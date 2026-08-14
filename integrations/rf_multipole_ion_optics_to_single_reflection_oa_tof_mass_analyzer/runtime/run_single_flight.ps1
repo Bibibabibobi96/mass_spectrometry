@@ -88,7 +88,7 @@ function Invoke-SingleFlightPython {
 }
 
 if (-not (Test-Path -LiteralPath $SimionExe -PathType Leaf)) { throw "SIMION is missing: $SimionExe" }
-$cacheProjectId = 'rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer'
+$runProjectId = 'rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer'
 $simionSolverCacheIdentity = Get-RfSimionSolverCacheIdentity -SimionExe $SimionExe
 if ($PulseResolutionN100Screening) {
   $planRoot = [IO.Path]::GetFullPath($PulseResolutionPrefixPlanRoot)
@@ -114,9 +114,9 @@ if ($PulseResolutionN100Screening) {
     throw 'Real multipole beam + real accelerator field + real reflectron field deterministic N=100 baseline result contract differs.'
   }
 }
-$artifactRoot = Join-Path $workspaceRoot "artifacts\projects\$($runtime.upstream_project_id)"
+$artifactRoot = Join-Path $workspaceRoot "artifacts\projects\$runProjectId"
 $package = New-RfRunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
-  -RunId $RunId -Project $runtime.upstream_project_id -Mode 'rf_to_oatof_simion_single_flight' `
+  -RunId $RunId -Project $runProjectId -Mode 'rf_to_oatof_simion_single_flight' `
   -Software @('SIMION 2020','Python 3.11') -RetentionContractEnabled -RetentionClass compact `
   -AdditionalDirectories @('simion')
 $resourceBudgetExceeded = $false
@@ -517,7 +517,7 @@ try {
   $frontendCacheRole = 'simion_single_flight_frontend_pa_cache'
   $frontendCacheIdentity = [ordered]@{
     schema_version=2; role=$frontendCacheRole
-    project_id=$cacheProjectId; solver=$simionSolverCacheIdentity
+    project_id=$runProjectId; solver=$simionSolverCacheIdentity
     inputs=[ordered]@{frontend_gem_sha256=$frontendHash}
     critical_options=[ordered]@{
       gem2pa=@('--nogui','--noprompt','gem2pa','frontend.gem','frontend.pa#')
@@ -525,10 +525,10 @@ try {
     }
   }
   $frontendCacheKey = Get-RfContentIdentitySha256 -Identity $frontendCacheIdentity
-  $cacheRoot = Join-Path $workspaceRoot "artifacts\projects\$cacheProjectId\cache\simion_single_flight_frontend"
+  $cacheRoot = Join-Path $workspaceRoot "artifacts\projects\$runProjectId\cache\simion_single_flight_frontend"
   $cacheDir = Join-Path $cacheRoot $frontendCacheKey
   $frontendRefineRequired = -not (Test-RfReusableCacheEntry -Python $python `
-    -RepoRoot $repoRoot -WorkspaceRoot $workspaceRoot -ProjectId $cacheProjectId `
+    -RepoRoot $repoRoot -WorkspaceRoot $workspaceRoot -ProjectId $runProjectId `
     -CacheRoot $cacheRoot -CacheKey $frontendCacheKey -Role $frontendCacheRole)
   if ($frontendRefineRequired) {
     $frontendBuildDir = New-RfCacheStagingDirectory -CacheRoot $cacheRoot
@@ -551,7 +551,7 @@ try {
     if ($refine.resource_budget_exceeded) { $resourceBudgetExceeded=$true; throw 'Frontend refinement exceeded its resource budget.' }
     if ($refine.exit_code -ne 0 -or -not (Test-Path -LiteralPath (Join-Path $frontendBuildDir 'frontend.pa0') -PathType Leaf)) { throw 'Frontend PA refinement failed.' }
     $cacheDir = Publish-RfVerifiedCacheEntry -Python $python -RepoRoot $repoRoot `
-      -WorkspaceRoot $workspaceRoot -ProjectId $cacheProjectId -CacheRoot $cacheRoot `
+      -WorkspaceRoot $workspaceRoot -ProjectId $runProjectId -CacheRoot $cacheRoot `
       -CacheKey $frontendCacheKey -Role $frontendCacheRole -Identity $frontendCacheIdentity `
       -StagingDirectory $frontendBuildDir -ProviderRunId $RunId
     } catch {
@@ -583,7 +583,7 @@ try {
     $overlayCacheRole = 'simion_accelerator_overlay_pa_cache'
     $overlayIdentity = [ordered]@{
       schema_version=2; role=$overlayCacheRole
-      project_id=$cacheProjectId; solver=$simionSolverCacheIdentity
+      project_id=$runProjectId; solver=$simionSolverCacheIdentity
       inputs=[ordered]@{
         overlay_gem_sha256=(Get-FileHash -LiteralPath $overlayGem -Algorithm SHA256).Hash
         frontend_pa0_sha256=(Get-FileHash -LiteralPath $cachePa0 -Algorithm SHA256).Hash
@@ -598,14 +598,14 @@ try {
       }
     }
     $overlayKey = Get-RfContentIdentitySha256 -Identity $overlayIdentity
-    $overlayCacheRoot = Join-Path $workspaceRoot "artifacts\projects\$cacheProjectId\cache\simion_accelerator_overlay"
+    $overlayCacheRoot = Join-Path $workspaceRoot "artifacts\projects\$runProjectId\cache\simion_accelerator_overlay"
     $overlayCacheDir = Join-Path $overlayCacheRoot $overlayKey
     $overlayCachePaSharp = Join-Path $overlayCacheDir 'accelerator_overlay.pa#'
     $overlayCachePa0 = Join-Path $overlayCacheDir 'accelerator_overlay.pa0'
     $overlayCacheManifest = Join-Path $overlayCacheDir 'cache_manifest.json'
     $overlayCacheBasisReport = Join-Path $overlayCacheDir 'basis_build.json'
     $overlayFamilyComplete = Test-RfReusableCacheEntry -Python $python `
-      -RepoRoot $repoRoot -WorkspaceRoot $workspaceRoot -ProjectId $cacheProjectId `
+      -RepoRoot $repoRoot -WorkspaceRoot $workspaceRoot -ProjectId $runProjectId `
       -CacheRoot $overlayCacheRoot -CacheKey $overlayKey -Role $overlayCacheRole
     New-Item -ItemType Directory -Path $overlayCacheRoot -Force | Out-Null
     $overlayBasisBuilderFrozen = Join-Path $package.input_dir 'build_accelerator_overlay_basis.lua'
@@ -664,7 +664,7 @@ try {
           if ($singleOverlayRefine.exit_code -ne 0) { throw "Overlay pa$electrode refine failed." }
         }
         $overlayCacheDir = Publish-RfVerifiedCacheEntry -Python $python `
-          -RepoRoot $repoRoot -WorkspaceRoot $workspaceRoot -ProjectId $cacheProjectId `
+          -RepoRoot $repoRoot -WorkspaceRoot $workspaceRoot -ProjectId $runProjectId `
           -CacheRoot $overlayCacheRoot -CacheKey $overlayKey -Role $overlayCacheRole `
           -Identity $overlayIdentity -StagingDirectory $overlayBuildDir -ProviderRunId $RunId
       } catch {
@@ -744,7 +744,7 @@ try {
   $flightTubeGemFrozen = $null
   $flightTubeBuildStdout = $null
   $flightTubeBuildStderr = $null
-  $downstreamCacheRoot = Join-Path $workspaceRoot "artifacts\projects\$cacheProjectId\cache\simion_oatof_downstream_pa"
+  $downstreamCacheRoot = Join-Path $workspaceRoot "artifacts\projects\$runProjectId\cache\simion_oatof_downstream_pa"
   $geometryHash = (Get-FileHash -LiteralPath $oatofGeometry -Algorithm SHA256).Hash
   $flightTubeBuilderSource = Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer\simion\workbench\build_flight_tube_variant.lua'
   $flightTubeGemSource = Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer\simion\workbench\oatof_flight_tube_ground.gem'
@@ -763,7 +763,7 @@ try {
     $additionalHash = if ([string]::IsNullOrWhiteSpace($Additional)) { '' } else { (Get-FileHash -LiteralPath $Additional -Algorithm SHA256).Hash }
     $identity = [ordered]@{
       schema_version=2; role=$Role
-      project_id=$cacheProjectId; solver=$simionSolverCacheIdentity
+      project_id=$runProjectId; solver=$simionSolverCacheIdentity
       inputs=[ordered]@{
         oatof_geometry_sha256=$geometryHash
         builder_sha256=(Get-FileHash -LiteralPath $Builder -Algorithm SHA256).Hash
@@ -837,7 +837,7 @@ try {
         }
       }
       return Publish-RfVerifiedCacheEntry -Python $python -RepoRoot $repoRoot `
-        -WorkspaceRoot $workspaceRoot -ProjectId $cacheProjectId `
+        -WorkspaceRoot $workspaceRoot -ProjectId $runProjectId `
         -CacheRoot $downstreamCacheRoot -CacheKey $Plan.key -Role $Plan.role `
         -Identity $Plan.identity -StagingDirectory $staging -ProviderRunId $RunId
     } catch {
@@ -848,7 +848,7 @@ try {
   $flightTubeCacheUsed = $false
   $reflectronCacheUsed = $false
   if ($hasFlightTubeRebuild -and (Test-RfReusableCacheEntry -Python $python `
-      -RepoRoot $repoRoot -WorkspaceRoot $workspaceRoot -ProjectId $cacheProjectId `
+      -RepoRoot $repoRoot -WorkspaceRoot $workspaceRoot -ProjectId $runProjectId `
       -CacheRoot $downstreamCacheRoot -CacheKey $flightTubeCachePlan.key `
       -Role $flightTubeCachePlan.role)) {
     Use-ReadOnlyPaCacheFamily -CacheDirectory $flightTubeCacheDir -Pattern 'flight_tube_ground.pa*'
@@ -856,7 +856,7 @@ try {
     $hasFlightTubeRebuild = $false
   }
   if ($hasReflectronRebuild -and (Test-RfReusableCacheEntry -Python $python `
-      -RepoRoot $repoRoot -WorkspaceRoot $workspaceRoot -ProjectId $cacheProjectId `
+      -RepoRoot $repoRoot -WorkspaceRoot $workspaceRoot -ProjectId $runProjectId `
       -CacheRoot $downstreamCacheRoot -CacheKey $reflectronCachePlan.key `
       -Role $reflectronCachePlan.role)) {
     Use-ReadOnlyPaCacheFamily -CacheDirectory $reflectronCacheDir -Pattern 'reflectron.pa*'
@@ -1068,7 +1068,8 @@ try {
     -Failure 'Single-flight Program build failed.'
 
   $runConfiguration = [ordered]@{
-    schema_version=2; run_id=$RunId; project=$runtime.upstream_project_id; mode='rf_to_oatof_simion_single_flight'; project_root=$repoRoot
+    schema_version=2; run_id=$RunId; project=$runProjectId; mode='rf_to_oatof_simion_single_flight'; project_root=$repoRoot
+    upstream_project_id=$runtime.upstream_project_id
     inputs=[ordered]@{ configuration=$configuration; runtime_binding=$runtimeBindingFrozen; resolved_connection=$resolvedFrozen; resolved_source_contract=$sourceContractFrozen; resolved_population_contract=$populationContractFrozen; upstream_resolved_design=$upstreamFrozen; oatof_resolved_geometry=$oatofGeometry; pulse_schedule=$pulseScheduleFrozen; resolved_region_field_contract=$resolvedRegionFieldContractFrozen; resolved_integration_engineering_budget=$budget.frozen_budget; resolved_stage_resource_budget=$budget.stage_budget; mother_particle_source=$motherSource; mother_particle_source_materialization_receipt=$motherSourceReceiptFrozen; initial_global_state=$globalSource; pre_pulse_restart_validation=$prePulseValidationFrozen; particle_input=$particleInput; frontend_gem=$frontendGem; frontend_contract=$frontendContract; frontend_pa_cache_manifest=$frontendCacheManifestInput; accelerator_overlay_gem=$overlayGem; accelerator_overlay_contract=$overlayContract; accelerator_overlay_basis_builder=$overlayBasisBuilderFrozen; accelerator_overlay_refiner=$overlayRefinerFrozen; accelerator_overlay_interface_verifier=$overlayInterfaceVerifierFrozen; accelerator_overlay_pa_cache_manifest=$overlayCacheManifestInput; accelerator_overlay_iob_builder=$overlayIobBuilderFrozen; accelerator_overlay_iob_container=$overlayIobContainerFrozen; accelerator_overlay_iob_container_gems=$overlayIobContainerGemFrozen; accelerator_overlay_basis_report=$overlayBasisReport; accelerator_overlay_interface_report=$overlayInterfaceReport; flight_tube_pa_cache_manifest=$flightTubeCacheManifestInput; reflectron_pa_cache_manifest=$reflectronCacheManifestInput; frontend_aperture_topology_support=$apertureTopologySupport; frontend_aperture_topology_verifier=$apertureVerifier; program_metadata=$programMetadata; candidate_flight_tube_builder=$flightTubeBuilderFrozen; candidate_flight_tube_gem=$flightTubeGemFrozen; candidate_reflectron_builder=$reflectronBuilderFrozen; candidate_reflectron_gem=$reflectronGemFrozen; candidate_reflectron_refiner=$reflectronRefinerFrozen }
     upstream_source_identity=$runtime.source_identity
     parameters=[ordered]@{ connection_profile_id=$ConnectionProfileId; source_branch_id=$SourceBranchId; layout_profile_id=$(if($hasGovernedLayout){$LayoutProfileId}else{$null}); architecture_generation_id=$(if($hasGovernedLayout){$ArchitectureGenerationId}else{$null}); source_profile_id=$(if($SourceProfileId){$SourceProfileId}else{$null}); field_overlay_id=$resolvedFieldOverlayId; bore_radius_mm=[double]$oatofGeometryDocument.geometry_mm.bore_r; ring_outer_radius_mm=[double]$oatofGeometryDocument.geometry_mm.ring_outer_r; shield_inner_radius_mm=[double]$oatofGeometryDocument.geometry_mm.flight_tube_r; frontend_grid_profile_id=$selectedGridProfileId; frontend_cell_mm_xyz=[ordered]@{x=$frontendCellMmX;y=$frontendCellMmY;z=$frontendCellMmZ}; accelerator_overlay_enabled=$overlayEnabled; accelerator_overlay_cell_mm_xyz=$(if($overlayEnabled){[ordered]@{x=$overlayCellMmX;y=$overlayCellMmY;z=$overlayCellMmZ}}else{$null}); accelerator_overlay_boundary_mode=$(if($overlayEnabled){'coarse_electrode_basis_dirichlet_v1'}else{$null}); oatof_numerical_profile_id=$selectedOatofNumericalProfileId; trajectory_quality_profile_id=$selectedTrajectoryQualityProfileId; trajectory_quality=$trajectoryQuality; time_integration_profile_id=$selectedTimeIntegrationProfileId; rf_steps_per_period=$rfStepsPerPeriod; spatial_window_profile_id=$(if($spatialWindowProfiles.Count -eq 1){$SpatialWindowProfileId}else{$null}); accelerator_field_profile_id=$selectedFieldProfileId; resolved_region_field_contract_sha256=$ResolvedRegionFieldContractSha256; resolved_region_field_semantic_sha256=$ResolvedRegionFieldSemanticSha256; resolved_population_contract_sha256=$ResolvedPopulationContractSha256; max_parallel_batches=$maxParallelBatches; clock_basis=[string]$settings.clock_basis; launched_particle_count=$launched; particle_count=$launched; population_denominator_count=$PopulationDenominatorCount; eligible_population_count=$EligiblePopulationCount; population_basis=$(if($SamplingMode -eq 'continuous_injection_full_population'){'candidate_full_population'}elseif($SamplingMode -eq 'pulse_eligible_conditional'){'pulse_eligible_conditional_population'}else{'source_contract_population'}); execution_batch_count=$(if($launched -ge [int]$settings.batching_policy.enabled_at_particle_count){[int]$settings.batching_policy.default_batch_count}else{1}); execution_batches_parallel=$(if($launched -ge [int]$settings.batching_policy.enabled_at_particle_count){[bool]$settings.batching_policy.parallel_after_cache_warmup}else{$false}); aperture_width_mm=$apertureWidthMm; aperture_height_mm=$apertureHeightMm; aperture_boolean_boundary_policy=[string]$apertureDiscretization.boolean_boundary_policy; aperture_grid_warnings=$apertureGridWarnings; frontend_open_aperture_column_count=[int]$apertureTopology.open_column_count; frontend_aperture_guard_electrode_check_passed=[bool]$apertureTopology.guard_electrode_check_passed; frontend_aperture_topology_report_sha256=(Get-FileHash -LiteralPath $apertureTopologyReport -Algorithm SHA256).Hash; rod_end_to_accelerator_shield_mm=1.0; surrounded_transition=$true; accelerator_axis_x_mm=[double]$oatofGeometryDocument.coordinate_convention.accelerator_axis_x; pulse_time_us=$pulseTimeUs; pulse_width_us=$pulseWidthUs; design_compilation=$(if($null -ne $layoutDerivation){$layoutDerivation.design_compilation}else{$null}); source_release_full_width_mm=[double]$oatofGeometryDocument.particle_source.size_z_mm; reflectron_stage2_length_mm=[double]$oatofGeometryDocument.geometry_mm.L_stage2; reflectron_midgrid_voltage_V=[double]$oatofGeometryDocument.electrodes_V.midgrid; reflectron_backplate_voltage_V=[double]$oatofGeometryDocument.electrodes_V.backplate; reflectron_pa0_sha256=(Get-FileHash -LiteralPath $reflectronPa0 -Algorithm SHA256).Hash; frontend_gem_sha256=$frontendHash; frontend_pa0_sha256=(Get-FileHash -LiteralPath $cachePa0 -Algorithm SHA256).Hash; accelerator_overlay_pa0_sha256=$(if($overlayEnabled){(Get-FileHash -LiteralPath $overlayCachePa0 -Algorithm SHA256).Hash}else{$null}) }

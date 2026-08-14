@@ -13,9 +13,11 @@ import unittest
 from unittest.mock import patch
 
 from common.contracts.file_identity import file_sha256, repository_text_sha256
+from common.contracts.machine_contracts import ContractError
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.publish_run import (
     INTEGRATION_ID,
     STAGES,
+    stage_project_id,
     publish_family_source_closure_failure,
     publish_family_source_closure_run,
 )
@@ -34,6 +36,19 @@ WORKFLOW_ROOT = ADAPTER_PATH.parent
 RUN_ARTIFACTS_PATH = (
     REPO_ROOT / "integrations" / INTEGRATION_ID / "runtime" / "run_artifacts.ps1"
 )
+
+
+class JointSingleFlightOwnershipTests(unittest.TestCase):
+    def test_new_single_flight_stage_is_integration_owned(self) -> None:
+        upstream = "rf_octupole_ion_optics"
+        self.assertEqual(
+            stage_project_id("simion_single_flight", upstream), INTEGRATION_ID
+        )
+        self.assertEqual(
+            stage_project_id("staged_three_stage", upstream), upstream
+        )
+        with self.assertRaisesRegex(ContractError, "unsupported"):
+            stage_project_id("unknown", upstream)
 
 
 def write_json(path: Path, value: object) -> None:

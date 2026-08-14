@@ -174,5 +174,46 @@ class AssessmentClassificationTests(unittest.TestCase):
                 {"census": census}, rows
             )
 
+
+class SingleFlightOwnershipLineageTests(unittest.TestCase):
+    upstream_project_id = "rf_octupole_ion_optics"
+
+    def test_accepts_integration_owned_child_with_explicit_upstream_lineage(self) -> None:
+        lineage = assessment._single_flight_ownership_lineage(
+            child_manifest={"project": assessment.PROJECT_ID},
+            child_config={
+                "project": assessment.PROJECT_ID,
+                "upstream_project_id": self.upstream_project_id,
+            },
+            expected_upstream_project_id=self.upstream_project_id,
+        )
+        self.assertEqual(
+            lineage, "integration_owned_with_upstream_input_lineage"
+        )
+
+    def test_accepts_explicit_legacy_upstream_owned_child_read_only(self) -> None:
+        lineage = assessment._single_flight_ownership_lineage(
+            child_manifest={"project": self.upstream_project_id},
+            child_config={
+                "project": self.upstream_project_id,
+                "upstream_source_identity": {
+                    "project_id": self.upstream_project_id,
+                },
+            },
+            expected_upstream_project_id=self.upstream_project_id,
+        )
+        self.assertEqual(
+            lineage, "legacy_upstream_project_owned_single_flight_read_only"
+        )
+
+    def test_rejects_mixed_or_implicit_ownership(self) -> None:
+        with self.assertRaisesRegex(ContractError, "ownership lineage"):
+            assessment._single_flight_ownership_lineage(
+                child_manifest={"project": assessment.PROJECT_ID},
+                child_config={"project": self.upstream_project_id},
+                expected_upstream_project_id=self.upstream_project_id,
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

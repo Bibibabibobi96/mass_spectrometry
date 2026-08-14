@@ -87,6 +87,34 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
         self.assertEqual(text.count("$SamplingMode -ne 'steady_candidate_pool' -and"), 2)
         self.assertIn("$programArguments += '--terminate-after-pulse'", text)
 
+    def test_joint_single_flight_run_package_is_integration_owned(self) -> None:
+        text = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        integration_id = (
+            "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
+        )
+        self.assertIn(f"$runProjectId = '{integration_id}'", text)
+        self.assertIn(
+            '"artifacts\\projects\\$runProjectId"', text
+        )
+        self.assertIn("-Project $runProjectId", text)
+        self.assertIn("project=$runProjectId", text)
+        self.assertIn(
+            "upstream_project_id=$runtime.upstream_project_id", text
+        )
+        self.assertNotIn("-Project $runtime.upstream_project_id", text)
+        adapter = FAMILY_ADAPTER.read_text(encoding="utf-8")
+        self.assertIn(
+            "'artifacts\\projects\\' + $plan.integration_id + '\\runs'",
+            adapter,
+        )
+        self.assertIn(
+            "$singleFlightManifest.project -ne $plan.integration_id", adapter
+        )
+        self.assertIn(
+            "$singleFlightManifest.mode -ne 'rf_to_oatof_simion_single_flight'",
+            adapter,
+        )
+
     def test_overlay_cache_is_staged_and_reuses_the_basis_report(self) -> None:
         text = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
         self.assertIn("'b-' + [guid]::NewGuid().ToString('N').Substring(0,12)", text)

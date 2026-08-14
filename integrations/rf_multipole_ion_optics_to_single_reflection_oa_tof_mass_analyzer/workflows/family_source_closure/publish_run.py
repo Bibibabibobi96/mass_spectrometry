@@ -51,6 +51,14 @@ def _retry_suffix(run_id: str) -> str:
     return match.group(1) if match else ""
 
 
+def stage_project_id(execution_strategy: str, upstream_project_id: str) -> str:
+    if execution_strategy == "simion_single_flight":
+        return INTEGRATION_ID
+    if execution_strategy == "staged_three_stage":
+        return upstream_project_id
+    raise ContractError(f"unsupported family execution strategy: {execution_strategy}")
+
+
 def _load(path: Path) -> dict[str, Any]:
     value = json.loads(path.read_text(encoding="utf-8-sig"))
     if not isinstance(value, dict):
@@ -295,11 +303,12 @@ def publish_family_source_closure_run(
             raise ContractError(
                 f"family receipt stage runtime-binding SHA is invalid: {phase}"
             )
+    stage_owner = stage_project_id(execution_strategy, upstream_project_id)
     stage_root = (
         workspace_root
         / "artifacts"
         / "projects"
-        / upstream_project_id
+        / stage_owner
         / "runs"
     )
     stages = []
@@ -309,7 +318,7 @@ def publish_family_source_closure_run(
             _verify_stage(
                 run_path=stage_root / stage_run_id,
                 run_id=stage_run_id,
-                project_id=upstream_project_id,
+                project_id=stage_owner,
                 mode=contract["mode"],
                 workspace_root=workspace_root,
             )

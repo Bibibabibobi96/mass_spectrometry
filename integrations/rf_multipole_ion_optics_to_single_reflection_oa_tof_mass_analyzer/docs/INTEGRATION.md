@@ -46,6 +46,13 @@ schema-v3 single-flight 执行采用两条单权威链：campaign 中显式的
 `SolverAuthorized`执行会失败关闭并要求schema-v3 successor。完整实现、29行successor及验证收据见
 [schema-v3单权威收口记录](../../../docs/history/20260814__rf-oatof-schema-v3-resolved-pulse-population-authority.md)。
 
+joint single-flight run package由integration ID拥有；`run_config.project`与终态manifest的
+`project`都必须是integration ID。多极杆项目ID只作为`upstream_project_id`和源输入lineage，不能再
+决定joint output路径。`staged_three_stage`的stage输出仍归对应upstream project；未知执行策略失败
+关闭。2026-08-15之前已经发布在upstream项目目录中的single-flight run保持逐字节只读兼容，reader
+只能依据冻结manifest/run_config中的显式legacy ownership与upstream source identity读取，禁止按目录
+形状猜测，也禁止新writer继续写入该legacy位置。
+
 理论/理想源合同必须另外声明`source_state_epoch`和`source_state_locus`，两者与坐标基、规范时钟、
 有序粒子ID和目标状态共同构成源身份。若SIMION因连续轨迹要求在目标epoch之前写入`.ion`，该文件只算
 `release_implementation_state`；profile中的目标宽度、均值或斜率仍指向声明checkpoint，不能由release

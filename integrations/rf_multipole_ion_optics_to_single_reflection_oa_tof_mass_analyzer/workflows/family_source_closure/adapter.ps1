@@ -888,6 +888,25 @@ if ($executionStrategy -eq 'simion_single_flight') {
 if ($LASTEXITCODE -ne 0) {
   throw "Family mapped RF-to-oaTOF $executionStrategy execution failed."
 }
+if ($executionStrategy -eq 'simion_single_flight') {
+  $singleFlightRunsRoot = Join-Path $workspaceRoot (
+    'artifacts\projects\' + $plan.integration_id + '\runs'
+  )
+  $singleFlightManifestPath = Join-Path (
+    Join-Path $singleFlightRunsRoot $singleFlightRunId
+  ) 'run_manifest.json'
+  if (-not (Test-Path -LiteralPath $singleFlightManifestPath -PathType Leaf)) {
+    throw 'New single-flight output must publish under the integration project.'
+  }
+  $singleFlightManifest = Get-Content -LiteralPath $singleFlightManifestPath `
+    -Raw -Encoding UTF8 | ConvertFrom-Json
+  if ($singleFlightManifest.role -ne 'simulation_run_manifest' -or
+      $singleFlightManifest.run_id -ne $singleFlightRunId -or
+      $singleFlightManifest.project -ne $plan.integration_id -or
+      $singleFlightManifest.mode -ne 'rf_to_oatof_simion_single_flight') {
+    throw 'New single-flight output ownership identity differs.'
+  }
+}
 
 $stageParticleCount = [int]$budget.particle_count
 $runtimeBindingSha256 = (

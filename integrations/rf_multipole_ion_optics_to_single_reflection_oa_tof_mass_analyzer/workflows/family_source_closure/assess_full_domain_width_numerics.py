@@ -381,6 +381,32 @@ def _path_free_field_identity(
     }
 
 
+def _single_flight_ownership_lineage(
+    *,
+    child_manifest: Mapping[str, Any],
+    child_config: Mapping[str, Any],
+    expected_upstream_project_id: str,
+) -> str:
+    """Classify explicit current or read-only legacy single-flight ownership."""
+    manifest_project = child_manifest.get("project")
+    config_project = child_config.get("project")
+    if manifest_project == PROJECT_ID and config_project == PROJECT_ID:
+        if child_config.get("upstream_project_id") != expected_upstream_project_id:
+            raise ContractError("integration-owned child upstream lineage differs")
+        return "integration_owned_with_upstream_input_lineage"
+
+    upstream_source_identity = child_config.get("upstream_source_identity")
+    if (
+        manifest_project == expected_upstream_project_id
+        and config_project == expected_upstream_project_id
+        and isinstance(upstream_source_identity, Mapping)
+        and upstream_source_identity.get("project_id") == expected_upstream_project_id
+    ):
+        return "legacy_upstream_project_owned_single_flight_read_only"
+
+    raise ContractError("single-flight child ownership lineage differs")
+
+
 def _case(
     *, repo_root: Path, workspace_root: Path, parent_root: Path,
     experiment: Mapping[str, Any], campaign_id: str,
@@ -441,7 +467,6 @@ def _case(
         for key, value in {
             "schema_version": 2,
             "role": "simulation_run_manifest",
-            "project": "rf_octupole_ion_optics",
             "mode": "rf_to_oatof_simion_single_flight",
             "status": "success",
         }.items()
@@ -457,6 +482,17 @@ def _case(
         )
     child_config_path = _verified(child_manifest.get("run_config"), "child run_config")
     child_config = load_json(child_config_path, "child run_config")
+    source_particle_identity = parent_config.get("source_particle_identity")
+    if not isinstance(source_particle_identity, Mapping):
+        raise ContractError("parent source particle identity is missing")
+    upstream_project_id = source_particle_identity.get("project_id")
+    if not isinstance(upstream_project_id, str) or not upstream_project_id:
+        raise ContractError("parent upstream project identity is missing")
+    child_ownership_lineage = _single_flight_ownership_lineage(
+        child_manifest=child_manifest,
+        child_config=child_config,
+        expected_upstream_project_id=upstream_project_id,
+    )
     if (
         child_config.get("formal_gate_passed") is not False
         or child_manifest.get("formal_eligible") is not False
@@ -530,6 +566,7 @@ def _case(
             "run_id": child_manifest["run_id"],
             "path": child_manifest_path.parent.relative_to(workspace_root).as_posix(),
             "manifest_sha256": file_sha256(child_manifest_path),
+            "ownership_lineage": child_ownership_lineage,
         },
         "pulse_effective_metrics": _pulse_metrics(summary, times),
         "field_configuration": _path_free_field_identity(child_manifest),
