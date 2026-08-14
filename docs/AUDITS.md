@@ -5,6 +5,9 @@
 
 ## 已完成审计
 
+- [2026-08-14 artifact 授权处置审计](history/20260814__artifact-authorized-disposition-audit.md)：
+  记录用户授权下对 scratch、失败/中断及锁死排查产物的17目标处置、硬链接导致的逻辑大小与实际释放差异，
+  以及当前理想源/束源和真实场/理想场实验PA与cache的保护边界。
 - [2026-08-02 活动run与campaign证据审计](history/20260802__run-campaign-evidence-audit.md)：
   核对8个项目的活动run三件套、manifest记录、终态和全部声明式campaign，区分不可变历史缺陷与
   当前证据，并关闭相对路径验证和oaTOF campaign公共生命周期缺口。
