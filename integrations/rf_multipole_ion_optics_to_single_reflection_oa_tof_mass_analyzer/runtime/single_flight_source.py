@@ -128,7 +128,7 @@ def materialize_ideal_linear_source(
     target_y = float(particle_source["center_y_mm"])
     target_z = float(particle_source["center_z_mm"])
     entry_x = float(pulse_schedule["entry_surface_x_mm"])
-    pulse_time_us = float(pulse_schedule["derived_pulse_time_us"])
+    pulse_time_us = float(pulse_schedule["pulse_effective_time_us"])
     speed = math.sqrt(
         2.0 * energy * ELEMENTARY_CHARGE_C / (mass * AMU_KG)
     )

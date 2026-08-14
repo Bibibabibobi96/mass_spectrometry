@@ -143,6 +143,14 @@ def _verify_stage_chain_identity(
         raise ContractError(
             f"family stage runtime/resolved identity differs: {stage['phase']}"
         )
+    if stage["phase"] == "single_flight_transport":
+        population_path = Path(inputs.get("resolved_population_contract", ""))
+        if (
+            not population_path.is_file()
+            or file_sha256(population_path)
+            != receipt["resolved_population_contract_sha256"]
+        ):
+            raise ContractError("single-flight stage population authority differs")
 
 
 def publish_family_source_closure_run(
@@ -164,7 +172,9 @@ def publish_family_source_closure_run(
     resolved = _load(resolved_path)
     plan = _load(plan_path)
     budget = _load(budget_path)
-    execution_strategy = receipt.get("execution_strategy", "staged_three_stage")
+    execution_strategy = receipt.get("execution_strategy")
+    if execution_strategy is None:
+        raise ContractError("family parent execution strategy is missing")
     if execution_strategy not in STAGES_BY_STRATEGY:
         raise ContractError("family parent execution strategy is invalid")
     stage_contracts = STAGES_BY_STRATEGY[execution_strategy]
@@ -196,7 +206,7 @@ def publish_family_source_closure_run(
         or resolved["selection"]["connection_profile_id"] != profile_id
         or budget["connection_profile_id"] != profile_id
         or budget["source_identity"] != receipt["source_identity"]
-        or budget.get("execution_strategy", "staged_three_stage") != execution_strategy
+        or budget["execution_strategy"] != execution_strategy
         or budget["source_identity"]["source_branch_id"] != source_branch_id
         or any(budget[key] != receipt[key] for key in campaign_keys)
         or receipt.get("campaign_sha256") is None
@@ -219,6 +229,9 @@ def publish_family_source_closure_run(
     upstream_resolved_design_path = (
         receipt_path.parent / receipt.get("upstream_resolved_design_filename", "")
     ).resolve()
+    resolved_population_contract_path = (
+        receipt_path.parent / receipt.get("resolved_population_contract_filename", "")
+    ).resolve()
     if (
         not campaign_path.is_relative_to(repo_root.resolve())
         or not campaign_path.is_file()
@@ -233,6 +246,25 @@ def publish_family_source_closure_run(
         != receipt.get("upstream_resolved_design_sha256")
     ):
         raise ContractError("family parent frozen campaign inputs differ")
+    if execution_strategy == "simion_single_flight":
+        if (
+            resolved_population_contract_path.parent != receipt_path.parent.resolve()
+            or not resolved_population_contract_path.is_file()
+            or file_sha256(resolved_population_contract_path)
+            != receipt.get("resolved_population_contract_sha256")
+        ):
+            raise ContractError("family parent resolved population authority differs")
+        population = _load(resolved_population_contract_path)
+        if (
+            population.get("role") != "rf_oatof_resolved_population_contract"
+            or population.get("campaign_id") != receipt["campaign_id"]
+            or population.get("experiment_id") != receipt["experiment_id"]
+            or population.get("experiment_row_sha256")
+            != receipt["experiment_row_sha256"]
+            or population.get("execution_population", {}).get("particle_count")
+            != launched_particle_count
+        ):
+            raise ContractError("family parent population contract identity differs")
     upstream_project_id = resolved["selection"]["upstream_project_id"]
     stage_run_ids = receipt.get("stage_run_ids")
     stage_runtime_binding_sha256s = receipt.get(
@@ -498,6 +530,7 @@ def publish_family_source_closure_failure(
         "upstream_resolved_design.json",
         "resolved_oatof_geometry.json",
         "resolved_single_flight_pulse_schedule.json",
+        "resolved_population_contract.json",
     )
     frozen_inputs = {
         name.removesuffix(".json"): _portable(run_dir / name, workspace_root)

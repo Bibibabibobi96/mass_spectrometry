@@ -7,8 +7,33 @@ import unittest
 from pathlib import Path
 
 from common.contracts.particle_physics import kinetic_energy_ev
-from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.analyze_single_flight import analyze
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.analyze_single_flight import analyze as analyze_with_population_contract
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.plot_single_flight_spatial_six_panel import marker_area
+
+
+def analyze(log_path, launched, mass_amu, *args, **kwargs):
+    """Test fixture: compile formerly separate population values into one contract."""
+    population_count = kwargs.pop("population_denominator_count", launched)
+    eligible_count = kwargs.pop("eligible_population_count", launched)
+    bootstrap_resamples = kwargs.pop("bootstrap_resamples", 0)
+    bootstrap_seed = kwargs.pop("bootstrap_seed", 20260812)
+    source_release_mode = kwargs.pop("source_release_mode", "continuous_frontend")
+    contract = {
+        "role": "rf_oatof_resolved_population_contract",
+        "source_release_mode": source_release_mode,
+        "execution_population": {"particle_count": launched},
+        "denominators": {
+            "population_count": population_count,
+            "eligible_population_count": eligible_count,
+        },
+        "analysis_randomness": {
+            "bootstrap_resample_count": bootstrap_resamples,
+            "bootstrap_seed": bootstrap_seed,
+        },
+    }
+    return analyze_with_population_contract(
+        log_path, mass_amu, contract, *args, **kwargs
+    )
 
 
 class SingleFlightAnalysisTests(unittest.TestCase):
@@ -277,7 +302,10 @@ class SingleFlightAnalysisTests(unittest.TestCase):
             model = root / "geometry.json"
             log.write_text(text, encoding="utf-8")
             model.write_text(json.dumps(geometry), encoding="utf-8")
-            rows, summary = analyze(log, 4, 100.0, model, 10.0)
+            rows, summary = analyze(
+                log, 4, 100.0, model, 10.0,
+                eligible_population_count=1,
+            )
         capture = summary["pulse_capture"]
         self.assertEqual(capture["counts"], {
             "eligible": 1,
@@ -392,7 +420,7 @@ class SingleFlightAnalysisTests(unittest.TestCase):
         self.assertEqual(population["simulated_fraction_of_candidate_population"], 4 / 6)
         self.assertEqual(population["simulated_fraction_of_pulse_eligible_population"], 1.0)
 
-    def test_full_population_derives_pulse_eligible_count_from_observed_state(self) -> None:
+    def test_full_population_cross_checks_declared_pulse_eligible_count(self) -> None:
         lines = [
             "TRACE: source_release ion=1 instrument_time_us=0 x_mm=-69 y_mm=0 z_mm=-18 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
             "TRACE: source_release ion=2 instrument_time_us=0 x_mm=-69 y_mm=0 z_mm=-18 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
@@ -414,7 +442,10 @@ class SingleFlightAnalysisTests(unittest.TestCase):
             model = root / "geometry.json"
             log.write_text("\n".join(lines), encoding="utf-8")
             model.write_text(json.dumps(geometry), encoding="utf-8")
-            _, summary = analyze(log, 2, 100.0, model, 10.0)
+            _, summary = analyze(
+                log, 2, 100.0, model, 10.0,
+                eligible_population_count=1,
+            )
 
         population = summary["source_population"]
         self.assertEqual(population["simulation_population_basis"], "candidate_full_population")

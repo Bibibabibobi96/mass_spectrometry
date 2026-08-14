@@ -31,6 +31,9 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     build_resolved_region_field_contract,
     canonical_profile_id,
 )
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.resolved_population import (
+    compile_resolved_population_contract,
+)
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_layout import (
     compile_geometry_and_port,
     derive_pulse_schedule,
@@ -135,13 +138,21 @@ def validate_full_domain_affine_width_numerics_campaign(
         "single_flight_frontend_grid_profile_id": "frontend_isotropic_020_accelerator_overlay_z005",
         "single_flight_oatof_numerical_profile_id": "oatof_formal_mesh",
         "single_flight_accelerator_field_profile_id": FULL_ID,
-        "single_flight_pulse_offset_rf_periods": 0,
         "architecture_generation_id": "finite_interval_2p2mm_matched_voltage_v1",
         "field_overlay_id": "accelerator_overlay_z005",
     }
     for row in rows:
         if any(row.get(key) != value for key, value in fixed.items()):
             raise ContractError("full-domain width/numerics fixed control differs")
+        if campaign["schema_version"] == 3:
+            if row.get("single_flight_pulse_schedule_policy") != {
+                "policy_id": "multipole_handoff_ballistic_centroid_v1",
+                "offset_rf_periods": 0,
+                "pulse_width_us": 1.0,
+            }:
+                raise ContractError("full-domain width/numerics pulse policy differs")
+        elif row.get("single_flight_pulse_offset_rf_periods") != 0:
+            raise ContractError("historical full-domain pulse offset differs")
         if row.get("source_profile_id") != row.get(
             "single_flight_source_materialization_profile_id"
         ):
@@ -374,6 +385,38 @@ def _workspace_relative(path: Path, workspace: Path) -> str:
         raise ContractError(f"path escapes the workspace: {path}") from exc
 
 
+def _population_source_table(
+    path: Path,
+    *,
+    workspace: Path,
+    input_role: str,
+    table_binding: str,
+) -> dict[str, Any]:
+    with path.open(encoding="utf-8-sig", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    if not rows or "particle_id" not in rows[0]:
+        raise ContractError("population source table lacks particle identities")
+    try:
+        particle_ids = [int(row["particle_id"]) for row in rows]
+    except (TypeError, ValueError) as exc:
+        raise ContractError("population source particle identities are invalid") from exc
+    if len(particle_ids) != len(set(particle_ids)):
+        raise ContractError("population source particle identities are not unique")
+    return {
+        "input_role": input_role,
+        "table_binding": table_binding,
+        "table": {
+            "path": _workspace_relative(path, workspace),
+            "sha256": file_sha256(path),
+        },
+        "particle_count": len(particle_ids),
+        "ordered_particle_ids": {
+            "encoding": "canonical_compact_json_integer_array_v1",
+            "sha256": _canonical_sha256(particle_ids),
+        },
+    }
+
+
 def _validate_canonical_pulse_restart_state(
     source_path: Path,
     receipt_path: Path,
@@ -396,7 +439,7 @@ def _validate_canonical_pulse_restart_state(
         or target.get("clock_authority") != "resolved_single_flight_pulse_schedule"
     ):
         raise ContractError("canonical pulse restart receipt identity differs")
-    pulse_time_us = float(schedule["derived_pulse_time_us"])
+    pulse_time_us = float(schedule["pulse_effective_time_us"])
     _, normalized_rows = materialize_pre_pulse_restart(source_path, pulse_time_us)
     count = int(profile["particle_count"])
     if len(normalized_rows) != count:
@@ -654,14 +697,17 @@ def prepare_family_source_closure(
     validate_pulse_resolution_optimization_campaign(
         campaign, execution_requested=True, experiment=experiment
     )
-    execution_strategy = experiment.get(
-        "execution_strategy", "staged_three_stage"
-    )
-    pulse_offset_rf_periods = float(
-        experiment.get("single_flight_pulse_offset_rf_periods", 0.0)
-    )
-    if pulse_offset_rf_periods != 0.0 and execution_strategy != "simion_single_flight":
-        raise ContractError("pulse RF-period offsets require SIMION single flight")
+    execution_strategy = experiment.get("execution_strategy", "staged_three_stage")
+    pulse_schedule_policy = experiment.get("single_flight_pulse_schedule_policy")
+    population_declaration = experiment.get("single_flight_population")
+    if execution_strategy == "simion_single_flight" and campaign["schema_version"] < 3:
+        raise ContractError(
+            "SolverAuthorized single-flight execution requires a schema-v3 successor campaign"
+        )
+    if execution_strategy == "simion_single_flight" and (
+        pulse_schedule_policy is None or population_declaration is None
+    ):
+        raise ContractError("schema-v3 single flight requires resolved clock and population inputs")
     frontend_grid_profile_id = experiment.get(
         "single_flight_frontend_grid_profile_id"
     )
@@ -780,12 +826,15 @@ def prepare_family_source_closure(
     pre_pulse_source_state = experiment.get("pre_pulse_source_state")
     identity_values = (
         architecture_generation_id, source_profile_id, field_overlay_id,
-        source_release_mode,
     )
     if any(value is not None for value in identity_values) and not all(
         isinstance(value, str) and value for value in identity_values
     ):
-        raise ContractError("single-flight architecture/source/field/release identity is incomplete")
+        raise ContractError("single-flight architecture/source/field identity is incomplete")
+    if execution_strategy == "simion_single_flight" and not (
+        isinstance(source_release_mode, str) and source_release_mode
+    ):
+        raise ContractError("single-flight source release identity is incomplete")
     if (
         source_materialization_profile is not None
         and source_materialization_profile["source_profile_id"] != source_profile_id
@@ -1026,7 +1075,7 @@ def prepare_family_source_closure(
     layout_files: dict[str, Path] | None = None
     resolved_region_field_contract_path: Path | None = None
     resolved_region_field_contract: dict[str, Any] | None = None
-    if campaign["schema_version"] == 2:
+    if campaign["schema_version"] == 3:
         if execution_strategy != "simion_single_flight":
             raise ContractError("single-flight layout profiles require SIMION single flight")
         layout_registry_path = (
@@ -1197,15 +1246,7 @@ def prepare_family_source_closure(
             )
             registration_receipt_sha256 = file_sha256(registration_receipt_path)
     execution_particle_count = (
-        int(pulse_contract["population_contract"]["screening_prefix_count"])
-        if pulse_contract is not None else
-        int(source_materialization_profile["particle_count"])
-        if source_materialization_profile is not None
-        else int(single_flight_source["particle_count"])
-        if single_flight_source is not None
-        else int(pre_pulse_source_state["particle_count"])
-        if pre_pulse_source_state is not None
-        else evidence["launched_particle_count"]
+        int(population_declaration["execution_population"]["particle_count"])
         if execution_strategy == "simion_single_flight"
         else evidence["particle_count"]
     )
@@ -1279,14 +1320,23 @@ def prepare_family_source_closure(
         plan_output,
         repo_root=root,
     )
+    materialized_source_path = None
+    resolved_population_path = None
     if layout_files is not None:
         schedule = derive_pulse_schedule(
             design_evidence["state_path"], _load(resolved_path), _load(layout_files["geometry"]),
             layout_profile,
-            pulse_offset_rf_periods=pulse_offset_rf_periods,
+            campaign_id=campaign["campaign_id"],
+            experiment_id=experiment_id,
+            experiment_row_sha256=row_sha256,
+            population_declaration_sha256=_canonical_sha256(population_declaration),
+            policy=pulse_schedule_policy,
             rf_frequency_hz=float(
                 design_evidence["resolved_design"]["drive"]["frequency_Hz"]
             ),
+        )
+        validate_schema(
+            schedule, "rf_oatof_resolved_single_flight_pulse_schedule.schema.json"
         )
         schedule_path = plan_output.with_name("resolved_single_flight_pulse_schedule.json")
         schedule_path.write_text(json.dumps(schedule, indent=2) + "\n", encoding="utf-8")
@@ -1336,6 +1386,60 @@ def prepare_family_source_closure(
             != "canonical_multipole_source"
         ):
             raise ContractError("source materialization mode is unsupported")
+        table_binding = population_declaration["source_authority"]["table_binding"]
+        if table_binding == "source_contract_particle_source":
+            population_path = _workspace_record(
+                workspace, source["particle_source"], "population source contract table"
+            )
+            population_input_role = source["particle_source_manifest_input_role"]
+        elif table_binding == "experiment_single_flight_particle_source":
+            if single_flight_source_path is None:
+                raise ContractError("population declaration requires an experiment source table")
+            population_path = single_flight_source_path
+            population_input_role = "single_flight_particle_source"
+        elif table_binding == "experiment_pre_pulse_source_state":
+            if pre_pulse_source_path is None:
+                raise ContractError("population declaration requires a pre-pulse source table")
+            population_path = pre_pulse_source_path
+            population_input_role = "pre_pulse_source_state"
+        elif table_binding == "prepared_materialized_particle_source":
+            if materialized_source_path is None:
+                raise ContractError("population declaration requires a materialized source table")
+            population_path = materialized_source_path
+            population_input_role = "single_flight_materialized_particle_source"
+        elif table_binding == "prepared_deterministic_prefix":
+            if pulse_prefix_path is None:
+                raise ContractError("population declaration requires a deterministic prefix table")
+            population_path = pulse_prefix_path
+            population_input_role = "pulse_resolution_screening_prefix"
+        elif table_binding == "staged_upstream_source":
+            population_path = _workspace_record(
+                workspace, source["particle_source"], "staged population source table"
+            )
+            population_input_role = source["particle_source_manifest_input_role"]
+        else:
+            raise ContractError("population source table binding is unsupported")
+        resolved_population = compile_resolved_population_contract(
+            campaign_id=campaign["campaign_id"],
+            experiment_id=experiment_id,
+            experiment_row_sha256=row_sha256,
+            population_declaration_sha256=_canonical_sha256(population_declaration),
+            execution_strategy=execution_strategy,
+            source_release_mode=source_release_mode,
+            declaration=population_declaration,
+            source_table=_population_source_table(
+                population_path,
+                workspace=workspace,
+                input_role=population_input_role,
+                table_binding=table_binding,
+            ),
+        )
+        resolved_population_path = plan_output.with_name(
+            "resolved_population_contract.json"
+        )
+        resolved_population_path.write_text(
+            json.dumps(resolved_population, indent=2) + "\n", encoding="utf-8"
+        )
     plan = _load(plan_path)
     plan["execution_steps"] = [
         {
@@ -1364,21 +1468,20 @@ def prepare_family_source_closure(
                 f"single_flight_particle_source_path={single_flight_source['path']}",
                 f"single_flight_particle_source_sha256={single_flight_source['sha256']}",
                 f"single_flight_particle_source_count={single_flight_source['particle_count']}",
-                f"single_flight_sampling_mode={single_flight_source['sampling_mode']}",
             ]) + ([] if source_materialization_profile is None else [
                 "single_flight_source_materialization_profile_id="
                 + source_materialization_profile_id,
             ]) + ([] if source_materialization_profile is None or
                     source_materialization_profile["materialization_mode"] ==
                     "canonical_multipole_source" else [
-                "single_flight_materialized_source_filename=inputs/"
-                + materialized_source_path.name,
+                "single_flight_materialized_source_filename="
+                "inputs/single_flight_materialized_particle_source.csv",
                 "single_flight_materialized_source_sha256="
                 + materialization_receipt["particle_source"]["sha256"],
                 "single_flight_materialized_source_count="
                 + str(materialization_receipt["particle_count"]),
-                "single_flight_materialization_receipt_filename=inputs/"
-                + materialization_receipt_path.name,
+                "single_flight_materialization_receipt_filename="
+                "inputs/single_flight_source_materialization_receipt.json",
                 "single_flight_materialization_receipt_sha256="
                 + file_sha256(materialization_receipt_path),
             ]) + ([] if pulse_contract is None else [
@@ -1389,8 +1492,6 @@ def prepare_family_source_closure(
                 "pulse_resolution_prefix_filename=inputs/"
                 + pulse_prefix_path.name,
                 "pulse_resolution_prefix_sha256=" + pulse_prefix_sha256,
-                "pulse_resolution_bootstrap_seed="
-                + str(pulse_contract["bootstrap"]["seed"]),
                 "pulse_resolution_registration_filename=inputs/"
                 + registration_receipt_path.name,
                 "pulse_resolution_registration_sha256="
@@ -1400,11 +1501,6 @@ def prepare_family_source_closure(
                 + experiment["pulse_resolution_baseline_checkpoints"]["path"],
                 "pulse_resolution_baseline_checkpoints_sha256="
                 + experiment["pulse_resolution_baseline_checkpoints"]["sha256"],
-            ]) + ([] if selection_receipt is None else [
-                "single_flight_population_denominator_count="
-                + str(selection_receipt["candidate_launched_count"]),
-                "single_flight_eligible_population_count="
-                + str(selection_receipt["candidate_eligible_count"]),
             ]) + ([] if layout_files is None else [
                 f"layout_profile_id={experiment['single_flight_layout_profile_id']}",
                 "architecture_generation_id="
@@ -1413,6 +1509,8 @@ def prepare_family_source_closure(
                 f"resolved_oatof_geometry_sha256={file_sha256(layout_files['geometry'])}",
                 "resolved_single_flight_pulse_schedule_filename=resolved_single_flight_pulse_schedule.json",
                 f"resolved_single_flight_pulse_schedule_sha256={file_sha256(layout_files['schedule'])}",
+                "resolved_population_contract_filename=resolved_population_contract.json",
+                f"resolved_population_contract_sha256={file_sha256(resolved_population_path)}",
                 f"single_flight_layout_registry_sha256={repository_text_sha256(layout_files['registry'])}",
                 "resolved_oatof_bore_radius_mm="
                 + format(float(geometry["geometry_mm"]["bore_r"]), ".17g"),
@@ -1421,9 +1519,10 @@ def prepare_family_source_closure(
                 "resolved_oatof_shield_inner_radius_mm="
                 + format(float(geometry["geometry_mm"]["flight_tube_r"]), ".17g"),
             ]) + ([] if source_release_mode is None else [
+                "source_release_mode=" + source_release_mode,
+            ]) + ([] if source_profile_id is None else [
                 "source_profile_id=" + source_profile_id,
                 "field_overlay_id=" + field_overlay_id,
-                "source_release_mode=" + source_release_mode,
             ]) + ([] if pre_pulse_source_path is None else [
                 "pre_pulse_source_state_path="
                 + _workspace_relative(pre_pulse_source_path, workspace),

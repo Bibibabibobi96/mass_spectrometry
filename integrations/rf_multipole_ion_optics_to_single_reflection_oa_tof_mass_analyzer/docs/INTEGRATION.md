@@ -38,6 +38,14 @@ repository-text SHA由`runtime/refresh_family_repository_bindings.py`单向刷�
 筛选；`pulse_eligible_conditional`仅用于带selection receipt的条件诊断。空间窗口只做detector-blind
 分组统计，不修改轨迹。
 
+schema-v3 single-flight 执行采用两条单权威链：campaign 中显式的
+`single_flight_pulse_schedule_policy`只经`derive_pulse_schedule`编译为resolved pulse schedule，runner
+只读取其中的`pulse_effective_time_us`；`single_flight_population`只经resolved population编译器冻结
+总体模式、源表绑定、N、有序ID哈希、分母和bootstrap设置，adapter、runner、analyzer只消费该合同。
+源表和轨迹观测只能交叉校验，不能补默认值或覆盖合同。schema-v1/v2仍可读，但single-flight的
+`SolverAuthorized`执行会失败关闭并要求schema-v3 successor。完整实现、29行successor及验证收据见
+[schema-v3单权威收口记录](../../../docs/history/20260814__rf-oatof-schema-v3-resolved-pulse-population-authority.md)。
+
 理论/理想源合同必须另外声明`source_state_epoch`和`source_state_locus`，两者与坐标基、规范时钟、
 有序粒子ID和目标状态共同构成源身份。若SIMION因连续轨迹要求在目标epoch之前写入`.ion`，该文件只算
 `release_implementation_state`；profile中的目标宽度、均值或斜率仍指向声明checkpoint，不能由release

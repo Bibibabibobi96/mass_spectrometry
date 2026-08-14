@@ -5,7 +5,7 @@
   "additionalProperties": false,
   "required": ["schema_version", "role", "integration_id", "campaign_id", "status", "execution_policy", "claim_limit", "experiments"],
   "properties": {
-    "schema_version": {"enum": [1, 2]},
+    "schema_version": {"enum": [1, 2, 3]},
     "role": {"const": "rf_multipole_oatof_experiment_campaign"},
     "integration_id": {"const": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"},
     "campaign_id": {"$ref": "#/$defs/id"},
@@ -18,13 +18,45 @@
   },
   "allOf": [
     {
-      "if": {"properties": {"schema_version": {"const": 2}}, "required": ["schema_version"]},
+      "if": {"properties": {"schema_version": {"enum": [2, 3]}}, "required": ["schema_version"]},
       "then": {"properties": {"experiments": {"items": {"required": ["single_flight_layout_profile_id"]}}}},
       "else": {"properties": {"experiments": {"items": {"not": {"required": ["single_flight_layout_profile_id"]}}}}}
     },
     {
       "if": {"required": ["pulse_resolution_optimization"]},
-      "then": {"properties": {"schema_version": {"const": 2}}}
+      "then": {"properties": {"schema_version": {"enum": [2, 3]}}}
+    },
+    {
+      "if": {"properties": {"schema_version": {"const": 3}}, "required": ["schema_version"]},
+      "then": {
+        "properties": {
+          "experiments": {
+            "items": {
+              "required": ["execution_strategy"],
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {"execution_strategy": {"const": "simion_single_flight"}},
+                    "required": ["execution_strategy"]
+                  },
+                  "then": {
+                    "required": [
+                      "single_flight_layout_profile_id",
+                      "architecture_generation_id",
+                      "source_profile_id",
+                      "field_overlay_id",
+                      "source_release_mode",
+                      "single_flight_pulse_schedule_policy",
+                      "single_flight_population"
+                    ],
+                    "not": {"required": ["single_flight_pulse_offset_rf_periods"]}
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
     }
   ],
   "$defs": {
@@ -103,6 +135,89 @@
         "clock_abs_tolerance_us": {"const": 1e-9},
         "energy_abs_tolerance_eV": {"const": 5e-9},
         "postselection_prohibited": {"const": true}
+      }
+    },
+    "single_flight_pulse_schedule_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policy_id", "offset_rf_periods", "pulse_width_us"],
+      "properties": {
+        "policy_id": {"const": "multipole_handoff_ballistic_centroid_v1"},
+        "offset_rf_periods": {"type": "number", "minimum": -0.5, "maximum": 0.5},
+        "pulse_width_us": {"type": "number", "exclusiveMinimum": 0}
+      }
+    },
+    "single_flight_population": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "population_id", "population_mode", "source_authority",
+        "execution_population", "denominators", "analysis_randomness",
+        "postselection_policy"
+      ],
+      "properties": {
+        "population_id": {"$ref": "#/$defs/id"},
+        "population_mode": {
+          "enum": [
+            "staged_three_stage",
+            "continuous_injection_full_population",
+            "resolved_layout_pulse_ideal_linear_z_vz",
+            "pre_pulse_restart",
+            "pulse_eligible_conditional",
+            "first_100_rows_in_frozen_file_order"
+          ]
+        },
+        "source_authority": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["input_role", "table_binding", "ordered_particle_id_encoding"],
+          "properties": {
+            "input_role": {"type": "string", "minLength": 1},
+            "table_binding": {
+              "enum": [
+                "source_contract_particle_source",
+                "experiment_single_flight_particle_source",
+                "experiment_pre_pulse_source_state",
+                "prepared_materialized_particle_source",
+                "prepared_deterministic_prefix",
+                "staged_upstream_source"
+              ]
+            },
+            "ordered_particle_id_encoding": {"const": "canonical_compact_json_integer_array_v1"}
+          }
+        },
+        "execution_population": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["particle_count", "ordered_particle_id_sha256", "selection_algorithm", "selection_seed"],
+          "properties": {
+            "particle_count": {"type": "integer", "minimum": 1, "maximum": 10000},
+            "ordered_particle_id_sha256": {"$ref": "#/$defs/sha"},
+            "selection_algorithm": {"type": "string", "minLength": 1},
+            "selection_seed": {"type": "integer", "minimum": 0}
+          }
+        },
+        "denominators": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["population_count", "eligible_population_count"],
+          "properties": {
+            "population_count": {"type": "integer", "minimum": 1, "maximum": 10000},
+            "eligible_population_count": {"type": "integer", "minimum": 1, "maximum": 10000}
+          }
+        },
+        "analysis_randomness": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["bootstrap_resample_count", "bootstrap_seed"],
+          "properties": {
+            "bootstrap_resample_count": {"type": "integer", "minimum": 0},
+            "bootstrap_seed": {"type": "integer", "minimum": 0}
+          }
+        },
+        "postselection_policy": {
+          "enum": ["prohibited", "detector_blind_preregistered", "pulse_eligibility_only"]
+        }
       }
     },
     "pulse_resolution_optimization": {
@@ -283,6 +398,91 @@
             "properties": {"source_release_mode": {"const": "pre_pulse_restart"}},
             "required": ["source_release_mode"]
           }
+        },
+        {
+          "if": {"required": ["single_flight_population"]},
+          "then": {
+            "oneOf": [
+              {
+                "properties": {
+                  "execution_strategy": {"const": "staged_three_stage"},
+                  "single_flight_population": {"properties": {
+                    "population_mode": {"const": "staged_three_stage"},
+                    "source_authority": {"properties": {"table_binding": {"const": "staged_upstream_source"}}},
+                    "execution_population": {"properties": {"selection_algorithm": {"const": "all_rows_in_frozen_file_order"}}},
+                    "postselection_policy": {"const": "prohibited"}
+                  }}
+                },
+                "required": ["execution_strategy"],
+                "not": {"required": ["source_release_mode"]}
+              },
+              {
+                "properties": {
+                  "execution_strategy": {"const": "simion_single_flight"},
+                  "source_release_mode": {"const": "continuous_frontend"},
+                  "single_flight_population": {"properties": {
+                    "population_mode": {"const": "continuous_injection_full_population"},
+                    "source_authority": {"properties": {"table_binding": {"const": "source_contract_particle_source"}}},
+                    "execution_population": {"properties": {"selection_algorithm": {"const": "all_rows_in_frozen_file_order"}}},
+                    "postselection_policy": {"const": "prohibited"}
+                  }}
+                },
+                "required": ["execution_strategy", "source_release_mode"]
+              },
+              {
+                "properties": {
+                  "execution_strategy": {"const": "simion_single_flight"},
+                  "source_release_mode": {"const": "continuous_frontend"},
+                  "single_flight_population": {"properties": {
+                    "population_mode": {"const": "resolved_layout_pulse_ideal_linear_z_vz"},
+                    "source_authority": {"properties": {"table_binding": {"const": "prepared_materialized_particle_source"}}},
+                    "execution_population": {"properties": {"selection_algorithm": {"const": "all_rows_in_frozen_file_order"}}},
+                    "postselection_policy": {"const": "prohibited"}
+                  }}
+                },
+                "required": ["execution_strategy", "source_release_mode"]
+              },
+              {
+                "properties": {
+                  "execution_strategy": {"const": "simion_single_flight"},
+                  "source_release_mode": {"const": "pre_pulse_restart"},
+                  "single_flight_population": {"properties": {
+                    "population_mode": {"const": "pre_pulse_restart"},
+                    "source_authority": {"properties": {"table_binding": {"const": "experiment_pre_pulse_source_state"}}},
+                    "execution_population": {"properties": {"selection_algorithm": {"const": "all_rows_in_frozen_file_order"}}},
+                    "postselection_policy": {"const": "prohibited"}
+                  }}
+                },
+                "required": ["execution_strategy", "source_release_mode"]
+              },
+              {
+                "properties": {
+                  "execution_strategy": {"const": "simion_single_flight"},
+                  "source_release_mode": {"const": "continuous_frontend"},
+                  "single_flight_population": {"properties": {
+                    "population_mode": {"const": "pulse_eligible_conditional"},
+                    "source_authority": {"properties": {"table_binding": {"const": "experiment_single_flight_particle_source"}}},
+                    "execution_population": {"properties": {"selection_algorithm": {"const": "all_rows_in_frozen_file_order"}}},
+                    "postselection_policy": {"const": "pulse_eligibility_only"}
+                  }}
+                },
+                "required": ["execution_strategy", "source_release_mode"]
+              },
+              {
+                "properties": {
+                  "execution_strategy": {"const": "simion_single_flight"},
+                  "source_release_mode": {"const": "continuous_frontend"},
+                  "single_flight_population": {"properties": {
+                    "population_mode": {"const": "first_100_rows_in_frozen_file_order"},
+                    "source_authority": {"properties": {"table_binding": {"const": "prepared_deterministic_prefix"}}},
+                    "execution_population": {"properties": {"selection_algorithm": {"const": "first_100_rows_in_frozen_file_order"}}},
+                    "postselection_policy": {"const": "prohibited"}
+                  }}
+                },
+                "required": ["execution_strategy", "source_release_mode"]
+              }
+            ]
+          }
         }
       ],
       "properties": {
@@ -307,6 +507,8 @@
           "minimum": -0.5,
           "maximum": 0.5
         },
+        "single_flight_pulse_schedule_policy": {"$ref": "#/$defs/single_flight_pulse_schedule_policy"},
+        "single_flight_population": {"$ref": "#/$defs/single_flight_population"},
         "pulse_resolution_attribution_arm_id": {"$ref": "#/$defs/id"},
         "pulse_resolution_execution_mode": {"enum": ["screening_prefix_n100_baseline_registration", "screening_prefix_n100_paired_candidate", "qualification_full_n1000"]},
         "pulse_resolution_baseline_result": {"$ref": "#/$defs/file"},

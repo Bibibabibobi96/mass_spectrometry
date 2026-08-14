@@ -69,6 +69,8 @@ $layoutArgumentNames = @(
   'resolved_oatof_shield_inner_radius_mm',
   'resolved_single_flight_pulse_schedule_filename',
   'resolved_single_flight_pulse_schedule_sha256',
+  'resolved_population_contract_filename',
+  'resolved_population_contract_sha256',
   'single_flight_layout_registry_sha256'
 )
 if ($frozenArguments.ContainsKey('layout_profile_id')) {
@@ -77,8 +79,7 @@ if ($frozenArguments.ContainsKey('layout_profile_id')) {
 $sourceOverrideArgumentNames = @(
   'single_flight_particle_source_path',
   'single_flight_particle_source_sha256',
-  'single_flight_particle_source_count',
-  'single_flight_sampling_mode'
+  'single_flight_particle_source_count'
 )
 if ($frozenArguments.ContainsKey('single_flight_particle_source_path')) {
   $expectedArguments += $sourceOverrideArgumentNames
@@ -96,12 +97,6 @@ if ($frozenArguments.ContainsKey('single_flight_source_materialization_profile_i
   if ($frozenArguments.ContainsKey('single_flight_materialized_source_filename')) {
     $expectedArguments += $materializedSourceArgumentNames[1..5]
   }
-}
-if ($frozenArguments.ContainsKey('single_flight_population_denominator_count')) {
-  $expectedArguments += @(
-    'single_flight_population_denominator_count',
-    'single_flight_eligible_population_count'
-  )
 }
 if ($frozenArguments.ContainsKey('single_flight_frontend_grid_profile_id')) {
   $expectedArguments += 'single_flight_frontend_grid_profile_id'
@@ -127,7 +122,10 @@ if ($frozenArguments.ContainsKey('resolved_region_field_contract_filename')) {
   )
 }
 if ($frozenArguments.ContainsKey('source_release_mode')) {
-  $expectedArguments += @('source_profile_id','field_overlay_id','source_release_mode')
+  $expectedArguments += 'source_release_mode'
+  if ($frozenArguments.ContainsKey('source_profile_id')) {
+    $expectedArguments += @('source_profile_id','field_overlay_id')
+  }
 }
 if ($frozenArguments.ContainsKey('pre_pulse_source_state_path')) {
   $expectedArguments += @(
@@ -151,7 +149,6 @@ if ($frozenArguments.ContainsKey('pulse_resolution_attribution_arm_id')) {
     'pulse_resolution_execution_mode',
     'pulse_resolution_prefix_filename',
     'pulse_resolution_prefix_sha256',
-    'pulse_resolution_bootstrap_seed',
     'pulse_resolution_registration_filename',
     'pulse_resolution_registration_sha256'
   )
@@ -210,6 +207,11 @@ if ($campaign.role -ne 'rf_multipole_oatof_experiment_campaign' -or
   throw 'Campaign or experiment identity no longer resolves uniquely.'
 }
 $experiment = $experiments[0]
+if ($SolverAuthorized -and
+    [string]$experiment.execution_strategy -eq 'simion_single_flight' -and
+    [int]$campaign.schema_version -lt 3) {
+  throw 'SolverAuthorized single-flight execution requires a schema-v3 successor campaign.'
+}
 $pulseN100Screening = $frozenArguments.ContainsKey(
   'pulse_resolution_attribution_arm_id'
 )
@@ -242,9 +244,7 @@ if ($pulseN100Screening) {
   if ($pulseContract.execution_state -ne 'n100_full_domain_piecewise_ideal_field_screening' -or
       $arm.Count -ne 1 -or -not ($baselineRow -or $pairedRow -or $pairedStage12Row -or $pairedAllIdealRow) -or
       $arm[0].source_model -ne 'real_beam' -or
-      $arm[0].reflectron_field -notin @('real','ideal') -or
-      [int]$pulseContract.bootstrap.seed -ne
-        [int]$frozenArguments.pulse_resolution_bootstrap_seed) {
+      $arm[0].reflectron_field -notin @('real','ideal')) {
     throw 'Only real multipole beam + real accelerator field + real reflectron field, deterministic N=100 prefix baseline registration is executable.'
   }
 }
@@ -258,7 +258,6 @@ if ($frozenArguments.ContainsKey('single_flight_particle_source_path')) {
       [string]$declaredSource.path -ne $frozenArguments.single_flight_particle_source_path -or
       [string]$declaredSource.sha256 -ne $frozenArguments.single_flight_particle_source_sha256 -or
       [int]$declaredSource.particle_count -ne [int]$frozenArguments.single_flight_particle_source_count -or
-      [string]$declaredSource.sampling_mode -ne $frozenArguments.single_flight_sampling_mode -or
       -not $singleFlightParticleSourcePath.StartsWith($repo + [IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase) -or
       -not (Test-Path -LiteralPath $singleFlightParticleSourcePath -PathType Leaf) -or
       (Get-FileHash -LiteralPath $singleFlightParticleSourcePath -Algorithm SHA256).Hash -ne $frozenArguments.single_flight_particle_source_sha256) {
@@ -312,18 +311,19 @@ if ($frozenArguments.ContainsKey('single_flight_materialized_source_filename')) 
     $frozenArguments.single_flight_materialized_source_sha256
   $frozenArguments.single_flight_particle_source_count =
     $frozenArguments.single_flight_materialized_source_count
-  $frozenArguments.single_flight_sampling_mode =
-    [string]$materializationReceipt.particle_source.sampling_mode
 }
 $prePulseSourceStatePath = $null
 $prePulseRestartValidationPath = $null
 if ($frozenArguments.ContainsKey('source_release_mode')) {
-  if ([string]$experiment.architecture_generation_id -ne
+  if ([string]$experiment.source_release_mode -ne $frozenArguments.source_release_mode) {
+    throw 'Campaign source-release identity changed after preparation.'
+  }
+  if ($frozenArguments.ContainsKey('source_profile_id') -and (
+      [string]$experiment.architecture_generation_id -ne
         $frozenArguments.architecture_generation_id -or
       [string]$experiment.source_profile_id -ne $frozenArguments.source_profile_id -or
-      [string]$experiment.field_overlay_id -ne $frozenArguments.field_overlay_id -or
-      [string]$experiment.source_release_mode -ne $frozenArguments.source_release_mode) {
-    throw 'Campaign architecture/source/field/release identity changed after preparation.'
+      [string]$experiment.field_overlay_id -ne $frozenArguments.field_overlay_id)) {
+    throw 'Campaign architecture/source/field identity changed after preparation.'
   }
   if ($frozenArguments.source_release_mode -eq 'pre_pulse_restart') {
     if (-not $frozenArguments.ContainsKey('pre_pulse_source_state_path')) {
@@ -567,12 +567,16 @@ $upstreamResolvedDesignPath = [IO.Path]::GetFullPath(
 )
 $resolvedOatofGeometryPath = $null
 $resolvedPulseSchedulePath = $null
-if ([int]$campaign.schema_version -eq 2) {
+$resolvedPopulationContractPath = $null
+if ([int]$campaign.schema_version -eq 3) {
   $resolvedOatofGeometryPath = [IO.Path]::GetFullPath(
     (Join-Path $runDirectory $frozenArguments.resolved_oatof_geometry_filename)
   )
   $resolvedPulseSchedulePath = [IO.Path]::GetFullPath(
     (Join-Path $runDirectory $frozenArguments.resolved_single_flight_pulse_schedule_filename)
+  )
+  $resolvedPopulationContractPath = [IO.Path]::GetFullPath(
+    (Join-Path $runDirectory $frozenArguments.resolved_population_contract_filename)
   )
   $layoutRegistryPath = Join-Path $integrationRoot 'config\single_flight_layout_profiles.json'
   $declaredArchitectureGeneration = if (
@@ -593,6 +597,11 @@ if ([int]$campaign.schema_version -eq 2) {
       -not (Test-Path -LiteralPath $resolvedPulseSchedulePath -PathType Leaf) -or
       (Get-FileHash -LiteralPath $resolvedPulseSchedulePath -Algorithm SHA256).Hash -ne
         $frozenArguments.resolved_single_flight_pulse_schedule_sha256 -or
+      $frozenArguments.resolved_population_contract_filename -ne
+        'resolved_population_contract.json' -or
+      -not (Test-Path -LiteralPath $resolvedPopulationContractPath -PathType Leaf) -or
+      (Get-FileHash -LiteralPath $resolvedPopulationContractPath -Algorithm SHA256).Hash -ne
+        $frozenArguments.resolved_population_contract_sha256 -or
       (Get-FileHash -LiteralPath $layoutRegistryPath -Algorithm SHA256).Hash -ne
         $frozenArguments.single_flight_layout_registry_sha256) {
     throw 'Prepared single-flight layout or pulse schedule is missing or stale.'
@@ -608,6 +617,18 @@ if ([int]$campaign.schema_version -eq 2) {
       [double]$geometryDocument.geometry_mm.flight_tube_r -ne
         [double]$frozenArguments.resolved_oatof_shield_inner_radius_mm) {
     throw 'Prepared oaTOF geometry identity differs.'
+  }
+  $resolvedPopulation = Get-Content -LiteralPath $resolvedPopulationContractPath `
+    -Raw -Encoding UTF8 | ConvertFrom-Json
+  if ($resolvedPopulation.role -ne 'rf_oatof_resolved_population_contract' -or
+      $resolvedPopulation.campaign_id -ne $campaign.campaign_id -or
+      $resolvedPopulation.experiment_id -ne $experiment.experiment_id -or
+      $resolvedPopulation.experiment_row_sha256 -ne
+        $frozenArguments.experiment_row_sha256 -or
+      [string]$resolvedPopulation.execution_strategy -ne $executionStrategy -or
+      [string]$resolvedPopulation.source_release_mode -ne
+        [string]$frozenArguments.source_release_mode) {
+    throw 'Prepared resolved population contract identity differs.'
   }
 }
 if ($frozenArguments.resolved_source_contract_filename -ne
@@ -657,12 +678,7 @@ $runtimeLaunchedCount = if (
   [int]$runtime.source_record.particle_count
 }
 $expectedExecutionParticleCount = if ($executionStrategy -eq 'simion_single_flight') {
-  if ($pulseN100Screening) { 100 }
-  elseif ($null -ne $singleFlightParticleSourcePath) {
-    [int]$frozenArguments.single_flight_particle_source_count
-  } elseif ($null -ne $prePulseSourceStatePath) {
-    [int]$frozenArguments.pre_pulse_source_state_count
-  } else { $runtimeLaunchedCount }
+  [int]$resolvedPopulation.execution_population.particle_count
 } else { [int]$runtime.source_record.particle_count }
 if ($budget.role -ne 'integration_resolved_engineering_budget' -or
     $budget.integration_id -ne $plan.integration_id -or
@@ -739,9 +755,12 @@ $retrySuffix = if ($RunId -match '(__r\d{2})$') { $Matches[1] } else { '' }
 if ($executionStrategy -eq 'simion_single_flight') {
   $singleFlightRunId = "$($RunId.Substring(0, 15))__sim__simion__rf-oatof-single-flight-gap0__n$expectedExecutionParticleCount$retrySuffix"
   $runnerArguments.RunId = $singleFlightRunId
-  if ([int]$campaign.schema_version -eq 2) {
+  if ([int]$campaign.schema_version -eq 3) {
     $runnerArguments.OatofResolvedGeometry = $resolvedOatofGeometryPath
     $runnerArguments.PulseSchedule = $resolvedPulseSchedulePath
+    $runnerArguments.ResolvedPopulationContract = $resolvedPopulationContractPath
+    $runnerArguments.ResolvedPopulationContractSha256 =
+      $frozenArguments.resolved_population_contract_sha256
     $runnerArguments.LayoutProfileId = [string]$frozenArguments.layout_profile_id
     $runnerArguments.ArchitectureGenerationId =
       [string]$frozenArguments.architecture_generation_id
@@ -793,9 +812,10 @@ if ($executionStrategy -eq 'simion_single_flight') {
       [string]$frozenArguments.single_flight_spatial_window_profile_id
   }
   if ($frozenArguments.ContainsKey('source_release_mode')) {
-    $runnerArguments.SourceProfileId = [string]$frozenArguments.source_profile_id
-    $runnerArguments.FieldOverlayId = [string]$frozenArguments.field_overlay_id
-    $runnerArguments.SourceReleaseMode = [string]$frozenArguments.source_release_mode
+    if ($frozenArguments.ContainsKey('source_profile_id')) {
+      $runnerArguments.SourceProfileId = [string]$frozenArguments.source_profile_id
+      $runnerArguments.FieldOverlayId = [string]$frozenArguments.field_overlay_id
+    }
     if ($null -ne $prePulseSourceStatePath) {
       $runnerArguments.PrePulseSourceState = $prePulseSourceStatePath
       $runnerArguments.PrePulseSourceStateSha256 =
@@ -821,17 +841,10 @@ if ($executionStrategy -eq 'simion_single_flight') {
     $runnerArguments.MotherParticleSource = $singleFlightParticleSourcePath
     $runnerArguments.MotherParticleSourceSha256 = $frozenArguments.single_flight_particle_source_sha256
     $runnerArguments.MotherParticleCount = [int]$frozenArguments.single_flight_particle_source_count
-    $runnerArguments.SamplingMode = $frozenArguments.single_flight_sampling_mode
     if ($frozenArguments.ContainsKey('single_flight_materialization_receipt_filename')) {
       $runnerArguments.MotherParticleSourceReceipt = $materializationReceiptPath
       $runnerArguments.MotherParticleSourceReceiptSha256 =
         $frozenArguments.single_flight_materialization_receipt_sha256
-    }
-    if ($frozenArguments.ContainsKey('single_flight_population_denominator_count')) {
-      $runnerArguments.PopulationDenominatorCount =
-        [int]$frozenArguments.single_flight_population_denominator_count
-      $runnerArguments.EligiblePopulationCount =
-        [int]$frozenArguments.single_flight_eligible_population_count
     }
   }
   if ($null -eq $resolvedRegionFieldContractPath) {
@@ -847,9 +860,6 @@ if ($executionStrategy -eq 'simion_single_flight') {
     $runnerArguments.MotherParticleSourceSha256 =
       $frozenArguments.pulse_resolution_prefix_sha256
     $runnerArguments.MotherParticleCount = 100
-    $runnerArguments.SamplingMode = 'continuous_injection_full_population'
-    $runnerArguments.BootstrapSeed =
-      [int]$frozenArguments.pulse_resolution_bootstrap_seed
     $runnerArguments.PulseResolutionN100Screening = $true
     $runnerArguments.PulseResolutionCampaign = $campaignPath
     $runnerArguments.PulseResolutionCampaignSha256 =
@@ -910,6 +920,12 @@ $receipt = [ordered]@{
     $frozenArguments.resolved_source_contract_filename
   resolved_source_contract_sha256 =
     $frozenArguments.resolved_source_contract_sha256
+  resolved_population_contract_filename = if ($executionStrategy -eq 'simion_single_flight') {
+    $frozenArguments.resolved_population_contract_filename
+  } else { $null }
+  resolved_population_contract_sha256 = if ($executionStrategy -eq 'simion_single_flight') {
+    $frozenArguments.resolved_population_contract_sha256
+  } else { $null }
   upstream_resolved_design_filename =
     $frozenArguments.upstream_resolved_design_filename
   upstream_resolved_design_sha256 =

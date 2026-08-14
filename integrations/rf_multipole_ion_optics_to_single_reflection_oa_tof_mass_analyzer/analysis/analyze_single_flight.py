@@ -227,19 +227,14 @@ def _segment_diagnostics(
 
 def analyze(
     log_path: Path | Sequence[Path],
-    launched: int,
     mass_amu: float,
+    population_contract: dict[str, object],
     geometry_path: Path | None = None,
     pulse_time_us: float | None = None,
     clock_basis: str = "canonical_instrument_time_us",
     batch_particle_counts: Sequence[int] | None = None,
     initial_global_state_path: Path | None = None,
     spatial_window_profile: dict[str, object] | None = None,
-    population_denominator_count: int | None = None,
-    eligible_population_count: int | None = None,
-    bootstrap_resamples: int = 0,
-    bootstrap_seed: int = 20260812,
-    source_release_mode: str = "continuous_frontend",
     initial_global_state_sha256: str | None = None,
     source_run_manifest_path: Path | None = None,
     post_selection_detector_metrics: bool = False,
@@ -249,6 +244,17 @@ def analyze(
     restart_energy_tolerance_eV: float | None = None,
     restart_validation_contract_sha256: str | None = None,
 ) -> tuple[list[dict[str, object]], dict[str, object]]:
+    if population_contract.get("role") != "rf_oatof_resolved_population_contract":
+        raise ValueError("resolved population contract identity differs")
+    execution_population = population_contract["execution_population"]
+    denominators = population_contract["denominators"]
+    randomness = population_contract["analysis_randomness"]
+    launched = int(execution_population["particle_count"])
+    population_denominator_count = int(denominators["population_count"])
+    eligible_population_count = int(denominators["eligible_population_count"])
+    bootstrap_resamples = int(randomness["bootstrap_resample_count"])
+    bootstrap_seed = int(randomness["bootstrap_seed"])
+    source_release_mode = str(population_contract["source_release_mode"])
     if clock_basis != "canonical_instrument_time_us":
         raise ValueError("new single-flight analysis requires canonical instrument time")
     if bootstrap_resamples < 0:
@@ -820,15 +826,7 @@ def analyze(
             "is_causal_counterfactual": False,
             "detector_blind_selection_metrics": selection_metrics,
         }
-    if population_denominator_count is None:
-        population_denominator_count = launched
     full_candidate_population_simulated = launched == population_denominator_count
-    if eligible_population_count is None:
-        eligible_population_count = (
-            pulse_capture["counts"]["eligible"]
-            if full_candidate_population_simulated and pulse_capture is not None
-            else launched
-        )
     if not 0 <= eligible_population_count <= population_denominator_count:
         raise ValueError("source population counts are inconsistent")
     if not 0 < launched <= population_denominator_count:
@@ -960,16 +958,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--log", required=True, action="append", type=Path)
     parser.add_argument("--batch-particle-count", action="append", type=int)
-    parser.add_argument("--launched", required=True, type=int)
     parser.add_argument("--mass-amu", required=True, type=float)
+    parser.add_argument("--resolved-population-contract", required=True, type=Path)
+    parser.add_argument("--resolved-population-contract-sha256", required=True)
     parser.add_argument("--geometry", type=Path)
     parser.add_argument("--pulse-time-us", type=float)
     parser.add_argument("--initial-global-state", type=Path)
-    parser.add_argument(
-        "--source-release-mode",
-        default="continuous_frontend",
-        choices=("continuous_frontend", "pre_pulse_restart"),
-    )
     parser.add_argument("--initial-global-state-sha256")
     parser.add_argument("--restart-position-tolerance-mm", type=float)
     parser.add_argument("--restart-velocity-tolerance-m-per-s", type=float)
@@ -980,10 +974,6 @@ def main() -> int:
     parser.add_argument("--post-selection-detector-metrics", action="store_true")
     parser.add_argument("--configuration", type=Path)
     parser.add_argument("--spatial-window-profile-id")
-    parser.add_argument("--population-denominator-count", type=int)
-    parser.add_argument("--eligible-population-count", type=int)
-    parser.add_argument("--bootstrap-resamples", type=int, default=0)
-    parser.add_argument("--bootstrap-seed", type=int, default=20260812)
     parser.add_argument(
         "--clock-basis",
         default="canonical_instrument_time_us",
@@ -992,6 +982,12 @@ def main() -> int:
     parser.add_argument("--checkpoints", required=True, type=Path)
     parser.add_argument("--summary", required=True, type=Path)
     args = parser.parse_args()
+    if file_sha256(args.resolved_population_contract) != \
+            args.resolved_population_contract_sha256:
+        parser.error("resolved population contract SHA differs")
+    population_contract = json.loads(
+        args.resolved_population_contract.read_text(encoding="utf-8-sig")
+    )
     spatial_window_profile = None
     if args.spatial_window_profile_id is not None:
         if args.configuration is None:
@@ -1008,19 +1004,14 @@ def main() -> int:
         spatial_window_profile = matches[0]
     rows, summary = analyze(
         args.log,
-        args.launched,
         args.mass_amu,
+        population_contract,
         args.geometry,
         args.pulse_time_us,
         args.clock_basis,
         args.batch_particle_count,
         args.initial_global_state,
         spatial_window_profile,
-        args.population_denominator_count,
-        args.eligible_population_count,
-        args.bootstrap_resamples,
-        args.bootstrap_seed,
-        args.source_release_mode,
         args.initial_global_state_sha256,
         args.source_run_manifest,
         args.post_selection_detector_metrics,

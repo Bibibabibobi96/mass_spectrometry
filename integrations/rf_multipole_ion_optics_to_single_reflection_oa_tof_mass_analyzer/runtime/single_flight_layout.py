@@ -337,19 +337,25 @@ def derive_pulse_schedule(
     geometry: dict[str, Any],
     profile: dict[str, Any],
     *,
-    pulse_offset_rf_periods: float = 0.0,
-    rf_frequency_hz: float | None = None,
+    campaign_id: str,
+    experiment_id: str,
+    experiment_row_sha256: str,
+    population_declaration_sha256: str,
+    policy: dict[str, Any],
+    rf_frequency_hz: float,
 ) -> dict[str, Any]:
+    if policy.get("policy_id") != "multipole_handoff_ballistic_centroid_v1":
+        raise ContractError("single-flight pulse policy is unsupported")
+    pulse_offset_rf_periods = float(policy["offset_rf_periods"])
+    pulse_width_us = float(policy["pulse_width_us"])
     if not math.isfinite(pulse_offset_rf_periods) or not (
         -0.5 <= pulse_offset_rf_periods <= 0.5
     ):
         raise ContractError("single-flight pulse RF-period offset is outside contract")
-    if pulse_offset_rf_periods != 0.0 and (
-        rf_frequency_hz is None
-        or not math.isfinite(rf_frequency_hz)
-        or rf_frequency_hz <= 0.0
-    ):
-        raise ContractError("pulse RF-period offset requires a positive RF frequency")
+    if not math.isfinite(pulse_width_us) or pulse_width_us <= 0.0:
+        raise ContractError("single-flight pulse width must be positive")
+    if not math.isfinite(rf_frequency_hz) or rf_frequency_hz <= 0.0:
+        raise ContractError("pulse schedule requires a positive RF frequency")
     with state_path.open(encoding="utf-8-sig", newline="") as handle:
         rows = [
             row for row in csv.DictReader(handle)
@@ -422,7 +428,21 @@ def derive_pulse_schedule(
     centroid_error = sum(predicted) / len(predicted) - target_x
     return {
         "schema_version": 1,
-        "role": "rf_oatof_single_flight_multipole_handoff_pulse_schedule",
+        "role": "rf_oatof_resolved_single_flight_pulse_schedule",
+        "campaign_id": campaign_id,
+        "experiment_id": experiment_id,
+        "experiment_row_sha256": experiment_row_sha256,
+        "population_declaration_sha256": population_declaration_sha256,
+        "policy": {
+            "policy_id": policy["policy_id"],
+            "offset_rf_periods": pulse_offset_rf_periods,
+            "pulse_width_us": pulse_width_us,
+        },
+        "rf_period_us": 1.0e6 / rf_frequency_hz,
+        "pulse_base_time_us": base_pulse_time,
+        "pulse_offset_us": pulse_offset_us,
+        "pulse_effective_time_us": pulse_time,
+        "pulse_width_us": pulse_width_us,
         "layout_profile_id": profile["layout_profile_id"],
         "method": profile["pulse_timing_method"],
         "source_state_path": str(state_path.resolve()),
@@ -437,12 +457,7 @@ def derive_pulse_schedule(
         "mean_kinetic_energy_eV": sum(float(item["energy_eV"]) for item in cohort) / len(cohort),
         "target_centroid_x_mm": target_x,
         "entry_surface_x_mm": center[0],
-        "base_derived_pulse_time_us": base_pulse_time,
         "base_predicted_centroid_error_x_mm": base_centroid_error,
-        "pulse_offset_rf_periods": pulse_offset_rf_periods,
-        "pulse_offset_us": pulse_offset_us,
-        "derived_pulse_time_us": pulse_time,
-        "pulse_width_us": 1.0,
         "predicted_centroid_error_x_mm": centroid_error,
         "claim_status": profile["claim_status"],
     }

@@ -35,7 +35,7 @@ class SingleFlightSourceTests(unittest.TestCase):
         geometry = {"particle_source": {
             "center_x_mm": -50.0, "center_y_mm": 0.0, "center_z_mm": -10.0,
         }}
-        schedule = {"entry_surface_x_mm": -80.0, "derived_pulse_time_us": 40.0}
+        schedule = {"entry_surface_x_mm": -80.0, "pulse_effective_time_us": 40.0}
         profile = {
             "profile_id": "canonical_test", "source_profile_id": "canonical_test",
             "particle_count": 3, "source_full_width_mm": 2.2,

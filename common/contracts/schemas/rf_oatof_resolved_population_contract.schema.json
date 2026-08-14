@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/rf_oatof_resolved_population_contract.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "role", "campaign_id", "experiment_id",
+    "experiment_row_sha256", "population_declaration_sha256", "execution_strategy", "population_id", "population_mode",
+    "source_authority", "execution_population", "denominators",
+    "analysis_randomness", "postselection_policy"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "rf_oatof_resolved_population_contract"},
+    "campaign_id": {"$ref": "#/$defs/id"},
+    "experiment_id": {"$ref": "#/$defs/id"},
+    "experiment_row_sha256": {"$ref": "#/$defs/sha"},
+    "population_declaration_sha256": {"$ref": "#/$defs/sha"},
+    "execution_strategy": {"enum": ["staged_three_stage", "simion_single_flight"]},
+    "source_release_mode": {"enum": ["continuous_frontend", "pre_pulse_restart"]},
+    "population_id": {"$ref": "#/$defs/id"},
+    "population_mode": {
+      "enum": [
+        "staged_three_stage", "continuous_injection_full_population",
+        "resolved_layout_pulse_ideal_linear_z_vz", "pre_pulse_restart",
+        "pulse_eligible_conditional", "first_100_rows_in_frozen_file_order"
+      ]
+    },
+    "source_authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input_role", "table_binding", "table", "particle_count", "ordered_particle_ids"],
+      "properties": {
+        "input_role": {"type": "string", "minLength": 1},
+        "table_binding": {"type": "string", "minLength": 1},
+        "table": {"$ref": "#/$defs/file"},
+        "particle_count": {"type": "integer", "minimum": 1, "maximum": 10000},
+        "ordered_particle_ids": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["encoding", "sha256"],
+          "properties": {
+            "encoding": {"const": "canonical_compact_json_integer_array_v1"},
+            "sha256": {"$ref": "#/$defs/sha"}
+          }
+        }
+      }
+    },
+    "execution_population": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["particle_count", "ordered_particle_id_sha256", "selection_algorithm", "selection_seed"],
+      "properties": {
+        "particle_count": {"type": "integer", "minimum": 1, "maximum": 10000},
+        "ordered_particle_id_sha256": {"$ref": "#/$defs/sha"},
+        "selection_algorithm": {"type": "string", "minLength": 1},
+        "selection_seed": {"type": "integer", "minimum": 0}
+      }
+    },
+    "denominators": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["population_count", "eligible_population_count"],
+      "properties": {
+        "population_count": {"type": "integer", "minimum": 1, "maximum": 10000},
+        "eligible_population_count": {"type": "integer", "minimum": 1, "maximum": 10000}
+      }
+    },
+    "analysis_randomness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bootstrap_resample_count", "bootstrap_seed"],
+      "properties": {
+        "bootstrap_resample_count": {"type": "integer", "minimum": 0},
+        "bootstrap_seed": {"type": "integer", "minimum": 0}
+      }
+    },
+    "postselection_policy": {"enum": ["prohibited", "detector_blind_preregistered", "pulse_eligibility_only"]}
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "execution_strategy": {"const": "staged_three_stage"},
+        "population_mode": {"const": "staged_three_stage"},
+        "source_authority": {"properties": {"table_binding": {"const": "staged_upstream_source"}}},
+        "execution_population": {"properties": {"selection_algorithm": {"const": "all_rows_in_frozen_file_order"}}},
+        "postselection_policy": {"const": "prohibited"}
+      },
+      "not": {"required": ["source_release_mode"]}
+    },
+    {
+      "properties": {
+        "execution_strategy": {"const": "simion_single_flight"},
+        "source_release_mode": {"const": "continuous_frontend"},
+        "population_mode": {"const": "continuous_injection_full_population"},
+        "source_authority": {"properties": {"table_binding": {"const": "source_contract_particle_source"}}},
+        "execution_population": {"properties": {"selection_algorithm": {"const": "all_rows_in_frozen_file_order"}}},
+        "postselection_policy": {"const": "prohibited"}
+      },
+      "required": ["source_release_mode"]
+    },
+    {
+      "properties": {
+        "execution_strategy": {"const": "simion_single_flight"},
+        "source_release_mode": {"const": "continuous_frontend"},
+        "population_mode": {"const": "resolved_layout_pulse_ideal_linear_z_vz"},
+        "source_authority": {"properties": {"table_binding": {"const": "prepared_materialized_particle_source"}}},
+        "execution_population": {"properties": {"selection_algorithm": {"const": "all_rows_in_frozen_file_order"}}},
+        "postselection_policy": {"const": "prohibited"}
+      },
+      "required": ["source_release_mode"]
+    },
+    {
+      "properties": {
+        "execution_strategy": {"const": "simion_single_flight"},
+        "source_release_mode": {"const": "pre_pulse_restart"},
+        "population_mode": {"const": "pre_pulse_restart"},
+        "source_authority": {"properties": {"table_binding": {"const": "experiment_pre_pulse_source_state"}}},
+        "execution_population": {"properties": {"selection_algorithm": {"const": "all_rows_in_frozen_file_order"}}},
+        "postselection_policy": {"const": "prohibited"}
+      },
+      "required": ["source_release_mode"]
+    },
+    {
+      "properties": {
+        "execution_strategy": {"const": "simion_single_flight"},
+        "source_release_mode": {"const": "continuous_frontend"},
+        "population_mode": {"const": "pulse_eligible_conditional"},
+        "source_authority": {"properties": {"table_binding": {"const": "experiment_single_flight_particle_source"}}},
+        "execution_population": {"properties": {"selection_algorithm": {"const": "all_rows_in_frozen_file_order"}}},
+        "postselection_policy": {"const": "pulse_eligibility_only"}
+      },
+      "required": ["source_release_mode"]
+    },
+    {
+      "properties": {
+        "execution_strategy": {"const": "simion_single_flight"},
+        "source_release_mode": {"const": "continuous_frontend"},
+        "population_mode": {"const": "first_100_rows_in_frozen_file_order"},
+        "source_authority": {"properties": {"table_binding": {"const": "prepared_deterministic_prefix"}}},
+        "execution_population": {"properties": {"selection_algorithm": {"const": "first_100_rows_in_frozen_file_order"}}},
+        "postselection_policy": {"const": "prohibited"}
+      },
+      "required": ["source_release_mode"]
+    }
+  ],
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"},
+    "sha": {"type": "string", "pattern": "^[A-F0-9]{64}$"},
+    "file": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {"path": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/$defs/sha"}}
+    }
+  }
+}

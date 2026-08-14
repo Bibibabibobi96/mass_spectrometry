@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
 import tempfile
 import unittest
@@ -70,12 +71,113 @@ def write_json(path: Path, value: object) -> None:
     path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
 
 
+def migrate_v3_campaign(campaign: dict[str, object]) -> dict[str, object]:
+    campaign["schema_version"] = 3
+    layout_profiles = {
+        item["layout_profile_id"]: item
+        for item in load(CONFIG_ROOT / "single_flight_layout_profiles.json")["profiles"]
+    }
+    single_flight_configuration = load(CONFIG_ROOT / "simion_single_flight.json")
+    grid_profiles = {
+        item["profile_id"]: item
+        for item in single_flight_configuration["frontend_grid_profiles"]
+    }
+    for row in campaign["experiments"]:
+        if row.get("execution_strategy") != "simion_single_flight":
+            continue
+        row.setdefault("source_release_mode", "continuous_frontend")
+        row.setdefault(
+            "architecture_generation_id",
+            layout_profiles[row["single_flight_layout_profile_id"]]["architecture_generation_id"],
+        )
+        row.setdefault(
+            "field_overlay_id",
+            grid_profiles[row.get(
+                "single_flight_frontend_grid_profile_id",
+                single_flight_configuration["default_frontend_grid_profile_id"],
+            )]["field_overlay_id"],
+        )
+        count = int(
+            row.get("single_flight_particle_source", {}).get(
+                "particle_count",
+                row.get("pre_pulse_source_state", {}).get(
+                    "particle_count", row["source"]["launched_particle_count"]
+                ),
+            )
+        )
+        materialization = row.get("single_flight_source_materialization_profile_id")
+        row.setdefault("source_profile_id", materialization or "campaign_source_population")
+        if row.get("source_release_mode") == "pre_pulse_restart":
+            mode, role, binding = (
+                "pre_pulse_restart", "pre_pulse_source_state",
+                "experiment_pre_pulse_source_state",
+            )
+        elif row.get("single_flight_particle_source") is not None:
+            source = row["single_flight_particle_source"]
+            mode, role, binding = (
+                (
+                    "pulse_eligible_conditional"
+                    if source["sampling_mode"] == "steady_candidate_pool"
+                    else source["sampling_mode"]
+                ), "single_flight_particle_source",
+                "experiment_single_flight_particle_source",
+            )
+        elif materialization and materialization != "canonical_real_octupole_n1000":
+            mode, role, binding = (
+                "resolved_layout_pulse_ideal_linear_z_vz",
+                "single_flight_materialized_particle_source",
+                "prepared_materialized_particle_source",
+            )
+        else:
+            mode, role, binding = (
+                "continuous_injection_full_population",
+                row["source"]["particle_source_manifest_input_role"],
+                "source_contract_particle_source",
+            )
+        offset = row.pop("single_flight_pulse_offset_rf_periods", 0.0)
+        row["single_flight_pulse_schedule_policy"] = {
+            "policy_id": "multipole_handoff_ballistic_centroid_v1",
+            "offset_rf_periods": offset,
+            "pulse_width_us": 1.0,
+        }
+        ordered_hash = hashlib.sha256(
+            json.dumps(list(range(1, count + 1)), separators=(",", ":")).encode()
+        ).hexdigest().upper()
+        row["single_flight_population"] = {
+            "population_id": "test_population",
+            "population_mode": mode,
+            "source_authority": {
+                "input_role": role, "table_binding": binding,
+                "ordered_particle_id_encoding": "canonical_compact_json_integer_array_v1",
+            },
+            "execution_population": {
+                "particle_count": count,
+                "ordered_particle_id_sha256": ordered_hash,
+                "selection_algorithm": "all_rows_in_frozen_file_order",
+                "selection_seed": 0,
+            },
+            "denominators": {
+                "population_count": count, "eligible_population_count": count,
+            },
+            "analysis_randomness": {
+                "bootstrap_resample_count": 0, "bootstrap_seed": 20260812,
+            },
+            "postselection_policy": (
+                "pulse_eligibility_only"
+                if mode == "pulse_eligible_conditional"
+                else "prohibited"
+            ),
+        }
+    return campaign
+
+
 def write_current_policy_campaign(source: Path, destination: Path) -> dict[str, object]:
     """Clone one immutable historical campaign with the active governed policy."""
     campaign = load(source)
     campaign["execution_policy"] = load(OCTUPOLE_RUNTIME_BINDING)["contracts"][
         "execution_policy_contract"
     ]
+    migrate_v3_campaign(campaign)
     write_json(destination, campaign)
     return campaign
 
@@ -331,7 +433,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
         self.assertEqual(frozen_physics[0], frozen_physics[1])
 
     def test_unknown_frontend_grid_profile_is_rejected_before_execution(self) -> None:
-        campaign = load(GRID_CONVERGENCE_CAMPAIGN_PATH)
+        campaign = migrate_v3_campaign(load(GRID_CONVERGENCE_CAMPAIGN_PATH))
         campaign["experiments"][0][
             "single_flight_frontend_grid_profile_id"
         ] = "missing_grid_profile"
@@ -352,8 +454,8 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                     plan_output=root / "plan.json",
                 )
 
-    def test_pulse_offset_is_a_governed_campaign_value_with_zero_default(self) -> None:
-        campaign = load(GRID_CONVERGENCE_CAMPAIGN_PATH)
+    def test_pulse_policy_is_a_governed_campaign_value_without_a_default(self) -> None:
+        campaign = migrate_v3_campaign(load(GRID_CONVERGENCE_CAMPAIGN_PATH))
         experiment = campaign["experiments"][0]
         source_run = (
             REPO_ROOT.parent / "artifacts/projects/rf_octupole_ion_optics/runs"
@@ -361,7 +463,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
         )
         if not source_run.is_dir():
             self.skipTest("local single-flight design reference is unavailable")
-        experiment["single_flight_pulse_offset_rf_periods"] = -0.125
+        experiment["single_flight_pulse_schedule_policy"]["offset_rf_periods"] = -0.125
         experiment_policy = load(OCTUPOLE_RUNTIME_BINDING)["contracts"][
             "execution_policy_contract"
         ]
@@ -386,10 +488,10 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                 plan_output=output / "plan.json",
             )
             schedule = load(output / "resolved_single_flight_pulse_schedule.json")
-            self.assertEqual(schedule["pulse_offset_rf_periods"], -0.125)
+            self.assertEqual(schedule["policy"]["offset_rf_periods"], -0.125)
             self.assertLess(
-                schedule["derived_pulse_time_us"],
-                schedule["base_derived_pulse_time_us"],
+                schedule["pulse_effective_time_us"],
+                schedule["pulse_base_time_us"],
             )
             self.assertAlmostEqual(
                 schedule["base_predicted_centroid_error_x_mm"], 0.0, places=9
@@ -498,7 +600,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                 experiment["single_flight_design_reference"]["run_id"],
             )
 
-    def test_superseded_non_grounded_single_flight_source_is_rejected(self) -> None:
+    def test_legacy_single_flight_requires_a_schema_v3_successor(self) -> None:
         source_run = (
             REPO_ROOT.parent / "artifacts/projects/rf_octupole_ion_optics/runs"
             / "20260804_112000__sim__simion__oct-segmented-aperture050__n1000"
@@ -510,8 +612,12 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
         ) as directory, tempfile.TemporaryDirectory(dir=CONFIG_ROOT) as config_directory:
             output = Path(directory)
             campaign_path = Path(config_directory) / "campaign.json"
-            write_current_policy_campaign(SINGLE_FLIGHT_CAMPAIGN_PATH, campaign_path)
-            with self.assertRaisesRegex(ContractError, "0.0 was expected"):
+            campaign = load(SINGLE_FLIGHT_CAMPAIGN_PATH)
+            campaign["execution_policy"] = load(OCTUPOLE_RUNTIME_BINDING)["contracts"][
+                "execution_policy_contract"
+            ]
+            write_json(campaign_path, campaign)
+            with self.assertRaisesRegex(ContractError, "schema-v3 successor"):
                 prepare_family_source_closure(
                     repo_root=REPO_ROOT,
                     profile_registry_path=PROFILE_REGISTRY,
@@ -559,7 +665,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             write_json(resolved, {"integration_id": INTEGRATION_ID})
             write_json(plan, {"integration_id": INTEGRATION_ID})
             write_json(budget, {})
-            with self.assertRaisesRegex(ContractError, "campaign identity is missing"):
+            with self.assertRaisesRegex(ContractError, "execution strategy is missing"):
                 publish_family_source_closure_run(
                     repo_root=REPO_ROOT,
                     workspace_root=workspace,

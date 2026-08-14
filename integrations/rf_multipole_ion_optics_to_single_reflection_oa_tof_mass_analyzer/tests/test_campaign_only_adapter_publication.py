@@ -281,18 +281,13 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
     def test_materialized_source_freezes_every_solver_consumed_property(self) -> None:
         source = ADAPTER_PATH.read_text(encoding="utf-8-sig")
         prepare_exit = source.index("if ($PrepareOnly)")
-        sampling_assignment = source.index(
-            "$frozenArguments.single_flight_sampling_mode ="
+        population_validation = source.index(
+            "$resolvedPopulation.role -ne 'rf_oatof_resolved_population_contract'"
         )
-        solver_use = source.index(
-            "$runnerArguments.SamplingMode = $frozenArguments.single_flight_sampling_mode"
-        )
-        self.assertLess(sampling_assignment, prepare_exit)
+        solver_use = source.index("$runnerArguments.ResolvedPopulationContract =")
+        self.assertLess(population_validation, prepare_exit)
         self.assertLess(prepare_exit, solver_use)
-        self.assertIn(
-            "$materializationReceipt.particle_source.sampling_mode -ne",
-            source,
-        )
+        self.assertNotIn("single_flight_sampling_mode", source)
 
     def test_parent_publication_is_n_neutral_and_preserves_both_counts(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -375,6 +370,7 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
                 budget,
                 {
                     "connection_profile_id": profile_id,
+                    "execution_strategy": "staged_three_stage",
                     "source_identity": source_identity,
                     **campaign_identity,
                 },
@@ -395,6 +391,7 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
                     "role": "integration_family_source_closure_execution_receipt",
                     "integration_run_id": run_id,
                     "execution_status": "completed_pending_paired_analysis",
+                    "execution_strategy": "staged_three_stage",
                     "connection_profile_id": profile_id,
                     "campaign_path": (
                         "integrations/"

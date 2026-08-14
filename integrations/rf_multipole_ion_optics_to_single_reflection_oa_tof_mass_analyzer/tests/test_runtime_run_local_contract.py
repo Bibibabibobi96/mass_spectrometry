@@ -12,6 +12,9 @@ WORKFLOW_ENTRY = (
     INTEGRATION_ROOT / "workflows" / "family_source_closure" / "execute.ps1"
 )
 SINGLE_FLIGHT_RUNNER = INTEGRATION_ROOT / "runtime" / "run_single_flight.ps1"
+FAMILY_ADAPTER = (
+    INTEGRATION_ROOT / "workflows" / "family_source_closure" / "adapter.ps1"
+)
 RUNNERS = (
     INTEGRATION_ROOT / "runtime" / "run_transfer.ps1",
     INTEGRATION_ROOT / "stages" / "comsol" / "run_pre_pulse_interface_transport.ps1",
@@ -163,13 +166,40 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
 
     def test_resolution_qualification_requires_full_bootstrap(self) -> None:
         text = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
-        self.assertIn("[int]$BootstrapResamples = 0", text)
+        self.assertNotIn("[int]$BootstrapResamples = 0", text)
         self.assertIn("[switch]$ResolutionQualification", text)
         self.assertIn("$BootstrapResamples -ne 5000", text)
-        self.assertIn("'--bootstrap-resamples'", text)
+        self.assertIn(
+            "$populationContract.analysis_randomness.bootstrap_resample_count", text
+        )
+        self.assertNotIn("'--bootstrap-resamples'", text)
         self.assertIn("[int]$_.resamples_valid -lt 4750", text)
         self.assertIn(
             "[double]$_.relative_95pct_interval_width -gt 0.10", text
+        )
+
+    def test_population_contract_is_the_only_release_and_mode_authority(self) -> None:
+        runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        adapter = FAMILY_ADAPTER.read_text(encoding="utf-8")
+        self.assertNotIn("[string]$SourceReleaseMode", runner)
+        self.assertNotIn("$runnerArguments.SourceReleaseMode", adapter)
+        self.assertIn(
+            "$sourceReleaseMode = [string]$populationContract.source_release_mode",
+            runner,
+        )
+        self.assertNotIn("source_release_mode=$sourceReleaseMode", runner)
+        self.assertNotIn("source_release_mode=$SourceReleaseMode", runner)
+        for mode in (
+            "staged_three_stage",
+            "continuous_injection_full_population",
+            "resolved_layout_pulse_ideal_linear_z_vz",
+            "pre_pulse_restart",
+            "pulse_eligible_conditional",
+            "first_100_rows_in_frozen_file_order",
+        ):
+            self.assertIn(f"'{mode}'", runner)
+        self.assertIn(
+            'default { throw "Unsupported resolved population mode:', runner
         )
 
     def test_paired_n100_field_authority_is_run_local_contract(self) -> None:
