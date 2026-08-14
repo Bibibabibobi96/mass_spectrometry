@@ -68,8 +68,20 @@
         "cell_mm_xyz": {"x": 0.2, "y": 0.2, "z": 0.05},
         "boundary_mode": "coarse_electrode_basis_dirichlet_v1"
       },
-      "max_parallel_batches": 2,
+      "max_parallel_batches": 3,
       "role": "accelerator_local_refinement_candidate"
+    },
+    {
+      "profile_id": "frontend_isotropic_020_accelerator_overlay_z005_parallel2",
+      "field_overlay_id": "accelerator_overlay_z005",
+      "cell_mm_xyz": {"x": 0.2, "y": 0.2, "z": 0.2},
+      "accelerator_overlay": {
+        "enabled": true,
+        "cell_mm_xyz": {"x": 0.2, "y": 0.2, "z": 0.05},
+        "boundary_mode": "coarse_electrode_basis_dirichlet_v1"
+      },
+      "max_parallel_batches": 2,
+      "role": "accelerator_local_refinement_memory_stable_execution"
     },
     {
       "profile_id": "frontend_isotropic_020_accelerator_overlay_z0025",
@@ -212,6 +224,79 @@
       "single_flight_ideal_accel_stage2_enable": 0,
       "single_flight_arm8_global_field_enable": 1,
       "role": "paired_n100_arm8_closed_global_theoretical_field"
+    }
+  ],
+  "source_materialization_profiles": [
+    {
+      "profile_id": "canonical_ideal_linear_z_vz_1mm_center_n1_smoke",
+      "source_profile_id": "canonical_ideal_linear_z_vz_1mm_center_n1_smoke",
+      "materialization_mode": "resolved_layout_pulse_ideal_linear_z_vz",
+      "particle_count": 1,
+      "source_full_width_mm": 1.0,
+      "mass_amu": 100.0,
+      "charge_state": 1,
+      "kinetic_energy_eV": 10.0,
+      "phase_space_authority": "config/accelerator_phase_space_match.json",
+      "role": "global_segment_initialize_smoke_no_physics_claim"
+    },
+    {
+      "profile_id": "canonical_ideal_linear_z_vz_1mm_n1000",
+      "source_profile_id": "canonical_ideal_linear_z_vz_1mm_n1000",
+      "materialization_mode": "resolved_layout_pulse_ideal_linear_z_vz",
+      "particle_count": 1000,
+      "source_full_width_mm": 1.0,
+      "mass_amu": 100.0,
+      "charge_state": 1,
+      "kinetic_energy_eV": 10.0,
+      "phase_space_authority": "config/accelerator_phase_space_match.json",
+      "role": "canonical_layout_pulse_materialized_ideal_source"
+    },
+    {
+      "profile_id": "canonical_ideal_linear_z_vz_2p2mm_n1000",
+      "source_profile_id": "canonical_ideal_linear_z_vz_2p2mm_n1000",
+      "materialization_mode": "resolved_layout_pulse_ideal_linear_z_vz",
+      "particle_count": 1000,
+      "source_full_width_mm": 2.2,
+      "mass_amu": 100.0,
+      "charge_state": 1,
+      "kinetic_energy_eV": 10.0,
+      "phase_space_authority": "config/accelerator_phase_space_match.json",
+      "role": "canonical_layout_pulse_materialized_ideal_source"
+    },
+    {
+      "profile_id": "canonical_ideal_zero_vz_1mm_n1000",
+      "source_profile_id": "canonical_ideal_zero_vz_1mm_n1000",
+      "materialization_mode": "resolved_layout_pulse_ideal_linear_z_vz",
+      "particle_count": 1000,
+      "source_full_width_mm": 1.0,
+      "mass_amu": 100.0,
+      "charge_state": 1,
+      "kinetic_energy_eV": 10.0,
+      "mean_velocity_z_m_per_s": 0.0,
+      "velocity_z_slope_m_per_s_per_mm": 0.0,
+      "phase_space_authority": "source_condition:canonical_zero_mean_zero_slope_v1",
+      "role": "canonical_layout_pulse_materialized_ideal_source"
+    },
+    {
+      "profile_id": "canonical_ideal_zero_vz_2p2mm_n1000",
+      "source_profile_id": "canonical_ideal_zero_vz_2p2mm_n1000",
+      "materialization_mode": "resolved_layout_pulse_ideal_linear_z_vz",
+      "particle_count": 1000,
+      "source_full_width_mm": 2.2,
+      "mass_amu": 100.0,
+      "charge_state": 1,
+      "kinetic_energy_eV": 10.0,
+      "mean_velocity_z_m_per_s": 0.0,
+      "velocity_z_slope_m_per_s_per_mm": 0.0,
+      "phase_space_authority": "source_condition:canonical_zero_mean_zero_slope_v1",
+      "role": "canonical_layout_pulse_materialized_ideal_source"
+    },
+    {
+      "profile_id": "canonical_real_octupole_n1000",
+      "source_profile_id": "canonical_real_octupole_n1000",
+      "materialization_mode": "canonical_multipole_source",
+      "particle_count": 1000,
+      "role": "canonical_multipole_source_transform"
     }
   ],
   "rf_steps_per_period": 160,

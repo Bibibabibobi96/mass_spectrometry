@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from common.contracts.file_identity import file_sha256
+from common.contracts.file_identity import file_sha256, repository_text_sha256
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.publish_run import (
     INTEGRATION_ID,
     STAGES,
@@ -28,6 +31,9 @@ ADAPTER_PATH = (
     / "adapter.ps1"
 )
 WORKFLOW_ROOT = ADAPTER_PATH.parent
+RUN_ARTIFACTS_PATH = (
+    REPO_ROOT / "integrations" / INTEGRATION_ID / "runtime" / "run_artifacts.ps1"
+)
 
 
 def write_json(path: Path, value: object) -> None:
@@ -44,6 +50,174 @@ def record(path: Path) -> dict[str, object]:
 
 
 class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
+    def test_shared_cache_publisher_creates_verified_atomic_entry(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            cache_root = (
+                workspace / "artifacts" / "projects" / INTEGRATION_ID / "cache"
+                / "simion_single_flight_frontend"
+            )
+            identity_path = workspace / "identity.json"
+            identity = {
+                "schema_version": 2,
+                "role": "simion_single_flight_frontend_pa_cache",
+                "project_id": INTEGRATION_ID,
+                "solver": {
+                    "name": "SIMION",
+                    "product_version": "2020",
+                    "executable_sha256": "B" * 64,
+                },
+                "critical_options": {"refine": ["--nogui", "refine"]},
+            }
+            write_json(identity_path, identity)
+            command = (
+                f". '{RUN_ARTIFACTS_PATH}'; "
+                f"$identity=Get-Content -Raw -LiteralPath '{identity_path}' | ConvertFrom-Json; "
+                f"$key=Get-RfContentIdentitySha256 -Identity $identity; "
+                f"$staging=New-RfCacheStagingDirectory -CacheRoot '{cache_root}'; "
+                "'frontend.gem','frontend.pa#','frontend.pa0' | ForEach-Object { "
+                "[IO.File]::WriteAllText((Join-Path $staging $_),$_) }; "
+                f"Publish-RfVerifiedCacheEntry -Python '{Path(sys.executable)}' "
+                f"-RepoRoot '{REPO_ROOT}' -WorkspaceRoot '{workspace}' "
+                f"-ProjectId '{INTEGRATION_ID}' -CacheRoot '{cache_root}' "
+                "-CacheKey $key -Role $identity.role -Identity $identity "
+                "-StagingDirectory $staging -ProviderRunId fixture"
+            )
+            result = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", command],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            entries = list(cache_root.iterdir())
+            self.assertEqual(len(entries), 1, result.stdout + result.stderr)
+            manifest = json.loads(
+                (entries[0] / "cache_manifest.json").read_text(encoding="utf-8-sig")
+            )
+            self.assertEqual(manifest["schema_version"], 2)
+            self.assertEqual(manifest["cache_key"], entries[0].name)
+            self.assertEqual(len(manifest["files"]), 3)
+
+    def test_shared_cache_helper_verifies_hit_and_removes_invalid_v2_entry(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            cache_root = (
+                workspace / "artifacts" / "projects" / INTEGRATION_ID / "cache"
+                / "simion_single_flight_frontend"
+            )
+            identity = {
+                "schema_version": 2,
+                "role": "simion_single_flight_frontend_pa_cache",
+                "project_id": INTEGRATION_ID,
+                "solver": {
+                    "name": "SIMION",
+                    "product_version": "2020",
+                    "executable_sha256": "A" * 64,
+                },
+                "critical_options": {"refine": ["--nogui", "refine"]},
+            }
+            key_input = json.dumps(identity, separators=(",", ":"))
+            key = hashlib.sha256(key_input.encode()).hexdigest()
+            entry = cache_root / key
+            entry.mkdir(parents=True)
+            records = []
+            for name in ("frontend.gem", "frontend.pa#", "frontend.pa0"):
+                path = entry / name
+                path.write_text(f"{name}\n", encoding="utf-8")
+                records.append(
+                    {
+                        "name": name,
+                        "bytes": path.stat().st_size,
+                        "sha256": file_sha256(path),
+                    }
+                )
+            write_json(
+                entry / "cache_manifest.json",
+                {
+                    "schema_version": 2,
+                    "role": identity["role"],
+                    "cache_key": key,
+                    "provider_run_id": "fixture",
+                    "cache_key_input": key_input,
+                    "identity": identity,
+                    "files": records,
+                },
+            )
+            command = (
+                f". '{RUN_ARTIFACTS_PATH}'; "
+                f"Test-RfReusableCacheEntry -Python '{Path(sys.executable)}' "
+                f"-RepoRoot '{REPO_ROOT}' -WorkspaceRoot '{workspace}' "
+                f"-ProjectId '{INTEGRATION_ID}' -CacheRoot '{cache_root}' "
+                f"-CacheKey '{key}' -Role '{identity['role']}'"
+            )
+            first = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", command],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            self.assertIn("True", first.stdout)
+            (entry / "frontend.pa0").write_text("changed\n", encoding="utf-8")
+            second = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", command],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            self.assertIn("False", second.stdout)
+            self.assertFalse(entry.exists())
+
+    def test_campaign_repository_text_identity_is_newline_neutral_but_content_sensitive(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            lf = root / "campaign_lf.json"
+            crlf = root / "campaign_crlf.json"
+            changed = root / "campaign_changed.json"
+            lf.write_bytes(b'{\n  "role": "campaign_fixture"\n}\n')
+            crlf.write_bytes(b'{\r\n  "role": "campaign_fixture"\r\n}\r\n')
+            changed.write_bytes(b'{\n  "role": "different_campaign"\n}\n')
+            self.assertEqual(
+                repository_text_sha256(lf), repository_text_sha256(crlf)
+            )
+            self.assertNotEqual(
+                repository_text_sha256(lf), repository_text_sha256(changed)
+            )
+
+    def test_materialized_source_crosses_only_the_parent_child_run_boundary(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            parent = (
+                workspace / "artifacts" / "projects" / INTEGRATION_ID /
+                "runs" / "parent_run" / "inputs"
+            )
+            child = workspace / "child" / "inputs"
+            parent.mkdir(parents=True)
+            child.mkdir(parents=True)
+            source = parent / "single_flight_materialized_particle_source.csv"
+            receipt = parent / "single_flight_source_materialization_receipt.json"
+            source.write_text("particle_id\n1\n", encoding="utf-8")
+            receipt.write_text("{}\n", encoding="utf-8")
+            frozen_source = child / "mother_particle_source.csv"
+            frozen_receipt = child / "single_flight_source_materialization_receipt.json"
+            command = (
+                f". '{RUN_ARTIFACTS_PATH}'; "
+                f"$root=Resolve-RfMaterializedMotherSourceRunRoot -WorkspaceRoot '{workspace}' "
+                f"-SourcePath '{source}' -ReceiptPath '{receipt}'; "
+                f"Copy-RfStableFile -SourceRunRoot $root -SourcePath '{source}' "
+                f"-Destination '{frozen_source}' -Role source | Out-Null; "
+                f"Copy-RfStableFile -SourceRunRoot $root -SourcePath '{receipt}' "
+                f"-Destination '{frozen_receipt}' -Role receipt | Out-Null"
+            )
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", command],
+                text=True, capture_output=True,
+            )
+            frozen_source_text = frozen_source.read_text(encoding="utf-8")
+            frozen_receipt_text = frozen_receipt.read_text(encoding="utf-8")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(frozen_source_text, "particle_id\n1\n")
+        self.assertEqual(frozen_receipt_text, "{}\n")
+
     def test_public_entry_and_prepare_are_campaign_only(self) -> None:
         execute_source = (WORKFLOW_ROOT / "execute.ps1").read_text(
             encoding="utf-8-sig"
@@ -104,8 +278,24 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
         self.assertIn("$stageParticleCount = [int]$budget.particle_count", source)
         self.assertIn("$retrySuffix = if ($RunId -match", source)
 
+    def test_materialized_source_freezes_every_solver_consumed_property(self) -> None:
+        source = ADAPTER_PATH.read_text(encoding="utf-8-sig")
+        prepare_exit = source.index("if ($PrepareOnly)")
+        sampling_assignment = source.index(
+            "$frozenArguments.single_flight_sampling_mode ="
+        )
+        solver_use = source.index(
+            "$runnerArguments.SamplingMode = $frozenArguments.single_flight_sampling_mode"
+        )
+        self.assertLess(sampling_assignment, prepare_exit)
+        self.assertLess(prepare_exit, solver_use)
+        self.assertIn(
+            "$materializationReceipt.particle_source.sampling_mode -ne",
+            source,
+        )
+
     def test_parent_publication_is_n_neutral_and_preserves_both_counts(self) -> None:
-        with tempfile.TemporaryDirectory(dir=REPO_ROOT.parent) as directory:
+        with tempfile.TemporaryDirectory() as directory:
             workspace = Path(directory)
             fixture_repo = workspace / "simulation_repo"
             fixture_campaign = (
@@ -116,7 +306,9 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
                 / "experiment_campaign.json"
             )
             fixture_campaign.parent.mkdir(parents=True)
-            write_json(fixture_campaign, {"role": "campaign_fixture"})
+            fixture_campaign.write_bytes(
+                b'{\r\n  "role": "campaign_fixture"\r\n}\r\n'
+            )
             run_id = "20260803_220000__sim__cross__campaign-parent__n1000__r02"
             run_dir = (
                 workspace
@@ -209,7 +401,7 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
                         + INTEGRATION_ID
                         + "/config/experiment_campaign.json"
                     ),
-                    "campaign_sha256": file_sha256(
+                    "campaign_sha256": repository_text_sha256(
                         fixture_campaign
                     ),
                     "resolved_source_contract_filename": (
@@ -304,7 +496,7 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
             self.assertNotIn("source_revision_id", parent_summary)
 
     def test_failed_parent_publication_preserves_prepared_inputs(self) -> None:
-        with tempfile.TemporaryDirectory(dir=REPO_ROOT.parent) as directory:
+        with tempfile.TemporaryDirectory() as directory:
             workspace = Path(directory)
             fixture_repo = workspace / "simulation_repo"
             fixture_repo.mkdir()

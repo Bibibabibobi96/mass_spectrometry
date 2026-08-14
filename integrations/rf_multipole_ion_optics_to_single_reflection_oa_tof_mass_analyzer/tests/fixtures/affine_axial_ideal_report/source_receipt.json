@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "role": "rf_oatof_single_flight_source_materialization_receipt",
+  "profile_id": "fixture_affine_n3",
+  "source_profile_id": "fixture_affine_n3",
+  "method": "resolved_layout_pulse_contract_ideal_linear_z_vz_v1",
+  "particle_count": 3,
+  "source_full_width_mm": 1.0,
+  "resolved_target_center_mm": [0.0, 0.0, -68.45815512803617],
+  "physics": {
+    "mass_amu": 100.0,
+    "charge_state": 1,
+    "mean_velocity_z_m_per_s": 0.0,
+    "velocity_z_slope_m_per_s_per_mm": 0.0
+  },
+  "particle_source": {
+    "path": "source_release.csv",
+    "sha256": "9A3706CBEC2EC1A773F240DDF62784E6B5924CF5ADCD8E262B78C00B0782533E",
+    "particle_count": 3,
+    "sampling_mode": "continuous_injection_full_population"
+  }
+}

@@ -180,6 +180,199 @@ function Copy-RfStableFile {
   }
 }
 
+function Get-RfSimionSolverCacheIdentity {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$SimionExe)
+  $executable = (Resolve-Path -LiteralPath $SimionExe).Path
+  $version = [Diagnostics.FileVersionInfo]::GetVersionInfo($executable)
+  $productVersion = [string]$version.ProductVersion
+  if ([string]::IsNullOrWhiteSpace($productVersion)) {
+    $productVersion = [string]$version.FileVersion
+  }
+  if ([string]::IsNullOrWhiteSpace($productVersion)) {
+    throw 'SIMION executable has no product or file version identity.'
+  }
+  return [ordered]@{
+    name = 'SIMION'
+    product_version = $productVersion
+    executable_sha256 = (Get-FileHash -LiteralPath $executable -Algorithm SHA256).Hash
+  }
+}
+
+function Get-RfContentIdentitySha256 {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)]$Identity)
+  $json = $Identity | ConvertTo-Json -Depth 12 -Compress
+  return [Convert]::ToHexString(
+    [Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($json))
+  ).ToLowerInvariant()
+}
+
+function Assert-RfCacheEntryPath {
+  param(
+    [Parameter(Mandatory)][string]$CacheRoot,
+    [Parameter(Mandatory)][string]$CacheKey,
+    [Parameter(Mandatory)][string]$CacheEntry
+  )
+  if ($CacheKey -notmatch '^[a-f0-9]{64}$') { throw 'Cache key is not a lowercase SHA-256.' }
+  $root = [IO.Path]::GetFullPath($CacheRoot).TrimEnd([IO.Path]::DirectorySeparatorChar)
+  $expected = [IO.Path]::GetFullPath((Join-Path $root $CacheKey))
+  if (-not $expected.Equals([IO.Path]::GetFullPath($CacheEntry), [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'Cache entry path differs from its content key.'
+  }
+}
+
+function Test-RfReusableCacheEntry {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$Python,
+    [Parameter(Mandatory)][string]$RepoRoot,
+    [Parameter(Mandatory)][string]$WorkspaceRoot,
+    [Parameter(Mandatory)][string]$ProjectId,
+    [Parameter(Mandatory)][string]$CacheRoot,
+    [Parameter(Mandatory)][string]$CacheKey,
+    [Parameter(Mandatory)][string]$Role
+  )
+  $entry = Join-Path $CacheRoot $CacheKey
+  Assert-RfCacheEntryPath -CacheRoot $CacheRoot -CacheKey $CacheKey -CacheEntry $entry
+  $manifest = Join-Path $entry 'cache_manifest.json'
+  if (-not (Test-Path -LiteralPath $manifest -PathType Leaf)) { return $false }
+  & $Python (Join-Path $RepoRoot 'common\contracts\verify_artifact_layout.py') `
+    (Join-Path $WorkspaceRoot 'artifacts\projects') --cache-entry $entry `
+    --expected-cache-role $Role --expected-cache-key $CacheKey `
+    --expected-cache-project $ProjectId *> $null
+  if ($LASTEXITCODE -eq 0) { return $true }
+  $document = $null
+  try {
+    $document = Get-Content -LiteralPath $manifest -Raw -Encoding UTF8 | ConvertFrom-Json
+  } catch {
+    $document = $null
+  }
+  if ($null -ne $document -and [int]$document.schema_version -eq 2) {
+    Remove-Item -LiteralPath $entry -Recurse -Force
+    return $false
+  }
+  return $false
+}
+
+function New-RfCacheStagingDirectory {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$CacheRoot)
+  $root = [IO.Path]::GetFullPath($CacheRoot)
+  New-Item -ItemType Directory -Path $root -Force | Out-Null
+  $staging = Join-Path $root ('b-' + [guid]::NewGuid().ToString('N').Substring(0,12))
+  New-Item -ItemType Directory -Path $staging | Out-Null
+  if (-not (Split-Path -Parent ([IO.Path]::GetFullPath($staging))).Equals(
+      $root.TrimEnd([IO.Path]::DirectorySeparatorChar),
+      [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'Cache staging directory escaped its registered root.'
+  }
+  return $staging
+}
+
+function Publish-RfVerifiedCacheEntry {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$Python,
+    [Parameter(Mandatory)][string]$RepoRoot,
+    [Parameter(Mandatory)][string]$WorkspaceRoot,
+    [Parameter(Mandatory)][string]$ProjectId,
+    [Parameter(Mandatory)][string]$CacheRoot,
+    [Parameter(Mandatory)][string]$CacheKey,
+    [Parameter(Mandatory)][string]$Role,
+    [Parameter(Mandatory)]$Identity,
+    [Parameter(Mandatory)][string]$StagingDirectory,
+    [Parameter(Mandatory)][string]$ProviderRunId
+  )
+  $root = [IO.Path]::GetFullPath($CacheRoot).TrimEnd([IO.Path]::DirectorySeparatorChar)
+  $staging = [IO.Path]::GetFullPath($StagingDirectory)
+  if (-not (Split-Path -Parent $staging).Equals($root, [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'Cache publication staging directory escaped its registered root.'
+  }
+  $target = Join-Path $root $CacheKey
+  Assert-RfCacheEntryPath -CacheRoot $root -CacheKey $CacheKey -CacheEntry $target
+  $files = @(Get-ChildItem -LiteralPath $staging -File | Where-Object {
+    $_.Name -ne 'cache_manifest.json'
+  } | Sort-Object Name)
+  if ($files.Count -eq 0) { throw 'Cache publication has no files.' }
+  $records = @($files | ForEach-Object {
+    [ordered]@{name=$_.Name;bytes=$_.Length;sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash}
+  })
+  $cacheKeyInput = $Identity | ConvertTo-Json -Depth 12 -Compress
+  $derivedKey = [Convert]::ToHexString(
+    [Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($cacheKeyInput))
+  ).ToLowerInvariant()
+  if ($derivedKey -ne $CacheKey) { throw 'Cache identity changed before publication.' }
+  Write-RfJson -Path (Join-Path $staging 'cache_manifest.json') -Depth 14 -Value ([ordered]@{
+    schema_version=2; role=$Role; cache_key=$CacheKey; provider_run_id=$ProviderRunId
+    cache_key_input=$cacheKeyInput; identity=$Identity; files=$records
+  })
+  if (Test-Path -LiteralPath $target) {
+    if (Test-RfReusableCacheEntry -Python $Python -RepoRoot $RepoRoot `
+        -WorkspaceRoot $WorkspaceRoot -ProjectId $ProjectId -CacheRoot $root `
+        -CacheKey $CacheKey -Role $Role) {
+      Remove-Item -LiteralPath $staging -Recurse -Force
+      return $target
+    }
+    if (Test-Path -LiteralPath $target) {
+      throw 'Legacy cache entry unexpectedly collides with the current content key.'
+    }
+  }
+  Move-Item -LiteralPath $staging -Destination $target
+  if (-not (Test-RfReusableCacheEntry -Python $Python -RepoRoot $RepoRoot `
+      -WorkspaceRoot $WorkspaceRoot -ProjectId $ProjectId -CacheRoot $root `
+      -CacheKey $CacheKey -Role $Role)) {
+    throw 'Published cache entry did not pass the shared verifier.'
+  }
+  return $target
+}
+
+function Copy-RfCacheManifestInput {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$CacheEntry,
+    [Parameter(Mandatory)][string]$Destination
+  )
+  $source = Join-Path $CacheEntry 'cache_manifest.json'
+  if (Test-Path -LiteralPath $Destination) { throw 'Frozen cache manifest destination exists.' }
+  Copy-Item -LiteralPath $source -Destination $Destination
+  if ((Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash -ne
+      (Get-FileHash -LiteralPath $Destination -Algorithm SHA256).Hash) {
+    throw 'Cache manifest changed while frozen into run inputs.'
+  }
+  return $Destination
+}
+
+function Resolve-RfMaterializedMotherSourceRunRoot {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$WorkspaceRoot,
+    [Parameter(Mandatory)][string]$SourcePath,
+    [Parameter(Mandatory)][string]$ReceiptPath
+  )
+  $workspace = [IO.Path]::GetFullPath($WorkspaceRoot)
+  $source = [IO.Path]::GetFullPath($SourcePath)
+  $receipt = [IO.Path]::GetFullPath($ReceiptPath)
+  $inputs = Split-Path -Parent $receipt
+  $runRoot = Split-Path -Parent $inputs
+  $integrationRunsRoot = [IO.Path]::GetFullPath((Join-Path $workspace (
+    'artifacts\projects\rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer\runs'
+  )))
+  if ((Split-Path -Parent $runRoot) -ne $integrationRunsRoot -or
+      (Split-Path -Leaf $inputs) -ne 'inputs' -or
+      -not $source.Equals(
+        (Join-Path $inputs 'single_flight_materialized_particle_source.csv'),
+        [StringComparison]::OrdinalIgnoreCase
+      ) -or
+      -not $receipt.Equals(
+        (Join-Path $inputs 'single_flight_source_materialization_receipt.json'),
+        [StringComparison]::OrdinalIgnoreCase
+      )) {
+    throw 'Materialized mother source is outside its canonical integration parent run.'
+  }
+  return $runRoot
+}
+
 function Initialize-RfIntegrationStageBudget {
   [CmdletBinding()]
   param(

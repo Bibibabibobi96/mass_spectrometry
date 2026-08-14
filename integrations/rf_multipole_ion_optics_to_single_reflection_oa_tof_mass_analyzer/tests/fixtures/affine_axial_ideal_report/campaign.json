@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "role": "rf_oatof_affine_axial_all_ideal_report_campaign",
+  "campaign_id": "fixture_affine_axial_all_ideal_report_v1",
+  "evidence_level": "PROVISIONAL",
+  "source_profile_registry_path": "registry.json",
+  "cases": [
+    {
+      "case_id": "fixture",
+      "architecture_id": "ARCH-SHORT-Z10-R100",
+      "architecture_generation_id": "fixture_short_focus",
+      "field_profile_id": "arm8_closed_global_piecewise_theoretical_field",
+      "source_profile_id": "fixture_affine_n3",
+      "source_profile_definition_sha256": "AA7BC79EB933AEB9E50B509AAB95E89425D120FAA2A23C478429C65A01522936",
+      "allow_diagnostic_extrapolation": false,
+      "source_contract": {
+        "particle_count": 3,
+        "full_width_mm": 1.0,
+        "mass_amu": 100.0,
+        "charge_state": 1,
+        "mass_to_charge_Th": 100.0
+      },
+      "resolved_geometry": {
+        "path": "geometry.json",
+        "sha256": "D1619B13BB5CDF081D5D786D7D543EEC725AA06A520C7D92DA866EAA436854AC"
+      },
+      "source_materialization_receipt": {
+        "path": "source_receipt.json",
+        "sha256": "F3851C0E74D920AD46605DB23BD0B531A29041727701ED0CCC28AB297115614E"
+      },
+      "source_release_csv": {
+        "path": "source_release.csv",
+        "sha256": "9A3706CBEC2EC1A773F240DDF62784E6B5924CF5ADCD8E262B78C00B0782533E"
+      }
+    }
+  ]
+}

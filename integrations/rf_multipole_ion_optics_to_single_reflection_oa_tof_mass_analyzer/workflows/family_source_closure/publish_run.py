@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from common.contracts.artifact_naming import validate_run_id
-from common.contracts.file_identity import file_sha256
+from common.contracts.file_identity import file_sha256, repository_text_sha256
 from common.contracts.machine_contracts import ContractError
 from common.contracts.verify_run_manifest import verify_record
 
@@ -222,7 +222,7 @@ def publish_family_source_closure_run(
     if (
         not campaign_path.is_relative_to(repo_root.resolve())
         or not campaign_path.is_file()
-        or file_sha256(campaign_path) != receipt["campaign_sha256"]
+        or repository_text_sha256(campaign_path) != receipt["campaign_sha256"]
         or resolved_source_contract_path.parent != receipt_path.parent.resolve()
         or not resolved_source_contract_path.is_file()
         or file_sha256(resolved_source_contract_path)

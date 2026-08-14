@@ -31,8 +31,10 @@ global ID提取。唯一新求解预留为q108 run
 
 campaign、schema、prepare和adapter已经允许且只允许上述两个常量profile。q108 campaign通过
 `CAMPAIGN_SOURCE_BINDINGS=PASS`、`FAMILY_SOURCE_CLOSURE_PREPARE=PASS`、`COMPOSITION_PLAN=PASS`和
-`INTEGRATION_EXECUTION=VALIDATED`；PrepareOnly产物位于
-`C:\Users\Liao\mass_spectrometry\artifacts\projects\rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer\scratch\short_focus_rr_tqual108_stratified_n100`。
+`INTEGRATION_EXECUTION=VALIDATED`；配置权威为
+`config/diagnostics/short_focus_rr_tqual108_stratified_n100_campaign.json`，运行证据权威为成功运行
+`20260814_010000__sim__cross__short-rr-tqual108-stratified__n100__r01`及其成功子运行
+`20260814_010000__sim__simion__rf-oatof-single-flight-gap0__n100__r01`，PrepareOnly scratch不再作为证据入口。
 组成计划冻结N=100源SHA、布局、真实场profile和`single_flight_trajectory_quality_profile_id=tqual_108`。
 相关workflow/runtime合同单测24项通过。
 

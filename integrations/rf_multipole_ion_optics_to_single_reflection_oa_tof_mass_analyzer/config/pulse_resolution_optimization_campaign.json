@@ -244,8 +244,13 @@
         "sha256": "D46986FC918605D9EB2AD1BA059BB76F9E6AFA24156C30C20A5880375F6B9044"
       },
       "pulse_resolution_axial_ideal_closure_receipt": {
-        "path": "artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20260813_151500__analysis__python__axial-ideal-arm8-closure/results/axial_ideal_arm8_analytic_closure_receipt.json",
-        "sha256": "9AA2773255B4DC83F3208B7620DDAA8423C4F6B78650E156F75847424D6D883B"
+        "evidence_revision": 2,
+        "path": "artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20260814_165300__analysis__python__axial-ideal-arm8-closure-republish/results/axial_ideal_arm8_closure/axial_ideal_arm8_analytic_closure_receipt.json",
+        "sha256": "9AA2773255B4DC83F3208B7620DDAA8423C4F6B78650E156F75847424D6D883B",
+        "supersedes": {
+          "path": "artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20260813_151500__analysis__python__axial-ideal-arm8-closure/results/axial_ideal_arm8_analytic_closure_receipt.json",
+          "sha256": "9AA2773255B4DC83F3208B7620DDAA8423C4F6B78650E156F75847424D6D883B"
+        }
       },
       "pulse_resolution_arm8_simion_closure_result": {
         "path": "artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20260813_223000__sim__simion__arm8-solver-closure-n101-interpolated-r04/results/arm8_simion_solver_closure_result.json",

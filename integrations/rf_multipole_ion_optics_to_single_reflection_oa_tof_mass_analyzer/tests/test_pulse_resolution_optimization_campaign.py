@@ -35,6 +35,16 @@ class PulseResolutionOptimizationCampaignTests(unittest.TestCase):
     def test_declares_complete_fail_closed_optimization_contract(self) -> None:
         campaign = load(CAMPAIGN_PATH)
         validate_schema(campaign, SCHEMA_NAME)
+        arm8_receipt = campaign["experiments"][4][
+            "pulse_resolution_axial_ideal_closure_receipt"
+        ]
+        self.assertEqual(arm8_receipt["evidence_revision"], 2)
+        self.assertEqual(
+            arm8_receipt["supersedes"]["sha256"], arm8_receipt["sha256"]
+        )
+        self.assertNotEqual(
+            arm8_receipt["supersedes"]["path"], arm8_receipt["path"]
+        )
         validate_pulse_resolution_optimization_campaign(
             campaign, execution_requested=False
         )

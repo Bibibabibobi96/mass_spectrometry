@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "role": "rf_oatof_provisional_analytic_source_profile_registry",
+  "source_materialization_profiles": [
+    {
+      "profile_id": "canonical_ideal_linear_z_vz_1mm_n1000",
+      "source_profile_id": "canonical_ideal_linear_z_vz_1mm_n1000",
+      "materialization_mode": "resolved_layout_pulse_ideal_linear_z_vz",
+      "particle_count": 1000,
+      "source_full_width_mm": 1.0,
+      "mass_amu": 100.0,
+      "charge_state": 1,
+      "kinetic_energy_eV": 10.0,
+      "phase_space_authority": "config/accelerator_phase_space_match.json",
+      "role": "canonical_layout_pulse_materialized_ideal_source"
+    },
+    {
+      "profile_id": "canonical_ideal_linear_z_vz_2p2mm_n1000",
+      "source_profile_id": "canonical_ideal_linear_z_vz_2p2mm_n1000",
+      "materialization_mode": "resolved_layout_pulse_ideal_linear_z_vz",
+      "particle_count": 1000,
+      "source_full_width_mm": 2.2,
+      "mass_amu": 100.0,
+      "charge_state": 1,
+      "kinetic_energy_eV": 10.0,
+      "phase_space_authority": "config/accelerator_phase_space_match.json",
+      "role": "canonical_layout_pulse_materialized_ideal_source"
+    },
+    {
+      "profile_id": "diagnostic_zero_vz_linear_z_1mm_n1000",
+      "source_profile_id": "diagnostic_zero_vz_linear_z_1mm_n1000",
+      "materialization_mode": "resolved_layout_pulse_ideal_linear_z_vz",
+      "particle_count": 1000,
+      "source_full_width_mm": 1.0,
+      "mass_amu": 100.0,
+      "charge_state": 1,
+      "kinetic_energy_eV": 0.0,
+      "mean_velocity_z_m_per_s": 0.0,
+      "velocity_z_slope_m_per_s_per_mm": 0.0,
+      "role": "provisional_analytic_pulse_state_profile"
+    },
+    {
+      "profile_id": "diagnostic_zero_vz_linear_z_2p2mm_n1000",
+      "source_profile_id": "diagnostic_zero_vz_linear_z_2p2mm_n1000",
+      "materialization_mode": "resolved_layout_pulse_ideal_linear_z_vz",
+      "particle_count": 1000,
+      "source_full_width_mm": 2.2,
+      "mass_amu": 100.0,
+      "charge_state": 1,
+      "kinetic_energy_eV": 0.0,
+      "mean_velocity_z_m_per_s": 0.0,
+      "velocity_z_slope_m_per_s_per_mm": 0.0,
+      "role": "provisional_analytic_pulse_state_profile"
+    }
+  ]
+}

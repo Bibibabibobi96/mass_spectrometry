@@ -38,6 +38,44 @@ repository-text SHA由`runtime/refresh_family_repository_bindings.py`单向刷�
 筛选；`pulse_eligible_conditional`仅用于带selection receipt的条件诊断。空间窗口只做detector-blind
 分组统计，不修改轨迹。
 
+理论/理想源合同必须另外声明`source_state_epoch`和`source_state_locus`，两者与坐标基、规范时钟、
+有序粒子ID和目标状态共同构成源身份。若SIMION因连续轨迹要求在目标epoch之前写入`.ion`，该文件只算
+`release_implementation_state`；profile中的目标宽度、均值或斜率仍指向声明checkpoint，不能由release
+行直接冒充。运行前必须冻结逐粒子checkpoint验收容差；运行后receipt至少保存目标/观察epoch与plane、
+到达ID、位置和速度残差、能量一致性、终止分类及PASS/FAIL。只有实际checkpoint在预声明容差内闭合，
+该run才能沿用理论/理想源注册名。
+
+旧profile未提供上述epoch/plane与checkpoint receipt时，只能解释为具名`AT-RELEASE`诊断。若源在
+编译PA中创建失败、未到达目标checkpoint或残差越界，runner/分析必须失败关闭；结果降级为
+`release aperture incompatibility`或相应实现态失败证据，不计算分辨率、不进入理论源性能矩阵，也
+不得用裁剪、筛选、重定位或事后放宽容差维持原声明。该规则只收紧证据语义；新增机器字段及门禁须复用
+现有source materialization与checkpoint receipt链，不建立第二套源物理实现或执行入口。
+
+本轮规范pulse-state源的locus固定注册为
+`accelerator_stage1_interior_fixed_transverse_finite_local_z_interval`：它是Stage1内部、固定横向坐标并沿
+`z_local`占有限区间的region/manifold，不是`global_x`平面。正式restart合同唯一冻结逐行位置
+`1e-9 mm`、逐行速度分量`1e-6 m/s`、时钟`1e-9 us`和由实际速度派生的物理能量`5e-9 eV`绝对容差；prepare只把同一合同身份
+传到adapter、runner和analyzer，消费者不得另设默认阈值。actual SIMION `source_release`必须覆盖全部
+有序ID并逐行闭合，summary引用同一validation-contract SHA。
+
+该restart表示采用SIMION支持的原生粒子与Program机制，不是项目自建轨迹搬运。官方依据于
+`2026-08-14`按本机目标版本SIMION 2020核查如下：
+
+- SIMION官方[FLY2 File](https://simion.com/info/fly2_file.html#individual-particles)的
+  “Individual Particles”明确允许把每个粒子写成独立`standard_beam`，并直接使用
+  `position=vector(...)`与`velocity=vector(...)`；同页说明这种表示加载效率低于ION，但数千粒子仍属
+  合理范围。本项目只用它表达N=1000 pulse-state restart，不把它扩展成新的源动力学算法。
+- SIMION官方[SIMION 8.2 (2020)](https://simion.com/info/simion82.html)把
+  `sim_segment_global`列为8.2正式reserved variable：置1后，粒子位于任何PA instance之外时Program
+  segment仍会被调用。本机官方`SIMION-2020/examples/mfield_adjust/README.html`给出的组合正是紧随
+  `simion.workbench_program()`声明`simion.early_access(8.2)`与`sim_segment_global=1`。本项目原样采用
+  该已安装版本示例组合，但只对带冻结validation contract的`pre_pulse_restart`启用；连续前端仍走原
+  ION路径，避免把全局segment调度无条件扩散到其他workflow。
+
+FLY2载入仍可能把速度经过内部表示往返，官方格式支持不等于逐位无误差。因此实际
+`source_release`必须按同一冻结合同逐粒子验收位置、速度、时钟与由实际速度派生的物理能量；不得以
+“官方格式”跳过误差门禁或增加数值预补偿。
+
 ## 单流程PA、屏蔽和参数重构
 
 单流程的四个Workbench槽位依次为flight tube、reflectron、combined frontend和detector。combined
@@ -57,9 +95,51 @@ layout profile + design overrides
 → run-local PA rebuild plan
 ```
 
+canonical finite-interval layout中的`midgrid/backplate`明确禁止作为独立扫描轴。它们只能由理想源条件、
+加速器理论解和耦合反射器方程整体派生；`ACC-RR/IR/RI/II`共享各自layout的这套理论派生电压。派生链
+不得读取反射器入口的实测粒子状态、检测器时间/FWHM/分辨率，也不得用经验扫描反调电压。本轮反射器
+电压扫描已取消，没有新增实验；后续若权威理论输入发生变化，仍必须回到上述完整编译链重新派生。
+
 加速器对相邻组件只发布外包络端点；屏蔽罩、无场区和反射器边界从该端点派生，不重复维护内部尺寸或
 绝对坐标。范围校验只证明可编译；几何、电压或拓扑改变后仍须重新验证PA贯通、电极映射、真实Fly和
 数值敏感性。
+
+单流程frontend、accelerator overlay、flight tube与reflectron四类PA性能缓存均使用根README注册的
+schema-v2内容身份：key同时绑定角色、输入/构建代码、SIMION产品版本与可执行文件SHA-256以及完整关键
+选项；命中前由公共artifact verifier逐文件复核bytes/SHA，损坏或不完整的schema-v2 entry只允许精确
+重建。每次使用的cache manifest冻结进该run inputs；它只说明本次复用了哪组可重建PA，不能替代run
+manifest或Formal资产。旧schema entry在单独清理前只保留布局可识别性，运行时一律视为MISS。
+2026-08-14引用审计后只物理保留当前实验所需的10个legacy PA entry（33,919,321,596 bytes）；这些
+entry也不获得运行时复用资格，首次需要时必须由冻结输入重建并发布为schema-v2。
+
+同日完成旧分析证据的正式successor收口：短/长checkpoint FWHM当前分别引用
+`20260814_163500__analysis__cross__short-checkpoint-fwhm-2x2-republish-n1000`和
+`20260814_163600__analysis__cross__long-checkpoint-fwhm-2x2-republish-n1000`；legacy stage-field当前引用
+`20260814_164400__analysis__cross__legacy-stage-field-2x2-fail-closed-republish-n1000`。短/长postselection、
+q8/q108与三份ZERO-MATCH source当前依次引用`20260814_184000__analysis__cross__oct-whole-short-long-republish__n1000`、
+`20260814_184100__analysis__python__rr-tqual8-vs108-republish__n100`、
+`20260814_184200__analysis__cross__zero-match-short1-source-v2__n1000`、
+`20260814_184300__analysis__cross__zero-match-long1-source-v2__n1000`和
+`20260814_184400__analysis__cross__zero-match-long2p2-source-v2__n1000`。ZERO-MATCH source三件套与
+旧`174000/174100/174200`逐字节相同；这些successor只补齐v2 campaign、manifest和精确输出失败关闭，
+没有重跑SIMION或改变科学值。旧`20260813_151500__analysis__python__axial-ideal-arm8-closure`现由
+`20260814_165300__analysis__python__axial-ideal-arm8-closure-republish`正式接管：`8,459-byte` receipt
+逐字节相同，当前campaign只绑定`evidence_revision=2` successor，并仅在`supersedes`保留旧身份。
+旧`scratch/r03-winner-post-selection`则由
+`20260814_185300__analysis__python__r03-winner-postselection-republish__n1000`接管，四份科学文件逐字节
+相同；source solver terminal status仍为failed，因此只保留成功detector-blind reanalysis/postselection
+声明。完整旧→新ID、summary/manifest/receipt SHA统一查
+[高阶时间像差续篇](../../../docs/history/20260814__oatof-canonical-matrix-high-order-continuation.md#后续正式successor与当前证据绑定)。
+该续篇的名称一致性覆盖source、cohort、geometry、accelerator field、reflector field、grid、solver
+numerics和clock全部结果身份维度，不只覆盖离子源；同一机器身份在结果表和successor引用中沿用同一
+规范注册名，不用简写另造第二配置名称。
+
+本轮清理已永久删除七批共`274,407,951,175 bytes`：第一批`550,005`、59个非当前legacy PA cache
+`179,406,313,439`、4个run内未由manifest引用的PA副本`90,227,338,032`、8个失败/中断/无终态或
+已被成功recovery/Formal完整取代的目录`4,765,128,506`、旧`151500` receipt `8,459`、47个invalid
+scratch `6,741,298`和正式successor接管后的最后2个scratch `1,871,436`。删除不可恢复。继续保留10个当前cache
+（`33,919,321,596 bytes`）、全部Formal发布物、成功manifest逐文件冻结资产及唯一结果/不可重构输入；
+清理不改变33行矩阵、ZERO-MATCH结果、资格状态或后续复现入口。
 
 ## 脉冲分辨率优化能力与边界
 
@@ -145,9 +225,24 @@ winner、几何、电压、场模式、粒子ID、时钟和理论接受窗；粒
 [线性z–vz理论](../../../projects/single_reflection_oa_tof_mass_analyzer/docs/theory/z_vz_linear_phase_space_coupling.md)。
 
 理论几何重构在真实场中提高了传输，却形成双峰且`R≈8494`，不能晋升。理想分段场的人造线性源在
-修正栅面时间步截断后能在焦面闭合，证明公式、源映射和焦面坐标有效；真实PA与理想两段均匀场的差异
-才是该长焦距设计的主要限制。详细诊断和代表run见
+修正栅面时间步截断后能在焦面闭合，证明公式、源映射和焦面坐标有效。这里“真实PA与理想两段均匀场
+的差异是主要限制”只描述2026-08-12里程碑所用历史源、cohort与单点数值配置，不能外推到本轮规范
+N=1000矩阵；后者已把完整2.2 mm有限区间的高阶残差识别为主导，而真实场/downstream bundle只贡献
+约7.3%的附加sigma。详细诊断和代表run见
 [2026-08-12里程碑](../../../docs/history/20260812__oatof-finite-interval-focus-diagnostics.md)。
+
+### 规范1 mm affine四臂的焦后交互
+
+统一33行表派生分析现已完成短/长`ACC-RR/IR/RI/II`的严格IDs 1..1000检查点配对。检测面直接FWHM
+析因中，Stage2理想化主效应为短/长`-0.113562236/-0.101770972 ns`，明显大于Stage1的
+`-0.003474939/+0.005925899 ns`，因此Stage2仍是规范1 mm源的主要直接改善方向。完整FWHM
+difference-in-differences从反射器入口到检测面，短焦由`+0.044723597`变为`+0.072874903 ns`，长焦
+由`-0.036653286`翻转为`+0.031748199 ns`；固定downstream/真实反射器bundle确实改变非加性interaction。
+
+该结论不能拆成纯反射器电压失配：现有真实场输出没有受支持的detector-blind一、二阶导数识别入口。
+RR与II检测峰还分别出现2模及3/4模，且当前无bootstrap、无数值收敛；因此只允许确定性描述，不授予
+统计显著、普适或Formal结论。四臂原值、mean interaction、run与SHA统一见
+[高阶时间像差续篇的派生受控交互分析](../../../docs/history/20260814__oatof-canonical-matrix-high-order-continuation.md#33行统一表的派生受控交互分析)。
 
 ### 真实八极杆束的焦距、一级间隙与径向结构配对
 
@@ -220,9 +315,12 @@ FWHM由`0.19894 ns`增至`1.55509 ns`。短结构2.2 mm源换实际场后焦面�
 
 ### 一级场归因与局部细PA
 
-同一最新几何的分段理想场隔离把主要误差定位到一级加速区；仅理想化二级不能恢复分辨率。轴向基函数
-显示源窗口内电势主要由repeller/grid1决定，0.2 mm整体PA的关键误差来自透明栅网附近的数值边界层，
-不是宏观屏蔽泄漏。简单改端点电压会同时改变二级场和总能量，不能替代场形修正。
+本小节的一级场结论只适用于当时真实八极杆束、局部细PA和对应历史cohort/单点数值配置：该隔离曾把
+主要误差定位到一级加速区，并显示只理想化二级不足以恢复该历史工况的分辨率。轴向基函数显示该源窗口
+内电势主要由repeller/grid1决定，0.2 mm整体PA的关键误差来自透明栅网附近的数值边界层，不是宏观
+屏蔽泄漏。简单改端点电压会同时改变二级场和总能量，不能替代场形修正。它不覆盖上面的规范1 mm
+affine N=1000四臂矩阵；该严格配对矩阵的检测面FWHM主效应已显示Stage2是主要直接改善方向，当前结论
+应按源、cohort、结构和数值配置分别引用。
 
 当前有效修复保持0.2 mm多极杆整体PA，使用六面Dirichlet基函数边界耦合局部0.05 mm加速器PA，并在
 出口人工边界前以重叠保护区回退粗PA。方法合同只由
@@ -252,15 +350,28 @@ A/B中，局部细PA把焦面时间σ从4.431降至1.472 ns，焦面z斜率从+6
 - [RR轨迹质量q8/q108配对检查准备](../../../docs/history/20260814__oatof-rr-trajectory-quality-paired-check.md)
 - [原生栅网、源/场、数值与短长焦全过程](../../../docs/history/20260814__oatof-native-grid-field-source-focus-investigation.md)
 - [源、cohort、场与短长焦统一配置注册表及完整结果矩阵](../../../docs/history/20260814__oatof-source-field-configuration-registry-and-results-matrix.md)
+- [规范矩阵、高阶像差与33行统一表的派生交互分析](../../../docs/history/20260814__oatof-canonical-matrix-high-order-continuation.md)
+
+## 全理想轴向PROVISIONAL解析报告
+
+[`affine_axial_ideal_report.py`](../analysis/affine_axial_ideal_report.py)提供独立的PROVISIONAL解析入口，由
+[`canonical_affine_axial_all_ideal_report_campaign.json`](../config/diagnostics/canonical_affine_axial_all_ideal_report_campaign.json)
+选择短/长结构、1.0/2.2 mm以及affine/zero-vz profile。它失败关闭地绑定resolved geometry、source
+profile定义、materialization receipt与source release CSV SHA，并校验release行数、有序粒子ID、receipt
+粒子数和`continuous_injection_full_population`。逐粒子只组合既有加速器时间、静电出口能量、通用初始
+轴向动能和反射器时间API；summary复用规范peak metrics并区分sample/population sigma。报告还按resolved
+耦合反射器能量包络标出外推。该入口不调用SIMION/COMSOL、不接入活动run/hash链、不自称receipt，结果固定
+为`PROVISIONAL`，不能晋升Candidate或Formal。
 
 ## 开放任务
 
-1. 为既有adapter实现并验证八臂源/场模式映射；先以同一冻结母样本的N=100确定性前缀完成归因矩阵，
-   严格执行第八臂解析闭合停止规则和晋级门槛，再解除campaign的planning-only状态。
-2. 只在归因确认的限制区域完成SIMION局部网格收敛；随后以固定ID划分验证传递模型和少量受约束候选，
+1. 当前不建立`ACC-RR/IR/RI`反射器电压扫描；只有未来出现受支持的新理论输入时，才允许回到完整
+   canonical编译链整体重派生。不得用入口实测粒子或检测面FWHM反向拟合`midgrid/backplate`，也不得
+   把downstream交互直接写成纯电压失配。
+2. 只在归因确认的Stage2及downstream限制区域完成SIMION局部网格收敛；随后以固定ID划分验证传递模型和少量受约束候选，
    冻结detector-blind理论接受窗。窗口覆盖不达机器合同门槛时必须改善场或上游束，不能继续缩窗。
-3. 最佳候选用冻结N=1000母样本、五批PA复用和全部pulse-eligible粒子完成双重验收与bootstrap；关闭前
-   现有局部PA结果仍只是单一数值设置诊断，不是生产、收敛或优化结果。
+3. 对规范1 mm四臂的检测面多模峰完成预注册bootstrap和峰形稳定性复核；关闭前现有DID仍是确定性
+   描述，不是统计显著、数值收敛、生产优化或Formal结果。
 4. SIMION稳定通过后生成唯一handoff receipt，再用通用retrace runner完成COMSOL N=100同粒子理想场
    分解、边界对等和局部网格收敛；通过后才在单一商业求解器会话运行N=1000并比较两端结果。
 5. COMSOL真实链还须验证全局笛卡尔速度、完整终态census、慢粒子求解、GUI重开Compute和连接开口/

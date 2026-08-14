@@ -50,6 +50,25 @@
       "claim_status": "INCONCLUSIVE_DIAGNOSTIC_ONLY"
     },
     {
+      "layout_profile_id": "zero_match_short_1mm",
+      "architecture_generation_id": "zero_match_short_1mm_v1",
+      "method": "symmetric_axis_speed_scaling_v1",
+      "reference_injection_energy_eV": 5.0,
+      "target_injection_energy_eV": 10.0,
+      "pulse_timing_method": "multipole_handoff_ballistic_centroid_v1",
+      "finite_interval_accelerator_profile": "config/accelerator_phase_space_match.json",
+      "finite_interval_source_full_width_mm": 1.0,
+      "finite_interval_phase_space_input": {
+        "authority": "solver_native_zero_mean_zero_slope",
+        "mass_to_charge_Th": 100.0,
+        "release_position_mm": 1.498375640839315,
+        "mean_initial_velocity_m_per_s": 0.0,
+        "velocity_slope_m_per_s_per_mm": 0.0
+      },
+      "accelerator_stage1_length_mm": 3.0,
+      "claim_status": "INCONCLUSIVE_DIAGNOSTIC_ONLY"
+    },
+    {
       "layout_profile_id": "theory_source_z10_d1_4",
       "architecture_generation_id": "short_focus_1mm_theory_v1",
       "method": "symmetric_axis_speed_scaling_v1",
@@ -82,6 +101,25 @@
       "pulse_timing_method": "multipole_handoff_ballistic_centroid_v1",
       "finite_interval_accelerator_profile": "config/accelerator_phase_space_match.json",
       "finite_interval_source_full_width_mm": 2.2,
+      "accelerator_stage1_length_mm": 3.0,
+      "claim_status": "INCONCLUSIVE_DIAGNOSTIC_ONLY"
+    },
+    {
+      "layout_profile_id": "zero_match_long_2p2mm",
+      "architecture_generation_id": "zero_match_long_2p2mm_v1",
+      "method": "symmetric_axis_speed_scaling_v1",
+      "reference_injection_energy_eV": 5.0,
+      "target_injection_energy_eV": 10.0,
+      "pulse_timing_method": "multipole_handoff_ballistic_centroid_v1",
+      "finite_interval_accelerator_profile": "config/accelerator_phase_space_match.json",
+      "finite_interval_source_full_width_mm": 2.2,
+      "finite_interval_phase_space_input": {
+        "authority": "solver_native_zero_mean_zero_slope",
+        "mass_to_charge_Th": 100.0,
+        "release_position_mm": 1.498375640839315,
+        "mean_initial_velocity_m_per_s": 0.0,
+        "velocity_slope_m_per_s_per_mm": 0.0
+      },
       "accelerator_stage1_length_mm": 3.0,
       "claim_status": "INCONCLUSIVE_DIAGNOSTIC_ONLY"
     },

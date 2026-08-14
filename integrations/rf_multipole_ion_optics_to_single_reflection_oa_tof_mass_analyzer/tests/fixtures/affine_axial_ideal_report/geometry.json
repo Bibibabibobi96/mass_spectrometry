@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "role": "oa_tof_resolved_contract_do_not_edit",
+  "geometry_derivation": {
+    "accelerator": {
+      "d1_mm": 3.0,
+      "d2_mm": 16.8,
+      "canonical_repeller_z_mm": -69.95653076887548,
+      "finite_interval_theory": {
+        "focus_drift_mm": 50.156530768875484,
+        "coupled_reflectron": {
+          "total_field_free_length_mm": 1200.0,
+          "stage1_voltage_drop_v": 1600.8967499896587,
+          "stage1_field_v_per_mm": 13.340806249913822,
+          "stage2_field_v_per_mm": 9.218275772964926,
+          "energy_min_v": 1900.0,
+          "energy_max_v": 2100.0
+        }
+      }
+    },
+    "reflectron": {
+      "energy_min_V": 1900.0,
+      "energy_max_V": 2100.0
+    }
+  },
+  "electrodes_V": {
+    "repeller": 2154.81955744942,
+    "grid1": 1844.8447689590694,
+    "grid2": 0.0
+  },
+  "single_flight_layout_derivation": {
+    "architecture_generation_id": "fixture_short_focus"
+  }
+}

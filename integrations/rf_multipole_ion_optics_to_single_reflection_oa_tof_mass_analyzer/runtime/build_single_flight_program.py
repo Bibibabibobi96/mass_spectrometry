@@ -27,6 +27,18 @@ def _lua_number(value: float) -> str:
     return format(float(value), ".17g")
 
 
+def enable_official_global_segments(formal: str) -> str:
+    """Enable SIMION's documented global segment dispatch for restart states."""
+    declaration = "simion.workbench_program()"
+    if formal.count(declaration) != 1:
+        raise ValueError("formal Program must declare exactly one workbench")
+    return formal.replace(
+        declaration,
+        declaration + "\nsimion.early_access(8.2)\nsim_segment_global = 1",
+        1,
+    )
+
+
 def load_birth_times(path: Path) -> list[float]:
     """Load contiguous per-particle instrument birth times in microseconds."""
     with path.open(encoding="utf-8-sig", newline="") as handle:
@@ -366,9 +378,7 @@ def build_extension(
             "  local instrument_time_us=single_flight_instrument_time_us()",
             "  single_flight_accel_state_for_current_particle()",
             "  single_flight_previous[ion_number]={t=instrument_time_us,x=ion_px_mm,y=ion_py_mm,z=ion_pz_mm,vx=ion_vx_mm,vy=ion_vy_mm,vz=ion_vz_mm}",
-            "  if trajectory_log_enable~=0 then",
-            "    print(string.format('TRACE: source_release ion=%d instrument_time_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_per_us=%.12g vy_mm_per_us=%.12g vz_mm_per_us=%.12g',ion_number,instrument_time_us,ion_px_mm,ion_py_mm,ion_pz_mm,ion_vx_mm,ion_vy_mm,ion_vz_mm))",
-            "  end",
+            "  print(string.format('TRACE: source_release ion=%d instrument_time_us=%.17g x_mm=%.17g y_mm=%.17g z_mm=%.17g vx_mm_per_us=%.17g vy_mm_per_us=%.17g vz_mm_per_us=%.17g simion_native_kinetic_energy_eV=%.17g',ion_number,instrument_time_us,ion_px_mm,ion_py_mm,ion_pz_mm,ion_vx_mm,ion_vy_mm,ion_vz_mm,ion_ke))",
             "end",
             "function segment.tstep_adjust()",
             "  single_flight_base_tstep_adjust()",
@@ -535,6 +545,7 @@ def main() -> int:
     parser.add_argument("--initial-global-state", required=True, type=Path)
     parser.add_argument("--arm8-global-field-contract", type=Path)
     parser.add_argument("--terminate-after-pulse", action="store_true")
+    parser.add_argument("--global-segments", action="store_true")
     parser.add_argument(
         "--frontend-program-profile",
         default="combined_frontend",
@@ -547,6 +558,8 @@ def main() -> int:
     formal = disable_redundant_ground_fast_adjust(bind_oatof_adjustables(
         args.formal.read_text(encoding="utf-8-sig"), oatof
     ))
+    if args.global_segments:
+        formal = enable_official_global_segments(formal)
     if args.accelerator_overlay_contract is not None:
         formal = allow_accelerator_overlay_instance(formal)
     pulse = args.pulse_extension.read_text(encoding="utf-8-sig")
@@ -613,6 +626,7 @@ def main() -> int:
         "clock_basis": "canonical_instrument_time_us",
         "frontend_program_profile": args.frontend_program_profile,
         "terminate_after_pulse": args.terminate_after_pulse,
+        "global_segments": args.global_segments,
         "output_sha256": file_sha256(args.output),
     }
     args.metadata.write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8", newline="\n")

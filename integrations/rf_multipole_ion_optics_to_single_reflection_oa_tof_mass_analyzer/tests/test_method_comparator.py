@@ -82,14 +82,14 @@ class MethodComparatorTest(unittest.TestCase):
         integration = Path(__file__).parents[1]
         campaign = integration / "config/diagnostics/short_focus_winner_field_region_attribution_n1000_campaign.json"
         registry = integration / "config/simion_single_flight.json"
-        summary = (
+        manifest = (
             integration.parents[2]
             / "artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
-            / "scratch/r03-winner-post-selection/summary.json"
+            / "runs/20260814_185300__analysis__python__r03-winner-postselection-republish__n1000/run_manifest.json"
         )
         with tempfile.TemporaryDirectory() as directory:
             receipt = verify_field_region_matrix(
-                campaign, registry, summary, Path(directory) / "receipt.json"
+                campaign, registry, manifest, Path(directory) / "receipt.json"
             )
         self.assertTrue(receipt["only_governed_stage_flags_and_run_identities_differ"])
         self.assertEqual(set(receipt["controlled_matrix"]), {"RR", "IR", "RI", "II"})

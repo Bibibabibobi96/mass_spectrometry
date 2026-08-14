@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -67,6 +68,20 @@ LEGACY_POLICY = {
     "verification_identity": "recorded_project_id",
     "claim_policy": "preserve_original_status_and_claim_limits_no_promotion",
 }
+INTEGRATION_CACHE_ROLES = {
+    "simion_single_flight_frontend": {"simion_single_flight_frontend_pa_cache"},
+    "simion_accelerator_overlay": {"simion_accelerator_overlay_pa_cache"},
+    "simion_oatof_downstream_pa": {
+        "simion_oatof_flight_tube_pa_cache",
+        "simion_oatof_reflectron_pa_cache",
+    },
+}
+INTEGRATION_CACHE_ROOT_BY_ROLE = {
+    role: root
+    for root, roles in INTEGRATION_CACHE_ROLES.items()
+    for role in roles
+}
+CACHE_SHA256 = re.compile(r"[A-Fa-f0-9]{64}")
 
 
 def verify_record(root: Path, record: dict, verify_hashes: bool) -> Path:
@@ -82,6 +97,166 @@ def verify_record(root: Path, record: dict, verify_hashes: bool) -> Path:
     if verify_hashes and file_sha256(path) != record["sha256"]:
         raise AssertionError(f"manifest SHA-256 differs: {path}")
     return path
+
+
+def verify_integration_cache_entry(
+    entry: Path,
+    *,
+    expected_role: str,
+    expected_key: str,
+    expected_project_id: str,
+    verify_hashes: bool = True,
+) -> dict:
+    """Verify one reusable integration PA cache entry and its full inventory."""
+
+    if CACHE_SHA256.fullmatch(expected_key) is None:
+        raise AssertionError("cache key is not a SHA-256 identity")
+    manifest_path = entry / "cache_manifest.json"
+    if not manifest_path.is_file():
+        raise AssertionError(f"{entry}: reusable cache manifest is missing")
+    if any(not item.is_file() for item in entry.iterdir()):
+        raise AssertionError(f"{entry}: reusable cache contains a non-file entry")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+    identity = manifest.get("identity", {})
+    key_input = manifest.get("cache_key_input")
+    solver = identity.get("solver", {}) if isinstance(identity, dict) else {}
+    critical_options = (
+        identity.get("critical_options", {}) if isinstance(identity, dict) else {}
+    )
+    if (
+        manifest.get("schema_version") != 2
+        or manifest.get("role") != expected_role
+        or manifest.get("cache_key") != expected_key
+        or identity.get("schema_version") != 2
+        or identity.get("role") != expected_role
+        or identity.get("project_id") != expected_project_id
+        or solver.get("name") != "SIMION"
+        or not isinstance(solver.get("product_version"), str)
+        or not solver.get("product_version")
+        or CACHE_SHA256.fullmatch(str(solver.get("executable_sha256", ""))) is None
+        or not isinstance(critical_options, dict)
+        or not critical_options
+        or not isinstance(key_input, str)
+    ):
+        raise AssertionError(f"{entry}: reusable cache identity differs")
+    try:
+        key_input_identity = json.loads(key_input)
+    except json.JSONDecodeError as exc:
+        raise AssertionError(f"{entry}: cache key input is invalid JSON") from exc
+    derived_key = hashlib.sha256(key_input.encode("utf-8")).hexdigest()
+    if derived_key != expected_key or key_input_identity != identity:
+        raise AssertionError(f"{entry}: cache key does not bind its identity")
+    records = manifest.get("files")
+    if not isinstance(records, list) or not records:
+        raise AssertionError(f"{entry}: reusable cache inventory is incomplete")
+    expected = {"cache_manifest.json"}
+    for record in records:
+        name = record.get("name") if isinstance(record, dict) else None
+        if not isinstance(name, str) or Path(name).name != name:
+            raise AssertionError(f"{entry}: invalid cache filename")
+        if name in expected:
+            raise AssertionError(f"{entry}: duplicate cache filename")
+        expected.add(name)
+        verify_record(entry, {**record, "path": name}, verify_hashes)
+    actual = {item.name for item in entry.iterdir() if item.is_file()}
+    if actual != expected:
+        raise AssertionError(f"{entry}: reusable cache inventory differs")
+    payload = actual - {"cache_manifest.json"}
+    required_by_role = {
+        "simion_single_flight_frontend_pa_cache": {
+            "frontend.gem", "frontend.pa#", "frontend.pa0"
+        },
+        "simion_accelerator_overlay_pa_cache": {
+            "accelerator_overlay.gem",
+            "accelerator_overlay.pa#",
+            "basis_build.json",
+            *(f"accelerator_overlay.pa{electrode}" for electrode in range(20)),
+        },
+        "simion_oatof_flight_tube_pa_cache": {
+            "flight_tube_ground.pa#", "flight_tube_ground.pa0"
+        },
+        "simion_oatof_reflectron_pa_cache": {
+            "reflectron.pa#", "reflectron.pa0", "reflectron.pa1"
+        },
+    }
+    required = required_by_role.get(expected_role)
+    if required is None or not required.issubset(payload):
+        raise AssertionError(f"{entry}: reusable cache PA family is incomplete")
+    return manifest
+
+
+def _verify_integration_content_caches(
+    project: Path, cache: Path, verify_hashes: bool
+) -> None:
+    """Verify registered integration PA entries, including visible legacy entries."""
+
+    for cache_name, required_name in (
+        ("simion_accelerator_overlay", "accelerator_overlay.pa0"),
+        ("simion_oatof_downstream_pa", None),
+        ("simion_single_flight_frontend", "frontend.pa0"),
+    ):
+        content_root = cache / cache_name
+        if not content_root.exists():
+            continue
+        for entry in content_root.iterdir():
+            if not entry.is_dir() or re.fullmatch(r"[a-f0-9]{64}", entry.name) is None:
+                raise AssertionError(f"{entry}: invalid content-addressed cache entry")
+            files = {item.name for item in entry.iterdir() if item.is_file()}
+            manifest_path = entry / "cache_manifest.json"
+            manifest = (
+                json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+                if manifest_path.is_file()
+                else None
+            )
+            if isinstance(manifest, dict) and manifest.get("schema_version") == 2:
+                role = str(manifest.get("role", ""))
+                if role not in INTEGRATION_CACHE_ROLES[cache_name]:
+                    raise AssertionError(f"{entry}: cache role is not registered")
+                verify_integration_cache_entry(
+                    entry,
+                    expected_role=role,
+                    expected_key=entry.name,
+                    expected_project_id=project.name,
+                    verify_hashes=verify_hashes,
+                )
+                continue
+            # Schema-v1/no-manifest entries predate the reusable-cache contract.
+            # They remain layout-visible until separately removed, but runtime
+            # lookup must treat them as misses.
+            if required_name is not None and required_name not in files:
+                raise AssertionError(f"{entry}: required cached PA is missing")
+            if cache_name == "simion_oatof_downstream_pa":
+                pa0_files = [name for name in files if name.endswith(".pa0")]
+                stems = {name[:-4] for name in pa0_files}
+                if len(stems) != 1:
+                    raise AssertionError(f"{entry}: downstream PA identity is ambiguous")
+                stem = next(iter(stems))
+                if not any(name.startswith(stem + ".pa") for name in files):
+                    raise AssertionError(f"{entry}: downstream PA family is incomplete")
+            elif cache_name == "simion_accelerator_overlay":
+                required = {
+                    "accelerator_overlay.gem",
+                    "basis_build.json",
+                    "cache_manifest.json",
+                    *(f"accelerator_overlay.pa{electrode}" for electrode in range(20)),
+                }
+                if not required.issubset(files):
+                    raise AssertionError(f"{entry}: accelerator overlay PA family is incomplete")
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+                basis = json.loads(
+                    (entry / "basis_build.json").read_text(encoding="utf-8-sig")
+                )
+                if (
+                    manifest.get("schema_version") != 1
+                    or manifest.get("role") != "simion_accelerator_overlay_pa_cache"
+                    or manifest.get("cache_key") != entry.name
+                    or manifest.get("basis_count") != 20
+                    or basis.get("schema_version") != 1
+                    or basis.get("role") != "simion_accelerator_overlay_basis_build"
+                    or basis.get("status") != "pass"
+                    or basis.get("basis_array_count") != 20
+                ):
+                    raise AssertionError(f"{entry}: accelerator overlay cache identity differs")
 
 
 def verify_cache(project: Path, verify_hashes: bool = False) -> None:
@@ -130,55 +305,7 @@ def verify_cache(project: Path, verify_hashes: bool = False) -> None:
         actual = {item.name for item in basis.iterdir() if item.is_file()}
         if actual != expected:
             raise AssertionError(f"{basis}: cache inventory differs")
-
-    for cache_name, required_name in (
-        ("simion_accelerator_overlay", "accelerator_overlay.pa0"),
-        ("simion_oatof_downstream_pa", None),
-        ("simion_single_flight_frontend", "frontend.pa0"),
-    ):
-        content_root = cache / cache_name
-        if not content_root.exists():
-            continue
-        for entry in content_root.iterdir():
-            if not entry.is_dir() or re.fullmatch(r"[a-f0-9]{64}", entry.name) is None:
-                raise AssertionError(f"{entry}: invalid content-addressed cache entry")
-            files = {item.name for item in entry.iterdir() if item.is_file()}
-            if required_name is not None and required_name not in files:
-                raise AssertionError(f"{entry}: required cached PA is missing")
-            if cache_name == "simion_oatof_downstream_pa":
-                pa0_files = [name for name in files if name.endswith(".pa0")]
-                stems = {name[:-4] for name in pa0_files}
-                if len(stems) != 1:
-                    raise AssertionError(f"{entry}: downstream PA identity is ambiguous")
-                stem = next(iter(stems))
-                if not any(name.startswith(stem + ".pa") for name in files):
-                    raise AssertionError(f"{entry}: downstream PA family is incomplete")
-            elif cache_name == "simion_accelerator_overlay":
-                required = {
-                    "accelerator_overlay.gem",
-                    "basis_build.json",
-                    "cache_manifest.json",
-                    *(f"accelerator_overlay.pa{electrode}" for electrode in range(20)),
-                }
-                if not required.issubset(files):
-                    raise AssertionError(f"{entry}: accelerator overlay PA family is incomplete")
-                manifest = json.loads(
-                    (entry / "cache_manifest.json").read_text(encoding="utf-8-sig")
-                )
-                basis = json.loads(
-                    (entry / "basis_build.json").read_text(encoding="utf-8-sig")
-                )
-                if (
-                    manifest.get("schema_version") != 1
-                    or manifest.get("role") != "simion_accelerator_overlay_pa_cache"
-                    or manifest.get("cache_key") != entry.name
-                    or manifest.get("basis_count") != 20
-                    or basis.get("schema_version") != 1
-                    or basis.get("role") != "simion_accelerator_overlay_basis_build"
-                    or basis.get("status") != "pass"
-                    or basis.get("basis_array_count") != 20
-                ):
-                    raise AssertionError(f"{entry}: accelerator overlay cache identity differs")
+    _verify_integration_content_caches(project, cache, verify_hashes)
 
 
 def legacy_identity(repository_root: Path, project_id: str) -> dict | None:
@@ -393,9 +520,48 @@ def main() -> None:
     parser.add_argument("--formal-only", action="store_true")
     parser.add_argument("--project")
     parser.add_argument("--repository-root", type=Path)
+    parser.add_argument("--cache-entry", type=Path)
+    parser.add_argument("--expected-cache-role")
+    parser.add_argument("--expected-cache-key")
+    parser.add_argument("--expected-cache-project")
     args = parser.parse_args()
     projects = args.root.resolve()
     verify_artifacts_root(projects)
+    if args.cache_entry is not None:
+        required = (
+            args.expected_cache_role,
+            args.expected_cache_key,
+            args.expected_cache_project,
+        )
+        if any(value is None for value in required):
+            parser.error("narrow cache verification requires role, key, and project")
+        cache_root_name = INTEGRATION_CACHE_ROOT_BY_ROLE.get(
+            args.expected_cache_role
+        )
+        if cache_root_name is None:
+            parser.error("expected cache role is not registered")
+        expected_entry = (
+            projects
+            / args.expected_cache_project
+            / "cache"
+            / cache_root_name
+            / args.expected_cache_key
+        ).resolve()
+        entry = args.cache_entry.resolve()
+        if entry != expected_entry:
+            raise AssertionError("cache entry path differs from its registered role")
+        verify_integration_cache_entry(
+            entry,
+            expected_role=args.expected_cache_role,
+            expected_key=args.expected_cache_key,
+            expected_project_id=args.expected_cache_project,
+            verify_hashes=True,
+        )
+        print(
+            "CACHE_ENTRY=PASS "
+            f"ROLE={args.expected_cache_role} KEY={args.expected_cache_key}"
+        )
+        return
     repository_root = args.repository_root.resolve() if args.repository_root else None
     project_dirs = [project for project in projects.iterdir() if project.is_dir()]
     if args.project:

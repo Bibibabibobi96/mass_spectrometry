@@ -527,11 +527,22 @@ try {
         }
         $cacheManifest = Get-Content -LiteralPath $cacheManifestPath `
           -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ([int]$cacheManifest.schema_version -ne 2) { return $false }
+        $cacheKey = [IO.Path]::GetFileName($_.DirectoryName)
+        & $python (Join-Path $repoRoot 'common\contracts\verify_artifact_layout.py') `
+          (Join-Path $workspaceRoot 'artifacts\projects') `
+          --cache-entry $_.DirectoryName `
+          --expected-cache-role 'simion_accelerator_overlay_pa_cache' `
+          --expected-cache-key $cacheKey `
+          --expected-cache-project `
+          'rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer' *> $null
+        if ($LASTEXITCODE -ne 0) { return $false }
+        $cacheInputs = $cacheManifest.identity.inputs
         (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash -eq
           $expectedOverlayPa0Hash -and
-        [string]$cacheManifest.frontend_pa0_sha256 -eq
+        [string]$cacheInputs.frontend_pa0_sha256 -eq
           [string]$frontendConfig.parameters.frontend_pa0_sha256 -and
-        [string]$cacheManifest.overlay_gem_sha256 -eq
+        [string]$cacheInputs.overlay_gem_sha256 -eq
           (Get-FileHash -LiteralPath (Join-Path $frontendRoot `
             'inputs\accelerator_overlay.gem') -Algorithm SHA256).Hash
       })

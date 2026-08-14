@@ -1,0 +1,238 @@
+{
+  "schema_version": 1,
+  "role": "rf_oatof_affine_axial_all_ideal_report_campaign",
+  "campaign_id": "canonical_affine_axial_all_ideal_report_n1000_v1",
+  "evidence_level": "PROVISIONAL",
+  "analysis_class": "solver_independent_analytic",
+  "source_profile_registry_path": "simulation_repo/integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/canonical_affine_axial_all_ideal_report_profiles.json",
+  "cases": [
+    {
+      "case_id": "short_focus_1mm_n1000",
+      "architecture_id": "ARCH-SHORT-Z10-R100",
+      "architecture_generation_id": "short_focus_1mm_theory_v1",
+      "field_profile_id": "arm8_closed_global_piecewise_theoretical_field",
+      "source_profile_id": "canonical_ideal_linear_z_vz_1mm_n1000",
+      "source_profile_definition_sha256": "A1D52FF63015C884A5354895FDF98D0D25DF38F12843429760F20F3143E1B429",
+      "allow_diagnostic_extrapolation": true,
+      "source_contract": {
+        "particle_count": 1000,
+        "full_width_mm": 1.0,
+        "mass_amu": 100.0,
+        "charge_state": 1,
+        "mass_to_charge_Th": 100.0
+      },
+      "resolved_geometry": {
+        "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260814_122000__sim__simion__rf-oatof-single-flight-gap0__n1000__r03/inputs/oatof_resolved_geometry.json",
+        "sha256": "F5213032583424D39B31F6BE266C15205A2FD5944755B15EBF956739D0C8B71F"
+      },
+      "source_materialization_receipt": {
+        "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260814_122000__sim__simion__rf-oatof-single-flight-gap0__n1000__r03/inputs/single_flight_source_materialization_receipt.json",
+        "sha256": "ED1C03248FCBF6232C592F02948793E92954516F42AE0FC38B606F78D39035C4"
+      },
+      "source_release_csv": {
+        "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260814_122000__sim__simion__rf-oatof-single-flight-gap0__n1000__r03/inputs/mother_particle_source.csv",
+        "sha256": "0E900A152C1F70D7F2D5DACFCBD8ABCF67A3F26B00A5F604C5C929F36FC8E152"
+      }
+    },
+    {
+      "case_id": "long_focus_1mm_n1000",
+      "architecture_id": "ARCH-LONG-Z22-R100",
+      "architecture_generation_id": "finite_interval_2p2mm_matched_voltage_v1",
+      "field_profile_id": "arm8_closed_global_piecewise_theoretical_field",
+      "source_profile_id": "canonical_ideal_linear_z_vz_1mm_n1000",
+      "source_profile_definition_sha256": "A1D52FF63015C884A5354895FDF98D0D25DF38F12843429760F20F3143E1B429",
+      "allow_diagnostic_extrapolation": false,
+      "source_contract": {
+        "particle_count": 1000,
+        "full_width_mm": 1.0,
+        "mass_amu": 100.0,
+        "charge_state": 1,
+        "mass_to_charge_Th": 100.0
+      },
+      "resolved_geometry": {
+        "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260814_123000__sim__simion__rf-oatof-single-flight-gap0__n1000__r03/inputs/oatof_resolved_geometry.json",
+        "sha256": "FB3E0957F648BB1F8618B1D26858D4485ABEE5AC601F7B1E748615F75948FDCD"
+      },
+      "source_materialization_receipt": {
+        "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260814_123000__sim__simion__rf-oatof-single-flight-gap0__n1000__r03/inputs/single_flight_source_materialization_receipt.json",
+        "sha256": "5859EB0E28D41210A25F32647B31D914AC63E3378D23DAE8BB4FD32475BED10E"
+      },
+      "source_release_csv": {
+        "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260814_123000__sim__simion__rf-oatof-single-flight-gap0__n1000__r03/inputs/mother_particle_source.csv",
+        "sha256": "0E900A152C1F70D7F2D5DACFCBD8ABCF67A3F26B00A5F604C5C929F36FC8E152"
+      }
+    },
+    {
+      "case_id": "short_focus_2p2mm_n1000",
+      "architecture_id": "ARCH-SHORT-Z10-R100",
+      "architecture_generation_id": "short_focus_1mm_theory_v1",
+      "field_profile_id": "arm8_closed_global_piecewise_theoretical_field",
+      "source_profile_id": "canonical_ideal_linear_z_vz_2p2mm_n1000",
+      "source_profile_definition_sha256": "05E72A56E200DAB7DEB9267413730A75D6077FD9DF56B83AA85EF7878D818573",
+      "allow_diagnostic_extrapolation": true,
+      "source_contract": {
+        "particle_count": 1000,
+        "full_width_mm": 2.2,
+        "mass_amu": 100.0,
+        "charge_state": 1,
+        "mass_to_charge_Th": 100.0
+      },
+      "resolved_geometry": {
+        "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260814_134000__sim__simion__rf-oatof-single-flight-gap0__n1000__r03/inputs/oatof_resolved_geometry.json",
+        "sha256": "F5213032583424D39B31F6BE266C15205A2FD5944755B15EBF956739D0C8B71F"
+      },
+      "source_materialization_receipt": {
+        "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260814_134000__sim__simion__rf-oatof-single-flight-gap0__n1000__r03/inputs/single_flight_source_materialization_receipt.json",
+        "sha256": "3D2A31AC329EA6CFD300D15344E8C4568367EA3E1BC8E20B17816240CD5D44F6"
+      },
+      "source_release_csv": {
+        "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260814_134000__sim__simion__rf-oatof-single-flight-gap0__n1000__r03/inputs/mother_particle_source.csv",
+        "sha256": "DE5A76C159F0045FA4F0BAC45D94D493B453A64B652FD225926315EAB00B59D7"
+      }
+    },
+    {
+      "case_id": "long_focus_2p2mm_n1000",
+      "architecture_id": "ARCH-LONG-Z22-R100",
+      "architecture_generation_id": "finite_interval_2p2mm_matched_voltage_v1",
+      "field_profile_id": "arm8_closed_global_piecewise_theoretical_field",
+      "source_profile_id": "canonical_ideal_linear_z_vz_2p2mm_n1000",
+      "source_profile_definition_sha256": "05E72A56E200DAB7DEB9267413730A75D6077FD9DF56B83AA85EF7878D818573",
+      "allow_diagnostic_extrapolation": true,
+      "source_contract": {
+        "particle_count": 1000,
+        "full_width_mm": 2.2,
+        "mass_amu": 100.0,
+        "charge_state": 1,
+        "mass_to_charge_Th": 100.0
+      },
+      "resolved_geometry": {
+        "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260814_135000__sim__simion__rf-oatof-single-flight-gap0__n1000__r03/inputs/oatof_resolved_geometry.json",
+        "sha256": "FB3E0957F648BB1F8618B1D26858D4485ABEE5AC601F7B1E748615F75948FDCD"
+      },
+      "source_materialization_receipt": {
+        "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260814_135000__sim__simion__rf-oatof-single-flight-gap0__n1000__r03/inputs/single_flight_source_materialization_receipt.json",
+        "sha256": "44C9F431003498C0E969029354331256EEEF16F89243C286CD77CA07465A29B1"
+      },
+      "source_release_csv": {
+        "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260814_135000__sim__simion__rf-oatof-single-flight-gap0__n1000__r03/inputs/mother_particle_source.csv",
+        "sha256": "DE5A76C159F0045FA4F0BAC45D94D493B453A64B652FD225926315EAB00B59D7"
+      }
+    },
+    {
+      "case_id": "short_focus_1mm_zero_vz_n1000",
+      "architecture_id": "ARCH-SHORT-Z10-R100",
+      "architecture_generation_id": "short_focus_1mm_theory_v1",
+      "field_profile_id": "arm8_closed_global_piecewise_theoretical_field",
+      "source_profile_id": "diagnostic_zero_vz_linear_z_1mm_n1000",
+      "source_profile_definition_sha256": "6C767F5ACFDD169B161548C1EBE1B6BF7AE93D87F8CBF4661D66553C486E672C",
+      "target_materialization_profile_id": "canonical_ideal_linear_z_vz_1mm_n1000",
+      "allow_diagnostic_extrapolation": false,
+      "source_contract": {
+        "particle_count": 1000,
+        "full_width_mm": 1.0,
+        "mass_amu": 100.0,
+        "charge_state": 1,
+        "mass_to_charge_Th": 100.0
+      },
+      "resolved_geometry": {
+        "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260814_122000__sim__simion__rf-oatof-single-flight-gap0__n1000__r03/inputs/oatof_resolved_geometry.json",
+        "sha256": "F5213032583424D39B31F6BE266C15205A2FD5944755B15EBF956739D0C8B71F"
+      },
+      "source_materialization_receipt": {
+        "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260814_122000__sim__simion__rf-oatof-single-flight-gap0__n1000__r03/inputs/single_flight_source_materialization_receipt.json",
+        "sha256": "ED1C03248FCBF6232C592F02948793E92954516F42AE0FC38B606F78D39035C4"
+      },
+      "source_release_csv": {
+        "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260814_122000__sim__simion__rf-oatof-single-flight-gap0__n1000__r03/inputs/mother_particle_source.csv",
+        "sha256": "0E900A152C1F70D7F2D5DACFCBD8ABCF67A3F26B00A5F604C5C929F36FC8E152"
+      }
+    },
+    {
+      "case_id": "long_focus_1mm_zero_vz_n1000",
+      "architecture_id": "ARCH-LONG-Z22-R100",
+      "architecture_generation_id": "finite_interval_2p2mm_matched_voltage_v1",
+      "field_profile_id": "arm8_closed_global_piecewise_theoretical_field",
+      "source_profile_id": "diagnostic_zero_vz_linear_z_1mm_n1000",
+      "source_profile_definition_sha256": "6C767F5ACFDD169B161548C1EBE1B6BF7AE93D87F8CBF4661D66553C486E672C",
+      "target_materialization_profile_id": "canonical_ideal_linear_z_vz_1mm_n1000",
+      "allow_diagnostic_extrapolation": false,
+      "source_contract": {
+        "particle_count": 1000,
+        "full_width_mm": 1.0,
+        "mass_amu": 100.0,
+        "charge_state": 1,
+        "mass_to_charge_Th": 100.0
+      },
+      "resolved_geometry": {
+        "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260814_123000__sim__simion__rf-oatof-single-flight-gap0__n1000__r03/inputs/oatof_resolved_geometry.json",
+        "sha256": "FB3E0957F648BB1F8618B1D26858D4485ABEE5AC601F7B1E748615F75948FDCD"
+      },
+      "source_materialization_receipt": {
+        "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260814_123000__sim__simion__rf-oatof-single-flight-gap0__n1000__r03/inputs/single_flight_source_materialization_receipt.json",
+        "sha256": "5859EB0E28D41210A25F32647B31D914AC63E3378D23DAE8BB4FD32475BED10E"
+      },
+      "source_release_csv": {
+        "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260814_123000__sim__simion__rf-oatof-single-flight-gap0__n1000__r03/inputs/mother_particle_source.csv",
+        "sha256": "0E900A152C1F70D7F2D5DACFCBD8ABCF67A3F26B00A5F604C5C929F36FC8E152"
+      }
+    },
+    {
+      "case_id": "short_focus_2p2mm_zero_vz_n1000",
+      "architecture_id": "ARCH-SHORT-Z10-R100",
+      "architecture_generation_id": "short_focus_1mm_theory_v1",
+      "field_profile_id": "arm8_closed_global_piecewise_theoretical_field",
+      "source_profile_id": "diagnostic_zero_vz_linear_z_2p2mm_n1000",
+      "source_profile_definition_sha256": "ACA1584DFE71ECEB259437387190A9768C25BA1019F5BC4A41776125FDBC2B4D",
+      "target_materialization_profile_id": "canonical_ideal_linear_z_vz_2p2mm_n1000",
+      "allow_diagnostic_extrapolation": true,
+      "source_contract": {
+        "particle_count": 1000,
+        "full_width_mm": 2.2,
+        "mass_amu": 100.0,
+        "charge_state": 1,
+        "mass_to_charge_Th": 100.0
+      },
+      "resolved_geometry": {
+        "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260814_134000__sim__simion__rf-oatof-single-flight-gap0__n1000__r03/inputs/oatof_resolved_geometry.json",
+        "sha256": "F5213032583424D39B31F6BE266C15205A2FD5944755B15EBF956739D0C8B71F"
+      },
+      "source_materialization_receipt": {
+        "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260814_134000__sim__simion__rf-oatof-single-flight-gap0__n1000__r03/inputs/single_flight_source_materialization_receipt.json",
+        "sha256": "3D2A31AC329EA6CFD300D15344E8C4568367EA3E1BC8E20B17816240CD5D44F6"
+      },
+      "source_release_csv": {
+        "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260814_134000__sim__simion__rf-oatof-single-flight-gap0__n1000__r03/inputs/mother_particle_source.csv",
+        "sha256": "DE5A76C159F0045FA4F0BAC45D94D493B453A64B652FD225926315EAB00B59D7"
+      }
+    },
+    {
+      "case_id": "long_focus_2p2mm_zero_vz_n1000",
+      "architecture_id": "ARCH-LONG-Z22-R100",
+      "architecture_generation_id": "finite_interval_2p2mm_matched_voltage_v1",
+      "field_profile_id": "arm8_closed_global_piecewise_theoretical_field",
+      "source_profile_id": "diagnostic_zero_vz_linear_z_2p2mm_n1000",
+      "source_profile_definition_sha256": "ACA1584DFE71ECEB259437387190A9768C25BA1019F5BC4A41776125FDBC2B4D",
+      "target_materialization_profile_id": "canonical_ideal_linear_z_vz_2p2mm_n1000",
+      "allow_diagnostic_extrapolation": true,
+      "source_contract": {
+        "particle_count": 1000,
+        "full_width_mm": 2.2,
+        "mass_amu": 100.0,
+        "charge_state": 1,
+        "mass_to_charge_Th": 100.0
+      },
+      "resolved_geometry": {
+        "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260814_135000__sim__simion__rf-oatof-single-flight-gap0__n1000__r03/inputs/oatof_resolved_geometry.json",
+        "sha256": "FB3E0957F648BB1F8618B1D26858D4485ABEE5AC601F7B1E748615F75948FDCD"
+      },
+      "source_materialization_receipt": {
+        "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260814_135000__sim__simion__rf-oatof-single-flight-gap0__n1000__r03/inputs/single_flight_source_materialization_receipt.json",
+        "sha256": "44C9F431003498C0E969029354331256EEEF16F89243C286CD77CA07465A29B1"
+      },
+      "source_release_csv": {
+        "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260814_135000__sim__simion__rf-oatof-single-flight-gap0__n1000__r03/inputs/mother_particle_source.csv",
+        "sha256": "DE5A76C159F0045FA4F0BAC45D94D493B453A64B652FD225926315EAB00B59D7"
+      }
+    }
+  ]
+}

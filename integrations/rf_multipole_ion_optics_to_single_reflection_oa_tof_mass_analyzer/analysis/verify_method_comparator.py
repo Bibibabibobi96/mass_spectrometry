@@ -53,7 +53,7 @@ def verify(campaign_path: Path, output: Path) -> dict[str, object]:
 def verify_field_region_matrix(
     campaign_path: Path,
     profile_registry_path: Path,
-    real_summary_path: Path,
+    real_run_manifest_path: Path,
     output: Path,
 ) -> dict[str, object]:
     """Verify the RR/IR/RI/II controlled matrix and extra global oracle."""
@@ -104,6 +104,30 @@ def verify_field_region_matrix(
     if profiles[oracle_profile_id]["single_flight_ideal_accel_enable"] != 1:
         raise ValueError("global piecewise oracle flag is disabled")
 
+    real_manifest = json.loads(real_run_manifest_path.read_text(encoding="utf-8-sig"))
+    if (
+        real_manifest.get("role") != "simulation_run_manifest"
+        or real_manifest.get("status") != "success"
+        or real_manifest.get("mode")
+        != "manifest_bound_r03_winner_postselection_republication"
+        or real_manifest.get("run_id") != real_run_manifest_path.parent.name
+    ):
+        raise ValueError("RR reuse manifest is not the successful formal successor")
+    summary_records = [
+        record
+        for record in real_manifest.get("outputs", [])
+        if Path(str(record.get("path", ""))).name == "summary.json"
+        and Path(str(record.get("path", ""))).parent.name == "winner_postselection"
+    ]
+    if len(summary_records) != 1:
+        raise ValueError("RR formal successor does not bind one scientific summary")
+    real_summary_path = Path(str(summary_records[0]["path"]))
+    if (
+        not real_summary_path.is_file()
+        or real_summary_path.stat().st_size != int(summary_records[0]["bytes"])
+        or file_sha256(real_summary_path) != summary_records[0]["sha256"]
+    ):
+        raise ValueError("RR formal successor scientific summary identity differs")
     real_summary = json.loads(real_summary_path.read_text(encoding="utf-8-sig"))
     provenance = real_summary.get("reanalysis_provenance", {})
     if provenance.get("role") != "manifest_bound_single_flight_spatial_reanalysis":
@@ -114,6 +138,7 @@ def verify_field_region_matrix(
         "role": "rf_oatof_short_focus_field_region_2x2_identity_receipt",
         "campaign_sha256": file_sha256(campaign_path),
         "profile_registry_sha256": file_sha256(profile_registry_path),
+        "real_successor_manifest_sha256": file_sha256(real_run_manifest_path),
         "real_reanalysis_summary_sha256": file_sha256(real_summary_path),
         "real_baseline_provenance": provenance,
         "controlled_matrix": matrix,
@@ -135,13 +160,13 @@ def main() -> None:
     parser.add_argument("--campaign", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--profile-registry", type=Path)
-    parser.add_argument("--real-summary", type=Path)
+    parser.add_argument("--real-manifest", type=Path)
     args = parser.parse_args()
-    if args.profile_registry or args.real_summary:
-        if not args.profile_registry or not args.real_summary:
-            parser.error("field-region verification requires both registry and summary")
+    if args.profile_registry or args.real_manifest:
+        if not args.profile_registry or not args.real_manifest:
+            parser.error("field-region verification requires both registry and formal successor manifest")
         verify_field_region_matrix(
-            args.campaign, args.profile_registry, args.real_summary, args.output
+            args.campaign, args.profile_registry, args.real_manifest, args.output
         )
     else:
         verify(args.campaign, args.output)

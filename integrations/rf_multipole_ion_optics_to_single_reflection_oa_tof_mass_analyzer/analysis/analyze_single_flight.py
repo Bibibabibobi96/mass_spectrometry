@@ -7,6 +7,7 @@ from collections.abc import Sequence
 import csv
 import hashlib
 import json
+import math
 import re
 from pathlib import Path
 
@@ -242,6 +243,11 @@ def analyze(
     initial_global_state_sha256: str | None = None,
     source_run_manifest_path: Path | None = None,
     post_selection_detector_metrics: bool = False,
+    restart_position_tolerance_mm: float | None = None,
+    restart_velocity_tolerance_m_per_s: float | None = None,
+    restart_clock_tolerance_us: float | None = None,
+    restart_energy_tolerance_eV: float | None = None,
+    restart_validation_contract_sha256: str | None = None,
 ) -> tuple[list[dict[str, object]], dict[str, object]]:
     if clock_basis != "canonical_instrument_time_us":
         raise ValueError("new single-flight analysis requires canonical instrument time")
@@ -383,6 +389,7 @@ def analyze(
         if match:
             pulse_times.append(float(match["t"]))
     pre_pulse_state_provenance = None
+    restart_source_release_validation = None
     if initial_global_state_path is not None:
         if source_release_mode == "pre_pulse_restart":
             if initial_global_state_sha256 is None:
@@ -404,6 +411,86 @@ def analyze(
             for row in rows
             if row["event"] == "source_release"
         }
+        if source_release_mode == "pre_pulse_restart":
+            restart_validation_enabled = restart_validation_contract_sha256 is not None
+            if (
+                restart_validation_enabled
+                and (
+                restart_position_tolerance_mm is None
+                or restart_velocity_tolerance_m_per_s is None
+                or restart_clock_tolerance_us is None
+                or restart_energy_tolerance_eV is None
+                or not math.isfinite(restart_position_tolerance_mm)
+                or not math.isfinite(restart_velocity_tolerance_m_per_s)
+                or not math.isfinite(restart_clock_tolerance_us)
+                or not math.isfinite(restart_energy_tolerance_eV)
+                or restart_position_tolerance_mm <= 0
+                or restart_velocity_tolerance_m_per_s <= 0
+                or restart_clock_tolerance_us <= 0
+                or restart_energy_tolerance_eV <= 0
+                )
+            ):
+                raise ValueError("pre-pulse restart requires positive frozen source-release tolerances")
+            if restart_validation_enabled and traced_release_ids != set(range(1, launched + 1)):
+                raise ValueError("pre-pulse restart requires actual source_release checkpoints for every particle")
+            traced_by_id = {
+                int(row["particle_id"]): row
+                for row in rows if row["event"] == "source_release"
+            }
+            maximum_position_error = 0.0
+            maximum_velocity_error = 0.0
+            maximum_clock_error = 0.0
+            maximum_energy_error = 0.0
+            for initial in (initial_rows if restart_validation_enabled else []):
+                particle_id = int(initial["particle_id"])
+                actual = traced_by_id[particle_id]
+                position_error = max(
+                    abs(float(actual[f"{axis}_mm"]) - float(initial[f"position_{axis}_mm"]))
+                    for axis in "xyz"
+                )
+                velocity_error = max(
+                    abs(1000.0 * float(actual[f"v{axis}_mm_per_us"]) - float(initial[f"velocity_{axis}_m_s"]))
+                    for axis in "xyz"
+                )
+                clock_error = abs(
+                    float(actual["instrument_time_us"])
+                    - float(initial["instrument_time_us"])
+                )
+                energy_error = abs(
+                    kinetic_energy_ev(
+                        float(initial["mass_amu"]),
+                        *(1000.0 * float(actual[f"v{axis}_mm_per_us"]) for axis in "xyz"),
+                    ) - float(initial["kinetic_energy_eV"])
+                )
+                maximum_position_error = max(maximum_position_error, position_error)
+                maximum_velocity_error = max(maximum_velocity_error, velocity_error)
+                maximum_clock_error = max(maximum_clock_error, clock_error)
+                maximum_energy_error = max(maximum_energy_error, energy_error)
+            if (
+                restart_validation_enabled
+                and (
+                maximum_position_error > restart_position_tolerance_mm
+                or maximum_velocity_error > restart_velocity_tolerance_m_per_s
+                or maximum_clock_error > restart_clock_tolerance_us
+                or maximum_energy_error > restart_energy_tolerance_eV
+                )
+            ):
+                raise ValueError("actual source_release checkpoint differs from the frozen pre-pulse state")
+            restart_source_release_validation = ({
+                "status": "PASS",
+                "checkpoint": "source_release",
+                "particle_count": launched,
+                "validation_contract_sha256": restart_validation_contract_sha256,
+                "ordered_particle_ids_exact": True,
+                "position_rowwise_abs_tolerance_mm": restart_position_tolerance_mm,
+                "velocity_rowwise_abs_tolerance_m_per_s": restart_velocity_tolerance_m_per_s,
+                "clock_abs_tolerance_us": restart_clock_tolerance_us,
+                "energy_abs_tolerance_eV": restart_energy_tolerance_eV,
+                "maximum_position_rowwise_abs_error_mm": maximum_position_error,
+                "maximum_velocity_rowwise_abs_error_m_per_s": maximum_velocity_error,
+                "maximum_clock_abs_error_us": maximum_clock_error,
+                "maximum_energy_abs_error_eV": maximum_energy_error,
+            } if restart_validation_enabled else None)
         for initial in initial_rows:
             particle_id = int(initial["particle_id"])
             if particle_id in traced_release_ids:
@@ -856,6 +943,7 @@ def analyze(
         "detector_time_basis": "canonical_instrument_time_us",
         "detector_pulse_effective_time_basis": "pulse_effective_elapsed_us",
         "pre_pulse_state_provenance": pre_pulse_state_provenance,
+        "pre_pulse_restart_source_release_validation": restart_source_release_validation,
         "instrument_clock_peak": instrument_clock_peak,
         "instrument_clock_peak_is_resolution_claim": False,
         "injection_energy_validation": injection_energy_validation,
@@ -883,6 +971,11 @@ def main() -> int:
         choices=("continuous_frontend", "pre_pulse_restart"),
     )
     parser.add_argument("--initial-global-state-sha256")
+    parser.add_argument("--restart-position-tolerance-mm", type=float)
+    parser.add_argument("--restart-velocity-tolerance-m-per-s", type=float)
+    parser.add_argument("--restart-clock-tolerance-us", type=float)
+    parser.add_argument("--restart-energy-tolerance-eV", type=float)
+    parser.add_argument("--restart-validation-contract-sha256")
     parser.add_argument("--source-run-manifest", type=Path)
     parser.add_argument("--post-selection-detector-metrics", action="store_true")
     parser.add_argument("--configuration", type=Path)
@@ -931,6 +1024,11 @@ def main() -> int:
         args.initial_global_state_sha256,
         args.source_run_manifest,
         args.post_selection_detector_metrics,
+        args.restart_position_tolerance_mm,
+        args.restart_velocity_tolerance_m_per_s,
+        args.restart_clock_tolerance_us,
+        args.restart_energy_tolerance_eV,
+        args.restart_validation_contract_sha256,
     )
     args.checkpoints.parent.mkdir(parents=True, exist_ok=True)
     with args.checkpoints.open("w", encoding="utf-8", newline="") as handle:

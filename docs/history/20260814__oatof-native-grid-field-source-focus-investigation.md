@@ -101,6 +101,21 @@ native parent只获得`FUNCTIONAL_SCREEN_ONLY`，paired analysis未运行。
 仍属另一设计代。pulse hard-mask baseline/Arm8真实束`R=5015.88/3993.51`属于另一前端筛选链；预留
 `20260813_150000`旧all-ideal run从未产生结果且已deprecated。
 
+## 官方FLY2直接速度的表示界限与冻结门限
+
+`pre_pulse_restart`不再使用ION的KE/azimuth/elevation间接表示，而只使用SIMION官方individual-particle
+FLY2：`coordinates=0`、`tob=0`、质量/电荷/cwf/color、位置和`velocity=vector(...)`；连续前端ION路径
+保持不变。N=1 smoke r01证明`sim_segment_global=1`使PA实例外的`segment.initialize`真实执行；r02进一步
+证明FLY2直接速度在SIMION装载时仍发生内部speed-KE-speed数值往返。r02冻结目标速度为
+`(4392.8416580436106, 0, -2.9323518410018137) m/s`，actual `source_release`为
+`(4392.8416576899174, 0, -2.9323518407657133) m/s`：最大分量误差`3.53693e-7 m/s`，由实际速度经公共
+particle-physics派生的能量误差`1.61032e-9 eV`；位置与canonical clock误差为0。SIMION原生`ion_ke`
+仅记作diagnostic，不是能量第二权威；未采用数值预补偿。
+
+因此正式合同在查看N=1000结果前冻结为：位置`1e-9 mm`、速度分量`1e-6 m/s`、canonical clock
+`1e-9 us`、实际速度派生物理能量`5e-9 eV`，ordered IDs/N/SHA exact且禁止postselection。该调整只覆盖
+官方FLY2表示界限，不改变源目标、加速/反射场、时钟、总体或分辨率门。
+
 ## 结论范围、资格与后续
 
 - 原生一行栅网证明官方表面语义下的功能链闭合，但没有证明真实丝网、PA空间收敛或整机性能。

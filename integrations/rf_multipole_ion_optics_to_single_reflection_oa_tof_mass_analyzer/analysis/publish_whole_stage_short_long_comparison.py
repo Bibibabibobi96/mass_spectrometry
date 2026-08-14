@@ -13,8 +13,12 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.analyze_single_flight import _peak_summary
-from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.run_publication import publish_manifest
+from common.contracts.machine_contracts import ContractError
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.run_publication import (
+    load_json,
+    publish_manifest,
+    record_for_path,
+)
 
 PROJECT = "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
 MODE = "whole_stage_short_long_postselection_comparison"
@@ -36,12 +40,29 @@ def _id_sha(ids: list[int]) -> str:
     return hashlib.sha256(("\n".join(map(str, ids)) + "\n").encode()).hexdigest().upper()
 
 
+def _validate_parent_manifest(
+    manifest_path: Path, *, checkpoints: Path, report: Path, label: str
+) -> dict[str, object]:
+    manifest = load_json(manifest_path, f"{label} parent manifest")
+    if manifest.get("role") != "simulation_run_manifest" or manifest.get("status") != "success":
+        raise ContractError(f"{label} parent manifest is not a successful simulation run manifest")
+    if manifest.get("run_id") != manifest_path.parent.name:
+        raise ContractError(f"{label} parent manifest run_id does not match its run directory")
+    records = list((manifest.get("inputs") or {}).values()) + list(manifest.get("outputs") or [])
+    record_for_path(records, checkpoints, f"{label} checkpoints")
+    record_for_path(records, report, f"{label} report")
+    return manifest
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--long-checkpoints", required=True, type=Path); p.add_argument("--short-checkpoints", required=True, type=Path)
     p.add_argument("--long-report", required=True, type=Path); p.add_argument("--short-report", required=True, type=Path)
+    p.add_argument("--long-manifest", required=True, type=Path); p.add_argument("--short-manifest", required=True, type=Path)
     p.add_argument("--run-dir", required=True, type=Path); p.add_argument("--run-id", required=True); p.add_argument("--repo-root", required=True, type=Path)
     a = p.parse_args(); out = a.run_dir / "results"; out.mkdir(parents=True, exist_ok=True)
+    long_manifest = _validate_parent_manifest(a.long_manifest, checkpoints=a.long_checkpoints, report=a.long_report, label="long")
+    short_manifest = _validate_parent_manifest(a.short_manifest, checkpoints=a.short_checkpoints, report=a.short_report, label="short")
     long_ids, long_detector, long_all = _cohorts(a.long_checkpoints); short_ids, short_detector, short_all = _cohorts(a.short_checkpoints)
     same_ids = long_ids == short_ids
     if len(long_ids) != 695 or len(short_ids) != 695 or not same_ids:
@@ -58,9 +79,12 @@ def main() -> int:
         w=csv.writer(h,lineterminator="\n"); w.writerow(("particle_id","long_tof_us","short_tof_us","short_minus_long_ns")); w.writerows((i,long_detector[i],short_detector[i],1000*(short_detector[i]-long_detector[i])) for i in paired_ids)
     with plt.rc_context({"font.size":8}):
         fig,ax=plt.subplots(figsize=(160/25.4,90/25.4),layout="constrained"); ax.hist(delta_ns,bins=50,color="#D55E00",alpha=.8); ax.set(xlabel="Short − long pulse-effective TOF (ns)",ylabel="Particles",title="Paired whole-stage eligible cohort (N=695)"); fig.savefig(png_path,dpi=300,facecolor="white"); plt.close(fig)
-    config={"schema_version":2,"run_id":a.run_id,"project":PROJECT,"mode":MODE,"project_root":str(a.repo_root.resolve()),"inputs":{"long_checkpoints":str(a.long_checkpoints.resolve()),"short_checkpoints":str(a.short_checkpoints.resolve()),"long_report":str(a.long_report.resolve()),"short_report":str(a.short_report.resolve())},"parameters":{"eligible_count":695,"paired_by_particle_id":True},"artifact_retention":{"policy_version":1,"class":"compact","reason":None}}
+    summary_path = a.run_dir / "summary.json"
+    summary = {"schema_version":1,"role":"whole_stage_short_long_postselection_comparison_summary","status":"success","run_id":a.run_id,"source_run_ids":{"long":long_manifest["run_id"],"short":short_manifest["run_id"]},"eligible_count":len(paired_ids),"result_paths":{"report":str(report_path.resolve()),"table":str(csv_path.resolve()),"figure":str(png_path.resolve())},"paired_detector_tof":report["paired_detector_tof"],"formal_eligible":False,"claim_limit":report["claim_limit"]}
+    summary_path.write_text(json.dumps(summary,indent=2)+"\n",encoding="utf-8")
+    config={"schema_version":2,"run_id":a.run_id,"project":PROJECT,"mode":MODE,"project_root":str(a.repo_root.resolve()),"inputs":{"long_manifest":str(a.long_manifest.resolve()),"short_manifest":str(a.short_manifest.resolve()),"long_checkpoints":str(a.long_checkpoints.resolve()),"short_checkpoints":str(a.short_checkpoints.resolve()),"long_report":str(a.long_report.resolve()),"short_report":str(a.short_report.resolve())},"parameters":{"eligible_count":695,"paired_by_particle_id":True},"artifact_retention":{"policy_version":1,"class":"compact","reason":None}}
     config_path=a.run_dir/"run_config.json"; config_path.write_text(json.dumps(config,indent=2)+"\n",encoding="utf-8")
-    publish_manifest(repo_root=a.repo_root,run_config=config_path,manifest_path=a.run_dir/"run_manifest.json",status="success",outputs=[report_path,csv_path,png_path],project=PROJECT,mode=MODE,label="whole-stage short-long comparison")
+    publish_manifest(repo_root=a.repo_root,run_config=config_path,manifest_path=a.run_dir/"run_manifest.json",status="success",outputs=[summary_path,report_path,csv_path,png_path],project=PROJECT,mode=MODE,label="whole-stage short-long comparison")
     print(f"WHOLE_STAGE_SHORT_LONG_COMPARISON=PASS REPORT={report_path}"); return 0
 
 if __name__ == "__main__": raise SystemExit(main())

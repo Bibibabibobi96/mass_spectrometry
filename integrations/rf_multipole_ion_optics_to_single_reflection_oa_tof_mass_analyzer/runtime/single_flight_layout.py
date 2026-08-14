@@ -125,7 +125,29 @@ def compile_geometry_and_port(
             )
         match_profile = _load((Path(__file__).resolve().parents[1] / finite_profile_path).resolve())
         finite = match_profile["finite_interval_design"]
-        frozen = match_profile["frozen_phase_space_input"]
+        frozen = profile.get(
+            "finite_interval_phase_space_input",
+            match_profile["frozen_phase_space_input"],
+        )
+        if "finite_interval_phase_space_input" in profile:
+            required_phase_space_keys = {
+                "authority",
+                "mass_to_charge_Th",
+                "release_position_mm",
+                "mean_initial_velocity_m_per_s",
+                "velocity_slope_m_per_s_per_mm",
+            }
+            if (
+                set(frozen) != required_phase_space_keys
+                or frozen["authority"] != "solver_native_zero_mean_zero_slope"
+                or float(frozen["mean_initial_velocity_m_per_s"]) != 0.0
+                or float(frozen["velocity_slope_m_per_s_per_mm"]) != 0.0
+                or float(frozen["mass_to_charge_Th"]) <= 0.0
+                or not math.isfinite(float(frozen["release_position_mm"]))
+            ):
+                raise ContractError(
+                    "finite-interval phase-space override is not the governed zero-zero input"
+                )
         accelerator = geometry["geometry_derivation"]["accelerator"]
         stage1_length_mm = float(
             profile.get("accelerator_stage1_length_mm", accelerator["d1_mm"])
@@ -214,6 +236,14 @@ def compile_geometry_and_port(
             coupled.stage1_voltage_drop_v
             + coupled.stage2_field_v_per_mm * float(geometry["geometry_mm"]["L_stage2"])
         )
+        reflectron = geometry["geometry_derivation"]["reflectron"]
+        reflectron.update({
+            "nominal_energy_per_charge_V": solution.nominal_energy_per_charge_v,
+            "source_release_full_width_mm": solution.source_full_width_mm,
+            "spatial_energy_half_range_V": half_energy_range,
+            "energy_min_V": solution.nominal_energy_per_charge_v - half_energy_range,
+            "energy_max_V": solution.nominal_energy_per_charge_v + half_energy_range,
+        })
         accelerator.update({
             "rule": (
                 f"Set d1={stage1_length_mm:g} mm and solve the finite source interval "
@@ -228,6 +258,7 @@ def compile_geometry_and_port(
             "finite_interval_theory": {
                 **solution.__dict__,
                 "profile_path": finite_profile_path,
+                "solver_phase_space_input": copy.deepcopy(frozen),
                 "linear_phase_space_coefficients": coefficients.__dict__,
                 "coupled_reflectron": coupled.__dict__,
             },
@@ -250,6 +281,12 @@ def compile_geometry_and_port(
                 "reflectron_pa": bool(
                     design_derivation["simion_rebuild_plan"]["reflectron_pa"]
                 ),
+            },
+            "reflectron_voltage_application": {
+                "pa0_basis_reused": True,
+                "method": "official_simion_runtime_fast_adjust_v1",
+                "voltage_authority": "electrodes_V",
+                "runtime_call": "r:fast_adjust(reflectron_voltages)",
             },
         }
     geometry["coordinate_convention"]["accelerator_axis_x"] = axis_x

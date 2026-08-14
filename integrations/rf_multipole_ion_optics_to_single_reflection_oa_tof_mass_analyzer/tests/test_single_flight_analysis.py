@@ -220,6 +220,41 @@ class SingleFlightAnalysisTests(unittest.TestCase):
                     source_release_mode="pre_pulse_restart",
                 )
 
+    def test_prepulse_restart_validates_actual_source_release_against_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            log = root / "log.txt"
+            initial = root / "initial.csv"
+            log.write_text(
+                "TRACE: source_release ion=1 instrument_time_us=45.5 "
+                "x_mm=-69 y_mm=0 z_mm=-66 vx_mm_per_us=4.392842636759329 "
+                "vy_mm_per_us=0 vz_mm_per_us=0\n",
+                encoding="utf-8",
+            )
+            initial.write_text(
+                "particle_id,instrument_time_us,mass_amu,charge_state,"
+                "position_x_mm,position_y_mm,position_z_mm,velocity_x_m_s,"
+                "velocity_y_m_s,velocity_z_m_s,kinetic_energy_eV\n"
+                "1,45.5,100,1,-69,0,-66,4392.842636759329,0,0,10\n",
+                encoding="utf-8",
+            )
+            digest = hashlib.sha256(initial.read_bytes()).hexdigest()
+            _, summary = analyze(
+                log, 1, 100.0, pulse_time_us=45.5,
+                initial_global_state_path=initial,
+                source_release_mode="pre_pulse_restart",
+                initial_global_state_sha256=digest,
+                restart_position_tolerance_mm=1e-9,
+                restart_velocity_tolerance_m_per_s=1e-9,
+                restart_clock_tolerance_us=1e-9,
+                restart_energy_tolerance_eV=5e-9,
+                restart_validation_contract_sha256="A" * 64,
+            )
+        validation = summary["pre_pulse_restart_source_release_validation"]
+        self.assertEqual(validation["status"], "PASS")
+        self.assertEqual(validation["validation_contract_sha256"], "A" * 64)
+        self.assertLessEqual(validation["maximum_velocity_rowwise_abs_error_m_per_s"], 1e-9)
+
     def test_classifies_physical_pulse_capture_without_rejecting_losses(self) -> None:
         text = "\n".join([
             "TRACE: source_release ion=1 instrument_time_us=0 x_mm=-69 y_mm=0 z_mm=-18.4 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",

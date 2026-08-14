@@ -158,8 +158,9 @@ def analyze(args: argparse.Namespace) -> dict:
     json_path = args.output / "trajectory_quality_paired_check.json"
     json_path.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     outputs = [json_path, args.output / "checkpoint_paired_statistics.csv", args.output / "checkpoint_arm_statistics.csv", args.output / "trajectory_quality_paired_check.png"]
-    manifest = {"schema_version": 1, "role": "derived_analysis_manifest", "status": "success", "outputs": [{"path": str(p), "sha256": file_sha256(p), "bytes": p.stat().st_size} for p in outputs]}
-    (args.output / "derived_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    if not getattr(args, "no_derived_manifest", False):
+        manifest = {"schema_version": 1, "role": "derived_analysis_manifest", "status": "success", "outputs": [{"path": str(p), "sha256": file_sha256(p), "bytes": p.stat().st_size} for p in outputs]}
+        (args.output / "derived_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     return result
 
 
@@ -167,6 +168,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     for name in ("q8-checkpoints", "q108-checkpoints", "q8-manifest", "q8-reanalysis-summary", "q108-manifest", "sample-receipt", "q108-configuration", "q108-program-build", "q108-stdout", "q108-geometry", "output"):
         parser.add_argument("--" + name, type=Path, required=True)
+    parser.add_argument("--no-derived-manifest", action="store_true")
     result = analyze(parser.parse_args())
     print(f"TQUAL_PAIRED_ANALYSIS=PASS PRIMARY={result['focus_decision']['paired_trajectory_quality_pass']}")
 

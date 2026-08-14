@@ -10,6 +10,7 @@ from common.contracts.verify_artifact_layout import (
     verify_artifacts_root,
     verify_cache,
     verify_formal,
+    verify_integration_cache_entry,
 )
 
 
@@ -30,6 +31,43 @@ def record(path: Path, root: Path) -> dict[str, object]:
 
 
 class ArtifactLayoutIdentityTests(unittest.TestCase):
+    def write_reusable_cache(
+        self, entry: Path, role: str, project_id: str, names: tuple[str, ...]
+    ) -> Path:
+        identity = {
+            "schema_version": 2,
+            "role": role,
+            "project_id": project_id,
+            "solver": {
+                "name": "SIMION",
+                "product_version": "2020",
+                "executable_sha256": "E" * 64,
+            },
+            "critical_options": {"refine_convergence": "5e-7"},
+        }
+        key_input = json.dumps(identity, separators=(",", ":"))
+        entry = entry.parent / hashlib.sha256(key_input.encode()).hexdigest()
+        entry.mkdir(parents=True)
+        records = []
+        for name in names:
+            path = entry / name
+            path.write_text(f"cached {name}\n", encoding="utf-8")
+            item = record(path, entry)
+            item.pop("path")
+            records.append({"name": name, **item})
+        write_json(
+            entry / "cache_manifest.json",
+            {
+                "schema_version": 2,
+                "role": role,
+                "cache_key": entry.name,
+                "cache_key_input": key_input,
+                "identity": identity,
+                "files": records,
+            },
+        )
+        return entry
+
     def test_artifacts_root_rejects_files_beside_projects(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             artifacts = Path(directory) / "artifacts"
@@ -149,6 +187,79 @@ class ArtifactLayoutIdentityTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(AssertionError, "cache identity differs"):
                 verify_cache(project)
+
+    def test_reusable_integration_cache_verifies_identity_and_file_hashes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory) / "integration"
+            entry = project / "cache" / "simion_single_flight_frontend" / ("e" * 64)
+            entry = self.write_reusable_cache(
+                entry,
+                "simion_single_flight_frontend_pa_cache",
+                project.name,
+                ("frontend.gem", "frontend.pa#", "frontend.pa0"),
+            )
+            verify_cache(project, verify_hashes=True)
+            verify_integration_cache_entry(
+                entry,
+                expected_role="simion_single_flight_frontend_pa_cache",
+                expected_key=entry.name,
+                expected_project_id=project.name,
+            )
+            (entry / "frontend.pa0").write_text("changed\n", encoding="utf-8")
+            with self.assertRaisesRegex(AssertionError, "byte count differs"):
+                verify_cache(project, verify_hashes=True)
+
+    def test_reusable_downstream_cache_role_must_match_registered_root(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory) / "integration"
+            entry = (
+                project
+                / "cache"
+                / "simion_oatof_downstream_pa"
+                / ("f" * 64)
+            )
+            entry = self.write_reusable_cache(
+                entry,
+                "simion_single_flight_frontend_pa_cache",
+                project.name,
+                ("flight_tube_ground.pa0",),
+            )
+            with self.assertRaisesRegex(AssertionError, "not registered"):
+                verify_cache(project, verify_hashes=True)
+
+    def test_reusable_cache_rejects_missing_solver_or_extra_file(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory) / "integration"
+            entry = (
+                project / "cache" / "simion_accelerator_overlay" / ("1" * 64)
+            )
+            entry = self.write_reusable_cache(
+                entry,
+                "simion_accelerator_overlay_pa_cache",
+                project.name,
+                ("accelerator_overlay.pa0",),
+            )
+            manifest_path = entry / "cache_manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["identity"]["solver"].pop("product_version")
+            write_json(manifest_path, manifest)
+            with self.assertRaisesRegex(AssertionError, "identity differs"):
+                verify_integration_cache_entry(
+                    entry,
+                    expected_role="simion_accelerator_overlay_pa_cache",
+                    expected_key=entry.name,
+                    expected_project_id=project.name,
+                )
+            manifest["identity"]["solver"]["product_version"] = "2020"
+            write_json(manifest_path, manifest)
+            (entry / "unexpected.bin").write_bytes(b"unexpected")
+            with self.assertRaisesRegex(AssertionError, "inventory differs"):
+                verify_integration_cache_entry(
+                    entry,
+                    expected_role="simion_accelerator_overlay_pa_cache",
+                    expected_key=entry.name,
+                    expected_project_id=project.name,
+                )
 
     def make_formal(
         self,

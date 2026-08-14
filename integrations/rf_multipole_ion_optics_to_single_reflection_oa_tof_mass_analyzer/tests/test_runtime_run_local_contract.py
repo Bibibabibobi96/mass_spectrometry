@@ -89,7 +89,7 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
         self.assertIn("'b-' + [guid]::NewGuid().ToString('N').Substring(0,12)", text)
         self.assertIn("legacy path-length limit", text)
         self.assertIn(
-            "Move-Item -LiteralPath $overlayBuildDir -Destination $overlayCacheDir",
+            "$overlayCacheDir = Publish-RfVerifiedCacheEntry",
             text,
         )
         self.assertIn(
@@ -107,6 +107,33 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
             "-Destination $overlayBasisReport",
             text,
         )
+
+    def test_all_four_pa_cache_roles_use_one_verified_contract(self) -> None:
+        runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        artifacts = (INTEGRATION_ROOT / "runtime" / "run_artifacts.ps1").read_text(
+            encoding="utf-8"
+        )
+        for role in (
+            "simion_single_flight_frontend_pa_cache",
+            "simion_accelerator_overlay_pa_cache",
+            "simion_oatof_flight_tube_pa_cache",
+            "simion_oatof_reflectron_pa_cache",
+        ):
+            self.assertIn(role, runner)
+        self.assertIn("Get-RfSimionSolverCacheIdentity", runner)
+        self.assertIn("Get-RfContentIdentitySha256", runner)
+        self.assertIn("executable_sha256", artifacts)
+        self.assertIn("product_version", artifacts)
+        self.assertIn("Test-RfReusableCacheEntry", artifacts)
+        self.assertIn("Publish-RfVerifiedCacheEntry", artifacts)
+        self.assertNotIn("requires manual quarantine", runner)
+        for input_name in (
+            "frontend_pa_cache_manifest",
+            "accelerator_overlay_pa_cache_manifest",
+            "flight_tube_pa_cache_manifest",
+            "reflectron_pa_cache_manifest",
+        ):
+            self.assertIn(input_name, runner)
 
     def test_dz0025_profile_keeps_coarse_grid_isotropic_and_refines_only_z(self) -> None:
         import json

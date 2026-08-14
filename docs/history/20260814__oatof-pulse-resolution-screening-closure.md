@@ -35,8 +35,10 @@ baseline完整census为100 launched、75 multipole handoff、66 pre-pulse alive�
 
 ## Arm8解析与SIMION闭合
 
-求解器无关解析receipt位于run
-`20260813_151500__analysis__python__axial-ideal-arm8-closure`。最终SIMION闭合run为
+求解器无关解析receipt最初产生于不完整run
+`20260813_151500__analysis__python__axial-ideal-arm8-closure`，现以逐字节及独立科学重算等价的正式
+success triplet重发为`20260814_165300__analysis__python__axial-ideal-arm8-closure-republish`；当前campaign
+只绑定后者，旧路径仅作历史溯源。最终SIMION闭合run为
 `20260813_223000__sim__simion__arm8-solver-closure-n101-interpolated-r04`：101/101粒子通过十个有序事件，
 脉冲相对峰为单峰，direct FWHM `0.328160 ns`、`R=47493.49`；最大时间、位置、出口能量和转向深度误差
 分别为`0.149972 ns`、`0.003351 mm`、`0.034273 eV`和`0.003351 mm`，均通过预声明容差。

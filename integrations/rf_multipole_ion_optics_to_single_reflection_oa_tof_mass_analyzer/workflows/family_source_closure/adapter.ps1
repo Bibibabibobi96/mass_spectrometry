@@ -83,6 +83,20 @@ $sourceOverrideArgumentNames = @(
 if ($frozenArguments.ContainsKey('single_flight_particle_source_path')) {
   $expectedArguments += $sourceOverrideArgumentNames
 }
+$materializedSourceArgumentNames = @(
+  'single_flight_source_materialization_profile_id',
+  'single_flight_materialized_source_filename',
+  'single_flight_materialized_source_sha256',
+  'single_flight_materialized_source_count',
+  'single_flight_materialization_receipt_filename',
+  'single_flight_materialization_receipt_sha256'
+)
+if ($frozenArguments.ContainsKey('single_flight_source_materialization_profile_id')) {
+  $expectedArguments += 'single_flight_source_materialization_profile_id'
+  if ($frozenArguments.ContainsKey('single_flight_materialized_source_filename')) {
+    $expectedArguments += $materializedSourceArgumentNames[1..5]
+  }
+}
 if ($frozenArguments.ContainsKey('single_flight_population_denominator_count')) {
   $expectedArguments += @(
     'single_flight_population_denominator_count',
@@ -112,6 +126,16 @@ if ($frozenArguments.ContainsKey('pre_pulse_source_state_path')) {
     'pre_pulse_source_state_path','pre_pulse_source_state_sha256',
     'pre_pulse_source_state_count'
   )
+  if ($frozenArguments.ContainsKey('pre_pulse_restart_validation_filename')) {
+    $expectedArguments += @(
+      'pre_pulse_restart_position_tolerance_mm',
+      'pre_pulse_restart_velocity_tolerance_m_per_s',
+      'pre_pulse_restart_clock_tolerance_us',
+      'pre_pulse_restart_energy_tolerance_eV',
+      'pre_pulse_restart_validation_filename',
+      'pre_pulse_restart_validation_sha256'
+    )
+  }
 }
 if ($frozenArguments.ContainsKey('pulse_resolution_attribution_arm_id')) {
   $expectedArguments += @(
@@ -283,7 +307,58 @@ if ($frozenArguments.ContainsKey('single_flight_particle_source_path')) {
     throw 'Single-flight particle-source override is missing or stale.'
   }
 }
+if ($frozenArguments.ContainsKey('single_flight_materialized_source_filename')) {
+  if ($null -ne $singleFlightParticleSourcePath -or
+      [string]$experiment.single_flight_source_materialization_profile_id -ne
+        $frozenArguments.single_flight_source_materialization_profile_id) {
+    throw 'Materialized and static single-flight source authorities conflict.'
+  }
+  $materializedRunDirectory = [IO.Path]::GetFullPath(
+    (Split-Path -Parent $CompositionPlan)
+  )
+  $singleFlightParticleSourcePath = [IO.Path]::GetFullPath(
+    (Join-Path $materializedRunDirectory $frozenArguments.single_flight_materialized_source_filename)
+  )
+  $materializationReceiptPath = [IO.Path]::GetFullPath(
+    (Join-Path $materializedRunDirectory $frozenArguments.single_flight_materialization_receipt_filename)
+  )
+  $inputsRoot = [IO.Path]::GetFullPath((Join-Path $materializedRunDirectory 'inputs'))
+  if (-not $singleFlightParticleSourcePath.StartsWith(
+        $inputsRoot + [IO.Path]::DirectorySeparatorChar,
+        [StringComparison]::OrdinalIgnoreCase) -or
+      -not $materializationReceiptPath.StartsWith(
+        $inputsRoot + [IO.Path]::DirectorySeparatorChar,
+        [StringComparison]::OrdinalIgnoreCase) -or
+      -not (Test-Path -LiteralPath $singleFlightParticleSourcePath -PathType Leaf) -or
+      -not (Test-Path -LiteralPath $materializationReceiptPath -PathType Leaf) -or
+      (Get-FileHash -LiteralPath $singleFlightParticleSourcePath -Algorithm SHA256).Hash -ne
+        $frozenArguments.single_flight_materialized_source_sha256 -or
+      (Get-FileHash -LiteralPath $materializationReceiptPath -Algorithm SHA256).Hash -ne
+        $frozenArguments.single_flight_materialization_receipt_sha256) {
+    throw 'Plan-bound source materialization inputs are missing or stale.'
+  }
+  $materializationReceipt = Get-Content -LiteralPath $materializationReceiptPath -Raw -Encoding UTF8 |
+    ConvertFrom-Json
+  if ($materializationReceipt.role -ne 'rf_oatof_single_flight_source_materialization_receipt' -or
+      $materializationReceipt.profile_id -ne
+        $frozenArguments.single_flight_source_materialization_profile_id -or
+      [int]$materializationReceipt.particle_count -ne
+        [int]$frozenArguments.single_flight_materialized_source_count -or
+      $materializationReceipt.particle_source.sha256 -ne
+        $frozenArguments.single_flight_materialized_source_sha256 -or
+      $materializationReceipt.particle_source.sampling_mode -ne
+        'continuous_injection_full_population') {
+    throw 'Plan-bound source materialization receipt differs.'
+  }
+  $frozenArguments.single_flight_particle_source_sha256 =
+    $frozenArguments.single_flight_materialized_source_sha256
+  $frozenArguments.single_flight_particle_source_count =
+    $frozenArguments.single_flight_materialized_source_count
+  $frozenArguments.single_flight_sampling_mode =
+    [string]$materializationReceipt.particle_source.sampling_mode
+}
 $prePulseSourceStatePath = $null
+$prePulseRestartValidationPath = $null
 if ($frozenArguments.ContainsKey('source_release_mode')) {
   if ([string]$experiment.architecture_generation_id -ne
         $frozenArguments.architecture_generation_id -or
@@ -295,6 +370,27 @@ if ($frozenArguments.ContainsKey('source_release_mode')) {
   if ($frozenArguments.source_release_mode -eq 'pre_pulse_restart') {
     if (-not $frozenArguments.ContainsKey('pre_pulse_source_state_path')) {
       throw 'Pre-pulse restart lacks a frozen source state.'
+    }
+    if ($frozenArguments.ContainsKey('pre_pulse_restart_validation_filename')) {
+      if (
+        [double]$experiment.pre_pulse_source_state.position_rowwise_abs_tolerance_mm -ne
+          [double]$frozenArguments.pre_pulse_restart_position_tolerance_mm -or
+        [double]$experiment.pre_pulse_source_state.velocity_rowwise_abs_tolerance_m_per_s -ne
+          [double]$frozenArguments.pre_pulse_restart_velocity_tolerance_m_per_s -or
+        [double]$experiment.pre_pulse_source_state.clock_abs_tolerance_us -ne
+          [double]$frozenArguments.pre_pulse_restart_clock_tolerance_us -or
+        [double]$experiment.pre_pulse_source_state.energy_abs_tolerance_eV -ne
+          [double]$frozenArguments.pre_pulse_restart_energy_tolerance_eV
+      ) {
+        throw 'Pre-pulse restart source-release tolerance identity changed after preparation.'
+      }
+      $prePulseRestartValidationPath = Join-Path (Split-Path -Parent $CompositionPlan) `
+        $frozenArguments.pre_pulse_restart_validation_filename
+      if (-not (Test-Path -LiteralPath $prePulseRestartValidationPath -PathType Leaf) -or
+          (Get-FileHash -LiteralPath $prePulseRestartValidationPath -Algorithm SHA256).Hash -ne
+            $frozenArguments.pre_pulse_restart_validation_sha256) {
+        throw 'Pre-pulse restart validation identity is missing or stale.'
+      }
     }
     $prePulseSourceStatePath = [IO.Path]::GetFullPath(
       (Join-Path $workspaceRoot $frozenArguments.pre_pulse_source_state_path)
@@ -715,6 +811,19 @@ if ($executionStrategy -eq 'simion_single_flight') {
         [string]$frozenArguments.pre_pulse_source_state_sha256
       $runnerArguments.PrePulseSourceStateCount =
         [int]$frozenArguments.pre_pulse_source_state_count
+      if ($null -ne $prePulseRestartValidationPath) {
+        $runnerArguments.PrePulseRestartPositionToleranceMm =
+          [double]$frozenArguments.pre_pulse_restart_position_tolerance_mm
+        $runnerArguments.PrePulseRestartVelocityToleranceMPerS =
+          [double]$frozenArguments.pre_pulse_restart_velocity_tolerance_m_per_s
+        $runnerArguments.PrePulseRestartClockToleranceUs =
+          [double]$frozenArguments.pre_pulse_restart_clock_tolerance_us
+        $runnerArguments.PrePulseRestartEnergyToleranceEv =
+          [double]$frozenArguments.pre_pulse_restart_energy_tolerance_eV
+        $runnerArguments.PrePulseRestartValidation = $prePulseRestartValidationPath
+        $runnerArguments.PrePulseRestartValidationSha256 =
+          [string]$frozenArguments.pre_pulse_restart_validation_sha256
+      }
     }
   }
   if ($null -ne $singleFlightParticleSourcePath) {
@@ -722,6 +831,11 @@ if ($executionStrategy -eq 'simion_single_flight') {
     $runnerArguments.MotherParticleSourceSha256 = $frozenArguments.single_flight_particle_source_sha256
     $runnerArguments.MotherParticleCount = [int]$frozenArguments.single_flight_particle_source_count
     $runnerArguments.SamplingMode = $frozenArguments.single_flight_sampling_mode
+    if ($frozenArguments.ContainsKey('single_flight_materialization_receipt_filename')) {
+      $runnerArguments.MotherParticleSourceReceipt = $materializationReceiptPath
+      $runnerArguments.MotherParticleSourceReceiptSha256 =
+        $frozenArguments.single_flight_materialization_receipt_sha256
+    }
     if ($frozenArguments.ContainsKey('single_flight_population_denominator_count')) {
       $runnerArguments.PopulationDenominatorCount =
         [int]$frozenArguments.single_flight_population_denominator_count

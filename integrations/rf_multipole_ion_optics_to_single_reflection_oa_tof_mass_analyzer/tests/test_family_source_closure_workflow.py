@@ -11,9 +11,16 @@ from common.contracts.machine_contracts import ContractError, validate_schema
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.prepare import (
     prepare_family_source_closure,
 )
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_source import (
+    resolve_source_materialization_profile,
+)
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.publish_run import (
     INTEGRATION_ID,
     publish_family_source_closure_run,
+)
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_layout import (
+    compile_geometry_and_port,
+    select_profile,
 )
 
 
@@ -44,8 +51,15 @@ ACCELERATION_AXIS_GRID_CAMPAIGN_PATH = (
 IDEAL_FIELD_CAMPAIGN_PATH = (
     CONFIG_ROOT / "diagnostics" / "octupole_accelerator_ideal_field_n1000_campaign.json"
 )
+SOURCE_ARCH_FIELD_MATRIX_PATH = (
+    CONFIG_ROOT / "diagnostics" /
+    "canonical_source_architecture_accelerator_field_matrix_n1000_campaign.json"
+)
 PROFILE_REGISTRY = CONFIG_ROOT / "connection_profiles.json"
 ADAPTER_REGISTRY = CONFIG_ROOT / "execution_adapter_profiles.json"
+OCTUPOLE_RUNTIME_BINDING = (
+    CONFIG_ROOT / "family_octupole_direct_mating_gap_0mm_runtime_binding.json"
+)
 
 
 def load(path: Path) -> dict[str, object]:
@@ -56,7 +70,136 @@ def write_json(path: Path, value: object) -> None:
     path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
 
 
+def write_current_policy_campaign(source: Path, destination: Path) -> dict[str, object]:
+    """Clone one immutable historical campaign with the active governed policy."""
+    campaign = load(source)
+    campaign["execution_policy"] = load(OCTUPOLE_RUNTIME_BINDING)["contracts"][
+        "execution_policy_contract"
+    ]
+    write_json(destination, campaign)
+    return campaign
+
+
 class FamilySourceClosureWorkflowTests(unittest.TestCase):
+    def test_affine_source_profile_resolves_only_from_phase_space_authority(self) -> None:
+        registry = load(CONFIG_ROOT / "simion_single_flight.json")
+        profile = next(
+            item for item in registry["source_materialization_profiles"]
+            if item["profile_id"] == "canonical_ideal_linear_z_vz_1mm_n1000"
+        )
+        self.assertNotIn("mean_velocity_z_m_per_s", profile)
+        self.assertNotIn("velocity_z_slope_m_per_s_per_mm", profile)
+        resolved = resolve_source_materialization_profile(profile, INTEGRATION_ROOT)
+        authority = load(CONFIG_ROOT / "accelerator_phase_space_match.json")[
+            "frozen_phase_space_input"
+        ]
+        self.assertEqual(
+            resolved["mean_velocity_z_m_per_s"],
+            authority["mean_initial_velocity_m_per_s"],
+        )
+        self.assertEqual(
+            resolved["velocity_z_slope_m_per_s_per_mm"],
+            authority["velocity_slope_m_per_s_per_mm"],
+        )
+
+    def test_zero_vz_match_layouts_use_solver_native_zero_zero_inputs(self) -> None:
+        registry = load(CONFIG_ROOT / "single_flight_layout_profiles.json")
+        base_geometry = load(
+            REPO_ROOT
+            / "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json"
+        )
+        base_port = load(
+            REPO_ROOT
+            / "projects/single_reflection_oa_tof_mass_analyzer/config/interfaces/required/oatof_accelerator_entry.json"
+        )
+        expected = {
+            "zero_match_short_1mm": (
+                "zero_match_short_1mm_v1",
+                1.0,
+            ),
+            "zero_match_long_2p2mm": (
+                "zero_match_long_2p2mm_v1",
+                2.2,
+            ),
+        }
+        for layout_id, (generation_id, width_mm) in expected.items():
+            profile = select_profile(registry, layout_id)
+            self.assertEqual(profile["architecture_generation_id"], generation_id)
+            self.assertEqual(
+                profile["finite_interval_accelerator_profile"],
+                "config/accelerator_phase_space_match.json",
+            )
+            frozen = profile["finite_interval_phase_space_input"]
+            self.assertEqual(frozen["mean_initial_velocity_m_per_s"], 0.0)
+            self.assertEqual(frozen["velocity_slope_m_per_s_per_mm"], 0.0)
+            self.assertEqual(profile["finite_interval_source_full_width_mm"], width_mm)
+            geometry, _, _ = compile_geometry_and_port(
+                base_geometry, base_port, profile
+            )
+            derivation = geometry["single_flight_layout_derivation"][
+                "design_compilation"
+            ]
+            self.assertEqual(
+                derivation["method"], "finite_interval_uniform_two_field_theory_v1"
+            )
+            self.assertEqual(
+                derivation["simion_rebuild_plan"],
+                {
+                    "frontend_pa": True,
+                    "flight_tube_pa": True,
+                    "reflectron_pa": False,
+                },
+            )
+            accelerator = geometry["geometry_derivation"]["accelerator"]
+            self.assertEqual(accelerator["canonical_focus_z_mm"], 0.0)
+            self.assertEqual(
+                accelerator["finite_interval_theory"]["solver_phase_space_input"],
+                frozen,
+            )
+            self.assertEqual(geometry["particle_source"]["size_z_mm"], width_mm)
+            for electrode in ("repeller", "grid1", "midgrid", "backplate"):
+                self.assertIsInstance(geometry["electrodes_V"][electrode], float)
+
+    def test_canonical_source_architecture_field_matrix_has_strict_24_rows(self) -> None:
+        campaign = load(SOURCE_ARCH_FIELD_MATRIX_PATH)
+        validate_schema(campaign, "rf_multipole_oatof_experiment_campaign.schema.json")
+        rows = campaign["experiments"]
+        self.assertEqual(len(rows), 24)
+        self.assertEqual([row["sequence"] for row in rows], list(range(1, 25)))
+        self.assertEqual(
+            {row["single_flight_source_materialization_profile_id"] for row in rows},
+            {
+                "canonical_ideal_linear_z_vz_1mm_n1000",
+                "canonical_ideal_linear_z_vz_2p2mm_n1000",
+                "canonical_real_octupole_n1000",
+            },
+        )
+        self.assertEqual(
+            {row["single_flight_accelerator_field_profile_id"] for row in rows},
+            {
+                "accelerator_real_pa",
+                "accelerator_ideal_stage1_real_stage2",
+                "accelerator_real_stage1_ideal_stage2",
+                "accelerator_ideal_stage1_stage2_real_reflectron",
+            },
+        )
+        self.assertTrue(all(
+            row["single_flight_frontend_grid_profile_id"]
+            == "frontend_isotropic_020_accelerator_overlay_z005"
+            and row["single_flight_oatof_numerical_profile_id"]
+            == "oatof_formal_mesh"
+            and row["single_flight_trajectory_quality_profile_id"] == "tqual_8"
+            for row in rows
+        ))
+        configuration = load(CONFIG_ROOT / "simion_single_flight.json")
+        selected_grid = next(
+            profile for profile in configuration["frontend_grid_profiles"]
+            if profile["profile_id"]
+            == "frontend_isotropic_020_accelerator_overlay_z005"
+        )
+        self.assertEqual(selected_grid["max_parallel_batches"], 3)
+        self.assertLessEqual(selected_grid["max_parallel_batches"], 5)
+
     def test_native_grid_short_focus_row_rebuilds_current_reflectron(self) -> None:
         campaign_path = (
             CONFIG_ROOT / "diagnostics" /
@@ -75,13 +218,16 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             REPO_ROOT.parent / "artifacts" / "projects" / INTEGRATION_ID / "scratch"
         )
         scratch.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(dir=scratch) as directory:
+        with tempfile.TemporaryDirectory(dir=scratch) as directory, \
+                tempfile.TemporaryDirectory(dir=CONFIG_ROOT) as config_directory:
             output = Path(directory)
+            current_campaign_path = Path(config_directory) / "campaign.json"
+            write_current_policy_campaign(campaign_path, current_campaign_path)
             prepare_family_source_closure(
                 repo_root=REPO_ROOT,
                 profile_registry_path=PROFILE_REGISTRY,
                 adapter_registry_path=ADAPTER_REGISTRY,
-                campaign_path=campaign_path,
+                campaign_path=current_campaign_path,
                 experiment_id=row["experiment_id"],
                 resolved_output=output / "resolved.json",
                 plan_output=output / "plan.json",
@@ -215,6 +361,10 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
         if not source_run.is_dir():
             self.skipTest("local single-flight design reference is unavailable")
         experiment["single_flight_pulse_offset_rf_periods"] = -0.125
+        experiment_policy = load(OCTUPOLE_RUNTIME_BINDING)["contracts"][
+            "execution_policy_contract"
+        ]
+        campaign["execution_policy"] = experiment_policy
         validate_schema(
             campaign, "rf_multipole_oatof_experiment_campaign.schema.json"
         )
@@ -322,13 +472,17 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             self.skipTest("local corrected terminal design reference is unavailable")
         with tempfile.TemporaryDirectory(
             dir=REPO_ROOT.parent / "artifacts/projects/rf_octupole_ion_optics"
-        ) as directory:
+        ) as directory, tempfile.TemporaryDirectory(dir=CONFIG_ROOT) as config_directory:
             output = Path(directory)
+            campaign_path = Path(config_directory) / "campaign.json"
+            write_current_policy_campaign(
+                TERMINAL_DESIGN_REFERENCE_CAMPAIGN_PATH, campaign_path
+            )
             _, plan = prepare_family_source_closure(
                 repo_root=REPO_ROOT,
                 profile_registry_path=PROFILE_REGISTRY,
                 adapter_registry_path=ADAPTER_REGISTRY,
-                campaign_path=TERMINAL_DESIGN_REFERENCE_CAMPAIGN_PATH,
+                campaign_path=campaign_path,
                 experiment_id=experiment["experiment_id"],
                 resolved_output=output / "resolved.json",
                 plan_output=output / "plan.json",
@@ -352,21 +506,23 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             self.skipTest("local N=1000 source artifact is unavailable")
         with tempfile.TemporaryDirectory(
             dir=REPO_ROOT.parent / "artifacts/projects/rf_octupole_ion_optics"
-        ) as directory:
+        ) as directory, tempfile.TemporaryDirectory(dir=CONFIG_ROOT) as config_directory:
             output = Path(directory)
+            campaign_path = Path(config_directory) / "campaign.json"
+            write_current_policy_campaign(SINGLE_FLIGHT_CAMPAIGN_PATH, campaign_path)
             with self.assertRaisesRegex(ContractError, "0.0 was expected"):
                 prepare_family_source_closure(
                     repo_root=REPO_ROOT,
                     profile_registry_path=PROFILE_REGISTRY,
                     adapter_registry_path=ADAPTER_REGISTRY,
-                    campaign_path=SINGLE_FLIGHT_CAMPAIGN_PATH,
+                    campaign_path=campaign_path,
                     experiment_id="octupole_segmented_aperture100_simion_single_flight",
                     resolved_output=output / "resolved.json",
                     plan_output=output / "plan.json",
                 )
 
     def test_prepare_rejects_campaign_outside_repository(self) -> None:
-        with tempfile.TemporaryDirectory(dir=REPO_ROOT.parent) as directory:
+        with tempfile.TemporaryDirectory() as directory:
             outside = Path(directory)
             campaign = outside / "campaign.json"
             write_json(campaign, load(CAMPAIGN_PATH))
@@ -382,7 +538,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                 )
 
     def test_parent_publisher_requires_campaign_identity(self) -> None:
-        with tempfile.TemporaryDirectory(dir=REPO_ROOT.parent) as directory:
+        with tempfile.TemporaryDirectory() as directory:
             workspace = Path(directory)
             run_id = "20260803_220000__sim__cross__campaign-parent__n100"
             run_dir = workspace / run_id

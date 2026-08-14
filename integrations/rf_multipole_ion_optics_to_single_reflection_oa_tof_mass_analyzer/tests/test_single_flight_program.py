@@ -11,6 +11,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     bind_oatof_adjustables,
     build_extension,
     disable_redundant_ground_fast_adjust,
+    enable_official_global_segments,
     load_birth_times,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_frontend import (
@@ -58,6 +59,18 @@ def _minimal_program_contracts() -> tuple[dict[str, object], dict[str, object]]:
 
 
 class SingleFlightProgramTests(unittest.TestCase):
+    def test_official_global_segments_follow_workbench_declaration(self) -> None:
+        program = enable_official_global_segments(
+            "simion.workbench_program()\nadjustable x=0\n"
+        )
+        self.assertTrue(
+            program.startswith(
+                "simion.workbench_program()\n"
+                "simion.early_access(8.2)\n"
+                "sim_segment_global = 1\n"
+            )
+        )
+
     def test_parallel_program_does_not_readjust_frozen_ground_pas(self) -> None:
         formal = (
             REPO / "projects/single_reflection_oa_tof_mass_analyzer/simion/"
@@ -145,6 +158,11 @@ class SingleFlightProgramTests(unittest.TestCase):
         self.assertIn("adj_elect[19]=3", extension)
         self.assertIn("single_flight_handoff", extension)
         self.assertIn("TRACE: source_release", extension)
+        self.assertNotIn(
+            "if trajectory_log_enable~=0 then\n"
+            "    print(string.format('TRACE: source_release",
+            extension,
+        )
         self.assertIn("TRACE: pre_pulse_state", extension)
         self.assertIn("TRACE: accelerator_grid1_forward", extension)
         self.assertIn("single_flight_rf_steps=160", extension)

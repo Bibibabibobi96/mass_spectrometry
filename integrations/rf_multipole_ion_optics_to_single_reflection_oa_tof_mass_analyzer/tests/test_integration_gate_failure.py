@@ -17,7 +17,7 @@ class IntegrationGateFailureTests(unittest.TestCase):
         pwsh = shutil.which("pwsh")
         if pwsh is None:
             self.skipTest("PowerShell Core is unavailable")
-        with tempfile.TemporaryDirectory(dir=REPO_ROOT.parent) as directory:
+        with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             integration = root / "integrations" / "fixture_integration"
             tests = integration / "tests"

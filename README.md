@@ -266,9 +266,22 @@ artifacts/projects/<project>/
 不得成为项目状态或规则权威。各目录的状态、保留与清理条件由本节末尾统一定义。脚本必须通过项目
 路径解析器定位这里，禁止硬编码用户名或重建旧 `artifacts/components/`。
 `cache/`不是运行证据或第二份项目状态，只允许机器校验器显式注册的内容寻址性能缓存；缓存命中必须
-复核内容身份，删除后只能造成重算，不能破坏既有run三件套或结论。当前唯一注册角色是
-`cache/simion_pa_basis/<SHA-256>/`，用于同项目同几何/网格/求解器身份的SIMION PA basis复用。
-不得在`cache/`保存唯一输入、canonical结果、正式资产或未登记的任意文件。
+复核配置、代码、几何/网格、求解器版本与关键选项身份，以及manifest中的完整文件字节数和SHA-256。
+损坏、不完整或旧schema条目只能视为MISS并重建，不能作为run输入。当前注册角色为：
+
+| cache根 | 注册角色 |
+|---|---|
+| `cache/simion_pa_basis/<SHA-256>/` | `multipole_simion_pa_basis_cache` |
+| `cache/simion_single_flight_frontend/<SHA-256>/` | `simion_single_flight_frontend_pa_cache` |
+| `cache/simion_accelerator_overlay/<SHA-256>/` | `simion_accelerator_overlay_pa_cache` |
+| `cache/simion_oatof_downstream_pa/<SHA-256>/` | `simion_oatof_flight_tube_pa_cache`或`simion_oatof_reflectron_pa_cache`，由entry manifest唯一消歧 |
+
+不得在`cache/`保存唯一输入、canonical结果、正式资产或未登记的任意文件。所有`formal/` PA无条件按
+正式资产合同保留，禁止作为cache清理；当前实验仍引用的cache PA和无法由冻结输入重建的唯一来源同样
+保留。2026-08-14引用审计后，当前实验仍需的10个legacy PA entry（33,919,321,596 bytes）物理保留；
+它们只能由artifact布局门禁识别，运行器必须fail-closed视为MISS，首次需要时按schema-v2精确重建。
+其余不被当前实验使用、非formal且可由冻结配置/代码/求解器身份重建的legacy cache属于可清理性能层；
+清理只影响后续重算，不得改写既有run、manifest或结论。
 SIMION IOB 可能嵌入 PA 的绝对路径，移动工作区后必须重新打开/保存或重建 IOB，并验证四个 PA
 实例；文件存在不等于迁移成功。SolidWorks 装配移动后必须检查外部引用。
 

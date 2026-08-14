@@ -14,6 +14,7 @@ from typing import Any
 from common.contracts.file_identity import file_sha256, repository_text_sha256
 from common.contracts.machine_contracts import ContractError, validate_schema
 from common.contracts.particle_count_policy import validate_standard_particle_count
+from common.contracts.particle_physics import kinetic_energy_ev
 from common.integration.adapter_contract import (
     load_execution_adapter_registry,
     resolve_execution_mapping,
@@ -29,6 +30,11 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     compile_geometry_and_port,
     derive_pulse_schedule,
     select_profile,
+)
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_source import (
+    materialize_ideal_linear_source,
+    materialize_pre_pulse_restart,
+    resolve_source_materialization_profile,
 )
 
 
@@ -234,6 +240,115 @@ def _workspace_relative(path: Path, workspace: Path) -> str:
         return path.resolve().relative_to(workspace.resolve()).as_posix()
     except ValueError as exc:
         raise ContractError(f"path escapes the workspace: {path}") from exc
+
+
+def _validate_canonical_pulse_restart_state(
+    source_path: Path,
+    receipt_path: Path,
+    source_record: dict[str, Any],
+    profile: dict[str, Any],
+    geometry: dict[str, Any],
+    schedule: dict[str, Any],
+) -> dict[str, Any]:
+    receipt = _load(receipt_path)
+    target = receipt.get("pulse_target_state", {})
+    expected_locus = "accelerator_stage1_interior_fixed_transverse_finite_local_z_interval"
+    if (
+        receipt.get("profile_id") != profile["profile_id"]
+        or target.get("sha256") != source_record["sha256"]
+        or target.get("particle_count") != source_record["particle_count"]
+        or target.get("source_state_epoch") != "pulse_effective_time"
+        or target.get("source_state_locus", {}).get("kind") != expected_locus
+        or target.get("coordinate_frame") != "oatof_global_cartesian"
+        or target.get("clock_basis") != "canonical_instrument_time_us"
+        or target.get("clock_authority") != "resolved_single_flight_pulse_schedule"
+    ):
+        raise ContractError("canonical pulse restart receipt identity differs")
+    pulse_time_us = float(schedule["derived_pulse_time_us"])
+    _, normalized_rows = materialize_pre_pulse_restart(source_path, pulse_time_us)
+    count = int(profile["particle_count"])
+    if len(normalized_rows) != count:
+        raise ContractError("canonical pulse restart population differs")
+    ordered_ids = [int(row["particle_id"]) for row in normalized_rows]
+    ordered_id_sha256 = _canonical_sha256(ordered_ids)
+    if target.get("ordered_particle_id_sha256") != ordered_id_sha256:
+        raise ContractError("canonical pulse restart ordered particle identity differs")
+    particle_source = geometry["particle_source"]
+    center_x = float(particle_source["center_x_mm"])
+    center_y = float(particle_source["center_y_mm"])
+    center_z = float(particle_source["center_z_mm"])
+    width = float(profile["source_full_width_mm"])
+    mean_vz = float(profile["mean_velocity_z_m_per_s"])
+    slope = float(profile["velocity_z_slope_m_per_s_per_mm"])
+    position_tolerance = float(source_record["position_rowwise_abs_tolerance_mm"])
+    velocity_tolerance = float(source_record["velocity_rowwise_abs_tolerance_m_per_s"])
+    maximum_position_error = 0.0
+    maximum_velocity_error = 0.0
+    maximum_clock_error = 0.0
+    maximum_energy_error = 0.0
+    for index, row in enumerate(normalized_rows):
+        expected_z = (
+            center_z
+            if count == 1
+            else center_z - width / 2.0 + width * index / (count - 1)
+        )
+        expected_vz = mean_vz + slope * (expected_z - center_z)
+        maximum_position_error = max(
+            maximum_position_error,
+            abs(float(row["position_x_mm"]) - center_x),
+            abs(float(row["position_y_mm"]) - center_y),
+            abs(float(row["position_z_mm"]) - expected_z),
+        )
+        maximum_velocity_error = max(
+            maximum_velocity_error,
+            abs(float(row["velocity_z_m_s"]) - expected_vz),
+        )
+        maximum_clock_error = max(
+            maximum_clock_error,
+            abs(float(row["instrument_time_us"]) - pulse_time_us),
+        )
+        maximum_energy_error = max(
+            maximum_energy_error,
+            abs(
+                kinetic_energy_ev(
+                    float(row["mass_amu"]),
+                    *(float(row[f"velocity_{axis}_m_s"]) for axis in "xyz"),
+                ) - float(row["kinetic_energy_eV"])
+            ),
+        )
+    if (
+        maximum_position_error > position_tolerance
+        or maximum_velocity_error > velocity_tolerance
+        or maximum_clock_error > float(source_record["clock_abs_tolerance_us"])
+        or maximum_energy_error > float(source_record["energy_abs_tolerance_eV"])
+    ):
+        raise ContractError("canonical pulse restart target-state validation failed")
+    return {
+        "schema_version": 1,
+        "role": "canonical_pulse_restart_target_state_validation",
+        "status": "PASS",
+        "target_pulse_state_sha256": source_record["sha256"],
+        "materialization_receipt_sha256": source_record["materialization_receipt"]["sha256"],
+        "source_state_epoch": "pulse_effective_time",
+        "source_state_locus": expected_locus,
+        "coordinate_frame": "oatof_global_cartesian",
+        "clock_basis": "canonical_instrument_time_us",
+        "clock_authority": "resolved_single_flight_pulse_schedule",
+        "ordered_particle_id_sha256": ordered_id_sha256,
+        "particle_count": count,
+        "tolerances": {
+            "position_rowwise_abs_tolerance_mm": position_tolerance,
+            "velocity_rowwise_abs_tolerance_m_per_s": velocity_tolerance,
+            "clock_abs_tolerance_us": float(source_record["clock_abs_tolerance_us"]),
+            "energy_abs_tolerance_eV": float(source_record["energy_abs_tolerance_eV"]),
+        },
+        "maximum_errors": {
+            "position_rowwise_abs_mm": maximum_position_error,
+            "velocity_rowwise_abs_m_per_s": maximum_velocity_error,
+            "clock_abs_us": maximum_clock_error,
+            "energy_abs_eV": maximum_energy_error,
+        },
+    }
 
 
 def _unique_profile(document: dict[str, Any], profile_id: str) -> dict[str, Any]:
@@ -459,6 +574,30 @@ def prepare_family_source_closure(
         root / "integrations" / INTEGRATION_ID / "config" /
         "simion_single_flight.json"
     )
+    source_materialization_profile_id = experiment.get(
+        "single_flight_source_materialization_profile_id"
+    )
+    source_materialization_profile = None
+    if source_materialization_profile_id is not None:
+        if execution_strategy != "simion_single_flight":
+            raise ContractError(
+                "source materialization profiles require SIMION single flight"
+            )
+        matches = [
+            item
+            for item in single_flight_configuration["source_materialization_profiles"]
+            if item["profile_id"] == source_materialization_profile_id
+        ]
+        if len(matches) != 1:
+            raise ContractError(
+                "single-flight source materialization profile must resolve exactly once"
+            )
+        try:
+            source_materialization_profile = resolve_source_materialization_profile(
+                matches[0], root / "integrations" / INTEGRATION_ID,
+            )
+        except (KeyError, OSError, TypeError, ValueError) as exc:
+            raise ContractError("source phase-space authority is invalid") from exc
     if frontend_grid_profile_id is not None:
         if execution_strategy != "simion_single_flight":
             raise ContractError(
@@ -538,18 +677,38 @@ def prepare_family_source_closure(
     ):
         raise ContractError("single-flight architecture/source/field/release identity is incomplete")
     if (
+        source_materialization_profile is not None
+        and source_materialization_profile["source_profile_id"] != source_profile_id
+    ):
+        raise ContractError("source materialization and campaign source identities differ")
+    if (
         field_overlay_id is not None
         and frontend_grid_profile_id is not None
         and grid_profiles[0].get("field_overlay_id") != field_overlay_id
     ):
         raise ContractError("frontend grid field-overlay identity differs")
     pre_pulse_source_path = None
+    pre_pulse_receipt_path = None
     if source_release_mode == "pre_pulse_restart":
         if execution_strategy != "simion_single_flight" or pre_pulse_source_state is None:
             raise ContractError("pre-pulse restart requires a governed source-state record")
         pre_pulse_source_path = _workspace_record(
             workspace, pre_pulse_source_state, "pre-pulse source state"
         )
+        if source_materialization_profile is not None:
+            required_restart_fields = {
+                "materialization_receipt", "source_state_epoch", "source_state_locus",
+                "position_rowwise_abs_tolerance_mm",
+                "velocity_rowwise_abs_tolerance_m_per_s", "clock_abs_tolerance_us",
+                "energy_abs_tolerance_eV", "postselection_prohibited",
+            }
+            if not required_restart_fields.issubset(pre_pulse_source_state):
+                raise ContractError("canonical pulse restart validation contract is incomplete")
+            pre_pulse_receipt_path = _workspace_record(
+                workspace,
+                pre_pulse_source_state["materialization_receipt"],
+                "pre-pulse source materialization receipt",
+            )
     elif pre_pulse_source_state is not None:
         raise ContractError("pre-pulse source state requires pre-pulse restart mode")
     profile_registry = load_connection_profile_registry(profile_registry_path)
@@ -914,7 +1073,9 @@ def prepare_family_source_closure(
     execution_particle_count = (
         int(pulse_contract["population_contract"]["screening_prefix_count"])
         if pulse_contract is not None else
-        int(single_flight_source["particle_count"])
+        int(source_materialization_profile["particle_count"])
+        if source_materialization_profile is not None
+        else int(single_flight_source["particle_count"])
         if single_flight_source is not None
         else int(pre_pulse_source_state["particle_count"])
         if pre_pulse_source_state is not None
@@ -1004,6 +1165,51 @@ def prepare_family_source_closure(
         schedule_path = plan_output.with_name("resolved_single_flight_pulse_schedule.json")
         schedule_path.write_text(json.dumps(schedule, indent=2) + "\n", encoding="utf-8")
         layout_files["schedule"] = schedule_path
+        if pre_pulse_source_path is not None and source_materialization_profile is not None:
+            pulse_restart_validation = _validate_canonical_pulse_restart_state(
+                pre_pulse_source_path,
+                pre_pulse_receipt_path,
+                pre_pulse_source_state,
+                source_materialization_profile,
+                geometry,
+                schedule,
+            )
+            pulse_restart_validation_path = plan_output.with_name(
+                "canonical_pulse_restart_target_state_validation.json"
+            )
+            pulse_restart_validation_path.write_text(
+                json.dumps(pulse_restart_validation, indent=2) + "\n",
+                encoding="utf-8",
+            )
+        if (
+            source_materialization_profile is not None
+            and source_materialization_profile["materialization_mode"]
+            == "resolved_layout_pulse_ideal_linear_z_vz"
+        ):
+            materialized_source_path = plan_output.parent / "inputs" / (
+                "single_flight_materialized_particle_source.csv"
+            )
+            materialization_receipt_path = plan_output.parent / "inputs" / (
+                "single_flight_source_materialization_receipt.json"
+            )
+            pulse_target_source_path = plan_output.parent / "inputs" / (
+                "single_flight_pulse_target_state.csv"
+            )
+            materialization_receipt = materialize_ideal_linear_source(
+                materialized_source_path,
+                materialization_receipt_path,
+                _load(resolved_path),
+                geometry,
+                schedule,
+                source_materialization_profile,
+                pulse_target_source_path,
+            )
+        elif (
+            source_materialization_profile is not None
+            and source_materialization_profile["materialization_mode"]
+            != "canonical_multipole_source"
+        ):
+            raise ContractError("source materialization mode is unsupported")
     plan = _load(plan_path)
     plan["execution_steps"] = [
         {
@@ -1033,6 +1239,22 @@ def prepare_family_source_closure(
                 f"single_flight_particle_source_sha256={single_flight_source['sha256']}",
                 f"single_flight_particle_source_count={single_flight_source['particle_count']}",
                 f"single_flight_sampling_mode={single_flight_source['sampling_mode']}",
+            ]) + ([] if source_materialization_profile is None else [
+                "single_flight_source_materialization_profile_id="
+                + source_materialization_profile_id,
+            ]) + ([] if source_materialization_profile is None or
+                    source_materialization_profile["materialization_mode"] ==
+                    "canonical_multipole_source" else [
+                "single_flight_materialized_source_filename=inputs/"
+                + materialized_source_path.name,
+                "single_flight_materialized_source_sha256="
+                + materialization_receipt["particle_source"]["sha256"],
+                "single_flight_materialized_source_count="
+                + str(materialization_receipt["particle_count"]),
+                "single_flight_materialization_receipt_filename=inputs/"
+                + materialization_receipt_path.name,
+                "single_flight_materialization_receipt_sha256="
+                + file_sha256(materialization_receipt_path),
             ]) + ([] if pulse_contract is None else [
                 "pulse_resolution_attribution_arm_id="
                 + experiment["pulse_resolution_attribution_arm_id"],
@@ -1091,6 +1313,19 @@ def prepare_family_source_closure(
                 "pre_pulse_source_state_sha256=" + pre_pulse_source_state["sha256"],
                 "pre_pulse_source_state_count="
                 + str(pre_pulse_source_state["particle_count"]),
+            ]) + ([] if pre_pulse_source_path is None or source_materialization_profile is None else [
+                "pre_pulse_restart_position_tolerance_mm="
+                + format(float(pre_pulse_source_state["position_rowwise_abs_tolerance_mm"]), ".17g"),
+                "pre_pulse_restart_velocity_tolerance_m_per_s="
+                + format(float(pre_pulse_source_state["velocity_rowwise_abs_tolerance_m_per_s"]), ".17g"),
+                "pre_pulse_restart_clock_tolerance_us="
+                + format(float(pre_pulse_source_state["clock_abs_tolerance_us"]), ".17g"),
+                "pre_pulse_restart_energy_tolerance_eV="
+                + format(float(pre_pulse_source_state["energy_abs_tolerance_eV"]), ".17g"),
+                "pre_pulse_restart_validation_filename="
+                + pulse_restart_validation_path.name,
+                "pre_pulse_restart_validation_sha256="
+                + file_sha256(pulse_restart_validation_path),
             ]) + ([] if "single_flight_frontend_grid_profile_id" not in experiment else [
                 "single_flight_frontend_grid_profile_id="
                 + experiment["single_flight_frontend_grid_profile_id"],
