@@ -18,6 +18,9 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     compile_accelerator_overlay,
     compile_frontend,
 )
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_electrode_contract import (
+    FRONTEND_ELECTRODES,
+)
 
 
 REPO = Path(__file__).resolve().parents[3]
@@ -33,8 +36,17 @@ def _minimal_program_contracts() -> tuple[dict[str, object], dict[str, object]]:
         },
         "segmentation": {
             "segmented_rod_array": {
+                "segment_count": 4,
                 "electrodes": [
-                    {"electrode_id": electrode_id, "electrode_group": 1 + electrode_id % 2}
+                    {
+                        "electrode_id": electrode_id,
+                        "electrode_group": 1 + electrode_id % 2,
+                        "center_x_mm": float(electrode_id),
+                        "center_y_mm": 0.0,
+                        "z_min_mm": 0.0,
+                        "z_max_mm": 1.0,
+                        "radius_mm": 0.5,
+                    }
                     for electrode_id in range(1, 9)
                 ]
             }
@@ -54,11 +66,18 @@ def _minimal_program_contracts() -> tuple[dict[str, object], dict[str, object]]:
         "junction_enclosure": {"shield_potential_V": 0.0},
         "instance_origin_mm": {"x": 0.0, "y": 0.0, "z": 0.0},
         "source_exit_center_mm": {"x": -1.0, "y": 0.0, "z": 0.0},
+        "electrodes": copy.deepcopy(FRONTEND_ELECTRODES),
     }
     return upstream, frontend
 
 
 class SingleFlightProgramTests(unittest.TestCase):
+    def test_program_rejects_frontend_outside_exact_published_basis(self) -> None:
+        upstream, frontend = _minimal_program_contracts()
+        frontend["electrodes"]["accelerator_grid2_id"] = 16
+        with self.assertRaisesRegex(ValueError, "published Program PA basis"):
+            build_extension(upstream, frontend, birth_times_us=[0.0])
+
     def test_official_global_segments_follow_workbench_declaration(self) -> None:
         program = enable_official_global_segments(
             "simion.workbench_program()\nadjustable x=0\n"

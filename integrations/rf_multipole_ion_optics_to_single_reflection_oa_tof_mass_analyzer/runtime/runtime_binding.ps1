@@ -113,51 +113,20 @@ function Resolve-RfOatofDependencyContract {
       $contract.consumer_scope -ne 'rf_multipole_registered_handoff_family') {
     throw 'Family runtime dependency identity differs from the closed contract.'
   }
-  $expectedBaseIds = @(
-    'oatof_baseline','oatof_accelerator_geometry_builder',
-    'oatof_rf_handoff_adapter','oatof_resolved_geometry',
-    'oatof_formal_validation','oatof_simion_stable_entry',
-    'oatof_handoff_pulse_program_builder','oatof_formal_lua',
-    'oatof_handoff_pulse_extension_lua','oatof_simion_log_analyzer_wrapper',
-    'oatof_solver_diagnostics','oatof_accelerator_simion_builder',
-    'oatof_accelerator_simion_gem','oatof_candidate_design_compiler',
-    'oatof_design_variable_catalog','oatof_reflectron_simion_builder',
-    'oatof_reflectron_simion_gem','oatof_flight_tube_simion_builder',
-    'oatof_flight_tube_simion_gem','rf_simion_interface_transport_comparator',
-    'rf_simion_grid2_state_materializer',
-    'rf_interface_stage_plan',
-    'rf_shared_joint_geometry','rf_pulse_capture_pulse_scheduler',
-    'rf_pulse_capture_geometry_snapshot_plotter',
-    'rf_pulse_capture_pulse_chain_auditor',
-    'rf_pulse_capture_local_exit_adapter',
-    'rf_analyzer_transport_simion_input_adapter',
-    'rf_analyzer_transport_analyzer','rf_oatof_formal_release_validator',
-    'common_simion_aperture_discretization_schema',
-    'common_simion_aperture_discretizer',
-    'common_simion_aperture_topology_support',
-    'common_simion_aperture_topology_verifier',
-    'common_grounded_shield_connector',
-    'common_connection_profile_schema','common_component_port_schema',
-    'common_resolved_connection_schema','common_machine_contracts',
-    'common_particle_state','common_particle_count_policy',
-    'common_multipole_numerical_qualification',
-    'common_multipole_numerical_observables',
-    'common_multipole_three_mode_dispersion','common_multipole_handoff_publisher',
-    'common_rigid_transform','common_particle_physics',
-    'common_component_particle_state','common_component_particle_state_schema',
-    'common_file_identity','common_artifact_retention',
-    'common_artifact_retention_policy','common_resource_budget_support',
-    'common_verify_run_manifest','common_artifact_naming',
-    'common_write_run_manifest','common_run_artifact_support',
-    'common_require_powershell7','common_create_multipole_round_rods',
-    'common_comsol_runner','common_comsol_resolver',
-    'common_comsol_failure_classifier','common_comsol_environment',
-    'common_comsol_startup'
-  )
   $dependencyIds = @($contract.dependencies | ForEach-Object { [string]$_.id })
-  if ([string]::Join("`n", $dependencyIds) -ne
-      [string]::Join("`n", $expectedBaseIds)) {
-    throw 'Family runtime dependency set or stable order differs.'
+  if ($dependencyIds.Count -lt 1 -or
+      @($dependencyIds | Where-Object { [string]::IsNullOrWhiteSpace($_) }).Count -ne 0) {
+    throw 'Family runtime dependency authority contains an empty identity.'
+  }
+  foreach ($requiredId in @(
+      'common_multipole_simion_geometry',
+      'common_grounded_shield_connector',
+      'rf_single_flight_electrode_contract',
+      'oatof_simion_stable_entry'
+    )) {
+    if (@($dependencyIds | Where-Object { $_ -eq $requiredId }).Count -ne 1) {
+      throw "Family runtime dependency authority must contain required ID exactly once: $requiredId"
+    }
   }
   $allDependencies = @($contract.dependencies)
   $allIds = @($allDependencies | ForEach-Object { [string]$_.id })
@@ -167,9 +136,9 @@ function Resolve-RfOatofDependencyContract {
   $frozenFilenames = @(
     $allDependencies | ForEach-Object { [string]$_.frozen_filename }
   )
-  if (@($allIds | Select-Object -Unique).Count -ne 64 -or
-      @($runInputNames | Select-Object -Unique).Count -ne 64 -or
-      @($frozenFilenames | Select-Object -Unique).Count -ne 64) {
+  if (@($allIds | Select-Object -Unique).Count -ne $allDependencies.Count -or
+      @($runInputNames | Select-Object -Unique).Count -ne $allDependencies.Count -or
+      @($frozenFilenames | Select-Object -Unique).Count -ne $allDependencies.Count) {
     throw 'Resolved family dependency inventory contains duplicate identities or paths.'
   }
   foreach ($dependency in $allDependencies) {
@@ -230,8 +199,11 @@ function Publish-RfOatofDependencyInventory {
       sha256 = $contractIdentity.sha256
     }
   }
-  if (@($inventory.dependencies).Count -ne 58) {
-    throw "$Role resolved code inventory must contain exactly 58 dependencies."
+  $dependencyCount = @($inventory.dependencies).Count
+  if ($dependencyCount -lt 1 -or
+      @($inventory.dependencies | ForEach-Object { [string]$_.id } |
+        Select-Object -Unique).Count -ne $dependencyCount) {
+    throw "$Role resolved code inventory contains no dependencies or duplicate IDs."
   }
   $inventoryPath = Join-Path $InputDir 'code_inventory.json'
   $inventoryJson = $inventory | ConvertTo-Json -Depth 20

@@ -11,6 +11,11 @@ from typing import Any
 
 from common.contracts.file_identity import file_sha256
 from common.multipole.grounded_shield import require_grounded_potential
+from common.multipole.simion_geometry import segmented_rod_electrode_ids
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_electrode_contract import (
+    ROD_ELECTRODE_IDS,
+    require_published_frontend_electrodes,
+)
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.resolved_region_field import (
     resolved_region_field_lua,
     validate_resolved_region_field_contract,
@@ -160,6 +165,7 @@ def build_extension(
         raise ValueError("single-flight Program requires a multipole resolved design")
     if frontend.get("role") != "rf_oatof_simion_single_flight_frontend_contract":
         raise ValueError("single-flight Program requires a frontend contract")
+    require_published_frontend_electrodes(frontend.get("electrodes", {}))
     require_grounded_potential(
         upstream["axial_dc"]["upstream_shield_potential_V"], "multipole shield"
     )
@@ -170,10 +176,13 @@ def build_extension(
     if drive["waveform"] != "cosine":
         raise ValueError("single-flight Program currently requires the frozen cosine RF waveform")
     electrodes = upstream["segmentation"]["segmented_rod_array"]["electrodes"]
+    rod_ids = segmented_rod_electrode_ids(
+        upstream["segmentation"]["segmented_rod_array"]
+    )
     unique: dict[int, dict[str, Any]] = {}
     for item in electrodes:
-        unique[int(item["electrode_id"])] = item
-    if set(unique) != set(range(1, 9)):
+        unique[item["electrode_id"]] = item
+    if rod_ids != list(ROD_ELECTRODE_IDS) or set(unique) != set(ROD_ELECTRODE_IDS):
         raise ValueError("single-flight Program requires multipole electrodes 1 through 8")
     potentials = {
         int(item["electrode_id"]): float(item["potential_V"])

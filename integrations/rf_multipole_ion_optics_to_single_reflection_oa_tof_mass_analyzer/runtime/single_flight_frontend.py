@@ -12,12 +12,17 @@ from common.multipole.grounded_shield import (
     render_grounded_circular_to_rectangular_connection,
     require_grounded_potential,
 )
+from common.multipole.simion_geometry import (
+    render_axis_mapped_segmented_rod_array_gem,
+    segmented_rod_electrode_ids,
+)
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_electrode_contract import (
+    ACCELERATOR_RING_COUNT,
+    FRONTEND_ELECTRODES,
+    ROD_ELECTRODE_IDS,
+    require_published_frontend_electrodes,
+)
 
-
-MULTIPOLE_SHIELD_ELECTRODE = 9
-ACCELERATOR_ELECTRODE_OFFSET = 9
-ENTRANCE_REFERENCE_ELECTRODE = 18
-ENTRANCE_PLATE_ELECTRODE = 19
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -45,8 +50,27 @@ def _require_close(actual: float, expected: float, label: str) -> None:
         raise ValueError(f"{label} differs: actual={actual}, expected={expected}")
 
 
+def _electrode_namespace(rod_ids: list[int], ring_count: int) -> dict[str, Any]:
+    if rod_ids != list(ROD_ELECTRODE_IDS):
+        raise ValueError(
+            "single-flight runtime requires the published rod PA basis IDs 1..8"
+        )
+    if ring_count != ACCELERATOR_RING_COUNT:
+        raise ValueError("single-flight runtime requires exactly five accelerator rings")
+    result = {
+        key: list(value) if isinstance(value, list) else value
+        for key, value in FRONTEND_ELECTRODES.items()
+    }
+    require_published_frontend_electrodes(result)
+    return result
+
+
 def _render_accelerator_local_geometry(
-    geometry: dict[str, float | int], *, cell_x_mm: float, cell_z_mm: float
+    geometry: dict[str, float | int],
+    *,
+    cell_x_mm: float,
+    cell_z_mm: float,
+    electrodes: dict[str, Any],
 ) -> list[str]:
     """Render accelerator geometry with native one-row ideal grids.
 
@@ -56,16 +80,21 @@ def _render_accelerator_local_geometry(
     """
     axis_x = float(geometry["axis_x_mm"])
     axis_y = float(geometry["axis_y_mm"])
+    grounded_shield_id = int(electrodes["grounded_shield_id"])
+    repeller_id = int(electrodes["accelerator_repeller_id"])
+    grid1_id = int(electrodes["accelerator_grid1_id"])
+    ring_ids = [int(value) for value in electrodes["accelerator_ring_ids"]]
+    grid2_id = int(electrodes["accelerator_grid2_id"])
     lines = [
-        f"  e({MULTIPOLE_SHIELD_ELECTRODE}) {{ fill {{",
+        f"  e({grounded_shield_id}) {{ fill {{",
         f"    within {{ {_box(axis_x, axis_y, float(geometry['shield_center_z_mm']), float(geometry['shield_outer_width_mm']), float(geometry['shield_outer_width_mm']), float(geometry['shield_span_z_mm']))} }}",
         f"    notin {{ {_box(axis_x, axis_y, float(geometry['shield_center_z_mm']), float(geometry['shield_inner_width_mm']), float(geometry['shield_inner_width_mm']), float(geometry['shield_span_z_mm']))} }}",
         f"    notin_inside_or_on {{ {_box(float(geometry['negative_x_face_mm'])+float(geometry['shield_wall_mm'])/2, float(geometry['port_center_y_mm']), float(geometry['port_center_z_mm']), float(geometry['shield_wall_mm'])+2*cell_x_mm, float(geometry['numerical_port_width_mm']), float(geometry['numerical_port_height_mm']))} }}",
         "  } }",
-        f"  e({MULTIPOLE_SHIELD_ELECTRODE}) {{ fill {{ within {{ {_box(axis_x, axis_y, float(geometry['shield_back_z_mm'])+float(geometry['shield_wall_mm'])/2, float(geometry['shield_outer_width_mm']), float(geometry['shield_outer_width_mm']), float(geometry['shield_wall_mm']))} }} }} }}",
-        f"  e({ACCELERATOR_ELECTRODE_OFFSET+1}) {{ fill {{ within {{ {_box(axis_x,axis_y,float(geometry['repeller_front_z_mm'])-float(geometry['repeller_thickness_mm'])/2,float(geometry['electrode_width_mm']),float(geometry['electrode_width_mm']),float(geometry['repeller_thickness_mm']))} }} }} }}",
+        f"  e({grounded_shield_id}) {{ fill {{ within {{ {_box(axis_x, axis_y, float(geometry['shield_back_z_mm'])+float(geometry['shield_wall_mm'])/2, float(geometry['shield_outer_width_mm']), float(geometry['shield_outer_width_mm']), float(geometry['shield_wall_mm']))} }} }} }}",
+        f"  e({repeller_id}) {{ fill {{ within {{ {_box(axis_x,axis_y,float(geometry['repeller_front_z_mm'])-float(geometry['repeller_thickness_mm'])/2,float(geometry['electrode_width_mm']),float(geometry['electrode_width_mm']),float(geometry['repeller_thickness_mm']))} }} }} }}",
         "  ; Zero-grid-unit sheets are one-row ideal 100% transmission grids.",
-        f"  e({ACCELERATOR_ELECTRODE_OFFSET+2}) {{ fill {{ within {{ {_box(axis_x,axis_y,float(geometry['grid1_z_mm']),float(geometry['electrode_width_mm']),float(geometry['electrode_width_mm']),0.0)} }} }} }}",
+        f"  e({grid1_id}) {{ fill {{ within {{ {_box(axis_x,axis_y,float(geometry['grid1_z_mm']),float(geometry['electrode_width_mm']),float(geometry['electrode_width_mm']),0.0)} }} }} }}",
     ]
     ring_count = int(geometry["ring_count"])
     ring_pitch = float(geometry["ring_pitch_mm"])
@@ -73,14 +102,14 @@ def _render_accelerator_local_geometry(
         ring_z = float(geometry["grid1_z_mm"]) + ring_index * ring_pitch
         lines.extend(
             [
-                f"  e({ACCELERATOR_ELECTRODE_OFFSET+2+ring_index}) {{ fill {{",
+                f"  e({ring_ids[ring_index-1]}) {{ fill {{",
                 f"    within {{ {_box(axis_x,axis_y,ring_z,float(geometry['electrode_width_mm']),float(geometry['electrode_width_mm']),float(geometry['ring_thickness_mm']))} }}",
                 f"    notin {{ {_box(axis_x,axis_y,ring_z,float(geometry['bore_width_mm']),float(geometry['bore_width_mm']),float(geometry['ring_thickness_mm'])+cell_z_mm)} }}",
                 "  } }",
             ]
         )
     lines.append(
-        f"  e({ACCELERATOR_ELECTRODE_OFFSET+3+ring_count}) {{ fill {{ within {{ {_box(axis_x,axis_y,float(geometry['grid2_z_mm']),float(geometry['shield_inner_width_mm']),float(geometry['shield_inner_width_mm']),0.0)} }} }} }}"
+        f"  e({grid2_id}) {{ fill {{ within {{ {_box(axis_x,axis_y,float(geometry['grid2_z_mm']),float(geometry['shield_inner_width_mm']),float(geometry['shield_inner_width_mm']),0.0)} }} }} }}"
     )
     return lines
 
@@ -115,6 +144,7 @@ def compile_accelerator_overlay(
         raise ValueError("accelerator overlay may only refine z on the governed coarse x-y grid")
 
     geometry = dict(frontend["accelerator_local_region"])
+    electrodes = dict(frontend["electrodes"])
     origin = frontend["instance_origin_mm"]
     half_width = float(geometry["shield_outer_width_mm"]) / 2
     bounds = {
@@ -139,7 +169,10 @@ def compile_accelerator_overlay(
             raise ValueError(f"accelerator overlay {axis} span is not aligned to the fine grid")
         dimensions[f"n{axis}"] = int(nearest) + 1
 
-    missing_physical_electrodes = [*range(1, 9), ENTRANCE_REFERENCE_ELECTRODE]
+    missing_physical_electrodes = [
+        *electrodes["multipole_rod_ids"],
+        electrodes["entrance_reference_sleeve_id"],
+    ]
     boundary_sentinels = [
         f"  e({electrode_id}) {{ fill {{ within {{ "
         f"{_box(bounds['x_min'], bounds['y_min'] + offset * fine['y'], bounds['z_min'], fine['x']/2, fine['y']/2, fine['z']/2)}"
@@ -152,11 +185,14 @@ def compile_accelerator_overlay(
         f"pa_define({dimensions['nx']},{dimensions['ny']},{dimensions['nz']},planar,none,electrostatic,,{_fmt(fine['x'])},{_fmt(fine['y'])},{_fmt(fine['z'])},surface=none)",
         f"locate({_fmt(-bounds['x_min'])},{_fmt(-bounds['y_min'])},{_fmt(-bounds['z_min'])}) {{",
         *_render_accelerator_local_geometry(
-            geometry, cell_x_mm=fine["x"], cell_z_mm=fine["z"]
+            geometry,
+            cell_x_mm=fine["x"],
+            cell_z_mm=fine["z"],
+            electrodes=electrodes,
         ),
         "  ; Boundary-only sentinels make SIMION initialize absent pa1..pa8 and pa18.",
         *boundary_sentinels,
-        f"  e({ENTRANCE_PLATE_ELECTRODE}) {{ fill {{ within {{ {_box(bounds['x_min'],bounds['y_min'],bounds['z_min'],fine['x']/2,fine['y']/2,fine['z']/2)} }} }} }}",
+        f"  e({electrodes['entrance_plate_id']}) {{ fill {{ within {{ {_box(bounds['x_min'],bounds['y_min'],bounds['z_min'],fine['x']/2,fine['y']/2,fine['z']/2)} }} }} }}",
         "}",
         "",
     ]
@@ -182,12 +218,12 @@ def compile_accelerator_overlay(
             "mode": "coarse_electrode_basis_dirichlet_v1",
             "faces": ["x_min", "x_max", "y_min", "y_max", "z_min", "z_max"],
             "coarse_frontend_role": frontend["role"],
-            "basis_electrode_ids": list(range(0, ENTRANCE_PLATE_ELECTRODE + 1)),
+            "basis_electrode_ids": list(range(0, int(electrodes["entrance_plate_id"]) + 1)),
         },
         "electrodes": dict(frontend["electrodes"]),
         "boundary_family_sentinel_electrode_ids": [
             *missing_physical_electrodes,
-            ENTRANCE_PLATE_ELECTRODE,
+            electrodes["entrance_plate_id"],
         ],
     }
     return "\n".join(lines), contract
@@ -281,15 +317,20 @@ def compile_frontend(
     )
     accelerator = oatof["geometry_derivation"]["accelerator"]
     geometry = oatof["geometry_mm"]
+    ring_count = int(oatof["rings"]["accelerator_count"])
     axis_x = float(oatof["coordinate_convention"]["accelerator_axis_x"])
     axis_y = 0.0
     _require_close(center_z, oatof["particle_source"]["center_z_mm"], "port center z")
 
     enclosure = upstream["geometry_mm"]["enclosure"]
-    rods = upstream["segmentation"]["segmented_rod_array"]["electrodes"]
-    segment_count = int(upstream["segmentation"]["segmented_rod_array"]["segment_count"])
-    if segment_count != 4 or {int(item["electrode_id"]) for item in rods} != set(range(1, 9)):
-        raise ValueError("single-flight frontend currently requires the frozen four-segment octupole map")
+    segmented_rods = upstream["segmentation"]["segmented_rod_array"]
+    rods = segmented_rods["electrodes"]
+    electrodes = _electrode_namespace(
+        segmented_rod_electrode_ids(segmented_rods), ring_count
+    )
+    grounded_shield_id = int(electrodes["grounded_shield_id"])
+    entrance_reference_id = int(electrodes["entrance_reference_sleeve_id"])
+    entrance_plate_id = int(electrodes["entrance_plate_id"])
 
     outer_radius = float(enclosure["shield_outer_radius_mm"])
     inner_radius = float(enclosure["shield_inner_radius_mm"])
@@ -329,26 +370,26 @@ def compile_frontend(
     lines = [
         "; Generated single-flight multipole + oaTOF accelerator frontend; do not edit.",
         f"; upstream_resolved_sha256={upstream['resolved_sha256']}",
-        "; electrode 1..8=multipole rods; 9=all grounded shields and connector; 10..17=oaTOF accelerator; 18=functional entrance-reference sleeve",
+        f"; electrode {electrodes['multipole_rod_ids'][0]}..{electrodes['multipole_rod_ids'][-1]}=multipole rods; {grounded_shield_id}=all grounded shields and connector; {electrodes['accelerator_repeller_id']}..{electrodes['accelerator_grid2_id']}=oaTOF accelerator; {entrance_reference_id}=functional entrance-reference sleeve",
         f"pa_define({nx},{ny},{nz},planar,none,electrostatic,,{_fmt(cell_x_mm)},{_fmt(cell_y_mm)},{_fmt(cell_z_mm)},surface=none)",
         f"locate({_fmt(-x_min)},{_fmt(-y_min)},{_fmt(-z_min)}) {{",
     ]
-    for rod in rods:
-        z_min_local = float(rod["z_min_mm"])
-        z_max_local = float(rod["z_max_mm"])
-        endpoint_x = source_zero_x + z_max_local
-        rod_y = center_y + float(rod["center_x_mm"])
-        rod_z = center_z + float(rod["center_y_mm"])
-        lines.append(
-            f"  e({int(rod['electrode_id'])}) {{ fill {{ within {{ locate("
-            f"{_fmt(endpoint_x)},{_fmt(rod_y)},{_fmt(rod_z)},1,90) {{ cylinder(0,0,0,"
-            f"{_fmt(rod['radius_mm'])},,{_fmt(z_max_local-z_min_local)}) }} }} }} }}"
-        )
+    lines.extend(
+        render_axis_mapped_segmented_rod_array_gem(
+            segmented_rods,
+            axial_origin_mm=source_zero_x,
+            transverse_origin_mm=(center_y, center_z),
+            rotation_axis=1,
+            rotation_degrees=90,
+            indent="  ",
+            significant_digits=12,
+        ).splitlines()
+    )
 
     shield_length = shield_x_max - source_x_min
     lines.extend(
         [
-            f"  e({MULTIPOLE_SHIELD_ELECTRODE}) {{ fill {{",
+            f"  e({grounded_shield_id}) {{ fill {{",
             f"    within {{ locate({_fmt(shield_x_max)},{_fmt(center_y)},{_fmt(center_z)},1,90) {{ cylinder(0,0,0,{_fmt(outer_radius)},,{_fmt(shield_length)}) }} }}",
             f"    notin_inside {{ locate({_fmt(shield_x_max+cell_x_mm)},{_fmt(center_y)},{_fmt(center_z)},1,90) {{ cylinder(0,0,0,{_fmt(inner_radius)},,{_fmt(shield_length+2*cell_x_mm)}) }} }}",
             "  } }",
@@ -371,16 +412,16 @@ def compile_frontend(
     sleeve_max = source_zero_x + float(sleeve["downstream_face_z_mm"])
     lines.extend(
         [
-            f"  e({MULTIPOLE_SHIELD_ELECTRODE}) {{ fill {{",
+            f"  e({grounded_shield_id}) {{ fill {{",
             f"    within {{ locate({_fmt(entrance_max)},{_fmt(center_y)},{_fmt(center_z)},1,90) {{ cylinder(0,0,0,{_fmt(outer_radius)},,{_fmt(entrance_max-entrance_min)}) }} }}",
             f"    notin_inside {{ locate({_fmt(entrance_max+cell_x_mm)},{_fmt(center_y)},{_fmt(center_z)},1,90) {{ cylinder(0,0,0,{_fmt(insulated_radius)},,{_fmt(entrance_max-entrance_min+2*cell_x_mm)}) }} }}",
             "  } }",
-            f"  e({ENTRANCE_PLATE_ELECTRODE}) {{ fill {{",
+            f"  e({entrance_plate_id}) {{ fill {{",
             f"    within {{ locate({_fmt(entrance_plate_max)},{_fmt(center_y)},{_fmt(center_z)},1,90) {{ cylinder(0,0,0,{_fmt(outer_radius)},,{_fmt(entrance_plate_max-entrance_plate_min)}) }} }}",
             f"    notin_inside {{ locate({_fmt(entrance_plate_max+cell_x_mm)},{_fmt(center_y)},{_fmt(center_z)},1,90) {{ cylinder(0,0,0,{_fmt(entrance_radius)},,{_fmt(entrance_plate_max-entrance_plate_min+2*cell_x_mm)}) }} }}",
             "  } }",
             "  ; Functional source-reference sleeve; this is not a shield electrode.",
-            f"  e({ENTRANCE_REFERENCE_ELECTRODE}) {{ fill {{",
+            f"  e({entrance_reference_id}) {{ fill {{",
             f"    within {{ locate({_fmt(sleeve_max)},{_fmt(center_y)},{_fmt(center_z)},1,90) {{ cylinder(0,0,0,{_fmt(sleeve_outer)},,{_fmt(sleeve_max-sleeve_min)}) }} }}",
             f"    notin_inside {{ locate({_fmt(sleeve_max+cell_x_mm)},{_fmt(center_y)},{_fmt(center_z)},1,90) {{ cylinder(0,0,0,{_fmt(sleeve_inner)},,{_fmt(sleeve_max-sleeve_min+2*cell_x_mm)}) }} }}",
             "  } }",
@@ -404,7 +445,7 @@ def compile_frontend(
         "grounded shield sleeve",
     )
     connection_lines, connection_contract = render_grounded_circular_to_rectangular_connection(
-        electrode_id=MULTIPOLE_SHIELD_ELECTRODE,
+        electrode_id=grounded_shield_id,
         sleeve_x_min_mm=shield_x_max,
         sleeve_x_max_mm=exit_x,
         flange_thickness_mm=shield_wall,
@@ -429,7 +470,6 @@ def compile_frontend(
     bore_width = 2 * float(geometry["accelerator_bore_half"])
     grid1_z = float(accelerator["canonical_grid1_z_mm"])
     stage2 = float(accelerator["d2_mm"])
-    ring_count = int(oatof["rings"]["accelerator_count"])
     ring_pitch = stage2 / (ring_count + 1)
     ring_thickness = float(geometry["accelerator_ring_thickness"])
     accelerator_local_region: dict[str, float | int] = {
@@ -461,6 +501,7 @@ def compile_frontend(
             accelerator_local_region,
             cell_x_mm=cell_x_mm,
             cell_z_mm=cell_z_mm,
+            electrodes=electrodes,
         )
     )
     lines.extend(["}", ""])
@@ -486,16 +527,7 @@ def compile_frontend(
             "terminal_envelope_width_mm": terminal_width,
             "terminal_envelope_height_mm": terminal_height,
         },
-        "electrodes": {
-            "multipole_rod_ids": list(range(1, 9)),
-            "grounded_shield_id": MULTIPOLE_SHIELD_ELECTRODE,
-            "accelerator_repeller_id": 10,
-            "accelerator_grid1_id": 11,
-            "accelerator_ring_ids": list(range(12, 17)),
-            "accelerator_grid2_id": 17,
-            "entrance_reference_sleeve_id": ENTRANCE_REFERENCE_ELECTRODE,
-            "entrance_plate_id": ENTRANCE_PLATE_ELECTRODE,
-        },
+        "electrodes": electrodes,
         "entrance_reference_sleeve": dict(sleeve),
         "accelerator_local_region": accelerator_local_region,
         "ideal_grid_model": {

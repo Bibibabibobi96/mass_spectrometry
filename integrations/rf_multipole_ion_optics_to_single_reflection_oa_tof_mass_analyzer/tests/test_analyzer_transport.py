@@ -555,7 +555,11 @@ class AnalyzerTransportTests(unittest.TestCase):
         self.assertLess(frozen_parse, selection)
         self.assertLess(selection, ordinary_copy)
         self.assertIn("$contractIdentity = Copy-RfStableFile", runtime)
-        self.assertIn("resolved code inventory must contain exactly 58", runtime)
+        self.assertIn(
+            "resolved code inventory contains no dependencies or duplicate IDs",
+            runtime,
+        )
+        self.assertNotIn("resolved code inventory must contain exactly", runtime)
         self.assertIn("path = $contractRelative", runtime)
         self.assertNotIn("base = [ordered]@{", runtime)
         self.assertNotIn("overlay = [ordered]@{", runtime)

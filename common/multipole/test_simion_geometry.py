@@ -282,7 +282,9 @@ class SimionGeometryTests(unittest.TestCase):
                 "segment_count": 2,
                 "electrodes": [
                     {**base, "electrode_id": 1, "z_min_mm": 2.0, "z_max_mm": 7.0},
+                    {**base, "electrode_id": 2, "z_min_mm": 2.0, "z_max_mm": 7.0},
                     {**base, "electrode_id": 3, "z_min_mm": 8.0, "z_max_mm": 15.0},
+                    {**base, "electrode_id": 4, "z_min_mm": 8.0, "z_max_mm": 15.0},
                 ],
             },
         }

@@ -1,6 +1,8 @@
 import json
+import hashlib
 import math
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from common.multipole.compile_design_request import (
@@ -10,14 +12,152 @@ from common.multipole.compile_design_request import (
 from common.multipole.interface_geometry import build_axial_interface_layout
 from common.multipole.round_rod_geometry import build_round_rod_array
 from common.multipole.simion_geometry import (
+    render_axis_mapped_segmented_rod_array_gem,
     render_gem,
     render_grouped_rod_array_gem,
     render_segmented_rod_array_gem,
 )
+from common.multipole import simion_geometry
 ROOT = Path(__file__).resolve().parents[2]
 
 
 class RoundRodGeometryTest(unittest.TestCase):
+    def test_segmented_renderer_canonical_family_geometry_and_hashes(self):
+        expected = {
+            "quadrupole": (16, 4, "427647f0200eda36fad92c40a0c36739ca6d316bcbf7e7e8fc7d5f67dff960f7", "c811a0ff39044a3caee40dc3b058cfd7bc77c53edb1045340a304481e15a2b7d"),
+            "hexapole": (24, 6, "be36a3afbd12358358050ec7f738be1b23b11680ad20e95414f398a8d117fb68", "ee39c8445a1c7a090130b37d43e9d71c54db74d30cc0518132386cc8601c3d36"),
+            "octupole": (32, 8, "934f81aff5ac381240a0c353ad0f701083afb9b02c3a13c18fbd39e64d65a087", "3e80b28238e8e0b39c43a78d829d6c64fb3842666b61ec4b7601ef8cc7a4be45"),
+        }
+        for family, (rod_count, center_count, canonical_sha256, mapped_sha256) in expected.items():
+            with self.subTest(family=family):
+                resolved = json.loads(
+                    (
+                        ROOT
+                        / f"projects/rf_{family}_ion_optics/config/resolved_design_no_acceleration_full_length.json"
+                    ).read_text(encoding="utf-8")
+                )
+                segmented = resolved["segmentation"]["segmented_rod_array"]
+                electrodes = segmented["electrodes"]
+                self.assertEqual(segmented["segment_count"], 4)
+                self.assertEqual(len(electrodes), rod_count)
+                self.assertEqual(
+                    len({(item["center_x_mm"], item["center_y_mm"]) for item in electrodes}),
+                    center_count,
+                )
+                self.assertEqual({item["radius_mm"] for item in electrodes}, {2.0})
+                self.assertEqual(
+                    {int(item["electrode_id"]) for item in electrodes}, set(range(1, 9))
+                )
+                self.assertEqual(
+                    len({(item["z_min_mm"], item["z_max_mm"]) for item in electrodes}), 4
+                )
+                gem = render_segmented_rod_array_gem(segmented)
+                self.assertEqual(hashlib.sha256(gem.encode()).hexdigest(), canonical_sha256)
+                mapped = render_axis_mapped_segmented_rod_array_gem(
+                    segmented,
+                    axial_origin_mm=-148.4,
+                    transverse_origin_mm=(2.5, -1.25),
+                    rotation_axis=1,
+                    rotation_degrees=90,
+                    indent="  ",
+                    significant_digits=12,
+                )
+                self.assertEqual(len(mapped.splitlines()), rod_count)
+                self.assertEqual(hashlib.sha256(mapped.encode()).hexdigest(), mapped_sha256)
+
+    def test_segmented_renderer_rejects_invalid_primitives(self):
+        valid = {
+            "segment_count": 2,
+            "electrodes": [
+                {
+                    "electrode_id": electrode_id,
+                    "center_x_mm": float(electrode_id),
+                    "center_y_mm": 1.0,
+                    "z_min_mm": 0.0,
+                    "z_max_mm": 1.0,
+                    "radius_mm": 0.5,
+                }
+                for electrode_id in range(1, 5)
+            ],
+        }
+        render_segmented_rod_array_gem(valid)
+        for label, pattern, mutate in (
+            ("segment_count", "segments", lambda value: value.update(segment_count=True)),
+            ("length", "length", lambda value: value["electrodes"][0].update(z_max_mm=0.0)),
+            ("radius", "finite", lambda value: value["electrodes"][0].update(radius_mm=float("nan"))),
+            ("incomplete", "incomplete", lambda value: value["electrodes"][0].pop("center_x_mm")),
+            ("bool_id", "namespace", lambda value: value["electrodes"][0].update(electrode_id=True)),
+            ("fractional_id", "namespace", lambda value: value["electrodes"][0].update(electrode_id=1.5)),
+            ("gapped_id", "complete", lambda value: value["electrodes"][0].update(electrode_id=5)),
+        ):
+            with self.subTest(label=label):
+                candidate = json.loads(json.dumps(valid))
+                mutate(candidate)
+                with self.assertRaisesRegex(ValueError, pattern):
+                    render_segmented_rod_array_gem(candidate)
+
+    def test_axis_mapped_renderer_strictly_validates_placement(self):
+        resolved = json.loads(
+            (
+                ROOT
+                / "projects/rf_quadrupole_ion_optics/config/resolved_design_no_acceleration_full_length.json"
+            ).read_text(encoding="utf-8")
+        )
+        segmented = resolved["segmentation"]["segmented_rod_array"]
+        base = {
+            "axial_origin_mm": 0.0,
+            "transverse_origin_mm": (0.0, 0.0),
+            "rotation_axis": 1,
+            "rotation_degrees": 90.0,
+            "indent": "  ",
+            "significant_digits": 12,
+        }
+        for label, pattern, override in (
+            ("bool_origin", "axial_origin", {"axial_origin_mm": True}),
+            ("nan_origin", "finite", {"axial_origin_mm": float("nan")}),
+            ("inf_transverse", "finite", {"transverse_origin_mm": (0.0, float("inf"))}),
+            ("list_transverse", "tuple", {"transverse_origin_mm": [0.0, 0.0]}),
+            ("bool_axis", "selector", {"rotation_axis": True}),
+            ("fractional_axis", "selector", {"rotation_axis": 1.5}),
+            ("invalid_axis", "selector 1", {"rotation_axis": 2}),
+            ("nan_degrees", "finite", {"rotation_degrees": float("nan")}),
+            ("bool_degrees", "rotation_degrees", {"rotation_degrees": False}),
+            ("bool_digits", "significant_digits", {"significant_digits": True}),
+            ("low_digits", "significant_digits", {"significant_digits": 0}),
+            ("high_digits", "significant_digits", {"significant_digits": 18}),
+            ("bad_indent", "indent", {"indent": "\t"}),
+        ):
+            with self.subTest(label=label):
+                kwargs = {**base, **override}
+                with self.assertRaisesRegex(ValueError, pattern):
+                    render_axis_mapped_segmented_rod_array_gem(segmented, **kwargs)
+
+    def test_production_render_gem_uses_shared_local_segmented_primitive(self):
+        for family in ("quadrupole", "hexapole", "octupole"):
+            resolved = json.loads(
+                (
+                    ROOT
+                    / f"projects/rf_{family}_ion_optics/config/resolved_design_no_acceleration_full_length.json"
+                ).read_text(encoding="utf-8")
+            )
+            with self.subTest(family=family), patch.object(
+                simion_geometry,
+                "_render_local_segmented_rod_array_gem",
+                wraps=simion_geometry._render_local_segmented_rod_array_gem,
+            ) as renderer:
+                gem = render_gem(resolved, 0.2)
+                renderer.assert_called_once_with(
+                    resolved["segmentation"]["segmented_rod_array"],
+                    indent="  ",
+                    significant_digits=12,
+                )
+                local = simion_geometry._render_local_segmented_rod_array_gem(
+                    resolved["segmentation"]["segmented_rod_array"],
+                    indent="  ",
+                    significant_digits=12,
+                )
+                self.assertIn(local, gem)
+
     def test_quadrupole_uses_same_array_generator(self):
         array = build_round_rod_array(
             radial_order_n=2,

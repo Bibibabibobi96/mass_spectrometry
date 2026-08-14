@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import copy
+import hashlib
 import unittest
 from pathlib import Path
 
@@ -92,6 +93,55 @@ class SingleFlightFrontendTests(unittest.TestCase):
         self.assertIn(f",{grid1:.12g},", gem)
         self.assertIn(f",{grid2:.12g},", gem)
         self.assertGreaterEqual(gem.count(",0) } } }"), 2)
+
+    def test_canonical_octupole_rod_semantics_and_frontend_hash(self) -> None:
+        segmented = self.upstream["segmentation"]["segmented_rod_array"]
+        rods = segmented["electrodes"]
+        self.assertEqual(segmented["segment_count"], 4)
+        self.assertEqual(len(rods), 32)
+        self.assertEqual(len({(rod["center_x_mm"], rod["center_y_mm"]) for rod in rods}), 8)
+        self.assertEqual({rod["radius_mm"] for rod in rods}, {2.0})
+        self.assertEqual({int(rod["electrode_id"]) for rod in rods}, set(range(1, 9)))
+        self.assertEqual(len({(rod["z_min_mm"], rod["z_max_mm"]) for rod in rods}), 4)
+        gem, contract = compile_frontend(self.upstream, self.oatof, self.connection)
+        self.assertEqual(
+            hashlib.sha256(gem.encode()).hexdigest(),
+            "35d331a4d46e73abbcde140cc9e5a9bee7e10a9a6b2ab099fe1db90ddc376217",
+        )
+        self.assertEqual(contract["electrodes"]["multipole_rod_ids"], list(range(1, 9)))
+
+    def test_frontend_accepts_shared_quadrupole_and_hexapole_segmented_rods(self) -> None:
+        for family, rod_count in (("quadrupole", 16), ("hexapole", 24)):
+            with self.subTest(family=family):
+                resolved = json.loads(
+                    (
+                        REPO
+                        / f"projects/rf_{family}_ion_optics/config/resolved_design_no_acceleration_full_length.json"
+                    ).read_text(encoding="utf-8")
+                )
+                upstream = copy.deepcopy(self.upstream)
+                upstream["segmentation"]["segmented_rod_array"] = resolved["segmentation"][
+                    "segmented_rod_array"
+                ]
+                gem, contract = compile_frontend(upstream, self.oatof, self.connection)
+                self.assertEqual(
+                    gem.count("{ cylinder(0,0,0,2,,19.6)"), rod_count
+                )
+                self.assertEqual(
+                    contract["electrodes"]["multipole_rod_ids"], list(range(1, 9))
+                )
+
+    def test_frontend_fails_closed_outside_published_electrode_basis(self) -> None:
+        oatof = copy.deepcopy(self.oatof)
+        oatof["rings"]["accelerator_count"] = 4
+        with self.assertRaisesRegex(ValueError, "exactly five accelerator rings"):
+            compile_frontend(self.upstream, oatof, self.connection)
+        upstream = copy.deepcopy(self.upstream)
+        upstream["segmentation"]["segmented_rod_array"]["electrodes"][0][
+            "electrode_id"
+        ] = 9
+        with self.assertRaisesRegex(ValueError, "namespace"):
+            compile_frontend(upstream, self.oatof, self.connection)
 
     def test_preserves_direct_mating_aperture_and_global_origin(self) -> None:
         _, contract = compile_frontend(self.upstream, self.oatof, self.connection)

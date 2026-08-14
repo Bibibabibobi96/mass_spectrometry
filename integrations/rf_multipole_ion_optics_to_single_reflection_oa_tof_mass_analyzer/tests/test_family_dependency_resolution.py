@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import shutil
+import subprocess
+import tempfile
 import unittest
 
 from common.contracts.file_identity import repository_text_sha256
@@ -20,15 +23,63 @@ def load(path: Path) -> dict[str, object]:
 
 
 class FamilyDependencyResolutionTests(unittest.TestCase):
-    def test_single_stable_65_item_inventory(self) -> None:
+    def test_powershell_resolver_and_publisher_use_manifest_authority(self) -> None:
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("PowerShell 7 is unavailable")
+        binding_path = CONFIG_ROOT / "family_octupole_direct_mating_gap_0mm_runtime_binding.json"
+        run_artifacts = INTEGRATION_ROOT / "runtime" / "run_artifacts.ps1"
+        runtime_binding = INTEGRATION_ROOT / "runtime" / "runtime_binding.ps1"
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            script = f"""
+$OutputEncoding = [Text.UTF8Encoding]::new($false)
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+. '{run_artifacts}'
+. '{runtime_binding}'
+$runtimeBinding = Get-Content -LiteralPath '{binding_path}' -Raw | ConvertFrom-Json
+$binding = Get-Content -LiteralPath '{INVENTORY}' -Raw | ConvertFrom-Json
+$resolved = Resolve-RfOatofDependencyContract -RepoRoot '{REPO_ROOT}' -ContractPath '{INVENTORY}'
+$runtime = [pscustomobject]@{{
+  binding = $runtimeBinding
+  contracts = [pscustomobject]@{{ dependency_contract = '{INVENTORY}' }}
+  dependency_contract = $resolved
+}}
+$publication = Publish-RfOatofDependencyInventory -Runtime $runtime -RepoRoot '{REPO_ROOT}' -InputDir '{output}' -Role 'test'
+$inventory = Get-Content -LiteralPath $publication.code_inventory_path -Raw | ConvertFrom-Json
+if (@($inventory.dependencies | Where-Object {{ $_.id -eq 'common_multipole_simion_geometry' }}).Count -ne 1) {{ throw 'common renderer dependency differs' }}
+if (@($inventory.dependencies | Where-Object {{ $_.id -eq 'rf_single_flight_electrode_contract' }}).Count -ne 1) {{ throw 'electrode contract dependency differs' }}
+if ([string]::Join("`n", @($resolved.dependencies.id)) -ne [string]::Join("`n", @($binding.dependencies.id))) {{ throw 'resolved dependency order differs' }}
+if ([string]::Join("`n", @($inventory.dependencies.id)) -ne [string]::Join("`n", @($binding.dependencies.id))) {{ throw 'published dependency order differs' }}
+"RESOLVE_COUNT=$(@($resolved.dependencies).Count) PUBLISH_COUNT=$(@($inventory.dependencies).Count)"
+"""
+            result = subprocess.run(
+                [pwsh, "-NoProfile", "-Command", script],
+                cwd=REPO_ROOT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                capture_output=True,
+                check=False,
+            )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        expected_count = len(load(INVENTORY)["dependencies"])
+        self.assertIn(
+            f"RESOLVE_COUNT={expected_count} PUBLISH_COUNT={expected_count}",
+            result.stdout,
+        )
+
+    def test_single_stable_unique_inventory(self) -> None:
         inventory = load(INVENTORY)
         dependencies = inventory["dependencies"]
         ids = [item["id"] for item in dependencies]
         run_inputs = [item["run_input_name"] for item in dependencies]
-        self.assertEqual(len(dependencies), 65)
+        self.assertGreater(len(dependencies), 0)
         self.assertEqual(len(ids), len(set(ids)))
         self.assertEqual(len(run_inputs), len(set(run_inputs)))
         self.assertIn("oatof_finite_interval_design_compiler", ids)
+        self.assertIn("common_multipole_simion_geometry", ids)
+        self.assertIn("rf_single_flight_electrode_contract", ids)
         self.assertEqual(
             inventory["consumer_scope"],
             "rf_multipole_registered_handoff_family",

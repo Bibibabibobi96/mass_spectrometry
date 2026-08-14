@@ -9,7 +9,11 @@ from pathlib import Path
 from typing import Any
 
 from common.multipole.connector_geometry import CONNECTOR_SHAPES
+from common.multipole.axial_acceleration import SIMION_MAX_ADJUSTABLE_ELECTRODE_ID
 from common.multipole.simion_numerics import normalize_cell_mm_xyz
+
+
+_GLOBAL_X_ROTATION_AXIS_SELECTOR = 1
 
 
 def render_grouped_rod_array_gem(array: dict[str, Any]) -> str:
@@ -38,25 +42,163 @@ def render_grouped_rod_array_gem(array: dict[str, Any]) -> str:
 
 def render_segmented_rod_array_gem(segmented: dict[str, Any]) -> str:
     """Render solver-neutral rod segments using their explicit electrode IDs."""
-    electrodes = segmented.get("electrodes", [])
-    if not electrodes:
-        raise ValueError("segmented rod contract must contain electrodes")
+    return _render_located_segmented_rod_array_gem(
+        segmented, significant_digits=15, legacy_spacing=True
+    )
+
+
+def _render_located_segmented_rod_array_gem(
+    segmented: dict[str, Any], *, significant_digits: int, legacy_spacing: bool
+) -> str:
+    primitives = _segmented_rod_primitives(segmented)
+    fmt = lambda value: format(value, f".{significant_digits}g")
+    radius_prefix = " " if legacy_spacing else ""
     lines: list[str] = []
-    for electrode in electrodes:
-        x = float(electrode["center_x_mm"])
-        y = float(electrode["center_y_mm"])
-        z_min = float(electrode["z_min_mm"])
-        z_max = float(electrode["z_max_mm"])
+    for primitive in primitives:
         lines.extend(
             [
-                f"locate(0,0,{z_max:.15g}) {{",
-                f"  e({int(electrode['electrode_id'])}) {{ fill {{ within {{ cylinder("
-                f"{x:.15g},{y:.15g},0, {float(electrode['radius_mm']):.15g},, {z_max-z_min:.15g}) }} }} }}",
+                f"locate(0,0,{fmt(primitive['z_max_mm'])}) {{",
+                f"  e({primitive['electrode_id']}) {{ fill {{ within {{ cylinder("
+                f"{fmt(primitive['center_x_mm'])},{fmt(primitive['center_y_mm'])},0,"
+                f"{radius_prefix}{fmt(primitive['radius_mm'])},,{radius_prefix}"
+                f"{fmt(primitive['length_mm'])}) }} }} }}",
                 "}",
             ]
         )
     lines.append("")
     return "\n".join(lines)
+
+
+def segmented_rod_electrode_ids(segmented: dict[str, Any]) -> list[int]:
+    """Return the canonical explicit electrode namespace of a segmented rod array."""
+    return sorted({item["electrode_id"] for item in _segmented_rod_primitives(segmented)})
+
+
+def _render_local_segmented_rod_array_gem(
+    segmented: dict[str, Any], *, indent: str = "  ", significant_digits: int = 12
+) -> str:
+    """Render canonical rod primitives in their native local frame."""
+    indent, significant_digits = _validate_render_format(indent, significant_digits)
+    fmt = lambda value: format(value, f".{significant_digits}g")
+    return "\n".join(
+        f"{indent}e({item['electrode_id']}) {{ fill {{ within {{ cylinder("
+        f"{fmt(item['center_x_mm'])},{fmt(item['center_y_mm'])},{fmt(item['z_max_mm'])},"
+        f"{fmt(item['radius_mm'])},,{fmt(item['length_mm'])}) }} }} }}"
+        for item in _segmented_rod_primitives(segmented)
+    )
+
+
+def render_axis_mapped_segmented_rod_array_gem(
+    segmented: dict[str, Any],
+    *,
+    axial_origin_mm: float,
+    transverse_origin_mm: tuple[float, float],
+    rotation_axis: int,
+    rotation_degrees: float,
+    indent: str = "",
+    significant_digits: int = 12,
+) -> str:
+    """Render local-z rod cylinders on the current assembly's global-X axis.
+
+    The segmented rod contract remains the sole primitive and electrode-mapping
+    authority. The caller supplies only the placement needed by its assembly.
+    This narrow placement supports SIMION ``locate`` rotation selector 1 only;
+    it is not a general-purpose arbitrary-axis renderer.
+    """
+    primitives = _segmented_rod_primitives(segmented)
+    axial_origin = _finite_real(axial_origin_mm, "axial_origin_mm")
+    if (
+        not isinstance(transverse_origin_mm, tuple)
+        or len(transverse_origin_mm) != 2
+    ):
+        raise ValueError("transverse_origin_mm must be one two-value tuple")
+    transverse_x = _finite_real(transverse_origin_mm[0], "transverse_origin_mm[0]")
+    transverse_y = _finite_real(transverse_origin_mm[1], "transverse_origin_mm[1]")
+    if isinstance(rotation_axis, bool) or not isinstance(rotation_axis, int):
+        raise ValueError("rotation_axis must be one official integer selector")
+    if rotation_axis != _GLOBAL_X_ROTATION_AXIS_SELECTOR:
+        raise ValueError("axis-mapped rod placement requires official selector 1")
+    rotation = _finite_real(rotation_degrees, "rotation_degrees")
+    indent, significant_digits = _validate_render_format(indent, significant_digits)
+
+    def fmt(value: float) -> str:
+        return format(float(value), f".{significant_digits}g")
+
+    lines = []
+    for primitive in primitives:
+        lines.append(
+            f"{indent}e({primitive['electrode_id']}) {{ fill {{ within {{ locate("
+            f"{fmt(axial_origin+primitive['z_max_mm'])},"
+            f"{fmt(transverse_x+primitive['center_x_mm'])},"
+            f"{fmt(transverse_y+primitive['center_y_mm'])},{rotation_axis},"
+            f"{fmt(rotation)}) {{ cylinder(0,0,0,{fmt(primitive['radius_mm'])},,"
+            f"{fmt(primitive['length_mm'])}) }} }} }} }}"
+        )
+    return "\n".join(lines)
+
+
+def _finite_real(value: Any, label: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{label} must be one finite number")
+    result = float(value)
+    if not math.isfinite(result):
+        raise ValueError(f"{label} must be finite")
+    return result
+
+
+def _validate_render_format(indent: Any, significant_digits: Any) -> tuple[str, int]:
+    if indent not in ("", "  ", "    "):
+        raise ValueError("indent must be a supported whitespace prefix")
+    if (
+        isinstance(significant_digits, bool)
+        or not isinstance(significant_digits, int)
+        or not 1 <= significant_digits <= 17
+    ):
+        raise ValueError("significant_digits must be an integer from 1 through 17")
+    return indent, significant_digits
+
+
+def _segmented_rod_primitives(segmented: dict[str, Any]) -> list[dict[str, Any]]:
+    segment_count = segmented.get("segment_count")
+    electrodes = segmented.get("electrodes", [])
+    if not isinstance(segment_count, int) or isinstance(segment_count, bool) or segment_count < 2:
+        raise ValueError("segmented rod contract must declare at least two segments")
+    if not isinstance(electrodes, list) or not electrodes:
+        raise ValueError("segmented rod contract must contain electrodes")
+    required = {
+        "electrode_id", "center_x_mm", "center_y_mm", "z_min_mm", "z_max_mm", "radius_mm"
+    }
+    primitives = []
+    for electrode in electrodes:
+        if not isinstance(electrode, dict) or not required.issubset(electrode):
+            raise ValueError("segmented rod electrode contract is incomplete")
+        electrode_id = electrode["electrode_id"]
+        if (
+            isinstance(electrode_id, bool)
+            or not isinstance(electrode_id, int)
+            or not 1 <= electrode_id <= SIMION_MAX_ADJUSTABLE_ELECTRODE_ID
+        ):
+            raise ValueError("segmented rod electrode_id is outside the SIMION namespace")
+        center_x, center_y, z_min, z_max, radius = (
+            _finite_real(electrode[key], key)
+            for key in ("center_x_mm", "center_y_mm", "z_min_mm", "z_max_mm", "radius_mm")
+        )
+        if z_max <= z_min:
+            raise ValueError("segmented rod electrode length must be positive")
+        if radius <= 0:
+            raise ValueError("segmented rod electrode radius must be positive")
+        primitives.append({
+            "electrode_id": electrode_id,
+            "center_x_mm": center_x,
+            "center_y_mm": center_y,
+            "z_max_mm": z_max,
+            "radius_mm": radius,
+            "length_mm": z_max - z_min,
+        })
+    expected_ids = set(range(1, 2 * segment_count + 1))
+    if {item["electrode_id"] for item in primitives} != expected_ids:
+        raise ValueError("segmented rod electrode IDs must be the complete segment-group namespace")
+    return primitives
 
 
 def render_gem(
@@ -162,10 +304,20 @@ def render_gem(
         f"pa_define({nx},{ny},{nz},planar,none,electrostatic,,{dx:.12g},{dy:.12g},{dz:.12g},surface=fractional)",
         f"locate({half_width:.12g},{half_height:.12g},{-z_min:.12g}) {{",
     ]
-    for rod in rods:
-        lines.extend([
-            f"  e({rod.get('electrode_id', rod['electrode_group'])}) {{ fill {{ within {{ cylinder({rod['center_x_mm']:.12g},{rod['center_y_mm']:.12g},{rod['z_max_mm']:.12g},{rod['radius_mm']:.12g},,{rod['z_max_mm']-rod['z_min_mm']:.12g}) }} }} }}",
-        ])
+    if axial_mode:
+        lines.extend(
+            _render_local_segmented_rod_array_gem(
+                segmented_rods, indent="  ", significant_digits=12
+            ).splitlines()
+        )
+    else:
+        for rod in rods:
+            lines.append(
+                f"  e({rod['electrode_group']}) {{ fill {{ within {{ cylinder("
+                f"{rod['center_x_mm']:.12g},{rod['center_y_mm']:.12g},"
+                f"{rod['z_max_mm']:.12g},{rod['radius_mm']:.12g},,"
+                f"{rod['z_max_mm']-rod['z_min_mm']:.12g}) }} }} }}"
+            )
     shield_end_z = (
         float(downstream_terminal["upstream_enclosure_end_plane_z_mm"])
         if downstream_terminal is not None else z_max
@@ -343,17 +495,25 @@ def _render_rectangular_reference_gem(
         f"; parent_resolved_sha256={parent_hash}",
         f"pa_define({nx},{ny},{nz},planar,xy,electrostatic,,{dx:.12g},{dy:.12g},{dz:.12g},surface=fractional)",
     ]
-    for rod in rods:
-        z0 = float(rod["z_min_mm"])
-        z1 = float(rod["z_max_mm"])
-        electrode = int(rod.get("electrode_id", rod["electrode_group"]))
+    if segmented_rods is not None:
         lines.extend(
-            [
-                f"locate(0,0,{z1:.12g}) {{",
-                f"  e({electrode}) {{ fill {{ within {{ cylinder({float(rod['center_x_mm']):.12g},{float(rod['center_y_mm']):.12g},0,{float(rod['radius_mm']):.12g},,{z1-z0:.12g}) }} }} }}",
-                "}",
-            ]
+            _render_located_segmented_rod_array_gem(
+                segmented_rods, significant_digits=12, legacy_spacing=False
+            ).splitlines()
         )
+    else:
+        for rod in rods:
+            z0 = float(rod["z_min_mm"])
+            z1 = float(rod["z_max_mm"])
+            lines.extend(
+                [
+                    f"locate(0,0,{z1:.12g}) {{",
+                    f"  e({int(rod['electrode_group'])}) {{ fill {{ within {{ cylinder("
+                    f"{float(rod['center_x_mm']):.12g},{float(rod['center_y_mm']):.12g},"
+                    f"0,{float(rod['radius_mm']):.12g},,{z1-z0:.12g}) }} }} }}",
+                    "}",
+                ]
+            )
     _append_rectangular_apertured_section(
         lines,
         ground_electrode,

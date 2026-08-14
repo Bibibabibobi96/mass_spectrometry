@@ -168,7 +168,11 @@ def written_campaign(document: dict) -> Iterator[Path]:
         with tempfile.NamedTemporaryFile(
             mode="w",
             prefix=".transport_campaign_test_",
-            suffix=".json",
+            # The production path guard requires this fixture to remain under
+            # the campaign root. A non-publication suffix keeps concurrent
+            # repository-binding scans from treating the in-flight fixture as
+            # an active campaign.
+            suffix=".tmp",
             dir=CAMPAIGN_ROOT,
             delete=False,
             encoding="utf-8",

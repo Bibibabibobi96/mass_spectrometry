@@ -53,6 +53,13 @@ joint single-flight run package由integration ID拥有；`run_config.project`与
 只能依据冻结manifest/run_config中的显式legacy ownership与upstream source identity读取，禁止按目录
 形状猜测，也禁止新writer继续写入该legacy位置。
 
+single-flight frontend不拥有第二套rod GEM primitive。四/六/八极杆resolved design中的
+`segmented_rod_array`由`common/multipole/simion_geometry.py`统一验证并生成官方SIMION `cylinder`/
+`locate` primitive；integration只声明local-z→global-x的刚体placement、组合PA电极namespace及connector。
+当前三族均为四个轴向segment、显式rod basis IDs `1..8`，但物理rod primitive分别为16/24/32条；frontend
+不得再用“固定四段八极杆”推断primitive数量。当前single-flight Program公开的PA basis仍是rod `1..8`
+及总电极`0..19`，因此其他未来basis映射必须先全链发布，frontend不能单独宣称已支持。
+
 理论/理想源合同必须另外声明`source_state_epoch`和`source_state_locus`，两者与坐标基、规范时钟、
 有序粒子ID和目标状态共同构成源身份。若SIMION因连续轨迹要求在目标epoch之前写入`.ion`，该文件只算
 `release_implementation_state`；profile中的目标宽度、均值或斜率仍指向声明checkpoint，不能由release
