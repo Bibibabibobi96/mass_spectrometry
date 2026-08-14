@@ -160,6 +160,9 @@ LiveLink、SIMION Lua/GEM、PowerShell及跨软件数据合同。仓库架构、
 - 物理优化campaign原则上固定源、数值精度、统计口径和证据合同；数值收敛campaign固定物理设计、
   源和观测定义；统计campaign固定物理和数值设置。若数值设置必须随几何变化，只能由明确派生策略
   保持各行误差目标一致。
+- 控制变量、配对或析因campaign的冻结身份、共同cohort、效应计算和联合结果报告必须遵循
+  [`VALIDATION_METHODS.md`的控制变量、严格配对与析因比较](VALIDATION_METHODS.md#控制变量严格配对与析因比较)；
+  workflow与Schema负责把该设计机器化并失败关闭，不得另设统计口径。
 - 薄调度器只做schema校验、身份解析、失败关闭和调用既有单工况入口；须支持单行选择。商业求解器
   默认最大并发为1、自动重试为0；首个失败后停止并记录未启动原因。每行保留独立run三件套和资源
   记录，campaign summary只作索引。全表成功仅证明执行与预登记一致；baseline只由独立晋升流程更新，
