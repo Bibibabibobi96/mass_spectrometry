@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/rf_oatof_affine_axial_all_ideal_width_sweep_campaign.schema.json",
+  "title": "RF oaTOF exploratory affine axial all-ideal width sweep campaign",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "role",
+    "campaign_id",
+    "evidence_level",
+    "threshold_status",
+    "analysis_class",
+    "solver_execution_allowed",
+    "base_analytic_campaign",
+    "base_case_id",
+    "fixed_architecture_id",
+    "source_family_profile_id",
+    "full_widths_mm",
+    "sample_count",
+    "model_full_width_mm",
+    "cross_validation",
+    "local_taylor_closure",
+    "exploratory_target_checkpoint",
+    "exploratory_declared_thresholds",
+    "exploratory_interpretation_policy"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "rf_oatof_affine_axial_all_ideal_width_sweep_campaign"},
+    "campaign_id": {"type": "string", "minLength": 1},
+    "evidence_level": {"const": "EXPLORATORY_PROVISIONAL"},
+    "threshold_status": {"const": "declared_after_initial_observation_not_preregistered"},
+    "analysis_class": {"const": "solver_independent_analytic"},
+    "solver_execution_allowed": {"const": false},
+    "base_analytic_campaign": {"$ref": "#/$defs/file_record"},
+    "base_case_id": {"type": "string", "minLength": 1},
+    "fixed_architecture_id": {"type": "string", "minLength": 1},
+    "source_family_profile_id": {"type": "string", "minLength": 1},
+    "full_widths_mm": {
+      "type": "array",
+      "minItems": 3,
+      "uniqueItems": true,
+      "items": {"type": "number", "exclusiveMinimum": 0}
+    },
+    "sample_count": {"type": "integer", "minimum": 15},
+    "model_full_width_mm": {"type": "number", "exclusiveMinimum": 0},
+    "cross_validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method", "particle_id_modulus", "validation_offsets", "selection_uses_detector_outcome"],
+      "properties": {
+        "method": {"const": "five_fold_particle_id_modulo"},
+        "particle_id_modulus": {"const": 5},
+        "validation_offsets": {"const": [0, 1, 2, 3, 4]},
+        "selection_uses_detector_outcome": {"const": false}
+      }
+    },
+    "local_taylor_closure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "coefficient_source",
+        "require_resolved_accelerator_coefficient_match",
+        "maximum_accelerator_first_coefficient_difference_mm_per_v_pow_3_over_2",
+        "maximum_accelerator_second_coefficient_difference_mm_per_v_pow_5_over_2",
+        "maximum_abs_coupled_first_residual_mm_per_v_pow_3_over_2",
+        "maximum_abs_coupled_second_residual_mm_per_v_pow_5_over_2",
+        "detector_central_difference_step_mm",
+        "maximum_abs_detector_first_derivative_ns_per_mm",
+        "maximum_abs_detector_second_derivative_ns_per_mm2"
+      ],
+      "properties": {
+        "coefficient_source": {"const": "linear_phase_space_timing_coefficients"},
+        "require_resolved_accelerator_coefficient_match": {"type": "boolean"},
+        "maximum_accelerator_first_coefficient_difference_mm_per_v_pow_3_over_2": {"$ref": "#/$defs/nonnegative_number"},
+        "maximum_accelerator_second_coefficient_difference_mm_per_v_pow_5_over_2": {"$ref": "#/$defs/nonnegative_number"},
+        "maximum_abs_coupled_first_residual_mm_per_v_pow_3_over_2": {"$ref": "#/$defs/nonnegative_number"},
+        "maximum_abs_coupled_second_residual_mm_per_v_pow_5_over_2": {"$ref": "#/$defs/nonnegative_number"},
+        "detector_central_difference_step_mm": {"type": "number", "exclusiveMinimum": 0},
+        "maximum_abs_detector_first_derivative_ns_per_mm": {"$ref": "#/$defs/nonnegative_number"},
+        "maximum_abs_detector_second_derivative_ns_per_mm2": {"$ref": "#/$defs/nonnegative_number"}
+      }
+    },
+    "exploratory_target_checkpoint": {"enum": ["accelerator_focus", "reflectron_entrance", "detector"]},
+    "exploratory_declared_thresholds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "minimum_full_model_validation_r_squared",
+        "maximum_full_model_validation_rmse_fraction_of_sigma",
+        "minimum_sigma_log_width_exponent",
+        "maximum_sigma_log_width_exponent",
+        "minimum_sigma_log_width_fit_r_squared",
+        "maximum_energy_envelope_outside_count"
+      ],
+      "properties": {
+        "minimum_full_model_validation_r_squared": {"type": "number", "minimum": 0, "maximum": 1},
+        "maximum_full_model_validation_rmse_fraction_of_sigma": {"$ref": "#/$defs/nonnegative_number"},
+        "minimum_sigma_log_width_exponent": {"type": "number"},
+        "maximum_sigma_log_width_exponent": {"type": "number"},
+        "minimum_sigma_log_width_fit_r_squared": {"type": "number", "minimum": 0, "maximum": 1},
+        "maximum_energy_envelope_outside_count": {"type": "integer", "minimum": 0}
+      }
+    },
+    "exploratory_interpretation_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "allowed_if_all_thresholds_pass",
+        "not_preregistered",
+        "local_taylor_global_reconstruction_and_width_scaling_are_separate",
+        "legendre_variance_is_not_taylor_derivative_order_attribution",
+        "specific_third_order_dominance_claim_allowed",
+        "real_field_transverse_release_or_numerical_exclusion_claim_allowed",
+        "simion_candidate_or_formal_claim_allowed"
+      ],
+      "properties": {
+        "allowed_if_all_thresholds_pass": {"const": "affine_all_ideal_axial_n1001_higher_order_pattern_only"},
+        "not_preregistered": {"const": true},
+        "local_taylor_global_reconstruction_and_width_scaling_are_separate": {"const": true},
+        "legendre_variance_is_not_taylor_derivative_order_attribution": {"const": true},
+        "specific_third_order_dominance_claim_allowed": {"const": false},
+        "real_field_transverse_release_or_numerical_exclusion_claim_allowed": {"const": false},
+        "simion_candidate_or_formal_claim_allowed": {"const": false}
+      }
+    }
+  },
+  "$defs": {
+    "file_record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"}
+      }
+    },
+    "nonnegative_number": {"type": "number", "minimum": 0}
+  }
+}

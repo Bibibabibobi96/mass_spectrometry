@@ -166,26 +166,22 @@ class SingleFlightProgramTests(unittest.TestCase):
         self.assertIn("TRACE: pre_pulse_state", extension)
         self.assertIn("TRACE: accelerator_grid1_forward", extension)
         self.assertIn("single_flight_rf_steps=160", extension)
-        self.assertIn("adjustable accelerator_ring_quadratic_V=0", extension)
-        self.assertIn("adjustable accelerator_ring_cubic_V=0", extension)
+        self.assertNotIn("accelerator_ring_quadratic_V", extension)
+        self.assertNotIn("accelerator_ring_cubic_V", extension)
         self.assertIn("single_flight_accelerator_ring_voltage(1)", extension)
-        self.assertIn("endpoint_zero*(2*fraction-1)", extension)
+        self.assertIn("return V_grid1*((6-index)/6)", extension)
         self.assertNotIn("single_flight_absolute_birth_clock", extension)
         self.assertIn("return birth+ion_time_of_flight", extension)
         self.assertNotIn("ion_time_of_flight=birth", extension)
         self.assertIn("math.cos(single_flight_omega*instrument_time_us)", extension)
         self.assertIn("single_flight_terminate_after_pulse=1", extension)
         self.assertIn("instrument_time_us>=handoff_pulse_time_us then ion_splat=1", extension)
-        self.assertIn("adjustable sf_ideal_accel_enable=0", extension)
-        self.assertIn("adjustable sf_ideal_accel_stage1_enable=0", extension)
-        self.assertIn("adjustable sf_ideal_accel_stage2_enable=0", extension)
-        self.assertIn("single_flight_base_efield_adjust()", extension)
-        self.assertIn("sf_ideal_accel_stage1_enable==0 and sf_ideal_accel_stage2_enable==0", extension)
-        self.assertIn("math.abs(ion_px_mm-accelerator_axis_x_mm)>accelerator_bore_half_mm", extension)
-        self.assertIn("not single_flight_pulse_is_on() then return", extension)
+        self.assertNotIn("sf_ideal_accel", extension)
+        self.assertNotIn("OATOF_IDEAL_ACCEL", extension)
+        self.assertNotIn("function segment.efield_adjust()", extension)
         self.assertIn("next_plane=accelerator_grid1_z_mm", extension)
         self.assertIn("next_plane=accelerator_grid2_z_mm", extension)
-        self.assertIn("ion_charge*96.4853321233*E/ion_mass", extension)
+        self.assertIn("local crossing_time=distance/ion_vz_mm", extension)
         self.assertIn("ion_time_step=crossing_time", extension)
         self.assertIn("local single_flight_accel_plane_state={}", extension)
         self.assertIn("single_flight_accel_state_for_current_particle()", extension)
@@ -201,7 +197,7 @@ class SingleFlightProgramTests(unittest.TestCase):
         self.assertNotIn("accelerator_plane_tstep_diagnostic", extension)
         self.assertNotIn("accelerator_plane_other_actions_diagnostic", extension)
         self.assertIn("local coordinate_tolerance=32*2.2204460492503131e-16", extension)
-        self.assertIn("status=='willhit' and ion_vz_mm>0", extension)
+        self.assertIn("status=='willhit' and math.abs(distance)", extension)
         self.assertIn("math.abs(distance)<=coordinate_tolerance", extension)
         self.assertIn("ion_time_step=0", extension)
         self.assertIn("state[stage]='hitting'", extension)
@@ -210,19 +206,11 @@ class SingleFlightProgramTests(unittest.TestCase):
         self.assertNotIn("repeated_plane_evaluation then return", extension)
         self.assertIn("accelerator plane crossing estimate made no representable time progress", extension)
         self.assertNotIn("landing did not reach its governed boundary", extension)
-        self.assertIn("ion_pz_mm>=accelerator_repeller_front_z_mm", extension)
+        self.assertIn("ion_pz_mm<accelerator_grid1_z_mm", extension)
         self.assertNotIn("accelerator_focus_drift_mm then next_plane", extension)
         self.assertNotIn("ion_pz_mm=next_plane", extension)
-        stage1_gate = (
-            "(sf_ideal_accel_enable~=0 or sf_ideal_accel_stage1_enable~=0) "
-            "and ion_pz_mm>=accelerator_repeller_front_z_mm"
-        )
-        stage2_gate = (
-            "(sf_ideal_accel_enable~=0 or sf_ideal_accel_stage2_enable~=0) "
-            "and ion_pz_mm>=accelerator_grid1_z_mm"
-        )
-        self.assertIn(stage1_gate, extension)
-        self.assertIn(stage2_gate, extension)
+        self.assertNotIn("sf_ideal_accel", extension)
+        self.assertNotIn("OATOF_IDEAL_ACCEL", extension)
 
         _, overlay = compile_accelerator_overlay(
             frontend, cell_mm_xyz={"x": 0.2, "y": 0.2, "z": 0.05}
@@ -346,17 +334,18 @@ class SingleFlightProgramTests(unittest.TestCase):
             )
             self.assertEqual(load_birth_times(path), [31.8, 31.8])
 
-    def test_ideal_stage_switches_are_process_local_and_disable_overlay(self) -> None:
+    def test_field_switches_are_absent_and_overlay_keeps_geometry_role(self) -> None:
         text = (REPO / "integrations" /
                 "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer" /
                 "runtime" / "build_single_flight_program.py").read_text(encoding="utf-8")
-        self.assertIn("OATOF_IDEAL_ACCEL_STAGE1_ENABLE", text)
-        self.assertIn("pulse_resolution_accelerator_stage_mode", text)
-        self.assertIn("ideal_stage1_region", text)
-        self.assertIn("ideal_stage2_region", text)
-        self.assertIn("ideal_stage_regions_disable_overlay_instance5=1", text)
-        self.assertIn("OATOF_IDEAL_REFLECTRON_STAGE1_ENABLE", text)
-        self.assertIn("pulse_resolution_reflectron_stage_mode", text)
+        self.assertNotIn("OATOF_IDEAL_ACCEL_STAGE1_ENABLE", text)
+        self.assertNotIn("pulse_resolution_accelerator_stage_mode", text)
+        self.assertNotIn("ideal_stage1_region", text)
+        self.assertNotIn("ideal_stage2_region", text)
+        self.assertNotIn("ideal_stage_regions_disable_overlay_instance5=1", text)
+        self.assertIn("resolved_region_field_contract active=1", text)
+        self.assertNotIn("OATOF_IDEAL_REFLECTRON_STAGE1_ENABLE", text)
+        self.assertNotIn("pulse_resolution_reflectron_stage_mode", text)
 
 
 if __name__ == "__main__":

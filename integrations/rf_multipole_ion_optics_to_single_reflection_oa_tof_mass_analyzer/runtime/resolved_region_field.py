@@ -1,0 +1,267 @@
+"""Compile and render the single authoritative oaTOF region-field contract."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import math
+from collections.abc import Mapping
+from pathlib import Path
+import re
+from typing import Any
+
+from common.contracts.file_identity import file_sha256
+
+
+ROLE = "rf_oatof_resolved_region_field_contract"
+SCHEMA_VERSION = 1
+FULL_FIELD_NAME = "FULL_DOMAIN_PIECEWISE_IDEAL_FIELD"
+MODES = frozenset({"real_pa_field", "analytic_ideal_field", "zero_field"})
+REGIONS = (
+    "accelerator_stage1",
+    "accelerator_stage2",
+    "drift",
+    "reflectron_stage1",
+    "reflectron_stage2",
+)
+PROFILE_MODES = {
+    "accelerator_real_pa": ("real_pa_field", "real_pa_field"),
+    "accelerator_ideal_stage1_real_stage2": ("analytic_ideal_field", "real_pa_field"),
+    "accelerator_real_stage1_ideal_stage2": ("real_pa_field", "analytic_ideal_field"),
+    "accelerator_ideal_stage1_stage2_real_reflectron": (
+        "analytic_ideal_field",
+        "analytic_ideal_field",
+    ),
+}
+FULL_ID = "full_domain_piecewise_ideal_field"
+FIELD_CONFIGURATION_IDS = {
+    "accelerator_real_pa": "REAL_ACCELERATOR_REAL_REFLECTOR_FIELD",
+    "accelerator_ideal_stage1_real_stage2": "IDEAL_STAGE1_REAL_STAGE2_REAL_REFLECTOR_FIELD",
+    "accelerator_real_stage1_ideal_stage2": "REAL_STAGE1_IDEAL_STAGE2_REAL_REFLECTOR_FIELD",
+    "accelerator_ideal_stage1_stage2_real_reflectron": "IDEAL_ACCELERATOR_REAL_REFLECTOR_FIELD",
+    FULL_ID: FULL_FIELD_NAME,
+}
+
+
+def _load(path: Path) -> dict[str, Any]:
+    value = json.loads(path.read_text(encoding="utf-8-sig"))
+    if not isinstance(value, dict):
+        raise ValueError(f"JSON object required: {path}")
+    return value
+
+
+def semantic_sha256(semantic: Mapping[str, Any]) -> str:
+    encoded = json.dumps(
+        semantic, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest().upper()
+
+
+def canonical_profile_id(profile_id: str) -> str:
+    """Return an already canonical profile ID; execution aliases are forbidden."""
+    if profile_id not in {*PROFILE_MODES, FULL_ID}:
+        raise ValueError(f"unsupported accelerator field profile: {profile_id}")
+    return profile_id
+
+
+def _region_modes(profile_id: str) -> dict[str, str]:
+    canonical = canonical_profile_id(profile_id)
+    if canonical == FULL_ID:
+        return {
+            "accelerator_stage1": "analytic_ideal_field",
+            "accelerator_stage2": "analytic_ideal_field",
+            "drift": "zero_field",
+            "reflectron_stage1": "analytic_ideal_field",
+            "reflectron_stage2": "analytic_ideal_field",
+        }
+    if canonical not in PROFILE_MODES:
+        raise ValueError(f"unsupported accelerator field profile: {profile_id}")
+    stage1, stage2 = PROFILE_MODES[canonical]
+    return {
+        "accelerator_stage1": stage1,
+        "accelerator_stage2": stage2,
+        "drift": "real_pa_field",
+        "reflectron_stage1": "real_pa_field",
+        "reflectron_stage2": "real_pa_field",
+    }
+
+
+def build_resolved_region_field_contract(
+    resolved_geometry_path: Path, output_path: Path, profile_id: str
+) -> dict[str, Any]:
+    """Compile a path-free semantic contract plus separately frozen source identity."""
+    geometry = _load(resolved_geometry_path)
+    if geometry.get("role") != "oa_tof_resolved_contract_do_not_edit":
+        raise ValueError("region field contract requires resolved oaTOF geometry")
+    geom = geometry["geometry_mm"]
+    voltage = geometry["electrodes_V"]
+    canonical = canonical_profile_id(profile_id)
+    modes = _region_modes(canonical)
+    planes = {
+        "repeller": float(geom["accelerator_repeller_z"]),
+        "grid1": float(geom["accelerator_grid1_z"]),
+        "grid2": float(geom["accelerator_grid2_z"]),
+        "reflectron_entrance": float(geom["L_flight"]),
+        "reflectron_midgrid": float(geom["L_flight"]) + float(geom["L_stage1"]),
+        "reflectron_backplate": float(geom["L_flight"])
+        + float(geom["L_stage1"])
+        + float(geom["L_stage2"]),
+    }
+    if not (
+        planes["repeller"] < planes["grid1"] < planes["grid2"]
+        <= planes["reflectron_entrance"] < planes["reflectron_midgrid"]
+        < planes["reflectron_backplate"]
+    ):
+        raise ValueError("resolved region field planes are not ordered")
+    fields = {
+        "accelerator_stage1": (float(voltage["repeller"]) - float(voltage["grid1"]))
+        / (planes["grid1"] - planes["repeller"]),
+        "accelerator_stage2": (float(voltage["grid1"]) - float(voltage["grid2"]))
+        / (planes["grid2"] - planes["grid1"]),
+        "reflectron_stage1": (float(voltage["midgrid"]) - float(voltage["entgrid"]))
+        / (planes["reflectron_midgrid"] - planes["reflectron_entrance"]),
+        "reflectron_stage2": (float(voltage["backplate"]) - float(voltage["midgrid"]))
+        / (planes["reflectron_backplate"] - planes["reflectron_midgrid"]),
+    }
+    if any(not math.isfinite(value) for value in fields.values()):
+        raise ValueError("resolved region field contains a non-finite field")
+    finite = geometry["geometry_derivation"]["accelerator"].get(
+        "finite_interval_theory"
+    )
+    if isinstance(finite, Mapping):
+        expected = {
+            "repeller": float(finite["repeller_v"]),
+            "grid1": float(finite["intermediate_v"]),
+            "grid2": float(finite["exit_v"]),
+        }
+        if any(abs(float(voltage[key]) - value) > 1e-8 for key, value in expected.items()):
+            raise ValueError("resolved accelerator voltage differs from finite-interval design")
+    layout = geometry.get("single_flight_layout_derivation", {})
+    semantic = {
+        "field_configuration_id": FIELD_CONFIGURATION_IDS[canonical],
+        "canonical_profile_id": canonical,
+        "region_modes": modes,
+        "planes_mm": planes,
+        "fields_V_per_mm": fields,
+        "effective_domain": {
+            "longitudinal": "closed_piecewise_path_repeller_to_reflectron_backplate",
+            "transverse": "analytic_field_extends_until_native_pa_geometry_collision",
+            "outside_longitudinal_domain": "invalid_trajectory_error",
+        },
+        "pa_role": "geometry_and_collision_carrier_plus_explicit_real_pa_field_regions",
+        "real_pa_field_blending_allowed": False,
+        "instance_coordinate_mapping": {
+            "accelerator": {
+                "accepted_workbench_instances": [3, 5],
+                "global_field_axis": "z",
+                "local_derivative_axis": "z",
+            },
+            "reflectron": {
+                "workbench_instance": 2,
+                "az_deg": -90.0,
+                "global_field_axis": "z",
+                "local_derivative_axis": "x",
+            },
+        },
+    }
+    contract = {
+        "schema_version": SCHEMA_VERSION,
+        "role": ROLE,
+        "layout_geometry": {
+            "sha256": file_sha256(resolved_geometry_path),
+            "layout_profile_id": layout.get("layout_profile_id"),
+            "architecture_generation_id": layout.get("architecture_generation_id"),
+        },
+        "semantic": semantic,
+        "semantic_sha256": semantic_sha256(semantic),
+    }
+    validate_resolved_region_field_contract(contract)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(contract, indent=2) + "\n", encoding="utf-8")
+    return contract
+
+
+def validate_resolved_region_field_contract(contract: Mapping[str, Any]) -> None:
+    if contract.get("schema_version") != SCHEMA_VERSION or contract.get("role") != ROLE:
+        raise ValueError("unsupported resolved region field contract")
+    semantic = contract.get("semantic")
+    if not isinstance(semantic, Mapping):
+        raise ValueError("resolved region field semantic object is required")
+    if semantic_sha256(semantic) != contract.get("semantic_sha256"):
+        raise ValueError("resolved region field semantic SHA differs")
+    modes = semantic.get("region_modes")
+    if not isinstance(modes, Mapping) or set(modes) != set(REGIONS):
+        raise ValueError("resolved region field regions are incomplete")
+    if any(mode not in MODES for mode in modes.values()):
+        raise ValueError("resolved region field contains an unsupported mode")
+    if semantic.get("real_pa_field_blending_allowed") is not False:
+        raise ValueError("resolved region field must prohibit real-PA blending")
+    profile_id = semantic.get("canonical_profile_id")
+    if semantic.get("field_configuration_id") != FIELD_CONFIGURATION_IDS.get(profile_id):
+        raise ValueError("resolved region field scientific configuration identity differs")
+    if profile_id == FULL_ID and any(
+        mode == "real_pa_field" for mode in modes.values()
+    ):
+        raise ValueError("full-domain ideal field cannot contain a real-PA region")
+    domain = semantic.get("effective_domain", {})
+    if domain.get("outside_longitudinal_domain") != "invalid_trajectory_error":
+        raise ValueError("analytic effective-domain escape must fail closed")
+    if domain.get("transverse") != "analytic_field_extends_until_native_pa_geometry_collision":
+        raise ValueError("analytic field cannot silently fall back outside a bore")
+
+
+def resolved_region_field_lua(
+    contract: Mapping[str, Any], *, prefix: str = "rrf",
+    enable_expression: str = "single_flight_pulse_is_on()",
+) -> str:
+    """Render the only supported region-field backend for the formal Program."""
+    validate_resolved_region_field_contract(contract)
+    if not re.fullmatch(r"[a-z][a-z0-9_]*", prefix):
+        raise ValueError("Lua prefix must be a lowercase identifier")
+    if not enable_expression.strip():
+        raise ValueError("Lua field enable expression is required")
+    semantic = contract["semantic"]
+    p = semantic["planes_mm"]
+    f = semantic["fields_V_per_mm"]
+    m = semantic["region_modes"]
+    mode_codes = {"real_pa_field": 0, "analytic_ideal_field": 1, "zero_field": 2}
+    return f"""
+local {prefix}_repeller={p['repeller']:.17g}
+local {prefix}_grid1={p['grid1']:.17g}
+local {prefix}_grid2={p['grid2']:.17g}
+local {prefix}_entrance={p['reflectron_entrance']:.17g}
+local {prefix}_midgrid={p['reflectron_midgrid']:.17g}
+local {prefix}_backplate={p['reflectron_backplate']:.17g}
+local {prefix}_accel1={f['accelerator_stage1']:.17g}
+local {prefix}_accel2={f['accelerator_stage2']:.17g}
+local {prefix}_refl1={f['reflectron_stage1']:.17g}
+local {prefix}_refl2={f['reflectron_stage2']:.17g}
+local {prefix}_m_accel1={mode_codes[m['accelerator_stage1']]}
+local {prefix}_m_accel2={mode_codes[m['accelerator_stage2']]}
+local {prefix}_m_drift={mode_codes[m['drift']]}
+local {prefix}_m_refl1={mode_codes[m['reflectron_stage1']]}
+local {prefix}_m_refl2={mode_codes[m['reflectron_stage2']]}
+local {prefix}_base_efield_adjust=segment.efield_adjust
+function segment.efield_adjust()
+  {prefix}_base_efield_adjust()
+  if not ({enable_expression}) then return end
+  local z=ion_pz_mm; local mode=nil; local E=0; local family=nil
+  if z>={prefix}_repeller and z<{prefix}_grid1 then mode={prefix}_m_accel1; E={prefix}_accel1; family='accelerator'
+  elseif z>={prefix}_grid1 and z<{prefix}_grid2 then mode={prefix}_m_accel2; E={prefix}_accel2; family='accelerator'
+  elseif z>={prefix}_grid2 and z<{prefix}_entrance then mode={prefix}_m_drift
+  elseif z>={prefix}_entrance and z<{prefix}_midgrid then mode={prefix}_m_refl1; E=-{prefix}_refl1; family='reflectron'
+  elseif z>={prefix}_midgrid and z<={prefix}_backplate then mode={prefix}_m_refl2; E=-{prefix}_refl2; family='reflectron'
+  else error('particle escaped resolved region-field longitudinal domain') end
+  if mode==0 then return end
+  ion_dvoltsx_gu=0; ion_dvoltsy_gu=0; ion_dvoltsz_gu=0
+  if mode==2 then return end
+  local pi=simion.wb.instances[ion_instance]
+  if family=='accelerator' then
+    assert(ion_instance==3 or ion_instance==5, 'analytic accelerator field requires instance 3 or 5')
+    ion_dvoltsz_gu=-E*pi.pa.dz_mm*pi.scale
+  else
+    assert(ion_instance==2, 'analytic reflectron field requires rotated instance 2')
+    ion_dvoltsx_gu=-E*pi.pa.dx_mm*pi.scale
+  end
+end
+""".strip()

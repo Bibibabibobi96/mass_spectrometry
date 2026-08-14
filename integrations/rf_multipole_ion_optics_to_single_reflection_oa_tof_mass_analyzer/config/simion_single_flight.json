@@ -120,6 +120,11 @@
     {"profile_id": "tqual_8", "trajectory_quality": 8, "role": "default"},
     {"profile_id": "tqual_108", "trajectory_quality": 108, "role": "paired_numerical_diagnostic"}
   ],
+  "default_time_integration_profile_id": "dt160",
+  "time_integration_profiles": [
+    {"profile_id": "dt160", "rf_steps_per_period": 160, "role": "default"},
+    {"profile_id": "dt320", "rf_steps_per_period": 320, "role": "paired_numerical_diagnostic"}
+  ],
   "spatial_window_profiles": [
     {
       "profile_id": "accelerator_xy_open_bore",
@@ -175,55 +180,37 @@
   "accelerator_field_profiles": [
     {
       "profile_id": "accelerator_real_pa",
-      "single_flight_ideal_accel_enable": 0,
-      "single_flight_ideal_accel_stage1_enable": 0,
-      "single_flight_ideal_accel_stage2_enable": 0,
+      "accelerator_stage1": "real_pa_field",
+      "accelerator_stage2": "real_pa_field",
       "role": "default"
     },
     {
-      "profile_id": "accelerator_ideal_piecewise_uniform",
-      "single_flight_ideal_accel_enable": 1,
-      "single_flight_ideal_accel_stage1_enable": 1,
-      "single_flight_ideal_accel_stage2_enable": 1,
-      "role": "controlled_counterfactual"
-    },
-    {
       "profile_id": "accelerator_ideal_stage1_real_stage2",
-      "single_flight_ideal_accel_enable": 0,
-      "single_flight_ideal_accel_stage1_enable": 1,
-      "single_flight_ideal_accel_stage2_enable": 0,
+      "accelerator_stage1": "analytic_ideal_field",
+      "accelerator_stage2": "real_pa_field",
       "role": "paired_n100_controlled_counterfactual"
     },
     {
       "profile_id": "accelerator_real_stage1_ideal_stage2",
-      "single_flight_ideal_accel_enable": 0,
-      "single_flight_ideal_accel_stage1_enable": 0,
-      "single_flight_ideal_accel_stage2_enable": 1,
+      "accelerator_stage1": "real_pa_field",
+      "accelerator_stage2": "analytic_ideal_field",
       "role": "paired_n1000_field_region_attribution"
     },
     {
       "profile_id": "accelerator_ideal_stage1_stage2_real_reflectron",
-      "single_flight_ideal_accel_enable": 0,
-      "single_flight_ideal_accel_stage1_enable": 1,
-      "single_flight_ideal_accel_stage2_enable": 1,
+      "accelerator_stage1": "analytic_ideal_field",
+      "accelerator_stage2": "analytic_ideal_field",
       "role": "paired_n100_controlled_counterfactual"
     },
     {
-      "profile_id": "accelerator_ideal_stage1_stage2_ideal_reflectron",
-      "single_flight_ideal_accel_enable": 0,
-      "single_flight_ideal_accel_stage1_enable": 1,
-      "single_flight_ideal_accel_stage2_enable": 1,
-      "single_flight_ideal_reflectron_stage1_enable": 1,
-      "single_flight_ideal_reflectron_stage2_enable": 1,
-      "role": "paired_n100_controlled_counterfactual"
-    },
-    {
-      "profile_id": "arm8_closed_global_piecewise_theoretical_field",
-      "single_flight_ideal_accel_enable": 0,
-      "single_flight_ideal_accel_stage1_enable": 0,
-      "single_flight_ideal_accel_stage2_enable": 0,
-      "single_flight_arm8_global_field_enable": 1,
-      "role": "paired_n100_arm8_closed_global_theoretical_field"
+      "profile_id": "full_domain_piecewise_ideal_field",
+      "accelerator_stage1": "analytic_ideal_field",
+      "accelerator_stage2": "analytic_ideal_field",
+      "drift": "zero_field",
+      "reflectron_stage1": "analytic_ideal_field",
+      "reflectron_stage2": "analytic_ideal_field",
+      "real_pa_field_blending_allowed": false,
+      "role": "full_domain_controlled_counterfactual"
     }
   ],
   "source_materialization_profiles": [
@@ -245,6 +232,18 @@
       "materialization_mode": "resolved_layout_pulse_ideal_linear_z_vz",
       "particle_count": 1000,
       "source_full_width_mm": 1.0,
+      "mass_amu": 100.0,
+      "charge_state": 1,
+      "kinetic_energy_eV": 10.0,
+      "phase_space_authority": "config/accelerator_phase_space_match.json",
+      "role": "canonical_layout_pulse_materialized_ideal_source"
+    },
+    {
+      "profile_id": "canonical_ideal_linear_z_vz_1p5mm_n1000",
+      "source_profile_id": "canonical_ideal_linear_z_vz_1p5mm_n1000",
+      "materialization_mode": "resolved_layout_pulse_ideal_linear_z_vz",
+      "particle_count": 1000,
+      "source_full_width_mm": 1.5,
       "mass_amu": 100.0,
       "charge_state": 1,
       "kinetic_energy_eV": 10.0,
@@ -299,10 +298,8 @@
       "role": "canonical_multipole_source_transform"
     }
   ],
-  "rf_steps_per_period": 160,
   "pulse_time_us": 39.58788438081105,
   "pulse_width_us": 1.0,
-  "trajectory_quality": 8,
   "maximum_time_of_flight_us": 90.0,
   "retention_class": "compact"
 }

@@ -26,6 +26,11 @@ from common.integration.resolve_connection import (
     write_resolved_and_plan,
 )
 from common.multipole.component_port import build_exit_component_port
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.resolved_region_field import (
+    FULL_ID,
+    build_resolved_region_field_contract,
+    canonical_profile_id,
+)
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_layout import (
     compile_geometry_and_port,
     derive_pulse_schedule,
@@ -46,6 +51,149 @@ UPSTREAM_PROJECTS = {
     "rf_hexapole_ion_optics",
     "rf_octupole_ion_optics",
 }
+
+def validate_full_domain_affine_width_numerics_campaign(
+    campaign: dict[str, Any], single_flight: dict[str, Any], policy: dict[str, Any],
+    root: Path,
+) -> None:
+    """Fail closed on the pending Stage-B five-cell matrix."""
+
+    rows = [
+        row for row in campaign["experiments"]
+        if canonical_profile_id(
+            row.get("single_flight_accelerator_field_profile_id", "accelerator_real_pa")
+        ) == FULL_ID
+    ]
+    if not rows:
+        return
+    if len(rows) != len(campaign["experiments"]):
+        raise ContractError("full-domain ideal rows cannot be mixed with another campaign")
+    observed = {
+        (
+            row.get("single_flight_source_materialization_profile_id"),
+            row.get("single_flight_trajectory_quality_profile_id"),
+            row.get("single_flight_time_integration_profile_id"),
+        )
+        for row in rows
+    }
+    expected = {
+        ("canonical_ideal_linear_z_vz_1mm_n1000", "tqual_8", "dt160"),
+        ("canonical_ideal_linear_z_vz_1p5mm_n1000", "tqual_8", "dt160"),
+        ("canonical_ideal_linear_z_vz_2p2mm_n1000", "tqual_8", "dt160"),
+        ("canonical_ideal_linear_z_vz_2p2mm_n1000", "tqual_8", "dt320"),
+        ("canonical_ideal_linear_z_vz_2p2mm_n1000", "tqual_108", "dt160"),
+    }
+    if len(rows) != 5 or observed != expected:
+        raise ContractError("full-domain affine width/numerics matrix differs")
+    registration = campaign.get("preregistration")
+    release_modes = {row.get("source_release_mode") for row in rows}
+    if release_modes != {"pre_pulse_restart"}:
+        if campaign.get("status") != "archived_invalid":
+            raise ContractError("non-restart full-domain width campaign must remain archived")
+    elif campaign.get("status") == "authorized":
+        if registration is None:
+            raise ContractError("authorized full-domain matrix requires preregistration")
+        document = registration["document"]
+        document_path = (root / document["path"]).resolve()
+        if (
+            not document_path.is_relative_to(root)
+            or not document_path.is_file()
+            or document_path.stat().st_size != int(document["bytes"])
+            or file_sha256(document_path) != document["sha256"]
+        ):
+            raise ContractError("full-domain matrix preregistration document differs")
+        row_hashes = {
+            row["experiment_id"]: _canonical_sha256(row) for row in rows
+        }
+        if registration["frozen_experiment_row_sha256"] != row_hashes:
+            raise ContractError("full-domain matrix preregistered row identities differ")
+    elif campaign.get("status") != "PENDING_PREREGISTRATION":
+        raise ContractError("full-domain matrix registration status differs")
+    source_profiles = {
+        item["profile_id"]: item
+        for item in single_flight["source_materialization_profiles"]
+    }
+    expected_widths = {
+        "canonical_ideal_linear_z_vz_1mm_n1000": 1.0,
+        "canonical_ideal_linear_z_vz_1p5mm_n1000": 1.5,
+        "canonical_ideal_linear_z_vz_2p2mm_n1000": 2.2,
+    }
+    for profile_id, width in expected_widths.items():
+        profile = source_profiles.get(profile_id, {})
+        if (
+            int(profile.get("particle_count", 0)) != 1000
+            or float(profile.get("source_full_width_mm", float("nan"))) != width
+            or profile.get("phase_space_authority")
+            != "config/accelerator_phase_space_match.json"
+            or (profile.get("mass_amu"), profile.get("charge_state"),
+                profile.get("kinetic_energy_eV")) != (100.0, 1, 10.0)
+        ):
+            raise ContractError("full-domain affine source authority differs")
+    fixed = {
+        "execution_strategy": "simion_single_flight",
+        "single_flight_layout_profile_id": "symmetric_10ev_source_z22_finite_interval_theory",
+        "single_flight_frontend_grid_profile_id": "frontend_isotropic_020_accelerator_overlay_z005",
+        "single_flight_oatof_numerical_profile_id": "oatof_formal_mesh",
+        "single_flight_accelerator_field_profile_id": FULL_ID,
+        "single_flight_pulse_offset_rf_periods": 0,
+        "architecture_generation_id": "finite_interval_2p2mm_matched_voltage_v1",
+        "field_overlay_id": "accelerator_overlay_z005",
+    }
+    for row in rows:
+        if any(row.get(key) != value for key, value in fixed.items()):
+            raise ContractError("full-domain width/numerics fixed control differs")
+        if row.get("source_profile_id") != row.get(
+            "single_flight_source_materialization_profile_id"
+        ):
+            raise ContractError("full-domain width/numerics source identity differs")
+    release_modes = {row.get("source_release_mode") for row in rows}
+    if release_modes == {"continuous_frontend"}:
+        if release_modes != {"continuous_frontend"} or any(
+            row.get("pre_pulse_source_state") is not None for row in rows
+        ):
+            raise ContractError("archived continuous source path differs")
+    else:
+        if release_modes != {"pre_pulse_restart"}:
+            raise ContractError("official full-domain source path must be pre-pulse restart")
+        expected_restart_sources = {
+            "canonical_ideal_linear_z_vz_1mm_n1000": (
+                "22ADAC66F610064AD73E78FC9B17AB850A8FA59B3D6175EE0B5F10357FBC0539",
+                "A59E16B3783DCDE7930070286C58D5BA6BA8DC0B9756DE61B410A07975672B5B",
+            ),
+            "canonical_ideal_linear_z_vz_1p5mm_n1000": (
+                "2411F2BB62939E1CA74F627ABD567937C698848AB0E332A67784B0F2F8405624",
+                "7A8FFC4D6E2A4D9B67560592B7401A72984137ACC8AE6F79388275DA494927C2",
+            ),
+            "canonical_ideal_linear_z_vz_2p2mm_n1000": (
+                "75DF5222C32846CA16F7594404067020AEFD1CFCB2577FC8E86BF18A08493D4E",
+                "7B1D722A9E73635938847EC31DEF0B45824098E1F44D4A7A1B036F6CF02392E6",
+            ),
+        }
+        for row in rows:
+            restart = row.get("pre_pulse_source_state", {})
+            expected_source, expected_receipt = expected_restart_sources[
+                row["single_flight_source_materialization_profile_id"]
+            ]
+            receipt = restart.get("materialization_receipt", {})
+            if (
+                restart.get("sha256") != expected_source
+                or receipt.get("sha256") != expected_receipt
+                or restart.get("particle_count") != 1000
+                or restart.get("source_state_epoch") != "pulse_effective_time"
+                or restart.get("postselection_prohibited") is not True
+            ):
+                raise ContractError("official full-domain restart source identity differs")
+    grids = {
+        item["profile_id"]: item for item in single_flight["frontend_grid_profiles"]
+    }
+    if int(grids[fixed["single_flight_frontend_grid_profile_id"]]["max_parallel_batches"]) != 3:
+        raise ContractError(
+            "full-domain width/numerics requires five batches dispatched as 3+2 waves"
+        )
+    if int(policy["stage_limits"]["single_flight_transport"][
+        "minimum_system_available_memory_bytes"
+    ]) != 4 * 1024**3:
+        raise ContractError("full-domain width/numerics memory gate must be 4 GiB")
 
 
 def validate_pulse_resolution_optimization_campaign(
@@ -77,7 +225,7 @@ def validate_pulse_resolution_optimization_campaign(
         raise ContractError("pulse-resolution attribution matrix differs")
     if [arm["implementation_status"] for arm in arms] != (
         ["executable_registration"] + ["executable_paired_screening"] * 2
-        + ["executable_paired_screening_with_arm8_closure"]
+        + ["executable_paired_screening_with_full_domain_contract"]
         + ["planning_only_until_adapter_support"] * 4
     ):
         raise ContractError("pulse-resolution executable-arm status matrix differs")
@@ -135,30 +283,14 @@ def validate_pulse_resolution_optimization_campaign(
             == "accelerator_ideal_stage1_stage2_real_reflectron"
             and experiment.get("pulse_resolution_baseline_result") is not None
         )
-        deprecated_all_ideal_row = (
-            experiment.get("pulse_resolution_attribution_arm_id") == "real_beam_all_ideal"
-            and experiment.get("pulse_resolution_execution_mode")
-            == "screening_prefix_n100_paired_candidate"
-            and experiment.get("single_flight_accelerator_field_profile_id")
-            == "accelerator_ideal_stage1_stage2_ideal_reflectron"
-            and experiment.get("pulse_resolution_deprecated_counterfactual") is True
-        )
         paired_all_ideal_row = (
             experiment.get("pulse_resolution_attribution_arm_id") == "real_beam_all_ideal"
             and experiment.get("pulse_resolution_execution_mode")
             == "screening_prefix_n100_paired_candidate"
             and experiment.get("single_flight_accelerator_field_profile_id")
-            == "arm8_closed_global_piecewise_theoretical_field"
+            == FULL_ID
             and experiment.get("pulse_resolution_baseline_result") is not None
-            and all(experiment.get(key) is not None for key in (
-                "pulse_resolution_axial_ideal_closure_receipt",
-                "pulse_resolution_arm8_simion_closure_result",
-                "pulse_resolution_arm8_simion_closure_manifest",
-                "pulse_resolution_arm8_simion_closure_contract",
-            ))
         )
-        if deprecated_all_ideal_row:
-            raise ContractError("deprecated hard-mask real-beam all-ideal experiment is non-executable")
         if experiment.get("execution_strategy") != "simion_single_flight" or not (
             baseline_row or paired_row or paired_stage12_row or paired_all_ideal_row
         ):
@@ -525,43 +657,6 @@ def prepare_family_source_closure(
     execution_strategy = experiment.get(
         "execution_strategy", "staged_three_stage"
     )
-    if experiment.get("single_flight_accelerator_field_profile_id") == (
-        "arm8_closed_global_piecewise_theoretical_field"
-    ):
-        records = {
-            key: _workspace_record(workspace, experiment[key], key)
-            for key in (
-                "pulse_resolution_axial_ideal_closure_receipt",
-                "pulse_resolution_arm8_simion_closure_result",
-                "pulse_resolution_arm8_simion_closure_manifest",
-                "pulse_resolution_arm8_simion_closure_contract",
-            )
-        }
-        analytic = _load(records["pulse_resolution_axial_ideal_closure_receipt"])
-        result = _load(records["pulse_resolution_arm8_simion_closure_result"])
-        manifest = _load(records["pulse_resolution_arm8_simion_closure_manifest"])
-        closure = _load(records["pulse_resolution_arm8_simion_closure_contract"])
-        if (
-            analytic.get("receipt_role") != "axial_ideal_arm8_solver_independent_analytic_closure"
-            or analytic.get("status") != "pass"
-            or not analytic.get("all_assertions_passed")
-            or float(analytic.get("peak_metrics", {}).get("mass_resolution", 0)) < 30000
-            or float(analytic.get("peak_metrics", {}).get("direct_fwhm_tof_ns", 1)) > 0.537
-            or result.get("role") != "rf_oatof_arm8_simion_solver_closure_result"
-            or result.get("status") != "pass"
-            or not result.get("all_assertions_passed")
-            or int(result.get("particles", 0)) != 101
-            or float(result.get("pulse_effective_peak", {}).get("mass_resolution", 0)) < 30000
-            or float(result.get("pulse_effective_peak", {}).get("direct_fwhm_tof_ns", 1)) > 0.537
-            or manifest.get("role") != "rf_oatof_arm8_simion_solver_closure_n101_manifest"
-            or manifest.get("status") != "success"
-            or int(manifest.get("solver", {}).get("detector_hits", 0)) != 101
-            or manifest.get("output_sha256", {}).get("solver_closure_receipt") != experiment["pulse_resolution_arm8_simion_closure_result"]["sha256"]
-            or closure.get("role") != "rf_oatof_arm8_simion_solver_closure_contract"
-            or closure.get("analytic_receipt", {}).get("sha256") != experiment["pulse_resolution_axial_ideal_closure_receipt"]["sha256"]
-            or closure.get("potential", {}).get("real_pa_field_blending_allowed") is not False
-        ):
-            raise ContractError("Arm8 analytic/SIMION full-domain closure evidence differs")
     pulse_offset_rf_periods = float(
         experiment.get("single_flight_pulse_offset_rf_periods", 0.0)
     )
@@ -635,6 +730,16 @@ def prepare_family_source_closure(
         ]
         if len(matches) != 1:
             raise ContractError("trajectory-quality profile must resolve exactly once")
+    time_integration_profile_id = experiment.get(
+        "single_flight_time_integration_profile_id"
+    )
+    if time_integration_profile_id is not None:
+        matches = [
+            item for item in single_flight_configuration["time_integration_profiles"]
+            if item["profile_id"] == time_integration_profile_id
+        ]
+        if len(matches) != 1:
+            raise ContractError("time-integration profile must resolve exactly once")
     spatial_window_profile_id = experiment.get(
         "single_flight_spatial_window_profile_id"
     )
@@ -647,8 +752,13 @@ def prepare_family_source_closure(
         ]
         if len(matches) != 1:
             raise ContractError("spatial-window profile must resolve exactly once")
-    accelerator_field_profile_id = experiment.get(
-        "single_flight_accelerator_field_profile_id"
+    accelerator_field_profile_id = (
+        canonical_profile_id(experiment.get(
+            "single_flight_accelerator_field_profile_id",
+            single_flight_configuration["default_accelerator_field_profile_id"],
+        ))
+        if execution_strategy == "simion_single_flight"
+        else None
     )
     if accelerator_field_profile_id is not None:
         if execution_strategy != "simion_single_flight":
@@ -657,7 +767,7 @@ def prepare_family_source_closure(
             )
         field_profiles = [
             item for item in single_flight_configuration["accelerator_field_profiles"]
-            if item["profile_id"] == accelerator_field_profile_id
+            if canonical_profile_id(item["profile_id"]) == accelerator_field_profile_id
         ]
         if len(field_profiles) != 1:
             raise ContractError(
@@ -747,6 +857,9 @@ def prepare_family_source_closure(
     policy_path = _repo_record(root, policy_record, "integration execution policy")
     policy = _load(policy_path)
     validate_schema(policy, "rf_multipole_oatof_execution_policy.schema.json")
+    validate_full_domain_affine_width_numerics_campaign(
+        campaign, single_flight_configuration, policy, root
+    )
 
     evidence = _load_source_evidence(
         workspace=workspace,
@@ -911,6 +1024,8 @@ def prepare_family_source_closure(
         upstream_port_path, workspace
     )
     layout_files: dict[str, Path] | None = None
+    resolved_region_field_contract_path: Path | None = None
+    resolved_region_field_contract: dict[str, Any] | None = None
     if campaign["schema_version"] == 2:
         if execution_strategy != "simion_single_flight":
             raise ContractError("single-flight layout profiles require SIMION single flight")
@@ -953,6 +1068,17 @@ def prepare_family_source_closure(
             )
         geometry_path = plan_output.with_name("resolved_oatof_geometry.json")
         geometry_path.write_text(json.dumps(geometry, indent=2) + "\n", encoding="utf-8")
+        resolved_region_field_contract_path = (
+            plan_output.parent / "inputs" / "resolved_region_field_contract.json"
+        )
+        try:
+            resolved_region_field_contract = build_resolved_region_field_contract(
+                geometry_path,
+                resolved_region_field_contract_path,
+                accelerator_field_profile_id or "accelerator_real_pa",
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ContractError("resolved region field contract is invalid") from exc
         downstream_port["authority"]["source_contract"] = _workspace_relative(
             geometry_path, workspace
         )
@@ -1274,15 +1400,6 @@ def prepare_family_source_closure(
                 + experiment["pulse_resolution_baseline_checkpoints"]["path"],
                 "pulse_resolution_baseline_checkpoints_sha256="
                 + experiment["pulse_resolution_baseline_checkpoints"]["sha256"],
-            ]) + ([] if experiment.get("pulse_resolution_arm8_simion_closure_contract") is None else [
-                "pulse_resolution_arm8_analytic_receipt_path=" + experiment["pulse_resolution_axial_ideal_closure_receipt"]["path"],
-                "pulse_resolution_arm8_analytic_receipt_sha256=" + experiment["pulse_resolution_axial_ideal_closure_receipt"]["sha256"],
-                "pulse_resolution_arm8_result_path=" + experiment["pulse_resolution_arm8_simion_closure_result"]["path"],
-                "pulse_resolution_arm8_result_sha256=" + experiment["pulse_resolution_arm8_simion_closure_result"]["sha256"],
-                "pulse_resolution_arm8_manifest_path=" + experiment["pulse_resolution_arm8_simion_closure_manifest"]["path"],
-                "pulse_resolution_arm8_manifest_sha256=" + experiment["pulse_resolution_arm8_simion_closure_manifest"]["sha256"],
-                "pulse_resolution_arm8_contract_path=" + experiment["pulse_resolution_arm8_simion_closure_contract"]["path"],
-                "pulse_resolution_arm8_contract_sha256=" + experiment["pulse_resolution_arm8_simion_closure_contract"]["sha256"],
             ]) + ([] if selection_receipt is None else [
                 "single_flight_population_denominator_count="
                 + str(selection_receipt["candidate_launched_count"]),
@@ -1335,12 +1452,21 @@ def prepare_family_source_closure(
             ]) + ([] if "single_flight_trajectory_quality_profile_id" not in experiment else [
                 "single_flight_trajectory_quality_profile_id="
                 + experiment["single_flight_trajectory_quality_profile_id"],
+            ]) + ([] if "single_flight_time_integration_profile_id" not in experiment else [
+                "single_flight_time_integration_profile_id="
+                + experiment["single_flight_time_integration_profile_id"],
             ]) + ([] if "single_flight_spatial_window_profile_id" not in experiment else [
                 "single_flight_spatial_window_profile_id="
                 + experiment["single_flight_spatial_window_profile_id"],
-            ]) + ([] if "single_flight_accelerator_field_profile_id" not in experiment else [
-                "single_flight_accelerator_field_profile_id="
-                + experiment["single_flight_accelerator_field_profile_id"],
+            ]) + ([] if resolved_region_field_contract_path is None else [
+                "resolved_region_field_contract_filename=inputs/"
+                + resolved_region_field_contract_path.name,
+                "resolved_region_field_contract_sha256="
+                + file_sha256(resolved_region_field_contract_path),
+                "resolved_region_field_semantic_sha256="
+                + str(resolved_region_field_contract["semantic_sha256"]),
+                "resolved_region_field_profile_id="
+                + str(resolved_region_field_contract["semantic"]["canonical_profile_id"]),
             ]),
         }
     ]

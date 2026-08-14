@@ -256,7 +256,8 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             "accelerator_real_pa",
         )
         selected = profiles[row["single_flight_accelerator_field_profile_id"]]
-        self.assertEqual(selected["single_flight_ideal_accel_enable"], 1)
+        self.assertEqual(selected["accelerator_stage1"], "analytic_ideal_field")
+        self.assertEqual(selected["accelerator_stage2"], "analytic_ideal_field")
         self.assertEqual(
             row["single_flight_frontend_grid_profile_id"],
             "frontend_isotropic_0125",

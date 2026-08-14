@@ -60,17 +60,6 @@
       "intervention": "analytic_axis_2p2mm_monoenergetic_10ev_run_local_theory_linear_global_z_vz"
     },
     {
-      "arm_id": "formal_focus_mapped_layout_source",
-      "intervention": "translate_formal_positions_and_apply_observed_energy_along_positive_global_x",
-      "solver_profile_id": "formal_reflectron"
-    },
-    {
-      "arm_id": "exact_formal_field_mapped_layout_source",
-      "intervention": "translate_formal_positions_and_apply_observed_energy_along_positive_global_x",
-      "solver_profile_id": "formal_reflectron",
-      "frontend_profile_id": "formal_accelerator"
-    },
-    {
       "arm_id": "formal_ideal_source",
       "intervention": "translate_formal_positions_and_apply_formal_energy_along_positive_global_x"
     },

@@ -261,7 +261,7 @@
       "single_flight_frontend_grid_profile_id": "frontend_isotropic_020_accelerator_overlay_z005",
       "single_flight_oatof_numerical_profile_id": "oatof_reflectron_z010_r100",
       "single_flight_spatial_window_profile_id": "accelerator_xy_open_bore",
-      "single_flight_accelerator_field_profile_id": "accelerator_ideal_piecewise_uniform",
+      "single_flight_accelerator_field_profile_id": "full_domain_piecewise_ideal_field",
       "single_flight_pulse_offset_rf_periods": 0.0,
       "single_flight_design_overrides": [
         {

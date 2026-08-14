@@ -9,7 +9,7 @@
       "case_id": "fixture",
       "architecture_id": "ARCH-SHORT-Z10-R100",
       "architecture_generation_id": "fixture_short_focus",
-      "field_profile_id": "arm8_closed_global_piecewise_theoretical_field",
+      "field_profile_id": "full_domain_piecewise_ideal_field",
       "source_profile_id": "fixture_affine_n3",
       "source_profile_definition_sha256": "AA7BC79EB933AEB9E50B509AAB95E89425D120FAA2A23C478429C65A01522936",
       "allow_diagnostic_extrapolation": false,

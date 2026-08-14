@@ -302,29 +302,7 @@ class ComsolPrePulseReplayTests(unittest.TestCase):
         self.assertIn("arm.baseline_field_mask", core)
         self.assertIn("arm.baseline_voltages_V", core)
         self.assertIn('status(particle) = "solver_failure"', core)
-        for wrapper_name in (
-            "run_prepulse_oatof_replay.m",
-            "run_prepulse_accel_idealization_matrix.m",
-            "run_prepulse_voltage_ab.m",
-            "run_finite_interval_ideal_source.m",
-        ):
-            wrapper = (STAGE_ROOT / wrapper_name).read_text(encoding="utf-8")
-            self.assertIn("run_retrace_arm.m", wrapper)
-            self.assertNotIn("model.study", wrapper)
-            self.assertNotIn("mphparticle", wrapper)
-
-    def test_powershell_legacy_entries_delegate_without_solver_logic_or_absolute_paths(self) -> None:
-        for wrapper_name in (
-            "execute.ps1",
-            "execute_accel_idealization_matrix.ps1",
-            "execute_voltage_ab.ps1",
-            "execute_finite_interval_ideal_source.ps1",
-        ):
-            wrapper = (WORKFLOW_ROOT / wrapper_name).read_text(encoding="utf-8")
-            self.assertIn("execute_retrace_arm.ps1", wrapper)
-            self.assertNotIn("run_comsol_r2025b.ps1", wrapper)
-            self.assertNotIn("C:\\Users\\", wrapper)
-
+    def test_powershell_core_and_recovery_own_run_lifecycle(self) -> None:
         recovery = (WORKFLOW_ROOT / "recover_completed_solver_run.ps1").read_text(
             encoding="utf-8"
         )

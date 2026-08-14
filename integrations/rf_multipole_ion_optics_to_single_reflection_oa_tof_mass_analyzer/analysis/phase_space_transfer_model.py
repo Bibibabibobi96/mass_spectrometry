@@ -219,7 +219,7 @@ def campaign_transfer_settings(
     if contract.get("execution_state") not in {
         "planning_only_until_adapter_support",
         "n100_baseline_registration_only",
-        "n100_arm8_closed_global_field_screening",
+        "n100_full_domain_piecewise_ideal_field_screening",
     }:
         raise TransferModelContractError("transfer analysis cannot make a pulse-resolution campaign executable")
     clock = contract.get("clock_contract")

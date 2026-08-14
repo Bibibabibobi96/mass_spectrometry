@@ -35,14 +35,20 @@ INTEGRATION_ROOT = Path(__file__).resolve().parents[1]
 ENERGY_ENVELOPE_ABS_TOL_V = 1.0e-9
 
 
-def _bound_path(root: Path, record: Mapping[str, Any], label: str) -> Path:
+def resolve_bound_input_path(root: Path, record: Mapping[str, Any], label: str) -> Path:
+    """Resolve one SHA-bound workspace input or fail closed."""
+
     path = (root / str(record["path"])).resolve()
     if not path.is_file() or file_sha256(path) != record.get("sha256"):
         raise PhysicsContractError(f"{label} is missing or SHA-256 differs")
     return path
 
 
-def _profile(registry: Mapping[str, Any], case: Mapping[str, Any]) -> Mapping[str, Any]:
+def select_bound_source_profile(
+    registry: Mapping[str, Any], case: Mapping[str, Any]
+) -> Mapping[str, Any]:
+    """Select the uniquely identified source-profile definition for an analytic case."""
+
     matches = [
         value
         for value in registry.get("source_materialization_profiles", [])
@@ -83,18 +89,20 @@ def compute_analytic_report(
     if len(cases) != 1:
         raise PhysicsContractError("case_id must select exactly one analytic case")
     case = cases[0]
-    geometry_path = _bound_path(workspace_root, case["resolved_geometry"], "geometry")
-    receipt_path = _bound_path(
+    geometry_path = resolve_bound_input_path(
+        workspace_root, case["resolved_geometry"], "geometry"
+    )
+    receipt_path = resolve_bound_input_path(
         workspace_root, case["source_materialization_receipt"], "source receipt"
     )
-    release_path = _bound_path(
+    release_path = resolve_bound_input_path(
         workspace_root, case["source_release_csv"], "source release CSV"
     )
     registry_path = (workspace_root / campaign["source_profile_registry_path"]).resolve()
     geometry = load_json(geometry_path)
     receipt = load_json(receipt_path)
     profile = resolve_source_materialization_profile(
-        dict(_profile(load_json(registry_path), case)), INTEGRATION_ROOT,
+        dict(select_bound_source_profile(load_json(registry_path), case)), INTEGRATION_ROOT,
     )
     expected = case["source_contract"]
     count = int(expected["particle_count"])

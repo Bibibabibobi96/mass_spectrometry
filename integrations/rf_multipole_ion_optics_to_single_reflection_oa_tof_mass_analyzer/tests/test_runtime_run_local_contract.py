@@ -172,11 +172,13 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
             "[double]$_.relative_95pct_interval_width -gt 0.10", text
         )
 
-    def test_paired_n100_stage_switches_are_process_local(self) -> None:
+    def test_paired_n100_field_authority_is_run_local_contract(self) -> None:
         text = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
-        self.assertIn("OATOF_IDEAL_ACCEL_STAGE1_ENABLE", text)
-        self.assertIn("OATOF_IDEAL_ACCEL_STAGE2_ENABLE", text)
-        self.assertIn("single_flight_ideal_accel_stage1_enable", text)
+        self.assertNotIn("OATOF_IDEAL_ACCEL_STAGE1_ENABLE", text)
+        self.assertNotIn("OATOF_IDEAL_ACCEL_STAGE2_ENABLE", text)
+        self.assertNotIn("single_flight_ideal_accel_stage1_enable", text)
+        self.assertIn("ResolvedRegionFieldContractSha256", text)
+        self.assertIn("ResolvedRegionFieldSemanticSha256", text)
         self.assertIn("PulseResolutionBaselineCheckpointsSha256", text)
         self.assertIn("pulse_resolution_real_beam_ideal_stage1_n100_candidate_result.json", text)
         self.assertIn("if ($PulseResolutionArmId -ne 'real_beam_all_real')", text)

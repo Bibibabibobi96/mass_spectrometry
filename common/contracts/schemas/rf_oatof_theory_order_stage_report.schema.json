@@ -1,0 +1,280 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/rf_oatof_theory_order_stage_report.schema.json",
+  "title": "oaTOF all-ideal theory order audit report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "role", "status", "evidence_level",
+    "solver_execution_performed", "campaign", "input_evidence", "arms",
+    "cross_arm_sigma_scaling", "declared_provisional_assessment", "claim_limit"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "rf_oatof_theory_order_stage_report"},
+    "status": {
+      "enum": ["PROVISIONAL_THRESHOLDS_PASSED", "PROVISIONAL_THRESHOLDS_NOT_PASSED"]
+    },
+    "evidence_level": {"const": "PROVISIONAL"},
+    "solver_execution_performed": {"const": false},
+    "campaign": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha"}
+      }
+    },
+    "input_evidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["accelerator_entry_port", "base_geometry", "layout_profile_registry", "phase_space_match_contract"],
+      "properties": {
+        "accelerator_entry_port": {"$ref": "#/$defs/file"},
+        "base_geometry": {"$ref": "#/$defs/file"},
+        "layout_profile_registry": {"$ref": "#/$defs/file"},
+        "phase_space_match_contract": {"$ref": "#/$defs/file"}
+      }
+    },
+    "arms": {
+      "type": "array", "minItems": 3, "maxItems": 3,
+      "items": {"$ref": "#/$defs/arm"}
+    },
+    "cross_arm_sigma_scaling": {
+      "type": "array", "minItems": 2, "maxItems": 2,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["left_width_mm", "right_width_mm", "sigma_log_width_exponent"],
+        "properties": {
+          "left_width_mm": {"type": "number", "exclusiveMinimum": 0},
+          "right_width_mm": {"type": "number", "exclusiveMinimum": 0},
+          "sigma_log_width_exponent": {"type": "number"}
+        }
+      }
+    },
+    "declared_provisional_assessment": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "all_width_contract_checks_passed",
+        "target_2p2mm_numeric_c3_or_c4_resolved",
+        "target_2p2mm_terminal_c3_or_c4_significant_above_numeric_floor",
+        "cross_arm_sigma_exponents_within_2p7_to_3p3",
+        "target_2p2mm_third_and_higher_dominance_supported",
+        "target_2p2mm_numeric_c3_term_dominance_supported",
+        "target_2p2mm_numeric_c4_term_dominance_supported",
+        "allowed_claim", "authority_limit"
+      ],
+      "properties": {
+        "all_width_contract_checks_passed": {"type": "boolean"},
+        "target_2p2mm_numeric_c3_or_c4_resolved": {"type": "boolean"},
+        "target_2p2mm_terminal_c3_or_c4_significant_above_numeric_floor": {"type": "boolean"},
+        "cross_arm_sigma_exponents_within_2p7_to_3p3": {"type": "boolean"},
+        "target_2p2mm_third_and_higher_dominance_supported": {"type": "boolean"},
+        "target_2p2mm_numeric_c3_term_dominance_supported": {"type": "boolean"},
+        "target_2p2mm_numeric_c4_term_dominance_supported": {"type": "boolean"},
+        "allowed_claim": {
+          "enum": [
+            "SUPPORTED_NUMERIC_LOCAL_THIRD_AND_HIGHER_DOMINANCE",
+            "THEORY_ORDER_DOMINANCE_NOT_SUPPORTED"
+          ]
+        },
+        "authority_limit": {
+          "const": "D1_D2_solver_authoritative; c3=T'''/3! and c4=T''''/4! are_symmetric_multistep_Richardson_numeric_Taylor_coefficient_audits_only"
+        }
+      }
+    },
+    "claim_limit": {
+      "const": "Declared provisional, not preregistered. All-ideal one-dimensional theory audit only. D1 and D2 are solver authorities. Richardson c3=T'''/3! and c4=T''''/4! values are converged symmetric numerical Taylor-coefficient audits, not solver-published analytic derivatives, SIMION results, or component qualifications."
+    }
+  },
+  "$defs": {
+    "sha": {"type": "string", "pattern": "^[A-F0-9]{64}$"},
+    "file": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "bytes", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "bytes": {"type": "integer", "minimum": 1},
+        "sha256": {"$ref": "#/$defs/sha"}
+      }
+    },
+    "arm": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "source_full_width_mm", "layout_profile_id", "independent_theory_match",
+        "sample_metrics", "sample_rms_relative_difference", "nested_width_metrics",
+        "nested_sigma_log_slopes", "local_order_audit",
+        "physical_low_vs_high_order", "checks"
+      ],
+      "properties": {
+        "source_full_width_mm": {"type": "number", "exclusiveMinimum": 0},
+        "layout_profile_id": {"type": "string", "minLength": 1},
+        "independent_theory_match": {"$ref": "#/$defs/theory_match"},
+        "sample_metrics": {
+          "type": "object", "additionalProperties": false,
+          "required": ["1001", "2001"],
+          "properties": {
+            "1001": {"$ref": "#/$defs/sample_metrics"},
+            "2001": {"$ref": "#/$defs/sample_metrics"}
+          }
+        },
+        "sample_rms_relative_difference": {"type": "number", "minimum": 0},
+        "nested_width_metrics": {
+          "type": "array", "minItems": 3, "maxItems": 3,
+          "items": {"$ref": "#/$defs/nested_metric"}
+        },
+        "nested_sigma_log_slopes": {
+          "type": "array", "minItems": 2, "maxItems": 2,
+          "items": {"type": "number"}
+        },
+        "local_order_audit": {"$ref": "#/$defs/local_order_audit"},
+        "physical_low_vs_high_order": {"$ref": "#/$defs/low_high"},
+        "checks": {"$ref": "#/$defs/checks"}
+      }
+    },
+    "theory_match": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "repeller_v", "intermediate_v", "focus_drift_mm",
+        "reflectron_stage1_voltage_drop_v", "reflectron_stage2_field_v_per_mm",
+        "total_first_derivative_residual", "total_second_derivative_residual",
+        "total_third_derivative"
+      ],
+      "properties": {
+        "repeller_v": {"type": "number"},
+        "intermediate_v": {"type": "number"},
+        "focus_drift_mm": {"type": "number"},
+        "reflectron_stage1_voltage_drop_v": {"type": "number"},
+        "reflectron_stage2_field_v_per_mm": {"type": "number"},
+        "total_first_derivative_residual": {"type": "number"},
+        "total_second_derivative_residual": {"type": "number"},
+        "total_third_derivative": {"type": "null"}
+      }
+    },
+    "sample_metrics": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "detector_population_sigma_s", "detector_full_span_s",
+        "accelerator_focus_population_sigma_s", "accelerator_focus_full_span_s"
+      ],
+      "properties": {
+        "detector_population_sigma_s": {"type": "number", "minimum": 0},
+        "detector_full_span_s": {"type": "number", "minimum": 0},
+        "accelerator_focus_population_sigma_s": {"type": "number", "minimum": 0},
+        "accelerator_focus_full_span_s": {"type": "number", "minimum": 0}
+      }
+    },
+    "nested_metric": {
+      "type": "object", "additionalProperties": false,
+      "required": ["width_fraction", "full_width_mm", "population_sigma_s", "full_span_s"],
+      "properties": {
+        "width_fraction": {"type": "number", "exclusiveMinimum": 0},
+        "full_width_mm": {"type": "number", "exclusiveMinimum": 0},
+        "population_sigma_s": {"type": "number", "minimum": 0},
+        "full_span_s": {"type": "number", "minimum": 0}
+      }
+    },
+    "coefficient_audit": {
+      "type": "object", "additionalProperties": false,
+      "required": ["values", "small_step_value", "significant_above_numeric_floor", "converged", "status"],
+      "properties": {
+        "values": {"type": "array", "minItems": 3, "items": {"type": "number"}},
+        "small_step_value": {"type": "number"},
+        "significant_above_numeric_floor": {"type": "boolean"},
+        "converged": {"type": "boolean"},
+        "status": {
+          "enum": [
+            "CONVERGED_NUMERIC_TAYLOR_COEFFICIENT_AUDIT",
+            "NOT_RESOLVED_NUMERIC_FLOOR", "NOT_CONVERGED"
+          ]
+        }
+      }
+    },
+    "local_order_audit": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "interpretation", "steps", "solver_authority", "d1_numeric_audit",
+        "d2_numeric_audit", "c3_numeric_taylor_coefficient_audit",
+        "c4_numeric_taylor_coefficient_audit"
+      ],
+      "properties": {
+        "interpretation": {
+          "const": "D1_D2_are_solver_authorities; c3_equals_T3_over_3_factorial_and_c4_equals_T4_over_4_factorial_are_symmetric_multistep_Richardson_numeric_Taylor_coefficient_audits_not_analytic_authorities"
+        },
+        "steps": {
+          "type": "array", "minItems": 4, "maxItems": 4,
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["step_mm", "odd_time_s", "even_time_s", "raw_c1_s_per_mm", "raw_c2_s_per_mm2", "raw_c3_after_d1_s_per_mm3", "raw_c4_after_d2_s_per_mm4"],
+            "properties": {
+              "step_mm": {"type": "number", "exclusiveMinimum": 0},
+              "odd_time_s": {"type": "number"}, "even_time_s": {"type": "number"},
+              "raw_c1_s_per_mm": {"type": "number"}, "raw_c2_s_per_mm2": {"type": "number"},
+              "raw_c3_after_d1_s_per_mm3": {"type": "number"},
+              "raw_c4_after_d2_s_per_mm4": {"type": "number"}
+            }
+          }
+        },
+        "solver_authority": {
+          "type": "object", "additionalProperties": false,
+          "required": ["c1_s_per_mm", "c2_s_per_mm2"],
+          "properties": {"c1_s_per_mm": {"type": "number"}, "c2_s_per_mm2": {"type": "number"}}
+        },
+        "d1_numeric_audit": {"$ref": "#/$defs/authority_audit"},
+        "d2_numeric_audit": {"$ref": "#/$defs/authority_audit"},
+        "c3_numeric_taylor_coefficient_audit": {"$ref": "#/$defs/coefficient_audit"},
+        "c4_numeric_taylor_coefficient_audit": {"$ref": "#/$defs/coefficient_audit"}
+      }
+    },
+    "authority_audit": {
+      "type": "object", "additionalProperties": false,
+      "required": ["agrees_with_solver_authority"],
+      "properties": {
+        "richardson_values_s_per_mm": {"type": "array", "items": {"type": "number"}},
+        "richardson_values_s_per_mm2": {"type": "array", "items": {"type": "number"}},
+        "agrees_with_solver_authority": {"type": "boolean"}
+      },
+      "oneOf": [
+        {"required": ["richardson_values_s_per_mm"]},
+        {"required": ["richardson_values_s_per_mm2"]}
+      ]
+    },
+    "reconstruction": {
+      "type": "object", "additionalProperties": false,
+      "required": ["captured_fraction_of_high_order_sse", "residual_rms_fraction_of_high_order"],
+      "properties": {
+        "captured_fraction_of_high_order_sse": {"type": "number"},
+        "residual_rms_fraction_of_high_order": {"type": "number", "minimum": 0}
+      }
+    },
+    "low_high": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "low_order_definition", "high_order_definition", "low_order_rms_ratio",
+        "third_and_higher_rms_ratio", "numeric_c3_taylor_term_reconstruction",
+        "numeric_c4_taylor_term_reconstruction",
+        "numeric_c3_plus_c4_taylor_term_reconstruction"
+      ],
+      "properties": {
+        "low_order_definition": {"const": "solver_D1_times_u_plus_solver_D2_over_2_times_u_squared"},
+        "high_order_definition": {"const": "complete_T_of_z_minus_T0_minus_low_order"},
+        "low_order_rms_ratio": {"type": "number", "minimum": 0},
+        "third_and_higher_rms_ratio": {"type": "number", "minimum": 0},
+        "numeric_c3_taylor_term_reconstruction": {"$ref": "#/$defs/reconstruction"},
+        "numeric_c4_taylor_term_reconstruction": {"$ref": "#/$defs/reconstruction"},
+        "numeric_c3_plus_c4_taylor_term_reconstruction": {"$ref": "#/$defs/reconstruction"}
+      }
+    },
+    "checks": {
+      "type": "object", "additionalProperties": false,
+      "required": ["sample_rms_converged", "d1_agrees_with_solver", "d2_agrees_with_solver", "high_order_rms_ratio", "low_order_rms_ratio", "nested_sigma_exponent"],
+      "properties": {
+        "sample_rms_converged": {"type": "boolean"},
+        "d1_agrees_with_solver": {"type": "boolean"},
+        "d2_agrees_with_solver": {"type": "boolean"},
+        "high_order_rms_ratio": {"type": "boolean"},
+        "low_order_rms_ratio": {"type": "boolean"},
+        "nested_sigma_exponent": {"type": "boolean"}
+      }
+    }
+  }
+}

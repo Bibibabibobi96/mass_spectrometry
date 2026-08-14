@@ -442,6 +442,22 @@ def publish_family_source_closure_run(
             "family parent manifest publication failed: "
             + (completed.stdout + completed.stderr).strip()
         )
+    from .assess_full_domain_width_numerics import (
+        is_full_domain_width_numerics_campaign,
+        publish_completed_assessment,
+    )
+
+    campaign = _load(campaign_path)
+    if is_full_domain_width_numerics_campaign(campaign):
+        final_experiment = max(
+            campaign["experiments"], key=lambda row: row["sequence"]
+        )["experiment_id"]
+        if receipt["experiment_id"] == final_experiment:
+            publish_completed_assessment(
+                repo_root=repo_root,
+                workspace_root=workspace_root,
+                campaign_path=campaign_path,
+            )
     return manifest_path
 
 

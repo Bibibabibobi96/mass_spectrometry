@@ -35,15 +35,9 @@ class PulseResolutionOptimizationCampaignTests(unittest.TestCase):
     def test_declares_complete_fail_closed_optimization_contract(self) -> None:
         campaign = load(CAMPAIGN_PATH)
         validate_schema(campaign, SCHEMA_NAME)
-        arm8_receipt = campaign["experiments"][4][
-            "pulse_resolution_axial_ideal_closure_receipt"
-        ]
-        self.assertEqual(arm8_receipt["evidence_revision"], 2)
-        self.assertEqual(
-            arm8_receipt["supersedes"]["sha256"], arm8_receipt["sha256"]
-        )
-        self.assertNotEqual(
-            arm8_receipt["supersedes"]["path"], arm8_receipt["path"]
+        self.assertNotIn(
+            "pulse_resolution_axial_ideal_closure_receipt",
+            campaign["experiments"][3],
         )
         validate_pulse_resolution_optimization_campaign(
             campaign, execution_requested=False
@@ -184,33 +178,31 @@ class PulseResolutionOptimizationCampaignTests(unittest.TestCase):
         self.assertEqual(candidate["single_flight_accelerator_field_profile_id"],
                          "accelerator_ideal_stage1_stage2_real_reflectron")
 
-    def test_deprecated_hard_mask_is_blocked_and_arm8_global_field_is_open(self) -> None:
+    def test_only_governed_full_domain_all_ideal_field_is_open(self) -> None:
         campaign = load(CAMPAIGN_PATH)
-        deprecated = campaign["experiments"][3]
-        with self.assertRaisesRegex(ContractError, "deprecated hard-mask"):
-            validate_pulse_resolution_optimization_campaign(
-                campaign, execution_requested=True, experiment=deprecated
-            )
-        candidate = campaign["experiments"][4]
+        self.assertEqual(len(campaign["experiments"]), 4)
+        candidate = campaign["experiments"][3]
         validate_pulse_resolution_optimization_campaign(
             campaign, execution_requested=True, experiment=candidate
         )
         self.assertEqual(candidate["pulse_resolution_attribution_arm_id"],
                          "real_beam_all_ideal")
         self.assertEqual(candidate["single_flight_accelerator_field_profile_id"],
-                         "arm8_closed_global_piecewise_theoretical_field")
+                         "full_domain_piecewise_ideal_field")
         self.assertEqual(
             campaign["pulse_resolution_optimization"]["attribution_arms"][3][
                 "implementation_status"
             ],
-            "executable_paired_screening_with_arm8_closure",
+            "executable_paired_screening_with_full_domain_contract",
         )
         adapter = (INTEGRATION_ROOT / "workflows" / "family_source_closure" /
                    "adapter.ps1").read_text(encoding="utf-8-sig")
-        self.assertIn("Deprecated hard-mask real-beam all-ideal", adapter)
-        self.assertIn("pulse_resolution_arm8_contract_sha256", adapter)
+        self.assertNotIn("Deprecated hard-mask real-beam all-ideal", adapter)
+        self.assertNotIn("accelerator_ideal_stage1_stage2_ideal_reflectron", adapter)
+        self.assertIn("resolved_region_field_semantic_sha256", adapter)
+        self.assertNotIn("pulse_resolution_arm8_contract_sha256", adapter)
         self.assertEqual(candidate["run_id"],
-                         "20260814_000000__sim__cross__pulse-real-arm8-global-theory__n100")
+                         "20260814_000000__sim__cross__pulse-real-full-domain-ideal__n100")
 
     def test_rejects_arm_8_stop_rule_bound_to_another_arm(self) -> None:
         campaign = load(CAMPAIGN_PATH)

@@ -9,9 +9,10 @@
     "role": {"const": "rf_multipole_oatof_experiment_campaign"},
     "integration_id": {"const": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"},
     "campaign_id": {"$ref": "#/$defs/id"},
-    "status": {"const": "authorized"},
+    "status": {"enum": ["authorized", "PENDING_PREREGISTRATION", "archived_invalid"]},
     "execution_policy": {"$ref": "#/$defs/file"},
     "claim_limit": {"type": "string", "minLength": 1},
+    "preregistration": {"$ref": "#/$defs/preregistration"},
     "pulse_resolution_optimization": {"$ref": "#/$defs/pulse_resolution_optimization"},
     "experiments": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/experiment"}}
   },
@@ -30,6 +31,26 @@
     "id": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"},
     "sha": {"type": "string", "pattern": "^[A-F0-9]{64}$"},
     "file": {"type": "object", "additionalProperties": false, "required": ["path", "sha256"], "properties": {"path": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/$defs/sha"}}},
+    "preregistration": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "document", "frozen_experiment_row_sha256"],
+      "properties": {
+        "status": {"const": "REGISTERED_EXECUTION_REQUIRES_EXPLICIT_AUTHORIZATION"},
+        "document": {
+          "type": "object", "additionalProperties": false,
+          "required": ["path", "bytes", "sha256"],
+          "properties": {
+            "path": {"type": "string", "minLength": 1},
+            "bytes": {"type": "integer", "minimum": 1},
+            "sha256": {"$ref": "#/$defs/sha"}
+          }
+        },
+        "frozen_experiment_row_sha256": {
+          "type": "object", "minProperties": 1,
+          "additionalProperties": {"$ref": "#/$defs/sha"}
+        }
+      }
+    },
     "versioned_file": {
       "type": "object",
       "additionalProperties": false,
@@ -95,7 +116,7 @@
       ],
       "properties": {
         "purpose": {"const": "physical_optimization"},
-        "execution_state": {"enum": ["n100_baseline_registration_only", "n100_arm8_closed_global_field_screening"]},
+        "execution_state": {"enum": ["n100_baseline_registration_only", "n100_full_domain_piecewise_ideal_field_screening"]},
         "clock_contract": {
           "type": "object", "additionalProperties": false,
           "required": ["resolution_time_basis", "absolute_instrument_clock_is_resolution_claim"],
@@ -138,7 +159,7 @@
               "source_model": {"enum": ["real_beam", "finite_interval_2p2mm_theory_source", "on_axis_longitudinal_ideal_source"]},
               "accelerator_field": {"enum": ["all_real", "ideal_stage1", "ideal_stage1_stage2", "ideal_accelerator"]},
               "reflectron_field": {"enum": ["real", "ideal"]},
-              "implementation_status": {"enum": ["executable_registration", "executable_paired_screening", "executable_paired_screening_with_arm8_closure", "blocked_pending_axial_ideal_analytic_closure", "planning_only_until_adapter_support"]}
+              "implementation_status": {"enum": ["executable_registration", "executable_paired_screening", "executable_paired_screening_with_full_domain_contract", "blocked_pending_axial_ideal_analytic_closure", "planning_only_until_adapter_support"]}
             }
           }
         },
@@ -272,6 +293,7 @@
         "single_flight_frontend_grid_profile_id": {"$ref": "#/$defs/id"},
         "single_flight_oatof_numerical_profile_id": {"$ref": "#/$defs/id"},
         "single_flight_trajectory_quality_profile_id": {"enum": ["tqual_8", "tqual_108"]},
+        "single_flight_time_integration_profile_id": {"enum": ["dt160", "dt320"]},
         "single_flight_spatial_window_profile_id": {"$ref": "#/$defs/id"},
         "single_flight_accelerator_field_profile_id": {"$ref": "#/$defs/id"},
         "single_flight_source_materialization_profile_id": {"$ref": "#/$defs/id"},
@@ -289,11 +311,6 @@
         "pulse_resolution_execution_mode": {"enum": ["screening_prefix_n100_baseline_registration", "screening_prefix_n100_paired_candidate", "qualification_full_n1000"]},
         "pulse_resolution_baseline_result": {"$ref": "#/$defs/file"},
         "pulse_resolution_baseline_checkpoints": {"$ref": "#/$defs/file"},
-        "pulse_resolution_axial_ideal_closure_receipt": {"$ref": "#/$defs/versioned_file"},
-        "pulse_resolution_arm8_simion_closure_result": {"$ref": "#/$defs/file"},
-        "pulse_resolution_arm8_simion_closure_manifest": {"$ref": "#/$defs/file"},
-        "pulse_resolution_arm8_simion_closure_contract": {"$ref": "#/$defs/file"},
-        "pulse_resolution_deprecated_counterfactual": {"type": "boolean"},
         "single_flight_design_overrides": {
           "type": "array",
           "minItems": 1,

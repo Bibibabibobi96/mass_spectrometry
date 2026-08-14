@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/rf_oatof_theory_order_stage_campaign.schema.json",
+  "title": "oaTOF all-ideal theory order audit campaign",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "role", "campaign_id", "evidence_level", "assessment_design_status",
+    "solver_execution_allowed", "base_layout_profile_id", "mass_to_charge_Th",
+    "source_widths_mm", "uniform_sample_counts", "nested_width_fractions",
+    "derivative_step_fractions_of_half_width", "inputs", "thresholds", "claim_limit"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "rf_oatof_theory_order_stage_campaign"},
+    "campaign_id": {"const": "zero_match_long_all_ideal_theory_order_stage"},
+    "evidence_level": {"const": "PROVISIONAL"},
+    "assessment_design_status": {"const": "DECLARED_PROVISIONAL_NOT_PREREGISTERED"},
+    "solver_execution_allowed": {"const": false},
+    "base_layout_profile_id": {"const": "zero_match_long_2p2mm"},
+    "mass_to_charge_Th": {"const": 100.0},
+    "source_widths_mm": {
+      "type": "array", "prefixItems": [{"const": 0.5}, {"const": 1.0}, {"const": 2.2}],
+      "items": false, "minItems": 3, "maxItems": 3
+    },
+    "uniform_sample_counts": {
+      "type": "array", "prefixItems": [{"const": 1001}, {"const": 2001}],
+      "items": false, "minItems": 2, "maxItems": 2
+    },
+    "nested_width_fractions": {
+      "type": "array", "prefixItems": [{"const": 0.25}, {"const": 0.5}, {"const": 1.0}],
+      "items": false, "minItems": 3, "maxItems": 3
+    },
+    "derivative_step_fractions_of_half_width": {
+      "type": "array", "prefixItems": [
+        {"const": 0.5}, {"const": 0.25}, {"const": 0.125}, {"const": 0.0625}
+      ],
+      "items": false, "minItems": 4, "maxItems": 4
+    },
+    "inputs": {
+      "type": "object", "additionalProperties": false,
+      "required": ["base_geometry", "accelerator_entry_port", "layout_profile_registry", "phase_space_match_contract"],
+      "properties": {
+        "base_geometry": {"$ref": "#/$defs/file"},
+        "accelerator_entry_port": {"$ref": "#/$defs/file"},
+        "layout_profile_registry": {"$ref": "#/$defs/file"},
+        "phase_space_match_contract": {"$ref": "#/$defs/file"}
+      }
+    },
+    "thresholds": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "sample_rms_relative_convergence", "d1_d2_effect_relative_agreement",
+        "richardson_effect_relative_convergence", "absolute_time_floor_s",
+        "numeric_floor_multiplier", "minimum_high_order_rms_ratio",
+        "maximum_low_order_rms_ratio", "minimum_nested_sigma_exponent",
+        "minimum_single_order_captured_fraction", "maximum_single_order_residual_fraction",
+        "minimum_cross_arm_sigma_exponent", "maximum_cross_arm_sigma_exponent"
+      ],
+      "properties": {
+        "sample_rms_relative_convergence": {"const": 0.01},
+        "d1_d2_effect_relative_agreement": {"const": 0.01},
+        "richardson_effect_relative_convergence": {"const": 0.05},
+        "absolute_time_floor_s": {"const": 1e-15},
+        "numeric_floor_multiplier": {"const": 10.0},
+        "minimum_high_order_rms_ratio": {"const": 0.80},
+        "maximum_low_order_rms_ratio": {"const": 0.20},
+        "minimum_nested_sigma_exponent": {"const": 2.70},
+        "minimum_single_order_captured_fraction": {"const": 0.80},
+        "maximum_single_order_residual_fraction": {"const": 0.30},
+        "minimum_cross_arm_sigma_exponent": {"const": 2.70},
+        "maximum_cross_arm_sigma_exponent": {"const": 3.30}
+      }
+    },
+    "claim_limit": {"type": "string", "minLength": 1}
+  },
+  "$defs": {
+    "file": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "bytes", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "bytes": {"type": "integer", "minimum": 1},
+        "sha256": {"type": "string", "pattern": "^[A-F0-9]{64}$"}
+      }
+    }
+  }
+}

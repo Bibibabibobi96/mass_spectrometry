@@ -1,6 +1,0 @@
-% Compatibility wrapper: ideal-source retraces are declarative source arms.
-repoRoot = getenv('RF_OATOF_COMSOL_RETRACE_REPO_ROOT');
-assert(isfolder(repoRoot), 'RF_OATOF_COMSOL_RETRACE_REPO_ROOT is required.');
-run(fullfile(repoRoot, 'integrations', ...
-    'rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer', ...
-    'stages', 'comsol', 'run_retrace_arm.m'));

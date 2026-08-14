@@ -11,8 +11,9 @@ from typing import Any
 
 from common.contracts.file_identity import file_sha256
 from common.multipole.grounded_shield import require_grounded_potential
-from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.arm8_simion_solver_closure import (
-    full_domain_piecewise_field_lua,
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.resolved_region_field import (
+    resolved_region_field_lua,
+    validate_resolved_region_field_contract,
 )
 
 
@@ -198,23 +199,9 @@ def build_extension(
         "",
         "-- BEGIN RF-OATOF SINGLE-FLIGHT EXTENSION",
         "adjustable single_flight_enable=1",
-        "adjustable sf_ideal_accel_enable=0",
-        "adjustable sf_ideal_accel_stage1_enable=0",
-        "adjustable sf_ideal_accel_stage2_enable=0",
-        "adjustable sf_arm8_global_field_enable=0",
-        "local sf_stage1_env=assert(tonumber(os.getenv('OATOF_IDEAL_ACCEL_STAGE1_ENABLE') or '0'),'invalid stage1 env')",
-        "local sf_stage2_env=assert(tonumber(os.getenv('OATOF_IDEAL_ACCEL_STAGE2_ENABLE') or '0'),'invalid stage2 env')",
-        "local sf_refl_stage1_env=assert(tonumber(os.getenv('OATOF_IDEAL_REFLECTRON_STAGE1_ENABLE') or '0'),'invalid reflectron stage1 env')",
-        "local sf_refl_stage2_env=assert(tonumber(os.getenv('OATOF_IDEAL_REFLECTRON_STAGE2_ENABLE') or '0'),'invalid reflectron stage2 env')",
-        "local sf_arm8_global_env=assert(tonumber(os.getenv('OATOF_ARM8_GLOBAL_FIELD_ENABLE') or '0'),'invalid Arm8 global field env')",
-        "assert((sf_stage1_env==0 or sf_stage1_env==1) and (sf_stage2_env==0 or sf_stage2_env==1),'ideal accelerator stage env must be binary')",
-        "assert((sf_refl_stage1_env==0 or sf_refl_stage1_env==1) and (sf_refl_stage2_env==0 or sf_refl_stage2_env==1),'ideal reflectron stage env must be binary')",
-        "assert(sf_arm8_global_env==0 or sf_arm8_global_env==1,'Arm8 global field env must be binary')",
         f"adjustable single_flight_rf_peak_v={_lua_number(drive['rf_amplitude_V_zero_to_peak_per_group'])}",
         f"adjustable single_flight_frequency_hz={_lua_number(drive['frequency_Hz'])}",
         "adjustable single_flight_rf_steps=160",
-        "adjustable accelerator_ring_quadratic_V=0",
-        "adjustable accelerator_ring_cubic_V=0",
         "local single_flight_particle_id_offset=assert(tonumber(os.getenv('OATOF_SINGLE_FLIGHT_PARTICLE_ID_OFFSET') or '0'),'invalid single-flight particle ID offset')",
         f"local single_flight_frontend_origin_x={_lua_number(origin['x'])}",
         f"local single_flight_frontend_origin_y={_lua_number(origin['y'])}",
@@ -300,10 +287,7 @@ def build_extension(
             "    instrument_time_us<handoff_pulse_time_us+handoff_pulse_width_us)",
             "end",
             "local function single_flight_accelerator_ring_voltage(index)",
-            "  local fraction=(6-index)/6",
-            "  local endpoint_zero=fraction*(1-fraction)",
-            "  return V_grid1*fraction+accelerator_ring_quadratic_V*endpoint_zero+",
-            "    accelerator_ring_cubic_V*endpoint_zero*(2*fraction-1)",
+            "  return V_grid1*((6-index)/6)",
             "end",
             "local function single_flight_set_frontend_voltages()",
             "  local instrument_time_us=single_flight_instrument_time_us()",
@@ -324,16 +308,7 @@ def build_extension(
             "end",
             "function segment.initialize_run()",
             "  single_flight_base_initialize_run()",
-            "  sf_ideal_accel_stage1_enable=sf_stage1_env",
-            "  sf_ideal_accel_stage2_enable=sf_stage2_env",
-            "  ideal_refl_stage1_enable=sf_refl_stage1_env",
-            "  ideal_refl_stage2_enable=sf_refl_stage2_env",
-            "  sf_arm8_global_field_enable=sf_arm8_global_env",
-            "  assert(sf_ideal_accel_stage1_enable==sf_stage1_env and sf_ideal_accel_stage2_enable==sf_stage2_env,'ideal accelerator stage env was not applied')",
-            "  if trajectory_log_enable~=0 then print(string.format('TRACE: pulse_resolution_accelerator_stage_mode stage1=%d stage2=%d',sf_ideal_accel_stage1_enable,sf_ideal_accel_stage2_enable)) end",
-            "  if trajectory_log_enable~=0 then print(string.format('TRACE: pulse_resolution_reflectron_stage_mode stage1=%d stage2=%d',ideal_refl_stage1_enable,ideal_refl_stage2_enable)) end",
-            "  if trajectory_log_enable~=0 then print(string.format('TRACE: pulse_resolution_arm8_global_field enabled=%d real_pa_blending=0',sf_arm8_global_field_enable)) end",
-            "  if trajectory_log_enable~=0 then print('TRACE: pulse_resolution_overlay_policy ideal_stage_regions_disable_overlay_instance5=1 analytic_field_instance3=1') end",
+            "  if trajectory_log_enable~=0 then print('TRACE: resolved_region_field_contract active=1 real_pa_blending=0') end",
             "  assert(single_flight_enable~=0,'single-flight Program requires explicit enable')",
             "  local ai=simion.wb.instances[3]",
             "  ai.x,ai.y,ai.z=single_flight_frontend_origin_x,single_flight_frontend_origin_y,single_flight_frontend_origin_z",
@@ -366,9 +341,7 @@ def build_extension(
             "  if single_flight_base_instance_adjust then single_flight_base_instance_adjust() end",
             "  if single_flight_overlay_enabled==0 or ion_instance~=5 then return end",
             "  local di=simion.wb.instances[4]",
-            "  local ideal_stage1_region=sf_ideal_accel_stage1_enable~=0 and ion_pz_mm>=accelerator_repeller_front_z_mm and ion_pz_mm<accelerator_grid1_z_mm",
-            "  local ideal_stage2_region=sf_ideal_accel_stage2_enable~=0 and ion_pz_mm>=accelerator_grid1_z_mm and ion_pz_mm<accelerator_grid2_z_mm",
-            "  if sf_arm8_global_field_enable~=0 or sf_ideal_accel_enable~=0 or ideal_stage1_region or ideal_stage2_region or di:inside_wc(ion_px_mm,ion_py_mm,ion_pz_mm) or",
+            "  if di:inside_wc(ion_px_mm,ion_py_mm,ion_pz_mm) or",
             "      ion_px_mm<=single_flight_overlay_active_x_min or ion_px_mm>=single_flight_overlay_active_x_max or",
             "      ion_py_mm<=single_flight_overlay_active_y_min or ion_py_mm>=single_flight_overlay_active_y_max or",
             "      ion_pz_mm<=single_flight_overlay_active_z_min or ion_pz_mm>=single_flight_overlay_active_z_max then ion_instance=0 end",
@@ -386,49 +359,29 @@ def build_extension(
             "    local state=single_flight_accel_state_for_current_particle()",
             "    local repeated_plane_evaluation=state.last_eval_time==ion_time_of_flight and state.last_eval_instance==ion_instance",
             "    if not repeated_plane_evaluation then",
-            "    state.last_eval_time=ion_time_of_flight; state.last_eval_instance=ion_instance",
-            "    local stage,next_plane,E=nil,nil,0",
-            "    if (sf_ideal_accel_enable~=0 or sf_ideal_accel_stage1_enable~=0) and ion_pz_mm>=accelerator_repeller_front_z_mm and ion_pz_mm<accelerator_grid1_z_mm then stage='stage1'; next_plane=accelerator_grid1_z_mm; E=(V_repeller-V_grid1)/(accelerator_grid1_z_mm-accelerator_repeller_front_z_mm)",
-            "    elseif (sf_ideal_accel_enable~=0 or sf_ideal_accel_stage2_enable~=0) and ion_pz_mm>=accelerator_grid1_z_mm and ion_pz_mm<accelerator_grid2_z_mm then stage='stage2'; next_plane=accelerator_grid2_z_mm; E=V_grid1/(accelerator_grid2_z_mm-accelerator_grid1_z_mm) end",
-            "    if stage~=nil then",
-            "      local status=state[stage]",
-            "      local distance=next_plane-ion_pz_mm",
-            "      local coordinate_tolerance=32*2.2204460492503131e-16*math.max(1,math.abs(next_plane))",
-            "      if status=='willhit' and ion_vz_mm>0 and math.abs(distance)<=coordinate_tolerance then",
-            "        state[stage]='hitting'; state[stage..'_zero_step_count']=(state[stage..'_zero_step_count'] or 0)+1",
-            "        assert(state[stage..'_zero_step_count']==1,'accelerator plane hitting requested more than one zero-step confirmation')",
-            "        ion_time_step=0",
-            "      elseif status=='approaching' or status=='willhit' then",
-            "      local acceleration=ion_charge*96.4853321233*E/ion_mass",
-            "      local crossing_time",
-            "      if math.abs(acceleration)>1e-15 then crossing_time=(-ion_vz_mm+math.sqrt(ion_vz_mm^2+2*acceleration*distance))/acceleration",
-            "      else crossing_time=distance/ion_vz_mm end",
-            "      assert(crossing_time>0,'accelerator plane crossing estimate made no representable time progress')",
-            "      if ion_time_step>=crossing_time then state[stage]='willhit'; state[stage..'_request_time']=ion_time_of_flight; state[stage..'_request_z']=ion_pz_mm; ion_time_step=crossing_time end",
+            "      state.last_eval_time=ion_time_of_flight; state.last_eval_instance=ion_instance",
+            "      local stage,next_plane=nil,nil",
+            "      if ion_pz_mm<accelerator_grid1_z_mm then stage='stage1'; next_plane=accelerator_grid1_z_mm",
+            "      elseif ion_pz_mm<accelerator_grid2_z_mm then stage='stage2'; next_plane=accelerator_grid2_z_mm end",
+            "      if stage~=nil then",
+            "        local status=state[stage]",
+            "        local distance=next_plane-ion_pz_mm",
+            "        local coordinate_tolerance=32*2.2204460492503131e-16*math.max(1,math.abs(next_plane))",
+            "        if status=='willhit' and math.abs(distance)<=coordinate_tolerance then",
+            "          state[stage]='hitting'; state[stage..'_zero_step_count']=(state[stage..'_zero_step_count'] or 0)+1",
+            "          assert(state[stage..'_zero_step_count']==1,'accelerator plane hitting requested more than one zero-step confirmation')",
+            "          ion_time_step=0",
+            "        elseif status=='approaching' or status=='willhit' then",
+            "          local crossing_time=distance/ion_vz_mm",
+            "          assert(crossing_time>0,'accelerator plane crossing estimate made no representable time progress')",
+            "          if ion_time_step>=crossing_time then state[stage]='willhit'; state[stage..'_request_time']=ion_time_of_flight; state[stage..'_request_z']=ion_pz_mm; ion_time_step=crossing_time end",
+            "        end",
             "      end",
-            "    end",
             "    end",
             "  end",
             "  if ion_instance==3 or (single_flight_overlay_enabled~=0 and ion_instance==5) then",
             "    local rf_step=1e6/single_flight_frequency_hz/single_flight_rf_steps",
             "    if ion_time_step>rf_step then ion_time_step=rf_step end",
-            "  end",
-            "end",
-            "function segment.efield_adjust()",
-            "  single_flight_base_efield_adjust()",
-            "  if (sf_ideal_accel_enable==0 and sf_ideal_accel_stage1_enable==0 and sf_ideal_accel_stage2_enable==0) or ion_instance~=3 or",
-            "      not single_flight_pulse_is_on() then return end",
-            "  if math.abs(ion_px_mm-accelerator_axis_x_mm)>accelerator_bore_half_mm or",
-            "      math.abs(ion_py_mm-accelerator_axis_y_mm)>accelerator_bore_half_mm then return end",
-            "  local z,E=ion_pz_mm,nil",
-            "  if z>=accelerator_repeller_front_z_mm and z<accelerator_grid1_z_mm and (sf_ideal_accel_enable~=0 or sf_ideal_accel_stage1_enable~=0) then",
-            "    E=(V_repeller-V_grid1)/(accelerator_grid1_z_mm-accelerator_repeller_front_z_mm)",
-            "  elseif z>=accelerator_grid1_z_mm and z<accelerator_grid2_z_mm and (sf_ideal_accel_enable~=0 or sf_ideal_accel_stage2_enable~=0) then",
-            "    E=V_grid1/(accelerator_grid2_z_mm-accelerator_grid1_z_mm)",
-            "  end",
-            "  if E~=nil then",
-            "    ion_dvoltsx_gu=0; ion_dvoltsy_gu=0; ion_dvoltsz_gu=0",
-            "    ion_dvoltsz_gu=-E*simion.wb.instances[3].pa.dz_mm*simion.wb.instances[3].scale",
             "  end",
             "end",
             "function segment.other_actions()",
@@ -543,14 +496,9 @@ def main() -> int:
     parser.add_argument("--accelerator-overlay-contract", type=Path)
     parser.add_argument("--oatof", required=True, type=Path)
     parser.add_argument("--initial-global-state", required=True, type=Path)
-    parser.add_argument("--arm8-global-field-contract", type=Path)
+    parser.add_argument("--resolved-region-field-contract", required=True, type=Path)
     parser.add_argument("--terminate-after-pulse", action="store_true")
     parser.add_argument("--global-segments", action="store_true")
-    parser.add_argument(
-        "--frontend-program-profile",
-        default="combined_frontend",
-        choices=("combined_frontend", "formal_accelerator"),
-    )
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--metadata", required=True, type=Path)
     args = parser.parse_args()
@@ -565,36 +513,26 @@ def main() -> int:
     pulse = args.pulse_extension.read_text(encoding="utf-8-sig")
     if formal.count("simion.workbench_program()") != 1 or "segment.fast_adjust" not in pulse:
         raise ValueError("frozen oaTOF Program inputs differ from the expected contract")
-    extension = ""
-    if args.frontend_program_profile == "combined_frontend":
-        extension = build_extension(
-            _load(args.upstream),
-            _load(args.frontend_contract),
-            birth_times_us=load_birth_times(args.initial_global_state),
-            terminate_after_pulse=args.terminate_after_pulse,
-            overlay=(
-                _load(args.accelerator_overlay_contract)
-                if args.accelerator_overlay_contract is not None
-                else None
-            ),
-        )
+    extension = build_extension(
+        _load(args.upstream),
+        _load(args.frontend_contract),
+        birth_times_us=load_birth_times(args.initial_global_state),
+        terminate_after_pulse=args.terminate_after_pulse,
+        overlay=(
+            _load(args.accelerator_overlay_contract)
+            if args.accelerator_overlay_contract is not None
+            else None
+        ),
+    )
+    region_field_contract = _load(args.resolved_region_field_contract)
+    validate_resolved_region_field_contract(region_field_contract)
     output = formal.rstrip() + "\n\n" + pulse.strip() + "\n" + extension
-    if args.arm8_global_field_contract is not None:
-        arm8_contract = _load(args.arm8_global_field_contract)
-        if (
-            arm8_contract.get("role") != "rf_oatof_arm8_simion_solver_closure_contract"
-            or arm8_contract.get("potential", {}).get("real_pa_field_blending_allowed") is not False
-        ):
-            raise ValueError("Arm-8 global field contract is not a no-blending closure authority")
-        output += "\n-- BEGIN REAL-BEAM ARM8 GLOBAL THEORETICAL FIELD\n"
-        output += full_domain_piecewise_field_lua(
-            arm8_contract["potential"],
-            prefix="sf_arm8",
-            enable_expression=(
-                "sf_arm8_global_field_enable~=0 and single_flight_pulse_is_on()"
-            ),
-        )
-        output += "\n-- END REAL-BEAM ARM8 GLOBAL THEORETICAL FIELD\n"
+    output += "\n-- BEGIN RESOLVED REGION FIELD CONTRACT\n"
+    output += resolved_region_field_lua(
+        region_field_contract,
+        enable_expression="single_flight_pulse_is_on()",
+    )
+    output += "\n-- END RESOLVED REGION FIELD CONTRACT\n"
     if output.count("simion.workbench_program()") != 1:
         raise ValueError("combined single-flight Program must declare one workbench")
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -618,13 +556,16 @@ def main() -> int:
             if args.initial_global_state is not None
             else None
         ),
-        "arm8_global_field_contract_sha256": (
-            file_sha256(args.arm8_global_field_contract)
-            if args.arm8_global_field_contract is not None
-            else None
+        "resolved_region_field_contract_sha256": file_sha256(
+            args.resolved_region_field_contract
         ),
+        "resolved_region_field_semantic_sha256": region_field_contract[
+            "semantic_sha256"
+        ],
+        "resolved_region_field_profile_id": region_field_contract["semantic"][
+            "canonical_profile_id"
+        ],
         "clock_basis": "canonical_instrument_time_us",
-        "frontend_program_profile": args.frontend_program_profile,
         "terminate_after_pulse": args.terminate_after_pulse,
         "global_segments": args.global_segments,
         "output_sha256": file_sha256(args.output),

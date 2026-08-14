@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "rf_oatof_resolved_region_field_contract.schema.json",
+  "title": "Resolved oaTOF region field contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "role", "layout_geometry", "semantic", "semantic_sha256"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "rf_oatof_resolved_region_field_contract"},
+    "layout_geometry": {
+      "type": "object",
+      "required": ["sha256", "layout_profile_id", "architecture_generation_id"],
+      "properties": {
+        "sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"},
+        "layout_profile_id": {"type": ["string", "null"]},
+        "architecture_generation_id": {"type": ["string", "null"]}
+      },
+      "additionalProperties": false
+    },
+    "semantic": {
+      "type": "object",
+      "required": ["field_configuration_id", "canonical_profile_id", "region_modes", "planes_mm", "fields_V_per_mm", "effective_domain", "pa_role", "real_pa_field_blending_allowed", "instance_coordinate_mapping"],
+      "properties": {
+        "field_configuration_id": {"enum": ["REAL_ACCELERATOR_REAL_REFLECTOR_FIELD", "IDEAL_STAGE1_REAL_STAGE2_REAL_REFLECTOR_FIELD", "REAL_STAGE1_IDEAL_STAGE2_REAL_REFLECTOR_FIELD", "IDEAL_ACCELERATOR_REAL_REFLECTOR_FIELD", "FULL_DOMAIN_PIECEWISE_IDEAL_FIELD"]},
+        "canonical_profile_id": {"type": "string", "minLength": 1},
+        "region_modes": {
+          "type": "object",
+          "required": ["accelerator_stage1", "accelerator_stage2", "drift", "reflectron_stage1", "reflectron_stage2"],
+          "additionalProperties": false,
+          "properties": {
+            "accelerator_stage1": {"enum": ["real_pa_field", "analytic_ideal_field", "zero_field"]},
+            "accelerator_stage2": {"enum": ["real_pa_field", "analytic_ideal_field", "zero_field"]},
+            "drift": {"enum": ["real_pa_field", "analytic_ideal_field", "zero_field"]},
+            "reflectron_stage1": {"enum": ["real_pa_field", "analytic_ideal_field", "zero_field"]},
+            "reflectron_stage2": {"enum": ["real_pa_field", "analytic_ideal_field", "zero_field"]}
+          }
+        },
+        "planes_mm": {"type": "object"},
+        "fields_V_per_mm": {"type": "object"},
+        "effective_domain": {
+          "type": "object",
+          "required": ["longitudinal", "transverse", "outside_longitudinal_domain"],
+          "properties": {
+            "longitudinal": {"const": "closed_piecewise_path_repeller_to_reflectron_backplate"},
+            "transverse": {"const": "analytic_field_extends_until_native_pa_geometry_collision"},
+            "outside_longitudinal_domain": {"const": "invalid_trajectory_error"}
+          },
+          "additionalProperties": false
+        },
+        "pa_role": {"const": "geometry_and_collision_carrier_plus_explicit_real_pa_field_regions"},
+        "real_pa_field_blending_allowed": {"const": false},
+        "instance_coordinate_mapping": {"type": "object"}
+      },
+      "additionalProperties": false
+    },
+    "semantic_sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"}
+  }
+}

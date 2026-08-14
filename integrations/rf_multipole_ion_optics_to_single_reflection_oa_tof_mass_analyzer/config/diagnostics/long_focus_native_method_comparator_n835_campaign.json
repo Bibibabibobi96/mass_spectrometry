@@ -17,7 +17,7 @@
     },
     {
       "sequence":2,"experiment_id":"long_focus_native_ideal_piecewise_n835","execution_strategy":"simion_single_flight",
-      "single_flight_layout_profile_id":"symmetric_10ev_source_z22_finite_interval_theory","single_flight_frontend_grid_profile_id":"frontend_isotropic_020","single_flight_oatof_numerical_profile_id":"oatof_formal_mesh","single_flight_accelerator_field_profile_id":"accelerator_ideal_piecewise_uniform","single_flight_pulse_offset_rf_periods":0.15593652300413582,
+      "single_flight_layout_profile_id":"symmetric_10ev_source_z22_finite_interval_theory","single_flight_frontend_grid_profile_id":"frontend_isotropic_020","single_flight_oatof_numerical_profile_id":"oatof_formal_mesh","single_flight_accelerator_field_profile_id":"accelerator_ideal_stage1_stage2_real_reflectron","single_flight_pulse_offset_rf_periods":0.15593652300413582,
       "architecture_generation_id":"finite_interval_2p2mm_matched_voltage_v1","source_profile_id":"historical_long_focus_ideal_linear_z_vz_n835_v1","field_overlay_id":"none","source_release_mode":"pre_pulse_restart",
       "pre_pulse_source_state":{"path":"artifacts/projects/rf_octupole_ion_optics/runs/20260812_210000__sim__simion__rf-oatof-terminal-analytic-ideal-boundary-step__n1000__r01/inputs/counterfactual_arms/current_layout_ideal_1mm_linear_z_vz__source_state.csv","sha256":"70FA718C44AF8E793122528B039CD6DDFB4E9AD8F4EC72129ABCE4591139F71A","particle_count":835,"coordinate_frame":"oatof_global_cartesian","release_event":"pre_pulse_state"},
       "connection_profile_id":"rf_octupole_oatof_shield_terminal_direct_mating_gap_0mm","run_id":"20260813_183100__sim__cross__long-native-ideal-piecewise__n835__r05",

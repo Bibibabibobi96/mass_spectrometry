@@ -59,18 +59,17 @@ class ResolutionAttributionCounterfactualTests(unittest.TestCase):
         self.assertAlmostEqual(result["source_z_time_slope_ns_per_mm"], 2.0)
         self.assertAlmostEqual(result["time_sigma_ns"], np.std([-2.0, 0.0, 2.0]))
 
-    def test_execution_governs_ideal_accelerator_field_mode(self) -> None:
+    def test_execution_inherits_one_resolved_region_field_authority(self) -> None:
         execution = (
             Path(__file__).resolve().parents[1]
             / "workflows/resolution_attribution/execute.ps1"
         ).read_text(encoding="utf-8")
-        self.assertIn("single_flight_ideal_accel_enable", execution)
-        self.assertIn("'ideal_stage1','ideal_stage2','ideal_piecewise'", execution)
-        self.assertIn("$effectiveIdealAcceleratorEnabled", execution)
-        self.assertIn("elseif ($AcceleratorFieldMode -eq 'ideal_piecewise')", execution)
-        self.assertIn(
-            '"sf_ideal_accel_enable=$effectiveIdealAcceleratorEnabled"', execution
-        )
+        self.assertNotIn("single_flight_ideal_accel_enable", execution)
+        self.assertNotIn("AcceleratorFieldMode", execution)
+        self.assertNotIn("accelerator_field_mode", execution)
+        self.assertIn("resolved_region_field_contract.json", execution)
+        self.assertIn("--resolved-region-field-contract", execution)
+        self.assertNotIn("sf_ideal_accel_enable", execution)
 
     def test_phase_space_time_transfer_reports_actual_correlated_slope(self) -> None:
         rows = []
@@ -158,11 +157,9 @@ class ResolutionAttributionCounterfactualTests(unittest.TestCase):
         self.assertIn("cacheInputs.overlay_gem_sha256", workflow)
         self.assertIn("-BaseName 'accelerator_overlay'", workflow)
         self.assertIn("'--initial-global-state',$replayClockState", workflow)
-        self.assertIn("'--clock-basis','absolute_birth_time'", workflow)
-        self.assertIn(
-            "Accelerator-overlay attribution supports only combined_frontend arms.",
-            workflow,
-        )
+        self.assertNotIn("--clock-basis", workflow)
+        self.assertNotIn("frontend_profile_id", workflow)
+        self.assertNotIn("formal_accelerator", workflow)
 
     def test_formal_published_particle_schema_is_an_ideal_source(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -285,7 +282,7 @@ class ResolutionAttributionCounterfactualTests(unittest.TestCase):
             self.assertEqual(result["paired_cohort_particles"], 4)
             self.assertEqual(result["initial_pa_instance"], 5)
             self.assertEqual(result["solver_birth_time_us"], 0.0)
-            self.assertEqual(len(result["arms"]), 21)
+            self.assertEqual(len(result["arms"]), 19)
             for arm in result["arms"]:
                 state = root / "prepared" / arm["state_file"]
                 with state.open(encoding="utf-8", newline="") as handle:
@@ -337,16 +334,10 @@ class ResolutionAttributionCounterfactualTests(unittest.TestCase):
             )
             self.assertTrue(all(float(row["vy_m_s"]) == 0 for row in layout_rows))
             self.assertTrue(all(float(row["vz_m_s"]) == 0 for row in layout_rows))
-            prepared_arm = next(
-                arm for arm in result["arms"]
-                if arm["arm_id"] == "formal_focus_mapped_layout_source"
-            )
-            self.assertEqual(prepared_arm["solver_profile_id"], "formal_reflectron")
-            exact_arm = next(
-                arm for arm in result["arms"]
-                if arm["arm_id"] == "exact_formal_field_mapped_layout_source"
-            )
-            self.assertEqual(exact_arm["frontend_profile_id"], "formal_accelerator")
+            self.assertTrue(all(
+                "solver_profile_id" not in arm and "frontend_profile_id" not in arm
+                for arm in result["arms"]
+            ))
 
     def test_prepare_can_select_a_small_ordered_arm_matrix(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -385,10 +376,7 @@ class ResolutionAttributionCounterfactualTests(unittest.TestCase):
             target_geometry = root / "target_geometry.json"
             formal_geometry.write_text(json.dumps(geometry), encoding="utf-8")
             target_geometry.write_text(json.dumps(geometry), encoding="utf-8")
-            arm_ids = [
-                "formal_focus_mapped_layout_source",
-                "exact_formal_field_mapped_layout_source",
-            ]
+            arm_ids = ["formal_ideal_source", "observed_restart_control"]
             result = prepare(
                 PROFILE, checkpoints, ideal, formal_geometry, target_geometry,
                 root / "prepared", 100.0, 1, 1.1e6, 3,
@@ -493,7 +481,6 @@ class ResolutionAttributionCounterfactualTests(unittest.TestCase):
             with state.open(encoding="utf-8", newline="") as handle:
                 source_ids = [int(row["source_particle_id"]) for row in csv.DictReader(handle)]
             self.assertEqual(source_ids, [1, 2, 3, 4])
-            release = result["accelerator_match"]["release_position_mm"]
             selected_probe = prepare(
                 PROFILE, checkpoints, ideal, formal_geometry, target_geometry,
                 root / "prepared_probe", 100.0, 1, 1.1e6, 4,
@@ -505,12 +492,9 @@ class ResolutionAttributionCounterfactualTests(unittest.TestCase):
                 selected_probe["arms"][0]["arm_id"],
                 "accelerator_phase_match_m010",
             )
-            for arm in selected_probe["arms"]:
-                voltage = arm["accelerator_voltage_override"]
-                nominal = voltage["repeller_V"] - (
-                    voltage["gap1_voltage_drop_V"] * release / 3.0
-                )
-                self.assertAlmostEqual(nominal, 2000.0, places=10)
+            self.assertNotIn(
+                "accelerator_voltage_override", selected_probe["arms"][0]
+            )
             ring_result = prepare(
                 PROFILE, checkpoints, ideal, formal_geometry, target_geometry,
                 root / "prepared_ring", 100.0, 1, 1.1e6, 4,
@@ -560,17 +544,14 @@ class ResolutionAttributionCounterfactualTests(unittest.TestCase):
                 accelerator_match_stage="finite_interval_coupled",
             )
             self.assertEqual(len(finite_coupled["arms"]), 2)
-            fixed = finite_coupled["accelerator_match"]["fixed_focus_match"]
             for arm in finite_coupled["arms"]:
-                voltage = arm["accelerator_voltage_override"]
-                self.assertAlmostEqual(voltage["repeller_V"], fixed["repeller_v"])
+                self.assertNotIn("accelerator_voltage_override", arm)
+                self.assertNotIn("reflectron_voltage_override", arm)
                 state = root / "prepared_finite_coupled" / arm["state_file"]
                 with state.open(encoding="utf-8", newline="") as handle:
                     rows = list(csv.DictReader(handle))
                 self.assertTrue(all(float(row["x_mm"]) == 0.0 for row in rows))
                 self.assertTrue(all(float(row["y_mm"]) == 0.0 for row in rows))
-            self.assertIsNone(finite_coupled["arms"][0]["reflectron_voltage_override"])
-            self.assertIsNotNone(finite_coupled["arms"][1]["reflectron_voltage_override"])
     def test_state_summary_uses_null_for_undefined_correlation(self) -> None:
         rows = [
             {

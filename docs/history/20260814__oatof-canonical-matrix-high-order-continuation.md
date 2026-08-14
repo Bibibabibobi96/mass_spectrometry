@@ -812,6 +812,138 @@ Arm8解析closure successor中的`8,459-byte` receipt与旧`151500` receipt逐�
 `ECF34C7D2550A36E8B8F05F207EEFF871FE48831BC06BCED915AD7629FF5EC5D`和
 `627CC56F658AD0EA16A964BE2EEA5765A11F06D6D60801FF7EE899D95D9C56A1`；它不改变原科学结果或Formal边界。
 
+## 2.2 mm高阶假设的分层证据
+
+本节统一使用`SRC-IDEAL-ZERO-VZ`、`ARCH-LONG-Z22-R100`、`ACC-II`、
+`REFL-REAL-FORMAL025`、`CLOCK-PULSE-EFFECTIVE`和population sigma（`ddof=0`）。其中“fixed-affine”指
+沿同一冻结affine匹配参数改变源宽；“per-width rematch”指每个源宽重新解匹配参数。两类探索均为全理想
+一维解析证据，不是新增SIMION场求解，也不能单独归因某一真实电极区域。
+
+### fixed-affine与per-width rematch探索
+
+fixed-affine八点宽度序列为`0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.8, 2.2 mm`，每点
+`N=1001`。其中1.0、1.5、2.2 mm的population sigma分别为`0.0745728367`、`0.2568393848`、
+`0.8480549797 ns`；八点幂律拟合得到`p=3.0325769184`、`R²=0.9999551795`。因此在该冻结匹配附近，
+展宽随源宽近似三次增长是强数值事实，但“近似三次”仍不是某个组件三阶导数的唯一归因。
+
+per-width rematch下，0.5、1.0、2.2 mm的population sigma分别为`0.0089176617`、
+`0.0726383715`、`0.8458712749 ns`；相邻有效幂指数分别为`3.02599448`和`3.11351507`。重新匹配可显著
+降低窄源绝对展宽，却没有消除随宽度约三次放大的趋势。2.2 mm探索性局部拟合中，三次项解释
+`95.935793%`的高阶SSE，三次与四次联合解释`99.631405%`，联合残差RMS为`6.0712%`；只看四次项会给出
+错误归因。D1/D2的低阶RMS比为`1.423294e-11`，高阶比约为1，支持“低阶匹配已消去、剩余由高阶形状
+控制”的工作假设。由于这些拟合未预注册且只使用全理想一维模型，它们只能作为设计下一轮受控实验的
+PROVISIONAL证据，不能发布为Formal物理结论。
+
+### ZERO-MATCH Stage A停止判据
+
+`zero_match_long_higher_order_stage_a_v1`对保留的1.0与2.2 mm官方SIMION checkpoint作只读五折重建；
+没有启动新求解器。其正式状态为`PARTIAL_STOP_RULE / PARTIAL_NOT_COMPLETE_STAGE_A`。2.2 mm检测面全局M1
+残余方差分数为`0.1967574277804951`，低于预注册阈值`0.70`，故唯一允许结论是
+`GLOBAL_M1_RESIDUAL_THRESHOLD_NOT_PASSED`。M2--M4探索性模型解释了M1残差的
+`0.9989891722287125`，且每折M4均优于M1，但该结果未参与停止决定，也不能把全局多项式次数解释为局部
+泰勒阶数或组件归因。
+
+配置中的`0.16`是对“均匀对称z上纯`z³`时间映射”的解析参考：全局线性M1会吸收`z³`的线性投影，
+所以即使数据是纯三次映射，该指标的M1残余方差分数也只有`0.16`。因此观察值`0.196757...`未达到
+`0.70`不能排除局部三次或其他高阶行为；它只说明原先选定的全局M1阈值不适合完成该归因。预注册的
+M5/M6过拟合敏感性、奇偶分解、预测sigma重建和后续新宽度求解均按停止规则未执行。
+
+### 旧五格SIMION的实际态诊断与失效边界
+
+旧`canonical_long_affine_arm8_width_numerics_n1000`五格在连续前端模式下均完成N=1000 census，但
+脉冲时刻实际源态没有逐行复现预注册affine目标，故整个矩阵永久标记为
+`INVALID_IDENTITY_OR_CENSUS`；下列数值只允许作`AT-ACTUAL-PULSE-STATE`诊断。名义1.0、1.5、2.2 mm
+三格的population sigma分别为`0.0886925266`、`0.2818017283`、`0.9113334962 ns`，局部有效幂指数为
+`2.851116`、`3.064566`，端点指数为`2.954799`，五点OLS为`2.953786`且`R²=0.999566`。
+
+目标态为`x=-69.01362184 mm`、`z=-65.85199246 mm`、平均`vz=-2.932352 m/s`、
+`dvz/dz=228.806044 (m/s)/mm`及`10 eV`；三格实际脉冲态的平均x约为`-68.66748`、`-68.66715`、
+`-68.66645 mm`，平均z约为`-65.84417 mm`，平均vz约为`-1.096 m/s`，斜率约为
+`228.939/228.937/228.933 (m/s)/mm`，平均动能为`10.37281/10.37317/10.37392 eV`，实际全宽为
+`1.017731/1.526218/2.237280 mm`。这解释了为什么“全数到达”不能代替身份闭合，也禁止把该五格直接与
+理想目标态解析曲线作Formal差值。
+
+在实际态口径内，三格相对fixed-affine解析sigma高`18.934%/9.719%/7.462%`，平均TOF差为
+`-0.014903/-0.019996/-0.036752 ns`。2.2 mm数值控制的population sigma为base
+`0.91133350 ns`、`dt=320`时`0.91133727 ns`（`+0.000414%`）、`q=108`时`0.91124953 ns`
+（`-0.009214%`）；直接FWHM为`0.773014/0.764588/0.762527 ns`。最大sigma数值变化只占1.0到2.2 mm
+增量`0.822641 ns`的`0.01021%`，所以在这个失效矩阵的实际态内部，观察到的宽度增长不能由这两项数值
+设置解释；但身份失败仍阻止其承担预注册物理结论。
+
+所有上述R只允许来自`pulse_effective_peak`，即`detector_time_minus_pulse_effective_time`。旧五格base、
+`dt=320`、`q=108`的诊断R依次为`20846.996`、`21076.734`、`21133.712`；
+`instrument_clock_peak`只保留为诊断字段，禁止作为resolution authority。
+
+### 官方restart修正版五格最终结果
+
+修正版预注册采用SIMION官方FLY2粒子/Program路径，以`pre_pulse_restart`和冻结
+`pre_pulse_source_state`逐行复现脉冲有效时刻目标态；旧连续前端五格继续保持
+`INVALID_IDENTITY_OR_CENSUS`，不得承担exact-pulse合同。五格统一使用长焦
+`finite_interval_2p2mm_matched_voltage_v1`结构和规范场名`FULL_DOMAIN_PIECEWISE_IDEAL_FIELD`；活动配置中的
+`arm8_closed_global_piecewise_theoretical_field`只是该场在本轮运行时遗留的profile ID，`Arm8`不得再作为
+新文档、配置或接口的规范场名。分辨率唯一时钟是`CLOCK-PULSE-EFFECTIVE`，即
+`detector_time_minus_pulse_effective_time`。
+
+三份源身份冻结如下。每份均为有序ID 1..1000，三个数值控制格复用2.2 mm同一源；五个child summary的
+`pre_pulse_restart_source_release_validation.status`均为`PASS`，位置最大逐行误差为0，速度最大逐行误差
+不超过`3.537e-7 m/s`，能量最大逐行误差不超过`1.611e-9 eV`。
+
+|规范源名|活动profile ID|目标态CSV SHA-256|materialization receipt SHA-256|
+|---|---|---|---|
+|`SRC-CANON-IDEAL-LINEAR-ZVZ-1MM-N1000`|`canonical_ideal_linear_z_vz_1mm_n1000`|`22ADAC66F610064AD73E78FC9B17AB850A8FA59B3D6175EE0B5F10357FBC0539`|`A59E16B3783DCDE7930070286C58D5BA6BA8DC0B9756DE61B410A07975672B5B`|
+|`SRC-CANON-IDEAL-LINEAR-ZVZ-1P5MM-N1000`|`canonical_ideal_linear_z_vz_1p5mm_n1000`|`2411F2BB62939E1CA74F627ABD567937C698848AB0E332A67784B0F2F8405624`|`7A8FFC4D6E2A4D9B67560592B7401A72984137ACC8AE6F79388275DA494927C2`|
+|`SRC-CANON-IDEAL-LINEAR-ZVZ-2P2MM-N1000`|`canonical_ideal_linear_z_vz_2p2mm_n1000`|`75DF5222C32846CA16F7594404067020AEFD1CFCB2577FC8E86BF18A08493D4E`|`7B1D722A9E73635938847EC31DEF0B45824098E1F44D4A7A1B036F6CF02392E6`|
+
+下表直接来自五个保留的child `summary.json`；population sigma按`ddof=0`从同一N=1000
+`pulse_effective_peak`总体重算，FWHM和R取同一对象。五个parent/child manifest均为`success`，五格均
+1000/1000到达检测器，但仍只是预注册范围内的`FUNCTIONAL_SCREEN_ONLY`，不是Formal资格结果。
+
+|源全宽 / 数值设置|population sigma (ns)|direct FWHM (ns)|pulse-effective R|source release|parent manifest SHA-256|child manifest SHA-256|
+|---|---:|---:|---:|---|---|---|
+|1.0 mm / q8, dt160|0.0870116832|0.1589231269|101401.832|PASS|`4ED22A0E43766240FEA7E329AB789F5C00A5A1DDB1CC47091D95ED69F50C68FC`|`ED0601D0B0C72C2B124C28CD000626D73D23BB185B76D014FE659A060A4CBEE2`|
+|1.5 mm / q8, dt160|0.2625339891|0.2601069240|61955.722|PASS|`C1EE474A2A5981BCF583361CE7B397CBA8C2A6749DC67169C580FD134439777A`|`73D92B17C0F0D2C20CB5EBB2B29EC5E5139DA3F15A6F7EEAE39F4CCAFF392632`|
+|2.2 mm / q8, dt160|0.8534370813|0.7258778739|22201.028|PASS|`4C5E69F79FE501E278CDA01E5B67EE98CC9B4C7FED4A023D142F6EF84B206507`|`B6F7D784C9E455BBA9E917A2DC569EF9BB33D0005F57C23B88726BAFCA912CFB`|
+|2.2 mm / q8, dt320|0.8526321871|0.7158241088|22512.822|PASS|`BB55DB3F1049E6BF43F0B536B2B2E34F52780CDD53D9B9B5548C61B667D7B59B`|`37628F364FB41A7A47E8BD75A41A33C26B5A4ABDD40F369456505B6F51E2F285`|
+|2.2 mm / q108, dt160|0.8528413401|0.7131096958|22598.543|PASS|`DCFDA488EFE78FAD58DC3183B3E0243363890F42A18B24270FDB78AA339C8BA4`|`F3175BEBF885C406434D95F5CBC3B651BF01576F7F389AA0A6E62F0310ABCBEE`|
+
+宽度主对照的sigma比为`1.5/1.0=3.017227`、`2.2/1.5=3.250768`、
+`2.2/1.0=9.808304`；相邻有效指数为`2.723633`和`3.078107`，三点预注册OLS描述斜率为
+`2.894136`。`Delta_width=sigma(2.2)-sigma(1.0)=0.7664253981 ns`。dt320相对base的绝对sigma变化
+为`0.0008048942 ns`，仅为`Delta_width`的`0.105019%`；q108变化为`0.0005957412 ns`，仅为
+`0.077730%`。两者均远低于预注册`10% * Delta_width=0.0766425398 ns`数值门，因此本轮强结论是：
+在同一长焦、同一全域理想分段场和已逐行闭合的affine源身份下，1.0到2.2 mm的强非线性展宽不是
+dt160或q8数值设置主导。
+
+与前节同一fixed-affine全理想解析结果`0.0745728367/0.2568393848/0.8480549797 ns`相比，SIMION三点
+分别高`16.6801%/2.2172%/0.6346%`；解析相邻指数为`3.050015/3.118848`。随宽度接近2.2 mm时两条
+独立路径在绝对sigma和近三次宽度响应上收敛，支持“低阶匹配后有限区间高阶残差是2.2 mm主矛盾”。
+这个结果仍不把高阶唯一指定为三阶，也不证明任意更宽源在重新适配后必然失败；验证后一命题必须为每个
+新增宽度独立重解加速器及理论耦合反射器，再做预注册宽度序列，不能把2.2 mm电压原样外推。
+
+`20260814_234500__analysis__python__long-arm8-affine-width-numerics__n1000`的数值与上述raw evidence一致，
+但其`summary.json`错误写入`formal_gate_passed=true`；同一文件的`threshold_result_eligible=true`只表示
+预注册阈值可评价，不授予Formal资格。该run manifest正确写入`formal_eligible=false`，五个parent/child
+run config及manifest也均为非Formal。因此该assessment永久标记为
+`NON_AUTHORITATIVE_FORMAL_FIELD_ERROR`，旧artifact不修改且禁止作为Formal证据。科学结论不依赖该错误字段，而直接绑定
+上表五对parent/child manifest和独立只读审计：审计重新计算每个manifest SHA，逐项核对status、N=1000
+census、source-release validation、pulse-effective指标，并独立计算population sigma、ratio、斜率和
+dt/q门；所有数值与上表一致。
+
+### 弃用审计与统一入口后续计划
+
+本轮只记录审计，不在五格运行期间修改共享运行链。审计确认活动实现仍同时存在旧stage-field布尔flag、
+Lua adjustable、环境变量和Arm8专用field contract；它们会形成字段默认值、双权威和同义profile风险。
+已经移除的deprecated理想反射器hard-mask、resolution-attribution双时钟选择及已判定无效的连续前端
+exact-pulse路径不得恢复；全域理想能力由`FULL_DOMAIN_PIECEWISE_IDEAL_FIELD`保留。
+
+五格完成后的原子迁移必须一次覆盖配置、Schema、prepare、adapter、runner、Program builder、runtime
+binding、活动campaign和测试：由campaign field-profile ID编译唯一run-local
+`resolved_region_field_contract`，完整声明加速器两段、漂移区、反射器两段和域外行为；prepare冻结一次
+SHA，adapter只验这一份，runner只传这一份，builder只把合同编译为Lua字面量。迁移同时删除旧field
+flags、field env、adjustable默认值、Arm8运行时第二权威和物理同义profile，不保留兼容shim或双路径。
+实现前还必须关闭透明栅/真实PA所需的bore横向谓词、漂移边缘场、instance 3/5坐标缩放及域外真实场
+语义，并按官方SIMION Program/PA实例机制复核；在完整原子测试通过前不得把半迁移状态投入新求解。
+
 ## 永久清理与保留边界
 
 2026-08-14完成七批不可恢复的物理删除，均在删除前用manifest、文件metadata和必要SHA审计确认不属于

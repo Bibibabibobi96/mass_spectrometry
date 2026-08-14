@@ -1,0 +1,148 @@
+{
+  "schema_version": 1,
+  "role": "rf_oatof_zero_match_higher_order_stage_a_campaign",
+  "campaign_id": "zero_match_long_higher_order_stage_a_v1",
+  "analysis_declaration": "PRE_ANALYSIS_DECLARED_PROVISIONAL",
+  "evidence_level": "PROVISIONAL",
+  "solver_execution_allowed": false,
+  "particle_count": 1000,
+  "mass_amu": 100.0,
+  "checkpoint_events": [
+    "accelerator_focus_forward",
+    "reflectron_entrance_forward",
+    "detector_crossing"
+  ],
+  "clock": {
+    "basis": "detector_time_minus_pulse_effective_time",
+    "authority": "initial_global_state.instrument_time_us",
+    "elapsed_crosscheck_abs_tolerance_us": 1e-9
+  },
+  "source_physics": {
+    "mass_amu": 100.0,
+    "charge_state": 1,
+    "kinetic_energy_eV": 10.0,
+    "mean_velocity_z_m_per_s": 0.0,
+    "velocity_z_slope_m_per_s_per_mm": 0.0,
+    "source_state_epoch": "pulse_effective_time",
+    "coordinate_frame": "oatof_global_cartesian",
+    "clock_basis": "canonical_instrument_time_us"
+  },
+  "transport_identity": {
+    "layout_profile_id": "zero_match_long_2p2mm",
+    "architecture_generation_id": "zero_match_long_2p2mm_v1",
+    "accelerator_field_profile_id": "accelerator_ideal_stage1_stage2_real_reflectron",
+    "field_overlay_id": "accelerator_overlay_z005",
+    "frontend_grid_profile_id": "frontend_isotropic_020_accelerator_overlay_z005",
+    "oatof_numerical_profile_id": "oatof_formal_mesh",
+    "source_release_mode": "pre_pulse_restart",
+    "clock_basis": "canonical_instrument_time_us"
+  },
+  "fold_policy": {
+    "method": "particle_id_modulo",
+    "fold_count": 5,
+    "model_degrees": [1, 2, 3, 4],
+    "selection_uses_detector_outcome": false
+  },
+  "nested_window": {
+    "full_width_mm": 1.0,
+    "center_authority": "source_materialization_receipt.resolved_target_center_mm[2]",
+    "selection_uses_detector_outcome": false
+  },
+  "acceptance_thresholds": {
+    "minimum_detector_nonlinear_variance_fraction": 0.70,
+    "minimum_detector_m2_to_m4_captured_fraction": 0.80,
+    "require_m4_better_than_m1_in_every_fold": true
+  },
+  "stop_rule": {
+    "screen_metric": "detector_global_m1_residual_variance_fraction",
+    "threshold_reference": "acceptance_thresholds.minimum_detector_nonlinear_variance_fraction",
+    "failure_status": "PARTIAL_STOP_RULE",
+    "allowed_claim": "GLOBAL_M1_RESIDUAL_THRESHOLD_NOT_PASSED"
+  },
+  "declared_but_unexecuted_analyses": [
+    "global_m5_m6_overfit_sensitivity",
+    "odd_even_decomposition",
+    "predicted_sigma_reconstruction"
+  ],
+  "stop_gated_followup": [
+    "new_solver_width_matrix",
+    "downstream_width_scan"
+  ],
+  "evidence_runs": {
+    "contained_1mm": {
+      "source_full_width_mm": 1.0,
+      "expected_integration_run_id": "20260814_175100__sim__cross__zero-match-long1-ii__n1000",
+      "expected_transport_run_id": "20260814_175100__sim__simion__rf-oatof-single-flight-gap0__n1000",
+      "expected_experiment_id": "zero_match_long_contained_1mm_acc_ii_n1000",
+      "expected_source_profile_id": "canonical_ideal_zero_vz_1mm_n1000",
+      "integration_manifest": {
+        "path": "artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20260814_175100__sim__cross__zero-match-long1-ii__n1000/run_manifest.json",
+        "bytes": 4551,
+        "sha256": "30172FB5327A4AC5A7540B5843D963F20E9021E5523BE535DC373CE35C9B3F79"
+      },
+      "transport_manifest": {
+        "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260814_175100__sim__simion__rf-oatof-single-flight-gap0__n1000/run_manifest.json",
+        "bytes": 21331,
+        "sha256": "EED6440622B673BD71AE8D4A9C993C17A2555F7EAE240CDE609C8997D8B65012"
+      },
+      "checkpoint_output": {
+        "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260814_175100__sim__simion__rf-oatof-single-flight-gap0__n1000/results/single_flight_particle_checkpoints.csv",
+        "bytes": 1441443,
+        "sha256": "219D488F7ED08484C4E5F83198C08AD59DA50C846441F99B07A59541D0E02905"
+      },
+      "initial_global_state_input": {
+        "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260814_175100__sim__simion__rf-oatof-single-flight-gap0__n1000/inputs/single_flight_initial_global_state.csv",
+        "bytes": 112974,
+        "sha256": "DAF9760BEC36229DB3A2BBF30862F262F8E0023023F527C74961B959A0726BD5"
+      },
+      "mother_particle_source_input": {
+        "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260814_175100__sim__simion__rf-oatof-single-flight-gap0__n1000/inputs/mother_particle_source.csv",
+        "bytes": 96974,
+        "sha256": "E897097FBF32782DD4CEB913D4803C333BC584D34B4BE47A3B905E3780BA29D2"
+      },
+      "source_materialization_receipt_input": {
+        "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260814_175100__sim__simion__rf-oatof-single-flight-gap0__n1000/inputs/single_flight_source_materialization_receipt.json",
+        "bytes": 2212,
+        "sha256": "EFFD2A1ED43DAC00508BEE8EB14D85C76628D6AF6CAD576AF0A893C90703E4D7"
+      }
+    },
+    "full_2p2mm": {
+      "source_full_width_mm": 2.2,
+      "expected_integration_run_id": "20260814_175200__sim__cross__zero-match-long2p2-ii__n1000",
+      "expected_transport_run_id": "20260814_175200__sim__simion__rf-oatof-single-flight-gap0__n1000",
+      "expected_experiment_id": "zero_match_long_full_2p2mm_acc_ii_n1000",
+      "expected_source_profile_id": "canonical_ideal_zero_vz_2p2mm_n1000",
+      "integration_manifest": {
+        "path": "artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20260814_175200__sim__cross__zero-match-long2p2-ii__n1000/run_manifest.json",
+        "bytes": 4569,
+        "sha256": "02D4C4BCD3E19C2BEBCF5794BAB85628F87C936B996AB41B58C64CF2978218F9"
+      },
+      "transport_manifest": {
+        "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260814_175200__sim__simion__rf-oatof-single-flight-gap0__n1000/run_manifest.json",
+        "bytes": 19775,
+        "sha256": "0385D3D9303FE1C003588786359BCE09E0362866546EC84774D0E2ED309DC183"
+      },
+      "checkpoint_output": {
+        "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260814_175200__sim__simion__rf-oatof-single-flight-gap0__n1000/results/single_flight_particle_checkpoints.csv",
+        "bytes": 1441146,
+        "sha256": "C0EFDA9159EEDCD12CB11E1884A35AF53435669085A2D36993A7E4188E3CF60A"
+      },
+      "initial_global_state_input": {
+        "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260814_175200__sim__simion__rf-oatof-single-flight-gap0__n1000/inputs/single_flight_initial_global_state.csv",
+        "bytes": 112937,
+        "sha256": "BFC4639302639DCE00222351A04399A1869C046E769E0FE239AFC63BB4D212C0"
+      },
+      "mother_particle_source_input": {
+        "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260814_175200__sim__simion__rf-oatof-single-flight-gap0__n1000/inputs/mother_particle_source.csv",
+        "bytes": 96937,
+        "sha256": "0AFDA722235AA0AB4383193C8FFB231499A2F60FEC9C20BB557268C536507B8C"
+      },
+      "source_materialization_receipt_input": {
+        "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260814_175200__sim__simion__rf-oatof-single-flight-gap0__n1000/inputs/single_flight_source_materialization_receipt.json",
+        "bytes": 2216,
+        "sha256": "13177ECEA524E7F6CA31E0BF42A8029B5DDE57C7837F967D7E9F44E2D7EAFF54"
+      }
+    }
+  },
+  "claim_limit": "PRE_ANALYSIS_DECLARED_PROVISIONAL read-only global-M1 screen. A stop-rule result only permits GLOBAL_M1_RESIDUAL_THRESHOLD_NOT_PASSED; it is not a complete Stage A, does not negate local cubic or other higher-order behavior, and makes no solver, component, Taylor-order, Candidate, or Formal claim."
+}

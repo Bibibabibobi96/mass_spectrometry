@@ -21,7 +21,7 @@ def verify(campaign_path: Path, output: Path) -> dict[str, object]:
         raise ValueError(f"B/C frozen fields differ: {differences}")
     if real["single_flight_accelerator_field_profile_id"] != "accelerator_real_pa":
         raise ValueError("B is not the real-field arm")
-    if ideal["single_flight_accelerator_field_profile_id"] != "accelerator_ideal_piecewise_uniform":
+    if ideal["single_flight_accelerator_field_profile_id"] != "accelerator_ideal_stage1_stage2_real_reflectron":
         raise ValueError("C is not the ideal-piecewise arm")
     source = real["pre_pulse_source_state"]
     receipt = {
@@ -72,37 +72,35 @@ def verify_field_region_matrix(
     registry = json.loads(profile_registry_path.read_text(encoding="utf-8-sig"))
     profiles = {row["profile_id"]: row for row in registry["accelerator_field_profiles"]}
     expected = {
-        "RR": ("accelerator_real_pa", 0, 0, 0),
-        "IR": ("accelerator_ideal_stage1_real_stage2", 0, 1, 0),
-        "RI": ("accelerator_real_stage1_ideal_stage2", 0, 0, 1),
-        "II": ("accelerator_ideal_stage1_stage2_real_reflectron", 0, 1, 1),
+        "RR": ("accelerator_real_pa", "real_pa_field", "real_pa_field"),
+        "IR": ("accelerator_ideal_stage1_real_stage2", "analytic_ideal_field", "real_pa_field"),
+        "RI": ("accelerator_real_stage1_ideal_stage2", "real_pa_field", "analytic_ideal_field"),
+        "II": ("accelerator_ideal_stage1_stage2_real_reflectron", "analytic_ideal_field", "analytic_ideal_field"),
     }
     row_by_arm = dict(zip(("IR", "RI", "II"), controlled))
     matrix = {}
-    for arm, (profile_id, global_flag, stage1, stage2) in expected.items():
+    for arm, (profile_id, stage1, stage2) in expected.items():
         profile = profiles[profile_id]
         actual = (
-            profile["single_flight_ideal_accel_enable"],
-            profile["single_flight_ideal_accel_stage1_enable"],
-            profile["single_flight_ideal_accel_stage2_enable"],
+            profile["accelerator_stage1"],
+            profile["accelerator_stage2"],
         )
-        if actual != (global_flag, stage1, stage2):
-            raise ValueError(f"{arm} governed flags differ: {actual}")
+        if actual != (stage1, stage2):
+            raise ValueError(f"{arm} governed region modes differ: {actual}")
         if arm in row_by_arm and row_by_arm[arm]["single_flight_accelerator_field_profile_id"] != profile_id:
             raise ValueError(f"{arm} campaign profile differs")
         matrix[arm] = {
             "profile_id": profile_id,
-            "global_piecewise_enable": global_flag,
-            "stage1_ideal_enable": stage1,
-            "stage2_ideal_enable": stage2,
+            "accelerator_stage1": stage1,
+            "accelerator_stage2": stage2,
             "run_id": row_by_arm.get(arm, {}).get("run_id"),
         }
 
-    oracle_profile_id = "accelerator_ideal_piecewise_uniform"
+    oracle_profile_id = "full_domain_piecewise_ideal_field"
     if oracle["single_flight_accelerator_field_profile_id"] != oracle_profile_id:
         raise ValueError("global piecewise row is not the extra oracle")
-    if profiles[oracle_profile_id]["single_flight_ideal_accel_enable"] != 1:
-        raise ValueError("global piecewise oracle flag is disabled")
+    if profiles[oracle_profile_id].get("real_pa_field_blending_allowed") is not False:
+        raise ValueError("full-domain oracle permits real-PA blending")
 
     real_manifest = json.loads(real_run_manifest_path.read_text(encoding="utf-8-sig"))
     if (

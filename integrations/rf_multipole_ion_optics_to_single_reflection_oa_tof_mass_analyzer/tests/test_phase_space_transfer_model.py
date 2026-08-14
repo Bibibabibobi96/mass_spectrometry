@@ -43,7 +43,7 @@ class PhaseSpaceTransferModelTests(unittest.TestCase):
         self.assertEqual(settings.minimum_pulse_eligible_coverage, 0.70)
         self.assertEqual(
             settings.execution_state,
-            "n100_arm8_closed_global_field_screening",
+            "n100_full_domain_piecewise_ideal_field_screening",
         )
         first = campaign_fixed_id_split(campaign, np.arange(1, 1001))
         second = campaign_fixed_id_split(campaign, np.arange(1000, 0, -1))

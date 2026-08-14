@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "role": "rf_oatof_affine_axial_all_ideal_width_sweep_campaign",
+  "campaign_id": "canonical_long_z22_affine_axial_all_ideal_width_sweep_v1",
+  "evidence_level": "EXPLORATORY_PROVISIONAL",
+  "threshold_status": "declared_after_initial_observation_not_preregistered",
+  "analysis_class": "solver_independent_analytic",
+  "solver_execution_allowed": false,
+  "base_analytic_campaign": {
+    "path": "simulation_repo/integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/canonical_affine_axial_all_ideal_report_campaign.json",
+    "sha256": "14367AB5734C8BBFA6078FB08898ABD16D1B3306E884ECA3FA1900CA13B41CC0"
+  },
+  "base_case_id": "long_focus_2p2mm_n1000",
+  "fixed_architecture_id": "ARCH-LONG-Z22-R100",
+  "source_family_profile_id": "canonical_ideal_linear_z_vz_2p2mm_n1000",
+  "full_widths_mm": [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.8, 2.2],
+  "sample_count": 1001,
+  "model_full_width_mm": 2.2,
+  "cross_validation": {
+    "method": "five_fold_particle_id_modulo",
+    "particle_id_modulus": 5,
+    "validation_offsets": [0, 1, 2, 3, 4],
+    "selection_uses_detector_outcome": false
+  },
+  "local_taylor_closure": {
+    "coefficient_source": "linear_phase_space_timing_coefficients",
+    "require_resolved_accelerator_coefficient_match": true,
+    "maximum_accelerator_first_coefficient_difference_mm_per_v_pow_3_over_2": 1e-15,
+    "maximum_accelerator_second_coefficient_difference_mm_per_v_pow_5_over_2": 1e-15,
+    "maximum_abs_coupled_first_residual_mm_per_v_pow_3_over_2": 1e-12,
+    "maximum_abs_coupled_second_residual_mm_per_v_pow_5_over_2": 1e-12,
+    "detector_central_difference_step_mm": 0.0022,
+    "maximum_abs_detector_first_derivative_ns_per_mm": 0.001,
+    "maximum_abs_detector_second_derivative_ns_per_mm2": 0.001
+  },
+  "exploratory_target_checkpoint": "detector",
+  "exploratory_declared_thresholds": {
+    "minimum_full_model_validation_r_squared": 0.95,
+    "maximum_full_model_validation_rmse_fraction_of_sigma": 0.2,
+    "minimum_sigma_log_width_exponent": 2.8,
+    "maximum_sigma_log_width_exponent": 3.2,
+    "minimum_sigma_log_width_fit_r_squared": 0.99,
+    "maximum_energy_envelope_outside_count": 0
+  },
+  "exploratory_interpretation_policy": {
+    "allowed_if_all_thresholds_pass": "affine_all_ideal_axial_n1001_higher_order_pattern_only",
+    "not_preregistered": true,
+    "local_taylor_global_reconstruction_and_width_scaling_are_separate": true,
+    "legendre_variance_is_not_taylor_derivative_order_attribution": true,
+    "specific_third_order_dominance_claim_allowed": false,
+    "real_field_transverse_release_or_numerical_exclusion_claim_allowed": false,
+    "simion_candidate_or_formal_claim_allowed": false
+  }
+}

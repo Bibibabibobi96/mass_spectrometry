@@ -1,0 +1,205 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/rf_oatof_zero_match_higher_order_stage_a_campaign.schema.json",
+  "title": "ZERO-MATCH long higher-order stage-A evidence campaign",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "role", "campaign_id", "analysis_declaration", "evidence_level",
+    "solver_execution_allowed", "particle_count", "mass_amu",
+    "checkpoint_events", "clock", "source_physics", "transport_identity",
+    "fold_policy", "nested_window", "acceptance_thresholds", "stop_rule",
+    "declared_but_unexecuted_analyses", "stop_gated_followup",
+    "evidence_runs", "claim_limit"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "rf_oatof_zero_match_higher_order_stage_a_campaign"},
+    "campaign_id": {"$ref": "#/$defs/id"},
+    "analysis_declaration": {"const": "PRE_ANALYSIS_DECLARED_PROVISIONAL"},
+    "evidence_level": {"const": "PROVISIONAL"},
+    "solver_execution_allowed": {"const": false},
+    "particle_count": {"const": 1000},
+    "mass_amu": {"const": 100.0},
+    "checkpoint_events": {
+      "type": "array",
+      "prefixItems": [
+        {"const": "accelerator_focus_forward"},
+        {"const": "reflectron_entrance_forward"},
+        {"const": "detector_crossing"}
+      ],
+      "items": false,
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "clock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["basis", "authority", "elapsed_crosscheck_abs_tolerance_us"],
+      "properties": {
+        "basis": {"const": "detector_time_minus_pulse_effective_time"},
+        "authority": {"const": "initial_global_state.instrument_time_us"},
+        "elapsed_crosscheck_abs_tolerance_us": {"type": "number", "exclusiveMinimum": 0}
+      }
+    },
+    "source_physics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mass_amu", "charge_state", "kinetic_energy_eV",
+        "mean_velocity_z_m_per_s", "velocity_z_slope_m_per_s_per_mm",
+        "source_state_epoch", "coordinate_frame", "clock_basis"
+      ],
+      "properties": {
+        "mass_amu": {"const": 100.0},
+        "charge_state": {"const": 1},
+        "kinetic_energy_eV": {"const": 10.0},
+        "mean_velocity_z_m_per_s": {"const": 0.0},
+        "velocity_z_slope_m_per_s_per_mm": {"const": 0.0},
+        "source_state_epoch": {"const": "pulse_effective_time"},
+        "coordinate_frame": {"const": "oatof_global_cartesian"},
+        "clock_basis": {"const": "canonical_instrument_time_us"}
+      }
+    },
+    "transport_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "layout_profile_id", "architecture_generation_id",
+        "accelerator_field_profile_id", "field_overlay_id",
+        "frontend_grid_profile_id", "oatof_numerical_profile_id",
+        "source_release_mode", "clock_basis"
+      ],
+      "properties": {
+        "layout_profile_id": {"const": "zero_match_long_2p2mm"},
+        "architecture_generation_id": {"const": "zero_match_long_2p2mm_v1"},
+        "accelerator_field_profile_id": {"const": "accelerator_ideal_stage1_stage2_real_reflectron"},
+        "field_overlay_id": {"const": "accelerator_overlay_z005"},
+        "frontend_grid_profile_id": {"const": "frontend_isotropic_020_accelerator_overlay_z005"},
+        "oatof_numerical_profile_id": {"const": "oatof_formal_mesh"},
+        "source_release_mode": {"const": "pre_pulse_restart"},
+        "clock_basis": {"const": "canonical_instrument_time_us"}
+      }
+    },
+    "fold_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method", "fold_count", "model_degrees", "selection_uses_detector_outcome"],
+      "properties": {
+        "method": {"const": "particle_id_modulo"},
+        "fold_count": {"const": 5},
+        "model_degrees": {
+          "type": "array",
+          "prefixItems": [{"const": 1}, {"const": 2}, {"const": 3}, {"const": 4}],
+          "items": false,
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "selection_uses_detector_outcome": {"const": false}
+      }
+    },
+    "nested_window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["full_width_mm", "center_authority", "selection_uses_detector_outcome"],
+      "properties": {
+        "full_width_mm": {"const": 1.0},
+        "center_authority": {"const": "source_materialization_receipt.resolved_target_center_mm[2]"},
+        "selection_uses_detector_outcome": {"const": false}
+      }
+    },
+    "acceptance_thresholds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "minimum_detector_nonlinear_variance_fraction",
+        "minimum_detector_m2_to_m4_captured_fraction",
+        "require_m4_better_than_m1_in_every_fold"
+      ],
+      "properties": {
+        "minimum_detector_nonlinear_variance_fraction": {"const": 0.70},
+        "minimum_detector_m2_to_m4_captured_fraction": {"const": 0.80},
+        "require_m4_better_than_m1_in_every_fold": {"const": true}
+      }
+    },
+    "stop_rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["screen_metric", "threshold_reference", "failure_status", "allowed_claim"],
+      "properties": {
+        "screen_metric": {"const": "detector_global_m1_residual_variance_fraction"},
+        "threshold_reference": {"const": "acceptance_thresholds.minimum_detector_nonlinear_variance_fraction"},
+        "failure_status": {"const": "PARTIAL_STOP_RULE"},
+        "allowed_claim": {"const": "GLOBAL_M1_RESIDUAL_THRESHOLD_NOT_PASSED"}
+      }
+    },
+    "declared_but_unexecuted_analyses": {
+      "type": "array",
+      "prefixItems": [
+        {"const": "global_m5_m6_overfit_sensitivity"},
+        {"const": "odd_even_decomposition"},
+        {"const": "predicted_sigma_reconstruction"}
+      ],
+      "items": false,
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "stop_gated_followup": {
+      "type": "array",
+      "prefixItems": [
+        {"const": "new_solver_width_matrix"},
+        {"const": "downstream_width_scan"}
+      ],
+      "items": false,
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "evidence_runs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contained_1mm", "full_2p2mm"],
+      "properties": {
+        "contained_1mm": {"$ref": "#/$defs/evidence_run"},
+        "full_2p2mm": {"$ref": "#/$defs/evidence_run"}
+      }
+    },
+    "claim_limit": {"type": "string", "minLength": 1}
+  },
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"},
+    "sha": {"type": "string", "pattern": "^[A-F0-9]{64}$"},
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "bytes", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "bytes": {"type": "integer", "minimum": 1},
+        "sha256": {"$ref": "#/$defs/sha"}
+      }
+    },
+    "evidence_run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_full_width_mm", "expected_integration_run_id", "expected_transport_run_id",
+        "expected_experiment_id", "expected_source_profile_id", "integration_manifest",
+        "transport_manifest", "checkpoint_output", "initial_global_state_input",
+        "mother_particle_source_input", "source_materialization_receipt_input"
+      ],
+      "properties": {
+        "source_full_width_mm": {"enum": [1.0, 2.2]},
+        "expected_integration_run_id": {"type": "string", "minLength": 1},
+        "expected_transport_run_id": {"type": "string", "minLength": 1},
+        "expected_experiment_id": {"$ref": "#/$defs/id"},
+        "expected_source_profile_id": {"$ref": "#/$defs/id"},
+        "integration_manifest": {"$ref": "#/$defs/file"},
+        "transport_manifest": {"$ref": "#/$defs/file"},
+        "checkpoint_output": {"$ref": "#/$defs/file"},
+        "initial_global_state_input": {"$ref": "#/$defs/file"},
+        "mother_particle_source_input": {"$ref": "#/$defs/file"},
+        "source_materialization_receipt_input": {"$ref": "#/$defs/file"}
+      }
+    }
+  }
+}

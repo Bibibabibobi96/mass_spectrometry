@@ -146,8 +146,6 @@ def _validate_profile(profile: dict[str, Any]) -> list[str]:
         {"arm_id": "current_layout_ideal_finite_interval_linear_z_vz", "intervention": "analytic_run_local_finite_interval_xyz_monoenergetic_10ev_theory_linear_global_z_vz"},
         {"arm_id": "current_layout_ideal_finite_interval_axis_linear_z_vz", "intervention": "analytic_run_local_finite_interval_axis_monoenergetic_10ev_theory_linear_global_z_vz"},
         {"arm_id": "current_layout_ideal_axis_2p2mm_linear_z_vz", "intervention": "analytic_axis_2p2mm_monoenergetic_10ev_run_local_theory_linear_global_z_vz"},
-        {"arm_id": "formal_focus_mapped_layout_source", "intervention": "translate_formal_positions_and_apply_observed_energy_along_positive_global_x", "solver_profile_id": "formal_reflectron"},
-        {"arm_id": "exact_formal_field_mapped_layout_source", "intervention": "translate_formal_positions_and_apply_observed_energy_along_positive_global_x", "solver_profile_id": "formal_reflectron", "frontend_profile_id": "formal_accelerator"},
         {"arm_id": "formal_ideal_source", "intervention": "translate_formal_positions_and_apply_formal_energy_along_positive_global_x"},
         {"arm_id": "formal_positions_observed_velocities", "intervention": "translate_formal_positions_preserve_observed_velocity_vectors"},
         {"arm_id": "observed_positions_formal_kinematics", "intervention": "preserve_observed_positions_apply_formal_energy_along_positive_global_x"},
@@ -687,18 +685,6 @@ def _apply_arm(
         if np.any(np.abs(result[:, 6]) >= speeds):
             raise ValueError("finite-interval ideal-source vz exceeds total speed")
         result[:, 4] = np.sqrt(speeds * speeds - result[:, 6] * result[:, 6])
-    if arm_id in {
-        "formal_focus_mapped_layout_source",
-        "exact_formal_field_mapped_layout_source",
-    }:
-        result[:, 1:4] = _translated_formal_positions(
-            formal_samples, formal_center, target_center
-        )
-        energies = np.asarray(
-            [kinetic_energy_ev(row[7], row[4], row[5], row[6]) for row in observed]
-        )
-        result[:, 4:7] = 0.0
-        result[:, 4] = _speed_for_energy(energies, float(observed[0, 7]))
     formal_positions = {
         "formal_ideal_source",
         "formal_positions_observed_velocities",
@@ -1111,37 +1097,6 @@ def prepare(
                 "arm_id": arm_id,
                 "intervention": "none",
                 "source_intervention_arm_id": probe.get("source_intervention_arm_id"),
-                "solver_profile_id": "current_downstream",
-                "frontend_profile_id": "combined_frontend",
-                "accelerator_voltage_override": {
-                    "repeller_V": repeller_v,
-                    "grid1_V": intermediate_v,
-                    "grid2_V": match.exit_v,
-                    "gap1_voltage_drop_V": voltage_drop,
-                    "voltage_drop_offset_V": voltage_drop_offset,
-                    "second_region_field_policy": "uniform_grid1_to_grid2",
-                },
-                "accelerator_ring_shape_override": (
-                    {
-                        "quadratic_V": float(probe["quadratic_V"]),
-                        "cubic_V": float(probe["cubic_V"]),
-                    }
-                    if accelerator_match_stage in {
-                        "ring_shape", "coupled_reflectron", "actual_slope"
-                    }
-                    else None
-                ),
-                "reflectron_voltage_override": (
-                    {
-                        "midgrid_V": coupled_solution.stage1_voltage_drop_v,
-                        "backplate_V": coupled_solution.stage1_voltage_drop_v
-                        + coupled_solution.stage2_field_v_per_mm
-                        * float(target_geometry["geometry_mm"]["L_stage2"]),
-                    }
-                    if coupled_solution is not None
-                    and bool(probe.get("coupled_reflectron_enabled", True))
-                    else None
-                ),
             }
             accelerator_match["arms"].append(generated_arms[arm_id])
         if selected_arm_ids is None:
@@ -1262,21 +1217,6 @@ def prepare(
                     float(arm_profile[arm_id].get("pulse_delay_rf_periods", 0.0))
                     * 1.0e6 / float(rf_frequency_hz)
                     if rf_frequency_hz is not None else 0.0
-                ),
-                "solver_profile_id": arm_profile[arm_id].get(
-                    "solver_profile_id", "current_downstream"
-                ),
-                "frontend_profile_id": arm_profile[arm_id].get(
-                    "frontend_profile_id", "combined_frontend"
-                ),
-                "accelerator_voltage_override": arm_profile[arm_id].get(
-                    "accelerator_voltage_override"
-                ),
-                "accelerator_ring_shape_override": arm_profile[arm_id].get(
-                    "accelerator_ring_shape_override"
-                ),
-                "reflectron_voltage_override": arm_profile[arm_id].get(
-                    "reflectron_voltage_override"
                 ),
             }
         )
@@ -1530,7 +1470,6 @@ def summarize(
     baseline_checkpoints_path: Path,
     logs_dir: Path,
     output_dir: Path,
-    baseline_clock_basis: str = "legacy_relative_time",
     reference_arm_id: str | None = None,
 ) -> dict[str, Any]:
     profile = _load_json(profile_path)
@@ -1564,11 +1503,8 @@ def summarize(
     baseline_columns, baseline_rows = _load_csv(baseline_checkpoints_path)
     if not set(CHECKPOINT_COLUMNS).issubset(baseline_columns):
         raise ValueError("baseline checkpoint columns differ")
-    if baseline_clock_basis not in {"legacy_relative_time", "absolute_birth_time"}:
-        raise ValueError("baseline clock basis differs")
-    # analyze_single_flight writes canonical instrument-clock time into every
-    # checkpoint row.  clock_basis records how that value was obtained; it is
-    # not an instruction to add source_release a second time here.
+    # analyze_single_flight writes the canonical instrument clock into every
+    # checkpoint row.  No second time basis is accepted or reconstructed here.
     baseline_detector = _checkpoint_detector_times(baseline_rows)
     output_dir.mkdir(parents=True, exist_ok=False)
     checkpoint_rows: list[dict[str, object]] = []
@@ -1656,15 +1592,6 @@ def summarize(
                     )
                 },
                 "peak": peak,
-                "accelerator_voltage_override": prepared_by_id[arm_id].get(
-                    "accelerator_voltage_override"
-                ),
-                "accelerator_ring_shape_override": prepared_by_id[arm_id].get(
-                    "accelerator_ring_shape_override"
-                ),
-                "reflectron_voltage_override": prepared_by_id[arm_id].get(
-                    "reflectron_voltage_override"
-                ),
             }
         )
     with (output_dir / "counterfactual_particle_checkpoints.csv").open(
@@ -1781,15 +1708,6 @@ def main() -> int:
     prepare_parser.add_argument("--execution-batch-count", type=int, default=5)
     prepare_parser.add_argument("--initial-pa-instance", type=int, choices=(3, 5), default=3)
     prepare_parser.add_argument("--solver-birth-time-us", type=float)
-    prepare_parser.add_argument("--accelerator-match-profile", type=Path)
-    prepare_parser.add_argument(
-        "--accelerator-match-stage",
-        choices=(
-            "voltage", "ring_shape", "coupled_reflectron", "actual_slope",
-            "finite_interval", "finite_interval_coupled",
-        ),
-        default="voltage",
-    )
     prepare_parser.add_argument("--arm-id", action="append", dest="selected_arm_ids")
     prepare_parser.add_argument("--diagnostic-particle-limit", type=int)
     summarize_parser = subparsers.add_parser("summarize")
@@ -1799,11 +1717,6 @@ def main() -> int:
     summarize_parser.add_argument("--logs-dir", required=True, type=Path)
     summarize_parser.add_argument("--output-dir", required=True, type=Path)
     summarize_parser.add_argument("--reference-arm-id")
-    summarize_parser.add_argument(
-        "--baseline-clock-basis",
-        choices=("legacy_relative_time", "absolute_birth_time"),
-        default="legacy_relative_time",
-    )
     args = parser.parse_args()
     if args.command == "prepare":
         result = prepare(
@@ -1820,8 +1733,8 @@ def main() -> int:
             args.selected_arm_ids,
             args.initial_pa_instance,
             args.solver_birth_time_us,
-            args.accelerator_match_profile,
-            args.accelerator_match_stage,
+            None,
+            "voltage",
             args.diagnostic_particle_limit,
         )
         print(
@@ -1835,7 +1748,6 @@ def main() -> int:
             args.baseline_checkpoints,
             args.logs_dir,
             args.output_dir,
-            args.baseline_clock_basis,
             args.reference_arm_id,
         )
         print(

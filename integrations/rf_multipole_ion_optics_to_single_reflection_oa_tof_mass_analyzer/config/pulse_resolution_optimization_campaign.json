@@ -8,10 +8,10 @@
     "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/execution_policy.json",
     "sha256": "B5AD2687C3D1B3CFE1F332C593F69BE3AFE55D749CB28815EB5C110207478FF3"
   },
-  "claim_limit": "Arms 1-3 and the Arm8-closed global theoretical-field implementation of arm 4 may run deterministic N=100 screening only. The deprecated hard-mask arm 4 remains non-executable; no N=100 result grants qualification authority.",
+  "claim_limit": "Arms 1-3 and the canonical full-domain piecewise ideal-field implementation of arm 4 may run deterministic N=100 screening only. No N=100 result grants qualification authority.",
   "pulse_resolution_optimization": {
     "purpose": "physical_optimization",
-    "execution_state": "n100_arm8_closed_global_field_screening",
+    "execution_state": "n100_full_domain_piecewise_ideal_field_screening",
     "clock_contract": {
       "resolution_time_basis": "detector_time_minus_pulse_effective_time",
       "absolute_instrument_clock_is_resolution_claim": false
@@ -37,7 +37,7 @@
       {"sequence": 1, "arm_id": "real_beam_all_real", "source_model": "real_beam", "accelerator_field": "all_real", "reflectron_field": "real", "implementation_status": "executable_registration"},
       {"sequence": 2, "arm_id": "real_beam_ideal_stage1", "source_model": "real_beam", "accelerator_field": "ideal_stage1", "reflectron_field": "real", "implementation_status": "executable_paired_screening"},
       {"sequence": 3, "arm_id": "real_beam_ideal_stage1_stage2", "source_model": "real_beam", "accelerator_field": "ideal_stage1_stage2", "reflectron_field": "real", "implementation_status": "executable_paired_screening"},
-      {"sequence": 4, "arm_id": "real_beam_all_ideal", "source_model": "real_beam", "accelerator_field": "ideal_accelerator", "reflectron_field": "ideal", "implementation_status": "executable_paired_screening_with_arm8_closure"},
+      {"sequence": 4, "arm_id": "real_beam_all_ideal", "source_model": "real_beam", "accelerator_field": "ideal_accelerator", "reflectron_field": "ideal", "implementation_status": "executable_paired_screening_with_full_domain_contract"},
       {"sequence": 5, "arm_id": "finite_source_all_real", "source_model": "finite_interval_2p2mm_theory_source", "accelerator_field": "all_real", "reflectron_field": "real", "implementation_status": "planning_only_until_adapter_support"},
       {"sequence": 6, "arm_id": "finite_source_ideal_accelerator", "source_model": "finite_interval_2p2mm_theory_source", "accelerator_field": "ideal_accelerator", "reflectron_field": "real", "implementation_status": "planning_only_until_adapter_support"},
       {"sequence": 7, "arm_id": "finite_source_all_ideal", "source_model": "finite_interval_2p2mm_theory_source", "accelerator_field": "ideal_accelerator", "reflectron_field": "ideal", "implementation_status": "planning_only_until_adapter_support"},
@@ -202,8 +202,7 @@
     },
     {
       "sequence": 4,
-      "experiment_id": "pulse_resolution_real_beam_ideal_accelerator_ideal_reflectron_n100",
-      "pulse_resolution_deprecated_counterfactual": true,
+      "experiment_id": "pulse_resolution_real_beam_full_domain_piecewise_ideal_n100",
       "pulse_resolution_attribution_arm_id": "real_beam_all_ideal",
       "pulse_resolution_execution_mode": "screening_prefix_n100_paired_candidate",
       "pulse_resolution_baseline_result": {
@@ -217,59 +216,9 @@
       "execution_strategy": "simion_single_flight",
       "single_flight_layout_profile_id": "symmetric_10ev_injection_diagnostic",
       "single_flight_frontend_grid_profile_id": "frontend_isotropic_020_accelerator_overlay_z005",
-      "single_flight_accelerator_field_profile_id": "accelerator_ideal_stage1_stage2_ideal_reflectron",
+      "single_flight_accelerator_field_profile_id": "full_domain_piecewise_ideal_field",
       "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_0mm",
-      "run_id": "20260813_150000__sim__cross__pulse-real-all-ideal__n100",
-      "source": {
-        "run_id": "20260805_150100__sim__simion__oct-segmented-10ev-h15__n1000", "launched_particle_count": 1000, "particle_count": 577,
-        "particle_source_manifest_input_role": "particle_source",
-        "manifest": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_150100__sim__simion__oct-segmented-10ev-h15__n1000/run_manifest.json", "sha256": "44355DD9CA45F973767F0A2F3DA18EC8F010F398CE61EDB239722B258F9088E7"},
-        "state": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_150100__sim__simion__oct-segmented-10ev-h15__n1000/results/particle_states__axial_acceleration_rf_on.csv", "sha256": "F8F77CFA0A3A21D06BC779FAAC2CB2F066AC38BBC986E3A6A60F28A1E58AE409"},
-        "particle_source": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_150100__sim__simion__oct-segmented-10ev-h15__n1000/inputs/particle_source.csv", "sha256": "302C03DC29737CE9D46EB1A8D258DB2A8D3C0F8B6A53F7702A33B1ECF9D5320D"},
-        "metadata": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_150100__sim__simion__oct-segmented-10ev-h15__n1000/inputs/particle_source_metadata.json", "sha256": "954D2D069A07EC8CD39CF40691682A053B05FBC20884D02462BDDD57862CD2F6"},
-        "handoff_publication_contract": {"path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/octupole_handoff_publication_n1000.json", "sha256": "BF3DD74CE90CFE4E9811FECADE8F38D95C9DF16E61C1828D52889135094616A4"}
-      }
-    },
-    {
-      "sequence": 5,
-      "experiment_id": "pulse_resolution_real_beam_arm8_closed_global_theory_n100",
-      "pulse_resolution_attribution_arm_id": "real_beam_all_ideal",
-      "pulse_resolution_execution_mode": "screening_prefix_n100_paired_candidate",
-      "pulse_resolution_baseline_result": {
-        "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260812_210000__sim__simion__rf-oatof-single-flight-gap0__n100/results/pulse_resolution_arm1_n100_baseline_registration_receipt.json",
-        "sha256": "97495F4B0A49D4FF3CA8ECE3EBBDF949AFFAEA3D32E14CF26B707C4573133D4E"
-      },
-      "pulse_resolution_baseline_checkpoints": {
-        "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260812_210000__sim__simion__rf-oatof-single-flight-gap0__n100/results/single_flight_particle_checkpoints.csv",
-        "sha256": "D46986FC918605D9EB2AD1BA059BB76F9E6AFA24156C30C20A5880375F6B9044"
-      },
-      "pulse_resolution_axial_ideal_closure_receipt": {
-        "evidence_revision": 2,
-        "path": "artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20260814_165300__analysis__python__axial-ideal-arm8-closure-republish/results/axial_ideal_arm8_closure/axial_ideal_arm8_analytic_closure_receipt.json",
-        "sha256": "9AA2773255B4DC83F3208B7620DDAA8423C4F6B78650E156F75847424D6D883B",
-        "supersedes": {
-          "path": "artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20260813_151500__analysis__python__axial-ideal-arm8-closure/results/axial_ideal_arm8_analytic_closure_receipt.json",
-          "sha256": "9AA2773255B4DC83F3208B7620DDAA8423C4F6B78650E156F75847424D6D883B"
-        }
-      },
-      "pulse_resolution_arm8_simion_closure_result": {
-        "path": "artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20260813_223000__sim__simion__arm8-solver-closure-n101-interpolated-r04/results/arm8_simion_solver_closure_result.json",
-        "sha256": "BC36375FED841A9690367DE2B0B95B236A8AE4F9B3E216D6CFB07664C429ED40"
-      },
-      "pulse_resolution_arm8_simion_closure_manifest": {
-        "path": "artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20260813_223000__sim__simion__arm8-solver-closure-n101-interpolated-r04/run_manifest.json",
-        "sha256": "2453AB8F22038659DF9DD88836FDB5FBB013666CBBC52C4459E757DD8469DEE6"
-      },
-      "pulse_resolution_arm8_simion_closure_contract": {
-        "path": "artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20260813_223000__sim__simion__arm8-solver-closure-n101-interpolated-r04/arm8_simion_solver_closure_contract.json",
-        "sha256": "B2AF3B9C61D7FD1654DB24D5E700116E3A28D5175208F3DB99765A67DF6FA433"
-      },
-      "execution_strategy": "simion_single_flight",
-      "single_flight_layout_profile_id": "symmetric_10ev_injection_diagnostic",
-      "single_flight_frontend_grid_profile_id": "frontend_isotropic_020_accelerator_overlay_z005",
-      "single_flight_accelerator_field_profile_id": "arm8_closed_global_piecewise_theoretical_field",
-      "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_0mm",
-      "run_id": "20260814_000000__sim__cross__pulse-real-arm8-global-theory__n100",
+      "run_id": "20260814_000000__sim__cross__pulse-real-full-domain-ideal__n100",
       "source": {
         "run_id": "20260805_150100__sim__simion__oct-segmented-10ev-h15__n1000", "launched_particle_count": 1000, "particle_count": 577,
         "particle_source_manifest_input_role": "particle_source",

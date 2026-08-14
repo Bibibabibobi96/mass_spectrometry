@@ -112,11 +112,19 @@ if ($frozenArguments.ContainsKey('single_flight_oatof_numerical_profile_id')) {
 if ($frozenArguments.ContainsKey('single_flight_trajectory_quality_profile_id')) {
   $expectedArguments += 'single_flight_trajectory_quality_profile_id'
 }
+if ($frozenArguments.ContainsKey('single_flight_time_integration_profile_id')) {
+  $expectedArguments += 'single_flight_time_integration_profile_id'
+}
 if ($frozenArguments.ContainsKey('single_flight_spatial_window_profile_id')) {
   $expectedArguments += 'single_flight_spatial_window_profile_id'
 }
-if ($frozenArguments.ContainsKey('single_flight_accelerator_field_profile_id')) {
-  $expectedArguments += 'single_flight_accelerator_field_profile_id'
+if ($frozenArguments.ContainsKey('resolved_region_field_contract_filename')) {
+  $expectedArguments += @(
+    'resolved_region_field_contract_filename',
+    'resolved_region_field_contract_sha256',
+    'resolved_region_field_semantic_sha256',
+    'resolved_region_field_profile_id'
+  )
 }
 if ($frozenArguments.ContainsKey('source_release_mode')) {
   $expectedArguments += @('source_profile_id','field_overlay_id','source_release_mode')
@@ -151,14 +159,6 @@ if ($frozenArguments.ContainsKey('pulse_resolution_attribution_arm_id')) {
     $expectedArguments += @(
       'pulse_resolution_baseline_checkpoints_path',
       'pulse_resolution_baseline_checkpoints_sha256'
-    )
-  }
-  if ($frozenArguments.ContainsKey('pulse_resolution_arm8_contract_path')) {
-    $expectedArguments += @(
-      'pulse_resolution_arm8_analytic_receipt_path','pulse_resolution_arm8_analytic_receipt_sha256',
-      'pulse_resolution_arm8_result_path','pulse_resolution_arm8_result_sha256',
-      'pulse_resolution_arm8_manifest_path','pulse_resolution_arm8_manifest_sha256',
-      'pulse_resolution_arm8_contract_path','pulse_resolution_arm8_contract_sha256'
     )
   }
 }
@@ -233,61 +233,19 @@ if ($pulseN100Screening) {
     $arm[0].accelerator_field -eq 'ideal_stage1_stage2' -and
     $experiment.pulse_resolution_execution_mode -eq 'screening_prefix_n100_paired_candidate' -and
     $experiment.single_flight_accelerator_field_profile_id -eq 'accelerator_ideal_stage1_stage2_real_reflectron'
-  $deprecatedAllIdealRow = [int]$arm[0].sequence -eq 4 -and
-    $null -ne $experiment.PSObject.Properties['pulse_resolution_deprecated_counterfactual'] -and
-    [bool]$experiment.pulse_resolution_deprecated_counterfactual -and
-    $experiment.single_flight_accelerator_field_profile_id -eq 'accelerator_ideal_stage1_stage2_ideal_reflectron'
   $pairedAllIdealRow = [int]$arm[0].sequence -eq 4 -and
-    $arm[0].implementation_status -eq 'executable_paired_screening_with_arm8_closure' -and
+    $arm[0].implementation_status -eq 'executable_paired_screening_with_full_domain_contract' -and
     $arm[0].accelerator_field -eq 'ideal_accelerator' -and
     $arm[0].reflectron_field -eq 'ideal' -and
     $experiment.pulse_resolution_execution_mode -eq 'screening_prefix_n100_paired_candidate' -and
-    $experiment.single_flight_accelerator_field_profile_id -eq 'arm8_closed_global_piecewise_theoretical_field'
-  if ($deprecatedAllIdealRow) {
-    throw 'Deprecated hard-mask real-beam all-ideal experiment is non-executable.'
-  }
-  if ($pulseContract.execution_state -ne 'n100_arm8_closed_global_field_screening' -or
+    $experiment.single_flight_accelerator_field_profile_id -eq 'full_domain_piecewise_ideal_field'
+  if ($pulseContract.execution_state -ne 'n100_full_domain_piecewise_ideal_field_screening' -or
       $arm.Count -ne 1 -or -not ($baselineRow -or $pairedRow -or $pairedStage12Row -or $pairedAllIdealRow) -or
       $arm[0].source_model -ne 'real_beam' -or
       $arm[0].reflectron_field -notin @('real','ideal') -or
       [int]$pulseContract.bootstrap.seed -ne
         [int]$frozenArguments.pulse_resolution_bootstrap_seed) {
     throw 'Only real multipole beam + real accelerator field + real reflectron field, deterministic N=100 prefix baseline registration is executable.'
-  }
-}
-$pulseArm8ContractPath = $null
-if ($pulseN100Screening -and $frozenArguments.ContainsKey('pulse_resolution_arm8_contract_path')) {
-  function Resolve-Arm8Evidence([string]$pathKey,[string]$shaKey) {
-    $path = [IO.Path]::GetFullPath((Join-Path $workspaceRoot $frozenArguments[$pathKey]))
-    if (-not $path.StartsWith($workspaceRoot + [IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase) -or
-        -not (Test-Path -LiteralPath $path -PathType Leaf) -or
-        (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ne $frozenArguments[$shaKey]) {
-      throw "Arm8 closure evidence is missing or stale: $pathKey"
-    }
-    return $path
-  }
-  $arm8AnalyticPath = Resolve-Arm8Evidence 'pulse_resolution_arm8_analytic_receipt_path' 'pulse_resolution_arm8_analytic_receipt_sha256'
-  $arm8ResultPath = Resolve-Arm8Evidence 'pulse_resolution_arm8_result_path' 'pulse_resolution_arm8_result_sha256'
-  $arm8ManifestPath = Resolve-Arm8Evidence 'pulse_resolution_arm8_manifest_path' 'pulse_resolution_arm8_manifest_sha256'
-  $pulseArm8ContractPath = Resolve-Arm8Evidence 'pulse_resolution_arm8_contract_path' 'pulse_resolution_arm8_contract_sha256'
-  $analytic = Get-Content -LiteralPath $arm8AnalyticPath -Raw -Encoding UTF8 | ConvertFrom-Json
-  $arm8Result = Get-Content -LiteralPath $arm8ResultPath -Raw -Encoding UTF8 | ConvertFrom-Json
-  $arm8Manifest = Get-Content -LiteralPath $arm8ManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
-  $arm8Contract = Get-Content -LiteralPath $pulseArm8ContractPath -Raw -Encoding UTF8 | ConvertFrom-Json
-  if ($analytic.receipt_role -ne 'axial_ideal_arm8_solver_independent_analytic_closure' -or $analytic.status -ne 'pass' -or
-      -not [bool]$analytic.all_assertions_passed -or [double]$analytic.peak_metrics.mass_resolution -lt 30000 -or
-      [double]$analytic.peak_metrics.direct_fwhm_tof_ns -gt 0.537 -or
-      $arm8Result.role -ne 'rf_oatof_arm8_simion_solver_closure_result' -or $arm8Result.status -ne 'pass' -or
-      -not [bool]$arm8Result.all_assertions_passed -or [int]$arm8Result.particles -ne 101 -or
-      [double]$arm8Result.pulse_effective_peak.mass_resolution -lt 30000 -or
-      [double]$arm8Result.pulse_effective_peak.direct_fwhm_tof_ns -gt 0.537 -or
-      $arm8Manifest.role -ne 'rf_oatof_arm8_simion_solver_closure_n101_manifest' -or $arm8Manifest.status -ne 'success' -or
-      [int]$arm8Manifest.solver.detector_hits -ne 101 -or
-      $arm8Manifest.output_sha256.solver_closure_receipt -ne $frozenArguments.pulse_resolution_arm8_result_sha256 -or
-      $arm8Contract.role -ne 'rf_oatof_arm8_simion_solver_closure_contract' -or
-      $arm8Contract.analytic_receipt.sha256 -ne $frozenArguments.pulse_resolution_arm8_analytic_receipt_sha256 -or
-      [bool]$arm8Contract.potential.real_pa_field_blending_allowed) {
-    throw 'Arm8 analytic/SIMION full-domain closure evidence differs.'
   }
 }
 $singleFlightParticleSourcePath = $null
@@ -472,6 +430,36 @@ if (-not (Test-Path -LiteralPath $runtimeBinding -PathType Leaf) -or
 }
 
 $runDirectory = [IO.Path]::GetFullPath((Split-Path -Parent $CompositionPlan))
+$resolvedRegionFieldContractPath = $null
+if ($frozenArguments.ContainsKey('resolved_region_field_contract_filename')) {
+  $resolvedRegionFieldContractPath = [IO.Path]::GetFullPath(
+    (Join-Path $runDirectory $frozenArguments.resolved_region_field_contract_filename)
+  )
+  $regionInputsRoot = (Join-Path $runDirectory 'inputs') + [IO.Path]::DirectorySeparatorChar
+  if ($frozenArguments.resolved_region_field_contract_filename -ne
+      'inputs/resolved_region_field_contract.json' -or
+      -not $resolvedRegionFieldContractPath.StartsWith(
+        $regionInputsRoot,[StringComparison]::OrdinalIgnoreCase
+      ) -or
+      -not (Test-Path -LiteralPath $resolvedRegionFieldContractPath -PathType Leaf) -or
+      (Get-FileHash -LiteralPath $resolvedRegionFieldContractPath -Algorithm SHA256).Hash -ne
+      $frozenArguments.resolved_region_field_contract_sha256) {
+    throw 'Plan-bound resolved region field contract is missing or stale.'
+  }
+  $resolvedRegionFieldContract = Get-Content -LiteralPath `
+    $resolvedRegionFieldContractPath -Raw -Encoding UTF8 | ConvertFrom-Json
+  if ($resolvedRegionFieldContract.role -ne
+      'rf_oatof_resolved_region_field_contract' -or
+      [bool]$resolvedRegionFieldContract.semantic.real_pa_field_blending_allowed -or
+      [string]$resolvedRegionFieldContract.semantic_sha256 -ne
+      [string]$frozenArguments.resolved_region_field_semantic_sha256 -or
+      [string]$resolvedRegionFieldContract.semantic.canonical_profile_id -ne
+      [string]$frozenArguments.resolved_region_field_profile_id -or
+      $resolvedRegionFieldContract.layout_geometry.sha256 -ne
+      $frozenArguments.resolved_oatof_geometry_sha256) {
+    throw 'Plan-bound resolved region field contract identity differs.'
+  }
+}
 $pulsePrefixPath = $null
 $pulseRegistrationPath = $null
 if ($pulseN100Screening) {
@@ -715,6 +703,9 @@ if ($PrepareOnly) {
   )
   exit 0
 }
+if ([string]$campaign.status -ne 'authorized') {
+  throw 'Campaign status permits validation only and cannot execute a solver.'
+}
 if (-not $SolverAuthorized) {
   throw 'Family source-closure execution requires explicit solver authorization.'
 }
@@ -785,6 +776,14 @@ if ($executionStrategy -eq 'simion_single_flight') {
     $runnerArguments.TrajectoryQualityProfileId =
       [string]$frozenArguments.single_flight_trajectory_quality_profile_id
   }
+  if ($frozenArguments.ContainsKey('single_flight_time_integration_profile_id')) {
+    if ([string]$experiment.single_flight_time_integration_profile_id -ne
+        [string]$frozenArguments.single_flight_time_integration_profile_id) {
+      throw 'Single-flight time-integration profile changed after preparation.'
+    }
+    $runnerArguments.TimeIntegrationProfileId =
+      [string]$frozenArguments.single_flight_time_integration_profile_id
+  }
   if ($frozenArguments.ContainsKey('single_flight_spatial_window_profile_id')) {
     if ([string]$experiment.single_flight_spatial_window_profile_id -ne
         [string]$frozenArguments.single_flight_spatial_window_profile_id) {
@@ -792,14 +791,6 @@ if ($executionStrategy -eq 'simion_single_flight') {
     }
     $runnerArguments.SpatialWindowProfileId =
       [string]$frozenArguments.single_flight_spatial_window_profile_id
-  }
-  if ($frozenArguments.ContainsKey('single_flight_accelerator_field_profile_id')) {
-    if ([string]$experiment.single_flight_accelerator_field_profile_id -ne
-        [string]$frozenArguments.single_flight_accelerator_field_profile_id) {
-      throw 'Single-flight accelerator field profile changed after preparation.'
-    }
-    $runnerArguments.AcceleratorFieldProfileId =
-      [string]$frozenArguments.single_flight_accelerator_field_profile_id
   }
   if ($frozenArguments.ContainsKey('source_release_mode')) {
     $runnerArguments.SourceProfileId = [string]$frozenArguments.source_profile_id
@@ -843,6 +834,14 @@ if ($executionStrategy -eq 'simion_single_flight') {
         [int]$frozenArguments.single_flight_eligible_population_count
     }
   }
+  if ($null -eq $resolvedRegionFieldContractPath) {
+    throw 'SIMION single flight requires one resolved region field contract.'
+  }
+  $runnerArguments.ResolvedRegionFieldContract = $resolvedRegionFieldContractPath
+  $runnerArguments.ResolvedRegionFieldContractSha256 =
+    $frozenArguments.resolved_region_field_contract_sha256
+  $runnerArguments.ResolvedRegionFieldSemanticSha256 =
+    $frozenArguments.resolved_region_field_semantic_sha256
   if ($pulseN100Screening) {
     $runnerArguments.MotherParticleSource = $pulsePrefixPath
     $runnerArguments.MotherParticleSourceSha256 =
@@ -869,11 +868,6 @@ if ($executionStrategy -eq 'simion_single_flight') {
       $runnerArguments.PulseResolutionBaselineCheckpoints = $pulseBaselineCheckpointsPath
       $runnerArguments.PulseResolutionBaselineCheckpointsSha256 =
         $frozenArguments.pulse_resolution_baseline_checkpoints_sha256
-    }
-    if ($null -ne $pulseArm8ContractPath) {
-      $runnerArguments.PulseResolutionArm8GlobalFieldContract = $pulseArm8ContractPath
-      $runnerArguments.PulseResolutionArm8GlobalFieldContractSha256 =
-        $frozenArguments.pulse_resolution_arm8_contract_sha256
     }
   }
   & $runtime.implementation.single_flight_runner @runnerArguments
