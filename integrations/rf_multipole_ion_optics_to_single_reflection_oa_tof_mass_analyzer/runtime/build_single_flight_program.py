@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import math
 from pathlib import Path
 import re
 from typing import Any
@@ -17,8 +18,11 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     require_published_frontend_electrodes,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.resolved_region_field import (
-    resolved_region_field_lua,
+    resolved_region_field_hook_lua,
     validate_resolved_region_field_contract,
+)
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.pure_boundary_validator import (
+    validate_pure_lua_component_source,
 )
 
 
@@ -30,19 +34,34 @@ def _load(path: Path) -> dict[str, Any]:
 
 
 def _lua_number(value: float) -> str:
-    return format(float(value), ".17g")
+    result = float(value)
+    if not math.isfinite(result):
+        raise ValueError("Lua numeric value must be finite")
+    return format(result, ".17g")
 
 
-def enable_official_global_segments(formal: str) -> str:
-    """Enable SIMION's documented global segment dispatch for restart states."""
-    declaration = "simion.workbench_program()"
-    if formal.count(declaration) != 1:
-        raise ValueError("formal Program must declare exactly one workbench")
-    return formal.replace(
-        declaration,
-        declaration + "\nsimion.early_access(8.2)\nsim_segment_global = 1",
-        1,
-    )
+def _lua_value(value: object) -> str:
+    """Serialize a validated Python contract fragment as deterministic Lua."""
+    if value is None:
+        return "nil"
+    if value is True:
+        return "true"
+    if value is False:
+        return "false"
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return _lua_number(value)
+    if isinstance(value, str):
+        return json.dumps(value, ensure_ascii=True)
+    if isinstance(value, list):
+        return "{" + ",".join(_lua_value(item) for item in value) + "}"
+    if isinstance(value, dict):
+        items = []
+        for key, item in value.items():
+            if not isinstance(key, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
+                raise ValueError(f"Lua contract key is not one identifier: {key!r}")
+            items.append(f"{key}={_lua_value(item)}")
+        return "{" + ",".join(items) + "}"
+    raise ValueError(f"unsupported Lua contract value: {type(value).__name__}")
 
 
 def load_birth_times(path: Path) -> list[float]:
@@ -63,104 +82,137 @@ def load_birth_times(path: Path) -> list[float]:
     return values
 
 
-def bind_oatof_adjustables(formal: str, oatof: dict[str, Any]) -> str:
-    """Bind resolved geometry into Program defaults without SIMION CLI name limits."""
+_SUCCESSOR_CALLBACKS = (
+    "load",
+    "initialize_run",
+    "efield_adjust",
+    "fast_adjust",
+    "instance_adjust",
+    "initialize",
+    "tstep_adjust",
+    "other_actions",
+    "terminate",
+)
+
+
+def _successor_analyzer_config(
+    oatof: dict[str, Any], frontend: dict[str, Any]
+) -> dict[str, Any]:
     geometry = oatof["geometry_mm"]
-    accelerator = oatof["geometry_derivation"]["accelerator"]
+    derivation = oatof["geometry_derivation"]["accelerator"]
+    coordinate = oatof["coordinate_convention"]
     voltage = oatof["electrodes_V"]
     rings = oatof["rings"]
-    coordinate = oatof["coordinate_convention"]
-    values = {
-        "V_repeller": voltage["repeller"],
-        "V_grid1": voltage["grid1"],
-        "V_mid": voltage["midgrid"],
-        "V_backplate": voltage["backplate"],
-        "accelerator_assembly_translation_z_mm": geometry["accelerator_repeller_z"],
-        "accelerator_stage1_length_mm": accelerator["d1_mm"],
-        "accelerator_stage2_length_mm": accelerator["d2_mm"],
-        "accelerator_ring_count": rings["accelerator_count"],
-        "accelerator_repeller_front_z_mm": geometry["accelerator_repeller_z"],
-        "accelerator_grid1_z_mm": geometry["accelerator_grid1_z"],
-        "accelerator_grid2_z_mm": geometry["accelerator_grid2_z"],
-        "accelerator_focus_drift_mm": accelerator["focus_drift_after_grid2_mm"],
-        "reflectron_entgrid_z_mm": geometry["L_flight"],
-        "field_free_one_way_length_mm": geometry["L_flight"],
-        "reflectron_stage1_length_mm": geometry["L_stage1"],
-        "reflectron_stage2_length_mm": geometry["L_stage2"],
-        "reflectron_stage1_ring_count": rings["stage1_count"],
-        "reflectron_stage2_ring_count": rings["stage2_count"],
-        "reflectron_midgrid_z_mm": geometry["L_flight"] + geometry["L_stage1"],
-        "reflectron_backplate_z_mm": geometry["L_flight"] + geometry["L_reflectron"],
-        "reflectron_grid_radius_mm": geometry["ring_outer_r"],
-        "accelerator_axis_x_mm": coordinate["accelerator_axis_x"],
-        "accelerator_bore_half_mm": geometry["accelerator_bore_half"],
-        "accelerator_ring_width_mm": geometry["accelerator_ring_width"],
-        "accelerator_insulation_gap_mm": geometry["accelerator_insulation_gap"],
-        "accelerator_shield_wall_mm": geometry["accelerator_shield_wall"],
-        "accelerator_rear_insulation_gap_mm": geometry["accelerator_rear_clearance"],
-        "accelerator_repeller_thickness_mm": geometry["accelerator_repeller_thickness"],
-        "accelerator_instance_z_mm": (
-            geometry["accelerator_repeller_z"]
-            - geometry["accelerator_repeller_thickness"]
-            - geometry["accelerator_rear_clearance"]
-            - geometry["accelerator_shield_wall"]
-        ),
-        "flight_tube_inner_radius_mm": geometry["flight_tube_r"],
-        "flight_tube_shield_wall_mm": geometry["flight_tube_wall"],
-        "flight_tube_near_endcap_gap_mm": geometry["shield_near_endcap_gap"],
-        "flight_tube_far_endcap_gap_mm": geometry["shield_axial_gap"],
-        "flight_tube_endcap_thickness_mm": geometry["shield_endcap_thickness"],
-        "reflectron_backplate_thickness_mm": geometry["ring_thickness"],
+    marker = oatof["simion_detector_marker"]
+    electrodes = frontend["electrodes"]
+    accelerator_instance_z = (
+        float(geometry["accelerator_repeller_z"])
+        - float(geometry["accelerator_repeller_thickness"])
+        - float(geometry["accelerator_rear_clearance"])
+        - float(geometry["accelerator_shield_wall"])
+    )
+    near_bore_z = (
+        accelerator_instance_z
+        - float(geometry["shield_near_endcap_gap"])
+    )
+    near_outer_z = near_bore_z - float(geometry["shield_endcap_thickness"])
+    backplate_z = (
+        float(geometry["L_flight"])
+        + float(geometry["L_stage1"])
+        + float(geometry["L_stage2"])
+    )
+    far_outer_z = (
+        backplate_z
+        + float(geometry["ring_thickness"])
+        + float(geometry["shield_axial_gap"])
+        + float(geometry["shield_endcap_thickness"])
+    )
+    accelerator_axis_y = float(coordinate.get("accelerator_axis_y", 0.0))
+    detector_x = float(coordinate["detector_x"])
+    detector_y = -accelerator_axis_y
+    return {
+        "instance_roles": {
+            "flight_tube": 1,
+            "reflectron": 2,
+            "accelerator": 3,
+            "detector": 4,
+        },
+        "geometry": {
+            "accelerator_axis_x_mm": float(coordinate["accelerator_axis_x"]),
+            "accelerator_axis_y_mm": accelerator_axis_y,
+            "accelerator_instance_z_mm": accelerator_instance_z,
+            "accelerator_repeller_front_z_mm": float(geometry["accelerator_repeller_z"]),
+            "accelerator_grid1_z_mm": float(geometry["accelerator_grid1_z"]),
+            "accelerator_grid2_z_mm": float(geometry["accelerator_grid2_z"]),
+            "reflectron_axis_x_mm": 0.0,
+            "reflectron_axis_y_mm": 0.0,
+            "reflectron_entgrid_z_mm": float(geometry["L_flight"]),
+            "reflectron_midgrid_z_mm": float(geometry["L_flight"])
+            + float(geometry["L_stage1"]),
+            "reflectron_backplate_z_mm": backplate_z,
+            "detector_x_mm": detector_x,
+            "detector_y_mm": detector_y,
+            "detector_z_mm": float(geometry["accelerator_grid2_z"])
+            + float(derivation["focus_drift_after_grid2_mm"]),
+            "detector_radius_mm": float(geometry["detector_radius"]),
+            "detector_marker_front_margin_z_mm": float(marker["front_margin_z_mm"]),
+            "detector_marker_back_margin_z_mm": float(marker["back_margin_z_mm"]),
+            "detector_marker_absorber_thickness_mm": float(marker["absorber_thickness_mm"]),
+            "diagnostic_return_plane_z_mm": 20.5,
+            "flight_tube_near_outer_z_mm": near_outer_z,
+            "flight_tube_far_outer_z_mm": far_outer_z,
+        },
+        "field_modes": {
+            "ideal_accelerator": False,
+            "ideal_accelerator_axial": False,
+            "ideal_drift_axial": False,
+            "ideal_reflectron_stage1": False,
+            "ideal_reflectron_stage1_axial": False,
+            "ideal_reflectron_stage2": False,
+            "ideal_reflectron_stage2_axial": False,
+        },
+        "voltages": {
+            "repeller_v": float(voltage["repeller"]),
+            "grid1_v": float(voltage["grid1"]),
+            "mid_v": float(voltage["midgrid"]),
+            "backplate_v": float(voltage["backplate"]),
+        },
+        "accelerator_ring_count": int(rings["accelerator_count"]),
+        "electrode_ids": {
+            "repeller": int(electrodes["accelerator_repeller_id"]),
+            "grid1": int(electrodes["accelerator_grid1_id"]),
+            "rings": [int(item) for item in electrodes["accelerator_ring_ids"]],
+            "grid2": int(electrodes["accelerator_grid2_id"]),
+        },
+        "reflectron_stage1_ring_count": int(rings["stage1_count"]),
+        "reflectron_stage2_ring_count": int(rings["stage2_count"]),
+        "detector": {
+            "tstep_enabled": True,
+            "capture_arm_distance_mm": float(marker["capture_arm_distance_mm"]),
+            "capture_depth_mm": float(marker["capture_depth_mm"]),
+            "marker_absorber_thickness_mm": float(marker["absorber_thickness_mm"]),
+        },
+        "diagnostics": {"max_tof_us": 90.0, "log_stride": 1000},
     }
-    bound = formal
-    for name, value in values.items():
-        pattern = rf"(?m)^(adjustable\s+{re.escape(name)}\s*=)[^\r\n]+$"
-        bound, count = re.subn(pattern, rf"\g<1>{_lua_number(value)}", bound)
-        if count != 1:
-            raise ValueError(f"formal Program adjustable is not unique: {name}")
-    return bound
 
 
-def disable_redundant_ground_fast_adjust(formal: str) -> str:
-    """Keep grounded single-electrode PAs read-only in parallel flights."""
-
-    block = " r:fast_adjust(reflectron_voltages)\n t:fast_adjust{[1]=0}\n d:fast_adjust{[1]=0}"
-    replacement = (
-        " r:fast_adjust(reflectron_voltages)\n"
-        " -- Flight-tube and detector PA0 are frozen at 0 V; re-adjusting them is\n"
-        " -- redundant and unsafe when parallel SIMION processes share run inputs."
-    )
-    if formal.count(block) != 1:
-        raise ValueError("formal grounded-PA fast-adjust block is not unique")
-    return formal.replace(block, replacement)
-
-
-def allow_accelerator_overlay_instance(formal: str) -> str:
-    """Extend the frozen four-instance workbench assertion for local PA overlay."""
-
-    assertion = (
-        "assert(#simion.wb.instances==4, "
-        "'formal workbench must contain four PA instances')"
-    )
-    replacement = (
-        "assert(#simion.wb.instances==5, "
-        "'overlay workbench must contain five PA instances')\n"
-        " assert(simion.wb.instances[5].filename:match('accelerator_overlay%.pa0$'),\n"
-        "   'instance 5 must be the boundary-coupled accelerator overlay')"
-    )
-    if formal.count(assertion) != 1:
-        raise ValueError("formal workbench instance assertion is not unique")
-    return formal.replace(assertion, replacement)
-
-
-def build_extension(
+def build_successor_program(
     upstream: dict[str, Any],
     frontend: dict[str, Any],
+    oatof: dict[str, Any],
+    region_field_contract: dict[str, Any],
     *,
     birth_times_us: list[float],
+    analyzer_component_source: str,
+    pulse_hook_source: str,
+    frontend_hook_source: str,
+    rf_drive_kernel_source: str,
     terminate_after_pulse: bool = False,
     overlay: dict[str, Any] | None = None,
+    rf_steps_per_period: int = 160,
+    global_segments: bool = False,
 ) -> str:
+    """Assemble the callback-neutral components behind one SIMION callback set."""
     if upstream.get("role") != "multipole_resolved_design_do_not_edit":
         raise ValueError("single-flight Program requires a multipole resolved design")
     if frontend.get("role") != "rf_oatof_simion_single_flight_frontend_contract":
@@ -170,388 +222,461 @@ def build_extension(
         upstream["axial_dc"]["upstream_shield_potential_V"], "multipole shield"
     )
     require_grounded_potential(
-        frontend["junction_enclosure"]["shield_potential_V"], "frontend shield connection"
+        frontend["junction_enclosure"]["shield_potential_V"],
+        "frontend shield connection",
+    )
+    if not birth_times_us or any(not math.isfinite(item) or item < 0 for item in birth_times_us):
+        raise ValueError("canonical instrument clock requires nonnegative birth times")
+    if isinstance(rf_steps_per_period, bool) or not isinstance(rf_steps_per_period, int) or rf_steps_per_period <= 0:
+        raise ValueError("RF steps per period must be one positive integer")
+    if overlay is not None and overlay.get("role") != "rf_oatof_simion_accelerator_overlay_contract":
+        raise ValueError("single-flight Program requires an accelerator overlay contract")
+    validate_resolved_region_field_contract(region_field_contract)
+    sources = {
+        "analyzer component": analyzer_component_source,
+        "pulse hook": pulse_hook_source,
+        "frontend hook": frontend_hook_source,
+        "RF drive kernel": rf_drive_kernel_source,
+    }
+    normalized = {
+        name: validate_pure_lua_component_source(
+            source.replace("\r\n", "\n").replace("\r", "\n").rstrip("\n"), name
+        )
+        for name, source in sources.items()
+    }
+    region_hook = validate_pure_lua_component_source(
+        resolved_region_field_hook_lua(region_field_contract),
+        "resolved region field hook",
     )
     drive = upstream["drive"]
-    if drive["waveform"] != "cosine":
-        raise ValueError("single-flight Program currently requires the frozen cosine RF waveform")
-    electrodes = upstream["segmentation"]["segmented_rod_array"]["electrodes"]
+    if drive["waveform"] not in {"sine", "cosine"}:
+        raise ValueError("single-flight Program RF waveform must be sine or cosine")
     rod_ids = segmented_rod_electrode_ids(
         upstream["segmentation"]["segmented_rod_array"]
     )
-    unique: dict[int, dict[str, Any]] = {}
-    for item in electrodes:
-        unique[item["electrode_id"]] = item
-    if rod_ids != list(ROD_ELECTRODE_IDS) or set(unique) != set(ROD_ELECTRODE_IDS):
+    if rod_ids != list(ROD_ELECTRODE_IDS):
         raise ValueError("single-flight Program requires multipole electrodes 1 through 8")
+    electrode_rows = {
+        int(item["electrode_id"]): item
+        for item in upstream["segmentation"]["segmented_rod_array"]["electrodes"]
+    }
     potentials = {
         int(item["electrode_id"]): float(item["potential_V"])
         for item in upstream["axial_dc"]["rod_electrodes"]
     }
-    entrance_reference = upstream["axial_dc"]["entrance_reference_sleeve"]
-    entrance_reference_v = float(entrance_reference["potential_V"])
-    entrance_plate_v = float(upstream["axial_dc"]["entrance_plate_potential_V"])
-    origin = frontend["instance_origin_mm"]
-    overlay_origin = None
-    overlay_active = None
-    if overlay is not None:
-        if overlay.get("role") != "rf_oatof_simion_accelerator_overlay_contract":
-            raise ValueError("single-flight Program requires an accelerator overlay contract")
-        if overlay["boundary_condition"]["mode"] != "coarse_electrode_basis_dirichlet_v1":
-            raise ValueError("single-flight Program received an unknown overlay boundary mode")
-        overlay_origin = overlay["instance_origin_mm"]
-        overlay_active = overlay["active_bounds_mm"]
-    handoff_x = frontend["source_exit_center_mm"]["x"]
-    if not birth_times_us:
-        raise ValueError("canonical instrument clock requires per-particle birth times")
-    lines = [
-        "",
-        "-- BEGIN RF-OATOF SINGLE-FLIGHT EXTENSION",
-        "adjustable single_flight_enable=1",
-        f"adjustable single_flight_rf_peak_v={_lua_number(drive['rf_amplitude_V_zero_to_peak_per_group'])}",
-        f"adjustable single_flight_frequency_hz={_lua_number(drive['frequency_Hz'])}",
-        "adjustable single_flight_rf_steps=160",
-        "local single_flight_particle_id_offset=assert(tonumber(os.getenv('OATOF_SINGLE_FLIGHT_PARTICLE_ID_OFFSET') or '0'),'invalid single-flight particle ID offset')",
-        f"local single_flight_frontend_origin_x={_lua_number(origin['x'])}",
-        f"local single_flight_frontend_origin_y={_lua_number(origin['y'])}",
-        f"local single_flight_frontend_origin_z={_lua_number(origin['z'])}",
-        f"local single_flight_overlay_enabled={1 if overlay is not None else 0}",
-        f"local single_flight_overlay_origin_x={_lua_number(overlay_origin['x'] if overlay_origin else 0)}",
-        f"local single_flight_overlay_origin_y={_lua_number(overlay_origin['y'] if overlay_origin else 0)}",
-        f"local single_flight_overlay_origin_z={_lua_number(overlay_origin['z'] if overlay_origin else 0)}",
-        f"local single_flight_overlay_active_x_min={_lua_number(overlay_active['x_min'] if overlay_active else 0)}",
-        f"local single_flight_overlay_active_x_max={_lua_number(overlay_active['x_max'] if overlay_active else 0)}",
-        f"local single_flight_overlay_active_y_min={_lua_number(overlay_active['y_min'] if overlay_active else 0)}",
-        f"local single_flight_overlay_active_y_max={_lua_number(overlay_active['y_max'] if overlay_active else 0)}",
-        f"local single_flight_overlay_active_z_min={_lua_number(overlay_active['z_min'] if overlay_active else 0)}",
-        f"local single_flight_overlay_active_z_max={_lua_number(overlay_active['z_max'] if overlay_active else 0)}",
-        f"local single_flight_handoff_x={_lua_number(handoff_x)}",
-        "local single_flight_base_initialize_run=segment.initialize_run",
-        "local single_flight_base_initialize=segment.initialize",
-        "local single_flight_base_tstep_adjust=segment.tstep_adjust",
-        "local single_flight_base_efield_adjust=segment.efield_adjust",
-        "local single_flight_base_instance_adjust=segment.instance_adjust",
-        "local single_flight_base_other_actions=segment.other_actions",
-        "local single_flight_previous={}",
-        "local single_flight_handoff_reported={}",
-        "local single_flight_prepulse_reported={}",
-        "local single_flight_grid1_forward_reported={}",
-        "local single_flight_focus_forward_reported={}",
-        "local single_flight_reflectron_entrance_reported={}",
-        "local single_flight_reflectron_midgrid_reported={}",
-        "local single_flight_reflectron_turning_reported={}",
-        "local single_flight_reflectron_exit_reported={}",
-        "-- Native plane landing follows SIMION Example test_plane lifecycle:",
-        "-- tstep requests landing; other_actions observes the completed crossing.",
-        "-- Position tolerance is state-comparison-only; positions are never changed.",
-        "local single_flight_accel_plane_state={}",
-        "local function single_flight_accel_state_for_current_particle()",
-        "  local state=single_flight_accel_plane_state[ion_number]",
-        "  if state==nil then",
-        "    state={stage1=ion_pz_mm>=accelerator_grid1_z_mm and 'hitted' or 'approaching',stage2=ion_pz_mm>=accelerator_grid2_z_mm and 'hitted' or 'approaching',initialized_time=ion_time_of_flight,initialized_instance=ion_instance}",
-        "    single_flight_accel_plane_state[ion_number]=state",
-        "    if trajectory_log_enable~=0 then print(string.format('TRACE: accelerator_plane_hit_state ion=%d state=initialized t=%.12g z=%.17g instance=%d',ion_number,ion_time_of_flight,ion_pz_mm,ion_instance)) end",
-        "  end",
-        "  assert((state.stage1=='approaching' or state.stage1=='willhit' or state.stage1=='hitting' or state.stage1=='hitted') and (state.stage2=='approaching' or state.stage2=='willhit' or state.stage2=='hitting' or state.stage2=='hitted'),'accelerator plane state is invalid')",
-        "  return state",
-        "end",
-        "local single_flight_birth_time_us={",
-    ]
-    if birth_times_us:
-        for particle_id, value in enumerate(birth_times_us, start=1):
-            lines.append(f"  [{particle_id}]={_lua_number(value)},")
-    lines.extend([
-        "}",
-        f"local single_flight_terminate_after_pulse={1 if terminate_after_pulse else 0}",
-        "local single_flight_omega=single_flight_frequency_hz*1e-6*2*math.pi",
-        "local single_flight_rods={",
-    ])
-    for electrode_id in range(1, 9):
-        item = unique[electrode_id]
-        sign = 1 if int(item["electrode_group"]) == 1 else -1
-        lines.append(
-            f"  [{electrode_id}]={{dc={_lua_number(potentials[electrode_id])},sign={sign}}},"
+    rf_electrodes = []
+    for electrode_id in ROD_ELECTRODE_IDS:
+        group = int(electrode_rows[electrode_id]["electrode_group"])
+        rf_electrodes.append(
+            {
+                "electrode_id": electrode_id,
+                "electrode_group": group,
+                "polarity": 1 if group == 1 else -1,
+                "common_mode_v": potentials[electrode_id],
+            }
         )
-    lines.extend(
-        [
-            "}",
-            "local function single_flight_instrument_time_us()",
-            "  local global_particle_id=ion_number+single_flight_particle_id_offset",
-            "  local birth=single_flight_birth_time_us[global_particle_id]",
-            "  assert(birth~=nil,'absolute single-flight clock is missing particle birth time')",
-            "  return birth+ion_time_of_flight",
-            "end",
-            "handoff_instrument_time_us=single_flight_instrument_time_us",
-            "local function single_flight_trace_checkpoint(event,t,x,y,z,vx,vy,vz)",
-            "  if trajectory_log_enable==0 then return end",
-            "  local global_particle_id=ion_number+single_flight_particle_id_offset",
-            "  local tof_since_pulse_us=t-handoff_pulse_time_us",
-            "  local kinetic_energy_eV=0.0051821348263402529*ion_mass*(vx*vx+vy*vy+vz*vz)",
-            "  print(string.format('TRACE: %s ion=%d particle_id=%d instrument_time_us=%.12g tof_since_pulse_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_per_us=%.12g vy_mm_per_us=%.12g vz_mm_per_us=%.12g kinetic_energy_eV=%.12g survival_status=alive',event,ion_number,global_particle_id,t,tof_since_pulse_us,x,y,z,vx,vy,vz,kinetic_energy_eV))",
-            "end",
-            "local function single_flight_pulse_is_on()",
-            "  local instrument_time_us=single_flight_instrument_time_us()",
-            "  return handoff_pulse_mode==0 or (handoff_pulse_mode==1 and",
-            "    instrument_time_us>=handoff_pulse_time_us and",
-            "    instrument_time_us<handoff_pulse_time_us+handoff_pulse_width_us)",
-            "end",
-            "local function single_flight_accelerator_ring_voltage(index)",
-            "  return V_grid1*((6-index)/6)",
-            "end",
-            "local function single_flight_set_frontend_voltages()",
-            "  local instrument_time_us=single_flight_instrument_time_us()",
-            "  local rf=single_flight_rf_peak_v*math.cos(single_flight_omega*instrument_time_us)",
-            "  for id,item in pairs(single_flight_rods) do adj_elect[id]=item.dc+item.sign*rf end",
-            "  adj_elect[9]=0",
-            "  local pulse_on=single_flight_pulse_is_on()",
-            "  adj_elect[10]=pulse_on and V_repeller or handoff_pulse_pre_all_v",
-            "  adj_elect[11]=pulse_on and V_grid1 or handoff_pulse_pre_all_v",
-            "  adj_elect[12]=pulse_on and single_flight_accelerator_ring_voltage(1) or handoff_pulse_pre_all_v",
-            "  adj_elect[13]=pulse_on and single_flight_accelerator_ring_voltage(2) or handoff_pulse_pre_all_v",
-            "  adj_elect[14]=pulse_on and single_flight_accelerator_ring_voltage(3) or handoff_pulse_pre_all_v",
-            "  adj_elect[15]=pulse_on and single_flight_accelerator_ring_voltage(4) or handoff_pulse_pre_all_v",
-            "  adj_elect[16]=pulse_on and single_flight_accelerator_ring_voltage(5) or handoff_pulse_pre_all_v",
-            "  adj_elect[17]=0",
-            f"  adj_elect[18]={_lua_number(entrance_reference_v)}",
-            f"  adj_elect[19]={_lua_number(entrance_plate_v)}",
-            "end",
-            "function segment.initialize_run()",
-            "  single_flight_base_initialize_run()",
-            "  if trajectory_log_enable~=0 then print('TRACE: resolved_region_field_contract active=1 real_pa_blending=0') end",
-            "  assert(single_flight_enable~=0,'single-flight Program requires explicit enable')",
-            "  local ai=simion.wb.instances[3]",
-            "  ai.x,ai.y,ai.z=single_flight_frontend_origin_x,single_flight_frontend_origin_y,single_flight_frontend_origin_z",
-            "  ai.az,ai.el,ai.rt,ai.scale=0,0,0,1",
-            "  local initial={}",
-            "  for id,item in pairs(single_flight_rods) do initial[id]=item.dc end",
-            "  initial[9]=0",
-            "  initial[10]=0; initial[11]=0; initial[12]=0; initial[13]=0; initial[14]=0",
-            "  initial[15]=0; initial[16]=0; initial[17]=0",
-            f"  initial[18]={_lua_number(entrance_reference_v)}",
-            f"  initial[19]={_lua_number(entrance_plate_v)}",
-            "  ai.pa:fast_adjust(initial)",
-            "  if single_flight_overlay_enabled~=0 then",
-            "    local oi=simion.wb.instances[5]",
-            "    assert(oi and oi.filename:match('accelerator_overlay%.pa0$'),'accelerator overlay instance is missing')",
-            "    oi.x,oi.y,oi.z=single_flight_overlay_origin_x,single_flight_overlay_origin_y,single_flight_overlay_origin_z",
-            "    oi.az,oi.el,oi.rt,oi.scale=0,0,0,1",
-            "    oi.pa:fast_adjust(initial)",
-            "  end",
-            "  single_flight_previous={}; single_flight_handoff_reported={}; single_flight_prepulse_reported={}; single_flight_grid1_forward_reported={}; single_flight_focus_forward_reported={}; single_flight_accel_plane_state={}",
-            "  single_flight_reflectron_entrance_reported={}; single_flight_reflectron_midgrid_reported={}; single_flight_reflectron_turning_reported={}; single_flight_reflectron_exit_reported={}",
-            "  if trajectory_log_enable~=0 then",
-            "    print(string.format('TRACE: single_flight_contract frontend_origin=(%.12g,%.12g,%.12g) handoff_x=%.12g rf_peak_v=%.12g frequency_hz=%.12g',ai.x,ai.y,ai.z,single_flight_handoff_x,single_flight_rf_peak_v,single_flight_frequency_hz))",
-            "  end",
-            "end",
-            "function segment.fast_adjust()",
-            "  if ion_instance==3 or (single_flight_overlay_enabled~=0 and ion_instance==5) then single_flight_set_frontend_voltages() end",
-            "end",
-            "function segment.instance_adjust()",
-            "  if single_flight_base_instance_adjust then single_flight_base_instance_adjust() end",
-            "  if single_flight_overlay_enabled==0 or ion_instance~=5 then return end",
-            "  local di=simion.wb.instances[4]",
-            "  if di:inside_wc(ion_px_mm,ion_py_mm,ion_pz_mm) or",
-            "      ion_px_mm<=single_flight_overlay_active_x_min or ion_px_mm>=single_flight_overlay_active_x_max or",
-            "      ion_py_mm<=single_flight_overlay_active_y_min or ion_py_mm>=single_flight_overlay_active_y_max or",
-            "      ion_pz_mm<=single_flight_overlay_active_z_min or ion_pz_mm>=single_flight_overlay_active_z_max then ion_instance=0 end",
-            "end",
-            "function segment.initialize()",
-            "  single_flight_base_initialize()",
-            "  local instrument_time_us=single_flight_instrument_time_us()",
-            "  single_flight_accel_state_for_current_particle()",
-            "  single_flight_previous[ion_number]={t=instrument_time_us,x=ion_px_mm,y=ion_py_mm,z=ion_pz_mm,vx=ion_vx_mm,vy=ion_vy_mm,vz=ion_vz_mm}",
-            "  print(string.format('TRACE: source_release ion=%d instrument_time_us=%.17g x_mm=%.17g y_mm=%.17g z_mm=%.17g vx_mm_per_us=%.17g vy_mm_per_us=%.17g vz_mm_per_us=%.17g simion_native_kinetic_energy_eV=%.17g',ion_number,instrument_time_us,ion_px_mm,ion_py_mm,ion_pz_mm,ion_vx_mm,ion_vy_mm,ion_vz_mm,ion_ke))",
-            "end",
-            "function segment.tstep_adjust()",
-            "  single_flight_base_tstep_adjust()",
-            "  if ion_instance==3 and single_flight_pulse_is_on() and ion_vz_mm>0 then",
-            "    local state=single_flight_accel_state_for_current_particle()",
-            "    local repeated_plane_evaluation=state.last_eval_time==ion_time_of_flight and state.last_eval_instance==ion_instance",
-            "    if not repeated_plane_evaluation then",
-            "      state.last_eval_time=ion_time_of_flight; state.last_eval_instance=ion_instance",
-            "      local stage,next_plane=nil,nil",
-            "      if ion_pz_mm<accelerator_grid1_z_mm then stage='stage1'; next_plane=accelerator_grid1_z_mm",
-            "      elseif ion_pz_mm<accelerator_grid2_z_mm then stage='stage2'; next_plane=accelerator_grid2_z_mm end",
-            "      if stage~=nil then",
-            "        local status=state[stage]",
-            "        local distance=next_plane-ion_pz_mm",
-            "        local coordinate_tolerance=32*2.2204460492503131e-16*math.max(1,math.abs(next_plane))",
-            "        if status=='willhit' and math.abs(distance)<=coordinate_tolerance then",
-            "          state[stage]='hitting'; state[stage..'_zero_step_count']=(state[stage..'_zero_step_count'] or 0)+1",
-            "          assert(state[stage..'_zero_step_count']==1,'accelerator plane hitting requested more than one zero-step confirmation')",
-            "          ion_time_step=0",
-            "        elseif status=='approaching' or status=='willhit' then",
-            "          local crossing_time=distance/ion_vz_mm",
-            "          assert(crossing_time>0,'accelerator plane crossing estimate made no representable time progress')",
-            "          if ion_time_step>=crossing_time then state[stage]='willhit'; state[stage..'_request_time']=ion_time_of_flight; state[stage..'_request_z']=ion_pz_mm; ion_time_step=crossing_time end",
-            "        end",
-            "      end",
-            "    end",
-            "  end",
-            "  if ion_instance==3 or (single_flight_overlay_enabled~=0 and ion_instance==5) then",
-            "    local rf_step=1e6/single_flight_frequency_hz/single_flight_rf_steps",
-            "    if ion_time_step>rf_step then ion_time_step=rf_step end",
-            "  end",
-            "end",
-            "function segment.other_actions()",
-            "  single_flight_base_other_actions()",
-            "  local p=single_flight_previous[ion_number]",
-            "  local instrument_time_us=single_flight_instrument_time_us()",
-            "  local plane_state=single_flight_accel_state_for_current_particle()",
-            "  if p then",
-            "    for _,stage in ipairs({'stage1','stage2'}) do",
-            "      local plane=stage=='stage1' and accelerator_grid1_z_mm or accelerator_grid2_z_mm",
-            "      local status=plane_state[stage]",
-            "      local crossed=p.z<plane and ion_pz_mm>=plane and ion_vz_mm>0",
-            "      if status=='willhit' and crossed then",
-            "        assert(instrument_time_us>p.t,'accelerator plane crossing made no representable time progress')",
-            "        plane_state[stage]='hitting'; plane_state[stage..'_oa_time']=instrument_time_us; plane_state[stage..'_oa_count']=(plane_state[stage..'_oa_count'] or 0)+1",
-            "        assert(plane_state[stage..'_oa_count']==1,'accelerator plane crossing was observed more than once')",
-            "        if trajectory_log_enable~=0 then print(string.format('TRACE: accelerator_plane_hit_state ion=%d stage=%s state=hitting t=%.12g z=%.17g oa_count=%d',ion_number,stage,instrument_time_us,ion_pz_mm,plane_state[stage..'_oa_count'])) end",
-            "      elseif status=='hitting' then",
-            "        if plane_state[stage..'_zero_step_count'] then",
-            "          assert(ion_vz_mm>0 and (plane-ion_pz_mm)<=32*2.2204460492503131e-16*math.max(1,math.abs(plane)),'accelerator plane zero-step confirmation is outside the governed boundary tolerance')",
-            "          plane_state[stage..'_oa_count']=(plane_state[stage..'_oa_count'] or 0)+1",
-            "          assert(plane_state[stage..'_oa_count']==1,'accelerator plane zero-step confirmation was observed more than once')",
-            "        end",
-            "        plane_state[stage]='hitted'",
-            "      end",
-            "    end",
-            "  end",
-            "  if p and not single_flight_prepulse_reported[ion_number] and p.t<handoff_pulse_time_us and instrument_time_us>=handoff_pulse_time_us then",
-            "    local f=(handoff_pulse_time_us-p.t)/(instrument_time_us-p.t)",
-            "    local xc=p.x+f*(ion_px_mm-p.x); local yc=p.y+f*(ion_py_mm-p.y); local zc=p.z+f*(ion_pz_mm-p.z)",
-            "    single_flight_prepulse_reported[ion_number]=true",
-            "    if trajectory_log_enable~=0 then",
-            "      print(string.format('TRACE: pre_pulse_state ion=%d instrument_time_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_per_us=%.12g vy_mm_per_us=%.12g vz_mm_per_us=%.12g',ion_number,handoff_pulse_time_us,xc,yc,zc,ion_vx_mm,ion_vy_mm,ion_vz_mm))",
-            "    end",
-            "  end",
-            "  if p and not single_flight_handoff_reported[ion_number] and p.x<single_flight_handoff_x and ion_px_mm>=single_flight_handoff_x and ion_vx_mm>0 then",
-            "    local f=(single_flight_handoff_x-p.x)/(ion_px_mm-p.x)",
-            "    local tc=p.t+f*(instrument_time_us-p.t)",
-            "    local yc=p.y+f*(ion_py_mm-p.y); local zc=p.z+f*(ion_pz_mm-p.z)",
-            "    single_flight_handoff_reported[ion_number]=true",
-            "    if trajectory_log_enable~=0 then",
-            "      print(string.format('TRACE: single_flight_handoff ion=%d instrument_time_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_per_us=%.12g vy_mm_per_us=%.12g vz_mm_per_us=%.12g',ion_number,tc,single_flight_handoff_x,yc,zc,ion_vx_mm,ion_vy_mm,ion_vz_mm))",
-            "    end",
-            "  end",
-            "  if p and not single_flight_grid1_forward_reported[ion_number] and p.z<accelerator_grid1_z_mm and ion_pz_mm>=accelerator_grid1_z_mm and ion_vz_mm>0 then",
-            "    local f=(accelerator_grid1_z_mm-p.z)/(ion_pz_mm-p.z)",
-            "    local tc=p.t+f*(instrument_time_us-p.t)",
-            "    local xc=p.x+f*(ion_px_mm-p.x); local yc=p.y+f*(ion_py_mm-p.y)",
-            "    single_flight_grid1_forward_reported[ion_number]=true",
-            "    if trajectory_log_enable~=0 then",
-            "      print(string.format('TRACE: accelerator_grid1_forward ion=%d instrument_time_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_per_us=%.12g vy_mm_per_us=%.12g vz_mm_per_us=%.12g',ion_number,tc,xc,yc,accelerator_grid1_z_mm,ion_vx_mm,ion_vy_mm,ion_vz_mm))",
-            "    end",
-            "  end",
-            "  local focus_z=accelerator_grid2_z_mm+accelerator_focus_drift_mm",
-            "  if p and not single_flight_focus_forward_reported[ion_number] and p.z<focus_z and ion_pz_mm>=focus_z and ion_vz_mm>0 then",
-            "    local f=(focus_z-p.z)/(ion_pz_mm-p.z)",
-            "    local tc=p.t+f*(instrument_time_us-p.t)",
-            "    local xc=p.x+f*(ion_px_mm-p.x); local yc=p.y+f*(ion_py_mm-p.y)",
-            "    single_flight_focus_forward_reported[ion_number]=true",
-            "    if trajectory_log_enable~=0 then",
-            "      print(string.format('TRACE: accelerator_focus_forward ion=%d instrument_time_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_per_us=%.12g vy_mm_per_us=%.12g vz_mm_per_us=%.12g',ion_number,tc,xc,yc,focus_z,ion_vx_mm,ion_vy_mm,ion_vz_mm))",
-            "    end",
-            "  end",
-            "  if p and not single_flight_reflectron_entrance_reported[ion_number] and p.z<reflectron_entgrid_z_mm and ion_pz_mm>=reflectron_entgrid_z_mm and ion_vz_mm>0 then",
-            "    local f=(reflectron_entgrid_z_mm-p.z)/(ion_pz_mm-p.z)",
-            "    local tc=p.t+f*(instrument_time_us-p.t)",
-            "    local xc=p.x+f*(ion_px_mm-p.x); local yc=p.y+f*(ion_py_mm-p.y)",
-            "    local vxc=p.vx+f*(ion_vx_mm-p.vx); local vyc=p.vy+f*(ion_vy_mm-p.vy); local vzc=p.vz+f*(ion_vz_mm-p.vz)",
-            "    single_flight_reflectron_entrance_reported[ion_number]=true",
-            "    single_flight_trace_checkpoint('reflectron_entrance_forward',tc,xc,yc,reflectron_entgrid_z_mm,vxc,vyc,vzc)",
-            "  end",
-            "  if p and single_flight_reflectron_entrance_reported[ion_number] and not single_flight_reflectron_midgrid_reported[ion_number] and p.z<reflectron_midgrid_z_mm and ion_pz_mm>=reflectron_midgrid_z_mm and ion_vz_mm>0 then",
-            "    local f=(reflectron_midgrid_z_mm-p.z)/(ion_pz_mm-p.z)",
-            "    local tc=p.t+f*(instrument_time_us-p.t)",
-            "    local xc=p.x+f*(ion_px_mm-p.x); local yc=p.y+f*(ion_py_mm-p.y)",
-            "    local vxc=p.vx+f*(ion_vx_mm-p.vx); local vyc=p.vy+f*(ion_vy_mm-p.vy); local vzc=p.vz+f*(ion_vz_mm-p.vz)",
-            "    single_flight_reflectron_midgrid_reported[ion_number]=true",
-            "    single_flight_trace_checkpoint('reflectron_midgrid_forward',tc,xc,yc,reflectron_midgrid_z_mm,vxc,vyc,vzc)",
-            "  end",
-            "  if p and single_flight_reflectron_midgrid_reported[ion_number] and not single_flight_reflectron_turning_reported[ion_number] and p.vz>0 and ion_vz_mm<=0 then",
-            "    local f=p.vz/(p.vz-ion_vz_mm)",
-            "    local tc=p.t+f*(instrument_time_us-p.t)",
-            "    local xc=p.x+f*(ion_px_mm-p.x); local yc=p.y+f*(ion_py_mm-p.y); local zc=p.z+f*(ion_pz_mm-p.z)",
-            "    local vxc=p.vx+f*(ion_vx_mm-p.vx); local vyc=p.vy+f*(ion_vy_mm-p.vy)",
-            "    single_flight_reflectron_turning_reported[ion_number]=true",
-            "    single_flight_trace_checkpoint('reflectron_turning_point',tc,xc,yc,zc,vxc,vyc,0)",
-            "  end",
-            "  if p and single_flight_reflectron_turning_reported[ion_number] and not single_flight_reflectron_exit_reported[ion_number] and p.z>reflectron_entgrid_z_mm and ion_pz_mm<=reflectron_entgrid_z_mm and ion_vz_mm<0 then",
-            "    local f=(reflectron_entgrid_z_mm-p.z)/(ion_pz_mm-p.z)",
-            "    local tc=p.t+f*(instrument_time_us-p.t)",
-            "    local xc=p.x+f*(ion_px_mm-p.x); local yc=p.y+f*(ion_py_mm-p.y)",
-            "    local vxc=p.vx+f*(ion_vx_mm-p.vx); local vyc=p.vy+f*(ion_vy_mm-p.vy); local vzc=p.vz+f*(ion_vz_mm-p.vz)",
-            "    single_flight_reflectron_exit_reported[ion_number]=true",
-            "    single_flight_trace_checkpoint('reflectron_exit_return',tc,xc,yc,reflectron_entgrid_z_mm,vxc,vyc,vzc)",
-            "  end",
-            "  single_flight_previous[ion_number]={t=instrument_time_us,x=ion_px_mm,y=ion_py_mm,z=ion_pz_mm,vx=ion_vx_mm,vy=ion_vy_mm,vz=ion_vz_mm}",
-            "  if single_flight_terminate_after_pulse~=0 and instrument_time_us>=handoff_pulse_time_us then ion_splat=1 end",
-            "end",
-            "-- END RF-OATOF SINGLE-FLIGHT EXTENSION",
-            "",
-        ]
+    analyzer_config = _successor_analyzer_config(oatof, frontend)
+    analyzer_config_static = dict(analyzer_config)
+    analyzer_config_static.pop("diagnostics")
+    analyzer_config_lua = _lua_value(analyzer_config_static)[:-1] + (
+        ",diagnostics={max_tof_us=diagnostic_max_tof_us,"
+        "log_stride=trajectory_log_stride}}"
     )
-    return "\n".join(lines)
+    geometry = analyzer_config["geometry"]
+    electrodes = frontend["electrodes"]
+    origin = frontend["instance_origin_mm"]
+    overlay_origin = overlay["instance_origin_mm"] if overlay is not None else {"x": 0, "y": 0, "z": 0}
+    overlay_bounds = overlay["active_bounds_mm"] if overlay is not None else {
+        "x_min": 0, "x_max": 0, "y_min": 0, "y_max": 0, "z_min": 0, "z_max": 0
+    }
+    entrance_reference_v = float(
+        upstream["axial_dc"]["entrance_reference_sleeve"]["potential_V"]
+    )
+    entrance_plate_v = float(upstream["axial_dc"]["entrance_plate_potential_V"])
+    birth_table = "{" + ",".join(
+        f"[{index}]={_lua_number(value)}"
+        for index, value in enumerate(birth_times_us, start=1)
+    ) + "}"
+    embedded = "\n".join(
+        f"local {name}=(function()\n{source}\nend)()"
+        for name, source in (
+            ("single_flight_analyzer_component", normalized["analyzer component"]),
+            ("single_flight_pulse_component", normalized["pulse hook"]),
+            ("single_flight_frontend_component", normalized["frontend hook"]),
+            ("single_flight_rf_kernel", normalized["RF drive kernel"]),
+            ("single_flight_region_field", region_hook),
+        )
+    )
+    global_setup = "\nsimion.early_access(8.2)\nsim_segment_global=1" if global_segments else ""
+    program = f"""simion.workbench_program(){global_setup}
+{embedded}
+adjustable V_repeller={_lua_number(oatof['electrodes_V']['repeller'])}
+adjustable V_grid1={_lua_number(oatof['electrodes_V']['grid1'])}
+adjustable V_mid={_lua_number(oatof['electrodes_V']['midgrid'])}
+adjustable V_backplate={_lua_number(oatof['electrodes_V']['backplate'])}
+adjustable trajectory_quality=8
+adjustable trajectory_log_enable=0
+adjustable trajectory_log_stride=1000
+adjustable diagnostic_max_tof_us=90
+adjustable handoff_pulse_mode=1
+adjustable handoff_pulse_time_us=0
+adjustable handoff_pulse_width_us=1
+adjustable handoff_pulse_pre_all_v=0
+adjustable single_flight_enable=1
+adjustable single_flight_rf_peak_v={_lua_number(drive['rf_amplitude_V_zero_to_peak_per_group'])}
+adjustable single_flight_frequency_hz={_lua_number(drive['frequency_Hz'])}
+adjustable single_flight_phase_rad={_lua_number(drive['phase_rad'])}
+adjustable single_flight_dc_amplitude_v={_lua_number(drive['dc_amplitude_V_per_group'])}
+adjustable single_flight_rf_scale=1
+adjustable single_flight_common_mode_scale=1
+adjustable single_flight_rf_steps={rf_steps_per_period}
+local accelerator_repeller_front_z_mm={_lua_number(geometry['accelerator_repeller_front_z_mm'])}
+local accelerator_grid1_z_mm={_lua_number(geometry['accelerator_grid1_z_mm'])}
+local accelerator_grid2_z_mm={_lua_number(geometry['accelerator_grid2_z_mm'])}
+local reflectron_entgrid_z_mm={_lua_number(geometry['reflectron_entgrid_z_mm'])}
+local reflectron_midgrid_z_mm={_lua_number(geometry['reflectron_midgrid_z_mm'])}
+local reflectron_backplate_z_mm={_lua_number(geometry['reflectron_backplate_z_mm'])}
+local single_flight_birth_time_us={birth_table}
+local single_flight_particle_id_offset=assert(tonumber(os.getenv('OATOF_SINGLE_FLIGHT_PARTICLE_ID_OFFSET') or '0'),'invalid single-flight particle ID offset')
+local single_flight_terminate_after_pulse={1 if terminate_after_pulse else 0}
+local single_flight_overlay_enabled={1 if overlay is not None else 0}
+local single_flight_overlay_origin={_lua_value(overlay_origin)}
+local single_flight_overlay_bounds={_lua_value(overlay_bounds)}
+local single_flight_analyzer=nil
+local single_flight_pulse=nil
+local single_flight_frontend=nil
+local single_flight_particle_state={{}}
+local single_flight_analyzer_initialized={{}}
+local single_flight_previous={{}}
+local single_flight_reported={{}}
+local single_flight_accelerator_pa_override=os.getenv('OATOF_ACCELERATOR_PA_OVERRIDE')
+local single_flight_accelerator_pa_override_loaded=false
+local function single_flight_instrument_time_us()
+  local birth=single_flight_birth_time_us[ion_number+single_flight_particle_id_offset]
+  assert(birth~=nil,'absolute single-flight clock is missing particle birth time')
+  return birth+ion_time_of_flight
+end
+handoff_instrument_time_us=single_flight_instrument_time_us
+local function single_flight_set_electrode(id,value) adj_elect[id]=value end
+local function single_flight_trace_checkpoint(event,t,x,y,z,vx,vy,vz)
+  if trajectory_log_enable==0 then return end
+  local particle_id=ion_number+single_flight_particle_id_offset
+  local energy=0.0051821348263402529*ion_mass*(vx*vx+vy*vy+vz*vz)
+  print(string.format('TRACE: %s ion=%d particle_id=%d instrument_time_us=%.12g tof_since_pulse_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_per_us=%.12g vy_mm_per_us=%.12g vz_mm_per_us=%.12g kinetic_energy_eV=%.12g survival_status=alive',
+    event,ion_number,particle_id,t,t-handoff_pulse_time_us,x,y,z,vx,vy,vz,energy))
+end
+local function single_flight_require_analyzer_particle(elapsed)
+  if not single_flight_analyzer_initialized[ion_number] then
+    single_flight_analyzer.initialize_particle{{particle_id=ion_number,elapsed_us=elapsed,
+      x_mm=ion_px_mm,y_mm=ion_py_mm,z_mm=ion_pz_mm}}
+    single_flight_analyzer_initialized[ion_number]=true
+  end
+end
+local function single_flight_require_particle_state()
+  local state=single_flight_particle_state[ion_number]
+  if state==nil then
+    local time=single_flight_instrument_time_us()
+    state={{frontend=single_flight_frontend.initialize_particle(ion_pz_mm),
+      previous={{time_us=time,position_z_mm=ion_pz_mm,velocity_z_mm_per_us=ion_vz_mm}}}}
+    single_flight_particle_state[ion_number]=state
+  end
+  return state
+end
+local function single_flight_apply_plan(pa,plan)
+  local values={{}}
+  for _,item in ipairs(plan) do values[item.electrode_id]=item.voltage_v end
+  pa:fast_adjust(values)
+end
+local function single_flight_workbench_state()
+  local instances={{}}
+  for index,instance in ipairs(simion.wb.instances) do
+    instances[index]={{filename=instance.filename,nx=instance.pa.nx,ny=instance.pa.ny,nz=instance.pa.nz,
+      dx_mm=instance.pa.dx_mm,dy_mm=instance.pa.dy_mm,dz_mm=instance.pa.dz_mm,scale=instance.scale}}
+  end
+  return {{instances=instances}}
+end
+local function single_flight_apply_placement(instance,placement)
+  instance.x,instance.y,instance.z=placement.x_mm,placement.y_mm,placement.z_mm
+  instance.az,instance.el,instance.rt,instance.scale=placement.az_deg,placement.el_deg,placement.rt_deg,placement.scale
+end
+local function single_flight_project_electrode_plan()
+  return {{apply_at=function(_,pulse_state,setter)
+    setter({int(electrodes['grounded_shield_id'])},0)
+    local plan=single_flight_analyzer.accelerator_electrode_write_plan(
+      pulse_state.active and 'on' or 'off',
+      {{pre_all_v=handoff_pulse_pre_all_v,repeller_v=V_repeller,grid1_v=V_grid1}})
+    for _,item in ipairs(plan) do setter(item.electrode_id,item.voltage_v) end
+    setter({int(electrodes['entrance_reference_sleeve_id'])},{_lua_number(entrance_reference_v)})
+    setter({int(electrodes['entrance_plate_id'])},{_lua_number(entrance_plate_v)})
+  end}}
+end
+function segment.load()
+  sim_trajectory_quality=trajectory_quality
+  local path=os.getenv('OATOF_SIMION_PROGRAM_LOAD_REPORT')
+  if path and path~='' then local report=assert(io.open(path,'w')); report:write(string.format('TRAJECTORY_QUALITY=%g\\nSTATUS=PASS\\n',sim_trajectory_quality)); report:close() end
+end
+function segment.initialize_run()
+  assert(single_flight_enable~=0,'single-flight Program requires explicit enable')
+  sim_trajectory_quality=trajectory_quality
+  local ai=simion.wb.instances[3]
+  if single_flight_accelerator_pa_override and single_flight_accelerator_pa_override~='' and
+      not single_flight_accelerator_pa_override_loaded then
+    ai.pa:load(single_flight_accelerator_pa_override)
+    ai:_debug_update_size()
+    single_flight_accelerator_pa_override_loaded=true
+  end
+  single_flight_analyzer=single_flight_analyzer_component.new({analyzer_config_lua})
+  local initialized=single_flight_analyzer.initialize_workbench(single_flight_workbench_state())
+  single_flight_apply_placement(simion.wb.instances[1],initialized.placements.flight_tube)
+  single_flight_apply_placement(simion.wb.instances[2],initialized.placements.reflectron)
+  single_flight_apply_placement(ai,initialized.placements.accelerator)
+  ai.x,ai.y,ai.z={_lua_number(origin['x'])},{_lua_number(origin['y'])},{_lua_number(origin['z'])}
+  single_flight_apply_placement(simion.wb.instances[4],initialized.placements.detector)
+  single_flight_apply_plan(ai.pa,initialized.static_electrode_plans.legacy_accelerator_characterization)
+  single_flight_apply_plan(simion.wb.instances[2].pa,initialized.static_electrode_plans.reflectron)
+  local rf=single_flight_rf_kernel.new{{waveform={json.dumps(drive['waveform'])},frequency_hz=single_flight_frequency_hz,
+    phase_rad=single_flight_phase_rad,rf_amplitude_v=single_flight_rf_peak_v,rf_scale=single_flight_rf_scale,
+    common_mode_scale=single_flight_common_mode_scale,group_dc_v={{[1]=single_flight_dc_amplitude_v,[2]=-single_flight_dc_amplitude_v}},
+    rf_steps_per_period=single_flight_rf_steps,electrodes={_lua_value(rf_electrodes)}}}
+  single_flight_pulse=single_flight_pulse_component.new{{canonical_clock=single_flight_instrument_time_us,
+    pulse_time_us=handoff_pulse_time_us,pulse_width_us=handoff_pulse_width_us,pulse_mode=function() return handoff_pulse_mode end}}
+  single_flight_frontend=single_flight_frontend_component.new{{rf_drive=rf,pulse_hook=single_flight_pulse,
+    electrode_plan=single_flight_project_electrode_plan(),planes_z_mm={{accelerator_grid1_z_mm,accelerator_grid2_z_mm}}}}
+  local initial={{}}
+  rf.apply_static(function(id,value) initial[id]=value end)
+  initial[{int(electrodes['grounded_shield_id'])}]=0
+  for _,item in ipairs(single_flight_analyzer.accelerator_electrode_write_plan('off',
+      {{pre_all_v=0,repeller_v=V_repeller,grid1_v=V_grid1}})) do initial[item.electrode_id]=item.voltage_v end
+  initial[{int(electrodes['entrance_reference_sleeve_id'])}]={_lua_number(entrance_reference_v)}
+  initial[{int(electrodes['entrance_plate_id'])}]={_lua_number(entrance_plate_v)}
+  ai.pa:fast_adjust(initial)
+  if single_flight_overlay_enabled~=0 then
+    local oi=assert(simion.wb.instances[5],'accelerator overlay instance is missing')
+    assert(oi.filename:match('accelerator_overlay%.pa0$'),'instance 5 must be the accelerator overlay')
+    oi.x,oi.y,oi.z=single_flight_overlay_origin.x,single_flight_overlay_origin.y,single_flight_overlay_origin.z
+    oi.az,oi.el,oi.rt,oi.scale=0,0,0,1
+    oi.pa:fast_adjust(initial)
+  end
+  single_flight_particle_state={{}}
+  single_flight_analyzer_initialized={{}}
+  single_flight_previous={{}}
+  single_flight_reported={{}}
+end
+function segment.efield_adjust()
+  local instance=assert(simion.wb.instances[ion_instance],'field callback requires one PA instance')
+  local state={{z_mm=ion_pz_mm,instance_id=ion_instance,instance_dx_mm=instance.pa.dx_mm,
+    instance_dz_mm=instance.pa.dz_mm,instance_scale=instance.scale}}
+  local base=single_flight_analyzer.efield_adjust(state)
+  state.pulse_active=single_flight_pulse.is_active_at(single_flight_instrument_time_us())
+  local result=single_flight_region_field.apply(base,state)
+  if result then
+    if result.replace_all then ion_dvoltsx_gu=0; ion_dvoltsy_gu=0; ion_dvoltsz_gu=0 end
+    if result.dvoltsx_gu~=nil then ion_dvoltsx_gu=result.dvoltsx_gu end
+    if result.dvoltsy_gu~=nil then ion_dvoltsy_gu=result.dvoltsy_gu end
+    if result.dvoltsz_gu~=nil then ion_dvoltsz_gu=result.dvoltsz_gu end
+  end
+end
+function segment.fast_adjust()
+  if ion_instance==3 or (single_flight_overlay_enabled~=0 and ion_instance==5) then
+    single_flight_frontend.apply_at(single_flight_instrument_time_us(),single_flight_set_electrode)
+  end
+end
+function segment.instance_adjust()
+  if single_flight_overlay_enabled==0 or ion_instance~=5 then return end
+  local detector=simion.wb.instances[4]
+  local b=single_flight_overlay_bounds
+  if detector:inside_wc(ion_px_mm,ion_py_mm,ion_pz_mm) or
+      ion_px_mm<=b.x_min or ion_px_mm>=b.x_max or
+      ion_py_mm<=b.y_min or ion_py_mm>=b.y_max or
+      ion_pz_mm<=b.z_min or ion_pz_mm>=b.z_max then ion_instance=0 end
+end
+function segment.initialize()
+  local time=single_flight_instrument_time_us()
+  single_flight_require_analyzer_particle(ion_time_of_flight)
+  single_flight_particle_state[ion_number]={{frontend=single_flight_frontend.initialize_particle(ion_pz_mm),
+    previous={{time_us=time,position_z_mm=ion_pz_mm,velocity_z_mm_per_us=ion_vz_mm}}}}
+  single_flight_previous[ion_number]={{t=time,x=ion_px_mm,y=ion_py_mm,z=ion_pz_mm,
+    vx=ion_vx_mm,vy=ion_vy_mm,vz=ion_vz_mm}}
+  single_flight_reported[ion_number]={{}}
+  print(string.format('TRACE: source_release ion=%d instrument_time_us=%.17g x_mm=%.17g y_mm=%.17g z_mm=%.17g vx_mm_per_us=%.17g vy_mm_per_us=%.17g vz_mm_per_us=%.17g simion_native_kinetic_energy_eV=%.17g',ion_number,time,ion_px_mm,ion_py_mm,ion_pz_mm,ion_vx_mm,ion_vy_mm,ion_vz_mm,ion_ke))
+end
+function segment.tstep_adjust()
+  local analyzer_dt=single_flight_analyzer.tstep_adjust{{x_mm=ion_px_mm,y_mm=ion_py_mm,z_mm=ion_pz_mm,
+    vx_mm_per_us=ion_vx_mm,vy_mm_per_us=ion_vy_mm,vz_mm_per_us=ion_vz_mm,
+    detector_cell_dx_mm=simion.wb.instances[4].pa.dx_mm}}
+  if analyzer_dt and ion_time_step>analyzer_dt then ion_time_step=analyzer_dt end
+  local time=single_flight_instrument_time_us()
+  local pulse_capped=single_flight_pulse.cap_timestep_at(time,ion_time_step)
+  if ion_time_step>pulse_capped then ion_time_step=pulse_capped end
+  if ion_instance==3 or (single_flight_overlay_enabled~=0 and ion_instance==5) then
+    local state=single_flight_require_particle_state()
+    local capped=single_flight_frontend.cap_timestep_at(time,ion_pz_mm,ion_vz_mm,ion_time_step,state.frontend)
+    if ion_time_step>capped then ion_time_step=capped end
+  end
+end
+function segment.other_actions()
+  local time=single_flight_instrument_time_us()
+  single_flight_require_analyzer_particle(ion_time_of_flight)
+  local state=single_flight_require_particle_state()
+  local current={{time_us=time,position_z_mm=ion_pz_mm,velocity_z_mm_per_us=ion_vz_mm}}
+  single_flight_frontend.observe_step(state.previous,current,state.frontend)
+  state.previous=current
+  local p=single_flight_previous[ion_number]
+  local reported=single_flight_reported[ion_number] or {{}}
+  single_flight_reported[ion_number]=reported
+  local function crossing(plane,direction)
+    if not p then return nil end
+    local crossed=direction>0 and p.z<plane and ion_pz_mm>=plane and ion_vz_mm>0 or
+      direction<0 and p.z>plane and ion_pz_mm<=plane and ion_vz_mm<0
+    if not crossed then return nil end
+    local fraction=(plane-p.z)/(ion_pz_mm-p.z)
+    return fraction,p.t+fraction*(time-p.t),p.x+fraction*(ion_px_mm-p.x),
+      p.y+fraction*(ion_py_mm-p.y),p.vx+fraction*(ion_vx_mm-p.vx),
+      p.vy+fraction*(ion_vy_mm-p.vy),p.vz+fraction*(ion_vz_mm-p.vz)
+  end
+  if p and not reported.pre_pulse and p.t<handoff_pulse_time_us and time>=handoff_pulse_time_us then
+    local f=(handoff_pulse_time_us-p.t)/(time-p.t)
+    reported.pre_pulse=true
+    if trajectory_log_enable~=0 then print(string.format('TRACE: pre_pulse_state ion=%d instrument_time_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_per_us=%.12g vy_mm_per_us=%.12g vz_mm_per_us=%.12g',
+      ion_number,handoff_pulse_time_us,p.x+f*(ion_px_mm-p.x),p.y+f*(ion_py_mm-p.y),p.z+f*(ion_pz_mm-p.z),ion_vx_mm,ion_vy_mm,ion_vz_mm)) end
+  end
+  if handoff_pulse_mode==1 and not reported.pulse and time>=handoff_pulse_time_us then
+    reported.pulse=true
+    if trajectory_log_enable~=0 then print(string.format('TRACE: handoff_pulse_on ion=%d instrument_time_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_per_us=%.12g vy_mm_per_us=%.12g vz_mm_per_us=%.12g',
+      ion_number,time,ion_px_mm,ion_py_mm,ion_pz_mm,ion_vx_mm,ion_vy_mm,ion_vz_mm)) end
+  end
+  local handoff_x={_lua_number(frontend['source_exit_center_mm']['x'])}
+  if p and not reported.handoff and p.x<handoff_x and ion_px_mm>=handoff_x and ion_vx_mm>0 then
+    local f=(handoff_x-p.x)/(ion_px_mm-p.x); local tc=p.t+f*(time-p.t)
+    reported.handoff=true
+    if trajectory_log_enable~=0 then print(string.format('TRACE: single_flight_handoff ion=%d instrument_time_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_per_us=%.12g vy_mm_per_us=%.12g vz_mm_per_us=%.12g',
+      ion_number,tc,handoff_x,p.y+f*(ion_py_mm-p.y),p.z+f*(ion_pz_mm-p.z),ion_vx_mm,ion_vy_mm,ion_vz_mm)) end
+  end
+  local _,tc,xc,yc,vxc,vyc,vzc=crossing(accelerator_grid1_z_mm,1)
+  if tc and not reported.grid1 then reported.grid1=true
+    if trajectory_log_enable~=0 then print(string.format('TRACE: accelerator_grid1_forward ion=%d instrument_time_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_per_us=%.12g vy_mm_per_us=%.12g vz_mm_per_us=%.12g',ion_number,tc,xc,yc,accelerator_grid1_z_mm,vxc,vyc,vzc)) end
+  end
+  _,tc,xc,yc,vxc,vyc,vzc=crossing(accelerator_grid2_z_mm,1)
+  if tc and not reported.local_exit then reported.local_exit=true
+    if trajectory_log_enable~=0 then print(string.format('TRACE: local_accelerator_exit ion=%d instrument_time_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_per_us=%.12g vy_mm_per_us=%.12g vz_mm_per_us=%.12g',ion_number,tc,xc,yc,accelerator_grid2_z_mm,vxc,vyc,vzc)) end
+  end
+  local focus_z=accelerator_grid2_z_mm+{_lua_number(oatof['geometry_derivation']['accelerator']['focus_drift_after_grid2_mm'])}
+  _,tc,xc,yc,vxc,vyc,vzc=crossing(focus_z,1)
+  if tc and not reported.focus then reported.focus=true
+    if trajectory_log_enable~=0 then print(string.format('TRACE: accelerator_focus_forward ion=%d instrument_time_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_per_us=%.12g vy_mm_per_us=%.12g vz_mm_per_us=%.12g',ion_number,tc,xc,yc,focus_z,vxc,vyc,vzc)) end
+  end
+  _,tc,xc,yc,vxc,vyc,vzc=crossing(reflectron_entgrid_z_mm,1)
+  if tc and not reported.reflectron_entrance then reported.reflectron_entrance=true
+    single_flight_trace_checkpoint('reflectron_entrance_forward',tc,xc,yc,reflectron_entgrid_z_mm,vxc,vyc,vzc)
+  end
+  _,tc,xc,yc,vxc,vyc,vzc=crossing(reflectron_midgrid_z_mm,1)
+  if tc and reported.reflectron_entrance and not reported.reflectron_midgrid then reported.reflectron_midgrid=true
+    single_flight_trace_checkpoint('reflectron_midgrid_forward',tc,xc,yc,reflectron_midgrid_z_mm,vxc,vyc,vzc)
+  end
+  if p and reported.reflectron_midgrid and not reported.reflectron_turning and p.vz>0 and ion_vz_mm<=0 then
+    local f=p.vz/(p.vz-ion_vz_mm); reported.reflectron_turning=true
+    single_flight_trace_checkpoint('reflectron_turning_point',p.t+f*(time-p.t),
+      p.x+f*(ion_px_mm-p.x),p.y+f*(ion_py_mm-p.y),p.z+f*(ion_pz_mm-p.z),
+      p.vx+f*(ion_vx_mm-p.vx),p.vy+f*(ion_vy_mm-p.vy),0)
+  end
+  _,tc,xc,yc,vxc,vyc,vzc=crossing(reflectron_entgrid_z_mm,-1)
+  if tc and reported.reflectron_turning and not reported.reflectron_exit then reported.reflectron_exit=true
+    single_flight_trace_checkpoint('reflectron_exit_return',tc,xc,yc,reflectron_entgrid_z_mm,vxc,vyc,vzc)
+  end
+  single_flight_previous[ion_number]={{t=time,x=ion_px_mm,y=ion_py_mm,z=ion_pz_mm,
+    vx=ion_vx_mm,vy=ion_vy_mm,vz=ion_vz_mm}}
+  local result=single_flight_analyzer.other_actions{{particle_id=ion_number,elapsed_us=ion_time_of_flight,x_mm=ion_px_mm,y_mm=ion_py_mm,z_mm=ion_pz_mm,vz_mm_per_us=ion_vz_mm}}
+  if trajectory_log_enable~=0 then
+    for _,event in ipairs(result.events) do
+      if event.kind=='diagnostic_return_plane' then
+        print(string.format('TRACE: diagnostic_return_plane ion=%d t=%.12g x=%.12g y=%.12g z=%.12g vz=%.12g zmax=%.12g',
+          ion_number,event.elapsed_us,ion_px_mm,ion_py_mm,ion_pz_mm,ion_vz_mm,event.max_z_mm))
+      end
+    end
+  end
+  if result.splat or (single_flight_terminate_after_pulse~=0 and time>=handoff_pulse_time_us) then ion_splat=1 end
+end
+function segment.terminate()
+  local time=single_flight_instrument_time_us()
+  if handoff_pulse_mode==1 and trajectory_log_enable~=0 then
+    print(string.format('TRACE: handoff_terminal_raw ion=%d instance=%d instrument_time_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_per_us=%.12g vy_mm_per_us=%.12g vz_mm_per_us=%.12g',
+      ion_number,ion_instance,time,ion_px_mm,ion_py_mm,ion_pz_mm,ion_vx_mm,ion_vy_mm,ion_vz_mm))
+  end
+  single_flight_require_analyzer_particle(ion_time_of_flight)
+  local result=single_flight_analyzer.terminate{{particle_id=ion_number,instance_id=ion_instance,
+    elapsed_us=ion_time_of_flight,x_mm=ion_px_mm,y_mm=ion_py_mm,z_mm=ion_pz_mm,
+    vx_mm_per_us=ion_vx_mm,vy_mm_per_us=ion_vy_mm,vz_mm_per_us=ion_vz_mm,
+    detector_cell_dx_mm=simion.wb.instances[4].pa.dx_mm}}
+  if trajectory_log_enable~=0 and result then
+    if result.kind=='detector_crossing' then
+      print(string.format('TRACE: detector_crossing ion=%d t=%.12g x=%.12g y=%.12g z=%.12g r=%.12g zmax=%.12g',
+        ion_number,result.elapsed_us,result.x_mm,result.y_mm,result.z_mm,result.radius_mm,result.max_z_mm))
+      print(string.format('TRACE: detector_hit_entity ion=%d instance=4',ion_number))
+    elseif result.kind=='non_detector_splat' then
+      print(string.format('TRACE: non_detector_splat ion=%d instance=%d t=%.12g x=%.12g y=%.12g z=%.12g zmax=%.12g',
+        ion_number,ion_instance,time,ion_px_mm,ion_py_mm,ion_pz_mm,result.max_z_mm))
+    end
+  end
+end
+"""
+    if program.count("simion.workbench_program()") != 1:
+        raise ValueError("combined single-flight Program must declare one workbench")
+    for callback in _SUCCESSOR_CALLBACKS:
+        count = len(re.findall(rf"function\s+segment\.{callback}\s*\(", program))
+        if count != 1:
+            raise ValueError(f"combined single-flight Program callback {callback} count is {count}")
+    return program
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--formal", required=True, type=Path)
-    parser.add_argument("--pulse-extension", required=True, type=Path)
+    parser.add_argument("--analyzer-component", required=True, type=Path)
+    parser.add_argument("--pulse-hook", required=True, type=Path)
+    parser.add_argument("--frontend-hook", required=True, type=Path)
     parser.add_argument("--upstream", required=True, type=Path)
     parser.add_argument("--frontend-contract", required=True, type=Path)
     parser.add_argument("--accelerator-overlay-contract", type=Path)
     parser.add_argument("--oatof", required=True, type=Path)
     parser.add_argument("--initial-global-state", required=True, type=Path)
     parser.add_argument("--resolved-region-field-contract", required=True, type=Path)
+    parser.add_argument("--rf-drive-kernel", required=True, type=Path)
+    parser.add_argument("--rf-steps-per-period", required=True, type=int)
     parser.add_argument("--terminate-after-pulse", action="store_true")
     parser.add_argument("--global-segments", action="store_true")
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--metadata", required=True, type=Path)
     args = parser.parse_args()
     oatof = _load(args.oatof)
-    formal = disable_redundant_ground_fast_adjust(bind_oatof_adjustables(
-        args.formal.read_text(encoding="utf-8-sig"), oatof
-    ))
-    if args.global_segments:
-        formal = enable_official_global_segments(formal)
-    if args.accelerator_overlay_contract is not None:
-        formal = allow_accelerator_overlay_instance(formal)
-    pulse = args.pulse_extension.read_text(encoding="utf-8-sig")
-    if formal.count("simion.workbench_program()") != 1 or "segment.fast_adjust" not in pulse:
-        raise ValueError("frozen oaTOF Program inputs differ from the expected contract")
-    extension = build_extension(
+    region_field_contract = _load(args.resolved_region_field_contract)
+    validate_resolved_region_field_contract(region_field_contract)
+    output = build_successor_program(
         _load(args.upstream),
         _load(args.frontend_contract),
+        oatof,
+        region_field_contract,
         birth_times_us=load_birth_times(args.initial_global_state),
+        analyzer_component_source=args.analyzer_component.read_text(encoding="utf-8-sig"),
+        pulse_hook_source=args.pulse_hook.read_text(encoding="utf-8-sig"),
+        frontend_hook_source=args.frontend_hook.read_text(encoding="utf-8-sig"),
+        rf_drive_kernel_source=args.rf_drive_kernel.read_text(encoding="utf-8-sig"),
         terminate_after_pulse=args.terminate_after_pulse,
         overlay=(
             _load(args.accelerator_overlay_contract)
             if args.accelerator_overlay_contract is not None
             else None
         ),
+        rf_steps_per_period=args.rf_steps_per_period,
+        global_segments=args.global_segments,
     )
-    region_field_contract = _load(args.resolved_region_field_contract)
-    validate_resolved_region_field_contract(region_field_contract)
-    output = formal.rstrip() + "\n\n" + pulse.strip() + "\n" + extension
-    output += "\n-- BEGIN RESOLVED REGION FIELD CONTRACT\n"
-    output += resolved_region_field_lua(
-        region_field_contract,
-        enable_expression="single_flight_pulse_is_on()",
-    )
-    output += "\n-- END RESOLVED REGION FIELD CONTRACT\n"
-    if output.count("simion.workbench_program()") != 1:
-        raise ValueError("combined single-flight Program must declare one workbench")
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.metadata.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(output, encoding="utf-8", newline="\n")
     metadata = {
         "schema_version": 1,
         "role": "rf_oatof_simion_single_flight_program_build",
-        "formal_sha256": file_sha256(args.formal),
-        "pulse_extension_sha256": file_sha256(args.pulse_extension),
+        "analyzer_component_sha256": file_sha256(args.analyzer_component),
+        "pulse_hook_sha256": file_sha256(args.pulse_hook),
+        "frontend_hook_sha256": file_sha256(args.frontend_hook),
         "upstream_sha256": file_sha256(args.upstream),
         "frontend_contract_sha256": file_sha256(args.frontend_contract),
         "accelerator_overlay_contract_sha256": (
@@ -574,6 +699,8 @@ def main() -> int:
         "resolved_region_field_profile_id": region_field_contract["semantic"][
             "canonical_profile_id"
         ],
+        "rf_drive_kernel_sha256": file_sha256(args.rf_drive_kernel),
+        "rf_steps_per_period": args.rf_steps_per_period,
         "clock_basis": "canonical_instrument_time_us",
         "terminate_after_pulse": args.terminate_after_pulse,
         "global_segments": args.global_segments,

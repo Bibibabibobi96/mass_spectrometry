@@ -88,9 +88,10 @@ class ResolvedDesignConsumerContractTest(unittest.TestCase):
             self.assertIn(field, comsol)
             self.assertIn(field, simion)
         lua = (MULTIPOLE / "simion_transport.lua").read_text(encoding="utf-8")
-        self.assertIn("math.sin(angle)", lua)
-        self.assertIn("math.cos(angle)", lua)
-        self.assertIn("ion_time_of_flight * omega + phase", lua)
+        kernel = (MULTIPOLE / "simion_rf_drive.lua").read_text(encoding="utf-8")
+        self.assertIn("config.waveform == 'sine' and math.sin or math.cos", kernel)
+        self.assertIn("rf_drive.apply_at(ion_time_of_flight", lua)
+        self.assertNotIn("ion_time_of_flight * omega", lua)
 
     def test_static_boundary_voltages_are_canonical_and_solver_shared(self) -> None:
         resolved = (

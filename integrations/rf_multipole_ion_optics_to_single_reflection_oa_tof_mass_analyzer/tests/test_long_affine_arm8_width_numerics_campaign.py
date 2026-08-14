@@ -149,7 +149,7 @@ class LongAffineArm8WidthNumericsCampaignTests(unittest.TestCase):
         self.assertNotIn("$settings.rf_steps_per_period", runner)
         self.assertNotIn("PulseResolutionArm8GlobalFieldContract", runner)
         self.assertIn("Campaign status permits validation only", adapter)
-        self.assertIn("resolved_region_field_lua", builder)
+        self.assertIn("resolved_region_field_hook_lua", builder)
         self.assertNotIn("full_domain_piecewise_field_lua", builder)
 
 

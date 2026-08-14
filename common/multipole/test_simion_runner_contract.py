@@ -306,7 +306,9 @@ class SimionRunnerContractTests(unittest.TestCase):
             self.assertIn(field, source)
         self.assertIn("transport_waveform == 'sine'", lua)
         self.assertIn("transport_waveform == 'cosine'", lua)
-        self.assertIn("unsupported RF waveform", lua)
+        kernel = (RUNNER.parent / "simion_rf_drive.lua").read_text(encoding="utf-8")
+        self.assertIn("RF drive waveform must be sine or cosine", kernel)
+        self.assertIn("config.waveform == 'sine' and math.sin or math.cos", kernel)
 
     def test_mechanically_segmented_rods_always_receive_full_length_rf(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")

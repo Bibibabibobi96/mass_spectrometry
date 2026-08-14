@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "role": "legacy_single_flight_program_characterization",
+  "claim_limit": "Pre-successor implementation receipt; no Fly, refine, solver, or physical result.",
+  "inputs": {
+    "formal_sha256": "2E15EF94CC5ABEEA4E64E6C93FC9C0077B267C94300D2E6EFEDCCDBF5719B379",
+    "pulse_sha256": "3497ABEFA378DC5D717E3EA7EA383826C09E53A664DBF12624219D4EECBF9CF8",
+    "resolved_geometry_sha256": "0BC154D0A4F7EAB8EE560DC691E0E62EC26F55928E2035406A2D6DF11E4D42F9",
+    "rf_drive_kernel_sha256": "6193007FE9D4EE057203D40885A266E5C1E1896BEDD569C68A472C13B5B3799D",
+    "region_profile_id": "accelerator_real_pa",
+    "region_semantic_sha256": "B5217121AB655B773B24F359AEA18C527FEF7ECD1DF2B0E06D225E23868F1976",
+    "birth_times_us": [0.25, 1.0],
+    "rf_steps_per_period": 160,
+    "overlay_enabled": false,
+    "global_segments": false,
+    "terminate_after_pulse": false
+  },
+  "complete_program": {
+    "utf8_bytes": 51757,
+    "sha256": "CB81D2EF2CFE8825067F781C35196C98CFAB2D3F6C21E9999C2DEE079BC4B1A9",
+    "workbench_declarations": 1,
+    "callback_definition_counts": {
+      "load": 1,
+      "initialize_run": 3,
+      "fast_adjust": 2,
+      "efield_adjust": 2,
+      "initialize": 2,
+      "tstep_adjust": 3,
+      "other_actions": 3,
+      "terminate": 2,
+      "instance_adjust": 1
+    }
+  },
+  "official_cli_behavior_vectors": [
+    "initialize_run_fast_adjust_sequence",
+    "fast_adjust_pre_pulse",
+    "fast_adjust_pulse_on",
+    "fast_adjust_post_pulse",
+    "fast_adjust_held_off",
+    "fast_adjust_non_frontend_instance",
+    "tstep_pulse_rising_edge",
+    "tstep_rf_160_cap",
+    "tstep_grid1_native_landing",
+    "efield_real_pa_passthrough",
+    "instance_adjust_overlay_disabled",
+    "terminate_non_detector"
+  ]
+}

@@ -6,6 +6,10 @@ simion.workbench_program()
 local run_config_path = assert(os.getenv('MULTIPOLE_SIMION_RUN_CONFIG_LUA'),
   'MULTIPOLE_SIMION_RUN_CONFIG_LUA is not set')
 local run_config = assert(dofile(run_config_path), 'run config did not return a table')
+local rf_drive_kernel_path = assert(os.getenv('MULTIPOLE_SIMION_RF_DRIVE_KERNEL_LUA'),
+  'MULTIPOLE_SIMION_RF_DRIVE_KERNEL_LUA is not set')
+local rf_drive_kernel = assert(dofile(rf_drive_kernel_path),
+  'RF drive kernel did not return a table')
 local source_states = assert(run_config.source_states, 'run config source_states is missing')
 if run_config.instance_scale then
   assert(simion.wb and #simion.wb.instances == 1,
@@ -21,7 +25,7 @@ end
 adjustable transport_rf_peak_v = 0
 adjustable transport_dc_amplitude_v = 0
 adjustable transport_frequency_hz = 0
-adjustable transport_phase_deg = 0.0
+adjustable transport_phase_rad = 0.0
 adjustable transport_axis_voltage_v = 0.0
 adjustable transport_entrance_voltage_v = 0.0
 adjustable transport_exit_voltage_v = 0.0
@@ -63,6 +67,7 @@ local backward_escape_plane_mm
 local rf_scale
 local axial_scale
 local segmented_rod_electrodes
+local rf_drive
 
 local function set_electrode_voltage(electrode_id, voltage)
   assert(type(electrode_id) == 'number' and electrode_id == math.floor(electrode_id)
@@ -77,7 +82,7 @@ end
 transport_rf_peak_v = assert(run_config.rf_peak_v)
 transport_dc_amplitude_v = assert(run_config.dc_amplitude_v)
 transport_frequency_hz = assert(run_config.frequency_hz)
-transport_phase_deg = assert(run_config.phase_deg)
+transport_phase_rad = assert(run_config.phase_rad)
 transport_waveform = assert(run_config.waveform)
 transport_axis_voltage_v = assert(run_config.axis_voltage_v)
 transport_entrance_voltage_v = assert(run_config.entrance_voltage_v)
@@ -129,13 +134,37 @@ if segmented_rod_electrodes then
   assert(run_config.output_reference_v, 'output reference voltage is missing')
 end
 
-local omega = transport_frequency_hz * 1E-6 * 2 * math.pi
-local phase = transport_phase_deg * math.pi / 180
-
-local function rf_wave(angle)
-  if transport_waveform == 'sine' then return math.sin(angle) end
-  if transport_waveform == 'cosine' then return math.cos(angle) end
-  error('unsupported RF waveform')
+local function compile_rf_drive()
+  local electrodes = {}
+  if segmented_rod_electrodes then
+    for index, electrode in ipairs(segmented_rod_electrodes) do
+      local group = electrode.electrode_group
+      electrodes[index] = {
+        electrode_id=electrode.electrode_id,
+        electrode_group=group,
+        polarity=group == 1 and 1 or -1,
+        common_mode_v=electrode.common_mode_v,
+      }
+    end
+  else
+    electrodes = {
+      {electrode_id=1, electrode_group=1, polarity=1,
+        common_mode_v=transport_axis_voltage_v},
+      {electrode_id=2, electrode_group=2, polarity=-1,
+        common_mode_v=transport_axis_voltage_v},
+    }
+  end
+  return rf_drive_kernel.new {
+    waveform=transport_waveform,
+    frequency_hz=transport_frequency_hz,
+    phase_rad=transport_phase_rad,
+    rf_amplitude_v=transport_rf_peak_v,
+    rf_scale=rf_scale,
+    common_mode_scale=segmented_rod_electrodes and axial_scale or 1,
+    group_dc_v={[1]=transport_dc_amplitude_v, [2]=-transport_dc_amplitude_v},
+    rf_steps_per_period=transport_rf_steps_per_period,
+    electrodes=electrodes,
+  }
 end
 
 local function canonical_state(t, x, y, z, vx, vy, vz, ke)
@@ -182,7 +211,7 @@ local function write_particle_state(particle, event, status, terminal_reason, st
   local v_x = state.vy * 1000
   local v_y = state.vz * 1000
   local radial = math.sqrt(state.y^2 + state.z^2)
-  local rf_phase = (state.t * omega + phase) % (2 * math.pi)
+  local rf_phase = rf_drive.phase_at(state.t) % (2 * math.pi)
   particle_state_file:write(string.format(
     '%d,%s,%s,%s,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g,%.12g\n',
     particle, event, status, terminal_reason, state.t,
@@ -209,6 +238,7 @@ local function project_state_to_plane(state, plane)
 end
 
 function segment.initialize_run()
+  rf_drive = compile_rf_drive()
   birth_time = {}
   max_rod_radius = {}
   max_radius = {}
@@ -270,14 +300,8 @@ function segment.init_p_values()
 end
 
 function segment.fast_adjust()
-  local rf = rf_scale * transport_rf_peak_v * rf_wave(ion_time_of_flight * omega + phase)
-  local differential = transport_dc_amplitude_v + rf
+  rf_drive.apply_at(ion_time_of_flight, set_electrode_voltage)
   if segmented_rod_electrodes then
-    for _, electrode in ipairs(segmented_rod_electrodes) do
-      local polarity = electrode.electrode_group == 1 and 1 or -1
-      set_electrode_voltage(electrode.electrode_id,
-        axial_scale * electrode.common_mode_v + polarity * differential)
-    end
     set_electrode_voltage(run_config.ground_electrode_id,
       axial_scale * run_config.ground_reference_v)
     set_electrode_voltage(run_config.output_electrode_id,
@@ -296,13 +320,10 @@ function segment.fast_adjust()
     end
     return
   end
-  adj_elect01 = transport_axis_voltage_v + differential
-  adj_elect02 = transport_axis_voltage_v - differential
 end
 
 function segment.tstep_adjust()
-  ion_time_step = math.min(ion_time_step,
-    1E6 / transport_frequency_hz / transport_rf_steps_per_period)
+  ion_time_step = math.min(ion_time_step, rf_drive.timestep_cap_us)
 end
 
 function segment.initialize()

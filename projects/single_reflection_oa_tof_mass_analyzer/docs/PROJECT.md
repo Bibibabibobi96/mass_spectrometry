@@ -24,6 +24,11 @@ resolved、分析和资产合同管理；实现细节见[`COMSOL.md`](COMSOL.md)
 - 当前Formal加速器为闭合屏蔽结构，没有RF注入侧孔。RF多极杆连接使用run-local组合几何，不修改
   本项目baseline、MPH、SIMION包或CAD。连接策略、接地屏蔽、当前结果与资格边界只查
   [integration当前文档](../../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/INTEGRATION.md)。
+- integration single-flight现通过项目Candidate
+  `simion/workbench/candidates/oatof_analyzer_component.lua`调用oaTOF实例、基础场、静态电压与detector
+  纯hooks；组件不声明Workbench/callback、电极setter、pulse时序或SIMION原生时钟。历史Formal Program
+  字节未修改，仍只服务项目Formal与staged analyzer transport；该组件及唯一integration assembler的
+  直接Lua验证不改变本项目Formal资格。
 
 当前生命周期、capability与Formal asset状态均为`formal`。历史资产和旧结论只按其原始manifest
 身份保留，不能替代或改写当前release。

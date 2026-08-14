@@ -95,14 +95,14 @@ class SingleFlightAnalysisTests(unittest.TestCase):
         self.assertEqual(summary["pulse_capture"]["counts"]["eligible"], 1)
         self.assertFalse(summary["pulse_capture"]["selection_uses_detector_outcome"])
 
-    def test_particle_pulse_callbacks_do_not_override_effective_pulse_time(self) -> None:
+    def test_successor_pulse_callbacks_validate_effective_pulse_time(self) -> None:
         text = "\n".join([
             "TRACE: source_release ion=1 instrument_time_us=0 x_mm=-69 y_mm=0 z_mm=-18.4 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
             "TRACE: source_release ion=2 instrument_time_us=0 x_mm=-69 y_mm=0 z_mm=-18.3 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
             "TRACE: pre_pulse_state ion=1 instrument_time_us=10 x_mm=-69 y_mm=0 z_mm=-18.4 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
             "TRACE: pre_pulse_state ion=2 instrument_time_us=10 x_mm=-69 y_mm=0 z_mm=-18.3 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
-            "TRACE: handoff_pulse_on ion=1 instrument_time_us=10.000001",
-            "TRACE: handoff_pulse_on ion=2 instrument_time_us=10.000002",
+            "TRACE: handoff_pulse_on ion=1 instrument_time_us=10",
+            "TRACE: handoff_pulse_on ion=2 instrument_time_us=10",
             "TRACE: detector_crossing ion=1 t=20 x=0 y=0 z=0",
             "TRACE: detector_crossing ion=2 t=20.001 x=0 y=0 z=0",
         ])
@@ -111,7 +111,34 @@ class SingleFlightAnalysisTests(unittest.TestCase):
             log.write_text(text, encoding="utf-8")
             _, summary = analyze(log, 2, 100.0, pulse_time_us=10.0)
         self.assertEqual(summary["pulse_effective_time_us"], 10.0)
-        self.assertIsNone(summary["pulse_first_observed_us"])
+        self.assertEqual(summary["pulse_first_observed_us"], 10.0)
+
+    def test_legacy_pulse_trace_without_particle_identity_remains_readable(self) -> None:
+        text = "\n".join([
+            "TRACE: source_release ion=1 instrument_time_us=0 x_mm=0 y_mm=0 "
+            "z_mm=0 vx_mm_per_us=1 vy_mm_per_us=0 vz_mm_per_us=0",
+            "TRACE: handoff_pulse_on instrument_time_us=10",
+        ])
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory) / "log.txt"
+            log.write_text(text, encoding="utf-8")
+            _, summary = analyze(log, 1, 100.0, pulse_time_us=10.0)
+        self.assertEqual(summary["pulse_first_observed_us"], 10.0)
+
+    def test_successor_pulse_trace_rejects_inconsistent_particle_times(self) -> None:
+        text = "\n".join([
+            "TRACE: source_release ion=1 instrument_time_us=0 x_mm=0 y_mm=0 "
+            "z_mm=0 vx_mm_per_us=1 vy_mm_per_us=0 vz_mm_per_us=0",
+            "TRACE: handoff_pulse_on ion=1 instrument_time_us=10.000001",
+            "TRACE: handoff_pulse_on ion=2 instrument_time_us=10.000002",
+        ])
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory) / "log.txt"
+            log.write_text(text, encoding="utf-8")
+            with self.assertRaisesRegex(
+                ValueError, "SIMION batches report inconsistent pulse effective times"
+            ):
+                analyze(log, 2, 100.0, pulse_time_us=10.0)
 
     def test_canonical_clock_does_not_add_birth_time_to_detector_time(self) -> None:
         text = "\n".join([

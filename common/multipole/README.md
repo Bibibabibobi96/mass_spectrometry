@@ -112,6 +112,18 @@ effect resolution和预算；缺少这些设置的既有run只能发布`POSTHOC_
 SIMION使用`cell_mm_xyz`，COMSOL显式声明电势单元阶次。普通收敛点默认`compact`，只有事前授权的
 最终参考或GUI复核可保留重型求解器资产。
 
+SIMION杆电压只由[`simion_rf_drive.lua`](simion_rf_drive.lua)计算。该纯Lua kernel不拥有Workbench、
+segment callback、PA实例或时钟；调用者必须显式传入唯一instrument time。独立多极杆Program传
+`ion_time_of_flight`，连续single-flight Program传规范`birth + ion_time_of_flight`。kernel统一验证并
+计算sine/cosine、`phase_rad`、RF幅值与scale、两组DC、逐电极common-mode与scale，并发布每周期步数
+导出的timestep cap。每个Program只保留一个`fast_adjust`和`tstep_adjust`包装，drive在
+`initialize_run`编译一次，飞行热路径不重新解析配置。
+
+生产run必须先把kernel复制为run-local受校验输入，再由Program加载冻结路径；不得在运行时读取仓库
+活动文件，也不得在项目wrapper或integration中保留另一份内联RF公式。纯数学回归使用SIMION官方
+`simion.exe --nogui --noprompt lua`入口执行[`test_simion_rf_drive.lua`](test_simion_rf_drive.lua)，不加载
+Workbench/PA，不refine、不Fly。
+
 运行器统一发布canonical状态、metrics、轻量诊断图、summary和manifest。跨run图必须共享坐标与分箱；
 图和工程metrics本身不授予资格。资源越界时停止本次进程树并报告
 `INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED`，不自动重试。

@@ -210,22 +210,26 @@ def validate_resolved_region_field_contract(contract: Mapping[str, Any]) -> None
         raise ValueError("analytic field cannot silently fall back outside a bore")
 
 
-def resolved_region_field_lua(
-    contract: Mapping[str, Any], *, prefix: str = "rrf",
-    enable_expression: str = "single_flight_pulse_is_on()",
+def resolved_region_field_hook_lua(
+    contract: Mapping[str, Any], *, prefix: str = "rrf"
 ) -> str:
-    """Render the only supported region-field backend for the formal Program."""
+    """Render a callback-neutral integration override for one resolved profile.
+
+    The returned Lua module accepts the project-owned base field result and
+    changes it only when the resolved contract selects an analytic or zero
+    field for the particle's current longitudinal region.  Real-PA regions
+    return the base result unchanged.
+    """
     validate_resolved_region_field_contract(contract)
     if not re.fullmatch(r"[a-z][a-z0-9_]*", prefix):
         raise ValueError("Lua prefix must be a lowercase identifier")
-    if not enable_expression.strip():
-        raise ValueError("Lua field enable expression is required")
     semantic = contract["semantic"]
     p = semantic["planes_mm"]
     f = semantic["fields_V_per_mm"]
     m = semantic["region_modes"]
     mode_codes = {"real_pa_field": 0, "analytic_ideal_field": 1, "zero_field": 2}
     return f"""
+local {prefix}={{}}
 local {prefix}_repeller={p['repeller']:.17g}
 local {prefix}_grid1={p['grid1']:.17g}
 local {prefix}_grid2={p['grid2']:.17g}
@@ -241,27 +245,30 @@ local {prefix}_m_accel2={mode_codes[m['accelerator_stage2']]}
 local {prefix}_m_drift={mode_codes[m['drift']]}
 local {prefix}_m_refl1={mode_codes[m['reflectron_stage1']]}
 local {prefix}_m_refl2={mode_codes[m['reflectron_stage2']]}
-local {prefix}_base_efield_adjust=segment.efield_adjust
-function segment.efield_adjust()
-  {prefix}_base_efield_adjust()
-  if not ({enable_expression}) then return end
-  local z=ion_pz_mm; local mode=nil; local E=0; local family=nil
+function {prefix}.apply(base,state)
+  assert(type(state)=='table' and type(state.z_mm)=='number' and
+    type(state.instance_id)=='number' and type(state.instance_dx_mm)=='number' and
+    type(state.instance_dz_mm)=='number' and type(state.instance_scale)=='number' and
+    type(state.pulse_active)=='boolean','resolved region state is invalid')
+  if not state.pulse_active then return base end
+  local z=state.z_mm; local mode=nil; local E=0; local family=nil
   if z>={prefix}_repeller and z<{prefix}_grid1 then mode={prefix}_m_accel1; E={prefix}_accel1; family='accelerator'
   elseif z>={prefix}_grid1 and z<{prefix}_grid2 then mode={prefix}_m_accel2; E={prefix}_accel2; family='accelerator'
   elseif z>={prefix}_grid2 and z<{prefix}_entrance then mode={prefix}_m_drift
   elseif z>={prefix}_entrance and z<{prefix}_midgrid then mode={prefix}_m_refl1; E=-{prefix}_refl1; family='reflectron'
   elseif z>={prefix}_midgrid and z<={prefix}_backplate then mode={prefix}_m_refl2; E=-{prefix}_refl2; family='reflectron'
   else error('particle escaped resolved region-field longitudinal domain') end
-  if mode==0 then return end
-  ion_dvoltsx_gu=0; ion_dvoltsy_gu=0; ion_dvoltsz_gu=0
-  if mode==2 then return end
-  local pi=simion.wb.instances[ion_instance]
+  if mode==0 then return base end
+  if mode==2 then return {{replace_all=true,dvoltsx_gu=0,dvoltsy_gu=0,dvoltsz_gu=0}} end
   if family=='accelerator' then
-    assert(ion_instance==3 or ion_instance==5, 'analytic accelerator field requires instance 3 or 5')
-    ion_dvoltsz_gu=-E*pi.pa.dz_mm*pi.scale
-  else
-    assert(ion_instance==2, 'analytic reflectron field requires rotated instance 2')
-    ion_dvoltsx_gu=-E*pi.pa.dx_mm*pi.scale
+    assert(state.instance_id==3 or state.instance_id==5,
+      'analytic accelerator field requires instance 3 or 5')
+    return {{replace_all=true,dvoltsx_gu=0,dvoltsy_gu=0,
+      dvoltsz_gu=-E*state.instance_dz_mm*state.instance_scale}}
   end
+  assert(state.instance_id==2,'analytic reflectron field requires rotated instance 2')
+  return {{replace_all=true,dvoltsx_gu=-E*state.instance_dx_mm*state.instance_scale,
+    dvoltsy_gu=0,dvoltsz_gu=0}}
 end
+return {prefix}
 """.strip()

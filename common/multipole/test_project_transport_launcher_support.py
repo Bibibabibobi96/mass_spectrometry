@@ -8,6 +8,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SUPPORT_PATH = (
     REPO_ROOT / "common/multipole/project_transport_launcher_support.ps1"
 )
+SIMION_RUNNER = REPO_ROOT / "common/multipole/run_simion_finite_3d_transport.ps1"
+SIMION_PROGRAM = REPO_ROOT / "common/multipole/simion_transport.lua"
 PROJECTS = (
     (
         "rf_quadrupole_ion_optics",
@@ -28,6 +30,40 @@ PROJECTS = (
 
 
 class ProjectTransportLauncherSupportTests(unittest.TestCase):
+    def test_all_three_projects_close_over_one_frozen_rf_drive_kernel(self) -> None:
+        support = SUPPORT_PATH.read_text(encoding="utf-8-sig")
+        runner = SIMION_RUNNER.read_text(encoding="utf-8-sig")
+        program = SIMION_PROGRAM.read_text(encoding="utf-8")
+
+        self.assertEqual(
+            support.count("common\\multipole\\run_simion_finite_3d_transport.ps1"),
+            1,
+        )
+        self.assertIn("common\\multipole\\simion_rf_drive.lua", runner)
+        self.assertIn("Copy-VerifiedRunInput", runner)
+        self.assertIn("multipole_rf_drive_kernel.lua", runner)
+        self.assertIn("simion_rf_drive_kernel=$rfDriveKernelLua", runner)
+        self.assertIn(
+            "$env:MULTIPOLE_SIMION_RF_DRIVE_KERNEL_LUA=$rfDriveKernelLua",
+            runner,
+        )
+        self.assertIn(
+            "os.getenv('MULTIPOLE_SIMION_RF_DRIVE_KERNEL_LUA')",
+            program,
+        )
+        self.assertNotIn("common/multipole/simion_rf_drive.lua", program)
+
+        for project_id, entry_directory, _ in PROJECTS:
+            entry_root = REPO_ROOT / "projects" / project_id / entry_directory
+            launcher_name = (
+                "run_simion.ps1"
+                if project_id == "rf_quadrupole_ion_optics"
+                else "run_simion_finite_3d_transport.ps1"
+            )
+            launcher = (entry_root / launcher_name).read_text(encoding="utf-8-sig")
+            self.assertIn("project_transport_launcher_support.ps1", launcher)
+            self.assertNotIn("simion_rf_drive.lua", launcher)
+
     def test_one_internal_support_resolves_and_delegates_both_solvers(self) -> None:
         source = SUPPORT_PATH.read_text(encoding="utf-8-sig")
         self.assertEqual(

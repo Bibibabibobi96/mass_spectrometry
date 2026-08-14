@@ -115,6 +115,30 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
             adapter,
         )
 
+    def test_single_flight_freezes_only_successor_program_components(self) -> None:
+        text = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        for flag in (
+            "--analyzer-component",
+            "--pulse-hook",
+            "--frontend-hook",
+            "--rf-drive-kernel",
+        ):
+            self.assertIn(flag, text)
+        for frozen_input in (
+            "analyzer_component=$analyzerComponent",
+            "pulse_hook=$pulseHook",
+            "frontend_hook=$frontendHook",
+            "rf_drive_kernel=$rfDriveKernel",
+        ):
+            self.assertIn(frozen_input, text)
+        for legacy in (
+            "--formal",
+            "--pulse-extension",
+            "simion\\workbench\\formal",
+            "oatof_handoff_pulse.lua",
+        ):
+            self.assertNotIn(legacy, text)
+
     def test_overlay_cache_is_staged_and_reuses_the_basis_report(self) -> None:
         text = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
         self.assertIn("'b-' + [guid]::NewGuid().ToString('N').Substring(0,12)", text)

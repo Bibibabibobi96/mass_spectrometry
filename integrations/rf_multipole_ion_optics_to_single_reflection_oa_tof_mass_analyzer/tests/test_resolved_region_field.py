@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 
@@ -9,13 +10,17 @@ from common.contracts.machine_contracts import validate_schema
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.resolved_region_field import (
     FULL_ID,
     build_resolved_region_field_contract,
-    resolved_region_field_lua,
+    resolved_region_field_hook_lua,
     validate_resolved_region_field_contract,
+)
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.tests.test_support.legacy_single_flight_program import (
+    resolved_region_field_lua,
 )
 
 
 ROOT = Path(__file__).resolve().parents[3]
 GEOMETRY = ROOT / "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json"
+SIMION = Path(r"C:\Program Files\SIMION-2020\simion.exe")
 
 
 class ResolvedRegionFieldTests(unittest.TestCase):
@@ -66,6 +71,48 @@ class ResolvedRegionFieldTests(unittest.TestCase):
         two = self._build(FULL_ID)
         self.assertEqual(one["semantic_sha256"], two["semantic_sha256"])
         self.assertFalse(any(key == "path" for key in one["semantic"]))
+
+    @unittest.skipUnless(SIMION.is_file(), "official SIMION Lua CLI unavailable")
+    def test_callback_neutral_override_preserves_real_region_base_write_set(self) -> None:
+        real_hook = resolved_region_field_hook_lua(self._build("accelerator_real_pa"))
+        ideal_hook = resolved_region_field_hook_lua(
+            self._build("accelerator_ideal_stage1_real_stage2"), prefix="ideal"
+        )
+        for source in (real_hook, ideal_hook):
+            for forbidden in ("segment.", "simion.wb", "adj_elect", "ion_time_of_flight"):
+                self.assertNotIn(forbidden, source)
+        script = f"""
+local real=(function()\n{real_hook}\nend)()
+local ideal=(function()\n{ideal_hook}\nend)()
+local base={{replace_all=false,dvoltsx_gu=7}}
+local common={{z_mm=-18,instance_id=3,instance_dx_mm=0.25,
+  instance_dz_mm=0.05,instance_scale=1,pulse_active=true}}
+assert(real.apply(base,common)==base,'real-PA region changed project base result')
+local inactive={{z_mm=-18,instance_id=3,instance_dx_mm=0.25,
+  instance_dz_mm=0.05,instance_scale=1,pulse_active=false}}
+assert(ideal.apply(base,inactive)==base,'inactive override changed project base result')
+local changed=ideal.apply(base,common)
+assert(changed~=base and changed.replace_all==true,
+  'analytic region did not replace the base write set')
+assert(changed.dvoltsx_gu==0 and changed.dvoltsy_gu==0 and
+  type(changed.dvoltsz_gu)=='number','analytic accelerator write set is incomplete')
+print('RESOLVED_REGION_FIELD_HOOK=PASS')
+"""
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "test_region_hook.lua"
+            path.write_text(script, encoding="utf-8", newline="\n")
+            result = subprocess.run(
+                [str(SIMION), "--nogui", "--noprompt", "lua", str(path)],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=20,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertIn("RESOLVED_REGION_FIELD_HOOK=PASS", result.stdout)
 
 
 if __name__ == "__main__":

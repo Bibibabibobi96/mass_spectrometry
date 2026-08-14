@@ -591,6 +591,10 @@ try{
   Copy-VerifiedRunInput `
     -Source (Join-Path $codeRoot 'common\multipole\simion_transport.lua') `
     -Destination (Join-Path $solverDir 'multipole_runtime_program.lua')|Out-Null
+  $rfDriveKernelLua=Join-Path $inputDir 'multipole_rf_drive_kernel.lua'
+  Copy-VerifiedRunInput `
+    -Source (Join-Path $codeRoot 'common\multipole\simion_rf_drive.lua') `
+    -Destination $rfDriveKernelLua|Out-Null
 
   $drive=$design.drive;$geometry=$design.geometry_mm;$enclosure=$geometry.enclosure
   $static=$design.static_electrodes_V
@@ -716,6 +720,7 @@ try{
     particle_source_metadata=$sourceMetadata;particle_source_family=$sourceFamily;
     solver_numerics=$numerics;simion_grid_audit=$gridAudit;code_inventory=$codeInventory;
     evidence_contract=$evidence;simion_gem=$gem;simion_fly2=$fly2;
+    simion_rf_drive_kernel=$rfDriveKernelLua;
     resolved_runtime_profile=$resolvedRuntimeProfile;
     simion_layout_template_resolution=$templateResolution;
     simion_layout_template_registry=$templateRegistryInput;
@@ -824,7 +829,6 @@ try{
     # The registered Workbench transform maps GEM +z to flight +x.  Axial
     # sampling and the census-marker threshold must therefore use GEM dz.
     $surfaceToleranceMm=[Math]::Max(1e-6*$resolvedCellMmZ,1e-9)
-    $phaseDeg=[double]$drive.phase_rad*180/[Math]::PI
     $handoffApertureLua=if($hasDownstreamTerminal){
       $terminalAperture=$design.downstream_terminal.aperture
       "handoff_aperture={shape=`"$([string]$terminalAperture.shape)`",width_mm=$([double]$terminalAperture.width_mm),height_mm=$([double]$terminalAperture.height_mm)},"
@@ -836,7 +840,7 @@ mode="resolved_design_transport", operating_point="$name", parent_resolved_desig
 trajectory_quality=$TrajectoryQuality, rf_steps_per_period=$RfStepsPerPeriod, waveform="$($drive.waveform)",
 rf_peak_v=$($drive.rf_amplitude_V_zero_to_peak_per_group), rf_scale=$rfScale, axial_scale=$axialScale,
 scale_static_boundaries=$($exitAperturePlateStep.ToString().ToLowerInvariant()),
-dc_amplitude_v=$($drive.dc_amplitude_V_per_group), frequency_hz=$($drive.frequency_Hz), phase_deg=$phaseDeg,
+dc_amplitude_v=$($drive.dc_amplitude_V_per_group), frequency_hz=$($drive.frequency_Hz), phase_rad=$($drive.phase_rad),
 axis_voltage_v=$($drive.common_mode_offset_V), entrance_voltage_v=$entranceVoltage,
 exit_voltage_v=$exitVoltage, physical_detector_voltage_v=$physicalDetectorVoltage,
 has_electrode_4=true, has_electrode_5=$($rectangular.ToString().ToLowerInvariant()),
@@ -857,12 +861,16 @@ numerical_census_marker_is_handoff=false, axial_axis="x", origin_x_mm=$zShift, o
 origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
 "@|Set-Content -LiteralPath $luaConfig -Encoding ASCII
     $env:MULTIPOLE_SIMION_RUN_CONFIG_LUA=$luaConfig
+    $env:MULTIPOLE_SIMION_RF_DRIVE_KERNEL_LUA=$rfDriveKernelLua
     try{
       Invoke-SimionStep "fly__$name" @('--nogui','--noprompt','fly','--remove-pas=3',
         '--trajectory-quality',[string]$TrajectoryQuality,'--particles',$fly2,'--programs','1',
         '--retain-trajectories','0','--adjustable',"transport_rf_steps_per_period=$RfStepsPerPeriod",
         (Join-Path $solverDir 'quad_monolithic.iob'))
-    }finally{Remove-Item Env:MULTIPOLE_SIMION_RUN_CONFIG_LUA -ErrorAction SilentlyContinue}
+    }finally{
+      Remove-Item Env:MULTIPOLE_SIMION_RUN_CONFIG_LUA -ErrorAction SilentlyContinue
+      Remove-Item Env:MULTIPOLE_SIMION_RF_DRIVE_KERNEL_LUA -ErrorAction SilentlyContinue
+    }
     $stateReport=Join-Path $resultDir "particle_state_contract__$name.json"
     Push-Location $codeRoot
     try{

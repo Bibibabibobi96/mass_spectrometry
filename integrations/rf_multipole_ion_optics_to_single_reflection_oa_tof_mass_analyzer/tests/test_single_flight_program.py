@@ -2,17 +2,25 @@ from __future__ import annotations
 
 import json
 import copy
+import hashlib
 import re
+import tempfile
 import unittest
 from pathlib import Path
 
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.build_single_flight_program import (
+    build_successor_program,
+    load_birth_times,
+)
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.tests.test_support.legacy_single_flight_program import (
     allow_accelerator_overlay_instance,
     bind_oatof_adjustables,
-    build_extension,
+    build_extension as _build_extension,
     disable_redundant_ground_fast_adjust,
     enable_official_global_segments,
-    load_birth_times,
+)
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.resolved_region_field import (
+    build_resolved_region_field_contract,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_frontend import (
     compile_accelerator_overlay,
@@ -24,6 +32,26 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 
 
 REPO = Path(__file__).resolve().parents[3]
+RF_DRIVE_KERNEL_SOURCE = (
+    REPO / "common/multipole/simion_rf_drive.lua"
+).read_text(encoding="utf-8")
+ANALYZER_COMPONENT_SOURCE = (
+    REPO / "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/"
+    "candidates/oatof_analyzer_component.lua"
+).read_text(encoding="utf-8")
+PULSE_HOOK_SOURCE = (
+    REPO / "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/"
+    "runtime/single_flight_pulse_hook.lua"
+).read_text(encoding="utf-8")
+FRONTEND_HOOK_SOURCE = (
+    REPO / "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/"
+    "runtime/single_flight_frontend_hook.lua"
+).read_text(encoding="utf-8")
+
+
+def build_extension(*args: object, **kwargs: object) -> str:
+    kwargs.setdefault("rf_drive_kernel_source", RF_DRIVE_KERNEL_SOURCE)
+    return _build_extension(*args, **kwargs)  # type: ignore[arg-type]
 
 
 def _minimal_program_contracts() -> tuple[dict[str, object], dict[str, object]]:
@@ -32,7 +60,10 @@ def _minimal_program_contracts() -> tuple[dict[str, object], dict[str, object]]:
         "drive": {
             "waveform": "cosine",
             "rf_amplitude_V_zero_to_peak_per_group": 100.0,
+            "dc_amplitude_V_per_group": 0.0,
+            "common_mode_offset_V": 0.0,
             "frequency_Hz": 1.0e6,
+            "phase_rad": 0.0,
         },
         "segmentation": {
             "segmented_rod_array": {
@@ -72,6 +103,166 @@ def _minimal_program_contracts() -> tuple[dict[str, object], dict[str, object]]:
 
 
 class SingleFlightProgramTests(unittest.TestCase):
+    def test_successor_has_one_workbench_and_one_definition_per_callback(self) -> None:
+        upstream, frontend = _minimal_program_contracts()
+        geometry_path = REPO / (
+            "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json"
+        )
+        oatof = json.loads(geometry_path.read_text(encoding="utf-8"))
+        with tempfile.TemporaryDirectory() as directory:
+            region = build_resolved_region_field_contract(
+                geometry_path, Path(directory) / "region.json", "accelerator_real_pa"
+            )
+        program = build_successor_program(
+            upstream,
+            frontend,
+            oatof,
+            region,
+            birth_times_us=[0.25, 1.0],
+            analyzer_component_source=ANALYZER_COMPONENT_SOURCE,
+            pulse_hook_source=PULSE_HOOK_SOURCE,
+            frontend_hook_source=FRONTEND_HOOK_SOURCE,
+            rf_drive_kernel_source=RF_DRIVE_KERNEL_SOURCE,
+        )
+        self.assertEqual(program.count("simion.workbench_program()"), 1)
+        for callback in (
+            "load", "initialize_run", "efield_adjust", "fast_adjust",
+            "instance_adjust", "initialize", "tstep_adjust", "other_actions",
+            "terminate",
+        ):
+            self.assertEqual(
+                len(re.findall(rf"function\s+segment\.{callback}\s*\(", program)),
+                1,
+                callback,
+            )
+        self.assertNotIn("oatof_ideal_grounded.lua", program)
+        self.assertNotIn("oatof_handoff_pulse.lua", program)
+        for event in (
+            "source_release", "pre_pulse_state", "single_flight_handoff",
+            "accelerator_grid1_forward", "local_accelerator_exit",
+            "accelerator_focus_forward",
+        ):
+            self.assertIn(f"TRACE: {event}", program)
+        for event in (
+            "reflectron_entrance_forward", "reflectron_midgrid_forward",
+            "reflectron_turning_point", "reflectron_exit_return",
+        ):
+            self.assertIn(f"single_flight_trace_checkpoint('{event}'", program)
+        self.assertIn(
+            "TRACE: detector_crossing ion=%d t=%.12g x=%.12g y=%.12g z=%.12g",
+            program,
+        )
+        self.assertIn("adjustable diagnostic_max_tof_us=90", program)
+        self.assertIn(
+            "diagnostics={max_tof_us=diagnostic_max_tof_us,log_stride=trajectory_log_stride}",
+            program,
+        )
+        self.assertIn("TRACE: diagnostic_return_plane", program)
+
+    def test_successor_rejects_callback_owning_component_source(self) -> None:
+        upstream, frontend = _minimal_program_contracts()
+        geometry_path = REPO / (
+            "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json"
+        )
+        oatof = json.loads(geometry_path.read_text(encoding="utf-8"))
+        with tempfile.TemporaryDirectory() as directory:
+            region = build_resolved_region_field_contract(
+                geometry_path, Path(directory) / "region.json", "accelerator_real_pa"
+            )
+        with self.assertRaisesRegex(ValueError, "callback-neutral"):
+            build_successor_program(
+                upstream, frontend, oatof, region, birth_times_us=[0.25],
+                analyzer_component_source="segment.fast_adjust=function() end",
+                pulse_hook_source=PULSE_HOOK_SOURCE,
+                frontend_hook_source=FRONTEND_HOOK_SOURCE,
+                rf_drive_kernel_source=RF_DRIVE_KERNEL_SOURCE,
+            )
+
+    def test_active_cli_requires_pure_components_not_historical_programs(self) -> None:
+        source = (
+            REPO / "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/"
+            "runtime/build_single_flight_program.py"
+        ).read_text(encoding="utf-8")
+        active = source[source.index("def main()") :]
+        for option in ("--analyzer-component", "--pulse-hook", "--frontend-hook",
+                       "--rf-drive-kernel"):
+            self.assertIn(f'parser.add_argument("{option}", required=True', active)
+        self.assertNotIn('parser.add_argument("--formal"', active)
+        self.assertNotIn('parser.add_argument("--pulse-extension"', active)
+
+    def test_rf_drive_kernel_source_is_required_without_live_repo_fallback(self) -> None:
+        upstream, frontend = _minimal_program_contracts()
+        with self.assertRaisesRegex(TypeError, "rf_drive_kernel_source"):
+            _build_extension(upstream, frontend, birth_times_us=[0.0])
+
+    def test_shared_rf_kernel_binding_preserves_drive_and_clock_contract(self) -> None:
+        upstream, frontend = _minimal_program_contracts()
+        upstream["drive"].update(
+            {
+                "waveform": "sine",
+                "phase_rad": 0.25,
+                "dc_amplitude_V_per_group": 3.5,
+                "common_mode_offset_V": 0.0,
+            }
+        )
+        extension = build_extension(
+            upstream,
+            frontend,
+            birth_times_us=[0.25, 1.0],
+            rf_steps_per_period=320,
+        )
+        for token in (
+            "adjustable single_flight_phase_rad=0.25",
+            "adjustable single_flight_dc_amplitude_v=3.5",
+            "adjustable single_flight_common_mode_scale=1",
+            "adjustable single_flight_rf_steps=320",
+            "waveform='sine'",
+            "group_dc_v={[1]=single_flight_dc_amplitude_v,[2]=-single_flight_dc_amplitude_v}",
+            "return birth+ion_time_of_flight",
+            "single_flight_rf_drive.timestep_cap_us",
+        ):
+            self.assertIn(token, extension)
+        apply_offset = extension.index(
+            "single_flight_rf_drive.apply_at(instrument_time_us,"
+        )
+        pulse_offset = extension.index("adj_elect[10]=pulse_on and V_repeller")
+        self.assertLess(apply_offset, pulse_offset)
+        self.assertNotIn("single_flight_base_efield_adjust", extension)
+        self.assertEqual(extension.count("function segment.fast_adjust()"), 1)
+        self.assertEqual(extension.count("function segment.tstep_adjust()"), 1)
+
+    def test_shared_rf_kernel_rejects_invalid_integration_inputs(self) -> None:
+        upstream, frontend = _minimal_program_contracts()
+        upstream["drive"]["waveform"] = "triangle"
+        with self.assertRaisesRegex(ValueError, "waveform must be sine or cosine"):
+            build_extension(upstream, frontend, birth_times_us=[0.0])
+
+        upstream["drive"]["waveform"] = "cosine"
+        with self.assertRaisesRegex(ValueError, "positive integer"):
+            build_extension(
+                upstream,
+                frontend,
+                birth_times_us=[0.0],
+                rf_steps_per_period=0,
+            )
+        with self.assertRaisesRegex(ValueError, "pure Lua boundary"):
+            build_extension(
+                upstream,
+                frontend,
+                birth_times_us=[0.0],
+                rf_drive_kernel_source="return ion_time_of_flight",
+            )
+
+    def test_minimal_generated_program_hash_is_characterized(self) -> None:
+        upstream, frontend = _minimal_program_contracts()
+        extension = build_extension(
+            upstream, frontend, birth_times_us=[0.25, 1.0]
+        )
+        self.assertEqual(
+            hashlib.sha256(extension.encode()).hexdigest(),
+            "934783f95ee444aa3120843733cfd31d45c7dcbe255910a9dafef5f477968954",
+        )
+
     def test_program_rejects_frontend_outside_exact_published_basis(self) -> None:
         upstream, frontend = _minimal_program_contracts()
         frontend["electrodes"]["accelerator_grid2_id"] = 16
@@ -192,7 +383,12 @@ class SingleFlightProgramTests(unittest.TestCase):
         self.assertNotIn("single_flight_absolute_birth_clock", extension)
         self.assertIn("return birth+ion_time_of_flight", extension)
         self.assertNotIn("ion_time_of_flight=birth", extension)
-        self.assertIn("math.cos(single_flight_omega*instrument_time_us)", extension)
+        self.assertIn(
+            "single_flight_rf_drive.apply_at(instrument_time_us,"
+            "single_flight_set_rod_electrode)",
+            extension,
+        )
+        self.assertNotIn("single_flight_omega", extension)
         self.assertIn("single_flight_terminate_after_pulse=1", extension)
         self.assertIn("instrument_time_us>=handoff_pulse_time_us then ion_splat=1", extension)
         self.assertNotIn("sf_ideal_accel", extension)
@@ -362,9 +558,18 @@ class SingleFlightProgramTests(unittest.TestCase):
         self.assertNotIn("ideal_stage1_region", text)
         self.assertNotIn("ideal_stage2_region", text)
         self.assertNotIn("ideal_stage_regions_disable_overlay_instance5=1", text)
-        self.assertIn("resolved_region_field_contract active=1", text)
+        self.assertIn("resolved_region_field_hook_lua", text)
         self.assertNotIn("OATOF_IDEAL_REFLECTRON_STAGE1_ENABLE", text)
         self.assertNotIn("pulse_resolution_reflectron_stage_mode", text)
+        for legacy_helper in (
+            "bind_oatof_adjustables",
+            "disable_redundant_ground_fast_adjust",
+            "allow_accelerator_overlay_instance",
+            "enable_official_global_segments",
+            "build_extension",
+        ):
+            self.assertNotIn(f"def {legacy_helper}(", text)
+        self.assertNotIn(".tests.", text)
 
 
 if __name__ == "__main__":

@@ -120,7 +120,12 @@ function Resolve-RfOatofDependencyContract {
   }
   foreach ($requiredId in @(
       'common_multipole_simion_geometry',
+      'common_multipole_simion_rf_drive_kernel',
       'common_grounded_shield_connector',
+      'oatof_analyzer_component',
+      'rf_single_flight_pulse_hook',
+      'rf_single_flight_frontend_hook',
+      'rf_single_flight_pure_boundary_validator',
       'rf_single_flight_electrode_contract',
       'oatof_simion_stable_entry'
     )) {

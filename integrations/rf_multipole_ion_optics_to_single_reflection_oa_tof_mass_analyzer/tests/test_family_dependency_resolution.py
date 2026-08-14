@@ -80,6 +80,26 @@ if ([string]::Join("`n", @($inventory.dependencies.id)) -ne [string]::Join("`n",
         self.assertIn("oatof_finite_interval_design_compiler", ids)
         self.assertIn("common_multipole_simion_geometry", ids)
         self.assertIn("rf_single_flight_electrode_contract", ids)
+        by_id = {item["id"]: item for item in dependencies}
+        for successor in (
+            "oatof_analyzer_component",
+            "rf_single_flight_pulse_hook",
+            "rf_single_flight_frontend_hook",
+            "rf_single_flight_pure_boundary_validator",
+            "common_multipole_simion_rf_drive_kernel",
+        ):
+            self.assertEqual(
+                by_id[successor]["consumers"],
+                ["single_flight_transport"],
+            )
+        for staged_legacy in (
+            "oatof_formal_lua",
+            "oatof_handoff_pulse_extension_lua",
+        ):
+            self.assertEqual(
+                by_id[staged_legacy]["consumers"],
+                ["analyzer_transport"],
+            )
         self.assertEqual(
             inventory["consumer_scope"],
             "rf_multipole_registered_handoff_family",

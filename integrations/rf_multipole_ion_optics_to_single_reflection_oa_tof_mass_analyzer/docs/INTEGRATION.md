@@ -60,6 +60,23 @@ single-flight frontend不拥有第二套rod GEM primitive。四/六/八极杆res
 不得再用“固定四段八极杆”推断primitive数量。当前single-flight Program公开的PA basis仍是rod `1..8`
 及总电极`0..19`，因此其他未来basis映射必须先全链发布，frontend不能单独宣称已支持。
 
+single-flight不得维护第二套RF公式。`common/multipole/simion_rf_drive.lua`是独立多极杆与integration
+Program共用的纯Lua drive kernel；它经`family_runtime_dependencies.json`注册，并在每个joint run的
+`inputs/simion_rf_drive.lua`冻结后嵌入生成Program。kernel不读取SIMION时钟；integration唯一传入
+`birth + ion_time_of_flight`，杆电压先写入，再由唯一`fast_adjust`callback按既有顺序写加速器pulse。
+`rf_steps_per_period`只来自已选single-flight numerics profile，并同时控制kernel timestep cap；Program
+不得另设固定值。完整收口与回归收据见
+[公共RF drive kernel记录](../../../docs/history/20260815__multipole-common-simion-rf-drive-kernel.md)。
+
+single-flight Program由一个integration assembler唯一声明Workbench和九类`segment.*`callback。项目
+Candidate analyzer component只拥有oaTOF实例、基础场、静态电压和detector行为；integration pulse/
+frontend hooks只拥有规范instrument clock、RF→pulse编排和基于SIMION官方callback机制的项目落面hook；resolved-region
+hook按冻结profile执行base→override。四个Lua组件必须先冻结到run `inputs/`再由builder读取，并经统一
+纯边界校验，禁止从活动仓库回退读取。历史Formal/旧pulse仍由staged `analyzer_transport`冻结使用，
+但不再进入`single_flight_transport`活动路径。timeout、return-plane及detector crossing显式使用
+solver-local `elapsed_us`；只有pulse、RF和跨系统checkpoint使用`birth + elapsed`，分析器负责从
+detector local elapsed与冻结birth构造instrument time。
+
 理论/理想源合同必须另外声明`source_state_epoch`和`source_state_locus`，两者与坐标基、规范时钟、
 有序粒子ID和目标状态共同构成源身份。若SIMION因连续轨迹要求在目标epoch之前写入`.ion`，该文件只算
 `release_implementation_state`；profile中的目标宽度、均值或斜率仍指向声明checkpoint，不能由release
