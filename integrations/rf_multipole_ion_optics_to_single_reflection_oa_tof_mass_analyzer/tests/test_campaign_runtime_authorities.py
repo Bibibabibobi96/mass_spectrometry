@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import tempfile
 import unittest
+from unittest.mock import patch
 
 from common.contracts.machine_contracts import validate_schema
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.refresh_family_repository_bindings import (
     compile_publications,
     publication_differences,
+    write_publications,
 )
 
 
@@ -25,6 +28,21 @@ def load(path: Path) -> dict[str, object]:
 
 
 class CampaignRuntimeAuthoritiesTests(unittest.TestCase):
+    def test_repository_publication_writer_requires_canonical_lf_bytes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "publication.json"
+            path.write_bytes(b"{}\r\n")
+            compiled = {path: b"{}\n"}
+            target = (
+                "integrations.rf_multipole_ion_optics_to_single_reflection_"
+                "oa_tof_mass_analyzer.runtime.refresh_family_repository_bindings."
+                "compile_publications"
+            )
+            with patch(target, return_value=compiled):
+                self.assertEqual(publication_differences(REPO_ROOT), [path])
+                self.assertEqual(write_publications(REPO_ROOT), [path])
+                self.assertEqual(path.read_bytes(), b"{}\n")
+
     def test_source_adapter_is_run_independent(self) -> None:
         contract = load(CONFIG_ROOT / "family_source_adapter.json")
         validate_schema(contract, "rf_multipole_oatof_source_adapter.schema.json")

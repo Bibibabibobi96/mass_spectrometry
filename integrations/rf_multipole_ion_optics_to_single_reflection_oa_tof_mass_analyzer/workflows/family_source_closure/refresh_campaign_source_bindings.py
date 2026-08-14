@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -63,7 +64,21 @@ def canonical_bytes(document: dict[str, Any]) -> bytes:
 
 
 def is_fresh(repo_root: Path, campaign_path: Path) -> bool:
-    return _load(campaign_path) == compile_campaign(repo_root, campaign_path)
+    compiled = compile_campaign(repo_root, campaign_path)
+    rendered = canonical_bytes(compiled)
+    if campaign_path.read_bytes() != rendered:
+        return False
+    if (
+        _published_target_manifests(repo_root, compiled)
+        or _published_campaign_receipts(repo_root, campaign_path)
+    ):
+        try:
+            _validate_published_format_recovery(
+                repo_root, campaign_path, compiled, rendered
+            )
+        except ValueError:
+            return False
+    return True
 
 
 def _published_target_manifests(repo_root: Path, campaign: dict[str, Any]) -> list[Path]:
@@ -81,16 +96,82 @@ def _published_target_manifests(repo_root: Path, campaign: dict[str, Any]) -> li
     ]
 
 
+def _published_campaign_receipts(
+    repo_root: Path, campaign_path: Path
+) -> list[tuple[Path, dict[str, Any]]]:
+    run_root = (
+        repo_root.parent
+        / "artifacts"
+        / "projects"
+        / INTEGRATION_ID
+        / "runs"
+    )
+    if not run_root.is_dir():
+        return []
+    relative_campaign = campaign_path.resolve().relative_to(repo_root.resolve()).as_posix()
+    receipts = []
+    for receipt_path in run_root.glob("*/execution_receipt.json"):
+        receipt = _load(receipt_path)
+        if receipt.get("campaign_path") == relative_campaign:
+            receipts.append((receipt_path, receipt))
+    return receipts
+
+
+def _validate_published_format_recovery(
+    repo_root: Path,
+    campaign_path: Path,
+    compiled: dict[str, Any],
+    rendered: bytes,
+) -> None:
+    receipts = _published_campaign_receipts(repo_root, campaign_path)
+    manifests = _published_target_manifests(repo_root, compiled)
+    if not receipts:
+        if manifests:
+            raise ValueError("published campaign identity receipt is missing")
+        return
+    expected_sha256 = hashlib.sha256(rendered).hexdigest().upper()
+    experiments = {str(row["run_id"]): row for row in compiled.get("experiments", [])}
+    if len(experiments) != len(compiled.get("experiments", [])):
+        raise ValueError("campaign run identities are not unique")
+    relative_campaign = campaign_path.resolve().relative_to(repo_root.resolve()).as_posix()
+    for receipt_path, receipt in receipts:
+        run_id = receipt_path.parent.name
+        experiment = experiments.get(run_id)
+        if (
+            receipt.get("role")
+            != "integration_family_source_closure_execution_receipt"
+            or receipt.get("integration_run_id") != run_id
+            or receipt.get("campaign_path") != relative_campaign
+            or receipt.get("campaign_sha256") != expected_sha256
+            or receipt.get("campaign_id") != compiled.get("campaign_id")
+            or experiment is None
+            or receipt.get("experiment_id") != experiment.get("experiment_id")
+        ):
+            raise ValueError(f"published campaign identity differs: {run_id}")
+
+
 def write_campaign(repo_root: Path, campaign_path: Path) -> bool:
     """Refresh identities unless a published target run makes the campaign immutable."""
     compiled = compile_campaign(repo_root, campaign_path)
-    if _load(campaign_path) == compiled:
-        return False
+    rendered = canonical_bytes(compiled)
     published = _published_target_manifests(repo_root, compiled)
-    if published:
-        rendered = ",".join(path.parent.name for path in published)
-        raise ValueError(f"published campaign source bindings are immutable: {rendered}")
-    campaign_path.write_bytes(canonical_bytes(compiled))
+    receipts = _published_campaign_receipts(repo_root, campaign_path)
+    if published or receipts:
+        if _load(campaign_path) != compiled:
+            published_ids = ",".join(
+                sorted({path.parent.name for path in published} | {
+                    path.parent.name for path, _ in receipts
+                })
+            )
+            raise ValueError(
+                f"published campaign source bindings are immutable: {published_ids}"
+            )
+        _validate_published_format_recovery(
+            repo_root, campaign_path, compiled, rendered
+        )
+    if campaign_path.read_bytes() == rendered:
+        return False
+    campaign_path.write_bytes(rendered)
     return True
 
 

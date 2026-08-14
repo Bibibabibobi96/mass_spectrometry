@@ -256,7 +256,23 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             self.assertEqual(accelerator["canonical_focus_z_mm"], 0.0)
             self.assertEqual(
                 accelerator["finite_interval_theory"]["solver_phase_space_input"],
-                frozen,
+                {
+                    name: frozen[name]
+                    for name in (
+                        "mass_to_charge_Th",
+                        "release_position_mm",
+                        "mean_initial_velocity_m_per_s",
+                        "velocity_slope_m_per_s_per_mm",
+                    )
+                },
+            )
+            self.assertEqual(
+                geometry["single_flight_layout_derivation"]
+                ["finite_interval_input_provenance"],
+                {
+                    "profile_path": "config/accelerator_phase_space_match.json",
+                    "phase_space_input": frozen,
+                },
             )
             self.assertEqual(geometry["particle_source"]["size_z_mm"], width_mm)
             for electrode in ("repeller", "grid1", "midgrid", "backplate"):

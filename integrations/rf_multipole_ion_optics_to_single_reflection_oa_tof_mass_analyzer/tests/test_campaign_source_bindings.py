@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
 import tempfile
 import unittest
@@ -25,9 +26,11 @@ class CampaignSourceBindingTests(unittest.TestCase):
             (source / name).write_text(name + "\n", encoding="utf-8")
         campaign = repo / "campaign.json"
         campaign.write_text(json.dumps({
+            "campaign_id": "fixture_campaign",
             "execution_policy": {"path": "config/policy.json", "sha256": "0" * 64},
             "experiments": [{
                 "run_id": "target_run",
+                "experiment_id": "target_experiment",
                 "source": {
                     "manifest": {"path": "artifacts/projects/source/runs/source_run/run_manifest.json", "sha256": "0" * 64},
                     "state": {"path": "artifacts/projects/source/runs/source_run/state.csv", "sha256": "0" * 64},
@@ -37,6 +40,34 @@ class CampaignSourceBindingTests(unittest.TestCase):
             }],
         }, indent=2) + "\n", encoding="utf-8")
         return repo, campaign
+
+    def _publish_receipt(self, repo: Path, campaign: Path) -> Path:
+        document = json.loads(campaign.read_text(encoding="utf-8-sig"))
+        rendered = (
+            json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+        ).encode("utf-8")
+        run_id = document["experiments"][0]["run_id"]
+        run = (
+            repo.parent
+            / "artifacts/projects/"
+            "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/"
+            "runs"
+            / run_id
+        )
+        run.mkdir(parents=True, exist_ok=True)
+        (run / "run_manifest.json").write_text("{}\n", encoding="utf-8")
+        receipt = {
+            "role": "integration_family_source_closure_execution_receipt",
+            "integration_run_id": run_id,
+            "campaign_path": campaign.relative_to(repo).as_posix(),
+            "campaign_sha256": hashlib.sha256(rendered).hexdigest().upper(),
+            "campaign_id": document["campaign_id"],
+            "experiment_id": document["experiments"][0]["experiment_id"],
+        }
+        (run / "execution_receipt.json").write_text(
+            json.dumps(receipt, indent=2) + "\n", encoding="utf-8"
+        )
+        return run
 
     def test_refreshes_repository_and_artifact_identities(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -58,6 +89,76 @@ class CampaignSourceBindingTests(unittest.TestCase):
             manifest.write_text("{}\n", encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "immutable"):
                 write_campaign(repo, campaign)
+
+    def test_normalizes_only_campaign_bytes_even_when_published(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repo, campaign = self._fixture(Path(directory))
+            self.assertTrue(write_campaign(repo, campaign))
+            canonical = campaign.read_bytes()
+            self._publish_receipt(repo, campaign)
+            campaign.write_bytes(canonical.replace(b"\n", b"\r\n"))
+
+            self.assertFalse(is_fresh(repo, campaign))
+            self.assertTrue(write_campaign(repo, campaign))
+            self.assertEqual(campaign.read_bytes(), canonical)
+            self.assertTrue(is_fresh(repo, campaign))
+
+    def test_refuses_published_nonbinding_semantic_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repo, campaign = self._fixture(Path(directory))
+            self.assertTrue(write_campaign(repo, campaign))
+            self._publish_receipt(repo, campaign)
+            document = json.loads(campaign.read_text(encoding="utf-8"))
+            document["claim_limit"] = "mutated"
+            campaign.write_bytes(
+                (json.dumps(document, indent=2) + "\n").encode("utf-8")
+            )
+
+            self.assertFalse(is_fresh(repo, campaign))
+            with self.assertRaisesRegex(ValueError, "identity differs"):
+                write_campaign(repo, campaign)
+
+    def test_refuses_published_run_id_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repo, campaign = self._fixture(Path(directory))
+            self.assertTrue(write_campaign(repo, campaign))
+            self._publish_receipt(repo, campaign)
+            document = json.loads(campaign.read_text(encoding="utf-8"))
+            document["experiments"][0]["run_id"] = "replacement_run"
+            campaign.write_bytes(
+                (json.dumps(document, indent=2) + "\n").encode("utf-8")
+            )
+
+            self.assertFalse(is_fresh(repo, campaign))
+            with self.assertRaisesRegex(ValueError, "identity differs"):
+                write_campaign(repo, campaign)
+
+    def test_refuses_published_experiment_deletion_or_reordering(self) -> None:
+        for mutation in ("deletion", "reordering"):
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as directory:
+                repo, campaign = self._fixture(Path(directory))
+                document = json.loads(campaign.read_text(encoding="utf-8"))
+                second = json.loads(json.dumps(document["experiments"][0]))
+                second["run_id"] = "second_run"
+                second["experiment_id"] = "second_experiment"
+                document["experiments"].append(second)
+                campaign.write_bytes(
+                    (json.dumps(document, indent=2) + "\n").encode("utf-8")
+                )
+                self.assertTrue(write_campaign(repo, campaign))
+                self._publish_receipt(repo, campaign)
+                document = json.loads(campaign.read_text(encoding="utf-8"))
+                if mutation == "deletion":
+                    document["experiments"].pop()
+                else:
+                    document["experiments"].reverse()
+                campaign.write_bytes(
+                    (json.dumps(document, indent=2) + "\n").encode("utf-8")
+                )
+
+                self.assertFalse(is_fresh(repo, campaign))
+                with self.assertRaisesRegex(ValueError, "identity differs"):
+                    write_campaign(repo, campaign)
 
     def test_public_workflow_requires_fresh_source_bindings(self) -> None:
         workflow = (

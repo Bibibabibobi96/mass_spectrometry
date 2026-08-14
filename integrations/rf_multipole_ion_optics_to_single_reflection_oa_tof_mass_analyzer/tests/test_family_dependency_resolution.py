@@ -20,14 +20,15 @@ def load(path: Path) -> dict[str, object]:
 
 
 class FamilyDependencyResolutionTests(unittest.TestCase):
-    def test_single_stable_64_item_inventory(self) -> None:
+    def test_single_stable_65_item_inventory(self) -> None:
         inventory = load(INVENTORY)
         dependencies = inventory["dependencies"]
         ids = [item["id"] for item in dependencies]
         run_inputs = [item["run_input_name"] for item in dependencies]
-        self.assertEqual(len(dependencies), 64)
+        self.assertEqual(len(dependencies), 65)
         self.assertEqual(len(ids), len(set(ids)))
         self.assertEqual(len(run_inputs), len(set(run_inputs)))
+        self.assertIn("oatof_finite_interval_design_compiler", ids)
         self.assertEqual(
             inventory["consumer_scope"],
             "rf_multipole_registered_handoff_family",

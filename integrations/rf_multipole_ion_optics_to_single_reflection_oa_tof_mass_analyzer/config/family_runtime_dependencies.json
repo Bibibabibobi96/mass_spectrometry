@@ -186,6 +186,18 @@
       ]
     },
     {
+      "id": "oatof_finite_interval_design_compiler",
+      "provider_scope": "project",
+      "provider_project": "single_reflection_oa_tof_mass_analyzer",
+      "provider_repo_path": "projects/single_reflection_oa_tof_mass_analyzer",
+      "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/analysis/finite_interval_design_compiler.py",
+      "frozen_filename": "runtime_snapshot/projects/single_reflection_oa_tof_mass_analyzer/analysis/finite_interval_design_compiler.py",
+      "run_input_name": "oatof_finite_interval_design_compiler",
+      "consumers": [
+        "single_flight_transport"
+      ]
+    },
+    {
       "id": "oatof_design_variable_catalog",
       "provider_scope": "project",
       "provider_project": "single_reflection_oa_tof_mass_analyzer",

@@ -189,7 +189,7 @@ def publication_differences(repo_root: Path) -> list[Path]:
     """Return publications whose canonical bytes differ from compiled output."""
     differences = []
     for path, expected in compile_publications(repo_root).items():
-        actual = path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+        actual = path.read_bytes()
         if actual != expected:
             differences.append(path)
     return differences
@@ -200,7 +200,7 @@ def write_publications(repo_root: Path) -> list[Path]:
     compiled = compile_publications(repo_root)
     changed = []
     for path, expected in compiled.items():
-        actual = path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+        actual = path.read_bytes()
         if actual != expected:
             path.write_bytes(expected)
             changed.append(path)

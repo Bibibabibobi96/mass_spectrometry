@@ -32,7 +32,8 @@
         "accelerator_entry_port": {"$ref": "#/$defs/file"},
         "base_geometry": {"$ref": "#/$defs/file"},
         "layout_profile_registry": {"$ref": "#/$defs/file"},
-        "phase_space_match_contract": {"$ref": "#/$defs/file"}
+        "phase_space_match_contract": {"$ref": "#/$defs/file"},
+        "finite_interval_compiler_policy": {"$ref": "#/$defs/file"}
       }
     },
     "arms": {

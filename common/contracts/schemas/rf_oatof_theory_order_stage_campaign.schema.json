@@ -13,7 +13,10 @@
   "properties": {
     "schema_version": {"const": 1},
     "role": {"const": "rf_oatof_theory_order_stage_campaign"},
-    "campaign_id": {"const": "zero_match_long_all_ideal_theory_order_stage"},
+    "campaign_id": {"enum": [
+      "zero_match_long_all_ideal_theory_order_stage",
+      "zero_match_long_all_ideal_theory_order_stage_v2_successor"
+    ]},
     "evidence_level": {"const": "PROVISIONAL"},
     "assessment_design_status": {"const": "DECLARED_PROVISIONAL_NOT_PREREGISTERED"},
     "solver_execution_allowed": {"const": false},
@@ -44,7 +47,8 @@
         "base_geometry": {"$ref": "#/$defs/file"},
         "accelerator_entry_port": {"$ref": "#/$defs/file"},
         "layout_profile_registry": {"$ref": "#/$defs/file"},
-        "phase_space_match_contract": {"$ref": "#/$defs/file"}
+        "phase_space_match_contract": {"$ref": "#/$defs/file"},
+        "finite_interval_compiler_policy": {"$ref": "#/$defs/file"}
       }
     },
     "thresholds": {
@@ -74,6 +78,22 @@
     },
     "claim_limit": {"type": "string", "minLength": 1}
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "campaign_id": {
+            "const": "zero_match_long_all_ideal_theory_order_stage_v2_successor"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "inputs": {"required": ["finite_interval_compiler_policy"]}
+        }
+      }
+    }
+  ],
   "$defs": {
     "file": {
       "type": "object", "additionalProperties": false,

@@ -108,6 +108,19 @@ canonical finite-interval layout中的`midgrid/backplate`明确禁止作为独�
 不得读取反射器入口的实测粒子状态、检测器时间/FWHM/分辨率，也不得用经验扫描反调电压。本轮反射器
 电压扫描已取消，没有新增实验；后续若权威理论输入发生变化，仍必须回到上述完整编译链重新派生。
 
+finite-interval整机设计编译的代码所有权属于oaTOF项目公共
+`analysis/finite_interval_design_compiler.py`：integration只传四个物理相空间量、源宽和一级长度，项目
+API原子返回几何、电压、反射器耦合、shield与rebuild plan。profile路径、run/checkpoint/cohort/粒子数
+等provenance只进入integration自己的`finite_interval_input_provenance`收据，不得进入项目request或
+项目理论派生树。integration不得复制公式或逐字段改写`midgrid/backplate`。2026-08-15迁移对全部9个
+活动finite profile执行旧结构重构校验，证明resolved物理量、port及derived values逐字等价；外层
+canonical SHA因provenance结构迁移而显式换版。没有修改GEM/PA、场、dt、资源、入口或Formal资产。
+
+finite-interval数值政策只由oaTOF项目的`FINITE_INTERVAL_COMPILER_POLICY`发布。活动integration
+`accelerator_phase_space_match.json`不再重复电压降边界、采样数或电压容差；counterfactual分析同样
+直接读取项目政策。旧provisional theory-order campaign保持逐字不变，活动诊断使用显式绑定去重配置
+及项目政策文件的`zero_match_long_all_ideal_theory_order_stage_v2_successor`。
+
 加速器对相邻组件只发布外包络端点；屏蔽罩、无场区和反射器边界从该端点派生，不重复维护内部尺寸或
 绝对坐标。范围校验只证明可编译；几何、电压或拓扑改变后仍须重新验证PA贯通、电极映射、真实Fly和
 数值敏感性。

@@ -13,11 +13,26 @@ CAMPAIGN = (
     Path(__file__).resolve().parents[1]
     / "config"
     / "diagnostics"
-    / "zero_match_long_all_ideal_theory_order_stage_campaign.json"
+    / "zero_match_long_all_ideal_theory_order_stage_v2_successor_campaign.json"
+)
+LEGACY_CAMPAIGN = CAMPAIGN.with_name(
+    "zero_match_long_all_ideal_theory_order_stage_campaign.json"
 )
 
 
 class TheoryOrderStageTests(unittest.TestCase):
+    def test_legacy_provisional_campaign_remains_byte_immutable(self):
+        legacy = load_json(LEGACY_CAMPAIGN)
+        validate_schema(legacy, "rf_oatof_theory_order_stage_campaign.schema.json")
+        self.assertEqual(
+            theory_order.file_sha256(LEGACY_CAMPAIGN),
+            "BF539E187EDE523F055E2C8B5F91AE2FAEC84CB4E2338F14AF3CFB05803C5D2A",
+        )
+        self.assertEqual(
+            legacy["inputs"]["phase_space_match_contract"]["sha256"],
+            "B6E374251F85012DAD4633C94290C74DE912D801A7732D77C91B1BB1607FCBEB",
+        )
+
     def test_campaign_is_schema_valid_and_rejects_unknown_fields(self):
         campaign = load_json(CAMPAIGN)
         validate_schema(campaign, "rf_oatof_theory_order_stage_campaign.schema.json")
@@ -26,6 +41,11 @@ class TheoryOrderStageTests(unittest.TestCase):
             "DECLARED_PROVISIONAL_NOT_PREREGISTERED",
         )
         self.assertIn("c3=T'''/3!", campaign["claim_limit"])
+        self.assertEqual(
+            campaign["campaign_id"],
+            "zero_match_long_all_ideal_theory_order_stage_v2_successor",
+        )
+        self.assertIn("finite_interval_compiler_policy", campaign["inputs"])
         changed = copy.deepcopy(campaign)
         changed["posthoc_threshold"] = 0.5
         with self.assertRaises(Exception):

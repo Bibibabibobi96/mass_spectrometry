@@ -27,6 +27,9 @@ from common.contracts.particle_physics import (
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.peak_metrics import (
     compute_peak_metrics,
 )
+from projects.single_reflection_oa_tof_mass_analyzer.analysis.finite_interval_design_compiler import (
+    FINITE_INTERVAL_COMPILER_POLICY,
+)
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.accelerator_time_focus import (
     accelerator_state,
     linear_phase_space_timing_coefficients,
@@ -208,15 +211,10 @@ def _validate_accelerator_match_profile(profile: dict[str, Any]) -> None:
     if not isinstance(solver, dict) or set(solver) != {
         "derivative_step_mm",
         "derivative_tolerance_s_per_mm",
-        "voltage_drop_bounds_V",
     }:
         raise ValueError("accelerator phase-space match solver contract differs")
-    bounds = solver["voltage_drop_bounds_V"]
     if (
-        not isinstance(bounds, list)
-        or len(bounds) != 2
-        or not 0.0 < float(bounds[0]) < float(bounds[1])
-        or float(solver["derivative_step_mm"]) <= 0.0
+        float(solver["derivative_step_mm"]) <= 0.0
         or float(solver["derivative_tolerance_s_per_mm"]) <= 0.0
     ):
         raise ValueError("accelerator phase-space match solver values differ")
@@ -300,15 +298,12 @@ def _validate_accelerator_match_profile(profile: dict[str, Any]) -> None:
     if (
         not isinstance(finite_design, dict)
         or set(finite_design) != {
-            "arm_id", "source_full_width_mm", "sample_count", "voltage_tolerance_V",
+            "arm_id", "source_full_width_mm",
             "focus_policy", "stage2_field_policy", "geometry_policy",
         }
         or finite_design["arm_id"]
         != "accelerator_finite_interval_uniform_field_limit"
         or float(finite_design["source_full_width_mm"]) <= 0.0
-        or int(finite_design["sample_count"]) < 11
-        or int(finite_design["sample_count"]) % 2 == 0
-        or float(finite_design["voltage_tolerance_V"]) <= 0.0
         or finite_design["focus_policy"]
         != "derive_linear_phase_space_first_order_drift_then_translate_to_global_zero"
         or finite_design["stage2_field_policy"] != "single_uniform_field"
@@ -844,9 +839,9 @@ def prepare(
             mass_amu / abs(charge_state),
             nominal_energy,
             exit_v=float(electrodes["grid2"]),
-            voltage_drop_bounds_v=tuple(
-                float(value) for value in solver["voltage_drop_bounds_V"]
-            ),
+            voltage_drop_bounds_v=FINITE_INTERVAL_COMPILER_POLICY[
+                "voltage_drop_bounds_V"
+            ],
             derivative_step_mm=float(solver["derivative_step_mm"]),
             derivative_tolerance_s_per_mm=float(
                 solver["derivative_tolerance_s_per_mm"]
@@ -913,11 +908,13 @@ def prepare(
                 mass_amu / abs(charge_state),
                 nominal_energy,
                 exit_v=float(electrodes["grid2"]),
-                voltage_drop_bounds_v=tuple(
-                    float(value) for value in solver["voltage_drop_bounds_V"]
+                voltage_drop_bounds_v=FINITE_INTERVAL_COMPILER_POLICY[
+                    "voltage_drop_bounds_V"
+                ],
+                sample_count=int(FINITE_INTERVAL_COMPILER_POLICY["sample_count"]),
+                voltage_tolerance_v=float(
+                    FINITE_INTERVAL_COMPILER_POLICY["voltage_tolerance_V"]
                 ),
-                sample_count=int(finite_design["sample_count"]),
-                voltage_tolerance_v=float(finite_design["voltage_tolerance_V"]),
             )
             accelerator_match["finite_interval_solution"] = asdict(finite_solution)
         if accelerator_match_stage == "finite_interval_coupled":
@@ -936,11 +933,13 @@ def prepare(
                 mass_amu / abs(charge_state),
                 nominal_energy,
                 exit_v=float(electrodes["grid2"]),
-                voltage_drop_bounds_v=tuple(
-                    float(value) for value in solver["voltage_drop_bounds_V"]
+                voltage_drop_bounds_v=FINITE_INTERVAL_COMPILER_POLICY[
+                    "voltage_drop_bounds_V"
+                ],
+                sample_count=int(FINITE_INTERVAL_COMPILER_POLICY["sample_count"]),
+                voltage_tolerance_v=float(
+                    FINITE_INTERVAL_COMPILER_POLICY["voltage_tolerance_V"]
                 ),
-                sample_count=int(finite_design["sample_count"]),
-                voltage_tolerance_v=float(finite_design["voltage_tolerance_V"]),
             )
             fixed_focus_match = match_phase_space_voltage_pair(
                 float(acceleration["d1_mm"]),
@@ -952,9 +951,9 @@ def prepare(
                 mass_amu / abs(charge_state),
                 nominal_energy,
                 exit_v=float(electrodes["grid2"]),
-                voltage_drop_bounds_v=tuple(
-                    float(value) for value in solver["voltage_drop_bounds_V"]
-                ),
+                voltage_drop_bounds_v=FINITE_INTERVAL_COMPILER_POLICY[
+                    "voltage_drop_bounds_V"
+                ],
                 derivative_step_mm=float(solver["derivative_step_mm"]),
                 derivative_tolerance_s_per_mm=float(
                     solver["derivative_tolerance_s_per_mm"]
@@ -979,7 +978,7 @@ def prepare(
             source_positions = target_center[2] + np.linspace(
                 -0.5 * finite_solution.source_full_width_mm,
                 0.5 * finite_solution.source_full_width_mm,
-                int(finite_design["sample_count"]),
+                int(FINITE_INTERVAL_COMPILER_POLICY["sample_count"]),
             )
             source_velocities = (
                 finite_solution.mean_initial_velocity_m_per_s

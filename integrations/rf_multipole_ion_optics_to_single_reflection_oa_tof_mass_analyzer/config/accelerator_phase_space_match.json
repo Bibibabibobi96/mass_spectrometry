@@ -14,8 +14,7 @@
   ],
   "solver": {
     "derivative_step_mm": 0.0001,
-    "derivative_tolerance_s_per_mm": 1e-15,
-    "voltage_drop_bounds_V": [100.0, 1200.0]
+    "derivative_tolerance_s_per_mm": 1e-15
   },
   "probes": [
     {
@@ -117,8 +116,6 @@
   "finite_interval_design": {
     "arm_id": "accelerator_finite_interval_uniform_field_limit",
     "source_full_width_mm": 2.2,
-    "sample_count": 1001,
-    "voltage_tolerance_V": 1e-8,
     "focus_policy": "derive_linear_phase_space_first_order_drift_then_translate_to_global_zero",
     "stage2_field_policy": "single_uniform_field",
     "geometry_policy": "retain_stage1_stage2_and_ring_count_unless_theory_is_infeasible"

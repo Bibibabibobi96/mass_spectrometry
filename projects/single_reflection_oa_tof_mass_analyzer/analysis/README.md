@@ -26,12 +26,19 @@ run ID、seed、冻结路径和候选override只属于run instance，不能写�
 | 三栅加速器一阶时间聚焦 | `accelerator_time_focus.py` | `../docs/theory/oaaccelerator_time_focus.md` |
 | 双级反射器闭式解 | `reflectron_dual_stage_solver.py` | `../docs/theory/dual_stage_reflectron.md` |
 | 加速器—反射器纵向耦合 | `oatof_oaaccelerator_coupling.py` | `../docs/theory/oatof_oaaccelerator_coupling.md` |
+| finite-interval整机设计原子编译 | `finite_interval_design_compiler.py` | 复用上述三层理论，原子发布几何/电压/反射器耦合/rebuild plan |
 | Arm 8轴上全理论解析闭合 | `verify_axial_ideal_closure.py` | 复用上述耦合理论与统一`peak_metrics.py` |
 | 参数候选编译 | `compile_candidate_design.py` | design-variable catalog与优化包络 |
 
 候选只允许修改变量目录登记的连续量或整数离散量。理论派生量由编译器重算，拓扑变量使用专用编译
 路径；范围只代表编译安全边界，不代表可行或最优。编译器输出candidate baseline、resolved、diff和
 PA/COMSOL/SIMION/CAD重建影响，不能直接晋升Formal。
+
+跨项目finite-interval布局只能把四个物理相空间量、源宽和一级长度作为request传给项目公共
+`compile_finite_interval_oatof_design` API。加速器电压与轴向平移、源几何、线性导数、耦合反射器、
+shield边界和rebuild plan均由该函数一次性闭合。API严格拒绝profile路径、run、checkpoint、cohort、
+粒子数等integration provenance；这些事实只能由integration写入自己的layout derivation。数值政策
+唯一登记在同模块`FINITE_INTERVAL_COMPILER_POLICY`，消费者不得另传默认值。
 
 ## Candidate生命周期
 

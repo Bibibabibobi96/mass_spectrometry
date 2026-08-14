@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import copy
+import hashlib
 import json
 import math
 import re
@@ -20,6 +22,82 @@ INTEGRATION = REPO / "integrations/rf_multipole_ion_optics_to_single_reflection_
 
 
 class SingleFlightLayoutTests(unittest.TestCase):
+    def test_finite_interval_design_is_owned_by_the_oatof_project_api(self) -> None:
+        source = (
+            INTEGRATION / "runtime/single_flight_layout.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("compile_finite_interval_oatof_design", source)
+        for forbidden in (
+            "match_finite_phase_space_interval",
+            "linear_phase_space_timing_coefficients",
+            "solve_coupled_reflectron_from_accelerator_derivatives",
+            'geometry["electrodes_V"]["midgrid"] =',
+            'geometry["electrodes_V"]["backplate"] =',
+        ):
+            self.assertNotIn(forbidden, source)
+
+    def test_finite_interval_profiles_preserve_canonical_resolved_semantics(self) -> None:
+        registry = json.loads(
+            (INTEGRATION / "config/single_flight_layout_profiles.json").read_text()
+        )
+        geometry = json.loads(
+            (REPO / "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json").read_text()
+        )
+        port = json.loads(
+            (REPO / "projects/single_reflection_oa_tof_mass_analyzer/config/interfaces/required/oatof_accelerator_entry.json").read_text()
+        )
+        legacy_expected = {
+            "symmetric_10ev_source_z22_finite_interval_theory": "0825D932E7A638C02A959DC6B49A0498ED16377A22D3561F2B1E0DDC5673A0AB",
+            "theory_source_z10_d1_3": "7978E3EE42BB2FA41E12708EF572CF2BA8E94410DBF4D8D57CF1C98E165BA31E",
+            "zero_match_short_1mm": "98FC3BBADAEF841CFAFE91151169BFBA32A099F2099B3238329472CE3E6DADCD",
+            "theory_source_z10_d1_4": "9BAFEE370330033809FAC3B997AC7C077545DF633E5D2B38C4744EC95FCDAE42",
+            "theory_source_z10_d1_5": "93F85D1606E164D39346829B069FE2704CD375CE8451D95D403677041A0CEF43",
+            "theory_source_z22_d1_3": "428728EB8B27376396E2C600E18D47B810CFADAFAEB06C293C52AA47DE7F8A7E",
+            "zero_match_long_2p2mm": "AE1E74FC6662BD0BA6F74A153EEF12D84F1437EAC57B092E55AA5D81F698C6A0",
+            "theory_source_z22_d1_4": "92B7FB6783927050983EFBF7E09BA2354AFB46796802BAABF668285000195F5C",
+            "theory_source_z22_d1_5": "68245FB7295F078466B4EE24856F08DF5466EFB0B47088C92469BAF505D0BE07",
+        }
+        expected = {
+            "symmetric_10ev_source_z22_finite_interval_theory": "DB29B9ED6761C43201FA0421A09FA155300C187D7E331418368889B62C5D52FB",
+            "theory_source_z10_d1_3": "8C0677E1514D47CF0D5FACED59AAC1359172975CF0B1C1B8A486DE3A3D705FE3",
+            "zero_match_short_1mm": "9681025140FF5626D845974095A1E119A917F92016CB77307C270CAD7154023F",
+            "theory_source_z10_d1_4": "D2E81D81F03E98AA3F144A5D7C4C89F7C4F88E98168E5B145F5DEB0CD78A2326",
+            "theory_source_z10_d1_5": "7C51489461ACE3B54F84E8536390A3B968C8B4157C6ED82F6FFB29D7A35F58EB",
+            "theory_source_z22_d1_3": "17547A56CA37C29643DEE14E5A9FC24A1B9CA0ED2C42BC2A6A527A04100E337F",
+            "zero_match_long_2p2mm": "C826AA4DA9A4C0A18374B96CC9CFF622004904B98263A0F9F0ACA954158CF31F",
+            "theory_source_z22_d1_4": "B86135CB7A471D2443AE1F663E2192D02F82324B44B61626DBE71460B9B55528",
+            "theory_source_z22_d1_5": "064C32DA6566051F0A4C7475447D1050A47636108B0DEFC305E444DBFA5910D8",
+        }
+        for profile_id, expected_sha in expected.items():
+            with self.subTest(profile_id=profile_id):
+                compiled = compile_geometry_and_port(
+                    geometry, port, select_profile(registry, profile_id)
+                )
+                canonical = json.dumps(
+                    compiled, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+                ).encode()
+                self.assertEqual(hashlib.sha256(canonical).hexdigest().upper(), expected_sha)
+                legacy_equivalent = copy.deepcopy(compiled)
+                resolved = legacy_equivalent[0]
+                provenance = resolved["single_flight_layout_derivation"].pop(
+                    "finite_interval_input_provenance"
+                )
+                theory = resolved["geometry_derivation"]["accelerator"][
+                    "finite_interval_theory"
+                ]
+                theory["profile_path"] = provenance["profile_path"]
+                theory["solver_phase_space_input"] = provenance["phase_space_input"]
+                legacy_canonical = json.dumps(
+                    legacy_equivalent,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                ).encode()
+                self.assertEqual(
+                    hashlib.sha256(legacy_canonical).hexdigest().upper(),
+                    legacy_expected[profile_id],
+                )
+
     def test_formal_pa_assets_cross_runtime_boundary_by_value(self) -> None:
         support = (
             INTEGRATION / "runtime" / "single_flight_assets.ps1"

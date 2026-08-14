@@ -31,9 +31,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.oatof_oaaccelerato
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 
 
-def _bound_json(
-    root: Path, record: Mapping[str, Any], label: str
-) -> tuple[Path, dict[str, Any]]:
+def _bound_file(root: Path, record: Mapping[str, Any], label: str) -> Path:
     path = (root / str(record["path"])).resolve()
     if not path.is_file():
         raise ValueError(f"{label} is missing: {path}")
@@ -41,6 +39,13 @@ def _bound_json(
         raise ValueError(f"{label} byte count differs: {path}")
     if file_sha256(path) != str(record["sha256"]).upper():
         raise ValueError(f"{label} SHA-256 differs: {path}")
+    return path
+
+
+def _bound_json(
+    root: Path, record: Mapping[str, Any], label: str
+) -> tuple[Path, dict[str, Any]]:
+    path = _bound_file(root, record, label)
     value = load_json(path)
     if not isinstance(value, dict):
         raise ValueError(f"{label} must contain one JSON object")
@@ -422,13 +427,28 @@ def compute_theory_order_report(
 ) -> dict[str, Any]:
     campaign = load_json(campaign_path)
     validate_schema(campaign, "rf_oatof_theory_order_stage_campaign.schema.json")
+    json_inputs = {
+        name: record
+        for name, record in campaign["inputs"].items()
+        if name != "finite_interval_compiler_policy"
+    }
     bound = {
         name: _bound_json(workspace_root, record, name)
-        for name, record in campaign["inputs"].items()
+        for name, record in json_inputs.items()
     }
-    phase_contract = bound["phase_space_match_contract"][1]
-    if phase_contract.get("finite_interval_design", {}).get("sample_count") != 1001:
-        raise ValueError("phase-space contract finite-interval solver identity differs")
+    policy_record = campaign["inputs"].get("finite_interval_compiler_policy")
+    if policy_record is not None:
+        policy_path = _bound_file(
+            workspace_root, policy_record, "finite_interval_compiler_policy"
+        )
+        expected_policy_path = (
+            workspace_root
+            / "projects/single_reflection_oa_tof_mass_analyzer/analysis/"
+            "finite_interval_design_compiler.py"
+        ).resolve()
+        if policy_path != expected_policy_path:
+            raise ValueError("finite-interval compiler policy path differs")
+        bound["finite_interval_compiler_policy"] = (policy_path, None)
     arms = [
         _compile_width(
             float(width),
