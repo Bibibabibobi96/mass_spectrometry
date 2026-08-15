@@ -1,0 +1,118 @@
+{
+  "schema_version": 5,
+  "role": "rf_multipole_oatof_experiment_campaign",
+  "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+  "campaign_id": "staged_grid2_restart_legacy_n34_successor_r07",
+  "status": "archived_invalid",
+  "execution_policy": {
+    "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/execution_policy.json",
+    "sha256": "38178CEFC70EF977C1EA6C772827E0FFB9B220447794FFFB704BD6599B7AEB31"
+  },
+  "claim_limit": "ARCHIVED_INVALID. r07 completed the governed child Program, Fly and analysis, but parent publication failed because the legacy single-flight publisher compared the staged child against upstream_source_identity instead of the canonical staged source_identity. The parent is failed and the successful child is DIAGNOSTIC_ONLY; neither identity may be reused and no physical-equivalence, Candidate, Formal or resolution claim is allowed.",
+  "experiments": [
+    {
+      "sequence": 1,
+      "experiment_id": "staged_grid2_restart_legacy_n34_functional_r07",
+      "run_id": "20260815_133000__sim__cross__staged-grid2-restart-legacy__n34__r07",
+      "execution_strategy": "simion_single_flight",
+      "single_flight_pa_cache_policy": "build_and_publish_if_missing",
+      "single_flight_layout_profile_id": "symmetric_10ev_injection_diagnostic",
+      "single_flight_frontend_grid_profile_id": "frontend_isotropic_020",
+      "single_flight_oatof_numerical_profile_id": "oatof_formal_mesh",
+      "single_flight_trajectory_quality_profile_id": "tqual_8",
+      "single_flight_time_integration_profile_id": "dt160",
+      "single_flight_accelerator_field_profile_id": "accelerator_real_pa",
+      "architecture_generation_id": "short_focus_1mm_pre_voltage_change_v1",
+      "source_profile_id": "legacy_grid2_oracle_n34",
+      "field_overlay_id": "none",
+      "source_release_mode": "staged_grid2_restart",
+      "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_0mm",
+      "staged_grid2_source_state": {
+        "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260804_094500__sim__cross__oct-simion-grid2-common-oatof__n34/inputs/canonical_simion_local_accelerator_exit.csv",
+        "sha256": "66F88F513F8FA20AB55C35A15A41CC9DA7E8FC62FAB19781BA7E1CEAD6350019",
+        "particle_count": 34,
+        "schema_id": "canonical_component_particle_state_v1",
+        "state_event": "local_accelerator_exit",
+        "frame_id": "oatof_global",
+        "clock_basis": "canonical_instrument_time_us",
+        "clock_epoch_id": "instrument_clock_epoch_v1",
+        "simion_start_instance": 3,
+        "position_projection_applied": false,
+        "producer_run_id": "20260804_094500__sim__cross__oct-simion-grid2-common-oatof__n34",
+        "producer_manifest": {
+          "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260804_094500__sim__cross__oct-simion-grid2-common-oatof__n34/run_manifest.json",
+          "sha256": "561CFA944E529970FDB1E1A51B90EF9F03BAC99612D9E4614A46A8BD64220D2D"
+        },
+        "loader_authorization_budget": {
+          "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/staged_grid2_n34_simion_fly2_loader_authorization_budget.json",
+          "sha256": "3C55554E41C9D016C3A2DEC8CB11DC1FFC1436FC843805D0E8987CDE32CDF1FE"
+        },
+        "legacy_bridge": {
+          "template": {
+            "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260804_094500__sim__cross__oct-simion-grid2-common-oatof__n34/inputs/source_canonical_template.csv",
+            "sha256": "562A9C07FDB95CDC15A8B91255161F478A5AC8F30E0743360E777E9C590A80D8"
+          },
+          "trace": {
+            "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260803_235600__sim__simion__oct-oatof-interface-grid2__n41/results/simion_local_accelerator_exit.csv",
+            "sha256": "0DCC58D734BB24544BE79DF2B6EA1F95B0DADFC514128EA4B09B22EF4BC427EC"
+          },
+          "receipt_characterization": {
+            "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/staged_grid2_legacy_bridge_receipt_characterization.json",
+            "sha256": "A63E0AFA7737F5378ECF089A908660BEA147A652CF0BF447E8233CBE80F2A4A6"
+          }
+        }
+      },
+      "source": {
+        "authority_scope": "connection_lineage_only",
+        "run_id": "20260805_132100__sim__simion__oct-terminal-10ev-h15__n1000",
+        "launched_particle_count": 1000,
+        "particle_count": 893,
+        "particle_source_manifest_input_role": "particle_source",
+        "manifest": {
+          "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_132100__sim__simion__oct-terminal-10ev-h15__n1000/run_manifest.json",
+          "sha256": "EAA006E0C916CE4A2AD50C68ACF8F07DFB2A79FAB21D23C5F2E1168451300ABB"
+        },
+        "state": {
+          "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_132100__sim__simion__oct-terminal-10ev-h15__n1000/results/particle_states__exit_aperture_plate_acceleration_rf_on.csv",
+          "sha256": "A3762E69EE3E91265EC208B29F3C10A7A057AD6D61F2EAC450E291F6034EDCAB"
+        },
+        "particle_source": {
+          "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_132100__sim__simion__oct-terminal-10ev-h15__n1000/inputs/particle_source.csv",
+          "sha256": "302C03DC29737CE9D46EB1A8D258DB2A8D3C0F8B6A53F7702A33B1ECF9D5320D"
+        },
+        "metadata": {
+          "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_132100__sim__simion__oct-terminal-10ev-h15__n1000/inputs/particle_source_metadata.json",
+          "sha256": "9B3399D9B70AC5946190ABDF1CFFD1C713A665A09F918C532B4E8F7B95743A8F"
+        },
+        "handoff_publication_contract": {
+          "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/octupole_handoff_publication_n1000.json",
+          "sha256": "BF3DD74CE90CFE4E9811FECADE8F38D95C9DF16E61C1828D52889135094616A4"
+        }
+      },
+      "single_flight_population": {
+        "population_id": "legacy_grid2_oracle_n34_population",
+        "population_mode": "staged_grid2_restart",
+        "source_authority": {
+          "input_role": "staged_grid2_source_state",
+          "table_binding": "experiment_staged_grid2_source_state",
+          "ordered_particle_id_encoding": "canonical_compact_json_integer_array_v1"
+        },
+        "execution_population": {
+          "particle_count": 34,
+          "ordered_particle_id_sha256": "F3394E32FD237968FC29D9EA564B7AC986966008B09BEFD8AD6D8EF20FC8ED30",
+          "selection_algorithm": "all_rows_in_frozen_file_order",
+          "selection_seed": 0
+        },
+        "denominators": {
+          "population_count": 34,
+          "eligible_population_count": 34
+        },
+        "analysis_randomness": {
+          "bootstrap_resample_count": 0,
+          "bootstrap_seed": 20260815
+        },
+        "postselection_policy": "prohibited"
+      }
+    }
+  ]
+}

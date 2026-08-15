@@ -27,7 +27,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     compare_grid2_solver_propagation as propagation,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis import (
-    write_oatof_simion_input as adapter,
+    publish_family_source_bundle as publisher,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis import (
     validate_oatof_formal_analyzer_release as formal_release,
@@ -144,6 +144,39 @@ class AnalyzerTransportTests(unittest.TestCase):
             template = root / "template.csv"
             trace = root / "trace.csv"
             output = root / "grid2.csv"
+            receipt = root / "grid2_receipt.json"
+            write_csv(template, csv_columns(), [canonical_row(7)])
+            write_csv(trace, grid2_state.TRACE_COLUMNS, [{
+                "particle_id": 7, "instrument_time_us": 37.0,
+                "x": -45.0, "y": 0.1, "z": -0.129,
+                "vx": 4200, "vy": 200, "vz": 60000,
+                "ax": 4.0, "ay": 0.2,
+                "energy": kinetic_energy_ev(100, 4200, 200, 60000),
+            }])
+            self.assertEqual(
+                grid2_state.materialize(template, trace, output, receipt), 1
+            )
+            with output.open(encoding="utf-8") as handle:
+                row = next(csv.DictReader(handle))
+            self.assertEqual(row["state_event"], "local_accelerator_exit")
+            self.assertEqual(row["position_x_mm"], "-45.0")
+            self.assertEqual(row["velocity_z_m_s"], "60000")
+            self.assertAlmostEqual(float(row["particle_age_us"]), 36.25)
+            receipt_document = json.loads(receipt.read_text(encoding="utf-8"))
+            self.assertEqual(
+                receipt_document["trace_field_authority"]["velocity"],
+                "current_solver_step_not_crossing_interpolated",
+            )
+            self.assertEqual(
+                receipt_document["trace_energy_validation"]["status"], "PASS"
+            )
+
+    def test_grid2_bridge_rejects_trace_energy_inconsistent_with_velocity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            template = root / "template.csv"
+            trace = root / "trace.csv"
+            output = root / "grid2.csv"
             write_csv(template, csv_columns(), [canonical_row(7)])
             write_csv(trace, grid2_state.TRACE_COLUMNS, [{
                 "particle_id": 7, "instrument_time_us": 37.0,
@@ -151,13 +184,8 @@ class AnalyzerTransportTests(unittest.TestCase):
                 "vx": 4200, "vy": 200, "vz": 60000,
                 "ax": 4.0, "ay": 0.2, "energy": 1.0,
             }])
-            self.assertEqual(grid2_state.materialize(template, trace, output), 1)
-            with output.open(encoding="utf-8") as handle:
-                row = next(csv.DictReader(handle))
-            self.assertEqual(row["state_event"], "local_accelerator_exit")
-            self.assertEqual(row["position_x_mm"], "-45.0")
-            self.assertEqual(row["velocity_z_m_s"], "60000")
-            self.assertAlmostEqual(float(row["particle_age_us"]), 36.25)
+            with self.assertRaisesRegex(ValueError, "energy differs"):
+                grid2_state.materialize(template, trace, output)
 
     def test_compares_real_port_local_exit_by_particle_identity(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -593,7 +621,7 @@ class AnalyzerTransportTests(unittest.TestCase):
             write_csv(source, csv_columns(), [canonical_row(8), canonical_row(2)])
             canonical = root / "canonical.csv"; ion = root / "input.ion"
             mapping = root / "map.csv"; metadata = root / "metadata.json"
-            result = adapter.write_oatof_simion_input(
+            result = publisher.render_oatof_simion_inputs(
                 source, canonical, ion, mapping, metadata
             )
             self.assertEqual(result["particles"], 2)
@@ -613,7 +641,7 @@ class AnalyzerTransportTests(unittest.TestCase):
             root = Path(temp); canonical = root / "canonical.csv"
             write_csv(canonical, csv_columns(), [canonical_row(2)])
             ion = root / "input.ion"; mapping = root / "map.csv"; metadata = root / "meta.json"
-            adapter.write_oatof_simion_input(
+            publisher.render_oatof_simion_inputs(
                 canonical, root / "copy.csv", ion, mapping, metadata
             )
             summary = root / "summary.json"
@@ -644,7 +672,7 @@ class AnalyzerTransportTests(unittest.TestCase):
                 canonical, csv_columns(), [canonical_row(2), canonical_row(8)]
             )
             ion = root / "input.ion"; mapping = root / "map.csv"
-            adapter.write_oatof_simion_input(
+            publisher.render_oatof_simion_inputs(
                 canonical, root / "copy.csv", ion, mapping, root / "meta.json"
             )
             summary = root / "summary.json"

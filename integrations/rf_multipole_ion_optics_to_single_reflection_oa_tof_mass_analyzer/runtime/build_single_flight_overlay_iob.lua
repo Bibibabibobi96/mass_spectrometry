@@ -4,7 +4,7 @@
 -- Usage:
 --   simion.exe --nogui --noprompt lua build_single_flight_overlay_iob.lua
 --     formal.iob container5.iob output.iob
---     flight.pa0 reflectron.pa0 frontend.pa0 detector.pa0 overlay.pa0
+--     flight.pa0 reflectron.pa0 accelerator.pa0 detector.pa0 overlay.pa0
 --     overlay_ox overlay_oy overlay_oz program.lua particles.fly2
 
 local formal=assert(arg[1], 'formal IOB is required')
@@ -13,7 +13,7 @@ local output=assert(arg[3], 'output IOB is required')
 local pa_paths={
   assert(arg[4], 'flight-tube PA0 is required'),
   assert(arg[5], 'reflectron PA0 is required'),
-  assert(arg[6], 'frontend PA0 is required'),
+  assert(arg[6], 'accelerator PA0 is required'),
   assert(arg[7], 'detector PA0 is required'),
   assert(arg[8], 'overlay PA0 is required'),
 }

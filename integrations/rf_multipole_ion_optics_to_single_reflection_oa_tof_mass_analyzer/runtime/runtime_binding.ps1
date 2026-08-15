@@ -5,6 +5,42 @@ $script:RfOatofIntegrationId = (
   'rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer'
 )
 
+function Test-RfOatofImplementationPath {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$Name,
+    [Parameter(Mandatory)][string]$Path,
+    [Parameter(Mandatory)][string]$IntegrationRelativeRoot
+  )
+  if ($Path.StartsWith($IntegrationRelativeRoot, [StringComparison]::Ordinal)) {
+    return $true
+  }
+  $externalProviderPaths = @{
+    simion_rf_drive_kernel = 'common/multipole/simion_rf_drive.lua'
+    oatof_analyzer_component = 'projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/candidates/oatof_analyzer_component.lua'
+  }
+  return (
+    $externalProviderPaths.ContainsKey($Name) -and
+    $Path.Equals($externalProviderPaths[$Name], [StringComparison]::Ordinal)
+  )
+}
+
+function Assert-RfOatofSourceAuthorityScope {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][psobject]$SourceContract,
+    [Parameter(Mandatory)][bool]$StagedGrid2Mode
+  )
+  $hasScope = $SourceContract.PSObject.Properties.Name -contains 'authority_scope'
+  if ($hasScope -and
+      [string]$SourceContract.authority_scope -ne 'connection_lineage_only') {
+    throw 'Runtime source authority scope differs from connection-lineage-only.'
+  }
+  if ($StagedGrid2Mode -ne $hasScope) {
+    throw 'Staged source authority scope presence differs from the population mode.'
+  }
+}
+
 function Assert-RfOatofExactProperties {
   [CmdletBinding()]
   param(
@@ -381,10 +417,9 @@ function Resolve-RfOatofRuntimeBinding {
     Assert-RfOatofExactProperties -Object $record -Expected @('path','sha256') `
       -Role "Runtime implementation $name"
     if ($name -notmatch '^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$' -or
-        -not ([string]$record.path).StartsWith(
-          $integrationRelativeRoot,
-          [StringComparison]::Ordinal
-        )) {
+        -not (Test-RfOatofImplementationPath -Name $name `
+          -Path ([string]$record.path) `
+          -IntegrationRelativeRoot $integrationRelativeRoot)) {
       throw "Runtime implementation role or integration-local path differs: $name"
     }
     $implementation[$name] = Resolve-RfOatofBoundFile -Root $repo `
@@ -405,6 +440,11 @@ function Resolve-RfOatofRuntimeBinding {
   )
   if ($sourceContract.PSObject.Properties.Name -contains 'design_reference') {
     $expectedSourceContractFields += 'design_reference'
+  }
+  if ($sourceContract.PSObject.Properties.Name -contains 'authority_scope') {
+    $expectedSourceContractFields += 'authority_scope'
+    Assert-RfOatofSourceAuthorityScope -SourceContract $sourceContract `
+      -StagedGrid2Mode $true
   }
   Assert-RfOatofExactProperties -Object $sourceContract `
     -Expected $expectedSourceContractFields `

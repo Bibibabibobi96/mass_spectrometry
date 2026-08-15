@@ -1,0 +1,225 @@
+{
+  "schema_version": 5,
+  "role": "rf_multipole_oatof_experiment_campaign",
+  "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+  "campaign_id": "pulse_resolution_direct_baseline_v5_r03",
+  "status": "authorized",
+  "execution_policy": {
+    "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/execution_policy.json",
+    "sha256": "38178CEFC70EF977C1EA6C772827E0FFB9B220447794FFFB704BD6599B7AEB31"
+  },
+  "claim_limit": "The single baseline experiment may run deterministic N=100 baseline registration only. The current official transport establishes its observed detector-blind cohort; the migration checkpoint validates only the unchanged source prefix and is not a current cohort authority. This campaign grants no qualification authority.",
+  "pulse_resolution_optimization": {
+    "purpose": "physical_optimization",
+    "execution_state": "n100_baseline_registration_only",
+    "clock_contract": {
+      "resolution_time_basis": "detector_time_minus_pulse_effective_time",
+      "absolute_instrument_clock_is_resolution_claim": false
+    },
+    "population_contract": {
+      "mother_sample_count": 1000,
+      "screening_prefix_count": 100,
+      "screening_is_deterministic_prefix": true,
+      "qualification_population": "all_pulse_eligible_particles",
+      "random_downsampling_allowed": false,
+      "parallel_batch_count": 5
+    },
+    "stage_order": [
+      "implementation_and_observability",
+      "ideal_upper_bound_attribution",
+      "local_grid_convergence",
+      "joint_optimization",
+      "detector_blind_acceptance_window",
+      "simion_qualification",
+      "comsol_handoff"
+    ],
+    "comparison_matrix": [
+      {
+        "sequence": 1,
+        "experiment_id": "pulse_resolution_baseline",
+        "source_profile_id": "canonical_real_octupole_n1000",
+        "field_profile_id": "accelerator_real_pa",
+        "authority_status": "direct_executable_contract"
+      }
+    ],
+    "screening_promotion": {
+      "unimodal_required": true,
+      "direct_fwhm_relative_improvement_minimum": 0.15,
+      "sigma_relative_improvement_minimum": 0.15,
+      "both_improvements_required": true,
+      "axial_ideal_closure_experiment_id": "pulse_resolution_axial_source_full_domain_ideal",
+      "axial_ideal_minimum_mass_resolution": 30000,
+      "axial_ideal_failure_action": "stop_physical_optimization_and_repair_clock_ideal_field_or_theory"
+    },
+    "grid_convergence": {
+      "mass_resolution_relative_change_maximum": 0.02,
+      "direct_fwhm_relative_change_maximum": 0.02,
+      "hit_rate_change_maximum_percentage_points": 1,
+      "refine_only_attributed_limiting_regions": true
+    },
+    "optimization_constraints": {
+      "candidate_count_maximum": 5,
+      "cartesian_blind_scan_allowed": false,
+      "derived_variables_prohibited": [
+        "absolute_electrode_voltages",
+        "focus_plane",
+        "source_center",
+        "reflectron_endpoints",
+        "ring_baseline_voltages",
+        "shield_position"
+      ],
+      "diagnostic_variables_are_physical_optima": false,
+      "external_instrument_radius_increase_allowed": false,
+      "focus_global_z_mm": 0,
+      "reflectron_minimum_electrode_gap_mm": 1
+    },
+    "acceptance_window": {
+      "derivation": "synthetic_phase_space_and_real_minus_ideal_field_error_budget",
+      "selection_uses_detector_outcome": false,
+      "center_binding": "theory_source_center",
+      "allowed_coordinates": [
+        "x",
+        "y",
+        "z",
+        "angle_x",
+        "angle_y"
+      ],
+      "tof_error_budget_ns": 0.537,
+      "minimum_pulse_eligible_coverage": 0.7,
+      "shrink_below_minimum_coverage_allowed": false,
+      "freeze_before_real_beam_application": true,
+      "outside_window_remains_in_full_beam": true
+    },
+    "acceptance_gates": {
+      "full_beam": {
+        "population_basis": "all_pulse_eligible_particles",
+        "unimodal_required": true,
+        "conditional_hit_rate_minimum": 0.95,
+        "mass_resolution_minimum": 20000,
+        "direct_fwhm_maximum_ns": 0.806
+      },
+      "theoretical_window": {
+        "population_basis": "detector_blind_theoretical_acceptance_window",
+        "unimodal_required": true,
+        "conditional_hit_rate_minimum": 0.95,
+        "mass_resolution_minimum": 30000,
+        "direct_fwhm_maximum_ns": 0.537
+      }
+    },
+    "comsol_handoff": {
+      "simion_dual_gate_required": true,
+      "single_solver_session": true,
+      "global_cartesian_velocity_error_limit_exclusive_m_per_s": 1e-06,
+      "mass_resolution_relative_difference_maximum": 0.1,
+      "hit_rate_difference_maximum_percentage_points": 1
+    }
+  },
+  "experiments": [
+    {
+      "sequence": 1,
+      "experiment_id": "pulse_resolution_baseline",
+      "pulse_resolution_execution_mode": "screening_prefix_n100_baseline_registration",
+      "execution_strategy": "simion_single_flight",
+      "single_flight_pa_cache_policy": "require_existing",
+      "single_flight_oatof_numerical_profile_id": "oatof_formal_mesh",
+      "single_flight_trajectory_quality_profile_id": "tqual_8",
+      "single_flight_time_integration_profile_id": "dt160",
+      "single_flight_source_materialization_profile_id": "canonical_real_octupole_n1000",
+      "architecture_generation_id": "short_focus_1mm_pre_voltage_change_v1",
+      "source_profile_id": "canonical_real_octupole_n1000",
+      "field_overlay_id": "accelerator_overlay_z005",
+      "source_release_mode": "continuous_frontend",
+      "single_flight_pulse_schedule_policy": {
+        "policy_id": "multipole_handoff_ballistic_centroid_v1",
+        "offset_rf_periods": 0,
+        "pulse_width_us": 1,
+        "fixed_execution_authority": {
+          "authority_mode": "frozen_historical_schedule_v1",
+          "pulse_effective_time_us": 31.81366987147908,
+          "rf_period_us": 0.5,
+          "source_schedule": {
+            "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260812_210000__sim__simion__rf-oatof-single-flight-gap0__n100/inputs/resolved_single_flight_pulse_schedule.json",
+            "sha256": "AC9B99A3769C72A0980387D599EF6BC0DDA74DBB388069C27368EC28E19837D1"
+          },
+          "source_state_sha256": "F8F77CFA0A3A21D06BC779FAAC2CB2F066AC38BBC986E3A6A60F28A1E58AE409"
+        }
+      },
+      "single_flight_population": {
+        "population_id": "pulse_resolution_direct_prefix_n100",
+        "population_mode": "first_100_rows_in_frozen_file_order",
+        "source_authority": {
+          "input_role": "pulse_resolution_screening_prefix",
+          "table_binding": "prepared_deterministic_prefix",
+          "ordered_particle_id_encoding": "canonical_compact_json_integer_array_v1"
+        },
+        "execution_population": {
+          "particle_count": 100,
+          "ordered_particle_id_sha256": "F9E2DBDE0AE4640704FB66EE02C101CF84ABE35137363D62647622606DF61279",
+          "selection_algorithm": "first_100_rows_in_frozen_file_order",
+          "selection_seed": 0
+        },
+        "analysis_randomness": {
+          "bootstrap_resample_count": 5000,
+          "bootstrap_seed": 20260812
+        },
+        "postselection_policy": "prohibited"
+      },
+      "single_flight_layout_profile_id": "symmetric_10ev_injection_diagnostic",
+      "single_flight_frontend_grid_profile_id": "frontend_isotropic_020_accelerator_overlay_z005",
+      "single_flight_accelerator_field_profile_id": "accelerator_real_pa",
+      "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_0mm",
+      "run_id": "20260815_160000__sim__cross__pulse-direct-real-rr__n100__r03",
+      "source": {
+        "run_id": "20260805_150100__sim__simion__oct-segmented-10ev-h15__n1000",
+        "launched_particle_count": 1000,
+        "particle_count": 577,
+        "particle_source_manifest_input_role": "particle_source",
+        "manifest": {
+          "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_150100__sim__simion__oct-segmented-10ev-h15__n1000/run_manifest.json",
+          "sha256": "44355DD9CA45F973767F0A2F3DA18EC8F010F398CE61EDB239722B258F9088E7"
+        },
+        "state": {
+          "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_150100__sim__simion__oct-segmented-10ev-h15__n1000/results/particle_states__axial_acceleration_rf_on.csv",
+          "sha256": "F8F77CFA0A3A21D06BC779FAAC2CB2F066AC38BBC986E3A6A60F28A1E58AE409"
+        },
+        "particle_source": {
+          "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_150100__sim__simion__oct-segmented-10ev-h15__n1000/inputs/particle_source.csv",
+          "sha256": "302C03DC29737CE9D46EB1A8D258DB2A8D3C0F8B6A53F7702A33B1ECF9D5320D"
+        },
+        "metadata": {
+          "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_150100__sim__simion__oct-segmented-10ev-h15__n1000/inputs/particle_source_metadata.json",
+          "sha256": "954D2D069A07EC8CD39CF40691682A053B05FBC20884D02462BDDD57862CD2F6"
+        },
+        "handoff_publication_contract": {
+          "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/octupole_handoff_publication_n1000.json",
+          "sha256": "BF3DD74CE90CFE4E9811FECADE8F38D95C9DF16E61C1828D52889135094616A4"
+        }
+      }
+    }
+  ],
+  "pulse_resolution_cohort_authority": {
+    "role": "rf_oatof_historical_migration_reference",
+    "checkpoint": {
+      "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260812_210000__sim__simion__rf-oatof-single-flight-gap0__n100/results/single_flight_particle_checkpoints.csv",
+      "sha256": "D46986FC918605D9EB2AD1BA059BB76F9E6AFA24156C30C20A5880375F6B9044"
+    },
+    "source_release": {
+      "selector": "event == source_release",
+      "ordered_particle_id_sha256": "F9E2DBDE0AE4640704FB66EE02C101CF84ABE35137363D62647622606DF61279"
+    },
+    "pre_pulse_state": {
+      "selector": "event == pre_pulse_state",
+      "ordered_particle_id_sha256": "0A4B33799A1C310F3F23E1260B52EF05E9517A7CEA20C2117A9E3607BDCD611D"
+    },
+    "pulse_eligible": {
+      "selector": "event == pre_pulse_state and pulse_eligibility == eligible",
+      "ordered_particle_id_sha256": "19D70E6F7633B0E783B52BC56B5A35CBA4E83C0051CE290853917A96992AA8E2"
+    },
+    "outside_transverse_bore": {
+      "selector": "event == pre_pulse_state and pulse_eligibility == outside_transverse_bore",
+      "ordered_particle_id_sha256": "B1317E6AF8C4B33CEE6C795E10F8DC0FF508BA3898762E4FAD45BC6A2D7FADC2"
+    },
+    "observed_eligibility_policy": "exact_count_and_ordered_id_sha_fail_closed",
+    "detector_survivor_reselection": "prohibited"
+  }
+}

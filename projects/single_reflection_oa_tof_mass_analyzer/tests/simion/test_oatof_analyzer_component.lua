@@ -13,6 +13,9 @@ end
 local function config()
   return {
     instance_roles={flight_tube=1, reflectron=2, accelerator=3, detector=4},
+    instance_filenames={flight_tube='flight_tube_ground.pa0',
+      reflectron='reflectron.pa0', accelerator='accelerator.pa0',
+      detector='detector_ground.pa0'},
     geometry={
       accelerator_axis_x_mm=-48.8, accelerator_axis_y_mm=0,
       accelerator_instance_z_mm=-29.92918680341103,
@@ -103,6 +106,37 @@ near(workbench.placements.detector.z_mm, -0.15,
   'detector linked z placement')
 near(workbench.placements.flight_tube.z_mm, -64.92918680341103,
   'flight-tube linked z placement')
+
+local override_config = config()
+override_config.instance_filenames.accelerator = 'frontend.pa0'
+local override_analyzer = component.new(override_config)
+override_analyzer.initialize_workbench({instances={
+  {filename='flight_tube_ground.pa0',nx=1001,ny=501,nz=2,dx_mm=1,dy_mm=1,dz_mm=1,scale=1},
+  {filename='reflectron.pa0',nx=401,ny=501,nz=2,dx_mm=1,dy_mm=1,dz_mm=1,scale=1},
+  {filename='frontend.pa0',nx=101,ny=101,nz=101,dx_mm=0.25,dy_mm=0.25,dz_mm=0.05,scale=1},
+  {filename='detector_ground.pa0',nx=3,ny=3,nz=8,dx_mm=1,dy_mm=1,dz_mm=0.05,scale=1},
+}})
+
+local function rejects_workbench(instances, expected)
+  local ok, message = pcall(function()
+    component.new(config()).initialize_workbench({instances=instances})
+  end)
+  assert(not ok, 'invalid workbench payload was accepted')
+  assert(tostring(message):find(expected, 1, true),
+    'unexpected workbench rejection: ' .. tostring(message))
+end
+rejects_workbench({
+  {filename='reflectron.pa0',nx=1,ny=1,nz=1,dx_mm=1,dy_mm=1,dz_mm=1,scale=1},
+  {filename='flight_tube_ground.pa0',nx=1,ny=1,nz=1,dx_mm=1,dy_mm=1,dz_mm=1,scale=1},
+  {filename='accelerator.pa0',nx=1,ny=1,nz=1,dx_mm=1,dy_mm=1,dz_mm=1,scale=1},
+  {filename='detector_ground.pa0',nx=1,ny=1,nz=1,dx_mm=1,dy_mm=1,dz_mm=1,scale=1},
+}, 'flight_tube payload filename differs')
+rejects_workbench({
+  {filename='flight_tube_ground.pa0',nx=1,ny=1,nz=1,dx_mm=1,dy_mm=1,dz_mm=1,scale=1},
+  {filename='reflectron.pa0',nx=1,ny=1,nz=1,dx_mm=1,dy_mm=1,dz_mm=1,scale=1},
+  {filename='wrong.pa0',nx=1,ny=1,nz=1,dx_mm=1,dy_mm=1,dz_mm=1,scale=1},
+  {filename='detector_ground.pa0',nx=1,ny=1,nz=1,dx_mm=1,dy_mm=1,dz_mm=1,scale=1},
+}, 'accelerator payload filename differs')
 
 local field = analyzer.efield_adjust({z_mm=-18, instance_id=3,
   instance_dx_mm=0.25, instance_dz_mm=0.05, instance_scale=1})

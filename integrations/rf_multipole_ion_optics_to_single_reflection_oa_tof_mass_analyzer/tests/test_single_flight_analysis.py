@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import csv
 import json
 import tempfile
 import unittest
@@ -18,25 +19,197 @@ def analyze(log_path, launched, mass_amu, *args, **kwargs):
     bootstrap_resamples = kwargs.pop("bootstrap_resamples", 0)
     bootstrap_seed = kwargs.pop("bootstrap_seed", 20260812)
     source_release_mode = kwargs.pop("source_release_mode", "continuous_frontend")
+    paired_cohort_authority = kwargs.pop("paired_cohort_authority", None)
+    cohort_authority_mode = kwargs.pop("cohort_authority_mode", None)
+    denominators = {"population_count": population_count}
+    if eligible_count is not None:
+        denominators["eligible_population_count"] = eligible_count
     contract = {
+        "schema_version": 1,
         "role": "rf_oatof_resolved_population_contract",
         "source_release_mode": source_release_mode,
         "execution_population": {"particle_count": launched},
-        "denominators": {
-            "population_count": population_count,
-            "eligible_population_count": eligible_count,
-        },
+        "denominators": denominators,
         "analysis_randomness": {
             "bootstrap_resample_count": bootstrap_resamples,
             "bootstrap_seed": bootstrap_seed,
         },
     }
+    if paired_cohort_authority is not None:
+        contract["paired_cohort_authority"] = paired_cohort_authority
+    if cohort_authority_mode is not None:
+        contract["cohort_authority_mode"] = cohort_authority_mode
+    if source_release_mode == "staged_grid2_restart":
+        contract["schema_version"] = 2
+        contract["source_release_validation"] = {
+            "role": "rf_oatof_resolved_source_release_validation",
+            "loader_authorization_budget": {
+                "path": "fixture.json", "sha256": "A" * 64,
+            },
+            "velocity": {
+                "relative_bound": 2e-8,
+                "absolute_floor_m_per_s": 0,
+                "zero_speed_must_be_exact": True,
+            },
+            "derived_energy": {
+                "relative_bound": 3e-8,
+                "absolute_floor_eV": 0,
+                "zero_energy_must_be_exact": True,
+            },
+            "native_ion_ke_role": "diagnostic_only",
+        }
     return analyze_with_population_contract(
         log_path, mass_amu, contract, *args, **kwargs
     )
 
 
 class SingleFlightAnalysisTests(unittest.TestCase):
+    def _run_staged_release_case(
+        self, root: Path, *, expected_velocity: float, actual_velocity: float,
+        actual_x: float = 1.0, actual_time: float = 36.0,
+    ) -> dict[str, object]:
+        energy = kinetic_energy_ev(100, actual_velocity, 0, 0)
+        log = root / "simion.log"
+        log.write_text("\n".join([
+            "TRACE: source_release ion=1 particle_id=6 "
+            f"instrument_time_us={actual_time:.17g} x_mm={actual_x:.17g} "
+            "y_mm=2 z_mm=3 "
+            f"vx_mm_per_us={actual_velocity / 1000:.17g} "
+            "vy_mm_per_us=0 vz_mm_per_us=0",
+            "TRACE: local_accelerator_exit ion=1 particle_id=6 "
+            "instrument_time_us=36 tof_since_pulse_us=0 x_mm=1 y_mm=2 z_mm=3 "
+            f"vx_mm_per_us={actual_velocity / 1000:.17g} "
+            "vy_mm_per_us=0 vz_mm_per_us=0 "
+            f"kinetic_energy_eV={energy:.17g} survival_status=alive",
+            "TRACE: detector_crossing ion=1 t=10 x=2 y=0 z=5",
+        ]) + "\n", encoding="utf-8")
+        initial = root / "initial.csv"
+        fields = ["particle_id", "instrument_time_us", "mass_amu", "charge_state",
+                  "position_x_mm", "position_y_mm", "position_z_mm",
+                  "velocity_x_m_s", "velocity_y_m_s", "velocity_z_m_s",
+                  "kinetic_energy_eV"]
+        with initial.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fields, lineterminator="\n")
+            writer.writeheader()
+            writer.writerow({
+                "particle_id": 6, "instrument_time_us": 36,
+                "mass_amu": 100, "charge_state": 1,
+                "position_x_mm": 1, "position_y_mm": 2, "position_z_mm": 3,
+                "velocity_x_m_s": expected_velocity,
+                "velocity_y_m_s": 0, "velocity_z_m_s": 0,
+                "kinetic_energy_eV": kinetic_energy_ev(
+                    100, expected_velocity, 0, 0
+                ),
+            })
+        row_map = root / "row_map.csv"
+        row_map.write_text(
+            "simulation_particle_id,source_particle_id\n1,6\n", encoding="utf-8"
+        )
+        geometry = root / "geometry.json"
+        geometry.write_text("{}\n", encoding="utf-8")
+        _, summary = analyze(
+            log, 1, 100.0, source_release_mode="staged_grid2_restart",
+            geometry_path=geometry, initial_global_state_path=initial,
+            initial_global_state_sha256=hashlib.sha256(
+                initial.read_bytes()
+            ).hexdigest(),
+            particle_row_map_path=row_map,
+        )
+        return summary
+
+    def test_staged_loader_budget_uses_relative_nonzero_bounds(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            summary = self._run_staged_release_case(
+                Path(directory), expected_velocity=4000,
+                actual_velocity=4000.00004,
+            )
+        validation = summary["staged_grid2_restart_source_release_validation"]
+        self.assertEqual(validation["status"], "PASS")
+        self.assertLess(
+            validation["maximum_velocity_relative_to_expected_speed"], 2e-8
+        )
+        self.assertLess(
+            validation["maximum_energy_relative_to_expected_energy"], 3e-8
+        )
+
+    def test_staged_loader_budget_rejects_outside_or_nonexact_state(self) -> None:
+        cases = [
+            {"expected_velocity": 4000, "actual_velocity": 4000.00016},
+            {"expected_velocity": 4000, "actual_velocity": 4000,
+             "actual_x": 1.000000000001},
+            {"expected_velocity": 4000, "actual_velocity": 4000,
+             "actual_time": 36.000000000001},
+            {"expected_velocity": 0, "actual_velocity": 1e-9},
+        ]
+        for index, case in enumerate(cases):
+            with self.subTest(case=index), tempfile.TemporaryDirectory() as directory:
+                with self.assertRaisesRegex(
+                    ValueError, "resolved loader-characterized contract"
+                ):
+                    self._run_staged_release_case(Path(directory), **case)
+
+    def test_staged_grid2_row_map_preserves_canonical_ids_and_elapsed_clock(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            log = root / "simion.log"
+            energy = kinetic_energy_ev(100, 4000, 0, 0)
+            log.write_text("\n".join([
+                "TRACE: source_release ion=1 particle_id=6 instrument_time_us=36 x_mm=1 y_mm=2 z_mm=3 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
+                f"TRACE: local_accelerator_exit ion=1 particle_id=6 instrument_time_us=36 tof_since_pulse_us=0 x_mm=1 y_mm=2 z_mm=3 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0 kinetic_energy_eV={energy:.17g} survival_status=alive",
+                "TRACE: detector_crossing ion=1 t=10 x=2 y=0 z=5",
+                "TRACE: source_release ion=2 particle_id=97 instrument_time_us=37 x_mm=1 y_mm=2 z_mm=3 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
+                f"TRACE: local_accelerator_exit ion=2 particle_id=97 instrument_time_us=37 tof_since_pulse_us=0 x_mm=1 y_mm=2 z_mm=3 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0 kinetic_energy_eV={energy:.17g} survival_status=alive",
+                "TRACE: detector_crossing ion=2 t=10 x=2 y=0 z=5",
+            ]) + "\n", encoding="utf-8")
+            initial = root / "initial.csv"
+            fields = ["particle_id", "instrument_time_us", "mass_amu", "charge_state",
+                      "position_x_mm", "position_y_mm", "position_z_mm",
+                      "velocity_x_m_s", "velocity_y_m_s", "velocity_z_m_s",
+                      "kinetic_energy_eV"]
+            with initial.open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=fields, lineterminator="\n")
+                writer.writeheader()
+                for particle_id, time_us in ((6, 36), (97, 37)):
+                    writer.writerow({"particle_id": particle_id, "instrument_time_us": time_us,
+                        "mass_amu": 100, "charge_state": 1, "position_x_mm": 1,
+                        "position_y_mm": 2, "position_z_mm": 3, "velocity_x_m_s": 4000,
+                        "velocity_y_m_s": 0, "velocity_z_m_s": 0,
+                        "kinetic_energy_eV": kinetic_energy_ev(100, 4000, 0, 0)})
+            row_map = root / "row_map.csv"
+            row_map.write_text(
+                "simulation_particle_id,source_particle_id\n1,6\n2,97\n",
+                encoding="utf-8",
+            )
+            geometry = root / "geometry.json"
+            geometry.write_text("{}\n", encoding="utf-8")
+            rows, summary = analyze(
+                log, 2, 100.0, source_release_mode="staged_grid2_restart",
+                geometry_path=geometry,
+                initial_global_state_path=initial,
+                initial_global_state_sha256=hashlib.sha256(initial.read_bytes()).hexdigest(),
+                particle_row_map_path=row_map,
+            )
+        self.assertEqual(sorted({int(row["particle_id"]) for row in rows}), [6, 97])
+        detector_times = sorted(
+            float(row["instrument_time_us"])
+            for row in rows if row["event"] == "detector_crossing"
+        )
+        self.assertEqual(detector_times, [46.0, 47.0])
+        self.assertEqual(
+            summary["staged_grid2_restart_source_release_validation"]["status"],
+            "PASS",
+        )
+        self.assertEqual(
+            summary["analysis_scope"],
+            "downstream_only_from_local_accelerator_exit",
+        )
+        self.assertFalse(summary["pulse_eligibility_validation_applied"])
+        self.assertFalse(summary["injection_energy_validation_applied"])
+        self.assertIsNone(summary["pulse_capture"])
+        self.assertIsNone(summary["injection_energy_validation"])
+        self.assertIsNone(summary["pulse_effective_time_us"])
+        self.assertIsNone(summary["resolution_time_basis"])
+
     def test_n1000_marker_does_not_obscure_geometry(self) -> None:
         self.assertLess(marker_area(1000), marker_area(100))
         self.assertLessEqual(marker_area(1000), 2.0)
@@ -331,7 +504,8 @@ class SingleFlightAnalysisTests(unittest.TestCase):
             model.write_text(json.dumps(geometry), encoding="utf-8")
             rows, summary = analyze(
                 log, 4, 100.0, model, 10.0,
-                eligible_population_count=1,
+                eligible_population_count=None,
+                cohort_authority_mode="establish_observed_authority",
             )
         capture = summary["pulse_capture"]
         self.assertEqual(capture["counts"], {
@@ -349,6 +523,20 @@ class SingleFlightAnalysisTests(unittest.TestCase):
         }
         self.assertEqual(classified[2], "upstream_of_repeller")
         self.assertEqual(classified[3], "outside_transverse_bore")
+        observed = summary["observed_cohort_authority"]
+        self.assertEqual(observed["source_release"]["ordered_particle_ids"], [1])
+        self.assertEqual(observed["pre_pulse_state"]["ordered_particle_ids"], [1, 2, 3])
+        self.assertEqual(observed["pulse_eligible"]["ordered_particle_ids"], [1])
+        self.assertEqual(
+            observed["outside_transverse_bore"]["ordered_particle_ids"], [3]
+        )
+        for name in (
+            "source_release", "pre_pulse_state", "pulse_eligible",
+            "outside_transverse_bore",
+        ):
+            self.assertEqual(len(observed[name]["ordered_particle_id_sha256"]), 64)
+            self.assertEqual(observed[name]["count"], len(observed[name]["ordered_particle_ids"]))
+        self.assertEqual(summary["observed_handoff"]["ordered_particle_ids"], [])
 
     def test_three_axis_window_reports_only_detector_blind_spatial_metrics(self) -> None:
         lines = []

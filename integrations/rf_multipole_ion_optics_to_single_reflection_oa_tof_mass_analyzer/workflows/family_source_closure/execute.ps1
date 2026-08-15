@@ -50,6 +50,55 @@ if (-not $campaignPath.StartsWith(
     -not (Test-Path -LiteralPath $campaignPath -PathType Leaf)) {
   throw 'Campaign must be one repository-managed file.'
 }
+$legacyDispositionPath = Join-Path $integrationRoot `
+  'config\family_source_closure_legacy_attribution_migration.json'
+$legacyDisposition = Get-Content -LiteralPath $legacyDispositionPath -Raw -Encoding UTF8 |
+  ConvertFrom-Json
+$expectedActiveWorkflow = 'workflows/family_source_closure/execute.ps1'
+if ([string]$legacyDisposition.active_workflow -ne $expectedActiveWorkflow) {
+  throw 'Legacy attribution disposition does not name this active workflow.'
+}
+$campaignRepoRelative = [IO.Path]::GetRelativePath($repoRoot, $campaignPath).Replace('\', '/')
+$historicalCampaigns = @($legacyDisposition.historical_campaigns | Where-Object {
+  [string]$_.path -eq $campaignRepoRelative
+})
+if ($historicalCampaigns.Count -gt 1) {
+  throw 'Historical campaign disposition must resolve at most once.'
+}
+if ($historicalCampaigns.Count -eq 1) {
+  $historicalCampaign = $historicalCampaigns[0]
+  $historicalCampaignSha256 = (
+    Get-FileHash -LiteralPath $campaignPath -Algorithm SHA256
+  ).Hash.ToLowerInvariant()
+  if ([string]$historicalCampaign.disposition -ne
+      'non_executable_historical_evidence' -or
+      $historicalCampaignSha256 -ne
+      ([string]$historicalCampaign.content_sha256).ToLowerInvariant()) {
+    throw 'Historical campaign disposition identity differs; execution remains forbidden.'
+  }
+  throw 'Campaign is non-executable historical evidence in ValidateOnly, PrepareOnly and SolverAuthorized modes.'
+}
+$campaignDocument = Get-Content -LiteralPath $campaignPath -Raw -Encoding UTF8 |
+  ConvertFrom-Json
+if ($SolverAuthorized -and [string]$campaignDocument.status -ne 'authorized') {
+  throw 'SolverAuthorized execution requires campaign.status=authorized.'
+}
+$experimentRows = @($campaignDocument.experiments | Where-Object {
+  $_.experiment_id -eq $ExperimentId
+})
+if ($experimentRows.Count -ne 1) {
+  throw 'Campaign experiment must resolve exactly once.'
+}
+$selectedExperiment = $experimentRows[0]
+$isStagedGrid2 =
+  [string]$selectedExperiment.source_release_mode -eq 'staged_grid2_restart'
+if ($SolverAuthorized -and $isStagedGrid2 -and (
+    [int]$campaignDocument.schema_version -ne 5 -or
+    $null -eq $selectedExperiment.staged_grid2_source_state -or
+    -not ($selectedExperiment.staged_grid2_source_state.PSObject.Properties.Name `
+      -contains 'loader_authorization_budget'))) {
+  throw 'SolverAuthorized staged grid2 execution requires campaign v5 with an explicit loader authorization budget.'
+}
 & $PythonExe -m (
   'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.' +
   'workflows.family_source_closure.refresh_campaign_source_bindings'
@@ -57,15 +106,14 @@ if (-not $campaignPath.StartsWith(
 if ($LASTEXITCODE -ne 0) {
   throw 'Campaign source bindings must be refreshed before execution.'
 }
-$campaignDocument = Get-Content -LiteralPath $campaignPath -Raw -Encoding UTF8 |
-  ConvertFrom-Json
-$experimentRows = @($campaignDocument.experiments | Where-Object {
-  $_.experiment_id -eq $ExperimentId
-})
-if ($experimentRows.Count -ne 1) {
-  throw 'Campaign experiment must resolve exactly once.'
-}
 $campaignRunId = [string]$experimentRows[0].run_id
+$legacySingleFlightCachePolicy =
+  [string]$selectedExperiment.execution_strategy -eq 'simion_single_flight' -and
+  -not ($selectedExperiment.PSObject.Properties.Name -contains
+    'single_flight_pa_cache_policy')
+if ($legacySingleFlightCachePolicy -and -not $ValidateOnly) {
+  throw 'Legacy single-flight cache policy is compatible with ValidateOnly only.'
+}
 
 $workspaceRoot = Split-Path -Parent $repoRoot
 $cleanupOutput = $ValidateOnly
@@ -96,7 +144,6 @@ if ($ValidateOnly) {
 $outputRoot = [IO.Path]::GetFullPath($outputRoot)
 
 try {
-  New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null
   $resolvedPath = Join-Path $outputRoot 'resolved_connection.json'
   $planPath = Join-Path $outputRoot 'composition_plan.json'
   $profileRegistry = Join-Path $integrationRoot 'config\connection_profiles.json'

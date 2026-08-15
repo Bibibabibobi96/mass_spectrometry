@@ -124,11 +124,7 @@ def _verify_stage_chain_identity(
     source_identity = receipt["source_identity"]
     stage_source_identity = run_config.get(expected_source_field)
     if (
-        not isinstance(stage_source_identity, dict)
-        or any(
-            stage_source_identity.get(key) != value
-            for key, value in source_identity.items()
-        )
+        stage_source_identity != source_identity
         or run_config.get("parameters", {}).get("connection_profile_id")
         != profile_id
         or run_config.get("parameters", {}).get("source_branch_id")
@@ -159,6 +155,38 @@ def _verify_stage_chain_identity(
             != receipt["resolved_population_contract_sha256"]
         ):
             raise ContractError("single-flight stage population authority differs")
+
+
+def _resolved_connection_lineage(
+    *, source_contract: dict[str, Any], source_branch_id: str
+) -> dict[str, Any]:
+    """Resolve the non-authoritative upstream connection lineage."""
+
+    if source_contract.get("authority_scope") != "connection_lineage_only":
+        raise ContractError("staged source contract is not connection-lineage-only")
+    branch = source_contract.get("source_branches", {}).get(source_branch_id)
+    if not isinstance(branch, dict) or not isinstance(branch.get("source"), dict):
+        raise ContractError("staged source contract connection lineage is missing")
+    source = branch["source"]
+    try:
+        identity = {
+            "source_branch_id": source_branch_id,
+            "solver_id": branch["solver_id"],
+            "run_id": source["run_id"],
+            "project_id": branch["recorded_project_id"],
+            "manifest_sha256": source["manifest"]["sha256"],
+            "event_sha256": source["state"]["sha256"],
+            "particle_source_sha256": source["particle_source"]["sha256"],
+            "metadata_sha256": source["metadata"]["sha256"],
+        }
+    except (KeyError, TypeError) as exc:
+        raise ContractError(
+            "staged source contract connection lineage is incomplete"
+        ) from exc
+    return {
+        "authority_scope": "connection_lineage_only",
+        "identity": identity,
+    }
 
 
 def publish_family_source_closure_run(
@@ -254,6 +282,7 @@ def publish_family_source_closure_run(
         != receipt.get("upstream_resolved_design_sha256")
     ):
         raise ContractError("family parent frozen campaign inputs differ")
+    population = None
     if execution_strategy == "simion_single_flight":
         if (
             resolved_population_contract_path.parent != receipt_path.parent.resolve()
@@ -273,6 +302,19 @@ def publish_family_source_closure_run(
             != launched_particle_count
         ):
             raise ContractError("family parent population contract identity differs")
+    staged_single_flight = (
+        execution_strategy == "simion_single_flight"
+        and population.get("source_release_mode") == "staged_grid2_restart"
+    )
+    connection_lineage = None
+    if staged_single_flight:
+        source_contract = _load(resolved_source_contract_path)
+        connection_lineage = _resolved_connection_lineage(
+            source_contract=source_contract,
+            source_branch_id=source_branch_id,
+        )
+        if receipt.get("connection_lineage") != connection_lineage:
+            raise ContractError("staged parent connection lineage differs")
     upstream_project_id = resolved["selection"]["upstream_project_id"]
     stage_run_ids = receipt.get("stage_run_ids")
     stage_runtime_binding_sha256s = receipt.get(
@@ -327,38 +369,31 @@ def publish_family_source_closure_run(
     first_stage_config = _load(
         workspace_root / stages[0]["path"] / "run_config.json"
     )
-    pre_pulse_source = first_stage_config.get(
-        "source_particle_identity" if execution_strategy == "staged_three_stage" else "upstream_source_identity"
-    )
-    required_source_keys = (
-        "source_branch_id",
-        "solver_id",
-        "run_id",
-        "project_id",
-        "manifest_sha256",
-        "event_sha256",
-        "particle_source_sha256",
-        "metadata_sha256",
-    )
-    if (
-        not isinstance(pre_pulse_source, dict)
-        or any(
-            pre_pulse_source.get(key) != receipt["source_identity"][key]
-            for key in required_source_keys
+    first_source_field = (
+        "source_identity"
+        if staged_single_flight
+        else (
+            "source_particle_identity"
+            if execution_strategy == "staged_three_stage"
+            else "upstream_source_identity"
         )
-    ):
+    )
+    pre_pulse_source = first_stage_config.get(first_source_field)
+    if pre_pulse_source != receipt["source_identity"]:
         raise ContractError(
             "family first stage and parent source identities differ"
         )
+    if staged_single_flight:
+        if (
+            first_stage_config.get("connection_lineage") != connection_lineage
+            or "upstream_source_identity" in first_stage_config
+        ):
+            raise ContractError("staged first-stage connection lineage differs")
     _verify_stage_chain_identity(
         stage=stages[0],
         workspace_root=workspace_root,
         receipt=receipt,
-        expected_source_field=(
-            "source_particle_identity"
-            if execution_strategy == "staged_three_stage"
-            else "upstream_source_identity"
-        ),
+        expected_source_field=first_source_field,
         expected_runtime_binding_sha256=stage_runtime_binding_sha256s[
             stages[0]["phase"]
         ],
@@ -415,7 +450,14 @@ def publish_family_source_closure_run(
         "launched_particle_count": launched_particle_count,
         "particle_count": particle_count,
         "policy_id": receipt["policy_id"],
-        "source_particle_identity": receipt["source_identity"],
+        **(
+            {
+                "source_identity": receipt["source_identity"],
+                "connection_lineage": connection_lineage,
+            }
+            if staged_single_flight
+            else {"source_particle_identity": receipt["source_identity"]}
+        ),
         "stage_runtime_binding_sha256s": stage_runtime_binding_sha256s,
         "stage_runs": stages,
         "artifact_retention": {

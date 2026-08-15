@@ -57,18 +57,33 @@ local function validate_electrode_ids(ids, ring_count)
   return validated
 end
 
-local function filename_matches(value, pattern, role)
-  assert(type(value) == 'string' and value:match(pattern),
-    'workbench ' .. role .. ' filename does not match its role')
+local function exact_basename(value, role)
+  assert(type(value) == 'string',
+    'workbench ' .. role .. ' payload filename must be a string')
+  local basename = value:gsub('\\', '/'):match('([^/]+)$')
+  assert(basename and basename ~= '',
+    'workbench ' .. role .. ' payload basename is missing')
+  return basename
+end
+
+local function filename_matches(value, expected, role)
+  assert(type(expected) == 'string' and expected ~= '' and
+      not expected:find('/', 1, true) and not expected:find('\\', 1, true),
+    'instance_filenames.' .. role .. ' must be an exact basename')
+  assert(exact_basename(value, role) == expected,
+    'workbench ' .. role .. ' payload filename differs')
 end
 
 function component.new(config)
-  exact_keys(config, {instance_roles=true, geometry=true, field_modes=true,
+  exact_keys(config, {instance_roles=true, instance_filenames=true,
+    geometry=true, field_modes=true,
     voltages=true, accelerator_ring_count=true, electrode_ids=true,
     reflectron_stage1_ring_count=true, reflectron_stage2_ring_count=true,
     detector=true, diagnostics=true}, 'config')
   exact_keys(config.instance_roles, {flight_tube=true, reflectron=true,
     accelerator=true, detector=true}, 'instance_roles')
+  exact_keys(config.instance_filenames, {flight_tube=true, reflectron=true,
+    accelerator=true, detector=true}, 'instance_filenames')
   exact_keys(config.geometry, {accelerator_axis_x_mm=true,
     accelerator_axis_y_mm=true, accelerator_instance_z_mm=true,
     accelerator_repeller_front_z_mm=true, accelerator_grid1_z_mm=true,
@@ -95,6 +110,7 @@ function component.new(config)
     'diagnostics')
 
   local roles = config.instance_roles
+  local payload_filenames = config.instance_filenames
   local role_seen = {}
   for name, value in pairs(roles) do
     value = integer(value, 'instance_roles.' .. name)
@@ -237,10 +253,10 @@ function component.new(config)
     local reflectron = state.instances[roles.reflectron]
     local accelerator = state.instances[roles.accelerator]
     local detector_instance = state.instances[roles.detector]
-    filename_matches(flight.filename, 'flight_tube_ground%.pa0$', 'flight_tube')
-    filename_matches(reflectron.filename, 'reflectron%.pa0$', 'reflectron')
-    filename_matches(accelerator.filename, 'accelerator%.pa0$', 'accelerator')
-    filename_matches(detector_instance.filename, 'detector_ground%.pa0$', 'detector')
+    filename_matches(flight.filename, payload_filenames.flight_tube, 'flight_tube')
+    filename_matches(reflectron.filename, payload_filenames.reflectron, 'reflectron')
+    filename_matches(accelerator.filename, payload_filenames.accelerator, 'accelerator')
+    filename_matches(detector_instance.filename, payload_filenames.detector, 'detector')
     for role, instance in pairs({flight_tube=flight, reflectron=reflectron,
         accelerator=accelerator, detector=detector_instance}) do
       exact_keys(instance, {filename=true, nx=true, ny=true, nz=true,

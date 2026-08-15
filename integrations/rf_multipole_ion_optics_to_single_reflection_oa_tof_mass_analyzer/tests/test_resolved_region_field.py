@@ -13,9 +13,6 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     resolved_region_field_hook_lua,
     validate_resolved_region_field_contract,
 )
-from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.tests.test_support.legacy_single_flight_program import (
-    resolved_region_field_lua,
-)
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -47,7 +44,7 @@ class ResolvedRegionFieldTests(unittest.TestCase):
         contract = self._build(FULL_ID)
         self.assertNotIn("real_pa_field", contract["semantic"]["region_modes"].values())
         self.assertFalse(contract["semantic"]["real_pa_field_blending_allowed"])
-        lua = resolved_region_field_lua(contract)
+        lua = resolved_region_field_hook_lua(contract)
         self.assertNotIn("bore", lua.lower())
         self.assertIn("analytic_field", contract["semantic"]["effective_domain"]["transverse"])
         self.assertIn("error('particle escaped resolved region-field", lua)

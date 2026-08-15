@@ -208,9 +208,17 @@ def campaign_transfer_settings(
     validation set: the validation identities remain the hash-ranked split.
     """
     if (
-        campaign.get("schema_version") != 2
+        int(campaign.get("schema_version", 0)) < 2
         or campaign.get("role") != "rf_multipole_oatof_experiment_campaign"
-        or campaign.get("campaign_id") != "pulse_resolution_optimization"
+        or campaign.get("campaign_id") not in {
+            "pulse_resolution_optimization",
+            "pulse_resolution_direct_baseline_v5",
+            "pulse_resolution_direct_baseline_v5_r09",
+            "pulse_resolution_direct_candidates_v5",
+            "pulse_resolution_direct_candidates_v5_r01",
+            "pulse_resolution_direct_candidates_v5_r02",
+            "pulse_resolution_direct_candidates_v5_r03",
+        }
     ):
         raise TransferModelContractError("campaign is not the pulse-resolution optimization contract")
     contract = campaign.get("pulse_resolution_optimization")
@@ -261,7 +269,7 @@ def campaign_transfer_settings(
     canonical_contract = json.dumps(contract, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     split_seed = int.from_bytes(sha256(canonical_contract).digest()[:8], "big")
     return FrozenCampaignTransferSettings(
-        campaign_id="pulse_resolution_optimization",
+        campaign_id=str(campaign["campaign_id"]),
         execution_state=str(contract["execution_state"]),
         campaign_feature_order=feature_order,
         model_feature_order=ACCEPTANCE_FEATURE_NAMES,

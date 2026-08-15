@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "role": "rf_oatof_legacy_simion_grid2_materialization_receipt",
+  "particle_count": 34,
+  "trace_energy_validation": {
+    "authority": "mass_and_velocity_derived_kinetic_energy",
+    "relative_tolerance": 5e-08,
+    "absolute_tolerance_eV": 5e-09,
+    "maximum_absolute_error_eV": 0.0,
+    "status": "PASS"
+  },
+  "trace_field_authority": {
+    "position_and_time": "grid2_crossing_linear_interpolation",
+    "velocity": "current_solver_step_not_crossing_interpolated",
+    "acceleration_x_y": "non_authoritative_legacy_trace_fields",
+    "energy": "validated_only_then_recomputed_from_mass_and_velocity"
+  },
+  "limitations": [
+    "legacy_grid2_velocity_is_current_step_not_crossing_interpolated"
+  ]
+}

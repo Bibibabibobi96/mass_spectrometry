@@ -8,7 +8,7 @@
   },
   "adapter": {
     "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/analysis/publish_family_source_bundle.py",
-    "sha256": "165A300CAE84BEA9D62050B5BB25D8AF4571DD327730643EC2B19891D4546628",
+    "sha256": "F1BCA48EBED4E529B3C3AAD659CF4F3F12A16B0643D2775E309ED5CD294B278C",
     "callable": "publish_family_source_bundle",
     "output_schema": "component_particle_state_v1"
   },

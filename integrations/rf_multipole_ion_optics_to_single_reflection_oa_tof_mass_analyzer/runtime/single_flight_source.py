@@ -10,6 +10,10 @@ import json
 import math
 from pathlib import Path
 
+from common.contracts.component_particle_state import (
+    csv_columns as component_state_columns,
+    validate_component_particle_state_csv,
+)
 from common.contracts.particle_physics import (
     AMU_KG,
     ELEMENTARY_CHARGE_C,
@@ -50,6 +54,7 @@ ATTRIBUTION_COLUMNS = [
     "instrument_time_us", "mass_amu", "charge_state", "x_mm", "y_mm",
     "z_mm", "vx_m_s", "vy_m_s", "vz_m_s", "kinetic_energy_eV",
 ]
+ROW_MAP_COLUMNS = ["simulation_particle_id", "source_particle_id"]
 
 def _file_sha256(path: Path) -> str:
     digest = hashlib.sha256()
@@ -232,7 +237,7 @@ def materialize_ideal_linear_source(
     return receipt
 
 
-def render_pre_pulse_fly2(rows: list[dict[str, str]]) -> str:
+def render_restart_fly2(rows: list[dict[str, str]]) -> str:
     """Render official individual-particle FLY2 direct-velocity definitions."""
     lines = ["particles {", "  coordinates = 0,"]
     for row in rows:
@@ -249,6 +254,11 @@ def render_pre_pulse_fly2(rows: list[dict[str, str]]) -> str:
         )
     lines.append("}")
     return "\n".join(lines) + "\n"
+
+
+def render_pre_pulse_fly2(rows: list[dict[str, str]]) -> str:
+    """Retain the established pre-pulse API over the generic official renderer."""
+    return render_restart_fly2(rows)
 
 
 def materialize_pre_pulse_restart(
@@ -288,6 +298,65 @@ def materialize_pre_pulse_restart(
         }
         global_rows.append(global_row)
     return render_pre_pulse_fly2(global_rows), global_rows
+
+
+def materialize_staged_grid2_restart(
+    source_path: Path,
+) -> tuple[str, list[dict[str, str]]]:
+    """Materialize an exact canonical local-exit state for downstream flight."""
+    validate_component_particle_state_csv(source_path)
+    with source_path.open(encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle)
+        if reader.fieldnames != component_state_columns():
+            raise ValueError(
+                "staged grid2 restart requires the exact canonical 28-column "
+                "component state schema"
+            )
+        rows = list(reader)
+    if not rows:
+        raise ValueError("staged grid2 restart canonical state is empty")
+    particle_ids = [int(row["particle_id"]) for row in rows]
+    if len(particle_ids) != len(set(particle_ids)) or any(
+        particle_id <= 0 for particle_id in particle_ids
+    ):
+        raise ValueError("staged grid2 restart particle IDs must be unique and positive")
+    epochs = {row["clock_epoch_id"] for row in rows}
+    for row in rows:
+        if (
+            row["state_event"] != "local_accelerator_exit"
+            or row["frame_id"] != "oatof_global"
+            or row["target_component_id"]
+            != "single_reflection_oa_tof_mass_analyzer"
+        ):
+            raise ValueError(
+                "staged grid2 restart requires local_accelerator_exit in "
+                "oatof_global for the oaTOF analyzer"
+            )
+    if len(epochs) != 1 or not next(iter(epochs)):
+        raise ValueError("staged grid2 restart requires one canonical clock epoch")
+    global_rows = [
+        {
+            "particle_id": str(int(row["particle_id"])),
+            "instrument_time_us": format(float(row["instrument_time_us"]), ".17g"),
+            "mass_amu": format(float(row["mass_amu"]), ".17g"),
+            "charge_state": str(int(row["charge_state"])),
+            **{
+                f"position_{axis}_mm": format(
+                    float(row[f"position_{axis}_mm"]), ".17g"
+                )
+                for axis in "xyz"
+            },
+            **{
+                f"velocity_{axis}_m_s": format(
+                    float(row[f"velocity_{axis}_m_s"]), ".17g"
+                )
+                for axis in "xyz"
+            },
+            "kinetic_energy_eV": format(float(row["kinetic_energy_eV"]), ".17g"),
+        }
+        for row in rows
+    ]
+    return render_restart_fly2(global_rows), global_rows
 
 
 def materialize(
@@ -363,9 +432,14 @@ def main() -> int:
     parser.add_argument("--connection", required=True, type=Path)
     parser.add_argument("--particle-input", required=True, type=Path)
     parser.add_argument("--global-state", required=True, type=Path)
+    parser.add_argument("--row-map", type=Path)
     parser.add_argument(
         "--source-release-mode",
-        choices=("continuous_frontend", "pre_pulse_restart"),
+        choices=(
+            "continuous_frontend",
+            "pre_pulse_restart",
+            "staged_grid2_restart",
+        ),
         default="continuous_frontend",
     )
     parser.add_argument("--pulse-time-us", type=float)
@@ -377,6 +451,15 @@ def main() -> int:
         particle_input, global_rows = materialize_pre_pulse_restart(
             args.source, args.pulse_time_us
         )
+    elif args.source_release_mode == "staged_grid2_restart":
+        if args.pulse_time_us is not None:
+            raise ValueError(
+                "staged grid2 restart inherits canonical row clocks and does not "
+                "accept a pulse-time override"
+            )
+        particle_input, global_rows = materialize_staged_grid2_restart(args.source)
+        if args.row_map is None:
+            raise ValueError("staged grid2 restart requires an explicit frozen row map")
     else:
         ion_rows, global_rows = materialize(args.source, connection)
         particle_input = None
@@ -391,6 +474,20 @@ def main() -> int:
         writer = csv.DictWriter(handle, fieldnames=GLOBAL_COLUMNS, lineterminator="\n")
         writer.writeheader()
         writer.writerows(global_rows)
+    if args.row_map is not None:
+        args.row_map.parent.mkdir(parents=True, exist_ok=True)
+        with args.row_map.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(
+                handle, fieldnames=ROW_MAP_COLUMNS, lineterminator="\n"
+            )
+            writer.writeheader()
+            writer.writerows(
+                {
+                    "simulation_particle_id": simulation_id,
+                    "source_particle_id": row["particle_id"],
+                }
+                for simulation_id, row in enumerate(global_rows, start=1)
+            )
     print(
         "SINGLE_FLIGHT_SOURCE=PASS "
         f"PARTICLES={len(global_rows)} PARTICLE_INPUT={args.particle_input}"

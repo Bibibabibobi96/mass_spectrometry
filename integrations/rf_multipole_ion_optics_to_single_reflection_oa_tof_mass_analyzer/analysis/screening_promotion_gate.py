@@ -201,9 +201,9 @@ def evaluate_campaign_n100_paired_promotion(
     failures: list[dict[str, str]] = []
     try:
         if (
-            campaign.get("schema_version") != 2
+            int(campaign.get("schema_version", 0)) < 3
             or campaign.get("role") != "rf_multipole_oatof_experiment_campaign"
-            or campaign.get("campaign_id") != "pulse_resolution_optimization"
+            or not isinstance(campaign.get("campaign_id"), str)
         ):
             raise ValueError("campaign is not the pulse-resolution optimization contract")
         contract = campaign["pulse_resolution_optimization"]

@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
+import shutil
+import subprocess
+import tempfile
 import unittest
 
 
@@ -15,6 +20,9 @@ SINGLE_FLIGHT_RUNNER = INTEGRATION_ROOT / "runtime" / "run_single_flight.ps1"
 FAMILY_ADAPTER = (
     INTEGRATION_ROOT / "workflows" / "family_source_closure" / "adapter.ps1"
 )
+PULSE_RESOLUTION_REGISTRAR = (
+    INTEGRATION_ROOT / "analysis" / "register_pulse_resolution_result.py"
+)
 RUNNERS = (
     INTEGRATION_ROOT / "runtime" / "run_transfer.ps1",
     INTEGRATION_ROOT / "stages" / "comsol" / "run_pre_pulse_interface_transport.ps1",
@@ -24,6 +32,428 @@ RUNNERS = (
 
 
 class RuntimeRunLocalContractTests(unittest.TestCase):
+    def test_v4_staged_solver_authorization_fails_before_child_creation(self) -> None:
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("PowerShell 7 is unavailable")
+        experiment_id = "staged_v4_early_gate_fixture"
+        run_id = "20260815_235959__sim__cross__staged-v4-early-gate__n1"
+        campaign = {
+            "schema_version": 4,
+            "status": "authorized",
+            "experiments": [{
+                "experiment_id": experiment_id,
+                "run_id": run_id,
+                "source_release_mode": "staged_grid2_restart",
+                "staged_grid2_source_state": {},
+            }],
+        }
+        diagnostics = INTEGRATION_ROOT / "config" / "diagnostics"
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", dir=diagnostics, delete=False,
+            encoding="utf-8",
+        ) as handle:
+            json.dump(campaign, handle)
+            campaign_path = Path(handle.name)
+        child = (
+            INTEGRATION_ROOT.parents[2] / "artifacts" / "projects" /
+            "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer" /
+            "runs" / run_id
+        )
+        try:
+            completed = subprocess.run(
+                [
+                    pwsh, "-NoProfile", "-File", str(WORKFLOW_ENTRY),
+                    "-Campaign", str(campaign_path),
+                    "-ExperimentId", experiment_id, "-SolverAuthorized",
+                ],
+                cwd=INTEGRATION_ROOT.parents[1], text=True, encoding="utf-8",
+                errors="replace", capture_output=True, check=False,
+            )
+        finally:
+            campaign_path.unlink(missing_ok=True)
+        self.assertNotEqual(completed.returncode, 0)
+        output = completed.stdout + completed.stderr
+        self.assertIn(
+            "requires campaign v5 with an explicit loader authorization budget",
+            output,
+        )
+        self.assertNotIn("CAMPAIGN_SOURCE_BINDINGS", output)
+        self.assertFalse(child.exists())
+
+    def test_runner_rejects_staged_loader_source_identity_mismatch(self) -> None:
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("PowerShell 7 is unavailable")
+        script = f"""
+$errors = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile(
+  '{SINGLE_FLIGHT_RUNNER}', [ref]$null, [ref]$errors
+)
+if ($errors) {{ throw $errors[0] }}
+$fn = $ast.Find({{
+  param($node)
+  $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+    $node.Name -eq 'Assert-RfStagedLoaderSourceIdentity'
+}}, $true)
+if ($null -eq $fn) {{ throw 'staged loader source assertion is missing' }}
+. ([scriptblock]::Create($fn.Extent.Text))
+Assert-RfStagedLoaderSourceIdentity -ValidationSourceSha256 ('A' * 64) `
+  -DeclaredSourceSha256 ('A' * 64) -PopulationSourceTableSha256 ('A' * 64)
+try {{
+  Assert-RfStagedLoaderSourceIdentity -ValidationSourceSha256 ('A' * 64) `
+    -DeclaredSourceSha256 ('A' * 64) -PopulationSourceTableSha256 ('B' * 64)
+  throw 'mismatch was accepted'
+}} catch {{
+  if ($_.Exception.Message -notmatch 'source identity differs') {{ throw }}
+}}
+'STAGED_LOADER_SOURCE_IDENTITY_NEGATIVE=PASS'
+"""
+        completed = subprocess.run(
+            [pwsh, "-NoProfile", "-Command", script],
+            cwd=INTEGRATION_ROOT.parents[1], text=True, encoding="utf-8",
+            errors="replace", capture_output=True, check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertIn(
+            "STAGED_LOADER_SOURCE_IDENTITY_NEGATIVE=PASS", completed.stdout
+        )
+
+    def test_pa_cache_policy_run_config_is_written_before_budget_and_cache_gates(self) -> None:
+        runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        initial_write = runner.index(
+            "Write-RfPreCacheRunConfiguration `\n"
+            "  -LifecycleStage 'pa_cache_policy_pending_budget_validation'"
+        )
+        budget_parse = runner.index("Initialize-RfIntegrationStageBudget")
+        first_cache_gate = runner.index("Test-RfReusableCacheEntry")
+        first_builder = runner.index("$gem2pa = Invoke-ResourceBudgetedProcess")
+        self.assertLess(initial_write, budget_parse)
+        self.assertLess(budget_parse, first_cache_gate)
+        self.assertLess(first_cache_gate, first_builder)
+        for family in (
+            "simion_single_flight_frontend_pa_cache",
+            "simion_accelerator_overlay_pa_cache",
+            "simion_oatof_flight_tube_pa_cache",
+            "simion_oatof_reflectron_pa_cache",
+        ):
+            self.assertIn(f"role='{family}'", runner)
+        self.assertIn("disposition='pending_cache_decision'", runner)
+        self.assertIn("single_flight_pa_cache_policy=$PaCachePolicy", runner)
+        self.assertIn(
+            "single_flight_pa_cache_policy_provenance=$PaCachePolicyProvenance",
+            runner,
+        )
+
+    def test_resolved_budget_authority_switches_to_run_local_frozen_copy(self) -> None:
+        runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        initialize = runner.index(
+            "$budget = Initialize-RfIntegrationStageBudget "
+            "-ResolvedBudget $ResolvedEngineeringBudget"
+        )
+        after_initialize = runner[initialize:]
+        self.assertIn(
+            "$resolvedBudgetDocument = Read-RfFrozenResolvedBudgetDocument `\n"
+            "    -StageBudgetReceipt $budget",
+            after_initialize,
+        )
+        self.assertNotIn(
+            "Get-Content -LiteralPath $ResolvedEngineeringBudget",
+            after_initialize,
+        )
+        self.assertEqual(after_initialize.count("$ResolvedEngineeringBudget"), 1)
+        self.assertIn(
+            "single_flight_pa_cache_policy -ne\n      $PaCachePolicy",
+            after_initialize,
+        )
+        frozen_policy_rebind = after_initialize.index(
+            "$PaCachePolicy = [string]"
+            "$resolvedBudgetDocument.single_flight_pa_cache_policy"
+        )
+        frozen_provenance_rebind = after_initialize.index(
+            "$PaCachePolicyProvenance = [string](\n"
+            "    $resolvedBudgetDocument."
+            "single_flight_pa_cache_policy_provenance"
+        )
+        first_cache_gate = after_initialize.index("Test-RfReusableCacheEntry")
+        frozen_receipt_policy = after_initialize.index(
+            "$preCacheRunConfiguration.parameters."
+            "single_flight_pa_cache_policy =\n"
+            "    [string]$resolvedBudgetDocument.single_flight_pa_cache_policy"
+        )
+        frozen_receipt_provenance = after_initialize.index(
+            "$preCacheRunConfiguration.parameters."
+            "single_flight_pa_cache_policy_provenance =\n"
+            "    [string]$resolvedBudgetDocument."
+            "single_flight_pa_cache_policy_provenance"
+        )
+        frozen_post_budget_write = after_initialize.index(
+            "Write-RfPreCacheRunConfiguration `\n"
+            "    -LifecycleStage "
+            "'pa_cache_policy_frozen_post_budget_validation'"
+        )
+        configuration_source = after_initialize.index(
+            "$configurationSource = Join-Path $integrationRoot"
+        )
+        frozen_pre_cache_write = after_initialize.index(
+            "Write-RfPreCacheRunConfiguration "
+            "-LifecycleStage 'pa_cache_policy_frozen_pre_cache'"
+        )
+        self.assertLess(frozen_policy_rebind, first_cache_gate)
+        self.assertLess(frozen_provenance_rebind, first_cache_gate)
+        self.assertLess(frozen_receipt_policy, frozen_post_budget_write)
+        self.assertLess(frozen_receipt_provenance, frozen_post_budget_write)
+        self.assertLess(frozen_post_budget_write, configuration_source)
+        self.assertLess(frozen_post_budget_write, frozen_pre_cache_write)
+        self.assertLess(frozen_pre_cache_write, first_cache_gate)
+        frozen_write_extent = after_initialize[
+            frozen_receipt_provenance:frozen_post_budget_write
+        ]
+        self.assertNotIn("$configurationSource", frozen_write_extent)
+        self.assertIn(
+            "$preCacheRunConfiguration.parameters."
+            "single_flight_pa_cache_policy_provenance =\n"
+            "    [string]$resolvedBudgetDocument."
+            "single_flight_pa_cache_policy_provenance\n"
+            "  Write-RfPreCacheRunConfiguration `\n"
+            "    -LifecycleStage "
+            "'pa_cache_policy_frozen_post_budget_validation'\n"
+            "  $configurationSource = Join-Path $integrationRoot",
+            after_initialize,
+        )
+
+    def test_require_existing_cache_misses_precede_every_simion_verifier(self) -> None:
+        runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        reflectron_gate = runner.index(
+            'Required PA cache MISS or damage: role=$($reflectronCachePlan.role)'
+        )
+        overlay_verify = runner.index("overlay_interface_verify_resource_usage.json")
+        topology_verify = runner.index("frontend_aperture_topology_resource_usage.json")
+        self.assertLess(reflectron_gate, overlay_verify)
+        self.assertLess(reflectron_gate, topology_verify)
+        self.assertIn("-InvalidEntryAction $(if ($PaCachePolicy -eq 'require_existing')", runner)
+        self.assertIn("single_flight_pa_cache_policy=$PaCachePolicy", runner)
+        self.assertIn("pa_cache_dispositions=$paCacheDispositions", runner)
+
+    def test_source_authority_scope_synthetic_matrix_is_strict(self) -> None:
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("PowerShell 7 is unavailable")
+        script = f"""
+. '{RUNTIME_BINDING}'
+$staged = [pscustomobject]@{{authority_scope='connection_lineage_only'}}
+$nonstaged = [pscustomobject]@{{role='synthetic_nonstaged'}}
+Assert-RfOatofSourceAuthorityScope -SourceContract $staged -StagedGrid2Mode $true
+Assert-RfOatofSourceAuthorityScope -SourceContract $nonstaged -StagedGrid2Mode $false
+$wrong = [pscustomobject]@{{authority_scope='source_population'}}
+$failures = 0
+foreach ($case in @(
+  @($nonstaged,$true), @($wrong,$true), @($staged,$false)
+)) {{
+  try {{
+    Assert-RfOatofSourceAuthorityScope -SourceContract $case[0] `
+      -StagedGrid2Mode $case[1]
+  }} catch {{ $failures++ }}
+}}
+if ($failures -ne 3) {{ throw "authority-scope negative cases differ: $failures" }}
+'SOURCE_AUTHORITY_SCOPE_SYNTHETIC=PASS POSITIVE=2 NEGATIVE=3'
+"""
+        completed = subprocess.run(
+            [pwsh, "-NoProfile", "-Command", script],
+            cwd=INTEGRATION_ROOT.parents[1],
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertIn(
+            "SOURCE_AUTHORITY_SCOPE_SYNTHETIC=PASS POSITIVE=2 NEGATIVE=3",
+            completed.stdout,
+        )
+
+    def test_historical_staged_source_contract_rejects_changed_stable_adapter(self) -> None:
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("PowerShell 7 is unavailable")
+        published = (
+            INTEGRATION_ROOT.parents[2] / "artifacts" / "projects" /
+            "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer" /
+            "runs" /
+            "20260815_120000__sim__cross__staged-grid2-restart-legacy__n34__r01" /
+            "resolved_source_contract.json"
+        )
+        if not published.is_file():
+            self.skipTest("published fail-closed staged preflight contract is unavailable")
+        run_root = published.parent
+        runtime_binding = (
+            INTEGRATION_ROOT / "config" /
+            "family_octupole_direct_mating_gap_0mm_runtime_binding.json"
+        )
+        script = f"""
+. '{RUNTIME_BINDING}'
+$sourcePath = '{published}'
+$designPath = '{run_root / "upstream_resolved_design.json"}'
+$runtime = Resolve-RfOatofRuntimeBinding `
+  -RepoRoot '{INTEGRATION_ROOT.parents[1]}' `
+  -ResolvedConnection '{run_root / "resolved_connection.json"}' `
+  -RuntimeBinding '{runtime_binding}' `
+  -ExpectedConnectionProfileId 'rf_octupole_oatof_shield_terminal_direct_mating_gap_0mm' `
+  -SourceBranchId simion `
+  -ResolvedSourceContract $sourcePath `
+  -ResolvedSourceContractSha256 (Get-FileHash $sourcePath -Algorithm SHA256).Hash `
+  -UpstreamResolvedDesign $designPath `
+  -UpstreamResolvedDesignSha256 (Get-FileHash $designPath -Algorithm SHA256).Hash
+if ($runtime.resolved_source_contract.authority_scope -ne 'connection_lineage_only') {{
+  throw 'resolved runtime authority scope differs'
+}}
+'PUBLISHED_STAGED_SOURCE_RUNTIME_PREFLIGHT=PASS'
+"""
+        completed = subprocess.run(
+            [pwsh, "-NoProfile", "-Command", script],
+            cwd=INTEGRATION_ROOT.parents[1],
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+            check=False,
+        )
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn(
+            "Resolved source adapter differs from its stable contract: sha256",
+            completed.stdout + completed.stderr,
+        )
+
+    def test_schema_v4_staged_build_budget_constructs_cache_hit_run_identity(self) -> None:
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("PowerShell 7 is unavailable")
+        parent = (
+            INTEGRATION_ROOT.parents[2] / "artifacts" / "projects" /
+            "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer" /
+            "runs" /
+            "20260815_120000__sim__cross__staged-grid2-restart-legacy__n34__r03"
+        )
+        budget = parent / "resolved_engineering_budget.json"
+        child_config = (
+            parent.parent /
+            "20260815_120000__sim__simion__rf-oatof-single-flight-gap0__n34__r03" /
+            "run_config.json"
+        )
+        if not budget.is_file() or not child_config.is_file():
+            self.skipTest("published schema-v4 staged BUILD failure evidence is unavailable")
+        script = f"""
+$parseErrors = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile(
+  '{SINGLE_FLIGHT_RUNNER}', [ref]$null, [ref]$parseErrors
+)
+if ($parseErrors) {{ throw $parseErrors[0] }}
+foreach ($functionName in @(
+  'Read-RfFrozenResolvedBudgetDocument',
+  'Set-RfStagedRunConfigurationIdentity'
+)) {{
+  $functionAst = $ast.Find({{
+    param($node)
+    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+      $node.Name -eq $functionName
+  }}, $true)
+  if ($null -eq $functionAst) {{ throw "staged compiler is missing: $functionName" }}
+  . ([scriptblock]::Create($functionAst.Extent.Text))
+}}
+$tempRoot = Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $tempRoot | Out-Null
+$frozenBudget = Join-Path $tempRoot 'frozen_budget.json'
+$externalBudget = Join-Path $tempRoot 'external_budget.json'
+Copy-Item -LiteralPath '{budget}' -Destination $frozenBudget
+Copy-Item -LiteralPath '{budget}' -Destination $externalBudget
+$tamperedExternal = Get-Content -LiteralPath $externalBudget -Raw | ConvertFrom-Json
+$tamperedExternal.single_flight_pa_cache_policy = 'require_existing'
+$tamperedExternal.source_identity.authority_role = 'tampered_external_authority'
+$tamperedExternal | ConvertTo-Json -Depth 100 | Set-Content -LiteralPath $externalBudget
+$stageBudgetReceipt = [pscustomobject]@{{
+  frozen_budget = $frozenBudget
+  stage_budget = (Join-Path $tempRoot 'stage_budget.json')
+}}
+$budget = Read-RfFrozenResolvedBudgetDocument -StageBudgetReceipt $stageBudgetReceipt
+$failedConfig = Get-Content '{child_config}' -Raw | ConvertFrom-Json
+if ($budget.single_flight_pa_cache_policy -ne 'build_and_publish_if_missing' -or
+    $budget.source_identity.authority_role -ne
+      'staged_grid2_canonical_source_state' -or
+    $failedConfig.parameters.pa_cache_dispositions.frontend.disposition -ne
+      'built_and_published') {{
+  throw 'run-local frozen staged BUILD evidence identity differs'
+}}
+$runConfig = [ordered]@{{
+  upstream_source_identity = [ordered]@{{obsolete=$true}}
+  parameters = [ordered]@{{
+    pa_cache_dispositions = [ordered]@{{
+      frontend = [ordered]@{{disposition='cache_hit'}}
+    }}
+  }}
+}}
+$lineage = [ordered]@{{run_id='lineage-only'}}
+Set-RfStagedRunConfigurationIdentity -RunConfiguration $runConfig `
+  -ResolvedBudgetDocument $budget -ConnectionLineageIdentity $lineage
+if ($runConfig.Contains('upstream_source_identity') -or
+    $runConfig.source_identity.authority_role -ne
+      'staged_grid2_canonical_source_state' -or
+    $runConfig.connection_lineage.authority_scope -ne
+      'connection_lineage_only' -or
+    $runConfig.parameters.pa_cache_dispositions.frontend.disposition -ne
+      'cache_hit') {{
+  throw 'staged cache-hit run configuration construction differs'
+}}
+Remove-Item -LiteralPath $tempRoot -Recurse -Force
+'SCHEMA_V4_STAGED_BUILD_CACHE_HIT_RUN_CONFIG=PASS'
+"""
+        completed = subprocess.run(
+            [pwsh, "-NoProfile", "-Command", script],
+            cwd=INTEGRATION_ROOT.parents[1], text=True, encoding="utf-8",
+            errors="replace", capture_output=True, check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertIn(
+            "SCHEMA_V4_STAGED_BUILD_CACHE_HIT_RUN_CONFIG=PASS",
+            completed.stdout,
+        )
+
+    def test_external_runtime_implementation_paths_are_exact_role_bound(self) -> None:
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("PowerShell 7 is unavailable")
+        script = f"""
+. '{RUNTIME_BINDING}'
+$root = 'integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/'
+$cases = @(
+  @('simion_rf_drive_kernel','common/multipole/simion_rf_drive.lua',$true),
+  @('oatof_analyzer_component','projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/candidates/oatof_analyzer_component.lua',$true),
+  @('single_flight_runner',$root + 'runtime/run_single_flight.ps1',$true),
+  @('simion_rf_drive_kernel','common/multipole/not_the_kernel.lua',$false),
+  @('unknown_external_role','common/multipole/simion_rf_drive.lua',$false),
+  @('oatof_analyzer_component','projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/formal/oatof_ideal_grounded.lua',$false)
+)
+foreach ($case in $cases) {{
+  $actual = Test-RfOatofImplementationPath -Name $case[0] -Path $case[1] `
+    -IntegrationRelativeRoot $root
+  if ($actual -ne $case[2]) {{
+    throw "implementation path case differs: $($case[0]) $($case[1])"
+  }}
+}}
+'RUNTIME_IMPLEMENTATION_PATH_CASES=PASS COUNT=6'
+"""
+        completed = subprocess.run(
+            [pwsh, "-NoProfile", "-Command", script],
+            cwd=INTEGRATION_ROOT.parents[1],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertIn(
+            "RUNTIME_IMPLEMENTATION_PATH_CASES=PASS COUNT=6", completed.stdout
+        )
+
     def test_all_runtime_boundaries_require_four_run_local_identities(self) -> None:
         parameters = (
             "ResolvedSourceContract",
@@ -162,6 +592,40 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
             "-Destination $overlayBasisReport",
             text,
         )
+        self.assertIn(
+            "Get-ChildItem -LiteralPath $cacheDir -Filter 'frontend.pa*' -File",
+            text,
+        )
+        self.assertIn("$frontendWorkingPa0,$overlayBuildPaSharp", text)
+        self.assertIn("frontend_pa_cache_key=$frontendCacheKey", text)
+
+    def test_simion_consumes_physical_pa_copies_and_rechecks_frontend_cache(
+        self,
+    ) -> None:
+        text = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        self.assertNotIn("New-Item -ItemType HardLink", text)
+        self.assertIn("function Copy-RfPaCacheFamilyToRuntime", text)
+        self.assertIn(
+            "Copy-Item -LiteralPath $source.FullName -Destination $target -Force",
+            text,
+        )
+        self.assertIn("$frontendWorkingPa0,$overlayCachePa0", text)
+        self.assertIn("-PaPath $frontendWorkingPa0", text)
+        self.assertIn(
+            "$env:OATOF_ACCELERATOR_PA_OVERRIDE = $frontendWorkingPa0",
+            text,
+        )
+        guard = text.index(
+            "Frontend PA cache changed during construction-time SIMION access."
+        )
+        manifest_copy = text.index(
+            "$frontendCacheManifestInput = Copy-RfCacheManifestInput"
+        )
+        fly_override = text.index(
+            "$env:OATOF_ACCELERATOR_PA_OVERRIDE = $frontendWorkingPa0"
+        )
+        self.assertLess(guard, manifest_copy)
+        self.assertLess(manifest_copy, fly_override)
 
     def test_all_four_pa_cache_roles_use_one_verified_contract(self) -> None:
         runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
@@ -254,18 +718,68 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
             'default { throw "Unsupported resolved population mode:', runner
         )
 
+    def test_r03_baseline_population_is_strictmode_safe_without_paired_cohort(self) -> None:
+        population = (
+            INTEGRATION_ROOT.parents[2]
+            / "artifacts/projects/"
+            "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/"
+            "runs/20260815_160000__sim__cross__pulse-direct-real-rr__n100__r03/"
+            "resolved_population_contract.json"
+        )
+        self.assertTrue(population.is_file())
+        self.assertEqual(
+            hashlib.sha256(population.read_bytes()).hexdigest().upper(),
+            "1D8D54EEEA5BB9B98A6BF631825AF0FE383523259444A3F6C95A9CE92794FC36",
+        )
+        completed = subprocess.run(
+            [
+                "pwsh", "-NoProfile", "-Command",
+                "Set-StrictMode -Version Latest; "
+                "$p=Get-Content -LiteralPath $args[0] -Raw | ConvertFrom-Json; "
+                "$paired=$p.PSObject.Properties['paired_cohort_authority']; "
+                "$mode=$p.PSObject.Properties['cohort_authority_mode']; "
+                "if($null -ne $paired){throw 'unexpected paired cohort'}; "
+                "if([string]$mode.Value -ne 'establish_observed_authority'){"
+                "throw 'mode differs'}; "
+                "if($null -ne $p.denominators.PSObject.Properties["
+                "'eligible_population_count']){throw 'eligible denominator present'}; "
+                "Write-Output 'R03_BASELINE_STRICTMODE=PASS'",
+                str(population),
+            ],
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertIn("R03_BASELINE_STRICTMODE=PASS", completed.stdout)
+        runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        self.assertIn(
+            "$populationContract.PSObject.Properties['paired_cohort_authority']",
+            runner,
+        )
+        self.assertIn("$EligiblePopulationCount = if ($hasPairedCohort)", runner)
+
     def test_paired_n100_field_authority_is_run_local_contract(self) -> None:
-        text = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
-        self.assertNotIn("OATOF_IDEAL_ACCEL_STAGE1_ENABLE", text)
-        self.assertNotIn("OATOF_IDEAL_ACCEL_STAGE2_ENABLE", text)
-        self.assertNotIn("single_flight_ideal_accel_stage1_enable", text)
-        self.assertIn("ResolvedRegionFieldContractSha256", text)
-        self.assertIn("ResolvedRegionFieldSemanticSha256", text)
-        self.assertIn("PulseResolutionBaselineCheckpointsSha256", text)
-        self.assertIn("pulse_resolution_real_beam_ideal_stage1_n100_candidate_result.json", text)
-        self.assertIn("if ($PulseResolutionArmId -ne 'real_beam_all_real')", text)
-        self.assertIn("execution_status=$expectedStatus", text)
-        self.assertIn("$PulseResolutionArmId + '_n100_promotion_receipt.json'", text)
+        runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        adapter = FAMILY_ADAPTER.read_text(encoding="utf-8")
+        registrar = PULSE_RESOLUTION_REGISTRAR.read_text(encoding="utf-8")
+        self.assertNotIn("OATOF_IDEAL_ACCEL_STAGE1_ENABLE", runner)
+        self.assertNotIn("OATOF_IDEAL_ACCEL_STAGE2_ENABLE", runner)
+        self.assertNotIn("single_flight_ideal_accel_stage1_enable", runner)
+        self.assertIn("ResolvedRegionFieldContractSha256", runner)
+        self.assertIn("ResolvedRegionFieldSemanticSha256", runner)
+        self.assertNotIn("PulseResolutionBaselineCheckpoints", runner)
+        self.assertIn("inputs/pulse_resolution_baseline_evidence.json", adapter)
+        self.assertIn("$PulseResolutionRegistrationAuthoritySha256", runner)
+        self.assertIn("--registration-authority-sha256", runner)
+        self.assertIn('campaign.get("pulse_resolution_baseline_evidence", {})', registrar)
+        self.assertIn('baseline_evidence.get("paired_checkpoint_rows", [])', registrar)
+        self.assertIn("'pulse_resolution_' + $PulseResolutionExperimentId + '_result.json'", runner)
+        self.assertIn("$PulseResolutionFieldProfileId -eq 'accelerator_real_pa'", runner)
+        self.assertIn("execution_status=$expectedStatus", runner)
+        self.assertIn("$PulseResolutionExperimentId + '_promotion_receipt.json'", runner)
 
 
 if __name__ == "__main__":

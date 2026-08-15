@@ -52,6 +52,7 @@ function Complete-RfFrozenFailedRun {
     [Parameter(Mandatory)][string[]]$Software,
     [ValidateSet('failed','interrupted')][string]$Status = 'failed',
     [string]$FailureClass = '',
+    [hashtable]$AdditionalSummaryProperties = @{},
     [string]$ResourceUsagePath = ''
   )
   $environmentNames = @('PYTHONPATH','PYTHONNOUSERSITE')
@@ -64,7 +65,9 @@ function Complete-RfFrozenFailedRun {
       Complete-RfFailedRun -Python $Python -RepoRoot $FrozenRepoRoot `
         -RunConfig $RunConfig -Summary $Summary -SummaryRole $SummaryRole `
         -Reason $Reason -Software $Software -Status $Status `
-        -FailureClass $FailureClass -ResourceUsagePath $ResourceUsagePath
+        -FailureClass $FailureClass `
+        -AdditionalSummaryProperties $AdditionalSummaryProperties `
+        -ResourceUsagePath $ResourceUsagePath
     } finally {
       Pop-Location
     }
@@ -231,27 +234,37 @@ function Test-RfReusableCacheEntry {
     [Parameter(Mandatory)][string]$ProjectId,
     [Parameter(Mandatory)][string]$CacheRoot,
     [Parameter(Mandatory)][string]$CacheKey,
-    [Parameter(Mandatory)][string]$Role
+    [Parameter(Mandatory)][string]$Role,
+    [ValidateSet('remove','preserve')][string]$InvalidEntryAction = 'remove'
   )
   $entry = Join-Path $CacheRoot $CacheKey
   Assert-RfCacheEntryPath -CacheRoot $CacheRoot -CacheKey $CacheKey -CacheEntry $entry
   $manifest = Join-Path $entry 'cache_manifest.json'
   if (-not (Test-Path -LiteralPath $manifest -PathType Leaf)) { return $false }
-  & $Python (Join-Path $RepoRoot 'common\contracts\verify_artifact_layout.py') `
-    (Join-Path $WorkspaceRoot 'artifacts\projects') --cache-entry $entry `
-    --expected-cache-role $Role --expected-cache-key $CacheKey `
-    --expected-cache-project $ProjectId *> $null
-  if ($LASTEXITCODE -eq 0) { return $true }
+  $verificationExitCode = 0
+  try {
+    & $Python (Join-Path $RepoRoot 'common\contracts\verify_artifact_layout.py') `
+      (Join-Path $WorkspaceRoot 'artifacts\projects') --cache-entry $entry `
+      --expected-cache-role $Role --expected-cache-key $CacheKey `
+      --expected-cache-project $ProjectId *> $null
+    $verificationExitCode = $LASTEXITCODE
+  } catch {
+    $verificationExitCode = if ($LASTEXITCODE) { $LASTEXITCODE } else { 1 }
+  }
+  if ($verificationExitCode -eq 0) { return $true }
+  $global:LASTEXITCODE = 0
   $document = $null
   try {
     $document = Get-Content -LiteralPath $manifest -Raw -Encoding UTF8 | ConvertFrom-Json
   } catch {
     $document = $null
   }
-  if ($null -ne $document -and [int]$document.schema_version -eq 2) {
+  if ($null -ne $document -and [int]$document.schema_version -eq 2 -and
+      $InvalidEntryAction -eq 'remove') {
     Remove-Item -LiteralPath $entry -Recurse -Force
     return $false
   }
+  $null = Test-Path -LiteralPath $entry
   return $false
 }
 

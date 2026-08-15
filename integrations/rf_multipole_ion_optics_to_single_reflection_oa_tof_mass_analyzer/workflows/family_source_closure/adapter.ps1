@@ -59,6 +59,12 @@ $expectedArguments = @(
   'upstream_resolved_design_filename',
   'upstream_resolved_design_sha256'
 )
+if ([string]$frozenArguments.execution_strategy -eq 'simion_single_flight') {
+  $expectedArguments += @(
+    'single_flight_pa_cache_policy',
+    'single_flight_pa_cache_policy_provenance'
+  )
+}
 $layoutArgumentNames = @(
   'layout_profile_id',
   'architecture_generation_id',
@@ -67,14 +73,18 @@ $layoutArgumentNames = @(
   'resolved_oatof_bore_radius_mm',
   'resolved_oatof_ring_outer_radius_mm',
   'resolved_oatof_shield_inner_radius_mm',
-  'resolved_single_flight_pulse_schedule_filename',
-  'resolved_single_flight_pulse_schedule_sha256',
   'resolved_population_contract_filename',
   'resolved_population_contract_sha256',
   'single_flight_layout_registry_sha256'
 )
 if ($frozenArguments.ContainsKey('layout_profile_id')) {
   $expectedArguments += $layoutArgumentNames
+  if ($frozenArguments.ContainsKey('resolved_single_flight_pulse_schedule_filename')) {
+    $expectedArguments += @(
+      'resolved_single_flight_pulse_schedule_filename',
+      'resolved_single_flight_pulse_schedule_sha256'
+    )
+  }
 }
 $sourceOverrideArgumentNames = @(
   'single_flight_particle_source_path',
@@ -143,21 +153,28 @@ if ($frozenArguments.ContainsKey('pre_pulse_source_state_path')) {
     )
   }
 }
-if ($frozenArguments.ContainsKey('pulse_resolution_attribution_arm_id')) {
+if ($frozenArguments.ContainsKey('staged_grid2_source_state_path')) {
   $expectedArguments += @(
-    'pulse_resolution_attribution_arm_id',
+    'staged_grid2_source_state_path','staged_grid2_source_state_sha256',
+    'staged_grid2_source_state_count','staged_grid2_start_instance',
+    'staged_grid2_clock_epoch_id',
+    'staged_grid2_producer_run_id','staged_grid2_producer_manifest_path',
+    'staged_grid2_producer_manifest_sha256'
+  )
+  if ($frozenArguments.ContainsKey('staged_grid2_bridge_receipt_path')) {
+    $expectedArguments += @(
+      'staged_grid2_bridge_receipt_path','staged_grid2_bridge_receipt_sha256'
+    )
+  }
+}
+if ($frozenArguments.ContainsKey('pulse_resolution_execution_mode')) {
+  $expectedArguments += @(
     'pulse_resolution_execution_mode',
     'pulse_resolution_prefix_filename',
     'pulse_resolution_prefix_sha256',
     'pulse_resolution_registration_filename',
     'pulse_resolution_registration_sha256'
   )
-  if ($frozenArguments.ContainsKey('pulse_resolution_baseline_checkpoints_path')) {
-    $expectedArguments += @(
-      'pulse_resolution_baseline_checkpoints_path',
-      'pulse_resolution_baseline_checkpoints_sha256'
-    )
-  }
 }
 if (@($frozenArguments.Keys | Where-Object {
       $_ -notin $expectedArguments
@@ -207,45 +224,58 @@ if ($campaign.role -ne 'rf_multipole_oatof_experiment_campaign' -or
   throw 'Campaign or experiment identity no longer resolves uniquely.'
 }
 $experiment = $experiments[0]
+$experimentHasPaCachePolicy =
+  $experiment.PSObject.Properties.Name -contains 'single_flight_pa_cache_policy'
+$expectedPaCachePolicy = if ($experimentHasPaCachePolicy) {
+  [string]$experiment.single_flight_pa_cache_policy
+} else { 'legacy_unspecified' }
+$expectedPaCachePolicyProvenance = if ($experimentHasPaCachePolicy) {
+  'explicit_campaign_row'
+} else { 'legacy_validate_only_compatibility' }
+if ([string]$experiment.execution_strategy -eq 'simion_single_flight' -and (
+    [string]$frozenArguments.single_flight_pa_cache_policy -ne
+      $expectedPaCachePolicy -or
+    [string]$frozenArguments.single_flight_pa_cache_policy_provenance -ne
+      $expectedPaCachePolicyProvenance)) {
+  throw 'Frozen PA cache policy differs from the exact campaign row.'
+}
 if ($SolverAuthorized -and
+    [string]$experiment.execution_strategy -eq 'simion_single_flight' -and (
+      [int]$campaign.schema_version -lt 4 -or
+      -not $experimentHasPaCachePolicy -or
+      $expectedPaCachePolicy -notin @(
+        'require_existing','build_and_publish_if_missing'
+      ))) {
+  throw 'SolverAuthorized single-flight execution requires an explicit schema-v4 PA cache policy.'
+}
+if ($PrepareOnly -and
     [string]$experiment.execution_strategy -eq 'simion_single_flight' -and
-    [int]$campaign.schema_version -lt 3) {
-  throw 'SolverAuthorized single-flight execution requires a schema-v3 successor campaign.'
+    -not $experimentHasPaCachePolicy) {
+  throw 'Legacy single-flight cache policy is compatible with ValidateOnly only.'
 }
 $pulseN100Screening = $frozenArguments.ContainsKey(
-  'pulse_resolution_attribution_arm_id'
+  'pulse_resolution_execution_mode'
 )
 if ($pulseN100Screening) {
   $pulseContract = $campaign.pulse_resolution_optimization
-  $arm = @($pulseContract.attribution_arms | Where-Object {
-    $_.arm_id -eq $frozenArguments.pulse_resolution_attribution_arm_id
-  })
-  $baselineRow = [int]$arm[0].sequence -eq 1 -and
-    $arm[0].implementation_status -eq 'executable_registration' -and
-    $arm[0].accelerator_field -eq 'all_real' -and
-    $experiment.pulse_resolution_execution_mode -eq 'screening_prefix_n100_baseline_registration' -and
-    $experiment.single_flight_accelerator_field_profile_id -eq 'accelerator_real_pa'
-  $pairedRow = [int]$arm[0].sequence -eq 2 -and
-    $arm[0].implementation_status -eq 'executable_paired_screening' -and
-    $arm[0].accelerator_field -eq 'ideal_stage1' -and
-    $experiment.pulse_resolution_execution_mode -eq 'screening_prefix_n100_paired_candidate' -and
-    $experiment.single_flight_accelerator_field_profile_id -eq 'accelerator_ideal_stage1_real_stage2'
-  $pairedStage12Row = [int]$arm[0].sequence -eq 3 -and
-    $arm[0].implementation_status -eq 'executable_paired_screening' -and
-    $arm[0].accelerator_field -eq 'ideal_stage1_stage2' -and
-    $experiment.pulse_resolution_execution_mode -eq 'screening_prefix_n100_paired_candidate' -and
-    $experiment.single_flight_accelerator_field_profile_id -eq 'accelerator_ideal_stage1_stage2_real_reflectron'
-  $pairedAllIdealRow = [int]$arm[0].sequence -eq 4 -and
-    $arm[0].implementation_status -eq 'executable_paired_screening_with_full_domain_contract' -and
-    $arm[0].accelerator_field -eq 'ideal_accelerator' -and
-    $arm[0].reflectron_field -eq 'ideal' -and
-    $experiment.pulse_resolution_execution_mode -eq 'screening_prefix_n100_paired_candidate' -and
-    $experiment.single_flight_accelerator_field_profile_id -eq 'full_domain_piecewise_ideal_field'
-  if ($pulseContract.execution_state -ne 'n100_full_domain_piecewise_ideal_field_screening' -or
-      $arm.Count -ne 1 -or -not ($baselineRow -or $pairedRow -or $pairedStage12Row -or $pairedAllIdealRow) -or
-      $arm[0].source_model -ne 'real_beam' -or
-      $arm[0].reflectron_field -notin @('real','ideal')) {
-    throw 'Only real multipole beam + real accelerator field + real reflectron field, deterministic N=100 prefix baseline registration is executable.'
+  $baselineRow = $experiment.pulse_resolution_execution_mode -eq
+    'screening_prefix_n100_baseline_registration'
+  $pairedRow = $experiment.pulse_resolution_execution_mode -eq
+    'screening_prefix_n100_paired_candidate'
+  if ([int]$campaign.schema_version -ne 5 -or
+      -not ($baselineRow -or $pairedRow) -or
+      $experiment.source_profile_id -ne 'canonical_real_octupole_n1000' -or
+      $experiment.single_flight_population.population_mode -ne
+        'first_100_rows_in_frozen_file_order' -or
+      $experiment.single_flight_population.source_authority.table_binding -ne
+        'prepared_deterministic_prefix') {
+    throw 'Pulse-resolution direct source, field, and population contract differs.'
+  }
+  if (($baselineRow -and
+       $experiment.single_flight_accelerator_field_profile_id -ne 'accelerator_real_pa') -or
+      ($pairedRow -and
+       $experiment.single_flight_accelerator_field_profile_id -eq 'accelerator_real_pa')) {
+    throw 'Pulse-resolution execution mode and field identity differ.'
   }
 }
 $singleFlightParticleSourcePath = $null
@@ -314,6 +344,9 @@ if ($frozenArguments.ContainsKey('single_flight_materialized_source_filename')) 
 }
 $prePulseSourceStatePath = $null
 $prePulseRestartValidationPath = $null
+$stagedGrid2SourceStatePath = $null
+$stagedGrid2ProducerManifestPath = $null
+$stagedGrid2BridgeReceiptPath = $null
 if ($frozenArguments.ContainsKey('source_release_mode')) {
   if ([string]$experiment.source_release_mode -ne $frozenArguments.source_release_mode) {
     throw 'Campaign source-release identity changed after preparation.'
@@ -364,8 +397,63 @@ if ($frozenArguments.ContainsKey('source_release_mode')) {
           [int]$frozenArguments.pre_pulse_source_state_count) {
       throw 'Pre-pulse source-state identity is missing, stale or outside artifacts.'
     }
+  } elseif ($frozenArguments.source_release_mode -eq 'staged_grid2_restart') {
+    if (-not $frozenArguments.ContainsKey('staged_grid2_source_state_path') -or
+        [string]$experiment.staged_grid2_source_state.state_event -ne
+          'local_accelerator_exit' -or
+        [string]$experiment.staged_grid2_source_state.frame_id -ne 'oatof_global' -or
+        [string]$experiment.staged_grid2_source_state.clock_basis -ne
+          'canonical_instrument_time_us' -or
+        [string]$experiment.staged_grid2_source_state.clock_epoch_id -ne
+          [string]$frozenArguments.staged_grid2_clock_epoch_id -or
+        [bool]$experiment.staged_grid2_source_state.position_projection_applied -or
+        [int]$experiment.staged_grid2_source_state.simion_start_instance -ne
+          [int]$frozenArguments.staged_grid2_start_instance) {
+      throw 'Staged grid2 restart context differs from the frozen campaign row.'
+    }
+    $overlayPresent = [string]$experiment.field_overlay_id -ne 'none'
+    if (([int]$frozenArguments.staged_grid2_start_instance -eq 5) -ne
+        $overlayPresent) {
+      throw 'Staged grid2 instance 3 requires no overlay and instance 5 requires overlay.'
+    }
+    $stagedGrid2SourceStatePath = [IO.Path]::GetFullPath(
+      (Join-Path $workspaceRoot $frozenArguments.staged_grid2_source_state_path)
+    )
+    $stagedGrid2ProducerManifestPath = [IO.Path]::GetFullPath(
+      (Join-Path $workspaceRoot $frozenArguments.staged_grid2_producer_manifest_path)
+    )
+    if ($frozenArguments.ContainsKey('staged_grid2_bridge_receipt_path')) {
+      $stagedGrid2BridgeReceiptPath = [IO.Path]::GetFullPath(
+        (Join-Path $workspaceRoot $frozenArguments.staged_grid2_bridge_receipt_path)
+      )
+      if (-not (Test-Path -LiteralPath $stagedGrid2BridgeReceiptPath -PathType Leaf) -or
+          (Get-FileHash -LiteralPath $stagedGrid2BridgeReceiptPath -Algorithm SHA256).Hash -ne
+            $frozenArguments.staged_grid2_bridge_receipt_sha256) {
+        throw 'Staged grid2 bridge receipt identity is missing or stale.'
+      }
+    }
+    $artifactRoot = [IO.Path]::GetFullPath((Join-Path $workspaceRoot 'artifacts'))
+    if (-not $stagedGrid2SourceStatePath.StartsWith(
+          $artifactRoot + [IO.Path]::DirectorySeparatorChar,
+          [StringComparison]::OrdinalIgnoreCase) -or
+        -not $stagedGrid2ProducerManifestPath.StartsWith(
+          $artifactRoot + [IO.Path]::DirectorySeparatorChar,
+          [StringComparison]::OrdinalIgnoreCase) -or
+        -not (Test-Path -LiteralPath $stagedGrid2SourceStatePath -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $stagedGrid2ProducerManifestPath -PathType Leaf) -or
+        (Get-FileHash -LiteralPath $stagedGrid2SourceStatePath -Algorithm SHA256).Hash -ne
+          $frozenArguments.staged_grid2_source_state_sha256 -or
+        (Get-FileHash -LiteralPath $stagedGrid2ProducerManifestPath -Algorithm SHA256).Hash -ne
+          $frozenArguments.staged_grid2_producer_manifest_sha256 -or
+        [int]$experiment.staged_grid2_source_state.particle_count -ne
+          [int]$frozenArguments.staged_grid2_source_state_count -or
+        [string]$experiment.staged_grid2_source_state.producer_run_id -ne
+          [string]$frozenArguments.staged_grid2_producer_run_id) {
+      throw 'Staged grid2 source or producer identity is missing or stale.'
+    }
   } elseif ($frozenArguments.source_release_mode -ne 'continuous_frontend' -or
-            $frozenArguments.ContainsKey('pre_pulse_source_state_path')) {
+            $frozenArguments.ContainsKey('pre_pulse_source_state_path') -or
+            $frozenArguments.ContainsKey('staged_grid2_source_state_path')) {
     throw 'Source release mode and pre-pulse source-state identity differ.'
   }
 }
@@ -480,7 +568,7 @@ if ($pulseN100Screening) {
   $candidateMode = [string]$frozenArguments.pulse_resolution_execution_mode -eq
     'screening_prefix_n100_paired_candidate'
   $expectedRegistration = if ($candidateMode) {
-    'inputs/pulse_resolution_baseline_result_reference.json'
+    'inputs/pulse_resolution_baseline_evidence.json'
   } else {
     'inputs/pulse_resolution_real_beam_real_accelerator_real_reflectron_n100_baseline_registration_authority.json'
   }
@@ -496,65 +584,6 @@ if ($pulseN100Screening) {
         $frozenArguments.pulse_resolution_registration_sha256) {
     throw 'Plan-bound baseline registration authority is outside inputs, missing or stale.'
   }
-  if ($candidateMode) {
-    $baselineResultRecord = $experiment.pulse_resolution_baseline_result
-    $publishedBaselineResult = [IO.Path]::GetFullPath(
-      (Join-Path $workspaceRoot $baselineResultRecord.path)
-    )
-    $baselineSimionRoot = Split-Path -Parent (Split-Path -Parent $publishedBaselineResult)
-    $baselineSimionManifestPath = Join-Path $baselineSimionRoot 'run_manifest.json'
-    $baselineCrossManifestPath = Join-Path $workspaceRoot `
-      'artifacts\projects\rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer\runs\20260812_210000__sim__cross__pulse-resolution-baseline__n100\run_manifest.json'
-    $baselineSimionManifest = Get-Content $baselineSimionManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
-    $baselineCrossManifest = Get-Content $baselineCrossManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
-    $resultOutput = @($baselineSimionManifest.outputs | Where-Object {
-      [IO.Path]::GetFullPath([string]$_.path).Equals($publishedBaselineResult,[StringComparison]::OrdinalIgnoreCase)
-    })
-    if ($baselineSimionManifest.status -ne 'success' -or
-        $baselineCrossManifest.status -ne 'success' -or
-        $resultOutput.Count -ne 1 -or
-        [string]$resultOutput[0].sha256 -ne [string]$baselineResultRecord.sha256 -or
-        (Get-FileHash $publishedBaselineResult -Algorithm SHA256).Hash -ne
-          [string]$baselineResultRecord.sha256) {
-      throw 'Published baseline cross/SIMION result evidence is missing or stale.'
-    }
-    $baselineReceipt = Get-Content $publishedBaselineResult -Raw -Encoding UTF8 | ConvertFrom-Json
-    if ($baselineReceipt.campaign_id -ne $campaign.campaign_id -or
-        $baselineReceipt.arm.arm_id -ne 'real_beam_all_real' -or
-        $baselineReceipt.source_identity.particle_source_sha256 -ne
-          $experiment.source.particle_source.sha256 -or
-        $baselineReceipt.prefix.sha256 -ne
-          $frozenArguments.pulse_resolution_prefix_sha256 -or
-        @($baselineReceipt.prefix.ordered_particle_ids).Count -ne 100) {
-      throw 'Published baseline campaign/source/prefix identity differs.'
-    }
-  }
-}
-$pulseBaselineCheckpointsPath = $null
-if ($frozenArguments.ContainsKey('pulse_resolution_baseline_checkpoints_path')) {
-  $pulseBaselineCheckpointsPath = [IO.Path]::GetFullPath(
-    (Join-Path $workspaceRoot $frozenArguments.pulse_resolution_baseline_checkpoints_path)
-  )
-  if (-not $pulseBaselineCheckpointsPath.StartsWith(
-        (Join-Path $workspaceRoot 'artifacts') + [IO.Path]::DirectorySeparatorChar,
-        [StringComparison]::OrdinalIgnoreCase
-      ) -or -not (Test-Path -LiteralPath $pulseBaselineCheckpointsPath -PathType Leaf) -or
-      (Get-FileHash -LiteralPath $pulseBaselineCheckpointsPath -Algorithm SHA256).Hash -ne
-        $frozenArguments.pulse_resolution_baseline_checkpoints_sha256) {
-    throw 'Paired baseline checkpoints are outside artifacts, missing or stale.'
-  }
-  $baselineManifestPath = Join-Path `
-    (Split-Path -Parent (Split-Path -Parent $pulseBaselineCheckpointsPath)) `
-    'run_manifest.json'
-  $baselineManifest = Get-Content $baselineManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
-  $checkpointOutput = @($baselineManifest.outputs | Where-Object {
-    [IO.Path]::GetFullPath([string]$_.path).Equals($pulseBaselineCheckpointsPath,[StringComparison]::OrdinalIgnoreCase)
-  })
-  if ($baselineManifest.status -ne 'success' -or $checkpointOutput.Count -ne 1 -or
-      [string]$checkpointOutput[0].sha256 -ne
-        $frozenArguments.pulse_resolution_baseline_checkpoints_sha256) {
-    throw 'Published baseline checkpoints are not frozen by a successful SIMION manifest.'
-  }
 }
 $resolvedSourceContractPath = [IO.Path]::GetFullPath(
   (Join-Path $runDirectory $frozenArguments.resolved_source_contract_filename)
@@ -568,13 +597,18 @@ $upstreamResolvedDesignPath = [IO.Path]::GetFullPath(
 $resolvedOatofGeometryPath = $null
 $resolvedPulseSchedulePath = $null
 $resolvedPopulationContractPath = $null
-if ([int]$campaign.schema_version -eq 3) {
+if ([int]$campaign.schema_version -ge 3) {
   $resolvedOatofGeometryPath = [IO.Path]::GetFullPath(
     (Join-Path $runDirectory $frozenArguments.resolved_oatof_geometry_filename)
   )
-  $resolvedPulseSchedulePath = [IO.Path]::GetFullPath(
-    (Join-Path $runDirectory $frozenArguments.resolved_single_flight_pulse_schedule_filename)
+  $hasPulseSchedule = $frozenArguments.ContainsKey(
+    'resolved_single_flight_pulse_schedule_filename'
   )
+  if ($hasPulseSchedule) {
+    $resolvedPulseSchedulePath = [IO.Path]::GetFullPath(
+      (Join-Path $runDirectory $frozenArguments.resolved_single_flight_pulse_schedule_filename)
+    )
+  }
   $resolvedPopulationContractPath = [IO.Path]::GetFullPath(
     (Join-Path $runDirectory $frozenArguments.resolved_population_contract_filename)
   )
@@ -592,11 +626,12 @@ if ([int]$campaign.schema_version -eq 3) {
       -not (Test-Path -LiteralPath $resolvedOatofGeometryPath -PathType Leaf) -or
       (Get-FileHash -LiteralPath $resolvedOatofGeometryPath -Algorithm SHA256).Hash -ne
         $frozenArguments.resolved_oatof_geometry_sha256 -or
-      $frozenArguments.resolved_single_flight_pulse_schedule_filename -ne
-        'resolved_single_flight_pulse_schedule.json' -or
-      -not (Test-Path -LiteralPath $resolvedPulseSchedulePath -PathType Leaf) -or
-      (Get-FileHash -LiteralPath $resolvedPulseSchedulePath -Algorithm SHA256).Hash -ne
-        $frozenArguments.resolved_single_flight_pulse_schedule_sha256 -or
+      ($hasPulseSchedule -and (
+        $frozenArguments.resolved_single_flight_pulse_schedule_filename -ne
+          'resolved_single_flight_pulse_schedule.json' -or
+        -not (Test-Path -LiteralPath $resolvedPulseSchedulePath -PathType Leaf) -or
+        (Get-FileHash -LiteralPath $resolvedPulseSchedulePath -Algorithm SHA256).Hash -ne
+          $frozenArguments.resolved_single_flight_pulse_schedule_sha256)) -or
       $frozenArguments.resolved_population_contract_filename -ne
         'resolved_population_contract.json' -or
       -not (Test-Path -LiteralPath $resolvedPopulationContractPath -PathType Leaf) -or
@@ -605,6 +640,11 @@ if ([int]$campaign.schema_version -eq 3) {
       (Get-FileHash -LiteralPath $layoutRegistryPath -Algorithm SHA256).Hash -ne
         $frozenArguments.single_flight_layout_registry_sha256) {
     throw 'Prepared single-flight layout or pulse schedule is missing or stale.'
+  }
+  $stagedGrid2Mode = [string]$frozenArguments.source_release_mode -eq
+    'staged_grid2_restart'
+  if ($stagedGrid2Mode -eq $hasPulseSchedule) {
+    throw 'Staged grid2 forbids a pulse schedule; other single-flight modes require one.'
   }
   $geometryDocument = Get-Content -LiteralPath $resolvedOatofGeometryPath -Raw -Encoding UTF8 |
     ConvertFrom-Json
@@ -680,6 +720,34 @@ $runtimeLaunchedCount = if (
 $expectedExecutionParticleCount = if ($executionStrategy -eq 'simion_single_flight') {
   [int]$resolvedPopulation.execution_population.particle_count
 } else { [int]$runtime.source_record.particle_count }
+$stagedBudgetIdentityDiffers = if (
+  [string]$frozenArguments.source_release_mode -eq 'staged_grid2_restart'
+) {
+  $budget.source_identity.authority_role -ne
+      'staged_grid2_canonical_source_state' -or
+    $budget.source_identity.run_id -ne
+      $frozenArguments.staged_grid2_producer_run_id -or
+    $budget.source_identity.manifest_sha256 -ne
+      $frozenArguments.staged_grid2_producer_manifest_sha256 -or
+    $budget.source_identity.event_sha256 -ne
+      $frozenArguments.staged_grid2_source_state_sha256 -or
+    $budget.source_identity.particle_source_sha256 -ne
+      $frozenArguments.staged_grid2_source_state_sha256 -or
+    $budget.source_identity.metadata_sha256 -ne
+      $frozenArguments.staged_grid2_source_state_sha256
+} else {
+  $budget.source_identity.solver_id -ne $runtime.source_identity.solver_id -or
+    $budget.source_identity.run_id -ne $runtime.source_identity.run_id -or
+    $budget.source_identity.project_id -ne $runtime.source_identity.project_id -or
+    $budget.source_identity.manifest_sha256 -ne
+      $runtime.source_identity.manifest_sha256 -or
+    $budget.source_identity.event_sha256 -ne
+      $runtime.source_identity.event_sha256 -or
+    $budget.source_identity.particle_source_sha256 -ne
+      $runtime.source_identity.particle_source_sha256 -or
+    $budget.source_identity.metadata_sha256 -ne
+      $runtime.source_identity.metadata_sha256
+}
 if ($budget.role -ne 'integration_resolved_engineering_budget' -or
     $budget.integration_id -ne $plan.integration_id -or
     $budget.connection_profile_id -ne
@@ -692,20 +760,15 @@ if ($budget.role -ne 'integration_resolved_engineering_budget' -or
     $budget.source_identity.source_branch_id -ne $sourceBranchId -or
     $budget.source_identity.project_id -ne
       $resolved.selection.upstream_project_id -or
-    $budget.source_identity.solver_id -ne $runtime.source_identity.solver_id -or
-    $budget.source_identity.run_id -ne $runtime.source_identity.run_id -or
-    $budget.source_identity.project_id -ne $runtime.source_identity.project_id -or
-    $budget.source_identity.manifest_sha256 -ne
-      $runtime.source_identity.manifest_sha256 -or
-    $budget.source_identity.event_sha256 -ne
-      $runtime.source_identity.event_sha256 -or
-    $budget.source_identity.particle_source_sha256 -ne
-      $runtime.source_identity.particle_source_sha256 -or
-    $budget.source_identity.metadata_sha256 -ne
-      $runtime.source_identity.metadata_sha256 -or
+    $stagedBudgetIdentityDiffers -or
     [int]$budget.launched_particle_count -ne $expectedExecutionParticleCount -or
     [int]$budget.particle_count -ne $expectedExecutionParticleCount -or
     $budget.execution_strategy -ne $executionStrategy -or
+    ($executionStrategy -eq 'simion_single_flight' -and (
+      [string]$budget.single_flight_pa_cache_policy -ne
+        [string]$frozenArguments.single_flight_pa_cache_policy -or
+      [string]$budget.single_flight_pa_cache_policy_provenance -ne
+        [string]$frozenArguments.single_flight_pa_cache_policy_provenance)) -or
     [int]$budget.launched_particle_count -ne $expectedExecutionParticleCount -or
     [int]$budget.particle_count -ne $expectedExecutionParticleCount -or
     $budget.retention_class -ne 'compact') {
@@ -755,9 +818,15 @@ $retrySuffix = if ($RunId -match '(__r\d{2})$') { $Matches[1] } else { '' }
 if ($executionStrategy -eq 'simion_single_flight') {
   $singleFlightRunId = "$($RunId.Substring(0, 15))__sim__simion__rf-oatof-single-flight-gap0__n$expectedExecutionParticleCount$retrySuffix"
   $runnerArguments.RunId = $singleFlightRunId
-  if ([int]$campaign.schema_version -eq 3) {
+  $runnerArguments.PaCachePolicy =
+    [string]$frozenArguments.single_flight_pa_cache_policy
+  $runnerArguments.PaCachePolicyProvenance =
+    [string]$frozenArguments.single_flight_pa_cache_policy_provenance
+  if ([int]$campaign.schema_version -ge 3) {
     $runnerArguments.OatofResolvedGeometry = $resolvedOatofGeometryPath
-    $runnerArguments.PulseSchedule = $resolvedPulseSchedulePath
+    if ($null -ne $resolvedPulseSchedulePath) {
+      $runnerArguments.PulseSchedule = $resolvedPulseSchedulePath
+    }
     $runnerArguments.ResolvedPopulationContract = $resolvedPopulationContractPath
     $runnerArguments.ResolvedPopulationContractSha256 =
       $frozenArguments.resolved_population_contract_sha256
@@ -836,6 +905,28 @@ if ($executionStrategy -eq 'simion_single_flight') {
           [string]$frozenArguments.pre_pulse_restart_validation_sha256
       }
     }
+    if ($null -ne $stagedGrid2SourceStatePath) {
+      $runnerArguments.StagedGrid2SourceState = $stagedGrid2SourceStatePath
+      $runnerArguments.StagedGrid2SourceStateSha256 =
+        [string]$frozenArguments.staged_grid2_source_state_sha256
+      $runnerArguments.StagedGrid2SourceStateCount =
+        [int]$frozenArguments.staged_grid2_source_state_count
+      $runnerArguments.StagedGrid2StartInstance =
+        [int]$frozenArguments.staged_grid2_start_instance
+      $runnerArguments.StagedGrid2ClockEpochId =
+        [string]$frozenArguments.staged_grid2_clock_epoch_id
+      $runnerArguments.StagedGrid2ProducerRunId =
+        [string]$frozenArguments.staged_grid2_producer_run_id
+      $runnerArguments.StagedGrid2ProducerManifest =
+        $stagedGrid2ProducerManifestPath
+      $runnerArguments.StagedGrid2ProducerManifestSha256 =
+        [string]$frozenArguments.staged_grid2_producer_manifest_sha256
+      if ($null -ne $stagedGrid2BridgeReceiptPath) {
+        $runnerArguments.StagedGrid2BridgeReceipt = $stagedGrid2BridgeReceiptPath
+        $runnerArguments.StagedGrid2BridgeReceiptSha256 =
+          [string]$frozenArguments.staged_grid2_bridge_receipt_sha256
+      }
+    }
   }
   if ($null -ne $singleFlightParticleSourcePath) {
     $runnerArguments.MotherParticleSource = $singleFlightParticleSourcePath
@@ -859,26 +950,23 @@ if ($executionStrategy -eq 'simion_single_flight') {
     $runnerArguments.MotherParticleSource = $pulsePrefixPath
     $runnerArguments.MotherParticleSourceSha256 =
       $frozenArguments.pulse_resolution_prefix_sha256
-    $runnerArguments.MotherParticleCount = 100
+    $runnerArguments.MotherParticleCount = @(Import-Csv -LiteralPath $pulsePrefixPath).Count
     $runnerArguments.PulseResolutionN100Screening = $true
     $runnerArguments.PulseResolutionCampaign = $campaignPath
     $runnerArguments.PulseResolutionCampaignSha256 =
       $frozenArguments.campaign_sha256
     $runnerArguments.PulseResolutionExperimentRowSha256 =
       $frozenArguments.experiment_row_sha256
-    $runnerArguments.PulseResolutionArmId =
-      [string]$frozenArguments.pulse_resolution_attribution_arm_id
+    $runnerArguments.PulseResolutionExperimentId =
+      [string]$frozenArguments.experiment_id
+    $runnerArguments.PulseResolutionFieldProfileId =
+      [string]$frozenArguments.resolved_region_field_profile_id
     $runnerArguments.PulseResolutionExecutionMode =
       [string]$frozenArguments.pulse_resolution_execution_mode
     $runnerArguments.PulseResolutionPrefixPlanRoot = $runDirectory
     $runnerArguments.PulseResolutionRegistrationAuthority = $pulseRegistrationPath
     $runnerArguments.PulseResolutionRegistrationAuthoritySha256 =
       $frozenArguments.pulse_resolution_registration_sha256
-    if ($null -ne $pulseBaselineCheckpointsPath) {
-      $runnerArguments.PulseResolutionBaselineCheckpoints = $pulseBaselineCheckpointsPath
-      $runnerArguments.PulseResolutionBaselineCheckpointsSha256 =
-        $frozenArguments.pulse_resolution_baseline_checkpoints_sha256
-    }
   }
   & $runtime.implementation.single_flight_runner @runnerArguments
 } else {
@@ -922,6 +1010,12 @@ $receipt = [ordered]@{
   experiment_id = $frozenArguments.experiment_id
   experiment_row_sha256 = $frozenArguments.experiment_row_sha256
   execution_strategy = $executionStrategy
+  single_flight_pa_cache_policy = if (
+    $executionStrategy -eq 'simion_single_flight'
+  ) { [string]$frozenArguments.single_flight_pa_cache_policy } else { $null }
+  single_flight_pa_cache_policy_provenance = if (
+    $executionStrategy -eq 'simion_single_flight'
+  ) { [string]$frozenArguments.single_flight_pa_cache_policy_provenance } else { $null }
   connection_profile_id = $plan.selection.connection_profile_id
   source_branch_id = $sourceBranchId
   source_identity = $budget.source_identity
@@ -969,6 +1063,12 @@ $receipt = [ordered]@{
   } }
   execution_status = 'completed_pending_paired_analysis'
   claim_status = 'FUNCTIONAL_SCREEN_ONLY'
+}
+if ([string]$frozenArguments.source_release_mode -eq 'staged_grid2_restart') {
+  $receipt['connection_lineage'] = [ordered]@{
+    authority_scope = 'connection_lineage_only'
+    identity = $runtime.source_identity
+  }
 }
 $receiptPath = Join-Path $runDirectory 'execution_receipt.json'
 $receipt | ConvertTo-Json -Depth 6 |

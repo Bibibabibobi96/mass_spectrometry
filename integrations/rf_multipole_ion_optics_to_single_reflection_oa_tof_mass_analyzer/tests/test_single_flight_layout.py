@@ -4,16 +4,12 @@ import copy
 import hashlib
 import json
 import math
-import re
 import unittest
 from pathlib import Path
 
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_layout import (
     compile_geometry_and_port,
     select_profile,
-)
-from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.tests.test_support.legacy_single_flight_program import (
-    bind_oatof_adjustables,
 )
 
 
@@ -231,64 +227,6 @@ class SingleFlightLayoutTests(unittest.TestCase):
             ],
             {"frontend_pa": True, "flight_tube_pa": True, "reflectron_pa": False},
         )
-
-    def test_zero_match_reflectron_voltage_is_consistent_through_generated_lua(self) -> None:
-        registry = json.loads(
-            (INTEGRATION / "config/single_flight_layout_profiles.json").read_text()
-        )
-        geometry = json.loads(
-            (REPO / "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json").read_text()
-        )
-        port = json.loads(
-            (REPO / "projects/single_reflection_oa_tof_mass_analyzer/config/interfaces/required/oatof_accelerator_entry.json").read_text()
-        )
-        formal = (
-            REPO / "projects/single_reflection_oa_tof_mass_analyzer/simion/"
-            "workbench/formal/oatof_ideal_grounded.lua"
-        ).read_text()
-        for profile_id in ("zero_match_short_1mm", "zero_match_long_2p2mm"):
-            with self.subTest(profile_id=profile_id):
-                profile = select_profile(registry, profile_id)
-                resolved, _, _ = compile_geometry_and_port(geometry, port, profile)
-                accelerator = resolved["geometry_derivation"]["accelerator"]
-                coupled = accelerator["finite_interval_theory"]["coupled_reflectron"]
-                reflectron = resolved["geometry_derivation"]["reflectron"]
-                compilation = resolved["single_flight_layout_derivation"]["design_compilation"]
-                midgrid = resolved["electrodes_V"]["midgrid"]
-                backplate = resolved["electrodes_V"]["backplate"]
-                self.assertAlmostEqual(midgrid, coupled["stage1_voltage_drop_v"])
-                self.assertAlmostEqual(
-                    backplate,
-                    midgrid
-                    + coupled["stage2_field_v_per_mm"]
-                    * resolved["geometry_mm"]["L_stage2"],
-                )
-                self.assertAlmostEqual(
-                    reflectron["source_release_full_width_mm"],
-                    resolved["particle_source"]["size_z_mm"],
-                )
-                self.assertAlmostEqual(
-                    reflectron["energy_min_V"], coupled["energy_min_v"]
-                )
-                self.assertAlmostEqual(
-                    reflectron["energy_max_V"], coupled["energy_max_v"]
-                )
-                self.assertFalse(compilation["simion_rebuild_plan"]["reflectron_pa"])
-                self.assertEqual(
-                    compilation["reflectron_voltage_application"],
-                    {
-                        "pa0_basis_reused": True,
-                        "method": "official_simion_runtime_fast_adjust_v1",
-                        "voltage_authority": "electrodes_V",
-                        "runtime_call": "r:fast_adjust(reflectron_voltages)",
-                    },
-                )
-                bound = bind_oatof_adjustables(formal, resolved)
-                self.assertIn("r:fast_adjust(reflectron_voltages)", bound)
-                for name, expected in {"V_mid": midgrid, "V_backplate": backplate}.items():
-                    match = re.search(rf"(?m)^adjustable {name}=([^\r\n]+)$", bound)
-                    self.assertIsNotNone(match)
-                    self.assertAlmostEqual(float(match.group(1)), expected)
 
     def test_generic_overrides_rebuild_linked_accelerator_and_flight_region(self) -> None:
         registry = json.loads(

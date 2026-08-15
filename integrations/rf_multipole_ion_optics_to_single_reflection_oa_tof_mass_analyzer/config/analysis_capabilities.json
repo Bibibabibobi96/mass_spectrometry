@@ -63,10 +63,10 @@
       "claim_class": "UNQUALIFIED_DIAGNOSTIC_ONLY"
     },
     {
-      "capability_id": "rf_oatof_pre_pulse_z_vz_phase_space_v1",
-      "consumer": "analysis/resolution_attribution_counterfactual.py",
-      "scope": "detector-blind pre-pulse z-vz scatter, measured linear trend and residual thickness for the pulse-eligible cohort",
-      "fixed_output_role": "results/resolution_attribution/pre_pulse_z_vz_phase_space.png",
+      "capability_id": "rf_oatof_pre_pulse_checkpoint_state_v1",
+      "consumer": "analysis/analyze_single_flight.py",
+      "scope": "family-source-closure detector-blind pre-pulse z-vz checkpoint state for the governed execution population; interventions are declared by campaign source and field profiles, not synthesized by a second runner",
+      "fixed_output_role": "results/single_flight_particle_checkpoints.csv",
       "claim_class": "CONTROLLED_COUNTERFACTUAL_DIAGNOSTIC_ONLY"
     }
   ]

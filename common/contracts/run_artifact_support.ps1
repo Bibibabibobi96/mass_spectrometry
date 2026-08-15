@@ -276,6 +276,7 @@ function Complete-FailedRun {
     [int]$SummarySchemaVersion=1,
     [string]$FailureStage='',
     [Nullable[bool]]$ThresholdResultEligible=$null,
+    [hashtable]$AdditionalSummaryProperties=@{},
     [string[]]$AdditionalOutputs=@(),
     [string]$ResourceUsagePath=''
   )
@@ -299,6 +300,12 @@ function Complete-FailedRun {
   }
   if($null-ne$ThresholdResultEligible){
     $summaryDocument.threshold_result_eligible=[bool]$ThresholdResultEligible
+  }
+  foreach($key in $AdditionalSummaryProperties.Keys){
+    if($key-in@('schema_version','role','status','reason','failure_class','failure_stage','threshold_result_eligible')){
+      throw "Additional failed-run summary property is reserved: $key"
+    }
+    $summaryDocument[$key]=$AdditionalSummaryProperties[$key]
   }
   Write-RunJson -Path $Summary -Value $summaryDocument
   $retentionActions=$null

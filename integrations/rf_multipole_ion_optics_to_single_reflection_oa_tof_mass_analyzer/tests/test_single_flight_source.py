@@ -8,13 +8,43 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_source import materialize, materialize_ideal_linear_source, materialize_pre_pulse_restart, render_pre_pulse_fly2
+from common.contracts.component_particle_state import write_component_particle_state_csv
+from common.contracts.particle_physics import kinetic_energy_ev
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_source import materialize, materialize_ideal_linear_source, materialize_pre_pulse_restart, materialize_staged_grid2_restart, render_pre_pulse_fly2
 
 
 REPO = Path(__file__).resolve().parents[3]
 
 
 class SingleFlightSourceTests(unittest.TestCase):
+    def test_staged_grid2_preserves_noncontiguous_canonical_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "grid2.csv"
+            rows = []
+            for particle_id in (6, 97):
+                rows.append({
+                    "particle_id": particle_id, "parent_particle_id": "",
+                    "generation": 0, "species_id": "ion_100amu_q1",
+                    "particle_weight": 1, "source_component_id": "accelerator",
+                    "target_component_id": "single_reflection_oa_tof_mass_analyzer",
+                    "state_event": "local_accelerator_exit", "frame_id": "oatof_global",
+                    "clock_epoch_id": "instrument_clock_epoch_v1",
+                    "instrument_time_us": 36.75, "lineage_age_us": 36.0,
+                    "particle_age_us": 36.0, "last_component_elapsed_time_us": 7.0,
+                    "lineage_birth_time_us": 0.75, "particle_birth_time_us": 0.75,
+                    "mass_to_charge_Th": 100, "mass_amu": 100, "charge_state": 1,
+                    "position_x_mm": -47, "position_y_mm": 0.2,
+                    "position_z_mm": 4.87, "velocity_x_m_s": 4000,
+                    "velocity_y_m_s": 300, "velocity_z_m_s": 58000,
+                    "kinetic_energy_eV": kinetic_energy_ev(100, 4000, 300, 58000),
+                    "phase_reference_id": "rf_drive.v1", "phase_rad": 2.7,
+                })
+            write_component_particle_state_csv(source, rows)
+            fly2, global_rows = materialize_staged_grid2_restart(source)
+        self.assertEqual([int(row["particle_id"]) for row in global_rows], [6, 97])
+        self.assertEqual(fly2.count("standard_beam"), 2)
+        self.assertNotIn("ke =", fly2)
+
     def test_direct_velocity_fly2_preserves_component_signs(self) -> None:
         row = {
             "mass_amu": "100", "charge_state": "1",

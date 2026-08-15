@@ -127,3 +127,140 @@ particle-physics派生的能量误差`1.61032e-9 eV`；位置与canonical clock�
 - 当前Functional证据可用；数值收敛、Candidate性能、Formal、SIMION/COMSOL一致性和最终优化资格均为
   **FAIL/未完成**。下一步需以受治理T.Qual和RF时间步序列配合PA空间网格序列，使用同global IDs、
   canonical pulse-effective clock及预声明门；数值稳定后才允许N=1000多批、bootstrap和COMSOL handoff。
+
+## 2026-08-15：direct baseline r02失败与r03 cohort语义修复
+
+`pulse_resolution_direct_baseline_v5_r02`使用当前官方零宽透明栅网路径完成一次N=100真实SIMION输运，
+但在baseline分析阶段失败关闭。源释放仍是同一有序ID 1--100，源表、canonical初态和固定脉冲时刻均
+闭合；实际输运观察到`source_release/handoff/pre_pulse/pulse_eligible/outside=100/62/52/52/0`，而
+旧D46986 checkpoint记录的是`100/75/66/50/16`。差异已在脉冲前、多极杆交接处形成，不是batch合并、
+粒子ID映射、脉冲时钟或反射器结果筛选造成。旧checkpoint来自迁移前的frontend/Program实现，包含
+`surface=fractional`及有厚度栅片；当前路径为官方一行零宽栅和`surface=none`。现有证据不能把差异
+唯一归因到某一片栅网，但足以否定旧四层cohort作为当前官方路径的严格运行权威。
+
+r02 parent run为
+`20260815_160000__sim__cross__pulse-direct-real-rr__n100__r02`，失败manifest SHA-256为
+`D9220D63AB56B4A607668652A55730DD09CDB0BC26A06D007A24666BA5C3106C`；campaign SHA-256为
+`E43CAA2987BE0A5D7EA2FA9131B2892FF77F06EE89E9E91495AEED3D1C3361CE`。它保持失败历史证据，不能晋升
+baseline result。该次官方构建已按内容身份发布frontend/overlay cache，键分别为
+`01c205c64fc144710678bf823e3ed3852c28ea2992c6c14064ca2a53f4515309`和
+`4dd7151d698f812ca60009c6e6434801ace6a247a8b6ff6e3c088aee25f12738`。
+
+r03只修复身份和cohort权威语义，科学输入不变，PA策略恢复`require_existing`并预期精确命中上述已发布
+cache。`pulse_resolution_execution_mode`是唯一控制权威：baseline派生
+`establish_observed_authority`，resolved population只预先冻结`population_count=100`，不得预填
+pre-pulse/eligible/outside分母；分析结果从当前日志发布四组有序ID、count、SHA及独立handoff，并由
+self-SHA闭合。candidate派生`require_frozen_baseline_authority`，只能从已验证baseline receipt取得四组
+成员并逐组精确复用。D46986仅以`rf_oatof_historical_migration_reference`保留，baseline只用它验证
+未变化的source-release 100、源身份和固定脉冲合同，不再验证旧`66/50/16`。
+
+r03 campaign为`pulse_resolution_direct_baseline_v5_r03`，run为
+`20260815_160000__sim__cross__pulse-direct-real-rr__n100__r03`，campaign SHA-256为
+`AFA49EE4D055C11B705CC43E06AAE0B9A1B4CDA476591982BE8410A34F95B1A6`。solver-free联合target为
+74/74 PASS；integration全套为378/378 PASS；正式`ValidateOnly`通过source binding、prepare、composition
+plan和integration validation，且临时目录自动清理。本阶段未运行r03 SolverAuthorized或SIMION，因此
+没有新分辨率结果，也尚未把r03 observed cohort晋升为候选配对权威。
+
+### r03/r04执行失败与r05恢复
+
+唯一一次r03 `SolverAuthorized`在8.1 s内失败于single-flight runner的solver前preflight。parent/child
+manifest均为`failed`，SHA-256分别为
+`B35AAB6BF95B43EA2CF9E42CDD685B7E8D7D65CDD53BDEA221AD493A25A40FFE`和
+`346C1E06111325955343D618CC77B7563E156F0E3CB1D74226B6FD1716D2AED6`。PowerShell StrictMode直接读取
+baseline按合同合法缺省的`paired_cohort_authority`属性，因属性不存在而终止；失败发生在cache lookup、
+SIMION Fly、build和refine之前，没有产生observed authority或baseline receipt。r03身份永久封存，不得
+原样重试。
+
+最小修复改为通过`PSObject.Properties`检查可选属性：`establish_observed_authority`必须不含paired
+cohort，`require_frozen_baseline_authority`必须含paired cohort；baseline的eligible denominator保持
+缺省，不回填占位值。r04 campaign/run只将r03身份改为r04，全部科学源、场、几何、时钟、数值、N、
+cache策略和cohort语义均不变；campaign SHA-256为
+`3A883CBBD8C098B350D2A6123D831438E85FD8E3C791B03BC8811562747441FD`。
+
+r04公开`PrepareOnly`通过prepare、composition和adapter，但按现有架构在adapter退出，不进入runner或
+cache lookup。没有为本缺陷新增CLI或第二执行路径。精确PowerShell回归绑定r03 frozen population SHA
+`1D8D54EEEA5BB9B98A6BF631825AF0FE383523259444A3F6C95A9CE92794FC36`，在StrictMode下验证缺省paired
+cohort与eligible denominator合法。官方`Test-RfReusableCacheEntry`以`preserve`模式逐文件验证frontend
+`01c205c64fc144710678bf823e3ed3852c28ea2992c6c14064ca2a53f4515309`和overlay
+`4dd7151d698f812ca60009c6e6434801ace6a247a8b6ff6e3c088aee25f12738`的manifest、role、project、key、
+文件大小和SHA，二者均PASS；该只读harness验证cache完整性，但不冒充完整runner preflight或Fly。
+
+随后唯一一次r04 `SolverAuthorized`在8.2 s内同样于single-flight runner的solver前preflight失败。
+parent/child manifest SHA-256分别为
+`AE7EA2BDF83B26C4B515209E287C73A1068DCBB8B989958E20F8D9F86A19E1C6`和
+`C62C237CB0DC2F7FEF43CA7066B6BEFC463D91E9731220BA31557762451D250A`；child明确记录
+`frozen_input_snapshot_completed=false`且两项cache disposition仍为`pending`，故这次也没有cache lookup、
+SIMION Fly、build或refine。根因是registration-source组装处仍用点属性访问合法缺省的
+`paired_cohort_authority`，与r03属于同一可选字段的第二个访问点。r04身份永久封存，不得原样重试。
+
+完整逐项审计runner、adapter、analyzer和registrar中的`paired_cohort_authority`后，唯一剩余不安全访问
+改为复用runner前部取得的`PSObject.Properties`对象：baseline省略该键，只有
+`require_frozen_baseline_authority`候选才写入。r05 campaign/run只将r04身份改为r05，全部科学源、场、
+几何、时钟、数值、N、cache策略和cohort语义不变；campaign SHA-256为
+`10EB3DAE1998403F2DC158B1CFDD18C8BCADE806A4290ADF24FE880080776B95`。精确r04 frozen-plan动态harness在
+PowerShell StrictMode下走到registration-source组装，并调用官方`Test-RfReusableCacheEntry -InvalidEntryAction preserve`
+验证上述frontend/overlay条目，结果均PASS。该harness仍不冒充实际runner或Fly；r05尚未执行
+`SolverAuthorized`，因此目前没有新的observed cohort、baseline receipt或分辨率结果。
+
+### r05 cache完整性失败与r06安全复用修复
+
+r05唯一一次`SolverAuthorized`在16.7 s内被`require_existing`完整性门禁阻断，未进入SIMION Fly、build或
+refine。parent/child manifest SHA-256分别为
+`EA0455460DAF33E8D9DD9CB20133F4FB63BEE4D88F43903BF0F6BB55276C588B`和
+`490C92EC707B7DE15AB72EB93410A43FBB22116FCEC5B092DD4333C894351A10`。frontend cache
+`01c205...`仅`frontend.pa19`偏离manifest：期望`88CE8E...EA446`，实际`82B7A8...6189`，尺寸不变；
+全族其余文件和overlay `4dd715...`均通过逐文件SHA。坏文件与另一受验证副本仅一个8-byte对齐位置的一字节
+不同。现有证据高度支持overlay basis构建时供应商PA API直接打开不可变frontend cache原件产生副作用，
+同时排除了frontend/overlay当前共享NTFS inode；不把未记录写入者提升为绝对因果结论。
+
+r06使所有SIMION消费者只打开`run/simion/frontend_cache_copy`中的普通物理副本，overlay/downstream
+cache与runtime/publish staging之间也统一使用`Copy-Item`，runner不再含PA hardlink。overlay cache身份改为
+绑定完整frontend cache key，而非仅绑定`pa0` SHA；构建期SIMION访问结束后、Fly前调用既有官方全payload
+verifier复核源frontend cache。r06相对r05只改变campaign/run身份和PA policy
+`require_existing -> build_and_publish_if_missing`，campaign SHA-256为
+`1720764541ADCDC65C808CAA81282BC5A3EE967179AE83A9C427E9663CDC8921`。solver-free target、相关integration
+分别`68/68`、`32/32` PASS，公开`ValidateOnly` PASS；尚未运行r06 `SolverAuthorized`。损坏frontend和
+tainted-provenance overlay两个旧cache的永久删除仍等待针对具体目录的明确批准。
+
+## 2026-08-15：N=100 direct field matrix正式登记结果
+
+本节只登记功能与预注册promotion结果，不增加物理解释。四行使用同一真实八极杆源、r09 observed cohort、
+pulse-effective时钟、官方零宽透明栅网、真实反射器合同和N=100 ordered prefix；四行均为
+source/handoff/pre-pulse/eligible/outside/detector=`100/62/52/52/0/52`，eligible到detector为`1.0`。
+frontend/overlay分别命中`01c205c64fc144710678bf823e3ed3852c28ea2992c6c14064ca2a53f4515309`和
+`f1b4d3fc449c8f350faa9a33615156249f97588f797d9686ff7fce046f92fa40`，没有build/refine。
+
+|序列|规范场配置|run|R|direct FWHM (ns)|mode|promotion|功能/publication|
+|---:|---|---|---:|---:|---:|---|---|
+|1|`accelerator_real_pa`|`20260815_160000__sim__cross__pulse-direct-real-rr__n100__r09`|4458.135378|3.496136959|1|baseline，不晋级|PASS|
+|2|`accelerator_ideal_stage1_real_stage2`|`20260815_160100__sim__cross__pulse-direct-ideal-s1-real-s2-rr__n100__r03`|4343.205166|3.588638942|1|reject|PASS|
+|3|`accelerator_ideal_stage1_stage2_real_reflectron`|`20260815_160200__sim__cross__pulse-direct-ideal-s1s2-real-rr__n100__r03`|4545.698265|3.428833509|1|reject|PASS|
+|4|`full_domain_piecewise_ideal_field`|`20260815_160300__sim__cross__pulse-direct-full-domain-ideal__n100__r03`|4545.698265|3.428833509|1|reject|PASS|
+
+功能贯通为`3/3 candidate PASS`，promotion为`0/3`。seq2的FWHM/sigma相对改善为
+`-2.645834%/-0.686656%`；seq3和seq4均为`1.925080%/1.514362%`，均低于预注册15%双门。
+
+- baseline result文件/self-SHA：`EA4BB4084A754F5442B016B7D3744141A107C291B8DDABA8CCD9C193D759E37E` /
+  `B515E431A076E57E00324B80CC1D3FEF031CD8B882CB3B65C2E48531A7B69E7B`；parent/child manifest：
+  `06134C747DD095092B8BD053AED7C213A877DA325B34DF0125D13DF156E9B12A` /
+  `54E67E3DEC5BA4D8B649929A7EB08FC05E668187F485A99EB132A773F54D0AE5`。
+- seq2 result文件/self-SHA：`C7EE0313F74CE8D59BFBD06758873AEC041202F5BFD7499C151052D79204BF90` /
+  `1FD9E69AAFD95F5BE44717B90431E758CC7F03D12CBA442B34E9073A3C973C6A`；promotion文件/self-SHA：
+  `CDC12B62F4ED5403E3D9913188EF287E0F331FC83DA360C55091BAC5D95DD81B` /
+  `B0AED58E93E15F4B1D0EA64FEE16A152F7853A824AAA07385E4255AF43876D8B`；parent/child manifest：
+  `2F06062F968AC173C426AA9A85949B10344EA0B2123A49D72038D272D4F1D7C6` /
+  `F8C68AE694639312028F16CA4EC3EBA1A070ACDC694070F77CD14AF9409DC278`。
+- seq3 result文件/self-SHA：`0DD8A05402A95EF892680977074EA8188F24EB83022001458C48DD776997AAC6` /
+  `206256D2864B6177CA6DB8ECB98BE53451C41F796D01E81D93AE69E16E362E09`；promotion文件/self-SHA：
+  `99C7505A8850430A21E8B98A1B1B7EDAB30A0E12248380B8CEF45BAB8641CE18` /
+  `1EBC04BFB1268519B5BB11F711C9268C7037C8337CCD5661E4381C7644DC945C`；parent/child manifest：
+  `73BDBE390D372716AC0C095C9210233CA50194295C9F43C5ACCB347545E1860C` /
+  `E30AC6313A2C3EC65D365D4E04DE6A7F9E76E4D837EA1F1DFB6B03D30A0544FB`。
+- seq4 result文件/self-SHA：`9CBD04867CE6EA846A09940CCC9097E0AC0980BC3B3A851D537057E52A2318A7` /
+  `223F6D2EF03ECA35CFA157E446E29E92F8B42D4D8E5898BFC2E0DE6CDDDCCA95`；promotion文件/self-SHA：
+  `023901D41E76B2E8322997F8BA891847A84CCB92CF491A9841BCE1CF230FB3A1` /
+  `42AB994A85EE20CCB17FC87EC79DDEF94954CECB78AB46A3AD221211AAC8B903`；parent/child manifest：
+  `7E0BAF0B1F241A49225D290ECAA6D9CBC642E75158486CF21EE3B7E7FC1E16DB` /
+  `1A3FBF6D60DF99E4051BBEF90114DC897136AC0A56EC55A9A70CFB9D9A3AF971`。
+
+全部result和promotion receipt的claimed self-SHA均与canonical重算一致。

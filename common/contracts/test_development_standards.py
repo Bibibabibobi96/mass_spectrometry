@@ -8,6 +8,30 @@ from pathlib import Path
 from common import verify_development_standards as standards
 
 
+class ExperimentParameterAuthorityStandardTests(unittest.TestCase):
+    def test_standard_freezes_experiment_semantics_through_one_authority_chain(self):
+        source = (
+            standards.REPO_ROOT / "docs" / "DEVELOPMENT_STANDARDS.md"
+        ).read_text(encoding="utf-8")
+        heading = "##### 实验语义参数的唯一权威链"
+        self.assertEqual(source.count(heading), 1)
+        section = source.split(heading, 1)[1].split("\n#### ", 1)[0]
+        self.assertIn(
+            "canonical row -> resolved plan/budget -> execution receipt", section
+        )
+        for forbidden_authority in (
+            "隐藏默认值",
+            "代码常量",
+            "求解器GUI默认",
+            "环境变量",
+            "CLI参数",
+            "脚本局部赋值",
+        ):
+            self.assertIn(forbidden_authority, section)
+        self.assertIn("实现不变量", section)
+        self.assertIn("测试fixture", section)
+
+
 class MatlabBuildOnlyContractTests(unittest.TestCase):
     example_path = standards.REPO_ROOT / "common" / "example.m"
 

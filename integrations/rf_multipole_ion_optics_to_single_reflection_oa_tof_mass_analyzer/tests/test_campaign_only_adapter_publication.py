@@ -16,6 +16,7 @@ from common.contracts.file_identity import file_sha256, repository_text_sha256
 from common.contracts.machine_contracts import ContractError
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.publish_run import (
     INTEGRATION_ID,
+    SINGLE_FLIGHT_STAGES,
     STAGES,
     stage_project_id,
     publish_family_source_closure_failure,
@@ -64,7 +65,279 @@ def record(path: Path) -> dict[str, object]:
     }
 
 
+def make_single_flight_publication_fixture(
+    workspace: Path, *, staged: bool
+) -> dict[str, object]:
+    fixture_repo = workspace / "simulation_repo"
+    campaign = fixture_repo / "integrations" / INTEGRATION_ID / "config/campaign.json"
+    campaign.parent.mkdir(parents=True)
+    write_json(campaign, {"role": "campaign_fixture"})
+    run_id = "20260815_140000__sim__cross__publisher-test__n34__r08"
+    run_dir = workspace / "artifacts/projects" / INTEGRATION_ID / "runs" / run_id
+    run_dir.mkdir(parents=True)
+    profile_id = "rf_octupole_oatof_direct_mating_gap_0mm"
+    canonical = {
+        "authority_role": "staged_grid2_canonical_source_state",
+        "source_branch_id": "simion",
+        "solver_id": "simion",
+        "run_id": "canonical_grid2_run",
+        "project_id": "rf_octupole_ion_optics",
+        "manifest_sha256": "A" * 64,
+        "event_sha256": "B" * 64,
+        "particle_source_sha256": "B" * 64,
+        "metadata_sha256": "B" * 64,
+        "state_event": "local_accelerator_exit",
+        "clock_epoch_id": "instrument_clock_epoch_v1",
+    }
+    lineage_identity = {
+        "source_branch_id": "simion",
+        "solver_id": "simion",
+        "run_id": "upstream_connection_run",
+        "project_id": "rf_octupole_ion_optics",
+        "manifest_sha256": "C" * 64,
+        "event_sha256": "D" * 64,
+        "particle_source_sha256": "E" * 64,
+        "metadata_sha256": "F" * 64,
+    }
+    lineage = {
+        "authority_scope": "connection_lineage_only",
+        "identity": lineage_identity,
+    }
+    runtime = run_dir / "runtime.json"
+    resolved = run_dir / "resolved_connection.json"
+    plan = run_dir / "composition_plan.json"
+    budget = run_dir / "resolved_engineering_budget.json"
+    receipt = run_dir / "execution_receipt.json"
+    source_contract = run_dir / "resolved_source_contract.json"
+    design = run_dir / "upstream_resolved_design.json"
+    population = run_dir / "resolved_population_contract.json"
+    write_json(runtime, {"role": "runtime_fixture"})
+    write_json(
+        resolved,
+        {
+            "integration_id": INTEGRATION_ID,
+            "selection": {
+                "connection_profile_id": profile_id,
+                "upstream_project_id": "rf_octupole_ion_optics",
+            },
+        },
+    )
+    write_json(
+        plan,
+        {
+            "integration_id": INTEGRATION_ID,
+            "selection": {"connection_profile_id": profile_id},
+        },
+    )
+    write_json(design, {"role": "design_fixture"})
+    write_json(
+        source_contract,
+        {
+            "role": "rf_multipole_oatof_source_contract",
+            "authority_scope": "connection_lineage_only",
+            "source_branches": {
+                "simion": {
+                    "solver_id": "simion",
+                    "recorded_project_id": lineage_identity["project_id"],
+                    "source": {
+                        "run_id": lineage_identity["run_id"],
+                        "manifest": {"sha256": lineage_identity["manifest_sha256"]},
+                        "state": {"sha256": lineage_identity["event_sha256"]},
+                        "particle_source": {
+                            "sha256": lineage_identity["particle_source_sha256"]
+                        },
+                        "metadata": {"sha256": lineage_identity["metadata_sha256"]},
+                    },
+                }
+            },
+        },
+    )
+    write_json(
+        population,
+        {
+            "role": "rf_oatof_resolved_population_contract",
+            "campaign_id": "publisher_test",
+            "experiment_id": "staged" if staged else "pre_pulse",
+            "experiment_row_sha256": "1" * 64,
+            "source_release_mode": (
+                "staged_grid2_restart" if staged else "pre_pulse_restart"
+            ),
+            "execution_population": {"particle_count": 34},
+        },
+    )
+    campaign_identity = {
+        "campaign_id": "publisher_test",
+        "experiment_id": "staged" if staged else "pre_pulse",
+        "experiment_row_sha256": "1" * 64,
+        "launched_particle_count": 34,
+        "particle_count": 34,
+        "policy_id": "compact_serial_commercial_solvers",
+        "retention_class": "compact",
+    }
+    write_json(
+        budget,
+        {
+            "connection_profile_id": profile_id,
+            "execution_strategy": "simion_single_flight",
+            "source_identity": canonical,
+            **campaign_identity,
+        },
+    )
+    stage_id = (
+        run_id[:15]
+        + SINGLE_FLIGHT_STAGES["single_flight_transport"]["run_stem"]
+        + "34__r08"
+    )
+    stage_dir = workspace / "artifacts/projects" / INTEGRATION_ID / "runs" / stage_id
+    stage_dir.mkdir(parents=True)
+    stage_config = {
+        "schema_version": 2,
+        "run_id": stage_id,
+        "project": INTEGRATION_ID,
+        "mode": SINGLE_FLIGHT_STAGES["single_flight_transport"]["mode"],
+        "parameters": {
+            "connection_profile_id": profile_id,
+            "source_branch_id": "simion",
+        },
+        "inputs": {
+            "runtime_binding": str(runtime.resolve()),
+            "resolved_connection": str(resolved.resolve()),
+            "resolved_population_contract": str(population.resolve()),
+        },
+        ("source_identity" if staged else "upstream_source_identity"): canonical,
+    }
+    if staged:
+        stage_config["connection_lineage"] = lineage
+    write_json(stage_dir / "run_config.json", stage_config)
+    write_json(
+        stage_dir / "run_manifest.json",
+        {
+            "role": "simulation_run_manifest",
+            "run_id": stage_id,
+            "project": INTEGRATION_ID,
+            "mode": SINGLE_FLIGHT_STAGES["single_flight_transport"]["mode"],
+            "status": "success",
+            "run_config": record(stage_dir / "run_config.json"),
+        },
+    )
+    write_json(stage_dir / "summary.json", {"census": {"detector": 34}})
+    receipt_value = {
+        "role": "integration_family_source_closure_execution_receipt",
+        "integration_run_id": run_id,
+        "execution_status": "completed_pending_paired_analysis",
+        "execution_strategy": "simion_single_flight",
+        "connection_profile_id": profile_id,
+        "campaign_path": campaign.relative_to(fixture_repo).as_posix(),
+        "campaign_sha256": repository_text_sha256(campaign),
+        "resolved_source_contract_filename": source_contract.name,
+        "resolved_source_contract_sha256": file_sha256(source_contract),
+        "upstream_resolved_design_filename": design.name,
+        "upstream_resolved_design_sha256": file_sha256(design),
+        "resolved_population_contract_filename": population.name,
+        "resolved_population_contract_sha256": file_sha256(population),
+        "source_branch_id": "simion",
+        "source_identity": canonical,
+        "resolved_connection_sha256": file_sha256(resolved),
+        "stage_run_ids": {"single_flight_transport": stage_id},
+        "stage_runtime_binding_sha256s": {
+            "single_flight_transport": file_sha256(runtime)
+        },
+        **campaign_identity,
+    }
+    if staged:
+        receipt_value["connection_lineage"] = lineage
+    write_json(receipt, receipt_value)
+    return {
+        "repo": fixture_repo,
+        "run_dir": run_dir,
+        "receipt": receipt,
+        "resolved": resolved,
+        "plan": plan,
+        "budget": budget,
+        "stage_config": stage_dir / "run_config.json",
+        "canonical": canonical,
+        "lineage": lineage,
+    }
+
+
 class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
+    def _publish_single_flight_fixture(self, fixture: dict[str, object]) -> None:
+        with patch(
+            "integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.publish_run.subprocess.run",
+            return_value=SimpleNamespace(returncode=0, stdout="", stderr=""),
+        ):
+            publish_family_source_closure_run(
+                repo_root=fixture["repo"],
+                workspace_root=fixture["repo"].parent,
+                integration_run_dir=fixture["run_dir"],
+                receipt_path=fixture["receipt"],
+                resolved_path=fixture["resolved"],
+                plan_path=fixture["plan"],
+                budget_path=fixture["budget"],
+            )
+
+    def test_staged_single_flight_publishes_one_canonical_source(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = make_single_flight_publication_fixture(
+                Path(directory), staged=True
+            )
+            self._publish_single_flight_fixture(fixture)
+            parent = json.loads(
+                (fixture["run_dir"] / "run_config.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(parent["source_identity"], fixture["canonical"])
+            self.assertEqual(parent["connection_lineage"], fixture["lineage"])
+            self.assertNotIn("upstream_source_identity", parent)
+            self.assertNotIn("source_particle_identity", parent)
+
+    def test_staged_single_flight_rejects_canonical_lineage_swap(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = make_single_flight_publication_fixture(
+                Path(directory), staged=True
+            )
+            stage = json.loads(fixture["stage_config"].read_text(encoding="utf-8"))
+            stage["source_identity"] = fixture["lineage"]["identity"]
+            stage["connection_lineage"] = {
+                "authority_scope": "connection_lineage_only",
+                "identity": fixture["canonical"],
+            }
+            write_json(fixture["stage_config"], stage)
+            stage_manifest = fixture["stage_config"].with_name("run_manifest.json")
+            manifest = json.loads(stage_manifest.read_text(encoding="utf-8"))
+            manifest["run_config"] = record(fixture["stage_config"])
+            write_json(stage_manifest, manifest)
+            with self.assertRaisesRegex(ContractError, "source identities differ"):
+                self._publish_single_flight_fixture(fixture)
+
+    def test_staged_single_flight_rejects_connection_lineage_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = make_single_flight_publication_fixture(
+                Path(directory), staged=True
+            )
+            receipt = json.loads(fixture["receipt"].read_text(encoding="utf-8"))
+            receipt["connection_lineage"]["identity"]["event_sha256"] = "9" * 64
+            write_json(fixture["receipt"], receipt)
+            with self.assertRaisesRegex(ContractError, "connection lineage differs"):
+                self._publish_single_flight_fixture(fixture)
+
+    def test_nonstaged_single_flight_keeps_upstream_source_branch(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = make_single_flight_publication_fixture(
+                Path(directory), staged=False
+            )
+            self._publish_single_flight_fixture(fixture)
+            parent = json.loads(
+                (fixture["run_dir"] / "run_config.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(
+                parent["source_particle_identity"], fixture["canonical"]
+            )
+            self.assertNotIn("connection_lineage", parent)
+
     def test_shared_cache_publisher_creates_verified_atomic_entry(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             workspace = Path(directory)
@@ -163,7 +436,7 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
                 f"Test-RfReusableCacheEntry -Python '{Path(sys.executable)}' "
                 f"-RepoRoot '{REPO_ROOT}' -WorkspaceRoot '{workspace}' "
                 f"-ProjectId '{INTEGRATION_ID}' -CacheRoot '{cache_root}' "
-                f"-CacheKey '{key}' -Role '{identity['role']}'"
+                f"-CacheKey '{key}' -Role '{identity['role']}'; exit 0"
             )
             first = subprocess.run(
                 ["pwsh", "-NoProfile", "-Command", command],
@@ -181,6 +454,38 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
             )
             self.assertIn("False", second.stdout)
             self.assertFalse(entry.exists())
+
+    def test_require_existing_preserves_a_damaged_cache_entry(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            cache_root = workspace / "artifacts" / "projects" / INTEGRATION_ID / "cache" / "simion_single_flight_frontend"
+            key = "a" * 64
+            entry = cache_root / key
+            entry.mkdir(parents=True)
+            write_json(entry / "cache_manifest.json", {
+                "schema_version": 2, "role": "simion_single_flight_frontend_pa_cache",
+                "cache_key": key, "provider_run_id": "fixture", "cache_key_input": "{}",
+                "identity": {}, "files": [],
+            })
+            command = (
+                f". '{RUN_ARTIFACTS_PATH}'; "
+                f"Test-RfReusableCacheEntry -Python '{Path(sys.executable)}' "
+                f"-RepoRoot '{REPO_ROOT}' -WorkspaceRoot '{workspace}' "
+                f"-ProjectId '{INTEGRATION_ID}' -CacheRoot '{cache_root}' "
+                "-CacheKey '" + key + "' -Role 'simion_single_flight_frontend_pa_cache' "
+                "-InvalidEntryAction preserve; exit 0"
+            )
+            result = subprocess.run(["pwsh", "-NoProfile", "-Command", command], check=True, capture_output=True, text=True)
+            self.assertIn("False", result.stdout)
+            self.assertTrue(entry.is_dir())
+
+    def test_build_policy_keeps_official_test_build_publish_chain(self) -> None:
+        runner = (RUN_ARTIFACTS_PATH.parent / "run_single_flight.ps1").read_text(encoding="utf-8")
+        test_index = runner.index("Test-RfReusableCacheEntry -Python $python")
+        gem2pa_index = runner.index("'--nogui','--noprompt','gem2pa'", test_index)
+        publish_index = runner.index("Publish-RfVerifiedCacheEntry -Python $python", gem2pa_index)
+        self.assertLess(test_index, gem2pa_index)
+        self.assertLess(gem2pa_index, publish_index)
 
     def test_campaign_repository_text_identity_is_newline_neutral_but_content_sensitive(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

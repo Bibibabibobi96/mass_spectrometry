@@ -410,11 +410,10 @@
       "provider_scope": "integration",
       "provider_project": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
       "provider_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
-      "source_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/analysis/write_oatof_simion_input.py",
-      "frozen_filename": "runtime_snapshot/integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/analysis/write_oatof_simion_input.py",
+      "source_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/analysis/publish_family_source_bundle.py",
+      "frozen_filename": "runtime_snapshot/integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/analysis/publish_family_source_bundle.py",
       "run_input_name": "rf_analyzer_transport_simion_input_adapter",
       "consumers": [
-        "pre_pulse_interface_transport",
         "analyzer_transport"
       ]
     },
@@ -428,6 +427,30 @@
       "run_input_name": "rf_analyzer_transport_analyzer",
       "consumers": [
         "analyzer_transport"
+      ]
+    },
+    {
+      "id": "rf_pulse_resolution_result_registrar",
+      "provider_scope": "integration",
+      "provider_project": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "provider_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "source_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/analysis/register_pulse_resolution_result.py",
+      "frozen_filename": "runtime_snapshot/integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/analysis/register_pulse_resolution_result.py",
+      "run_input_name": "rf_pulse_resolution_result_registrar",
+      "consumers": [
+        "single_flight_transport"
+      ]
+    },
+    {
+      "id": "rf_pulse_resolution_screening_promotion_gate",
+      "provider_scope": "integration",
+      "provider_project": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "provider_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "source_repo_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/analysis/screening_promotion_gate.py",
+      "frozen_filename": "runtime_snapshot/integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/analysis/screening_promotion_gate.py",
+      "run_input_name": "rf_pulse_resolution_screening_promotion_gate",
+      "consumers": [
+        "single_flight_transport"
       ]
     },
     {
@@ -583,7 +606,8 @@
       "frozen_filename": "runtime_snapshot/common/contracts/machine_contracts.py",
       "run_input_name": "common_machine_contracts",
       "consumers": [
-        "pre_pulse_interface_transport"
+        "pre_pulse_interface_transport",
+        "analyzer_transport"
       ]
     },
     {

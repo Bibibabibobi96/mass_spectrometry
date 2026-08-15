@@ -11,7 +11,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 )
 
 
-CAMPAIGN = Path(__file__).resolve().parents[1] / "config" / "pulse_resolution_optimization_campaign.json"
+CAMPAIGN = Path(__file__).resolve().parents[1] / "config" / "pulse_resolution_direct_baseline_successor_r09_campaign.json"
 
 
 class ScreeningPromotionGateTests(unittest.TestCase):

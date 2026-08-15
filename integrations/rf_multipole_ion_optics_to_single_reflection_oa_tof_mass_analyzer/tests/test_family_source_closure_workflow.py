@@ -4,20 +4,27 @@ from __future__ import annotations
 
 import json
 import hashlib
+import os
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 
 from common.contracts.machine_contracts import ContractError, validate_schema
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.prepare import (
+    _repo_byte_record,
     prepare_family_source_closure,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_source import (
+    materialize_staged_grid2_restart,
     resolve_source_materialization_profile,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.publish_run import (
     INTEGRATION_ID,
     publish_family_source_closure_run,
+)
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.refresh_campaign_source_bindings import (
+    write_campaign,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_layout import (
     compile_geometry_and_port,
@@ -60,6 +67,10 @@ PROFILE_REGISTRY = CONFIG_ROOT / "connection_profiles.json"
 ADAPTER_REGISTRY = CONFIG_ROOT / "execution_adapter_profiles.json"
 OCTUPOLE_RUNTIME_BINDING = (
     CONFIG_ROOT / "family_octupole_direct_mating_gap_0mm_runtime_binding.json"
+)
+STAGED_GRID2_R03_CAMPAIGN = (
+    CONFIG_ROOT / "diagnostics" /
+    "staged_grid2_restart_legacy_n34_successor_r03_campaign.json"
 )
 
 
@@ -183,6 +194,338 @@ def write_current_policy_campaign(source: Path, destination: Path) -> dict[str, 
 
 
 class FamilySourceClosureWorkflowTests(unittest.TestCase):
+    def test_loader_budget_requires_campaign_v5_and_staged_mode_both_ways(self) -> None:
+        campaign = load(
+            CONFIG_ROOT / "diagnostics" /
+            "staged_grid2_restart_legacy_n34_successor_r06_campaign.json"
+        )
+        validate_schema(
+            campaign, "rf_multipole_oatof_experiment_campaign.schema.json"
+        )
+        invalid = json.loads(json.dumps(campaign))
+        invalid["schema_version"] = 4
+        with self.assertRaises(ContractError):
+            validate_schema(
+                invalid, "rf_multipole_oatof_experiment_campaign.schema.json"
+            )
+        invalid = json.loads(json.dumps(campaign))
+        invalid["experiments"][0]["source_release_mode"] = "pre_pulse_restart"
+        with self.assertRaises(ContractError):
+            validate_schema(
+                invalid, "rf_multipole_oatof_experiment_campaign.schema.json"
+            )
+        invalid = json.loads(json.dumps(campaign))
+        del invalid["experiments"][0]["staged_grid2_source_state"][
+            "loader_authorization_budget"
+        ]
+        with self.assertRaises(ContractError):
+            validate_schema(
+                invalid, "rf_multipole_oatof_experiment_campaign.schema.json"
+            )
+
+    def test_loader_receipt_identity_is_raw_bytes_not_normalized_text(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            receipt = root / "receipt.json"
+            crlf = b'{\r\n  "status": "PASS"\r\n}\r\n'
+            receipt.write_bytes(crlf)
+            record = {
+                "path": "receipt.json",
+                "sha256": hashlib.sha256(crlf).hexdigest().upper(),
+            }
+            self.assertEqual(
+                _repo_byte_record(root, record, "loader receipt"), receipt
+            )
+            receipt.write_bytes(crlf.replace(b"\r\n", b"\n"))
+            with self.assertRaisesRegex(ContractError, "missing, stale"):
+                _repo_byte_record(root, record, "loader receipt")
+
+    def test_adapter_rejects_prepared_pa_cache_policy_and_budget_tampering(self) -> None:
+        campaign = load(STAGED_GRID2_R03_CAMPAIGN)
+        experiment_id = campaign["experiments"][0]["experiment_id"]
+        adapter = (
+            INTEGRATION_ROOT / "workflows" / "family_source_closure" / "adapter.ps1"
+        )
+        scratch = REPO_ROOT.parent / "artifacts" / "projects" / INTEGRATION_ID / "scratch"
+        scratch.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=scratch) as directory, \
+                tempfile.TemporaryDirectory(dir=CONFIG_ROOT) as config_directory:
+            output = Path(directory)
+            current_campaign_path = Path(config_directory) / "campaign.json"
+            campaign["execution_policy"] = load(OCTUPOLE_RUNTIME_BINDING)[
+                "contracts"
+            ]["execution_policy_contract"]
+            write_json(current_campaign_path, campaign)
+            resolved_path = output / "resolved_connection.json"
+            plan_path = output / "composition_plan.json"
+            prepare_family_source_closure(
+                repo_root=REPO_ROOT,
+                profile_registry_path=PROFILE_REGISTRY,
+                adapter_registry_path=ADAPTER_REGISTRY,
+                campaign_path=current_campaign_path,
+                experiment_id=experiment_id,
+                resolved_output=resolved_path,
+                plan_output=plan_path,
+            )
+            original_plan = load(plan_path)
+            budget_path = output / "resolved_engineering_budget.json"
+            original_budget = load(budget_path)
+
+            def invoke_adapter() -> subprocess.CompletedProcess[str]:
+                return subprocess.run(
+                    [
+                        "pwsh", "-NoProfile", "-File", str(adapter),
+                        "-CompositionPlan", str(plan_path),
+                        "-ResolvedConnection", str(resolved_path),
+                        "-PythonExe", str(REPO_ROOT / ".venv" / "Scripts" / "python.exe"),
+                        "-RepoRoot", str(REPO_ROOT), "-PrepareOnly",
+                    ],
+                    cwd=REPO_ROOT, text=True, encoding="utf-8", errors="replace",
+                    capture_output=True, check=False,
+                )
+
+            tampered_plan = json.loads(json.dumps(original_plan))
+            arguments = tampered_plan["execution_steps"][0]["arguments"]
+            policy_index = next(
+                index for index, value in enumerate(arguments)
+                if value.startswith("single_flight_pa_cache_policy=")
+            )
+            arguments[policy_index] = "single_flight_pa_cache_policy=require_existing"
+            write_json(plan_path, tampered_plan)
+            plan_result = invoke_adapter()
+            self.assertNotEqual(plan_result.returncode, 0)
+            self.assertIn(
+                "Frozen PA cache policy differs from the exact campaign row",
+                plan_result.stdout + plan_result.stderr,
+            )
+
+            tampered_budget = json.loads(json.dumps(original_budget))
+            tampered_budget["single_flight_pa_cache_policy"] = "require_existing"
+            write_json(budget_path, tampered_budget)
+            budget_hash = hashlib.sha256(budget_path.read_bytes()).hexdigest().upper()
+            budget_plan = json.loads(json.dumps(original_plan))
+            arguments = budget_plan["execution_steps"][0]["arguments"]
+            budget_index = next(
+                index for index, value in enumerate(arguments)
+                if value.startswith("resolved_budget_sha256=")
+            )
+            arguments[budget_index] = f"resolved_budget_sha256={budget_hash}"
+            write_json(plan_path, budget_plan)
+            budget_result = invoke_adapter()
+            self.assertNotEqual(budget_result.returncode, 0)
+            self.assertIn(
+                "Campaign budget and runtime source identities differ before stage 1",
+                budget_result.stdout + budget_result.stderr,
+            )
+
+    def test_legacy_cache_policy_is_validate_only_and_never_prepare_only(self) -> None:
+        source_campaign = (
+            CONFIG_ROOT / "diagnostics" /
+            "canonical_source_architecture_accelerator_field_matrix_n1000_v3_successor_campaign.json"
+        )
+        experiment_id = "matrix_ideal1mm_short_acc_rr_n1000_v3"
+        entry = (
+            INTEGRATION_ROOT / "workflows" / "family_source_closure" / "execute.ps1"
+        )
+        with tempfile.TemporaryDirectory(
+            dir=REPO_ROOT.parent / "artifacts" / "projects" / INTEGRATION_ID / "scratch"
+        ) as directory, tempfile.TemporaryDirectory(
+            dir=CONFIG_ROOT
+        ) as config_directory:
+            campaign = Path(config_directory) / "campaign.json"
+            write_current_policy_campaign(source_campaign, campaign)
+            write_campaign(REPO_ROOT, campaign)
+            output = Path(directory) / "legacy_prepare_must_not_exist"
+            prepared = subprocess.run(
+                [
+                    "pwsh", "-NoProfile", "-File", str(entry),
+                    "-Campaign", str(campaign), "-ExperimentId", experiment_id,
+                    "-OutputDirectory", str(output), "-PrepareOnly",
+                ],
+                cwd=REPO_ROOT, text=True, encoding="utf-8", errors="replace",
+                capture_output=True, check=False,
+            )
+            self.assertNotEqual(prepared.returncode, 0)
+            self.assertIn("ValidateOnly only", prepared.stdout + prepared.stderr)
+            self.assertFalse(output.exists())
+            validated = subprocess.run(
+                [
+                    "pwsh", "-NoProfile", "-File", str(entry),
+                    "-Campaign", str(campaign), "-ExperimentId", experiment_id,
+                    "-ValidateOnly",
+                ],
+                cwd=REPO_ROOT, text=True, encoding="utf-8", errors="replace",
+                capture_output=True, check=False,
+            )
+            self.assertEqual(
+                validated.returncode, 0, validated.stdout + validated.stderr
+            )
+            self.assertIn("INTEGRATION_EXECUTION=VALIDATED", validated.stdout)
+
+    def test_solver_authorized_rejects_archived_campaign_before_freshness(self) -> None:
+        campaign = CONFIG_ROOT / "diagnostics" / (
+            "staged_grid2_restart_legacy_n34_successor_campaign.json"
+        )
+        execute = INTEGRATION_ROOT / "workflows" / "family_source_closure" / (
+            "execute.ps1"
+        )
+        execute_source = execute.read_text(encoding="utf-8")
+        self.assertIn(
+            "$SolverAuthorized -and [string]$campaignDocument.status -ne "
+            "'authorized'",
+            execute_source,
+        )
+        campaign_schema = load(
+            REPO_ROOT / "common" / "contracts" / "schemas" /
+            "rf_multipole_oatof_experiment_campaign.schema.json"
+        )
+        self.assertIn(
+            "PENDING_PREREGISTRATION",
+            campaign_schema["properties"]["status"]["enum"],
+        )
+        completed = subprocess.run(
+            [
+                "pwsh", "-NoProfile", "-File", str(execute),
+                "-Campaign", str(campaign.relative_to(REPO_ROOT)),
+                "-ExperimentId", "staged_grid2_restart_legacy_n34_functional",
+                "-SolverAuthorized",
+            ],
+            cwd=REPO_ROOT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+            check=False,
+        )
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn(
+            "SolverAuthorized execution requires campaign.status=authorized",
+            completed.stdout + completed.stderr,
+        )
+        self.assertNotIn("CAMPAIGN_SOURCE_BINDINGS=STALE", completed.stdout)
+
+    def test_staged_n34_runner_filters_fly2_framing_before_batch_slice(self) -> None:
+        campaign = load(
+            CONFIG_ROOT / "diagnostics" /
+            "staged_grid2_restart_legacy_n34_successor_r02_campaign.json"
+        )
+        source = REPO_ROOT.parent / campaign["experiments"][0][
+            "staged_grid2_source_state"
+        ]["path"]
+        fly2_text, rows = materialize_staged_grid2_restart(source)
+        self.assertEqual(len(rows), 34)
+        with tempfile.TemporaryDirectory() as directory:
+            fly2 = Path(directory) / "staged_n34.fly2"
+            fly2.write_text(fly2_text, encoding="utf-8")
+            runner = INTEGRATION_ROOT / "runtime" / "run_single_flight.ps1"
+            script = r"""
+$parseErrors = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile(
+  $env:RF_RUNNER_TEST_PATH, [ref]$null, [ref]$parseErrors
+)
+if ($parseErrors) { throw $parseErrors[0] }
+$functionAst = $ast.Find({
+  param($node)
+  $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+    $node.Name -eq 'Get-RfSingleFlightParticleLines'
+}, $true)
+if ($null -eq $functionAst) { throw 'runner particle parser is missing' }
+. ([scriptblock]::Create($functionAst.Extent.Text))
+$particleRows = @(Get-RfSingleFlightParticleLines `
+  -ParticleInput $env:RF_FLY2_TEST_PATH -RestartFly2 $true)
+$batchRows = [string[]]$particleRows[0..33]
+[ordered]@{
+  particle_row_count = $particleRows.Count
+  non_particle_row_count = @($particleRows | Where-Object {
+    $_ -notmatch '^  standard_beam '
+  }).Count
+  batch_particle_row_count = @($batchRows | Where-Object {
+    $_ -match '^  standard_beam '
+  }).Count
+} | ConvertTo-Json -Compress
+"""
+            environment = os.environ.copy()
+            environment["RF_RUNNER_TEST_PATH"] = str(runner)
+            environment["RF_FLY2_TEST_PATH"] = str(fly2)
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", script],
+                cwd=REPO_ROOT,
+                env=environment,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        receipt = json.loads(completed.stdout)
+        self.assertEqual(receipt["particle_row_count"], 34)
+        self.assertEqual(receipt["non_particle_row_count"], 0)
+        self.assertEqual(receipt["batch_particle_row_count"], 34)
+
+    def test_adapter_freezes_campaign_and_row_before_solver_authorization(self) -> None:
+        adapter = (
+            INTEGRATION_ROOT / "workflows" / "family_source_closure" / "adapter.ps1"
+        ).read_text(encoding="utf-8")
+        campaign_hash = adapter.index("$frozenArguments.campaign_sha256")
+        row_hash = adapter.index("$frozenArguments.experiment_row_sha256")
+        solver_boundary = adapter.index("if (-not $SolverAuthorized)")
+        runner_call = adapter.index("& $runtime.implementation.single_flight_runner")
+        self.assertLess(campaign_hash, solver_boundary)
+        self.assertLess(row_hash, solver_boundary)
+        self.assertLess(solver_boundary, runner_call)
+
+    def test_adapter_uses_only_frozen_canonical_region_field_profile(self) -> None:
+        adapter = (
+            INTEGRATION_ROOT / "workflows" / "family_source_closure" / "adapter.ps1"
+        ).read_text(encoding="utf-8")
+        prepare = (
+            INTEGRATION_ROOT / "workflows" / "family_source_closure" / "prepare.py"
+        ).read_text(encoding="utf-8")
+        common_execute = (
+            REPO_ROOT / "common" / "integration" / "execute_connection.ps1"
+        ).read_text(encoding="utf-8")
+        self.assertIn('"resolved_region_field_profile_id="', prepare)
+        self.assertIn(
+            "$runnerArguments.PulseResolutionFieldProfileId =\n"
+            "      [string]$frozenArguments.resolved_region_field_profile_id",
+            adapter,
+        )
+        self.assertNotIn(
+            "$frozenArguments.single_flight_accelerator_field_profile_id",
+            adapter,
+        )
+        validate_exit = common_execute.index("if ($ValidateOnly)")
+        adapter_call = common_execute.index("& $AdapterEntrypoint @adapterArguments")
+        self.assertLess(validate_exit, adapter_call)
+        self.assertIn("exit 0", common_execute[validate_exit:adapter_call])
+
+    def test_staged_grid2_schema_forbids_pulse_schedule_and_binds_instance_overlay(self) -> None:
+        campaign_path = CONFIG_ROOT / "diagnostics" / (
+            "staged_grid2_restart_legacy_n34_successor_r02_campaign.json"
+        )
+        campaign = load(campaign_path)
+        validate_schema(campaign, "rf_multipole_oatof_experiment_campaign.schema.json")
+        row = campaign["experiments"][0]
+        self.assertNotIn("single_flight_pulse_schedule_policy", row)
+        self.assertEqual(row["source"]["authority_scope"], "connection_lineage_only")
+        with_schedule = json.loads(json.dumps(campaign))
+        with_schedule["experiments"][0]["single_flight_pulse_schedule_policy"] = {
+            "policy_id": "multipole_handoff_ballistic_centroid_v1",
+            "offset_rf_periods": 0,
+            "pulse_width_us": 1.0,
+        }
+        with self.assertRaises(ContractError):
+            validate_schema(
+                with_schedule, "rf_multipole_oatof_experiment_campaign.schema.json"
+            )
+        wrong_instance = json.loads(json.dumps(campaign))
+        wrong_instance["experiments"][0]["staged_grid2_source_state"][
+            "simion_start_instance"
+        ] = 5
+        with self.assertRaises(ContractError):
+            validate_schema(
+                wrong_instance, "rf_multipole_oatof_experiment_campaign.schema.json"
+            )
+
     def test_affine_source_profile_resolves_only_from_phase_space_authority(self) -> None:
         registry = load(CONFIG_ROOT / "simion_single_flight.json")
         profile = next(

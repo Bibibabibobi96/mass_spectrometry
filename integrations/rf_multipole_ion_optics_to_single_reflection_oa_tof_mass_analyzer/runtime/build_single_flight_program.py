@@ -64,8 +64,8 @@ def _lua_value(value: object) -> str:
     raise ValueError(f"unsupported Lua contract value: {type(value).__name__}")
 
 
-def load_birth_times(path: Path) -> list[float]:
-    """Load contiguous per-particle instrument birth times in microseconds."""
+def load_initial_state(path: Path) -> tuple[list[float], list[int]]:
+    """Load canonical clocks and source IDs in frozen source-row order."""
     with path.open(encoding="utf-8-sig", newline="") as handle:
         rows = list(csv.DictReader(handle))
     if not rows:
@@ -74,12 +74,33 @@ def load_birth_times(path: Path) -> list[float]:
         "particle_id" if "particle_id" in rows[0] else "simulation_particle_id"
     )
     actual_ids = [int(row[id_column]) for row in rows]
-    if actual_ids != list(range(1, len(rows) + 1)):
-        raise ValueError("single-flight initial-state particle IDs must be contiguous")
+    if any(value <= 0 for value in actual_ids) or len(set(actual_ids)) != len(actual_ids):
+        raise ValueError("single-flight initial-state particle IDs must be unique and positive")
     values = [float(row["instrument_time_us"]) for row in rows]
     if any(value < 0 for value in values):
         raise ValueError("single-flight birth times must be non-negative")
-    return values
+    return values, actual_ids
+
+
+def load_birth_times(path: Path) -> list[float]:
+    """Compatibility API returning only canonical clocks."""
+    return load_initial_state(path)[0]
+
+
+def load_row_map(path: Path, expected_source_ids: list[int]) -> list[int]:
+    """Load the explicit SIMION-row to canonical-source-ID authority."""
+    with path.open(encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle)
+        if reader.fieldnames != ["simulation_particle_id", "source_particle_id"]:
+            raise ValueError("single-flight row map columns differ")
+        rows = list(reader)
+    simulation_ids = [int(row["simulation_particle_id"]) for row in rows]
+    source_ids = [int(row["source_particle_id"]) for row in rows]
+    if simulation_ids != list(range(1, len(rows) + 1)):
+        raise ValueError("single-flight simulation row IDs must be contiguous and ordered")
+    if source_ids != expected_source_ids:
+        raise ValueError("single-flight row map differs from canonical source-row order")
+    return source_ids
 
 
 _SUCCESSOR_CALLBACKS = (
@@ -136,6 +157,12 @@ def _successor_analyzer_config(
             "reflectron": 2,
             "accelerator": 3,
             "detector": 4,
+        },
+        "instance_filenames": {
+            "flight_tube": "flight_tube_ground.pa0",
+            "reflectron": "reflectron.pa0",
+            "accelerator": "accelerator.pa0",
+            "detector": "detector_ground.pa0",
         },
         "geometry": {
             "accelerator_axis_x_mm": float(coordinate["accelerator_axis_x"]),
@@ -203,6 +230,8 @@ def build_successor_program(
     region_field_contract: dict[str, Any],
     *,
     birth_times_us: list[float],
+    particle_ids: list[int] | None = None,
+    restart_context: dict[str, Any] | None = None,
     analyzer_component_source: str,
     pulse_hook_source: str,
     frontend_hook_source: str,
@@ -227,6 +256,94 @@ def build_successor_program(
     )
     if not birth_times_us or any(not math.isfinite(item) or item < 0 for item in birth_times_us):
         raise ValueError("canonical instrument clock requires nonnegative birth times")
+    if particle_ids is None:
+        particle_ids = list(range(1, len(birth_times_us) + 1))
+    if (
+        len(particle_ids) != len(birth_times_us)
+        or any(item <= 0 for item in particle_ids)
+        or len(set(particle_ids)) != len(particle_ids)
+    ):
+        raise ValueError("single-flight canonical particle IDs are invalid")
+    staged_restart = restart_context is not None
+    if staged_restart:
+        required_restart = {
+            "role": "rf_oatof_staged_grid2_restart_context",
+            "source_release_mode": "staged_grid2_restart",
+            "population_mode": "staged_grid2_restart",
+            "state_event": "local_accelerator_exit",
+            "frame_id": "oatof_global",
+            "clock_basis": "canonical_instrument_time_us",
+            "position_projection_applied": False,
+            "skip_frontend_runtime_writes": True,
+            "skip_pulse_runtime_writes": True,
+            "skip_accelerator_runtime_writes": True,
+            "preserve_analyzer_static_pa_initialization": True,
+            "preserve_downstream_base_then_override_field_semantics": True,
+            "preserve_detector_elapsed_semantics": True,
+            "resolution_claim_allowed": False,
+        }
+        if any(restart_context.get(key) != value for key, value in required_restart.items()):
+            raise ValueError("staged grid2 restart context differs from the supported contract")
+        start_instance = restart_context.get("simion_start_instance")
+        if start_instance not in (3, 5):
+            raise ValueError("staged grid2 restart instance must be explicitly 3 or 5")
+        if not isinstance(restart_context.get("clock_epoch_id"), str) or not restart_context["clock_epoch_id"]:
+            raise ValueError("staged grid2 restart requires one explicit clock epoch")
+        validation = restart_context.get("source_release_validation")
+        velocity = validation.get("velocity") if isinstance(validation, dict) else None
+        energy = validation.get("derived_energy") if isinstance(validation, dict) else None
+        budget = (
+            validation.get("loader_authorization_budget")
+            if isinstance(validation, dict) else None
+        )
+        sha_keys = (
+            "canonical_source_sha256", "solver_executable_sha256",
+            "production_renderer_sha256",
+        )
+        if (
+            not isinstance(validation, dict)
+            or validation.get("role")
+            != "rf_oatof_resolved_source_release_validation"
+            or validation.get("representation")
+            != "standard_beam_direct_velocity_vector"
+            or validation.get("identity_position_clock_policy")
+            != "ordered_id_row_map_position_clock_exact"
+            or validation.get("native_ion_ke_role") != "diagnostic_only"
+            or not isinstance(budget, dict)
+            or not isinstance(budget.get("path"), str)
+            or not budget["path"]
+            or not isinstance(budget.get("sha256"), str)
+            or re.fullmatch(r"[A-F0-9]{64}", budget["sha256"]) is None
+            or any(
+                not isinstance(validation.get(key), str)
+                or re.fullmatch(r"[A-F0-9]{64}", validation[key]) is None
+                for key in sha_keys
+            )
+            or not isinstance(velocity, dict)
+            or isinstance(velocity.get("relative_bound"), bool)
+            or not isinstance(velocity.get("relative_bound"), (int, float))
+            or not math.isfinite(float(velocity["relative_bound"]))
+            or float(velocity["relative_bound"]) <= 0
+            or velocity.get("absolute_floor_m_per_s") != 0
+            or velocity.get("zero_speed_must_be_exact") is not True
+            or not isinstance(energy, dict)
+            or isinstance(energy.get("relative_bound"), bool)
+            or not isinstance(energy.get("relative_bound"), (int, float))
+            or not math.isfinite(float(energy["relative_bound"]))
+            or float(energy["relative_bound"]) <= 0
+            or energy.get("absolute_floor_eV") != 0
+            or energy.get("zero_energy_must_be_exact") is not True
+            or energy.get("authority")
+            != "actual_velocity_plus_canonical_mass_common_function"
+        ):
+            raise ValueError(
+                "staged grid2 restart requires resolved population v2 validation"
+            )
+        if (start_instance == 5) != (overlay is not None):
+            raise ValueError(
+                "staged grid2 restart instance/overlay mapping differs: "
+                "instance 3 requires no overlay and instance 5 requires one overlay"
+            )
     if isinstance(rf_steps_per_period, bool) or not isinstance(rf_steps_per_period, int) or rf_steps_per_period <= 0:
         raise ValueError("RF steps per period must be one positive integer")
     if overlay is not None and overlay.get("role") != "rf_oatof_simion_accelerator_overlay_contract":
@@ -276,6 +393,26 @@ def build_successor_program(
             }
         )
     analyzer_config = _successor_analyzer_config(oatof, frontend)
+    formal_iob_config = {
+        "instance_roles": {
+            "flight_tube": 1,
+            "reflectron": 2,
+            "accelerator": 3,
+            "detector": 4,
+            **({"accelerator_overlay": 5} if overlay is not None else {}),
+        },
+        "instance_filenames": {
+            "flight_tube": "flight_tube_ground.pa0",
+            "reflectron": "reflectron.pa0",
+            "accelerator": "accelerator.pa0",
+            "detector": "detector_ground.pa0",
+            **(
+                {"accelerator_overlay": "accelerator_overlay.pa0"}
+                if overlay is not None else {}
+            ),
+        },
+    }
+    formal_iob_config_lua = _lua_value(formal_iob_config)
     analyzer_config_static = dict(analyzer_config)
     analyzer_config_static.pop("diagnostics")
     analyzer_config_lua = _lua_value(analyzer_config_static)[:-1] + (
@@ -296,6 +433,9 @@ def build_successor_program(
     birth_table = "{" + ",".join(
         f"[{index}]={_lua_number(value)}"
         for index, value in enumerate(birth_times_us, start=1)
+    ) + "}"
+    particle_id_table = "{" + ",".join(
+        f"[{index}]={value}" for index, value in enumerate(particle_ids, start=1)
     ) + "}"
     embedded = "\n".join(
         f"local {name}=(function()\n{source}\nend)()"
@@ -337,7 +477,10 @@ local reflectron_entgrid_z_mm={_lua_number(geometry['reflectron_entgrid_z_mm'])}
 local reflectron_midgrid_z_mm={_lua_number(geometry['reflectron_midgrid_z_mm'])}
 local reflectron_backplate_z_mm={_lua_number(geometry['reflectron_backplate_z_mm'])}
 local single_flight_birth_time_us={birth_table}
+local single_flight_source_particle_id={particle_id_table}
 local single_flight_particle_id_offset=assert(tonumber(os.getenv('OATOF_SINGLE_FLIGHT_PARTICLE_ID_OFFSET') or '0'),'invalid single-flight particle ID offset')
+local single_flight_staged_grid2_restart={1 if staged_restart else 0}
+local single_flight_staged_grid2_start_instance={int(restart_context['simion_start_instance']) if staged_restart else 0}
 local single_flight_terminate_after_pulse={1 if terminate_after_pulse else 0}
 local single_flight_overlay_enabled={1 if overlay is not None else 0}
 local single_flight_overlay_origin={_lua_value(overlay_origin)}
@@ -351,8 +494,16 @@ local single_flight_previous={{}}
 local single_flight_reported={{}}
 local single_flight_accelerator_pa_override=os.getenv('OATOF_ACCELERATOR_PA_OVERRIDE')
 local single_flight_accelerator_pa_override_loaded=false
+local function single_flight_source_row_index()
+  return ion_number+single_flight_particle_id_offset
+end
+local function single_flight_canonical_particle_id()
+  local particle_id=single_flight_source_particle_id[single_flight_source_row_index()]
+  assert(particle_id~=nil,'explicit single-flight row map is missing a source particle ID')
+  return particle_id
+end
 local function single_flight_instrument_time_us()
-  local birth=single_flight_birth_time_us[ion_number+single_flight_particle_id_offset]
+  local birth=single_flight_birth_time_us[single_flight_source_row_index()]
   assert(birth~=nil,'absolute single-flight clock is missing particle birth time')
   return birth+ion_time_of_flight
 end
@@ -360,14 +511,14 @@ handoff_instrument_time_us=single_flight_instrument_time_us
 local function single_flight_set_electrode(id,value) adj_elect[id]=value end
 local function single_flight_trace_checkpoint(event,t,x,y,z,vx,vy,vz)
   if trajectory_log_enable==0 then return end
-  local particle_id=ion_number+single_flight_particle_id_offset
+  local particle_id=single_flight_canonical_particle_id()
   local energy=0.0051821348263402529*ion_mass*(vx*vx+vy*vy+vz*vz)
   print(string.format('TRACE: %s ion=%d particle_id=%d instrument_time_us=%.12g tof_since_pulse_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_per_us=%.12g vy_mm_per_us=%.12g vz_mm_per_us=%.12g kinetic_energy_eV=%.12g survival_status=alive',
     event,ion_number,particle_id,t,t-handoff_pulse_time_us,x,y,z,vx,vy,vz,energy))
 end
 local function single_flight_require_analyzer_particle(elapsed)
   if not single_flight_analyzer_initialized[ion_number] then
-    single_flight_analyzer.initialize_particle{{particle_id=ion_number,elapsed_us=elapsed,
+    single_flight_analyzer.initialize_particle{{particle_id=single_flight_canonical_particle_id(),elapsed_us=elapsed,
       x_mm=ion_px_mm,y_mm=ion_py_mm,z_mm=ion_pz_mm}}
     single_flight_analyzer_initialized[ion_number]=true
   end
@@ -387,9 +538,27 @@ local function single_flight_apply_plan(pa,plan)
   for _,item in ipairs(plan) do values[item.electrode_id]=item.voltage_v end
   pa:fast_adjust(values)
 end
+local function single_flight_exact_basename(value,label)
+  assert(type(value)=='string',label..' filename must be a string')
+  local basename=value:gsub('\\\\','/'):match('([^/]+)$')
+  assert(basename and basename~='',label..' basename is missing')
+  return basename
+end
+local function single_flight_assert_formal_iob_roles(config)
+  local role_count=0
+  for _ in pairs(config.instance_roles) do role_count=role_count+1 end
+  assert(#simion.wb.instances==role_count,
+    'formal single-flight IOB instance count differs')
+  for role,index in pairs(config.instance_roles) do
+    assert(single_flight_exact_basename(simion.wb.instances[index].filename,
+      'formal IOB role '..role)==config.instance_filenames[role],
+      'formal IOB role '..role..' filename differs')
+  end
+end
 local function single_flight_workbench_state()
   local instances={{}}
-  for index,instance in ipairs(simion.wb.instances) do
+  for index=1,#simion.wb.instances do
+    local instance=simion.wb.instances[index]
     instances[index]={{filename=instance.filename,nx=instance.pa.nx,ny=instance.pa.ny,nz=instance.pa.nz,
       dx_mm=instance.pa.dx_mm,dy_mm=instance.pa.dy_mm,dz_mm=instance.pa.dz_mm,scale=instance.scale}}
   end
@@ -418,14 +587,24 @@ end
 function segment.initialize_run()
   assert(single_flight_enable~=0,'single-flight Program requires explicit enable')
   sim_trajectory_quality=trajectory_quality
-  local ai=simion.wb.instances[3]
+  local analyzer_config={analyzer_config_lua}
+  local formal_iob_config={formal_iob_config_lua}
+  single_flight_assert_formal_iob_roles(formal_iob_config)
+  local ai=simion.wb.instances[analyzer_config.instance_roles.accelerator]
   if single_flight_accelerator_pa_override and single_flight_accelerator_pa_override~='' and
       not single_flight_accelerator_pa_override_loaded then
     ai.pa:load(single_flight_accelerator_pa_override)
     ai:_debug_update_size()
     single_flight_accelerator_pa_override_loaded=true
   end
-  single_flight_analyzer=single_flight_analyzer_component.new({analyzer_config_lua})
+  if single_flight_accelerator_pa_override and
+      single_flight_accelerator_pa_override~='' then
+    assert(single_flight_exact_basename(single_flight_accelerator_pa_override,
+      'accelerator override')=='frontend.pa0',
+      'accelerator override payload basename differs')
+    analyzer_config.instance_filenames.accelerator='frontend.pa0'
+  end
+  single_flight_analyzer=single_flight_analyzer_component.new(analyzer_config)
   local initialized=single_flight_analyzer.initialize_workbench(single_flight_workbench_state())
   single_flight_apply_placement(simion.wb.instances[1],initialized.placements.flight_tube)
   single_flight_apply_placement(simion.wb.instances[2],initialized.placements.reflectron)
@@ -434,28 +613,32 @@ function segment.initialize_run()
   single_flight_apply_placement(simion.wb.instances[4],initialized.placements.detector)
   single_flight_apply_plan(ai.pa,initialized.static_electrode_plans.legacy_accelerator_characterization)
   single_flight_apply_plan(simion.wb.instances[2].pa,initialized.static_electrode_plans.reflectron)
-  local rf=single_flight_rf_kernel.new{{waveform={json.dumps(drive['waveform'])},frequency_hz=single_flight_frequency_hz,
-    phase_rad=single_flight_phase_rad,rf_amplitude_v=single_flight_rf_peak_v,rf_scale=single_flight_rf_scale,
-    common_mode_scale=single_flight_common_mode_scale,group_dc_v={{[1]=single_flight_dc_amplitude_v,[2]=-single_flight_dc_amplitude_v}},
-    rf_steps_per_period=single_flight_rf_steps,electrodes={_lua_value(rf_electrodes)}}}
-  single_flight_pulse=single_flight_pulse_component.new{{canonical_clock=single_flight_instrument_time_us,
-    pulse_time_us=handoff_pulse_time_us,pulse_width_us=handoff_pulse_width_us,pulse_mode=function() return handoff_pulse_mode end}}
-  single_flight_frontend=single_flight_frontend_component.new{{rf_drive=rf,pulse_hook=single_flight_pulse,
-    electrode_plan=single_flight_project_electrode_plan(),planes_z_mm={{accelerator_grid1_z_mm,accelerator_grid2_z_mm}}}}
-  local initial={{}}
-  rf.apply_static(function(id,value) initial[id]=value end)
-  initial[{int(electrodes['grounded_shield_id'])}]=0
-  for _,item in ipairs(single_flight_analyzer.accelerator_electrode_write_plan('off',
-      {{pre_all_v=0,repeller_v=V_repeller,grid1_v=V_grid1}})) do initial[item.electrode_id]=item.voltage_v end
-  initial[{int(electrodes['entrance_reference_sleeve_id'])}]={_lua_number(entrance_reference_v)}
-  initial[{int(electrodes['entrance_plate_id'])}]={_lua_number(entrance_plate_v)}
-  ai.pa:fast_adjust(initial)
-  if single_flight_overlay_enabled~=0 then
-    local oi=assert(simion.wb.instances[5],'accelerator overlay instance is missing')
-    assert(oi.filename:match('accelerator_overlay%.pa0$'),'instance 5 must be the accelerator overlay')
-    oi.x,oi.y,oi.z=single_flight_overlay_origin.x,single_flight_overlay_origin.y,single_flight_overlay_origin.z
-    oi.az,oi.el,oi.rt,oi.scale=0,0,0,1
-    oi.pa:fast_adjust(initial)
+  if single_flight_staged_grid2_restart==0 then
+    local rf=single_flight_rf_kernel.new{{waveform={json.dumps(drive['waveform'])},frequency_hz=single_flight_frequency_hz,
+      phase_rad=single_flight_phase_rad,rf_amplitude_v=single_flight_rf_peak_v,rf_scale=single_flight_rf_scale,
+      common_mode_scale=single_flight_common_mode_scale,group_dc_v={{[1]=single_flight_dc_amplitude_v,[2]=-single_flight_dc_amplitude_v}},
+      rf_steps_per_period=single_flight_rf_steps,electrodes={_lua_value(rf_electrodes)}}}
+    single_flight_pulse=single_flight_pulse_component.new{{canonical_clock=single_flight_instrument_time_us,
+      pulse_time_us=handoff_pulse_time_us,pulse_width_us=handoff_pulse_width_us,pulse_mode=function() return handoff_pulse_mode end}}
+    single_flight_frontend=single_flight_frontend_component.new{{rf_drive=rf,pulse_hook=single_flight_pulse,
+      electrode_plan=single_flight_project_electrode_plan(),planes_z_mm={{accelerator_grid1_z_mm,accelerator_grid2_z_mm}}}}
+    local initial={{}}
+    rf.apply_static(function(id,value) initial[id]=value end)
+    initial[{int(electrodes['grounded_shield_id'])}]=0
+    for _,item in ipairs(single_flight_analyzer.accelerator_electrode_write_plan('off',
+        {{pre_all_v=0,repeller_v=V_repeller,grid1_v=V_grid1}})) do initial[item.electrode_id]=item.voltage_v end
+    initial[{int(electrodes['entrance_reference_sleeve_id'])}]={_lua_number(entrance_reference_v)}
+    initial[{int(electrodes['entrance_plate_id'])}]={_lua_number(entrance_plate_v)}
+    ai.pa:fast_adjust(initial)
+    if single_flight_overlay_enabled~=0 then
+      local oi=assert(simion.wb.instances[5],'accelerator overlay instance is missing')
+      assert(single_flight_exact_basename(oi.filename,
+        'accelerator overlay')=='accelerator_overlay.pa0',
+        'instance 5 must be the accelerator overlay')
+      oi.x,oi.y,oi.z=single_flight_overlay_origin.x,single_flight_overlay_origin.y,single_flight_overlay_origin.z
+      oi.az,oi.el,oi.rt,oi.scale=0,0,0,1
+      oi.pa:fast_adjust(initial)
+    end
   end
   single_flight_particle_state={{}}
   single_flight_analyzer_initialized={{}}
@@ -467,7 +650,7 @@ function segment.efield_adjust()
   local state={{z_mm=ion_pz_mm,instance_id=ion_instance,instance_dx_mm=instance.pa.dx_mm,
     instance_dz_mm=instance.pa.dz_mm,instance_scale=instance.scale}}
   local base=single_flight_analyzer.efield_adjust(state)
-  state.pulse_active=single_flight_pulse.is_active_at(single_flight_instrument_time_us())
+  state.pulse_active=single_flight_staged_grid2_restart~=0 or single_flight_pulse.is_active_at(single_flight_instrument_time_us())
   local result=single_flight_region_field.apply(base,state)
   if result then
     if result.replace_all then ion_dvoltsx_gu=0; ion_dvoltsy_gu=0; ion_dvoltsz_gu=0 end
@@ -477,6 +660,7 @@ function segment.efield_adjust()
   end
 end
 function segment.fast_adjust()
+  if single_flight_staged_grid2_restart~=0 then return end
   if ion_instance==3 or (single_flight_overlay_enabled~=0 and ion_instance==5) then
     single_flight_frontend.apply_at(single_flight_instrument_time_us(),single_flight_set_electrode)
   end
@@ -492,13 +676,24 @@ function segment.instance_adjust()
 end
 function segment.initialize()
   local time=single_flight_instrument_time_us()
+  if single_flight_staged_grid2_restart~=0 then
+    assert(ion_instance==single_flight_staged_grid2_start_instance,
+      'staged grid2 particle did not start in the contract-bound PA instance')
+  end
   single_flight_require_analyzer_particle(ion_time_of_flight)
-  single_flight_particle_state[ion_number]={{frontend=single_flight_frontend.initialize_particle(ion_pz_mm),
-    previous={{time_us=time,position_z_mm=ion_pz_mm,velocity_z_mm_per_us=ion_vz_mm}}}}
+  if single_flight_staged_grid2_restart==0 then
+    single_flight_particle_state[ion_number]={{frontend=single_flight_frontend.initialize_particle(ion_pz_mm),
+      previous={{time_us=time,position_z_mm=ion_pz_mm,velocity_z_mm_per_us=ion_vz_mm}}}}
+  end
   single_flight_previous[ion_number]={{t=time,x=ion_px_mm,y=ion_py_mm,z=ion_pz_mm,
     vx=ion_vx_mm,vy=ion_vy_mm,vz=ion_vz_mm}}
-  single_flight_reported[ion_number]={{}}
-  print(string.format('TRACE: source_release ion=%d instrument_time_us=%.17g x_mm=%.17g y_mm=%.17g z_mm=%.17g vx_mm_per_us=%.17g vy_mm_per_us=%.17g vz_mm_per_us=%.17g simion_native_kinetic_energy_eV=%.17g',ion_number,time,ion_px_mm,ion_py_mm,ion_pz_mm,ion_vx_mm,ion_vy_mm,ion_vz_mm,ion_ke))
+  single_flight_reported[ion_number]=single_flight_staged_grid2_restart~=0 and
+    {{pre_pulse=true,pulse=true,handoff=true,grid1=true,local_exit=true}} or {{}}
+  print(string.format('TRACE: source_release ion=%d particle_id=%d instrument_time_us=%.17g x_mm=%.17g y_mm=%.17g z_mm=%.17g vx_mm_per_us=%.17g vy_mm_per_us=%.17g vz_mm_per_us=%.17g simion_native_kinetic_energy_eV=%.17g',ion_number,single_flight_canonical_particle_id(),time,ion_px_mm,ion_py_mm,ion_pz_mm,ion_vx_mm,ion_vy_mm,ion_vz_mm,ion_ke))
+  if single_flight_staged_grid2_restart~=0 then
+    single_flight_trace_checkpoint('local_accelerator_exit',time,ion_px_mm,ion_py_mm,ion_pz_mm,
+      ion_vx_mm,ion_vy_mm,ion_vz_mm)
+  end
 end
 function segment.tstep_adjust()
   local analyzer_dt=single_flight_analyzer.tstep_adjust{{x_mm=ion_px_mm,y_mm=ion_py_mm,z_mm=ion_pz_mm,
@@ -506,9 +701,11 @@ function segment.tstep_adjust()
     detector_cell_dx_mm=simion.wb.instances[4].pa.dx_mm}}
   if analyzer_dt and ion_time_step>analyzer_dt then ion_time_step=analyzer_dt end
   local time=single_flight_instrument_time_us()
-  local pulse_capped=single_flight_pulse.cap_timestep_at(time,ion_time_step)
-  if ion_time_step>pulse_capped then ion_time_step=pulse_capped end
-  if ion_instance==3 or (single_flight_overlay_enabled~=0 and ion_instance==5) then
+  if single_flight_staged_grid2_restart==0 then
+    local pulse_capped=single_flight_pulse.cap_timestep_at(time,ion_time_step)
+    if ion_time_step>pulse_capped then ion_time_step=pulse_capped end
+  end
+  if single_flight_staged_grid2_restart==0 and (ion_instance==3 or (single_flight_overlay_enabled~=0 and ion_instance==5)) then
     local state=single_flight_require_particle_state()
     local capped=single_flight_frontend.cap_timestep_at(time,ion_pz_mm,ion_vz_mm,ion_time_step,state.frontend)
     if ion_time_step>capped then ion_time_step=capped end
@@ -517,10 +714,12 @@ end
 function segment.other_actions()
   local time=single_flight_instrument_time_us()
   single_flight_require_analyzer_particle(ion_time_of_flight)
-  local state=single_flight_require_particle_state()
-  local current={{time_us=time,position_z_mm=ion_pz_mm,velocity_z_mm_per_us=ion_vz_mm}}
-  single_flight_frontend.observe_step(state.previous,current,state.frontend)
-  state.previous=current
+  if single_flight_staged_grid2_restart==0 then
+    local state=single_flight_require_particle_state()
+    local current={{time_us=time,position_z_mm=ion_pz_mm,velocity_z_mm_per_us=ion_vz_mm}}
+    single_flight_frontend.observe_step(state.previous,current,state.frontend)
+    state.previous=current
+  end
   local p=single_flight_previous[ion_number]
   local reported=single_flight_reported[ion_number] or {{}}
   single_flight_reported[ion_number]=reported
@@ -585,7 +784,7 @@ function segment.other_actions()
   end
   single_flight_previous[ion_number]={{t=time,x=ion_px_mm,y=ion_py_mm,z=ion_pz_mm,
     vx=ion_vx_mm,vy=ion_vy_mm,vz=ion_vz_mm}}
-  local result=single_flight_analyzer.other_actions{{particle_id=ion_number,elapsed_us=ion_time_of_flight,x_mm=ion_px_mm,y_mm=ion_py_mm,z_mm=ion_pz_mm,vz_mm_per_us=ion_vz_mm}}
+  local result=single_flight_analyzer.other_actions{{particle_id=single_flight_canonical_particle_id(),elapsed_us=ion_time_of_flight,x_mm=ion_px_mm,y_mm=ion_py_mm,z_mm=ion_pz_mm,vz_mm_per_us=ion_vz_mm}}
   if trajectory_log_enable~=0 then
     for _,event in ipairs(result.events) do
       if event.kind=='diagnostic_return_plane' then
@@ -603,7 +802,7 @@ function segment.terminate()
       ion_number,ion_instance,time,ion_px_mm,ion_py_mm,ion_pz_mm,ion_vx_mm,ion_vy_mm,ion_vz_mm))
   end
   single_flight_require_analyzer_particle(ion_time_of_flight)
-  local result=single_flight_analyzer.terminate{{particle_id=ion_number,instance_id=ion_instance,
+  local result=single_flight_analyzer.terminate{{particle_id=single_flight_canonical_particle_id(),instance_id=ion_instance,
     elapsed_us=ion_time_of_flight,x_mm=ion_px_mm,y_mm=ion_py_mm,z_mm=ion_pz_mm,
     vx_mm_per_us=ion_vx_mm,vy_mm_per_us=ion_vy_mm,vz_mm_per_us=ion_vz_mm,
     detector_cell_dx_mm=simion.wb.instances[4].pa.dx_mm}}
@@ -638,6 +837,8 @@ def main() -> int:
     parser.add_argument("--accelerator-overlay-contract", type=Path)
     parser.add_argument("--oatof", required=True, type=Path)
     parser.add_argument("--initial-global-state", required=True, type=Path)
+    parser.add_argument("--particle-row-map", required=True, type=Path)
+    parser.add_argument("--restart-context", type=Path)
     parser.add_argument("--resolved-region-field-contract", required=True, type=Path)
     parser.add_argument("--rf-drive-kernel", required=True, type=Path)
     parser.add_argument("--rf-steps-per-period", required=True, type=int)
@@ -649,12 +850,17 @@ def main() -> int:
     oatof = _load(args.oatof)
     region_field_contract = _load(args.resolved_region_field_contract)
     validate_resolved_region_field_contract(region_field_contract)
+    birth_times, source_ids = load_initial_state(args.initial_global_state)
+    row_map_ids = load_row_map(args.particle_row_map, source_ids)
+    restart_context = _load(args.restart_context) if args.restart_context else None
     output = build_successor_program(
         _load(args.upstream),
         _load(args.frontend_contract),
         oatof,
         region_field_contract,
-        birth_times_us=load_birth_times(args.initial_global_state),
+        birth_times_us=birth_times,
+        particle_ids=row_map_ids,
+        restart_context=restart_context,
         analyzer_component_source=args.analyzer_component.read_text(encoding="utf-8-sig"),
         pulse_hook_source=args.pulse_hook.read_text(encoding="utf-8-sig"),
         frontend_hook_source=args.frontend_hook.read_text(encoding="utf-8-sig"),
@@ -689,6 +895,10 @@ def main() -> int:
             file_sha256(args.initial_global_state)
             if args.initial_global_state is not None
             else None
+        ),
+        "particle_row_map_sha256": file_sha256(args.particle_row_map),
+        "restart_context_sha256": (
+            file_sha256(args.restart_context) if args.restart_context else None
         ),
         "resolved_region_field_contract_sha256": file_sha256(
             args.resolved_region_field_contract

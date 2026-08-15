@@ -15,7 +15,7 @@
 |---|---|
 | 连接拓扑与端口 | [`connection_profiles.json`](../config/connection_profiles.json) |
 | 声明式实验 | [`experiment_campaign.json`](../config/experiment_campaign.json) |
-| 脉冲分辨率优化 | [`pulse_resolution_optimization_campaign.json`](../config/pulse_resolution_optimization_campaign.json) |
+| 脉冲分辨率优化 | [`pulse_resolution_direct_baseline_successor_r06_campaign.json`](../config/pulse_resolution_direct_baseline_successor_r06_campaign.json) |
 | 执行适配 | [`execution_adapter_profiles.json`](../config/execution_adapter_profiles.json) |
 | 单流程布局 | [`single_flight_layout_profiles.json`](../config/single_flight_layout_profiles.json) |
 | runtime bindings | [`config/`](../config/)中的`*_runtime_binding.json` |
@@ -38,12 +38,18 @@ repository-text SHA由`runtime/refresh_family_repository_bindings.py`单向刷�
 筛选；`pulse_eligible_conditional`仅用于带selection receipt的条件诊断。空间窗口只做detector-blind
 分组统计，不修改轨迹。
 
-schema-v3 single-flight 执行采用两条单权威链：campaign 中显式的
+schema-v3 pre-pulse single-flight 执行采用两条单权威链：campaign 中显式的
 `single_flight_pulse_schedule_policy`只经`derive_pulse_schedule`编译为resolved pulse schedule，runner
 只读取其中的`pulse_effective_time_us`；`single_flight_population`只经resolved population编译器冻结
 总体模式、源表绑定、N、有序ID哈希、分母和bootstrap设置，adapter、runner、analyzer只消费该合同。
-源表和轨迹观测只能交叉校验，不能补默认值或覆盖合同。schema-v1/v2仍可读，但single-flight的
-`SolverAuthorized`执行会失败关闭并要求schema-v3 successor。完整实现、29行successor及验证收据见
+staged `local_accelerator_exit` restart则禁止pulse schedule/time进入schema、prepare、adapter、runner、
+run config或SIMION CLI，并按下游分析范围跳过pulse eligibility与injection validation；其唯一population/
+source identity来自canonical 28列staged table及producer manifest，旧upstream source只允许作为显式
+`connection_lineage_only`连接谱系。无overlay必须从instance 3启动，有overlay必须从instance 5启动，
+两个方向均失败关闭。源表和轨迹观测只能交叉校验，不能补默认值或覆盖合同；有序eligible集合使用合同
+冻结的`expected_particle_ids`，不得假定ID连续。campaign SHA和实验行SHA在`SolverAuthorized`分支之前
+复核。schema-v1/v2仍可读，但single-flight的`SolverAuthorized`执行会失败关闭并要求schema-v3 successor。
+完整实现、29行successor及验证收据见
 [schema-v3单权威收口记录](../../../docs/history/20260814__rf-oatof-schema-v3-resolved-pulse-population-authority.md)。
 
 joint single-flight run package由integration ID拥有；`run_config.project`与终态manifest的
@@ -71,7 +77,7 @@ Program共用的纯Lua drive kernel；它经`family_runtime_dependencies.json`�
 RF母样本到oaTOF全局粒子状态及SIMION方向角的投影由integration
 `runtime/rf_handoff_adapter.py`唯一拥有。该模块只负责solver-row与particle ID顺序闭合、oaTOF全局
 速度与SIMION加速器PA方向角互转，以及速度/动能一致性；位置与instrument time由邻接的
-`write_oatof_simion_input.py`和`single_flight_source.py`校验。连续single-flight、pre-pulse/analyzer
+`publish_family_source_bundle.py`和`single_flight_source.py`校验。连续single-flight、pre-pulse/analyzer
 staged transport及counterfactual分析共同消费这一API；连接状态投影边界不得依赖oaTOF项目内同义
 adapter。oaTOF项目只发布required port、resolved几何及分析器组件，不保存RF→oaTOF连接专用副本；
 integration继续允许调用oaTOF项目发布的理论和设计编译API。
@@ -122,6 +128,21 @@ detector local elapsed与冻结birth构造instrument time。
 FLY2载入仍可能把速度经过内部表示往返，官方格式支持不等于逐位无误差。因此实际
 `source_release`必须按同一冻结合同逐粒子验收位置、速度、时钟与由实际速度派生的物理能量；不得以
 “官方格式”跳过误差门禁或增加数值预补偿。
+
+`staged_grid2_restart`复用上述官方individual-particle FLY2与唯一single-flight runner，但源权威收紧为
+`canonical_component_particle_state_v1`精确28列的`local_accelerator_exit/oatof_global`状态；旧11列
+SIMION TRACE不得直接成为restart源。兼容历史证据时，只允许既有`materialize_simion_grid2_state`作为
+受控桥：prepare同时冻结template、TRACE与独立characterization receipt，重建结果必须逐字节命中已声明
+canonical SHA。桥接receipt明确记录位置/时间为grid2穿越线性插值、速度仍是当前solver step而非穿越时刻
+插值、`ax/ay`非权威、能量经质量和速度校验后重算，因此该桥只能支持功能迁移，不能支持物理等价或
+分辨率结论。
+
+restart上下文必须显式声明event、frame、clock basis/epoch、无位置投影及起始instance；旧N=34 oracle
+固定从instance 3进入，禁止猜测overlay。SIMION局部粒子行号通过冻结row map映射回非连续canonical ID，
+分析器不得以行号代替源ID。该模式跳过RF frontend、pulse和accelerator运行时写入，保留analyzer静态
+初始化、downstream base→override电场顺序以及`canonical restart time + solver local elapsed`的探测器
+绝对时钟。当前未发布successor的claim严格为`FUNCTIONAL_MIGRATION_ONLY`；旧runner在真实SIMION物理
+parity完成前保持只读可用。
 
 ## 单流程PA、屏蔽和参数重构
 
@@ -203,27 +224,42 @@ scratch `6,741,298`和正式successor接管后的最后2个scratch `1,871,436`�
 
 ## 脉冲分辨率优化能力与边界
 
-[`pulse_resolution_optimization_campaign.json`](../config/pulse_resolution_optimization_campaign.json)已在
-既有campaign Schema和`family_source_closure`准备入口内注册，没有建立第二套CLI、物理模型或运行树。
-它预声明SIMION优先、COMSOL复现的阶段顺序、冻结母样本与确定性筛选前缀、八臂理想场归因、晋级、
-局部网格收敛、受约束候选、理论接受窗、双重验收、bootstrap和handoff规则。精确阈值、字段与禁止变量
-只认该机器合同，不在本文复制。
+[`pulse_resolution_direct_baseline_successor_r06_campaign.json`](../config/pulse_resolution_direct_baseline_successor_r06_campaign.json)已在
+既有campaign Schema和唯一`family_source_closure`执行入口内注册，没有建立第二套CLI、物理模型或运行树。
+该文件只含单行、`authorized`的direct-v5-r06 N=100全真实场baseline登记；旧r01
+`pulse_resolution_direct_baseline_successor_campaign.json`因精确frontend PA cache缺失而失败，保持原字节并
+登记为`non_executable_historical_evidence`。r02以官方runner构建并发布缺失cache，但实际cohort与迁移前
+D46986 checkpoint不同，故在baseline分析阶段失败并保持历史证据；r03复用其精确cache、恢复
+`require_existing`，只修复身份和cohort权威语义。r03在求解器启动前因PowerShell StrictMode直接读取
+合法缺省的paired cohort字段而失败；r04修复首次读取后，又在同一runner稍后的registration-source
+组装处以点属性重复读取该缺省字段，仍在cache lookup和SIMION之前失败。r05只更换身份，并把该字段的
+全部runner访问统一为一次`PSObject.Properties`存在性判断：baseline不写该键，candidate才写入冻结权威。
+r05随后被官方cache完整性门禁阻断：frontend `pa19`发生单字节SHA漂移，未进入Fly/build/refine。r06仅更换
+身份、授权重建缺失cache，并使全部SIMION PA消费者使用run-local物理副本；overlay身份绑定完整frontend
+cache key，构建后以现有全payload verifier复核源cache。r05已封存为不可执行历史证据。
+更早的
+[`pulse_resolution_direct_campaign.json`](../config/pulse_resolution_direct_campaign.json)保持失败尝试时的原字节，
+已按内容SHA和失败run identity登记为`non_executable_historical_evidence`；
+[`pulse_resolution_direct_candidate_campaign.json`](../config/pulse_resolution_direct_candidate_campaign.json)
+单独保存三行候选模板，状态为`PENDING_PREREGISTRATION`，不得执行。已发布的
+`pulse_resolution_optimization_campaign.json`保持原路径与字节，只作为
+`non_executable_historical_evidence`，唯一入口在binding检查和任何输出前对`ValidateOnly`、
+`PrepareOnly`及`SolverAuthorized`三种模式统一拒绝它。
 
-当前八个归因臂均标记为`planning_only_until_adapter_support`。现有准备入口会在读取artifact或启动求解器
-前拒绝执行该campaign；这表示声明、Schema、语义校验和失败关闭已经实现，不表示场mask、理想源、优化
-候选或双重验收已经跑过。只有既有adapter能逐臂消费所声明的源与场模式、冻结每行身份并通过N=100
-当前只解除第 1 臂“真实束 + 全真实场”的确定性 N=100 基线登记门禁。prepare 从已冻结且
-SHA 验证的 N=1000 母样本按文件顺序取前 100 行，并把具名前缀与 SHA 绑定到父 run plan；
-runner 仅在专用登记开关、全真实场 profile、arm/mode/seed 和 plan 同目录路径均一致时接受它。
-成功终态为 `baseline_registered_not_candidate`：receipt 保存完整 100 个 ID、census、pulse-effective
-指标、时钟和源哈希，但不调用配对 promotion gate，也不授权候选臂或 N=1000 资格运行。
-其余 7 臂仍为 planning-only，须完成静态/配对回归后再逐臂解除门禁。
+baseline不再把迁移前D46986的`66/50/16`作为当前官方输运权威。prepare只冻结同一source-release
+N=100、源身份和pulse clock，并由既有`pulse_resolution_execution_mode`派生
+`establish_observed_authority`；resolved population只预先含`population_count=100`。baseline分析从本次
+日志发布source-release、pre-pulse、pulse-eligible和outside-transverse-bore四组有序ID/count/SHA，handoff
+单列，并以self-SHA闭合。旧checkpoint只保留为`historical_migration_reference`。候选未来只有在campaign级
+`pulse_resolution_baseline_evidence`冻结该receipt路径和文件SHA后才能预注册；prepare与registrar复用同一
+纯验证函数，派生`require_frozen_baseline_authority`并要求receipt self-SHA有效、
+`solver_execution_performed=true`、四组成员及digest逐组精确复用。当前pending模板不含该证据，也不授权任何候选、N=1000、COMSOL、
+qualification或promotion运行。
 
-现另开放一个严格配对的 N=100 筛选行：`pulse_resolution_real_beam_ideal_stage1_real_stage2_real_reflectron_n100`，
-完整工况是“同一冻结真实多极杆粒子束 + 理想一级加速场 + 真实二级加速场 + 真实反射器场”。
-它复用基准的 ordered particle IDs、pulse-effective 时钟和 PA，仅启用既有一级理想场开关；不得启用
-qualification、N=1000、COMSOL 或其余六项。验证/准备命令为：
-`pwsh integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/workflows/family_source_closure/execute.ps1 -Campaign integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/pulse_resolution_optimization_campaign.json -ExperimentId pulse_resolution_real_beam_ideal_stage1_real_stage2_real_reflectron_n100 -ValidateOnly`。
+当前唯一可执行行的solver-free验证命令为：
+`pwsh integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/workflows/family_source_closure/execute.ps1 -Campaign integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/pulse_resolution_direct_baseline_successor_r06_campaign.json -ExperimentId pulse_resolution_baseline -ValidateOnly`。
+该命令通过只证明输入、身份、编排和失败关闭完整；本轮没有执行`SolverAuthorized`、SIMION Fly、refine或
+PA写入，也没有产生新的分辨率结果。
 
 SIMION单飞分析现以`detector_time_minus_pulse_effective_time`为唯一分辨率时钟；absolute instrument
 clock只保留诊断语义，不能形成分辨率声明。输出分别保留完整pulse-eligible队列的峰与传输、冻结理论窗
@@ -444,10 +480,14 @@ profile定义、materialization receipt与source release CSV SHA，并校验rele
 新single-flight run只接受`canonical_instrument_time_us`：冻结source state的`instrument_time_us`是唯一
 birth authority，SIMION `.ion`局部时钟固定从0开始，Lua只物化一次`birth + elapsed`，后续analyzer与
 五批aggregate纯透传该时间。单位、basis、authority SHA缺失或冲突均在preflight失败；新campaign不得
-选择legacy relative/absolute兼容模式。`resolution_attribution`和history audit中仍出现的legacy枚举仅
-用于解释既有run，冻结为只读迁移范围，不得被活动campaign或single-flight runner调用。后续分批迁移
-清单为：历史resolution attribution CLI、旧counterfactual分析参数、旧oaTOF输入writer；迁移须保持原
-evidence字节与解释结果，不在本次当前N=1000链修复中批量改写。
+选择legacy relative/absolute兼容模式。history audit中仍出现的legacy resolution-attribution枚举只用于
+解释既有run，不得被活动campaign或single-flight runner调用。原23-arm第二CLI及其合成counterfactual实现
+已退出活动代码；仍受支持的detector-blind pre-pulse `z-vz`能力由唯一`family_source_closure`执行人口、
+规范checkpoint CSV和campaign直接source/field profile声明承载，不再通过第二runner改写粒子。oaTOF
+canonical→ION11/row-map渲染已并入同一family source publisher，旧输入writer已删除；23个旧arm的精确
+supported/retired处置及现有authority绑定由
+[`family_source_closure_legacy_attribution_migration.json`](../config/family_source_closure_legacy_attribution_migration.json)
+冻结，迁移须保持原evidence字节与解释结果。
 
 [`verify_integration.ps1`](../verify_integration.ps1)只验证连接、端口、profile、冻结身份和失败关闭逻辑；
 不运行商业求解器，也不替代物理资格。
@@ -458,3 +498,46 @@ evidence字节与解释结果，不在本次当前N=1000链修复中批量改写
 shield 100/180/350 mm、电极径向bundle 35/70与250/300 mm、r100拓扑`10/5 t5 → 8/15 t5 →
 8/15 t2`及large anchor；晋级后才允许按0.2/0.1/0.05 mm做局部网格收敛。该合同保持
 planning-only，复用既有radial-compaction入口，不新建CLI，也不授予求解、排行榜或证据晋升权限。
+
+## 2026-08-15：N=100 direct field matrix正式登记结果
+
+本节只登记功能与预注册promotion结果，不增加物理解释。四行使用同一真实八极杆源、r09 observed cohort、
+pulse-effective时钟、官方零宽透明栅网、真实反射器合同和N=100 ordered prefix；四行均为
+source/handoff/pre-pulse/eligible/outside/detector=`100/62/52/52/0/52`，eligible到detector为`1.0`。
+frontend/overlay分别命中`01c205c64fc144710678bf823e3ed3852c28ea2992c6c14064ca2a53f4515309`和
+`f1b4d3fc449c8f350faa9a33615156249f97588f797d9686ff7fce046f92fa40`，没有build/refine。
+
+|序列|规范场配置|run|R|direct FWHM (ns)|mode|promotion|功能/publication|
+|---:|---|---|---:|---:|---:|---|---|
+|1|`accelerator_real_pa`|`20260815_160000__sim__cross__pulse-direct-real-rr__n100__r09`|4458.135378|3.496136959|1|baseline，不晋级|PASS|
+|2|`accelerator_ideal_stage1_real_stage2`|`20260815_160100__sim__cross__pulse-direct-ideal-s1-real-s2-rr__n100__r03`|4343.205166|3.588638942|1|reject|PASS|
+|3|`accelerator_ideal_stage1_stage2_real_reflectron`|`20260815_160200__sim__cross__pulse-direct-ideal-s1s2-real-rr__n100__r03`|4545.698265|3.428833509|1|reject|PASS|
+|4|`full_domain_piecewise_ideal_field`|`20260815_160300__sim__cross__pulse-direct-full-domain-ideal__n100__r03`|4545.698265|3.428833509|1|reject|PASS|
+
+功能贯通为`3/3 candidate PASS`，promotion为`0/3`。seq2的FWHM/sigma相对改善为
+`-2.645834%/-0.686656%`；seq3和seq4均为`1.925080%/1.514362%`，均低于预注册15%双门。
+
+- baseline result文件/self-SHA：`EA4BB4084A754F5442B016B7D3744141A107C291B8DDABA8CCD9C193D759E37E` /
+  `B515E431A076E57E00324B80CC1D3FEF031CD8B882CB3B65C2E48531A7B69E7B`；parent/child manifest：
+  `06134C747DD095092B8BD053AED7C213A877DA325B34DF0125D13DF156E9B12A` /
+  `54E67E3DEC5BA4D8B649929A7EB08FC05E668187F485A99EB132A773F54D0AE5`。
+- seq2 result文件/self-SHA：`C7EE0313F74CE8D59BFBD06758873AEC041202F5BFD7499C151052D79204BF90` /
+  `1FD9E69AAFD95F5BE44717B90431E758CC7F03D12CBA442B34E9073A3C973C6A`；promotion文件/self-SHA：
+  `CDC12B62F4ED5403E3D9913188EF287E0F331FC83DA360C55091BAC5D95DD81B` /
+  `B0AED58E93E15F4B1D0EA64FEE16A152F7853A824AAA07385E4255AF43876D8B`；parent/child manifest：
+  `2F06062F968AC173C426AA9A85949B10344EA0B2123A49D72038D272D4F1D7C6` /
+  `F8C68AE694639312028F16CA4EC3EBA1A070ACDC694070F77CD14AF9409DC278`。
+- seq3 result文件/self-SHA：`0DD8A05402A95EF892680977074EA8188F24EB83022001458C48DD776997AAC6` /
+  `206256D2864B6177CA6DB8ECB98BE53451C41F796D01E81D93AE69E16E362E09`；promotion文件/self-SHA：
+  `99C7505A8850430A21E8B98A1B1B7EDAB30A0E12248380B8CEF45BAB8641CE18` /
+  `1EBC04BFB1268519B5BB11F711C9268C7037C8337CCD5661E4381C7644DC945C`；parent/child manifest：
+  `73BDBE390D372716AC0C095C9210233CA50194295C9F43C5ACCB347545E1860C` /
+  `E30AC6313A2C3EC65D365D4E04DE6A7F9E76E4D837EA1F1DFB6B03D30A0544FB`。
+- seq4 result文件/self-SHA：`9CBD04867CE6EA846A09940CCC9097E0AC0980BC3B3A851D537057E52A2318A7` /
+  `223F6D2EF03ECA35CFA157E446E29E92F8B42D4D8E5898BFC2E0DE6CDDDCCA95`；promotion文件/self-SHA：
+  `023901D41E76B2E8322997F8BA891847A84CCB92CF491A9841BCE1CF230FB3A1` /
+  `42AB994A85EE20CCB17FC87EC79DDEF94954CECB78AB46A3AD221211AAC8B903`；parent/child manifest：
+  `7E0BAF0B1F241A49225D290ECAA6D9CBC642E75158486CF21EE3B7E7FC1E16DB` /
+  `1A3FBF6D60DF99E4051BBEF90114DC897136AC0A56EC55A9A70CFB9D9A3AF971`。
+
+全部result和promotion receipt的claimed self-SHA均与canonical重算一致。

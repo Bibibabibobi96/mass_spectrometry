@@ -52,6 +52,24 @@ POST_FOCUS_EVENTS = (
     "reflectron_exit_return",
     "detector_crossing",
 )
+
+
+def _ordered_integer_id_sha256(ids: Sequence[int]) -> str:
+    payload = json.dumps(list(ids), separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest().upper()
+
+
+def _observed_id_set(ids: Sequence[int]) -> dict[str, object]:
+    """Publish one observed ordered-ID set without making it an input authority."""
+
+    ordered_ids = sorted(set(ids))
+    return {
+        "ordered_particle_ids": ordered_ids,
+        "count": len(ordered_ids),
+        "ordered_particle_id_sha256": _ordered_integer_id_sha256(ordered_ids),
+    }
+
+
 REFLECTRON_EVENTS = POST_FOCUS_EVENTS[1:5]
 REFLECTRON_PATH_EVENTS = POST_FOCUS_EVENTS[:-1]
 
@@ -246,6 +264,7 @@ def analyze(
     restart_clock_tolerance_us: float | None = None,
     restart_energy_tolerance_eV: float | None = None,
     restart_validation_contract_sha256: str | None = None,
+    particle_row_map_path: Path | None = None,
 ) -> tuple[list[dict[str, object]], dict[str, object]]:
     if population_contract.get("role") != "rf_oatof_resolved_population_contract":
         raise ValueError("resolved population contract identity differs")
@@ -254,7 +273,17 @@ def analyze(
     randomness = population_contract["analysis_randomness"]
     launched = int(execution_population["particle_count"])
     population_denominator_count = int(denominators["population_count"])
-    eligible_population_count = int(denominators["eligible_population_count"])
+    paired_cohort = population_contract.get("paired_cohort_authority")
+    cohort_authority_mode = population_contract.get("cohort_authority_mode")
+    if cohort_authority_mode == "establish_observed_authority" and paired_cohort is not None:
+        raise ValueError("baseline observed authority must not consume a frozen cohort")
+    if cohort_authority_mode == "require_frozen_baseline_authority" and paired_cohort is None:
+        raise ValueError("paired candidate requires frozen baseline cohort authority")
+    eligible_population_count = (
+        len(paired_cohort["pulse_eligible"]["ordered_particle_ids"])
+        if paired_cohort is not None
+        else int(denominators.get("eligible_population_count", launched))
+    )
     bootstrap_resamples = int(randomness["bootstrap_resample_count"])
     bootstrap_seed = int(randomness["bootstrap_seed"])
     source_release_mode = str(population_contract["source_release_mode"])
@@ -262,8 +291,34 @@ def analyze(
         raise ValueError("new single-flight analysis requires canonical instrument time")
     if bootstrap_resamples < 0:
         raise ValueError("bootstrap resamples must be non-negative")
-    if source_release_mode not in {"continuous_frontend", "pre_pulse_restart"}:
+    if source_release_mode not in {
+        "continuous_frontend", "pre_pulse_restart", "staged_grid2_restart"
+    }:
         raise ValueError("unknown single-flight source release mode")
+    if particle_row_map_path is None:
+        if source_release_mode == "staged_grid2_restart":
+            raise ValueError("staged grid2 analysis requires the frozen particle row map")
+        ordered_particle_ids = list(range(1, launched + 1))
+    else:
+        with particle_row_map_path.open(encoding="utf-8-sig", newline="") as handle:
+            row_map_reader = csv.DictReader(handle)
+            if row_map_reader.fieldnames != [
+                "simulation_particle_id", "source_particle_id"
+            ]:
+                raise ValueError("single-flight particle row-map columns differ")
+            row_map_rows = list(row_map_reader)
+        if [int(row["simulation_particle_id"]) for row in row_map_rows] != list(
+            range(1, launched + 1)
+        ):
+            raise ValueError("single-flight simulation particle row map is not exact")
+        ordered_particle_ids = [int(row["source_particle_id"]) for row in row_map_rows]
+    expected_particle_ids = set(ordered_particle_ids)
+    if (
+        len(ordered_particle_ids) != launched
+        or any(value <= 0 for value in ordered_particle_ids)
+        or len(expected_particle_ids) != launched
+    ):
+        raise ValueError("single-flight canonical source particle row map is invalid")
     log_paths = [log_path] if isinstance(log_path, Path) else list(log_path)
     reanalysis_provenance = None
     if source_run_manifest_path is not None:
@@ -334,7 +389,8 @@ def analyze(
             local_id = int(match["ion"])
             if not 1 <= local_id <= batch_count:
                 raise ValueError("logged particle identity is outside its batch")
-            global_id = local_id + particle_offset
+            source_row = local_id + particle_offset
+            global_id = ordered_particle_ids[source_row - 1]
             if match["particle_id"] is not None and int(match["particle_id"]) != global_id:
                 raise ValueError("logged global particle identity differs from batch offset")
             key = (global_id, event)
@@ -378,7 +434,8 @@ def analyze(
             local_id = int(match["ion"])
             if not 1 <= local_id <= batch_count:
                 raise ValueError("logged particle identity is outside its batch")
-            key = (local_id + particle_offset, "detector_crossing")
+            source_row = local_id + particle_offset
+            key = (ordered_particle_ids[source_row - 1], "detector_crossing")
             if key in seen:
                 raise ValueError(f"duplicate detector crossing: particle={key[0]}")
             seen.add(key)
@@ -400,30 +457,52 @@ def analyze(
     pre_pulse_state_provenance = None
     restart_source_release_validation = None
     if initial_global_state_path is not None:
-        if source_release_mode == "pre_pulse_restart":
+        if source_release_mode in {"pre_pulse_restart", "staged_grid2_restart"}:
             if initial_global_state_sha256 is None:
                 raise ValueError("pre-pulse restart analysis requires the manifest-bound initial-state SHA256")
             actual_sha256 = hashlib.sha256(initial_global_state_path.read_bytes()).hexdigest()
             if actual_sha256.lower() != initial_global_state_sha256.lower():
                 raise ValueError("initial global state SHA256 differs from the manifest-bound identity")
-            if pulse_time_us is None:
+            if source_release_mode == "pre_pulse_restart" and pulse_time_us is None:
                 raise ValueError("pre-pulse restart analysis requires the effective pulse time")
         with initial_global_state_path.open(encoding="utf-8-sig", newline="") as handle:
             reader = csv.DictReader(handle)
             initial_rows = list(reader)
         if len(initial_rows) != launched:
             raise ValueError("initial global state row count differs from launched particles")
-        if [int(row["particle_id"]) for row in initial_rows] != list(range(1, launched + 1)):
-            raise ValueError("initial global state particle IDs are not contiguous and ordered")
+        if [int(row["particle_id"]) for row in initial_rows] != ordered_particle_ids:
+            raise ValueError("initial global state differs from the frozen particle row map")
         traced_release_ids = {
             int(row["particle_id"])
             for row in rows
             if row["event"] == "source_release"
         }
-        if source_release_mode == "pre_pulse_restart":
-            restart_validation_enabled = restart_validation_contract_sha256 is not None
+        if source_release_mode in {"pre_pulse_restart", "staged_grid2_restart"}:
+            resolved_release_validation = population_contract.get(
+                "source_release_validation"
+            )
+            staged_validation = source_release_mode == "staged_grid2_restart"
+            if staged_validation:
+                if (
+                    population_contract.get("schema_version") != 2
+                    or not isinstance(resolved_release_validation, dict)
+                    or resolved_release_validation.get("role")
+                    != "rf_oatof_resolved_source_release_validation"
+                ):
+                    raise ValueError(
+                        "staged grid2 restart requires resolved population v2 validation"
+                    )
+                restart_validation_enabled = True
+                restart_validation_contract_sha256 = resolved_release_validation[
+                    "loader_authorization_budget"
+                ]["sha256"]
+            else:
+                restart_validation_enabled = (
+                    restart_validation_contract_sha256 is not None
+                )
             if (
                 restart_validation_enabled
+                and not staged_validation
                 and (
                 restart_position_tolerance_mm is None
                 or restart_velocity_tolerance_m_per_s is None
@@ -440,8 +519,8 @@ def analyze(
                 )
             ):
                 raise ValueError("pre-pulse restart requires positive frozen source-release tolerances")
-            if restart_validation_enabled and traced_release_ids != set(range(1, launched + 1)):
-                raise ValueError("pre-pulse restart requires actual source_release checkpoints for every particle")
+            if restart_validation_enabled and traced_release_ids != expected_particle_ids:
+                raise ValueError("restart requires actual source_release checkpoints for every particle")
             traced_by_id = {
                 int(row["particle_id"]): row
                 for row in rows if row["event"] == "source_release"
@@ -450,6 +529,10 @@ def analyze(
             maximum_velocity_error = 0.0
             maximum_clock_error = 0.0
             maximum_energy_error = 0.0
+            maximum_velocity_relative_to_speed = 0.0
+            maximum_energy_relative = 0.0
+            exact_position_passed = True
+            exact_clock_passed = True
             for initial in (initial_rows if restart_validation_enabled else []):
                 particle_id = int(initial["particle_id"])
                 actual = traced_by_id[particle_id]
@@ -471,12 +554,65 @@ def analyze(
                         *(1000.0 * float(actual[f"v{axis}_mm_per_us"]) for axis in "xyz"),
                     ) - float(initial["kinetic_energy_eV"])
                 )
+                expected_velocity = tuple(
+                    float(initial[f"velocity_{axis}_m_s"]) for axis in "xyz"
+                )
+                expected_speed = math.sqrt(sum(
+                    value * value for value in expected_velocity
+                ))
+                expected_energy = float(initial["kinetic_energy_eV"])
+                velocity_relative = (
+                    velocity_error / expected_speed
+                    if expected_speed > 0 else 0.0
+                )
+                energy_relative = (
+                    energy_error / expected_energy
+                    if expected_energy > 0 else 0.0
+                )
                 maximum_position_error = max(maximum_position_error, position_error)
                 maximum_velocity_error = max(maximum_velocity_error, velocity_error)
                 maximum_clock_error = max(maximum_clock_error, clock_error)
                 maximum_energy_error = max(maximum_energy_error, energy_error)
+                maximum_velocity_relative_to_speed = max(
+                    maximum_velocity_relative_to_speed, velocity_relative
+                )
+                maximum_energy_relative = max(
+                    maximum_energy_relative, energy_relative
+                )
+                exact_position_passed = exact_position_passed and position_error == 0
+                exact_clock_passed = exact_clock_passed and clock_error == 0
+                if staged_validation:
+                    velocity_contract = resolved_release_validation["velocity"]
+                    energy_contract = resolved_release_validation["derived_energy"]
+                    actual_velocity = tuple(
+                        1000.0 * float(actual[f"v{axis}_mm_per_us"])
+                        for axis in "xyz"
+                    )
+                    velocity_passed = (
+                        actual_velocity == (0.0, 0.0, 0.0)
+                        if expected_speed == 0
+                        else velocity_error
+                        <= float(velocity_contract["relative_bound"]) * expected_speed
+                    )
+                    energy_passed = (
+                        energy_error == 0
+                        if expected_energy == 0
+                        else energy_error
+                        <= float(energy_contract["relative_bound"]) * expected_energy
+                    )
+                    if not (
+                        position_error == 0
+                        and clock_error == 0
+                        and velocity_passed
+                        and energy_passed
+                    ):
+                        raise ValueError(
+                            "actual source_release checkpoint differs from the "
+                            "resolved loader-characterized contract"
+                        )
             if (
                 restart_validation_enabled
+                and not staged_validation
                 and (
                 maximum_position_error > restart_position_tolerance_mm
                 or maximum_velocity_error > restart_velocity_tolerance_m_per_s
@@ -491,14 +627,43 @@ def analyze(
                 "particle_count": launched,
                 "validation_contract_sha256": restart_validation_contract_sha256,
                 "ordered_particle_ids_exact": True,
-                "position_rowwise_abs_tolerance_mm": restart_position_tolerance_mm,
-                "velocity_rowwise_abs_tolerance_m_per_s": restart_velocity_tolerance_m_per_s,
-                "clock_abs_tolerance_us": restart_clock_tolerance_us,
-                "energy_abs_tolerance_eV": restart_energy_tolerance_eV,
+                "identity_position_clock_policy": (
+                    "ordered_id_row_map_position_clock_exact"
+                    if staged_validation else "legacy_absolute_tolerances"
+                ),
+                "position_exact_passed": exact_position_passed,
+                "clock_exact_passed": exact_clock_passed,
+                "position_rowwise_abs_tolerance_mm": (
+                    None if staged_validation else restart_position_tolerance_mm
+                ),
+                "velocity_rowwise_abs_tolerance_m_per_s": (
+                    None if staged_validation else restart_velocity_tolerance_m_per_s
+                ),
+                "velocity_relative_to_expected_speed_bound": (
+                    resolved_release_validation["velocity"]["relative_bound"]
+                    if staged_validation else None
+                ),
+                "clock_abs_tolerance_us": (
+                    None if staged_validation else restart_clock_tolerance_us
+                ),
+                "energy_abs_tolerance_eV": (
+                    None if staged_validation else restart_energy_tolerance_eV
+                ),
+                "derived_energy_relative_to_expected_energy_bound": (
+                    resolved_release_validation["derived_energy"]["relative_bound"]
+                    if staged_validation else None
+                ),
                 "maximum_position_rowwise_abs_error_mm": maximum_position_error,
                 "maximum_velocity_rowwise_abs_error_m_per_s": maximum_velocity_error,
+                "maximum_velocity_relative_to_expected_speed":
+                    maximum_velocity_relative_to_speed,
                 "maximum_clock_abs_error_us": maximum_clock_error,
                 "maximum_energy_abs_error_eV": maximum_energy_error,
+                "maximum_energy_relative_to_expected_energy": maximum_energy_relative,
+                "native_ion_ke_role": (
+                    resolved_release_validation["native_ion_ke_role"]
+                    if staged_validation else None
+                ),
             } if restart_validation_enabled else None)
         for initial in initial_rows:
             particle_id = int(initial["particle_id"])
@@ -533,7 +698,7 @@ def analyze(
                 int(row["particle_id"]): row
                 for row in rows if row["event"] == "source_release"
             }
-            for particle_id in range(1, launched + 1):
+            for particle_id in ordered_particle_ids:
                 state = release_by_id[particle_id]
                 rows.append({
                     **state,
@@ -550,7 +715,7 @@ def analyze(
         "reflectron_entrance_forward", "reflectron_midgrid_forward",
         "reflectron_turning_point", "reflectron_exit_return", "detector_crossing",
     )}
-    if launched < 1 or any(int(row["particle_id"]) < 1 or int(row["particle_id"]) > launched for row in rows):
+    if launched < 1 or any(int(row["particle_id"]) not in expected_particle_ids for row in rows):
         raise ValueError("logged particle identity is outside the launched mother sample")
     effective_pulse_time_us = _resolve_pulse_time_us(pulse_time_us, pulse_times)
     detector_rows = [row for row in rows if row["event"] == "detector_crossing"]
@@ -586,6 +751,7 @@ def analyze(
     geometry = None
     if geometry_path is not None:
         geometry = json.loads(geometry_path.read_text(encoding="utf-8-sig"))
+    if geometry is not None and source_release_mode != "staged_grid2_restart":
         dimensions = geometry["geometry_mm"]
         axis_x = float(geometry["coordinate_convention"]["accelerator_axis_x"])
         repeller_z = float(dimensions["accelerator_repeller_z"])
@@ -637,6 +803,10 @@ def analyze(
             ),
             "selection_uses_detector_outcome": False,
         }
+        # This analyzer reports what this transport actually observed.  The
+        # result registrar decides, from pulse_resolution_execution_mode,
+        # whether those IDs establish a baseline authority or must reuse one.
+        eligible_population_count = len(eligible_ids)
         energies = np.asarray(
             [float(row["kinetic_energy_eV"]) for row in eligible], dtype=float
         )
@@ -829,6 +999,39 @@ def analyze(
             "is_causal_counterfactual": False,
             "detector_blind_selection_metrics": selection_metrics,
         }
+    observed_cohort_ids = {
+        "source_release": sorted({
+            int(row["particle_id"])
+            for row in rows if row["event"] == "source_release"
+        }),
+        "pre_pulse_state": sorted({
+            int(row["particle_id"])
+            for row in rows if row["event"] == "pre_pulse_state"
+        }),
+        "pulse_eligible": sorted({
+            int(row["particle_id"])
+            for row in rows
+            if row["event"] == "pre_pulse_state"
+            and row["pulse_eligibility"] == "eligible"
+        }),
+        "outside_transverse_bore": sorted({
+            int(row["particle_id"])
+            for row in rows
+            if row["event"] == "pre_pulse_state"
+            and row["pulse_eligibility"] == "outside_transverse_bore"
+        }),
+    }
+    observed_cohort_authority = {
+        "role": "rf_oatof_observed_paired_cohort_authority",
+        **{
+            name: _observed_id_set(ids)
+            for name, ids in observed_cohort_ids.items()
+        },
+    }
+    observed_handoff = _observed_id_set([
+        int(row["particle_id"])
+        for row in rows if row["event"] == "multipole_handoff"
+    ])
     full_candidate_population_simulated = launched == population_denominator_count
     if not 0 <= eligible_population_count <= population_denominator_count:
         raise ValueError("source population counts are inconsistent")
@@ -848,8 +1051,8 @@ def analyze(
         if row["event"] == "pre_pulse_state"
         and row["pulse_eligibility"] == "eligible"
     }
-    if geometry is None:
-        eligible_ids = set(range(1, launched + 1))
+    if geometry is None or source_release_mode == "staged_grid2_restart":
+        eligible_ids = expected_particle_ids
     eligible_detector_tof = np.asarray(
         [
             float(row["pulse_effective_elapsed_us"])
@@ -861,7 +1064,11 @@ def analyze(
     detector_blind_spatial_selection = (
         spatial_window_profile is not None and not post_selection_detector_metrics
     )
-    if detector_blind_spatial_selection:
+    frozen_eligible_complete = (
+        paired_cohort is None
+        or eligible_ids.issubset({int(row["particle_id"]) for row in detector_rows})
+    )
+    if detector_blind_spatial_selection or not frozen_eligible_complete:
         pulse_effective_peak = None
         full_bootstrap = None
     else:
@@ -879,7 +1086,7 @@ def analyze(
         full_candidate_population_simulated
         or (
             launched == eligible_population_count
-            and eligible_ids == set(range(1, launched + 1))
+            and eligible_ids == expected_particle_ids
         )
     )
     summary = {
@@ -927,24 +1134,70 @@ def analyze(
                 complete_eligible_population_simulated
             ),
         },
+        "observed_cohort_authority": observed_cohort_authority,
+        "observed_handoff": observed_handoff,
         "pulse_first_observed_us": min(pulse_times) if pulse_times else None,
         "pulse_effective_time_us": effective_pulse_time_us,
         "clock_basis": clock_basis,
-        "resolution_time_basis": "detector_time_minus_pulse_effective_time",
+        "analysis_scope": (
+            "downstream_only_from_local_accelerator_exit"
+            if source_release_mode == "staged_grid2_restart"
+            else "full_single_flight_with_pulse_eligibility"
+        ),
+        "pulse_eligibility_validation_applied": (
+            source_release_mode != "staged_grid2_restart"
+        ),
+        "injection_energy_validation_applied": (
+            geometry is not None and source_release_mode != "staged_grid2_restart"
+        ),
+        "resolution_time_basis": (
+            None
+            if source_release_mode == "staged_grid2_restart"
+            else "detector_time_minus_pulse_effective_time"
+        ),
         "pulse_effective_peak": pulse_effective_peak,
         "full_pulse_eligible_bootstrap": full_bootstrap,
         "detector_clock_diagnostic": {
-            "basis": "detector_time_minus_pulse_effective_time",
-            "sample_count": int(eligible_detector_tof.size),
-            "nonpositive_count": int(np.count_nonzero(eligible_detector_tof <= 0)),
+            "basis": (
+                "canonical_instrument_time_us"
+                if source_release_mode == "staged_grid2_restart"
+                else "detector_time_minus_pulse_effective_time"
+            ),
+            "sample_count": (
+                len(detector_rows)
+                if source_release_mode == "staged_grid2_restart"
+                else int(eligible_detector_tof.size)
+            ),
+            "nonpositive_count": (
+                None
+                if source_release_mode == "staged_grid2_restart"
+                else int(np.count_nonzero(eligible_detector_tof <= 0))
+            ),
             "used_for_spatial_selection": False,
-            "peak_metrics_computed": not detector_blind_spatial_selection,
+            "peak_metrics_computed": (
+                source_release_mode != "staged_grid2_restart"
+                and not detector_blind_spatial_selection
+            ),
         },
         "reanalysis_provenance": reanalysis_provenance,
         "detector_time_basis": "canonical_instrument_time_us",
         "detector_pulse_effective_time_basis": "pulse_effective_elapsed_us",
         "pre_pulse_state_provenance": pre_pulse_state_provenance,
-        "pre_pulse_restart_source_release_validation": restart_source_release_validation,
+        "pre_pulse_restart_source_release_validation": (
+            restart_source_release_validation
+            if source_release_mode == "pre_pulse_restart" else None
+        ),
+        "staged_grid2_restart_source_release_validation": (
+            restart_source_release_validation
+            if source_release_mode == "staged_grid2_restart" else None
+        ),
+        "particle_row_map": {
+            "path": str(particle_row_map_path) if particle_row_map_path else None,
+            "sha256": file_sha256(particle_row_map_path) if particle_row_map_path else None,
+            "simulation_rows": launched,
+            "canonical_source_ids_are_contiguous": ordered_particle_ids
+            == list(range(1, launched + 1)),
+        },
         "instrument_clock_peak": instrument_clock_peak,
         "instrument_clock_peak_is_resolution_claim": False,
         "injection_energy_validation": injection_energy_validation,
@@ -968,6 +1221,7 @@ def main() -> int:
     parser.add_argument("--pulse-time-us", type=float)
     parser.add_argument("--initial-global-state", type=Path)
     parser.add_argument("--initial-global-state-sha256")
+    parser.add_argument("--particle-row-map", required=True, type=Path)
     parser.add_argument("--restart-position-tolerance-mm", type=float)
     parser.add_argument("--restart-velocity-tolerance-m-per-s", type=float)
     parser.add_argument("--restart-clock-tolerance-us", type=float)
@@ -1023,6 +1277,7 @@ def main() -> int:
         args.restart_clock_tolerance_us,
         args.restart_energy_tolerance_eV,
         args.restart_validation_contract_sha256,
+        args.particle_row_map,
     )
     args.checkpoints.parent.mkdir(parents=True, exist_ok=True)
     with args.checkpoints.open("w", encoding="utf-8", newline="") as handle:

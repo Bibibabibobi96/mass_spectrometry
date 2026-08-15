@@ -70,14 +70,29 @@ try {
     -SummaryRole 'oa_tof_native_ideal_grid_smoke_summary' -SummarySchemaVersion 2 `
     -Reason 'grid2 electrode has zero raw PA points' -FailureClass 'native_ideal_grid_smoke_failed' `
     -FailureStage 'accelerator_raw_pa_family_or_grid_row_audit' -ThresholdResultEligible $false `
+    -AdditionalSummaryProperties ([ordered]@{cache_policy='require_existing';snapshot_completed=$false}) `
     -Software @('synthetic SIMION')
   $v2FailedSummary = Get-Content -LiteralPath $v2Summary -Raw -Encoding UTF8 | ConvertFrom-Json
   $v2FailedManifest = Get-Content -LiteralPath (Join-Path $v2FailedDir 'run_manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
   Assert-Equal $v2FailedSummary.schema_version 2 'Failed native-grid summary schema changed.'
   Assert-Equal $v2FailedSummary.failure_stage 'accelerator_raw_pa_family_or_grid_row_audit' 'Failed native-grid stage changed.'
   Assert-Equal $v2FailedSummary.threshold_result_eligible $false 'Failed native-grid result became threshold eligible.'
+  Assert-Equal $v2FailedSummary.cache_policy 'require_existing' 'Additional failed summary property changed.'
+  Assert-Equal $v2FailedSummary.snapshot_completed $false 'Pre-snapshot failure flag changed.'
   Assert-Equal $v2FailedManifest.status 'failed' 'Failed native-grid manifest status changed.'
   Assert-Equal $v2FailedManifest.artifact_retention.class 'compact' 'Failed native-grid retention changed.'
+  $v2SummaryOutput = @($v2FailedManifest.outputs | Where-Object {
+    [IO.Path]::GetFullPath([string]$_.path).Equals(
+      [IO.Path]::GetFullPath($v2Summary), [StringComparison]::OrdinalIgnoreCase
+    )
+  })
+  Assert-Equal $v2SummaryOutput.Count 1 'Failed summary manifest output changed.'
+  Assert-Equal $v2SummaryOutput[0].sha256 `
+    (Get-FileHash -LiteralPath $v2Summary -Algorithm SHA256).Hash `
+    'Failed summary manifest SHA differs from final summary.'
+  Assert-Equal ([int64]$v2SummaryOutput[0].bytes) `
+    ([int64](Get-Item -LiteralPath $v2Summary).Length) `
+    'Failed summary manifest bytes differ from final summary.'
 
   $successDir = Join-Path $testRoot '20260723_170002__test__cross__lifecycle-success__n100'
   New-Item -ItemType Directory -Path $successDir -Force | Out-Null

@@ -28,7 +28,10 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 )
 
 
-CAMPAIGN = Path(__file__).resolve().parents[1] / "config" / "pulse_resolution_optimization_campaign.json"
+CAMPAIGN = Path(__file__).resolve().parents[1] / "config" / "pulse_resolution_direct_baseline_successor_r09_campaign.json"
+CANDIDATE_CAMPAIGN = (
+    Path(__file__).resolve().parents[1] / "config" / "pulse_resolution_direct_candidate_campaign.json"
+)
 
 
 class PhaseSpaceTransferModelTests(unittest.TestCase):
@@ -43,7 +46,7 @@ class PhaseSpaceTransferModelTests(unittest.TestCase):
         self.assertEqual(settings.minimum_pulse_eligible_coverage, 0.70)
         self.assertEqual(
             settings.execution_state,
-            "n100_full_domain_piecewise_ideal_field_screening",
+            "n100_baseline_registration_only",
         )
         first = campaign_fixed_id_split(campaign, np.arange(1, 1001))
         second = campaign_fixed_id_split(campaign, np.arange(1000, 0, -1))
@@ -66,6 +69,14 @@ class PhaseSpaceTransferModelTests(unittest.TestCase):
         campaign["pulse_resolution_optimization"]["execution_state"] = "executable"
         with self.assertRaisesRegex(TransferModelContractError, "cannot make"):
             campaign_transfer_settings(campaign)
+
+        pending_candidate = json.loads(CANDIDATE_CAMPAIGN.read_text(encoding="utf-8"))
+        settings = campaign_transfer_settings(pending_candidate)
+        self.assertEqual(settings.campaign_id, "pulse_resolution_direct_candidates_v5")
+        self.assertEqual(settings.execution_state, "n100_full_domain_piecewise_ideal_field_screening")
+        pending_candidate["pulse_resolution_optimization"]["execution_state"] = "executable"
+        with self.assertRaisesRegex(TransferModelContractError, "cannot make"):
+            campaign_transfer_settings(pending_candidate)
 
     def test_campaign_window_maps_angles_and_rejects_nonforward_particles(self) -> None:
         campaign = json.loads(CAMPAIGN.read_text(encoding="utf-8"))

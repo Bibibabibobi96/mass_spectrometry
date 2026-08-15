@@ -15,6 +15,7 @@ from unittest.mock import patch
 from common.contracts.component_particle_state import (
     csv_columns,
     validate_component_particle_state_csv,
+    write_component_particle_state_csv,
 )
 from common.contracts.file_identity import file_sha256
 from common.contracts.particle_state import PARTICLE_STATE_COLUMNS
@@ -24,9 +25,6 @@ from common.integration.resolve_connection import (
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis import (
     publish_family_source_bundle as publisher,
-)
-from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis import (
-    write_oatof_simion_input as oatof_writer,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.rf_handoff_adapter import (
     decode_simion_accelerator_velocity,
@@ -209,9 +207,9 @@ class FamilySourceBundlePublisherTests(unittest.TestCase):
             patch.object(publisher, "validate_schema") as schema_validator,
             patch.object(
                 publisher,
-                "write_oatof_simion_input",
-                wraps=oatof_writer.write_oatof_simion_input,
-            ) as adapter_writer,
+                "render_oatof_simion_inputs",
+                wraps=publisher.render_oatof_simion_inputs,
+            ) as renderer,
         ):
             result = publisher.publish_family_source_bundle(
                 self.contract_path,
@@ -226,7 +224,7 @@ class FamilySourceBundlePublisherTests(unittest.TestCase):
         schema_validator.assert_called_once_with(
             self.resolved, "resolved_connection.schema.json"
         )
-        adapter_writer.assert_called_once()
+        renderer.assert_called_once()
         return result
 
     def _build_pre_pulse_runtime_snapshot(self) -> tuple[Path, Path]:
@@ -245,10 +243,6 @@ class FamilySourceBundlePublisherTests(unittest.TestCase):
         )
         source_adapter = json.loads(SOURCE_ADAPTER_PATH.read_text(encoding="utf-8"))
         publisher_path = source_adapter["adapter"]["path"]
-        publisher_dependency = {
-            "source_repo_path": publisher_path,
-            "frozen_filename": f"runtime_snapshot/{publisher_path}",
-        }
 
         frozen_names = {
             dependency["frozen_filename"] for dependency in dependencies
@@ -289,17 +283,15 @@ class FamilySourceBundlePublisherTests(unittest.TestCase):
             )
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, destination)
-        publisher_source = REPO_ROOT / publisher_dependency["source_repo_path"]
-        publisher_destination = self.root / publisher_dependency["frozen_filename"]
-        publisher_destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(publisher_source, publisher_destination)
         snapshot_root = self.root / "runtime_snapshot"
-        snapshot_publisher = self.root / publisher_dependency["frozen_filename"]
-        live_publisher = REPO_ROOT / publisher_dependency["source_repo_path"]
+        snapshot_publisher = snapshot_root / publisher_path
+        live_publisher = REPO_ROOT / publisher_path
+        snapshot_publisher.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(live_publisher, snapshot_publisher)
         source_contract = json.loads(SOURCE_ADAPTER_PATH.read_text(encoding="utf-8"))
         self.assertEqual(
             source_contract["adapter"]["path"],
-            publisher_dependency["source_repo_path"],
+            publisher_path,
         )
         self.assertEqual(
             file_sha256(snapshot_publisher),
@@ -391,7 +383,7 @@ class FamilySourceBundlePublisherTests(unittest.TestCase):
 
         with self.row_map_path.open(encoding="utf-8", newline="") as handle:
             row_map = list(csv.DictReader(handle))
-        self.assertEqual(list(row_map[0]), oatof_writer.ROW_MAP_COLUMNS)
+        self.assertEqual(list(row_map[0]), publisher.ROW_MAP_COLUMNS)
         self.assertEqual(
             [row["solver_row_index"] for row in row_map], ["1", "2"]
         )
@@ -423,6 +415,96 @@ class FamilySourceBundlePublisherTests(unittest.TestCase):
             recorded["outputs"]["canonical_handoff_csv"]["sha256"],
             file_sha256(self.canonical_path),
         )
+
+    def test_canonical_renderer_preserves_source_bytes_and_metadata(self) -> None:
+        self._publish()
+        direct_source = self.root / "direct_source.csv"
+        direct_source.write_bytes(self.canonical_path.read_bytes())
+        direct_canonical = self.root / "direct_canonical.csv"
+        direct_ion = self.root / "direct.ion"
+        direct_row_map = self.root / "direct_row_map.csv"
+        direct_metadata = self.root / "direct_metadata.json"
+
+        metadata = publisher.render_oatof_simion_inputs(
+            direct_source,
+            direct_canonical,
+            direct_ion,
+            direct_row_map,
+            direct_metadata,
+        )
+
+        self.assertEqual(direct_canonical.read_bytes(), direct_source.read_bytes())
+        self.assertEqual(metadata["role"], "oatof_simion_input_bundle")
+        self.assertEqual(metadata["coordinate_frame_id"], "oatof_global")
+        self.assertEqual(
+            metadata["outputs"]["oatof_ion"]["sha256"],
+            file_sha256(direct_ion),
+        )
+        with direct_row_map.open(encoding="utf-8", newline="") as handle:
+            mapping = list(csv.DictReader(handle))
+        self.assertEqual(list(mapping[0]), publisher.ROW_MAP_COLUMNS)
+
+    def test_canonical_renderer_rejects_wrong_frame_and_output_aliases(self) -> None:
+        self._publish()
+        with self.canonical_path.open(encoding="utf-8", newline="") as handle:
+            rows = list(csv.DictReader(handle))
+        rows[0]["frame_id"] = "multipole_cartesian_z_axis_v1"
+        wrong_frame = self.root / "wrong_frame.csv"
+        write_component_particle_state_csv(wrong_frame, rows)
+        with self.assertRaisesRegex(ValueError, "must be oatof_global"):
+            publisher.render_oatof_simion_inputs(
+                wrong_frame,
+                self.root / "wrong_copy.csv",
+                self.root / "wrong.ion",
+                self.root / "wrong_map.csv",
+                self.root / "wrong_metadata.json",
+            )
+        with self.assertRaisesRegex(ValueError, "must not overwrite"):
+            publisher.render_oatof_simion_inputs(
+                self.canonical_path,
+                self.canonical_path,
+                self.ion_path,
+                self.row_map_path,
+                self.metadata_path,
+            )
+        with self.assertRaisesRegex(ValueError, "must be distinct"):
+            publisher.render_oatof_simion_inputs(
+                self.canonical_path,
+                self.root / "alias_copy.csv",
+                self.root / "alias.ion",
+                self.root / "alias.ion",
+                self.root / "alias_metadata.json",
+            )
+
+    def test_publisher_cli_accepts_canonical_renderer_inputs(self) -> None:
+        self._publish()
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                (
+                    "integrations.rf_multipole_ion_optics_to_single_reflection_"
+                    "oa_tof_mass_analyzer.analysis.publish_family_source_bundle"
+                ),
+                "--source",
+                str(self.canonical_path),
+                "--canonical-output",
+                str(self.root / "cli_canonical.csv"),
+                "--ion-output",
+                str(self.root / "cli.ion"),
+                "--row-map-output",
+                str(self.root / "cli_row_map.csv"),
+                "--metadata-output",
+                str(self.root / "cli_metadata.json"),
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("OATOF_SIMION_INPUT=PASS", completed.stdout)
 
     def test_repository_publisher_closes_over_frozen_pre_pulse_snapshot(
         self,

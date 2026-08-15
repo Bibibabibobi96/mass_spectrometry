@@ -28,6 +28,9 @@ local function pa(label,nx,ny,nz,dx,dy,dz)
   function value:load(path)
     operation_order[#operation_order+1]=label..':load'
     self.load_calls[#self.load_calls+1]=path
+    if self.owner then
+      self.owner.filename=path:gsub('\\','/'):match('([^/]+)$')
+    end
   end
   return value
 end
@@ -38,11 +41,18 @@ local instances={
   {filename='accelerator.pa0',scale=1,pa=pa('accelerator',101,101,101,1,1,1)},
   {filename='detector_ground.pa0',scale=1,pa=pa('detector',3,3,8,1,1,0.05)},
 }
-if run_mode=='successor_overlay' then
+if run_mode:match('^successor_overlay') then
   instances[5]={filename='accelerator_overlay.pa0',scale=1,
     pa=pa('overlay',101,101,101,1,1,1)}
 end
+if run_mode=='successor_reject_count' then instances[4]=nil end
+if run_mode=='successor_reject_slot3' then instances[3].filename='wrong.pa0' end
+if run_mode=='successor_overlay_reject_slot3' then instances[3].filename='frontend.pa0' end
+if run_mode=='successor_overlay_reject_slot5' then
+  instances[5].filename='wrong_overlay.pa0'
+end
 for index,instance in ipairs(instances) do
+  instance.pa.owner=instance
   function instance:_debug_update_size()
     operation_order[#operation_order+1]=(index==3 and 'accelerator' or tostring(index))..':debug_update_size'
   end
@@ -69,15 +79,30 @@ end
 assert(type(callbacks.fast_adjust)=='function' and type(callbacks.tstep_adjust)=='function',
   'final callbacks are missing')
 
+local expected_rejection={
+  successor_reject_count='formal single-flight IOB instance count differs',
+  successor_reject_slot3='formal IOB role accelerator filename differs',
+  successor_overlay_reject_slot3='formal IOB role accelerator filename differs',
+  successor_overlay_reject_slot5='formal IOB role accelerator_overlay filename differs',
+}
+if expected_rejection[run_mode] then
+  local ok,message=pcall(callbacks.initialize_run)
+  assert(not ok,'invalid formal IOB contract was accepted')
+  assert(tostring(message):find(expected_rejection[run_mode],1,true),
+    'unexpected formal IOB rejection: '..tostring(message))
+  print('SUCCESSOR_FORMAL_IOB_NEGATIVE=PASS MODE='..run_mode)
+  return
+end
+
 if successor then
-  callbacks.__legacy_test_set_adjustable('handoff_pulse_mode',1)
-  callbacks.__legacy_test_set_adjustable('handoff_pulse_time_us',1)
-  callbacks.__legacy_test_set_adjustable('handoff_pulse_width_us',0.5)
+  callbacks.__successor_test_set_adjustable('handoff_pulse_mode',1)
+  callbacks.__successor_test_set_adjustable('handoff_pulse_time_us',1)
+  callbacks.__successor_test_set_adjustable('handoff_pulse_width_us',0.5)
 end
 callbacks.initialize_run()
 if successor then
   assert(#instances[3].pa.load_calls==1 and
-    instances[3].pa.load_calls[1]=='mock_combined_frontend.pa0',
+    instances[3].pa.load_calls[1]=='frontend.pa0',
     'successor did not load the combined frontend override')
   assert(operation_order[1]=='accelerator:load' and
     operation_order[2]=='accelerator:debug_update_size' and
@@ -102,14 +127,14 @@ if run_mode=='successor_overlay' then
 end
 
 local function set_callback_value(name,value)
-  assert(type(callbacks.__legacy_test_set_adjustable)=='function',
+  assert(type(callbacks.__successor_test_set_adjustable)=='function',
     'test-only adjustable control is missing')
-  callbacks.__legacy_test_set_adjustable(name,value)
+  callbacks.__successor_test_set_adjustable(name,value)
 end
 local function get_program_value(name)
-  assert(type(callbacks.__legacy_test_get_value)=='function',
+  assert(type(callbacks.__successor_test_get_value)=='function',
     'test-only value reader is missing')
-  return callbacks.__legacy_test_get_value(name)
+  return callbacks.__successor_test_get_value(name)
 end
 
 local function run_fast(instance_id, elapsed_us, mode)

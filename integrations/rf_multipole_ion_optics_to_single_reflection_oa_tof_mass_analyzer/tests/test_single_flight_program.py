@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import json
 import copy
-import hashlib
+import os
 import re
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -12,19 +13,8 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     build_successor_program,
     load_birth_times,
 )
-from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.tests.test_support.legacy_single_flight_program import (
-    allow_accelerator_overlay_instance,
-    bind_oatof_adjustables,
-    build_extension as _build_extension,
-    disable_redundant_ground_fast_adjust,
-    enable_official_global_segments,
-)
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.resolved_region_field import (
     build_resolved_region_field_contract,
-)
-from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_frontend import (
-    compile_accelerator_overlay,
-    compile_frontend,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_electrode_contract import (
     FRONTEND_ELECTRODES,
@@ -47,11 +37,81 @@ FRONTEND_HOOK_SOURCE = (
     REPO / "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/"
     "runtime/single_flight_frontend_hook.lua"
 ).read_text(encoding="utf-8")
+SIMION = Path(r"C:\Program Files\SIMION-2020\simion.exe")
+CALLBACK_HARNESS = Path(__file__).with_name("test_single_flight_program_callbacks.lua")
+CALLBACK_TEST_CONTROL = """
+segment.__successor_test_set_adjustable=function(name,value)
+  assert(type(name)=='string' and type(value)=='number')
+  if name=='handoff_pulse_mode' then handoff_pulse_mode=value
+  elseif name=='handoff_pulse_time_us' then handoff_pulse_time_us=value
+  elseif name=='handoff_pulse_width_us' then handoff_pulse_width_us=value
+  elseif name=='trajectory_log_enable' then trajectory_log_enable=value
+  else error('test adjustable name is not authorized: '..name) end
+end
+segment.__successor_test_get_value=function(name)
+  if name=='V_repeller' then return V_repeller
+  elseif name=='V_grid1' then return V_grid1
+  elseif name=='accelerator_grid1_z_mm' then return accelerator_grid1_z_mm
+  elseif name=='accelerator_grid2_z_mm' then return accelerator_grid2_z_mm
+  elseif name=='accelerator_repeller_front_z_mm' then return accelerator_repeller_front_z_mm
+  else error('test value name is not authorized: '..tostring(name)) end
+end
+"""
 
 
-def build_extension(*args: object, **kwargs: object) -> str:
-    kwargs.setdefault("rf_drive_kernel_source", RF_DRIVE_KERNEL_SOURCE)
-    return _build_extension(*args, **kwargs)  # type: ignore[arg-type]
+
+
+def _staged_source_release_validation_v2() -> dict[str, object]:
+    return {
+        "role": "rf_oatof_resolved_source_release_validation",
+        "loader_authorization_budget": {
+            "path": "config/diagnostics/loader_budget.json", "sha256": "A" * 64,
+        },
+        "representation": "standard_beam_direct_velocity_vector",
+        "canonical_source_sha256": "B" * 64,
+        "solver_executable_sha256": "C" * 64,
+        "production_renderer_sha256": "D" * 64,
+        "identity_position_clock_policy": "ordered_id_row_map_position_clock_exact",
+        "velocity": {
+            "relative_bound": 2e-8, "absolute_floor_m_per_s": 0,
+            "zero_speed_must_be_exact": True,
+        },
+        "derived_energy": {
+            "relative_bound": 3e-8, "absolute_floor_eV": 0,
+            "zero_energy_must_be_exact": True,
+            "authority": "actual_velocity_plus_canonical_mass_common_function",
+        },
+        "native_ion_ke_role": "diagnostic_only",
+    }
+
+
+def _successor_callback_program(
+    directory: Path,
+    *,
+    profile_id: str = "accelerator_real_pa",
+    overlay: dict[str, object] | None = None,
+) -> str:
+    geometry_path = REPO / (
+        "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json"
+    )
+    oatof = json.loads(geometry_path.read_text(encoding="utf-8"))
+    upstream, frontend = _minimal_program_contracts()
+    region = build_resolved_region_field_contract(
+        geometry_path, directory / "successor_resolved_region.json", profile_id
+    )
+    return build_successor_program(
+        upstream,
+        frontend,
+        oatof,
+        region,
+        birth_times_us=[0.25, 1.0],
+        analyzer_component_source=ANALYZER_COMPONENT_SOURCE,
+        pulse_hook_source=PULSE_HOOK_SOURCE,
+        frontend_hook_source=FRONTEND_HOOK_SOURCE,
+        rf_drive_kernel_source=RF_DRIVE_KERNEL_SOURCE,
+        rf_steps_per_period=160,
+        overlay=overlay,
+    ) + CALLBACK_TEST_CONTROL
 
 
 def _minimal_program_contracts() -> tuple[dict[str, object], dict[str, object]]:
@@ -103,6 +163,91 @@ def _minimal_program_contracts() -> tuple[dict[str, object], dict[str, object]]:
 
 
 class SingleFlightProgramTests(unittest.TestCase):
+    def test_staged_grid2_runner_omits_pulse_authority_and_enforces_instance_overlay(self) -> None:
+        runner = (
+            Path(__file__).resolve().parents[1] / "runtime" / "run_single_flight.ps1"
+        ).read_text(encoding="utf-8")
+        self.assertIn("$isStagedGrid2Restart -eq $hasPulseSchedule", runner)
+        self.assertIn("$runConfiguration.inputs.Remove('pulse_schedule')", runner)
+        self.assertIn("$runConfiguration.parameters.Remove('pulse_time_us')", runner)
+        self.assertIn("$runConfiguration.parameters.Remove('pulse_width_us')", runner)
+        self.assertIn("if ($isStagedGrid2Restart) { @() } else", runner)
+        self.assertIn(
+            "(($StagedGrid2StartInstance -eq 5) -ne [bool]$overlayEnabled)",
+            runner,
+        )
+        self.assertIn("authority_scope = 'connection_lineage_only'", runner)
+
+    def test_staged_grid2_uses_explicit_instance_ids_and_skips_upstream_runtime(self) -> None:
+        upstream, frontend = _minimal_program_contracts()
+        geometry_path = REPO / (
+            "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json"
+        )
+        oatof = json.loads(geometry_path.read_text(encoding="utf-8"))
+        with tempfile.TemporaryDirectory() as directory:
+            region = build_resolved_region_field_contract(
+                geometry_path, Path(directory) / "region.json", "accelerator_real_pa"
+            )
+        context = {
+            "role": "rf_oatof_staged_grid2_restart_context",
+            "source_release_mode": "staged_grid2_restart",
+            "population_mode": "staged_grid2_restart",
+            "state_event": "local_accelerator_exit", "frame_id": "oatof_global",
+            "clock_basis": "canonical_instrument_time_us",
+            "clock_epoch_id": "instrument_clock_epoch_v1",
+            "simion_start_instance": 3, "position_projection_applied": False,
+            "skip_frontend_runtime_writes": True,
+            "skip_pulse_runtime_writes": True,
+            "skip_accelerator_runtime_writes": True,
+            "preserve_analyzer_static_pa_initialization": True,
+            "preserve_downstream_base_then_override_field_semantics": True,
+            "preserve_detector_elapsed_semantics": True,
+            "resolution_claim_allowed": False,
+            "source_release_validation": _staged_source_release_validation_v2(),
+        }
+        program = build_successor_program(
+            upstream, frontend, oatof, region, birth_times_us=[36.0, 37.0],
+            particle_ids=[6, 97], restart_context=context,
+            analyzer_component_source=ANALYZER_COMPONENT_SOURCE,
+            pulse_hook_source=PULSE_HOOK_SOURCE,
+            frontend_hook_source=FRONTEND_HOOK_SOURCE,
+            rf_drive_kernel_source=RF_DRIVE_KERNEL_SOURCE,
+        )
+        self.assertIn("local single_flight_source_particle_id={[1]=6,[2]=97}", program)
+        self.assertIn("local single_flight_staged_grid2_restart=1", program)
+        self.assertIn("local single_flight_staged_grid2_start_instance=3", program)
+        self.assertIn("if single_flight_staged_grid2_restart~=0 then return end", program)
+        self.assertIn("single_flight_trace_checkpoint('local_accelerator_exit'", program)
+        self.assertIn("local result=single_flight_region_field.apply(base,state)", program)
+        legacy_context = copy.deepcopy(context)
+        legacy_context["source_release_validation"] = {
+            "position_rowwise_abs_tolerance_mm": 1e-9,
+            "velocity_rowwise_abs_tolerance_m_per_s": 1e-6,
+            "clock_abs_tolerance_us": 1e-9,
+            "energy_abs_tolerance_eV": 5e-9,
+        }
+        with self.assertRaisesRegex(ValueError, "resolved population v2 validation"):
+            build_successor_program(
+                upstream, frontend, oatof, region,
+                birth_times_us=[36.0, 37.0], particle_ids=[6, 97],
+                restart_context=legacy_context,
+                analyzer_component_source=ANALYZER_COMPONENT_SOURCE,
+                pulse_hook_source=PULSE_HOOK_SOURCE,
+                frontend_hook_source=FRONTEND_HOOK_SOURCE,
+                rf_drive_kernel_source=RF_DRIVE_KERNEL_SOURCE,
+            )
+        with self.assertRaisesRegex(ValueError, "instance/overlay mapping differs"):
+            build_successor_program(
+                upstream, frontend, oatof, region,
+                birth_times_us=[36.0, 37.0], particle_ids=[6, 97],
+                restart_context=context,
+                overlay={"role": "rf_oatof_simion_accelerator_overlay_contract"},
+                analyzer_component_source=ANALYZER_COMPONENT_SOURCE,
+                pulse_hook_source=PULSE_HOOK_SOURCE,
+                frontend_hook_source=FRONTEND_HOOK_SOURCE,
+                rf_drive_kernel_source=RF_DRIVE_KERNEL_SOURCE,
+            )
+
     def test_successor_has_one_workbench_and_one_definition_per_callback(self) -> None:
         upstream, frontend = _minimal_program_contracts()
         geometry_path = REPO / (
@@ -125,6 +270,10 @@ class SingleFlightProgramTests(unittest.TestCase):
             rf_drive_kernel_source=RF_DRIVE_KERNEL_SOURCE,
         )
         self.assertEqual(program.count("simion.workbench_program()"), 1)
+        self.assertIn("for index=1,#simion.wb.instances do", program)
+        self.assertIn("local instance=simion.wb.instances[index]", program)
+        self.assertNotIn("ipairs(simion.wb.instances)", program)
+        self.assertNotIn("pairs(simion.wb.instances)", program)
         for callback in (
             "load", "initialize_run", "efield_adjust", "fast_adjust",
             "instance_adjust", "initialize", "tstep_adjust", "other_actions",
@@ -190,259 +339,6 @@ class SingleFlightProgramTests(unittest.TestCase):
         self.assertNotIn('parser.add_argument("--formal"', active)
         self.assertNotIn('parser.add_argument("--pulse-extension"', active)
 
-    def test_rf_drive_kernel_source_is_required_without_live_repo_fallback(self) -> None:
-        upstream, frontend = _minimal_program_contracts()
-        with self.assertRaisesRegex(TypeError, "rf_drive_kernel_source"):
-            _build_extension(upstream, frontend, birth_times_us=[0.0])
-
-    def test_shared_rf_kernel_binding_preserves_drive_and_clock_contract(self) -> None:
-        upstream, frontend = _minimal_program_contracts()
-        upstream["drive"].update(
-            {
-                "waveform": "sine",
-                "phase_rad": 0.25,
-                "dc_amplitude_V_per_group": 3.5,
-                "common_mode_offset_V": 0.0,
-            }
-        )
-        extension = build_extension(
-            upstream,
-            frontend,
-            birth_times_us=[0.25, 1.0],
-            rf_steps_per_period=320,
-        )
-        for token in (
-            "adjustable single_flight_phase_rad=0.25",
-            "adjustable single_flight_dc_amplitude_v=3.5",
-            "adjustable single_flight_common_mode_scale=1",
-            "adjustable single_flight_rf_steps=320",
-            "waveform='sine'",
-            "group_dc_v={[1]=single_flight_dc_amplitude_v,[2]=-single_flight_dc_amplitude_v}",
-            "return birth+ion_time_of_flight",
-            "single_flight_rf_drive.timestep_cap_us",
-        ):
-            self.assertIn(token, extension)
-        apply_offset = extension.index(
-            "single_flight_rf_drive.apply_at(instrument_time_us,"
-        )
-        pulse_offset = extension.index("adj_elect[10]=pulse_on and V_repeller")
-        self.assertLess(apply_offset, pulse_offset)
-        self.assertNotIn("single_flight_base_efield_adjust", extension)
-        self.assertEqual(extension.count("function segment.fast_adjust()"), 1)
-        self.assertEqual(extension.count("function segment.tstep_adjust()"), 1)
-
-    def test_shared_rf_kernel_rejects_invalid_integration_inputs(self) -> None:
-        upstream, frontend = _minimal_program_contracts()
-        upstream["drive"]["waveform"] = "triangle"
-        with self.assertRaisesRegex(ValueError, "waveform must be sine or cosine"):
-            build_extension(upstream, frontend, birth_times_us=[0.0])
-
-        upstream["drive"]["waveform"] = "cosine"
-        with self.assertRaisesRegex(ValueError, "positive integer"):
-            build_extension(
-                upstream,
-                frontend,
-                birth_times_us=[0.0],
-                rf_steps_per_period=0,
-            )
-        with self.assertRaisesRegex(ValueError, "pure Lua boundary"):
-            build_extension(
-                upstream,
-                frontend,
-                birth_times_us=[0.0],
-                rf_drive_kernel_source="return ion_time_of_flight",
-            )
-
-    def test_minimal_generated_program_hash_is_characterized(self) -> None:
-        upstream, frontend = _minimal_program_contracts()
-        extension = build_extension(
-            upstream, frontend, birth_times_us=[0.25, 1.0]
-        )
-        self.assertEqual(
-            hashlib.sha256(extension.encode()).hexdigest(),
-            "934783f95ee444aa3120843733cfd31d45c7dcbe255910a9dafef5f477968954",
-        )
-
-    def test_program_rejects_frontend_outside_exact_published_basis(self) -> None:
-        upstream, frontend = _minimal_program_contracts()
-        frontend["electrodes"]["accelerator_grid2_id"] = 16
-        with self.assertRaisesRegex(ValueError, "published Program PA basis"):
-            build_extension(upstream, frontend, birth_times_us=[0.0])
-
-    def test_official_global_segments_follow_workbench_declaration(self) -> None:
-        program = enable_official_global_segments(
-            "simion.workbench_program()\nadjustable x=0\n"
-        )
-        self.assertTrue(
-            program.startswith(
-                "simion.workbench_program()\n"
-                "simion.early_access(8.2)\n"
-                "sim_segment_global = 1\n"
-            )
-        )
-
-    def test_parallel_program_does_not_readjust_frozen_ground_pas(self) -> None:
-        formal = (
-            REPO / "projects/single_reflection_oa_tof_mass_analyzer/simion/"
-            "workbench/formal/oatof_ideal_grounded.lua"
-        ).read_text()
-        prepared = disable_redundant_ground_fast_adjust(formal)
-        self.assertIn("r:fast_adjust(reflectron_voltages)", prepared)
-        self.assertNotIn("t:fast_adjust{[1]=0}", prepared)
-        self.assertNotIn("d:fast_adjust{[1]=0}", prepared)
-
-    def test_overlay_workbench_requires_gui_visible_fifth_instance(self) -> None:
-        formal = (
-            REPO / "projects/single_reflection_oa_tof_mass_analyzer/simion/"
-            "workbench/formal/oatof_ideal_grounded.lua"
-        ).read_text()
-        prepared = allow_accelerator_overlay_instance(formal)
-        self.assertIn("#simion.wb.instances==5", prepared)
-        self.assertIn("accelerator_overlay%.pa0", prepared)
-        self.assertNotIn("#simion.wb.instances==4", prepared)
-
-    def test_resolved_oatof_values_are_bound_into_program_defaults(self) -> None:
-        formal = (
-            REPO / "projects/single_reflection_oa_tof_mass_analyzer/simion/"
-            "workbench/formal/oatof_ideal_grounded.lua"
-        ).read_text()
-        oatof = json.loads(
-            (REPO / "projects/single_reflection_oa_tof_mass_analyzer/config/"
-             "resolved_geometry.json").read_text()
-        )
-        oatof["geometry_mm"]["L_stage2"] = 116.6151
-        oatof["geometry_mm"]["L_reflectron"] = 236.6151
-        oatof["electrodes_V"]["backplate"] = 2723.1999
-        bound = bind_oatof_adjustables(formal, oatof)
-        for name, expected in {
-            "V_backplate": 2723.1999,
-            "reflectron_stage2_length_mm": 116.6151,
-            "reflectron_backplate_z_mm": 836.6151,
-        }.items():
-            match = re.search(rf"(?m)^adjustable {name}=([^\r\n]+)$", bound)
-            self.assertIsNotNone(match)
-            self.assertAlmostEqual(float(match.group(1)), expected)
-
-    def test_frontend_electrode_schedule_keeps_rf_and_pulse_in_one_instance(self) -> None:
-        run = REPO.parent / "artifacts/projects/rf_octupole_ion_optics/runs/20260804_112000__sim__simion__oct-segmented-aperture050__n1000"
-        if not run.is_dir():
-            self.skipTest("local N=1000 octupole source artifact is unavailable")
-        upstream = json.loads((run / "inputs/multipole_resolved_design.json").read_text(encoding="utf-8-sig"))
-        oatof = json.loads((REPO / "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json").read_text())
-        connection = json.loads((REPO.parent / "artifacts/projects/rf_octupole_ion_optics/runs/20260804_125500__sim__simion__oct-aperture100x090-interface__n459/inputs/resolved_connection.json").read_text(encoding="utf-8-sig"))
-        upstream = copy.deepcopy(upstream)
-        upstream["axial_dc"]["upstream_shield_potential_V"] = 0.0
-        upstream["axial_dc"]["entrance_plate_potential_V"] = 3.0
-        upstream["axial_dc"]["entrance_reference_sleeve"] = {
-            "profile_id": "source_reference_sleeve_v1",
-            "role": "functional_source_reference_not_shield",
-            "potential_V": 3.0,
-            "inner_radius_mm": 1.0,
-            "outer_radius_mm": 1.4,
-            "upstream_face_z_mm": -2.5,
-            "downstream_face_z_mm": -0.1,
-            "minimum_insulation_gap_mm": 0.2,
-        }
-        upstream["downstream_terminal"]["terminal_potential_V"] = 0.0
-        connection["connector"].update({
-            "shield_connection_profile_id": "grounded_circular_to_rectangular_shield_v1",
-            "shield_potential_V": 0.0,
-            "flange_thickness_binding": "oatof.geometry_mm.accelerator_shield_wall",
-        })
-        _, frontend = compile_frontend(upstream, oatof, connection)
-        extension = build_extension(
-            upstream,
-            frontend,
-            birth_times_us=[0.25, 1.0],
-            terminate_after_pulse=True,
-        )
-        self.assertIn("OATOF_SINGLE_FLIGHT_PARTICLE_ID_OFFSET", extension)
-        self.assertNotIn("OATOF_ACCEL_PLANE_DIAGNOSTIC_PARTICLE_ID", extension)
-        self.assertIn(
-            "single_flight_birth_time_us[global_particle_id]", extension
-        )
-        self.assertIn("adj_elect[9]=0", extension)
-        self.assertIn("adj_elect[10]=pulse_on and V_repeller", extension)
-        self.assertIn("adj_elect[17]=0", extension)
-        self.assertIn("adj_elect[18]=3", extension)
-        self.assertIn("adj_elect[19]=3", extension)
-        self.assertIn("single_flight_handoff", extension)
-        self.assertIn("TRACE: source_release", extension)
-        self.assertNotIn(
-            "if trajectory_log_enable~=0 then\n"
-            "    print(string.format('TRACE: source_release",
-            extension,
-        )
-        self.assertIn("TRACE: pre_pulse_state", extension)
-        self.assertIn("TRACE: accelerator_grid1_forward", extension)
-        self.assertIn("single_flight_rf_steps=160", extension)
-        self.assertNotIn("accelerator_ring_quadratic_V", extension)
-        self.assertNotIn("accelerator_ring_cubic_V", extension)
-        self.assertIn("single_flight_accelerator_ring_voltage(1)", extension)
-        self.assertIn("return V_grid1*((6-index)/6)", extension)
-        self.assertNotIn("single_flight_absolute_birth_clock", extension)
-        self.assertIn("return birth+ion_time_of_flight", extension)
-        self.assertNotIn("ion_time_of_flight=birth", extension)
-        self.assertIn(
-            "single_flight_rf_drive.apply_at(instrument_time_us,"
-            "single_flight_set_rod_electrode)",
-            extension,
-        )
-        self.assertNotIn("single_flight_omega", extension)
-        self.assertIn("single_flight_terminate_after_pulse=1", extension)
-        self.assertIn("instrument_time_us>=handoff_pulse_time_us then ion_splat=1", extension)
-        self.assertNotIn("sf_ideal_accel", extension)
-        self.assertNotIn("OATOF_IDEAL_ACCEL", extension)
-        self.assertNotIn("function segment.efield_adjust()", extension)
-        self.assertIn("next_plane=accelerator_grid1_z_mm", extension)
-        self.assertIn("next_plane=accelerator_grid2_z_mm", extension)
-        self.assertIn("local crossing_time=distance/ion_vz_mm", extension)
-        self.assertIn("ion_time_step=crossing_time", extension)
-        self.assertIn("local single_flight_accel_plane_state={}", extension)
-        self.assertIn("single_flight_accel_state_for_current_particle()", extension)
-        self.assertIn("if state==nil then", extension)
-        self.assertIn("state=initialized", extension)
-        self.assertIn("accelerator plane state is invalid", extension)
-        self.assertNotIn("accelerator plane state is missing", extension)
-        self.assertIn("state[stage]='willhit'", extension)
-        self.assertIn("plane_state[stage]='hitting'", extension)
-        self.assertIn("plane_state[stage]='hitted'", extension)
-        self.assertIn("local crossed=p.z<plane and ion_pz_mm>=plane", extension)
-        self.assertIn("plane_state[stage..'_oa_count']==1", extension)
-        self.assertNotIn("accelerator_plane_tstep_diagnostic", extension)
-        self.assertNotIn("accelerator_plane_other_actions_diagnostic", extension)
-        self.assertIn("local coordinate_tolerance=32*2.2204460492503131e-16", extension)
-        self.assertIn("status=='willhit' and math.abs(distance)", extension)
-        self.assertIn("math.abs(distance)<=coordinate_tolerance", extension)
-        self.assertIn("ion_time_step=0", extension)
-        self.assertIn("state[stage]='hitting'", extension)
-        self.assertIn("plane_state[stage]='hitted'", extension)
-        self.assertIn("if not repeated_plane_evaluation then", extension)
-        self.assertNotIn("repeated_plane_evaluation then return", extension)
-        self.assertIn("accelerator plane crossing estimate made no representable time progress", extension)
-        self.assertNotIn("landing did not reach its governed boundary", extension)
-        self.assertIn("ion_pz_mm<accelerator_grid1_z_mm", extension)
-        self.assertNotIn("accelerator_focus_drift_mm then next_plane", extension)
-        self.assertNotIn("ion_pz_mm=next_plane", extension)
-        self.assertNotIn("sf_ideal_accel", extension)
-        self.assertNotIn("OATOF_IDEAL_ACCEL", extension)
-
-        _, overlay = compile_accelerator_overlay(
-            frontend, cell_mm_xyz={"x": 0.2, "y": 0.2, "z": 0.05}
-        )
-        overlay_extension = build_extension(
-            upstream,
-            frontend,
-            birth_times_us=[0.25, 1.0],
-            overlay=overlay,
-        )
-        self.assertIn("local single_flight_overlay_enabled=1", overlay_extension)
-        self.assertIn("simion.wb.instances[5]", overlay_extension)
-        self.assertIn("function segment.instance_adjust()", overlay_extension)
-        self.assertIn("di:inside_wc(ion_px_mm,ion_py_mm,ion_pz_mm)", overlay_extension)
-        self.assertIn("ion_pz_mm>=single_flight_overlay_active_z_max", overlay_extension)
-        self.assertIn("ion_instance==5", overlay_extension)
-
     def test_birth_times_are_loaded_as_contiguous_instrument_times(self) -> None:
         import tempfile
 
@@ -454,90 +350,6 @@ class SingleFlightProgramTests(unittest.TestCase):
             )
             self.assertEqual(load_birth_times(path), [0.25, 1.5])
 
-    def test_delayed_continuous_birth_initializes_plane_state_on_first_tstep(self) -> None:
-        upstream, frontend = _minimal_program_contracts()
-        extension = build_extension(upstream, frontend, birth_times_us=[41.079981])
-        initializer = extension.index(
-            "local function single_flight_accel_state_for_current_particle()"
-        )
-        tstep = extension.index("function segment.tstep_adjust()", initializer)
-        first_tstep_call = extension.index(
-            "local state=single_flight_accel_state_for_current_particle()", tstep
-        )
-        self.assertGreater(first_tstep_call, tstep)
-        self.assertIn(
-            "initialized_time=ion_time_of_flight,initialized_instance=ion_instance",
-            extension,
-        )
-
-    def test_plane_lifecycle_observes_crossing_only_after_completed_step(self) -> None:
-        upstream, frontend = _minimal_program_contracts()
-        extension = build_extension(upstream, frontend, birth_times_us=[41.079981])
-        tstep = extension.index("function segment.tstep_adjust()")
-        other_actions = extension.index("function segment.other_actions()", tstep)
-        request = extension.index("state[stage]='willhit'", tstep, other_actions)
-        observe = extension.index("plane_state[stage]='hitting'", other_actions)
-        finish = extension.index("plane_state[stage]='hitted'", observe)
-        self.assertLess(request, other_actions)
-        self.assertLess(other_actions, observe)
-        self.assertLess(observe, finish)
-        self.assertNotIn("pending_status=='willhit'", extension[tstep:other_actions])
-
-    def test_unrepresentable_spatial_progress_uses_one_zero_step_state_confirmation(self) -> None:
-        upstream, frontend = _minimal_program_contracts()
-        extension = build_extension(upstream, frontend, birth_times_us=[41.081286])
-        tstep = extension.index("function segment.tstep_adjust()")
-        other_actions = extension.index("function segment.other_actions()", tstep)
-        zero_request = extension.index("ion_time_step=0", tstep, other_actions)
-        hitting = extension.index("state[stage]='hitting'", tstep, other_actions)
-        hitted = extension.index("plane_state[stage]='hitted'", other_actions)
-        self.assertLess(hitting, zero_request)
-        self.assertLess(zero_request, other_actions)
-        self.assertLess(other_actions, hitted)
-        self.assertIn("state[stage..'_zero_step_count']==1", extension)
-        self.assertNotIn("ion_pz_mm=next_plane", extension)
-
-    def test_reflectron_checkpoints_are_ordered_particle_resolved_states(self) -> None:
-        upstream, frontend = _minimal_program_contracts()
-        extension = build_extension(upstream, frontend, birth_times_us=[0.0])
-        checkpoint_events = [
-            "reflectron_entrance_forward",
-            "reflectron_midgrid_forward",
-            "reflectron_turning_point",
-            "reflectron_exit_return",
-        ]
-        checkpoint_offsets = [extension.index(name) for name in checkpoint_events]
-        self.assertEqual(checkpoint_offsets, sorted(checkpoint_offsets))
-        for name in checkpoint_events:
-            self.assertEqual(
-                extension.count(f"single_flight_trace_checkpoint('{name}'"), 1
-            )
-        self.assertIn(
-            "particle_id=%d instrument_time_us=%.12g tof_since_pulse_us=%.12g",
-            extension,
-        )
-        self.assertIn(
-            "kinetic_energy_eV=%.12g survival_status=alive", extension
-        )
-        self.assertIn(
-            "global_particle_id=ion_number+single_flight_particle_id_offset",
-            extension,
-        )
-        self.assertIn(
-            "single_flight_reflectron_midgrid_reported[ion_number] and not "
-            "single_flight_reflectron_turning_reported[ion_number] and p.vz>0",
-            extension,
-        )
-        self.assertIn(
-            "single_flight_reflectron_turning_reported[ion_number]=true",
-            extension,
-        )
-        self.assertIn(
-            "single_flight_reflectron_turning_reported[ion_number] and not "
-            "single_flight_reflectron_exit_reported",
-            extension,
-        )
-
     def test_replay_birth_times_use_contiguous_simulation_particle_ids(self) -> None:
         import tempfile
 
@@ -548,6 +360,108 @@ class SingleFlightProgramTests(unittest.TestCase):
                 encoding="utf-8",
             )
             self.assertEqual(load_birth_times(path), [31.8, 31.8])
+
+    @unittest.skipUnless(SIMION.is_file(), "official SIMION Lua CLI unavailable")
+    def test_official_simion_cli_successor_callback_vectors(self) -> None:
+        overlay = {
+            "role": "rf_oatof_simion_accelerator_overlay_contract",
+            "instance_origin_mm": {"x": 10.0, "y": 20.0, "z": 30.0},
+            "active_bounds_mm": {
+                "x_min": 0.0, "x_max": 100.0, "y_min": 0.0,
+                "y_max": 100.0, "z_min": 0.0, "z_max": 100.0,
+            },
+        }
+        cases = (
+            ("successor", "accelerator_real_pa", None),
+            ("successor_full_ideal", "full_domain_piecewise_ideal_field", None),
+            ("successor_overlay", "accelerator_real_pa", overlay),
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            for mode, profile_id, selected_overlay in cases:
+                with self.subTest(mode=mode):
+                    program = directory / f"{mode}.lua"
+                    program.write_text(
+                        _successor_callback_program(
+                            directory, profile_id=profile_id,
+                            overlay=selected_overlay,
+                        ),
+                        encoding="utf-8", newline="\n",
+                    )
+                    result = subprocess.run(
+                        [str(SIMION), "--nogui", "--noprompt", "lua",
+                         str(CALLBACK_HARNESS), str(program), mode],
+                        cwd=REPO, check=False, capture_output=True, text=True,
+                        encoding="utf-8", errors="replace",
+                        env={**os.environ,
+                             "OATOF_ACCELERATOR_PA_OVERRIDE": "frontend.pa0"},
+                        timeout=20,
+                    )
+                    self.assertEqual(
+                        result.returncode, 0, result.stderr + result.stdout
+                    )
+                    self.assertIn(
+                        "SUCCESSOR_SINGLE_FLIGHT_CALLBACKS=PASS", result.stdout
+                    )
+
+    @unittest.skipUnless(SIMION.is_file(), "official SIMION Lua CLI unavailable")
+    def test_official_simion_cli_rejects_wrong_iob_or_override(self) -> None:
+        overlay = {
+            "role": "rf_oatof_simion_accelerator_overlay_contract",
+            "instance_origin_mm": {"x": 10.0, "y": 20.0, "z": 30.0},
+            "active_bounds_mm": {
+                "x_min": 0.0, "x_max": 100.0, "y_min": 0.0,
+                "y_max": 100.0, "z_min": 0.0, "z_max": 100.0,
+            },
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            normal = directory / "successor_negative.lua"
+            normal.write_text(
+                _successor_callback_program(directory), encoding="utf-8", newline="\n"
+            )
+            overlaid = directory / "successor_overlay_negative.lua"
+            overlaid.write_text(
+                _successor_callback_program(directory, overlay=overlay),
+                encoding="utf-8", newline="\n",
+            )
+            for program, mode in (
+                (normal, "successor_reject_count"),
+                (normal, "successor_reject_slot3"),
+                (overlaid, "successor_overlay_reject_slot3"),
+                (overlaid, "successor_overlay_reject_slot5"),
+            ):
+                with self.subTest(mode=mode):
+                    result = subprocess.run(
+                        [str(SIMION), "--nogui", "--noprompt", "lua",
+                         str(CALLBACK_HARNESS), str(program), mode],
+                        cwd=REPO, check=False, capture_output=True, text=True,
+                        encoding="utf-8", errors="replace",
+                        env={**os.environ,
+                             "OATOF_ACCELERATOR_PA_OVERRIDE": "frontend.pa0"},
+                        timeout=20,
+                    )
+                    self.assertEqual(
+                        result.returncode, 0, result.stderr + result.stdout
+                    )
+                    self.assertIn(
+                        f"SUCCESSOR_FORMAL_IOB_NEGATIVE=PASS MODE={mode}",
+                        result.stdout,
+                    )
+            wrong = subprocess.run(
+                [str(SIMION), "--nogui", "--noprompt", "lua",
+                 str(CALLBACK_HARNESS), str(normal), "successor"],
+                cwd=REPO, check=False, capture_output=True, text=True,
+                encoding="utf-8", errors="replace",
+                env={**os.environ,
+                     "OATOF_ACCELERATOR_PA_OVERRIDE": "wrong.pa0"},
+                timeout=20,
+            )
+            self.assertNotEqual(wrong.returncode, 0)
+            self.assertIn(
+                "accelerator override payload basename differs",
+                wrong.stderr + wrong.stdout,
+            )
 
     def test_field_switches_are_absent_and_overlay_keeps_geometry_role(self) -> None:
         text = (REPO / "integrations" /

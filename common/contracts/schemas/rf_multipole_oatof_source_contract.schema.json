@@ -45,6 +45,7 @@
       "properties": {
         "schema_version": {"const": 2},
         "role": {"const": "rf_multipole_oatof_source_contract"},
+        "authority_scope": {"enum": ["source_population", "connection_lineage_only"]},
         "upstream_project_id": {"$ref": "#/$defs/identifier"},
         "selector": {"$ref": "#/$defs/selector"},
         "adapter": {"$ref": "#/$defs/family_adapter"},

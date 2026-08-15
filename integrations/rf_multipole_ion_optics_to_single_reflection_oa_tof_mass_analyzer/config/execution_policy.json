@@ -39,7 +39,7 @@
     "single_flight_transport": {
       "solver": "simion",
       "wall_clock_seconds": 3600,
-      "transient_run_directory_bytes": 6442450944,
+      "transient_run_directory_bytes": 12884901888,
       "process_tree_working_set_bytes": 34359738368,
       "minimum_system_available_memory_bytes": 4294967296,
       "compact_final_retained_bytes": 26214400,
