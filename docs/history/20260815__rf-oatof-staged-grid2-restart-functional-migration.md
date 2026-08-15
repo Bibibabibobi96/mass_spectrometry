@@ -700,3 +700,32 @@ r01 campaign保持SHA-256
 `single_flight_pa_cache_policy: require_existing -> build_and_publish_if_missing`；删除这三个执行/身份差异
 后规范JSON深比较为零。该策略复用唯一官方runner已有的原子构建发布路径，不增加第二实现。本节当前只
 登记solver-free继任，尚未授权或执行r02 SolverAuthorized。
+
+### C5.6 loader characterization receipt compact-v2 迁移
+
+本轮只迁移Git内逐点诊断证据的存储形态，不改变任何科学阈值、生产消费者字段、SIMION输入或历史
+campaign。迁移前两份schema-v1 JSON分别为：
+
+|旧Git receipt|bytes|lines|冻结SHA-256|
+|---|---:|---:|---|
+|`staged_grid2_n34_simion_fly2_loader_ab_characterization.json`|623508|15669|`08E4C988D0D64C5B6D4EC50F64B74D3C439D06AFABCDAF07E57D66A74126E0E5`|
+|`staged_grid2_n34_simion_fly2_loader_authorization_budget.json`|311736|7828|`3C55554E41C9D016C3A2DEC8CB11DC1FFC1436FC843805D0E8987CDE32CDF1FE`|
+
+确定性迁移run为
+`20260815_223500__migration__repo__staged-grid2-loader-receipt-compact-v2`。其受管ZIP
+`results/staged_grid2_n34_simion_fly2_loader_raw_receipts.zip`为53068 bytes，SHA-256为
+`86DB4FB500C2C9EF1FDD32541CACD9A0D054D190D572B6CF5EAFE12C9C59C559`；固定member顺序、1980-01-01
+时间戳、Unix 0644权限和DEFLATE level 9。ZIP内两份member逐字节恢复上述旧JSON，member bytes和SHA-256
+均被冻结，并由测试验证可从旧raw确定性重建当前compact summary。
+
+Git中的两份receipt现为既有schema的version 2 compact summary：characterization为8822 bytes/181行，
+SHA-256为`3154AD9FF08660C3636FFBBD80A16BCE38956E55DB04EBD3592A2C24BAEAD74C`；authorization
+budget为4985 bytes/96行，SHA-256为
+`B8BEB73EB1F6B1650A6AB4FA5E50784169CDB7FCCE0A3BB044A765ED10E72B32`。前者删除四个逐点数组，后者
+删除两个逐点数组；所有production消费者字段保留，两份summary共享同一个`raw_evidence`描述符。
+`prepare.py`最小兼容schema v1/v2；v2只校验受管容器path/bytes/SHA和冻结member描述，不在运行时解压。
+
+r06/r07/r08及其run artifact保持immutable；r08子run仍保存旧authorization budget的exact-byte副本。
+本迁移未执行SIMION、未生成新科学结果，也不改变既有NO-GO/GO结论。项目级artifact layout的既存失败只来自
+此前不完整且待外部删除的`20260815_120000__sim__cross__staged-grid2-restart-legacy__n34__r02`，不得在本迁移中
+伪造补齐；compact-v2迁移run自身`run_config.json`、`summary.json`、`run_manifest.json`三件套完整。

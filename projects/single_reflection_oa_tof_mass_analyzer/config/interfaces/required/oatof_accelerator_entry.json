@@ -11,7 +11,7 @@
   },
   "authority": {
     "source_contract": "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json",
-    "source_sha256": "0BC154D0A4F7EAB8EE560DC691E0E62EC26F55928E2035406A2D6DF11E4D42F9",
+    "source_sha256": "F9C2152E5B1216242D6605A990BA40DC4586D5A278DFE3B1B3D59ABD9DC941A3",
     "bindings": [
       {
         "port_json_pointer": "/coordinate_frame/frame_id",

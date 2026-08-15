@@ -14,94 +14,68 @@ MIGRATION = INTEGRATION / "config/family_source_closure_legacy_attribution_migra
 HISTORICAL_CAMPAIGN = INTEGRATION / "config/pulse_resolution_optimization_campaign.json"
 FAILED_DIRECT_CAMPAIGN = INTEGRATION / "config/pulse_resolution_direct_campaign.json"
 FAILED_R01_CAMPAIGN = INTEGRATION / "config/pulse_resolution_direct_baseline_successor_campaign.json"
+CURRENT_BASELINE_CAMPAIGN = (
+    INTEGRATION / "config/pulse_resolution_direct_baseline_successor_r09_campaign.json"
+)
+CURRENT_CANDIDATE_CAMPAIGN = (
+    INTEGRATION / "config/pulse_resolution_direct_candidate_successor_r03_campaign.json"
+)
 
 
 class FamilySourceClosureLegacyAttributionMigrationTests(unittest.TestCase):
-    def test_published_historical_campaign_has_immutable_non_executable_disposition(
-        self,
-    ) -> None:
+    def test_terminal_campaign_dispositions_bind_immutable_bytes_and_status(self) -> None:
         contract = json.loads(MIGRATION.read_text(encoding="utf-8"))
+        historical = {
+            Path(row["path"]).name: row for row in contract["historical_campaigns"]
+        }
+        failed_names = {
+            "pulse_resolution_direct_baseline_successor_campaign.json",
+            *{
+                f"pulse_resolution_direct_baseline_successor_r{revision:02d}_campaign.json"
+                for revision in range(2, 8)
+            },
+            "pulse_resolution_direct_candidate_successor_r01_campaign.json",
+            "pulse_resolution_direct_candidate_successor_r02_campaign.json",
+        }
         self.assertEqual(
-            contract["historical_campaigns"][0],
             {
-                "path": (
-                    "integrations/"
-                    "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/"
-                    "config/pulse_resolution_optimization_campaign.json"
+                name
+                for name, row in historical.items()
+                if row.get("external_status") == "failed"
+            }
+            & failed_names,
+            failed_names,
+        )
+        current = {
+            Path(row["path"]).name: row
+            for row in contract["current_evidence_campaigns"]
+        }
+        self.assertEqual(
+            {
+                name: (row["external_status"], row["disposition"])
+                for name, row in current.items()
+            },
+            {
+                CURRENT_BASELINE_CAMPAIGN.name: (
+                    "published_evidence", "non_executable_published_evidence"
                 ),
-                "head_blob_sha1": "4a5f167f21e16a5c1c0cc658015ac588280427bf",
-                "content_sha256": (
-                    "2a8fa4fef8ff1fd53a2991862edaca36ce23ff3e0812d5cd8a8907697e61e524"
+                CURRENT_CANDIDATE_CAMPAIGN.name: (
+                    "completed", "non_executable_completed_evidence"
                 ),
-                "disposition": "non_executable_historical_evidence",
             },
         )
-        self.assertEqual(
-            hashlib.sha256(HISTORICAL_CAMPAIGN.read_bytes()).hexdigest(),
-            contract["historical_campaigns"][0]["content_sha256"],
-        )
+        for row in (*contract["historical_campaigns"], *current.values()):
+            campaign = REPO_ROOT / row["path"]
+            self.assertEqual(
+                hashlib.sha256(campaign.read_bytes()).hexdigest(),
+                row["content_sha256"],
+            )
+        historical_head = contract["historical_campaigns"][0]
         head_blob = subprocess.run(
-            ["git", "rev-parse", f"HEAD:{HISTORICAL_CAMPAIGN.relative_to(REPO_ROOT).as_posix()}"],
-            cwd=REPO_ROOT,
-            text=True,
-            encoding="utf-8",
-            capture_output=True,
-            check=True,
+            ["git", "rev-parse", f"HEAD:{historical_head['path']}"],
+            cwd=REPO_ROOT, text=True, encoding="utf-8", capture_output=True, check=True,
         ).stdout.strip()
-        self.assertEqual(head_blob, contract["historical_campaigns"][0]["head_blob_sha1"])
-        failed = contract["historical_campaigns"][1]
-        self.assertEqual(
-            failed,
-            {
-                "path": (
-                    "integrations/"
-                    "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/"
-                    "config/pulse_resolution_direct_campaign.json"
-                ),
-                "content_sha256": (
-                    "e4ac9275b4970721088797ad67dac979d84d4bdf7fce52003dd554daa78ad47b"
-                ),
-                "disposition": "non_executable_historical_evidence",
-                "failed_run_id": (
-                    "20260815_160000__sim__cross__pulse-direct-real-rr__n100"
-                ),
-                "failed_run_manifest_sha256": (
-                    "477a8ba8822256ac585f9db64f443d51b3c525660904d95738896d928c8bf994"
-                ),
-                "failure_stage": "governed_child_execution_or_publication",
-            },
-        )
-        self.assertEqual(
-            hashlib.sha256(FAILED_DIRECT_CAMPAIGN.read_bytes()).hexdigest(),
-            failed["content_sha256"],
-        )
-        failed_r01 = contract["historical_campaigns"][2]
-        self.assertEqual(
-            failed_r01,
-            {
-                "path": (
-                    "integrations/"
-                    "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/"
-                    "config/pulse_resolution_direct_baseline_successor_campaign.json"
-                ),
-                "content_sha256": (
-                    "d9f66c43a702dc52ff113a5c5a87e97cf391d6183a9b0915a053ff4993728904"
-                ),
-                "disposition": "non_executable_historical_evidence",
-                "failed_run_id": (
-                    "20260815_160000__sim__cross__pulse-direct-real-rr__n100__r01"
-                ),
-                "failed_run_manifest_sha256": (
-                    "6860d9d13ac0a65ea6d9476277ea9f5f4289fd359792d8861364518b4f1804a5"
-                ),
-                "failure_stage": "governed_child_execution_or_publication",
-                "failure_reason_stage": "frontend_pa_cache_miss_required_existing",
-            },
-        )
-        self.assertEqual(
-            hashlib.sha256(FAILED_R01_CAMPAIGN.read_bytes()).hexdigest(),
-            failed_r01["content_sha256"],
-        )
+        self.assertEqual(head_blob, historical_head["head_blob_sha1"])
 
     def test_public_execute_rejects_historical_campaign_in_all_modes_without_output(
         self,
@@ -150,7 +124,7 @@ class FamilySourceClosureLegacyAttributionMigrationTests(unittest.TestCase):
                         )
                         output = completed.stdout + completed.stderr
                         self.assertNotEqual(completed.returncode, 0)
-                        self.assertIn("non-executable historical evidence", output)
+                        self.assertIn("registered non-executable evidence", output)
                         self.assertNotIn("CAMPAIGN_SOURCE_BINDINGS", output)
                 self.assertEqual(
                     campaign_sha256_before,
@@ -159,6 +133,41 @@ class FamilySourceClosureLegacyAttributionMigrationTests(unittest.TestCase):
             self.assertFalse(prepare_output.exists())
         self.assertEqual(scratch_before, children(artifact_root / "scratch"))
         self.assertEqual(runs_before, children(artifact_root / "runs"))
+
+    def test_all_terminal_authorized_campaigns_are_non_executable(self) -> None:
+        contract = json.loads(MIGRATION.read_text(encoding="utf-8"))
+        execute = INTEGRATION / "workflows/family_source_closure/execute.ps1"
+        rows = [
+            row
+            for row in (
+                *contract["historical_campaigns"],
+                *contract["current_evidence_campaigns"],
+            )
+            if json.loads((REPO_ROOT / row["path"]).read_text(encoding="utf-8"))[
+                "status"
+            ] == "authorized"
+        ]
+        for row in rows:
+            campaign_path = REPO_ROOT / row["path"]
+            campaign = json.loads(campaign_path.read_text(encoding="utf-8"))
+            completed = subprocess.run(
+                [
+                    "pwsh", "-NoProfile", "-File", str(execute),
+                    "-Campaign", row["path"],
+                    "-ExperimentId", campaign["experiments"][0]["experiment_id"],
+                    "-SolverAuthorized",
+                ],
+                cwd=REPO_ROOT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                capture_output=True,
+                check=False,
+            )
+            output = completed.stdout + completed.stderr
+            self.assertNotEqual(completed.returncode, 0, row["path"])
+            self.assertIn("registered non-executable evidence", output)
+            self.assertNotIn("CAMPAIGN_SOURCE_BINDINGS", output)
 
     def test_all_legacy_arms_have_one_explicit_disposition(self) -> None:
         contract = json.loads(MIGRATION.read_text(encoding="utf-8"))

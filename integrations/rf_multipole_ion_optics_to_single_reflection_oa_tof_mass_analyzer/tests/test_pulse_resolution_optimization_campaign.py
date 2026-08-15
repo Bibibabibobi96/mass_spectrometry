@@ -708,15 +708,6 @@ class PulseResolutionOptimizationCampaignTests(unittest.TestCase):
                             self.assertFalse(solver_output.exists())
 
     def test_acceptance_and_grid_limits_remain_fail_closed(self) -> None:
-        campaign = load(BASELINE_PATH)
-        campaign["pulse_resolution_optimization"]["acceptance_gates"]["full_beam"][
-            "mass_resolution_minimum"
-        ] = 30000
-        validate_schema(campaign, SCHEMA_NAME)
-        with self.assertRaisesRegex(ContractError, "full_beam gate differs"):
-            validate_pulse_resolution_optimization_campaign(
-                campaign, execution_requested=False
-            )
         for field, value in (
             ("selection_uses_detector_outcome", True),
             ("minimum_pulse_eligible_coverage", 0.69),

@@ -15,7 +15,7 @@
 |---|---|
 | 连接拓扑与端口 | [`connection_profiles.json`](../config/connection_profiles.json) |
 | 声明式实验 | [`experiment_campaign.json`](../config/experiment_campaign.json) |
-| 脉冲分辨率优化 | [`pulse_resolution_direct_baseline_successor_r06_campaign.json`](../config/pulse_resolution_direct_baseline_successor_r06_campaign.json) |
+| 脉冲分辨率当前证据 | baseline [`pulse_resolution_direct_baseline_successor_r09_campaign.json`](../config/pulse_resolution_direct_baseline_successor_r09_campaign.json)；candidate [`pulse_resolution_direct_candidate_successor_r03_campaign.json`](../config/pulse_resolution_direct_candidate_successor_r03_campaign.json) |
 | 执行适配 | [`execution_adapter_profiles.json`](../config/execution_adapter_profiles.json) |
 | 单流程布局 | [`single_flight_layout_profiles.json`](../config/single_flight_layout_profiles.json) |
 | runtime bindings | [`config/`](../config/)中的`*_runtime_binding.json` |
@@ -224,27 +224,16 @@ scratch `6,741,298`和正式successor接管后的最后2个scratch `1,871,436`�
 
 ## 脉冲分辨率优化能力与边界
 
-[`pulse_resolution_direct_baseline_successor_r06_campaign.json`](../config/pulse_resolution_direct_baseline_successor_r06_campaign.json)已在
-既有campaign Schema和唯一`family_source_closure`执行入口内注册，没有建立第二套CLI、物理模型或运行树。
-该文件只含单行、`authorized`的direct-v5-r06 N=100全真实场baseline登记；旧r01
-`pulse_resolution_direct_baseline_successor_campaign.json`因精确frontend PA cache缺失而失败，保持原字节并
-登记为`non_executable_historical_evidence`。r02以官方runner构建并发布缺失cache，但实际cohort与迁移前
-D46986 checkpoint不同，故在baseline分析阶段失败并保持历史证据；r03复用其精确cache、恢复
-`require_existing`，只修复身份和cohort权威语义。r03在求解器启动前因PowerShell StrictMode直接读取
-合法缺省的paired cohort字段而失败；r04修复首次读取后，又在同一runner稍后的registration-source
-组装处以点属性重复读取该缺省字段，仍在cache lookup和SIMION之前失败。r05只更换身份，并把该字段的
-全部runner访问统一为一次`PSObject.Properties`存在性判断：baseline不写该键，candidate才写入冻结权威。
-r05随后被官方cache完整性门禁阻断：frontend `pa19`发生单字节SHA漂移，未进入Fly/build/refine。r06仅更换
-身份、授权重建缺失cache，并使全部SIMION PA消费者使用run-local物理副本；overlay身份绑定完整frontend
-cache key，构建后以现有全payload verifier复核源cache。r05已封存为不可执行历史证据。
-更早的
-[`pulse_resolution_direct_campaign.json`](../config/pulse_resolution_direct_campaign.json)保持失败尝试时的原字节，
-已按内容SHA和失败run identity登记为`non_executable_historical_evidence`；
-[`pulse_resolution_direct_candidate_campaign.json`](../config/pulse_resolution_direct_candidate_campaign.json)
-单独保存三行候选模板，状态为`PENDING_PREREGISTRATION`，不得执行。已发布的
-`pulse_resolution_optimization_campaign.json`保持原路径与字节，只作为
-`non_executable_historical_evidence`，唯一入口在binding检查和任何输出前对`ValidateOnly`、
-`PrepareOnly`及`SolverAuthorized`三种模式统一拒绝它。
+当前baseline证据由
+[`pulse_resolution_direct_baseline_successor_r09_campaign.json`](../config/pulse_resolution_direct_baseline_successor_r09_campaign.json)
+发布，三行candidate完成证据由
+[`pulse_resolution_direct_candidate_successor_r03_campaign.json`](../config/pulse_resolution_direct_candidate_successor_r03_campaign.json)
+发布。两者以及此前失败的baseline r01–r07、candidate r01–r02均保持原字节；唯一既有
+[`family_source_closure_legacy_attribution_migration.json`](../config/family_source_closure_legacy_attribution_migration.json)
+按内容SHA登记外部终态和不可执行处置。入口在source binding、prepare及任何输出之前，对已登记终态
+campaign的`ValidateOnly`、`PrepareOnly`和`SolverAuthorized`统一拒绝，避免文件内历史`authorized`
+状态成为第二活动权威。`pulse_resolution_direct_candidate_campaign.json`仍为
+`PENDING_PREREGISTRATION`模板；没有建立第二套CLI、物理模型、registry或运行树。
 
 baseline不再把迁移前D46986的`66/50/16`作为当前官方输运权威。prepare只冻结同一source-release
 N=100、源身份和pulse clock，并由既有`pulse_resolution_execution_mode`派生
@@ -256,10 +245,8 @@ N=100、源身份和pulse clock，并由既有`pulse_resolution_execution_mode`�
 `solver_execution_performed=true`、四组成员及digest逐组精确复用。当前pending模板不含该证据，也不授权任何候选、N=1000、COMSOL、
 qualification或promotion运行。
 
-当前唯一可执行行的solver-free验证命令为：
-`pwsh integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/workflows/family_source_closure/execute.ps1 -Campaign integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/pulse_resolution_direct_baseline_successor_r06_campaign.json -ExperimentId pulse_resolution_baseline -ValidateOnly`。
-该命令通过只证明输入、身份、编排和失败关闭完整；本轮没有执行`SolverAuthorized`、SIMION Fly、refine或
-PA写入，也没有产生新的分辨率结果。
+当前r09/r03已经发布终态证据，不得复用原run identity重跑；下一次执行必须形成新的campaign和run身份，
+再经同一`family_source_closure`入口校验与执行。
 
 SIMION单飞分析现以`detector_time_minus_pulse_effective_time`为唯一分辨率时钟；absolute instrument
 clock只保留诊断语义，不能形成分辨率声明。输出分别保留完整pulse-eligible队列的峰与传输、冻结理论窗

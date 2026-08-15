@@ -9,13 +9,24 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.sync_geometry_cont
     PROJECT_ROOT,
     frozen_fly2_seed,
     load_contract,
+    render_authority_document,
     render_fly2,
-    render_numerics_authority_document,
+    render_optimization_envelope,
+    render_resolved_lua,
 )
 from common.contracts.machine_contracts import sha256
 
 
 class SyncGeometryContractTests(unittest.TestCase):
+    def test_grid_policy_names_the_official_zero_width_one_row_model(self) -> None:
+        contract = load_contract()
+        expected = (
+            "zero-grid-unit-thick one-row full-aperture 100%-transmission "
+            "ideal electrode sheet"
+        )
+        self.assertEqual(contract["grid_policy"]["baseline"], expected)
+        self.assertIn(f'baseline="{expected}"', render_resolved_lua(contract))
+
     def test_fly2_seed_remains_a_run_instance_binding(self) -> None:
         contract = load_contract()
         self.assertNotIn("seed", contract["particle_source"])
@@ -42,12 +53,21 @@ class SyncGeometryContractTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "exactly one"):
                 frozen_fly2_seed(fly2)
 
-    def test_campaign_numerics_authority_is_compiled_by_the_same_sync_chain(self) -> None:
+    def test_campaign_authorities_are_compiled_by_the_same_sync_chain(self) -> None:
         campaign = PROJECT_ROOT / "config" / "experiment_campaign.json"
-        rendered = json.loads(render_numerics_authority_document(campaign))
+        envelope_source = render_optimization_envelope()
+        rendered = json.loads(render_authority_document(campaign, envelope_source))
+        self.assertEqual(
+            rendered["authorities"]["baseline"]["sha256"],
+            sha256(PROJECT_ROOT / "config" / "baseline.json"),
+        )
         self.assertEqual(
             rendered["authorities"]["solver_numerics"]["sha256"],
             sha256(PROJECT_ROOT / "config" / "formal_solver_numerics.json"),
+        )
+        self.assertEqual(
+            rendered["authorities"]["optimization_envelope"]["sha256"],
+            sha256(PROJECT_ROOT / "config" / "optimization_envelope.json"),
         )
 
 

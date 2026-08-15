@@ -20,6 +20,8 @@ import re
 import shutil
 import subprocess
 import tempfile
+import zipfile
+from io import BytesIO
 from pathlib import Path
 
 from common.contracts.particle_physics import kinetic_energy_ev
@@ -55,6 +57,50 @@ OFFICIAL_SPEED_TO_KE_EXAMPLE = (
 )
 EXPECTED_SOURCE_SHA256 = (
     "66F88F513F8FA20AB55C35A15A41CC9DA7E8FC62FAB19781BA7E1CEAD6350019"
+)
+RAW_EVIDENCE_RUN_ID = (
+    "20260815_223500__migration__repo__staged-grid2-loader-receipt-compact-v2"
+)
+RAW_EVIDENCE_CONTAINER = (
+    WORKSPACE
+    / "artifacts/projects/"
+    "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs"
+    / RAW_EVIDENCE_RUN_ID
+    / "results/staged_grid2_n34_simion_fly2_loader_raw_receipts.zip"
+)
+RAW_EVIDENCE_DESCRIPTOR = {
+    "role": "rf_oatof_simion_fly2_loader_raw_receipt_evidence",
+    "producer_run_id": RAW_EVIDENCE_RUN_ID,
+    "retention_class": "compact",
+    "container": {
+        "path": RAW_EVIDENCE_CONTAINER.relative_to(WORKSPACE).as_posix(),
+        "bytes": 53068,
+        "sha256": "86DB4FB500C2C9EF1FDD32541CACD9A0D054D190D572B6CF5EAFE12C9C59C559",
+        "format": "zip_deflate_fixed_metadata_v1",
+    },
+    "members": [
+        {
+            "name": RECEIPT.name,
+            "bytes": 623508,
+            "sha256": "08E4C988D0D64C5B6D4EC50F64B74D3C439D06AFABCDAF07E57D66A74126E0E5",
+        },
+        {
+            "name": AUTHORIZATION_RECEIPT.name,
+            "bytes": 311736,
+            "sha256": "3C55554E41C9D016C3A2DEC8CB11DC1FFC1436FC843805D0E8987CDE32CDF1FE",
+        },
+    ],
+    "runtime_decompression_required": False,
+}
+CHARACTERIZATION_RAW_FIELDS = (
+    "diagnostic_direct_velocity_threshold_observations",
+    "official_ke_direction_threshold_observations",
+    "diagnostic_direct_velocity_exact_vector_witnesses",
+    "official_ke_direction_exact_vector_pass_witnesses",
+)
+AUTHORIZATION_RAW_FIELDS = (
+    "production_threshold_observations",
+    "production_n34_exact_vector_witnesses",
 )
 PRODUCTION_RENDERER = (
     REPO
@@ -96,6 +142,64 @@ def _sha256(path: Path) -> str:
 def _canonical_json_sha256(value: object) -> str:
     encoded = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(encoded).hexdigest().upper()
+
+
+def _json_bytes(value: object) -> bytes:
+    return (json.dumps(value, indent=2) + "\n").encode()
+
+
+def _deterministic_raw_evidence_zip(documents: dict[str, bytes]) -> bytes:
+    """Return a fixed-metadata ZIP that preserves each receipt's exact bytes."""
+
+    buffer = BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        for name in sorted(documents):
+            info = zipfile.ZipInfo(name, (1980, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.create_system = 3
+            info.external_attr = 0o100644 << 16
+            archive.writestr(
+                info,
+                documents[name],
+                compress_type=zipfile.ZIP_DEFLATED,
+                compresslevel=9,
+            )
+    return buffer.getvalue()
+
+
+def _compact_receipt(
+    receipt: dict[str, object], raw_fields: tuple[str, ...]
+) -> dict[str, object]:
+    compact = dict(receipt)
+    for field in raw_fields:
+        compact.pop(field)
+    compact["schema_version"] = 2
+    compact["raw_evidence"] = RAW_EVIDENCE_DESCRIPTOR
+    return compact
+
+
+def _verify_raw_evidence(documents: dict[str, bytes]) -> None:
+    container = RAW_EVIDENCE_DESCRIPTOR["container"]
+    if (
+        not RAW_EVIDENCE_CONTAINER.is_file()
+        or RAW_EVIDENCE_CONTAINER.stat().st_size != container["bytes"]
+        or _sha256(RAW_EVIDENCE_CONTAINER) != container["sha256"]
+    ):
+        raise ValueError("loader raw-evidence ZIP identity differs")
+    if _deterministic_raw_evidence_zip(documents) != RAW_EVIDENCE_CONTAINER.read_bytes():
+        raise ValueError("loader raw-evidence ZIP is not deterministic or exact")
+    expected = {item["name"]: item for item in RAW_EVIDENCE_DESCRIPTOR["members"]}
+    with zipfile.ZipFile(RAW_EVIDENCE_CONTAINER) as archive:
+        if archive.namelist() != sorted(documents):
+            raise ValueError("loader raw-evidence ZIP member order differs")
+        for name, data in documents.items():
+            member = expected[name]
+            if (
+                archive.read(name) != data
+                or len(data) != member["bytes"]
+                or hashlib.sha256(data).hexdigest().upper() != member["sha256"]
+            ):
+                raise ValueError("loader raw-evidence ZIP member identity differs")
 
 
 def _unit(vector: tuple[float, float, float]) -> tuple[float, float, float]:
@@ -551,7 +655,6 @@ def main() -> int:
         "diagnostic_direct_velocity_exact_vector_witnesses": direct_witnesses,
         "official_ke_direction_exact_vector_pass_witnesses": official_witnesses,
     }
-    RECEIPT.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
     production_envelope = _raw_envelope(production_threshold)
     velocity_raw_relative = production_envelope[
         "maximum_component_relative_to_speed"
@@ -615,7 +718,9 @@ def main() -> int:
         },
         "identities": {
             "selection_receipt_path": RECEIPT.relative_to(REPO).as_posix(),
-            "selection_receipt_sha256": _sha256(RECEIPT),
+            "selection_receipt_sha256": hashlib.sha256(
+                _json_bytes(receipt)
+            ).hexdigest().upper(),
             "simion_executable_sha256": _sha256(SIMION),
             "program_sha256": hashlib.sha256(PROGRAM.encode()).hexdigest().upper(),
             "harness_path": Path(__file__).resolve().relative_to(REPO).as_posix(),
@@ -669,8 +774,26 @@ def main() -> int:
         "production_threshold_observations": production_threshold,
         "production_n34_exact_vector_witnesses": production_witnesses,
     }
+    raw_documents = {
+        RECEIPT.name: _json_bytes(receipt),
+        AUTHORIZATION_RECEIPT.name: _json_bytes(authorization_receipt),
+    }
+    _verify_raw_evidence(raw_documents)
+    compact_characterization = _compact_receipt(
+        receipt, CHARACTERIZATION_RAW_FIELDS
+    )
+    RECEIPT.write_bytes(_json_bytes(compact_characterization))
+    compact_authorization = _compact_receipt(
+        authorization_receipt, AUTHORIZATION_RAW_FIELDS
+    )
+    compact_authorization["identities"] = dict(
+        compact_authorization["identities"]
+    )
+    compact_authorization["identities"]["selection_receipt_sha256"] = _sha256(
+        RECEIPT
+    )
     AUTHORIZATION_RECEIPT.write_text(
-        json.dumps(authorization_receipt, indent=2) + "\n", encoding="utf-8"
+        json.dumps(compact_authorization, indent=2) + "\n", encoding="utf-8"
     )
     print(
         "SIMION_FLY2_LOADER_CHARACTERIZATION=PASS "

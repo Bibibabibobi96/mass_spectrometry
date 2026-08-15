@@ -14,13 +14,13 @@
   "inputs": {
     "base_geometry": {
       "path": "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json",
-      "bytes": 10528,
-      "sha256": "0BC154D0A4F7EAB8EE560DC691E0E62EC26F55928E2035406A2D6DF11E4D42F9"
+      "bytes": 10543,
+      "sha256": "F9C2152E5B1216242D6605A990BA40DC4586D5A278DFE3B1B3D59ABD9DC941A3"
     },
     "accelerator_entry_port": {
       "path": "projects/single_reflection_oa_tof_mass_analyzer/config/interfaces/required/oatof_accelerator_entry.json",
       "bytes": 1836,
-      "sha256": "88C2DEDF367F9BD27E03D15924B453240B52A49F17A470AFA34AF6A3F0FCEF1E"
+      "sha256": "EF2CB90284DB778755048F56FEE78F084F591A81A48C0F1469F018473A8A47CF"
     },
     "layout_profile_registry": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/single_flight_layout_profiles.json",

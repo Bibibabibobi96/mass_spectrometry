@@ -3,7 +3,7 @@
   "role": "oa_tof_resolved_contract_do_not_edit",
   "inputs": {
     "baseline": "config/baseline.json",
-    "baseline_sha256": "A50A247F58093A2C0A030AA8BDAE2AE695AB5E972D1F41E49090B6A121042685",
+    "baseline_sha256": "4248B3D34CF3784F3F00FF6E64B0EB734CD20ECF1D82DEDF9A7BA11C7EF98B67",
     "mode": "config/modes/formal.json",
     "mode_sha256": "40842C72515AB70AC0C848AA87CACEB91FBB437E4EAEB7F92FBDBAA47DC88446",
     "solver_numerics": "config/formal_solver_numerics.json",
@@ -238,7 +238,7 @@
     "capture_depth_mm": 0.02
   },
   "grid_policy": {
-    "baseline": "one-grid-unit-thick full-aperture transparent ideal electrode sheet",
+    "baseline": "zero-grid-unit-thick one-row full-aperture 100%-transmission ideal electrode sheet",
     "nonideal_grid": "separate high-resolution local wire-cell model plus transmission/kick map",
     "forbidden_baseline_approximation": "solid plate with a large aperture"
   },

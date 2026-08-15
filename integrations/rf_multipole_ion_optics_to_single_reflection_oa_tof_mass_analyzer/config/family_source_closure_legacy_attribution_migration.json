@@ -23,6 +23,7 @@
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/pulse_resolution_direct_campaign.json",
       "content_sha256": "e4ac9275b4970721088797ad67dac979d84d4bdf7fce52003dd554daa78ad47b",
       "disposition": "non_executable_historical_evidence",
+      "external_status": "failed",
       "failed_run_id": "20260815_160000__sim__cross__pulse-direct-real-rr__n100",
       "failed_run_manifest_sha256": "477a8ba8822256ac585f9db64f443d51b3c525660904d95738896d928c8bf994",
       "failure_stage": "governed_child_execution_or_publication"
@@ -31,6 +32,7 @@
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/pulse_resolution_direct_baseline_successor_campaign.json",
       "content_sha256": "d9f66c43a702dc52ff113a5c5a87e97cf391d6183a9b0915a053ff4993728904",
       "disposition": "non_executable_historical_evidence",
+      "external_status": "failed",
       "failed_run_id": "20260815_160000__sim__cross__pulse-direct-real-rr__n100__r01",
       "failed_run_manifest_sha256": "6860d9d13ac0a65ea6d9476277ea9f5f4289fd359792d8861364518b4f1804a5",
       "failure_stage": "governed_child_execution_or_publication",
@@ -40,6 +42,7 @@
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/pulse_resolution_direct_baseline_successor_r02_campaign.json",
       "content_sha256": "e43caa2987be0a5d7ea2fa9131b2892ff77f06ee89e9e91495aeed3d1c3361ce",
       "disposition": "non_executable_historical_evidence",
+      "external_status": "failed",
       "failed_run_id": "20260815_160000__sim__cross__pulse-direct-real-rr__n100__r02",
       "failed_run_manifest_sha256": "d9220d63ab56b4a607668652a55730dd09cdb0bc26a06d007a24666ba5c3106c",
       "failure_stage": "baseline_analysis",
@@ -49,6 +52,7 @@
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/pulse_resolution_direct_baseline_successor_r03_campaign.json",
       "content_sha256": "afa49ee4d055c11b705cc43e06aae0b9a1b4cda476591982be8410a34f95b1a6",
       "disposition": "non_executable_historical_evidence",
+      "external_status": "failed",
       "failed_run_id": "20260815_160000__sim__cross__pulse-direct-real-rr__n100__r03",
       "failed_run_manifest_sha256": "b35aab6bf95b43ea2cf9e42cdd685b7e8d7d65cdd53bdea221ad493a25a40ffe",
       "failure_stage": "single_flight_runner_preflight",
@@ -58,6 +62,7 @@
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/pulse_resolution_direct_baseline_successor_r04_campaign.json",
       "content_sha256": "3a883cbbd8c098b350d2a6123d831438e85fd8e3c791b03bc8811562747441fd",
       "disposition": "non_executable_historical_evidence",
+      "external_status": "failed",
       "failed_run_id": "20260815_160000__sim__cross__pulse-direct-real-rr__n100__r04",
       "failed_run_manifest_sha256": "ae7ea2bdf83b26c4b515209e287c73a1068dcbb8b989958e20f8d9f86a19e1c6",
       "failure_stage": "single_flight_runner_preflight",
@@ -67,6 +72,7 @@
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/pulse_resolution_direct_baseline_successor_r05_campaign.json",
       "content_sha256": "10eb3dae1998403f2dc158b1cfdd18c8bcade806a4290adf24fe880080776b95",
       "disposition": "non_executable_historical_evidence",
+      "external_status": "failed",
       "failed_run_id": "20260815_160000__sim__cross__pulse-direct-real-rr__n100__r05",
       "failed_run_manifest_sha256": "ea0455460daf33e8d9dd9cb20133f4fb63bee4d88f43903bf0f6bb55276c588b",
       "failure_stage": "frontend_pa_cache_integrity_preflight",
@@ -76,6 +82,7 @@
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/pulse_resolution_direct_baseline_successor_r06_campaign.json",
       "content_sha256": "1720764541adcdc65c808caa81282bc5a3ee967179ae83a9c427e9663cdc8921",
       "disposition": "non_executable_historical_evidence",
+      "external_status": "failed",
       "failed_run_id": "20260815_160000__sim__cross__pulse-direct-real-rr__n100__r06",
       "failed_run_manifest_sha256": "5aae0384a1b656d9388a4999f37475316fa56b34e41f6bf735dcdc7adaee0b59",
       "failure_stage": "overlay_iob_resource_preflight",
@@ -83,8 +90,9 @@
     },
     {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/pulse_resolution_direct_baseline_successor_r07_campaign.json",
-      "content_sha256": "eb54321dad5fec58c6172bddefe81a548b281d7c8db6568a88e7406232f7ebfa3",
+      "content_sha256": "eb54321dad5fec58c6172bddfe81a548b281d7c8db6568a88e7406232f7ebfa3",
       "disposition": "non_executable_historical_evidence",
+      "external_status": "failed",
       "failed_run_id": "20260815_160000__sim__cross__pulse-direct-real-rr__n100__r07",
       "failed_run_manifest_sha256": "0af185967528cb574dbd00aaa984e48db7baef37c9859685ae68e5e5078e752",
       "failure_stage": "pulse_resolution_result_registration",
@@ -94,6 +102,7 @@
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/pulse_resolution_direct_candidate_successor_r01_campaign.json",
       "content_sha256": "c4144504a53ada39152114d2196d20a43fe8f889afc91223fb958632eb6f9217",
       "disposition": "non_executable_historical_evidence",
+      "external_status": "failed",
       "failed_run_id": "20260815_160100__sim__cross__pulse-direct-ideal-s1-real-s2-rr__n100__r01",
       "failed_run_manifest_sha256": "c7673f492d2b78bce668a73c99b0bf04522b43cff71474b58dc5007cc047ea32",
       "failure_stage": "pulse_resolution_result_registration",
@@ -103,10 +112,33 @@
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/pulse_resolution_direct_candidate_successor_r02_campaign.json",
       "content_sha256": "8c73e3497994304d8ffa08e915053d117d4fbffa10934cddc3fdb9e329f73868",
       "disposition": "non_executable_historical_evidence",
+      "external_status": "failed",
       "failed_run_id": "20260815_160100__sim__cross__pulse-direct-ideal-s1-real-s2-rr__n100__r02",
       "failed_run_manifest_sha256": "1ea08757f73007254559aa68bfb1fffce10f2e5b043e71cc8c7c05b46ccf66aa",
       "failure_stage": "promotion_receipt_integrity_postpublication",
       "failure_reason_stage": "promotion_result_bindings_appended_after_self_sha"
+    }
+  ],
+  "current_evidence_campaigns": [
+    {
+      "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/pulse_resolution_direct_baseline_successor_r09_campaign.json",
+      "content_sha256": "7440dcccac53ce0b3d8240b3f15903cbb5383078b2e3943c46a6de2397eedd19",
+      "disposition": "non_executable_published_evidence",
+      "external_status": "published_evidence",
+      "published_run_ids": [
+        "20260815_160000__sim__cross__pulse-direct-real-rr__n100__r09"
+      ]
+    },
+    {
+      "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/pulse_resolution_direct_candidate_successor_r03_campaign.json",
+      "content_sha256": "668a2fae5d6aeb540fae2e0a1721944940f784e7920eb4881a717da6902302f0",
+      "disposition": "non_executable_completed_evidence",
+      "external_status": "completed",
+      "published_run_ids": [
+        "20260815_160100__sim__cross__pulse-direct-ideal-s1-real-s2-rr__n100__r03",
+        "20260815_160200__sim__cross__pulse-direct-ideal-s1s2-real-rr__n100__r03",
+        "20260815_160300__sim__cross__pulse-direct-full-domain-ideal__n100__r03"
+      ]
     }
   ],
   "legacy_arms": [

@@ -24,7 +24,8 @@ RESOLVED_LUA_PATH = PROJECT_ROOT / "simion" / "workbench" / "formal" / "oatof_re
 PROGRAM_PATH = PROJECT_ROOT / "simion" / "workbench" / "formal" / "oatof_ideal_grounded.lua"
 FLY2_PATH = PROJECT_ROOT / "simion" / "workbench" / "formal" / "oatof_ideal_grounded.fly2"
 NUMERICS_PATH = PROJECT_ROOT / "config" / "formal_solver_numerics.json"
-NUMERICS_AUTHORITY_DOCUMENTS = (
+OPTIMIZATION_ENVELOPE_PATH = PROJECT_ROOT / "config" / "optimization_envelope.json"
+AUTHORITY_DOCUMENTS = (
     PROJECT_ROOT / "config" / "experiment_campaign.json",
     PROJECT_ROOT / "config" / "radial_compaction_campaign.json",
 )
@@ -219,18 +220,66 @@ def render_program(contract: dict) -> str:
     return pattern.sub(block, source, count=1)
 
 
-def render_numerics_authority_document(path: Path) -> str:
+def _replace_unique_sha(
+    source: str,
+    key: str,
+    old_sha: str,
+    new_sha: str,
+    label: str,
+    path: Path,
+) -> str:
+    marker = f'"{key}": "{old_sha}"'
+    if source.count(marker) != 1:
+        raise ValueError(f"{label} SHA marker is not unique in {path}")
+    return source.replace(marker, f'"{key}": "{new_sha}"', 1)
+
+
+def render_optimization_envelope() -> str:
+    source = OPTIMIZATION_ENVELOPE_PATH.read_text(encoding="utf-8")
+    document = json.loads(source)
+    reference = document["reference"]
+    if reference.get("baseline") != "config/baseline.json":
+        raise ValueError("unexpected baseline reference in optimization envelope")
+    baseline_sha = hashlib.sha256(CONTRACT_PATH.read_bytes()).hexdigest().upper()
+    return _replace_unique_sha(
+        source,
+        "baseline_sha256",
+        reference["baseline_sha256"],
+        baseline_sha,
+        "baseline reference",
+        OPTIMIZATION_ENVELOPE_PATH,
+    )
+
+
+def render_authority_document(path: Path, optimization_envelope: str) -> str:
     source = path.read_text(encoding="utf-8")
     document = json.loads(source)
-    authority = document["authorities"]["solver_numerics"]
-    if authority.get("path") != "config/formal_solver_numerics.json":
-        raise ValueError(f"unexpected solver-numerics authority path in {path}")
-    old_sha = authority["sha256"]
-    new_sha = hashlib.sha256(NUMERICS_PATH.read_bytes()).hexdigest().upper()
-    marker = f'"sha256": "{old_sha}"'
-    if source.count(marker) != 1:
-        raise ValueError(f"solver-numerics SHA marker is not unique in {path}")
-    return source.replace(marker, f'"sha256": "{new_sha}"', 1)
+    bindings = {
+        "baseline": ("config/baseline.json", CONTRACT_PATH.read_bytes()),
+        "solver_numerics": (
+            "config/formal_solver_numerics.json",
+            NUMERICS_PATH.read_bytes(),
+        ),
+        "optimization_envelope": (
+            "config/optimization_envelope.json",
+            optimization_envelope.encode("utf-8"),
+        ),
+    }
+    for label, (expected_path, content) in bindings.items():
+        authority = document["authorities"].get(label)
+        if authority is None:
+            continue
+        if authority.get("path") != expected_path:
+            raise ValueError(f"unexpected {label} authority path in {path}")
+        source = _replace_unique_sha(
+            source,
+            "sha256",
+            authority["sha256"],
+            hashlib.sha256(content).hexdigest().upper(),
+            f"{label} authority",
+            path,
+        )
+    return source
 
 
 def frozen_fly2_seed(path: Path = FLY2_PATH) -> int:
@@ -307,6 +356,7 @@ def main() -> None:
     args = parser.parse_args()
     contract = load_contract()
     source_seed = frozen_fly2_seed()
+    optimization_envelope = render_optimization_envelope()
     changed = [
         path
         for path, content in (
@@ -314,9 +364,10 @@ def main() -> None:
             (RESOLVED_LUA_PATH, render_resolved_lua(contract)),
             (PROGRAM_PATH, render_program(contract)),
             (FLY2_PATH, render_fly2(contract, particle_source_seed=source_seed)),
+            (OPTIMIZATION_ENVELOPE_PATH, optimization_envelope),
             *(
-                (path, render_numerics_authority_document(path))
-                for path in NUMERICS_AUTHORITY_DOCUMENTS
+                (path, render_authority_document(path, optimization_envelope))
+                for path in AUTHORITY_DOCUMENTS
             ),
         )
         if update(path, content, args.write)

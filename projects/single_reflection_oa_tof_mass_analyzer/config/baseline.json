@@ -116,7 +116,7 @@
     "stage2_center_rule_mm": "L_flight+L_stage1+k*L_stage2/(N2+1), k=1..N2"
   },
   "grid_policy": {
-    "baseline": "one-grid-unit-thick full-aperture transparent ideal electrode sheet",
+    "baseline": "zero-grid-unit-thick one-row full-aperture 100%-transmission ideal electrode sheet",
     "nonideal_grid": "separate high-resolution local wire-cell model plus transmission/kick map",
     "forbidden_baseline_approximation": "solid plate with a large aperture"
   }

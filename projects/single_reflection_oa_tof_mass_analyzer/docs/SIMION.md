@@ -61,14 +61,16 @@ Candidate run `20260813_160656__gate__simion__native-ideal-grid__smoke`已真实
 
 反射器为二维轴对称PA；网格只查`../config/formal_solver_numerics.json`，制造约束只查
 `../config/design_variables.json`。包含理想栅的加速器和反射器PA均使用SIMION官方ideal-grid示例采用的
-PA级`surface=none`语义；四个零宽栅必须严格落在raw节点，普通厚环、背板和屏蔽罩边缘不对齐时记录
-`reflectron_geometry_edge_not_on_grid_node`警告并按raw网格离散。`surface`是PA级选项，本项目不伪造
-按电极混合surface元数据。
+默认非fractional surface语义，本项目在PA级显式声明`surface=none`；四个零宽栅必须严格落在raw节点，
+普通厚环、背板和屏蔽罩边缘不对齐时，加速器记录`accelerator_geometry_edge_not_on_grid_node`、反射器
+记录`reflectron_geometry_edge_not_on_grid_node`警告，并按raw网格离散。`surface`是PA级选项，本项目
+不伪造按电极混合surface元数据。
 
 官方依据（查阅`2026-08-13`，目标版本SIMION 2020）为SIMION Grid/PA说明
 <https://simion.com/info/grid.html>及本机随安装提供的
-`examples/geometry/parallel_plate_capacitor_2d.gem`：官方示例以节点对齐的一行零宽电极和PA级
-`surface=none`表达100%透明理想栅。本项目采用该路径；一行栅必须落在raw PA节点，真实丝网不在其适用域。
+`examples/geometry/parallel_plate_capacitor_2d.gem`：官方示例以节点对齐的一行零宽电极表达100%透明理想栅，
+并省略`surface`参数而采用默认非fractional语义。本项目采用相同路径并显式声明PA级`surface=none`；
+一行栅必须落在raw PA节点，真实丝网不在其适用域。
 
 ## Candidate与交付纪律
 

@@ -21,7 +21,7 @@
   "authorities": {
     "baseline": {
       "path": "config/baseline.json",
-      "sha256": "A50A247F58093A2C0A030AA8BDAE2AE695AB5E972D1F41E49090B6A121042685"
+      "sha256": "4248B3D34CF3784F3F00FF6E64B0EB734CD20ECF1D82DEDF9A7BA11C7EF98B67"
     },
     "science_profile": {
       "path": "config/modes/design_candidate.json",
@@ -37,7 +37,7 @@
     },
     "optimization_envelope": {
       "path": "config/optimization_envelope.json",
-      "sha256": "1E1F2289242541E968962C73C29E5153FA963B1626402DA050AA02DF307CF562"
+      "sha256": "65E5CF608F1B9B30301F592373CF81CD66CDA66224EBE781ABE0E774FEF1D7A7"
     },
     "candidate_workflow": {
       "path": "config/candidate_workflow.json",

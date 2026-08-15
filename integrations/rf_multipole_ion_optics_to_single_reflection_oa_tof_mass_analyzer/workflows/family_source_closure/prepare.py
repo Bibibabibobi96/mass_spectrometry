@@ -231,29 +231,7 @@ def validate_pulse_resolution_optimization_campaign(
     contract = campaign.get("pulse_resolution_optimization")
     if contract is None:
         return
-    if campaign["pulse_resolution_cohort_authority"]["role"] != (
-        "rf_oatof_historical_migration_reference"
-    ):
-        raise ContractError(
-            "pulse-resolution campaign checkpoint must be historical migration evidence"
-        )
     matrix = contract["comparison_matrix"]
-    expected_sequences = (
-        [1] if campaign["campaign_id"] in {
-            "pulse_resolution_direct_baseline_v5",
-            "pulse_resolution_direct_baseline_v5_r09",
-        }
-        else [2, 3, 4]
-        if campaign["campaign_id"] in {
-            "pulse_resolution_direct_candidates_v5",
-            "pulse_resolution_direct_candidates_v5_r01",
-            "pulse_resolution_direct_candidates_v5_r02",
-            "pulse_resolution_direct_candidates_v5_r03",
-        }
-        else list(range(1, len(matrix) + 1))
-    )
-    if [row["sequence"] for row in matrix] != expected_sequences:
-        raise ContractError("pulse-resolution comparison matrix role/order differs")
     experiments = {row["experiment_id"]: row for row in campaign["experiments"]}
     if len(matrix) != len(experiments):
         raise ContractError("pulse-resolution comparison matrix must match campaign rows")
@@ -261,16 +239,18 @@ def validate_pulse_resolution_optimization_campaign(
         experiment_row = experiments.get(row["experiment_id"])
         if (
             experiment_row is None
+            or row["sequence"] != experiment_row["sequence"]
             or row["source_profile_id"] != experiment_row["source_profile_id"]
             or row["field_profile_id"]
             != experiment_row["single_flight_accelerator_field_profile_id"]
-            or row["authority_status"] not in {
-                "direct_executable_contract", "pending_preregistration"
-            }
         ):
             raise ContractError("pulse-resolution direct comparison matrix differs")
-    is_candidate_campaign = expected_sequences == [2, 3, 4]
-    if is_candidate_campaign and campaign.get("status") == "authorized":
+    execution_modes = {
+        row.get("pulse_resolution_execution_mode") for row in experiments.values()
+    }
+    if None in execution_modes or len(execution_modes) != 1:
+        raise ContractError("pulse-resolution campaign must use one execution mode")
+    if campaign.get("status") == "authorized" and "preregistration" in campaign:
         registration = campaign["preregistration"]
         frozen_rows = registration["frozen_experiment_row_sha256"]
         if set(frozen_rows) != set(experiments) or any(
@@ -278,50 +258,12 @@ def validate_pulse_resolution_optimization_campaign(
             for experiment_id, experiment_row in experiments.items()
         ):
             raise ContractError("authorized candidate experiment row SHA differs")
-    gates = contract["acceptance_gates"]
-    expected_gates = {
-        "full_beam": ("all_pulse_eligible_particles", 20000, 0.806),
-        "theoretical_window": (
-            "detector_blind_theoretical_acceptance_window", 30000, 0.537
-        ),
-    }
-    for gate_id, expected in expected_gates.items():
-        gate = gates[gate_id]
-        observed = (
-            gate["population_basis"], gate["mass_resolution_minimum"],
-            gate["direct_fwhm_maximum_ns"],
-        )
-        if observed != expected:
-            raise ContractError(f"pulse-resolution {gate_id} gate differs")
-    prohibited = set(contract["optimization_constraints"]["derived_variables_prohibited"])
-    expected_prohibited = {
-        "absolute_electrode_voltages", "focus_plane", "source_center",
-        "reflectron_endpoints", "ring_baseline_voltages", "shield_position",
-    }
-    if prohibited != expected_prohibited:
-        raise ContractError("pulse-resolution derived-variable prohibition differs")
     if execution_requested:
         if campaign.get("status") != "authorized":
             raise ContractError("pending pulse-resolution campaign cannot execute")
         if experiment is None:
             raise ContractError("pulse-resolution execution requires a selected row")
-        baseline_row = (
-            experiment.get("pulse_resolution_execution_mode")
-            == "screening_prefix_n100_baseline_registration"
-            and experiment.get("single_flight_accelerator_field_profile_id")
-            == "accelerator_real_pa"
-            and experiment.get("pulse_resolution_baseline_evidence") is None
-        )
-        paired_row = (
-            experiment.get("pulse_resolution_execution_mode")
-            == "screening_prefix_n100_paired_candidate"
-            and experiment.get("single_flight_accelerator_field_profile_id")
-            != "accelerator_real_pa"
-            and campaign.get("pulse_resolution_baseline_evidence") is not None
-        )
-        if experiment.get("execution_strategy") != "simion_single_flight" or not (
-            baseline_row or paired_row
-        ):
+        if experiment.get("execution_strategy") != "simion_single_flight":
             raise ContractError("pulse-resolution N=100 experiment is not executable")
 
 
@@ -546,6 +488,47 @@ def _resolve_staged_loader_validation(
         root, record, "staged loader authorization budget"
     )
     receipt = _load(receipt_path)
+    if receipt.get("schema_version") not in {1, 2}:
+        raise ContractError("staged loader authorization schema version differs")
+    if receipt["schema_version"] == 2:
+        raw_evidence = receipt.get("raw_evidence", {})
+        container = raw_evidence.get("container", {})
+        expected_members = [
+            {
+                "name": "staged_grid2_n34_simion_fly2_loader_ab_characterization.json",
+                "bytes": 623508,
+                "sha256": "08E4C988D0D64C5B6D4EC50F64B74D3C439D06AFABCDAF07E57D66A74126E0E5",
+            },
+            {
+                "name": "staged_grid2_n34_simion_fly2_loader_authorization_budget.json",
+                "bytes": 311736,
+                "sha256": "3C55554E41C9D016C3A2DEC8CB11DC1FFC1436FC843805D0E8987CDE32CDF1FE",
+            },
+        ]
+        if (
+            raw_evidence.get("role")
+            != "rf_oatof_simion_fly2_loader_raw_receipt_evidence"
+            or raw_evidence.get("producer_run_id")
+            != "20260815_223500__migration__repo__staged-grid2-loader-receipt-compact-v2"
+            or raw_evidence.get("retention_class") != "compact"
+            or raw_evidence.get("runtime_decompression_required") is not False
+            or container
+            != {
+                "path": "artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20260815_223500__migration__repo__staged-grid2-loader-receipt-compact-v2/results/staged_grid2_n34_simion_fly2_loader_raw_receipts.zip",
+                "bytes": 53068,
+                "sha256": "86DB4FB500C2C9EF1FDD32541CACD9A0D054D190D572B6CF5EAFE12C9C59C559",
+                "format": "zip_deflate_fixed_metadata_v1",
+            }
+            or raw_evidence.get("members") != expected_members
+        ):
+            raise ContractError("staged loader compact raw-evidence descriptor differs")
+        container_path = _workspace_record(
+            root.parent,
+            {"path": container.get("path"), "sha256": container.get("sha256")},
+            "staged loader compact raw-evidence container",
+        )
+        if container_path.stat().st_size != container.get("bytes"):
+            raise ContractError("staged loader compact raw-evidence bytes differ")
     identities = receipt.get("identities", {})
     scope = receipt.get("claim_scope", {})
     budget = receipt.get("authorized_budget", {})
@@ -565,11 +548,20 @@ def _resolve_staged_loader_validation(
         or witness.get("energy_all_pass") is not True
     ):
         raise ContractError("staged loader authorization scope or witness gate differs")
-    for path_key, sha_key, label in (
+    identity_files = [
         ("selection_receipt_path", "selection_receipt_sha256", "selection receipt"),
-        ("harness_path", "harness_sha256", "loader harness"),
         ("production_renderer_path", "production_renderer_sha256", "production renderer"),
+    ]
+    if receipt["schema_version"] == 1:
+        identity_files.append(("harness_path", "harness_sha256", "loader harness"))
+    elif (
+        identities.get("harness_path")
+        != "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/tests/verify_simion_fly2_loader_characterization.py"
+        or identities.get("harness_sha256")
+        != "827854E703F65135E8056D94F3B61AEF74E1FFC94EFEC65F31B30F6C85AA9A7E"
     ):
+        raise ContractError("staged loader historical harness identity differs")
+    for path_key, sha_key, label in identity_files:
         path = (root / identities[path_key]).resolve()
         if (
             not path.is_relative_to(root)

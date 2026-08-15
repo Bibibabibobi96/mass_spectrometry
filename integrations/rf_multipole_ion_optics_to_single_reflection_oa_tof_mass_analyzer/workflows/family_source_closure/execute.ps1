@@ -59,24 +59,27 @@ if ([string]$legacyDisposition.active_workflow -ne $expectedActiveWorkflow) {
   throw 'Legacy attribution disposition does not name this active workflow.'
 }
 $campaignRepoRelative = [IO.Path]::GetRelativePath($repoRoot, $campaignPath).Replace('\', '/')
-$historicalCampaigns = @($legacyDisposition.historical_campaigns | Where-Object {
+$registeredCampaigns = @(
+  @($legacyDisposition.historical_campaigns) +
+  @($legacyDisposition.current_evidence_campaigns)
+)
+$registeredCampaigns = @($registeredCampaigns | Where-Object {
   [string]$_.path -eq $campaignRepoRelative
 })
-if ($historicalCampaigns.Count -gt 1) {
-  throw 'Historical campaign disposition must resolve at most once.'
+if ($registeredCampaigns.Count -gt 1) {
+  throw 'Terminal campaign disposition must resolve at most once.'
 }
-if ($historicalCampaigns.Count -eq 1) {
-  $historicalCampaign = $historicalCampaigns[0]
-  $historicalCampaignSha256 = (
+if ($registeredCampaigns.Count -eq 1) {
+  $registeredCampaign = $registeredCampaigns[0]
+  $registeredCampaignSha256 = (
     Get-FileHash -LiteralPath $campaignPath -Algorithm SHA256
   ).Hash.ToLowerInvariant()
-  if ([string]$historicalCampaign.disposition -ne
-      'non_executable_historical_evidence' -or
-      $historicalCampaignSha256 -ne
-      ([string]$historicalCampaign.content_sha256).ToLowerInvariant()) {
-    throw 'Historical campaign disposition identity differs; execution remains forbidden.'
+  if (-not ([string]$registeredCampaign.disposition).StartsWith('non_executable_') -or
+      $registeredCampaignSha256 -ne
+      ([string]$registeredCampaign.content_sha256).ToLowerInvariant()) {
+    throw 'Terminal campaign disposition identity differs; execution remains forbidden.'
   }
-  throw 'Campaign is non-executable historical evidence in ValidateOnly, PrepareOnly and SolverAuthorized modes.'
+  throw 'Campaign is registered non-executable evidence in ValidateOnly, PrepareOnly and SolverAuthorized modes.'
 }
 $campaignDocument = Get-Content -LiteralPath $campaignPath -Raw -Encoding UTF8 |
   ConvertFrom-Json
