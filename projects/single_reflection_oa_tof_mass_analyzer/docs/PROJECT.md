@@ -141,15 +141,22 @@ T5→三区`CANDIDATE_ONLY` resolved编译器、region-field schema v2和保持�
 理论收益在真实PA场中仍显著存在，但数值只是100 Th、N=100、Functional/CANDIDATE_ONLY证据；未做
 COMSOL/CAD、N=1000、网格收敛或工程包络资格，不能改变524 Da Formal状态。
 
-随后用同一真实PA、几何、数值和100个ID做了observed pulse-state源敏感性。面向结果的两臂明确命名为
-`transverse_collapsed`和`full_observed_6d`，不再用字母代号作为主名称；两者共享经验`z/vz`、逐粒子
-能量、clock和ID，只恢复真实横向位置与速度方向。两臂均100/100探测且单峰：前者
-`sigma/FWHM/R=0.8197190662 ns/2.4714356728 ns/6338.67`，后者为
-`0.8542897552 ns/2.5829468539 ns/6065.03`。完整横向状态只额外使sigma/FWHM增加
-`4.2174%/4.5120%`；相对affine理想源的大部分退化已存在于共同的经验纵向源bundle。canonical
-比较run为`20260817_235959__analysis__python__three-zone-observed-transverse-sensitivity__n100`，完整
-authority、失败前驱和限制见
-[`history/20260817__three-zone-observed-transverse-sensitivity.md`](history/20260817__three-zone-observed-transverse-sensitivity.md)。
+随后在同一真实PA、几何、数值、经验`z`点和100个ID上完成四个描述性源臂的顺序敏感性分解：
+`affine_zvz_fixed_10eV_transverse_collapsed`、`observed_zvz_fixed_10eV_transverse_collapsed`、
+`observed_z_vz_energy_transverse_collapsed`和`full_observed_6d`。每个N=1门均1/1探测并授权同臂N=100，
+四个N=100均100/100探测；canonical顺序比较run为
+`20260817_235946__analysis__python__three-zone-source-sequential-attribution__n100`。对应`sigma/FWHM/R`依次为
+`0.0919962629 ns/0.1201946242 ns/130335.42`、
+`0.8197245483 ns/2.4711425665 ns/6339.43`、
+`0.8197190662 ns/2.4714356728 ns/6338.67`和
+`0.8542897552 ns/2.5829468539 ns/6065.03`。以首尾总退化为分母，逐ID observed-affine `z-vz`偏离、逐粒子能谱
+和完整横向状态的顺序份额在sigma上为`95.46563%/-0.00072%/4.53509%`，在直接FWHM上为
+`95.46019%/0.01190%/4.52791%`。残差审计进一步表明，重新最小二乘匹配affine均值/斜率后仍有
+`95.7478586%`的原残差均方，2—6阶多项式只捕获该non-affine/stochastic scatter的`0.92%—1.14%`。
+这是冻结三区设计、100 Th、单次N=100的`FUNCTIONAL_ONLY`
+敏感性结果；它不证明非线性不可通过重新编译并联合优化加速器与反射器来补偿。完整公式、权威、
+run/manifest和理论升级问题集中见
+[`history/20260817__three-zone-zvz-nonlinearity-fixed-energy-source-sensitivity.md`](history/20260817__three-zone-zvz-nonlinearity-fixed-energy-source-sensitivity.md)。
 
 ## 已知兼容边界
 

@@ -304,11 +304,30 @@
         "old_geometry": {"$ref": "#/$defs/file"},
         "arm_id": {
           "enum": [
+            "affine_zvz_fixed_10eV_transverse_collapsed",
+            "observed_zvz_fixed_10eV_transverse_collapsed",
             "full_observed_6d",
             "observed_z_vz_energy_transverse_collapsed"
           ]
+        },
+        "comparison_claim": {
+          "const": "frozen_three_zone_observed_z_vz_nonlinearity_relative_to_affine_effect_only"
         }
-      }
+      },
+      "allOf": [{
+        "if": {
+          "properties": {
+            "arm_id": {
+              "enum": [
+                "affine_zvz_fixed_10eV_transverse_collapsed",
+                "observed_zvz_fixed_10eV_transverse_collapsed"
+              ]
+            }
+          },
+          "required": ["arm_id"]
+        },
+        "then": {"required": ["comparison_claim"]}
+      }]
     },
     "generated_pre_pulse_ordered_subset": {
       "type": "object", "additionalProperties": false,

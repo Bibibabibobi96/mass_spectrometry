@@ -8,7 +8,7 @@
     "projection", "arms", "invariants"
   ],
   "properties": {
-    "schema_version": {"const": 1},
+    "schema_version": {"enum": [1, 2]},
     "role": {"const": "rf_oatof_observed_pre_pulse_projection_receipt"},
     "status": {"const": "PASS"},
     "authorities": {
@@ -53,7 +53,7 @@
         "simulation_to_source_particle_id"
       ],
       "properties": {
-        "method": {"const": "common_center_translation_and_current_epoch_transplant_v1"},
+        "method": {"enum": ["common_center_translation_and_current_epoch_transplant_v1", "observed_z_four_arm_energy_decomposition_v2"]},
         "old_center_mm": {"$ref": "#/$defs/vector3"},
         "current_center_mm": {"$ref": "#/$defs/vector3"},
         "translation_mm": {"$ref": "#/$defs/vector3"},
@@ -64,7 +64,9 @@
           "minItems": 1,
           "maxItems": 100,
           "items": {"$ref": "#/$defs/particle_map"}
-        }
+        },
+        "fixed_kinetic_energy_eV": {"const": 10.0},
+        "affine_authority": {"$ref": "#/$defs/affine_authority"}
       }
     },
     "arms": {
@@ -75,7 +77,9 @@
       ],
       "properties": {
         "full_observed_6d": {"$ref": "#/$defs/file"},
-        "observed_z_vz_energy_transverse_collapsed": {"$ref": "#/$defs/file"}
+        "observed_z_vz_energy_transverse_collapsed": {"$ref": "#/$defs/file"},
+        "affine_zvz_fixed_10eV_transverse_collapsed": {"$ref": "#/$defs/file"},
+        "observed_zvz_fixed_10eV_transverse_collapsed": {"$ref": "#/$defs/file"}
       }
     },
     "invariants": {
@@ -96,10 +100,54 @@
         "collapsed_x_y_equal_current_center": {"const": true},
         "collapsed_vy_zero": {"const": true},
         "collapsed_positive_vx_preserves_transverse_speed": {"const": true},
-        "energy_recomputed_from_velocity": {"const": true}
+        "energy_recomputed_from_velocity": {"const": true},
+        "all_arms_observed_z_id_clock_equal": {"const": true},
+        "affine_arm_vz_from_frozen_authority": {"const": true},
+        "observed_fixed_arm_observed_vz_preserved": {"const": true},
+        "fixed_10eV_arms_energy_equal": {"const": true},
+        "fixed_10eV_arms_centered_xy_vy_zero_positive_vx": {"const": true}
       }
     }
   },
+  "allOf": [{
+    "if": {"properties": {"schema_version": {"const": 2}}},
+    "then": {
+      "properties": {
+        "projection": {
+          "required": ["fixed_kinetic_energy_eV", "affine_authority"],
+          "properties": {"method": {"const": "observed_z_four_arm_energy_decomposition_v2"}}
+        },
+        "arms": {"required": ["affine_zvz_fixed_10eV_transverse_collapsed", "observed_zvz_fixed_10eV_transverse_collapsed"]},
+        "invariants": {"required": [
+          "all_arms_observed_z_id_clock_equal", "affine_arm_vz_from_frozen_authority",
+          "observed_fixed_arm_observed_vz_preserved", "fixed_10eV_arms_energy_equal",
+          "fixed_10eV_arms_centered_xy_vy_zero_positive_vx"
+        ]}
+      }
+    },
+    "else": {
+      "properties": {
+        "projection": {
+          "properties": {"method": {"const": "common_center_translation_and_current_epoch_transplant_v1"}},
+          "not": {"anyOf": [
+            {"required": ["fixed_kinetic_energy_eV"]},
+            {"required": ["affine_authority"]}
+          ]}
+        },
+        "arms": {"not": {"anyOf": [
+          {"required": ["affine_zvz_fixed_10eV_transverse_collapsed"]},
+          {"required": ["observed_zvz_fixed_10eV_transverse_collapsed"]}
+        ]}},
+        "invariants": {"not": {"anyOf": [
+          {"required": ["all_arms_observed_z_id_clock_equal"]},
+          {"required": ["affine_arm_vz_from_frozen_authority"]},
+          {"required": ["observed_fixed_arm_observed_vz_preserved"]},
+          {"required": ["fixed_10eV_arms_energy_equal"]},
+          {"required": ["fixed_10eV_arms_centered_xy_vy_zero_positive_vx"]}
+        ]}}
+      }
+    }
+  }],
   "$defs": {
     "sha": {"type": "string", "pattern": "^[A-F0-9]{64}$"},
     "file": {
@@ -124,6 +172,16 @@
       "properties": {
         "simulation_particle_id": {"type": "integer", "minimum": 1, "maximum": 100},
         "source_particle_id": {"type": "integer", "minimum": 1, "maximum": 1000}
+      }
+    },
+    "affine_authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mean_velocity_z_m_per_s", "velocity_z_slope_m_per_s_per_mm", "center_z_mm"],
+      "properties": {
+        "mean_velocity_z_m_per_s": {"type": "number"},
+        "velocity_z_slope_m_per_s_per_mm": {"type": "number"},
+        "center_z_mm": {"type": "number"}
       }
     }
   }

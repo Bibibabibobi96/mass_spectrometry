@@ -212,27 +212,35 @@ child均通过manifest验证。100/100粒子各自穿过I1、I2、exit、反射�
 Functional/CANDIDATE_ONLY真实PA证据；不授予工程资格、COMSOL等价或Formal变更。最终N=100的
 frontend、overlay与flight-tube均为cache hit，没有再次Refine。
 
-### Observed纵向束与横向六维敏感性
+### 经验纵向非线性、能谱与横向六维敏感性
 
-在上述真实PA和同一全宽分层N=100 ID集合上，后继源投影从成功的996行observed pulse-state authority
-逐ID恢复经验非线性`z-vz`和逐粒子能谱。该投影只把旧源中心共同平移到当前三区源中心并采用当前
-pulse epoch；两个campaign的clock差不被解释为连续物理飞行。面向用户与artifact的两个名称是：
+在上述真实PA和同一全宽分层N=100 ID集合上，投影从成功的996行observed pulse-state authority逐ID
+恢复经验`z-vz`、逐粒子能谱和横向六维状态，只把旧源中心共同平移到当前三区源中心并采用当前pulse
+epoch；clock差不解释为连续物理飞行。四个artifact名称是
+`affine_zvz_fixed_10eV_transverse_collapsed`、`observed_zvz_fixed_10eV_transverse_collapsed`、
+`observed_z_vz_energy_transverse_collapsed`和`full_observed_6d`。前两个严格共享经验`z`点、10 eV
+总能量和塌缩横向状态，只把`vz`从当前affine规律替换为observed非线性关系，并在同一能量壳内联动
+正向`vx`；后两步再依次恢复observed逐粒子能谱和完整横向位置/速度方向。
 
-- `transverse_collapsed`：经验`z/vz/E`不变，`x/y`置共同中心，`vy=0`，正向`vx`保持横向速率。
-- `full_observed_6d`：经验`x/y/z/vx/vy/vz`全部保留，只施加共同位置平移。
+每个N=1机制门均1/1探测并分别授权同臂N=100；四个N=100均100/100探测。按上述顺序，pulse-relative
+`sigma/FWHM/R`为`0.0919962629/0.1201946242/130335.42`、
+`0.8197245483/2.4711425665/6339.43`、`0.8197190662/2.4714356728/6338.67`和
+`0.8542897552 ns/2.5829468539 ns/6065.03`。以首尾总退化为分母，非线性`z-vz`残差、能谱和完整
+横向状态的顺序份额在sigma上为`95.46563%/-0.00072%/4.53509%`，在直接FWHM上为
+`95.46019%/0.01190%/4.52791%`。能谱项接近零且sigma符号为负，只能按本次单一N=100数值实现解释。
+detector-blind残差审计显示，重新匹配affine均值/斜率后仍有`95.7478586%`的原残差均方；2—6阶
+多项式只捕获剩余non-affine/stochastic scatter的`0.92%—1.14%`，不能把本轮现象简化成光滑三阶项。
 
-两个N=1机制门均1/1探测并分别授权同臂N=100；两个N=100均100/100探测、单峰。横向塌缩臂的
-pulse-relative `sigma/FWHM/R`为`0.8197190662 ns/2.4714356728 ns/6338.67`，完整六维臂为
-`0.8542897552 ns/2.5829468539 ns/6065.03`。严格100粒子配对得到完整六维相对横向塌缩的
-detector `delta-t RMS=0.2288780663 ns`，sigma增加`4.2174%`、FWHM增加`4.5120%`、R降低
-`4.3171%`。这说明横向状态是次要增量；相对affine理想源约10.6—11.0倍的FWHM放大主要已经来自
-共同的经验纵向源bundle及其与真实场的组合。
-
-canonical比较run是
-`20260817_235959__analysis__python__three-zone-observed-transverse-sensitivity__n100`。它明确发布
-`FUNCTIONAL_ONLY`、`formal_gate_passed=false`、无阈值和无资格判定。observed状态移植不是连续真实
-handoff轨迹；detector checkpoint没有速度列，因此artifact把速度统计写为`null`而不做反推。本轮所有
-frontend/overlay/flight-tube均为cache hit，没有重建PA。
+该比较明确是冻结三区设计下的`FUNCTIONAL_ONLY`敏感性，不证明经验非线性不可通过重新编译源模型并
+联合求解加速器、场和反射器来补偿。observed状态移植也不是连续真实handoff轨迹。完整公式、经验源
+统计、冻结身份、run/manifest及理论升级问题集中见oaTOF项目的
+[`20260817__three-zone-zvz-nonlinearity-fixed-energy-source-sensitivity.md`](../../../projects/single_reflection_oa_tof_mass_analyzer/docs/history/20260817__three-zone-zvz-nonlinearity-fixed-energy-source-sensitivity.md)。
+canonical顺序比较run为
+`20260817_235946__analysis__python__three-zone-source-sequential-attribution__n100`，manifest SHA-256
+`C7E4E7C86AA5B249F690EF1CA439B46506593CDC5EC131CB822FEA259B2C1E8E`并已验证。focus到detector的
+checkpoint分解表明下游会显著放大并重映射observed-affine残差，横向步骤的FWHM/R符号也会改变；
+因此上述detector份额是固定顺序、固定checkpoint的描述量，不是顺序无关factorial effect。完整数值与
+closure只在链接的history和canonical artifact保存，本节不建立第二份清单。
 
 栅面机制只沿用2026-08-13已验收的SIMION官方一行raw-PA理想透明电极路径；本轮没有增加自建跨栅、
 epsilon越层、粒子位移或TOF补偿。N=1→N=100机器门已按真实checkpoint、manifest和全科学身份闭合；

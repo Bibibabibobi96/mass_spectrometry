@@ -51,8 +51,10 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     validate_ordered_pre_pulse_subset,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.observed_pre_pulse_projection import (
+    ARM_AFFINE_FIXED_10EV,
     ARM_COLLAPSED,
     ARM_FULL,
+    ARM_OBSERVED_FIXED_10EV,
     project_observed_pre_pulse_states,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_layout import (
@@ -469,12 +471,19 @@ def _three_zone_gate_pairs(
         pair[0]["observed_pre_pulse_projection"]["arm_id"]
         for pair in observed_pairs
     }
-    if len(observed_pairs) != 2 or observed_arms != {
-        "full_observed_6d",
-        "observed_z_vz_energy_transverse_collapsed",
-    }:
+    valid_arm_sets = (
+        {
+            "affine_zvz_fixed_10eV_transverse_collapsed",
+            "observed_zvz_fixed_10eV_transverse_collapsed",
+        },
+        {
+            "full_observed_6d",
+            "observed_z_vz_energy_transverse_collapsed",
+        },
+    )
+    if len(observed_pairs) != len(observed_arms) or observed_arms not in valid_arm_sets:
         raise ContractError(
-            "observed source projection requires exactly one complete C/D gate pair"
+            "observed source projection requires one unique complete A/B or legacy C/D arm set"
         )
 
     def cross_arm_comparable(row: dict[str, Any]) -> dict[str, Any]:
@@ -484,21 +493,11 @@ def _three_zone_gate_pairs(
         value["observed_pre_pulse_projection"].pop("arm_id")
         return value
 
-    collapsed_pair = next(
-        pair
-        for pair in observed_pairs
-        if pair[0]["observed_pre_pulse_projection"]["arm_id"]
-        == "observed_z_vz_energy_transverse_collapsed"
-    )
-    full_pair = next(
-        pair
-        for pair in observed_pairs
-        if pair[0]["observed_pre_pulse_projection"]["arm_id"]
-        == "full_observed_6d"
-    )
+    reference_pair = observed_pairs[0]
     if any(
-        cross_arm_comparable(collapsed) != cross_arm_comparable(full)
-        for collapsed, full in zip(collapsed_pair, full_pair)
+        cross_arm_comparable(reference) != cross_arm_comparable(candidate)
+        for candidate_pair in observed_pairs[1:]
+        for reference, candidate in zip(reference_pair, candidate_pair, strict=True)
     ):
         raise ContractError(
             "observed source projection arms differ beyond arm and run identity"
@@ -1087,9 +1086,13 @@ def _validate_observed_pre_pulse_projection(
     selected_path: Path,
     full_path: Path,
     collapsed_path: Path,
+    affine_fixed_10ev_path: Path | None,
+    observed_fixed_10ev_path: Path | None,
     current_target_path: Path,
     current_subset_receipt_path: Path,
     pulse_time_us: float,
+    affine_authority: dict[str, float] | None,
+    fixed_kinetic_energy_eV: float | None,
 ) -> dict[str, Any]:
     expected_invariants = {
         "full_observed_velocity_preserved": True,
@@ -1100,11 +1103,24 @@ def _validate_observed_pre_pulse_projection(
         "collapsed_positive_vx_preserves_transverse_speed": True,
         "energy_recomputed_from_velocity": True,
     }
+    four_arm = selected_arm in {ARM_AFFINE_FIXED_10EV, ARM_OBSERVED_FIXED_10EV}
+    if four_arm:
+        expected_invariants.update({
+            "all_arms_observed_z_id_clock_equal": True,
+            "affine_arm_vz_from_frozen_authority": True,
+            "observed_fixed_arm_observed_vz_preserved": True,
+            "fixed_10eV_arms_energy_equal": True,
+            "fixed_10eV_arms_centered_xy_vy_zero_positive_vx": True,
+        })
     if (
         receipt.get("role") != "rf_oatof_observed_pre_pulse_projection_receipt"
         or receipt.get("status") != "PASS"
         or receipt.get("invariants") != expected_invariants
-        or selected_arm not in {ARM_FULL, ARM_COLLAPSED}
+        or selected_arm not in {
+            ARM_AFFINE_FIXED_10EV, ARM_OBSERVED_FIXED_10EV,
+            ARM_FULL, ARM_COLLAPSED,
+        }
+        or receipt.get("schema_version") != (2 if four_arm else 1)
     ):
         raise ContractError("observed pre-pulse projection receipt is invalid")
     expected_refs = {
@@ -1118,15 +1134,29 @@ def _validate_observed_pre_pulse_projection(
         ) != file_sha256(path):
             raise ContractError(f"observed projection {name} authority differs")
     arm_paths = {ARM_FULL: full_path, ARM_COLLAPSED: collapsed_path}
+    if four_arm:
+        if affine_fixed_10ev_path is None or observed_fixed_10ev_path is None:
+            raise ContractError("four-arm projection outputs are incomplete")
+        arm_paths.update({
+            ARM_AFFINE_FIXED_10EV: affine_fixed_10ev_path,
+            ARM_OBSERVED_FIXED_10EV: observed_fixed_10ev_path,
+        })
     for arm_id, path in arm_paths.items():
         record = receipt.get("arms", {}).get(arm_id, {})
         if Path(str(record.get("path", ""))).resolve() != path.resolve() or record.get(
             "sha256"
         ) != file_sha256(path):
             raise ContractError(f"observed projection {arm_id} output differs")
-    _, full_rows = materialize_pre_pulse_restart(full_path, pulse_time_us)
-    _, collapsed_rows = materialize_pre_pulse_restart(collapsed_path, pulse_time_us)
-    if len(full_rows) != len(collapsed_rows) or selected_path != arm_paths[selected_arm]:
+    rows_by_arm = {
+        arm_id: materialize_pre_pulse_restart(path, pulse_time_us)[1]
+        for arm_id, path in arm_paths.items()
+    }
+    full_rows = rows_by_arm[ARM_FULL]
+    collapsed_rows = rows_by_arm[ARM_COLLAPSED]
+    if (
+        any(len(rows) != len(full_rows) for rows in rows_by_arm.values())
+        or selected_path != arm_paths[selected_arm]
+    ):
         raise ContractError("observed projection paired population differs")
     exact_paired_fields = (
         "particle_id", "instrument_time_us", "mass_amu", "charge_state",
@@ -1146,6 +1176,63 @@ def _validate_observed_pre_pulse_projection(
         for full, collapsed in zip(full_rows, collapsed_rows, strict=True)
     ):
         raise ContractError("observed projection paired energy differs")
+    if four_arm:
+        projection = receipt.get("projection", {})
+        if (
+            affine_authority is None
+            or fixed_kinetic_energy_eV != 10.0
+            or projection.get("method")
+            != "observed_z_four_arm_energy_decomposition_v2"
+            or projection.get("fixed_kinetic_energy_eV") != fixed_kinetic_energy_eV
+            or projection.get("affine_authority") != affine_authority
+        ):
+            raise ContractError("four-arm affine or fixed-energy authority differs")
+        shared_fields = (
+            "particle_id", "instrument_time_us", "mass_amu", "charge_state",
+            "position_z_mm",
+        )
+        reference_rows = rows_by_arm[ARM_FULL]
+        if any(
+            any(reference[field] != candidate[field] for field in shared_fields)
+            for arm_id, rows in rows_by_arm.items()
+            if arm_id != ARM_FULL
+            for reference, candidate in zip(reference_rows, rows, strict=True)
+        ):
+            raise ContractError(
+                "four-arm ID, clock, species, or observed-z invariant differs"
+            )
+        affine_rows = rows_by_arm[ARM_AFFINE_FIXED_10EV]
+        observed_fixed_rows = rows_by_arm[ARM_OBSERVED_FIXED_10EV]
+        current_center = projection["current_center_mm"]
+        for affine, observed_fixed, collapsed, full in zip(
+            affine_rows, observed_fixed_rows, collapsed_rows, full_rows, strict=True
+        ):
+            expected_affine_vz = (
+                affine_authority["mean_velocity_z_m_per_s"]
+                + affine_authority["velocity_z_slope_m_per_s_per_mm"]
+                * (
+                    float(affine["position_z_mm"])
+                    - affine_authority["center_z_mm"]
+                )
+            )
+            if (
+                abs(float(affine["velocity_z_m_s"]) - expected_affine_vz) > 1e-9
+                or observed_fixed["velocity_z_m_s"] != collapsed["velocity_z_m_s"]
+                or collapsed["velocity_z_m_s"] != full["velocity_z_m_s"]
+                or any(
+                    abs(float(row["kinetic_energy_eV"]) - fixed_kinetic_energy_eV)
+                    > 5e-9
+                    for row in (affine, observed_fixed)
+                )
+                or any(
+                    float(row["position_x_mm"]) != float(current_center[0])
+                    or float(row["position_y_mm"]) != float(current_center[1])
+                    or float(row["velocity_y_m_s"]) != 0.0
+                    or float(row["velocity_x_m_s"]) <= 0.0
+                    for row in (affine, observed_fixed)
+                )
+            ):
+                raise ContractError("four-arm physical invariants differ")
     return {
         "schema_version": 1,
         "role": "canonical_pulse_restart_target_state_validation",
@@ -2450,9 +2537,43 @@ def prepare_family_source_closure(
                 collapsed_path = (
                     plan_output.parent / "inputs" / "observed_pre_pulse_collapsed.csv"
                 )
+                affine_fixed_10ev_path = (
+                    plan_output.parent / "inputs"
+                    / "affine_zvz_fixed_10eV_transverse_collapsed.csv"
+                )
+                observed_fixed_10ev_path = (
+                    plan_output.parent / "inputs"
+                    / "observed_zvz_fixed_10eV_transverse_collapsed.csv"
+                )
                 projection_receipt_path = (
                     plan_output.parent / "inputs"
                     / "observed_pre_pulse_projection_receipt.json"
+                )
+                selected_arm = observed_pre_pulse_projection["arm_id"]
+                four_arm_projection = selected_arm in {
+                    ARM_AFFINE_FIXED_10EV, ARM_OBSERVED_FIXED_10EV,
+                }
+                affine_authority = (
+                    {
+                        "mean_velocity_z_m_per_s": float(
+                            source_materialization_profile[
+                                "mean_velocity_z_m_per_s"
+                            ]
+                        ),
+                        "velocity_z_slope_m_per_s_per_mm": float(
+                            source_materialization_profile[
+                                "velocity_z_slope_m_per_s_per_mm"
+                            ]
+                        ),
+                        "center_z_mm": float(
+                            ordered_subset_receipt["resolved_target_center_mm"][2]
+                        ),
+                    }
+                    if four_arm_projection else None
+                )
+                fixed_kinetic_energy_eV = (
+                    float(source_materialization_profile["kinetic_energy_eV"])
+                    if four_arm_projection else None
                 )
                 projection_receipt = project_observed_pre_pulse_states(
                     authority_manifest_path=authority_paths["authority_manifest"],
@@ -2464,14 +2585,35 @@ def prepare_family_source_closure(
                     full_output_path=full_path,
                     collapsed_output_path=collapsed_path,
                     receipt_output_path=projection_receipt_path,
+                    affine_fixed_10ev_output_path=(
+                        affine_fixed_10ev_path if four_arm_projection else None
+                    ),
+                    observed_fixed_10ev_output_path=(
+                        observed_fixed_10ev_path if four_arm_projection else None
+                    ),
+                    affine_mean_velocity_z_m_per_s=(
+                        affine_authority["mean_velocity_z_m_per_s"]
+                        if affine_authority is not None else None
+                    ),
+                    affine_velocity_z_slope_m_per_s_per_mm=(
+                        affine_authority["velocity_z_slope_m_per_s_per_mm"]
+                        if affine_authority is not None else None
+                    ),
+                    affine_center_z_mm=(
+                        affine_authority["center_z_mm"]
+                        if affine_authority is not None else None
+                    ),
+                    fixed_kinetic_energy_eV=fixed_kinetic_energy_eV,
                 )
                 validate_schema(
                     projection_receipt,
                     "rf_oatof_observed_pre_pulse_projection_receipt.schema.json",
                 )
-                selected_arm = observed_pre_pulse_projection["arm_id"]
                 pre_pulse_source_path = {
-                    ARM_FULL: full_path, ARM_COLLAPSED: collapsed_path,
+                    ARM_AFFINE_FIXED_10EV: affine_fixed_10ev_path,
+                    ARM_OBSERVED_FIXED_10EV: observed_fixed_10ev_path,
+                    ARM_FULL: full_path,
+                    ARM_COLLAPSED: collapsed_path,
                 }[selected_arm]
                 pre_pulse_receipt_path = projection_receipt_path
             pre_pulse_source_state = {
@@ -2504,9 +2646,17 @@ def prepare_family_source_closure(
                     selected_path=pre_pulse_source_path,
                     full_path=full_path,
                     collapsed_path=collapsed_path,
+                    affine_fixed_10ev_path=(
+                        affine_fixed_10ev_path if four_arm_projection else None
+                    ),
+                    observed_fixed_10ev_path=(
+                        observed_fixed_10ev_path if four_arm_projection else None
+                    ),
                     current_target_path=current_target_path,
                     current_subset_receipt_path=current_subset_receipt_path,
                     pulse_time_us=float(schedule["pulse_effective_time_us"]),
+                    affine_authority=affine_authority,
+                    fixed_kinetic_energy_eV=fixed_kinetic_energy_eV,
                 )
                 if projection_receipt is not None
                 else ideal_subset_validation

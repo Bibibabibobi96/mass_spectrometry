@@ -117,6 +117,7 @@ single_reflection_oa_tof_mass_analyzer/
 - [`docs/history/20260802__formal-simion-integrity-recovery.md`](docs/history/20260802__formal-simion-integrity-recovery.md)
 - [`docs/history/20260817__three-zone-accelerator-external-document-review.md`](docs/history/20260817__three-zone-accelerator-external-document-review.md)
 - [`docs/history/20260817__three-zone-observed-transverse-sensitivity.md`](docs/history/20260817__three-zone-observed-transverse-sensitivity.md)
+- [`docs/history/20260817__three-zone-zvz-nonlinearity-fixed-energy-source-sensitivity.md`](docs/history/20260817__three-zone-zvz-nonlinearity-fixed-energy-source-sensitivity.md)
 - [`docs/history/CANDIDATE_WORKFLOW_VALIDATION_20260720.md`](docs/history/CANDIDATE_WORKFLOW_VALIDATION_20260720.md)
 - [`docs/history/COMSOL_EXTREME_N_CRASH_20260718_19.md`](docs/history/COMSOL_EXTREME_N_CRASH_20260718_19.md)
 - [`docs/history/COMSOL_EXTREME_N_CRASH_CLOSURE_20260719.md`](docs/history/COMSOL_EXTREME_N_CRASH_CLOSURE_20260719.md)

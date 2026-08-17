@@ -32,6 +32,8 @@ EXPECTED_AUTHORITY_MODE = "rf_oatof_resolution_attribution_counterfactual"
 EXPECTED_PREPARED_PROFILE = "pre_pulse_phase_space_attribution_v3"
 ARM_FULL = "full_observed_6d"
 ARM_COLLAPSED = "observed_z_vz_energy_transverse_collapsed"
+ARM_AFFINE_FIXED_10EV = "affine_zvz_fixed_10eV_transverse_collapsed"
+ARM_OBSERVED_FIXED_10EV = "observed_zvz_fixed_10eV_transverse_collapsed"
 
 
 def _sha256(path: Path) -> str:
@@ -154,8 +156,31 @@ def project_observed_pre_pulse_states(
     full_output_path: Path,
     collapsed_output_path: Path,
     receipt_output_path: Path,
+    affine_fixed_10ev_output_path: Path | None = None,
+    observed_fixed_10ev_output_path: Path | None = None,
+    affine_mean_velocity_z_m_per_s: float | None = None,
+    affine_velocity_z_slope_m_per_s_per_mm: float | None = None,
+    affine_center_z_mm: float | None = None,
+    fixed_kinetic_energy_eV: float | None = None,
 ) -> dict[str, Any]:
-    """Write paired full-observed and transverse-collapsed current-epoch states."""
+    """Write the v1 C/D pair or the v2 observed-z four-arm decomposition."""
+    four_arm_values = (
+        affine_fixed_10ev_output_path,
+        observed_fixed_10ev_output_path,
+        affine_mean_velocity_z_m_per_s,
+        affine_velocity_z_slope_m_per_s_per_mm,
+        affine_center_z_mm,
+        fixed_kinetic_energy_eV,
+    )
+    four_arm = any(value is not None for value in four_arm_values)
+    if four_arm and any(value is None for value in four_arm_values):
+        raise ValueError("four-arm projection requires both outputs and frozen affine authority")
+    if four_arm and (
+        not math.isfinite(float(fixed_kinetic_energy_eV))
+        or fixed_kinetic_energy_eV <= 0
+        or fixed_kinetic_energy_eV != 10.0
+    ):
+        raise ValueError("four-arm projection requires fixed kinetic energy of 10 eV")
     observed, old_center, old_clock = _validate_authority(
         authority_manifest_path, prepared_arms_path, observed_state_path,
         old_geometry_path,
@@ -177,6 +202,8 @@ def project_observed_pre_pulse_states(
 
     full_rows: list[dict[str, object]] = []
     collapsed_rows: list[dict[str, object]] = []
+    affine_rows: list[dict[str, object]] = []
+    observed_fixed_rows: list[dict[str, object]] = []
     id_map: list[dict[str, int]] = []
     for index, (target_row, identity) in enumerate(zip(target, mapping), start=1):
         simulation_id = int(identity["simulation_particle_id"])
@@ -213,18 +240,110 @@ def project_observed_pre_pulse_states(
         collapsed["velocity_y_m_s"] = "0"
         full_rows.append(full)
         collapsed_rows.append(collapsed)
+        if four_arm:
+            speed_10ev = math.sqrt(
+                float(fixed_kinetic_energy_eV)
+                / kinetic_energy_ev(mass, 1.0, 0.0, 0.0)
+            )
+            observed_vz = velocity[2]
+            affine_vz = float(affine_mean_velocity_z_m_per_s) + float(
+                affine_velocity_z_slope_m_per_s_per_mm
+            ) * (position[2] - float(affine_center_z_mm))
+
+            def fixed_energy_row(vz: float, arm: str) -> dict[str, object]:
+                transverse_squared = speed_10ev**2 - vz**2
+                if transverse_squared <= 0:
+                    raise ValueError(
+                        f"{arm} axial kinetic energy exceeds fixed 10 eV"
+                    )
+                row = dict(base)
+                row.update({
+                    "position_x_mm": format(current_center[0], ".17g"),
+                    "position_y_mm": format(current_center[1], ".17g"),
+                    "position_z_mm": format(position[2], ".17g"),
+                    "velocity_x_m_s": format(math.sqrt(max(0.0, transverse_squared)), ".17g"),
+                    "velocity_y_m_s": "0",
+                    "velocity_z_m_s": format(vz, ".17g"),
+                })
+                recomputed_energy = kinetic_energy_ev(
+                    mass,
+                    float(row["velocity_x_m_s"]),
+                    0.0,
+                    float(row["velocity_z_m_s"]),
+                )
+                if not math.isclose(
+                    recomputed_energy, float(fixed_kinetic_energy_eV),
+                    rel_tol=1e-14, abs_tol=1e-12,
+                ):
+                    raise ValueError(f"{arm} velocity rounding violates fixed 10 eV")
+                row["kinetic_energy_eV"] = format(float(fixed_kinetic_energy_eV), ".17g")
+                return row
+
+            affine_rows.append(fixed_energy_row(affine_vz, ARM_AFFINE_FIXED_10EV))
+            observed_fixed_rows.append(
+                fixed_energy_row(observed_vz, ARM_OBSERVED_FIXED_10EV)
+            )
         id_map.append({"simulation_particle_id": simulation_id, "source_particle_id": source_id})
 
     _write_rows(full_output_path, full_rows)
     _write_rows(collapsed_output_path, collapsed_rows)
+    if four_arm:
+        _write_rows(Path(affine_fixed_10ev_output_path), affine_rows)
+        _write_rows(Path(observed_fixed_10ev_output_path), observed_fixed_rows)
     for full, collapsed in zip(full_rows, collapsed_rows):
         if any(full[field] != collapsed[field] for field in (
             "particle_id", "instrument_time_us", "mass_amu", "charge_state",
             "position_z_mm", "velocity_z_m_s", "kinetic_energy_eV",
         )):
             raise ValueError("collapsed-arm paired invariants differ")
+    arms = {
+        ARM_FULL: _reference(full_output_path),
+        ARM_COLLAPSED: _reference(collapsed_output_path),
+    }
+    invariants = {
+        "full_observed_velocity_preserved": True,
+        "full_observed_position_common_translation": True,
+        "collapsed_z_vz_energy_clock_equal_full": True,
+        "collapsed_x_y_equal_current_center": True,
+        "collapsed_vy_zero": True,
+        "collapsed_positive_vx_preserves_transverse_speed": True,
+        "energy_recomputed_from_velocity": True,
+    }
+    projection = {
+        "method": (
+            "observed_z_four_arm_energy_decomposition_v2"
+            if four_arm
+            else "common_center_translation_and_current_epoch_transplant_v1"
+        ),
+        "old_center_mm": old_center,
+        "current_center_mm": current_center,
+        "translation_mm": translation,
+        "old_instrument_time_us": old_clock,
+        "current_instrument_time_us": current_clock,
+        "simulation_to_source_particle_id": id_map,
+    }
+    if four_arm:
+        arms.update({
+            ARM_AFFINE_FIXED_10EV: _reference(Path(affine_fixed_10ev_output_path)),
+            ARM_OBSERVED_FIXED_10EV: _reference(Path(observed_fixed_10ev_output_path)),
+        })
+        projection.update({
+            "fixed_kinetic_energy_eV": float(fixed_kinetic_energy_eV),
+            "affine_authority": {
+                "mean_velocity_z_m_per_s": affine_mean_velocity_z_m_per_s,
+                "velocity_z_slope_m_per_s_per_mm": affine_velocity_z_slope_m_per_s_per_mm,
+                "center_z_mm": affine_center_z_mm,
+            },
+        })
+        invariants.update({
+            "all_arms_observed_z_id_clock_equal": True,
+            "affine_arm_vz_from_frozen_authority": True,
+            "observed_fixed_arm_observed_vz_preserved": True,
+            "fixed_10eV_arms_energy_equal": True,
+            "fixed_10eV_arms_centered_xy_vy_zero_positive_vx": True,
+        })
     receipt = {
-        "schema_version": 1,
+        "schema_version": 2 if four_arm else 1,
         "role": "rf_oatof_observed_pre_pulse_projection_receipt",
         "status": "PASS",
         "authorities": {
@@ -239,28 +358,9 @@ def project_observed_pre_pulse_states(
             "particle_count": len(observed),
             "missing_source_particle_ids": EXPECTED_MISSING_SOURCE_IDS,
         },
-        "projection": {
-            "method": "common_center_translation_and_current_epoch_transplant_v1",
-            "old_center_mm": old_center,
-            "current_center_mm": current_center,
-            "translation_mm": translation,
-            "old_instrument_time_us": old_clock,
-            "current_instrument_time_us": current_clock,
-            "simulation_to_source_particle_id": id_map,
-        },
-        "arms": {
-            ARM_FULL: _reference(full_output_path),
-            ARM_COLLAPSED: _reference(collapsed_output_path),
-        },
-        "invariants": {
-            "full_observed_velocity_preserved": True,
-            "full_observed_position_common_translation": True,
-            "collapsed_z_vz_energy_clock_equal_full": True,
-            "collapsed_x_y_equal_current_center": True,
-            "collapsed_vy_zero": True,
-            "collapsed_positive_vx_preserves_transverse_speed": True,
-            "energy_recomputed_from_velocity": True,
-        },
+        "projection": projection,
+        "arms": arms,
+        "invariants": invariants,
     }
     receipt_output_path.parent.mkdir(parents=True, exist_ok=True)
     receipt_output_path.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")

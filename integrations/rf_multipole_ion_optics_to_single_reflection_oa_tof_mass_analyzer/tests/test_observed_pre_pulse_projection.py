@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 
 from common.contracts.particle_physics import kinetic_energy_ev
-from common.contracts.machine_contracts import validate_schema
+from common.contracts.machine_contracts import ContractError, validate_schema
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.observed_pre_pulse_projection import OBSERVED_COLUMNS, TARGET_COLUMNS, project_observed_pre_pulse_states
 
 REPO = Path(__file__).resolve().parents[3]
@@ -23,7 +23,8 @@ class ObservedPrePulseProjectionTests(unittest.TestCase):
     def _fixture(self, root: Path) -> dict[str, Path]:
         paths = {name: root / name for name in (
             "manifest.json", "prepared.json", "observed.csv", "geometry.json",
-            "target.csv", "subset.json", "full.csv", "collapsed.csv", "receipt.json",
+            "target.csv", "subset.json", "full.csv", "collapsed.csv", "affine.csv",
+            "observed_fixed.csv", "receipt.json",
         )}
         paths["manifest.json"].write_text(json.dumps({
             "role": "simulation_run_manifest",
@@ -133,6 +134,99 @@ class ObservedPrePulseProjectionTests(unittest.TestCase):
                     old_geometry_path=p["geometry.json"], current_target_path=p["target.csv"],
                     current_subset_receipt_path=p["subset.json"], full_output_path=p["full.csv"],
                     collapsed_output_path=p["collapsed.csv"], receipt_output_path=p["receipt.json"],
+                )
+
+    def test_projects_v2_four_arms_on_shared_observed_z(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            p = self._fixture(Path(directory))
+            receipt = project_observed_pre_pulse_states(
+                authority_manifest_path=p["manifest.json"],
+                prepared_arms_path=p["prepared.json"], observed_state_path=p["observed.csv"],
+                old_geometry_path=p["geometry.json"], current_target_path=p["target.csv"],
+                current_subset_receipt_path=p["subset.json"], full_output_path=p["full.csv"],
+                collapsed_output_path=p["collapsed.csv"], receipt_output_path=p["receipt.json"],
+                affine_fixed_10ev_output_path=p["affine.csv"],
+                observed_fixed_10ev_output_path=p["observed_fixed.csv"],
+                affine_mean_velocity_z_m_per_s=-2.9323518410018137,
+                affine_velocity_z_slope_m_per_s_per_mm=228.80604377795845,
+                affine_center_z_mm=-61.49423982071021,
+                fixed_kinetic_energy_eV=10.0,
+            )
+            validate_schema(receipt, "rf_oatof_observed_pre_pulse_projection_receipt.schema.json")
+            self.assertEqual(receipt["schema_version"], 2)
+            with p["full.csv"].open(encoding="utf-8", newline="") as handle:
+                full = list(csv.DictReader(handle))
+            with p["affine.csv"].open(encoding="utf-8", newline="") as handle:
+                affine = list(csv.DictReader(handle))
+            with p["observed_fixed.csv"].open(encoding="utf-8", newline="") as handle:
+                observed_fixed = list(csv.DictReader(handle))
+            for full_row, affine_row, observed_row in zip(
+                full, affine, observed_fixed, strict=True
+            ):
+                self.assertEqual(affine_row["position_z_mm"], full_row["position_z_mm"])
+                self.assertEqual(observed_row["position_z_mm"], full_row["position_z_mm"])
+                self.assertEqual(observed_row["velocity_z_m_s"], full_row["velocity_z_m_s"])
+                expected_vz = -2.9323518410018137 + 228.80604377795845 * (
+                    float(full_row["position_z_mm"]) + 61.49423982071021
+                )
+                self.assertAlmostEqual(float(affine_row["velocity_z_m_s"]), expected_vz)
+                for fixed_row in (affine_row, observed_row):
+                    self.assertEqual(fixed_row["position_x_mm"], "-69")
+                    self.assertEqual(fixed_row["position_y_mm"], "0")
+                    self.assertEqual(fixed_row["velocity_y_m_s"], "0")
+                    self.assertGreater(float(fixed_row["velocity_x_m_s"]), 0)
+                    self.assertAlmostEqual(float(fixed_row["kinetic_energy_eV"]), 10.0)
+
+    def test_rejects_fixed_energy_below_affine_axial_energy(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            p = self._fixture(Path(directory))
+            with self.assertRaisesRegex(ValueError, "axial kinetic energy exceeds"):
+                project_observed_pre_pulse_states(
+                    authority_manifest_path=p["manifest.json"],
+                    prepared_arms_path=p["prepared.json"], observed_state_path=p["observed.csv"],
+                    old_geometry_path=p["geometry.json"], current_target_path=p["target.csv"],
+                    current_subset_receipt_path=p["subset.json"], full_output_path=p["full.csv"],
+                    collapsed_output_path=p["collapsed.csv"], receipt_output_path=p["receipt.json"],
+                    affine_fixed_10ev_output_path=p["affine.csv"],
+                    observed_fixed_10ev_output_path=p["observed_fixed.csv"],
+                    affine_mean_velocity_z_m_per_s=10000.0,
+                    affine_velocity_z_slope_m_per_s_per_mm=0.0,
+                    affine_center_z_mm=-61.0,
+                    fixed_kinetic_energy_eV=10.0,
+                )
+
+    def test_four_arm_requires_explicit_fixed_energy_authority(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            p = self._fixture(Path(directory))
+            with self.assertRaisesRegex(ValueError, "requires both outputs and frozen affine"):
+                project_observed_pre_pulse_states(
+                    authority_manifest_path=p["manifest.json"],
+                    prepared_arms_path=p["prepared.json"], observed_state_path=p["observed.csv"],
+                    old_geometry_path=p["geometry.json"], current_target_path=p["target.csv"],
+                    current_subset_receipt_path=p["subset.json"], full_output_path=p["full.csv"],
+                    collapsed_output_path=p["collapsed.csv"], receipt_output_path=p["receipt.json"],
+                    affine_fixed_10ev_output_path=p["affine.csv"],
+                    observed_fixed_10ev_output_path=p["observed_fixed.csv"],
+                    affine_mean_velocity_z_m_per_s=0.0,
+                    affine_velocity_z_slope_m_per_s_per_mm=1.0,
+                    affine_center_z_mm=-61.0,
+                )
+
+    def test_v1_schema_rejects_v2_only_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            p = self._fixture(Path(directory))
+            receipt = project_observed_pre_pulse_states(
+                authority_manifest_path=p["manifest.json"],
+                prepared_arms_path=p["prepared.json"], observed_state_path=p["observed.csv"],
+                old_geometry_path=p["geometry.json"], current_target_path=p["target.csv"],
+                current_subset_receipt_path=p["subset.json"], full_output_path=p["full.csv"],
+                collapsed_output_path=p["collapsed.csv"], receipt_output_path=p["receipt.json"],
+            )
+            receipt["projection"]["fixed_kinetic_energy_eV"] = 10.0
+            with self.assertRaises(ContractError):
+                validate_schema(
+                    receipt,
+                    "rf_oatof_observed_pre_pulse_projection_receipt.schema.json",
                 )
 
     def test_real_authority_projects_current_n100_when_artifacts_exist(self) -> None:
