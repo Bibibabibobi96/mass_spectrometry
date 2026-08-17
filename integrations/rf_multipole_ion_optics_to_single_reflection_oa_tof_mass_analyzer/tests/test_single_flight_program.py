@@ -18,6 +18,8 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_electrode_contract import (
     FRONTEND_ELECTRODES,
+    THREE_ZONE_FRONTEND_ELECTRODES,
+    resolve_frontend_electrode_topology,
 )
 
 
@@ -163,6 +165,42 @@ def _minimal_program_contracts() -> tuple[dict[str, object], dict[str, object]]:
 
 
 class SingleFlightProgramTests(unittest.TestCase):
+    def test_electrode_topology_registry_preserves_two_zone_and_adds_only_id_20(self) -> None:
+        two_zone = resolve_frontend_electrode_topology(FRONTEND_ELECTRODES)
+        self.assertEqual(two_zone["topology_id"], "two_zone_frontend_v1")
+        self.assertEqual(two_zone["basis_electrode_ids"], list(range(20)))
+        self.assertEqual(
+            {
+                key: value
+                for key, value in THREE_ZONE_FRONTEND_ELECTRODES.items()
+                if key != "accelerator_intermediate2_id"
+            },
+            FRONTEND_ELECTRODES,
+        )
+        three_zone = resolve_frontend_electrode_topology(
+            THREE_ZONE_FRONTEND_ELECTRODES
+        )
+        self.assertEqual(three_zone["topology_id"], "three_zone_frontend_v1")
+        self.assertEqual(three_zone["basis_electrode_ids"], list(range(21)))
+        self.assertEqual(
+            THREE_ZONE_FRONTEND_ELECTRODES["accelerator_intermediate2_id"], 20
+        )
+
+    def test_electrode_topology_registry_rejects_unknown_missing_and_noncontiguous(self) -> None:
+        invalid = [
+            {**FRONTEND_ELECTRODES, "unknown_electrode_id": 20},
+            {
+                key: value
+                for key, value in FRONTEND_ELECTRODES.items()
+                if key != "accelerator_grid2_id"
+            },
+            {**THREE_ZONE_FRONTEND_ELECTRODES, "accelerator_intermediate2_id": 21},
+        ]
+        for electrodes in invalid:
+            with self.subTest(electrodes=electrodes):
+                with self.assertRaisesRegex(ValueError, "published topology"):
+                    resolve_frontend_electrode_topology(electrodes)
+
     def test_staged_grid2_runner_omits_pulse_authority_and_enforces_instance_overlay(self) -> None:
         runner = (
             Path(__file__).resolve().parents[1] / "runtime" / "run_single_flight.ps1"
@@ -177,6 +215,16 @@ class SingleFlightProgramTests(unittest.TestCase):
             runner,
         )
         self.assertIn("authority_scope = 'connection_lineage_only'", runner)
+
+    def test_runner_consumes_frozen_electrode_topology_for_overlay_basis(self) -> None:
+        runner = (
+            Path(__file__).resolve().parents[1] / "runtime" / "run_single_flight.ps1"
+        ).read_text(encoding="utf-8")
+        self.assertIn("frontend_electrode_topology.json", runner)
+        self.assertIn("$frontendBasisElectrodeIds", runner)
+        self.assertIn("$maximumFrontendElectrodeId", runner)
+        self.assertNotIn("basis_count=20", runner)
+        self.assertNotIn("foreach ($electrode in 0..19)", runner)
 
     def test_staged_grid2_uses_explicit_instance_ids_and_skips_upstream_runtime(self) -> None:
         upstream, frontend = _minimal_program_contracts()

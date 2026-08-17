@@ -6,7 +6,7 @@
   "additionalProperties": false,
   "required": ["schema_version", "role", "layout_geometry", "semantic", "semantic_sha256"],
   "properties": {
-    "schema_version": {"const": 1},
+    "schema_version": {"enum": [1, 2]},
     "role": {"const": "rf_oatof_resolved_region_field_contract"},
     "layout_geometry": {
       "type": "object",
@@ -22,15 +22,27 @@
       "type": "object",
       "required": ["field_configuration_id", "canonical_profile_id", "region_modes", "planes_mm", "fields_V_per_mm", "effective_domain", "pa_role", "real_pa_field_blending_allowed", "instance_coordinate_mapping"],
       "properties": {
-        "field_configuration_id": {"enum": ["REAL_ACCELERATOR_REAL_REFLECTOR_FIELD", "IDEAL_STAGE1_REAL_STAGE2_REAL_REFLECTOR_FIELD", "REAL_STAGE1_IDEAL_STAGE2_REAL_REFLECTOR_FIELD", "IDEAL_ACCELERATOR_REAL_REFLECTOR_FIELD", "FULL_DOMAIN_PIECEWISE_IDEAL_FIELD"]},
+        "field_configuration_id": {"enum": ["REAL_ACCELERATOR_REAL_REFLECTOR_FIELD", "IDEAL_STAGE1_REAL_STAGE2_REAL_REFLECTOR_FIELD", "REAL_STAGE1_IDEAL_STAGE2_REAL_REFLECTOR_FIELD", "IDEAL_ACCELERATOR_REAL_REFLECTOR_FIELD", "FULL_DOMAIN_PIECEWISE_IDEAL_FIELD", "IDEAL_THREE_ZONE_ACCELERATOR_REAL_REFLECTOR_FIELD"]},
         "canonical_profile_id": {"type": "string", "minLength": 1},
+        "accelerator_topology": {
+          "type": "object",
+          "required": ["topology_id", "planes_global_z_mm", "potentials_v"],
+          "additionalProperties": false,
+          "properties": {
+            "topology_id": {"const": "three_zone_accelerator_ideal_v1"},
+            "planes_global_z_mm": {"$ref": "#/$defs/three_zone_values"},
+            "potentials_v": {"$ref": "#/$defs/three_zone_values"}
+          }
+        },
         "region_modes": {
           "type": "object",
-          "required": ["accelerator_stage1", "accelerator_stage2", "drift", "reflectron_stage1", "reflectron_stage2"],
           "additionalProperties": false,
           "properties": {
             "accelerator_stage1": {"enum": ["real_pa_field", "analytic_ideal_field", "zero_field"]},
             "accelerator_stage2": {"enum": ["real_pa_field", "analytic_ideal_field", "zero_field"]},
+            "accelerator_zone1": {"enum": ["real_pa_field", "analytic_ideal_field", "zero_field"]},
+            "accelerator_zone2": {"enum": ["real_pa_field", "analytic_ideal_field", "zero_field"]},
+            "accelerator_zone3": {"enum": ["real_pa_field", "analytic_ideal_field", "zero_field"]},
             "drift": {"enum": ["real_pa_field", "analytic_ideal_field", "zero_field"]},
             "reflectron_stage1": {"enum": ["real_pa_field", "analytic_ideal_field", "zero_field"]},
             "reflectron_stage2": {"enum": ["real_pa_field", "analytic_ideal_field", "zero_field"]}
@@ -55,5 +67,81 @@
       "additionalProperties": false
     },
     "semantic_sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"}
-  }
+  },
+  "$defs": {
+    "three_zone_values": {
+      "type": "object",
+      "required": ["repeller", "intermediate1", "intermediate2", "exit"],
+      "additionalProperties": false,
+      "properties": {
+        "repeller": {"type": "number"},
+        "intermediate1": {"type": "number"},
+        "intermediate2": {"type": "number"},
+        "exit": {"type": "number"}
+      }
+    },
+    "three_zone_planes": {
+      "type": "object",
+      "required": ["repeller", "intermediate1", "intermediate2", "exit", "reflectron_entrance", "reflectron_midgrid", "reflectron_backplate"],
+      "additionalProperties": false,
+      "properties": {
+        "repeller": {"type": "number"},
+        "intermediate1": {"type": "number"},
+        "intermediate2": {"type": "number"},
+        "exit": {"type": "number"},
+        "reflectron_entrance": {"type": "number"},
+        "reflectron_midgrid": {"type": "number"},
+        "reflectron_backplate": {"type": "number"}
+      }
+    },
+    "three_zone_fields": {
+      "type": "object",
+      "required": ["accelerator_zone1", "accelerator_zone2", "accelerator_zone3", "reflectron_stage1", "reflectron_stage2"],
+      "additionalProperties": false,
+      "properties": {
+        "accelerator_zone1": {"type": "number", "exclusiveMinimum": 0},
+        "accelerator_zone2": {"type": "number", "exclusiveMinimum": 0},
+        "accelerator_zone3": {"type": "number", "exclusiveMinimum": 0},
+        "reflectron_stage1": {"type": "number"},
+        "reflectron_stage2": {"type": "number"}
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"schema_version": {"const": 1}}},
+      "then": {"properties": {"semantic": {
+        "not": {"required": ["accelerator_topology"]},
+        "properties": {
+          "field_configuration_id": {"not": {"const": "IDEAL_THREE_ZONE_ACCELERATOR_REAL_REFLECTOR_FIELD"}},
+          "canonical_profile_id": {"not": {"const": "accelerator_ideal_three_zone_real_reflectron"}},
+          "region_modes": {"required": ["accelerator_stage1", "accelerator_stage2", "drift", "reflectron_stage1", "reflectron_stage2"], "maxProperties": 5}
+        }
+      }}}
+    },
+    {
+      "if": {"properties": {"schema_version": {"const": 2}}},
+      "then": {"properties": {"semantic": {
+        "required": ["accelerator_topology"],
+        "properties": {
+          "field_configuration_id": {"const": "IDEAL_THREE_ZONE_ACCELERATOR_REAL_REFLECTOR_FIELD"},
+          "canonical_profile_id": {"const": "accelerator_ideal_three_zone_real_reflectron"},
+          "region_modes": {
+            "required": ["accelerator_zone1", "accelerator_zone2", "accelerator_zone3", "drift", "reflectron_stage1", "reflectron_stage2"],
+            "maxProperties": 6,
+            "properties": {
+              "accelerator_zone1": {"const": "analytic_ideal_field"},
+              "accelerator_zone2": {"const": "analytic_ideal_field"},
+              "accelerator_zone3": {"const": "analytic_ideal_field"},
+              "drift": {"const": "real_pa_field"},
+              "reflectron_stage1": {"const": "real_pa_field"},
+              "reflectron_stage2": {"const": "real_pa_field"}
+            }
+          },
+          "planes_mm": {"$ref": "#/$defs/three_zone_planes"},
+          "fields_V_per_mm": {"$ref": "#/$defs/three_zone_fields"}
+        }
+      }}}
+    }
+  ]
 }

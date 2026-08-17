@@ -63,8 +63,11 @@ single-flight frontend不拥有第二套rod GEM primitive。四/六/八极杆res
 `segmented_rod_array`由`common/multipole/simion_geometry.py`统一验证并生成官方SIMION `cylinder`/
 `locate` primitive；integration只声明local-z→global-x的刚体placement、组合PA电极namespace及connector。
 当前三族均为四个轴向segment、显式rod basis IDs `1..8`，但物理rod primitive分别为16/24/32条；frontend
-不得再用“固定四段八极杆”推断primitive数量。当前single-flight Program公开的PA basis仍是rod `1..8`
-及总电极`0..19`，因此其他未来basis映射必须先全链发布，frontend不能单独宣称已支持。
+不得再用“固定四段八极杆”推断primitive数量。single-flight现通过显式电极拓扑注册表发布两种映射：
+既有双区`two_zone_frontend_v1`保持总电极`0..19`逐字不变；三区
+`three_zone_frontend_v1`只新增`accelerator_intermediate2_id=20`，总basis为`0..20`。活动
+layout/profile/GEM仍全部是双区，只有消费冻结三区拓扑的后继才能选用ID 20；注册表存在不等于frontend
+已经具有真实第三栅。
 
 single-flight不得维护第二套RF公式。`common/multipole/simion_rf_drive.lua`是独立多极杆与integration
 Program共用的纯Lua drive kernel；它经`family_runtime_dependencies.json`注册，并在每个joint run的
@@ -147,9 +150,10 @@ parity完成前保持只读可用。
 ## 单流程PA、屏蔽和参数重构
 
 单流程的四个Workbench槽位依次为flight tube、reflectron、combined frontend和detector。combined
-frontend把多极杆、连续接地屏蔽、连接器和oaTOF加速器放在同一PA；其电极1–8为八极杆，9为接地
-屏蔽与连接器，10–17为加速器功能电极，18为入口参考套筒，19为入口板。每次run生成的
-`single_flight_frontend_contract.json`才是编号和几何权威。
+frontend把多极杆、连续接地屏蔽、连接器和oaTOF加速器放在同一PA；当前活动双区layout中电极1–8为
+八极杆，9为接地屏蔽与连接器，10–17为加速器功能电极，18为入口参考套筒，19为入口板。三区注册
+身份保留这些ID并预留新增中间边界ID 20，但当前GEM/PA尚未物化该电极。每次run生成的
+`single_flight_frontend_contract.json`及冻结的`frontend_electrode_topology.json`才是编号和几何权威。
 
 布局profile的`design_overrides`只能引用oaTOF变量目录：连续量受安全包络和实验包络约束；整数是离散
 拓扑量；焦面、平移、反射器和罩体等理论派生量禁止直接指定；网格和时间步属于数值profile。省略输入
@@ -180,6 +184,21 @@ finite-interval数值政策只由oaTOF项目的`FINITE_INTERVAL_COMPILER_POLICY`
 `accelerator_phase_space_match.json`不再重复电压降边界、采样数或电压容差；counterfactual分析同样
 直接读取项目政策。旧provisional theory-order campaign保持逐字不变，活动诊断使用显式绑定去重配置
 及项目政策文件的`zero_match_long_all_ideal_theory_order_stage_v2_successor`。
+
+三区后继目前只闭合了“可编译、可失败关闭”的未执行能力。oaTOF项目
+[`three_zone_t5_simion_candidate.py`](../../../projects/single_reflection_oa_tof_mass_analyzer/analysis/three_zone_t5_simion_candidate.py)
+可从hash绑定的成功T5 receipt/report唯一读取`frozen_primary`和冻结branch root，输出
+`CANDIDATE_ONLY`的`three_zone_accelerator_ideal_v1` plane/potential mapping；integration
+region-field schema v2只以
+`accelerator_ideal_three_zone_real_reflectron / IDEAL_THREE_ZONE_ACCELERATOR_REAL_REFLECTOR_FIELD`
+身份消费该mapping，显式生成`accelerator_zone1/2/3`，不把双区
+`FULL_DOMAIN_PIECEWISE_IDEAL_FIELD`静默三区化。相关integration无求解器回归为`392/392`。
+
+该桥尚无已执行的Candidate resolved、三区layout/profile、frontend GEM/PA真实第三栅、N=1 smoke或
+N=100传输；因此当前不能声称三区理论场已经在SIMION实现，也不能授予工程或性能资格。栅面机制只
+沿用2026-08-13已验收的SIMION官方一行raw-PA理想透明电极路径；本轮没有增加自建跨栅、epsilon越层、
+粒子位移或TOF补偿。后继必须先发布并冻结三区layout/profile/GEM，再按N=1原生穿越和N=100传输顺序
+闭合，不能以schema、注册表或测试通过替代solver evidence。
 
 加速器对相邻组件只发布外包络端点；屏蔽罩、无场区和反射器边界从该端点派生，不重复维护内部尺寸或
 绝对坐标。范围校验只证明可编译；几何、电压或拓扑改变后仍须重新验证PA贯通、电极映射、真实Fly和

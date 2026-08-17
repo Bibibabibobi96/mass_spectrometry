@@ -93,7 +93,7 @@ instrument clock仅用于调度与诊断，禁止作为分辨率声明；集成�
 | 结构Candidate | 零变化和`reflectron_midgrid_voltage`、N=100、真实COMSOL/SIMION/CAD receipt | Candidate结构合同；无性能声明 |
 | 五质量候选 | 固定10/100/500/1000/2000 Da功能比较 | Candidate；不替代524 Da基线 |
 | Formal跨求解器诊断 | 当前冻结资产的轴场、同坐标三维场和代表粒子轨迹 | Diagnostic；不改变Formal资格 |
-| 三区加速器理想理论 | 100 Th冻结离散域、精确一维时间和T0—T5单stage漏斗 | Functional / PROVISIONAL / POST_PILOT；solver-free，不改变Formal |
+| 三区加速器理想理论 | 100 Th冻结离散域、精确一维时间和canonical T0—T5漏斗闭合 | Functional / PROVISIONAL / POST_PILOT；solver-free，不改变Formal |
 | Formal当前设计 | vNext同源N=1000、COMSOL/SIMION/CAD及GUI证据原子冻结 | Formal |
 | RF四极杆离子光学→本项目接口 | 下游只读分析器消费 | 整机Formal BLOCKED |
 
@@ -120,6 +120,25 @@ Candidate唯一公开入口为`../workflows/design_candidate/run_candidate.py`�
 不是默认运行量或性能指标。现有双区resolved/profile不能静默复用为三区工程身份，任何真实场迁移必须
 另开Candidate；当前Formal、baseline和资产不变。外部文档问题与处置见
 [`2026-08-17审阅`](history/20260817__three-zone-accelerator-external-document-review.md)。
+
+2026-08-17 canonical solver-free链执行了`T0,T1,T2,G1,T3,T4a,T4b,G2,T5`，未执行可选T4c。
+T2最佳可行二区在2.2 mm cohort上的population sigma/直接FWHM为
+`0.8159038773341178/0.679286964277992 ns`；冻结三区primary为
+`d1=3.25 mm, l23=17.0 mm, lambda=0.30, DeltaV1=250 V`，场对比度
+`2.826764127118471`、尺度化条件数`561.8473678`、尺度化
+`Gamma3=1.12487848e-4`，且因`l23`命中域上界而是boundary-limited。T5的2.2 mm sigma/FWHM为
+`0.18240109086706416/0.14113517445224488 ns`，相对最佳二区改善`77.6443%/79.2230%`；
+1.0 mm sigma/FWHM为`0.004970459371531842/0.003840889778672363 ns`，两种宽度的sampling
+差分别为`0.7647%/0.6353%`。结论为
+`PRIMARY_CONFIRMATION_PASSED_OVER_BEST_TWO_ZONE`，canonical T5 run为
+`20260817_122700__analysis__python__three-zone-t5`。精确口径与限制只查上述理论权威。
+
+T5→三区`CANDIDATE_ONLY` resolved编译器、integration region-field schema v2和保持旧
+`0..19`映射且仅新增电极ID `20`的拓扑注册能力已经实现，integration无求解器回归为
+`392/392`；这些能力尚未被canonical run执行。当前仍没有三区layout/profile、frontend GEM/PA真实
+第三栅、N=1 smoke或N=100传输，因而不能声称三区理论场已在SIMION实现。理想透明栅继续沿用
+2026-08-13已验收的SIMION官方一行raw-PA电极路径；本轮没有新增自建跨栅、粒子位移或TOF补偿。
+上述理论结果仍是solver-free、非工程资格，不能改变Formal状态。
 
 ## 已知兼容边界
 

@@ -234,14 +234,19 @@ $\ell_1,\ell_{23},\lambda$ 和第一段压降作为受控外层离散域；这�
 ## 7. 科学模型与工程拓扑边界
 
 本文的三区命名是 `zone1/zone2/zone3`，边界角色是
-`repeller/intermediate1/intermediate2/exit`。项目现有双区resolved几何、SIMION电极语义和integration
-的 `FULL_DOMAIN_PIECEWISE_IDEAL_FIELD` schema v1只认识
+`repeller/intermediate1/intermediate2/exit`。既有双区resolved几何、SIMION电极语义和
+`FULL_DOMAIN_PIECEWISE_IDEAL_FIELD` schema v1仍只认识
 `accelerator_stage1/accelerator_stage2`、`repeller/grid1/grid2`及 `accel1/accel2`；其中现有
 `grid2` 是双区出口，不是三区新增中间边界。
 
-因此隔离理论结果不得直接复用该profile身份，不得把现有 `grid2` 静默改成中间电极，也不得声称
-已有三区COMSOL/SIMION/CAD拓扑。进入工程阶段前必须新增可区分的region/plane/field schema、解析器、
-Lua分支、求解器几何、电极映射和接口迁移，并重新闭合跨求解器及CAD证据。
+后续已实现但尚未执行一条显式桥接能力：T5 receipt可由
+[`three_zone_t5_simion_candidate.py`](../../analysis/three_zone_t5_simion_candidate.py)编译为
+`CANDIDATE_ONLY` resolved；integration region-field schema v2只在显式
+`three_zone_accelerator_ideal_v1`拓扑下接受三区region/plane/field；电极拓扑注册表保持旧双区
+`0..19`不变，仅为三区新增ID `20`。这些能力没有被任何canonical run消费，也没有新增layout
+profile、frontend GEM/PA中的真实第三栅、N=1 smoke或N=100传输。因此隔离理论结果仍不得直接复用
+双区profile，不得把现有 `grid2` 静默改成中间电极，更不得声称三区理论场已经在SIMION、COMSOL或
+CAD中实现。进入工程验证仍须先闭合三区layout/profile/GEM、真实栅面、电极映射、solver run和证据链。
 
 ## 8. T0—T5阶段漏斗
 
@@ -276,12 +281,44 @@ T4c的 `32,955` 只是离散外层域笛卡尔积的点数：
 它不是性能指标、不是外部文档结论、不是已执行点数，也不是32,955次SIMION/COMSOL运行。T4a/T4b
 足以给出可冻结primary时，默认不执行T4c；只有边界或覆盖不足触发并取得G2人工授权后才可扩展。
 
+### 2026-08-17 canonical solver-free结果
+
+canonical链实际执行了`T0,T1,T2,G1,T3,T4a,T4b,G2,T5`，没有执行可选T4c。T2在冻结域和同一
+baseline连接分支内得到的最佳可行二区基准为
+`d1=4.5 mm, l23=15.0 mm, lambda=0.5, DeltaV1=475 V`；其2.2 mm cohort
+`population sigma=0.8159038773341178 ns`、直接
+`FWHM=0.679286964277992 ns`。
+
+G2冻结的三区primary为
+`d1=3.25 mm, l23=17.0 mm, lambda=0.30, DeltaV1=250 V`。它的场对比度为
+`2.826764127118471`，尺度化Jacobian条件数为`561.8473678`，尺度化
+`Gamma3=1.12487848e-4`；所有post-root门禁通过，但因`l23=17.0 mm`落在冻结域上界而标记为
+`boundary_limited=true`。这支持冻结域内的primary，不支持向域外外推。
+
+T5在1001点cohort上得到：
+
+| 宽度 | population sigma (ns) | 直接FWHM (ns) |
+|---|---:|---:|
+| 2.2 mm | `0.18240109086706416` | `0.14113517445224488` |
+| 1.0 mm | `0.004970459371531842` | `0.003840889778672363` |
+
+相对最佳可行二区，2.2 mm的sigma和直接FWHM分别改善`77.6443%`和`79.2230%`。primary在
+2.2 mm和1.0 mm上的501/1001/2001点population-sigma最大相对差分别为`0.7647%`和`0.6353%`，
+峰模态均稳定。最终结论为
+`PRIMARY_CONFIRMATION_PASSED_OVER_BEST_TWO_ZONE`，canonical T5 run是
+`20260817_122700__analysis__python__three-zone-t5`。
+
+这些数值仍只是post-pilot、solver-free、一维理想分段场证据，不是工程资格、SIMION/COMSOL/CAD
+结果或当前Formal设计变更。
+
 ## 9. 晋级与停止条件
 
 任何stage都必须保留完整失败行、全部根和分支选择依据，不得按低FWHM后筛选。branch选择只按baseline
 连续性和参数距离，不按性能。先导结果只作为高对比上界和post-pilot设计输入，不能作为warm start或
 确认数据。
 
-T5通过也只把三区候选评为 `PRIMARY_THEORY_ONLY_SUPPORTED` 或同等的求解器无关结论。若要进入真实
-Candidate，必须另行预注册三区工程拓扑、当前电压包络、真实边缘场、栅网、传输、容差、COMSOL、
-SIMION和CAD关闭条件；在该后继完成前，项目Formal及所有现有工程资产保持不变。
+T5通过也只允许报告`PRIMARY_THEORY_ONLY_SUPPORTED`、
+`PRIMARY_CONFIRMATION_PASSED_OVER_BEST_TWO_ZONE`或同等的求解器无关结论。即使已存在
+T5→Candidate resolved编译边界，也必须另行预注册并执行三区工程拓扑、当前电压包络、真实边缘场、
+栅网、传输、容差、COMSOL、SIMION和CAD关闭条件；在该后继完成前，项目Formal及所有现有工程资产
+保持不变。

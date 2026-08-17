@@ -1,0 +1,180 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/oatof_three_zone_simion_candidate_resolved.schema.json",
+  "title": "oaTOF T5-frozen three-zone SIMION Candidate resolved input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "role", "project_id", "qualification",
+    "compiler_mode", "campaign", "t5_evidence", "source_identity",
+    "identities", "accelerator_topology", "accelerator_physics",
+    "reflectron", "claim_limit"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "oatof_three_zone_simion_candidate_resolved"},
+    "project_id": {"const": "single_reflection_oa_tof_mass_analyzer"},
+    "qualification": {"const": "CANDIDATE_ONLY"},
+    "compiler_mode": {"const": "T5_FROZEN_PRIMARY_AND_BRANCH_ONLY"},
+    "campaign": {
+      "type": "object", "additionalProperties": false,
+      "required": ["campaign_id", "file"],
+      "properties": {
+        "campaign_id": {"$ref": "#/$defs/id"},
+        "file": {"$ref": "#/$defs/file"}
+      }
+    },
+    "t5_evidence": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "stage_id", "status", "conclusion", "plan_sha256",
+        "receipt", "report", "frozen_primary_row_id", "frozen_branch_root"
+      ],
+      "properties": {
+        "stage_id": {"const": "T5"},
+        "status": {"const": "success"},
+        "conclusion": {
+          "enum": [
+            "PRIMARY_CONFIRMATION_PASSED_OVER_BEST_TWO_ZONE",
+            "PRIMARY_THEORY_ONLY_SUPPORTED"
+          ]
+        },
+        "plan_sha256": {"$ref": "#/$defs/sha"},
+        "receipt": {"$ref": "#/$defs/file"},
+        "report": {"$ref": "#/$defs/file"},
+        "frozen_primary_row_id": {"const": "frozen_primary"},
+        "frozen_branch_root": {
+          "type": "object", "additionalProperties": false,
+          "required": [
+            "policy", "reference_fixture_id", "accepted_index",
+            "cluster_index", "coordinates", "distance_to_branch_reference",
+            "inner"
+          ],
+          "properties": {
+            "policy": {"const": "scaled_parameter_distance_unique_nearest"},
+            "reference_fixture_id": {"type": "string", "minLength": 1},
+            "accepted_index": {"type": "integer", "minimum": 0},
+            "cluster_index": {"type": "integer", "minimum": 0},
+            "coordinates": {
+              "type": "array", "minItems": 3, "maxItems": 3,
+              "items": {"type": "number"}
+            },
+            "distance_to_branch_reference": {
+              "oneOf": [{"type": "number", "minimum": 0}, {"type": "null"}]
+            },
+            "inner": {"$ref": "#/$defs/inner"}
+          }
+        }
+      }
+    },
+    "source_identity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["authority", "campaign_id", "campaign_sha256", "frozen_source"],
+      "properties": {
+        "authority": {"const": "campaign.frozen_source"},
+        "campaign_id": {"$ref": "#/$defs/id"},
+        "campaign_sha256": {"$ref": "#/$defs/sha"},
+        "frozen_source": {
+          "type": "object", "additionalProperties": false,
+          "required": [
+            "mass_to_charge_th", "charge_sign", "center_x_mm",
+            "center_velocity_m_per_s", "velocity_slope_m_per_s_per_mm",
+            "nominal_energy_per_charge_v"
+          ],
+          "properties": {
+            "mass_to_charge_th": {"type": "number", "exclusiveMinimum": 0},
+            "charge_sign": {"const": 1},
+            "center_x_mm": {"type": "number"},
+            "center_velocity_m_per_s": {"type": "number"},
+            "velocity_slope_m_per_s_per_mm": {"type": "number"},
+            "nominal_energy_per_charge_v": {"type": "number", "exclusiveMinimum": 0}
+          }
+        }
+      }
+    },
+    "identities": {
+      "type": "object", "additionalProperties": false,
+      "required": ["topology_id", "geometry_id", "field_id"],
+      "properties": {
+        "topology_id": {"const": "three_zone_accelerator_ideal_v1"},
+        "geometry_id": {"const": "three_zone_focus_origin_planes_v1"},
+        "field_id": {"const": "three_zone_piecewise_uniform_ideal_field_v1"}
+      }
+    },
+    "accelerator_topology": {
+      "type": "object", "additionalProperties": false,
+      "required": ["topology_id", "planes_global_z_mm", "potentials_v"],
+      "properties": {
+        "topology_id": {"const": "three_zone_accelerator_ideal_v1"},
+        "planes_global_z_mm": {"$ref": "#/$defs/fourPlanes"},
+        "potentials_v": {"$ref": "#/$defs/fourPlanes"}
+      }
+    },
+    "accelerator_physics": {
+      "type": "object", "additionalProperties": false,
+      "required": ["lengths_mm", "fields_v_per_mm", "focus_drift_after_exit_mm"],
+      "properties": {
+        "lengths_mm": {
+          "type": "object", "additionalProperties": false,
+          "required": ["d1", "d2", "d3"],
+          "properties": {
+            "d1": {"type": "number", "exclusiveMinimum": 0},
+            "d2": {"type": "number", "exclusiveMinimum": 0},
+            "d3": {"type": "number", "exclusiveMinimum": 0}
+          }
+        },
+        "fields_v_per_mm": {
+          "type": "object", "additionalProperties": false,
+          "required": ["e1", "e2", "e3"],
+          "properties": {
+            "e1": {"type": "number", "exclusiveMinimum": 0},
+            "e2": {"type": "number", "exclusiveMinimum": 0},
+            "e3": {"type": "number", "exclusiveMinimum": 0}
+          }
+        },
+        "focus_drift_after_exit_mm": {"type": "number", "minimum": 0}
+      }
+    },
+    "reflectron": {
+      "type": "object", "additionalProperties": false,
+      "required": ["u_r1_v", "f_r2_v_per_mm"],
+      "properties": {
+        "u_r1_v": {"type": "number", "exclusiveMinimum": 0},
+        "f_r2_v_per_mm": {"type": "number", "exclusiveMinimum": 0}
+      }
+    },
+    "claim_limit": {"type": "string", "minLength": 1}
+  },
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"},
+    "sha": {"type": "string", "pattern": "^[A-F0-9]{64}$"},
+    "file": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "bytes", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "bytes": {"type": "integer", "minimum": 1},
+        "sha256": {"$ref": "#/$defs/sha"}
+      }
+    },
+    "inner": {
+      "type": "object", "additionalProperties": false,
+      "required": ["eta", "u_r1_v", "f_r2_v_per_mm"],
+      "properties": {
+        "eta": {"type": "number"},
+        "u_r1_v": {"type": "number", "exclusiveMinimum": 0},
+        "f_r2_v_per_mm": {"type": "number", "exclusiveMinimum": 0}
+      }
+    },
+    "fourPlanes": {
+      "type": "object", "additionalProperties": false,
+      "required": ["repeller", "intermediate1", "intermediate2", "exit"],
+      "properties": {
+        "repeller": {"type": "number"},
+        "intermediate1": {"type": "number"},
+        "intermediate2": {"type": "number"},
+        "exit": {"type": "number"}
+      }
+    }
+  }
+}
