@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/oatof_three_zone_resolved_plan.schema.json",
+  "title": "Resolved single-stage oaTOF three-zone solver-free plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "role", "campaign_id", "campaign_sha256", "stage_id",
+    "plan_sha256", "assessment_design_status", "solver_execution_allowed",
+    "automatic_retry_count", "predecessor", "manual_gate", "authorities",
+    "parameters", "rows", "claim_limit"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "oatof_three_zone_resolved_stage_plan"},
+    "campaign_id": {"$ref": "#/$defs/id"},
+    "campaign_sha256": {"$ref": "#/$defs/sha"},
+    "stage_id": {"$ref": "#/$defs/stage"},
+    "plan_sha256": {"$ref": "#/$defs/sha"},
+    "assessment_design_status": {
+      "const": "POST_PILOT_STAGE_GATED_OPTIMIZATION_THEN_FROZEN_CONFIRMATION"
+    },
+    "solver_execution_allowed": {"const": false},
+    "automatic_retry_count": {"const": 0},
+    "predecessor": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/receipt_ref"}]},
+    "manual_gate": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/receipt_ref"}]},
+    "authorities": {
+      "type": "object", "minProperties": 1,
+      "additionalProperties": {"$ref": "#/$defs/file"}
+    },
+    "parameters": {"type": "object"},
+    "rows": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/row"}
+    },
+    "claim_limit": {"type": "string", "minLength": 1}
+  },
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"},
+    "sha": {"type": "string", "pattern": "^[A-F0-9]{64}$"},
+    "stage": {"enum": ["T0", "T1", "T2", "G1", "T3", "T4a", "T4b", "T4c", "G2", "T5"]},
+    "file": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "bytes", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "bytes": {"type": "integer", "minimum": 1},
+        "sha256": {"$ref": "#/$defs/sha"}
+      }
+    },
+    "receipt_ref": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "sha256", "stage_id", "conclusion", "next_stage_authorized"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha"},
+        "stage_id": {"$ref": "#/$defs/stage"},
+        "conclusion": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]+$"},
+        "next_stage_authorized": {"const": true}
+      }
+    },
+    "row": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "sequence", "row_id", "row_sha256", "arm_role", "scientific_gate_eligible",
+        "scope", "outer", "solve_variables", "solve_targets", "matched_control_row_id"
+      ],
+      "properties": {
+        "sequence": {"type": "integer", "minimum": 1},
+        "row_id": {"$ref": "#/$defs/id"},
+        "row_sha256": {"$ref": "#/$defs/sha"},
+        "arm_role": {
+          "enum": [
+            "formula_fixture", "two_zone_benchmark", "three_zone_screen",
+            "paired_two_zone_control", "current_exact_baseline",
+            "three_zone_discovery", "three_zone_confirmation", "local_robustness"
+          ]
+        },
+        "scientific_gate_eligible": {"type": "boolean"},
+        "scope": {"enum": ["frozen_domain", "extrapolation_only", "identity_only"]},
+        "outer": {
+          "type": "object", "additionalProperties": false,
+          "required": ["d1_mm", "l23_mm", "lambda", "delta_v1_v"],
+          "properties": {
+            "d1_mm": {"type": ["number", "null"]},
+            "l23_mm": {"type": ["number", "null"]},
+            "lambda": {"type": ["number", "null"]},
+            "delta_v1_v": {"type": ["number", "null"]}
+          }
+        },
+        "solve_variables": {
+          "type": "array", "uniqueItems": true,
+          "items": {"enum": ["eta", "u_r1", "f_r2"]}
+        },
+        "solve_targets": {
+          "type": "array", "uniqueItems": true,
+          "items": {"enum": ["d1", "d2", "d3"]}
+        },
+        "matched_control_row_id": {"type": ["string", "null"]}
+      }
+    }
+  }
+}

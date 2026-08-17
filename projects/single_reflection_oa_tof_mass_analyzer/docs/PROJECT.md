@@ -93,6 +93,7 @@ instrument clock仅用于调度与诊断，禁止作为分辨率声明；集成�
 | 结构Candidate | 零变化和`reflectron_midgrid_voltage`、N=100、真实COMSOL/SIMION/CAD receipt | Candidate结构合同；无性能声明 |
 | 五质量候选 | 固定10/100/500/1000/2000 Da功能比较 | Candidate；不替代524 Da基线 |
 | Formal跨求解器诊断 | 当前冻结资产的轴场、同坐标三维场和代表粒子轨迹 | Diagnostic；不改变Formal资格 |
+| 三区加速器理想理论 | 100 Th冻结离散域、精确一维时间和T0—T5单stage漏斗 | Functional / PROVISIONAL / POST_PILOT；solver-free，不改变Formal |
 | Formal当前设计 | vNext同源N=1000、COMSOL/SIMION/CAD及GUI证据原子冻结 | Formal |
 | RF四极杆离子光学→本项目接口 | 下游只读分析器消费 | 整机Formal BLOCKED |
 
@@ -112,6 +113,13 @@ Candidate唯一公开入口为`../workflows/design_candidate/run_candidate.py`�
 跨项目2.2 mm理论源宽候选只验证了变量合同、理论闭合和run-local PA自动重构；没有修改本项目Formal，
 也不改变Formal资格。完整结果只查
 [integration当前文档](../../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/INTEGRATION.md)。
+
+针对该先导现象的三区加速器假说现已收归
+[`三区理想理论与隔离验证漏斗`](theory/three_zone_accelerator_ideal_theory.md)。它只运行精确一维解析时间和
+冻结cohort，不调用SIMION、COMSOL或CAD；可选T4c的32,955仅是人工授权后的解析外层网格基数，
+不是默认运行量或性能指标。现有双区resolved/profile不能静默复用为三区工程身份，任何真实场迁移必须
+另开Candidate；当前Formal、baseline和资产不变。外部文档问题与处置见
+[`2026-08-17审阅`](history/20260817__three-zone-accelerator-external-document-review.md)。
 
 ## 已知兼容边界
 

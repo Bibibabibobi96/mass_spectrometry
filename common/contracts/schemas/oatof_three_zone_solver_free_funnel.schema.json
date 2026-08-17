@@ -1,0 +1,553 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/oatof_three_zone_solver_free_funnel.schema.json",
+  "title": "Post-pilot oaTOF three-zone solver-free stage funnel",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "role", "project_id", "campaign_id", "status",
+    "assessment_design_status", "evidence_level", "solver_execution_allowed",
+    "stage_execution_mode", "automatic_retry_count", "authorities",
+    "identity", "frozen_source", "reflectron_geometry", "theory_domain",
+    "physics_limits", "root_policy", "sampling_policy", "scientific_gates",
+    "engineering_annotations", "fixtures", "stage_design", "stages", "claim_limit"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "oatof_three_zone_solver_free_funnel"},
+    "project_id": {"const": "single_reflection_oa_tof_mass_analyzer"},
+    "campaign_id": {"$ref": "#/$defs/id"},
+    "status": {"enum": ["draft", "authorized", "retired"]},
+    "assessment_design_status": {
+      "const": "POST_PILOT_STAGE_GATED_OPTIMIZATION_THEN_FROZEN_CONFIRMATION"
+    },
+    "evidence_level": {"const": "PROVISIONAL"},
+    "solver_execution_allowed": {"const": false},
+    "stage_execution_mode": {"const": "single_stage_only"},
+    "automatic_retry_count": {"const": 0},
+    "authorities": {
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/file"},
+      "required": [
+        "baseline", "resolved_geometry", "analysis_contract", "peak_metrics",
+        "two_zone_theory", "reflectron_theory", "three_zone_theory",
+        "three_zone_root_solver"
+      ]
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "prior_pilot_results_seen", "primary_status", "historical_pilot_role",
+        "working_candidate_binding_required", "focus_to_reflectron_mm",
+        "accelerator_translation_policy", "exit_to_reflectron_rule",
+        "confirmation_benchmark"
+      ],
+      "properties": {
+        "prior_pilot_results_seen": {"const": true},
+        "primary_status": {"const": "PENDING_G2_FREEZE"},
+        "historical_pilot_role": {"const": "HIGH_CONTRAST_UPPER_BOUND_ONLY"},
+        "working_candidate_binding_required": {"const": true},
+        "focus_to_reflectron_mm": {"const": 600.0},
+        "accelerator_translation_policy": {
+          "const": "derive_DA_from_A1_zero_then_translate_exit_to_z_minus_DA"
+        },
+        "exit_to_reflectron_rule": {"const": "focus_to_reflectron_mm_plus_DA"},
+        "confirmation_benchmark": {"const": "best_feasible_two_zone_in_frozen_domain_branch"}
+      }
+    },
+    "frozen_source": {"$ref": "#/$defs/source"},
+    "reflectron_geometry": {"$ref": "#/$defs/reflectron"},
+    "theory_domain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "d1_mm", "l23_mm", "lambda", "delta_v1_v", "minimum_zone_length_mm",
+        "field_ratio", "maximum_accelerator_field_v_per_mm",
+        "maximum_da_plus_accelerator_length_mm"
+      ],
+      "properties": {
+        "d1_mm": {"$ref": "#/$defs/grid"},
+        "l23_mm": {"$ref": "#/$defs/grid"},
+        "lambda": {"$ref": "#/$defs/grid"},
+        "delta_v1_v": {"$ref": "#/$defs/grid"},
+        "minimum_zone_length_mm": {"type": "number", "exclusiveMinimum": 0},
+        "field_ratio": {
+          "type": "object", "additionalProperties": false,
+          "required": ["minimum", "maximum"],
+          "properties": {
+            "minimum": {"type": "number", "exclusiveMinimum": 0},
+            "maximum": {"type": "number", "exclusiveMinimum": 0}
+          }
+        },
+        "maximum_accelerator_field_v_per_mm": {
+          "type": "number", "exclusiveMinimum": 0
+        },
+        "maximum_da_plus_accelerator_length_mm": {"type": "number", "exclusiveMinimum": 0}
+      }
+    },
+    "physics_limits": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "minimum_zone_length_mm", "minimum_electrode_clearance_mm",
+        "minimum_energy_margin_v", "minimum_abs_energy_slope_v_per_mm",
+        "minimum_focus_drift_mm", "maximum_accelerator_focus_envelope_mm",
+        "minimum_stage1_voltage_v", "maximum_stage1_voltage_v",
+        "maximum_accelerator_field_v_per_mm",
+        "maximum_accelerator_field_contrast", "minimum_stage2_depth_margin_mm"
+      ],
+      "properties": {
+        "minimum_zone_length_mm": {"type": "number", "exclusiveMinimum": 0},
+        "minimum_electrode_clearance_mm": {"type": "number", "minimum": 0},
+        "minimum_energy_margin_v": {"type": "number", "minimum": 0},
+        "minimum_abs_energy_slope_v_per_mm": {"type": "number", "minimum": 0},
+        "minimum_focus_drift_mm": {"type": "number", "minimum": 0},
+        "maximum_accelerator_focus_envelope_mm": {"type": "number", "exclusiveMinimum": 0},
+        "minimum_stage1_voltage_v": {"type": "number", "minimum": 0},
+        "maximum_stage1_voltage_v": {"type": "number", "exclusiveMinimum": 0},
+        "maximum_accelerator_field_v_per_mm": {"type": "number", "exclusiveMinimum": 0},
+        "maximum_accelerator_field_contrast": {"type": "number", "minimum": 1},
+        "minimum_stage2_depth_margin_mm": {"type": "number", "minimum": 0}
+      }
+    },
+    "root_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scaled_variables", "scaled_bounds", "two_zone_seeds", "eta_hat_seeds", "seed_order",
+        "newton_central_difference_step", "newton_convergence_tolerance", "maximum_iterations",
+        "maximum_backtracks", "minimum_backtracking_factor", "invalid_trial_policy",
+        "maximum_scaled_residual", "root_cluster_scaled_distance",
+        "rank_relative_tolerance", "minimum_reciprocal_condition",
+        "branch_selection", "three_zone_branch_reference_fixture_id",
+        "branch_distance_coordinates", "branch_distance_metric",
+        "branch_selection_requires_unique_nearest",
+        "branch_selection_never_uses_performance", "two_zone_branch_selection",
+        "pilot_warm_start_allowed",
+        "post_root_composite_audit",
+        "minimum_gamma3_uncertainty_multiple"
+      ],
+      "properties": {
+        "scaled_variables": {
+          "const": ["u=U_R1/Wc", "f=F_R2*L_R2/Wc", "eta_hat=eta/ln(10)"]
+        },
+        "scaled_bounds": {
+          "type": "object", "additionalProperties": false,
+          "required": ["u", "f", "eta_hat"],
+          "properties": {
+            "u": {"$ref": "#/$defs/bounds"},
+            "f": {"$ref": "#/$defs/bounds"},
+            "eta_hat": {"$ref": "#/$defs/bounds"}
+          }
+        },
+        "two_zone_seeds": {
+          "type": "array", "minItems": 5, "maxItems": 5,
+          "items": {"$ref": "#/$defs/pair"}
+        },
+        "eta_hat_seeds": {
+          "type": "array", "minItems": 5, "maxItems": 5,
+          "items": {"type": "number"}
+        },
+        "seed_order": {"const": "eta_hat_then_two_zone_seed;collect_all_roots"},
+        "newton_central_difference_step": {"type": "number", "exclusiveMinimum": 0},
+        "newton_convergence_tolerance": {"type": "number", "exclusiveMinimum": 0},
+        "maximum_iterations": {"type": "integer", "minimum": 1},
+        "maximum_backtracks": {"type": "integer", "minimum": 0},
+        "minimum_backtracking_factor": {"type": "number", "exclusiveMinimum": 0, "maximum": 1},
+        "invalid_trial_policy": {"const": "shrink_step_only"},
+        "maximum_scaled_residual": {"type": "number", "exclusiveMinimum": 0},
+        "root_cluster_scaled_distance": {"type": "number", "exclusiveMinimum": 0},
+        "rank_relative_tolerance": {"type": "number", "exclusiveMinimum": 0},
+        "minimum_reciprocal_condition": {"type": "number", "exclusiveMinimum": 0},
+        "branch_selection": {"const": "baseline_continuation_then_parameter_distance_never_performance"},
+        "three_zone_branch_reference_fixture_id": {"const": "low_contrast_c3_anchor"},
+        "branch_distance_coordinates": {"const": ["u", "f", "eta_hat"]},
+        "branch_distance_metric": {"const": "scaled_euclidean"},
+        "branch_selection_requires_unique_nearest": {"const": true},
+        "branch_selection_never_uses_performance": {"const": true},
+        "two_zone_branch_selection": {"const": "unique_accepted_root_only"},
+        "pilot_warm_start_allowed": {"const": false},
+        "post_root_composite_audit": {
+          "type": "object", "additionalProperties": false,
+          "required": [
+            "central_difference_steps_h", "required_checks_at_each_step",
+            "require_all_checks_at_all_steps", "cross_step_quantities",
+            "maximum_cross_step_relative_change"
+          ],
+          "properties": {
+            "central_difference_steps_h": {"const": [0.00005, 0.0001, 0.0002]},
+            "required_checks_at_each_step": {
+              "const": [
+                "scaled_derivative_residual", "full_numerical_rank",
+                "jacobian_condition_number", "gamma3_uncertainty_separation"
+              ]
+            },
+            "require_all_checks_at_all_steps": {"const": true},
+            "cross_step_quantities": {"const": ["scaled_jacobian", "gamma3_scaled"]},
+            "maximum_cross_step_relative_change": {"const": 0.01}
+          }
+        },
+        "minimum_gamma3_uncertainty_multiple": {"type": "number", "minimum": 0}
+      }
+    },
+    "sampling_policy": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "source_full_widths_mm", "population_sample_counts",
+        "population_sigma_relative_convergence", "primary_sample_count", "fwhm_algorithm",
+        "fwhm_cross_sample_convergence_allowed", "mode_count_cross_sample_stability_required"
+      ],
+      "properties": {
+        "source_full_widths_mm": {
+          "type": "array", "minItems": 2, "uniqueItems": true,
+          "items": {"type": "number", "exclusiveMinimum": 0}
+        },
+        "population_sample_counts": {
+          "type": "array", "prefixItems": [{"const": 501}, {"const": 1001}, {"const": 2001}],
+          "items": false, "minItems": 3, "maxItems": 3
+        },
+        "population_sigma_relative_convergence": {"const": 0.01},
+        "primary_sample_count": {"const": 1001},
+        "fwhm_algorithm": {"const": "analysis.peak_metrics.compute_peak_metrics"},
+        "fwhm_cross_sample_convergence_allowed": {"const": false},
+        "mode_count_cross_sample_stability_required": {"const": true}
+      }
+    },
+    "scientific_gates": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "maximum_scaled_derivative_residual", "maximum_scaled_jacobian_condition",
+        "eta_zero_oracle_relative_tolerance", "exact_vs_taylor_relative_tolerance",
+        "two_zone_sufficiency_relative_to_current", "three_zone_performance_relative_to_best_two_zone"
+      ],
+      "properties": {
+        "maximum_scaled_derivative_residual": {"type": "number", "exclusiveMinimum": 0},
+        "maximum_scaled_jacobian_condition": {"type": "number", "exclusiveMinimum": 1},
+        "eta_zero_oracle_relative_tolerance": {"type": "number", "exclusiveMinimum": 0},
+        "exact_vs_taylor_relative_tolerance": {"type": "number", "exclusiveMinimum": 0},
+        "two_zone_sufficiency_relative_to_current": {"$ref": "#/$defs/performance"},
+        "three_zone_performance_relative_to_best_two_zone": {"$ref": "#/$defs/performance"}
+      }
+    },
+    "engineering_annotations": {
+      "type": "object", "additionalProperties": false,
+      "required": ["current_approved_voltage_envelope_gating", "real_fringe_gating", "manufacturing_gating"],
+      "properties": {
+        "current_approved_voltage_envelope_gating": {"const": false},
+        "real_fringe_gating": {"const": false},
+        "manufacturing_gating": {"const": false}
+      }
+    },
+    "fixtures": {
+      "type": "object", "additionalProperties": false,
+      "required": ["current_exact_baseline", "low_contrast_anchor"],
+      "properties": {
+        "current_exact_baseline": {"$ref": "#/$defs/baselineFixture"},
+        "low_contrast_anchor": {"$ref": "#/$defs/anchorFixture"}
+      }
+    },
+    "stage_design": {"$ref": "#/$defs/stageDesign"},
+    "stages": {
+      "type": "array", "minItems": 10, "maxItems": 10,
+      "items": {"$ref": "#/$defs/stage"}
+    },
+    "claim_limit": {"type": "string", "minLength": 1}
+  },
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"},
+    "sha": {"type": "string", "pattern": "^[A-F0-9]{64}$"},
+    "file": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "bytes", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "bytes": {"type": "integer", "minimum": 1},
+        "sha256": {"$ref": "#/$defs/sha"}
+      }
+    },
+    "grid": {
+      "type": "object", "additionalProperties": false,
+      "required": ["minimum", "maximum", "step"],
+      "properties": {
+        "minimum": {"type": "number"}, "maximum": {"type": "number"},
+        "step": {"type": "number", "exclusiveMinimum": 0}
+      }
+    },
+    "bounds": {
+      "type": "object", "additionalProperties": false,
+      "required": ["minimum", "maximum"],
+      "properties": {
+        "minimum": {"type": "number"},
+        "maximum": {"type": "number"}
+      }
+    },
+    "pair": {
+      "type": "array", "prefixItems": [{"type": "number"}, {"type": "number"}],
+      "items": false, "minItems": 2, "maxItems": 2
+    },
+    "source": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "mass_to_charge_th", "charge_sign", "center_x_mm",
+        "center_velocity_m_per_s", "velocity_slope_m_per_s_per_mm",
+        "nominal_energy_per_charge_v"
+      ],
+      "properties": {
+        "mass_to_charge_th": {"type": "number", "exclusiveMinimum": 0},
+        "charge_sign": {"enum": [-1, 1]},
+        "center_x_mm": {"type": "number"},
+        "center_velocity_m_per_s": {"type": "number"},
+        "velocity_slope_m_per_s_per_mm": {"type": "number"},
+        "nominal_energy_per_charge_v": {"type": "number", "exclusiveMinimum": 0}
+      }
+    },
+    "reflectron": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "stage1_length_mm", "stage2_length_mm", "upstream_drift_mm",
+        "downstream_drift_mm"
+      ],
+      "properties": {
+        "stage1_length_mm": {"type": "number", "exclusiveMinimum": 0},
+        "stage2_length_mm": {"type": "number", "exclusiveMinimum": 0},
+        "upstream_drift_mm": {"type": "number", "exclusiveMinimum": 0},
+        "downstream_drift_mm": {"type": "number", "exclusiveMinimum": 0}
+      }
+    },
+    "outer": {
+      "type": "object", "additionalProperties": false,
+      "required": ["d1_mm", "l23_mm", "lambda", "delta_v1_v"],
+      "properties": {
+        "d1_mm": {"type": "number"}, "l23_mm": {"type": "number"},
+        "lambda": {"type": "number"}, "delta_v1_v": {"type": "number"}
+      }
+    },
+    "inner": {
+      "type": "object", "additionalProperties": false,
+      "required": ["eta", "u_r1_v", "f_r2_v_per_mm"],
+      "properties": {
+        "eta": {"type": "number"}, "u_r1_v": {"type": "number"},
+        "f_r2_v_per_mm": {"type": "number"}
+      }
+    },
+    "baselineFixture": {
+      "type": "object", "additionalProperties": false,
+      "required": ["fixture_id", "outer", "inner_policy", "scope"],
+      "properties": {
+        "fixture_id": {"const": "current_exact_baseline"},
+        "outer": {"$ref": "#/$defs/outer"},
+        "inner_policy": {"const": "resolve_eta_zero_d1_d2_with_common_five_seeds"},
+        "scope": {"const": "context_only_outside_frozen_grid"}
+      }
+    },
+    "anchorFixture": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "fixture_id", "evidence_identity", "outer", "inner", "expected",
+        "expected_derivatives"
+      ],
+      "properties": {
+        "fixture_id": {"const": "low_contrast_c3_anchor"},
+        "evidence_identity": {"const": "POST_PILOT_WORKING_ANCHOR_NOT_PRIMARY"},
+        "outer": {"$ref": "#/$defs/outer"},
+        "inner": {"$ref": "#/$defs/inner"},
+        "expected": {
+          "type": "object", "additionalProperties": false,
+          "required": [
+            "focus_drift_after_exit_mm", "field1_v_per_mm", "field2_v_per_mm",
+            "field3_v_per_mm", "field_ratio_2_over_3",
+            "accelerator_field_contrast"
+          ],
+          "properties": {
+            "focus_drift_after_exit_mm": {"type": "number"},
+            "field1_v_per_mm": {"type": "number"},
+            "field2_v_per_mm": {"type": "number"},
+            "field3_v_per_mm": {"type": "number"},
+            "field_ratio_2_over_3": {"type": "number"},
+            "accelerator_field_contrast": {"type": "number"}
+          }
+        },
+        "expected_derivatives": {
+          "type": "object", "additionalProperties": false,
+          "required": ["d1", "d2", "d3", "d4"],
+          "properties": {
+            "d1": {"type": "number"},
+            "d2": {"type": "number"},
+            "d3": {"type": "number"},
+            "d4": {"type": "number"}
+          }
+        }
+      }
+    },
+    "numberArray": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": {"type": "number"}
+    },
+    "stageDesign": {
+      "type": "object", "additionalProperties": false,
+      "required": ["T1", "T2", "T3", "T4a", "T4b", "T4c", "T5"],
+      "properties": {
+        "T1": {
+          "type": "object", "additionalProperties": false,
+          "required": ["formula_fixtures", "expected_rows"],
+          "properties": {
+            "formula_fixtures": {
+              "type": "array", "minItems": 3, "maxItems": 3, "uniqueItems": true,
+              "items": {"type": "string", "minLength": 1}
+            },
+            "expected_rows": {"const": 3}
+          }
+        },
+        "T2": {
+          "type": "object", "additionalProperties": false,
+          "required": ["grid_axes", "grid_rows", "include_current_baseline", "expected_rows"],
+          "properties": {
+            "grid_axes": {"const": ["d1_mm", "l23_mm", "delta_v1_v"]},
+            "grid_rows": {"const": 2535},
+            "include_current_baseline": {"const": true},
+            "expected_rows": {"const": 2536}
+          }
+        },
+        "T3": {
+          "type": "object", "additionalProperties": false,
+          "required": [
+            "d1_values_mm", "l23_values_mm", "delta_v1_values_v", "lambda_values",
+            "three_zone_rows", "paired_two_zone_rows", "include_current_baseline",
+            "expected_rows", "anchor_fixture_id"
+          ],
+          "properties": {
+            "d1_values_mm": {"$ref": "#/$defs/numberArray"},
+            "l23_values_mm": {"$ref": "#/$defs/numberArray"},
+            "delta_v1_values_v": {"$ref": "#/$defs/numberArray"},
+            "lambda_values": {"$ref": "#/$defs/numberArray"},
+            "three_zone_rows": {"const": 32},
+            "paired_two_zone_rows": {"const": 8},
+            "include_current_baseline": {"const": true},
+            "expected_rows": {"const": 41},
+            "anchor_fixture_id": {"const": "low_contrast_c3_anchor"}
+          }
+        },
+        "T4a": {
+          "type": "object", "additionalProperties": false,
+          "required": [
+            "d1_values_mm", "l23_values_mm", "delta_v1_values_v",
+            "lambda_values", "expected_rows",
+            "include_predecessor_selected_points_in_ranking"
+          ],
+          "properties": {
+            "d1_values_mm": {"$ref": "#/$defs/numberArray"},
+            "l23_values_mm": {"$ref": "#/$defs/numberArray"},
+            "delta_v1_values_v": {"$ref": "#/$defs/numberArray"},
+            "lambda_values": {"$ref": "#/$defs/numberArray"},
+            "expected_rows": {"const": 625},
+            "include_predecessor_selected_points_in_ranking": {"const": true}
+          }
+        },
+        "T4b": {
+          "type": "object", "additionalProperties": false,
+          "required": [
+            "top_k", "offset_multipliers", "full_domain_steps",
+            "contrast_tier_upper_bounds", "ranking_tuple",
+            "deduplication_policy", "maximum_rows"
+          ],
+          "properties": {
+            "top_k": {"const": 8},
+            "offset_multipliers": {"const": [-1, 0, 1]},
+            "full_domain_steps": {
+              "type": "object", "additionalProperties": false,
+              "required": ["d1_mm", "l23_mm", "lambda", "delta_v1_v"],
+              "properties": {
+                "d1_mm": {"type": "number", "exclusiveMinimum": 0},
+                "l23_mm": {"type": "number", "exclusiveMinimum": 0},
+                "lambda": {"type": "number", "exclusiveMinimum": 0},
+                "delta_v1_v": {"type": "number", "exclusiveMinimum": 0}
+              }
+            },
+            "contrast_tier_upper_bounds": {"const": [3.0, 4.0, 6.0, 10.0]},
+            "ranking_tuple": {
+              "const": [
+                "contrast_tier_index", "boundary_limited", "target_gate_failed",
+                "sigma_2p2_population_ns", "fwhm_2p2_ns",
+                "sigma_1p0_population_ns", "jacobian_condition",
+                "d1_mm", "l23_mm", "delta_v1_v", "lambda"
+              ]
+            },
+            "deduplication_policy": {
+              "const": "omit_out_of_domain_then_lexicographic_deduplicate_no_replacement"
+            },
+            "maximum_rows": {"const": 648}
+          }
+        },
+        "T4c": {
+          "type": "object", "additionalProperties": false,
+          "required": ["grid_axes", "expected_rows", "authorization_conclusion", "default_enabled"],
+          "properties": {
+            "grid_axes": {"const": ["d1_mm", "l23_mm", "lambda", "delta_v1_v"]},
+            "expected_rows": {"const": 32955},
+            "authorization_conclusion": {"const": "G2_AUTHORIZE_OPTIONAL_FULL_GRID"},
+            "default_enabled": {"const": false}
+          }
+        },
+        "T5": {
+          "type": "object", "additionalProperties": false,
+          "required": [
+            "primary_selection_policy", "primary_benchmark",
+            "include_same_outer_control", "include_current_baseline", "expected_rows"
+          ],
+          "properties": {
+            "primary_selection_policy": {
+              "const": "predecessor_receipt_frozen_deterministic_ranking_before_confirmation_metrics"
+            },
+            "primary_benchmark": {
+              "const": "best_feasible_two_zone_in_frozen_domain_branch"
+            },
+            "include_same_outer_control": {"const": true},
+            "include_current_baseline": {"const": true},
+            "expected_rows": {"const": 4}
+          }
+        }
+      }
+    },
+    "performance": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "minimum_2p2mm_population_sigma_reduction", "minimum_2p2mm_direct_fwhm_reduction",
+        "maximum_1p0mm_population_sigma_degradation", "mode_count_must_not_increase"
+      ],
+      "properties": {
+        "minimum_2p2mm_population_sigma_reduction": {"type": "number", "minimum": 0, "maximum": 1},
+        "minimum_2p2mm_direct_fwhm_reduction": {"type": "number", "minimum": 0, "maximum": 1},
+        "maximum_1p0mm_population_sigma_degradation": {"type": "number", "minimum": 0},
+        "mode_count_must_not_increase": {"const": true}
+      }
+    },
+    "stage": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "stage_id", "purpose", "kind", "allowed_predecessors", "row_policy",
+        "conclusions", "transitions"
+      ],
+      "properties": {
+        "stage_id": {"enum": ["T0", "T1", "T2", "G1", "T3", "T4a", "T4b", "T4c", "G2", "T5"]},
+        "purpose": {"type": "string", "minLength": 1},
+        "kind": {"enum": ["validate", "analyze", "manual_gate"]},
+        "allowed_predecessors": {
+          "type": "array", "uniqueItems": true,
+          "items": {"enum": ["T0", "T1", "T2", "G1", "T3", "T4a", "T4b", "T4c", "G2"]}
+        },
+        "row_policy": {"type": "string", "minLength": 1},
+        "conclusions": {
+          "type": "array", "minItems": 2, "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]+$"}
+        },
+        "transitions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array", "uniqueItems": true,
+            "items": {"enum": ["T1", "T2", "G1", "T3", "T4a", "T4b", "T4c", "G2", "T5"]}
+          }
+        }
+      }
+    }
+  }
+}

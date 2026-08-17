@@ -8,11 +8,17 @@
 - 双区正交加速器一阶空间聚焦：`oaaccelerator_time_focus.md`；
 - 多极杆实测线性 `z-v_z` 相空间扩展：`z_vz_linear_phase_space_coupling.md`；
 - 二级反射镜局部一、二阶能量聚焦：`dual_stage_reflectron.md`；
-- 从释放到探测面的整机纵向耦合：`oatof_oaaccelerator_coupling.md`。
+- 从释放到探测面的整机纵向耦合：`oatof_oaaccelerator_coupling.md`；
+- 三区分段均匀场与隔离阶段漏斗：
+  [`three_zone_accelerator_ideal_theory.md`](three_zone_accelerator_ideal_theory.md)。
 
 三个层级不能互相替代。特别是，局部反射镜闭式解不包含加速器在一阶焦面处仍存在的二阶时间
 曲率，不能直接作为整机二阶聚焦结论。局部闭式解只用于退化检查和初值，不能覆盖耦合模型或
 项目当前机器参数。
+
+三区文档是100 Th集成问题的求解器无关 `Functional / PROVISIONAL / POST_PILOT` 理论评估，
+不改变524 Da当前Formal。它的 `zone1/zone2/zone3` 也不是现有双区COMSOL、SIMION、CAD或
+`FULL_DOMAIN_PIECEWISE_IDEAL_FIELD` profile已经实现的工程拓扑。
 
 ## 分辨率时钟边界
 

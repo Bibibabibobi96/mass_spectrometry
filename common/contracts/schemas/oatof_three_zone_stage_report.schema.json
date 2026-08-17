@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/oatof_three_zone_stage_report.schema.json",
+  "title": "oaTOF three-zone solver-free stage report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "role", "campaign_id", "stage_id", "plan_sha256",
+    "status", "scientific_assessment", "engineering_compatibility_annotation",
+    "row_census", "results", "allowed_claim", "claim_limit"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "oatof_three_zone_stage_report"},
+    "campaign_id": {"$ref": "#/$defs/id"},
+    "stage_id": {"enum": ["T0", "T1", "T2", "G1", "T3", "T4a", "T4b", "T4c", "G2", "T5"]},
+    "plan_sha256": {"$ref": "#/$defs/sha"},
+    "status": {"enum": ["success", "failed", "interrupted"]},
+    "scientific_assessment": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]+$"},
+    "engineering_compatibility_annotation": {
+      "enum": [
+        "COMPATIBLE_WITH_CURRENT_APPROVED_ENVELOPE",
+        "REQUIRES_NEW_ENGINEERING_ENVELOPE",
+        "REAL_FIELD_AND_MANUFACTURING_NOT_ASSESSED",
+        "NOT_APPLICABLE"
+      ]
+    },
+    "row_census": {
+      "type": "object", "additionalProperties": false,
+      "required": ["planned", "completed", "failed", "not_started"],
+      "properties": {
+        "planned": {"type": "integer", "minimum": 0},
+        "completed": {"type": "integer", "minimum": 0},
+        "failed": {"type": "integer", "minimum": 0},
+        "not_started": {"type": "integer", "minimum": 0}
+      }
+    },
+    "results": {"type": "object"},
+    "allowed_claim": {"type": "string", "minLength": 1},
+    "claim_limit": {"type": "string", "minLength": 1}
+  },
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"},
+    "sha": {"type": "string", "pattern": "^[A-F0-9]{64}$"}
+  }
+}

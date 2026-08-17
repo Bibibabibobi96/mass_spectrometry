@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/oatof_three_zone_stage_receipt.schema.json",
+  "title": "oaTOF three-zone solver-free stage receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "role", "campaign_id", "campaign_sha256", "stage_id",
+    "plan_sha256", "status", "conclusion", "next_stage_authorized",
+    "assessment_design_status", "solver_execution_performed", "performance_metrics_read",
+    "completed_rows", "planned_rows", "selected_outer_points", "frozen_primary",
+    "best_feasible_two_zone",
+    "report", "recorded_at_utc", "claim_limit"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "oatof_three_zone_stage_receipt"},
+    "campaign_id": {"$ref": "#/$defs/id"},
+    "campaign_sha256": {"$ref": "#/$defs/sha"},
+    "stage_id": {"$ref": "#/$defs/stage"},
+    "plan_sha256": {"$ref": "#/$defs/sha"},
+    "status": {"enum": ["success", "failed", "interrupted"]},
+    "conclusion": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]+$"},
+    "next_stage_authorized": {"type": "boolean"},
+    "assessment_design_status": {
+      "const": "POST_PILOT_STAGE_GATED_OPTIMIZATION_THEN_FROZEN_CONFIRMATION"
+    },
+    "solver_execution_performed": {"const": false},
+    "performance_metrics_read": {"type": "boolean"},
+    "completed_rows": {"type": "integer", "minimum": 0},
+    "planned_rows": {"type": "integer", "minimum": 0},
+    "selected_outer_points": {
+      "type": "array", "maxItems": 8,
+      "items": {"$ref": "#/$defs/outer"}
+    },
+    "frozen_primary": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/outer"}]},
+    "best_feasible_two_zone": {
+      "oneOf": [{"type": "null"}, {"$ref": "#/$defs/outer"}]
+    },
+    "report": {"$ref": "#/$defs/file"},
+    "recorded_at_utc": {"type": "string", "format": "date-time"},
+    "claim_limit": {"type": "string", "minLength": 1}
+  },
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"},
+    "sha": {"type": "string", "pattern": "^[A-F0-9]{64}$"},
+    "stage": {"enum": ["T0", "T1", "T2", "G1", "T3", "T4a", "T4b", "T4c", "G2", "T5"]},
+    "file": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "bytes", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "bytes": {"type": "integer", "minimum": 1},
+        "sha256": {"$ref": "#/$defs/sha"}
+      }
+    },
+    "outer": {
+      "type": "object", "additionalProperties": false,
+      "required": ["d1_mm", "l23_mm", "lambda", "delta_v1_v"],
+      "properties": {
+        "d1_mm": {"type": "number"}, "l23_mm": {"type": "number"},
+        "lambda": {"type": "number"}, "delta_v1_v": {"type": "number"}
+      }
+    }
+  }
+}
