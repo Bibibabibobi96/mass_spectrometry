@@ -17,6 +17,30 @@ $integrationRoot = (Resolve-Path (Join-Path $workflowRoot '..\..')).Path
 $registryPath = Join-Path $integrationRoot 'config\execution_adapter_profiles.json'
 . (Join-Path $integrationRoot 'runtime\runtime_binding.ps1')
 . (Join-Path $integrationRoot 'runtime\run_artifacts.ps1')
+
+function Resolve-RfObservedPrePulseSourceIdentity {
+  param(
+    [Parameter(Mandatory)]$Experiment,
+    [Parameter(Mandatory)]$BudgetSourceIdentity
+  )
+  $experimentHasProjection = $Experiment.PSObject.Properties.Name -contains
+    'observed_pre_pulse_projection'
+  $budgetHasProjection = $BudgetSourceIdentity.PSObject.Properties.Name -contains
+    'observed_pre_pulse_projection'
+  if ($experimentHasProjection) {
+    if (-not $budgetHasProjection -or
+        ($Experiment.observed_pre_pulse_projection |
+          ConvertTo-Json -Depth 100 -Compress) -cne
+        ($BudgetSourceIdentity.observed_pre_pulse_projection |
+          ConvertTo-Json -Depth 100 -Compress)) {
+      throw 'Observed pre-pulse projection source identity differs from the campaign row.'
+    }
+  } elseif ($budgetHasProjection) {
+    throw 'Non-observed campaign row prohibits an observed pre-pulse projection identity.'
+  }
+  return $BudgetSourceIdentity
+}
+
 $plan = Get-Content -LiteralPath $CompositionPlan -Raw -Encoding UTF8 |
   ConvertFrom-Json
 $resolved = Get-Content -LiteralPath $ResolvedConnection -Raw -Encoding UTF8 |
@@ -982,6 +1006,8 @@ if ($budget.role -ne 'integration_resolved_engineering_budget' -or
     $budget.retention_class -ne 'compact') {
   throw 'Campaign budget and runtime source identities differ before stage 1.'
 }
+$runtime.source_identity = Resolve-RfObservedPrePulseSourceIdentity `
+  -Experiment $experiment -BudgetSourceIdentity $budget.source_identity
 
 if ($threeZoneSolverGateStage -eq 'n1_smoke_producer' -and
     $expectedExecutionParticleCount -ne 1) {

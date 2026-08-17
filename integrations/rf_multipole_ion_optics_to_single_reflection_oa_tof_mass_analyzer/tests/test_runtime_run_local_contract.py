@@ -32,6 +32,88 @@ RUNNERS = (
 
 
 class RuntimeRunLocalContractTests(unittest.TestCase):
+    def test_observed_projection_identity_is_promoted_before_solver(self) -> None:
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("PowerShell 7 is unavailable")
+        script = f"""
+$errors = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile(
+  '{FAMILY_ADAPTER}', [ref]$null, [ref]$errors
+)
+if ($errors) {{ throw $errors[0] }}
+$fn = $ast.Find({{
+  param($node)
+  $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+    $node.Name -eq 'Resolve-RfObservedPrePulseSourceIdentity'
+}}, $true)
+if ($null -eq $fn) {{ throw 'observed projection identity resolver is missing' }}
+. ([scriptblock]::Create($fn.Extent.Text))
+$projection = [pscustomobject]@{{
+  arm_id='full_observed_6d'
+  authority_manifest=[pscustomobject]@{{path='authority.json';sha256=('A' * 64)}}
+}}
+$experiment = [pscustomobject]@{{observed_pre_pulse_projection=$projection}}
+$budgetIdentity = [pscustomobject]@{{
+  run_id='source-run';observed_pre_pulse_projection=$projection
+}}
+$resolved = Resolve-RfObservedPrePulseSourceIdentity `
+  -Experiment $experiment -BudgetSourceIdentity $budgetIdentity
+if ($resolved.run_id -ne 'source-run' -or
+    $resolved.observed_pre_pulse_projection.arm_id -ne 'full_observed_6d') {{
+  throw 'complete budget source identity was not returned'
+}}
+$mismatch = [pscustomobject]@{{
+  run_id='source-run'
+  observed_pre_pulse_projection=[pscustomobject]@{{
+    arm_id='observed_z_vz_energy_transverse_collapsed'
+    authority_manifest=$projection.authority_manifest
+  }}
+}}
+try {{
+  Resolve-RfObservedPrePulseSourceIdentity `
+    -Experiment $experiment -BudgetSourceIdentity $mismatch
+  throw 'projection mismatch was accepted'
+}} catch {{
+  if ($_.Exception.Message -notmatch 'differs from the campaign row') {{ throw }}
+}}
+try {{
+  Resolve-RfObservedPrePulseSourceIdentity `
+    -Experiment ([pscustomobject]@{{experiment_id='ordinary'}}) `
+    -BudgetSourceIdentity $budgetIdentity
+  throw 'ordinary row accepted an observed projection'
+}} catch {{
+  if ($_.Exception.Message -notmatch 'Non-observed campaign row prohibits') {{ throw }}
+}}
+'OBSERVED_PROJECTION_IDENTITY=PASS'
+"""
+        completed = subprocess.run(
+            [pwsh, "-NoProfile", "-Command", script],
+            cwd=INTEGRATION_ROOT.parents[1], text=True, encoding="utf-8",
+            errors="replace", capture_output=True, check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertIn("OBSERVED_PROJECTION_IDENTITY=PASS", completed.stdout)
+        adapter = FAMILY_ADAPTER.read_text(encoding="utf-8")
+        promotion = adapter.index(
+            "$runtime.source_identity = Resolve-RfObservedPrePulseSourceIdentity"
+        )
+        self.assertLess(
+            promotion,
+            adapter.index("& $runtime.implementation.single_flight_runner"),
+        )
+        self.assertIn(
+            "-BudgetSourceIdentity $budget.source_identity", adapter
+        )
+        runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        self.assertIn(
+            "upstream_source_identity=$resolvedBudgetDocument.source_identity",
+            runner,
+        )
+        self.assertNotIn(
+            "upstream_source_identity=$runtime.source_identity", runner
+        )
+
     def test_three_zone_runner_arguments_are_all_or_none_and_layout_scoped(self) -> None:
         pwsh = shutil.which("pwsh")
         if pwsh is None:

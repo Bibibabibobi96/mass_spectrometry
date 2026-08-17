@@ -50,6 +50,11 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     ordered_subset_source_particle_ids,
     validate_ordered_pre_pulse_subset,
 )
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.observed_pre_pulse_projection import (
+    ARM_COLLAPSED,
+    ARM_FULL,
+    project_observed_pre_pulse_states,
+)
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_layout import (
     compile_geometry_and_port,
     derive_pulse_schedule,
@@ -316,19 +321,13 @@ def _canonical_sha256(value: Any) -> str:
     return hashlib.sha256(payload).hexdigest().upper()
 
 
-def _three_zone_gate_pair(
-    campaign: dict[str, Any],
-) -> tuple[dict[str, Any], dict[str, Any]] | None:
-    """Validate and return the unique N=1 producer/N=100 consumer pair."""
+def _validate_three_zone_gate_pair(
+    gated: list[dict[str, Any]],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Validate one N=1 producer/N=100 consumer pair."""
 
-    gated = [row for row in campaign["experiments"] if "three_zone_solver_gate" in row]
-    if not gated:
-        return None
-    if campaign["schema_version"] != 6 or len(gated) != 2:
-        raise ContractError("three-zone solver gate requires exactly two schema-v6 rows")
-    gate_ids = {row["three_zone_solver_gate"]["gate_id"] for row in gated}
-    if len(gate_ids) != 1:
-        raise ContractError("three-zone solver gate ID differs across its pair")
+    if len(gated) != 2:
+        raise ContractError("each three-zone solver gate requires exactly two rows")
     producers = [
         row for row in gated
         if row["three_zone_solver_gate"]["stage"] == "n1_smoke_producer"
@@ -439,6 +438,72 @@ def _three_zone_gate_pair(
     if comparable(producer) != comparable(consumer):
         raise ContractError("three-zone solver gate rows differ beyond population and run identity")
     return producer, consumer
+
+
+def _three_zone_gate_pairs(
+    campaign: dict[str, Any],
+) -> dict[str, tuple[dict[str, Any], dict[str, Any]]]:
+    """Validate and return every schema-v6 pair grouped by solver gate ID."""
+
+    gated = [row for row in campaign["experiments"] if "three_zone_solver_gate" in row]
+    if not gated:
+        return {}
+    if campaign["schema_version"] != 6:
+        raise ContractError("three-zone solver gates require a schema-v6 campaign")
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in gated:
+        gate_id = row["three_zone_solver_gate"]["gate_id"]
+        grouped.setdefault(gate_id, []).append(row)
+    pairs = {
+        gate_id: _validate_three_zone_gate_pair(rows)
+        for gate_id, rows in grouped.items()
+    }
+    observed_pairs = [
+        pair
+        for pair in pairs.values()
+        if "observed_pre_pulse_projection" in pair[0]
+    ]
+    if not observed_pairs:
+        return pairs
+    observed_arms = {
+        pair[0]["observed_pre_pulse_projection"]["arm_id"]
+        for pair in observed_pairs
+    }
+    if len(observed_pairs) != 2 or observed_arms != {
+        "full_observed_6d",
+        "observed_z_vz_energy_transverse_collapsed",
+    }:
+        raise ContractError(
+            "observed source projection requires exactly one complete C/D gate pair"
+        )
+
+    def cross_arm_comparable(row: dict[str, Any]) -> dict[str, Any]:
+        value = copy.deepcopy(row)
+        for key in ("sequence", "experiment_id", "run_id", "three_zone_solver_gate"):
+            value.pop(key, None)
+        value["observed_pre_pulse_projection"].pop("arm_id")
+        return value
+
+    collapsed_pair = next(
+        pair
+        for pair in observed_pairs
+        if pair[0]["observed_pre_pulse_projection"]["arm_id"]
+        == "observed_z_vz_energy_transverse_collapsed"
+    )
+    full_pair = next(
+        pair
+        for pair in observed_pairs
+        if pair[0]["observed_pre_pulse_projection"]["arm_id"]
+        == "full_observed_6d"
+    )
+    if any(
+        cross_arm_comparable(collapsed) != cross_arm_comparable(full)
+        for collapsed, full in zip(collapsed_pair, full_pair)
+    ):
+        raise ContractError(
+            "observed source projection arms differ beyond arm and run identity"
+        )
+    return pairs
 
 
 def _resolve_three_zone_n1_authorization(
@@ -1014,6 +1079,87 @@ def _validate_canonical_pulse_restart_state(
     }
 
 
+def _validate_observed_pre_pulse_projection(
+    *,
+    receipt: dict[str, Any],
+    receipt_path: Path,
+    selected_arm: str,
+    selected_path: Path,
+    full_path: Path,
+    collapsed_path: Path,
+    current_target_path: Path,
+    current_subset_receipt_path: Path,
+    pulse_time_us: float,
+) -> dict[str, Any]:
+    expected_invariants = {
+        "full_observed_velocity_preserved": True,
+        "full_observed_position_common_translation": True,
+        "collapsed_z_vz_energy_clock_equal_full": True,
+        "collapsed_x_y_equal_current_center": True,
+        "collapsed_vy_zero": True,
+        "collapsed_positive_vx_preserves_transverse_speed": True,
+        "energy_recomputed_from_velocity": True,
+    }
+    if (
+        receipt.get("role") != "rf_oatof_observed_pre_pulse_projection_receipt"
+        or receipt.get("status") != "PASS"
+        or receipt.get("invariants") != expected_invariants
+        or selected_arm not in {ARM_FULL, ARM_COLLAPSED}
+    ):
+        raise ContractError("observed pre-pulse projection receipt is invalid")
+    expected_refs = {
+        "current_target": current_target_path,
+        "current_subset_receipt": current_subset_receipt_path,
+    }
+    for name, path in expected_refs.items():
+        record = receipt.get("authorities", {}).get(name, {})
+        if Path(str(record.get("path", ""))).resolve() != path.resolve() or record.get(
+            "sha256"
+        ) != file_sha256(path):
+            raise ContractError(f"observed projection {name} authority differs")
+    arm_paths = {ARM_FULL: full_path, ARM_COLLAPSED: collapsed_path}
+    for arm_id, path in arm_paths.items():
+        record = receipt.get("arms", {}).get(arm_id, {})
+        if Path(str(record.get("path", ""))).resolve() != path.resolve() or record.get(
+            "sha256"
+        ) != file_sha256(path):
+            raise ContractError(f"observed projection {arm_id} output differs")
+    _, full_rows = materialize_pre_pulse_restart(full_path, pulse_time_us)
+    _, collapsed_rows = materialize_pre_pulse_restart(collapsed_path, pulse_time_us)
+    if len(full_rows) != len(collapsed_rows) or selected_path != arm_paths[selected_arm]:
+        raise ContractError("observed projection paired population differs")
+    exact_paired_fields = (
+        "particle_id", "instrument_time_us", "mass_amu", "charge_state",
+        "position_z_mm", "velocity_z_m_s",
+    )
+    if any(
+        any(full[field] != collapsed[field] for field in exact_paired_fields)
+        for full, collapsed in zip(full_rows, collapsed_rows, strict=True)
+    ):
+        raise ContractError("observed projection longitudinal paired invariants differ")
+    if any(
+        abs(
+            float(full["kinetic_energy_eV"])
+            - float(collapsed["kinetic_energy_eV"])
+        )
+        > 5e-9
+        for full, collapsed in zip(full_rows, collapsed_rows, strict=True)
+    ):
+        raise ContractError("observed projection paired energy differs")
+    return {
+        "schema_version": 1,
+        "role": "canonical_pulse_restart_target_state_validation",
+        "status": "PASS",
+        "projection_arm_id": selected_arm,
+        "target_pulse_state_sha256": file_sha256(selected_path),
+        "materialization_receipt_sha256": file_sha256(receipt_path),
+        "source_state_epoch": "pulse_effective_time",
+        "source_state_locus": "accelerator_stage1_interior_finite_observed_3d_cloud",
+        "particle_count": len(full_rows),
+        "paired_longitudinal_state_preserved": True,
+    }
+
+
 def _unique_profile(document: dict[str, Any], profile_id: str) -> dict[str, Any]:
     matches = [
         item
@@ -1178,11 +1324,17 @@ def prepare_family_source_closure(
     sequences = [item["sequence"] for item in campaign["experiments"]]
     if len(identities) != len(set(identities)) or len(sequences) != len(set(sequences)):
         raise ContractError("campaign experiment IDs and sequences must be unique")
-    three_zone_gate_pair = _three_zone_gate_pair(campaign)
+    three_zone_gate_pairs = _three_zone_gate_pairs(campaign)
     matches = [item for item in campaign["experiments"] if item["experiment_id"] == experiment_id]
     if len(matches) != 1:
         raise ContractError("campaign experiment must resolve exactly once")
     experiment = matches[0]
+    selected_three_zone_gate = experiment.get("three_zone_solver_gate")
+    three_zone_gate_pair = (
+        three_zone_gate_pairs[selected_three_zone_gate["gate_id"]]
+        if selected_three_zone_gate is not None
+        else None
+    )
     source = experiment["source"]
     validate_pulse_resolution_optimization_campaign(
         campaign, execution_requested=True, experiment=experiment
@@ -1349,6 +1501,7 @@ def prepare_family_source_closure(
     generated_pre_pulse_ordered_subset = experiment.get(
         "generated_pre_pulse_ordered_subset"
     )
+    observed_pre_pulse_projection = experiment.get("observed_pre_pulse_projection")
     staged_grid2_source_state = experiment.get("staged_grid2_source_state")
     identity_values = (
         architecture_generation_id, source_profile_id, field_overlay_id,
@@ -1907,6 +2060,10 @@ def prepare_family_source_closure(
             "metadata_sha256": source["metadata"]["sha256"],
         }
     )
+    if observed_pre_pulse_projection is not None:
+        source_identity["observed_pre_pulse_projection"] = copy.deepcopy(
+            observed_pre_pulse_projection
+        )
     row_sha256 = _canonical_sha256(experiment)
     three_zone_authorization: dict[str, str] | None = None
     if three_zone_gate_pair is not None:
@@ -2257,6 +2414,66 @@ def prepare_family_source_closure(
                 ordered_subset_receipt,
                 "rf_oatof_pre_pulse_ordered_subset_receipt.schema.json",
             )
+            ideal_subset_validation = _validate_canonical_pulse_restart_state(
+                pre_pulse_source_path,
+                pre_pulse_receipt_path,
+                {
+                    "sha256": file_sha256(pre_pulse_source_path),
+                    "particle_count": len(ordered_source_ids),
+                    "materialization_receipt": {
+                        "sha256": file_sha256(pre_pulse_receipt_path)
+                    },
+                    "position_rowwise_abs_tolerance_mm": 1e-9,
+                    "velocity_rowwise_abs_tolerance_m_per_s": 1e-6,
+                    "clock_abs_tolerance_us": 1e-9,
+                    "energy_abs_tolerance_eV": 5e-9,
+                },
+                source_materialization_profile,
+                geometry,
+                schedule,
+            )
+            projection_receipt = None
+            if observed_pre_pulse_projection is not None:
+                authority_paths = {
+                    key: _workspace_record(
+                        workspace, observed_pre_pulse_projection[key],
+                        f"observed projection {key}",
+                    )
+                    for key in (
+                        "authority_manifest", "prepared_arms", "observed_state",
+                        "old_geometry",
+                    )
+                }
+                current_target_path = pre_pulse_source_path
+                current_subset_receipt_path = pre_pulse_receipt_path
+                full_path = plan_output.parent / "inputs" / "observed_pre_pulse_full_6d.csv"
+                collapsed_path = (
+                    plan_output.parent / "inputs" / "observed_pre_pulse_collapsed.csv"
+                )
+                projection_receipt_path = (
+                    plan_output.parent / "inputs"
+                    / "observed_pre_pulse_projection_receipt.json"
+                )
+                projection_receipt = project_observed_pre_pulse_states(
+                    authority_manifest_path=authority_paths["authority_manifest"],
+                    prepared_arms_path=authority_paths["prepared_arms"],
+                    observed_state_path=authority_paths["observed_state"],
+                    old_geometry_path=authority_paths["old_geometry"],
+                    current_target_path=current_target_path,
+                    current_subset_receipt_path=current_subset_receipt_path,
+                    full_output_path=full_path,
+                    collapsed_output_path=collapsed_path,
+                    receipt_output_path=projection_receipt_path,
+                )
+                validate_schema(
+                    projection_receipt,
+                    "rf_oatof_observed_pre_pulse_projection_receipt.schema.json",
+                )
+                selected_arm = observed_pre_pulse_projection["arm_id"]
+                pre_pulse_source_path = {
+                    ARM_FULL: full_path, ARM_COLLAPSED: collapsed_path,
+                }[selected_arm]
+                pre_pulse_receipt_path = projection_receipt_path
             pre_pulse_source_state = {
                 "path": _workspace_relative(pre_pulse_source_path, workspace),
                 "sha256": file_sha256(pre_pulse_source_path),
@@ -2269,6 +2486,8 @@ def prepare_family_source_closure(
                 },
                 "source_state_epoch": "pulse_effective_time",
                 "source_state_locus": (
+                    "accelerator_stage1_interior_finite_observed_3d_cloud"
+                    if projection_receipt is not None else
                     "accelerator_stage1_interior_fixed_transverse_finite_local_z_interval"
                 ),
                 "position_rowwise_abs_tolerance_mm": 1e-9,
@@ -2277,13 +2496,20 @@ def prepare_family_source_closure(
                 "energy_abs_tolerance_eV": 5e-9,
                 "postselection_prohibited": True,
             }
-            pulse_restart_validation = _validate_canonical_pulse_restart_state(
-                pre_pulse_source_path,
-                pre_pulse_receipt_path,
-                pre_pulse_source_state,
-                source_materialization_profile,
-                geometry,
-                schedule,
+            pulse_restart_validation = (
+                _validate_observed_pre_pulse_projection(
+                    receipt=projection_receipt,
+                    receipt_path=pre_pulse_receipt_path,
+                    selected_arm=selected_arm,
+                    selected_path=pre_pulse_source_path,
+                    full_path=full_path,
+                    collapsed_path=collapsed_path,
+                    current_target_path=current_target_path,
+                    current_subset_receipt_path=current_subset_receipt_path,
+                    pulse_time_us=float(schedule["pulse_effective_time_us"]),
+                )
+                if projection_receipt is not None
+                else ideal_subset_validation
             )
             pulse_restart_validation_path = plan_output.with_name(
                 "canonical_pulse_restart_target_state_validation.json"

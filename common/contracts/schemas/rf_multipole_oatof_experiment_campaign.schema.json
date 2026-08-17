@@ -283,12 +283,31 @@
         "release_event": {"const": "pre_pulse_state"},
         "materialization_receipt": {"$ref": "#/$defs/file"},
         "source_state_epoch": {"const": "pulse_effective_time"},
-        "source_state_locus": {"const": "accelerator_stage1_interior_fixed_transverse_finite_local_z_interval"},
+        "source_state_locus": {"enum": ["accelerator_stage1_interior_fixed_transverse_finite_local_z_interval", "accelerator_stage1_interior_finite_observed_3d_cloud"]},
         "position_rowwise_abs_tolerance_mm": {"const": 1e-9},
         "velocity_rowwise_abs_tolerance_m_per_s": {"const": 1e-6},
         "clock_abs_tolerance_us": {"const": 1e-9},
         "energy_abs_tolerance_eV": {"const": 5e-9},
         "postselection_prohibited": {"const": true}
+      }
+    },
+    "observed_pre_pulse_projection": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "authority_manifest", "prepared_arms", "observed_state",
+        "old_geometry", "arm_id"
+      ],
+      "properties": {
+        "authority_manifest": {"$ref": "#/$defs/file"},
+        "prepared_arms": {"$ref": "#/$defs/file"},
+        "observed_state": {"$ref": "#/$defs/file"},
+        "old_geometry": {"$ref": "#/$defs/file"},
+        "arm_id": {
+          "enum": [
+            "full_observed_6d",
+            "observed_z_vz_energy_transverse_collapsed"
+          ]
+        }
       }
     },
     "generated_pre_pulse_ordered_subset": {
@@ -697,6 +716,18 @@
           }
         },
         {
+          "if": {"required": ["observed_pre_pulse_projection"]},
+          "then": {
+            "required": [
+              "generated_pre_pulse_ordered_subset",
+              "single_flight_source_materialization_profile_id"
+            ],
+            "properties": {
+              "source_release_mode": {"const": "pre_pulse_restart"}
+            }
+          }
+        },
+        {
           "if": {
             "properties": {
               "generated_pre_pulse_ordered_subset": {
@@ -908,6 +939,7 @@
         "field_overlay_id": {"$ref": "#/$defs/id"},
         "source_release_mode": {"enum": ["continuous_frontend", "pre_pulse_restart", "staged_grid2_restart"]},
         "pre_pulse_source_state": {"$ref": "#/$defs/pre_pulse_source_state"},
+        "observed_pre_pulse_projection": {"$ref": "#/$defs/observed_pre_pulse_projection"},
         "generated_pre_pulse_ordered_subset": {"$ref": "#/$defs/generated_pre_pulse_ordered_subset"},
         "three_zone_solver_gate": {"$ref": "#/$defs/three_zone_solver_gate"},
         "staged_grid2_source_state": {"$ref": "#/$defs/staged_grid2_source_state"},

@@ -7,11 +7,12 @@ import unittest
 
 from common.contracts.file_identity import file_sha256, repository_text_sha256
 from common.contracts.machine_contracts import ContractError
+from common.contracts.machine_contracts import validate_schema
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.prepare import (
     INTEGRATION_ID,
     _canonical_sha256,
     _resolve_three_zone_n1_authorization,
-    _three_zone_gate_pair,
+    _three_zone_gate_pairs,
 )
 
 
@@ -84,6 +85,16 @@ def _rows() -> tuple[dict[str, object], dict[str, object]]:
     return producer, consumer
 
 
+def _observed_projection(arm_id: str) -> dict[str, object]:
+    return {
+        "authority_manifest": {"path": "artifacts/authority.json", "sha256": "1" * 64},
+        "prepared_arms": {"path": "artifacts/prepared.csv", "sha256": "2" * 64},
+        "observed_state": {"path": "artifacts/observed.csv", "sha256": "3" * 64},
+        "old_geometry": {"path": "artifacts/old_geometry.json", "sha256": "4" * 64},
+        "arm_id": arm_id,
+    }
+
+
 class ThreeZoneSolverGatePrepareTests(unittest.TestCase):
     def test_segmented_rings_full_width_realization_is_supported(self) -> None:
         producer, consumer = _rows()
@@ -99,7 +110,10 @@ class ThreeZoneSolverGatePrepareTests(unittest.TestCase):
         }
         campaign = {"schema_version": 6, "experiments": [producer, consumer]}
 
-        self.assertEqual(_three_zone_gate_pair(campaign), (producer, consumer))
+        self.assertEqual(
+            _three_zone_gate_pairs(campaign),
+            {"three_zone_gate_v1": (producer, consumer)},
+        )
 
     def test_segmented_rings_reject_prefix_n100_selection(self) -> None:
         producer, consumer = _rows()
@@ -113,7 +127,7 @@ class ThreeZoneSolverGatePrepareTests(unittest.TestCase):
         campaign = {"schema_version": 6, "experiments": [producer, consumer]}
 
         with self.assertRaisesRegex(ContractError, "layout, architecture, or N=100"):
-            _three_zone_gate_pair(campaign)
+            _three_zone_gate_pairs(campaign)
 
     def test_generated_simulation_id_digest_is_checked_before_execution(self) -> None:
         producer, consumer = _rows()
@@ -123,7 +137,7 @@ class ThreeZoneSolverGatePrepareTests(unittest.TestCase):
         campaign = {"schema_version": 6, "experiments": [producer, consumer]}
 
         with self.assertRaisesRegex(ContractError, "population or ordered selection"):
-            _three_zone_gate_pair(campaign)
+            _three_zone_gate_pairs(campaign)
 
     def test_both_pair_run_ids_are_calendar_validated(self) -> None:
         producer, consumer = _rows()
@@ -131,17 +145,132 @@ class ThreeZoneSolverGatePrepareTests(unittest.TestCase):
         campaign = {"schema_version": 6, "experiments": [producer, consumer]}
 
         with self.assertRaisesRegex(ContractError, "run_id is invalid"):
-            _three_zone_gate_pair(campaign)
+            _three_zone_gate_pairs(campaign)
 
     def test_pair_requires_exact_frozen_n1_to_n100_relationship(self) -> None:
         producer, consumer = _rows()
         campaign = {"schema_version": 6, "experiments": [producer, consumer]}
-        self.assertEqual(_three_zone_gate_pair(campaign), (producer, consumer))
+        self.assertEqual(
+            _three_zone_gate_pairs(campaign),
+            {"three_zone_gate_v1": (producer, consumer)},
+        )
         # N=1 preflight has no predecessor artifact or receipt dependency.
         self.assertNotIn("predecessor_experiment_id", producer["three_zone_solver_gate"])
         consumer["single_flight_time_integration_profile_id"] = "dt320"
         with self.assertRaisesRegex(ContractError, "differ beyond"):
-            _three_zone_gate_pair(campaign)
+            _three_zone_gate_pairs(campaign)
+
+    def test_multiple_pairs_are_grouped_by_gate_id(self) -> None:
+        producer_c, consumer_c = _rows()
+        producer_d = json.loads(json.dumps(producer_c))
+        consumer_d = json.loads(json.dumps(consumer_c))
+        producer_d.update({
+            "sequence": 3,
+            "experiment_id": "three_zone_d_n1",
+            "run_id": "20260817_192000__sim__cross__three-zone-d-n1__n1",
+        })
+        producer_d["three_zone_solver_gate"]["gate_id"] = "three_zone_gate_d_v1"
+        consumer_d.update({
+            "sequence": 4,
+            "experiment_id": "three_zone_d_n100",
+            "run_id": "20260817_193000__sim__cross__three-zone-d-n100__n100",
+        })
+        consumer_d["three_zone_solver_gate"].update({
+            "gate_id": "three_zone_gate_d_v1",
+            "predecessor_experiment_id": "three_zone_d_n1",
+        })
+        pairs = _three_zone_gate_pairs({
+            "schema_version": 6,
+            "experiments": [producer_c, producer_d, consumer_c, consumer_d],
+        })
+
+        self.assertEqual(
+            pairs,
+            {
+                "three_zone_gate_v1": (producer_c, consumer_c),
+                "three_zone_gate_d_v1": (producer_d, consumer_d),
+            },
+        )
+
+    def test_each_group_requires_exactly_one_complete_pair(self) -> None:
+        producer, consumer = _rows()
+        orphan = json.loads(json.dumps(producer))
+        orphan.update({
+            "sequence": 3,
+            "experiment_id": "orphan_n1",
+            "run_id": "20260817_192000__sim__cross__orphan-n1__n1",
+        })
+        orphan["three_zone_solver_gate"]["gate_id"] = "orphan_gate_v1"
+
+        with self.assertRaisesRegex(ContractError, "each three-zone solver gate"):
+            _three_zone_gate_pairs({
+                "schema_version": 6,
+                "experiments": [producer, consumer, orphan],
+            })
+
+    def test_observed_projection_schema_freezes_authorities_and_arm(self) -> None:
+        integration_root = Path(__file__).resolve().parents[1]
+        campaign = json.loads(
+            (
+                integration_root
+                / "config/diagnostics/three_zone_t5_real_pa_full_width_"
+                "segmented_rings_n1_n100_campaign_v5.json"
+            ).read_text(encoding="utf-8")
+        )
+        for row in campaign["experiments"]:
+            row["observed_pre_pulse_projection"] = _observed_projection(
+                "full_observed_6d"
+            )
+
+        validate_schema(
+            campaign, "rf_multipole_oatof_experiment_campaign.schema.json"
+        )
+        campaign["experiments"][0]["observed_pre_pulse_projection"][
+            "arm_id"
+        ] = "unknown_arm"
+        with self.assertRaises(ContractError):
+            validate_schema(
+                campaign, "rf_multipole_oatof_experiment_campaign.schema.json"
+            )
+
+    def test_observed_projection_pairs_differ_only_by_arm_and_run_identity(self) -> None:
+        producer_c, consumer_c = _rows()
+        for row in (producer_c, consumer_c):
+            row["observed_pre_pulse_projection"] = _observed_projection(
+                "observed_z_vz_energy_transverse_collapsed"
+            )
+        producer_d = json.loads(json.dumps(producer_c))
+        consumer_d = json.loads(json.dumps(consumer_c))
+        for row in (producer_d, consumer_d):
+            row["observed_pre_pulse_projection"]["arm_id"] = "full_observed_6d"
+        producer_d.update({
+            "sequence": 3,
+            "experiment_id": "three_zone_d_n1",
+            "run_id": "20260817_192000__sim__cross__three-zone-d-n1__n1",
+        })
+        producer_d["three_zone_solver_gate"]["gate_id"] = "three_zone_gate_d_v1"
+        consumer_d.update({
+            "sequence": 4,
+            "experiment_id": "three_zone_d_n100",
+            "run_id": "20260817_193000__sim__cross__three-zone-d-n100__n100",
+        })
+        consumer_d["three_zone_solver_gate"].update({
+            "gate_id": "three_zone_gate_d_v1",
+            "predecessor_experiment_id": "three_zone_d_n1",
+        })
+        campaign = {
+            "schema_version": 6,
+            "experiments": [producer_c, producer_d, consumer_c, consumer_d],
+        }
+
+        pairs = _three_zone_gate_pairs(campaign)
+        self.assertEqual(set(pairs), {"three_zone_gate_v1", "three_zone_gate_d_v1"})
+        for row in (producer_d, consumer_d):
+            row["observed_pre_pulse_projection"]["observed_state"]["sha256"] = (
+                "9" * 64
+            )
+        with self.assertRaisesRegex(ContractError, "differ beyond arm"):
+            _three_zone_gate_pairs(campaign)
 
     def test_n100_consumes_only_parent_bound_pass_receipt(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

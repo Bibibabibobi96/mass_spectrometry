@@ -321,6 +321,14 @@ N=100从同一N=1000母样本按`ID(k)=1+round(k*999/99)`取样，母ID覆盖1..
 T5，sigma增加约11.61%，直接FWHM增加约65.70%，说明fringe/真实电极主要扩大峰宽和尾部，但没有
 消除三区补偿收益。该后继仍是N=100 Functional/CANDIDATE_ONLY，不是Formal或工程资格。
 
+同一真实PA后续又用经验非线性`z-vz`和逐粒子能谱做了严格配对的横向敏感性。`transverse_collapsed`
+与`full_observed_6d`均100/100探测；恢复完整横向位置与速度方向只使sigma/FWHM增加
+`4.2174%/4.5120%`，而两个经验纵向束臂相对affine理想源的FWHM已放大约10.6—11.0倍。因此当前
+主要差距属于完整纵向源bundle与真实场的组合，不应把它归因于横向展宽，也不能用这一结果反过来修改
+solver-free理论。配对run为
+`20260817_235959__analysis__python__three-zone-observed-transverse-sensitivity__n100`，仍只允许
+`FUNCTIONAL_ONLY`源敏感性声明。
+
 ## 9. 晋级与停止条件
 
 任何stage都必须保留完整失败行、全部根和分支选择依据，不得按低FWHM后筛选。branch选择只按baseline

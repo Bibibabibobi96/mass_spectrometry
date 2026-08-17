@@ -141,6 +141,16 @@ T5→三区`CANDIDATE_ONLY` resolved编译器、region-field schema v2和保持�
 理论收益在真实PA场中仍显著存在，但数值只是100 Th、N=100、Functional/CANDIDATE_ONLY证据；未做
 COMSOL/CAD、N=1000、网格收敛或工程包络资格，不能改变524 Da Formal状态。
 
+随后用同一真实PA、几何、数值和100个ID做了observed pulse-state源敏感性。面向结果的两臂明确命名为
+`transverse_collapsed`和`full_observed_6d`，不再用字母代号作为主名称；两者共享经验`z/vz`、逐粒子
+能量、clock和ID，只恢复真实横向位置与速度方向。两臂均100/100探测且单峰：前者
+`sigma/FWHM/R=0.8197190662 ns/2.4714356728 ns/6338.67`，后者为
+`0.8542897552 ns/2.5829468539 ns/6065.03`。完整横向状态只额外使sigma/FWHM增加
+`4.2174%/4.5120%`；相对affine理想源的大部分退化已存在于共同的经验纵向源bundle。canonical
+比较run为`20260817_235959__analysis__python__three-zone-observed-transverse-sensitivity__n100`，完整
+authority、失败前驱和限制见
+[`history/20260817__three-zone-observed-transverse-sensitivity.md`](history/20260817__three-zone-observed-transverse-sensitivity.md)。
+
 ## 已知兼容边界
 
 - COMSOL 6.4当前模型在极小求解粒子数路径存在非单调原生不稳定；日常使用N=100，逻辑小样本仅在

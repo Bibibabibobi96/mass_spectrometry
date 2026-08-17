@@ -21,7 +21,7 @@
     },
     "single_flight_runner": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/run_single_flight.ps1",
-      "sha256": "2CF04FFC4B38E6193BD766F26CC9AE80FD65C4DF615EE850271FCDC4A8D046C2"
+      "sha256": "9D1427CDD417338AB63867CE629A6E72F3661A2ABFD5DD4CBD338B0163010397"
     },
     "single_flight_frontend": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/single_flight_frontend.py",
@@ -70,6 +70,10 @@
     "single_flight_source": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/single_flight_source.py",
       "sha256": "862D229B29321AEE42CBEC0C202D21EAA0FF8D3F4C2429F1F1A8D6F3A8621ED3"
+    },
+    "observed_pre_pulse_projection": {
+      "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/observed_pre_pulse_projection.py",
+      "sha256": "9D05DAA1A6EB8F8D0B2B305B873CB44189F52A79AF2AD0A35DC1FAB589A203FB"
     },
     "single_flight_asset_support": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/single_flight_assets.ps1",

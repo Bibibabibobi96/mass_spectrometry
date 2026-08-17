@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/rf_oatof_observed_pre_pulse_projection_receipt.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "role", "status", "authorities", "observed_population",
+    "projection", "arms", "invariants"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "rf_oatof_observed_pre_pulse_projection_receipt"},
+    "status": {"const": "PASS"},
+    "authorities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "manifest", "prepared_arms", "observed_state", "old_geometry",
+        "current_target", "current_subset_receipt"
+      ],
+      "properties": {
+        "manifest": {"$ref": "#/$defs/file"},
+        "prepared_arms": {"$ref": "#/$defs/file"},
+        "observed_state": {"$ref": "#/$defs/file"},
+        "old_geometry": {"$ref": "#/$defs/file"},
+        "current_target": {"$ref": "#/$defs/file"},
+        "current_subset_receipt": {"$ref": "#/$defs/file"}
+      }
+    },
+    "observed_population": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["particle_count", "missing_source_particle_ids"],
+      "properties": {
+        "particle_count": {"const": 996},
+        "missing_source_particle_ids": {
+          "type": "array",
+          "prefixItems": [
+            {"const": 10}, {"const": 290}, {"const": 298}, {"const": 701}
+          ],
+          "items": false,
+          "minItems": 4,
+          "maxItems": 4
+        }
+      }
+    },
+    "projection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method", "old_center_mm", "current_center_mm", "translation_mm",
+        "old_instrument_time_us", "current_instrument_time_us",
+        "simulation_to_source_particle_id"
+      ],
+      "properties": {
+        "method": {"const": "common_center_translation_and_current_epoch_transplant_v1"},
+        "old_center_mm": {"$ref": "#/$defs/vector3"},
+        "current_center_mm": {"$ref": "#/$defs/vector3"},
+        "translation_mm": {"$ref": "#/$defs/vector3"},
+        "old_instrument_time_us": {"type": "number", "minimum": 0},
+        "current_instrument_time_us": {"type": "number", "minimum": 0},
+        "simulation_to_source_particle_id": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": {"$ref": "#/$defs/particle_map"}
+        }
+      }
+    },
+    "arms": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "full_observed_6d", "observed_z_vz_energy_transverse_collapsed"
+      ],
+      "properties": {
+        "full_observed_6d": {"$ref": "#/$defs/file"},
+        "observed_z_vz_energy_transverse_collapsed": {"$ref": "#/$defs/file"}
+      }
+    },
+    "invariants": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "full_observed_velocity_preserved",
+        "full_observed_position_common_translation",
+        "collapsed_z_vz_energy_clock_equal_full",
+        "collapsed_x_y_equal_current_center", "collapsed_vy_zero",
+        "collapsed_positive_vx_preserves_transverse_speed",
+        "energy_recomputed_from_velocity"
+      ],
+      "properties": {
+        "full_observed_velocity_preserved": {"const": true},
+        "full_observed_position_common_translation": {"const": true},
+        "collapsed_z_vz_energy_clock_equal_full": {"const": true},
+        "collapsed_x_y_equal_current_center": {"const": true},
+        "collapsed_vy_zero": {"const": true},
+        "collapsed_positive_vx_preserves_transverse_speed": {"const": true},
+        "energy_recomputed_from_velocity": {"const": true}
+      }
+    }
+  },
+  "$defs": {
+    "sha": {"type": "string", "pattern": "^[A-F0-9]{64}$"},
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha"}
+      }
+    },
+    "vector3": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {"type": "number"}
+    },
+    "particle_map": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["simulation_particle_id", "source_particle_id"],
+      "properties": {
+        "simulation_particle_id": {"type": "integer", "minimum": 1, "maximum": 100},
+        "source_particle_id": {"type": "integer", "minimum": 1, "maximum": 1000}
+      }
+    }
+  }
+}
