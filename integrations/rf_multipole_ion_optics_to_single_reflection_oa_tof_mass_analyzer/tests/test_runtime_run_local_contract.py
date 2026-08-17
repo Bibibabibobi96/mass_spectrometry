@@ -32,6 +32,420 @@ RUNNERS = (
 
 
 class RuntimeRunLocalContractTests(unittest.TestCase):
+    def test_three_zone_runner_arguments_are_all_or_none_and_layout_scoped(self) -> None:
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("PowerShell 7 is unavailable")
+        script = f"""
+$errors = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile(
+  '{SINGLE_FLIGHT_RUNNER}', [ref]$null, [ref]$errors
+)
+if ($errors) {{ throw $errors[0] }}
+$fn = $ast.Find({{
+  param($node)
+  $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+    $node.Name -eq 'Assert-RfThreeZoneArgumentSet'
+}}, $true)
+if ($null -eq $fn) {{ throw 'three-zone argument assertion is missing' }}
+. ([scriptblock]::Create($fn.Extent.Text))
+$valid = @{{
+  LayoutProfileId='three_zone_t5_primary_v1'; Candidate='candidate.json'
+  CandidateSha256=('A' * 64); TopologyId='three_zone_accelerator_ideal_v1'
+  GeometryId='three_zone_focus_origin_planes_v1'
+  FrontendElectrodeTopologyId='three_zone_frontend_v1'
+  FieldId='three_zone_refined_pa_field_v1'
+}}
+if (-not (Assert-RfThreeZoneArgumentSet @valid)) {{ throw 'valid set rejected' }}
+if (Assert-RfThreeZoneArgumentSet -LayoutProfileId 'theory_source_z10_d1_3') {{
+  throw 'two-zone identity was misclassified'
+}}
+try {{
+  Assert-RfThreeZoneArgumentSet -LayoutProfileId 'three_zone_t5_primary_v1'
+  throw 'missing Candidate was accepted'
+}} catch {{
+  if ($_.Exception.Message -notmatch 'arguments and layout identity differ') {{ throw }}
+}}
+try {{
+  $invalid = $valid.Clone()
+  $invalid.LayoutProfileId = 'theory_source_z10_d1_3'
+  Assert-RfThreeZoneArgumentSet @invalid
+  throw 'two-zone Candidate was accepted'
+}} catch {{
+  if ($_.Exception.Message -notmatch 'arguments and layout identity differ') {{ throw }}
+}}
+'THREE_ZONE_ARGUMENT_SET=PASS'
+"""
+        completed = subprocess.run(
+            [pwsh, "-NoProfile", "-Command", script],
+            cwd=INTEGRATION_ROOT.parents[1],
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertIn("THREE_ZONE_ARGUMENT_SET=PASS", completed.stdout)
+
+    def test_three_zone_candidate_is_frozen_and_cross_checked_without_public_cli(self) -> None:
+        adapter = FAMILY_ADAPTER.read_text(encoding="utf-8")
+        runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        public_entry = WORKFLOW_ENTRY.read_text(encoding="utf-8")
+        for name in (
+            "single_flight_three_zone_candidate_path",
+            "single_flight_three_zone_candidate_sha256",
+            "ThreeZoneCandidate",
+            "ThreeZoneTopologyId",
+            "ThreeZoneGeometryId",
+            "ThreeZoneFrontendElectrodeTopologyId",
+            "ThreeZoneFieldId",
+        ):
+            self.assertIn(name, adapter)
+        self.assertIn("$workspaceArtifactRoot", adapter)
+        self.assertIn("Assert-RfThreeZoneRuntimeIdentity", runner)
+        self.assertIn("three_zone_t5_candidate_resolved.json", runner)
+        self.assertIn(
+            "$runConfiguration.inputs.three_zone_t5_candidate", runner
+        )
+        self.assertIn(
+            "$FrontendElectrodeTopology.topology_id", runner
+        )
+        self.assertNotIn("ThreeZoneCandidate", public_entry)
+
+    def test_three_zone_runtime_identity_rejects_mapping_tamper(self) -> None:
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("PowerShell 7 is unavailable")
+        script = f"""
+$errors = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile(
+  '{SINGLE_FLIGHT_RUNNER}', [ref]$null, [ref]$errors
+)
+if ($errors) {{ throw $errors[0] }}
+$fn = $ast.Find({{
+  param($node)
+  $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+    $node.Name -eq 'Assert-RfThreeZoneRuntimeIdentity'
+}}, $true)
+if ($null -eq $fn) {{ throw 'three-zone runtime assertion is missing' }}
+. ([scriptblock]::Create($fn.Extent.Text))
+$planes = [pscustomobject]@{{
+  repeller=-25.0; intermediate1=-20.0; intermediate2=-10.0; exit=-5.0
+}}
+$potentials = [pscustomobject]@{{
+  repeller=2000.0; intermediate1=1500.0; intermediate2=500.0; exit=0.0
+}}
+$topology = [pscustomobject]@{{
+  topology_id='three_zone_accelerator_ideal_v1'
+  planes_global_z_mm=$planes; potentials_v=$potentials
+}}
+$candidate = [pscustomobject]@{{
+  schema_version=1; role='oatof_three_zone_simion_candidate_resolved'
+  qualification='CANDIDATE_ONLY'; compiler_mode='T5_FROZEN_PRIMARY_AND_BRANCH_ONLY'
+  identities=[pscustomobject]@{{
+    topology_id='three_zone_accelerator_ideal_v1'
+    geometry_id='three_zone_focus_origin_planes_v1'
+    field_id='three_zone_piecewise_uniform_ideal_field_v1'
+  }}
+  accelerator_topology=$topology
+}}
+$geometry = [pscustomobject]@{{
+  accelerator_topology=$topology
+  single_flight_layout_derivation=[pscustomobject]@{{
+    layout_profile_id='three_zone_t5_primary_v1'
+    architecture_generation_id='three_zone_t5_frozen_primary_v1'
+    design_compilation=[pscustomobject]@{{
+      candidate=[pscustomobject]@{{sha256=('A' * 64)}}
+    }}
+  }}
+}}
+$region = [pscustomobject]@{{
+  layout_geometry=[pscustomobject]@{{sha256=('B' * 64)}}
+  semantic=[pscustomobject]@{{
+    canonical_profile_id='accelerator_real_three_zone_pa_real_reflectron'
+    accelerator_topology=$topology
+  }}
+}}
+$field = [pscustomobject]@{{
+  profile_id='accelerator_real_three_zone_pa_real_reflectron'
+  topology_id='three_zone_accelerator_ideal_v1'
+  geometry_id='three_zone_focus_origin_planes_v1'
+  frontend_electrode_topology_id='three_zone_frontend_v1'
+  field_id='three_zone_refined_pa_field_v1'
+}}
+$arguments = @{{
+  Candidate=$candidate; CandidateSha256=('A' * 64)
+  Geometry=$geometry; GeometrySha256=('B' * 64)
+  FrontendContract=[pscustomobject]@{{
+    accelerator_topology_id='three_zone_accelerator_ideal_v1'
+  }}
+  FrontendElectrodeTopology=[pscustomobject]@{{topology_id='three_zone_frontend_v1'}}
+  RegionField=$region; FieldProfile=$field
+  LayoutProfileId='three_zone_t5_primary_v1'
+  ArchitectureGenerationId='three_zone_t5_frozen_primary_v1'
+  TopologyId='three_zone_accelerator_ideal_v1'
+  GeometryId='three_zone_focus_origin_planes_v1'
+  FrontendElectrodeTopologyId='three_zone_frontend_v1'
+  FieldId='three_zone_refined_pa_field_v1'
+}}
+Assert-RfThreeZoneRuntimeIdentity @arguments
+$region.semantic.accelerator_topology = [pscustomobject]@{{
+  topology_id='three_zone_accelerator_ideal_v1'
+  planes_global_z_mm=$planes
+  potentials_v=[pscustomobject]@{{
+    repeller=2000.0; intermediate1=1500.0; intermediate2=500.0; exit=1.0
+  }}
+}}
+try {{
+  Assert-RfThreeZoneRuntimeIdentity @arguments
+  throw 'mapping tamper was accepted'
+}} catch {{
+  if ($_.Exception.Message -notmatch 'plane or potential mapping differs') {{ throw }}
+}}
+'THREE_ZONE_RUNTIME_IDENTITY=PASS'
+"""
+        completed = subprocess.run(
+            [pwsh, "-NoProfile", "-Command", script],
+            cwd=INTEGRATION_ROOT.parents[1],
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertIn("THREE_ZONE_RUNTIME_IDENTITY=PASS", completed.stdout)
+
+    def test_three_zone_intermediate2_checkpoint_is_required_only_for_three_zone(
+        self,
+    ) -> None:
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("PowerShell 7 is unavailable")
+        runner_text = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        script = f"""
+$errors = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile(
+  '{SINGLE_FLIGHT_RUNNER}', [ref]$null, [ref]$errors
+)
+if ($errors) {{ throw $errors[0] }}
+$fn = $ast.Find({{
+  param($node)
+  $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+    $node.Name -eq 'Assert-RfThreeZoneCheckpointCensus'
+}}, $true)
+if ($null -eq $fn) {{ throw 'three-zone checkpoint assertion is missing' }}
+. ([scriptblock]::Create($fn.Extent.Text))
+$three = [pscustomobject]@{{accelerator_intermediate2_forward=7}}
+Assert-RfThreeZoneCheckpointCensus -Required $true -Census $three -ExpectedCount 7
+Assert-RfThreeZoneCheckpointCensus -Required $false `
+  -Census ([pscustomobject]@{{}}) -ExpectedCount 7
+try {{
+  Assert-RfThreeZoneCheckpointCensus -Required $true `
+    -Census ([pscustomobject]@{{}}) -ExpectedCount 7
+  throw 'missing intermediate2 checkpoint was accepted'
+}} catch {{
+  if ($_.Exception.Message -notmatch 'checkpoint census differs') {{ throw }}
+}}
+'THREE_ZONE_CHECKPOINT_CENSUS=PASS'
+"""
+        completed = subprocess.run(
+            [pwsh, "-NoProfile", "-Command", script],
+            cwd=INTEGRATION_ROOT.parents[1],
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertIn("THREE_ZONE_CHECKPOINT_CENSUS=PASS", completed.stdout)
+        self.assertIn(
+            "accelerator_intermediate2_forward_expected_count", runner_text
+        )
+        self.assertIn("accelerator_intermediate2_forward_count", runner_text)
+
+    def test_three_zone_n1_authorization_rejects_missing_fail_tamper_and_identity_mismatch(
+        self,
+    ) -> None:
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("PowerShell 7 is unavailable")
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            producer = workspace / "artifacts" / "projects" / "integration" / "runs" / "producer"
+            child = workspace / "artifacts" / "projects" / "integration" / "runs" / "child"
+            result = producer / "results" / "three_zone_n1_solver_authorization_receipt.json"
+            summary = child / "summary.json"
+            checkpoints = child / "results" / "single_flight_particle_checkpoints.csv"
+            for path, text in ((summary, "{}\n"), (checkpoints, "particle_id,event\n500,detector_crossing\n")):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(text, encoding="utf-8")
+
+            def sha(path: Path) -> str:
+                return hashlib.sha256(path.read_bytes()).hexdigest().upper()
+
+            def binding(path: Path) -> dict[str, object]:
+                return {
+                    "path": path.relative_to(workspace).as_posix(),
+                    "bytes": path.stat().st_size,
+                    "sha256": sha(path),
+                }
+
+            transport_manifest = child / "run_manifest.json"
+            transport_manifest.write_text(json.dumps({
+                "role": "simulation_run_manifest",
+                "run_id": "child",
+                "project": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+                "mode": "rf_to_oatof_simion_single_flight",
+                "status": "success",
+                "formal_eligible": False,
+            }, indent=2) + "\n", encoding="utf-8")
+            ids = {
+                "candidate_sha256": "A" * 64,
+                "layout_profile_id": "three_zone_t5_primary_v1",
+                "architecture_generation_id": "three_zone_t5_frozen_primary_v1",
+                "topology_id": "three_zone_accelerator_ideal_v1",
+                "geometry_id": "three_zone_focus_origin_planes_v1",
+                "frontend_electrode_topology_id": "three_zone_frontend_v1",
+                "accelerator_field_profile_id": "accelerator_real_three_zone_pa_real_reflectron",
+                "field_id": "three_zone_refined_pa_field_v1",
+                "resolved_region_field_semantic_sha256": "B" * 64,
+                "source_identity_sha256": "C" * 64,
+            }
+            events = [
+                "source_release", "pre_pulse_state",
+                "accelerator_grid1_forward", "accelerator_intermediate2_forward",
+                "local_accelerator_exit", "reflectron_entrance_forward",
+                "reflectron_turning_point", "reflectron_exit_return",
+                "detector_crossing",
+            ]
+            receipt = {
+                "schema_version": 1,
+                "role": "rf_oatof_three_zone_n1_solver_authorization_receipt",
+                "gate_id": "three_zone_real_pa_gate_v1",
+                "decision": "PASS",
+                "authorization_status": "N100_SOLVER_AUTHORIZED",
+                "campaign": {"campaign_id": "campaign", "campaign_sha256": "D" * 64},
+                "producer": {
+                    "experiment_id": "producer", "experiment_row_sha256": "E" * 64,
+                    "integration_run_id": "producer", "transport_run_id": "child",
+                    "transport_manifest": binding(transport_manifest),
+                },
+                "authorized_successor": {
+                    "experiment_id": "successor", "experiment_row_sha256": "F" * 64,
+                    "particle_count": 100,
+                },
+                "identities": ids,
+                "evidence": {
+                    "summary": binding(summary), "checkpoints": binding(checkpoints),
+                    "particle_id": 500,
+                    "census": {"launched": 1, **{event: 1 for event in events[2:]}},
+                    "required_event_sequence": events,
+                },
+                "failure_codes": [], "claim_limit": "functional only",
+                "formal_gate_passed": False,
+            }
+            result.parent.mkdir(parents=True, exist_ok=True)
+            result.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
+            parent_manifest = producer / "run_manifest.json"
+            parent_manifest.write_text(json.dumps({
+                "role": "simulation_run_manifest", "run_id": "producer",
+                "project": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+                "mode": "multipole_family_source_closure", "status": "success",
+                "formal_eligible": False,
+                "outputs": [{"path": str(result.resolve()), "bytes": result.stat().st_size,
+                             "sha256": sha(result)}],
+            }, indent=2) + "\n", encoding="utf-8")
+            script = f"""
+$errors=$null
+$runnerAst=[System.Management.Automation.Language.Parser]::ParseFile(
+  '{SINGLE_FLIGHT_RUNNER}',[ref]$null,[ref]$errors)
+if($errors){{throw $errors[0]}}
+$supportAst=[System.Management.Automation.Language.Parser]::ParseFile(
+  '{INTEGRATION_ROOT / 'runtime' / 'run_artifacts.ps1'}',[ref]$null,[ref]$errors)
+foreach($name in @('Get-RfManifestOutputRecord')){{
+  $fn=$supportAst.Find({{param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name}},$true)
+  . ([scriptblock]::Create($fn.Extent.Text))
+}}
+foreach($name in @('Assert-RfThreeZoneAuthorizationFileBinding','Assert-RfThreeZoneSolverAuthorization')){{
+  $fn=$runnerAst.Find({{param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name}},$true)
+  . ([scriptblock]::Create($fn.Extent.Text))
+}}
+$args=@{{Stage='n100_solver_authorized_consumer';ParticleCount=100
+  ReceiptPath='{result}';ReceiptSha256='{sha(result)}'
+  ParentManifestPath='{parent_manifest}';ParentManifestSha256='{sha(parent_manifest)}'
+  GateId='three_zone_real_pa_gate_v1';CampaignId='campaign';CampaignSha256=('D'*64)
+  ProducerExperimentId='producer';ProducerExperimentRowSha256=('E'*64)
+  SuccessorExperimentId='successor';SuccessorExperimentRowSha256=('F'*64)
+  CandidateSha256=('A'*64);LayoutProfileId='three_zone_t5_primary_v1'
+  ArchitectureGenerationId='three_zone_t5_frozen_primary_v1'
+  TopologyId='three_zone_accelerator_ideal_v1';GeometryId='three_zone_focus_origin_planes_v1'
+  FrontendElectrodeTopologyId='three_zone_frontend_v1'
+  AcceleratorFieldProfileId='accelerator_real_three_zone_pa_real_reflectron'
+  FieldId='three_zone_refined_pa_field_v1';RegionFieldSemanticSha256=('B'*64)
+  SourceIdentitySha256=('C'*64);WorkspaceRoot='{workspace}'}}
+Assert-RfThreeZoneSolverAuthorization @args
+try{{Assert-RfThreeZoneSolverAuthorization -Stage 'n100_solver_authorized_consumer' -ParticleCount 100 -WorkspaceRoot '{workspace}';throw 'missing accepted'}}catch{{if($_.Exception.Message -notmatch 'incomplete'){{throw}}}}
+$bad=$args.Clone();$bad.FieldId='wrong_field'
+try{{Assert-RfThreeZoneSolverAuthorization @bad;throw 'identity accepted'}}catch{{if($_.Exception.Message -notmatch 'identity or decision'){{throw}}}}
+$receipt=Get-Content -LiteralPath '{result}' -Raw|ConvertFrom-Json
+$receipt.decision='FAIL';$receipt.authorization_status='N100_SOLVER_NOT_AUTHORIZED'
+$receipt.failure_codes=@('DETECTOR_STATUS')
+$receipt|ConvertTo-Json -Depth 12|Set-Content -LiteralPath '{result}' -Encoding UTF8
+$manifest=Get-Content -LiteralPath '{parent_manifest}' -Raw|ConvertFrom-Json
+$manifest.outputs[0].bytes=(Get-Item -LiteralPath '{result}').Length
+$manifest.outputs[0].sha256=(Get-FileHash -LiteralPath '{result}' -Algorithm SHA256).Hash
+$manifest|ConvertTo-Json -Depth 8|Set-Content -LiteralPath '{parent_manifest}' -Encoding UTF8
+$failed=$args.Clone();$failed.ReceiptSha256=(Get-FileHash -LiteralPath '{result}' -Algorithm SHA256).Hash
+$failed.ParentManifestSha256=(Get-FileHash -LiteralPath '{parent_manifest}' -Algorithm SHA256).Hash
+try{{Assert-RfThreeZoneSolverAuthorization @failed;throw 'FAIL receipt accepted'}}catch{{if($_.Exception.Message -notmatch 'identity or decision'){{throw}}}}
+Set-Content -LiteralPath '{result}' -Value 'tampered' -Encoding UTF8
+try{{Assert-RfThreeZoneSolverAuthorization @failed;throw 'tamper accepted'}}catch{{if($_.Exception.Message -notmatch 'missing or stale'){{throw}}}}
+'N1_AUTHORIZATION_GATE=PASS'
+"""
+            completed = subprocess.run(
+                [pwsh, "-NoProfile", "-Command", script],
+                cwd=INTEGRATION_ROOT.parents[1], text=True, encoding="utf-8",
+                errors="replace", capture_output=True, check=False,
+            )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertIn("N1_AUTHORIZATION_GATE=PASS", completed.stdout)
+
+    def test_three_zone_authorization_precedes_first_simion_process(self) -> None:
+        runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        adapter = FAMILY_ADAPTER.read_text(encoding="utf-8")
+        self.assertLess(
+            runner.index("Assert-RfThreeZoneSolverAuthorization -Stage"),
+            runner.index("Invoke-ResourceBudgetedProcess"),
+        )
+        self.assertLess(
+            adapter.index("$authorizationIdentityDiffers"),
+            adapter.index("& $runtime.implementation.single_flight_runner"),
+        )
+        self.assertNotIn("ThreeZoneAuthorizationReceipt", WORKFLOW_ENTRY.read_text(encoding="utf-8"))
+
+    def test_generated_pre_pulse_subset_does_not_require_external_campaign_state(self) -> None:
+        adapter = FAMILY_ADAPTER.read_text(encoding="utf-8")
+        runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        self.assertIn("$usesGeneratedPrePulseSubset", adapter)
+        self.assertIn("$declaredPrePulseSourceState", adapter)
+        self.assertIn("@(Import-Csv -LiteralPath $prePulseSourceStatePath).Count", adapter)
+        self.assertIn(
+            "$frozenArguments.source_release_mode -eq 'continuous_frontend'",
+            adapter,
+        )
+        self.assertIn(
+            "Restart source modes prohibit an unused mother-source override.",
+            runner,
+        )
+        self.assertNotIn("$experiment.pre_pulse_source_state.particle_count", adapter)
+        self.assertNotIn(
+            "$experiment.pre_pulse_source_state.position_rowwise_abs_tolerance_mm",
+            adapter,
+        )
+
     def test_v4_staged_solver_authorization_fails_before_child_creation(self) -> None:
         pwsh = shutil.which("pwsh")
         if pwsh is None:

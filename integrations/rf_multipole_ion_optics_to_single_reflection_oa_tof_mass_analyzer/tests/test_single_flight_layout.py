@@ -7,6 +7,7 @@ import math
 import unittest
 from pathlib import Path
 
+from common.contracts.machine_contracts import ContractError
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_layout import (
     compile_geometry_and_port,
     select_profile,
@@ -18,6 +19,190 @@ INTEGRATION = REPO / "integrations/rf_multipole_ion_optics_to_single_reflection_
 
 
 class SingleFlightLayoutTests(unittest.TestCase):
+    @staticmethod
+    def _three_zone_candidate() -> dict[str, object]:
+        return {
+            "role": "oatof_three_zone_simion_candidate_resolved",
+            "qualification": "CANDIDATE_ONLY",
+            "compiler_mode": "T5_FROZEN_PRIMARY_AND_BRANCH_ONLY",
+            "campaign": {"campaign_id": "three_zone_solver_free_funnel_v1"},
+            "t5_evidence": {"plan_sha256": "A" * 64},
+            "source_identity": {
+                "frozen_source": {
+                    "center_x_mm": 1.5,
+                    "nominal_energy_per_charge_v": 2000.0,
+                }
+            },
+            "identities": {
+                "topology_id": "three_zone_accelerator_ideal_v1",
+                "geometry_id": "three_zone_focus_origin_planes_v1",
+                "field_id": "three_zone_piecewise_uniform_ideal_field_v1",
+            },
+            "accelerator_topology": {
+                "topology_id": "three_zone_accelerator_ideal_v1",
+                "planes_global_z_mm": {
+                    "repeller": -25.0,
+                    "intermediate1": -20.0,
+                    "intermediate2": -10.0,
+                    "exit": -5.0,
+                },
+                "potentials_v": {
+                    "repeller": 2000.0,
+                    "intermediate1": 1500.0,
+                    "intermediate2": 500.0,
+                    "exit": 0.0,
+                },
+            },
+            "accelerator_physics": {
+                "lengths_mm": {"d1": 5.0, "d2": 10.0, "d3": 5.0},
+                "focus_drift_after_exit_mm": 5.0,
+            },
+            "reflectron": {
+                "u_r1_v": 1600.0,
+                "f_r2_v_per_mm": 10.0,
+            },
+        }
+
+    def test_t5_three_zone_profile_maps_exact_topology_and_legacy_surface(self) -> None:
+        registry = json.loads(
+            (INTEGRATION / "config/single_flight_layout_profiles.json").read_text()
+        )
+        geometry = json.loads(
+            (
+                REPO
+                / "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json"
+            ).read_text()
+        )
+        port = json.loads(
+            (
+                REPO
+                / "projects/single_reflection_oa_tof_mass_analyzer/config/interfaces/required/oatof_accelerator_entry.json"
+            ).read_text()
+        )
+        profile = select_profile(registry, "three_zone_t5_primary_v1")
+        candidate = self._three_zone_candidate()
+        binding = {"path": "candidate.json", "sha256": "B" * 64}
+        resolved, _, _ = compile_geometry_and_port(
+            geometry,
+            port,
+            profile,
+            three_zone_candidate=candidate,
+            three_zone_candidate_binding=binding,
+        )
+        self.assertEqual(
+            resolved["accelerator_topology"],
+            candidate["accelerator_topology"],
+        )
+        self.assertEqual(resolved["geometry_mm"]["accelerator_grid1_z"], -20.0)
+        self.assertEqual(resolved["geometry_mm"]["accelerator_grid2_z"], -5.0)
+        accelerator = resolved["geometry_derivation"]["accelerator"]
+        self.assertEqual(accelerator["d1_mm"], 5.0)
+        self.assertEqual(accelerator["d2_mm"], 15.0)
+        self.assertEqual(accelerator["canonical_intermediate2_z_mm"], -10.0)
+        self.assertEqual(resolved["particle_source"]["center_z_mm"], -23.5)
+        self.assertEqual(resolved["particle_source"]["size_z_mm"], 2.2)
+        self.assertEqual(resolved["geometry_mm"]["L_flight"], 600.0)
+        self.assertEqual(resolved["electrodes_V"]["midgrid"], 1600.0)
+        self.assertAlmostEqual(
+            resolved["electrodes_V"]["backplate"],
+            1600.0 + 10.0 * resolved["geometry_mm"]["L_stage2"],
+        )
+        compilation = resolved["single_flight_layout_derivation"][
+            "design_compilation"
+        ]
+        self.assertEqual(compilation["candidate"], binding)
+        self.assertEqual(
+            compilation["simion_rebuild_plan"],
+            {
+                "frontend_pa": True,
+                "flight_tube_pa": True,
+                "reflectron_pa": False,
+            },
+        )
+
+    def test_t5_three_zone_profile_requires_bound_candidate(self) -> None:
+        registry = json.loads(
+            (INTEGRATION / "config/single_flight_layout_profiles.json").read_text()
+        )
+        geometry = json.loads(
+            (
+                REPO
+                / "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json"
+            ).read_text()
+        )
+        port = json.loads(
+            (
+                REPO
+                / "projects/single_reflection_oa_tof_mass_analyzer/config/interfaces/required/oatof_accelerator_entry.json"
+            ).read_text()
+        )
+        with self.assertRaisesRegex(
+            ContractError, "requires a hash-bound Candidate"
+        ):
+            compile_geometry_and_port(
+                geometry,
+                port,
+                select_profile(registry, "three_zone_t5_primary_v1"),
+            )
+
+    def test_three_zone_shaping_ring_successor_derives_exact_one_plus_four_centers(self) -> None:
+        registry = json.loads(
+            (INTEGRATION / "config/single_flight_layout_profiles.json").read_text()
+        )
+        old_profile = select_profile(registry, "three_zone_t5_primary_v1")
+        old_bytes = json.dumps(
+            old_profile, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode()
+        self.assertEqual(
+            hashlib.sha256(old_bytes).hexdigest().upper(),
+            "06D1BFAF5A89DEC4D44CDB72E6DF27A793444B6C0A236FF85ABA9813BD9FEDE7",
+        )
+        geometry = json.loads(
+            (REPO / "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json").read_text()
+        )
+        port = json.loads(
+            (REPO / "projects/single_reflection_oa_tof_mass_analyzer/config/interfaces/required/oatof_accelerator_entry.json").read_text()
+        )
+        candidate = self._three_zone_candidate()
+        candidate["accelerator_topology"]["planes_global_z_mm"].update(
+            {"repeller": -23.25, "intermediate1": -20.0,
+             "intermediate2": -14.9, "exit": -3.0}
+        )
+        candidate["accelerator_physics"] = {
+            "lengths_mm": {"d1": 3.25, "d2": 5.1, "d3": 11.9},
+            "focus_drift_after_exit_mm": 3.0,
+        }
+        profile = select_profile(
+            registry, "three_zone_t5_primary_shaping_rings_1p4_v1"
+        )
+        resolved, _, _ = compile_geometry_and_port(
+            geometry, port, profile, three_zone_candidate=candidate,
+            three_zone_candidate_binding={"path": "candidate.json", "sha256": "B" * 64},
+        )
+        placement = resolved["rings"]["accelerator_placement"]
+        self.assertEqual(placement["zone_ring_counts"], {"zone2": 1, "zone3": 4})
+        self.assertEqual(
+            placement["ring_z_mm"],
+            [-20.0 + 2.55, *[-14.9 + index * 2.38 for index in range(1, 5)]],
+        )
+        self.assertAlmostEqual(
+            placement["minimum_observed_grid_to_ring_edge_clearance_mm"], 1.88
+        )
+
+        invalid = copy.deepcopy(profile)
+        invalid["accelerator_ring_placement_policy"]["zone2_ring_count"] = 2
+        with self.assertRaisesRegex(ContractError, "placement policy is invalid"):
+            select_profile({**registry, "profiles": [invalid]}, invalid["layout_profile_id"])
+        invalid = copy.deepcopy(profile)
+        invalid["accelerator_ring_placement_policy"][
+            "minimum_grid_to_ring_edge_clearance_mm"
+        ] = 2.1
+        with self.assertRaisesRegex(ContractError, "clearance is below policy"):
+            compile_geometry_and_port(
+                geometry, port, invalid, three_zone_candidate=candidate,
+                three_zone_candidate_binding={"path": "candidate.json", "sha256": "B" * 64},
+            )
+
     def test_finite_interval_design_is_owned_by_the_oatof_project_api(self) -> None:
         source = (
             INTEGRATION / "runtime/single_flight_layout.py"

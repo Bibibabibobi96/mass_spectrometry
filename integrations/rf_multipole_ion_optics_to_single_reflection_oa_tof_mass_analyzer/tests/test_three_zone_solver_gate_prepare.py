@@ -1,0 +1,271 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+import tempfile
+import unittest
+
+from common.contracts.file_identity import file_sha256, repository_text_sha256
+from common.contracts.machine_contracts import ContractError
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.prepare import (
+    INTEGRATION_ID,
+    _canonical_sha256,
+    _resolve_three_zone_n1_authorization,
+    _three_zone_gate_pair,
+)
+
+
+def _write(path: Path, value: object) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
+
+
+def _record(path: Path, base: Path) -> dict[str, object]:
+    return {
+        "path": path.relative_to(base).as_posix(),
+        "bytes": path.stat().st_size,
+        "sha256": file_sha256(path),
+    }
+
+
+def _rows() -> tuple[dict[str, object], dict[str, object]]:
+    common = {
+        "execution_strategy": "simion_single_flight",
+        "connection_profile_id": "direct_mating_gap_0mm",
+        "source": {"identity": "same"},
+        "single_flight_layout_profile_id": "three_zone_t5_primary_v1",
+        "single_flight_three_zone_candidate": {"path": "artifacts/candidate.json", "bytes": 1, "sha256": "A" * 64},
+        "architecture_generation_id": "three_zone_t5_frozen_primary_v1",
+        "source_profile_id": "canonical_ideal_linear_z_vz_2p2mm_n1000",
+        "single_flight_source_materialization_profile_id": "canonical_ideal_linear_z_vz_2p2mm_n1000",
+        "single_flight_frontend_grid_profile_id": "three_zone_frontend_z005",
+        "single_flight_oatof_numerical_profile_id": "r100",
+        "single_flight_trajectory_quality_profile_id": "tqual_8",
+        "single_flight_time_integration_profile_id": "dt160",
+        "single_flight_pa_cache_policy": "build_and_publish_if_missing",
+        "single_flight_accelerator_field_profile_id": "accelerator_real_three_zone_pa_real_reflectron",
+        "source_release_mode": "pre_pulse_restart",
+        "field_overlay_id": "three_zone_frontend_v1",
+        "single_flight_population": {
+            "execution_population": {
+                "particle_count": 1,
+                "ordered_particle_id_sha256": "080A9ED428559EF602668B4C00F114F1A11C3F6B02A435F0BDC154578E4D7F22",
+                "selection_algorithm": "all_rows_in_frozen_file_order",
+            },
+            "denominators": {"population_count": 1, "eligible_population_count": 1},
+        },
+    }
+    producer = {
+        **common,
+        "sequence": 1,
+        "experiment_id": "three_zone_n1",
+        "run_id": "20260817_190000__sim__cross__three-zone-n1__n1",
+        "generated_pre_pulse_ordered_subset": {"selection_id": "n1_center_source_id_500_v1"},
+        "three_zone_solver_gate": {"gate_id": "three_zone_gate_v1", "stage": "n1_smoke_producer"},
+    }
+    consumer = json.loads(json.dumps(producer))
+    consumer.update({
+        "sequence": 2,
+        "experiment_id": "three_zone_n100",
+        "run_id": "20260817_191000__sim__cross__three-zone-n100__n100",
+        "generated_pre_pulse_ordered_subset": {"selection_id": "n100_file_order_source_ids_1_to_100_v1"},
+        "three_zone_solver_gate": {
+            "gate_id": "three_zone_gate_v1",
+            "stage": "n100_solver_authorized_consumer",
+            "predecessor_experiment_id": "three_zone_n1",
+        },
+    })
+    consumer["single_flight_population"]["execution_population"]["particle_count"] = 100
+    consumer["single_flight_population"]["execution_population"]["ordered_particle_id_sha256"] = (
+        "F9E2DBDE0AE4640704FB66EE02C101CF84ABE35137363D62647622606DF61279"
+    )
+    consumer["single_flight_population"]["denominators"]["population_count"] = 100
+    consumer["single_flight_population"]["denominators"]["eligible_population_count"] = 100
+    return producer, consumer
+
+
+class ThreeZoneSolverGatePrepareTests(unittest.TestCase):
+    def test_segmented_rings_full_width_realization_is_supported(self) -> None:
+        producer, consumer = _rows()
+        for row in (producer, consumer):
+            row["single_flight_layout_profile_id"] = (
+                "three_zone_t5_primary_shaping_rings_1p4_v1"
+            )
+            row["architecture_generation_id"] = (
+                "three_zone_t5_frozen_primary_shaping_rings_1p4_v1"
+            )
+        consumer["generated_pre_pulse_ordered_subset"] = {
+            "selection_id": "n100_uniform_full_width_source_ids_1_to_1000_v1"
+        }
+        campaign = {"schema_version": 6, "experiments": [producer, consumer]}
+
+        self.assertEqual(_three_zone_gate_pair(campaign), (producer, consumer))
+
+    def test_segmented_rings_reject_prefix_n100_selection(self) -> None:
+        producer, consumer = _rows()
+        for row in (producer, consumer):
+            row["single_flight_layout_profile_id"] = (
+                "three_zone_t5_primary_shaping_rings_1p4_v1"
+            )
+            row["architecture_generation_id"] = (
+                "three_zone_t5_frozen_primary_shaping_rings_1p4_v1"
+            )
+        campaign = {"schema_version": 6, "experiments": [producer, consumer]}
+
+        with self.assertRaisesRegex(ContractError, "layout, architecture, or N=100"):
+            _three_zone_gate_pair(campaign)
+
+    def test_generated_simulation_id_digest_is_checked_before_execution(self) -> None:
+        producer, consumer = _rows()
+        consumer["single_flight_population"]["execution_population"][
+            "ordered_particle_id_sha256"
+        ] = "0" * 64
+        campaign = {"schema_version": 6, "experiments": [producer, consumer]}
+
+        with self.assertRaisesRegex(ContractError, "population or ordered selection"):
+            _three_zone_gate_pair(campaign)
+
+    def test_both_pair_run_ids_are_calendar_validated(self) -> None:
+        producer, consumer = _rows()
+        consumer["run_id"] = "20260817_236000__sim__cross__invalid-time__n100"
+        campaign = {"schema_version": 6, "experiments": [producer, consumer]}
+
+        with self.assertRaisesRegex(ContractError, "run_id is invalid"):
+            _three_zone_gate_pair(campaign)
+
+    def test_pair_requires_exact_frozen_n1_to_n100_relationship(self) -> None:
+        producer, consumer = _rows()
+        campaign = {"schema_version": 6, "experiments": [producer, consumer]}
+        self.assertEqual(_three_zone_gate_pair(campaign), (producer, consumer))
+        # N=1 preflight has no predecessor artifact or receipt dependency.
+        self.assertNotIn("predecessor_experiment_id", producer["three_zone_solver_gate"])
+        consumer["single_flight_time_integration_profile_id"] = "dt320"
+        with self.assertRaisesRegex(ContractError, "differ beyond"):
+            _three_zone_gate_pair(campaign)
+
+    def test_n100_consumes_only_parent_bound_pass_receipt(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            producer, consumer = _rows()
+            campaign = {
+                "schema_version": 6,
+                "campaign_id": "three_zone_gate_campaign",
+                "experiments": [producer, consumer],
+            }
+            campaign_path = workspace / "simulation_repo/campaign.json"
+            _write(campaign_path, campaign)
+            source_identity = {"source_branch_id": "simion", "sha256": "B" * 64}
+            layout = {
+                "topology_id": "three_zone_accelerator_ideal_v1",
+                "geometry_id": "three_zone_focus_origin_planes_v1",
+                "frontend_electrode_topology_id": "three_zone_frontend_v1",
+            }
+            field = {"field_id": "three_zone_refined_pa_field_v1"}
+            region = {"semantic_sha256": "C" * 64}
+            identities = {
+                "candidate_sha256": "A" * 64,
+                "layout_profile_id": "three_zone_t5_primary_v1",
+                "architecture_generation_id": "three_zone_t5_frozen_primary_v1",
+                "topology_id": layout["topology_id"],
+                "geometry_id": layout["geometry_id"],
+                "frontend_electrode_topology_id": layout["frontend_electrode_topology_id"],
+                "accelerator_field_profile_id": "accelerator_real_three_zone_pa_real_reflectron",
+                "field_id": field["field_id"],
+                "resolved_region_field_semantic_sha256": "C" * 64,
+                "source_identity_sha256": _canonical_sha256(source_identity),
+            }
+            receipt = {
+                "schema_version": 1,
+                "role": "rf_oatof_three_zone_n1_solver_authorization_receipt",
+                "gate_id": "three_zone_gate_v1",
+                "decision": "PASS",
+                "authorization_status": "N100_SOLVER_AUTHORIZED",
+                "campaign": {"campaign_id": campaign["campaign_id"], "campaign_sha256": repository_text_sha256(campaign_path)},
+                "producer": {
+                    "experiment_id": producer["experiment_id"],
+                    "experiment_row_sha256": _canonical_sha256(producer),
+                    "integration_run_id": producer["run_id"],
+                    "transport_run_id": "child",
+                    "transport_manifest": {"path": "artifacts/child.json", "bytes": 1, "sha256": "D" * 64},
+                },
+                "authorized_successor": {
+                    "experiment_id": consumer["experiment_id"],
+                    "experiment_row_sha256": _canonical_sha256(consumer),
+                    "particle_count": 100,
+                },
+                "identities": identities,
+                "evidence": {
+                    "summary": {"path": "artifacts/summary.json", "bytes": 1, "sha256": "E" * 64},
+                    "checkpoints": {"path": "artifacts/checkpoints.csv", "bytes": 1, "sha256": "F" * 64},
+                    "particle_id": 500,
+                    "census": {key: 1 for key in (
+                        "launched", "accelerator_grid1_forward", "accelerator_intermediate2_forward",
+                        "local_accelerator_exit", "reflectron_entrance_forward", "reflectron_turning_point",
+                        "reflectron_exit_return", "detector_crossing",
+                    )},
+                    "required_event_sequence": [
+                        "source_release", "pre_pulse_state",
+                        "accelerator_grid1_forward", "accelerator_intermediate2_forward",
+                        "local_accelerator_exit", "reflectron_entrance_forward",
+                        "reflectron_turning_point", "reflectron_exit_return", "detector_crossing",
+                    ],
+                },
+                "failure_codes": [],
+                "claim_limit": "functional authorization only",
+                "formal_gate_passed": False,
+            }
+            run = workspace / "artifacts/projects" / INTEGRATION_ID / "runs" / producer["run_id"]
+            run_config = run / "run_config.json"
+            receipt_path = run / "results/three_zone_n1_solver_authorization_receipt.json"
+            _write(run_config, {"role": "simulation_run_config"})
+            _write(receipt_path, receipt)
+            manifest_path = run / "run_manifest.json"
+            manifest = {
+                "role": "simulation_run_manifest", "status": "success",
+                "run_id": producer["run_id"], "project": INTEGRATION_ID,
+                "mode": "multipole_family_source_closure", "formal_eligible": False,
+                "run_config": _record(run_config, run), "inputs": {},
+                "outputs": [_record(receipt_path, run)],
+            }
+            _write(manifest_path, manifest)
+            frozen = _resolve_three_zone_n1_authorization(
+                workspace=workspace, campaign=campaign, campaign_path=campaign_path,
+                producer=producer, consumer=consumer, source_identity=source_identity,
+                layout_profile=layout, selected_field_profile=field,
+                resolved_region_field_contract=region,
+            )
+            self.assertEqual(frozen["three_zone_n1_authorization_receipt_sha256"], file_sha256(receipt_path))
+            self.assertEqual(frozen["three_zone_source_identity_sha256"], identities["source_identity_sha256"])
+
+            receipt["decision"] = "FAIL"
+            receipt["authorization_status"] = "N100_SOLVER_NOT_AUTHORIZED"
+            receipt["failure_codes"] = ["DETECTOR_STATUS"]
+            _write(receipt_path, receipt)
+            with self.assertRaisesRegex(ContractError, "manifest verification failed"):
+                _resolve_three_zone_n1_authorization(
+                    workspace=workspace, campaign=campaign, campaign_path=campaign_path,
+                    producer=producer, consumer=consumer, source_identity=source_identity,
+                    layout_profile=layout, selected_field_profile=field,
+                    resolved_region_field_contract=region,
+                )
+            manifest["outputs"] = [_record(receipt_path, run)]
+            _write(manifest_path, manifest)
+            with self.assertRaisesRegex(ContractError, "identity or decision"):
+                _resolve_three_zone_n1_authorization(
+                    workspace=workspace, campaign=campaign, campaign_path=campaign_path,
+                    producer=producer, consumer=consumer, source_identity=source_identity,
+                    layout_profile=layout, selected_field_profile=field,
+                    resolved_region_field_contract=region,
+                )
+            manifest_path.unlink()
+            with self.assertRaisesRegex(ContractError, "parent manifest is missing"):
+                _resolve_three_zone_n1_authorization(
+                    workspace=workspace, campaign=campaign, campaign_path=campaign_path,
+                    producer=producer, consumer=consumer, source_identity=source_identity,
+                    layout_profile=layout, selected_field_profile=field,
+                    resolved_region_field_contract=region,
+                )
+
+
+if __name__ == "__main__":
+    unittest.main()

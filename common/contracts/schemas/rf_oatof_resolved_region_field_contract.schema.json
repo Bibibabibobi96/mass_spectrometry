@@ -22,7 +22,7 @@
       "type": "object",
       "required": ["field_configuration_id", "canonical_profile_id", "region_modes", "planes_mm", "fields_V_per_mm", "effective_domain", "pa_role", "real_pa_field_blending_allowed", "instance_coordinate_mapping"],
       "properties": {
-        "field_configuration_id": {"enum": ["REAL_ACCELERATOR_REAL_REFLECTOR_FIELD", "IDEAL_STAGE1_REAL_STAGE2_REAL_REFLECTOR_FIELD", "REAL_STAGE1_IDEAL_STAGE2_REAL_REFLECTOR_FIELD", "IDEAL_ACCELERATOR_REAL_REFLECTOR_FIELD", "FULL_DOMAIN_PIECEWISE_IDEAL_FIELD", "IDEAL_THREE_ZONE_ACCELERATOR_REAL_REFLECTOR_FIELD"]},
+        "field_configuration_id": {"enum": ["REAL_ACCELERATOR_REAL_REFLECTOR_FIELD", "IDEAL_STAGE1_REAL_STAGE2_REAL_REFLECTOR_FIELD", "REAL_STAGE1_IDEAL_STAGE2_REAL_REFLECTOR_FIELD", "IDEAL_ACCELERATOR_REAL_REFLECTOR_FIELD", "FULL_DOMAIN_PIECEWISE_IDEAL_FIELD", "IDEAL_THREE_ZONE_ACCELERATOR_REAL_REFLECTOR_FIELD", "REAL_THREE_ZONE_ACCELERATOR_REAL_REFLECTOR_FIELD"]},
         "canonical_profile_id": {"type": "string", "minLength": 1},
         "accelerator_topology": {
           "type": "object",
@@ -54,9 +54,9 @@
           "type": "object",
           "required": ["longitudinal", "transverse", "outside_longitudinal_domain"],
           "properties": {
-            "longitudinal": {"const": "closed_piecewise_path_repeller_to_reflectron_backplate"},
-            "transverse": {"const": "analytic_field_extends_until_native_pa_geometry_collision"},
-            "outside_longitudinal_domain": {"const": "invalid_trajectory_error"}
+            "longitudinal": {"enum": ["closed_piecewise_path_repeller_to_reflectron_backplate", "native_pa_instance_domain"]},
+            "transverse": {"enum": ["analytic_field_extends_until_native_pa_geometry_collision", "native_pa_instance_domain"]},
+            "outside_longitudinal_domain": {"enum": ["invalid_trajectory_error", "native_pa_base_field_unchanged"]}
           },
           "additionalProperties": false
         },
@@ -113,9 +113,16 @@
       "then": {"properties": {"semantic": {
         "not": {"required": ["accelerator_topology"]},
         "properties": {
-          "field_configuration_id": {"not": {"const": "IDEAL_THREE_ZONE_ACCELERATOR_REAL_REFLECTOR_FIELD"}},
-          "canonical_profile_id": {"not": {"const": "accelerator_ideal_three_zone_real_reflectron"}},
-          "region_modes": {"required": ["accelerator_stage1", "accelerator_stage2", "drift", "reflectron_stage1", "reflectron_stage2"], "maxProperties": 5}
+          "field_configuration_id": {"not": {"enum": ["IDEAL_THREE_ZONE_ACCELERATOR_REAL_REFLECTOR_FIELD", "REAL_THREE_ZONE_ACCELERATOR_REAL_REFLECTOR_FIELD"]}},
+          "canonical_profile_id": {"not": {"enum": ["accelerator_ideal_three_zone_real_reflectron", "accelerator_real_three_zone_pa_real_reflectron"]}},
+          "region_modes": {"required": ["accelerator_stage1", "accelerator_stage2", "drift", "reflectron_stage1", "reflectron_stage2"], "maxProperties": 5},
+          "effective_domain": {
+            "properties": {
+              "longitudinal": {"const": "closed_piecewise_path_repeller_to_reflectron_backplate"},
+              "transverse": {"const": "analytic_field_extends_until_native_pa_geometry_collision"},
+              "outside_longitudinal_domain": {"const": "invalid_trajectory_error"}
+            }
+          }
         }
       }}}
     },
@@ -124,23 +131,62 @@
       "then": {"properties": {"semantic": {
         "required": ["accelerator_topology"],
         "properties": {
-          "field_configuration_id": {"const": "IDEAL_THREE_ZONE_ACCELERATOR_REAL_REFLECTOR_FIELD"},
-          "canonical_profile_id": {"const": "accelerator_ideal_three_zone_real_reflectron"},
           "region_modes": {
             "required": ["accelerator_zone1", "accelerator_zone2", "accelerator_zone3", "drift", "reflectron_stage1", "reflectron_stage2"],
-            "maxProperties": 6,
+            "maxProperties": 6
+          },
+          "planes_mm": {"$ref": "#/$defs/three_zone_planes"}
+        },
+        "oneOf": [
+          {
             "properties": {
-              "accelerator_zone1": {"const": "analytic_ideal_field"},
-              "accelerator_zone2": {"const": "analytic_ideal_field"},
-              "accelerator_zone3": {"const": "analytic_ideal_field"},
-              "drift": {"const": "real_pa_field"},
-              "reflectron_stage1": {"const": "real_pa_field"},
-              "reflectron_stage2": {"const": "real_pa_field"}
+              "field_configuration_id": {"const": "IDEAL_THREE_ZONE_ACCELERATOR_REAL_REFLECTOR_FIELD"},
+              "canonical_profile_id": {"const": "accelerator_ideal_three_zone_real_reflectron"},
+              "region_modes": {
+                "properties": {
+                  "accelerator_zone1": {"const": "analytic_ideal_field"},
+                  "accelerator_zone2": {"const": "analytic_ideal_field"},
+                  "accelerator_zone3": {"const": "analytic_ideal_field"},
+                  "drift": {"const": "real_pa_field"},
+                  "reflectron_stage1": {"const": "real_pa_field"},
+                  "reflectron_stage2": {"const": "real_pa_field"}
+                }
+              },
+              "fields_V_per_mm": {"$ref": "#/$defs/three_zone_fields"},
+              "effective_domain": {
+                "properties": {
+                  "longitudinal": {"const": "closed_piecewise_path_repeller_to_reflectron_backplate"},
+                  "transverse": {"const": "analytic_field_extends_until_native_pa_geometry_collision"},
+                  "outside_longitudinal_domain": {"const": "invalid_trajectory_error"}
+                }
+              }
             }
           },
-          "planes_mm": {"$ref": "#/$defs/three_zone_planes"},
-          "fields_V_per_mm": {"$ref": "#/$defs/three_zone_fields"}
-        }
+          {
+            "properties": {
+              "field_configuration_id": {"const": "REAL_THREE_ZONE_ACCELERATOR_REAL_REFLECTOR_FIELD"},
+              "canonical_profile_id": {"const": "accelerator_real_three_zone_pa_real_reflectron"},
+              "region_modes": {
+                "properties": {
+                  "accelerator_zone1": {"const": "real_pa_field"},
+                  "accelerator_zone2": {"const": "real_pa_field"},
+                  "accelerator_zone3": {"const": "real_pa_field"},
+                  "drift": {"const": "real_pa_field"},
+                  "reflectron_stage1": {"const": "real_pa_field"},
+                  "reflectron_stage2": {"const": "real_pa_field"}
+                }
+              },
+              "fields_V_per_mm": {"const": {}},
+              "effective_domain": {
+                "properties": {
+                  "longitudinal": {"const": "native_pa_instance_domain"},
+                  "transverse": {"const": "native_pa_instance_domain"},
+                  "outside_longitudinal_domain": {"const": "native_pa_base_field_unchanged"}
+                }
+              }
+            }
+          }
+        ]
       }}}
     }
   ]

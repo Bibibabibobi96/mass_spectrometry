@@ -13,11 +13,15 @@ import unittest
 from common.contracts.machine_contracts import ContractError, validate_schema
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.prepare import (
     _repo_byte_record,
+    _workspace_record,
     prepare_family_source_closure,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_source import (
     materialize_staged_grid2_restart,
     resolve_source_materialization_profile,
+)
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.ordered_pre_pulse_subset import (
+    ordered_subset_source_particle_ids,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.publish_run import (
     INTEGRATION_ID,
@@ -194,6 +198,258 @@ def write_current_policy_campaign(source: Path, destination: Path) -> dict[str, 
 
 
 class FamilySourceClosureWorkflowTests(unittest.TestCase):
+    def test_generated_ordered_subset_selectors_are_exact_and_fresh(self) -> None:
+        n1 = ordered_subset_source_particle_ids("n1_center_source_id_500_v1")
+        n100 = ordered_subset_source_particle_ids(
+            "n100_file_order_source_ids_1_to_100_v1"
+        )
+        self.assertEqual(n1, [500])
+        self.assertEqual(n100, list(range(1, 101)))
+        n100.append(101)
+        self.assertEqual(
+            ordered_subset_source_particle_ids(
+                "n100_file_order_source_ids_1_to_100_v1"
+            ),
+            list(range(1, 101)),
+        )
+        with self.assertRaisesRegex(ValueError, "unsupported"):
+            ordered_subset_source_particle_ids("arbitrary_postselection")
+
+    def test_generated_ordered_subset_schema_is_mutually_exclusive_and_count_bound(
+        self,
+    ) -> None:
+        path = (
+            CONFIG_ROOT
+            / "diagnostics"
+            / "canonical_long_full_domain_restart_affine_width_numerics_n1000_v3_successor_campaign.json"
+        )
+        external = load(path)
+        validate_schema(
+            external, "rf_multipole_oatof_experiment_campaign.schema.json"
+        )
+        campaign = json.loads(json.dumps(external))
+        row = campaign["experiments"][2]
+        del row["pre_pulse_source_state"]
+        row["generated_pre_pulse_ordered_subset"] = {
+            "selection_id": "n100_file_order_source_ids_1_to_100_v1"
+        }
+        population = row["single_flight_population"]
+        population["execution_population"]["particle_count"] = 100
+        population["execution_population"]["ordered_particle_id_sha256"] = (
+            hashlib.sha256(
+                json.dumps(
+                    list(range(1, 101)), separators=(",", ":")
+                ).encode()
+            ).hexdigest().upper()
+        )
+        population["denominators"] = {
+            "population_count": 100,
+            "eligible_population_count": 100,
+        }
+        validate_schema(
+            campaign, "rf_multipole_oatof_experiment_campaign.schema.json"
+        )
+        full_width = json.loads(json.dumps(campaign))
+        full_width["experiments"][2]["generated_pre_pulse_ordered_subset"] = {
+            "selection_id": "n100_uniform_full_width_source_ids_1_to_1000_v1"
+        }
+        validate_schema(
+            full_width, "rf_multipole_oatof_experiment_campaign.schema.json"
+        )
+
+        conflicting = json.loads(json.dumps(campaign))
+        conflicting["experiments"][2]["pre_pulse_source_state"] = external[
+            "experiments"
+        ][2]["pre_pulse_source_state"]
+        with self.assertRaises(ContractError):
+            validate_schema(
+                conflicting,
+                "rf_multipole_oatof_experiment_campaign.schema.json",
+            )
+
+        wrong_count = json.loads(json.dumps(campaign))
+        wrong_count["experiments"][2]["single_flight_population"][
+            "execution_population"
+        ]["particle_count"] = 1
+        with self.assertRaises(ContractError):
+            validate_schema(
+                wrong_count,
+                "rf_multipole_oatof_experiment_campaign.schema.json",
+            )
+
+    def test_prepare_generates_and_freezes_n100_ordered_restart_subset(self) -> None:
+        source_run = (
+            REPO_ROOT.parent
+            / "artifacts/projects/rf_octupole_ion_optics/runs"
+            / "20260805_132100__sim__simion__oct-terminal-10ev-h15__n1000"
+        )
+        if not source_run.is_dir():
+            self.skipTest("local frozen N=1000 mother source is unavailable")
+        source_campaign = (
+            CONFIG_ROOT
+            / "diagnostics"
+            / "canonical_pulse_state_source_acc_ii_n1000_campaign.json"
+        )
+        with tempfile.TemporaryDirectory(
+            dir=REPO_ROOT.parent
+            / "artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
+        ) as directory, tempfile.TemporaryDirectory(
+            dir=CONFIG_ROOT
+        ) as config_directory:
+            output = Path(directory)
+            campaign_path = Path(config_directory) / "campaign.json"
+            campaign = migrate_v3_campaign(load(source_campaign))
+            campaign["execution_policy"] = load(OCTUPOLE_RUNTIME_BINDING)[
+                "contracts"
+            ]["execution_policy_contract"]
+            row = campaign["experiments"][4]
+            del row["pre_pulse_source_state"]
+            row["generated_pre_pulse_ordered_subset"] = {
+                "selection_id": "n100_file_order_source_ids_1_to_100_v1"
+            }
+            population = row["single_flight_population"]
+            population["execution_population"]["particle_count"] = 100
+            population["execution_population"][
+                "ordered_particle_id_sha256"
+            ] = hashlib.sha256(
+                json.dumps(
+                    list(range(1, 101)), separators=(",", ":")
+                ).encode()
+            ).hexdigest().upper()
+            population["denominators"] = {
+                "population_count": 100,
+                "eligible_population_count": 100,
+            }
+            write_json(campaign_path, campaign)
+            _, plan_path = prepare_family_source_closure(
+                repo_root=REPO_ROOT,
+                profile_registry_path=PROFILE_REGISTRY,
+                adapter_registry_path=ADAPTER_REGISTRY,
+                campaign_path=campaign_path,
+                experiment_id=row["experiment_id"],
+                resolved_output=output / "resolved.json",
+                plan_output=output / "plan.json",
+            )
+            subset_path = output / "inputs/single_flight_pre_pulse_ordered_subset.csv"
+            receipt_path = output / (
+                "inputs/single_flight_pre_pulse_ordered_subset_receipt.json"
+            )
+            receipt = load(receipt_path)
+            plan = load(plan_path)
+            arguments = dict(
+                item.split("=", 1)
+                for item in plan["execution_steps"][0]["arguments"]
+                if "=" in item
+            )
+            self.assertTrue(subset_path.is_file())
+            self.assertEqual(
+                receipt["selection"]["ordered_source_particle_ids"],
+                list(range(1, 101)),
+            )
+            self.assertEqual(arguments["pre_pulse_source_state_count"], "100")
+            self.assertEqual(
+                arguments["pre_pulse_source_state_sha256"],
+                hashlib.sha256(subset_path.read_bytes()).hexdigest().upper(),
+            )
+            self.assertEqual(
+                arguments["pre_pulse_restart_validation_sha256"],
+                hashlib.sha256(
+                    (output / "canonical_pulse_restart_target_state_validation.json").read_bytes()
+                ).hexdigest().upper(),
+            )
+
+    def test_three_zone_candidate_binding_is_layout_scoped_and_hash_bound(self) -> None:
+        campaign = load(
+            CONFIG_ROOT
+            / "diagnostics/short_focus_rr_tqual108_stratified_n100_campaign.json"
+        )
+        row = campaign["experiments"][0]
+        row["single_flight_layout_profile_id"] = "three_zone_t5_primary_v1"
+        row["single_flight_three_zone_candidate"] = {
+            "path": (
+                "artifacts/projects/single_reflection_oa_tof_mass_analyzer/"
+                "runs/t5/three_zone_candidate.json"
+            ),
+            "sha256": "A" * 64,
+        }
+        validate_schema(
+            campaign, "rf_multipole_oatof_experiment_campaign.schema.json"
+        )
+
+        missing = json.loads(json.dumps(campaign))
+        del missing["experiments"][0]["single_flight_three_zone_candidate"]
+        with self.assertRaises(ContractError):
+            validate_schema(
+                missing, "rf_multipole_oatof_experiment_campaign.schema.json"
+            )
+
+        wrong_layout = json.loads(json.dumps(campaign))
+        wrong_layout["experiments"][0][
+            "single_flight_layout_profile_id"
+        ] = "theory_source_z10_d1_3"
+        with self.assertRaises(ContractError):
+            validate_schema(
+                wrong_layout, "rf_multipole_oatof_experiment_campaign.schema.json"
+            )
+
+    def test_three_zone_candidate_workspace_binding_rejects_escape_and_stale_sha(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            candidate = workspace / "artifacts/projects/oatof/runs/t5/candidate.json"
+            candidate.parent.mkdir(parents=True)
+            candidate.write_text('{"role":"fixture"}\n', encoding="utf-8")
+            record = {
+                "path": candidate.relative_to(workspace).as_posix(),
+                "sha256": hashlib.sha256(candidate.read_bytes()).hexdigest().upper(),
+            }
+            self.assertEqual(
+                _workspace_record(workspace, record, "three-zone T5 Candidate"),
+                candidate,
+            )
+            stale = dict(record)
+            stale["sha256"] = "A" * 64
+            with self.assertRaisesRegex(ContractError, "SHA-256 is stale"):
+                _workspace_record(
+                    workspace, stale, "three-zone T5 Candidate"
+                )
+            outside = workspace / "outside.json"
+            outside.write_text("{}\n", encoding="utf-8")
+            escaped = {
+                "path": outside.relative_to(workspace).as_posix(),
+                "sha256": hashlib.sha256(outside.read_bytes()).hexdigest().upper(),
+            }
+            with self.assertRaisesRegex(
+                ContractError, "missing or escapes workspace artifacts"
+            ):
+                _workspace_record(
+                    workspace, escaped, "three-zone T5 Candidate"
+                )
+
+    def test_three_zone_field_profiles_publish_four_exact_identities(self) -> None:
+        configuration = load(CONFIG_ROOT / "simion_single_flight.json")
+        profiles = {
+            item["profile_id"]: item
+            for item in configuration["accelerator_field_profiles"]
+        }
+        expected = {
+            "topology_id": "three_zone_accelerator_ideal_v1",
+            "geometry_id": "three_zone_focus_origin_planes_v1",
+            "frontend_electrode_topology_id": "three_zone_frontend_v1",
+        }
+        field_ids = {
+            "accelerator_ideal_three_zone_real_reflectron":
+                "three_zone_piecewise_uniform_ideal_field_v1",
+            "accelerator_real_three_zone_pa_real_reflectron":
+                "three_zone_refined_pa_field_v1",
+        }
+        for profile_id, field_id in field_ids.items():
+            with self.subTest(profile_id=profile_id):
+                profile = profiles[profile_id]
+                self.assertTrue(
+                    all(profile[key] == value for key, value in expected.items())
+                )
+                self.assertEqual(profile["field_id"], field_id)
+
     def test_loader_budget_requires_campaign_v5_and_staged_mode_both_ways(self) -> None:
         campaign = load(
             CONFIG_ROOT / "diagnostics" /

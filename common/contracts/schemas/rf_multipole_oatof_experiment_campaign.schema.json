@@ -5,7 +5,7 @@
   "additionalProperties": false,
   "required": ["schema_version", "role", "integration_id", "campaign_id", "status", "execution_policy", "claim_limit", "experiments"],
   "properties": {
-    "schema_version": {"enum": [1, 2, 3, 4, 5]},
+    "schema_version": {"enum": [1, 2, 3, 4, 5, 6]},
     "role": {"const": "rf_multipole_oatof_experiment_campaign"},
     "integration_id": {"const": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"},
     "campaign_id": {"$ref": "#/$defs/id"},
@@ -20,13 +20,13 @@
   },
   "allOf": [
     {
-      "if": {"properties": {"schema_version": {"enum": [2, 3, 4, 5]}}, "required": ["schema_version"]},
+      "if": {"properties": {"schema_version": {"enum": [2, 3, 4, 5, 6]}}, "required": ["schema_version"]},
       "then": {"properties": {"experiments": {"items": {"required": ["single_flight_layout_profile_id"]}}}},
       "else": {"properties": {"experiments": {"items": {"not": {"required": ["single_flight_layout_profile_id"]}}}}}
     },
     {
       "if": {"required": ["pulse_resolution_optimization"]},
-      "then": {"properties": {"schema_version": {"enum": [2, 3, 4, 5]}}}
+      "then": {"properties": {"schema_version": {"enum": [2, 3, 4, 5, 6]}}}
     },
     {
       "if": {
@@ -290,6 +290,33 @@
         "energy_abs_tolerance_eV": {"const": 5e-9},
         "postselection_prohibited": {"const": true}
       }
+    },
+    "generated_pre_pulse_ordered_subset": {
+      "type": "object", "additionalProperties": false,
+      "required": ["selection_id"],
+      "properties": {
+        "selection_id": {
+          "enum": [
+            "n1_center_source_id_500_v1",
+            "n100_file_order_source_ids_1_to_100_v1",
+            "n100_uniform_full_width_source_ids_1_to_1000_v1"
+          ]
+        }
+      }
+    },
+    "three_zone_solver_gate": {
+      "type": "object", "additionalProperties": false,
+      "required": ["gate_id", "stage"],
+      "properties": {
+        "gate_id": {"$ref": "#/$defs/id"},
+        "stage": {"enum": ["n1_smoke_producer", "n100_solver_authorized_consumer"]},
+        "predecessor_experiment_id": {"$ref": "#/$defs/id"}
+      },
+      "allOf": [{
+        "if": {"properties": {"stage": {"const": "n100_solver_authorized_consumer"}}, "required": ["stage"]},
+        "then": {"required": ["predecessor_experiment_id"]},
+        "else": {"not": {"required": ["predecessor_experiment_id"]}}
+      }]
     },
     "staged_grid2_source_state": {
       "type": "object", "additionalProperties": false,
@@ -624,16 +651,110 @@
         },
         {
           "if": {
+            "properties": {
+              "single_flight_layout_profile_id": {
+                "enum": [
+                  "three_zone_t5_primary_v1",
+                  "three_zone_t5_primary_shaping_rings_1p4_v1"
+                ]
+              }
+            },
+            "required": ["single_flight_layout_profile_id"]
+          },
+          "then": {"required": ["single_flight_three_zone_candidate"]},
+          "else": {"not": {"required": ["single_flight_three_zone_candidate"]}}
+        },
+        {
+          "if": {
             "properties": {"source_release_mode": {"const": "pre_pulse_restart"}},
             "required": ["source_release_mode"]
           },
-          "then": {"required": ["architecture_generation_id", "source_profile_id", "field_overlay_id", "pre_pulse_source_state"]}
+          "then": {
+            "required": ["architecture_generation_id", "source_profile_id", "field_overlay_id"],
+            "oneOf": [
+              {"required": ["pre_pulse_source_state"]},
+              {"required": ["generated_pre_pulse_ordered_subset", "single_flight_source_materialization_profile_id"]}
+            ]
+          }
         },
         {
           "if": {"required": ["pre_pulse_source_state"]},
           "then": {
             "properties": {"source_release_mode": {"const": "pre_pulse_restart"}},
             "required": ["source_release_mode"]
+          }
+        },
+        {
+          "if": {"required": ["generated_pre_pulse_ordered_subset"]},
+          "then": {
+            "properties": {
+              "source_release_mode": {"const": "pre_pulse_restart"},
+              "source_profile_id": {"const": "canonical_ideal_linear_z_vz_2p2mm_n1000"},
+              "single_flight_source_materialization_profile_id": {"const": "canonical_ideal_linear_z_vz_2p2mm_n1000"}
+            },
+            "required": ["source_release_mode", "single_flight_source_materialization_profile_id"],
+            "not": {"required": ["pre_pulse_source_state"]}
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "generated_pre_pulse_ordered_subset": {
+                "properties": {"selection_id": {"const": "n1_center_source_id_500_v1"}},
+                "required": ["selection_id"]
+              }
+            },
+            "required": ["generated_pre_pulse_ordered_subset"]
+          },
+          "then": {
+            "properties": {
+              "single_flight_population": {
+                "properties": {
+                  "execution_population": {"properties": {"particle_count": {"const": 1}}},
+                  "denominators": {
+                    "properties": {
+                      "population_count": {"const": 1},
+                      "eligible_population_count": {"const": 1}
+                    }
+                  }
+                }
+              }
+            },
+            "required": ["single_flight_population"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "generated_pre_pulse_ordered_subset": {
+                "properties": {
+                  "selection_id": {
+                    "enum": [
+                      "n100_file_order_source_ids_1_to_100_v1",
+                      "n100_uniform_full_width_source_ids_1_to_1000_v1"
+                    ]
+                  }
+                },
+                "required": ["selection_id"]
+              }
+            },
+            "required": ["generated_pre_pulse_ordered_subset"]
+          },
+          "then": {
+            "properties": {
+              "single_flight_population": {
+                "properties": {
+                  "execution_population": {"properties": {"particle_count": {"const": 100}}},
+                  "denominators": {
+                    "properties": {
+                      "population_count": {"const": 100},
+                      "eligible_population_count": {"const": 100}
+                    }
+                  }
+                }
+              }
+            },
+            "required": ["single_flight_population"]
           }
         },
         {
@@ -781,11 +902,14 @@
         "single_flight_spatial_window_profile_id": {"$ref": "#/$defs/id"},
         "single_flight_accelerator_field_profile_id": {"$ref": "#/$defs/id"},
         "single_flight_source_materialization_profile_id": {"$ref": "#/$defs/id"},
+        "single_flight_three_zone_candidate": {"$ref": "#/$defs/file"},
         "architecture_generation_id": {"$ref": "#/$defs/id"},
         "source_profile_id": {"$ref": "#/$defs/id"},
         "field_overlay_id": {"$ref": "#/$defs/id"},
         "source_release_mode": {"enum": ["continuous_frontend", "pre_pulse_restart", "staged_grid2_restart"]},
         "pre_pulse_source_state": {"$ref": "#/$defs/pre_pulse_source_state"},
+        "generated_pre_pulse_ordered_subset": {"$ref": "#/$defs/generated_pre_pulse_ordered_subset"},
+        "three_zone_solver_gate": {"$ref": "#/$defs/three_zone_solver_gate"},
         "staged_grid2_source_state": {"$ref": "#/$defs/staged_grid2_source_state"},
         "single_flight_pulse_offset_rf_periods": {
           "type": "number",

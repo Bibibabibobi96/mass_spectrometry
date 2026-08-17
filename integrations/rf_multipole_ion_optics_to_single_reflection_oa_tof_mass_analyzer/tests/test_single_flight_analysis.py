@@ -7,9 +7,16 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from matplotlib import pyplot as plt
+
 from common.contracts.particle_physics import kinetic_energy_ev
-from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.analyze_single_flight import analyze as analyze_with_population_contract
-from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.plot_single_flight_spatial_six_panel import marker_area
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.analyze_single_flight import (
+    analyze as analyze_with_population_contract,
+)
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.plot_single_flight_spatial_six_panel import (
+    _accelerator,
+    marker_area,
+)
 
 
 def analyze(log_path, launched, mass_amu, *args, **kwargs):
@@ -44,7 +51,8 @@ def analyze(log_path, launched, mass_amu, *args, **kwargs):
         contract["source_release_validation"] = {
             "role": "rf_oatof_resolved_source_release_validation",
             "loader_authorization_budget": {
-                "path": "fixture.json", "sha256": "A" * 64,
+                "path": "fixture.json",
+                "sha256": "A" * 64,
             },
             "velocity": {
                 "relative_bound": 2e-8,
@@ -58,61 +66,84 @@ def analyze(log_path, launched, mass_amu, *args, **kwargs):
             },
             "native_ion_ke_role": "diagnostic_only",
         }
-    return analyze_with_population_contract(
-        log_path, mass_amu, contract, *args, **kwargs
-    )
+    return analyze_with_population_contract(log_path, mass_amu, contract, *args, **kwargs)
 
 
 class SingleFlightAnalysisTests(unittest.TestCase):
     def _run_staged_release_case(
-        self, root: Path, *, expected_velocity: float, actual_velocity: float,
-        actual_x: float = 1.0, actual_time: float = 36.0,
+        self,
+        root: Path,
+        *,
+        expected_velocity: float,
+        actual_velocity: float,
+        actual_x: float = 1.0,
+        actual_time: float = 36.0,
     ) -> dict[str, object]:
         energy = kinetic_energy_ev(100, actual_velocity, 0, 0)
         log = root / "simion.log"
-        log.write_text("\n".join([
-            "TRACE: source_release ion=1 particle_id=6 "
-            f"instrument_time_us={actual_time:.17g} x_mm={actual_x:.17g} "
-            "y_mm=2 z_mm=3 "
-            f"vx_mm_per_us={actual_velocity / 1000:.17g} "
-            "vy_mm_per_us=0 vz_mm_per_us=0",
-            "TRACE: local_accelerator_exit ion=1 particle_id=6 "
-            "instrument_time_us=36 tof_since_pulse_us=0 x_mm=1 y_mm=2 z_mm=3 "
-            f"vx_mm_per_us={actual_velocity / 1000:.17g} "
-            "vy_mm_per_us=0 vz_mm_per_us=0 "
-            f"kinetic_energy_eV={energy:.17g} survival_status=alive",
-            "TRACE: detector_crossing ion=1 t=10 x=2 y=0 z=5",
-        ]) + "\n", encoding="utf-8")
+        log.write_text(
+            "\n".join(
+                [
+                    "TRACE: source_release ion=1 particle_id=6 "
+                    f"instrument_time_us={actual_time:.17g} x_mm={actual_x:.17g} "
+                    "y_mm=2 z_mm=3 "
+                    f"vx_mm_per_us={actual_velocity / 1000:.17g} "
+                    "vy_mm_per_us=0 vz_mm_per_us=0",
+                    "TRACE: local_accelerator_exit ion=1 particle_id=6 "
+                    "instrument_time_us=36 tof_since_pulse_us=0 x_mm=1 y_mm=2 z_mm=3 "
+                    f"vx_mm_per_us={actual_velocity / 1000:.17g} "
+                    "vy_mm_per_us=0 vz_mm_per_us=0 "
+                    f"kinetic_energy_eV={energy:.17g} survival_status=alive",
+                    "TRACE: detector_crossing ion=1 t=10 x=2 y=0 z=5",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
         initial = root / "initial.csv"
-        fields = ["particle_id", "instrument_time_us", "mass_amu", "charge_state",
-                  "position_x_mm", "position_y_mm", "position_z_mm",
-                  "velocity_x_m_s", "velocity_y_m_s", "velocity_z_m_s",
-                  "kinetic_energy_eV"]
+        fields = [
+            "particle_id",
+            "instrument_time_us",
+            "mass_amu",
+            "charge_state",
+            "position_x_mm",
+            "position_y_mm",
+            "position_z_mm",
+            "velocity_x_m_s",
+            "velocity_y_m_s",
+            "velocity_z_m_s",
+            "kinetic_energy_eV",
+        ]
         with initial.open("w", encoding="utf-8", newline="") as handle:
             writer = csv.DictWriter(handle, fieldnames=fields, lineterminator="\n")
             writer.writeheader()
-            writer.writerow({
-                "particle_id": 6, "instrument_time_us": 36,
-                "mass_amu": 100, "charge_state": 1,
-                "position_x_mm": 1, "position_y_mm": 2, "position_z_mm": 3,
-                "velocity_x_m_s": expected_velocity,
-                "velocity_y_m_s": 0, "velocity_z_m_s": 0,
-                "kinetic_energy_eV": kinetic_energy_ev(
-                    100, expected_velocity, 0, 0
-                ),
-            })
+            writer.writerow(
+                {
+                    "particle_id": 6,
+                    "instrument_time_us": 36,
+                    "mass_amu": 100,
+                    "charge_state": 1,
+                    "position_x_mm": 1,
+                    "position_y_mm": 2,
+                    "position_z_mm": 3,
+                    "velocity_x_m_s": expected_velocity,
+                    "velocity_y_m_s": 0,
+                    "velocity_z_m_s": 0,
+                    "kinetic_energy_eV": kinetic_energy_ev(100, expected_velocity, 0, 0),
+                }
+            )
         row_map = root / "row_map.csv"
-        row_map.write_text(
-            "simulation_particle_id,source_particle_id\n1,6\n", encoding="utf-8"
-        )
+        row_map.write_text("simulation_particle_id,source_particle_id\n1,6\n", encoding="utf-8")
         geometry = root / "geometry.json"
         geometry.write_text("{}\n", encoding="utf-8")
         _, summary = analyze(
-            log, 1, 100.0, source_release_mode="staged_grid2_restart",
-            geometry_path=geometry, initial_global_state_path=initial,
-            initial_global_state_sha256=hashlib.sha256(
-                initial.read_bytes()
-            ).hexdigest(),
+            log,
+            1,
+            100.0,
+            source_release_mode="staged_grid2_restart",
+            geometry_path=geometry,
+            initial_global_state_path=initial,
+            initial_global_state_sha256=hashlib.sha256(initial.read_bytes()).hexdigest(),
             particle_row_map_path=row_map,
         )
         return summary
@@ -120,32 +151,25 @@ class SingleFlightAnalysisTests(unittest.TestCase):
     def test_staged_loader_budget_uses_relative_nonzero_bounds(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             summary = self._run_staged_release_case(
-                Path(directory), expected_velocity=4000,
+                Path(directory),
+                expected_velocity=4000,
                 actual_velocity=4000.00004,
             )
         validation = summary["staged_grid2_restart_source_release_validation"]
         self.assertEqual(validation["status"], "PASS")
-        self.assertLess(
-            validation["maximum_velocity_relative_to_expected_speed"], 2e-8
-        )
-        self.assertLess(
-            validation["maximum_energy_relative_to_expected_energy"], 3e-8
-        )
+        self.assertLess(validation["maximum_velocity_relative_to_expected_speed"], 2e-8)
+        self.assertLess(validation["maximum_energy_relative_to_expected_energy"], 3e-8)
 
     def test_staged_loader_budget_rejects_outside_or_nonexact_state(self) -> None:
         cases = [
             {"expected_velocity": 4000, "actual_velocity": 4000.00016},
-            {"expected_velocity": 4000, "actual_velocity": 4000,
-             "actual_x": 1.000000000001},
-            {"expected_velocity": 4000, "actual_velocity": 4000,
-             "actual_time": 36.000000000001},
+            {"expected_velocity": 4000, "actual_velocity": 4000, "actual_x": 1.000000000001},
+            {"expected_velocity": 4000, "actual_velocity": 4000, "actual_time": 36.000000000001},
             {"expected_velocity": 0, "actual_velocity": 1e-9},
         ]
         for index, case in enumerate(cases):
             with self.subTest(case=index), tempfile.TemporaryDirectory() as directory:
-                with self.assertRaisesRegex(
-                    ValueError, "resolved loader-characterized contract"
-                ):
+                with self.assertRaisesRegex(ValueError, "resolved loader-characterized contract"):
                     self._run_staged_release_case(Path(directory), **case)
 
     def test_staged_grid2_row_map_preserves_canonical_ids_and_elapsed_clock(self) -> None:
@@ -153,28 +177,53 @@ class SingleFlightAnalysisTests(unittest.TestCase):
             root = Path(directory)
             log = root / "simion.log"
             energy = kinetic_energy_ev(100, 4000, 0, 0)
-            log.write_text("\n".join([
-                "TRACE: source_release ion=1 particle_id=6 instrument_time_us=36 x_mm=1 y_mm=2 z_mm=3 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
-                f"TRACE: local_accelerator_exit ion=1 particle_id=6 instrument_time_us=36 tof_since_pulse_us=0 x_mm=1 y_mm=2 z_mm=3 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0 kinetic_energy_eV={energy:.17g} survival_status=alive",
-                "TRACE: detector_crossing ion=1 t=10 x=2 y=0 z=5",
-                "TRACE: source_release ion=2 particle_id=97 instrument_time_us=37 x_mm=1 y_mm=2 z_mm=3 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
-                f"TRACE: local_accelerator_exit ion=2 particle_id=97 instrument_time_us=37 tof_since_pulse_us=0 x_mm=1 y_mm=2 z_mm=3 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0 kinetic_energy_eV={energy:.17g} survival_status=alive",
-                "TRACE: detector_crossing ion=2 t=10 x=2 y=0 z=5",
-            ]) + "\n", encoding="utf-8")
+            log.write_text(
+                "\n".join(
+                    [
+                        "TRACE: source_release ion=1 particle_id=6 instrument_time_us=36 x_mm=1 y_mm=2 z_mm=3 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
+                        f"TRACE: local_accelerator_exit ion=1 particle_id=6 instrument_time_us=36 tof_since_pulse_us=0 x_mm=1 y_mm=2 z_mm=3 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0 kinetic_energy_eV={energy:.17g} survival_status=alive",
+                        "TRACE: detector_crossing ion=1 t=10 x=2 y=0 z=5",
+                        "TRACE: source_release ion=2 particle_id=97 instrument_time_us=37 x_mm=1 y_mm=2 z_mm=3 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
+                        f"TRACE: local_accelerator_exit ion=2 particle_id=97 instrument_time_us=37 tof_since_pulse_us=0 x_mm=1 y_mm=2 z_mm=3 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0 kinetic_energy_eV={energy:.17g} survival_status=alive",
+                        "TRACE: detector_crossing ion=2 t=10 x=2 y=0 z=5",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
             initial = root / "initial.csv"
-            fields = ["particle_id", "instrument_time_us", "mass_amu", "charge_state",
-                      "position_x_mm", "position_y_mm", "position_z_mm",
-                      "velocity_x_m_s", "velocity_y_m_s", "velocity_z_m_s",
-                      "kinetic_energy_eV"]
+            fields = [
+                "particle_id",
+                "instrument_time_us",
+                "mass_amu",
+                "charge_state",
+                "position_x_mm",
+                "position_y_mm",
+                "position_z_mm",
+                "velocity_x_m_s",
+                "velocity_y_m_s",
+                "velocity_z_m_s",
+                "kinetic_energy_eV",
+            ]
             with initial.open("w", encoding="utf-8", newline="") as handle:
                 writer = csv.DictWriter(handle, fieldnames=fields, lineterminator="\n")
                 writer.writeheader()
                 for particle_id, time_us in ((6, 36), (97, 37)):
-                    writer.writerow({"particle_id": particle_id, "instrument_time_us": time_us,
-                        "mass_amu": 100, "charge_state": 1, "position_x_mm": 1,
-                        "position_y_mm": 2, "position_z_mm": 3, "velocity_x_m_s": 4000,
-                        "velocity_y_m_s": 0, "velocity_z_m_s": 0,
-                        "kinetic_energy_eV": kinetic_energy_ev(100, 4000, 0, 0)})
+                    writer.writerow(
+                        {
+                            "particle_id": particle_id,
+                            "instrument_time_us": time_us,
+                            "mass_amu": 100,
+                            "charge_state": 1,
+                            "position_x_mm": 1,
+                            "position_y_mm": 2,
+                            "position_z_mm": 3,
+                            "velocity_x_m_s": 4000,
+                            "velocity_y_m_s": 0,
+                            "velocity_z_m_s": 0,
+                            "kinetic_energy_eV": kinetic_energy_ev(100, 4000, 0, 0),
+                        }
+                    )
             row_map = root / "row_map.csv"
             row_map.write_text(
                 "simulation_particle_id,source_particle_id\n1,6\n2,97\n",
@@ -183,17 +232,17 @@ class SingleFlightAnalysisTests(unittest.TestCase):
             geometry = root / "geometry.json"
             geometry.write_text("{}\n", encoding="utf-8")
             rows, summary = analyze(
-                log, 2, 100.0, source_release_mode="staged_grid2_restart",
+                log,
+                2,
+                100.0,
+                source_release_mode="staged_grid2_restart",
                 geometry_path=geometry,
                 initial_global_state_path=initial,
                 initial_global_state_sha256=hashlib.sha256(initial.read_bytes()).hexdigest(),
                 particle_row_map_path=row_map,
             )
         self.assertEqual(sorted({int(row["particle_id"]) for row in rows}), [6, 97])
-        detector_times = sorted(
-            float(row["instrument_time_us"])
-            for row in rows if row["event"] == "detector_crossing"
-        )
+        detector_times = sorted(float(row["instrument_time_us"]) for row in rows if row["event"] == "detector_crossing")
         self.assertEqual(detector_times, [46.0, 47.0])
         self.assertEqual(
             summary["staged_grid2_restart_source_release_validation"]["status"],
@@ -214,14 +263,45 @@ class SingleFlightAnalysisTests(unittest.TestCase):
         self.assertLess(marker_area(1000), marker_area(100))
         self.assertLessEqual(marker_area(1000), 2.0)
 
+    def test_three_zone_panel_d_uses_frozen_ring_positions_and_three_grid_lines(self) -> None:
+        oatof = {
+            "geometry_mm": {"accelerator_bore_half": 5.0, "accelerator_ring_width": 5.0},
+            "coordinate_convention": {"accelerator_axis_x": -69.0},
+            "rings": {"accelerator_count": 2},
+            "accelerator_topology": {
+                "topology_id": "three_zone_accelerator_ideal_v1",
+                "planes_global_z_mm": {
+                    "repeller": -63.0,
+                    "intermediate1": -59.75,
+                    "intermediate2": -54.65,
+                    "exit": -42.75,
+                },
+            },
+        }
+        frontend = {
+            "accelerator_topology_id": "three_zone_accelerator_ideal_v1",
+            "accelerator_local_region": {"ring_z_mm": [-56.9, -48.4]},
+        }
+        figure, axis = plt.subplots()
+        try:
+            _accelerator(axis, oatof, frontend)
+            dashed = [float(line.get_ydata()[0]) for line in axis.lines if line.get_linestyle() == "--"]
+            solid = [float(line.get_ydata()[0]) for line in axis.lines if line.get_linestyle() == "-"]
+        finally:
+            plt.close(figure)
+        self.assertEqual(dashed, [-59.75, -54.65, -42.75])
+        self.assertEqual(solid, [-63.0, -56.9, -48.4])
+
     def test_preserves_original_ion_identity_at_all_checkpoints(self) -> None:
-        text = "\n".join([
-            "TRACE: source_release ion=2 instrument_time_us=0 x_mm=-68.8 y_mm=0 z_mm=0 vx_mm_per_us=1 vy_mm_per_us=2 vz_mm_per_us=3",
-            "TRACE: single_flight_handoff ion=2 instrument_time_us=10 x_mm=-67.8 y_mm=0 z_mm=-18.4 vx_mm_per_us=1 vy_mm_per_us=2 vz_mm_per_us=3",
-            "TRACE: pre_pulse_state ion=2 instrument_time_us=20 x_mm=-48.8 y_mm=0 z_mm=1.5 vx_mm_per_us=1 vy_mm_per_us=2 vz_mm_per_us=3",
-            "TRACE: local_accelerator_exit ion=2 instrument_time_us=41 x_mm=-67 y_mm=0 z_mm=20 vx_mm_per_us=2 vy_mm_per_us=0 vz_mm_per_us=20",
-            "TRACE: detector_crossing ion=2 t=70 x=49 y=0 z=19.83 r=0 zmax=19.83",
-        ])
+        text = "\n".join(
+            [
+                "TRACE: source_release ion=2 instrument_time_us=0 x_mm=-68.8 y_mm=0 z_mm=0 vx_mm_per_us=1 vy_mm_per_us=2 vz_mm_per_us=3",
+                "TRACE: single_flight_handoff ion=2 instrument_time_us=10 x_mm=-67.8 y_mm=0 z_mm=-18.4 vx_mm_per_us=1 vy_mm_per_us=2 vz_mm_per_us=3",
+                "TRACE: pre_pulse_state ion=2 instrument_time_us=20 x_mm=-48.8 y_mm=0 z_mm=1.5 vx_mm_per_us=1 vy_mm_per_us=2 vz_mm_per_us=3",
+                "TRACE: local_accelerator_exit ion=2 instrument_time_us=41 x_mm=-67 y_mm=0 z_mm=20 vx_mm_per_us=2 vy_mm_per_us=0 vz_mm_per_us=20",
+                "TRACE: detector_crossing ion=2 t=70 x=49 y=0 z=19.83 r=0 zmax=19.83",
+            ]
+        )
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "log.txt"
             path.write_text(text, encoding="utf-8")
@@ -235,12 +315,67 @@ class SingleFlightAnalysisTests(unittest.TestCase):
         pre_pulse = next(row for row in rows if row["event"] == "pre_pulse_state")
         self.assertGreater(pre_pulse["kinetic_energy_eV"], 0.0)
 
+    def test_publishes_three_zone_intermediate2_checkpoint_and_census(self) -> None:
+        text = "\n".join(
+            [
+                "TRACE: accelerator_grid1_forward ion=1 particle_id=1 "
+                "instrument_time_us=20 tof_since_pulse_us=10 x_mm=0 y_mm=0 z_mm=10 "
+                "vx_mm_per_us=0 vy_mm_per_us=0 vz_mm_per_us=1",
+                "TRACE: accelerator_intermediate2_forward ion=1 particle_id=1 "
+                "instrument_time_us=21 tof_since_pulse_us=11 x_mm=0 y_mm=0 z_mm=20 "
+                "vx_mm_per_us=0 vy_mm_per_us=0 vz_mm_per_us=1",
+                "TRACE: local_accelerator_exit ion=1 particle_id=1 "
+                "instrument_time_us=22 tof_since_pulse_us=12 x_mm=0 y_mm=0 z_mm=30 "
+                "vx_mm_per_us=0 vy_mm_per_us=0 vz_mm_per_us=1",
+            ]
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory) / "log.txt"
+            log.write_text(text, encoding="utf-8")
+            rows, summary = analyze(log, 1, 100.0, pulse_time_us=10.0)
+
+        intermediate2 = [row for row in rows if row["event"] == "accelerator_intermediate2_forward"]
+        self.assertEqual(len(intermediate2), 1)
+        self.assertEqual(intermediate2[0]["particle_id"], 1)
+        self.assertEqual(intermediate2[0]["pulse_effective_elapsed_us"], 11.0)
+        self.assertEqual(summary["census"]["accelerator_intermediate2_forward"], 1)
+
+    def test_two_zone_census_publishes_zero_intermediate2_count(self) -> None:
+        text = (
+            "TRACE: accelerator_grid1_forward ion=1 particle_id=1 "
+            "instrument_time_us=20 x_mm=0 y_mm=0 z_mm=10 "
+            "vx_mm_per_us=0 vy_mm_per_us=0 vz_mm_per_us=1\n"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory) / "log.txt"
+            log.write_text(text, encoding="utf-8")
+            _, summary = analyze(log, 1, 100.0)
+
+        self.assertEqual(summary["census"]["accelerator_intermediate2_forward"], 0)
+
+    def test_rejects_duplicate_intermediate2_checkpoint_per_particle(self) -> None:
+        checkpoint = (
+            "TRACE: accelerator_intermediate2_forward ion=1 particle_id=1 "
+            "instrument_time_us=21 tof_since_pulse_us=11 x_mm=0 y_mm=0 z_mm=20 "
+            "vx_mm_per_us=0 vy_mm_per_us=0 vz_mm_per_us=1"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory) / "log.txt"
+            log.write_text(f"{checkpoint}\n{checkpoint}\n", encoding="utf-8")
+            with self.assertRaisesRegex(
+                ValueError,
+                "duplicate checkpoint: particle=1 event=accelerator_intermediate2_forward",
+            ):
+                analyze(log, 1, 100.0, pulse_time_us=10.0)
+
     def test_target_energy_uses_pre_pulse_state_inside_accelerator(self) -> None:
-        text = "\n".join([
-            "TRACE: single_flight_handoff ion=1 instrument_time_us=9 x_mm=-88 y_mm=0 z_mm=-18.4 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
-            "TRACE: pre_pulse_state ion=1 instrument_time_us=10 x_mm=-69 y_mm=0 z_mm=-18.4 vx_mm_per_us=4.392 vy_mm_per_us=0 vz_mm_per_us=0",
-            "TRACE: handoff_pulse_on ion=1 instrument_time_us=10",
-        ])
+        text = "\n".join(
+            [
+                "TRACE: single_flight_handoff ion=1 instrument_time_us=9 x_mm=-88 y_mm=0 z_mm=-18.4 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
+                "TRACE: pre_pulse_state ion=1 instrument_time_us=10 x_mm=-69 y_mm=0 z_mm=-18.4 vx_mm_per_us=4.392 vy_mm_per_us=0 vz_mm_per_us=0",
+                "TRACE: handoff_pulse_on ion=1 instrument_time_us=10",
+            ]
+        )
         geometry = {
             "coordinate_convention": {"accelerator_axis_x": -69.0},
             "geometry_mm": {
@@ -269,16 +404,18 @@ class SingleFlightAnalysisTests(unittest.TestCase):
         self.assertFalse(summary["pulse_capture"]["selection_uses_detector_outcome"])
 
     def test_successor_pulse_callbacks_validate_effective_pulse_time(self) -> None:
-        text = "\n".join([
-            "TRACE: source_release ion=1 instrument_time_us=0 x_mm=-69 y_mm=0 z_mm=-18.4 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
-            "TRACE: source_release ion=2 instrument_time_us=0 x_mm=-69 y_mm=0 z_mm=-18.3 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
-            "TRACE: pre_pulse_state ion=1 instrument_time_us=10 x_mm=-69 y_mm=0 z_mm=-18.4 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
-            "TRACE: pre_pulse_state ion=2 instrument_time_us=10 x_mm=-69 y_mm=0 z_mm=-18.3 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
-            "TRACE: handoff_pulse_on ion=1 instrument_time_us=10",
-            "TRACE: handoff_pulse_on ion=2 instrument_time_us=10",
-            "TRACE: detector_crossing ion=1 t=20 x=0 y=0 z=0",
-            "TRACE: detector_crossing ion=2 t=20.001 x=0 y=0 z=0",
-        ])
+        text = "\n".join(
+            [
+                "TRACE: source_release ion=1 instrument_time_us=0 x_mm=-69 y_mm=0 z_mm=-18.4 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
+                "TRACE: source_release ion=2 instrument_time_us=0 x_mm=-69 y_mm=0 z_mm=-18.3 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
+                "TRACE: pre_pulse_state ion=1 instrument_time_us=10 x_mm=-69 y_mm=0 z_mm=-18.4 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
+                "TRACE: pre_pulse_state ion=2 instrument_time_us=10 x_mm=-69 y_mm=0 z_mm=-18.3 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
+                "TRACE: handoff_pulse_on ion=1 instrument_time_us=10",
+                "TRACE: handoff_pulse_on ion=2 instrument_time_us=10",
+                "TRACE: detector_crossing ion=1 t=20 x=0 y=0 z=0",
+                "TRACE: detector_crossing ion=2 t=20.001 x=0 y=0 z=0",
+            ]
+        )
         with tempfile.TemporaryDirectory() as directory:
             log = Path(directory) / "log.txt"
             log.write_text(text, encoding="utf-8")
@@ -287,11 +424,13 @@ class SingleFlightAnalysisTests(unittest.TestCase):
         self.assertEqual(summary["pulse_first_observed_us"], 10.0)
 
     def test_legacy_pulse_trace_without_particle_identity_remains_readable(self) -> None:
-        text = "\n".join([
-            "TRACE: source_release ion=1 instrument_time_us=0 x_mm=0 y_mm=0 "
-            "z_mm=0 vx_mm_per_us=1 vy_mm_per_us=0 vz_mm_per_us=0",
-            "TRACE: handoff_pulse_on instrument_time_us=10",
-        ])
+        text = "\n".join(
+            [
+                "TRACE: source_release ion=1 instrument_time_us=0 x_mm=0 y_mm=0 "
+                "z_mm=0 vx_mm_per_us=1 vy_mm_per_us=0 vz_mm_per_us=0",
+                "TRACE: handoff_pulse_on instrument_time_us=10",
+            ]
+        )
         with tempfile.TemporaryDirectory() as directory:
             log = Path(directory) / "log.txt"
             log.write_text(text, encoding="utf-8")
@@ -299,42 +438,36 @@ class SingleFlightAnalysisTests(unittest.TestCase):
         self.assertEqual(summary["pulse_first_observed_us"], 10.0)
 
     def test_successor_pulse_trace_rejects_inconsistent_particle_times(self) -> None:
-        text = "\n".join([
-            "TRACE: source_release ion=1 instrument_time_us=0 x_mm=0 y_mm=0 "
-            "z_mm=0 vx_mm_per_us=1 vy_mm_per_us=0 vz_mm_per_us=0",
-            "TRACE: handoff_pulse_on ion=1 instrument_time_us=10.000001",
-            "TRACE: handoff_pulse_on ion=2 instrument_time_us=10.000002",
-        ])
+        text = "\n".join(
+            [
+                "TRACE: source_release ion=1 instrument_time_us=0 x_mm=0 y_mm=0 "
+                "z_mm=0 vx_mm_per_us=1 vy_mm_per_us=0 vz_mm_per_us=0",
+                "TRACE: handoff_pulse_on ion=1 instrument_time_us=10.000001",
+                "TRACE: handoff_pulse_on ion=2 instrument_time_us=10.000002",
+            ]
+        )
         with tempfile.TemporaryDirectory() as directory:
             log = Path(directory) / "log.txt"
             log.write_text(text, encoding="utf-8")
-            with self.assertRaisesRegex(
-                ValueError, "SIMION batches report inconsistent pulse effective times"
-            ):
+            with self.assertRaisesRegex(ValueError, "SIMION batches report inconsistent pulse effective times"):
                 analyze(log, 2, 100.0, pulse_time_us=10.0)
 
     def test_canonical_clock_does_not_add_birth_time_to_detector_time(self) -> None:
-        text = "\n".join([
-            "TRACE: source_release ion=1 instrument_time_us=0.25 x_mm=-70 y_mm=0 z_mm=-18 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
-            "TRACE: source_release ion=2 instrument_time_us=0.75 x_mm=-70 y_mm=0 z_mm=-18 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
-            "TRACE: detector_crossing ion=1 t=70.5 x=69 y=0 z=0",
-            "TRACE: detector_crossing ion=2 t=70.0 x=69 y=0 z=0",
-        ])
+        text = "\n".join(
+            [
+                "TRACE: source_release ion=1 instrument_time_us=0.25 x_mm=-70 y_mm=0 z_mm=-18 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
+                "TRACE: source_release ion=2 instrument_time_us=0.75 x_mm=-70 y_mm=0 z_mm=-18 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
+                "TRACE: detector_crossing ion=1 t=70.5 x=69 y=0 z=0",
+                "TRACE: detector_crossing ion=2 t=70.0 x=69 y=0 z=0",
+            ]
+        )
         with tempfile.TemporaryDirectory() as directory:
             log = Path(directory) / "log.txt"
             log.write_text(text, encoding="utf-8")
-            rows, summary = analyze(
-                log, 2, 100.0
-            )
-        detector_times = [
-            row["instrument_time_us"]
-            for row in rows
-            if row["event"] == "detector_crossing"
-        ]
+            rows, summary = analyze(log, 2, 100.0)
+        detector_times = [row["instrument_time_us"] for row in rows if row["event"] == "detector_crossing"]
         self.assertEqual(detector_times, [70.75, 70.75])
-        self.assertEqual(
-            summary["detector_time_basis"], "canonical_instrument_time_us"
-        )
+        self.assertEqual(summary["detector_time_basis"], "canonical_instrument_time_us")
 
     def test_five_batch_logs_receive_global_particle_ids(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -352,9 +485,7 @@ class SingleFlightAnalysisTests(unittest.TestCase):
                 )
                 logs.append(log)
             rows, summary = analyze(logs, 5, 100.0, batch_particle_counts=[1] * 5)
-        self.assertEqual(
-            sorted({row["particle_id"] for row in rows}), [1, 2, 3, 4, 5]
-        )
+        self.assertEqual(sorted({row["particle_id"] for row in rows}), [1, 2, 3, 4, 5])
         self.assertEqual(summary["census"]["detector_crossing"], 5)
 
     def test_rejects_noncanonical_local_elapsed_basis(self) -> None:
@@ -408,7 +539,10 @@ class SingleFlightAnalysisTests(unittest.TestCase):
             )
             digest = hashlib.sha256(initial.read_bytes()).hexdigest()
             rows, summary = analyze(
-                log, 1, 100.0, pulse_time_us=45.5,
+                log,
+                1,
+                100.0,
+                pulse_time_us=45.5,
                 initial_global_state_path=initial,
                 source_release_mode="pre_pulse_restart",
                 initial_global_state_sha256=digest,
@@ -440,7 +574,10 @@ class SingleFlightAnalysisTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(ValueError, "manifest-bound"):
                 analyze(
-                    log, 1, 100.0, pulse_time_us=45.5,
+                    log,
+                    1,
+                    100.0,
+                    pulse_time_us=45.5,
                     initial_global_state_path=initial,
                     source_release_mode="pre_pulse_restart",
                 )
@@ -465,7 +602,10 @@ class SingleFlightAnalysisTests(unittest.TestCase):
             )
             digest = hashlib.sha256(initial.read_bytes()).hexdigest()
             _, summary = analyze(
-                log, 1, 100.0, pulse_time_us=45.5,
+                log,
+                1,
+                100.0,
+                pulse_time_us=45.5,
                 initial_global_state_path=initial,
                 source_release_mode="pre_pulse_restart",
                 initial_global_state_sha256=digest,
@@ -481,13 +621,15 @@ class SingleFlightAnalysisTests(unittest.TestCase):
         self.assertLessEqual(validation["maximum_velocity_rowwise_abs_error_m_per_s"], 1e-9)
 
     def test_classifies_physical_pulse_capture_without_rejecting_losses(self) -> None:
-        text = "\n".join([
-            "TRACE: source_release ion=1 instrument_time_us=0 x_mm=-69 y_mm=0 z_mm=-18.4 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
-            "TRACE: pre_pulse_state ion=1 instrument_time_us=10 x_mm=-69 y_mm=0 z_mm=-18.4 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
-            "TRACE: pre_pulse_state ion=2 instrument_time_us=10 x_mm=-69 y_mm=0 z_mm=-20.0 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
-            "TRACE: pre_pulse_state ion=3 instrument_time_us=10 x_mm=-60 y_mm=0 z_mm=-18.4 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
-            "TRACE: detector_crossing ion=1 t=70 x=49 y=0 z=19.83",
-        ])
+        text = "\n".join(
+            [
+                "TRACE: source_release ion=1 instrument_time_us=0 x_mm=-69 y_mm=0 z_mm=-18.4 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
+                "TRACE: pre_pulse_state ion=1 instrument_time_us=10 x_mm=-69 y_mm=0 z_mm=-18.4 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
+                "TRACE: pre_pulse_state ion=2 instrument_time_us=10 x_mm=-69 y_mm=0 z_mm=-20.0 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
+                "TRACE: pre_pulse_state ion=3 instrument_time_us=10 x_mm=-60 y_mm=0 z_mm=-18.4 vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0",
+                "TRACE: detector_crossing ion=1 t=70 x=49 y=0 z=19.83",
+            ]
+        )
         geometry = {
             "coordinate_convention": {"accelerator_axis_x": -69.0},
             "geometry_mm": {
@@ -503,35 +645,39 @@ class SingleFlightAnalysisTests(unittest.TestCase):
             log.write_text(text, encoding="utf-8")
             model.write_text(json.dumps(geometry), encoding="utf-8")
             rows, summary = analyze(
-                log, 4, 100.0, model, 10.0,
+                log,
+                4,
+                100.0,
+                model,
+                10.0,
                 eligible_population_count=None,
                 cohort_authority_mode="establish_observed_authority",
             )
         capture = summary["pulse_capture"]
-        self.assertEqual(capture["counts"], {
-            "eligible": 1,
-            "upstream_of_repeller": 1,
-            "downstream_of_grid1": 0,
-            "outside_transverse_bore": 1,
-            "missing_before_pulse": 1,
-        })
+        self.assertEqual(
+            capture["counts"],
+            {
+                "eligible": 1,
+                "upstream_of_repeller": 1,
+                "downstream_of_grid1": 0,
+                "outside_transverse_bore": 1,
+                "missing_before_pulse": 1,
+            },
+        )
         self.assertEqual(capture["capture_fraction_of_launched"], 0.25)
         self.assertEqual(capture["conditional_detector_efficiency"], 1.0)
-        classified = {
-            row["particle_id"]: row["pulse_eligibility"]
-            for row in rows if row["event"] == "pre_pulse_state"
-        }
+        classified = {row["particle_id"]: row["pulse_eligibility"] for row in rows if row["event"] == "pre_pulse_state"}
         self.assertEqual(classified[2], "upstream_of_repeller")
         self.assertEqual(classified[3], "outside_transverse_bore")
         observed = summary["observed_cohort_authority"]
         self.assertEqual(observed["source_release"]["ordered_particle_ids"], [1])
         self.assertEqual(observed["pre_pulse_state"]["ordered_particle_ids"], [1, 2, 3])
         self.assertEqual(observed["pulse_eligible"]["ordered_particle_ids"], [1])
-        self.assertEqual(
-            observed["outside_transverse_bore"]["ordered_particle_ids"], [3]
-        )
+        self.assertEqual(observed["outside_transverse_bore"]["ordered_particle_ids"], [3])
         for name in (
-            "source_release", "pre_pulse_state", "pulse_eligible",
+            "source_release",
+            "pre_pulse_state",
+            "pulse_eligible",
             "outside_transverse_bore",
         ):
             self.assertEqual(len(observed[name]["ordered_particle_id_sha256"]), 64)
@@ -557,10 +703,7 @@ class SingleFlightAnalysisTests(unittest.TestCase):
                 f"x_mm={x_mm} y_mm={y_mm} z_mm={z_mm} "
                 "vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0"
             )
-            lines.append(
-                f"TRACE: detector_crossing ion={particle_id} "
-                f"t={70 + particle_id * 0.01} x=49 y=0 z=19.83"
-            )
+            lines.append(f"TRACE: detector_crossing ion={particle_id} t={70 + particle_id * 0.01} x=49 y=0 z=19.83")
         geometry = {
             "particle_source": {
                 "center_x_mm": -69.0,
@@ -599,7 +742,11 @@ class SingleFlightAnalysisTests(unittest.TestCase):
             log.write_text("\n".join(lines), encoding="utf-8")
             model.write_text(json.dumps(geometry), encoding="utf-8")
             _, summary = analyze(
-                log, 4, 100.0, model, 10.0,
+                log,
+                4,
+                100.0,
+                model,
+                10.0,
                 spatial_window_profile=profile,
                 population_denominator_count=6,
                 eligible_population_count=4,
@@ -610,9 +757,7 @@ class SingleFlightAnalysisTests(unittest.TestCase):
         self.assertNotIn("mass_resolution_ratio_to_full_pulse_eligible", window)
         self.assertIsNone(summary["pulse_effective_peak"])
         self.assertIsNone(summary["full_pulse_eligible_bootstrap"])
-        self.assertFalse(
-            summary["detector_clock_diagnostic"]["peak_metrics_computed"]
-        )
+        self.assertFalse(summary["detector_clock_diagnostic"]["peak_metrics_computed"])
         self.assertEqual(window["selected_count"], 3)
         self.assertEqual(window["pulse_eligible_coverage_fraction"], 0.75)
         self.assertFalse(window["selection_uses_detector_outcome"])
@@ -658,7 +803,11 @@ class SingleFlightAnalysisTests(unittest.TestCase):
             log.write_text("\n".join(lines), encoding="utf-8")
             model.write_text(json.dumps(geometry), encoding="utf-8")
             _, summary = analyze(
-                log, 2, 100.0, model, 10.0,
+                log,
+                2,
+                100.0,
+                model,
+                10.0,
                 eligible_population_count=1,
             )
 
@@ -672,9 +821,7 @@ class SingleFlightAnalysisTests(unittest.TestCase):
 
     def test_five_dimensional_window_uses_forward_velocity_angles(self) -> None:
         lines = []
-        for particle_id, (vx, vy, vz) in enumerate(
-            [(0.1, 0.1, 10), (-0.1, 0, 10), (0, -0.1, 10), (0, 0, -10)], 1
-        ):
+        for particle_id, (vx, vy, vz) in enumerate([(0.1, 0.1, 10), (-0.1, 0, 10), (0, -0.1, 10), (0, 0, -10)], 1):
             lines.append(
                 f"TRACE: source_release ion={particle_id} instrument_time_us=0 "
                 f"x_mm=-69 y_mm=0 z_mm=-18.4 vx_mm_per_us={vx} "
@@ -686,13 +833,11 @@ class SingleFlightAnalysisTests(unittest.TestCase):
                 f"vy_mm_per_us={vy} vz_mm_per_us={vz}"
             )
             if particle_id < 4:
-                lines.append(
-                    f"TRACE: detector_crossing ion={particle_id} "
-                    f"t={70 + particle_id * 0.01} x=0 y=0 z=0"
-                )
+                lines.append(f"TRACE: detector_crossing ion={particle_id} t={70 + particle_id * 0.01} x=0 y=0 z=0")
         geometry = {
             "particle_source": {
-                "center_x_mm": -69.0, "center_y_mm": 0.0,
+                "center_x_mm": -69.0,
+                "center_y_mm": 0.0,
                 "center_z_mm": -18.4,
             },
             "coordinate_convention": {"accelerator_axis_x": -69.0},
@@ -711,7 +856,8 @@ class SingleFlightAnalysisTests(unittest.TestCase):
                     "full_width_mm": 1.0,
                 }
                 for axis in ("x", "y", "z")
-            } | {
+            }
+            | {
                 axis: {
                     "center_binding": "theory_source_center_angle_deg",
                     "center_deg": 0.0,
@@ -733,9 +879,7 @@ class SingleFlightAnalysisTests(unittest.TestCase):
             model = root / "geometry.json"
             log.write_text("\n".join(lines), encoding="utf-8")
             model.write_text(json.dumps(geometry), encoding="utf-8")
-            _, summary = analyze(
-                log, 4, 100.0, model, 10.0, spatial_window_profile=profile
-            )
+            _, summary = analyze(log, 4, 100.0, model, 10.0, spatial_window_profile=profile)
         window = summary["spatial_window_peak"]
         self.assertEqual(window["selected_count"], 3)
         self.assertEqual(window["pulse_eligible_coverage_fraction"], 0.75)
@@ -752,8 +896,10 @@ class SingleFlightAnalysisTests(unittest.TestCase):
             )
             times = [20, 30, 40, 50, 60]
             events = [
-                "accelerator_focus_forward", "reflectron_entrance_forward",
-                "reflectron_midgrid_forward", "reflectron_turning_point",
+                "accelerator_focus_forward",
+                "reflectron_entrance_forward",
+                "reflectron_midgrid_forward",
+                "reflectron_turning_point",
                 "reflectron_exit_return",
             ]
             for index, (event, time_us) in enumerate(zip(events, times, strict=True)):
@@ -768,10 +914,7 @@ class SingleFlightAnalysisTests(unittest.TestCase):
                     f"kinetic_energy_eV={kinetic_energy_ev(100, 1000, 0, 1000 * vz):.12g} "
                     "survival_status=alive"
                 )
-            lines.append(
-                f"TRACE: detector_crossing ion={particle_id} "
-                f"t={70 + particle_id * 0.001} x=0 y=0 z=0"
-            )
+            lines.append(f"TRACE: detector_crossing ion={particle_id} t={70 + particle_id * 0.001} x=0 y=0 z=0")
         with tempfile.TemporaryDirectory() as directory:
             log = Path(directory) / "log.txt"
             log.write_text("\n".join(lines), encoding="utf-8")
@@ -799,10 +942,12 @@ class SingleFlightAnalysisTests(unittest.TestCase):
         )
 
     def test_rejects_reflectron_checkpoint_out_of_order(self) -> None:
-        text = "\n".join([
-            "TRACE: reflectron_entrance_forward ion=1 particle_id=1 instrument_time_us=20 tof_since_pulse_us=10 x_mm=0 y_mm=0 z_mm=600 vx_mm_per_us=0 vy_mm_per_us=0 vz_mm_per_us=1",
-            "TRACE: reflectron_turning_point ion=1 particle_id=1 instrument_time_us=30 tof_since_pulse_us=20 x_mm=0 y_mm=0 z_mm=700 vx_mm_per_us=0 vy_mm_per_us=0 vz_mm_per_us=0",
-        ])
+        text = "\n".join(
+            [
+                "TRACE: reflectron_entrance_forward ion=1 particle_id=1 instrument_time_us=20 tof_since_pulse_us=10 x_mm=0 y_mm=0 z_mm=600 vx_mm_per_us=0 vy_mm_per_us=0 vz_mm_per_us=1",
+                "TRACE: reflectron_turning_point ion=1 particle_id=1 instrument_time_us=30 tof_since_pulse_us=20 x_mm=0 y_mm=0 z_mm=700 vx_mm_per_us=0 vy_mm_per_us=0 vz_mm_per_us=0",
+            ]
+        )
         with tempfile.TemporaryDirectory() as directory:
             log = Path(directory) / "log.txt"
             log.write_text(text, encoding="utf-8")

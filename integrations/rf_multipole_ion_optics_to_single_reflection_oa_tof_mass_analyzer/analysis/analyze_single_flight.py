@@ -22,7 +22,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.peak_metrics impor
 
 
 STATE_PATTERN = re.compile(
-    r"TRACE: (?P<event>source_release|single_flight_handoff|pre_pulse_state|accelerator_grid1_forward|local_accelerator_exit|accelerator_focus_forward|reflectron_entrance_forward|reflectron_midgrid_forward|reflectron_turning_point|reflectron_exit_return) "
+    r"TRACE: (?P<event>source_release|single_flight_handoff|pre_pulse_state|accelerator_grid1_forward|accelerator_intermediate2_forward|local_accelerator_exit|accelerator_focus_forward|reflectron_entrance_forward|reflectron_midgrid_forward|reflectron_turning_point|reflectron_exit_return) "
     r"ion=(?P<ion>\d+)(?: particle_id=(?P<particle_id>\d+))? instrument_time_us=(?P<t>[-+0-9.eE]+) "
     r"(?:tof_since_pulse_us=(?P<tof_since_pulse>[-+0-9.eE]+) )?"
     r"x_mm=(?P<x>[-+0-9.eE]+) y_mm=(?P<y>[-+0-9.eE]+) z_mm=(?P<z>[-+0-9.eE]+) "
@@ -380,6 +380,7 @@ def analyze(
                 "pre_pulse_state": "pre_pulse_state",
                 "local_accelerator_exit": "local_accelerator_exit",
                 "accelerator_grid1_forward": "accelerator_grid1_forward",
+                "accelerator_intermediate2_forward": "accelerator_intermediate2_forward",
                 "accelerator_focus_forward": "accelerator_focus_forward",
                 "reflectron_entrance_forward": "reflectron_entrance_forward",
                 "reflectron_midgrid_forward": "reflectron_midgrid_forward",
@@ -711,7 +712,8 @@ def analyze(
     _validate_reflectron_event_order(rows)
     counts = {event: sum(row["event"] == event for row in rows) for event in (
         "source_release", "multipole_handoff", "pre_pulse_state",
-        "accelerator_grid1_forward", "local_accelerator_exit", "accelerator_focus_forward",
+        "accelerator_grid1_forward", "accelerator_intermediate2_forward",
+        "local_accelerator_exit", "accelerator_focus_forward",
         "reflectron_entrance_forward", "reflectron_midgrid_forward",
         "reflectron_turning_point", "reflectron_exit_return", "detector_crossing",
     )}

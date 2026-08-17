@@ -11,6 +11,7 @@ from pathlib import Path
 import shutil
 from typing import Any
 
+from common.contracts.artifact_naming import validate_run_id
 from common.contracts.component_particle_state import (
     validate_component_particle_state_csv,
 )
@@ -18,6 +19,7 @@ from common.contracts.file_identity import file_sha256, repository_text_sha256
 from common.contracts.machine_contracts import ContractError, validate_schema
 from common.contracts.particle_count_policy import validate_standard_particle_count
 from common.contracts.particle_physics import kinetic_energy_ev
+from common.contracts.verify_run_manifest import record_path, verify_record
 from common.integration.adapter_contract import (
     load_execution_adapter_registry,
     resolve_execution_mapping,
@@ -42,6 +44,11 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.resolved_population import (
     compile_resolved_population_contract,
+)
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.ordered_pre_pulse_subset import (
+    materialize_ordered_pre_pulse_subset,
+    ordered_subset_source_particle_ids,
+    validate_ordered_pre_pulse_subset,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_layout import (
     compile_geometry_and_port,
@@ -307,6 +314,219 @@ def _canonical_sha256(value: Any) -> str:
         value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
     ).encode("utf-8")
     return hashlib.sha256(payload).hexdigest().upper()
+
+
+def _three_zone_gate_pair(
+    campaign: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]] | None:
+    """Validate and return the unique N=1 producer/N=100 consumer pair."""
+
+    gated = [row for row in campaign["experiments"] if "three_zone_solver_gate" in row]
+    if not gated:
+        return None
+    if campaign["schema_version"] != 6 or len(gated) != 2:
+        raise ContractError("three-zone solver gate requires exactly two schema-v6 rows")
+    gate_ids = {row["three_zone_solver_gate"]["gate_id"] for row in gated}
+    if len(gate_ids) != 1:
+        raise ContractError("three-zone solver gate ID differs across its pair")
+    producers = [
+        row for row in gated
+        if row["three_zone_solver_gate"]["stage"] == "n1_smoke_producer"
+    ]
+    consumers = [
+        row for row in gated
+        if row["three_zone_solver_gate"]["stage"] == "n100_solver_authorized_consumer"
+    ]
+    if len(producers) != 1 or len(consumers) != 1:
+        raise ContractError("three-zone solver gate requires one producer and one consumer")
+    producer, consumer = producers[0], consumers[0]
+    for row in (producer, consumer):
+        try:
+            validate_run_id(str(row.get("run_id", "")))
+        except (TypeError, ValueError) as exc:
+            raise ContractError("three-zone solver gate run_id is invalid") from exc
+    if consumer["three_zone_solver_gate"].get("predecessor_experiment_id") != producer["experiment_id"]:
+        raise ContractError("three-zone N=100 predecessor does not identify the N=1 row")
+    realization = (
+        producer.get("single_flight_layout_profile_id"),
+        producer.get("architecture_generation_id"),
+        consumer.get("generated_pre_pulse_ordered_subset", {}).get("selection_id"),
+    )
+    supported_realizations = {
+        (
+            "three_zone_t5_primary_v1",
+            "three_zone_t5_frozen_primary_v1",
+            "n100_file_order_source_ids_1_to_100_v1",
+        ),
+        (
+            "three_zone_t5_primary_shaping_rings_1p4_v1",
+            "three_zone_t5_frozen_primary_shaping_rings_1p4_v1",
+            "n100_uniform_full_width_source_ids_1_to_1000_v1",
+        ),
+    }
+    if realization not in supported_realizations:
+        raise ContractError(
+            "three-zone solver gate layout, architecture, or N=100 selection differs"
+        )
+    layout_profile_id, architecture_generation_id, n100_selection_id = realization
+    expected = (
+        (
+            producer,
+            1,
+            "n1_center_source_id_500_v1",
+            "080A9ED428559EF602668B4C00F114F1A11C3F6B02A435F0BDC154578E4D7F22",
+        ),
+        (
+            consumer,
+            100,
+            n100_selection_id,
+            "F9E2DBDE0AE4640704FB66EE02C101CF84ABE35137363D62647622606DF61279",
+        ),
+    )
+    for row, count, selection_id, ordered_id_sha256 in expected:
+        execution_population = row.get("single_flight_population", {}).get(
+            "execution_population", {}
+        )
+        actual_count = execution_population.get("particle_count")
+        actual_selection = row.get("generated_pre_pulse_ordered_subset", {}).get(
+            "selection_id"
+        )
+        if (
+            actual_count != count
+            or actual_selection != selection_id
+            or execution_population.get("ordered_particle_id_sha256")
+            != ordered_id_sha256
+        ):
+            raise ContractError("three-zone solver gate population or ordered selection differs")
+        required_identity = {
+            "execution_strategy": "simion_single_flight",
+            "single_flight_layout_profile_id": layout_profile_id,
+            "architecture_generation_id": architecture_generation_id,
+            "single_flight_accelerator_field_profile_id":
+                "accelerator_real_three_zone_pa_real_reflectron",
+            "source_release_mode": "pre_pulse_restart",
+        }
+        if any(row.get(key) != value for key, value in required_identity.items()):
+            raise ContractError("three-zone solver gate execution identity is not the real-PA path")
+        required_keys = (
+            "single_flight_three_zone_candidate", "architecture_generation_id",
+            "single_flight_source_materialization_profile_id", "source_profile_id",
+            "single_flight_frontend_grid_profile_id",
+            "single_flight_oatof_numerical_profile_id",
+            "single_flight_trajectory_quality_profile_id",
+            "single_flight_time_integration_profile_id", "single_flight_pa_cache_policy",
+            "connection_profile_id", "field_overlay_id",
+        )
+        if any(key not in row for key in required_keys):
+            raise ContractError("three-zone solver gate scientific identity is incomplete")
+
+    def comparable(row: dict[str, Any]) -> dict[str, Any]:
+        value = copy.deepcopy(row)
+        for key in (
+            "sequence", "experiment_id", "run_id", "three_zone_solver_gate",
+            "generated_pre_pulse_ordered_subset",
+        ):
+            value.pop(key, None)
+        population = value.get("single_flight_population", {})
+        execution_population = population.get("execution_population", {})
+        execution_population.pop("particle_count", None)
+        execution_population.pop("ordered_particle_id_sha256", None)
+        denominators = population.get("denominators", {})
+        denominators.pop("population_count", None)
+        denominators.pop("eligible_population_count", None)
+        return value
+
+    if comparable(producer) != comparable(consumer):
+        raise ContractError("three-zone solver gate rows differ beyond population and run identity")
+    return producer, consumer
+
+
+def _resolve_three_zone_n1_authorization(
+    *, workspace: Path, campaign: dict[str, Any], campaign_path: Path,
+    producer: dict[str, Any], consumer: dict[str, Any],
+    source_identity: dict[str, Any], layout_profile: dict[str, Any],
+    selected_field_profile: dict[str, Any],
+    resolved_region_field_contract: dict[str, Any],
+) -> dict[str, str]:
+    """Load and close the producer parent manifest and PASS authorization receipt."""
+
+    manifest_path = (
+        workspace / "artifacts" / "projects" / INTEGRATION_ID / "runs"
+        / producer["run_id"] / "run_manifest.json"
+    ).resolve()
+    if not manifest_path.is_file():
+        raise ContractError("three-zone N=1 producer parent manifest is missing")
+    manifest = _load(manifest_path)
+    expected_manifest = {
+        "role": "simulation_run_manifest", "status": "success",
+        "run_id": producer["run_id"], "project": INTEGRATION_ID,
+        "mode": "multipole_family_source_closure",
+    }
+    if (
+        any(manifest.get(key) != value for key, value in expected_manifest.items())
+        or manifest.get("formal_eligible") is not False
+    ):
+        raise ContractError("three-zone N=1 producer parent manifest identity differs")
+    try:
+        verify_record("run_config", manifest["run_config"], base_dir=manifest_path.parent)
+        for name, record in manifest.get("inputs", {}).items():
+            verify_record(f"input {name}", record, base_dir=manifest_path.parent)
+        for index, record in enumerate(manifest.get("outputs", []), start=1):
+            verify_record(f"output {index}", record, base_dir=manifest_path.parent)
+    except (AssertionError, KeyError, TypeError) as exc:
+        raise ContractError("three-zone N=1 producer parent manifest verification failed") from exc
+    matches: list[tuple[Path, dict[str, Any]]] = []
+    for record in manifest.get("outputs", []):
+        path = record_path(record, base_dir=manifest_path.parent)
+        if path.suffix.lower() != ".json":
+            continue
+        value = _load(path)
+        if value.get("role") == "rf_oatof_three_zone_n1_solver_authorization_receipt":
+            matches.append((path, value))
+    if len(matches) != 1:
+        raise ContractError("producer parent must contain one three-zone N=1 authorization receipt")
+    receipt_path, receipt = matches[0]
+    validate_schema(
+        receipt, "rf_oatof_three_zone_n1_solver_authorization_receipt.schema.json"
+    )
+    expected_identities = {
+        "candidate_sha256": consumer["single_flight_three_zone_candidate"]["sha256"],
+        "layout_profile_id": consumer["single_flight_layout_profile_id"],
+        "architecture_generation_id": consumer["architecture_generation_id"],
+        "topology_id": layout_profile["topology_id"],
+        "geometry_id": layout_profile["geometry_id"],
+        "frontend_electrode_topology_id": layout_profile["frontend_electrode_topology_id"],
+        "accelerator_field_profile_id": consumer["single_flight_accelerator_field_profile_id"],
+        "field_id": selected_field_profile["field_id"],
+        "resolved_region_field_semantic_sha256": resolved_region_field_contract["semantic_sha256"],
+        "source_identity_sha256": _canonical_sha256(source_identity),
+    }
+    if (
+        receipt.get("gate_id") != producer["three_zone_solver_gate"]["gate_id"]
+        or receipt.get("decision") != "PASS"
+        or receipt.get("authorization_status") != "N100_SOLVER_AUTHORIZED"
+        or receipt.get("campaign") != {
+            "campaign_id": campaign["campaign_id"],
+            "campaign_sha256": repository_text_sha256(campaign_path),
+        }
+        or receipt.get("producer", {}).get("experiment_id") != producer["experiment_id"]
+        or receipt.get("producer", {}).get("experiment_row_sha256") != _canonical_sha256(producer)
+        or receipt.get("producer", {}).get("integration_run_id") != producer["run_id"]
+        or receipt.get("authorized_successor") != {
+            "experiment_id": consumer["experiment_id"],
+            "experiment_row_sha256": _canonical_sha256(consumer),
+            "particle_count": 100,
+        }
+        or receipt.get("identities") != expected_identities
+    ):
+        raise ContractError("three-zone N=1 authorization receipt identity or decision differs")
+    return {
+        "three_zone_n1_authorization_receipt_path": _workspace_relative(receipt_path, workspace),
+        "three_zone_n1_authorization_receipt_sha256": file_sha256(receipt_path),
+        "three_zone_n1_producer_parent_manifest_path": _workspace_relative(manifest_path, workspace),
+        "three_zone_n1_producer_parent_manifest_sha256": file_sha256(manifest_path),
+        "three_zone_source_identity_sha256": _canonical_sha256(source_identity),
+    }
 
 
 def _pulse_resolution_cohort_policy(experiment: dict[str, Any]) -> str:
@@ -663,9 +883,47 @@ def _validate_canonical_pulse_restart_state(
     ):
         raise ContractError("canonical pulse restart receipt identity differs")
     pulse_time_us = float(schedule["pulse_effective_time_us"])
-    _, normalized_rows = materialize_pre_pulse_restart(source_path, pulse_time_us)
-    count = int(profile["particle_count"])
-    if len(normalized_rows) != count:
+    subset_source_ids = None
+    if receipt.get("role") == "rf_oatof_pre_pulse_ordered_subset_receipt":
+        validate_schema(
+            receipt, "rf_oatof_pre_pulse_ordered_subset_receipt.schema.json"
+        )
+        mother = receipt["mother_pulse_target_state"]
+        mother_source_path = (
+            receipt_path.parent / mother["path"]
+        ).resolve()
+        mother_receipt_path = (
+            receipt_path.parent / mother["materialization_receipt"]["path"]
+        ).resolve()
+        if (
+            not mother_source_path.is_relative_to(receipt_path.parent.resolve())
+            or not mother_receipt_path.is_relative_to(receipt_path.parent.resolve())
+            or not mother_source_path.is_file()
+            or not mother_receipt_path.is_file()
+        ):
+            raise ContractError("ordered subset mother files are unavailable")
+        try:
+            normalized_rows = validate_ordered_pre_pulse_subset(
+                source_path,
+                receipt,
+                mother_source_path,
+                mother_receipt_path,
+                pulse_time_us=pulse_time_us,
+            )
+        except (KeyError, OSError, TypeError, ValueError) as exc:
+            raise ContractError("ordered pre-pulse subset validation failed") from exc
+        subset_source_ids = receipt["selection"]["ordered_source_particle_ids"]
+        if int(profile["particle_count"]) != mother["particle_count"]:
+            raise ContractError("ordered subset mother population differs from profile")
+    else:
+        _, normalized_rows = materialize_pre_pulse_restart(
+            source_path, pulse_time_us
+        )
+    count = len(normalized_rows)
+    if (
+        target.get("particle_count") != count
+        or source_record["particle_count"] != count
+    ):
         raise ContractError("canonical pulse restart population differs")
     ordered_ids = [int(row["particle_id"]) for row in normalized_rows]
     ordered_id_sha256 = _canonical_sha256(ordered_ids)
@@ -685,11 +943,18 @@ def _validate_canonical_pulse_restart_state(
     maximum_clock_error = 0.0
     maximum_energy_error = 0.0
     for index, row in enumerate(normalized_rows):
-        expected_z = (
-            center_z
-            if count == 1
-            else center_z - width / 2.0 + width * index / (count - 1)
-        )
+        if subset_source_ids is None:
+            expected_z = (
+                center_z
+                if count == 1
+                else center_z - width / 2.0 + width * index / (count - 1)
+            )
+        else:
+            mother_count = int(profile["particle_count"])
+            expected_z = (
+                center_z - width / 2.0
+                + width * (subset_source_ids[index] - 1) / (mother_count - 1)
+            )
         expected_vz = mean_vz + slope * (expected_z - center_z)
         maximum_position_error = max(
             maximum_position_error,
@@ -913,6 +1178,7 @@ def prepare_family_source_closure(
     sequences = [item["sequence"] for item in campaign["experiments"]]
     if len(identities) != len(set(identities)) or len(sequences) != len(set(sequences)):
         raise ContractError("campaign experiment IDs and sequences must be unique")
+    three_zone_gate_pair = _three_zone_gate_pair(campaign)
     matches = [item for item in campaign["experiments"] if item["experiment_id"] == experiment_id]
     if len(matches) != 1:
         raise ContractError("campaign experiment must resolve exactly once")
@@ -1080,6 +1346,9 @@ def prepare_family_source_closure(
     source_profile_id = experiment.get("source_profile_id")
     field_overlay_id = experiment.get("field_overlay_id")
     pre_pulse_source_state = experiment.get("pre_pulse_source_state")
+    generated_pre_pulse_ordered_subset = experiment.get(
+        "generated_pre_pulse_ordered_subset"
+    )
     staged_grid2_source_state = experiment.get("staged_grid2_source_state")
     identity_values = (
         architecture_generation_id, source_profile_id, field_overlay_id,
@@ -1114,12 +1383,19 @@ def prepare_family_source_closure(
     staged_loader_validation = None
     staged_loader_budget_path = None
     if source_release_mode == "pre_pulse_restart":
-        if execution_strategy != "simion_single_flight" or pre_pulse_source_state is None:
+        if execution_strategy != "simion_single_flight" or (
+            pre_pulse_source_state is None
+            and generated_pre_pulse_ordered_subset is None
+        ):
             raise ContractError("pre-pulse restart requires a governed source-state record")
-        pre_pulse_source_path = _workspace_record(
-            workspace, pre_pulse_source_state, "pre-pulse source state"
-        )
-        if source_materialization_profile is not None:
+        if pre_pulse_source_state is not None:
+            pre_pulse_source_path = _workspace_record(
+                workspace, pre_pulse_source_state, "pre-pulse source state"
+            )
+        if (
+            pre_pulse_source_state is not None
+            and source_materialization_profile is not None
+        ):
             required_restart_fields = {
                 "materialization_receipt", "source_state_epoch", "source_state_locus",
                 "position_rowwise_abs_tolerance_mm",
@@ -1133,7 +1409,10 @@ def prepare_family_source_closure(
                 pre_pulse_source_state["materialization_receipt"],
                 "pre-pulse source materialization receipt",
             )
-    elif pre_pulse_source_state is not None:
+    elif (
+        pre_pulse_source_state is not None
+        or generated_pre_pulse_ordered_subset is not None
+    ):
         raise ContractError("pre-pulse source state requires pre-pulse restart mode")
     if source_release_mode == "staged_grid2_restart":
         if execution_strategy != "simion_single_flight" or staged_grid2_source_state is None:
@@ -1476,6 +1755,59 @@ def prepare_family_source_closure(
         ):
             raise ContractError("layout profile architecture generation differs")
         experiment_overrides = experiment.get("single_flight_design_overrides", [])
+        three_zone_candidate = None
+        three_zone_candidate_binding = None
+        three_zone_candidate_path = None
+        if layout_profile["method"] == "t5_frozen_three_zone_candidate_v1":
+            if experiment_overrides:
+                raise ContractError(
+                    "three-zone T5 layout prohibits experiment design overrides"
+                )
+            three_zone_candidate_binding = experiment.get(
+                "single_flight_three_zone_candidate"
+            )
+            if not isinstance(three_zone_candidate_binding, dict):
+                raise ContractError(
+                    "three-zone T5 layout requires a Candidate file binding"
+                )
+            three_zone_candidate_path = _workspace_record(
+                workspace,
+                three_zone_candidate_binding,
+                "three-zone T5 Candidate",
+            )
+            three_zone_candidate = _load(three_zone_candidate_path)
+            validate_schema(
+                three_zone_candidate,
+                "oatof_three_zone_simion_candidate_resolved.schema.json",
+            )
+            selected_field_profile = field_profiles[0]
+            expected_profile_identities = {
+                "topology_id": layout_profile["topology_id"],
+                "geometry_id": layout_profile["geometry_id"],
+                "frontend_electrode_topology_id": layout_profile[
+                    "frontend_electrode_topology_id"
+                ],
+            }
+            if any(
+                selected_field_profile.get(key) != value
+                for key, value in expected_profile_identities.items()
+            ):
+                raise ContractError(
+                    "three-zone field and layout profile identities differ"
+                )
+            expected_field_ids = {
+                "accelerator_ideal_three_zone_real_reflectron":
+                    "three_zone_piecewise_uniform_ideal_field_v1",
+                "accelerator_real_three_zone_pa_real_reflectron":
+                    "three_zone_refined_pa_field_v1",
+            }
+            if (
+                selected_field_profile.get("field_id")
+                != expected_field_ids.get(accelerator_field_profile_id)
+            ):
+                raise ContractError(
+                    "three-zone field profile scientific identity differs"
+                )
         if experiment_overrides:
             inherited = list(layout_profile.get("design_overrides", []))
             variables = [item["variable"] for item in inherited + experiment_overrides]
@@ -1489,7 +1821,11 @@ def prepare_family_source_closure(
         )
         base_downstream_port_path = (root / profile["downstream"]["port_contract"]).resolve()
         geometry, downstream_port, _ = compile_geometry_and_port(
-            _load(base_geometry_path), _load(base_downstream_port_path), layout_profile
+            _load(base_geometry_path),
+            _load(base_downstream_port_path),
+            layout_profile,
+            three_zone_candidate=three_zone_candidate,
+            three_zone_candidate_binding=three_zone_candidate_binding,
         )
         if oatof_numerical_profile is not None:
             reflectron_mesh = oatof_numerical_profile["reflectron_cell_mm"]
@@ -1509,6 +1845,7 @@ def prepare_family_source_closure(
                 geometry_path,
                 resolved_region_field_contract_path,
                 accelerator_field_profile_id or "accelerator_real_pa",
+                accelerator_topology=geometry.get("accelerator_topology"),
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise ContractError("resolved region field contract is invalid") from exc
@@ -1535,6 +1872,8 @@ def prepare_family_source_closure(
             "geometry": geometry_path,
             "downstream_port": downstream_port_path,
         }
+        if three_zone_candidate_path is not None:
+            layout_files["three_zone_candidate"] = three_zone_candidate_path
     resolved_registry_path = plan_output.with_name(
         "resolved_connection_profile_registry.json"
     )
@@ -1569,6 +1908,28 @@ def prepare_family_source_closure(
         }
     )
     row_sha256 = _canonical_sha256(experiment)
+    three_zone_authorization: dict[str, str] | None = None
+    if three_zone_gate_pair is not None:
+        producer, consumer = three_zone_gate_pair
+        gate_stage = experiment["three_zone_solver_gate"]["stage"]
+        if gate_stage == "n100_solver_authorized_consumer":
+            if (
+                resolved_region_field_contract is None
+                or layout_profile is None
+                or not field_profiles
+            ):
+                raise ContractError("three-zone N=100 authorization identity is incomplete")
+            three_zone_authorization = _resolve_three_zone_n1_authorization(
+                workspace=workspace,
+                campaign=campaign,
+                campaign_path=campaign_path,
+                producer=producer,
+                consumer=consumer,
+                source_identity=source_identity,
+                layout_profile=layout_profile,
+                selected_field_profile=field_profiles[0],
+                resolved_region_field_contract=resolved_region_field_contract,
+            )
     registration_receipt_path = None
     registration_receipt_sha256 = None
     if pulse_contract is not None:
@@ -1854,6 +2215,83 @@ def prepare_family_source_closure(
             != "canonical_multipole_source"
         ):
             raise ContractError("source materialization mode is unsupported")
+        if generated_pre_pulse_ordered_subset is not None:
+            if (
+                source_materialization_profile is None
+                or source_materialization_profile["materialization_mode"]
+                != "resolved_layout_pulse_ideal_linear_z_vz"
+                or int(source_materialization_profile["particle_count"]) != 1000
+                or pulse_target_source_path is None
+                or materialization_receipt_path is None
+            ):
+                raise ContractError(
+                    "generated ordered subset requires one N=1000 ideal-linear mother"
+                )
+            try:
+                ordered_source_ids = ordered_subset_source_particle_ids(
+                    generated_pre_pulse_ordered_subset["selection_id"]
+                )
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ContractError(
+                    "generated ordered subset selection is invalid"
+                ) from exc
+            pre_pulse_source_path = (
+                plan_output.parent
+                / "inputs"
+                / "single_flight_pre_pulse_ordered_subset.csv"
+            )
+            pre_pulse_receipt_path = (
+                plan_output.parent
+                / "inputs"
+                / "single_flight_pre_pulse_ordered_subset_receipt.json"
+            )
+            ordered_subset_receipt = materialize_ordered_pre_pulse_subset(
+                pulse_target_source_path,
+                materialization_receipt_path,
+                pre_pulse_source_path,
+                pre_pulse_receipt_path,
+                pulse_time_us=float(schedule["pulse_effective_time_us"]),
+                ordered_source_particle_ids=ordered_source_ids,
+            )
+            validate_schema(
+                ordered_subset_receipt,
+                "rf_oatof_pre_pulse_ordered_subset_receipt.schema.json",
+            )
+            pre_pulse_source_state = {
+                "path": _workspace_relative(pre_pulse_source_path, workspace),
+                "sha256": file_sha256(pre_pulse_source_path),
+                "particle_count": len(ordered_source_ids),
+                "coordinate_frame": "oatof_global_cartesian",
+                "release_event": "pre_pulse_state",
+                "materialization_receipt": {
+                    "path": _workspace_relative(pre_pulse_receipt_path, workspace),
+                    "sha256": file_sha256(pre_pulse_receipt_path),
+                },
+                "source_state_epoch": "pulse_effective_time",
+                "source_state_locus": (
+                    "accelerator_stage1_interior_fixed_transverse_finite_local_z_interval"
+                ),
+                "position_rowwise_abs_tolerance_mm": 1e-9,
+                "velocity_rowwise_abs_tolerance_m_per_s": 1e-6,
+                "clock_abs_tolerance_us": 1e-9,
+                "energy_abs_tolerance_eV": 5e-9,
+                "postselection_prohibited": True,
+            }
+            pulse_restart_validation = _validate_canonical_pulse_restart_state(
+                pre_pulse_source_path,
+                pre_pulse_receipt_path,
+                pre_pulse_source_state,
+                source_materialization_profile,
+                geometry,
+                schedule,
+            )
+            pulse_restart_validation_path = plan_output.with_name(
+                "canonical_pulse_restart_target_state_validation.json"
+            )
+            pulse_restart_validation_path.write_text(
+                json.dumps(pulse_restart_validation, indent=2) + "\n",
+                encoding="utf-8",
+            )
         table_binding = population_declaration["source_authority"]["table_binding"]
         if table_binding == "source_contract_particle_source":
             population_path = _workspace_record(
@@ -1995,6 +2433,11 @@ def prepare_family_source_closure(
             ]) + ([] if layout_files is None or "schedule" not in layout_files else [
                 "resolved_single_flight_pulse_schedule_filename=resolved_single_flight_pulse_schedule.json",
                 f"resolved_single_flight_pulse_schedule_sha256={file_sha256(layout_files['schedule'])}",
+            ]) + ([] if layout_files is None or "three_zone_candidate" not in layout_files else [
+                "single_flight_three_zone_candidate_path="
+                + experiment["single_flight_three_zone_candidate"]["path"],
+                "single_flight_three_zone_candidate_sha256="
+                + experiment["single_flight_three_zone_candidate"]["sha256"],
             ]) + ([] if source_release_mode is None else [
                 "source_release_mode=" + source_release_mode,
             ]) + ([] if source_profile_id is None else [
@@ -2065,6 +2508,9 @@ def prepare_family_source_closure(
                 + str(resolved_region_field_contract["semantic_sha256"]),
                 "resolved_region_field_profile_id="
                 + str(resolved_region_field_contract["semantic"]["canonical_profile_id"]),
+            ]) + ([] if three_zone_authorization is None else [
+                name + "=" + value
+                for name, value in three_zone_authorization.items()
             ]),
         }
     ]

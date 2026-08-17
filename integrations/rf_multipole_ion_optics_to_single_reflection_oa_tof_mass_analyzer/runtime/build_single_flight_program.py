@@ -117,7 +117,9 @@ _SUCCESSOR_CALLBACKS = (
 
 
 def _successor_analyzer_config(
-    oatof: dict[str, Any], frontend: dict[str, Any]
+    oatof: dict[str, Any],
+    frontend: dict[str, Any],
+    region_field_contract: dict[str, Any],
 ) -> dict[str, Any]:
     geometry = oatof["geometry_mm"]
     derivation = oatof["geometry_derivation"]["accelerator"]
@@ -126,8 +128,31 @@ def _successor_analyzer_config(
     rings = oatof["rings"]
     marker = oatof["simion_detector_marker"]
     electrodes = frontend["electrodes"]
+    frontend_topology_id = frontend.get("accelerator_topology_id")
+    three_zone = frontend_topology_id == "three_zone_accelerator_ideal_v1"
+    topology = oatof.get("accelerator_topology") if three_zone else None
+    region_topology = region_field_contract["semantic"].get(
+        "accelerator_topology"
+    )
+    if three_zone:
+        if topology != region_topology or topology.get("topology_id") != frontend_topology_id:
+            raise ValueError(
+                "frontend, oaTOF and region-field three-zone topologies must match exactly"
+            )
+        planes = topology["planes_global_z_mm"]
+        accelerator_repeller_z = float(planes["repeller"])
+        accelerator_grid1_z = float(planes["intermediate1"])
+        accelerator_intermediate2_z = float(planes["intermediate2"])
+        accelerator_grid2_z = float(planes["exit"])
+        accelerator_potentials = topology["potentials_v"]
+    else:
+        if frontend_topology_id is not None or region_topology is not None:
+            raise ValueError("two-zone frontend must not publish a three-zone topology")
+        accelerator_repeller_z = float(geometry["accelerator_repeller_z"])
+        accelerator_grid1_z = float(geometry["accelerator_grid1_z"])
+        accelerator_grid2_z = float(geometry["accelerator_grid2_z"])
     accelerator_instance_z = (
-        float(geometry["accelerator_repeller_z"])
+        accelerator_repeller_z
         - float(geometry["accelerator_repeller_thickness"])
         - float(geometry["accelerator_rear_clearance"])
         - float(geometry["accelerator_shield_wall"])
@@ -151,7 +176,67 @@ def _successor_analyzer_config(
     accelerator_axis_y = float(coordinate.get("accelerator_axis_y", 0.0))
     detector_x = float(coordinate["detector_x"])
     detector_y = -accelerator_axis_y
+    analyzer_geometry = {
+        "accelerator_axis_x_mm": float(coordinate["accelerator_axis_x"]),
+        "accelerator_axis_y_mm": accelerator_axis_y,
+        "accelerator_instance_z_mm": accelerator_instance_z,
+        "accelerator_repeller_front_z_mm": accelerator_repeller_z,
+        "accelerator_grid1_z_mm": accelerator_grid1_z,
+        "accelerator_grid2_z_mm": accelerator_grid2_z,
+        "reflectron_axis_x_mm": 0.0,
+        "reflectron_axis_y_mm": 0.0,
+        "reflectron_entgrid_z_mm": float(geometry["L_flight"]),
+        "reflectron_midgrid_z_mm": float(geometry["L_flight"])
+        + float(geometry["L_stage1"]),
+        "reflectron_backplate_z_mm": backplate_z,
+        "detector_x_mm": detector_x,
+        "detector_y_mm": detector_y,
+        "detector_z_mm": accelerator_grid2_z
+        + float(derivation["focus_drift_after_grid2_mm"]),
+        "detector_radius_mm": float(geometry["detector_radius"]),
+        "detector_marker_front_margin_z_mm": float(marker["front_margin_z_mm"]),
+        "detector_marker_back_margin_z_mm": float(marker["back_margin_z_mm"]),
+        "detector_marker_absorber_thickness_mm": float(marker["absorber_thickness_mm"]),
+        "diagnostic_return_plane_z_mm": 20.5,
+        "flight_tube_near_outer_z_mm": near_outer_z,
+        "flight_tube_far_outer_z_mm": far_outer_z,
+    }
+    analyzer_voltages = {
+        "repeller_v": float(voltage["repeller"]),
+        "grid1_v": float(voltage["grid1"]),
+        "mid_v": float(voltage["midgrid"]),
+        "backplate_v": float(voltage["backplate"]),
+    }
+    analyzer_electrodes = {
+        "repeller": int(electrodes["accelerator_repeller_id"]),
+        "grid1": int(electrodes["accelerator_grid1_id"]),
+        "rings": [int(item) for item in electrodes["accelerator_ring_ids"]],
+        "grid2": int(electrodes["accelerator_grid2_id"]),
+    }
+    if three_zone:
+        analyzer_geometry.update(
+            {
+                "accelerator_intermediate2_z_mm": accelerator_intermediate2_z,
+                "accelerator_ring_z_mm": list(
+                    frontend["accelerator_local_region"]["ring_z_mm"]
+                ),
+            }
+        )
+        analyzer_voltages.update(
+            {
+                "repeller_v": float(accelerator_potentials["repeller"]),
+                "grid1_v": float(accelerator_potentials["intermediate1"]),
+                "intermediate2_v": float(accelerator_potentials["intermediate2"]),
+                "exit_v": float(accelerator_potentials["exit"]),
+            }
+        )
+        analyzer_electrodes["intermediate2"] = int(
+            electrodes["accelerator_intermediate2_id"]
+        )
     return {
+        "accelerator_topology_id": (
+            "three_zone_frontend_v1" if three_zone else "two_zone_frontend_v1"
+        ),
         "instance_roles": {
             "flight_tube": 1,
             "reflectron": 2,
@@ -164,31 +249,7 @@ def _successor_analyzer_config(
             "accelerator": "accelerator.pa0",
             "detector": "detector_ground.pa0",
         },
-        "geometry": {
-            "accelerator_axis_x_mm": float(coordinate["accelerator_axis_x"]),
-            "accelerator_axis_y_mm": accelerator_axis_y,
-            "accelerator_instance_z_mm": accelerator_instance_z,
-            "accelerator_repeller_front_z_mm": float(geometry["accelerator_repeller_z"]),
-            "accelerator_grid1_z_mm": float(geometry["accelerator_grid1_z"]),
-            "accelerator_grid2_z_mm": float(geometry["accelerator_grid2_z"]),
-            "reflectron_axis_x_mm": 0.0,
-            "reflectron_axis_y_mm": 0.0,
-            "reflectron_entgrid_z_mm": float(geometry["L_flight"]),
-            "reflectron_midgrid_z_mm": float(geometry["L_flight"])
-            + float(geometry["L_stage1"]),
-            "reflectron_backplate_z_mm": backplate_z,
-            "detector_x_mm": detector_x,
-            "detector_y_mm": detector_y,
-            "detector_z_mm": float(geometry["accelerator_grid2_z"])
-            + float(derivation["focus_drift_after_grid2_mm"]),
-            "detector_radius_mm": float(geometry["detector_radius"]),
-            "detector_marker_front_margin_z_mm": float(marker["front_margin_z_mm"]),
-            "detector_marker_back_margin_z_mm": float(marker["back_margin_z_mm"]),
-            "detector_marker_absorber_thickness_mm": float(marker["absorber_thickness_mm"]),
-            "diagnostic_return_plane_z_mm": 20.5,
-            "flight_tube_near_outer_z_mm": near_outer_z,
-            "flight_tube_far_outer_z_mm": far_outer_z,
-        },
+        "geometry": analyzer_geometry,
         "field_modes": {
             "ideal_accelerator": False,
             "ideal_accelerator_axial": False,
@@ -198,19 +259,9 @@ def _successor_analyzer_config(
             "ideal_reflectron_stage2": False,
             "ideal_reflectron_stage2_axial": False,
         },
-        "voltages": {
-            "repeller_v": float(voltage["repeller"]),
-            "grid1_v": float(voltage["grid1"]),
-            "mid_v": float(voltage["midgrid"]),
-            "backplate_v": float(voltage["backplate"]),
-        },
+        "voltages": analyzer_voltages,
         "accelerator_ring_count": int(rings["accelerator_count"]),
-        "electrode_ids": {
-            "repeller": int(electrodes["accelerator_repeller_id"]),
-            "grid1": int(electrodes["accelerator_grid1_id"]),
-            "rings": [int(item) for item in electrodes["accelerator_ring_ids"]],
-            "grid2": int(electrodes["accelerator_grid2_id"]),
-        },
+        "electrode_ids": analyzer_electrodes,
         "reflectron_stage1_ring_count": int(rings["stage1_count"]),
         "reflectron_stage2_ring_count": int(rings["stage2_count"]),
         "detector": {
@@ -348,6 +399,22 @@ def build_successor_program(
         raise ValueError("RF steps per period must be one positive integer")
     if overlay is not None and overlay.get("role") != "rf_oatof_simion_accelerator_overlay_contract":
         raise ValueError("single-flight Program requires an accelerator overlay contract")
+    three_zone = frontend.get("accelerator_topology_id") == (
+        "three_zone_accelerator_ideal_v1"
+    )
+    if three_zone and staged_restart:
+        raise ValueError(
+            "three-zone single-flight Program does not support the legacy staged-grid2 restart"
+        )
+    if three_zone and (
+        overlay is None
+        or frontend["accelerator_local_region"].get("intermediate2_grid_provider")
+        != "accelerator_overlay"
+        or float(overlay["cell_mm_xyz"]["z"]) != 0.05
+    ):
+        raise ValueError(
+            "three-zone single-flight Program requires the governed z=0.05 mm accelerator overlay"
+        )
     validate_resolved_region_field_contract(region_field_contract)
     sources = {
         "analyzer component": analyzer_component_source,
@@ -392,7 +459,7 @@ def build_successor_program(
                 "common_mode_v": potentials[electrode_id],
             }
         )
-    analyzer_config = _successor_analyzer_config(oatof, frontend)
+    analyzer_config = _successor_analyzer_config(oatof, frontend, region_field_contract)
     formal_iob_config = {
         "instance_roles": {
             "flight_tube": 1,
@@ -420,6 +487,47 @@ def build_successor_program(
         "log_stride=trajectory_log_stride}}"
     )
     geometry = analyzer_config["geometry"]
+    pulse_voltage_lua = (
+        "{pre_all_v=handoff_pulse_pre_all_v,repeller_v=V_repeller,"
+        "grid1_v=V_grid1,intermediate2_v=V_intermediate2,exit_v=V_exit}"
+        if three_zone
+        else "{pre_all_v=handoff_pulse_pre_all_v,repeller_v=V_repeller,grid1_v=V_grid1}"
+    )
+    initial_voltage_lua = pulse_voltage_lua.replace(
+        "pre_all_v=handoff_pulse_pre_all_v", "pre_all_v=0"
+    )
+    three_zone_adjustables = (
+        f"adjustable V_intermediate2={_lua_number(analyzer_config['voltages']['intermediate2_v'])}\n"
+        f"adjustable V_exit={_lua_number(analyzer_config['voltages']['exit_v'])}\n"
+        if three_zone
+        else ""
+    )
+    intermediate2_local = (
+        "local accelerator_intermediate2_z_mm="
+        f"{_lua_number(geometry['accelerator_intermediate2_z_mm'])}\n"
+        if three_zone
+        else ""
+    )
+    accelerator_planes_lua = (
+        "{accelerator_grid1_z_mm,accelerator_intermediate2_z_mm,"
+        "accelerator_grid2_z_mm}"
+        if three_zone
+        else "{accelerator_grid1_z_mm,accelerator_grid2_z_mm}"
+    )
+    restart_reported_lua = (
+        "{pre_pulse=true,pulse=true,handoff=true,grid1=true,"
+        "intermediate2=true,local_exit=true}"
+        if three_zone
+        else "{pre_pulse=true,pulse=true,handoff=true,grid1=true,local_exit=true}"
+    )
+    intermediate2_crossing_lua = (
+        "  _,tc,xc,yc,vxc,vyc,vzc=crossing(accelerator_intermediate2_z_mm,1)\n"
+        "  if tc and not reported.intermediate2 then reported.intermediate2=true\n"
+        "    if trajectory_log_enable~=0 then print(string.format('TRACE: accelerator_intermediate2_forward ion=%d instrument_time_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_per_us=%.12g vy_mm_per_us=%.12g vz_mm_per_us=%.12g',ion_number,tc,xc,yc,accelerator_intermediate2_z_mm,vxc,vyc,vzc)) end\n"
+        "  end\n"
+        if three_zone
+        else ""
+    )
     electrodes = frontend["electrodes"]
     origin = frontend["instance_origin_mm"]
     overlay_origin = overlay["instance_origin_mm"] if overlay is not None else {"x": 0, "y": 0, "z": 0}
@@ -450,9 +558,9 @@ def build_successor_program(
     global_setup = "\nsimion.early_access(8.2)\nsim_segment_global=1" if global_segments else ""
     program = f"""simion.workbench_program(){global_setup}
 {embedded}
-adjustable V_repeller={_lua_number(oatof['electrodes_V']['repeller'])}
-adjustable V_grid1={_lua_number(oatof['electrodes_V']['grid1'])}
-adjustable V_mid={_lua_number(oatof['electrodes_V']['midgrid'])}
+adjustable V_repeller={_lua_number(analyzer_config['voltages']['repeller_v'])}
+adjustable V_grid1={_lua_number(analyzer_config['voltages']['grid1_v'])}
+{three_zone_adjustables}adjustable V_mid={_lua_number(oatof['electrodes_V']['midgrid'])}
 adjustable V_backplate={_lua_number(oatof['electrodes_V']['backplate'])}
 adjustable trajectory_quality=8
 adjustable trajectory_log_enable=0
@@ -472,7 +580,7 @@ adjustable single_flight_common_mode_scale=1
 adjustable single_flight_rf_steps={rf_steps_per_period}
 local accelerator_repeller_front_z_mm={_lua_number(geometry['accelerator_repeller_front_z_mm'])}
 local accelerator_grid1_z_mm={_lua_number(geometry['accelerator_grid1_z_mm'])}
-local accelerator_grid2_z_mm={_lua_number(geometry['accelerator_grid2_z_mm'])}
+{intermediate2_local}local accelerator_grid2_z_mm={_lua_number(geometry['accelerator_grid2_z_mm'])}
 local reflectron_entgrid_z_mm={_lua_number(geometry['reflectron_entgrid_z_mm'])}
 local reflectron_midgrid_z_mm={_lua_number(geometry['reflectron_midgrid_z_mm'])}
 local reflectron_backplate_z_mm={_lua_number(geometry['reflectron_backplate_z_mm'])}
@@ -573,7 +681,7 @@ local function single_flight_project_electrode_plan()
     setter({int(electrodes['grounded_shield_id'])},0)
     local plan=single_flight_analyzer.accelerator_electrode_write_plan(
       pulse_state.active and 'on' or 'off',
-      {{pre_all_v=handoff_pulse_pre_all_v,repeller_v=V_repeller,grid1_v=V_grid1}})
+      {pulse_voltage_lua})
     for _,item in ipairs(plan) do setter(item.electrode_id,item.voltage_v) end
     setter({int(electrodes['entrance_reference_sleeve_id'])},{_lua_number(entrance_reference_v)})
     setter({int(electrodes['entrance_plate_id'])},{_lua_number(entrance_plate_v)})
@@ -621,12 +729,12 @@ function segment.initialize_run()
     single_flight_pulse=single_flight_pulse_component.new{{canonical_clock=single_flight_instrument_time_us,
       pulse_time_us=handoff_pulse_time_us,pulse_width_us=handoff_pulse_width_us,pulse_mode=function() return handoff_pulse_mode end}}
     single_flight_frontend=single_flight_frontend_component.new{{rf_drive=rf,pulse_hook=single_flight_pulse,
-      electrode_plan=single_flight_project_electrode_plan(),planes_z_mm={{accelerator_grid1_z_mm,accelerator_grid2_z_mm}}}}
+      electrode_plan=single_flight_project_electrode_plan(),planes_z_mm={accelerator_planes_lua}}}
     local initial={{}}
     rf.apply_static(function(id,value) initial[id]=value end)
     initial[{int(electrodes['grounded_shield_id'])}]=0
     for _,item in ipairs(single_flight_analyzer.accelerator_electrode_write_plan('off',
-        {{pre_all_v=0,repeller_v=V_repeller,grid1_v=V_grid1}})) do initial[item.electrode_id]=item.voltage_v end
+        {initial_voltage_lua})) do initial[item.electrode_id]=item.voltage_v end
     initial[{int(electrodes['entrance_reference_sleeve_id'])}]={_lua_number(entrance_reference_v)}
     initial[{int(electrodes['entrance_plate_id'])}]={_lua_number(entrance_plate_v)}
     ai.pa:fast_adjust(initial)
@@ -688,7 +796,7 @@ function segment.initialize()
   single_flight_previous[ion_number]={{t=time,x=ion_px_mm,y=ion_py_mm,z=ion_pz_mm,
     vx=ion_vx_mm,vy=ion_vy_mm,vz=ion_vz_mm}}
   single_flight_reported[ion_number]=single_flight_staged_grid2_restart~=0 and
-    {{pre_pulse=true,pulse=true,handoff=true,grid1=true,local_exit=true}} or {{}}
+    {restart_reported_lua} or {{}}
   print(string.format('TRACE: source_release ion=%d particle_id=%d instrument_time_us=%.17g x_mm=%.17g y_mm=%.17g z_mm=%.17g vx_mm_per_us=%.17g vy_mm_per_us=%.17g vz_mm_per_us=%.17g simion_native_kinetic_energy_eV=%.17g',ion_number,single_flight_canonical_particle_id(),time,ion_px_mm,ion_py_mm,ion_pz_mm,ion_vx_mm,ion_vy_mm,ion_vz_mm,ion_ke))
   if single_flight_staged_grid2_restart~=0 then
     single_flight_trace_checkpoint('local_accelerator_exit',time,ion_px_mm,ion_py_mm,ion_pz_mm,
@@ -740,9 +848,16 @@ function segment.other_actions()
       ion_number,handoff_pulse_time_us,p.x+f*(ion_px_mm-p.x),p.y+f*(ion_py_mm-p.y),p.z+f*(ion_pz_mm-p.z),ion_vx_mm,ion_vy_mm,ion_vz_mm)) end
   end
   if handoff_pulse_mode==1 and not reported.pulse and time>=handoff_pulse_time_us then
+    local pulse_x,pulse_y,pulse_z=ion_px_mm,ion_py_mm,ion_pz_mm
+    local pulse_vx,pulse_vy,pulse_vz=ion_vx_mm,ion_vy_mm,ion_vz_mm
+    if p and p.t<handoff_pulse_time_us and time>p.t then
+      local f=(handoff_pulse_time_us-p.t)/(time-p.t)
+      pulse_x=p.x+f*(ion_px_mm-p.x); pulse_y=p.y+f*(ion_py_mm-p.y); pulse_z=p.z+f*(ion_pz_mm-p.z)
+      pulse_vx=p.vx+f*(ion_vx_mm-p.vx); pulse_vy=p.vy+f*(ion_vy_mm-p.vy); pulse_vz=p.vz+f*(ion_vz_mm-p.vz)
+    end
     reported.pulse=true
     if trajectory_log_enable~=0 then print(string.format('TRACE: handoff_pulse_on ion=%d instrument_time_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_per_us=%.12g vy_mm_per_us=%.12g vz_mm_per_us=%.12g',
-      ion_number,time,ion_px_mm,ion_py_mm,ion_pz_mm,ion_vx_mm,ion_vy_mm,ion_vz_mm)) end
+      ion_number,handoff_pulse_time_us,pulse_x,pulse_y,pulse_z,pulse_vx,pulse_vy,pulse_vz)) end
   end
   local handoff_x={_lua_number(frontend['source_exit_center_mm']['x'])}
   if p and not reported.handoff and p.x<handoff_x and ion_px_mm>=handoff_x and ion_vx_mm>0 then
@@ -755,7 +870,7 @@ function segment.other_actions()
   if tc and not reported.grid1 then reported.grid1=true
     if trajectory_log_enable~=0 then print(string.format('TRACE: accelerator_grid1_forward ion=%d instrument_time_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_per_us=%.12g vy_mm_per_us=%.12g vz_mm_per_us=%.12g',ion_number,tc,xc,yc,accelerator_grid1_z_mm,vxc,vyc,vzc)) end
   end
-  _,tc,xc,yc,vxc,vyc,vzc=crossing(accelerator_grid2_z_mm,1)
+{intermediate2_crossing_lua}  _,tc,xc,yc,vxc,vyc,vzc=crossing(accelerator_grid2_z_mm,1)
   if tc and not reported.local_exit then reported.local_exit=true
     if trajectory_log_enable~=0 then print(string.format('TRACE: local_accelerator_exit ion=%d instrument_time_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_per_us=%.12g vy_mm_per_us=%.12g vz_mm_per_us=%.12g',ion_number,tc,xc,yc,accelerator_grid2_z_mm,vxc,vyc,vzc)) end
   end

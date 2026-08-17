@@ -179,6 +179,28 @@
   "default_accelerator_field_profile_id": "accelerator_real_pa",
   "accelerator_field_profiles": [
     {
+      "profile_id": "accelerator_ideal_three_zone_real_reflectron",
+      "accelerator_zone1": "analytic_ideal_field",
+      "accelerator_zone2": "analytic_ideal_field",
+      "accelerator_zone3": "analytic_ideal_field",
+      "topology_id": "three_zone_accelerator_ideal_v1",
+      "geometry_id": "three_zone_focus_origin_planes_v1",
+      "frontend_electrode_topology_id": "three_zone_frontend_v1",
+      "field_id": "three_zone_piecewise_uniform_ideal_field_v1",
+      "role": "three_zone_t5_candidate_ideal_field"
+    },
+    {
+      "profile_id": "accelerator_real_three_zone_pa_real_reflectron",
+      "accelerator_zone1": "real_pa_field",
+      "accelerator_zone2": "real_pa_field",
+      "accelerator_zone3": "real_pa_field",
+      "topology_id": "three_zone_accelerator_ideal_v1",
+      "geometry_id": "three_zone_focus_origin_planes_v1",
+      "frontend_electrode_topology_id": "three_zone_frontend_v1",
+      "field_id": "three_zone_refined_pa_field_v1",
+      "role": "three_zone_t5_candidate_real_pa_field"
+    },
+    {
       "profile_id": "accelerator_real_pa",
       "accelerator_stage1": "real_pa_field",
       "accelerator_stage2": "real_pa_field",

@@ -3,6 +3,40 @@
   "role": "rf_oatof_single_flight_layout_profile_registry",
   "profiles": [
     {
+      "layout_profile_id": "three_zone_t5_primary_v1",
+      "architecture_generation_id": "three_zone_t5_frozen_primary_v1",
+      "method": "t5_frozen_three_zone_candidate_v1",
+      "reference_injection_energy_eV": 5.0,
+      "target_injection_energy_eV": 10.0,
+      "pulse_timing_method": "multipole_handoff_ballistic_centroid_v1",
+      "topology_id": "three_zone_accelerator_ideal_v1",
+      "geometry_id": "three_zone_focus_origin_planes_v1",
+      "frontend_electrode_topology_id": "three_zone_frontend_v1",
+      "source_release_full_width_mm": 2.2,
+      "focus_to_reflectron_mm": 600.0,
+      "claim_status": "CANDIDATE_ONLY"
+    },
+    {
+      "layout_profile_id": "three_zone_t5_primary_shaping_rings_1p4_v1",
+      "architecture_generation_id": "three_zone_t5_frozen_primary_shaping_rings_1p4_v1",
+      "method": "t5_frozen_three_zone_candidate_v1",
+      "reference_injection_energy_eV": 5.0,
+      "target_injection_energy_eV": 10.0,
+      "pulse_timing_method": "multipole_handoff_ballistic_centroid_v1",
+      "topology_id": "three_zone_accelerator_ideal_v1",
+      "geometry_id": "three_zone_focus_origin_planes_v1",
+      "frontend_electrode_topology_id": "three_zone_frontend_v1",
+      "accelerator_ring_placement_policy": {
+        "policy_id": "three_zone_zonewise_equal_subdivision_1p4_v1",
+        "zone2_ring_count": 1,
+        "zone3_ring_count": 4,
+        "minimum_grid_to_ring_edge_clearance_mm": 1.0
+      },
+      "source_release_full_width_mm": 2.2,
+      "focus_to_reflectron_mm": 600.0,
+      "claim_status": "CANDIDATE_ONLY"
+    },
+    {
       "layout_profile_id": "symmetric_10ev_injection_diagnostic",
       "architecture_generation_id": "short_focus_1mm_pre_voltage_change_v1",
       "method": "symmetric_axis_speed_scaling_v1",

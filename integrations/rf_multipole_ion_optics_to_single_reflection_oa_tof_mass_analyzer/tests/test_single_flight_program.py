@@ -201,6 +201,106 @@ class SingleFlightProgramTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "published topology"):
                     resolve_frontend_electrode_topology(electrodes)
 
+    def test_three_zone_program_requires_overlay_and_publishes_intermediate2(self) -> None:
+        topology = {
+            "topology_id": "three_zone_accelerator_ideal_v1",
+            "planes_global_z_mm": {
+                "repeller": -19.92918680341103,
+                "intermediate1": -16.87918680341103,
+                "intermediate2": -11.57918680341103,
+                "exit": -0.12918680341102995,
+            },
+            "potentials_v": {
+                "repeller": 2000.0,
+                "intermediate1": 1750.0,
+                "intermediate2": 1450.0,
+                "exit": 100.0,
+            },
+        }
+        geometry_path = REPO / (
+            "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json"
+        )
+        oatof = json.loads(geometry_path.read_text(encoding="utf-8"))
+        oatof["accelerator_topology"] = copy.deepcopy(topology)
+        upstream, frontend = _minimal_program_contracts()
+        frontend["accelerator_topology_id"] = topology["topology_id"]
+        frontend["electrodes"] = copy.deepcopy(THREE_ZONE_FRONTEND_ELECTRODES)
+        frontend["accelerator_local_region"] = {
+            "intermediate2_grid_provider": "accelerator_overlay",
+            "ring_z_mm": [-14.5, -12.0, -9.5, -7.0, -4.5],
+        }
+        overlay = {
+            "role": "rf_oatof_simion_accelerator_overlay_contract",
+            "cell_mm_xyz": {"x": 0.2, "y": 0.2, "z": 0.05},
+            "instance_origin_mm": {"x": 0.0, "y": 0.0, "z": 0.0},
+            "active_bounds_mm": {
+                "x_min": -1.0,
+                "x_max": 1.0,
+                "y_min": -1.0,
+                "y_max": 1.0,
+                "z_min": -20.0,
+                "z_max": 1.0,
+            },
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            region = build_resolved_region_field_contract(
+                geometry_path,
+                Path(directory) / "region.json",
+                "accelerator_ideal_three_zone_real_reflectron",
+                accelerator_topology=topology,
+            )
+            kwargs = {
+                "birth_times_us": [0.25],
+                "analyzer_component_source": ANALYZER_COMPONENT_SOURCE,
+                "pulse_hook_source": PULSE_HOOK_SOURCE,
+                "frontend_hook_source": FRONTEND_HOOK_SOURCE,
+                "rf_drive_kernel_source": RF_DRIVE_KERNEL_SOURCE,
+            }
+            with self.assertRaisesRegex(ValueError, "requires the governed"):
+                build_successor_program(
+                    upstream, frontend, oatof, region, **kwargs
+                )
+            program = build_successor_program(
+                upstream, frontend, oatof, region, overlay=overlay, **kwargs
+            )
+            if SIMION.is_file():
+                program_path = Path(directory) / "three_zone_program.lua"
+                checker_path = Path(directory) / "syntax_check.lua"
+                program_path.write_text(program, encoding="utf-8", newline="\n")
+                checker_path.write_text(
+                    "local chunk,message=loadfile(assert(arg[1])); "
+                    "assert(chunk,message); print('THREE_ZONE_PROGRAM_SYNTAX=PASS')\n",
+                    encoding="utf-8",
+                    newline="\n",
+                )
+                result = subprocess.run(
+                    [
+                        str(SIMION),
+                        "--nogui",
+                        "--noprompt",
+                        "lua",
+                        str(checker_path),
+                        str(program_path),
+                    ],
+                    cwd=directory,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=20,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("THREE_ZONE_PROGRAM_SYNTAX=PASS", result.stdout)
+        self.assertIn("adjustable V_intermediate2=1450", program)
+        self.assertIn("adjustable V_exit=100", program)
+        self.assertIn("intermediate2=20", program)
+        self.assertIn(
+            "planes_z_mm={accelerator_grid1_z_mm,accelerator_intermediate2_z_mm,accelerator_grid2_z_mm}",
+            program,
+        )
+        self.assertIn("TRACE: accelerator_intermediate2_forward", program)
+
     def test_staged_grid2_runner_omits_pulse_authority_and_enforces_instance_overlay(self) -> None:
         runner = (
             Path(__file__).resolve().parents[1] / "runtime" / "run_single_flight.ps1"
@@ -335,11 +435,22 @@ class SingleFlightProgramTests(unittest.TestCase):
         self.assertNotIn("oatof_ideal_grounded.lua", program)
         self.assertNotIn("oatof_handoff_pulse.lua", program)
         for event in (
-            "source_release", "pre_pulse_state", "single_flight_handoff",
+            "source_release", "pre_pulse_state", "handoff_pulse_on",
+            "single_flight_handoff",
             "accelerator_grid1_forward", "local_accelerator_exit",
             "accelerator_focus_forward",
         ):
             self.assertIn(f"TRACE: {event}", program)
+        self.assertIn(
+            "ion_number,handoff_pulse_time_us,pulse_x,pulse_y,pulse_z,"
+            "pulse_vx,pulse_vy,pulse_vz",
+            program,
+        )
+        self.assertNotIn(
+            "ion_number,time,ion_px_mm,ion_py_mm,ion_pz_mm,ion_vx_mm,"
+            "ion_vy_mm,ion_vz_mm)) end\n  end\n  local handoff_x",
+            program,
+        )
         for event in (
             "reflectron_entrance_forward", "reflectron_midgrid_forward",
             "reflectron_turning_point", "reflectron_exit_return",

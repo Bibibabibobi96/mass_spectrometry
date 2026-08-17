@@ -7,10 +7,26 @@
   "solver_execution_allowed": false,
   "base_layout_profile_id": "zero_match_long_2p2mm",
   "mass_to_charge_Th": 100.0,
-  "source_widths_mm": [0.5, 1.0, 2.2],
-  "uniform_sample_counts": [1001, 2001],
-  "nested_width_fractions": [0.25, 0.5, 1.0],
-  "derivative_step_fractions_of_half_width": [0.5, 0.25, 0.125, 0.0625],
+  "source_widths_mm": [
+    0.5,
+    1.0,
+    2.2
+  ],
+  "uniform_sample_counts": [
+    1001,
+    2001
+  ],
+  "nested_width_fractions": [
+    0.25,
+    0.5,
+    1.0
+  ],
+  "derivative_step_fractions_of_half_width": [
+    0.5,
+    0.25,
+    0.125,
+    0.0625
+  ],
   "inputs": {
     "base_geometry": {
       "path": "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json",
@@ -24,8 +40,8 @@
     },
     "layout_profile_registry": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/single_flight_layout_profiles.json",
-      "bytes": 6860,
-      "sha256": "BF2916D4D02201B1034E2949976B32983F95E14F7850ABC1292C59837AC2EA9A"
+      "bytes": 8437,
+      "sha256": "DA68742508B6856C29866B7FE6F945F4E5D96FC947C28045424E77F0D43E320C"
     },
     "phase_space_match_contract": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/accelerator_phase_space_match.json",
@@ -44,13 +60,13 @@
     "richardson_effect_relative_convergence": 0.05,
     "absolute_time_floor_s": 1e-15,
     "numeric_floor_multiplier": 10.0,
-    "minimum_high_order_rms_ratio": 0.80,
-    "maximum_low_order_rms_ratio": 0.20,
-    "minimum_nested_sigma_exponent": 2.70,
-    "minimum_single_order_captured_fraction": 0.80,
-    "maximum_single_order_residual_fraction": 0.30,
-    "minimum_cross_arm_sigma_exponent": 2.70,
-    "maximum_cross_arm_sigma_exponent": 3.30
+    "minimum_high_order_rms_ratio": 0.8,
+    "maximum_low_order_rms_ratio": 0.2,
+    "minimum_nested_sigma_exponent": 2.7,
+    "minimum_single_order_captured_fraction": 0.8,
+    "maximum_single_order_residual_fraction": 0.3,
+    "minimum_cross_arm_sigma_exponent": 2.7,
+    "maximum_cross_arm_sigma_exponent": 3.3
   },
   "claim_limit": "Declared provisional, not preregistered. All-ideal one-dimensional theory audit only. D1 and D2 are solver authorities. Richardson c3=T'''/3! and c4=T''''/4! values are converged symmetric numerical Taylor-coefficient audits, not solver-published analytic derivatives, SIMION results, or component qualifications."
 }

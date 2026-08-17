@@ -185,20 +185,36 @@ finite-interval数值政策只由oaTOF项目的`FINITE_INTERVAL_COMPILER_POLICY`
 直接读取项目政策。旧provisional theory-order campaign保持逐字不变，活动诊断使用显式绑定去重配置
 及项目政策文件的`zero_match_long_all_ideal_theory_order_stage_v2_successor`。
 
-三区后继目前只闭合了“可编译、可失败关闭”的未执行能力。oaTOF项目
+三区后继从“可编译、可失败关闭”继续闭合到了真实SIMION PA的Functional执行证据。oaTOF项目
 [`three_zone_t5_simion_candidate.py`](../../../projects/single_reflection_oa_tof_mass_analyzer/analysis/three_zone_t5_simion_candidate.py)
 可从hash绑定的成功T5 receipt/report唯一读取`frozen_primary`和冻结branch root，输出
 `CANDIDATE_ONLY`的`three_zone_accelerator_ideal_v1` plane/potential mapping；integration
-region-field schema v2只以
-`accelerator_ideal_three_zone_real_reflectron / IDEAL_THREE_ZONE_ACCELERATOR_REAL_REFLECTOR_FIELD`
-身份消费该mapping，显式生成`accelerator_zone1/2/3`，不把双区
-`FULL_DOMAIN_PIECEWISE_IDEAL_FIELD`静默三区化。相关integration无求解器回归为`392/392`。
+region-field schema v2分别以显式ideal和real-PA profile消费同一mapping；real-PA profile在全域返回
+native PA base field，不把双区`FULL_DOMAIN_PIECEWISE_IDEAL_FIELD`静默三区化。
 
-该桥尚无已执行的Candidate resolved、三区layout/profile、frontend GEM/PA真实第三栅、N=1 smoke或
-N=100传输；因此当前不能声称三区理论场已经在SIMION实现，也不能授予工程或性能资格。栅面机制只
-沿用2026-08-13已验收的SIMION官方一行raw-PA理想透明电极路径；本轮没有增加自建跨栅、epsilon越层、
-粒子位移或TOF补偿。后继必须先发布并冻结三区layout/profile/GEM，再按N=1原生穿越和N=100传输顺序
-闭合，不能以schema、注册表或测试通过替代solver evidence。
+冻结三区四平面为repeller/I1/I2/exit，位置
+`-62.992615/-59.742615/-54.642615/-42.742615 mm`；ID 20是I2真实一行透明栅。5个整形环不再把
+17 mm合并等距，而按二区5.1 mm与三区11.9 mm分别布置为1+4：中心
+`-57.192615/-52.262615/-49.882615/-47.502615/-45.122615 mm`，1 mm环厚下最小栅—环边缘
+间隙为`1.88 mm`。旧双区和旧三区profile保持不变。
+
+source合同继续复用唯一2.2 mm affine N=1000母样本。N=1冻结母ID 500；最终N=100用
+`ID(k)=1+round(k*999/99)`、`k=0..99`，母ID从1到1000，实际global-z端点
+`-62.5942398207/-60.3942398207 mm`，完整覆盖2.2 mm。物化后SIMION行重新编号1..100，其SHA与
+母ID映射分别由population合同和subset receipt绑定。旧file-order前100行只覆盖0.218018 mm，已保留为
+窄源诊断，不得作为2.2 mm结果。
+
+v5 N=1父run `20260817_235800__sim__cross__three-zone-segmented-rings-real-pa-n1__n1`发布PASS
+authorization receipt；全宽N=100父run
+`20260817_235900__sim__cross__three-zone-segmented-rings-real-pa-full-width__n100`及其SIMION
+child均通过manifest验证。100/100粒子各自穿过I1、I2、exit、反射器并到达探测器；pulse-relative
+`sigma=0.2035735674 ns`、直接`FWHM=0.2338558848 ns`、质量`R=66988.23`、单峰。该结果只授予
+Functional/CANDIDATE_ONLY真实PA证据；不授予工程资格、COMSOL等价或Formal变更。最终N=100的
+frontend、overlay与flight-tube均为cache hit，没有再次Refine。
+
+栅面机制只沿用2026-08-13已验收的SIMION官方一行raw-PA理想透明电极路径；本轮没有增加自建跨栅、
+epsilon越层、粒子位移或TOF补偿。N=1→N=100机器门已按真实checkpoint、manifest和全科学身份闭合；
+schema、注册表或测试通过本身仍不能替代上述solver evidence。
 
 加速器对相邻组件只发布外包络端点；屏蔽罩、无场区和反射器边界从该端点派生，不重复维护内部尺寸或
 绝对坐标。范围校验只证明可编译；几何、电压或拓扑改变后仍须重新验证PA贯通、电极映射、真实Fly和

@@ -20,7 +20,9 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     ACCELERATOR_RING_COUNT,
     FRONTEND_ELECTRODES,
     ROD_ELECTRODE_IDS,
+    THREE_ZONE_FRONTEND_ELECTRODES,
     require_published_frontend_electrodes,
+    resolve_frontend_electrode_topology,
 )
 
 
@@ -50,7 +52,9 @@ def _require_close(actual: float, expected: float, label: str) -> None:
         raise ValueError(f"{label} differs: actual={actual}, expected={expected}")
 
 
-def _electrode_namespace(rod_ids: list[int], ring_count: int) -> dict[str, Any]:
+def _electrode_namespace(
+    rod_ids: list[int], ring_count: int, *, three_zone: bool = False
+) -> dict[str, Any]:
     if rod_ids != list(ROD_ELECTRODE_IDS):
         raise ValueError(
             "single-flight runtime requires the published rod PA basis IDs 1..8"
@@ -59,18 +63,21 @@ def _electrode_namespace(rod_ids: list[int], ring_count: int) -> dict[str, Any]:
         raise ValueError("single-flight runtime requires exactly five accelerator rings")
     result = {
         key: list(value) if isinstance(value, list) else value
-        for key, value in FRONTEND_ELECTRODES.items()
+        for key, value in (
+            THREE_ZONE_FRONTEND_ELECTRODES if three_zone else FRONTEND_ELECTRODES
+        ).items()
     }
     require_published_frontend_electrodes(result)
     return result
 
 
 def _render_accelerator_local_geometry(
-    geometry: dict[str, float | int],
+    geometry: dict[str, Any],
     *,
     cell_x_mm: float,
     cell_z_mm: float,
     electrodes: dict[str, Any],
+    render_intermediate2_sheet: bool = False,
 ) -> list[str]:
     """Render accelerator geometry with native one-row ideal grids.
 
@@ -96,10 +103,23 @@ def _render_accelerator_local_geometry(
         "  ; Zero-grid-unit sheets are one-row ideal 100% transmission grids.",
         f"  e({grid1_id}) {{ fill {{ within {{ {_box(axis_x,axis_y,float(geometry['grid1_z_mm']),float(geometry['electrode_width_mm']),float(geometry['electrode_width_mm']),0.0)} }} }} }}",
     ]
+    intermediate2_id = electrodes.get("accelerator_intermediate2_id")
+    if intermediate2_id is not None and render_intermediate2_sheet:
+        lines.append(
+            f"  e({int(intermediate2_id)}) {{ fill {{ within {{ {_box(axis_x,axis_y,float(geometry['intermediate2_z_mm']),float(geometry['electrode_width_mm']),float(geometry['electrode_width_mm']),0.0)} }} }} }}"
+        )
     ring_count = int(geometry["ring_count"])
-    ring_pitch = float(geometry["ring_pitch_mm"])
+    ring_z_mm = geometry.get("ring_z_mm")
+    if ring_z_mm is None:
+        ring_pitch = float(geometry["ring_pitch_mm"])
+        ring_z_mm = [
+            float(geometry["grid1_z_mm"]) + index * ring_pitch
+            for index in range(1, ring_count + 1)
+        ]
+    if not isinstance(ring_z_mm, list) or len(ring_z_mm) != ring_count:
+        raise ValueError("accelerator ring_z_mm must match ring_count")
     for ring_index in range(1, ring_count + 1):
-        ring_z = float(geometry["grid1_z_mm"]) + ring_index * ring_pitch
+        ring_z = float(ring_z_mm[ring_index - 1])
         lines.extend(
             [
                 f"  e({ring_ids[ring_index-1]}) {{ fill {{",
@@ -120,6 +140,23 @@ def _aligned_index(value: float, origin: float, cell: float, label: str) -> int:
     if not math.isclose(coordinate, nearest, abs_tol=1e-8):
         raise ValueError(f"accelerator overlay {label} is not aligned to the coarse grid")
     return int(nearest)
+
+
+def _outward_aligned_boundary(
+    value: float, origin: float, cell: float, *, side: str
+) -> float:
+    """Expand one overlay boundary to the enclosing coarse-PA node."""
+    coordinate = (value - origin) / cell
+    nearest = round(coordinate)
+    if math.isclose(coordinate, nearest, abs_tol=1e-8):
+        return value
+    elif side == "min":
+        index = math.floor(coordinate)
+    elif side == "max":
+        index = math.ceil(coordinate)
+    else:
+        raise ValueError("accelerator overlay boundary side is invalid")
+    return origin + index * cell
 
 
 def compile_accelerator_overlay(
@@ -145,6 +182,7 @@ def compile_accelerator_overlay(
 
     geometry = dict(frontend["accelerator_local_region"])
     electrodes = dict(frontend["electrodes"])
+    topology = resolve_frontend_electrode_topology(electrodes)
     origin = frontend["instance_origin_mm"]
     half_width = float(geometry["shield_outer_width_mm"]) / 2
     bounds = {
@@ -158,6 +196,13 @@ def compile_accelerator_overlay(
         "z_max": float(geometry["grid2_z_mm"]) + 2 * coarse["z"],
     }
     for axis in ("x", "y", "z"):
+        bounds[f"{axis}_min"] = _outward_aligned_boundary(
+            bounds[f"{axis}_min"], float(origin[axis]), coarse[axis], side="min"
+        )
+        bounds[f"{axis}_max"] = _outward_aligned_boundary(
+            bounds[f"{axis}_max"], float(origin[axis]), coarse[axis], side="max"
+        )
+    for axis in ("x", "y", "z"):
         _aligned_index(bounds[f"{axis}_min"], float(origin[axis]), coarse[axis], f"{axis}_min")
         _aligned_index(bounds[f"{axis}_max"], float(origin[axis]), coarse[axis], f"{axis}_max")
     dimensions: dict[str, int] = {}
@@ -168,6 +213,13 @@ def compile_accelerator_overlay(
         if not math.isclose(coordinate, nearest, abs_tol=1e-8):
             raise ValueError(f"accelerator overlay {axis} span is not aligned to the fine grid")
         dimensions[f"n{axis}"] = int(nearest) + 1
+    if topology["topology_id"] == "three_zone_frontend_v1":
+        _aligned_index(
+            float(geometry["intermediate2_z_mm"]),
+            bounds["z_min"],
+            fine["z"],
+            "intermediate2_z_mm",
+        )
 
     missing_physical_electrodes = [
         *electrodes["multipole_rod_ids"],
@@ -189,6 +241,7 @@ def compile_accelerator_overlay(
             cell_x_mm=fine["x"],
             cell_z_mm=fine["z"],
             electrodes=electrodes,
+            render_intermediate2_sheet=True,
         ),
         "  ; Boundary-only sentinels make SIMION initialize absent pa1..pa8 and pa18.",
         *boundary_sentinels,
@@ -218,7 +271,7 @@ def compile_accelerator_overlay(
             "mode": "coarse_electrode_basis_dirichlet_v1",
             "faces": ["x_min", "x_max", "y_min", "y_max", "z_min", "z_max"],
             "coarse_frontend_role": frontend["role"],
-            "basis_electrode_ids": list(range(0, int(electrodes["entrance_plate_id"]) + 1)),
+            "basis_electrode_ids": list(topology["basis_electrode_ids"]),
         },
         "electrodes": dict(frontend["electrodes"]),
         "boundary_family_sentinel_electrode_ids": [
@@ -316,6 +369,30 @@ def compile_frontend(
         exit_x - (source_zero_x + exit_local), connector_length, "registered connector gap"
     )
     accelerator = oatof["geometry_derivation"]["accelerator"]
+    accelerator_topology = oatof.get("accelerator_topology")
+    three_zone = accelerator_topology is not None
+    if three_zone:
+        if set(accelerator_topology) != {
+            "topology_id",
+            "planes_global_z_mm",
+            "potentials_v",
+        } or accelerator_topology.get("topology_id") != (
+            "three_zone_accelerator_ideal_v1"
+        ):
+            raise ValueError("oaTOF accelerator_topology differs from the published three-zone contract")
+        planes = accelerator_topology["planes_global_z_mm"]
+        potentials = accelerator_topology["potentials_v"]
+        plane_roles = ("repeller", "intermediate1", "intermediate2", "exit")
+        if set(planes) != set(plane_roles) or set(potentials) != set(plane_roles):
+            raise ValueError("three-zone accelerator requires exactly four named planes and potentials")
+        plane_values = [float(planes[role]) for role in plane_roles]
+        potential_values = [float(potentials[role]) for role in plane_roles]
+        if not all(math.isfinite(value) for value in plane_values + potential_values):
+            raise ValueError("three-zone accelerator planes and potentials must be finite")
+        if not all(left < right for left, right in zip(plane_values, plane_values[1:])):
+            raise ValueError("three-zone accelerator planes must be strictly increasing")
+        if not all(left > right for left, right in zip(potential_values, potential_values[1:])):
+            raise ValueError("three-zone accelerator potentials must be strictly decreasing")
     geometry = oatof["geometry_mm"]
     ring_count = int(oatof["rings"]["accelerator_count"])
     axis_x = float(oatof["coordinate_convention"]["accelerator_axis_x"])
@@ -326,7 +403,7 @@ def compile_frontend(
     segmented_rods = upstream["segmentation"]["segmented_rod_array"]
     rods = segmented_rods["electrodes"]
     electrodes = _electrode_namespace(
-        segmented_rod_electrode_ids(segmented_rods), ring_count
+        segmented_rod_electrode_ids(segmented_rods), ring_count, three_zone=three_zone
     )
     grounded_shield_id = int(electrodes["grounded_shield_id"])
     entrance_reference_id = int(electrodes["entrance_reference_sleeve_id"])
@@ -336,8 +413,16 @@ def compile_frontend(
     inner_radius = float(enclosure["shield_inner_radius_mm"])
     source_x_min = source_zero_x + float(enclosure["vacuum_z_min_mm"])
     shield_x_max = source_zero_x + float(terminal["upstream_enclosure_end_plane_z_mm"])
-    grid2_z = float(accelerator["canonical_grid2_z_mm"])
-    repeller_front_z = float(accelerator["canonical_repeller_z_mm"])
+    grid2_z = float(
+        accelerator_topology["planes_global_z_mm"]["exit"]
+        if three_zone
+        else accelerator["canonical_grid2_z_mm"]
+    )
+    repeller_front_z = float(
+        accelerator_topology["planes_global_z_mm"]["repeller"]
+        if three_zone
+        else accelerator["canonical_repeller_z_mm"]
+    )
     repeller_thickness = float(geometry["accelerator_repeller_thickness"])
     rear_gap = float(geometry["accelerator_rear_clearance"])
     shield_wall = float(geometry["accelerator_shield_wall"])
@@ -468,11 +553,63 @@ def compile_frontend(
         + float(geometry["accelerator_ring_width"])
     )
     bore_width = 2 * float(geometry["accelerator_bore_half"])
-    grid1_z = float(accelerator["canonical_grid1_z_mm"])
-    stage2 = float(accelerator["d2_mm"])
-    ring_pitch = stage2 / (ring_count + 1)
+    grid1_z = float(
+        accelerator_topology["planes_global_z_mm"]["intermediate1"]
+        if three_zone
+        else accelerator["canonical_grid1_z_mm"]
+    )
+    stage2 = grid2_z - grid1_z if three_zone else float(accelerator["d2_mm"])
     ring_thickness = float(geometry["accelerator_ring_thickness"])
-    accelerator_local_region: dict[str, float | int] = {
+    placement = oatof["rings"].get("accelerator_placement")
+    if placement is not None:
+        if not three_zone or set(placement) != {
+            "policy_id",
+            "zone_ring_counts",
+            "minimum_grid_to_ring_edge_clearance_mm",
+            "minimum_observed_grid_to_ring_edge_clearance_mm",
+            "ring_z_mm",
+        } or placement["policy_id"] != "three_zone_zonewise_equal_subdivision_1p4_v1":
+            raise ValueError("accelerator ring placement policy identity differs")
+        counts = placement["zone_ring_counts"]
+        if counts != {"zone2": 1, "zone3": 4} or sum(counts.values()) != ring_count:
+            raise ValueError("accelerator ring placement count differs")
+        intermediate2_z = float(
+            accelerator_topology["planes_global_z_mm"]["intermediate2"]
+        )
+        expected_ring_z = [grid1_z + (intermediate2_z - grid1_z) / 2.0]
+        expected_ring_z.extend(
+            intermediate2_z + index * (grid2_z - intermediate2_z) / 5.0
+            for index in range(1, 5)
+        )
+        ring_z_mm = [float(value) for value in placement["ring_z_mm"]]
+        if len(ring_z_mm) != ring_count or any(
+            not math.isclose(actual, expected, rel_tol=0.0, abs_tol=1e-9)
+            for actual, expected in zip(ring_z_mm, expected_ring_z)
+        ):
+            raise ValueError("accelerator ring placement centers differ")
+        edge_clearance = min(
+            ring_z_mm[0] - ring_thickness / 2.0 - grid1_z,
+            intermediate2_z - ring_z_mm[0] - ring_thickness / 2.0,
+            ring_z_mm[1] - ring_thickness / 2.0 - intermediate2_z,
+            grid2_z - ring_z_mm[-1] - ring_thickness / 2.0,
+        )
+        required_clearance = float(
+            placement["minimum_grid_to_ring_edge_clearance_mm"]
+        )
+        if edge_clearance + 1e-12 < required_clearance or not math.isclose(
+            edge_clearance,
+            float(placement["minimum_observed_grid_to_ring_edge_clearance_mm"]),
+            rel_tol=0.0,
+            abs_tol=1e-9,
+        ):
+            raise ValueError("accelerator grid-to-ring edge clearance differs")
+        ring_pitch = None
+    else:
+        ring_pitch = stage2 / (ring_count + 1)
+        ring_z_mm = [
+            grid1_z + index * ring_pitch for index in range(1, ring_count + 1)
+        ]
+    accelerator_local_region: dict[str, Any] = {
         "axis_x_mm": axis_x,
         "axis_y_mm": axis_y,
         "shield_center_z_mm": shield_center_z,
@@ -493,9 +630,27 @@ def compile_frontend(
         "grid1_z_mm": grid1_z,
         "grid2_z_mm": grid2_z,
         "ring_count": ring_count,
-        "ring_pitch_mm": ring_pitch,
         "ring_thickness_mm": ring_thickness,
     }
+    if ring_pitch is not None:
+        accelerator_local_region["ring_pitch_mm"] = ring_pitch
+    else:
+        accelerator_local_region["ring_placement"] = {
+            "policy_id": placement["policy_id"],
+            "zone_ring_counts": dict(placement["zone_ring_counts"]),
+            "minimum_grid_to_ring_edge_clearance_mm": required_clearance,
+            "minimum_observed_grid_to_ring_edge_clearance_mm": edge_clearance,
+        }
+    if three_zone:
+        accelerator_local_region.update(
+            {
+                "intermediate2_z_mm": float(
+                    accelerator_topology["planes_global_z_mm"]["intermediate2"]
+                ),
+                "ring_z_mm": ring_z_mm,
+                "intermediate2_grid_provider": "accelerator_overlay",
+            }
+        )
     lines.extend(
         _render_accelerator_local_geometry(
             accelerator_local_region,
@@ -504,6 +659,13 @@ def compile_frontend(
             electrodes=electrodes,
         )
     )
+    if three_zone:
+        lines.extend(
+            [
+                f"  ; ID {electrodes['accelerator_intermediate2_id']} is a coarse boundary sentinel; the exact sheet is owned by the accelerator overlay.",
+                f"  e({electrodes['accelerator_intermediate2_id']}) {{ fill {{ within {{ {_box(x_min,y_min,z_min,0.0,0.0,0.0)} }} }} }}",
+            ]
+        )
     lines.extend(["}", ""])
 
     contract = {
@@ -532,10 +694,16 @@ def compile_frontend(
         "accelerator_local_region": accelerator_local_region,
         "ideal_grid_model": {
             "model_id": "simion_one_row_zero_width_native_transmission",
-            "grid_roles": ["accelerator_grid1", "accelerator_grid2"],
+            "grid_roles": [
+                "accelerator_grid1",
+                *(["accelerator_intermediate2"] if three_zone else []),
+                "accelerator_grid2",
+            ],
             "real_wire_mesh_requires_separate_profile": True,
         },
     }
+    if three_zone:
+        contract["accelerator_topology_id"] = accelerator_topology["topology_id"]
     return "\n".join(lines), contract
 
 

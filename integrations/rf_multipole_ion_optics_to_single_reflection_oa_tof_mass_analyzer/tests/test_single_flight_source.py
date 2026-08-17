@@ -9,14 +9,197 @@ import unittest
 from pathlib import Path
 
 from common.contracts.component_particle_state import write_component_particle_state_csv
+from common.contracts.file_identity import file_sha256
+from common.contracts.machine_contracts import validate_schema
 from common.contracts.particle_physics import kinetic_energy_ev
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.ordered_pre_pulse_subset import materialize_ordered_pre_pulse_subset, ordered_subset_source_particle_ids, validate_ordered_pre_pulse_subset
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_source import materialize, materialize_ideal_linear_source, materialize_pre_pulse_restart, materialize_staged_grid2_restart, render_pre_pulse_fly2
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.prepare import _validate_canonical_pulse_restart_state
 
 
 REPO = Path(__file__).resolve().parents[3]
 
 
 class SingleFlightSourceTests(unittest.TestCase):
+    def test_uniform_n100_selection_spans_the_full_n1000_mother_width(self) -> None:
+        n1 = ordered_subset_source_particle_ids("n1_center_source_id_500_v1")
+        prefix = ordered_subset_source_particle_ids(
+            "n100_file_order_source_ids_1_to_100_v1"
+        )
+        full_width = ordered_subset_source_particle_ids(
+            "n100_uniform_full_width_source_ids_1_to_1000_v1"
+        )
+        self.assertEqual(n1, [500])
+        self.assertEqual(prefix, list(range(1, 101)))
+        self.assertEqual(
+            full_width,
+            [1 + round(index * 999 / 99) for index in range(100)],
+        )
+        self.assertEqual(len(full_width), 100)
+        self.assertEqual(len(set(full_width)), 100)
+        self.assertTrue(all(left < right for left, right in zip(
+            full_width, full_width[1:]
+        )))
+        self.assertEqual((full_width[0], full_width[-1]), (1, 1000))
+
+        local_z_mm = [-1.1 + 2.2 * (source_id - 1) / 999 for source_id in full_width]
+        self.assertAlmostEqual(local_z_mm[0], -1.1)
+        self.assertAlmostEqual(local_z_mm[-1], 1.1)
+        self.assertAlmostEqual(local_z_mm[-1] - local_z_mm[0], 2.2)
+
+    def test_three_zone_n1_and_n100_are_frozen_subsets_of_one_n1000_mother(self) -> None:
+        repeller_z_mm = -62.992615461549526
+        source_center_from_repeller_mm = 1.498375640839315
+        target_z_mm = repeller_z_mm + source_center_from_repeller_mm
+        connection = {"spatial_registration": {
+            "rotation_upstream_to_downstream": [
+                [0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0],
+            ],
+            "translation_mm": [-100.0, 0.0, -20.0],
+        }}
+        geometry = {"particle_source": {
+            "center_x_mm": -50.0, "center_y_mm": 0.0,
+            "center_z_mm": target_z_mm,
+        }}
+        schedule = {
+            "entry_surface_x_mm": -80.0,
+            "pulse_effective_time_us": 45.416793965641695,
+        }
+        profile = {
+            "profile_id": "canonical_ideal_linear_z_vz_2p2mm_n1000",
+            "source_profile_id": "canonical_ideal_linear_z_vz_2p2mm_n1000",
+            "particle_count": 1000, "source_full_width_mm": 2.2,
+            "mass_amu": 100.0, "charge_state": 1, "kinetic_energy_eV": 10.0,
+            "mean_velocity_z_m_per_s": -2.9323518410018137,
+            "velocity_z_slope_m_per_s_per_mm": 228.80604377795845,
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            mother_source = root / "mother.csv"
+            mother_receipt = root / "mother_receipt.json"
+            materialize_ideal_linear_source(
+                root / "upstream.csv", mother_receipt, connection, geometry,
+                schedule, profile, mother_source,
+            )
+            for name, source_ids in (
+                ("n1", [500]),
+                ("n100", list(range(1, 101))),
+                (
+                    "n100_full_width",
+                    ordered_subset_source_particle_ids(
+                        "n100_uniform_full_width_source_ids_1_to_1000_v1"
+                    ),
+                ),
+            ):
+                with self.subTest(name=name):
+                    subset_source = root / f"{name}.csv"
+                    subset_receipt_path = root / f"{name}_receipt.json"
+                    receipt = materialize_ordered_pre_pulse_subset(
+                        mother_source, mother_receipt,
+                        subset_source, subset_receipt_path,
+                        pulse_time_us=schedule["pulse_effective_time_us"],
+                        ordered_source_particle_ids=source_ids,
+                    )
+                    validate_schema(
+                        receipt,
+                        "rf_oatof_pre_pulse_ordered_subset_receipt.schema.json",
+                    )
+                    rows = validate_ordered_pre_pulse_subset(
+                        subset_source, receipt, mother_source, mother_receipt,
+                        pulse_time_us=schedule["pulse_effective_time_us"],
+                    )
+                    validation = _validate_canonical_pulse_restart_state(
+                        subset_source,
+                        subset_receipt_path,
+                        {
+                            "sha256": file_sha256(subset_source),
+                            "particle_count": len(source_ids),
+                            "materialization_receipt": {
+                                "sha256": file_sha256(subset_receipt_path),
+                            },
+                            "position_rowwise_abs_tolerance_mm": 1e-9,
+                            "velocity_rowwise_abs_tolerance_m_per_s": 1e-6,
+                            "clock_abs_tolerance_us": 1e-9,
+                            "energy_abs_tolerance_eV": 5e-9,
+                        },
+                        profile,
+                        geometry,
+                        schedule,
+                    )
+                    self.assertEqual(len(rows), len(source_ids))
+                    self.assertEqual(validation["particle_count"], len(source_ids))
+                    self.assertEqual(
+                        receipt["resolved_target_center_mm"][2], target_z_mm
+                    )
+                    self.assertEqual(receipt["physics"]["mass_amu"], 100.0)
+                    self.assertEqual(
+                        receipt["selection"]["ordered_source_particle_ids"],
+                        source_ids,
+                    )
+                    if name == "n100_full_width":
+                        selected_z_mm = [
+                            float(row["position_z_mm"]) for row in rows
+                        ]
+                        self.assertAlmostEqual(
+                            selected_z_mm[0], target_z_mm - 1.1
+                        )
+                        self.assertAlmostEqual(
+                            selected_z_mm[-1], target_z_mm + 1.1
+                        )
+                        self.assertAlmostEqual(
+                            selected_z_mm[-1] - selected_z_mm[0], 2.2
+                        )
+
+    def test_ordered_pre_pulse_subset_rejects_changed_global_z(self) -> None:
+        connection = {"spatial_registration": {
+            "rotation_upstream_to_downstream": [
+                [0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0],
+            ],
+            "translation_mm": [-100.0, 0.0, -20.0],
+        }}
+        geometry = {"particle_source": {
+            "center_x_mm": -50.0, "center_y_mm": 0.0, "center_z_mm": -61.5,
+        }}
+        schedule = {"entry_surface_x_mm": -80.0, "pulse_effective_time_us": 40.0}
+        profile = {
+            "profile_id": "canonical_ideal_linear_z_vz_2p2mm_n1000",
+            "source_profile_id": "canonical_ideal_linear_z_vz_2p2mm_n1000",
+            "particle_count": 1000, "source_full_width_mm": 2.2,
+            "mass_amu": 100.0, "charge_state": 1, "kinetic_energy_eV": 10.0,
+            "mean_velocity_z_m_per_s": 0.0,
+            "velocity_z_slope_m_per_s_per_mm": 100.0,
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            mother_source = root / "mother.csv"
+            mother_receipt = root / "mother_receipt.json"
+            subset_source = root / "n1.csv"
+            materialize_ideal_linear_source(
+                root / "upstream.csv", mother_receipt, connection, geometry,
+                schedule, profile, mother_source,
+            )
+            receipt = materialize_ordered_pre_pulse_subset(
+                mother_source, mother_receipt, subset_source,
+                root / "n1_receipt.json", pulse_time_us=40.0,
+                ordered_source_particle_ids=[500],
+            )
+            with subset_source.open(encoding="utf-8", newline="") as handle:
+                rows = list(csv.DictReader(handle))
+            rows[0]["position_z_mm"] = str(
+                float(rows[0]["position_z_mm"]) + 1.0
+            )
+            with subset_source.open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(
+                    handle, fieldnames=list(rows[0]), lineterminator="\n"
+                )
+                writer.writeheader()
+                writer.writerows(rows)
+            with self.assertRaisesRegex(ValueError, "file identity"):
+                validate_ordered_pre_pulse_subset(
+                    subset_source, receipt, mother_source, mother_receipt,
+                    pulse_time_us=40.0,
+                )
+
     def test_staged_grid2_preserves_noncontiguous_canonical_ids(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "grid2.csv"

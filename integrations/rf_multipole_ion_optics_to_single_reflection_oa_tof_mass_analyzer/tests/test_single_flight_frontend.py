@@ -17,6 +17,21 @@ INTEGRATION = REPO / "integrations" / "rf_multipole_ion_optics_to_single_reflect
 
 
 class SingleFlightFrontendTests(unittest.TestCase):
+    THREE_ZONE_TOPOLOGY = {
+        "topology_id": "three_zone_accelerator_ideal_v1",
+        "planes_global_z_mm": {
+            "repeller": -19.92918680341103,
+            "intermediate1": -16.87918680341103,
+            "intermediate2": -11.57918680341103,
+            "exit": -0.12918680341102995,
+        },
+        "potentials_v": {
+            "repeller": 2000.0,
+            "intermediate1": 1750.0,
+            "intermediate2": 1450.0,
+            "exit": 0.0,
+        },
+    }
     @classmethod
     def setUpClass(cls) -> None:
         source = (
@@ -354,12 +369,105 @@ class SingleFlightFrontendTests(unittest.TestCase):
         for electrode_id in [1, 2, 3, 4, 5, 6, 7, 8, 18, 19]:
             self.assertIn(f"e({electrode_id})", gem)
 
+    def test_three_zone_publishes_id20_but_overlay_owns_exact_sheet(self) -> None:
+        oatof = copy.deepcopy(self.oatof)
+        oatof["accelerator_topology"] = copy.deepcopy(self.THREE_ZONE_TOPOLOGY)
+        coarse_gem, frontend = compile_frontend(
+            self.upstream, oatof, self.connection
+        )
+        self.assertEqual(
+            frontend["accelerator_topology_id"],
+            "three_zone_accelerator_ideal_v1",
+        )
+        self.assertEqual(frontend["electrodes"]["accelerator_intermediate2_id"], 20)
+        local = frontend["accelerator_local_region"]
+        self.assertEqual(local["intermediate2_grid_provider"], "accelerator_overlay")
+        self.assertEqual(len(local["ring_z_mm"]), 5)
+        self.assertEqual(coarse_gem.count("e(20)"), 1)
+        overlay_gem, overlay = compile_accelerator_overlay(
+            frontend, cell_mm_xyz={"x": 0.2, "y": 0.2, "z": 0.05}
+        )
+        self.assertEqual(
+            overlay["boundary_condition"]["basis_electrode_ids"], list(range(21))
+        )
+        self.assertEqual(overlay_gem.count("e(20)"), 1)
+        self.assertIn(f",{local['intermediate2_z_mm']:.12g},", overlay_gem)
+
+        misaligned = copy.deepcopy(frontend)
+        misaligned["accelerator_local_region"]["intermediate2_z_mm"] += 0.01
+        with self.assertRaisesRegex(ValueError, "intermediate2_z_mm is not aligned"):
+            compile_accelerator_overlay(
+                misaligned, cell_mm_xyz={"x": 0.2, "y": 0.2, "z": 0.05}
+            )
+
+    def test_three_zone_frontend_consumes_exact_zonewise_one_plus_four_rings(self) -> None:
+        oatof = copy.deepcopy(self.oatof)
+        topology = copy.deepcopy(self.THREE_ZONE_TOPOLOGY)
+        grid1 = -17.12918680341103
+        intermediate2 = grid1 + 5.1
+        exit_z = intermediate2 + 11.9
+        topology["planes_global_z_mm"].update(
+            {"intermediate1": grid1, "intermediate2": intermediate2, "exit": exit_z}
+        )
+        ring_z = [
+            grid1 + 2.55,
+            *[intermediate2 + index * 2.38 for index in range(1, 5)],
+        ]
+        oatof["accelerator_topology"] = topology
+        oatof["rings"]["accelerator_placement"] = {
+            "policy_id": "three_zone_zonewise_equal_subdivision_1p4_v1",
+            "zone_ring_counts": {"zone2": 1, "zone3": 4},
+            "minimum_grid_to_ring_edge_clearance_mm": 1.0,
+            "minimum_observed_grid_to_ring_edge_clearance_mm": 1.88,
+            "ring_z_mm": ring_z,
+        }
+        _, frontend = compile_frontend(self.upstream, oatof, self.connection)
+        local = frontend["accelerator_local_region"]
+        self.assertEqual(local["ring_z_mm"], ring_z)
+        self.assertNotIn("ring_pitch_mm", local)
+        self.assertEqual(
+            local["ring_placement"]["zone_ring_counts"], {"zone2": 1, "zone3": 4}
+        )
+
+        invalid = copy.deepcopy(oatof)
+        invalid["rings"]["accelerator_placement"]["zone_ring_counts"] = {
+            "zone2": 2, "zone3": 3
+        }
+        with self.assertRaisesRegex(ValueError, "placement count differs"):
+            compile_frontend(self.upstream, invalid, self.connection)
+        invalid = copy.deepcopy(oatof)
+        invalid["rings"]["accelerator_placement"][
+            "minimum_grid_to_ring_edge_clearance_mm"
+        ] = 2.0
+        with self.assertRaisesRegex(ValueError, "edge clearance differs"):
+            compile_frontend(self.upstream, invalid, self.connection)
+
     def test_accelerator_overlay_supports_same_grid_identity_validation(self) -> None:
         _, frontend = compile_frontend(self.upstream, self.oatof, self.connection)
         _, overlay = compile_accelerator_overlay(
             frontend, cell_mm_xyz={"x": 0.2, "y": 0.2, "z": 0.2}
         )
         self.assertEqual(overlay["cell_mm_xyz"], frontend["cell_mm_xyz"])
+
+    def test_accelerator_overlay_expands_unaligned_envelope_to_coarse_nodes(self) -> None:
+        oatof = copy.deepcopy(self.oatof)
+        oatof["accelerator_topology"] = copy.deepcopy(self.THREE_ZONE_TOPOLOGY)
+        _, frontend = compile_frontend(self.upstream, oatof, self.connection)
+        frontend["accelerator_local_region"]["shield_back_z_mm"] -= 0.05
+        _, overlay = compile_accelerator_overlay(
+            frontend, cell_mm_xyz={"x": 0.2, "y": 0.2, "z": 0.05}
+        )
+        origin_z = frontend["instance_origin_mm"]["z"]
+        z_min = overlay["instance_bounds_mm"]["z_min"]
+        desired_min = (
+            frontend["accelerator_local_region"]["shield_back_z_mm"] - 0.2
+        )
+        self.assertLessEqual(z_min, desired_min)
+        self.assertAlmostEqual((z_min - origin_z) / 0.2, round((z_min - origin_z) / 0.2))
+        intermediate2 = frontend["accelerator_local_region"]["intermediate2_z_mm"]
+        self.assertAlmostEqual(
+            (intermediate2 - z_min) / 0.05, round((intermediate2 - z_min) / 0.05)
+        )
 
     def test_accelerator_overlay_rejects_asymmetric_coarse_or_transverse_grid(self) -> None:
         _, asymmetric = compile_frontend(

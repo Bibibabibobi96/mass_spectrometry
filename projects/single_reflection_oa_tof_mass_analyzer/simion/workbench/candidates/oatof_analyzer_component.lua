@@ -31,9 +31,10 @@ local function exact_keys(value, expected, name)
   end
 end
 
-local function validate_electrode_ids(ids, ring_count)
-  exact_keys(ids, {repeller=true, grid1=true, rings=true, grid2=true},
-    'electrode_ids')
+local function validate_electrode_ids(ids, ring_count, three_zone)
+  local expected = {repeller=true, grid1=true, rings=true, grid2=true}
+  if three_zone then expected.intermediate2 = true end
+  exact_keys(ids, expected, 'electrode_ids')
   assert(type(ids.rings) == 'table' and #ids.rings == ring_count,
     'electrode_ids.rings must match accelerator_ring_count')
   local seen = {}
@@ -50,6 +51,10 @@ local function validate_electrode_ids(ids, ring_count)
     rings={},
     grid2=accept(ids.grid2, 'electrode_ids.grid2'),
   }
+  if three_zone then
+    validated.intermediate2=accept(ids.intermediate2,
+      'electrode_ids.intermediate2')
+  end
   for index, value in ipairs(ids.rings) do
     validated.rings[index] = accept(value,
       'electrode_ids.rings[' .. index .. ']')
@@ -76,7 +81,7 @@ end
 
 function component.new(config)
   exact_keys(config, {instance_roles=true, instance_filenames=true,
-    geometry=true, field_modes=true,
+    geometry=true, field_modes=true, accelerator_topology_id=true,
     voltages=true, accelerator_ring_count=true, electrode_ids=true,
     reflectron_stage1_ring_count=true, reflectron_stage2_ring_count=true,
     detector=true, diagnostics=true}, 'config')
@@ -84,7 +89,10 @@ function component.new(config)
     accelerator=true, detector=true}, 'instance_roles')
   exact_keys(config.instance_filenames, {flight_tube=true, reflectron=true,
     accelerator=true, detector=true}, 'instance_filenames')
-  exact_keys(config.geometry, {accelerator_axis_x_mm=true,
+  local three_zone = config.accelerator_topology_id == 'three_zone_frontend_v1'
+  assert(three_zone or config.accelerator_topology_id == 'two_zone_frontend_v1',
+    'accelerator_topology_id is not published')
+  local geometry_keys = {accelerator_axis_x_mm=true,
     accelerator_axis_y_mm=true, accelerator_instance_z_mm=true,
     accelerator_repeller_front_z_mm=true, accelerator_grid1_z_mm=true,
     accelerator_grid2_z_mm=true, reflectron_axis_x_mm=true,
@@ -95,14 +103,21 @@ function component.new(config)
     detector_marker_back_margin_z_mm=true,
     detector_marker_absorber_thickness_mm=true,
     diagnostic_return_plane_z_mm=true, flight_tube_near_outer_z_mm=true,
-    flight_tube_far_outer_z_mm=true}, 'geometry')
+    flight_tube_far_outer_z_mm=true}
+  if three_zone then
+    geometry_keys.accelerator_intermediate2_z_mm = true
+    geometry_keys.accelerator_ring_z_mm = true
+  end
+  exact_keys(config.geometry, geometry_keys, 'geometry')
   exact_keys(config.field_modes, {ideal_accelerator=true,
     ideal_accelerator_axial=true, ideal_drift_axial=true,
     ideal_reflectron_stage1=true, ideal_reflectron_stage1_axial=true,
     ideal_reflectron_stage2=true, ideal_reflectron_stage2_axial=true},
     'field_modes')
-  exact_keys(config.voltages, {repeller_v=true, grid1_v=true, mid_v=true,
-    backplate_v=true}, 'voltages')
+  local voltage_keys = {repeller_v=true, grid1_v=true, mid_v=true,
+    backplate_v=true}
+  if three_zone then voltage_keys.intermediate2_v=true; voltage_keys.exit_v=true end
+  exact_keys(config.voltages, voltage_keys, 'voltages')
   exact_keys(config.detector, {tstep_enabled=true,
     capture_arm_distance_mm=true, capture_depth_mm=true,
     marker_absorber_thickness_mm=true}, 'detector')
@@ -119,7 +134,9 @@ function component.new(config)
     role_seen[value] = true
   end
   local g, modes, volts = config.geometry, config.field_modes, config.voltages
-  for name, value in pairs(g) do finite(value, 'geometry.' .. name) end
+  for name, value in pairs(g) do
+    if name ~= 'accelerator_ring_z_mm' then finite(value, 'geometry.' .. name) end
+  end
   for name, value in pairs(modes) do
     assert(value == true or value == false, 'field_modes.' .. name .. ' must be boolean')
   end
@@ -133,7 +150,19 @@ function component.new(config)
     'reflectron_stage2_ring_count')
   assert(reflectron_stage1_count > 0 and reflectron_stage2_count > 0,
     'reflectron ring counts must be positive')
-  local ids = validate_electrode_ids(config.electrode_ids, ring_count)
+  local ids = validate_electrode_ids(config.electrode_ids, ring_count, three_zone)
+  if three_zone then
+    assert(type(g.accelerator_ring_z_mm) == 'table' and
+      #g.accelerator_ring_z_mm == ring_count,
+      'geometry.accelerator_ring_z_mm must match accelerator_ring_count')
+    local previous = g.accelerator_grid1_z_mm
+    for index, value in ipairs(g.accelerator_ring_z_mm) do
+      value=finite(value, 'geometry.accelerator_ring_z_mm[' .. index .. ']')
+      assert(value > previous and value < g.accelerator_grid2_z_mm,
+        'accelerator ring z positions must be strictly increasing inside grid1..grid2')
+      previous=value
+    end
+  end
   local detector = config.detector
   assert(detector.tstep_enabled == true or detector.tstep_enabled == false,
     'detector.tstep_enabled must be boolean')
@@ -152,6 +181,11 @@ function component.new(config)
   assert(g.accelerator_repeller_front_z_mm < g.accelerator_grid1_z_mm and
     g.accelerator_grid1_z_mm < g.accelerator_grid2_z_mm,
     'accelerator planes must be strictly increasing')
+  if three_zone then
+    assert(g.accelerator_grid1_z_mm < g.accelerator_intermediate2_z_mm and
+      g.accelerator_intermediate2_z_mm < g.accelerator_grid2_z_mm,
+      'three-zone accelerator planes must be strictly increasing')
+  end
   assert(g.reflectron_entgrid_z_mm < g.reflectron_midgrid_z_mm and
     g.reflectron_midgrid_z_mm < g.reflectron_backplate_z_mm,
     'reflectron planes must be strictly increasing')
@@ -161,8 +195,9 @@ function component.new(config)
   local function accelerator_plan(pulse_state, pulse_voltages)
     assert(pulse_state == 'on' or pulse_state == 'off',
       'pulse_state must be on or off')
-    exact_keys(pulse_voltages, {pre_all_v=true, repeller_v=true,
-      grid1_v=true}, 'pulse_voltages')
+    local pulse_keys={pre_all_v=true, repeller_v=true, grid1_v=true}
+    if three_zone then pulse_keys.intermediate2_v=true; pulse_keys.exit_v=true end
+    exact_keys(pulse_voltages, pulse_keys, 'pulse_voltages')
     for name, value in pairs(pulse_voltages) do
       finite(value, 'pulse_voltages.' .. name)
     end
@@ -172,12 +207,32 @@ function component.new(config)
     local plan = {{electrode_id=ids.repeller, voltage_v=repeller},
       {electrode_id=ids.grid1, voltage_v=grid1}}
     for index, electrode_id in ipairs(ids.rings) do
-      plan[#plan + 1] = {electrode_id=electrode_id,
-        voltage_v=pulse_state == 'on' and
+      local ring_voltage
+      if three_zone and pulse_state == 'on' then
+        local z=g.accelerator_ring_z_mm[index]
+        local z0, z1, v0, v1
+        if z <= g.accelerator_intermediate2_z_mm then
+          z0, z1 = g.accelerator_grid1_z_mm, g.accelerator_intermediate2_z_mm
+          v0, v1 = pulse_voltages.grid1_v, pulse_voltages.intermediate2_v
+        else
+          z0, z1 = g.accelerator_intermediate2_z_mm, g.accelerator_grid2_z_mm
+          v0, v1 = pulse_voltages.intermediate2_v, pulse_voltages.exit_v
+        end
+        ring_voltage=v0+(v1-v0)*(z-z0)/(z1-z0)
+      else
+        ring_voltage=pulse_state == 'on' and
           pulse_voltages.grid1_v * (ring_count + 1 - index) /
-          (ring_count + 1) or pre}
+          (ring_count + 1) or pre
+      end
+      plan[#plan + 1] = {electrode_id=electrode_id,
+        voltage_v=ring_voltage}
     end
-    plan[#plan + 1] = {electrode_id=ids.grid2, voltage_v=pre}
+    if three_zone then
+      plan[#plan + 1] = {electrode_id=ids.intermediate2,
+        voltage_v=pulse_state == 'on' and pulse_voltages.intermediate2_v or pre}
+    end
+    plan[#plan + 1] = {electrode_id=ids.grid2,
+      voltage_v=three_zone and pulse_state == 'on' and pulse_voltages.exit_v or pre}
     return plan
   end
 
@@ -186,14 +241,21 @@ function component.new(config)
       exact_keys(reflectron_profile, {stage1_ring_voltages_v=true,
         stage2_ring_voltages_v=true}, 'reflectron_profile')
     end
-    local accelerator = accelerator_plan('on', {pre_all_v=0,
-      repeller_v=volts.repeller_v, grid1_v=volts.grid1_v})
-    local legacy_accelerator = {}
-    for index, item in ipairs(accelerator) do
-      legacy_accelerator[index] = {electrode_id=index, voltage_v=item.voltage_v}
+    local pulse_voltages={pre_all_v=0,
+      repeller_v=volts.repeller_v, grid1_v=volts.grid1_v}
+    if three_zone then
+      pulse_voltages.intermediate2_v=volts.intermediate2_v
+      pulse_voltages.exit_v=volts.exit_v
     end
-    legacy_accelerator[#legacy_accelerator + 1] = {
-      electrode_id=ring_count + 4, voltage_v=0}
+    local accelerator = accelerator_plan('on', pulse_voltages)
+    local legacy_accelerator = {}
+    if not three_zone then
+      for index, item in ipairs(accelerator) do
+        legacy_accelerator[index] = {electrode_id=index, voltage_v=item.voltage_v}
+      end
+      legacy_accelerator[#legacy_accelerator + 1] = {
+        electrode_id=ring_count + 4, voltage_v=0}
+    end
     local reflectron = {{electrode_id=1, voltage_v=0}}
     local stage1_count = reflectron_stage1_count
     local stage2_count = reflectron_stage2_count

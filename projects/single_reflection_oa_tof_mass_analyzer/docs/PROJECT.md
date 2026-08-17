@@ -133,12 +133,13 @@ T2最佳可行二区在2.2 mm cohort上的population sigma/直接FWHM为
 `PRIMARY_CONFIRMATION_PASSED_OVER_BEST_TWO_ZONE`，canonical T5 run为
 `20260817_122700__analysis__python__three-zone-t5`。精确口径与限制只查上述理论权威。
 
-T5→三区`CANDIDATE_ONLY` resolved编译器、integration region-field schema v2和保持旧
-`0..19`映射且仅新增电极ID `20`的拓扑注册能力已经实现，integration无求解器回归为
-`392/392`；这些能力尚未被canonical run执行。当前仍没有三区layout/profile、frontend GEM/PA真实
-第三栅、N=1 smoke或N=100传输，因而不能声称三区理论场已在SIMION实现。理想透明栅继续沿用
-2026-08-13已验收的SIMION官方一行raw-PA电极路径；本轮没有新增自建跨栅、粒子位移或TOF补偿。
-上述理论结果仍是solver-free、非工程资格，不能改变Formal状态。
+T5→三区`CANDIDATE_ONLY` resolved编译器、region-field schema v2和保持旧`0..19`映射且仅新增
+电极ID `20`的拓扑已进入真实SIMION PA验证。二区5.1 mm与三区11.9 mm分别采用1+4个整形环；N=1
+原生路径授权后，完整2.2 mm分层N=100得到100/100探测、pulse-relative
+`sigma=0.2035735674 ns`、直接`FWHM=0.2338558848 ns`、质量`R=66988.23`、单峰。对应父run为
+`20260817_235900__sim__cross__three-zone-segmented-rings-real-pa-full-width__n100`。这证明三区
+理论收益在真实PA场中仍显著存在，但数值只是100 Th、N=100、Functional/CANDIDATE_ONLY证据；未做
+COMSOL/CAD、N=1000、网格收敛或工程包络资格，不能改变524 Da Formal状态。
 
 ## 已知兼容边界
 

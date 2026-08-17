@@ -12,6 +12,7 @@ end
 
 local function config()
   return {
+    accelerator_topology_id='two_zone_frontend_v1',
     instance_roles={flight_tube=1, reflectron=2, accelerator=3, detector=4},
     instance_filenames={flight_tube='flight_tube_ground.pa0',
       reflectron='reflectron.pa0', accelerator='accelerator.pa0',
@@ -84,6 +85,44 @@ assert(plans.legacy_accelerator_characterization[9].electrode_id == 9,
   'legacy accelerator local reference-ground mapping changed')
 near(plans.legacy_accelerator_characterization[9].voltage_v, 0,
   'legacy accelerator reference-ground voltage')
+
+local three_zone_config = config()
+three_zone_config.accelerator_topology_id='three_zone_frontend_v1'
+three_zone_config.geometry.accelerator_intermediate2_z_mm=-11.65
+three_zone_config.geometry.accelerator_ring_z_mm={-15,-13,-10,-7,-3}
+three_zone_config.voltages.intermediate2_v=1450
+three_zone_config.voltages.exit_v=100
+three_zone_config.electrode_ids.intermediate2=20
+local three_zone = component.new(three_zone_config)
+local three_on = three_zone.accelerator_electrode_write_plan('on',
+  {pre_all_v=0,repeller_v=2240,grid1_v=1760,intermediate2_v=1450,exit_v=100})
+assert(#three_on == 9, 'three-zone plan must contain all nine physical electrodes')
+assert(three_on[8].electrode_id == 20, 'intermediate2 must retain published ID 20')
+near(three_on[8].voltage_v, 1450, 'intermediate2 voltage')
+assert(three_on[9].electrode_id == 17, 'exit must retain published grid2 ID 17')
+near(three_on[9].voltage_v, 100, 'three-zone exit voltage')
+for index=1,5 do
+  local z=three_zone_config.geometry.accelerator_ring_z_mm[index]
+  local expected
+  if z <= three_zone_config.geometry.accelerator_intermediate2_z_mm then
+    expected=1760+(1450-1760)*(z-three_zone_config.geometry.accelerator_grid1_z_mm)/
+      (three_zone_config.geometry.accelerator_intermediate2_z_mm-
+       three_zone_config.geometry.accelerator_grid1_z_mm)
+  else
+    expected=1450+(100-1450)*(z-three_zone_config.geometry.accelerator_intermediate2_z_mm)/
+      (three_zone_config.geometry.accelerator_grid2_z_mm-
+       three_zone_config.geometry.accelerator_intermediate2_z_mm)
+  end
+  near(three_on[2+index].voltage_v, expected,
+    'three-zone piecewise ring voltage ' .. index)
+end
+local three_off = three_zone.accelerator_electrode_write_plan('off',
+  {pre_all_v=7,repeller_v=2240,grid1_v=1760,intermediate2_v=1450,exit_v=100})
+for index=1,#three_off do
+  near(three_off[index].voltage_v, 7, 'three-zone off voltage ' .. index)
+end
+assert(#three_zone.static_electrode_plans(nil).legacy_accelerator_characterization == 0,
+  'three-zone must disable the legacy sequential characterization plan')
 assert(#plans.reflectron == 19, 'static reflectron plan changed')
 near(plans.reflectron[1].voltage_v, 0, 'reflectron entrance voltage')
 near(plans.reflectron[12].voltage_v, 1628.8001, 'reflectron middle-grid voltage')

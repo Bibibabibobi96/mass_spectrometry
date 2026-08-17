@@ -1,0 +1,161 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/rf_oatof_pre_pulse_ordered_subset_receipt.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "role", "method", "profile_id", "source_profile_id",
+    "particle_count", "source_full_width_mm", "resolved_target_center_mm",
+    "resolved_pulse_time_us", "physics", "mother_pulse_target_state",
+    "selection", "pulse_target_state"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "rf_oatof_pre_pulse_ordered_subset_receipt"},
+    "method": {"const": "frozen_ordered_subset_from_pre_pulse_mother_v1"},
+    "profile_id": {"$ref": "#/$defs/id"},
+    "source_profile_id": {"$ref": "#/$defs/id"},
+    "particle_count": {"type": "integer", "minimum": 1, "maximum": 1000},
+    "source_full_width_mm": {"const": 2.2},
+    "resolved_target_center_mm": {
+      "type": "array", "minItems": 3, "maxItems": 3,
+      "items": {"type": "number"}
+    },
+    "resolved_pulse_time_us": {"type": "number", "minimum": 0},
+    "physics": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "mass_amu", "charge_state", "kinetic_energy_eV",
+        "mean_velocity_z_m_per_s", "velocity_z_slope_m_per_s_per_mm"
+      ],
+      "properties": {
+        "mass_amu": {"const": 100.0},
+        "charge_state": {"const": 1},
+        "kinetic_energy_eV": {"const": 10.0},
+        "mean_velocity_z_m_per_s": {"type": "number"},
+        "velocity_z_slope_m_per_s_per_mm": {"type": "number"}
+      }
+    },
+    "mother_pulse_target_state": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "path", "sha256", "particle_count", "materialization_receipt",
+        "ordered_particle_id_sha256"
+      ],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha"},
+        "particle_count": {"const": 1000},
+        "materialization_receipt": {"$ref": "#/$defs/file"},
+        "ordered_particle_id_sha256": {"$ref": "#/$defs/sha"}
+      }
+    },
+    "selection": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "algorithm", "ordered_source_particle_ids",
+        "ordered_source_particle_id_sha256",
+        "simulation_to_source_particle_id", "postselection_prohibited"
+      ],
+      "properties": {
+        "algorithm": {"const": "explicit_ordered_source_particle_ids_v1"},
+        "ordered_source_particle_ids": {
+          "type": "array", "minItems": 1, "maxItems": 100,
+          "items": {"type": "integer", "minimum": 1, "maximum": 1000}
+        },
+        "ordered_source_particle_id_sha256": {"$ref": "#/$defs/sha"},
+        "simulation_to_source_particle_id": {
+          "type": "array", "minItems": 1, "maxItems": 100,
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["simulation_particle_id", "source_particle_id"],
+            "properties": {
+              "simulation_particle_id": {"type": "integer", "minimum": 1, "maximum": 100},
+              "source_particle_id": {"type": "integer", "minimum": 1, "maximum": 1000}
+            }
+          }
+        },
+        "postselection_prohibited": {"const": true}
+      }
+    },
+    "pulse_target_state": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "path", "sha256", "particle_count", "source_state_epoch",
+        "source_state_locus", "coordinate_frame", "clock_basis",
+        "clock_authority", "ordered_particle_id_sha256"
+      ],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha"},
+        "particle_count": {"type": "integer", "minimum": 1, "maximum": 100},
+        "source_state_epoch": {"const": "pulse_effective_time"},
+        "source_state_locus": {
+          "type": "object", "additionalProperties": false,
+          "required": ["kind", "resolved_target_center_mm", "z_local_interval_mm"],
+          "properties": {
+            "kind": {"const": "accelerator_stage1_interior_fixed_transverse_finite_local_z_interval"},
+            "resolved_target_center_mm": {
+              "type": "array", "minItems": 3, "maxItems": 3,
+              "items": {"type": "number"}
+            },
+            "z_local_interval_mm": {
+              "type": "array", "minItems": 2, "maxItems": 2,
+              "items": {"type": "number"}
+            }
+          }
+        },
+        "coordinate_frame": {"const": "oatof_global_cartesian"},
+        "clock_basis": {"const": "canonical_instrument_time_us"},
+        "clock_authority": {"const": "resolved_single_flight_pulse_schedule"},
+        "ordered_particle_id_sha256": {"$ref": "#/$defs/sha"}
+      }
+    }
+  },
+  "allOf": [
+    {
+      "oneOf": [
+        {
+          "properties": {
+            "particle_count": {"const": 1},
+            "selection": {
+              "properties": {
+                "ordered_source_particle_ids": {"minItems": 1, "maxItems": 1},
+                "simulation_to_source_particle_id": {"minItems": 1, "maxItems": 1}
+              }
+            },
+            "pulse_target_state": {
+              "properties": {"particle_count": {"const": 1}}
+            }
+          }
+        },
+        {
+          "properties": {
+            "particle_count": {"const": 100},
+            "selection": {
+              "properties": {
+                "ordered_source_particle_ids": {"minItems": 100, "maxItems": 100},
+                "simulation_to_source_particle_id": {"minItems": 100, "maxItems": 100}
+              }
+            },
+            "pulse_target_state": {
+              "properties": {"particle_count": {"const": 100}}
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"},
+    "sha": {"type": "string", "pattern": "^[A-F0-9]{64}$"},
+    "file": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha"}
+      }
+    }
+  }
+}

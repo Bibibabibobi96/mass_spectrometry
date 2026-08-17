@@ -11,6 +11,7 @@ from common.contracts.machine_contracts import validate_schema
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.resolved_region_field import (
     FULL_ID,
     THREE_ZONE_PROFILE_ID,
+    THREE_ZONE_REAL_PA_PROFILE_ID,
     THREE_ZONE_TOPOLOGY_ID,
     build_resolved_region_field_contract,
     resolved_region_field_hook_lua,
@@ -45,13 +46,13 @@ class ResolvedRegionFieldTests(unittest.TestCase):
             output = Path(temporary) / "resolved.json"
             return build_resolved_region_field_contract(GEOMETRY, output, profile_id)
 
-    def _build_three_zone(self) -> dict:
+    def _build_three_zone(self, profile_id: str = THREE_ZONE_PROFILE_ID) -> dict:
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary) / "resolved.json"
             return build_resolved_region_field_contract(
                 GEOMETRY,
                 output,
-                THREE_ZONE_PROFILE_ID,
+                profile_id,
                 accelerator_topology=self.THREE_ZONE_TOPOLOGY,
             )
 
@@ -142,6 +143,95 @@ class ResolvedRegionFieldTests(unittest.TestCase):
         self.assertIn("_intermediate2", lua)
         self.assertNotIn("grid1", lua)
         self.assertNotIn("grid2", lua)
+
+    def test_three_zone_ideal_output_remains_byte_semantic_and_lua_stable(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "resolved.json"
+            contract = build_resolved_region_field_contract(
+                GEOMETRY,
+                output,
+                THREE_ZONE_PROFILE_ID,
+                accelerator_topology=self.THREE_ZONE_TOPOLOGY,
+            )
+            file_digest = hashlib.sha256(output.read_bytes()).hexdigest().upper()
+        lua_digest = hashlib.sha256(
+            resolved_region_field_hook_lua(contract).encode()
+        ).hexdigest().upper()
+        self.assertEqual(
+            file_digest,
+            "9ABC0EDA4E2D3279A9D0EAE276AC027093E22ECC2E7E9274914FBBBC85BFE778",
+        )
+        self.assertEqual(
+            contract["semantic_sha256"],
+            "96F0FC885372040433BCA2FAB84F82963824D35C853CD3876616E7DA9422FB36",
+        )
+        self.assertEqual(
+            lua_digest,
+            "06ECF01634307FD099D66CC97F20B5892881C0F4CE177A01ED8C54D9749EF23C",
+        )
+
+    def test_three_zone_real_pa_profile_is_explicit_and_has_no_analytic_field(self) -> None:
+        contract = self._build_three_zone(THREE_ZONE_REAL_PA_PROFILE_ID)
+        semantic = contract["semantic"]
+        self.assertEqual(contract["schema_version"], 2)
+        self.assertEqual(
+            semantic["field_configuration_id"],
+            "REAL_THREE_ZONE_ACCELERATOR_REAL_REFLECTOR_FIELD",
+        )
+        self.assertEqual(
+            semantic["accelerator_topology"], self.THREE_ZONE_TOPOLOGY
+        )
+        self.assertEqual(set(semantic["region_modes"].values()), {"real_pa_field"})
+        self.assertEqual(semantic["fields_V_per_mm"], {})
+        self.assertEqual(
+            semantic["effective_domain"],
+            {
+                "longitudinal": "native_pa_instance_domain",
+                "transverse": "native_pa_instance_domain",
+                "outside_longitudinal_domain": "native_pa_base_field_unchanged",
+            },
+        )
+        validate_schema(contract, "rf_oatof_resolved_region_field_contract.schema.json")
+        lua = resolved_region_field_hook_lua(contract)
+        self.assertIn("return base", lua)
+        for forbidden in ("replace_all", "_zone", "_repeller", "local E", "error("):
+            self.assertNotIn(forbidden, lua)
+
+    def test_three_zone_real_pa_profile_rejects_mixed_or_implicit_semantics(self) -> None:
+        from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.resolved_region_field import semantic_sha256
+
+        with tempfile.TemporaryDirectory() as temporary:
+            with self.assertRaisesRegex(ValueError, "requires accelerator_topology"):
+                build_resolved_region_field_contract(
+                    GEOMETRY,
+                    Path(temporary) / "resolved.json",
+                    THREE_ZONE_REAL_PA_PROFILE_ID,
+                )
+        invalid = copy.deepcopy(
+            self._build_three_zone(THREE_ZONE_REAL_PA_PROFILE_ID)
+        )
+        invalid["semantic"]["region_modes"]["accelerator_zone2"] = (
+            "analytic_ideal_field"
+        )
+        invalid["semantic_sha256"] = semantic_sha256(invalid["semantic"])
+        with self.assertRaisesRegex(ValueError, "region modes differ"):
+            validate_resolved_region_field_contract(invalid)
+        invalid = copy.deepcopy(
+            self._build_three_zone(THREE_ZONE_REAL_PA_PROFILE_ID)
+        )
+        invalid["semantic"]["fields_V_per_mm"] = {"accelerator_zone1": 1.0}
+        invalid["semantic_sha256"] = semantic_sha256(invalid["semantic"])
+        with self.assertRaisesRegex(ValueError, "must not publish analytic fields"):
+            validate_resolved_region_field_contract(invalid)
+        invalid = copy.deepcopy(
+            self._build_three_zone(THREE_ZONE_REAL_PA_PROFILE_ID)
+        )
+        invalid["semantic"]["effective_domain"]["transverse"] = (
+            "analytic_field_extends_until_native_pa_geometry_collision"
+        )
+        invalid["semantic_sha256"] = semantic_sha256(invalid["semantic"])
+        with self.assertRaisesRegex(ValueError, "native-PA domain differs"):
+            validate_resolved_region_field_contract(invalid)
 
     def test_three_zone_topology_is_explicit_and_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -260,6 +350,42 @@ print('THREE_ZONE_REGION_FIELD_HOOK=PASS')
             )
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
         self.assertIn("THREE_ZONE_REGION_FIELD_HOOK=PASS", result.stdout)
+
+    @unittest.skipUnless(SIMION.is_file(), "official SIMION Lua CLI unavailable")
+    def test_three_zone_real_pa_lua_returns_base_for_the_native_pa_domain(self) -> None:
+        hook = resolved_region_field_hook_lua(
+            self._build_three_zone(THREE_ZONE_REAL_PA_PROFILE_ID), prefix="native"
+        )
+        script = f"""
+local native=(function()\n{hook}\nend)()
+local base={{replace_all=false,dvoltsx_gu=7}}
+local function state(z,pulse) return {{z_mm=z,instance_id=3,instance_dx_mm=0.25,
+  instance_dz_mm=0.05,instance_scale=1,pulse_active=pulse}} end
+for _,z in ipairs({{-1000,-20,-16.75,-11.65,0.25,1000}}) do
+  assert(native.apply(base,state(z,true))==base,
+    'native-PA profile changed base field inside or outside frozen planes')
+  assert(native.apply(base,state(z,false))==base,
+    'native-PA profile changed inactive base field')
+end
+local ok=pcall(function() native.apply(base,{{}}) end)
+assert(not ok,'invalid region state did not fail closed')
+print('THREE_ZONE_REAL_PA_HOOK=PASS')
+"""
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "test_three_zone_real_pa_hook.lua"
+            path.write_text(script, encoding="utf-8", newline="\n")
+            result = subprocess.run(
+                [str(SIMION), "--nogui", "--noprompt", "lua", str(path)],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=20,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertIn("THREE_ZONE_REAL_PA_HOOK=PASS", result.stdout)
 
 
 if __name__ == "__main__":

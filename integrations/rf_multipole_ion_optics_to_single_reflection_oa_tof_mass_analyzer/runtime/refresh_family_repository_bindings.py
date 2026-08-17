@@ -37,6 +37,7 @@ ACTIVE_PUBLICATION_PATHS = (
     "config/family_octupole_direct_mating_gap_0mm_runtime_binding.json",
     "config/family_octupole_aperture_050x050_direct_mating_gap_0mm_runtime_binding.json",
     "config/family_octupole_aperture_050x020_direct_mating_gap_0mm_runtime_binding.json",
+    "config/diagnostics/zero_match_long_all_ideal_theory_order_stage_v2_successor_campaign.json",
 )
 
 
@@ -176,6 +177,12 @@ def compile_publications(repo_root: Path) -> dict[Path, bytes]:
                 else repository_text_sha256(dependency)
             )
             owner[hash_key] = digest
+            if path_key == "path" and "bytes" in owner:
+                owner["bytes"] = (
+                    len(compile_one(dependency))
+                    if dependency in target_set
+                    else dependency.stat().st_size
+                )
         visiting.remove(path)
         compiled[path] = _render(document)
         return compiled[path]

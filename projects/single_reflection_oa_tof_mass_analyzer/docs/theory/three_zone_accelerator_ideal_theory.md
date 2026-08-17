@@ -239,14 +239,14 @@ $\ell_1,\ell_{23},\lambda$ 和第一段压降作为受控外层离散域；这�
 `accelerator_stage1/accelerator_stage2`、`repeller/grid1/grid2`及 `accel1/accel2`；其中现有
 `grid2` 是双区出口，不是三区新增中间边界。
 
-后续已实现但尚未执行一条显式桥接能力：T5 receipt可由
+后续已实现并执行一条显式桥接能力：T5 receipt可由
 [`three_zone_t5_simion_candidate.py`](../../analysis/three_zone_t5_simion_candidate.py)编译为
 `CANDIDATE_ONLY` resolved；integration region-field schema v2只在显式
 `three_zone_accelerator_ideal_v1`拓扑下接受三区region/plane/field；电极拓扑注册表保持旧双区
-`0..19`不变，仅为三区新增ID `20`。这些能力没有被任何canonical run消费，也没有新增layout
-profile、frontend GEM/PA中的真实第三栅、N=1 smoke或N=100传输。因此隔离理论结果仍不得直接复用
-双区profile，不得把现有 `grid2` 静默改成中间电极，更不得声称三区理论场已经在SIMION、COMSOL或
-CAD中实现。进入工程验证仍须先闭合三区layout/profile/GEM、真实栅面、电极映射、solver run和证据链。
+`0..19`不变，仅为三区新增ID `20`。显式successor layout把二区5.1 mm和三区11.9 mm的5个整形环
+分别布置为1+4，并已完成真实frontend/overlay PA、N=1原生路径和完整2.2 mm N=100。隔离理论仍不得
+直接复用双区profile，也不得把现有`grid2`静默改成中间电极；COMSOL、CAD、N=1000和工程资格仍未
+闭合。
 
 ## 8. T0—T5阶段漏斗
 
@@ -310,6 +310,16 @@ T5在1001点cohort上得到：
 
 这些数值仍只是post-pilot、solver-free、一维理想分段场证据，不是工程资格、SIMION/COMSOL/CAD
 结果或当前Formal设计变更。
+
+### 2026-08-17真实SIMION PA后继
+
+冻结四平面和电势不变；successor只把整形环按二区5.1 mm放1个、三区11.9 mm放4个。完整2.2 mm
+N=100从同一N=1000母样本按`ID(k)=1+round(k*999/99)`取样，母ID覆盖1..1000。真实PA得到100/100
+探测、pulse-relative `sigma=0.2035735674 ns`、直接`FWHM=0.2338558848 ns`、质量
+`R=66988.23`、单峰；父run为
+`20260817_235900__sim__cross__three-zone-segmented-rings-real-pa-full-width__n100`。相对理想
+T5，sigma增加约11.61%，直接FWHM增加约65.70%，说明fringe/真实电极主要扩大峰宽和尾部，但没有
+消除三区补偿收益。该后继仍是N=100 Functional/CANDIDATE_ONLY，不是Formal或工程资格。
 
 ## 9. 晋级与停止条件
 

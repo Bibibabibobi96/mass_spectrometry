@@ -5,8 +5,11 @@ from __future__ import annotations
 import copy
 import json
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from common.contracts.file_identity import file_sha256
@@ -21,6 +24,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis import (
 
 
 compile_t5_simion_candidate = candidate_compiler.compile_t5_simion_candidate
+publish_t5_simion_candidate = candidate_compiler.publish_t5_simion_candidate
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
@@ -251,6 +255,140 @@ class ThreeZoneT5SimionCandidateTests(unittest.TestCase):
             CANONICAL_CAMPAIGN, Path(receipt_value)
         )
         self.assertEqual(resolved["qualification"], "CANDIDATE_ONLY")
+
+    def test_publishes_portable_canonical_artifact_run_atomically(self) -> None:
+        run_id = "20260817_170000__build__python__three-zone-t5-candidate"
+        run_dir = (
+            self.root
+            / "artifacts"
+            / "projects"
+            / "single_reflection_oa_tof_mass_analyzer"
+            / "runs"
+            / run_id
+        )
+        code_root = self.root / "simulation_repo"
+        code_inputs = {
+            "COMPILER_SOURCE": candidate_compiler.COMPILER_SOURCE,
+            "THEORY_CORE_SOURCE": candidate_compiler.THEORY_CORE_SOURCE,
+            "EXPERIMENT_CORE_SOURCE": candidate_compiler.EXPERIMENT_CORE_SOURCE,
+            "OUTPUT_SCHEMA_SOURCE": candidate_compiler.OUTPUT_SCHEMA_SOURCE,
+        }
+        relocated_code = {}
+        for attribute, source in code_inputs.items():
+            destination = code_root / source.relative_to(REPOSITORY_ROOT)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(source.read_bytes())
+            relocated_code[attribute] = destination
+        with mock.patch.multiple(candidate_compiler, **relocated_code):
+            summary = publish_t5_simion_candidate(
+                self.campaign_path,
+                self.receipt_path,
+                run_dir,
+                workspace_root=self.root,
+            )
+        candidate_path = (
+            run_dir / "results" / "three_zone_t5_simion_candidate_resolved.json"
+        )
+        self.assertEqual(
+            set(path.relative_to(run_dir).as_posix() for path in run_dir.rglob("*")),
+            {
+                "results",
+                "results/three_zone_t5_simion_candidate_resolved.json",
+                "run_config.json",
+                "summary.json",
+                "run_manifest.json",
+            },
+        )
+        self.assertFalse(summary["formal_gate_passed"])
+        self.assertEqual(summary["candidate"]["sha256"], file_sha256(candidate_path))
+        candidate = json.loads(candidate_path.read_text(encoding="utf-8"))
+        for record in (
+            candidate["campaign"]["file"],
+            candidate["t5_evidence"]["receipt"],
+            candidate["t5_evidence"]["report"],
+        ):
+            self.assertFalse(Path(record["path"]).is_absolute())
+        run_config = json.loads((run_dir / "run_config.json").read_text(encoding="utf-8"))
+        self.assertFalse(run_config["formal_gate_passed"])
+        self.assertNotIn("project_root", run_config)
+        self.assertTrue(
+            all(not Path(value).is_absolute() for value in run_config["inputs"].values())
+        )
+        expected_code_inputs = {
+            "candidate_compiler_source": relocated_code["COMPILER_SOURCE"],
+            "three_zone_ideal_theory_source": relocated_code["THEORY_CORE_SOURCE"],
+            "three_zone_theory_experiment_source": relocated_code[
+                "EXPERIMENT_CORE_SOURCE"
+            ],
+            "candidate_output_schema": relocated_code["OUTPUT_SCHEMA_SOURCE"],
+        }
+        self.assertEqual(
+            set(expected_code_inputs),
+            set(run_config["inputs"]) - {"campaign", "t5_receipt", "t5_report"},
+        )
+        manifest = json.loads((run_dir / "run_manifest.json").read_text(encoding="utf-8"))
+        records = [
+            manifest["run_config"],
+            *manifest["inputs"].values(),
+            *manifest["outputs"],
+        ]
+        self.assertTrue(all(not Path(record["path"]).is_absolute() for record in records))
+        self.assertFalse(manifest["formal_eligible"])
+        for name, source in expected_code_inputs.items():
+            self.assertEqual(manifest["inputs"][name]["sha256"], file_sha256(source))
+        verified = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "common.contracts.verify_run_manifest",
+                str(run_dir / "run_manifest.json"),
+                "--require-status",
+                "success",
+                "--require-local-run-config",
+                "--require-run-id",
+                run_id,
+                "--require-project",
+                "single_reflection_oa_tof_mass_analyzer",
+                "--require-mode",
+                "three_zone_t5_simion_candidate_compile",
+            ],
+            cwd=REPOSITORY_ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=20,
+        )
+        self.assertEqual(verified.returncode, 0, verified.stdout + verified.stderr)
+        with self.assertRaises(FileExistsError):
+            publish_t5_simion_candidate(
+                self.campaign_path,
+                self.receipt_path,
+                run_dir,
+                workspace_root=self.root,
+            )
+
+    def test_publish_rejects_noncanonical_or_invalid_run_directory(self) -> None:
+        with self.assertRaisesRegex(ValueError, "canonical workspace artifact root"):
+            publish_t5_simion_candidate(
+                self.campaign_path,
+                self.receipt_path,
+                self.root / "20260817_170000__build__python__three-zone-t5-candidate",
+                workspace_root=self.root,
+            )
+        invalid_run = (
+            self.root
+            / "artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/not-a-run"
+        )
+        with self.assertRaisesRegex(ValueError, "run_id"):
+            publish_t5_simion_candidate(
+                self.campaign_path,
+                self.receipt_path,
+                invalid_run,
+                workspace_root=self.root,
+            )
+        self.assertFalse(invalid_run.exists())
 
 
 if __name__ == "__main__":

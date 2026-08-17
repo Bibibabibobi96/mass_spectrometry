@@ -13,6 +13,8 @@ from common.contracts.file_identity import file_sha256
 from common.contracts.machine_contracts import ContractError, validate_schema
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.compile_candidate_design import (
     compile_design_overrides,
+    derive_accelerator_outer_envelope_min_z,
+    derive_shield_bounds,
 )
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.finite_interval_design_compiler import (
     compile_finite_interval_oatof_design,
@@ -41,7 +43,10 @@ def select_profile(registry: dict[str, Any], profile_id: str) -> dict[str, Any]:
         raise ContractError(f"single-flight layout profile is not unique: {profile_id}")
     profile = copy.deepcopy(matches[0])
     if (
-        profile.get("method") != "symmetric_axis_speed_scaling_v1"
+        profile.get("method") not in {
+            "symmetric_axis_speed_scaling_v1",
+            "t5_frozen_three_zone_candidate_v1",
+        }
         or profile.get("pulse_timing_method")
         != "multipole_handoff_ballistic_centroid_v1"
         or not isinstance(profile.get("architecture_generation_id"), str)
@@ -55,13 +60,304 @@ def select_profile(registry: dict[str, Any], profile_id: str) -> dict[str, Any]:
     overrides = profile.get("design_overrides", [])
     if not isinstance(overrides, list):
         raise ContractError("single-flight design overrides must be a list")
+    if profile["method"] == "t5_frozen_three_zone_candidate_v1":
+        expected_identities = {
+            "topology_id": "three_zone_accelerator_ideal_v1",
+            "geometry_id": "three_zone_focus_origin_planes_v1",
+            "frontend_electrode_topology_id": "three_zone_frontend_v1",
+        }
+        if (
+            overrides
+            or profile.get("finite_interval_accelerator_profile") is not None
+            or any(
+                profile.get(key) != value
+                for key, value in expected_identities.items()
+            )
+            or profile.get("claim_status") != "CANDIDATE_ONLY"
+        ):
+            raise ContractError("three-zone T5 layout profile identity is invalid")
+        ring_policy = profile.get("accelerator_ring_placement_policy")
+        if ring_policy is not None and (
+            set(ring_policy) != {
+                "policy_id",
+                "zone2_ring_count",
+                "zone3_ring_count",
+                "minimum_grid_to_ring_edge_clearance_mm",
+            }
+            or ring_policy.get("policy_id")
+            != "three_zone_zonewise_equal_subdivision_1p4_v1"
+            or ring_policy.get("zone2_ring_count") != 1
+            or ring_policy.get("zone3_ring_count") != 4
+            or not math.isfinite(
+                float(ring_policy.get("minimum_grid_to_ring_edge_clearance_mm", math.nan))
+            )
+            or float(ring_policy["minimum_grid_to_ring_edge_clearance_mm"]) <= 0.0
+        ):
+            raise ContractError("three-zone accelerator ring placement policy is invalid")
     return profile
+
+
+def _derive_three_zone_ring_placement(
+    profile: dict[str, Any],
+    plane_values: dict[str, float],
+    *,
+    ring_count: int,
+    ring_thickness_mm: float,
+) -> dict[str, Any] | None:
+    """Resolve a profile-owned zonewise equal-subdivision ring placement."""
+
+    policy = profile.get("accelerator_ring_placement_policy")
+    if policy is None:
+        return None
+    zone_counts = {
+        "zone2": int(policy["zone2_ring_count"]),
+        "zone3": int(policy["zone3_ring_count"]),
+    }
+    if sum(zone_counts.values()) != ring_count:
+        raise ContractError("three-zone ring placement count differs from accelerator_count")
+    zones = (
+        ("zone2", "intermediate1", "intermediate2"),
+        ("zone3", "intermediate2", "exit"),
+    )
+    centers: list[float] = []
+    observed_clearances: list[float] = []
+    half_thickness = ring_thickness_mm / 2.0
+    for zone, left_role, right_role in zones:
+        left = plane_values[left_role]
+        right = plane_values[right_role]
+        count = zone_counts[zone]
+        pitch = (right - left) / (count + 1)
+        zone_centers = [left + index * pitch for index in range(1, count + 1)]
+        centers.extend(zone_centers)
+        observed_clearances.extend(
+            (zone_centers[0] - half_thickness - left,
+             right - zone_centers[-1] - half_thickness)
+        )
+    required_clearance = float(policy["minimum_grid_to_ring_edge_clearance_mm"])
+    observed_clearance = min(observed_clearances)
+    if observed_clearance + 1e-12 < required_clearance:
+        raise ContractError("three-zone grid-to-ring edge clearance is below policy")
+    return {
+        "policy_id": policy["policy_id"],
+        "zone_ring_counts": zone_counts,
+        "minimum_grid_to_ring_edge_clearance_mm": required_clearance,
+        "minimum_observed_grid_to_ring_edge_clearance_mm": observed_clearance,
+        "ring_z_mm": centers,
+    }
+
+
+def _compile_three_zone_candidate(
+    base_geometry: dict[str, Any],
+    profile: dict[str, Any],
+    candidate: dict[str, Any],
+    candidate_binding: dict[str, str],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Map one hash-bound T5 Candidate into the legacy-compatible geometry surface."""
+
+    if (
+        candidate.get("role") != "oatof_three_zone_simion_candidate_resolved"
+        or candidate.get("qualification") != "CANDIDATE_ONLY"
+        or candidate.get("compiler_mode") != "T5_FROZEN_PRIMARY_AND_BRANCH_ONLY"
+        or set(candidate_binding) != {"path", "sha256"}
+    ):
+        raise ContractError("three-zone T5 Candidate identity is invalid")
+    identities = candidate.get("identities", {})
+    expected_identities = {
+        "topology_id": profile["topology_id"],
+        "geometry_id": profile["geometry_id"],
+        "field_id": "three_zone_piecewise_uniform_ideal_field_v1",
+    }
+    if identities != expected_identities:
+        raise ContractError("three-zone T5 Candidate scientific identity differs")
+    topology = candidate.get("accelerator_topology")
+    if (
+        not isinstance(topology, dict)
+        or topology.get("topology_id") != profile["topology_id"]
+    ):
+        raise ContractError("three-zone T5 Candidate topology differs")
+    planes = topology.get("planes_global_z_mm", {})
+    potentials = topology.get("potentials_v", {})
+    plane_keys = {"repeller", "intermediate1", "intermediate2", "exit"}
+    if set(planes) != plane_keys or set(potentials) != plane_keys:
+        raise ContractError("three-zone T5 Candidate planes or potentials are incomplete")
+    order = ("repeller", "intermediate1", "intermediate2", "exit")
+    plane_values = {key: float(planes[key]) for key in order}
+    potential_values = {key: float(potentials[key]) for key in order}
+    if (
+        not all(
+            math.isfinite(value)
+            for value in (*plane_values.values(), *potential_values.values())
+        )
+        or not all(
+            plane_values[left] < plane_values[right]
+            for left, right in zip(order, order[1:])
+        )
+        or not all(
+            potential_values[left] > potential_values[right]
+            for left, right in zip(order, order[1:])
+        )
+    ):
+        raise ContractError("three-zone T5 Candidate topology is not ordered")
+
+    physics = candidate.get("accelerator_physics", {})
+    lengths = physics.get("lengths_mm", {})
+    if set(lengths) != {"d1", "d2", "d3"}:
+        raise ContractError("three-zone T5 Candidate lengths are incomplete")
+    d1 = float(lengths["d1"])
+    d2 = float(lengths["d2"])
+    d3 = float(lengths["d3"])
+    focus_drift = float(physics.get("focus_drift_after_exit_mm", math.nan))
+    if not all(
+        math.isfinite(value) and value > 0.0 for value in (d1, d2, d3)
+    ):
+        raise ContractError("three-zone T5 Candidate lengths must be positive")
+    for label, actual, expected in (
+        ("d1", plane_values["intermediate1"] - plane_values["repeller"], d1),
+        ("d2", plane_values["intermediate2"] - plane_values["intermediate1"], d2),
+        ("d3", plane_values["exit"] - plane_values["intermediate2"], d3),
+        ("focus", -plane_values["exit"], focus_drift),
+    ):
+        if not math.isclose(actual, expected, rel_tol=0.0, abs_tol=1e-9):
+            raise ContractError(f"three-zone T5 Candidate {label} geometry differs")
+
+    geometry = copy.deepcopy(base_geometry)
+    geom = geometry["geometry_mm"]
+    accelerator = geometry["geometry_derivation"]["accelerator"]
+    source = candidate.get("source_identity", {}).get("frozen_source", {})
+    reflectron = candidate.get("reflectron", {})
+    source_center = float(source.get("center_x_mm", math.nan))
+    source_width = float(profile["source_release_full_width_mm"])
+    stage1_voltage = float(reflectron.get("u_r1_v", math.nan))
+    stage2_field = float(reflectron.get("f_r2_v_per_mm", math.nan))
+    focus_to_reflectron = float(profile["focus_to_reflectron_mm"])
+    if not (
+        math.isfinite(source_center)
+        and 0.0 < source_center < d1
+        and math.isfinite(source_width)
+        and source_width > 0.0
+        and math.isfinite(stage1_voltage)
+        and stage1_voltage > 0.0
+        and math.isfinite(stage2_field)
+        and stage2_field > 0.0
+        and math.isfinite(focus_to_reflectron)
+        and focus_to_reflectron > 0.0
+    ):
+        raise ContractError("three-zone T5 source or reflectron mapping is invalid")
+
+    total_l23 = d2 + d3
+    geom["L_accel"] = d1 + total_l23
+    geom["accelerator_repeller_z"] = plane_values["repeller"]
+    geom["accelerator_grid1_z"] = plane_values["intermediate1"]
+    geom["accelerator_grid2_z"] = plane_values["exit"]
+    geom["accelerator_focus_z"] = 0.0
+    geom["L_flight"] = focus_to_reflectron
+    geometry["accelerator_topology"] = copy.deepcopy(topology)
+    geometry["electrodes_V"].update(
+        {
+            "repeller": potential_values["repeller"],
+            "grid1": potential_values["intermediate1"],
+            "intermediate2": potential_values["intermediate2"],
+            "grid2": potential_values["exit"],
+            "midgrid": stage1_voltage,
+            "backplate": stage1_voltage
+            + stage2_field * float(geom["L_stage2"]),
+        }
+    )
+    geometry["particle_source"]["center_z_mm"] = (
+        plane_values["repeller"] + source_center
+    )
+    geometry["particle_source"]["center_z_rule"] = (
+        "accelerator_topology.planes_global_z_mm.repeller + "
+        "geometry_derivation.accelerator.source_center_from_repeller_mm"
+    )
+    geometry["particle_source"]["size_z_mm"] = source_width
+    ring_placement = _derive_three_zone_ring_placement(
+        profile,
+        plane_values,
+        ring_count=int(geometry["rings"]["accelerator_count"]),
+        ring_thickness_mm=float(geom["accelerator_ring_thickness"]),
+    )
+    if ring_placement is not None:
+        geometry["rings"]["accelerator_placement"] = ring_placement
+    accelerator.clear()
+    accelerator.update(
+        {
+            "topology_id": profile["topology_id"],
+            "geometry_id": profile["geometry_id"],
+            "d1_mm": d1,
+            "d2_mm": total_l23,
+            "zone2_length_mm": d2,
+            "zone3_length_mm": d3,
+            "canonical_repeller_z_mm": plane_values["repeller"],
+            "canonical_grid1_z_mm": plane_values["intermediate1"],
+            "canonical_intermediate2_z_mm": plane_values["intermediate2"],
+            "canonical_grid2_z_mm": plane_values["exit"],
+            "canonical_focus_z_mm": 0.0,
+            "focus_drift_after_grid2_mm": focus_drift,
+            "source_center_from_repeller_mm": source_center,
+            "source_release_full_width_mm": source_width,
+            "rule": (
+                "Consume the hash-bound T5 frozen primary and preserve its "
+                "exact four-plane topology."
+            ),
+        }
+    )
+    reflectron_derivation = geometry["geometry_derivation"]["reflectron"]
+    reflectron_derivation.update(
+        {
+            "model_id": "oatof.three_zone_t5_frozen_reflectron.v1",
+            "total_field_free_length_mm": 2.0 * focus_to_reflectron,
+            "outbound_field_free_length_mm": focus_to_reflectron,
+            "return_field_free_length_mm": focus_to_reflectron,
+            "stage1_length_mm": float(geom["L_stage1"]),
+            "stage1_voltage_drop_V": stage1_voltage,
+            "stage2_field_V_per_mm": stage2_field,
+            "nominal_energy_per_charge_V": float(
+                source["nominal_energy_per_charge_v"]
+            ),
+            "source_release_full_width_mm": source_width,
+            "rule": (
+                "Consume the hash-bound T5 frozen U_R1 and F_R2; retain "
+                "the published reflectron lengths."
+            ),
+        }
+    )
+    derive_shield_bounds(
+        geometry, derive_accelerator_outer_envelope_min_z(geometry)
+    )
+    compilation = {
+        "method": profile["method"],
+        "candidate": copy.deepcopy(candidate_binding),
+        "candidate_campaign_id": candidate["campaign"]["campaign_id"],
+        "candidate_plan_sha256": candidate["t5_evidence"]["plan_sha256"],
+        "changed_variables": [
+            "three_zone_accelerator_topology",
+            "source_release_full_width",
+            "reflectron_voltage",
+            *(["accelerator_ring_placement"] if ring_placement is not None else []),
+        ],
+        "rebuild_effects": [
+            "accelerator_geometry",
+            "accelerator_voltage",
+            "accelerator_axial_position",
+            "reflectron_voltage",
+        ],
+        "simion_rebuild_plan": {
+            "frontend_pa": True,
+            "flight_tube_pa": True,
+            "reflectron_pa": False,
+        },
+    }
+    return geometry, compilation
 
 
 def compile_geometry_and_port(
     base_geometry: dict[str, Any],
     base_port: dict[str, Any],
     profile: dict[str, Any],
+    *,
+    three_zone_candidate: dict[str, Any] | None = None,
+    three_zone_candidate_binding: dict[str, str] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, float]]:
     if base_geometry.get("role") != "oa_tof_resolved_contract_do_not_edit":
         raise ContractError("single-flight layout requires the resolved oaTOF geometry")
@@ -81,7 +377,22 @@ def compile_geometry_and_port(
     port_x = axis_x + port_offset
 
     overrides = profile.get("design_overrides", [])
-    if overrides:
+    if profile["method"] == "t5_frozen_three_zone_candidate_v1":
+        if three_zone_candidate is None or three_zone_candidate_binding is None:
+            raise ContractError(
+                "three-zone T5 layout requires a hash-bound Candidate"
+            )
+        geometry, design_derivation = _compile_three_zone_candidate(
+            base_geometry,
+            profile,
+            three_zone_candidate,
+            three_zone_candidate_binding,
+        )
+    elif three_zone_candidate is not None or three_zone_candidate_binding is not None:
+        raise ContractError(
+            "three-zone Candidate is only valid for the T5 layout"
+        )
+    elif overrides:
         try:
             geometry, design_derivation = compile_design_overrides(
                 base_geometry, overrides

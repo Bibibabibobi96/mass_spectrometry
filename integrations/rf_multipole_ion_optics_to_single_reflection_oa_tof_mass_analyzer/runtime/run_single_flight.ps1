@@ -22,6 +22,27 @@ param(
   [Parameter(Mandatory)][string]$ResolvedPopulationContractSha256,
   [string]$LayoutProfileId = '',
   [string]$ArchitectureGenerationId = '',
+  [string]$ThreeZoneCandidate = '',
+  [string]$ThreeZoneCandidateSha256 = '',
+  [string]$ThreeZoneTopologyId = '',
+  [string]$ThreeZoneGeometryId = '',
+  [string]$ThreeZoneFrontendElectrodeTopologyId = '',
+  [string]$ThreeZoneFieldId = '',
+  [ValidateSet('','n1_smoke_producer','n100_solver_authorized_consumer')]
+  [string]$ThreeZoneSolverGateStage = '',
+  [string]$ThreeZoneSolverGateId = '',
+  [string]$ThreeZoneAuthorizationReceipt = '',
+  [string]$ThreeZoneAuthorizationReceiptSha256 = '',
+  [string]$ThreeZoneProducerParentManifest = '',
+  [string]$ThreeZoneProducerParentManifestSha256 = '',
+  [string]$ThreeZoneCampaignId = '',
+  [string]$ThreeZoneCampaignSha256 = '',
+  [string]$ThreeZoneProducerExperimentId = '',
+  [string]$ThreeZoneProducerExperimentRowSha256 = '',
+  [string]$ThreeZoneSuccessorExperimentId = '',
+  [string]$ThreeZoneSuccessorExperimentRowSha256 = '',
+  [string]$ThreeZoneSourceIdentitySha256 = '',
+  [int]$ThreeZoneGateParticleCount = 0,
   [double]$ExpectedBoreRadiusMm = 0,
   [double]$ExpectedRingOuterRadiusMm = 0,
   [double]$ExpectedShieldInnerRadiusMm = 0,
@@ -157,6 +178,304 @@ function Read-RfFrozenResolvedBudgetDocument {
   return Get-Content -LiteralPath $StageBudgetReceipt.frozen_budget `
     -Raw -Encoding UTF8 | ConvertFrom-Json
 }
+
+function Assert-RfThreeZoneArgumentSet {
+  param(
+    [Parameter(Mandatory)][string]$LayoutProfileId,
+    [string]$Candidate = '',
+    [string]$CandidateSha256 = '',
+    [string]$TopologyId = '',
+    [string]$GeometryId = '',
+    [string]$FrontendElectrodeTopologyId = '',
+    [string]$FieldId = ''
+  )
+  $isThreeZoneLayout = $LayoutProfileId -in @(
+    'three_zone_t5_primary_v1',
+    'three_zone_t5_primary_shaping_rings_1p4_v1'
+  )
+  $values = @(
+    $Candidate,$CandidateSha256,$TopologyId,$GeometryId,
+    $FrontendElectrodeTopologyId,$FieldId
+  )
+  $hasAny = @($values | Where-Object {
+    -not [string]::IsNullOrWhiteSpace([string]$_)
+  }).Count -gt 0
+  $hasAll = @($values | Where-Object {
+    [string]::IsNullOrWhiteSpace([string]$_)
+  }).Count -eq 0
+  if ($isThreeZoneLayout -ne $hasAll -or $hasAny -ne $hasAll) {
+    throw 'Three-zone runner arguments and layout identity differ.'
+  }
+  return $isThreeZoneLayout
+}
+
+function Assert-RfThreeZoneRuntimeIdentity {
+  param(
+    [Parameter(Mandatory)]$Candidate,
+    [Parameter(Mandatory)][string]$CandidateSha256,
+    [Parameter(Mandatory)]$Geometry,
+    [Parameter(Mandatory)][string]$GeometrySha256,
+    [Parameter(Mandatory)]$FrontendContract,
+    [Parameter(Mandatory)]$FrontendElectrodeTopology,
+    [Parameter(Mandatory)]$RegionField,
+    [Parameter(Mandatory)]$FieldProfile,
+    [Parameter(Mandatory)][string]$LayoutProfileId,
+    [Parameter(Mandatory)][string]$ArchitectureGenerationId,
+    [Parameter(Mandatory)][string]$TopologyId,
+    [Parameter(Mandatory)][string]$GeometryId,
+    [Parameter(Mandatory)][string]$FrontendElectrodeTopologyId,
+    [Parameter(Mandatory)][string]$FieldId
+  )
+  if ([int]$Candidate.schema_version -ne 1 -or
+      [string]$Candidate.role -ne
+      'oatof_three_zone_simion_candidate_resolved' -or
+      [string]$Candidate.qualification -ne 'CANDIDATE_ONLY' -or
+      [string]$Candidate.compiler_mode -ne
+      'T5_FROZEN_PRIMARY_AND_BRANCH_ONLY' -or
+      [string]$Candidate.identities.topology_id -ne $TopologyId -or
+      [string]$Candidate.identities.geometry_id -ne $GeometryId -or
+      [string]$Candidate.identities.field_id -ne
+      'three_zone_piecewise_uniform_ideal_field_v1' -or
+      [string]$Geometry.single_flight_layout_derivation.layout_profile_id -ne
+      $LayoutProfileId -or
+      [string]$Geometry.single_flight_layout_derivation.architecture_generation_id -ne
+      $ArchitectureGenerationId -or
+      [string]$Geometry.single_flight_layout_derivation.design_compilation.candidate.sha256 -ne
+      $CandidateSha256 -or
+      [string]$Geometry.accelerator_topology.topology_id -ne $TopologyId -or
+      [string]$FrontendContract.accelerator_topology_id -ne $TopologyId -or
+      [string]$FrontendElectrodeTopology.topology_id -ne
+      $FrontendElectrodeTopologyId -or
+      [string]$RegionField.layout_geometry.sha256 -ne $GeometrySha256 -or
+      [string]$RegionField.semantic.accelerator_topology.topology_id -ne
+      $TopologyId -or
+      [string]$RegionField.semantic.canonical_profile_id -ne
+      [string]$FieldProfile.profile_id -or
+      [string]$FieldProfile.topology_id -ne $TopologyId -or
+      [string]$FieldProfile.geometry_id -ne $GeometryId -or
+      [string]$FieldProfile.frontend_electrode_topology_id -ne
+      $FrontendElectrodeTopologyId -or
+      [string]$FieldProfile.field_id -ne $FieldId) {
+    throw 'Frozen three-zone Candidate/runtime identity differs.'
+  }
+  foreach ($mappingName in @('planes_global_z_mm','potentials_v')) {
+    foreach ($role in @('repeller','intermediate1','intermediate2','exit')) {
+      $candidateValue = [double]$Candidate.accelerator_topology.$mappingName.$role
+      if ([double]$Geometry.accelerator_topology.$mappingName.$role -ne
+          $candidateValue -or
+          [double]$RegionField.semantic.accelerator_topology.$mappingName.$role -ne
+          $candidateValue) {
+        throw 'Frozen three-zone Candidate plane or potential mapping differs.'
+      }
+    }
+  }
+}
+
+function Assert-RfThreeZoneCheckpointCensus {
+  param(
+    [Parameter(Mandatory)][bool]$Required,
+    [Parameter(Mandatory)]$Census,
+    [Parameter(Mandatory)][int]$ExpectedCount
+  )
+  if (-not $Required) { return }
+  $countProperty = $Census.PSObject.Properties[
+    'accelerator_intermediate2_forward'
+  ]
+  if ($ExpectedCount -lt 1 -or $null -eq $countProperty -or
+      [int]$countProperty.Value -ne $ExpectedCount) {
+    throw 'Three-zone intermediate2 checkpoint census differs.'
+  }
+}
+
+function Assert-RfThreeZoneAuthorizationFileBinding {
+  param(
+    [Parameter(Mandatory)]$Binding,
+    [Parameter(Mandatory)][string]$WorkspaceRoot,
+    [Parameter(Mandatory)][string]$Role
+  )
+  $path = [IO.Path]::GetFullPath((Join-Path $WorkspaceRoot ([string]$Binding.path)))
+  if (-not $path.StartsWith(
+        [IO.Path]::GetFullPath((Join-Path $WorkspaceRoot 'artifacts')) +
+          [IO.Path]::DirectorySeparatorChar,
+        [StringComparison]::OrdinalIgnoreCase
+      ) -or
+      -not (Test-Path -LiteralPath $path -PathType Leaf) -or
+      (Get-Item -LiteralPath $path).Length -ne [long]$Binding.bytes -or
+      (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ne
+        [string]$Binding.sha256) {
+    throw "Three-zone N=1 $Role binding is missing or stale."
+  }
+  return $path
+}
+
+function Assert-RfThreeZoneSolverAuthorization {
+  param(
+    [Parameter(Mandatory)][string]$Stage,
+    [Parameter(Mandatory)][int]$ParticleCount,
+    [string]$ReceiptPath = '',
+    [string]$ReceiptSha256 = '',
+    [string]$ParentManifestPath = '',
+    [string]$ParentManifestSha256 = '',
+    [string]$GateId = '',
+    [string]$CampaignId = '',
+    [string]$CampaignSha256 = '',
+    [string]$ProducerExperimentId = '',
+    [string]$ProducerExperimentRowSha256 = '',
+    [string]$SuccessorExperimentId = '',
+    [string]$SuccessorExperimentRowSha256 = '',
+    [string]$CandidateSha256 = '',
+    [string]$LayoutProfileId = '',
+    [string]$ArchitectureGenerationId = '',
+    [string]$TopologyId = '',
+    [string]$GeometryId = '',
+    [string]$FrontendElectrodeTopologyId = '',
+    [string]$AcceleratorFieldProfileId = '',
+    [string]$FieldId = '',
+    [string]$RegionFieldSemanticSha256 = '',
+    [string]$SourceIdentitySha256 = '',
+    [Parameter(Mandatory)][string]$WorkspaceRoot
+  )
+  $authorizationFiles = @(
+    $ReceiptPath,$ReceiptSha256,$ParentManifestPath,$ParentManifestSha256
+  )
+  $authorizationValues = @(
+    $ReceiptPath,$ReceiptSha256,$ParentManifestPath,$ParentManifestSha256,
+    $GateId,$CampaignId,$CampaignSha256,$ProducerExperimentId,
+    $ProducerExperimentRowSha256,$SuccessorExperimentId,
+    $SuccessorExperimentRowSha256,$SourceIdentitySha256
+  )
+  $hasAuthorization = @($authorizationFiles | Where-Object {
+    -not [string]::IsNullOrWhiteSpace([string]$_)
+  }).Count -gt 0
+  if ($Stage -eq 'n1_smoke_producer') {
+    if ($ParticleCount -ne 1 -or $hasAuthorization) {
+      throw 'Three-zone N=1 producer must freeze one particle and prohibit authorization input.'
+    }
+    return
+  }
+  if ([string]::IsNullOrWhiteSpace($Stage)) {
+    if (@($authorizationValues | Where-Object {
+          -not [string]::IsNullOrWhiteSpace([string]$_)
+        }).Count -gt 0) {
+      throw 'Non-gated three-zone run cannot consume N=1 authorization.'
+    }
+    return
+  }
+  if ($Stage -ne 'n100_solver_authorized_consumer' -or
+      $ParticleCount -ne 100 -or
+      @($authorizationValues | Where-Object {
+        [string]::IsNullOrWhiteSpace([string]$_)
+      }).Count -ne 0) {
+    throw 'Three-zone N=100 consumer authorization arguments are incomplete.'
+  }
+  foreach ($file in @(
+      @{Path=$ReceiptPath;Sha=$ReceiptSha256;Role='authorization receipt'},
+      @{Path=$ParentManifestPath;Sha=$ParentManifestSha256;Role='producer parent manifest'}
+    )) {
+    if (-not (Test-Path -LiteralPath $file.Path -PathType Leaf) -or
+        (Get-FileHash -LiteralPath $file.Path -Algorithm SHA256).Hash -ne
+          $file.Sha) {
+      throw "Three-zone N=1 $($file.Role) is missing or stale."
+    }
+  }
+  $parentManifest = Get-Content -LiteralPath $ParentManifestPath -Raw -Encoding UTF8 |
+    ConvertFrom-Json
+  $receipt = Get-Content -LiteralPath $ReceiptPath -Raw -Encoding UTF8 |
+    ConvertFrom-Json
+  if ([string]$parentManifest.role -ne 'simulation_run_manifest' -or
+      [string]$parentManifest.project -ne
+        'rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer' -or
+      [string]$parentManifest.mode -ne 'multipole_family_source_closure' -or
+      [string]$parentManifest.status -ne 'success' -or
+      [bool]$parentManifest.formal_eligible -or
+      [string]$parentManifest.run_id -ne [string]$receipt.producer.integration_run_id) {
+    throw 'Three-zone N=1 producer parent manifest identity/status differs.'
+  }
+  $receiptRecord = Get-RfManifestOutputRecord -Manifest $parentManifest `
+    -ExpectedPath $ReceiptPath -Role 'three-zone N=1 authorization receipt'
+  if ([long]$receiptRecord.bytes -ne (Get-Item -LiteralPath $ReceiptPath).Length -or
+      [string]$receiptRecord.sha256 -ne $ReceiptSha256) {
+    throw 'Three-zone N=1 authorization receipt is not the frozen parent output.'
+  }
+  $expectedSequence = @(
+    'source_release','pre_pulse_state',
+    'accelerator_grid1_forward','accelerator_intermediate2_forward',
+    'local_accelerator_exit','reflectron_entrance_forward',
+    'reflectron_turning_point','reflectron_exit_return','detector_crossing'
+  )
+  $identityDiffers = (
+    [int]$receipt.schema_version -ne 1 -or
+    [string]$receipt.role -ne
+      'rf_oatof_three_zone_n1_solver_authorization_receipt' -or
+    [string]$receipt.gate_id -ne $GateId -or
+    [string]$receipt.decision -ne 'PASS' -or
+    [string]$receipt.authorization_status -ne 'N100_SOLVER_AUTHORIZED' -or
+    [bool]$receipt.formal_gate_passed -or
+    @($receipt.failure_codes).Count -ne 0 -or
+    [string]$receipt.campaign.campaign_id -ne $CampaignId -or
+    [string]$receipt.campaign.campaign_sha256 -ne $CampaignSha256 -or
+    [string]$receipt.producer.experiment_id -ne $ProducerExperimentId -or
+    [string]$receipt.producer.experiment_row_sha256 -ne
+      $ProducerExperimentRowSha256 -or
+    [string]$receipt.authorized_successor.experiment_id -ne
+      $SuccessorExperimentId -or
+    [string]$receipt.authorized_successor.experiment_row_sha256 -ne
+      $SuccessorExperimentRowSha256 -or
+    [int]$receipt.authorized_successor.particle_count -ne 100 -or
+    [string]$receipt.identities.candidate_sha256 -ne $CandidateSha256 -or
+    [string]$receipt.identities.layout_profile_id -ne $LayoutProfileId -or
+    [string]$receipt.identities.architecture_generation_id -ne
+      $ArchitectureGenerationId -or
+    [string]$receipt.identities.topology_id -ne $TopologyId -or
+    [string]$receipt.identities.geometry_id -ne $GeometryId -or
+    [string]$receipt.identities.frontend_electrode_topology_id -ne
+      $FrontendElectrodeTopologyId -or
+    [string]$receipt.identities.accelerator_field_profile_id -ne
+      $AcceleratorFieldProfileId -or
+    [string]$receipt.identities.field_id -ne $FieldId -or
+    [string]$receipt.identities.resolved_region_field_semantic_sha256 -ne
+      $RegionFieldSemanticSha256 -or
+    [string]$receipt.identities.source_identity_sha256 -ne
+      $SourceIdentitySha256 -or
+    (@($receipt.evidence.required_event_sequence) -join ',') -ne
+      ($expectedSequence -join ',')
+  )
+  if ($identityDiffers) {
+    throw 'Three-zone N=1 authorization receipt identity or decision differs.'
+  }
+  foreach ($event in $expectedSequence[2..8]) {
+    if ([int]$receipt.evidence.census.$event -ne 1) {
+      throw 'Three-zone N=1 authorization census differs.'
+    }
+  }
+  if ([int]$receipt.evidence.census.launched -ne 1) {
+    throw 'Three-zone N=1 authorization census differs.'
+  }
+  $transportManifestPath = Assert-RfThreeZoneAuthorizationFileBinding `
+    -Binding $receipt.producer.transport_manifest -WorkspaceRoot $WorkspaceRoot `
+    -Role 'transport manifest'
+  foreach ($binding in @(
+      @{Value=$receipt.evidence.summary;Role='summary'},
+      @{Value=$receipt.evidence.checkpoints;Role='checkpoints'}
+    )) {
+    Assert-RfThreeZoneAuthorizationFileBinding -Binding $binding.Value `
+      -WorkspaceRoot $WorkspaceRoot -Role $binding.Role | Out-Null
+  }
+  $transportManifest = Get-Content -LiteralPath $transportManifestPath `
+    -Raw -Encoding UTF8 | ConvertFrom-Json
+  if ([string]$transportManifest.role -ne 'simulation_run_manifest' -or
+      [string]$transportManifest.run_id -ne
+        [string]$receipt.producer.transport_run_id -or
+      [string]$transportManifest.project -ne
+        'rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer' -or
+      [string]$transportManifest.mode -ne 'rf_to_oatof_simion_single_flight' -or
+      [string]$transportManifest.status -ne 'success' -or
+      [bool]$transportManifest.formal_eligible) {
+    throw 'Three-zone N=1 transport manifest identity/status differs.'
+  }
+}
+
+$hasThreeZoneCandidate = Assert-RfThreeZoneArgumentSet -LayoutProfileId $LayoutProfileId -Candidate $ThreeZoneCandidate -CandidateSha256 $ThreeZoneCandidateSha256 -TopologyId $ThreeZoneTopologyId -GeometryId $ThreeZoneGeometryId -FrontendElectrodeTopologyId $ThreeZoneFrontendElectrodeTopologyId -FieldId $ThreeZoneFieldId
 
 if (-not (Test-Path -LiteralPath $SimionExe -PathType Leaf)) { throw "SIMION is missing: $SimionExe" }
 $runProjectId = 'rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer'
@@ -367,6 +686,63 @@ try {
     throw 'Resolved region field semantic authority differs.'
   }
   $selectedFieldProfileId = [string]$resolvedRegionField.semantic.canonical_profile_id
+  $selectedFieldProfiles = @($settings.accelerator_field_profiles | Where-Object {
+    [string]$_.profile_id -eq $selectedFieldProfileId
+  })
+  if ($hasThreeZoneCandidate -and $selectedFieldProfiles.Count -ne 1) {
+    throw 'Three-zone field profile does not resolve uniquely in the frozen configuration.'
+  }
+  $selectedFieldProfile = if ($selectedFieldProfiles.Count -eq 1) {
+    $selectedFieldProfiles[0]
+  } else { $null }
+  $threeZoneCandidateFrozen = $null
+  $threeZoneCandidateDocument = $null
+  if ($hasThreeZoneCandidate) {
+    $threeZoneCandidateFrozen = Join-Path $package.input_dir 'three_zone_t5_candidate_resolved.json'
+    Copy-RfStableFile -SourceRunRoot $workspaceRoot -SourcePath $ThreeZoneCandidate -Destination $threeZoneCandidateFrozen -Role 'three-zone T5 Candidate resolved input' | Out-Null
+    if ((Get-FileHash -LiteralPath $threeZoneCandidateFrozen -Algorithm SHA256).Hash -ne
+        $ThreeZoneCandidateSha256) {
+      throw 'Three-zone T5 Candidate SHA differs.'
+    }
+    $threeZoneCandidateDocument = Get-Content -LiteralPath $threeZoneCandidateFrozen -Raw -Encoding UTF8 | ConvertFrom-Json
+  }
+  Assert-RfThreeZoneSolverAuthorization -Stage $ThreeZoneSolverGateStage `
+    -ParticleCount $ThreeZoneGateParticleCount `
+    -ReceiptPath $ThreeZoneAuthorizationReceipt `
+    -ReceiptSha256 $ThreeZoneAuthorizationReceiptSha256 `
+    -ParentManifestPath $ThreeZoneProducerParentManifest `
+    -ParentManifestSha256 $ThreeZoneProducerParentManifestSha256 `
+    -GateId $ThreeZoneSolverGateId -CampaignId $ThreeZoneCampaignId `
+    -CampaignSha256 $ThreeZoneCampaignSha256 `
+    -ProducerExperimentId $ThreeZoneProducerExperimentId `
+    -ProducerExperimentRowSha256 $ThreeZoneProducerExperimentRowSha256 `
+    -SuccessorExperimentId $ThreeZoneSuccessorExperimentId `
+    -SuccessorExperimentRowSha256 $ThreeZoneSuccessorExperimentRowSha256 `
+    -CandidateSha256 $ThreeZoneCandidateSha256 -LayoutProfileId $LayoutProfileId `
+    -ArchitectureGenerationId $ArchitectureGenerationId `
+    -TopologyId $ThreeZoneTopologyId -GeometryId $ThreeZoneGeometryId `
+    -FrontendElectrodeTopologyId $ThreeZoneFrontendElectrodeTopologyId `
+    -AcceleratorFieldProfileId $selectedFieldProfileId `
+    -FieldId $ThreeZoneFieldId `
+    -RegionFieldSemanticSha256 $ResolvedRegionFieldSemanticSha256 `
+    -SourceIdentitySha256 $ThreeZoneSourceIdentitySha256 `
+    -WorkspaceRoot $workspaceRoot
+  $threeZoneAuthorizationReceiptFrozen = $null
+  $threeZoneProducerParentManifestFrozen = $null
+  if ($ThreeZoneSolverGateStage -eq 'n100_solver_authorized_consumer') {
+    $threeZoneAuthorizationReceiptFrozen = Join-Path $package.input_dir `
+      'three_zone_n1_solver_authorization_receipt.json'
+    Copy-RfStableFile -SourceRunRoot $workspaceRoot `
+      -SourcePath $ThreeZoneAuthorizationReceipt `
+      -Destination $threeZoneAuthorizationReceiptFrozen `
+      -Role 'three-zone N=1 solver authorization receipt' | Out-Null
+    $threeZoneProducerParentManifestFrozen = Join-Path $package.input_dir `
+      'three_zone_n1_producer_parent_run_manifest.json'
+    Copy-RfStableFile -SourceRunRoot $workspaceRoot `
+      -SourcePath $ThreeZoneProducerParentManifest `
+      -Destination $threeZoneProducerParentManifestFrozen `
+      -Role 'three-zone N=1 producer parent manifest' | Out-Null
+  }
   $hasGovernedLayout = -not [string]::IsNullOrWhiteSpace($LayoutProfileId)
   $hasGeometry = -not [string]::IsNullOrWhiteSpace($OatofResolvedGeometry)
   $hasPulseSchedule = -not [string]::IsNullOrWhiteSpace($PulseSchedule)
@@ -617,6 +993,10 @@ try {
         $MotherParticleSourceReceiptSha256))) {
     throw 'Materialized mother-source receipt identity is incomplete.'
   }
+  if (($isPrePulseRestart -or $isStagedGrid2Restart) -and
+      ($hasMotherOverride -or $hasMaterializedMotherReceipt)) {
+    throw 'Restart source modes prohibit an unused mother-source override.'
+  }
   $sourceToCopy = if ($isPrePulseRestart) {
     [IO.Path]::GetFullPath($PrePulseSourceState)
   } elseif ($isStagedGrid2Restart) {
@@ -781,6 +1161,27 @@ try {
       ($frontendBasisElectrodeIds -join ',') -ne
       ($expectedFrontendBasisElectrodeIds -join ',')) {
     throw 'Resolved frontend electrode topology is invalid or non-contiguous.'
+  }
+  if ($hasThreeZoneCandidate) {
+    $threeZoneRuntimeIdentity = @{
+      Candidate = $threeZoneCandidateDocument
+      CandidateSha256 = $ThreeZoneCandidateSha256
+      Geometry = $oatofGeometryDocument
+      GeometrySha256 = (
+        Get-FileHash -LiteralPath $oatofGeometry -Algorithm SHA256
+      ).Hash
+      FrontendContract = $frontendGeometry
+      FrontendElectrodeTopology = $frontendElectrodeTopology
+      RegionField = $resolvedRegionField
+      FieldProfile = $selectedFieldProfile
+      LayoutProfileId = $LayoutProfileId
+      ArchitectureGenerationId = $ArchitectureGenerationId
+      TopologyId = $ThreeZoneTopologyId
+      GeometryId = $ThreeZoneGeometryId
+      FrontendElectrodeTopologyId = $ThreeZoneFrontendElectrodeTopologyId
+      FieldId = $ThreeZoneFieldId
+    }
+    Assert-RfThreeZoneRuntimeIdentity @threeZoneRuntimeIdentity
   }
   $apertureWidthMm = [double]$frontendGeometry.aperture.width_mm
   $apertureHeightMm = [double]$frontendGeometry.aperture.height_mm
@@ -1493,6 +1894,39 @@ try {
     parameters=[ordered]@{ connection_profile_id=$ConnectionProfileId; source_branch_id=$SourceBranchId; single_flight_pa_cache_policy=$PaCachePolicy; single_flight_pa_cache_policy_provenance=$PaCachePolicyProvenance; pa_cache_dispositions=$paCacheDispositions; layout_profile_id=$(if($hasGovernedLayout){$LayoutProfileId}else{$null}); architecture_generation_id=$(if($hasGovernedLayout){$ArchitectureGenerationId}else{$null}); source_profile_id=$(if($SourceProfileId){$SourceProfileId}else{$null}); field_overlay_id=$resolvedFieldOverlayId; bore_radius_mm=[double]$oatofGeometryDocument.geometry_mm.bore_r; ring_outer_radius_mm=[double]$oatofGeometryDocument.geometry_mm.ring_outer_r; shield_inner_radius_mm=[double]$oatofGeometryDocument.geometry_mm.flight_tube_r; frontend_grid_profile_id=$selectedGridProfileId; frontend_cell_mm_xyz=[ordered]@{x=$frontendCellMmX;y=$frontendCellMmY;z=$frontendCellMmZ}; accelerator_overlay_enabled=$overlayEnabled; accelerator_overlay_cell_mm_xyz=$(if($overlayEnabled){[ordered]@{x=$overlayCellMmX;y=$overlayCellMmY;z=$overlayCellMmZ}}else{$null}); accelerator_overlay_boundary_mode=$(if($overlayEnabled){'coarse_electrode_basis_dirichlet_v1'}else{$null}); oatof_numerical_profile_id=$selectedOatofNumericalProfileId; trajectory_quality_profile_id=$selectedTrajectoryQualityProfileId; trajectory_quality=$trajectoryQuality; time_integration_profile_id=$selectedTimeIntegrationProfileId; rf_steps_per_period=$rfStepsPerPeriod; spatial_window_profile_id=$(if($spatialWindowProfiles.Count -eq 1){$SpatialWindowProfileId}else{$null}); accelerator_field_profile_id=$selectedFieldProfileId; resolved_region_field_contract_sha256=$ResolvedRegionFieldContractSha256; resolved_region_field_semantic_sha256=$ResolvedRegionFieldSemanticSha256; resolved_population_contract_sha256=$ResolvedPopulationContractSha256; max_parallel_batches=$maxParallelBatches; clock_basis=[string]$settings.clock_basis; launched_particle_count=$launched; particle_count=$launched; population_denominator_count=$PopulationDenominatorCount; eligible_population_count=$EligiblePopulationCount; population_basis=$(if($SamplingMode -eq 'continuous_injection_full_population'){'candidate_full_population'}elseif($SamplingMode -eq 'pulse_eligible_conditional'){'pulse_eligible_conditional_population'}else{'source_contract_population'}); execution_batch_count=$(if($launched -ge [int]$settings.batching_policy.enabled_at_particle_count){[int]$settings.batching_policy.default_batch_count}else{1}); execution_batches_parallel=$(if($launched -ge [int]$settings.batching_policy.enabled_at_particle_count){[bool]$settings.batching_policy.parallel_after_cache_warmup}else{$false}); aperture_width_mm=$apertureWidthMm; aperture_height_mm=$apertureHeightMm; aperture_boolean_boundary_policy=[string]$apertureDiscretization.boolean_boundary_policy; aperture_grid_warnings=$apertureGridWarnings; frontend_open_aperture_column_count=[int]$apertureTopology.open_column_count; frontend_aperture_guard_electrode_check_passed=[bool]$apertureTopology.guard_electrode_check_passed; frontend_aperture_topology_report_sha256=(Get-FileHash -LiteralPath $apertureTopologyReport -Algorithm SHA256).Hash; rod_end_to_accelerator_shield_mm=1.0; surrounded_transition=$true; accelerator_axis_x_mm=[double]$oatofGeometryDocument.coordinate_convention.accelerator_axis_x; pulse_time_us=$pulseTimeUs; pulse_width_us=$pulseWidthUs; design_compilation=$(if($null -ne $layoutDerivation){$layoutDerivation.design_compilation}else{$null}); source_release_full_width_mm=[double]$oatofGeometryDocument.particle_source.size_z_mm; reflectron_stage2_length_mm=[double]$oatofGeometryDocument.geometry_mm.L_stage2; reflectron_midgrid_voltage_V=[double]$oatofGeometryDocument.electrodes_V.midgrid; reflectron_backplate_voltage_V=[double]$oatofGeometryDocument.electrodes_V.backplate; reflectron_pa0_sha256=(Get-FileHash -LiteralPath $reflectronPa0 -Algorithm SHA256).Hash; frontend_gem_sha256=$frontendHash; frontend_pa0_sha256=(Get-FileHash -LiteralPath $cachePa0 -Algorithm SHA256).Hash; accelerator_overlay_pa0_sha256=$(if($overlayEnabled){(Get-FileHash -LiteralPath $overlayCachePa0 -Algorithm SHA256).Hash}else{$null}) }
     artifact_retention=[ordered]@{policy_version=1;class='compact';reason=$null}; formal_gate_passed=$false
   }
+  if ($hasThreeZoneCandidate) {
+    $runConfiguration.inputs.three_zone_t5_candidate =
+      $threeZoneCandidateFrozen
+    $runConfiguration.parameters.three_zone_topology_id =
+      $ThreeZoneTopologyId
+    $runConfiguration.parameters.three_zone_geometry_id =
+      $ThreeZoneGeometryId
+    $runConfiguration.parameters.three_zone_frontend_electrode_topology_id =
+      $ThreeZoneFrontendElectrodeTopologyId
+    $runConfiguration.parameters.three_zone_field_id = $ThreeZoneFieldId
+    $runConfiguration.parameters.three_zone_candidate_sha256 =
+      $ThreeZoneCandidateSha256
+    $runConfiguration.parameters.accelerator_intermediate2_forward_expected_count =
+      $launched
+  }
+  if ($ThreeZoneSolverGateStage -ne '') {
+    $runConfiguration.parameters.three_zone_solver_gate_stage =
+      $ThreeZoneSolverGateStage
+    $runConfiguration.parameters.three_zone_solver_gate_id =
+      $ThreeZoneSolverGateId
+  }
+  if ($ThreeZoneSolverGateStage -eq 'n100_solver_authorized_consumer') {
+    $runConfiguration.inputs.three_zone_n1_solver_authorization_receipt =
+      $threeZoneAuthorizationReceiptFrozen
+    $runConfiguration.inputs.three_zone_n1_producer_parent_manifest =
+      $threeZoneProducerParentManifestFrozen
+    $runConfiguration.parameters.three_zone_n1_solver_authorization_receipt_sha256 =
+      $ThreeZoneAuthorizationReceiptSha256
+    $runConfiguration.parameters.three_zone_n1_producer_parent_manifest_sha256 =
+      $ThreeZoneProducerParentManifestSha256
+    $runConfiguration.parameters.three_zone_source_identity_sha256 =
+      $ThreeZoneSourceIdentitySha256
+  }
   if ($isStagedGrid2Restart) {
     $runConfiguration.inputs.Remove('pulse_schedule')
     $runConfiguration.parameters.Remove('pulse_time_us')
@@ -1720,6 +2154,12 @@ try {
     '--frontend',$frontendContract,'--oatof',$oatofGeometry,'--output',$sixPanel,
     '--metadata',$sixPanelMetadata) -Failure 'Single-flight six-panel spatial diagnostic failed.'
   $result = Get-Content -LiteralPath $package.summary -Raw -Encoding UTF8 | ConvertFrom-Json
+  Assert-RfThreeZoneCheckpointCensus -Required $hasThreeZoneCandidate `
+    -Census $result.census -ExpectedCount $launched
+  if ($hasThreeZoneCandidate) {
+    $runConfiguration.parameters.accelerator_intermediate2_forward_count =
+      [int]$result.census.accelerator_intermediate2_forward
+  }
   $result | Add-Member -NotePropertyName single_flight_pa_cache_policy `
     -NotePropertyValue $PaCachePolicy -Force
   $result | Add-Member -NotePropertyName single_flight_pa_cache_policy_provenance `
