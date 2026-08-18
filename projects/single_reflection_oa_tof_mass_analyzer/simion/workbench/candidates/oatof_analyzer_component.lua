@@ -305,8 +305,43 @@ function component.new(config)
   end
 
   local function initialize_workbench(state)
-    exact_keys(state, {instances=true}, 'workbench_state')
+    local active_scope = state.active_scope or 'full_flight'
+    if active_scope == 'full_flight' then
+      exact_keys(state, {instances=true}, 'workbench_state')
+    else
+      exact_keys(state, {instances=true, active_scope=true}, 'workbench_state')
+      assert(active_scope == 'pre_pulse_frontend_accelerator',
+        'workbench active scope is unsupported')
+    end
     assert(type(state.instances) == 'table', 'workbench_state.instances must be a table')
+    if active_scope == 'pre_pulse_frontend_accelerator' then
+      local accelerator = state.instances[roles.accelerator]
+      assert(type(accelerator) == 'table',
+        'pre-pulse workbench accelerator instance is missing')
+      filename_matches(accelerator.filename, payload_filenames.accelerator,
+        'accelerator')
+      exact_keys(accelerator, {filename=true, nx=true, ny=true, nz=true,
+        dx_mm=true, dy_mm=true, dz_mm=true, scale=true},
+        'workbench instance accelerator')
+      positive(accelerator.nx, 'accelerator.nx')
+      positive(accelerator.ny, 'accelerator.ny')
+      positive(accelerator.nz, 'accelerator.nz')
+      positive(accelerator.dx_mm, 'accelerator.dx_mm')
+      positive(accelerator.dy_mm, 'accelerator.dy_mm')
+      positive(accelerator.dz_mm, 'accelerator.dz_mm')
+      positive(accelerator.scale, 'accelerator.scale')
+      local half_x =
+        (accelerator.nx - 1) * accelerator.dx_mm * accelerator.scale / 2
+      local half_y =
+        (accelerator.ny - 1) * accelerator.dy_mm * accelerator.scale / 2
+      return {placements={accelerator={
+        x_mm=g.accelerator_axis_x_mm - half_x,
+        y_mm=g.accelerator_axis_y_mm - half_y,
+        z_mm=g.accelerator_instance_z_mm,
+        az_deg=0, el_deg=0, rt_deg=0, scale=accelerator.scale,
+      }}, static_electrode_plans=static_electrode_plans(nil),
+        active_scope=active_scope}
+    end
     local max_role = math.max(roles.flight_tube, roles.reflectron,
       roles.accelerator, roles.detector)
     assert(#state.instances >= max_role,

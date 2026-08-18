@@ -116,6 +116,7 @@ def make_single_flight_publication_fixture(
         resolved,
         {
             "integration_id": INTEGRATION_ID,
+            "connector": {"length_mm": 0.0},
             "selection": {
                 "connection_profile_id": profile_id,
                 "upstream_project_id": "rf_octupole_ion_optics",

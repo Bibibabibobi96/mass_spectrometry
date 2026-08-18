@@ -287,6 +287,21 @@ scratch `6,741,298`和正式successor接管后的最后2个scratch `1,871,436`�
 （`33,919,321,596 bytes`）、全部Formal发布物、成功manifest逐文件冻结资产及唯一结果/不可重构输入；
 清理不改变33行矩阵、ZERO-MATCH结果、资格状态或后续复现入口。
 
+## 真实场pulse时刻自动选择与复用
+
+gap 3.2 mm的detector-blind held-off time-series已在同一N=100、同一三区real-PA、同一RF与数值身份下
+冻结321个原生采样时刻；自动选择得到`47.45133445865456 us`。随后唯一
+`family_source_closure`入口以该候选完成一次完整pulse-on确认：
+`100→95 handoff→81 pre-pulse→80 intermediate2→69 exit→69 detector`，parent/child run分别为
+`20260818_232300__sim__cross__three-zone-pulse-confirmation-gap3p2__n100`和同时间戳的SIMION child。
+该结果只授权相同内容身份的功能复用，不声称时刻全局最优、分辨率最优、Candidate或Formal资格。
+
+resolved pulse schedule仍是runner唯一时刻输入。prepare按源、人口、有序ID、connection/gap、三区几何、
+场、RF、数值和selector规则计算内容身份；命中已验证receipt时直接复用上述时刻，缺失或身份变化时保留
+原schedule派生路径。用户不填写标量pulse时间，也不新增runner CLI；time-series、候选选择、pulse-on确认
+和后续复用均由同一公开workflow及manifest/receipt链承载。verified cache只是可删除加速层，确认child
+manifest仍是证据权威。
+
 ## 脉冲分辨率优化能力与边界
 
 当前baseline证据由

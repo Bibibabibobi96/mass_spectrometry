@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 
 from matplotlib import pyplot as plt
+from matplotlib.patches import PathPatch
 
 from common.contracts.particle_physics import kinetic_energy_ev
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.analyze_single_flight import (
@@ -15,6 +16,16 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.plot_single_flight_spatial_six_panel import (
     _accelerator,
+    _apply_shared_nice_ticks,
+    _accelerator_boundary_planes,
+    _accelerator_cross_section,
+    _accelerator_shield_geometry,
+    _connector_through_hole_geometry,
+    _ideal_source_cross_section,
+    _ideal_source_geometry,
+    _ideal_source_longitudinal,
+    _rectangular_frame_path,
+    _repeller_body_geometry,
     marker_area,
 )
 
@@ -263,9 +274,16 @@ class SingleFlightAnalysisTests(unittest.TestCase):
         self.assertLess(marker_area(1000), marker_area(100))
         self.assertLessEqual(marker_area(1000), 2.0)
 
-    def test_three_zone_panel_d_uses_frozen_ring_positions_and_three_grid_lines(self) -> None:
+    def test_three_zone_panel_d_renders_electrode_thickness_and_grid_planes(self) -> None:
         oatof = {
-            "geometry_mm": {"accelerator_bore_half": 5.0, "accelerator_ring_width": 5.0},
+            "geometry_mm": {
+                "accelerator_bore_half": 5.0,
+                "accelerator_ring_width": 5.0,
+                "accelerator_ring_thickness": 1.0,
+                "accelerator_repeller_thickness": 1.5,
+                "accelerator_exit_grid_half_width": 15.0,
+                "accelerator_shield_wall": 4.0,
+            },
             "coordinate_convention": {"accelerator_axis_x": -69.0},
             "rings": {"accelerator_count": 2},
             "accelerator_topology": {
@@ -280,17 +298,317 @@ class SingleFlightAnalysisTests(unittest.TestCase):
         }
         frontend = {
             "accelerator_topology_id": "three_zone_accelerator_ideal_v1",
-            "accelerator_local_region": {"ring_z_mm": [-56.9, -48.4]},
+            "accelerator_local_region": {
+                "axis_x_mm": -69.0, "axis_y_mm": 0.0,
+                "shield_center_z_mm": -57.875,
+                "shield_outer_width_mm": 38.0, "shield_inner_width_mm": 30.0,
+                "shield_span_z_mm": 30.25, "negative_x_face_mm": -88.0,
+                "shield_wall_mm": 4.0, "shield_back_z_mm": -73.0,
+                "grid2_z_mm": -42.75, "ring_z_mm": [-56.9, -48.4],
+                "repeller_front_z_mm": -63.0, "repeller_thickness_mm": 1.5,
+                "grid1_z_mm": -59.75,
+                "intermediate2_z_mm": -54.65,
+                "electrode_width_mm": 20.0,
+                "port_center_y_mm": 0.0, "port_center_z_mm": -61.5,
+                "numerical_port_width_mm": 2.0,
+                "numerical_port_height_mm": 1.0,
+            },
+            "source_exit_center_mm": {"x": -88.0, "y": 0.0, "z": -61.5},
         }
         figure, axis = plt.subplots()
         try:
             _accelerator(axis, oatof, frontend)
             dashed = [float(line.get_ydata()[0]) for line in axis.lines if line.get_linestyle() == "--"]
-            solid = [float(line.get_ydata()[0]) for line in axis.lines if line.get_linestyle() == "-"]
+            patches = list(axis.patches)
         finally:
             plt.close(figure)
         self.assertEqual(dashed, [-59.75, -54.65, -42.75])
-        self.assertEqual(solid, [-63.0, -56.9, -48.4])
+        self.assertEqual(
+            [float(line.get_xdata()[1] - line.get_xdata()[0])
+             for line in axis.lines if line.get_linestyle() == "--"],
+            [20.0, 20.0, 30.0],
+        )
+        self.assertEqual(len(patches), 7)
+        self.assertIsInstance(patches[0], PathPatch)
+        shield_path = patches[0].get_path()
+        self.assertEqual(
+            (shield_path.get_extents().xmin, shield_path.get_extents().ymin,
+             shield_path.get_extents().width, shield_path.get_extents().height),
+            (-88.0, -73.0, 38.0, 30.25),
+        )
+        self.assertEqual(list(shield_path.codes).count(shield_path.MOVETO), 1)
+        self.assertEqual(len(shield_path.vertices), 9)
+        self.assertIn(patches[0].get_linestyle(), ("-", "solid"))
+        self.assertEqual(
+            [patch.get_label() for patch in patches].count("accelerator shield body"),
+            1,
+        )
+        self.assertNotIn("outer", str(patches[0].get_label()))
+        self.assertEqual(
+            (patches[1].get_x(), patches[1].get_y(), patches[1].get_width(), patches[1].get_height()),
+            (-88.0, -62.0, 4.0, 1.0),
+        )
+        self.assertEqual((patches[2].get_y(), patches[2].get_height()), (-64.5, 1.5))
+        self.assertEqual(
+            sorted((patch.get_y(), patch.get_height()) for patch in patches[3:]),
+            [(-57.4, 1.0), (-57.4, 1.0), (-48.9, 1.0), (-48.9, 1.0)],
+        )
+        self.assertNotIn("shield wall 4 mm", [line.get_label() for line in axis.lines])
+
+    def test_panel_e_shows_exit_grid_and_ring_inner_outer_widths(self) -> None:
+        oatof = {
+            "geometry_mm": {
+                "accelerator_bore_half": 5.0,
+                "accelerator_ring_width": 5.0,
+                "accelerator_exit_grid_half_width": 15.0,
+                "accelerator_shield_wall": 3.0,
+            },
+            "coordinate_convention": {"accelerator_axis_x": -69.0},
+        }
+        frontend = {"accelerator_local_region": {
+            "axis_x_mm": -69.0, "axis_y_mm": 0.0,
+            "shield_center_z_mm": -55.0,
+            "shield_outer_width_mm": 46.0, "shield_inner_width_mm": 40.0,
+            "shield_span_z_mm": 24.0, "negative_x_face_mm": -92.0,
+            "shield_wall_mm": 3.0, "shield_back_z_mm": -67.0,
+            "grid2_z_mm": -43.0,
+            "port_center_y_mm": 1.0, "port_center_z_mm": -55.0,
+            "numerical_port_width_mm": 6.0,
+            "numerical_port_height_mm": 4.0,
+        }, "source_exit_center_mm": {"x": -92.0, "y": 1.0, "z": -55.0}}
+        figure, axis = plt.subplots()
+        try:
+            _accelerator_cross_section(axis, oatof, frontend)
+            boxes = list(axis.patches)
+        finally:
+            plt.close(figure)
+        self.assertEqual(len(boxes), 4)
+        self.assertIsInstance(boxes[0], PathPatch)
+        shield_path = boxes[0].get_path()
+        self.assertEqual(list(shield_path.codes).count(shield_path.MOVETO), 2)
+        self.assertEqual(
+            (shield_path.get_extents().xmin, shield_path.get_extents().xmax,
+             shield_path.get_extents().ymin, shield_path.get_extents().ymax),
+            (-92.0, -46.0, -23.0, 23.0),
+        )
+        self.assertIn(boxes[0].get_linestyle(), ("-", "solid"))
+        self.assertEqual((boxes[1].get_x(), boxes[1].get_width()), (-92.0, 3.0))
+        self.assertEqual((boxes[1].get_y(), boxes[1].get_height()), (-2.0, 6.0))
+        self.assertIsInstance(boxes[2], PathPatch)
+        ring_path = boxes[2].get_path()
+        self.assertEqual(list(ring_path.codes).count(ring_path.MOVETO), 2)
+        self.assertEqual(
+            (ring_path.get_extents().xmin, ring_path.get_extents().xmax,
+             ring_path.get_extents().ymin, ring_path.get_extents().ymax),
+            (-79.0, -59.0, -10.0, 10.0),
+        )
+        labels = [box.get_label() for box in boxes]
+        self.assertNotIn("shield inner vacuum", labels)
+        self.assertNotIn("shield outer body", labels)
+        self.assertEqual(labels.count("accelerator shield body"), 1)
+        self.assertNotIn("ring outer width", labels)
+        self.assertNotIn("ring inner bore", labels)
+        self.assertEqual(labels.count("shaping ring body (inner/outer width)"), 1)
+        self.assertEqual(labels.count("exit-grid extent"), 1)
+
+    def test_compound_frame_follows_changed_geometry(self) -> None:
+        frame = _rectangular_frame_path(
+            (-17.0, 8.0, 60.0, 42.0),
+            (-12.0, 13.0, 50.0, 37.0),
+        )
+        self.assertEqual(list(frame.codes).count(frame.MOVETO), 2)
+        self.assertEqual(
+            (frame.get_extents().xmin, frame.get_extents().xmax,
+             frame.get_extents().ymin, frame.get_extents().ymax),
+            (-17.0, 43.0, 8.0, 50.0),
+        )
+    def test_shared_nice_ticks_follow_current_and_larger_geometry(self) -> None:
+        figure, axes = plt.subplots(2, 2)
+        current_d, current_e, larger_d, larger_e = axes.flat
+        try:
+            current_d.set(xlim=(-89.9, -48.1), ylim=(-74.5125, -41.2375))
+            current_e.set(xlim=(-89.9, -48.1), ylim=(-20.9, 20.9))
+            current_step = _apply_shared_nice_ticks((current_d, current_e))
+            larger_d.set(xlim=(-130.0, -42.0), ylim=(-98.0, -40.0))
+            larger_e.set(xlim=(-130.0, -42.0), ylim=(-44.0, 44.0))
+            larger_step = _apply_shared_nice_ticks((larger_d, larger_e))
+            current_locators = (
+                current_d.xaxis.get_major_locator(), current_d.yaxis.get_major_locator(),
+                current_e.xaxis.get_major_locator(), current_e.yaxis.get_major_locator(),
+            )
+            larger_locators = (
+                larger_d.xaxis.get_major_locator(), larger_d.yaxis.get_major_locator(),
+                larger_e.xaxis.get_major_locator(), larger_e.yaxis.get_major_locator(),
+            )
+        finally:
+            plt.close(figure)
+        self.assertEqual(current_step, 5.0)
+        self.assertEqual(larger_step, 10.0)
+        for locator in current_locators:
+            ticks = locator.tick_values(0.0, 20.0)
+            self.assertTrue(all(abs(right - left - 5.0) < 1e-12 for left, right in zip(ticks, ticks[1:])))
+        for locator in larger_locators:
+            ticks = locator.tick_values(0.0, 40.0)
+            self.assertTrue(all(abs(right - left - 10.0) < 1e-12 for left, right in zip(ticks, ticks[1:])))
+
+    def test_shield_geometry_fails_closed_on_inconsistent_wall(self) -> None:
+        oatof = {
+            "geometry_mm": {"accelerator_shield_wall": 4.0},
+            "coordinate_convention": {"accelerator_axis_x": -69.0},
+        }
+        frontend = {"accelerator_local_region": {
+            "axis_x_mm": -69.0, "axis_y_mm": 0.0,
+            "shield_center_z_mm": -57.875,
+            "shield_outer_width_mm": 38.0, "shield_inner_width_mm": 31.0,
+            "shield_span_z_mm": 30.25, "negative_x_face_mm": -88.0,
+            "shield_wall_mm": 4.0, "shield_back_z_mm": -73.0,
+            "grid2_z_mm": -42.75,
+        }}
+        with self.assertRaisesRegex(ValueError, "shield geometry is inconsistent"):
+            _accelerator_shield_geometry(oatof, frontend)
+
+    def test_shield_geometry_requires_all_frozen_frontend_fields(self) -> None:
+        oatof = {
+            "geometry_mm": {"accelerator_shield_wall": 4.0},
+            "coordinate_convention": {"accelerator_axis_x": -69.0},
+        }
+        with self.assertRaises(KeyError):
+            _accelerator_shield_geometry(
+                oatof, {"accelerator_local_region": {"axis_x_mm": -69.0}}
+            )
+
+    def test_connector_through_hole_requires_complete_frontend_fields(self) -> None:
+        oatof = {
+            "geometry_mm": {"accelerator_shield_wall": 4.0},
+            "coordinate_convention": {"accelerator_axis_x": -69.0},
+        }
+        with self.assertRaises(KeyError):
+            _connector_through_hole_geometry(
+                oatof, {"accelerator_local_region": {"axis_x_mm": -69.0}}
+            )
+
+    def test_ideal_source_panels_follow_frozen_center_and_axial_width(self) -> None:
+        first = {"particle_source": {
+            "center_x_mm": -69.0, "center_y_mm": 0.5,
+            "center_z_mm": -61.5, "size_z_mm": 2.2,
+        }, "geometry_mm": {
+            "accelerator_repeller_z": -64.0,
+            "accelerator_grid1_z": -63.0,
+            "accelerator_repeller_thickness": 1.0,
+        }}
+        second = {"particle_source": {
+            "center_x_mm": -42.0, "center_y_mm": -1.5,
+            "center_z_mm": 7.0, "size_z_mm": 5.5,
+        }, "geometry_mm": {
+            "accelerator_repeller_z": 10.0,
+            "accelerator_grid1_z": 8.0,
+            "accelerator_repeller_thickness": 2.0,
+        }}
+        first_frontend = {"accelerator_local_region": {
+            "repeller_front_z_mm": -64.0, "repeller_thickness_mm": 1.0,
+            "grid1_z_mm": -63.0,
+        }}
+        second_frontend = {"accelerator_local_region": {
+            "repeller_front_z_mm": 10.0, "repeller_thickness_mm": 2.0,
+            "grid1_z_mm": 8.0,
+        }}
+        first_figure, (first_d, first_e) = plt.subplots(1, 2)
+        second_figure, (second_d, second_e) = plt.subplots(1, 2)
+        try:
+            _ideal_source_longitudinal(first_d, first, first_frontend)
+            _ideal_source_cross_section(first_e, first)
+            _ideal_source_longitudinal(second_d, second, second_frontend)
+            _ideal_source_cross_section(second_e, second)
+            first_long = first_d.patches[0]
+            second_long = second_d.patches[0]
+            first_cross = first_e.patches[0]
+            second_cross = second_e.patches[0]
+        finally:
+            plt.close(first_figure)
+            plt.close(second_figure)
+        self.assertEqual((first_long.get_x(), first_long.get_y()), (-70.0, -62.6))
+        self.assertEqual((first_long.get_width(), first_long.get_height()), (2.0, 2.2))
+        self.assertEqual((second_long.get_x(), second_long.get_y()), (-43.0, 4.25))
+        self.assertEqual((second_long.get_width(), second_long.get_height()), (2.0, 5.5))
+        self.assertEqual((first_cross.get_x(), first_cross.get_y()), (-70.0, -0.5))
+        self.assertEqual((second_cross.get_x(), second_cross.get_y()), (-43.0, -2.5))
+
+    def test_repeller_body_extends_away_from_vacuum_in_either_direction(self) -> None:
+        positive = {
+            "geometry_mm": {
+                "accelerator_repeller_z": -63.0,
+                "accelerator_grid1_z": -59.75,
+                "accelerator_repeller_thickness": 1.5,
+            }
+        }
+        negative = {
+            "geometry_mm": {
+                "accelerator_repeller_z": 12.0,
+                "accelerator_grid1_z": 8.0,
+                "accelerator_repeller_thickness": 2.0,
+            }
+        }
+        positive_body = _repeller_body_geometry(
+            positive, {"accelerator_local_region": {
+                "repeller_front_z_mm": -63.0, "repeller_thickness_mm": 1.5,
+                "grid1_z_mm": -59.75,
+            }}
+        )
+        negative_body = _repeller_body_geometry(
+            negative, {"accelerator_local_region": {
+                "repeller_front_z_mm": 12.0, "repeller_thickness_mm": 2.0,
+                "grid1_z_mm": 8.0,
+            }}
+        )
+        self.assertEqual((positive_body["z_min"], positive_body["z_max"]), (-64.5, -63.0))
+        self.assertEqual((negative_body["z_min"], negative_body["z_max"]), (12.0, 14.0))
+
+    def test_boundary_plane_widths_follow_different_reversed_fixture(self) -> None:
+        oatof = {
+            "geometry_mm": {
+                "accelerator_bore_half": 3.0,
+                "accelerator_ring_width": 4.0,
+                "accelerator_exit_grid_half_width": 9.0,
+                "accelerator_grid1_z": 16.0,
+                "accelerator_grid2_z": 10.0,
+            }
+        }
+        frontend = {"accelerator_local_region": {
+            "electrode_width_mm": 14.0,
+            "grid1_z_mm": 16.0,
+            "grid2_z_mm": 10.0,
+        }}
+        self.assertEqual(
+            _accelerator_boundary_planes(oatof, frontend),
+            [(16.0, 7.0), (10.0, 9.0)],
+        )
+
+    def test_boundary_plane_width_rejects_frontend_mismatch(self) -> None:
+        oatof = {
+            "geometry_mm": {
+                "accelerator_bore_half": 5.0,
+                "accelerator_ring_width": 5.0,
+                "accelerator_exit_grid_half_width": 15.0,
+                "accelerator_grid1_z": -59.75,
+                "accelerator_grid2_z": -42.75,
+            }
+        }
+        frontend = {"accelerator_local_region": {
+            "electrode_width_mm": 19.0,
+            "grid1_z_mm": -59.75,
+            "grid2_z_mm": -42.75,
+        }}
+        with self.assertRaisesRegex(ValueError, "boundary-plane geometry is inconsistent"):
+            _accelerator_boundary_planes(oatof, frontend)
+
+    def test_ideal_source_geometry_fails_closed_on_nonfinite_or_missing_input(self) -> None:
+        with self.assertRaisesRegex(ValueError, "plotting geometry is invalid"):
+            _ideal_source_geometry({"particle_source": {
+                "center_x_mm": 0.0, "center_y_mm": 0.0,
+                "center_z_mm": float("nan"), "size_z_mm": 2.2,
+            }})
+        with self.assertRaises(KeyError):
+            _ideal_source_geometry({"particle_source": {"center_x_mm": 0.0}})
 
     def test_preserves_original_ion_identity_at_all_checkpoints(self) -> None:
         text = "\n".join(

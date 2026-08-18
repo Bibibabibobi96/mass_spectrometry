@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
 from typing import Any
 
@@ -11,11 +12,104 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib.patches import Circle, Rectangle
+from matplotlib.path import Path as MplPath
+from matplotlib.patches import Circle, PathPatch, Rectangle
+from matplotlib.ticker import MultipleLocator
 import pandas as pd
 
 
-CAPABILITY_ID = "rf_oatof_single_flight_spatial_six_panel_v1"
+CAPABILITY_ID = "rf_oatof_single_flight_spatial_six_panel_v2"
+PROVISIONAL_TRANSVERSE_SOURCE_WIDTH_MM = 2.0
+GEOMETRY_TARGET_TICK_INTERVALS = 9
+
+
+def _rectangular_frame_path(
+    outer: tuple[float, float, float, float],
+    inner: tuple[float, float, float, float],
+    *,
+    open_positive_y: bool = False,
+) -> MplPath:
+    """Build one solid rectangular frame with a clean inner-vacuum hole."""
+
+    outer_x, outer_y, outer_width, outer_height = outer
+    inner_x, inner_y, inner_width, inner_height = inner
+    values = (*outer, *inner)
+    if (
+        not all(math.isfinite(value) for value in values)
+        or min(outer_width, outer_height, inner_width, inner_height) <= 0
+        or inner_x < outer_x
+        or inner_y < outer_y
+        or inner_x + inner_width > outer_x + outer_width
+        or inner_y + inner_height > outer_y + outer_height
+    ):
+        raise ValueError("rectangular frame geometry is invalid")
+    if open_positive_y:
+        if abs(inner_y + inner_height - (outer_y + outer_height)) > 1e-9:
+            raise ValueError("open rectangular frame must share its positive-y edge")
+        vertices = (
+            (outer_x, outer_y + outer_height),
+            (outer_x, outer_y),
+            (outer_x + outer_width, outer_y),
+            (outer_x + outer_width, outer_y + outer_height),
+            (inner_x + inner_width, inner_y + inner_height),
+            (inner_x + inner_width, inner_y),
+            (inner_x, inner_y),
+            (inner_x, inner_y + inner_height),
+            (outer_x, outer_y + outer_height),
+        )
+        return MplPath(
+            vertices,
+            [MplPath.MOVETO] + [MplPath.LINETO] * 7 + [MplPath.CLOSEPOLY],
+        )
+    outer_vertices = (
+        (outer_x, outer_y),
+        (outer_x + outer_width, outer_y),
+        (outer_x + outer_width, outer_y + outer_height),
+        (outer_x, outer_y + outer_height),
+        (outer_x, outer_y),
+    )
+    # Reverse the inner contour so the nonzero fill rule leaves one clean hole.
+    inner_vertices = (
+        (inner_x, inner_y),
+        (inner_x, inner_y + inner_height),
+        (inner_x + inner_width, inner_y + inner_height),
+        (inner_x + inner_width, inner_y),
+        (inner_x, inner_y),
+    )
+    codes = [
+        MplPath.MOVETO,
+        MplPath.LINETO,
+        MplPath.LINETO,
+        MplPath.LINETO,
+        MplPath.CLOSEPOLY,
+    ] * 2
+    return MplPath([*outer_vertices, *inner_vertices], codes)
+
+
+def _apply_shared_nice_ticks(axes: tuple[plt.Axes, ...]) -> float:
+    """Use one geometry-derived nice tick interval on every supplied axis."""
+
+    if not axes:
+        raise ValueError("at least one geometry axis is required")
+    spans = [
+        upper - lower
+        for ax in axes
+        for lower, upper in (ax.get_xlim(), ax.get_ylim())
+    ]
+    if not all(math.isfinite(span) and span > 0 for span in spans):
+        raise ValueError("geometry display spans are invalid")
+    raw_step = max(spans) / GEOMETRY_TARGET_TICK_INTERVALS
+    exponent = math.floor(math.log10(raw_step))
+    candidates = [
+        multiplier * 10.0 ** candidate_exponent
+        for candidate_exponent in (exponent - 1, exponent, exponent + 1)
+        for multiplier in (1.0, 2.0, 2.5, 5.0, 10.0)
+    ]
+    step = min(candidates, key=lambda candidate: (abs(candidate - raw_step), candidate))
+    for ax in axes:
+        ax.xaxis.set_major_locator(MultipleLocator(step))
+        ax.yaxis.set_major_locator(MultipleLocator(step))
+    return step
 
 
 def marker_area(particle_count: int) -> float:
@@ -96,15 +190,58 @@ def _multipole_longitudinal(ax: plt.Axes, upstream: dict[str, Any], initial: pd.
 def _accelerator(ax: plt.Axes, oatof: dict[str, Any], frontend: dict[str, Any]) -> None:
     geometry = oatof["geometry_mm"]
     center_x = float(oatof["coordinate_convention"]["accelerator_axis_x"])
-    width = 2 * (float(geometry["accelerator_bore_half"]) + float(geometry["accelerator_ring_width"]))
+    shield = _accelerator_shield_geometry(oatof, frontend)
+    bore_half = float(geometry["accelerator_bore_half"])
+    ring_width = float(geometry["accelerator_ring_width"])
+    outer_half = bore_half + ring_width
+    ring_thickness = float(geometry["accelerator_ring_thickness"])
+    repeller = _repeller_body_geometry(oatof, frontend)
+    repeller_thickness = repeller["thickness"]
+    boundary_planes = _accelerator_boundary_planes(oatof, frontend)
+    if min(bore_half, ring_width, ring_thickness, repeller_thickness) <= 0:
+        raise ValueError("accelerator electrode dimensions must be positive")
+    shield_path = _rectangular_frame_path(
+        (
+            shield["outer_x_min"],
+            shield["outer_z_min"],
+            shield["outer_width"],
+            shield["outer_z_max"] - shield["outer_z_min"],
+        ),
+        (
+            shield["inner_x_min"],
+            shield["inner_z_min"],
+            shield["inner_width"],
+            shield["outer_z_max"] - shield["inner_z_min"],
+        ),
+        open_positive_y=True,
+    )
+    ax.add_patch(
+        PathPatch(
+            shield_path,
+            facecolor="#d9d9d9",
+            edgecolor="#525252",
+            linewidth=1.0,
+            linestyle="-",
+            alpha=0.42,
+            label="accelerator shield body",
+            zorder=1,
+        )
+    )
+    port = _connector_through_hole_geometry(oatof, frontend)
+    ax.add_patch(
+        Rectangle(
+            (port["x_min"], port["z_min"]), port["wall"], port["height"],
+            facecolor="white", edgecolor="#009E73", linewidth=1.3,
+            alpha=0.62, label="connector through-hole", zorder=2.5,
+        )
+    )
     topology = oatof.get("accelerator_topology")
     if topology is None:
-        zs = [float(geometry["accelerator_repeller_z"]), float(geometry["accelerator_grid1_z"])]
+        grid1_z = float(geometry["accelerator_grid1_z"])
         count = int(oatof["rings"]["accelerator_count"])
-        pitch = (float(geometry["accelerator_grid2_z"]) - zs[1]) / (count + 1)
-        zs.extend(zs[1] + index * pitch for index in range(1, count + 1))
-        zs.append(float(geometry["accelerator_grid2_z"]))
-        electrode_lines = [(z_value, "--" if index in {1, len(zs) - 1} else "-") for index, z_value in enumerate(zs)]
+        exit_z = float(geometry["accelerator_grid2_z"])
+        pitch = (exit_z - grid1_z) / (count + 1)
+        rings = [grid1_z + index * pitch for index in range(1, count + 1)]
     else:
         topology_id = str(topology["topology_id"])
         if frontend.get("accelerator_topology_id") != topology_id:
@@ -115,22 +252,344 @@ def _accelerator(ax: plt.Axes, oatof: dict[str, Any], frontend: dict[str, Any]) 
         rings = frontend["accelerator_local_region"].get("ring_z_mm")
         if not isinstance(rings, list) or len(rings) != int(oatof["rings"]["accelerator_count"]):
             raise ValueError("three-zone accelerator ring positions are incomplete")
-        electrode_lines = [
-            (float(planes["repeller"]), "-"),
-            *((float(z_value), "-") for z_value in rings),
-            (float(planes["intermediate1"]), "--"),
-            (float(planes["intermediate2"]), "--"),
-            (float(planes["exit"]), "--"),
-        ]
-    for z_value, style in electrode_lines:
+        rings = [float(z_value) for z_value in rings]
+    ax.add_patch(
+        Rectangle(
+            (center_x - outer_half, repeller["z_min"]),
+            2 * outer_half,
+            repeller_thickness,
+            facecolor="#bdbdbd",
+            edgecolor="#252525",
+            linewidth=0.8,
+            alpha=0.72,
+            label="repeller body",
+            zorder=6,
+        )
+    )
+    for ring_index, z_value in enumerate(rings):
+        for side_index, x_min in enumerate((center_x - outer_half, center_x + bore_half)):
+            ax.add_patch(
+                Rectangle(
+                    (x_min, z_value - ring_thickness / 2),
+                    ring_width,
+                    ring_thickness,
+                    facecolor="#bdbdbd",
+                    edgecolor="#252525",
+                    linewidth=0.8,
+                    alpha=0.72,
+                    label=(
+                        "shaping ring body (inner/outer width)"
+                        if ring_index == 0 and side_index == 0
+                        else None
+                    ),
+                    zorder=6,
+                )
+            )
+    for z_value, half_width in boundary_planes:
         ax.plot(
-            [center_x - width / 2, center_x + width / 2],
+            [center_x - half_width, center_x + half_width],
             [z_value, z_value],
             color="#252525",
             linewidth=0.8,
-            linestyle=style,
+            linestyle="--",
             zorder=7,
         )
+
+
+def _accelerator_shield_geometry(
+    oatof: dict[str, Any], frontend: dict[str, Any]
+) -> dict[str, float]:
+    """Resolve the plotted shield from the frozen frontend solid contract."""
+
+    local = frontend["accelerator_local_region"]
+    center_x = float(local["axis_x_mm"])
+    center_y = float(local["axis_y_mm"])
+    center_z = float(local["shield_center_z_mm"])
+    outer_width = float(local["shield_outer_width_mm"])
+    inner_width = float(local["shield_inner_width_mm"])
+    span_z = float(local["shield_span_z_mm"])
+    wall = float(local["shield_wall_mm"])
+    outer_x_min = float(local["negative_x_face_mm"])
+    outer_z_min = float(local["shield_back_z_mm"])
+    outer_z_max = float(local["grid2_z_mm"])
+    checks = (
+        abs(center_x - float(oatof["coordinate_convention"]["accelerator_axis_x"])),
+        abs(center_y),
+        abs(wall - float(oatof["geometry_mm"]["accelerator_shield_wall"])),
+        abs(outer_width - inner_width - 2 * wall),
+        abs(outer_x_min - (center_x - outer_width / 2)),
+        abs(center_z - (outer_z_min + outer_z_max) / 2),
+        abs(span_z - (outer_z_max - outer_z_min)),
+    )
+    if min(outer_width, inner_width, span_z, wall) <= 0 or any(
+        error > 1e-9 for error in checks
+    ):
+        raise ValueError("frontend accelerator shield geometry is inconsistent")
+    return {
+        "center_y": center_y,
+        "outer_width": outer_width,
+        "inner_width": inner_width,
+        "wall": wall,
+        "outer_x_min": outer_x_min,
+        "inner_x_min": center_x - inner_width / 2,
+        "outer_y_min": center_y - outer_width / 2,
+        "inner_y_min": center_y - inner_width / 2,
+        "outer_z_min": outer_z_min,
+        "inner_z_min": outer_z_min + wall,
+        "outer_z_max": outer_z_max,
+    }
+
+
+def _repeller_body_geometry(
+    oatof: dict[str, Any], frontend: dict[str, Any]
+) -> dict[str, float]:
+    """Resolve a front-face repeller solid, extending away from accelerator vacuum."""
+
+    local = frontend["accelerator_local_region"]
+    front = float(local["repeller_front_z_mm"])
+    thickness = float(local["repeller_thickness_mm"])
+    grid1 = float(local["grid1_z_mm"])
+    topology = oatof.get("accelerator_topology")
+    if topology is None:
+        expected_front = float(oatof["geometry_mm"]["accelerator_repeller_z"])
+        expected_grid1 = float(oatof["geometry_mm"]["accelerator_grid1_z"])
+    else:
+        planes = topology["planes_global_z_mm"]
+        expected_front = float(planes["repeller"])
+        expected_grid1 = float(planes["intermediate1"])
+    expected_thickness = float(
+        oatof["geometry_mm"]["accelerator_repeller_thickness"]
+    )
+    vacuum_direction = math.copysign(1.0, grid1 - front) if grid1 != front else 0.0
+    if (
+        thickness <= 0
+        or vacuum_direction == 0
+        or abs(front - expected_front) > 1e-9
+        or abs(grid1 - expected_grid1) > 1e-9
+        or abs(thickness - expected_thickness) > 1e-9
+    ):
+        raise ValueError("frontend repeller face geometry is inconsistent")
+    body_other_face = front - vacuum_direction * thickness
+    return {
+        "front_z": front,
+        "thickness": thickness,
+        "vacuum_direction": vacuum_direction,
+        "z_min": min(front, body_other_face),
+        "z_max": max(front, body_other_face),
+    }
+
+
+def _accelerator_boundary_planes(
+    oatof: dict[str, Any], frontend: dict[str, Any]
+) -> list[tuple[float, float]]:
+    """Return each ideal grid plane with its separately governed half width."""
+
+    geometry = oatof["geometry_mm"]
+    local = frontend["accelerator_local_region"]
+    electrode_width = float(local["electrode_width_mm"])
+    expected_electrode_width = 2 * (
+        float(geometry["accelerator_bore_half"])
+        + float(geometry["accelerator_ring_width"])
+    )
+    exit_half_width = float(geometry["accelerator_exit_grid_half_width"])
+    topology = oatof.get("accelerator_topology")
+    if topology is None:
+        expected = [
+            (float(geometry["accelerator_grid1_z"]), electrode_width / 2),
+            (float(geometry["accelerator_grid2_z"]), exit_half_width),
+        ]
+        observed_z = [float(local["grid1_z_mm"]), float(local["grid2_z_mm"])]
+    else:
+        planes = topology["planes_global_z_mm"]
+        expected = [
+            (float(planes["intermediate1"]), electrode_width / 2),
+            (float(planes["intermediate2"]), electrode_width / 2),
+            (float(planes["exit"]), exit_half_width),
+        ]
+        observed_z = [
+            float(local["grid1_z_mm"]),
+            float(local["intermediate2_z_mm"]),
+            float(local["grid2_z_mm"]),
+        ]
+    if (
+        not math.isfinite(electrode_width)
+        or not math.isfinite(exit_half_width)
+        or min(electrode_width, exit_half_width) <= 0
+        or abs(electrode_width - expected_electrode_width) > 1e-9
+        or any(abs(observed - plane[0]) > 1e-9 for observed, plane in zip(observed_z, expected))
+    ):
+        raise ValueError("frontend accelerator boundary-plane geometry is inconsistent")
+    return expected
+
+
+def _connector_through_hole_geometry(
+    oatof: dict[str, Any], frontend: dict[str, Any]
+) -> dict[str, float]:
+    """Resolve the negative-x wall opening from the frozen frontend GEM contract."""
+
+    local = frontend["accelerator_local_region"]
+    source_exit = frontend["source_exit_center_mm"]
+    shield = _accelerator_shield_geometry(oatof, frontend)
+    values = {
+        "x_min": float(local["negative_x_face_mm"]),
+        "wall": float(local["shield_wall_mm"]),
+        "center_y": float(local["port_center_y_mm"]),
+        "center_z": float(local["port_center_z_mm"]),
+        "width": float(local["numerical_port_width_mm"]),
+        "height": float(local["numerical_port_height_mm"]),
+    }
+    if not all(math.isfinite(value) for value in values.values()) or min(
+        values["wall"], values["width"], values["height"]
+    ) <= 0:
+        raise ValueError("connector through-hole geometry is invalid")
+    x_max = values["x_min"] + values["wall"]
+    y_min = values["center_y"] - values["width"] / 2
+    y_max = values["center_y"] + values["width"] / 2
+    z_min = values["center_z"] - values["height"] / 2
+    z_max = values["center_z"] + values["height"] / 2
+    outer_y_max = shield["outer_y_min"] + shield["outer_width"]
+    checks = (
+        abs(values["x_min"] - shield["outer_x_min"]),
+        abs(x_max - shield["inner_x_min"]),
+        abs(values["center_y"] - float(source_exit["y"])),
+        abs(values["center_z"] - float(source_exit["z"])),
+        abs(values["x_min"] - float(source_exit["x"])),
+    )
+    if (
+        any(error > 1e-9 for error in checks)
+        or y_min < shield["outer_y_min"] - 1e-9
+        or y_max > outer_y_max + 1e-9
+        or z_min < shield["outer_z_min"] - 1e-9
+        or z_max > shield["outer_z_max"] + 1e-9
+    ):
+        raise ValueError("connector through-hole differs from the shield wall")
+    return values | {"x_max": x_max, "y_min": y_min, "z_min": z_min}
+
+
+def _accelerator_cross_section(
+    ax: plt.Axes, oatof: dict[str, Any], frontend: dict[str, Any]
+) -> None:
+    geometry = oatof["geometry_mm"]
+    center_x = float(oatof["coordinate_convention"]["accelerator_axis_x"])
+    shield = _accelerator_shield_geometry(oatof, frontend)
+    bore_half = float(geometry["accelerator_bore_half"])
+    outer_half = bore_half + float(geometry["accelerator_ring_width"])
+    exit_grid_half = float(geometry["accelerator_exit_grid_half_width"])
+    shield_path = _rectangular_frame_path(
+        (
+            shield["outer_x_min"], shield["outer_y_min"],
+            shield["outer_width"], shield["outer_width"],
+        ),
+        (
+            shield["inner_x_min"], shield["inner_y_min"],
+            shield["inner_width"], shield["inner_width"],
+        ),
+    )
+    ax.add_patch(
+        PathPatch(
+            shield_path,
+            facecolor="#d9d9d9",
+            edgecolor="#525252",
+            linewidth=1.2,
+            linestyle="-",
+            alpha=0.42,
+            label="accelerator shield body",
+            zorder=1,
+        )
+    )
+    port = _connector_through_hole_geometry(oatof, frontend)
+    ax.add_patch(
+        Rectangle(
+            (port["x_min"], port["y_min"]), port["wall"], port["width"],
+            facecolor="white", edgecolor="#009E73", linewidth=1.3,
+            alpha=0.62, label="connector through-hole", zorder=2.5,
+        )
+    )
+    ring_width = outer_half - bore_half
+    if ring_width <= 0:
+        raise ValueError("accelerator shaping-ring projection is invalid")
+    ring_path = _rectangular_frame_path(
+        (center_x - outer_half, -outer_half, 2 * outer_half, 2 * outer_half),
+        (center_x - bore_half, -bore_half, 2 * bore_half, 2 * bore_half),
+    )
+    ax.add_patch(
+        PathPatch(
+            ring_path,
+            facecolor="#bdbdbd",
+            edgecolor="#252525",
+            linewidth=0.8,
+            alpha=0.72,
+            label="shaping ring body (inner/outer width)",
+            zorder=8,
+        )
+    )
+    ax.add_patch(
+        Rectangle(
+            (center_x - exit_grid_half, -exit_grid_half),
+            2 * exit_grid_half, 2 * exit_grid_half,
+            fill=False, edgecolor="#252525", linewidth=0.9,
+            linestyle=":", label="exit-grid extent", zorder=9,
+        )
+    )
+
+
+def _ideal_source_geometry(oatof: dict[str, Any]) -> dict[str, float]:
+    """Resolve the frozen axial interval and explicit provisional transverse policy."""
+
+    source = oatof["particle_source"]
+    values = {
+        "center_x": float(source["center_x_mm"]),
+        "center_y": float(source["center_y_mm"]),
+        "center_z": float(source["center_z_mm"]),
+        "width_z": float(source["size_z_mm"]),
+        "width_transverse": PROVISIONAL_TRANSVERSE_SOURCE_WIDTH_MM,
+    }
+    if not all(math.isfinite(value) for value in values.values()) or min(
+        values["width_z"], values["width_transverse"]
+    ) <= 0:
+        raise ValueError("ideal-source plotting geometry is invalid")
+    return values
+
+
+def _ideal_source_longitudinal(
+    ax: plt.Axes, oatof: dict[str, Any], frontend: dict[str, Any]
+) -> None:
+    source = _ideal_source_geometry(oatof)
+    repeller = _repeller_body_geometry(oatof, frontend)
+    source_min = source["center_z"] - source["width_z"] / 2
+    source_max = source["center_z"] + source["width_z"] / 2
+    vacuum_clearance = (
+        source_min - repeller["front_z"]
+        if repeller["vacuum_direction"] > 0
+        else repeller["front_z"] - source_max
+    )
+    if vacuum_clearance < -1e-9:
+        raise ValueError("ideal-source interval overlaps the repeller body")
+    ax.add_patch(
+        Rectangle(
+            (source["center_x"] - source["width_transverse"] / 2,
+             source["center_z"] - source["width_z"] / 2),
+            source["width_transverse"], source["width_z"],
+            facecolor="#56B4E9", edgecolor="#0072B2", linewidth=1.2,
+            linestyle=":", alpha=0.25,
+            label="theory-accepted z interval; provisional 2 mm transverse",
+            zorder=2,
+        )
+    )
+
+
+def _ideal_source_cross_section(ax: plt.Axes, oatof: dict[str, Any]) -> None:
+    source = _ideal_source_geometry(oatof)
+    width = source["width_transverse"]
+    ax.add_patch(
+        Rectangle(
+            (source["center_x"] - width / 2, source["center_y"] - width / 2),
+            width, width, facecolor="#56B4E9", edgecolor="#0072B2",
+            linewidth=1.2, linestyle=":", alpha=0.25,
+            label="theory-accepted z interval; provisional 2 mm transverse",
+            zorder=2,
+        )
+    )
 
 
 def build_figure(
@@ -198,23 +657,15 @@ def build_figure(
     ax_c.set(title="C  Grounded connector / oaTOF entrance handoff", xlabel="global y (mm)", ylabel="global z (mm)")
 
     _accelerator(ax_d, oatof, frontend)
+    _ideal_source_longitudinal(ax_d, oatof, frontend)
     _cloud(ax_d, prepulse, "x_mm", "z_mm", size=size, label="immediately before pulse", color="#fdae61")
+    ax_d.set_aspect("equal", adjustable="box")
     ax_d.set(title="D  Ion distribution in accelerator before pulse", xlabel="global x (mm)", ylabel="global z (mm)")
 
     _cloud(ax_e, accelerator_exit, "x_mm", "y_mm", size=size, label="local accelerator exit", color="#756bb1")
-    bore = float(oatof["geometry_mm"]["accelerator_exit_grid_half_width"])
-    accelerator_axis_x = float(oatof["coordinate_convention"]["accelerator_axis_x"])
-    ax_e.add_patch(
-        Rectangle(
-            (accelerator_axis_x - bore, -bore),
-            2 * bore,
-            2 * bore,
-            fill=False,
-            edgecolor="#252525",
-            linewidth=1.0,
-            zorder=8,
-        )
-    )
+    _accelerator_cross_section(ax_e, oatof, frontend)
+    _ideal_source_cross_section(ax_e, oatof)
+    shared_tick_step = _apply_shared_nice_ticks((ax_d, ax_e))
     ax_e.set_aspect("equal", adjustable="box")
     ax_e.set(title="E  Local accelerator exit plane", xlabel="global x (mm)", ylabel="global y (mm)")
 
@@ -237,6 +688,7 @@ def build_figure(
         f"small markers preserve geometry visibility; capability={CAPABILITY_ID}",
         fontsize=12,
     )
+    source_geometry = _ideal_source_geometry(oatof)
     return figure, {
         "released": len(initial),
         "handoff": len(handoff),
@@ -244,6 +696,9 @@ def build_figure(
         "accelerator_exit": len(accelerator_exit),
         "detector": len(detector),
         "particle_marker_area_pt2": size,
+        "theory_accepted_source_z_width_mm": source_geometry["width_z"],
+        "provisional_transverse_source_width_mm": source_geometry["width_transverse"],
+        "accelerator_shared_tick_step_mm": shared_tick_step,
     }
 
 

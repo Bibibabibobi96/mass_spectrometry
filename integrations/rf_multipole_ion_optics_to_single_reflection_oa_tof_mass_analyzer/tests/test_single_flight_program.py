@@ -92,6 +92,7 @@ def _successor_callback_program(
     *,
     profile_id: str = "accelerator_real_pa",
     overlay: dict[str, object] | None = None,
+    pre_pulse_time_series_contract: dict[str, object] | None = None,
 ) -> str:
     geometry_path = REPO / (
         "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json"
@@ -113,6 +114,7 @@ def _successor_callback_program(
         rf_drive_kernel_source=RF_DRIVE_KERNEL_SOURCE,
         rf_steps_per_period=160,
         overlay=overlay,
+        pre_pulse_time_series_contract=pre_pulse_time_series_contract,
     ) + CALLBACK_TEST_CONTROL
 
 
@@ -165,6 +167,52 @@ def _minimal_program_contracts() -> tuple[dict[str, object], dict[str, object]]:
 
 
 class SingleFlightProgramTests(unittest.TestCase):
+    def test_pre_pulse_time_series_uses_native_rf160_landings(self) -> None:
+        contract = {
+            "schema_version": 1,
+            "role": "rf_oatof_pre_pulse_time_series_screening_contract",
+            "mode": "real_pa_rf_pre_pulse_time_series",
+            "active_scope": "pre_pulse_frontend_accelerator",
+            "pulse_disabled": True,
+            "terminate_at_window_end": True,
+            "resolution_claim_allowed": False,
+            "prohibited_outputs": [
+                "detector_crossing",
+                "resolution_metrics",
+                "single_flight_spatial_six_panel",
+            ],
+            "sample_times_us": [1.0, 1.00625],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            program = _successor_callback_program(
+                Path(directory), pre_pulse_time_series_contract=contract
+            )
+        self.assertIn("adjustable handoff_pulse_mode=2", program)
+        self.assertIn("assert(handoff_pulse_mode==2", program)
+        self.assertNotIn("assert(handoff_pulse_mode==0", program)
+        self.assertIn("existing held-off pulse mode", program)
+        self.assertIn("'pre_pulse_frontend_accelerator' or 'full_flight'", program)
+        self.assertIn("single_flight_analyzer.initialize_workbench", program)
+        self.assertNotIn("initialize_upstream_workbench", program)
+        self.assertIn(
+            "pre-pulse screening particle escaped its frontend/accelerator active scope",
+            program,
+        )
+        self.assertIn("ion_time_step=next_time-time", program)
+        self.assertIn(
+            "pre-pulse time-series sample did not land on its native SIMION timestep",
+            program,
+        )
+        self.assertIn("actual_instrument_time_us=%.17g", program)
+        self.assertNotIn("fraction=(sample_time-p.t)", program)
+        self.assertIn("if single_flight_pre_pulse_time_series~=0 then return end", program)
+        invalid = dict(contract, pulse_disabled=False)
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(ValueError, "contract mode differs"):
+                _successor_callback_program(
+                    Path(directory), pre_pulse_time_series_contract=invalid
+                )
+
     def test_electrode_topology_registry_preserves_two_zone_and_adds_only_id_20(self) -> None:
         two_zone = resolve_frontend_electrode_topology(FRONTEND_ELECTRODES)
         self.assertEqual(two_zone["topology_id"], "two_zone_frontend_v1")
@@ -309,7 +357,7 @@ class SingleFlightProgramTests(unittest.TestCase):
         self.assertIn("$runConfiguration.inputs.Remove('pulse_schedule')", runner)
         self.assertIn("$runConfiguration.parameters.Remove('pulse_time_us')", runner)
         self.assertIn("$runConfiguration.parameters.Remove('pulse_width_us')", runner)
-        self.assertIn("if ($isStagedGrid2Restart) { @() } else", runner)
+        self.assertIn("elseif ($isStagedGrid2Restart) { @() } else", runner)
         self.assertIn(
             "(($StagedGrid2StartInstance -eq 5) -ne [bool]$overlayEnabled)",
             runner,
@@ -530,20 +578,42 @@ class SingleFlightProgramTests(unittest.TestCase):
                 "y_max": 100.0, "z_min": 0.0, "z_max": 100.0,
             },
         }
+        time_series_contract = {
+            "schema_version": 1,
+            "role": "rf_oatof_pre_pulse_time_series_screening_contract",
+            "mode": "real_pa_rf_pre_pulse_time_series",
+            "active_scope": "pre_pulse_frontend_accelerator",
+            "pulse_disabled": True,
+            "terminate_at_window_end": True,
+            "resolution_claim_allowed": False,
+            "prohibited_outputs": [
+                "detector_crossing",
+                "resolution_metrics",
+                "single_flight_spatial_six_panel",
+            ],
+            "sample_times_us": [1.0, 1.00625],
+        }
         cases = (
-            ("successor", "accelerator_real_pa", None),
-            ("successor_full_ideal", "full_domain_piecewise_ideal_field", None),
-            ("successor_overlay", "accelerator_real_pa", overlay),
+            ("successor", "accelerator_real_pa", None, None),
+            ("successor_full_ideal", "full_domain_piecewise_ideal_field", None, None),
+            ("successor_overlay", "accelerator_real_pa", overlay, None),
+            (
+                "successor_time_series_mode2",
+                "accelerator_real_pa",
+                None,
+                time_series_contract,
+            ),
         )
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
-            for mode, profile_id, selected_overlay in cases:
+            for mode, profile_id, selected_overlay, time_series in cases:
                 with self.subTest(mode=mode):
                     program = directory / f"{mode}.lua"
                     program.write_text(
                         _successor_callback_program(
                             directory, profile_id=profile_id,
                             overlay=selected_overlay,
+                            pre_pulse_time_series_contract=time_series,
                         ),
                         encoding="utf-8", newline="\n",
                     )
@@ -559,9 +629,12 @@ class SingleFlightProgramTests(unittest.TestCase):
                     self.assertEqual(
                         result.returncode, 0, result.stderr + result.stdout
                     )
-                    self.assertIn(
-                        "SUCCESSOR_SINGLE_FLIGHT_CALLBACKS=PASS", result.stdout
+                    expected = (
+                        "SUCCESSOR_TIME_SERIES_HELD_OFF_MODE=PASS"
+                        if time_series is not None
+                        else "SUCCESSOR_SINGLE_FLIGHT_CALLBACKS=PASS"
                     )
+                    self.assertIn(expected, result.stdout)
 
     @unittest.skipUnless(SIMION.is_file(), "official SIMION Lua CLI unavailable")
     def test_official_simion_cli_rejects_wrong_iob_or_override(self) -> None:

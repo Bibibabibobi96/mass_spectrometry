@@ -15,10 +15,89 @@
     "preregistration": {"$ref": "#/$defs/preregistration"},
     "pulse_resolution_optimization": {"$ref": "#/$defs/pulse_resolution_optimization"},
     "pulse_resolution_cohort_authority": {"$ref": "#/$defs/pulse_resolution_cohort_authority"},
+    "connector_gap_screen": {"$ref": "#/$defs/connector_gap_screen"},
+    "pre_pulse_time_series_screening": {"$ref": "#/$defs/pre_pulse_time_series_screening"},
     "pulse_resolution_baseline_evidence": {"$ref": "#/$defs/baseline_evidence"},
     "experiments": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/experiment"}}
   },
   "allOf": [
+    {
+      "if": {"required": ["pre_pulse_time_series_screening"]},
+      "then": {
+        "properties": {
+          "schema_version": {"const": 5},
+          "experiments": {
+            "minItems": 1,
+            "maxItems": 1,
+            "items": {
+              "properties": {
+                "execution_strategy": {"const": "simion_single_flight"},
+                "single_flight_pa_cache_policy": {"const": "require_existing"},
+                "single_flight_layout_profile_id": {"const": "three_zone_t5_primary_shaping_rings_1p4_v1"},
+                "single_flight_frontend_grid_profile_id": {"const": "frontend_isotropic_020_accelerator_overlay_z005"},
+                "single_flight_oatof_numerical_profile_id": {"const": "oatof_formal_mesh"},
+                "single_flight_trajectory_quality_profile_id": {"const": "tqual_8"},
+                "single_flight_time_integration_profile_id": {"const": "dt160"},
+                "single_flight_accelerator_field_profile_id": {"const": "accelerator_real_three_zone_pa_real_reflectron"},
+                "single_flight_source_materialization_profile_id": {"const": "canonical_real_octupole_n1000"},
+                "architecture_generation_id": {"const": "three_zone_t5_frozen_primary_shaping_rings_1p4_v1"},
+                "source_profile_id": {"const": "canonical_real_octupole_n1000"},
+                "field_overlay_id": {"const": "accelerator_overlay_z005"},
+                "source_release_mode": {"const": "continuous_frontend"},
+                "connection_profile_id": {"const": "rf_octupole_oatof_shield_terminal_direct_mating_gap_3p2mm"},
+                "single_flight_population": {
+                  "properties": {
+                    "population_mode": {"const": "first_100_rows_in_frozen_file_order"},
+                    "source_authority": {"properties": {
+                      "input_role": {"const": "pre_pulse_time_series_screening_prefix"},
+                      "table_binding": {"const": "prepared_deterministic_prefix"}
+                    }},
+                    "execution_population": {"properties": {
+                      "particle_count": {"const": 100},
+                      "selection_algorithm": {"const": "first_100_rows_in_frozen_file_order"}
+                    }}
+                  }
+                }
+              },
+              "not": {"anyOf": [
+                {"required": ["pre_pulse_source_state"]},
+                {"required": ["generated_pre_pulse_ordered_subset"]},
+                {"required": ["observed_pre_pulse_projection"]},
+                {"required": ["staged_grid2_source_state"]},
+                {"required": ["single_flight_spatial_window_profile_id"]},
+                {"required": ["pulse_resolution_execution_mode"]}
+              ]}
+            }
+          }
+        },
+        "not": {"anyOf": [
+          {"required": ["connector_gap_screen"]},
+          {"required": ["pulse_resolution_optimization"]},
+          {"required": ["pulse_resolution_cohort_authority"]},
+          {"required": ["pulse_resolution_baseline_evidence"]}
+        ]}
+      }
+    },
+    {
+      "if": {"required": ["connector_gap_screen"]},
+      "then": {
+        "properties": {
+          "schema_version": {"const": 5},
+          "experiments": {
+            "items": {
+              "required": ["connector_gap_evidence_role"],
+              "properties": {"source_release_mode": {"const": "continuous_frontend"}},
+              "not": {"anyOf": [
+                {"required": ["pre_pulse_source_state"]},
+                {"required": ["generated_pre_pulse_ordered_subset"]},
+                {"required": ["observed_pre_pulse_projection"]},
+                {"required": ["staged_grid2_source_state"]}
+              ]}
+            }
+          }
+        }
+      }
+    },
     {
       "if": {"properties": {"schema_version": {"enum": [2, 3, 4, 5, 6]}}, "required": ["schema_version"]},
       "then": {"properties": {"experiments": {"items": {"required": ["single_flight_layout_profile_id"]}}}},
@@ -397,19 +476,41 @@
         "offset_rf_periods": {"type": "number", "minimum": -0.5, "maximum": 0.5},
         "pulse_width_us": {"type": "number", "exclusiveMinimum": 0},
         "fixed_execution_authority": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "authority_mode", "pulse_effective_time_us", "rf_period_us",
-            "source_schedule", "source_state_sha256"
-          ],
-          "properties": {
-            "authority_mode": {"const": "frozen_historical_schedule_v1"},
-            "pulse_effective_time_us": {"type": "number", "minimum": 0},
-            "rf_period_us": {"type": "number", "exclusiveMinimum": 0},
-            "source_schedule": {"$ref": "#/$defs/file"},
-            "source_state_sha256": {"$ref": "#/$defs/sha"}
-          }
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "authority_mode", "pulse_effective_time_us", "rf_period_us",
+                "source_schedule", "source_state_sha256"
+              ],
+              "properties": {
+                "authority_mode": {"const": "frozen_historical_schedule_v1"},
+                "pulse_effective_time_us": {"type": "number", "minimum": 0},
+                "rf_period_us": {"type": "number", "exclusiveMinimum": 0},
+                "source_schedule": {"$ref": "#/$defs/file"},
+                "source_state_sha256": {"$ref": "#/$defs/sha"}
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "authority_mode", "candidate_parent_manifest",
+                "candidate_selection_receipt", "confirmation_policy_id"
+              ],
+              "properties": {
+                "authority_mode": {
+                  "const": "detector_blind_candidate_confirmation_v1"
+                },
+                "candidate_parent_manifest": {"$ref": "#/$defs/file"},
+                "candidate_selection_receipt": {"$ref": "#/$defs/file"},
+                "confirmation_policy_id": {
+                  "const": "identical_identity_pulse_on_full_flight_v1"
+                }
+              }
+            }
+          ]
         }
       }
     },
@@ -535,6 +636,127 @@
         "selector": {"type": "string", "minLength": 1},
         "ordered_particle_id_sha256": {"$ref": "#/$defs/sha"}
       }
+    },
+    "connector_gap_screen": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "purpose", "primary_connection_profile_ids",
+        "report_only_connection_profile_ids", "mother_sample_count",
+        "screening_prefix_count", "selection_algorithm",
+        "ordered_particle_id_sha256", "mother_particle_source_sha256",
+        "original_denominator_count", "allowed_variation_axes"
+      ],
+      "properties": {
+        "purpose": {"const": "connector_gap_sensitivity_diagnostic"},
+        "primary_connection_profile_ids": {
+          "type": "array",
+          "prefixItems": [
+            {"const": "rf_octupole_oatof_shield_terminal_direct_mating_gap_0mm"},
+            {"const": "rf_octupole_oatof_shield_terminal_direct_mating_gap_3p2mm"},
+            {"const": "rf_octupole_oatof_shield_terminal_direct_mating_gap_6p4mm"},
+            {"const": "rf_octupole_oatof_shield_terminal_direct_mating_gap_12p8mm"}
+          ],
+          "items": false,
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "report_only_connection_profile_ids": {
+          "type": "array",
+          "prefixItems": [
+            {"const": "rf_octupole_oatof_shield_terminal_direct_mating_gap_25p6mm"}
+          ],
+          "items": false,
+          "minItems": 1,
+          "maxItems": 1
+        },
+        "mother_sample_count": {"const": 1000},
+        "screening_prefix_count": {"const": 100},
+        "selection_algorithm": {"const": "first_100_rows_in_frozen_file_order"},
+        "ordered_particle_id_sha256": {
+          "const": "F9E2DBDE0AE4640704FB66EE02C101CF84ABE35137363D62647622606DF61279"
+        },
+        "mother_particle_source_sha256": {
+          "const": "302C03DC29737CE9D46EB1A8D258DB2A8D3C0F8B6A53F7702A33B1ECF9D5320D"
+        },
+        "original_denominator_count": {"const": 100},
+        "allowed_variation_axes": {
+          "const": [
+            "sequence", "experiment_id", "run_id", "connection_profile_id",
+            "connector_gap_evidence_role"
+          ]
+        }
+      }
+    },
+    "pre_pulse_time_series_screening": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode", "anchor_time_us", "relative_start_index", "relative_end_index",
+        "rf_steps_per_period", "expected_upstream_frequency_hz", "sample_count",
+        "spatial_window_profile_id", "pa_cache_keys", "pulse_disabled",
+        "terminate_at_window_end", "resolution_claim_allowed", "prohibited_outputs"
+      ],
+      "properties": {
+        "mode": {"const": "real_pa_rf_pre_pulse_time_series"},
+        "active_scope": {"const": "pre_pulse_frontend_accelerator"},
+        "anchor_time_us": {"const": 46.7467890041091},
+        "relative_start_index": {"const": -160},
+        "relative_end_index": {"const": 160},
+        "rf_steps_per_period": {"const": 160},
+        "expected_upstream_frequency_hz": {"const": 1100000},
+        "sample_count": {"const": 321},
+        "spatial_window_profile_id": {"const": "ideal_source_box_1mm_xyz"},
+        "selection_order": {"const": [
+          "maximize_pulse_eligible_count",
+          "maximize_transverse_bore_count",
+          "minimize_normalized_xyz_centroid_distance",
+          "minimize_normalized_xyz_spread_norm",
+          "minimize_absolute_distance_to_ballistic_seed",
+          "select_earlier_time"
+        ]},
+        "pa_cache_keys": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["frontend", "accelerator_overlay", "flight_tube", "reflectron"],
+          "properties": {
+            "frontend": {"const": "328e5b7966e5e4a1883674f7c64d959c59f4c26ba170429e6d49a35126b1a451"},
+            "accelerator_overlay": {"const": "c89f109fb8277b04b58b4e11e1b90bd63f8c23476722a0a4a217e773f214b425"},
+            "flight_tube": {},
+            "reflectron": {}
+          }
+        },
+        "pulse_disabled": {"const": true},
+        "terminate_at_window_end": {"const": true},
+        "resolution_claim_allowed": {"const": false},
+        "prohibited_outputs": {"const": [
+          "detector_crossing", "resolution_metrics", "single_flight_spatial_six_panel"
+        ]}
+      },
+      "oneOf": [
+        {
+          "required": ["active_scope"],
+          "properties": {
+            "pa_cache_keys": {
+              "properties": {
+                "flight_tube": {"type": "null"},
+                "reflectron": {"type": "null"}
+              }
+            }
+          }
+        },
+        {
+          "not": {"required": ["active_scope"]},
+          "properties": {
+            "pa_cache_keys": {
+              "properties": {
+                "flight_tube": {"const": "de0ce0ecc05613dbd72c9020b6ace651ec3159788d2fdeea115b2ee6cf6d56ee"},
+                "reflectron": {"const": "252f6012eac06aecf18e73d2036c70098cf5d8d89e763cfe1a8148fca3e3e1e1"}
+              }
+            }
+          }
+        }
+      ]
     },
     "pulse_resolution_optimization": {
       "type": "object",
@@ -961,6 +1183,7 @@
         "observed_pre_pulse_projection": {"$ref": "#/$defs/observed_pre_pulse_projection"},
         "generated_pre_pulse_ordered_subset": {"$ref": "#/$defs/generated_pre_pulse_ordered_subset"},
         "three_zone_solver_gate": {"$ref": "#/$defs/three_zone_solver_gate"},
+        "connector_gap_evidence_role": {"enum": ["primary", "stress_report_only"]},
         "staged_grid2_source_state": {"$ref": "#/$defs/staged_grid2_source_state"},
         "single_flight_pulse_offset_rf_periods": {
           "type": "number",

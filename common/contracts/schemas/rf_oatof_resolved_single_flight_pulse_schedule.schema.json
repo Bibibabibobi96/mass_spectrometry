@@ -51,10 +51,51 @@
     "entry_surface_x_mm": {"type": "number"},
     "base_predicted_centroid_error_x_mm": {"type": "number"},
     "predicted_centroid_error_x_mm": {"type": "number"},
-    "claim_status": {"type": "string", "minLength": 1}
+    "claim_status": {"type": "string", "minLength": 1},
+    "execution_authority": {
+      "oneOf": [
+        {
+          "type": "object", "additionalProperties": false,
+          "required": [
+            "mode", "content_key", "candidate_parent_manifest",
+            "candidate_selection_receipt", "selection_preregistered",
+            "confirmation_selection_authorized", "confirmation_policy_id"
+          ],
+          "properties": {
+            "mode": {"const": "detector_blind_candidate_confirmation_v1"},
+            "content_key": {"$ref": "#/$defs/sha"},
+            "candidate_parent_manifest": {"$ref": "#/$defs/file"},
+            "candidate_selection_receipt": {"$ref": "#/$defs/file"},
+            "selection_preregistered": {"type": "boolean"},
+            "confirmation_selection_authorized": {"const": true},
+            "confirmation_policy_id": {
+              "const": "identical_identity_pulse_on_full_flight_v1"
+            }
+          }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["mode", "content_key", "verified_receipt"],
+          "properties": {
+            "mode": {"const": "verified_pulse_timing_reuse_v1"},
+            "content_key": {"$ref": "#/$defs/sha"},
+            "verified_receipt": {"$ref": "#/$defs/file"}
+          }
+        }
+      ]
+    }
   },
   "$defs": {
     "id": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"},
-    "sha": {"type": "string", "pattern": "^[A-F0-9]{64}$"}
+    "sha": {"type": "string", "pattern": "^[A-F0-9]{64}$"},
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha"}
+      }
+    }
   }
 }

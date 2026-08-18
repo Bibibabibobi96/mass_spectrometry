@@ -2,8 +2,8 @@
   "schema_version": 3,
   "role": "rf_multipole_oatof_runtime_binding",
   "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
-  "connection_profile_id": "rf_hexapole_oatof_shield_terminal_direct_mating_gap_0mm",
-  "upstream_project_id": "rf_hexapole_ion_optics",
+  "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_25p6mm",
+  "upstream_project_id": "rf_octupole_ion_optics",
   "contracts": {
     "dependency_contract": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_runtime_dependencies.json",
@@ -26,8 +26,8 @@
       "sha256": "FED3E8BA8629155FF12C38764D683672D1CB6B241113DD22E9C6DC5617C3068F"
     },
     "handoff_publication_contract": {
-      "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_hexapole_handoff_publication_contract.json",
-      "sha256": "76A61DF5E8DB9F27A49E679D767DD815AEDB78F5542917882506F79179F1ADFE"
+      "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_octupole_handoff_publication_contract.json",
+      "sha256": "4A79A6259A299FCD1E9AE9DD0650495FC94BDA618F0D5795FD7736BF400964F3"
     },
     "source_adapter_contract": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_source_adapter.json",

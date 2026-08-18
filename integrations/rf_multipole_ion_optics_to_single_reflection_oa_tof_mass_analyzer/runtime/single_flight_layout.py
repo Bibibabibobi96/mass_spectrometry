@@ -6,6 +6,7 @@ import copy
 import csv
 import json
 import math
+import statistics
 from pathlib import Path
 from typing import Any
 
@@ -540,6 +541,350 @@ def compile_geometry_and_port(
     }
 
 
+def project_handoff_through_connector(
+    rows: list[dict[str, str]],
+    resolved_connection: dict[str, Any],
+    geometry: dict[str, Any],
+) -> dict[str, Any]:
+    """Ballistically project handoff rows through the resolved finite-wall connector."""
+    registration = resolved_connection["spatial_registration"]
+    rotation = registration["rotation_upstream_to_downstream"]
+    if rotation != [[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]:
+        raise ContractError("connector projection requires the canonical rotation")
+    gap = float(registration["actual_gap_mm"])
+    expected_gap = float(registration["expected_gap_mm"])
+    connector_length = float(resolved_connection["connector"]["length_mm"])
+    tolerance = float(registration["position_tolerance_mm"])
+    if (
+        not math.isfinite(gap)
+        or gap < 0
+        or not math.isclose(gap, expected_gap, rel_tol=0, abs_tol=tolerance)
+        or not math.isclose(gap, connector_length, rel_tol=0, abs_tol=tolerance)
+    ):
+        raise ContractError("resolved connector actual gap identity differs")
+    tx, ty, tz = map(float, registration["translation_mm"])
+    aperture = resolved_connection["transition_aperture"]
+    center = list(map(float, aperture["center_mm"]))
+    half_y = float(aperture["full_width_mm"]) / 2.0
+    half_z = float(aperture["full_height_mm"]) / 2.0
+    wall = float(geometry["geometry_mm"]["accelerator_shield_wall"])
+    candidates: list[dict[str, float | int]] = []
+    survivors: list[dict[str, float | int]] = []
+    for row in rows:
+        handoff_x = float(row["axial_z_mm"]) + tx
+        handoff_y = float(row["transverse_x_mm"]) + ty
+        handoff_z = float(row["transverse_y_mm"]) + tz
+        vx = float(row["velocity_axial_m_s"])
+        vy = float(row["velocity_x_m_s"])
+        vz = float(row["velocity_y_m_s"])
+        if vx <= 0 or not math.isclose(
+            handoff_x, center[0] - gap, rel_tol=0, abs_tol=max(tolerance, 1e-8)
+        ):
+            continue
+        outer_y = handoff_y + vy / vx * gap
+        outer_z = handoff_z + vz / vx * gap
+        inner_y = outer_y + vy / vx * wall
+        inner_z = outer_z + vz / vx * wall
+        entry_time = float(row["time_us"]) + 1000.0 * gap / vx
+        item: dict[str, float | int] = {
+            "particle_id": int(row["particle_id"]),
+            "handoff_x_mm": handoff_x,
+            "handoff_y_mm": handoff_y,
+            "handoff_z_mm": handoff_z,
+            "outer_y_mm": outer_y,
+            "outer_z_mm": outer_z,
+            "inner_y_mm": inner_y,
+            "inner_z_mm": inner_z,
+            "entry_time_us": entry_time,
+            "vx_m_s": vx,
+            "vy_m_s": vy,
+            "vz_m_s": vz,
+            "energy_eV": float(row["kinetic_energy_eV"]),
+        }
+        candidates.append(item)
+        if (
+            abs(outer_y - center[1]) <= half_y + 1e-12
+            and abs(outer_z - center[2]) <= half_z + 1e-12
+            and abs(inner_y - center[1]) <= half_y + 1e-12
+            and abs(inner_z - center[2]) <= half_z + 1e-12
+        ):
+            survivors.append(item)
+    return {
+        "actual_gap_mm": gap,
+        "aperture_center_mm": center,
+        "aperture_half_width_y_mm": half_y,
+        "aperture_half_height_z_mm": half_z,
+        "wall_thickness_mm": wall,
+        "handoff_candidates": candidates,
+        "finite_wall_survivors": survivors,
+    }
+
+
+def resolve_ideal_source_box_1mm_xyz(
+    geometry: dict[str, Any],
+    spatial_window_profile: dict[str, Any],
+) -> dict[str, dict[str, float]]:
+    """Resolve the registered 1 mm XYZ source box against one frozen geometry."""
+
+    if (
+        spatial_window_profile.get("profile_id") != "ideal_source_box_1mm_xyz"
+        or spatial_window_profile.get("event") != "pre_pulse_state"
+        or spatial_window_profile.get("selection_uses_detector_outcome") is not False
+        or set(spatial_window_profile.get("axes", {})) != {"x", "y", "z"}
+    ):
+        raise ContractError("real-field pulse timing requires ideal_source_box_1mm_xyz")
+    source = geometry.get("particle_source", {})
+    bounds: dict[str, dict[str, float]] = {}
+    for axis in ("x", "y", "z"):
+        specification = spatial_window_profile["axes"][axis]
+        if (
+            set(specification) != {"center_binding", "full_width_mm"}
+            or specification["center_binding"]
+            != f"particle_source.center_{axis}_mm"
+        ):
+            raise ContractError("ideal source box axis binding differs")
+        center = float(source[f"center_{axis}_mm"])
+        width = float(specification["full_width_mm"])
+        if not math.isfinite(center) or not math.isclose(
+            width, 1.0, rel_tol=0.0, abs_tol=0.0
+        ):
+            raise ContractError("ideal source box must retain its exact 1 mm width")
+        bounds[axis] = {
+            "center_mm": center,
+            "full_width_mm": width,
+            "minimum_mm": center - width / 2.0,
+            "maximum_mm": center + width / 2.0,
+        }
+    return bounds
+
+
+def select_detector_blind_real_field_pulse_time(
+    rows: list[dict[str, str]],
+    geometry: dict[str, Any],
+    spatial_window_profile: dict[str, Any],
+    *,
+    candidate_times_us: list[float],
+    frozen_particle_ids: list[int],
+    ballistic_seed_time_us: float,
+) -> dict[str, Any]:
+    """Rank real pre-pulse states on a frozen detector-blind time grid.
+
+    Every registered time must contain the exact same ordered particle-ID set. Pulse
+    eligibility follows the existing open Stage-1 definition; normalized XYZ moments
+    use the complete frozen cohort and the registered 1 mm source-box half widths.
+    """
+
+    bounds = resolve_ideal_source_box_1mm_xyz(geometry, spatial_window_profile)
+    times = [float(value) for value in candidate_times_us]
+    if (
+        not times
+        or any(not math.isfinite(value) for value in times)
+        or any(right <= left for left, right in zip(times, times[1:]))
+    ):
+        raise ContractError("real-field pulse candidate times must be strictly increasing")
+    seed = float(ballistic_seed_time_us)
+    if not math.isfinite(seed):
+        raise ContractError("real-field pulse ballistic seed must be finite")
+    expected_ids = [int(value) for value in frozen_particle_ids]
+    if (
+        not expected_ids
+        or expected_ids != sorted(expected_ids)
+        or len(set(expected_ids)) != len(expected_ids)
+        or any(value <= 0 for value in expected_ids)
+    ):
+        raise ContractError("real-field pulse frozen particle IDs are invalid")
+    expected_id_set = set(expected_ids)
+
+    dimensions = geometry.get("geometry_mm", {})
+    coordinate = geometry.get("coordinate_convention", {})
+    repeller_z = float(dimensions["accelerator_repeller_z"])
+    grid1_z = float(dimensions["accelerator_grid1_z"])
+    bore_half = float(dimensions["accelerator_bore_half"])
+    axis_x = float(coordinate["accelerator_axis_x"])
+    axis_y = float(coordinate.get("accelerator_axis_y", 0.0))
+    if not (
+        all(math.isfinite(value) for value in (repeller_z, grid1_z, bore_half, axis_x, axis_y))
+        and repeller_z < grid1_z
+        and bore_half > 0.0
+    ):
+        raise ContractError("real-field pulse accelerator acceptance geometry is invalid")
+
+    grouped: dict[int, dict[int, dict[str, float | int]]] = {
+        index: {} for index in range(1, len(times) + 1)
+    }
+    for row in rows:
+        sample_index_value = float(row["sample_index"])
+        if (
+            not math.isfinite(sample_index_value)
+            or not sample_index_value.is_integer()
+            or not 1 <= sample_index_value <= len(times)
+        ):
+            raise ContractError("real-field pulse state sample index is invalid")
+        sample_index = int(sample_index_value)
+        candidate_time_us = times[sample_index - 1]
+        instrument_time_us = float(row["instrument_time_us"])
+        actual_time_us = float(row["actual_instrument_time_us"])
+        tolerance_us = 1e-12 * max(1.0, abs(candidate_time_us))
+        if (
+            row["event"] != "pre_pulse_time_series_state"
+            or row.get("survival_status") != "alive"
+            or not math.isfinite(instrument_time_us)
+            or not math.isfinite(actual_time_us)
+            or abs(instrument_time_us - candidate_time_us) > tolerance_us
+            or abs(actual_time_us - candidate_time_us) > tolerance_us
+        ):
+            raise ContractError("real-field pulse state event/time landing differs")
+        particle_id_value = float(row["particle_id"])
+        if (
+            not math.isfinite(particle_id_value)
+            or not particle_id_value.is_integer()
+            or particle_id_value <= 0
+        ):
+            raise ContractError("real-field pulse state particle ID is invalid")
+        particle_id = int(particle_id_value)
+        if particle_id not in expected_id_set:
+            raise ContractError("real-field pulse state particle is outside frozen IDs")
+        if particle_id in grouped[sample_index]:
+            raise ContractError("real-field pulse state duplicates a time/particle pair")
+        state = {
+            "particle_id": particle_id,
+            "actual_instrument_time_us": actual_time_us,
+            "x_mm": float(row["x_mm"]),
+            "y_mm": float(row["y_mm"]),
+            "z_mm": float(row["z_mm"]),
+        }
+        if any(not math.isfinite(float(state[key])) for key in ("x_mm", "y_mm", "z_mm")):
+            raise ContractError("real-field pulse state contains non-finite coordinates")
+        grouped[sample_index][particle_id] = state
+
+    observed_indices_by_id = {
+        particle_id: [
+            sample_index for sample_index in range(1, len(times) + 1)
+            if particle_id in grouped[sample_index]
+        ]
+        for particle_id in expected_ids
+    }
+    if any(
+        indices != list(range(1, len(indices) + 1))
+        for indices in observed_indices_by_id.values()
+    ):
+        raise ContractError("real-field pulse particle samples are not an alive prefix")
+
+    candidates: list[dict[str, Any]] = []
+    prior_alive_ids = set(expected_ids)
+    for sample_index, time_us in enumerate(times, start=1):
+        states_by_id = grouped[sample_index]
+        alive_ids = sorted(states_by_id)
+        if not set(alive_ids).issubset(prior_alive_ids):
+            raise ContractError("real-field pulse particle reappears after physical loss")
+        prior_alive_ids = set(alive_ids)
+        missing_ids = sorted(expected_id_set - set(alive_ids))
+        if not alive_ids:
+            raise ContractError("real-field pulse candidate has no alive states")
+        states = [states_by_id[particle_id] for particle_id in alive_ids]
+        bore_ids = [
+            int(state["particle_id"])
+            for state in states
+            if abs(float(state["x_mm"]) - axis_x) < bore_half
+            and abs(float(state["y_mm"]) - axis_y) < bore_half
+        ]
+        bore_id_set = set(bore_ids)
+        eligible_ids = [
+            int(state["particle_id"])
+            for state in states
+            if int(state["particle_id"]) in bore_id_set
+            and repeller_z < float(state["z_mm"]) < grid1_z
+        ]
+        pulse_noneligible_ids = sorted(expected_id_set - set(eligible_ids))
+        transverse_nonbore_ids = sorted(expected_id_set - set(bore_ids))
+        ideal_box_ids = [
+            int(state["particle_id"])
+            for state in states
+            if all(
+                bounds[axis]["minimum_mm"]
+                <= float(state[f"{axis}_mm"])
+                <= bounds[axis]["maximum_mm"]
+                for axis in ("x", "y", "z")
+            )
+        ]
+        normalized_centroid: dict[str, float] = {}
+        normalized_spread: dict[str, float] = {}
+        for axis in ("x", "y", "z"):
+            values = [float(state[f"{axis}_mm"]) for state in states]
+            half_width = bounds[axis]["full_width_mm"] / 2.0
+            normalized_centroid[axis] = (
+                statistics.fmean(values) - bounds[axis]["center_mm"]
+            ) / half_width
+            normalized_spread[axis] = statistics.pstdev(values) / half_width
+        candidates.append({
+            "sample_index": sample_index,
+            "candidate_time_us": time_us,
+            "offset_from_ballistic_seed_us": time_us - seed,
+            "frozen_particle_ids": expected_ids,
+            "alive_particle_ids": alive_ids,
+            "missing_particle_ids": missing_ids,
+            "pulse_eligible_ids": eligible_ids,
+            "pulse_noneligible_ids": pulse_noneligible_ids,
+            "transverse_bore_ids": bore_ids,
+            "transverse_nonbore_ids": transverse_nonbore_ids,
+            "ideal_source_box_ids": ideal_box_ids,
+            "population_count": len(expected_ids),
+            "alive_count": len(alive_ids),
+            "missing_count": len(missing_ids),
+            "pulse_eligible_count": len(eligible_ids),
+            "pulse_noneligible_count": len(pulse_noneligible_ids),
+            "transverse_bore_count": len(bore_ids),
+            "transverse_nonbore_count": len(transverse_nonbore_ids),
+            "ideal_source_box_count": len(ideal_box_ids),
+            "normalized_xyz_centroid": normalized_centroid,
+            "normalized_xyz_centroid_distance": math.sqrt(
+                sum(value * value for value in normalized_centroid.values())
+            ),
+            "normalized_xyz_spread": normalized_spread,
+            "normalized_xyz_spread_norm": math.sqrt(
+                sum(value * value for value in normalized_spread.values())
+            ),
+            "actual_instrument_time_us": {
+                "minimum": min(
+                    float(state["actual_instrument_time_us"]) for state in states
+                ),
+                "maximum": max(
+                    float(state["actual_instrument_time_us"]) for state in states
+                ),
+                "maximum_absolute_candidate_error_us": max(
+                    abs(float(state["actual_instrument_time_us"]) - time_us)
+                    for state in states
+                ),
+                "tolerance_us": 1e-12 * max(1.0, abs(time_us)),
+            },
+        })
+    candidates.sort(key=lambda item: (
+        -int(item["pulse_eligible_count"]),
+        -int(item["transverse_bore_count"]),
+        float(item["normalized_xyz_centroid_distance"]),
+        float(item["normalized_xyz_spread_norm"]),
+        abs(float(item["offset_from_ballistic_seed_us"])),
+        float(item["candidate_time_us"]),
+    ))
+    return {
+        "selection_order": [
+            "maximize_pulse_eligible_count",
+            "maximize_transverse_bore_count",
+            "minimize_normalized_xyz_centroid_distance",
+            "minimize_normalized_xyz_spread_norm",
+            "minimize_absolute_distance_to_ballistic_seed",
+            "select_earlier_time",
+        ],
+        "selection_uses_detector_outcome": False,
+        "detector_results_used": False,
+        "ballistic_seed_time_us": seed,
+        "ideal_source_box_bounds": bounds,
+        "population_denominator_count": len(expected_ids),
+        "selected_time_us": float(candidates[0]["candidate_time_us"]),
+        "candidates_ranked": candidates,
+    }
+
+
 def derive_pulse_schedule(
     state_path: Path,
     resolved_connection: dict[str, Any],
@@ -572,52 +917,21 @@ def derive_pulse_schedule(
         ]
     if not rows:
         raise ContractError("no transmitted multipole handoff states are available")
-    registration = resolved_connection["spatial_registration"]
-    rotation = registration["rotation_upstream_to_downstream"]
-    if rotation != [[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]:
-        raise ContractError("pulse scheduler requires the canonical multipole-to-oaTOF rotation")
-    tx, ty, tz = map(float, registration["translation_mm"])
-    aperture = resolved_connection["transition_aperture"]
-    center = list(map(float, aperture["center_mm"]))
-    half_y = float(aperture["full_width_mm"]) / 2.0
-    half_z = float(aperture["full_height_mm"]) / 2.0
-    wall = float(geometry["geometry_mm"]["accelerator_shield_wall"])
-    cohort: list[dict[str, float | int]] = []
-    for row in rows:
-        x = float(row["axial_z_mm"]) + tx
-        y = float(row["transverse_x_mm"]) + ty
-        z = float(row["transverse_y_mm"]) + tz
-        vx = float(row["velocity_axial_m_s"])
-        vy = float(row["velocity_x_m_s"])
-        vz = float(row["velocity_y_m_s"])
-        if vx <= 0 or not math.isclose(x, center[0], rel_tol=0, abs_tol=1e-8):
-            continue
-        inner_y = y + vy / vx * wall
-        inner_z = z + vz / vx * wall
-        if (
-            abs(y - center[1]) <= half_y + 1e-12
-            and abs(z - center[2]) <= half_z + 1e-12
-            and abs(inner_y - center[1]) <= half_y + 1e-12
-            and abs(inner_z - center[2]) <= half_z + 1e-12
-        ):
-            cohort.append({
-                "particle_id": int(row["particle_id"]),
-                "time_us": float(row["time_us"]),
-                "vx_m_s": vx,
-                "energy_eV": float(row["kinetic_energy_eV"]),
-            })
+    projected = project_handoff_through_connector(rows, resolved_connection, geometry)
+    center = projected["aperture_center_mm"]
+    cohort = projected["finite_wall_survivors"]
     if not cohort:
         raise ContractError("finite-wall prediction leaves no pulse-scheduling particles")
     mean_vx = sum(float(item["vx_m_s"]) for item in cohort) / len(cohort)
     mean_vx_t = sum(
-        float(item["vx_m_s"]) * float(item["time_us"]) for item in cohort
+        float(item["vx_m_s"]) * float(item["entry_time_us"]) for item in cohort
     ) / len(cohort)
     target_x = float(geometry["particle_source"]["center_x_mm"])
     pulse_time = (1000.0 * (target_x - center[0]) + mean_vx_t) / mean_vx
     base_pulse_time = pulse_time
     base_predicted = [
         center[0] + float(item["vx_m_s"]) *
-        (base_pulse_time - float(item["time_us"])) / 1000.0
+        (base_pulse_time - float(item["entry_time_us"])) / 1000.0
         for item in cohort
     ]
     base_centroid_error = sum(base_predicted) / len(base_predicted) - target_x
@@ -631,7 +945,7 @@ def derive_pulse_schedule(
     pulse_time += pulse_offset_us
     predicted = [
         center[0] + float(item["vx_m_s"]) *
-        (pulse_time - float(item["time_us"])) / 1000.0
+        (pulse_time - float(item["entry_time_us"])) / 1000.0
         for item in cohort
     ]
     centroid_error = sum(predicted) / len(predicted) - target_x
@@ -661,7 +975,7 @@ def derive_pulse_schedule(
             "predicted_finite_wall_survivors": len(cohort),
         },
         "selected_particle_ids": [int(item["particle_id"]) for item in cohort],
-        "mean_entry_time_us": sum(float(item["time_us"]) for item in cohort) / len(cohort),
+        "mean_entry_time_us": sum(float(item["entry_time_us"]) for item in cohort) / len(cohort),
         "mean_velocity_x_m_s": mean_vx,
         "mean_kinetic_energy_eV": sum(float(item["energy_eV"]) for item in cohort) / len(cohort),
         "target_centroid_x_mm": target_x,

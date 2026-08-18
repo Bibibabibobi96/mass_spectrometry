@@ -162,6 +162,222 @@
     {
       "schema_version": 1,
       "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_3p2mm",
+      "upstream": {
+        "project_id": "rf_octupole_ion_optics",
+        "port_id": "rf_multipole_exit",
+        "port_binding": "source_run_resolved_design"
+      },
+      "downstream": {
+        "project_id": "single_reflection_oa_tof_mass_analyzer",
+        "port_id": "oatof_accelerator_entry",
+        "port_contract": "projects/single_reflection_oa_tof_mass_analyzer/config/interfaces/required/oatof_accelerator_entry.json"
+      },
+      "coupling_mode": "monolithic_joint_solve",
+      "spatial_registration": {
+        "rotation_upstream_to_downstream": [
+          [0.0, 0.0, 1.0],
+          [1.0, 0.0, 0.0],
+          [0.0, 1.0, 0.0]
+        ],
+        "translation_mm": [-151.6, 0.0, -18.42918680341103],
+        "expected_gap_mm": 3.2,
+        "position_tolerance_mm": 1e-9,
+        "angular_tolerance_rad": 1e-12
+      },
+      "connector": {
+        "length_mm": 3.2,
+        "inner_radius_mm": 3.6,
+        "wall_thickness_mm": 0.0,
+        "shield_connection_profile_id": "grounded_circular_to_rectangular_shield_v1",
+        "shield_potential_V": 0.0,
+        "flange_thickness_binding": "oatof.geometry_mm.accelerator_shield_wall"
+      },
+      "transition_aperture": {
+        "shape": "rectangle",
+        "full_width_mm": 1.0,
+        "full_height_mm": 0.9,
+        "width_axis_downstream_frame": [0.0, 1.0, 0.0],
+        "height_axis_downstream_frame": [0.0, 0.0, 1.0]
+      },
+      "minimum_clear_radius_mm": 0.45,
+      "potential_alignment": {
+        "mode": "continuous",
+        "tolerance_V": 0.0
+      },
+      "clock_alignment": {
+        "mode": "same_origin",
+        "offset_s": 0.0
+      },
+      "field_ownership_segments": [
+        {"start_mm": 0.0, "end_mm": 3.2, "owner": "integration"}
+      ]
+    },
+    {
+      "schema_version": 1,
+      "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_6p4mm",
+      "upstream": {
+        "project_id": "rf_octupole_ion_optics",
+        "port_id": "rf_multipole_exit",
+        "port_binding": "source_run_resolved_design"
+      },
+      "downstream": {
+        "project_id": "single_reflection_oa_tof_mass_analyzer",
+        "port_id": "oatof_accelerator_entry",
+        "port_contract": "projects/single_reflection_oa_tof_mass_analyzer/config/interfaces/required/oatof_accelerator_entry.json"
+      },
+      "coupling_mode": "monolithic_joint_solve",
+      "spatial_registration": {
+        "rotation_upstream_to_downstream": [
+          [0.0, 0.0, 1.0],
+          [1.0, 0.0, 0.0],
+          [0.0, 1.0, 0.0]
+        ],
+        "translation_mm": [-154.8, 0.0, -18.42918680341103],
+        "expected_gap_mm": 6.4,
+        "position_tolerance_mm": 1e-9,
+        "angular_tolerance_rad": 1e-12
+      },
+      "connector": {
+        "length_mm": 6.4,
+        "inner_radius_mm": 3.6,
+        "wall_thickness_mm": 0.0,
+        "shield_connection_profile_id": "grounded_circular_to_rectangular_shield_v1",
+        "shield_potential_V": 0.0,
+        "flange_thickness_binding": "oatof.geometry_mm.accelerator_shield_wall"
+      },
+      "transition_aperture": {
+        "shape": "rectangle",
+        "full_width_mm": 1.0,
+        "full_height_mm": 0.9,
+        "width_axis_downstream_frame": [0.0, 1.0, 0.0],
+        "height_axis_downstream_frame": [0.0, 0.0, 1.0]
+      },
+      "minimum_clear_radius_mm": 0.45,
+      "potential_alignment": {
+        "mode": "continuous",
+        "tolerance_V": 0.0
+      },
+      "clock_alignment": {
+        "mode": "same_origin",
+        "offset_s": 0.0
+      },
+      "field_ownership_segments": [
+        {"start_mm": 0.0, "end_mm": 6.4, "owner": "integration"}
+      ]
+    },
+    {
+      "schema_version": 1,
+      "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_12p8mm",
+      "upstream": {
+        "project_id": "rf_octupole_ion_optics",
+        "port_id": "rf_multipole_exit",
+        "port_binding": "source_run_resolved_design"
+      },
+      "downstream": {
+        "project_id": "single_reflection_oa_tof_mass_analyzer",
+        "port_id": "oatof_accelerator_entry",
+        "port_contract": "projects/single_reflection_oa_tof_mass_analyzer/config/interfaces/required/oatof_accelerator_entry.json"
+      },
+      "coupling_mode": "monolithic_joint_solve",
+      "spatial_registration": {
+        "rotation_upstream_to_downstream": [
+          [0.0, 0.0, 1.0],
+          [1.0, 0.0, 0.0],
+          [0.0, 1.0, 0.0]
+        ],
+        "translation_mm": [-161.2, 0.0, -18.42918680341103],
+        "expected_gap_mm": 12.8,
+        "position_tolerance_mm": 1e-9,
+        "angular_tolerance_rad": 1e-12
+      },
+      "connector": {
+        "length_mm": 12.8,
+        "inner_radius_mm": 3.6,
+        "wall_thickness_mm": 0.0,
+        "shield_connection_profile_id": "grounded_circular_to_rectangular_shield_v1",
+        "shield_potential_V": 0.0,
+        "flange_thickness_binding": "oatof.geometry_mm.accelerator_shield_wall"
+      },
+      "transition_aperture": {
+        "shape": "rectangle",
+        "full_width_mm": 1.0,
+        "full_height_mm": 0.9,
+        "width_axis_downstream_frame": [0.0, 1.0, 0.0],
+        "height_axis_downstream_frame": [0.0, 0.0, 1.0]
+      },
+      "minimum_clear_radius_mm": 0.45,
+      "potential_alignment": {
+        "mode": "continuous",
+        "tolerance_V": 0.0
+      },
+      "clock_alignment": {
+        "mode": "same_origin",
+        "offset_s": 0.0
+      },
+      "field_ownership_segments": [
+        {"start_mm": 0.0, "end_mm": 12.8, "owner": "integration"}
+      ]
+    },
+    {
+      "schema_version": 1,
+      "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+      "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_25p6mm",
+      "upstream": {
+        "project_id": "rf_octupole_ion_optics",
+        "port_id": "rf_multipole_exit",
+        "port_binding": "source_run_resolved_design"
+      },
+      "downstream": {
+        "project_id": "single_reflection_oa_tof_mass_analyzer",
+        "port_id": "oatof_accelerator_entry",
+        "port_contract": "projects/single_reflection_oa_tof_mass_analyzer/config/interfaces/required/oatof_accelerator_entry.json"
+      },
+      "coupling_mode": "monolithic_joint_solve",
+      "spatial_registration": {
+        "rotation_upstream_to_downstream": [
+          [0.0, 0.0, 1.0],
+          [1.0, 0.0, 0.0],
+          [0.0, 1.0, 0.0]
+        ],
+        "translation_mm": [-174.0, 0.0, -18.42918680341103],
+        "expected_gap_mm": 25.6,
+        "position_tolerance_mm": 1e-9,
+        "angular_tolerance_rad": 1e-12
+      },
+      "connector": {
+        "length_mm": 25.6,
+        "inner_radius_mm": 3.6,
+        "wall_thickness_mm": 0.0,
+        "shield_connection_profile_id": "grounded_circular_to_rectangular_shield_v1",
+        "shield_potential_V": 0.0,
+        "flange_thickness_binding": "oatof.geometry_mm.accelerator_shield_wall"
+      },
+      "transition_aperture": {
+        "shape": "rectangle",
+        "full_width_mm": 1.0,
+        "full_height_mm": 0.9,
+        "width_axis_downstream_frame": [0.0, 1.0, 0.0],
+        "height_axis_downstream_frame": [0.0, 0.0, 1.0]
+      },
+      "minimum_clear_radius_mm": 0.45,
+      "potential_alignment": {
+        "mode": "continuous",
+        "tolerance_V": 0.0
+      },
+      "clock_alignment": {
+        "mode": "same_origin",
+        "offset_s": 0.0
+      },
+      "field_ownership_segments": [
+        {"start_mm": 0.0, "end_mm": 25.6, "owner": "integration"}
+      ]
+    },
+    {
+      "schema_version": 1,
+      "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
       "connection_profile_id": "rf_octupole_oatof_shield_terminal_aperture_050x050_direct_mating_gap_0mm",
       "upstream": {
         "project_id": "rf_octupole_ion_optics",

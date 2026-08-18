@@ -155,6 +155,18 @@ override_analyzer.initialize_workbench({instances={
   {filename='frontend.pa0',nx=101,ny=101,nz=101,dx_mm=0.25,dy_mm=0.25,dz_mm=0.05,scale=1},
   {filename='detector_ground.pa0',nx=3,ny=3,nz=8,dx_mm=1,dy_mm=1,dz_mm=0.05,scale=1},
 }})
+local pre_pulse = override_analyzer.initialize_workbench({
+  active_scope='pre_pulse_frontend_accelerator',
+  instances={[3]={filename='frontend.pa0',nx=101,ny=101,nz=101,
+    dx_mm=0.25,dy_mm=0.25,dz_mm=0.05,scale=1}},
+})
+assert(pre_pulse.active_scope == 'pre_pulse_frontend_accelerator',
+  'pre-pulse active scope changed')
+near(pre_pulse.placements.accelerator.x_mm, -61.3,
+  'pre-pulse accelerator linked x placement')
+assert(pre_pulse.placements.flight_tube == nil and
+  pre_pulse.placements.reflectron == nil and pre_pulse.placements.detector == nil,
+  'pre-pulse scope exposed downstream placements')
 
 local function rejects_workbench(instances, expected)
   local ok, message = pcall(function()

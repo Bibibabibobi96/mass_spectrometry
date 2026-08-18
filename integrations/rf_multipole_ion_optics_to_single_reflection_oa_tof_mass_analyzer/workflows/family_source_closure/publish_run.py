@@ -10,6 +10,7 @@ import math
 import re
 import subprocess
 import sys
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
@@ -45,8 +46,30 @@ STAGES_BY_STRATEGY = {
     "simion_single_flight": SINGLE_FLIGHT_STAGES,
 }
 ALL_STAGE_CONTRACTS = {**STAGES, **SINGLE_FLIGHT_STAGES}
+
+
+def _single_flight_run_stem(resolved: dict[str, Any]) -> str:
+    try:
+        raw_gap_mm = resolved["connector"]["length_mm"]
+        if isinstance(raw_gap_mm, bool):
+            raise ValueError
+        gap_mm = Decimal(str(raw_gap_mm))
+    except (InvalidOperation, KeyError, TypeError, ValueError) as exc:
+        raise ContractError("resolved connector length is missing") from exc
+    if not gap_mm.is_finite() or gap_mm < 0:
+        raise ContractError("resolved connector length is invalid")
+    gap_label = format(gap_mm, "f")
+    if "." in gap_label:
+        gap_label = gap_label.rstrip("0").rstrip(".")
+    gap_label = gap_label.replace(".", "p")
+    if not gap_label:
+        gap_label = "0"
+    return f"__sim__simion__rf-oatof-single-flight-gap{gap_label}__n"
+
+
 N1_RECEIPT_SCHEMA = "rf_oatof_three_zone_n1_solver_authorization_receipt.schema.json"
 N1_RECEIPT_NAME = "three_zone_n1_solver_authorization_receipt.json"
+VERIFIED_PULSE_RECEIPT_NAME = "verified_pulse_timing_receipt.json"
 N1_REQUIRED_EVENTS = (
     "source_release",
     "pre_pulse_state",
@@ -112,6 +135,239 @@ def _verified_manifest_record(
     except (AssertionError, KeyError, TypeError) as exc:
         raise ContractError(f"N=1 child manifest {collection}.{name} identity differs") from exc
     return record, record_path(record, base_dir=run_dir)
+
+
+def _verified_stage_record(
+    manifest: dict[str, Any],
+    *,
+    collection: str,
+    name: str,
+    run_dir: Path,
+) -> Path:
+    records = manifest.get(collection)
+    if collection == "inputs":
+        record = records.get(name) if isinstance(records, dict) else None
+    else:
+        matches = [
+            item for item in records or []
+            if isinstance(item, dict) and Path(str(item.get("path", ""))).name == name
+        ]
+        record = matches[0] if len(matches) == 1 else None
+    if not isinstance(record, dict):
+        raise ContractError(f"pulse screening {collection}.{name} is missing")
+    try:
+        verify_record(f"pulse screening {collection}.{name}", record, base_dir=run_dir)
+        path = record_path(record, base_dir=run_dir).resolve()
+    except (AssertionError, KeyError, TypeError) as exc:
+        raise ContractError(
+            f"pulse screening {collection}.{name} identity differs"
+        ) from exc
+    if not path.is_relative_to(run_dir.resolve()):
+        raise ContractError(f"pulse screening {collection}.{name} is nonlocal")
+    return path
+
+
+def _publish_detector_blind_pulse_selection(
+    *,
+    repo_root: Path,
+    workspace_root: Path,
+    parent_run_dir: Path,
+    stage: dict[str, Any],
+    resolved_connection_path: Path,
+    resolved_source_path: Path,
+    resolved_population_path: Path,
+) -> tuple[Path, Path, dict[str, Any]]:
+    from ...analysis.select_real_field_pulse_time import select_and_write
+
+    child_dir = (workspace_root / stage["path"]).resolve()
+    child_manifest_path = child_dir / "run_manifest.json"
+    if file_sha256(child_manifest_path) != stage.get("manifest_sha256"):
+        raise ContractError("pulse screening child manifest identity differs")
+    child_manifest = _load(child_manifest_path)
+    inputs = {
+        name: _verified_stage_record(
+            child_manifest, collection="inputs", name=name, run_dir=child_dir
+        )
+        for name in (
+            "configuration",
+            "resolved_connection",
+            "resolved_source_contract",
+            "resolved_population_contract",
+            "oatof_resolved_geometry",
+            "pulse_schedule",
+            "mother_particle_source",
+            "pre_pulse_time_series_contract",
+        )
+    }
+    state_table = _verified_stage_record(
+        child_manifest,
+        collection="outputs",
+        name="pre_pulse_time_series_states.csv",
+        run_dir=child_dir,
+    )
+    screening_receipt = _verified_stage_record(
+        child_manifest,
+        collection="outputs",
+        name="pre_pulse_time_series_screening_receipt.json",
+        run_dir=child_dir,
+    )
+    parent_identities = {
+        "resolved_connection": resolved_connection_path,
+        "resolved_source_contract": resolved_source_path,
+        "resolved_population_contract": resolved_population_path,
+    }
+    if any(
+        file_sha256(inputs[name]) != file_sha256(path)
+        for name, path in parent_identities.items()
+    ):
+        raise ContractError("pulse screening child and parent identities differ")
+    selector_source = (
+        repo_root
+        / "integrations"
+        / INTEGRATION_ID
+        / "analysis"
+        / "select_real_field_pulse_time.py"
+    )
+    candidate_table = (
+        parent_run_dir / "results" / "detector_blind_pulse_timing_candidates.csv"
+    )
+    candidate_receipt = (
+        parent_run_dir
+        / "results"
+        / "detector_blind_pulse_timing_candidate_receipt.json"
+    )
+    receipt = select_and_write(
+        state_table_path=state_table,
+        screening_contract_path=inputs["pre_pulse_time_series_contract"],
+        screening_receipt_path=screening_receipt,
+        resolved_population_path=resolved_population_path,
+        population_table_path=inputs["mother_particle_source"],
+        resolved_source_path=resolved_source_path,
+        resolved_connection_path=resolved_connection_path,
+        screening_manifest_path=child_manifest_path,
+        selector_source_path=selector_source,
+        geometry_path=inputs["oatof_resolved_geometry"],
+        single_flight_configuration_path=inputs["configuration"],
+        ballistic_schedule_path=inputs["pulse_schedule"],
+        candidate_table_path=candidate_table,
+        receipt_path=candidate_receipt,
+    )
+    return candidate_table, candidate_receipt, receipt
+
+
+def _publish_verified_pulse_receipt(
+    *, workspace_root: Path, parent_run_dir: Path, stage: dict[str, Any],
+) -> tuple[Path, dict[str, Any]] | None:
+    """Publish functional reuse authority after one successful pulse-on flight."""
+
+    child_dir = (workspace_root / stage["path"]).resolve()
+    child_manifest_path = child_dir / "run_manifest.json"
+    if file_sha256(child_manifest_path) != stage.get("manifest_sha256"):
+        raise ContractError("pulse confirmation child manifest identity differs")
+    child_manifest = _load(child_manifest_path)
+    if not isinstance(child_manifest.get("inputs"), dict) or (
+        "pulse_schedule" not in child_manifest["inputs"]
+    ):
+        return None
+    schedule_path = _verified_stage_record(
+        child_manifest, collection="inputs", name="pulse_schedule", run_dir=child_dir
+    )
+    schedule = _load(schedule_path)
+    authority = schedule.get("execution_authority")
+    if not isinstance(authority, dict):
+        return None
+    if authority.get("mode") != "detector_blind_candidate_confirmation_v1":
+        raise ContractError("pulse confirmation schedule authority mode differs")
+    summary_path = _verified_stage_record(
+        child_manifest, collection="outputs", name="summary.json", run_dir=child_dir
+    )
+    child_summary = _load(summary_path)
+    selected_time_us = float(schedule["pulse_effective_time_us"])
+    census = child_summary.get("census", {})
+    names = (
+        "launched", "multipole_handoff", "pre_pulse_state",
+        "accelerator_grid1_forward", "accelerator_intermediate2_forward",
+        "local_accelerator_exit", "detector_crossing",
+    )
+    ordered_counts = [census.get(name) for name in names]
+    if (
+        child_summary.get("role") != "rf_oatof_simion_single_flight_summary"
+        or child_summary.get("status") != "success"
+        or not math.isclose(
+            float(child_summary.get("pulse_effective_time_us")), selected_time_us,
+            rel_tol=0.0, abs_tol=1e-9,
+        )
+        or any(not isinstance(value, int) for value in ordered_counts)
+        or any(left < right for left, right in zip(ordered_counts, ordered_counts[1:]))
+        or ordered_counts[-1] <= 0
+    ):
+        raise ContractError("pulse confirmation flight evidence differs")
+
+    def authority_path(name: str) -> Path:
+        record = authority[name]
+        path = (workspace_root / record["path"]).resolve()
+        if (
+            not path.is_relative_to(workspace_root.resolve())
+            or not path.is_file()
+            or file_sha256(path) != record["sha256"]
+        ):
+            raise ContractError(f"pulse confirmation {name} identity differs")
+        return path
+
+    candidate_parent = authority_path("candidate_parent_manifest")
+    candidate_receipt = authority_path("candidate_selection_receipt")
+    receipt = {
+        "schema_version": 1,
+        "role": "rf_oatof_verified_pulse_timing_receipt",
+        "status": "success",
+        "qualification": "FUNCTIONAL_ONLY",
+        "decision": "PASS_FOR_IDENTICAL_IDENTITY_REUSE",
+        "reusable_verified_pulse": True,
+        "content_key": authority["content_key"],
+        "selected_time_us": selected_time_us,
+        "candidate_authority": {
+            "parent_manifest": _file_binding(candidate_parent, workspace_root),
+            "selection_receipt": _file_binding(candidate_receipt, workspace_root),
+            "selection_preregistered": authority["selection_preregistered"],
+        },
+        "verification_authority": {
+            "child_manifest": _file_binding(child_manifest_path, workspace_root),
+            "pulse_schedule": _file_binding(schedule_path, workspace_root),
+            "summary": _file_binding(summary_path, workspace_root),
+        },
+        "census": {name: census[name] for name in names},
+        "claim_limit": "IDENTICAL_IDENTITY_FUNCTIONAL_REUSE_ONLY",
+    }
+    validate_schema(receipt, "rf_oatof_verified_pulse_timing_receipt.schema.json")
+    path = parent_run_dir / "results" / VERIFIED_PULSE_RECEIPT_NAME
+    path.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
+    return path, receipt
+
+
+def _publish_verified_pulse_cache(
+    *, workspace_root: Path, receipt: dict[str, Any],
+) -> Path:
+    """Publish a deletable content-addressed copy of verified pulse authority."""
+
+    cache_dir = (
+        workspace_root
+        / "artifacts"
+        / "projects"
+        / INTEGRATION_ID
+        / "cache"
+        / "verified_pulse"
+        / receipt["content_key"]
+    )
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    path = cache_dir / VERIFIED_PULSE_RECEIPT_NAME
+    if path.exists():
+        existing = _load(path)
+        validate_schema(existing, "rf_oatof_verified_pulse_timing_receipt.schema.json")
+        if existing != receipt:
+            raise ContractError("verified pulse cache content differs")
+        return path
+    path.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
+    return path
 
 
 def _n1_gate_pair(campaign: dict[str, Any], experiment_id: str) -> tuple[dict[str, Any], dict[str, Any]] | None:
@@ -570,7 +826,12 @@ def publish_family_source_closure_run(
         raise ContractError("family receipt stage identities are incomplete")
     for phase in stage_contracts:
         validate_run_id(stage_run_ids[phase])
-        expected_run_id = run_id[:15] + stage_contracts[phase]["run_stem"] + str(particle_count) + _retry_suffix(run_id)
+        run_stem = (
+            _single_flight_run_stem(resolved)
+            if phase == "single_flight_transport"
+            else stage_contracts[phase]["run_stem"]
+        )
+        expected_run_id = run_id[:15] + run_stem + str(particle_count) + _retry_suffix(run_id)
         binding_hash = stage_runtime_binding_sha256s[phase]
         if (
             stage_run_ids[phase] != expected_run_id
@@ -626,6 +887,39 @@ def publish_family_source_closure_run(
         )
 
     analyzer_summary = _load(workspace_root / stages[-1]["path"] / "summary.json")
+    pulse_candidate_table_path = None
+    pulse_candidate_receipt_path = None
+    pulse_candidate_receipt = None
+    if campaign.get("pre_pulse_time_series_screening") is not None:
+        if execution_strategy != "simion_single_flight":
+            raise ContractError("pulse screening requires single-flight execution")
+        (
+            pulse_candidate_table_path,
+            pulse_candidate_receipt_path,
+            pulse_candidate_receipt,
+        ) = _publish_detector_blind_pulse_selection(
+            repo_root=repo_root,
+            workspace_root=workspace_root,
+            parent_run_dir=run_dir,
+            stage=stages[-1],
+            resolved_connection_path=resolved_path,
+            resolved_source_path=resolved_source_contract_path,
+            resolved_population_path=resolved_population_contract_path,
+        )
+    verified_pulse_path = None
+    verified_pulse = None
+    if execution_strategy == "simion_single_flight":
+        verified_result = _publish_verified_pulse_receipt(
+            workspace_root=workspace_root,
+            parent_run_dir=run_dir,
+            stage=stages[-1],
+        )
+        if verified_result is not None:
+            verified_pulse_path, verified_pulse = verified_result
+            _publish_verified_pulse_cache(
+                workspace_root=workspace_root,
+                receipt=verified_pulse,
+            )
     n1_authorization_path = None
     n1_authorization = None
     if n1_gate_pair is not None:
@@ -657,6 +951,20 @@ def publish_family_source_closure_run(
             "upstream_resolved_design": _portable(upstream_resolved_design_path, workspace_root),
             "resolved_engineering_budget": _portable(budget_path, workspace_root),
             **{f"{stage['phase']}_manifest": (stage["path"] + "/run_manifest.json") for stage in stages},
+            **(
+                {
+                    "pulse_timing_selector_source": _portable(
+                        repo_root
+                        / "integrations"
+                        / INTEGRATION_ID
+                        / "analysis"
+                        / "select_real_field_pulse_time.py",
+                        workspace_root,
+                    )
+                }
+                if pulse_candidate_receipt is not None
+                else {}
+            ),
         },
         "connection_profile_id": profile_id,
         "campaign_path": receipt["campaign_path"],
@@ -705,6 +1013,52 @@ def publish_family_source_closure_run(
         "paired_analysis_status": "NOT_RUN",
         **(
             {
+                "detector_blind_pulse_timing_candidate": {
+                    "qualification": "candidate_selection",
+                    "selection_preregistered": pulse_candidate_receipt[
+                        "selection_preregistered"
+                    ],
+                    "selected_time_us": pulse_candidate_receipt["selected_time_us"],
+                    "candidate_count": len(
+                        pulse_candidate_receipt["candidates_ranked"]
+                    ),
+                    "population_denominator_count": pulse_candidate_receipt[
+                        "population_denominator_count"
+                    ],
+                    "content_key": pulse_candidate_receipt["content_key"],
+                    "candidate_table": (
+                        "results/detector_blind_pulse_timing_candidates.csv"
+                    ),
+                    "candidate_table_sha256": file_sha256(
+                        pulse_candidate_table_path
+                    ),
+                    "receipt": (
+                        "results/"
+                        "detector_blind_pulse_timing_candidate_receipt.json"
+                    ),
+                    "receipt_sha256": file_sha256(pulse_candidate_receipt_path),
+                    "reusable_verified_pulse": False,
+                }
+            }
+            if pulse_candidate_receipt is not None
+            else {}
+        ),
+        **(
+            {
+                "verified_pulse_timing": {
+                    "decision": verified_pulse["decision"],
+                    "selected_time_us": verified_pulse["selected_time_us"],
+                    "content_key": verified_pulse["content_key"],
+                    "receipt": "results/" + VERIFIED_PULSE_RECEIPT_NAME,
+                    "receipt_sha256": file_sha256(verified_pulse_path),
+                    "reusable_verified_pulse": True,
+                }
+            }
+            if verified_pulse is not None
+            else {}
+        ),
+        **(
+            {
                 "three_zone_solver_authorization": {
                     "decision": n1_authorization["decision"],
                     "authorization_status": n1_authorization["authorization_status"],
@@ -744,6 +1098,21 @@ def publish_family_source_closure_run(
             "--output",
             str(summary_path),
             *(["--output", str(n1_authorization_path)] if n1_authorization_path is not None else []),
+            *(
+                ["--output", str(verified_pulse_path)]
+                if verified_pulse_path is not None
+                else []
+            ),
+            *(
+                [
+                    "--output",
+                    str(pulse_candidate_table_path),
+                    "--output",
+                    str(pulse_candidate_receipt_path),
+                ]
+                if pulse_candidate_receipt is not None
+                else []
+            ),
         ],
         cwd=repo_root,
         check=False,

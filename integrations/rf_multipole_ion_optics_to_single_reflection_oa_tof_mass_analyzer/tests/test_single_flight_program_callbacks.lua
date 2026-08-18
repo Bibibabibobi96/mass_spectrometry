@@ -67,6 +67,7 @@ simion={
 assert(dofile(program_path)==nil, 'combined Program unexpectedly returned a value')
 
 local successor=run_mode:match('^successor')~=nil
+local time_series=run_mode=='successor_time_series_mode2'
 local expected_counts=successor and
   {load=1,initialize_run=1,fast_adjust=1,efield_adjust=1,
     initialize=1,tstep_adjust=1,other_actions=1,terminate=1,instance_adjust=1} or
@@ -94,12 +95,27 @@ if expected_rejection[run_mode] then
   return
 end
 
-if successor then
+if time_series then
+  callbacks.__successor_test_set_adjustable('handoff_pulse_mode',0)
+  local accepted_mode0,message_mode0=pcall(callbacks.initialize_run)
+  assert(not accepted_mode0 and tostring(message_mode0):find(
+    'existing held-off pulse mode',1,true),
+    'pre-pulse time-series accepted formal always-on pulse mode 0')
+  callbacks.__successor_test_set_adjustable('handoff_pulse_mode',2)
+elseif successor then
   callbacks.__successor_test_set_adjustable('handoff_pulse_mode',1)
   callbacks.__successor_test_set_adjustable('handoff_pulse_time_us',1)
   callbacks.__successor_test_set_adjustable('handoff_pulse_width_us',0.5)
 end
 callbacks.initialize_run()
+if time_series then
+  assert(#instances[2].pa.calls==0,
+    'pre-pulse time-series adjusted the reflectron PA')
+  assert(#instances[3].pa.calls==2,
+    'pre-pulse time-series accelerator/frontend adjustment count changed')
+  print('SUCCESSOR_TIME_SERIES_HELD_OFF_MODE=PASS')
+  return
+end
 if successor then
   assert(#instances[3].pa.load_calls==1 and
     instances[3].pa.load_calls[1]=='frontend.pa0',

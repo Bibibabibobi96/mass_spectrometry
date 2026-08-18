@@ -78,6 +78,7 @@ param(
   [string]$MotherParticleSource = '',
   [string]$MotherParticleSourceSha256 = '',
   [int]$MotherParticleCount = 0,
+  [string]$MotherParticleSourceRunRoot = '',
   [string]$MotherParticleSourceReceipt = '',
   [string]$MotherParticleSourceReceiptSha256 = '',
   [switch]$ResolutionQualification,
@@ -91,6 +92,8 @@ param(
   [string]$PulseResolutionPrefixPlanRoot = '',
   [string]$PulseResolutionRegistrationAuthority = '',
   [string]$PulseResolutionRegistrationAuthoritySha256 = '',
+  [string]$PrePulseTimeSeriesContract = '',
+  [string]$PrePulseTimeSeriesContractSha256 = '',
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
   [string]$PythonExe = ''
 )
@@ -275,14 +278,33 @@ function Assert-RfThreeZoneCheckpointCensus {
   param(
     [Parameter(Mandatory)][bool]$Required,
     [Parameter(Mandatory)]$Census,
-    [Parameter(Mandatory)][int]$ExpectedCount
+    [Parameter(Mandatory)][int]$LaunchedCount
   )
   if (-not $Required) { return }
-  $countProperty = $Census.PSObject.Properties[
-    'accelerator_intermediate2_forward'
-  ]
-  if ($ExpectedCount -lt 1 -or $null -eq $countProperty -or
-      [int]$countProperty.Value -ne $ExpectedCount) {
+  $counts = [ordered]@{}
+  foreach ($eventName in @(
+      'accelerator_grid1_forward',
+      'accelerator_intermediate2_forward',
+      'local_accelerator_exit',
+      'detector_crossing'
+    )) {
+    $countProperty = $Census.PSObject.Properties[$eventName]
+    if ($null -eq $countProperty) {
+      throw 'Three-zone intermediate2 checkpoint census differs.'
+    }
+    $counts[$eventName] = [int]$countProperty.Value
+  }
+  if ($LaunchedCount -lt 1 -or
+      $counts.accelerator_grid1_forward -lt 1 -or
+      $counts.accelerator_intermediate2_forward -lt 1 -or
+      $counts.accelerator_grid1_forward -gt $LaunchedCount -or
+      $counts.accelerator_intermediate2_forward -gt
+        $counts.accelerator_grid1_forward -or
+      $counts.local_accelerator_exit -gt
+        $counts.accelerator_intermediate2_forward -or
+      $counts.detector_crossing -gt $counts.local_accelerator_exit -or
+      $counts.local_accelerator_exit -lt 0 -or
+      $counts.detector_crossing -lt 0) {
     throw 'Three-zone intermediate2 checkpoint census differs.'
   }
 }
@@ -310,7 +332,7 @@ function Assert-RfThreeZoneAuthorizationFileBinding {
 
 function Assert-RfThreeZoneSolverAuthorization {
   param(
-    [Parameter(Mandatory)][string]$Stage,
+    [AllowEmptyString()][Parameter(Mandatory)][string]$Stage,
     [Parameter(Mandatory)][int]$ParticleCount,
     [string]$ReceiptPath = '',
     [string]$ReceiptSha256 = '',
@@ -480,6 +502,18 @@ $hasThreeZoneCandidate = Assert-RfThreeZoneArgumentSet -LayoutProfileId $LayoutP
 if (-not (Test-Path -LiteralPath $SimionExe -PathType Leaf)) { throw "SIMION is missing: $SimionExe" }
 $runProjectId = 'rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer'
 $simionSolverCacheIdentity = Get-RfSimionSolverCacheIdentity -SimionExe $SimionExe
+$isPrePulseTimeSeriesScreening = -not [string]::IsNullOrWhiteSpace(
+  $PrePulseTimeSeriesContract
+)
+if ($isPrePulseTimeSeriesScreening -ne (-not [string]::IsNullOrWhiteSpace(
+      $PrePulseTimeSeriesContractSha256))) {
+  throw 'Pre-pulse time-series contract path/hash identity is incomplete.'
+}
+if ($isPrePulseTimeSeriesScreening -and (
+    $ResolutionQualification -or $PulseResolutionN100Screening -or
+    $PaCachePolicy -ne 'require_existing')) {
+  throw 'Pre-pulse time-series screening requires cached FUNCTIONAL_ONLY execution.'
+}
 if ($PulseResolutionN100Screening) {
   $isBaseline = $PulseResolutionExecutionMode -eq `
     'screening_prefix_n100_baseline_registration'
@@ -523,6 +557,36 @@ $paCacheDispositions = [ordered]@{
   reflectron = [ordered]@{
     role='simion_oatof_reflectron_pa_cache';key=$null
     disposition='pending_cache_decision'
+  }
+}
+$prePulseTimeSeriesContractFrozen = $null
+$prePulseTimeSeries = $null
+if ($isPrePulseTimeSeriesScreening) {
+  $prePulseTimeSeriesContractFrozen = Join-Path $package.input_dir `
+    'pre_pulse_time_series_screening_contract.json'
+  Copy-RfStableFile -SourceRunRoot $workspaceRoot `
+    -SourcePath $PrePulseTimeSeriesContract `
+    -Destination $prePulseTimeSeriesContractFrozen `
+    -Role 'pre-pulse time-series screening contract' | Out-Null
+  if ((Get-FileHash -LiteralPath $prePulseTimeSeriesContractFrozen -Algorithm SHA256).Hash -ne
+      $PrePulseTimeSeriesContractSha256) {
+    throw 'Pre-pulse time-series screening contract SHA differs.'
+  }
+  $prePulseTimeSeries = Get-Content -LiteralPath $prePulseTimeSeriesContractFrozen `
+    -Raw -Encoding UTF8 | ConvertFrom-Json
+  if ([int]$prePulseTimeSeries.schema_version -ne 1 -or
+      [string]$prePulseTimeSeries.role -ne
+        'rf_oatof_pre_pulse_time_series_screening_contract' -or
+      [string]$prePulseTimeSeries.mode -ne 'real_pa_rf_pre_pulse_time_series' -or
+      [string]$prePulseTimeSeries.active_scope -ne
+        'pre_pulse_frontend_accelerator' -or
+      -not [bool]$prePulseTimeSeries.pulse_disabled -or
+      -not [bool]$prePulseTimeSeries.terminate_at_window_end -or
+      [bool]$prePulseTimeSeries.resolution_claim_allowed -or
+      (@($prePulseTimeSeries.prohibited_outputs) -join ',') -ne
+        'detector_crossing,resolution_metrics,single_flight_spatial_six_panel' -or
+      @($prePulseTimeSeries.sample_times_us).Count -lt 1) {
+    throw 'Pre-pulse time-series screening contract mode/output policy differs.'
   }
 }
 $preCacheRunConfiguration = [ordered]@{
@@ -892,12 +956,14 @@ try {
     throw 'Frozen oaTOF architecture generation or radius identity differs.'
   }
   $hasReflectronRebuild = (
+    -not $isPrePulseTimeSeriesScreening -and
     $SamplingMode -ne 'steady_candidate_pool' -and
     $null -ne $layoutDerivation -and
     $null -ne $layoutDerivation.PSObject.Properties['design_compilation'] -and
     [bool]$layoutDerivation.design_compilation.simion_rebuild_plan.reflectron_pa
   )
   $hasFlightTubeRebuild = (
+    -not $isPrePulseTimeSeriesScreening -and
     $SamplingMode -ne 'steady_candidate_pool' -and
     $null -ne $layoutDerivation -and
     $null -ne $layoutDerivation.PSObject.Properties['design_compilation'] -and
@@ -997,6 +1063,12 @@ try {
       ($hasMotherOverride -or $hasMaterializedMotherReceipt)) {
     throw 'Restart source modes prohibit an unused mother-source override.'
   }
+  $hasMotherSourceRunRoot = -not [string]::IsNullOrWhiteSpace(
+    $MotherParticleSourceRunRoot
+  )
+  if ($hasMotherSourceRunRoot -and (-not $hasMotherOverride -or $hasMaterializedMotherReceipt)) {
+    throw 'Explicit mother-source run root requires one non-materialized mother-source override.'
+  }
   $sourceToCopy = if ($isPrePulseRestart) {
     [IO.Path]::GetFullPath($PrePulseSourceState)
   } elseif ($isStagedGrid2Restart) {
@@ -1004,6 +1076,8 @@ try {
   } elseif ($hasMotherOverride) { [IO.Path]::GetFullPath($MotherParticleSource) } else { $runtime.source_particle_source }
   $motherSourceRoot = if ($PulseResolutionN100Screening) {
     [IO.Path]::GetFullPath($PulseResolutionPrefixPlanRoot)
+  } elseif ($hasMotherSourceRunRoot) {
+    [IO.Path]::GetFullPath($MotherParticleSourceRunRoot)
   } elseif ($isPrePulseRestart -or $isStagedGrid2Restart) { $workspaceRoot } elseif ($hasMaterializedMotherReceipt) {
     Resolve-RfMaterializedMotherSourceRunRoot `
       -WorkspaceRoot $workspaceRoot `
@@ -1281,6 +1355,7 @@ try {
   $overlayCachePa0 = $null
   $overlayBasisBuilderFrozen = $null
   $overlayRefinerFrozen = $null
+  $overlayKey = $null
   $overlayBasisReport = $null
   $overlayInterfaceVerifierFrozen = $null
   $overlayInterfaceReport = $null
@@ -1517,6 +1592,75 @@ try {
   $reflectronCachePa0 = $reflectronCachePlan.pa0
   $flightTubeCacheDir = $flightTubeCachePlan.directory
   $reflectronCacheDir = $reflectronCachePlan.directory
+  if ($isPrePulseTimeSeriesScreening) {
+    $identity = $prePulseTimeSeries.identities
+    $cacheKeys = $prePulseTimeSeries.pa_cache_keys
+    $rfGrid = $prePulseTimeSeries.rf_time_grid
+    $upstreamDocument = Get-Content -LiteralPath $upstreamFrozen -Raw -Encoding UTF8 |
+      ConvertFrom-Json
+    $motherSourceActualSha256 = (Get-FileHash -LiteralPath $motherSource `
+      -Algorithm SHA256).Hash
+    $identityChecks = @(
+      @([string]$identity.campaign_id,[string]$populationContract.campaign_id),
+      @([string]$identity.experiment_id,[string]$populationContract.experiment_id),
+      @([string]$identity.connection_profile_id,$ConnectionProfileId),
+      @([string]$identity.source_profile_id,$SourceProfileId),
+      @([string]$identity.resolved_source_contract_sha256,$ResolvedSourceContractSha256),
+      @([string]$identity.resolved_population_contract_sha256,$ResolvedPopulationContractSha256),
+      @([string]$identity.mother_particle_source_sha256,$motherSourceActualSha256),
+      @([string]$identity.layout_profile_id,$LayoutProfileId),
+      @([string]$identity.architecture_generation_id,$ArchitectureGenerationId),
+      @([string]$identity.candidate_sha256,$ThreeZoneCandidateSha256),
+      @([string]$identity.topology_id,$ThreeZoneTopologyId),
+      @([string]$identity.geometry_id,$ThreeZoneGeometryId),
+      @([string]$identity.frontend_electrode_topology_id,$ThreeZoneFrontendElectrodeTopologyId),
+      @([string]$identity.field_id,$ThreeZoneFieldId),
+      @([string]$identity.field_profile_id,$selectedFieldProfileId),
+      @([string]$identity.region_field_semantic_sha256,$ResolvedRegionFieldSemanticSha256),
+      @([string]$identity.frontend_grid_profile_id,$selectedGridProfileId),
+      @([string]$identity.field_overlay_id,$resolvedFieldOverlayId),
+      @([string]$identity.oatof_numerical_profile_id,$selectedOatofNumericalProfileId),
+      @([string]$identity.trajectory_quality_profile_id,$selectedTrajectoryQualityProfileId),
+      @([string]$identity.time_integration_profile_id,$selectedTimeIntegrationProfileId)
+    )
+    if (@($identityChecks | Where-Object { $_[0] -ne $_[1] }).Count -ne 0 -or
+        [string]$cacheKeys.frontend -ne $frontendCacheKey -or
+        [string]$cacheKeys.accelerator_overlay -ne [string]$overlayKey -or
+        $null -ne $cacheKeys.flight_tube -or
+        $null -ne $cacheKeys.reflectron) {
+      throw 'Pre-pulse time-series source/layout/field/PA identity differs.'
+    }
+    $sampleTimes = @($prePulseTimeSeries.sample_times_us | ForEach-Object {
+      [double]$_
+    })
+    $frequencyHz = [double]$upstreamDocument.drive.frequency_Hz
+    $periodUs = 1000000.0 / $frequencyHz
+    $stepUs = $periodUs / 160.0
+    $startIndex = [int]$rfGrid.start_index
+    $endIndex = [int]$rfGrid.end_index
+    if ([string]$rfGrid.waveform -ne [string]$upstreamDocument.drive.waveform -or
+        [double]$rfGrid.frequency_hz -ne $frequencyHz -or
+        [double]$rfGrid.phase_rad -ne [double]$upstreamDocument.drive.phase_rad -or
+        [int]$rfGrid.rf_steps_per_period -ne 160 -or
+        $rfStepsPerPeriod -ne 160 -or
+        [Math]::Abs([double]$rfGrid.period_us - $periodUs) -gt 1e-12 -or
+        [Math]::Abs([double]$rfGrid.step_us - $stepUs) -gt 1e-12 -or
+        $startIndex -lt 0 -or $endIndex -lt $startIndex -or
+        $sampleTimes.Count -ne ($endIndex - $startIndex + 1)) {
+      throw 'Pre-pulse time-series RF160 time-grid identity differs.'
+    }
+    for ($index = 0; $index -lt $sampleTimes.Count; $index++) {
+      $expectedTime = [double]$rfGrid.grid_origin_us +
+        ($startIndex + $index) * $stepUs
+      if ([Math]::Abs($sampleTimes[$index] - $expectedTime) -gt
+          (1e-12 * [Math]::Max(1.0,[Math]::Abs($expectedTime)))) {
+        throw 'Pre-pulse time-series sample time differs from the frozen RF160 grid.'
+      }
+      if ($index -gt 0 -and $sampleTimes[$index] -le $sampleTimes[$index - 1]) {
+        throw 'Pre-pulse time-series sample times are not strictly increasing.'
+      }
+    }
+  }
   function Copy-RfPaCacheFamilyToRuntime {
     param([Parameter(Mandatory)][string]$CacheDirectory,[Parameter(Mandatory)][string]$Pattern)
     foreach ($source in Get-ChildItem -LiteralPath $CacheDirectory -Filter $Pattern -File) {
@@ -1881,6 +2025,11 @@ try {
     $programArguments += @('--restart-context',$restartContext)
   }
   if ($SamplingMode -eq 'steady_candidate_pool') { $programArguments += '--terminate-after-pulse' }
+  if ($isPrePulseTimeSeriesScreening) {
+    $programArguments += @(
+      '--pre-pulse-time-series-contract',$prePulseTimeSeriesContractFrozen
+    )
+  }
   if ($null -ne $prePulseValidationFrozen) { $programArguments += '--global-segments' }
   if ($overlayEnabled) { $programArguments += @('--accelerator-overlay-contract',$overlayContract) }
   Invoke-SingleFlightPython -Arguments $programArguments `
@@ -1891,8 +2040,15 @@ try {
     upstream_project_id=$runtime.upstream_project_id
     inputs=[ordered]@{ configuration=$configuration; runtime_binding=$runtimeBindingFrozen; resolved_connection=$resolvedFrozen; resolved_source_contract=$sourceContractFrozen; resolved_population_contract=$populationContractFrozen; upstream_resolved_design=$upstreamFrozen; oatof_resolved_geometry=$oatofGeometry; pulse_schedule=$pulseScheduleFrozen; resolved_region_field_contract=$resolvedRegionFieldContractFrozen; analyzer_component=$analyzerComponent; pulse_hook=$pulseHook; frontend_hook=$frontendHook; rf_drive_kernel=$rfDriveKernel; resolved_integration_engineering_budget=$budget.frozen_budget; resolved_stage_resource_budget=$budget.stage_budget; mother_particle_source=$motherSource; mother_particle_source_materialization_receipt=$motherSourceReceiptFrozen; initial_global_state=$globalSource; particle_row_map=$particleRowMap; pre_pulse_restart_validation=$prePulseValidationFrozen; staged_grid2_restart_context=$restartContext; staged_grid2_loader_authorization_budget=$stagedLoaderBudgetFrozen; staged_grid2_producer_manifest=$stagedGrid2ProducerManifestFrozen; staged_grid2_bridge_receipt=$stagedGrid2BridgeReceiptFrozen; particle_input=$particleInput; frontend_gem=$frontendGem; frontend_contract=$frontendContract; frontend_electrode_topology=$frontendElectrodeTopologyContract; frontend_pa_cache_manifest=$frontendCacheManifestInput; accelerator_overlay_gem=$overlayGem; accelerator_overlay_contract=$overlayContract; accelerator_overlay_basis_builder=$overlayBasisBuilderFrozen; accelerator_overlay_refiner=$overlayRefinerFrozen; accelerator_overlay_interface_verifier=$overlayInterfaceVerifierFrozen; accelerator_overlay_pa_cache_manifest=$overlayCacheManifestInput; accelerator_overlay_iob_builder=$overlayIobBuilderFrozen; accelerator_overlay_iob_container=$overlayIobContainerFrozen; accelerator_overlay_iob_container_gems=$overlayIobContainerGemFrozen; accelerator_overlay_basis_report=$overlayBasisReport; accelerator_overlay_interface_report=$overlayInterfaceReport; flight_tube_pa_cache_manifest=$flightTubeCacheManifestInput; reflectron_pa_cache_manifest=$reflectronCacheManifestInput; frontend_aperture_topology_support=$apertureTopologySupport; frontend_aperture_topology_verifier=$apertureVerifier; program_metadata=$programMetadata; candidate_flight_tube_builder=$flightTubeBuilderFrozen; candidate_flight_tube_gem=$flightTubeGemFrozen; candidate_reflectron_builder=$reflectronBuilderFrozen; candidate_reflectron_gem=$reflectronGemFrozen; candidate_reflectron_refiner=$reflectronRefinerFrozen }
     upstream_source_identity=$resolvedBudgetDocument.source_identity
-    parameters=[ordered]@{ connection_profile_id=$ConnectionProfileId; source_branch_id=$SourceBranchId; single_flight_pa_cache_policy=$PaCachePolicy; single_flight_pa_cache_policy_provenance=$PaCachePolicyProvenance; pa_cache_dispositions=$paCacheDispositions; layout_profile_id=$(if($hasGovernedLayout){$LayoutProfileId}else{$null}); architecture_generation_id=$(if($hasGovernedLayout){$ArchitectureGenerationId}else{$null}); source_profile_id=$(if($SourceProfileId){$SourceProfileId}else{$null}); field_overlay_id=$resolvedFieldOverlayId; bore_radius_mm=[double]$oatofGeometryDocument.geometry_mm.bore_r; ring_outer_radius_mm=[double]$oatofGeometryDocument.geometry_mm.ring_outer_r; shield_inner_radius_mm=[double]$oatofGeometryDocument.geometry_mm.flight_tube_r; frontend_grid_profile_id=$selectedGridProfileId; frontend_cell_mm_xyz=[ordered]@{x=$frontendCellMmX;y=$frontendCellMmY;z=$frontendCellMmZ}; accelerator_overlay_enabled=$overlayEnabled; accelerator_overlay_cell_mm_xyz=$(if($overlayEnabled){[ordered]@{x=$overlayCellMmX;y=$overlayCellMmY;z=$overlayCellMmZ}}else{$null}); accelerator_overlay_boundary_mode=$(if($overlayEnabled){'coarse_electrode_basis_dirichlet_v1'}else{$null}); oatof_numerical_profile_id=$selectedOatofNumericalProfileId; trajectory_quality_profile_id=$selectedTrajectoryQualityProfileId; trajectory_quality=$trajectoryQuality; time_integration_profile_id=$selectedTimeIntegrationProfileId; rf_steps_per_period=$rfStepsPerPeriod; spatial_window_profile_id=$(if($spatialWindowProfiles.Count -eq 1){$SpatialWindowProfileId}else{$null}); accelerator_field_profile_id=$selectedFieldProfileId; resolved_region_field_contract_sha256=$ResolvedRegionFieldContractSha256; resolved_region_field_semantic_sha256=$ResolvedRegionFieldSemanticSha256; resolved_population_contract_sha256=$ResolvedPopulationContractSha256; max_parallel_batches=$maxParallelBatches; clock_basis=[string]$settings.clock_basis; launched_particle_count=$launched; particle_count=$launched; population_denominator_count=$PopulationDenominatorCount; eligible_population_count=$EligiblePopulationCount; population_basis=$(if($SamplingMode -eq 'continuous_injection_full_population'){'candidate_full_population'}elseif($SamplingMode -eq 'pulse_eligible_conditional'){'pulse_eligible_conditional_population'}else{'source_contract_population'}); execution_batch_count=$(if($launched -ge [int]$settings.batching_policy.enabled_at_particle_count){[int]$settings.batching_policy.default_batch_count}else{1}); execution_batches_parallel=$(if($launched -ge [int]$settings.batching_policy.enabled_at_particle_count){[bool]$settings.batching_policy.parallel_after_cache_warmup}else{$false}); aperture_width_mm=$apertureWidthMm; aperture_height_mm=$apertureHeightMm; aperture_boolean_boundary_policy=[string]$apertureDiscretization.boolean_boundary_policy; aperture_grid_warnings=$apertureGridWarnings; frontend_open_aperture_column_count=[int]$apertureTopology.open_column_count; frontend_aperture_guard_electrode_check_passed=[bool]$apertureTopology.guard_electrode_check_passed; frontend_aperture_topology_report_sha256=(Get-FileHash -LiteralPath $apertureTopologyReport -Algorithm SHA256).Hash; rod_end_to_accelerator_shield_mm=1.0; surrounded_transition=$true; accelerator_axis_x_mm=[double]$oatofGeometryDocument.coordinate_convention.accelerator_axis_x; pulse_time_us=$pulseTimeUs; pulse_width_us=$pulseWidthUs; design_compilation=$(if($null -ne $layoutDerivation){$layoutDerivation.design_compilation}else{$null}); source_release_full_width_mm=[double]$oatofGeometryDocument.particle_source.size_z_mm; reflectron_stage2_length_mm=[double]$oatofGeometryDocument.geometry_mm.L_stage2; reflectron_midgrid_voltage_V=[double]$oatofGeometryDocument.electrodes_V.midgrid; reflectron_backplate_voltage_V=[double]$oatofGeometryDocument.electrodes_V.backplate; reflectron_pa0_sha256=(Get-FileHash -LiteralPath $reflectronPa0 -Algorithm SHA256).Hash; frontend_gem_sha256=$frontendHash; frontend_pa0_sha256=(Get-FileHash -LiteralPath $cachePa0 -Algorithm SHA256).Hash; accelerator_overlay_pa0_sha256=$(if($overlayEnabled){(Get-FileHash -LiteralPath $overlayCachePa0 -Algorithm SHA256).Hash}else{$null}) }
+    parameters=[ordered]@{ connection_profile_id=$ConnectionProfileId; source_branch_id=$SourceBranchId; single_flight_pa_cache_policy=$PaCachePolicy; single_flight_pa_cache_policy_provenance=$PaCachePolicyProvenance; pa_cache_dispositions=$paCacheDispositions; layout_profile_id=$(if($hasGovernedLayout){$LayoutProfileId}else{$null}); architecture_generation_id=$(if($hasGovernedLayout){$ArchitectureGenerationId}else{$null}); source_profile_id=$(if($SourceProfileId){$SourceProfileId}else{$null}); field_overlay_id=$resolvedFieldOverlayId; bore_radius_mm=[double]$oatofGeometryDocument.geometry_mm.bore_r; ring_outer_radius_mm=[double]$oatofGeometryDocument.geometry_mm.ring_outer_r; shield_inner_radius_mm=[double]$oatofGeometryDocument.geometry_mm.flight_tube_r; frontend_grid_profile_id=$selectedGridProfileId; frontend_cell_mm_xyz=[ordered]@{x=$frontendCellMmX;y=$frontendCellMmY;z=$frontendCellMmZ}; accelerator_overlay_enabled=$overlayEnabled; accelerator_overlay_cell_mm_xyz=$(if($overlayEnabled){[ordered]@{x=$overlayCellMmX;y=$overlayCellMmY;z=$overlayCellMmZ}}else{$null}); accelerator_overlay_boundary_mode=$(if($overlayEnabled){'coarse_electrode_basis_dirichlet_v1'}else{$null}); oatof_numerical_profile_id=$selectedOatofNumericalProfileId; trajectory_quality_profile_id=$selectedTrajectoryQualityProfileId; trajectory_quality=$trajectoryQuality; time_integration_profile_id=$selectedTimeIntegrationProfileId; rf_steps_per_period=$rfStepsPerPeriod; spatial_window_profile_id=$(if($spatialWindowProfiles.Count -eq 1){$SpatialWindowProfileId}else{$null}); accelerator_field_profile_id=$selectedFieldProfileId; resolved_region_field_contract_sha256=$ResolvedRegionFieldContractSha256; resolved_region_field_semantic_sha256=$ResolvedRegionFieldSemanticSha256; resolved_population_contract_sha256=$ResolvedPopulationContractSha256; max_parallel_batches=$maxParallelBatches; clock_basis=[string]$settings.clock_basis; launched_particle_count=$launched; particle_count=$launched; population_denominator_count=$PopulationDenominatorCount; eligible_population_count=$EligiblePopulationCount; population_basis=$(if($SamplingMode -eq 'continuous_injection_full_population'){'candidate_full_population'}elseif($SamplingMode -eq 'pulse_eligible_conditional'){'pulse_eligible_conditional_population'}else{'source_contract_population'}); execution_batch_count=$(if($launched -ge [int]$settings.batching_policy.enabled_at_particle_count){[int]$settings.batching_policy.default_batch_count}else{1}); execution_batches_parallel=$(if($launched -ge [int]$settings.batching_policy.enabled_at_particle_count){[bool]$settings.batching_policy.parallel_after_cache_warmup}else{$false}); aperture_width_mm=$apertureWidthMm; aperture_height_mm=$apertureHeightMm; aperture_boolean_boundary_policy=[string]$apertureDiscretization.boolean_boundary_policy; aperture_grid_warnings=$apertureGridWarnings; frontend_open_aperture_column_count=[int]$apertureTopology.open_column_count; frontend_aperture_guard_electrode_check_passed=[bool]$apertureTopology.guard_electrode_check_passed; frontend_aperture_topology_report_sha256=(Get-FileHash -LiteralPath $apertureTopologyReport -Algorithm SHA256).Hash; rod_end_to_accelerator_shield_mm=[double]$frontendGeometry.junction_enclosure.rod_end_to_accelerator_shield_mm; surrounded_transition=$true; accelerator_axis_x_mm=[double]$oatofGeometryDocument.coordinate_convention.accelerator_axis_x; pulse_time_us=$pulseTimeUs; pulse_width_us=$pulseWidthUs; design_compilation=$(if($null -ne $layoutDerivation){$layoutDerivation.design_compilation}else{$null}); source_release_full_width_mm=[double]$oatofGeometryDocument.particle_source.size_z_mm; reflectron_stage2_length_mm=[double]$oatofGeometryDocument.geometry_mm.L_stage2; reflectron_midgrid_voltage_V=[double]$oatofGeometryDocument.electrodes_V.midgrid; reflectron_backplate_voltage_V=[double]$oatofGeometryDocument.electrodes_V.backplate; reflectron_pa0_sha256=(Get-FileHash -LiteralPath $reflectronPa0 -Algorithm SHA256).Hash; frontend_gem_sha256=$frontendHash; frontend_pa0_sha256=(Get-FileHash -LiteralPath $cachePa0 -Algorithm SHA256).Hash; accelerator_overlay_pa0_sha256=$(if($overlayEnabled){(Get-FileHash -LiteralPath $overlayCachePa0 -Algorithm SHA256).Hash}else{$null}) }
     artifact_retention=[ordered]@{policy_version=1;class='compact';reason=$null}; formal_gate_passed=$false
+  }
+  if ($isPrePulseTimeSeriesScreening) {
+    $runConfiguration.inputs.pre_pulse_time_series_contract =
+      $prePulseTimeSeriesContractFrozen
+    $runConfiguration.parameters.execution_mode =
+      'real_pa_rf_pre_pulse_time_series'
+    $runConfiguration.parameters.resolution_claim_allowed = $false
   }
   if ($hasThreeZoneCandidate) {
     $runConfiguration.inputs.three_zone_t5_candidate =
@@ -1906,7 +2062,7 @@ try {
     $runConfiguration.parameters.three_zone_field_id = $ThreeZoneFieldId
     $runConfiguration.parameters.three_zone_candidate_sha256 =
       $ThreeZoneCandidateSha256
-    $runConfiguration.parameters.accelerator_intermediate2_forward_expected_count =
+    $runConfiguration.parameters.accelerator_intermediate2_forward_launched_upper_bound =
       $launched
   }
   if ($ThreeZoneSolverGateStage -ne '') {
@@ -2044,7 +2200,9 @@ try {
           '--adjustable',("trajectory_quality={0}" -f $trajectoryQuality),
           '--adjustable','trajectory_log_enable=1',
           '--adjustable',("diagnostic_max_tof_us={0:R}" -f [double]$settings.maximum_time_of_flight_us)
-        ) + $(if ($isStagedGrid2Restart) { @() } else { @(
+        ) + $(if ($isPrePulseTimeSeriesScreening) { @(
+          '--adjustable','handoff_pulse_mode=2'
+        ) } elseif ($isStagedGrid2Restart) { @() } else { @(
           '--adjustable','handoff_pulse_mode=1',
           '--adjustable',("handoff_pulse_time_us={0:R}" -f $pulseTimeUs),
           '--adjustable',("handoff_pulse_width_us={0:R}" -f $pulseWidthUs)
@@ -2086,6 +2244,170 @@ try {
       }
     }
   } finally { $env:OATOF_ACCELERATOR_PA_OVERRIDE = $oldOverride }
+
+  if ($isPrePulseTimeSeriesScreening) {
+    $statesCsv = Join-Path $package.result_dir 'pre_pulse_time_series_states.csv'
+    $screeningReceipt = Join-Path $package.result_dir `
+      'pre_pulse_time_series_screening_receipt.json'
+    $tracePattern = '^TRACE: pre_pulse_time_series_state ion=(?<ion>\d+) particle_id=(?<particle_id>\d+) sample_index=(?<sample_index>\d+) instrument_time_us=(?<instrument_time>[-+0-9.eE]+) actual_instrument_time_us=(?<actual_time>[-+0-9.eE]+) x_mm=(?<x>[-+0-9.eE]+) y_mm=(?<y>[-+0-9.eE]+) z_mm=(?<z>[-+0-9.eE]+) vx_mm_per_us=(?<vx>[-+0-9.eE]+) vy_mm_per_us=(?<vy>[-+0-9.eE]+) vz_mm_per_us=(?<vz>[-+0-9.eE]+) kinetic_energy_eV=(?<energy>[-+0-9.eE]+) survival_status=(?<status>\S+)$'
+    $rows = @()
+    foreach ($log in $stdoutFiles) {
+      foreach ($line in Get-Content -LiteralPath $log -Encoding UTF8) {
+        if ($line -match '^TRACE: (detector_crossing|diagnostic_return_plane)') {
+          throw 'Pre-pulse time-series screening emitted a prohibited downstream event.'
+        }
+        if ($line -match $tracePattern) {
+          $rows += [pscustomobject][ordered]@{
+            particle_id = [int]$Matches.particle_id
+            event = 'pre_pulse_time_series_state'
+            sample_index = [int]$Matches.sample_index
+            instrument_time_us = [double]$Matches.instrument_time
+            actual_instrument_time_us = [double]$Matches.actual_time
+            x_mm = [double]$Matches.x
+            y_mm = [double]$Matches.y
+            z_mm = [double]$Matches.z
+            vx_mm_per_us = [double]$Matches.vx
+            vy_mm_per_us = [double]$Matches.vy
+            vz_mm_per_us = [double]$Matches.vz
+            kinetic_energy_eV = [double]$Matches.energy
+            survival_status = [string]$Matches.status
+          }
+        }
+      }
+    }
+    $sampleTimes = @($prePulseTimeSeries.sample_times_us)
+    $rows = @($rows | Sort-Object particle_id,sample_index)
+    $frozenParticleIds = @(
+      Import-Csv -LiteralPath $particleRowMap | ForEach-Object {
+        [int]$_.source_particle_id
+      }
+    )
+    if ($frozenParticleIds.Count -ne $launched -or
+        @($frozenParticleIds | Sort-Object -Unique).Count -ne $launched -or
+        @($rows | Group-Object particle_id,sample_index | Where-Object {
+            $_.Count -ne 1
+          }).Count -ne 0 -or
+        @($rows | Where-Object {
+            $_.particle_id -notin $frozenParticleIds
+          }).Count -ne 0) {
+      throw 'Pre-pulse time-series TRACE particle identity/uniqueness differs.'
+    }
+    foreach ($row in $rows) {
+      if ($row.sample_index -lt 1 -or $row.sample_index -gt $sampleTimes.Count) {
+        throw 'Pre-pulse time-series TRACE sample index is outside the frozen grid.'
+      }
+      $expectedTime = [double]$sampleTimes[$row.sample_index - 1]
+      $tolerance = 1e-12 * [Math]::Max(1.0,[Math]::Abs($expectedTime))
+      if ([Math]::Abs($row.instrument_time_us - $expectedTime) -gt $tolerance -or
+          [Math]::Abs($row.actual_instrument_time_us - $expectedTime) -gt $tolerance -or
+          $row.survival_status -ne 'alive') {
+        throw 'Pre-pulse time-series TRACE identity/time landing differs.'
+      }
+    }
+    foreach ($particleId in $frozenParticleIds) {
+      $indices = @($rows | Where-Object { $_.particle_id -eq $particleId } |
+        ForEach-Object { [int]$_.sample_index })
+      for ($index = 0; $index -lt $indices.Count; $index++) {
+        if ($indices[$index] -ne ($index + 1)) {
+          throw 'Pre-pulse time-series particle state is not one continuous alive prefix.'
+        }
+      }
+    }
+    $sampleCensus = @()
+    foreach ($sampleIndex in 1..$sampleTimes.Count) {
+      $aliveIds = @($rows | Where-Object { $_.sample_index -eq $sampleIndex } |
+        ForEach-Object { [int]$_.particle_id } | Sort-Object)
+      $missingIds = @($frozenParticleIds | Where-Object { $_ -notin $aliveIds } |
+        Sort-Object)
+      $sampleCensus += [ordered]@{
+        sample_index = $sampleIndex
+        instrument_time_us = [double]$sampleTimes[$sampleIndex - 1]
+        alive_count = $aliveIds.Count
+        alive_particle_ids_sha256 = Get-RfContentIdentitySha256 -Identity ([ordered]@{
+          ordered_particle_ids = $aliveIds
+        })
+        missing_count = $missingIds.Count
+        missing_particle_ids = $missingIds
+        missing_particle_ids_sha256 = Get-RfContentIdentitySha256 -Identity ([ordered]@{
+          ordered_particle_ids = $missingIds
+        })
+      }
+    }
+    $rows | Export-Csv -LiteralPath $statesCsv -NoTypeInformation -Encoding utf8
+    $statesRecord = [ordered]@{
+      path = 'results/pre_pulse_time_series_states.csv'
+      sha256 = (Get-FileHash -LiteralPath $statesCsv -Algorithm SHA256).Hash
+      bytes = (Get-Item -LiteralPath $statesCsv).Length
+      row_count = $rows.Count
+    }
+    $receipt = [ordered]@{
+      schema_version = 1
+      role = 'rf_oatof_pre_pulse_time_series_screening_receipt'
+      status = 'success'
+      qualification = 'FUNCTIONAL_ONLY'
+      execution_mode = 'real_pa_rf_pre_pulse_time_series'
+      resolution_claim_allowed = $false
+      pulse_disabled = $true
+      contract_sha256 = $PrePulseTimeSeriesContractSha256
+      identities = $prePulseTimeSeries.identities
+      pa_cache_keys = $prePulseTimeSeries.pa_cache_keys
+      rf_time_grid = $prePulseTimeSeries.rf_time_grid
+      sample_times_us = $sampleTimes
+      particle_count = $launched
+      state_row_count = $rows.Count
+      sample_census = $sampleCensus
+      outputs = [ordered]@{ states = $statesRecord }
+      prohibited_outputs = @($prePulseTimeSeries.prohibited_outputs)
+    }
+    Write-RfJson -Path $screeningReceipt -Depth 10 -Value $receipt
+    $summary = [ordered]@{
+      schema_version = 1
+      role = $summaryRole
+      status = 'success'
+      execution_mode = 'real_pa_rf_pre_pulse_time_series'
+      qualification = 'FUNCTIONAL_ONLY'
+      resolution_claim_allowed = $false
+      pulse_disabled = $true
+      sample_times_us = $sampleTimes
+      census = [ordered]@{
+        source_release = $launched
+        particle_count = $launched
+        sample_count = $sampleTimes.Count
+        observed_state_rows = $rows.Count
+        sample_census = $sampleCensus
+      }
+      pa_cache_dispositions = $paCacheDispositions
+      outputs = [ordered]@{
+        states = $statesRecord
+        receipt = [ordered]@{
+          path = 'results/pre_pulse_time_series_screening_receipt.json'
+          sha256 = (Get-FileHash -LiteralPath $screeningReceipt -Algorithm SHA256).Hash
+          bytes = (Get-Item -LiteralPath $screeningReceipt).Length
+        }
+      }
+      prohibited_outputs = @($prePulseTimeSeries.prohibited_outputs)
+    }
+    Write-RfJson -Path $package.summary -Depth 10 -Value $summary
+    $runConfiguration.parameters.pre_pulse_time_series_state_row_count = $rows.Count
+    Write-RfJson -Path $package.run_config -Depth 10 -Value $runConfiguration
+    $retentionActions = Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot `
+      -RunConfig $package.run_config
+    foreach ($usage in $resourceUsageFiles) {
+      if (-not (Complete-ResourceUsage -ResolvedBudgetPath $budget.stage_budget `
+            -RunDir $package.run_dir -UsagePath $usage)) {
+        $resourceBudgetExceeded = $true
+        throw 'Pre-pulse time-series compact retained-byte budget exceeded.'
+      }
+    }
+    $outputs = @($statesCsv,$screeningReceipt,$package.summary,$retentionActions) +
+      $stdoutFiles + $stderrFiles + $resourceUsageFiles |
+      Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) }
+    Write-RfFrozenRunManifest -Python $python -FrozenRepoRoot $repoRoot `
+      -RunConfig $package.run_config -Status success `
+      -Software @('SIMION 2020','Python 3.11') -Outputs $outputs
+    Write-Output "SIMION_PRE_PULSE_TIME_SERIES=PASS RUN_ID=$RunId ROWS=$($rows.Count)"
+    return
+  }
 
   $checkpoints = Join-Path $package.result_dir 'single_flight_particle_checkpoints.csv'
   $analysisArguments = @('-m',
@@ -2155,7 +2477,7 @@ try {
     '--metadata',$sixPanelMetadata) -Failure 'Single-flight six-panel spatial diagnostic failed.'
   $result = Get-Content -LiteralPath $package.summary -Raw -Encoding UTF8 | ConvertFrom-Json
   Assert-RfThreeZoneCheckpointCensus -Required $hasThreeZoneCandidate `
-    -Census $result.census -ExpectedCount $launched
+    -Census $result.census -LaunchedCount $launched
   if ($hasThreeZoneCandidate) {
     $runConfiguration.parameters.accelerator_intermediate2_forward_count =
       [int]$result.census.accelerator_intermediate2_forward

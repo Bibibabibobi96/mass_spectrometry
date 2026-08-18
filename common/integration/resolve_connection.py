@@ -70,6 +70,39 @@ def derive_direct_mating_translation(
     return _subtract(list(map(float, downstream_center_mm)), transformed)
 
 
+def derive_mating_translation_with_gap(
+    rotation_upstream_to_downstream: list[list[float]],
+    upstream_center_mm: list[float],
+    upstream_outward_normal: list[float],
+    downstream_center_mm: list[float],
+    gap_mm: float,
+) -> list[float]:
+    """Return a rigid translation with a nonnegative normal gap in millimetres."""
+    direct_translation = derive_direct_mating_translation(
+        rotation_upstream_to_downstream,
+        upstream_center_mm,
+        downstream_center_mm,
+    )
+    if len(upstream_outward_normal) != 3:
+        raise ContractError("gap-mating translation requires a 3D upstream normal")
+    normal = list(map(float, upstream_outward_normal))
+    gap = float(gap_mm)
+    if not all(math.isfinite(value) for value in [*normal, gap]):
+        raise ContractError("gap-mating translation inputs must be finite")
+    if gap < 0.0:
+        raise ContractError("gap-mating translation gap must be nonnegative")
+    if not math.isclose(_norm(normal), 1.0, rel_tol=0.0, abs_tol=1e-12):
+        raise ContractError("gap-mating translation upstream normal must be a unit vector")
+    _validate_rotation(rotation_upstream_to_downstream, 1e-12)
+    transformed_normal = _matrix_vector(rotation_upstream_to_downstream, normal)
+    return [
+        value - gap * component
+        for value, component in zip(
+            direct_translation, transformed_normal, strict=True
+        )
+    ]
+
+
 def _determinant(matrix: list[list[float]]) -> float:
     a, b, c = matrix
     return (

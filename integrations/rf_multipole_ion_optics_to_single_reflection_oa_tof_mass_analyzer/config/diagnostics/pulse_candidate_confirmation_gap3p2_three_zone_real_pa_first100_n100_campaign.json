@@ -1,0 +1,105 @@
+{
+  "schema_version": 5,
+  "role": "rf_multipole_oatof_experiment_campaign",
+  "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+  "campaign_id": "pulse_candidate_confirmation_gap3p2_three_zone_real_pa_first100_n100",
+  "status": "authorized",
+  "execution_policy": {
+    "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/execution_policy.json",
+    "sha256": "2E95DB4D9168416CE38BB311355312C51667069FD3BBFE52F422FD36D72379AE"
+  },
+  "claim_limit": "FUNCTIONAL_ONLY pulse-on confirmation of the manifest-bound detector-blind real-field candidate for the frozen gap-3.2 mm three-zone real-PA N=100 identity. The pulse time is compiled only from the candidate receipt; the campaign contains no scalar pulse time. Success may authorize identical-identity reuse but does not claim optimal timing, resolution qualification, Candidate promotion or Formal status.",
+  "experiments": [
+    {
+      "sequence": 1,
+      "experiment_id": "pulse_candidate_confirmation_gap3p2_three_zone_real_pa_first100_n100",
+      "run_id": "20260818_232300__sim__cross__three-zone-pulse-confirmation-gap3p2__n100",
+      "execution_strategy": "simion_single_flight",
+      "single_flight_pa_cache_policy": "require_existing",
+      "single_flight_layout_profile_id": "three_zone_t5_primary_shaping_rings_1p4_v1",
+      "single_flight_frontend_grid_profile_id": "frontend_isotropic_020_accelerator_overlay_z005",
+      "single_flight_oatof_numerical_profile_id": "oatof_formal_mesh",
+      "single_flight_trajectory_quality_profile_id": "tqual_8",
+      "single_flight_time_integration_profile_id": "dt160",
+      "single_flight_accelerator_field_profile_id": "accelerator_real_three_zone_pa_real_reflectron",
+      "single_flight_source_materialization_profile_id": "canonical_real_octupole_n1000",
+      "single_flight_three_zone_candidate": {
+        "path": "artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20260817_181000__build__python__three-zone-t5-candidate/results/three_zone_t5_simion_candidate_resolved.json",
+        "sha256": "CF744FD57957DF18D627F71EE2D2252A62420B343D7DD0AB1CEF493B876A7339"
+      },
+      "architecture_generation_id": "three_zone_t5_frozen_primary_shaping_rings_1p4_v1",
+      "source_profile_id": "canonical_real_octupole_n1000",
+      "field_overlay_id": "accelerator_overlay_z005",
+      "source_release_mode": "continuous_frontend",
+      "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_3p2mm",
+      "source": {
+        "authority_scope": "source_population",
+        "run_id": "20260805_132100__sim__simion__oct-terminal-10ev-h15__n1000",
+        "launched_particle_count": 1000,
+        "particle_count": 893,
+        "particle_source_manifest_input_role": "particle_source",
+        "manifest": {
+          "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_132100__sim__simion__oct-terminal-10ev-h15__n1000/run_manifest.json",
+          "sha256": "EAA006E0C916CE4A2AD50C68ACF8F07DFB2A79FAB21D23C5F2E1168451300ABB"
+        },
+        "state": {
+          "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_132100__sim__simion__oct-terminal-10ev-h15__n1000/results/particle_states__exit_aperture_plate_acceleration_rf_on.csv",
+          "sha256": "A3762E69EE3E91265EC208B29F3C10A7A057AD6D61F2EAC450E291F6034EDCAB"
+        },
+        "particle_source": {
+          "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_132100__sim__simion__oct-terminal-10ev-h15__n1000/inputs/particle_source.csv",
+          "sha256": "302C03DC29737CE9D46EB1A8D258DB2A8D3C0F8B6A53F7702A33B1ECF9D5320D"
+        },
+        "metadata": {
+          "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_132100__sim__simion__oct-terminal-10ev-h15__n1000/inputs/particle_source_metadata.json",
+          "sha256": "9B3399D9B70AC5946190ABDF1CFFD1C713A665A09F918C532B4E8F7B95743A8F"
+        },
+        "handoff_publication_contract": {
+          "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/octupole_handoff_publication_n1000.json",
+          "sha256": "BF3DD74CE90CFE4E9811FECADE8F38D95C9DF16E61C1828D52889135094616A4"
+        }
+      },
+      "single_flight_pulse_schedule_policy": {
+        "policy_id": "multipole_handoff_ballistic_centroid_v1",
+        "offset_rf_periods": 0,
+        "pulse_width_us": 1.0,
+        "fixed_execution_authority": {
+          "authority_mode": "detector_blind_candidate_confirmation_v1",
+          "candidate_parent_manifest": {
+            "path": "artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20260818_232250__analysis__python__pulse-timing-candidate-replay__n100/run_manifest.json",
+            "sha256": "AF3923066128D1C4758FDF5139E1D15C2B6475D7542EECF6BCB532704B3CFD30"
+          },
+          "candidate_selection_receipt": {
+            "path": "artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20260818_232250__analysis__python__pulse-timing-candidate-replay__n100/results/detector_blind_pulse_timing_candidate_receipt.json",
+            "sha256": "315719156EDA55122958686FBDA846E7EA866656DA2B32312ACD988AA8055404"
+          },
+          "confirmation_policy_id": "identical_identity_pulse_on_full_flight_v1"
+        }
+      },
+      "single_flight_population": {
+        "population_id": "pulse_candidate_confirmation_first_100_from_n1000_mother",
+        "population_mode": "first_100_rows_in_frozen_file_order",
+        "source_authority": {
+          "input_role": "pulse_candidate_confirmation_prefix",
+          "table_binding": "prepared_deterministic_prefix",
+          "ordered_particle_id_encoding": "canonical_compact_json_integer_array_v1"
+        },
+        "execution_population": {
+          "particle_count": 100,
+          "ordered_particle_id_sha256": "F9E2DBDE0AE4640704FB66EE02C101CF84ABE35137363D62647622606DF61279",
+          "selection_algorithm": "first_100_rows_in_frozen_file_order",
+          "selection_seed": 0
+        },
+        "denominators": {
+          "population_count": 100,
+          "eligible_population_count": 100
+        },
+        "analysis_randomness": {
+          "bootstrap_resample_count": 0,
+          "bootstrap_seed": 20260818
+        },
+        "postselection_policy": "prohibited"
+      }
+    }
+  ]
+}

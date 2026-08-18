@@ -32,6 +32,39 @@ RUNNERS = (
 
 
 class RuntimeRunLocalContractTests(unittest.TestCase):
+    def test_pre_pulse_time_series_is_pre_solver_fail_closed_and_gap_bound(self) -> None:
+        runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        self.assertIn("[string]$PrePulseTimeSeriesContract = ''", runner)
+        self.assertIn("[string]$PrePulseTimeSeriesContractSha256 = ''", runner)
+        self.assertIn(
+            "$PaCachePolicy -ne 'require_existing'", runner
+        )
+        identity_gate = runner.index(
+            "Pre-pulse time-series source/layout/field/PA identity differs."
+        )
+        solver_launch = runner.index("$jobs += Start-Job")
+        self.assertLess(identity_gate, solver_launch)
+        completion = runner.index("if ($isPrePulseTimeSeriesScreening) {", solver_launch)
+        downstream = runner.index("analysis.analyze_single_flight")
+        self.assertLess(completion, downstream)
+        self.assertIn("'--adjustable','handoff_pulse_mode=2'", runner)
+        self.assertIn("'--adjustable','handoff_pulse_mode=1'", runner)
+        self.assertNotIn("'--adjustable','handoff_pulse_mode=0'", runner)
+        self.assertIn("pre_pulse_time_series_states.csv", runner)
+        self.assertIn("pre_pulse_time_series_screening_receipt.json", runner)
+        self.assertIn("actual_instrument_time_us", runner)
+        self.assertEqual(
+            runner.count("-not $isPrePulseTimeSeriesScreening -and"), 2
+        )
+        self.assertIn("$null -ne $cacheKeys.flight_tube", runner)
+        self.assertIn("$null -ne $cacheKeys.reflectron", runner)
+        self.assertNotIn("rod_end_to_accelerator_shield_mm=1.0", runner)
+        self.assertIn(
+            "rod_end_to_accelerator_shield_mm=[double]$frontendGeometry."
+            "junction_enclosure.rod_end_to_accelerator_shield_mm",
+            runner,
+        )
+
     def test_observed_projection_identity_is_promoted_before_solver(self) -> None:
         pwsh = shutil.which("pwsh")
         if pwsh is None:
@@ -319,14 +352,31 @@ $fn = $ast.Find({{
 }}, $true)
 if ($null -eq $fn) {{ throw 'three-zone checkpoint assertion is missing' }}
 . ([scriptblock]::Create($fn.Extent.Text))
-$three = [pscustomobject]@{{accelerator_intermediate2_forward=7}}
-Assert-RfThreeZoneCheckpointCensus -Required $true -Census $three -ExpectedCount 7
+$three = [pscustomobject]@{{
+  accelerator_grid1_forward=7
+  accelerator_intermediate2_forward=6
+  local_accelerator_exit=5
+  detector_crossing=4
+}}
+Assert-RfThreeZoneCheckpointCensus -Required $true -Census $three -LaunchedCount 7
 Assert-RfThreeZoneCheckpointCensus -Required $false `
-  -Census ([pscustomobject]@{{}}) -ExpectedCount 7
+  -Census ([pscustomobject]@{{}}) -LaunchedCount 7
 try {{
   Assert-RfThreeZoneCheckpointCensus -Required $true `
-    -Census ([pscustomobject]@{{}}) -ExpectedCount 7
+    -Census ([pscustomobject]@{{}}) -LaunchedCount 7
   throw 'missing intermediate2 checkpoint was accepted'
+}} catch {{
+  if ($_.Exception.Message -notmatch 'checkpoint census differs') {{ throw }}
+}}
+try {{
+  Assert-RfThreeZoneCheckpointCensus -Required $true `
+    -Census ([pscustomobject]@{{
+      accelerator_grid1_forward=5
+      accelerator_intermediate2_forward=6
+      local_accelerator_exit=5
+      detector_crossing=4
+    }}) -LaunchedCount 7
+  throw 'non-monotonic checkpoint census was accepted'
 }} catch {{
   if ($_.Exception.Message -notmatch 'checkpoint census differs') {{ throw }}
 }}
@@ -344,7 +394,7 @@ try {{
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         self.assertIn("THREE_ZONE_CHECKPOINT_CENSUS=PASS", completed.stdout)
         self.assertIn(
-            "accelerator_intermediate2_forward_expected_count", runner_text
+            "accelerator_intermediate2_forward_launched_upper_bound", runner_text
         )
         self.assertIn("accelerator_intermediate2_forward_count", runner_text)
 
@@ -469,6 +519,9 @@ $args=@{{Stage='n100_solver_authorized_consumer';ParticleCount=100
   FieldId='three_zone_refined_pa_field_v1';RegionFieldSemanticSha256=('B'*64)
   SourceIdentitySha256=('C'*64);WorkspaceRoot='{workspace}'}}
 Assert-RfThreeZoneSolverAuthorization @args
+Assert-RfThreeZoneSolverAuthorization -Stage '' -ParticleCount 100 -WorkspaceRoot '{workspace}'
+$ungatedWithReceipt=@{{Stage='';ParticleCount=100;ReceiptPath='{result}';WorkspaceRoot='{workspace}'}}
+try{{Assert-RfThreeZoneSolverAuthorization @ungatedWithReceipt;throw 'ungated receipt accepted'}}catch{{if($_.Exception.Message -notmatch 'cannot consume'){{throw}}}}
 try{{Assert-RfThreeZoneSolverAuthorization -Stage 'n100_solver_authorized_consumer' -ParticleCount 100 -WorkspaceRoot '{workspace}';throw 'missing accepted'}}catch{{if($_.Exception.Message -notmatch 'incomplete'){{throw}}}}
 $bad=$args.Clone();$bad.FieldId='wrong_field'
 try{{Assert-RfThreeZoneSolverAuthorization @bad;throw 'identity accepted'}}catch{{if($_.Exception.Message -notmatch 'identity or decision'){{throw}}}}
@@ -522,6 +575,13 @@ try{{Assert-RfThreeZoneSolverAuthorization @failed;throw 'tamper accepted'}}catc
             "Restart source modes prohibit an unused mother-source override.",
             runner,
         )
+        self.assertIn("[string]$MotherParticleSourceRunRoot = ''", runner)
+        self.assertIn(
+            "Explicit mother-source run root requires one non-materialized "
+            "mother-source override.",
+            runner,
+        )
+        self.assertIn("[IO.Path]::GetFullPath($MotherParticleSourceRunRoot)", runner)
         self.assertNotIn("$experiment.pre_pulse_source_state.particle_count", adapter)
         self.assertNotIn(
             "$experiment.pre_pulse_source_state.position_rowwise_abs_tolerance_mm",

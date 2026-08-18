@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/rf_oatof_detector_blind_pulse_timing_candidate_receipt.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "role", "status", "qualification",
+    "selection_preregistered", "reusable_verified_pulse",
+    "pulse_confirmation_status", "claim_limit",
+    "selection_uses_detector_outcome", "detector_results_used",
+    "detector_fields_present_in_state_table", "content_key",
+    "content_key_basis", "authorities", "selection_order",
+    "ballistic_seed_time_us", "selected_time_us",
+    "population_denominator_count", "ideal_source_box_bounds",
+    "candidates_ranked", "sample_census", "candidate_table"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "rf_oatof_detector_blind_real_field_pulse_timing_selection_receipt"},
+    "status": {"const": "success"},
+    "qualification": {"const": "candidate_selection"},
+    "selection_preregistered": {"type": "boolean"},
+    "reusable_verified_pulse": {"const": false},
+    "pulse_confirmation_status": {"const": "NOT_RUN"},
+    "claim_limit": {"const": "DETECTOR_BLIND_REAL_FIELD_PULSE_TIMING_ONLY"},
+    "selection_uses_detector_outcome": {"const": false},
+    "detector_results_used": {"const": false},
+    "detector_fields_present_in_state_table": {"const": false},
+    "content_key": {"$ref": "#/$defs/sha"},
+    "content_key_basis": {"type": "object"},
+    "authorities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "real_field_state_table", "pre_pulse_time_series_contract",
+        "pre_pulse_time_series_receipt", "resolved_population_contract",
+        "population_table", "resolved_source_contract",
+        "resolved_connection", "screening_transport_manifest",
+        "resolved_geometry", "single_flight_configuration",
+        "ballistic_pulse_schedule", "selector_source"
+      ],
+      "properties": {
+        "real_field_state_table": {"$ref": "#/$defs/file"},
+        "pre_pulse_time_series_contract": {"$ref": "#/$defs/file"},
+        "pre_pulse_time_series_receipt": {"$ref": "#/$defs/file"},
+        "resolved_population_contract": {"$ref": "#/$defs/file"},
+        "population_table": {"$ref": "#/$defs/file"},
+        "resolved_source_contract": {"$ref": "#/$defs/file"},
+        "resolved_connection": {"$ref": "#/$defs/file"},
+        "screening_transport_manifest": {"$ref": "#/$defs/file"},
+        "resolved_geometry": {"$ref": "#/$defs/file"},
+        "single_flight_configuration": {"$ref": "#/$defs/file"},
+        "ballistic_pulse_schedule": {"$ref": "#/$defs/file"},
+        "selector_source": {"$ref": "#/$defs/file"}
+      }
+    },
+    "selection_order": {
+      "const": [
+        "maximize_pulse_eligible_count",
+        "maximize_transverse_bore_count",
+        "minimize_normalized_xyz_centroid_distance",
+        "minimize_normalized_xyz_spread_norm",
+        "minimize_absolute_distance_to_ballistic_seed",
+        "select_earlier_time"
+      ]
+    },
+    "ballistic_seed_time_us": {"type": "number"},
+    "selected_time_us": {"type": "number"},
+    "population_denominator_count": {"type": "integer", "minimum": 1},
+    "ideal_source_box_bounds": {"type": "object"},
+    "candidates_ranked": {
+      "type": "array", "minItems": 1, "items": {"type": "object"}
+    },
+    "sample_census": {
+      "type": "array", "minItems": 1, "items": {"type": "object"}
+    },
+    "candidate_table": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "sha256", "row_count"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha"},
+        "row_count": {"type": "integer", "minimum": 1}
+      }
+    }
+  },
+  "$defs": {
+    "sha": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"},
+    "file": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha"}
+      }
+    }
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/rf_oatof_verified_pulse_timing_receipt.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "role", "status", "qualification", "decision",
+    "reusable_verified_pulse", "content_key", "selected_time_us",
+    "candidate_authority", "verification_authority", "census", "claim_limit"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "rf_oatof_verified_pulse_timing_receipt"},
+    "status": {"const": "success"},
+    "qualification": {"const": "FUNCTIONAL_ONLY"},
+    "decision": {"const": "PASS_FOR_IDENTICAL_IDENTITY_REUSE"},
+    "reusable_verified_pulse": {"const": true},
+    "content_key": {"$ref": "#/$defs/sha"},
+    "selected_time_us": {"type": "number", "exclusiveMinimum": 0},
+    "candidate_authority": {
+      "type": "object", "additionalProperties": false,
+      "required": ["parent_manifest", "selection_receipt", "selection_preregistered"],
+      "properties": {
+        "parent_manifest": {"$ref": "#/$defs/file"},
+        "selection_receipt": {"$ref": "#/$defs/file"},
+        "selection_preregistered": {"type": "boolean"}
+      }
+    },
+    "verification_authority": {
+      "type": "object", "additionalProperties": false,
+      "required": ["child_manifest", "pulse_schedule", "summary"],
+      "properties": {
+        "child_manifest": {"$ref": "#/$defs/file"},
+        "pulse_schedule": {"$ref": "#/$defs/file"},
+        "summary": {"$ref": "#/$defs/file"}
+      }
+    },
+    "census": {
+      "type": "object", "additionalProperties": {"type": "integer", "minimum": 0},
+      "required": [
+        "launched", "multipole_handoff", "pre_pulse_state",
+        "accelerator_grid1_forward", "accelerator_intermediate2_forward",
+        "local_accelerator_exit", "detector_crossing"
+      ]
+    },
+    "claim_limit": {"const": "IDENTICAL_IDENTITY_FUNCTIONAL_REUSE_ONLY"}
+  },
+  "$defs": {
+    "sha": {"type": "string", "pattern": "^[A-F0-9]{64}$"},
+    "file": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "bytes", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "bytes": {"type": "integer", "minimum": 1},
+        "sha256": {"$ref": "#/$defs/sha"}
+      }
+    }
+  }
+}

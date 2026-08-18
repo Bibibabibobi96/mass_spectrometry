@@ -25,6 +25,8 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.publish_run import (
     INTEGRATION_ID,
+    _retry_suffix,
+    _single_flight_run_stem,
     publish_family_source_closure_run,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.refresh_campaign_source_bindings import (
@@ -729,6 +731,47 @@ $batchRows = [string[]]$particleRows[0..33]
         self.assertLess(row_hash, solver_boundary)
         self.assertLess(solver_boundary, runner_call)
 
+    def test_adapter_fails_closed_on_connector_gap_prefix_before_solver(self) -> None:
+        adapter = (
+            INTEGRATION_ROOT / "workflows" / "family_source_closure" / "adapter.ps1"
+        ).read_text(encoding="utf-8")
+        argument_gate = adapter.index("'connector_gap_prefix_filename'")
+        campaign_gate = adapter.index(
+            "Connector-gap campaign and prepared prefix authority differ."
+        )
+        mutual_exclusion = adapter.index(
+            "Pulse-resolution and connector-gap prefix authorities are mutually exclusive."
+        )
+        path_gate = adapter.index("$expectedConnectorGapPrefix")
+        missing_gate = adapter.index(
+            "Test-Path -LiteralPath $connectorGapPrefixPath", path_gate
+        )
+        tamper_gate = adapter.index(
+            "Get-FileHash -LiteralPath $connectorGapPrefixPath", path_gate
+        )
+        assignment = adapter.index(
+            "$runnerArguments.MotherParticleSource = $preparedPrefixPath"
+        )
+        source_root_assignment = adapter.index(
+            "$runnerArguments.MotherParticleSourceRunRoot = $runDirectory"
+        )
+        runner_call = adapter.index("& $runtime.implementation.single_flight_runner")
+        self.assertIn("'connector_gap_prefix_sha256'", adapter[argument_gate:campaign_gate])
+        self.assertIn(
+            "inputs/connector_gap_screening_prefix_n100.csv",
+            adapter[path_gate:assignment],
+        )
+        self.assertIn("-ne 100", adapter[path_gate:assignment])
+        self.assertLess(argument_gate, campaign_gate)
+        self.assertLess(campaign_gate, mutual_exclusion)
+        self.assertLess(mutual_exclusion, path_gate)
+        self.assertLess(path_gate, missing_gate)
+        self.assertLess(missing_gate, tamper_gate)
+        self.assertLess(tamper_gate, assignment)
+        self.assertLess(assignment, source_root_assignment)
+        self.assertLess(source_root_assignment, runner_call)
+        self.assertLess(assignment, runner_call)
+
     def test_adapter_uses_only_frozen_canonical_region_field_profile(self) -> None:
         adapter = (
             INTEGRATION_ROOT / "workflows" / "family_source_closure" / "adapter.ps1"
@@ -1147,6 +1190,80 @@ $batchRows = [string[]]$particleRows[0..33]
                 "source_run_resolved_design",
             )
             self.assertNotIn("port_contract", profile["upstream"])
+
+    def test_nonzero_octupole_connections_freeze_gap_geometry_and_bindings(self) -> None:
+        profiles = {
+            item["connection_profile_id"]: item
+            for item in load(PROFILE_REGISTRY)["profiles"]
+        }
+        adapter_registry = load(ADAPTER_REGISTRY)
+        validate_schema(adapter_registry, "execution_adapter_registry.schema.json")
+        mappings = {
+            item["connection_profile_id"]: item
+            for item in adapter_registry["mappings"]
+        }
+        expected = {
+            "3p2": (3.2, -151.6),
+            "6p4": (6.4, -154.8),
+            "12p8": (12.8, -161.2),
+            "25p6": (25.6, -174.0),
+        }
+        for slug, (length_mm, translation_x_mm) in expected.items():
+            profile_id = (
+                "rf_octupole_oatof_shield_terminal_direct_mating_gap_"
+                f"{slug}mm"
+            )
+            profile = profiles[profile_id]
+            validate_schema(profile, "connection_profile.schema.json")
+            self.assertEqual(profile["connector"]["length_mm"], length_mm)
+            self.assertEqual(
+                profile["spatial_registration"]["expected_gap_mm"], length_mm
+            )
+            self.assertEqual(
+                profile["spatial_registration"]["translation_mm"][0],
+                translation_x_mm,
+            )
+            self.assertEqual(
+                profile["transition_aperture"],
+                {
+                    "shape": "rectangle",
+                    "full_width_mm": 1.0,
+                    "full_height_mm": 0.9,
+                    "width_axis_downstream_frame": [0.0, 1.0, 0.0],
+                    "height_axis_downstream_frame": [0.0, 0.0, 1.0],
+                },
+            )
+            self.assertEqual(
+                profile["field_ownership_segments"],
+                [{"start_mm": 0.0, "end_mm": length_mm, "owner": "integration"}],
+            )
+            binding_path = CONFIG_ROOT / (
+                f"family_octupole_direct_mating_gap_{slug}mm_runtime_binding.json"
+            )
+            self.assertEqual(
+                mappings[profile_id]["runtime_binding_path"],
+                binding_path.relative_to(REPO_ROOT).as_posix(),
+            )
+            binding = load(binding_path)
+            validate_schema(binding, "rf_multipole_oatof_runtime_binding.schema.json")
+            self.assertEqual(binding["connection_profile_id"], profile_id)
+
+    def test_single_flight_run_stem_uses_resolved_connector_gap(self) -> None:
+        for length_mm, expected in (
+            (0.0, "__sim__simion__rf-oatof-single-flight-gap0__n"),
+            (3.2, "__sim__simion__rf-oatof-single-flight-gap3p2__n"),
+            (6.4, "__sim__simion__rf-oatof-single-flight-gap6p4__n"),
+            (10, "__sim__simion__rf-oatof-single-flight-gap10__n"),
+            (12.8, "__sim__simion__rf-oatof-single-flight-gap12p8__n"),
+            (25.6, "__sim__simion__rf-oatof-single-flight-gap25p6__n"),
+        ):
+            self.assertEqual(
+                _single_flight_run_stem({"connector": {"length_mm": length_mm}}),
+                expected,
+            )
+        with self.assertRaises(ContractError):
+            _single_flight_run_stem({"connector": {"length_mm": -1.0}})
+        self.assertEqual(_retry_suffix("20260818_120000__sim__family__n100__r03"), "__r03")
 
     def test_campaign_and_experiment_identities_are_unique(self) -> None:
         campaign = load(CAMPAIGN_PATH)

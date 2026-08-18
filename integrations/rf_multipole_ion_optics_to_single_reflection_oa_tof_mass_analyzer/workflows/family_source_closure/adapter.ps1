@@ -218,6 +218,35 @@ if ($frozenArguments.ContainsKey('pulse_resolution_execution_mode')) {
     'pulse_resolution_registration_sha256'
   )
 }
+$hasConnectorGapPrefixArguments = $frozenArguments.ContainsKey(
+  'connector_gap_prefix_filename'
+)
+if ($hasConnectorGapPrefixArguments) {
+  $expectedArguments += @(
+    'connector_gap_prefix_filename',
+    'connector_gap_prefix_sha256'
+  )
+}
+$hasPrePulseTimeSeriesArguments = $frozenArguments.ContainsKey(
+  'pre_pulse_time_series_contract_filename'
+)
+if ($hasPrePulseTimeSeriesArguments) {
+  $expectedArguments += @(
+    'pre_pulse_time_series_prefix_filename',
+    'pre_pulse_time_series_prefix_sha256',
+    'pre_pulse_time_series_contract_filename',
+    'pre_pulse_time_series_contract_sha256'
+  )
+}
+$hasPulseCandidateConfirmationArguments = $frozenArguments.ContainsKey(
+  'pulse_candidate_confirmation_prefix_filename'
+)
+if ($hasPulseCandidateConfirmationArguments) {
+  $expectedArguments += @(
+    'pulse_candidate_confirmation_prefix_filename',
+    'pulse_candidate_confirmation_prefix_sha256'
+  )
+}
 if (@($frozenArguments.Keys | Where-Object {
       $_ -notin $expectedArguments
     }).Count -ne 0 -or
@@ -385,6 +414,50 @@ if ($PrepareOnly -and
 $pulseN100Screening = $frozenArguments.ContainsKey(
   'pulse_resolution_execution_mode'
 )
+$campaignHasConnectorGapScreen = (
+  $campaign.PSObject.Properties.Name -contains 'connector_gap_screen'
+) -and $null -ne $campaign.connector_gap_screen
+if ($campaignHasConnectorGapScreen -ne $hasConnectorGapPrefixArguments) {
+  throw 'Connector-gap campaign and prepared prefix authority differ.'
+}
+$connectorGapScreening = $campaignHasConnectorGapScreen
+$campaignHasPrePulseTimeSeries = (
+  $campaign.PSObject.Properties.Name -contains
+  'pre_pulse_time_series_screening'
+) -and $null -ne $campaign.pre_pulse_time_series_screening
+if ($campaignHasPrePulseTimeSeries -ne $hasPrePulseTimeSeriesArguments) {
+  throw 'Pre-pulse time-series campaign and prepared authority differ.'
+}
+$prePulseTimeSeriesScreening = $campaignHasPrePulseTimeSeries
+$pulseSchedulePolicyProperty =
+  $experiment.PSObject.Properties['single_flight_pulse_schedule_policy']
+$pulseSchedulePolicy = if ($null -ne $pulseSchedulePolicyProperty) {
+  $pulseSchedulePolicyProperty.Value
+} else { $null }
+$fixedAuthorityProperty = if ($null -ne $pulseSchedulePolicy) {
+  $pulseSchedulePolicy.PSObject.Properties['fixed_execution_authority']
+} else { $null }
+$pulseCandidateConfirmation = (
+  $null -ne $fixedAuthorityProperty -and
+  $null -ne $fixedAuthorityProperty.Value -and
+  [string]$fixedAuthorityProperty.Value.authority_mode -eq
+    'detector_blind_candidate_confirmation_v1'
+)
+if ($pulseCandidateConfirmation -ne $hasPulseCandidateConfirmationArguments) {
+  throw 'Pulse candidate confirmation and prepared prefix authority differ.'
+}
+if ($pulseN100Screening -and $connectorGapScreening) {
+  throw 'Pulse-resolution and connector-gap prefix authorities are mutually exclusive.'
+}
+if ($prePulseTimeSeriesScreening -and (
+    $pulseN100Screening -or $connectorGapScreening)) {
+  throw 'Prepared screening authorities are mutually exclusive.'
+}
+if ($pulseCandidateConfirmation -and (
+    $pulseN100Screening -or $connectorGapScreening -or
+    $prePulseTimeSeriesScreening)) {
+  throw 'Pulse candidate confirmation and screening authorities are mutually exclusive.'
+}
 if ($pulseN100Screening) {
   $pulseContract = $campaign.pulse_resolution_optimization
   $baselineRow = $experiment.pulse_resolution_execution_mode -eq
@@ -746,6 +819,70 @@ if ($pulseN100Screening) {
       (Get-FileHash -LiteralPath $pulseRegistrationPath -Algorithm SHA256).Hash -ne
         $frozenArguments.pulse_resolution_registration_sha256) {
     throw 'Plan-bound baseline registration authority is outside inputs, missing or stale.'
+  }
+}
+$connectorGapPrefixPath = $null
+if ($connectorGapScreening) {
+  $expectedConnectorGapPrefix =
+    'inputs/connector_gap_screening_prefix_n100.csv'
+  $connectorGapPrefixPath = [IO.Path]::GetFullPath(
+    (Join-Path $runDirectory $frozenArguments.connector_gap_prefix_filename)
+  )
+  if ($frozenArguments.connector_gap_prefix_filename -ne
+        $expectedConnectorGapPrefix -or
+      -not $connectorGapPrefixPath.StartsWith(
+        (Join-Path $runDirectory 'inputs') + [IO.Path]::DirectorySeparatorChar,
+        [StringComparison]::OrdinalIgnoreCase
+      ) -or
+      -not (Test-Path -LiteralPath $connectorGapPrefixPath -PathType Leaf) -or
+      (Get-FileHash -LiteralPath $connectorGapPrefixPath -Algorithm SHA256).Hash -ne
+        $frozenArguments.connector_gap_prefix_sha256 -or
+      @(Import-Csv -LiteralPath $connectorGapPrefixPath).Count -ne 100) {
+    throw 'Plan-bound connector-gap screening prefix is outside inputs, missing, stale, or not N=100.'
+  }
+}
+$prePulseTimeSeriesPrefixPath = $null
+$prePulseTimeSeriesContractPath = $null
+if ($prePulseTimeSeriesScreening) {
+  $prePulseTimeSeriesPrefixPath = [IO.Path]::GetFullPath((Join-Path $runDirectory `
+    $frozenArguments.pre_pulse_time_series_prefix_filename))
+  $prePulseTimeSeriesContractPath = [IO.Path]::GetFullPath((Join-Path $runDirectory `
+    $frozenArguments.pre_pulse_time_series_contract_filename))
+  $inputsRoot = (Join-Path $runDirectory 'inputs') +
+    [IO.Path]::DirectorySeparatorChar
+  if ($frozenArguments.pre_pulse_time_series_prefix_filename -ne
+        'inputs/pre_pulse_time_series_screening_prefix_n100.csv' -or
+      $frozenArguments.pre_pulse_time_series_contract_filename -ne
+        'inputs/pre_pulse_time_series_screening_contract.json' -or
+      -not $prePulseTimeSeriesPrefixPath.StartsWith(
+        $inputsRoot,[StringComparison]::OrdinalIgnoreCase) -or
+      -not $prePulseTimeSeriesContractPath.StartsWith(
+        $inputsRoot,[StringComparison]::OrdinalIgnoreCase) -or
+      -not (Test-Path -LiteralPath $prePulseTimeSeriesPrefixPath -PathType Leaf) -or
+      -not (Test-Path -LiteralPath $prePulseTimeSeriesContractPath -PathType Leaf) -or
+      (Get-FileHash -LiteralPath $prePulseTimeSeriesPrefixPath -Algorithm SHA256).Hash -ne
+        $frozenArguments.pre_pulse_time_series_prefix_sha256 -or
+      (Get-FileHash -LiteralPath $prePulseTimeSeriesContractPath -Algorithm SHA256).Hash -ne
+        $frozenArguments.pre_pulse_time_series_contract_sha256 -or
+      @(Import-Csv -LiteralPath $prePulseTimeSeriesPrefixPath).Count -ne 100) {
+    throw 'Plan-bound pre-pulse time-series inputs are missing or stale.'
+  }
+}
+$pulseCandidateConfirmationPrefixPath = $null
+if ($pulseCandidateConfirmation) {
+  $pulseCandidateConfirmationPrefixPath = [IO.Path]::GetFullPath((Join-Path `
+    $runDirectory $frozenArguments.pulse_candidate_confirmation_prefix_filename))
+  $inputsRoot = (Join-Path $runDirectory 'inputs') +
+    [IO.Path]::DirectorySeparatorChar
+  if ($frozenArguments.pulse_candidate_confirmation_prefix_filename -ne
+        'inputs/pulse_candidate_confirmation_prefix_n100.csv' -or
+      -not $pulseCandidateConfirmationPrefixPath.StartsWith(
+        $inputsRoot,[StringComparison]::OrdinalIgnoreCase) -or
+      -not (Test-Path -LiteralPath $pulseCandidateConfirmationPrefixPath -PathType Leaf) -or
+      (Get-FileHash -LiteralPath $pulseCandidateConfirmationPrefixPath -Algorithm SHA256).Hash -ne
+        $frozenArguments.pulse_candidate_confirmation_prefix_sha256 -or
+      @(Import-Csv -LiteralPath $pulseCandidateConfirmationPrefixPath).Count -ne 100) {
+    throw 'Plan-bound pulse candidate confirmation prefix is missing or stale.'
   }
 }
 $resolvedSourceContractPath = [IO.Path]::GetFullPath(
@@ -1153,7 +1290,21 @@ $runnerArguments = @{
 }
 $retrySuffix = if ($RunId -match '(__r\d{2})$') { $Matches[1] } else { '' }
 if ($executionStrategy -eq 'simion_single_flight') {
-  $singleFlightRunId = "$($RunId.Substring(0, 15))__sim__simion__rf-oatof-single-flight-gap0__n$expectedExecutionParticleCount$retrySuffix"
+  if ($null -eq $resolved.connector -or
+      $null -eq $resolved.connector.length_mm) {
+    throw 'Resolved connector length is missing for single-flight run identity.'
+  }
+  $connectorGapMm = [double]$resolved.connector.length_mm
+  if ([double]::IsNaN($connectorGapMm) -or
+      [double]::IsInfinity($connectorGapMm) -or
+      $connectorGapMm -lt 0.0) {
+    throw 'Resolved connector length is invalid for single-flight run identity.'
+  }
+  $connectorGapLabel = $connectorGapMm.ToString(
+    '0.###############',
+    [Globalization.CultureInfo]::InvariantCulture
+  ).Replace('.', 'p')
+  $singleFlightRunId = "$($RunId.Substring(0, 15))__sim__simion__rf-oatof-single-flight-gap$connectorGapLabel`__n$expectedExecutionParticleCount$retrySuffix"
   $runnerArguments.RunId = $singleFlightRunId
   $runnerArguments.PaCachePolicy =
     [string]$frozenArguments.single_flight_pa_cache_policy
@@ -1323,11 +1474,32 @@ if ($executionStrategy -eq 'simion_single_flight') {
     $frozenArguments.resolved_region_field_contract_sha256
   $runnerArguments.ResolvedRegionFieldSemanticSha256 =
     $frozenArguments.resolved_region_field_semantic_sha256
-  if ($pulseN100Screening) {
-    $runnerArguments.MotherParticleSource = $pulsePrefixPath
-    $runnerArguments.MotherParticleSourceSha256 =
+  $preparedPrefixPath = if ($pulseN100Screening) {
+    $pulsePrefixPath
+  } elseif ($connectorGapScreening) {
+    $connectorGapPrefixPath
+  } elseif ($prePulseTimeSeriesScreening) {
+    $prePulseTimeSeriesPrefixPath
+  } elseif ($pulseCandidateConfirmation) {
+    $pulseCandidateConfirmationPrefixPath
+  } else { $null }
+  if ($null -ne $preparedPrefixPath) {
+    $runnerArguments.MotherParticleSource = $preparedPrefixPath
+    $runnerArguments.MotherParticleSourceRunRoot = $runDirectory
+    $runnerArguments.MotherParticleSourceSha256 = if ($pulseN100Screening) {
       $frozenArguments.pulse_resolution_prefix_sha256
-    $runnerArguments.MotherParticleCount = @(Import-Csv -LiteralPath $pulsePrefixPath).Count
+    } elseif ($connectorGapScreening) {
+      $frozenArguments.connector_gap_prefix_sha256
+    } elseif ($pulseCandidateConfirmation) {
+      $frozenArguments.pulse_candidate_confirmation_prefix_sha256
+    } else {
+      $frozenArguments.pre_pulse_time_series_prefix_sha256
+    }
+    $runnerArguments.MotherParticleCount = @(
+      Import-Csv -LiteralPath $preparedPrefixPath
+    ).Count
+  }
+  if ($pulseN100Screening) {
     $runnerArguments.PulseResolutionN100Screening = $true
     $runnerArguments.PulseResolutionCampaign = $campaignPath
     $runnerArguments.PulseResolutionCampaignSha256 =
@@ -1344,6 +1516,12 @@ if ($executionStrategy -eq 'simion_single_flight') {
     $runnerArguments.PulseResolutionRegistrationAuthority = $pulseRegistrationPath
     $runnerArguments.PulseResolutionRegistrationAuthoritySha256 =
       $frozenArguments.pulse_resolution_registration_sha256
+  }
+  if ($prePulseTimeSeriesScreening) {
+    $runnerArguments.PrePulseTimeSeriesContract =
+      $prePulseTimeSeriesContractPath
+    $runnerArguments.PrePulseTimeSeriesContractSha256 =
+      $frozenArguments.pre_pulse_time_series_contract_sha256
   }
   & $runtime.implementation.single_flight_runner @runnerArguments
 } else {

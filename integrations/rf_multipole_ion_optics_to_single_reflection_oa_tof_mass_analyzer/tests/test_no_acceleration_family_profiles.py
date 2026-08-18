@@ -34,6 +34,12 @@ PROFILE_IDS.add(
 PROFILE_IDS.add(
     "rf_octupole_oatof_shield_terminal_aperture_050x020_direct_mating_gap_0mm"
 )
+PROFILE_IDS.update(
+    {
+        f"rf_octupole_oatof_shield_terminal_direct_mating_gap_{gap}"
+        for gap in ("3p2mm", "6p4mm", "12p8mm", "25p6mm")
+    }
+)
 
 
 def load(path: Path) -> dict[str, object]:

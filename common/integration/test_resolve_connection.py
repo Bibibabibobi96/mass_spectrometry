@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import shutil
 import subprocess
 import sys
@@ -16,6 +17,7 @@ from common.contracts.machine_contracts import (
 from common.contracts.file_identity import file_sha256, repository_text_sha256
 from common.integration.resolve_connection import (
     derive_direct_mating_translation,
+    derive_mating_translation_with_gap,
     load_connection_profile_registry,
     resolve_connection_profile,
     verify_composition_plan,
@@ -32,6 +34,100 @@ class ResolveConnectionTests(unittest.TestCase):
             ),
             [-168.6, 0.0, -18.4],
         )
+
+    def test_zero_gap_translation_is_exactly_direct_mating(self) -> None:
+        rotation = [[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
+        direct = derive_direct_mating_translation(
+            rotation, [0.0, 0.0, 80.6], [-88.0, 0.0, -18.4]
+        )
+        with_gap = derive_mating_translation_with_gap(
+            rotation,
+            [0.0, 0.0, 80.6],
+            [0.0, 0.0, 1.0],
+            [-88.0, 0.0, -18.4],
+            0.0,
+        )
+        self.assertEqual(with_gap, direct)
+
+    def test_gap_translation_separates_centers_along_rotated_normal(self) -> None:
+        rotation = [[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
+        translation = derive_mating_translation_with_gap(
+            rotation,
+            [0.0, 0.0, 80.6],
+            [0.0, 0.0, 1.0],
+            [-88.0, 0.0, -18.4],
+            3.2,
+        )
+        self.assertEqual(translation, [-171.79999999999998, 0.0, -18.4])
+        transformed_center = [
+            sum(row[index] * [0.0, 0.0, 80.6][index] for index in range(3))
+            + translation[row_index]
+            for row_index, row in enumerate(rotation)
+        ]
+        transformed_normal = [row[2] for row in rotation]
+        separation = [
+            downstream - upstream
+            for downstream, upstream in zip(
+                [-88.0, 0.0, -18.4], transformed_center, strict=True
+            )
+        ]
+        for actual, expected in zip(
+            separation,
+            [3.2 * component for component in transformed_normal],
+            strict=True,
+        ):
+            self.assertAlmostEqual(actual, expected, delta=1e-12)
+
+    def test_gap_translation_rejects_negative_gap_and_nonunit_normal(self) -> None:
+        identity = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+        with self.assertRaisesRegex(ContractError, "gap must be nonnegative"):
+            derive_mating_translation_with_gap(
+                identity,
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                -1.0,
+            )
+        with self.assertRaisesRegex(ContractError, "normal must be a unit vector"):
+            derive_mating_translation_with_gap(
+                identity,
+                [0.0, 0.0, 0.0],
+                [2.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                1.0,
+            )
+
+    def test_gap_translation_respects_negative_outward_normal_direction(self) -> None:
+        identity = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+        translation = derive_mating_translation_with_gap(
+            identity,
+            [0.0, 0.0, 0.0],
+            [-1.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0],
+            2.0,
+        )
+        self.assertEqual(translation, [2.0, 0.0, 0.0])
+
+    def test_gap_translation_rejects_nonrigid_rotation(self) -> None:
+        with self.assertRaisesRegex(ContractError, "rotation is not orthonormal"):
+            derive_mating_translation_with_gap(
+                [[2.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                1.0,
+            )
+
+    def test_direct_mating_translation_keeps_invalid_input_failures(self) -> None:
+        identity = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+        with self.assertRaisesRegex(ContractError, "requires 3D rotation and centers"):
+            derive_direct_mating_translation(
+                identity[:2], [0.0, 0.0, 0.0], [1.0, 0.0, 0.0]
+            )
+        with self.assertRaisesRegex(ContractError, "inputs must be finite"):
+            derive_direct_mating_translation(
+                identity, [0.0, 0.0, math.nan], [1.0, 0.0, 0.0]
+            )
 
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()

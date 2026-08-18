@@ -7,6 +7,7 @@ import copy
 import csv
 import hashlib
 import json
+import math
 from pathlib import Path
 import shutil
 from typing import Any
@@ -25,7 +26,7 @@ from common.integration.adapter_contract import (
     resolve_execution_mapping,
 )
 from common.integration.resolve_connection import (
-    derive_direct_mating_translation,
+    derive_mating_translation_with_gap,
     load_connection_profile_registry,
     verify_composition_plan,
     write_resolved_and_plan,
@@ -35,6 +36,9 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.register_pulse_resolution_result import (
     validate_frozen_baseline_evidence,
+)
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.select_real_field_pulse_time import (
+    pulse_selection_content_identity,
 )
 from common.multipole.component_port import build_exit_component_port
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.resolved_region_field import (
@@ -279,6 +283,213 @@ def validate_pulse_resolution_optimization_campaign(
             raise ContractError("pulse-resolution execution requires a selected row")
         if experiment.get("execution_strategy") != "simion_single_flight":
             raise ContractError("pulse-resolution N=100 experiment is not executable")
+
+
+def validate_connector_gap_screen_campaign(
+    campaign: dict[str, Any], profile_registry: dict[str, Any],
+) -> None:
+    """Fail closed on the detector-blind five-row connector-gap matrix."""
+    contract = campaign.get("connector_gap_screen")
+    if contract is None:
+        return
+    rows = campaign["experiments"]
+    profile_ids = (
+        contract["primary_connection_profile_ids"]
+        + contract["report_only_connection_profile_ids"]
+    )
+    if len(rows) != 5 or [row["connection_profile_id"] for row in rows] != profile_ids:
+        raise ContractError("connector-gap campaign profile order differs")
+    expected_roles = ["primary"] * 4 + ["stress_report_only"]
+    if [row.get("connector_gap_evidence_role") for row in rows] != expected_roles:
+        raise ContractError("connector-gap campaign evidence roles differ")
+    profiles = {
+        profile["connection_profile_id"]: profile
+        for profile in profile_registry["profiles"]
+    }
+    observed_gaps: list[float] = []
+    for profile_id in profile_ids:
+        profile = profiles.get(profile_id)
+        if profile is None:
+            raise ContractError("connector-gap campaign profile is not registered")
+        expected_gap = float(profile["spatial_registration"]["expected_gap_mm"])
+        connector_length = float(profile["connector"]["length_mm"])
+        if expected_gap != connector_length:
+            raise ContractError("connector-gap profile registration and length differ")
+        observed_gaps.append(expected_gap)
+    if observed_gaps != [0.0, 3.2, 6.4, 12.8, 25.6]:
+        raise ContractError("connector-gap campaign distance matrix differs")
+    allowed_axes = set(contract["allowed_variation_axes"])
+    normalized_rows = []
+    for row in rows:
+        try:
+            validate_run_id(str(row["run_id"]))
+        except (TypeError, ValueError) as exc:
+            raise ContractError("connector-gap campaign run_id is invalid") from exc
+        source = row.get("source", {})
+        population = row.get("single_flight_population", {})
+        execution = population.get("execution_population", {})
+        denominators = population.get("denominators", {})
+        authority = population.get("source_authority", {})
+        if (
+            row.get("source_release_mode") != "continuous_frontend"
+            or any(key in row for key in (
+                "pre_pulse_source_state", "generated_pre_pulse_ordered_subset",
+                "observed_pre_pulse_projection", "staged_grid2_source_state",
+            ))
+            or source.get("authority_scope") != "source_population"
+            or source.get("launched_particle_count") != contract["mother_sample_count"]
+            or source.get("particle_source", {}).get("sha256")
+            != contract["mother_particle_source_sha256"]
+            or population.get("population_mode")
+            != "first_100_rows_in_frozen_file_order"
+            or authority.get("table_binding") != "prepared_deterministic_prefix"
+            or authority.get("input_role") != "connector_gap_screening_prefix"
+            or execution.get("particle_count") != contract["screening_prefix_count"]
+            or execution.get("ordered_particle_id_sha256")
+            != contract["ordered_particle_id_sha256"]
+            or execution.get("selection_algorithm") != contract["selection_algorithm"]
+            or denominators.get("population_count")
+            != contract["original_denominator_count"]
+            or denominators.get("eligible_population_count")
+            != contract["original_denominator_count"]
+        ):
+            raise ContractError("connector-gap source or population identity differs")
+        normalized_rows.append({
+            key: value for key, value in row.items() if key not in allowed_axes
+        })
+    if any(row != normalized_rows[0] for row in normalized_rows[1:]):
+        raise ContractError("connector-gap campaign changes a frozen control")
+
+
+def validate_pre_pulse_time_series_campaign(campaign: dict[str, Any]) -> None:
+    """Fail closed on the one-row, detector-blind actual-field time screen."""
+
+    contract = campaign.get("pre_pulse_time_series_screening")
+    if contract is None:
+        return
+    rows = campaign["experiments"]
+    if len(rows) != 1 or "FUNCTIONAL_ONLY" not in campaign["claim_limit"]:
+        raise ContractError("pre-pulse time-series campaign scope differs")
+    row = rows[0]
+    source = row["source"]
+    population = row["single_flight_population"]
+    execution = population["execution_population"]
+    if (
+        contract.get("active_scope") != "pre_pulse_frontend_accelerator"
+        or contract.get("pa_cache_keys", {}).get("flight_tube") is not None
+        or contract.get("pa_cache_keys", {}).get("reflectron") is not None
+        or source.get("authority_scope") != "source_population"
+        or source.get("launched_particle_count") != 1000
+        or source.get("particle_source", {}).get("sha256")
+        != "302C03DC29737CE9D46EB1A8D258DB2A8D3C0F8B6A53F7702A33B1ECF9D5320D"
+        or execution.get("ordered_particle_id_sha256")
+        != "F9E2DBDE0AE4640704FB66EE02C101CF84ABE35137363D62647622606DF61279"
+        or population["denominators"] != {
+            "population_count": 100, "eligible_population_count": 100,
+        }
+        or contract["sample_count"]
+        != contract["relative_end_index"] - contract["relative_start_index"] + 1
+    ):
+        raise ContractError("pre-pulse time-series source, population, or grid differs")
+
+
+def compile_pre_pulse_time_series_contract(
+    *, campaign: dict[str, Any], experiment: dict[str, Any],
+    experiment_row_sha256: str, upstream_resolved_design: dict[str, Any],
+    resolved_source_contract_sha256: str, resolved_population_contract_sha256: str,
+    prepared_prefix_sha256: str, layout_profile: dict[str, Any],
+    selected_field_profile: dict[str, Any], region_field_semantic_sha256: str,
+    rf_steps_per_period: int,
+) -> dict[str, Any]:
+    """Compile exact RF-grid sample times and all runner-checked identities."""
+
+    specification = campaign["pre_pulse_time_series_screening"]
+    drive = upstream_resolved_design["drive"]
+    frequency_hz = float(drive["frequency_Hz"])
+    if (
+        frequency_hz != float(specification["expected_upstream_frequency_hz"])
+        or rf_steps_per_period != specification["rf_steps_per_period"]
+    ):
+        raise ContractError("pre-pulse time-series upstream RF grid differs")
+    period_us = 1_000_000.0 / frequency_hz
+    step_us = period_us / rf_steps_per_period
+    relative_start = int(specification["relative_start_index"])
+    relative_end = int(specification["relative_end_index"])
+    anchor_time_us = float(specification["anchor_time_us"])
+    grid_origin_us = anchor_time_us + relative_start * step_us
+    sample_count = relative_end - relative_start + 1
+    sample_times_us = [grid_origin_us + index * step_us for index in range(sample_count)]
+    if (
+        sample_count != specification["sample_count"]
+        or not math.isclose(sample_times_us[-1], anchor_time_us + relative_end * step_us,
+                            rel_tol=1e-15, abs_tol=1e-15)
+        or not all(right > left for left, right in zip(
+            sample_times_us, sample_times_us[1:], strict=False
+        ))
+    ):
+        raise ContractError("pre-pulse time-series RF grid does not close")
+    contract = {
+        "schema_version": 1,
+        "role": "rf_oatof_pre_pulse_time_series_screening_contract",
+        "mode": specification["mode"],
+        "active_scope": specification["active_scope"],
+        "claim_limit": "FUNCTIONAL_ONLY",
+        "identities": {
+            "campaign_id": campaign["campaign_id"],
+            "experiment_id": experiment["experiment_id"],
+            "experiment_row_sha256": experiment_row_sha256,
+            "connection_profile_id": experiment["connection_profile_id"],
+            "source_profile_id": experiment["source_profile_id"],
+            "resolved_source_contract_sha256": resolved_source_contract_sha256,
+            "resolved_population_contract_sha256": resolved_population_contract_sha256,
+            "mother_particle_source_sha256": prepared_prefix_sha256,
+            "ordered_particle_id_sha256": experiment["single_flight_population"]
+                ["execution_population"]["ordered_particle_id_sha256"],
+            "layout_profile_id": experiment["single_flight_layout_profile_id"],
+            "architecture_generation_id": experiment["architecture_generation_id"],
+            "candidate_sha256": experiment["single_flight_three_zone_candidate"]["sha256"],
+            "topology_id": layout_profile["topology_id"],
+            "geometry_id": layout_profile["geometry_id"],
+            "frontend_electrode_topology_id": layout_profile["frontend_electrode_topology_id"],
+            "field_id": selected_field_profile["field_id"],
+            "field_profile_id": experiment["single_flight_accelerator_field_profile_id"],
+            "region_field_semantic_sha256": region_field_semantic_sha256,
+            "frontend_grid_profile_id": experiment["single_flight_frontend_grid_profile_id"],
+            "field_overlay_id": experiment["field_overlay_id"],
+            "oatof_numerical_profile_id": experiment["single_flight_oatof_numerical_profile_id"],
+            "trajectory_quality_profile_id": experiment["single_flight_trajectory_quality_profile_id"],
+            "time_integration_profile_id": experiment["single_flight_time_integration_profile_id"],
+            "spatial_window_profile_id": specification["spatial_window_profile_id"],
+        },
+        "pa_cache_keys": copy.deepcopy(specification["pa_cache_keys"]),
+        "rf_time_grid": {
+            "derivation": "grid_origin_us + sample_index*period_us/rf_steps_per_period",
+            "waveform": drive["waveform"], "frequency_hz": frequency_hz,
+            "phase_rad": float(drive["phase_rad"]),
+            "rf_steps_per_period": rf_steps_per_period,
+            "period_us": period_us, "step_us": step_us,
+            "anchor_time_us": anchor_time_us, "grid_origin_us": grid_origin_us,
+            "requested_relative_start_index": relative_start,
+            "requested_relative_end_index": relative_end,
+            "anchor_sample_index": -relative_start,
+            "start_index": 0, "end_index": sample_count - 1,
+            "sample_count": sample_count,
+        },
+        "sample_times_us": sample_times_us,
+        **(
+            {"selection_order": copy.deepcopy(specification["selection_order"])}
+            if "selection_order" in specification
+            else {}
+        ),
+        "pulse_disabled": specification["pulse_disabled"],
+        "terminate_at_window_end": specification["terminate_at_window_end"],
+        "resolution_claim_allowed": specification["resolution_claim_allowed"],
+        "prohibited_outputs": copy.deepcopy(specification["prohibited_outputs"]),
+    }
+    validate_schema(
+        contract, "rf_oatof_pre_pulse_time_series_screening_contract.schema.json"
+    )
+    return contract
 
 
 SCREENING_SOURCE_COLUMNS = [
@@ -714,6 +925,231 @@ def _resolve_fixed_pulse_schedule(
     ):
         schedule[key] = source_schedule[key]
     schedule["source_state_path"] = experiment["source"]["state"]["path"]
+    return schedule
+
+
+def _resolve_candidate_confirmation_schedule(
+    *, root: Path, experiment: dict[str, Any], policy: dict[str, Any],
+    population_declaration: dict[str, Any], prepared_prefix_sha256: str,
+    resolved_connection_path: Path, resolved_source_path: Path,
+    resolved_geometry_path: Path, single_flight_configuration: dict[str, Any],
+    base_schedule: dict[str, Any],
+) -> dict[str, Any]:
+    """Compile one pulse-on schedule from a manifest-bound detector-blind candidate."""
+
+    authority = policy["fixed_execution_authority"]
+    if authority["authority_mode"] != "detector_blind_candidate_confirmation_v1":
+        raise ContractError("candidate pulse confirmation authority mode is unsupported")
+    workspace = root.parent
+    parent_manifest_path = _workspace_record(
+        workspace, authority["candidate_parent_manifest"],
+        "pulse candidate parent manifest",
+    )
+    candidate_receipt_path = _workspace_record(
+        workspace, authority["candidate_selection_receipt"],
+        "pulse candidate selection receipt",
+    )
+    parent_manifest = _load(parent_manifest_path)
+    if (
+        parent_manifest.get("role") != "simulation_run_manifest"
+        or parent_manifest.get("status") != "success"
+        or parent_manifest.get("project") != INTEGRATION_ID
+        or parent_manifest.get("mode") not in {
+            "multipole_family_source_closure",
+            "detector_blind_real_field_pulse_timing_candidate_replay",
+        }
+        or parent_manifest.get("formal_eligible") is not False
+    ):
+        raise ContractError("pulse candidate parent manifest identity differs")
+    try:
+        verify_record(
+            "pulse candidate parent run_config", parent_manifest["run_config"],
+            base_dir=parent_manifest_path.parent,
+        )
+        receipt_records = [
+            record for record in parent_manifest.get("outputs", [])
+            if record_path(record, base_dir=parent_manifest_path.parent).resolve()
+            == candidate_receipt_path.resolve()
+        ]
+        if len(receipt_records) != 1:
+            raise ContractError("pulse candidate receipt is not a unique parent output")
+        verify_record(
+            "pulse candidate receipt", receipt_records[0],
+            base_dir=parent_manifest_path.parent,
+        )
+    except (AssertionError, KeyError, TypeError) as exc:
+        raise ContractError("pulse candidate parent manifest verification failed") from exc
+    receipt = _load(candidate_receipt_path)
+    validate_schema(
+        receipt,
+        "rf_oatof_detector_blind_pulse_timing_candidate_receipt.schema.json",
+    )
+    if (
+        receipt.get("status") != "success"
+        or receipt.get("qualification") != "candidate_selection"
+        or receipt.get("reusable_verified_pulse") is not False
+        or receipt.get("pulse_confirmation_status") != "NOT_RUN"
+        or receipt.get("detector_results_used") is not False
+        or receipt.get("selection_uses_detector_outcome") is not False
+    ):
+        raise ContractError("pulse candidate receipt qualification differs")
+
+    def receipt_authority(name: str) -> Path:
+        record = receipt.get("authorities", {}).get(name)
+        if not isinstance(record, dict):
+            raise ContractError(f"pulse candidate authority is missing: {name}")
+        return _workspace_record(workspace, record, f"pulse candidate {name}")
+
+    screening_contract = _load(receipt_authority("pre_pulse_time_series_contract"))
+    candidate_population = _load(receipt_authority("resolved_population_contract"))
+    candidate_population_table = receipt_authority("population_table")
+    selector_record = receipt.get("authorities", {}).get("selector_source")
+    if not isinstance(selector_record, dict):
+        raise ContractError("pulse candidate selector source identity differs")
+    current_geometry = _load(resolved_geometry_path)
+    profile_id = screening_contract["identities"]["spatial_window_profile_id"]
+    profiles = [
+        profile for profile in single_flight_configuration["spatial_window_profiles"]
+        if profile.get("profile_id") == profile_id
+    ]
+    execution_population = population_declaration["execution_population"]
+    winner_population = receipt["candidates_ranked"][0]["population_identity"]
+    if (
+        len(profiles) != 1
+        or population_declaration["source_authority"]["table_binding"]
+        != "prepared_deterministic_prefix"
+        or prepared_prefix_sha256 != file_sha256(candidate_population_table)
+        or execution_population["particle_count"] != winner_population["count"]
+        or execution_population["ordered_particle_id_sha256"]
+        != winner_population["ordered_particle_id_sha256"]
+        or candidate_population["execution_population"]["particle_count"]
+        != execution_population["particle_count"]
+        or candidate_population["execution_population"]["ordered_particle_id_sha256"]
+        != execution_population["ordered_particle_id_sha256"]
+    ):
+        raise ContractError("pulse candidate population identity differs")
+    content_basis, content_key = pulse_selection_content_identity(
+        contract=screening_contract,
+        population=candidate_population,
+        source=_load(resolved_source_path),
+        connection=_load(resolved_connection_path),
+        geometry=current_geometry,
+        spatial_profile=profiles[0],
+        selector_source_sha256=selector_record.get("sha256"),
+    )
+    selected_time_us = float(receipt["selected_time_us"])
+    if (
+        content_basis != receipt["content_key_basis"]
+        or content_key != receipt["content_key"]
+        or not math.isfinite(selected_time_us)
+        or selected_time_us <= 0
+        or not math.isclose(
+            float(base_schedule["pulse_effective_time_us"]),
+            float(receipt["ballistic_seed_time_us"]),
+            rel_tol=0.0, abs_tol=1e-12,
+        )
+    ):
+        raise ContractError("pulse candidate content identity or time differs")
+    schedule = copy.deepcopy(base_schedule)
+    schedule.update({
+        "method": "detector_blind_real_field_pulse_timing_candidate_confirmation_v1",
+        "pulse_base_time_us": selected_time_us,
+        "pulse_offset_us": 0.0,
+        "pulse_effective_time_us": selected_time_us,
+        "claim_status": "FUNCTIONAL_ONLY",
+        "execution_authority": {
+            "mode": authority["authority_mode"],
+            "content_key": content_key,
+            "candidate_parent_manifest": {
+                "path": _workspace_relative(parent_manifest_path, workspace),
+                "sha256": file_sha256(parent_manifest_path),
+            },
+            "candidate_selection_receipt": {
+                "path": _workspace_relative(candidate_receipt_path, workspace),
+                "sha256": file_sha256(candidate_receipt_path),
+            },
+            "selection_preregistered": receipt["selection_preregistered"],
+            "confirmation_selection_authorized": True,
+            "confirmation_policy_id": authority["confirmation_policy_id"],
+        },
+    })
+    return schedule
+
+
+def _resolve_cached_verified_pulse_schedule(
+    *, root: Path, experiment: dict[str, Any], policy: dict[str, Any],
+    population_declaration: dict[str, Any], prepared_prefix_sha256: str,
+    resolved_connection_path: Path, resolved_source_path: Path,
+    resolved_geometry_path: Path, single_flight_configuration: dict[str, Any],
+    base_schedule: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Reuse a verified pulse receipt when the full content identity matches."""
+
+    workspace = root.parent
+    cache_root = (
+        workspace / "artifacts" / "projects" / INTEGRATION_ID
+        / "cache" / "verified_pulse"
+    )
+    if not cache_root.is_dir():
+        return None
+    matches: list[tuple[Path, dict[str, Any], dict[str, Any]]] = []
+    for receipt_path in sorted(cache_root.glob("*/verified_pulse_timing_receipt.json")):
+        receipt = _load(receipt_path)
+        validate_schema(receipt, "rf_oatof_verified_pulse_timing_receipt.schema.json")
+        candidate = receipt["candidate_authority"]
+        candidate_policy = copy.deepcopy(policy)
+        candidate_policy["fixed_execution_authority"] = {
+            "authority_mode": "detector_blind_candidate_confirmation_v1",
+            "candidate_parent_manifest": {
+                key: candidate["parent_manifest"][key] for key in ("path", "sha256")
+            },
+            "candidate_selection_receipt": {
+                key: candidate["selection_receipt"][key] for key in ("path", "sha256")
+            },
+            "confirmation_policy_id": "identical_identity_pulse_on_full_flight_v1",
+        }
+        try:
+            schedule = _resolve_candidate_confirmation_schedule(
+                root=root,
+                experiment=experiment,
+                policy=candidate_policy,
+                population_declaration=population_declaration,
+                prepared_prefix_sha256=prepared_prefix_sha256,
+                resolved_connection_path=resolved_connection_path,
+                resolved_source_path=resolved_source_path,
+                resolved_geometry_path=resolved_geometry_path,
+                single_flight_configuration=single_flight_configuration,
+                base_schedule=base_schedule,
+            )
+        except ContractError:
+            continue
+        if (
+            schedule["execution_authority"]["content_key"] == receipt["content_key"]
+            and math.isclose(
+                schedule["pulse_effective_time_us"], receipt["selected_time_us"],
+                rel_tol=0.0, abs_tol=1e-12,
+            )
+        ):
+            matches.append((receipt_path, receipt, schedule))
+    if not matches:
+        return None
+    if len(matches) != 1:
+        raise ContractError("verified pulse cache identity is not unique")
+    receipt_path, receipt, schedule = matches[0]
+    for name in ("child_manifest", "pulse_schedule", "summary"):
+        _workspace_record(
+            workspace, receipt["verification_authority"][name],
+            f"verified pulse {name}",
+        )
+    schedule["method"] = "verified_real_field_pulse_timing_reuse_v1"
+    schedule["execution_authority"] = {
+        "mode": "verified_pulse_timing_reuse_v1",
+        "content_key": receipt["content_key"],
+        "verified_receipt": {
+            "path": _workspace_relative(receipt_path, workspace),
+            "sha256": file_sha256(receipt_path),
+        },
+    }
     return schedule
 
 
@@ -1405,6 +1841,7 @@ def prepare_family_source_closure(
         raise ContractError("integration campaign must be repository-managed")
     campaign = _load(campaign_path)
     validate_schema(campaign, "rf_multipole_oatof_experiment_campaign.schema.json")
+    validate_pre_pulse_time_series_campaign(campaign)
     if campaign["integration_id"] != INTEGRATION_ID:
         raise ContractError("campaign integration identity differs")
     identities = [item["experiment_id"] for item in campaign["experiments"]]
@@ -1455,6 +1892,18 @@ def prepare_family_source_closure(
             pa_cache_policy_provenance = "explicit_campaign_row"
     pulse_schedule_policy = experiment.get("single_flight_pulse_schedule_policy")
     population_declaration = experiment.get("single_flight_population")
+    pre_pulse_time_series_specification = campaign.get(
+        "pre_pulse_time_series_screening"
+    )
+    fixed_pulse_authority = (
+        pulse_schedule_policy.get("fixed_execution_authority", {})
+        if isinstance(pulse_schedule_policy, dict)
+        else {}
+    )
+    pulse_candidate_confirmation = (
+        fixed_pulse_authority.get("authority_mode")
+        == "detector_blind_candidate_confirmation_v1"
+    )
     staged_grid2_mode = experiment.get("source_release_mode") == "staged_grid2_restart"
     if execution_strategy == "simion_single_flight" and campaign["schema_version"] < 3:
         raise ContractError(
@@ -1540,6 +1989,7 @@ def prepare_family_source_closure(
     time_integration_profile_id = experiment.get(
         "single_flight_time_integration_profile_id"
     )
+    time_integration_profile = None
     if time_integration_profile_id is not None:
         matches = [
             item for item in single_flight_configuration["time_integration_profiles"]
@@ -1547,6 +1997,7 @@ def prepare_family_source_closure(
         ]
         if len(matches) != 1:
             raise ContractError("time-integration profile must resolve exactly once")
+        time_integration_profile = matches[0]
     spatial_window_profile_id = experiment.get(
         "single_flight_spatial_window_profile_id"
     )
@@ -1750,6 +2201,7 @@ def prepare_family_source_closure(
             "staged grid2 source state requires staged grid2 restart mode"
         )
     profile_registry = load_connection_profile_registry(profile_registry_path)
+    validate_connector_gap_screen_campaign(campaign, profile_registry)
     profile = _unique_profile(profile_registry, experiment["connection_profile_id"])
     expected_project_id = profile["upstream"]["project_id"]
 
@@ -1796,6 +2248,7 @@ def prepare_family_source_closure(
     )
     source = evidence["source"]
     pulse_contract = campaign.get("pulse_resolution_optimization")
+    connector_gap_contract = campaign.get("connector_gap_screen")
     pulse_cohort_policy = None
     historical_cohort_reference = None
     paired_cohort_authority = None
@@ -1830,6 +2283,55 @@ def prepare_family_source_closure(
                               "pulse-resolution mother source"),
             pulse_prefix_path,
             ordered_particle_ids=prefix_ids,
+        )
+    elif connector_gap_contract is not None:
+        prefix_ids = list(range(1, connector_gap_contract["screening_prefix_count"] + 1))
+        pulse_prefix_path = (
+            plan_output.parent / "inputs" / "connector_gap_screening_prefix_n100.csv"
+        )
+        pulse_prefix_path.parent.mkdir(parents=True, exist_ok=True)
+        pulse_prefix_sha256 = write_pulse_resolution_screening_prefix(
+            _workspace_record(
+                workspace, source["particle_source"], "connector-gap mother source"
+            ),
+            pulse_prefix_path,
+            ordered_particle_ids=prefix_ids,
+        )
+    elif pre_pulse_time_series_specification is not None:
+        prefix_ids = list(range(1, 101))
+        pulse_prefix_path = plan_output.parent / "inputs" / (
+            "pre_pulse_time_series_screening_prefix_n100.csv"
+        )
+        pulse_prefix_path.parent.mkdir(parents=True, exist_ok=True)
+        pulse_prefix_sha256 = write_pulse_resolution_screening_prefix(
+            _workspace_record(
+                workspace, source["particle_source"],
+                "pre-pulse time-series mother source",
+            ),
+            pulse_prefix_path,
+            ordered_particle_ids=prefix_ids,
+        )
+    elif pulse_candidate_confirmation:
+        if (
+            population_declaration.get("population_mode")
+            != "first_100_rows_in_frozen_file_order"
+            or population_declaration.get("source_authority", {}).get("table_binding")
+            != "prepared_deterministic_prefix"
+            or population_declaration.get("execution_population", {}).get("particle_count")
+            != 100
+        ):
+            raise ContractError("pulse candidate confirmation population differs")
+        pulse_prefix_path = plan_output.parent / "inputs" / (
+            "pulse_candidate_confirmation_prefix_n100.csv"
+        )
+        pulse_prefix_path.parent.mkdir(parents=True, exist_ok=True)
+        pulse_prefix_sha256 = write_pulse_resolution_screening_prefix(
+            _workspace_record(
+                workspace, source["particle_source"],
+                "pulse candidate confirmation mother source",
+            ),
+            pulse_prefix_path,
+            ordered_particle_ids=list(range(1, 101)),
         )
     single_flight_source = experiment.get("single_flight_particle_source")
     single_flight_source_path = None
@@ -2102,10 +2604,12 @@ def prepare_family_source_closure(
             _workspace_relative(downstream_port_path, workspace)
         )
         registration = resolved_registry["profiles"][0]["spatial_registration"]
-        registration["translation_mm"] = derive_direct_mating_translation(
+        registration["translation_mm"] = derive_mating_translation_with_gap(
             registration["rotation_upstream_to_downstream"],
             upstream_port["mating_surface"]["center_mm"],
+            upstream_port["mating_surface"]["outward_normal"],
             downstream_port["mating_surface"]["center_mm"],
+            float(registration["expected_gap_mm"]),
         )
         layout_files = {
             "registry": layout_registry_path,
@@ -2385,7 +2889,13 @@ def prepare_family_source_closure(
     if layout_files is not None:
         schedule = None
         if not staged_grid2_mode:
-            if pulse_schedule_policy.get("fixed_execution_authority") is not None:
+            fixed_authority = pulse_schedule_policy.get("fixed_execution_authority")
+            authority_mode = (
+                fixed_authority.get("authority_mode")
+                if isinstance(fixed_authority, dict)
+                else None
+            )
+            if authority_mode == "frozen_historical_schedule_v1":
                 schedule = _resolve_fixed_pulse_schedule(
                     root=root,
                     campaign=campaign,
@@ -2396,7 +2906,7 @@ def prepare_family_source_closure(
                     policy=pulse_schedule_policy,
                 )
             else:
-                schedule = derive_pulse_schedule(
+                base_schedule = derive_pulse_schedule(
                     design_evidence["state_path"], _load(resolved_path), _load(layout_files["geometry"]),
                     layout_profile,
                     campaign_id=campaign["campaign_id"],
@@ -2408,6 +2918,45 @@ def prepare_family_source_closure(
                         design_evidence["resolved_design"]["drive"]["frequency_Hz"]
                     ),
                 )
+                if authority_mode == "detector_blind_candidate_confirmation_v1":
+                    if pulse_prefix_sha256 is None:
+                        raise ContractError(
+                            "pulse candidate confirmation requires a prepared population prefix"
+                        )
+                    schedule = _resolve_candidate_confirmation_schedule(
+                        root=root,
+                        experiment=experiment,
+                        policy=pulse_schedule_policy,
+                        population_declaration=population_declaration,
+                        prepared_prefix_sha256=pulse_prefix_sha256,
+                        resolved_connection_path=resolved_path,
+                        resolved_source_path=resolved_source_contract_path,
+                        resolved_geometry_path=layout_files["geometry"],
+                        single_flight_configuration=single_flight_configuration,
+                        base_schedule=base_schedule,
+                    )
+                elif authority_mode is None:
+                    schedule = None
+                    if (
+                        pulse_prefix_sha256 is not None
+                        and pre_pulse_time_series_specification is None
+                    ):
+                        schedule = _resolve_cached_verified_pulse_schedule(
+                            root=root,
+                            experiment=experiment,
+                            policy=pulse_schedule_policy,
+                            population_declaration=population_declaration,
+                            prepared_prefix_sha256=pulse_prefix_sha256,
+                            resolved_connection_path=resolved_path,
+                            resolved_source_path=resolved_source_contract_path,
+                            resolved_geometry_path=layout_files["geometry"],
+                            single_flight_configuration=single_flight_configuration,
+                            base_schedule=base_schedule,
+                        )
+                    if schedule is None:
+                        schedule = base_schedule
+                else:
+                    raise ContractError("single-flight pulse authority mode is unsupported")
             validate_schema(
                 schedule, "rf_oatof_resolved_single_flight_pulse_schedule.schema.json"
             )
@@ -2700,7 +3249,9 @@ def prepare_family_source_closure(
             if pulse_prefix_path is None:
                 raise ContractError("population declaration requires a deterministic prefix table")
             population_path = pulse_prefix_path
-            population_input_role = "pulse_resolution_screening_prefix"
+            population_input_role = population_declaration["source_authority"][
+                "input_role"
+            ]
         elif table_binding == "staged_upstream_source":
             population_path = _workspace_record(
                 workspace, source["particle_source"], "staged population source table"
@@ -2732,6 +3283,37 @@ def prepare_family_source_closure(
         )
         resolved_population_path.write_text(
             json.dumps(resolved_population, indent=2) + "\n", encoding="utf-8"
+        )
+    pre_pulse_time_series_contract_path = None
+    if pre_pulse_time_series_specification is not None:
+        if (
+            pulse_prefix_path is None or pulse_prefix_sha256 is None
+            or resolved_population_path is None or resolved_region_field_contract is None
+            or layout_files is None or time_integration_profile is None
+            or not field_profiles
+        ):
+            raise ContractError("pre-pulse time-series prepared identity is incomplete")
+        pre_pulse_time_series_contract = compile_pre_pulse_time_series_contract(
+            campaign=campaign,
+            experiment=experiment,
+            experiment_row_sha256=row_sha256,
+            upstream_resolved_design=design_evidence["resolved_design"],
+            resolved_source_contract_sha256=file_sha256(resolved_source_contract_path),
+            resolved_population_contract_sha256=file_sha256(resolved_population_path),
+            prepared_prefix_sha256=pulse_prefix_sha256,
+            layout_profile=layout_profile,
+            selected_field_profile=field_profiles[0],
+            region_field_semantic_sha256=resolved_region_field_contract[
+                "semantic_sha256"
+            ],
+            rf_steps_per_period=int(time_integration_profile["rf_steps_per_period"]),
+        )
+        pre_pulse_time_series_contract_path = plan_output.parent / "inputs" / (
+            "pre_pulse_time_series_screening_contract.json"
+        )
+        pre_pulse_time_series_contract_path.write_text(
+            json.dumps(pre_pulse_time_series_contract, indent=2) + "\n",
+            encoding="utf-8",
         )
     plan = _load(plan_path)
     plan["execution_steps"] = [
@@ -2791,6 +3373,22 @@ def prepare_family_source_closure(
                 + registration_receipt_path.name,
                 "pulse_resolution_registration_sha256="
                 + registration_receipt_sha256,
+            ]) + ([] if connector_gap_contract is None else [
+                "connector_gap_prefix_filename=inputs/" + pulse_prefix_path.name,
+                "connector_gap_prefix_sha256=" + pulse_prefix_sha256,
+            ]) + ([] if pre_pulse_time_series_contract_path is None else [
+                "pre_pulse_time_series_prefix_filename=inputs/"
+                + pulse_prefix_path.name,
+                "pre_pulse_time_series_prefix_sha256=" + pulse_prefix_sha256,
+                "pre_pulse_time_series_contract_filename=inputs/"
+                + pre_pulse_time_series_contract_path.name,
+                "pre_pulse_time_series_contract_sha256="
+                + file_sha256(pre_pulse_time_series_contract_path),
+            ]) + ([] if not pulse_candidate_confirmation else [
+                "pulse_candidate_confirmation_prefix_filename=inputs/"
+                + pulse_prefix_path.name,
+                "pulse_candidate_confirmation_prefix_sha256="
+                + pulse_prefix_sha256,
             ]) + ([] if layout_files is None else [
                 f"layout_profile_id={experiment['single_flight_layout_profile_id']}",
                 "architecture_generation_id="
