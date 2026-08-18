@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/rf_oatof_resolved_pulse_timing_orchestration.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "role", "campaign_id", "experiment_id",
+    "experiment_row_sha256", "original_run_id", "target_output_directory",
+    "state", "cache_miss_policy_id", "time_grid_profile_id",
+    "spatial_window_profile_id", "requested_schedule"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "rf_oatof_resolved_pulse_timing_orchestration"},
+    "campaign_id": {"$ref": "#/$defs/id"},
+    "experiment_id": {"$ref": "#/$defs/id"},
+    "experiment_row_sha256": {"$ref": "#/$defs/sha"},
+    "original_run_id": {"type": "string", "minLength": 1},
+    "target_output_directory": {"type": "string", "minLength": 1},
+    "state": {
+      "enum": ["discovery_required", "confirmation_required", "ready_verified"]
+    },
+    "cache_miss_policy_id": {
+      "const": "auto_detector_blind_discovery_and_confirmation_v1"
+    },
+    "time_grid_profile_id": {
+      "const": "ballistic_seed_rf160_minus56_plus264_v1"
+    },
+    "spatial_window_profile_id": {"$ref": "#/$defs/id"},
+    "requested_schedule": {"$ref": "#/$defs/workspace_file"},
+    "stage": {"$ref": "#/$defs/stage"},
+    "transition": {"$ref": "#/$defs/workspace_file"},
+    "transition_relative_path": {
+      "const": "results/pulse_timing_transition.json"
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"state": {"const": "discovery_required"}}},
+      "then": {
+        "required": ["stage", "transition_relative_path"],
+        "not": {"required": ["transition"]},
+        "properties": {
+          "stage": {"properties": {"stage_id": {"const": "pulse_timing_discovery"}}}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"state": {"const": "confirmation_required"}}},
+      "then": {
+        "required": ["stage", "transition"],
+        "not": {"required": ["transition_relative_path"]},
+        "properties": {
+          "stage": {"properties": {"stage_id": {"const": "pulse_timing_confirmation"}}}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"state": {"const": "ready_verified"}}},
+      "then": {"not": {"anyOf": [{"required": ["stage"]}, {"required": ["transition"]}, {"required": ["transition_relative_path"]}]}}
+    }
+  ],
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"},
+    "sha": {"type": "string", "pattern": "^[A-F0-9]{64}$"},
+    "workspace_file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha"}
+      }
+    },
+    "stage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stage_id", "run_id", "output_directory", "resolved_connection", "composition_plan"],
+      "properties": {
+        "stage_id": {"enum": ["pulse_timing_discovery", "pulse_timing_confirmation"]},
+        "run_id": {"type": "string", "minLength": 1},
+        "output_directory": {"type": "string", "minLength": 1},
+        "resolved_connection": {"$ref": "#/$defs/workspace_file"},
+        "composition_plan": {"$ref": "#/$defs/workspace_file"}
+      }
+    }
+  }
+}

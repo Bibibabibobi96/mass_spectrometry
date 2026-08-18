@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/rf_oatof_pulse_timing_transition.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "role", "status", "discovery_run_id",
+    "content_key", "candidate_selection_receipt", "screening_child_manifest"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "rf_oatof_pulse_timing_transition"},
+    "status": {"const": "candidate_selected_confirmation_required"},
+    "discovery_run_id": {"type": "string", "minLength": 1},
+    "content_key": {"$ref": "#/$defs/sha"},
+    "candidate_selection_receipt": {"$ref": "#/$defs/file"},
+    "screening_child_manifest": {"$ref": "#/$defs/file"}
+  },
+  "$defs": {
+    "sha": {"type": "string", "pattern": "^[A-F0-9]{64}$"},
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "bytes", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "bytes": {"type": "integer", "minimum": 1},
+        "sha256": {"$ref": "#/$defs/sha"}
+      }
+    }
+  }
+}

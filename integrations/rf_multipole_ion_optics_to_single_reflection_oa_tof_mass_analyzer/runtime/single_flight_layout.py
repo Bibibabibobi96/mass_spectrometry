@@ -620,35 +620,42 @@ def project_handoff_through_connector(
     }
 
 
-def resolve_ideal_source_box_1mm_xyz(
+def resolve_source_region_bounds(
     geometry: dict[str, Any],
-    spatial_window_profile: dict[str, Any],
+    source_region_profile: dict[str, Any],
 ) -> dict[str, dict[str, float]]:
-    """Resolve the registered 1 mm XYZ source box against one frozen geometry."""
+    """Resolve one registered source-region profile against frozen geometry."""
 
     if (
-        spatial_window_profile.get("profile_id") != "ideal_source_box_1mm_xyz"
-        or spatial_window_profile.get("event") != "pre_pulse_state"
-        or spatial_window_profile.get("selection_uses_detector_outcome") is not False
-        or set(spatial_window_profile.get("axes", {})) != {"x", "y", "z"}
+        source_region_profile.get("profile_id")
+        != "layout_resolved_axial_provisional_xy2_v1"
+        or source_region_profile.get("event") != "pre_pulse_state"
+        or source_region_profile.get("selection_uses_detector_outcome") is not False
+        or set(source_region_profile.get("axes", {})) != {"x", "y", "z"}
     ):
-        raise ContractError("real-field pulse timing requires ideal_source_box_1mm_xyz")
+        raise ContractError("real-field pulse source-region profile differs")
     source = geometry.get("particle_source", {})
     bounds: dict[str, dict[str, float]] = {}
     for axis in ("x", "y", "z"):
-        specification = spatial_window_profile["axes"][axis]
+        specification = source_region_profile["axes"][axis]
+        width_keys = {"full_width_mm", "full_width_binding"} & set(specification)
         if (
-            set(specification) != {"center_binding", "full_width_mm"}
+            set(specification) != {"center_binding", *width_keys}
+            or len(width_keys) != 1
             or specification["center_binding"]
             != f"particle_source.center_{axis}_mm"
         ):
-            raise ContractError("ideal source box axis binding differs")
+            raise ContractError("source-region axis binding differs")
         center = float(source[f"center_{axis}_mm"])
-        width = float(specification["full_width_mm"])
-        if not math.isfinite(center) or not math.isclose(
-            width, 1.0, rel_tol=0.0, abs_tol=0.0
-        ):
-            raise ContractError("ideal source box must retain its exact 1 mm width")
+        if "full_width_binding" in specification:
+            binding = specification["full_width_binding"]
+            if binding != f"particle_source.size_{axis}_mm":
+                raise ContractError("source-region width binding differs")
+            width = float(source[f"size_{axis}_mm"])
+        else:
+            width = float(specification["full_width_mm"])
+        if not math.isfinite(center) or not math.isfinite(width) or width <= 0:
+            raise ContractError("source-region bounds must be finite and positive")
         bounds[axis] = {
             "center_mm": center,
             "full_width_mm": width,
@@ -661,7 +668,7 @@ def resolve_ideal_source_box_1mm_xyz(
 def select_detector_blind_real_field_pulse_time(
     rows: list[dict[str, str]],
     geometry: dict[str, Any],
-    spatial_window_profile: dict[str, Any],
+    source_region_profile: dict[str, Any],
     *,
     candidate_times_us: list[float],
     frozen_particle_ids: list[int],
@@ -671,10 +678,10 @@ def select_detector_blind_real_field_pulse_time(
 
     Every registered time must contain the exact same ordered particle-ID set. Pulse
     eligibility follows the existing open Stage-1 definition; normalized XYZ moments
-    use the complete frozen cohort and the registered 1 mm source-box half widths.
+    use the complete frozen cohort and the registered source-region half widths.
     """
 
-    bounds = resolve_ideal_source_box_1mm_xyz(geometry, spatial_window_profile)
+    bounds = resolve_source_region_bounds(geometry, source_region_profile)
     times = [float(value) for value in candidate_times_us]
     if (
         not times
@@ -797,7 +804,7 @@ def select_detector_blind_real_field_pulse_time(
         ]
         pulse_noneligible_ids = sorted(expected_id_set - set(eligible_ids))
         transverse_nonbore_ids = sorted(expected_id_set - set(bore_ids))
-        ideal_box_ids = [
+        source_region_ids = [
             int(state["particle_id"])
             for state in states
             if all(
@@ -827,7 +834,7 @@ def select_detector_blind_real_field_pulse_time(
             "pulse_noneligible_ids": pulse_noneligible_ids,
             "transverse_bore_ids": bore_ids,
             "transverse_nonbore_ids": transverse_nonbore_ids,
-            "ideal_source_box_ids": ideal_box_ids,
+            "source_region_ids": source_region_ids,
             "population_count": len(expected_ids),
             "alive_count": len(alive_ids),
             "missing_count": len(missing_ids),
@@ -835,7 +842,7 @@ def select_detector_blind_real_field_pulse_time(
             "pulse_noneligible_count": len(pulse_noneligible_ids),
             "transverse_bore_count": len(bore_ids),
             "transverse_nonbore_count": len(transverse_nonbore_ids),
-            "ideal_source_box_count": len(ideal_box_ids),
+            "source_region_count": len(source_region_ids),
             "normalized_xyz_centroid": normalized_centroid,
             "normalized_xyz_centroid_distance": math.sqrt(
                 sum(value * value for value in normalized_centroid.values())
@@ -878,7 +885,7 @@ def select_detector_blind_real_field_pulse_time(
         "selection_uses_detector_outcome": False,
         "detector_results_used": False,
         "ballistic_seed_time_us": seed,
-        "ideal_source_box_bounds": bounds,
+        "source_region_bounds": bounds,
         "population_denominator_count": len(expected_ids),
         "selected_time_us": float(candidates[0]["candidate_time_us"]),
         "candidates_ranked": candidates,

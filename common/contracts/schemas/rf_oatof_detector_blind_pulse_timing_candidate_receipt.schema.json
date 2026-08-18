@@ -11,11 +11,11 @@
     "detector_fields_present_in_state_table", "content_key",
     "content_key_basis", "authorities", "selection_order",
     "ballistic_seed_time_us", "selected_time_us",
-    "population_denominator_count", "ideal_source_box_bounds",
+    "population_denominator_count", "source_region_bounds",
     "candidates_ranked", "sample_census", "candidate_table"
   ],
   "properties": {
-    "schema_version": {"const": 1},
+    "schema_version": {"const": 2},
     "role": {"const": "rf_oatof_detector_blind_real_field_pulse_timing_selection_receipt"},
     "status": {"const": "success"},
     "qualification": {"const": "candidate_selection"},
@@ -28,6 +28,16 @@
     "detector_fields_present_in_state_table": {"const": false},
     "content_key": {"$ref": "#/$defs/sha"},
     "content_key_basis": {"type": "object"},
+    "pa_cache_keys": {
+      "type": "object", "additionalProperties": false,
+      "required": ["frontend", "accelerator_overlay", "flight_tube", "reflectron"],
+      "properties": {
+        "frontend": {"$ref": "#/$defs/sha"},
+        "accelerator_overlay": {"$ref": "#/$defs/sha"},
+        "flight_tube": {"type": "null"},
+        "reflectron": {"type": "null"}
+      }
+    },
     "authorities": {
       "type": "object",
       "additionalProperties": false,
@@ -67,7 +77,7 @@
     "ballistic_seed_time_us": {"type": "number"},
     "selected_time_us": {"type": "number"},
     "population_denominator_count": {"type": "integer", "minimum": 1},
-    "ideal_source_box_bounds": {"type": "object"},
+    "source_region_bounds": {"type": "object"},
     "candidates_ranked": {
       "type": "array", "minItems": 1, "items": {"type": "object"}
     },

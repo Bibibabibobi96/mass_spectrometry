@@ -6,7 +6,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from common.contracts.machine_contracts import ContractError
+from common.contracts.machine_contracts import ContractError, validate_schema
 from common.contracts.file_identity import file_sha256
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.select_real_field_pulse_time import (
     SELECTION_ORDER,
@@ -18,6 +18,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.publish_run import (
     INTEGRATION_ID,
     _publish_detector_blind_pulse_selection,
+    _publish_pulse_timing_transition,
     _publish_verified_pulse_receipt,
 )
 
@@ -36,14 +37,21 @@ def _record(path: Path) -> dict[str, object]:
 
 def _profile() -> dict[str, object]:
     return {
-        "profile_id": "ideal_source_box_1mm_xyz",
+        "profile_id": "layout_resolved_axial_provisional_xy2_v1",
         "event": "pre_pulse_state",
         "axes": {
-            axis: {
-                "center_binding": f"particle_source.center_{axis}_mm",
-                "full_width_mm": 1.0,
-            }
-            for axis in ("x", "y", "z")
+            "x": {
+                "center_binding": "particle_source.center_x_mm",
+                "full_width_mm": 2.0,
+            },
+            "y": {
+                "center_binding": "particle_source.center_y_mm",
+                "full_width_mm": 2.0,
+            },
+            "z": {
+                "center_binding": "particle_source.center_z_mm",
+                "full_width_binding": "particle_source.size_z_mm",
+            },
         },
         "selection_uses_detector_outcome": False,
     }
@@ -54,6 +62,7 @@ def _geometry() -> dict[str, object]:
         "role": "oa_tof_resolved_contract_do_not_edit",
         "particle_source": {
             "center_x_mm": 0.0, "center_y_mm": 0.0, "center_z_mm": 0.0,
+            "size_z_mm": 2.2,
         },
         "coordinate_convention": {
             "accelerator_axis_x": 0.0, "accelerator_axis_y": 0.0,
@@ -104,13 +113,15 @@ class RealFieldPulseCoreTests(unittest.TestCase):
     def test_source_box_boundaries_are_inclusive(self) -> None:
         rows = [
             {"particle_id": "1", "event": "pre_pulse_time_series_state", "sample_index": "1", "instrument_time_us": "1", "actual_instrument_time_us": "1", "x_mm": "-0.5", "y_mm": "0.5", "z_mm": "0.5", "survival_status": "alive"},
-            {"particle_id": "2", "event": "pre_pulse_time_series_state", "sample_index": "1", "instrument_time_us": "1", "actual_instrument_time_us": "1", "x_mm": "0.5000001", "y_mm": "0", "z_mm": "0", "survival_status": "alive"},
+            {"particle_id": "2", "event": "pre_pulse_time_series_state", "sample_index": "1", "instrument_time_us": "1", "actual_instrument_time_us": "1", "x_mm": "1.0000001", "y_mm": "0", "z_mm": "0", "survival_status": "alive"},
         ]
         result = select_detector_blind_real_field_pulse_time(
             rows, _geometry(), _profile(), candidate_times_us=[1.0],
             frozen_particle_ids=[1, 2], ballistic_seed_time_us=1.0,
         )
-        self.assertEqual(result["candidates_ranked"][0]["ideal_source_box_ids"], [1])
+        self.assertEqual(result["candidates_ranked"][0]["source_region_ids"], [1])
+        self.assertEqual(result["source_region_bounds"]["x"]["full_width_mm"], 2.0)
+        self.assertEqual(result["source_region_bounds"]["z"]["full_width_mm"], 2.2)
 
     def test_allows_physical_loss_with_complete_frozen_denominator(self) -> None:
         rows = [
@@ -203,7 +214,7 @@ class RealFieldPulseAnalysisTests(unittest.TestCase):
         paths["configuration"].write_text(json.dumps({
             "schema_version": 5,
             "role": "rf_oatof_simion_single_flight_configuration",
-            "spatial_window_profiles": [_profile()],
+            "source_region_diagnostic_profiles": [_profile()],
         }), encoding="utf-8")
         paths["schedule"].write_text(json.dumps({
             "schema_version": 1,
@@ -224,7 +235,9 @@ class RealFieldPulseAnalysisTests(unittest.TestCase):
                 "ordered_particle_id_sha256": "",
                 "layout_profile_id": "layout", "field_profile_id": "field",
                 "time_integration_profile_id": "dt",
-                "spatial_window_profile_id": "ideal_source_box_1mm_xyz",
+                "spatial_window_profile_id": (
+                    "layout_resolved_axial_provisional_xy2_v1"
+                ),
             },
         }
         population_ids = [1, 2, 3]
@@ -364,6 +377,8 @@ class RealFieldPulseAnalysisTests(unittest.TestCase):
                 receipt["candidate_table"]["sha256"], r"^[0-9A-F]{64}$"
             )
             self.assertFalse(receipt["detector_results_used"])
+            self.assertEqual(receipt["schema_version"], 2)
+            self.assertIn("source_region_bounds", receipt)
             self.assertTrue(paths["receipt"].is_file())
 
     def test_receipt_publishes_alive_and_missing_sample_census(self) -> None:
@@ -414,6 +429,38 @@ class RealFieldPulseAnalysisTests(unittest.TestCase):
             self.assertEqual(receipt["selected_time_us"], 11.0)
             self.assertFalse(receipt["reusable_verified_pulse"])
 
+    def test_discovery_publisher_emits_manifest_ready_transition(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            paths, child, parent, stage = self._write_publisher_child(workspace)
+            parent_run = parent.with_name(
+                "20260819_000000__sim__cross__pulse-timing-discovery__n100"
+            )
+            parent.rename(parent_run)
+            _table, receipt_path, receipt = _publish_detector_blind_pulse_selection(
+                repo_root=REPO_ROOT,
+                workspace_root=workspace,
+                parent_run_dir=parent_run,
+                stage=stage,
+                resolved_connection_path=paths["connection"],
+                resolved_source_path=paths["source"],
+                resolved_population_path=paths["population"],
+            )
+            transition_path = _publish_pulse_timing_transition(
+                workspace_root=workspace,
+                parent_run_dir=parent_run,
+                stage=stage,
+                candidate_receipt_path=receipt_path,
+                candidate_receipt=receipt,
+            )
+            transition = json.loads(transition_path.read_text(encoding="utf-8"))
+            validate_schema(transition, "rf_oatof_pulse_timing_transition.schema.json")
+            self.assertEqual(transition["content_key"], receipt["content_key"])
+            self.assertEqual(
+                transition["screening_child_manifest"]["sha256"],
+                file_sha256(child / "run_manifest.json"),
+            )
+
     def test_parent_publisher_rejects_child_parent_identity_drift(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             workspace = Path(directory)
@@ -442,25 +489,29 @@ class RealFieldPulseAnalysisTests(unittest.TestCase):
         if not manifest.is_file():
             self.skipTest("canonical pulse confirmation child is not available")
         with tempfile.TemporaryDirectory() as directory:
-            parent = Path(directory)
-            (parent / "results").mkdir()
-            result = _publish_verified_pulse_receipt(
-                workspace_root=workspace,
-                parent_run_dir=parent,
-                stage={
-                    "path": child.relative_to(workspace).as_posix(),
-                    "manifest_sha256": file_sha256(manifest),
-                },
-            )
-            self.assertIsNotNone(result)
-            assert result is not None
-            receipt_path, receipt = result
-            self.assertTrue(receipt_path.is_file())
-            self.assertEqual(
-                receipt["decision"], "PASS_FOR_IDENTICAL_IDENTITY_REUSE"
-            )
-            self.assertEqual(receipt["census"]["detector_crossing"], 69)
-            self.assertTrue(receipt["reusable_verified_pulse"])
+            for precreate_results in (False, True):
+                with self.subTest(precreate_results=precreate_results):
+                    parent = Path(directory) / str(precreate_results).lower()
+                    parent.mkdir()
+                    if precreate_results:
+                        (parent / "results").mkdir()
+                    result = _publish_verified_pulse_receipt(
+                        workspace_root=workspace,
+                        parent_run_dir=parent,
+                        stage={
+                            "path": child.relative_to(workspace).as_posix(),
+                            "manifest_sha256": file_sha256(manifest),
+                        },
+                    )
+                    self.assertIsNotNone(result)
+                    assert result is not None
+                    receipt_path, receipt = result
+                    self.assertTrue(receipt_path.is_file())
+                    self.assertEqual(
+                        receipt["decision"], "PASS_FOR_IDENTICAL_IDENTITY_REUSE"
+                    )
+                    self.assertEqual(receipt["census"]["detector_crossing"], 69)
+                    self.assertTrue(receipt["reusable_verified_pulse"])
 
 
 if __name__ == "__main__":

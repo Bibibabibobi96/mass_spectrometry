@@ -265,6 +265,7 @@ def analyze(
     restart_energy_tolerance_eV: float | None = None,
     restart_validation_contract_sha256: str | None = None,
     particle_row_map_path: Path | None = None,
+    source_region_diagnostic_profile: dict[str, object] | None = None,
 ) -> tuple[list[dict[str, object]], dict[str, object]]:
     if population_contract.get("role") != "rf_oatof_resolved_population_contract":
         raise ValueError("resolved population contract identity differs")
@@ -1055,6 +1056,125 @@ def analyze(
     }
     if geometry is None or source_release_mode == "staged_grid2_restart":
         eligible_ids = expected_particle_ids
+    source_region_diagnostic = None
+    if source_region_diagnostic_profile is not None:
+        if geometry is None:
+            raise ValueError("source-region diagnostic requires resolved geometry")
+        profile = source_region_diagnostic_profile
+        axes = profile.get("axes")
+        if (
+            profile.get("role") != "layout_resolved_source_region_diagnostic"
+            or profile.get("claim_status") != "PROVISIONAL_DIAGNOSTIC_ONLY"
+            or profile.get("event") != "pre_pulse_state"
+            or profile.get("population_basis") != "pulse_eligible"
+            or profile.get("selection_uses_detector_outcome") is not False
+            or not isinstance(axes, dict)
+            or set(axes) != {"x", "y", "z"}
+        ):
+            raise ValueError("source-region diagnostic profile identity differs")
+        bounds: dict[str, dict[str, float | str]] = {}
+        for axis in ("x", "y", "z"):
+            specification = axes[axis]
+            if (
+                not isinstance(specification, dict)
+                or specification.get("center_binding")
+                != f"particle_source.center_{axis}_mm"
+            ):
+                raise ValueError("source-region diagnostic axis binding differs")
+            center = float(geometry["particle_source"][f"center_{axis}_mm"])
+            if axis == "z":
+                if specification.get("full_width_binding") != (
+                    "particle_source.size_z_mm"
+                ):
+                    raise ValueError(
+                        "source-region diagnostic axial width binding differs"
+                    )
+                width = float(geometry["particle_source"]["size_z_mm"])
+            else:
+                if specification.get("full_width_binding") is not None:
+                    raise ValueError(
+                        "source-region diagnostic transverse width binding differs"
+                    )
+                width = float(specification.get("full_width_mm", 0.0))
+            if width <= 0:
+                raise ValueError("source-region diagnostic width must be positive")
+            bounds[axis] = {
+                "center_binding": str(specification["center_binding"]),
+                "center_mm": center,
+                "full_width_binding": specification.get("full_width_binding"),
+                "full_width_mm": width,
+                "minimum_mm": center - width / 2.0,
+                "maximum_mm": center + width / 2.0,
+            }
+        eligible_event_rows = [
+            row for row in rows
+            if row["event"] == "pre_pulse_state"
+            and int(row["particle_id"]) in eligible_ids
+        ]
+        selected_ids = sorted({
+            int(row["particle_id"])
+            for row in eligible_event_rows
+            if all(
+                float(bounds[axis]["minimum_mm"])
+                <= float(row[f"{axis}_mm"])
+                <= float(bounds[axis]["maximum_mm"])
+                for axis in ("x", "y", "z")
+            )
+        })
+        selected_id_set = set(selected_ids)
+        selected_detector_rows = [
+            row for row in detector_rows
+            if int(row["particle_id"]) in selected_id_set
+        ]
+        detected_ids = sorted({
+            int(row["particle_id"]) for row in selected_detector_rows
+        })
+        if effective_pulse_time_us is None:
+            source_region_peak = None
+            source_region_bootstrap = {
+                "resamples_requested": bootstrap_resamples,
+                "seed": bootstrap_seed,
+                "status": "not_computed",
+                "reason": "pulse_effective_time_unavailable",
+            }
+        else:
+            source_region_peak, source_region_bootstrap = _peak_summary(
+                np.asarray([
+                    float(row["pulse_effective_elapsed_us"])
+                    for row in selected_detector_rows
+                ], dtype=float),
+                mass_amu,
+                bootstrap_resamples=bootstrap_resamples,
+                bootstrap_seed=bootstrap_seed,
+            )
+        source_region_diagnostic = {
+            "profile_id": profile["profile_id"],
+            "role": profile["role"],
+            "claim_status": profile["claim_status"],
+            "qualification_eligible": False,
+            "event": profile["event"],
+            "population_basis": profile["population_basis"],
+            "selection_uses_detector_outcome": False,
+            "bounds": bounds,
+            "eligible_particle_ids": sorted(eligible_ids),
+            "eligible_count": len(eligible_ids),
+            "selected_particle_ids": selected_ids,
+            "selected_count": len(selected_ids),
+            "detected_particle_ids": detected_ids,
+            "detected_count": len(detected_ids),
+            "occupancy_fraction": (
+                len(selected_ids) / len(eligible_ids) if eligible_ids else None
+            ),
+            "pulse_effective_peak": source_region_peak,
+            "peak_status": (
+                "computed" if source_region_peak is not None else "not_computed"
+            ),
+            "peak_reason": (
+                None if source_region_peak is not None
+                else source_region_bootstrap.get("reason")
+            ),
+            "bootstrap": source_region_bootstrap,
+        }
     eligible_detector_tof = np.asarray(
         [
             float(row["pulse_effective_elapsed_us"])
@@ -1205,6 +1325,7 @@ def analyze(
         "injection_energy_validation": injection_energy_validation,
         "pulse_capture": pulse_capture,
         "spatial_window_peak": spatial_window_peak,
+        "source_region_diagnostic": source_region_diagnostic,
         "post_focus_common_cohort": segment_diagnostics,
         "spatial_six_panel": "results/single_flight_spatial_six_panel.png",
         "formal_gate_passed": False,
@@ -1233,6 +1354,7 @@ def main() -> int:
     parser.add_argument("--post-selection-detector-metrics", action="store_true")
     parser.add_argument("--configuration", type=Path)
     parser.add_argument("--spatial-window-profile-id")
+    parser.add_argument("--source-region-diagnostic-profile-id")
     parser.add_argument(
         "--clock-basis",
         default="canonical_instrument_time_us",
@@ -1247,13 +1369,19 @@ def main() -> int:
     population_contract = json.loads(
         args.resolved_population_contract.read_text(encoding="utf-8-sig")
     )
-    spatial_window_profile = None
-    if args.spatial_window_profile_id is not None:
+    configuration = None
+    if (
+        args.spatial_window_profile_id is not None
+        or args.source_region_diagnostic_profile_id is not None
+    ):
         if args.configuration is None:
-            parser.error("--spatial-window-profile-id requires --configuration")
+            parser.error("profile selection requires --configuration")
         configuration = json.loads(
             args.configuration.read_text(encoding="utf-8-sig")
         )
+    spatial_window_profile = None
+    if args.spatial_window_profile_id is not None:
+        assert configuration is not None
         matches = [
             profile for profile in configuration.get("spatial_window_profiles", [])
             if profile.get("profile_id") == args.spatial_window_profile_id
@@ -1261,6 +1389,22 @@ def main() -> int:
         if len(matches) != 1:
             parser.error("spatial-window profile must resolve exactly once")
         spatial_window_profile = matches[0]
+    source_region_diagnostic_profile = None
+    if args.source_region_diagnostic_profile_id is not None:
+        assert configuration is not None
+        matches = [
+            profile
+            for profile in configuration.get(
+                "source_region_diagnostic_profiles", []
+            )
+            if profile.get("profile_id")
+            == args.source_region_diagnostic_profile_id
+        ]
+        if len(matches) != 1:
+            parser.error(
+                "source-region diagnostic profile must resolve exactly once"
+            )
+        source_region_diagnostic_profile = matches[0]
     rows, summary = analyze(
         args.log,
         args.mass_amu,
@@ -1280,6 +1424,7 @@ def main() -> int:
         args.restart_energy_tolerance_eV,
         args.restart_validation_contract_sha256,
         args.particle_row_map,
+        source_region_diagnostic_profile,
     )
     args.checkpoints.parent.mkdir(parents=True, exist_ok=True)
     with args.checkpoints.open("w", encoding="utf-8", newline="") as handle:

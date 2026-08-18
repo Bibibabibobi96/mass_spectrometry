@@ -169,7 +169,7 @@ def _minimal_program_contracts() -> tuple[dict[str, object], dict[str, object]]:
 class SingleFlightProgramTests(unittest.TestCase):
     def test_pre_pulse_time_series_uses_native_rf160_landings(self) -> None:
         contract = {
-            "schema_version": 1,
+            "schema_version": 2,
             "role": "rf_oatof_pre_pulse_time_series_screening_contract",
             "mode": "real_pa_rf_pre_pulse_time_series",
             "active_scope": "pre_pulse_frontend_accelerator",

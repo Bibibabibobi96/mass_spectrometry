@@ -145,6 +145,253 @@ if ($ValidateOnly) {
   $outputRoot = [IO.Path]::GetFullPath((Join-Path $runsRoot $campaignRunId))
 }
 $outputRoot = [IO.Path]::GetFullPath($outputRoot)
+$removeUnpublishedTargetOnExit = [bool]$SolverAuthorized
+if ($SolverAuthorized -and (Test-Path -LiteralPath $outputRoot)) {
+  throw 'SolverAuthorized target run directory already exists.'
+}
+$unpublishedDiscoveryRoot = ''
+if ($SolverAuthorized -and $campaignRunId -match
+    '^(?<stamp>[0-9]{8}_[0-9]{6})__.+__(?<detail>n[0-9]+)(?<retry>__r[0-9]{2})?$') {
+  $derivedDiscoveryRunId = (
+    $Matches.stamp + '__sim__cross__pulse-timing-discovery__' +
+    $Matches.detail + [string]$Matches['retry']
+  )
+  $candidateDiscoveryRoot = [IO.Path]::GetFullPath((Join-Path `
+    $runsRoot $derivedDiscoveryRunId))
+  if (-not (Test-Path -LiteralPath $candidateDiscoveryRoot)) {
+    $unpublishedDiscoveryRoot = $candidateDiscoveryRoot
+  }
+}
+
+function Invoke-FamilyPreparation {
+  param(
+    [Parameter(Mandatory)][string]$ResolvedPath,
+    [Parameter(Mandatory)][string]$PlanPath,
+    [string]$PulseTimingTransition = '',
+    [switch]$MaterializePulseTimingStage
+  )
+
+  $prepareArguments = @(
+    '-m', $prepareModule,
+    '--repo-root', $repoRoot,
+    '--profile-registry', $profileRegistry,
+    '--adapter-registry', $adapterRegistry,
+    '--campaign', $campaignPath,
+    '--experiment-id', $ExperimentId,
+    '--resolved-output', $ResolvedPath,
+    '--plan-output', $PlanPath
+  )
+  if (-not [string]::IsNullOrWhiteSpace($PulseTimingTransition)) {
+    $prepareArguments += @('--pulse-timing-transition', $PulseTimingTransition)
+  }
+  if ($MaterializePulseTimingStage) {
+    $prepareArguments += '--materialize-pulse-timing-stage'
+  }
+  Push-Location $repoRoot
+  try {
+    & $PythonExe @prepareArguments
+    if ($LASTEXITCODE -ne 0) {
+      throw 'Family source-closure preparation failed.'
+    }
+  } finally {
+    Pop-Location
+  }
+}
+
+function Get-CompositionPlanArgumentMap {
+  param([Parameter(Mandatory)][string]$PlanPath)
+
+  $plan = Get-Content -LiteralPath $PlanPath -Raw -Encoding UTF8 |
+    ConvertFrom-Json
+  $steps = @($plan.execution_steps)
+  if ($steps.Count -ne 1) {
+    throw 'Family source-closure composition plan must contain exactly one step.'
+  }
+  $arguments = @{}
+  foreach ($argument in @($steps[0].arguments)) {
+    $parts = ([string]$argument).Split('=', 2)
+    if ($parts.Count -ne 2 -or $arguments.ContainsKey($parts[0])) {
+      throw 'Family source-closure composition-plan argument is malformed or duplicated.'
+    }
+    $arguments[$parts[0]] = $parts[1]
+  }
+  return $arguments
+}
+
+function Get-PulseTimingOrchestration {
+  param(
+    [Parameter(Mandatory)][string]$PlanPath,
+    [Parameter(Mandatory)][string]$PreparedRoot
+  )
+
+  $arguments = Get-CompositionPlanArgumentMap -PlanPath $PlanPath
+  $required = @(
+    'pulse_timing_orchestration_filename',
+    'pulse_timing_orchestration_sha256',
+    'pulse_timing_orchestration_state'
+  )
+  $presentCount = @($required | Where-Object { $arguments.ContainsKey($_) }).Count
+  if ($presentCount -eq 0) {
+    return $null
+  }
+  foreach ($name in $required) {
+    if (-not $arguments.ContainsKey($name) -or
+        [string]::IsNullOrWhiteSpace([string]$arguments[$name])) {
+      throw "Prepared pulse-timing orchestration argument is missing: $name"
+    }
+  }
+  $orchestrationPath = [IO.Path]::GetFullPath((Join-Path `
+    $PreparedRoot ([string]$arguments['pulse_timing_orchestration_filename'])))
+  if (-not $orchestrationPath.StartsWith(
+        ([IO.Path]::GetFullPath($PreparedRoot) + [IO.Path]::DirectorySeparatorChar),
+        [StringComparison]::OrdinalIgnoreCase
+      ) -or -not (Test-Path -LiteralPath $orchestrationPath -PathType Leaf)) {
+    throw 'Prepared pulse-timing orchestration file is missing or escapes its run.'
+  }
+  $actualSha256 = (Get-FileHash -LiteralPath $orchestrationPath -Algorithm SHA256).Hash
+  if ($actualSha256 -ne [string]$arguments['pulse_timing_orchestration_sha256']) {
+    throw 'Prepared pulse-timing orchestration SHA-256 differs.'
+  }
+  $orchestration = Get-Content -LiteralPath $orchestrationPath -Raw -Encoding UTF8 |
+    ConvertFrom-Json
+  if ([string]$orchestration.role -ne 'rf_oatof_resolved_pulse_timing_orchestration' -or
+      [string]$orchestration.state -ne
+      [string]$arguments['pulse_timing_orchestration_state'] -or
+      [string]$orchestration.campaign_id -ne [string]$campaignDocument.campaign_id -or
+      [string]$orchestration.experiment_id -ne $ExperimentId -or
+      [string]$orchestration.original_run_id -ne $campaignRunId) {
+    throw 'Prepared pulse-timing orchestration identity differs.'
+  }
+  return $orchestration
+}
+
+function Resolve-WorkspaceStagePath {
+  param(
+    [Parameter(Mandatory)][string]$Path,
+    [Parameter(Mandatory)][string]$Label
+  )
+
+  $candidate = if ([IO.Path]::IsPathRooted($Path)) {
+    $Path
+  } else {
+    Join-Path $workspaceRoot $Path
+  }
+  $resolved = [IO.Path]::GetFullPath($candidate)
+  if (-not $resolved.StartsWith(
+        ([IO.Path]::GetFullPath($workspaceRoot) + [IO.Path]::DirectorySeparatorChar),
+        [StringComparison]::OrdinalIgnoreCase
+      )) {
+    throw "$Label escapes the managed workspace."
+  }
+  return $resolved
+}
+
+function Get-PulseTimingStage {
+  param(
+    [Parameter(Mandatory)]$Orchestration,
+    [Parameter(Mandatory)][string]$ExpectedStageId
+  )
+
+  $stage = $Orchestration.stage
+  if ($null -eq $stage -or [string]$stage.stage_id -ne $ExpectedStageId) {
+    throw "Pulse-timing orchestration does not provide $ExpectedStageId."
+  }
+  $output = Resolve-WorkspaceStagePath `
+    -Path ([string]$stage.output_directory) -Label 'Pulse-timing stage output'
+  $resolved = Resolve-WorkspaceStagePath `
+    -Path ([string]$stage.resolved_connection.path) `
+    -Label 'Pulse-timing stage resolved connection'
+  $plan = Resolve-WorkspaceStagePath `
+    -Path ([string]$stage.composition_plan.path) `
+    -Label 'Pulse-timing stage composition plan'
+  foreach ($record in @(
+      @{ Label = 'resolved connection'; Path = $resolved; Record = $stage.resolved_connection },
+      @{ Label = 'composition plan'; Path = $plan; Record = $stage.composition_plan }
+    )) {
+    if (-not (Test-Path -LiteralPath $record.Path -PathType Leaf) -or
+        (Get-FileHash -LiteralPath $record.Path -Algorithm SHA256).Hash -ne
+        [string]$record.Record.sha256) {
+      throw "Pulse-timing stage $($record.Label) identity differs."
+    }
+  }
+  return [pscustomobject]@{
+    RunId = [string]$stage.run_id
+    OutputRoot = $output
+    ResolvedPath = $resolved
+    PlanPath = $plan
+  }
+}
+
+function Assert-PulseTimingTarget {
+  param([Parameter(Mandatory)]$Orchestration)
+
+  $declaredTarget = Resolve-WorkspaceStagePath `
+    -Path ([string]$Orchestration.target_output_directory) `
+    -Label 'Pulse-timing target output'
+  if ($declaredTarget -ne $outputRoot) {
+    throw 'Pulse-timing orchestration target output differs from the requested run.'
+  }
+}
+
+function Invoke-FamilyExecutionBoundary {
+  param(
+    [Parameter(Mandatory)][AllowEmptyString()][string]$RunId,
+    [Parameter(Mandatory)][string]$ExecutionRoot,
+    [Parameter(Mandatory)][string]$ResolvedPath,
+    [Parameter(Mandatory)][string]$PlanPath,
+    [Parameter(Mandatory)][ValidateSet('ValidateOnly', 'PrepareOnly', 'SolverAuthorized')]
+      [string]$Mode
+  )
+
+  if ($Mode -eq 'SolverAuthorized' -and [string]::IsNullOrWhiteSpace($RunId)) {
+    throw 'SolverAuthorized execution requires a nonempty run ID.'
+  }
+
+  $arguments = @{
+    CompositionPlan = $PlanPath
+    ResolvedConnection = $ResolvedPath
+    PythonExe = $PythonExe
+    RepoRoot = $repoRoot
+  }
+  if ($Mode -eq 'ValidateOnly') {
+    $arguments.ValidateOnly = $true
+  } else {
+    $arguments.AdapterEntrypoint = Join-Path $workflowRoot 'adapter.ps1'
+    $arguments.RunId = $(if ($Mode -eq 'SolverAuthorized') { $RunId } else { '' })
+    if ($Mode -eq 'PrepareOnly') { $arguments.PrepareOnly = $true }
+    if ($Mode -eq 'SolverAuthorized') { $arguments.SolverAuthorized = $true }
+  }
+  try {
+    & $commonExecute @arguments
+    if ($LASTEXITCODE -ne 0) {
+      throw 'Family source-closure execution boundary failed.'
+    }
+  } catch {
+    $executionError = $_
+    $terminalManifest = Join-Path $ExecutionRoot 'run_manifest.json'
+    $budgetPath = Join-Path $ExecutionRoot 'resolved_engineering_budget.json'
+    if ($Mode -eq 'SolverAuthorized' -and
+        -not (Test-Path -LiteralPath $terminalManifest -PathType Leaf) -and
+        (Test-Path -LiteralPath $ResolvedPath -PathType Leaf) -and
+        (Test-Path -LiteralPath $PlanPath -PathType Leaf) -and
+        (Test-Path -LiteralPath $budgetPath -PathType Leaf)) {
+      & $PythonExe -m (
+        'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.' +
+        'workflows.family_source_closure.publish_run'
+      ) --repo-root $repoRoot `
+        --integration-run-dir $ExecutionRoot `
+        --resolved-connection $ResolvedPath `
+        --composition-plan $PlanPath `
+        --resolved-engineering-budget $budgetPath `
+        --terminal-status failed `
+        --failure-reason $executionError.Exception.Message
+      if ($LASTEXITCODE -ne 0) {
+        Write-Warning 'Failed to terminalize the parent integration run after child failure.'
+      }
+    }
+    throw $executionError
+  }
+}
 
 try {
   $resolvedPath = Join-Path $outputRoot 'resolved_connection.json'
@@ -157,69 +404,103 @@ try {
     'workflows.family_source_closure.prepare'
   )
 
-  Push-Location $repoRoot
-  try {
-    & $PythonExe -m $prepareModule `
-      --repo-root $repoRoot `
-      --profile-registry $profileRegistry `
-      --adapter-registry $adapterRegistry `
-      --campaign $campaignPath `
-      --experiment-id $ExperimentId `
-      --resolved-output $resolvedPath `
-      --plan-output $planPath
-    if ($LASTEXITCODE -ne 0) {
-      throw 'Family source-closure preparation failed.'
-    }
-  } finally {
-    Pop-Location
-  }
+  Invoke-FamilyPreparation -ResolvedPath $resolvedPath -PlanPath $planPath `
+    -MaterializePulseTimingStage:$SolverAuthorized
 
   $commonExecute = Join-Path $repoRoot 'common\integration\execute_connection.ps1'
-  $arguments = @{
-    CompositionPlan = $planPath
-    ResolvedConnection = $resolvedPath
-    PythonExe = $PythonExe
-    RepoRoot = $repoRoot
-  }
   if ($ValidateOnly) {
-    $arguments.ValidateOnly = $true
+    Invoke-FamilyExecutionBoundary -RunId '' -ExecutionRoot $outputRoot `
+      -ResolvedPath $resolvedPath -PlanPath $planPath -Mode ValidateOnly
+  } elseif ($PrepareOnly) {
+    Invoke-FamilyExecutionBoundary -RunId '' -ExecutionRoot $outputRoot `
+      -ResolvedPath $resolvedPath -PlanPath $planPath -Mode PrepareOnly
   } else {
-    $arguments.AdapterEntrypoint = Join-Path $workflowRoot 'adapter.ps1'
-    $arguments.RunId = $(if ($SolverAuthorized) { $campaignRunId } else { '' })
-    if ($PrepareOnly) { $arguments.PrepareOnly = $true }
-    if ($SolverAuthorized) { $arguments.SolverAuthorized = $true }
-  }
-  try {
-    & $commonExecute @arguments
-    if ($LASTEXITCODE -ne 0) {
-      throw 'Family source-closure execution boundary failed.'
-    }
-  } catch {
-    $executionError = $_
-    $terminalManifest = Join-Path $outputRoot 'run_manifest.json'
-    $budgetPath = Join-Path $outputRoot 'resolved_engineering_budget.json'
-    if ($SolverAuthorized -and
-        -not (Test-Path -LiteralPath $terminalManifest -PathType Leaf) -and
-        (Test-Path -LiteralPath $resolvedPath -PathType Leaf) -and
-        (Test-Path -LiteralPath $planPath -PathType Leaf) -and
-        (Test-Path -LiteralPath $budgetPath -PathType Leaf)) {
-      & $PythonExe -m (
-        'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.' +
-        'workflows.family_source_closure.publish_run'
-      ) --repo-root $repoRoot `
-        --integration-run-dir $outputRoot `
-        --resolved-connection $resolvedPath `
-        --composition-plan $planPath `
-        --resolved-engineering-budget $budgetPath `
-        --terminal-status failed `
-        --failure-reason $executionError.Exception.Message
-      if ($LASTEXITCODE -ne 0) {
-        Write-Warning 'Failed to terminalize the parent integration run after child failure.'
+    $orchestration = Get-PulseTimingOrchestration `
+      -PlanPath $planPath -PreparedRoot $outputRoot
+    if ($null -eq $orchestration) {
+      Invoke-FamilyExecutionBoundary -RunId $campaignRunId `
+        -ExecutionRoot $outputRoot -ResolvedPath $resolvedPath `
+        -PlanPath $planPath -Mode SolverAuthorized
+      $removeUnpublishedTargetOnExit = $false
+    } else {
+      Assert-PulseTimingTarget -Orchestration $orchestration
+      switch ([string]$orchestration.state) {
+        'ready_verified' {
+          Invoke-FamilyExecutionBoundary -RunId $campaignRunId `
+            -ExecutionRoot $outputRoot -ResolvedPath $resolvedPath `
+            -PlanPath $planPath -Mode SolverAuthorized
+          $removeUnpublishedTargetOnExit = $false
+        }
+        'discovery_required' {
+          $discovery = Get-PulseTimingStage `
+            -Orchestration $orchestration -ExpectedStageId 'pulse_timing_discovery'
+          Invoke-FamilyExecutionBoundary -RunId $discovery.RunId `
+            -ExecutionRoot $discovery.OutputRoot `
+            -ResolvedPath $discovery.ResolvedPath `
+            -PlanPath $discovery.PlanPath -Mode SolverAuthorized
+          $transitionPath = [IO.Path]::GetFullPath((Join-Path `
+            $discovery.OutputRoot `
+            ([string]$orchestration.transition_relative_path)))
+          if (-not $transitionPath.StartsWith(
+                ($discovery.OutputRoot + [IO.Path]::DirectorySeparatorChar),
+                [StringComparison]::OrdinalIgnoreCase
+              ) -or -not (Test-Path -LiteralPath $transitionPath -PathType Leaf)) {
+            throw 'Pulse-timing discovery did not publish its declared transition.'
+          }
+          Invoke-FamilyPreparation -ResolvedPath $resolvedPath -PlanPath $planPath `
+            -PulseTimingTransition $transitionPath
+          $confirmationOrchestration = Get-PulseTimingOrchestration `
+            -PlanPath $planPath -PreparedRoot $outputRoot
+          if ([string]$confirmationOrchestration.state -ne 'confirmation_required') {
+            throw 'Pulse-timing discovery did not advance to confirmation_required.'
+          }
+          Assert-PulseTimingTarget -Orchestration $confirmationOrchestration
+          $confirmation = Get-PulseTimingStage `
+            -Orchestration $confirmationOrchestration `
+            -ExpectedStageId 'pulse_timing_confirmation'
+          if ($confirmation.RunId -ne $campaignRunId -or
+              $confirmation.OutputRoot -ne $outputRoot) {
+            throw 'Pulse-timing confirmation is not the originally requested run.'
+          }
+          Invoke-FamilyExecutionBoundary -RunId $confirmation.RunId `
+            -ExecutionRoot $confirmation.OutputRoot `
+            -ResolvedPath $confirmation.ResolvedPath `
+            -PlanPath $confirmation.PlanPath -Mode SolverAuthorized
+          $removeUnpublishedTargetOnExit = $false
+        }
+        default {
+          throw 'Prepared pulse-timing orchestration state is unsupported.'
+        }
       }
     }
-    throw $executionError
   }
 } finally {
+  if (-not [string]::IsNullOrWhiteSpace($unpublishedDiscoveryRoot) -and
+      (Test-Path -LiteralPath $unpublishedDiscoveryRoot) -and
+      -not (Test-Path -LiteralPath (
+        Join-Path $unpublishedDiscoveryRoot 'run_manifest.json'
+      ))) {
+    $managedRunsRoot = [IO.Path]::GetFullPath($runsRoot)
+    if (-not $unpublishedDiscoveryRoot.StartsWith(
+          ($managedRunsRoot + [IO.Path]::DirectorySeparatorChar),
+          [StringComparison]::OrdinalIgnoreCase
+        )) {
+      throw 'Unpublished discovery cleanup escaped the managed runs root.'
+    }
+    Remove-Item -LiteralPath $unpublishedDiscoveryRoot -Recurse -Force
+  }
+  if ($removeUnpublishedTargetOnExit -and
+      (Test-Path -LiteralPath $outputRoot) -and
+      -not (Test-Path -LiteralPath (Join-Path $outputRoot 'run_manifest.json'))) {
+    $managedRunsRoot = [IO.Path]::GetFullPath($runsRoot)
+    if (-not $outputRoot.StartsWith(
+          ($managedRunsRoot + [IO.Path]::DirectorySeparatorChar),
+          [StringComparison]::OrdinalIgnoreCase
+        )) {
+      throw 'Unpublished target cleanup escaped the managed runs root.'
+    }
+    Remove-Item -LiteralPath $outputRoot -Recurse -Force
+  }
   if ($cleanupOutput -and (Test-Path -LiteralPath $outputRoot)) {
     Remove-Item -LiteralPath $outputRoot -Recurse -Force
   }

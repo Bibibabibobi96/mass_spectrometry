@@ -3,53 +3,172 @@
   "$id": "https://mass-spectrometry.local/schemas/rf_oatof_pre_pulse_time_series_screening_contract.schema.json",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "role", "mode", "active_scope", "claim_limit", "identities", "pa_cache_keys", "rf_time_grid", "sample_times_us", "pulse_disabled", "terminate_at_window_end", "resolution_claim_allowed", "prohibited_outputs"],
+  "required": [
+    "schema_version", "role", "mode", "active_scope", "claim_limit",
+    "identities", "rf_time_grid", "sample_times_us", "pulse_disabled",
+    "terminate_at_window_end", "resolution_claim_allowed", "prohibited_outputs"
+  ],
   "properties": {
-    "schema_version": {"const": 1},
+    "schema_version": {"enum": [1, 2]},
     "role": {"const": "rf_oatof_pre_pulse_time_series_screening_contract"},
     "mode": {"const": "real_pa_rf_pre_pulse_time_series"},
     "active_scope": {"const": "pre_pulse_frontend_accelerator"},
     "claim_limit": {"const": "FUNCTIONAL_ONLY"},
     "identities": {
-      "type": "object", "additionalProperties": false,
-      "required": ["campaign_id", "experiment_id", "experiment_row_sha256", "connection_profile_id", "source_profile_id", "resolved_source_contract_sha256", "resolved_population_contract_sha256", "mother_particle_source_sha256", "ordered_particle_id_sha256", "layout_profile_id", "architecture_generation_id", "candidate_sha256", "topology_id", "geometry_id", "frontend_electrode_topology_id", "field_id", "field_profile_id", "region_field_semantic_sha256", "frontend_grid_profile_id", "field_overlay_id", "oatof_numerical_profile_id", "trajectory_quality_profile_id", "time_integration_profile_id", "spatial_window_profile_id"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "campaign_id", "experiment_id", "experiment_row_sha256",
+        "connection_profile_id", "source_profile_id",
+        "resolved_source_contract_sha256", "resolved_population_contract_sha256",
+        "mother_particle_source_sha256", "ordered_particle_id_sha256",
+        "layout_profile_id", "architecture_generation_id", "topology_id",
+        "geometry_id", "frontend_electrode_topology_id", "field_id",
+        "field_profile_id", "region_field_semantic_sha256",
+        "frontend_grid_profile_id", "field_overlay_id",
+        "oatof_numerical_profile_id", "trajectory_quality_profile_id",
+        "time_integration_profile_id", "spatial_window_profile_id"
+      ],
       "properties": {
-        "campaign_id": {"$ref": "#/$defs/id"}, "experiment_id": {"$ref": "#/$defs/id"},
+        "campaign_id": {"$ref": "#/$defs/id"},
+        "experiment_id": {"$ref": "#/$defs/id"},
         "experiment_row_sha256": {"$ref": "#/$defs/sha"},
-        "connection_profile_id": {"const": "rf_octupole_oatof_shield_terminal_direct_mating_gap_3p2mm"},
-        "source_profile_id": {"const": "canonical_real_octupole_n1000"},
-        "resolved_source_contract_sha256": {"$ref": "#/$defs/sha"}, "resolved_population_contract_sha256": {"$ref": "#/$defs/sha"},
+        "connection_profile_id": {"$ref": "#/$defs/id"},
+        "source_profile_id": {"$ref": "#/$defs/id"},
+        "resolved_source_contract_sha256": {"$ref": "#/$defs/sha"},
+        "resolved_population_contract_sha256": {"$ref": "#/$defs/sha"},
         "mother_particle_source_sha256": {"$ref": "#/$defs/sha"},
-        "ordered_particle_id_sha256": {"const": "F9E2DBDE0AE4640704FB66EE02C101CF84ABE35137363D62647622606DF61279"},
-        "layout_profile_id": {"const": "three_zone_t5_primary_shaping_rings_1p4_v1"},
-        "architecture_generation_id": {"const": "three_zone_t5_frozen_primary_shaping_rings_1p4_v1"},
+        "ordered_particle_id_sha256": {"$ref": "#/$defs/sha"},
+        "layout_profile_id": {"$ref": "#/$defs/id"},
+        "architecture_generation_id": {"$ref": "#/$defs/id"},
         "candidate_sha256": {"$ref": "#/$defs/sha"},
-        "topology_id": {"const": "three_zone_accelerator_ideal_v1"}, "geometry_id": {"const": "three_zone_focus_origin_planes_v1"},
-        "frontend_electrode_topology_id": {"const": "three_zone_frontend_v1"}, "field_id": {"const": "three_zone_refined_pa_field_v1"},
-        "field_profile_id": {"const": "accelerator_real_three_zone_pa_real_reflectron"},
+        "topology_id": {"$ref": "#/$defs/id"},
+        "geometry_id": {"$ref": "#/$defs/id"},
+        "frontend_electrode_topology_id": {"$ref": "#/$defs/id"},
+        "field_id": {"$ref": "#/$defs/id"},
+        "field_profile_id": {"$ref": "#/$defs/id"},
         "region_field_semantic_sha256": {"$ref": "#/$defs/sha"},
-        "frontend_grid_profile_id": {"const": "frontend_isotropic_020_accelerator_overlay_z005"}, "field_overlay_id": {"const": "accelerator_overlay_z005"},
-        "oatof_numerical_profile_id": {"const": "oatof_formal_mesh"}, "trajectory_quality_profile_id": {"const": "tqual_8"},
-        "time_integration_profile_id": {"const": "dt160"}, "spatial_window_profile_id": {"const": "ideal_source_box_1mm_xyz"}
+        "frontend_grid_profile_id": {"$ref": "#/$defs/id"},
+        "field_overlay_id": {"$ref": "#/$defs/id"},
+        "oatof_numerical_profile_id": {"$ref": "#/$defs/id"},
+        "trajectory_quality_profile_id": {"$ref": "#/$defs/id"},
+        "time_integration_profile_id": {"$ref": "#/$defs/id"},
+        "spatial_window_profile_id": {"$ref": "#/$defs/id"}
       }
     },
-    "pa_cache_keys": {"type": "object", "additionalProperties": false, "required": ["frontend", "accelerator_overlay", "flight_tube", "reflectron"], "properties": {"frontend": {"$ref": "#/$defs/sha"}, "accelerator_overlay": {"$ref": "#/$defs/sha"}, "flight_tube": {"type": "null"}, "reflectron": {"type": "null"}}},
+    "pa_cache_keys": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["frontend", "accelerator_overlay", "flight_tube", "reflectron"],
+      "properties": {
+        "frontend": {"$ref": "#/$defs/sha"},
+        "accelerator_overlay": {"$ref": "#/$defs/sha"},
+        "flight_tube": {"type": "null"},
+        "reflectron": {"type": "null"}
+      }
+    },
+    "pa_cache_roles": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["identity_source", "required", "prohibited"],
+      "properties": {
+        "identity_source": {"const": "runner_materialized_verified_pa_cache_receipt"},
+        "required": {"const": ["frontend", "accelerator_overlay"]},
+        "prohibited": {"const": ["flight_tube", "reflectron"]}
+      }
+    },
     "rf_time_grid": {
+      "oneOf": [
+        {"$ref": "#/$defs/rf_time_grid_v1"},
+        {"$ref": "#/$defs/rf_time_grid_v2"}
+      ]
+    },
+    "sample_times_us": {
+      "type": "array", "minItems": 1, "items": {"type": "number", "minimum": 0}
+    },
+    "selection_order": {"const": ["maximize_pulse_eligible_count", "maximize_transverse_bore_count", "minimize_normalized_xyz_centroid_distance", "minimize_normalized_xyz_spread_norm", "minimize_absolute_distance_to_ballistic_seed", "select_earlier_time"]},
+    "pulse_disabled": {"const": true},
+    "terminate_at_window_end": {"const": true},
+    "resolution_claim_allowed": {"const": false},
+    "prohibited_outputs": {"const": ["detector_crossing", "resolution_metrics", "single_flight_spatial_six_panel"]}
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "schema_version": {"const": 1},
+        "rf_time_grid": {"$ref": "#/$defs/rf_time_grid_v1"},
+        "identities": {
+          "properties": {
+            "spatial_window_profile_id": {
+              "const": "layout_resolved_axial_provisional_xy2_v1"
+            }
+          }
+        }
+      },
+      "required": ["pa_cache_keys"],
+      "not": {"required": ["pa_cache_roles"]}
+    },
+    {
+      "properties": {
+        "schema_version": {"const": 2},
+        "rf_time_grid": {"$ref": "#/$defs/rf_time_grid_v2"},
+        "identities": {
+          "properties": {
+            "spatial_window_profile_id": {
+              "const": "layout_resolved_axial_provisional_xy2_v1"
+            }
+          }
+        }
+      },
+      "required": ["pa_cache_roles"],
+      "not": {"required": ["pa_cache_keys"]}
+    }
+  ],
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"},
+    "sha": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"},
+    "rf_time_grid_v1": {
       "type": "object", "additionalProperties": false,
       "required": ["derivation", "waveform", "frequency_hz", "phase_rad", "rf_steps_per_period", "period_us", "step_us", "anchor_time_us", "grid_origin_us", "requested_relative_start_index", "requested_relative_end_index", "anchor_sample_index", "start_index", "end_index", "sample_count"],
       "properties": {
-        "derivation": {"const": "grid_origin_us + sample_index*period_us/rf_steps_per_period"}, "waveform": {"enum": ["sine", "cosine"]},
-        "frequency_hz": {"const": 1100000}, "phase_rad": {"type": "number"}, "rf_steps_per_period": {"const": 160},
-        "period_us": {"type": "number", "exclusiveMinimum": 0}, "step_us": {"type": "number", "exclusiveMinimum": 0},
-        "anchor_time_us": {"const": 46.7467890041091}, "grid_origin_us": {"type": "number"},
-        "requested_relative_start_index": {"const": -160}, "requested_relative_end_index": {"const": 160},
-        "anchor_sample_index": {"const": 160}, "start_index": {"const": 0}, "end_index": {"const": 320}, "sample_count": {"const": 321}
+        "derivation": {"const": "grid_origin_us + sample_index*period_us/rf_steps_per_period"},
+        "waveform": {"enum": ["sine", "cosine"]},
+        "frequency_hz": {"type": "number", "exclusiveMinimum": 0},
+        "phase_rad": {"type": "number"},
+        "rf_steps_per_period": {"type": "integer", "minimum": 1},
+        "period_us": {"type": "number", "exclusiveMinimum": 0},
+        "step_us": {"type": "number", "exclusiveMinimum": 0},
+        "anchor_time_us": {"type": "number", "minimum": 0},
+        "grid_origin_us": {"type": "number", "minimum": 0},
+        "requested_relative_start_index": {"type": "integer"},
+        "requested_relative_end_index": {"type": "integer"},
+        "anchor_sample_index": {"type": "integer", "minimum": 0},
+        "start_index": {"const": 0},
+        "end_index": {"type": "integer", "minimum": 0},
+        "sample_count": {"type": "integer", "minimum": 1}
       }
     },
-    "sample_times_us": {"type": "array", "minItems": 321, "maxItems": 321, "items": {"type": "number"}},
-    "selection_order": {"const": ["maximize_pulse_eligible_count", "maximize_transverse_bore_count", "minimize_normalized_xyz_centroid_distance", "minimize_normalized_xyz_spread_norm", "minimize_absolute_distance_to_ballistic_seed", "select_earlier_time"]},
-    "pulse_disabled": {"const": true}, "terminate_at_window_end": {"const": true}, "resolution_claim_allowed": {"const": false},
-    "prohibited_outputs": {"const": ["detector_crossing", "resolution_metrics", "single_flight_spatial_six_panel"]}
-  },
-  "$defs": {"id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"}, "sha": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"}}
+    "rf_time_grid_v2": {
+      "type": "object", "additionalProperties": false,
+      "required": ["time_grid_profile_id", "derivation", "waveform", "frequency_hz", "phase_rad", "rf_steps_per_period", "period_us", "step_us", "ballistic_seed_time_us", "grid_origin_us", "requested_relative_start_index", "requested_relative_end_index", "ballistic_seed_sample_index", "start_index", "end_index", "sample_count"],
+      "properties": {
+        "time_grid_profile_id": {"$ref": "#/$defs/id"},
+        "derivation": {"const": "ballistic_seed_time_us + relative_index*period_us/rf_steps_per_period"},
+        "waveform": {"enum": ["sine", "cosine"]},
+        "frequency_hz": {"type": "number", "exclusiveMinimum": 0},
+        "phase_rad": {"type": "number"},
+        "rf_steps_per_period": {"type": "integer", "minimum": 1},
+        "period_us": {"type": "number", "exclusiveMinimum": 0},
+        "step_us": {"type": "number", "exclusiveMinimum": 0},
+        "ballistic_seed_time_us": {"type": "number", "minimum": 0},
+        "grid_origin_us": {"type": "number", "minimum": 0},
+        "requested_relative_start_index": {"type": "integer", "maximum": 0},
+        "requested_relative_end_index": {"type": "integer", "minimum": 0},
+        "ballistic_seed_sample_index": {"type": "integer", "minimum": 0},
+        "start_index": {"const": 0},
+        "end_index": {"type": "integer", "minimum": 0},
+        "sample_count": {"type": "integer", "minimum": 1}
+      }
+    }
+  }
 }

@@ -1,16 +1,22 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
+import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 from common.contracts.verify_artifact_layout import (
+    main,
     verify_artifacts_root,
     verify_cache,
     verify_formal,
     verify_integration_cache_entry,
+    verify_verified_pulse_cache_entry,
 )
 
 
@@ -259,6 +265,113 @@ class ArtifactLayoutIdentityTests(unittest.TestCase):
                     expected_role="simion_accelerator_overlay_pa_cache",
                     expected_key=entry.name,
                     expected_project_id=project.name,
+                )
+
+    def write_verified_pulse_cache(self, root: Path) -> tuple[Path, list[Path]]:
+        workspace = root
+        project = workspace / "artifacts" / "projects" / "integration"
+        authority_root = project / "runs" / RUN_ID
+        authority_paths = []
+        for name in (
+            "candidate_parent_manifest.json",
+            "candidate_selection_receipt.json",
+            "confirmation_child_manifest.json",
+            "resolved_pulse_schedule.json",
+            "confirmation_summary.json",
+        ):
+            path = authority_root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(f"{name}\n", encoding="utf-8")
+            authority_paths.append(path)
+        content_key = "B" * 64
+        entry = project / "cache" / "verified_pulse" / content_key
+        entry.mkdir(parents=True)
+        bindings = [record(path, workspace) for path in authority_paths]
+        write_json(
+            entry / "verified_pulse_timing_receipt.json",
+            {
+                "schema_version": 1,
+                "role": "rf_oatof_verified_pulse_timing_receipt",
+                "status": "success",
+                "qualification": "FUNCTIONAL_ONLY",
+                "decision": "PASS_FOR_IDENTICAL_IDENTITY_REUSE",
+                "reusable_verified_pulse": True,
+                "content_key": content_key,
+                "selected_time_us": 47.45133445865456,
+                "candidate_authority": {
+                    "parent_manifest": bindings[0],
+                    "selection_receipt": bindings[1],
+                    "selection_preregistered": False,
+                },
+                "verification_authority": {
+                    "child_manifest": bindings[2],
+                    "pulse_schedule": bindings[3],
+                    "summary": bindings[4],
+                },
+                "census": {
+                    "launched": 100,
+                    "multipole_handoff": 95,
+                    "pre_pulse_state": 81,
+                    "accelerator_grid1_forward": 81,
+                    "accelerator_intermediate2_forward": 80,
+                    "local_accelerator_exit": 69,
+                    "detector_crossing": 69,
+                },
+                "claim_limit": "IDENTICAL_IDENTITY_FUNCTIONAL_REUSE_ONLY",
+            },
+        )
+        return entry, authority_paths
+
+    def test_verified_pulse_cache_is_registered_and_binds_authorities(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            entry, _ = self.write_verified_pulse_cache(root)
+            project = root / "artifacts" / "projects" / "integration"
+            verify_cache(project, verify_hashes=True)
+            receipt = verify_verified_pulse_cache_entry(
+                entry, workspace_root=root, verify_hashes=True
+            )
+            self.assertEqual(receipt["content_key"], entry.name)
+
+    def test_cli_dispatches_verified_pulse_role_to_receipt_verifier(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            entry, _ = self.write_verified_pulse_cache(root)
+            projects = root / "artifacts" / "projects"
+            argv = [
+                "verify_artifact_layout.py",
+                str(projects),
+                "--cache-entry", str(entry),
+                "--expected-cache-role",
+                "rf_oatof_verified_pulse_timing_receipt",
+                "--expected-cache-key", entry.name,
+                "--expected-cache-project", "integration",
+            ]
+            output = io.StringIO()
+            with patch.object(sys, "argv", argv), redirect_stdout(output):
+                main()
+            self.assertIn(
+                "CACHE_ENTRY=PASS ROLE=rf_oatof_verified_pulse_timing_receipt",
+                output.getvalue(),
+            )
+
+    def test_verified_pulse_cache_rejects_tampering_or_extra_files(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            entry, authority_paths = self.write_verified_pulse_cache(root)
+            authority_paths[-1].write_text("tampered summary\n", encoding="utf-8")
+            with self.assertRaisesRegex(AssertionError, "authority file differs"):
+                verify_verified_pulse_cache_entry(
+                    entry, workspace_root=root, verify_hashes=True
+                )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            entry, _ = self.write_verified_pulse_cache(root)
+            (entry / "unexpected.json").write_text("{}\n", encoding="utf-8")
+            with self.assertRaisesRegex(AssertionError, "inventory differs"):
+                verify_cache(
+                    root / "artifacts" / "projects" / "integration",
+                    verify_hashes=True,
                 )
 
     def make_formal(

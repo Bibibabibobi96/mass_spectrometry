@@ -38,6 +38,15 @@ repository-text SHA由`runtime/refresh_family_repository_bindings.py`单向刷�
 筛选；`pulse_eligible_conditional`仅用于带selection receipt的条件诊断。空间窗口只做detector-blind
 分组统计，不修改轨迹。
 
+正常full-flight默认发布完整census、传输与pulse-relative主峰，逐粒子checkpoint CSV，以及同一份
+source-region resolved bounds驱动的空间六子图和区域条件峰。默认source-region profile的`x/y=2 mm`是
+`PROVISIONAL_DIAGNOSTIC_ONLY`横向参考范围，`z`宽度只绑定当前layout的
+`particle_source.size_z_mm`；它不改变粒子集合、主峰或run状态。低occupancy只表示pre-pulse eligible总体中
+落入该参考区域的条件子集较小，不是接受率、传输率或效率，区域条件峰也不得代表完整束。aperture/campaign
+比较、chain-checkpoint或grid2-downstream六图、ideal-vs-actual gap、COMSOL pulse snapshot、pre-pulse
+time-series、bootstrap资格、postselection、角度窗、代理模型和数值收敛诊断均须由专用合同显式选择，
+不得成为每次full-flight的隐式默认。
+
 schema-v3 pre-pulse single-flight 执行采用两条单权威链：campaign 中显式的
 `single_flight_pulse_schedule_policy`只经`derive_pulse_schedule`编译为resolved pulse schedule，runner
 只读取其中的`pulse_effective_time_us`；`single_flight_population`只经resolved population编译器冻结
@@ -296,11 +305,33 @@ gap 3.2 mm的detector-blind held-off time-series已在同一N=100、同一三区
 `20260818_232300__sim__cross__three-zone-pulse-confirmation-gap3p2__n100`和同时间戳的SIMION child。
 该结果只授权相同内容身份的功能复用，不声称时刻全局最优、分辨率最优、Candidate或Formal资格。
 
+[`connector_gap_three_zone_real_pa_first100_n100_campaign_v13.json`](../config/diagnostics/connector_gap_three_zone_real_pa_first100_n100_campaign_v13.json)
+已完成gap 0的首条真实自动链。parent `20260819_001000__sim__cross__three-zone-connector-gap-0mm__n100`
+成功；cache miss自动执行held-off `100×321` discovery，Fly耗时`234.62 s`，选择
+`46.161112147459875 us`后自动完成pulse-on full-flight。全束detector为`81/100`，pulse-relative主峰
+`sigma=0.7110859451 ns`、`FWHM=2.2420417576 ns`、`R=6987.238675`。默认source-region profile
+`layout_resolved_axial_provisional_xy2_v1`的bounds为`2×2×2.2 mm`，pre-pulse eligible/inside/detected为
+`93/29/29`、occupancy为`0.311827957`；其条件峰为`sigma=0.6403060194 ns`、
+`FWHM=2.0514647161 ns`、`R=7636.378315`，只作诊断，不替代完整束主峰。verified decision为
+`PASS_FOR_IDENTICAL_IDENTITY_REUSE`，identity key为
+`055800EC9D0639093E38207F0597DE9715104A77ED863317C067AF7C67CD0DC3`。该链涉及的PA全部命中既有cache，
+没有重建PA。
+
+[`connector_gap_three_zone_real_pa_first100_n100_campaign_v14.json`](../config/diagnostics/connector_gap_three_zone_real_pa_first100_n100_campaign_v14.json)
+随后以新run identity执行`PrepareOnly`作为cache-hit proof：约`6 s`即得到`ready_verified`，复用同一
+`46.161112147459875 us`和同一
+`055800EC9D0639093E38207F0597DE9715104A77ED863317C067AF7C67CD0DC3` key；未创建内部stage/discovery
+目录，未调用SIMION，也未进入PA构建，临时验证目录已清理。它只证明相同内容身份可自动命中，不新增
+物理结果或资格结论。
+
 resolved pulse schedule仍是runner唯一时刻输入。prepare按源、人口、有序ID、connection/gap、三区几何、
-场、RF、数值和selector规则计算内容身份；命中已验证receipt时直接复用上述时刻，缺失或身份变化时保留
-原schedule派生路径。用户不填写标量pulse时间，也不新增runner CLI；time-series、候选选择、pulse-on确认
-和后续复用均由同一公开workflow及manifest/receipt链承载。verified cache只是可删除加速层，确认child
-manifest仍是证据权威。
+场、RF、数值和selector规则计算内容身份；命中已验证receipt时直接复用时刻。cache miss由同一campaign
+行的policy自动编译为以ballistic seed为基准、RF160索引`-56..+264`的321点held-off discovery，只加载
+frontend与accelerator-overlay PA；runner把实际materialize的PA key写入screening receipt并进入候选内容
+身份。publisher发布候选transition后，同一公开workflow立即重编译原目标为pulse-on confirmation；确认
+成功后发布verified receipt，后续相同内容身份直接命中。用户不填写标量pulse时间、候选路径或receipt
+路径，也不新增runner CLI或第二campaign。verified cache只是可删除加速层，确认child manifest仍是证据
+权威。未发布的connector-gap v5五行successor只提供这条自动入口，尚不构成任何新gap的真实运行结论。
 
 ## 脉冲分辨率优化能力与边界
 
@@ -539,6 +570,13 @@ profile定义、materialization receipt与source release CSV SHA，并校验rele
    分解、边界对等和局部网格收敛；通过后才在单一商业求解器会话运行N=1000并比较两端结果。
 5. COMSOL真实链还须验证全局笛卡尔速度、完整终态census、慢粒子求解、GUI重开Compute和连接开口/
    接地罩边界；这些检查以及机器合同中的跨求解器差异门槛全部通过后，才能关闭复现任务。
+6. **扁平campaign编写模型。** 为任意参数矩阵增加单文件authoring语法：顶层只声明各行共享的冻结参数，
+   每个experiment只写已显式声明的variation axes及其值；变化轴可覆盖connector gap、二区/三区布局、
+   分段长度、电压、source profile、pulse policy和mesh等受控参数。prepare必须把它展开为与当前逐行完整
+   合同语义等价的机器输入，并拒绝任何未声明变化轴上的行间差异；禁止外部template、include或多层继承链。
+   resolved合同和终态manifest继续冻结每行全部展开值，现有公开执行入口和机器权威不变。以当前五行
+   connector-gap campaign作为固定回归夹具，要求展开后的规范完整合同字节及语义SHA-256均与现行逐行
+   合同一致。该任务只改善authoring可读性；完成条件是上述编译、失败关闭和字节/语义回归全部进入门禁。
 
 ## 静态门禁
 

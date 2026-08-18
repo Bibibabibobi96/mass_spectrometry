@@ -546,9 +546,26 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
         prepare_source = (WORKFLOW_ROOT / "prepare.py").read_text(
             encoding="utf-8-sig"
         )
-        self.assertIn("[Parameter(Mandatory)][string]$Campaign", execute_source)
-        self.assertIn("[Parameter(Mandatory)][string]$ExperimentId", execute_source)
-        self.assertIn("[string]$OutputDirectory = ''", execute_source)
+        param_start = execute_source.index("param(")
+        param_depth = 0
+        param_end = None
+        for index in range(param_start, len(execute_source)):
+            character = execute_source[index]
+            if character == "(":
+                param_depth += 1
+            elif character == ")":
+                param_depth -= 1
+                if param_depth == 0:
+                    param_end = index + 1
+                    break
+        self.assertIsNotNone(param_end)
+        public_param_block = execute_source[param_start:param_end]
+
+        self.assertIn("[Parameter(Mandatory)][string]$Campaign", public_param_block)
+        self.assertIn(
+            "[Parameter(Mandatory)][string]$ExperimentId", public_param_block
+        )
+        self.assertIn("[string]$OutputDirectory = ''", public_param_block)
         self.assertIn("$campaignRunId = [string]$experimentRows[0].run_id", execute_source)
         self.assertIn("Select exactly one of ValidateOnly", execute_source)
         self.assertIn("OutputDirectory is accepted only for PrepareOnly", execute_source)
@@ -561,9 +578,9 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
             "SourceRevisionId",
             "ConnectionProfileId",
             "SourceBranchId",
-            "preregistration",
-            "revision-registry",
         ):
+            self.assertNotIn(obsolete, public_param_block)
+        for obsolete in ("preregistration", "revision-registry"):
             self.assertNotIn(obsolete, execute_source)
         self.assertIn(
             'shutil.copyfile(design_evidence["resolved_design_path"]',

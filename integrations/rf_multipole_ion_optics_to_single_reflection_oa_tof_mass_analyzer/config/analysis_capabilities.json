@@ -11,7 +11,7 @@
       "claim_class": "engineering_diagnostic"
     },
     {
-      "capability_id": "rf_oatof_single_flight_spatial_six_panel_v1",
+      "capability_id": "rf_oatof_single_flight_spatial_six_panel_v2",
       "consumer": "analysis/plot_single_flight_spatial_six_panel.py",
       "scope": "continuous-flight release, handoff, pre-pulse, accelerator-exit and detector spatial snapshots with governed component outlines",
       "fixed_output_role": "results/single_flight_spatial_six_panel.png",

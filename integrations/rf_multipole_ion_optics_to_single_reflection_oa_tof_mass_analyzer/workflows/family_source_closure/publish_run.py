@@ -48,7 +48,9 @@ STAGES_BY_STRATEGY = {
 ALL_STAGE_CONTRACTS = {**STAGES, **SINGLE_FLIGHT_STAGES}
 
 
-def _single_flight_run_stem(resolved: dict[str, Any]) -> str:
+def _single_flight_run_stem(
+    resolved: dict[str, Any], *, pulse_timing_internal_stage: str = "",
+) -> str:
     try:
         raw_gap_mm = resolved["connector"]["length_mm"]
         if isinstance(raw_gap_mm, bool):
@@ -64,12 +66,18 @@ def _single_flight_run_stem(resolved: dict[str, Any]) -> str:
     gap_label = gap_label.replace(".", "p")
     if not gap_label:
         gap_label = "0"
-    return f"__sim__simion__rf-oatof-single-flight-gap{gap_label}__n"
+    role = (
+        "rf-oatof-pulse-screen"
+        if pulse_timing_internal_stage == "pulse_timing_discovery"
+        else "rf-oatof-single-flight"
+    )
+    return f"__sim__simion__{role}-gap{gap_label}__n"
 
 
 N1_RECEIPT_SCHEMA = "rf_oatof_three_zone_n1_solver_authorization_receipt.schema.json"
 N1_RECEIPT_NAME = "three_zone_n1_solver_authorization_receipt.json"
 VERIFIED_PULSE_RECEIPT_NAME = "verified_pulse_timing_receipt.json"
+PULSE_TRANSITION_NAME = "pulse_timing_transition.json"
 N1_REQUIRED_EVENTS = (
     "source_release",
     "pre_pulse_state",
@@ -255,6 +263,34 @@ def _publish_detector_blind_pulse_selection(
     return candidate_table, candidate_receipt, receipt
 
 
+def _publish_pulse_timing_transition(
+    *, workspace_root: Path, parent_run_dir: Path, stage: dict[str, Any],
+    candidate_receipt_path: Path, candidate_receipt: dict[str, Any],
+) -> Path:
+    """Publish the manifest-ready handoff from discovery to confirmation."""
+
+    child_manifest_path = (
+        workspace_root / stage["path"] / "run_manifest.json"
+    ).resolve()
+    transition = {
+        "schema_version": 1,
+        "role": "rf_oatof_pulse_timing_transition",
+        "status": "candidate_selected_confirmation_required",
+        "discovery_run_id": parent_run_dir.name,
+        "content_key": candidate_receipt["content_key"],
+        "candidate_selection_receipt": _file_binding(
+            candidate_receipt_path, workspace_root
+        ),
+        "screening_child_manifest": _file_binding(
+            child_manifest_path, workspace_root
+        ),
+    }
+    validate_schema(transition, "rf_oatof_pulse_timing_transition.schema.json")
+    path = parent_run_dir / "results" / PULSE_TRANSITION_NAME
+    path.write_text(json.dumps(transition, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
 def _publish_verified_pulse_receipt(
     *, workspace_root: Path, parent_run_dir: Path, stage: dict[str, Any],
 ) -> tuple[Path, dict[str, Any]] | None:
@@ -340,6 +376,7 @@ def _publish_verified_pulse_receipt(
     }
     validate_schema(receipt, "rf_oatof_verified_pulse_timing_receipt.schema.json")
     path = parent_run_dir / "results" / VERIFIED_PULSE_RECEIPT_NAME
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
     return path, receipt
 
@@ -713,6 +750,12 @@ def publish_family_source_closure_run(
     resolved = _load(resolved_path)
     plan = _load(plan_path)
     budget = _load(budget_path)
+    plan_arguments = {}
+    for raw in plan.get("execution_steps", [{}])[0].get("arguments", []):
+        if isinstance(raw, str) and "=" in raw:
+            name, value = raw.split("=", 1)
+            plan_arguments[name] = value
+    pulse_timing_internal_stage = plan_arguments.get("pulse_timing_internal_stage")
     execution_strategy = receipt.get("execution_strategy")
     if execution_strategy is None:
         raise ContractError("family parent execution strategy is missing")
@@ -827,7 +870,10 @@ def publish_family_source_closure_run(
     for phase in stage_contracts:
         validate_run_id(stage_run_ids[phase])
         run_stem = (
-            _single_flight_run_stem(resolved)
+            _single_flight_run_stem(
+                resolved,
+                pulse_timing_internal_stage=pulse_timing_internal_stage,
+            )
             if phase == "single_flight_transport"
             else stage_contracts[phase]["run_stem"]
         )
@@ -890,7 +936,11 @@ def publish_family_source_closure_run(
     pulse_candidate_table_path = None
     pulse_candidate_receipt_path = None
     pulse_candidate_receipt = None
-    if campaign.get("pre_pulse_time_series_screening") is not None:
+    pulse_transition_path = None
+    if (
+        campaign.get("pre_pulse_time_series_screening") is not None
+        or pulse_timing_internal_stage == "pulse_timing_discovery"
+    ):
         if execution_strategy != "simion_single_flight":
             raise ContractError("pulse screening requires single-flight execution")
         (
@@ -906,6 +956,14 @@ def publish_family_source_closure_run(
             resolved_source_path=resolved_source_contract_path,
             resolved_population_path=resolved_population_contract_path,
         )
+        if pulse_timing_internal_stage == "pulse_timing_discovery":
+            pulse_transition_path = _publish_pulse_timing_transition(
+                workspace_root=workspace_root,
+                parent_run_dir=run_dir,
+                stage=stages[-1],
+                candidate_receipt_path=pulse_candidate_receipt_path,
+                candidate_receipt=pulse_candidate_receipt,
+            )
     verified_pulse_path = None
     verified_pulse = None
     if execution_strategy == "simion_single_flight":
@@ -1111,6 +1169,11 @@ def publish_family_source_closure_run(
                     str(pulse_candidate_receipt_path),
                 ]
                 if pulse_candidate_receipt is not None
+                else []
+            ),
+            *(
+                ["--output", str(pulse_transition_path)]
+                if pulse_transition_path is not None
                 else []
             ),
         ],

@@ -41,6 +41,49 @@ function Resolve-RfObservedPrePulseSourceIdentity {
   return $BudgetSourceIdentity
 }
 
+function Resolve-RfPulseTimingOrchestrationArguments {
+  param(
+    [Parameter(Mandatory)][hashtable]$FrozenArguments,
+    [string]$PreparedRoot = ''
+  )
+
+  $names = @(
+    'pulse_timing_orchestration_filename',
+    'pulse_timing_orchestration_sha256',
+    'pulse_timing_orchestration_state'
+  )
+  $presentCount = @($names | Where-Object {
+    $FrozenArguments.ContainsKey($_)
+  }).Count
+  if ($presentCount -eq 0) {
+    return
+  }
+  if ($presentCount -ne $names.Count) {
+    throw 'Prepared pulse-timing orchestration arguments must be all-or-none.'
+  }
+  if ([string]$FrozenArguments.pulse_timing_orchestration_filename -ne
+        'resolved_pulse_timing_orchestration.json' -or
+      [string]$FrozenArguments.pulse_timing_orchestration_state -notin @(
+        'discovery_required','confirmation_required','ready_verified'
+      )) {
+    throw 'Prepared pulse-timing orchestration filename or state is invalid.'
+  }
+  if (-not [string]::IsNullOrWhiteSpace($PreparedRoot)) {
+    $root = [IO.Path]::GetFullPath($PreparedRoot)
+    $path = [IO.Path]::GetFullPath((Join-Path $root `
+      $FrozenArguments.pulse_timing_orchestration_filename))
+    if (-not (Split-Path -Parent $path).Equals(
+          $root,[StringComparison]::OrdinalIgnoreCase
+        ) -or
+        -not (Test-Path -LiteralPath $path -PathType Leaf) -or
+        (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ne
+          [string]$FrozenArguments.pulse_timing_orchestration_sha256) {
+      throw 'Prepared pulse-timing orchestration file is missing, misplaced or stale.'
+    }
+  }
+  return $names
+}
+
 $plan = Get-Content -LiteralPath $CompositionPlan -Raw -Encoding UTF8 |
   ConvertFrom-Json
 $resolved = Get-Content -LiteralPath $ResolvedConnection -Raw -Encoding UTF8 |
@@ -247,6 +290,21 @@ if ($hasPulseCandidateConfirmationArguments) {
     'pulse_candidate_confirmation_prefix_sha256'
   )
 }
+$pulseTimingInternalStage = if (
+  $frozenArguments.ContainsKey('pulse_timing_internal_stage')
+) { [string]$frozenArguments.pulse_timing_internal_stage } else { '' }
+if ($pulseTimingInternalStage -ne '') {
+  if ($pulseTimingInternalStage -notin @(
+      'pulse_timing_discovery','pulse_timing_confirmation'
+    )) {
+    throw 'Prepared pulse-timing internal stage is unsupported.'
+  }
+  $expectedArguments += 'pulse_timing_internal_stage'
+}
+$pulseTimingOrchestrationArgumentNames = @(
+  Resolve-RfPulseTimingOrchestrationArguments -FrozenArguments $frozenArguments
+)
+$expectedArguments += $pulseTimingOrchestrationArgumentNames
 if (@($frozenArguments.Keys | Where-Object {
       $_ -notin $expectedArguments
     }).Count -ne 0 -or
@@ -425,19 +483,36 @@ $campaignHasPrePulseTimeSeries = (
   $campaign.PSObject.Properties.Name -contains
   'pre_pulse_time_series_screening'
 ) -and $null -ne $campaign.pre_pulse_time_series_screening
-if ($campaignHasPrePulseTimeSeries -ne $hasPrePulseTimeSeriesArguments) {
-  throw 'Pre-pulse time-series campaign and prepared authority differ.'
-}
-$prePulseTimeSeriesScreening = $campaignHasPrePulseTimeSeries
 $pulseSchedulePolicyProperty =
   $experiment.PSObject.Properties['single_flight_pulse_schedule_policy']
 $pulseSchedulePolicy = if ($null -ne $pulseSchedulePolicyProperty) {
   $pulseSchedulePolicyProperty.Value
 } else { $null }
+$cacheMissPolicyProperty = if ($null -ne $pulseSchedulePolicy) {
+  $pulseSchedulePolicy.PSObject.Properties['cache_miss_policy']
+} else { $null }
+$automaticPulseTiming = (
+  $null -ne $cacheMissPolicyProperty -and
+  $null -ne $cacheMissPolicyProperty.Value -and
+  [string]$cacheMissPolicyProperty.Value.mode -eq
+    'auto_detector_blind_discovery_and_confirmation_v1'
+)
+$pulseTimingDiscovery = $pulseTimingInternalStage -eq 'pulse_timing_discovery'
+$pulseTimingConfirmation = $pulseTimingInternalStage -eq 'pulse_timing_confirmation'
+if (($pulseTimingDiscovery -or $pulseTimingConfirmation) -and
+    -not $automaticPulseTiming) {
+  throw 'Internal pulse-timing stage requires the automatic campaign policy.'
+}
+if (($campaignHasPrePulseTimeSeries -or $pulseTimingDiscovery) -ne
+    $hasPrePulseTimeSeriesArguments) {
+  throw 'Pre-pulse time-series campaign and prepared authority differ.'
+}
+$prePulseTimeSeriesScreening = $campaignHasPrePulseTimeSeries -or
+  $pulseTimingDiscovery
 $fixedAuthorityProperty = if ($null -ne $pulseSchedulePolicy) {
   $pulseSchedulePolicy.PSObject.Properties['fixed_execution_authority']
 } else { $null }
-$pulseCandidateConfirmation = (
+$pulseCandidateConfirmation = $pulseTimingConfirmation -or (
   $null -ne $fixedAuthorityProperty -and
   $null -ne $fixedAuthorityProperty.Value -and
   [string]$fixedAuthorityProperty.Value.authority_mode -eq
@@ -450,11 +525,13 @@ if ($pulseN100Screening -and $connectorGapScreening) {
   throw 'Pulse-resolution and connector-gap prefix authorities are mutually exclusive.'
 }
 if ($prePulseTimeSeriesScreening -and (
-    $pulseN100Screening -or $connectorGapScreening)) {
+    $pulseN100Screening -or
+    ($connectorGapScreening -and -not $pulseTimingDiscovery))) {
   throw 'Prepared screening authorities are mutually exclusive.'
 }
 if ($pulseCandidateConfirmation -and (
-    $pulseN100Screening -or $connectorGapScreening -or
+    $pulseN100Screening -or
+    ($connectorGapScreening -and -not $pulseTimingConfirmation) -or
     $prePulseTimeSeriesScreening)) {
   throw 'Pulse candidate confirmation and screening authorities are mutually exclusive.'
 }
@@ -754,6 +831,10 @@ if (-not (Test-Path -LiteralPath $runtimeBinding -PathType Leaf) -or
 }
 
 $runDirectory = [IO.Path]::GetFullPath((Split-Path -Parent $CompositionPlan))
+if ($pulseTimingOrchestrationArgumentNames.Count -ne 0) {
+  $null = Resolve-RfPulseTimingOrchestrationArguments `
+    -FrozenArguments $frozenArguments -PreparedRoot $runDirectory
+}
 $resolvedRegionFieldContractPath = $null
 if ($frozenArguments.ContainsKey('resolved_region_field_contract_filename')) {
   $resolvedRegionFieldContractPath = [IO.Path]::GetFullPath(
@@ -850,8 +931,13 @@ if ($prePulseTimeSeriesScreening) {
     $frozenArguments.pre_pulse_time_series_contract_filename))
   $inputsRoot = (Join-Path $runDirectory 'inputs') +
     [IO.Path]::DirectorySeparatorChar
+  $expectedTimeSeriesPrefix = if ($pulseTimingDiscovery) {
+    if ($connectorGapScreening) {
+      [string]$frozenArguments.connector_gap_prefix_filename
+    } else { 'inputs/automatic_pulse_timing_prefix_n100.csv' }
+  } else { 'inputs/pre_pulse_time_series_screening_prefix_n100.csv' }
   if ($frozenArguments.pre_pulse_time_series_prefix_filename -ne
-        'inputs/pre_pulse_time_series_screening_prefix_n100.csv' -or
+        $expectedTimeSeriesPrefix -or
       $frozenArguments.pre_pulse_time_series_contract_filename -ne
         'inputs/pre_pulse_time_series_screening_contract.json' -or
       -not $prePulseTimeSeriesPrefixPath.StartsWith(
@@ -874,8 +960,13 @@ if ($pulseCandidateConfirmation) {
     $runDirectory $frozenArguments.pulse_candidate_confirmation_prefix_filename))
   $inputsRoot = (Join-Path $runDirectory 'inputs') +
     [IO.Path]::DirectorySeparatorChar
+  $expectedConfirmationPrefix = if ($pulseTimingConfirmation) {
+    if ($connectorGapScreening) {
+      [string]$frozenArguments.connector_gap_prefix_filename
+    } else { 'inputs/automatic_pulse_timing_prefix_n100.csv' }
+  } else { 'inputs/pulse_candidate_confirmation_prefix_n100.csv' }
   if ($frozenArguments.pulse_candidate_confirmation_prefix_filename -ne
-        'inputs/pulse_candidate_confirmation_prefix_n100.csv' -or
+        $expectedConfirmationPrefix -or
       -not $pulseCandidateConfirmationPrefixPath.StartsWith(
         $inputsRoot,[StringComparison]::OrdinalIgnoreCase) -or
       -not (Test-Path -LiteralPath $pulseCandidateConfirmationPrefixPath -PathType Leaf) -or
@@ -1262,7 +1353,18 @@ if ([string]$campaign.status -ne 'authorized') {
 if (-not $SolverAuthorized) {
   throw 'Family source-closure execution requires explicit solver authorization.'
 }
-if ($experiment.run_id -ne $RunId) {
+$expectedRunId = [string]$experiment.run_id
+if ($pulseTimingDiscovery) {
+  if ($expectedRunId -notmatch
+      '^(?<stamp>[0-9]{8}_[0-9]{6})__.+__(?<detail>n[0-9]+)(?<retry>__r[0-9]{2})?$') {
+    throw 'Automatic pulse-timing target RunId cannot derive a discovery RunId.'
+  }
+  $expectedRunId = (
+    $Matches.stamp + '__sim__cross__pulse-timing-discovery__' +
+    $Matches.detail + [string]$Matches['retry']
+  )
+}
+if ($expectedRunId -ne $RunId) {
   throw 'Solver-authorized RunId differs from the campaign row.'
 }
 $runsRoot = Join-Path $workspaceRoot (
@@ -1304,7 +1406,12 @@ if ($executionStrategy -eq 'simion_single_flight') {
     '0.###############',
     [Globalization.CultureInfo]::InvariantCulture
   ).Replace('.', 'p')
-  $singleFlightRunId = "$($RunId.Substring(0, 15))__sim__simion__rf-oatof-single-flight-gap$connectorGapLabel`__n$expectedExecutionParticleCount$retrySuffix"
+  $singleFlightRole = if ($pulseTimingDiscovery) {
+    'rf-oatof-pulse-screen'
+  } else {
+    'rf-oatof-single-flight'
+  }
+  $singleFlightRunId = "$($RunId.Substring(0, 15))__sim__simion__$singleFlightRole-gap$connectorGapLabel`__n$expectedExecutionParticleCount$retrySuffix"
   $runnerArguments.RunId = $singleFlightRunId
   $runnerArguments.PaCachePolicy =
     [string]$frozenArguments.single_flight_pa_cache_policy
@@ -1474,7 +1581,11 @@ if ($executionStrategy -eq 'simion_single_flight') {
     $frozenArguments.resolved_region_field_contract_sha256
   $runnerArguments.ResolvedRegionFieldSemanticSha256 =
     $frozenArguments.resolved_region_field_semantic_sha256
-  $preparedPrefixPath = if ($pulseN100Screening) {
+  $preparedPrefixPath = if ($pulseTimingDiscovery) {
+    $prePulseTimeSeriesPrefixPath
+  } elseif ($pulseTimingConfirmation) {
+    $pulseCandidateConfirmationPrefixPath
+  } elseif ($pulseN100Screening) {
     $pulsePrefixPath
   } elseif ($connectorGapScreening) {
     $connectorGapPrefixPath

@@ -88,7 +88,7 @@ def _validate_screening_contract(contract: dict[str, Any]) -> bool:
         or contract.get("pulse_disabled") is not True
         or contract.get("resolution_claim_allowed") is not False
         or contract.get("identities", {}).get("spatial_window_profile_id")
-        != "ideal_source_box_1mm_xyz"
+        != "layout_resolved_axial_provisional_xy2_v1"
     ):
         raise ContractError("pre-pulse screening selection contract is invalid")
     selection_order = contract.get("selection_order")
@@ -156,6 +156,15 @@ def _validate_screening_receipt(
     ):
         if receipt_ids.get(key) != contract_ids.get(key):
             raise ContractError("pre-pulse screening receipt identity differs")
+    if contract.get("schema_version") == 2:
+        keys = receipt.get("pa_cache_keys", {})
+        if (
+            not isinstance(keys.get("frontend"), str)
+            or not isinstance(keys.get("accelerator_overlay"), str)
+            or keys.get("flight_tube") is not None
+            or keys.get("reflectron") is not None
+        ):
+            raise ContractError("pre-pulse screening PA cache roles differ")
 
 
 def pulse_selection_content_identity(
@@ -163,6 +172,7 @@ def pulse_selection_content_identity(
     source: dict[str, Any], connection: dict[str, Any], geometry: dict[str, Any],
     spatial_profile: dict[str, Any], selector_source_path: Path | None = None,
     selector_source_sha256: str | None = None,
+    pa_cache_keys: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], str]:
     """Return the canonical detector-blind selection identity and digest."""
     if (selector_source_path is None) == (selector_source_sha256 is None):
@@ -206,18 +216,25 @@ def pulse_selection_content_identity(
         "spatial_window_profile_sha256": _canonical_sha256(spatial_profile),
         "selector_source_sha256": selector_sha256,
     }
+    if contract.get("schema_version") == 2 and pa_cache_keys is None:
+        raise ContractError("actual PA cache keys are required for v2 pulse selection")
+    if contract.get("schema_version") == 2:
+        basis["pa_cache_keys"] = copy.deepcopy(pa_cache_keys)
     return basis, _canonical_sha256(basis)
 
 
-def _select_spatial_profile(configuration: dict[str, Any], profile_id: str) -> dict[str, Any]:
+def _select_source_region_profile(
+    configuration: dict[str, Any], profile_id: str,
+) -> dict[str, Any]:
     if configuration.get("role") != "rf_oatof_simion_single_flight_configuration":
         raise ContractError("single-flight configuration identity differs")
     matches = [
-        profile for profile in configuration.get("spatial_window_profiles", [])
+        profile
+        for profile in configuration.get("source_region_diagnostic_profiles", [])
         if profile.get("profile_id") == profile_id
     ]
     if len(matches) != 1:
-        raise ContractError("real-field pulse spatial-window profile is not unique")
+        raise ContractError("real-field pulse source-region profile is not unique")
     return matches[0]
 
 
@@ -268,7 +285,7 @@ def select_and_write(
     schedule = _load_object(ballistic_schedule_path)
     if schedule.get("role") != "rf_oatof_resolved_single_flight_pulse_schedule":
         raise ContractError("real-field pulse ballistic schedule identity differs")
-    profile = _select_spatial_profile(
+    profile = _select_source_region_profile(
         configuration,
         str(contract["identities"]["spatial_window_profile_id"]),
     )
@@ -288,6 +305,7 @@ def select_and_write(
         contract=contract, population=population, source=source,
         connection=connection, geometry=geometry, spatial_profile=profile,
         selector_source_path=selector_source_path,
+        pa_cache_keys=screening_receipt.get("pa_cache_keys"),
     )
 
     candidate_rows: list[dict[str, Any]] = []
@@ -301,7 +319,7 @@ def select_and_write(
             ("pulse_noneligible", "pulse_noneligible_ids"),
             ("transverse_bore", "transverse_bore_ids"),
             ("transverse_nonbore", "transverse_nonbore_ids"),
-            ("ideal_source_box", "ideal_source_box_ids"),
+            ("source_region", "source_region_ids"),
         ):
             candidate[f"{prefix}_identity"] = _observed_id_set(candidate[key])
         candidate_rows.append(candidate)
@@ -313,11 +331,11 @@ def select_and_write(
             "offset_from_ballistic_seed_us", "population_count", "alive_count",
             "missing_count", "pulse_eligible_count", "transverse_bore_count",
             "pulse_noneligible_count", "transverse_nonbore_count",
-            "ideal_source_box_count", "normalized_xyz_centroid_distance",
+            "source_region_count", "normalized_xyz_centroid_distance",
             "normalized_xyz_spread_norm", "population_id_sha256",
             "alive_id_sha256", "missing_id_sha256", "pulse_eligible_id_sha256",
             "pulse_noneligible_id_sha256", "transverse_bore_id_sha256",
-            "transverse_nonbore_id_sha256", "ideal_source_box_id_sha256",
+            "transverse_nonbore_id_sha256", "source_region_id_sha256",
         ]
         writer = csv.DictWriter(handle, fieldnames=fieldnames, lineterminator="\n")
         writer.writeheader()
@@ -345,13 +363,13 @@ def select_and_write(
                 "transverse_nonbore_id_sha256": candidate[
                     "transverse_nonbore_identity"
                 ]["ordered_particle_id_sha256"],
-                "ideal_source_box_id_sha256": candidate["ideal_source_box_identity"][
+                "source_region_id_sha256": candidate["source_region_identity"][
                     "ordered_particle_id_sha256"
                 ],
             })
 
     receipt: dict[str, Any] = {
-        "schema_version": 1,
+        "schema_version": 2,
         "role": "rf_oatof_detector_blind_real_field_pulse_timing_selection_receipt",
         "status": "success",
         "qualification": "candidate_selection",
@@ -384,7 +402,7 @@ def select_and_write(
         "ballistic_seed_time_us": result["ballistic_seed_time_us"],
         "selected_time_us": result["selected_time_us"],
         "population_denominator_count": result["population_denominator_count"],
-        "ideal_source_box_bounds": result["ideal_source_box_bounds"],
+        "source_region_bounds": result["source_region_bounds"],
         "candidates_ranked": candidate_rows,
         "sample_census": [
             {
@@ -404,6 +422,8 @@ def select_and_write(
             "row_count": len(candidate_rows),
         },
     }
+    if contract.get("schema_version") == 2:
+        receipt["pa_cache_keys"] = copy.deepcopy(screening_receipt["pa_cache_keys"])
     receipt["authorities"]["selector_source"] = _binding(
         selector_source_path, repository_text=True
     )

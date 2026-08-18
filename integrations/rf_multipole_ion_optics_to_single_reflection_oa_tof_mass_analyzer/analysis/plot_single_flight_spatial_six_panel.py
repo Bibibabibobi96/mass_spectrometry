@@ -19,7 +19,6 @@ import pandas as pd
 
 
 CAPABILITY_ID = "rf_oatof_single_flight_spatial_six_panel_v2"
-PROVISIONAL_TRANSVERSE_SOURCE_WIDTH_MM = 2.0
 GEOMETRY_TARGET_TICK_INTERVALS = 9
 
 
@@ -533,31 +532,57 @@ def _accelerator_cross_section(
     )
 
 
-def _ideal_source_geometry(oatof: dict[str, Any]) -> dict[str, float]:
-    """Resolve the frozen axial interval and explicit provisional transverse policy."""
+def _source_region_bounds(
+    diagnostic: dict[str, Any],
+) -> dict[str, dict[str, float | str | None]]:
+    """Validate the analyzer-resolved default source-region diagnostic bounds."""
 
-    source = oatof["particle_source"]
-    values = {
-        "center_x": float(source["center_x_mm"]),
-        "center_y": float(source["center_y_mm"]),
-        "center_z": float(source["center_z_mm"]),
-        "width_z": float(source["size_z_mm"]),
-        "width_transverse": PROVISIONAL_TRANSVERSE_SOURCE_WIDTH_MM,
-    }
-    if not all(math.isfinite(value) for value in values.values()) or min(
-        values["width_z"], values["width_transverse"]
-    ) <= 0:
-        raise ValueError("ideal-source plotting geometry is invalid")
-    return values
+    bounds = diagnostic.get("bounds")
+    if (
+        diagnostic.get("role") != "layout_resolved_source_region_diagnostic"
+        or diagnostic.get("claim_status") != "PROVISIONAL_DIAGNOSTIC_ONLY"
+        or diagnostic.get("event") != "pre_pulse_state"
+        or diagnostic.get("population_basis") != "pulse_eligible"
+        or diagnostic.get("selection_uses_detector_outcome") is not False
+        or not isinstance(bounds, dict)
+        or set(bounds) != {"x", "y", "z"}
+    ):
+        raise ValueError("source-region diagnostic identity is invalid")
+    for axis in ("x", "y", "z"):
+        bound = bounds[axis]
+        if not isinstance(bound, dict):
+            raise ValueError("source-region diagnostic bound is invalid")
+        values = [
+            float(bound[name])
+            for name in ("center_mm", "full_width_mm", "minimum_mm", "maximum_mm")
+        ]
+        center, width, minimum, maximum = values
+        if (
+            not all(math.isfinite(value) for value in values)
+            or width <= 0
+            or abs(minimum - (center - width / 2)) > 1e-9
+            or abs(maximum - (center + width / 2)) > 1e-9
+        ):
+            raise ValueError("source-region diagnostic bound is invalid")
+        if bound.get("center_binding") != f"particle_source.center_{axis}_mm":
+            raise ValueError("source-region diagnostic center binding is invalid")
+        expected_width_binding = "particle_source.size_z_mm" if axis == "z" else None
+        if bound.get("full_width_binding") != expected_width_binding:
+            raise ValueError("source-region diagnostic width binding is invalid")
+    return bounds
 
 
-def _ideal_source_longitudinal(
-    ax: plt.Axes, oatof: dict[str, Any], frontend: dict[str, Any]
+def _source_region_longitudinal(
+    ax: plt.Axes,
+    diagnostic: dict[str, Any],
+    oatof: dict[str, Any],
+    frontend: dict[str, Any],
 ) -> None:
-    source = _ideal_source_geometry(oatof)
+    bounds = _source_region_bounds(diagnostic)
+    x_bound, z_bound = bounds["x"], bounds["z"]
     repeller = _repeller_body_geometry(oatof, frontend)
-    source_min = source["center_z"] - source["width_z"] / 2
-    source_max = source["center_z"] + source["width_z"] / 2
+    source_min = float(z_bound["minimum_mm"])
+    source_max = float(z_bound["maximum_mm"])
     vacuum_clearance = (
         source_min - repeller["front_z"]
         if repeller["vacuum_direction"] > 0
@@ -567,26 +592,31 @@ def _ideal_source_longitudinal(
         raise ValueError("ideal-source interval overlaps the repeller body")
     ax.add_patch(
         Rectangle(
-            (source["center_x"] - source["width_transverse"] / 2,
-             source["center_z"] - source["width_z"] / 2),
-            source["width_transverse"], source["width_z"],
+            (float(x_bound["minimum_mm"]), float(z_bound["minimum_mm"])),
+            float(x_bound["full_width_mm"]), float(z_bound["full_width_mm"]),
             facecolor="#56B4E9", edgecolor="#0072B2", linewidth=1.2,
             linestyle=":", alpha=0.25,
-            label="theory-accepted z interval; provisional 2 mm transverse",
+            label=(
+                f"layout-resolved axial interval; provisional "
+                f"{float(x_bound['full_width_mm']):g} mm transverse"
+            ),
             zorder=2,
         )
     )
 
 
-def _ideal_source_cross_section(ax: plt.Axes, oatof: dict[str, Any]) -> None:
-    source = _ideal_source_geometry(oatof)
-    width = source["width_transverse"]
+def _source_region_cross_section(
+    ax: plt.Axes, diagnostic: dict[str, Any]
+) -> None:
+    bounds = _source_region_bounds(diagnostic)
+    x_bound, y_bound = bounds["x"], bounds["y"]
     ax.add_patch(
         Rectangle(
-            (source["center_x"] - width / 2, source["center_y"] - width / 2),
-            width, width, facecolor="#56B4E9", edgecolor="#0072B2",
+            (float(x_bound["minimum_mm"]), float(y_bound["minimum_mm"])),
+            float(x_bound["full_width_mm"]), float(y_bound["full_width_mm"]),
+            facecolor="#56B4E9", edgecolor="#0072B2",
             linewidth=1.2, linestyle=":", alpha=0.25,
-            label="theory-accepted z interval; provisional 2 mm transverse",
+            label="provisional transverse source reference region",
             zorder=2,
         )
     )
@@ -598,7 +628,8 @@ def build_figure(
     upstream: dict[str, Any],
     frontend: dict[str, Any],
     oatof: dict[str, Any],
-) -> tuple[plt.Figure, dict[str, int | float]]:
+    source_region_diagnostic: dict[str, Any],
+) -> tuple[plt.Figure, dict[str, Any]]:
     required = {"particle_id", "event", "instrument_time_us", "x_mm", "y_mm", "z_mm"}
     if missing := sorted(required - set(checkpoints.columns)):
         raise ValueError(f"checkpoint columns are missing: {', '.join(missing)}")
@@ -657,14 +688,14 @@ def build_figure(
     ax_c.set(title="C  Grounded connector / oaTOF entrance handoff", xlabel="global y (mm)", ylabel="global z (mm)")
 
     _accelerator(ax_d, oatof, frontend)
-    _ideal_source_longitudinal(ax_d, oatof, frontend)
+    _source_region_longitudinal(ax_d, source_region_diagnostic, oatof, frontend)
     _cloud(ax_d, prepulse, "x_mm", "z_mm", size=size, label="immediately before pulse", color="#fdae61")
     ax_d.set_aspect("equal", adjustable="box")
     ax_d.set(title="D  Ion distribution in accelerator before pulse", xlabel="global x (mm)", ylabel="global z (mm)")
 
     _cloud(ax_e, accelerator_exit, "x_mm", "y_mm", size=size, label="local accelerator exit", color="#756bb1")
     _accelerator_cross_section(ax_e, oatof, frontend)
-    _ideal_source_cross_section(ax_e, oatof)
+    _source_region_cross_section(ax_e, source_region_diagnostic)
     shared_tick_step = _apply_shared_nice_ticks((ax_d, ax_e))
     ax_e.set_aspect("equal", adjustable="box")
     ax_e.set(title="E  Local accelerator exit plane", xlabel="global x (mm)", ylabel="global y (mm)")
@@ -688,7 +719,7 @@ def build_figure(
         f"small markers preserve geometry visibility; capability={CAPABILITY_ID}",
         fontsize=12,
     )
-    source_geometry = _ideal_source_geometry(oatof)
+    source_bounds = _source_region_bounds(source_region_diagnostic)
     return figure, {
         "released": len(initial),
         "handoff": len(handoff),
@@ -696,8 +727,16 @@ def build_figure(
         "accelerator_exit": len(accelerator_exit),
         "detector": len(detector),
         "particle_marker_area_pt2": size,
-        "theory_accepted_source_z_width_mm": source_geometry["width_z"],
-        "provisional_transverse_source_width_mm": source_geometry["width_transverse"],
+        "source_region_diagnostic": {
+            "profile_id": source_region_diagnostic["profile_id"],
+            "claim_status": source_region_diagnostic["claim_status"],
+            "event": source_region_diagnostic["event"],
+            "population_basis": source_region_diagnostic["population_basis"],
+            "bounds": source_bounds,
+            "eligible_count": source_region_diagnostic["eligible_count"],
+            "selected_count": source_region_diagnostic["selected_count"],
+            "occupancy_fraction": source_region_diagnostic["occupancy_fraction"],
+        },
         "accelerator_shared_tick_step_mm": shared_tick_step,
     }
 
@@ -712,12 +751,17 @@ def main() -> int:
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--metadata", required=True, type=Path)
     args = parser.parse_args()
+    summary = _load(args.output.parent.parent / "summary.json")
+    source_region_diagnostic = summary.get("source_region_diagnostic")
+    if not isinstance(source_region_diagnostic, dict):
+        parser.error("summary does not contain the default source-region diagnostic")
     figure, counts = build_figure(
         pd.read_csv(args.initial),
         pd.read_csv(args.checkpoints),
         _load(args.upstream),
         _load(args.frontend),
         _load(args.oatof),
+        source_region_diagnostic,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     figure.savefig(args.output, dpi=190)

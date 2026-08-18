@@ -37,7 +37,8 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
         self.assertIn("[string]$PrePulseTimeSeriesContract = ''", runner)
         self.assertIn("[string]$PrePulseTimeSeriesContractSha256 = ''", runner)
         self.assertIn(
-            "$PaCachePolicy -ne 'require_existing'", runner
+            "$PaCachePolicy -notin @('require_existing','build_and_publish_if_missing')",
+            runner,
         )
         identity_gate = runner.index(
             "Pre-pulse time-series source/layout/field/PA identity differs."
@@ -1235,6 +1236,35 @@ foreach ($case in $cases) {{
         self.assertIn("'transient_disk_estimate'", runner)
         self.assertIn("$frontendCellMmX -ne $frontendCellMmY", runner)
         self.assertIn("$overlayCellMmX -ne $frontendCellMmX", runner)
+
+    def test_full_flight_uses_configured_source_region_diagnostic_default(self) -> None:
+        settings = json.loads(
+            (INTEGRATION_ROOT / "config" / "simion_single_flight.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        profile_id = settings["default_source_region_diagnostic_profile_id"]
+        self.assertEqual(profile_id, "layout_resolved_axial_provisional_xy2_v1")
+        profiles = settings["source_region_diagnostic_profiles"]
+        profile = next(item for item in profiles if item["profile_id"] == profile_id)
+        self.assertEqual(profile["claim_status"], "PROVISIONAL_DIAGNOSTIC_ONLY")
+        self.assertEqual(profile["axes"]["x"]["full_width_mm"], 2.0)
+        self.assertEqual(profile["axes"]["y"]["full_width_mm"], 2.0)
+        self.assertEqual(
+            profile["axes"]["z"]["full_width_binding"],
+            "particle_source.size_z_mm",
+        )
+        self.assertNotIn(
+            profile_id,
+            {item["profile_id"] for item in settings["spatial_window_profiles"]},
+        )
+        runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        self.assertIn("default_source_region_diagnostic_profile_id", runner)
+        self.assertIn("source_region_diagnostic_profiles", runner)
+        self.assertIn("--source-region-diagnostic-profile-id", runner)
+        self.assertIn("$isPrePulseTimeSeriesScreening -eq $false", runner)
+        self.assertIn("$SamplingMode -notin @('steady_candidate_pool')", runner)
+        self.assertNotIn("layout_resolved_axial_provisional_xy2_v1", runner)
 
     def test_resolution_qualification_requires_full_bootstrap(self) -> None:
         text = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")

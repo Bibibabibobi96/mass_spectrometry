@@ -576,6 +576,91 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                 budget_result.stdout + budget_result.stderr,
             )
 
+    def test_adapter_validates_pulse_orchestration_argument_group_and_file(self) -> None:
+        adapter = (
+            INTEGRATION_ROOT / "workflows" / "family_source_closure" / "adapter.ps1"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            orchestration = root / "resolved_pulse_timing_orchestration.json"
+            write_json(orchestration, {"state": "ready_verified"})
+            script = r"""
+$parseErrors = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile(
+  $env:RF_ADAPTER_PATH, [ref]$null, [ref]$parseErrors
+)
+if ($parseErrors) { throw $parseErrors[0] }
+$functionAst = $ast.Find({
+  param($node)
+  $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+    $node.Name -eq 'Resolve-RfPulseTimingOrchestrationArguments'
+}, $true)
+if ($null -eq $functionAst) { throw 'orchestration resolver is missing' }
+. ([scriptblock]::Create($functionAst.Extent.Text))
+$frozen = @{
+  pulse_timing_orchestration_filename = 'resolved_pulse_timing_orchestration.json'
+  pulse_timing_orchestration_sha256 = $env:RF_ORCHESTRATION_SHA256
+  pulse_timing_orchestration_state = 'ready_verified'
+}
+$names = @(Resolve-RfPulseTimingOrchestrationArguments `
+  -FrozenArguments $frozen -PreparedRoot $env:RF_PREPARED_ROOT)
+if ($names.Count -ne 3) { throw 'valid orchestration group did not resolve' }
+'VALID=PASS'
+$missing = $frozen.Clone()
+$missing.Remove('pulse_timing_orchestration_sha256')
+try {
+  $null = Resolve-RfPulseTimingOrchestrationArguments -FrozenArguments $missing
+  throw 'partial orchestration group was accepted'
+} catch {
+  if ($_.Exception.Message -notmatch 'all-or-none') { throw }
+}
+'PARTIAL=REJECTED'
+$invalidState = $frozen.Clone()
+$invalidState.pulse_timing_orchestration_state = 'fallback'
+try {
+  $null = Resolve-RfPulseTimingOrchestrationArguments -FrozenArguments $invalidState
+  throw 'invalid orchestration state was accepted'
+} catch {
+  if ($_.Exception.Message -notmatch 'filename or state') { throw }
+}
+'STATE=REJECTED'
+$stale = $frozen.Clone()
+$stale.pulse_timing_orchestration_sha256 = '0' * 64
+try {
+  $null = Resolve-RfPulseTimingOrchestrationArguments `
+    -FrozenArguments $stale -PreparedRoot $env:RF_PREPARED_ROOT
+  throw 'stale orchestration file was accepted'
+} catch {
+  if ($_.Exception.Message -notmatch 'missing, misplaced or stale') { throw }
+}
+'SHA=REJECTED'
+"""
+            environment = os.environ.copy()
+            environment.update({
+                "RF_ADAPTER_PATH": str(adapter),
+                "RF_PREPARED_ROOT": str(root),
+                "RF_ORCHESTRATION_SHA256": hashlib.sha256(
+                    orchestration.read_bytes()
+                ).hexdigest().upper(),
+            })
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", script],
+                cwd=REPO_ROOT,
+                env=environment,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(
+                completed.returncode, 0, completed.stdout + completed.stderr
+            )
+            self.assertIn("VALID=PASS", completed.stdout)
+            self.assertIn("PARTIAL=REJECTED", completed.stdout)
+            self.assertIn("STATE=REJECTED", completed.stdout)
+            self.assertIn("SHA=REJECTED", completed.stdout)
+
     def test_legacy_cache_policy_is_validate_only_and_never_prepare_only(self) -> None:
         source_campaign = (
             CONFIG_ROOT / "diagnostics" /
@@ -619,6 +704,105 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                 validated.returncode, 0, validated.stdout + validated.stderr
             )
             self.assertIn("INTEGRATION_EXECUTION=VALIDATED", validated.stdout)
+
+    def test_execute_reads_only_the_prepared_pulse_orchestration_identity(self) -> None:
+        entry = (
+            INTEGRATION_ROOT / "workflows" / "family_source_closure" / "execute.ps1"
+        )
+        source = entry.read_text(encoding="utf-8")
+        self.assertIn("'discovery_required'", source)
+        self.assertIn("'ready_verified'", source)
+        self.assertIn("--pulse-timing-transition", source)
+        self.assertIn("transition_relative_path", source)
+        self.assertNotIn("Get-ChildItem -Recurse", source)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            orchestration_path = root / "resolved_pulse_timing_orchestration.json"
+            orchestration = {
+                "role": "rf_oatof_resolved_pulse_timing_orchestration",
+                "campaign_id": "test_campaign",
+                "experiment_id": "test_experiment",
+                "original_run_id": "20260818_235900__sim__cross__test__n1",
+                "state": "ready_verified",
+            }
+            write_json(orchestration_path, orchestration)
+            plan_path = root / "composition_plan.json"
+            write_json(
+                plan_path,
+                {
+                    "execution_steps": [{
+                        "arguments": [
+                            "pulse_timing_orchestration_filename="
+                            + orchestration_path.name,
+                            "pulse_timing_orchestration_sha256="
+                            + hashlib.sha256(orchestration_path.read_bytes())
+                            .hexdigest().upper(),
+                            "pulse_timing_orchestration_state=ready_verified",
+                        ]
+                    }]
+                },
+            )
+            script = r"""
+$parseErrors = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile(
+  $env:RF_EXECUTE_PATH, [ref]$null, [ref]$parseErrors
+)
+if ($parseErrors) { throw $parseErrors[0] }
+foreach ($name in @(
+    'Get-CompositionPlanArgumentMap', 'Get-PulseTimingOrchestration'
+  )) {
+  $functionAst = $ast.Find({
+    param($node)
+    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+      $node.Name -eq $name
+  }, $true)
+  if ($null -eq $functionAst) { throw "missing function: $name" }
+  . ([scriptblock]::Create($functionAst.Extent.Text))
+}
+$campaignDocument = [pscustomobject]@{ campaign_id = 'test_campaign' }
+$ExperimentId = 'test_experiment'
+$campaignRunId = '20260818_235900__sim__cross__test__n1'
+$result = Get-PulseTimingOrchestration `
+  -PlanPath $env:RF_PLAN_PATH -PreparedRoot $env:RF_PREPARED_ROOT
+"STATE=$($result.state)"
+"""
+            environment = os.environ.copy()
+            environment.update({
+                "RF_EXECUTE_PATH": str(entry),
+                "RF_PLAN_PATH": str(plan_path),
+                "RF_PREPARED_ROOT": str(root),
+            })
+            result = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", script],
+                cwd=REPO_ROOT,
+                env=environment,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("STATE=ready_verified", result.stdout)
+
+            orchestration["state"] = "discovery_required"
+            write_json(orchestration_path, orchestration)
+            stale = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", script],
+                cwd=REPO_ROOT,
+                env=environment,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                capture_output=True,
+                check=False,
+            )
+            self.assertNotEqual(stale.returncode, 0)
+            self.assertIn(
+                "Prepared pulse-timing orchestration SHA-256 differs",
+                stale.stdout + stale.stderr,
+            )
 
     def test_solver_authorized_rejects_archived_campaign_before_freshness(self) -> None:
         campaign = CONFIG_ROOT / "diagnostics" / (
@@ -1264,6 +1448,36 @@ $batchRows = [string[]]$particleRows[0..33]
         with self.assertRaises(ContractError):
             _single_flight_run_stem({"connector": {"length_mm": -1.0}})
         self.assertEqual(_retry_suffix("20260818_120000__sim__family__n100__r03"), "__r03")
+
+    def test_pulse_discovery_child_run_stem_is_distinct_without_renaming_full_flight(
+        self,
+    ) -> None:
+        resolved = {"connector": {"length_mm": 3.2}}
+        full_flight = _single_flight_run_stem(resolved)
+        confirmation = _single_flight_run_stem(
+            resolved,
+            pulse_timing_internal_stage="pulse_timing_confirmation",
+        )
+        discovery = _single_flight_run_stem(
+            resolved,
+            pulse_timing_internal_stage="pulse_timing_discovery",
+        )
+        self.assertEqual(
+            full_flight,
+            "__sim__simion__rf-oatof-single-flight-gap3p2__n",
+        )
+        self.assertEqual(confirmation, full_flight)
+        self.assertEqual(
+            discovery,
+            "__sim__simion__rf-oatof-pulse-screen-gap3p2__n",
+        )
+        self.assertLessEqual(len(discovery), len(full_flight))
+        adapter = (
+            INTEGRATION_ROOT / "workflows" / "family_source_closure" / "adapter.ps1"
+        ).read_text(encoding="utf-8")
+        self.assertIn("if ($pulseTimingDiscovery)", adapter)
+        self.assertIn("'rf-oatof-pulse-screen'", adapter)
+        self.assertIn("$expectedExecutionParticleCount$retrySuffix", adapter)
 
     def test_campaign_and_experiment_identities_are_unique(self) -> None:
         campaign = load(CAMPAIGN_PATH)

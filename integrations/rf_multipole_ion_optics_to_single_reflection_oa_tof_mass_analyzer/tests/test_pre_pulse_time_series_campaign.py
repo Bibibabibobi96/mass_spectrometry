@@ -28,6 +28,10 @@ V3_CAMPAIGN_PATH = INTEGRATION_ROOT / (
     "config/diagnostics/"
     "pre_pulse_time_series_gap3p2_three_zone_real_pa_first100_n100_campaign_v3.json"
 )
+V5_AUTO_CAMPAIGN_PATH = INTEGRATION_ROOT / (
+    "config/diagnostics/"
+    "connector_gap_three_zone_real_pa_first100_n100_campaign_v5.json"
+)
 ADAPTER_PATH = INTEGRATION_ROOT / "workflows/family_source_closure/adapter.ps1"
 PUBLIC_ENTRY_PATH = INTEGRATION_ROOT / "workflows/family_source_closure/execute.ps1"
 
@@ -37,9 +41,13 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
         self.campaign = json.loads(CAMPAIGN_PATH.read_text(encoding="utf-8"))
 
     def _compile(self) -> dict[str, object]:
-        row = self.campaign["experiments"][0]
+        campaign = copy.deepcopy(self.campaign)
+        campaign["pre_pulse_time_series_screening"][
+            "spatial_window_profile_id"
+        ] = "layout_resolved_axial_provisional_xy2_v1"
+        row = campaign["experiments"][0]
         return compile_pre_pulse_time_series_contract(
-            campaign=self.campaign,
+            campaign=campaign,
             experiment=row,
             experiment_row_sha256="A" * 64,
             upstream_resolved_design={"drive": {
@@ -59,9 +67,6 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
         )
 
     def test_campaign_and_compiled_runner_contract_close_rf160_grid(self) -> None:
-        validate_schema(
-            self.campaign, "rf_multipole_oatof_experiment_campaign.schema.json"
-        )
         validate_pre_pulse_time_series_campaign(self.campaign)
         contract = self._compile()
         validate_schema(
@@ -81,17 +86,21 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
         self.assertIsNone(contract["pa_cache_keys"]["reflectron"])
         self.assertEqual(contract["identities"]["mother_particle_source_sha256"], "D" * 64)
 
-    def test_published_v1_remains_schema_readable_but_non_executable(self) -> None:
+    def test_published_v1_campaign_is_no_longer_active_schema_input(self) -> None:
         legacy = json.loads(LEGACY_CAMPAIGN_PATH.read_text(encoding="utf-8"))
-        validate_schema(legacy, "rf_multipole_oatof_experiment_campaign.schema.json")
+        with self.assertRaises(ContractError):
+            validate_schema(
+                legacy, "rf_multipole_oatof_experiment_campaign.schema.json"
+            )
         with self.assertRaisesRegex(ContractError, "source, population, or grid differs"):
             validate_pre_pulse_time_series_campaign(legacy)
 
     def test_v3_successor_changes_only_identity_and_mode_failure_claim(self) -> None:
         successor = json.loads(V3_CAMPAIGN_PATH.read_text(encoding="utf-8"))
-        validate_schema(
-            successor, "rf_multipole_oatof_experiment_campaign.schema.json"
-        )
+        with self.assertRaises(ContractError):
+            validate_schema(
+                successor, "rf_multipole_oatof_experiment_campaign.schema.json"
+            )
         validate_pre_pulse_time_series_campaign(successor)
         self.assertEqual(
             successor["experiments"][0]["run_id"],
@@ -132,6 +141,130 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
                 region_field_semantic_sha256="E" * 64,
                 rf_steps_per_period=160,
             )
+
+    def test_auto_policy_uses_ballistic_seed_minus56_plus264_without_pa_keys(self) -> None:
+        row = self.campaign["experiments"][0]
+        contract = compile_pre_pulse_time_series_contract(
+            campaign=self.campaign,
+            experiment=row,
+            experiment_row_sha256="A" * 64,
+            upstream_resolved_design={"drive": {
+                "frequency_Hz": 1_100_000, "waveform": "sine", "phase_rad": 0.25,
+            }},
+            resolved_source_contract_sha256="B" * 64,
+            resolved_population_contract_sha256="C" * 64,
+            prepared_prefix_sha256="D" * 64,
+            layout_profile={
+                "topology_id": "three_zone_accelerator_ideal_v1",
+                "geometry_id": "three_zone_focus_origin_planes_v1",
+                "frontend_electrode_topology_id": "three_zone_frontend_v1",
+            },
+            selected_field_profile={"field_id": "three_zone_refined_pa_field_v1"},
+            region_field_semantic_sha256="E" * 64,
+            rf_steps_per_period=160,
+            specification={
+                "mode": "real_pa_rf_pre_pulse_time_series",
+                "active_scope": "pre_pulse_frontend_accelerator",
+                "time_grid_profile_id": "ballistic_seed_rf160_minus56_plus264_v1",
+                "relative_start_index": -56,
+                "relative_end_index": 264,
+                "rf_steps_per_period": 160,
+                "sample_count": 321,
+                "spatial_window_profile_id": (
+                    "layout_resolved_axial_provisional_xy2_v1"
+                ),
+                "pulse_disabled": True,
+                "terminate_at_window_end": True,
+                "resolution_claim_allowed": False,
+                "prohibited_outputs": [
+                    "detector_crossing", "resolution_metrics",
+                    "single_flight_spatial_six_panel",
+                ],
+            },
+            base_schedule={"pulse_effective_time_us": 45.4167939656417},
+        )
+        self.assertEqual(contract["schema_version"], 2)
+        self.assertNotIn("pa_cache_keys", contract)
+        self.assertEqual(
+            contract["pa_cache_roles"]["required"],
+            ["frontend", "accelerator_overlay"],
+        )
+        grid = contract["rf_time_grid"]
+        self.assertEqual(grid["requested_relative_start_index"], -56)
+        self.assertEqual(grid["requested_relative_end_index"], 264)
+        self.assertAlmostEqual(
+            contract["sample_times_us"][56], grid["ballistic_seed_time_us"], places=13
+        )
+
+    def test_screening_schema_closes_version_to_pa_authority_and_grid(self) -> None:
+        legacy = self._compile()
+        automatic = copy.deepcopy(legacy)
+        automatic["schema_version"] = 2
+        automatic["identities"]["spatial_window_profile_id"] = (
+            "layout_resolved_axial_provisional_xy2_v1"
+        )
+        automatic["pa_cache_roles"] = {
+            "identity_source": "runner_materialized_verified_pa_cache_receipt",
+            "required": ["frontend", "accelerator_overlay"],
+            "prohibited": ["flight_tube", "reflectron"],
+        }
+        automatic.pop("pa_cache_keys")
+        automatic["rf_time_grid"] = {
+            "time_grid_profile_id": "ballistic_seed_rf160_minus56_plus264_v1",
+            "derivation": (
+                "ballistic_seed_time_us + relative_index*period_us/"
+                "rf_steps_per_period"
+            ),
+            "waveform": "sine",
+            "frequency_hz": 1_100_000,
+            "phase_rad": 0.25,
+            "rf_steps_per_period": 160,
+            "period_us": 10 / 11,
+            "step_us": 1 / 176,
+            "ballistic_seed_time_us": 45.4167939656417,
+            "grid_origin_us": 45.09861214745988,
+            "requested_relative_start_index": -56,
+            "requested_relative_end_index": 264,
+            "ballistic_seed_sample_index": 56,
+            "start_index": 0,
+            "end_index": 320,
+            "sample_count": 321,
+        }
+        validate_schema(
+            automatic,
+            "rf_oatof_pre_pulse_time_series_screening_contract.schema.json",
+        )
+        for crossed in (
+            {**copy.deepcopy(legacy), "schema_version": 2},
+            {**copy.deepcopy(automatic), "schema_version": 1},
+            {**copy.deepcopy(legacy), "rf_time_grid": automatic["rf_time_grid"]},
+            {**copy.deepcopy(automatic), "rf_time_grid": legacy["rf_time_grid"]},
+        ):
+            with self.assertRaises(ContractError):
+                validate_schema(
+                    crossed,
+                    "rf_oatof_pre_pulse_time_series_screening_contract.schema.json",
+                )
+
+    def test_active_cache_miss_schema_requires_layout_resolved_profile(self) -> None:
+        campaign = json.loads(V5_AUTO_CAMPAIGN_PATH.read_text(encoding="utf-8"))
+        with self.assertRaises(ContractError):
+            validate_schema(
+                campaign, "rf_multipole_oatof_experiment_campaign.schema.json"
+            )
+        for row in campaign["experiments"]:
+            row["single_flight_pulse_schedule_policy"]["cache_miss_policy"][
+                "spatial_window_profile_id"
+            ] = "layout_resolved_axial_provisional_xy2_v1"
+        validate_schema(campaign, "rf_multipole_oatof_experiment_campaign.schema.json")
+        self.assertEqual(len(campaign["experiments"]), 5)
+        for row in campaign["experiments"]:
+            policy = row["single_flight_pulse_schedule_policy"]["cache_miss_policy"]
+            self.assertEqual(
+                policy["mode"],
+                "auto_detector_blind_discovery_and_confirmation_v1",
+            )
+            self.assertNotIn("fixed_execution_authority", row["single_flight_pulse_schedule_policy"])
 
     def test_adapter_transports_internal_contract_without_new_public_cli(self) -> None:
         adapter = ADAPTER_PATH.read_text(encoding="utf-8")

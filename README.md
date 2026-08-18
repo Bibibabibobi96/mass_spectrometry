@@ -275,6 +275,7 @@ artifacts/projects/<project>/
 | `cache/simion_single_flight_frontend/<SHA-256>/` | `simion_single_flight_frontend_pa_cache` |
 | `cache/simion_accelerator_overlay/<SHA-256>/` | `simion_accelerator_overlay_pa_cache` |
 | `cache/simion_oatof_downstream_pa/<SHA-256>/` | `simion_oatof_flight_tube_pa_cache`或`simion_oatof_reflectron_pa_cache`，由entry manifest唯一消歧 |
+| `cache/verified_pulse/<SHA-256>/` | `rf_oatof_verified_pulse_timing_receipt`；仅保存相同内容身份下已通过完整pulse-on飞行确认的可删除时刻收据 |
 
 不得在`cache/`保存唯一输入、canonical结果、正式资产或未登记的任意文件。所有`formal/` PA无条件按
 正式资产合同保留，禁止作为cache清理；当前实验仍引用的cache PA和无法由冻结输入重建的唯一来源同样

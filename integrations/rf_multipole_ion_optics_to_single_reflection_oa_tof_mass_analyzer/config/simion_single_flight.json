@@ -142,38 +142,22 @@
       },
       "minimum_pulse_eligible_coverage": 0.01,
       "role": "detector_blind_pulse_offset_selection"
-    },
+    }
+  ],
+  "default_source_region_diagnostic_profile_id": "layout_resolved_axial_provisional_xy2_v1",
+  "source_region_diagnostic_profiles": [
     {
-      "profile_id": "ideal_source_box_1mm_xyz",
+      "profile_id": "layout_resolved_axial_provisional_xy2_v1",
       "event": "pre_pulse_state",
+      "population_basis": "pulse_eligible",
       "axes": {
-        "x": {"center_binding": "particle_source.center_x_mm", "full_width_mm": 1.0},
-        "y": {"center_binding": "particle_source.center_y_mm", "full_width_mm": 1.0},
-        "z": {"center_binding": "particle_source.center_z_mm", "full_width_mm": 1.0}
+        "x": {"center_binding": "particle_source.center_x_mm", "full_width_mm": 2.0},
+        "y": {"center_binding": "particle_source.center_y_mm", "full_width_mm": 2.0},
+        "z": {"center_binding": "particle_source.center_z_mm", "full_width_binding": "particle_source.size_z_mm"}
       },
       "selection_uses_detector_outcome": false,
-      "field_error_budget": {
-        "derivation": "legacy_detector_blind_source_extent_control",
-        "tof_error_budget_ns": 0.537,
-        "frozen_before_particle_outcomes": true
-      },
-      "minimum_pulse_eligible_coverage": 0.70,
-      "role": "ideal_source_extent_diagnostic"
-    },
-    {
-      "profile_id": "ideal_source_z_1mm",
-      "event": "pre_pulse_state",
-      "axes": {
-        "z": {"center_binding": "particle_source.center_z_mm", "full_width_mm": 1.0}
-      },
-      "selection_uses_detector_outcome": false,
-      "field_error_budget": {
-        "derivation": "legacy_detector_blind_source_extent_control",
-        "tof_error_budget_ns": 0.537,
-        "frozen_before_particle_outcomes": true
-      },
-      "minimum_pulse_eligible_coverage": 0.70,
-      "role": "acceleration_direction_extent_diagnostic"
+      "claim_status": "PROVISIONAL_DIAGNOSTIC_ONLY",
+      "role": "layout_resolved_source_region_diagnostic"
     }
   ],
   "default_accelerator_field_profile_id": "accelerator_real_pa",

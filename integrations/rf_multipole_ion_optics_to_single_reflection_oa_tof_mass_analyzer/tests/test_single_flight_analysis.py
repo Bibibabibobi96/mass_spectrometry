@@ -21,11 +21,11 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     _accelerator_cross_section,
     _accelerator_shield_geometry,
     _connector_through_hole_geometry,
-    _ideal_source_cross_section,
-    _ideal_source_geometry,
-    _ideal_source_longitudinal,
     _rectangular_frame_path,
     _repeller_body_geometry,
+    _source_region_bounds,
+    _source_region_cross_section,
+    _source_region_longitudinal,
     marker_area,
 )
 
@@ -487,7 +487,7 @@ class SingleFlightAnalysisTests(unittest.TestCase):
                 oatof, {"accelerator_local_region": {"axis_x_mm": -69.0}}
             )
 
-    def test_ideal_source_panels_follow_frozen_center_and_axial_width(self) -> None:
+    def test_source_region_panels_follow_analyzer_resolved_bounds(self) -> None:
         first = {"particle_source": {
             "center_x_mm": -69.0, "center_y_mm": 0.5,
             "center_z_mm": -61.5, "size_z_mm": 2.2,
@@ -512,13 +512,43 @@ class SingleFlightAnalysisTests(unittest.TestCase):
             "repeller_front_z_mm": 10.0, "repeller_thickness_mm": 2.0,
             "grid1_z_mm": 8.0,
         }}
+        def diagnostic(center_x, center_y, center_z, width_z):
+            centers = {"x": center_x, "y": center_y, "z": center_z}
+            widths = {"x": 2.0, "y": 2.0, "z": width_z}
+            return {
+                "profile_id": "layout_resolved_axial_provisional_xy2_v1",
+                "role": "layout_resolved_source_region_diagnostic",
+                "claim_status": "PROVISIONAL_DIAGNOSTIC_ONLY",
+                "event": "pre_pulse_state",
+                "population_basis": "pulse_eligible",
+                "selection_uses_detector_outcome": False,
+                "bounds": {
+                    axis: {
+                        "center_binding": f"particle_source.center_{axis}_mm",
+                        "center_mm": centers[axis],
+                        "full_width_binding": (
+                            "particle_source.size_z_mm" if axis == "z" else None
+                        ),
+                        "full_width_mm": widths[axis],
+                        "minimum_mm": centers[axis] - widths[axis] / 2,
+                        "maximum_mm": centers[axis] + widths[axis] / 2,
+                    }
+                    for axis in ("x", "y", "z")
+                },
+            }
+        first_diagnostic = diagnostic(-69.0, 0.5, -61.5, 2.2)
+        second_diagnostic = diagnostic(-42.0, -1.5, 7.0, 5.5)
         first_figure, (first_d, first_e) = plt.subplots(1, 2)
         second_figure, (second_d, second_e) = plt.subplots(1, 2)
         try:
-            _ideal_source_longitudinal(first_d, first, first_frontend)
-            _ideal_source_cross_section(first_e, first)
-            _ideal_source_longitudinal(second_d, second, second_frontend)
-            _ideal_source_cross_section(second_e, second)
+            _source_region_longitudinal(
+                first_d, first_diagnostic, first, first_frontend
+            )
+            _source_region_cross_section(first_e, first_diagnostic)
+            _source_region_longitudinal(
+                second_d, second_diagnostic, second, second_frontend
+            )
+            _source_region_cross_section(second_e, second_diagnostic)
             first_long = first_d.patches[0]
             second_long = second_d.patches[0]
             first_cross = first_e.patches[0]
@@ -601,14 +631,32 @@ class SingleFlightAnalysisTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "boundary-plane geometry is inconsistent"):
             _accelerator_boundary_planes(oatof, frontend)
 
-    def test_ideal_source_geometry_fails_closed_on_nonfinite_or_missing_input(self) -> None:
-        with self.assertRaisesRegex(ValueError, "plotting geometry is invalid"):
-            _ideal_source_geometry({"particle_source": {
-                "center_x_mm": 0.0, "center_y_mm": 0.0,
-                "center_z_mm": float("nan"), "size_z_mm": 2.2,
-            }})
-        with self.assertRaises(KeyError):
-            _ideal_source_geometry({"particle_source": {"center_x_mm": 0.0}})
+    def test_source_region_bounds_fail_closed_on_invalid_or_missing_input(self) -> None:
+        diagnostic = {
+            "role": "layout_resolved_source_region_diagnostic",
+            "claim_status": "PROVISIONAL_DIAGNOSTIC_ONLY",
+            "event": "pre_pulse_state",
+            "population_basis": "pulse_eligible",
+            "selection_uses_detector_outcome": False,
+            "bounds": {},
+        }
+        with self.assertRaisesRegex(ValueError, "identity is invalid"):
+            _source_region_bounds(diagnostic)
+        diagnostic["bounds"] = {
+            axis: {
+                "center_binding": f"particle_source.center_{axis}_mm",
+                "center_mm": float("nan") if axis == "z" else 0.0,
+                "full_width_binding": (
+                    "particle_source.size_z_mm" if axis == "z" else None
+                ),
+                "full_width_mm": 2.0,
+                "minimum_mm": -1.0,
+                "maximum_mm": 1.0,
+            }
+            for axis in ("x", "y", "z")
+        }
+        with self.assertRaisesRegex(ValueError, "bound is invalid"):
+            _source_region_bounds(diagnostic)
 
     def test_preserves_original_ion_identity_at_all_checkpoints(self) -> None:
         text = "\n".join(
@@ -1002,13 +1050,14 @@ class SingleFlightAnalysisTests(unittest.TestCase):
             self.assertEqual(observed[name]["count"], len(observed[name]["ordered_particle_ids"]))
         self.assertEqual(summary["observed_handoff"]["ordered_particle_ids"], [])
 
-    def test_three_axis_window_reports_only_detector_blind_spatial_metrics(self) -> None:
+    def test_default_source_region_reports_canonical_diagnostic_peak(self) -> None:
         lines = []
         positions = [
             (-69.0, 0.0, -18.4),
-            (-69.4, 0.4, -18.8),
-            (-68.6, -0.4, -18.0),
-            (-68.4, 0.0, -18.4),
+            (-69.8, 0.8, -18.8),
+            (-68.2, -0.8, -18.0),
+            (-67.8, 0.0, -18.4),
+            (-69.0, 1.2, -18.4),
         ]
         for particle_id, (x_mm, y_mm, z_mm) in enumerate(positions, 1):
             lines.append(
@@ -1027,6 +1076,7 @@ class SingleFlightAnalysisTests(unittest.TestCase):
                 "center_x_mm": -69.0,
                 "center_y_mm": 0.0,
                 "center_z_mm": -18.4,
+                "size_z_mm": 1.0,
             },
             "coordinate_convention": {"accelerator_axis_x": -69.0},
             "geometry_mm": {
@@ -1036,22 +1086,26 @@ class SingleFlightAnalysisTests(unittest.TestCase):
             },
         }
         profile = {
-            "profile_id": "ideal_source_box_1mm_xyz",
+            "profile_id": "layout_resolved_axial_provisional_xy2_v1",
+            "role": "layout_resolved_source_region_diagnostic",
+            "claim_status": "PROVISIONAL_DIAGNOSTIC_ONLY",
             "event": "pre_pulse_state",
+            "population_basis": "pulse_eligible",
             "axes": {
-                axis: {
-                    "center_binding": f"particle_source.center_{axis}_mm",
-                    "full_width_mm": 1.0,
-                }
-                for axis in ("x", "y", "z")
+                "x": {
+                    "center_binding": "particle_source.center_x_mm",
+                    "full_width_mm": 2.0,
+                },
+                "y": {
+                    "center_binding": "particle_source.center_y_mm",
+                    "full_width_mm": 2.0,
+                },
+                "z": {
+                    "center_binding": "particle_source.center_z_mm",
+                    "full_width_binding": "particle_source.size_z_mm",
+                },
             },
             "selection_uses_detector_outcome": False,
-            "field_error_budget": {
-                "derivation": "frozen_test_budget",
-                "tof_error_budget_ns": 0.537,
-                "frozen_before_particle_outcomes": True,
-            },
-            "minimum_pulse_eligible_coverage": 0.70,
         }
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -1061,42 +1115,104 @@ class SingleFlightAnalysisTests(unittest.TestCase):
             model.write_text(json.dumps(geometry), encoding="utf-8")
             _, summary = analyze(
                 log,
-                4,
+                5,
                 100.0,
                 model,
                 10.0,
-                spatial_window_profile=profile,
-                population_denominator_count=6,
-                eligible_population_count=4,
+                source_region_diagnostic_profile=profile,
             )
-        window = summary["spatial_window_peak"]
-        self.assertNotIn("pulse_effective_peak", window)
-        self.assertNotIn("bootstrap", window)
-        self.assertNotIn("mass_resolution_ratio_to_full_pulse_eligible", window)
-        self.assertIsNone(summary["pulse_effective_peak"])
-        self.assertIsNone(summary["full_pulse_eligible_bootstrap"])
-        self.assertFalse(summary["detector_clock_diagnostic"]["peak_metrics_computed"])
-        self.assertEqual(window["selected_count"], 3)
-        self.assertEqual(window["pulse_eligible_coverage_fraction"], 0.75)
-        self.assertFalse(window["selection_uses_detector_outcome"])
-        self.assertEqual(window["axis_semantics"]["acceleration_direction"], "z")
+        diagnostic = summary["source_region_diagnostic"]
+        self.assertIsNone(summary["spatial_window_peak"])
+        self.assertIsNotNone(summary["pulse_effective_peak"])
+        self.assertEqual(diagnostic["claim_status"], "PROVISIONAL_DIAGNOSTIC_ONLY")
+        self.assertFalse(diagnostic["qualification_eligible"])
+        self.assertEqual(diagnostic["eligible_count"], 5)
+        self.assertEqual(diagnostic["selected_particle_ids"], [1, 2, 3])
+        self.assertEqual(diagnostic["selected_count"], 3)
+        self.assertEqual(diagnostic["detected_particle_ids"], [1, 2, 3])
+        self.assertEqual(diagnostic["detected_count"], 3)
+        self.assertAlmostEqual(diagnostic["occupancy_fraction"], 0.6)
+        self.assertEqual(diagnostic["bounds"]["z"]["full_width_mm"], 1.0)
         self.assertEqual(
-            summary["source_population"]["efficiency_denominator"],
-            "candidate_population_count",
+            diagnostic["bounds"]["z"]["full_width_binding"],
+            "particle_source.size_z_mm",
         )
+        self.assertEqual(diagnostic["peak_status"], "computed")
+        self.assertIsNone(diagnostic["peak_reason"])
+        self.assertEqual(diagnostic["pulse_effective_peak"]["particles"], 3)
+
+    def test_source_region_fewer_than_three_detected_is_nonblocking(self) -> None:
+        lines = []
+        for particle_id, x_mm in enumerate((-69.0, -68.5, -67.0), 1):
+            for event, time_us in (("source_release", 0), ("pre_pulse_state", 10)):
+                lines.append(
+                    f"TRACE: {event} ion={particle_id} instrument_time_us={time_us} "
+                    f"x_mm={x_mm} y_mm=0 z_mm=-18.4 "
+                    "vx_mm_per_us=4 vy_mm_per_us=0 vz_mm_per_us=0"
+                )
+            lines.append(
+                f"TRACE: detector_crossing ion={particle_id} "
+                f"t={70 + particle_id * 0.01} x=49 y=0 z=19.83"
+            )
+        geometry = {
+            "particle_source": {
+                "center_x_mm": -69.0,
+                "center_y_mm": 0.0,
+                "center_z_mm": -18.4,
+                "size_z_mm": 1.0,
+            },
+            "coordinate_convention": {"accelerator_axis_x": -69.0},
+            "geometry_mm": {
+                "accelerator_repeller_z": -19.9,
+                "accelerator_grid1_z": -16.9,
+                "accelerator_bore_half": 5.0,
+            },
+        }
+        profile = {
+            "profile_id": "layout_resolved_axial_provisional_xy2_v1",
+            "role": "layout_resolved_source_region_diagnostic",
+            "claim_status": "PROVISIONAL_DIAGNOSTIC_ONLY",
+            "event": "pre_pulse_state",
+            "population_basis": "pulse_eligible",
+            "axes": {
+                "x": {
+                    "center_binding": "particle_source.center_x_mm",
+                    "full_width_mm": 2.0,
+                },
+                "y": {
+                    "center_binding": "particle_source.center_y_mm",
+                    "full_width_mm": 2.0,
+                },
+                "z": {
+                    "center_binding": "particle_source.center_z_mm",
+                    "full_width_binding": "particle_source.size_z_mm",
+                },
+            },
+            "selection_uses_detector_outcome": False,
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            log = root / "log.txt"
+            model = root / "geometry.json"
+            log.write_text("\n".join(lines), encoding="utf-8")
+            model.write_text(json.dumps(geometry), encoding="utf-8")
+            _, summary = analyze(
+                log,
+                3,
+                100.0,
+                model,
+                10.0,
+                source_region_diagnostic_profile=profile,
+            )
+        diagnostic = summary["source_region_diagnostic"]
+        self.assertEqual(summary["status"], "success")
+        self.assertEqual(diagnostic["selected_count"], 2)
+        self.assertEqual(diagnostic["detected_count"], 2)
+        self.assertIsNone(diagnostic["pulse_effective_peak"])
+        self.assertEqual(diagnostic["peak_status"], "not_computed")
         self.assertEqual(
-            summary["transmission"]["detector_fraction_of_candidate_population"],
-            4 / 6,
+            diagnostic["peak_reason"], "fewer_than_three_detected_particles"
         )
-        population = summary["source_population"]
-        self.assertEqual(
-            population["simulation_population_basis"],
-            "pulse_eligible_conditional_population",
-        )
-        self.assertEqual(population["simulated_population_count"], 4)
-        self.assertEqual(population["pulse_eligible_population_count"], 4)
-        self.assertEqual(population["simulated_fraction_of_candidate_population"], 4 / 6)
-        self.assertEqual(population["simulated_fraction_of_pulse_eligible_population"], 1.0)
 
     def test_full_population_cross_checks_declared_pulse_eligible_count(self) -> None:
         lines = [

@@ -404,7 +404,6 @@ def build_successor_program(
         contract = pre_pulse_time_series_contract
         assert contract is not None
         required = {
-            "schema_version": 1,
             "role": "rf_oatof_pre_pulse_time_series_screening_contract",
             "mode": "real_pa_rf_pre_pulse_time_series",
             "active_scope": "pre_pulse_frontend_accelerator",
@@ -412,7 +411,10 @@ def build_successor_program(
             "terminate_at_window_end": True,
             "resolution_claim_allowed": False,
         }
-        if any(contract.get(key) != value for key, value in required.items()):
+        if (
+            contract.get("schema_version") not in {1, 2}
+            or any(contract.get(key) != value for key, value in required.items())
+        ):
             raise ValueError("pre-pulse time-series screening contract mode differs")
         if contract.get("prohibited_outputs") != [
             "detector_crossing",

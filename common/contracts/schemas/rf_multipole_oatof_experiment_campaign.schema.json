@@ -475,6 +475,18 @@
         "policy_id": {"const": "multipole_handoff_ballistic_centroid_v1"},
         "offset_rf_periods": {"type": "number", "minimum": -0.5, "maximum": 0.5},
         "pulse_width_us": {"type": "number", "exclusiveMinimum": 0},
+        "cache_miss_policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "time_grid_profile_id", "spatial_window_profile_id"],
+          "properties": {
+            "mode": {"const": "auto_detector_blind_discovery_and_confirmation_v1"},
+            "time_grid_profile_id": {"const": "ballistic_seed_rf160_minus56_plus264_v1"},
+            "spatial_window_profile_id": {
+              "const": "layout_resolved_axial_provisional_xy2_v1"
+            }
+          }
+        },
         "fixed_execution_authority": {
           "oneOf": [
             {
@@ -706,7 +718,9 @@
         "rf_steps_per_period": {"const": 160},
         "expected_upstream_frequency_hz": {"const": 1100000},
         "sample_count": {"const": 321},
-        "spatial_window_profile_id": {"const": "ideal_source_box_1mm_xyz"},
+        "spatial_window_profile_id": {
+          "const": "layout_resolved_axial_provisional_xy2_v1"
+        },
         "selection_order": {"const": [
           "maximize_pulse_eligible_count",
           "maximize_transverse_bore_count",

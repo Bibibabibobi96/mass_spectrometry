@@ -533,12 +533,13 @@ def publish_run(repo_root: Path, run_id: str, wide_run: Path, small_run: Path) -
         _load_json(small_run / "inputs" / "upstream_resolved_design.json"),
         data["frontend"]["small"],
         _load_json(small_run / "inputs" / "oatof_resolved_geometry.json"),
+        _load_json(small_run / "summary.json")["source_region_diagnostic"],
     )
     _save_figure(spatial_figure, small_spatial_path, dpi=190)
     write_pending_json(small_spatial_metadata_path, {
         "schema_version": 1,
         "role": "rf_oatof_single_flight_spatial_six_panel_figure_manifest",
-        "capability_id": "rf_oatof_single_flight_spatial_six_panel_v1",
+        "capability_id": "rf_oatof_single_flight_spatial_six_panel_v2",
         "source_run_id": small_run.name,
         "counts": spatial_counts,
         "aperture_mm": [0.5, 0.5],

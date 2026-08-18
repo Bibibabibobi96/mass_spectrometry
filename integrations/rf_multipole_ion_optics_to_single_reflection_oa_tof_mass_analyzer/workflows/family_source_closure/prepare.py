@@ -21,6 +21,7 @@ from common.contracts.machine_contracts import ContractError, validate_schema
 from common.contracts.particle_count_policy import validate_standard_particle_count
 from common.contracts.particle_physics import kinetic_energy_ev
 from common.contracts.verify_run_manifest import record_path, verify_record
+from common.contracts.verify_artifact_layout import verify_verified_pulse_cache_entry
 from common.integration.adapter_contract import (
     load_execution_adapter_registry,
     resolve_execution_mapping,
@@ -81,6 +82,123 @@ UPSTREAM_PROJECTS = {
     "rf_hexapole_ion_optics",
     "rf_octupole_ion_optics",
 }
+AUTO_PULSE_POLICY_ID = "auto_detector_blind_discovery_and_confirmation_v1"
+AUTO_PULSE_GRID_PROFILE_ID = "ballistic_seed_rf160_minus56_plus264_v1"
+PULSE_TRANSITION_RELATIVE_PATH = "results/pulse_timing_transition.json"
+
+
+def _derive_pulse_discovery_run_id(original_run_id: str) -> str:
+    """Derive one canonical internal discovery identity from the target run."""
+
+    identity = validate_run_id(original_run_id)
+    detail = identity.get("detail")
+    if not isinstance(detail, str) or not detail.startswith("n"):
+        raise ContractError("automatic pulse timing requires a particle-count run detail")
+    retry = f"__r{identity['retry']}" if identity.get("retry") else ""
+    run_id = (
+        f"{identity['stamp']}__sim__cross__pulse-timing-discovery__{detail}{retry}"
+    )
+    validate_run_id(run_id)
+    return run_id
+
+
+def _materialize_pulse_discovery_package(
+    *,
+    source_directory: Path,
+    stage_directory: Path,
+    stage_plan_bytes: bytes,
+    resolved_filename: str,
+    repo_root: Path,
+) -> None:
+    """Publish one complete prepared discovery package or remove the partial copy."""
+
+    if stage_directory.exists():
+        raise ContractError("automatic pulse discovery run directory already exists")
+    stage_directory.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        shutil.copytree(source_directory, stage_directory)
+        stage_plan_path = stage_directory / "composition_plan.json"
+        stage_plan_path.write_bytes(stage_plan_bytes)
+        verify_composition_plan(
+            stage_plan_path,
+            stage_directory / resolved_filename,
+            repo_root=repo_root,
+        )
+    except Exception:
+        if (
+            stage_directory.exists()
+            and not (stage_directory / "run_manifest.json").exists()
+        ):
+            shutil.rmtree(stage_directory)
+        raise
+
+
+def _resolve_pulse_transition(
+    workspace: Path, transition_path: Path,
+) -> tuple[dict[str, Any], dict[str, str]]:
+    """Resolve a manifest-bound discovery transition into internal authority."""
+
+    path = transition_path.resolve()
+    artifacts = (workspace / "artifacts").resolve()
+    if not path.is_relative_to(artifacts) or not path.is_file():
+        raise ContractError("pulse timing transition is missing or escapes artifacts")
+    transition = _load(path)
+    validate_schema(transition, "rf_oatof_pulse_timing_transition.schema.json")
+    parent_dir = path.parent.parent
+    parent_manifest_path = parent_dir / "run_manifest.json"
+    if not parent_manifest_path.is_file():
+        raise ContractError("pulse timing transition parent manifest is missing")
+    parent_manifest = _load(parent_manifest_path)
+    if (
+        parent_manifest.get("status") != "success"
+        or parent_manifest.get("project") != INTEGRATION_ID
+        or parent_manifest.get("run_id") != transition["discovery_run_id"]
+    ):
+        raise ContractError("pulse timing transition parent identity differs")
+    transition_matches = []
+    receipt_matches = []
+    for record in parent_manifest.get("outputs", []):
+        record_file = record_path(record, base_dir=parent_dir).resolve()
+        if record_file == path:
+            transition_matches.append(record)
+        if record_file == (
+            workspace / transition["candidate_selection_receipt"]["path"]
+        ).resolve():
+            receipt_matches.append(record)
+    if len(transition_matches) != 1 or len(receipt_matches) != 1:
+        raise ContractError("pulse timing transition is not uniquely manifest-bound")
+    for label, record in (
+        ("transition", transition_matches[0]),
+        ("candidate selection receipt", receipt_matches[0]),
+    ):
+        try:
+            verify_record(label, record, base_dir=parent_dir)
+        except (AssertionError, KeyError, TypeError) as exc:
+            raise ContractError(f"pulse timing {label} identity differs") from exc
+    candidate_receipt_path = _workspace_record(
+        workspace,
+        transition["candidate_selection_receipt"],
+        "pulse timing candidate selection receipt",
+    )
+    candidate_receipt = _load(candidate_receipt_path)
+    if candidate_receipt.get("content_key") != transition["content_key"]:
+        raise ContractError("pulse timing transition content key differs")
+    authority = {
+        "authority_mode": "detector_blind_candidate_confirmation_v1",
+        "candidate_parent_manifest": {
+            "path": _workspace_relative(parent_manifest_path, workspace),
+            "sha256": file_sha256(parent_manifest_path),
+        },
+        "candidate_selection_receipt": {
+            "path": _workspace_relative(candidate_receipt_path, workspace),
+            "sha256": file_sha256(candidate_receipt_path),
+        },
+        "confirmation_policy_id": "identical_identity_pulse_on_full_flight_v1",
+    }
+    return authority, {
+        "path": _workspace_relative(path, workspace),
+        "sha256": file_sha256(path),
+    }
 
 def validate_full_domain_affine_width_numerics_campaign(
     campaign: dict[str, Any], single_flight: dict[str, Any], policy: dict[str, Any],
@@ -362,7 +480,7 @@ def validate_connector_gap_screen_campaign(
 
 
 def validate_pre_pulse_time_series_campaign(campaign: dict[str, Any]) -> None:
-    """Fail closed on the one-row, detector-blind actual-field time screen."""
+    """Fail closed on a one-row detector-blind actual-field time screen."""
 
     contract = campaign.get("pre_pulse_time_series_screening")
     if contract is None:
@@ -374,19 +492,23 @@ def validate_pre_pulse_time_series_campaign(campaign: dict[str, Any]) -> None:
     source = row["source"]
     population = row["single_flight_population"]
     execution = population["execution_population"]
+    denominators = population.get("denominators", {})
+    source_authority = population.get("source_authority", {})
     if (
         contract.get("active_scope") != "pre_pulse_frontend_accelerator"
         or contract.get("pa_cache_keys", {}).get("flight_tube") is not None
         or contract.get("pa_cache_keys", {}).get("reflectron") is not None
         or source.get("authority_scope") != "source_population"
-        or source.get("launched_particle_count") != 1000
-        or source.get("particle_source", {}).get("sha256")
-        != "302C03DC29737CE9D46EB1A8D258DB2A8D3C0F8B6A53F7702A33B1ECF9D5320D"
-        or execution.get("ordered_particle_id_sha256")
-        != "F9E2DBDE0AE4640704FB66EE02C101CF84ABE35137363D62647622606DF61279"
-        or population["denominators"] != {
-            "population_count": 100, "eligible_population_count": 100,
-        }
+        or not isinstance(source.get("launched_particle_count"), int)
+        or source["launched_particle_count"] < execution.get("particle_count", 0)
+        or population.get("population_mode")
+        != "first_100_rows_in_frozen_file_order"
+        or source_authority.get("table_binding") != "prepared_deterministic_prefix"
+        or execution.get("selection_algorithm")
+        != "first_100_rows_in_frozen_file_order"
+        or denominators.get("population_count") != execution.get("particle_count")
+        or denominators.get("eligible_population_count")
+        != execution.get("particle_count")
         or contract["sample_count"]
         != contract["relative_end_index"] - contract["relative_start_index"] + 1
     ):
@@ -399,29 +521,39 @@ def compile_pre_pulse_time_series_contract(
     resolved_source_contract_sha256: str, resolved_population_contract_sha256: str,
     prepared_prefix_sha256: str, layout_profile: dict[str, Any],
     selected_field_profile: dict[str, Any], region_field_semantic_sha256: str,
-    rf_steps_per_period: int,
+    rf_steps_per_period: int, specification: dict[str, Any] | None = None,
+    base_schedule: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Compile exact RF-grid sample times and all runner-checked identities."""
 
-    specification = campaign["pre_pulse_time_series_screening"]
+    specification = (
+        campaign["pre_pulse_time_series_screening"]
+        if specification is None
+        else specification
+    )
     drive = upstream_resolved_design["drive"]
     frequency_hz = float(drive["frequency_Hz"])
-    if (
-        frequency_hz != float(specification["expected_upstream_frequency_hz"])
-        or rf_steps_per_period != specification["rf_steps_per_period"]
-    ):
+    if rf_steps_per_period != specification["rf_steps_per_period"]:
+        raise ContractError("pre-pulse time-series upstream RF grid differs")
+    expected_frequency = specification.get("expected_upstream_frequency_hz")
+    if expected_frequency is not None and frequency_hz != float(expected_frequency):
         raise ContractError("pre-pulse time-series upstream RF grid differs")
     period_us = 1_000_000.0 / frequency_hz
     step_us = period_us / rf_steps_per_period
     relative_start = int(specification["relative_start_index"])
     relative_end = int(specification["relative_end_index"])
-    anchor_time_us = float(specification["anchor_time_us"])
-    grid_origin_us = anchor_time_us + relative_start * step_us
+    automatic = base_schedule is not None
+    seed_time_us = float(
+        base_schedule["pulse_effective_time_us"]
+        if automatic
+        else specification["anchor_time_us"]
+    )
+    grid_origin_us = seed_time_us + relative_start * step_us
     sample_count = relative_end - relative_start + 1
     sample_times_us = [grid_origin_us + index * step_us for index in range(sample_count)]
     if (
         sample_count != specification["sample_count"]
-        or not math.isclose(sample_times_us[-1], anchor_time_us + relative_end * step_us,
+        or not math.isclose(sample_times_us[-1], seed_time_us + relative_end * step_us,
                             rel_tol=1e-15, abs_tol=1e-15)
         or not all(right > left for left, right in zip(
             sample_times_us, sample_times_us[1:], strict=False
@@ -429,7 +561,7 @@ def compile_pre_pulse_time_series_contract(
     ):
         raise ContractError("pre-pulse time-series RF grid does not close")
     contract = {
-        "schema_version": 1,
+        "schema_version": 2 if automatic else 1,
         "role": "rf_oatof_pre_pulse_time_series_screening_contract",
         "mode": specification["mode"],
         "active_scope": specification["active_scope"],
@@ -447,7 +579,6 @@ def compile_pre_pulse_time_series_contract(
                 ["execution_population"]["ordered_particle_id_sha256"],
             "layout_profile_id": experiment["single_flight_layout_profile_id"],
             "architecture_generation_id": experiment["architecture_generation_id"],
-            "candidate_sha256": experiment["single_flight_three_zone_candidate"]["sha256"],
             "topology_id": layout_profile["topology_id"],
             "geometry_id": layout_profile["geometry_id"],
             "frontend_electrode_topology_id": layout_profile["frontend_electrode_topology_id"],
@@ -461,17 +592,40 @@ def compile_pre_pulse_time_series_contract(
             "time_integration_profile_id": experiment["single_flight_time_integration_profile_id"],
             "spatial_window_profile_id": specification["spatial_window_profile_id"],
         },
-        "pa_cache_keys": copy.deepcopy(specification["pa_cache_keys"]),
+        **(
+            {"pa_cache_roles": {
+                "identity_source": "runner_materialized_verified_pa_cache_receipt",
+                "required": ["frontend", "accelerator_overlay"],
+                "prohibited": ["flight_tube", "reflectron"],
+            }}
+            if automatic
+            else {"pa_cache_keys": copy.deepcopy(specification["pa_cache_keys"])}
+        ),
         "rf_time_grid": {
-            "derivation": "grid_origin_us + sample_index*period_us/rf_steps_per_period",
+            "derivation": (
+                "ballistic_seed_time_us + relative_index*period_us/rf_steps_per_period"
+                if automatic
+                else "grid_origin_us + sample_index*period_us/rf_steps_per_period"
+            ),
             "waveform": drive["waveform"], "frequency_hz": frequency_hz,
             "phase_rad": float(drive["phase_rad"]),
             "rf_steps_per_period": rf_steps_per_period,
             "period_us": period_us, "step_us": step_us,
-            "anchor_time_us": anchor_time_us, "grid_origin_us": grid_origin_us,
+            **(
+                {
+                    "time_grid_profile_id": specification["time_grid_profile_id"],
+                    "ballistic_seed_time_us": seed_time_us,
+                    "ballistic_seed_sample_index": -relative_start,
+                }
+                if automatic
+                else {
+                    "anchor_time_us": seed_time_us,
+                    "anchor_sample_index": -relative_start,
+                }
+            ),
+            "grid_origin_us": grid_origin_us,
             "requested_relative_start_index": relative_start,
             "requested_relative_end_index": relative_end,
-            "anchor_sample_index": -relative_start,
             "start_index": 0, "end_index": sample_count - 1,
             "sample_count": sample_count,
         },
@@ -486,6 +640,9 @@ def compile_pre_pulse_time_series_contract(
         "resolution_claim_allowed": specification["resolution_claim_allowed"],
         "prohibited_outputs": copy.deepcopy(specification["prohibited_outputs"]),
     }
+    candidate = experiment.get("single_flight_three_zone_candidate")
+    if isinstance(candidate, dict):
+        contract["identities"]["candidate_sha256"] = candidate["sha256"]
     validate_schema(
         contract, "rf_oatof_pre_pulse_time_series_screening_contract.schema.json"
     )
@@ -930,6 +1087,7 @@ def _resolve_fixed_pulse_schedule(
 
 def _resolve_candidate_confirmation_schedule(
     *, root: Path, experiment: dict[str, Any], policy: dict[str, Any],
+    authority: dict[str, Any],
     population_declaration: dict[str, Any], prepared_prefix_sha256: str,
     resolved_connection_path: Path, resolved_source_path: Path,
     resolved_geometry_path: Path, single_flight_configuration: dict[str, Any],
@@ -937,7 +1095,6 @@ def _resolve_candidate_confirmation_schedule(
 ) -> dict[str, Any]:
     """Compile one pulse-on schedule from a manifest-bound detector-blind candidate."""
 
-    authority = policy["fixed_execution_authority"]
     if authority["authority_mode"] != "detector_blind_candidate_confirmation_v1":
         raise ContractError("candidate pulse confirmation authority mode is unsupported")
     workspace = root.parent
@@ -1009,7 +1166,10 @@ def _resolve_candidate_confirmation_schedule(
     current_geometry = _load(resolved_geometry_path)
     profile_id = screening_contract["identities"]["spatial_window_profile_id"]
     profiles = [
-        profile for profile in single_flight_configuration["spatial_window_profiles"]
+        profile
+        for profile in single_flight_configuration[
+            "source_region_diagnostic_profiles"
+        ]
         if profile.get("profile_id") == profile_id
     ]
     execution_population = population_declaration["execution_population"]
@@ -1036,6 +1196,7 @@ def _resolve_candidate_confirmation_schedule(
         geometry=current_geometry,
         spatial_profile=profiles[0],
         selector_source_sha256=selector_record.get("sha256"),
+        pa_cache_keys=receipt.get("pa_cache_keys"),
     )
     selected_time_us = float(receipt["selected_time_us"])
     if (
@@ -1094,11 +1255,17 @@ def _resolve_cached_verified_pulse_schedule(
         return None
     matches: list[tuple[Path, dict[str, Any], dict[str, Any]]] = []
     for receipt_path in sorted(cache_root.glob("*/verified_pulse_timing_receipt.json")):
-        receipt = _load(receipt_path)
+        try:
+            receipt = verify_verified_pulse_cache_entry(
+                receipt_path.parent,
+                workspace_root=workspace,
+                verify_hashes=True,
+            )
+        except (AssertionError, OSError, ValueError):
+            continue
         validate_schema(receipt, "rf_oatof_verified_pulse_timing_receipt.schema.json")
         candidate = receipt["candidate_authority"]
-        candidate_policy = copy.deepcopy(policy)
-        candidate_policy["fixed_execution_authority"] = {
+        candidate_authority = {
             "authority_mode": "detector_blind_candidate_confirmation_v1",
             "candidate_parent_manifest": {
                 key: candidate["parent_manifest"][key] for key in ("path", "sha256")
@@ -1112,7 +1279,8 @@ def _resolve_cached_verified_pulse_schedule(
             schedule = _resolve_candidate_confirmation_schedule(
                 root=root,
                 experiment=experiment,
-                policy=candidate_policy,
+                policy=policy,
+                authority=candidate_authority,
                 population_declaration=population_declaration,
                 prepared_prefix_sha256=prepared_prefix_sha256,
                 resolved_connection_path=resolved_connection_path,
@@ -1833,6 +2001,8 @@ def prepare_family_source_closure(
     experiment_id: str,
     resolved_output: Path,
     plan_output: Path,
+    pulse_timing_transition_path: Path | None = None,
+    materialize_pulse_timing_stage: bool = False,
 ) -> tuple[Path, Path]:
     root = repo_root.resolve()
     workspace = root.parent
@@ -1900,10 +2070,26 @@ def prepare_family_source_closure(
         if isinstance(pulse_schedule_policy, dict)
         else {}
     )
-    pulse_candidate_confirmation = (
-        fixed_pulse_authority.get("authority_mode")
-        == "detector_blind_candidate_confirmation_v1"
+    if fixed_pulse_authority.get("authority_mode") == (
+        "detector_blind_candidate_confirmation_v1"
+    ):
+        raise ContractError(
+            "manual pulse candidate confirmation is retired; use the automatic transition"
+        )
+    cache_miss_policy = (
+        pulse_schedule_policy.get("cache_miss_policy")
+        if isinstance(pulse_schedule_policy, dict)
+        else None
     )
+    transition_authority = None
+    transition_binding = None
+    if pulse_timing_transition_path is not None:
+        if cache_miss_policy is None:
+            raise ContractError("pulse timing transition requires automatic cache-miss policy")
+        transition_authority, transition_binding = _resolve_pulse_transition(
+            workspace, pulse_timing_transition_path
+        )
+    pulse_candidate_confirmation = transition_authority is not None
     staged_grid2_mode = experiment.get("source_release_mode") == "staged_grid2_restart"
     if execution_strategy == "simion_single_flight" and campaign["schema_version"] < 3:
         raise ContractError(
@@ -2311,7 +2497,7 @@ def prepare_family_source_closure(
             pulse_prefix_path,
             ordered_particle_ids=prefix_ids,
         )
-    elif pulse_candidate_confirmation:
+    elif pulse_candidate_confirmation or cache_miss_policy is not None:
         if (
             population_declaration.get("population_mode")
             != "first_100_rows_in_frozen_file_order"
@@ -2320,15 +2506,15 @@ def prepare_family_source_closure(
             or population_declaration.get("execution_population", {}).get("particle_count")
             != 100
         ):
-            raise ContractError("pulse candidate confirmation population differs")
+            raise ContractError("automatic pulse timing population differs")
         pulse_prefix_path = plan_output.parent / "inputs" / (
-            "pulse_candidate_confirmation_prefix_n100.csv"
+            "automatic_pulse_timing_prefix_n100.csv"
         )
         pulse_prefix_path.parent.mkdir(parents=True, exist_ok=True)
         pulse_prefix_sha256 = write_pulse_resolution_screening_prefix(
             _workspace_record(
                 workspace, source["particle_source"],
-                "pulse candidate confirmation mother source",
+                "automatic pulse timing mother source",
             ),
             pulse_prefix_path,
             ordered_particle_ids=list(range(1, 101)),
@@ -2886,6 +3072,8 @@ def prepare_family_source_closure(
         staged_grid2_source_path = staged_grid2_generated_path
     materialized_source_path = None
     resolved_population_path = None
+    pulse_timing_state = None
+    base_schedule = None
     if layout_files is not None:
         schedule = None
         if not staged_grid2_mode:
@@ -2918,15 +3106,16 @@ def prepare_family_source_closure(
                         design_evidence["resolved_design"]["drive"]["frequency_Hz"]
                     ),
                 )
-                if authority_mode == "detector_blind_candidate_confirmation_v1":
+                if transition_authority is not None:
                     if pulse_prefix_sha256 is None:
                         raise ContractError(
-                            "pulse candidate confirmation requires a prepared population prefix"
+                            "pulse timing confirmation requires a prepared population prefix"
                         )
                     schedule = _resolve_candidate_confirmation_schedule(
                         root=root,
                         experiment=experiment,
                         policy=pulse_schedule_policy,
+                        authority=transition_authority,
                         population_declaration=population_declaration,
                         prepared_prefix_sha256=pulse_prefix_sha256,
                         resolved_connection_path=resolved_path,
@@ -2935,6 +3124,7 @@ def prepare_family_source_closure(
                         single_flight_configuration=single_flight_configuration,
                         base_schedule=base_schedule,
                     )
+                    pulse_timing_state = "confirmation_required"
                 elif authority_mode is None:
                     schedule = None
                     if (
@@ -2955,6 +3145,10 @@ def prepare_family_source_closure(
                         )
                     if schedule is None:
                         schedule = base_schedule
+                        if cache_miss_policy is not None:
+                            pulse_timing_state = "discovery_required"
+                    elif cache_miss_policy is not None:
+                        pulse_timing_state = "ready_verified"
                 else:
                     raise ContractError("single-flight pulse authority mode is unsupported")
             validate_schema(
@@ -3285,7 +3479,10 @@ def prepare_family_source_closure(
             json.dumps(resolved_population, indent=2) + "\n", encoding="utf-8"
         )
     pre_pulse_time_series_contract_path = None
-    if pre_pulse_time_series_specification is not None:
+    if (
+        pre_pulse_time_series_specification is not None
+        or pulse_timing_state == "discovery_required"
+    ):
         if (
             pulse_prefix_path is None or pulse_prefix_sha256 is None
             or resolved_population_path is None or resolved_region_field_contract is None
@@ -3293,6 +3490,28 @@ def prepare_family_source_closure(
             or not field_profiles
         ):
             raise ContractError("pre-pulse time-series prepared identity is incomplete")
+        screening_specification = pre_pulse_time_series_specification
+        if screening_specification is None:
+            screening_specification = {
+                "mode": "real_pa_rf_pre_pulse_time_series",
+                "active_scope": "pre_pulse_frontend_accelerator",
+                "time_grid_profile_id": cache_miss_policy["time_grid_profile_id"],
+                "relative_start_index": -56,
+                "relative_end_index": 264,
+                "rf_steps_per_period": 160,
+                "sample_count": 321,
+                "spatial_window_profile_id": cache_miss_policy[
+                    "spatial_window_profile_id"
+                ],
+                "pulse_disabled": True,
+                "terminate_at_window_end": True,
+                "resolution_claim_allowed": False,
+                "prohibited_outputs": [
+                    "detector_crossing",
+                    "resolution_metrics",
+                    "single_flight_spatial_six_panel",
+                ],
+            }
         pre_pulse_time_series_contract = compile_pre_pulse_time_series_contract(
             campaign=campaign,
             experiment=experiment,
@@ -3307,6 +3526,10 @@ def prepare_family_source_closure(
                 "semantic_sha256"
             ],
             rf_steps_per_period=int(time_integration_profile["rf_steps_per_period"]),
+            specification=screening_specification,
+            base_schedule=(
+                base_schedule if pulse_timing_state == "discovery_required" else None
+            ),
         )
         pre_pulse_time_series_contract_path = plan_output.parent / "inputs" / (
             "pre_pulse_time_series_screening_contract.json"
@@ -3488,9 +3711,146 @@ def prepare_family_source_closure(
             ]),
         }
     ]
+    materialized_discovery = None
+    if cache_miss_policy is not None:
+        if pulse_timing_state is None or layout_files is None or "schedule" not in layout_files:
+            raise ContractError("automatic pulse timing state is incomplete")
+        stage = None
+        transition_relative_path = None
+        if pulse_timing_state != "ready_verified":
+            stage_id = (
+                "pulse_timing_discovery"
+                if pulse_timing_state == "discovery_required"
+                else "pulse_timing_confirmation"
+            )
+            stage_run_id = (
+                _derive_pulse_discovery_run_id(experiment["run_id"])
+                if pulse_timing_state == "discovery_required"
+                else experiment["run_id"]
+            )
+            if pulse_timing_state == "confirmation_required":
+                stage_output = plan_output.parent
+            else:
+                stage_output = (
+                    workspace / "artifacts" / "projects" / INTEGRATION_ID
+                    / "runs" / stage_run_id
+                )
+            stage_plan = copy.deepcopy(plan)
+            if pulse_timing_state == "discovery_required":
+                if materialize_pulse_timing_stage:
+                    if stage_output.exists():
+                        raise ContractError(
+                            "automatic pulse discovery run directory already exists"
+                        )
+                    stage_resolved_path = stage_output / resolved_path.name
+                    stage_plan_path = stage_output / "composition_plan.json"
+                    stage_plan["resolved_connection"] = {
+                        "path": _workspace_relative(stage_resolved_path, workspace),
+                        "sha256": file_sha256(resolved_path),
+                    }
+                else:
+                    stage_resolved_path = resolved_path
+                    stage_plan_path = plan_output.with_name(
+                        stage_id + "_composition_plan.json"
+                    )
+            else:
+                stage_resolved_path = resolved_path
+                stage_plan_path = plan_output.with_name(
+                    stage_id + "_composition_plan.json"
+                )
+            stage_plan["execution_steps"][0]["arguments"].append(
+                "pulse_timing_internal_stage=" + stage_id
+            )
+            validate_schema(stage_plan, "composition_plan.schema.json")
+            stage_plan_bytes = (
+                json.dumps(stage_plan, indent=2) + "\n"
+            ).encode("utf-8")
+            if (
+                pulse_timing_state == "discovery_required"
+                and materialize_pulse_timing_stage
+            ):
+                materialized_discovery = (
+                    plan_output.parent,
+                    stage_output,
+                    stage_plan_bytes,
+                    resolved_path.name,
+                )
+            else:
+                stage_plan_path.write_bytes(stage_plan_bytes)
+                verify_composition_plan(
+                    stage_plan_path, stage_resolved_path, repo_root=root
+                )
+            stage = {
+                "stage_id": stage_id,
+                "run_id": stage_run_id,
+                "output_directory": _workspace_relative(stage_output, workspace),
+                "resolved_connection": {
+                    "path": _workspace_relative(stage_resolved_path, workspace),
+                    "sha256": file_sha256(resolved_path),
+                },
+                "composition_plan": {
+                    "path": _workspace_relative(stage_plan_path, workspace),
+                    "sha256": hashlib.sha256(stage_plan_bytes).hexdigest().upper(),
+                },
+            }
+            if pulse_timing_state == "discovery_required":
+                transition_relative_path = PULSE_TRANSITION_RELATIVE_PATH
+        orchestration = {
+            "schema_version": 1,
+            "role": "rf_oatof_resolved_pulse_timing_orchestration",
+            "campaign_id": campaign["campaign_id"],
+            "experiment_id": experiment_id,
+            "experiment_row_sha256": row_sha256,
+            "original_run_id": experiment["run_id"],
+            "target_output_directory": _workspace_relative(plan_output.parent, workspace),
+            "state": pulse_timing_state,
+            "cache_miss_policy_id": cache_miss_policy["mode"],
+            "time_grid_profile_id": cache_miss_policy["time_grid_profile_id"],
+            "spatial_window_profile_id": cache_miss_policy[
+                "spatial_window_profile_id"
+            ],
+            "requested_schedule": {
+                "path": _workspace_relative(layout_files["schedule"], workspace),
+                "sha256": file_sha256(layout_files["schedule"]),
+            },
+            **({"stage": stage} if stage is not None else {}),
+            **(
+                {"transition_relative_path": transition_relative_path}
+                if transition_relative_path is not None
+                else {}
+            ),
+            **(
+                {"transition": transition_binding}
+                if pulse_timing_state == "confirmation_required"
+                else {}
+            ),
+        }
+        validate_schema(
+            orchestration,
+            "rf_oatof_resolved_pulse_timing_orchestration.schema.json",
+        )
+        orchestration_path = plan_output.with_name(
+            "resolved_pulse_timing_orchestration.json"
+        )
+        orchestration_path.write_text(
+            json.dumps(orchestration, indent=2) + "\n", encoding="utf-8"
+        )
+        plan["execution_steps"][0]["arguments"].extend([
+            "pulse_timing_orchestration_filename=" + orchestration_path.name,
+            "pulse_timing_orchestration_sha256=" + file_sha256(orchestration_path),
+            "pulse_timing_orchestration_state=" + pulse_timing_state,
+        ])
     validate_schema(plan, "composition_plan.schema.json")
     plan_path.write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
     verify_composition_plan(plan_path, resolved_path, repo_root=root)
+    if materialized_discovery is not None:
+        _materialize_pulse_discovery_package(
+            source_directory=materialized_discovery[0],
+            stage_directory=materialized_discovery[1],
+            stage_plan_bytes=materialized_discovery[2],
+            resolved_filename=materialized_discovery[3],
+            repo_root=root,
+        )
     return resolved_path, plan_path
 
 
@@ -3503,6 +3863,8 @@ def main() -> int:
     parser.add_argument("--experiment-id", required=True)
     parser.add_argument("--resolved-output", required=True, type=Path)
     parser.add_argument("--plan-output", required=True, type=Path)
+    parser.add_argument("--pulse-timing-transition", type=Path)
+    parser.add_argument("--materialize-pulse-timing-stage", action="store_true")
     args = parser.parse_args()
     resolved, plan = prepare_family_source_closure(
         repo_root=args.repo_root,
@@ -3512,6 +3874,8 @@ def main() -> int:
         experiment_id=args.experiment_id,
         resolved_output=args.resolved_output,
         plan_output=args.plan_output,
+        pulse_timing_transition_path=args.pulse_timing_transition,
+        materialize_pulse_timing_stage=args.materialize_pulse_timing_stage,
     )
     print(f"FAMILY_SOURCE_CLOSURE_PREPARE=PASS RESOLVED={resolved} PLAN={plan}")
     return 0

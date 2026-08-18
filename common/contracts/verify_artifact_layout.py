@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import re
 from pathlib import Path
 
@@ -75,6 +76,7 @@ INTEGRATION_CACHE_ROLES = {
         "simion_oatof_flight_tube_pa_cache",
         "simion_oatof_reflectron_pa_cache",
     },
+    "verified_pulse": {"rf_oatof_verified_pulse_timing_receipt"},
 }
 INTEGRATION_CACHE_ROOT_BY_ROLE = {
     role: root
@@ -259,6 +261,92 @@ def _verify_integration_content_caches(
                     raise AssertionError(f"{entry}: accelerator overlay cache identity differs")
 
 
+def verify_verified_pulse_cache_entry(
+    entry: Path, *, workspace_root: Path, verify_hashes: bool = True
+) -> dict:
+    """Verify one content-addressed functional pulse-timing reuse receipt."""
+
+    receipt_path = entry / "verified_pulse_timing_receipt.json"
+    actual = {item.name for item in entry.iterdir()}
+    if actual != {receipt_path.name} or not receipt_path.is_file():
+        raise AssertionError(f"{entry}: verified pulse cache inventory differs")
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8-sig"))
+    content_key = receipt.get("content_key")
+    selected_time_us = receipt.get("selected_time_us")
+    candidate = receipt.get("candidate_authority")
+    verification = receipt.get("verification_authority")
+    census = receipt.get("census")
+    census_names = (
+        "launched",
+        "multipole_handoff",
+        "pre_pulse_state",
+        "accelerator_grid1_forward",
+        "accelerator_intermediate2_forward",
+        "local_accelerator_exit",
+        "detector_crossing",
+    )
+    counts = [census.get(name) for name in census_names] if isinstance(census, dict) else []
+    if (
+        receipt.get("schema_version") != 1
+        or receipt.get("role") != "rf_oatof_verified_pulse_timing_receipt"
+        or receipt.get("status") != "success"
+        or receipt.get("qualification") != "FUNCTIONAL_ONLY"
+        or receipt.get("decision") != "PASS_FOR_IDENTICAL_IDENTITY_REUSE"
+        or receipt.get("reusable_verified_pulse") is not True
+        or receipt.get("claim_limit") != "IDENTICAL_IDENTITY_FUNCTIONAL_REUSE_ONLY"
+        or not isinstance(content_key, str)
+        or re.fullmatch(r"[A-F0-9]{64}", content_key) is None
+        or entry.name != content_key
+        or not isinstance(selected_time_us, (int, float))
+        or isinstance(selected_time_us, bool)
+        or not math.isfinite(float(selected_time_us))
+        or float(selected_time_us) <= 0
+        or not isinstance(candidate, dict)
+        or not isinstance(candidate.get("selection_preregistered"), bool)
+        or not isinstance(verification, dict)
+        or len(counts) != len(census_names)
+        or any(not isinstance(value, int) or isinstance(value, bool) or value < 0 for value in counts)
+        or any(left < right for left, right in zip(counts, counts[1:]))
+        or counts[-1] <= 0
+    ):
+        raise AssertionError(f"{entry}: verified pulse cache identity differs")
+
+    records = (
+        candidate.get("parent_manifest"),
+        candidate.get("selection_receipt"),
+        verification.get("child_manifest"),
+        verification.get("pulse_schedule"),
+        verification.get("summary"),
+    )
+    workspace = workspace_root.resolve()
+    for record in records:
+        if (
+            not isinstance(record, dict)
+            or set(record) != {"path", "bytes", "sha256"}
+            or not isinstance(record.get("path"), str)
+            or not isinstance(record.get("bytes"), int)
+            or isinstance(record.get("bytes"), bool)
+            or record["bytes"] < 1
+            or re.fullmatch(r"[A-F0-9]{64}", str(record.get("sha256", ""))) is None
+        ):
+            raise AssertionError(f"{entry}: verified pulse authority record differs")
+        relative = Path(record["path"])
+        if relative.is_absolute():
+            raise AssertionError(f"{entry}: verified pulse authority path is absolute")
+        path = (workspace / relative).resolve()
+        try:
+            path.relative_to(workspace)
+        except ValueError as exc:
+            raise AssertionError(
+                f"{entry}: verified pulse authority escapes the workspace"
+            ) from exc
+        if not path.is_file() or path.stat().st_size != record["bytes"]:
+            raise AssertionError(f"{entry}: verified pulse authority file differs")
+        if verify_hashes and file_sha256(path) != record["sha256"]:
+            raise AssertionError(f"{entry}: verified pulse authority SHA-256 differs")
+    return receipt
+
+
 def verify_cache(project: Path, verify_hashes: bool = False) -> None:
     """Validate the narrowly registered, disposable project cache layout."""
 
@@ -270,6 +358,7 @@ def verify_cache(project: Path, verify_hashes: bool = False) -> None:
         "simion_pa_basis",
         "simion_oatof_downstream_pa",
         "simion_single_flight_frontend",
+        "verified_pulse",
     }
     unexpected = {entry.name for entry in cache.iterdir()} - allowed
     if unexpected:
@@ -306,6 +395,23 @@ def verify_cache(project: Path, verify_hashes: bool = False) -> None:
         if actual != expected:
             raise AssertionError(f"{basis}: cache inventory differs")
     _verify_integration_content_caches(project, cache, verify_hashes)
+    verified_pulse_root = cache / "verified_pulse"
+    for entry in (
+        item for item in verified_pulse_root.iterdir() if item.is_dir()
+    ) if verified_pulse_root.exists() else ():
+        if re.fullmatch(r"[A-F0-9]{64}", entry.name) is None:
+            raise AssertionError(f"{entry}: invalid verified pulse cache key")
+        verify_verified_pulse_cache_entry(
+            entry,
+            workspace_root=project.parents[2],
+            verify_hashes=verify_hashes,
+        )
+    if verified_pulse_root.exists() and any(
+        not item.is_dir() for item in verified_pulse_root.iterdir()
+    ):
+        raise AssertionError(
+            f"{verified_pulse_root}: verified pulse cache root contains a non-directory"
+        )
 
 
 def legacy_identity(repository_root: Path, project_id: str) -> dict | None:
@@ -550,13 +656,20 @@ def main() -> None:
         entry = args.cache_entry.resolve()
         if entry != expected_entry:
             raise AssertionError("cache entry path differs from its registered role")
-        verify_integration_cache_entry(
-            entry,
-            expected_role=args.expected_cache_role,
-            expected_key=args.expected_cache_key,
-            expected_project_id=args.expected_cache_project,
-            verify_hashes=True,
-        )
+        if cache_root_name == "verified_pulse":
+            verify_verified_pulse_cache_entry(
+                entry,
+                workspace_root=projects.parent.parent,
+                verify_hashes=True,
+            )
+        else:
+            verify_integration_cache_entry(
+                entry,
+                expected_role=args.expected_cache_role,
+                expected_key=args.expected_cache_key,
+                expected_project_id=args.expected_cache_project,
+                verify_hashes=True,
+            )
         print(
             "CACHE_ENTRY=PASS "
             f"ROLE={args.expected_cache_role} KEY={args.expected_cache_key}"
