@@ -18,6 +18,14 @@
       "claim_class": "engineering_diagnostic"
     },
     {
+      "capability_id": "rf_oatof_accelerator_pre_pulse_phase_space_v1",
+      "consumer": "analysis/plot_single_flight_spatial_six_panel.py",
+      "scope": "detector-blind structured CSV plus x-vx, y-vy and z-vz distributions for the retained pre-pulse checkpoint cohort inside the accelerator",
+      "required_event_plane": "pre_pulse_state",
+      "fixed_output_role": "results/single_flight_accelerator_pre_pulse_phase_space.png",
+      "claim_class": "DIAGNOSTIC_ONLY"
+    },
+    {
       "capability_id": "rf_oatof_pulse_geometry_snapshot_v1",
       "consumer": "analysis/plot_shared_pulse_geometry_snapshot.py",
       "scope": "COMSOL particle positions and losses immediately before the shared pulse",

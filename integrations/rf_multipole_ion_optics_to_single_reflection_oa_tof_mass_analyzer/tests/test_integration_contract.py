@@ -76,6 +76,7 @@ class IntegrationProfileContractTests(unittest.TestCase):
                 "rf_octupole_oatof_shield_terminal_direct_mating_gap_6p4mm",
                 "rf_octupole_oatof_shield_terminal_direct_mating_gap_12p8mm",
                 "rf_octupole_oatof_shield_terminal_direct_mating_gap_25p6mm",
+                "rf_octupole_to_single_reflection_oatof_direct_mating_gap_51p2mm",
                 "rf_octupole_oatof_shield_terminal_aperture_050x050_direct_mating_gap_0mm",
                 "rf_octupole_oatof_shield_terminal_aperture_050x020_direct_mating_gap_0mm",
             },

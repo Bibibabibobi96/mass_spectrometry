@@ -40,6 +40,9 @@ PROFILE_IDS.update(
         for gap in ("3p2mm", "6p4mm", "12p8mm", "25p6mm")
     }
 )
+PROFILE_IDS.add(
+    "rf_octupole_to_single_reflection_oatof_direct_mating_gap_51p2mm"
+)
 
 
 def load(path: Path) -> dict[str, object]:

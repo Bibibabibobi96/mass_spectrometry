@@ -73,6 +73,21 @@ function Invoke-ResourceBudgetedProcess {
   )
   $budget=Get-Content -LiteralPath $ResolvedBudgetPath -Raw -Encoding UTF8|ConvertFrom-Json
   $limits=$budget.limits
+  $directorySampleProperty=$limits.PSObject.Properties[
+    'transient_run_directory_sample_interval_seconds'
+  ]
+  $directorySampleIntervalSeconds=[double]0.5
+  if($null-ne$directorySampleProperty){
+    try{$directorySampleIntervalSeconds=[convert]::ToDouble(
+      $directorySampleProperty.Value,[Globalization.CultureInfo]::InvariantCulture)}catch{
+      throw 'Transient run-directory sample interval must be one positive integer.'
+    }
+    if($directorySampleProperty.Value-is[bool]-or
+        $directorySampleIntervalSeconds-lt 1-or
+        $directorySampleIntervalSeconds-ne[math]::Floor($directorySampleIntervalSeconds)){
+      throw 'Transient run-directory sample interval must be one positive integer.'
+    }
+  }
   if(Test-Path -LiteralPath $UsagePath -PathType Leaf){
     $usage=Get-Content -LiteralPath $UsagePath -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
     $started=[datetimeoffset]::Parse([string]$usage.started_at_utc)
@@ -82,7 +97,7 @@ function Invoke-ResourceBudgetedProcess {
       schema_version=1;role='multipole_resource_usage';status='running'
       failure_class=$null;limit_name=$null;started_at_utc=$started.ToString('o')
       wall_clock_seconds=0.0;peak_process_tree_working_set_bytes=[int64]0
-      minimum_system_available_memory_bytes=$null;peak_run_directory_bytes=[int64]0
+      minimum_system_available_memory_bytes=$null;warning_names=@();peak_run_directory_bytes=[int64]0
       final_retained_bytes=$null;limits=$limits
       final_retained_measurement_scope='run_directory_before_terminal_manifest'
     }
@@ -97,22 +112,38 @@ function Invoke-ResourceBudgetedProcess {
   }
   $process=Start-Process @startArguments
   $limitName=$null
+  $lastDirectorySampleAt=$null
   while(-not$process.HasExited){
-    $elapsed=([datetimeoffset]::UtcNow-$started).TotalSeconds
+    $now=[datetimeoffset]::UtcNow
+    $elapsed=($now-$started).TotalSeconds
     $treeBytes=Get-ProcessTreeWorkingSetBytes -RootProcessId $process.Id
     $availableBytes=[int64][MultipoleMemoryStatus]::AvailableBytes()
-    $directoryBytes=Get-RunDirectoryBytes -RunDir $RunDir
+    $sampleDirectory=$null-eq$lastDirectorySampleAt-or
+      ($now-$lastDirectorySampleAt).TotalSeconds-ge$directorySampleIntervalSeconds
+    if($sampleDirectory){
+      $directoryBytes=Get-RunDirectoryBytes -RunDir $RunDir
+      $lastDirectorySampleAt=$now
+      $usage.peak_run_directory_bytes=[math]::Max(
+        [int64]$usage.peak_run_directory_bytes,$directoryBytes)
+    }
     $usage.wall_clock_seconds=[math]::Round($elapsed,3)
     $usage.peak_process_tree_working_set_bytes=[math]::Max(
       [int64]$usage.peak_process_tree_working_set_bytes,$treeBytes)
     $usage.minimum_system_available_memory_bytes=$(if($null-eq$usage.minimum_system_available_memory_bytes){
       $availableBytes
     }else{[math]::Min([int64]$usage.minimum_system_available_memory_bytes,$availableBytes)})
-    $usage.peak_run_directory_bytes=[math]::Max([int64]$usage.peak_run_directory_bytes,$directoryBytes)
     if($elapsed-gt[double]$limits.wall_clock_seconds){$limitName='wall_clock_seconds'}
     elseif($treeBytes-gt[int64]$limits.process_tree_working_set_bytes){$limitName='process_tree_working_set_bytes'}
-    elseif($availableBytes-lt[int64]$limits.minimum_system_available_memory_bytes){$limitName='minimum_system_available_memory_bytes'}
-    elseif($directoryBytes-gt[int64]$limits.transient_run_directory_bytes){$limitName='transient_run_directory_bytes'}
+    elseif($availableBytes-lt[int64]$limits.minimum_system_available_memory_bytes){
+      if(@($limits.warning_only_limit_names) -contains 'minimum_system_available_memory_bytes'){
+        if(-not(@($usage.warning_names) -contains 'minimum_system_available_memory_bytes')){
+          $usage.warning_names=@($usage.warning_names)+'minimum_system_available_memory_bytes'
+        }
+      }else{$limitName='minimum_system_available_memory_bytes'}
+    }
+    elseif($sampleDirectory-and$directoryBytes-gt[int64]$limits.transient_run_directory_bytes){
+      $limitName='transient_run_directory_bytes'
+    }
     Write-ResourceUsage -Usage $usage -Path $UsagePath
     if($limitName){
       & taskkill.exe /PID $process.Id /T|Out-Null
@@ -124,6 +155,16 @@ function Invoke-ResourceBudgetedProcess {
     }
     Start-Sleep -Milliseconds 500
     $process.Refresh()
+  }
+  if(-not$limitName){
+    $usage.wall_clock_seconds=[math]::Round(
+      ([datetimeoffset]::UtcNow-$started).TotalSeconds,3)
+    $directoryBytes=Get-RunDirectoryBytes -RunDir $RunDir
+    $usage.peak_run_directory_bytes=[math]::Max(
+      [int64]$usage.peak_run_directory_bytes,$directoryBytes)
+    if($directoryBytes-gt[int64]$limits.transient_run_directory_bytes){
+      $limitName='transient_run_directory_bytes'
+    }
   }
   if($limitName){
     $usage.status='resource_budget_exceeded';$usage.failure_class='resource_budget_exceeded'

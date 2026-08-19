@@ -5,11 +5,11 @@
   "implementation": {
     "campaign_source_binding_refresher": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/workflows/family_source_closure/refresh_campaign_source_bindings.py",
-      "sha256": "E9D4CA25A577D63B7B95F863CCDA057DCF68AF9B863371509C8DE316D1A6F070"
+      "sha256": "52B4D44E00E3DC93947B1F241C5C750C20327ACB00F9AA05111BD060843D5181"
     },
     "run_artifact_support": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/run_artifacts.ps1",
-      "sha256": "ABE68E92931C7CD1ACE9629F2D0041E352798FB0026732BAEDB1D204470F1C3E"
+      "sha256": "023FE3192D36473E2B63CD630F3CAB82FA9811095C9910EF2EF8C23FB1381283"
     },
     "runtime_binding_support": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/runtime_binding.ps1",
@@ -21,7 +21,7 @@
     },
     "single_flight_runner": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/run_single_flight.ps1",
-      "sha256": "F1C4C2473C353DD06E4F10B115E068815A08F279B2C3D11713A31C2C185D9EC4"
+      "sha256": "3D3284F4BB4DBE073460D4F2908F687A3B8DF9A7F1B6911DAB1504C69796FA30"
     },
     "single_flight_frontend": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/single_flight_frontend.py",
@@ -54,6 +54,10 @@
     "single_flight_program_builder": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/build_single_flight_program.py",
       "sha256": "45C2C95A0B5B2A1D2A6F10DC36A0BF23C4C868650F457D417B0BE115F7DDA7B6"
+    },
+    "single_flight_pre_pulse_time_series_materializer": {
+      "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/materialize_pre_pulse_time_series.py",
+      "sha256": "048C607AA35B5391F4DD41F1295383555EAF7FC4E13C842F838858A5C8D386BD"
     },
     "single_flight_overlay_basis_builder": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/build_accelerator_overlay_basis.lua",

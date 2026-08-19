@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import csv
+import hashlib
 import json
 from pathlib import Path
 import tempfile
@@ -115,6 +116,10 @@ class ConnectorGapCampaignTests(unittest.TestCase):
             with output.open(encoding="utf-8", newline="") as handle:
                 ids = [int(row["particle_id"]) for row in csv.DictReader(handle)]
             self.assertEqual(ids, list(range(1, 101)))
+            self.assertEqual(
+                hashlib.sha256(output.read_bytes()).hexdigest().upper(),
+                "899299CDE68F14EB50567E5B2ADD4605CD1399C0C5D4E8482D8F312F0CCA5570",
+            )
 
 
 if __name__ == "__main__":

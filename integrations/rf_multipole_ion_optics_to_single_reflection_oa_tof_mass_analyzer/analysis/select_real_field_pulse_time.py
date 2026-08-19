@@ -14,6 +14,9 @@ from common.contracts.machine_contracts import ContractError, validate_schema
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.analyze_single_flight import (
     _observed_id_set,
 )
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.pulse_reuse_identity_projection import (
+    build_verified_pulse_reuse_projection,
+)
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_layout import (
     select_detector_blind_real_field_pulse_time,
 )
@@ -104,7 +107,6 @@ def _load_population_ids(
     table = authority.get("table", {})
     if (
         population.get("role") != "rf_oatof_resolved_population_contract"
-        or authority.get("table_binding") != "prepared_deterministic_prefix"
         or not population_table_path.is_file()
         or file_sha256(population_table_path) != table.get("sha256")
     ):
@@ -168,8 +170,8 @@ def _validate_screening_receipt(
 
 
 def pulse_selection_content_identity(
-    *, contract: dict[str, Any], population: dict[str, Any],
-    source: dict[str, Any], connection: dict[str, Any], geometry: dict[str, Any],
+    *, contract: dict[str, Any], source: dict[str, Any],
+    connection: dict[str, Any], geometry: dict[str, Any],
     spatial_profile: dict[str, Any], selector_source_path: Path | None = None,
     selector_source_sha256: str | None = None,
     pa_cache_keys: dict[str, Any] | None = None,
@@ -188,15 +190,9 @@ def pulse_selection_content_identity(
     for key in (
         "campaign_id", "experiment_id", "experiment_row_sha256",
         "resolved_source_contract_sha256", "resolved_population_contract_sha256",
+        "mother_particle_source_sha256", "ordered_particle_id_sha256",
     ):
         contract_basis["identities"].pop(key, None)
-    population_basis = copy.deepcopy(population)
-    for key in (
-        "campaign_id", "experiment_id", "experiment_row_sha256",
-        "population_declaration_sha256",
-    ):
-        population_basis.pop(key, None)
-    population_basis.get("source_authority", {}).get("table", {}).pop("path", None)
     connection_basis = {
         key: copy.deepcopy(connection[key])
         for key in (
@@ -206,10 +202,9 @@ def pulse_selection_content_identity(
         )
     }
     basis = {
-        "schema_version": 1,
+        "schema_version": 2,
         "role": "rf_oatof_detector_blind_pulse_selection_content_key_basis",
         "screening_contract_semantic_sha256": _canonical_sha256(contract_basis),
-        "resolved_population_semantic_sha256": _canonical_sha256(population_basis),
         "resolved_source_semantic_sha256": _canonical_sha256(source),
         "resolved_connection_semantic_sha256": _canonical_sha256(connection_basis),
         "resolved_geometry_sha256": _canonical_sha256(geometry),
@@ -220,6 +215,17 @@ def pulse_selection_content_identity(
         raise ContractError("actual PA cache keys are required for v2 pulse selection")
     if contract.get("schema_version") == 2:
         basis["pa_cache_keys"] = copy.deepcopy(pa_cache_keys)
+    return basis, _canonical_sha256(basis)
+
+
+def verified_pulse_reuse_content_identity(
+    candidate_basis: dict[str, Any],
+) -> tuple[dict[str, Any], str]:
+    """Return the physics-only identity for a full-flight-verified pulse."""
+    basis = copy.deepcopy(candidate_basis)
+    basis["schema_version"] = 1
+    basis["role"] = "rf_oatof_verified_pulse_reuse_content_key_basis"
+    basis.pop("selector_source_sha256", None)
     return basis, _canonical_sha256(basis)
 
 
@@ -302,11 +308,30 @@ def select_and_write(
         raise ContractError("real-field pulse selection order differs from preregistration")
 
     content_key_basis, content_key = pulse_selection_content_identity(
-        contract=contract, population=population, source=source,
+        contract=contract, source=source,
         connection=connection, geometry=geometry, spatial_profile=profile,
         selector_source_path=selector_source_path,
         pa_cache_keys=screening_receipt.get("pa_cache_keys"),
     )
+    verified_reuse_basis = None
+    verified_reuse_key = None
+    reuse_pa_keys = screening_receipt.get("pa_cache_keys")
+    if (
+        contract.get("schema_version") == 2
+        and isinstance(reuse_pa_keys, dict)
+        and isinstance(reuse_pa_keys.get("frontend"), str)
+        and isinstance(reuse_pa_keys.get("accelerator_overlay"), str)
+    ):
+        verified_reuse_basis, verified_reuse_key = (
+            build_verified_pulse_reuse_projection(
+                screening_contract=contract,
+                resolved_source=source,
+                resolved_connection=connection,
+                resolved_geometry=geometry,
+                spatial_profile=profile,
+                pa_cache_keys=reuse_pa_keys,
+            )
+        )
 
     candidate_rows: list[dict[str, Any]] = []
     for rank, candidate in enumerate(result["candidates_ranked"], start=1):
@@ -422,6 +447,9 @@ def select_and_write(
             "row_count": len(candidate_rows),
         },
     }
+    if verified_reuse_key is not None:
+        receipt["verified_reuse_content_key"] = verified_reuse_key
+        receipt["verified_reuse_content_key_basis"] = verified_reuse_basis
     if contract.get("schema_version") == 2:
         receipt["pa_cache_keys"] = copy.deepcopy(screening_receipt["pa_cache_keys"])
     receipt["authorities"]["selector_source"] = _binding(

@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/rf_oatof_manifest_bound_pre_pulse_restart_materialization_receipt.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "role", "status", "method", "producer",
+    "authorities", "selection", "pulse_target_state", "reuse_scope",
+    "claim_limit"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "rf_oatof_manifest_bound_pre_pulse_restart_materialization_receipt"},
+    "status": {"const": "PASS"},
+    "method": {"const": "manifest_bound_pulse_eligible_checkpoint_reindex_v1"},
+    "producer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run_id", "manifest", "summary", "checkpoints"],
+      "properties": {
+        "run_id": {"type": "string", "minLength": 1},
+        "manifest": {"$ref": "#/$defs/file"},
+        "summary": {"$ref": "#/$defs/file"},
+        "checkpoints": {"$ref": "#/$defs/file"}
+      }
+    },
+    "authorities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "initial_global_state", "pulse_schedule",
+        "resolved_population_contract", "resolved_geometry"
+      ],
+      "properties": {
+        "initial_global_state": {"$ref": "#/$defs/file"},
+        "pulse_schedule": {"$ref": "#/$defs/file"},
+        "resolved_population_contract": {"$ref": "#/$defs/file"},
+        "resolved_geometry": {"$ref": "#/$defs/file"}
+      }
+    },
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "event", "pulse_eligibility", "selection_uses_detector_outcome",
+        "detector_results_used", "producer_population_denominator_count",
+        "producer_execution_population_count", "producer_particle_count",
+        "producer_ordered_particle_ids_sha256",
+        "restart_to_producer_particle_id", "postselection_prohibited"
+      ],
+      "properties": {
+        "event": {"const": "pre_pulse_state"},
+        "pulse_eligibility": {"const": "eligible"},
+        "selection_uses_detector_outcome": {"const": false},
+        "detector_results_used": {"const": false},
+        "producer_population_denominator_count": {"type": "integer", "minimum": 1},
+        "producer_execution_population_count": {"type": "integer", "minimum": 1},
+        "producer_particle_count": {"type": "integer", "minimum": 1},
+        "producer_ordered_particle_ids_sha256": {"$ref": "#/$defs/sha"},
+        "restart_to_producer_particle_id": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["restart_particle_id", "producer_particle_id"],
+            "properties": {
+              "restart_particle_id": {"type": "integer", "minimum": 1},
+              "producer_particle_id": {"type": "integer", "minimum": 1}
+            }
+          }
+        },
+        "postselection_prohibited": {"const": true}
+      }
+    },
+    "pulse_target_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path", "bytes", "sha256", "particle_count", "source_state_epoch",
+        "source_state_locus", "coordinate_frame", "clock_basis",
+        "clock_authority", "pulse_effective_time_us",
+        "ordered_particle_id_sha256"
+      ],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "bytes": {"type": "integer", "minimum": 1},
+        "sha256": {"$ref": "#/$defs/sha"},
+        "particle_count": {"type": "integer", "minimum": 1},
+        "source_state_epoch": {"const": "pulse_effective_time"},
+        "source_state_locus": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": {
+            "kind": {"const": "accelerator_stage1_interior_finite_observed_3d_cloud"}
+          }
+        },
+        "coordinate_frame": {"const": "oatof_global_cartesian"},
+        "clock_basis": {"const": "canonical_instrument_time_us"},
+        "clock_authority": {"const": "resolved_single_flight_pulse_schedule"},
+        "pulse_effective_time_us": {"type": "number", "exclusiveMinimum": 0},
+        "ordered_particle_id_sha256": {"$ref": "#/$defs/sha"}
+      }
+    },
+    "reuse_scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role", "allowed_variation_axes", "pulse_timing_reselection_required",
+        "upstream_repropagation_required", "qualification"
+      ],
+      "properties": {
+        "role": {"const": "conditional_post_pulse_transport_initial_state"},
+        "allowed_variation_axes": {
+          "const": [
+            "time_integration_profile_id",
+            "post_pulse_accelerator_field_profile_id"
+          ]
+        },
+        "pulse_timing_reselection_required": {"const": false},
+        "upstream_repropagation_required": {"const": false},
+        "qualification": {"const": "DIAGNOSTIC_ONLY"}
+      }
+    },
+    "claim_limit": {"type": "string", "minLength": 1}
+  },
+  "$defs": {
+    "sha": {"type": "string", "pattern": "^[A-F0-9]{64}$"},
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "bytes", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "bytes": {"type": "integer", "minimum": 1},
+        "sha256": {"$ref": "#/$defs/sha"}
+      }
+    }
+  }
+}

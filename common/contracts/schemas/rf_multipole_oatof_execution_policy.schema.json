@@ -30,13 +30,15 @@
     "stage": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["solver", "wall_clock_seconds", "transient_run_directory_bytes", "process_tree_working_set_bytes", "minimum_system_available_memory_bytes", "compact_final_retained_bytes", "automatic_retry_count"],
+      "required": ["solver", "wall_clock_seconds", "transient_run_directory_bytes", "transient_run_directory_sample_interval_seconds", "process_tree_working_set_bytes", "minimum_system_available_memory_bytes", "compact_final_retained_bytes", "automatic_retry_count"],
       "properties": {
         "solver": {"enum": ["comsol", "simion"]},
         "wall_clock_seconds": {"type": "integer", "minimum": 1},
         "transient_run_directory_bytes": {"type": "integer", "minimum": 1},
+        "transient_run_directory_sample_interval_seconds": {"type": "integer", "minimum": 1},
         "process_tree_working_set_bytes": {"type": "integer", "minimum": 1},
         "minimum_system_available_memory_bytes": {"type": "integer", "minimum": 1},
+        "warning_only_limit_names": {"type": "array", "uniqueItems": true, "items": {"enum": ["minimum_system_available_memory_bytes"]}},
         "compact_final_retained_bytes": {"type": "integer", "minimum": 1},
         "automatic_retry_count": {"const": 0}
       }

@@ -311,7 +311,7 @@ class ArtifactLayoutIdentityTests(unittest.TestCase):
                 "census": {
                     "launched": 100,
                     "multipole_handoff": 95,
-                    "pre_pulse_state": 81,
+                    "pre_pulse_state": 80,
                     "accelerator_grid1_forward": 81,
                     "accelerator_intermediate2_forward": 80,
                     "local_accelerator_exit": 69,
@@ -364,6 +364,19 @@ class ArtifactLayoutIdentityTests(unittest.TestCase):
                 verify_verified_pulse_cache_entry(
                     entry, workspace_root=root, verify_hashes=True
                 )
+
+    def test_verified_pulse_cache_rejects_invalid_downstream_census(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            entry, _ = self.write_verified_pulse_cache(root)
+            receipt_path = entry / "verified_pulse_timing_receipt.json"
+            receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+            receipt["census"]["accelerator_intermediate2_forward"] = 82
+            write_json(receipt_path, receipt)
+            with self.assertRaisesRegex(AssertionError, "cache identity differs"):
+                verify_verified_pulse_cache_entry(
+                    entry, workspace_root=root, verify_hashes=True
+                )
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             entry, _ = self.write_verified_pulse_cache(root)
@@ -373,6 +386,23 @@ class ArtifactLayoutIdentityTests(unittest.TestCase):
                     root / "artifacts" / "projects" / "integration",
                     verify_hashes=True,
                 )
+
+    def test_verified_pulse_cache_accepts_non_nested_handoff_and_grid1_counts(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            entry, _ = self.write_verified_pulse_cache(root)
+            receipt_path = entry / "verified_pulse_timing_receipt.json"
+            receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+            receipt["census"]["multipole_handoff"] = 70
+            write_json(receipt_path, receipt)
+            verified = verify_verified_pulse_cache_entry(
+                entry, workspace_root=root, verify_hashes=True
+            )
+            self.assertEqual(
+                verified["census"]["accelerator_grid1_forward"], 81
+            )
 
     def make_formal(
         self,

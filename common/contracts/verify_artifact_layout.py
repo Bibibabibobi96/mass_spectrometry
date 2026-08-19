@@ -286,6 +286,16 @@ def verify_verified_pulse_cache_entry(
         "detector_crossing",
     )
     counts = [census.get(name) for name in census_names] if isinstance(census, dict) else []
+    physical_census = (
+        len(counts) == len(census_names)
+        and all(
+            isinstance(value, int) and not isinstance(value, bool) and value >= 0
+            for value in counts
+        )
+        and counts[0] >= counts[1]
+        and counts[0] >= counts[2]
+        and counts[3] >= counts[4] >= counts[5] >= counts[6] > 0
+    )
     if (
         receipt.get("schema_version") != 1
         or receipt.get("role") != "rf_oatof_verified_pulse_timing_receipt"
@@ -304,10 +314,7 @@ def verify_verified_pulse_cache_entry(
         or not isinstance(candidate, dict)
         or not isinstance(candidate.get("selection_preregistered"), bool)
         or not isinstance(verification, dict)
-        or len(counts) != len(census_names)
-        or any(not isinstance(value, int) or isinstance(value, bool) or value < 0 for value in counts)
-        or any(left < right for left, right in zip(counts, counts[1:]))
-        or counts[-1] <= 0
+        or not physical_census
     ):
         raise AssertionError(f"{entry}: verified pulse cache identity differs")
 

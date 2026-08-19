@@ -130,7 +130,8 @@ $expectedArguments = @(
 if ([string]$frozenArguments.execution_strategy -eq 'simion_single_flight') {
   $expectedArguments += @(
     'single_flight_pa_cache_policy',
-    'single_flight_pa_cache_policy_provenance'
+    'single_flight_pa_cache_policy_provenance',
+    'single_flight_batch_count'
   )
 }
 $layoutArgumentNames = @(
@@ -277,6 +278,7 @@ if ($hasPrePulseTimeSeriesArguments) {
   $expectedArguments += @(
     'pre_pulse_time_series_prefix_filename',
     'pre_pulse_time_series_prefix_sha256',
+    'pre_pulse_time_series_prefix_count',
     'pre_pulse_time_series_contract_filename',
     'pre_pulse_time_series_contract_sha256'
   )
@@ -287,7 +289,8 @@ $hasPulseCandidateConfirmationArguments = $frozenArguments.ContainsKey(
 if ($hasPulseCandidateConfirmationArguments) {
   $expectedArguments += @(
     'pulse_candidate_confirmation_prefix_filename',
-    'pulse_candidate_confirmation_prefix_sha256'
+    'pulse_candidate_confirmation_prefix_sha256',
+    'pulse_candidate_confirmation_prefix_count'
   )
 }
 $pulseTimingInternalStage = if (
@@ -499,16 +502,21 @@ $automaticPulseTiming = (
 )
 $pulseTimingDiscovery = $pulseTimingInternalStage -eq 'pulse_timing_discovery'
 $pulseTimingConfirmation = $pulseTimingInternalStage -eq 'pulse_timing_confirmation'
+$pulseTimingDiscoveryRequired = $automaticPulseTiming -and
+  $frozenArguments.ContainsKey('pulse_timing_orchestration_state') -and
+  [string]$frozenArguments.pulse_timing_orchestration_state -eq
+    'discovery_required'
 if (($pulseTimingDiscovery -or $pulseTimingConfirmation) -and
     -not $automaticPulseTiming) {
   throw 'Internal pulse-timing stage requires the automatic campaign policy.'
 }
-if (($campaignHasPrePulseTimeSeries -or $pulseTimingDiscovery) -ne
+if (($campaignHasPrePulseTimeSeries -or $pulseTimingDiscovery -or
+    $pulseTimingDiscoveryRequired) -ne
     $hasPrePulseTimeSeriesArguments) {
   throw 'Pre-pulse time-series campaign and prepared authority differ.'
 }
 $prePulseTimeSeriesScreening = $campaignHasPrePulseTimeSeries -or
-  $pulseTimingDiscovery
+  $pulseTimingDiscovery -or $pulseTimingDiscoveryRequired
 $fixedAuthorityProperty = if ($null -ne $pulseSchedulePolicy) {
   $pulseSchedulePolicy.PSObject.Properties['fixed_execution_authority']
 } else { $null }
@@ -641,17 +649,25 @@ if ($frozenArguments.ContainsKey('source_release_mode')) {
     $usesGeneratedPrePulseSubset =
       $experiment.PSObject.Properties.Name -contains
         'generated_pre_pulse_ordered_subset'
+    $usesManifestBoundPostPulseRestart =
+      $experiment.PSObject.Properties.Name -contains
+        'post_pulse_restart_reuse_authority'
     $declaredPrePulseSourceState = if (
       $experiment.PSObject.Properties.Name -contains 'pre_pulse_source_state'
     ) { $experiment.pre_pulse_source_state } else { $null }
-    if ($usesGeneratedPrePulseSubset -eq ($null -ne $declaredPrePulseSourceState)) {
-      throw 'Pre-pulse restart must select exactly one external or generated source authority.'
+    $restartAuthorityCount = @(
+      $usesGeneratedPrePulseSubset,
+      $usesManifestBoundPostPulseRestart,
+      ($null -ne $declaredPrePulseSourceState)
+    ).Where({ $_ }).Count
+    if ($restartAuthorityCount -ne 1) {
+      throw 'Pre-pulse restart must select exactly one governed source authority.'
     }
     if (-not $frozenArguments.ContainsKey('pre_pulse_source_state_path')) {
       throw 'Pre-pulse restart lacks a frozen source state.'
     }
     if ($frozenArguments.ContainsKey('pre_pulse_restart_validation_filename')) {
-      if (-not $usesGeneratedPrePulseSubset -and (
+      if ($null -ne $declaredPrePulseSourceState -and (
         [double]$declaredPrePulseSourceState.position_rowwise_abs_tolerance_mm -ne
           [double]$frozenArguments.pre_pulse_restart_position_tolerance_mm -or
         [double]$declaredPrePulseSourceState.velocity_rowwise_abs_tolerance_m_per_s -ne
@@ -681,10 +697,10 @@ if ($frozenArguments.ContainsKey('source_release_mode')) {
         -not (Test-Path -LiteralPath $prePulseSourceStatePath -PathType Leaf) -or
         (Get-FileHash -LiteralPath $prePulseSourceStatePath -Algorithm SHA256).Hash -ne
           $frozenArguments.pre_pulse_source_state_sha256 -or
-        (-not $usesGeneratedPrePulseSubset -and
+        ($null -ne $declaredPrePulseSourceState -and
           [int]$declaredPrePulseSourceState.particle_count -ne
             [int]$frozenArguments.pre_pulse_source_state_count) -or
-        ($usesGeneratedPrePulseSubset -and
+        (($usesGeneratedPrePulseSubset -or $usesManifestBoundPostPulseRestart) -and
           @(Import-Csv -LiteralPath $prePulseSourceStatePath).Count -ne
             [int]$frozenArguments.pre_pulse_source_state_count)) {
       throw 'Pre-pulse source-state identity is missing, stale or outside artifacts.'
@@ -925,23 +941,34 @@ if ($connectorGapScreening) {
 $prePulseTimeSeriesPrefixPath = $null
 $prePulseTimeSeriesContractPath = $null
 if ($prePulseTimeSeriesScreening) {
-  $prePulseTimeSeriesPrefixPath = [IO.Path]::GetFullPath((Join-Path $runDirectory `
-    $frozenArguments.pre_pulse_time_series_prefix_filename))
+  $prePulseTimeSeriesPrefixBinding = [string]$frozenArguments.pre_pulse_time_series_prefix_filename
+  $prePulseTimeSeriesPrefixPath = [IO.Path]::GetFullPath((Join-Path `
+    $(if ($prePulseTimeSeriesPrefixBinding.StartsWith('artifacts/')) {
+      $workspaceRoot
+    } else { $runDirectory }) $prePulseTimeSeriesPrefixBinding))
   $prePulseTimeSeriesContractPath = [IO.Path]::GetFullPath((Join-Path $runDirectory `
     $frozenArguments.pre_pulse_time_series_contract_filename))
   $inputsRoot = (Join-Path $runDirectory 'inputs') +
     [IO.Path]::DirectorySeparatorChar
-  $expectedTimeSeriesPrefix = if ($pulseTimingDiscovery) {
+  $artifactsRoot = (Join-Path $workspaceRoot 'artifacts') +
+    [IO.Path]::DirectorySeparatorChar
+  $pulseTimingDiscoveryAuthority = $pulseTimingDiscovery -or
+    $pulseTimingDiscoveryRequired
+  $expectedTimeSeriesPrefix = if ($pulseTimingDiscoveryAuthority) {
     if ($connectorGapScreening) {
       [string]$frozenArguments.connector_gap_prefix_filename
-    } else { 'inputs/automatic_pulse_timing_prefix_n100.csv' }
+    } else { $prePulseTimeSeriesPrefixBinding }
   } else { 'inputs/pre_pulse_time_series_screening_prefix_n100.csv' }
-  if ($frozenArguments.pre_pulse_time_series_prefix_filename -ne
+  if ([IO.Path]::IsPathRooted($prePulseTimeSeriesPrefixBinding) -or
+      $prePulseTimeSeriesPrefixBinding -ne
         $expectedTimeSeriesPrefix -or
       $frozenArguments.pre_pulse_time_series_contract_filename -ne
         'inputs/pre_pulse_time_series_screening_contract.json' -or
-      -not $prePulseTimeSeriesPrefixPath.StartsWith(
-        $inputsRoot,[StringComparison]::OrdinalIgnoreCase) -or
+      (-not $prePulseTimeSeriesPrefixPath.StartsWith(
+        $inputsRoot,[StringComparison]::OrdinalIgnoreCase) -and
+       -not ($pulseTimingDiscoveryAuthority -and
+         $prePulseTimeSeriesPrefixPath.StartsWith(
+           $artifactsRoot,[StringComparison]::OrdinalIgnoreCase))) -or
       -not $prePulseTimeSeriesContractPath.StartsWith(
         $inputsRoot,[StringComparison]::OrdinalIgnoreCase) -or
       -not (Test-Path -LiteralPath $prePulseTimeSeriesPrefixPath -PathType Leaf) -or
@@ -950,29 +977,44 @@ if ($prePulseTimeSeriesScreening) {
         $frozenArguments.pre_pulse_time_series_prefix_sha256 -or
       (Get-FileHash -LiteralPath $prePulseTimeSeriesContractPath -Algorithm SHA256).Hash -ne
         $frozenArguments.pre_pulse_time_series_contract_sha256 -or
-      @(Import-Csv -LiteralPath $prePulseTimeSeriesPrefixPath).Count -ne 100) {
+      [int]$frozenArguments.pre_pulse_time_series_prefix_count -ne
+        [int]$experiment.single_flight_population.execution_population.particle_count -or
+      @(Import-Csv -LiteralPath $prePulseTimeSeriesPrefixPath).Count -ne
+        [int]$frozenArguments.pre_pulse_time_series_prefix_count) {
     throw 'Plan-bound pre-pulse time-series inputs are missing or stale.'
   }
 }
 $pulseCandidateConfirmationPrefixPath = $null
 if ($pulseCandidateConfirmation) {
+  $pulseCandidateConfirmationPrefixBinding = [string]$frozenArguments.pulse_candidate_confirmation_prefix_filename
   $pulseCandidateConfirmationPrefixPath = [IO.Path]::GetFullPath((Join-Path `
-    $runDirectory $frozenArguments.pulse_candidate_confirmation_prefix_filename))
+    $(if ($pulseCandidateConfirmationPrefixBinding.StartsWith('artifacts/')) {
+      $workspaceRoot
+    } else { $runDirectory }) $pulseCandidateConfirmationPrefixBinding))
   $inputsRoot = (Join-Path $runDirectory 'inputs') +
+    [IO.Path]::DirectorySeparatorChar
+  $artifactsRoot = (Join-Path $workspaceRoot 'artifacts') +
     [IO.Path]::DirectorySeparatorChar
   $expectedConfirmationPrefix = if ($pulseTimingConfirmation) {
     if ($connectorGapScreening) {
       [string]$frozenArguments.connector_gap_prefix_filename
-    } else { 'inputs/automatic_pulse_timing_prefix_n100.csv' }
+    } else { $pulseCandidateConfirmationPrefixBinding }
   } else { 'inputs/pulse_candidate_confirmation_prefix_n100.csv' }
-  if ($frozenArguments.pulse_candidate_confirmation_prefix_filename -ne
+  if ([IO.Path]::IsPathRooted($pulseCandidateConfirmationPrefixBinding) -or
+      $pulseCandidateConfirmationPrefixBinding -ne
         $expectedConfirmationPrefix -or
-      -not $pulseCandidateConfirmationPrefixPath.StartsWith(
-        $inputsRoot,[StringComparison]::OrdinalIgnoreCase) -or
+      (-not $pulseCandidateConfirmationPrefixPath.StartsWith(
+        $inputsRoot,[StringComparison]::OrdinalIgnoreCase) -and
+       -not ($pulseTimingConfirmation -and
+         $pulseCandidateConfirmationPrefixPath.StartsWith(
+           $artifactsRoot,[StringComparison]::OrdinalIgnoreCase))) -or
       -not (Test-Path -LiteralPath $pulseCandidateConfirmationPrefixPath -PathType Leaf) -or
       (Get-FileHash -LiteralPath $pulseCandidateConfirmationPrefixPath -Algorithm SHA256).Hash -ne
         $frozenArguments.pulse_candidate_confirmation_prefix_sha256 -or
-      @(Import-Csv -LiteralPath $pulseCandidateConfirmationPrefixPath).Count -ne 100) {
+      [int]$frozenArguments.pulse_candidate_confirmation_prefix_count -ne
+        [int]$experiment.single_flight_population.execution_population.particle_count -or
+      @(Import-Csv -LiteralPath $pulseCandidateConfirmationPrefixPath).Count -ne
+        [int]$frozenArguments.pulse_candidate_confirmation_prefix_count) {
     throw 'Plan-bound pulse candidate confirmation prefix is missing or stale.'
   }
 }
@@ -1417,6 +1459,15 @@ if ($executionStrategy -eq 'simion_single_flight') {
     [string]$frozenArguments.single_flight_pa_cache_policy
   $runnerArguments.PaCachePolicyProvenance =
     [string]$frozenArguments.single_flight_pa_cache_policy_provenance
+  $declaredBatchCount = if (
+    $null -ne $experiment.PSObject.Properties['single_flight_batch_count']
+  ) { [int]$experiment.single_flight_batch_count } else { 1 }
+  if ([int]$frozenArguments.single_flight_batch_count -ne $declaredBatchCount -or
+      $declaredBatchCount -lt 1 -or
+      $declaredBatchCount -gt $expectedExecutionParticleCount) {
+    throw 'Single-flight batch count changed after preparation or exceeds the resolved population.'
+  }
+  $runnerArguments.ExecutionBatchCount = $declaredBatchCount
   if ([int]$campaign.schema_version -ge 3) {
     $runnerArguments.OatofResolvedGeometry = $resolvedOatofGeometryPath
     if ($null -ne $resolvedPulseSchedulePath) {
@@ -1597,6 +1648,13 @@ if ($executionStrategy -eq 'simion_single_flight') {
   if ($null -ne $preparedPrefixPath) {
     $runnerArguments.MotherParticleSource = $preparedPrefixPath
     $runnerArguments.MotherParticleSourceRunRoot = $runDirectory
+    if ($preparedPrefixPath.StartsWith(
+        (Join-Path $workspaceRoot 'artifacts') +
+          [IO.Path]::DirectorySeparatorChar,
+        [StringComparison]::OrdinalIgnoreCase
+      )) {
+      $runnerArguments.MotherParticleSourceRunRoot = $workspaceRoot
+    }
     $runnerArguments.MotherParticleSourceSha256 = if ($pulseN100Screening) {
       $frozenArguments.pulse_resolution_prefix_sha256
     } elseif ($connectorGapScreening) {

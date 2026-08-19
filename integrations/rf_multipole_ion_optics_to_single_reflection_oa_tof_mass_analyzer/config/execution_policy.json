@@ -13,6 +13,7 @@
       "solver": "comsol",
       "wall_clock_seconds": 1200,
       "transient_run_directory_bytes": 2147483648,
+      "transient_run_directory_sample_interval_seconds": 10,
       "process_tree_working_set_bytes": 17179869184,
       "minimum_system_available_memory_bytes": 8589934592,
       "compact_final_retained_bytes": 26214400,
@@ -22,6 +23,7 @@
       "solver": "comsol",
       "wall_clock_seconds": 1200,
       "transient_run_directory_bytes": 2147483648,
+      "transient_run_directory_sample_interval_seconds": 10,
       "process_tree_working_set_bytes": 17179869184,
       "minimum_system_available_memory_bytes": 8589934592,
       "compact_final_retained_bytes": 26214400,
@@ -31,6 +33,7 @@
       "solver": "simion",
       "wall_clock_seconds": 300,
       "transient_run_directory_bytes": 2147483648,
+      "transient_run_directory_sample_interval_seconds": 10,
       "process_tree_working_set_bytes": 2147483648,
       "minimum_system_available_memory_bytes": 8589934592,
       "compact_final_retained_bytes": 26214400,
@@ -40,9 +43,13 @@
       "solver": "simion",
       "wall_clock_seconds": 3600,
       "transient_run_directory_bytes": 12884901888,
+      "transient_run_directory_sample_interval_seconds": 10,
       "process_tree_working_set_bytes": 34359738368,
-      "minimum_system_available_memory_bytes": 4294967296,
-      "compact_final_retained_bytes": 26214400,
+      "minimum_system_available_memory_bytes": 1073741824,
+      "warning_only_limit_names": [
+        "minimum_system_available_memory_bytes"
+      ],
+      "compact_final_retained_bytes": 268435456,
       "automatic_retry_count": 0
     }
   }

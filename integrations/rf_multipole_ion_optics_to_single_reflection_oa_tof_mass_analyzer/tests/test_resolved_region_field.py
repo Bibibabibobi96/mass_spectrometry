@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import json
 from pathlib import Path
 import subprocess
 import tempfile
@@ -10,6 +11,7 @@ import unittest
 from common.contracts.machine_contracts import validate_schema
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.resolved_region_field import (
     FULL_ID,
+    FULL_THREE_ZONE_PROFILE_ID,
     THREE_ZONE_PROFILE_ID,
     THREE_ZONE_REAL_PA_PROFILE_ID,
     THREE_ZONE_TOPOLOGY_ID,
@@ -21,6 +23,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 
 ROOT = Path(__file__).resolve().parents[3]
 GEOMETRY = ROOT / "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json"
+CONFIG = ROOT / "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/simion_single_flight.json"
 SIMION = Path(r"C:\Program Files\SIMION-2020\simion.exe")
 
 
@@ -167,8 +170,82 @@ class ResolvedRegionFieldTests(unittest.TestCase):
         )
         self.assertEqual(
             lua_digest,
-            "06ECF01634307FD099D66CC97F20B5892881C0F4CE177A01ED8C54D9749EF23C",
+            "4241D40ED7DD73A7FEF4ABF008951F32344E7BC32A8FDD48902968628271122A",
         )
+
+    def test_full_domain_three_zone_profile_is_one_closed_six_region_control(self) -> None:
+        contract = self._build_three_zone(FULL_THREE_ZONE_PROFILE_ID)
+        semantic = contract["semantic"]
+        self.assertEqual(
+            semantic["field_configuration_id"],
+            "FULL_DOMAIN_THREE_ZONE_PIECEWISE_IDEAL_FIELD",
+        )
+        self.assertEqual(
+            semantic["region_modes"],
+            {
+                "accelerator_zone1": "analytic_ideal_field",
+                "accelerator_zone2": "analytic_ideal_field",
+                "accelerator_zone3": "analytic_ideal_field",
+                "drift": "zero_field",
+                "reflectron_stage1": "analytic_ideal_field",
+                "reflectron_stage2": "analytic_ideal_field",
+            },
+        )
+        self.assertNotIn("real_pa_field", semantic["region_modes"].values())
+        self.assertEqual(semantic["pa_role"], "geometry_and_collision_carrier_only")
+        validate_schema(contract, "rf_oatof_resolved_region_field_contract.schema.json")
+
+        lua = resolved_region_field_hook_lua(contract, prefix="fullthree")
+        self.assertIn("local fullthree_m_drift=2", lua)
+        self.assertIn("local fullthree_m_refl1=1", lua)
+        self.assertIn("local fullthree_m_refl2=1", lua)
+        self.assertIn("analytic reflectron field requires rotated instance 2", lua)
+        self.assertIn("dvoltsx_gu=-E*state.instance_dx_mm*state.instance_scale", lua)
+
+    def test_full_domain_three_zone_profile_registration_is_exact(self) -> None:
+        config = json.loads(CONFIG.read_text(encoding="utf-8"))
+        profiles = config["accelerator_field_profiles"]
+        matches = [
+            profile
+            for profile in profiles
+            if profile["profile_id"] == FULL_THREE_ZONE_PROFILE_ID
+        ]
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(
+            matches[0],
+            {
+                "profile_id": FULL_THREE_ZONE_PROFILE_ID,
+                "accelerator_zone1": "analytic_ideal_field",
+                "accelerator_zone2": "analytic_ideal_field",
+                "accelerator_zone3": "analytic_ideal_field",
+                "drift": "zero_field",
+                "reflectron_stage1": "analytic_ideal_field",
+                "reflectron_stage2": "analytic_ideal_field",
+                "real_pa_field_blending_allowed": False,
+                "topology_id": "three_zone_accelerator_ideal_v1",
+                "geometry_id": "three_zone_focus_origin_planes_v1",
+                "frontend_electrode_topology_id": "three_zone_frontend_v1",
+                "field_id": "three_zone_plus_reflectron_piecewise_uniform_ideal_field_v1",
+                "role": "full_domain_three_zone_controlled_counterfactual",
+            },
+        )
+
+    def test_full_domain_three_zone_rejects_real_region_or_pa_field_role(self) -> None:
+        from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.resolved_region_field import semantic_sha256
+
+        invalid = copy.deepcopy(self._build_three_zone(FULL_THREE_ZONE_PROFILE_ID))
+        invalid["semantic"]["region_modes"]["drift"] = "real_pa_field"
+        invalid["semantic_sha256"] = semantic_sha256(invalid["semantic"])
+        with self.assertRaisesRegex(ValueError, "region modes differ"):
+            validate_resolved_region_field_contract(invalid)
+
+        invalid = copy.deepcopy(self._build_three_zone(FULL_THREE_ZONE_PROFILE_ID))
+        invalid["semantic"]["pa_role"] = (
+            "geometry_and_collision_carrier_plus_explicit_real_pa_field_regions"
+        )
+        invalid["semantic_sha256"] = semantic_sha256(invalid["semantic"])
+        with self.assertRaisesRegex(ValueError, "PA role differs"):
+            validate_resolved_region_field_contract(invalid)
 
     def test_three_zone_real_pa_profile_is_explicit_and_has_no_analytic_field(self) -> None:
         contract = self._build_three_zone(THREE_ZONE_REAL_PA_PROFILE_ID)

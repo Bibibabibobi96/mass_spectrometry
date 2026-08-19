@@ -5,21 +5,30 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from common.contracts.machine_contracts import ContractError, validate_schema
 from common.contracts.file_identity import file_sha256
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.select_real_field_pulse_time import (
     SELECTION_ORDER,
+    _load_population_ids,
+    pulse_selection_content_identity,
     select_and_write,
+    verified_pulse_reuse_content_identity,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_layout import (
     select_detector_blind_real_field_pulse_time,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.publish_run import (
     INTEGRATION_ID,
+    _pulse_confirmation_census_is_physical,
     _publish_detector_blind_pulse_selection,
     _publish_pulse_timing_transition,
     _publish_verified_pulse_receipt,
+    publish_verified_pulse_publication_replay,
+)
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.prepare import (
+    _select_strongest_verified_pulse_match,
 )
 
 
@@ -95,6 +104,98 @@ def _rows() -> list[dict[str, str]]:
 
 
 class RealFieldPulseCoreTests(unittest.TestCase):
+    def test_verified_reuse_identity_excludes_population_and_selector_provenance(
+        self,
+    ) -> None:
+        contract = {
+            "schema_version": 2,
+            "identities": {
+                "campaign_id": "campaign_n100",
+                "experiment_id": "experiment_n100",
+                "experiment_row_sha256": "1" * 64,
+                "resolved_source_contract_sha256": "2" * 64,
+                "resolved_population_contract_sha256": "3" * 64,
+                "mother_particle_source_sha256": "4" * 64,
+                "ordered_particle_id_sha256": "5" * 64,
+                "connection_profile_id": "connection",
+                "layout_profile_id": "layout",
+                "field_profile_id": "field",
+            },
+            "rf_time_grid": {"period_us": 1.0, "sample_count": 321},
+        }
+        connection = {
+            "selection": {}, "spatial_registration": {}, "connector": {},
+            "port_geometry": {}, "transition_aperture": {},
+            "effective_clear_radius_mm": 1.0, "potential_alignment": {},
+            "clock_alignment": {}, "field_ownership_segments": [],
+        }
+        kwargs = {
+            "source": {"distribution": {"energy_ev": 10.0}},
+            "connection": connection,
+            "geometry": _geometry(),
+            "spatial_profile": _profile(),
+            "pa_cache_keys": {"frontend": "A" * 64, "accelerator_overlay": "B" * 64},
+        }
+        candidate_basis, candidate_key = pulse_selection_content_identity(
+            contract=contract, selector_source_sha256="C" * 64, **kwargs,
+        )
+        full_population_contract = json.loads(json.dumps(contract))
+        full_population_contract["identities"].update({
+            "campaign_id": "campaign_n1000",
+            "experiment_id": "experiment_n1000",
+            "experiment_row_sha256": "6" * 64,
+            "resolved_population_contract_sha256": "7" * 64,
+            "mother_particle_source_sha256": "8" * 64,
+            "ordered_particle_id_sha256": "9" * 64,
+        })
+        full_basis, full_key = pulse_selection_content_identity(
+            contract=full_population_contract,
+            selector_source_sha256="C" * 64,
+            **kwargs,
+        )
+        self.assertEqual(candidate_basis, full_basis)
+        self.assertEqual(candidate_key, full_key)
+
+        later_basis, later_key = pulse_selection_content_identity(
+            contract=full_population_contract,
+            selector_source_sha256="D" * 64,
+            **kwargs,
+        )
+        self.assertNotEqual(candidate_key, later_key)
+        _, verified_key = verified_pulse_reuse_content_identity(candidate_basis)
+        _, later_verified_key = verified_pulse_reuse_content_identity(later_basis)
+        self.assertEqual(verified_key, later_verified_key)
+
+        changed_source = {**kwargs, "source": {"distribution": {"energy_ev": 11.0}}}
+        changed_basis, _ = pulse_selection_content_identity(
+            contract=contract, selector_source_sha256="C" * 64, **changed_source,
+        )
+        _, changed_verified_key = verified_pulse_reuse_content_identity(changed_basis)
+        self.assertNotEqual(verified_key, changed_verified_key)
+
+    def test_strongest_verified_population_wins_and_tied_time_must_agree(
+        self,
+    ) -> None:
+        def match(name: str, count: int, time_us: float, native: bool) -> dict:
+            return {
+                "receipt_path": Path(name),
+                "receipt": {"selected_time_us": time_us},
+                "population_count": count,
+                "native": native,
+            }
+
+        selected = _select_strongest_verified_pulse_match([
+            match("n100.json", 100, 46.16, False),
+            match("n1000_legacy.json", 1000, 46.12, False),
+            match("n1000_native.json", 1000, 46.12, True),
+        ])
+        self.assertEqual(selected["receipt_path"], Path("n1000_native.json"))
+        with self.assertRaisesRegex(ContractError, "times are ambiguous"):
+            _select_strongest_verified_pulse_match([
+                match("first.json", 1000, 46.12, False),
+                match("second.json", 1000, 46.13, False),
+            ])
+
     def test_rank_prioritizes_eligibility_and_uses_earlier_final_tie(self) -> None:
         result = select_detector_blind_real_field_pulse_time(
             _rows(), _geometry(), _profile(),
@@ -326,6 +427,59 @@ class RealFieldPulseAnalysisTests(unittest.TestCase):
             receipt_path=paths["receipt"],
         )
 
+    def test_accepts_full_n1000_source_contract_population(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            paths = self._write_inputs(Path(directory))
+            particle_ids = list(range(1, 1001))
+            with paths["population_table"].open(
+                "w", encoding="utf-8", newline=""
+            ) as handle:
+                writer = csv.DictWriter(
+                    handle, fieldnames=["particle_id"], lineterminator="\n"
+                )
+                writer.writeheader()
+                writer.writerows({"particle_id": value} for value in particle_ids)
+            population = json.loads(paths["population"].read_text(encoding="utf-8"))
+            population["source_authority"]["table_binding"] = (
+                "source_contract_particle_source"
+            )
+            population["source_authority"]["table"]["sha256"] = file_sha256(
+                paths["population_table"]
+            )
+            population["execution_population"] = {
+                "particle_count": 1000,
+                "ordered_particle_id_sha256": (
+                    "0DE41D33D8E41EE4A69E898BCBCC42F7C9E65F7CDCE1239A00DEF95EF7DD206B"
+                ),
+            }
+            self.assertEqual(
+                _load_population_ids(population, paths["population_table"]),
+                particle_ids,
+            )
+
+    def test_population_integrity_does_not_repeat_prepare_binding_policy(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            paths = self._write_inputs(Path(directory))
+            population = json.loads(paths["population"].read_text(encoding="utf-8"))
+            population["source_authority"]["table_binding"] = "prepare_validated_binding"
+            self.assertEqual(
+                _load_population_ids(population, paths["population_table"]),
+                [1, 2, 3],
+            )
+            population["source_authority"]["table"]["sha256"] = "0" * 64
+            with self.assertRaisesRegex(
+                ContractError, "population table identity differs"
+            ):
+                _load_population_ids(population, paths["population_table"])
+            population["source_authority"]["table"]["sha256"] = file_sha256(
+                paths["population_table"]
+            )
+            population["execution_population"]["ordered_particle_id_sha256"] = (
+                "0" * 64
+            )
+            with self.assertRaisesRegex(ContractError, "population order differs"):
+                _load_population_ids(population, paths["population_table"])
+
     def _write_publisher_child(
         self, workspace: Path,
     ) -> tuple[dict[str, Path], Path, Path, dict[str, object]]:
@@ -512,6 +666,64 @@ class RealFieldPulseAnalysisTests(unittest.TestCase):
                     )
                     self.assertEqual(receipt["census"]["detector_crossing"], 69)
                     self.assertTrue(receipt["reusable_verified_pulse"])
+
+    def test_confirmation_census_keeps_snapshot_and_crossing_chains_distinct(self) -> None:
+        census = {
+            "launched": 1000,
+            "multipole_handoff": 334,
+            "pre_pulse_state": 223,
+            "accelerator_grid1_forward": 225,
+            "accelerator_intermediate2_forward": 223,
+            "local_accelerator_exit": 223,
+            "detector_crossing": 223,
+        }
+        self.assertTrue(_pulse_confirmation_census_is_physical(census))
+        census["accelerator_intermediate2_forward"] = 226
+        self.assertFalse(_pulse_confirmation_census_is_physical(census))
+
+    def test_failed_parent_replays_successful_confirmation_without_solver(self) -> None:
+        workspace = REPO_ROOT.parent
+        parent = workspace / (
+            "artifacts/projects/"
+            "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/"
+            "runs/20260819_023400__sim__cross__three-zone-connector-gap-25p6mm__n1000"
+        )
+        if not (parent / "run_manifest.json").is_file():
+            self.skipTest("canonical failed publication parent is not available")
+        scratch = (
+            workspace
+            / "artifacts"
+            / "projects"
+            / INTEGRATION_ID
+            / "scratch"
+        )
+        scratch.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=scratch) as directory:
+            replay = Path(directory) / (
+                "20260819_024000__analysis__python__verified-pulse-publication-replay__n1000"
+            )
+            with patch(
+                "integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer."
+                "workflows.family_source_closure.publish_run._publish_verified_pulse_cache"
+            ) as cache_publish:
+                manifest_path = publish_verified_pulse_publication_replay(
+                    repo_root=REPO_ROOT,
+                    workspace_root=workspace,
+                    replay_run_dir=replay,
+                    failed_parent_manifest_path=parent / "run_manifest.json",
+                    execution_receipt_path=parent / "execution_receipt.json",
+                    resolved_path=parent / "resolved_connection.json",
+                    plan_path=parent / "composition_plan.json",
+                    budget_path=parent / "resolved_engineering_budget.json",
+                )
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            summary = json.loads((replay / "summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["status"], "success")
+            self.assertFalse(summary["solver_rerun"])
+            self.assertEqual(summary["confirmation_child_run_id"], (
+                "20260819_023400__sim__simion__rf-oatof-single-flight-gap25p6__n1000"
+            ))
+            cache_publish.assert_called_once()
 
 
 if __name__ == "__main__":

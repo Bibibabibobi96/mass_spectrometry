@@ -431,6 +431,20 @@ try {
             -PlanPath $planPath -Mode SolverAuthorized
           $removeUnpublishedTargetOnExit = $false
         }
+        'confirmation_required' {
+          $confirmation = Get-PulseTimingStage `
+            -Orchestration $orchestration `
+            -ExpectedStageId 'pulse_timing_confirmation'
+          if ($confirmation.RunId -ne $campaignRunId -or
+              $confirmation.OutputRoot -ne $outputRoot) {
+            throw 'Pulse-timing confirmation is not the originally requested run.'
+          }
+          Invoke-FamilyExecutionBoundary -RunId $confirmation.RunId `
+            -ExecutionRoot $confirmation.OutputRoot `
+            -ResolvedPath $confirmation.ResolvedPath `
+            -PlanPath $confirmation.PlanPath -Mode SolverAuthorized
+          $removeUnpublishedTargetOnExit = $false
+        }
         'discovery_required' {
           $discovery = Get-PulseTimingStage `
             -Orchestration $orchestration -ExpectedStageId 'pulse_timing_discovery'

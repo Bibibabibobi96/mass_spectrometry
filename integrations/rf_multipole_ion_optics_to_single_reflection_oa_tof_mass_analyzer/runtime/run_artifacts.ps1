@@ -225,6 +225,45 @@ function Assert-RfCacheEntryPath {
   }
 }
 
+function Set-RfCachePayloadReadOnly {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$CacheEntry)
+  $entry = [IO.Path]::GetFullPath($CacheEntry).TrimEnd(
+    [IO.Path]::DirectorySeparatorChar
+  )
+  $manifest = Get-Content -LiteralPath (Join-Path $entry 'cache_manifest.json') `
+    -Raw -Encoding UTF8 | ConvertFrom-Json
+  if ([int]$manifest.schema_version -ne 2) {
+    throw 'Only schema-v2 cache payloads can be protected as immutable.'
+  }
+  foreach ($record in @($manifest.files)) {
+    $path = [IO.Path]::GetFullPath((Join-Path $entry ([string]$record.name)))
+    if (-not (Split-Path -Parent $path).Equals(
+        $entry,[StringComparison]::OrdinalIgnoreCase)) {
+      throw 'Cache payload path escaped its content-addressed entry.'
+    }
+    $item = Get-Item -LiteralPath $path -Force
+    if ($item.PSIsContainer) { throw 'Cache payload record is not a regular file.' }
+    $item.IsReadOnly = $true
+  }
+}
+
+function Set-RfMaterializedCacheFileWritable {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$Path)
+  $item = Get-Item -LiteralPath $Path -Force
+  if ($item.PSIsContainer) { throw 'Materialized cache payload is not a regular file.' }
+  $item.IsReadOnly = $false
+}
+
+function Clear-RfCacheEntryReadOnly {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$CacheEntry)
+  foreach ($item in Get-ChildItem -LiteralPath $CacheEntry -File -Force) {
+    $item.IsReadOnly = $false
+  }
+}
+
 function Test-RfReusableCacheEntry {
   [CmdletBinding()]
   param(
@@ -251,7 +290,10 @@ function Test-RfReusableCacheEntry {
   } catch {
     $verificationExitCode = if ($LASTEXITCODE) { $LASTEXITCODE } else { 1 }
   }
-  if ($verificationExitCode -eq 0) { return $true }
+  if ($verificationExitCode -eq 0) {
+    Set-RfCachePayloadReadOnly -CacheEntry $entry
+    return $true
+  }
   $global:LASTEXITCODE = 0
   $document = $null
   try {
@@ -261,6 +303,7 @@ function Test-RfReusableCacheEntry {
   }
   if ($null -ne $document -and [int]$document.schema_version -eq 2 -and
       $InvalidEntryAction -eq 'remove') {
+    Clear-RfCacheEntryReadOnly -CacheEntry $entry
     Remove-Item -LiteralPath $entry -Recurse -Force
     return $false
   }

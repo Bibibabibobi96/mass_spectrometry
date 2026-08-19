@@ -9,6 +9,7 @@ from pathlib import Path
 
 from matplotlib import pyplot as plt
 from matplotlib.patches import PathPatch
+import pandas as pd
 
 from common.contracts.particle_physics import kinetic_energy_ev
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.analyze_single_flight import (
@@ -26,6 +27,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     _source_region_bounds,
     _source_region_cross_section,
     _source_region_longitudinal,
+    build_accelerator_phase_space_figure,
     marker_area,
 )
 
@@ -81,6 +83,103 @@ def analyze(log_path, launched, mass_amu, *args, **kwargs):
 
 
 class SingleFlightAnalysisTests(unittest.TestCase):
+    def test_accelerator_phase_space_uses_detector_blind_pre_pulse_cohort(self) -> None:
+        checkpoints = pd.DataFrame(
+            [
+                {
+                    "particle_id": 1,
+                    "event": "pre_pulse_state",
+                    "instrument_time_us": 58.7,
+                    "x_mm": -69.1,
+                    "y_mm": 0.1,
+                    "z_mm": -61.0,
+                    "vx_mm_per_us": 0.2,
+                    "vy_mm_per_us": -0.1,
+                    "vz_mm_per_us": 1.4,
+                    "pulse_eligibility": "eligible",
+                },
+                {
+                    "particle_id": 2,
+                    "event": "pre_pulse_state",
+                    "instrument_time_us": 58.7,
+                    "x_mm": -68.8,
+                    "y_mm": -0.2,
+                    "z_mm": -60.5,
+                    "vx_mm_per_us": -0.3,
+                    "vy_mm_per_us": 0.2,
+                    "vz_mm_per_us": 2.1,
+                    "pulse_eligibility": "outside_transverse_bore",
+                },
+                {
+                    "particle_id": 1,
+                    "event": "detector_crossing",
+                    "instrument_time_us": 75.0,
+                    "x_mm": 49.0,
+                    "y_mm": 0.0,
+                    "z_mm": 19.8,
+                    "vx_mm_per_us": "",
+                    "vy_mm_per_us": "",
+                    "vz_mm_per_us": "",
+                    "pulse_eligibility": "eligible",
+                },
+            ]
+        )
+        figure, metadata, data = build_accelerator_phase_space_figure(checkpoints)
+        try:
+            self.assertEqual(len(figure.axes), 3)
+            self.assertEqual(metadata["pre_pulse_count"], 2)
+            self.assertEqual(metadata["pulse_eligible_count"], 1)
+            self.assertEqual(metadata["not_pulse_eligible_count"], 1)
+            self.assertFalse(metadata["selection_uses_detector_outcome"])
+            self.assertEqual(list(data["particle_id"]), [1, 2])
+            self.assertEqual(
+                list(data.columns),
+                [
+                    "particle_id",
+                    "event",
+                    "instrument_time_us",
+                    "x_mm",
+                    "y_mm",
+                    "z_mm",
+                    "vx_m_per_s",
+                    "vy_m_per_s",
+                    "vz_m_per_s",
+                    "pulse_eligibility",
+                ],
+            )
+            self.assertEqual(figure.axes[2].get_xlabel(), "z (mm)")
+            self.assertEqual(figure.axes[2].get_ylabel(), "vz (m/s)")
+            self.assertEqual([panel["panel"] for panel in metadata["panels"]], ["x-vx", "y-vy", "z-vz"])
+            for axis, panel in zip(figure.axes, metadata["panels"], strict=True):
+                fit = panel["linear_fit"]
+                self.assertEqual(fit["status"], "computed")
+                self.assertEqual(fit["particle_count"], 2)
+                self.assertAlmostEqual(fit["r_squared"], 1.0)
+                self.assertAlmostEqual(fit["residual_rms_m_per_s"], 0.0)
+                self.assertAlmostEqual(fit["residual_max_abs_m_per_s"], 0.0)
+                self.assertEqual(len(axis.lines), 1)
+                annotation = "\n".join(text.get_text() for text in axis.texts)
+                self.assertIn("slope=", annotation)
+                self.assertIn("R²=", annotation)
+                self.assertIn("residual RMS=", annotation)
+                self.assertIn("max|residual|=", annotation)
+                self.assertIn("m/s/mm", annotation)
+                self.assertIn("m/s", annotation)
+            self.assertAlmostEqual(
+                metadata["panels"][0]["linear_fit"]["slope_m_per_s_per_mm"],
+                -5000.0 / 3.0,
+            )
+            self.assertAlmostEqual(
+                metadata["panels"][1]["linear_fit"]["intercept_m_per_s"],
+                0.0,
+            )
+            self.assertAlmostEqual(
+                metadata["panels"][2]["linear_fit"]["slope_m_per_s_per_mm"],
+                1400.0,
+            )
+        finally:
+            plt.close(figure)
+
     def _run_staged_release_case(
         self,
         root: Path,

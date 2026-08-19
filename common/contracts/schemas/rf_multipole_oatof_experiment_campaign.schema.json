@@ -370,6 +370,29 @@
         "postselection_prohibited": {"const": true}
       }
     },
+    "post_pulse_restart_reuse_authority": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "authority_mode", "producer_manifest", "checkpoint_output",
+        "producer_pulse_schedule", "verified_pulse_receipt",
+        "post_pulse_variation_axis"
+      ],
+      "properties": {
+        "authority_mode": {
+          "const": "manifest_bound_post_pulse_restart_reuse_v1"
+        },
+        "producer_manifest": {"$ref": "#/$defs/file"},
+        "checkpoint_output": {"$ref": "#/$defs/file"},
+        "producer_pulse_schedule": {"$ref": "#/$defs/file"},
+        "verified_pulse_receipt": {"$ref": "#/$defs/file"},
+        "post_pulse_variation_axis": {
+          "enum": [
+            "time_integration_profile_id",
+            "accelerator_field_profile_id"
+          ]
+        }
+      }
+    },
     "observed_pre_pulse_projection": {
       "type": "object", "additionalProperties": false,
       "required": [
@@ -676,11 +699,12 @@
         "report_only_connection_profile_ids": {
           "type": "array",
           "prefixItems": [
-            {"const": "rf_octupole_oatof_shield_terminal_direct_mating_gap_25p6mm"}
+            {"const": "rf_octupole_oatof_shield_terminal_direct_mating_gap_25p6mm"},
+            {"const": "rf_octupole_to_single_reflection_oatof_direct_mating_gap_51p2mm"}
           ],
           "items": false,
           "minItems": 1,
-          "maxItems": 1
+          "maxItems": 2
         },
         "mother_sample_count": {"const": 1000},
         "screening_prefix_count": {"const": 100},
@@ -947,8 +971,20 @@
             "required": ["architecture_generation_id", "source_profile_id", "field_overlay_id"],
             "oneOf": [
               {"required": ["pre_pulse_source_state"]},
-              {"required": ["generated_pre_pulse_ordered_subset", "single_flight_source_materialization_profile_id"]}
+              {"required": ["generated_pre_pulse_ordered_subset", "single_flight_source_materialization_profile_id"]},
+              {"required": ["post_pulse_restart_reuse_authority"]}
             ]
+          }
+        },
+        {
+          "if": {"required": ["post_pulse_restart_reuse_authority"]},
+          "then": {
+            "properties": {"source_release_mode": {"const": "pre_pulse_restart"}},
+            "required": ["source_release_mode"],
+            "not": {"anyOf": [
+              {"required": ["pre_pulse_source_state"]},
+              {"required": ["generated_pre_pulse_ordered_subset"]}
+            ]}
           }
         },
         {
@@ -1178,10 +1214,13 @@
         "experiment_id": {"$ref": "#/$defs/id"},
         "execution_strategy": {"enum": ["staged_three_stage", "simion_single_flight"]},
         "single_flight_layout_profile_id": {"$ref": "#/$defs/id"},
+        "single_flight_batch_count": {"type": "integer", "minimum": 1},
         "single_flight_frontend_grid_profile_id": {"$ref": "#/$defs/id"},
         "single_flight_oatof_numerical_profile_id": {"$ref": "#/$defs/id"},
         "single_flight_trajectory_quality_profile_id": {"enum": ["tqual_8", "tqual_108"]},
-        "single_flight_time_integration_profile_id": {"enum": ["dt160", "dt320"]},
+        "single_flight_time_integration_profile_id": {
+          "enum": ["dt10", "dt20", "dt40", "dt80", "dt160", "dt320"]
+        },
         "single_flight_pa_cache_policy": {
           "enum": ["require_existing", "build_and_publish_if_missing"]
         },
@@ -1194,6 +1233,9 @@
         "field_overlay_id": {"$ref": "#/$defs/id"},
         "source_release_mode": {"enum": ["continuous_frontend", "pre_pulse_restart", "staged_grid2_restart"]},
         "pre_pulse_source_state": {"$ref": "#/$defs/pre_pulse_source_state"},
+        "post_pulse_restart_reuse_authority": {
+          "$ref": "#/$defs/post_pulse_restart_reuse_authority"
+        },
         "observed_pre_pulse_projection": {"$ref": "#/$defs/observed_pre_pulse_projection"},
         "generated_pre_pulse_ordered_subset": {"$ref": "#/$defs/generated_pre_pulse_ordered_subset"},
         "three_zone_solver_gate": {"$ref": "#/$defs/three_zone_solver_gate"},
@@ -1205,6 +1247,7 @@
           "maximum": 0.5
         },
         "single_flight_pulse_schedule_policy": {"$ref": "#/$defs/single_flight_pulse_schedule_policy"},
+        "pulse_timing_transition_authority": {"$ref": "#/$defs/file"},
         "single_flight_population": {"$ref": "#/$defs/single_flight_population"},
         "pulse_resolution_execution_mode": {"enum": ["screening_prefix_n100_baseline_registration", "screening_prefix_n100_paired_candidate", "qualification_full_n1000"]},
         "pulse_resolution_baseline_result": {"$ref": "#/$defs/file"},

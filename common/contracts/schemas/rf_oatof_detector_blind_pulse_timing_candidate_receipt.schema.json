@@ -28,6 +28,8 @@
     "detector_fields_present_in_state_table": {"const": false},
     "content_key": {"$ref": "#/$defs/sha"},
     "content_key_basis": {"type": "object"},
+    "verified_reuse_content_key": {"$ref": "#/$defs/sha"},
+    "verified_reuse_content_key_basis": {"type": "object"},
     "pa_cache_keys": {
       "type": "object", "additionalProperties": false,
       "required": ["frontend", "accelerator_overlay", "flight_tube", "reflectron"],

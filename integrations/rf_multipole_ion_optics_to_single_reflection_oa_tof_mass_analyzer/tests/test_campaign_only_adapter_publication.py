@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import hashlib
 from pathlib import Path
+import stat
 import subprocess
 import sys
 import tempfile
@@ -386,6 +387,15 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
             self.assertEqual(manifest["schema_version"], 2)
             self.assertEqual(manifest["cache_key"], entries[0].name)
             self.assertEqual(len(manifest["files"]), 3)
+            for name in ("frontend.gem", "frontend.pa#", "frontend.pa0"):
+                self.assertTrue(
+                    (entries[0] / name).stat().st_file_attributes
+                    & stat.FILE_ATTRIBUTE_READONLY
+                )
+            self.assertFalse(
+                (entries[0] / "cache_manifest.json").stat().st_file_attributes
+                & stat.FILE_ATTRIBUTE_READONLY
+            )
 
     def test_shared_cache_helper_verifies_hit_and_removes_invalid_v2_entry(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -446,7 +456,15 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
                 text=True,
             )
             self.assertIn("True", first.stdout)
-            (entry / "frontend.pa0").write_text("changed\n", encoding="utf-8")
+            for name in ("frontend.gem", "frontend.pa#", "frontend.pa0"):
+                self.assertTrue(
+                    (entry / name).stat().st_file_attributes
+                    & stat.FILE_ATTRIBUTE_READONLY
+                )
+            changed = entry / "frontend.pa0"
+            changed.chmod(stat.S_IWRITE)
+            changed.write_text("changed\n", encoding="utf-8")
+            changed.chmod(stat.S_IREAD)
             second = subprocess.run(
                 ["pwsh", "-NoProfile", "-Command", command],
                 check=True,
@@ -455,6 +473,34 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
             )
             self.assertIn("False", second.stdout)
             self.assertFalse(entry.exists())
+
+    def test_materialized_cache_copy_is_writable_without_mutating_source(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.pa0"
+            target = root / "target.pa0"
+            source.write_bytes(b"immutable-cache-payload")
+            source_hash = file_sha256(source)
+            source.chmod(stat.S_IREAD)
+            command = (
+                f". '{RUN_ARTIFACTS_PATH}'; "
+                f"Copy-Item -LiteralPath '{source}' -Destination '{target}'; "
+                f"Set-RfMaterializedCacheFileWritable -Path '{target}'"
+            )
+            subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", command],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            self.assertTrue(
+                source.stat().st_file_attributes & stat.FILE_ATTRIBUTE_READONLY
+            )
+            self.assertFalse(
+                target.stat().st_file_attributes & stat.FILE_ATTRIBUTE_READONLY
+            )
+            target.write_bytes(b"private-run-copy")
+            self.assertEqual(file_sha256(source), source_hash)
 
     def test_require_existing_preserves_a_damaged_cache_entry(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

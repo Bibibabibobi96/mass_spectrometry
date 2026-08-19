@@ -86,6 +86,15 @@ Program共用的纯Lua drive kernel；它经`family_runtime_dependencies.json`�
 不得另设固定值。完整收口与回归收据见
 [公共RF drive kernel记录](../../../docs/history/20260815__multipole-common-simion-rf-drive-kernel.md)。
 
+当前51.2 mm连接器、三区real-PA、N=1000 continuous full-flight的配对数值证据已闭合
+`dt160/dt40/dt10`：三档共同得到`1000 -> 82 pre-pulse -> 77 eligible -> 77 detector`，规范72粒子主峰
+分别为`R=5108.20/5107.84/5117.54`。dt40相对dt160的direct FWHM变化约`+0.0071%`，并把两批
+并行wave的最长单批wall clock从`1418.454 s`降至`916.248 s`；dt10没有更快且主峰偏移更大。因此
+该冻结身份的当前默认profile是显式`dt40`（`rf_steps_per_period=40`）；dt160只作回归参考，dt10只作
+stress诊断。runner不得内隐选择profile；layout、gap、RF clock、field、PA、source或pulse policy改变时
+仍须由campaign显式冻结数值身份，不能把本次单点结论外推为普适资格。完整运行表、失败尝试与条件区域峰
+见[51.2 mm三档时间步长记录](../../../docs/history/20260819__oatof-gap51p2-dt160-dt40-dt10-convergence.md)。
+
 RF母样本到oaTOF全局粒子状态及SIMION方向角的投影由integration
 `runtime/rf_handoff_adapter.py`唯一拥有。该模块只负责solver-row与particle ID顺序闭合、oaTOF全局
 速度与SIMION加速器PA方向角互转，以及速度/动能一致性；位置与instrument time由邻接的

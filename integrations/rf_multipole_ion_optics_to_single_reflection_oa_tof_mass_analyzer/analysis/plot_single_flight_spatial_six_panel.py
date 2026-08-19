@@ -15,10 +15,12 @@ import matplotlib.pyplot as plt
 from matplotlib.path import Path as MplPath
 from matplotlib.patches import Circle, PathPatch, Rectangle
 from matplotlib.ticker import MultipleLocator
+import numpy as np
 import pandas as pd
 
 
 CAPABILITY_ID = "rf_oatof_single_flight_spatial_six_panel_v2"
+PHASE_SPACE_CAPABILITY_ID = "rf_oatof_accelerator_pre_pulse_phase_space_v1"
 GEOMETRY_TARGET_TICK_INTERVALS = 9
 
 
@@ -741,16 +743,298 @@ def build_figure(
     }
 
 
+def build_accelerator_phase_space_figure(
+    checkpoints: pd.DataFrame,
+) -> tuple[plt.Figure, dict[str, Any], pd.DataFrame]:
+    """Plot detector-blind pre-pulse phase space from retained checkpoints."""
+
+    required = {
+        "particle_id",
+        "event",
+        "instrument_time_us",
+        "x_mm",
+        "y_mm",
+        "z_mm",
+        "vx_mm_per_us",
+        "vy_mm_per_us",
+        "vz_mm_per_us",
+        "pulse_eligibility",
+    }
+    if missing := sorted(required - set(checkpoints.columns)):
+        raise ValueError(f"checkpoint phase-space columns are missing: {', '.join(missing)}")
+    prepulse = _event(checkpoints, "pre_pulse_state")
+    if prepulse.empty or prepulse["particle_id"].duplicated().any():
+        raise ValueError("pre-pulse phase space requires unique retained particles")
+    numeric = (
+        "x_mm",
+        "y_mm",
+        "z_mm",
+        "vx_mm_per_us",
+        "vy_mm_per_us",
+        "vz_mm_per_us",
+    )
+    prepulse.loc[:, list(numeric)] = prepulse.loc[:, list(numeric)].apply(
+        pd.to_numeric, errors="coerce"
+    )
+    numeric_values = prepulse.loc[:, list(numeric)]
+    if (
+        numeric_values.isna().any().any()
+        or numeric_values.isin([math.inf, -math.inf]).any().any()
+    ):
+        raise ValueError("pre-pulse phase space contains non-finite coordinates")
+    for axis in ("x", "y", "z"):
+        prepulse[f"v{axis}_m_per_s"] = 1000.0 * prepulse[f"v{axis}_mm_per_us"]
+
+    eligible = prepulse.loc[prepulse["pulse_eligibility"].eq("eligible")]
+    excluded = prepulse.loc[~prepulse["pulse_eligibility"].eq("eligible")]
+    size = marker_area(len(prepulse))
+    figure, axes = plt.subplots(1, 3, figsize=(15.0, 4.6), constrained_layout=True)
+    phase_axes = (
+        ("x_mm", "vx_m_per_s", "x (mm)", "vx (m/s)"),
+        ("y_mm", "vy_m_per_s", "y (mm)", "vy (m/s)"),
+        ("z_mm", "vz_m_per_s", "z (mm)", "vz (m/s)"),
+    )
+    panel_metadata = []
+    for ax, (position, velocity, position_label, velocity_label) in zip(
+        axes, phase_axes, strict=True
+    ):
+        _cloud(
+            ax,
+            eligible,
+            position,
+            velocity,
+            size=size,
+            label="pulse eligible",
+            color="#1b9e77",
+        )
+        _cloud(
+            ax,
+            excluded,
+            position,
+            velocity,
+            size=size,
+            label="not pulse eligible",
+            color="#d95f02",
+        )
+        position_values = prepulse[position].to_numpy(dtype=float)
+        velocity_values = prepulse[velocity].to_numpy(dtype=float)
+        fit_metadata: dict[str, Any]
+        if len(prepulse) >= 2 and float(np.ptp(position_values)) > 0:
+            design = np.column_stack([np.ones(len(prepulse)), position_values])
+            intercept, slope = np.linalg.lstsq(
+                design, velocity_values, rcond=None
+            )[0]
+            predicted = intercept + slope * position_values
+            residual = velocity_values - predicted
+            residual_sum_squares = float(np.sum(residual**2))
+            total_sum_squares = float(
+                np.sum((velocity_values - np.mean(velocity_values)) ** 2)
+            )
+            r_squared = (
+                1.0 - residual_sum_squares / total_sum_squares
+                if total_sum_squares > 0
+                else 1.0
+            )
+            fit_metadata = {
+                "status": "computed",
+                "population_basis": "all_retained_pre_pulse_particles",
+                "particle_count": len(prepulse),
+                "slope_m_per_s_per_mm": float(slope),
+                "intercept_m_per_s": float(intercept),
+                "r_squared": float(r_squared),
+                "residual_rms_m_per_s": float(np.sqrt(np.mean(residual**2))),
+                "residual_max_abs_m_per_s": float(np.max(np.abs(residual))),
+            }
+            line_x = np.asarray(
+                [float(np.min(position_values)), float(np.max(position_values))]
+            )
+            ax.plot(
+                line_x,
+                intercept + slope * line_x,
+                color="#252525",
+                linewidth=1.2,
+                label="linear fit (all retained pre-pulse)",
+                zorder=5,
+            )
+            ax.text(
+                0.02,
+                0.98,
+                (
+                    f"slope={float(slope):.4g} m/s/mm\n"
+                    f"R²={float(r_squared):.4g}\n"
+                    f"residual RMS={fit_metadata['residual_rms_m_per_s']:.4g} m/s\n"
+                    f"max|residual|={fit_metadata['residual_max_abs_m_per_s']:.4g} m/s"
+                ),
+                transform=ax.transAxes,
+                ha="left",
+                va="top",
+                fontsize=7,
+                bbox={
+                    "boxstyle": "round,pad=0.25",
+                    "facecolor": "white",
+                    "edgecolor": "#636363",
+                    "alpha": 0.82,
+                },
+                zorder=7,
+            )
+        else:
+            fit_metadata = {
+                "status": "not_computed",
+                "reason": "fewer_than_two_particles_or_zero_position_span",
+                "population_basis": "all_retained_pre_pulse_particles",
+                "particle_count": len(prepulse),
+                "slope_m_per_s_per_mm": None,
+                "intercept_m_per_s": None,
+                "r_squared": None,
+                "residual_rms_m_per_s": None,
+                "residual_max_abs_m_per_s": None,
+            }
+            ax.text(
+                0.02,
+                0.98,
+                "linear fit not computed",
+                transform=ax.transAxes,
+                ha="left",
+                va="top",
+                fontsize=7,
+                bbox={"facecolor": "white", "edgecolor": "#636363", "alpha": 0.82},
+                zorder=7,
+            )
+        panel_metadata.append(
+            {
+                "panel": (
+                    f"{position.removesuffix('_mm')}-"
+                    f"{velocity.removesuffix('_m_per_s')}"
+                ),
+                "position_column": position,
+                "position_unit": "mm",
+                "velocity_column": velocity,
+                "velocity_unit": "m_per_s",
+                "linear_fit": fit_metadata,
+            }
+        )
+        ax.set(xlabel=position_label, ylabel=velocity_label)
+        ax.grid(alpha=0.16, zorder=0)
+        handles, labels = ax.get_legend_handles_labels()
+        if handles:
+            ax.legend(handles, labels, fontsize=7, loc="best", frameon=False)
+    axes[0].set_title("A  x-vx")
+    axes[1].set_title("B  y-vy")
+    axes[2].set_title("C  z-vz")
+    figure.suptitle(
+        "Accelerator pre-pulse phase space (detector-blind retained checkpoint cohort)\n"
+        f"capability={PHASE_SPACE_CAPABILITY_ID}",
+        fontsize=12,
+    )
+    return figure, {
+        "event": "pre_pulse_state",
+        "population_basis": "all_retained_pre_pulse_particles",
+        "selection_uses_detector_outcome": False,
+        "pre_pulse_count": len(prepulse),
+        "pulse_eligible_count": len(eligible),
+        "not_pulse_eligible_count": len(excluded),
+        "particle_marker_area_pt2": size,
+        "panels": panel_metadata,
+    }, prepulse.loc[
+        :,
+        [
+            "particle_id",
+            "event",
+            "instrument_time_us",
+            "x_mm",
+            "y_mm",
+            "z_mm",
+            "vx_m_per_s",
+            "vy_m_per_s",
+            "vz_m_per_s",
+            "pulse_eligibility",
+        ],
+    ].copy()
+
+
+def write_accelerator_phase_space_outputs(
+    checkpoints_path: Path,
+    figure_path: Path,
+    metadata_path: Path,
+    data_path: Path,
+) -> None:
+    """Write one manifest-ready phase-space CSV/figure/metadata bundle."""
+
+    phase_figure, phase_counts, phase_data = build_accelerator_phase_space_figure(
+        pd.read_csv(checkpoints_path)
+    )
+    figure_path.parent.mkdir(parents=True, exist_ok=True)
+    phase_figure.savefig(figure_path, dpi=190)
+    plt.close(phase_figure)
+    phase_data.to_csv(data_path, index=False, lineterminator="\n")
+    metadata_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "role": "rf_oatof_accelerator_pre_pulse_phase_space_metadata",
+                "capability_id": PHASE_SPACE_CAPABILITY_ID,
+                "status": "success",
+                "counts": phase_counts,
+                "data": str(data_path.resolve()),
+                "figure": str(figure_path.resolve()),
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--initial", required=True, type=Path)
+    parser.add_argument("--initial", type=Path)
     parser.add_argument("--checkpoints", required=True, type=Path)
-    parser.add_argument("--upstream", required=True, type=Path)
-    parser.add_argument("--frontend", required=True, type=Path)
-    parser.add_argument("--oatof", required=True, type=Path)
-    parser.add_argument("--output", required=True, type=Path)
-    parser.add_argument("--metadata", required=True, type=Path)
+    parser.add_argument("--upstream", type=Path)
+    parser.add_argument("--frontend", type=Path)
+    parser.add_argument("--oatof", type=Path)
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--metadata", type=Path)
+    parser.add_argument("--phase-space-output", type=Path)
+    parser.add_argument("--phase-space-metadata", type=Path)
+    parser.add_argument("--phase-space-data", type=Path)
+    parser.add_argument("--phase-space-only", action="store_true")
     args = parser.parse_args()
+    phase_outputs = (
+        args.phase_space_output,
+        args.phase_space_metadata,
+        args.phase_space_data,
+    )
+    if args.phase_space_only:
+        if not all(value is not None for value in phase_outputs):
+            parser.error("phase-space-only requires figure, metadata and data outputs")
+        assert args.phase_space_output is not None
+        assert args.phase_space_metadata is not None
+        assert args.phase_space_data is not None
+        write_accelerator_phase_space_outputs(
+            args.checkpoints,
+            args.phase_space_output,
+            args.phase_space_metadata,
+            args.phase_space_data,
+        )
+        print(f"SINGLE_FLIGHT_PHASE_SPACE=PASS FIGURE={args.phase_space_output}")
+        return 0
+    spatial_inputs = (
+        args.initial,
+        args.upstream,
+        args.frontend,
+        args.oatof,
+        args.output,
+        args.metadata,
+    )
+    if not all(value is not None for value in spatial_inputs):
+        parser.error("spatial six-panel mode requires all spatial inputs and outputs")
+    assert args.initial is not None
+    assert args.upstream is not None
+    assert args.frontend is not None
+    assert args.oatof is not None
+    assert args.output is not None
+    assert args.metadata is not None
     summary = _load(args.output.parent.parent / "summary.json")
     source_region_diagnostic = summary.get("source_region_diagnostic")
     if not isinstance(source_region_diagnostic, dict):
@@ -782,6 +1066,20 @@ def main() -> int:
         encoding="utf-8",
         newline="\n",
     )
+    if any(value is None for value in phase_outputs) and any(
+        value is not None for value in phase_outputs
+    ):
+        parser.error("phase-space figure, metadata and data must be supplied together")
+    if all(value is not None for value in phase_outputs):
+        assert args.phase_space_output is not None
+        assert args.phase_space_metadata is not None
+        assert args.phase_space_data is not None
+        write_accelerator_phase_space_outputs(
+            args.checkpoints,
+            args.phase_space_output,
+            args.phase_space_metadata,
+            args.phase_space_data,
+        )
     print(f"SINGLE_FLIGHT_SIX_PANEL=PASS FIGURE={args.output}")
     return 0
 

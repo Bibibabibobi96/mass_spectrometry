@@ -78,6 +78,18 @@ class CampaignRuntimeAuthoritiesTests(unittest.TestCase):
         )
         for stage in policy["stage_limits"].values():
             self.assertEqual(stage["automatic_retry_count"], 0)
+        self.assertEqual(
+            {
+                name: stage["compact_final_retained_bytes"]
+                for name, stage in policy["stage_limits"].items()
+            },
+            {
+                "pre_pulse_interface_transport": 26214400,
+                "pulse_capture": 26214400,
+                "analyzer_transport": 26214400,
+                "single_flight_transport": 268435456,
+            },
+        )
         serialized = json.dumps(policy)
         for forbidden in ("particle_count", "source_run", "operating_mode"):
             self.assertNotIn(forbidden, serialized)
@@ -209,6 +221,25 @@ class CampaignRuntimeAuthoritiesTests(unittest.TestCase):
         )
         self.assertIn("aperture_height_mm=$apertureHeightMm", runner)
         self.assertNotIn("aperture_height_mm=0.9", runner)
+
+    def test_batch_scheduling_is_not_part_of_pa_content_identity(self) -> None:
+        runner = (
+            INTEGRATION_ROOT / "runtime" / "run_single_flight.ps1"
+        ).read_text(encoding="utf-8-sig")
+        frontend_identity = runner.split(
+            "$frontendCacheIdentity = [ordered]@{", 1
+        )[1].split("$frontendCacheKey =", 1)[0]
+        overlay_identity = runner.split(
+            "$overlayIdentity = [ordered]@{", 1
+        )[1].split("$overlayKey =", 1)[0]
+        self.assertNotIn("max_parallel_batches", frontend_identity)
+        self.assertNotIn("max_parallel_batches", overlay_identity)
+        self.assertNotIn("single_flight_batch_count", frontend_identity)
+        self.assertNotIn("single_flight_batch_count", overlay_identity)
+        self.assertNotIn("parallel_batch_memory_reservation_bytes", frontend_identity)
+        self.assertNotIn("parallel_batch_memory_reservation_bytes", overlay_identity)
+        self.assertIn("frontend_gem_sha256", frontend_identity)
+        self.assertIn("overlay_gem_sha256", overlay_identity)
 
     def test_single_flight_fails_closed_on_compiled_pa_aperture_topology(self) -> None:
         runner = (

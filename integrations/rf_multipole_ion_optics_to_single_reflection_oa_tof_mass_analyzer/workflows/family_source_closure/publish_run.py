@@ -18,6 +18,10 @@ from common.contracts.artifact_naming import validate_run_id
 from common.contracts.file_identity import file_sha256, repository_text_sha256
 from common.contracts.machine_contracts import ContractError, validate_schema
 from common.contracts.verify_run_manifest import record_path, verify_record
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.run_publication import (
+    publish_manifest,
+    write_pending_json,
+)
 
 
 INTEGRATION_ID = "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
@@ -78,6 +82,7 @@ N1_RECEIPT_SCHEMA = "rf_oatof_three_zone_n1_solver_authorization_receipt.schema.
 N1_RECEIPT_NAME = "three_zone_n1_solver_authorization_receipt.json"
 VERIFIED_PULSE_RECEIPT_NAME = "verified_pulse_timing_receipt.json"
 PULSE_TRANSITION_NAME = "pulse_timing_transition.json"
+PULSE_PUBLICATION_REPLAY_MODE = "verified_pulse_timing_publication_replay"
 N1_REQUIRED_EVENTS = (
     "source_release",
     "pre_pulse_state",
@@ -291,6 +296,28 @@ def _publish_pulse_timing_transition(
     return path
 
 
+def _pulse_confirmation_census_is_physical(census: dict[str, Any]) -> bool:
+    """Validate snapshot and crossing-event censuses without conflating them."""
+
+    names = (
+        "launched", "multipole_handoff", "pre_pulse_state",
+        "accelerator_grid1_forward", "accelerator_intermediate2_forward",
+        "local_accelerator_exit", "detector_crossing",
+    )
+    counts = {name: census.get(name) for name in names}
+    return (
+        all(isinstance(value, int) for value in counts.values())
+        and counts["launched"] >= counts["multipole_handoff"]
+        and counts["launched"] >= counts["pre_pulse_state"]
+        and counts["launched"] >= counts["accelerator_grid1_forward"]
+        and counts["accelerator_grid1_forward"]
+        >= counts["accelerator_intermediate2_forward"]
+        and counts["accelerator_intermediate2_forward"]
+        >= counts["local_accelerator_exit"]
+        and counts["local_accelerator_exit"] >= counts["detector_crossing"] > 0
+    )
+
+
 def _publish_verified_pulse_receipt(
     *, workspace_root: Path, parent_run_dir: Path, stage: dict[str, Any],
 ) -> tuple[Path, dict[str, Any]] | None:
@@ -325,7 +352,6 @@ def _publish_verified_pulse_receipt(
         "accelerator_grid1_forward", "accelerator_intermediate2_forward",
         "local_accelerator_exit", "detector_crossing",
     )
-    ordered_counts = [census.get(name) for name in names]
     if (
         child_summary.get("role") != "rf_oatof_simion_single_flight_summary"
         or child_summary.get("status") != "success"
@@ -333,9 +359,7 @@ def _publish_verified_pulse_receipt(
             float(child_summary.get("pulse_effective_time_us")), selected_time_us,
             rel_tol=0.0, abs_tol=1e-9,
         )
-        or any(not isinstance(value, int) for value in ordered_counts)
-        or any(left < right for left, right in zip(ordered_counts, ordered_counts[1:]))
-        or ordered_counts[-1] <= 0
+        or not _pulse_confirmation_census_is_physical(census)
     ):
         raise ContractError("pulse confirmation flight evidence differs")
 
@@ -352,6 +376,8 @@ def _publish_verified_pulse_receipt(
 
     candidate_parent = authority_path("candidate_parent_manifest")
     candidate_receipt = authority_path("candidate_selection_receipt")
+    if "pilot_verified_receipt" in authority:
+        authority_path("pilot_verified_receipt")
     receipt = {
         "schema_version": 1,
         "role": "rf_oatof_verified_pulse_timing_receipt",
@@ -405,6 +431,187 @@ def _publish_verified_pulse_cache(
         return path
     path.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
     return path
+
+
+def publish_verified_pulse_publication_replay(
+    *,
+    repo_root: Path,
+    workspace_root: Path,
+    replay_run_dir: Path,
+    failed_parent_manifest_path: Path,
+    execution_receipt_path: Path,
+    resolved_path: Path,
+    plan_path: Path,
+    budget_path: Path,
+) -> Path:
+    """Republish verified pulse evidence from an immutable successful child."""
+
+    replay_run_dir = replay_run_dir.resolve()
+    run_identity = validate_run_id(replay_run_dir.name)
+    if run_identity["activity"] != "analysis" or run_identity["scope"] != "python":
+        raise ContractError("pulse publication replay requires an analysis/python run ID")
+    if replay_run_dir.exists():
+        raise ContractError("pulse publication replay run already exists")
+
+    failed_parent_manifest_path = failed_parent_manifest_path.resolve()
+    failed_parent_dir = failed_parent_manifest_path.parent
+    execution_receipt_path = execution_receipt_path.resolve()
+    resolved_path = resolved_path.resolve()
+    plan_path = plan_path.resolve()
+    budget_path = budget_path.resolve()
+    if any(
+        path.parent != failed_parent_dir
+        for path in (execution_receipt_path, resolved_path, plan_path, budget_path)
+    ):
+        raise ContractError("pulse publication replay inputs are not from one parent run")
+
+    failed_manifest = _load(failed_parent_manifest_path)
+    receipt = _load(execution_receipt_path)
+    if (
+        failed_manifest.get("role") != "simulation_run_manifest"
+        or failed_manifest.get("project") != INTEGRATION_ID
+        or failed_manifest.get("mode") != "multipole_family_source_closure"
+        or failed_manifest.get("status") != "failed"
+        or receipt.get("role") != "integration_family_source_closure_execution_receipt"
+        or receipt.get("integration_run_id") != failed_manifest.get("run_id")
+        or receipt.get("execution_strategy") != "simion_single_flight"
+        or receipt.get("execution_status") != "completed_pending_paired_analysis"
+    ):
+        raise ContractError("pulse publication replay parent authority differs")
+    try:
+        verify_record("failed parent run_config", failed_manifest["run_config"])
+        for record in failed_manifest.get("outputs", []):
+            verify_record("failed parent output", record)
+    except (AssertionError, KeyError, TypeError) as exc:
+        raise ContractError("pulse publication replay failed parent identity differs") from exc
+
+    parent_inputs = failed_manifest.get("inputs")
+    expected_inputs = {
+        "resolved_connection": resolved_path,
+        "composition_plan": plan_path,
+        "resolved_engineering_budget": budget_path,
+    }
+    if not isinstance(parent_inputs, dict):
+        raise ContractError("pulse publication replay parent inputs are missing")
+    for name, expected_path in expected_inputs.items():
+        record = parent_inputs.get(name)
+        try:
+            verify_record(name, record)
+        except (AssertionError, KeyError, TypeError) as exc:
+            raise ContractError(f"pulse publication replay {name} identity differs") from exc
+        if record_path(record) != expected_path:
+            raise ContractError(f"pulse publication replay {name} path differs")
+    prepared_sha = {
+        "resolved_connection_sha256": file_sha256(resolved_path),
+        "composition_plan_sha256": file_sha256(plan_path),
+        "resolved_engineering_budget_sha256": file_sha256(budget_path),
+    }
+    manifest_sha = {
+        f"{name}_sha256": parent_inputs[name]["sha256"]
+        for name in expected_inputs
+    }
+    if any(
+        prepared_sha[name] not in {receipt.get(name), manifest_sha[name]}
+        for name in prepared_sha
+    ):
+        raise ContractError("pulse publication replay prepared identity differs")
+
+    stage_run_ids = receipt.get("stage_run_ids")
+    stage_binding_sha256s = receipt.get("stage_runtime_binding_sha256s")
+    if (
+        not isinstance(stage_run_ids, dict)
+        or set(stage_run_ids) != {"single_flight_transport"}
+        or not isinstance(stage_binding_sha256s, dict)
+        or set(stage_binding_sha256s) != {"single_flight_transport"}
+    ):
+        raise ContractError("pulse publication replay child authority is incomplete")
+    child_run_id = stage_run_ids["single_flight_transport"]
+    child_dir = (
+        workspace_root
+        / "artifacts"
+        / "projects"
+        / INTEGRATION_ID
+        / "runs"
+        / child_run_id
+    )
+    stage = _verify_stage(
+        run_path=child_dir,
+        run_id=child_run_id,
+        project_id=INTEGRATION_ID,
+        mode=SINGLE_FLIGHT_STAGES["single_flight_transport"]["mode"],
+        workspace_root=workspace_root,
+    )
+    _verify_stage_chain_identity(
+        stage=stage,
+        workspace_root=workspace_root,
+        receipt=receipt,
+        expected_source_field="upstream_source_identity",
+        expected_runtime_binding_sha256=stage_binding_sha256s["single_flight_transport"],
+    )
+
+    replay_run_dir.mkdir(parents=True, exist_ok=False)
+    verified_result = _publish_verified_pulse_receipt(
+        workspace_root=workspace_root,
+        parent_run_dir=replay_run_dir,
+        stage=stage,
+    )
+    if verified_result is None:
+        raise ContractError("pulse publication replay child has no confirmation authority")
+    verified_path, verified_receipt = verified_result
+    run_config = {
+        "schema_version": 1,
+        "role": "rf_oatof_verified_pulse_publication_replay_run_config",
+        "run_id": replay_run_dir.name,
+        "project": INTEGRATION_ID,
+        "mode": PULSE_PUBLICATION_REPLAY_MODE,
+        "project_root": str(workspace_root.resolve()),
+        "inputs": {
+            "failed_parent_manifest": _portable(failed_parent_manifest_path, workspace_root),
+            "source_execution_receipt": _portable(execution_receipt_path, workspace_root),
+            "confirmation_child_manifest": _portable(child_dir / "run_manifest.json", workspace_root),
+            "publisher_source": _portable(Path(__file__), workspace_root),
+        },
+        "parameters": {
+            "failed_parent_run_id": failed_manifest["run_id"],
+            "confirmation_child_run_id": child_run_id,
+            "selected_time_us": verified_receipt["selected_time_us"],
+            "content_key": verified_receipt["content_key"],
+            "solver_rerun": False,
+        },
+        "formal_gate_passed": False,
+    }
+    summary = {
+        "schema_version": 1,
+        "role": "rf_oatof_verified_pulse_publication_replay_summary",
+        "status": "success",
+        "qualification": "FUNCTIONAL_ONLY",
+        "decision": verified_receipt["decision"],
+        "selected_time_us": verified_receipt["selected_time_us"],
+        "content_key": verified_receipt["content_key"],
+        "confirmation_child_run_id": child_run_id,
+        "solver_rerun": False,
+        "formal_gate_passed": False,
+    }
+    run_config_path = replay_run_dir / "run_config.json"
+    summary_path = replay_run_dir / "summary.json"
+    manifest_path = replay_run_dir / "run_manifest.json"
+    write_pending_json(run_config_path, run_config)
+    write_pending_json(summary_path, summary)
+    publish_manifest(
+        repo_root=repo_root,
+        run_config=run_config_path,
+        manifest_path=manifest_path,
+        status="success",
+        outputs=(verified_path, summary_path),
+        project=INTEGRATION_ID,
+        mode=PULSE_PUBLICATION_REPLAY_MODE,
+        label="verified pulse publication replay",
+    )
+    _publish_verified_pulse_cache(
+        workspace_root=workspace_root,
+        receipt=verified_receipt,
+    )
+    return manifest_path
 
 
 def _n1_gate_pair(campaign: dict[str, Any], experiment_id: str) -> tuple[dict[str, Any], dict[str, Any]] | None:
@@ -1331,9 +1538,29 @@ def main() -> int:
     )
     parser.add_argument("--terminal-status", choices=("failed", "interrupted"))
     parser.add_argument("--failure-reason")
+    parser.add_argument("--publication-replay-source-parent-manifest", type=Path)
     args = parser.parse_args()
     repo_root = args.repo_root.resolve()
-    if args.failure_reason is not None:
+    if args.publication_replay_source_parent_manifest is not None:
+        if (
+            args.receipt is None
+            or args.terminal_status is not None
+            or args.failure_reason is not None
+        ):
+            parser.error("publication replay requires receipt and forbids failure arguments")
+        manifest = publish_verified_pulse_publication_replay(
+            repo_root=repo_root,
+            workspace_root=repo_root.parent,
+            replay_run_dir=args.integration_run_dir.resolve(),
+            failed_parent_manifest_path=(
+                args.publication_replay_source_parent_manifest.resolve()
+            ),
+            execution_receipt_path=args.receipt.resolve(),
+            resolved_path=args.resolved_connection.resolve(),
+            plan_path=args.composition_plan.resolve(),
+            budget_path=args.resolved_engineering_budget.resolve(),
+        )
+    elif args.failure_reason is not None:
         if args.terminal_status is None or args.receipt is not None:
             parser.error("failure publication requires status and forbids receipt")
         manifest = publish_family_source_closure_failure(

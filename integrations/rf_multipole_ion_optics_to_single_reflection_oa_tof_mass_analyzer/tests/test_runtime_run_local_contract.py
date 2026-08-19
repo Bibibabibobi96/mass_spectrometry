@@ -10,6 +10,8 @@ import subprocess
 import tempfile
 import unittest
 
+from common.contracts.file_identity import repository_text_sha256
+
 
 INTEGRATION_ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_BINDING = INTEGRATION_ROOT / "runtime" / "runtime_binding.ps1"
@@ -17,6 +19,12 @@ WORKFLOW_ENTRY = (
     INTEGRATION_ROOT / "workflows" / "family_source_closure" / "execute.ps1"
 )
 SINGLE_FLIGHT_RUNNER = INTEGRATION_ROOT / "runtime" / "run_single_flight.ps1"
+PRE_PULSE_TIME_SERIES_MATERIALIZER = (
+    INTEGRATION_ROOT / "runtime" / "materialize_pre_pulse_time_series.py"
+)
+FAMILY_RUNTIME_IMPLEMENTATION = (
+    INTEGRATION_ROOT / "config" / "family_runtime_implementation.json"
+)
 FAMILY_ADAPTER = (
     INTEGRATION_ROOT / "workflows" / "family_source_closure" / "adapter.ps1"
 )
@@ -32,6 +40,24 @@ RUNNERS = (
 
 
 class RuntimeRunLocalContractTests(unittest.TestCase):
+    def test_adapter_accepts_one_manifest_bound_pre_pulse_restart_authority(self) -> None:
+        adapter = FAMILY_ADAPTER.read_text(encoding="utf-8")
+        gate = adapter.index("$restartAuthorityCount = @(")
+        frozen_source_gate = adapter.index(
+            "Pre-pulse restart lacks a frozen source state.", gate
+        )
+        self.assertLess(gate, frozen_source_gate)
+        self.assertIn("'post_pulse_restart_reuse_authority'", adapter[gate - 300:gate])
+        self.assertIn("if ($restartAuthorityCount -ne 1)", adapter[gate:frozen_source_gate])
+        self.assertIn(
+            "($usesGeneratedPrePulseSubset -or "
+            "$usesManifestBoundPostPulseRestart)",
+            adapter,
+        )
+        self.assertIn(
+            "pre_pulse_restart_validation_sha256", adapter
+        )
+
     def test_pre_pulse_time_series_is_pre_solver_fail_closed_and_gap_bound(self) -> None:
         runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
         self.assertIn("[string]$PrePulseTimeSeriesContract = ''", runner)
@@ -53,7 +79,21 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
         self.assertNotIn("'--adjustable','handoff_pulse_mode=0'", runner)
         self.assertIn("pre_pulse_time_series_states.csv", runner)
         self.assertIn("pre_pulse_time_series_screening_receipt.json", runner)
-        self.assertIn("actual_instrument_time_us", runner)
+        self.assertIn(
+            "runtime.materialize_pre_pulse_time_series", runner
+        )
+        for argument in (
+            "--run-config",
+            "--pre-pulse-time-series-contract-sha256",
+            "--stdout-log",
+            "--states-output",
+            "--receipt-output",
+            "--summary-output",
+        ):
+            self.assertIn(argument, runner)
+        self.assertNotIn("$tracePattern", runner)
+        self.assertNotIn("$rows +=", runner)
+        self.assertNotIn("Export-Csv", runner)
         self.assertEqual(
             runner.count("-not $isPrePulseTimeSeriesScreening -and"), 2
         )
@@ -64,6 +104,62 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
             "rod_end_to_accelerator_shield_mm=[double]$frontendGeometry."
             "junction_enclosure.rod_end_to_accelerator_shield_mm",
             runner,
+        )
+
+    def test_execution_batch_count_and_parallel_memory_gate_are_governed(self) -> None:
+        runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        self.assertIn(
+            "[ValidateScript({ $_ -ge 1 })][int]$ExecutionBatchCount = 1", runner
+        )
+        self.assertNotIn("ValidateRange(1,10000)", runner)
+        self.assertIn("execution_batch_count=$ExecutionBatchCount", runner)
+        self.assertIn(
+            "execution_batches_parallel=[bool]($ExecutionBatchCount -gt 1 "
+            "-and $maxParallelBatches -gt 1)",
+            runner,
+        )
+        self.assertNotIn("$settings.batching_policy.default_batch_count", runner)
+        self.assertNotIn("$batchCount -ne 5", runner)
+        self.assertNotIn("N=1000 single flight requires five batches", runner)
+        self.assertIn("$quotient = [Math]::Floor($launched / $batchCount)", runner)
+        self.assertIn("$remainder = $launched % $batchCount", runner)
+        self.assertIn("$waveStart += $maxParallelBatches", runner)
+        self.assertIn("$waveBatchCount -gt 1", runner)
+        self.assertIn("[MultipoleMemoryStatus]::AvailableBytes()", runner)
+        self.assertIn(
+            "$settings.batching_policy.parallel_batch_memory_reservation_bytes",
+            runner,
+        )
+        self.assertIn(
+            "$stageBudgetDocument.limits.minimum_system_available_memory_bytes",
+            runner,
+        )
+        self.assertNotIn("[int64](10GB)", runner)
+        self.assertNotIn("[int64](4GB)", runner)
+        memory_gate = runner.index("$waveBatchCount -gt 1")
+        solver_launch = runner.index("$jobs += Start-Job")
+        self.assertLess(memory_gate, solver_launch)
+        batch_bound = runner.index(
+            "Single-flight execution batch count exceeds launched particle count."
+        )
+        self.assertLess(batch_bound, solver_launch)
+
+    def test_pre_pulse_time_series_materializer_is_runtime_bound(self) -> None:
+        registry = json.loads(
+            FAMILY_RUNTIME_IMPLEMENTATION.read_text(encoding="utf-8")
+        )
+        record = registry["implementation"][
+            "single_flight_pre_pulse_time_series_materializer"
+        ]
+        self.assertEqual(
+            record["path"],
+            "integrations/"
+            "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/"
+            "runtime/materialize_pre_pulse_time_series.py",
+        )
+        self.assertEqual(
+            record["sha256"],
+            repository_text_sha256(PRE_PULSE_TIME_SERIES_MATERIALIZER),
         )
 
     def test_observed_projection_identity_is_promoted_before_solver(self) -> None:
@@ -1166,7 +1262,16 @@ foreach ($case in $cases) {{
             "Copy-Item -LiteralPath $source.FullName -Destination $target -Force",
             text,
         )
-        self.assertIn("$frontendWorkingPa0,$overlayCachePa0", text)
+        self.assertIn("$frontendWorkingPa0,$overlayRuntimePa0", text)
+        self.assertIn(
+            "-FilePath $SimionExe -WorkingDirectory $runtimeDir",
+            text,
+        )
+        self.assertNotIn(
+            "-FilePath $SimionExe -WorkingDirectory $overlayCacheDir",
+            text,
+        )
+        self.assertIn("Set-RfMaterializedCacheFileWritable -Path $target", text)
         self.assertIn("-PaPath $frontendWorkingPa0", text)
         self.assertIn(
             "$env:OATOF_ACCELERATOR_PA_OVERRIDE = $frontendWorkingPa0",
@@ -1265,6 +1370,29 @@ foreach ($case in $cases) {{
         self.assertIn("$isPrePulseTimeSeriesScreening -eq $false", runner)
         self.assertIn("$SamplingMode -notin @('steady_candidate_pool')", runner)
         self.assertNotIn("layout_resolved_axial_provisional_xy2_v1", runner)
+
+    def test_full_flight_freezes_default_accelerator_phase_space_diagnostic(self) -> None:
+        runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        self.assertIn("single_flight_accelerator_pre_pulse_phase_space.png", runner)
+        self.assertIn("--phase-space-output", runner)
+        self.assertIn("--phase-space-metadata", runner)
+        self.assertIn("--phase-space-data", runner)
+        self.assertIn("accelerator_pre_pulse_phase_space", runner)
+        self.assertIn("$phaseSpace,$phaseSpaceMetadata,$phaseSpaceData", runner)
+
+        catalog = json.loads(
+            (INTEGRATION_ROOT / "config" / "analysis_capabilities.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        capability = next(
+            item
+            for item in catalog["capabilities"]
+            if item["capability_id"]
+            == "rf_oatof_accelerator_pre_pulse_phase_space_v1"
+        )
+        self.assertEqual(capability["required_event_plane"], "pre_pulse_state")
+        self.assertEqual(capability["claim_class"], "DIAGNOSTIC_ONLY")
 
     def test_resolution_qualification_requires_full_bootstrap(self) -> None:
         text = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")

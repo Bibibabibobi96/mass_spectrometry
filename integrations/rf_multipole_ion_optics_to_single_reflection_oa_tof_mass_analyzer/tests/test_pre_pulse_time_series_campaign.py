@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 from pathlib import Path
+import subprocess
 import unittest
 
 from common.contracts.machine_contracts import ContractError, validate_schema
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.prepare import (
+    _automatic_pulse_population_binding,
     compile_pre_pulse_time_series_contract,
     validate_pre_pulse_time_series_campaign,
 )
@@ -31,6 +34,10 @@ V3_CAMPAIGN_PATH = INTEGRATION_ROOT / (
 V5_AUTO_CAMPAIGN_PATH = INTEGRATION_ROOT / (
     "config/diagnostics/"
     "connector_gap_three_zone_real_pa_first100_n100_campaign_v5.json"
+)
+N1000_AUTO_CAMPAIGN_PATH = INTEGRATION_ROOT / (
+    "config/diagnostics/"
+    "connector_gap_three_zone_real_pa_full_n1000_campaign_v1.json"
 )
 ADAPTER_PATH = INTEGRATION_ROOT / "workflows/family_source_closure/adapter.ps1"
 PUBLIC_ENTRY_PATH = INTEGRATION_ROOT / "workflows/family_source_closure/execute.ps1"
@@ -266,12 +273,50 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
             )
             self.assertNotIn("fixed_execution_authority", row["single_flight_pulse_schedule_policy"])
 
+    def test_auto_policy_accepts_only_legacy_prefix_or_full_source_population(
+        self,
+    ) -> None:
+        legacy = json.loads(V5_AUTO_CAMPAIGN_PATH.read_text(encoding="utf-8"))
+        full = json.loads(N1000_AUTO_CAMPAIGN_PATH.read_text(encoding="utf-8"))
+        self.assertEqual(
+            _automatic_pulse_population_binding(
+                legacy["experiments"][0]["single_flight_population"]
+            ),
+            ("prepared_deterministic_prefix", 100),
+        )
+        for row in full["experiments"]:
+            self.assertEqual(
+                _automatic_pulse_population_binding(row["single_flight_population"]),
+                ("source_contract_particle_source", 1000),
+            )
+        unsupported = copy.deepcopy(full["experiments"][0]["single_flight_population"])
+        unsupported["execution_population"]["particle_count"] = 999
+        self.assertEqual(
+            _automatic_pulse_population_binding(unsupported),
+            ("source_contract_particle_source", 999),
+        )
+        for invalid_count in (0, -1):
+            unsupported["execution_population"]["particle_count"] = invalid_count
+            with self.subTest(invalid_count=invalid_count), self.assertRaisesRegex(
+                ContractError, "automatic pulse timing population differs"
+            ):
+                _automatic_pulse_population_binding(unsupported)
+        unsupported = copy.deepcopy(full["experiments"][0]["single_flight_population"])
+        unsupported["source_authority"]["table_binding"] = (
+            "prepared_deterministic_prefix"
+        )
+        with self.assertRaisesRegex(
+            ContractError, "automatic pulse timing population differs"
+        ):
+            _automatic_pulse_population_binding(unsupported)
+
     def test_adapter_transports_internal_contract_without_new_public_cli(self) -> None:
         adapter = ADAPTER_PATH.read_text(encoding="utf-8")
         public_entry = PUBLIC_ENTRY_PATH.read_text(encoding="utf-8")
         for name in (
             "pre_pulse_time_series_prefix_filename",
             "pre_pulse_time_series_prefix_sha256",
+            "pre_pulse_time_series_prefix_count",
             "pre_pulse_time_series_contract_filename",
             "pre_pulse_time_series_contract_sha256",
             "PrePulseTimeSeriesContract",
@@ -279,7 +324,69 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
         ):
             self.assertIn(name, adapter)
         self.assertIn("$runnerArguments.PrePulseTimeSeriesContract", adapter)
+        self.assertIn(
+            "$prePulseTimeSeriesPrefixBinding = [string]"
+            "$frozenArguments.pre_pulse_time_series_prefix_filename",
+            adapter,
+        )
+        self.assertIn(
+            "$pulseCandidateConfirmationPrefixBinding = [string]"
+            "$frozenArguments.pulse_candidate_confirmation_prefix_filename",
+            adapter,
+        )
+        self.assertNotIn(
+            "$prePulseTimeSeriesPrefixBinding = [string]\n", adapter
+        )
+        self.assertNotIn(
+            "$pulseCandidateConfirmationPrefixBinding = [string]\n", adapter
+        )
         self.assertNotIn("PrePulseTimeSeriesContract", public_entry)
+
+    def test_adapter_population_path_casts_execute_as_strings(self) -> None:
+        script = r"""
+$errors = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile(
+  $env:RF_ADAPTER_PATH, [ref]$null, [ref]$errors
+)
+if ($errors) { throw $errors[0] }
+$cases = @(
+  @('prePulseTimeSeriesPrefixBinding', 'pre_pulse_time_series_prefix_filename'),
+  @('pulseCandidateConfirmationPrefixBinding',
+    'pulse_candidate_confirmation_prefix_filename')
+)
+foreach ($case in $cases) {
+  $variableName = '$' + $case[0]
+  $assignment = $ast.Find({
+    param($node)
+    $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+      $node.Left.Extent.Text -eq $variableName
+  }, $true)
+  if ($null -eq $assignment) { throw "missing assignment: $variableName" }
+  $frozenArguments = @{}
+  $frozenArguments[$case[1]] = 'artifacts/projects/source.csv'
+  . ([scriptblock]::Create($assignment.Extent.Text))
+  $value = Get-Variable -Name $case[0] -ValueOnly
+  if ($value.GetType().FullName -ne 'System.String' -or
+      -not $value.StartsWith('artifacts/')) {
+    throw "population path cast is not executable: $variableName"
+  }
+}
+"CAST_SHAPE=PASS"
+"""
+        environment = os.environ.copy()
+        environment["RF_ADAPTER_PATH"] = str(ADAPTER_PATH)
+        result = subprocess.run(
+            ["pwsh", "-NoProfile", "-Command", script],
+            cwd=REPO_ROOT,
+            env=environment,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("CAST_SHAPE=PASS", result.stdout)
 
 
 if __name__ == "__main__":

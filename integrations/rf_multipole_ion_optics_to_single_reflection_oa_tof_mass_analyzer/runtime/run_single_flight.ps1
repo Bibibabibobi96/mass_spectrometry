@@ -94,6 +94,7 @@ param(
   [string]$PulseResolutionRegistrationAuthoritySha256 = '',
   [string]$PrePulseTimeSeriesContract = '',
   [string]$PrePulseTimeSeriesContractSha256 = '',
+  [ValidateScript({ $_ -ge 1 })][int]$ExecutionBatchCount = 1,
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
   [string]$PythonExe = ''
 )
@@ -619,6 +620,10 @@ try {
     -ExpectedConnectionProfileId $ConnectionProfileId -StageId 'single_flight_transport' -Solver simion
   $resolvedBudgetDocument = Read-RfFrozenResolvedBudgetDocument `
     -StageBudgetReceipt $budget
+  $stageBudgetDocument = Get-Content -Raw -LiteralPath $budget.stage_budget `
+    -Encoding UTF8 | ConvertFrom-Json
+  $minimumSystemAvailableMemoryBytes =
+    [int64]$stageBudgetDocument.limits.minimum_system_available_memory_bytes
   if ([string]$resolvedBudgetDocument.single_flight_pa_cache_policy -ne
       $PaCachePolicy -or
       [string]$resolvedBudgetDocument.single_flight_pa_cache_policy_provenance -ne
@@ -646,6 +651,10 @@ try {
     [string]$_.profile_id -eq $selectedGridProfileId
   })
   if ($settings.role -ne 'rf_oatof_simion_single_flight_configuration' -or
+      $settings.PSObject.Properties.Name -notcontains 'batching_policy' -or
+      $settings.batching_policy.PSObject.Properties.Name -notcontains
+        'parallel_batch_memory_reservation_bytes' -or
+      [int64]$settings.batching_policy.parallel_batch_memory_reservation_bytes -le 0 -or
       $gridProfiles.Count -ne 1 -or
       @($gridProfiles[0].cell_mm_xyz.PSObject.Properties.Name).Count -ne 3 -or
       @($gridProfiles[0].cell_mm_xyz.PSObject.Properties.Name | Where-Object {
@@ -663,6 +672,8 @@ try {
   $frontendCellMmY = [double]$gridProfiles[0].cell_mm_xyz.y
   $frontendCellMmZ = [double]$gridProfiles[0].cell_mm_xyz.z
   $maxParallelBatches = [int]$gridProfiles[0].max_parallel_batches
+  $parallelBatchMemoryReservationBytes =
+    [int64]$settings.batching_policy.parallel_batch_memory_reservation_bytes
   $overlayEnabled = $null -ne $gridProfiles[0].PSObject.Properties['accelerator_overlay'] -and
     [bool]$gridProfiles[0].accelerator_overlay.enabled
   $resolvedFieldOverlayId = [string]$gridProfiles[0].field_overlay_id
@@ -721,7 +732,7 @@ try {
     [string]$_.profile_id -eq $selectedTimeIntegrationProfileId
   })
   if ($timeIntegrationProfiles.Count -ne 1 -or
-      [int]$timeIntegrationProfiles[0].rf_steps_per_period -notin @(160,320)) {
+      [int]$timeIntegrationProfiles[0].rf_steps_per_period -notin @(10,20,40,80,160,320)) {
     throw 'Single-flight time-integration profile is invalid.'
   }
   $rfStepsPerPeriod = [int]$timeIntegrationProfiles[0].rf_steps_per_period
@@ -924,6 +935,9 @@ try {
       throw 'Staged-three-stage population cannot execute in the single-flight runner.'
     }
     default { throw "Unsupported resolved population mode: $populationMode" }
+  }
+  if ($ExecutionBatchCount -gt $launched) {
+    throw 'Single-flight execution batch count exceeds launched particle count.'
   }
   $sourceRegionDiagnosticProfileId = if (
     $isPrePulseTimeSeriesScreening -eq $false -and
@@ -1364,8 +1378,11 @@ try {
   $cacheGem = Join-Path $cacheDir 'frontend.gem'; $cachePaSharp = Join-Path $cacheDir 'frontend.pa#'; $cachePa0 = Join-Path $cacheDir 'frontend.pa0'
   $frontendWorkingDir = Join-Path $package.run_dir 'simion\frontend_cache_copy'
   New-Item -ItemType Directory -Path $frontendWorkingDir -Force | Out-Null
-  Get-ChildItem -LiteralPath $cacheDir -Filter 'frontend.pa*' -File |
-    Copy-Item -Destination $frontendWorkingDir -Force
+  foreach ($source in Get-ChildItem -LiteralPath $cacheDir -Filter 'frontend.pa*' -File) {
+    $target = Join-Path $frontendWorkingDir $source.Name
+    Copy-Item -LiteralPath $source.FullName -Destination $target -Force
+    Set-RfMaterializedCacheFileWritable -Path $target
+  }
   $frontendWorkingPa0 = Join-Path $frontendWorkingDir 'frontend.pa0'
 
   $overlayGeometry = $null
@@ -1700,6 +1717,7 @@ try {
     foreach ($source in Get-ChildItem -LiteralPath $CacheDirectory -Filter $Pattern -File) {
       $target = Join-Path $runtimeDir $source.Name
       Copy-Item -LiteralPath $source.FullName -Destination $target -Force
+      Set-RfMaterializedCacheFileWritable -Path $target
     }
   }
   function Publish-DownstreamPaCacheFamily {
@@ -1764,12 +1782,15 @@ try {
     Write-RfPreCacheRunConfiguration -LifecycleStage 'reflectron_pa_cache_hit'
   }
   if ($overlayEnabled) {
+    Copy-RfPaCacheFamilyToRuntime -CacheDirectory $overlayCacheDir `
+      -Pattern 'accelerator_overlay.pa*'
+    $overlayRuntimePa0 = Join-Path $runtimeDir 'accelerator_overlay.pa0'
     $overlayVerify = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget `
       -RunDir $package.run_dir -UsagePath (Join-Path $package.log_dir 'overlay_interface_verify_resource_usage.json') `
-      -FilePath $SimionExe -WorkingDirectory $overlayCacheDir `
+      -FilePath $SimionExe -WorkingDirectory $runtimeDir `
       -RedirectStandardOutput (Join-Path $package.log_dir 'overlay_interface_verify.stdout.log') `
       -RedirectStandardError (Join-Path $package.log_dir 'overlay_interface_verify.stderr.log') `
-      -ArgumentList @('--nogui','--noprompt','lua',$overlayInterfaceVerifierFrozen,$frontendWorkingPa0,$overlayCachePa0,
+      -ArgumentList @('--nogui','--noprompt','lua',$overlayInterfaceVerifierFrozen,$frontendWorkingPa0,$overlayRuntimePa0,
         ([string]$frontendGeometry.instance_origin_mm.x),([string]$frontendGeometry.instance_origin_mm.y),([string]$frontendGeometry.instance_origin_mm.z),
         ([string]$overlayGeometry.instance_origin_mm.x),([string]$overlayGeometry.instance_origin_mm.y),([string]$overlayGeometry.instance_origin_mm.z),'19',$overlayInterfaceReport)
     if ($overlayVerify.resource_budget_exceeded) { $resourceBudgetExceeded=$true; throw 'Overlay interface verification exceeded its resource budget.' }
@@ -1941,7 +1962,6 @@ try {
   $overlayIobContainerFrozen = $null
   $overlayIobContainerGemFrozen = @()
   if ($overlayEnabled) {
-    Copy-RfPaCacheFamilyToRuntime -CacheDirectory $overlayCacheDir -Pattern 'accelerator_overlay.pa*'
     $overlayIobBuilderSource = Join-Path $PSScriptRoot 'build_single_flight_overlay_iob.lua'
     $overlayIobBuilderFrozen = Join-Path $package.input_dir 'build_single_flight_overlay_iob.lua'
     Copy-RfStableFile -SourceRunRoot $repoRoot -SourcePath $overlayIobBuilderSource `
@@ -2074,7 +2094,7 @@ try {
     upstream_project_id=$runtime.upstream_project_id
     inputs=[ordered]@{ configuration=$configuration; runtime_binding=$runtimeBindingFrozen; resolved_connection=$resolvedFrozen; resolved_source_contract=$sourceContractFrozen; resolved_population_contract=$populationContractFrozen; upstream_resolved_design=$upstreamFrozen; oatof_resolved_geometry=$oatofGeometry; pulse_schedule=$pulseScheduleFrozen; resolved_region_field_contract=$resolvedRegionFieldContractFrozen; analyzer_component=$analyzerComponent; pulse_hook=$pulseHook; frontend_hook=$frontendHook; rf_drive_kernel=$rfDriveKernel; resolved_integration_engineering_budget=$budget.frozen_budget; resolved_stage_resource_budget=$budget.stage_budget; mother_particle_source=$motherSource; mother_particle_source_materialization_receipt=$motherSourceReceiptFrozen; initial_global_state=$globalSource; particle_row_map=$particleRowMap; pre_pulse_restart_validation=$prePulseValidationFrozen; staged_grid2_restart_context=$restartContext; staged_grid2_loader_authorization_budget=$stagedLoaderBudgetFrozen; staged_grid2_producer_manifest=$stagedGrid2ProducerManifestFrozen; staged_grid2_bridge_receipt=$stagedGrid2BridgeReceiptFrozen; particle_input=$particleInput; frontend_gem=$frontendGem; frontend_contract=$frontendContract; frontend_electrode_topology=$frontendElectrodeTopologyContract; frontend_pa_cache_manifest=$frontendCacheManifestInput; accelerator_overlay_gem=$overlayGem; accelerator_overlay_contract=$overlayContract; accelerator_overlay_basis_builder=$overlayBasisBuilderFrozen; accelerator_overlay_refiner=$overlayRefinerFrozen; accelerator_overlay_interface_verifier=$overlayInterfaceVerifierFrozen; accelerator_overlay_pa_cache_manifest=$overlayCacheManifestInput; accelerator_overlay_iob_builder=$overlayIobBuilderFrozen; accelerator_overlay_iob_container=$overlayIobContainerFrozen; accelerator_overlay_iob_container_gems=$overlayIobContainerGemFrozen; accelerator_overlay_basis_report=$overlayBasisReport; accelerator_overlay_interface_report=$overlayInterfaceReport; flight_tube_pa_cache_manifest=$flightTubeCacheManifestInput; reflectron_pa_cache_manifest=$reflectronCacheManifestInput; frontend_aperture_topology_support=$apertureTopologySupport; frontend_aperture_topology_verifier=$apertureVerifier; program_metadata=$programMetadata; candidate_flight_tube_builder=$flightTubeBuilderFrozen; candidate_flight_tube_gem=$flightTubeGemFrozen; candidate_reflectron_builder=$reflectronBuilderFrozen; candidate_reflectron_gem=$reflectronGemFrozen; candidate_reflectron_refiner=$reflectronRefinerFrozen }
     upstream_source_identity=$resolvedBudgetDocument.source_identity
-    parameters=[ordered]@{ connection_profile_id=$ConnectionProfileId; source_branch_id=$SourceBranchId; single_flight_pa_cache_policy=$PaCachePolicy; single_flight_pa_cache_policy_provenance=$PaCachePolicyProvenance; pa_cache_dispositions=$paCacheDispositions; layout_profile_id=$(if($hasGovernedLayout){$LayoutProfileId}else{$null}); architecture_generation_id=$(if($hasGovernedLayout){$ArchitectureGenerationId}else{$null}); source_profile_id=$(if($SourceProfileId){$SourceProfileId}else{$null}); field_overlay_id=$resolvedFieldOverlayId; bore_radius_mm=[double]$oatofGeometryDocument.geometry_mm.bore_r; ring_outer_radius_mm=[double]$oatofGeometryDocument.geometry_mm.ring_outer_r; shield_inner_radius_mm=[double]$oatofGeometryDocument.geometry_mm.flight_tube_r; frontend_grid_profile_id=$selectedGridProfileId; frontend_cell_mm_xyz=[ordered]@{x=$frontendCellMmX;y=$frontendCellMmY;z=$frontendCellMmZ}; accelerator_overlay_enabled=$overlayEnabled; accelerator_overlay_cell_mm_xyz=$(if($overlayEnabled){[ordered]@{x=$overlayCellMmX;y=$overlayCellMmY;z=$overlayCellMmZ}}else{$null}); accelerator_overlay_boundary_mode=$(if($overlayEnabled){'coarse_electrode_basis_dirichlet_v1'}else{$null}); oatof_numerical_profile_id=$selectedOatofNumericalProfileId; trajectory_quality_profile_id=$selectedTrajectoryQualityProfileId; trajectory_quality=$trajectoryQuality; time_integration_profile_id=$selectedTimeIntegrationProfileId; rf_steps_per_period=$rfStepsPerPeriod; spatial_window_profile_id=$(if($spatialWindowProfiles.Count -eq 1){$SpatialWindowProfileId}else{$null}); source_region_diagnostic_profile_id=$(if($sourceRegionDiagnosticProfiles.Count -eq 1){$sourceRegionDiagnosticProfileId}else{$null}); accelerator_field_profile_id=$selectedFieldProfileId; resolved_region_field_contract_sha256=$ResolvedRegionFieldContractSha256; resolved_region_field_semantic_sha256=$ResolvedRegionFieldSemanticSha256; resolved_population_contract_sha256=$ResolvedPopulationContractSha256; max_parallel_batches=$maxParallelBatches; clock_basis=[string]$settings.clock_basis; launched_particle_count=$launched; particle_count=$launched; population_denominator_count=$PopulationDenominatorCount; eligible_population_count=$EligiblePopulationCount; population_basis=$(if($SamplingMode -eq 'continuous_injection_full_population'){'candidate_full_population'}elseif($SamplingMode -eq 'pulse_eligible_conditional'){'pulse_eligible_conditional_population'}else{'source_contract_population'}); execution_batch_count=$(if($launched -ge [int]$settings.batching_policy.enabled_at_particle_count){[int]$settings.batching_policy.default_batch_count}else{1}); execution_batches_parallel=$(if($launched -ge [int]$settings.batching_policy.enabled_at_particle_count){[bool]$settings.batching_policy.parallel_after_cache_warmup}else{$false}); aperture_width_mm=$apertureWidthMm; aperture_height_mm=$apertureHeightMm; aperture_boolean_boundary_policy=[string]$apertureDiscretization.boolean_boundary_policy; aperture_grid_warnings=$apertureGridWarnings; frontend_open_aperture_column_count=[int]$apertureTopology.open_column_count; frontend_aperture_guard_electrode_check_passed=[bool]$apertureTopology.guard_electrode_check_passed; frontend_aperture_topology_report_sha256=(Get-FileHash -LiteralPath $apertureTopologyReport -Algorithm SHA256).Hash; rod_end_to_accelerator_shield_mm=[double]$frontendGeometry.junction_enclosure.rod_end_to_accelerator_shield_mm; surrounded_transition=$true; accelerator_axis_x_mm=[double]$oatofGeometryDocument.coordinate_convention.accelerator_axis_x; pulse_time_us=$pulseTimeUs; pulse_width_us=$pulseWidthUs; design_compilation=$(if($null -ne $layoutDerivation){$layoutDerivation.design_compilation}else{$null}); source_release_full_width_mm=[double]$oatofGeometryDocument.particle_source.size_z_mm; reflectron_stage2_length_mm=[double]$oatofGeometryDocument.geometry_mm.L_stage2; reflectron_midgrid_voltage_V=[double]$oatofGeometryDocument.electrodes_V.midgrid; reflectron_backplate_voltage_V=[double]$oatofGeometryDocument.electrodes_V.backplate; reflectron_pa0_sha256=(Get-FileHash -LiteralPath $reflectronPa0 -Algorithm SHA256).Hash; frontend_gem_sha256=$frontendHash; frontend_pa0_sha256=(Get-FileHash -LiteralPath $cachePa0 -Algorithm SHA256).Hash; accelerator_overlay_pa0_sha256=$(if($overlayEnabled){(Get-FileHash -LiteralPath $overlayCachePa0 -Algorithm SHA256).Hash}else{$null}) }
+    parameters=[ordered]@{ connection_profile_id=$ConnectionProfileId; source_branch_id=$SourceBranchId; single_flight_pa_cache_policy=$PaCachePolicy; single_flight_pa_cache_policy_provenance=$PaCachePolicyProvenance; pa_cache_dispositions=$paCacheDispositions; layout_profile_id=$(if($hasGovernedLayout){$LayoutProfileId}else{$null}); architecture_generation_id=$(if($hasGovernedLayout){$ArchitectureGenerationId}else{$null}); source_profile_id=$(if($SourceProfileId){$SourceProfileId}else{$null}); field_overlay_id=$resolvedFieldOverlayId; bore_radius_mm=[double]$oatofGeometryDocument.geometry_mm.bore_r; ring_outer_radius_mm=[double]$oatofGeometryDocument.geometry_mm.ring_outer_r; shield_inner_radius_mm=[double]$oatofGeometryDocument.geometry_mm.flight_tube_r; frontend_grid_profile_id=$selectedGridProfileId; frontend_cell_mm_xyz=[ordered]@{x=$frontendCellMmX;y=$frontendCellMmY;z=$frontendCellMmZ}; accelerator_overlay_enabled=$overlayEnabled; accelerator_overlay_cell_mm_xyz=$(if($overlayEnabled){[ordered]@{x=$overlayCellMmX;y=$overlayCellMmY;z=$overlayCellMmZ}}else{$null}); accelerator_overlay_boundary_mode=$(if($overlayEnabled){'coarse_electrode_basis_dirichlet_v1'}else{$null}); oatof_numerical_profile_id=$selectedOatofNumericalProfileId; trajectory_quality_profile_id=$selectedTrajectoryQualityProfileId; trajectory_quality=$trajectoryQuality; time_integration_profile_id=$selectedTimeIntegrationProfileId; rf_steps_per_period=$rfStepsPerPeriod; spatial_window_profile_id=$(if($spatialWindowProfiles.Count -eq 1){$SpatialWindowProfileId}else{$null}); source_region_diagnostic_profile_id=$(if($sourceRegionDiagnosticProfiles.Count -eq 1){$sourceRegionDiagnosticProfileId}else{$null}); accelerator_field_profile_id=$selectedFieldProfileId; resolved_region_field_contract_sha256=$ResolvedRegionFieldContractSha256; resolved_region_field_semantic_sha256=$ResolvedRegionFieldSemanticSha256; resolved_population_contract_sha256=$ResolvedPopulationContractSha256; max_parallel_batches=$maxParallelBatches; clock_basis=[string]$settings.clock_basis; launched_particle_count=$launched; particle_count=$launched; population_denominator_count=$PopulationDenominatorCount; eligible_population_count=$EligiblePopulationCount; population_basis=$(if($SamplingMode -eq 'continuous_injection_full_population'){'candidate_full_population'}elseif($SamplingMode -eq 'pulse_eligible_conditional'){'pulse_eligible_conditional_population'}else{'source_contract_population'}); execution_batch_count=$ExecutionBatchCount; execution_batches_parallel=[bool]($ExecutionBatchCount -gt 1 -and $maxParallelBatches -gt 1); aperture_width_mm=$apertureWidthMm; aperture_height_mm=$apertureHeightMm; aperture_boolean_boundary_policy=[string]$apertureDiscretization.boolean_boundary_policy; aperture_grid_warnings=$apertureGridWarnings; frontend_open_aperture_column_count=[int]$apertureTopology.open_column_count; frontend_aperture_guard_electrode_check_passed=[bool]$apertureTopology.guard_electrode_check_passed; frontend_aperture_topology_report_sha256=(Get-FileHash -LiteralPath $apertureTopologyReport -Algorithm SHA256).Hash; rod_end_to_accelerator_shield_mm=[double]$frontendGeometry.junction_enclosure.rod_end_to_accelerator_shield_mm; surrounded_transition=$true; accelerator_axis_x_mm=[double]$oatofGeometryDocument.coordinate_convention.accelerator_axis_x; pulse_time_us=$pulseTimeUs; pulse_width_us=$pulseWidthUs; design_compilation=$(if($null -ne $layoutDerivation){$layoutDerivation.design_compilation}else{$null}); source_release_full_width_mm=[double]$oatofGeometryDocument.particle_source.size_z_mm; reflectron_stage2_length_mm=[double]$oatofGeometryDocument.geometry_mm.L_stage2; reflectron_midgrid_voltage_V=[double]$oatofGeometryDocument.electrodes_V.midgrid; reflectron_backplate_voltage_V=[double]$oatofGeometryDocument.electrodes_V.backplate; reflectron_pa0_sha256=(Get-FileHash -LiteralPath $reflectronPa0 -Algorithm SHA256).Hash; frontend_gem_sha256=$frontendHash; frontend_pa0_sha256=(Get-FileHash -LiteralPath $cachePa0 -Algorithm SHA256).Hash; accelerator_overlay_pa0_sha256=$(if($overlayEnabled){(Get-FileHash -LiteralPath $overlayCachePa0 -Algorithm SHA256).Hash}else{$null}) }
     artifact_retention=[ordered]@{policy_version=1;class='compact';reason=$null}; formal_gate_passed=$false
   }
   if ($isPrePulseTimeSeriesScreening) {
@@ -2160,11 +2180,6 @@ try {
   $snapshotReady = $true
 
   $batchCount = [int]$runConfiguration.parameters.execution_batch_count
-  if ($batchCount -gt 1 -and (
-      $batchCount -ne 5 -or
-      -not [bool]$runConfiguration.parameters.execution_batches_parallel)) {
-    throw 'N=1000 single flight requires five batches with profile-capped wave dispatch.'
-  }
   $particleLines = @(Get-RfSingleFlightParticleLines `
     -ParticleInput $particleInput -RestartFly2 $isRestartFly2)
   if ($particleLines.Count -ne $launched) {
@@ -2213,6 +2228,20 @@ try {
     $env:OATOF_ACCELERATOR_PA_OVERRIDE = $frontendWorkingPa0
     for ($waveStart = 0; $waveStart -lt $batchRecords.Count; $waveStart += $maxParallelBatches) {
       $waveEnd = [Math]::Min($waveStart + $maxParallelBatches - 1,$batchRecords.Count - 1)
+      $waveBatchCount = $waveEnd - $waveStart + 1
+      if ($waveBatchCount -gt 1) {
+        $requiredAvailableMemoryBytes =
+          [int64]$waveBatchCount * $parallelBatchMemoryReservationBytes +
+          $minimumSystemAvailableMemoryBytes
+        $availableMemoryBytes = [int64][MultipoleMemoryStatus]::AvailableBytes()
+        if ($availableMemoryBytes -lt $requiredAvailableMemoryBytes) {
+          throw (
+            'Single-flight parallel batch wave lacks required available memory: ' +
+            "available=$availableMemoryBytes required=$requiredAvailableMemoryBytes " +
+            "batch_count=$waveBatchCount."
+          )
+        }
+      }
       $jobs = @()
       foreach ($batch in @($batchRecords[$waveStart..$waveEnd])) {
         $payload = [pscustomobject]@{
@@ -2283,146 +2312,24 @@ try {
     $statesCsv = Join-Path $package.result_dir 'pre_pulse_time_series_states.csv'
     $screeningReceipt = Join-Path $package.result_dir `
       'pre_pulse_time_series_screening_receipt.json'
-    $tracePattern = '^TRACE: pre_pulse_time_series_state ion=(?<ion>\d+) particle_id=(?<particle_id>\d+) sample_index=(?<sample_index>\d+) instrument_time_us=(?<instrument_time>[-+0-9.eE]+) actual_instrument_time_us=(?<actual_time>[-+0-9.eE]+) x_mm=(?<x>[-+0-9.eE]+) y_mm=(?<y>[-+0-9.eE]+) z_mm=(?<z>[-+0-9.eE]+) vx_mm_per_us=(?<vx>[-+0-9.eE]+) vy_mm_per_us=(?<vy>[-+0-9.eE]+) vz_mm_per_us=(?<vz>[-+0-9.eE]+) kinetic_energy_eV=(?<energy>[-+0-9.eE]+) survival_status=(?<status>\S+)$'
-    $rows = @()
-    foreach ($log in $stdoutFiles) {
-      foreach ($line in Get-Content -LiteralPath $log -Encoding UTF8) {
-        if ($line -match '^TRACE: (detector_crossing|diagnostic_return_plane)') {
-          throw 'Pre-pulse time-series screening emitted a prohibited downstream event.'
-        }
-        if ($line -match $tracePattern) {
-          $rows += [pscustomobject][ordered]@{
-            particle_id = [int]$Matches.particle_id
-            event = 'pre_pulse_time_series_state'
-            sample_index = [int]$Matches.sample_index
-            instrument_time_us = [double]$Matches.instrument_time
-            actual_instrument_time_us = [double]$Matches.actual_time
-            x_mm = [double]$Matches.x
-            y_mm = [double]$Matches.y
-            z_mm = [double]$Matches.z
-            vx_mm_per_us = [double]$Matches.vx
-            vy_mm_per_us = [double]$Matches.vy
-            vz_mm_per_us = [double]$Matches.vz
-            kinetic_energy_eV = [double]$Matches.energy
-            survival_status = [string]$Matches.status
-          }
-        }
-      }
-    }
-    $sampleTimes = @($prePulseTimeSeries.sample_times_us)
-    $rows = @($rows | Sort-Object particle_id,sample_index)
-    $frozenParticleIds = @(
-      Import-Csv -LiteralPath $particleRowMap | ForEach-Object {
-        [int]$_.source_particle_id
-      }
+    $materializerArguments = @(
+      '-m',
+      'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.materialize_pre_pulse_time_series',
+      '--run-config',$package.run_config,
+      '--pre-pulse-time-series-contract-sha256',$PrePulseTimeSeriesContractSha256,
+      '--states-output',$statesCsv,
+      '--receipt-output',$screeningReceipt,
+      '--summary-output',$package.summary
     )
-    if ($frozenParticleIds.Count -ne $launched -or
-        @($frozenParticleIds | Sort-Object -Unique).Count -ne $launched -or
-        @($rows | Group-Object particle_id,sample_index | Where-Object {
-            $_.Count -ne 1
-          }).Count -ne 0 -or
-        @($rows | Where-Object {
-            $_.particle_id -notin $frozenParticleIds
-          }).Count -ne 0) {
-      throw 'Pre-pulse time-series TRACE particle identity/uniqueness differs.'
+    foreach ($stdoutFile in $stdoutFiles) {
+      $materializerArguments += @('--stdout-log',$stdoutFile)
     }
-    foreach ($row in $rows) {
-      if ($row.sample_index -lt 1 -or $row.sample_index -gt $sampleTimes.Count) {
-        throw 'Pre-pulse time-series TRACE sample index is outside the frozen grid.'
-      }
-      $expectedTime = [double]$sampleTimes[$row.sample_index - 1]
-      $tolerance = 1e-12 * [Math]::Max(1.0,[Math]::Abs($expectedTime))
-      if ([Math]::Abs($row.instrument_time_us - $expectedTime) -gt $tolerance -or
-          [Math]::Abs($row.actual_instrument_time_us - $expectedTime) -gt $tolerance -or
-          $row.survival_status -ne 'alive') {
-        throw 'Pre-pulse time-series TRACE identity/time landing differs.'
-      }
-    }
-    foreach ($particleId in $frozenParticleIds) {
-      $indices = @($rows | Where-Object { $_.particle_id -eq $particleId } |
-        ForEach-Object { [int]$_.sample_index })
-      for ($index = 0; $index -lt $indices.Count; $index++) {
-        if ($indices[$index] -ne ($index + 1)) {
-          throw 'Pre-pulse time-series particle state is not one continuous alive prefix.'
-        }
-      }
-    }
-    $sampleCensus = @()
-    foreach ($sampleIndex in 1..$sampleTimes.Count) {
-      $aliveIds = @($rows | Where-Object { $_.sample_index -eq $sampleIndex } |
-        ForEach-Object { [int]$_.particle_id } | Sort-Object)
-      $missingIds = @($frozenParticleIds | Where-Object { $_ -notin $aliveIds } |
-        Sort-Object)
-      $sampleCensus += [ordered]@{
-        sample_index = $sampleIndex
-        instrument_time_us = [double]$sampleTimes[$sampleIndex - 1]
-        alive_count = $aliveIds.Count
-        alive_particle_ids_sha256 = Get-RfContentIdentitySha256 -Identity ([ordered]@{
-          ordered_particle_ids = $aliveIds
-        })
-        missing_count = $missingIds.Count
-        missing_particle_ids = $missingIds
-        missing_particle_ids_sha256 = Get-RfContentIdentitySha256 -Identity ([ordered]@{
-          ordered_particle_ids = $missingIds
-        })
-      }
-    }
-    $rows | Export-Csv -LiteralPath $statesCsv -NoTypeInformation -Encoding utf8
-    $statesRecord = [ordered]@{
-      path = 'results/pre_pulse_time_series_states.csv'
-      sha256 = (Get-FileHash -LiteralPath $statesCsv -Algorithm SHA256).Hash
-      bytes = (Get-Item -LiteralPath $statesCsv).Length
-      row_count = $rows.Count
-    }
-    $receipt = [ordered]@{
-      schema_version = 1
-      role = 'rf_oatof_pre_pulse_time_series_screening_receipt'
-      status = 'success'
-      qualification = 'FUNCTIONAL_ONLY'
-      execution_mode = 'real_pa_rf_pre_pulse_time_series'
-      resolution_claim_allowed = $false
-      pulse_disabled = $true
-      contract_sha256 = $PrePulseTimeSeriesContractSha256
-      identities = $prePulseTimeSeries.identities
-      pa_cache_keys = $cacheKeys
-      rf_time_grid = $prePulseTimeSeries.rf_time_grid
-      sample_times_us = $sampleTimes
-      particle_count = $launched
-      state_row_count = $rows.Count
-      sample_census = $sampleCensus
-      outputs = [ordered]@{ states = $statesRecord }
-      prohibited_outputs = @($prePulseTimeSeries.prohibited_outputs)
-    }
-    Write-RfJson -Path $screeningReceipt -Depth 10 -Value $receipt
-    $summary = [ordered]@{
-      schema_version = 1
-      role = $summaryRole
-      status = 'success'
-      execution_mode = 'real_pa_rf_pre_pulse_time_series'
-      qualification = 'FUNCTIONAL_ONLY'
-      resolution_claim_allowed = $false
-      pulse_disabled = $true
-      sample_times_us = $sampleTimes
-      census = [ordered]@{
-        source_release = $launched
-        particle_count = $launched
-        sample_count = $sampleTimes.Count
-        observed_state_rows = $rows.Count
-        sample_census = $sampleCensus
-      }
-      pa_cache_dispositions = $paCacheDispositions
-      outputs = [ordered]@{
-        states = $statesRecord
-        receipt = [ordered]@{
-          path = 'results/pre_pulse_time_series_screening_receipt.json'
-          sha256 = (Get-FileHash -LiteralPath $screeningReceipt -Algorithm SHA256).Hash
-          bytes = (Get-Item -LiteralPath $screeningReceipt).Length
-        }
-      }
-      prohibited_outputs = @($prePulseTimeSeries.prohibited_outputs)
-    }
-    Write-RfJson -Path $package.summary -Depth 10 -Value $summary
-    $runConfiguration.parameters.pre_pulse_time_series_state_row_count = $rows.Count
+    Invoke-SingleFlightPython -Arguments $materializerArguments `
+      -Failure 'Pre-pulse time-series materialization failed.'
+    $materializedSummary = Get-Content -Raw -LiteralPath $package.summary `
+      -Encoding UTF8 | ConvertFrom-Json
+    $stateRowCount = [int]$materializedSummary.census.observed_state_rows
+    $runConfiguration.parameters.pre_pulse_time_series_state_row_count = $stateRowCount
     Write-RfJson -Path $package.run_config -Depth 10 -Value $runConfiguration
     $retentionActions = Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot `
       -RunConfig $package.run_config
@@ -2439,7 +2346,7 @@ try {
     Write-RfFrozenRunManifest -Python $python -FrozenRepoRoot $repoRoot `
       -RunConfig $package.run_config -Status success `
       -Software @('SIMION 2020','Python 3.11') -Outputs $outputs
-    Write-Output "SIMION_PRE_PULSE_TIME_SERIES=PASS RUN_ID=$RunId ROWS=$($rows.Count)"
+    Write-Output "SIMION_PRE_PULSE_TIME_SERIES=PASS RUN_ID=$RunId ROWS=$stateRowCount"
     return
   }
 
@@ -2510,11 +2417,16 @@ try {
   }
   $sixPanel = Join-Path $package.result_dir 'single_flight_spatial_six_panel.png'
   $sixPanelMetadata = Join-Path $package.result_dir 'single_flight_spatial_six_panel_metadata.json'
+  $phaseSpace = Join-Path $package.result_dir 'single_flight_accelerator_pre_pulse_phase_space.png'
+  $phaseSpaceMetadata = Join-Path $package.result_dir 'single_flight_accelerator_pre_pulse_phase_space_metadata.json'
+  $phaseSpaceData = Join-Path $package.result_dir 'single_flight_accelerator_pre_pulse_phase_space.csv'
   Invoke-SingleFlightPython -Arguments @('-m',
     'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.plot_single_flight_spatial_six_panel',
     '--initial',$globalSource,'--checkpoints',$checkpoints,'--upstream',$upstreamFrozen,
     '--frontend',$frontendContract,'--oatof',$oatofGeometry,'--output',$sixPanel,
-    '--metadata',$sixPanelMetadata) -Failure 'Single-flight six-panel spatial diagnostic failed.'
+    '--metadata',$sixPanelMetadata,'--phase-space-output',$phaseSpace,
+    '--phase-space-metadata',$phaseSpaceMetadata,'--phase-space-data',$phaseSpaceData
+  ) -Failure 'Single-flight spatial and phase-space diagnostics failed.'
   $result = Get-Content -LiteralPath $package.summary -Raw -Encoding UTF8 | ConvertFrom-Json
   Assert-RfThreeZoneCheckpointCensus -Required $hasThreeZoneCandidate `
     -Census $result.census -LaunchedCount $launched
@@ -2528,6 +2440,14 @@ try {
     -NotePropertyValue $PaCachePolicyProvenance -Force
   $result | Add-Member -NotePropertyName pa_cache_dispositions `
     -NotePropertyValue $paCacheDispositions -Force
+  $result | Add-Member -NotePropertyName accelerator_pre_pulse_phase_space `
+    -NotePropertyValue ([ordered]@{
+      figure='results/single_flight_accelerator_pre_pulse_phase_space.png'
+      metadata='results/single_flight_accelerator_pre_pulse_phase_space_metadata.json'
+      data='results/single_flight_accelerator_pre_pulse_phase_space.csv'
+      claim_status='DIAGNOSTIC_ONLY'
+      selection_uses_detector_outcome=$false
+    }) -Force
   Write-RfJson -Path $package.summary -Depth 10 -Value $result
   $baselineReceipt = $null
   $promotionReceipt = $null
@@ -2591,7 +2511,7 @@ try {
   $runConfiguration.parameters.detector_crossing_count = [int]$result.census.detector_crossing
   Write-RfJson -Path $package.run_config -Depth 10 -Value $runConfiguration
   $retentionActions = Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config
-  $outputs = @($checkpoints,$sixPanel,$sixPanelMetadata,$baselineReceipt,$promotionReceipt) + $stdoutFiles + $stderrFiles + $resourceUsageFiles + @($flightTubeBuildStdout,$flightTubeBuildStderr,$reflectronBuildStdout,$reflectronBuildStderr,$package.summary,$retentionActions) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) }
+  $outputs = @($checkpoints,$sixPanel,$sixPanelMetadata,$phaseSpace,$phaseSpaceMetadata,$phaseSpaceData,$baselineReceipt,$promotionReceipt) + $stdoutFiles + $stderrFiles + $resourceUsageFiles + @($flightTubeBuildStdout,$flightTubeBuildStderr,$reflectronBuildStdout,$reflectronBuildStderr,$package.summary,$retentionActions) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) }
   foreach ($usage in $resourceUsageFiles) {
     if (-not (Complete-ResourceUsage -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir -UsagePath $usage)) { $resourceBudgetExceeded=$true; throw 'Single-flight compact retained-byte budget exceeded.' }
   }

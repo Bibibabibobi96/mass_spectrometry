@@ -3,10 +3,8 @@
   "role": "rf_oatof_simion_single_flight_configuration",
   "clock_basis": "canonical_instrument_time_us",
   "batching_policy": {
-    "enabled_at_particle_count": 1000,
-    "default_batch_count": 5,
-    "parallel_after_cache_warmup": true,
-    "cache_warmup_batch_count": 1,
+    "parallel_batch_memory_reservation_bytes": 10737418240,
+    "parallel_batch_observed_peak_working_set_bytes": 8700387328,
     "equivalence_requires_collisions_disabled": true,
     "equivalence_requires_space_charge_disabled": true
   },
@@ -68,7 +66,7 @@
         "cell_mm_xyz": {"x": 0.2, "y": 0.2, "z": 0.05},
         "boundary_mode": "coarse_electrode_basis_dirichlet_v1"
       },
-      "max_parallel_batches": 3,
+      "max_parallel_batches": 2,
       "role": "accelerator_local_refinement_candidate"
     },
     {
@@ -120,9 +118,13 @@
     {"profile_id": "tqual_8", "trajectory_quality": 8, "role": "default"},
     {"profile_id": "tqual_108", "trajectory_quality": 108, "role": "paired_numerical_diagnostic"}
   ],
-  "default_time_integration_profile_id": "dt160",
+  "default_time_integration_profile_id": "dt40",
   "time_integration_profiles": [
-    {"profile_id": "dt160", "rf_steps_per_period": 160, "role": "default"},
+    {"profile_id": "dt160", "rf_steps_per_period": 160, "role": "paired_numerical_reference"},
+    {"profile_id": "dt80", "rf_steps_per_period": 80, "role": "paired_numerical_acceleration_diagnostic"},
+    {"profile_id": "dt40", "rf_steps_per_period": 40, "role": "default"},
+    {"profile_id": "dt20", "rf_steps_per_period": 20, "role": "paired_numerical_acceleration_diagnostic"},
+    {"profile_id": "dt10", "rf_steps_per_period": 10, "role": "paired_numerical_acceleration_diagnostic"},
     {"profile_id": "dt320", "rf_steps_per_period": 320, "role": "paired_numerical_diagnostic"}
   ],
   "spatial_window_profiles": [
@@ -172,6 +174,21 @@
       "frontend_electrode_topology_id": "three_zone_frontend_v1",
       "field_id": "three_zone_piecewise_uniform_ideal_field_v1",
       "role": "three_zone_t5_candidate_ideal_field"
+    },
+    {
+      "profile_id": "full_domain_three_zone_piecewise_ideal_field",
+      "accelerator_zone1": "analytic_ideal_field",
+      "accelerator_zone2": "analytic_ideal_field",
+      "accelerator_zone3": "analytic_ideal_field",
+      "drift": "zero_field",
+      "reflectron_stage1": "analytic_ideal_field",
+      "reflectron_stage2": "analytic_ideal_field",
+      "real_pa_field_blending_allowed": false,
+      "topology_id": "three_zone_accelerator_ideal_v1",
+      "geometry_id": "three_zone_focus_origin_planes_v1",
+      "frontend_electrode_topology_id": "three_zone_frontend_v1",
+      "field_id": "three_zone_plus_reflectron_piecewise_uniform_ideal_field_v1",
+      "role": "full_domain_three_zone_controlled_counterfactual"
     },
     {
       "profile_id": "accelerator_real_three_zone_pa_real_reflectron",

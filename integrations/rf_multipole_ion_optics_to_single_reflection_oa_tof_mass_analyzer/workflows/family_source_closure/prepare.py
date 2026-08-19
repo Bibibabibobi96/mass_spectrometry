@@ -62,6 +62,12 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     ARM_OBSERVED_FIXED_10EV,
     project_observed_pre_pulse_states,
 )
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.pulse_reuse_identity_projection import (
+    build_verified_pulse_reuse_projection,
+)
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.materialize_manifest_bound_pre_pulse_restart import (
+    materialize as materialize_manifest_bound_pre_pulse_restart,
+)
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_layout import (
     compile_geometry_and_port,
     derive_pulse_schedule,
@@ -346,17 +352,10 @@ def validate_full_domain_affine_width_numerics_campaign(
                 or restart.get("postselection_prohibited") is not True
             ):
                 raise ContractError("official full-domain restart source identity differs")
-    grids = {
-        item["profile_id"]: item for item in single_flight["frontend_grid_profiles"]
-    }
-    if int(grids[fixed["single_flight_frontend_grid_profile_id"]]["max_parallel_batches"]) != 3:
-        raise ContractError(
-            "full-domain width/numerics requires five batches dispatched as 3+2 waves"
-        )
     if int(policy["stage_limits"]["single_flight_transport"][
         "minimum_system_available_memory_bytes"
-    ]) != 4 * 1024**3:
-        raise ContractError("full-domain width/numerics memory gate must be 4 GiB")
+    ]) != 1 * 1024**3:
+        raise ContractError("single-flight memory gate must be 1 GiB")
 
 
 def validate_pulse_resolution_optimization_campaign(
@@ -477,6 +476,49 @@ def validate_connector_gap_screen_campaign(
         })
     if any(row != normalized_rows[0] for row in normalized_rows[1:]):
         raise ContractError("connector-gap campaign changes a frozen control")
+
+
+def _automatic_pulse_population_binding(
+    population: dict[str, Any],
+) -> tuple[str, int]:
+    """Return the population-table bindings supported by auto pulse timing."""
+
+    authority = population.get("source_authority", {})
+    execution = population.get("execution_population", {})
+    count = execution.get("particle_count")
+    identity = (
+        population.get("population_mode"),
+        authority.get("table_binding"),
+        execution.get("selection_algorithm"),
+    )
+    if identity == (
+        "first_100_rows_in_frozen_file_order",
+        "prepared_deterministic_prefix",
+        "first_100_rows_in_frozen_file_order",
+    ) and count == 100:
+        return "prepared_deterministic_prefix", 100
+    if identity == (
+        "continuous_injection_full_population",
+        "source_contract_particle_source",
+        "all_rows_in_frozen_file_order",
+    ) and isinstance(count, int) and not isinstance(count, bool) and count > 0:
+        return "source_contract_particle_source", count
+    raise ContractError("automatic pulse timing population differs")
+
+
+def resolve_single_flight_batch_count(
+    experiment: dict[str, Any], *, execution_particle_count: int,
+) -> int:
+    """Resolve execution-only batching without deriving the governed population."""
+
+    value = experiment.get("single_flight_batch_count", 1)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ContractError("single-flight batch count must be an integer")
+    if not 1 <= value <= execution_particle_count:
+        raise ContractError(
+            "single-flight batch count must be between one and the resolved population count"
+        )
+    return value
 
 
 def validate_pre_pulse_time_series_campaign(campaign: dict[str, Any]) -> None:
@@ -1091,7 +1133,7 @@ def _resolve_candidate_confirmation_schedule(
     population_declaration: dict[str, Any], prepared_prefix_sha256: str,
     resolved_connection_path: Path, resolved_source_path: Path,
     resolved_geometry_path: Path, single_flight_configuration: dict[str, Any],
-    base_schedule: dict[str, Any],
+    base_schedule: dict[str, Any], pilot_verified_receipt_path: Path | None = None,
 ) -> dict[str, Any]:
     """Compile one pulse-on schedule from a manifest-bound detector-blind candidate."""
 
@@ -1173,35 +1215,105 @@ def _resolve_candidate_confirmation_schedule(
         if profile.get("profile_id") == profile_id
     ]
     execution_population = population_declaration["execution_population"]
+    candidate_execution = candidate_population["execution_population"]
     winner_population = receipt["candidates_ranked"][0]["population_identity"]
     if (
         len(profiles) != 1
-        or population_declaration["source_authority"]["table_binding"]
-        != "prepared_deterministic_prefix"
+        or file_sha256(candidate_population_table)
+        != candidate_population["source_authority"]["table"]["sha256"]
+        or candidate_execution["particle_count"] != winner_population["count"]
+        or candidate_execution["ordered_particle_id_sha256"]
+        != winner_population["ordered_particle_id_sha256"]
+    ):
+        raise ContractError("pulse candidate population identity differs")
+    if pilot_verified_receipt_path is None and (
+        _automatic_pulse_population_binding(population_declaration)[0]
+        != population_declaration["source_authority"]["table_binding"]
         or prepared_prefix_sha256 != file_sha256(candidate_population_table)
         or execution_population["particle_count"] != winner_population["count"]
         or execution_population["ordered_particle_id_sha256"]
         != winner_population["ordered_particle_id_sha256"]
-        or candidate_population["execution_population"]["particle_count"]
-        != execution_population["particle_count"]
-        or candidate_population["execution_population"]["ordered_particle_id_sha256"]
-        != execution_population["ordered_particle_id_sha256"]
     ):
-        raise ContractError("pulse candidate population identity differs")
+        raise ContractError("pulse candidate confirmation population identity differs")
+    current_identities = {
+        "connection_profile_id": experiment["connection_profile_id"],
+        "source_profile_id": experiment["source_profile_id"],
+        "layout_profile_id": experiment["single_flight_layout_profile_id"],
+        "architecture_generation_id": experiment["architecture_generation_id"],
+        "frontend_grid_profile_id": experiment["single_flight_frontend_grid_profile_id"],
+        "field_overlay_id": experiment["field_overlay_id"],
+        "oatof_numerical_profile_id": experiment["single_flight_oatof_numerical_profile_id"],
+        "trajectory_quality_profile_id": experiment[
+            "single_flight_trajectory_quality_profile_id"
+        ],
+        "spatial_window_profile_id": policy["cache_miss_policy"][
+            "spatial_window_profile_id"
+        ],
+    }
+    candidate = experiment.get("single_flight_three_zone_candidate")
+    if isinstance(candidate, dict):
+        current_identities["candidate_sha256"] = candidate["sha256"]
+    if any(
+        screening_contract["identities"].get(key) != value
+        for key, value in current_identities.items()
+    ) or (
+        screening_contract["rf_time_grid"].get("time_grid_profile_id")
+        != policy["cache_miss_policy"]["time_grid_profile_id"]
+        or not math.isclose(
+            float(screening_contract["rf_time_grid"]["period_us"]),
+            float(base_schedule["rf_period_us"]), rel_tol=0.0, abs_tol=1e-15,
+        )
+    ):
+        raise ContractError("pulse candidate physical identity differs")
+    current_source = _load(resolved_source_path)
+    current_connection = _load(resolved_connection_path)
     content_basis, content_key = pulse_selection_content_identity(
         contract=screening_contract,
-        population=candidate_population,
-        source=_load(resolved_source_path),
-        connection=_load(resolved_connection_path),
+        source=current_source,
+        connection=current_connection,
         geometry=current_geometry,
         spatial_profile=profiles[0],
         selector_source_sha256=selector_record.get("sha256"),
         pa_cache_keys=receipt.get("pa_cache_keys"),
     )
+    reuse_basis, verified_content_key = build_verified_pulse_reuse_projection(
+        screening_contract=screening_contract,
+        resolved_source=current_source,
+        resolved_connection=current_connection,
+        resolved_geometry=current_geometry,
+        spatial_profile=profiles[0],
+        pa_cache_keys=receipt.get("pa_cache_keys", {}),
+    )
     selected_time_us = float(receipt["selected_time_us"])
+    receipt_key_is_valid = (
+        receipt.get("content_key") == _canonical_sha256(receipt["content_key_basis"])
+    )
+    if pilot_verified_receipt_path is None:
+        content_identity_matches = (
+            content_basis == receipt["content_key_basis"]
+            and content_key == receipt["content_key"]
+        )
+    else:
+        pilot_receipt = _load(pilot_verified_receipt_path)
+        stored_reuse_basis = receipt.get("verified_reuse_content_key_basis")
+        stored_reuse_key = receipt.get("verified_reuse_content_key")
+        content_identity_matches = (
+            math.isclose(
+                float(pilot_receipt.get("selected_time_us")), selected_time_us,
+                rel_tol=0.0, abs_tol=1e-12,
+            )
+            and (
+                stored_reuse_basis is None
+                or (
+                    stored_reuse_basis == reuse_basis
+                    and stored_reuse_key == verified_content_key
+                    and stored_reuse_key == _canonical_sha256(stored_reuse_basis)
+                )
+            )
+        )
     if (
-        content_basis != receipt["content_key_basis"]
-        or content_key != receipt["content_key"]
+        not receipt_key_is_valid
+        or not content_identity_matches
         or not math.isfinite(selected_time_us)
         or selected_time_us <= 0
         or not math.isclose(
@@ -1220,7 +1332,7 @@ def _resolve_candidate_confirmation_schedule(
         "claim_status": "FUNCTIONAL_ONLY",
         "execution_authority": {
             "mode": authority["authority_mode"],
-            "content_key": content_key,
+            "content_key": verified_content_key,
             "candidate_parent_manifest": {
                 "path": _workspace_relative(parent_manifest_path, workspace),
                 "sha256": file_sha256(parent_manifest_path),
@@ -1234,7 +1346,37 @@ def _resolve_candidate_confirmation_schedule(
             "confirmation_policy_id": authority["confirmation_policy_id"],
         },
     })
+    if pilot_verified_receipt_path is not None:
+        schedule["execution_authority"]["pilot_verified_receipt"] = {
+            "path": _workspace_relative(pilot_verified_receipt_path, workspace),
+            "sha256": file_sha256(pilot_verified_receipt_path),
+        }
     return schedule
+
+
+def _select_strongest_verified_pulse_match(
+    matches: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Choose the largest confirmed population, failing tied time ambiguity."""
+    strongest_count = max(match["population_count"] for match in matches)
+    strongest = [
+        match for match in matches if match["population_count"] == strongest_count
+    ]
+    selected_time_us = float(strongest[0]["receipt"]["selected_time_us"])
+    if any(
+        not math.isclose(
+            float(match["receipt"]["selected_time_us"]), selected_time_us,
+            rel_tol=0.0, abs_tol=1e-12,
+        )
+        for match in strongest[1:]
+    ):
+        raise ContractError("strongest verified pulse cache times are ambiguous")
+    return sorted(
+        strongest,
+        key=lambda match: (
+            not match["native"], match["receipt_path"].as_posix()
+        ),
+    )[0]
 
 
 def _resolve_cached_verified_pulse_schedule(
@@ -1253,7 +1395,7 @@ def _resolve_cached_verified_pulse_schedule(
     )
     if not cache_root.is_dir():
         return None
-    matches: list[tuple[Path, dict[str, Any], dict[str, Any]]] = []
+    matches: list[dict[str, Any]] = []
     for receipt_path in sorted(cache_root.glob("*/verified_pulse_timing_receipt.json")):
         try:
             receipt = verify_verified_pulse_cache_entry(
@@ -1288,36 +1430,70 @@ def _resolve_cached_verified_pulse_schedule(
                 resolved_geometry_path=resolved_geometry_path,
                 single_flight_configuration=single_flight_configuration,
                 base_schedule=base_schedule,
+                pilot_verified_receipt_path=receipt_path,
             )
         except ContractError:
             continue
-        if (
-            schedule["execution_authority"]["content_key"] == receipt["content_key"]
-            and math.isclose(
-                schedule["pulse_effective_time_us"], receipt["selected_time_us"],
-                rel_tol=0.0, abs_tol=1e-12,
-            )
+        if math.isclose(
+            schedule["pulse_effective_time_us"], receipt["selected_time_us"],
+            rel_tol=0.0, abs_tol=1e-12,
         ):
-            matches.append((receipt_path, receipt, schedule))
+            selection_receipt_path = _workspace_record(
+                workspace, candidate["selection_receipt"],
+                "verified pulse selection receipt",
+            )
+            selection_receipt = _load(selection_receipt_path)
+            selection_count = selection_receipt.get("population_denominator_count")
+            confirmation_count = receipt.get("census", {}).get("launched")
+            if (
+                not isinstance(selection_count, int)
+                or not isinstance(confirmation_count, int)
+                or selection_count <= 0
+                or selection_count != confirmation_count
+            ):
+                raise ContractError("verified pulse population evidence differs")
+            matches.append({
+                "receipt_path": receipt_path,
+                "receipt": receipt,
+                "schedule": schedule,
+                "population_count": confirmation_count,
+                "native": (
+                    receipt["content_key"]
+                    == schedule["execution_authority"]["content_key"]
+                ),
+            })
     if not matches:
         return None
-    if len(matches) != 1:
-        raise ContractError("verified pulse cache identity is not unique")
-    receipt_path, receipt, schedule = matches[0]
+    selected = _select_strongest_verified_pulse_match(matches)
+    receipt_path = selected["receipt_path"]
+    receipt = selected["receipt"]
+    schedule = selected["schedule"]
     for name in ("child_manifest", "pulse_schedule", "summary"):
         _workspace_record(
             workspace, receipt["verification_authority"][name],
             f"verified pulse {name}",
         )
-    schedule["method"] = "verified_real_field_pulse_timing_reuse_v1"
-    schedule["execution_authority"] = {
-        "mode": "verified_pulse_timing_reuse_v1",
-        "content_key": receipt["content_key"],
-        "verified_receipt": {
-            "path": _workspace_relative(receipt_path, workspace),
-            "sha256": file_sha256(receipt_path),
-        },
-    }
+    target_population_count = population_declaration["execution_population"][
+        "particle_count"
+    ]
+    if selected["population_count"] >= target_population_count:
+        schedule["method"] = "verified_real_field_pulse_timing_reuse_v1"
+        reuse_content_key = schedule["execution_authority"]["content_key"]
+        schedule.pop("execution_authority")
+        schedule["verified_reuse_authority"] = {
+            "mode": "verified_pulse_timing_reuse_v1",
+            "content_key": reuse_content_key,
+            "verified_receipt": {
+                "path": _workspace_relative(receipt_path, workspace),
+                "sha256": file_sha256(receipt_path),
+            },
+        }
+        if receipt["content_key"] != reuse_content_key:
+            schedule["verified_reuse_authority"]["source_content_key"] = receipt[
+                "content_key"
+            ]
+    else:
+        schedule["method"] = "verified_pilot_pulse_timing_confirmation_v1"
     return schedule
 
 
@@ -1364,6 +1540,273 @@ def _workspace_relative(path: Path, workspace: Path) -> str:
         return path.resolve().relative_to(workspace.resolve()).as_posix()
     except ValueError as exc:
         raise ContractError(f"path escapes the workspace: {path}") from exc
+
+
+def _resolve_post_pulse_restart_reuse(
+    *,
+    root: Path,
+    experiment: dict[str, Any],
+    authority: dict[str, Any],
+    population_declaration: dict[str, Any],
+    resolved_connection_path: Path,
+    resolved_source_path: Path,
+    resolved_geometry_path: Path,
+    upstream_design_path: Path,
+    plan_output: Path,
+) -> tuple[Path, dict[str, Any], dict[str, Any]]:
+    """Validate one successful child and materialize its pulse-epoch cloud."""
+
+    workspace = root.parent
+    producer_manifest_path = _workspace_record(
+        workspace, authority["producer_manifest"], "post-pulse producer manifest"
+    )
+    checkpoint_path = _workspace_record(
+        workspace, authority["checkpoint_output"], "post-pulse checkpoint output"
+    )
+    producer_schedule_path = _workspace_record(
+        workspace, authority["producer_pulse_schedule"], "post-pulse producer schedule"
+    )
+    verified_receipt_path = _workspace_record(
+        workspace, authority["verified_pulse_receipt"], "verified pulse receipt"
+    )
+    manifest = _load(producer_manifest_path)
+    if (
+        manifest.get("role") != "simulation_run_manifest"
+        or manifest.get("status") != "success"
+        or manifest.get("project") != INTEGRATION_ID
+        or manifest.get("mode") != "rf_to_oatof_simion_single_flight"
+        or manifest.get("formal_eligible") is not False
+    ):
+        raise ContractError("post-pulse producer manifest identity differs")
+    try:
+        verify_record(
+            "post-pulse producer run_config", manifest["run_config"],
+            base_dir=producer_manifest_path.parent,
+        )
+    except (AssertionError, KeyError, TypeError) as exc:
+        raise ContractError("post-pulse producer run_config identity differs") from exc
+    run_config_path = record_path(
+        manifest["run_config"], base_dir=producer_manifest_path.parent
+    )
+    run_config = _load(run_config_path)
+    inputs = manifest.get("inputs")
+    outputs = manifest.get("outputs")
+    if not isinstance(inputs, dict) or not isinstance(outputs, list):
+        raise ContractError("post-pulse producer manifest records are incomplete")
+
+    def verified_input(name: str) -> Path:
+        record = inputs.get(name)
+        try:
+            verify_record(name, record, base_dir=producer_manifest_path.parent)
+        except (AssertionError, KeyError, TypeError) as exc:
+            raise ContractError(f"post-pulse producer input differs: {name}") from exc
+        return record_path(record, base_dir=producer_manifest_path.parent).resolve()
+
+    checkpoint_records = [
+        record for record in outputs
+        if record_path(record, base_dir=producer_manifest_path.parent).resolve()
+        == checkpoint_path.resolve()
+    ]
+    if len(checkpoint_records) != 1:
+        raise ContractError("post-pulse checkpoint is not a unique producer output")
+    try:
+        verify_record(
+            "post-pulse checkpoint", checkpoint_records[0],
+            base_dir=producer_manifest_path.parent,
+        )
+    except (AssertionError, KeyError, TypeError) as exc:
+        raise ContractError("post-pulse checkpoint manifest identity differs") from exc
+
+    producer_schedule_input = verified_input("pulse_schedule")
+    source_input = verified_input("resolved_source_contract")
+    connection_input = verified_input("resolved_connection")
+    geometry_input = verified_input("oatof_resolved_geometry")
+    design_input = verified_input("upstream_resolved_design")
+    if producer_schedule_input != producer_schedule_path.resolve():
+        raise ContractError("post-pulse producer schedule is not manifest-bound")
+    for current, producer, label in (
+        (resolved_source_path, source_input, "source"),
+        (resolved_geometry_path, geometry_input, "geometry"),
+        (upstream_design_path, design_input, "upstream RF design"),
+    ):
+        if _canonical_sha256(_load(current)) != _canonical_sha256(_load(producer)):
+            raise ContractError(f"post-pulse producer and consumer {label} differ")
+    connection_keys = (
+        "selection", "spatial_registration", "connector", "port_geometry",
+        "transition_aperture", "effective_clear_radius_mm",
+        "potential_alignment", "clock_alignment", "field_ownership_segments",
+    )
+    current_connection = _load(resolved_connection_path)
+    producer_connection = _load(connection_input)
+    if _canonical_sha256({
+        key: current_connection[key] for key in connection_keys
+    }) != _canonical_sha256({
+        key: producer_connection[key] for key in connection_keys
+    }):
+        raise ContractError("post-pulse producer and consumer connection differ")
+
+    schedule = _load(producer_schedule_path)
+    verified_receipt = _load(verified_receipt_path)
+    validate_schema(schedule, "rf_oatof_resolved_single_flight_pulse_schedule.schema.json")
+    validate_schema(verified_receipt, "rf_oatof_verified_pulse_timing_receipt.schema.json")
+    verified_child = _workspace_record(
+        workspace, verified_receipt["verification_authority"]["child_manifest"],
+        "verified pulse child manifest",
+    )
+    verified_schedule = _workspace_record(
+        workspace, verified_receipt["verification_authority"]["pulse_schedule"],
+        "verified pulse schedule",
+    )
+    pulse_time_us = float(schedule["pulse_effective_time_us"])
+    if (
+        verified_child != producer_manifest_path.resolve()
+        or verified_schedule != producer_schedule_path.resolve()
+        or not math.isclose(
+            float(verified_receipt["selected_time_us"]), pulse_time_us,
+            rel_tol=0.0, abs_tol=1e-12,
+        )
+    ):
+        raise ContractError("verified pulse does not authorize the producer checkpoint")
+
+    parameters = run_config.get("parameters", {})
+    target_profiles = {
+        "connection_profile_id": experiment["connection_profile_id"],
+        "source_profile_id": experiment["source_profile_id"],
+        "layout_profile_id": experiment["single_flight_layout_profile_id"],
+        "architecture_generation_id": experiment["architecture_generation_id"],
+        "frontend_grid_profile_id": experiment["single_flight_frontend_grid_profile_id"],
+        "field_overlay_id": experiment["field_overlay_id"],
+        "oatof_numerical_profile_id": experiment["single_flight_oatof_numerical_profile_id"],
+        "trajectory_quality_profile_id": experiment[
+            "single_flight_trajectory_quality_profile_id"
+        ],
+    }
+    if any(parameters.get(key) != value for key, value in target_profiles.items()):
+        raise ContractError("post-pulse producer and consumer profile identity differs")
+    axis = authority["post_pulse_variation_axis"]
+    producer_time_profile = parameters.get("time_integration_profile_id")
+    producer_field_profile = parameters.get("accelerator_field_profile_id")
+    if axis == "time_integration_profile_id":
+        if (
+            experiment["single_flight_accelerator_field_profile_id"]
+            != producer_field_profile
+        ):
+            raise ContractError("post-pulse reuse differs outside the time-integration axis")
+        consumer_profile = experiment["single_flight_time_integration_profile_id"]
+    elif axis == "accelerator_field_profile_id":
+        if (
+            experiment["single_flight_time_integration_profile_id"]
+            != producer_time_profile
+        ):
+            raise ContractError("post-pulse reuse differs outside the field-profile axis")
+        consumer_profile = experiment["single_flight_accelerator_field_profile_id"]
+    else:
+        raise ContractError("post-pulse variation axis is unsupported")
+
+    def binding(path: Path) -> dict[str, str]:
+        return {
+            "path": _workspace_relative(path, workspace),
+            "sha256": file_sha256(path),
+        }
+
+    output_path = plan_output.parent / "inputs" / "post_pulse_restart_state.csv"
+    receipt_path = plan_output.parent / "inputs" / (
+        "post_pulse_restart_materialization_receipt.json"
+    )
+    try:
+        receipt = materialize_manifest_bound_pre_pulse_restart(
+            child_manifest_path=producer_manifest_path,
+            workspace_root=workspace,
+            state_output_path=output_path,
+            receipt_output_path=receipt_path,
+        )
+        validate_schema(
+            receipt,
+            "rf_oatof_manifest_bound_pre_pulse_restart_materialization_receipt.schema.json",
+        )
+    except (ContractError, KeyError, OSError, TypeError, ValueError) as exc:
+        raise ContractError("post-pulse restart materialization failed") from exc
+    if (
+        receipt["producer"]["manifest"]["sha256"]
+        != authority["producer_manifest"]["sha256"]
+        or receipt["producer"]["checkpoints"]["sha256"]
+        != authority["checkpoint_output"]["sha256"]
+        or receipt["authorities"]["pulse_schedule"]["sha256"]
+        != authority["producer_pulse_schedule"]["sha256"]
+    ):
+        raise ContractError("post-pulse materialization authorities differ")
+    execution = population_declaration["execution_population"]
+    if (
+        execution["particle_count"]
+        != receipt["pulse_target_state"]["particle_count"]
+        or execution["ordered_particle_id_sha256"]
+        != receipt["pulse_target_state"]["ordered_particle_id_sha256"]
+    ):
+        raise ContractError("post-pulse restart population identity differs")
+    tolerance = {
+        "position_rowwise_abs_tolerance_mm": 1e-9,
+        "velocity_rowwise_abs_tolerance_m_per_s": 1e-6,
+        "clock_abs_tolerance_us": 1e-9,
+        "energy_abs_tolerance_eV": 5e-9,
+    }
+    source_record = {
+        "path": _workspace_relative(output_path, workspace),
+        "sha256": file_sha256(output_path),
+        "particle_count": receipt["pulse_target_state"]["particle_count"],
+        "coordinate_frame": "oatof_global_cartesian",
+        "release_event": "pre_pulse_state",
+        "materialization_receipt": binding(receipt_path),
+        "source_state_epoch": "pulse_effective_time",
+        "source_state_locus": "accelerator_stage1_interior_finite_observed_3d_cloud",
+        **tolerance,
+        "postselection_prohibited": True,
+    }
+    validation = {
+        "schema_version": 1,
+        "role": "canonical_pulse_restart_target_state_validation",
+        "status": "PASS",
+        "target_pulse_state_sha256": source_record["sha256"],
+        "materialization_receipt_sha256": file_sha256(receipt_path),
+        "source_state_epoch": "pulse_effective_time",
+        "source_state_locus": source_record["source_state_locus"],
+        "coordinate_frame": "oatof_global_cartesian",
+        "clock_basis": "canonical_instrument_time_us",
+        "clock_authority": "resolved_single_flight_pulse_schedule",
+        "ordered_particle_id_sha256": receipt["pulse_target_state"][
+            "ordered_particle_id_sha256"
+        ],
+        "particle_count": source_record["particle_count"],
+        "tolerances": tolerance,
+        "selection": {
+            "event": "pre_pulse_state",
+            "pulse_eligibility": "eligible",
+            "detector_results_used": False,
+            "postselection_prohibited": True,
+        },
+    }
+    schedule_authority = {
+        "mode": authority["authority_mode"],
+        "variation_axis": axis,
+        "producer_manifest": binding(producer_manifest_path),
+        "checkpoint_output": binding(checkpoint_path),
+        "producer_pulse_schedule": binding(producer_schedule_path),
+        "verified_pulse_receipt": binding(verified_receipt_path),
+        "materialization_receipt": binding(receipt_path),
+        "provider_profiles": {
+            "time_integration_profile_id": producer_time_profile,
+            "trajectory_quality_profile_id": parameters.get(
+                "trajectory_quality_profile_id"
+            ),
+            "accelerator_field_profile_id": producer_field_profile,
+        },
+        "consumer_profile_id": consumer_profile,
+    }
+    return output_path, source_record, {
+        "producer_schedule": schedule,
+        "schedule_authority": schedule_authority,
+        "materialization_receipt_path": receipt_path,
+        "validation": validation,
+    }
 
 
 def _resolve_staged_loader_validation(
@@ -2083,6 +2526,17 @@ def prepare_family_source_closure(
     )
     transition_authority = None
     transition_binding = None
+    declared_transition = experiment.get("pulse_timing_transition_authority")
+    if declared_transition is not None:
+        if pulse_timing_transition_path is not None:
+            raise ContractError("pulse timing transition authority is duplicated")
+        if cache_miss_policy is None:
+            raise ContractError(
+                "pulse timing transition authority requires automatic cache-miss policy"
+            )
+        pulse_timing_transition_path = _workspace_record(
+            workspace, declared_transition, "pulse timing transition authority"
+        )
     if pulse_timing_transition_path is not None:
         if cache_miss_policy is None:
             raise ContractError("pulse timing transition requires automatic cache-miss policy")
@@ -2222,6 +2676,9 @@ def prepare_family_source_closure(
     source_profile_id = experiment.get("source_profile_id")
     field_overlay_id = experiment.get("field_overlay_id")
     pre_pulse_source_state = experiment.get("pre_pulse_source_state")
+    post_pulse_restart_authority = experiment.get(
+        "post_pulse_restart_reuse_authority"
+    )
     generated_pre_pulse_ordered_subset = experiment.get(
         "generated_pre_pulse_ordered_subset"
     )
@@ -2263,6 +2720,7 @@ def prepare_family_source_closure(
         if execution_strategy != "simion_single_flight" or (
             pre_pulse_source_state is None
             and generated_pre_pulse_ordered_subset is None
+            and post_pulse_restart_authority is None
         ):
             raise ContractError("pre-pulse restart requires a governed source-state record")
         if pre_pulse_source_state is not None:
@@ -2289,6 +2747,7 @@ def prepare_family_source_closure(
     elif (
         pre_pulse_source_state is not None
         or generated_pre_pulse_ordered_subset is not None
+        or post_pulse_restart_authority is not None
     ):
         raise ContractError("pre-pulse source state requires pre-pulse restart mode")
     if source_release_mode == "staged_grid2_restart":
@@ -2440,6 +2899,8 @@ def prepare_family_source_closure(
     paired_cohort_authority = None
     pulse_prefix_path = None
     pulse_prefix_sha256 = None
+    pulse_population_plan_path = None
+    pulse_population_count = None
     if pulse_contract is not None:
         pulse_cohort_policy = _pulse_resolution_cohort_policy(experiment)
         if pulse_cohort_policy == "establish_observed_authority":
@@ -2497,28 +2958,39 @@ def prepare_family_source_closure(
             pulse_prefix_path,
             ordered_particle_ids=prefix_ids,
         )
-    elif pulse_candidate_confirmation or cache_miss_policy is not None:
-        if (
-            population_declaration.get("population_mode")
-            != "first_100_rows_in_frozen_file_order"
-            or population_declaration.get("source_authority", {}).get("table_binding")
-            != "prepared_deterministic_prefix"
-            or population_declaration.get("execution_population", {}).get("particle_count")
-            != 100
-        ):
-            raise ContractError("automatic pulse timing population differs")
-        pulse_prefix_path = plan_output.parent / "inputs" / (
-            "automatic_pulse_timing_prefix_n100.csv"
+    elif (
+        pulse_candidate_confirmation or cache_miss_policy is not None
+    ) and post_pulse_restart_authority is None:
+        table_binding, pulse_population_count = (
+            _automatic_pulse_population_binding(population_declaration)
         )
-        pulse_prefix_path.parent.mkdir(parents=True, exist_ok=True)
-        pulse_prefix_sha256 = write_pulse_resolution_screening_prefix(
-            _workspace_record(
+        if table_binding == "prepared_deterministic_prefix":
+            pulse_prefix_path = plan_output.parent / "inputs" / (
+                "automatic_pulse_timing_prefix_n100.csv"
+            )
+            pulse_prefix_path.parent.mkdir(parents=True, exist_ok=True)
+            pulse_prefix_sha256 = write_pulse_resolution_screening_prefix(
+                _workspace_record(
+                    workspace, source["particle_source"],
+                    "automatic pulse timing mother source",
+                ),
+                pulse_prefix_path,
+                ordered_particle_ids=list(range(1, 101)),
+            )
+            pulse_population_plan_path = "inputs/" + pulse_prefix_path.name
+        else:
+            pulse_prefix_path = _workspace_record(
                 workspace, source["particle_source"],
-                "automatic pulse timing mother source",
-            ),
-            pulse_prefix_path,
-            ordered_particle_ids=list(range(1, 101)),
-        )
+                "automatic pulse timing full population",
+            )
+            pulse_prefix_sha256 = file_sha256(pulse_prefix_path)
+            pulse_population_plan_path = source["particle_source"]["path"]
+    if pulse_prefix_path is not None and pulse_population_plan_path is None:
+        pulse_population_plan_path = "inputs/" + pulse_prefix_path.name
+    if pulse_prefix_path is not None and pulse_population_count is None:
+        pulse_population_count = population_declaration["execution_population"][
+            "particle_count"
+        ]
     single_flight_source = experiment.get("single_flight_particle_source")
     single_flight_source_path = None
     selection_receipt = None
@@ -2728,6 +3200,8 @@ def prepare_family_source_closure(
                     "three_zone_piecewise_uniform_ideal_field_v1",
                 "accelerator_real_three_zone_pa_real_reflectron":
                     "three_zone_refined_pa_field_v1",
+                "full_domain_three_zone_piecewise_ideal_field":
+                    "three_zone_plus_reflectron_piecewise_uniform_ideal_field_v1",
             }
             if (
                 selected_field_profile.get("field_id")
@@ -2971,6 +3445,13 @@ def prepare_family_source_closure(
         if execution_strategy == "simion_single_flight"
         else evidence["particle_count"]
     )
+    single_flight_batch_count = (
+        resolve_single_flight_batch_count(
+            experiment, execution_particle_count=execution_particle_count,
+        )
+        if execution_strategy == "simion_single_flight"
+        else 1
+    )
     resolved_budget = {
         "schema_version": 1,
         "role": "integration_resolved_engineering_budget",
@@ -3074,6 +3555,7 @@ def prepare_family_source_closure(
     resolved_population_path = None
     pulse_timing_state = None
     base_schedule = None
+    pulse_restart_validation_path = None
     if layout_files is not None:
         schedule = None
         if not staged_grid2_mode:
@@ -3106,7 +3588,60 @@ def prepare_family_source_closure(
                         design_evidence["resolved_design"]["drive"]["frequency_Hz"]
                     ),
                 )
-                if transition_authority is not None:
+                if post_pulse_restart_authority is not None:
+                    (
+                        pre_pulse_source_path,
+                        pre_pulse_source_state,
+                        restart_reuse,
+                    ) = _resolve_post_pulse_restart_reuse(
+                        root=root,
+                        experiment=experiment,
+                        authority=post_pulse_restart_authority,
+                        population_declaration=population_declaration,
+                        resolved_connection_path=resolved_path,
+                        resolved_source_path=resolved_source_contract_path,
+                        resolved_geometry_path=layout_files["geometry"],
+                        upstream_design_path=upstream_resolved_design_path,
+                        plan_output=plan_output,
+                    )
+                    pre_pulse_receipt_path = restart_reuse[
+                        "materialization_receipt_path"
+                    ]
+                    pulse_restart_validation_path = plan_output.with_name(
+                        "canonical_pulse_restart_target_state_validation.json"
+                    )
+                    pulse_restart_validation_path.write_text(
+                        json.dumps(restart_reuse["validation"], indent=2) + "\n",
+                        encoding="utf-8",
+                    )
+                    producer_schedule = restart_reuse["producer_schedule"]
+                    if not math.isclose(
+                        float(base_schedule["rf_period_us"]),
+                        float(producer_schedule["rf_period_us"]),
+                        rel_tol=0.0, abs_tol=1e-15,
+                    ):
+                        raise ContractError("post-pulse producer RF period differs")
+                    pulse_time_us = float(
+                        producer_schedule["pulse_effective_time_us"]
+                    )
+                    schedule = copy.deepcopy(base_schedule)
+                    schedule.update({
+                        "method": "manifest_bound_post_pulse_restart_reuse_v1",
+                        "pulse_base_time_us": pulse_time_us,
+                        "pulse_offset_us": 0.0,
+                        "pulse_effective_time_us": pulse_time_us,
+                        "pulse_width_us": float(producer_schedule["pulse_width_us"]),
+                        "source_state_path": pre_pulse_source_state["path"],
+                        "source_state_sha256": pre_pulse_source_state["sha256"],
+                        "claim_status": "FUNCTIONAL_ONLY",
+                        "post_pulse_restart_reuse_authority": restart_reuse[
+                            "schedule_authority"
+                        ],
+                    })
+                    pulse_timing_state = (
+                        "ready_verified" if cache_miss_policy is not None else None
+                    )
+                elif transition_authority is not None:
                     if pulse_prefix_sha256 is None:
                         raise ContractError(
                             "pulse timing confirmation requires a prepared population prefix"
@@ -3157,7 +3692,11 @@ def prepare_family_source_closure(
             schedule_path = plan_output.with_name("resolved_single_flight_pulse_schedule.json")
             schedule_path.write_text(json.dumps(schedule, indent=2) + "\n", encoding="utf-8")
             layout_files["schedule"] = schedule_path
-        if pre_pulse_source_path is not None and source_materialization_profile is not None:
+        if (
+            pre_pulse_source_path is not None
+            and source_materialization_profile is not None
+            and post_pulse_restart_authority is None
+        ):
             pulse_restart_validation = _validate_canonical_pulse_restart_state(
                 pre_pulse_source_path,
                 pre_pulse_receipt_path,
@@ -3525,7 +4064,7 @@ def prepare_family_source_closure(
             region_field_semantic_sha256=resolved_region_field_contract[
                 "semantic_sha256"
             ],
-            rf_steps_per_period=int(time_integration_profile["rf_steps_per_period"]),
+            rf_steps_per_period=int(screening_specification["rf_steps_per_period"]),
             specification=screening_specification,
             base_schedule=(
                 base_schedule if pulse_timing_state == "discovery_required" else None
@@ -3566,6 +4105,7 @@ def prepare_family_source_closure(
                 "single_flight_pa_cache_policy=" + pa_cache_policy,
                 "single_flight_pa_cache_policy_provenance="
                 + pa_cache_policy_provenance,
+                "single_flight_batch_count=" + str(single_flight_batch_count),
             ]) + ([] if single_flight_source is None else [
                 f"single_flight_particle_source_path={single_flight_source['path']}",
                 f"single_flight_particle_source_sha256={single_flight_source['sha256']}",
@@ -3600,18 +4140,22 @@ def prepare_family_source_closure(
                 "connector_gap_prefix_filename=inputs/" + pulse_prefix_path.name,
                 "connector_gap_prefix_sha256=" + pulse_prefix_sha256,
             ]) + ([] if pre_pulse_time_series_contract_path is None else [
-                "pre_pulse_time_series_prefix_filename=inputs/"
-                + pulse_prefix_path.name,
+                "pre_pulse_time_series_prefix_filename="
+                + pulse_population_plan_path,
                 "pre_pulse_time_series_prefix_sha256=" + pulse_prefix_sha256,
+                "pre_pulse_time_series_prefix_count="
+                + str(pulse_population_count),
                 "pre_pulse_time_series_contract_filename=inputs/"
                 + pre_pulse_time_series_contract_path.name,
                 "pre_pulse_time_series_contract_sha256="
                 + file_sha256(pre_pulse_time_series_contract_path),
             ]) + ([] if not pulse_candidate_confirmation else [
-                "pulse_candidate_confirmation_prefix_filename=inputs/"
-                + pulse_prefix_path.name,
+                "pulse_candidate_confirmation_prefix_filename="
+                + pulse_population_plan_path,
                 "pulse_candidate_confirmation_prefix_sha256="
                 + pulse_prefix_sha256,
+                "pulse_candidate_confirmation_prefix_count="
+                + str(pulse_population_count),
             ]) + ([] if layout_files is None else [
                 f"layout_profile_id={experiment['single_flight_layout_profile_id']}",
                 "architecture_generation_id="
@@ -3668,7 +4212,7 @@ def prepare_family_source_closure(
                 + _workspace_relative(staged_grid2_bridge_receipt_path, workspace),
                 "staged_grid2_bridge_receipt_sha256="
                 + file_sha256(staged_grid2_bridge_receipt_path),
-            ])) + ([] if pre_pulse_source_path is None or source_materialization_profile is None else [
+            ])) + ([] if pre_pulse_source_path is None or pulse_restart_validation_path is None else [
                 "pre_pulse_restart_position_tolerance_mm="
                 + format(float(pre_pulse_source_state["position_rowwise_abs_tolerance_mm"]), ".17g"),
                 "pre_pulse_restart_velocity_tolerance_m_per_s="

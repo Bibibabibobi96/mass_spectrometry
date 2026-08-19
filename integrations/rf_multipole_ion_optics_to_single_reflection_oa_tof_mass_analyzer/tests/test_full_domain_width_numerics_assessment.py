@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -173,6 +174,56 @@ class AssessmentClassificationTests(unittest.TestCase):
             assessment._validate_registered_checkpoint_census(
                 {"census": census}, rows
             )
+
+
+class BatchResourceUsageTests(unittest.TestCase):
+    @staticmethod
+    def _record(path: Path) -> dict[str, object]:
+        return {
+            "path": str(path),
+            "bytes": path.stat().st_size,
+            "sha256": assessment.file_sha256(path),
+        }
+
+    def _manifest(self, directory: Path, count: int) -> dict[str, object]:
+        outputs = []
+        for index in range(1, count + 1):
+            path = directory / f"resource_usage__batch{index:02d}.json"
+            path.write_text(
+                json.dumps({
+                    "status": "completed",
+                    "started_at_utc": f"2026-08-19T00:00:0{index}+00:00",
+                    "wall_clock_seconds": 2.0,
+                    "peak_process_tree_working_set_bytes": 1024 * index,
+                }),
+                encoding="utf-8",
+            )
+            outputs.append(self._record(path))
+        return {"outputs": outputs}
+
+    def test_uses_manifest_bound_execution_batch_count(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            result = assessment._batch_resource_usage(
+                self._manifest(Path(directory), 2),
+                {"parameters": {
+                    "execution_batch_count": 2,
+                    "max_parallel_batches": 2,
+                }},
+            )
+        self.assertEqual(result["execution_batch_count"], 2)
+        self.assertEqual(result["max_parallel_batches"], 2)
+        self.assertEqual(len(result["batches"]), 2)
+
+    def test_rejects_usage_count_different_from_manifest_bound_run_config(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(ContractError, "manifest-bound run_config"):
+                assessment._batch_resource_usage(
+                    self._manifest(Path(directory), 1),
+                    {"parameters": {
+                        "execution_batch_count": 2,
+                        "max_parallel_batches": 2,
+                    }},
+                )
 
 
 class SingleFlightOwnershipLineageTests(unittest.TestCase):

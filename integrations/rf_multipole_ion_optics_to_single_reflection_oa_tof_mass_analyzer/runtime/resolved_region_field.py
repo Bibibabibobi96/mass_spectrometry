@@ -17,6 +17,7 @@ ROLE = "rf_oatof_resolved_region_field_contract"
 SCHEMA_VERSION = 1
 THREE_ZONE_SCHEMA_VERSION = 2
 THREE_ZONE_PROFILE_ID = "accelerator_ideal_three_zone_real_reflectron"
+FULL_THREE_ZONE_PROFILE_ID = "full_domain_three_zone_piecewise_ideal_field"
 THREE_ZONE_REAL_PA_PROFILE_ID = "accelerator_real_three_zone_pa_real_reflectron"
 THREE_ZONE_TOPOLOGY_ID = "three_zone_accelerator_ideal_v1"
 FULL_FIELD_NAME = "FULL_DOMAIN_PIECEWISE_IDEAL_FIELD"
@@ -53,9 +54,14 @@ FIELD_CONFIGURATION_IDS = {
     "accelerator_ideal_stage1_stage2_real_reflectron": "IDEAL_ACCELERATOR_REAL_REFLECTOR_FIELD",
     FULL_ID: FULL_FIELD_NAME,
     THREE_ZONE_PROFILE_ID: "IDEAL_THREE_ZONE_ACCELERATOR_REAL_REFLECTOR_FIELD",
+    FULL_THREE_ZONE_PROFILE_ID: "FULL_DOMAIN_THREE_ZONE_PIECEWISE_IDEAL_FIELD",
     THREE_ZONE_REAL_PA_PROFILE_ID: "REAL_THREE_ZONE_ACCELERATOR_REAL_REFLECTOR_FIELD",
 }
-THREE_ZONE_PROFILE_IDS = {THREE_ZONE_PROFILE_ID, THREE_ZONE_REAL_PA_PROFILE_ID}
+THREE_ZONE_PROFILE_IDS = {
+    THREE_ZONE_PROFILE_ID,
+    FULL_THREE_ZONE_PROFILE_ID,
+    THREE_ZONE_REAL_PA_PROFILE_ID,
+}
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -288,14 +294,26 @@ def _build_three_zone_contract(
         / (planes["reflectron_backplate"] - planes["reflectron_midgrid"]),
     }
     layout = geometry.get("single_flight_layout_derivation", {})
-    if canonical == THREE_ZONE_PROFILE_ID:
+    if canonical in {THREE_ZONE_PROFILE_ID, FULL_THREE_ZONE_PROFILE_ID}:
         region_modes = {
             "accelerator_zone1": "analytic_ideal_field",
             "accelerator_zone2": "analytic_ideal_field",
             "accelerator_zone3": "analytic_ideal_field",
-            "drift": "real_pa_field",
-            "reflectron_stage1": "real_pa_field",
-            "reflectron_stage2": "real_pa_field",
+            "drift": (
+                "zero_field"
+                if canonical == FULL_THREE_ZONE_PROFILE_ID
+                else "real_pa_field"
+            ),
+            "reflectron_stage1": (
+                "analytic_ideal_field"
+                if canonical == FULL_THREE_ZONE_PROFILE_ID
+                else "real_pa_field"
+            ),
+            "reflectron_stage2": (
+                "analytic_ideal_field"
+                if canonical == FULL_THREE_ZONE_PROFILE_ID
+                else "real_pa_field"
+            ),
         }
         published_fields = fields
         effective_domain = {
@@ -325,7 +343,11 @@ def _build_three_zone_contract(
         "planes_mm": planes,
         "fields_V_per_mm": published_fields,
         "effective_domain": effective_domain,
-        "pa_role": "geometry_and_collision_carrier_plus_explicit_real_pa_field_regions",
+        "pa_role": (
+            "geometry_and_collision_carrier_only"
+            if canonical == FULL_THREE_ZONE_PROFILE_ID
+            else "geometry_and_collision_carrier_plus_explicit_real_pa_field_regions"
+        ),
         "real_pa_field_blending_allowed": False,
         "instance_coordinate_mapping": {
             "accelerator": {
@@ -382,10 +404,17 @@ def validate_resolved_region_field_contract(contract: Mapping[str, Any]) -> None
         _validate_three_zone_semantic(semantic)
     elif semantic.get("accelerator_topology") is not None or profile_id in THREE_ZONE_PROFILE_IDS:
         raise ValueError("schema-v1 cannot declare a three-zone accelerator")
-    if profile_id == FULL_ID and any(
+    if profile_id in {FULL_ID, FULL_THREE_ZONE_PROFILE_ID} and any(
         mode == "real_pa_field" for mode in modes.values()
     ):
         raise ValueError("full-domain ideal field cannot contain a real-PA region")
+    expected_pa_role = (
+        "geometry_and_collision_carrier_only"
+        if profile_id == FULL_THREE_ZONE_PROFILE_ID
+        else "geometry_and_collision_carrier_plus_explicit_real_pa_field_regions"
+    )
+    if semantic.get("pa_role") != expected_pa_role:
+        raise ValueError("resolved region field PA role differs")
     if profile_id == THREE_ZONE_REAL_PA_PROFILE_ID:
         return
     domain = semantic.get("effective_domain", {})
@@ -429,6 +458,13 @@ def _validate_three_zone_semantic(semantic: Mapping[str, Any]) -> None:
         expected_modes = {
             **{key: "analytic_ideal_field" for key in THREE_ZONE_REGIONS[:3]},
             **{key: "real_pa_field" for key in THREE_ZONE_REGIONS[3:]},
+        }
+    elif profile_id == FULL_THREE_ZONE_PROFILE_ID:
+        expected_modes = {
+            **{key: "analytic_ideal_field" for key in THREE_ZONE_REGIONS[:3]},
+            "drift": "zero_field",
+            "reflectron_stage1": "analytic_ideal_field",
+            "reflectron_stage2": "analytic_ideal_field",
         }
     else:
         expected_modes = {key: "real_pa_field" for key in THREE_ZONE_REGIONS}
@@ -565,32 +601,53 @@ def _three_zone_region_field_hook_lua(
     semantic = contract["semantic"]
     planes = semantic["planes_mm"]
     fields = semantic["fields_V_per_mm"]
+    modes = semantic["region_modes"]
+    mode_codes = {"real_pa_field": 0, "analytic_ideal_field": 1, "zero_field": 2}
     return f"""
 local {prefix}={{}}
 local {prefix}_repeller={planes['repeller']:.17g}
 local {prefix}_intermediate1={planes['intermediate1']:.17g}
 local {prefix}_intermediate2={planes['intermediate2']:.17g}
 local {prefix}_exit={planes['exit']:.17g}
+local {prefix}_entrance={planes['reflectron_entrance']:.17g}
+local {prefix}_midgrid={planes['reflectron_midgrid']:.17g}
 local {prefix}_backplate={planes['reflectron_backplate']:.17g}
 local {prefix}_zone1={fields['accelerator_zone1']:.17g}
 local {prefix}_zone2={fields['accelerator_zone2']:.17g}
 local {prefix}_zone3={fields['accelerator_zone3']:.17g}
+local {prefix}_refl1={fields['reflectron_stage1']:.17g}
+local {prefix}_refl2={fields['reflectron_stage2']:.17g}
+local {prefix}_m_zone1={mode_codes[modes['accelerator_zone1']]}
+local {prefix}_m_zone2={mode_codes[modes['accelerator_zone2']]}
+local {prefix}_m_zone3={mode_codes[modes['accelerator_zone3']]}
+local {prefix}_m_drift={mode_codes[modes['drift']]}
+local {prefix}_m_refl1={mode_codes[modes['reflectron_stage1']]}
+local {prefix}_m_refl2={mode_codes[modes['reflectron_stage2']]}
 function {prefix}.apply(base,state)
   assert(type(state)=='table' and type(state.z_mm)=='number' and
     type(state.instance_id)=='number' and type(state.instance_dx_mm)=='number' and
     type(state.instance_dz_mm)=='number' and type(state.instance_scale)=='number' and
     type(state.pulse_active)=='boolean','resolved region state is invalid')
   if not state.pulse_active then return base end
-  local z=state.z_mm; local E=nil
-  if z>={prefix}_repeller and z<{prefix}_intermediate1 then E={prefix}_zone1
-  elseif z>={prefix}_intermediate1 and z<{prefix}_intermediate2 then E={prefix}_zone2
-  elseif z>={prefix}_intermediate2 and z<{prefix}_exit then E={prefix}_zone3
-  elseif z>={prefix}_exit and z<={prefix}_backplate then return base
+  local z=state.z_mm; local mode=nil; local E=0; local family=nil
+  if z>={prefix}_repeller and z<{prefix}_intermediate1 then mode={prefix}_m_zone1; E={prefix}_zone1; family='accelerator'
+  elseif z>={prefix}_intermediate1 and z<{prefix}_intermediate2 then mode={prefix}_m_zone2; E={prefix}_zone2; family='accelerator'
+  elseif z>={prefix}_intermediate2 and z<{prefix}_exit then mode={prefix}_m_zone3; E={prefix}_zone3; family='accelerator'
+  elseif z>={prefix}_exit and z<{prefix}_entrance then mode={prefix}_m_drift
+  elseif z>={prefix}_entrance and z<{prefix}_midgrid then mode={prefix}_m_refl1; E=-{prefix}_refl1; family='reflectron'
+  elseif z>={prefix}_midgrid and z<={prefix}_backplate then mode={prefix}_m_refl2; E=-{prefix}_refl2; family='reflectron'
   else error('particle escaped resolved region-field longitudinal domain') end
-  assert(state.instance_id==3 or state.instance_id==5,
-    'analytic accelerator field requires instance 3 or 5')
-  return {{replace_all=true,dvoltsx_gu=0,dvoltsy_gu=0,
-    dvoltsz_gu=-E*state.instance_dz_mm*state.instance_scale}}
+  if mode==0 then return base end
+  if mode==2 then return {{replace_all=true,dvoltsx_gu=0,dvoltsy_gu=0,dvoltsz_gu=0}} end
+  if family=='accelerator' then
+    assert(state.instance_id==3 or state.instance_id==5,
+      'analytic accelerator field requires instance 3 or 5')
+    return {{replace_all=true,dvoltsx_gu=0,dvoltsy_gu=0,
+      dvoltsz_gu=-E*state.instance_dz_mm*state.instance_scale}}
+  end
+  assert(state.instance_id==2,'analytic reflectron field requires rotated instance 2')
+  return {{replace_all=true,dvoltsx_gu=-E*state.instance_dx_mm*state.instance_scale,
+    dvoltsy_gu=0,dvoltsz_gu=0}}
 end
 return {prefix}
 """.strip()

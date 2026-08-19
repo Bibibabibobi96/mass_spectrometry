@@ -9,12 +9,16 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from common.contracts.machine_contracts import ContractError, validate_schema
+from common.integration.resolve_connection import derive_mating_translation_with_gap
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.prepare import (
+    _automatic_pulse_population_binding,
     _repo_byte_record,
     _workspace_record,
     prepare_family_source_closure,
+    resolve_single_flight_batch_count,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_source import (
     materialize_staged_grid2_restart,
@@ -77,6 +81,10 @@ OCTUPOLE_RUNTIME_BINDING = (
 STAGED_GRID2_R03_CAMPAIGN = (
     CONFIG_ROOT / "diagnostics" /
     "staged_grid2_restart_legacy_n34_successor_r03_campaign.json"
+)
+AUTO_N1000_CONNECTOR_CAMPAIGN = (
+    CONFIG_ROOT / "diagnostics" /
+    "connector_gap_three_zone_real_pa_full_n1000_campaign_v11.json"
 )
 
 
@@ -200,6 +208,106 @@ def write_current_policy_campaign(source: Path, destination: Path) -> dict[str, 
 
 
 class FamilySourceClosureWorkflowTests(unittest.TestCase):
+    def test_automatic_full_population_binding_uses_declared_count(self) -> None:
+        population = {
+            "population_mode": "continuous_injection_full_population",
+            "source_authority": {
+                "table_binding": "source_contract_particle_source",
+            },
+            "execution_population": {
+                "particle_count": 123,
+                "selection_algorithm": "all_rows_in_frozen_file_order",
+            },
+        }
+        self.assertEqual(
+            _automatic_pulse_population_binding(population),
+            ("source_contract_particle_source", 123),
+        )
+        population["execution_population"]["particle_count"] = 0
+        with self.assertRaisesRegex(ContractError, "population differs"):
+            _automatic_pulse_population_binding(population)
+
+    def test_batch_count_is_execution_only_and_defaults_to_one(self) -> None:
+        self.assertEqual(
+            resolve_single_flight_batch_count({}, execution_particle_count=100),
+            1,
+        )
+        self.assertEqual(
+            resolve_single_flight_batch_count(
+                {"single_flight_batch_count": 2}, execution_particle_count=1000,
+            ),
+            2,
+        )
+        for invalid in (0, 1001, True, 2.0):
+            with self.subTest(invalid=invalid), self.assertRaises(ContractError):
+                resolve_single_flight_batch_count(
+                    {"single_flight_batch_count": invalid},
+                    execution_particle_count=1000,
+                )
+
+    def test_auto_pulse_full_n1000_compiles_source_contract_population(self) -> None:
+        campaign = load(AUTO_N1000_CONNECTOR_CAMPAIGN)
+        row = campaign["experiments"][0]
+        scratch = REPO_ROOT.parent / "artifacts" / "projects" / INTEGRATION_ID / "scratch"
+        scratch.mkdir(parents=True, exist_ok=True)
+        mapping = next(
+            item for item in load(ADAPTER_REGISTRY)["mappings"]
+            if item["connection_profile_id"] == row["connection_profile_id"]
+        )
+        with tempfile.TemporaryDirectory(dir=scratch) as directory, patch(
+            "integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer."
+            "workflows.family_source_closure.prepare."
+            "_resolve_cached_verified_pulse_schedule",
+            return_value=None,
+        ), patch(
+            "integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer."
+            "workflows.family_source_closure.prepare.resolve_execution_mapping",
+            return_value=mapping,
+        ):
+            output = Path(directory)
+            _, plan_path = prepare_family_source_closure(
+                repo_root=REPO_ROOT,
+                profile_registry_path=PROFILE_REGISTRY,
+                adapter_registry_path=ADAPTER_REGISTRY,
+                campaign_path=AUTO_N1000_CONNECTOR_CAMPAIGN,
+                experiment_id=row["experiment_id"],
+                resolved_output=output / "resolved_connection.json",
+                plan_output=output / "composition_plan.json",
+            )
+            arguments = {
+                item.split("=", 1)[0]: item.split("=", 1)[1]
+                for item in load(plan_path)["execution_steps"][0]["arguments"]
+            }
+            self.assertEqual(
+                arguments["pre_pulse_time_series_prefix_filename"],
+                row["source"]["particle_source"]["path"],
+            )
+            self.assertEqual(
+                arguments["pre_pulse_time_series_prefix_sha256"],
+                row["source"]["particle_source"]["sha256"],
+            )
+            self.assertEqual(arguments["pre_pulse_time_series_prefix_count"], "1000")
+            self.assertEqual(arguments["single_flight_batch_count"], "2")
+            self.assertFalse(
+                (output / "inputs" / "automatic_pulse_timing_prefix_n100.csv").exists()
+            )
+            population = load(output / "resolved_population_contract.json")
+            self.assertEqual(
+                population["source_authority"]["table_binding"],
+                "source_contract_particle_source",
+            )
+            self.assertEqual(population["execution_population"]["particle_count"], 1000)
+            self.assertEqual(
+                load(output / "resolved_pulse_timing_orchestration.json")["state"],
+                "discovery_required",
+            )
+        adapter_source = (
+            INTEGRATION_ROOT / "workflows" / "family_source_closure" / "adapter.ps1"
+        ).read_text(encoding="utf-8-sig")
+        self.assertIn("'single_flight_batch_count'", adapter_source)
+        self.assertIn("$runnerArguments.ExecutionBatchCount", adapter_source)
+        self.assertIn("-gt $expectedExecutionParticleCount", adapter_source)
+
     def test_generated_ordered_subset_selectors_are_exact_and_fresh(self) -> None:
         n1 = ordered_subset_source_particle_ids("n1_center_source_id_500_v1")
         n100 = ordered_subset_source_particle_ids(
@@ -661,6 +769,195 @@ try {
             self.assertIn("STATE=REJECTED", completed.stdout)
             self.assertIn("SHA=REJECTED", completed.stdout)
 
+    def test_adapter_authorizes_base_prepare_only_discovery_arguments(self) -> None:
+        adapter = (
+            INTEGRATION_ROOT / "workflows" / "family_source_closure" / "adapter.ps1"
+        )
+        script = r"""
+$parseErrors = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile(
+  $env:RF_ADAPTER_PATH, [ref]$null, [ref]$parseErrors
+)
+if ($parseErrors) { throw $parseErrors[0] }
+function Get-UniqueExtent([scriptblock]$Predicate) {
+  $matches = @($ast.FindAll($Predicate, $true))
+  if ($matches.Count -ne 1) { throw "expected one adapter logic node" }
+  return $matches[0].Extent.Text
+}
+$discoveryRequired = Get-UniqueExtent {
+  param($node)
+  $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+    $node.Left.Extent.Text -eq '$pulseTimingDiscoveryRequired'
+}
+$authorityMismatch = Get-UniqueExtent {
+  param($node)
+  $node -is [System.Management.Automation.Language.IfStatementAst] -and
+    $node.Extent.Text -match
+      'Pre-pulse time-series campaign and prepared authority differ'
+}
+$screening = Get-UniqueExtent {
+  param($node)
+  $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+    $node.Left.Extent.Text -eq '$prePulseTimeSeriesScreening'
+}
+$logic = [scriptblock]::Create(
+  $discoveryRequired + [Environment]::NewLine +
+  $authorityMismatch + [Environment]::NewLine + $screening
+)
+function Invoke-BasePrepareOnlyCase([string]$State, [bool]$HasArguments) {
+  $automaticPulseTiming = $true
+  $frozenArguments = @{ pulse_timing_orchestration_state = $State }
+  $campaignHasPrePulseTimeSeries = $false
+  $pulseTimingDiscovery = $false
+  $hasPrePulseTimeSeriesArguments = $HasArguments
+  . $logic
+  return [bool]$prePulseTimeSeriesScreening
+}
+if (-not (Invoke-BasePrepareOnlyCase 'discovery_required' $true)) {
+  throw 'base PrepareOnly discovery authority was not enabled'
+}
+'VALID=PASS'
+foreach ($case in @(
+    @{ state = 'ready_verified'; arguments = $true },
+    @{ state = 'discovery_required'; arguments = $false }
+  )) {
+  try {
+    $null = Invoke-BasePrepareOnlyCase $case.state $case.arguments
+    throw 'mismatched base discovery authority was accepted'
+  } catch {
+    if ($_.Exception.Message -notmatch 'prepared authority differ') { throw }
+  }
+}
+'MISMATCHES=REJECTED'
+"""
+        completed = subprocess.run(
+            ["pwsh", "-NoProfile", "-Command", script],
+            cwd=REPO_ROOT,
+            env={**os.environ, "RF_ADAPTER_PATH": str(adapter)},
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(
+            completed.returncode, 0, completed.stdout + completed.stderr
+        )
+        self.assertIn("VALID=PASS", completed.stdout)
+        self.assertIn("MISMATCHES=REJECTED", completed.stdout)
+
+    def test_adapter_base_discovery_accepts_artifact_population_and_input_contract(
+        self,
+    ) -> None:
+        adapter = (
+            INTEGRATION_ROOT / "workflows" / "family_source_closure" / "adapter.ps1"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            run_directory = workspace / "run"
+            inputs = run_directory / "inputs"
+            artifacts = workspace / "artifacts"
+            inputs.mkdir(parents=True)
+            artifacts.mkdir()
+            prefix = artifacts / "source.csv"
+            contract = inputs / "pre_pulse_time_series_screening_contract.json"
+            prefix.write_text("particle_id\n1\n", encoding="utf-8")
+            contract.write_text("{}\n", encoding="utf-8")
+            script = r"""
+$parseErrors = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile(
+  $env:RF_ADAPTER_PATH, [ref]$null, [ref]$parseErrors
+)
+if ($parseErrors) { throw $parseErrors[0] }
+function Get-UniqueExtent([scriptblock]$Predicate) {
+  $matches = @($ast.FindAll($Predicate, $true))
+  if ($matches.Count -ne 1) { throw 'expected one adapter input-authority node' }
+  return $matches[0].Extent.Text
+}
+$authorityLogic = [scriptblock]::Create((Get-UniqueExtent {
+  param($node)
+  $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+    $node.Left.Extent.Text -eq '$pulseTimingDiscoveryAuthority'
+}))
+$expectedPrefixLogic = [scriptblock]::Create((Get-UniqueExtent {
+  param($node)
+  $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+    $node.Left.Extent.Text -eq '$expectedTimeSeriesPrefix'
+}))
+$validationLogic = [scriptblock]::Create((Get-UniqueExtent {
+  param($node)
+  $node -is [System.Management.Automation.Language.IfStatementAst] -and
+    $node.Extent.Text -match '^if \(\[IO\.Path\]::IsPathRooted' -and
+    $node.Extent.Text -match 'Plan-bound pre-pulse time-series inputs'
+}))
+$runDirectory = [IO.Path]::GetFullPath($env:RF_RUN_DIRECTORY)
+$workspaceRoot = [IO.Path]::GetFullPath($env:RF_WORKSPACE)
+$inputsRoot = (Join-Path $runDirectory 'inputs') +
+  [IO.Path]::DirectorySeparatorChar
+$artifactsRoot = (Join-Path $workspaceRoot 'artifacts') +
+  [IO.Path]::DirectorySeparatorChar
+$prePulseTimeSeriesPrefixBinding = 'artifacts/source.csv'
+$prePulseTimeSeriesPrefixPath = [IO.Path]::GetFullPath($env:RF_PREFIX_PATH)
+$prePulseTimeSeriesContractPath = [IO.Path]::GetFullPath($env:RF_CONTRACT_PATH)
+$frozenArguments = @{
+  pre_pulse_time_series_prefix_filename = $prePulseTimeSeriesPrefixBinding
+  pre_pulse_time_series_prefix_sha256 = $env:RF_PREFIX_SHA256
+  pre_pulse_time_series_prefix_count = '1'
+  pre_pulse_time_series_contract_filename =
+    'inputs/pre_pulse_time_series_screening_contract.json'
+  pre_pulse_time_series_contract_sha256 = $env:RF_CONTRACT_SHA256
+}
+$experiment = [pscustomobject]@{
+  single_flight_population = [pscustomobject]@{
+    execution_population = [pscustomobject]@{ particle_count = 1 }
+  }
+}
+$connectorGapScreening = $false
+$pulseTimingDiscovery = $false
+$pulseTimingDiscoveryRequired = $true
+. $authorityLogic
+. $expectedPrefixLogic
+. $validationLogic
+'BASE_DISCOVERY_INPUTS=PASS'
+$pulseTimingDiscoveryRequired = $false
+. $authorityLogic
+. $expectedPrefixLogic
+try {
+  . $validationLogic
+  throw 'artifact population was accepted without discovery authority'
+} catch {
+  if ($_.Exception.Message -notmatch 'missing or stale') { throw }
+}
+'NO_AUTHORITY=REJECTED'
+"""
+            environment = os.environ.copy()
+            environment.update({
+                "RF_ADAPTER_PATH": str(adapter),
+                "RF_WORKSPACE": str(workspace),
+                "RF_RUN_DIRECTORY": str(run_directory),
+                "RF_PREFIX_PATH": str(prefix),
+                "RF_PREFIX_SHA256": hashlib.sha256(prefix.read_bytes())
+                .hexdigest().upper(),
+                "RF_CONTRACT_PATH": str(contract),
+                "RF_CONTRACT_SHA256": hashlib.sha256(contract.read_bytes())
+                .hexdigest().upper(),
+            })
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", script],
+                cwd=REPO_ROOT,
+                env=environment,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(
+                completed.returncode, 0, completed.stdout + completed.stderr
+            )
+            self.assertIn("BASE_DISCOVERY_INPUTS=PASS", completed.stdout)
+            self.assertIn("NO_AUTHORITY=REJECTED", completed.stdout)
+
     def test_legacy_cache_policy_is_validate_only_and_never_prepare_only(self) -> None:
         source_campaign = (
             CONFIG_ROOT / "diagnostics" /
@@ -711,6 +1008,7 @@ try {
         )
         source = entry.read_text(encoding="utf-8")
         self.assertIn("'discovery_required'", source)
+        self.assertIn("'confirmation_required'", source)
         self.assertIn("'ready_verified'", source)
         self.assertIn("--pulse-timing-transition", source)
         self.assertIn("transition_relative_path", source)
@@ -1141,8 +1439,43 @@ $batchRows = [string[]]$particleRows[0..33]
             if profile["profile_id"]
             == "frontend_isotropic_020_accelerator_overlay_z005"
         )
-        self.assertEqual(selected_grid["max_parallel_batches"], 3)
-        self.assertLessEqual(selected_grid["max_parallel_batches"], 5)
+        batching = configuration["batching_policy"]
+        self.assertEqual(selected_grid["max_parallel_batches"], 2)
+        self.assertEqual(
+            batching["parallel_batch_memory_reservation_bytes"], 10 * 1024**3,
+        )
+        self.assertEqual(
+            batching["parallel_batch_observed_peak_working_set_bytes"],
+            8_700_387_328,
+        )
+        self.assertGreater(
+            batching["parallel_batch_memory_reservation_bytes"],
+            batching["parallel_batch_observed_peak_working_set_bytes"],
+        )
+        for retired in (
+            "enabled_at_particle_count", "default_batch_count",
+            "parallel_after_cache_warmup", "cache_warmup_batch_count",
+        ):
+            self.assertNotIn(retired, batching)
+
+    def test_n1000_v3_changes_only_identity_and_execution_batching(self) -> None:
+        v2 = load(
+            CONFIG_ROOT / "diagnostics" /
+            "connector_gap_three_zone_real_pa_full_n1000_campaign_v2.json"
+        )
+        v3 = load(AUTO_N1000_CONNECTOR_CAMPAIGN)
+        validate_schema(v3, "rf_multipole_oatof_experiment_campaign.schema.json")
+        self.assertIn("old PowerShell N=1000 post-processing", v3["claim_limit"])
+        self.assertEqual(len(v2["experiments"]), len(v3["experiments"]))
+        for before, after in zip(v2["experiments"], v3["experiments"], strict=True):
+            self.assertEqual(after["single_flight_batch_count"], 2)
+            normalized_before = dict(before)
+            normalized_after = dict(after)
+            for key in ("experiment_id", "run_id"):
+                normalized_before.pop(key)
+                normalized_after.pop(key)
+            normalized_after.pop("single_flight_batch_count")
+            self.assertEqual(normalized_before, normalized_after)
 
     def test_native_grid_short_focus_row_rebuilds_current_reflectron(self) -> None:
         campaign_path = (
@@ -1391,10 +1724,13 @@ $batchRows = [string[]]$particleRows[0..33]
             "6p4": (6.4, -154.8),
             "12p8": (12.8, -161.2),
             "25p6": (25.6, -174.0),
+            "51p2": (51.2, -199.6),
         }
         for slug, (length_mm, translation_x_mm) in expected.items():
             profile_id = (
-                "rf_octupole_oatof_shield_terminal_direct_mating_gap_"
+                "rf_octupole_to_single_reflection_oatof_direct_mating_gap_51p2mm"
+                if slug == "51p2"
+                else "rf_octupole_oatof_shield_terminal_direct_mating_gap_"
                 f"{slug}mm"
             )
             profile = profiles[profile_id]
@@ -1407,6 +1743,22 @@ $batchRows = [string[]]$particleRows[0..33]
                 profile["spatial_registration"]["translation_mm"][0],
                 translation_x_mm,
             )
+            direct = profiles[
+                "rf_octupole_oatof_shield_terminal_direct_mating_gap_0mm"
+            ]["spatial_registration"]["translation_mm"]
+            derived_translation = derive_mating_translation_with_gap(
+                profile["spatial_registration"]["rotation_upstream_to_downstream"],
+                [0.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0],
+                direct,
+                length_mm,
+            )
+            for actual, derived in zip(
+                profile["spatial_registration"]["translation_mm"],
+                derived_translation,
+                strict=True,
+            ):
+                self.assertAlmostEqual(actual, derived, places=12)
             self.assertEqual(
                 profile["transition_aperture"],
                 {
@@ -1440,6 +1792,7 @@ $batchRows = [string[]]$particleRows[0..33]
             (10, "__sim__simion__rf-oatof-single-flight-gap10__n"),
             (12.8, "__sim__simion__rf-oatof-single-flight-gap12p8__n"),
             (25.6, "__sim__simion__rf-oatof-single-flight-gap25p6__n"),
+            (51.2, "__sim__simion__rf-oatof-single-flight-gap51p2__n"),
         ):
             self.assertEqual(
                 _single_flight_run_stem({"connector": {"length_mm": length_mm}}),

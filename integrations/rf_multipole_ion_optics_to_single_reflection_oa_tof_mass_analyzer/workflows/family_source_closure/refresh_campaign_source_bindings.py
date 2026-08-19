@@ -10,6 +10,10 @@ from pathlib import Path
 from typing import Any
 
 from common.contracts.file_identity import file_sha256, repository_text_sha256
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.prepare import (
+    _canonical_sha256,
+    _derive_pulse_discovery_run_id,
+)
 
 
 INTEGRATION_ID = "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
@@ -130,8 +134,12 @@ def _validate_published_format_recovery(
             raise ValueError("published campaign identity receipt is missing")
         return
     expected_sha256 = hashlib.sha256(rendered).hexdigest().upper()
-    experiments = {str(row["run_id"]): row for row in compiled.get("experiments", [])}
-    if len(experiments) != len(compiled.get("experiments", [])):
+    rows = compiled.get("experiments", [])
+    experiments = {str(row["run_id"]): row for row in rows}
+    experiments_by_id: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        experiments_by_id.setdefault(str(row["experiment_id"]), []).append(row)
+    if len(experiments) != len(rows):
         raise ValueError("campaign run identities are not unique")
     relative_campaign = campaign_path.resolve().relative_to(repo_root.resolve()).as_posix()
     for receipt_path, receipt in receipts:
@@ -144,10 +152,44 @@ def _validate_published_format_recovery(
             or receipt.get("campaign_path") != relative_campaign
             or receipt.get("campaign_sha256") != expected_sha256
             or receipt.get("campaign_id") != compiled.get("campaign_id")
-            or experiment is None
-            or receipt.get("experiment_id") != experiment.get("experiment_id")
+            or (
+                experiment is not None
+                and receipt.get("experiment_id") != experiment.get("experiment_id")
+            )
         ):
             raise ValueError(f"published campaign identity differs: {run_id}")
+        if experiment is not None:
+            continue
+        matches = experiments_by_id.get(str(receipt.get("experiment_id")), [])
+        if len(matches) != 1:
+            raise ValueError(f"published campaign identity differs: {run_id}")
+        _validate_internal_discovery_receipt(
+            receipt_path=receipt_path,
+            receipt=receipt,
+            run_id=run_id,
+            experiment=matches[0],
+        )
+
+
+def _validate_internal_discovery_receipt(
+    *,
+    receipt_path: Path,
+    receipt: dict[str, Any],
+    run_id: str,
+    experiment: dict[str, Any],
+) -> None:
+    """Validate one machine-bound internal pulse-discovery publication."""
+
+    expected_run_id = _derive_pulse_discovery_run_id(str(experiment["run_id"]))
+    plan_path = receipt_path.parent / "composition_plan.json"
+    if (
+        run_id != expected_run_id
+        or receipt.get("execution_strategy") != "simion_single_flight"
+        or receipt.get("experiment_row_sha256") != _canonical_sha256(experiment)
+        or not plan_path.is_file()
+        or receipt.get("composition_plan_sha256") != file_sha256(plan_path)
+    ):
+        raise ValueError(f"published campaign identity differs: {run_id}")
 
 
 def write_campaign(repo_root: Path, campaign_path: Path) -> bool:

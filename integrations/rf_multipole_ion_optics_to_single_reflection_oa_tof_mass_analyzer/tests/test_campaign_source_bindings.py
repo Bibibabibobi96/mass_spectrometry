@@ -11,6 +11,10 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     is_fresh,
     write_campaign,
 )
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.prepare import (
+    _canonical_sha256,
+    _derive_pulse_discovery_run_id,
+)
 
 
 class CampaignSourceBindingTests(unittest.TestCase):
@@ -41,12 +45,19 @@ class CampaignSourceBindingTests(unittest.TestCase):
         }, indent=2) + "\n", encoding="utf-8")
         return repo, campaign
 
-    def _publish_receipt(self, repo: Path, campaign: Path) -> Path:
+    def _publish_receipt(
+        self,
+        repo: Path,
+        campaign: Path,
+        *,
+        run_id: str | None = None,
+        receipt_fields: dict[str, object] | None = None,
+    ) -> Path:
         document = json.loads(campaign.read_text(encoding="utf-8-sig"))
         rendered = (
             json.dumps(document, indent=2, ensure_ascii=False) + "\n"
         ).encode("utf-8")
-        run_id = document["experiments"][0]["run_id"]
+        run_id = run_id or document["experiments"][0]["run_id"]
         run = (
             repo.parent
             / "artifacts/projects/"
@@ -64,10 +75,59 @@ class CampaignSourceBindingTests(unittest.TestCase):
             "campaign_id": document["campaign_id"],
             "experiment_id": document["experiments"][0]["experiment_id"],
         }
+        receipt.update(receipt_fields or {})
         (run / "execution_receipt.json").write_text(
             json.dumps(receipt, indent=2) + "\n", encoding="utf-8"
         )
         return run
+
+    def _configure_automatic_pulse_row(self, campaign: Path) -> None:
+        document = json.loads(campaign.read_text(encoding="utf-8-sig"))
+        row = document["experiments"][0]
+        row.update({
+            "run_id": "20260819_002000__sim__cross__fixture-target__n100",
+            "execution_strategy": "simion_single_flight",
+        })
+        campaign.write_text(
+            json.dumps(document, indent=2) + "\n", encoding="utf-8"
+        )
+
+    def _publish_discovery_receipt(
+        self,
+        repo: Path,
+        campaign: Path,
+        *,
+        run_id: str | None = None,
+        receipt_overrides: dict[str, object] | None = None,
+    ) -> Path:
+        document = json.loads(campaign.read_text(encoding="utf-8-sig"))
+        row = document["experiments"][0]
+        parent_run_id = run_id or _derive_pulse_discovery_run_id(row["run_id"])
+        run = (
+            repo.parent
+            / "artifacts"
+            / "projects"
+            / "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
+            / "runs"
+            / parent_run_id
+        )
+        run.mkdir(parents=True)
+        plan_path = run / "composition_plan.json"
+        plan_path.write_text(
+            '{"pulse_timing_internal_stage":"pulse_timing_discovery"}\n',
+            encoding="utf-8",
+        )
+        fields = {
+            "experiment_row_sha256": _canonical_sha256(row),
+            "execution_strategy": "simion_single_flight",
+            "composition_plan_sha256": hashlib.sha256(
+                plan_path.read_bytes()
+            ).hexdigest().upper(),
+        }
+        fields.update(receipt_overrides or {})
+        return self._publish_receipt(
+            repo, campaign, run_id=parent_run_id, receipt_fields=fields
+        )
 
     def test_refreshes_repository_and_artifact_identities(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -155,6 +215,37 @@ class CampaignSourceBindingTests(unittest.TestCase):
                 campaign.write_bytes(
                     (json.dumps(document, indent=2) + "\n").encode("utf-8")
                 )
+
+                self.assertFalse(is_fresh(repo, campaign))
+                with self.assertRaisesRegex(ValueError, "identity differs"):
+                    write_campaign(repo, campaign)
+
+    def test_target_and_machine_bound_discovery_receipts_are_fresh(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repo, campaign = self._fixture(Path(directory))
+            self._configure_automatic_pulse_row(campaign)
+            self.assertTrue(write_campaign(repo, campaign))
+            self._publish_receipt(repo, campaign)
+            self._publish_discovery_receipt(repo, campaign)
+
+            self.assertTrue(is_fresh(repo, campaign))
+            self.assertFalse(write_campaign(repo, campaign))
+
+    def test_refuses_unknown_or_forged_discovery_receipt(self) -> None:
+        cases = (
+            {
+                "run_id": (
+                    "20260819_002000__sim__cross__foreign-pulse-discovery__n100"
+                ),
+            },
+            {"receipt_overrides": {"composition_plan_sha256": "0" * 64}},
+        )
+        for case in cases:
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as directory:
+                repo, campaign = self._fixture(Path(directory))
+                self._configure_automatic_pulse_row(campaign)
+                self.assertTrue(write_campaign(repo, campaign))
+                self._publish_discovery_receipt(repo, campaign, **case)
 
                 self.assertFalse(is_fresh(repo, campaign))
                 with self.assertRaisesRegex(ValueError, "identity differs"):

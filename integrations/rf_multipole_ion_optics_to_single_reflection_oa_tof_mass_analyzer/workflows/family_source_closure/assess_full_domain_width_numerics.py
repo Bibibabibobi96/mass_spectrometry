@@ -95,13 +95,36 @@ def _output_records(manifest: Mapping[str, Any]) -> list[dict[str, Any]]:
     raise ContractError("manifest outputs are invalid")
 
 
-def _batch_resource_usage(manifest: Mapping[str, Any]) -> dict[str, Any]:
+def _batch_resource_usage(
+    manifest: Mapping[str, Any], manifest_bound_run_config: Mapping[str, Any],
+) -> dict[str, Any]:
+    parameters = manifest_bound_run_config.get("parameters")
+    if not isinstance(parameters, Mapping):
+        raise ContractError("child run_config parameters are missing")
+    execution_batch_count = parameters.get("execution_batch_count")
+    max_parallel_batches = parameters.get("max_parallel_batches")
+    if (
+        isinstance(execution_batch_count, bool)
+        or not isinstance(execution_batch_count, int)
+        or execution_batch_count < 1
+        or isinstance(max_parallel_batches, bool)
+        or not isinstance(max_parallel_batches, int)
+        or max_parallel_batches < 1
+    ):
+        raise ContractError("child run_config batch execution parameters are invalid")
     records = [
         row for row in _output_records(manifest)
         if Path(str(row.get("path", ""))).name.startswith("resource_usage__batch")
     ]
-    if len(records) != 5:
-        raise ContractError("five batch resource-usage records are required")
+    observed_names = sorted(Path(str(row["path"])).name for row in records)
+    expected_names = [
+        f"resource_usage__batch{index:02d}.json"
+        for index in range(1, execution_batch_count + 1)
+    ]
+    if observed_names != expected_names:
+        raise ContractError(
+            "batch resource-usage records differ from the manifest-bound run_config"
+        )
     batches = []
     for record in sorted(records, key=lambda row: str(row["path"])):
         path = _verified(record, "batch resource usage")
@@ -125,8 +148,10 @@ def _batch_resource_usage(manifest: Mapping[str, Any]) -> dict[str, Any]:
         for row in batches
     )
     return {
-        "scope": "five_SIMION_particle_batches_only_excludes_PA_preparation",
-        "dispatch_wave_contract": "3+2_maximum_three_concurrent",
+        "scope": "SIMION_particle_execution_batches_only_excludes_PA_preparation",
+        "execution_batch_count": execution_batch_count,
+        "max_parallel_batches": max_parallel_batches,
+        "dispatch_wave_contract": f"up_to_{max_parallel_batches}_concurrent_batches",
         "observed_batch_span_seconds": (end - start).total_seconds(),
         "sum_batch_wall_clock_seconds": sum(row["wall_clock_seconds"] for row in batches),
         "batches": batches,
@@ -577,7 +602,7 @@ def _case(
             summary.get("pre_pulse_restart_source_release_validation") if is_restart else None,
         ),
         "pa_cache": cache,
-        "resource_usage": _batch_resource_usage(child_manifest),
+        "resource_usage": _batch_resource_usage(child_manifest, child_config),
     }
 
 

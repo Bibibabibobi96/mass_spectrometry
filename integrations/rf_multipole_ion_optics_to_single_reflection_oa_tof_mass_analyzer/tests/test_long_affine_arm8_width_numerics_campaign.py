@@ -61,10 +61,50 @@ class LongAffineArm8WidthNumericsCampaignTests(unittest.TestCase):
         self.assertEqual(
             [(item["profile_id"], item["rf_steps_per_period"])
              for item in self.registry["time_integration_profiles"]],
-            [("dt160", 160), ("dt320", 320)],
+            [
+                ("dt160", 160),
+                ("dt80", 80),
+                ("dt40", 40),
+                ("dt20", 20),
+                ("dt10", 10),
+                ("dt320", 320),
+            ],
         )
         self.assertNotIn("rf_steps_per_period", self.registry)
         self.assertNotIn("trajectory_quality", self.registry)
+        self.assertEqual(
+            self.registry["default_time_integration_profile_id"], "dt40"
+        )
+        profiles = {
+            item["profile_id"]: item
+            for item in self.registry["time_integration_profiles"]
+        }
+        self.assertEqual(
+            profiles["dt160"]["role"], "paired_numerical_reference"
+        )
+        self.assertEqual(profiles["dt40"]["role"], "default")
+
+    def test_accelerated_time_integration_profiles_are_schema_registered(self) -> None:
+        profiles = {
+            item["profile_id"]: item
+            for item in self.registry["time_integration_profiles"]
+        }
+        for profile_id, steps, role in (
+            ("dt80", 80, "paired_numerical_acceleration_diagnostic"),
+            ("dt40", 40, "default"),
+            ("dt20", 20, "paired_numerical_acceleration_diagnostic"),
+            ("dt10", 10, "paired_numerical_acceleration_diagnostic"),
+        ):
+            self.assertEqual(profiles[profile_id]["rf_steps_per_period"], steps)
+            self.assertEqual(profiles[profile_id]["role"], role)
+            campaign = copy.deepcopy(self.restart_campaign)
+            campaign["experiments"][0][
+                "single_flight_time_integration_profile_id"
+            ] = profile_id
+            validate_schema(
+                campaign,
+                "rf_multipole_oatof_experiment_campaign.schema.json",
+            )
 
     def test_matrix_rejects_missing_cell_and_wrong_resource_gate(self) -> None:
         missing = copy.deepcopy(self.campaign)
@@ -76,7 +116,7 @@ class LongAffineArm8WidthNumericsCampaignTests(unittest.TestCase):
         wrong_policy = copy.deepcopy(self.policy)
         wrong_policy["stage_limits"]["single_flight_transport"][
             "minimum_system_available_memory_bytes"
-        ] = 8 * 1024**3
+        ] = 4 * 1024**3
         with self.assertRaises(ContractError):
             validate_full_domain_affine_width_numerics_campaign(
                 self.campaign, self.registry, wrong_policy, ROOT
@@ -145,6 +185,7 @@ class LongAffineArm8WidthNumericsCampaignTests(unittest.TestCase):
         )
         builder = (INTEGRATION / "runtime/build_single_flight_program.py").read_text(encoding="utf-8")
         self.assertIn("$timeIntegrationProfiles", runner)
+        self.assertIn("-notin @(10,20,40,80,160,320)", runner)
         self.assertIn('single_flight_rf_steps={0}" -f $rfStepsPerPeriod', runner)
         self.assertNotIn("$settings.rf_steps_per_period", runner)
         self.assertNotIn("PulseResolutionArm8GlobalFieldContract", runner)

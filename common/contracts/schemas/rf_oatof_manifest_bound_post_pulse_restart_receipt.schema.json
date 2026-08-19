@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/rf_oatof_manifest_bound_post_pulse_restart_receipt.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "role", "method", "particle_count",
+    "pulse_effective_time_us", "coordinate_frame", "clock_basis",
+    "unit_conversion", "source_state", "authorities", "identity",
+    "runtime_particle_id_mapping", "maximum_kinetic_energy_abs_error_eV",
+    "postselection_applied"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "rf_oatof_manifest_bound_post_pulse_restart_receipt"},
+    "method": {"const": "manifest_bound_post_pulse_restart_reuse_v1"},
+    "particle_count": {"type": "integer", "minimum": 1},
+    "pulse_effective_time_us": {"type": "number", "exclusiveMinimum": 0},
+    "coordinate_frame": {"const": "oatof_global_cartesian"},
+    "clock_basis": {"const": "canonical_instrument_time_us"},
+    "unit_conversion": {
+      "type": "object", "additionalProperties": false,
+      "required": ["position", "velocity", "species"],
+      "properties": {
+        "position": {"const": "mm_to_mm_identity"},
+        "velocity": {"const": "mm_per_us_to_m_per_s_times_1000"},
+        "species": {"const": "frozen_mother_particle_source_row_map"}
+      }
+    },
+    "source_state": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "sha256", "particle_count"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha"},
+        "particle_count": {"type": "integer", "minimum": 1}
+      }
+    },
+    "authorities": {
+      "type": "object", "additionalProperties": {"$ref": "#/$defs/file"},
+      "required": [
+        "producer_manifest", "checkpoint_output", "producer_pulse_schedule",
+        "verified_pulse_receipt", "particle_row_map", "mother_particle_source",
+        "frontend_pa_cache_manifest", "accelerator_overlay_pa_cache_manifest"
+      ]
+    },
+    "identity": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "producer_simulation_particle_ids_sha256",
+        "source_particle_ids_sha256", "runtime_particle_ids_sha256"
+      ],
+      "properties": {
+        "producer_simulation_particle_ids_sha256": {"$ref": "#/$defs/sha"},
+        "source_particle_ids_sha256": {"$ref": "#/$defs/sha"},
+        "runtime_particle_ids_sha256": {"$ref": "#/$defs/sha"}
+      }
+    },
+    "runtime_particle_id_mapping": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": [
+          "runtime_particle_id", "producer_simulation_particle_id",
+          "source_particle_id"
+        ],
+        "properties": {
+          "runtime_particle_id": {"type": "integer", "minimum": 1},
+          "producer_simulation_particle_id": {"type": "integer", "minimum": 1},
+          "source_particle_id": {"type": "integer", "minimum": 1}
+        }
+      }
+    },
+    "maximum_kinetic_energy_abs_error_eV": {"type": "number", "minimum": 0},
+    "postselection_applied": {"const": false}
+  },
+  "$defs": {
+    "sha": {"type": "string", "pattern": "^[A-F0-9]{64}$"},
+    "file": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha"}
+      }
+    }
+  }
+}

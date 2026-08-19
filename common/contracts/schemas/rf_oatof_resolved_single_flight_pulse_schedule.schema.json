@@ -70,7 +70,8 @@
             "confirmation_selection_authorized": {"const": true},
             "confirmation_policy_id": {
               "const": "identical_identity_pulse_on_full_flight_v1"
-            }
+            },
+            "pilot_verified_receipt": {"$ref": "#/$defs/file"}
           }
         },
         {
@@ -83,6 +84,51 @@
           }
         }
       ]
+    },
+    "verified_reuse_authority": {
+      "type": "object", "additionalProperties": false,
+      "required": ["mode", "content_key", "verified_receipt"],
+      "properties": {
+        "mode": {"const": "verified_pulse_timing_reuse_v1"},
+        "content_key": {"$ref": "#/$defs/sha"},
+        "source_content_key": {"$ref": "#/$defs/sha"},
+        "verified_receipt": {"$ref": "#/$defs/file"}
+      }
+    },
+    "post_pulse_restart_reuse_authority": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "mode", "variation_axis", "producer_manifest", "checkpoint_output",
+        "producer_pulse_schedule", "verified_pulse_receipt",
+        "materialization_receipt", "provider_profiles", "consumer_profile_id"
+      ],
+      "properties": {
+        "mode": {"const": "manifest_bound_post_pulse_restart_reuse_v1"},
+        "variation_axis": {
+          "enum": [
+            "time_integration_profile_id",
+            "accelerator_field_profile_id"
+          ]
+        },
+        "producer_manifest": {"$ref": "#/$defs/file"},
+        "checkpoint_output": {"$ref": "#/$defs/file"},
+        "producer_pulse_schedule": {"$ref": "#/$defs/file"},
+        "verified_pulse_receipt": {"$ref": "#/$defs/file"},
+        "materialization_receipt": {"$ref": "#/$defs/file"},
+        "provider_profiles": {
+          "type": "object", "additionalProperties": false,
+          "required": [
+            "time_integration_profile_id", "trajectory_quality_profile_id",
+            "accelerator_field_profile_id"
+          ],
+          "properties": {
+            "time_integration_profile_id": {"$ref": "#/$defs/id"},
+            "trajectory_quality_profile_id": {"$ref": "#/$defs/id"},
+            "accelerator_field_profile_id": {"$ref": "#/$defs/id"}
+          }
+        },
+        "consumer_profile_id": {"$ref": "#/$defs/id"}
+      }
     }
   },
   "$defs": {
