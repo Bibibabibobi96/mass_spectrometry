@@ -41,6 +41,10 @@
     {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_reflectron_ideal_source_zvz_theory_dt40_v8_remaining_no_rf_successor.json",
       "content_sha256": "D8F3B0AC4858C7D8DB0DECEA1D337B1B60EC71C8DCF8DE4E915AF21816DBD8DF"
+    },
+    {
+      "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_field_matrix_compact_replay_v1.json",
+      "content_sha256": "B72FD544B6B51A71E5F073975AF549642910EEDF21997F936759CC5211342C41"
     }
   ]
 }

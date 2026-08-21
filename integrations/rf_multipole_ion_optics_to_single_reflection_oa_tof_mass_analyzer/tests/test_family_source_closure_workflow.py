@@ -275,6 +275,69 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
         self.assertEqual(expanded["experiments"][0]["source_profile_id"], "n100")
         self.assertEqual(authored["experiments"]["rows"][0]["overrides"], {"connection_profile_id": "gap0", "connector_gap_evidence_role": "primary"})
 
+    def test_flat_authoring_preserves_fifty_six_gap_field_rows(self) -> None:
+        """A large matrix must remain ordered and must not share mutable row state."""
+        field_modes = (
+            ("gap0", "full_ideal", 116, 1),
+            ("gap6p4", "partial_ideal", 482, 2),
+            ("gap12p8", "full_real", 482, 3),
+        )
+        authored = {
+            "experiments": {
+                "shared": {
+                    "execution_strategy": "simion_single_flight",
+                    "source_profile_id": "post_pulse_source_zvz_theory",
+                    "time_integration_profile_id": "dt40",
+                },
+                "variation_axes": [
+                    "connection_profile_id", "field_realization",
+                    "execution_particle_count", "single_flight_batch_count",
+                ],
+                "rows": [
+                    {
+                        "sequence": sequence,
+                        "experiment_id": f"gap_field_{sequence:02d}",
+                        "run_id": f"matrix_run_{sequence:02d}",
+                        "overrides": {
+                            "connection_profile_id": mode[0],
+                            "field_realization": mode[1],
+                            "execution_particle_count": mode[2],
+                            "single_flight_batch_count": mode[3],
+                        },
+                    }
+                    for sequence, mode in enumerate(
+                        (field_modes[index % len(field_modes)] for index in range(56)),
+                        start=1,
+                    )
+                ],
+            }
+        }
+
+        expanded = expand_flat_experiment_authoring(authored)
+
+        self.assertEqual(len(expanded["experiments"]), 56)
+        self.assertEqual(
+            [row["sequence"] for row in expanded["experiments"]], list(range(1, 57)),
+        )
+        self.assertEqual(
+            expanded["experiments"][0]["field_realization"], "full_ideal",
+        )
+        self.assertEqual(
+            expanded["experiments"][1]["field_realization"], "partial_ideal",
+        )
+        self.assertEqual(
+            expanded["experiments"][2]["field_realization"], "full_real",
+        )
+        expanded["experiments"][0]["source_profile_id"] = "mutated"
+        self.assertEqual(
+            expanded["experiments"][1]["source_profile_id"],
+            "post_pulse_source_zvz_theory",
+        )
+        self.assertEqual(
+            authored["experiments"]["shared"]["source_profile_id"],
+            "post_pulse_source_zvz_theory",
+        )
+
     def test_flat_authoring_rejects_undeclared_parameter_change(self) -> None:
         with self.assertRaisesRegex(ContractError, "allowed variation axis"):
             expand_flat_experiment_authoring({"experiments": {
