@@ -1,0 +1,117 @@
+{
+  "schema_version": 6,
+  "role": "rf_multipole_oatof_experiment_campaign",
+  "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+  "campaign_id": "connector_gap_102p4_real_pa_full_n5000_v2",
+  "status": "retired",
+  "execution_policy": {
+    "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/execution_policy.json",
+    "sha256": "55B4EFCE4711EA2A709B60CF62D2FF8F8511298DE5E812B87B3AB5DC216F89E1"
+  },
+  "claim_limit": "DIAGNOSTIC_ONLY. 102.4 mm continuous-frontend N=5000 single-wave, three-batch real-PA experiment. This successor corrects the prior run's contract-unbound 90 us termination cap; 110 us is bound as an execution parameter. Pulse discovery remains detector-blind; resolution is reported only after complete detector timing evidence.",
+  "experiments": [
+    {
+      "sequence": 1,
+      "experiment_id": "connector_gap_102p4_real_pa_full_n5000_v2",
+      "run_id": "20260820_193100__sim__simion__three-zone-connector-gap-102p4mm__n5000__r07",
+      "execution_strategy": "simion_single_flight",
+      "single_flight_batch_count": 3,
+      "single_flight_batch_memory_policy": {
+        "policy_id": "auto_memory_bound_from_receipt_v1",
+        "default_batch_count": 2,
+        "maximum_batch_count": 3,
+        "reserve_available_memory_bytes": 1073741824,
+        "resource_usage_receipt": {
+          "path": "artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20260820_235000__sim__simion__rf-oatof-single-flight-gap102p4__n5000__r05/logs/resource_usage__batch01.json",
+          "sha256": "A4DF52F49C6164CBA32E82447757A9B5443EBBCFB2BCAAA29EA34B383F29B84E"
+        }
+      },
+      "single_flight_pa_cache_policy": "build_and_publish_if_missing",
+      "single_flight_layout_profile_id": "three_zone_t5_primary_shaping_rings_1p4_v1",
+      "single_flight_frontend_grid_profile_id": "frontend_isotropic_020_accelerator_overlay_z005_parallel3",
+      "single_flight_oatof_numerical_profile_id": "oatof_formal_mesh",
+      "single_flight_trajectory_quality_profile_id": "tqual_8",
+      "single_flight_time_integration_profile_id": "dt40",
+      "single_flight_maximum_time_of_flight_us": 110.0,
+      "single_flight_accelerator_field_profile_id": "accelerator_real_three_zone_pa_real_reflectron",
+      "single_flight_source_materialization_profile_id": "canonical_real_octupole_n5000",
+      "single_flight_three_zone_candidate": {
+        "path": "artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20260817_181000__build__python__three-zone-t5-candidate/results/three_zone_t5_simion_candidate_resolved.json",
+        "sha256": "CF744FD57957DF18D627F71EE2D2252A62420B343D7DD0AB1CEF493B876A7339"
+      },
+      "architecture_generation_id": "three_zone_t5_frozen_primary_shaping_rings_1p4_v1",
+      "source_profile_id": "canonical_real_octupole_n5000",
+      "field_overlay_id": "accelerator_overlay_z005",
+      "source_release_mode": "continuous_frontend",
+      "connection_profile_id": "rf_octupole_to_single_reflection_oatof_direct_mating_gap_102p4mm",
+      "connector_gap_evidence_role": "stress_report_only",
+      "source": {
+        "authority_scope": "source_population",
+        "run_id": "20260820_215000__sim__simion__oct-terminal-10ev-h15-finalize-recovery-downstream__n5000",
+        "launched_particle_count": 5000,
+        "particle_count_binding": {
+          "mode": "derive_from_frozen_source_state_v1",
+          "selector": {
+            "event": "handoff",
+            "status": "transmitted"
+          }
+        },
+        "particle_source_manifest_input_role": "particle_source",
+        "manifest": {
+          "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260820_215000__sim__simion__oct-terminal-10ev-h15-finalize-recovery-downstream__n5000/run_manifest.json",
+          "sha256": "7CF69AA9A1D10FC4E8CE8859C83A4A5354FEE72ED5DC87C62F2D25E271CD424B"
+        },
+        "state": {
+          "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260820_215000__sim__simion__oct-terminal-10ev-h15-finalize-recovery-downstream__n5000/results/particle_states__exit_aperture_plate_acceleration_rf_on.csv",
+          "sha256": "08E910AF9ABAB79C033256047A5F32E46D521B57589234414B6A618AD34067EB"
+        },
+        "particle_source": {
+          "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260820_215000__sim__simion__oct-terminal-10ev-h15-finalize-recovery-downstream__n5000/inputs/particle_source.csv",
+          "sha256": "91E7EA09A9C06680001E18E6DA19C1EBC70142E8EC635210439B68A9A84B0FBE"
+        },
+        "metadata": {
+          "path": "artifacts/projects/rf_octupole_ion_optics/runs/20260820_215000__sim__simion__oct-terminal-10ev-h15-finalize-recovery-downstream__n5000/inputs/particle_source_metadata.json",
+          "sha256": "578D73970F5CC45BA6A9C1A8CF5217ECB0F9C44DC2E109F75DD1743B5B732B05"
+        },
+        "handoff_publication_contract": {
+          "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/octupole_handoff_publication_n5000.json",
+          "sha256": "2F0554287B0A236ABD5DE4CE0140F05E056D281060093D1AC8A4FD8729B7C237"
+        }
+      },
+      "single_flight_pulse_schedule_policy": {
+        "policy_id": "multipole_handoff_ballistic_centroid_v1",
+        "offset_rf_periods": 0,
+        "pulse_width_us": 1.0,
+        "cache_miss_policy": {
+          "mode": "auto_detector_blind_discovery_and_confirmation_v1",
+          "time_grid_profile_id": "ballistic_seed_native_dt_minus0p35_plus1p65_v1",
+          "spatial_window_profile_id": "layout_resolved_axial_provisional_xy2_v1"
+        }
+      },
+      "single_flight_population": {
+        "population_id": "canonical_real_octupole_full_n5000_population",
+        "population_mode": "continuous_injection_full_population",
+        "source_authority": {
+          "input_role": "particle_source",
+          "table_binding": "source_contract_particle_source",
+          "ordered_particle_id_encoding": "canonical_compact_json_integer_array_v1"
+        },
+        "execution_population": {
+          "particle_count": 5000,
+          "ordered_particle_id_sha256": "37DC4C2E241AB6B87C39D1AD1CE5CD4CC3E92B05F539AB8ECBB999F88DC98C33",
+          "selection_algorithm": "all_rows_in_frozen_file_order",
+          "selection_seed": 0
+        },
+        "denominators": {
+          "population_count": 5000,
+          "eligible_population_count": 5000
+        },
+        "analysis_randomness": {
+          "bootstrap_resample_count": 0,
+          "bootstrap_seed": 20260820
+        },
+        "postselection_policy": "prohibited"
+      }
+    }
+  ]
+}

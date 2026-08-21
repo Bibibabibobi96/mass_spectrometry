@@ -1,0 +1,52 @@
+{
+  "schema_version": 2,
+  "role": "rf_multipole_oatof_experiment_campaign",
+  "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+  "campaign_id": "octupole_15mm_sleeve_accelerator_energy_n100",
+  "status": "retired",
+  "execution_policy": {
+    "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/execution_policy.json",
+    "sha256": "B5AD2687C3D1B3CFE1F332C593F69BE3AFE55D749CB28815EB5C110207478FF3"
+  },
+  "claim_limit": "N=100 continuous-SIMION diagnostic comparing terminal and segmented acceleration at the pre-pulse state inside the oaTOF accelerator; no convergence, Candidate or Formal claim.",
+  "experiments": [
+    {
+      "sequence": 1,
+      "experiment_id": "octupole_terminal_15mm_sleeve_accelerator_energy_n100",
+      "execution_strategy": "simion_single_flight",
+      "single_flight_layout_profile_id": "symmetric_10ev_injection_diagnostic",
+      "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_0mm",
+      "run_id": "20260805_173000__sim__cross__oct-terminal-15mm-sleeve-accelerator-energy__n100",
+      "source": {
+        "run_id": "20260805_172000__sim__simion__oct-terminal-15mm-sleeve-8v-entrance__n100",
+        "launched_particle_count": 100,
+        "particle_count": 85,
+        "particle_source_manifest_input_role": "particle_source",
+        "manifest": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_172000__sim__simion__oct-terminal-15mm-sleeve-8v-entrance__n100/run_manifest.json", "sha256": "9197EF55DCD038E6FA7494202229004DBAE09CC0AC31D331473BA1FF351D663C"},
+        "state": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_172000__sim__simion__oct-terminal-15mm-sleeve-8v-entrance__n100/results/particle_states__exit_aperture_plate_acceleration_rf_on.csv", "sha256": "39881669B068D5B9E5D1344CFC8998FD158FD8F4D2DAA14D426522A8EF7ACD71"},
+        "particle_source": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_172000__sim__simion__oct-terminal-15mm-sleeve-8v-entrance__n100/inputs/particle_source.csv", "sha256": "A8721EAB49AC15904DE6D1B135C0B16D98022E68B46710313575F356F1F984CF"},
+        "metadata": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_172000__sim__simion__oct-terminal-15mm-sleeve-8v-entrance__n100/inputs/particle_source_metadata.json", "sha256": "C7E5C710CADD8021A8A7CCB1D68025D2265B991805793A284DFF930CD5D85BA5"},
+        "handoff_publication_contract": {"path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/octupole_10ev_handoff_publication_n100.json", "sha256": "FFBD85CCB14489E3DB5F3FEF1EC59821CA44BA8548959AA14FF61834C8E23F19"}
+      }
+    },
+    {
+      "sequence": 2,
+      "experiment_id": "octupole_segmented_15mm_sleeve_accelerator_energy_n100",
+      "execution_strategy": "simion_single_flight",
+      "single_flight_layout_profile_id": "symmetric_10ev_injection_diagnostic",
+      "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_0mm",
+      "run_id": "20260805_173100__sim__cross__oct-segmented-15mm-sleeve-accelerator-energy__n100",
+      "source": {
+        "run_id": "20260805_172100__sim__simion__oct-segmented-15mm-sleeve-8v-entrance__n100",
+        "launched_particle_count": 100,
+        "particle_count": 60,
+        "particle_source_manifest_input_role": "particle_source",
+        "manifest": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_172100__sim__simion__oct-segmented-15mm-sleeve-8v-entrance__n100/run_manifest.json", "sha256": "E26D6011317C4438CA04A83FFB247074C8531D6021818526ACC98EB58B906254"},
+        "state": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_172100__sim__simion__oct-segmented-15mm-sleeve-8v-entrance__n100/results/particle_states__axial_acceleration_rf_on.csv", "sha256": "E62A2AE6D6CFBAA8FE8A7ACFF88A557F8801E1393A83FDB514B7CE094CF20CC4"},
+        "particle_source": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_172100__sim__simion__oct-segmented-15mm-sleeve-8v-entrance__n100/inputs/particle_source.csv", "sha256": "A8721EAB49AC15904DE6D1B135C0B16D98022E68B46710313575F356F1F984CF"},
+        "metadata": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_172100__sim__simion__oct-segmented-15mm-sleeve-8v-entrance__n100/inputs/particle_source_metadata.json", "sha256": "DEC6299DE498DE3CCBEDAF095EED41919D85B4FCD6E4C4FD8DCF89A3068CE60E"},
+        "handoff_publication_contract": {"path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/octupole_10ev_handoff_publication_n100.json", "sha256": "FFBD85CCB14489E3DB5F3FEF1EC59821CA44BA8548959AA14FF61834C8E23F19"}
+      }
+    }
+  ]
+}

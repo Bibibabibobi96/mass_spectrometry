@@ -13,3 +13,4 @@
 # History is immutable payload. Preserve its exact Git bytes on every OS so
 # frozen SHA-256 lists remain valid after directory renames and clean checkout.
 projects/*/docs/history/** -text -eol
+integrations/*/docs/history/** -text -eol
