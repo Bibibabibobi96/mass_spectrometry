@@ -18,6 +18,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.prepare import (
     _automatic_pulse_population_binding,
+    expand_flat_experiment_authoring,
     _repo_byte_record,
     _workspace_record,
     prepare_family_source_closure,
@@ -256,6 +257,30 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                     {"single_flight_batch_count": invalid},
                     execution_particle_count=1000,
                 )
+
+    def test_flat_authoring_expands_shared_controls_and_gap_rows(self) -> None:
+        authored = {
+            "experiments": {
+                "shared": {"execution_strategy": "simion_single_flight", "source_profile_id": "n100"},
+                "variation_axes": ["connection_profile_id", "connector_gap_evidence_role"],
+                "rows": [
+                    {"sequence": 1, "experiment_id": "gap0", "run_id": "run_gap0", "overrides": {"connection_profile_id": "gap0", "connector_gap_evidence_role": "primary"}},
+                    {"sequence": 2, "experiment_id": "gap3", "run_id": "run_gap3", "overrides": {"connection_profile_id": "gap3", "connector_gap_evidence_role": "primary"}},
+                ],
+            }
+        }
+        expanded = expand_flat_experiment_authoring(authored)
+        self.assertEqual([row["connection_profile_id"] for row in expanded["experiments"]], ["gap0", "gap3"])
+        self.assertEqual(expanded["experiments"][0]["source_profile_id"], "n100")
+        self.assertEqual(authored["experiments"]["rows"][0]["overrides"], {"connection_profile_id": "gap0", "connector_gap_evidence_role": "primary"})
+
+    def test_flat_authoring_rejects_undeclared_parameter_change(self) -> None:
+        with self.assertRaisesRegex(ContractError, "allowed variation axis"):
+            expand_flat_experiment_authoring({"experiments": {
+                "shared": {"execution_strategy": "simion_single_flight"},
+                "variation_axes": ["connection_profile_id"],
+                "rows": [{"sequence": 1, "experiment_id": "gap", "run_id": "run_gap", "overrides": {"source_profile_id": "other"}}],
+            }})
 
     def test_memory_policy_freezes_selected_count_and_fails_when_no_batch_fits(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

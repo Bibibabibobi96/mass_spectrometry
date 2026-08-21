@@ -834,6 +834,47 @@ def _load(path: Path) -> dict[str, Any]:
     return value
 
 
+def expand_flat_experiment_authoring(campaign: dict[str, Any]) -> dict[str, Any]:
+    """Expand shared experiment controls and explicit per-row variation axes.
+
+    The on-disk authoring form remains compact.  Consumers receive the same
+    fully materialized rows as the legacy array form, so every selected run can
+    still freeze one complete, independently verifiable contract.
+    """
+    source = campaign.get("experiments")
+    if isinstance(source, list):
+        return campaign
+    if not isinstance(source, dict):
+        raise ContractError("experiments must be an array or flat authoring object")
+    if set(source) != {"shared", "variation_axes", "rows"}:
+        raise ContractError("flat experiment authoring keys differ")
+    shared = source["shared"]
+    axes = source["variation_axes"]
+    rows = source["rows"]
+    if not isinstance(shared, dict) or not isinstance(axes, list) or not isinstance(rows, list):
+        raise ContractError("flat experiment authoring shape differs")
+    if not axes or any(not isinstance(axis, str) or not axis for axis in axes) or len(axes) != len(set(axes)):
+        raise ContractError("flat experiment variation axes are invalid")
+    expanded: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict) or set(row) != {"sequence", "experiment_id", "run_id", "overrides"}:
+            raise ContractError("flat experiment row must contain identity and overrides only")
+        overrides = row["overrides"]
+        if not isinstance(overrides, dict) or not set(overrides).issubset(set(axes)):
+            raise ContractError("flat experiment row override is not an allowed variation axis")
+        materialized = copy.deepcopy(shared)
+        if set(materialized).intersection({"sequence", "experiment_id", "run_id"}):
+            raise ContractError("flat experiment shared controls cannot contain row identity")
+        materialized.update(copy.deepcopy(overrides))
+        materialized.update({key: row[key] for key in ("sequence", "experiment_id", "run_id")})
+        expanded.append(materialized)
+    if not expanded:
+        raise ContractError("flat experiment authoring must contain at least one row")
+    result = copy.deepcopy(campaign)
+    result["experiments"] = expanded
+    return result
+
+
 def _validate_three_zone_gate_pair(
     gated: list[dict[str, Any]],
 ) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -2695,7 +2736,7 @@ def prepare_family_source_closure(
     campaign_path = campaign_path.resolve()
     if not campaign_path.is_relative_to(root):
         raise ContractError("integration campaign must be repository-managed")
-    campaign = _load(campaign_path)
+    campaign = expand_flat_experiment_authoring(_load(campaign_path))
     validate_schema(campaign, "rf_multipole_oatof_experiment_campaign.schema.json")
     validate_pre_pulse_time_series_campaign(campaign)
     if campaign["integration_id"] != INTEGRATION_ID:

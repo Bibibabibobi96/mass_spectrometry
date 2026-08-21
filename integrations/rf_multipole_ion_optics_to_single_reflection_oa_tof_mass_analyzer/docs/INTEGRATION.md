@@ -31,3 +31,8 @@ SIMION 运行可调用共享批处理；批内结果必须恢复全局粒子 ID 
 活动配置位于 [`config/`](../config/)；公共 schema 和文件身份工具位于
 [`common/contracts/`](../../../common/contracts/README.md)。修改活动运行器、合同、资源策略或 campaign 后，应运行
 项目门禁及仓库级集成门禁。历史文档中的数字、状态和链接均不构成活动授权。
+
+实验 campaign 可继续使用完整行，也可用扁平 authoring：`experiments.shared` 声明共同控制，
+`variation_axes` 列出允许变化的字段，`rows` 只列行身份和 `overrides`。准备阶段先展开为完整冻结行，
+再执行既有 schema 与授权校验；任何未声明的字段变化都失败关闭。这样同一合同可顺序执行多个 gap 或
+其他已授权参数点，而不会复制共享输入。
