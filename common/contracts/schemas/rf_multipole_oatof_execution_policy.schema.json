@@ -3,7 +3,7 @@
   "$id": "https://mass-spectrometry.local/schemas/rf_multipole_oatof_execution_policy.schema.json",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "role", "integration_id", "policy_id", "workflow_id", "retention_class", "commercial_solver_concurrency_limit", "single_flight_batch_parallel_limit", "stop_after_first_failure", "budget_exhaustion_result", "stage_limits"],
+  "required": ["schema_version", "role", "integration_id", "policy_id", "workflow_id", "retention_class", "commercial_solver_concurrency_limit", "stop_after_first_failure", "budget_exhaustion_result", "stage_limits"],
   "properties": {
     "schema_version": {"const": 1},
     "role": {"const": "rf_multipole_oatof_execution_policy"},
@@ -12,7 +12,6 @@
     "workflow_id": {"const": "family_source_closure"},
     "retention_class": {"const": "compact"},
     "commercial_solver_concurrency_limit": {"const": 1},
-    "single_flight_batch_parallel_limit": {"type": "integer", "minimum": 1},
     "stop_after_first_failure": {"const": true},
     "budget_exhaustion_result": {"const": "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED"},
     "stage_limits": {

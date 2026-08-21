@@ -586,9 +586,13 @@ def resolve_single_flight_batch_count(
                 "rf_steps_per_period": int(time_profile[2:]),
                 "particle_count": execution_particle_count,
                 "independent_particles": True,
-                "default_parallel_batches": int(memory_policy["default_batch_count"]),
-                "maximum_parallel_batches": int(memory_policy["maximum_batch_count"]),
+                "default_parallel_batches": int(memory_policy.get("default_batch_count", 1)),
+                "maximum_parallel_batches": int(memory_policy.get("maximum_batch_count", execution_particle_count)),
                 "reserve_available_memory_bytes": int(memory_policy["reserve_available_memory_bytes"]),
+                "memory_safety_numerator": int(memory_policy.get("memory_safety_numerator", 115)),
+                "memory_safety_denominator": int(memory_policy.get("memory_safety_denominator", 100)),
+                "cpu_cores_per_batch": int(memory_policy.get("cpu_cores_per_batch", 1)),
+                "reserve_cpu_cores": int(memory_policy.get("reserve_cpu_cores", 0)),
                 "frontend_grid_profile_id": experiment.get("single_flight_frontend_grid_profile_id"),
                 "oatof_numerical_profile_id": experiment.get("single_flight_oatof_numerical_profile_id"),
                 "trajectory_quality_profile_id": experiment.get("single_flight_trajectory_quality_profile_id"),
@@ -3780,32 +3784,13 @@ def prepare_family_source_closure(
         if execution_strategy == "simion_single_flight"
         else evidence["particle_count"]
     )
-    single_flight_batch_count = (
-        resolve_single_flight_batch_count(
+    if execution_strategy == "simion_single_flight":
+        single_flight_batch_count = resolve_single_flight_batch_count(
             experiment, execution_particle_count=execution_particle_count,
             workspace=workspace,
         )
-        if execution_strategy == "simion_single_flight"
-        else 1
-    )
-    if execution_strategy == "simion_single_flight":
-        single_flight_parallel_limit = int(
-            policy["single_flight_batch_parallel_limit"]
-        )
-        if single_flight_batch_count > single_flight_parallel_limit:
-            raise ContractError(
-                "single-flight batch count exceeds the execution policy's "
-                "one-wave parallel limit"
-            )
     else:
-        single_flight_parallel_limit = 1
-    if (
-        execution_strategy == "simion_single_flight"
-        and single_flight_batch_count > int(grid_profiles[0]["max_parallel_batches"])
-    ):
-        raise ContractError(
-            "single-flight batch count exceeds the selected profile's one-wave parallel capacity"
-        )
+        single_flight_batch_count = 1
     resolved_budget = {
         "schema_version": 1,
         "role": "integration_resolved_engineering_budget",
@@ -3832,9 +3817,6 @@ def prepare_family_source_closure(
             resolved_budget["single_flight_pa_cache_generation_binding"] = (
                 pa_cache_generation_binding
             )
-        resolved_budget["single_flight_batch_parallel_limit"] = (
-            single_flight_parallel_limit
-        )
     if frontend_grid_profile_id is not None and grid_profiles[0].get(
         "accelerator_overlay"
     ):
@@ -4605,8 +4587,6 @@ def prepare_family_source_closure(
                 "single_flight_pa_cache_policy_provenance="
                 + pa_cache_policy_provenance,
                 "single_flight_batch_count=" + str(single_flight_batch_count),
-                "single_flight_batch_parallel_limit="
-                + str(single_flight_parallel_limit),
             ]) + ([] if pa_cache_generation_binding_path is None else [
                 "single_flight_pa_cache_generation_binding_filename=inputs/"
                 + pa_cache_generation_binding_path.name,

@@ -707,9 +707,45 @@ function Assert-RfExactPaCacheGenerationBinding {
           [string]$requirement['generation_sha256'] -or
         ([string]$manifest['payload_sha256']).ToUpperInvariant() -ne
           ([string]$requirement['payload_sha256']).ToUpperInvariant()) {
-      throw "PA cache generation identity differs: $activeRole"
+      throw ("PA cache generation identity differs: role={0}; cache_directory={1}; " +
+        "expected_key={2}; actual_key={3}; expected_generation={4}; " +
+        "actual_generation={5}; expected_payload={6}; actual_payload={7}; " +
+        "actual_schema={8}" -f $activeRole,[string]$active['cache_directory'],
+        [string]$requirement['cache_key'],[string]$manifest['cache_key'],
+        [string]$requirement['generation_sha256'],[string]$manifest['generation_sha256'],
+        [string]$requirement['payload_sha256'],[string]$manifest['payload_sha256'],
+        [string]$manifest['schema_version'])
     }
   }
+}
+function Resolve-RfBoundGenerationDirectory {
+  param(
+    [Parameter(Mandatory)][string]$CacheRoot,
+    [Parameter(Mandatory)][string]$CacheKey,
+    [Parameter(Mandatory)][string]$Role,
+    [AllowNull()][string]$ReusableDirectory
+  )
+  if ($null -eq $ReusableDirectory -or -not $hasRequiredPaCacheGenerationBinding) {
+    return $ReusableDirectory
+  }
+  # A generation-bound contract must never silently fall back to a schema-v2
+  # key root nor consult its mutable current-generation pointer.  Its frozen
+  # binding names the exact immutable generation to materialize.
+  $matches = @($requiredPaCacheGenerationEntries | Where-Object {
+    [string]$_['role'] -eq $Role -and [string]$_['cache_key'] -eq $CacheKey
+  })
+  if ($matches.Count -eq 0) {
+    return $ReusableDirectory
+  }
+  if ($matches.Count -ne 1) {
+    throw "PA cache generation binding repeats role/key: $Role"
+  }
+  $generationDirectory = Join-Path (Join-Path (Join-Path $CacheRoot $CacheKey) `
+    'generations') ([string]$matches[0]['generation_sha256'])
+  if (-not (Test-Path -LiteralPath $generationDirectory -PathType Container)) {
+    throw "Bound PA cache generation is missing: $Role"
+  }
+  return $generationDirectory
 }
 $prePulseTimeSeriesContractFrozen = $null
 $prePulseTimeSeries = $null
@@ -814,15 +850,13 @@ try {
       [double]$gridProfiles[0].cell_mm_xyz.x -le 0 -or
       [double]$gridProfiles[0].cell_mm_xyz.y -le 0 -or
       [double]$gridProfiles[0].cell_mm_xyz.z -le 0 -or
-      [int]$gridProfiles[0].max_parallel_batches -lt 1 -or
-      [int]$gridProfiles[0].max_parallel_batches -gt 5 -or
     [string]$settings.clock_basis -ne 'canonical_instrument_time_us') {
     throw 'Single-flight numerical configuration is invalid.'
   }
   $frontendCellMmX = [double]$gridProfiles[0].cell_mm_xyz.x
   $frontendCellMmY = [double]$gridProfiles[0].cell_mm_xyz.y
   $frontendCellMmZ = [double]$gridProfiles[0].cell_mm_xyz.z
-  $maxParallelBatches = [int]$gridProfiles[0].max_parallel_batches
+  $maxParallelBatches = [int]$ExecutionBatchCount
   $parallelBatchMemoryReservationBytes =
     [int64]$settings.batching_policy.parallel_batch_memory_reservation_bytes
   $overlayEnabled = $null -ne $gridProfiles[0].PSObject.Properties['accelerator_overlay'] -and
@@ -1509,7 +1543,10 @@ try {
     -CacheRoot $cacheRoot -CacheKey $frontendCacheKey -Role $frontendCacheRole `
     -Identity $frontendCacheIdentity `
     -InvalidEntryAction $(if ($PaCachePolicy -eq 'require_existing') {'preserve'} else {'remove'})
-  $frontendCacheHit = $null -ne $cacheDir
+  $cacheDir = Resolve-RfBoundGenerationDirectory -CacheRoot $cacheRoot `
+    -CacheKey $frontendCacheKey -Role $frontendCacheRole `
+    -ReusableDirectory $cacheDir
+  $frontendCacheHit = -not [string]::IsNullOrWhiteSpace($cacheDir)
   $frontendRefineRequired = -not $frontendCacheHit
   if ($frontendRefineRequired -and $PaCachePolicy -eq 'require_existing') {
     $paCacheDispositions.frontend.disposition = 'cache_miss_required_existing'
@@ -1623,7 +1660,10 @@ try {
       -CacheRoot $overlayCacheRoot -CacheKey $overlayKey -Role $overlayCacheRole `
       -Identity $overlayIdentity `
       -InvalidEntryAction $(if ($PaCachePolicy -eq 'require_existing') {'preserve'} else {'remove'})
-    $overlayFamilyComplete = $null -ne $overlayCacheDir
+    $overlayCacheDir = Resolve-RfBoundGenerationDirectory -CacheRoot $overlayCacheRoot `
+      -CacheKey $overlayKey -Role $overlayCacheRole `
+      -ReusableDirectory $overlayCacheDir
+    $overlayFamilyComplete = -not [string]::IsNullOrWhiteSpace($overlayCacheDir)
     if (-not $overlayFamilyComplete -and $PaCachePolicy -eq 'require_existing') {
       $paCacheDispositions.accelerator_overlay.disposition = 'cache_miss_required_existing'
       Write-RfPreCacheRunConfiguration -LifecycleStage 'accelerator_overlay_pa_cache_miss'
@@ -1951,7 +1991,10 @@ try {
       -Role $flightTubeCachePlan.role `
       -Identity $flightTubeCachePlan.identity `
       -InvalidEntryAction $(if ($PaCachePolicy -eq 'require_existing') {'preserve'} else {'remove'}) }
-  $flightTubeCacheHit = $null -ne $flightTubeCacheDir
+  $flightTubeCacheDir = Resolve-RfBoundGenerationDirectory -CacheRoot $downstreamCacheRoot `
+    -CacheKey $flightTubeCachePlan.key -Role $flightTubeCachePlan.role `
+    -ReusableDirectory $flightTubeCacheDir
+  $flightTubeCacheHit = -not [string]::IsNullOrWhiteSpace($flightTubeCacheDir)
   if ($hasFlightTubeRebuild -and -not $flightTubeCacheHit -and
       $PaCachePolicy -eq 'require_existing') {
     $paCacheDispositions.flight_tube.disposition = 'cache_miss_required_existing'
@@ -1971,7 +2014,10 @@ try {
       -Role $reflectronCachePlan.role `
       -Identity $reflectronCachePlan.identity `
       -InvalidEntryAction $(if ($PaCachePolicy -eq 'require_existing') {'preserve'} else {'remove'}) }
-  $reflectronCacheHit = $null -ne $reflectronCacheDir
+  $reflectronCacheDir = Resolve-RfBoundGenerationDirectory -CacheRoot $downstreamCacheRoot `
+    -CacheKey $reflectronCachePlan.key -Role $reflectronCachePlan.role `
+    -ReusableDirectory $reflectronCacheDir
+  $reflectronCacheHit = -not [string]::IsNullOrWhiteSpace($reflectronCacheDir)
   if ($hasReflectronRebuild -and -not $reflectronCacheHit -and
       $PaCachePolicy -eq 'require_existing') {
     $paCacheDispositions.reflectron.disposition = 'cache_miss_required_existing'

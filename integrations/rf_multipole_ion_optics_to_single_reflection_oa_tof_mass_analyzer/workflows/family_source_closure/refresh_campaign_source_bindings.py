@@ -6,6 +6,7 @@ import argparse
 import copy
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -134,8 +135,39 @@ def _validated_failed_parent_recoveries(
         manifest = _load(candidate)
         if manifest.get("status") != "failed":
             continue
+        experiment = next(
+            row for row in campaign.get("experiments", []) if str(row["run_id"]) == candidate.parent.name
+        )
+        # A solver retry is a separate, immutable run.  Failed retry attempts
+        # are retained but do not invalidate the campaign; the first successful
+        # retry must carry the original campaign/experiment identity.
+        retry_manifests = sorted(
+            candidate.parent.parent.glob(candidate.parent.name + "__r[0-9][0-9]/run_manifest.json")
+        )
+        successful_retry = next(
+            (
+                path for path in retry_manifests
+                if (_load(path).get("status") == "success"
+                    and _load(path).get("mode") == "multipole_family_source_closure")
+            ),
+            None,
+        )
+        if successful_retry is not None:
+            retry_manifest = _load(successful_retry)
+            verify_record("solver retry run_config", retry_manifest["run_config"], base_dir=successful_retry.parent)
+            retry_config = _load(record_path(retry_manifest["run_config"], base_dir=successful_retry.parent))
+            if (
+                retry_config.get("campaign_id") != campaign.get("campaign_id")
+                or retry_config.get("experiment_id") != experiment.get("experiment_id")
+                or retry_config.get("experiment_row_sha256") != _canonical_sha256(experiment)
+            ):
+                raise ValueError(f"failed-parent solver retry is invalid: {candidate.parent.name}")
+            finalized.add(candidate)
+            continue
         recovery = candidate.parent.parent / (candidate.parent.name + "__r01") / "run_manifest.json"
         if not recovery.is_file():
+            continue
+        if _load(recovery).get("status") == "failed":
             continue
         try:
             recovery_manifest = _load(recovery)
@@ -179,9 +211,6 @@ def _validated_failed_parent_recoveries(
                 or receipt.get("source_failed_parent_manifest_sha256") != file_sha256(candidate)
             ):
                 raise ValueError("recovery receipt identity differs")
-            experiment = next(
-                row for row in campaign.get("experiments", []) if str(row["run_id"]) == candidate.parent.name
-            )
             if receipt.get("campaign", {}).get("experiment_id") != experiment.get("experiment_id"):
                 raise ValueError("recovery receipt experiment differs")
         except (AssertionError, KeyError, StopIteration, TypeError, ValueError) as exc:
@@ -251,6 +280,19 @@ def _validate_published_format_recovery(
         ):
             raise ValueError(f"published campaign identity differs: {run_id}")
         if experiment is not None:
+            continue
+        retry_matches = [
+            row for base_run_id, row in experiments.items()
+            if re.fullmatch(re.escape(base_run_id) + r"__r[0-9]{2}", run_id)
+        ]
+        if len(retry_matches) == 1:
+            retry_experiment = retry_matches[0]
+            if (
+                receipt.get("execution_strategy") != "simion_single_flight"
+                or receipt.get("experiment_id") != retry_experiment.get("experiment_id")
+                or receipt.get("experiment_row_sha256") != _canonical_sha256(retry_experiment)
+            ):
+                raise ValueError(f"published campaign retry identity differs: {run_id}")
             continue
         matches = experiments_by_id.get(str(receipt.get("experiment_id")), [])
         if len(matches) != 1:

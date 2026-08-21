@@ -448,6 +448,10 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                     "default_batch_count": 2,
                     "maximum_batch_count": 3,
                     "reserve_available_memory_bytes": 1024**3,
+                    "memory_safety_numerator": 105,
+                    "memory_safety_denominator": 100,
+                    "cpu_cores_per_batch": 2,
+                    "reserve_cpu_cores": 2,
                 },
             }
             with patch(
@@ -476,7 +480,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn("must fit in one dispatch wave", runner)
-        self.assertIn("one-wave parallel capacity", prepare_source)
+        self.assertIn("plan_simion_dispatch", prepare_source)
 
     def test_auto_pulse_full_n1000_compiles_source_contract_population(self) -> None:
         campaign = load(AUTO_N1000_CONNECTOR_CAMPAIGN)
@@ -1681,13 +1685,7 @@ $batchRows = [string[]]$particleRows[0..33]
             == "frontend_isotropic_020_accelerator_overlay_z005"
         )
         batching = configuration["batching_policy"]
-        self.assertEqual(selected_grid["max_parallel_batches"], 2)
-        selected_grid_parallel3 = next(
-            profile for profile in configuration["frontend_grid_profiles"]
-            if profile["profile_id"]
-            == "frontend_isotropic_020_accelerator_overlay_z005_parallel3"
-        )
-        self.assertEqual(selected_grid_parallel3["max_parallel_batches"], 3)
+        self.assertNotIn("max_parallel_batches", selected_grid)
         self.assertEqual(
             batching["parallel_batch_memory_reservation_bytes"], 10 * 1024**3,
         )

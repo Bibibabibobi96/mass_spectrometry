@@ -172,8 +172,7 @@ if ([string]$frozenArguments.execution_strategy -eq 'simion_single_flight') {
   $expectedArguments += @(
     'single_flight_pa_cache_policy',
     'single_flight_pa_cache_policy_provenance',
-    'single_flight_batch_count',
-    'single_flight_batch_parallel_limit'
+    'single_flight_batch_count'
   )
   if ($frozenArguments.ContainsKey('single_flight_pa_cache_generation_binding_filename')) {
     $expectedArguments += @(
@@ -1614,7 +1613,31 @@ if ($pulseTimingDiscovery) {
   )
 }
 if ($expectedRunId -ne $RunId) {
-  throw 'Solver-authorized RunId differs from the campaign row.'
+  $recoveryMatch = [regex]::Match($RunId, ('^' +
+    [regex]::Escape($expectedRunId) + '__r(?<index>[0-9]{2})$'))
+  $recoveryParentRunId = ''
+  if ($recoveryMatch.Success -and [int]$recoveryMatch.Groups['index'].Value -ge 1) {
+    $recoveryIndex = [int]$recoveryMatch.Groups['index'].Value
+    $recoveryParentRunId = if ($recoveryIndex -eq 1) {
+      $expectedRunId
+    } else {
+      $expectedRunId + ('__r{0:D2}' -f ($recoveryIndex - 1))
+    }
+  }
+  $recoveryParentDirectory = [IO.Path]::GetFullPath((Join-Path (
+    Join-Path $workspaceRoot ('artifacts\projects\' + $plan.integration_id + '\runs')
+  ) $recoveryParentRunId))
+  $recoveryParentManifest = Join-Path $recoveryParentDirectory 'run_manifest.json'
+  $recoveryParentStatus = ''
+  if (Test-Path -LiteralPath $recoveryParentManifest -PathType Leaf) {
+    $recoveryParentStatus = [string]((Get-Content `
+      -LiteralPath $recoveryParentManifest -Raw | ConvertFrom-Json).status)
+  }
+  $isFailedRecovery = $recoveryMatch.Success -and
+    $recoveryParentStatus -eq 'failed'
+  if (-not $isFailedRecovery) {
+    throw 'Solver-authorized RunId differs from the campaign row.'
+  }
 }
 $runsRoot = Join-Path $workspaceRoot (
   'artifacts\projects\' + $plan.integration_id + '\runs'
@@ -1679,15 +1702,6 @@ if ($executionStrategy -eq 'simion_single_flight') {
   if ($resolvedBatchCount -lt 1 -or
       $resolvedBatchCount -gt $expectedExecutionParticleCount) {
     throw 'Prepared single-flight batch count is invalid or exceeds the resolved population.'
-  }
-  if ([int]$frozenArguments.single_flight_batch_parallel_limit -lt 1 -or
-      $resolvedBatchCount -gt
-        [int]$frozenArguments.single_flight_batch_parallel_limit -or
-      [int]$budget.single_flight_batch_parallel_limit -ne
-        [int]$frozenArguments.single_flight_batch_parallel_limit -or
-      [int]$executionPolicy.single_flight_batch_parallel_limit -ne
-        [int]$frozenArguments.single_flight_batch_parallel_limit) {
-    throw 'Single-flight batch parallel limit differs from the frozen execution policy.'
   }
   $runnerArguments.ExecutionBatchCount = $resolvedBatchCount
   if ([int]$campaign.schema_version -ge 3) {

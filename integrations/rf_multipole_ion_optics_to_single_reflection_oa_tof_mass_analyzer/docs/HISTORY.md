@@ -35,5 +35,6 @@
 - [20260820__oatof-connector-gap-phase-space-trend](history/20260820__oatof-connector-gap-phase-space-trend.md)
 - [20260820__resolution-matrix-gap-field-source-population](history/20260820__resolution-matrix-gap-field-source-population.md)
 - [20260821__gap102p4_manifest-bound-handoff-n116](history/20260821__gap102p4_manifest-bound-handoff-n116.md)
+- [20260821__compact-auto-gap-field-replay](history/20260821__compact-auto-gap-field-replay.md)
 - [20260822__post-pulse-no-rf-per-gap-theory-field-matrix](history/20260822__post-pulse-no-rf-per-gap-theory-field-matrix.md)
 - [retired_campaigns](history/retired_campaigns.md)

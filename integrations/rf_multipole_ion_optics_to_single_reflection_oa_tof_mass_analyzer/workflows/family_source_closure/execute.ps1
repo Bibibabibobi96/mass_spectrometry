@@ -230,6 +230,7 @@ if ($legacySingleFlightCachePolicy -and -not $ValidateOnly) {
 }
 
 $workspaceRoot = Split-Path -Parent $repoRoot
+$executionRunId = $campaignRunId
 $cleanupOutput = $ValidateOnly
 if ($ValidateOnly) {
   $validationRoot = Join-Path $workspaceRoot (
@@ -267,7 +268,67 @@ if ($ValidateOnly) {
 $outputRoot = [IO.Path]::GetFullPath($outputRoot)
 $removeUnpublishedTargetOnExit = [bool]($SolverAuthorized -or $FinalizeOnly)
 if ($SolverAuthorized -and (Test-Path -LiteralPath $outputRoot)) {
-  throw 'SolverAuthorized target run directory already exists.'
+  $publishedManifestPath = Join-Path $outputRoot 'run_manifest.json'
+  if (Test-Path -LiteralPath $publishedManifestPath -PathType Leaf) {
+    $publishedManifest = Get-Content -LiteralPath $publishedManifestPath -Raw |
+      ConvertFrom-Json
+    # Parent manifests intentionally list only materialized run inputs.  The
+    # campaign identity is frozen in the composition-plan step arguments.
+    $publishedCampaignSha256 = ''
+    $publishedPlanPath = Join-Path $outputRoot 'composition_plan.json'
+    if (Test-Path -LiteralPath $publishedPlanPath -PathType Leaf) {
+      $publishedPlan = Get-Content -LiteralPath $publishedPlanPath -Raw |
+        ConvertFrom-Json
+      $publishedCampaignArgument = @($publishedPlan.execution_steps |
+        ForEach-Object { @($_.arguments | Where-Object {
+          [string]$_ -like 'campaign_sha256=*'
+        }) } | Select-Object -First 1)
+      if ($publishedCampaignArgument.Count -eq 1) {
+        $publishedCampaignSha256 = ([string]$publishedCampaignArgument[0]).Substring(
+          'campaign_sha256='.Length
+        )
+      }
+    }
+    if ($publishedManifest.role -eq 'simulation_run_manifest' -and
+        $publishedManifest.status -eq 'success' -and
+        $publishedManifest.run_id -eq $campaignRunId -and
+        $publishedCampaignSha256.ToUpperInvariant() -eq $campaignSha256.ToUpperInvariant()) {
+      Write-Output 'INTEGRATION_EXECUTION=ALREADY_SUCCESS'
+      return
+    }
+  }
+  # Preserve the failed run as evidence, then make exactly one explicitly
+  # named recovery attempt.  A failed recovery itself is evidence too, so the
+  # next unused suffix may be attempted only when its immediate predecessor is
+  # a failed manifest.  This keeps an --AllExperiments campaign continuous
+  # without ever overwriting a solver result.
+  if ($publishedManifest.role -eq 'simulation_run_manifest' -and
+      $publishedManifest.status -eq 'failed') {
+    $publishedRecovery = @(Get-ChildItem -LiteralPath $runsRoot -Directory `
+      -Filter ($campaignRunId + '__r??') | ForEach-Object {
+        $manifestPath = Join-Path $_.FullName 'run_manifest.json'
+        if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
+          Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+        }
+      } | Where-Object {
+        $_.role -eq 'simulation_run_manifest' -and $_.status -eq 'success' -and
+        $_.mode -eq 'multipole_family_source_closure'
+      })
+    if ($publishedRecovery.Count -gt 0) {
+      Write-Output 'INTEGRATION_EXECUTION=ALREADY_RECOVERED_SUCCESS'
+      return
+    }
+    $retryIndex = 1
+    do {
+      $executionRunId = $campaignRunId + ('__r{0:D2}' -f $retryIndex)
+      $outputRoot = [IO.Path]::GetFullPath((Join-Path $runsRoot $executionRunId))
+      $retryIndex += 1
+    } while (Test-Path -LiteralPath $outputRoot)
+    $outputRoot = [IO.Path]::GetFullPath((Join-Path $runsRoot $executionRunId))
+    Write-Output "INTEGRATION_EXECUTION=RECOVER_FAILED_RUN PARENT=$campaignRunId RETRY=$executionRunId"
+  } else {
+    throw 'SolverAuthorized target run directory already exists.'
+  }
 }
 $unpublishedDiscoveryRoot = ''
 if ($SolverAuthorized -and $campaignRunId -match
@@ -550,7 +611,7 @@ try {
     $orchestration = Get-PulseTimingOrchestration `
       -PlanPath $planPath -PreparedRoot $outputRoot
     if ($null -eq $orchestration) {
-      Invoke-FamilyExecutionBoundary -RunId $campaignRunId `
+      Invoke-FamilyExecutionBoundary -RunId $executionRunId `
         -ExecutionRoot $outputRoot -ResolvedPath $resolvedPath `
         -PlanPath $planPath -Mode SolverAuthorized
       $removeUnpublishedTargetOnExit = $false
@@ -558,7 +619,7 @@ try {
       Assert-PulseTimingTarget -Orchestration $orchestration
       switch ([string]$orchestration.state) {
         'ready_verified' {
-          Invoke-FamilyExecutionBoundary -RunId $campaignRunId `
+          Invoke-FamilyExecutionBoundary -RunId $executionRunId `
             -ExecutionRoot $outputRoot -ResolvedPath $resolvedPath `
             -PlanPath $planPath -Mode SolverAuthorized
           $removeUnpublishedTargetOnExit = $false

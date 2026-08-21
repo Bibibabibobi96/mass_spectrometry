@@ -120,7 +120,7 @@ class CampaignRuntimeAuthoritiesTests(unittest.TestCase):
         policy = load(CONFIG_ROOT / "execution_policy.json")
         validate_schema(policy, "rf_multipole_oatof_execution_policy.schema.json")
         self.assertEqual(policy["commercial_solver_concurrency_limit"], 1)
-        self.assertEqual(policy["single_flight_batch_parallel_limit"], 3)
+        self.assertNotIn("single_flight_batch_parallel_limit", policy)
         self.assertTrue(policy["stop_after_first_failure"])
         self.assertEqual(policy["retention_class"], "compact")
         self.assertEqual(

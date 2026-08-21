@@ -1017,6 +1017,12 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
         self.assertIn("$campaignRunId = [string]$experimentRows[0].run_id", execute_source)
         self.assertIn("Select exactly one of ValidateOnly", execute_source)
         self.assertIn("OutputDirectory is accepted only for PrepareOnly", execute_source)
+        self.assertIn("INTEGRATION_EXECUTION=ALREADY_SUCCESS", execute_source)
+        self.assertIn("$publishedManifest.status -eq 'success'", execute_source)
+        self.assertIn(
+            "$publishedCampaignSha256.ToUpperInvariant() -eq $campaignSha256.ToUpperInvariant()",
+            execute_source,
+        )
         self.assertIn("'scratch'", execute_source)
         self.assertIn("__repo__family-source-validation-", execute_source)
         self.assertNotIn("validation_tmp", execute_source)

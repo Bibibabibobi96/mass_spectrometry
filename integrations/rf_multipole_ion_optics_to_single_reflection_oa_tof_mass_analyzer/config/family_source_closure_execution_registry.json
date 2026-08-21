@@ -43,8 +43,8 @@
       "content_sha256": "D8F3B0AC4858C7D8DB0DECEA1D337B1B60EC71C8DCF8DE4E915AF21816DBD8DF"
     },
     {
-      "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_field_matrix_compact_replay_v1.json",
-      "content_sha256": "C88EE355BF769D1DE25A264A926900D0F4CF67BBF349E2D0E0DC40425073F4DA"
+      "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_field_matrix_compact_auto_replay_v2.json",
+      "content_sha256": "5F76AAF17DACAECD56E4153F8BC26DF42C5003D6A762873BE270EE5BE0EF4D50"
     }
   ]
 }
