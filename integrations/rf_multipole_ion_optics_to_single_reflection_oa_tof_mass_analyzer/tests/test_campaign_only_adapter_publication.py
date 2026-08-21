@@ -1005,8 +1005,13 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
         public_param_block = execute_source[param_start:param_end]
 
         self.assertIn("[Parameter(Mandatory)][string]$Campaign", public_param_block)
+        self.assertIn("[string]$ExperimentId = ''", public_param_block)
+        self.assertIn("[switch]$AllExperiments", public_param_block)
         self.assertIn(
-            "[Parameter(Mandatory)][string]$ExperimentId", public_param_block
+            "ExperimentId is required unless AllExperiments is selected.", execute_source
+        )
+        self.assertIn(
+            "AllExperiments and ExperimentId are mutually exclusive.", execute_source
         )
         self.assertIn("[string]$OutputDirectory = ''", public_param_block)
         self.assertIn("$campaignRunId = [string]$experimentRows[0].run_id", execute_source)

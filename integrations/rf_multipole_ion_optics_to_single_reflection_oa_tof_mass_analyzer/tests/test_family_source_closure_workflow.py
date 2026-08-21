@@ -708,6 +708,11 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
     def test_adapter_rejects_prepared_pa_cache_policy_and_budget_tampering(self) -> None:
         campaign = load(STAGED_GRID2_R03_CAMPAIGN)
         experiment_id = campaign["experiments"][0]["experiment_id"]
+        staged_source = REPO_ROOT.parent / campaign["experiments"][0][
+            "staged_grid2_source_state"
+        ]["path"]
+        if not staged_source.is_file():
+            self.skipTest("local staged-grid source evidence is unavailable")
         adapter = (
             INTEGRATION_ROOT / "workflows" / "family_source_closure" / "adapter.ps1"
         )
@@ -1222,6 +1227,8 @@ $result = Get-PulseTimingOrchestration `
         source = REPO_ROOT.parent / campaign["experiments"][0][
             "staged_grid2_source_state"
         ]["path"]
+        if not source.is_file():
+            self.skipTest("local staged-grid source evidence is unavailable")
         fly2_text, rows = materialize_staged_grid2_restart(source)
         self.assertEqual(len(rows), 34)
         with tempfile.TemporaryDirectory() as directory:
@@ -1583,6 +1590,9 @@ $batchRows = [string[]]$particleRows[0..33]
         self.assertEqual(row["single_flight_frontend_grid_profile_id"], "frontend_isotropic_020_accelerator_overlay_z005")
         self.assertEqual(row["single_flight_oatof_numerical_profile_id"], "oatof_reflectron_z010_r100")
         self.assertEqual(row["source"]["launched_particle_count"], 100)
+        source_manifest = REPO_ROOT.parent / row["source"]["manifest"]["path"]
+        if not source_manifest.is_file():
+            self.skipTest("local short-focus source manifest is unavailable")
         scratch = (
             REPO_ROOT.parent / "artifacts" / "projects" / INTEGRATION_ID / "scratch"
         )

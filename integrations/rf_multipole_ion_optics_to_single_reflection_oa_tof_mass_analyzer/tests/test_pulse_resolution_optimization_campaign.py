@@ -80,6 +80,8 @@ def load(path: Path) -> dict[str, object]:
 
 
 def checkpoint_rows() -> list[dict[str, str]]:
+    if not CHECKPOINT_PATH.is_file():
+        raise unittest.SkipTest("local pulse-resolution checkpoint evidence is unavailable")
     if file_sha256(CHECKPOINT_PATH) != (
         "D46986FC918605D9EB2AD1BA059BB76F9E6AFA24156C30C20A5880375F6B9044"
     ):
@@ -140,6 +142,8 @@ def source_identity(campaign: dict[str, object]) -> dict[str, str]:
 
 class PulseResolutionOptimizationCampaignTests(unittest.TestCase):
     def test_screening_arm_uses_canonical_pulse_elapsed_checkpoint(self) -> None:
+        if not R09_BASELINE_RECEIPT_PATH.is_file():
+            self.skipTest("local pulse-resolution baseline receipt is unavailable")
         self.assertEqual(
             file_sha256(R09_BASELINE_RECEIPT_PATH),
             "EA4BB4084A754F5442B016B7D3744141A107C291B8DDABA8CCD9C193D759E37E",
@@ -157,6 +161,8 @@ class PulseResolutionOptimizationCampaignTests(unittest.TestCase):
         )
 
     def test_r02_promotion_receipt_final_sha_covers_result_bindings(self) -> None:
+        if not R02_PROMOTION_RECEIPT_PATH.is_file():
+            self.skipTest("local pulse-resolution promotion receipt is unavailable")
         published = load(R02_PROMOTION_RECEIPT_PATH)
         published.pop("receipt_sha256")
         self.assertIn("baseline_result_sha256", published)

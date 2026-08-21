@@ -9,7 +9,13 @@ $ErrorActionPreference = 'Stop'
 $integrationRoot = $PSScriptRoot
 $repoRoot = Split-Path -Parent (Split-Path -Parent $integrationRoot)
 if ([string]::IsNullOrWhiteSpace($PythonExe)) {
-    $PythonExe = Join-Path $repoRoot '.venv\Scripts\python.exe'
+    $venvPython = Join-Path $repoRoot '.venv\Scripts\python.exe'
+    if (Test-Path -LiteralPath $venvPython -PathType Leaf) {
+        $PythonExe = $venvPython
+    }
+    else {
+        $PythonExe = (Get-Command python -ErrorAction Stop).Source
+    }
 }
 if (-not (Test-Path -LiteralPath $PythonExe -PathType Leaf)) {
     throw "Python 3.11 executable not found: $PythonExe"

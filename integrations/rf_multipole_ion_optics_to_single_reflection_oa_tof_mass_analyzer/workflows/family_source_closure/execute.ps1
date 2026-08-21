@@ -52,6 +52,10 @@ if ([string]::IsNullOrWhiteSpace($PythonExe)) {
 if (-not (Test-Path -LiteralPath $PythonExe -PathType Leaf)) {
   throw "Python 3.11 executable not found: $PythonExe"
 }
+$pythonVersion = (& $PythonExe -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')").Trim()
+if ($LASTEXITCODE -ne 0 -or $pythonVersion -ne '3.11') {
+  throw "Family source closure requires Python 3.11, found $pythonVersion at $PythonExe"
+}
 
 $campaignCandidate = if ([IO.Path]::IsPathRooted($Campaign)) {
   $Campaign

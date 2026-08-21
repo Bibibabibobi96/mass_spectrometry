@@ -12,6 +12,21 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 SOURCE_GATE = REPO_ROOT / "integrations" / Path(__file__).resolve().parents[1].name / "verify_integration.ps1"
 
 
+def python_311_executable() -> str:
+    if sys.version_info[:2] == (3, 11):
+        return sys.executable
+    completed = subprocess.run(
+        ["py", "-3.11", "-c", "import sys; print(sys.executable)"],
+        check=True,
+        capture_output=True,
+        cwd=REPO_ROOT,
+        text=True,
+        encoding="utf-8",
+        timeout=30,
+    )
+    return completed.stdout.strip()
+
+
 class IntegrationGateFailureTests(unittest.TestCase):
     def test_failing_unittest_never_prints_pass(self) -> None:
         pwsh = shutil.which("pwsh")
@@ -42,7 +57,7 @@ class IntegrationGateFailureTests(unittest.TestCase):
                     "-File",
                     str(integration / "verify_integration.ps1"),
                     "-PythonExe",
-                    sys.executable,
+                    python_311_executable(),
                 ],
                 cwd=root,
                 capture_output=True,

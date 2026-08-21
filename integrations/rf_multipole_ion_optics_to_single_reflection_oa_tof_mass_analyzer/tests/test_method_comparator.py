@@ -37,6 +37,8 @@ class MethodComparatorTest(unittest.TestCase):
             / "artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
             / "runs/20260814_185300__analysis__python__r03-winner-postselection-republish__n1000/run_manifest.json"
         )
+        if not manifest.is_file():
+            self.skipTest("local field-region attribution manifest is unavailable")
         with tempfile.TemporaryDirectory() as directory:
             receipt = verify_field_region_matrix(
                 campaign, registry, manifest, Path(directory) / "receipt.json"
