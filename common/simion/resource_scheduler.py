@@ -113,6 +113,12 @@ def plan_simion_dispatch(
     particles = _positive_int(request.get("particle_count"), "particle_count")
     maximum_batches = _positive_int(request.get("maximum_parallel_batches", 1), "maximum_parallel_batches")
     maximum_batches = min(maximum_batches, particles)
+    default_batches = _positive_int(
+        request.get("default_parallel_batches", maximum_batches),
+        "default_parallel_batches",
+    )
+    if default_batches > maximum_batches:
+        raise ValueError("default_parallel_batches cannot exceed maximum_parallel_batches")
     if request.get("solver") != "SIMION":
         raise ValueError("scheduler accepts only SIMION requests")
     field_kind = request.get("field_kind")
@@ -170,7 +176,7 @@ def plan_simion_dispatch(
     safety_denominator = _positive_int(request.get("memory_safety_denominator", 100), "memory_safety_denominator")
     reserved_peak = (peak * safety_numerator + safety_denominator - 1) // safety_denominator
     if available is None:
-        memory_capacity = maximum_batches
+        memory_capacity = default_batches
         memory_reason = "host_memory_unavailable_use_authorized_cap"
     else:
         available = _nonnegative_int(available, "available_memory_bytes")

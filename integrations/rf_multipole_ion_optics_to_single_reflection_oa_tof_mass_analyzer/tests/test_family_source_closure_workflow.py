@@ -267,6 +267,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             )
             policy = {
                 "single_flight_batch_count": 3,
+                "single_flight_time_integration_profile_id": "dt40",
                 "single_flight_batch_memory_policy": {
                     "resource_usage_receipt": {
                         "path": "resource_usage.json",
@@ -278,8 +279,8 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                 },
             }
             with patch(
-                "common.simion.particle_batching.available_physical_memory_bytes",
-                return_value=13 * 1024**3,
+                "common.simion.resource_scheduler.available_physical_memory_bytes",
+                return_value=15 * 1024**3,
             ):
                 self.assertEqual(
                     resolve_single_flight_batch_count(
@@ -288,7 +289,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                     1,
                 )
             with patch(
-                "common.simion.particle_batching.available_physical_memory_bytes",
+                "common.simion.resource_scheduler.available_physical_memory_bytes",
                 return_value=12 * 1024**3,
             ), self.assertRaisesRegex(ContractError, "memory batch policy is invalid"):
                 resolve_single_flight_batch_count(

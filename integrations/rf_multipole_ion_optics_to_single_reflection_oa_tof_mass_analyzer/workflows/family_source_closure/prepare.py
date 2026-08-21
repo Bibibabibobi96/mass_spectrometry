@@ -575,18 +575,44 @@ def resolve_single_flight_batch_count(
         peak = receipt.get("peak_process_tree_working_set_bytes")
         if isinstance(peak, bool) or not isinstance(peak, int) or peak < 1:
             raise ContractError("single-flight memory batch receipt lacks a positive peak")
-        from common.simion.particle_batching import choose_memory_bound_batch_count
+        from common.simion.resource_scheduler import plan_simion_dispatch
         try:
-            decision = choose_memory_bound_batch_count(
-                execution_particle_count,
-                int(memory_policy["default_batch_count"]),
-                int(memory_policy["maximum_batch_count"]),
-                peak,
-                int(memory_policy["reserve_available_memory_bytes"]),
+            time_profile = str(experiment["single_flight_time_integration_profile_id"])
+            if not time_profile.startswith("dt") or not time_profile[2:].isdigit():
+                raise ValueError("single-flight RF time profile lacks its steps per period")
+            request = {
+                "solver": "SIMION",
+                "field_kind": "rf",
+                "rf_steps_per_period": int(time_profile[2:]),
+                "particle_count": execution_particle_count,
+                "independent_particles": True,
+                "default_parallel_batches": int(memory_policy["default_batch_count"]),
+                "maximum_parallel_batches": int(memory_policy["maximum_batch_count"]),
+                "reserve_available_memory_bytes": int(memory_policy["reserve_available_memory_bytes"]),
+                "frontend_grid_profile_id": experiment.get("single_flight_frontend_grid_profile_id"),
+                "oatof_numerical_profile_id": experiment.get("single_flight_oatof_numerical_profile_id"),
+                "trajectory_quality_profile_id": experiment.get("single_flight_trajectory_quality_profile_id"),
+                "time_integration_profile_id": time_profile,
+                "accelerator_field_profile_id": experiment.get("single_flight_accelerator_field_profile_id"),
+            }
+            profile = {
+                "resource_identity": {
+                    key: request[key]
+                    for key in (
+                        "solver", "field_kind", "rf_steps_per_period",
+                        "frontend_grid_profile_id", "oatof_numerical_profile_id",
+                        "trajectory_quality_profile_id", "time_integration_profile_id",
+                        "accelerator_field_profile_id",
+                    )
+                },
+                "per_batch_peak_working_set_bytes": peak,
+            }
+            decision = plan_simion_dispatch(
+                request, [profile],
             )
         except ValueError as error:
             raise ContractError("single-flight memory batch policy is invalid") from error
-        return int(decision["selected_batch_count"])
+        return int(decision["waves"][0]["batch_count"])
 
     value = experiment.get("single_flight_batch_count", 1)
     if isinstance(value, bool) or not isinstance(value, int):

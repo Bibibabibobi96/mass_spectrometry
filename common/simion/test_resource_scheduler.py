@@ -37,3 +37,49 @@ class ResourceSchedulerTests(unittest.TestCase):
                 "solver": "SIMION", "field_kind": "electrostatic", "particle_count": 2,
                 "maximum_parallel_batches": 2, "unknown_per_batch_reservation_bytes": 1,
             }, [], available_memory_bytes=10, logical_processors=2)
+
+    def test_simulated_known_profile_improves_over_fixed_two_batch_policy(self) -> None:
+        """A balanced independent-particle model must use available safe lanes."""
+        request = {
+            "solver": "SIMION", "field_kind": "rf", "rf_steps_per_period": 40,
+            "particle_count": 8000, "independent_particles": True,
+            "default_parallel_batches": 2, "maximum_parallel_batches": 8,
+            "reserve_available_memory_bytes": 4, "cpu_cores_per_batch": 1,
+        }
+        profile = {
+            "resource_identity": {
+                "solver": "SIMION", "field_kind": "rf", "rf_steps_per_period": 40,
+            },
+            "per_batch_peak_working_set_bytes": 10,
+        }
+        plan = plan_simion_dispatch(
+            request, [profile], available_memory_bytes=52, logical_processors=8,
+        )
+        selected = plan["waves"][0]["batch_count"]
+        self.assertEqual(selected, 4)  # floor((52 - 4) / ceil(10 * 1.15))
+        fixed_policy_makespan = 8000 / 2
+        adaptive_makespan = max(batch["count"] for batch in plan["waves"][0]["batches"])
+        self.assertEqual(adaptive_makespan, 8000 / selected)
+        self.assertEqual(fixed_policy_makespan / adaptive_makespan, 2.0)
+
+    def test_simulated_capacity_never_exceeds_memory_or_cpu(self) -> None:
+        for available, processors in ((30, 32), (100, 3), (100, 32)):
+            with self.subTest(available=available, processors=processors):
+                request = {
+                    "solver": "SIMION", "field_kind": "electrostatic",
+                    "particle_count": 1000, "independent_particles": True,
+                    "maximum_parallel_batches": 16, "reserve_available_memory_bytes": 5,
+                    "cpu_cores_per_batch": 2, "reserve_cpu_cores": 1,
+                }
+                profile = {
+                    "resource_identity": {"solver": "SIMION", "field_kind": "electrostatic"},
+                    "per_batch_peak_working_set_bytes": 10,
+                }
+                plan = plan_simion_dispatch(
+                    request, [profile], available_memory_bytes=available,
+                    logical_processors=processors,
+                )
+                selected = plan["waves"][0]["batch_count"]
+                reserved_peak = plan["estimation"]["reserved_peak_bytes"]
+                self.assertLessEqual(selected * reserved_peak + 5, available)
+                self.assertLessEqual(selected * 2 + 1, processors)
