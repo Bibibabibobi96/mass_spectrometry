@@ -1645,6 +1645,7 @@ def _resolve_cached_verified_pulse_schedule(
 
 
 def _repo_record(root: Path, record: dict[str, str], label: str) -> Path:
+    root = root.resolve()
     path = (root / record["path"]).resolve()
     if (
         not path.is_relative_to(root)
@@ -1656,6 +1657,7 @@ def _repo_record(root: Path, record: dict[str, str], label: str) -> Path:
 
 
 def _repo_byte_record(root: Path, record: dict[str, str], label: str) -> Path:
+    root = root.resolve()
     path = (root / record["path"]).resolve()
     if not path.is_relative_to(root) or not path.is_file() or (
         file_sha256(path) != record["sha256"]

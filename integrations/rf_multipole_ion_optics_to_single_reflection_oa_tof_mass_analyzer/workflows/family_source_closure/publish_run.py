@@ -943,7 +943,7 @@ def _verify_stage(
         verify_record("run_config", manifest["run_config"])
     except (AssertionError, KeyError) as exc:
         raise ContractError(f"family stage run_config is invalid: {run_id}") from exc
-    if Path(manifest["run_config"]["path"]).resolve().parent != run_path:
+    if Path(manifest["run_config"]["path"]).resolve().parent != run_path.resolve():
         raise ContractError(f"family stage run_config is nonlocal: {run_id}")
     return {
         "phase": next(phase for phase, contract in ALL_STAGE_CONTRACTS.items() if contract["mode"] == mode),

@@ -335,6 +335,9 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
         campaign = load(AUTO_N1000_CONNECTOR_CAMPAIGN)
         use_current_time_grid_profile(campaign)
         row = campaign["experiments"][0]
+        source_manifest = REPO_ROOT.parent / row["source"]["manifest"]["path"]
+        if not source_manifest.is_file():
+            self.skipTest("local automatic-pulse source manifest is unavailable")
         scratch = REPO_ROOT.parent / "artifacts" / "projects" / INTEGRATION_ID / "scratch"
         scratch.mkdir(parents=True, exist_ok=True)
         mapping = next(
@@ -609,7 +612,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             }
             self.assertEqual(
                 _workspace_record(workspace, record, "three-zone T5 Candidate"),
-                candidate,
+                candidate.resolve(),
             )
             stale = dict(record)
             stale["sha256"] = "A" * 64
