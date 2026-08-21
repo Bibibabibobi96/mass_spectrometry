@@ -4927,12 +4927,21 @@ def main() -> int:
     parser.add_argument("--profile-registry", required=True, type=Path)
     parser.add_argument("--adapter-registry", required=True, type=Path)
     parser.add_argument("--campaign", required=True, type=Path)
-    parser.add_argument("--experiment-id", required=True)
-    parser.add_argument("--resolved-output", required=True, type=Path)
-    parser.add_argument("--plan-output", required=True, type=Path)
+    parser.add_argument("--experiment-id")
+    parser.add_argument("--resolved-output", type=Path)
+    parser.add_argument("--plan-output", type=Path)
+    parser.add_argument("--list-experiment-ids", action="store_true")
     parser.add_argument("--pulse-timing-transition", type=Path)
     parser.add_argument("--materialize-pulse-timing-stage", action="store_true")
     args = parser.parse_args()
+    if args.list_experiment_ids:
+        campaign = expand_flat_experiment_authoring(_load(args.campaign))
+        validate_schema(campaign, "rf_multipole_oatof_experiment_campaign.schema.json")
+        for row in sorted(campaign["experiments"], key=lambda item: item["sequence"]):
+            print(row["experiment_id"])
+        return 0
+    if args.experiment_id is None or args.resolved_output is None or args.plan_output is None:
+        parser.error("--experiment-id, --resolved-output and --plan-output are required unless listing")
     resolved, plan = prepare_family_source_closure(
         repo_root=args.repo_root,
         profile_registry_path=args.profile_registry,

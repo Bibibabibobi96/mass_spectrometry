@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
   [Parameter(Mandatory)][string]$Campaign,
-  [Parameter(Mandatory)][string]$ExperimentId,
+  [string]$ExperimentId = '',
+  [switch]$AllExperiments,
   [string]$OutputDirectory = '',
   [string]$PythonExe = '',
   [switch]$ValidateOnly,
@@ -21,6 +22,12 @@ $selectedModeCount = (
 if ($selectedModeCount -ne 1) {
   throw 'Select exactly one of ValidateOnly, PrepareOnly, SolverAuthorized or FinalizeOnly.'
 }
+if ($AllExperiments -and -not [string]::IsNullOrWhiteSpace($ExperimentId)) {
+  throw 'AllExperiments and ExperimentId are mutually exclusive.'
+}
+if (-not $AllExperiments -and [string]::IsNullOrWhiteSpace($ExperimentId)) {
+  throw 'ExperimentId is required unless AllExperiments is selected.'
+}
 if ($PrepareOnly -and [string]::IsNullOrWhiteSpace($OutputDirectory)) {
   throw 'PrepareOnly requires an explicit OutputDirectory for review.'
 }
@@ -34,7 +41,13 @@ $workflowRoot = $PSScriptRoot
 $integrationRoot = (Resolve-Path (Join-Path $workflowRoot '..\..')).Path
 $repoRoot = (Resolve-Path (Join-Path $integrationRoot '..\..')).Path
 if ([string]::IsNullOrWhiteSpace($PythonExe)) {
-  $PythonExe = Join-Path $repoRoot '.venv\Scripts\python.exe'
+  $venvPython = Join-Path $repoRoot '.venv\Scripts\python.exe'
+  if (Test-Path -LiteralPath $venvPython -PathType Leaf) {
+    $PythonExe = $venvPython
+  }
+  else {
+    $PythonExe = (Get-Command python -ErrorAction Stop).Source
+  }
 }
 if (-not (Test-Path -LiteralPath $PythonExe -PathType Leaf)) {
   throw "Python 3.11 executable not found: $PythonExe"
@@ -115,6 +128,32 @@ if ($SolverAuthorized -or $FinalizeOnly) {
       ([string]$currentCampaigns[0].content_sha256).ToLowerInvariant()) {
     throw 'Current execution authority campaign identity differs; execution is forbidden.'
   }
+}
+if ($AllExperiments) {
+  $prepareModule = (
+    'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.' +
+    'workflows.family_source_closure.prepare'
+  )
+  $profileRegistry = Join-Path $integrationRoot 'config\connection_profiles.json'
+  $adapterRegistry = Join-Path $integrationRoot 'config\execution_adapter_profiles.json'
+  $experimentIds = @(& $PythonExe -m $prepareModule --repo-root $repoRoot `
+    --profile-registry $profileRegistry --adapter-registry $adapterRegistry `
+    --campaign $campaignPath --list-experiment-ids)
+  if ($LASTEXITCODE -ne 0 -or $experimentIds.Count -lt 1) {
+    throw 'Could not resolve ordered experiment IDs from the campaign.'
+  }
+  foreach ($nextExperimentId in $experimentIds) {
+    $childParameters = @{
+      Campaign = $Campaign; ExperimentId = [string]$nextExperimentId; PythonExe = $PythonExe
+    }
+    if ($ValidateOnly) { $childParameters.ValidateOnly = $true }
+    elseif ($SolverAuthorized) { $childParameters.SolverAuthorized = $true }
+    elseif ($FinalizeOnly) { $childParameters.FinalizeOnly = $true }
+    else { throw 'AllExperiments does not support PrepareOnly because each row requires its own review directory.' }
+    & $PSCommandPath @childParameters
+    if ($LASTEXITCODE -ne 0) { throw "Campaign sequence stopped at experiment: $nextExperimentId" }
+  }
+  return
 }
 $experimentRows = @($campaignDocument.experiments | Where-Object {
   $_.experiment_id -eq $ExperimentId
