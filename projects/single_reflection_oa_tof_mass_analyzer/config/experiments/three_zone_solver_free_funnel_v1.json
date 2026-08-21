@@ -26,7 +26,7 @@
       "sha256": "9AC9DF480DC0D57499E39F26FE358C437C0D30F103417BB4A02E3B1730A36BDD"
     },
     "peak_metrics": {
-      "path": "projects/single_reflection_oa_tof_mass_analyzer/analysis/peak_metrics.py",
+      "path": "common/analysis/peak_metrics.py",
       "bytes": 24684,
       "sha256": "DF50A675272A92C88E1150822925257B509A892F2EA69D8B4FE6A368ED809ED3"
     },
@@ -52,8 +52,8 @@
     },
     "three_zone_funnel_schema": {
       "path": "common/contracts/schemas/oatof_three_zone_solver_free_funnel.schema.json",
-      "bytes": 24516,
-      "sha256": "C98674749ACF21E1963B545076EB849613E8EF3FBD843C5313F0ABCF9502281F"
+      "bytes": 24523,
+      "sha256": "6828F3B7581A1A1B7D3378929B023B36D7F0456EB73859CC36FE472EB32FFC18"
     },
     "three_zone_resolved_plan_schema": {
       "path": "common/contracts/schemas/oatof_three_zone_resolved_plan.schema.json",
@@ -72,13 +72,13 @@
     },
     "three_zone_numeric_execution": {
       "path": "projects/single_reflection_oa_tof_mass_analyzer/analysis/three_zone_theory_numeric_execution.py",
-      "bytes": 39488,
-      "sha256": "31FB2857AE068BE259485956F53D1D10BD3EA0B761EBB956DCC1DF6CD77EF20C"
+      "bytes": 39447,
+      "sha256": "3653426A7B03165E5AB677B30BCE0F4D9E830AB2A5CE4BF55FBE799C9815F62C"
     },
     "three_zone_experiment": {
       "path": "projects/single_reflection_oa_tof_mass_analyzer/analysis/three_zone_theory_experiment.py",
-      "bytes": 28728,
-      "sha256": "18B5B3DC5D7C0082390355B9727BBC0AC220C44D48818EF1CBF36696681A25E5"
+      "bytes": 28866,
+      "sha256": "59E50D95CDACE0ECADC5EB25E5D32F6B6D039438670009EFD525154437232AEA"
     },
     "three_zone_cli": {
       "path": "projects/single_reflection_oa_tof_mass_analyzer/workflows/three_zone_ideal_theory/run_theory.py",
@@ -180,7 +180,7 @@
     "population_sample_counts": [501, 1001, 2001],
     "population_sigma_relative_convergence": 0.01,
     "primary_sample_count": 1001,
-    "fwhm_algorithm": "analysis.peak_metrics.compute_peak_metrics",
+    "fwhm_algorithm": "common.analysis.peak_metrics.compute_peak_metrics",
     "fwhm_cross_sample_convergence_allowed": false,
     "mode_count_cross_sample_stability_required": true
   },

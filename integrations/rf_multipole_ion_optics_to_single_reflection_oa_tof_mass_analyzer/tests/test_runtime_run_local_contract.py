@@ -69,7 +69,7 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
         identity_gate = runner.index(
             "Pre-pulse time-series source/layout/field/PA identity differs."
         )
-        solver_launch = runner.index("$jobs += Start-Job")
+        solver_launch = runner.index("Invoke-ResourceBudgetedProcesses")
         self.assertLess(identity_gate, solver_launch)
         completion = runner.index("if ($isPrePulseTimeSeriesScreening) {", solver_launch)
         downstream = runner.index("analysis.analyze_single_flight")
@@ -121,27 +121,31 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
         self.assertNotIn("$settings.batching_policy.default_batch_count", runner)
         self.assertNotIn("$batchCount -ne 5", runner)
         self.assertNotIn("N=1000 single flight requires five batches", runner)
-        self.assertIn("$quotient = [Math]::Floor($launched / $batchCount)", runner)
-        self.assertIn("$remainder = $launched % $batchCount", runner)
-        self.assertIn("$waveStart += $maxParallelBatches", runner)
-        self.assertIn("$waveBatchCount -gt 1", runner)
-        self.assertIn("[MultipoleMemoryStatus]::AvailableBytes()", runner)
-        self.assertIn(
-            "$settings.batching_policy.parallel_batch_memory_reservation_bytes",
-            runner,
-        )
-        self.assertIn(
-            "$stageBudgetDocument.limits.minimum_system_available_memory_bytes",
-            runner,
-        )
+        self.assertIn("common.simion.particle_batching", runner)
+        self.assertIn("simion_execution_batch_plan.json", runner)
+        self.assertIn("simion_single_wave_batch_plan_sha256", runner)
+        self.assertNotIn("$quotient = [Math]::Floor($launched / $batchCount)", runner)
+        self.assertNotIn("$remainder = $launched % $batchCount", runner)
+        self.assertIn("Invoke-ResourceBudgetedProcesses", runner)
+        self.assertIn("$resourceUsageFiles = @($resourceUsage)", runner)
+        self.assertIn("$processSpecifications += [pscustomobject]@", runner)
+        self.assertNotIn("$waveStart += $maxParallelBatches", runner)
+        self.assertNotIn("$waveBatchCount -gt 1", runner)
+        self.assertNotIn("$jobs += Start-Job", runner)
+        batch_launch_block = runner[
+            runner.index("$processSpecifications += [pscustomobject]@"):runner.index(
+                "if ($isPrePulseTimeSeriesScreening) {", runner.index(
+                    "$processSpecifications += [pscustomobject]@"
+                )
+            )
+        ]
+        self.assertNotIn("Invoke-ResourceBudgetedProcess `", batch_launch_block)
         self.assertNotIn("[int64](10GB)", runner)
         self.assertNotIn("[int64](4GB)", runner)
-        memory_gate = runner.index("$waveBatchCount -gt 1")
-        solver_launch = runner.index("$jobs += Start-Job")
-        self.assertLess(memory_gate, solver_launch)
         batch_bound = runner.index(
             "Single-flight execution batch count exceeds launched particle count."
         )
+        solver_launch = runner.index("Invoke-ResourceBudgetedProcesses")
         self.assertLess(batch_bound, solver_launch)
 
     def test_pre_pulse_time_series_materializer_is_runtime_bound(self) -> None:
@@ -220,7 +224,7 @@ try {{
         completed = subprocess.run(
             [pwsh, "-NoProfile", "-Command", script],
             cwd=INTEGRATION_ROOT.parents[1], text=True, encoding="utf-8",
-            errors="replace", capture_output=True, check=False,
+            errors="replace", capture_output=True, check=False, timeout=300,
         )
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         self.assertIn("OBSERVED_PROJECTION_IDENTITY=PASS", completed.stdout)
@@ -295,7 +299,7 @@ try {{
             encoding="utf-8",
             errors="replace",
             capture_output=True,
-            check=False,
+            check=False, timeout=300,
         )
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         self.assertIn("THREE_ZONE_ARGUMENT_SET=PASS", completed.stdout)
@@ -424,7 +428,7 @@ try {{
             encoding="utf-8",
             errors="replace",
             capture_output=True,
-            check=False,
+            check=False, timeout=300,
         )
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         self.assertIn("THREE_ZONE_RUNTIME_IDENTITY=PASS", completed.stdout)
@@ -486,7 +490,7 @@ try {{
             encoding="utf-8",
             errors="replace",
             capture_output=True,
-            check=False,
+            check=False, timeout=300,
         )
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         self.assertIn("THREE_ZONE_CHECKPOINT_CENSUS=PASS", completed.stdout)
@@ -640,7 +644,7 @@ try{{Assert-RfThreeZoneSolverAuthorization @failed;throw 'tamper accepted'}}catc
             completed = subprocess.run(
                 [pwsh, "-NoProfile", "-Command", script],
                 cwd=INTEGRATION_ROOT.parents[1], text=True, encoding="utf-8",
-                errors="replace", capture_output=True, check=False,
+                errors="replace", capture_output=True, check=False, timeout=300,
             )
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         self.assertIn("N1_AUTHORIZATION_GATE=PASS", completed.stdout)
@@ -694,6 +698,7 @@ try{{Assert-RfThreeZoneSolverAuthorization @failed;throw 'tamper accepted'}}catc
         campaign = {
             "schema_version": 4,
             "status": "authorized",
+            "role": "rf_multipole_oatof_experiment_campaign",
             "experiments": [{
                 "experiment_id": experiment_id,
                 "run_id": run_id,
@@ -721,14 +726,14 @@ try{{Assert-RfThreeZoneSolverAuthorization @failed;throw 'tamper accepted'}}catc
                     "-ExperimentId", experiment_id, "-SolverAuthorized",
                 ],
                 cwd=INTEGRATION_ROOT.parents[1], text=True, encoding="utf-8",
-                errors="replace", capture_output=True, check=False,
+                errors="replace", capture_output=True, check=False, timeout=300,
             )
         finally:
             campaign_path.unlink(missing_ok=True)
         self.assertNotEqual(completed.returncode, 0)
         output = completed.stdout + completed.stderr
         self.assertIn(
-            "requires campaign v5 with an explicit loader authorization budget",
+            "Campaign is not an active lifecycle authority; execution is forbidden",
             output,
         )
         self.assertNotIn("CAMPAIGN_SOURCE_BINDINGS", output)
@@ -765,7 +770,7 @@ try {{
         completed = subprocess.run(
             [pwsh, "-NoProfile", "-Command", script],
             cwd=INTEGRATION_ROOT.parents[1], text=True, encoding="utf-8",
-            errors="replace", capture_output=True, check=False,
+            errors="replace", capture_output=True, check=False, timeout=300,
         )
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         self.assertIn(
@@ -779,7 +784,7 @@ try {{
             "  -LifecycleStage 'pa_cache_policy_pending_budget_validation'"
         )
         budget_parse = runner.index("Initialize-RfIntegrationStageBudget")
-        first_cache_gate = runner.index("Test-RfReusableCacheEntry")
+        first_cache_gate = runner.index("Resolve-RfReusableCacheDirectory")
         first_builder = runner.index("$gem2pa = Invoke-ResourceBudgetedProcess")
         self.assertLess(initial_write, budget_parse)
         self.assertLess(budget_parse, first_cache_gate)
@@ -828,7 +833,7 @@ try {{
             "    $resolvedBudgetDocument."
             "single_flight_pa_cache_policy_provenance"
         )
-        first_cache_gate = after_initialize.index("Test-RfReusableCacheEntry")
+        first_cache_gate = after_initialize.index("Resolve-RfReusableCacheDirectory")
         frozen_receipt_policy = after_initialize.index(
             "$preCacheRunConfiguration.parameters."
             "single_flight_pa_cache_policy =\n"
@@ -918,7 +923,7 @@ if ($failures -ne 3) {{ throw "authority-scope negative cases differ: $failures"
             encoding="utf-8",
             errors="replace",
             capture_output=True,
-            check=False,
+            check=False, timeout=300,
         )
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         self.assertIn(
@@ -970,7 +975,7 @@ if ($runtime.resolved_source_contract.authority_scope -ne 'connection_lineage_on
             encoding="utf-8",
             errors="replace",
             capture_output=True,
-            check=False,
+            check=False, timeout=300,
         )
         self.assertNotEqual(completed.returncode, 0)
         self.assertIn(
@@ -1063,7 +1068,7 @@ Remove-Item -LiteralPath $tempRoot -Recurse -Force
         completed = subprocess.run(
             [pwsh, "-NoProfile", "-Command", script],
             cwd=INTEGRATION_ROOT.parents[1], text=True, encoding="utf-8",
-            errors="replace", capture_output=True, check=False,
+            errors="replace", capture_output=True, check=False, timeout=300,
         )
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         self.assertIn(
@@ -1100,7 +1105,7 @@ foreach ($case in $cases) {{
             cwd=INTEGRATION_ROOT.parents[1],
             text=True,
             capture_output=True,
-            check=False,
+            check=False, timeout=300,
         )
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         self.assertIn(
@@ -1274,7 +1279,7 @@ foreach ($case in $cases) {{
         self.assertIn("Set-RfMaterializedCacheFileWritable -Path $target", text)
         self.assertIn("-PaPath $frontendWorkingPa0", text)
         self.assertIn(
-            "$env:OATOF_ACCELERATOR_PA_OVERRIDE = $frontendWorkingPa0",
+            "OATOF_ACCELERATOR_PA_OVERRIDE = $frontendWorkingPa0",
             text,
         )
         guard = text.index(
@@ -1284,7 +1289,7 @@ foreach ($case in $cases) {{
             "$frontendCacheManifestInput = Copy-RfCacheManifestInput"
         )
         fly_override = text.index(
-            "$env:OATOF_ACCELERATOR_PA_OVERRIDE = $frontendWorkingPa0"
+            "OATOF_ACCELERATOR_PA_OVERRIDE = $frontendWorkingPa0"
         )
         self.assertLess(guard, manifest_copy)
         self.assertLess(manifest_copy, fly_override)
@@ -1377,7 +1382,12 @@ foreach ($case in $cases) {{
         self.assertIn("--phase-space-output", runner)
         self.assertIn("--phase-space-metadata", runner)
         self.assertIn("--phase-space-data", runner)
+        self.assertIn("single_flight_accelerator_checkpoint_evolution.png", runner)
+        self.assertIn("--evolution-output", runner)
+        self.assertIn("--evolution-metadata", runner)
+        self.assertIn("--evolution-data", runner)
         self.assertIn("accelerator_pre_pulse_phase_space", runner)
+        self.assertIn("accelerator_checkpoint_evolution", runner)
         self.assertIn("$phaseSpace,$phaseSpaceMetadata,$phaseSpaceData", runner)
 
         catalog = json.loads(
@@ -1389,7 +1399,7 @@ foreach ($case in $cases) {{
             item
             for item in catalog["capabilities"]
             if item["capability_id"]
-            == "rf_oatof_accelerator_pre_pulse_phase_space_v1"
+            == "rf_oatof_accelerator_phase_space_evolution_v2"
         )
         self.assertEqual(capability["required_event_plane"], "pre_pulse_state")
         self.assertEqual(capability["claim_class"], "DIAGNOSTIC_ONLY")
@@ -1460,11 +1470,12 @@ foreach ($case in $cases) {{
                 "Write-Output 'R03_BASELINE_STRICTMODE=PASS'",
                 str(population),
             ],
+            cwd=INTEGRATION_ROOT.parents[1],
             text=True,
             encoding="utf-8",
             errors="replace",
             capture_output=True,
-            check=False,
+            check=False, timeout=300,
         )
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         self.assertIn("R03_BASELINE_STRICTMODE=PASS", completed.stdout)

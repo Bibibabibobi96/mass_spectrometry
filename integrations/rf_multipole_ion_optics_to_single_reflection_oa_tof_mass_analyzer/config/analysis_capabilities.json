@@ -18,11 +18,11 @@
       "claim_class": "engineering_diagnostic"
     },
     {
-      "capability_id": "rf_oatof_accelerator_pre_pulse_phase_space_v1",
+      "capability_id": "rf_oatof_accelerator_phase_space_evolution_v2",
       "consumer": "analysis/plot_single_flight_spatial_six_panel.py",
-      "scope": "detector-blind structured CSV plus x-vx, y-vy and z-vz distributions for the retained pre-pulse checkpoint cohort inside the accelerator",
+      "scope": "detector-blind structured pre-pulse phase space plus default all-checkpoint 3D space, velocity, local-axis angular, transverse-envelope and z-vz residual evolution",
       "required_event_plane": "pre_pulse_state",
-      "fixed_output_role": "results/single_flight_accelerator_pre_pulse_phase_space.png",
+      "fixed_output_role": "results/single_flight_accelerator_checkpoint_evolution.png",
       "claim_class": "DIAGNOSTIC_ONLY"
     },
     {

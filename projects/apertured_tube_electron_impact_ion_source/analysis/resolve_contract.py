@@ -8,87 +8,19 @@ import math
 from pathlib import Path
 from typing import Any
 
+from common.contracts.strict_json import (
+    StrictJsonError as ContractError,
+    load_json_object as load_json,
+    require_bool as _require_bool,
+    require_dict as _require_dict,
+    require_exact_keys as _require_exact_keys,
+    require_number as _require_number,
+    require_positive_integer as _require_positive_integer,
+    require_string as _require_string,
+)
+
 PROJECT_ID = "apertured_tube_electron_impact_ion_source"
 MODEL_ID = "ei_source.long_thin_apertured_tube.yield_feasibility.v1"
-
-
-class ContractError(ValueError):
-    """Raised when a contract violates identity, units, shape, or range rules."""
-
-
-def _require_exact_keys(
-    value: dict[str, Any], expected: set[str], context: str
-) -> None:
-    actual = set(value)
-    missing = sorted(expected - actual)
-    unknown = sorted(actual - expected)
-    if missing or unknown:
-        raise ContractError(
-            f"{context} keys mismatch; missing={missing}, unknown={unknown}"
-        )
-
-
-def _require_dict(value: Any, context: str) -> dict[str, Any]:
-    if not isinstance(value, dict):
-        raise ContractError(f"{context} must be an object")
-    return value
-
-
-def _require_bool(value: Any, context: str) -> bool:
-    if not isinstance(value, bool):
-        raise ContractError(f"{context} must be boolean")
-    return value
-
-
-def _require_string(value: Any, context: str) -> str:
-    if not isinstance(value, str) or not value:
-        raise ContractError(f"{context} must be a non-empty string")
-    return value
-
-
-def _require_number(
-    value: Any,
-    context: str,
-    *,
-    minimum: float | None = None,
-    maximum: float | None = None,
-    strict_minimum: bool = False,
-) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ContractError(f"{context} must be numeric")
-    numeric = float(value)
-    if not math.isfinite(numeric):
-        raise ContractError(f"{context} must be finite")
-    if minimum is not None:
-        if strict_minimum and numeric <= minimum:
-            raise ContractError(f"{context} must be > {minimum}")
-        if not strict_minimum and numeric < minimum:
-            raise ContractError(f"{context} must be >= {minimum}")
-    if maximum is not None and numeric > maximum:
-        raise ContractError(f"{context} must be <= {maximum}")
-    return numeric
-
-
-def _require_positive_integer(value: Any, context: str) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
-        raise ContractError(f"{context} must be a positive integer")
-    return value
-
-
-def load_json(path: Path) -> dict[str, Any]:
-    """Load one JSON object and reject non-standard numeric constants."""
-
-    try:
-        with path.open("r", encoding="utf-8") as stream:
-            value = json.load(
-                stream,
-                parse_constant=lambda token: (_ for _ in ()).throw(
-                    ContractError(f"{path}: non-finite JSON number {token}")
-                ),
-            )
-    except (OSError, json.JSONDecodeError) as exc:
-        raise ContractError(f"cannot read {path}: {exc}") from exc
-    return _require_dict(value, str(path))
 
 
 def validate_baseline(raw: dict[str, Any]) -> dict[str, Any]:

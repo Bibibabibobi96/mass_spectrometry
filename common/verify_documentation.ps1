@@ -162,10 +162,24 @@ foreach ($file in $markdownFiles) {
             continue
         }
         $pathPart = ($target -split '#', 2)[0]
+        $anchorPart = if ($target -match '#') { ($target -split '#', 2)[1] } else { '' }
         $pathPart = [uri]::UnescapeDataString($pathPart)
         $resolved = Join-Path -Path $file.DirectoryName -ChildPath $pathPart
         if (-not (Test-Path -LiteralPath $resolved)) {
             Add-DocError "$relative`: broken relative link '$target'"
+        }
+        elseif (-not [string]::IsNullOrWhiteSpace($anchorPart) -and
+                $anchorPart -match '^[A-Za-z0-9][A-Za-z0-9_-]*$') {
+            $headingAnchors = @()
+            foreach ($heading in @(Get-Content -LiteralPath $resolved -Encoding UTF8 |
+                    Where-Object { $_ -match '^#{1,6}\s+(.+?)\s*$' })) {
+                $headingText = ([regex]::Match($heading, '^#{1,6}\s+(.+?)\s*$')).Groups[1].Value
+                $slug = $headingText.ToLowerInvariant() -replace '[^a-z0-9\s_-]', '' -replace '\s+', '-'
+                $headingAnchors += $slug.Trim('-')
+            }
+            if ($anchorPart.ToLowerInvariant() -notin $headingAnchors) {
+                Add-DocError "$relative`: broken Markdown anchor '$target'"
+            }
         }
     }
 }
@@ -229,15 +243,38 @@ foreach ($file in $activeTextFiles) {
 }
 
 $historyFiles = New-Object System.Collections.Generic.List[System.IO.FileInfo]
-$historyDirs = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'projects') -Directory | ForEach-Object {
+$historyScopes = @(
+    [pscustomobject]@{
+        Directory = Get-Item -LiteralPath (Join-Path $repoRoot 'docs\history')
+        IndexPath = Join-Path $repoRoot 'docs\AUDITS.md'
+        IndexLabel = 'docs/AUDITS.md'
+        IndexPrefix = 'history/'
+    }
+) + @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'projects') -Directory | ForEach-Object {
     $candidate = Join-Path $_.FullName 'docs\history'
-    if (Test-Path -LiteralPath $candidate -PathType Container) { Get-Item -LiteralPath $candidate }
+    if (-not (Test-Path -LiteralPath $candidate -PathType Container)) { return }
+    $projectPath = $_.FullName
+    [pscustomobject]@{
+        Directory = Get-Item -LiteralPath $candidate
+        IndexPath = Join-Path $projectPath 'README.md'
+        IndexLabel = "$($_.Name)/README.md"
+        IndexPrefix = 'docs/history/'
+    }
+}) + @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'integrations') -Directory | ForEach-Object {
+    $candidate = Join-Path $_.FullName 'docs\history'
+    if (-not (Test-Path -LiteralPath $candidate -PathType Container)) { return }
+    $integrationPath = $_.FullName
+    [pscustomobject]@{
+        Directory = Get-Item -LiteralPath $candidate
+        IndexPath = Join-Path $integrationPath 'docs\HISTORY.md'
+        IndexLabel = "$($_.Name)/docs/HISTORY.md"
+        IndexPrefix = 'history/'
+    }
 })
-foreach ($historyDir in $historyDirs) {
-    $projectPath = Split-Path -Parent (Split-Path -Parent $historyDir.FullName)
-    $projectReadme = Join-Path $projectPath 'README.md'
-    $projectReadmeRaw = if (Test-Path -LiteralPath $projectReadme -PathType Leaf) {
-        [System.IO.File]::ReadAllText($projectReadme, $utf8)
+foreach ($historyScope in $historyScopes) {
+    $historyDir = $historyScope.Directory
+    $indexRaw = if (Test-Path -LiteralPath $historyScope.IndexPath -PathType Leaf) {
+        [System.IO.File]::ReadAllText($historyScope.IndexPath, $utf8)
     } else { '' }
     $flatMarkdown = @(Get-ChildItem -LiteralPath $historyDir.FullName -File -Filter '*.md')
     foreach ($file in $flatMarkdown) {
@@ -248,10 +285,10 @@ foreach ($historyDir in $historyDirs) {
             $relative = $file.FullName.Substring($repoRoot.Length + 1)
             Add-DocError "$relative`: missing read-only archive banner"
         }
-        $historyEntry = 'docs/history/' + $file.Name
-        if ($projectReadmeRaw -notmatch [regex]::Escape($historyEntry)) {
+        $historyEntry = $historyScope.IndexPrefix + $file.Name
+        if ($indexRaw -notmatch [regex]::Escape($historyEntry)) {
             $relative = $file.FullName.Substring($repoRoot.Length + 1)
-            Add-DocError "$relative`: project README does not index '$historyEntry'"
+            Add-DocError "$relative`: $($historyScope.IndexLabel) does not index '$historyEntry'"
         }
     }
 
@@ -275,6 +312,13 @@ foreach ($historyDir in $historyDirs) {
             Add-DocError "$relative`: nested directories are forbidden in history payloads"
         }
         $manifestRaw = [System.IO.File]::ReadAllText($manifestPath, $utf8)
+        # Large immutable payload sets may use a machine-readable JSON
+        # migration manifest instead of duplicating 100+ links in Markdown.
+        # Its entries and hashes are still checked below as part of the same
+        # flat manifest directory.
+        $machineManifestRaw = ($manifestRaw + "`n" + (
+            @(Get-ChildItem -LiteralPath $payloadDir.FullName -File -Filter '*manifest*.json' |
+                ForEach-Object { [System.IO.File]::ReadAllText($_.FullName, $utf8) }) -join "`n"))
         $checksumPath = Join-Path $payloadDir.FullName 'SHA256SUMS.txt'
         $checksumRaw = if (Test-Path -LiteralPath $checksumPath -PathType Leaf) {
             [System.IO.File]::ReadAllText($checksumPath, $utf8)
@@ -291,14 +335,19 @@ foreach ($historyDir in $historyDirs) {
                 Add-DocError "$relative`: forbidden Markdown or runtime cache in history payload"
             }
             $payloadEntry = $payloadDir.Name + '/' + $payloadFile.Name
-            if ($manifestRaw -notmatch [regex]::Escape($payloadEntry)) {
+            $checksumLinksPayload = $checksumRaw -match ('(?im)(?:\s|\*)+' + [regex]::Escape($payloadFile.Name) + '\s*$')
+            if ($payloadFile.Name -notin @('SHA256SUMS.txt') -and
+                $payloadFile.Name -notmatch 'manifest' -and -not $checksumLinksPayload -and
+                $machineManifestRaw -notmatch [regex]::Escape($payloadEntry) -and
+                $machineManifestRaw -notmatch [regex]::Escape($payloadFile.Name)) {
                 Add-DocError "$relative`: same-name manifest does not link payload '$payloadEntry'"
             }
-            if ($payloadFile.Name -ne 'SHA256SUMS.txt') {
+            if ($payloadFile.Name -ne 'SHA256SUMS.txt' -and
+                $payloadFile.Name -notmatch 'manifest') {
                 $actualHash = (Get-FileHash -LiteralPath $payloadFile.FullName -Algorithm SHA256).Hash
                 $checksumPattern = '(?im)^' + [regex]::Escape($actualHash) + '\s+\*?' +
                     [regex]::Escape($payloadFile.Name) + '\s*$'
-                if ($manifestRaw -notmatch [regex]::Escape($actualHash) -and
+                if ($machineManifestRaw -notmatch [regex]::Escape($actualHash) -and
                     $checksumRaw -notmatch $checksumPattern) {
                     Add-DocError "$relative`: SHA-256 is absent or stale in manifest/checksum list"
                 }

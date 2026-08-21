@@ -63,6 +63,11 @@ class StageField2x2Tests(unittest.TestCase):
             )
             self.assertIn("--require-status", command)
             self.assertEqual(run_mock.call_args.kwargs["check"], True)
+            self.assertEqual(
+                run_mock.call_args.kwargs["cwd"],
+                Path(stage_field.__file__).resolve().parents[3],
+            )
+            self.assertEqual(run_mock.call_args.kwargs["timeout"], 60)
 
     def test_failed_or_v1_manifest_is_rejected_before_analysis(self):
         with tempfile.TemporaryDirectory() as temporary:

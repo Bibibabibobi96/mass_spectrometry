@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.peak_metrics import compute_peak_metrics
+from common.analysis.peak_metrics import compute_peak_metrics
 
 
 def _norm(frame: pd.DataFrame, columns: list[str]) -> np.ndarray:

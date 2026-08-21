@@ -50,11 +50,17 @@ def record_for_path(records: Any, path: Path, label: str) -> dict[str, Any]:
     return verified_record(label, matches[0])
 
 
-def portable_path(path: Path, workspace_root: Path) -> str:
+def portable_path(
+    path: Path,
+    workspace_root: Path,
+    *,
+    outside_message: str = "path is outside workspace",
+) -> str:
+    """Return a portable workspace-relative provenance path."""
     try:
         return path.resolve().relative_to(workspace_root.resolve()).as_posix()
     except ValueError as error:
-        raise ContractError(f"path is outside workspace: {path}") from error
+        raise ContractError(f"{outside_message}: {path}") from error
 
 
 def freeze_repository_inputs(
@@ -127,6 +133,7 @@ def publish_manifest(
         text=True,
         encoding="utf-8",
         errors="replace",
+        timeout=60,
     )
     if completed.returncode != 0:
         raise ContractError(
@@ -171,6 +178,7 @@ def publish_manifest(
         text=True,
         encoding="utf-8",
         errors="replace",
+        timeout=60,
     )
     if verified.returncode != 0:
         raise ContractError(

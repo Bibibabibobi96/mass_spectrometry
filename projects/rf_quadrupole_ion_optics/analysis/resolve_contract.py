@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 from pathlib import Path
 import tempfile
 
+from common.contracts.file_identity import file_sha256 as _sha256
 from common.contracts.machine_contracts import validate_schema
 from common.multipole.compile_design_request import (
     compile_governed_design_request_file,
@@ -56,10 +56,6 @@ def _json_bytes(document: dict) -> bytes:
     return (
         json.dumps(document, indent=2, ensure_ascii=False, allow_nan=False) + "\n"
     ).encode("utf-8")
-
-
-def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest().upper()
 
 
 def _atomic_write_json(path: Path, document: dict) -> None:

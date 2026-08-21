@@ -10,9 +10,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[4]
+PROJECT_ROOT = REPO_ROOT / "projects" / "apertured_tube_electron_impact_ion_source"
 
-from analysis.resolve_contract import (
+from projects.apertured_tube_electron_impact_ion_source.analysis.resolve_contract import (
     ContractError,
     load_json,
     resolve_contract,
@@ -35,11 +36,16 @@ class ResolveContractTests(unittest.TestCase):
     def run_resolver_module(self, arguments: list[str]) -> subprocess.CompletedProcess:
         """Run the package entry with bounded, diagnosable subprocess behavior."""
 
-        command = [sys.executable, "-m", "analysis.resolve_contract", *arguments]
+        command = [
+            sys.executable,
+            "-m",
+            "projects.apertured_tube_electron_impact_ion_source.analysis.resolve_contract",
+            *arguments,
+        ]
         try:
             return subprocess.run(
                 command,
-                cwd=PROJECT_ROOT,
+                cwd=REPO_ROOT,
                 check=False,
                 capture_output=True,
                 text=True,
@@ -147,15 +153,15 @@ class ResolveContractTests(unittest.TestCase):
         completed = self.run_resolver_module(
             [
                 "--baseline",
-                "config/baseline.json",
+                "projects/apertured_tube_electron_impact_ion_source/config/baseline.json",
                 "--modes",
-                "config/numerical_modes.json",
+                "projects/apertured_tube_electron_impact_ion_source/config/numerical_modes.json",
                 "--mode",
                 "build_only_smoke",
                 "--evidence-particle-count",
                 "1",
                 "--check",
-                "config/resolved_model.json",
+                "projects/apertured_tube_electron_impact_ion_source/config/resolved_model.json",
             ]
         )
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
@@ -164,9 +170,9 @@ class ResolveContractTests(unittest.TestCase):
         completed = self.run_resolver_module(
             [
                 "--baseline",
-                "config/baseline.json",
+                "projects/apertured_tube_electron_impact_ion_source/config/baseline.json",
                 "--modes",
-                "config/numerical_modes.json",
+                "projects/apertured_tube_electron_impact_ion_source/config/numerical_modes.json",
                 "--mode",
                 "unregistered",
             ]

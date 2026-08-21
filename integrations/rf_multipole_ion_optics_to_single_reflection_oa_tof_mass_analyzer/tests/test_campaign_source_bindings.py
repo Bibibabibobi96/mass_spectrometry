@@ -150,6 +150,69 @@ class CampaignSourceBindingTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "immutable"):
                 write_campaign(repo, campaign)
 
+    def test_finalized_failed_parent_allows_binding_refresh_without_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repo, campaign = self._fixture(Path(directory))
+            runs = (
+                repo.parent / "artifacts/projects/"
+                "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs"
+            )
+
+            def record(path: Path) -> dict[str, object]:
+                return {
+                    "path": str(path), "bytes": path.stat().st_size,
+                    "sha256": hashlib.sha256(path.read_bytes()).hexdigest().upper(),
+                }
+
+            failed_parent = runs / "target_run"
+            failed_parent.mkdir(parents=True)
+            failed_config = failed_parent / "run_config.json"
+            failed_config.write_text("{}\n", encoding="utf-8")
+            failed_manifest = failed_parent / "run_manifest.json"
+            failed_manifest.write_text(json.dumps({
+                "role": "simulation_run_manifest", "status": "failed",
+                "run_config": record(failed_config), "inputs": {}, "outputs": [],
+            }), encoding="utf-8")
+            receipt = runs / "child__r01" / "results" / "receipt.json"
+            receipt.parent.mkdir(parents=True)
+            receipt.write_text(json.dumps({
+                "role": "rf_oatof_completed_single_flight_analysis_recovery_receipt",
+                "status": "success", "solver_reexecuted": False,
+                "source_failed_parent_manifest_sha256": hashlib.sha256(failed_manifest.read_bytes()).hexdigest().upper(),
+                "campaign": {"experiment_id": "target_experiment"},
+            }), encoding="utf-8")
+            child = runs / "child__r01"
+            child_config = child / "run_config.json"
+            child_config.write_text(json.dumps({"inputs": {"failed_parent_manifest": str(failed_manifest)}}), encoding="utf-8")
+            child_manifest = child / "run_manifest.json"
+            child_manifest.write_text(json.dumps({
+                "status": "success", "mode": "rf_to_oatof_simion_single_flight_analysis_recovery",
+                "run_config": record(child_config), "inputs": {"failed_parent_manifest": record(failed_manifest)},
+            }), encoding="utf-8")
+            recovery_parent = runs / "target_run__r01"
+            recovery_parent.mkdir()
+            summary = recovery_parent / "summary.json"
+            summary.write_text("{}\n", encoding="utf-8")
+            parent_config = recovery_parent / "run_config.json"
+            parent_config.write_text(json.dumps({"inputs": {
+                "failed_parent_manifest": str(failed_manifest),
+                "recovered_child_manifest": str(child_manifest),
+                "recovery_receipt": str(receipt),
+            }}), encoding="utf-8")
+            (recovery_parent / "run_manifest.json").write_text(json.dumps({
+                "role": "simulation_run_manifest", "status": "success",
+                "mode": "multipole_family_source_closure_analysis_recovery",
+                "run_config": record(parent_config),
+                "inputs": {
+                    "failed_parent_manifest": record(failed_manifest),
+                    "recovered_child_manifest": record(child_manifest),
+                    "recovery_receipt": record(receipt),
+                }, "outputs": [record(summary)],
+            }), encoding="utf-8")
+
+            self.assertTrue(write_campaign(repo, campaign))
+            self.assertTrue(is_fresh(repo, campaign))
+
     def test_normalizes_only_campaign_bytes_even_when_published(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             repo, campaign = self._fixture(Path(directory))

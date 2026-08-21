@@ -10,6 +10,10 @@
     "family_mother_sample_v1_n1000": {
       "path": "common/multipole/sources/rf_multipole_family_mother_sample_v1_1000.csv",
       "sha256": "CE68A6B47DC5726D9C45CBE28E4397A2321D782FAED265067824891AAF4D0FBF"
+    },
+    "family_mother_sample_v1_n5000": {
+      "path": "common/multipole/sources/rf_multipole_family_mother_sample_v1_5000.csv",
+      "sha256": "131C63A4DA0BD8A5BC2E5133432B8E4B77EAA5F1B94188E3B1393B8E36DC61CA"
     }
   }
 }

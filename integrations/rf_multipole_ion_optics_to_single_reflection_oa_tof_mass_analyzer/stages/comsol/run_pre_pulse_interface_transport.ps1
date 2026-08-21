@@ -43,7 +43,7 @@ function Invoke-PrePulseSnapshotPython {
     [hashtable]$AdditionalEnvironment = @{}
   )
   $environmentNames = @('PYTHONPATH','PYTHONNOUSERSITE') + @($AdditionalEnvironment.Keys)
-  $savedEnvironment = Save-RfEnvironment -Names $environmentNames
+  $savedEnvironment = Save-RunEnvironment -Names $environmentNames
   try {
     $env:PYTHONPATH = $SnapshotRoot
     $env:PYTHONNOUSERSITE = '1'
@@ -54,7 +54,7 @@ function Invoke-PrePulseSnapshotPython {
     try { & $Python @Arguments } finally { Pop-Location }
     if ($LASTEXITCODE -ne 0) { throw $FailureMessage }
   } finally {
-    Restore-RfEnvironment -Names $environmentNames -Snapshot $savedEnvironment
+    Restore-RunEnvironment -Names $environmentNames -Snapshot $savedEnvironment
   }
 }
 
@@ -112,7 +112,7 @@ $mode = if ($Particles) { 'rf_to_oatof_pre_pulse_interface_transport' } `
 $summaryRole = if ($Particles) { 'rf_to_oatof_pre_pulse_interface_transport_summary' } `
   else { 'rf_to_oatof_pre_pulse_no_pulse_field_summary' }
 $software = @('COMSOL 6.4','MATLAB R2025b','Python 3.11')
-$package = New-RfRunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
+$package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
   -RunId $RunId -Project $upstreamProjectId -Mode $mode -Software $software `
   -RetentionContractEnabled -RetentionClass compact
 $manifestToolRoot = $repoRoot
@@ -173,9 +173,7 @@ try {
     throw 'PrePulse dependency consumer subset is empty or has duplicate identities.'
   }
   $dependencyIdentities = [ordered]@{}
-  $dependencyPaths = @{}
   $dependencySnapshotPaths = @{}
-  $dependencyCompatibilityPaths = @{}
   foreach ($dependency in $selectedDependencies) {
     $identity = Copy-RfFrozenDependency -RepoRoot $repoRoot -InputDir $inputDir `
       -Dependency $dependency
@@ -190,18 +188,15 @@ try {
       frozen_input_name = $identity.frozen_input_name
       consumers = @($identity.consumers)
       snapshot_path = $identity.snapshot_path
-      compatibility_path = $identity.compatibility_path
       sha256 = $identity.sha256
     }
-    $dependencyPaths[$identity.id] = $identity.frozen_path
     $dependencySnapshotPaths[$identity.id] = $identity.snapshot_path
-    $dependencyCompatibilityPaths[$identity.id] = $identity.compatibility_path
   }
   $manifestToolRoot = $snapshotRoot
   $sharedJoint = $dependencySnapshotPaths['rf_shared_joint_geometry']
-  $oaBaseline = $dependencyPaths['oatof_baseline']
+  $oaBaseline = $dependencySnapshotPaths['oatof_baseline']
   $oaBaselineSnapshot = $dependencySnapshotPaths['oatof_baseline']
-  $oaBuilder = $dependencyPaths['oatof_accelerator_geometry_builder']
+  $oaBuilder = $dependencySnapshotPaths['oatof_accelerator_geometry_builder']
   $oatofHandoff = Join-Path $inputDir 'source_adapter.py'
   $null = Copy-RfStableFile -SourceRunRoot $repoRoot `
     -SourcePath $runtime.source_adapter -Destination $oatofHandoff `
@@ -377,10 +372,6 @@ try {
   }
   foreach ($identity in $dependencyIdentities.Values) {
     $runConfiguration.inputs[[string]$identity.frozen_input_name] = [string]$identity.snapshot_path
-    if (-not [string]::IsNullOrWhiteSpace([string]$identity.compatibility_path)) {
-      $runConfiguration.inputs[([string]$identity.frozen_input_name + '_compatibility')] = `
-        [string]$identity.compatibility_path
-    }
   }
   if ($Particles) {
     $runConfiguration.inputs.source_run_manifest = $sourceManifest
@@ -393,14 +384,14 @@ try {
     $runConfiguration.inputs.particle_row_map = $particleRowMap
     $runConfiguration.inputs.particle_handoff_metadata = $particleMetadata
   }
-  Write-RfJson -Path $package.run_config -Depth 8 -Value $runConfiguration
-  Write-RfJson -Path $package.summary -Value ([ordered]@{
+  Write-RunJson -Path $package.run_config -Depth 8 -Value $runConfiguration
+  Write-RunJson -Path $package.summary -Value ([ordered]@{
     schema_version = 1
     role = $summaryRole
     status = 'interrupted'
     reason = 'Run package initialized; final status not yet recorded.'
   })
-  Write-RfFrozenRunManifest -Python $python -FrozenRepoRoot $manifestToolRoot `
+  Write-RunManifest -Python $python -RepoRoot $manifestToolRoot `
     -RunConfig $package.run_config `
     -Status interrupted -Software $software
 
@@ -411,7 +402,7 @@ try {
     'RF_OATOF_PrePulse_OA_COMSOL_DIR','RF_OATOF_MULTIPOLE_COMSOL_DIR',
     'RF_OATOF_PrePulse_PARTICLE_INPUT','RF_OATOF_PrePulse_PARTICLE_OUTPUT'
   )
-  $oldEnvironment = Save-RfEnvironment -Names $environmentNames
+  $oldEnvironment = Save-RunEnvironment -Names $environmentNames
   $comsolWrapperStdout = Join-Path $logDir 'comsol_wrapper.stdout.log'
   $comsolWrapperStderr = Join-Path $logDir 'comsol_wrapper.stderr.log'
   try {
@@ -449,7 +440,7 @@ try {
       throw 'COMSOL PrePulse no-pulse field task failed.'
     }
   } finally {
-    Restore-RfEnvironment -Names $environmentNames -Snapshot $oldEnvironment
+    Restore-RunEnvironment -Names $environmentNames -Snapshot $oldEnvironment
   }
 
   $fieldMetrics = Get-Content -LiteralPath $metrics -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -474,7 +465,7 @@ try {
         [int]$contractDocument.particle_runtime.minimum_oatof_entry_crossings)) {
     throw 'PrePulse particle metrics violate the nominal functional contract.'
   }
-  Write-RfJson -Path $package.summary -Value ([ordered]@{
+  Write-RunJson -Path $package.summary -Value ([ordered]@{
     schema_version = 1
     role = $summaryRole
     status = 'success'
@@ -509,12 +500,12 @@ try {
     $resourceBudgetExceeded = $true
     throw 'COMSOL PrePulse compact final retained-byte budget exceeded.'
   }
-  Write-RfFrozenRunManifest -Python $python -FrozenRepoRoot $manifestToolRoot `
+  Write-RunManifest -Python $python -RepoRoot $manifestToolRoot `
     -RunConfig $package.run_config `
     -Status success -Software $software -Outputs $outputs
   Write-Output "STATUS=PASS RUN_ID=$RunId GAP_MM=$gapMm FIELD_BASES=2 PARTICLES=$Particles OA_PULSE=false"
 } catch {
-  Complete-RfFrozenFailedRun -Python $python -FrozenRepoRoot $manifestToolRoot `
+  Complete-FailedRun -Python $python -RepoRoot $manifestToolRoot `
     -RunConfig $package.run_config `
     -Summary $package.summary -SummaryRole $summaryRole `
     -Reason $_.Exception.Message -Software $software `

@@ -3,12 +3,12 @@
   "role": "rf_multipole_oatof_experiment_campaign",
   "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
   "campaign_id": "canonical_long_affine_arm8_width_numerics_restart_n1000",
-  "status": "authorized",
+  "status": "retired",
   "execution_policy": {"path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/execution_policy.json", "sha256": "38178CEFC70EF977C1EA6C772827E0FFB9B220447794FFFB704BD6599B7AEB31"},
   "claim_limit": "PREREGISTERED corrected five-cell fixed-long Arm8 diagnostic, with five particle batches dispatched as 3+2 per cell. The only scientific change from the archived invalid continuous-frontend matrix is official FLY2 pre_pulse_restart bound to exact governed pulse-state CSV/receipt with rowwise actual source_release validation. Validation only; SIMION execution requires independent review and explicit authorization. No optimization, Candidate or Formal claim is authorized.",
   "preregistration": {
     "status": "REGISTERED_EXECUTION_REQUIRES_EXPLICIT_AUTHORIZATION",
-    "document": {"path": "docs/history/20260814__oatof-long-affine-arm8-five-cell-official-restart-preregistration.md", "bytes": 5118, "sha256": "F6565072A111BC6734DBED68236BCA3A08E85F967B85EFA8925A88DC83363522"},
+    "document": {"path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/20260814__oatof-long-affine-arm8-five-cell-official-restart-preregistration.md", "bytes": 5118, "sha256": "F6565072A111BC6734DBED68236BCA3A08E85F967B85EFA8925A88DC83363522"},
     "frozen_experiment_row_sha256": {
       "long_arm8_restart_affine_1mm_q8_dt160_n1000": "1374934762961D38A368E9B45FE23202AA76D002CDAD340CC44DE39D34BA0C21",
       "long_arm8_restart_affine_1p5mm_q8_dt160_n1000": "BD1CF040D0C0DA078727BEC347FF3084B2741737F256A9113CED454E0FABDFEA",

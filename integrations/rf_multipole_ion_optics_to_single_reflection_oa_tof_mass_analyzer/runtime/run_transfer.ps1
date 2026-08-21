@@ -100,7 +100,7 @@ $verificationCases = @(
   }
 )
 $environmentNames = @('PYTHONPATH','PYTHONNOUSERSITE')
-$savedEnvironment = Save-RfEnvironment -Names $environmentNames
+$savedEnvironment = Save-RunEnvironment -Names $environmentNames
 try {
   $env:PYTHONPATH = $snapshotRoot
   $env:PYTHONNOUSERSITE = '1'
@@ -121,7 +121,7 @@ try {
     Pop-Location
   }
 } finally {
-  Restore-RfEnvironment -Names $environmentNames -Snapshot $savedEnvironment
+  Restore-RunEnvironment -Names $environmentNames -Snapshot $savedEnvironment
 }
 $summary = Get-Content -LiteralPath (Join-Path $endToEndRun 'summary.json') `
   -Raw -Encoding UTF8 | ConvertFrom-Json

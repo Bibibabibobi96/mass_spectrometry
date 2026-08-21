@@ -29,7 +29,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     verified_record,
     write_pending_json,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.peak_metrics import (
+from common.analysis.peak_metrics import (
     compute_peak_metrics,
 )
 

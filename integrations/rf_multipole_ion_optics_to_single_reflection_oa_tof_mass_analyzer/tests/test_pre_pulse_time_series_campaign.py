@@ -35,6 +35,9 @@ V5_AUTO_CAMPAIGN_PATH = INTEGRATION_ROOT / (
     "config/diagnostics/"
     "connector_gap_three_zone_real_pa_first100_n100_campaign_v5.json"
 )
+CURRENT_AUTO_CAMPAIGN_PATH = INTEGRATION_ROOT / (
+    "config/diagnostics/connector_gap_102p4_real_pa_full_n5000_v1.json"
+)
 N1000_AUTO_CAMPAIGN_PATH = INTEGRATION_ROOT / (
     "config/diagnostics/"
     "connector_gap_three_zone_real_pa_full_n1000_campaign_v1.json"
@@ -47,7 +50,9 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
     def setUp(self) -> None:
         self.campaign = json.loads(CAMPAIGN_PATH.read_text(encoding="utf-8"))
 
-    def _compile(self) -> dict[str, object]:
+    def _compile(
+        self, *, time_integration_profile_id: str | None = None
+    ) -> dict[str, object]:
         campaign = copy.deepcopy(self.campaign)
         campaign["pre_pulse_time_series_screening"][
             "spatial_window_profile_id"
@@ -71,6 +76,7 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
             selected_field_profile={"field_id": "three_zone_refined_pa_field_v1"},
             region_field_semantic_sha256="E" * 64,
             rf_steps_per_period=160,
+            time_integration_profile_id=time_integration_profile_id,
         )
 
     def test_campaign_and_compiled_runner_contract_close_rf160_grid(self) -> None:
@@ -88,6 +94,10 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
         self.assertEqual(grid["start_index"], 0)
         self.assertEqual(grid["end_index"], 320)
         self.assertFalse(contract["resolution_claim_allowed"])
+
+    def test_screening_solver_profile_is_independent_of_full_flight_profile(self) -> None:
+        contract = self._compile(time_integration_profile_id="dt160")
+        self.assertEqual(contract["identities"]["time_integration_profile_id"], "dt160")
         self.assertEqual(contract["active_scope"], "pre_pulse_frontend_accelerator")
         self.assertIsNone(contract["pa_cache_keys"]["flight_tube"])
         self.assertIsNone(contract["pa_cache_keys"]["reflectron"])
@@ -254,7 +264,10 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
                 )
 
     def test_active_cache_miss_schema_requires_layout_resolved_profile(self) -> None:
-        campaign = json.loads(V5_AUTO_CAMPAIGN_PATH.read_text(encoding="utf-8"))
+        campaign = json.loads(CURRENT_AUTO_CAMPAIGN_PATH.read_text(encoding="utf-8"))
+        campaign["experiments"][0]["single_flight_pulse_schedule_policy"][
+            "cache_miss_policy"
+        ]["spatial_window_profile_id"] = "legacy_fixed_window"
         with self.assertRaises(ContractError):
             validate_schema(
                 campaign, "rf_multipole_oatof_experiment_campaign.schema.json"
@@ -264,7 +277,7 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
                 "spatial_window_profile_id"
             ] = "layout_resolved_axial_provisional_xy2_v1"
         validate_schema(campaign, "rf_multipole_oatof_experiment_campaign.schema.json")
-        self.assertEqual(len(campaign["experiments"]), 5)
+        self.assertEqual(len(campaign["experiments"]), 1)
         for row in campaign["experiments"]:
             policy = row["single_flight_pulse_schedule_policy"]["cache_miss_policy"]
             self.assertEqual(
@@ -319,6 +332,7 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
             "pre_pulse_time_series_prefix_count",
             "pre_pulse_time_series_contract_filename",
             "pre_pulse_time_series_contract_sha256",
+            "pre_pulse_time_series_time_integration_profile_id",
             "PrePulseTimeSeriesContract",
             "PrePulseTimeSeriesContractSha256",
         ):
@@ -383,7 +397,7 @@ foreach ($case in $cases) {
             encoding="utf-8",
             errors="replace",
             capture_output=True,
-            check=False,
+            check=False, timeout=300,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("CAST_SHAPE=PASS", result.stdout)

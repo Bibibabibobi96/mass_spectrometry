@@ -8,9 +8,9 @@ $workspaceRoot = Split-Path -Parent $repoRoot
 $errors = [Collections.Generic.List[string]]::new()
 
 $allowedWorkspaceEntries = @(
-  '.agents','.claude','.comsol_runtime','.comsol_server_config','.git','.idea',
+  '.agents','.claude','.codex','.comsol_runtime','.comsol_server_config','.git','.idea',
   '.matlab_pref','.matlab_pref25','.mcp.json','.tools','AGENTS.md','CLAUDE.md',
-  'README.md','artifacts','simulation_repo'
+  'README.md','artifacts','integrations','simulation_repo','scratch'
 )
 $workspaceManaged =
   (Split-Path -Leaf $repoRoot) -eq 'simulation_repo' -or

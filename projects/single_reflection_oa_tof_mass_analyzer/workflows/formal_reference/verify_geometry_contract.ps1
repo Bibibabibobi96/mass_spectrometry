@@ -343,7 +343,7 @@ if (-not $SkipRuntime) {
   if ($cadReport.solidWorks.assembly.componentCount -ne $formalAssets.solidworks.component_count) { throw 'Formal SolidWorks assembly component count differs from the verified asset manifest.' }
   if ($cadReport.solidWorks.assembly.saveErrors -ne 0 -or $cadReport.solidWorks.assembly.saveWarnings -ne 0) { throw 'Formal SolidWorks assembly report contains save errors or warnings.' }
   if (($cadReport.solidWorks.parts | Measure-Object -Property saveErrors -Maximum).Maximum -ne 0 -or ($cadReport.solidWorks.parts | Measure-Object -Property saveWarnings -Maximum).Maximum -ne 0) { throw 'Formal SolidWorks part report contains save errors or warnings.' }
-  $stableGate = Join-Path $componentDir 'tests\simion\verify_stable_entry.ps1'
+  $stableGate = Join-Path $componentDir 'workflows\formal_reference\verify_stable_entry.ps1'
   & $stableGate -ManifestPath $simionStablePath -SimionExe $SimionExe -SkipRuntime
   if ($LASTEXITCODE -ne 0) { throw 'Formal SIMION stable-entry gate failed.' }
   $verifyLua = Join-Path $componentDir 'simion\workbench\verify_formal_runtime.lua'

@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from common.contracts.file_identity import file_sha256
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.peak_metrics import compute_peak_metrics
+from common.analysis.peak_metrics import compute_peak_metrics
 
 EVENTS=("accelerator_grid1_forward","local_accelerator_exit","accelerator_focus_forward","reflectron_entrance_forward","reflectron_midgrid_forward","reflectron_turning_point","reflectron_exit_return","detector_crossing")
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 from pathlib import Path
 
@@ -11,6 +10,7 @@ from common.contracts.artifact_identity_archive import (
     relocated_manifest_path,
     resolve_legacy_artifact_root,
 )
+from common.contracts.file_identity import file_sha256 as _sha256
 
 
 EXPECTED_TRANSFORM = {
@@ -36,10 +36,6 @@ def _load(path: Path) -> dict:
     if not isinstance(value, dict):
         raise ValueError(f"JSON object required: {path}")
     return value
-
-
-def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest().upper()
 
 
 def resolve_simion_layout_template(

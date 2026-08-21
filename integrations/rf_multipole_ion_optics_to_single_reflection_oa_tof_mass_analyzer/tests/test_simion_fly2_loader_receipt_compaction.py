@@ -8,7 +8,7 @@ import unittest
 import zipfile
 from pathlib import Path
 
-from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.tests.verify_simion_fly2_loader_characterization import (
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.validation.verify_simion_fly2_loader_characterization import (
     AUTHORIZATION_RAW_FIELDS,
     AUTHORIZATION_RECEIPT,
     CHARACTERIZATION_RAW_FIELDS,
@@ -37,6 +37,17 @@ CANONICAL_SOURCE = (
 
 
 class SimionFly2LoaderReceiptCompactionTest(unittest.TestCase):
+    def test_prepare_does_not_require_historical_test_harness(self) -> None:
+        prepare = (
+            Path(__file__).resolve().parents[1]
+            / "workflows/family_source_closure/prepare.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("historical provenance", prepare)
+        self.assertNotIn(
+            'identity_files.append(("harness_path", "harness_sha256", "loader harness"))',
+            prepare,
+        )
+
     def test_git_summaries_are_compact_and_share_raw_evidence(self) -> None:
         characterization = json.loads(RECEIPT.read_text(encoding="utf-8"))
         authorization = json.loads(

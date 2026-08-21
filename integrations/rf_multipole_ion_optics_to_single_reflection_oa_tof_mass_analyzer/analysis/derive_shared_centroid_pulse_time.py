@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import math
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+from common.contracts.file_identity import file_sha256 as _sha256
 
 
 INTEGRATION_ROOT = Path(__file__).resolve().parents[1]
@@ -24,6 +25,10 @@ def validate_policy(policy_path: Path = POLICY_PATH) -> dict:
     policy = load_json(policy_path)
     if policy.get("schema_version") != 1:
         raise ValueError("pulse timing policy schema is invalid")
+    if policy.get("status") != (
+        "candidate_authorized_for_continuous_beam_n100_functional_validation"
+    ):
+        raise ValueError("pulse timing policy is not an active authorized contract")
     if policy.get("method") != "selected_species_ballistic_port_survivor_x_centroid":
         raise ValueError("pulse timing method is not the supported centroid scheduler")
     population = policy["population"]
@@ -39,14 +44,6 @@ def validate_policy(policy_path: Path = POLICY_PATH) -> dict:
     if claims.get("hit_rate_gate_required_for_timing_validation") is not False:
         raise ValueError("timing validation must remain independent of hit rate")
     return policy
-
-
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest().upper()
 
 
 def derive_schedule(

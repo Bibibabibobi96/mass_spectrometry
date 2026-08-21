@@ -216,12 +216,12 @@ class WorkflowArchitectureContractTests(unittest.TestCase):
             "transport_no_collision_candidate": {
                 "workflows/no_collision_transport/run_comsol.ps1",
                 "workflows/no_collision_transport/run_simion.ps1",
-                "workflows/no_collision_transport/compare_cross_solver.ps1",
+                "workflows/cross_solver/compare_cross_solver.ps1",
             },
             "transport_interface_readiness_candidate": {
                 "workflows/interface_readiness/run_comsol.ps1",
                 "workflows/interface_readiness/run_simion.ps1",
-                "workflows/interface_readiness/compare_cross_solver.ps1",
+                "workflows/cross_solver/compare_cross_solver.ps1",
             },
             "mass_filter_simion_functional_reference": {
                 "workflows/mass_filter_reference/run_simion.ps1",

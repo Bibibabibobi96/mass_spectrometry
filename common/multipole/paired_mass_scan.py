@@ -3,16 +3,12 @@
 from __future__ import annotations
 
 import csv
-import hashlib
 import json
 import math
 from pathlib import Path
 from typing import Any
 
-
-def sha256(path: Path) -> str:
-    """Return the uppercase SHA-256 digest of ``path``."""
-    return hashlib.sha256(path.read_bytes()).hexdigest().upper()
+from common.contracts.file_identity import file_sha256 as sha256
 
 
 def load_ion_rows(path: Path) -> list[list[str]]:

@@ -17,7 +17,7 @@ import pandas as pd
 
 from common.contracts.file_identity import file_sha256
 from common.contracts.verify_run_manifest import record_path
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.peak_metrics import compute_peak_metrics
+from common.analysis.peak_metrics import compute_peak_metrics
 
 EVENTS = ("pre_pulse_state", "accelerator_grid1_forward", "local_accelerator_exit", "accelerator_focus_forward", "reflectron_entrance_forward", "reflectron_midgrid_forward", "reflectron_turning_point", "reflectron_exit_return", "detector_crossing")
 ARMS = ("RR", "IR", "RI", "II")
@@ -48,6 +48,8 @@ def _verify_success_v2_manifest(path: Path) -> dict[str, object]:
             check=True,
             capture_output=True,
             text=True,
+            cwd=Path(__file__).resolve().parents[3],
+            timeout=60,
         )
     except subprocess.CalledProcessError as exc:
         detail = (exc.stderr or exc.stdout or "unknown verifier failure").strip()

@@ -725,6 +725,45 @@ class RealFieldPulseAnalysisTests(unittest.TestCase):
             ))
             cache_publish.assert_called_once()
 
+    def test_success_parent_replays_successful_confirmation_without_solver(self) -> None:
+        workspace = REPO_ROOT.parent
+        parent = workspace / (
+            "artifacts/projects/"
+            "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/"
+            "runs/20260819_050000__sim__cross__gap51p2-full-flow-dt40__n1000"
+        )
+        if not (parent / "run_manifest.json").is_file():
+            self.skipTest("canonical successful publication parent is not available")
+        scratch = workspace / "artifacts" / "projects" / INTEGRATION_ID / "scratch"
+        scratch.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=scratch) as directory:
+            replay = Path(directory) / (
+                "20260819_051000__analysis__python__verified-pulse-publication-replay__n1000"
+            )
+            with patch(
+                "integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer."
+                "workflows.family_source_closure.publish_run._publish_verified_pulse_cache"
+            ) as cache_publish:
+                manifest_path = publish_verified_pulse_publication_replay(
+                    repo_root=REPO_ROOT,
+                    workspace_root=workspace,
+                    replay_run_dir=replay,
+                    failed_parent_manifest_path=parent / "run_manifest.json",
+                    execution_receipt_path=parent / "execution_receipt.json",
+                    resolved_path=parent / "resolved_connection.json",
+                    plan_path=parent / "composition_plan.json",
+                    budget_path=parent / "resolved_engineering_budget.json",
+                )
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            summary = json.loads((replay / "summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["status"], "success")
+            self.assertFalse(summary["solver_rerun"])
+            self.assertEqual(
+                summary["confirmation_child_run_id"],
+                "20260819_050000__sim__simion__rf-oatof-single-flight-gap51p2__n1000",
+            )
+            cache_publish.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

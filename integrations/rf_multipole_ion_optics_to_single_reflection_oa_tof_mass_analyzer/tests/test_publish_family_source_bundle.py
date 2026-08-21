@@ -335,7 +335,7 @@ class FamilySourceBundlePublisherTests(unittest.TestCase):
             capture_output=True,
             text=True,
             encoding="utf-8",
-            check=False,
+            check=False, timeout=300,
         )
 
     def _assert_snapshot_failure_when_missing(
@@ -501,7 +501,7 @@ class FamilySourceBundlePublisherTests(unittest.TestCase):
             capture_output=True,
             text=True,
             encoding="utf-8",
-            check=False,
+            check=False, timeout=300,
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("OATOF_SIMION_INPUT=PASS", completed.stdout)

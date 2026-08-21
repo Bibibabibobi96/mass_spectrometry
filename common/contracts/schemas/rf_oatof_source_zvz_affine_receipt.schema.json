@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/rf_oatof_source_zvz_affine_receipt.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "role", "policy_id", "source_state", "claim_limit"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "rf_oatof_source_zvz_affine_receipt"},
+    "policy_id": {"const": "source_zvz_affine_identify_and_bind_v1"},
+    "claim_limit": {"type": "string", "minLength": 1},
+    "source_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sha256", "particle_count", "ordered_particle_id_sha256", "mean_global_z_mm", "mean_vz_m_per_s", "ols_intercept_vz_m_per_s", "ols_slope_vz_m_per_s_per_mm", "residual_rms_m_per_s", "residual_max_abs_m_per_s", "mass_to_charge_th"],
+      "properties": {
+        "sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"},
+        "particle_count": {"type": "integer", "minimum": 3},
+        "ordered_particle_id_sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"},
+        "mean_global_z_mm": {"type": "number"},
+        "mean_vz_m_per_s": {"type": "number"},
+        "ols_intercept_vz_m_per_s": {"type": "number"},
+        "ols_slope_vz_m_per_s_per_mm": {"type": "number"},
+        "residual_rms_m_per_s": {"type": "number", "minimum": 0},
+        "residual_max_abs_m_per_s": {"type": "number", "minimum": 0},
+        "mass_to_charge_th": {"type": "number", "exclusiveMinimum": 0}
+      }
+    }
+  }
+}

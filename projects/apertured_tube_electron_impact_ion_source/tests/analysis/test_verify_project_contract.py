@@ -12,6 +12,6 @@ class VerifyProjectContractTests(unittest.TestCase):
         resolve_index = source.index(
             "$PythonExe = (Resolve-Path -LiteralPath $PythonExe -ErrorAction Stop).Path"
         )
-        push_location_index = source.index("Push-Location $projectRoot")
+        push_location_index = source.index("Push-Location $repoRoot")
 
         self.assertLess(resolve_index, push_location_index)

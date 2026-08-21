@@ -3,20 +3,16 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 from pathlib import Path
 from typing import Any
 
 from common.contracts.particle_state import canonical_sources, ion11_sources
+from common.contracts.file_identity import file_sha256 as sha256
 from projects.rf_quadrupole_ion_optics.analysis.paired_particle_source_bundle import (
     load_declared_bundle_specification,
     validate_bundle,
 )
-
-
-def sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest().upper()
 
 
 def _validate_representation_equivalence(

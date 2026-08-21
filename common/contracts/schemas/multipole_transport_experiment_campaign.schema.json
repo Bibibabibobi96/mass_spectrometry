@@ -425,6 +425,15 @@
               "maximum": 1000000
             }
           }
+        },
+        "execution_batching": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["dispatch", "batch_count"],
+          "properties": {
+            "dispatch": {"const": "single_wave_parallel"},
+            "batch_count": {"type": "integer", "minimum": 1, "maximum": 16}
+          }
         }
       }
     },

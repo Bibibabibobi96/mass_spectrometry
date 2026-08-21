@@ -17,8 +17,8 @@ from common.multipole.numerical_observables import (
     PARTICLE_ENVELOPE_FIELDS,
     observable_differences,
     run_data,
-    sha256_file,
 )
+from common.contracts.file_identity import file_sha256
 from common.multipole.numerical_qualification import (
     evaluate,
     load_engineering_progression_contract,
@@ -452,15 +452,15 @@ def engineering_batch(
         policy_path, functional_contract_path
     )
     manifest_sha256 = {
-        key: sha256_file(path) for key, path in run_paths.items()
+        key: file_sha256(path) for key, path in run_paths.items()
     }
     runs = {key: run_loader(path) for key, path in run_paths.items()}
     if any(
-        sha256_file(run_paths[key]) != digest
+        file_sha256(run_paths[key]) != digest
         for key, digest in manifest_sha256.items()
     ):
         raise ValueError("engineering batch run manifest changed during loading")
-    if sha256_file(plan_path.resolve()) != plan_sha256:
+    if file_sha256(plan_path.resolve()) != plan_sha256:
         raise ValueError("engineering batch plan changed during analysis")
     required_provenance = ("run_id", "project", "solver")
     for key, run in runs.items():
@@ -493,10 +493,10 @@ def engineering_batch(
         statuses.append(status)
         results.append({**comparison, "result": result})
 
-    if sha256_file(plan_path.resolve()) != plan_sha256:
+    if file_sha256(plan_path.resolve()) != plan_sha256:
         raise ValueError("engineering batch plan changed during analysis")
     if any(
-        sha256_file(run_paths[key]) != digest
+        file_sha256(run_paths[key]) != digest
         for key, digest in manifest_sha256.items()
     ):
         raise ValueError("engineering batch run manifest changed during analysis")

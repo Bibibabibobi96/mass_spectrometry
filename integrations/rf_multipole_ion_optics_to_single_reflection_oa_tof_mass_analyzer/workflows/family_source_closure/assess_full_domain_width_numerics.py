@@ -209,6 +209,7 @@ def _verify_manifest_process(
         text=True,
         encoding="utf-8",
         errors="replace",
+        timeout=60,
     )
 
 

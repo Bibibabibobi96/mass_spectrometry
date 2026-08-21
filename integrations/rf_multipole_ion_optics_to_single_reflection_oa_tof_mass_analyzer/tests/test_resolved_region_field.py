@@ -12,6 +12,8 @@ from common.contracts.machine_contracts import validate_schema
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.resolved_region_field import (
     FULL_ID,
     FULL_THREE_ZONE_PROFILE_ID,
+    THREE_ZONE_EXPLICIT_REGION_MODES_PROFILE_ID,
+    THREE_ZONE_REAL_ACCELERATOR_IDEAL_REFLECTRON_PROFILE_ID,
     THREE_ZONE_PROFILE_ID,
     THREE_ZONE_REAL_PA_PROFILE_ID,
     THREE_ZONE_TOPOLOGY_ID,
@@ -201,6 +203,65 @@ class ResolvedRegionFieldTests(unittest.TestCase):
         self.assertIn("local fullthree_m_refl2=1", lua)
         self.assertIn("analytic reflectron field requires rotated instance 2", lua)
         self.assertIn("dvoltsx_gu=-E*state.instance_dx_mm*state.instance_scale", lua)
+
+    def test_three_zone_real_accelerator_ideal_reflectron_is_independent_profile(self) -> None:
+        contract = self._build_three_zone(
+            THREE_ZONE_REAL_ACCELERATOR_IDEAL_REFLECTRON_PROFILE_ID
+        )
+        semantic = contract["semantic"]
+        self.assertEqual(
+            semantic["field_configuration_id"],
+            "REAL_THREE_ZONE_ACCELERATOR_IDEAL_REFLECTOR_FIELD",
+        )
+        self.assertEqual(
+            semantic["region_modes"],
+            {
+                "accelerator_zone1": "real_pa_field",
+                "accelerator_zone2": "real_pa_field",
+                "accelerator_zone3": "real_pa_field",
+                "drift": "zero_field",
+                "reflectron_stage1": "analytic_ideal_field",
+                "reflectron_stage2": "analytic_ideal_field",
+            },
+        )
+        self.assertEqual(
+            semantic["pa_role"],
+            "geometry_and_collision_carrier_plus_explicit_real_pa_field_regions",
+        )
+        validate_schema(contract, "rf_oatof_resolved_region_field_contract.schema.json")
+        lua = resolved_region_field_hook_lua(contract, prefix="reflideal")
+        self.assertIn("local reflideal_m_zone1=0", lua)
+        self.assertIn("local reflideal_m_drift=2", lua)
+        self.assertIn("local reflideal_m_refl1=1", lua)
+
+    def test_explicit_three_zone_modes_allow_any_region_combination(self) -> None:
+        selected = {
+            "accelerator_zone1": "analytic_ideal_field",
+            "accelerator_zone2": "real_pa_field",
+            "accelerator_zone3": "zero_field",
+            "drift": "real_pa_field",
+            "reflectron_stage1": "analytic_ideal_field",
+            "reflectron_stage2": "real_pa_field",
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            contract = build_resolved_region_field_contract(
+                GEOMETRY,
+                Path(temporary) / "resolved.json",
+                THREE_ZONE_EXPLICIT_REGION_MODES_PROFILE_ID,
+                accelerator_topology=self.THREE_ZONE_TOPOLOGY,
+                three_zone_region_modes=selected,
+            )
+        self.assertEqual(contract["semantic"]["region_modes"], selected)
+        self.assertEqual(
+            contract["semantic"]["field_configuration_id"],
+            "EXPLICIT_THREE_ZONE_REGION_MODES_FIELD",
+        )
+        validate_schema(contract, "rf_oatof_resolved_region_field_contract.schema.json")
+        lua = resolved_region_field_hook_lua(contract, prefix="arbitrary")
+        self.assertIn("local arbitrary_m_zone1=1", lua)
+        self.assertIn("local arbitrary_m_zone2=0", lua)
+        self.assertIn("local arbitrary_m_zone3=2", lua)
+        self.assertIn("local arbitrary_m_refl1=1", lua)
 
     def test_full_domain_three_zone_profile_registration_is_exact(self) -> None:
         config = json.loads(CONFIG.read_text(encoding="utf-8"))

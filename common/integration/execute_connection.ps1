@@ -9,7 +9,8 @@ param(
     [switch]$PrepareOnly,
     [string]$AdapterEntrypoint = '',
     [string]$RunId = '',
-    [switch]$SolverAuthorized
+    [switch]$SolverAuthorized,
+    [switch]$FinalizeOnly
 )
 
 Set-StrictMode -Version Latest
@@ -76,9 +77,9 @@ if (-not [string]::Equals(
 }
 if (-not $PrepareOnly) {
     if ([string]::IsNullOrWhiteSpace($RunId)) {
-        throw 'Physical integration execution requires an explicit RunId.'
+        throw 'Physical or finalize integration execution requires an explicit RunId.'
     }
-    if (-not $SolverAuthorized) {
+    if (-not $SolverAuthorized -and -not $FinalizeOnly) {
         throw 'Physical integration execution requires explicit solver authorization.'
     }
 }
@@ -91,6 +92,7 @@ $adapterArguments = @{
 }
 if ($PrepareOnly) { $adapterArguments.PrepareOnly = $true }
 if ($SolverAuthorized) { $adapterArguments.SolverAuthorized = $true }
+if ($FinalizeOnly) { $adapterArguments.FinalizeOnly = $true }
 & $AdapterEntrypoint @adapterArguments
 if ($LASTEXITCODE -ne 0) {
     throw 'Integration-owned adapter failed.'

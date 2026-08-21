@@ -91,8 +91,8 @@ class PulseCaptureChainAuditTests(unittest.TestCase):
             text,
         )
         self.assertIn(
-            "Write-RfFrozenRunManifest -Python $python "
-            "-FrozenRepoRoot $manifestToolRoot",
+            "Write-RunManifest -Python $python "
+            "-RepoRoot $manifestToolRoot",
             text.replace("`\n    ", ""),
         )
         self.assertNotIn("common\\comsol\\run_comsol_r2025b.ps1", text)

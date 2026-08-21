@@ -5,12 +5,12 @@ from __future__ import annotations
 import argparse
 import copy
 import csv
-import hashlib
 import json
 import math
 from pathlib import Path
 from typing import Any
 
+from common.contracts.file_identity import file_sha256 as sha256
 from projects.rf_quadrupole_ion_optics.analysis.particle_state_comparison_core import (
     aggregate_handoff,
     event_ids,
@@ -21,10 +21,6 @@ from projects.rf_quadrupole_ion_optics.analysis.particle_state_comparison_core i
 from projects.rf_quadrupole_ion_optics.analysis.validate_paired_particle_source_binding import (
     resolve_binding,
 )
-
-
-def sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest().upper()
 
 
 def within_acceptance(value: float | None, maximum: float) -> bool:

@@ -20,10 +20,10 @@ from projects.rf_quadrupole_ion_optics.analysis.validate_paired_particle_source_
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = PROJECT_ROOT.parents[1]
-CROSS_ROOT = PROJECT_ROOT / "workflows" / "interface_readiness"
+CROSS_ROOT = PROJECT_ROOT / "workflows" / "cross_solver"
 IDENTITY_HELPER = PROJECT_ROOT / "runtime" / "particle_table_identity.ps1"
 CROSS_RUNNER = CROSS_ROOT / "compare_cross_solver.ps1"
-COMSOL_RUNNER = CROSS_ROOT / "run_comsol.ps1"
+COMSOL_RUNNER = PROJECT_ROOT / "workflows" / "interface_readiness" / "run_comsol.ps1"
 PROJECT_GATE = PROJECT_ROOT / "verify_project.ps1"
 LIFECYCLE_SUPPORT = PROJECT_ROOT / "runtime" / "cross_solver_analysis_lifecycle.ps1"
 
@@ -481,28 +481,19 @@ class CandidateGateParameterContractTests(unittest.TestCase):
             / "runtime"
             / "cross_solver_analysis_lifecycle.ps1"
         ).read_text(encoding="utf-8")
-        self.assertIn("'--particles',$frozenIon11", cross_runner)
+        self.assertIn("'--particles',$fion", cross_runner)
         self.assertIn("execution_status='success'", cross_runner)
         self.assertIn("decision_status=$decisionStatus", cross_runner)
         self.assertIn("-Status success", support)
         self.assertIn("if($decisionStatus-ne'PASS')", cross_runner)
         self.assertIn("Complete-FailedRun", cross_runner)
-        self.assertIn("$decisionStatus = 'NOT_EVALUATED'", cross_runner)
+        self.assertIn("$decisionStatus='NOT_EVALUATED'", cross_runner)
 
     def test_cross_run_config_freezes_cross_representation_bindings(self) -> None:
         cross_runner = CROSS_RUNNER.read_text(encoding="utf-8")
-        self.assertIn(
-            "particle_table_ion11=$frozenIon11",
-            cross_runner,
-        )
-        self.assertIn(
-            "particle_table_canonical10=$frozenCanonical",
-            cross_runner,
-        )
-        self.assertIn(
-            "source_sample_family_sha256=$particleIdentity.source_sample_family_sha256",
-            cross_runner,
-        )
+        self.assertIn("particle_table_ion11=$fion", cross_runner)
+        self.assertIn("particle_table_canonical10=$fcan", cross_runner)
+        self.assertIn("Assert-RfTransportParticleTableIdentity", cross_runner)
         self.assertIn("Format='ion11'", cross_runner)
         self.assertIn("Format='canonical'", cross_runner)
         self.assertIn("Copy-CrossSolverAnalysisInputs", cross_runner)
@@ -517,22 +508,14 @@ class CandidateGateParameterContractTests(unittest.TestCase):
         self.assertNotIn("$comsolConfig.frequency_hz", cross_runner)
         self.assertNotIn("$simionConfig.rf_peak_v", cross_runner)
         self.assertNotIn("$simionConfig.frequency_hz", cross_runner)
-        self.assertIn("comsol_resolved_design=$frozenComsolResolved", cross_runner)
-        self.assertIn("simion_resolved_design=$frozenSimionResolved", cross_runner)
-        self.assertIn("rf_peak_v=$resolvedDrive.rf_peak_v", cross_runner)
-        self.assertIn("frequency_hz=$resolvedDrive.frequency_hz", cross_runner)
-        self.assertIn(
-            "resolved_design_sha256=$resolvedDrive.resolved_design_sha256",
-            cross_runner,
-        )
+        self.assertIn("comsol_resolved_design=$fcr", cross_runner)
+        self.assertIn("simion_resolved_design=$fsr", cross_runner)
+        self.assertIn("$FrequencyHz=[double]$drive.frequency_hz", cross_runner)
         self.assertLess(
             cross_runner.index("Assert-RfTransportParticleTableIdentity"),
-            cross_runner.index("$comsolResolvedSource"),
+            cross_runner.index("$cres=Resolve-Input"),
         )
-        self.assertLess(
-            cross_runner.index("Copy-CrossSolverAnalysisInputs"),
-            cross_runner.index("$resolvedDrive = Get-CrossSolverResolvedDrive"),
-        )
+        self.assertIn("Copy-ModeInput $base", cross_runner)
 
     def test_project_gate_does_not_select_or_forward_candidate_workflows(self) -> None:
         project_gate = PROJECT_GATE.read_text(encoding="utf-8")

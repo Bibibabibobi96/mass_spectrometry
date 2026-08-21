@@ -153,8 +153,8 @@ if ($PSCmdlet.ParameterSetName -eq 'Status') {
 $selected = if ($PSCmdlet.ParameterSetName -eq 'All') {@($campaign.experiments)} else {
   @($campaign.experiments | Where-Object {[string]$_.experiment_id -eq $ExperimentId})
 }
-if ($selected.Count -eq 0) {throw "Campaign experiment is missing: $ExperimentId"}
-if ($PSCmdlet.ParameterSetName -eq 'One' -and $selected.Count -ne 1) {
+if (@($selected).Count -eq 0) {throw "Campaign experiment is missing: $ExperimentId"}
+if ($PSCmdlet.ParameterSetName -eq 'One' -and @($selected).Count -ne 1) {
   throw "Campaign experiment identity is not unique: $ExperimentId"
 }
 

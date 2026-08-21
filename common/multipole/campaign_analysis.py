@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import math
 from pathlib import Path
@@ -11,6 +10,7 @@ import subprocess
 import sys
 from typing import Any
 
+from common.contracts.file_identity import file_sha256 as _sha256
 from common.contracts.machine_contracts import ContractError, validate_schema
 from common.contracts.verify_run_manifest import record_path
 from common.multipole.campaign_status import _verify_manifest as verify_campaign_manifest
@@ -60,10 +60,6 @@ def _load_json(path: Path) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError(f"JSON object required: {path}")
     return value
-
-
-def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest().upper()
 
 
 def _resolve_catalog_module(repo_root: Path, module: str) -> str:

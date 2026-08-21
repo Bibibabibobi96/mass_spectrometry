@@ -100,14 +100,18 @@
       "required": [
         "mode", "variation_axis", "producer_manifest", "checkpoint_output",
         "producer_pulse_schedule", "verified_pulse_receipt",
-        "materialization_receipt", "provider_profiles", "consumer_profile_id"
+        "materialization_receipt", "provider_profiles", "consumer_profile_id",
+        "producer_time_integration_profile_id", "consumer_time_integration_profile_id"
       ],
       "properties": {
         "mode": {"const": "manifest_bound_post_pulse_restart_reuse_v1"},
         "variation_axis": {
           "enum": [
             "time_integration_profile_id",
-            "accelerator_field_profile_id"
+            "accelerator_field_profile_id",
+            "diagnostic_state_transform",
+            "accelerator_field_profile_id_and_diagnostic_state_transform",
+            "accelerator_field_profile_id_and_source_zvz_theory_working_point"
           ]
         },
         "producer_manifest": {"$ref": "#/$defs/file"},
@@ -127,7 +131,9 @@
             "accelerator_field_profile_id": {"$ref": "#/$defs/id"}
           }
         },
-        "consumer_profile_id": {"$ref": "#/$defs/id"}
+        "consumer_profile_id": {"$ref": "#/$defs/id"},
+        "producer_time_integration_profile_id": {"$ref": "#/$defs/id"},
+        "consumer_time_integration_profile_id": {"$ref": "#/$defs/id"}
       }
     }
   },

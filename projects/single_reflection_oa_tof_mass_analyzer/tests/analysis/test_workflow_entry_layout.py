@@ -142,9 +142,9 @@ class WorkflowEntryLayoutTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         inspector = (
             PROJECT_ROOT
-            / "tests"
             / "simion"
-            / "test_support"
+            / "workbench"
+            / "formal"
             / "inspect_native_ideal_grid_rows.lua"
         ).read_text(encoding="utf-8")
         self.assertIn("native_ideal_grid_raw_pa_receipt.json", runner)

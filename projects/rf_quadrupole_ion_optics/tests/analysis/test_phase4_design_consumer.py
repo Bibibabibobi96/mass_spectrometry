@@ -23,30 +23,16 @@ FORBIDDEN_RUNNER_TERMS = {
 
 class Phase4DesignConsumerTests(unittest.TestCase):
     def test_cross_solver_comparison_separates_physical_and_numerical_authority(self) -> None:
-        interface_analyzer = (
-            PROJECT_ROOT / "workflows" / "interface_readiness" / "evaluate.py"
+        evaluator = (
+            PROJECT_ROOT / "workflows" / "cross_solver" / "evaluate.py"
         ).read_text(encoding="utf-8")
-        component_analyzer = (
-            PROJECT_ROOT / "workflows" / "no_collision_transport" / "evaluate.py"
+        runner = (
+            PROJECT_ROOT / "workflows" / "cross_solver" / "compare_cross_solver.ps1"
         ).read_text(encoding="utf-8")
-        interface_runner = (
-            PROJECT_ROOT
-            / "workflows"
-            / "interface_readiness"
-            / "compare_cross_solver.ps1"
-        ).read_text(encoding="utf-8")
-        component_runner = (
-            PROJECT_ROOT
-            / "workflows"
-            / "no_collision_transport"
-            / "compare_cross_solver.ps1"
-        ).read_text(encoding="utf-8")
-        self.assertNotIn("transport_no_collision", interface_analyzer)
-        self.assertNotIn("transport_interface_readiness", component_analyzer)
-        self.assertIn("interface_readiness.evaluate", interface_runner)
-        self.assertIn("no_collision_transport.evaluate", component_runner)
-        self.assertNotIn("[string]$Mode", interface_runner)
-        self.assertNotIn("[string]$Mode", component_runner)
+        self.assertIn("transport_no_collision", evaluator)
+        self.assertIn("transport_interface_readiness", evaluator)
+        self.assertIn("ValidateSet('transport_no_collision','transport_interface_readiness')", runner)
+        self.assertIn("mode contract", evaluator)
         lifecycle = (
             PROJECT_ROOT
             / "runtime"

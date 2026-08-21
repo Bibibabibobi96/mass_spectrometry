@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import hashlib
 from pathlib import Path
@@ -375,29 +376,281 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
             )
             result = subprocess.run(
                 ["pwsh", "-NoProfile", "-Command", command],
+                cwd=REPO_ROOT,
                 check=True,
                 capture_output=True,
                 text=True,
+                timeout=120,
             )
             entries = list(cache_root.iterdir())
             self.assertEqual(len(entries), 1, result.stdout + result.stderr)
-            manifest = json.loads(
-                (entries[0] / "cache_manifest.json").read_text(encoding="utf-8-sig")
+            key_directory = entries[0]
+            pointer = json.loads(
+                (key_directory / "current_generation.json").read_text(
+                    encoding="utf-8-sig"
+                )
             )
-            self.assertEqual(manifest["schema_version"], 2)
-            self.assertEqual(manifest["cache_key"], entries[0].name)
+            entry = key_directory / pointer["generation_relative_path"]
+            manifest = json.loads(
+                (entry / "cache_manifest.json").read_text(encoding="utf-8-sig")
+            )
+            self.assertEqual(manifest["schema_version"], 3)
+            self.assertEqual(manifest["cache_key"], key_directory.name)
+            self.assertEqual(manifest["generation_sha256"], pointer["generation_sha256"])
+            self.assertEqual(manifest["payload_sha256"], pointer["payload_sha256"])
             self.assertEqual(len(manifest["files"]), 3)
             for name in ("frontend.gem", "frontend.pa#", "frontend.pa0"):
                 self.assertTrue(
-                    (entries[0] / name).stat().st_file_attributes
+                    (entry / name).stat().st_file_attributes
                     & stat.FILE_ATTRIBUTE_READONLY
                 )
             self.assertFalse(
-                (entries[0] / "cache_manifest.json").stat().st_file_attributes
+                (entry / "cache_manifest.json").stat().st_file_attributes
                 & stat.FILE_ATTRIBUTE_READONLY
             )
 
-    def test_shared_cache_helper_verifies_hit_and_removes_invalid_v2_entry(self) -> None:
+    def test_legacy_v2_cache_promotion_rehashes_and_preserves_legacy_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            cache_root = (
+                workspace / "artifacts" / "projects" / INTEGRATION_ID / "cache"
+                / "simion_single_flight_frontend"
+            )
+            identity = {
+                "schema_version": 2,
+                "role": "simion_single_flight_frontend_pa_cache",
+                "project_id": INTEGRATION_ID,
+                "solver": {
+                    "name": "SIMION",
+                    "product_version": "2020",
+                    "executable_sha256": "C" * 64,
+                },
+                "critical_options": {"refine": ["--nogui", "refine"]},
+            }
+            identity_path = workspace / "identity.json"
+            write_json(identity_path, identity)
+            key = hashlib.sha256(
+                json.dumps(identity, separators=(",", ":")).encode("utf-8")
+            ).hexdigest()
+            legacy = cache_root / key
+            legacy.mkdir(parents=True)
+            payload = {
+                "frontend.gem": b"legacy-gem",
+                "frontend.pa#": b"legacy-pa-sharp",
+                "frontend.pa0": b"legacy-pa-zero",
+            }
+            for name, value in payload.items():
+                (legacy / name).write_bytes(value)
+            legacy_manifest = {
+                "schema_version": 2,
+                "role": identity["role"],
+                "cache_key": key,
+                "provider_run_id": "legacy-provider",
+                "cache_key_input": json.dumps(identity, separators=(",", ":")),
+                "identity": identity,
+                "files": [
+                    {
+                        "name": name,
+                        "bytes": len(value),
+                        "sha256": hashlib.sha256(value).hexdigest().upper(),
+                    }
+                    for name, value in payload.items()
+                ],
+            }
+            write_json(legacy / "cache_manifest.json", legacy_manifest)
+            command = (
+                f". '{RUN_ARTIFACTS_PATH}'; "
+                f"$identity=Get-Content -Raw -LiteralPath '{identity_path}' | ConvertFrom-Json; "
+                f"Promote-RfVerifiedLegacyV2CacheEntry -Python '{Path(sys.executable)}' "
+                f"-RepoRoot '{REPO_ROOT}' -WorkspaceRoot '{workspace}' "
+                f"-ProjectId '{INTEGRATION_ID}' -CacheRoot '{cache_root}' "
+                f"-CacheKey '{key}' -Role $identity.role -Identity $identity | Out-Null"
+            )
+            subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", command], cwd=REPO_ROOT,
+                check=True, capture_output=True, text=True, timeout=120,
+            )
+            self.assertEqual(
+                json.loads((legacy / "cache_manifest.json").read_text(encoding="utf-8")),
+                legacy_manifest,
+            )
+            for name, value in payload.items():
+                self.assertEqual((legacy / name).read_bytes(), value)
+            pointer = json.loads(
+                (legacy / "current_generation.json").read_text(encoding="utf-8-sig")
+            )
+            generation = legacy / pointer["generation_relative_path"]
+            promoted = json.loads(
+                (generation / "cache_manifest.json").read_text(encoding="utf-8-sig")
+            )
+            self.assertEqual(promoted["schema_version"], 3)
+            self.assertEqual(promoted["provider_run_id"], "legacy-provider")
+            self.assertEqual(promoted["identity"], legacy_manifest["identity"])
+            for name, value in payload.items():
+                self.assertEqual((generation / name).read_bytes(), value)
+                self.assertTrue(
+                    (generation / name).stat().st_file_attributes
+                    & stat.FILE_ATTRIBUTE_READONLY
+                )
+
+    def test_legacy_v2_cache_promotion_requires_exact_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            cache_root = (
+                workspace / "artifacts" / "projects" / INTEGRATION_ID / "cache"
+                / "simion_single_flight_frontend"
+            )
+            legacy_identity = {
+                "schema_version": 2,
+                "role": "simion_single_flight_frontend_pa_cache",
+                "project_id": INTEGRATION_ID,
+                "solver": {"name": "SIMION", "product_version": "2020", "executable_sha256": "D" * 64},
+                "critical_options": {"refine": ["--nogui", "refine"]},
+            }
+            key = hashlib.sha256(
+                json.dumps(legacy_identity, separators=(",", ":")).encode("utf-8")
+            ).hexdigest()
+            legacy = cache_root / key
+            legacy.mkdir(parents=True)
+            value = b"legacy-pa"
+            (legacy / "frontend.pa0").write_bytes(value)
+            write_json(legacy / "cache_manifest.json", {
+                "schema_version": 2, "role": legacy_identity["role"],
+                "cache_key": key, "provider_run_id": "legacy-provider",
+                "cache_key_input": json.dumps(legacy_identity, separators=(",", ":")),
+                "identity": legacy_identity,
+                "files": [{"name": "frontend.pa0", "bytes": len(value),
+                           "sha256": hashlib.sha256(value).hexdigest().upper()}],
+            })
+            incompatible = dict(legacy_identity)
+            incompatible["critical_options"] = {"refine": ["--nogui", "other"]}
+            identity_path = workspace / "identity.json"
+            write_json(identity_path, incompatible)
+            command = (
+                f". '{RUN_ARTIFACTS_PATH}'; "
+                f"$identity=Get-Content -Raw -LiteralPath '{identity_path}' | ConvertFrom-Json; "
+                f"$result=Promote-RfVerifiedLegacyV2CacheEntry -Python '{Path(sys.executable)}' "
+                f"-RepoRoot '{REPO_ROOT}' -WorkspaceRoot '{workspace}' "
+                f"-ProjectId '{INTEGRATION_ID}' -CacheRoot '{cache_root}' "
+                f"-CacheKey '{key}' -Role $identity.role -Identity $identity; "
+                "if ($null -ne $result) { throw 'unexpected promotion' }"
+            )
+            result = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", command], cwd=REPO_ROOT,
+                capture_output=True, text=True, timeout=120,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse((legacy / "current_generation.json").exists())
+            self.assertEqual((legacy / "frontend.pa0").read_bytes(), value)
+
+    def test_required_existing_normal_cache_path_reuses_verified_legacy_and_rejects_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+
+            def write_legacy(cache_root: Path, identity: dict, payload: bytes) -> tuple[str, Path]:
+                key = hashlib.sha256(
+                    json.dumps(identity, separators=(",", ":")).encode("utf-8")
+                ).hexdigest()
+                legacy = cache_root / key
+                legacy.mkdir(parents=True)
+                files = {
+                    "frontend.gem": payload + b"-gem",
+                    "frontend.pa#": payload + b"-sharp",
+                    "frontend.pa0": payload,
+                }
+                for name, value in files.items():
+                    (legacy / name).write_bytes(value)
+                write_json(legacy / "cache_manifest.json", {
+                    "schema_version": 2, "role": identity["role"],
+                    "cache_key": key, "provider_run_id": "legacy-provider",
+                    "cache_key_input": json.dumps(identity, separators=(",", ":")),
+                    "identity": identity,
+                    "files": [
+                        {"name": name, "bytes": len(value),
+                         "sha256": hashlib.sha256(value).hexdigest().upper()}
+                        for name, value in files.items()
+                    ],
+                })
+                return key, legacy
+
+            exact_identity = {
+                "schema_version": 2,
+                "role": "simion_single_flight_frontend_pa_cache",
+                "project_id": INTEGRATION_ID,
+                "solver": {"name": "SIMION", "product_version": "2020", "executable_sha256": "E" * 64},
+                "critical_options": {"refine": ["--nogui", "refine"]},
+            }
+            exact_root = workspace / "artifacts" / "projects" / INTEGRATION_ID / "cache" / "simion_single_flight_frontend"
+            exact_key, exact_legacy = write_legacy(exact_root, exact_identity, b"exact-legacy")
+            exact_identity_path = workspace / "exact_identity.json"
+            write_json(exact_identity_path, exact_identity)
+            exact_command = (
+                f". '{RUN_ARTIFACTS_PATH}'; "
+                f"$identity=Get-Content -Raw -LiteralPath '{exact_identity_path}' | ConvertFrom-Json; "
+                f"$directory=Resolve-RfReusableCacheDirectory -Python '{Path(sys.executable)}' "
+                f"-RepoRoot '{REPO_ROOT}' -WorkspaceRoot '{workspace}' "
+                f"-ProjectId '{INTEGRATION_ID}' -CacheRoot '{exact_root}' "
+                f"-CacheKey '{exact_key}' -Role $identity.role -Identity $identity "
+                "-InvalidEntryAction preserve; "
+                "if ($null -eq $directory) { throw 'verified legacy cache was not reusable' }; "
+                f"if ($directory -ne '{exact_legacy}') {{ throw 'legacy cache did not remain direct' }}"
+            )
+            subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", exact_command],
+                cwd=REPO_ROOT, check=True, capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=120,
+            )
+            self.assertFalse((exact_legacy / "current_generation.json").exists())
+            self.assertEqual(
+                json.loads((exact_legacy / "cache_manifest.json").read_text(encoding="utf-8")),
+                {
+                    "schema_version": 2, "role": exact_identity["role"],
+                    "cache_key": exact_key, "provider_run_id": "legacy-provider",
+                    "cache_key_input": json.dumps(exact_identity, separators=(",", ":")),
+                    "identity": exact_identity,
+                    "files": [
+                        {"name": name, "bytes": len(value),
+                         "sha256": hashlib.sha256(value).hexdigest().upper()}
+                        for name, value in {
+                            "frontend.gem": b"exact-legacy-gem",
+                            "frontend.pa#": b"exact-legacy-sharp",
+                            "frontend.pa0": b"exact-legacy",
+                        }.items()
+                    ],
+                },
+            )
+            self.assertEqual((exact_legacy / "frontend.pa0").read_bytes(), b"exact-legacy")
+
+            mismatch_identity = dict(exact_identity)
+            mismatch_identity["solver"] = dict(exact_identity["solver"])
+            mismatch_identity["solver"]["executable_sha256"] = "F" * 64
+            mismatch_root = exact_root
+            mismatch_key, mismatch_legacy = write_legacy(mismatch_root, mismatch_identity, b"mismatch-legacy")
+            incompatible = dict(mismatch_identity)
+            incompatible["solver"] = dict(mismatch_identity["solver"])
+            incompatible["solver"]["executable_sha256"] = "0" * 64
+            incompatible_path = workspace / "incompatible_identity.json"
+            write_json(incompatible_path, incompatible)
+            mismatch_command = (
+                f". '{RUN_ARTIFACTS_PATH}'; "
+                f"$identity=Get-Content -Raw -LiteralPath '{incompatible_path}' | ConvertFrom-Json; "
+                f"$directory=Resolve-RfReusableCacheDirectory -Python '{Path(sys.executable)}' "
+                f"-RepoRoot '{REPO_ROOT}' -WorkspaceRoot '{workspace}' "
+                f"-ProjectId '{INTEGRATION_ID}' -CacheRoot '{mismatch_root}' "
+                f"-CacheKey '{mismatch_key}' -Role $identity.role -Identity $identity "
+                "-InvalidEntryAction preserve; "
+                "if ($null -ne $directory) { throw 'mismatched legacy cache was reusable' }"
+            )
+            mismatch = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", mismatch_command],
+                cwd=REPO_ROOT, capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=120,
+            )
+            self.assertEqual(mismatch.returncode, 0, mismatch.stderr)
+            self.assertFalse((mismatch_legacy / "current_generation.json").exists())
+            self.assertEqual((mismatch_legacy / "frontend.pa0").read_bytes(), b"mismatch-legacy")
+
+    def test_shared_cache_helper_verifies_hit_and_removes_invalid_generation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             workspace = Path(directory)
             cache_root = (
@@ -415,33 +668,26 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
                 },
                 "critical_options": {"refine": ["--nogui", "refine"]},
             }
-            key_input = json.dumps(identity, separators=(",", ":"))
-            key = hashlib.sha256(key_input.encode()).hexdigest()
-            entry = cache_root / key
-            entry.mkdir(parents=True)
-            records = []
-            for name in ("frontend.gem", "frontend.pa#", "frontend.pa0"):
-                path = entry / name
-                path.write_text(f"{name}\n", encoding="utf-8")
-                records.append(
-                    {
-                        "name": name,
-                        "bytes": path.stat().st_size,
-                        "sha256": file_sha256(path),
-                    }
-                )
-            write_json(
-                entry / "cache_manifest.json",
-                {
-                    "schema_version": 2,
-                    "role": identity["role"],
-                    "cache_key": key,
-                    "provider_run_id": "fixture",
-                    "cache_key_input": key_input,
-                    "identity": identity,
-                    "files": records,
-                },
+            identity_path = workspace / "identity.json"
+            write_json(identity_path, identity)
+            publish = (
+                f". '{RUN_ARTIFACTS_PATH}'; "
+                f"$identity=Get-Content -Raw -LiteralPath '{identity_path}' | ConvertFrom-Json; "
+                "$key=Get-RfContentIdentitySha256 -Identity $identity; "
+                f"$staging=New-RfCacheStagingDirectory -CacheRoot '{cache_root}'; "
+                "'frontend.gem','frontend.pa#','frontend.pa0' | ForEach-Object { "
+                "[IO.File]::WriteAllText((Join-Path $staging $_), $_) }; "
+                f"Publish-RfVerifiedCacheEntry -Python '{Path(sys.executable)}' "
+                f"-RepoRoot '{REPO_ROOT}' -WorkspaceRoot '{workspace}' "
+                f"-ProjectId '{INTEGRATION_ID}' -CacheRoot '{cache_root}' "
+                "-CacheKey $key -Role $identity.role -Identity $identity "
+                "-StagingDirectory $staging -ProviderRunId fixture | Out-Null"
             )
+            subprocess.run(["pwsh", "-NoProfile", "-Command", publish], cwd=REPO_ROOT,
+                           check=True, capture_output=True, text=True, timeout=120)
+            key = next(cache_root.iterdir()).name
+            pointer = json.loads((cache_root / key / "current_generation.json").read_text(encoding="utf-8-sig"))
+            entry = cache_root / key / pointer["generation_relative_path"]
             command = (
                 f". '{RUN_ARTIFACTS_PATH}'; "
                 f"Test-RfReusableCacheEntry -Python '{Path(sys.executable)}' "
@@ -451,9 +697,11 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
             )
             first = subprocess.run(
                 ["pwsh", "-NoProfile", "-Command", command],
+                cwd=REPO_ROOT,
                 check=True,
                 capture_output=True,
                 text=True,
+                timeout=120,
             )
             self.assertIn("True", first.stdout)
             for name in ("frontend.gem", "frontend.pa#", "frontend.pa0"):
@@ -467,12 +715,64 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
             changed.chmod(stat.S_IREAD)
             second = subprocess.run(
                 ["pwsh", "-NoProfile", "-Command", command],
+                cwd=REPO_ROOT,
                 check=True,
                 capture_output=True,
                 text=True,
+                timeout=120,
             )
             self.assertIn("False", second.stdout)
             self.assertFalse(entry.exists())
+            self.assertTrue((cache_root / key).exists())
+
+    def test_rebuild_publishes_new_generation_without_overwriting_prior_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            cache_root = (
+                workspace / "artifacts" / "projects" / INTEGRATION_ID / "cache"
+                / "simion_single_flight_frontend"
+            )
+            identity = {
+                "schema_version": 2,
+                "role": "simion_single_flight_frontend_pa_cache",
+                "project_id": INTEGRATION_ID,
+                "solver": {"name": "SIMION", "product_version": "2020", "executable_sha256": "D" * 64},
+                "critical_options": {"refine": ["--nogui", "refine"]},
+            }
+            identity_path = workspace / "identity.json"
+            write_json(identity_path, identity)
+
+            def publish(label: str) -> None:
+                command = (
+                    f". '{RUN_ARTIFACTS_PATH}'; "
+                    f"$identity=Get-Content -Raw -LiteralPath '{identity_path}' | ConvertFrom-Json; "
+                    "$key=Get-RfContentIdentitySha256 -Identity $identity; "
+                    f"$staging=New-RfCacheStagingDirectory -CacheRoot '{cache_root}'; "
+                    "'frontend.gem','frontend.pa#','frontend.pa0' | ForEach-Object { "
+                    f"[IO.File]::WriteAllText((Join-Path $staging $_), '{label}:' + $_) }}; "
+                    f"Publish-RfVerifiedCacheEntry -Python '{Path(sys.executable)}' "
+                    f"-RepoRoot '{REPO_ROOT}' -WorkspaceRoot '{workspace}' "
+                    f"-ProjectId '{INTEGRATION_ID}' -CacheRoot '{cache_root}' "
+                    "-CacheKey $key -Role $identity.role -Identity $identity "
+                    f"-StagingDirectory $staging -ProviderRunId '{label}' | Out-Null"
+                )
+                subprocess.run(["pwsh", "-NoProfile", "-Command", command], cwd=REPO_ROOT,
+                               check=True, capture_output=True, text=True, timeout=120)
+
+            publish("first")
+            key_directory = next(cache_root.iterdir())
+            first_pointer = json.loads((key_directory / "current_generation.json").read_text(encoding="utf-8-sig"))
+            first_entry = key_directory / first_pointer["generation_relative_path"]
+            first_payload = (first_entry / "frontend.pa0").read_text(encoding="utf-8")
+            publish("second")
+            second_pointer = json.loads((key_directory / "current_generation.json").read_text(encoding="utf-8-sig"))
+            second_entry = key_directory / second_pointer["generation_relative_path"]
+            self.assertNotEqual(first_pointer["generation_sha256"], second_pointer["generation_sha256"])
+            self.assertNotEqual(first_pointer["payload_sha256"], second_pointer["payload_sha256"])
+            self.assertTrue(first_entry.is_dir())
+            self.assertEqual((first_entry / "frontend.pa0").read_text(encoding="utf-8"), first_payload)
+            self.assertEqual((second_entry / "frontend.pa0").read_text(encoding="utf-8"), "second:frontend.pa0")
+            self.assertEqual(len(list((key_directory / "generations").iterdir())), 2)
 
     def test_materialized_cache_copy_is_writable_without_mutating_source(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -489,9 +789,11 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
             )
             subprocess.run(
                 ["pwsh", "-NoProfile", "-Command", command],
+                cwd=REPO_ROOT,
                 check=True,
                 capture_output=True,
                 text=True,
+                timeout=120,
             )
             self.assertTrue(
                 source.stat().st_file_attributes & stat.FILE_ATTRIBUTE_READONLY
@@ -522,17 +824,110 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
                 "-CacheKey '" + key + "' -Role 'simion_single_flight_frontend_pa_cache' "
                 "-InvalidEntryAction preserve; exit 0"
             )
-            result = subprocess.run(["pwsh", "-NoProfile", "-Command", command], check=True, capture_output=True, text=True)
+            result = subprocess.run(["pwsh", "-NoProfile", "-Command", command], cwd=REPO_ROOT, check=True, capture_output=True, text=True, timeout=120)
             self.assertIn("False", result.stdout)
             self.assertTrue(entry.is_dir())
 
-    def test_build_policy_keeps_official_test_build_publish_chain(self) -> None:
+    def test_cache_key_lock_serializes_concurrent_verify_build_publish(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            cache_root = (
+                workspace / "artifacts" / "projects" / INTEGRATION_ID / "cache"
+                / "simion_single_flight_frontend"
+            )
+            identity = {
+                "schema_version": 2,
+                "role": "simion_single_flight_frontend_pa_cache",
+                "project_id": INTEGRATION_ID,
+                "solver": {
+                    "name": "SIMION",
+                    "product_version": "2020",
+                    "executable_sha256": "C" * 64,
+                },
+                "critical_options": {"refine": ["--nogui", "refine"]},
+            }
+            identity_path = workspace / "identity.json"
+            marker = workspace / "builds.txt"
+            write_json(identity_path, identity)
+
+            def publisher(label: str) -> subprocess.CompletedProcess[str]:
+                command = (
+                    f". '{RUN_ARTIFACTS_PATH}'; "
+                    f"$identity=Get-Content -Raw -LiteralPath '{identity_path}' | ConvertFrom-Json; "
+                    "$key=Get-RfContentIdentitySha256 -Identity $identity; "
+                    f"$lock=Enter-RfCacheKeyLock -CacheRoot '{cache_root}' -CacheKey $key; "
+                    "try { "
+                    f"$hit=Test-RfReusableCacheEntry -Python '{Path(sys.executable)}' "
+                    f"-RepoRoot '{REPO_ROOT}' -WorkspaceRoot '{workspace}' "
+                    f"-ProjectId '{INTEGRATION_ID}' -CacheRoot '{cache_root}' "
+                    "-CacheKey $key -Role $identity.role; "
+                    "if (-not $hit) { "
+                    f"[IO.File]::AppendAllText('{marker}', '{label}`n'); "
+                    "Start-Sleep -Milliseconds 800; "
+                    f"$staging=New-RfCacheStagingDirectory -CacheRoot '{cache_root}'; "
+                    "'frontend.gem','frontend.pa#','frontend.pa0' | ForEach-Object { "
+                    "[IO.File]::WriteAllText((Join-Path $staging $_), $_) }; "
+                    f"Publish-RfVerifiedCacheEntry -Python '{Path(sys.executable)}' "
+                    f"-RepoRoot '{REPO_ROOT}' -WorkspaceRoot '{workspace}' "
+                    f"-ProjectId '{INTEGRATION_ID}' -CacheRoot '{cache_root}' "
+                    "-CacheKey $key -Role $identity.role -Identity $identity "
+                    f"-StagingDirectory $staging -ProviderRunId '{label}' | Out-Null "
+                    "} "
+                    "} finally { Exit-RfCacheKeyLock -Mutex $lock }"
+                )
+                return subprocess.run(
+                    ["pwsh", "-NoProfile", "-Command", command],
+                    cwd=REPO_ROOT,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=120,
+                )
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                first, second = executor.map(publisher, ("first", "second"))
+            self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+            self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+            self.assertEqual(len(marker.read_text(encoding="utf-8").splitlines()), 1)
+
+    def test_build_policy_uses_direct_reuse_then_official_build_publish_fallback(self) -> None:
         runner = (RUN_ARTIFACTS_PATH.parent / "run_single_flight.ps1").read_text(encoding="utf-8")
-        test_index = runner.index("Test-RfReusableCacheEntry -Python $python")
-        gem2pa_index = runner.index("'--nogui','--noprompt','gem2pa'", test_index)
+        lock_index = runner.index("Enter-RfCacheKeyLock -CacheRoot $cacheRoot")
+        test_index = runner.index(
+            "Resolve-RfReusableCacheDirectory -Python $python"
+        )
+        gem2pa_index = runner.index(
+            "-ArgumentList @('--nogui','--noprompt','gem2pa'", test_index
+        )
         publish_index = runner.index("Publish-RfVerifiedCacheEntry -Python $python", gem2pa_index)
+        unlock_index = runner.index("Exit-RfCacheKeyLock -Mutex $frontendCacheLock")
+        self.assertLess(lock_index, test_index)
         self.assertLess(test_index, gem2pa_index)
         self.assertLess(gem2pa_index, publish_index)
+        self.assertLess(publish_index, unlock_index)
+        self.assertNotIn("-PromoteLegacyV2:$true", runner)
+
+    def test_construction_time_frontend_recheck_uses_the_same_reuse_resolver(self) -> None:
+        runner = (RUN_ARTIFACTS_PATH.parent / "run_single_flight.ps1").read_text(encoding="utf-8")
+        message = "Frontend PA cache changed during construction-time SIMION access."
+        recheck_start = runner.rfind("Resolve-RfReusableCacheDirectory -Python $python", 0, runner.index(message))
+        self.assertGreaterEqual(recheck_start, 0)
+        self.assertNotIn(
+            "Test-RfReusableCacheEntry -Python $python",
+            runner[recheck_start:runner.index(message)],
+        )
+
+    def test_ordinary_cache_freeze_accepts_verified_v2_but_strict_pairing_requires_v3(self) -> None:
+        runner = (RUN_ARTIFACTS_PATH.parent / "run_single_flight.ps1").read_text(encoding="utf-8")
+        freeze_block = runner[
+            runner.index("foreach ($binding in $cacheManifestBindings)"):
+            runner.index("$program = Join-Path $runtimeDir", runner.index("foreach ($binding in $cacheManifestBindings)"))
+        ]
+        self.assertIn("if ($hasRequiredPaCacheGenerationBinding)", freeze_block)
+        self.assertIn("schema_version -notin @(2,3)", freeze_block)
+        self.assertIn("lacks immutable generation identity", freeze_block)
 
     def test_campaign_repository_text_identity_is_newline_neutral_but_content_sensitive(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -577,7 +972,9 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
             )
             completed = subprocess.run(
                 ["pwsh", "-NoProfile", "-Command", command],
+                cwd=REPO_ROOT,
                 text=True, capture_output=True,
+                timeout=120,
             )
             frozen_source_text = frozen_source.read_text(encoding="utf-8")
             frozen_receipt_text = frozen_receipt.read_text(encoding="utf-8")

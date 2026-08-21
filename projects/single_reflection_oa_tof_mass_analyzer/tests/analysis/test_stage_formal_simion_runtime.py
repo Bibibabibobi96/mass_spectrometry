@@ -63,7 +63,7 @@ class StageFormalSimionRuntimeTests(unittest.TestCase):
             "mass": project / "workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1",
             "ideal": project / "simion/workbench/run_ideal_field_diagnostic.ps1",
             "geometry": project / "workflows/formal_reference/verify_geometry_contract.ps1",
-            "stable": project / "tests/simion/verify_stable_entry.ps1",
+            "stable": project / "workflows/formal_reference/verify_stable_entry.ps1",
             "diagnostics": project / "workflows/cross_solver_diagnostics/run_cross_solver_diagnostics.ps1",
         }
         combined = "\n".join(path.read_text(encoding="utf-8") for path in scripts.values())

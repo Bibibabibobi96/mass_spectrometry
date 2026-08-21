@@ -565,9 +565,29 @@ function Resolve-RfOatofRuntimeBinding {
       -Record $sourceRecord.metadata -Role 'runtime source metadata' `
       -AllowWorkspaceArtifact
   }
+  $sourcePopulationReceiptPath = Resolve-RfOatofBoundFile -Root $repo `
+    -Record $sourceRecord.population_derivation_receipt `
+    -Role 'runtime source population receipt' -AllowWorkspaceArtifact
+  $sourcePopulationReceipt = Get-Content -LiteralPath $sourcePopulationReceiptPath `
+    -Raw -Encoding UTF8 | ConvertFrom-Json
+  Assert-RfOatofExactProperties -Object $sourcePopulationReceipt `
+    -Expected @(
+      'schema_version','role','status','source_state','selector',
+      'particle_count','ordered_particle_id_sha256'
+    ) -Role 'Runtime source population receipt'
+  if ([int]$sourcePopulationReceipt.schema_version -ne 1 -or
+      [string]$sourcePopulationReceipt.role -ne
+        'rf_multipole_oatof_source_population_receipt' -or
+      [string]$sourcePopulationReceipt.status -ne 'PASS' -or
+      [string]$sourcePopulationReceipt.source_state.sha256 -ne
+        [string]$sourceRecord.state.sha256 -or
+      [int]$sourcePopulationReceipt.particle_count -ne
+        [int]$sourceRecord.particle_count) {
+    throw 'Runtime source population receipt differs from the frozen source.'
+  }
   $expectedSourceFields = @(
     'run_id','particle_count','particle_source_manifest_input_role',
-    'manifest','state','particle_source'
+    'manifest','state','particle_source','population_derivation_receipt'
   )
   if ($sourceRecord.PSObject.Properties.Name -contains 'metadata') {
     $expectedSourceFields += 'metadata'
@@ -592,7 +612,13 @@ function Resolve-RfOatofRuntimeBinding {
   } else {
     [int]$sourceRecord.particle_count
   }
-  $particleSourceRowCount = @(Import-Csv -LiteralPath $sourceParticleSource).Count
+  $countReceipt = Join-Path ([IO.Path]::GetTempPath()) ('rf_oatof_csv_count_{0}.json' -f [guid]::NewGuid())
+  try {
+    & (Join-Path $repo '.venv\Scripts\python.exe') -m common.simion.particle_batching `
+      --count-csv $sourceParticleSource --output $countReceipt | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Python particle-source CSV count failed.' }
+    $particleSourceRowCount = [int]((Get-Content -Raw -LiteralPath $countReceipt | ConvertFrom-Json).rows)
+  } finally { Remove-Item -LiteralPath $countReceipt -Force -ErrorAction SilentlyContinue }
   if ($launchedParticleCount -lt [int]$sourceRecord.particle_count -or
       $particleSourceRowCount -ne $launchedParticleCount) {
     throw 'Runtime launched and selected particle populations differ from their frozen files.'
@@ -659,15 +685,19 @@ function Resolve-RfOatofRuntimeBinding {
         ([string]$sourceRecord.state.sha256).ToUpperInvariant()) {
     throw 'Runtime source manifest does not prove the frozen successful source run.'
   }
-  $selectedStateRows = @(
-    Import-Csv -LiteralPath $sourceState | Where-Object {
-      [string]$_.event -eq [string]$sourceContract.selector.event -and
-      [string]$_.status -eq [string]$sourceContract.selector.status
-    }
-  )
-  if ($selectedStateRows.Count -ne
+  $countReceipt = Join-Path ([IO.Path]::GetTempPath()) ('rf_oatof_csv_count_{0}.json' -f [guid]::NewGuid())
+  try {
+    & (Join-Path $repo '.venv\Scripts\python.exe') -m common.simion.particle_batching `
+      --count-csv $sourceState `
+      --event ([string]$sourcePopulationReceipt.selector.event) `
+      --status ([string]$sourcePopulationReceipt.selector.status) `
+      --output $countReceipt | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Python selected-state CSV count failed.' }
+    $selectedStateRowCount = [int]((Get-Content -Raw -LiteralPath $countReceipt | ConvertFrom-Json).rows)
+  } finally { Remove-Item -LiteralPath $countReceipt -Force -ErrorAction SilentlyContinue }
+  if ($selectedStateRowCount -ne
       [int]$sourceRecord.particle_count) {
-    throw 'Runtime source state does not contain the declared selected handoff population.'
+    throw 'Runtime source state does not contain the receipt-derived population.'
   }
 
   $sourceIdentity = [ordered]@{

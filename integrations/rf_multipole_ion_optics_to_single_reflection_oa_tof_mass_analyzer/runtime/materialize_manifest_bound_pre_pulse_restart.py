@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 import csv
 import hashlib
+import io
 import json
 import math
 from pathlib import Path
@@ -14,12 +15,19 @@ from common.contracts.file_identity import file_sha256
 from common.contracts.machine_contracts import ContractError
 from common.contracts.particle_physics import kinetic_energy_ev
 from common.contracts.verify_run_manifest import record_path, verify_record
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.run_publication import (
+    portable_path as _portable,
+)
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.analyze_single_flight import (
     COLUMNS as CHECKPOINT_COLUMNS,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_source import (
     GLOBAL_COLUMNS,
     materialize_pre_pulse_restart,
+)
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.observed_pre_pulse_projection import (
+    ZVZ_AFFINE_RESIDUAL_REMOVED,
+    remove_zvz_affine_residual,
 )
 
 
@@ -64,11 +72,12 @@ def _id_sha256(particle_ids: Sequence[int]) -> str:
     return hashlib.sha256(payload).hexdigest().upper()
 
 
-def _portable(path: Path, workspace_root: Path) -> str:
-    try:
-        return path.resolve().relative_to(workspace_root.resolve()).as_posix()
-    except ValueError as exc:
-        raise ContractError("pre-pulse restart file escapes the workspace") from exc
+def _state_rows_sha256(rows: Sequence[dict[str, str | int]]) -> str:
+    buffer = io.StringIO(newline="")
+    writer = csv.DictWriter(buffer, fieldnames=GLOBAL_COLUMNS, lineterminator="\n")
+    writer.writeheader()
+    writer.writerows(rows)
+    return hashlib.sha256(buffer.getvalue().encode("utf-8")).hexdigest().upper()
 
 
 def _binding(path: Path, workspace_root: Path) -> dict[str, Any]:
@@ -129,8 +138,25 @@ def materialize(
     workspace_root: Path,
     state_output_path: Path,
     receipt_output_path: Path,
+    diagnostic_state_transform: str | None = None,
+    producer_time_integration_profile_id: str | None = None,
+    consumer_time_integration_profile_id: str | None = None,
 ) -> dict[str, Any]:
-    """Write one conditional post-pulse restart without detector postselection."""
+    """Write one conditional post-pulse restart without detector postselection.
+
+    The optional time-integration identities are recorded only when this
+    materialization is consumed as a manifest-bound post-pulse restart.  The
+    checkpoint is already a frozen initial state, so the producer and
+    consumer integration profiles may differ; no producer-stage integration
+    is repeated by the consumer.
+    """
+
+    if (producer_time_integration_profile_id is None) != (
+        consumer_time_integration_profile_id is None
+    ):
+        raise ContractError(
+            "producer and consumer time-integration profiles must be supplied together"
+        )
 
     workspace_root = workspace_root.resolve()
     child_manifest_path = child_manifest_path.resolve()
@@ -257,6 +283,8 @@ def materialize(
     ):
         raise ContractError("resolved population denominator differs")
 
+    if diagnostic_state_transform not in {None, ZVZ_AFFINE_RESIDUAL_REMOVED}:
+        raise ContractError("post-pulse diagnostic state transform is unsupported")
     output_rows: list[dict[str, str | int]] = []
     identity_map: list[dict[str, int]] = []
     for restart_id, checkpoint in enumerate(eligible_rows, start=1):
@@ -281,6 +309,13 @@ def materialize(
         if mass <= 0 or charge == 0:
             raise ContractError("pre-pulse checkpoint species is invalid")
         energy = kinetic_energy_ev(mass, *velocity)
+        checkpoint_energy = _finite(
+            checkpoint, "kinetic_energy_eV", "pre-pulse checkpoint"
+        )
+        if not math.isclose(
+            checkpoint_energy, energy, rel_tol=0.0, abs_tol=5e-9
+        ):
+            raise ContractError("pre-pulse checkpoint energy differs from state")
         output_rows.append(
             {
                 "particle_id": restart_id,
@@ -312,6 +347,14 @@ def materialize(
             }
         )
 
+    diagnostic: dict[str, float | str] | None = None
+    if diagnostic_state_transform is not None:
+        pre_transform_state_sha256 = _state_rows_sha256(output_rows)
+        try:
+            diagnostic = remove_zvz_affine_residual(output_rows)
+        except ValueError as exc:
+            raise ContractError("post-pulse diagnostic state transform failed") from exc
+
     state_output_path = state_output_path.resolve()
     receipt_output_path = receipt_output_path.resolve()
     _portable(state_output_path, workspace_root)
@@ -329,10 +372,13 @@ def materialize(
 
     restart_ids = list(range(1, len(output_rows) + 1))
     receipt = {
-        "schema_version": 1,
+        "schema_version": 2 if diagnostic is not None else 1,
         "role": RECEIPT_ROLE,
         "status": "PASS",
-        "method": "manifest_bound_pulse_eligible_checkpoint_reindex_v1",
+        "method": (
+            "manifest_bound_pulse_eligible_zvz_affine_residual_removed_v1"
+            if diagnostic is not None else "manifest_bound_pulse_eligible_checkpoint_reindex_v1"
+        ),
         "producer": {
             "run_id": manifest["run_id"],
             "manifest": _binding(child_manifest_path, workspace_root),
@@ -390,6 +436,16 @@ def materialize(
             "Candidate, Formal, or qualification authority."
         ),
     }
+    if producer_time_integration_profile_id is not None:
+        receipt["time_integration"] = {
+            "producer_time_integration_profile_id": producer_time_integration_profile_id,
+            "consumer_time_integration_profile_id": consumer_time_integration_profile_id,
+            "producer_stage_reintegration": False,
+        }
+    if diagnostic is not None:
+        diagnostic["pre_transform_state_sha256"] = pre_transform_state_sha256
+        diagnostic["post_transform_state_sha256"] = file_sha256(state_output_path)
+        receipt["diagnostic"] = diagnostic
     receipt_output_path.parent.mkdir(parents=True, exist_ok=True)
     receipt_output_path.write_text(
         json.dumps(receipt, indent=2) + "\n", encoding="utf-8", newline="\n"

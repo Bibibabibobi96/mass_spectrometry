@@ -8,7 +8,10 @@ from pathlib import Path
 
 from common.contracts.file_identity import (
     HASH_CHUNK_BYTES,
+    canonical_json_sha256,
     file_sha256,
+    files_have_same_identity,
+    files_match_manifest_records,
     repository_text_sha256,
 )
 from common.contracts import write_formal_asset_manifest, write_run_manifest
@@ -67,6 +70,14 @@ class FileIdentityTest(unittest.TestCase):
             self.assertEqual(repository_text_sha256(legacy_cr), expected)
             self.assertNotEqual(file_sha256(crlf), expected)
 
+    def test_canonical_json_identity_ignores_mapping_order_and_rejects_nan(self) -> None:
+        self.assertEqual(
+            canonical_json_sha256({"a": [1, 2], "b": "ion"}),
+            canonical_json_sha256({"b": "ion", "a": [1, 2]}),
+        )
+        with self.assertRaises(ValueError):
+            canonical_json_sha256({"nonfinite": float("nan")})
+
     def test_manifest_record_fields_are_byte_for_byte_unchanged(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
@@ -93,6 +104,30 @@ class FileIdentityTest(unittest.TestCase):
                     json.dumps(actual, separators=(",", ":")),
                     json.dumps(expected_relative, separators=(",", ":")),
                 )
+
+    def test_manifest_record_comparison_is_shared_byte_identity_primitive(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            payload = root / "payload.bin"
+            payload.write_bytes(b"cached-pa-bytes")
+            record = {
+                "name": payload.name,
+                "bytes": payload.stat().st_size,
+                "sha256": file_sha256(payload),
+            }
+            self.assertTrue(files_match_manifest_records(root, [record]))
+            record["sha256"] = "0" * 64
+            self.assertFalse(files_match_manifest_records(root, [record]))
+
+    def test_pair_comparison_uses_size_then_shared_byte_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            left, same, different = root / "left.bin", root / "same.bin", root / "other.bin"
+            left.write_bytes(b"same bytes")
+            same.write_bytes(b"same bytes")
+            different.write_bytes(b"different!")
+            self.assertTrue(files_have_same_identity(left, same))
+            self.assertFalse(files_have_same_identity(left, different))
 
 
 if __name__ == "__main__":

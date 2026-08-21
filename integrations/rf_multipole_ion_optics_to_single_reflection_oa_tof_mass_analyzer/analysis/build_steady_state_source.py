@@ -9,16 +9,15 @@ import json
 import random
 from pathlib import Path
 
+from common.contracts.file_identity import file_sha256 as sha256
+from common.simion.particle_batching import plan_single_wave_batches
+
 
 SOURCE_COLUMNS = [
     "particle_id", "birth_time_s", "x_mm", "y_mm", "z_mm", "vx_m_s",
     "vy_m_s", "vz_m_s", "mass_amu", "charge_state",
 ]
 SELECTION_SEED = 2026081002
-
-
-def sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest().upper()
 
 
 def _portable_receipt_path(path: Path) -> str:
@@ -95,32 +94,29 @@ def build(
         for particle_id, (_, _, row) in enumerate(selected, 1):
             writer.writerow(dict(row, particle_id=str(particle_id)))
     output_batches: list[dict[str, object]] = []
+    execution_batch_plan: dict[str, object] | None = None
     if batch_directory is not None:
-        if batch_count < 1 or batch_count > selected_count:
-            raise ValueError("execution batch count is outside selected population")
+        execution_batch_plan = plan_single_wave_batches(selected_count, batch_count)
         batch_directory.mkdir(parents=True, exist_ok=True)
-        quotient, remainder = divmod(selected_count, batch_count)
-        start = 0
-        for batch_index in range(batch_count):
-            size = quotient + (1 if batch_index < remainder else 0)
+        for batch in execution_batch_plan["batches"]:
+            size = int(batch["count"])
             path = batch_directory / (
-                f"{output_path.stem}_batch{batch_index + 1:02d}_{size}.csv"
+                f"{output_path.stem}_batch{int(batch['index']):02d}_{size}.csv"
             )
             with path.open("w", encoding="utf-8", newline="") as handle:
                 writer = csv.DictWriter(handle, fieldnames=SOURCE_COLUMNS, lineterminator="\n")
                 writer.writeheader()
                 for local_id, (_, _, row) in enumerate(
-                    selected[start : start + size], 1
+                    selected[int(batch["particle_id_min"]) - 1 : int(batch["particle_id_max"])], 1
                 ):
                     writer.writerow(dict(row, particle_id=str(local_id)))
             output_batches.append({
-                "batch_index": batch_index + 1,
-                "global_particle_id_offset": start,
+                "batch_index": batch["index"],
+                "global_particle_id_offset": batch["simion_particle_id_offset"],
                 "particle_count": size,
                 "path": _portable_receipt_path(path),
                 "sha256": sha256(path),
             })
-            start += size
     receipt: dict[str, object] = {
         "schema_version": 2,
         "role": "rf_oatof_steady_state_source_selection_receipt",
@@ -157,6 +153,7 @@ def build(
         "output_path": _portable_receipt_path(output_path),
         "output_sha256": sha256(output_path),
         "execution_batch_count": batch_count if output_batches else 1,
+        "execution_batch_plan": execution_batch_plan,
         "execution_batches": output_batches,
     }
     receipt_path.parent.mkdir(parents=True, exist_ok=True)

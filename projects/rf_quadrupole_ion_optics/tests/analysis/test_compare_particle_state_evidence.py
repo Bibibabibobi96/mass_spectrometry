@@ -16,20 +16,10 @@ PARTICLE_COUNT_POLICY = (
     REPO_ROOT / "common" / "contracts" / "particle_count_policy.json"
 )
 ANALYSIS = PROJECT_ROOT / "analysis"
-INTERFACE = PROJECT_ROOT / "workflows" / "interface_readiness" / "evaluate.py"
-NO_COLLISION = (
-    PROJECT_ROOT / "workflows" / "no_collision_transport" / "evaluate.py"
-)
-ANALYZER_MODULES = {
-    INTERFACE: (
-        "projects.rf_quadrupole_ion_optics.workflows."
-        "interface_readiness.evaluate"
-    ),
-    NO_COLLISION: (
-        "projects.rf_quadrupole_ion_optics.workflows."
-        "no_collision_transport.evaluate"
-    ),
-}
+EVALUATOR = PROJECT_ROOT / "workflows" / "cross_solver" / "evaluate.py"
+INTERFACE = "transport_interface_readiness"
+NO_COLLISION = "transport_no_collision"
+ANALYZER_MODULE = "projects.rf_quadrupole_ion_optics.workflows.cross_solver.evaluate"
 CORE = ANALYSIS / "particle_state_comparison_core.py"
 STATE_FIELDS = [
     "particle_id",
@@ -143,7 +133,7 @@ class SplitParticleStateComparisonTests(unittest.TestCase):
 
     def run_analyzer(
         self,
-        analyzer: Path,
+        analyzer: str,
         particle_count: int,
         comsol_handoffs: set[int],
         simion_handoffs: set[int],
@@ -170,7 +160,7 @@ class SplitParticleStateComparisonTests(unittest.TestCase):
         arguments = [
             sys.executable,
             "-m",
-            ANALYZER_MODULES[analyzer],
+            ANALYZER_MODULE,
             "--comsol",
             str(comsol),
             "--simion",

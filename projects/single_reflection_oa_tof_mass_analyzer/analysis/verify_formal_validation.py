@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import math
 from pathlib import Path
 
+from common.contracts.file_identity import file_sha256
 
 ANALYSIS_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = ANALYSIS_DIR.parent
@@ -15,18 +15,10 @@ ARTIFACT_ROOT = REPO_ROOT.parent / "artifacts" / "projects" / "single_reflection
 CONFIG_PATH = PROJECT_DIR / "config" / "formal_validation.json"
 
 
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest().upper()
-
-
 def require_hash(path: Path, expected: str) -> None:
     if not path.is_file():
         raise FileNotFoundError(path)
-    actual = sha256_file(path)
+    actual = file_sha256(path)
     if actual != expected:
         raise ValueError(f"SHA-256 mismatch for {path}: {actual} != {expected}")
 

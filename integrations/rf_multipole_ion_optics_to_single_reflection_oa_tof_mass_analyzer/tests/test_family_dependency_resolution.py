@@ -61,6 +61,7 @@ if ([string]::Join("`n", @($inventory.dependencies.id)) -ne [string]::Join("`n",
                 errors="replace",
                 capture_output=True,
                 check=False,
+                timeout=300,
             )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         expected_count = len(load(INVENTORY)["dependencies"])

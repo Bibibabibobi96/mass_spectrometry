@@ -10,6 +10,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+from common.contracts.file_identity import file_sha256
+
 
 class DotNetFrameworkRandom:
     """Reproduce the seeded System.Random sequence used by the legacy generator."""
@@ -145,9 +147,7 @@ def validate_ion_source(
         "source_path": str(source_path.resolve()),
         "source_sha256": digest,
         "generator_path": str(generator_path),
-        "generator_sha256": hashlib.sha256(generator_path.read_bytes())
-        .hexdigest()
-        .upper(),
+        "generator_sha256": file_sha256(generator_path),
         "particle_count": particle_count,
         "mass_amu": mass_amu,
         "charge": charge,

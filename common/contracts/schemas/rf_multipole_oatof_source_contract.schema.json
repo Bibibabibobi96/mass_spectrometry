@@ -211,6 +211,7 @@
       "required": [
         "run_id",
         "particle_count",
+        "population_derivation_receipt",
         "particle_source_manifest_input_role",
         "manifest",
         "state",
@@ -221,6 +222,7 @@
         "run_id": {"type": "string", "minLength": 1},
         "particle_count": {"type": "integer", "minimum": 1},
         "launched_particle_count": {"type": "integer", "minimum": 1},
+        "population_derivation_receipt": {"$ref": "#/$defs/file"},
         "particle_source_manifest_input_role": {"const": "particle_source"},
         "manifest": {"$ref": "#/$defs/file"},
         "state": {"$ref": "#/$defs/file"},

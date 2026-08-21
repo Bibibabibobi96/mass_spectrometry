@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from common.contracts.file_identity import file_sha256, repository_text_sha256
+from common.contracts.verify_run_manifest import record_path, verify_record
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.prepare import (
     _canonical_sha256,
     _derive_pulse_discovery_run_id,
@@ -93,11 +94,88 @@ def _published_target_manifests(repo_root: Path, campaign: dict[str, Any]) -> li
         / INTEGRATION_ID
         / "runs"
     )
-    return [
+    targets = [
         run_root / str(experiment["run_id"]) / "run_manifest.json"
         for experiment in campaign.get("experiments", [])
         if (run_root / str(experiment["run_id"]) / "run_manifest.json").is_file()
     ]
+    finalized = _validated_failed_parent_recoveries(repo_root, campaign, targets)
+    return [path for path in targets if path not in finalized]
+
+
+def _validated_failed_parent_recoveries(
+    repo_root: Path, campaign: dict[str, Any], targets: list[Path]
+) -> set[Path]:
+    """Return failed target manifests replaced by one verified analysis recovery.
+
+    A recovery never makes the original parent successful.  It only permits a
+    source-binding refresh when the separate ``__r01`` successor proves that
+    the immutable failed parent and completed raw-log child were reanalysed.
+    Any malformed successor remains a hard failure rather than silently
+    weakening published-campaign immutability.
+    """
+
+    finalized: set[Path] = set()
+    for candidate in targets:
+        manifest = _load(candidate)
+        if manifest.get("status") != "failed":
+            continue
+        recovery = candidate.parent.parent / (candidate.parent.name + "__r01") / "run_manifest.json"
+        if not recovery.is_file():
+            continue
+        try:
+            recovery_manifest = _load(recovery)
+            if (
+                recovery_manifest.get("role") != "simulation_run_manifest"
+                or recovery_manifest.get("status") != "success"
+                or recovery_manifest.get("mode")
+                != "multipole_family_source_closure_analysis_recovery"
+            ):
+                raise ValueError("recovery parent identity differs")
+            verify_record("recovery parent run_config", recovery_manifest["run_config"], base_dir=recovery.parent)
+            for name, record in recovery_manifest.get("inputs", {}).items():
+                verify_record(f"recovery parent input {name}", record, base_dir=recovery.parent)
+            for record in recovery_manifest.get("outputs", []):
+                verify_record("recovery parent output", record, base_dir=recovery.parent)
+            parent_config = _load(record_path(recovery_manifest["run_config"], base_dir=recovery.parent))
+            failed_parent_path = Path(parent_config["inputs"]["failed_parent_manifest"])
+            child_manifest_path = Path(parent_config["inputs"]["recovered_child_manifest"])
+            receipt_path = Path(parent_config["inputs"]["recovery_receipt"])
+            if failed_parent_path.resolve() != candidate.resolve():
+                raise ValueError("recovery parent source differs")
+            for label, path in (("recovery child", child_manifest_path), ("recovery receipt", receipt_path)):
+                if not path.is_file():
+                    raise ValueError(f"{label} is missing")
+            child_manifest = _load(child_manifest_path)
+            if (
+                child_manifest.get("status") != "success"
+                or child_manifest.get("mode") != "rf_to_oatof_simion_single_flight_analysis_recovery"
+            ):
+                raise ValueError("recovery child identity differs")
+            for name, record in child_manifest.get("inputs", {}).items():
+                verify_record(f"recovery child input {name}", record, base_dir=child_manifest_path.parent)
+            child_config = _load(record_path(child_manifest["run_config"], base_dir=child_manifest_path.parent))
+            if Path(child_config["inputs"]["failed_parent_manifest"]).resolve() != candidate.resolve():
+                raise ValueError("recovery child source differs")
+            receipt = _load(receipt_path)
+            if (
+                receipt.get("role") != "rf_oatof_completed_single_flight_analysis_recovery_receipt"
+                or receipt.get("status") != "success"
+                or receipt.get("solver_reexecuted") is not False
+                or receipt.get("source_failed_parent_manifest_sha256") != file_sha256(candidate)
+            ):
+                raise ValueError("recovery receipt identity differs")
+            experiment = next(
+                row for row in campaign.get("experiments", []) if str(row["run_id"]) == candidate.parent.name
+            )
+            if receipt.get("campaign", {}).get("experiment_id") != experiment.get("experiment_id"):
+                raise ValueError("recovery receipt experiment differs")
+        except (AssertionError, KeyError, StopIteration, TypeError, ValueError) as exc:
+            raise ValueError(f"failed-parent recovery is invalid: {candidate.parent.name}") from exc
+        if not campaign.get("campaign_id"):
+            raise ValueError("recovery campaign identity is missing")
+        finalized.add(candidate)
+    return finalized
 
 
 def _published_campaign_receipts(

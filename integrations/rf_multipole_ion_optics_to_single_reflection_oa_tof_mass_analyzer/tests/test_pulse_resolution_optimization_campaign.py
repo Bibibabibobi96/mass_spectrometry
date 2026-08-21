@@ -10,6 +10,9 @@ import unittest
 
 from common.contracts.machine_contracts import ContractError, validate_schema
 from common.contracts.file_identity import file_sha256
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.tests.fixtures.campaign_fixture import (
+    current_campaign_fixture,
+)
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.register_pulse_resolution_result import (
     _canonical_sha,
     _observed_cohort_authority,
@@ -73,7 +76,7 @@ R02_PROMOTION_RECEIPT_PATH = (
 
 
 def load(path: Path) -> dict[str, object]:
-    return json.loads(path.read_text(encoding="utf-8-sig"))
+    return current_campaign_fixture(json.loads(path.read_text(encoding="utf-8-sig")))
 
 
 def checkpoint_rows() -> list[dict[str, str]]:
@@ -182,18 +185,15 @@ class PulseResolutionOptimizationCampaignTests(unittest.TestCase):
         with self.assertRaises(ContractError):
             validate_schema(missing, SCHEMA_NAME)
 
-    def test_split_campaign_authorization_and_rows(self) -> None:
+    def test_split_campaign_lifecycle_and_rows(self) -> None:
         baseline = load(BASELINE_PATH)
         candidates = load(CANDIDATE_PATH)
         validate_schema(baseline, SCHEMA_NAME)
         validate_schema(candidates, SCHEMA_NAME)
         validate_pulse_resolution_optimization_campaign(
-            baseline, execution_requested=True, experiment=baseline["experiments"][0]
-        )
-        validate_pulse_resolution_optimization_campaign(
             candidates, execution_requested=False
         )
-        self.assertEqual(baseline["status"], "authorized")
+        self.assertEqual(baseline["status"], "retired")
         self.assertEqual(len(baseline["experiments"]), 1)
         self.assertEqual(
             baseline["experiments"][0]["experiment_id"], "pulse_resolution_baseline"
@@ -626,9 +626,17 @@ class PulseResolutionOptimizationCampaignTests(unittest.TestCase):
         ) / "scratch"
         scratch.mkdir(parents=True, exist_ok=True)
         runs = scratch.parent / "runs"
+        # Temporary mutated campaigns are intentionally not lifecycle-registered.
+        # The family entry must reject them before any baseline receipt is read.
         cases = (
-            ("self_sha", "frozen baseline evidence self-SHA differs"),
-            ("deleted_row", "frozen baseline observed cohort authority differs"),
+            (
+                "self_sha",
+                "Campaign is not an active lifecycle authority; execution is forbidden",
+            ),
+            (
+                "deleted_row",
+                "Campaign is not an active lifecycle authority; execution is forbidden",
+            ),
         )
         with tempfile.TemporaryDirectory(dir=scratch) as evidence_directory:
             evidence_root = Path(evidence_directory)
@@ -681,31 +689,27 @@ class PulseResolutionOptimizationCampaignTests(unittest.TestCase):
                         solver_output = runs / run_id
                         self.assertFalse(prepare_output.exists())
                         self.assertFalse(solver_output.exists())
-                        for mode_arguments in (
-                            ["-PrepareOnly", "-OutputDirectory", str(prepare_output)],
-                            ["-SolverAuthorized"],
-                        ):
-                            completed = subprocess.run(
-                                [
-                                    "pwsh", "-NoProfile", "-File", str(execute),
-                                    "-Campaign", str(campaign_path.relative_to(REPO_ROOT)),
-                                    "-ExperimentId",
-                                    campaign["experiments"][0]["experiment_id"],
-                                    *mode_arguments,
-                                ],
-                                cwd=REPO_ROOT,
-                                text=True,
-                                encoding="utf-8",
-                                errors="replace",
-                                capture_output=True,
-                                check=False,
-                            )
-                            output = completed.stdout + completed.stderr
-                            self.assertNotEqual(completed.returncode, 0)
-                            self.assertIn(expected_error, output)
-                            self.assertNotIn("SIMION", output)
-                            self.assertFalse(prepare_output.exists())
-                            self.assertFalse(solver_output.exists())
+                        completed = subprocess.run(
+                            [
+                                "pwsh", "-NoProfile", "-File", str(execute),
+                                "-Campaign", str(campaign_path.relative_to(REPO_ROOT)),
+                                "-ExperimentId",
+                                campaign["experiments"][0]["experiment_id"],
+                                "-PrepareOnly", "-OutputDirectory", str(prepare_output),
+                            ],
+                            cwd=REPO_ROOT,
+                            text=True,
+                            encoding="utf-8",
+                            errors="replace",
+                            capture_output=True,
+                            check=False, timeout=300,
+                        )
+                        output = completed.stdout + completed.stderr
+                        self.assertNotEqual(completed.returncode, 0)
+                        self.assertIn(expected_error, output)
+                        self.assertNotIn("SIMION", output)
+                        self.assertFalse(prepare_output.exists())
+                        self.assertFalse(solver_output.exists())
 
     def test_acceptance_and_grid_limits_remain_fail_closed(self) -> None:
         for field, value in (

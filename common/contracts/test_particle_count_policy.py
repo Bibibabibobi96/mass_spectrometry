@@ -13,25 +13,30 @@ from common.contracts.particle_count_policy import (
 
 
 class ParticleCountPolicyTests(unittest.TestCase):
-    def test_only_functional_and_statistical_counts_are_standard(self) -> None:
+    def test_standard_counts_are_functional_statistical_and_high_statistical(self) -> None:
         policy = load_particle_count_policy()
-        self.assertEqual(policy["standard_particle_counts"], [100, 1000])
+        self.assertEqual(policy["standard_particle_counts"], [100, 1000, 5000])
+        self.assertEqual(policy["functional_check_count"], 100)
+        self.assertEqual(policy["statistical_count"], 1000)
+        self.assertEqual(policy["high_statistical_count"], 5000)
         self.assertEqual(validate_standard_particle_count(100), 100)
         self.assertEqual(validate_standard_particle_count(1000), 1000)
+        self.assertEqual(validate_standard_particle_count(5000), 5000)
         for count in (1, 25, 30, 99, 101):
             with self.assertRaisesRegex(ValueError, "must be one of"):
                 validate_standard_particle_count(count)
 
     def test_root_readme_matches_machine_policy(self) -> None:
         readme = (Path(__file__).resolve().parents[2] / "README.md").read_text(encoding="utf-8")
-        self.assertIn("N=100是功能检查", readme)
-        self.assertIn("N=1000是峰形", readme)
-        self.assertIn("N=100必须是同一种子N=1000母样本的前100行", readme)
+        self.assertIn("N=100是功能检查、日常回归和Candidate功能证据的最低标准档", readme)
+        self.assertIn("N=1000是峰形、尾部、束斑/发散分布、损失分布与标准分辨率统计档", readme)
+        self.assertIn("N=5000是高统计档", readme)
+        self.assertIn("较小标准样本必须是同一种子较大母样本的前缀，不能分别抽样", readme)
 
     def test_prefix_accepts_matching_headered_sources_and_expected_hashes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            data_rows = [f"{index},{index + 1}" for index in range(1000)]
+            data_rows = [f"{index},{index + 1}" for index in range(5000)]
             n100 = root / "n100.csv"
             n1000 = root / "n1000.csv"
             n100.write_text(
@@ -39,7 +44,7 @@ class ParticleCountPolicyTests(unittest.TestCase):
                 encoding="utf-8",
             )
             n1000.write_text(
-                "particle_id,value\n" + "\n".join(data_rows) + "\n",
+                "particle_id,value\n" + "\n".join(data_rows[:1000]) + "\n",
                 encoding="utf-8",
             )
             validate_prefix_particle_sources(
@@ -52,28 +57,48 @@ class ParticleCountPolicyTests(unittest.TestCase):
     def test_prefix_accepts_matching_headerless_sources(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            data_rows = [f"{index},{index + 1}" for index in range(1000)]
+            data_rows = [f"{index},{index + 1}" for index in range(5000)]
             n100 = root / "n100.ion"
             n1000 = root / "n1000.ion"
             n100.write_text("\n".join(data_rows[:100]) + "\n", encoding="utf-8")
-            n1000.write_text("\n".join(data_rows) + "\n", encoding="utf-8")
+            n1000.write_text("\n".join(data_rows[:1000]) + "\n", encoding="utf-8")
             validate_prefix_particle_sources(n100, n1000)
+
+    def test_three_standard_counts_have_nested_deterministic_prefixes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            data_rows = [f"{index},{index + 1}" for index in range(5000)]
+            n100 = root / "n100.ion"
+            n1000 = root / "n1000.ion"
+            n5000 = root / "n5000.ion"
+            n100.write_text("\n".join(data_rows[:100]) + "\n", encoding="utf-8")
+            n1000.write_text("\n".join(data_rows[:1000]) + "\n", encoding="utf-8")
+            n5000.write_text("\n".join(data_rows) + "\n", encoding="utf-8")
+
+            n100_rows = n100.read_text(encoding="utf-8").splitlines()
+            n1000_rows = n1000.read_text(encoding="utf-8").splitlines()
+            n5000_rows = n5000.read_text(encoding="utf-8").splitlines()
+            self.assertEqual(len(n100_rows), 100)
+            self.assertEqual(len(n1000_rows), 1000)
+            self.assertEqual(len(n5000_rows), 5000)
+            self.assertEqual(n100_rows, n1000_rows[:100])
+            self.assertEqual(n1000_rows, n5000_rows[:1000])
 
     def test_prefix_rejects_mixed_or_different_headers(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            data_rows = [f"{index},{index + 1}" for index in range(1000)]
+            data_rows = [f"{index},{index + 1}" for index in range(5000)]
             n100 = root / "n100.csv"
             n1000 = root / "n1000.csv"
             n100.write_text(
                 "particle_id,value\n" + "\n".join(data_rows[:100]) + "\n",
                 encoding="utf-8",
             )
-            n1000.write_text("\n".join(data_rows) + "\n", encoding="utf-8")
+            n1000.write_text("\n".join(data_rows[:1000]) + "\n", encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "mixed header"):
                 validate_prefix_particle_sources(n100, n1000)
             n1000.write_text(
-                "particle_id,other\n" + "\n".join(data_rows) + "\n",
+                "particle_id,other\n" + "\n".join(data_rows[:1000]) + "\n",
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(ValueError, "same header"):
@@ -82,11 +107,11 @@ class ParticleCountPolicyTests(unittest.TestCase):
     def test_prefix_rejects_wrong_expected_hash(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            data_rows = [f"{index},{index + 1}" for index in range(1000)]
+            data_rows = [f"{index},{index + 1}" for index in range(5000)]
             n100 = root / "n100.ion"
             n1000 = root / "n1000.ion"
             n100.write_text("\n".join(data_rows[:100]) + "\n", encoding="utf-8")
-            n1000.write_text("\n".join(data_rows) + "\n", encoding="utf-8")
+            n1000.write_text("\n".join(data_rows[:1000]) + "\n", encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "SHA-256 differs"):
                 validate_prefix_particle_sources(
                     n100,

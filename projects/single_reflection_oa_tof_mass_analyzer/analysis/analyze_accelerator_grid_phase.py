@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.peak_metrics import AnalysisSettings, compute_peak_metrics, compute_source_mapping_metrics
+from common.analysis.peak_metrics import AnalysisSettings, compute_peak_metrics, compute_source_mapping_metrics
 
 
 def _read_particles(path: Path) -> pd.DataFrame:

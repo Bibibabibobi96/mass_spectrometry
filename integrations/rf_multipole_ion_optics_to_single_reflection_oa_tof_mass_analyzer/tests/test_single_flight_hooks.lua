@@ -101,6 +101,21 @@ local capped_frontend = frontend_module.new{
 near(capped_frontend.cap_timestep_at(4, 3, 1, 1,
   capped_frontend.initialize_particle(3)), 0.00625, 'RF timestep cap')
 
+local no_rf_writes = {}
+local no_rf_frontend = frontend_module.new{
+  rf_drive=false, pulse_hook=pulse, electrode_plan=electrode_plan,
+  planes_z_mm={0, 2},
+}
+no_rf_frontend.apply_at(4, function(id, voltage)
+  no_rf_writes[#no_rf_writes+1] = {id=id, voltage=voltage}
+end)
+assert(#no_rf_writes == 2 and no_rf_writes[1].id == 41 and
+  no_rf_writes[2].id == 77,
+  'RF-disabled frontend must retain only the project electrode plan')
+near(no_rf_frontend.cap_timestep_at(4, 3, 1, 1,
+  no_rf_frontend.initialize_particle(3)), 1,
+  'RF-disabled frontend must not apply the RF timestep cap')
+
 local ok = pcall(pulse_module.new, {canonical_clock=function() return 0 end,
   pulse_time_us=1, pulse_width_us=0, pulse_mode=function() return 1 end})
 assert(not ok, 'zero pulse width was accepted')

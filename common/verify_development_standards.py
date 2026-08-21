@@ -10,7 +10,11 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SOURCE_ROOTS = (REPO_ROOT / "common", REPO_ROOT / "projects")
+SOURCE_ROOTS = (
+    REPO_ROOT / "common",
+    REPO_ROOT / "projects",
+    REPO_ROOT / "integrations",
+)
 EXCLUDED_PARTS = {"history", "legacy", ".venv", "__pycache__"}
 MATLAB_BUILD_ONLY_MARKER = re.compile(
     r"(?im)^\s*%\s*REPOSITORY_CONTRACT:\s*MATLAB_BUILD_ONLY\s*$"

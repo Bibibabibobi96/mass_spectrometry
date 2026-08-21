@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import math
 from pathlib import Path
 from typing import Any
 
+from common.contracts.file_identity import file_sha256 as _sha256
 from common.multipole.grounded_shield import require_grounded_potential
 
 
@@ -16,10 +16,6 @@ BASELINE_PATH = PROJECT_ROOT / "config" / "baseline.json"
 MODE_PATH = PROJECT_ROOT / "config" / "modes" / "formal.json"
 NUMERICS_PATH = PROJECT_ROOT / "config" / "formal_solver_numerics.json"
 RESOLVED_PATH = PROJECT_ROOT / "config" / "resolved_geometry.json"
-
-
-def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest().upper()
 
 
 def _close(label: str, actual: float, expected: float, tolerance: float = 1e-10) -> None:

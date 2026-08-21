@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/rf_oatof_diagnostics_lifecycle_registry.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "role",
+    "integration_id",
+    "discovery_policy",
+    "campaign_selector",
+    "excluded_statuses",
+    "active_campaigns"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "rf_oatof_diagnostics_lifecycle_registry"},
+    "integration_id": {"const": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"},
+    "discovery_policy": {"const": "default_deny"},
+    "campaign_selector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["root", "role"],
+      "properties": {
+        "root": {"const": "config/diagnostics"},
+        "role": {"const": "rf_multipole_oatof_experiment_campaign"}
+      }
+    },
+    "excluded_statuses": {
+      "type": "array",
+      "uniqueItems": true,
+      "minItems": 1,
+      "items": {"enum": ["retired", "archived_invalid", "PENDING_PREREGISTRATION"]}
+    },
+    "active_campaigns": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "content_sha256"],
+        "properties": {
+          "path": {"type": "string", "pattern": "^integrations/.+/config/diagnostics/.+\\.json$"},
+          "content_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        }
+      }
+    }
+  }
+}

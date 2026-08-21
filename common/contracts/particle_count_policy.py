@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import argparse
 import csv
-import hashlib
 import json
 from pathlib import Path
 from typing import Any
+
+from common.contracts.file_identity import file_sha256
 
 
 POLICY_PATH = Path(__file__).with_name("particle_count_policy.json")
@@ -17,14 +18,16 @@ def load_particle_count_policy() -> dict[str, Any]:
     """Load and validate the shared particle-trajectory count policy."""
     policy = json.loads(POLICY_PATH.read_text(encoding="utf-8"))
     standard = [int(value) for value in policy["standard_particle_counts"]]
-    if standard != [100, 1000]:
-        raise ValueError("standard particle counts must be exactly [100, 1000]")
+    if standard != [100, 1000, 5000]:
+        raise ValueError("standard particle counts must be exactly [100, 1000, 5000]")
     if int(policy["default_particle_count"]) != 100:
         raise ValueError("default particle count must be 100")
     if int(policy["functional_check_count"]) != 100:
         raise ValueError("functional check count must be 100")
     if int(policy["statistical_count"]) != 1000:
         raise ValueError("statistical count must be 1000")
+    if int(policy.get("high_statistical_count", 0)) != 5000:
+        raise ValueError("high statistical count must be 5000")
     if policy.get("prefix_sampling_required") is not True:
         raise ValueError("N=100 must be the deterministic prefix of the N=1000 source")
     return policy
@@ -62,7 +65,7 @@ def _validate_expected_sha256(
     expected = expected_sha256.upper()
     if len(expected) != 64 or any(character not in "0123456789ABCDEF" for character in expected):
         raise ValueError(f"{label} expected SHA-256 is invalid")
-    actual = hashlib.sha256(path.read_bytes()).hexdigest().upper()
+    actual = file_sha256(path)
     if actual != expected:
         raise ValueError(f"{label} SHA-256 differs from the expected identity")
 

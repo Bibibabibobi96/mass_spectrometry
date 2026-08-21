@@ -21,8 +21,9 @@ function frontend.new(config)
   local rf_drive = config.rf_drive
   local pulse_hook = config.pulse_hook
   local electrode_plan = config.electrode_plan
-  assert(type(rf_drive) == 'table' and type(rf_drive.apply_at) == 'function' and
-    type(rf_drive.timestep_cap_us) == 'number', 'rf_drive contract is invalid')
+  assert(rf_drive == false or
+    (type(rf_drive) == 'table' and type(rf_drive.apply_at) == 'function' and
+      type(rf_drive.timestep_cap_us) == 'number'), 'rf_drive contract is invalid')
   assert(type(pulse_hook) == 'table' and type(pulse_hook.state_at) == 'function' and
     type(pulse_hook.is_active_at) == 'function' and
     type(pulse_hook.cap_timestep_at) == 'function' and
@@ -54,7 +55,7 @@ function frontend.new(config)
     time_us = finite(time_us, 'instrument_time_us')
     assert(type(setter) == 'function', 'electrode setter must be a function')
     local pulse_state = pulse_hook.state_at(time_us)
-    rf_drive.apply_at(time_us, setter)
+    if rf_drive ~= false then rf_drive.apply_at(time_us, setter) end
     electrode_plan.apply_at(time_us, pulse_state, setter)
     return pulse_state
   end
@@ -100,7 +101,9 @@ function frontend.new(config)
       'frontend timestep state is invalid')
     local result = pulse_hook.cap_timestep_at(time_us, current_dt_us)
     result = plane_cap(time_us, position_z_mm, velocity_z_mm_per_us, result, state)
-    if result > rf_drive.timestep_cap_us then result = rf_drive.timestep_cap_us end
+    if rf_drive ~= false and result > rf_drive.timestep_cap_us then
+      result = rf_drive.timestep_cap_us
+    end
     return result
   end
 

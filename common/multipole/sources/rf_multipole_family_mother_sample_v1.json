@@ -12,6 +12,12 @@
     "sha256": "CE68A6B47DC5726D9C45CBE28E4397A2321D782FAED265067824891AAF4D0FBF",
     "particle_count": 1000
   },
+  "high_statistical_output": {
+    "path": "common/multipole/sources/rf_multipole_family_mother_sample_v1_5000.csv",
+    "sha256": "131C63A4DA0BD8A5BC2E5133432B8E4B77EAA5F1B94188E3B1393B8E36DC61CA",
+    "particle_count": 5000,
+    "policy": "exact_first_1000_data_rows_are_n1000"
+  },
   "prefix": {
     "path": "common/multipole/sources/rf_multipole_family_mother_sample_v1_100.csv",
     "sha256": "0125C3AB02B2321EF26A3A913CF6EC04325FD0D48597D2CB439D0CE42411662F",
@@ -24,7 +30,7 @@
     "implementation_identity": "python_random_mt19937_v1",
     "seed": 2026072801,
     "particle_id_start": 1,
-    "particle_id_end": 1000,
+    "particle_id_end": 5000,
     "draw_order_per_particle": [
       "birth_time",
       "radial_area_coordinate",
@@ -47,6 +53,6 @@
       "elementary_charge_C": 1.602176634e-19
     },
     "float_serialization": "python_repr_binary64",
-    "rebuild_rule": "Generate all 1000 rows in one deterministic stream, then publish rows 1 through 100 as the exact N100 prefix."
+    "rebuild_rule": "Generate all 5000 rows in one deterministic stream; publish rows 1 through 100 and 1 through 1000 as exact nested prefixes."
   }
 }

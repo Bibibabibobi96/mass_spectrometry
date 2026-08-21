@@ -68,6 +68,8 @@ def load_campaign(
 
     campaign = load_json(campaign_path)
     validate_schema(campaign, CAMPAIGN_SCHEMA)
+    if campaign["status"] != "authorized":
+        raise ValueError("three-zone theory campaign is not an authorized execution contract")
     if campaign["stage_execution_mode"] != "single_stage_only":
         raise ValueError("three-zone theory campaign must remain single-stage-only")
     if campaign["solver_execution_allowed"]:

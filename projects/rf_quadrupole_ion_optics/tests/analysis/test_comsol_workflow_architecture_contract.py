@@ -234,28 +234,24 @@ class ComsolWorkflowArchitectureContractTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, arguments)
 
-    def test_profiles_use_dedicated_cross_solver_analysis_entries_without_mode(self) -> None:
+    def test_profiles_use_shared_contract_driven_cross_solver_entry(self) -> None:
         profiles = {
             item["profile_id"]: item
             for item in json.loads(PROFILES.read_text(encoding="utf-8"))["profiles"]
         }
         expected = {
-            "transport_no_collision_candidate": (
-                "workflows/no_collision_transport/compare_cross_solver.ps1"
-            ),
-            "transport_interface_readiness_candidate": (
-                "workflows/interface_readiness/compare_cross_solver.ps1"
-            ),
+            "transport_no_collision_candidate": "transport_no_collision",
+            "transport_interface_readiness_candidate": "transport_interface_readiness",
         }
-        for profile_id, entrypoint in expected.items():
+        for profile_id, mode in expected.items():
             step = next(
                 item
                 for item in profiles[profile_id]["steps"]
                 if item["step_id"] == "cross_solver_comparison"
             )
-            self.assertEqual(step["entrypoint"], entrypoint)
+            self.assertEqual(step["entrypoint"], "workflows/cross_solver/compare_cross_solver.ps1")
             arguments = dict(zip(step["arguments"][::2], step["arguments"][1::2]))
-            self.assertNotIn("-Mode", arguments)
+            self.assertEqual(arguments["-Mode"], mode)
             self.assertEqual(arguments["-ComsolRunId"], "{comsol_run_id}")
             self.assertEqual(arguments["-SimionRunId"], "{simion_run_id}")
 

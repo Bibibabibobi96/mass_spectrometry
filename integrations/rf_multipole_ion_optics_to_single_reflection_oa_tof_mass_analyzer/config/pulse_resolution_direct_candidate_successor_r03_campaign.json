@@ -3,7 +3,7 @@
   "role": "rf_multipole_oatof_experiment_campaign",
   "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
   "campaign_id": "pulse_resolution_direct_candidates_v5_r03",
-  "status": "authorized",
+  "status": "retired",
   "execution_policy": {
     "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/execution_policy.json",
     "sha256": "2E95DB4D9168416CE38BB311355312C51667069FD3BBFE52F422FD36D72379AE"
@@ -408,7 +408,7 @@
   "preregistration": {
     "status": "REGISTERED_EXECUTION_REQUIRES_EXPLICIT_AUTHORIZATION",
     "document": {
-      "path": "docs/history/20260815__pulse-resolution-candidate-r01-failure-r02-successor.md",
+      "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/20260815__pulse-resolution-candidate-r01-failure-r02-successor.md",
       "bytes": 1314,
       "sha256": "77DAB562BE2E1D6F29CCF02CF825035595B4327E7C4033C91D360220B6D2BE91"
     },

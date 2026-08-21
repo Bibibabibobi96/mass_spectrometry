@@ -90,6 +90,7 @@ class ThreeZoneCampaignContractTests(unittest.TestCase):
         return path
 
     def test_stage_graph_is_single_stage_only_and_t4c_is_manual_non_default(self) -> None:
+        self.assertEqual(self.campaign["status"], "authorized")
         self.assertEqual(
             [stage["stage_id"] for stage in self.campaign["stages"]],
             ["T0", "T1", "T2", "G1", "T3", "T4a", "T4b", "T4c", "G2", "T5"],

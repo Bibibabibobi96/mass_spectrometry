@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import copy
-import hashlib
 import json
 import math
 from dataclasses import dataclass
@@ -18,14 +17,11 @@ from common.contracts.machine_contracts import (
     sha256,
     validate_schema,
 )
-from common.contracts.file_identity import file_sha256, repository_text_sha256
-
-
-def _canonical_sha256(value: Any) -> str:
-    payload = json.dumps(
-        value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-    ).encode("utf-8")
-    return hashlib.sha256(payload).hexdigest().upper()
+from common.contracts.file_identity import (
+    canonical_json_sha256 as _canonical_sha256,
+    file_sha256,
+    repository_text_sha256,
+)
 
 
 def _dot(left: list[float], right: list[float]) -> float:

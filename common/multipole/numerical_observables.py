@@ -75,14 +75,6 @@ def load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest().upper()
-
-
 def _load_hashed_json(path: Path) -> tuple[dict[str, Any], str]:
     payload = path.read_bytes()
     document = json.loads(payload.decode("utf-8-sig"))

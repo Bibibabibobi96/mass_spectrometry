@@ -10,6 +10,9 @@ import unittest
 
 from common.contracts.machine_contracts import ContractError, validate_schema
 from common.integration.resolve_connection import load_connection_profile_registry
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.tests.fixtures.campaign_fixture import (
+    current_campaign_fixture,
+)
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.prepare import (
     SCREENING_SOURCE_COLUMNS,
     validate_connector_gap_screen_campaign,
@@ -29,7 +32,9 @@ REGISTRY_PATH = INTEGRATION_ROOT / "config/connection_profiles.json"
 
 class ConnectorGapCampaignTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.campaign = json.loads(CAMPAIGN_PATH.read_text(encoding="utf-8"))
+        self.campaign = current_campaign_fixture(
+            json.loads(CAMPAIGN_PATH.read_text(encoding="utf-8"))
+        )
         self.registry = load_connection_profile_registry(REGISTRY_PATH)
 
     def test_campaign_schema_and_cross_row_contract_pass(self) -> None:

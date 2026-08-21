@@ -11,7 +11,6 @@ Analyze one CSV or GUI-exported XLSX::
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import platform
 import re
@@ -28,7 +27,7 @@ import pandas as pd
 import scipy
 from scipy import stats
 
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.peak_metrics import (
+from common.analysis.peak_metrics import (
     AnalysisSettings,
     bootstrap_resolution_difference,
     compare_peak_shapes,
@@ -37,6 +36,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.peak_metrics impor
     compute_paired_tof_delta_source_metrics,
     compute_source_mapping_metrics,
 )
+from common.contracts.file_identity import file_sha256
 
 
 ANALYSIS_DIR = Path(__file__).resolve().parent
@@ -49,14 +49,6 @@ DEFAULT_DETECTOR_CENTER_X_MM = float(
     _physical_geometry["coordinate_convention"]["detector_x"]
 )
 DEFAULT_DETECTOR_CENTER_Y_MM = 0.0
-
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest().upper()
 
 
 def _normalized_name(name: str) -> str:
@@ -304,7 +296,7 @@ def runtime_provenance(contract_path: Path) -> dict[str, Any]:
         "pandas_version": pd.__version__,
         "matplotlib_version": matplotlib.__version__,
         "analysis_contract": str(contract_path.resolve()),
-        "analysis_contract_sha256": sha256_file(contract_path),
+        "analysis_contract_sha256": file_sha256(contract_path),
     }
 
 
@@ -697,7 +689,7 @@ def analyze_single(
         "input": {
             "path": str(input_path.resolve()),
             "bytes": input_path.stat().st_size,
-            "sha256": sha256_file(input_path),
+            "sha256": file_sha256(input_path),
             **import_metadata,
         },
         "settings": settings.to_dict(),
@@ -1140,14 +1132,14 @@ def analyze_comparison(
         "left": {
             "label": left_label,
             "path": str(left_path.resolve()),
-            "sha256": sha256_file(left_path),
+            "sha256": file_sha256(left_path),
             "import": left_import,
             "metrics": left_metrics,
         },
         "right": {
             "label": right_label,
             "path": str(right_path.resolve()),
-            "sha256": sha256_file(right_path),
+            "sha256": file_sha256(right_path),
             "import": right_import,
             "metrics": right_metrics,
         },

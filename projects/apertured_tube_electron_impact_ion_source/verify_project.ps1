@@ -10,24 +10,27 @@ if (-not $PythonExe) {
 }
 $PythonExe = (Resolve-Path -LiteralPath $PythonExe -ErrorAction Stop).Path
 
-Push-Location $projectRoot
+Push-Location $repoRoot
 try {
-  & $PythonExe -m analysis.resolve_contract `
-    --baseline config/baseline.json `
-    --modes config/numerical_modes.json `
+  & $PythonExe -m projects.apertured_tube_electron_impact_ion_source.analysis.resolve_contract `
+    --baseline projects/apertured_tube_electron_impact_ion_source/config/baseline.json `
+    --modes projects/apertured_tube_electron_impact_ion_source/config/numerical_modes.json `
     --mode build_only_smoke `
     --evidence-particle-count 1 `
-    --check config/resolved_model.json
+    --check projects/apertured_tube_electron_impact_ion_source/config/resolved_model.json
   if ($LASTEXITCODE -ne 0) {
     throw 'EI-source resolved contract is invalid or stale.'
   }
 
-  & $PythonExe -m unittest discover -s tests/analysis -p 'test_*.py'
+  & $PythonExe -m unittest discover `
+    -s projects/apertured_tube_electron_impact_ion_source/tests/analysis -p 'test_*.py'
   if ($LASTEXITCODE -ne 0) {
     throw 'EI-source static tests failed.'
   }
 
-  & $PythonExe -m ruff check analysis tests/analysis
+  & $PythonExe -m ruff check `
+    projects/apertured_tube_electron_impact_ion_source/analysis `
+    projects/apertured_tube_electron_impact_ion_source/tests/analysis
   if ($LASTEXITCODE -ne 0) {
     throw 'EI-source Ruff checks failed.'
   }

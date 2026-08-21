@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mass-spectrometry.local/schemas/rf_oatof_theory_working_point.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["role", "policy_id", "source_state_sha256", "resolved_geometry_input_sha256", "native_constraints", "accelerator_topology", "reflectron", "verification"],
+  "properties": {
+    "role": {"const": "rf_oatof_theory_working_point"},
+    "policy_id": {"const": "source_zvz_three_zone_theory_working_point_v1"},
+    "source_state_sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"},
+    "resolved_geometry_input_sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"},
+    "native_constraints": {
+      "type": "object", "additionalProperties": false,
+      "required": ["first_zone_drop_v", "nominal_energy_per_charge_v", "reflectron_stage1_voltage_v"],
+      "properties": {
+        "first_zone_drop_v": {"type": "number", "exclusiveMinimum": 0},
+        "nominal_energy_per_charge_v": {"type": "number", "exclusiveMinimum": 0},
+        "reflectron_stage1_voltage_v": {"type": "number", "exclusiveMinimum": 0}
+      }
+    },
+    "accelerator_topology": {"type": "object"},
+    "reflectron": {"type": "object"},
+    "verification": {"type": "object"}
+  }
+}

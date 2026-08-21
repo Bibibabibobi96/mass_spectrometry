@@ -3,6 +3,9 @@ from __future__ import annotations
 import unittest
 
 from common.contracts.machine_contracts import ContractError, validate_schema
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.tests.fixtures.campaign_fixture import (
+    current_campaign_fixture,
+)
 
 
 SHA = "A" * 64
@@ -12,14 +15,13 @@ def campaign() -> dict[str, object]:
     source = {
         "run_id": "20260814_000000__sim__simion__fixture-gap0__n10",
         "launched_particle_count": 100,
-        "particle_count": 10,
         "particle_source_manifest_input_role": "simion_particle_source",
         "manifest": {"path": "fixture/manifest.json", "sha256": SHA},
         "state": {"path": "fixture/state.csv", "sha256": SHA},
         "particle_source": {"path": "fixture/source.csv", "sha256": SHA},
         "metadata": {"path": "fixture/metadata.json", "sha256": SHA},
     }
-    return {
+    return current_campaign_fixture({
         "schema_version": 3,
         "role": "rf_multipole_oatof_experiment_campaign",
         "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
@@ -63,7 +65,7 @@ def campaign() -> dict[str, object]:
             "run_id": "20260814_000000__sim__simion__fixture-gap0__n10",
             "source": source,
         }],
-    }
+    })
 
 
 class CampaignV3ContractTests(unittest.TestCase):

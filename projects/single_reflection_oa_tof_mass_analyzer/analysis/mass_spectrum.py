@@ -8,7 +8,6 @@ replace the dedicated 524 Da formal resolution baseline.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import platform
 from pathlib import Path
@@ -22,20 +21,13 @@ from matplotlib.lines import Line2D
 import numpy as np
 import pandas as pd
 
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.peak_metrics import AnalysisSettings, compare_peak_shapes, compute_detector_metrics
+from common.analysis.peak_metrics import AnalysisSettings, compare_peak_shapes, compute_detector_metrics
+from common.contracts.file_identity import file_sha256
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.reference_analysis import (
     DEFAULT_DETECTOR_CENTER_X_MM,
     DEFAULT_DETECTOR_CENTER_Y_MM,
     read_particle_table,
 )
-
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest().upper()
 
 
 def load_mode(path: Path) -> dict[str, Any]:
@@ -235,8 +227,8 @@ def analyze_mass_spectrum(
     summary_rows: list[dict[str, Any]] = []
     peak_shape_rows: list[dict[str, Any]] = []
     input_hashes = {
-        "mode_config": sha256_file(mode_path),
-        "simion_csv": sha256_file(simion_csv),
+        "mode_config": file_sha256(mode_path),
+        "simion_csv": file_sha256(simion_csv),
     }
 
     for item in mode["species"]:
@@ -249,7 +241,7 @@ def analyze_mass_spectrum(
         comsol_path = comsol_dir / f"{species_id}.csv"
         if not comsol_path.is_file():
             raise FileNotFoundError(comsol_path)
-        input_hashes[f"comsol_{species_id}"] = sha256_file(comsol_path)
+        input_hashes[f"comsol_{species_id}"] = file_sha256(comsol_path)
 
         solver_frames = {
             "COMSOL": _normalized_comsol_rows(comsol_path),

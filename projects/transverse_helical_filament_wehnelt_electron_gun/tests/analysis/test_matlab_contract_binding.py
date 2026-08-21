@@ -237,7 +237,9 @@ class MatlabContractBindingTests(unittest.TestCase):
             self.build_runner.count("common\\comsol\\run_comsol_r2025b.ps1"),
             1,
         )
-        self.assertIn("function Get-FileSha256", self.build_runner)
+        self.assertIn("Copy-VerifiedRunInput", self.build_runner)
+        self.assertIn("Get-RunFileSha256 -Path $source", self.build_runner)
+        self.assertNotIn("function Get-FileSha256", self.build_runner)
         self.assertNotIn("Get-FileHash", self.build_runner)
 
     def test_runner_executes_frozen_gate_and_checks_frozen_contract_triplet(
@@ -269,6 +271,12 @@ class MatlabContractBindingTests(unittest.TestCase):
             self.build_runner,
         )
         self.assertIn("$infrastructureRoot = $snapshotRoot", self.build_runner)
+
+    def test_frozen_resolver_has_its_shared_strict_json_dependency(self) -> None:
+        self.assertIn("from common.contracts.strict_json import (", self.resolver)
+        self.assertIn(
+            "strict_json = 'common\\contracts\\strict_json.py'", self.build_runner
+        )
 
     def test_runner_strictly_consumes_the_registered_mode_descriptor(self) -> None:
         required = (
@@ -391,7 +399,7 @@ class MatlabContractBindingTests(unittest.TestCase):
             "[IO.File]::WriteAllBytes",
             "the last verified prestate was restored",
             "bootstrap_boundary = [ordered]@{",
-            "sha256 = Get-FileSha256 -Path $source",
+            "sha256 = Get-RunFileSha256 -Path $source",
             "Bootstrap dependency changed before it was frozen",
         )
         for token in required:
@@ -400,7 +408,10 @@ class MatlabContractBindingTests(unittest.TestCase):
 
     def test_bootstrap_identity_includes_immediate_support_dependencies(self) -> None:
         bootstrap_start = self.build_runner.index("$bootstrapFiles = [ordered]@{")
-        bootstrap_end = self.build_runner.index("}\n$bootstrapIdentity", bootstrap_start)
+        bootstrap_end = self.build_runner.index(
+            "}\n. (Join-Path $repoRoot $bootstrapFiles.artifact_support)",
+            bootstrap_start,
+        )
         bootstrap_block = self.build_runner[bootstrap_start:bootstrap_end]
         required = (
             "powershell_runtime_gate = 'common\\require_powershell7.ps1'",
@@ -410,6 +421,7 @@ class MatlabContractBindingTests(unittest.TestCase):
             "artifact_naming = 'common\\contracts\\artifact_naming.py'",
             "file_identity = 'common\\contracts\\file_identity.py'",
             "particle_physics = 'common\\contracts\\particle_physics.py'",
+            "strict_json = 'common\\contracts\\strict_json.py'",
         )
         for token in required:
             with self.subTest(token=token):
@@ -419,7 +431,7 @@ class MatlabContractBindingTests(unittest.TestCase):
             self.build_runner,
         )
         self.assertIn(
-            "Get-FileSha256 -Path $frozenInputs[$entry.Key]",
+            "Get-RunFileSha256 -Path $frozenInputs[$entry.Key]",
             self.build_runner,
         )
 
@@ -608,6 +620,7 @@ class MatlabContractBindingTests(unittest.TestCase):
             "common\\contracts\\write_run_manifest.py",
             "common\\contracts\\verify_run_manifest.py",
             "common\\contracts\\particle_physics.py",
+            "common\\contracts\\strict_json.py",
             "common\\comsol\\run_comsol_r2025b.ps1",
             "common\\comsol\\resolve_comsol_64.ps1",
             "common\\comsol\\livelink_r2025b\\comsolstartup.m",
@@ -654,6 +667,7 @@ class MatlabContractBindingTests(unittest.TestCase):
             "common/contracts/file_identity.py",
             "common/contracts/artifact_identity_archive.py",
             "common/contracts/particle_physics.py",
+            "common/contracts/strict_json.py",
             "common/contracts/build_project_registry.py",
             "common/contracts/machine_contracts.py",
             "common/comsol/run_comsol_r2025b.ps1",

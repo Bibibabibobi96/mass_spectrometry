@@ -177,6 +177,83 @@ function Invoke-ResourceBudgetedProcess {
   return [pscustomobject]@{exit_code=$process.ExitCode;resource_budget_exceeded=$false;limit_name=$null}
 }
 
+function Invoke-ResourceBudgetedProcesses {
+  <# Run an explicitly preflighted set of independent solver children in one wave.
+     The resource limits apply to the aggregate, never per batch. #>
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$ResolvedBudgetPath,
+    [Parameter(Mandatory)][string]$RunDir,
+    [Parameter(Mandatory)][string]$UsagePath,
+    [Parameter(Mandatory)][object[]]$ProcessSpecifications
+  )
+  if($ProcessSpecifications.Count-lt 1){throw 'A parallel process wave requires at least one specification.'}
+  $budget=Get-Content -LiteralPath $ResolvedBudgetPath -Raw -Encoding UTF8|ConvertFrom-Json
+  $limits=$budget.limits
+  $started=[datetimeoffset]::UtcNow
+  $usage=[ordered]@{
+    schema_version=1;role='multipole_resource_usage';status='running'
+    failure_class=$null;limit_name=$null;started_at_utc=$started.ToString('o')
+    wall_clock_seconds=0.0;peak_process_tree_working_set_bytes=[int64]0
+    minimum_system_available_memory_bytes=$null;warning_names=@();peak_run_directory_bytes=[int64]0
+    final_retained_bytes=$null;limits=$limits
+    final_retained_measurement_scope='run_directory_before_terminal_manifest'
+    execution_wave=[ordered]@{dispatch='single_wave_parallel';process_count=$ProcessSpecifications.Count}
+  }
+  $running=@()
+  foreach($specification in $ProcessSpecifications){
+    foreach($required in @('name','file_path','argument_list','stdout','stderr','environment')){
+      if(-not($specification.PSObject.Properties.Name-contains$required)){
+        throw "Parallel process specification is missing $required."
+      }
+    }
+    $arguments=@{FilePath=[string]$specification.file_path;ArgumentList=@($specification.argument_list);
+      PassThru=$true;WindowStyle='Hidden';RedirectStandardOutput=[string]$specification.stdout;
+      RedirectStandardError=[string]$specification.stderr;Environment=[hashtable]$specification.environment}
+    if($specification.PSObject.Properties.Name-contains'working_directory'){
+      $arguments.WorkingDirectory=[string]$specification.working_directory
+    }
+    $running+=[pscustomobject]@{name=[string]$specification.name;process=(Start-Process @arguments)}
+  }
+  $limitName=$null
+  while(@($running|Where-Object{-not$_.process.HasExited}).Count-gt 0){
+    $now=[datetimeoffset]::UtcNow
+    $elapsed=($now-$started).TotalSeconds
+    $treeBytes=[int64]0
+    foreach($item in $running){$treeBytes+=Get-ProcessTreeWorkingSetBytes -RootProcessId $item.process.Id}
+    $availableBytes=[int64][MultipoleMemoryStatus]::AvailableBytes()
+    $directoryBytes=Get-RunDirectoryBytes -RunDir $RunDir
+    $usage.wall_clock_seconds=[math]::Round($elapsed,3)
+    $usage.peak_process_tree_working_set_bytes=[math]::Max([int64]$usage.peak_process_tree_working_set_bytes,$treeBytes)
+    $usage.peak_run_directory_bytes=[math]::Max([int64]$usage.peak_run_directory_bytes,$directoryBytes)
+    $usage.minimum_system_available_memory_bytes=$(if($null-eq$usage.minimum_system_available_memory_bytes){$availableBytes}else{[math]::Min([int64]$usage.minimum_system_available_memory_bytes,$availableBytes)})
+    if($elapsed-gt[double]$limits.wall_clock_seconds){$limitName='wall_clock_seconds'}
+    elseif($treeBytes-gt[int64]$limits.process_tree_working_set_bytes){$limitName='process_tree_working_set_bytes'}
+    elseif($availableBytes-lt[int64]$limits.minimum_system_available_memory_bytes){$limitName='minimum_system_available_memory_bytes'}
+    elseif($directoryBytes-gt[int64]$limits.transient_run_directory_bytes){$limitName='transient_run_directory_bytes'}
+    Write-ResourceUsage -Usage $usage -Path $UsagePath
+    if($limitName){
+      foreach($item in $running|Where-Object{-not$_.process.HasExited}){
+        & taskkill.exe /PID $item.process.Id /T /F|Out-Null
+      }
+      break
+    }
+    Start-Sleep -Milliseconds 500
+    foreach($item in $running){$item.process.Refresh()}
+  }
+  foreach($item in $running){if(-not$item.process.HasExited){$item.process.WaitForExit()}}
+  if($limitName){
+    $usage.status='resource_budget_exceeded';$usage.failure_class='resource_budget_exceeded';$usage.limit_name=$limitName
+    Write-ResourceUsage -Usage $usage -Path $UsagePath
+    return [pscustomobject]@{resource_budget_exceeded=$true;limit_name=$limitName;processes=@()}
+  }
+  $usage.status=$(if(@($running|Where-Object{$_.process.ExitCode-ne 0}).Count-eq 0){'running'}else{'process_failed'})
+  Write-ResourceUsage -Usage $usage -Path $UsagePath
+  return [pscustomobject]@{resource_budget_exceeded=$false;limit_name=$null;
+    processes=@($running|ForEach-Object{[pscustomobject]@{name=$_.name;exit_code=$_.process.ExitCode}})
+  }
+}
+
 function Complete-ResourceUsage {
   [CmdletBinding()]
   param(

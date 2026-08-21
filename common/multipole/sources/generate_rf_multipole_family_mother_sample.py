@@ -1,19 +1,21 @@
-"""Build deterministic N=100/N=1000 RF-multipole family particle sources."""
+"""Build deterministic nested N=100/N=1000/N=5000 RF-multipole sources."""
 
 from __future__ import annotations
 
 import argparse
 import csv
-import hashlib
 import io
 import math
 import random
 from pathlib import Path
 
+from common.contracts.file_identity import file_sha256 as sha256
+
 
 SEED = 2026072801
 PREFIX_COUNT = 100
 TOTAL_COUNT = 1000
+HIGH_STATISTICAL_COUNT = 5000
 STEADY_CANDIDATE_SEED = 2026081001
 STEADY_CANDIDATE_COUNT = 2000
 RF_FREQUENCY_HZ = 1_100_000.0
@@ -37,10 +39,6 @@ COLUMNS = (
     "mass_amu",
     "charge_state",
 )
-
-
-def sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest().upper()
 
 
 def generate_rows(seed: int, total_count: int) -> list[dict[str, object]]:
@@ -96,13 +94,17 @@ def _render(selected: list[dict[str, object]]) -> bytes:
 def build(
     n100_path: Path,
     n1000_path: Path,
+    n5000_path: Path | None = None,
     steady_candidate_path: Path | None = None,
 ) -> None:
-    sample = rows()
+    sample = generate_rows(SEED, HIGH_STATISTICAL_COUNT)
     n100_path.parent.mkdir(parents=True, exist_ok=True)
     n1000_path.parent.mkdir(parents=True, exist_ok=True)
     n100_path.write_bytes(_render(sample[:PREFIX_COUNT]))
-    n1000_path.write_bytes(_render(sample))
+    n1000_path.write_bytes(_render(sample[:TOTAL_COUNT]))
+    if n5000_path is not None:
+        n5000_path.parent.mkdir(parents=True, exist_ok=True)
+        n5000_path.write_bytes(_render(sample))
     if steady_candidate_path is not None:
         steady_candidate_path.parent.mkdir(parents=True, exist_ok=True)
         steady_candidate_path.write_bytes(
@@ -130,10 +132,14 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-n100", required=True, type=Path)
     parser.add_argument("--output-n1000", required=True, type=Path)
+    parser.add_argument("--output-n5000", type=Path)
     parser.add_argument("--output-steady-candidate", type=Path)
     parser.add_argument("--steady-batch-directory", type=Path)
     args = parser.parse_args()
-    build(args.output_n100, args.output_n1000, args.output_steady_candidate)
+    build(
+        args.output_n100, args.output_n1000, args.output_n5000,
+        args.output_steady_candidate,
+    )
     batch_paths = (
         build_steady_batches(args.steady_batch_directory)
         if args.steady_batch_directory is not None
@@ -143,6 +149,7 @@ def main() -> int:
         "RF_MULTIPOLE_FAMILY_MOTHER_SAMPLE=PASS "
         f"N100_SHA256={sha256(args.output_n100)} "
         f"N1000_SHA256={sha256(args.output_n1000)}"
+        + (f" N5000_SHA256={sha256(args.output_n5000)}" if args.output_n5000 is not None else "")
         + (
             f" STEADY_CANDIDATE_SHA256={sha256(args.output_steady_candidate)}"
             if args.output_steady_candidate is not None

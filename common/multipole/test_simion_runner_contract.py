@@ -497,6 +497,41 @@ class SimionRunnerContractTests(unittest.TestCase):
             self.assertEqual(drift_count, 100)
             self.assertEqual(drifting_family.read_count, 1)
 
+            fly, states, count = render_canonical_source(
+                source, resolved_path, source_family_path=family_path,
+                operating_point_id="rf_to_oatof_100amu_5eV",
+                expected_source_family_sha256=hashlib.sha256(family_path.read_bytes()).hexdigest(),
+                particle_id_min=21, particle_id_max=40,
+            )
+            self.assertEqual(count, 20)
+            self.assertIn("[21]", states)
+            self.assertIn("[40]", states)
+            self.assertNotIn("[20]", states)
+            self.assertEqual(fly.count("standard_beam"), 20)
+            _, local_states, _ = render_canonical_source(
+                source, resolved_path, source_family_path=family_path,
+                operating_point_id="rf_to_oatof_100amu_5eV",
+                expected_source_family_sha256=hashlib.sha256(family_path.read_bytes()).hexdigest(),
+                particle_id_min=21, particle_id_max=40, simion_particle_id_offset=20,
+            )
+            self.assertIn("[1]", local_states)
+            self.assertIn("[20]", local_states)
+            self.assertNotIn("[21]", local_states)
+            with self.assertRaisesRegex(ValueError, "offset exceeds"):
+                render_canonical_source(
+                    source, resolved_path, source_family_path=family_path,
+                    operating_point_id="rf_to_oatof_100amu_5eV",
+                    expected_source_family_sha256=hashlib.sha256(family_path.read_bytes()).hexdigest(),
+                    particle_id_min=21, particle_id_max=40, simion_particle_id_offset=21,
+                )
+            with self.assertRaisesRegex(ValueError, "batch interval"):
+                render_canonical_source(
+                    source, resolved_path, source_family_path=family_path,
+                    operating_point_id="rf_to_oatof_100amu_5eV",
+                    expected_source_family_sha256=hashlib.sha256(family_path.read_bytes()).hexdigest(),
+                    particle_id_min=1,
+                )
+
     def test_primary_only_case_set_skips_control_and_records_null_control(self) -> None:
         runner = RUNNER.read_text(encoding="utf-8")
         self.assertIn(
@@ -508,6 +543,21 @@ class SimionRunnerContractTests(unittest.TestCase):
         self.assertIn("$control=Invoke-TransportCase $controlName 0 1", runner)
         self.assertIn("role='multipole_simion_rf_off_energy_control_metrics'", runner)
         self.assertIn("case_set=$CaseSet", runner)
+
+    def test_parallel_batching_is_single_wave_and_revalidates_the_merged_state(self) -> None:
+        runner = RUNNER.read_text(encoding="utf-8")
+        support = (RUNNER.parent / "resource_budget_support.ps1").read_text(encoding="utf-8")
+        self.assertIn("common.simion.particle_batching", runner)
+        self.assertIn("SIMION shared single-wave batch plan differs from the canonical source.", runner)
+        self.assertIn("--particle-id-min", runner)
+        self.assertIn("Invoke-ResourceBudgetedProcesses", runner)
+        self.assertIn("SIMION shared single-wave batch plan", runner)
+        self.assertIn("SIMION $name particle-state contract failed.", runner)
+        self.assertIn("--merge-rebase-csv", runner)
+        self.assertIn("--merge-summaries", runner)
+        self.assertNotIn("Add-Content -LiteralPath $caseState", runner)
+        self.assertIn("Get-ProcessTreeWorkingSetBytes", support)
+        self.assertIn("execution_wave", support)
         self.assertIn("$control=$null;$controlName=$null", runner)
         self.assertIn(
             "Primary-only SIMION runs cannot consume a paired-case evidence contract.",

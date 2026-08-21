@@ -123,7 +123,7 @@ foreach ($family in @(
 }
 
 $rawPaReceipt = Join-Path $outputFull 'native_ideal_grid_raw_pa_receipt.json'
-$rowInspector = Join-Path $projectRoot 'tests\simion\test_support\inspect_native_ideal_grid_rows.lua'
+$rowInspector = Join-Path $projectRoot 'simion\workbench\formal\inspect_native_ideal_grid_rows.lua'
 $acceleratorZMin = -[double]$geometry.accelerator_repeller_thickness - [double]$geometry.accelerator_rear_clearance - [double]$geometry.accelerator_shield_wall
 $grid1RawRow = [Math]::Round((-$acceleratorZMin + [double]$accelerator.d1_mm) / [double]$acceleratorBuild.cell_z_mm)
 $grid2RawRow = [Math]::Round((-$acceleratorZMin + [double]$accelerator.d1_mm + [double]$accelerator.d2_mm) / [double]$acceleratorBuild.cell_z_mm)

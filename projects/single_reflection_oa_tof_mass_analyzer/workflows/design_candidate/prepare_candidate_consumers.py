@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 from pathlib import Path
 
+from common.contracts.file_identity import file_sha256
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.sync_geometry_contract import (
     load_contract,
     render_fly2,
@@ -18,14 +18,6 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.sync_geometry_cont
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CONSUMER_CONTRACT_PATH = PROJECT_ROOT / "config" / "candidate_consumers.json"
 VARIABLE_CATALOG_PATH = PROJECT_ROOT / "config" / "design_variables.json"
-
-
-def sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def verify_routing_coverage(consumer_contract: dict, variable_catalog: dict) -> None:
@@ -82,7 +74,7 @@ def prepare(
         "schema_version": 1,
         "role": "oa_tof_candidate_consumption_plan",
         "status": "STATIC_INPUTS_READY",
-        "candidate_contract": {"path": str(contract_path), "sha256": sha256(contract_path)},
+        "candidate_contract": {"path": str(contract_path), "sha256": file_sha256(contract_path).lower()},
         "consumers": {
             "comsol": {
                 "entrypoint": "comsol/run_oatof_model.m",
@@ -92,7 +84,7 @@ def prepare(
             "simion": {
                 "entrypoint": "workflows/design_candidate/prepare_candidate_consumers.py",
                 "generated": {
-                    key: {"path": str(path.resolve()), "sha256": sha256(path)}
+                    key: {"path": str(path.resolve()), "sha256": file_sha256(path).lower()}
                     for key, path in generated.items()
                 },
                 "runtime_status": "text_generated_pa_iob_not_built",

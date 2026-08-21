@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import copy
-import hashlib
-import json
 from typing import Any
+
+from common.contracts.file_identity import canonical_json_sha256 as _canonical_sha256
 
 
 _POPULATION_IDENTITY_KEYS = {
@@ -35,13 +35,6 @@ _CONNECTION_KEYS = (
     "clock_alignment",
     "field_ownership_segments",
 )
-
-
-def _canonical_sha256(value: Any) -> str:
-    payload = json.dumps(
-        value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-    ).encode("utf-8")
-    return hashlib.sha256(payload).hexdigest().upper()
 
 
 def _require_mapping(value: Any, label: str) -> dict[str, Any]:

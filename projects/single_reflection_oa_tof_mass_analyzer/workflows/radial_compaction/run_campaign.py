@@ -39,7 +39,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract 
     resolve_contract,
     serialized,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.peak_metrics import (
+from common.analysis.peak_metrics import (
     compute_peak_metrics,
 )
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.prepare_candidate_consumers import (
@@ -352,6 +352,10 @@ def main() -> None:
     validate_run_id(args.run_id)
     simion_exe = args.simion_exe.resolve(strict=True)
     config = load_json(CONFIG_PATH)
+    if config.get("status") != "authorized":
+        raise ValueError(
+            "radial-compaction campaign is not an active authorized execution contract"
+        )
     reference_summary_path, reference_particles_path = _verify_authorities(config)
     baseline = load_json(BASELINE_PATH)
     reference_metrics = _canonical_metrics(reference_particles_path)

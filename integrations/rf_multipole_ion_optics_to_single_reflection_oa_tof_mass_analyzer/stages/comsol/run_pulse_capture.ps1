@@ -42,7 +42,7 @@ function Invoke-PulseCaptureSnapshotPython {
     [Parameter(Mandatory)][string]$FailureMessage
   )
   $environmentNames = @('PYTHONPATH','PYTHONNOUSERSITE')
-  $savedEnvironment = Save-RfEnvironment -Names $environmentNames
+  $savedEnvironment = Save-RunEnvironment -Names $environmentNames
   try {
     $env:PYTHONPATH = $SnapshotRoot
     $env:PYTHONNOUSERSITE = '1'
@@ -50,7 +50,7 @@ function Invoke-PulseCaptureSnapshotPython {
     try { & $Python @Arguments } finally { Pop-Location }
     if ($LASTEXITCODE -ne 0) { throw $FailureMessage }
   } finally {
-    Restore-RfEnvironment -Names $environmentNames -Snapshot $savedEnvironment
+    Restore-RunEnvironment -Names $environmentNames -Snapshot $savedEnvironment
   }
 }
 
@@ -69,7 +69,7 @@ if ([string]::IsNullOrWhiteSpace($RunId)) {
     "__sim__comsol__rf-oatof-pulse-capture__n${particleCount}"
 }
 $software = @('COMSOL 6.4','MATLAB R2025b','Python 3.11')
-$package = New-RfRunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
+$package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
   -RunId $RunId -Project $upstreamProjectId `
   -Mode 'rf_to_oatof_pulse_capture' -Software $software `
   -RetentionContractEnabled -RetentionClass compact
@@ -126,7 +126,6 @@ try {
   }
   $dependencyIdentities = [ordered]@{}
   $dependencySnapshotPaths = @{}
-  $dependencyCompatibilityPaths = @{}
   foreach ($dependency in $selectedDependencies) {
     $identity = Copy-RfFrozenDependency -RepoRoot $repoRoot -InputDir $inputDir `
       -Dependency $dependency
@@ -142,11 +141,9 @@ try {
       frozen_input_name = $identity.frozen_input_name
       consumers = @($identity.consumers)
       snapshot_path = $identity.snapshot_path
-      compatibility_path = $identity.compatibility_path
       sha256 = $identity.sha256
     }
     $dependencySnapshotPaths[$identity.id] = $identity.snapshot_path
-    $dependencyCompatibilityPaths[$identity.id] = $identity.compatibility_path
   }
   $manifestToolRoot = $snapshotRoot
   $interfaceStagePlan = $dependencySnapshotPaths['rf_interface_stage_plan']
@@ -159,11 +156,11 @@ try {
     $dependencySnapshotPaths['common_create_multipole_round_rods']
   $oaBaselineSnapshot = $dependencySnapshotPaths['oatof_baseline']
   $oaBuilderSnapshot = $dependencySnapshotPaths['oatof_accelerator_geometry_builder']
-  $oaBaselineMatlab = $dependencyCompatibilityPaths['oatof_baseline']
-  $oaBuilderMatlab = $dependencyCompatibilityPaths['oatof_accelerator_geometry_builder']
+  $oaBaselineMatlab = $dependencySnapshotPaths['oatof_baseline']
+  $oaBuilderMatlab = $dependencySnapshotPaths['oatof_accelerator_geometry_builder']
   if ([string]::IsNullOrWhiteSpace($oaBaselineMatlab) -or
       [string]::IsNullOrWhiteSpace($oaBuilderMatlab)) {
-    throw 'PulseCapture MATLAB compatibility inputs are not declared by the dependency contract.'
+    throw 'PulseCapture MATLAB inputs are not declared by the dependency contract.'
   }
   $frozenManifestVerifier = $dependencySnapshotPaths['common_verify_run_manifest']
   $frozenComsolRunner = $dependencySnapshotPaths['common_comsol_runner']
@@ -346,9 +343,9 @@ try {
       code_inventory = $dependencyContract
       dependency_contract = $dependencyPublication.dependency_contract_path
       oatof_baseline = $oaBaselineSnapshot
-      oatof_baseline_matlab_compatibility = $oaBaselineMatlab
+      oatof_baseline_matlab = $oaBaselineMatlab
       oatof_accelerator_builder = $oaBuilderSnapshot
-      oatof_accelerator_builder_matlab_compatibility = $oaBuilderMatlab
+      oatof_accelerator_builder_matlab = $oaBuilderMatlab
       source_run_manifest = $sourceManifest
       source_run_config = $sourceRunConfig
       resolved_integration_engineering_budget = $budgetBinding.frozen_budget
@@ -382,12 +379,12 @@ try {
     }
     formal_gate_passed = $false
   }
-  Write-RfJson -Path $package.run_config -Depth 9 -Value $runConfiguration
-  Write-RfJson -Path $package.summary -Value ([ordered]@{
+  Write-RunJson -Path $package.run_config -Depth 9 -Value $runConfiguration
+  Write-RunJson -Path $package.summary -Value ([ordered]@{
     schema_version = 1; role = 'rf_to_oatof_pulse_capture_summary'
     status = 'interrupted'; reason = 'Run package initialized; final status not yet recorded.'
   })
-  Write-RfFrozenRunManifest -Python $python -FrozenRepoRoot $manifestToolRoot `
+  Write-RunManifest -Python $python -RepoRoot $manifestToolRoot `
     -RunConfig $package.run_config `
     -Status interrupted -Software $software
 
@@ -399,7 +396,7 @@ try {
     'RF_OATOF_PulseCapture_PARTICLE_INPUT','RF_OATOF_PulseCapture_OA_COMSOL_DIR',
     'RF_OATOF_MULTIPOLE_COMSOL_DIR'
   )
-  $oldEnvironment = Save-RfEnvironment -Names $environmentNames
+  $oldEnvironment = Save-RunEnvironment -Names $environmentNames
   $comsolWrapperStdout = Join-Path $logDir 'comsol_wrapper.stdout.log'
   $comsolWrapperStderr = Join-Path $logDir 'comsol_wrapper.stderr.log'
   try {
@@ -432,7 +429,7 @@ try {
       throw 'COMSOL PulseCapture pulse-capture task failed.'
     }
   } finally {
-    Restore-RfEnvironment -Names $environmentNames -Snapshot $oldEnvironment
+    Restore-RunEnvironment -Names $environmentNames -Snapshot $oldEnvironment
   }
   Invoke-PulseCaptureSnapshotPython -Python $python -SnapshotRoot $snapshotRoot -Arguments @(
     $localExitAdapter,'--source',$particleInput,'--terminal',$terminal,
@@ -470,7 +467,7 @@ try {
       [bool]$result.pulse_capture_stage_passed -or [bool]$result.formal_gate_passed) {
     throw 'PulseCapture result violates the qualification-limited functional contract.'
   }
-  Write-RfJson -Path $package.summary -Value ([ordered]@{
+  Write-RunJson -Path $package.summary -Value ([ordered]@{
     schema_version = 1; role = 'rf_to_oatof_pulse_capture_summary'; status = 'success'
     source_particles = [int]$result.source_particles
     oatof_entry_crossings = [int]$result.oatof_entry_crossings
@@ -498,12 +495,12 @@ try {
     $resourceBudgetExceeded = $true
     throw 'COMSOL PulseCapture compact final retained-byte budget exceeded.'
   }
-  Write-RfFrozenRunManifest -Python $python -FrozenRepoRoot $manifestToolRoot `
+  Write-RunManifest -Python $python -RepoRoot $manifestToolRoot `
     -RunConfig $package.run_config `
     -Status success -Software $software -Outputs $outputs
   Write-Output "STATUS=PASS RUN_ID=$RunId SOURCE=$($result.source_particles) ACTIVE=$($result.active_at_pulse) LOCAL_EXIT=$($result.local_accelerator_exit) PulseCapture_STAGE_PASS=false"
 } catch {
-  Complete-RfFrozenFailedRun -Python $python -FrozenRepoRoot $manifestToolRoot `
+  Complete-FailedRun -Python $python -RepoRoot $manifestToolRoot `
     -RunConfig $package.run_config `
     -Summary $package.summary -SummaryRole 'rf_to_oatof_pulse_capture_summary' `
     -Reason $_.Exception.Message -Software $software `

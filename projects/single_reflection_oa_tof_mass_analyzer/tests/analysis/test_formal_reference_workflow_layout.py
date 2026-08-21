@@ -12,6 +12,7 @@ class FormalReferenceWorkflowLayoutTests(unittest.TestCase):
         workflow_root = PROJECT_ROOT / "workflows" / "formal_reference"
         moved_names = {
             "run_formal_validation.ps1",
+            "verify_stable_entry.ps1",
             "verify_geometry_contract.ps1",
             "verify_geometry_derivation.py",
         }
@@ -158,7 +159,7 @@ class FormalReferenceWorkflowLayoutTests(unittest.TestCase):
             / "verify_geometry_contract.ps1"
         ).read_text(encoding="utf-8")
         stable_gate = (
-            PROJECT_ROOT / "tests" / "simion" / "verify_stable_entry.ps1"
+            PROJECT_ROOT / "workflows" / "formal_reference" / "verify_stable_entry.ps1"
         ).read_text(encoding="utf-8")
         self.assertIn("$formalAssets.simion_manifest", gate)
         self.assertIn("verify_stable_entry.ps1", gate)

@@ -12,7 +12,7 @@
   "preregistration": {
     "status": "REGISTERED_EXECUTION_REQUIRES_EXPLICIT_AUTHORIZATION",
     "document": {
-      "path": "docs/history/20260814__oatof-long-affine-arm8-five-cell-simion-preregistration.md",
+      "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/20260814__oatof-long-affine-arm8-five-cell-simion-preregistration.md",
       "bytes": 11709,
       "sha256": "BD08187AC4B0DEE0F5933F4CCD02F8C690DDDFEB7BEAA43C73BDD4FDB8ABBE4E"
     },

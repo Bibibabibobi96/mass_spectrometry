@@ -4,7 +4,9 @@ import csv
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+from common.simion.particle_batching import plan_single_wave_batches
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.build_steady_state_source import (
     SOURCE_COLUMNS,
     build,
@@ -89,11 +91,17 @@ class SteadyStateSourceTests(unittest.TestCase):
                 "6,pre_pulse_state,eligible\n",
                 encoding="utf-8",
             )
-            receipt = build(
-                [source], [checkpoints], root / "selected.csv", root / "receipt.json",
-                target_count=None, selection_mode="all_eligible",
-                batch_directory=root / "batches", batch_count=2,
-            )
+            with patch(
+                "integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
+                ".analysis.build_steady_state_source.plan_single_wave_batches",
+                wraps=plan_single_wave_batches,
+            ) as plan_batches:
+                receipt = build(
+                    [source], [checkpoints], root / "selected.csv", root / "receipt.json",
+                    target_count=None, selection_mode="all_eligible",
+                    batch_directory=root / "batches", batch_count=2,
+                )
+            plan_batches.assert_called_once_with(5, 2)
             self.assertEqual(receipt["selected_count"], 5)
             self.assertEqual(receipt["unselected_eligible_count"], 0)
             self.assertIsNone(receipt["selection_seed"])
@@ -104,6 +112,22 @@ class SteadyStateSourceTests(unittest.TestCase):
             self.assertEqual(
                 [item["global_particle_id_offset"] for item in receipt["execution_batches"]],
                 [0, 3],
+            )
+            self.assertEqual(
+                receipt["execution_batch_plan"],
+                {
+                    "schema_version": 1,
+                    "role": "simion_single_wave_particle_batch_plan",
+                    "dispatch": "single_wave_parallel",
+                    "particle_count": 5,
+                    "batch_count": 2,
+                    "batches": [
+                        {"index": 1, "count": 3, "particle_id_min": 1,
+                         "particle_id_max": 3, "simion_particle_id_offset": 0},
+                        {"index": 2, "count": 2, "particle_id_min": 4,
+                         "particle_id_max": 5, "simion_particle_id_offset": 3},
+                    ],
+                },
             )
             self.assertEqual(
                 receipt["selected_population_contract"]["efficiency_denominator"],

@@ -16,6 +16,8 @@ param(
   [Parameter(Mandatory)]
   [ValidateSet('explicit_campaign_row')]
   [string]$PaCachePolicyProvenance,
+  [string]$RequiredPaCacheGenerationBinding = '',
+  [string]$RequiredPaCacheGenerationBindingSha256 = '',
   [string]$OatofResolvedGeometry = '',
   [string]$PulseSchedule = '',
   [Parameter(Mandatory)][string]$ResolvedPopulationContract,
@@ -28,6 +30,8 @@ param(
   [string]$ThreeZoneGeometryId = '',
   [string]$ThreeZoneFrontendElectrodeTopologyId = '',
   [string]$ThreeZoneFieldId = '',
+  [string]$TheoryWorkingPoint = '',
+  [string]$TheoryWorkingPointSha256 = '',
   [ValidateSet('','n1_smoke_producer','n100_solver_authorized_consumer')]
   [string]$ThreeZoneSolverGateStage = '',
   [string]$ThreeZoneSolverGateId = '',
@@ -50,6 +54,7 @@ param(
   [string]$OatofNumericalProfileId = '',
   [string]$TrajectoryQualityProfileId = '',
   [string]$TimeIntegrationProfileId = '',
+  [double]$MaximumTimeOfFlightUs = 0,
   [string]$SpatialWindowProfileId = '',
   [Parameter(Mandatory)][string]$ResolvedRegionFieldContract,
   [Parameter(Mandatory)][string]$ResolvedRegionFieldContractSha256,
@@ -96,11 +101,21 @@ param(
   [string]$PrePulseTimeSeriesContractSha256 = '',
   [ValidateScript({ $_ -ge 1 })][int]$ExecutionBatchCount = 1,
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
-  [string]$PythonExe = ''
+  [string]$PythonExe = '',
+  [switch]$BindingParseOnly
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$frozenPaCacheGenerationBindingPath = [string]$RequiredPaCacheGenerationBinding
+$frozenPaCacheGenerationBindingSha256 = [string]$RequiredPaCacheGenerationBindingSha256
+$hasRequiredPaCacheGenerationBinding = -not [string]::IsNullOrWhiteSpace(
+  $frozenPaCacheGenerationBindingPath
+)
+if ($hasRequiredPaCacheGenerationBinding -ne (-not [string]::IsNullOrWhiteSpace(
+    $frozenPaCacheGenerationBindingSha256))) {
+  throw 'PA cache generation binding path/hash identity is incomplete.'
+}
 $integrationRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $repoRoot = (Resolve-Path (Join-Path $integrationRoot '..\..')).Path
 $workspaceRoot = Split-Path -Parent $repoRoot
@@ -118,13 +133,25 @@ $runtime = Resolve-RfOatofRuntimeBinding -RepoRoot $repoRoot `
 . (Join-Path $repoRoot 'common\multipole\resource_budget_support.ps1')
 
 function Invoke-SingleFlightPython {
-  param([Parameter(Mandatory)][object[]]$Arguments,[Parameter(Mandatory)][string]$Failure)
-  $saved = Save-RfEnvironment -Names @('PYTHONPATH','PYTHONNOUSERSITE')
+  param(
+    [Parameter(Mandatory)][object[]]$Arguments,
+    [Parameter(Mandatory)][string]$Failure,
+    [string]$StdoutPath = '',
+    [string]$StderrPath = ''
+  )
+  $saved = Save-RunEnvironment -Names @('PYTHONPATH','PYTHONNOUSERSITE')
   try {
     $env:PYTHONPATH = $repoRoot; $env:PYTHONNOUSERSITE = '1'
     Push-Location -LiteralPath $repoRoot
-    try { & $python @Arguments; if ($LASTEXITCODE -ne 0) { throw $Failure } } finally { Pop-Location }
-  } finally { Restore-RfEnvironment -Names @('PYTHONPATH','PYTHONNOUSERSITE') -Snapshot $saved }
+    try {
+      if ($StdoutPath -and $StderrPath) {
+        & $python @Arguments 1> $StdoutPath 2> $StderrPath
+      } else {
+        & $python @Arguments
+      }
+      if ($LASTEXITCODE -ne 0) { throw "$Failure (exit_code=$LASTEXITCODE)" }
+    } finally { Pop-Location }
+  } finally { Restore-RunEnvironment -Names @('PYTHONPATH','PYTHONNOUSERSITE') -Snapshot $saved }
 }
 
 function Get-RfSingleFlightParticleLines {
@@ -229,6 +256,7 @@ function Assert-RfThreeZoneRuntimeIdentity {
     [Parameter(Mandatory)][string]$GeometryId,
     [Parameter(Mandatory)][string]$FrontendElectrodeTopologyId,
     [Parameter(Mandatory)][string]$FieldId
+    ,[Parameter()]$TheoryWorkingPoint = $null
   )
   if ([int]$Candidate.schema_version -ne 1 -or
       [string]$Candidate.role -ne
@@ -265,13 +293,23 @@ function Assert-RfThreeZoneRuntimeIdentity {
   foreach ($mappingName in @('planes_global_z_mm','potentials_v')) {
     foreach ($role in @('repeller','intermediate1','intermediate2','exit')) {
       $candidateValue = [double]$Candidate.accelerator_topology.$mappingName.$role
+      $expectedValue = if ($null -ne $TheoryWorkingPoint -and $mappingName -eq 'potentials_v') {
+        [double]$TheoryWorkingPoint.accelerator_topology.potentials_v.$role
+      } else { $candidateValue }
       if ([double]$Geometry.accelerator_topology.$mappingName.$role -ne
-          $candidateValue -or
+          $expectedValue -or
           [double]$RegionField.semantic.accelerator_topology.$mappingName.$role -ne
-          $candidateValue) {
+          $expectedValue) {
         throw 'Frozen three-zone Candidate plane or potential mapping differs.'
       }
     }
+  }
+  if ($null -ne $TheoryWorkingPoint -and
+      ([string]$TheoryWorkingPoint.role -ne 'rf_oatof_theory_working_point' -or
+       [string]$TheoryWorkingPoint.policy_id -ne 'source_zvz_three_zone_theory_working_point_v1' -or
+       [double]$Geometry.electrodes_V.midgrid -ne [double]$TheoryWorkingPoint.reflectron.stage1_voltage_v -or
+       [double]$Geometry.electrodes_V.backplate -ne [double]$TheoryWorkingPoint.reflectron.backplate_voltage_v)) {
+    throw 'Theory working point and resolved electrode potentials differ.'
   }
 }
 
@@ -534,10 +572,84 @@ if ($PulseResolutionN100Screening) {
   }
 }
 $artifactRoot = Join-Path $workspaceRoot "artifacts\projects\$runProjectId"
-$package = New-RfRunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
+$package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
   -RunId $RunId -Project $runProjectId -Mode 'rf_to_oatof_simion_single_flight' `
   -Software @('SIMION 2020','Python 3.11') -RetentionContractEnabled -RetentionClass compact `
   -AdditionalDirectories @('simion')
+if ($BindingParseOnly) {
+  if (-not $hasRequiredPaCacheGenerationBinding) {
+    throw 'BindingParseOnly requires one PA cache generation binding.'
+  }
+  $bindingParseOnlyDocument = Get-Content `
+    -LiteralPath $frozenPaCacheGenerationBindingPath -Raw -Encoding UTF8 |
+    ConvertFrom-Json -AsHashtable
+  if (-not $bindingParseOnlyDocument.ContainsKey('binding_mode') -or
+      -not $bindingParseOnlyDocument.ContainsKey('cache_generations') -or
+      [string]$bindingParseOnlyDocument['binding_mode'] -ne
+        'require_exact_schema_v3_generations_v1' -or
+      @($bindingParseOnlyDocument['cache_generations']).Count -lt 1) {
+    throw 'BindingParseOnly PA cache generation binding is invalid.'
+  }
+  $testPackageRoot = [IO.Path]::GetFullPath($package.run_dir)
+  $allowedRoot = [IO.Path]::GetFullPath($artifactRoot).TrimEnd(
+    [IO.Path]::DirectorySeparatorChar
+  ) + [IO.Path]::DirectorySeparatorChar
+  if (-not $testPackageRoot.StartsWith(
+      $allowedRoot, [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'BindingParseOnly package cleanup escaped the runner artifact root.'
+  }
+  Remove-Item -LiteralPath $testPackageRoot -Recurse -Force
+  'PA_CACHE_GENERATION_POST_PACKAGE_PARSE=PASS'
+  exit 0
+}
+$requiredPaCacheGenerationBindingDocument = $null
+$requiredPaCacheGenerationEntries = @()
+if ($hasRequiredPaCacheGenerationBinding) {
+  # The adapter has already verified the frozen file and SHA before dispatch.
+  # The authoritative runtime check below validates the resolved cache
+  # manifests (role, cache key, generation and payload) before SIMION.
+  $requiredPaCacheGenerationBindingDocument = Get-Content `
+    -LiteralPath $frozenPaCacheGenerationBindingPath -Raw -Encoding UTF8 |
+    ConvertFrom-Json -AsHashtable
+  if ($null -eq $requiredPaCacheGenerationBindingDocument -or
+      $requiredPaCacheGenerationBindingDocument -isnot
+        [System.Collections.IDictionary] -or
+      -not $requiredPaCacheGenerationBindingDocument.Contains('binding_mode') -or
+      -not $requiredPaCacheGenerationBindingDocument.Contains('cache_generations')) {
+    $parsedType = if ($null -eq $requiredPaCacheGenerationBindingDocument) {
+      '<null>'
+    } else {
+      $requiredPaCacheGenerationBindingDocument.GetType().FullName
+    }
+    $parsedKeys = if ($requiredPaCacheGenerationBindingDocument -isnot
+        [System.Collections.IDictionary]) {
+      '<none>'
+    } else {
+      @($requiredPaCacheGenerationBindingDocument.Keys) -join ','
+    }
+    throw "PA cache generation binding parser output is invalid: type=$parsedType keys=$parsedKeys path=$frozenPaCacheGenerationBindingPath"
+  }
+  $requiredPaCacheGenerationEntries = @(
+    $requiredPaCacheGenerationBindingDocument['cache_generations']
+  )
+  if ([string]$requiredPaCacheGenerationBindingDocument['binding_mode'] -ne
+      'require_exact_schema_v3_generations_v1' -or
+      $requiredPaCacheGenerationEntries.Count -lt 1 -or
+      @($requiredPaCacheGenerationEntries | Where-Object {
+        $_ -isnot [System.Collections.IDictionary]
+      }).Count -ne 0) {
+    throw 'PA cache generation binding is invalid.'
+  }
+  $roles = @($requiredPaCacheGenerationEntries | ForEach-Object {
+    [string]$_['role']
+  })
+  if ($roles.Count -ne @($roles | Select-Object -Unique).Count) {
+    throw 'PA cache generation binding roles are not unique.'
+  }
+  Copy-Item -LiteralPath $frozenPaCacheGenerationBindingPath -Destination (
+    Join-Path $package.input_dir 'single_flight_pa_cache_generation_binding.json'
+  )
+}
 $resourceBudgetExceeded = $false
 $snapshotReady = $false
 $summaryRole = 'rf_oatof_simion_single_flight_summary'
@@ -558,6 +670,45 @@ $paCacheDispositions = [ordered]@{
   reflectron = [ordered]@{
     role='simion_oatof_reflectron_pa_cache';key=$null
     disposition='pending_cache_decision'
+  }
+}
+function Assert-RfExactPaCacheGenerationBinding {
+  param([Parameter(Mandatory)][object[]]$ActiveCaches)
+  if (-not $hasRequiredPaCacheGenerationBinding) { return }
+  $expected = @($requiredPaCacheGenerationEntries)
+  if ($expected.Count -ne $ActiveCaches.Count) {
+    throw 'PA cache generation binding does not cover exactly the active PA roles.'
+  }
+  foreach ($active in $ActiveCaches) {
+    if ($active -isnot [System.Collections.IDictionary]) {
+      throw 'Active PA cache identity has an unsupported representation.'
+    }
+    $activeRole = [string]$active['role']
+    $matches = @($expected | Where-Object {
+      [string]$_['role'] -eq $activeRole
+    })
+    if ($matches.Count -ne 1) {
+      throw "PA cache generation binding lacks exactly one active role: $activeRole"
+    }
+    $requirement = $matches[0]
+    $manifestPath = Join-Path ([string]$active['cache_directory']) `
+      'cache_manifest.json'
+    if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+      throw "PA cache generation manifest is missing: $activeRole"
+    }
+    $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 |
+      ConvertFrom-Json -AsHashtable
+    if ($manifest -isnot [System.Collections.IDictionary] -or
+        [int]$manifest['schema_version'] -ne 3 -or
+        [string]$manifest['role'] -ne $activeRole -or
+        [string]$manifest['cache_key'] -ne [string]$active['cache_key'] -or
+        [string]$manifest['cache_key'] -ne [string]$requirement['cache_key'] -or
+        [string]$manifest['generation_sha256'] -ne
+          [string]$requirement['generation_sha256'] -or
+        ([string]$manifest['payload_sha256']).ToUpperInvariant() -ne
+          ([string]$requirement['payload_sha256']).ToUpperInvariant()) {
+      throw "PA cache generation identity differs: $activeRole"
+    }
   }
 }
 $prePulseTimeSeriesContractFrozen = $null
@@ -608,7 +759,7 @@ $preCacheRunConfiguration = [ordered]@{
 function Write-RfPreCacheRunConfiguration {
   param([Parameter(Mandatory)][string]$LifecycleStage)
   $preCacheRunConfiguration.parameters.lifecycle_stage = $LifecycleStage
-  Write-RfJson -Path $package.run_config -Depth 10 -Value $preCacheRunConfiguration
+  Write-RunJson -Path $package.run_config -Depth 10 -Value $preCacheRunConfiguration
 }
 Write-RfPreCacheRunConfiguration `
   -LifecycleStage 'pa_cache_policy_pending_budget_validation'
@@ -736,6 +887,16 @@ try {
     throw 'Single-flight time-integration profile is invalid.'
   }
   $rfStepsPerPeriod = [int]$timeIntegrationProfiles[0].rf_steps_per_period
+  $maximumTimeOfFlightUs = if ($MaximumTimeOfFlightUs -gt 0) {
+    $MaximumTimeOfFlightUs
+  } else {
+    [double]$settings.maximum_time_of_flight_us
+  }
+  if ([double]::IsNaN($maximumTimeOfFlightUs) -or
+      [double]::IsInfinity($maximumTimeOfFlightUs) -or
+      $maximumTimeOfFlightUs -le 0) {
+    throw 'Single-flight maximum time of flight is invalid.'
+  }
   $spatialWindowProfiles = @(if ([string]::IsNullOrWhiteSpace($SpatialWindowProfileId)) {
   } else {
     $settings.spatial_window_profiles | Where-Object {
@@ -938,6 +1099,9 @@ try {
   }
   if ($ExecutionBatchCount -gt $launched) {
     throw 'Single-flight execution batch count exceeds launched particle count.'
+  }
+  if ($ExecutionBatchCount -gt $maxParallelBatches) {
+    throw 'Single-flight execution must fit in one dispatch wave; batch count exceeds the selected profile parallel capacity.'
   }
   $sourceRegionDiagnosticProfileId = if (
     $isPrePulseTimeSeriesScreening -eq $false -and
@@ -1221,7 +1385,7 @@ try {
       $registrationSourceIdentity['paired_cohort_authority'] =
         $pairedCohortProperty.Value
     }
-    Write-RfJson -Path $sourceIdentity -Depth 10 -Value $registrationSourceIdentity
+    Write-RunJson -Path $sourceIdentity -Depth 10 -Value $registrationSourceIdentity
   }
   $frontendGem = Join-Path $package.input_dir 'single_flight_frontend.gem'
   $frontendContract = Join-Path $package.input_dir 'single_flight_frontend_contract.json'
@@ -1269,6 +1433,16 @@ try {
     throw 'Resolved frontend electrode topology is invalid or non-contiguous.'
   }
   if ($hasThreeZoneCandidate) {
+    $theoryWorkingPointDocument = $null
+    if (-not [string]::IsNullOrWhiteSpace($TheoryWorkingPoint)) {
+      if ([string]::IsNullOrWhiteSpace($TheoryWorkingPointSha256) -or
+          -not (Test-Path -LiteralPath $TheoryWorkingPoint -PathType Leaf) -or
+          (Get-FileHash -LiteralPath $TheoryWorkingPoint -Algorithm SHA256).Hash -ne
+          $TheoryWorkingPointSha256) {
+        throw 'Theory working point is missing or stale.'
+      }
+      $theoryWorkingPointDocument = Get-Content -LiteralPath $TheoryWorkingPoint -Raw -Encoding UTF8 | ConvertFrom-Json
+    }
     $threeZoneRuntimeIdentity = @{
       Candidate = $threeZoneCandidateDocument
       CandidateSha256 = $ThreeZoneCandidateSha256
@@ -1286,6 +1460,7 @@ try {
       GeometryId = $ThreeZoneGeometryId
       FrontendElectrodeTopologyId = $ThreeZoneFrontendElectrodeTopologyId
       FieldId = $ThreeZoneFieldId
+      TheoryWorkingPoint = $theoryWorkingPointDocument
     }
     Assert-RfThreeZoneRuntimeIdentity @threeZoneRuntimeIdentity
   }
@@ -1326,10 +1501,15 @@ try {
   $paCacheDispositions.frontend.key = $frontendCacheKey
   $cacheRoot = Join-Path $workspaceRoot "artifacts\projects\$runProjectId\cache\simion_single_flight_frontend"
   $cacheDir = Join-Path $cacheRoot $frontendCacheKey
-  $frontendCacheHit = Test-RfReusableCacheEntry -Python $python `
+  $frontendCacheLock = Enter-RfCacheKeyLock -CacheRoot $cacheRoot `
+    -CacheKey $frontendCacheKey
+  try {
+  $cacheDir = Resolve-RfReusableCacheDirectory -Python $python `
     -RepoRoot $repoRoot -WorkspaceRoot $workspaceRoot -ProjectId $runProjectId `
     -CacheRoot $cacheRoot -CacheKey $frontendCacheKey -Role $frontendCacheRole `
+    -Identity $frontendCacheIdentity `
     -InvalidEntryAction $(if ($PaCachePolicy -eq 'require_existing') {'preserve'} else {'remove'})
+  $frontendCacheHit = $null -ne $cacheDir
   $frontendRefineRequired = -not $frontendCacheHit
   if ($frontendRefineRequired -and $PaCachePolicy -eq 'require_existing') {
     $paCacheDispositions.frontend.disposition = 'cache_miss_required_existing'
@@ -1374,6 +1554,9 @@ try {
   if (-not $frontendRefineRequired) {
     $paCacheDispositions.frontend.disposition = 'cache_hit'
     Write-RfPreCacheRunConfiguration -LifecycleStage 'frontend_pa_cache_hit'
+  }
+  } finally {
+    Exit-RfCacheKeyLock -Mutex $frontendCacheLock
   }
   $cacheGem = Join-Path $cacheDir 'frontend.gem'; $cachePaSharp = Join-Path $cacheDir 'frontend.pa#'; $cachePa0 = Join-Path $cacheDir 'frontend.pa0'
   $frontendWorkingDir = Join-Path $package.run_dir 'simion\frontend_cache_copy'
@@ -1435,10 +1618,12 @@ try {
     $overlayCachePa0 = Join-Path $overlayCacheDir 'accelerator_overlay.pa0'
     $overlayCacheManifest = Join-Path $overlayCacheDir 'cache_manifest.json'
     $overlayCacheBasisReport = Join-Path $overlayCacheDir 'basis_build.json'
-    $overlayFamilyComplete = Test-RfReusableCacheEntry -Python $python `
+    $overlayCacheDir = Resolve-RfReusableCacheDirectory -Python $python `
       -RepoRoot $repoRoot -WorkspaceRoot $workspaceRoot -ProjectId $runProjectId `
       -CacheRoot $overlayCacheRoot -CacheKey $overlayKey -Role $overlayCacheRole `
+      -Identity $overlayIdentity `
       -InvalidEntryAction $(if ($PaCachePolicy -eq 'require_existing') {'preserve'} else {'remove'})
+    $overlayFamilyComplete = $null -ne $overlayCacheDir
     if (-not $overlayFamilyComplete -and $PaCachePolicy -eq 'require_existing') {
       $paCacheDispositions.accelerator_overlay.disposition = 'cache_miss_required_existing'
       Write-RfPreCacheRunConfiguration -LifecycleStage 'accelerator_overlay_pa_cache_miss'
@@ -1523,6 +1708,7 @@ try {
       $paCacheDispositions.accelerator_overlay.disposition = 'cache_hit'
       Write-RfPreCacheRunConfiguration -LifecycleStage 'accelerator_overlay_pa_cache_hit'
     }
+    $overlayCacheBasisReport = Join-Path $overlayCacheDir 'basis_build.json'
     Copy-Item -LiteralPath $overlayCacheBasisReport -Destination $overlayBasisReport
     $overlayInterfaceReport = Join-Path $package.result_dir 'accelerator_overlay_interface_verification.json'
   }
@@ -1560,7 +1746,6 @@ try {
   $flightTubeBuildStdout = $null
   $flightTubeBuildStderr = $null
   $downstreamCacheRoot = Join-Path $workspaceRoot "artifacts\projects\$runProjectId\cache\simion_oatof_downstream_pa"
-  $geometryHash = (Get-FileHash -LiteralPath $oatofGeometry -Algorithm SHA256).Hash
   $flightTubeBuilderSource = Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer\simion\workbench\build_flight_tube_variant.lua'
   $flightTubeGemSource = Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer\simion\workbench\oatof_flight_tube_ground.gem'
   $reflectronBuilderSource = Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer\simion\reflectron\build_reflectron_variant.lua'
@@ -1573,6 +1758,7 @@ try {
       [Parameter(Mandatory)][string]$Builder,
       [Parameter(Mandatory)][string]$Gem,
       [Parameter(Mandatory)]$CriticalOptions,
+      [Parameter(Mandatory)][string]$GeometryIdentitySha256,
       [string]$Additional=''
     )
     $additionalHash = if ([string]::IsNullOrWhiteSpace($Additional)) { '' } else { (Get-FileHash -LiteralPath $Additional -Algorithm SHA256).Hash }
@@ -1580,7 +1766,7 @@ try {
       schema_version=2; role=$Role
       project_id=$runProjectId; solver=$simionSolverCacheIdentity
       inputs=[ordered]@{
-        oatof_geometry_sha256=$geometryHash
+        pa_build_geometry_sha256=$GeometryIdentitySha256
         builder_sha256=(Get-FileHash -LiteralPath $Builder -Algorithm SHA256).Hash
         gem_sha256=(Get-FileHash -LiteralPath $Gem -Algorithm SHA256).Hash
         additional_builder_sha256=$additionalHash
@@ -1599,8 +1785,18 @@ try {
   $reflectronBuild = $oatofGeometryDocument.simion_geometry_build.reflectron
   $rings = $oatofGeometryDocument.rings
   $voltage = $oatofGeometryDocument.electrodes_V
+  # The flight-tube PA is a single grounded shield.  Its builder consumes only
+  # these mesh and geometry values; electrode potentials are applied by the
+  # runtime field contract and must not create a duplicate PA-cache identity.
+  $flightTubeGeometryIdentity = Get-RfFlightTubePaBuildGeometryIdentity `
+    -Geometry $geometry -Build $flightBuild
+  $flightTubeGeometryIdentitySha256 = Get-RfContentIdentitySha256 `
+    -Identity $flightTubeGeometryIdentity
+  $reflectronGeometryIdentitySha256 = (Get-FileHash -LiteralPath $oatofGeometry `
+    -Algorithm SHA256).Hash
   $flightTubeCachePlan = Get-DownstreamCachePlan -Kind 'flight_tube_ground' `
     -Role 'simion_oatof_flight_tube_pa_cache' -Builder $flightTubeBuilderSource `
+    -GeometryIdentitySha256 $flightTubeGeometryIdentitySha256 `
     -Gem $flightTubeGemSource -CriticalOptions ([ordered]@{
       builder_mode='flight_tube_variant';cell_axial_mm=[double]$flightBuild.cell_axial_mm
       cell_radial_mm=[double]$flightBuild.cell_radial_mm;max_gib=[double]$flightBuild.max_gib
@@ -1613,6 +1809,7 @@ try {
     })
   $reflectronCachePlan = Get-DownstreamCachePlan -Kind 'reflectron' `
     -Role 'simion_oatof_reflectron_pa_cache' -Builder $reflectronBuilderSource `
+    -GeometryIdentitySha256 $reflectronGeometryIdentitySha256 `
     -Gem $reflectronGemSource -Additional $reflectronRefinerSource `
     -CriticalOptions ([ordered]@{
       builder_mode='initialize-only';cell_axial_mm=[double]$reflectronBuild.cell_axial_mm
@@ -1686,26 +1883,29 @@ try {
     })
     $frequencyHz = [double]$upstreamDocument.drive.frequency_Hz
     $periodUs = 1000000.0 / $frequencyHz
-    $stepUs = $periodUs / 160.0
+    $gridRfStepsPerPeriod = [int]$rfGrid.rf_steps_per_period
+    if ($gridRfStepsPerPeriod -le 0) {
+      throw 'Pre-pulse time-series RF step count must be positive.'
+    }
+    $stepUs = $periodUs / [double]$gridRfStepsPerPeriod
     $startIndex = [int]$rfGrid.start_index
     $endIndex = [int]$rfGrid.end_index
     if ([string]$rfGrid.waveform -ne [string]$upstreamDocument.drive.waveform -or
         [double]$rfGrid.frequency_hz -ne $frequencyHz -or
         [double]$rfGrid.phase_rad -ne [double]$upstreamDocument.drive.phase_rad -or
-        [int]$rfGrid.rf_steps_per_period -ne 160 -or
-        $rfStepsPerPeriod -ne 160 -or
+        $rfStepsPerPeriod -ne $gridRfStepsPerPeriod -or
         [Math]::Abs([double]$rfGrid.period_us - $periodUs) -gt 1e-12 -or
         [Math]::Abs([double]$rfGrid.step_us - $stepUs) -gt 1e-12 -or
         $startIndex -lt 0 -or $endIndex -lt $startIndex -or
         $sampleTimes.Count -ne ($endIndex - $startIndex + 1)) {
-      throw 'Pre-pulse time-series RF160 time-grid identity differs.'
+      throw 'Pre-pulse time-series native solver time-grid identity differs.'
     }
     for ($index = 0; $index -lt $sampleTimes.Count; $index++) {
       $expectedTime = [double]$rfGrid.grid_origin_us +
         ($startIndex + $index) * $stepUs
       if ([Math]::Abs($sampleTimes[$index] - $expectedTime) -gt
           (1e-12 * [Math]::Max(1.0,[Math]::Abs($expectedTime)))) {
-        throw 'Pre-pulse time-series sample time differs from the frozen RF160 grid.'
+        throw 'Pre-pulse time-series sample time differs from the frozen native solver grid.'
       }
       if ($index -gt 0 -and $sampleTimes[$index] -le $sampleTimes[$index - 1]) {
         throw 'Pre-pulse time-series sample times are not strictly increasing.'
@@ -1745,11 +1945,13 @@ try {
   if ($hasReflectronRebuild) {
     $paCacheDispositions.reflectron.key = $reflectronCachePlan.key
   }
-  $flightTubeCacheHit = $hasFlightTubeRebuild -and (Test-RfReusableCacheEntry -Python $python `
+  $flightTubeCacheDir = if ($hasFlightTubeRebuild) { Resolve-RfReusableCacheDirectory -Python $python `
       -RepoRoot $repoRoot -WorkspaceRoot $workspaceRoot -ProjectId $runProjectId `
       -CacheRoot $downstreamCacheRoot -CacheKey $flightTubeCachePlan.key `
       -Role $flightTubeCachePlan.role `
-      -InvalidEntryAction $(if ($PaCachePolicy -eq 'require_existing') {'preserve'} else {'remove'}))
+      -Identity $flightTubeCachePlan.identity `
+      -InvalidEntryAction $(if ($PaCachePolicy -eq 'require_existing') {'preserve'} else {'remove'}) }
+  $flightTubeCacheHit = $null -ne $flightTubeCacheDir
   if ($hasFlightTubeRebuild -and -not $flightTubeCacheHit -and
       $PaCachePolicy -eq 'require_existing') {
     $paCacheDispositions.flight_tube.disposition = 'cache_miss_required_existing'
@@ -1763,11 +1965,13 @@ try {
     $paCacheDispositions.flight_tube.disposition = 'cache_hit'
     Write-RfPreCacheRunConfiguration -LifecycleStage 'flight_tube_pa_cache_hit'
   }
-  $reflectronCacheHit = $hasReflectronRebuild -and (Test-RfReusableCacheEntry -Python $python `
+  $reflectronCacheDir = if ($hasReflectronRebuild) { Resolve-RfReusableCacheDirectory -Python $python `
       -RepoRoot $repoRoot -WorkspaceRoot $workspaceRoot -ProjectId $runProjectId `
       -CacheRoot $downstreamCacheRoot -CacheKey $reflectronCachePlan.key `
       -Role $reflectronCachePlan.role `
-      -InvalidEntryAction $(if ($PaCachePolicy -eq 'require_existing') {'preserve'} else {'remove'}))
+      -Identity $reflectronCachePlan.identity `
+      -InvalidEntryAction $(if ($PaCachePolicy -eq 'require_existing') {'preserve'} else {'remove'}) }
+  $reflectronCacheHit = $null -ne $reflectronCacheDir
   if ($hasReflectronRebuild -and -not $reflectronCacheHit -and
       $PaCachePolicy -eq 'require_existing') {
     $paCacheDispositions.reflectron.disposition = 'cache_miss_required_existing'
@@ -1782,8 +1986,27 @@ try {
     Write-RfPreCacheRunConfiguration -LifecycleStage 'reflectron_pa_cache_hit'
   }
   if ($overlayEnabled) {
+    $overlayCachePaSharp = Join-Path $overlayCacheDir 'accelerator_overlay.pa#'
+    $overlayCachePa0 = Join-Path $overlayCacheDir 'accelerator_overlay.pa0'
     Copy-RfPaCacheFamilyToRuntime -CacheDirectory $overlayCacheDir `
       -Pattern 'accelerator_overlay.pa*'
+    $activePaCaches = @(
+      [ordered]@{role=$frontendCacheRole;cache_key=$frontendCacheKey;cache_directory=$cacheDir}
+    )
+    $activePaCaches += [ordered]@{
+      role=$overlayCacheRole;cache_key=$overlayKey;cache_directory=$overlayCacheDir
+    }
+    if ($flightTubeCacheUsed) {
+      $activePaCaches += [ordered]@{
+        role=$flightTubeCachePlan.role;cache_key=$flightTubeCachePlan.key;cache_directory=$flightTubeCacheDir
+      }
+    }
+    if ($reflectronCacheUsed) {
+      $activePaCaches += [ordered]@{
+        role=$reflectronCachePlan.role;cache_key=$reflectronCachePlan.key;cache_directory=$reflectronCacheDir
+      }
+    }
+    Assert-RfExactPaCacheGenerationBinding -ActiveCaches $activePaCaches
     $overlayRuntimePa0 = Join-Path $runtimeDir 'accelerator_overlay.pa0'
     $overlayVerify = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget `
       -RunDir $package.run_dir -UsagePath (Join-Path $package.log_dir 'overlay_interface_verify_resource_usage.json') `
@@ -1795,6 +2018,22 @@ try {
         ([string]$overlayGeometry.instance_origin_mm.x),([string]$overlayGeometry.instance_origin_mm.y),([string]$overlayGeometry.instance_origin_mm.z),'19',$overlayInterfaceReport)
     if ($overlayVerify.resource_budget_exceeded) { $resourceBudgetExceeded=$true; throw 'Overlay interface verification exceeded its resource budget.' }
     if ($overlayVerify.exit_code -ne 0) { throw 'Overlay interface verification failed.' }
+  }
+  if (-not $overlayEnabled) {
+    $activePaCaches = @(
+      [ordered]@{role=$frontendCacheRole;cache_key=$frontendCacheKey;cache_directory=$cacheDir}
+    )
+    if ($flightTubeCacheUsed) {
+      $activePaCaches += [ordered]@{
+        role=$flightTubeCachePlan.role;cache_key=$flightTubeCachePlan.key;cache_directory=$flightTubeCacheDir
+      }
+    }
+    if ($reflectronCacheUsed) {
+      $activePaCaches += [ordered]@{
+        role=$reflectronCachePlan.role;cache_key=$reflectronCachePlan.key;cache_directory=$reflectronCacheDir
+      }
+    }
+    Assert-RfExactPaCacheGenerationBinding -ActiveCaches $activePaCaches
   }
   $topologyResult = Invoke-SimionCompiledApertureTopologyCheck `
     -PaPath $frontendWorkingPa0 -ReportPath $apertureTopologyReport -VerifierPath $apertureVerifier `
@@ -1972,8 +2211,7 @@ try {
       throw 'SIMION-distributed five-instance IOB container is missing.'
     }
     $overlayContainerFrozenDir = Join-Path $package.input_dir 'simion_five_instance_container'
-    $overlayContainerRuntimeDir = Join-Path $runtimeDir 'simion_five_instance_container'
-    New-Item -ItemType Directory -Path $overlayContainerFrozenDir,$overlayContainerRuntimeDir -Force | Out-Null
+    New-Item -ItemType Directory -Path $overlayContainerFrozenDir -Force | Out-Null
     $overlayIobContainerFrozen = Join-Path $overlayContainerFrozenDir 'mag_quad_2dp.iob'
     Copy-Item -LiteralPath $overlayIobContainerSource -Destination $overlayIobContainerFrozen
     foreach ($seedName in @('mag_quad_2dp.gem','mag_quad_2dp-Mx.gem','mag_quad_2dp-My.gem','mag_quad_2dp-j.gem','mag_quad_2dp-mu.gem')) {
@@ -1981,28 +2219,41 @@ try {
       Copy-Item -LiteralPath (Join-Path $overlayIobContainerSourceDir $seedName) -Destination $seedFrozen
       $overlayIobContainerGemFrozen += $seedFrozen
     }
-    Get-ChildItem -LiteralPath $overlayContainerFrozenDir -File | Copy-Item -Destination $overlayContainerRuntimeDir
-    $overlayIobContainerRuntime = Join-Path $overlayContainerRuntimeDir 'mag_quad_2dp.iob'
-    $overlayIobBuild = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget `
-      -RunDir $package.run_dir -UsagePath (Join-Path $package.log_dir 'overlay_iob_build_resource_usage.json') `
-      -FilePath $SimionExe -WorkingDirectory $runtimeDir `
-      -RedirectStandardOutput (Join-Path $package.log_dir 'overlay_iob_build.stdout.log') `
-      -RedirectStandardError (Join-Path $package.log_dir 'overlay_iob_build.stderr.log') `
-      -ArgumentList @('--nogui','--noprompt','lua',$overlayIobBuilderFrozen,
-        (Join-Path $runtimeDir 'oatof_ideal_grounded.iob'),$overlayIobContainerRuntime,
-        (Join-Path $runtimeDir 'oatof_ideal_grounded.iob'),
-        (Join-Path $runtimeDir 'flight_tube_ground.pa0'),(Join-Path $runtimeDir 'reflectron.pa0'),
-        (Join-Path $runtimeDir 'accelerator.pa0'),(Join-Path $runtimeDir 'detector_ground.pa0'),
-        (Join-Path $runtimeDir 'accelerator_overlay.pa0'),
-        ([string]$overlayGeometry.instance_origin_mm.x),([string]$overlayGeometry.instance_origin_mm.y),([string]$overlayGeometry.instance_origin_mm.z),
-        (Join-Path $runtimeDir 'oatof_ideal_grounded.lua'),(Join-Path $runtimeDir 'oatof_ideal_grounded.fly2'))
+    # SIMION 2020's bundled GEM preprocessor cannot create its intermediate
+    # *.processed.gem beside a container whose absolute path is too long.
+    # Keep the governed evidence in the run and use a short, disposable copy
+    # only while replacing the five placeholder instances.
+    $overlayIobStageRoot = Join-Path $workspaceRoot 'scratch\simion_iob'
+    $overlayIobStageDir = New-RfCacheStagingDirectory -CacheRoot $overlayIobStageRoot
+    try {
+      Get-ChildItem -LiteralPath $overlayContainerFrozenDir -File |
+        Copy-Item -Destination $overlayIobStageDir
+      $overlayIobContainerRuntime = Join-Path $overlayIobStageDir 'mag_quad_2dp.iob'
+      $overlayIobBuild = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget `
+        -RunDir $package.run_dir -UsagePath (Join-Path $package.log_dir 'overlay_iob_build_resource_usage.json') `
+        -FilePath $SimionExe -WorkingDirectory $runtimeDir `
+        -RedirectStandardOutput (Join-Path $package.log_dir 'overlay_iob_build.stdout.log') `
+        -RedirectStandardError (Join-Path $package.log_dir 'overlay_iob_build.stderr.log') `
+        -ArgumentList @('--nogui','--noprompt','lua',$overlayIobBuilderFrozen,
+          (Join-Path $runtimeDir 'oatof_ideal_grounded.iob'),$overlayIobContainerRuntime,
+          (Join-Path $runtimeDir 'oatof_ideal_grounded.iob'),
+          (Join-Path $runtimeDir 'flight_tube_ground.pa0'),(Join-Path $runtimeDir 'reflectron.pa0'),
+          (Join-Path $runtimeDir 'accelerator.pa0'),(Join-Path $runtimeDir 'detector_ground.pa0'),
+          (Join-Path $runtimeDir 'accelerator_overlay.pa0'),
+          ([string]$overlayGeometry.instance_origin_mm.x),([string]$overlayGeometry.instance_origin_mm.y),([string]$overlayGeometry.instance_origin_mm.z),
+          (Join-Path $runtimeDir 'oatof_ideal_grounded.lua'),(Join-Path $runtimeDir 'oatof_ideal_grounded.fly2'))
+    } finally {
+      if (Test-Path -LiteralPath $overlayIobStageDir) {
+        Remove-Item -LiteralPath $overlayIobStageDir -Recurse -Force
+      }
+    }
     if ($overlayIobBuild.resource_budget_exceeded) { $resourceBudgetExceeded=$true; throw 'Overlay IOB build exceeded its resource budget.' }
     if ($overlayIobBuild.exit_code -ne 0) { throw 'Overlay IOB build failed.' }
   }
-  if (-not (Test-RfReusableCacheEntry -Python $python -RepoRoot $repoRoot `
+  if ($null -eq (Resolve-RfReusableCacheDirectory -Python $python -RepoRoot $repoRoot `
       -WorkspaceRoot $workspaceRoot -ProjectId $runProjectId `
       -CacheRoot $cacheRoot -CacheKey $frontendCacheKey -Role $frontendCacheRole `
-      -InvalidEntryAction 'preserve')) {
+      -Identity $frontendCacheIdentity -InvalidEntryAction 'preserve')) {
     throw 'Frontend PA cache changed during construction-time SIMION access.'
   }
   $frontendCacheManifestInput = Copy-RfCacheManifestInput -CacheEntry $cacheDir `
@@ -2019,6 +2270,32 @@ try {
     Copy-RfCacheManifestInput -CacheEntry $overlayCacheDir `
       -Destination (Join-Path $package.input_dir 'accelerator_overlay_pa_cache_manifest.json')
   } else { $null }
+  $cacheManifestBindings = @(
+    [ordered]@{disposition=$paCacheDispositions.frontend; path=$frontendCacheManifestInput}
+  )
+  if ($null -ne $flightTubeCacheManifestInput) {
+    $cacheManifestBindings += [ordered]@{disposition=$paCacheDispositions.flight_tube;path=$flightTubeCacheManifestInput}
+  }
+  if ($null -ne $reflectronCacheManifestInput) {
+    $cacheManifestBindings += [ordered]@{disposition=$paCacheDispositions.reflectron;path=$reflectronCacheManifestInput}
+  }
+  if ($null -ne $overlayCacheManifestInput) {
+    $cacheManifestBindings += [ordered]@{disposition=$paCacheDispositions.accelerator_overlay;path=$overlayCacheManifestInput}
+  }
+  foreach ($binding in $cacheManifestBindings) {
+    $manifest = Get-Content -LiteralPath $binding.path -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ($hasRequiredPaCacheGenerationBinding) {
+      if ([int]$manifest.schema_version -ne 3 -or
+          [string]$manifest.generation_sha256 -notmatch '^[a-f0-9]{64}$' -or
+          [string]$manifest.payload_sha256 -notmatch '^[A-Fa-f0-9]{64}$') {
+        throw 'Frozen PA cache manifest lacks immutable generation identity.'
+      }
+      $binding.disposition.generation_sha256 = [string]$manifest.generation_sha256
+      $binding.disposition.payload_sha256 = [string]$manifest.payload_sha256.ToUpperInvariant()
+    } elseif ([int]$manifest.schema_version -notin @(2,3)) {
+      throw 'Frozen PA cache manifest schema is unsupported.'
+    }
+  }
   $program = Join-Path $runtimeDir 'oatof_ideal_grounded.lua'
   $programMetadata = Join-Path $package.input_dir 'single_flight_program_build.json'
   $analyzerComponent = Join-Path $package.input_dir 'oatof_analyzer_component.lua'
@@ -2029,7 +2306,7 @@ try {
   if ($isStagedGrid2Restart) {
     $restartContext = Join-Path $package.input_dir `
       'staged_grid2_restart_context.json'
-    Write-RfJson -Path $restartContext -Depth 5 -Value ([ordered]@{
+    Write-RunJson -Path $restartContext -Depth 5 -Value ([ordered]@{
       schema_version = 1
       role = 'rf_oatof_staged_grid2_restart_context'
       source_release_mode = 'staged_grid2_restart'
@@ -2074,6 +2351,7 @@ try {
     '--resolved-region-field-contract',$resolvedRegionFieldContractFrozen,
     '--rf-drive-kernel',$rfDriveKernel,
     '--rf-steps-per-period',([string]$rfStepsPerPeriod),
+    '--source-release-mode',$sourceReleaseMode,
     '--output',$program,'--metadata',$programMetadata)
   if ($null -ne $restartContext) {
     $programArguments += @('--restart-context',$restartContext)
@@ -2087,7 +2365,9 @@ try {
   if ($null -ne $prePulseValidationFrozen) { $programArguments += '--global-segments' }
   if ($overlayEnabled) { $programArguments += @('--accelerator-overlay-contract',$overlayContract) }
   Invoke-SingleFlightPython -Arguments $programArguments `
-    -Failure 'Single-flight Program build failed.'
+    -Failure 'Single-flight Program build failed.' `
+    -StdoutPath (Join-Path $package.log_dir 'single_flight_program_build.stdout.log') `
+    -StderrPath (Join-Path $package.log_dir 'single_flight_program_build.stderr.log')
 
   $runConfiguration = [ordered]@{
     schema_version=2; run_id=$RunId; project=$runProjectId; mode='rf_to_oatof_simion_single_flight'; project_root=$repoRoot
@@ -2097,6 +2377,7 @@ try {
     parameters=[ordered]@{ connection_profile_id=$ConnectionProfileId; source_branch_id=$SourceBranchId; single_flight_pa_cache_policy=$PaCachePolicy; single_flight_pa_cache_policy_provenance=$PaCachePolicyProvenance; pa_cache_dispositions=$paCacheDispositions; layout_profile_id=$(if($hasGovernedLayout){$LayoutProfileId}else{$null}); architecture_generation_id=$(if($hasGovernedLayout){$ArchitectureGenerationId}else{$null}); source_profile_id=$(if($SourceProfileId){$SourceProfileId}else{$null}); field_overlay_id=$resolvedFieldOverlayId; bore_radius_mm=[double]$oatofGeometryDocument.geometry_mm.bore_r; ring_outer_radius_mm=[double]$oatofGeometryDocument.geometry_mm.ring_outer_r; shield_inner_radius_mm=[double]$oatofGeometryDocument.geometry_mm.flight_tube_r; frontend_grid_profile_id=$selectedGridProfileId; frontend_cell_mm_xyz=[ordered]@{x=$frontendCellMmX;y=$frontendCellMmY;z=$frontendCellMmZ}; accelerator_overlay_enabled=$overlayEnabled; accelerator_overlay_cell_mm_xyz=$(if($overlayEnabled){[ordered]@{x=$overlayCellMmX;y=$overlayCellMmY;z=$overlayCellMmZ}}else{$null}); accelerator_overlay_boundary_mode=$(if($overlayEnabled){'coarse_electrode_basis_dirichlet_v1'}else{$null}); oatof_numerical_profile_id=$selectedOatofNumericalProfileId; trajectory_quality_profile_id=$selectedTrajectoryQualityProfileId; trajectory_quality=$trajectoryQuality; time_integration_profile_id=$selectedTimeIntegrationProfileId; rf_steps_per_period=$rfStepsPerPeriod; spatial_window_profile_id=$(if($spatialWindowProfiles.Count -eq 1){$SpatialWindowProfileId}else{$null}); source_region_diagnostic_profile_id=$(if($sourceRegionDiagnosticProfiles.Count -eq 1){$sourceRegionDiagnosticProfileId}else{$null}); accelerator_field_profile_id=$selectedFieldProfileId; resolved_region_field_contract_sha256=$ResolvedRegionFieldContractSha256; resolved_region_field_semantic_sha256=$ResolvedRegionFieldSemanticSha256; resolved_population_contract_sha256=$ResolvedPopulationContractSha256; max_parallel_batches=$maxParallelBatches; clock_basis=[string]$settings.clock_basis; launched_particle_count=$launched; particle_count=$launched; population_denominator_count=$PopulationDenominatorCount; eligible_population_count=$EligiblePopulationCount; population_basis=$(if($SamplingMode -eq 'continuous_injection_full_population'){'candidate_full_population'}elseif($SamplingMode -eq 'pulse_eligible_conditional'){'pulse_eligible_conditional_population'}else{'source_contract_population'}); execution_batch_count=$ExecutionBatchCount; execution_batches_parallel=[bool]($ExecutionBatchCount -gt 1 -and $maxParallelBatches -gt 1); aperture_width_mm=$apertureWidthMm; aperture_height_mm=$apertureHeightMm; aperture_boolean_boundary_policy=[string]$apertureDiscretization.boolean_boundary_policy; aperture_grid_warnings=$apertureGridWarnings; frontend_open_aperture_column_count=[int]$apertureTopology.open_column_count; frontend_aperture_guard_electrode_check_passed=[bool]$apertureTopology.guard_electrode_check_passed; frontend_aperture_topology_report_sha256=(Get-FileHash -LiteralPath $apertureTopologyReport -Algorithm SHA256).Hash; rod_end_to_accelerator_shield_mm=[double]$frontendGeometry.junction_enclosure.rod_end_to_accelerator_shield_mm; surrounded_transition=$true; accelerator_axis_x_mm=[double]$oatofGeometryDocument.coordinate_convention.accelerator_axis_x; pulse_time_us=$pulseTimeUs; pulse_width_us=$pulseWidthUs; design_compilation=$(if($null -ne $layoutDerivation){$layoutDerivation.design_compilation}else{$null}); source_release_full_width_mm=[double]$oatofGeometryDocument.particle_source.size_z_mm; reflectron_stage2_length_mm=[double]$oatofGeometryDocument.geometry_mm.L_stage2; reflectron_midgrid_voltage_V=[double]$oatofGeometryDocument.electrodes_V.midgrid; reflectron_backplate_voltage_V=[double]$oatofGeometryDocument.electrodes_V.backplate; reflectron_pa0_sha256=(Get-FileHash -LiteralPath $reflectronPa0 -Algorithm SHA256).Hash; frontend_gem_sha256=$frontendHash; frontend_pa0_sha256=(Get-FileHash -LiteralPath $cachePa0 -Algorithm SHA256).Hash; accelerator_overlay_pa0_sha256=$(if($overlayEnabled){(Get-FileHash -LiteralPath $overlayCachePa0 -Algorithm SHA256).Hash}else{$null}) }
     artifact_retention=[ordered]@{policy_version=1;class='compact';reason=$null}; formal_gate_passed=$false
   }
+  $runConfiguration.parameters.maximum_time_of_flight_us = $maximumTimeOfFlightUs
   if ($isPrePulseTimeSeriesScreening) {
     $runConfiguration.inputs.pre_pulse_time_series_contract =
       $prePulseTimeSeriesContractFrozen
@@ -2174,23 +2455,36 @@ try {
       $StagedGrid2ProducerRunId
     $runConfiguration.parameters.resolution_claim_allowed = $false
   }
-  Write-RfJson -Path $package.run_config -Depth 10 -Value $runConfiguration
-  Write-RfJson -Path $package.summary -Depth 10 -Value ([ordered]@{schema_version=1;role=$summaryRole;status='interrupted';reason='Frozen inputs recorded; SIMION flight not complete.';single_flight_pa_cache_policy=$PaCachePolicy;single_flight_pa_cache_policy_provenance=$PaCachePolicyProvenance;pa_cache_dispositions=$paCacheDispositions})
-  Write-RfFrozenRunManifest -Python $python -FrozenRepoRoot $repoRoot -RunConfig $package.run_config -Status interrupted -Software @('SIMION 2020','Python 3.11')
+  $batchPlanPath = Join-Path $package.input_dir 'simion_execution_batch_plan.json'
+  Invoke-SingleFlightPython -Arguments @(
+    '-m','common.simion.particle_batching','--particle-count',([string]$launched),
+    '--batch-count',([string]$runConfiguration.parameters.execution_batch_count),
+    '--output',$batchPlanPath
+  ) -Failure 'Shared SIMION single-wave batch planning failed.'
+  $batchPlan = Get-Content -Raw -LiteralPath $batchPlanPath | ConvertFrom-Json
+  if ($batchPlan.dispatch -ne 'single_wave_parallel' -or
+      [int]$batchPlan.particle_count -ne [int]$launched) {
+    throw 'Shared SIMION batch plan differs from the frozen launched population.'
+  }
+  $runConfiguration.inputs.simion_execution_batch_plan = $batchPlanPath
+  $runConfiguration.parameters.simion_single_wave_batch_plan_sha256 =
+    (Get-FileHash -Algorithm SHA256 -LiteralPath $batchPlanPath).Hash
+  Write-RunJson -Path $package.run_config -Depth 10 -Value $runConfiguration
+  Write-RunJson -Path $package.summary -Depth 10 -Value ([ordered]@{schema_version=1;role=$summaryRole;status='interrupted';reason='Frozen inputs recorded; SIMION flight not complete.';single_flight_pa_cache_policy=$PaCachePolicy;single_flight_pa_cache_policy_provenance=$PaCachePolicyProvenance;pa_cache_dispositions=$paCacheDispositions})
+  Write-RunManifest -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config -Status interrupted -Software @('SIMION 2020','Python 3.11')
   $snapshotReady = $true
 
-  $batchCount = [int]$runConfiguration.parameters.execution_batch_count
+  $batchCount = [int]$batchPlan.batch_count
   $particleLines = @(Get-RfSingleFlightParticleLines `
     -ParticleInput $particleInput -RestartFly2 $isRestartFly2)
   if ($particleLines.Count -ne $launched) {
     throw 'Single-flight particle-input row count differs from the launched mother sample.'
   }
   $batchRecords = @()
-  $quotient = [Math]::Floor($launched / $batchCount)
-  $remainder = $launched % $batchCount
-  $offset = 0
-  foreach ($batchIndex in 1..$batchCount) {
-    $count = $quotient + $(if ($batchIndex -le $remainder) { 1 } else { 0 })
+  foreach ($plannedBatch in @($batchPlan.batches)) {
+    $batchIndex = [int]$plannedBatch.index
+    $count = [int]$plannedBatch.count
+    $offset = [int]$plannedBatch.simion_particle_id_offset
     $batchParticleInput = Join-Path $package.input_dir (
       'single_flight_mother_sample__batch{0:D2}.{1}' -f $batchIndex,$(if ($isRestartFly2) {'fly2'} else {'ion'})
     )
@@ -2214,99 +2508,58 @@ try {
       stderr = Join-Path $package.log_dir (
         'simion__batch{0:D2}.stderr.log' -f $batchIndex
       )
-      usage = Join-Path $package.log_dir (
-        'resource_usage__batch{0:D2}.json' -f $batchIndex
-      )
     }
-    $offset += $count
   }
   $stdoutFiles = @($batchRecords | ForEach-Object { $_.stdout })
   $stderrFiles = @($batchRecords | ForEach-Object { $_.stderr })
-  $resourceUsageFiles = @($batchRecords | ForEach-Object { $_.usage })
-  $oldOverride = $env:OATOF_ACCELERATOR_PA_OVERRIDE
-  try {
-    $env:OATOF_ACCELERATOR_PA_OVERRIDE = $frontendWorkingPa0
-    for ($waveStart = 0; $waveStart -lt $batchRecords.Count; $waveStart += $maxParallelBatches) {
-      $waveEnd = [Math]::Min($waveStart + $maxParallelBatches - 1,$batchRecords.Count - 1)
-      $waveBatchCount = $waveEnd - $waveStart + 1
-      if ($waveBatchCount -gt 1) {
-        $requiredAvailableMemoryBytes =
-          [int64]$waveBatchCount * $parallelBatchMemoryReservationBytes +
-          $minimumSystemAvailableMemoryBytes
-        $availableMemoryBytes = [int64][MultipoleMemoryStatus]::AvailableBytes()
-        if ($availableMemoryBytes -lt $requiredAvailableMemoryBytes) {
-          throw (
-            'Single-flight parallel batch wave lacks required available memory: ' +
-            "available=$availableMemoryBytes required=$requiredAvailableMemoryBytes " +
-            "batch_count=$waveBatchCount."
-          )
-        }
+  # The whole batch set is one dispatch wave.  The shared aggregate helper owns
+  # process-tree and available-memory accounting; per-batch helpers would make
+  # the frozen process-tree limit apply independently to every SIMION child.
+  $resourceUsageFiles = @($resourceUsage)
+  $processSpecifications = @()
+  foreach ($batch in $batchRecords) {
+    $processSpecifications += [pscustomobject]@{
+      name = 'simion_batch_{0:D2}' -f [int]$batch.index
+      file_path = $SimionExe
+      working_directory = $runtimeDir
+      stdout = $batch.stdout
+      stderr = $batch.stderr
+      environment = @{
+        OATOF_ACCELERATOR_PA_OVERRIDE = $frontendWorkingPa0
+        OATOF_SINGLE_FLIGHT_PARTICLE_ID_OFFSET = [string]$batch.offset
       }
-      $jobs = @()
-      foreach ($batch in @($batchRecords[$waveStart..$waveEnd])) {
-        $payload = [pscustomobject]@{
-        support = Join-Path $repoRoot 'common\multipole\resource_budget_support.ps1'
-        budget = $budget.stage_budget
-        run_dir = $package.run_dir
-        usage = $batch.usage
-        executable = $SimionExe
-        working_directory = $runtimeDir
-        stdout = $batch.stdout
-        stderr = $batch.stderr
-        accelerator_pa = $frontendWorkingPa0
-        particle_id_offset = [int]$batch.offset
-        arguments = [string[]](@(
-          '--default-num-particles',([string][Math]::Max(100,[int]$batch.count)),
-          '--nogui','--noprompt','fly',
-          '--trajectory-quality',([string]$trajectoryQuality),
-          '--retain-trajectories','0','--particles',$batch.particle_input,'--programs','1',
-          '--adjustable',("trajectory_quality={0}" -f $trajectoryQuality),
-          '--adjustable','trajectory_log_enable=1',
-          '--adjustable',("diagnostic_max_tof_us={0:R}" -f [double]$settings.maximum_time_of_flight_us)
-        ) + $(if ($isPrePulseTimeSeriesScreening) { @(
-          '--adjustable','handoff_pulse_mode=2'
-        ) } elseif ($isStagedGrid2Restart) { @() } else { @(
-          '--adjustable','handoff_pulse_mode=1',
-          '--adjustable',("handoff_pulse_time_us={0:R}" -f $pulseTimeUs),
-          '--adjustable',("handoff_pulse_width_us={0:R}" -f $pulseWidthUs)
-        ) }) + @(
-          '--adjustable',("single_flight_rf_steps={0}" -f $rfStepsPerPeriod),
-          (Join-Path $runtimeDir 'oatof_ideal_grounded.iob')
-        ))
-      }
-        $jobs += Start-Job -ArgumentList $payload -ScriptBlock {
-          param($item)
-          . $item.support
-          $env:OATOF_ACCELERATOR_PA_OVERRIDE = $item.accelerator_pa
-          $env:OATOF_SINGLE_FLIGHT_PARTICLE_ID_OFFSET = [string]$item.particle_id_offset
-          Invoke-ResourceBudgetedProcess `
-            -ResolvedBudgetPath $item.budget -RunDir $item.run_dir `
-            -UsagePath $item.usage -FilePath $item.executable `
-            -WorkingDirectory $item.working_directory `
-            -RedirectStandardOutput $item.stdout `
-            -RedirectStandardError $item.stderr `
-            -ArgumentList ([string[]]$item.arguments)
-        }
-      }
-      try {
-        foreach ($job in $jobs) {
-          $fly = Receive-Job -Job $job -Wait
-          if ($job.State -ne 'Completed' -or $null -eq $fly) {
-            throw 'Single-flight SIMION batch job failed.'
-          }
-          if ($fly.resource_budget_exceeded) {
-            $resourceBudgetExceeded = $true
-            throw 'Single-flight SIMION batch exceeded its resource budget.'
-          }
-          if ($fly.exit_code -ne 0) {
-            throw 'Single-flight SIMION batch failed.'
-          }
-        }
-      } finally {
-        $jobs | Remove-Job -Force -ErrorAction SilentlyContinue
-      }
+      argument_list = [string[]](@(
+        '--default-num-particles',([string][Math]::Max(100,[int]$batch.count)),
+        '--nogui','--noprompt','fly',
+        '--trajectory-quality',([string]$trajectoryQuality),
+        '--retain-trajectories','0','--particles',$batch.particle_input,'--programs','1',
+        '--adjustable',("trajectory_quality={0}" -f $trajectoryQuality),
+        '--adjustable','trajectory_log_enable=1',
+        '--adjustable',("diagnostic_max_tof_us={0:R}" -f $maximumTimeOfFlightUs)
+      ) + $(if ($isPrePulseTimeSeriesScreening) { @(
+        '--adjustable','handoff_pulse_mode=2'
+      ) } elseif ($isStagedGrid2Restart) { @() } else { @(
+        '--adjustable','handoff_pulse_mode=1',
+        '--adjustable',("handoff_pulse_time_us={0:R}" -f $pulseTimeUs),
+        '--adjustable',("handoff_pulse_width_us={0:R}" -f $pulseWidthUs)
+      ) }) + @(
+        $(if (-not $isPrePulseRestart) {
+          @('--adjustable',("single_flight_rf_steps={0}" -f $rfStepsPerPeriod))
+        } else { @() }),
+        (Join-Path $runtimeDir 'oatof_ideal_grounded.iob')
+      ))
     }
-  } finally { $env:OATOF_ACCELERATOR_PA_OVERRIDE = $oldOverride }
+  }
+  $waveResult = Invoke-ResourceBudgetedProcesses `
+    -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
+    -UsagePath $resourceUsage -ProcessSpecifications $processSpecifications
+  if ($waveResult.resource_budget_exceeded) {
+    $resourceBudgetExceeded = $true
+    throw 'Single-flight SIMION batch wave exceeded its aggregate resource budget.'
+  }
+  if (@($waveResult.processes | Where-Object { [int]$_.exit_code -ne 0 }).Count -ne 0) {
+    throw 'Single-flight SIMION batch wave failed.'
+  }
 
   if ($isPrePulseTimeSeriesScreening) {
     $statesCsv = Join-Path $package.result_dir 'pre_pulse_time_series_states.csv'
@@ -2330,7 +2583,7 @@ try {
       -Encoding UTF8 | ConvertFrom-Json
     $stateRowCount = [int]$materializedSummary.census.observed_state_rows
     $runConfiguration.parameters.pre_pulse_time_series_state_row_count = $stateRowCount
-    Write-RfJson -Path $package.run_config -Depth 10 -Value $runConfiguration
+    Write-RunJson -Path $package.run_config -Depth 10 -Value $runConfiguration
     $retentionActions = Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot `
       -RunConfig $package.run_config
     foreach ($usage in $resourceUsageFiles) {
@@ -2343,7 +2596,7 @@ try {
     $outputs = @($statesCsv,$screeningReceipt,$package.summary,$retentionActions) +
       $stdoutFiles + $stderrFiles + $resourceUsageFiles |
       Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) }
-    Write-RfFrozenRunManifest -Python $python -FrozenRepoRoot $repoRoot `
+    Write-RunManifest -Python $python -RepoRoot $repoRoot `
       -RunConfig $package.run_config -Status success `
       -Software @('SIMION 2020','Python 3.11') -Outputs $outputs
     Write-Output "SIMION_PRE_PULSE_TIME_SERIES=PASS RUN_ID=$RunId ROWS=$stateRowCount"
@@ -2420,12 +2673,17 @@ try {
   $phaseSpace = Join-Path $package.result_dir 'single_flight_accelerator_pre_pulse_phase_space.png'
   $phaseSpaceMetadata = Join-Path $package.result_dir 'single_flight_accelerator_pre_pulse_phase_space_metadata.json'
   $phaseSpaceData = Join-Path $package.result_dir 'single_flight_accelerator_pre_pulse_phase_space.csv'
+  $evolution = Join-Path $package.result_dir 'single_flight_accelerator_checkpoint_evolution.png'
+  $evolutionMetadata = Join-Path $package.result_dir 'single_flight_accelerator_checkpoint_evolution_metadata.json'
+  $evolutionData = Join-Path $package.result_dir 'single_flight_accelerator_checkpoint_evolution.csv'
   Invoke-SingleFlightPython -Arguments @('-m',
     'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.plot_single_flight_spatial_six_panel',
     '--initial',$globalSource,'--checkpoints',$checkpoints,'--upstream',$upstreamFrozen,
     '--frontend',$frontendContract,'--oatof',$oatofGeometry,'--output',$sixPanel,
     '--metadata',$sixPanelMetadata,'--phase-space-output',$phaseSpace,
-    '--phase-space-metadata',$phaseSpaceMetadata,'--phase-space-data',$phaseSpaceData
+    '--phase-space-metadata',$phaseSpaceMetadata,'--phase-space-data',$phaseSpaceData,
+    '--evolution-output',$evolution,'--evolution-metadata',$evolutionMetadata,
+    '--evolution-data',$evolutionData
   ) -Failure 'Single-flight spatial and phase-space diagnostics failed.'
   $result = Get-Content -LiteralPath $package.summary -Raw -Encoding UTF8 | ConvertFrom-Json
   Assert-RfThreeZoneCheckpointCensus -Required $hasThreeZoneCandidate `
@@ -2448,7 +2706,15 @@ try {
       claim_status='DIAGNOSTIC_ONLY'
       selection_uses_detector_outcome=$false
     }) -Force
-  Write-RfJson -Path $package.summary -Depth 10 -Value $result
+  $result | Add-Member -NotePropertyName accelerator_checkpoint_evolution `
+    -NotePropertyValue ([ordered]@{
+      figure='results/single_flight_accelerator_checkpoint_evolution.png'
+      metadata='results/single_flight_accelerator_checkpoint_evolution_metadata.json'
+      data='results/single_flight_accelerator_checkpoint_evolution.csv'
+      claim_status='DIAGNOSTIC_ONLY'
+      selection_uses_detector_outcome=$false
+    }) -Force
+  Write-RunJson -Path $package.summary -Depth 10 -Value $result
   $baselineReceipt = $null
   $promotionReceipt = $null
   if ($PulseResolutionN100Screening) {
@@ -2504,21 +2770,21 @@ try {
           receipt_sha256=(Get-FileHash -LiteralPath $promotionReceipt -Algorithm SHA256).Hash
         }) -Force
     }
-    Write-RfJson -Path $package.summary -Depth 10 -Value $result
+    Write-RunJson -Path $package.summary -Depth 10 -Value $result
   }
   $runConfiguration.parameters.multipole_handoff_count = [int]$result.census.multipole_handoff
   $runConfiguration.parameters.local_accelerator_exit_count = [int]$result.census.local_accelerator_exit
   $runConfiguration.parameters.detector_crossing_count = [int]$result.census.detector_crossing
-  Write-RfJson -Path $package.run_config -Depth 10 -Value $runConfiguration
+  Write-RunJson -Path $package.run_config -Depth 10 -Value $runConfiguration
   $retentionActions = Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config
-  $outputs = @($checkpoints,$sixPanel,$sixPanelMetadata,$phaseSpace,$phaseSpaceMetadata,$phaseSpaceData,$baselineReceipt,$promotionReceipt) + $stdoutFiles + $stderrFiles + $resourceUsageFiles + @($flightTubeBuildStdout,$flightTubeBuildStderr,$reflectronBuildStdout,$reflectronBuildStderr,$package.summary,$retentionActions) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) }
+  $outputs = @($checkpoints,$sixPanel,$sixPanelMetadata,$phaseSpace,$phaseSpaceMetadata,$phaseSpaceData,$evolution,$evolutionMetadata,$evolutionData,$baselineReceipt,$promotionReceipt) + $stdoutFiles + $stderrFiles + $resourceUsageFiles + @($flightTubeBuildStdout,$flightTubeBuildStderr,$reflectronBuildStdout,$reflectronBuildStderr,$package.summary,$retentionActions) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) }
   foreach ($usage in $resourceUsageFiles) {
     if (-not (Complete-ResourceUsage -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir -UsagePath $usage)) { $resourceBudgetExceeded=$true; throw 'Single-flight compact retained-byte budget exceeded.' }
   }
-  Write-RfFrozenRunManifest -Python $python -FrozenRepoRoot $repoRoot -RunConfig $package.run_config -Status success -Software @('SIMION 2020','Python 3.11') -Outputs $outputs
+  Write-RunManifest -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config -Status success -Software @('SIMION 2020','Python 3.11') -Outputs $outputs
   Write-Output "SIMION_SINGLE_FLIGHT=PASS RUN_ID=$RunId DETECTOR=$($result.census.detector_crossing)/$launched"
 } catch {
-  Complete-RfFrozenFailedRun -Python $python -FrozenRepoRoot $repoRoot `
+  Complete-FailedRun -Python $python -RepoRoot $repoRoot `
     -RunConfig $package.run_config -Summary $package.summary `
     -SummaryRole $summaryRole -Reason $_.Exception.Message `
     -Software @('SIMION 2020','Python 3.11') `

@@ -15,7 +15,7 @@ import numpy as np
 
 from common.contracts.file_identity import file_sha256
 from common.contracts.particle_physics import kinetic_energy_ev
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.peak_metrics import (
+from common.analysis.peak_metrics import (
     bootstrap_resolution_distribution,
     compute_peak_metrics,
 )
@@ -112,6 +112,51 @@ def _resolve_pulse_time_us(
             raise ValueError("configured and logged pulse effective times differ")
         return reference
     return configured_time_us
+
+
+def _validate_logged_pre_pulse_restart_state(
+    rows: list[dict[str, object]],
+    initial_rows: list[dict[str, str]],
+    ordered_particle_ids: Sequence[int],
+    *,
+    position_tolerance_mm: float,
+    velocity_tolerance_m_per_s: float,
+    clock_tolerance_us: float,
+    energy_tolerance_eV: float,
+) -> bool:
+    """Accept one logged restart checkpoint only when it matches frozen state."""
+    logged = [row for row in rows if row["event"] == "pre_pulse_state"]
+    if not logged:
+        return False
+    expected_ids = set(ordered_particle_ids)
+    logged_by_id = {int(row["particle_id"]): row for row in logged}
+    if len(logged_by_id) != len(logged) or set(logged_by_id) != expected_ids:
+        raise ValueError("logged pre-pulse restart checkpoints differ from the frozen particle row map")
+    initial_by_id = {int(row["particle_id"]): row for row in initial_rows}
+    for particle_id in ordered_particle_ids:
+        actual = logged_by_id[particle_id]
+        expected = initial_by_id[particle_id]
+        position_error = max(
+            abs(float(actual[f"{axis}_mm"]) - float(expected[f"position_{axis}_mm"]))
+            for axis in "xyz"
+        )
+        velocity_error = max(
+            abs(1000.0 * float(actual[f"v{axis}_mm_per_us"]) - float(expected[f"velocity_{axis}_m_s"]))
+            for axis in "xyz"
+        )
+        clock_error = abs(float(actual["instrument_time_us"]) - float(expected["instrument_time_us"]))
+        energy_error = abs(
+            float(actual["kinetic_energy_eV"]) - float(expected["kinetic_energy_eV"])
+        )
+        if (
+            position_error > position_tolerance_mm
+            or velocity_error > velocity_tolerance_m_per_s
+            or clock_error > clock_tolerance_us
+            or energy_error > energy_tolerance_eV
+        ):
+            raise ValueError("logged pre-pulse restart checkpoint differs from the frozen pre-pulse state")
+        actual["checkpoint_provenance"] = "pre_pulse_restart_logged_canonical_state"
+    return True
 
 
 def _peak_summary(
@@ -462,7 +507,7 @@ def analyze(
         if source_release_mode in {"pre_pulse_restart", "staged_grid2_restart"}:
             if initial_global_state_sha256 is None:
                 raise ValueError("pre-pulse restart analysis requires the manifest-bound initial-state SHA256")
-            actual_sha256 = hashlib.sha256(initial_global_state_path.read_bytes()).hexdigest()
+            actual_sha256 = file_sha256(initial_global_state_path)
             if actual_sha256.lower() != initial_global_state_sha256.lower():
                 raise ValueError("initial global state SHA256 differs from the manifest-bound identity")
             if source_release_mode == "pre_pulse_restart" and pulse_time_us is None:
@@ -694,21 +739,39 @@ def analyze(
         if source_release_mode == "pre_pulse_restart":
             if any(abs(float(row["instrument_time_us"]) - pulse_time_us) > 1e-9 for row in initial_rows):
                 raise ValueError("pre-pulse restart initial-state clock differs from the pulse time")
-            if any(row["event"] == "pre_pulse_state" for row in rows):
-                raise ValueError("pre-pulse restart log already contains pre_pulse_state checkpoints")
-            release_by_id = {
-                int(row["particle_id"]): row
-                for row in rows if row["event"] == "source_release"
-            }
-            for particle_id in ordered_particle_ids:
-                state = release_by_id[particle_id]
-                rows.append({
-                    **state,
-                    "event": "pre_pulse_state",
-                    "pulse_effective_elapsed_us": 0.0,
-                    "checkpoint_provenance": "pre_pulse_restart_initial_global_state",
-                })
-            pre_pulse_state_provenance = "pre_pulse_restart_initial_global_state"
+            has_logged_checkpoint = any(
+                row["event"] == "pre_pulse_state" for row in rows
+            )
+            if has_logged_checkpoint:
+                if not restart_validation_enabled:
+                    raise ValueError(
+                        "logged pre-pulse restart checkpoints require frozen "
+                        "source-release validation"
+                    )
+                _validate_logged_pre_pulse_restart_state(
+                    rows,
+                    initial_rows,
+                    ordered_particle_ids,
+                    position_tolerance_mm=restart_position_tolerance_mm,
+                    velocity_tolerance_m_per_s=restart_velocity_tolerance_m_per_s,
+                    clock_tolerance_us=restart_clock_tolerance_us,
+                    energy_tolerance_eV=restart_energy_tolerance_eV,
+                )
+                pre_pulse_state_provenance = "pre_pulse_restart_logged_canonical_state"
+            else:
+                release_by_id = {
+                    int(row["particle_id"]): row
+                    for row in rows if row["event"] == "source_release"
+                }
+                for particle_id in ordered_particle_ids:
+                    state = release_by_id[particle_id]
+                    rows.append({
+                        **state,
+                        "event": "pre_pulse_state",
+                        "pulse_effective_elapsed_us": 0.0,
+                        "checkpoint_provenance": "pre_pulse_restart_initial_global_state",
+                    })
+                pre_pulse_state_provenance = "pre_pulse_restart_initial_global_state"
     rows.sort(key=lambda row: (int(row["particle_id"]), str(row["event"])))
     _validate_reflectron_event_order(rows)
     counts = {event: sum(row["event"] == event for row in rows) for event in (
@@ -740,15 +803,6 @@ def analyze(
             if reported != "" and abs(float(reported) - computed) > 1e-8:
                 raise ValueError("logged pulse-effective checkpoint time is inconsistent")
             row["pulse_effective_elapsed_us"] = computed
-    instrument_detector_times = np.asarray(
-        [float(row["instrument_time_us"]) for row in detector_rows], dtype=float
-    )
-    instrument_clock_peak, _ = _peak_summary(
-        instrument_detector_times,
-        mass_amu,
-        bootstrap_resamples=0,
-        bootstrap_seed=bootstrap_seed,
-    )
     injection_energy_validation = None
     pulse_capture = None
     geometry = None
@@ -1320,8 +1374,6 @@ def analyze(
             "canonical_source_ids_are_contiguous": ordered_particle_ids
             == list(range(1, launched + 1)),
         },
-        "instrument_clock_peak": instrument_clock_peak,
-        "instrument_clock_peak_is_resolution_claim": False,
         "injection_energy_validation": injection_energy_validation,
         "pulse_capture": pulse_capture,
         "spatial_window_peak": spatial_window_peak,

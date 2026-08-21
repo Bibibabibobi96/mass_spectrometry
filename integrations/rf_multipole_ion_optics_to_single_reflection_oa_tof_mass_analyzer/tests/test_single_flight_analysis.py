@@ -775,8 +775,8 @@ class SingleFlightAnalysisTests(unittest.TestCase):
         self.assertEqual(summary["census"]["launched"], 3)
         self.assertEqual(summary["census"]["detector_crossing"], 1)
         self.assertEqual(summary["census"]["reflectron_turning_point"], 0)
-        self.assertIsNone(summary["instrument_clock_peak"])
-        self.assertFalse(summary["instrument_clock_peak_is_resolution_claim"])
+        self.assertNotIn("instrument_clock_peak", summary)
+        self.assertNotIn("instrument_clock_peak_is_resolution_claim", summary)
         pre_pulse = next(row for row in rows if row["event"] == "pre_pulse_state")
         self.assertGreater(pre_pulse["kinetic_energy_eV"], 0.0)
 
@@ -1084,6 +1084,130 @@ class SingleFlightAnalysisTests(unittest.TestCase):
         self.assertEqual(validation["status"], "PASS")
         self.assertEqual(validation["validation_contract_sha256"], "A" * 64)
         self.assertLessEqual(validation["maximum_velocity_rowwise_abs_error_m_per_s"], 1e-9)
+
+    def test_prepulse_restart_uses_one_verified_logged_checkpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            log = root / "log.txt"
+            initial = root / "initial.csv"
+            log.write_text(
+                "TRACE: source_release ion=1 instrument_time_us=45.5 "
+                "x_mm=-69 y_mm=0 z_mm=-66 vx_mm_per_us=4.392842636759329 "
+                "vy_mm_per_us=0 vz_mm_per_us=0\n"
+                "TRACE: pre_pulse_state ion=1 instrument_time_us=45.5 "
+                "x_mm=-69 y_mm=0 z_mm=-66 vx_mm_per_us=4.39284263676 "
+                "vy_mm_per_us=0 vz_mm_per_us=0\n",
+                encoding="utf-8",
+            )
+            initial.write_text(
+                "particle_id,instrument_time_us,mass_amu,charge_state,"
+                "position_x_mm,position_y_mm,position_z_mm,velocity_x_m_s,"
+                "velocity_y_m_s,velocity_z_m_s,kinetic_energy_eV\n"
+                "1,45.5,100,1,-69,0,-66,4392.842636759329,0,0,10\n",
+                encoding="utf-8",
+            )
+            digest = hashlib.sha256(initial.read_bytes()).hexdigest()
+            rows, summary = analyze(
+                log,
+                1,
+                100.0,
+                pulse_time_us=45.5,
+                initial_global_state_path=initial,
+                source_release_mode="pre_pulse_restart",
+                initial_global_state_sha256=digest,
+                restart_position_tolerance_mm=1e-9,
+                restart_velocity_tolerance_m_per_s=1e-9,
+                restart_clock_tolerance_us=1e-9,
+                restart_energy_tolerance_eV=5e-9,
+                restart_validation_contract_sha256="A" * 64,
+            )
+        checkpoints = [row for row in rows if row["event"] == "pre_pulse_state"]
+        self.assertEqual(len(checkpoints), 1)
+        self.assertEqual(
+            checkpoints[0]["checkpoint_provenance"],
+            "pre_pulse_restart_logged_canonical_state",
+        )
+        self.assertEqual(
+            summary["pre_pulse_state_provenance"],
+            "pre_pulse_restart_logged_canonical_state",
+        )
+
+    def test_prepulse_restart_rejects_inconsistent_logged_checkpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            log = root / "log.txt"
+            initial = root / "initial.csv"
+            log.write_text(
+                "TRACE: source_release ion=1 instrument_time_us=45.5 "
+                "x_mm=-69 y_mm=0 z_mm=-66 vx_mm_per_us=4.392842636759329 "
+                "vy_mm_per_us=0 vz_mm_per_us=0\n"
+                "TRACE: pre_pulse_state ion=1 instrument_time_us=45.5 "
+                "x_mm=-69 y_mm=0 z_mm=-66 vx_mm_per_us=4.5 "
+                "vy_mm_per_us=0 vz_mm_per_us=0\n",
+                encoding="utf-8",
+            )
+            initial.write_text(
+                "particle_id,instrument_time_us,mass_amu,charge_state,"
+                "position_x_mm,position_y_mm,position_z_mm,velocity_x_m_s,"
+                "velocity_y_m_s,velocity_z_m_s,kinetic_energy_eV\n"
+                "1,45.5,100,1,-69,0,-66,4392.842636759329,0,0,10\n",
+                encoding="utf-8",
+            )
+            digest = hashlib.sha256(initial.read_bytes()).hexdigest()
+            with self.assertRaisesRegex(
+                ValueError, "logged pre-pulse restart checkpoint differs"
+            ):
+                analyze(
+                    log,
+                    1,
+                    100.0,
+                    pulse_time_us=45.5,
+                    initial_global_state_path=initial,
+                    source_release_mode="pre_pulse_restart",
+                    initial_global_state_sha256=digest,
+                    restart_position_tolerance_mm=1e-9,
+                    restart_velocity_tolerance_m_per_s=1e-9,
+                    restart_clock_tolerance_us=1e-9,
+                    restart_energy_tolerance_eV=5e-9,
+                    restart_validation_contract_sha256="A" * 64,
+                )
+
+    def test_prepulse_restart_rejects_duplicate_logged_checkpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            log = root / "log.txt"
+            initial = root / "initial.csv"
+            state = (
+                "TRACE: pre_pulse_state ion=1 instrument_time_us=45.5 "
+                "x_mm=-69 y_mm=0 z_mm=-66 vx_mm_per_us=4.392842636759329 "
+                "vy_mm_per_us=0 vz_mm_per_us=0\n"
+            )
+            log.write_text(state + state, encoding="utf-8")
+            initial.write_text(
+                "particle_id,instrument_time_us,mass_amu,charge_state,"
+                "position_x_mm,position_y_mm,position_z_mm,velocity_x_m_s,"
+                "velocity_y_m_s,velocity_z_m_s,kinetic_energy_eV\n"
+                "1,45.5,100,1,-69,0,-66,4392.842636759329,0,0,10\n",
+                encoding="utf-8",
+            )
+            digest = hashlib.sha256(initial.read_bytes()).hexdigest()
+            with self.assertRaisesRegex(
+                ValueError, "duplicate checkpoint: particle=1 event=pre_pulse_state"
+            ):
+                analyze(
+                    log,
+                    1,
+                    100.0,
+                    pulse_time_us=45.5,
+                    initial_global_state_path=initial,
+                    source_release_mode="pre_pulse_restart",
+                    initial_global_state_sha256=digest,
+                    restart_position_tolerance_mm=1e-9,
+                    restart_velocity_tolerance_m_per_s=1e-9,
+                    restart_clock_tolerance_us=1e-9,
+                    restart_energy_tolerance_eV=5e-9,
+                    restart_validation_contract_sha256="A" * 64,
+                )
 
     def test_classifies_physical_pulse_capture_without_rejecting_losses(self) -> None:
         text = "\n".join(
@@ -1457,8 +1581,8 @@ class SingleFlightAnalysisTests(unittest.TestCase):
             "detector_time_minus_pulse_effective_time",
         )
         self.assertIsNotNone(summary["pulse_effective_peak"])
-        self.assertIsNotNone(summary["instrument_clock_peak"])
-        self.assertFalse(summary["instrument_clock_peak_is_resolution_claim"])
+        self.assertNotIn("instrument_clock_peak", summary)
+        self.assertNotIn("instrument_clock_peak_is_resolution_claim", summary)
         common = summary["post_focus_common_cohort"]
         self.assertEqual(common["reflectron_common_cohort_count"], 4)
         self.assertEqual(common["detector_paired_cohort_count"], 4)

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import csv
-import hashlib
 import json
 import os
 import subprocess
@@ -18,6 +17,8 @@ import matplotlib
 matplotlib.use("Agg")
 from matplotlib import pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
+
+from common.contracts.file_identity import file_sha256
 
 
 NUMERIC_COLUMNS = (
@@ -75,14 +76,6 @@ class ExitState:
         return len(self.values["transverse_x_mm"])
 
 
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest().upper()
-
-
 def load_exit_state(path: Path, label: str) -> ExitState:
     path = path.resolve()
     with path.open("r", encoding="utf-8-sig", newline="") as stream:
@@ -136,7 +129,7 @@ def load_exit_state(path: Path, label: str) -> ExitState:
     return ExitState(
         label=label,
         source_path=path,
-        source_sha256=sha256_file(path),
+        source_sha256=file_sha256(path),
         event=selected_event,
         statuses=selected_statuses,
         source_particle_count=len(source_ids),
@@ -565,7 +558,7 @@ def _publish_figure(
     try:
         figure.savefig(temporary_output, format=output.suffix.lstrip("."), dpi=dpi, facecolor="white")
         plt.imread(temporary_output)
-        document["figure"]["sha256"] = sha256_file(temporary_output)
+        document["figure"]["sha256"] = file_sha256(temporary_output)
         temporary_manifest.write_text(
             json.dumps(document, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
         )

@@ -36,9 +36,9 @@
         },
         {
           "step_id": "cross_solver_comparison", "kind": "analyze", "shell": "powershell",
-          "entrypoint": "workflows/no_collision_transport/compare_cross_solver.ps1",
+          "entrypoint": "workflows/cross_solver/compare_cross_solver.ps1",
           "run_id_template": "{timestamp}__analysis__cross__rf-transport__no-collision",
-          "arguments": ["-ComsolRunId", "{comsol_run_id}", "-SimionRunId", "{simion_run_id}", "-RunId", "{cross_solver_comparison_run_id}", "-PythonExe", "{python_exe}"]
+          "arguments": ["-Mode", "transport_no_collision", "-ComsolRunId", "{comsol_run_id}", "-SimionRunId", "{simion_run_id}", "-RunId", "{cross_solver_comparison_run_id}", "-PythonExe", "{python_exe}"]
         }
       ],
       "limitations": [
@@ -88,9 +88,9 @@
         },
         {
           "step_id": "cross_solver_comparison", "kind": "analyze", "shell": "powershell",
-          "entrypoint": "workflows/interface_readiness/compare_cross_solver.ps1",
+          "entrypoint": "workflows/cross_solver/compare_cross_solver.ps1",
           "run_id_template": "{timestamp}__analysis__cross__rf-transport__interface-readiness",
-          "arguments": ["-ComsolRunId", "{comsol_run_id}", "-SimionRunId", "{simion_run_id}", "-RunId", "{cross_solver_comparison_run_id}", "-PythonExe", "{python_exe}"]
+          "arguments": ["-Mode", "transport_interface_readiness", "-ComsolRunId", "{comsol_run_id}", "-SimionRunId", "{simion_run_id}", "-RunId", "{cross_solver_comparison_run_id}", "-PythonExe", "{python_exe}"]
         }
       ],
       "limitations": [

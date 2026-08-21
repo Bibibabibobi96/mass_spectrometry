@@ -208,7 +208,7 @@
         },
         "population_sigma_relative_convergence": {"const": 0.01},
         "primary_sample_count": {"const": 1001},
-        "fwhm_algorithm": {"const": "analysis.peak_metrics.compute_peak_metrics"},
+        "fwhm_algorithm": {"const": "common.analysis.peak_metrics.compute_peak_metrics"},
         "fwhm_cross_sample_convergence_allowed": {"const": false},
         "mode_count_cross_sample_stability_required": {"const": true}
       }

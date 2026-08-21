@@ -3,13 +3,10 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 from pathlib import Path
 
-
-def sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest().upper()
+from common.contracts.file_identity import file_sha256 as sha256
 
 
 def build(formal: Path, extension: Path, output: Path, metadata: Path) -> None:

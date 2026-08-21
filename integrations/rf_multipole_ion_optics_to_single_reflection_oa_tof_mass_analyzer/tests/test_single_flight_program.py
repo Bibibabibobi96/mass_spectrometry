@@ -93,6 +93,8 @@ def _successor_callback_program(
     profile_id: str = "accelerator_real_pa",
     overlay: dict[str, object] | None = None,
     pre_pulse_time_series_contract: dict[str, object] | None = None,
+    rf_steps_per_period: int = 160,
+    source_release_mode: str | None = None,
 ) -> str:
     geometry_path = REPO / (
         "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json"
@@ -112,7 +114,8 @@ def _successor_callback_program(
         pulse_hook_source=PULSE_HOOK_SOURCE,
         frontend_hook_source=FRONTEND_HOOK_SOURCE,
         rf_drive_kernel_source=RF_DRIVE_KERNEL_SOURCE,
-        rf_steps_per_period=160,
+        source_release_mode=source_release_mode,
+        rf_steps_per_period=rf_steps_per_period,
         overlay=overlay,
         pre_pulse_time_series_contract=pre_pulse_time_series_contract,
     ) + CALLBACK_TEST_CONTROL
@@ -167,7 +170,29 @@ def _minimal_program_contracts() -> tuple[dict[str, object], dict[str, object]]:
 
 
 class SingleFlightProgramTests(unittest.TestCase):
-    def test_pre_pulse_time_series_uses_native_rf160_landings(self) -> None:
+    def test_runner_passes_release_mode_and_omits_rf_cap_for_pre_pulse_restart(self) -> None:
+        runner = (
+            REPO
+            / "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
+            / "runtime/run_single_flight.ps1"
+        ).read_text(encoding="utf-8")
+        self.assertIn("'--source-release-mode',$sourceReleaseMode", runner)
+        self.assertIn("if (-not $isPrePulseRestart)", runner)
+        self.assertIn('"single_flight_rf_steps={0}" -f $rfStepsPerPeriod', runner)
+
+    def test_pre_pulse_restart_disables_rf_drive_and_rf_cap(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            program = _successor_callback_program(
+                Path(directory), source_release_mode="pre_pulse_restart",
+            )
+        self.assertIn("local single_flight_rf_enabled=0", program)
+        self.assertIn("rf_drive=false", program)
+        self.assertNotIn("single_flight_rf_kernel.new", program)
+        self.assertNotIn("single_flight_rf_steps", program)
+        self.assertIn("single_flight_frontend.apply_at", program)
+        self.assertIn("single_flight_pulse.cap_timestep_at", program)
+
+    def test_pre_pulse_time_series_uses_native_contract_dt40_landings(self) -> None:
         contract = {
             "schema_version": 2,
             "role": "rf_oatof_pre_pulse_time_series_screening_contract",
@@ -181,16 +206,18 @@ class SingleFlightProgramTests(unittest.TestCase):
                 "resolution_metrics",
                 "single_flight_spatial_six_panel",
             ],
-            "sample_times_us": [1.0, 1.00625],
+            "sample_times_us": [1.0, 1.025],
         }
         with tempfile.TemporaryDirectory() as directory:
             program = _successor_callback_program(
-                Path(directory), pre_pulse_time_series_contract=contract
+                Path(directory), pre_pulse_time_series_contract=contract,
+                rf_steps_per_period=40,
             )
         self.assertIn("adjustable handoff_pulse_mode=2", program)
         self.assertIn("assert(handoff_pulse_mode==2", program)
         self.assertNotIn("assert(handoff_pulse_mode==0", program)
         self.assertIn("existing held-off pulse mode", program)
+        self.assertIn("assert(single_flight_rf_steps==40", program)
         self.assertIn("'pre_pulse_frontend_accelerator' or 'full_flight'", program)
         self.assertIn("single_flight_analyzer.initialize_workbench", program)
         self.assertNotIn("initialize_upstream_workbench", program)

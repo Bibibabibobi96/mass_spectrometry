@@ -126,7 +126,7 @@ def verify_integration_cache_entry(
         identity.get("critical_options", {}) if isinstance(identity, dict) else {}
     )
     if (
-        manifest.get("schema_version") != 2
+        manifest.get("schema_version") != 3
         or manifest.get("role") != expected_role
         or manifest.get("cache_key") != expected_key
         or identity.get("schema_version") != 2
@@ -139,6 +139,9 @@ def verify_integration_cache_entry(
         or not isinstance(critical_options, dict)
         or not critical_options
         or not isinstance(key_input, str)
+        or CACHE_SHA256.fullmatch(str(manifest.get("payload_sha256", ""))) is None
+        or CACHE_SHA256.fullmatch(str(manifest.get("generation_sha256", ""))) is None
+        or not isinstance(manifest.get("generation_input"), str)
     ):
         raise AssertionError(f"{entry}: reusable cache identity differs")
     try:
@@ -164,6 +167,26 @@ def verify_integration_cache_entry(
     if actual != expected:
         raise AssertionError(f"{entry}: reusable cache inventory differs")
     payload = actual - {"cache_manifest.json"}
+    payload_input = json.dumps(records, separators=(",", ":"))
+    payload_sha256 = hashlib.sha256(payload_input.encode("utf-8")).hexdigest()
+    if payload_sha256 != manifest["payload_sha256"].lower():
+        raise AssertionError(f"{entry}: cache payload identity differs")
+    try:
+        generation_input = json.loads(manifest["generation_input"])
+    except json.JSONDecodeError as exc:
+        raise AssertionError(f"{entry}: generation input is invalid JSON") from exc
+    if generation_input != {
+        "schema_version": 1,
+        "cache_key": expected_key,
+        "payload_sha256": payload_sha256,
+        "provider_run_id": manifest.get("provider_run_id"),
+    }:
+        raise AssertionError(f"{entry}: generation input differs")
+    generation_sha256 = hashlib.sha256(
+        manifest["generation_input"].encode("utf-8")
+    ).hexdigest()
+    if generation_sha256 != manifest["generation_sha256"].lower() or entry.name != generation_sha256:
+        raise AssertionError(f"{entry}: generation path differs from immutable identity")
     required_by_role = {
         "simion_single_flight_frontend_pa_cache": {
             "frontend.gem", "frontend.pa#", "frontend.pa0"
@@ -203,6 +226,45 @@ def _verify_integration_content_caches(
         for entry in content_root.iterdir():
             if not entry.is_dir() or re.fullmatch(r"[a-f0-9]{64}", entry.name) is None:
                 raise AssertionError(f"{entry}: invalid content-addressed cache entry")
+            pointer_path = entry / "current_generation.json"
+            if pointer_path.is_file():
+                pointer = json.loads(pointer_path.read_text(encoding="utf-8-sig"))
+                generation = str(pointer.get("generation_sha256", ""))
+                if (
+                    pointer.get("schema_version") != 1
+                    or pointer.get("cache_key") != entry.name
+                    or re.fullmatch(r"[a-f0-9]{64}", generation) is None
+                    or pointer.get("generation_relative_path") != f"generations/{generation}"
+                ):
+                    raise AssertionError(f"{entry}: cache generation pointer differs")
+                generation_root = entry / "generations"
+                if not generation_root.is_dir():
+                    raise AssertionError(f"{entry}: cache generations are missing")
+                generations = [item for item in generation_root.iterdir() if item.is_dir()]
+                if not generations or any(
+                    re.fullmatch(r"[a-f0-9]{64}", item.name) is None for item in generations
+                ):
+                    raise AssertionError(f"{entry}: cache generation layout differs")
+                selected = generation_root / generation
+                manifest_path = selected / "cache_manifest.json"
+                manifest = (
+                    json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+                    if manifest_path.is_file()
+                    else None
+                )
+                if not isinstance(manifest, dict) or manifest.get("schema_version") != 3:
+                    raise AssertionError(f"{entry}: active cache generation is invalid")
+                role = str(manifest.get("role", ""))
+                if role not in INTEGRATION_CACHE_ROLES[cache_name]:
+                    raise AssertionError(f"{entry}: cache role is not registered")
+                verify_integration_cache_entry(
+                    selected,
+                    expected_role=role,
+                    expected_key=entry.name,
+                    expected_project_id=project.name,
+                    verify_hashes=verify_hashes,
+                )
+                continue
             files = {item.name for item in entry.iterdir() if item.is_file()}
             manifest_path = entry / "cache_manifest.json"
             manifest = (
@@ -210,18 +272,6 @@ def _verify_integration_content_caches(
                 if manifest_path.is_file()
                 else None
             )
-            if isinstance(manifest, dict) and manifest.get("schema_version") == 2:
-                role = str(manifest.get("role", ""))
-                if role not in INTEGRATION_CACHE_ROLES[cache_name]:
-                    raise AssertionError(f"{entry}: cache role is not registered")
-                verify_integration_cache_entry(
-                    entry,
-                    expected_role=role,
-                    expected_key=entry.name,
-                    expected_project_id=project.name,
-                    verify_hashes=verify_hashes,
-                )
-                continue
             # Schema-v1/no-manifest entries predate the reusable-cache contract.
             # They remain layout-visible until separately removed, but runtime
             # lookup must treat them as misses.
@@ -653,7 +703,7 @@ def main() -> None:
         )
         if cache_root_name is None:
             parser.error("expected cache role is not registered")
-        expected_entry = (
+        expected_key_directory = (
             projects
             / args.expected_cache_project
             / "cache"
@@ -661,22 +711,38 @@ def main() -> None:
             / args.expected_cache_key
         ).resolve()
         entry = args.cache_entry.resolve()
-        if entry != expected_entry:
-            raise AssertionError("cache entry path differs from its registered role")
         if cache_root_name == "verified_pulse":
+            if entry != expected_key_directory:
+                raise AssertionError("cache entry path differs from its registered role")
             verify_verified_pulse_cache_entry(
                 entry,
                 workspace_root=projects.parent.parent,
                 verify_hashes=True,
             )
         else:
-            verify_integration_cache_entry(
+            try:
+                relative_entry = entry.relative_to(expected_key_directory / "generations")
+            except ValueError as exc:
+                raise AssertionError("cache entry path differs from its registered role") from exc
+            if len(relative_entry.parts) != 1 or CACHE_SHA256.fullmatch(relative_entry.name) is None:
+                raise AssertionError("cache entry path differs from its registered role")
+            manifest = verify_integration_cache_entry(
                 entry,
                 expected_role=args.expected_cache_role,
                 expected_key=args.expected_cache_key,
                 expected_project_id=args.expected_cache_project,
                 verify_hashes=True,
             )
+            pointer = json.loads(
+                (expected_key_directory / "current_generation.json").read_text(
+                    encoding="utf-8-sig"
+                )
+            )
+            if (
+                pointer.get("generation_sha256") != manifest.get("generation_sha256")
+                or pointer.get("payload_sha256") != manifest.get("payload_sha256")
+            ):
+                raise AssertionError("cache generation pointer differs from frozen payload")
         print(
             "CACHE_ENTRY=PASS "
             f"ROLE={args.expected_cache_role} KEY={args.expected_cache_key}"

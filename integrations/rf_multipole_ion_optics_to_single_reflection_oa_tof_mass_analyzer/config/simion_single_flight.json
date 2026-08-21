@@ -82,6 +82,18 @@
       "role": "accelerator_local_refinement_memory_stable_execution"
     },
     {
+      "profile_id": "frontend_isotropic_020_accelerator_overlay_z005_parallel3",
+      "field_overlay_id": "accelerator_overlay_z005",
+      "cell_mm_xyz": {"x": 0.2, "y": 0.2, "z": 0.2},
+      "accelerator_overlay": {
+        "enabled": true,
+        "cell_mm_xyz": {"x": 0.2, "y": 0.2, "z": 0.05},
+        "boundary_mode": "coarse_electrode_basis_dirichlet_v1"
+      },
+      "max_parallel_batches": 3,
+      "role": "accelerator_local_refinement_single_wave_parallel3_execution"
+    },
+    {
       "profile_id": "frontend_isotropic_020_accelerator_overlay_z0025",
       "field_overlay_id": "accelerator_overlay_z0025",
       "cell_mm_xyz": {"x": 0.2, "y": 0.2, "z": 0.2},
@@ -174,6 +186,29 @@
       "frontend_electrode_topology_id": "three_zone_frontend_v1",
       "field_id": "three_zone_piecewise_uniform_ideal_field_v1",
       "role": "three_zone_t5_candidate_ideal_field"
+    },
+    {
+      "profile_id": "accelerator_real_three_zone_ideal_reflectron",
+      "accelerator_zone1": "real_pa_field",
+      "accelerator_zone2": "real_pa_field",
+      "accelerator_zone3": "real_pa_field",
+      "drift": "zero_field",
+      "reflectron_stage1": "analytic_ideal_field",
+      "reflectron_stage2": "analytic_ideal_field",
+      "real_pa_field_blending_allowed": false,
+      "topology_id": "three_zone_accelerator_ideal_v1",
+      "geometry_id": "three_zone_focus_origin_planes_v1",
+      "frontend_electrode_topology_id": "three_zone_frontend_v1",
+      "field_id": "three_zone_real_pa_plus_reflectron_piecewise_uniform_ideal_field_v1",
+      "role": "three_zone_real_accelerator_ideal_reflectron_counterfactual"
+    },
+    {
+      "profile_id": "three_zone_explicit_region_modes",
+      "topology_id": "three_zone_accelerator_ideal_v1",
+      "geometry_id": "three_zone_focus_origin_planes_v1",
+      "frontend_electrode_topology_id": "three_zone_frontend_v1",
+      "field_id": "three_zone_explicit_region_modes_v1",
+      "role": "three_zone_region_selectable_counterfactual"
     },
     {
       "profile_id": "full_domain_three_zone_piecewise_ideal_field",
@@ -319,6 +354,13 @@
       "materialization_mode": "canonical_multipole_source",
       "particle_count": 1000,
       "role": "canonical_multipole_source_transform"
+    },
+    {
+      "profile_id": "canonical_real_octupole_n5000",
+      "source_profile_id": "canonical_real_octupole_n5000",
+      "materialization_mode": "canonical_multipole_source",
+      "particle_count": 5000,
+      "role": "canonical_multipole_high_statistical_source_transform"
     }
   ],
   "pulse_time_us": 39.58788438081105,

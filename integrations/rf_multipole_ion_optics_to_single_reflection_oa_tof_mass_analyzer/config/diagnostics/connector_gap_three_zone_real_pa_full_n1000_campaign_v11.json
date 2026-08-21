@@ -3,7 +3,7 @@
   "role": "rf_multipole_oatof_experiment_campaign",
   "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
   "campaign_id": "connector_gap_three_zone_real_pa_full_n1000_v11",
-  "status": "authorized",
+  "status": "retired",
   "execution_policy": {
     "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/execution_policy.json",
     "sha256": "2E46BB48291F8CFEC31883A0F2D03080324B5BC2852F16522938A7419813414B"

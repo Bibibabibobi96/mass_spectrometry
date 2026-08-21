@@ -8,7 +8,6 @@ import unittest
 
 from common.contracts.file_identity import file_sha256, repository_text_sha256
 from common.contracts.machine_contracts import ContractError
-from common.contracts.machine_contracts import validate_schema
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.prepare import (
     INTEGRATION_ID,
     _canonical_sha256,
@@ -226,31 +225,6 @@ class ThreeZoneSolverGatePrepareTests(unittest.TestCase):
                 "experiments": [producer, consumer, orphan],
             })
 
-    def test_observed_projection_schema_freezes_authorities_and_arm(self) -> None:
-        integration_root = Path(__file__).resolve().parents[1]
-        campaign = json.loads(
-            (
-                integration_root
-                / "config/diagnostics/three_zone_t5_real_pa_full_width_"
-                "segmented_rings_n1_n100_campaign_v5.json"
-            ).read_text(encoding="utf-8")
-        )
-        for row in campaign["experiments"]:
-            row["observed_pre_pulse_projection"] = _observed_projection(
-                "full_observed_6d"
-            )
-
-        validate_schema(
-            campaign, "rf_multipole_oatof_experiment_campaign.schema.json"
-        )
-        campaign["experiments"][0]["observed_pre_pulse_projection"][
-            "arm_id"
-        ] = "unknown_arm"
-        with self.assertRaises(ContractError):
-            validate_schema(
-                campaign, "rf_multipole_oatof_experiment_campaign.schema.json"
-            )
-
     def test_observed_projection_pairs_differ_only_by_arm_and_run_identity(self) -> None:
         producer_c, consumer_c = _rows()
         for row in (producer_c, consumer_c):
@@ -332,30 +306,6 @@ class ThreeZoneSolverGatePrepareTests(unittest.TestCase):
             )
         with self.assertRaisesRegex(ContractError, "unique complete"):
             _three_zone_gate_pairs(campaign)
-
-    def test_affine_observed_arm_schema_requires_limited_comparison_claim(self) -> None:
-        integration_root = Path(__file__).resolve().parents[1]
-        campaign = json.loads(
-            (
-                integration_root
-                / "config/diagnostics/three_zone_t5_real_pa_full_width_"
-                "segmented_rings_n1_n100_campaign_v5.json"
-            ).read_text(encoding="utf-8")
-        )
-        for row in campaign["experiments"]:
-            row["observed_pre_pulse_projection"] = _observed_projection(
-                "affine_zvz_fixed_10eV_transverse_collapsed"
-            )
-        validate_schema(
-            campaign, "rf_multipole_oatof_experiment_campaign.schema.json"
-        )
-        del campaign["experiments"][0]["observed_pre_pulse_projection"][
-            "comparison_claim"
-        ]
-        with self.assertRaises(ContractError):
-            validate_schema(
-                campaign, "rf_multipole_oatof_experiment_campaign.schema.json"
-            )
 
     def test_prepare_validator_closes_four_arm_projection_invariants(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

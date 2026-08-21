@@ -4,78 +4,6 @@ $ErrorActionPreference = 'Stop'
 $repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
 
-Set-Alias -Name New-RfRunPackage -Value New-RunPackage
-Set-Alias -Name Write-RfJson -Value Write-RunJson
-Set-Alias -Name Write-RfRunManifest -Value Write-RunManifest
-Set-Alias -Name Save-RfEnvironment -Value Save-RunEnvironment
-Set-Alias -Name Restore-RfEnvironment -Value Restore-RunEnvironment
-Set-Alias -Name Complete-RfFailedRun -Value Complete-FailedRun
-
-function Write-RfFrozenRunManifest {
-  [CmdletBinding()]
-  param(
-    [Parameter(Mandatory)][string]$Python,
-    [Parameter(Mandatory)][string]$FrozenRepoRoot,
-    [Parameter(Mandatory)][string]$RunConfig,
-    [Parameter(Mandatory)]
-    [ValidateSet('success','failed','interrupted','superseded')]
-    [string]$Status,
-    [string[]]$Software = @(),
-    [string[]]$Outputs = @()
-  )
-  $environmentNames = @('PYTHONPATH','PYTHONNOUSERSITE')
-  $savedEnvironment = Save-RfEnvironment -Names $environmentNames
-  try {
-    $env:PYTHONPATH = $FrozenRepoRoot
-    $env:PYTHONNOUSERSITE = '1'
-    Push-Location -LiteralPath $FrozenRepoRoot
-    try {
-      Write-RfRunManifest -Python $Python -RepoRoot $FrozenRepoRoot `
-        -RunConfig $RunConfig -Status $Status -Software $Software -Outputs $Outputs
-    } finally {
-      Pop-Location
-    }
-  } finally {
-    Restore-RfEnvironment -Names $environmentNames -Snapshot $savedEnvironment
-  }
-}
-
-function Complete-RfFrozenFailedRun {
-  [CmdletBinding()]
-  param(
-    [Parameter(Mandatory)][string]$Python,
-    [Parameter(Mandatory)][string]$FrozenRepoRoot,
-    [Parameter(Mandatory)][string]$RunConfig,
-    [Parameter(Mandatory)][string]$Summary,
-    [Parameter(Mandatory)][string]$SummaryRole,
-    [Parameter(Mandatory)][string]$Reason,
-    [Parameter(Mandatory)][string[]]$Software,
-    [ValidateSet('failed','interrupted')][string]$Status = 'failed',
-    [string]$FailureClass = '',
-    [hashtable]$AdditionalSummaryProperties = @{},
-    [string]$ResourceUsagePath = ''
-  )
-  $environmentNames = @('PYTHONPATH','PYTHONNOUSERSITE')
-  $savedEnvironment = Save-RfEnvironment -Names $environmentNames
-  try {
-    $env:PYTHONPATH = $FrozenRepoRoot
-    $env:PYTHONNOUSERSITE = '1'
-    Push-Location -LiteralPath $FrozenRepoRoot
-    try {
-      Complete-RfFailedRun -Python $Python -RepoRoot $FrozenRepoRoot `
-        -RunConfig $RunConfig -Summary $Summary -SummaryRole $SummaryRole `
-        -Reason $Reason -Software $Software -Status $Status `
-        -FailureClass $FailureClass `
-        -AdditionalSummaryProperties $AdditionalSummaryProperties `
-        -ResourceUsagePath $ResourceUsagePath
-    } finally {
-      Pop-Location
-    }
-  } finally {
-    Restore-RfEnvironment -Names $environmentNames -Snapshot $savedEnvironment
-  }
-}
-
 function Resolve-RfDirectChildDirectory {
   [CmdletBinding()]
   param(
@@ -211,6 +139,32 @@ function Get-RfContentIdentitySha256 {
   ).ToLowerInvariant()
 }
 
+function Get-RfFlightTubePaBuildGeometryIdentity {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)]$Geometry,
+    [Parameter(Mandatory)]$Build
+  )
+  # This PA is a grounded collision shield.  Keep its cache identity exactly
+  # to the values passed to build_flight_tube_variant.lua, rather than the
+  # larger resolved OATOF document that also carries runtime electrode values.
+  return [ordered]@{
+    schema_version=1
+    geometry_mm=[ordered]@{
+      flight_tube_r=[double]$Geometry.flight_tube_r
+      flight_tube_wall=[double]$Geometry.flight_tube_wall
+      shield_endcap_thickness=[double]$Geometry.shield_endcap_thickness
+      shield_outer_z_min=[double]$Geometry.shield_outer_z_min
+      flight_length=[double]$Geometry.L_flight
+    }
+    mesh=[ordered]@{
+      cell_axial_mm=[double]$Build.cell_axial_mm
+      cell_radial_mm=[double]$Build.cell_radial_mm
+      max_gib=[double]$Build.max_gib
+    }
+  }
+}
+
 function Assert-RfCacheEntryPath {
   param(
     [Parameter(Mandatory)][string]$CacheRoot,
@@ -233,8 +187,8 @@ function Set-RfCachePayloadReadOnly {
   )
   $manifest = Get-Content -LiteralPath (Join-Path $entry 'cache_manifest.json') `
     -Raw -Encoding UTF8 | ConvertFrom-Json
-  if ([int]$manifest.schema_version -ne 2) {
-    throw 'Only schema-v2 cache payloads can be protected as immutable.'
+  if ([int]$manifest.schema_version -ne 3) {
+    throw 'Only schema-v3 cache payloads can be protected as immutable.'
   }
   foreach ($record in @($manifest.files)) {
     $path = [IO.Path]::GetFullPath((Join-Path $entry ([string]$record.name)))
@@ -276,8 +230,9 @@ function Test-RfReusableCacheEntry {
     [Parameter(Mandatory)][string]$Role,
     [ValidateSet('remove','preserve')][string]$InvalidEntryAction = 'remove'
   )
-  $entry = Join-Path $CacheRoot $CacheKey
-  Assert-RfCacheEntryPath -CacheRoot $CacheRoot -CacheKey $CacheKey -CacheEntry $entry
+  try {
+    $entry = Resolve-RfCurrentCacheGeneration -CacheRoot $CacheRoot -CacheKey $CacheKey -Role $Role
+  } catch { return $false }
   $manifest = Join-Path $entry 'cache_manifest.json'
   if (-not (Test-Path -LiteralPath $manifest -PathType Leaf)) { return $false }
   $verificationExitCode = 0
@@ -301,7 +256,7 @@ function Test-RfReusableCacheEntry {
   } catch {
     $document = $null
   }
-  if ($null -ne $document -and [int]$document.schema_version -eq 2 -and
+  if ($null -ne $document -and [int]$document.schema_version -eq 3 -and
       $InvalidEntryAction -eq 'remove') {
     Clear-RfCacheEntryReadOnly -CacheEntry $entry
     Remove-Item -LiteralPath $entry -Recurse -Force
@@ -309,6 +264,144 @@ function Test-RfReusableCacheEntry {
   }
   $null = Test-Path -LiteralPath $entry
   return $false
+}
+
+function Test-RfReusableCacheEntryWithLegacyPromotion {
+  <#
+  Resolve a cache hit through the normal v3 verifier, with one compatibility
+  step for a verified schema-v2 payload when the caller explicitly requires
+  an existing entry.  Promotion is identity-bound and leaves the v2 payload
+  untouched; the returned hit is always verified from the resulting v3
+  generation.
+  #>
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$Python,
+    [Parameter(Mandatory)][string]$RepoRoot,
+    [Parameter(Mandatory)][string]$WorkspaceRoot,
+    [Parameter(Mandatory)][string]$ProjectId,
+    [Parameter(Mandatory)][string]$CacheRoot,
+    [Parameter(Mandatory)][string]$CacheKey,
+    [Parameter(Mandatory)][string]$Role,
+    [Parameter(Mandatory)]$Identity,
+    [ValidateSet('remove','preserve')][string]$InvalidEntryAction = 'remove',
+    [switch]$PromoteLegacyV2
+  )
+  $hit = Test-RfReusableCacheEntry -Python $Python -RepoRoot $RepoRoot `
+    -WorkspaceRoot $WorkspaceRoot -ProjectId $ProjectId -CacheRoot $CacheRoot `
+    -CacheKey $CacheKey -Role $Role -InvalidEntryAction $InvalidEntryAction
+  if ($hit -or -not $PromoteLegacyV2) { return $hit }
+
+  $legacyManifest = Join-Path (Join-Path $CacheRoot $CacheKey) 'cache_manifest.json'
+  if (-not (Test-Path -LiteralPath $legacyManifest -PathType Leaf)) {
+    return $false
+  }
+  $promoted = Promote-RfVerifiedLegacyV2CacheEntry -Python $Python `
+    -RepoRoot $RepoRoot -WorkspaceRoot $WorkspaceRoot -ProjectId $ProjectId `
+    -CacheRoot $CacheRoot -CacheKey $CacheKey -Role $Role -Identity $Identity
+  if ($null -eq $promoted) { return $false }
+  return (Test-RfReusableCacheEntry -Python $Python -RepoRoot $RepoRoot `
+    -WorkspaceRoot $WorkspaceRoot -ProjectId $ProjectId -CacheRoot $CacheRoot `
+    -CacheKey $CacheKey -Role $Role -InvalidEntryAction $InvalidEntryAction)
+}
+
+function Test-RfVerifiedLegacyV2CacheEntry {
+  <#
+  Verify a schema-v2 cache in place.  Ordinary consumers may reuse this
+  immutable payload directly when its physical build identity and every
+  manifest-recorded file hash match.  It intentionally does not publish a
+  v3 generation or mutate the legacy key directory.
+  #>
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$Python,
+    [Parameter(Mandatory)][string]$RepoRoot,
+    [Parameter(Mandatory)][string]$CacheRoot,
+    [Parameter(Mandatory)][string]$CacheKey,
+    [Parameter(Mandatory)][string]$Role,
+    [Parameter(Mandatory)]$Identity
+  )
+  if ((Get-RfContentIdentitySha256 -Identity $Identity) -ne $CacheKey) {
+    return $false
+  }
+  $entry = Join-Path $CacheRoot $CacheKey
+  Assert-RfCacheEntryPath -CacheRoot $CacheRoot -CacheKey $CacheKey -CacheEntry $entry
+  $manifestPath = Join-Path $entry 'cache_manifest.json'
+  if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { return $false }
+  try {
+    $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+  } catch { return $false }
+  if ([int]$manifest.schema_version -ne 2 -or $manifest.role -ne $Role -or
+      $manifest.cache_key -ne $CacheKey -or
+      [string]::IsNullOrWhiteSpace([string]$manifest.provider_run_id) -or
+      $null -eq $manifest.identity -or $null -eq $manifest.files) {
+    return $false
+  }
+  # The content-addressed key is the canonical physical-build identity.
+  # Do not compare PowerShell's JSON serialization: its property order is an
+  # implementation detail and must not turn the same PA into a cache miss.
+  if ((Get-RfContentIdentitySha256 -Identity $manifest.identity) -ne $CacheKey) {
+    return $false
+  }
+  try {
+    & $Python -m common.contracts.file_identity --root $entry --manifest $manifestPath *> $null
+    return $LASTEXITCODE -eq 0
+  } catch {
+    return $false
+  }
+}
+
+function Resolve-RfReusableCacheDirectory {
+  <# Return a verified v3 generation or a verified schema-v2 key root. #>
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$Python,
+    [Parameter(Mandatory)][string]$RepoRoot,
+    [Parameter(Mandatory)][string]$WorkspaceRoot,
+    [Parameter(Mandatory)][string]$ProjectId,
+    [Parameter(Mandatory)][string]$CacheRoot,
+    [Parameter(Mandatory)][string]$CacheKey,
+    [Parameter(Mandatory)][string]$Role,
+    [Parameter(Mandatory)]$Identity,
+    [ValidateSet('remove','preserve')][string]$InvalidEntryAction = 'remove'
+  )
+  if (Test-RfReusableCacheEntry -Python $Python -RepoRoot $RepoRoot `
+      -WorkspaceRoot $WorkspaceRoot -ProjectId $ProjectId -CacheRoot $CacheRoot `
+      -CacheKey $CacheKey -Role $Role -InvalidEntryAction $InvalidEntryAction) {
+    return (Resolve-RfCurrentCacheGeneration -CacheRoot $CacheRoot `
+      -CacheKey $CacheKey -Role $Role)
+  }
+  if (Test-RfVerifiedLegacyV2CacheEntry -Python $Python -RepoRoot $RepoRoot `
+      -CacheRoot $CacheRoot -CacheKey $CacheKey `
+      -Role $Role -Identity $Identity) {
+    return (Join-Path $CacheRoot $CacheKey)
+  }
+  return $null
+}
+
+function Resolve-RfCurrentCacheGeneration {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$CacheRoot,
+    [Parameter(Mandatory)][string]$CacheKey,
+    [Parameter(Mandatory)][string]$Role
+  )
+  $keyDirectory = Join-Path $CacheRoot $CacheKey
+  Assert-RfCacheEntryPath -CacheRoot $CacheRoot -CacheKey $CacheKey -CacheEntry $keyDirectory
+  $pointerPath = Join-Path $keyDirectory 'current_generation.json'
+  if (-not (Test-Path -LiteralPath $pointerPath -PathType Leaf)) {
+    throw 'Cache generation pointer is missing.'
+  }
+  $pointer = Get-Content -LiteralPath $pointerPath -Raw -Encoding UTF8 | ConvertFrom-Json
+  $generationKey = [string]$pointer.generation_sha256
+  $payloadSha256 = [string]$pointer.payload_sha256
+  if ([int]$pointer.schema_version -ne 1 -or $pointer.role -ne $Role -or
+      $pointer.cache_key -ne $CacheKey -or $generationKey -notmatch '^[a-f0-9]{64}$' -or
+      $payloadSha256 -notmatch '^[A-Fa-f0-9]{64}$' -or
+      $pointer.generation_relative_path -ne "generations/$generationKey") {
+    throw 'Cache generation pointer is invalid.'
+  }
+  return Join-Path $keyDirectory "generations\$generationKey"
 }
 
 function New-RfCacheStagingDirectory {
@@ -324,6 +417,55 @@ function New-RfCacheStagingDirectory {
     throw 'Cache staging directory escaped its registered root.'
   }
   return $staging
+}
+
+function Enter-RfCacheKeyLock {
+  <#
+  Serializes the complete verify/build/publish transaction for one cache key.
+  The mutex is process-local to this Windows host and leaves no artifact in the
+  content-addressed cache tree.
+  #>
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$CacheRoot,
+    [Parameter(Mandatory)][string]$CacheKey,
+    [ValidateRange(1, 7200)][int]$TimeoutSeconds = 3600
+  )
+  Assert-RfCacheEntryPath -CacheRoot $CacheRoot -CacheKey $CacheKey `
+    -CacheEntry (Join-Path $CacheRoot $CacheKey)
+  $root = [IO.Path]::GetFullPath($CacheRoot).TrimEnd(
+    [IO.Path]::DirectorySeparatorChar
+  ).ToUpperInvariant()
+  $seed = "$root|$CacheKey"
+  $hash = [Convert]::ToHexString(
+    [Security.Cryptography.SHA256]::HashData(
+      [Text.Encoding]::UTF8.GetBytes($seed)
+    )
+  ).ToLowerInvariant()
+  $mutex = [Threading.Mutex]::new($false, "Local\rf_oatof_cache_$hash")
+  try {
+    try {
+      if (-not $mutex.WaitOne([TimeSpan]::FromSeconds($TimeoutSeconds))) {
+        throw "Timed out waiting for cache-key lock: $CacheKey"
+      }
+    } catch [Threading.AbandonedMutexException] {
+      # Windows transfers ownership with this exception after a crashed owner.
+    }
+    return $mutex
+  } catch {
+    $mutex.Dispose()
+    throw
+  }
+}
+
+function Exit-RfCacheKeyLock {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][Threading.Mutex]$Mutex)
+  try {
+    $Mutex.ReleaseMutex()
+  } finally {
+    $Mutex.Dispose()
+  }
 }
 
 function Publish-RfVerifiedCacheEntry {
@@ -345,8 +487,8 @@ function Publish-RfVerifiedCacheEntry {
   if (-not (Split-Path -Parent $staging).Equals($root, [StringComparison]::OrdinalIgnoreCase)) {
     throw 'Cache publication staging directory escaped its registered root.'
   }
-  $target = Join-Path $root $CacheKey
-  Assert-RfCacheEntryPath -CacheRoot $root -CacheKey $CacheKey -CacheEntry $target
+  $keyDirectory = Join-Path $root $CacheKey
+  Assert-RfCacheEntryPath -CacheRoot $root -CacheKey $CacheKey -CacheEntry $keyDirectory
   $files = @(Get-ChildItem -LiteralPath $staging -File | Where-Object {
     $_.Name -ne 'cache_manifest.json'
   } | Sort-Object Name)
@@ -359,28 +501,147 @@ function Publish-RfVerifiedCacheEntry {
     [Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($cacheKeyInput))
   ).ToLowerInvariant()
   if ($derivedKey -ne $CacheKey) { throw 'Cache identity changed before publication.' }
-  Write-RfJson -Path (Join-Path $staging 'cache_manifest.json') -Depth 14 -Value ([ordered]@{
-    schema_version=2; role=$Role; cache_key=$CacheKey; provider_run_id=$ProviderRunId
-    cache_key_input=$cacheKeyInput; identity=$Identity; files=$records
+  $payloadInput = $records | ConvertTo-Json -Depth 8 -Compress
+  $payloadSha256 = [Convert]::ToHexString(
+    [Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($payloadInput))
+  ).ToLowerInvariant()
+  $generationInput = [ordered]@{
+    schema_version=1; cache_key=$CacheKey; payload_sha256=$payloadSha256
+    provider_run_id=$ProviderRunId
+  } | ConvertTo-Json -Depth 8 -Compress
+  $generationSha256 = [Convert]::ToHexString(
+    [Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($generationInput))
+  ).ToLowerInvariant()
+  $generationRoot = Join-Path $keyDirectory 'generations'
+  $target = Join-Path $generationRoot $generationSha256
+  Write-RunJson -Path (Join-Path $staging 'cache_manifest.json') -Depth 14 -Value ([ordered]@{
+    schema_version=3; role=$Role; cache_key=$CacheKey; provider_run_id=$ProviderRunId
+    cache_key_input=$cacheKeyInput; identity=$Identity; payload_sha256=$payloadSha256
+    generation_sha256=$generationSha256; generation_input=$generationInput; files=$records
   })
+  New-Item -ItemType Directory -Path $generationRoot -Force | Out-Null
   if (Test-Path -LiteralPath $target) {
-    if (Test-RfReusableCacheEntry -Python $Python -RepoRoot $RepoRoot `
-        -WorkspaceRoot $WorkspaceRoot -ProjectId $ProjectId -CacheRoot $root `
-        -CacheKey $CacheKey -Role $Role) {
-      Remove-Item -LiteralPath $staging -Recurse -Force
-      return $target
-    }
-    if (Test-Path -LiteralPath $target) {
-      throw 'Legacy cache entry unexpectedly collides with the current content key.'
-    }
+    Remove-Item -LiteralPath $staging -Recurse -Force
+  } else {
+    Move-Item -LiteralPath $staging -Destination $target
   }
-  Move-Item -LiteralPath $staging -Destination $target
+  $pointerStage = Join-Path $keyDirectory ('current_generation.' + [guid]::NewGuid().ToString('N') + '.json')
+  Write-RunJson -Path $pointerStage -Depth 8 -Value ([ordered]@{
+    schema_version=1; role=$Role; cache_key=$CacheKey
+    generation_sha256=$generationSha256; payload_sha256=$payloadSha256
+    generation_relative_path="generations/$generationSha256"
+  })
+  $pointer = Join-Path $keyDirectory 'current_generation.json'
+  Move-Item -LiteralPath $pointerStage -Destination $pointer -Force
   if (-not (Test-RfReusableCacheEntry -Python $Python -RepoRoot $RepoRoot `
       -WorkspaceRoot $WorkspaceRoot -ProjectId $ProjectId -CacheRoot $root `
       -CacheKey $CacheKey -Role $Role)) {
-    throw 'Published cache entry did not pass the shared verifier.'
+    throw 'Published cache generation did not pass the shared verifier.'
   }
   return $target
+}
+
+function Promote-RfVerifiedLegacyV2CacheEntry {
+  <#
+  Promotes a verified schema-v2 cache payload into a schema-v3 generation.
+  The v2 directory remains untouched: only an exact identity match, a complete
+  rehash, and a copy into governed staging may reach the v3 publisher.
+  #>
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$Python,
+    [Parameter(Mandatory)][string]$RepoRoot,
+    [Parameter(Mandatory)][string]$WorkspaceRoot,
+    [Parameter(Mandatory)][string]$ProjectId,
+    [Parameter(Mandatory)][string]$CacheRoot,
+    [Parameter(Mandatory)][string]$CacheKey,
+    [Parameter(Mandatory)][string]$Role,
+    [Parameter(Mandatory)]$Identity
+  )
+  $expectedKey = Get-RfContentIdentitySha256 -Identity $Identity
+  if ($expectedKey -ne $CacheKey) {
+    throw 'Legacy cache promotion identity does not derive the requested key.'
+  }
+  $legacyEntry = Join-Path $CacheRoot $CacheKey
+  Assert-RfCacheEntryPath -CacheRoot $CacheRoot -CacheKey $CacheKey `
+    -CacheEntry $legacyEntry
+  $legacyManifestPath = Join-Path $legacyEntry 'cache_manifest.json'
+  if (-not (Test-Path -LiteralPath $legacyManifestPath -PathType Leaf)) {
+    return $null
+  }
+  try {
+    $legacy = Get-Content -LiteralPath $legacyManifestPath -Raw -Encoding UTF8 |
+      ConvertFrom-Json
+  } catch {
+    throw 'Legacy cache promotion manifest is unreadable.'
+  }
+  if ([int]$legacy.schema_version -ne 2 -or $legacy.role -ne $Role -or
+      $legacy.cache_key -ne $CacheKey -or
+      [string]::IsNullOrWhiteSpace([string]$legacy.provider_run_id) -or
+      $null -eq $legacy.identity -or $null -eq $legacy.files) {
+    return $null
+  }
+  if ((Get-RfContentIdentitySha256 -Identity $legacy.identity) -ne $CacheKey) {
+    throw 'Legacy cache promotion identity does not derive its recorded key.'
+  }
+  $legacyIdentityJson = $legacy.identity | ConvertTo-Json -Depth 12 -Compress
+  $expectedIdentityJson = $Identity | ConvertTo-Json -Depth 12 -Compress
+  if ($legacyIdentityJson -ne $expectedIdentityJson) {
+    return $null
+  }
+  $records = @($legacy.files)
+  if ($records.Count -eq 0) { throw 'Legacy cache promotion payload is empty.' }
+  $names = @{}
+  foreach ($record in $records) {
+    $name = [string]$record.name
+    if ([string]::IsNullOrWhiteSpace($name) -or
+        [IO.Path]::IsPathRooted($name) -or $name.IndexOfAny([char[]]@('\','/')) -ge 0 -or
+        $name -in @('.','..') -or $names.ContainsKey($name) -or
+        [int64]$record.bytes -lt 0 -or [string]$record.sha256 -notmatch '^[A-Fa-f0-9]{64}$') {
+      throw 'Legacy cache promotion file record is invalid.'
+    }
+    $names[$name] = $true
+    $source = Join-Path $legacyEntry $name
+    if (-not (Test-Path -LiteralPath $source -PathType Leaf) -or
+        (Get-Item -LiteralPath $source -Force).Length -ne [int64]$record.bytes -or
+        (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash -ne $record.sha256) {
+      throw "Legacy cache promotion payload differs: $name"
+    }
+  }
+  $staging = New-RfCacheStagingDirectory -CacheRoot $CacheRoot
+  try {
+    foreach ($record in $records) {
+      $name = [string]$record.name
+      $source = Join-Path $legacyEntry $name
+      $destination = Join-Path $staging $name
+      $copyVerified = $false
+      for ($attempt = 1; $attempt -le 3 -and -not $copyVerified; $attempt++) {
+        if (Test-Path -LiteralPath $destination) {
+          Remove-Item -LiteralPath $destination -Force
+        }
+        Copy-Item -LiteralPath $source -Destination $destination
+        $destinationHash = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash
+        $copyVerified = (
+          (Get-Item -LiteralPath $destination -Force).Length -eq [int64]$record.bytes -and
+          [string]::Equals($destinationHash, [string]$record.sha256,
+            [StringComparison]::OrdinalIgnoreCase)
+        )
+      }
+      if (-not $copyVerified) {
+        throw "Legacy cache promotion copy differs: $name"
+      }
+    }
+    return Publish-RfVerifiedCacheEntry -Python $Python -RepoRoot $RepoRoot `
+      -WorkspaceRoot $WorkspaceRoot -ProjectId $ProjectId -CacheRoot $CacheRoot `
+      -CacheKey $CacheKey -Role $Role -Identity $Identity `
+      -StagingDirectory $staging -ProviderRunId ([string]$legacy.provider_run_id)
+  } catch {
+    if (Test-Path -LiteralPath $staging) {
+      Clear-RfCacheEntryReadOnly -CacheEntry $staging
+      Remove-Item -LiteralPath $staging -Recurse -Force
+    }
+    throw
+  }
 }
 
 function Copy-RfCacheManifestInput {
@@ -392,8 +653,7 @@ function Copy-RfCacheManifestInput {
   $source = Join-Path $CacheEntry 'cache_manifest.json'
   if (Test-Path -LiteralPath $Destination) { throw 'Frozen cache manifest destination exists.' }
   Copy-Item -LiteralPath $source -Destination $Destination
-  if ((Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash -ne
-      (Get-FileHash -LiteralPath $Destination -Algorithm SHA256).Hash) {
+  if (-not (Test-RunFilesIdentical -Left $source -Right $Destination)) {
     throw 'Cache manifest changed while frozen into run inputs.'
   }
   return $Destination
@@ -475,7 +735,7 @@ function Initialize-RfIntegrationStageBudget {
     }
   }
   $stageBudget = Join-Path $InputDir "resolved_resource_budget__$StageId.json"
-  Write-RfJson -Path $stageBudget -Value ([ordered]@{
+  Write-RunJson -Path $stageBudget -Value ([ordered]@{
     schema_version = 1
     role = 'integration_resolved_stage_resource_budget'
     integration_id = $ExpectedIntegrationId
@@ -667,28 +927,6 @@ function Copy-RfFrozenDependency {
   if ($sourceHash -ne $frozenHash) {
     throw "Dependency changed while frozen: $source"
   }
-  $runtimePath = $destination
-  $compatibilityPath = $null
-  if ($Dependency.PSObject.Properties.Name -contains 'compatibility_frozen_filename') {
-    $compatibilityRelative = [string]$Dependency.compatibility_frozen_filename
-    if ([IO.Path]::IsPathRooted($compatibilityRelative)) {
-      throw "Dependency $($Dependency.id) compatibility filename must be input-relative."
-    }
-    $compatibilityPath = [IO.Path]::GetFullPath((Join-Path $inputs $compatibilityRelative))
-    if (-not (Test-RfDependencyPathWithin -Path $compatibilityPath -Root $inputs)) {
-      throw "Dependency $($Dependency.id) compatibility destination escapes the run inputs."
-    }
-    if ($compatibilityPath -eq $destination -or (Test-Path -LiteralPath $compatibilityPath)) {
-      throw "Dependency $($Dependency.id) compatibility destination is not unique."
-    }
-    $compatibilityParent = Split-Path -Parent $compatibilityPath
-    New-Item -ItemType Directory -Path $compatibilityParent -Force | Out-Null
-    Copy-Item -LiteralPath $source -Destination $compatibilityPath
-    if ($sourceHash -ne (Get-FileHash -LiteralPath $compatibilityPath -Algorithm SHA256).Hash) {
-      throw "Dependency changed while compatibility copy was frozen: $source"
-    }
-    $runtimePath = $compatibilityPath
-  }
   return [pscustomobject]@{
     id = [string]$Dependency.id
     provider_scope = $scope
@@ -697,9 +935,8 @@ function Copy-RfFrozenDependency {
     source_repo_path = $sourceRelative.Replace('\','/')
     frozen_input_name = [string]$Dependency.run_input_name
     consumers = @($Dependency.consumers)
-    frozen_path = $runtimePath
+    frozen_path = $destination
     snapshot_path = $destination
-    compatibility_path = $compatibilityPath
     sha256 = $sourceHash
   }
 }

@@ -9,7 +9,7 @@
     "role": {"const": "rf_multipole_oatof_experiment_campaign"},
     "integration_id": {"const": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"},
     "campaign_id": {"$ref": "#/$defs/id"},
-    "status": {"enum": ["authorized", "PENDING_PREREGISTRATION", "archived_invalid"]},
+    "status": {"enum": ["authorized", "PENDING_PREREGISTRATION", "retired", "archived_invalid"]},
     "execution_policy": {"$ref": "#/$defs/file"},
     "claim_limit": {"type": "string", "minLength": 1},
     "preregistration": {"$ref": "#/$defs/preregistration"},
@@ -328,11 +328,27 @@
     },
     "source": {
       "type": "object", "additionalProperties": false,
-      "required": ["run_id", "launched_particle_count", "particle_count", "particle_source_manifest_input_role", "manifest", "state", "particle_source", "metadata"],
+      "required": ["run_id", "launched_particle_count", "particle_count_binding", "particle_source_manifest_input_role", "manifest", "state", "particle_source", "metadata"],
       "properties": {
         "run_id": {"type": "string", "minLength": 1},
-        "launched_particle_count": {"type": "integer", "enum": [100, 1000]},
-        "particle_count": {"type": "integer", "minimum": 1, "maximum": 1000},
+        "launched_particle_count": {"type": "integer", "enum": [100, 1000, 5000]},
+        "particle_count_binding": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "selector"],
+          "properties": {
+            "mode": {"const": "derive_from_frozen_source_state_v1"},
+            "selector": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["event", "status"],
+              "properties": {
+                "event": {"type": "string", "minLength": 1},
+                "status": {"type": "string", "minLength": 1}
+              }
+            }
+          }
+        },
         "particle_source_manifest_input_role": {"type": "string", "minLength": 1},
         "manifest": {"$ref": "#/$defs/file"}, "state": {"$ref": "#/$defs/file"},
         "particle_source": {"$ref": "#/$defs/file"}, "metadata": {"$ref": "#/$defs/file"},
@@ -388,10 +404,21 @@
         "post_pulse_variation_axis": {
           "enum": [
             "time_integration_profile_id",
-            "accelerator_field_profile_id"
+            "accelerator_field_profile_id",
+            "diagnostic_state_transform",
+            "accelerator_field_profile_id_and_diagnostic_state_transform",
+            "accelerator_field_profile_id_and_source_zvz_theory_working_point"
           ]
+        },
+        "diagnostic_state_transform": {
+          "enum": ["zvz_affine_residual_removed"]
         }
-      }
+      },
+      "allOf": [{
+        "if": {"properties": {"post_pulse_variation_axis": {"enum": ["diagnostic_state_transform", "accelerator_field_profile_id_and_diagnostic_state_transform"]}}},
+        "then": {"required": ["diagnostic_state_transform"]},
+        "else": {"not": {"required": ["diagnostic_state_transform"]}}
+      }]
     },
     "observed_pre_pulse_projection": {
       "type": "object", "additionalProperties": false,
@@ -504,7 +531,7 @@
           "required": ["mode", "time_grid_profile_id", "spatial_window_profile_id"],
           "properties": {
             "mode": {"const": "auto_detector_blind_discovery_and_confirmation_v1"},
-            "time_grid_profile_id": {"const": "ballistic_seed_rf160_minus56_plus264_v1"},
+            "time_grid_profile_id": {"const": "ballistic_seed_native_dt_minus0p35_plus1p65_v1"},
             "spatial_window_profile_id": {
               "const": "layout_resolved_axial_provisional_xy2_v1"
             }
@@ -1215,17 +1242,86 @@
         "execution_strategy": {"enum": ["staged_three_stage", "simion_single_flight"]},
         "single_flight_layout_profile_id": {"$ref": "#/$defs/id"},
         "single_flight_batch_count": {"type": "integer", "minimum": 1},
+        "single_flight_batch_memory_policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["policy_id", "default_batch_count", "maximum_batch_count", "reserve_available_memory_bytes", "resource_usage_receipt"],
+          "properties": {
+            "policy_id": {"const": "auto_memory_bound_from_receipt_v1"},
+            "default_batch_count": {"type": "integer", "minimum": 1},
+            "maximum_batch_count": {"type": "integer", "minimum": 1},
+            "reserve_available_memory_bytes": {"type": "integer", "minimum": 0},
+            "resource_usage_receipt": {"$ref": "#/$defs/file"}
+          }
+        },
         "single_flight_frontend_grid_profile_id": {"$ref": "#/$defs/id"},
         "single_flight_oatof_numerical_profile_id": {"$ref": "#/$defs/id"},
         "single_flight_trajectory_quality_profile_id": {"enum": ["tqual_8", "tqual_108"]},
         "single_flight_time_integration_profile_id": {
           "enum": ["dt10", "dt20", "dt40", "dt80", "dt160", "dt320"]
         },
+        "single_flight_maximum_time_of_flight_us": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
         "single_flight_pa_cache_policy": {
           "enum": ["require_existing", "build_and_publish_if_missing"]
         },
+        "single_flight_pa_cache_generation_binding": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["binding_mode", "cache_generations"],
+          "properties": {
+            "binding_mode": {"const": "require_exact_schema_v3_generations_v1"},
+            "cache_generations": {
+              "type": "array", "minItems": 1,
+              "items": {
+                "type": "object", "additionalProperties": false,
+                "required": ["role", "cache_key", "generation_sha256", "payload_sha256"],
+                "properties": {
+                  "role": {"enum": [
+                    "simion_single_flight_frontend_pa_cache",
+                    "simion_accelerator_overlay_pa_cache",
+                    "simion_oatof_flight_tube_pa_cache",
+                    "simion_oatof_reflectron_pa_cache"
+                  ]},
+                  "cache_key": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+                  "generation_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+                  "payload_sha256": {"$ref": "#/$defs/sha"}
+                }
+              }
+            }
+          }
+        },
         "single_flight_spatial_window_profile_id": {"$ref": "#/$defs/id"},
         "single_flight_accelerator_field_profile_id": {"$ref": "#/$defs/id"},
+        "single_flight_three_zone_region_modes": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["accelerator_zone1", "accelerator_zone2", "accelerator_zone3", "drift", "reflectron_stage1", "reflectron_stage2"],
+          "properties": {
+            "accelerator_zone1": {"enum": ["real_pa_field", "analytic_ideal_field", "zero_field"]},
+            "accelerator_zone2": {"enum": ["real_pa_field", "analytic_ideal_field", "zero_field"]},
+            "accelerator_zone3": {"enum": ["real_pa_field", "analytic_ideal_field", "zero_field"]},
+            "drift": {"enum": ["real_pa_field", "analytic_ideal_field", "zero_field"]},
+            "reflectron_stage1": {"enum": ["real_pa_field", "analytic_ideal_field", "zero_field"]},
+            "reflectron_stage2": {"enum": ["real_pa_field", "analytic_ideal_field", "zero_field"]}
+          }
+        },
+        "single_flight_source_zvz_affine_policy": {
+          "enum": ["source_zvz_affine_identify_and_bind_v1"]
+        },
+        "single_flight_source_zvz_theory_working_point": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["policy_id", "first_zone_drop_v", "nominal_energy_per_charge_v", "reflectron_stage1_voltage_v"],
+          "properties": {
+            "policy_id": {"const": "source_zvz_three_zone_theory_working_point_v1"},
+            "first_zone_drop_v": {"type": "number", "exclusiveMinimum": 0},
+            "nominal_energy_per_charge_v": {"type": "number", "exclusiveMinimum": 0},
+            "reflectron_stage1_voltage_v": {"type": "number", "exclusiveMinimum": 0}
+          }
+        },
         "single_flight_source_materialization_profile_id": {"$ref": "#/$defs/id"},
         "single_flight_three_zone_candidate": {"$ref": "#/$defs/file"},
         "architecture_generation_id": {"$ref": "#/$defs/id"},

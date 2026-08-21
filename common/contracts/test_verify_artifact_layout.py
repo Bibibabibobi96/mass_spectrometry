@@ -52,24 +52,56 @@ class ArtifactLayoutIdentityTests(unittest.TestCase):
             "critical_options": {"refine_convergence": "5e-7"},
         }
         key_input = json.dumps(identity, separators=(",", ":"))
-        entry = entry.parent / hashlib.sha256(key_input.encode()).hexdigest()
-        entry.mkdir(parents=True)
+        cache_key = hashlib.sha256(key_input.encode()).hexdigest()
+        key_directory = entry.parent / cache_key
+        staging = key_directory / "generations" / "staging"
+        staging.mkdir(parents=True)
         records = []
         for name in names:
-            path = entry / name
+            path = staging / name
             path.write_text(f"cached {name}\n", encoding="utf-8")
-            item = record(path, entry)
+            item = record(path, staging)
             item.pop("path")
             records.append({"name": name, **item})
+        payload_sha256 = hashlib.sha256(
+            json.dumps(records, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        generation_input = json.dumps(
+            {
+                "schema_version": 1,
+                "cache_key": cache_key,
+                "payload_sha256": payload_sha256,
+                "provider_run_id": None,
+            },
+            separators=(",", ":"),
+        )
+        generation_sha256 = hashlib.sha256(generation_input.encode("utf-8")).hexdigest()
+        entry = staging.parent / generation_sha256
+        staging.rename(entry)
         write_json(
             entry / "cache_manifest.json",
             {
-                "schema_version": 2,
+                "schema_version": 3,
                 "role": role,
-                "cache_key": entry.name,
+                "cache_key": cache_key,
+                "provider_run_id": None,
                 "cache_key_input": key_input,
                 "identity": identity,
+                "payload_sha256": payload_sha256,
+                "generation_sha256": generation_sha256,
+                "generation_input": generation_input,
                 "files": records,
+            },
+        )
+        write_json(
+            key_directory / "current_generation.json",
+            {
+                "schema_version": 1,
+                "role": role,
+                "cache_key": cache_key,
+                "generation_sha256": generation_sha256,
+                "payload_sha256": payload_sha256,
+                "generation_relative_path": f"generations/{generation_sha256}",
             },
         )
         return entry
@@ -208,7 +240,7 @@ class ArtifactLayoutIdentityTests(unittest.TestCase):
             verify_integration_cache_entry(
                 entry,
                 expected_role="simion_single_flight_frontend_pa_cache",
-                expected_key=entry.name,
+                expected_key=entry.parents[1].name,
                 expected_project_id=project.name,
             )
             (entry / "frontend.pa0").write_text("changed\n", encoding="utf-8")
@@ -253,7 +285,7 @@ class ArtifactLayoutIdentityTests(unittest.TestCase):
                 verify_integration_cache_entry(
                     entry,
                     expected_role="simion_accelerator_overlay_pa_cache",
-                    expected_key=entry.name,
+                    expected_key=entry.parents[1].name,
                     expected_project_id=project.name,
                 )
             manifest["identity"]["solver"]["product_version"] = "2020"
@@ -263,7 +295,7 @@ class ArtifactLayoutIdentityTests(unittest.TestCase):
                 verify_integration_cache_entry(
                     entry,
                     expected_role="simion_accelerator_overlay_pa_cache",
-                    expected_key=entry.name,
+                    expected_key=entry.parents[1].name,
                     expected_project_id=project.name,
                 )
 

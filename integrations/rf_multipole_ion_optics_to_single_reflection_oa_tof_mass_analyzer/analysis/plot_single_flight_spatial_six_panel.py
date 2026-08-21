@@ -20,8 +20,106 @@ import pandas as pd
 
 
 CAPABILITY_ID = "rf_oatof_single_flight_spatial_six_panel_v2"
-PHASE_SPACE_CAPABILITY_ID = "rf_oatof_accelerator_pre_pulse_phase_space_v1"
+PHASE_SPACE_CAPABILITY_ID = "rf_oatof_accelerator_phase_space_evolution_v2"
 GEOMETRY_TARGET_TICK_INTERVALS = 9
+
+# The continuous frontend enters through the connector along global x and then
+# turns into the oaTOF's global z axis.  Angles must follow that local path;
+# using one global component for every checkpoint would manufacture a false
+# gap trend at the 90-degree bend.
+_CHECKPOINT_AXIAL_AXIS = {
+    "source_release": "x",
+    "multipole_handoff": "x",
+    "pre_pulse_state": "x",
+    "accelerator_grid1_forward": "x",
+    "accelerator_intermediate2_forward": "z",
+    "local_accelerator_exit": "z",
+    "accelerator_focus_forward": "z",
+    "reflectron_entrance_forward": "z",
+    "reflectron_midgrid_forward": "z",
+    "reflectron_turning_point": "z",
+    "reflectron_exit_return": "z",
+    "detector_crossing": "z",
+}
+
+
+def _quantiles(values: np.ndarray) -> dict[str, float]:
+    """Return the compact, distribution-complete summary used by all cohorts."""
+
+    if values.ndim != 1 or values.size == 0 or not np.isfinite(values).all():
+        raise ValueError("distribution values must be a non-empty finite vector")
+    return {
+        "mean": float(np.mean(values)),
+        "median": float(np.median(values)),
+        "sample_std": float(np.std(values, ddof=1)) if values.size > 1 else 0.0,
+        "p05": float(np.quantile(values, 0.05)),
+        "p25": float(np.quantile(values, 0.25)),
+        "p75": float(np.quantile(values, 0.75)),
+        "p95": float(np.quantile(values, 0.95)),
+    }
+
+
+def _checkpoint_distribution_summary(rows: pd.DataFrame, event: str) -> dict[str, Any]:
+    """Summarize one detector-blind checkpoint using its local propagation axis."""
+
+    axis = _CHECKPOINT_AXIAL_AXIS.get(event)
+    if axis is None:
+        raise ValueError(f"checkpoint axis is not registered: {event}")
+    position_fields = ("x_mm", "y_mm", "z_mm")
+    numeric = rows.loc[:, list(position_fields)].apply(pd.to_numeric, errors="coerce")
+    if numeric.empty or numeric.isna().any().any() or not np.isfinite(numeric.to_numpy()).all():
+        raise ValueError(f"checkpoint {event} has non-finite position values")
+    # Detector crossing is intentionally detector-blind: the detector contract
+    # publishes position and TOF, but no post-detector velocity/energy fields.
+    # Keep its spatial distribution while reporting angle and z–vz as not
+    # available, rather than treating the deliberate omission as bad data.
+    phase_space_available = event != "detector_crossing"
+    if phase_space_available:
+        velocity_fields = ("vx_mm_per_us", "vy_mm_per_us", "vz_mm_per_us")
+        velocities = rows.loc[:, list(velocity_fields)].apply(pd.to_numeric, errors="coerce")
+        if velocities.isna().any().any() or not np.isfinite(velocities.to_numpy()).all():
+            raise ValueError(f"checkpoint {event} has non-finite phase-space values")
+    else:
+        velocities = None
+    position = numeric.loc[:, ["x_mm", "y_mm", "z_mm"]].to_numpy(dtype=float)
+    axial_index = {"x": 0, "y": 1, "z": 2}[axis]
+    transverse = [index for index in range(3) if index != axial_index]
+    centered = position - np.median(position, axis=0)
+    transverse_radius = np.hypot(centered[:, transverse[0]], centered[:, transverse[1]])
+    velocity = None if velocities is None else 1000.0 * velocities.to_numpy(dtype=float)
+    axial_speed = None if velocity is None else velocity[:, axial_index]
+    transverse_speed = None if velocity is None else np.hypot(velocity[:, transverse[0]], velocity[:, transverse[1]])
+    # At the reflectron turning plane axial velocity is exactly zero.  Its
+    # direction is undefined, so expose it honestly rather than emitting 90°.
+    angle = None if axial_speed is None or np.all(np.abs(axial_speed) <= 1.0e-12) else np.degrees(
+        np.arctan2(transverse_speed, np.abs(axial_speed))
+    )
+    z = position[:, 2]
+    vz = None if velocity is None else velocity[:, 2]
+    if vz is not None and len(z) >= 2 and float(np.ptp(z)) > 0.0:
+        intercept, slope = np.linalg.lstsq(
+            np.column_stack([np.ones(len(z)), z]), vz, rcond=None
+        )[0]
+        residual = vz - (intercept + slope * z)
+        zvz = {
+            "status": "computed",
+            "slope_m_per_s_per_mm": float(slope),
+            "residual_rms_m_per_s": float(np.sqrt(np.mean(residual**2))),
+        }
+    else:
+        zvz = {"status": "not_computed", "reason": "detector_blind_or_zero_z_span_or_single_particle" if vz is None else "zero_z_span_or_single_particle"}
+    return {
+        "event": event,
+        "particle_count": int(len(rows)),
+        "local_propagation_axis": axis,
+        "space_mm": {name: _quantiles(position[:, index]) for index, name in enumerate(("x", "y", "z"))},
+        "velocity_m_per_s": None if velocity is None else {
+            name: _quantiles(velocity[:, index]) for index, name in enumerate(("vx", "vy", "vz"))
+        },
+        "transverse_radius_mm": _quantiles(transverse_radius),
+        "total_off_axis_angle_deg": None if angle is None else _quantiles(angle),
+        "z_vz_affine": zvz,
+    }
 
 
 def _rectangular_frame_path(
@@ -986,6 +1084,68 @@ def write_accelerator_phase_space_outputs(
     )
 
 
+def write_checkpoint_evolution_outputs(
+    checkpoints_path: Path, figure_path: Path, metadata_path: Path, data_path: Path,
+) -> None:
+    """Write the default detector-blind checkpoint-evolution diagnostic bundle."""
+
+    checkpoints = pd.read_csv(checkpoints_path)
+    summaries = []
+    for event in _CHECKPOINT_AXIAL_AXIS:
+        rows = checkpoints.loc[checkpoints["event"].eq(event)]
+        if not rows.empty:
+            summaries.append(_checkpoint_distribution_summary(rows, event))
+    if not summaries:
+        raise ValueError("checkpoint evolution requires at least one registered checkpoint")
+    table = pd.DataFrame(
+        {
+            "event": [item["event"] for item in summaries],
+            "particle_count": [item["particle_count"] for item in summaries],
+            "local_propagation_axis": [item["local_propagation_axis"] for item in summaries],
+            "transverse_radius_p95_mm": [item["transverse_radius_mm"]["p95"] for item in summaries],
+            "angle_p95_deg": [None if item["total_off_axis_angle_deg"] is None else item["total_off_axis_angle_deg"]["p95"] for item in summaries],
+            "z_vz_residual_rms_m_per_s": [item["z_vz_affine"].get("residual_rms_m_per_s") for item in summaries],
+        }
+    )
+    figure, axes = plt.subplots(2, 2, figsize=(13.5, 8.0), constrained_layout=True)
+    x = np.arange(len(table))
+    labels = table["event"].str.replace("_", "\n", regex=False)
+    series = (
+        (axes[0, 0], "particle_count", "retained particle count"),
+        (axes[0, 1], "transverse_radius_p95_mm", "transverse radius P95 (mm)"),
+        (axes[1, 0], "angle_p95_deg", "off-axis angle P95 (deg)"),
+        (axes[1, 1], "z_vz_residual_rms_m_per_s", "z–vz residual RMS (m/s)"),
+    )
+    for axis, column, ylabel in series:
+        values = table[column].to_numpy(dtype=float)
+        axis.plot(x, values, marker="o", linewidth=1.4, color="#1b9e77")
+        axis.set(ylabel=ylabel, xticks=x, xticklabels=labels)
+        axis.tick_params(axis="x", labelsize=7)
+        axis.grid(alpha=0.18)
+    figure.suptitle(
+        "Detector-blind accelerator/checkpoint phase-space evolution\n"
+        f"capability={PHASE_SPACE_CAPABILITY_ID}", fontsize=12,
+    )
+    figure_path.parent.mkdir(parents=True, exist_ok=True)
+    figure.savefig(figure_path, dpi=190)
+    plt.close(figure)
+    table.to_csv(data_path, index=False, lineterminator="\n")
+    metadata_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "role": "rf_oatof_accelerator_checkpoint_evolution_metadata",
+                "capability_id": PHASE_SPACE_CAPABILITY_ID,
+                "status": "success",
+                "selection_uses_detector_outcome": False,
+                "checkpoints": summaries,
+                "data": str(data_path.resolve()),
+                "figure": str(figure_path.resolve()),
+            }, indent=2,
+        ) + "\n", encoding="utf-8", newline="\n",
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--initial", type=Path)
@@ -998,6 +1158,9 @@ def main() -> int:
     parser.add_argument("--phase-space-output", type=Path)
     parser.add_argument("--phase-space-metadata", type=Path)
     parser.add_argument("--phase-space-data", type=Path)
+    parser.add_argument("--evolution-output", type=Path)
+    parser.add_argument("--evolution-metadata", type=Path)
+    parser.add_argument("--evolution-data", type=Path)
     parser.add_argument("--phase-space-only", action="store_true")
     args = parser.parse_args()
     phase_outputs = (
@@ -1079,6 +1242,16 @@ def main() -> int:
             args.phase_space_output,
             args.phase_space_metadata,
             args.phase_space_data,
+        )
+    evolution_outputs = (args.evolution_output, args.evolution_metadata, args.evolution_data)
+    if any(value is None for value in evolution_outputs) and any(value is not None for value in evolution_outputs):
+        parser.error("checkpoint-evolution figure, metadata and data must be supplied together")
+    if all(value is not None for value in evolution_outputs):
+        assert args.evolution_output is not None
+        assert args.evolution_metadata is not None
+        assert args.evolution_data is not None
+        write_checkpoint_evolution_outputs(
+            args.checkpoints, args.evolution_output, args.evolution_metadata, args.evolution_data,
         )
     print(f"SINGLE_FLIGHT_SIX_PANEL=PASS FIGURE={args.output}")
     return 0

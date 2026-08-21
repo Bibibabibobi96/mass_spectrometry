@@ -5,6 +5,9 @@ from pathlib import Path
 import unittest
 
 from common.contracts.machine_contracts import validate_schema
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.tests.fixtures.campaign_fixture import (
+    current_campaign_fixture,
+)
 
 
 INTEGRATION_ROOT = Path(__file__).resolve().parents[1]
@@ -17,7 +20,7 @@ SCHEMA = "rf_multipole_oatof_experiment_campaign.schema.json"
 
 
 def load(path: Path) -> dict[str, object]:
-    return json.loads(path.read_text(encoding="utf-8-sig"))
+    return current_campaign_fixture(json.loads(path.read_text(encoding="utf-8-sig")))
 
 
 class PulseResolutionDirectCampaignSplitTests(unittest.TestCase):
@@ -35,7 +38,7 @@ class PulseResolutionDirectCampaignSplitTests(unittest.TestCase):
     def test_candidate_successor_is_preregistered_against_r09(self) -> None:
         campaign = load(AUTHORIZED_CANDIDATES)
         validate_schema(campaign, SCHEMA)
-        self.assertEqual(campaign["status"], "authorized")
+        self.assertEqual(campaign["status"], "retired")
         self.assertEqual(
             campaign["pulse_resolution_baseline_evidence"]["sha256"],
             "EA4BB4084A754F5442B016B7D3744141A107C291B8DDABA8CCD9C193D759E37E",

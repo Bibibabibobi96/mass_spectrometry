@@ -3,7 +3,7 @@
   "role": "rf_multipole_oatof_experiment_campaign",
   "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
   "campaign_id": "octupole_segmented_vs_quadrupole_noacc_5ev_grid2_aligned_n100",
-  "status": "authorized",
+  "status": "retired",
   "execution_policy": {
     "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/execution_policy.json",
     "sha256": "B5AD2687C3D1B3CFE1F332C593F69BE3AFE55D749CB28815EB5C110207478FF3"

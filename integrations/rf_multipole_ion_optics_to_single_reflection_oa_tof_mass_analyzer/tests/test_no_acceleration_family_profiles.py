@@ -43,6 +43,9 @@ PROFILE_IDS.update(
 PROFILE_IDS.add(
     "rf_octupole_to_single_reflection_oatof_direct_mating_gap_51p2mm"
 )
+PROFILE_IDS.add(
+    "rf_octupole_to_single_reflection_oatof_direct_mating_gap_102p4mm"
+)
 
 
 def load(path: Path) -> dict[str, object]:

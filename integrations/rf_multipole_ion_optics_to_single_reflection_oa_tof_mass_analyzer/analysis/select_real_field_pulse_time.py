@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import copy
 import csv
-import hashlib
 import json
 from pathlib import Path
 from typing import Any
 
-from common.contracts.file_identity import file_sha256, repository_text_sha256
+from common.contracts.file_identity import (
+    canonical_json_sha256 as _canonical_sha256,
+    file_sha256,
+    repository_text_sha256,
+)
 from common.contracts.machine_contracts import ContractError, validate_schema
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.analyze_single_flight import (
     _observed_id_set,
@@ -66,13 +69,6 @@ def _load_state_rows(path: Path) -> list[dict[str, str]]:
     ):
         raise ContractError("real-field pulse state table contains detector outcomes")
     return rows
-
-
-def _canonical_sha256(value: Any) -> str:
-    payload = json.dumps(
-        value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-    ).encode("utf-8")
-    return hashlib.sha256(payload).hexdigest().upper()
 
 
 def _binding(path: Path, *, repository_text: bool = False) -> dict[str, str]:

@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 
 from common.contracts.component_particle_state import validate_component_particle_state_csv
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.peak_metrics import FWHM_FACTOR
+from common.analysis.peak_metrics import FWHM_FACTOR
 
 
 def _rows(path: Path) -> list[dict[str, str]]:

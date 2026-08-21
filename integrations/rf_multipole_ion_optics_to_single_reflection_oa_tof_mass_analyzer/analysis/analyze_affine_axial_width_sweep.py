@@ -30,7 +30,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.accelerator_time_f
     linear_phase_space_timing_coefficients,
     time_to_fixed_plane_s,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.peak_metrics import (
+from common.analysis.peak_metrics import (
     compute_peak_metrics,
 )
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.oatof_oaaccelerator_coupling import (

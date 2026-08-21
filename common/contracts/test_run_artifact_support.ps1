@@ -19,9 +19,30 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $python = Join-Path $repoRoot '.venv\Scripts\python.exe'
 $projectRoot = Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer'
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) ("run_artifact_support_" + [guid]::NewGuid().ToString('N'))
+$originalPythonPath=[Environment]::GetEnvironmentVariable('PYTHONPATH')
+$originalNoUserSite=[Environment]::GetEnvironmentVariable('PYTHONNOUSERSITE')
 
 try {
   . (Join-Path $PSScriptRoot 'run_artifact_support.ps1')
+  $originalLocation=(Get-Location).Path
+  [Environment]::SetEnvironmentVariable('PYTHONPATH','run-artifact-test-pythonpath')
+  [Environment]::SetEnvironmentVariable('PYTHONNOUSERSITE','run-artifact-test-nousersite')
+  $context=Invoke-RunToolRootContext -RepoRoot $repoRoot -Operation {
+    [pscustomobject]@{
+      location=(Get-Location).Path
+      python_path=$env:PYTHONPATH
+      no_user_site=$env:PYTHONNOUSERSITE
+    }
+  }
+  Assert-Equal $context.location $repoRoot 'Tool context did not use RepoRoot.'
+  Assert-Equal $context.python_path $repoRoot 'Tool context did not bind PYTHONPATH.'
+  Assert-Equal $context.no_user_site '1' 'Tool context did not disable user site.'
+  Assert-Equal (Get-Location).Path $originalLocation 'Tool context did not restore location.'
+  Assert-Equal ([Environment]::GetEnvironmentVariable('PYTHONPATH')) 'run-artifact-test-pythonpath' `
+    'Tool context did not restore PYTHONPATH.'
+  Assert-Equal ([Environment]::GetEnvironmentVariable('PYTHONNOUSERSITE')) 'run-artifact-test-nousersite' `
+    'Tool context did not restore PYTHONNOUSERSITE.'
+
   $interruptedDir = Join-Path $testRoot '20260723_170001__test__cross__lifecycle-interrupted__n100'
   New-Item -ItemType Directory -Path $interruptedDir -Force | Out-Null
   Initialize-RunRecord -RunDir $interruptedDir `
@@ -160,6 +181,8 @@ try {
 
   Write-Output 'RUN_ARTIFACT_SUPPORT=PASS'
 } finally {
+  [Environment]::SetEnvironmentVariable('PYTHONPATH',$originalPythonPath)
+  [Environment]::SetEnvironmentVariable('PYTHONNOUSERSITE',$originalNoUserSite)
   if (Test-Path -LiteralPath $testRoot) {
     [IO.Directory]::Delete($testRoot, $true)
   }

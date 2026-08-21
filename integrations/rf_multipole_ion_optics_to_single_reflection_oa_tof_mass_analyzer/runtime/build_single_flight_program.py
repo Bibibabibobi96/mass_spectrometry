@@ -287,6 +287,7 @@ def build_successor_program(
     pulse_hook_source: str,
     frontend_hook_source: str,
     rf_drive_kernel_source: str,
+    source_release_mode: str | None = None,
     terminate_after_pulse: bool = False,
     pre_pulse_time_series_contract: dict[str, Any] | None = None,
     overlay: dict[str, Any] | None = None,
@@ -317,6 +318,21 @@ def build_successor_program(
     ):
         raise ValueError("single-flight canonical particle IDs are invalid")
     staged_restart = restart_context is not None
+    if source_release_mode is None:
+        source_release_mode = (
+            "staged_grid2_restart" if staged_restart else "continuous_frontend"
+        )
+    if source_release_mode not in {
+        "continuous_frontend",
+        "pre_pulse_restart",
+        "staged_grid2_restart",
+    }:
+        raise ValueError("single-flight source release mode is unsupported")
+    if source_release_mode == "staged_grid2_restart" and not staged_restart:
+        raise ValueError("staged grid2 source release requires its restart context")
+    if source_release_mode != "staged_grid2_restart" and staged_restart:
+        raise ValueError("restart context requires staged grid2 source release mode")
+    rf_enabled = source_release_mode != "pre_pulse_restart"
     if staged_restart:
         required_restart = {
             "role": "rf_oatof_staged_grid2_restart_context",
@@ -437,8 +453,8 @@ def build_successor_program(
             raise ValueError("pre-pulse time-series sample times must be strictly increasing")
         if sample_times_us[0] < max(birth_times_us):
             raise ValueError("pre-pulse time-series starts before the last source birth")
-        if terminate_after_pulse or staged_restart or rf_steps_per_period != 160:
-            raise ValueError("pre-pulse time-series requires non-restart RF160 execution")
+        if terminate_after_pulse or staged_restart:
+            raise ValueError("pre-pulse time-series requires non-restart execution")
     if overlay is not None and overlay.get("role") != "rf_oatof_simion_accelerator_overlay_contract":
         raise ValueError("single-flight Program requires an accelerator overlay contract")
     three_zone = frontend.get("accelerator_topology_id") == (
@@ -591,16 +607,42 @@ def build_successor_program(
         f"[{index}]={_lua_number(value)}"
         for index, value in enumerate(sample_times_us, start=1)
     ) + "}"
+    embedded_components = [
+        ("single_flight_analyzer_component", normalized["analyzer component"]),
+        ("single_flight_pulse_component", normalized["pulse hook"]),
+        ("single_flight_frontend_component", normalized["frontend hook"]),
+    ]
+    if rf_enabled:
+        embedded_components.append(
+            ("single_flight_rf_kernel", normalized["RF drive kernel"])
+        )
+    embedded_components.append(("single_flight_region_field", region_hook))
     embedded = "\n".join(
         f"local {name}=(function()\n{source}\nend)()"
-        for name, source in (
-            ("single_flight_analyzer_component", normalized["analyzer component"]),
-            ("single_flight_pulse_component", normalized["pulse hook"]),
-            ("single_flight_frontend_component", normalized["frontend hook"]),
-            ("single_flight_rf_kernel", normalized["RF drive kernel"]),
-            ("single_flight_region_field", region_hook),
-        )
+        for name, source in embedded_components
     )
+    rf_adjustable = (
+        f"adjustable single_flight_rf_steps={rf_steps_per_period}\n"
+        if rf_enabled else ""
+    )
+    screening_rf_assert = (
+        f"    assert(single_flight_rf_steps=={int(rf_steps_per_period)},\n"
+        "      'pre-pulse time-series screening requires the frozen native solver RF step count')\n"
+        if rf_enabled and screening else ""
+    )
+    rf_initializer = (
+        f"""    rf=single_flight_rf_kernel.new{{waveform={json.dumps(drive['waveform'])},frequency_hz=single_flight_frequency_hz,
+      phase_rad=single_flight_phase_rad,rf_amplitude_v=single_flight_rf_peak_v,rf_scale=single_flight_rf_scale,
+      common_mode_scale=single_flight_common_mode_scale,group_dc_v={{[1]=single_flight_dc_amplitude_v,[2]=-single_flight_dc_amplitude_v}},
+      rf_steps_per_period=single_flight_rf_steps,electrodes={_lua_value(rf_electrodes)}}}
+"""
+        if rf_enabled else ""
+    )
+    rf_static_apply = (
+        "    rf.apply_static(function(id,value) initial[id]=value end)\n"
+        if rf_enabled else ""
+    )
+    rf_config = "rf" if rf_enabled else "false"
     global_setup = "\nsimion.early_access(8.2)\nsim_segment_global=1" if global_segments else ""
     program = f"""simion.workbench_program(){global_setup}
 {embedded}
@@ -623,7 +665,7 @@ adjustable single_flight_phase_rad={_lua_number(drive['phase_rad'])}
 adjustable single_flight_dc_amplitude_v={_lua_number(drive['dc_amplitude_V_per_group'])}
 adjustable single_flight_rf_scale=1
 adjustable single_flight_common_mode_scale=1
-adjustable single_flight_rf_steps={rf_steps_per_period}
+{rf_adjustable}local single_flight_rf_enabled={1 if rf_enabled else 0}
 local accelerator_repeller_front_z_mm={_lua_number(geometry['accelerator_repeller_front_z_mm'])}
 local accelerator_grid1_z_mm={_lua_number(geometry['accelerator_grid1_z_mm'])}
 {intermediate2_local}local accelerator_grid2_z_mm={_lua_number(geometry['accelerator_grid2_z_mm'])}
@@ -773,7 +815,7 @@ function segment.initialize_run()
   if single_flight_pre_pulse_time_series~=0 then
     assert(handoff_pulse_mode==2,
       'pre-pulse time-series screening requires the existing held-off pulse mode')
-    assert(single_flight_rf_steps==160,'pre-pulse time-series screening requires RF160')
+{screening_rf_assert}
   end
   sim_trajectory_quality=trajectory_quality
   local analyzer_config={analyzer_config_lua}
@@ -812,16 +854,14 @@ function segment.initialize_run()
     single_flight_apply_plan(simion.wb.instances[2].pa,initialized.static_electrode_plans.reflectron)
   end
   if single_flight_staged_grid2_restart==0 then
-    local rf=single_flight_rf_kernel.new{{waveform={json.dumps(drive['waveform'])},frequency_hz=single_flight_frequency_hz,
-      phase_rad=single_flight_phase_rad,rf_amplitude_v=single_flight_rf_peak_v,rf_scale=single_flight_rf_scale,
-      common_mode_scale=single_flight_common_mode_scale,group_dc_v={{[1]=single_flight_dc_amplitude_v,[2]=-single_flight_dc_amplitude_v}},
-      rf_steps_per_period=single_flight_rf_steps,electrodes={_lua_value(rf_electrodes)}}}
+    local rf=false
+{rf_initializer}
     single_flight_pulse=single_flight_pulse_component.new{{canonical_clock=single_flight_instrument_time_us,
       pulse_time_us=handoff_pulse_time_us,pulse_width_us=handoff_pulse_width_us,pulse_mode=function() return handoff_pulse_mode end}}
-    single_flight_frontend=single_flight_frontend_component.new{{rf_drive=rf,pulse_hook=single_flight_pulse,
+    single_flight_frontend=single_flight_frontend_component.new{{rf_drive={rf_config},pulse_hook=single_flight_pulse,
       electrode_plan=single_flight_project_electrode_plan(),planes_z_mm={accelerator_planes_lua}}}
     local initial={{}}
-    rf.apply_static(function(id,value) initial[id]=value end)
+{rf_static_apply}
     initial[{int(electrodes['grounded_shield_id'])}]=0
     for _,item in ipairs(single_flight_analyzer.accelerator_electrode_write_plan('off',
         {initial_voltage_lua})) do initial[item.electrode_id]=item.voltage_v end
@@ -1094,6 +1134,11 @@ def main() -> int:
     parser.add_argument("--resolved-region-field-contract", required=True, type=Path)
     parser.add_argument("--rf-drive-kernel", required=True, type=Path)
     parser.add_argument("--rf-steps-per-period", required=True, type=int)
+    parser.add_argument(
+        "--source-release-mode",
+        choices=("continuous_frontend", "pre_pulse_restart", "staged_grid2_restart"),
+        default=None,
+    )
     parser.add_argument("--terminate-after-pulse", action="store_true")
     parser.add_argument("--pre-pulse-time-series-contract", type=Path)
     parser.add_argument("--global-segments", action="store_true")
@@ -1118,6 +1163,7 @@ def main() -> int:
         pulse_hook_source=args.pulse_hook.read_text(encoding="utf-8-sig"),
         frontend_hook_source=args.frontend_hook.read_text(encoding="utf-8-sig"),
         rf_drive_kernel_source=args.rf_drive_kernel.read_text(encoding="utf-8-sig"),
+        source_release_mode=args.source_release_mode,
         terminate_after_pulse=args.terminate_after_pulse,
         pre_pulse_time_series_contract=(
             _load(args.pre_pulse_time_series_contract)
@@ -1169,6 +1215,10 @@ def main() -> int:
         ],
         "rf_drive_kernel_sha256": file_sha256(args.rf_drive_kernel),
         "rf_steps_per_period": args.rf_steps_per_period,
+        "source_release_mode": (
+            args.source_release_mode
+            or ("staged_grid2_restart" if restart_context is not None else "continuous_frontend")
+        ),
         "clock_basis": "canonical_instrument_time_us",
         "terminate_after_pulse": args.terminate_after_pulse,
         "pre_pulse_time_series_contract_sha256": (

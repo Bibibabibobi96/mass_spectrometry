@@ -11,13 +11,14 @@ from __future__ import annotations
 
 import argparse
 import csv
-import hashlib
 import json
 import math
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+
+from common.contracts.file_identity import file_sha256 as _sha256
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -33,10 +34,6 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.oatof_oaaccelerato
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.reflectron_dual_stage_solver import (
     normalized_flight_time_mm_sqrt_v,
 )
-
-
-def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest().upper()
 
 
 def _load_particle_csv(path: Path) -> tuple[np.ndarray, np.ndarray]:

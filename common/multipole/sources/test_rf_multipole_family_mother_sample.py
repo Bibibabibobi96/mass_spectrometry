@@ -18,6 +18,7 @@ from common.multipole.sources.generate_rf_multipole_family_mother_sample import 
 SOURCE_ROOT = Path(__file__).resolve().parent
 N100_PATH = SOURCE_ROOT / "rf_multipole_family_mother_sample_v1_100.csv"
 N1000_PATH = SOURCE_ROOT / "rf_multipole_family_mother_sample_v1_1000.csv"
+N5000_PATH = SOURCE_ROOT / "rf_multipole_family_mother_sample_v1_5000.csv"
 METADATA_PATH = SOURCE_ROOT / "rf_multipole_family_mother_sample_v1.json"
 
 
@@ -45,9 +46,11 @@ class RfMultipoleFamilyMotherSampleTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             rebuilt_n100 = Path(directory) / N100_PATH.name
             rebuilt_n1000 = Path(directory) / N1000_PATH.name
-            build(rebuilt_n100, rebuilt_n1000)
+            rebuilt_n5000 = Path(directory) / N5000_PATH.name
+            build(rebuilt_n100, rebuilt_n1000, rebuilt_n5000)
             self.assertEqual(rebuilt_n100.read_bytes(), N100_PATH.read_bytes())
             self.assertEqual(rebuilt_n1000.read_bytes(), N1000_PATH.read_bytes())
+            self.assertEqual(rebuilt_n5000.read_bytes(), N5000_PATH.read_bytes())
 
     def test_n100_is_exact_prefix_and_metadata_is_fresh(self) -> None:
         metadata = json.loads(METADATA_PATH.read_text(encoding="utf-8"))
@@ -62,6 +65,14 @@ class RfMultipoleFamilyMotherSampleTests(unittest.TestCase):
         with N1000_PATH.open(encoding="utf-8", newline="") as handle:
             rows = list(csv.DictReader(handle))
         self.assertEqual([int(row["particle_id"]) for row in rows], list(range(1, 1001)))
+
+    def test_n1000_is_exact_prefix_of_n5000(self) -> None:
+        with N1000_PATH.open(encoding="utf-8", newline="") as handle:
+            n1000_rows = list(csv.DictReader(handle))
+        with N5000_PATH.open(encoding="utf-8", newline="") as handle:
+            n5000_rows = list(csv.DictReader(handle))
+        self.assertEqual(n5000_rows[:1000], n1000_rows)
+        self.assertEqual([int(row["particle_id"]) for row in n5000_rows], list(range(1, 5001)))
 
 
 if __name__ == "__main__":

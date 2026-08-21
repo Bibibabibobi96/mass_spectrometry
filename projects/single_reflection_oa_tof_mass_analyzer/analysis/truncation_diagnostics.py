@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import platform
 from pathlib import Path
@@ -17,20 +16,13 @@ import numpy as np
 import pandas as pd
 
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.mass_spectrum import load_mode
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.peak_metrics import (
+from common.analysis.peak_metrics import (
     AnalysisSettings,
     bootstrap_resolution_distribution,
     compute_peak_metrics,
 )
+from common.contracts.file_identity import file_sha256 as _sha256
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.reference_analysis import read_particle_table
-
-
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest().upper()
 
 
 def _paired_frames(left_path: Path, right_path: Path) -> tuple[pd.DataFrame, pd.DataFrame]:

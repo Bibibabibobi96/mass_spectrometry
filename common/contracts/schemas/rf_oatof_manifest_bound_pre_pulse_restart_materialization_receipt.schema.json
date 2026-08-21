@@ -9,10 +9,37 @@
     "claim_limit"
   ],
   "properties": {
-    "schema_version": {"const": 1},
+    "schema_version": {"enum": [1, 2]},
     "role": {"const": "rf_oatof_manifest_bound_pre_pulse_restart_materialization_receipt"},
     "status": {"const": "PASS"},
-    "method": {"const": "manifest_bound_pulse_eligible_checkpoint_reindex_v1"},
+    "method": {"enum": ["manifest_bound_pulse_eligible_checkpoint_reindex_v1", "manifest_bound_pulse_eligible_zvz_affine_residual_removed_v1"]},
+    "time_integration": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "producer_time_integration_profile_id",
+        "consumer_time_integration_profile_id",
+        "producer_stage_reintegration"
+      ],
+      "properties": {
+        "producer_time_integration_profile_id": {"$ref": "#/$defs/id"},
+        "consumer_time_integration_profile_id": {"$ref": "#/$defs/id"},
+        "producer_stage_reintegration": {"const": false}
+      }
+    },
+    "diagnostic": {
+      "type": "object", "additionalProperties": false,
+      "required": ["state_transform", "pre_transform_state_sha256", "post_transform_state_sha256", "ols_intercept_vz_m_per_s", "ols_slope_vz_m_per_s_per_mm", "mean_z_mm", "mean_vz_m_per_s", "residual_rms_m_per_s", "residual_max_abs_m_per_s"],
+      "properties": {
+        "state_transform": {"const": "zvz_affine_residual_removed"},
+        "pre_transform_state_sha256": {"$ref": "#/$defs/sha"},
+        "post_transform_state_sha256": {"$ref": "#/$defs/sha"},
+        "ols_intercept_vz_m_per_s": {"type": "number"},
+        "ols_slope_vz_m_per_s_per_mm": {"type": "number"},
+        "mean_z_mm": {"type": "number"}, "mean_vz_m_per_s": {"type": "number"},
+        "residual_rms_m_per_s": {"type": "number", "minimum": 0},
+        "residual_max_abs_m_per_s": {"type": "number", "minimum": 0}
+      }
+    },
     "producer": {
       "type": "object",
       "additionalProperties": false,
@@ -125,8 +152,14 @@
     },
     "claim_limit": {"type": "string", "minLength": 1}
   },
+  "allOf": [{
+    "if": {"properties": {"schema_version": {"const": 2}}},
+    "then": {"required": ["diagnostic"], "properties": {"method": {"const": "manifest_bound_pulse_eligible_zvz_affine_residual_removed_v1"}}},
+    "else": {"not": {"required": ["diagnostic"]}, "properties": {"method": {"const": "manifest_bound_pulse_eligible_checkpoint_reindex_v1"}}}
+  }],
   "$defs": {
     "sha": {"type": "string", "pattern": "^[A-F0-9]{64}$"},
+    "id": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"},
     "file": {
       "type": "object",
       "additionalProperties": false,

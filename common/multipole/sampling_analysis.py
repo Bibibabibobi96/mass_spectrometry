@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import argparse
 import csv
-import hashlib
 import json
 import math
 import random
 from pathlib import Path
 from typing import Any, Iterable
 
+from common.contracts.file_identity import file_sha256 as _sha256
 from common.multipole.followup_analysis import load_resolution, paired_report
 from common.multipole.numerical_observables import (
     load_json,
@@ -32,10 +32,6 @@ def _load_json(path: Path) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError(f"JSON object required: {path}")
     return value
-
-
-def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest().upper()
 
 
 def _percentile(values: list[float], probability: float) -> float:

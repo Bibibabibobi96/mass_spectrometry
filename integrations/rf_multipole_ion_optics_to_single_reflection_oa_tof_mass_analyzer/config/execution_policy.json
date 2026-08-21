@@ -6,6 +6,7 @@
   "workflow_id": "family_source_closure",
   "retention_class": "compact",
   "commercial_solver_concurrency_limit": 1,
+  "single_flight_batch_parallel_limit": 3,
   "stop_after_first_failure": true,
   "budget_exhaustion_result": "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
   "stage_limits": {
@@ -42,9 +43,9 @@
     "single_flight_transport": {
       "solver": "simion",
       "wall_clock_seconds": 3600,
-      "transient_run_directory_bytes": 12884901888,
+      "transient_run_directory_bytes": 17179869184,
       "transient_run_directory_sample_interval_seconds": 10,
-      "process_tree_working_set_bytes": 34359738368,
+      "process_tree_working_set_bytes": 42949672960,
       "minimum_system_available_memory_bytes": 1073741824,
       "warning_only_limit_names": [
         "minimum_system_available_memory_bytes"

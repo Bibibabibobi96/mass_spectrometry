@@ -15,6 +15,7 @@ import math
 import re
 from pathlib import Path
 
+from common.contracts.file_identity import file_sha256
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract import RESOLVED_PATH, resolve_contract, serialized
 
 
@@ -240,7 +241,7 @@ def render_optimization_envelope() -> str:
     reference = document["reference"]
     if reference.get("baseline") != "config/baseline.json":
         raise ValueError("unexpected baseline reference in optimization envelope")
-    baseline_sha = hashlib.sha256(CONTRACT_PATH.read_bytes()).hexdigest().upper()
+    baseline_sha = file_sha256(CONTRACT_PATH)
     return _replace_unique_sha(
         source,
         "baseline_sha256",

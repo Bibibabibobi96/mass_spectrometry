@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import csv
-import hashlib
 import json
 import math
 from pathlib import Path
 from typing import Any
 
+from common.contracts.file_identity import file_sha256 as _sha256
 from common.contracts.particle_physics import kinetic_energy_ev
 
 
@@ -34,14 +34,54 @@ ARM_FULL = "full_observed_6d"
 ARM_COLLAPSED = "observed_z_vz_energy_transverse_collapsed"
 ARM_AFFINE_FIXED_10EV = "affine_zvz_fixed_10eV_transverse_collapsed"
 ARM_OBSERVED_FIXED_10EV = "observed_zvz_fixed_10eV_transverse_collapsed"
+ZVZ_AFFINE_RESIDUAL_REMOVED = "zvz_affine_residual_removed"
 
 
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest().upper()
+def remove_zvz_affine_residual(
+    rows: list[dict[str, str | int]],
+) -> dict[str, float | str]:
+    """Replace each row's vz by its cohort OLS prediction and recompute KE."""
+    if not rows:
+        raise ValueError("diagnostic state transform requires a nonempty cohort")
+    z_values = [_finite(row, "position_z_mm", "diagnostic restart state") for row in rows]
+    vz_values = [_finite(row, "velocity_z_m_s", "diagnostic restart state") for row in rows]
+    mean_z = sum(z_values) / len(z_values)
+    mean_vz = sum(vz_values) / len(vz_values)
+    denominator = sum((value - mean_z) ** 2 for value in z_values)
+    if not math.isfinite(denominator) or denominator <= 0:
+        raise ValueError("diagnostic z-vz affine fit is degenerate")
+    slope = sum(
+        (z - mean_z) * (vz - mean_vz)
+        for z, vz in zip(z_values, vz_values, strict=True)
+    ) / denominator
+    intercept = mean_vz - slope * mean_z
+    if not all(math.isfinite(value) for value in (intercept, slope)):
+        raise ValueError("diagnostic z-vz affine fit is non-finite")
+    residuals: list[float] = []
+    for row, z, observed_vz in zip(rows, z_values, vz_values, strict=True):
+        predicted_vz = intercept + slope * z
+        residuals.append(observed_vz - predicted_vz)
+        row["velocity_z_m_s"] = format(predicted_vz, ".17g")
+        row["kinetic_energy_eV"] = format(
+            kinetic_energy_ev(
+                _finite(row, "mass_amu", "diagnostic restart state"),
+                _finite(row, "velocity_x_m_s", "diagnostic restart state"),
+                _finite(row, "velocity_y_m_s", "diagnostic restart state"),
+                predicted_vz,
+            ),
+            ".17g",
+        )
+    return {
+        "state_transform": ZVZ_AFFINE_RESIDUAL_REMOVED,
+        "ols_intercept_vz_m_per_s": intercept,
+        "ols_slope_vz_m_per_s_per_mm": slope,
+        "mean_z_mm": mean_z,
+        "mean_vz_m_per_s": mean_vz,
+        "residual_rms_m_per_s": math.sqrt(
+            sum(value ** 2 for value in residuals) / len(residuals)
+        ),
+        "residual_max_abs_m_per_s": max(abs(value) for value in residuals),
+    }
 
 
 def _load_json(path: Path, role: str) -> dict[str, Any]:

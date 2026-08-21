@@ -16,7 +16,11 @@ from common.contracts.artifact_naming import validate_run_id
 from common.contracts.component_particle_state import (
     validate_component_particle_state_csv,
 )
-from common.contracts.file_identity import file_sha256, repository_text_sha256
+from common.contracts.file_identity import (
+    canonical_json_sha256 as _canonical_sha256,
+    file_sha256,
+    repository_text_sha256,
+)
 from common.contracts.machine_contracts import ContractError, validate_schema
 from common.contracts.particle_count_policy import validate_standard_particle_count
 from common.contracts.particle_physics import kinetic_energy_ev
@@ -47,8 +51,15 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     build_resolved_region_field_contract,
     canonical_profile_id,
 )
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.source_zvz_affine import (
+    derive_three_zone_working_point,
+    write_receipt as write_source_zvz_affine_receipt,
+)
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.resolved_population import (
     compile_resolved_population_contract,
+)
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.source_population import (
+    write_source_population_receipt,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.ordered_pre_pulse_subset import (
     materialize_ordered_pre_pulse_subset,
@@ -74,6 +85,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     select_profile,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_source import (
+    materialize as materialize_single_flight_source,
     materialize_ideal_linear_source,
     materialize_pre_pulse_restart,
     resolve_source_materialization_profile,
@@ -89,8 +101,47 @@ UPSTREAM_PROJECTS = {
     "rf_octupole_ion_optics",
 }
 AUTO_PULSE_POLICY_ID = "auto_detector_blind_discovery_and_confirmation_v1"
-AUTO_PULSE_GRID_PROFILE_ID = "ballistic_seed_rf160_minus56_plus264_v1"
+AUTO_PULSE_GRID_PROFILE_ID = "ballistic_seed_native_dt_minus0p35_plus1p65_v1"
 PULSE_TRANSITION_RELATIVE_PATH = "results/pulse_timing_transition.json"
+ACTIVE_POST_PULSE_WORKING_POINT_POLICY = (
+    "source_zvz_three_zone_theory_working_point_required_v1"
+)
+
+
+def validate_active_post_pulse_restart_working_point(
+    experiment: dict[str, Any],
+) -> None:
+    """Require automatic theory closure for an active restart row only."""
+    if (
+        experiment.get("source_release_mode") != "pre_pulse_restart"
+        or experiment.get("post_pulse_restart_reuse_authority") is None
+    ):
+        return
+    if (
+        experiment.get("single_flight_source_zvz_affine_policy")
+        != "source_zvz_affine_identify_and_bind_v1"
+    ):
+        raise ContractError(
+            "active manifest-bound post-pulse restart requires source z--vz binding"
+        )
+    theory_request = experiment.get("single_flight_source_zvz_theory_working_point")
+    if (
+        not isinstance(theory_request, dict)
+        or theory_request.get("policy_id")
+        != "source_zvz_three_zone_theory_working_point_v1"
+    ):
+        raise ContractError(
+            "active manifest-bound post-pulse restart requires the source z--vz theory working point"
+        )
+    authority = experiment["post_pulse_restart_reuse_authority"]
+    if (
+        not isinstance(authority, dict)
+        or authority.get("post_pulse_variation_axis")
+        != "accelerator_field_profile_id_and_source_zvz_theory_working_point"
+    ):
+        raise ContractError(
+            "active manifest-bound post-pulse restart requires the theory variation axis"
+        )
 
 
 def _derive_pulse_discovery_run_id(original_run_id: str) -> str:
@@ -508,8 +559,34 @@ def _automatic_pulse_population_binding(
 
 def resolve_single_flight_batch_count(
     experiment: dict[str, Any], *, execution_particle_count: int,
+    workspace: Path | None = None,
 ) -> int:
     """Resolve execution-only batching without deriving the governed population."""
+
+    memory_policy = experiment.get("single_flight_batch_memory_policy")
+    if memory_policy is not None:
+        if workspace is None:
+            raise ContractError("single-flight memory batch policy lacks workspace context")
+        receipt_ref = memory_policy["resource_usage_receipt"]
+        receipt_path = (workspace / receipt_ref["path"]).resolve()
+        if not receipt_path.is_file() or file_sha256(receipt_path) != receipt_ref["sha256"]:
+            raise ContractError("single-flight memory batch receipt is missing or differs")
+        receipt = _load(receipt_path)
+        peak = receipt.get("peak_process_tree_working_set_bytes")
+        if isinstance(peak, bool) or not isinstance(peak, int) or peak < 1:
+            raise ContractError("single-flight memory batch receipt lacks a positive peak")
+        from common.simion.particle_batching import choose_memory_bound_batch_count
+        try:
+            decision = choose_memory_bound_batch_count(
+                execution_particle_count,
+                int(memory_policy["default_batch_count"]),
+                int(memory_policy["maximum_batch_count"]),
+                peak,
+                int(memory_policy["reserve_available_memory_bytes"]),
+            )
+        except ValueError as error:
+            raise ContractError("single-flight memory batch policy is invalid") from error
+        return int(decision["selected_batch_count"])
 
     value = experiment.get("single_flight_batch_count", 1)
     if isinstance(value, bool) or not isinstance(value, int):
@@ -565,6 +642,7 @@ def compile_pre_pulse_time_series_contract(
     selected_field_profile: dict[str, Any], region_field_semantic_sha256: str,
     rf_steps_per_period: int, specification: dict[str, Any] | None = None,
     base_schedule: dict[str, Any] | None = None,
+    time_integration_profile_id: str | None = None,
 ) -> dict[str, Any]:
     """Compile exact RF-grid sample times and all runner-checked identities."""
 
@@ -631,7 +709,11 @@ def compile_pre_pulse_time_series_contract(
             "field_overlay_id": experiment["field_overlay_id"],
             "oatof_numerical_profile_id": experiment["single_flight_oatof_numerical_profile_id"],
             "trajectory_quality_profile_id": experiment["single_flight_trajectory_quality_profile_id"],
-            "time_integration_profile_id": experiment["single_flight_time_integration_profile_id"],
+            "time_integration_profile_id": (
+                experiment["single_flight_time_integration_profile_id"]
+                if time_integration_profile_id is None
+                else time_integration_profile_id
+            ),
             "spatial_window_profile_id": specification["spatial_window_profile_id"],
         },
         **(
@@ -724,13 +806,6 @@ def _load(path: Path) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ContractError(f"JSON object required: {path}")
     return value
-
-
-def _canonical_sha256(value: Any) -> str:
-    payload = json.dumps(
-        value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-    ).encode("utf-8")
-    return hashlib.sha256(payload).hexdigest().upper()
 
 
 def _validate_three_zone_gate_pair(
@@ -1432,7 +1507,12 @@ def _resolve_cached_verified_pulse_schedule(
                 base_schedule=base_schedule,
                 pilot_verified_receipt_path=receipt_path,
             )
-        except ContractError:
+        # A cache entry is advisory until its full candidate lineage parses
+        # and verifies.  Historical/interrupted publications can leave a
+        # truncated candidate receipt behind; it must not block an unrelated
+        # current experiment from finding another valid entry or discovering
+        # its own detector-blind pulse.
+        except (ContractError, OSError, ValueError):
             continue
         if math.isclose(
             schedule["pulse_effective_time_us"], receipt["selected_time_us"],
@@ -1542,6 +1622,87 @@ def _workspace_relative(path: Path, workspace: Path) -> str:
         raise ContractError(f"path escapes the workspace: {path}") from exc
 
 
+def _resolve_pa_cache_generation_binding(
+    experiment: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Validate an optional exact immutable PA-generation requirement."""
+
+    binding = experiment.get("single_flight_pa_cache_generation_binding")
+    if binding is None:
+        return None
+    if experiment.get("single_flight_pa_cache_policy") != "require_existing":
+        raise ContractError(
+            "exact PA cache generation binding requires require_existing policy"
+        )
+    if binding.get("binding_mode") != "require_exact_schema_v3_generations_v1":
+        raise ContractError("PA cache generation binding mode is unsupported")
+    generations = binding.get("cache_generations")
+    if not isinstance(generations, list) or not generations:
+        raise ContractError("PA cache generation binding is empty")
+    roles = [item.get("role") for item in generations if isinstance(item, dict)]
+    if len(roles) != len(generations) or len(roles) != len(set(roles)):
+        raise ContractError("PA cache generation binding roles must be unique")
+    return copy.deepcopy(binding)
+
+
+def _validate_post_pulse_variation_axis(
+    *,
+    experiment: dict[str, Any],
+    authority: dict[str, Any],
+    producer_time_profile: str,
+    producer_field_profile: str,
+) -> str:
+    """Fail closed unless a restart consumer changes only its declared axis."""
+    axis = authority["post_pulse_variation_axis"]
+    theory_axis = "accelerator_field_profile_id_and_source_zvz_theory_working_point"
+    if (
+        axis != theory_axis
+        and experiment.get("single_flight_source_zvz_theory_working_point") is not None
+    ):
+        raise ContractError("post-pulse theory working point requires its declared variation axis")
+    if axis == "time_integration_profile_id":
+        if experiment["single_flight_accelerator_field_profile_id"] != producer_field_profile:
+            raise ContractError("post-pulse reuse differs outside the time-integration axis")
+        return experiment["single_flight_time_integration_profile_id"]
+    if axis == "accelerator_field_profile_id":
+        return experiment["single_flight_accelerator_field_profile_id"]
+    if axis == "diagnostic_state_transform":
+        if experiment["single_flight_accelerator_field_profile_id"] != producer_field_profile:
+            raise ContractError("post-pulse diagnostic differs outside state transform")
+        return authority["diagnostic_state_transform"]
+    if axis == "accelerator_field_profile_id_and_diagnostic_state_transform":
+        if experiment["single_flight_accelerator_field_profile_id"] != "full_domain_three_zone_piecewise_ideal_field":
+            raise ContractError("post-pulse combined diagnostic requires the fixed full-ideal field")
+        return (
+            experiment["single_flight_accelerator_field_profile_id"]
+            + "_"
+            + authority["diagnostic_state_transform"]
+        )
+    if axis == theory_axis:
+        if experiment["single_flight_accelerator_field_profile_id"] not in {
+            "accelerator_ideal_three_zone_real_reflectron",
+            "accelerator_real_three_zone_ideal_reflectron",
+            "three_zone_explicit_region_modes",
+            "accelerator_real_three_zone_pa_real_reflectron",
+            "full_domain_three_zone_piecewise_ideal_field",
+        }:
+            raise ContractError("post-pulse theory working point requires a supported three-zone field profile")
+        if experiment.get("single_flight_source_zvz_affine_policy") != "source_zvz_affine_identify_and_bind_v1":
+            raise ContractError("post-pulse theory working point requires source z--vz binding")
+        theory_request = experiment.get("single_flight_source_zvz_theory_working_point")
+        if (
+            not isinstance(theory_request, dict)
+            or theory_request.get("policy_id") != "source_zvz_three_zone_theory_working_point_v1"
+        ):
+            raise ContractError("post-pulse theory working point authority is missing")
+        return (
+            experiment["single_flight_accelerator_field_profile_id"]
+            + "_"
+            + theory_request["policy_id"]
+        )
+    raise ContractError("post-pulse variation axis is unsupported")
+
+
 def _resolve_post_pulse_restart_reuse(
     *,
     root: Path,
@@ -1624,13 +1785,36 @@ def _resolve_post_pulse_restart_reuse(
     design_input = verified_input("upstream_resolved_design")
     if producer_schedule_input != producer_schedule_path.resolve():
         raise ContractError("post-pulse producer schedule is not manifest-bound")
+    def source_contract_identity(value: dict[str, Any]) -> str:
+        """Bind derivation receipts by content SHA, not run-local materialization path."""
+        normalized = copy.deepcopy(value)
+        for branch in normalized.get("source_branches", {}).values():
+            source = branch.get("source", {})
+            # The receipt only records the local derivation of an already-bound
+            # upstream source state.  It is not part of the physical source
+            # identity and older successful producers legitimately predate it.
+            source.pop("population_derivation_receipt", None)
+        return _canonical_sha256(normalized)
+
     for current, producer, label in (
         (resolved_source_path, source_input, "source"),
-        (resolved_geometry_path, geometry_input, "geometry"),
         (upstream_design_path, design_input, "upstream RF design"),
     ):
-        if _canonical_sha256(_load(current)) != _canonical_sha256(_load(producer)):
+        current_value = _load(current)
+        producer_value = _load(producer)
+        current_identity = (
+            source_contract_identity(current_value)
+            if label == "source" else _canonical_sha256(current_value)
+        )
+        producer_identity = (
+            source_contract_identity(producer_value)
+            if label == "source" else _canonical_sha256(producer_value)
+        )
+        if current_identity != producer_identity:
             raise ContractError(f"post-pulse producer and consumer {label} differ")
+    axis = authority["post_pulse_variation_axis"]
+    if _canonical_sha256(_load(resolved_geometry_path)) != _canonical_sha256(_load(geometry_input)):
+        raise ContractError("post-pulse producer and consumer geometry differ")
     connection_keys = (
         "selection", "spatial_registration", "connector", "port_geometry",
         "transition_aperture", "effective_clear_radius_mm",
@@ -1683,25 +1867,14 @@ def _resolve_post_pulse_restart_reuse(
     }
     if any(parameters.get(key) != value for key, value in target_profiles.items()):
         raise ContractError("post-pulse producer and consumer profile identity differs")
-    axis = authority["post_pulse_variation_axis"]
     producer_time_profile = parameters.get("time_integration_profile_id")
     producer_field_profile = parameters.get("accelerator_field_profile_id")
-    if axis == "time_integration_profile_id":
-        if (
-            experiment["single_flight_accelerator_field_profile_id"]
-            != producer_field_profile
-        ):
-            raise ContractError("post-pulse reuse differs outside the time-integration axis")
-        consumer_profile = experiment["single_flight_time_integration_profile_id"]
-    elif axis == "accelerator_field_profile_id":
-        if (
-            experiment["single_flight_time_integration_profile_id"]
-            != producer_time_profile
-        ):
-            raise ContractError("post-pulse reuse differs outside the field-profile axis")
-        consumer_profile = experiment["single_flight_accelerator_field_profile_id"]
-    else:
-        raise ContractError("post-pulse variation axis is unsupported")
+    consumer_profile = _validate_post_pulse_variation_axis(
+        experiment=experiment,
+        authority=authority,
+        producer_time_profile=producer_time_profile,
+        producer_field_profile=producer_field_profile,
+    )
 
     def binding(path: Path) -> dict[str, str]:
         return {
@@ -1719,6 +1892,11 @@ def _resolve_post_pulse_restart_reuse(
             workspace_root=workspace,
             state_output_path=output_path,
             receipt_output_path=receipt_path,
+            diagnostic_state_transform=authority.get("diagnostic_state_transform"),
+            producer_time_integration_profile_id=producer_time_profile,
+            consumer_time_integration_profile_id=(
+                experiment["single_flight_time_integration_profile_id"]
+            ),
         )
         validate_schema(
             receipt,
@@ -1735,6 +1913,26 @@ def _resolve_post_pulse_restart_reuse(
         != authority["producer_pulse_schedule"]["sha256"]
     ):
         raise ContractError("post-pulse materialization authorities differ")
+    time_integration = receipt.get("time_integration")
+    if (
+        not isinstance(time_integration, dict)
+        or time_integration.get("producer_time_integration_profile_id")
+        != producer_time_profile
+        or time_integration.get("consumer_time_integration_profile_id")
+        != experiment["single_flight_time_integration_profile_id"]
+        or time_integration.get("producer_stage_reintegration") is not False
+    ):
+        raise ContractError("post-pulse time-integration boundary differs")
+    if (
+        receipt.get("reuse_scope", {}).get("upstream_repropagation_required") is not False
+        or receipt.get("reuse_scope", {}).get("pulse_timing_reselection_required") is not False
+    ):
+        raise ContractError("post-pulse restart repeats producer-stage work")
+    if axis in {"diagnostic_state_transform", "accelerator_field_profile_id_and_diagnostic_state_transform"} and (
+        receipt.get("diagnostic", {}).get("state_transform")
+        != authority["diagnostic_state_transform"]
+    ):
+        raise ContractError("post-pulse diagnostic transform receipt differs")
     execution = population_declaration["execution_population"]
     if (
         execution["particle_count"]
@@ -1800,6 +1998,10 @@ def _resolve_post_pulse_restart_reuse(
             "accelerator_field_profile_id": producer_field_profile,
         },
         "consumer_profile_id": consumer_profile,
+        "producer_time_integration_profile_id": producer_time_profile,
+        "consumer_time_integration_profile_id": experiment[
+            "single_flight_time_integration_profile_id"
+        ],
     }
     return output_path, source_record, {
         "producer_schedule": schedule,
@@ -1879,19 +2081,14 @@ def _resolve_staged_loader_validation(
         or witness.get("energy_all_pass") is not True
     ):
         raise ContractError("staged loader authorization scope or witness gate differs")
+    # The harness path in this compact receipt is historical provenance.  The
+    # characterization has been moved out of tests/; production preparation
+    # must bind only the compact selection receipt and the production renderer,
+    # not execute or require a test harness.
     identity_files = [
         ("selection_receipt_path", "selection_receipt_sha256", "selection receipt"),
         ("production_renderer_path", "production_renderer_sha256", "production renderer"),
     ]
-    if receipt["schema_version"] == 1:
-        identity_files.append(("harness_path", "harness_sha256", "loader harness"))
-    elif (
-        identities.get("harness_path")
-        != "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/tests/verify_simion_fly2_loader_characterization.py"
-        or identities.get("harness_sha256")
-        != "827854E703F65135E8056D94F3B61AEF74E1FFC94EFEC65F31B30F6C85AA9A7E"
-    ):
-        raise ContractError("staged loader historical harness identity differs")
     for path_key, sha_key, label in identity_files:
         path = (root / identities[path_key]).resolve()
         if (
@@ -2332,14 +2529,13 @@ def _load_source_evidence(
     workspace: Path,
     experiment: dict[str, Any],
     expected_project_id: str,
+    receipt_output_path: Path,
 ) -> dict[str, Any]:
-    source = experiment["source"]
+    source = copy.deepcopy(experiment["source"])
     launched_count = validate_standard_particle_count(
         int(source["launched_particle_count"])
     )
-    selected_count = int(source["particle_count"])
-    if selected_count > launched_count:
-        raise ContractError("selected source particle count exceeds launched count")
+    population_binding = source.pop("particle_count_binding")
     manifest_path = _workspace_record(workspace, source["manifest"], "source manifest")
     state_path = _workspace_record(workspace, source["state"], "source state")
     particle_source_path = _workspace_record(
@@ -2421,6 +2617,27 @@ def _load_source_evidence(
         or terminal.get("upstream_terminal_electrode_present") is not False
     ):
         raise ContractError("source design does not freeze the governed oaTOF terminal")
+    try:
+        population_receipt = write_source_population_receipt(
+            state_path,
+            receipt_output_path,
+            expected_state_sha256=source["state"]["sha256"],
+            selector=population_binding["selector"],
+        )
+        validate_schema(
+            population_receipt,
+            "rf_multipole_oatof_source_population_receipt.schema.json",
+        )
+    except (KeyError, OSError, TypeError, ValueError) as exc:
+        raise ContractError("source population derivation failed") from exc
+    selected_count = int(population_receipt["particle_count"])
+    if selected_count > launched_count:
+        raise ContractError("derived source particle count exceeds launched count")
+    source["particle_count"] = selected_count
+    source["population_derivation_receipt"] = {
+        "path": _workspace_relative(receipt_output_path, workspace),
+        "sha256": file_sha256(receipt_output_path),
+    }
     return {
         "source": source,
         "manifest": manifest,
@@ -2466,6 +2683,22 @@ def prepare_family_source_closure(
     if len(matches) != 1:
         raise ContractError("campaign experiment must resolve exactly once")
     experiment = matches[0]
+    execution_registry_path = root / "integrations" / INTEGRATION_ID / "config" / (
+        "family_source_closure_execution_registry.json"
+    )
+    execution_registry = _load(execution_registry_path)
+    campaign_relative_path = campaign_path.relative_to(root).as_posix()
+    active_rows = [
+        row for row in execution_registry.get("current_campaigns", [])
+        if isinstance(row, dict) and row.get("path") == campaign_relative_path
+    ]
+    if active_rows:
+        if len(active_rows) != 1 or (
+            execution_registry.get("active_post_pulse_restart_working_point_policy")
+            != ACTIVE_POST_PULSE_WORKING_POINT_POLICY
+        ):
+            raise ContractError("active post-pulse working-point registry policy is invalid")
+        validate_active_post_pulse_restart_working_point(experiment)
     selected_three_zone_gate = experiment.get("three_zone_solver_gate")
     three_zone_gate_pair = (
         three_zone_gate_pairs[selected_three_zone_gate["gate_id"]]
@@ -2503,6 +2736,7 @@ def prepare_family_source_closure(
             pa_cache_policy_provenance = "legacy_validate_only_compatibility"
         else:
             pa_cache_policy_provenance = "explicit_campaign_row"
+    pa_cache_generation_binding = _resolve_pa_cache_generation_binding(experiment)
     pulse_schedule_policy = experiment.get("single_flight_pulse_schedule_policy")
     population_declaration = experiment.get("single_flight_population")
     pre_pulse_time_series_specification = campaign.get(
@@ -2589,19 +2823,25 @@ def prepare_family_source_closure(
             )
         except (KeyError, OSError, TypeError, ValueError) as exc:
             raise ContractError("source phase-space authority is invalid") from exc
-    if frontend_grid_profile_id is not None:
-        if execution_strategy != "simion_single_flight":
-            raise ContractError(
-                "single-flight frontend grid profiles require SIMION single flight"
-            )
+    grid_profiles: list[dict[str, Any]] = []
+    if execution_strategy == "simion_single_flight":
+        selected_frontend_grid_profile_id = (
+            frontend_grid_profile_id
+            if frontend_grid_profile_id is not None
+            else single_flight_configuration["default_frontend_grid_profile_id"]
+        )
         grid_profiles = [
             item for item in single_flight_configuration["frontend_grid_profiles"]
-            if item["profile_id"] == frontend_grid_profile_id
+            if item["profile_id"] == selected_frontend_grid_profile_id
         ]
         if len(grid_profiles) != 1:
             raise ContractError(
                 "single-flight frontend grid profile must resolve exactly once"
             )
+    elif frontend_grid_profile_id is not None:
+        raise ContractError(
+            "single-flight frontend grid profiles require SIMION single flight"
+        )
     oatof_numerical_profile_id = experiment.get(
         "single_flight_oatof_numerical_profile_id"
     )
@@ -2671,6 +2911,18 @@ def prepare_family_source_closure(
             raise ContractError(
                 "single-flight accelerator field profile must resolve exactly once"
             )
+    three_zone_region_modes = experiment.get("single_flight_three_zone_region_modes")
+    if accelerator_field_profile_id == "three_zone_explicit_region_modes":
+        expected_region_modes = {
+            "accelerator_zone1", "accelerator_zone2", "accelerator_zone3",
+            "drift", "reflectron_stage1", "reflectron_stage2",
+        }
+        if not isinstance(three_zone_region_modes, dict) or set(
+            three_zone_region_modes
+        ) != expected_region_modes:
+            raise ContractError("explicit three-zone field profile requires all region modes")
+    elif three_zone_region_modes is not None:
+        raise ContractError("explicit three-zone region modes require their explicit field profile")
     source_release_mode = experiment.get("source_release_mode")
     architecture_generation_id = experiment.get("architecture_generation_id")
     source_profile_id = experiment.get("source_profile_id")
@@ -2890,6 +3142,9 @@ def prepare_family_source_closure(
         workspace=workspace,
         experiment=experiment,
         expected_project_id=expected_project_id,
+        receipt_output_path=plan_output.with_name(
+            "resolved_source_population_receipt.json"
+        ),
     )
     source = evidence["source"]
     pulse_contract = campaign.get("pulse_resolution_optimization")
@@ -3039,6 +3294,9 @@ def prepare_family_source_closure(
             workspace=workspace,
             experiment={"source": design_reference},
             expected_project_id=expected_project_id,
+            receipt_output_path=plan_output.with_name(
+                "resolved_design_source_population_receipt.json"
+            ),
         )
         if design_evidence["solver_id"] != "simion":
             raise ContractError("single-flight design reference requires a SIMION run")
@@ -3198,6 +3456,10 @@ def prepare_family_source_closure(
             expected_field_ids = {
                 "accelerator_ideal_three_zone_real_reflectron":
                     "three_zone_piecewise_uniform_ideal_field_v1",
+                "accelerator_real_three_zone_ideal_reflectron":
+                    "three_zone_real_pa_plus_reflectron_piecewise_uniform_ideal_field_v1",
+                "three_zone_explicit_region_modes":
+                    "three_zone_explicit_region_modes_v1",
                 "accelerator_real_three_zone_pa_real_reflectron":
                     "three_zone_refined_pa_field_v1",
                 "full_domain_three_zone_piecewise_ideal_field":
@@ -3248,6 +3510,7 @@ def prepare_family_source_closure(
                 resolved_region_field_contract_path,
                 accelerator_field_profile_id or "accelerator_real_pa",
                 accelerator_topology=geometry.get("accelerator_topology"),
+                three_zone_region_modes=three_zone_region_modes,
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise ContractError("resolved region field contract is invalid") from exc
@@ -3448,10 +3711,29 @@ def prepare_family_source_closure(
     single_flight_batch_count = (
         resolve_single_flight_batch_count(
             experiment, execution_particle_count=execution_particle_count,
+            workspace=workspace,
         )
         if execution_strategy == "simion_single_flight"
         else 1
     )
+    if execution_strategy == "simion_single_flight":
+        single_flight_parallel_limit = int(
+            policy["single_flight_batch_parallel_limit"]
+        )
+        if single_flight_batch_count > single_flight_parallel_limit:
+            raise ContractError(
+                "single-flight batch count exceeds the execution policy's "
+                "one-wave parallel limit"
+            )
+    else:
+        single_flight_parallel_limit = 1
+    if (
+        execution_strategy == "simion_single_flight"
+        and single_flight_batch_count > int(grid_profiles[0]["max_parallel_batches"])
+    ):
+        raise ContractError(
+            "single-flight batch count exceeds the selected profile's one-wave parallel capacity"
+        )
     resolved_budget = {
         "schema_version": 1,
         "role": "integration_resolved_engineering_budget",
@@ -3473,6 +3755,13 @@ def prepare_family_source_closure(
         resolved_budget["single_flight_pa_cache_policy"] = pa_cache_policy
         resolved_budget["single_flight_pa_cache_policy_provenance"] = (
             pa_cache_policy_provenance
+        )
+        if pa_cache_generation_binding is not None:
+            resolved_budget["single_flight_pa_cache_generation_binding"] = (
+                pa_cache_generation_binding
+            )
+        resolved_budget["single_flight_batch_parallel_limit"] = (
+            single_flight_parallel_limit
         )
     if frontend_grid_profile_id is not None and grid_profiles[0].get(
         "accelerator_overlay"
@@ -3552,6 +3841,8 @@ def prepare_family_source_closure(
             )
         staged_grid2_source_path = staged_grid2_generated_path
     materialized_source_path = None
+    source_zvz_affine_receipt_path = None
+    source_zvz_theory_working_point_path = None
     resolved_population_path = None
     pulse_timing_state = None
     base_schedule = None
@@ -3741,6 +4032,124 @@ def prepare_family_source_closure(
             != "canonical_multipole_source"
         ):
             raise ContractError("source materialization mode is unsupported")
+        source_zvz_affine_policy = experiment.get("single_flight_source_zvz_affine_policy")
+        working_point_source = None
+        if source_zvz_affine_policy is not None:
+            if source_zvz_affine_policy != "source_zvz_affine_identify_and_bind_v1":
+                raise ContractError("source z--vz affine policy is unsupported")
+            working_point_source = pre_pulse_source_path or materialized_source_path
+            if working_point_source is None:
+                working_point_source = _workspace_record(
+                    workspace, source["particle_source"], "z--vz source state"
+                )
+            if (
+                pre_pulse_source_path is None
+                and source_materialization_profile is not None
+                and source_materialization_profile.get("materialization_mode")
+                == "canonical_multipole_source"
+            ):
+                _, global_rows = materialize_single_flight_source(
+                    working_point_source, _load(resolved_path)
+                )
+                mapped_source_path = plan_output.parent / "inputs" / (
+                    "source_zvz_working_point_state.csv"
+                )
+                with mapped_source_path.open(
+                    "w", encoding="utf-8", newline=""
+                ) as handle:
+                    writer = csv.DictWriter(
+                        handle,
+                        fieldnames=[
+                            "particle_id", "instrument_time_us", "mass_amu",
+                            "charge_state", "position_x_mm", "position_y_mm",
+                            "position_z_mm", "velocity_x_m_s", "velocity_y_m_s",
+                            "velocity_z_m_s", "kinetic_energy_eV",
+                        ],
+                        lineterminator="\n",
+                    )
+                    writer.writeheader()
+                    writer.writerows(global_rows)
+                working_point_source = mapped_source_path
+            source_zvz_affine_receipt_path = plan_output.parent / "inputs" / "source_zvz_affine_receipt.json"
+            try:
+                write_source_zvz_affine_receipt(
+                    source_zvz_affine_receipt_path, source_state_path=working_point_source
+                )
+                validate_schema(
+                    _load(source_zvz_affine_receipt_path),
+                    "rf_oatof_source_zvz_affine_receipt.schema.json",
+                )
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ContractError("automatic source z--vz identification failed") from exc
+        theory_working_point_request = experiment.get(
+            "single_flight_source_zvz_theory_working_point"
+        )
+        if theory_working_point_request is not None:
+            if source_zvz_affine_receipt_path is None or resolved_region_field_contract_path is None:
+                raise ContractError("source theory working point requires source z--vz binding")
+            if accelerator_field_profile_id not in {
+                "accelerator_ideal_three_zone_real_reflectron",
+                "accelerator_real_three_zone_ideal_reflectron",
+                "three_zone_explicit_region_modes",
+                "accelerator_real_three_zone_pa_real_reflectron",
+                "full_domain_three_zone_piecewise_ideal_field",
+            }:
+                raise ContractError("source theory working point requires a supported three-zone field profile")
+            try:
+                working_point = derive_three_zone_working_point(
+                    source_receipt=_load(source_zvz_affine_receipt_path),
+                    resolved_geometry=geometry,
+                    resolved_geometry_input_sha256=file_sha256(geometry_path),
+                    theory_request={
+                        key: theory_working_point_request[key]
+                        for key in (
+                            "first_zone_drop_v", "nominal_energy_per_charge_v",
+                            "reflectron_stage1_voltage_v",
+                        )
+                    },
+                )
+                geometry["accelerator_topology"] = working_point["accelerator_topology"]
+                potentials = working_point["accelerator_topology"]["potentials_v"]
+                geometry["electrodes_V"].update({
+                    "repeller": potentials["repeller"],
+                    "grid1": potentials["intermediate1"],
+                    "intermediate2": potentials["intermediate2"],
+                    "grid2": potentials["exit"],
+                    "entgrid": working_point["reflectron"]["entrance_voltage_v"],
+                    "midgrid": working_point["reflectron"]["stage1_voltage_v"],
+                    "backplate": working_point["reflectron"]["backplate_voltage_v"],
+                })
+                source_zvz_theory_working_point_path = plan_output.parent / "inputs" / "source_zvz_theory_working_point.json"
+                source_zvz_theory_working_point_path.write_text(
+                    json.dumps(working_point, indent=2) + "\n", encoding="utf-8"
+                )
+                validate_schema(
+                    _load(source_zvz_theory_working_point_path),
+                    "rf_oatof_theory_working_point.schema.json",
+                )
+                geometry_path.write_text(json.dumps(geometry, indent=2) + "\n", encoding="utf-8")
+                downstream_port["authority"]["source_sha256"] = file_sha256(geometry_path)
+                downstream_port_path.write_text(
+                    json.dumps(downstream_port, indent=2) + "\n", encoding="utf-8"
+                )
+                resolved_registry_path.write_text(
+                    json.dumps(resolved_registry, indent=2) + "\n", encoding="utf-8"
+                )
+                resolved_path, _ = write_resolved_and_plan(
+                    resolved_registry_path,
+                    experiment["connection_profile_id"],
+                    resolved_output,
+                    plan_output,
+                    repo_root=root,
+                )
+                resolved_region_field_contract = build_resolved_region_field_contract(
+                    geometry_path, resolved_region_field_contract_path,
+                    accelerator_field_profile_id,
+                    accelerator_topology=working_point["accelerator_topology"],
+                    three_zone_region_modes=three_zone_region_modes,
+                )
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ContractError("source theory working point derivation failed") from exc
         if generated_pre_pulse_ordered_subset is not None:
             if (
                 source_materialization_profile is None
@@ -4031,14 +4440,17 @@ def prepare_family_source_closure(
             raise ContractError("pre-pulse time-series prepared identity is incomplete")
         screening_specification = pre_pulse_time_series_specification
         if screening_specification is None:
+            native_rf_steps = int(time_integration_profile["rf_steps_per_period"])
+            relative_start_index = math.floor(-0.35 * native_rf_steps)
+            relative_end_index = math.ceil(1.65 * native_rf_steps)
             screening_specification = {
                 "mode": "real_pa_rf_pre_pulse_time_series",
                 "active_scope": "pre_pulse_frontend_accelerator",
                 "time_grid_profile_id": cache_miss_policy["time_grid_profile_id"],
-                "relative_start_index": -56,
-                "relative_end_index": 264,
-                "rf_steps_per_period": 160,
-                "sample_count": 321,
+                "relative_start_index": relative_start_index,
+                "relative_end_index": relative_end_index,
+                "rf_steps_per_period": native_rf_steps,
+                "sample_count": relative_end_index - relative_start_index + 1,
                 "spatial_window_profile_id": cache_miss_policy[
                     "spatial_window_profile_id"
                 ],
@@ -4066,6 +4478,12 @@ def prepare_family_source_closure(
             ],
             rf_steps_per_period=int(screening_specification["rf_steps_per_period"]),
             specification=screening_specification,
+            time_integration_profile_id=next(
+                profile["profile_id"]
+                for profile in single_flight_configuration["time_integration_profiles"]
+                if int(profile["rf_steps_per_period"])
+                == int(screening_specification["rf_steps_per_period"])
+            ),
             base_schedule=(
                 base_schedule if pulse_timing_state == "discovery_required" else None
             ),
@@ -4075,6 +4493,15 @@ def prepare_family_source_closure(
         )
         pre_pulse_time_series_contract_path.write_text(
             json.dumps(pre_pulse_time_series_contract, indent=2) + "\n",
+            encoding="utf-8",
+        )
+    pa_cache_generation_binding_path = None
+    if pa_cache_generation_binding is not None:
+        pa_cache_generation_binding_path = plan_output.parent / "inputs" / (
+            "single_flight_pa_cache_generation_binding.json"
+        )
+        pa_cache_generation_binding_path.write_text(
+            json.dumps(pa_cache_generation_binding, indent=2) + "\n",
             encoding="utf-8",
         )
     plan = _load(plan_path)
@@ -4106,6 +4533,13 @@ def prepare_family_source_closure(
                 "single_flight_pa_cache_policy_provenance="
                 + pa_cache_policy_provenance,
                 "single_flight_batch_count=" + str(single_flight_batch_count),
+                "single_flight_batch_parallel_limit="
+                + str(single_flight_parallel_limit),
+            ]) + ([] if pa_cache_generation_binding_path is None else [
+                "single_flight_pa_cache_generation_binding_filename=inputs/"
+                + pa_cache_generation_binding_path.name,
+                "single_flight_pa_cache_generation_binding_sha256="
+                + file_sha256(pa_cache_generation_binding_path),
             ]) + ([] if single_flight_source is None else [
                 f"single_flight_particle_source_path={single_flight_source['path']}",
                 f"single_flight_particle_source_sha256={single_flight_source['sha256']}",
@@ -4149,6 +4583,10 @@ def prepare_family_source_closure(
                 + pre_pulse_time_series_contract_path.name,
                 "pre_pulse_time_series_contract_sha256="
                 + file_sha256(pre_pulse_time_series_contract_path),
+                "pre_pulse_time_series_time_integration_profile_id="
+                + str(pre_pulse_time_series_contract["identities"][
+                    "time_integration_profile_id"
+                ]),
             ]) + ([] if not pulse_candidate_confirmation else [
                 "pulse_candidate_confirmation_prefix_filename="
                 + pulse_population_plan_path,
@@ -4237,6 +4675,12 @@ def prepare_family_source_closure(
             ]) + ([] if "single_flight_time_integration_profile_id" not in experiment else [
                 "single_flight_time_integration_profile_id="
                 + experiment["single_flight_time_integration_profile_id"],
+            ]) + ([] if "single_flight_maximum_time_of_flight_us" not in experiment else [
+                "single_flight_maximum_time_of_flight_us="
+                + format(
+                    float(experiment["single_flight_maximum_time_of_flight_us"]),
+                    ".17g",
+                ),
             ]) + ([] if "single_flight_spatial_window_profile_id" not in experiment else [
                 "single_flight_spatial_window_profile_id="
                 + experiment["single_flight_spatial_window_profile_id"],
@@ -4249,6 +4693,18 @@ def prepare_family_source_closure(
                 + str(resolved_region_field_contract["semantic_sha256"]),
                 "resolved_region_field_profile_id="
                 + str(resolved_region_field_contract["semantic"]["canonical_profile_id"]),
+            ]) + ([] if source_zvz_affine_receipt_path is None else [
+                "source_zvz_affine_receipt_filename=inputs/"
+                + source_zvz_affine_receipt_path.name,
+                "source_zvz_affine_receipt_sha256="
+                + file_sha256(source_zvz_affine_receipt_path),
+            ]) + ([] if source_zvz_theory_working_point_path is None else [
+                "source_zvz_theory_working_point_filename=inputs/"
+                + source_zvz_theory_working_point_path.name,
+                "source_zvz_theory_working_point_sha256="
+                + file_sha256(source_zvz_theory_working_point_path),
+                "source_zvz_theory_geometry_input_sha256="
+                + working_point["resolved_geometry_input_sha256"],
             ]) + ([] if three_zone_authorization is None else [
                 name + "=" + value
                 for name, value in three_zone_authorization.items()

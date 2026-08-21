@@ -37,6 +37,13 @@ class RadialCompactionCampaignTests(unittest.TestCase):
             )
             self.assertEqual(candidate["geometry_mm"]["flight_tube_wall"], 10.0)
 
+    def test_runtime_requires_authorized_campaign(self) -> None:
+        self.assertEqual(self.config["status"], "authorized")
+        source = (
+            PROJECT_ROOT / "workflows" / "radial_compaction" / "run_campaign.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn('config.get("status") != "authorized"', source)
+
     def test_smallest_shield_contains_offset_detector(self) -> None:
         smallest = min(
             self.config["radius_screen"],

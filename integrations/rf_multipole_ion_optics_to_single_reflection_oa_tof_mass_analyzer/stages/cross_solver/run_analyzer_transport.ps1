@@ -55,7 +55,7 @@ function Invoke-AnalyzerTransportSnapshotPython {
     [Parameter(Mandatory)][string]$FailureMessage
   )
   $environmentNames = @('PYTHONPATH','PYTHONNOUSERSITE')
-  $savedEnvironment = Save-RfEnvironment -Names $environmentNames
+  $savedEnvironment = Save-RunEnvironment -Names $environmentNames
   try {
     $env:PYTHONPATH = $SnapshotRoot
     $env:PYTHONNOUSERSITE = '1'
@@ -67,7 +67,7 @@ function Invoke-AnalyzerTransportSnapshotPython {
       Pop-Location
     }
   } finally {
-    Restore-RfEnvironment -Names $environmentNames -Snapshot $savedEnvironment
+    Restore-RunEnvironment -Names $environmentNames -Snapshot $savedEnvironment
   }
 }
 
@@ -219,7 +219,7 @@ $runMode = if ($interfaceDiagnostic) {
   'rf_to_oatof_simion_interface_transport'
 } else { 'rf_to_oatof_analyzer_transport' }
 $software = @('COMSOL 6.4','SIMION 2020','Python 3.11')
-$package = New-RfRunPackage -Python $python -RepoRoot $repoRoot `
+$package = New-RunPackage -Python $python -RepoRoot $repoRoot `
   -ArtifactRoot $artifactRoot -RunId $RunId `
   -Project $upstreamProjectId `
   -Mode $runMode -Software $software `
@@ -322,7 +322,6 @@ try {
   }
   $dependencyIdentities = [ordered]@{}
   $dependencySnapshotPaths = @{}
-  $dependencyCompatibilityPaths = @{}
   foreach ($dependency in $selectedDependencies) {
     $identity = Copy-RfFrozenDependency -RepoRoot $repoRoot `
       -InputDir $package.input_dir -Dependency $dependency
@@ -338,11 +337,9 @@ try {
       frozen_input_name = $identity.frozen_input_name
       consumers = @($identity.consumers)
       snapshot_path = $identity.snapshot_path
-      compatibility_path = $identity.compatibility_path
       sha256 = $identity.sha256
     }
     $dependencySnapshotPaths[$identity.id] = $identity.snapshot_path
-    $dependencyCompatibilityPaths[$identity.id] = $identity.compatibility_path
   }
   $requiredSnapshotIds = @(
     'rf_analyzer_transport_simion_input_adapter','rf_analyzer_transport_analyzer',
@@ -394,12 +391,12 @@ try {
   $frozenSolverDiagnostics =
     $dependencySnapshotPaths['oatof_solver_diagnostics']
   $frozenAcceleratorBuilder =
-    $dependencyCompatibilityPaths['oatof_accelerator_simion_builder']
+    $dependencySnapshotPaths['oatof_accelerator_simion_builder']
   $frozenAcceleratorGem =
-    $dependencyCompatibilityPaths['oatof_accelerator_simion_gem']
+    $dependencySnapshotPaths['oatof_accelerator_simion_gem']
   if ([string]::IsNullOrWhiteSpace($frozenAcceleratorBuilder) -or
       [string]::IsNullOrWhiteSpace($frozenAcceleratorGem)) {
-    throw 'SIMION accelerator builder compatibility paths are missing.'
+    throw 'SIMION accelerator builder inputs are missing.'
   }
   $frozenInterfaceComparator =
     $dependencySnapshotPaths['rf_simion_interface_transport_comparator']
@@ -524,7 +521,7 @@ try {
         [int]$simionSourceSummary.census.local_accelerator_exit -le 0) {
       throw 'SIMION grid2 replay requires a successful non-empty interface result.'
     }
-    Write-RfJson -Path $analysisSourceSummary -Value ([ordered]@{
+    Write-RunJson -Path $analysisSourceSummary -Value ([ordered]@{
       schema_version = 1
       role = 'rf_to_oatof_grid2_replay_source_summary'
       status = 'success'
@@ -906,8 +903,8 @@ try {
       $sourceCanonicalTemplate
     $runConfiguration.parameters.grid2_source_solver = 'simion'
   }
-  Write-RfJson -Path $package.run_config -Depth 10 -Value $runConfiguration
-  Write-RfJson -Path $package.summary -Value ([ordered]@{
+  Write-RunJson -Path $package.run_config -Depth 10 -Value $runConfiguration
+  Write-RunJson -Path $package.summary -Value ([ordered]@{
     schema_version = 1
     role = if ($interfaceDiagnostic) {
       'rf_to_oatof_simion_interface_transport_summary'
@@ -915,7 +912,7 @@ try {
     status = 'interrupted'
     reason = 'Frozen inputs recorded; SIMION continuation not yet complete.'
   })
-  Write-RfFrozenRunManifest -Python $python -FrozenRepoRoot $manifestToolRoot `
+  Write-RunManifest -Python $python -RepoRoot $manifestToolRoot `
     -RunConfig $package.run_config -Status interrupted -Software $software
   Complete-AnalyzerTransportStageTiming -Name 'run_configuration_publication'
 
@@ -998,8 +995,8 @@ try {
   $runConfiguration.parameters.particle_count = if ($interfaceDiagnostic) {
     [int]$result.simion.particles
   } else { [int]$result.census.local_accelerator_exit }
-  Write-RfJson -Path $package.run_config -Depth 10 -Value $runConfiguration
-  Write-RfJson -Path $package.summary -Depth 8 -Value ([ordered]@{
+  Write-RunJson -Path $package.run_config -Depth 10 -Value $runConfiguration
+  Write-RunJson -Path $package.summary -Depth 8 -Value ([ordered]@{
     schema_version = 1
     role = if ($interfaceDiagnostic) {
       'rf_to_oatof_simion_interface_transport_summary'
@@ -1021,7 +1018,7 @@ try {
   Complete-AnalyzerTransportStageTiming -Name 'solver_log_analysis_and_comparison'
   $stageTimings.total_through_results =
     [math]::Round($totalTimer.Elapsed.TotalSeconds, 3)
-  Write-RfJson -Path $stageTimingPath -Depth 4 -Value ([ordered]@{
+  Write-RunJson -Path $stageTimingPath -Depth 4 -Value ([ordered]@{
     schema_version = 1
     role = 'rf_to_oatof_analyzer_transport_stage_timings'
     units = 'seconds'
@@ -1045,7 +1042,7 @@ try {
     $resourceBudgetExceeded = $true
     throw 'SIMION analyzer compact final retained-byte budget exceeded.'
   }
-  Write-RfFrozenRunManifest -Python $python -FrozenRepoRoot $manifestToolRoot `
+  Write-RunManifest -Python $python -RepoRoot $manifestToolRoot `
     -RunConfig $package.run_config -Status success -Software $software `
     -Outputs $outputs
   if ($interfaceDiagnostic) {
@@ -1062,8 +1059,8 @@ try {
   }
 } catch {
   if ($snapshotReady) {
-    Complete-RfFrozenFailedRun -Python $python `
-      -FrozenRepoRoot $manifestToolRoot `
+    Complete-FailedRun -Python $python `
+      -RepoRoot $manifestToolRoot `
       -RunConfig $package.run_config -Summary $package.summary `
       -SummaryRole $(if ($interfaceDiagnostic) {
         'rf_to_oatof_simion_interface_transport_summary'
@@ -1077,7 +1074,7 @@ try {
         $resourceUsage
       } else { '' })
   } else {
-    Write-RfJson -Path $package.summary -Value ([ordered]@{
+    Write-RunJson -Path $package.summary -Value ([ordered]@{
       schema_version = 1
       role = if ($interfaceDiagnostic) {
         'rf_to_oatof_simion_interface_transport_summary'

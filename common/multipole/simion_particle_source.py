@@ -64,6 +64,9 @@ def render_canonical_source(
     operating_point_id: str | None = None,
     expected_source_family_sha256: str | None = None,
     expected_kinetic_energy_ev: float | None = None,
+    particle_id_min: int | None = None,
+    particle_id_max: int | None = None,
+    simion_particle_id_offset: int = 0,
 ) -> tuple[str, str, int]:
     """Project canonical particles into the SIMION workbench frame."""
     resolved = json.loads(resolved_design.read_text(encoding="utf-8-sig"))
@@ -75,6 +78,8 @@ def render_canonical_source(
         expected_source_family_sha256=expected_source_family_sha256,
         expected_kinetic_energy_ev=expected_kinetic_energy_ev,
     )
+    if simion_particle_id_offset < 0:
+        raise ValueError("SIMION particle ID offset must be non-negative")
     mass_amu = float(metadata["mass_amu"])
     enclosure = resolved["geometry_mm"]["enclosure"]
     rectangular = enclosure["model"] == "rectangular_reference_enclosure_v1"
@@ -84,6 +89,12 @@ def render_canonical_source(
     source_z = float(resolved["interfaces_mm"]["entrance"]["release_plane_z_mm"])
     with particles.open(encoding="utf-8-sig", newline="") as stream:
         rows = list(csv.DictReader(stream))
+    if particle_id_min is not None or particle_id_max is not None:
+        if particle_id_min is None or particle_id_max is None or particle_id_min < 1 or particle_id_max < particle_id_min:
+            raise ValueError("particle ID batch interval is invalid")
+        rows = [row for row in rows if particle_id_min <= int(row["particle_id"]) <= particle_id_max]
+        if len(rows) != particle_id_max - particle_id_min + 1:
+            raise ValueError("particle ID batch interval is not a complete canonical source slice")
     fly = ["particles {", "  coordinates = 0,"]
     states = ["return {"]
     for row in rows:
@@ -104,8 +115,11 @@ def render_canonical_source(
             f"    direction=vector({wb_vx:.12g},{wb_vy:.12g},{wb_vz:.12g}), cwf=1, color=3",
             "  },",
         ])
+        simion_particle_id = int(row["particle_id"]) - simion_particle_id_offset
+        if simion_particle_id < 1:
+            raise ValueError("SIMION particle ID offset exceeds the canonical source slice")
         states.append(
-            f"  [{int(row['particle_id'])}]={{t={tob:.12g},x={x:.12g},y={y:.12g},z={z:.12g},"
+            f"  [{simion_particle_id}]={{t={tob:.12g},x={x:.12g},y={y:.12g},z={z:.12g},"
             f"vx={wb_vx/1000:.12g},vy={wb_vy/1000:.12g},vz={wb_vz/1000:.12g},ke={ke:.12g}}},"
         )
     fly.append("}\n")
@@ -121,6 +135,9 @@ def main() -> int:
     parser.add_argument("--operating-point")
     parser.add_argument("--expected-source-family-sha256")
     parser.add_argument("--expected-kinetic-energy-ev", type=float)
+    parser.add_argument("--particle-id-min", type=int)
+    parser.add_argument("--particle-id-max", type=int)
+    parser.add_argument("--simion-particle-id-offset", type=int, default=0)
     parser.add_argument("--fly2", required=True, type=Path)
     parser.add_argument("--source-states-lua", required=True, type=Path)
     args = parser.parse_args()
@@ -133,6 +150,9 @@ def main() -> int:
         operating_point_id=args.operating_point,
         expected_source_family_sha256=args.expected_source_family_sha256,
         expected_kinetic_energy_ev=args.expected_kinetic_energy_ev,
+        particle_id_min=args.particle_id_min,
+        particle_id_max=args.particle_id_max,
+        simion_particle_id_offset=args.simion_particle_id_offset,
     )
     args.fly2.write_text(fly, encoding="ascii")
     args.source_states_lua.write_text(states, encoding="ascii")

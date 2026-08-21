@@ -18,7 +18,7 @@ import numpy as np
 
 from common.contracts.component_particle_state import validate_component_particle_state_csv
 from common.contracts.particle_physics import kinetic_energy_ev
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.peak_metrics import FWHM_FACTOR
+from common.analysis.peak_metrics import FWHM_FACTOR
 
 
 COLORS = {

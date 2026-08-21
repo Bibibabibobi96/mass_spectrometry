@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import argparse
 import copy
-import hashlib
 import json
 import math
 from pathlib import Path
 from typing import Any
 
+from common.contracts.file_identity import file_sha256 as _sha256
 from common.contracts.machine_contracts import ContractError, validate_schema
 from common.contracts.build_project_registry import pointer_value
 from common.multipole.compile_design_request import (
@@ -32,10 +32,6 @@ def _load(path: Path) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError(f"JSON object required: {path}")
     return value
-
-
-def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest().upper()
 
 
 def _require_keys(value: dict[str, Any], expected: set[str], label: str) -> None:
@@ -511,12 +507,17 @@ def _resolve_source_transform_policy(
         policy["n1000_reference_profile_id"],
     )
     authority_count = _particle_count(Path(authority["path"]))
-    if authority_count not in (100, 1000):
-        raise ValueError("source transform requires N=100 or N=1000 authority")
+    if authority_count not in (100, 1000, 5000):
+        raise ValueError("source transform requires a standard N=100, N=1000, or N=5000 authority")
     if _particle_count(Path(reference["path"])) != 1000:
         raise ValueError("source-transform reference must contain N=1000 particles")
     if authority_count == 1000 and authority["sha256"] != reference["sha256"]:
         raise ValueError("N=1000 source-transform authority differs from its reference")
+    if authority_count == 5000:
+        authority_lines = Path(authority["path"]).read_text(encoding="utf-8-sig").splitlines()
+        reference_lines = Path(reference["path"]).read_text(encoding="utf-8-sig").splitlines()
+        if authority_lines[: len(reference_lines)] != reference_lines:
+            raise ValueError("N=5000 source-transform authority does not preserve the N=1000 reference prefix")
     return {
         "kind": policy["kind"],
         "baseline_frequency_Hz": frequency,

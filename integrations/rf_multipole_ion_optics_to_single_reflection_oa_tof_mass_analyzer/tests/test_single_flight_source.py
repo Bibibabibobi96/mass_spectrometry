@@ -338,7 +338,7 @@ class SingleFlightSourceTests(unittest.TestCase):
                 "--source", str(source), "--connection", str(connection),
                 "--particle-input", str(ion), "--global-state", str(global_state),
                 "--source-release-mode", "continuous_frontend",
-            ], cwd=REPO, text=True, capture_output=True)
+            ], cwd=REPO, text=True, capture_output=True, timeout=300)
             self.assertEqual(completed.returncode, 0, completed.stderr)
             ion_rows = ion.read_text(encoding="utf-8").splitlines()
             with global_state.open(encoding="utf-8", newline="") as handle:
@@ -360,7 +360,7 @@ class SingleFlightSourceTests(unittest.TestCase):
                 "--particle-input", str(target / "source.ion"),
                 "--global-state", str(target / "global.csv"),
                 "--clock-basis", "legacy_relative_time",
-            ], cwd=REPO, text=True, capture_output=True)
+            ], cwd=REPO, text=True, capture_output=True, timeout=300)
             self.assertNotEqual(completed.returncode, 0)
             self.assertIn("unrecognized arguments", completed.stderr)
 
@@ -390,7 +390,7 @@ class SingleFlightSourceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             ion = Path(directory) / "source.fly2"
             global_state = Path(directory) / "global.csv"
-            completed = subprocess.run([sys.executable, "-m", "integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_source", "--source", str(source), "--connection", str(connection), "--particle-input", str(ion), "--global-state", str(global_state), "--source-release-mode", "pre_pulse_restart", "--pulse-time-us", "45.5585544411"], cwd=REPO, text=True, capture_output=True)
+            completed = subprocess.run([sys.executable, "-m", "integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_source", "--source", str(source), "--connection", str(connection), "--particle-input", str(ion), "--global-state", str(global_state), "--source-release-mode", "pre_pulse_restart", "--pulse-time-us", "45.5585544411"], cwd=REPO, text=True, capture_output=True, timeout=300)
             self.assertEqual(completed.returncode, 0, completed.stderr)
             fly2 = ion.read_text(encoding="utf-8")
             self.assertEqual(fly2.count("standard_beam"), 835)

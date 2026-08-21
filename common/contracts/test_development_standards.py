@@ -101,6 +101,38 @@ command = ["pwsh.exe", "-NoProfile", "-File", task]
         self.assertEqual(self.check(source), [])
 
 
+class DevelopmentStandardsCoverageTests(unittest.TestCase):
+    def test_integrations_are_part_of_python_and_powershell_scan_roots(self):
+        integration_root = standards.REPO_ROOT / "integrations"
+        self.assertIn(integration_root, standards.SOURCE_ROOTS)
+        python_paths = standards.active_files(".py")
+        powershell_paths = standards.active_files(".ps1")
+        self.assertTrue(any(path.is_relative_to(integration_root) for path in python_paths))
+        self.assertTrue(any(path.is_relative_to(integration_root) for path in powershell_paths))
+
+    def test_repository_entrypoints_do_not_repair_import_paths_at_runtime(self):
+        for relative_path in (
+            "projects/apertured_tube_electron_impact_ion_source/analysis/resolve_contract.py",
+            "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/refresh_family_repository_bindings.py",
+        ):
+            source = (standards.REPO_ROOT / relative_path).read_text(encoding="utf-8")
+            tree = ast.parse(source)
+            self.assertEqual(
+                [
+                    node
+                    for node in ast.walk(tree)
+                    if isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)
+                    and isinstance(node.func.value, ast.Attribute)
+                    and isinstance(node.func.value.value, ast.Name)
+                    and node.func.value.value.id == "sys"
+                    and node.func.value.attr == "path"
+                ],
+                [],
+                relative_path,
+            )
+
+
 class LightweightGateIntegrationTests(unittest.TestCase):
     repo_root = standards.REPO_ROOT
 

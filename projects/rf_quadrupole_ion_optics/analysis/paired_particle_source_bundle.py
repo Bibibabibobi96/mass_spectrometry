@@ -15,6 +15,7 @@ from typing import Any
 import numpy as np
 
 from common.contracts import particle_physics
+from common.contracts.file_identity import file_sha256 as sha256
 from common.contracts.particle_count_policy import (
     POLICY_PATH,
     load_particle_count_policy,
@@ -26,10 +27,6 @@ from common.multipole.particle_source_preflight import COLUMNS, validate_source
 
 BUNDLE_SCHEMA_VERSION = 1
 SINGLE_TABLE_ROLE = "paired_particle_single_table"
-
-
-def sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest().upper()
 
 
 def _sha256_bytes(content: bytes) -> str:

@@ -53,6 +53,13 @@ class SharedCentroidPulseTimeTests(unittest.TestCase):
             INTEGRATION_ROOT / "config" / "family_pre_pulse_interface_transport.json"
         )
 
+    def test_pulse_timing_policy_must_be_current_authorized_contract(self) -> None:
+        policy = module.validate_policy()
+        self.assertEqual(
+            policy["status"],
+            "candidate_authorized_for_continuous_beam_n100_functional_validation",
+        )
+
     def _write(self, path: Path, rows: list[dict]) -> None:
         pd.DataFrame(rows).to_csv(path, index=False)
 

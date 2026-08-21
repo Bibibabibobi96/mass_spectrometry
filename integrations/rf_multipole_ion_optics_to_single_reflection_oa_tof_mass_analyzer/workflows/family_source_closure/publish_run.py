@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import csv
-import hashlib
 import json
 import math
 import re
@@ -15,10 +14,15 @@ from pathlib import Path
 from typing import Any
 
 from common.contracts.artifact_naming import validate_run_id
-from common.contracts.file_identity import file_sha256, repository_text_sha256
+from common.contracts.file_identity import (
+    canonical_json_sha256 as _canonical_sha256,
+    file_sha256,
+    repository_text_sha256,
+)
 from common.contracts.machine_contracts import ContractError, validate_schema
 from common.contracts.verify_run_manifest import record_path, verify_record
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.run_publication import (
+    portable_path as _portable,
     publish_manifest,
     write_pending_json,
 )
@@ -114,18 +118,6 @@ def _load(path: Path) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ContractError(f"JSON object required: {path}")
     return value
-
-
-def _portable(path: Path, workspace_root: Path) -> str:
-    try:
-        return path.resolve().relative_to(workspace_root.resolve()).as_posix()
-    except ValueError as exc:
-        raise ContractError(f"path is outside the workspace: {path}") from exc
-
-
-def _canonical_sha256(value: Any) -> str:
-    payload = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    return hashlib.sha256(payload).hexdigest().upper()
 
 
 def _file_binding(path: Path, workspace_root: Path) -> dict[str, Any]:
@@ -328,19 +320,34 @@ def _publish_verified_pulse_receipt(
     if file_sha256(child_manifest_path) != stage.get("manifest_sha256"):
         raise ContractError("pulse confirmation child manifest identity differs")
     child_manifest = _load(child_manifest_path)
-    if not isinstance(child_manifest.get("inputs"), dict) or (
-        "pulse_schedule" not in child_manifest["inputs"]
-    ):
+    if not isinstance(child_manifest.get("inputs"), dict):
+        return None
+    schedule_record_name = (
+        "pulse_schedule"
+        if "pulse_schedule" in child_manifest["inputs"]
+        else "resolved_single_flight_pulse_schedule"
+    )
+    if schedule_record_name not in child_manifest["inputs"]:
         return None
     schedule_path = _verified_stage_record(
-        child_manifest, collection="inputs", name="pulse_schedule", run_dir=child_dir
+        child_manifest, collection="inputs", name=schedule_record_name, run_dir=child_dir
     )
     schedule = _load(schedule_path)
     authority = schedule.get("execution_authority")
-    if not isinstance(authority, dict):
+    reuse_authority = schedule.get("verified_reuse_authority")
+    if not isinstance(authority, dict) and not isinstance(reuse_authority, dict):
         return None
-    if authority.get("mode") != "detector_blind_candidate_confirmation_v1":
+    if isinstance(authority, dict) and isinstance(reuse_authority, dict):
+        raise ContractError("pulse schedule publication authority is ambiguous")
+    direct_reuse = isinstance(reuse_authority, dict)
+    if not direct_reuse and authority.get("mode") != (
+        "detector_blind_candidate_confirmation_v1"
+    ):
         raise ContractError("pulse confirmation schedule authority mode differs")
+    if direct_reuse and reuse_authority.get("mode") != (
+        "verified_pulse_timing_reuse_v1"
+    ):
+        raise ContractError("verified pulse reuse schedule authority mode differs")
     summary_path = _verified_stage_record(
         child_manifest, collection="outputs", name="summary.json", run_dir=child_dir
     )
@@ -363,8 +370,8 @@ def _publish_verified_pulse_receipt(
     ):
         raise ContractError("pulse confirmation flight evidence differs")
 
-    def authority_path(name: str) -> Path:
-        record = authority[name]
+    def authority_path(name: str, source: dict[str, Any]) -> Path:
+        record = source[name]
         path = (workspace_root / record["path"]).resolve()
         if (
             not path.is_relative_to(workspace_root.resolve())
@@ -374,10 +381,88 @@ def _publish_verified_pulse_receipt(
             raise ContractError(f"pulse confirmation {name} identity differs")
         return path
 
-    candidate_parent = authority_path("candidate_parent_manifest")
-    candidate_receipt = authority_path("candidate_selection_receipt")
-    if "pilot_verified_receipt" in authority:
-        authority_path("pilot_verified_receipt")
+    if direct_reuse:
+        prior_receipt_path = authority_path("verified_receipt", reuse_authority)
+        prior_receipt = _load(prior_receipt_path)
+        validate_schema(
+            prior_receipt, "rf_oatof_verified_pulse_timing_receipt.schema.json"
+        )
+        source_content_key = reuse_authority.get(
+            "source_content_key", reuse_authority.get("content_key")
+        )
+        if (
+            prior_receipt.get("content_key") != source_content_key
+            or not math.isclose(
+                float(prior_receipt.get("selected_time_us")), selected_time_us,
+                rel_tol=0.0, abs_tol=1e-12,
+            )
+        ):
+            raise ContractError("verified pulse reuse receipt identity differs")
+        for record_name in (
+            "resolved_connection", "resolved_source_contract",
+            "resolved_population_contract", "oatof_resolved_geometry",
+            "resolved_region_field_contract",
+        ):
+            _verified_stage_record(
+                child_manifest, collection="inputs", name=record_name,
+                run_dir=child_dir,
+            )
+        population_path = _verified_stage_record(
+            child_manifest, collection="inputs", name="resolved_population_contract",
+            run_dir=child_dir,
+        )
+        field_path = _verified_stage_record(
+            child_manifest, collection="inputs", name="resolved_region_field_contract",
+            run_dir=child_dir,
+        )
+        try:
+            verify_record(
+                "verified pulse reuse run_config", child_manifest["run_config"],
+                base_dir=child_dir,
+            )
+        except (AssertionError, KeyError, TypeError) as exc:
+            raise ContractError("verified pulse reuse run_config identity differs") from exc
+        run_config = _load(record_path(child_manifest["run_config"], base_dir=child_dir))
+        parameters = run_config.get("parameters", {})
+        population = _load(population_path)
+        field = _load(field_path)
+        if (
+            population.get("role") != "rf_oatof_resolved_population_contract"
+            or population.get("execution_population", {}).get("particle_count")
+            != census["launched"]
+            or parameters.get("resolved_population_contract_sha256")
+            != file_sha256(population_path)
+            or field.get("role") != "rf_oatof_resolved_region_field_contract"
+            or field.get("semantic", {}).get("canonical_profile_id")
+            != parameters.get("accelerator_field_profile_id")
+            or parameters.get("resolved_region_field_contract_sha256")
+            != file_sha256(field_path)
+            or parameters.get("pulse_time_us") != selected_time_us
+        ):
+            raise ContractError("verified pulse reuse child identity differs")
+        candidate_authority = prior_receipt["candidate_authority"]
+        for name in ("parent_manifest", "selection_receipt"):
+            record = candidate_authority[name]
+            path = (workspace_root / record["path"]).resolve()
+            if (
+                not path.is_relative_to(workspace_root.resolve())
+                or not path.is_file()
+                or path.stat().st_size != record["bytes"]
+                or file_sha256(path) != record["sha256"]
+            ):
+                raise ContractError(f"verified pulse reuse {name} identity differs")
+        content_key = reuse_authority["content_key"]
+    else:
+        candidate_parent = authority_path("candidate_parent_manifest", authority)
+        candidate_receipt = authority_path("candidate_selection_receipt", authority)
+        if "pilot_verified_receipt" in authority:
+            authority_path("pilot_verified_receipt", authority)
+        candidate_authority = {
+            "parent_manifest": _file_binding(candidate_parent, workspace_root),
+            "selection_receipt": _file_binding(candidate_receipt, workspace_root),
+            "selection_preregistered": authority["selection_preregistered"],
+        }
+        content_key = authority["content_key"]
     receipt = {
         "schema_version": 1,
         "role": "rf_oatof_verified_pulse_timing_receipt",
@@ -385,13 +470,9 @@ def _publish_verified_pulse_receipt(
         "qualification": "FUNCTIONAL_ONLY",
         "decision": "PASS_FOR_IDENTICAL_IDENTITY_REUSE",
         "reusable_verified_pulse": True,
-        "content_key": authority["content_key"],
+        "content_key": content_key,
         "selected_time_us": selected_time_us,
-        "candidate_authority": {
-            "parent_manifest": _file_binding(candidate_parent, workspace_root),
-            "selection_receipt": _file_binding(candidate_receipt, workspace_root),
-            "selection_preregistered": authority["selection_preregistered"],
-        },
+        "candidate_authority": candidate_authority,
         "verification_authority": {
             "child_manifest": _file_binding(child_manifest_path, workspace_root),
             "pulse_schedule": _file_binding(schedule_path, workspace_root),
@@ -471,7 +552,7 @@ def publish_verified_pulse_publication_replay(
         failed_manifest.get("role") != "simulation_run_manifest"
         or failed_manifest.get("project") != INTEGRATION_ID
         or failed_manifest.get("mode") != "multipole_family_source_closure"
-        or failed_manifest.get("status") != "failed"
+        or failed_manifest.get("status") not in {"failed", "success"}
         or receipt.get("role") != "integration_family_source_closure_execution_receipt"
         or receipt.get("integration_run_id") != failed_manifest.get("run_id")
         or receipt.get("execution_strategy") != "simion_single_flight"
@@ -1390,6 +1471,7 @@ def publish_family_source_closure_run(
         text=True,
         encoding="utf-8",
         errors="replace",
+        timeout=60,
     )
     if completed.returncode != 0:
         raise ContractError(
@@ -1516,6 +1598,7 @@ def publish_family_source_closure_failure(
         text=True,
         encoding="utf-8",
         errors="replace",
+        timeout=60,
     )
     if completed.returncode != 0:
         raise ContractError(

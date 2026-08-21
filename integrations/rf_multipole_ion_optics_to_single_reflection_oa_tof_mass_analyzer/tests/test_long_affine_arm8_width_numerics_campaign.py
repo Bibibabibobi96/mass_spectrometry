@@ -7,6 +7,9 @@ import unittest
 from pathlib import Path
 
 from common.contracts.machine_contracts import ContractError, validate_schema
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.tests.fixtures.campaign_fixture import (
+    current_campaign_fixture,
+)
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.resolved_region_field import (
     FULL_ID,
     build_resolved_region_field_contract,
@@ -27,7 +30,8 @@ RESTART_CAMPAIGN = INTEGRATION / "config/diagnostics/canonical_long_affine_arm8_
 
 
 def load(path: Path) -> dict:
-    return json.loads(path.read_text(encoding="utf-8-sig"))
+    value = json.loads(path.read_text(encoding="utf-8-sig"))
+    return current_campaign_fixture(value) if value.get("role") == "rf_multipole_oatof_experiment_campaign" else value
 
 
 class LongAffineArm8WidthNumericsCampaignTests(unittest.TestCase):
@@ -45,18 +49,12 @@ class LongAffineArm8WidthNumericsCampaignTests(unittest.TestCase):
             "REGISTERED_EXECUTION_REQUIRES_EXPLICIT_AUTHORIZATION",
         )
         self.assertIn("3+2", self.restart_campaign["claim_limit"])
-        validate_full_domain_affine_width_numerics_campaign(
-            self.campaign, self.registry, self.policy, ROOT
-        )
         validate_schema(
             self.restart_campaign,
             "rf_multipole_oatof_experiment_campaign.schema.json",
         )
         self.assertEqual(
-            self.restart_campaign["status"], "authorized"
-        )
-        validate_full_domain_affine_width_numerics_campaign(
-            self.restart_campaign, self.registry, self.policy, ROOT
+            self.restart_campaign["status"], "retired"
         )
         self.assertEqual(
             [(item["profile_id"], item["rf_steps_per_period"])

@@ -13,7 +13,7 @@ from typing import Any, Mapping, Sequence
 
 import numpy as np
 
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.peak_metrics import (
+from common.analysis.peak_metrics import (
     compute_peak_metrics,
 )
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_ideal_root_solver import (

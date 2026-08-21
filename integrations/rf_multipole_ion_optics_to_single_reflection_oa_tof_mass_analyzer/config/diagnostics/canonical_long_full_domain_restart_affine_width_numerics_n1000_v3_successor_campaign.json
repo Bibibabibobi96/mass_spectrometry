@@ -3,7 +3,7 @@
   "role": "rf_multipole_oatof_experiment_campaign",
   "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
   "campaign_id": "canonical_long_full_domain_restart_affine_width_numerics_n1000_v3_successor",
-  "status": "authorized",
+  "status": "retired",
   "execution_policy": {
     "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/execution_policy.json",
     "sha256": "38178CEFC70EF977C1EA6C772827E0FFB9B220447794FFFB704BD6599B7AEB31"
@@ -12,7 +12,7 @@
   "preregistration": {
     "status": "REGISTERED_EXECUTION_REQUIRES_EXPLICIT_AUTHORIZATION",
     "document": {
-      "path": "docs/history/20260814__oatof-long-affine-arm8-five-cell-official-restart-preregistration.md",
+      "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/20260814__oatof-long-affine-arm8-five-cell-official-restart-preregistration.md",
       "bytes": 5118,
       "sha256": "F6565072A111BC6734DBED68236BCA3A08E85F967B85EFA8925A88DC83363522"
     },

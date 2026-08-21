@@ -6,7 +6,8 @@ param(
   [Parameter(Mandatory)][string]$RepoRoot,
   [string]$RunId = '',
   [switch]$PrepareOnly,
-  [switch]$SolverAuthorized
+  [switch]$SolverAuthorized,
+  [switch]$FinalizeOnly
 )
 
 Set-StrictMode -Version Latest
@@ -97,6 +98,46 @@ if ($plan.selection.connection_profile_id -ne
   throw 'Prepared family plan and resolved connection identities differ.'
 }
 
+if ($FinalizeOnly) {
+  if ($PrepareOnly -or $SolverAuthorized -or [string]::IsNullOrWhiteSpace($RunId)) {
+    throw 'FinalizeOnly is mutually exclusive with preparation and solver execution and requires a recovery run ID.'
+  }
+  $sourceParentRoot = (Split-Path -Parent ([IO.Path]::GetFullPath($CompositionPlan)))
+  $expectedRecoveryRunId = (Split-Path -Leaf $sourceParentRoot) + '__r01'
+  if ($RunId -ne $expectedRecoveryRunId) {
+    throw 'FinalizeOnly recovery run ID must be the exact failed parent run ID plus __r01.'
+  }
+  $workspaceRoot = Split-Path -Parent $RepoRoot
+  $recoveryParentRoot = Join-Path $workspaceRoot (
+    'artifacts\projects\rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer\runs\' + $RunId
+  )
+  if (Test-Path -LiteralPath $recoveryParentRoot) {
+    throw 'FinalizeOnly recovery parent directory already exists.'
+  }
+  $campaignArgument = @($plan.execution_steps[0].arguments | Where-Object {
+    [string]$_ -like 'campaign_path=*'
+  })
+  if ($campaignArgument.Count -ne 1) {
+    throw 'FinalizeOnly source plan does not bind exactly one campaign path.'
+  }
+  $campaignPath = Join-Path $RepoRoot (([string]$campaignArgument[0]).Substring('campaign_path='.Length))
+  Push-Location -LiteralPath $RepoRoot
+  try {
+    & $PythonExe -m (
+      'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.' +
+      'workflows.family_source_closure.recover_completed_single_flight'
+    ) --repo-root $RepoRoot --campaign $campaignPath --failed-parent-run-dir $sourceParentRoot `
+      --recovery-parent-run-dir $recoveryParentRoot
+    if ($LASTEXITCODE -ne 0) {
+      throw 'FinalizeOnly completed-single-flight recovery failed.'
+    }
+  } finally {
+    Pop-Location
+  }
+  Write-Output "FAMILY_SOURCE_CLOSURE_ADAPTER=FINALIZED RUN_ID=$RunId"
+  exit 0
+}
+
 $frozenArguments = @{}
 foreach ($argument in @($steps[0].arguments)) {
   $separator = $argument.IndexOf('=')
@@ -131,8 +172,15 @@ if ([string]$frozenArguments.execution_strategy -eq 'simion_single_flight') {
   $expectedArguments += @(
     'single_flight_pa_cache_policy',
     'single_flight_pa_cache_policy_provenance',
-    'single_flight_batch_count'
+    'single_flight_batch_count',
+    'single_flight_batch_parallel_limit'
   )
+  if ($frozenArguments.ContainsKey('single_flight_pa_cache_generation_binding_filename')) {
+    $expectedArguments += @(
+      'single_flight_pa_cache_generation_binding_filename',
+      'single_flight_pa_cache_generation_binding_sha256'
+    )
+  }
 }
 $layoutArgumentNames = @(
   'layout_profile_id',
@@ -206,6 +254,9 @@ if ($frozenArguments.ContainsKey('single_flight_trajectory_quality_profile_id'))
 if ($frozenArguments.ContainsKey('single_flight_time_integration_profile_id')) {
   $expectedArguments += 'single_flight_time_integration_profile_id'
 }
+if ($frozenArguments.ContainsKey('single_flight_maximum_time_of_flight_us')) {
+  $expectedArguments += 'single_flight_maximum_time_of_flight_us'
+}
 if ($frozenArguments.ContainsKey('single_flight_spatial_window_profile_id')) {
   $expectedArguments += 'single_flight_spatial_window_profile_id'
 }
@@ -215,6 +266,19 @@ if ($frozenArguments.ContainsKey('resolved_region_field_contract_filename')) {
     'resolved_region_field_contract_sha256',
     'resolved_region_field_semantic_sha256',
     'resolved_region_field_profile_id'
+  )
+}
+if ($frozenArguments.ContainsKey('source_zvz_affine_receipt_filename')) {
+  $expectedArguments += @(
+    'source_zvz_affine_receipt_filename',
+    'source_zvz_affine_receipt_sha256'
+  )
+}
+if ($frozenArguments.ContainsKey('source_zvz_theory_working_point_filename')) {
+  $expectedArguments += @(
+    'source_zvz_theory_working_point_filename',
+    'source_zvz_theory_working_point_sha256',
+    'source_zvz_theory_geometry_input_sha256'
   )
 }
 if ($frozenArguments.ContainsKey('source_release_mode')) {
@@ -280,7 +344,8 @@ if ($hasPrePulseTimeSeriesArguments) {
     'pre_pulse_time_series_prefix_sha256',
     'pre_pulse_time_series_prefix_count',
     'pre_pulse_time_series_contract_filename',
-    'pre_pulse_time_series_contract_sha256'
+    'pre_pulse_time_series_contract_sha256',
+    'pre_pulse_time_series_time_integration_profile_id'
   )
 }
 $hasPulseCandidateConfirmationArguments = $frozenArguments.ContainsKey(
@@ -355,7 +420,47 @@ if ($campaign.role -ne 'rf_multipole_oatof_experiment_campaign' -or
     $experiments.Count -ne 1) {
   throw 'Campaign or experiment identity no longer resolves uniquely.'
 }
+if ($SolverAuthorized) {
+  $executionRegistryPath = Join-Path $integrationRoot `
+    'config\family_source_closure_execution_registry.json'
+  $executionRegistry = Get-Content -LiteralPath $executionRegistryPath -Raw -Encoding UTF8 |
+    ConvertFrom-Json
+  $campaignRepoRelative = [IO.Path]::GetRelativePath($repo, $campaignPath).Replace('\', '/')
+  $currentCampaigns = @($executionRegistry.current_campaigns | Where-Object {
+    [string]$_.path -eq $campaignRepoRelative
+  })
+  if ($executionRegistry.role -ne
+        'rf_oatof_family_source_closure_execution_registry' -or
+      $executionRegistry.integration_id -ne $plan.integration_id -or
+      $executionRegistry.active_workflow -ne
+        'workflows/family_source_closure/execute.ps1' -or
+      $currentCampaigns.Count -ne 1 -or
+      (Get-RfOatofRepositoryTextSha256 -Path $campaignPath) -ne
+        ([string]$currentCampaigns[0].content_sha256).ToUpperInvariant()) {
+    throw 'Campaign is not a current registered execution authority; SolverAuthorized is forbidden.'
+  }
+  if ([string]$executionRegistry.active_post_pulse_restart_working_point_policy -ne
+      'source_zvz_three_zone_theory_working_point_required_v1') {
+    throw 'Family execution registry post-pulse working-point policy is invalid.'
+  }
+}
 $experiment = $experiments[0]
+$isManifestBoundPostPulseRestart =
+  [string]$experiment.source_release_mode -eq 'pre_pulse_restart' -and
+  ($experiment.PSObject.Properties.Name -contains
+    'post_pulse_restart_reuse_authority')
+if ($SolverAuthorized -and $isManifestBoundPostPulseRestart) {
+  $theoryWorkingPoint = $experiment.single_flight_source_zvz_theory_working_point
+  if ([string]$experiment.single_flight_source_zvz_affine_policy -ne
+        'source_zvz_affine_identify_and_bind_v1' -or
+      $null -eq $theoryWorkingPoint -or
+      [string]$theoryWorkingPoint.policy_id -ne
+        'source_zvz_three_zone_theory_working_point_v1' -or
+      [string]$experiment.post_pulse_restart_reuse_authority.post_pulse_variation_axis -ne
+        'accelerator_field_profile_id_and_source_zvz_theory_working_point') {
+    throw 'Active manifest-bound post-pulse restart requires the source z--vz theory working point.'
+  }
+}
 $threeZoneSolverGate = if (
   $experiment.PSObject.Properties.Name -contains 'three_zone_solver_gate'
 ) { $experiment.three_zone_solver_gate } else { $null }
@@ -847,6 +952,37 @@ if (-not (Test-Path -LiteralPath $runtimeBinding -PathType Leaf) -or
 }
 
 $runDirectory = [IO.Path]::GetFullPath((Split-Path -Parent $CompositionPlan))
+$paCacheGenerationBindingPath = $null
+$campaignHasPaCacheGenerationBinding =
+  $experiment.PSObject.Properties.Name -contains
+    'single_flight_pa_cache_generation_binding'
+$argumentsHavePaCacheGenerationBinding =
+  $frozenArguments.ContainsKey('single_flight_pa_cache_generation_binding_filename') -and
+  $frozenArguments.ContainsKey('single_flight_pa_cache_generation_binding_sha256')
+if ($campaignHasPaCacheGenerationBinding -ne $argumentsHavePaCacheGenerationBinding) {
+  throw 'Campaign and prepared PA cache generation binding differ.'
+}
+if ($campaignHasPaCacheGenerationBinding) {
+  $paCacheGenerationBindingPath = [IO.Path]::GetFullPath(
+    (Join-Path $runDirectory $frozenArguments.single_flight_pa_cache_generation_binding_filename)
+  )
+  if ($frozenArguments.single_flight_pa_cache_generation_binding_filename -ne
+      'inputs/single_flight_pa_cache_generation_binding.json' -or
+      -not (Test-Path -LiteralPath $paCacheGenerationBindingPath -PathType Leaf) -or
+      (Get-FileHash -LiteralPath $paCacheGenerationBindingPath -Algorithm SHA256).Hash -ne
+        $frozenArguments.single_flight_pa_cache_generation_binding_sha256) {
+    throw 'Frozen PA cache generation binding is missing or stale.'
+  }
+  $frozenPaCacheGenerationBinding = Get-Content -LiteralPath $paCacheGenerationBindingPath `
+    -Raw -Encoding UTF8 | ConvertFrom-Json
+  if (($frozenPaCacheGenerationBinding | ConvertTo-Json -Depth 8 -Compress) -ne
+      ($experiment.single_flight_pa_cache_generation_binding | ConvertTo-Json -Depth 8 -Compress) -or
+      [string]$frozenPaCacheGenerationBinding.binding_mode -ne
+        'require_exact_schema_v3_generations_v1' -or
+      @($frozenPaCacheGenerationBinding.cache_generations).Count -lt 1) {
+    throw 'Frozen PA cache generation binding differs from the campaign.'
+  }
+}
 if ($pulseTimingOrchestrationArgumentNames.Count -ne 0) {
   $null = Resolve-RfPulseTimingOrchestrationArguments `
     -FrozenArguments $frozenArguments -PreparedRoot $runDirectory
@@ -879,6 +1015,49 @@ if ($frozenArguments.ContainsKey('resolved_region_field_contract_filename')) {
       $resolvedRegionFieldContract.layout_geometry.sha256 -ne
       $frozenArguments.resolved_oatof_geometry_sha256) {
     throw 'Plan-bound resolved region field contract identity differs.'
+  }
+}
+$sourceZvzAffineReceiptPath = $null
+if ($frozenArguments.ContainsKey('source_zvz_affine_receipt_filename')) {
+  $sourceZvzAffineReceiptPath = [IO.Path]::GetFullPath(
+    (Join-Path $runDirectory $frozenArguments.source_zvz_affine_receipt_filename)
+  )
+  if ($frozenArguments.source_zvz_affine_receipt_filename -ne
+      'inputs/source_zvz_affine_receipt.json' -or
+      -not (Test-Path -LiteralPath $sourceZvzAffineReceiptPath -PathType Leaf) -or
+      (Get-FileHash -LiteralPath $sourceZvzAffineReceiptPath -Algorithm SHA256).Hash -ne
+      $frozenArguments.source_zvz_affine_receipt_sha256) {
+    throw 'Plan-bound source z--vz affine receipt is missing or stale.'
+  }
+  $sourceZvzAffineReceipt = Get-Content -LiteralPath `
+    $sourceZvzAffineReceiptPath -Raw -Encoding UTF8 | ConvertFrom-Json
+  if ($sourceZvzAffineReceipt.role -ne 'rf_oatof_source_zvz_affine_receipt' -or
+      $sourceZvzAffineReceipt.policy_id -ne 'source_zvz_affine_identify_and_bind_v1') {
+    throw 'Plan-bound source z--vz affine receipt has an unsupported identity.'
+  }
+}
+$sourceZvzTheoryWorkingPointPath = $null
+if ($frozenArguments.ContainsKey('source_zvz_theory_working_point_filename')) {
+  $sourceZvzTheoryWorkingPointPath = [IO.Path]::GetFullPath(
+    (Join-Path $runDirectory $frozenArguments.source_zvz_theory_working_point_filename)
+  )
+  if ($frozenArguments.source_zvz_theory_working_point_filename -ne
+      'inputs/source_zvz_theory_working_point.json' -or
+      -not (Test-Path -LiteralPath $sourceZvzTheoryWorkingPointPath -PathType Leaf) -or
+      (Get-FileHash -LiteralPath $sourceZvzTheoryWorkingPointPath -Algorithm SHA256).Hash -ne
+      $frozenArguments.source_zvz_theory_working_point_sha256) {
+    throw 'Plan-bound source theory working point is missing or stale.'
+  }
+  $sourceZvzTheoryWorkingPoint = Get-Content -LiteralPath `
+    $sourceZvzTheoryWorkingPointPath -Raw -Encoding UTF8 | ConvertFrom-Json
+  if ($sourceZvzTheoryWorkingPoint.role -ne 'rf_oatof_theory_working_point' -or
+      $sourceZvzTheoryWorkingPoint.policy_id -ne
+      'source_zvz_three_zone_theory_working_point_v1' -or
+      $sourceZvzTheoryWorkingPoint.source_state_sha256 -ne
+      $sourceZvzAffineReceipt.source_state.sha256 -or
+      $sourceZvzTheoryWorkingPoint.resolved_geometry_input_sha256 -ne
+      $frozenArguments.source_zvz_theory_geometry_input_sha256) {
+    throw 'Plan-bound source theory working point identity differs.'
   }
 }
 $pulsePrefixPath = $null
@@ -1130,7 +1309,10 @@ if ([int]$campaign.schema_version -ge 3) {
         $threeZoneFrontendElectrodeTopologyId -ne 'three_zone_frontend_v1' -or
         $threeZoneFieldId -notin @(
           'three_zone_piecewise_uniform_ideal_field_v1',
-          'three_zone_refined_pa_field_v1'
+          'three_zone_real_pa_plus_reflectron_piecewise_uniform_ideal_field_v1',
+          'three_zone_refined_pa_field_v1',
+          'three_zone_plus_reflectron_piecewise_uniform_ideal_field_v1',
+          'three_zone_explicit_region_modes_v1'
         ) -or
         [string]$selectedFieldProfile.topology_id -ne $threeZoneTopologyId -or
         [string]$selectedFieldProfile.geometry_id -ne $threeZoneGeometryId -or
@@ -1150,12 +1332,21 @@ if ([int]$campaign.schema_version -ge 3) {
     }
     foreach ($mappingName in @('planes_global_z_mm','potentials_v')) {
       foreach ($role in @('repeller','intermediate1','intermediate2','exit')) {
-        $candidateValue = [double]$threeZoneCandidateDocument.accelerator_topology.$mappingName.$role
+        # A source-bound theory receipt intentionally supersedes only the
+        # candidate's voltage values.  The candidate remains the authority
+        # for planes/topology; without the receipt it remains authoritative
+        # for both mappings.
+        $expectedValue = if ($mappingName -eq 'potentials_v' -and
+            $null -ne $sourceZvzTheoryWorkingPointPath) {
+          [double]$sourceZvzTheoryWorkingPoint.accelerator_topology.$mappingName.$role
+        } else {
+          [double]$threeZoneCandidateDocument.accelerator_topology.$mappingName.$role
+        }
         if ([double]$geometryDocument.accelerator_topology.$mappingName.$role -ne
-            $candidateValue -or
+            $expectedValue -or
             [double]$resolvedRegionFieldContract.semantic.accelerator_topology.$mappingName.$role -ne
-            $candidateValue) {
-          throw 'Three-zone Candidate plane or potential mapping differs.'
+            $expectedValue) {
+          throw 'Three-zone plane or working-point mapping differs.'
         }
       }
     }
@@ -1459,15 +1650,30 @@ if ($executionStrategy -eq 'simion_single_flight') {
     [string]$frozenArguments.single_flight_pa_cache_policy
   $runnerArguments.PaCachePolicyProvenance =
     [string]$frozenArguments.single_flight_pa_cache_policy_provenance
-  $declaredBatchCount = if (
-    $null -ne $experiment.PSObject.Properties['single_flight_batch_count']
-  ) { [int]$experiment.single_flight_batch_count } else { 1 }
-  if ([int]$frozenArguments.single_flight_batch_count -ne $declaredBatchCount -or
-      $declaredBatchCount -lt 1 -or
-      $declaredBatchCount -gt $expectedExecutionParticleCount) {
-    throw 'Single-flight batch count changed after preparation or exceeds the resolved population.'
+  if ($null -ne $paCacheGenerationBindingPath) {
+    $runnerArguments.RequiredPaCacheGenerationBinding = $paCacheGenerationBindingPath
+    $runnerArguments.RequiredPaCacheGenerationBindingSha256 =
+      [string]$frozenArguments.single_flight_pa_cache_generation_binding_sha256
   }
-  $runnerArguments.ExecutionBatchCount = $declaredBatchCount
+  # Preparation resolves the effective count, including automatic memory
+  # selection.  The frozen plan argument is the sole execution authority;
+  # comparing it with the optional static campaign hint would reject a valid
+  # memory-bound decision.
+  $resolvedBatchCount = [int]$frozenArguments.single_flight_batch_count
+  if ($resolvedBatchCount -lt 1 -or
+      $resolvedBatchCount -gt $expectedExecutionParticleCount) {
+    throw 'Prepared single-flight batch count is invalid or exceeds the resolved population.'
+  }
+  if ([int]$frozenArguments.single_flight_batch_parallel_limit -lt 1 -or
+      $resolvedBatchCount -gt
+        [int]$frozenArguments.single_flight_batch_parallel_limit -or
+      [int]$budget.single_flight_batch_parallel_limit -ne
+        [int]$frozenArguments.single_flight_batch_parallel_limit -or
+      [int]$executionPolicy.single_flight_batch_parallel_limit -ne
+        [int]$frozenArguments.single_flight_batch_parallel_limit) {
+    throw 'Single-flight batch parallel limit differs from the frozen execution policy.'
+  }
+  $runnerArguments.ExecutionBatchCount = $resolvedBatchCount
   if ([int]$campaign.schema_version -ge 3) {
     $runnerArguments.OatofResolvedGeometry = $resolvedOatofGeometryPath
     if ($null -ne $resolvedPulseSchedulePath) {
@@ -1494,6 +1700,11 @@ if ($executionStrategy -eq 'simion_single_flight') {
       $runnerArguments.ThreeZoneFrontendElectrodeTopologyId =
         $threeZoneFrontendElectrodeTopologyId
       $runnerArguments.ThreeZoneFieldId = $threeZoneFieldId
+      if ($null -ne $sourceZvzTheoryWorkingPointPath) {
+        $runnerArguments.TheoryWorkingPoint = $sourceZvzTheoryWorkingPointPath
+        $runnerArguments.TheoryWorkingPointSha256 =
+          [string]$frozenArguments.source_zvz_theory_working_point_sha256
+      }
     }
     if ($threeZoneSolverGateStage -ne '') {
       $runnerArguments.ThreeZoneSolverGateStage = $threeZoneSolverGateStage
@@ -1556,6 +1767,17 @@ if ($executionStrategy -eq 'simion_single_flight') {
     }
     $runnerArguments.TimeIntegrationProfileId =
       [string]$frozenArguments.single_flight_time_integration_profile_id
+  }
+  if ($frozenArguments.ContainsKey('single_flight_maximum_time_of_flight_us')) {
+    $declaredMaximumTofUs = [double]$experiment.single_flight_maximum_time_of_flight_us
+    $frozenMaximumTofUs = [double]$frozenArguments.single_flight_maximum_time_of_flight_us
+    if ([double]::IsNaN($declaredMaximumTofUs) -or
+        [double]::IsInfinity($declaredMaximumTofUs) -or
+        $declaredMaximumTofUs -le 0 -or
+        $declaredMaximumTofUs -ne $frozenMaximumTofUs) {
+      throw 'Single-flight maximum time of flight changed after preparation or is invalid.'
+    }
+    $runnerArguments.MaximumTimeOfFlightUs = $declaredMaximumTofUs
   }
   if ($frozenArguments.ContainsKey('single_flight_spatial_window_profile_id')) {
     if ([string]$experiment.single_flight_spatial_window_profile_id -ne
@@ -1687,6 +1909,15 @@ if ($executionStrategy -eq 'simion_single_flight') {
       $frozenArguments.pulse_resolution_registration_sha256
   }
   if ($prePulseTimeSeriesScreening) {
+    $screeningTimeIntegrationProfileId =
+      [string]$frozenArguments.pre_pulse_time_series_time_integration_profile_id
+    $screeningContract = Get-Content -LiteralPath $prePulseTimeSeriesContractPath `
+      -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ([string]$screeningContract.identities.time_integration_profile_id -ne
+        $screeningTimeIntegrationProfileId) {
+      throw 'Pre-pulse time-series solver time-integration identity differs.'
+    }
+    $runnerArguments.TimeIntegrationProfileId = $screeningTimeIntegrationProfileId
     $runnerArguments.PrePulseTimeSeriesContract =
       $prePulseTimeSeriesContractPath
     $runnerArguments.PrePulseTimeSeriesContractSha256 =

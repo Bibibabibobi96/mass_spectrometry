@@ -15,19 +15,6 @@ $artifactRoot = Join-Path $workspaceRoot 'artifacts\projects\transverse_helical_
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
 $software = @('COMSOL 6.4 via MATLAB R2025b')
 
-function Get-FileSha256 {
-  [CmdletBinding()]
-  param([Parameter(Mandatory = $true)][string]$Path)
-  $stream = [IO.File]::OpenRead($Path)
-  $algorithm = [Security.Cryptography.SHA256]::Create()
-  try {
-    return [BitConverter]::ToString($algorithm.ComputeHash($stream)).Replace('-','')
-  } finally {
-    $algorithm.Dispose()
-    $stream.Dispose()
-  }
-}
-
 $bootstrapFiles = [ordered]@{
   powershell_runtime_gate = 'common\require_powershell7.ps1'
   artifact_support = 'common\contracts\run_artifact_support.ps1'
@@ -36,34 +23,16 @@ $bootstrapFiles = [ordered]@{
   artifact_naming = 'common\contracts\artifact_naming.py'
   file_identity = 'common\contracts\file_identity.py'
   particle_physics = 'common\contracts\particle_physics.py'
+  strict_json = 'common\contracts\strict_json.py'
 }
+. (Join-Path $repoRoot $bootstrapFiles.artifact_support)
 $bootstrapIdentity = [ordered]@{}
 foreach ($entry in $bootstrapFiles.GetEnumerator()) {
   $source = Join-Path $repoRoot $entry.Value
   $bootstrapIdentity[$entry.Key] = [ordered]@{
     source_repo_path = $entry.Value.Replace('\','/')
-    sha256 = Get-FileSha256 -Path $source
+    sha256 = Get-RunFileSha256 -Path $source
   }
-}
-. (Join-Path $repoRoot $bootstrapFiles.artifact_support)
-
-function Add-FrozenInput {
-  [CmdletBinding()]
-  param(
-    [Parameter(Mandatory = $true)][string]$Name,
-    [Parameter(Mandatory = $true)][string]$Source,
-    [Parameter(Mandatory = $true)][string]$Destination,
-    [Parameter(Mandatory = $true)][System.Collections.IDictionary]$Inputs
-  )
-  $destinationParent = Split-Path -Parent $Destination
-  if (-not (Test-Path -LiteralPath $destinationParent -PathType Container)) {
-    New-Item -ItemType Directory -Force -Path $destinationParent | Out-Null
-  }
-  Copy-Item -LiteralPath $Source -Destination $Destination
-  if ((Get-FileSha256 -Path $Source) -ne (Get-FileSha256 -Path $Destination)) {
-    throw "Frozen Wehnelt input differs from its source: $Source"
-  }
-  $Inputs[$Name] = $Destination
 }
 
 function Assert-BuildOnlyModeDescriptor {
@@ -359,16 +328,15 @@ try {
     static_gate = 'verify_project.ps1'
   }
   foreach ($entry in $projectFrozenFiles.GetEnumerator()) {
-    Add-FrozenInput -Name $entry.Key `
+    $frozenInputs[$entry.Key] = Copy-VerifiedRunInput `
       -Source (Join-Path $projectRoot $entry.Value) `
-      -Destination (Join-Path $codeRoot $entry.Value) -Inputs $frozenInputs
+      -Destination (Join-Path $codeRoot $entry.Value)
   }
   foreach ($file in Get-ChildItem -LiteralPath (Join-Path $projectRoot 'tests\analysis') `
       -Filter '*.py' -File | Sort-Object Name) {
     $key = 'static_test_' + ($file.BaseName -replace '[^A-Za-z0-9]+','_')
-    Add-FrozenInput -Name $key -Source $file.FullName `
-      -Destination (Join-Path $codeRoot ('tests\analysis\' + $file.Name)) `
-      -Inputs $frozenInputs
+    $frozenInputs[$key] = Copy-VerifiedRunInput -Source $file.FullName `
+      -Destination (Join-Path $codeRoot ('tests\analysis\' + $file.Name))
   }
 
   $commonFrozenFiles = [ordered]@{
@@ -383,6 +351,7 @@ try {
     file_identity = 'common\contracts\file_identity.py'
     artifact_identity_archive = 'common\contracts\artifact_identity_archive.py'
     particle_physics = 'common\contracts\particle_physics.py'
+    strict_json = 'common\contracts\strict_json.py'
     project_registry_builder = 'common\contracts\build_project_registry.py'
     machine_contracts = 'common\contracts\machine_contracts.py'
     comsol_runner = 'common\comsol\run_comsol_r2025b.ps1'
@@ -392,20 +361,19 @@ try {
     comsol_startup = 'common\comsol\livelink_r2025b\comsolstartup.m'
   }
   foreach ($entry in $commonFrozenFiles.GetEnumerator()) {
-    Add-FrozenInput -Name $entry.Key `
+    $frozenInputs[$entry.Key] = Copy-VerifiedRunInput `
       -Source (Join-Path $repoRoot $entry.Value) `
-      -Destination (Join-Path $infrastructureRoot $entry.Value) -Inputs $frozenInputs
+      -Destination (Join-Path $infrastructureRoot $entry.Value)
   }
   foreach ($file in Get-ChildItem -LiteralPath (Join-Path $repoRoot 'common\contracts\schemas') `
       -Filter '*.json' -File | Sort-Object Name) {
     $key = 'contract_schema_' + ($file.BaseName -replace '[^A-Za-z0-9]+','_')
-    Add-FrozenInput -Name $key -Source $file.FullName `
-      -Destination (Join-Path $snapshotRoot ('common\contracts\schemas\' + $file.Name)) `
-      -Inputs $frozenInputs
+    $frozenInputs[$key] = Copy-VerifiedRunInput -Source $file.FullName `
+      -Destination (Join-Path $snapshotRoot ('common\contracts\schemas\' + $file.Name))
   }
 
-  foreach ($entry in $bootstrapIdentity.GetEnumerator()) {
-    if ((Get-FileSha256 -Path $frozenInputs[$entry.Key]) -cne $entry.Value.sha256) {
+foreach ($entry in $bootstrapIdentity.GetEnumerator()) {
+    if ((Get-RunFileSha256 -Path $frozenInputs[$entry.Key]) -cne $entry.Value.sha256) {
       throw "Bootstrap dependency changed before it was frozen: $($entry.Key)"
     }
   }

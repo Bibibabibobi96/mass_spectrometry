@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 from pathlib import Path
 
+from common.contracts.file_identity import file_sha256
 from common.multipole.simion_geometry import (
     render_grouped_rod_array_gem,
 )
@@ -87,7 +87,7 @@ include(quad_include.gem)
 
 def render(*, cell_mm: float = 0.2) -> dict[Path, str]:
     contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
-    digest = hashlib.sha256(CONTRACT.read_bytes()).hexdigest().upper()
+    digest = file_sha256(CONTRACT)
     include, monolithic = render_contract(
         contract,
         digest,

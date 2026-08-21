@@ -10,7 +10,6 @@ SIMION or COMSOL trajectory solve.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import math
 from pathlib import Path
@@ -30,20 +29,13 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.oatof_oaaccelerato
     coupled_flight_time_s,
     solve_coupled_reflectron_fields,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.peak_metrics import (
+from common.analysis.peak_metrics import (
     compute_peak_metrics,
 )
+from common.contracts.file_identity import file_sha256 as _sha256
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
-
-
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest().upper()
 
 
 def _load_json(path: Path) -> Mapping[str, Any]:

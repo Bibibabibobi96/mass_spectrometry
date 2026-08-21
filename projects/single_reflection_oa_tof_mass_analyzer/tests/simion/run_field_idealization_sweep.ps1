@@ -85,7 +85,7 @@ $stableManifestPath = Join-Path $projectRoot 'config\simion_stable_entry.json'
 $stableManifest = Get-Content -LiteralPath $stableManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $formalEntry = @($stableManifest.entries)
 if ($formalEntry.Count -ne 1) { throw 'Stable-entry contract must identify exactly one Formal SIMION delivery.' }
-$stableGate = Join-Path $projectRoot 'tests\simion\verify_stable_entry.ps1'
+$stableGate = Join-Path $projectRoot 'workflows\formal_reference\verify_stable_entry.ps1'
 & $stableGate -ManifestPath $stableManifestPath -EntryId $formalEntry[0].id -SimionExe $SimionExe
 
 function Assert-DiagnosticPackage([string]$PackagePath) {

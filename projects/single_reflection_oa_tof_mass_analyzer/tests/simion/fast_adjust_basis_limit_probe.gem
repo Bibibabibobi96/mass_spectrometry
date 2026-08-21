@@ -1,9 +1,0 @@
-; Minimal independent-electrode Fast Adjust limit probe.
-# local var = _G.var or {}
-# local electrode_count = var.electrode_count or 19
-# local nx = 2*electrode_count+3
-pa_define($(nx),16,1,planar,y,electrostatic)
-
-# for electrode=1,electrode_count do
-e($(electrode)) { fill { within { box($(2*electrode),2,$(2*electrode),13) } } }
-# end

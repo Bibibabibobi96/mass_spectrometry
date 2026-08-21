@@ -2,6 +2,25 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . (Join-Path (Split-Path -Parent $PSScriptRoot) 'require_powershell7.ps1')
 
+function Invoke-RunToolRootContext {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$RepoRoot,
+    [Parameter(Mandatory)][scriptblock]$Operation
+  )
+  $root=(Resolve-Path -LiteralPath $RepoRoot).Path
+  $names=@('PYTHONPATH','PYTHONNOUSERSITE')
+  $saved=Save-RunEnvironment -Names $names
+  try{
+    $env:PYTHONPATH=$root
+    $env:PYTHONNOUSERSITE='1'
+    Push-Location -LiteralPath $root
+    try{& $Operation}finally{Pop-Location}
+  }finally{
+    Restore-RunEnvironment -Names $names -Snapshot $saved
+  }
+}
+
 function Write-RunJson {
   [CmdletBinding()]
   param([Parameter(Mandatory)][object]$Value,[Parameter(Mandatory)][string]$Path,[int]$Depth=8)
@@ -20,13 +39,15 @@ function Write-RunManifest {
     [string[]]$Outputs=@(),
     [switch]$PassThru
   )
-  $arguments=@((Join-Path $RepoRoot 'common\contracts\write_run_manifest.py'),'--run-config',$RunConfig,'--status',$Status)
-  if(-not[string]::IsNullOrWhiteSpace($Manifest)){$arguments+=@('--manifest',$Manifest)}
-  foreach($item in $Software){$arguments+=@('--software',$item)}
-  foreach($item in $Outputs){$arguments+=@('--output',$item)}
-  $writerOutput=& $Python @arguments
-  if($LASTEXITCODE-ne 0){throw "Run manifest failed for status $Status."}
-  if($PassThru){$writerOutput}
+  Invoke-RunToolRootContext -RepoRoot $RepoRoot -Operation {
+    $arguments=@((Join-Path $RepoRoot 'common\contracts\write_run_manifest.py'),'--run-config',$RunConfig,'--status',$Status)
+    if(-not[string]::IsNullOrWhiteSpace($Manifest)){$arguments+=@('--manifest',$Manifest)}
+    foreach($item in $Software){$arguments+=@('--software',$item)}
+    foreach($item in $Outputs){$arguments+=@('--output',$item)}
+    $writerOutput=& $Python @arguments
+    if($LASTEXITCODE-ne 0){throw "Run manifest failed for status $Status."}
+    if($PassThru){$writerOutput}
+  }
 }
 
 function Write-VerifiedRunManifest {
@@ -264,6 +285,19 @@ function Get-RunFileSha256 {
   return (Get-FileHash -LiteralPath $fullPath -Algorithm SHA256).Hash
 }
 
+function Test-RunFilesIdentical {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$Left,
+    [Parameter(Mandatory)][string]$Right
+  )
+  $leftPath=[IO.Path]::GetFullPath($Left);$rightPath=[IO.Path]::GetFullPath($Right)
+  if(-not(Test-Path -LiteralPath $leftPath -PathType Leaf) -or
+     -not(Test-Path -LiteralPath $rightPath -PathType Leaf)){return $false}
+  return (Get-Item -LiteralPath $leftPath).Length -eq (Get-Item -LiteralPath $rightPath).Length -and
+    (Get-RunFileSha256 -Path $leftPath) -ceq (Get-RunFileSha256 -Path $rightPath)
+}
+
 function Complete-FailedRun {
   [CmdletBinding()]
   param(
@@ -280,6 +314,7 @@ function Complete-FailedRun {
     [string[]]$AdditionalOutputs=@(),
     [string]$ResourceUsagePath=''
   )
+  Invoke-RunToolRootContext -RepoRoot $RepoRoot -Operation {
   $document=Get-Content -LiteralPath $RunConfig -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
   if(-not $document.Contains('inputs')){$document.inputs=[ordered]@{}}
   $known=@($document.inputs.Values|ForEach-Object{if($_ -is [string]){[IO.Path]::GetFullPath($_)}})
@@ -352,4 +387,5 @@ function Complete-FailedRun {
   }
   Write-VerifiedRunManifest -Python $Python -RepoRoot $RepoRoot -RunConfig $RunConfig `
     -Status $Status -Software $Software -Outputs @($outputs|Select-Object -Unique)
+  }
 }

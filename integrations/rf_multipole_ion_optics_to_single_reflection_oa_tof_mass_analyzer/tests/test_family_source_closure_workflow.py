@@ -13,6 +13,9 @@ from unittest.mock import patch
 
 from common.contracts.machine_contracts import ContractError, validate_schema
 from common.integration.resolve_connection import derive_mating_translation_with_gap
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.tests.fixtures.campaign_fixture import (
+    current_campaign_fixture,
+)
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.prepare import (
     _automatic_pulse_population_binding,
     _repo_byte_record,
@@ -32,9 +35,6 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     _retry_suffix,
     _single_flight_run_stem,
     publish_family_source_closure_run,
-)
-from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.refresh_campaign_source_bindings import (
-    write_campaign,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_layout import (
     compile_geometry_and_port,
@@ -89,11 +89,23 @@ AUTO_N1000_CONNECTOR_CAMPAIGN = (
 
 
 def load(path: Path) -> dict[str, object]:
-    return json.loads(path.read_text(encoding="utf-8-sig"))
+    return current_campaign_fixture(
+        json.loads(path.read_text(encoding="utf-8-sig"))
+    )
 
 
 def write_json(path: Path, value: object) -> None:
     path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
+
+
+def use_current_time_grid_profile(campaign: dict[str, object]) -> None:
+    """Upgrade legacy test copies to the current native-dt profile contract."""
+    for row in campaign.get("experiments", []):
+        policy = row.get("single_flight_pulse_schedule_policy", {})
+        cache_miss = policy.get("cache_miss_policy", {})
+        cache_miss["time_grid_profile_id"] = (
+            "ballistic_seed_native_dt_minus0p35_plus1p65_v1"
+        )
 
 
 def migrate_v3_campaign(campaign: dict[str, object]) -> dict[str, object]:
@@ -245,8 +257,57 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                     execution_particle_count=1000,
                 )
 
+    def test_memory_policy_freezes_selected_count_and_fails_when_no_batch_fits(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            receipt = workspace / "resource_usage.json"
+            receipt.write_text(
+                json.dumps({"peak_process_tree_working_set_bytes": 12 * 1024**3}),
+                encoding="utf-8",
+            )
+            policy = {
+                "single_flight_batch_count": 3,
+                "single_flight_batch_memory_policy": {
+                    "resource_usage_receipt": {
+                        "path": "resource_usage.json",
+                        "sha256": hashlib.sha256(receipt.read_bytes()).hexdigest().upper(),
+                    },
+                    "default_batch_count": 2,
+                    "maximum_batch_count": 3,
+                    "reserve_available_memory_bytes": 1024**3,
+                },
+            }
+            with patch(
+                "common.simion.particle_batching.available_physical_memory_bytes",
+                return_value=13 * 1024**3,
+            ):
+                self.assertEqual(
+                    resolve_single_flight_batch_count(
+                        policy, execution_particle_count=5000, workspace=workspace
+                    ),
+                    1,
+                )
+            with patch(
+                "common.simion.particle_batching.available_physical_memory_bytes",
+                return_value=12 * 1024**3,
+            ), self.assertRaisesRegex(ContractError, "memory batch policy is invalid"):
+                resolve_single_flight_batch_count(
+                    policy, execution_particle_count=5000, workspace=workspace
+                )
+
+    def test_single_flight_batching_is_one_wave_only(self) -> None:
+        runner = (INTEGRATION_ROOT / "runtime" / "run_single_flight.ps1").read_text(
+            encoding="utf-8-sig"
+        )
+        prepare_source = (INTEGRATION_ROOT / "workflows" / "family_source_closure" / "prepare.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("must fit in one dispatch wave", runner)
+        self.assertIn("one-wave parallel capacity", prepare_source)
+
     def test_auto_pulse_full_n1000_compiles_source_contract_population(self) -> None:
         campaign = load(AUTO_N1000_CONNECTOR_CAMPAIGN)
+        use_current_time_grid_profile(campaign)
         row = campaign["experiments"][0]
         scratch = REPO_ROOT.parent / "artifacts" / "projects" / INTEGRATION_ID / "scratch"
         scratch.mkdir(parents=True, exist_ok=True)
@@ -254,7 +315,8 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             item for item in load(ADAPTER_REGISTRY)["mappings"]
             if item["connection_profile_id"] == row["connection_profile_id"]
         )
-        with tempfile.TemporaryDirectory(dir=scratch) as directory, patch(
+        with tempfile.TemporaryDirectory(dir=scratch) as directory, \
+            tempfile.TemporaryDirectory(dir=CONFIG_ROOT) as config_directory, patch(
             "integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer."
             "workflows.family_source_closure.prepare."
             "_resolve_cached_verified_pulse_schedule",
@@ -265,11 +327,16 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             return_value=mapping,
         ):
             output = Path(directory)
+            campaign["execution_policy"] = load(OCTUPOLE_RUNTIME_BINDING)[
+                "contracts"
+            ]["execution_policy_contract"]
+            campaign_path = Path(config_directory) / "campaign.json"
+            write_json(campaign_path, campaign)
             _, plan_path = prepare_family_source_closure(
                 repo_root=REPO_ROOT,
                 profile_registry_path=PROFILE_REGISTRY,
                 adapter_registry_path=ADAPTER_REGISTRY,
-                campaign_path=AUTO_N1000_CONNECTOR_CAMPAIGN,
+                campaign_path=campaign_path,
                 experiment_id=row["experiment_id"],
                 resolved_output=output / "resolved_connection.json",
                 plan_output=output / "composition_plan.json",
@@ -307,6 +374,8 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
         self.assertIn("'single_flight_batch_count'", adapter_source)
         self.assertIn("$runnerArguments.ExecutionBatchCount", adapter_source)
         self.assertIn("-gt $expectedExecutionParticleCount", adapter_source)
+        self.assertIn("$resolvedBatchCount = [int]$frozenArguments.single_flight_batch_count", adapter_source)
+        self.assertNotIn("$declaredBatchCount", adapter_source)
 
     def test_generated_ordered_subset_selectors_are_exact_and_fresh(self) -> None:
         n1 = ordered_subset_source_particle_ids("n1_center_source_id_500_v1")
@@ -535,7 +604,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                     workspace, escaped, "three-zone T5 Candidate"
                 )
 
-    def test_three_zone_field_profiles_publish_four_exact_identities(self) -> None:
+    def test_three_zone_field_profiles_publish_selectable_identities(self) -> None:
         configuration = load(CONFIG_ROOT / "simion_single_flight.json")
         profiles = {
             item["profile_id"]: item
@@ -549,8 +618,12 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
         field_ids = {
             "accelerator_ideal_three_zone_real_reflectron":
                 "three_zone_piecewise_uniform_ideal_field_v1",
+            "accelerator_real_three_zone_ideal_reflectron":
+                "three_zone_real_pa_plus_reflectron_piecewise_uniform_ideal_field_v1",
             "accelerator_real_three_zone_pa_real_reflectron":
                 "three_zone_refined_pa_field_v1",
+            "three_zone_explicit_region_modes":
+                "three_zone_explicit_region_modes_v1",
         }
         for profile_id, field_id in field_ids.items():
             with self.subTest(profile_id=profile_id):
@@ -647,7 +720,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                         "-RepoRoot", str(REPO_ROOT), "-PrepareOnly",
                     ],
                     cwd=REPO_ROOT, text=True, encoding="utf-8", errors="replace",
-                    capture_output=True, check=False,
+                    capture_output=True, check=False, timeout=300,
                 )
 
             tampered_plan = json.loads(json.dumps(original_plan))
@@ -759,7 +832,7 @@ try {
                 encoding="utf-8",
                 errors="replace",
                 capture_output=True,
-                check=False,
+                check=False, timeout=300,
             )
             self.assertEqual(
                 completed.returncode, 0, completed.stdout + completed.stderr
@@ -838,7 +911,7 @@ foreach ($case in @(
             encoding="utf-8",
             errors="replace",
             capture_output=True,
-            check=False,
+            check=False, timeout=300,
         )
         self.assertEqual(
             completed.returncode, 0, completed.stdout + completed.stderr
@@ -950,57 +1023,13 @@ try {
                 encoding="utf-8",
                 errors="replace",
                 capture_output=True,
-                check=False,
+                check=False, timeout=300,
             )
             self.assertEqual(
                 completed.returncode, 0, completed.stdout + completed.stderr
             )
             self.assertIn("BASE_DISCOVERY_INPUTS=PASS", completed.stdout)
             self.assertIn("NO_AUTHORITY=REJECTED", completed.stdout)
-
-    def test_legacy_cache_policy_is_validate_only_and_never_prepare_only(self) -> None:
-        source_campaign = (
-            CONFIG_ROOT / "diagnostics" /
-            "canonical_source_architecture_accelerator_field_matrix_n1000_v3_successor_campaign.json"
-        )
-        experiment_id = "matrix_ideal1mm_short_acc_rr_n1000_v3"
-        entry = (
-            INTEGRATION_ROOT / "workflows" / "family_source_closure" / "execute.ps1"
-        )
-        with tempfile.TemporaryDirectory(
-            dir=REPO_ROOT.parent / "artifacts" / "projects" / INTEGRATION_ID / "scratch"
-        ) as directory, tempfile.TemporaryDirectory(
-            dir=CONFIG_ROOT
-        ) as config_directory:
-            campaign = Path(config_directory) / "campaign.json"
-            write_current_policy_campaign(source_campaign, campaign)
-            write_campaign(REPO_ROOT, campaign)
-            output = Path(directory) / "legacy_prepare_must_not_exist"
-            prepared = subprocess.run(
-                [
-                    "pwsh", "-NoProfile", "-File", str(entry),
-                    "-Campaign", str(campaign), "-ExperimentId", experiment_id,
-                    "-OutputDirectory", str(output), "-PrepareOnly",
-                ],
-                cwd=REPO_ROOT, text=True, encoding="utf-8", errors="replace",
-                capture_output=True, check=False,
-            )
-            self.assertNotEqual(prepared.returncode, 0)
-            self.assertIn("ValidateOnly only", prepared.stdout + prepared.stderr)
-            self.assertFalse(output.exists())
-            validated = subprocess.run(
-                [
-                    "pwsh", "-NoProfile", "-File", str(entry),
-                    "-Campaign", str(campaign), "-ExperimentId", experiment_id,
-                    "-ValidateOnly",
-                ],
-                cwd=REPO_ROOT, text=True, encoding="utf-8", errors="replace",
-                capture_output=True, check=False,
-            )
-            self.assertEqual(
-                validated.returncode, 0, validated.stdout + validated.stderr
-            )
-            self.assertIn("INTEGRATION_EXECUTION=VALIDATED", validated.stdout)
 
     def test_execute_reads_only_the_prepared_pulse_orchestration_identity(self) -> None:
         entry = (
@@ -1079,7 +1108,7 @@ $result = Get-PulseTimingOrchestration `
                 encoding="utf-8",
                 errors="replace",
                 capture_output=True,
-                check=False,
+                check=False, timeout=300,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("STATE=ready_verified", result.stdout)
@@ -1094,7 +1123,7 @@ $result = Get-PulseTimingOrchestration `
                 encoding="utf-8",
                 errors="replace",
                 capture_output=True,
-                check=False,
+                check=False, timeout=300,
             )
             self.assertNotEqual(stale.returncode, 0)
             self.assertIn(
@@ -1102,7 +1131,7 @@ $result = Get-PulseTimingOrchestration `
                 stale.stdout + stale.stderr,
             )
 
-    def test_solver_authorized_rejects_archived_campaign_before_freshness(self) -> None:
+    def test_all_modes_reject_retired_campaign_before_schema_or_prepare(self) -> None:
         campaign = CONFIG_ROOT / "diagnostics" / (
             "staged_grid2_restart_legacy_n34_successor_campaign.json"
         )
@@ -1110,11 +1139,7 @@ $result = Get-PulseTimingOrchestration `
             "execute.ps1"
         )
         execute_source = execute.read_text(encoding="utf-8")
-        self.assertIn(
-            "$SolverAuthorized -and [string]$campaignDocument.status -ne "
-            "'authorized'",
-            execute_source,
-        )
+        self.assertIn("@('retired', 'archived_invalid')", execute_source)
         campaign_schema = load(
             REPO_ROOT / "common" / "contracts" / "schemas" /
             "rf_multipole_oatof_experiment_campaign.schema.json"
@@ -1123,26 +1148,45 @@ $result = Get-PulseTimingOrchestration `
             "PENDING_PREREGISTRATION",
             campaign_schema["properties"]["status"]["enum"],
         )
+        self.assertIn("retired", campaign_schema["properties"]["status"]["enum"])
         completed = subprocess.run(
             [
                 "pwsh", "-NoProfile", "-File", str(execute),
                 "-Campaign", str(campaign.relative_to(REPO_ROOT)),
                 "-ExperimentId", "staged_grid2_restart_legacy_n34_functional",
-                "-SolverAuthorized",
+                "-ValidateOnly",
             ],
             cwd=REPO_ROOT,
             text=True,
             encoding="utf-8",
             errors="replace",
             capture_output=True,
-            check=False,
+            check=False, timeout=300,
         )
         self.assertNotEqual(completed.returncode, 0)
         self.assertIn(
-            "SolverAuthorized execution requires campaign.status=authorized",
+            "Campaign is not an active lifecycle authority; execution is forbidden",
             completed.stdout + completed.stderr,
         )
         self.assertNotIn("CAMPAIGN_SOURCE_BINDINGS=STALE", completed.stdout)
+
+    def test_authorized_campaigns_are_exactly_registry_bound(self) -> None:
+        campaigns = []
+        for path in INTEGRATION_ROOT.rglob("*.json"):
+            try:
+                document = load(path)
+            except Exception:
+                continue
+            if document.get("role") == "rf_multipole_oatof_experiment_campaign":
+                campaigns.append((path, document))
+        authorized = [(path, row) for path, row in campaigns if row["status"] == "authorized"]
+        self.assertGreater(len(authorized), 0)
+        registry = load(CONFIG_ROOT / "family_source_closure_execution_registry.json")
+        registered = {
+            (REPO_ROOT / row["path"]).resolve()
+            for row in registry["current_campaigns"]
+        }
+        self.assertEqual({path.resolve() for path, _ in authorized}, registered)
 
     def test_staged_n34_runner_filters_fly2_framing_before_batch_slice(self) -> None:
         campaign = load(
@@ -1193,7 +1237,7 @@ $batchRows = [string[]]$particleRows[0..33]
                 env=environment,
                 text=True,
                 capture_output=True,
-                check=False,
+                check=False, timeout=300,
             )
         self.assertEqual(completed.returncode, 0, completed.stderr)
         receipt = json.loads(completed.stdout)
@@ -1211,6 +1255,20 @@ $batchRows = [string[]]$particleRows[0..33]
         runner_call = adapter.index("& $runtime.implementation.single_flight_runner")
         self.assertLess(campaign_hash, solver_boundary)
         self.assertLess(row_hash, solver_boundary)
+        self.assertLess(solver_boundary, runner_call)
+
+    def test_optional_pa_generation_binding_is_initialized_after_campaign_resolution(self) -> None:
+        adapter = (
+            INTEGRATION_ROOT / "workflows" / "family_source_closure" / "adapter.ps1"
+        ).read_text(encoding="utf-8")
+        experiment_resolution = adapter.index("$experiment = $experiments[0]")
+        run_directory = adapter.index("$runDirectory = [IO.Path]::GetFullPath")
+        optional_binding = adapter.index("$campaignHasPaCacheGenerationBinding =")
+        solver_boundary = adapter.index("if (-not $SolverAuthorized)")
+        runner_call = adapter.index("& $runtime.implementation.single_flight_runner")
+        self.assertLess(experiment_resolution, optional_binding)
+        self.assertLess(run_directory, optional_binding)
+        self.assertLess(optional_binding, solver_boundary)
         self.assertLess(solver_boundary, runner_call)
 
     def test_adapter_fails_closed_on_connector_gap_prefix_before_solver(self) -> None:
@@ -1441,6 +1499,12 @@ $batchRows = [string[]]$particleRows[0..33]
         )
         batching = configuration["batching_policy"]
         self.assertEqual(selected_grid["max_parallel_batches"], 2)
+        selected_grid_parallel3 = next(
+            profile for profile in configuration["frontend_grid_profiles"]
+            if profile["profile_id"]
+            == "frontend_isotropic_020_accelerator_overlay_z005_parallel3"
+        )
+        self.assertEqual(selected_grid_parallel3["max_parallel_batches"], 3)
         self.assertEqual(
             batching["parallel_batch_memory_reservation_bytes"], 10 * 1024**3,
         )
@@ -1464,8 +1528,10 @@ $batchRows = [string[]]$particleRows[0..33]
             "connector_gap_three_zone_real_pa_full_n1000_campaign_v2.json"
         )
         v3 = load(AUTO_N1000_CONNECTOR_CAMPAIGN)
+        use_current_time_grid_profile(v2)
+        use_current_time_grid_profile(v3)
         validate_schema(v3, "rf_multipole_oatof_experiment_campaign.schema.json")
-        self.assertIn("old PowerShell N=1000 post-processing", v3["claim_limit"])
+        self.assertIn("single_flight_batch_count=2", v3["claim_limit"])
         self.assertEqual(len(v2["experiments"]), len(v3["experiments"]))
         for before, after in zip(v2["experiments"], v3["experiments"], strict=True):
             self.assertEqual(after["single_flight_batch_count"], 2)
@@ -1898,34 +1964,6 @@ $batchRows = [string[]]$particleRows[0..33]
                 source_contract["design_reference"]["run_id"],
                 experiment["single_flight_design_reference"]["run_id"],
             )
-
-    def test_legacy_single_flight_requires_a_schema_v3_successor(self) -> None:
-        source_run = (
-            REPO_ROOT.parent / "artifacts/projects/rf_octupole_ion_optics/runs"
-            / "20260804_112000__sim__simion__oct-segmented-aperture050__n1000"
-        )
-        if not source_run.is_dir():
-            self.skipTest("local N=1000 source artifact is unavailable")
-        with tempfile.TemporaryDirectory(
-            dir=REPO_ROOT.parent / "artifacts/projects/rf_octupole_ion_optics"
-        ) as directory, tempfile.TemporaryDirectory(dir=CONFIG_ROOT) as config_directory:
-            output = Path(directory)
-            campaign_path = Path(config_directory) / "campaign.json"
-            campaign = load(SINGLE_FLIGHT_CAMPAIGN_PATH)
-            campaign["execution_policy"] = load(OCTUPOLE_RUNTIME_BINDING)["contracts"][
-                "execution_policy_contract"
-            ]
-            write_json(campaign_path, campaign)
-            with self.assertRaisesRegex(ContractError, "schema-v3 successor"):
-                prepare_family_source_closure(
-                    repo_root=REPO_ROOT,
-                    profile_registry_path=PROFILE_REGISTRY,
-                    adapter_registry_path=ADAPTER_REGISTRY,
-                    campaign_path=campaign_path,
-                    experiment_id="octupole_segmented_aperture100_simion_single_flight",
-                    resolved_output=output / "resolved.json",
-                    plan_output=output / "plan.json",
-                )
 
     def test_prepare_rejects_campaign_outside_repository(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

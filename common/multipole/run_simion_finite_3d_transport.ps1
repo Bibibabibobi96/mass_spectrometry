@@ -183,6 +183,9 @@ try{
   if($LASTEXITCODE-ne 0){throw 'SIMION resource-budget preflight failed.'}
   $resolvedBudgetPreflight=Get-Content -LiteralPath $budgetPreflight -Raw -Encoding UTF8|ConvertFrom-Json
   $authorizedNumerics=$resolvedBudgetPreflight.solver_numerics
+  $executionBatching=if($authorizedNumerics.PSObject.Properties.Name-contains'execution_batching'){
+    $authorizedNumerics.execution_batching
+  }else{$null}
   $authorizedCell=$authorizedNumerics.cell_mm_xyz
   if($null-eq$authorizedCell){
     throw 'Authorized SIMION numerics omit canonical cell_mm_xyz.'
@@ -509,10 +512,12 @@ try{
     $referenceComsolSourceRunId=$ReferenceComsolRunId
   }
   $numerics=Join-Path $inputDir 'solver_numerics.json'
-  [ordered]@{schema_version=2;role='multipole_simion_solver_numerics';
+  $solverNumericsDocument=[ordered]@{schema_version=2;role='multipole_simion_solver_numerics';
     cell_mm_xyz=[ordered]@{x=$resolvedCellMmX;y=$resolvedCellMmY;z=$resolvedCellMmZ};
     trajectory_quality=$TrajectoryQuality;
-    trajectory=[ordered]@{rf_steps_per_period=$RfStepsPerPeriod;maximum_global_time_us=$MaximumTimeUs}}|
+    trajectory=[ordered]@{rf_steps_per_period=$RfStepsPerPeriod;maximum_global_time_us=$MaximumTimeUs}}
+  if($null-ne$executionBatching){$solverNumericsDocument.execution_batching=$executionBatching}
+  $solverNumericsDocument|
     ConvertTo-Json -Depth 5|Set-Content -LiteralPath $numerics -Encoding UTF8
   $evidence=$null
   if(-not[string]::IsNullOrWhiteSpace($EvidenceContractPath)){
@@ -525,6 +530,16 @@ try{
   Push-Location $codeRoot
   try{
     $env:PYTHONPATH=$codeRoot
+    $batchPlan=Join-Path $inputDir 'simion_execution_batch_plan.json'
+    $declaredBatchCount=if($null-ne$executionBatching){[int]$executionBatching.batch_count}else{1}
+    & $python -m common.simion.particle_batching --particle-count ([string]$sourceMeta.particle_count) `
+      --batch-count ([string]$declaredBatchCount) --output $batchPlan
+    if($LASTEXITCODE-ne 0){throw 'SIMION shared single-wave batch planning failed.'}
+    $batchPlanDocument=Get-Content -LiteralPath $batchPlan -Raw -Encoding UTF8|ConvertFrom-Json
+    if([string]$batchPlanDocument.dispatch-ne'single_wave_parallel'-or
+        [int]$batchPlanDocument.particle_count-ne[int]$sourceMeta.particle_count){
+      throw 'SIMION shared single-wave batch plan differs from the canonical source.'
+    }
     & $python -m common.multipole.simion_geometry --resolved-design $resolved `
       --cell-mm-x $resolvedCellMmX --cell-mm-y $resolvedCellMmY `
       --cell-mm-z $resolvedCellMmZ --output $gem
@@ -542,6 +557,28 @@ try{
     }
     & $python @sourceProjectionArguments
     if($LASTEXITCODE-ne 0){throw 'SIMION particle projection failed.'}
+    $simionBatches=@([pscustomobject]@{index=1;particle_id_min=1;
+      particle_id_max=[int]$sourceMeta.particle_count;fly2=$fly2;states=$states})
+    if($null-ne$executionBatching){
+      if([string]$executionBatching.dispatch-ne'single_wave_parallel'){
+        throw 'SIMION execution batching dispatch is not supported.'
+      }
+      $simionBatches=@()
+      foreach($plannedBatch in @($batchPlanDocument.batches)){
+        $batchIndex=[int]$plannedBatch.index;$first=[int]$plannedBatch.particle_id_min;$last=[int]$plannedBatch.particle_id_max
+        $batchFly2=Join-Path $solverDir ("quad_monolithic_batch_{0:D2}.fly2" -f $batchIndex)
+        $batchStates=Join-Path $inputDir ("source_states_batch_{0:D2}.lua" -f $batchIndex)
+        $batchArguments=@($sourceProjectionArguments)+@('--particle-id-min',[string]$first,
+          '--particle-id-max',[string]$last,'--simion-particle-id-offset',[string]$plannedBatch.simion_particle_id_offset)
+        $replaceFly=[array]::IndexOf($batchArguments,'--fly2');$replaceStates=[array]::IndexOf($batchArguments,'--source-states-lua')
+        $batchArguments[$replaceFly+1]=$batchFly2;$batchArguments[$replaceStates+1]=$batchStates
+        & $python @batchArguments
+        if($LASTEXITCODE-ne 0){throw "SIMION particle batch projection failed: $batchIndex"}
+        $simionBatches+=[pscustomobject]@{index=$batchIndex;particle_id_min=$first;
+          particle_id_max=$last;simion_particle_id_offset=[int]$plannedBatch.simion_particle_id_offset;
+          fly2=$batchFly2;states=$batchStates}
+      }
+    }
   }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
   $maximumPaGridPoints=if(
     $resolvedBudgetPreflight.limits.PSObject.Properties.Name-contains'maximum_pa_grid_points'
@@ -719,6 +756,7 @@ try{
     multipole_resolved_design=$resolved;particle_source=$particleSource;
     particle_source_metadata=$sourceMetadata;particle_source_family=$sourceFamily;
     solver_numerics=$numerics;simion_grid_audit=$gridAudit;code_inventory=$codeInventory;
+    simion_execution_batch_plan=$batchPlan;
     evidence_contract=$evidence;simion_gem=$gem;simion_fly2=$fly2;
     simion_rf_drive_kernel=$rfDriveKernelLua;
     resolved_runtime_profile=$resolvedRuntimeProfile;
@@ -825,7 +863,6 @@ try{
     $caseState=Join-Path $resultDir "particle_states__$name.csv"
     $caseTrajectory=Join-Path $resultDir "trajectory_samples__$name.csv"
     $caseSummary=Join-Path $resultDir "simion_summary__$name.json"
-    $luaConfig=Join-Path $inputDir "simion_config__$name.lua"
     # The registered Workbench transform maps GEM +z to flight +x.  Axial
     # sampling and the census-marker threshold must therefore use GEM dz.
     $surfaceToleranceMm=[Math]::Max(1e-6*$resolvedCellMmZ,1e-9)
@@ -833,9 +870,16 @@ try{
       $terminalAperture=$design.downstream_terminal.aperture
       "handoff_aperture={shape=`"$([string]$terminalAperture.shape)`",width_mm=$([double]$terminalAperture.width_mm),height_mm=$([double]$terminalAperture.height_mm)},"
     }else{''}
-    @"
-return {iob=[[$(Join-Path $solverDir 'quad_monolithic.iob')]], fly2=[[$fly2]], source_states=dofile([[$states]]),
-trajectory_csv=[[$caseTrajectory]], particle_state_csv=[[$caseState]], summary_json=[[$caseSummary]],
+    $batchRuns=@()
+    foreach($batch in $simionBatches){
+      $suffix=("batch_{0:D2}" -f [int]$batch.index)
+      $batchState=if($simionBatches.Count-eq 1){$caseState}else{Join-Path $resultDir "particle_states__$name`__$suffix.csv"}
+      $batchTrajectory=if($simionBatches.Count-eq 1){$caseTrajectory}else{Join-Path $resultDir "trajectory_samples__$name`__$suffix.csv"}
+      $batchSummary=if($simionBatches.Count-eq 1){$caseSummary}else{Join-Path $resultDir "simion_summary__$name`__$suffix.json"}
+      $luaConfig=if($simionBatches.Count-eq 1){Join-Path $inputDir "simion_config__$name.lua"}else{Join-Path $inputDir "simion_config__$name`__$suffix.lua"}
+      @"
+return {iob=[[$(Join-Path $solverDir 'quad_monolithic.iob')]], fly2=[[$($batch.fly2)]], source_states=dofile([[$($batch.states)]]),
+trajectory_csv=[[$batchTrajectory]], particle_state_csv=[[$batchState]], summary_json=[[$batchSummary]],
 mode="resolved_design_transport", operating_point="$name", parent_resolved_design_sha256="$resolvedHash",
 trajectory_quality=$TrajectoryQuality, rf_steps_per_period=$RfStepsPerPeriod, waveform="$($drive.waveform)",
 rf_peak_v=$($drive.rf_amplitude_V_zero_to_peak_per_group), rf_scale=$rfScale, axial_scale=$axialScale,
@@ -860,16 +904,58 @@ census_radius_mm=$censusRadius, radial_escape_radius_mm=$($enclosure.working_reg
 numerical_census_marker_is_handoff=false, axial_axis="x", origin_x_mm=$zShift, origin_y_mm=$(-$origin),
 origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
 "@|Set-Content -LiteralPath $luaConfig -Encoding ASCII
-    $env:MULTIPOLE_SIMION_RUN_CONFIG_LUA=$luaConfig
-    $env:MULTIPOLE_SIMION_RF_DRIVE_KERNEL_LUA=$rfDriveKernelLua
-    try{
-      Invoke-SimionStep "fly__$name" @('--nogui','--noprompt','fly','--remove-pas=3',
-        '--trajectory-quality',[string]$TrajectoryQuality,'--particles',$fly2,'--programs','1',
-        '--retain-trajectories','0','--adjustable',"transport_rf_steps_per_period=$RfStepsPerPeriod",
-        (Join-Path $solverDir 'quad_monolithic.iob'))
-    }finally{
-      Remove-Item Env:MULTIPOLE_SIMION_RUN_CONFIG_LUA -ErrorAction SilentlyContinue
-      Remove-Item Env:MULTIPOLE_SIMION_RF_DRIVE_KERNEL_LUA -ErrorAction SilentlyContinue
+      $batchRuns+=[pscustomobject]@{batch=$batch;state=$batchState;trajectory=$batchTrajectory;
+        summary=$batchSummary;lua_config=$luaConfig;fly2=[string]$batch.fly2}
+    }
+    $flyArguments=@('--nogui','--noprompt','fly','--remove-pas=3','--trajectory-quality',
+      [string]$TrajectoryQuality,'--programs','1','--retain-trajectories','0','--adjustable',
+      "transport_rf_steps_per_period=$RfStepsPerPeriod",(Join-Path $solverDir 'quad_monolithic.iob'))
+    if($batchRuns.Count-eq 1){
+      $env:MULTIPOLE_SIMION_RUN_CONFIG_LUA=$batchRuns[0].lua_config
+      $env:MULTIPOLE_SIMION_RF_DRIVE_KERNEL_LUA=$rfDriveKernelLua
+      try{Invoke-SimionStep "fly__$name" ($flyArguments[0..5]+@('--particles',$batchRuns[0].fly2)+$flyArguments[6..($flyArguments.Count-1)])}
+      finally{Remove-Item Env:MULTIPOLE_SIMION_RUN_CONFIG_LUA -ErrorAction SilentlyContinue;Remove-Item Env:MULTIPOLE_SIMION_RF_DRIVE_KERNEL_LUA -ErrorAction SilentlyContinue}
+    }else{
+      $specifications=@($batchRuns|ForEach-Object{
+        [pscustomobject]@{name="fly__$name`__batch_$($_.batch.index)";file_path=$simion;
+          argument_list=($flyArguments[0..5]+@('--particles',$_.fly2)+$flyArguments[6..($flyArguments.Count-1)]);
+          working_directory=$solverDir;stdout=(Join-Path $logDir "simion_stdout__fly__$name`__batch_$($_.batch.index).txt");
+          stderr=(Join-Path $logDir "simion_stderr__fly__$name`__batch_$($_.batch.index).txt");
+          environment=@{MULTIPOLE_SIMION_RUN_CONFIG_LUA=$_.lua_config;MULTIPOLE_SIMION_RF_DRIVE_KERNEL_LUA=$rfDriveKernelLua}}
+      })
+      $wave=Invoke-ResourceBudgetedProcesses -ResolvedBudgetPath $resolvedResourceBudget -RunDir $runDir `
+        -UsagePath $resourceUsage -ProcessSpecifications $specifications
+      if($wave.resource_budget_exceeded){$script:resourceBudgetExceeded=$true;throw "SIMION $name batch wave resource budget exceeded."}
+      $failed=@($wave.processes|Where-Object{$_.exit_code-ne 0})
+      if($failed.Count-ne 0){throw "SIMION $name batch wave failed: $($failed.name -join ',')"}
+    }
+    if($batchRuns.Count-gt 1){
+      Push-Location $codeRoot
+      try{
+        $env:PYTHONPATH=$codeRoot
+        foreach($merge in @(@{output=$caseState;property='state'},@{output=$caseTrajectory;property='trajectory'})){
+          $mergeArguments=@('-m','common.simion.particle_batching','--merge-rebase-csv','--output',$merge.output)
+          foreach($batchRun in $batchRuns){
+            $mergeArguments+=@('--batch-csv',[string]$batchRun.($merge.property),[string]$batchRun.batch.simion_particle_id_offset)
+          }
+          # Keep merger diagnostics from becoming extra function return
+          # values; only the parsed aggregate summary is returned below.
+          & $python @mergeArguments | Out-Null
+          if($LASTEXITCODE-ne 0){throw "SIMION $name shared particle CSV merge failed."}
+        }
+      }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
+      Push-Location $codeRoot
+      try{
+        $env:PYTHONPATH=$codeRoot
+        $summaryMergeArguments=@('-m','common.simion.particle_batching','--merge-summaries',
+          '--batch-plan',$batchPlan,'--output',$caseSummary)
+        foreach($batchRun in $batchRuns){$summaryMergeArguments+=@('--batch-summary',[string]$batchRun.summary)}
+        # The shared Python merger may emit diagnostics on stdout.  Keep that
+        # process output out of this function's return value: callers expect
+        # precisely the parsed aggregate summary object below.
+        & $python @summaryMergeArguments | Out-Null
+        if($LASTEXITCODE-ne 0){throw "SIMION $name shared summary merge failed."}
+      }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
     }
     $stateReport=Join-Path $resultDir "particle_state_contract__$name.json"
     Push-Location $codeRoot

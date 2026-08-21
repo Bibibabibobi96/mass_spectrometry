@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import argparse
 import csv
-import hashlib
-import json
 import math
 import os
 import statistics
@@ -14,10 +12,13 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from common.contracts.artifact_naming import validate_run_id
-from common.contracts.file_identity import file_sha256
+from common.contracts.file_identity import (
+    canonical_json_sha256 as _canonical_sha256,
+    file_sha256,
+)
 from common.contracts.machine_contracts import ContractError
 from common.multipole.exit_state_plot import _git_identity
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.peak_metrics import (
+from common.analysis.peak_metrics import (
     FWHM_FACTOR,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.run_publication import (
@@ -115,13 +116,6 @@ class CaseInputs:
     oatof_baseline: Path
     resolved_connection: Path
     rf_resolved_design: Path
-
-
-def _canonical_sha256(value: Any) -> str:
-    payload = json.dumps(
-        value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-    ).encode("utf-8")
-    return hashlib.sha256(payload).hexdigest().upper()
 
 
 def _record_path(label: str, record: Any) -> Path:

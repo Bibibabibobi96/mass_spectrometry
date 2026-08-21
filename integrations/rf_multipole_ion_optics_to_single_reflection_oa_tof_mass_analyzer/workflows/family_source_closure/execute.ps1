@@ -6,7 +6,8 @@ param(
   [string]$PythonExe = '',
   [switch]$ValidateOnly,
   [switch]$PrepareOnly,
-  [switch]$SolverAuthorized
+  [switch]$SolverAuthorized,
+  [switch]$FinalizeOnly
 )
 
 Set-StrictMode -Version Latest
@@ -14,15 +15,17 @@ $ErrorActionPreference = 'Stop'
 $selectedModeCount = (
   [int][bool]$ValidateOnly +
   [int][bool]$PrepareOnly +
-  [int][bool]$SolverAuthorized
+  [int][bool]$SolverAuthorized +
+  [int][bool]$FinalizeOnly
 )
 if ($selectedModeCount -ne 1) {
-  throw 'Select exactly one of ValidateOnly, PrepareOnly or SolverAuthorized.'
+  throw 'Select exactly one of ValidateOnly, PrepareOnly, SolverAuthorized or FinalizeOnly.'
 }
 if ($PrepareOnly -and [string]::IsNullOrWhiteSpace($OutputDirectory)) {
   throw 'PrepareOnly requires an explicit OutputDirectory for review.'
 }
 if (-not $PrepareOnly -and
+    -not $FinalizeOnly -and
     -not [string]::IsNullOrWhiteSpace($OutputDirectory)) {
   throw 'OutputDirectory is accepted only for PrepareOnly.'
 }
@@ -50,41 +53,68 @@ if (-not $campaignPath.StartsWith(
     -not (Test-Path -LiteralPath $campaignPath -PathType Leaf)) {
   throw 'Campaign must be one repository-managed file.'
 }
-$legacyDispositionPath = Join-Path $integrationRoot `
-  'config\family_source_closure_legacy_attribution_migration.json'
-$legacyDisposition = Get-Content -LiteralPath $legacyDispositionPath -Raw -Encoding UTF8 |
-  ConvertFrom-Json
 $expectedActiveWorkflow = 'workflows/family_source_closure/execute.ps1'
-if ([string]$legacyDisposition.active_workflow -ne $expectedActiveWorkflow) {
-  throw 'Legacy attribution disposition does not name this active workflow.'
-}
 $campaignRepoRelative = [IO.Path]::GetRelativePath($repoRoot, $campaignPath).Replace('\', '/')
-$registeredCampaigns = @(
-  @($legacyDisposition.historical_campaigns) +
-  @($legacyDisposition.current_evidence_campaigns)
-)
-$registeredCampaigns = @($registeredCampaigns | Where-Object {
-  [string]$_.path -eq $campaignRepoRelative
-})
-if ($registeredCampaigns.Count -gt 1) {
-  throw 'Terminal campaign disposition must resolve at most once.'
-}
-if ($registeredCampaigns.Count -eq 1) {
-  $registeredCampaign = $registeredCampaigns[0]
-  $registeredCampaignSha256 = (
-    Get-FileHash -LiteralPath $campaignPath -Algorithm SHA256
-  ).Hash.ToLowerInvariant()
-  if (-not ([string]$registeredCampaign.disposition).StartsWith('non_executable_') -or
-      $registeredCampaignSha256 -ne
-      ([string]$registeredCampaign.content_sha256).ToLowerInvariant()) {
-    throw 'Terminal campaign disposition identity differs; execution remains forbidden.'
-  }
-  throw 'Campaign is registered non-executable evidence in ValidateOnly, PrepareOnly and SolverAuthorized modes.'
-}
 $campaignDocument = Get-Content -LiteralPath $campaignPath -Raw -Encoding UTF8 |
   ConvertFrom-Json
-if ($SolverAuthorized -and [string]$campaignDocument.status -ne 'authorized') {
-  throw 'SolverAuthorized execution requires campaign.status=authorized.'
+$lifecycleRegistryPath = Join-Path $integrationRoot `
+  'config\diagnostics\lifecycle_registry.json'
+$lifecycleRegistry = Get-Content -LiteralPath $lifecycleRegistryPath -Raw -Encoding UTF8 |
+  ConvertFrom-Json
+if ($lifecycleRegistry.role -ne 'rf_oatof_diagnostics_lifecycle_registry' -or
+    $lifecycleRegistry.integration_id -ne
+      'rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer' -or
+    $lifecycleRegistry.discovery_policy -ne 'default_deny') {
+  throw 'Diagnostics lifecycle registry identity or policy is invalid.'
+}
+$campaignRole = [string]$lifecycleRegistry.campaign_selector.role
+if ([string]$campaignDocument.role -ne $campaignRole) {
+  throw 'Only registered experiment campaigns may enter the family workflow.'
+}
+$registeredCampaigns = @($lifecycleRegistry.active_campaigns | Where-Object {
+  [string]$_.path -eq $campaignRepoRelative
+})
+if ($registeredCampaigns.Count -ne 1) {
+  throw 'Campaign is not an active lifecycle authority; execution is forbidden.'
+}
+$campaignSha256 = (Get-FileHash -LiteralPath $campaignPath -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($campaignSha256 -ne ([string]$registeredCampaigns[0].content_sha256).ToLowerInvariant()) {
+  throw 'Active lifecycle campaign identity differs; execution is forbidden.'
+}
+if ([string]$campaignDocument.status -in @('retired', 'archived_invalid')) {
+  throw 'Retired or invalid campaigns are not executable in any mode.'
+}
+if (($SolverAuthorized -or $FinalizeOnly) -and [string]$campaignDocument.status -ne 'authorized') {
+  throw 'SolverAuthorized or FinalizeOnly execution requires campaign.status=authorized.'
+}
+$executionRegistryPath = Join-Path $integrationRoot `
+  'config\family_source_closure_execution_registry.json'
+$executionRegistry = Get-Content -LiteralPath $executionRegistryPath -Raw -Encoding UTF8 |
+  ConvertFrom-Json
+if ($executionRegistry.role -ne
+      'rf_oatof_family_source_closure_execution_registry' -or
+    $executionRegistry.integration_id -ne
+      'rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer' -or
+    $executionRegistry.active_workflow -ne $expectedActiveWorkflow) {
+  throw 'Family execution registry identity is invalid.'
+}
+$currentCampaigns = @($executionRegistry.current_campaigns | Where-Object {
+  [string]$_.path -eq $campaignRepoRelative
+})
+if ($currentCampaigns.Count -gt 1) {
+  throw 'Family execution registry resolves the campaign more than once.'
+}
+if ($SolverAuthorized -or $FinalizeOnly) {
+  if ($currentCampaigns.Count -ne 1) {
+    throw 'Campaign is not a current registered execution authority; execution is forbidden.'
+  }
+  $currentCampaignSha256 = (
+    Get-FileHash -LiteralPath $campaignPath -Algorithm SHA256
+  ).Hash.ToLowerInvariant()
+  if ($currentCampaignSha256 -ne
+      ([string]$currentCampaigns[0].content_sha256).ToLowerInvariant()) {
+    throw 'Current execution authority campaign identity differs; execution is forbidden.'
+  }
 }
 $experimentRows = @($campaignDocument.experiments | Where-Object {
   $_.experiment_id -eq $ExperimentId
@@ -93,6 +123,28 @@ if ($experimentRows.Count -ne 1) {
   throw 'Campaign experiment must resolve exactly once.'
 }
 $selectedExperiment = $experimentRows[0]
+$activePostPulseWorkingPointPolicy =
+  [string]$executionRegistry.active_post_pulse_restart_working_point_policy
+if ($activePostPulseWorkingPointPolicy -ne
+    'source_zvz_three_zone_theory_working_point_required_v1') {
+  throw 'Family execution registry post-pulse working-point policy is invalid.'
+}
+$isManifestBoundPostPulseRestart =
+  [string]$selectedExperiment.source_release_mode -eq 'pre_pulse_restart' -and
+  ($selectedExperiment.PSObject.Properties.Name -contains
+    'post_pulse_restart_reuse_authority')
+if ($SolverAuthorized -and $isManifestBoundPostPulseRestart) {
+  $theoryWorkingPoint = $selectedExperiment.single_flight_source_zvz_theory_working_point
+  if ([string]$selectedExperiment.single_flight_source_zvz_affine_policy -ne
+        'source_zvz_affine_identify_and_bind_v1' -or
+      $null -eq $theoryWorkingPoint -or
+      [string]$theoryWorkingPoint.policy_id -ne
+        'source_zvz_three_zone_theory_working_point_v1' -or
+      [string]$selectedExperiment.post_pulse_restart_reuse_authority.post_pulse_variation_axis -ne
+        'accelerator_field_profile_id_and_source_zvz_theory_working_point') {
+    throw 'Active manifest-bound post-pulse restart requires the source z--vz theory working point.'
+  }
+}
 $isStagedGrid2 =
   [string]$selectedExperiment.source_release_mode -eq 'staged_grid2_restart'
 if ($SolverAuthorized -and $isStagedGrid2 -and (
@@ -102,14 +154,20 @@ if ($SolverAuthorized -and $isStagedGrid2 -and (
       -contains 'loader_authorization_budget'))) {
   throw 'SolverAuthorized staged grid2 execution requires campaign v5 with an explicit loader authorization budget.'
 }
-& $PythonExe -m (
-  'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.' +
-  'workflows.family_source_closure.refresh_campaign_source_bindings'
-) --repo-root $repoRoot --campaign $campaignPath --check
-if ($LASTEXITCODE -ne 0) {
-  throw 'Campaign source bindings must be refreshed before execution.'
+if (-not $FinalizeOnly) {
+  & $PythonExe -m (
+    'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.' +
+    'workflows.family_source_closure.refresh_campaign_source_bindings'
+  ) --repo-root $repoRoot --campaign $campaignPath --check
+  if ($LASTEXITCODE -ne 0) {
+    throw 'Campaign source bindings must be refreshed before execution.'
+  }
 }
 $campaignRunId = [string]$experimentRows[0].run_id
+& $PythonExe -m common.contracts.artifact_naming run $campaignRunId
+if ($LASTEXITCODE -ne 0) {
+  throw 'Campaign row run_id fails the repository artifact naming contract.'
+}
 $legacySingleFlightCachePolicy =
   [string]$selectedExperiment.execution_strategy -eq 'simion_single_flight' -and
   -not ($selectedExperiment.PSObject.Properties.Name -contains
@@ -133,11 +191,20 @@ if ($ValidateOnly) {
   )
 } elseif ($PrepareOnly) {
   $outputRoot = [IO.Path]::GetFullPath($OutputDirectory)
-} else {
-  & $PythonExe -m common.contracts.artifact_naming run $campaignRunId
-  if ($LASTEXITCODE -ne 0) {
-    throw 'Campaign row run_id fails the repository artifact naming contract.'
+} elseif ($FinalizeOnly) {
+  $runsRoot = Join-Path $workspaceRoot (
+    'artifacts\projects\' +
+    'rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer\runs'
+  )
+  $sourceParentRoot = [IO.Path]::GetFullPath((Join-Path $runsRoot $campaignRunId))
+  if (-not (Test-Path -LiteralPath (Join-Path $sourceParentRoot 'run_manifest.json') -PathType Leaf)) {
+    throw 'FinalizeOnly requires the exact failed campaign parent run.'
   }
+  $outputRoot = [IO.Path]::GetFullPath((Join-Path $runsRoot ($campaignRunId + '__r01')))
+  if (Test-Path -LiteralPath $outputRoot) {
+    throw 'FinalizeOnly recovery target already exists; never overwrite a recovery run.'
+  }
+} else {
   $runsRoot = Join-Path $workspaceRoot (
     'artifacts\projects\' +
     'rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer\runs'
@@ -145,7 +212,7 @@ if ($ValidateOnly) {
   $outputRoot = [IO.Path]::GetFullPath((Join-Path $runsRoot $campaignRunId))
 }
 $outputRoot = [IO.Path]::GetFullPath($outputRoot)
-$removeUnpublishedTargetOnExit = [bool]$SolverAuthorized
+$removeUnpublishedTargetOnExit = [bool]($SolverAuthorized -or $FinalizeOnly)
 if ($SolverAuthorized -and (Test-Path -LiteralPath $outputRoot)) {
   throw 'SolverAuthorized target run directory already exists.'
 }
@@ -339,12 +406,12 @@ function Invoke-FamilyExecutionBoundary {
     [Parameter(Mandatory)][string]$ExecutionRoot,
     [Parameter(Mandatory)][string]$ResolvedPath,
     [Parameter(Mandatory)][string]$PlanPath,
-    [Parameter(Mandatory)][ValidateSet('ValidateOnly', 'PrepareOnly', 'SolverAuthorized')]
+    [Parameter(Mandatory)][ValidateSet('ValidateOnly', 'PrepareOnly', 'SolverAuthorized', 'FinalizeOnly')]
       [string]$Mode
   )
 
-  if ($Mode -eq 'SolverAuthorized' -and [string]::IsNullOrWhiteSpace($RunId)) {
-    throw 'SolverAuthorized execution requires a nonempty run ID.'
+  if ($Mode -in @('SolverAuthorized','FinalizeOnly') -and [string]::IsNullOrWhiteSpace($RunId)) {
+    throw 'Physical or finalize execution requires a nonempty run ID.'
   }
 
   $arguments = @{
@@ -357,9 +424,10 @@ function Invoke-FamilyExecutionBoundary {
     $arguments.ValidateOnly = $true
   } else {
     $arguments.AdapterEntrypoint = Join-Path $workflowRoot 'adapter.ps1'
-    $arguments.RunId = $(if ($Mode -eq 'SolverAuthorized') { $RunId } else { '' })
+    $arguments.RunId = $(if ($Mode -in @('SolverAuthorized','FinalizeOnly')) { $RunId } else { '' })
     if ($Mode -eq 'PrepareOnly') { $arguments.PrepareOnly = $true }
     if ($Mode -eq 'SolverAuthorized') { $arguments.SolverAuthorized = $true }
+    if ($Mode -eq 'FinalizeOnly') { $arguments.FinalizeOnly = $true }
   }
   try {
     & $commonExecute @arguments
@@ -404,8 +472,14 @@ try {
     'workflows.family_source_closure.prepare'
   )
 
-  Invoke-FamilyPreparation -ResolvedPath $resolvedPath -PlanPath $planPath `
-    -MaterializePulseTimingStage:$SolverAuthorized
+  if ($FinalizeOnly) {
+    $sourceParentRoot = [IO.Path]::GetFullPath((Join-Path $runsRoot $campaignRunId))
+    $resolvedPath = Join-Path $sourceParentRoot 'resolved_connection.json'
+    $planPath = Join-Path $sourceParentRoot 'composition_plan.json'
+  } else {
+    Invoke-FamilyPreparation -ResolvedPath $resolvedPath -PlanPath $planPath `
+      -MaterializePulseTimingStage:$SolverAuthorized
+  }
 
   $commonExecute = Join-Path $repoRoot 'common\integration\execute_connection.ps1'
   if ($ValidateOnly) {
@@ -414,6 +488,11 @@ try {
   } elseif ($PrepareOnly) {
     Invoke-FamilyExecutionBoundary -RunId '' -ExecutionRoot $outputRoot `
       -ResolvedPath $resolvedPath -PlanPath $planPath -Mode PrepareOnly
+  } elseif ($FinalizeOnly) {
+    Invoke-FamilyExecutionBoundary -RunId ($campaignRunId + '__r01') `
+      -ExecutionRoot $outputRoot -ResolvedPath $resolvedPath `
+      -PlanPath $planPath -Mode FinalizeOnly
+    $removeUnpublishedTargetOnExit = $false
   } else {
     $orchestration = Get-PulseTimingOrchestration `
       -PlanPath $planPath -PreparedRoot $outputRoot

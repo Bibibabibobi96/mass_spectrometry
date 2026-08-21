@@ -16,7 +16,6 @@
       "provider_repo_path": "projects/single_reflection_oa_tof_mass_analyzer",
       "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/config/baseline.json",
       "frozen_filename": "runtime_snapshot/projects/single_reflection_oa_tof_mass_analyzer/config/baseline.json",
-      "compatibility_frozen_filename": "oatof_baseline.json",
       "run_input_name": "oatof_baseline",
       "consumers": [
         "pre_pulse_interface_transport",
@@ -31,7 +30,6 @@
       "provider_repo_path": "projects/single_reflection_oa_tof_mass_analyzer",
       "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_accelerator_geometry.m",
       "frozen_filename": "runtime_snapshot/projects/single_reflection_oa_tof_mass_analyzer/comsol/oatof_build_accelerator_geometry.m",
-      "compatibility_frozen_filename": "oatof_build_accelerator_geometry.m",
       "run_input_name": "oatof_accelerator_builder",
       "consumers": [
         "pre_pulse_interface_transport",
@@ -203,7 +201,6 @@
       "provider_repo_path": "projects/single_reflection_oa_tof_mass_analyzer",
       "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/simion/accelerator/build_accelerator_variant.lua",
       "frozen_filename": "runtime_snapshot/projects/single_reflection_oa_tof_mass_analyzer/simion/accelerator/build_accelerator_variant.lua",
-      "compatibility_frozen_filename": "simion_accelerator_builder.lua",
       "run_input_name": "oatof_accelerator_simion_builder",
       "consumers": [
         "analyzer_transport"
@@ -216,7 +213,6 @@
       "provider_repo_path": "projects/single_reflection_oa_tof_mass_analyzer",
       "source_repo_path": "projects/single_reflection_oa_tof_mass_analyzer/simion/accelerator/oatof_accelerator_3d.gem",
       "frozen_filename": "runtime_snapshot/projects/single_reflection_oa_tof_mass_analyzer/simion/accelerator/oatof_accelerator_3d.gem",
-      "compatibility_frozen_filename": "simion_accelerator.gem",
       "run_input_name": "oatof_accelerator_simion_gem",
       "consumers": [
         "analyzer_transport"

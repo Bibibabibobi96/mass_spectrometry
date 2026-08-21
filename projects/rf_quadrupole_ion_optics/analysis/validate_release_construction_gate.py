@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import argparse
 import csv
-import hashlib
 import json
 import math
 import os
 from pathlib import Path
 from typing import Any
+
+from common.contracts.file_identity import file_sha256
 
 
 PARTICLE_COUNT = 100
@@ -27,14 +28,6 @@ PHASES = (
     "after_set_rt",
     "after_import",
 )
-
-
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(65536), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _load_ion11(path: Path) -> tuple[list[list[float]], list[str]]:
@@ -148,7 +141,7 @@ def _load_release_files(
                     f"Release file {path.name} column {column} differs from "
                     "the frozen ION11/scientific-spec state."
                 )
-        hashes.append(_sha256(path))
+        hashes.append(file_sha256(path).lower())
     return files, hashes
 
 
@@ -286,7 +279,7 @@ def validate_release_construction_gate(
 ) -> dict[str, Any]:
     """Validate the independent files, attributes, and event stream for Gate A."""
     rows, expressions = _load_ion11(particle_table)
-    particle_sha256 = _sha256(particle_table)
+    particle_sha256 = file_sha256(particle_table).lower()
     axial_offset_mm = _load_run_config(
         run_config_path, particle_table, particle_sha256
     )

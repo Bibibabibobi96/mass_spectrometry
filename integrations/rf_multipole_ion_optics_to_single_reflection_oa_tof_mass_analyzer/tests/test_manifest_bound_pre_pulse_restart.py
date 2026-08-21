@@ -8,6 +8,7 @@ import tempfile
 import unittest
 
 from common.contracts.machine_contracts import ContractError, validate_schema
+from common.contracts.particle_physics import kinetic_energy_ev
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.analyze_single_flight import (
     COLUMNS as CHECKPOINT_COLUMNS,
 )
@@ -110,7 +111,10 @@ class ManifestBoundPrePulseRestartTest(unittest.TestCase):
                         "vx_mm_per_us": "4",
                         "vy_mm_per_us": "0",
                         "vz_mm_per_us": str(particle_id / 100),
-                        "kinetic_energy_eV": "8.3",
+                        "kinetic_energy_eV": format(
+                            kinetic_energy_ev(100, 4000, 0, particle_id * 10),
+                            ".17g",
+                        ),
                         "pulse_eligibility": eligibility,
                         "pulse_effective_elapsed_us": "0",
                         "survival_status": "alive",
@@ -237,6 +241,107 @@ class ManifestBoundPrePulseRestartTest(unittest.TestCase):
 
         self.assertEqual(receipt["status"], "PASS")
         self.assertEqual(receipt["selection"]["producer_particle_count"], 2)
+
+    def test_records_cross_dt_post_pulse_boundary(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest, _ = self._fixture(root)
+            receipt = materialize(
+                child_manifest_path=manifest,
+                workspace_root=root,
+                state_output_path=root / "artifacts/restart/state.csv",
+                receipt_output_path=root / "artifacts/restart/receipt.json",
+                producer_time_integration_profile_id="dt160",
+                consumer_time_integration_profile_id="dt40",
+            )
+            validate_schema(
+                receipt,
+                "rf_oatof_manifest_bound_pre_pulse_restart_materialization_receipt.schema.json",
+            )
+
+        self.assertEqual(
+            receipt["time_integration"],
+            {
+                "producer_time_integration_profile_id": "dt160",
+                "consumer_time_integration_profile_id": "dt40",
+                "producer_stage_reintegration": False,
+            },
+        )
+
+    def test_rejects_checkpoint_energy_tamper(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest, checkpoints = self._fixture(root)
+            lines = checkpoints.read_text(encoding="utf-8").splitlines()
+            header = lines[0].split(",")
+            energy_index = header.index("kinetic_energy_eV")
+            event_index = header.index("event")
+            eligibility_index = header.index("pulse_eligibility")
+            for index, line in enumerate(lines[1:], start=1):
+                fields = line.split(",")
+                if (
+                    fields[event_index] == "pre_pulse_state"
+                    and fields[eligibility_index] == "eligible"
+                ):
+                    fields[energy_index] = "999"
+                    lines[index] = ",".join(fields)
+                    break
+            checkpoints.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            manifest_document = json.loads(manifest.read_text(encoding="utf-8"))
+            for output in manifest_document["outputs"]:
+                if Path(output["path"]).name == checkpoints.name:
+                    output.update(_record(checkpoints))
+            manifest.write_text(json.dumps(manifest_document) + "\n", encoding="utf-8")
+            with self.assertRaisesRegex(ContractError, "checkpoint energy differs"):
+                materialize(
+                    child_manifest_path=manifest,
+                    workspace_root=root,
+                    state_output_path=root / "artifacts/restart/state.csv",
+                    receipt_output_path=root / "artifacts/restart/receipt.json",
+                )
+
+    def test_removes_only_zvz_affine_residual_and_recomputes_energy(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest, _ = self._fixture(root)
+            state = root / "artifacts/restart/state.csv"
+            receipt = materialize(
+                child_manifest_path=manifest,
+                workspace_root=root,
+                state_output_path=state,
+                receipt_output_path=root / "artifacts/restart/receipt.json",
+                diagnostic_state_transform="zvz_affine_residual_removed",
+            )
+            validate_schema(
+                receipt,
+                "rf_oatof_manifest_bound_pre_pulse_restart_materialization_receipt.schema.json",
+            )
+            with state.open(encoding="utf-8", newline="") as handle:
+                rows = list(csv.DictReader(handle))
+
+        self.assertEqual(receipt["schema_version"], 2)
+        self.assertEqual(
+            receipt["diagnostic"]["state_transform"],
+            "zvz_affine_residual_removed",
+        )
+        self.assertEqual([row["particle_id"] for row in rows], ["1", "2"])
+        self.assertEqual([row["velocity_x_m_s"] for row in rows], ["4000", "4000"])
+        self.assertEqual([row["velocity_y_m_s"] for row in rows], ["0", "0"])
+        self.assertAlmostEqual(float(rows[0]["velocity_z_m_s"]), 10.0)
+        self.assertAlmostEqual(float(rows[1]["velocity_z_m_s"]), 30.0)
+
+    def test_rejects_unknown_diagnostic_state_transform(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest, _ = self._fixture(root)
+            with self.assertRaisesRegex(ContractError, "transform is unsupported"):
+                materialize(
+                    child_manifest_path=manifest,
+                    workspace_root=root,
+                    state_output_path=root / "artifacts/restart/state.csv",
+                    receipt_output_path=root / "artifacts/restart/receipt.json",
+                    diagnostic_state_transform="arbitrary_expression",
+                )
 
     def test_rejects_manifest_bound_checkpoint_tamper(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

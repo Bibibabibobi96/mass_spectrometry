@@ -8,12 +8,9 @@ import hashlib
 import json
 from pathlib import Path
 import re
-import sys
 from typing import Any, Iterator
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from common.contracts.file_identity import repository_text_sha256
 
@@ -29,6 +26,7 @@ ACTIVE_CONNECTION_PROFILE_IDS = {
     "rf_octupole_oatof_shield_terminal_direct_mating_gap_12p8mm",
     "rf_octupole_oatof_shield_terminal_direct_mating_gap_25p6mm",
     "rf_octupole_to_single_reflection_oatof_direct_mating_gap_51p2mm",
+    "rf_octupole_to_single_reflection_oatof_direct_mating_gap_102p4mm",
     "rf_octupole_oatof_shield_terminal_aperture_050x050_direct_mating_gap_0mm",
     "rf_octupole_oatof_shield_terminal_aperture_050x020_direct_mating_gap_0mm",
 }
@@ -45,6 +43,7 @@ ACTIVE_PUBLICATION_PATHS = (
     "config/family_octupole_direct_mating_gap_12p8mm_runtime_binding.json",
     "config/family_octupole_direct_mating_gap_25p6mm_runtime_binding.json",
     "config/family_octupole_direct_mating_gap_51p2mm_runtime_binding.json",
+    "config/family_octupole_direct_mating_gap_102p4mm_runtime_binding.json",
     "config/family_octupole_aperture_050x050_direct_mating_gap_0mm_runtime_binding.json",
     "config/family_octupole_aperture_050x020_direct_mating_gap_0mm_runtime_binding.json",
     "config/diagnostics/zero_match_long_all_ideal_theory_order_stage_v2_successor_campaign.json",

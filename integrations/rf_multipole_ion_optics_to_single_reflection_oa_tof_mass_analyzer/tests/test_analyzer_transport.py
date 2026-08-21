@@ -511,7 +511,8 @@ class AnalyzerTransportTests(unittest.TestCase):
         ):
             self.assertIn(f"'{dependency_id}'", runner)
         self.assertIn("$dependencySnapshotPaths = @{}", runner)
-        self.assertIn("$dependencyCompatibilityPaths = @{}", runner)
+        self.assertNotIn("compatibility_frozen_filename", runner)
+        self.assertNotIn("compatibility_path", runner)
         self.assertIn("$manifestToolRoot = $snapshotRoot", runner)
         self.assertIn("$snapshotReady = $false", runner)
         self.assertIn("if ($snapshotReady)", runner)
@@ -554,12 +555,12 @@ class AnalyzerTransportTests(unittest.TestCase):
             runner,
         )
         self.assertNotIn("& $package.python $frozen", runner)
-        self.assertEqual(runner.count("New-RfRunPackage"), 1)
+        self.assertEqual(runner.count("New-RunPackage"), 1)
         self.assertIn("-RetentionContractEnabled -RetentionClass compact", runner)
-        self.assertNotIn(
-            "Complete-RfFailedRun -Python", runner
-        )
-        self.assertNotIn("-FrozenRepoRoot $repoRoot", runner)
+        self.assertIn("Complete-FailedRun -Python", runner)
+        self.assertIn("-RepoRoot $manifestToolRoot", runner)
+        failed_run = runner[runner.index("Complete-FailedRun -Python") :]
+        self.assertNotIn("-RepoRoot $repoRoot", failed_run)
 
     def test_resolved_inventory_freezes_single_runtime_contract(self) -> None:
         runner = (
@@ -612,8 +613,10 @@ class AnalyzerTransportTests(unittest.TestCase):
         self.assertLess(ready, catch)
         self.assertLess(catch, guard)
         self.assertLess(guard, no_manifest)
-        self.assertNotIn("-FrozenRepoRoot $repoRoot", runner)
-        self.assertNotIn("Complete-RfFailedRun -Python", runner)
+        self.assertIn("Complete-FailedRun -Python", runner)
+        self.assertIn("-RepoRoot $manifestToolRoot", runner)
+        failed_run = runner[runner.index("Complete-FailedRun -Python") :]
+        self.assertNotIn("-RepoRoot $repoRoot", failed_run)
 
     def test_canonical_adapter_preserves_state_and_clock(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
 import tempfile
 import unittest
@@ -28,6 +29,60 @@ def load(path: Path) -> dict[str, object]:
 
 
 class CampaignRuntimeAuthoritiesTests(unittest.TestCase):
+    def test_diagnostics_lifecycle_registry_has_current_authorities(self) -> None:
+        registry_path = CONFIG_ROOT / "diagnostics" / "lifecycle_registry.json"
+        registry = load(registry_path)
+        validate_schema(
+            registry,
+            "rf_oatof_diagnostics_lifecycle_registry.schema.json",
+        )
+        self.assertEqual(registry["discovery_policy"], "default_deny")
+        active = registry["active_campaigns"]
+        self.assertGreaterEqual(len(active), 1)
+        active_paths = {row["path"] for row in active}
+        discovered = set()
+        diagnostics_root = INTEGRATION_ROOT / "config" / "diagnostics"
+        for path in diagnostics_root.glob("*.json"):
+            document = load(path)
+            if document.get("role") != registry["campaign_selector"]["role"]:
+                continue
+            relative = path.relative_to(REPO_ROOT).as_posix()
+            if document.get("status") in registry["excluded_statuses"]:
+                self.assertNotIn(relative, active_paths)
+            else:
+                discovered.add(relative)
+        # The registry is default-deny: an immutable historical campaign may
+        # retain `authorized` in order not to mutate a run-manifest input, yet
+        # it is no longer executable once absent from this registry.
+        self.assertTrue(active_paths.issubset(discovered))
+        for row in active:
+            active_path = REPO_ROOT / row["path"]
+            self.assertEqual(load(active_path)["status"], "authorized")
+            self.assertEqual(
+                row["content_sha256"],
+                hashlib.sha256(active_path.read_bytes()).hexdigest(),
+            )
+
+    def test_family_execute_enforces_diagnostics_lifecycle_authority(self) -> None:
+        execute = (
+            INTEGRATION_ROOT / "workflows" / "family_source_closure" / "execute.ps1"
+        ).read_text(encoding="utf-8-sig")
+        for required in (
+            "lifecycle_registry.json",
+            "discovery_policy -ne 'default_deny'",
+            "Only registered experiment campaigns may enter the family workflow.",
+            "Campaign is not an active lifecycle authority; execution is forbidden.",
+            "Active lifecycle campaign identity differs; execution is forbidden.",
+            "Campaign row run_id fails the repository artifact naming contract.",
+        ):
+            self.assertIn(required, execute)
+
+        run_id_validation = execute.index(
+            "& $PythonExe -m common.contracts.artifact_naming run $campaignRunId"
+        )
+        validate_only_branch = execute.index("$cleanupOutput = $ValidateOnly")
+        self.assertLess(run_id_validation, validate_only_branch)
+
     def test_repository_publication_writer_requires_canonical_lf_bytes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "publication.json"
@@ -65,6 +120,7 @@ class CampaignRuntimeAuthoritiesTests(unittest.TestCase):
         policy = load(CONFIG_ROOT / "execution_policy.json")
         validate_schema(policy, "rf_multipole_oatof_execution_policy.schema.json")
         self.assertEqual(policy["commercial_solver_concurrency_limit"], 1)
+        self.assertEqual(policy["single_flight_batch_parallel_limit"], 3)
         self.assertTrue(policy["stop_after_first_failure"])
         self.assertEqual(policy["retention_class"], "compact")
         self.assertEqual(
@@ -240,6 +296,40 @@ class CampaignRuntimeAuthoritiesTests(unittest.TestCase):
         self.assertNotIn("parallel_batch_memory_reservation_bytes", overlay_identity)
         self.assertIn("frontend_gem_sha256", frontend_identity)
         self.assertIn("overlay_gem_sha256", overlay_identity)
+
+    def test_pa_content_identity_excludes_runtime_field_and_state_diagnostics(
+        self,
+    ) -> None:
+        """Keep PA reuse tied to compiled geometry, not post-build semantics.
+
+        Field profiles select the runtime field implementation and diagnostic
+        transforms modify a materialized particle state.  Neither changes a PA
+        basis.  Conversely, the compiled GEM hashes and the overlay electrode
+        topology are physical build inputs and must remain in the cache keys.
+        """
+        runner = (
+            INTEGRATION_ROOT / "runtime" / "run_single_flight.ps1"
+        ).read_text(encoding="utf-8-sig")
+        frontend_identity = runner.split(
+            "$frontendCacheIdentity = [ordered]@{", 1
+        )[1].split("$frontendCacheKey =", 1)[0]
+        overlay_identity = runner.split(
+            "$overlayIdentity = [ordered]@{", 1
+        )[1].split("$overlayKey =", 1)[0]
+        downstream_identity = runner.split(
+            "$identity = [ordered]@{", 1
+        )[1].split("$key = Get-RfContentIdentitySha256", 1)[0]
+
+        for identity in (frontend_identity, overlay_identity, downstream_identity):
+            self.assertNotIn("field_profile", identity)
+            self.assertNotIn("resolved_region_field", identity)
+            self.assertNotIn("diagnostic_state_transform", identity)
+
+        self.assertIn("frontend_gem_sha256", frontend_identity)
+        self.assertIn("overlay_gem_sha256", overlay_identity)
+        self.assertIn("electrode_topology_id", overlay_identity)
+        self.assertIn("pa_build_geometry_sha256", downstream_identity)
+        self.assertNotIn("oatof_geometry_sha256", downstream_identity)
 
     def test_single_flight_fails_closed_on_compiled_pa_aperture_topology(self) -> None:
         runner = (
