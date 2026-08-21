@@ -14,3 +14,8 @@ oaTOF、single-flight或具体电极编号。
 
 `surface=fractional`只提高非对齐表面的场与边界表达精度，不保证连续几何精确，也不能替代真实PA拓扑审计
 或网格敏感性验证。本层不选择PA/IOB和物理参数；商业进程仍由项目runner按统一预算与串行规则启动。
+
+[`resource_scheduler.py`](resource_scheduler.py)是所有项目可复用的SIMION并行资源计划器：项目必须提交已经
+授权且粒子相互独立的请求，明确RF（含steps/period）或静电模式、粒子数、每批CPU、并发上限和内存保留。
+它只依据相同资源身份的已完成峰值选择最大安全并发；无历史数据时只生成一个bootstrap波次，后续必须以
+观测峰值重新计划。它不会发现、批准或启动campaign，也不会在外层campaign之上创建嵌套并发。
