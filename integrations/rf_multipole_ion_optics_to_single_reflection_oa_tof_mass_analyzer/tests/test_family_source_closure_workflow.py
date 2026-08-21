@@ -702,7 +702,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                 "sha256": hashlib.sha256(crlf).hexdigest().upper(),
             }
             self.assertEqual(
-                _repo_byte_record(root, record, "loader receipt"), receipt
+                _repo_byte_record(root, record, "loader receipt"), receipt.resolve()
             )
             receipt.write_bytes(crlf.replace(b"\r\n", b"\n"))
             with self.assertRaisesRegex(ContractError, "missing, stale"):
