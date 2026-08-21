@@ -411,9 +411,19 @@ if (-not $campaignPath.StartsWith(
 }
 $campaign = Get-Content -LiteralPath $campaignPath -Raw -Encoding UTF8 |
   ConvertFrom-Json
-$experiments = @($campaign.experiments | Where-Object {
-  $_.experiment_id -eq $frozenArguments.experiment_id
-})
+$prepareModule = (
+  'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.' +
+  'workflows.family_source_closure.prepare'
+)
+$profileRegistry = Join-Path $integrationRoot 'config\connection_profiles.json'
+$adapterRegistry = Join-Path $integrationRoot 'config\execution_adapter_profiles.json'
+$selectedExperimentJson = & $PythonExe -m $prepareModule --repo-root $repo `
+  --profile-registry $profileRegistry --adapter-registry $adapterRegistry `
+  --campaign $campaignPath --print-experiment-json $frozenArguments.experiment_id
+if ($LASTEXITCODE -ne 0) {
+  throw 'Campaign experiment identity no longer resolves uniquely.'
+}
+$experiments = @($selectedExperimentJson | ConvertFrom-Json)
 if ($campaign.role -ne 'rf_multipole_oatof_experiment_campaign' -or
     $campaign.integration_id -ne $plan.integration_id -or
     $campaign.campaign_id -ne $frozenArguments.campaign_id -or
@@ -883,6 +893,8 @@ if ($experiment.connection_profile_id -ne
 $rowHashCode = @'
 import hashlib, json, pathlib, sys
 campaign = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8-sig"))
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.prepare import expand_flat_experiment_authoring
+campaign = expand_flat_experiment_authoring(campaign)
 rows = [row for row in campaign["experiments"] if row["experiment_id"] == sys.argv[2]]
 if len(rows) != 1:
     raise SystemExit("campaign experiment identity is not unique")
@@ -899,9 +911,13 @@ $threeZoneProducerExperiment = $null
 $threeZoneProducerExperimentRowSha256 = ''
 if ($threeZoneSolverGateStage -eq 'n100_solver_authorized_consumer') {
   $producerId = [string]$threeZoneSolverGate.predecessor_experiment_id
-  $producerRows = @($campaign.experiments | Where-Object {
-    [string]$_.experiment_id -eq $producerId
-  })
+  $producerExperimentJson = & $PythonExe -m $prepareModule --repo-root $repo `
+    --profile-registry $profileRegistry --adapter-registry $adapterRegistry `
+    --campaign $campaignPath --print-experiment-json $producerId
+  if ($LASTEXITCODE -ne 0) {
+    throw 'Three-zone N=100 predecessor identity no longer resolves uniquely.'
+  }
+  $producerRows = @($producerExperimentJson | ConvertFrom-Json)
   if ($producerRows.Count -ne 1 -or
       [string]$producerRows[0].three_zone_solver_gate.stage -ne
         'n1_smoke_producer' -or
