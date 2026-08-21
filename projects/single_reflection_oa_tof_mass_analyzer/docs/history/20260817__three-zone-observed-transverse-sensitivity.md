@@ -1,5 +1,7 @@
 # 三区真实PA observed纵向束与横向六维敏感性
 
+DOC_STATUS: ARCHIVED_READ_ONLY
+
 > `DOC_STATUS: ARCHIVED_READ_ONLY`
 
 ## 结论

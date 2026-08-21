@@ -1,5 +1,7 @@
 # oa-TOF 理论重写审查记录
 
+DOC_STATUS: ARCHIVED_READ_ONLY
+
 <!-- DOC_STATUS: ARCHIVED_READ_ONLY -->
 
 ## 结论

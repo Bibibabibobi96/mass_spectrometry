@@ -1,5 +1,7 @@
 # 仓库规模与架构评审核验（2026-07-30）
 
+DOC_STATUS: ARCHIVED_READ_ONLY
+
 > **DOC_STATUS: ARCHIVED_READ_ONLY**。本文记录一次性外部评审核验和本次处置边界，不作为项目
 > 当前状态、持续规范或开放任务权威。稳定审计索引见[`../AUDITS.md`](../AUDITS.md)；项目状态仍以
 > 各项目`README.md → docs/PROJECT.md`和对应integration文档为准。

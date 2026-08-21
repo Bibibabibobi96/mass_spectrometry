@@ -1,5 +1,7 @@
 # reflectron midgrid声明式campaign授权（2026-08-02）
 
+DOC_STATUS: ARCHIVED_READ_ONLY
+
 > `DOC_STATUS: ARCHIVED_READ_ONLY`
 
 ## 授权范围

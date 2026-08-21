@@ -1,5 +1,7 @@
 # oa-TOF 已被取代理论 DOCX 归档（2026-07-21）
 
+DOC_STATUS: ARCHIVED_READ_ONLY
+
 <!-- DOC_STATUS: ARCHIVED_READ_ONLY -->
 
 本清单及同名子目录是只读历史快照，保存2026-07-20理论重构前的两份DOCX输入。它们已由活跃

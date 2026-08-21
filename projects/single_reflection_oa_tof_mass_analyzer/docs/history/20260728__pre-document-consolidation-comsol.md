@@ -1,5 +1,7 @@
 # oa-TOF文档收敛前COMSOL快照
 
+DOC_STATUS: ARCHIVED_READ_ONLY
+
 > **DOC_STATUS: ARCHIVED_READ_ONLY**。本清单冻结2026-07-28以前的COMSOL实施时间线、诊断数值和
 > 关闭过程；现行入口只以[`../COMSOL.md`](../COMSOL.md)为准。
 

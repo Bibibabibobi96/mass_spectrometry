@@ -1,5 +1,7 @@
 # Production维护面一次性基线（2026-07-30）
 
+DOC_STATUS: ARCHIVED_READ_ONLY
+
 > **DOC_STATUS: ARCHIVED_READ_ONLY**。本文记录提交
 > `57647c5b23ab07e367bfc2961dd78baefe3c968f`上的一次性CLOC语义审计，不是新的持续规范、
 > 项目状态或文件生命周期机器权威。稳定审计索引见[`../AUDITS.md`](../AUDITS.md)；当前职责仍以

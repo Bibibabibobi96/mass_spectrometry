@@ -1,5 +1,7 @@
 # Production维护边界处置（2026-07-30）
 
+DOC_STATUS: ARCHIVED_READ_ONLY
+
 > **DOC_STATUS: ARCHIVED_READ_ONLY**。本文是
 > [`20260730__production-maintenance-surface-baseline.md`](20260730__production-maintenance-surface-baseline.md)
 > 的首次生命周期处置记录，不是第二份目录分类规则或持续审计入口。当前职责、生命周期和执行入口仍只

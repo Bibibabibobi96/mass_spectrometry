@@ -1,5 +1,7 @@
 # 六极杆已关闭 hybrid mesh campaign 归档
 
+DOC_STATUS: ARCHIVED_READ_ONLY
+
 <!-- DOC_STATUS: ARCHIVED_READ_ONLY -->
 
 ## 归档结论

@@ -1,5 +1,7 @@
 # oa-TOF SIMION GUI Recording 与 Program 审计归档（2026-07-15—16）
 
+DOC_STATUS: ARCHIVED_READ_ONLY
+
 > **只读历史档案。** 本文件保存GUI Data Recording、轨迹质量和Program On/Off调查的关闭证据。
 > 文中的“正式”和路径均按归档时点解释；当前入口、资产身份和性能只以项目README、
 > `../PROJECT.md`及机器合同为准。`DOC_STATUS: ARCHIVED_READ_ONLY`

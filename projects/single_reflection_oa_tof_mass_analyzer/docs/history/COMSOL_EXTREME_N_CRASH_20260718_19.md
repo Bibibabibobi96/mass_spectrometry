@@ -1,5 +1,7 @@
 # COMSOL 极小粒子数原生崩溃调查归档（2026-07-18—19）
 
+DOC_STATUS: ARCHIVED_READ_ONLY
+
 > **只读历史档案。** 本文件冻结N=3至首次N=21阈值测试阶段的完整调查过程。文中的“当前”按
 > 归档时点解释；后续边界、绕行和开放任务只以`../PROJECT.md`、`../COMSOL.md`及artifacts中的
 > 新运行manifest为准。`DOC_STATUS: ARCHIVED_READ_ONLY`

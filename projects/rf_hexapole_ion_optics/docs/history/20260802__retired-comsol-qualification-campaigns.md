@@ -1,5 +1,7 @@
 # 六极杆已退役数值资格 campaign
 
+DOC_STATUS: ARCHIVED_READ_ONLY
+
 <!-- DOC_STATUS: ARCHIVED_READ_ONLY -->
 
 2026-08-02，已关闭的逐臂预登记、一次性预算、求解器隔离 profile 和与其一一绑定的静态测试从活动

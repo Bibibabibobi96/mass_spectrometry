@@ -1,5 +1,7 @@
 # 八极杆迁移前小样本功能证据
 
+DOC_STATUS: ARCHIVED_READ_ONLY
+
 > **DOC_STATUS: ARCHIVED_READ_ONLY**。本文冻结仓库采用 N=100 最低功能档以前的八极杆功能运行。
 > 当前状态、资格和开放任务只以[`../PROJECT.md`](../PROJECT.md)及机器合同为准。
 

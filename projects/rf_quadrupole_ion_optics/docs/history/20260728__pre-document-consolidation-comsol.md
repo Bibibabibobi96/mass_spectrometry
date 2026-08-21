@@ -1,5 +1,7 @@
 # RF四极杆文档收敛前COMSOL快照
 
+DOC_STATUS: ARCHIVED_READ_ONLY
+
 > **DOC_STATUS: ARCHIVED_READ_ONLY**。本清单冻结2026-07-28以前的COMSOL实现、诊断数值和关闭过程；
 > 现行入口只以[`../COMSOL.md`](../COMSOL.md)为准。payload保留迁移前界面与release术语原文。
 

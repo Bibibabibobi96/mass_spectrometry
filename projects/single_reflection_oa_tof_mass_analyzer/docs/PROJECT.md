@@ -1,0 +1,195 @@
+# 单次反射正交加速飞行时间质量分析器当前状态
+
+本文件是项目当前事实、资格与开放任务的唯一权威。机器精确值分别由`../config/`中的物理、数值、
+resolved、分析和资产合同管理；实现细节见[`COMSOL.md`](COMSOL.md)、[`SIMION.md`](SIMION.md)与
+[`CAD.md`](CAD.md)。2026-07-28以前的完整状态和时间线冻结在
+[`history/20260728__pre-document-consolidation-project.md`](history/20260728__pre-document-consolidation-project.md)。
+
+## 当前状态
+
+- 当前批准设计为524 Da、+1正交加速TOF，双级环栈反射镜，一级10环、二级5环；粒子初始能量
+  `5±0.4 eV`。
+- 统一坐标以检测器有效面中心和精确一阶时间焦点为`z=0`，`+z`从加速器指向反射器。SIMION局部PA
+  必须通过IOB变换映射到同一坐标。
+- 2026-07-20的耦合纵向baseline是拆层前的历史Formal记录；它仍可追溯，但不再是当前资产身份。
+- 科学合同、solver numerics和run instance拆层后，2026-07-29已以零物理变化的同源N=1000输入完成
+  vNext验证与原子发布。`../config/project.json`、`formal_assets.json`、`formal_validation.json`和
+  `simion_stable_entry.json`共同冻结当前Formal release；COMSOL GUI、SIMION GUI与SolidWorks CAD
+  evidence均由独立evidence run及SHA绑定。一次性请求已
+  [`归档`](history/20260729__formal-vnext-zero-change-requests.md)，不再是活动入口。
+- 2026-08-02逐文件审计发现并从原validation run精确恢复`accelerator.pa2`与`accelerator.pa7`两个Formal
+  解数组漂移；恢复后全Formal哈希与运行时门禁通过，四份Formal合同及既有资格身份未改变。SIMION活动
+  入口现只运行manifest验证后的scratch副本，完整处置见
+  [`history快照`](history/20260802__formal-simion-integrity-recovery.md)。
+- 当前Formal加速器为闭合屏蔽结构，没有RF注入侧孔。RF多极杆连接使用run-local组合几何，不修改
+  本项目baseline、MPH、SIMION包或CAD。连接策略、接地屏蔽、当前结果与资格边界只查
+  [integration当前文档](../../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/INTEGRATION.md)。
+- integration single-flight现通过项目Candidate
+  `simion/workbench/candidates/oatof_analyzer_component.lua`调用oaTOF实例、基础场、静态电压与detector
+  纯hooks；组件不声明Workbench/callback、电极setter、pulse时序或SIMION原生时钟。历史Formal Program
+  字节未修改，仍只服务项目Formal与staged analyzer transport；该组件及唯一integration assembler的
+  直接Lua验证不改变本项目Formal资格。
+- RF母样本到oaTOF粒子状态和SIMION方向角的连接专用adapter现由integration唯一拥有；本项目不再保存
+  `analysis/rf_handoff_adapter.py`副本。required port、resolved几何和项目分析器组件仍是本项目对外边界，
+  该所有权整理不改变粒子状态、时钟、Formal资产或资格。
+
+当前生命周期、capability与Formal asset状态均为`formal`。历史资产和旧结论只按其原始manifest
+身份保留，不能替代或改写当前release。
+
+## 物理与几何基线
+
+精确参数、公式和舍入规则只认`../config/baseline.json`、`../config/resolved_geometry.json`及
+`theory/`。用于识别设计的摘要为：
+
+| 对象 | 当前设计 |
+|---|---|
+| 三栅加速器间距 | `d1=3.0 mm`、`d2=16.8 mm` |
+| 反射器 | 一级120 mm；二级工程长度96.1563 mm |
+| 反射器电位 | 一级压降1628.8001 V；背板2531.1999 V |
+| 屏蔽罩 | 内半径350 mm；侧壁和端盖厚10 mm |
+| 检测有效面 | 全局`z=0`、半径40 mm |
+| SIMION日常加速器网格 | `xy=0.25 mm`、`z=0.05 mm`；`z=0.025 mm`仅为收敛参考 |
+
+这些摘要不能用于重建求解器模型。修改焦点、电压或长度前必须重算理论并同步COMSOL、SIMION和CAD。
+
+## 冻结验证记录
+
+`../config/formal_validation.json`冻结的当前vNext同源N=1000结果为：
+
+| 指标 | COMSOL | SIMION |
+|---|---:|---:|
+| 命中 | 1000/1000 | 1000/1000 |
+| 平均TOF (us) | 71.35281164 | 71.35361153 |
+| 直接质量FWHM (Da) | 0.01312031696 | 0.01099407843 |
+| 质量分辨率R | 39938.06 | 47662.02 |
+
+两端平均TOF差`0.79989 ns`，逐粒子TOF RMS差`1.06557 ns`，落点RMS差`0.30225 mm`。该release
+通过冻结的Formal验证合同与独立GUI/CAD evidence；它是当前拆层合同下的可信Formal参考点，
+不把单一分辨率差异解释为需要通过单独调网格、时间步或quality追平的目标。
+
+同资产CPU复测确认换用i9-9900K可缩短COMSOL粒子重追迹、SIMION Fly和PA Refine墙钟时间，且不改变
+已核验的粒子结果；它只属于性能证据，不改变Formal身份。精确时序与哈希见run
+`20260810_121500__benchmark__cross__cpu-formal-n1000`的manifest和summary。
+
+质量分辨率统一定义为`R=m/FWHM_m`；窄峰时间域等价式为`R=T/(2·FWHM_t)`。近似高斯时才允许以
+`2.3548×sigma`代替直接半高宽。
+
+分辨率的唯一飞行时间时钟定义为
+
+$$
+t_{\mathrm{TOF}}=t_{\mathrm{detector}}-t_{\mathrm{pulse,effective}}.
+$$
+
+正交加速脉冲的有效提取时刻是oa-TOF时间零点。多极杆中脉冲前的离子生成、驻留和传输时间不得
+计入oa-TOF分辨率，只能通过脉冲瞬间的位置、速度、能量和相位空间分布影响结果。absolute
+instrument clock仅用于调度与诊断，禁止作为分辨率声明；集成分析输出必须保持
+`instrument_clock_peak_is_resolution_claim=false`。
+
+## 当前能力与边界
+
+| 能力 | 当前范围 | 资格 |
+|---|---|---|
+| Static合同与候选编译 | baseline/science/numerics分层、resolved与源码冻结 | PASS |
+| 结构Candidate | 零变化和`reflectron_midgrid_voltage`、N=100、真实COMSOL/SIMION/CAD receipt | Candidate结构合同；无性能声明 |
+| 五质量候选 | 固定10/100/500/1000/2000 Da功能比较 | Candidate；不替代524 Da基线 |
+| Formal跨求解器诊断 | 当前冻结资产的轴场、同坐标三维场和代表粒子轨迹 | Diagnostic；不改变Formal资格 |
+| 三区加速器理想理论 | 100 Th冻结离散域、精确一维时间和canonical T0—T5漏斗闭合 | Functional / PROVISIONAL / POST_PILOT；solver-free，不改变Formal |
+| Formal当前设计 | vNext同源N=1000、COMSOL/SIMION/CAD及GUI证据原子冻结 | Formal |
+| RF四极杆离子光学→本项目接口 | 下游只读分析器消费 | 整机Formal BLOCKED |
+
+统一Formal跨求解器诊断已完成真实只读验收，覆盖轴场、同坐标三维场和冻结代表轨迹。它没有预注册
+场差接受阈值，成功只表示导出、坐标配对、分析和manifest闭合，不表示场或轨迹等价，也不改变Formal
+资格。精确采样数和差异只查run `20260801_011500__analysis__cross__formal-diagnostics`。
+
+Candidate唯一公开入口为`../workflows/design_candidate/run_candidate.py`；必须提供获批request、run ID和
+显式seed，依次执行粒子表、COMSOL、SIMION、CAD和结构验收。成功结果固定为
+`candidate_accepted_not_promoted`，不含晋升。晋升必须由独立事务完成。
+
+首个声明式midgrid campaign以同seed、N=100完成COMSOL、SIMION、SolidWorks与结构验收。诊断电压
+显著破坏时间聚焦而未明显改变最大命中半径，支持保留理论名义值；它不含COMSOL粒子级比较、统计重复
+或数值收敛，仍是`candidate_accepted_not_promoted`。完整数值与授权边界见
+[`history/20260802__reflectron-midgrid-campaign-authorization.md`](history/20260802__reflectron-midgrid-campaign-authorization.md)。
+
+跨项目2.2 mm理论源宽候选只验证了变量合同、理论闭合和run-local PA自动重构；没有修改本项目Formal，
+也不改变Formal资格。完整结果只查
+[integration当前文档](../../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/INTEGRATION.md)。
+
+针对该先导现象的三区加速器假说现已收归
+[`三区理想理论与隔离验证漏斗`](theory/three_zone_accelerator_ideal_theory.md)。它只运行精确一维解析时间和
+冻结cohort，不调用SIMION、COMSOL或CAD；可选T4c的32,955仅是人工授权后的解析外层网格基数，
+不是默认运行量或性能指标。现有双区resolved/profile不能静默复用为三区工程身份，任何真实场迁移必须
+另开Candidate；当前Formal、baseline和资产不变。外部文档问题与处置见
+[`2026-08-17审阅`](history/20260817__three-zone-accelerator-external-document-review.md)。
+
+2026-08-17 canonical solver-free链执行了`T0,T1,T2,G1,T3,T4a,T4b,G2,T5`，未执行可选T4c。
+T2最佳可行二区在2.2 mm cohort上的population sigma/直接FWHM为
+`0.8159038773341178/0.679286964277992 ns`；冻结三区primary为
+`d1=3.25 mm, l23=17.0 mm, lambda=0.30, DeltaV1=250 V`，场对比度
+`2.826764127118471`、尺度化条件数`561.8473678`、尺度化
+`Gamma3=1.12487848e-4`，且因`l23`命中域上界而是boundary-limited。T5的2.2 mm sigma/FWHM为
+`0.18240109086706416/0.14113517445224488 ns`，相对最佳二区改善`77.6443%/79.2230%`；
+1.0 mm sigma/FWHM为`0.004970459371531842/0.003840889778672363 ns`，两种宽度的sampling
+差分别为`0.7647%/0.6353%`。结论为
+`PRIMARY_CONFIRMATION_PASSED_OVER_BEST_TWO_ZONE`，canonical T5 run为
+`20260817_122700__analysis__python__three-zone-t5`。精确口径与限制只查上述理论权威。
+
+T5→三区`CANDIDATE_ONLY` resolved编译器、region-field schema v2和保持旧`0..19`映射且仅新增
+电极ID `20`的拓扑已进入真实SIMION PA验证。二区5.1 mm与三区11.9 mm分别采用1+4个整形环；N=1
+原生路径授权后，完整2.2 mm分层N=100得到100/100探测、pulse-relative
+`sigma=0.2035735674 ns`、直接`FWHM=0.2338558848 ns`、质量`R=66988.23`、单峰。对应父run为
+`20260817_235900__sim__cross__three-zone-segmented-rings-real-pa-full-width__n100`。这证明三区
+理论收益在真实PA场中仍显著存在，但数值只是100 Th、N=100、Functional/CANDIDATE_ONLY证据；未做
+COMSOL/CAD、N=1000、网格收敛或工程包络资格，不能改变524 Da Formal状态。
+
+随后在同一真实PA、几何、数值、经验`z`点和100个ID上完成四个描述性源臂的顺序敏感性分解：
+`affine_zvz_fixed_10eV_transverse_collapsed`、`observed_zvz_fixed_10eV_transverse_collapsed`、
+`observed_z_vz_energy_transverse_collapsed`和`full_observed_6d`。每个N=1门均1/1探测并授权同臂N=100，
+四个N=100均100/100探测；canonical顺序比较run为
+`20260817_235946__analysis__python__three-zone-source-sequential-attribution__n100`。对应`sigma/FWHM/R`依次为
+`0.0919962629 ns/0.1201946242 ns/130335.42`、
+`0.8197245483 ns/2.4711425665 ns/6339.43`、
+`0.8197190662 ns/2.4714356728 ns/6338.67`和
+`0.8542897552 ns/2.5829468539 ns/6065.03`。以首尾总退化为分母，逐ID observed-affine `z-vz`偏离、逐粒子能谱
+和完整横向状态的顺序份额在sigma上为`95.46563%/-0.00072%/4.53509%`，在直接FWHM上为
+`95.46019%/0.01190%/4.52791%`。残差审计进一步表明，重新最小二乘匹配affine均值/斜率后仍有
+`95.7478586%`的原残差均方，2—6阶多项式只捕获该non-affine/stochastic scatter的`0.92%—1.14%`。
+这是冻结三区设计、100 Th、单次N=100的`FUNCTIONAL_ONLY`
+敏感性结果；它不证明非线性不可通过重新编译并联合优化加速器与反射器来补偿。完整公式、权威、
+run/manifest和理论升级问题集中见
+[`history/20260817__three-zone-zvz-nonlinearity-fixed-energy-source-sensitivity.md`](history/20260817__three-zone-zvz-nonlinearity-fixed-energy-source-sensitivity.md)。
+
+## 已知兼容边界
+
+- COMSOL 6.4当前模型在极小求解粒子数路径存在非单调原生不稳定；日常使用N=100，逻辑小样本仅在
+  无粒子间耦合时由同源N=100承载后分析前缀。该绕行不属于开放调查。
+- SIMION四个理想透明栅统一使用官方零grid-unit厚度的一行raw-PA电极点并由引擎原生穿越；任何Program
+  epsilon越层、粒子位移或TOF补偿均被静态门禁禁止。Candidate SIMION门禁保存raw-PA行数与冻结单粒子
+  `1/1/2/2`穿越receipt；真实丝网必须使用独立物理profile。Candidate run
+  `20260813_160656__gate__simion__native-ideal-grid__smoke`已以SIMION 2020真实构建和飞行闭合该门禁：
+  grid1/grid2/entgrid/midgrid分别仅占raw row `260/596/0/480`，冻结单粒子原生穿越`1/1/2/2`并命中探测器。
+- 当前许可证不能使用SIMION 2026 `.wgem`，Candidate使用已验收的SIMION 2020 legacy-GEM四槽模板；
+  许可证升级并完成隔离GUI/结构复验前不迁移路线。
+
+详细失败矩阵与已关闭调查只在history保存，不作为current开放任务。
+
+## 开放任务
+
+1. **复现交付。** 按需从自包含Formal目录生成不含日志和收敛参考的ZIP及独立SHA；ZIP不是第二资产权威。
+2. **按需求启动的物理候选。** 轴对称圆形加速器、真实丝网、制造/装配误差预算和二维轴对称混合
+   COMSOL模型均暂缓；任何一项启动都须重新闭合理论、三维场、传输、网格、跨求解器与CAD。
+3. **整合图形诊断能力。** 盘点活动COMSOL、SIMION、跨求解器与集成图形，合并重复的几何、轨迹、
+   检查点、相空间、TOF和场诊断；为保留能力建立单一版本化能力目录、固定输入/输出角色和统一分析
+   run生命周期，未入目录的实现须归类为测试、迁移历史或删除候选。关闭条件是活动入口不再各自维护
+   重叠绘图代码，campaign只声明能力ID和受控参数，且现有Formal/Candidate证据不被重写。
+开放任务只写未完成动作和关闭条件。已完成的Candidate bootstrap、路径修复、receipt治理、历史失败
+run和非零变量复验全部冻结在同日PROJECT history快照。
+
+## 产物与历史
+
+新活动产物根为`artifacts/projects/single_reflection_oa_tof_mass_analyzer/`。重命名前的Formal、
+Candidate run及归档已以原manifest项目身份只读迁入该根的
+`archive/20260801_130003__migration-snapshot__repo__oa-tof/legacy-project-root/`。保留证据保持原文件名、
+SHA、身份、资格和声明边界；迁移后按根README独立裁剪的可重建重型载荷只由pruning manifest追溯，
+不得追加新run。current文档不复制完整run ID清单。旧RF投影诊断只见
+[`history/20260727__superseded-rf-handoff-diagnostics.md`](history/20260727__superseded-rf-handoff-diagnostics.md)，
+不得恢复为活动生产入口。

@@ -1,5 +1,7 @@
 # Wehnelt文档收敛前PROJECT快照
 
+DOC_STATUS: ARCHIVED_READ_ONLY
+
 > **DOC_STATUS: ARCHIVED_READ_ONLY**。本清单冻结2026-07-28以前的完整商业构建时间线、已关闭
 > provenance故障和旧开放任务；现行事实只以[`../PROJECT.md`](../PROJECT.md)为准。
 

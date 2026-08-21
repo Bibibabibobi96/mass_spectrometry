@@ -1,5 +1,7 @@
 # 六极杆 RF 幅值—频率相位匹配筛选（H15，N=100）
 
+DOC_STATUS: ARCHIVED_READ_ONLY
+
 <!-- DOC_STATUS: ARCHIVED_READ_ONLY -->
 
 > 本页保存N=100机制筛选历史；参数优选解释已由同日

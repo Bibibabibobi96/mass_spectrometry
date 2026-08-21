@@ -1,5 +1,7 @@
 # 项目笔记：螺旋灯丝 Wehnelt 电子枪
 
+DOC_STATUS: ARCHIVED_READ_ONLY
+
 > **DOC_STATUS: ARCHIVED_READ_ONLY**。本文冻结2026-07-13以前的选型依据、实验结果和时间线；当前
 > 正式资格、验证范围和开放任务只以[`../PROJECT.md`](../PROJECT.md)为准，本文不再更新“当前”。
 

@@ -1,5 +1,7 @@
 # oa-TOF 已替代 RF handoff 投影诊断源码归档
 
+DOC_STATUS: ARCHIVED_READ_ONLY
+
 <!-- DOC_STATUS: ARCHIVED_READ_ONLY -->
 
 ## 归档结论

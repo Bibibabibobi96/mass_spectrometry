@@ -1,5 +1,7 @@
 # oa-TOF 中栅电压候选运行时覆盖归档（2026-07-20）
 
+DOC_STATUS: ARCHIVED_READ_ONLY
+
 > **只读历史档案。** 本文件冻结首个非零设计变量端到端候选的失败、修复、人工交互缺口与无人值守
 > CAD闭合证据。当前能力和开放任务只以`../PROJECT.md`为准。
 > `DOC_STATUS: ARCHIVED_READ_ONLY`

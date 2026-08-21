@@ -1,5 +1,7 @@
 # RF→OA 旧 S2/S3 活动合同归档
 
+DOC_STATUS: ARCHIVED_READ_ONLY
+
 <!-- DOC_STATUS: ARCHIVED_READ_ONLY -->
 
 ## 归档结论

@@ -1,5 +1,7 @@
 # 六极杆 RF 幅值—频率相位匹配复核（H15，N=1000）
 
+DOC_STATUS: ARCHIVED_READ_ONLY
+
 <!-- DOC_STATUS: ARCHIVED_READ_ONLY -->
 
 ## 执行合同

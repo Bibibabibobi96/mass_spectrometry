@@ -1,5 +1,7 @@
 # oa-TOF 集成候选工作流真实验证归档（2026-07-20）
 
+DOC_STATUS: ARCHIVED_READ_ONLY
+
 > **只读历史档案。** 本文件冻结首次零改动候选端到端运行的失败、修复和成功证据。后续当前状态、
 > 开放任务和正式身份只以`../PROJECT.md`、各软件实施文档及新运行manifest为准。
 > `DOC_STATUS: ARCHIVED_READ_ONLY`

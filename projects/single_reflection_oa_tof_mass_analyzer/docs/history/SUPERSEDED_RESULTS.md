@@ -1,5 +1,7 @@
 # oa-TOF 已被取代的验证结果
 
+DOC_STATUS: ARCHIVED_READ_ONLY
+
 > **只读历史档案，归档截止2026-07-18。** 本文件保存曾进入`docs/PROJECT.md`、后来被正式结果
 > 取代的验证证据。数值不得作为当前性能基线；当前项目真值只以[`../PROJECT.md`](../PROJECT.md)为准。
 > `DOC_STATUS: ARCHIVED_READ_ONLY`

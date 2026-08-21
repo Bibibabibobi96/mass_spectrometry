@@ -1,5 +1,7 @@
 # oa-TOF文档收敛前PROJECT快照
 
+DOC_STATUS: ARCHIVED_READ_ONLY
+
 > **DOC_STATUS: ARCHIVED_READ_ONLY**。本清单冻结2026-07-28收敛前的完整状态、候选时间线、run编号
 > 和旧开放任务；现行事实只以[`../PROJECT.md`](../PROJECT.md)为准。
 

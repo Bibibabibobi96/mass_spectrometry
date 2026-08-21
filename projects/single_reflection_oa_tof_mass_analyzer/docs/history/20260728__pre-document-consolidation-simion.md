@@ -1,5 +1,7 @@
 # oa-TOF文档收敛前SIMION快照
 
+DOC_STATUS: ARCHIVED_READ_ONLY
+
 > **DOC_STATUS: ARCHIVED_READ_ONLY**。本清单冻结2026-07-28以前的SIMION实施时间线、诊断数值和
 > 关闭过程；现行入口只以[`../SIMION.md`](../SIMION.md)为准。payload中的detector marker按归档时点
 > 解释；现行文档称其为数值终止标记。

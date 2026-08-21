@@ -1,5 +1,7 @@
 # OA‑TOF Formal vNext 零物理变化请求归档
 
+DOC_STATUS: ARCHIVED_READ_ONLY
+
 <!-- DOC_STATUS: ARCHIVED_READ_ONLY -->
 
 ## 归档结论

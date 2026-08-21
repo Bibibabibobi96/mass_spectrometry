@@ -1,5 +1,7 @@
 # RF四极杆文档收敛前SIMION快照
 
+DOC_STATUS: ARCHIVED_READ_ONLY
+
 > **DOC_STATUS: ARCHIVED_READ_ONLY**。本清单冻结2026-07-28以前的SIMION实现、run和诊断数值；
 > 现行入口只以[`../SIMION.md`](../SIMION.md)为准。payload中的detector、terminal和particle plane
 > 均为迁移前术语。

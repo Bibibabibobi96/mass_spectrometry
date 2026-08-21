@@ -1,5 +1,7 @@
 # 2026-08-17 三区加速器外部文档审阅
 
+DOC_STATUS: ARCHIVED_READ_ONLY
+
 > `DOC_STATUS: ARCHIVED_READ_ONLY`
 
 本记录冻结对用户提供的三份2026-08-16外部文档的审阅和项目处置。它不复制外部文件、不修改

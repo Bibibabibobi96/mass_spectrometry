@@ -1,5 +1,7 @@
 # 项目笔记：oa-TOF 正交加速飞行时间质谱双级环栈反射镜分析器
 
+DOC_STATUS: ARCHIVED_READ_ONLY
+
 > **只读历史档案，归档截止2026-07-15。** 文中的“当前参数”“正式状态”和“下一步”仅表示
 > 当时状态，不再具有规范性；当前项目真值只以[`../PROJECT.md`](../PROJECT.md)为准。
 > `DOC_STATUS: ARCHIVED_READ_ONLY`

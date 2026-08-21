@@ -1,5 +1,7 @@
 # MR-TOF项目身份整合（2026-08-02）
 
+DOC_STATUS: ARCHIVED_READ_ONLY
+
 > DOC_STATUS: ARCHIVED_READ_ONLY
 >
 > Historical snapshot: statements are interpreted at the document date; current authority is the applicable active contract and current project/integration documentation.

@@ -1,5 +1,7 @@
 # oa-TOF 数值验证归档（2026-07-16—18）
 
+DOC_STATUS: ARCHIVED_READ_ONLY
+
 > **只读历史档案。** 本文件保存从当前`PROJECT.md`移出的详细诊断证据，避免日常阅读被过程信息
 > 淹没。文中的“正式”“当前”和“下一步”均按归档时点解释；当前项目真值只以`../PROJECT.md`和
 > `config/`机器契约为准。`DOC_STATUS: ARCHIVED_READ_ONLY`

@@ -1,5 +1,7 @@
 # oa-TOF SIMION 验证与进展记录
 
+DOC_STATUS: ARCHIVED_READ_ONLY
+
 > **只读历史档案，归档截止2026-07-15。** 文中的“当前状态”“正式结论”和“下一步”仅表示
 > 当时状态，不再具有规范性；当前项目真值只以[`../PROJECT.md`](../PROJECT.md)为准。
 > `DOC_STATUS: ARCHIVED_READ_ONLY`

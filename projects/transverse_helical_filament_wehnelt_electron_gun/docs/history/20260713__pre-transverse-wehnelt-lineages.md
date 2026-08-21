@@ -1,5 +1,7 @@
 # Wehnelt 横置基线前历史谱系源码
 
+DOC_STATUS: ARCHIVED_READ_ONLY
+
 > **DOC_STATUS: ARCHIVED_READ_ONLY**。本入口冻结实心阴极与轴向螺旋灯丝两条已被横置螺旋灯丝
 > 基线取代的 MATLAB 源码谱系。payload 仅用于追溯归档时点的实现与历史结论，禁止作为活动入口、
 > 受管运行输入或新模型起点，也禁止为适配当前工具链而修改其中源码。

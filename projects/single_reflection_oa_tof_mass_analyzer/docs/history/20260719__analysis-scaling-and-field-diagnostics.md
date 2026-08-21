@@ -1,5 +1,7 @@
 # oa-TOF 分析、缩放与场归因诊断归档（2026-07-18—19）
 
+DOC_STATUS: ARCHIVED_READ_ONLY
+
 > **只读历史档案。** 本文件保存被当前正式状态文档移出的纵向归因、质量谱、粒子数缩放和可组合场
 > 实验。结果只代表对应运行和归档时点，不得覆盖当前`../PROJECT.md`、机器合同或正式资产。
 > `DOC_STATUS: ARCHIVED_READ_ONLY`

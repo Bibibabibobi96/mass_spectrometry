@@ -1,5 +1,7 @@
 # COMSOL 极小粒子数原生崩溃调查关闭归档（2026-07-19）
 
+DOC_STATUS: ARCHIVED_READ_ONLY
+
 > **只读历史档案。** 本文件冻结N=21之后的边界收紧、干扰项辨别、工程绕行验证和停止调查决定；
 > N=3至首次N=21阶段见`COMSOL_EXTREME_N_CRASH_20260718_19.md`。后续当前状态、重启条件和绕行只以
 > `../PROJECT.md`与`../COMSOL.md`为准。`DOC_STATUS: ARCHIVED_READ_ONLY`

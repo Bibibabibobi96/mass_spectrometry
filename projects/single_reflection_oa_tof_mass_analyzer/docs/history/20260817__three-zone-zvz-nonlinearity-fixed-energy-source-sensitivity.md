@@ -1,5 +1,7 @@
 # 三区真实PA经验z-vz非线性、能谱与横向源敏感性
 
+DOC_STATUS: ARCHIVED_READ_ONLY
+
 > `DOC_STATUS: ARCHIVED_READ_ONLY`
 
 ## 结论
