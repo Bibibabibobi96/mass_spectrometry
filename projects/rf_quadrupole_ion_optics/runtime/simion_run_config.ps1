@@ -265,8 +265,8 @@ function New-RfSimionCoreRunConfig {
             -Property 'dc_amplitude_V_per_group' -Name 'resolved DC amplitude' -NonNegative
         frequency_hz = Get-RfSimionRequiredFiniteNumber -Object $drive `
             -Property 'frequency_Hz' -Name 'resolved RF frequency' -Positive
-        phase_deg = (Get-RfSimionRequiredFiniteNumber -Object $drive `
-            -Property 'phase_rad' -Name 'resolved RF phase') * 180 / [Math]::PI
+        phase_rad = Get-RfSimionRequiredFiniteNumber -Object $drive `
+            -Property 'phase_rad' -Name 'resolved RF phase'
         waveform = $waveform
         axis_voltage_v = Get-RfSimionRequiredFiniteNumber -Object $drive `
             -Property 'common_mode_offset_V' -Name 'resolved common-mode voltage'

@@ -33,6 +33,7 @@ RELATIVE_PATHS = (
     r"common\contracts\particle_physics.py",
     r"common\contracts\particle_count_policy.py",
     r"common\contracts\particle_count_policy.json",
+    r"common\contracts\file_identity.py",
     r"common\multipole\__init__.py",
     r"common\multipole\particle_source_preflight.py",
 )
@@ -44,6 +45,7 @@ REQUIRED_MODULES = (
     "projects.rf_quadrupole_ion_optics.analysis.paired_particle_source_bundle",
     "common.contracts.particle_physics",
     "common.contracts.particle_count_policy",
+    "common.contracts.file_identity",
     "common.multipole",
     "common.multipole.particle_source_preflight",
 )

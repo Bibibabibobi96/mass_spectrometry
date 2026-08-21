@@ -576,7 +576,7 @@ class WorkflowArchitectureContractTests(unittest.TestCase):
             "rf_peak_v",
             "dc_amplitude_v",
             "frequency_hz",
-            "phase_deg",
+            "phase_rad",
             "waveform",
             "axis_voltage_v",
             "entrance_voltage_v",

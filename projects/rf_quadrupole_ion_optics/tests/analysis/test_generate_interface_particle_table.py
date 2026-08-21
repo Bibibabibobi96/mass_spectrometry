@@ -313,6 +313,10 @@ class InterfaceParticleTableTests(unittest.TestCase):
                     code_root / "common" / "contracts" / "particle_count_policy.json",
                 ),
                 (
+                    REPOSITORY_ROOT / "common" / "contracts" / "file_identity.py",
+                    code_root / "common" / "contracts" / "file_identity.py",
+                ),
+                (
                     REPOSITORY_ROOT / "common" / "multipole" / "__init__.py",
                     code_root / "common" / "multipole" / "__init__.py",
                 ),

@@ -117,9 +117,10 @@ try {
             'projects\rf_quadrupole_ion_optics\analysis\paired_particle_source_bundle.py',
             'projects\rf_quadrupole_ion_optics\analysis\validate_release_construction_gate.py',
             'common\contracts\particle_physics.py',
-            'common\contracts\particle_count_policy.py',
-            'common\contracts\particle_count_policy.json',
-            'common\multipole\__init__.py',
+        'common\contracts\particle_count_policy.py',
+        'common\contracts\particle_count_policy.json',
+        'common\contracts\file_identity.py',
+        'common\multipole\__init__.py',
             'common\multipole\particle_source_preflight.py'
         )
     $frozenParticlePolicy = Get-FrozenPythonPackageFile `
@@ -176,8 +177,9 @@ try {
             'projects.rf_quadrupole_ion_optics.workflows.interface_readiness.particle_source_policy',
             'projects.rf_quadrupole_ion_optics.analysis.paired_particle_source_bundle',
             'common.contracts.particle_physics',
-            'common.contracts.particle_count_policy',
-            'common.multipole',
+        'common.contracts.particle_count_policy',
+        'common.contracts.file_identity',
+        'common.multipole',
             'common.multipole.particle_source_preflight'
         ) -ForbiddenRoots @($repoRoot,$projectRoot)
 

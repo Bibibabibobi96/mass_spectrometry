@@ -15,10 +15,11 @@ class MassFilterSimionContractTests(unittest.TestCase):
     def test_lua_applies_dc_and_rf_as_one_differential_voltage(self) -> None:
         wrapper = (PROJECT_ROOT / "simion" / "programs" / "quad_transport.lua").read_text(encoding="utf-8")
         self.assertIn("MULTIPOLE_SIMION_SHARED_PROGRAM_LUA", wrapper)
-        lua = (REPO_ROOT / "common" / "multipole" / "simion_transport.lua").read_text(encoding="utf-8")
-        self.assertIn("local differential = transport_dc_amplitude_v + rf", lua)
-        self.assertIn("adj_elect01 = transport_axis_voltage_v + differential", lua)
-        self.assertIn("adj_elect02 = transport_axis_voltage_v - differential", lua)
+        transport = (REPO_ROOT / "common" / "multipole" / "simion_transport.lua").read_text(encoding="utf-8")
+        kernel = (REPO_ROOT / "common" / "multipole" / "simion_rf_drive.lua").read_text(encoding="utf-8")
+        self.assertIn("group_dc_v={[1]=transport_dc_amplitude_v, [2]=-transport_dc_amplitude_v}", transport)
+        self.assertIn("rf_drive.apply_at(ion_time_of_flight, set_electrode_voltage)", transport)
+        self.assertIn("group_dc[index] + polarities[index] * differential", kernel)
 
     def test_mass_filter_has_a_dedicated_fixed_purpose_runner(self) -> None:
         runner_path = (

@@ -134,6 +134,7 @@ $frozenPythonPackage = New-FrozenPythonPackage `
         'common\contracts\particle_physics.py',
         'common\contracts\particle_count_policy.py',
         'common\contracts\particle_count_policy.json',
+        'common\contracts\file_identity.py',
         'common\multipole\__init__.py',
         'common\multipole\particle_source_preflight.py'
     )
@@ -174,6 +175,7 @@ $frozenPythonExecution = Invoke-IsolatedFrozenPythonModule `
         'projects.rf_quadrupole_ion_optics.analysis.paired_particle_source_bundle',
         'common.contracts.particle_physics',
         'common.contracts.particle_count_policy',
+        'common.contracts.file_identity',
         'common.multipole',
         'common.multipole.particle_source_preflight'
     ) -ForbiddenRoots @($repoRoot,$projectRoot)
@@ -421,7 +423,7 @@ try { & $python -m common.contracts.particle_state `
     --state $particleStateCsv --particles $particlePath `
     --source-format canonical --contract $frozenInterface `
     --axial-offset-mm 0.0 --frequency-hz $FrequencyHz `
-    --phase-rad ([double]$coreConfig.phase_deg*[Math]::PI/180) `
+    --phase-rad ([double]$coreConfig.phase_rad) `
     --solver SIMION --output $stateContractReport } finally { Pop-Location }
 if ($LASTEXITCODE -ne 0) { throw 'Particle-state contract gate failed.' }
 $shaPath = Join-Path $candidateDir 'SHA256SUMS.csv'
