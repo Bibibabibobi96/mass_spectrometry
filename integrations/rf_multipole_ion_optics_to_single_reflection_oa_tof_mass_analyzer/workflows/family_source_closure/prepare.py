@@ -855,6 +855,9 @@ def expand_flat_experiment_authoring(campaign: dict[str, Any]) -> dict[str, Any]
         raise ContractError("flat experiment authoring shape differs")
     if not axes or any(not isinstance(axis, str) or not axis for axis in axes) or len(axes) != len(set(axes)):
         raise ContractError("flat experiment variation axes are invalid")
+    row_identity = {"sequence", "experiment_id", "run_id"}
+    if set(axes).intersection(row_identity):
+        raise ContractError("flat experiment variation axes cannot contain row identity")
     expanded: list[dict[str, Any]] = []
     for row in rows:
         if not isinstance(row, dict) or set(row) != {"sequence", "experiment_id", "run_id", "overrides"}:
@@ -863,7 +866,7 @@ def expand_flat_experiment_authoring(campaign: dict[str, Any]) -> dict[str, Any]
         if not isinstance(overrides, dict) or not set(overrides).issubset(set(axes)):
             raise ContractError("flat experiment row override is not an allowed variation axis")
         materialized = copy.deepcopy(shared)
-        if set(materialized).intersection({"sequence", "experiment_id", "run_id"}):
+        if set(materialized).intersection(row_identity):
             raise ContractError("flat experiment shared controls cannot contain row identity")
         materialized.update(copy.deepcopy(overrides))
         materialized.update({key: row[key] for key in ("sequence", "experiment_id", "run_id")})
@@ -4933,12 +4936,22 @@ def main() -> int:
     parser.add_argument("--resolved-output", type=Path)
     parser.add_argument("--plan-output", type=Path)
     parser.add_argument("--list-experiment-ids", action="store_true")
+    parser.add_argument("--print-experiment-json")
     parser.add_argument("--pulse-timing-transition", type=Path)
     parser.add_argument("--materialize-pulse-timing-stage", action="store_true")
     args = parser.parse_args()
-    if args.list_experiment_ids:
+    if args.list_experiment_ids or args.print_experiment_json:
         campaign = expand_flat_experiment_authoring(_load(args.campaign))
         validate_schema(campaign, "rf_multipole_oatof_experiment_campaign.schema.json")
+        if args.print_experiment_json:
+            matches = [
+                row for row in campaign["experiments"]
+                if row["experiment_id"] == args.print_experiment_json
+            ]
+            if len(matches) != 1:
+                parser.error("--print-experiment-json must resolve exactly one experiment")
+            print(json.dumps(matches[0], separators=(",", ":")))
+            return 0
         for row in sorted(campaign["experiments"], key=lambda item: item["sequence"]):
             print(row["experiment_id"])
         return 0

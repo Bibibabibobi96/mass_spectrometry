@@ -137,6 +137,45 @@ class CampaignSourceBindingTests(unittest.TestCase):
             self.assertTrue(is_fresh(repo, campaign))
             self.assertFalse(write_campaign(repo, campaign))
 
+    def test_flat_authoring_refreshes_shared_and_row_source_bindings(self) -> None:
+        for source_location in ("shared", "overrides"):
+            with self.subTest(source_location=source_location), tempfile.TemporaryDirectory() as directory:
+                repo, campaign = self._fixture(Path(directory))
+                document = json.loads(campaign.read_text(encoding="utf-8"))
+                row = document["experiments"][0]
+                source = row.pop("source")
+                shared = {key: value for key, value in row.items() if key not in {
+                    "sequence", "experiment_id", "run_id"
+                }}
+                overrides = {}
+                if source_location == "shared":
+                    shared["source"] = source
+                else:
+                    overrides["source"] = source
+                document["experiments"] = {
+                    "shared": shared,
+                    "variation_axes": ["source"],
+                    "rows": [{
+                        "sequence": 1,
+                        "experiment_id": document["experiments"][0]["experiment_id"],
+                        "run_id": document["experiments"][0]["run_id"],
+                        "overrides": overrides,
+                    }],
+                }
+                campaign.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+
+                self.assertTrue(write_campaign(repo, campaign))
+                self.assertTrue(is_fresh(repo, campaign))
+                self.assertIsInstance(
+                    json.loads(campaign.read_text(encoding="utf-8"))["experiments"], dict
+                )
+                (repo.parent / "artifacts/projects/source/runs/source_run/state.csv").write_text(
+                    "changed\n", encoding="utf-8"
+                )
+                self.assertFalse(is_fresh(repo, campaign))
+                self.assertTrue(write_campaign(repo, campaign))
+                self.assertTrue(is_fresh(repo, campaign))
+
     def test_refuses_to_rebind_a_published_campaign(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             repo, campaign = self._fixture(Path(directory))

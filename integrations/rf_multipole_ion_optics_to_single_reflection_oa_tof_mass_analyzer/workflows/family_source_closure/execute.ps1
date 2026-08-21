@@ -159,9 +159,19 @@ if ($AllExperiments) {
   }
   return
 }
-$experimentRows = @($campaignDocument.experiments | Where-Object {
-  $_.experiment_id -eq $ExperimentId
-})
+$prepareModule = (
+  'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.' +
+  'workflows.family_source_closure.prepare'
+)
+$profileRegistry = Join-Path $integrationRoot 'config\connection_profiles.json'
+$adapterRegistry = Join-Path $integrationRoot 'config\execution_adapter_profiles.json'
+$selectedExperimentJson = & $PythonExe -m $prepareModule --repo-root $repoRoot `
+  --profile-registry $profileRegistry --adapter-registry $adapterRegistry `
+  --campaign $campaignPath --print-experiment-json $ExperimentId
+if ($LASTEXITCODE -ne 0) {
+  throw 'Campaign experiment must resolve exactly once.'
+}
+$experimentRows = @($selectedExperimentJson | ConvertFrom-Json)
 if ($experimentRows.Count -ne 1) {
   throw 'Campaign experiment must resolve exactly once.'
 }

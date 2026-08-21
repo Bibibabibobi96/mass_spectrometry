@@ -7,6 +7,7 @@ import hashlib
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -281,6 +282,89 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                 "variation_axes": ["connection_profile_id"],
                 "rows": [{"sequence": 1, "experiment_id": "gap", "run_id": "run_gap", "overrides": {"source_profile_id": "other"}}],
             }})
+
+    def test_flat_authoring_rejects_malformed_shapes_and_identity_overrides(self) -> None:
+        valid = {
+            "shared": {"execution_strategy": "simion_single_flight"},
+            "variation_axes": ["connection_profile_id"],
+            "rows": [{
+                "sequence": 1, "experiment_id": "one", "run_id": "run_one",
+                "overrides": {"connection_profile_id": "gap0"},
+            }],
+        }
+        invalid = (
+            {"shared": {}, "variation_axes": [], "rows": []},
+            {"shared": {}, "variation_axes": ["gap", "gap"], "rows": valid["rows"]},
+            {"shared": {}, "variation_axes": ["run_id"], "rows": valid["rows"]},
+            {"shared": {"run_id": "forbidden"}, "variation_axes": ["gap"], "rows": valid["rows"]},
+            {"shared": {}, "variation_axes": ["gap"], "rows": [{"sequence": 1, "experiment_id": "one", "run_id": "run_one", "overrides": []}]},
+            {"shared": {}, "variation_axes": ["gap"], "rows": [{"sequence": 1, "experiment_id": "one", "run_id": "run_one", "overrides": {}, "extra": True}]},
+            {"shared": {}, "variation_axes": ["gap"], "rows": [] , "extra": True},
+        )
+        for authoring in invalid:
+            with self.subTest(authoring=authoring), self.assertRaises(ContractError):
+                expand_flat_experiment_authoring({"experiments": authoring})
+
+    def test_flat_cli_lists_sorted_ids_and_prints_the_materialized_row(self) -> None:
+        campaign = load(CAMPAIGN_PATH)
+        rows = campaign["experiments"]
+        shared = {
+            key: rows[0][key] for key in rows[0]
+            if all(key in row and row[key] == rows[0][key] for row in rows)
+            and key not in {"sequence", "experiment_id", "run_id"}
+        }
+        axes = sorted(
+            set().union(*(row.keys() for row in rows)) - set(shared)
+            - {"sequence", "experiment_id", "run_id"}
+        )
+        compact_rows = [
+            {
+                "sequence": row["sequence"], "experiment_id": row["experiment_id"],
+                "run_id": row["run_id"],
+                "overrides": {key: row[key] for key in axes if key in row},
+            }
+            for row in reversed(rows)
+        ]
+        campaign["experiments"] = {
+            "shared": shared, "variation_axes": axes, "rows": compact_rows,
+        }
+        expected = expand_flat_experiment_authoring(campaign)
+        module = (
+            "integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer."
+            "workflows.family_source_closure.prepare"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "flat_campaign.json"
+            path.write_text(json.dumps(campaign, indent=2) + "\n", encoding="utf-8")
+            common = [
+                sys.executable, "-m", module, "--repo-root", str(REPO_ROOT),
+                "--profile-registry", str(PROFILE_REGISTRY), "--adapter-registry", str(ADAPTER_REGISTRY),
+                "--campaign", str(path),
+            ]
+            listed = subprocess.run(
+                [*common, "--list-experiment-ids"], capture_output=True, text=True,
+                encoding="utf-8", errors="replace", check=False, timeout=30, cwd=REPO_ROOT,
+            )
+            self.assertEqual(listed.returncode, 0, listed.stderr)
+            self.assertEqual(
+                listed.stdout.splitlines(),
+                [row["experiment_id"] for row in sorted(expected["experiments"], key=lambda row: row["sequence"])],
+            )
+            selected = expected["experiments"][0]
+            printed = subprocess.run(
+                [*common, "--print-experiment-json", selected["experiment_id"]],
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                check=False, timeout=30, cwd=REPO_ROOT,
+            )
+            self.assertEqual(printed.returncode, 0, printed.stderr)
+            self.assertEqual(json.loads(printed.stdout), selected)
+            missing = subprocess.run(
+                [*common, "--print-experiment-json", "missing"], capture_output=True,
+                text=True, encoding="utf-8", errors="replace", check=False, timeout=30,
+                cwd=REPO_ROOT,
+            )
+            self.assertNotEqual(missing.returncode, 0)
+            self.assertIn("must resolve exactly one experiment", missing.stderr)
 
     def test_memory_policy_freezes_selected_count_and_fails_when_no_batch_fits(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

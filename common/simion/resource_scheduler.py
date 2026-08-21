@@ -80,6 +80,11 @@ def select_memory_profile(
         peak = profile.get("per_batch_peak_working_set_bytes")
         if not isinstance(identity, dict) or isinstance(peak, bool) or not isinstance(peak, int) or peak < 1:
             continue
+        if (
+            identity.get("solver") != resource_identity.get("solver")
+            or identity.get("field_kind") != resource_identity.get("field_kind")
+        ):
+            continue
         score = sum(
             resource_identity.get(key) is not None
             and resource_identity.get(key) == identity.get(key)
@@ -138,13 +143,19 @@ def plan_simion_dispatch(
     if processor_count is None:
         processor_count = 1
     processor_count = _positive_int(processor_count, "logical_processors")
-    cpu_capacity = max(1, (processor_count - cpu_reserve) // cpu_per_batch)
+    cpu_capacity = (processor_count - cpu_reserve) // cpu_per_batch
+    if cpu_capacity < 1:
+        raise ValueError("available CPU cores cannot support one SIMION batch after reserve")
     identity = {key: request.get(key) for key in RESOURCE_IDENTITY_KEYS}
     profile = select_memory_profile(identity, profiles)
     available = available_physical_memory_bytes() if available_memory_bytes is None else available_memory_bytes
     fallback = request.get("unknown_per_batch_reservation_bytes")
     if profile is None:
-        _positive_int(fallback, "unknown_per_batch_reservation_bytes")
+        fallback = _positive_int(fallback, "unknown_per_batch_reservation_bytes")
+        if available is not None:
+            available = _nonnegative_int(available, "available_memory_bytes")
+            if available - reserve < fallback:
+                raise ValueError("available memory cannot support one unknown SIMION bootstrap batch after reserve")
         return {
             "schema_version": 1,
             "role": "simion_repository_dispatch_plan",

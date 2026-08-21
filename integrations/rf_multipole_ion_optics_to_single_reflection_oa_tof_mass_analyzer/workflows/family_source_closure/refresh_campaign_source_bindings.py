@@ -14,6 +14,7 @@ from common.contracts.verify_run_manifest import record_path, verify_record
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.prepare import (
     _canonical_sha256,
     _derive_pulse_discovery_run_id,
+    expand_flat_experiment_authoring,
 )
 
 
@@ -49,7 +50,19 @@ def compile_campaign(repo_root: Path, campaign_path: Path) -> dict[str, Any]:
     """Return a campaign with every declared source identity recomputed."""
     campaign = copy.deepcopy(_load(campaign_path))
     records = [campaign["execution_policy"]]
-    for experiment in campaign.get("experiments", []):
+    authoring = campaign.get("experiments", [])
+    if isinstance(authoring, list):
+        authoring_rows = authoring
+    elif isinstance(authoring, dict):
+        authoring_rows = [authoring.get("shared", {})] + [
+            row.get("overrides", {}) for row in authoring.get("rows", [])
+            if isinstance(row, dict)
+        ]
+    else:
+        raise ValueError("campaign experiments must be an array or flat authoring object")
+    for experiment in authoring_rows:
+        if not isinstance(experiment, dict):
+            raise ValueError("campaign experiment authoring row must be an object")
         source = experiment.get("source", {})
         records.extend(source[role] for role in SOURCE_FILE_ROLES if role in source)
         reference = experiment.get("single_flight_design_reference", {})
@@ -70,16 +83,17 @@ def canonical_bytes(document: dict[str, Any]) -> bytes:
 
 def is_fresh(repo_root: Path, campaign_path: Path) -> bool:
     compiled = compile_campaign(repo_root, campaign_path)
+    materialized = expand_flat_experiment_authoring(compiled)
     rendered = canonical_bytes(compiled)
     if campaign_path.read_bytes() != rendered:
         return False
     if (
-        _published_target_manifests(repo_root, compiled)
+        _published_target_manifests(repo_root, materialized)
         or _published_campaign_receipts(repo_root, campaign_path)
     ):
         try:
             _validate_published_format_recovery(
-                repo_root, campaign_path, compiled, rendered
+                repo_root, campaign_path, materialized, rendered
             )
         except ValueError:
             return False
@@ -273,8 +287,9 @@ def _validate_internal_discovery_receipt(
 def write_campaign(repo_root: Path, campaign_path: Path) -> bool:
     """Refresh identities unless a published target run makes the campaign immutable."""
     compiled = compile_campaign(repo_root, campaign_path)
+    materialized = expand_flat_experiment_authoring(compiled)
     rendered = canonical_bytes(compiled)
-    published = _published_target_manifests(repo_root, compiled)
+    published = _published_target_manifests(repo_root, materialized)
     receipts = _published_campaign_receipts(repo_root, campaign_path)
     if published or receipts:
         if _load(campaign_path) != compiled:
@@ -287,7 +302,7 @@ def write_campaign(repo_root: Path, campaign_path: Path) -> bool:
                 f"published campaign source bindings are immutable: {published_ids}"
             )
         _validate_published_format_recovery(
-            repo_root, campaign_path, compiled, rendered
+            repo_root, campaign_path, materialized, rendered
         )
     if campaign_path.read_bytes() == rendered:
         return False
