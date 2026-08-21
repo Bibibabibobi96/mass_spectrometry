@@ -25,6 +25,5 @@
 - SolidWorks 原始图边界：[`docs/CAD.md`](docs/CAD.md)
 - 项目身份与成熟度：[`config/project.json`](config/project.json)
 
-## 历史索引
-
-- [2026-08-02 项目身份整合](docs/history/20260802__mrtof-project-identity-consolidation.md)
+## 历史补充索引
+- [20260802__mrtof-project-identity-consolidation](docs/history/20260802__mrtof-project-identity-consolidation.md)
