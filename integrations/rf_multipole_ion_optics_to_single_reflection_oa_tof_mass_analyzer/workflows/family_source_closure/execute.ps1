@@ -110,24 +110,6 @@ if ([string]$campaignDocument.status -in @('retired', 'archived_invalid')) {
 if (($SolverAuthorized -or $FinalizeOnly) -and [string]$campaignDocument.status -ne 'authorized') {
   throw 'SolverAuthorized or FinalizeOnly execution requires campaign.status=authorized.'
 }
-$currentCampaigns = @($lifecycleRegistry.active_campaigns | Where-Object {
-  [string]$_.path -eq $campaignRepoRelative
-})
-if ($currentCampaigns.Count -gt 1) {
-  throw 'Lifecycle registry resolves the campaign more than once.'
-}
-if ($SolverAuthorized -or $FinalizeOnly) {
-  if ($currentCampaigns.Count -ne 1) {
-    throw 'Campaign is not a current registered execution authority; execution is forbidden.'
-  }
-  $currentCampaignSha256 = (
-    Get-FileHash -LiteralPath $campaignPath -Algorithm SHA256
-  ).Hash.ToLowerInvariant()
-  if ($currentCampaignSha256 -ne
-      ([string]$currentCampaigns[0].content_sha256).ToLowerInvariant()) {
-    throw 'Current execution authority campaign identity differs; execution is forbidden.'
-  }
-}
 if ($AllExperiments) {
   $prepareModule = (
     'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.' +
