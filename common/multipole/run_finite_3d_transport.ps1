@@ -139,12 +139,16 @@ try{
   Remove-Item -LiteralPath $budgetPreflight -Force -ErrorAction SilentlyContinue
   throw
 }
+$executionCapacityPaths=Get-RunPackageCopiedSourcePaths -RepoRoot $repoRoot `
+  -SourceRelativeDirectories @('common/contracts','common/multipole','common/comsol') `
+  -Extensions @('.py','.json','.ps1','.m','.lua')
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot `
   -ArtifactRoot (Join-Path $workspaceRoot "artifacts\projects\$ProjectId") -RunId $RunId `
   -Project $ProjectId -Mode 'resolved_design_transport' `
   -RetentionContractEnabled `
   -RetentionClass $RetentionClass -RetentionReason $RetentionReason `
-  -Software @('COMSOL 6.4','MATLAB R2025b','Python 3.11') -UseShortExecutionPath
+  -Software @('COMSOL 6.4','MATLAB R2025b','Python 3.11') -UseShortExecutionPath `
+  -ExpectedExecutionRelativePaths $executionCapacityPaths
 $runDir=$package.run_dir;$inputDir=$package.input_dir;$resultDir=$package.result_dir
 $logDir=$package.log_dir;$runConfig=$package.run_config;$summary=$package.summary
 $runtimeDir=Join-Path $logDir 'runtime'

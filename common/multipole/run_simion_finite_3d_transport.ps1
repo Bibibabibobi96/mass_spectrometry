@@ -210,12 +210,16 @@ if(-not(Test-Path -LiteralPath $simion -PathType Leaf)){
   Remove-Item -LiteralPath $budgetPreflight -Force -ErrorAction SilentlyContinue
   throw "SIMION executable is missing: $simion"
 }
+$executionCapacityPaths=Get-RunPackageCopiedSourcePaths -RepoRoot $repoRoot `
+  -SourceRelativeDirectories @('common/contracts','common/multipole','common/simion') `
+  -Extensions @('.py','.json','.ps1','.lua')
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot `
   -ArtifactRoot (Join-Path $workspaceRoot "artifacts\projects\$ProjectId") -RunId $RunId `
   -Project $ProjectId -Mode 'resolved_design_transport' -Software @('SIMION 2020','Python 3.11') `
   -RetentionContractEnabled `
   -RetentionClass $RetentionClass -RetentionReason $RetentionReason `
-  -AdditionalDirectories @('simion') -UseShortExecutionPath
+  -AdditionalDirectories @('simion') -UseShortExecutionPath `
+  -ExpectedExecutionRelativePaths $executionCapacityPaths
 $runDir=$package.run_dir;$inputDir=$package.input_dir;$resultDir=$package.result_dir
 $logDir=$package.log_dir;$solverDir=Join-Path $runDir 'simion'
 $runConfig=$package.run_config;$summary=$package.summary;$manifestRepoRoot=$repoRoot

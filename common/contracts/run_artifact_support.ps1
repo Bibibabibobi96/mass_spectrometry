@@ -175,6 +175,33 @@ function Get-RunPackagePathCapacity {
   }
 }
 
+function Get-RunPackageCopiedSourcePaths {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$RepoRoot,
+    [Parameter(Mandatory)][string[]]$SourceRelativeDirectories,
+    [Parameter(Mandatory)][string[]]$Extensions,
+    [string]$DestinationRoot = 'inputs/code'
+  )
+  $repo = [IO.Path]::GetFullPath($RepoRoot)
+  $paths = foreach ($relativeDirectory in $SourceRelativeDirectories) {
+    $source = [IO.Path]::GetFullPath((Join-Path $repo $relativeDirectory))
+    if (-not $source.StartsWith($repo + [IO.Path]::DirectorySeparatorChar,
+        [StringComparison]::OrdinalIgnoreCase) -or
+        -not (Test-Path -LiteralPath $source -PathType Container)) {
+      throw "Copied source directory is not one repository-local directory: $relativeDirectory"
+    }
+    Get-ChildItem -LiteralPath $source -Recurse -File |
+      Where-Object { $_.Extension -in $Extensions } |
+      ForEach-Object {
+        $nested = $_.FullName.Substring($source.Length).TrimStart([char[]]@(92,47))
+        ($DestinationRoot.TrimEnd([char[]]@(92,47)) + '/' +
+          $relativeDirectory.Trim([char[]]@(92,47)) + '/' + $nested).Replace([string][char]92,'/')
+      }
+  }
+  return @($paths | Sort-Object -Unique)
+}
+
 function Assert-RunPackagePathCapacity {
   [CmdletBinding()]
   param([Parameter(Mandatory)][pscustomobject]$Report)
