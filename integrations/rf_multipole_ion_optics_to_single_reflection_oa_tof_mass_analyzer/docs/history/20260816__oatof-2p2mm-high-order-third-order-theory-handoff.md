@@ -435,7 +435,7 @@ teleport或自建粒子搬运。
   当前affine `A1/A2`及工程`C3`边界。
 - [整机纵向耦合理论](../../../../projects/single_reflection_oa_tof_mass_analyzer/docs/theory/oatof_oaaccelerator_coupling.md)：
   焦面、`L_up/L_down`、静止源三阶诊断及联合`D1/D2`。
-- [官方restart五格机器合同](../../config/diagnostics/canonical_long_affine_arm8_width_numerics_restart_n1000_campaign.json)：
+- [官方restart五格机器合同](retired_campaigns/canonical_long_affine_arm8_width_numerics_restart_n1000_campaign.json)：
   lineage run、冻结源和数值变量；`Arm8`仅是历史profile命名，不是新规范场名。
 
 ### 外部primary sources

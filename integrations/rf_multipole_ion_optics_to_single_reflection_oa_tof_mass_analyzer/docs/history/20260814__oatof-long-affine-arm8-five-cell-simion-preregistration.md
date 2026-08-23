@@ -18,7 +18,7 @@ cohort是`AFFINE z-vz`、固定长焦2.2 mm匹配结构和全域理想场。本�
 冒充既有计划的阶段A、八宽度主扫描或真实场组件隔离结果。
 
 机器campaign唯一身份为
-[`canonical_long_affine_arm8_width_numerics_n1000_campaign`](../../config/diagnostics/canonical_long_affine_arm8_width_numerics_n1000_campaign.json)。
+[`canonical_long_affine_arm8_width_numerics_n1000_campaign`](retired_campaigns/canonical_long_affine_arm8_width_numerics_n1000_campaign.json)。
 本文冻结时该合同状态为`PENDING_PREREGISTRATION`，求解器执行被失败关闭；本文通过独立审阅后，只有
 责任workflow显式完成状态迁移并重新校验完全相同的五格语义，才可启动SIMION。激活后的完整campaign
 SHA和每行row SHA必须进入各run config。本文中的显示名只映射机器身份，不参与缓存或结果身份判断。

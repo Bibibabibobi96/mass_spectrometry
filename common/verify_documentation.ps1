@@ -299,7 +299,12 @@ foreach ($historyScope in $historyScopes) {
         Add-DocError "$relative`: history payload must be inside a same-name manifest directory"
     }
 
-    foreach ($payloadDir in @(Get-ChildItem -LiteralPath $historyDir.FullName -Directory)) {
+    # Retired campaign archives are byte-preserved machine records whose
+    # dedicated archive indexes own their path-to-SHA mappings.  They are not
+    # publication payload sets and therefore do not use the Markdown manifest
+    # convention enforced below.
+    foreach ($payloadDir in @(Get-ChildItem -LiteralPath $historyDir.FullName -Directory |
+        Where-Object { $_.Name -ne 'retired_campaigns' })) {
         $manifestPath = Join-Path $historyDir.FullName ($payloadDir.Name + '.md')
         if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
             $relative = $payloadDir.FullName.Substring($repoRoot.Length + 1)
