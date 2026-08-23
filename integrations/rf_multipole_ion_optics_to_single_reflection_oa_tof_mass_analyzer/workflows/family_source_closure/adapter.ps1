@@ -325,16 +325,6 @@ if ($frozenArguments.ContainsKey('pulse_resolution_execution_mode')) {
     'pulse_resolution_registration_sha256'
   )
 }
-$hasConnectorGapPrefixArguments = $frozenArguments.ContainsKey(
-  'connector_gap_prefix_filename'
-)
-if ($hasConnectorGapPrefixArguments) {
-  $expectedArguments += @(
-    'connector_gap_prefix_filename',
-    'connector_gap_prefix_sha256',
-    'connector_gap_prefix_count'
-  )
-}
 $hasPrePulseTimeSeriesArguments = $frozenArguments.ContainsKey(
   'pre_pulse_time_series_contract_filename'
 )
@@ -585,13 +575,6 @@ if ($PrepareOnly -and
 $pulseN100Screening = $frozenArguments.ContainsKey(
   'pulse_resolution_execution_mode'
 )
-$campaignHasConnectorGapScreen = (
-  $campaign.PSObject.Properties.Name -contains 'connector_gap_screen'
-) -and $null -ne $campaign.connector_gap_screen
-if ($campaignHasConnectorGapScreen -ne $hasConnectorGapPrefixArguments) {
-  throw 'Connector-gap campaign and prepared prefix authority differ.'
-}
-$connectorGapScreening = $campaignHasConnectorGapScreen
 $campaignHasPrePulseTimeSeries = (
   $campaign.PSObject.Properties.Name -contains
   'pre_pulse_time_series_screening'
@@ -639,18 +622,11 @@ $pulseCandidateConfirmation = $pulseTimingConfirmation -or (
 if ($pulseCandidateConfirmation -ne $hasPulseCandidateConfirmationArguments) {
   throw 'Pulse candidate confirmation and prepared prefix authority differ.'
 }
-if ($pulseN100Screening -and $connectorGapScreening) {
-  throw 'Pulse-resolution and connector-gap prefix authorities are mutually exclusive.'
-}
-if ($prePulseTimeSeriesScreening -and (
-    $pulseN100Screening -or
-    ($connectorGapScreening -and -not $pulseTimingDiscovery))) {
+if ($prePulseTimeSeriesScreening -and $pulseN100Screening) {
   throw 'Prepared screening authorities are mutually exclusive.'
 }
 if ($pulseCandidateConfirmation -and (
-    $pulseN100Screening -or
-    ($connectorGapScreening -and -not $pulseTimingConfirmation) -or
-    $prePulseTimeSeriesScreening)) {
+    $pulseN100Screening -or $prePulseTimeSeriesScreening)) {
   throw 'Pulse candidate confirmation and screening authorities are mutually exclusive.'
 }
 if ($pulseN100Screening) {
@@ -1098,23 +1074,6 @@ if ($pulseN100Screening) {
     throw 'Plan-bound baseline registration authority is outside inputs, missing or stale.'
   }
 }
-$connectorGapPrefixPath = $null
-if ($connectorGapScreening) {
-  $connectorGapPrefixPath = [IO.Path]::GetFullPath(
-    (Join-Path $runDirectory $frozenArguments.connector_gap_prefix_filename)
-  )
-  if (-not $connectorGapPrefixPath.StartsWith(
-        (Join-Path $runDirectory 'inputs') + [IO.Path]::DirectorySeparatorChar,
-        [StringComparison]::OrdinalIgnoreCase
-      ) -or
-      -not (Test-Path -LiteralPath $connectorGapPrefixPath -PathType Leaf) -or
-      (Get-FileHash -LiteralPath $connectorGapPrefixPath -Algorithm SHA256).Hash -ne
-        $frozenArguments.connector_gap_prefix_sha256 -or
-      @(Import-Csv -LiteralPath $connectorGapPrefixPath).Count -ne
-        [int]$frozenArguments.connector_gap_prefix_count) {
-    throw 'Plan-bound connector-gap screening prefix is outside inputs, missing, stale, or has the wrong count.'
-  }
-}
 $prePulseTimeSeriesPrefixPath = $null
 $prePulseTimeSeriesContractPath = $null
 if ($prePulseTimeSeriesScreening) {
@@ -1132,9 +1091,7 @@ if ($prePulseTimeSeriesScreening) {
   $pulseTimingDiscoveryAuthority = $pulseTimingDiscovery -or
     $pulseTimingDiscoveryRequired
   $expectedTimeSeriesPrefix = if ($pulseTimingDiscoveryAuthority) {
-    if ($connectorGapScreening) {
-      [string]$frozenArguments.connector_gap_prefix_filename
-    } else { $prePulseTimeSeriesPrefixBinding }
+    $prePulseTimeSeriesPrefixBinding
   } else { 'inputs/pre_pulse_time_series_screening_prefix_n100.csv' }
   if ([IO.Path]::IsPathRooted($prePulseTimeSeriesPrefixBinding) -or
       $prePulseTimeSeriesPrefixBinding -ne
@@ -1173,9 +1130,7 @@ if ($pulseCandidateConfirmation) {
   $artifactsRoot = (Join-Path $workspaceRoot 'artifacts') +
     [IO.Path]::DirectorySeparatorChar
   $expectedConfirmationPrefix = if ($pulseTimingConfirmation) {
-    if ($connectorGapScreening) {
-      [string]$frozenArguments.connector_gap_prefix_filename
-    } else { $pulseCandidateConfirmationPrefixBinding }
+    $pulseCandidateConfirmationPrefixBinding
   } else { 'inputs/pulse_candidate_confirmation_prefix_n100.csv' }
   if ([IO.Path]::IsPathRooted($pulseCandidateConfirmationPrefixBinding) -or
       $pulseCandidateConfirmationPrefixBinding -ne
@@ -1880,8 +1835,6 @@ if ($executionStrategy -eq 'simion_single_flight') {
     $pulseCandidateConfirmationPrefixPath
   } elseif ($pulseN100Screening) {
     $pulsePrefixPath
-  } elseif ($connectorGapScreening) {
-    $connectorGapPrefixPath
   } elseif ($prePulseTimeSeriesScreening) {
     $prePulseTimeSeriesPrefixPath
   } elseif ($pulseCandidateConfirmation) {
@@ -1899,8 +1852,6 @@ if ($executionStrategy -eq 'simion_single_flight') {
     }
     $runnerArguments.MotherParticleSourceSha256 = if ($pulseN100Screening) {
       $frozenArguments.pulse_resolution_prefix_sha256
-    } elseif ($connectorGapScreening) {
-      $frozenArguments.connector_gap_prefix_sha256
     } elseif ($pulseCandidateConfirmation) {
       $frozenArguments.pulse_candidate_confirmation_prefix_sha256
     } else {

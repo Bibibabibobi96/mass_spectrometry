@@ -16,7 +16,6 @@
     "preregistration": {"$ref": "#/$defs/preregistration"},
     "pulse_resolution_optimization": {"$ref": "#/$defs/pulse_resolution_optimization"},
     "pulse_resolution_cohort_authority": {"$ref": "#/$defs/pulse_resolution_cohort_authority"},
-    "connector_gap_screen": {"$ref": "#/$defs/connector_gap_screen"},
     "pre_pulse_time_series_screening": {"$ref": "#/$defs/pre_pulse_time_series_screening"},
     "pulse_resolution_baseline_evidence": {"$ref": "#/$defs/baseline_evidence"},
     "experiments": {
@@ -53,31 +52,10 @@
           }
         },
         "not": {"anyOf": [
-          {"required": ["connector_gap_screen"]},
           {"required": ["pulse_resolution_optimization"]},
           {"required": ["pulse_resolution_cohort_authority"]},
           {"required": ["pulse_resolution_baseline_evidence"]}
         ]}
-      }
-    },
-    {
-      "if": {"required": ["connector_gap_screen"]},
-      "then": {
-        "properties": {
-          "schema_version": {"const": 5},
-          "experiments": {
-            "items": {
-              "required": ["connector_gap_evidence_role"],
-              "properties": {"source_release_mode": {"const": "continuous_frontend"}},
-              "not": {"anyOf": [
-                {"required": ["pre_pulse_source_state"]},
-                {"required": ["generated_pre_pulse_ordered_subset"]},
-                {"required": ["observed_pre_pulse_projection"]},
-                {"required": ["staged_grid2_source_state"]}
-              ]}
-            }
-          }
-        }
       }
     },
     {
@@ -713,58 +691,6 @@
       "properties": {
         "selector": {"type": "string", "minLength": 1},
         "ordered_particle_id_sha256": {"$ref": "#/$defs/sha"}
-      }
-    },
-    "connector_gap_screen": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "purpose", "primary_connection_profile_ids",
-        "report_only_connection_profile_ids", "mother_sample_count",
-        "screening_prefix_count", "selection_algorithm",
-        "ordered_particle_id_sha256", "mother_particle_source_sha256",
-        "original_denominator_count", "allowed_variation_axes"
-      ],
-      "properties": {
-        "purpose": {"const": "connector_gap_sensitivity_diagnostic"},
-        "primary_connection_profile_ids": {
-          "type": "array",
-          "prefixItems": [
-            {"const": "rf_octupole_oatof_shield_terminal_direct_mating_gap_0mm"},
-            {"const": "rf_octupole_oatof_shield_terminal_direct_mating_gap_3p2mm"},
-            {"const": "rf_octupole_oatof_shield_terminal_direct_mating_gap_6p4mm"},
-            {"const": "rf_octupole_oatof_shield_terminal_direct_mating_gap_12p8mm"}
-          ],
-          "items": false,
-          "minItems": 4,
-          "maxItems": 4
-        },
-        "report_only_connection_profile_ids": {
-          "type": "array",
-          "prefixItems": [
-            {"const": "rf_octupole_oatof_shield_terminal_direct_mating_gap_25p6mm"},
-            {"const": "rf_octupole_to_single_reflection_oatof_direct_mating_gap_51p2mm"}
-          ],
-          "items": false,
-          "minItems": 1,
-          "maxItems": 2
-        },
-        "mother_sample_count": {"const": 1000},
-        "screening_prefix_count": {"const": 100},
-        "selection_algorithm": {"const": "first_100_rows_in_frozen_file_order"},
-        "ordered_particle_id_sha256": {
-          "const": "F9E2DBDE0AE4640704FB66EE02C101CF84ABE35137363D62647622606DF61279"
-        },
-        "mother_particle_source_sha256": {
-          "const": "302C03DC29737CE9D46EB1A8D258DB2A8D3C0F8B6A53F7702A33B1ECF9D5320D"
-        },
-        "original_denominator_count": {"const": 100},
-        "allowed_variation_axes": {
-          "const": [
-            "sequence", "experiment_id", "run_id", "connection_profile_id",
-            "connector_gap_evidence_role"
-          ]
-        }
       }
     },
     "pre_pulse_time_series_screening": {

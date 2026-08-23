@@ -300,82 +300,6 @@ def validate_pulse_resolution_optimization_campaign(
             raise ContractError("pulse-resolution N=100 experiment is not executable")
 
 
-def validate_connector_gap_screen_campaign(
-    campaign: dict[str, Any], profile_registry: dict[str, Any],
-) -> None:
-    """Fail closed on the detector-blind five-row connector-gap matrix."""
-    contract = campaign.get("connector_gap_screen")
-    if contract is None:
-        return
-    rows = campaign["experiments"]
-    profile_ids = (
-        contract["primary_connection_profile_ids"]
-        + contract["report_only_connection_profile_ids"]
-    )
-    if len(rows) != 5 or [row["connection_profile_id"] for row in rows] != profile_ids:
-        raise ContractError("connector-gap campaign profile order differs")
-    expected_roles = ["primary"] * 4 + ["stress_report_only"]
-    if [row.get("connector_gap_evidence_role") for row in rows] != expected_roles:
-        raise ContractError("connector-gap campaign evidence roles differ")
-    profiles = {
-        profile["connection_profile_id"]: profile
-        for profile in profile_registry["profiles"]
-    }
-    observed_gaps: list[float] = []
-    for profile_id in profile_ids:
-        profile = profiles.get(profile_id)
-        if profile is None:
-            raise ContractError("connector-gap campaign profile is not registered")
-        expected_gap = float(profile["spatial_registration"]["expected_gap_mm"])
-        connector_length = float(profile["connector"]["length_mm"])
-        if expected_gap != connector_length:
-            raise ContractError("connector-gap profile registration and length differ")
-        observed_gaps.append(expected_gap)
-    if observed_gaps != [0.0, 3.2, 6.4, 12.8, 25.6]:
-        raise ContractError("connector-gap campaign distance matrix differs")
-    allowed_axes = set(contract["allowed_variation_axes"])
-    normalized_rows = []
-    for row in rows:
-        try:
-            validate_run_id(str(row["run_id"]))
-        except (TypeError, ValueError) as exc:
-            raise ContractError("connector-gap campaign run_id is invalid") from exc
-        source = row.get("source", {})
-        population = row.get("single_flight_population", {})
-        execution = population.get("execution_population", {})
-        denominators = population.get("denominators", {})
-        authority = population.get("source_authority", {})
-        if (
-            row.get("source_release_mode") != "continuous_frontend"
-            or any(key in row for key in (
-                "pre_pulse_source_state", "generated_pre_pulse_ordered_subset",
-                "observed_pre_pulse_projection", "staged_grid2_source_state",
-            ))
-            or source.get("authority_scope") != "source_population"
-            or source.get("launched_particle_count") != contract["mother_sample_count"]
-            or source.get("particle_source", {}).get("sha256")
-            != contract["mother_particle_source_sha256"]
-            or population.get("population_mode")
-            != "first_100_rows_in_frozen_file_order"
-            or authority.get("table_binding") != "prepared_deterministic_prefix"
-            or authority.get("input_role") != "connector_gap_screening_prefix"
-            or execution.get("particle_count") != contract["screening_prefix_count"]
-            or execution.get("ordered_particle_id_sha256")
-            != contract["ordered_particle_id_sha256"]
-            or execution.get("selection_algorithm") != contract["selection_algorithm"]
-            or denominators.get("population_count")
-            != contract["original_denominator_count"]
-            or denominators.get("eligible_population_count")
-            != contract["original_denominator_count"]
-        ):
-            raise ContractError("connector-gap source or population identity differs")
-        normalized_rows.append({
-            key: value for key, value in row.items() if key not in allowed_axes
-        })
-    if any(row != normalized_rows[0] for row in normalized_rows[1:]):
-        raise ContractError("connector-gap campaign changes a frozen control")
-
-
 def _automatic_pulse_population_binding(
     population: dict[str, Any],
 ) -> tuple[str, int]:
@@ -3194,7 +3118,6 @@ def prepare_family_source_closure(
             "staged grid2 source state requires staged grid2 restart mode"
         )
     profile_registry = load_connection_profile_registry(profile_registry_path)
-    validate_connector_gap_screen_campaign(campaign, profile_registry)
     profile = _unique_profile(profile_registry, experiment["connection_profile_id"])
     expected_project_id = profile["upstream"]["project_id"]
 
@@ -3238,7 +3161,6 @@ def prepare_family_source_closure(
     )
     source = evidence["source"]
     pulse_contract = campaign.get("pulse_resolution_optimization")
-    connector_gap_contract = campaign.get("connector_gap_screen")
     pulse_cohort_policy = None
     historical_cohort_reference = None
     paired_cohort_authority = None
@@ -3273,19 +3195,6 @@ def prepare_family_source_closure(
         pulse_prefix_sha256 = write_pulse_resolution_screening_prefix(
             _workspace_record(workspace, source["particle_source"],
                               "pulse-resolution mother source"),
-            pulse_prefix_path,
-            ordered_particle_ids=prefix_ids,
-        )
-    elif connector_gap_contract is not None:
-        prefix_ids = list(range(1, connector_gap_contract["screening_prefix_count"] + 1))
-        pulse_prefix_path = (
-            plan_output.parent / "inputs" / "connector_gap_screening_prefix_n100.csv"
-        )
-        pulse_prefix_path.parent.mkdir(parents=True, exist_ok=True)
-        pulse_prefix_sha256 = write_pulse_resolution_screening_prefix(
-            _workspace_record(
-                workspace, source["particle_source"], "connector-gap mother source"
-            ),
             pulse_prefix_path,
             ordered_particle_ids=prefix_ids,
         )
@@ -4642,11 +4551,6 @@ def prepare_family_source_closure(
                 + registration_receipt_path.name,
                 "pulse_resolution_registration_sha256="
                 + registration_receipt_sha256,
-            ]) + ([] if connector_gap_contract is None else [
-                "connector_gap_prefix_filename=inputs/" + pulse_prefix_path.name,
-                "connector_gap_prefix_sha256=" + pulse_prefix_sha256,
-                "connector_gap_prefix_count="
-                + str(connector_gap_contract["screening_prefix_count"]),
             ]) + ([] if pre_pulse_time_series_contract_path is None else [
                 "pre_pulse_time_series_prefix_filename="
                 + pulse_population_plan_path,

@@ -1371,47 +1371,6 @@ $batchRows = [string[]]$particleRows[0..33]
         self.assertLess(optional_binding, solver_boundary)
         self.assertLess(solver_boundary, runner_call)
 
-    def test_adapter_fails_closed_on_connector_gap_prefix_before_solver(self) -> None:
-        adapter = (
-            INTEGRATION_ROOT / "workflows" / "family_source_closure" / "adapter.ps1"
-        ).read_text(encoding="utf-8")
-        argument_gate = adapter.index("'connector_gap_prefix_filename'")
-        campaign_gate = adapter.index(
-            "Connector-gap campaign and prepared prefix authority differ."
-        )
-        mutual_exclusion = adapter.index(
-            "Pulse-resolution and connector-gap prefix authorities are mutually exclusive."
-        )
-        path_gate = adapter.index("$connectorGapPrefixPath =")
-        missing_gate = adapter.index(
-            "Test-Path -LiteralPath $connectorGapPrefixPath", path_gate
-        )
-        tamper_gate = adapter.index(
-            "Get-FileHash -LiteralPath $connectorGapPrefixPath", path_gate
-        )
-        assignment = adapter.index(
-            "$runnerArguments.MotherParticleSource = $preparedPrefixPath"
-        )
-        source_root_assignment = adapter.index(
-            "$runnerArguments.MotherParticleSourceRunRoot = $runDirectory"
-        )
-        runner_call = adapter.index("& $runtime.implementation.single_flight_runner")
-        self.assertIn("'connector_gap_prefix_sha256'", adapter[argument_gate:campaign_gate])
-        self.assertIn("'connector_gap_prefix_count'", adapter[argument_gate:campaign_gate])
-        self.assertIn(
-            "[int]$frozenArguments.connector_gap_prefix_count",
-            adapter[path_gate:assignment],
-        )
-        self.assertLess(argument_gate, campaign_gate)
-        self.assertLess(campaign_gate, mutual_exclusion)
-        self.assertLess(mutual_exclusion, path_gate)
-        self.assertLess(path_gate, missing_gate)
-        self.assertLess(missing_gate, tamper_gate)
-        self.assertLess(tamper_gate, assignment)
-        self.assertLess(assignment, source_root_assignment)
-        self.assertLess(source_root_assignment, runner_call)
-        self.assertLess(assignment, runner_call)
-
     def test_adapter_uses_only_frozen_canonical_region_field_profile(self) -> None:
         adapter = (
             INTEGRATION_ROOT / "workflows" / "family_source_closure" / "adapter.ps1"
