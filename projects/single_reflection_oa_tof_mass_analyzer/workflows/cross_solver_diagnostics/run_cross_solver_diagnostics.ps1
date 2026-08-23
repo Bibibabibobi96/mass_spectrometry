@@ -36,12 +36,27 @@ $resultDir = Join-Path $runDir 'results'
 $logDir = Join-Path $runDir 'logs'
 New-Item -ItemType Directory -Path $runDir,$inputDir,$resultDir,$logDir | Out-Null
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+$executionAlias = $null
+$runtimeAlias = $null
+$runtimeRoot = $null
 Initialize-RunRecord -RunDir $runDir -RunId $RunId -Project 'single_reflection_oa_tof_mass_analyzer' `
   -Mode 'formal_cross_solver_diagnostics' -ProjectRoot $projectRoot `
   -RepoRoot $repoRoot -Python $python -ProvisionalSummaryRole 'oa_tof_provisional_run_summary' `
   -TerminalSummaryRole 'oa_tof_terminal_run_summary'
 $runRecordComplete = $false
 trap {
+  if ($null -ne $runtimeAlias) {
+    try { Remove-RunExecutionAlias -ExecutionAlias $runtimeAlias.execution_alias -TargetDirectory $runtimeRoot }
+    catch { Write-Warning "Could not remove short formal-runtime alias: $($_.Exception.Message)" }
+  }
+  if ($null -ne $runtimeRoot) {
+    try { Remove-OaTofFormalSimionRuntime -ArtifactRoot $artifactRoot -RuntimeRoot $runtimeRoot }
+    catch { Write-Warning "Could not remove formal SIMION runtime: $($_.Exception.Message)" }
+  }
+  if ($null -ne $executionAlias) {
+    try { Remove-RunExecutionAlias -ExecutionAlias $executionAlias.execution_alias -TargetDirectory $runDir }
+    catch { Write-Warning "Could not remove short diagnostics execution alias: $($_.Exception.Message)" }
+  }
   if (-not $runRecordComplete) {
     Write-TerminalRunRecord -RunDir $runDir -Status failed -Reason $_.Exception.Message `
       -RepoRoot $repoRoot -Python $python -SummaryRole 'oa_tof_terminal_run_summary'
@@ -161,21 +176,47 @@ $runtimeRoot = New-OaTofFormalSimionRuntime -ProjectRoot $projectRoot `
   -ArtifactRoot $artifactRoot -PythonExe $python `
   -Destination (Join-Path $artifactRoot "scratch\$runtimeTaskId") `
   -Receipt $runtimeReceipt
-$simionEnvironment.OATOF_FORMAL_IOB_PATH = Join-Path $runtimeRoot 'oatof_ideal_grounded.iob'
+$executionAlias = New-RunExecutionAlias -TargetDirectory $runDir -ExpectedExecutionRelativePaths @(
+  'results\comsol_selected_trajectories.csv', 'results\simion_axis_field.csv',
+  'results\simion_accelerator_vector_field.csv', 'logs\simion_axis_field.txt',
+  'logs\simion_accelerator_vector_field.txt'
+)
+$runtimeAlias = New-RunExecutionAlias -TargetDirectory $runtimeRoot `
+  -ExpectedExecutionRelativePaths @('oatof_ideal_grounded.iob')
+$simionEnvironment.OATOF_FORMAL_IOB_PATH = Join-Path $runtimeAlias.execution_alias 'oatof_ideal_grounded.iob'
+$simionEnvironment.OATOF_SIMION_FIELD_CSV = Join-Path $executionAlias.execution_alias 'results\simion_axis_field.csv'
+$simionEnvironment.OATOF_SIMION_FIELD_REPORT = Join-Path $executionAlias.execution_alias 'logs\simion_axis_field.txt'
+$simionEnvironment.OATOF_ACCELERATOR_SAMPLE_CSV = Join-Path $executionAlias.execution_alias 'results\comsol_selected_trajectories.csv'
+$simionEnvironment.OATOF_SIMION_VECTOR_FIELD_CSV = Join-Path $executionAlias.execution_alias 'results\simion_accelerator_vector_field.csv'
+$simionEnvironment.OATOF_SIMION_VECTOR_FIELD_REPORT = Join-Path $executionAlias.execution_alias 'logs\simion_accelerator_vector_field.txt'
 try {
   foreach ($entry in $simionEnvironment.GetEnumerator()) {
     $oldSimionEnvironment[$entry.Key] = [Environment]::GetEnvironmentVariable($entry.Key,'Process')
     [Environment]::SetEnvironmentVariable($entry.Key,$entry.Value,'Process')
   }
-  foreach ($task in @($simionAxisTask,$simionVectorTask)) {
-    & $SimionExe --nogui lua $task
-    if ($LASTEXITCODE -ne 0) { throw "SIMION diagnostic export failed: $task" }
+  Push-Location -LiteralPath $runtimeAlias.execution_alias
+  try {
+    foreach ($task in @($simionAxisTask,$simionVectorTask)) {
+      & $SimionExe --nogui lua $task
+      if ($LASTEXITCODE -ne 0) { throw "SIMION diagnostic export failed: $task" }
+    }
+  } finally {
+    Pop-Location
   }
 } finally {
   foreach ($entry in $simionEnvironment.GetEnumerator()) {
     [Environment]::SetEnvironmentVariable($entry.Key,$oldSimionEnvironment[$entry.Key],'Process')
   }
+  if ($null -ne $runtimeAlias) {
+    Remove-RunExecutionAlias -ExecutionAlias $runtimeAlias.execution_alias -TargetDirectory $runtimeRoot
+    $runtimeAlias = $null
+  }
   Remove-OaTofFormalSimionRuntime -ArtifactRoot $artifactRoot -RuntimeRoot $runtimeRoot
+  $runtimeRoot = $null
+  if ($null -ne $executionAlias) {
+    Remove-RunExecutionAlias -ExecutionAlias $executionAlias.execution_alias -TargetDirectory $runDir
+    $executionAlias = $null
+  }
 }
 
 $comsolVectorEnvironment = @{
