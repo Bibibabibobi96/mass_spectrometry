@@ -11,12 +11,6 @@ import unittest
 from common.contracts.machine_contracts import validate_schema
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.resolved_region_field import (
     FULL_ID,
-    FULL_THREE_ZONE_PROFILE_ID,
-    THREE_ZONE_EXPLICIT_REGION_MODES_PROFILE_ID,
-    THREE_ZONE_REAL_ACCELERATOR_IDEAL_REFLECTRON_PROFILE_ID,
-    THREE_ZONE_PROFILE_ID,
-    THREE_ZONE_REAL_PA_PROFILE_ID,
-    THREE_ZONE_TOPOLOGY_ID,
     build_resolved_region_field_contract,
     resolved_region_field_hook_lua,
     validate_resolved_region_field_contract,
@@ -27,6 +21,14 @@ ROOT = Path(__file__).resolve().parents[3]
 GEOMETRY = ROOT / "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json"
 CONFIG = ROOT / "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/simion_single_flight.json"
 SIMION = Path(r"C:\Program Files\SIMION-2020\simion.exe")
+THREE_ZONE_PROFILE_ID = "accelerator_ideal_three_zone_real_reflectron"
+FULL_THREE_ZONE_PROFILE_ID = "full_domain_three_zone_piecewise_ideal_field"
+THREE_ZONE_REAL_PA_PROFILE_ID = "accelerator_real_three_zone_pa_real_reflectron"
+THREE_ZONE_REAL_ACCELERATOR_IDEAL_REFLECTRON_PROFILE_ID = (
+    "accelerator_real_three_zone_ideal_reflectron"
+)
+THREE_ZONE_EXPLICIT_REGION_MODES_PROFILE_ID = "three_zone_explicit_region_modes"
+THREE_ZONE_TOPOLOGY_ID = "three_zone_accelerator_ideal_v1"
 
 
 class ResolvedRegionFieldTests(unittest.TestCase):
@@ -282,6 +284,7 @@ class ResolvedRegionFieldTests(unittest.TestCase):
                 "drift": "zero_field",
                 "reflectron_stage1": "analytic_ideal_field",
                 "reflectron_stage2": "analytic_ideal_field",
+                "field_evaluation_mode": "region_overlay",
                 "real_pa_field_blending_allowed": False,
                 "topology_id": "three_zone_accelerator_ideal_v1",
                 "geometry_id": "three_zone_focus_origin_planes_v1",

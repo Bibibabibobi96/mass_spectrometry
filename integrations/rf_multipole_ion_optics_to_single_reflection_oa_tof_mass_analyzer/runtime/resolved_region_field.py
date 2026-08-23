@@ -17,14 +17,6 @@ from common.contracts.file_identity import file_sha256
 ROLE = "rf_oatof_resolved_region_field_contract"
 SCHEMA_VERSION = 1
 THREE_ZONE_SCHEMA_VERSION = 2
-THREE_ZONE_PROFILE_ID = "accelerator_ideal_three_zone_real_reflectron"
-FULL_THREE_ZONE_PROFILE_ID = "full_domain_three_zone_piecewise_ideal_field"
-THREE_ZONE_REAL_PA_PROFILE_ID = "accelerator_real_three_zone_pa_real_reflectron"
-THREE_ZONE_REAL_ACCELERATOR_IDEAL_REFLECTRON_PROFILE_ID = (
-    "accelerator_real_three_zone_ideal_reflectron"
-)
-THREE_ZONE_EXPLICIT_REGION_MODES_PROFILE_ID = "three_zone_explicit_region_modes"
-THREE_ZONE_TOPOLOGY_ID = "three_zone_accelerator_ideal_v1"
 MODES = frozenset({"real_pa_field", "analytic_ideal_field", "zero_field"})
 REGIONS = (
     "accelerator_stage1",
@@ -42,13 +34,7 @@ THREE_ZONE_REGIONS = (
     "reflectron_stage2",
 )
 FULL_ID = "full_domain_piecewise_ideal_field"
-THREE_ZONE_PROFILE_IDS = {
-    THREE_ZONE_PROFILE_ID,
-    THREE_ZONE_REAL_ACCELERATOR_IDEAL_REFLECTRON_PROFILE_ID,
-    THREE_ZONE_EXPLICIT_REGION_MODES_PROFILE_ID,
-    FULL_THREE_ZONE_PROFILE_ID,
-    THREE_ZONE_REAL_PA_PROFILE_ID,
-}
+THREE_ZONE_EVALUATION_MODES = frozenset({"region_overlay", "native_pa_only"})
 
 
 @cache
@@ -108,6 +94,45 @@ def _region_modes(profile_id: str) -> dict[str, str]:
     return modes
 
 
+def _is_three_zone_profile(profile: Mapping[str, Any]) -> bool:
+    return isinstance(profile.get("topology_id"), str)
+
+
+def _three_zone_region_modes(
+    profile: Mapping[str, Any], selected_modes: Mapping[str, str] | None
+) -> dict[str, str]:
+    if profile.get("region_mode_authority") == "experiment":
+        if not isinstance(selected_modes, Mapping) or set(selected_modes) != set(
+            THREE_ZONE_REGIONS
+        ):
+            raise ValueError("explicit three-zone region modes must name each region exactly once")
+        modes = {key: str(selected_modes[key]) for key in THREE_ZONE_REGIONS}
+    else:
+        if not {"accelerator_zone1", "accelerator_zone2", "accelerator_zone3"}.issubset(
+            profile
+        ):
+            raise ValueError("three-zone field profile modes are incomplete")
+        modes = {
+            key: str(profile.get(key, "real_pa_field")) for key in THREE_ZONE_REGIONS
+        }
+    if any(mode not in MODES for mode in modes.values()):
+        raise ValueError("three-zone region mode is unsupported")
+    return modes
+
+
+def _three_zone_evaluation_mode(
+    profile: Mapping[str, Any], region_modes: Mapping[str, str]
+) -> str:
+    value = profile.get("field_evaluation_mode")
+    if value not in THREE_ZONE_EVALUATION_MODES:
+        raise ValueError("three-zone field evaluation mode is unsupported")
+    if value == "native_pa_only" and any(
+        mode != "real_pa_field" for mode in region_modes.values()
+    ):
+        raise ValueError("native-PA-only three-zone profile requires real-PA regions")
+    return str(value)
+
+
 def build_resolved_region_field_contract(
     resolved_geometry_path: Path,
     output_path: Path,
@@ -132,7 +157,7 @@ def build_resolved_region_field_contract(
             accelerator_topology,
             three_zone_region_modes,
         )
-    if canonical in THREE_ZONE_PROFILE_IDS:
+    if _is_three_zone_profile(_field_profile(canonical)):
         raise ValueError("three-zone field profile requires accelerator_topology")
     modes = _region_modes(canonical)
     planes = {
@@ -237,7 +262,8 @@ def _build_three_zone_contract(
     accelerator_topology: Mapping[str, Any],
     three_zone_region_modes: Mapping[str, str] | None,
 ) -> dict[str, Any]:
-    if canonical not in THREE_ZONE_PROFILE_IDS:
+    profile = _field_profile(canonical)
+    if not _is_three_zone_profile(profile):
         raise ValueError("accelerator_topology is only valid for the three-zone profile")
     if set(accelerator_topology) != {
         "topology_id",
@@ -245,7 +271,7 @@ def _build_three_zone_contract(
         "potentials_v",
     }:
         raise ValueError("three-zone accelerator topology fields are incomplete")
-    if accelerator_topology.get("topology_id") != THREE_ZONE_TOPOLOGY_ID:
+    if accelerator_topology.get("topology_id") != profile.get("topology_id"):
         raise ValueError("unsupported three-zone accelerator topology identity")
     accelerator_planes = _exact_numeric_mapping(
         accelerator_topology["planes_global_z_mm"], "three-zone planes_global_z_mm"
@@ -298,85 +324,26 @@ def _build_three_zone_contract(
         / (planes["reflectron_backplate"] - planes["reflectron_midgrid"]),
     }
     layout = geometry.get("single_flight_layout_derivation", {})
-    if canonical == THREE_ZONE_EXPLICIT_REGION_MODES_PROFILE_ID:
-        if not isinstance(three_zone_region_modes, Mapping) or set(
-            three_zone_region_modes
-        ) != set(THREE_ZONE_REGIONS):
-            raise ValueError("explicit three-zone region modes must name each region exactly once")
-        region_modes = {key: str(three_zone_region_modes[key]) for key in THREE_ZONE_REGIONS}
-        if any(mode not in MODES for mode in region_modes.values()):
-            raise ValueError("explicit three-zone region mode is unsupported")
-        published_fields = fields
-        effective_domain = {
-            "longitudinal": "closed_piecewise_path_repeller_to_reflectron_backplate",
-            "transverse": "analytic_field_extends_until_native_pa_geometry_collision",
-            "outside_longitudinal_domain": "invalid_trajectory_error",
-        }
-    elif canonical in {
-        THREE_ZONE_PROFILE_ID,
-        FULL_THREE_ZONE_PROFILE_ID,
-        THREE_ZONE_REAL_ACCELERATOR_IDEAL_REFLECTRON_PROFILE_ID,
-    }:
-        region_modes = {
-            "accelerator_zone1": (
-                "real_pa_field"
-                if canonical == THREE_ZONE_REAL_ACCELERATOR_IDEAL_REFLECTRON_PROFILE_ID
-                else "analytic_ideal_field"
-            ),
-            "accelerator_zone2": (
-                "real_pa_field"
-                if canonical == THREE_ZONE_REAL_ACCELERATOR_IDEAL_REFLECTRON_PROFILE_ID
-                else "analytic_ideal_field"
-            ),
-            "accelerator_zone3": (
-                "real_pa_field"
-                if canonical == THREE_ZONE_REAL_ACCELERATOR_IDEAL_REFLECTRON_PROFILE_ID
-                else "analytic_ideal_field"
-            ),
-            "drift": (
-                "zero_field"
-                if canonical in {
-                    FULL_THREE_ZONE_PROFILE_ID,
-                    THREE_ZONE_REAL_ACCELERATOR_IDEAL_REFLECTRON_PROFILE_ID,
-                }
-                else "real_pa_field"
-            ),
-            "reflectron_stage1": (
-                "analytic_ideal_field"
-                if canonical in {
-                    FULL_THREE_ZONE_PROFILE_ID,
-                    THREE_ZONE_REAL_ACCELERATOR_IDEAL_REFLECTRON_PROFILE_ID,
-                }
-                else "real_pa_field"
-            ),
-            "reflectron_stage2": (
-                "analytic_ideal_field"
-                if canonical in {
-                    FULL_THREE_ZONE_PROFILE_ID,
-                    THREE_ZONE_REAL_ACCELERATOR_IDEAL_REFLECTRON_PROFILE_ID,
-                }
-                else "real_pa_field"
-            ),
-        }
-        published_fields = fields
-        effective_domain = {
-            "longitudinal": "closed_piecewise_path_repeller_to_reflectron_backplate",
-            "transverse": "analytic_field_extends_until_native_pa_geometry_collision",
-            "outside_longitudinal_domain": "invalid_trajectory_error",
-        }
-    else:
-        region_modes = {key: "real_pa_field" for key in THREE_ZONE_REGIONS}
+    region_modes = _three_zone_region_modes(profile, three_zone_region_modes)
+    if _three_zone_evaluation_mode(profile, region_modes) == "native_pa_only":
         published_fields = {}
         effective_domain = {
             "longitudinal": "native_pa_instance_domain",
             "transverse": "native_pa_instance_domain",
             "outside_longitudinal_domain": "native_pa_base_field_unchanged",
         }
+    else:
+        published_fields = fields
+        effective_domain = {
+            "longitudinal": "closed_piecewise_path_repeller_to_reflectron_backplate",
+            "transverse": "analytic_field_extends_until_native_pa_geometry_collision",
+            "outside_longitudinal_domain": "invalid_trajectory_error",
+        }
     semantic = {
         "field_configuration_id": _field_configuration_id(canonical),
         "canonical_profile_id": canonical,
         "accelerator_topology": {
-            "topology_id": THREE_ZONE_TOPOLOGY_ID,
+            "topology_id": profile["topology_id"],
             "planes_global_z_mm": {
                 key: accelerator_planes[key] for key in electrode_order
             },
@@ -445,20 +412,25 @@ def validate_resolved_region_field_contract(contract: Mapping[str, Any]) -> None
         raise ValueError("resolved region field scientific configuration identity differs")
     if schema_version == THREE_ZONE_SCHEMA_VERSION:
         _validate_three_zone_semantic(semantic)
-    elif semantic.get("accelerator_topology") is not None or profile_id in THREE_ZONE_PROFILE_IDS:
+    elif semantic.get("accelerator_topology") is not None or _is_three_zone_profile(
+        _field_profile(str(profile_id))
+    ):
         raise ValueError("schema-v1 cannot declare a three-zone accelerator")
-    if profile_id in {FULL_ID, FULL_THREE_ZONE_PROFILE_ID} and any(
+    if profile_id == FULL_ID and any(
         mode == "real_pa_field" for mode in modes.values()
     ):
         raise ValueError("full-domain ideal field cannot contain a real-PA region")
     expected_pa_role = (
         "geometry_and_collision_carrier_only"
-        if profile_id == FULL_THREE_ZONE_PROFILE_ID
+        if schema_version == THREE_ZONE_SCHEMA_VERSION
+        and not any(mode == "real_pa_field" for mode in modes.values())
         else "geometry_and_collision_carrier_plus_explicit_real_pa_field_regions"
     )
     if semantic.get("pa_role") != expected_pa_role:
         raise ValueError("resolved region field PA role differs")
-    if profile_id == THREE_ZONE_REAL_PA_PROFILE_ID:
+    if schema_version == THREE_ZONE_SCHEMA_VERSION and _three_zone_evaluation_mode(
+        _field_profile(str(profile_id)), modes
+    ) == "native_pa_only":
         return
     domain = semantic.get("effective_domain", {})
     if domain.get("outside_longitudinal_domain") != "invalid_trajectory_error":
@@ -469,7 +441,8 @@ def validate_resolved_region_field_contract(contract: Mapping[str, Any]) -> None
 
 def _validate_three_zone_semantic(semantic: Mapping[str, Any]) -> None:
     profile_id = semantic.get("canonical_profile_id")
-    if profile_id not in THREE_ZONE_PROFILE_IDS:
+    profile = _field_profile(str(profile_id))
+    if not _is_three_zone_profile(profile):
         raise ValueError("schema-v2 requires the explicit three-zone profile identity")
     topology = semantic.get("accelerator_topology")
     if not isinstance(topology, Mapping) or set(topology) != {
@@ -478,7 +451,7 @@ def _validate_three_zone_semantic(semantic: Mapping[str, Any]) -> None:
         "potentials_v",
     }:
         raise ValueError("schema-v2 three-zone accelerator topology is incomplete")
-    if topology.get("topology_id") != THREE_ZONE_TOPOLOGY_ID:
+    if topology.get("topology_id") != profile.get("topology_id"):
         raise ValueError("schema-v2 three-zone topology identity differs")
     planes = _exact_numeric_mapping(
         topology.get("planes_global_z_mm"), "three-zone planes_global_z_mm"
@@ -497,44 +470,13 @@ def _validate_three_zone_semantic(semantic: Mapping[str, Any]) -> None:
         for left, right in zip(electrode_order, electrode_order[1:])
     ):
         raise ValueError("three-zone accelerator potentials must decrease strictly")
-    if profile_id == THREE_ZONE_PROFILE_ID:
-        expected_modes = {
-            **{key: "analytic_ideal_field" for key in THREE_ZONE_REGIONS[:3]},
-            **{key: "real_pa_field" for key in THREE_ZONE_REGIONS[3:]},
-        }
-    elif profile_id == FULL_THREE_ZONE_PROFILE_ID:
-        expected_modes = {
-            **{key: "analytic_ideal_field" for key in THREE_ZONE_REGIONS[:3]},
-            "drift": "zero_field",
-            "reflectron_stage1": "analytic_ideal_field",
-            "reflectron_stage2": "analytic_ideal_field",
-        }
-    elif profile_id == THREE_ZONE_REAL_ACCELERATOR_IDEAL_REFLECTRON_PROFILE_ID:
-        expected_modes = {
-            **{key: "real_pa_field" for key in THREE_ZONE_REGIONS[:3]},
-            "drift": "zero_field",
-            "reflectron_stage1": "analytic_ideal_field",
-            "reflectron_stage2": "analytic_ideal_field",
-        }
-    elif profile_id == THREE_ZONE_EXPLICIT_REGION_MODES_PROFILE_ID:
-        selected_modes = semantic.get("region_modes")
-        if not isinstance(selected_modes, Mapping) or set(selected_modes) != set(
-            THREE_ZONE_REGIONS
-        ) or any(mode not in MODES for mode in selected_modes.values()):
-            raise ValueError("explicit three-zone region modes are incomplete or unsupported")
-        expected_modes = dict(selected_modes)
-    else:
-        expected_modes = {key: "real_pa_field" for key in THREE_ZONE_REGIONS}
+    selected_modes = semantic.get("region_modes")
+    expected_modes = _three_zone_region_modes(
+        profile,
+        selected_modes if profile.get("region_mode_authority") == "experiment" else None,
+    )
     if semantic["region_modes"] != expected_modes:
         raise ValueError("three-zone region modes differ from the selected profile")
-    if profile_id == THREE_ZONE_EXPLICIT_REGION_MODES_PROFILE_ID:
-        expected_role = (
-            "geometry_and_collision_carrier_plus_explicit_real_pa_field_regions"
-            if any(mode == "real_pa_field" for mode in expected_modes.values())
-            else "geometry_and_collision_carrier_only"
-        )
-        if semantic.get("pa_role") != expected_role:
-            raise ValueError("explicit three-zone PA role differs from region modes")
     published_planes = semantic.get("planes_mm")
     expected_plane_keys = {
         *electrode_order,
@@ -554,7 +496,7 @@ def _validate_three_zone_semantic(semantic: Mapping[str, Any]) -> None:
     ):
         raise ValueError("three-zone downstream field planes are not ordered")
     published_fields = semantic.get("fields_V_per_mm")
-    if profile_id == THREE_ZONE_REAL_PA_PROFILE_ID:
+    if _three_zone_evaluation_mode(profile, expected_modes) == "native_pa_only":
         if published_fields != {}:
             raise ValueError("real three-zone PA profile must not publish analytic fields")
         expected_domain = {
@@ -603,8 +545,11 @@ def resolved_region_field_hook_lua(
         raise ValueError("Lua prefix must be a lowercase identifier")
     if (
         contract["schema_version"] == THREE_ZONE_SCHEMA_VERSION
-        and contract["semantic"]["canonical_profile_id"]
-        == THREE_ZONE_REAL_PA_PROFILE_ID
+        and _three_zone_evaluation_mode(
+            _field_profile(str(contract["semantic"]["canonical_profile_id"])),
+            contract["semantic"]["region_modes"],
+        )
+        == "native_pa_only"
     ):
         return _three_zone_real_pa_hook_lua(prefix)
     if contract["schema_version"] == THREE_ZONE_SCHEMA_VERSION:
