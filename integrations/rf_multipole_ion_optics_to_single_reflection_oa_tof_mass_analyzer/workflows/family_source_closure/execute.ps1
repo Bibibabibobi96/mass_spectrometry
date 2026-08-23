@@ -176,14 +176,6 @@ $campaignRunId = [string]$experimentRows[0].run_id
 if ($LASTEXITCODE -ne 0) {
   throw 'Campaign row run_id fails the repository artifact naming contract.'
 }
-$legacySingleFlightCachePolicy =
-  [string]$selectedExperiment.execution_strategy -eq 'simion_single_flight' -and
-  -not ($selectedExperiment.PSObject.Properties.Name -contains
-    'single_flight_pa_cache_policy')
-if ($legacySingleFlightCachePolicy -and -not $ValidateOnly) {
-  throw 'Legacy single-flight cache policy is compatible with ValidateOnly only.'
-}
-
 $workspaceRoot = Split-Path -Parent $repoRoot
 $executionRunId = $campaignRunId
 $cleanupOutput = $ValidateOnly
