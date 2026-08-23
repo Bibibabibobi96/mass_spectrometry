@@ -306,15 +306,6 @@ if ($frozenArguments.ContainsKey('staged_grid2_source_state_path')) {
     )
   }
 }
-if ($frozenArguments.ContainsKey('pulse_resolution_execution_mode')) {
-  $expectedArguments += @(
-    'pulse_resolution_execution_mode',
-    'pulse_resolution_prefix_filename',
-    'pulse_resolution_prefix_sha256',
-    'pulse_resolution_registration_filename',
-    'pulse_resolution_registration_sha256'
-  )
-}
 $hasPrePulseTimeSeriesArguments = $frozenArguments.ContainsKey(
   'pre_pulse_time_series_contract_filename'
 )
@@ -538,9 +529,6 @@ if ($PrepareOnly -and
     -not $experimentHasPaCachePolicy) {
   throw 'Legacy single-flight cache policy is compatible with ValidateOnly only.'
 }
-$pulseN100Screening = $frozenArguments.ContainsKey(
-  'pulse_resolution_execution_mode'
-)
 $campaignHasPrePulseTimeSeries = (
   $campaign.PSObject.Properties.Name -contains
   'pre_pulse_time_series_screening'
@@ -588,34 +576,8 @@ $pulseCandidateConfirmation = $pulseTimingConfirmation -or (
 if ($pulseCandidateConfirmation -ne $hasPulseCandidateConfirmationArguments) {
   throw 'Pulse candidate confirmation and prepared prefix authority differ.'
 }
-if ($prePulseTimeSeriesScreening -and $pulseN100Screening) {
-  throw 'Prepared screening authorities are mutually exclusive.'
-}
-if ($pulseCandidateConfirmation -and (
-    $pulseN100Screening -or $prePulseTimeSeriesScreening)) {
+if ($pulseCandidateConfirmation -and $prePulseTimeSeriesScreening) {
   throw 'Pulse candidate confirmation and screening authorities are mutually exclusive.'
-}
-if ($pulseN100Screening) {
-  $pulseContract = $campaign.pulse_resolution_optimization
-  $baselineRow = $experiment.pulse_resolution_execution_mode -eq
-    'screening_prefix_n100_baseline_registration'
-  $pairedRow = $experiment.pulse_resolution_execution_mode -eq
-    'screening_prefix_n100_paired_candidate'
-  if ([int]$campaign.schema_version -ne 5 -or
-      -not ($baselineRow -or $pairedRow) -or
-      $experiment.source_profile_id -ne 'canonical_real_octupole_n1000' -or
-      $experiment.single_flight_population.population_mode -ne
-        'first_100_rows_in_frozen_file_order' -or
-      $experiment.single_flight_population.source_authority.table_binding -ne
-        'prepared_deterministic_prefix') {
-    throw 'Pulse-resolution direct source, field, and population contract differs.'
-  }
-  if (($baselineRow -and
-       $experiment.single_flight_accelerator_field_profile_id -ne 'accelerator_real_pa') -or
-      ($pairedRow -and
-       $experiment.single_flight_accelerator_field_profile_id -eq 'accelerator_real_pa')) {
-    throw 'Pulse-resolution execution mode and field identity differ.'
-  }
 }
 $singleFlightParticleSourcePath = $null
 if ($frozenArguments.ContainsKey('single_flight_particle_source_path')) {
@@ -985,33 +947,6 @@ if ($frozenArguments.ContainsKey('source_zvz_theory_working_point_filename')) {
       $sourceZvzTheoryWorkingPoint.resolved_geometry_input_sha256 -ne
       $frozenArguments.source_zvz_theory_geometry_input_sha256) {
     throw 'Plan-bound source theory working point identity differs.'
-  }
-}
-$pulsePrefixPath = $null
-$pulseRegistrationPath = $null
-if ($pulseN100Screening) {
-  $pulsePrefixPath = [IO.Path]::GetFullPath(
-    (Join-Path $runDirectory $frozenArguments.pulse_resolution_prefix_filename)
-  )
-  if (-not $pulsePrefixPath.StartsWith(
-        (Join-Path $runDirectory 'inputs') + [IO.Path]::DirectorySeparatorChar,
-        [StringComparison]::OrdinalIgnoreCase
-      ) -or
-      -not (Test-Path -LiteralPath $pulsePrefixPath -PathType Leaf) -or
-      (Get-FileHash -LiteralPath $pulsePrefixPath -Algorithm SHA256).Hash -ne
-        $frozenArguments.pulse_resolution_prefix_sha256) {
-    throw 'Plan-bound arm 1 screening prefix is outside inputs, missing or stale.'
-  }
-  $pulseRegistrationPath = [IO.Path]::GetFullPath(
-    (Join-Path $runDirectory $frozenArguments.pulse_resolution_registration_filename)
-  )
-  if (-not $pulseRegistrationPath.StartsWith(
-        (Join-Path $runDirectory 'inputs') + [IO.Path]::DirectorySeparatorChar,
-        [StringComparison]::OrdinalIgnoreCase
-      ) -or -not (Test-Path -LiteralPath $pulseRegistrationPath -PathType Leaf) -or
-      (Get-FileHash -LiteralPath $pulseRegistrationPath -Algorithm SHA256).Hash -ne
-        $frozenArguments.pulse_resolution_registration_sha256) {
-    throw 'Plan-bound baseline registration authority is outside inputs, missing or stale.'
   }
 }
 $prePulseTimeSeriesPrefixPath = $null
@@ -1641,8 +1576,6 @@ if ($executionStrategy -eq 'simion_single_flight') {
     $prePulseTimeSeriesPrefixPath
   } elseif ($pulseTimingConfirmation) {
     $pulseCandidateConfirmationPrefixPath
-  } elseif ($pulseN100Screening) {
-    $pulsePrefixPath
   } elseif ($prePulseTimeSeriesScreening) {
     $prePulseTimeSeriesPrefixPath
   } elseif ($pulseCandidateConfirmation) {
@@ -1658,9 +1591,7 @@ if ($executionStrategy -eq 'simion_single_flight') {
       )) {
       $runnerArguments.MotherParticleSourceRunRoot = $workspaceRoot
     }
-    $runnerArguments.MotherParticleSourceSha256 = if ($pulseN100Screening) {
-      $frozenArguments.pulse_resolution_prefix_sha256
-    } elseif ($pulseCandidateConfirmation) {
+    $runnerArguments.MotherParticleSourceSha256 = if ($pulseCandidateConfirmation) {
       $frozenArguments.pulse_candidate_confirmation_prefix_sha256
     } else {
       $frozenArguments.pre_pulse_time_series_prefix_sha256
@@ -1668,24 +1599,6 @@ if ($executionStrategy -eq 'simion_single_flight') {
     $runnerArguments.MotherParticleCount = @(
       Import-Csv -LiteralPath $preparedPrefixPath
     ).Count
-  }
-  if ($pulseN100Screening) {
-    $runnerArguments.PulseResolutionN100Screening = $true
-    $runnerArguments.PulseResolutionCampaign = $campaignPath
-    $runnerArguments.PulseResolutionCampaignSha256 =
-      $frozenArguments.campaign_sha256
-    $runnerArguments.PulseResolutionExperimentRowSha256 =
-      $frozenArguments.experiment_row_sha256
-    $runnerArguments.PulseResolutionExperimentId =
-      [string]$frozenArguments.experiment_id
-    $runnerArguments.PulseResolutionFieldProfileId =
-      [string]$frozenArguments.resolved_region_field_profile_id
-    $runnerArguments.PulseResolutionExecutionMode =
-      [string]$frozenArguments.pulse_resolution_execution_mode
-    $runnerArguments.PulseResolutionPrefixPlanRoot = $runDirectory
-    $runnerArguments.PulseResolutionRegistrationAuthority = $pulseRegistrationPath
-    $runnerArguments.PulseResolutionRegistrationAuthoritySha256 =
-      $frozenArguments.pulse_resolution_registration_sha256
   }
   if ($prePulseTimeSeriesScreening) {
     $screeningTimeIntegrationProfileId =
