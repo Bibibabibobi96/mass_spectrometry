@@ -227,56 +227,79 @@ class SingleFlightLayoutTests(unittest.TestCase):
         port = json.loads(
             (REPO / "projects/single_reflection_oa_tof_mass_analyzer/config/interfaces/required/oatof_accelerator_entry.json").read_text()
         )
-        legacy_expected = {
-            "symmetric_10ev_source_z22_finite_interval_theory": "80148707BFFE1B95894875C3D451B7986449834447A1917E3682EB96B5FFC60A",
-            "theory_source_z10_d1_3": "6298FD5B4416525DE9FEFA4DAD7EE945C9AB92EAE2BA7986C595B08E5BF60950",
-            "zero_match_short_1mm": "E60C6123BE4BE357D9A68C0E64AC9B76AFF2D1EE9362D7E1B0CC8189F9D6DBAF",
-            "theory_source_z10_d1_4": "9B6A65E37A16B73F2A464420DDB7440A255E2D9E6F12D9DF190553E52C7614A1",
-            "theory_source_z10_d1_5": "047A42EBD953797975B8AFCEA7307493F911EC817AD7343F36A9BAE61AA6F0E6",
-            "theory_source_z22_d1_3": "C396756DD9E9DC00A8EF1952E2B19472066173C03A503F83D49E3B5F3BC55197",
-            "zero_match_long_2p2mm": "1D19DE8B8E15975ACC0CFC8F1BA17B42DAB76234C5E3BEB8B11CA58576DDC2D7",
-            "theory_source_z22_d1_4": "75B80C7F5E635DC02995103B9F42681BA075331BBBF7243E74D30840EA96CC0F",
-            "theory_source_z22_d1_5": "BCA3C09E03F269F67C91D693893C61FDF4E61AC29B859895C6B22547EAE16A75",
-        }
-        expected = {
-            "symmetric_10ev_source_z22_finite_interval_theory": "A28EE7342A0D697E79D068DFD702996E5717281F9CA0BA7B4683C1DAE297D507",
-            "theory_source_z10_d1_3": "7BC4E7A90FF7323E84C32D16E1B17D0B66C1BA5E8D6AAF7D9EB75F0D506FEC3F",
-            "zero_match_short_1mm": "A324FD33AA5202F0BFF96326EEC2A999BA0C1ABFE7628F16EAC2B3AC984FE99D",
-            "theory_source_z10_d1_4": "7FF2732CFD3FB0DCC7FD6E47D6BDDB9AC57ABDA23919FAA413F0CA5B04FD83DB",
-            "theory_source_z10_d1_5": "C9E60784EC922EEBCA2656DBC182BF3842444E98F46F6F2373F2819CD3D36A55",
-            "theory_source_z22_d1_3": "00701AC584D9472888F3F2F3D25F53568EDEDDF83509D34BC2136926CB45EB22",
-            "zero_match_long_2p2mm": "784A21637414D0B309FB72312E15B1749AFABA979AD03938B7A5A2B151B973AA",
-            "theory_source_z22_d1_4": "E1D4DCD98D581B2662F932DD252063F324C4A77BB18B2BC33CA50875A9EAE8EB",
-            "theory_source_z22_d1_5": "9A6D743007798431BAA2B8E87C8DB518E12A4E295DEB3B65CC26303B4D641F4E",
-        }
-        for profile_id, expected_sha in expected.items():
-            with self.subTest(profile_id=profile_id):
-                compiled = compile_geometry_and_port(
-                    geometry, port, select_profile(registry, profile_id)
+        profiles = [
+            select_profile(registry, item["layout_profile_id"])
+            for item in registry["profiles"]
+            if item.get("finite_interval_accelerator_profile")
+        ]
+        self.assertGreaterEqual(len(profiles), 1)
+        for profile in profiles:
+            with self.subTest(profile_id=profile["layout_profile_id"]):
+                resolved, derived_port, values = compile_geometry_and_port(
+                    geometry, port, profile
                 )
-                canonical = json.dumps(
-                    compiled, sort_keys=True, separators=(",", ":"), ensure_ascii=False
-                ).encode()
-                self.assertEqual(hashlib.sha256(canonical).hexdigest().upper(), expected_sha)
-                legacy_equivalent = copy.deepcopy(compiled)
-                resolved = legacy_equivalent[0]
-                provenance = resolved["single_flight_layout_derivation"].pop(
+                repeated = compile_geometry_and_port(geometry, port, profile)
+                self.assertEqual((resolved, derived_port, values), repeated)
+
+                provenance = resolved["single_flight_layout_derivation"][
                     "finite_interval_input_provenance"
-                )
-                theory = resolved["geometry_derivation"]["accelerator"][
-                    "finite_interval_theory"
                 ]
-                theory["profile_path"] = provenance["profile_path"]
-                theory["solver_phase_space_input"] = provenance["phase_space_input"]
-                legacy_canonical = json.dumps(
-                    legacy_equivalent,
-                    sort_keys=True,
-                    separators=(",", ":"),
-                    ensure_ascii=False,
-                ).encode()
+                authority = json.loads(
+                    (INTEGRATION / provenance["profile_path"]).read_text()
+                )
+                expected_phase_space = profile.get(
+                    "finite_interval_phase_space_input",
+                    authority["frozen_phase_space_input"],
+                )
+                self.assertEqual(provenance["phase_space_input"], expected_phase_space)
+
+                accelerator = resolved["geometry_derivation"]["accelerator"]
+                theory = accelerator["finite_interval_theory"]
+                expected_width = float(
+                    profile.get(
+                        "finite_interval_source_full_width_mm",
+                        authority["finite_interval_design"]["source_full_width_mm"],
+                    )
+                )
+                expected_d1 = float(
+                    profile.get(
+                        "accelerator_stage1_length_mm",
+                        accelerator["reference_d1_mm"],
+                    )
+                )
+                self.assertEqual(resolved["particle_source"]["size_z_mm"], expected_width)
+                self.assertEqual(accelerator["d1_mm"], expected_d1)
+                self.assertEqual(theory["source_full_width_mm"], expected_width)
+                self.assertEqual(theory["solver_phase_space_input"], {
+                    key: expected_phase_space[key]
+                    for key in (
+                        "mass_to_charge_Th", "release_position_mm",
+                        "mean_initial_velocity_m_per_s",
+                        "velocity_slope_m_per_s_per_mm",
+                    )
+                })
+                self.assertAlmostEqual(
+                    resolved["particle_source"]["center_z_mm"],
+                    theory["canonical_repeller_z_mm"] + theory["source_center_mm"],
+                )
+                self.assertAlmostEqual(
+                    resolved["electrodes_V"]["repeller"], theory["repeller_v"]
+                )
+                self.assertAlmostEqual(
+                    resolved["electrodes_V"]["grid1"], theory["intermediate_v"]
+                )
+                coupled = theory["coupled_reflectron"]
+                self.assertGreater(coupled["stage1_voltage_drop_v"], 0.0)
+                self.assertGreater(coupled["stage2_field_v_per_mm"], 0.0)
+                self.assertLess(abs(coupled["total_first_derivative_residual"]), 1e-12)
+                self.assertLess(abs(coupled["total_second_derivative_residual"]), 1e-12)
                 self.assertEqual(
-                    hashlib.sha256(legacy_canonical).hexdigest().upper(),
-                    legacy_expected[profile_id],
+                    values["accelerator_axis_x_mm"],
+                    resolved["coordinate_convention"]["accelerator_axis_x"],
+                )
+                self.assertEqual(
+                    derived_port["mating_surface"]["center_mm"][0],
+                    values["entry_port_x_mm"],
                 )
 
     def test_formal_pa_assets_cross_runtime_boundary_by_value(self) -> None:

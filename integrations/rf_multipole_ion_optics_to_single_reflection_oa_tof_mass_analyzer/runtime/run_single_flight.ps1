@@ -144,10 +144,6 @@ function Assert-RfThreeZoneArgumentSet {
     [string]$Candidate = '',
     [string]$CandidateSha256 = ''
   )
-  $isThreeZoneLayout = $LayoutProfileId -in @(
-    'three_zone_t5_primary_v1',
-    'three_zone_t5_primary_shaping_rings_1p4_v1'
-  )
   $values = @($Candidate,$CandidateSha256)
   $hasAny = @($values | Where-Object {
     -not [string]::IsNullOrWhiteSpace([string]$_)
@@ -155,10 +151,10 @@ function Assert-RfThreeZoneArgumentSet {
   $hasAll = @($values | Where-Object {
     [string]::IsNullOrWhiteSpace([string]$_)
   }).Count -eq 0
-  if ($isThreeZoneLayout -ne $hasAll -or $hasAny -ne $hasAll) {
-    throw 'Three-zone runner arguments and layout identity differ.'
+  if ($hasAny -ne $hasAll) {
+    throw 'Three-zone runner Candidate arguments are incomplete.'
   }
-  return $isThreeZoneLayout
+  return $hasAll
 }
 
 function Assert-RfThreeZoneRuntimeIdentity {
@@ -185,10 +181,11 @@ function Assert-RfThreeZoneRuntimeIdentity {
       [string]$Candidate.qualification -ne 'CANDIDATE_ONLY' -or
       [string]$Candidate.compiler_mode -ne
       'T5_FROZEN_PRIMARY_AND_BRANCH_ONLY' -or
-      $topologyId -ne 'three_zone_accelerator_ideal_v1' -or
-      $geometryId -ne 'three_zone_focus_origin_planes_v1' -or
-      [string]$Candidate.identities.field_id -ne
-      'three_zone_piecewise_uniform_ideal_field_v1' -or
+      [string]::IsNullOrWhiteSpace($topologyId) -or
+      [string]::IsNullOrWhiteSpace($geometryId) -or
+      [string]$Candidate.identities.topology_id -ne $topologyId -or
+      [string]$Candidate.identities.geometry_id -ne $geometryId -or
+      [string]$Candidate.accelerator_topology.topology_id -ne $topologyId -or
       [string]$Geometry.single_flight_layout_derivation.layout_profile_id -ne
       $LayoutProfileId -or
       [string]$Geometry.single_flight_layout_derivation.architecture_generation_id -ne

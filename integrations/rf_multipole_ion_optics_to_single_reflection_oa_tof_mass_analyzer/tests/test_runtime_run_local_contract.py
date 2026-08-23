@@ -272,26 +272,18 @@ $fn = $ast.Find({{
 if ($null -eq $fn) {{ throw 'three-zone argument assertion is missing' }}
 . ([scriptblock]::Create($fn.Extent.Text))
 $valid = @{{
-  LayoutProfileId='three_zone_t5_primary_v1'; Candidate='candidate.json'
+  LayoutProfileId='registered_future_three_zone_layout'; Candidate='candidate.json'
   CandidateSha256=('A' * 64)
 }}
 if (-not (Assert-RfThreeZoneArgumentSet @valid)) {{ throw 'valid set rejected' }}
-if (Assert-RfThreeZoneArgumentSet -LayoutProfileId 'theory_source_z10_d1_3') {{
-  throw 'two-zone identity was misclassified'
+if (Assert-RfThreeZoneArgumentSet -LayoutProfileId 'unrelated_layout') {{
+  throw 'absence of a Candidate was misclassified'
 }}
 try {{
-  Assert-RfThreeZoneArgumentSet -LayoutProfileId 'three_zone_t5_primary_v1'
+  Assert-RfThreeZoneArgumentSet -LayoutProfileId 'registered_future_three_zone_layout' -Candidate 'candidate.json'
   throw 'missing Candidate was accepted'
 }} catch {{
-  if ($_.Exception.Message -notmatch 'arguments and layout identity differ') {{ throw }}
-}}
-try {{
-  $invalid = $valid.Clone()
-  $invalid.LayoutProfileId = 'theory_source_z10_d1_3'
-  Assert-RfThreeZoneArgumentSet @invalid
-  throw 'two-zone Candidate was accepted'
-}} catch {{
-  if ($_.Exception.Message -notmatch 'arguments and layout identity differ') {{ throw }}
+  if ($_.Exception.Message -notmatch 'Candidate arguments are incomplete') {{ throw }}
 }}
 'THREE_ZONE_ARGUMENT_SET=PASS'
 """
@@ -359,24 +351,24 @@ $potentials = [pscustomobject]@{{
   repeller=2000.0; intermediate1=1500.0; intermediate2=500.0; exit=0.0
 }}
 $topology = [pscustomobject]@{{
-  topology_id='three_zone_accelerator_ideal_v1'
+  topology_id='registered_three_zone_topology_v2'
   planes_global_z_mm=$planes; potentials_v=$potentials
 }}
 $candidate = [pscustomobject]@{{
   schema_version=1; role='oatof_three_zone_simion_candidate_resolved'
   qualification='CANDIDATE_ONLY'; compiler_mode='T5_FROZEN_PRIMARY_AND_BRANCH_ONLY'
   identities=[pscustomobject]@{{
-    topology_id='three_zone_accelerator_ideal_v1'
-    geometry_id='three_zone_focus_origin_planes_v1'
-    field_id='three_zone_piecewise_uniform_ideal_field_v1'
+    topology_id='registered_three_zone_topology_v2'
+    geometry_id='registered_three_zone_geometry_v2'
+    field_id='candidate_ideal_field_v2'
   }}
   accelerator_topology=$topology
 }}
 $geometry = [pscustomobject]@{{
   accelerator_topology=$topology
   single_flight_layout_derivation=[pscustomobject]@{{
-    layout_profile_id='three_zone_t5_primary_v1'
-    architecture_generation_id='three_zone_t5_frozen_primary_v1'
+    layout_profile_id='registered_future_three_zone_layout'
+    architecture_generation_id='registered_three_zone_generation_v2'
     design_compilation=[pscustomobject]@{{
       candidate=[pscustomobject]@{{sha256=('A' * 64)}}
     }}
@@ -385,31 +377,31 @@ $geometry = [pscustomobject]@{{
 $region = [pscustomobject]@{{
   layout_geometry=[pscustomobject]@{{sha256=('B' * 64)}}
   semantic=[pscustomobject]@{{
-    canonical_profile_id='accelerator_real_three_zone_pa_real_reflectron'
+  canonical_profile_id='accelerator_real_three_zone_pa_real_reflectron'
     accelerator_topology=$topology
   }}
 }}
 $field = [pscustomobject]@{{
   profile_id='accelerator_real_three_zone_pa_real_reflectron'
-  topology_id='three_zone_accelerator_ideal_v1'
-  geometry_id='three_zone_focus_origin_planes_v1'
-  frontend_electrode_topology_id='three_zone_frontend_v1'
-  field_id='three_zone_refined_pa_field_v1'
+  topology_id='registered_three_zone_topology_v2'
+  geometry_id='registered_three_zone_geometry_v2'
+  frontend_electrode_topology_id='registered_three_zone_frontend_v2'
+  field_id='registered_three_zone_real_field_v2'
 }}
 $arguments = @{{
   Candidate=$candidate; CandidateSha256=('A' * 64)
   Geometry=$geometry; GeometrySha256=('B' * 64)
   FrontendContract=[pscustomobject]@{{
-    accelerator_topology_id='three_zone_accelerator_ideal_v1'
+    accelerator_topology_id='registered_three_zone_topology_v2'
   }}
-  FrontendElectrodeTopology=[pscustomobject]@{{topology_id='three_zone_frontend_v1'}}
+  FrontendElectrodeTopology=[pscustomobject]@{{topology_id='registered_three_zone_frontend_v2'}}
   RegionField=$region; FieldProfile=$field
-  LayoutProfileId='three_zone_t5_primary_v1'
-  ArchitectureGenerationId='three_zone_t5_frozen_primary_v1'
+  LayoutProfileId='registered_future_three_zone_layout'
+  ArchitectureGenerationId='registered_three_zone_generation_v2'
 }}
 Assert-RfThreeZoneRuntimeIdentity @arguments
 $region.semantic.accelerator_topology = [pscustomobject]@{{
-  topology_id='three_zone_accelerator_ideal_v1'
+  topology_id='registered_three_zone_topology_v2'
   planes_global_z_mm=$planes
   potentials_v=[pscustomobject]@{{
     repeller=2000.0; intermediate1=1500.0; intermediate2=500.0; exit=1.0
