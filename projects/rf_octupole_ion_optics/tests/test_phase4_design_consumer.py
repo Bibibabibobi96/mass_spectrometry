@@ -23,7 +23,6 @@ N100_TIER_SUFFIXES = (
     "_n100_spatial_refined",
     "_n100_temporal_refined",
 )
-COMPATIBILITY_RUNTIME_IDS: set[str] = set()
 HYBRID_RUNTIME_IDS = {
     "no_acceleration_full_length_n100_hybrid_exit025_temporal_coarse",
     "no_acceleration_full_length_n100_hybrid_exit025_temporal_refined",
@@ -44,7 +43,6 @@ class ThreeModeRuntimeAndQualificationTests(unittest.TestCase):
             for suffix in N100_TIER_SUFFIXES
         }
         expected_ids |= {f"{mode_id}_n1000" for mode_id in MODE_IDS}
-        expected_ids |= COMPATIBILITY_RUNTIME_IDS
         expected_ids |= HYBRID_RUNTIME_IDS
         self.assertTrue(expected_ids.issubset(registry["profiles"]))
         source_identities = set()
