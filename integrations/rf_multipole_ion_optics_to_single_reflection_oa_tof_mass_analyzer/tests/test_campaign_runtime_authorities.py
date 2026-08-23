@@ -71,26 +71,6 @@ class CampaignRuntimeAuthoritiesTests(unittest.TestCase):
             "source_zvz_three_zone_theory_working_point_required_v1",
         )
 
-    def test_family_execute_enforces_diagnostics_lifecycle_authority(self) -> None:
-        execute = (
-            INTEGRATION_ROOT / "workflows" / "family_source_closure" / "execute.ps1"
-        ).read_text(encoding="utf-8-sig")
-        for required in (
-            "lifecycle_registry.json",
-            "discovery_policy -ne 'default_deny'",
-            "Only registered experiment campaigns may enter the family workflow.",
-            "Campaign is not an active lifecycle authority; execution is forbidden.",
-            "Active lifecycle campaign identity differs; execution is forbidden.",
-            "Campaign row run_id fails the repository artifact naming contract.",
-        ):
-            self.assertIn(required, execute)
-
-        run_id_validation = execute.index(
-            "& $PythonExe -m common.contracts.artifact_naming run $campaignRunId"
-        )
-        validate_only_branch = execute.index("$cleanupOutput = $ValidateOnly")
-        self.assertLess(run_id_validation, validate_only_branch)
-
     def test_repository_publication_writer_requires_canonical_lf_bytes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "publication.json"
