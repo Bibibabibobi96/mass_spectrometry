@@ -1073,12 +1073,10 @@ if ($frozenArguments.ContainsKey('source_zvz_theory_working_point_filename')) {
 $pulsePrefixPath = $null
 $pulseRegistrationPath = $null
 if ($pulseN100Screening) {
-  $expectedPulsePrefix = 'inputs/pulse_resolution_arm1_all_real_screening_prefix_n100.csv'
   $pulsePrefixPath = [IO.Path]::GetFullPath(
     (Join-Path $runDirectory $frozenArguments.pulse_resolution_prefix_filename)
   )
-  if ($frozenArguments.pulse_resolution_prefix_filename -ne $expectedPulsePrefix -or
-      -not $pulsePrefixPath.StartsWith(
+  if (-not $pulsePrefixPath.StartsWith(
         (Join-Path $runDirectory 'inputs') + [IO.Path]::DirectorySeparatorChar,
         [StringComparison]::OrdinalIgnoreCase
       ) -or
@@ -1087,18 +1085,10 @@ if ($pulseN100Screening) {
         $frozenArguments.pulse_resolution_prefix_sha256) {
     throw 'Plan-bound arm 1 screening prefix is outside inputs, missing or stale.'
   }
-  $candidateMode = [string]$frozenArguments.pulse_resolution_execution_mode -eq
-    'screening_prefix_n100_paired_candidate'
-  $expectedRegistration = if ($candidateMode) {
-    'inputs/pulse_resolution_baseline_evidence.json'
-  } else {
-    'inputs/pulse_resolution_real_beam_real_accelerator_real_reflectron_n100_baseline_registration_authority.json'
-  }
   $pulseRegistrationPath = [IO.Path]::GetFullPath(
     (Join-Path $runDirectory $frozenArguments.pulse_resolution_registration_filename)
   )
-  if ($frozenArguments.pulse_resolution_registration_filename -ne $expectedRegistration -or
-      -not $pulseRegistrationPath.StartsWith(
+  if (-not $pulseRegistrationPath.StartsWith(
         (Join-Path $runDirectory 'inputs') + [IO.Path]::DirectorySeparatorChar,
         [StringComparison]::OrdinalIgnoreCase
       ) -or -not (Test-Path -LiteralPath $pulseRegistrationPath -PathType Leaf) -or

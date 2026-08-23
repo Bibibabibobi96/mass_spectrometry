@@ -556,13 +556,14 @@ class PulseResolutionOptimizationCampaignTests(unittest.TestCase):
         self.assertNotIn("pulse_resolution_baseline_result", serialized)
         self.assertNotIn("pulse_resolution_baseline_checkpoints", serialized)
 
-    def test_adapter_consumes_only_plan_local_baseline_evidence(self) -> None:
+    def test_adapter_consumes_only_plan_local_registration_authority(self) -> None:
         adapter = (
             INTEGRATION_ROOT / "workflows" / "family_source_closure" / "adapter.ps1"
         ).read_text(encoding="utf-8-sig")
-        self.assertIn("inputs/pulse_resolution_baseline_evidence.json", adapter)
+        self.assertIn("pulseRegistrationPath.StartsWith(", adapter)
         self.assertIn("Join-Path $runDirectory", adapter)
         self.assertIn("pulse_resolution_registration_filename", adapter)
+        self.assertIn("pulse_resolution_registration_sha256", adapter)
         self.assertNotIn("pulse_resolution_baseline_result_reference.json", adapter)
         self.assertNotIn("Published baseline checkpoints are not frozen", adapter)
         self.assertNotIn("pulse_resolution_baseline_checkpoints", adapter)
