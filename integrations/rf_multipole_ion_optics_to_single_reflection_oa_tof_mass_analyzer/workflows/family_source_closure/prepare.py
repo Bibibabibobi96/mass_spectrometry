@@ -2025,7 +2025,12 @@ def _resolve_single_flight_profiles(
                 "single-flight accelerator field profile must resolve exactly once"
             )
     three_zone_region_modes = experiment.get("single_flight_three_zone_region_modes")
-    if accelerator_field_profile_id == "three_zone_explicit_region_modes":
+    region_mode_authority = (
+        field_profiles[0].get("region_mode_authority")
+        if field_profiles
+        else None
+    )
+    if region_mode_authority == "experiment":
         expected_region_modes = {
             "accelerator_zone1", "accelerator_zone2", "accelerator_zone3",
             "drift", "reflectron_stage1", "reflectron_stage2",
@@ -2034,8 +2039,10 @@ def _resolve_single_flight_profiles(
             three_zone_region_modes
         ) != expected_region_modes:
             raise ContractError("explicit three-zone field profile requires all region modes")
-    elif three_zone_region_modes is not None:
+    elif region_mode_authority is None and three_zone_region_modes is not None:
         raise ContractError("explicit three-zone region modes require their explicit field profile")
+    elif region_mode_authority is not None:
+        raise ContractError("single-flight field profile region-mode authority is unsupported")
     return ResolvedSingleFlightProfiles(
         configuration=configuration,
         frontend_grid_profile_id=frontend_grid_profile_id,

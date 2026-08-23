@@ -21,6 +21,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.prepare import (
     _automatic_pulse_population_binding,
     expand_flat_experiment_authoring,
+    _resolve_single_flight_profiles,
     semantic_diff_experiments,
     _repo_byte_record,
     _workspace_record,
@@ -1446,6 +1447,43 @@ $result = Get-PulseTimingOrchestration `
                 normalized_after.pop(key)
             normalized_after.pop("single_flight_batch_count")
             self.assertEqual(normalized_before, normalized_after)
+
+    def test_three_zone_region_mode_authority_comes_from_field_profile(self) -> None:
+        explicit_profile = "three_zone_explicit_region_modes"
+        selected_modes = {
+            "accelerator_zone1": "analytic_ideal_field",
+            "accelerator_zone2": "real_pa_field",
+            "accelerator_zone3": "zero_field",
+            "drift": "real_pa_field",
+            "reflectron_stage1": "analytic_ideal_field",
+            "reflectron_stage2": "real_pa_field",
+        }
+        with self.assertRaisesRegex(ContractError, "requires all region modes"):
+            _resolve_single_flight_profiles(
+                REPO_ROOT,
+                {"single_flight_accelerator_field_profile_id": explicit_profile},
+                "simion_single_flight",
+            )
+        resolved = _resolve_single_flight_profiles(
+            REPO_ROOT,
+            {
+                "single_flight_accelerator_field_profile_id": explicit_profile,
+                "single_flight_three_zone_region_modes": selected_modes,
+            },
+            "simion_single_flight",
+        )
+        self.assertEqual(resolved.three_zone_region_modes, selected_modes)
+        with self.assertRaisesRegex(ContractError, "require their explicit field profile"):
+            _resolve_single_flight_profiles(
+                REPO_ROOT,
+                {
+                    "single_flight_accelerator_field_profile_id": (
+                        "accelerator_ideal_three_zone_real_reflectron"
+                    ),
+                    "single_flight_three_zone_region_modes": selected_modes,
+                },
+                "simion_single_flight",
+            )
 
     def test_ideal_accelerator_field_is_a_registered_counterfactual(self) -> None:
         campaign = load(IDEAL_FIELD_CAMPAIGN_PATH)
