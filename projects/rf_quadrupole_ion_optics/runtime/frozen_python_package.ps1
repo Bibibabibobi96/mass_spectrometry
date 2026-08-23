@@ -1,6 +1,14 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+function Get-FrozenPythonPackageExecutionPaths {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string[]]$RelativePaths)
+    return @($RelativePaths | ForEach-Object {
+        'inputs/code/' + ([string]$_ -replace '\\', '/')
+    })
+}
+
 function New-FrozenPythonPackage {
     [CmdletBinding()]
     param(

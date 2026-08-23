@@ -26,6 +26,22 @@ $python = if ($PythonExe) {
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
 . (Join-Path $projectRoot 'runtime\comsol_solver_numerics.ps1')
 . (Join-Path $projectRoot 'runtime\frozen_python_package.ps1')
+$frozenPythonRelativePaths = @(
+    'projects\rf_quadrupole_ion_optics\workflows\__init__.py',
+    'projects\rf_quadrupole_ion_optics\workflows\interface_readiness\__init__.py',
+    'projects\rf_quadrupole_ion_optics\workflows\interface_readiness\generate_particle_table.py',
+    'projects\rf_quadrupole_ion_optics\workflows\interface_readiness\particle_source_policy.py',
+    'projects\rf_quadrupole_ion_optics\analysis\paired_particle_source_bundle.py',
+    'projects\rf_quadrupole_ion_optics\analysis\validate_release_construction_gate.py',
+    'common\contracts\particle_physics.py',
+    'common\contracts\particle_count_policy.py',
+    'common\contracts\particle_count_policy.json',
+    'common\contracts\file_identity.py',
+    'common\multipole\__init__.py',
+    'common\multipole\particle_source_preflight.py'
+)
+$executionCapacityPaths = @('inputs/frozen_python_package.ps1') +
+    (Get-FrozenPythonPackageExecutionPaths -RelativePaths $frozenPythonRelativePaths)
 
 $workflowId = 'transport_interface_readiness'
 $software = @('COMSOL 6.4','MATLAB R2025b','Python 3.11')
@@ -41,7 +57,8 @@ if ([string]::IsNullOrWhiteSpace($RunId)) {
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot `
     -ArtifactRoot $artifactRoot -RunId $RunId `
     -Project 'rf_quadrupole_ion_optics' -Mode $workflowId `
-    -Software $software -AdditionalDirectories @('comsol','runtime') -UseShortExecutionPath
+    -Software $software -AdditionalDirectories @('comsol','runtime') -UseShortExecutionPath `
+    -ExpectedExecutionRelativePaths $executionCapacityPaths
 $runDir,$inputDir,$resultDir,$logDir = $package.run_dir,$package.input_dir,
     $package.result_dir,$package.log_dir
 $candidateDir,$runtimeDir = (Join-Path $runDir 'comsol'),(Join-Path $runDir 'runtime')
@@ -109,20 +126,7 @@ try {
         -Destination (Join-Path $inputDir 'frozen_python_package.ps1')
     $frozenCodeRoot = Join-Path $inputDir 'code'
     $frozenPythonPackage = New-FrozenPythonPackage `
-        -SourceRoot $repoRoot -CodeRoot $frozenCodeRoot -RelativePaths @(
-            'projects\rf_quadrupole_ion_optics\workflows\__init__.py',
-            'projects\rf_quadrupole_ion_optics\workflows\interface_readiness\__init__.py',
-            'projects\rf_quadrupole_ion_optics\workflows\interface_readiness\generate_particle_table.py',
-            'projects\rf_quadrupole_ion_optics\workflows\interface_readiness\particle_source_policy.py',
-            'projects\rf_quadrupole_ion_optics\analysis\paired_particle_source_bundle.py',
-            'projects\rf_quadrupole_ion_optics\analysis\validate_release_construction_gate.py',
-            'common\contracts\particle_physics.py',
-        'common\contracts\particle_count_policy.py',
-        'common\contracts\particle_count_policy.json',
-        'common\contracts\file_identity.py',
-        'common\multipole\__init__.py',
-            'common\multipole\particle_source_preflight.py'
-        )
+        -SourceRoot $repoRoot -CodeRoot $frozenCodeRoot -RelativePaths $frozenPythonRelativePaths
     $frozenParticlePolicy = Get-FrozenPythonPackageFile `
         -Package $frozenPythonPackage -RelativePath `
         'projects/rf_quadrupole_ion_optics/workflows/interface_readiness/particle_source_policy.py'

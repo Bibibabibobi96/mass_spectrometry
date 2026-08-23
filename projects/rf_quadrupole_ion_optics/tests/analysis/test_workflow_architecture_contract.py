@@ -119,6 +119,7 @@ RUNTIME_MODULE_FUNCTIONS = {
         "Assert-RfTransportParticleTableIdentity",
     },
     "frozen_python_package.ps1": {
+        "Get-FrozenPythonPackageExecutionPaths",
         "New-FrozenPythonPackage",
         "Assert-FrozenPythonPackage",
         "Get-FrozenPythonPackageFile",

@@ -29,12 +29,28 @@ $mode = 'transport_interface_readiness'
 . (Join-Path $projectRoot 'runtime\simion_run_config.ps1')
 . (Join-Path $projectRoot 'runtime\simion_execution.ps1')
 . (Join-Path $projectRoot 'runtime\frozen_python_package.ps1')
+$frozenPythonRelativePaths = @(
+    'projects\rf_quadrupole_ion_optics\workflows\__init__.py',
+    'projects\rf_quadrupole_ion_optics\workflows\interface_readiness\__init__.py',
+    'projects\rf_quadrupole_ion_optics\workflows\interface_readiness\generate_particle_table.py',
+    'projects\rf_quadrupole_ion_optics\workflows\interface_readiness\particle_source_policy.py',
+    'projects\rf_quadrupole_ion_optics\analysis\paired_particle_source_bundle.py',
+    'common\contracts\particle_physics.py',
+    'common\contracts\particle_count_policy.py',
+    'common\contracts\particle_count_policy.json',
+    'common\contracts\file_identity.py',
+    'common\multipole\__init__.py',
+    'common\multipole\particle_source_preflight.py'
+)
+$executionCapacityPaths = @('inputs/frozen_python_package.ps1') +
+    (Get-FrozenPythonPackageExecutionPaths -RelativePaths $frozenPythonRelativePaths)
 if ([string]::IsNullOrWhiteSpace($RunId)) {
     $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__sim__simion__rf-transport__interface-readiness'
 }
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -RunId $RunId `
     -Project 'rf_quadrupole_ion_optics' -Mode $mode -Software @('SIMION 2020','Python 3.11') `
-    -AdditionalDirectories @('simion') -UseShortExecutionPath
+    -AdditionalDirectories @('simion') -UseShortExecutionPath `
+    -ExpectedExecutionRelativePaths $executionCapacityPaths
 $runDir=$package.run_dir
 $candidateDir=Join-Path $runDir 'simion'
 $resultDir=$package.result_dir
@@ -116,19 +132,7 @@ $frozenPythonSupport = Copy-VerifiedRunInput `
     -Destination (Join-Path $inputDir 'frozen_python_package.ps1')
 $frozenCodeRoot = Join-Path $inputDir 'code'
 $frozenPythonPackage = New-FrozenPythonPackage `
-    -SourceRoot $repoRoot -CodeRoot $frozenCodeRoot -RelativePaths @(
-        'projects\rf_quadrupole_ion_optics\workflows\__init__.py',
-        'projects\rf_quadrupole_ion_optics\workflows\interface_readiness\__init__.py',
-        'projects\rf_quadrupole_ion_optics\workflows\interface_readiness\generate_particle_table.py',
-        'projects\rf_quadrupole_ion_optics\workflows\interface_readiness\particle_source_policy.py',
-        'projects\rf_quadrupole_ion_optics\analysis\paired_particle_source_bundle.py',
-        'common\contracts\particle_physics.py',
-        'common\contracts\particle_count_policy.py',
-        'common\contracts\particle_count_policy.json',
-        'common\contracts\file_identity.py',
-        'common\multipole\__init__.py',
-        'common\multipole\particle_source_preflight.py'
-    )
+    -SourceRoot $repoRoot -CodeRoot $frozenCodeRoot -RelativePaths $frozenPythonRelativePaths
 $bundleDocument = Get-Content -LiteralPath $bundleMetadataInput -Raw -Encoding UTF8 |
     ConvertFrom-Json
 $liveBundleRoot = [IO.Path]::GetFullPath((Split-Path -Parent $bundleMetadataInput))
