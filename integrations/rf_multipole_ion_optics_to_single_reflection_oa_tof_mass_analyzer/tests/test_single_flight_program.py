@@ -12,6 +12,7 @@ from pathlib import Path
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.build_single_flight_program import (
     build_successor_program,
     load_initial_state,
+    reflectron_fast_adjust_assignments,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.resolved_region_field import (
     build_resolved_region_field_contract,
@@ -143,6 +144,33 @@ def _minimal_program_contracts() -> tuple[dict[str, object], dict[str, object]]:
 
 
 class SingleFlightProgramTests(unittest.TestCase):
+    def test_reflectron_fast_adjust_assignments_are_python_compiled(self) -> None:
+        oatof = {
+            "rings": {"stage1_count": 2, "stage2_count": 3},
+            "electrodes_V": {"midgrid": 120.0, "backplate": 420.0},
+        }
+        self.assertEqual(
+            reflectron_fast_adjust_assignments(oatof),
+            [
+                "1=0",
+                "2=40",
+                "3=80",
+                "4=120",
+                "5=195",
+                "6=270",
+                "7=345",
+                "8=420",
+                "9=0",
+            ],
+        )
+        for invalid in (
+            {"rings": {"stage1_count": 0, "stage2_count": 3}, "electrodes_V": oatof["electrodes_V"]},
+            {"rings": oatof["rings"], "electrodes_V": {"midgrid": float("nan"), "backplate": 420.0}},
+        ):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(ValueError):
+                    reflectron_fast_adjust_assignments(invalid)
+
     def test_runner_passes_release_mode_and_omits_rf_cap_for_pre_pulse_restart(self) -> None:
         runner = (
             REPO

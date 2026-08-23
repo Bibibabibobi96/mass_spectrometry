@@ -40,6 +40,47 @@ def _lua_number(value: float) -> str:
     return format(result, ".17g")
 
 
+def reflectron_fast_adjust_assignments(oatof: dict[str, Any]) -> list[str]:
+    """Compile the resolved reflectron ring voltages into SIMION fastadj input."""
+
+    rings = oatof.get("rings")
+    voltages = oatof.get("electrodes_V")
+    if not isinstance(rings, dict) or not isinstance(voltages, dict):
+        raise ValueError("resolved oaTOF reflectron rings or voltages are missing")
+    stage1_count = rings.get("stage1_count")
+    stage2_count = rings.get("stage2_count")
+    if (
+        isinstance(stage1_count, bool)
+        or isinstance(stage2_count, bool)
+        or not isinstance(stage1_count, int)
+        or not isinstance(stage2_count, int)
+        or stage1_count < 1
+        or stage2_count < 1
+    ):
+        raise ValueError("resolved reflectron ring counts must be positive integers")
+    midgrid = float(voltages.get("midgrid"))
+    backplate = float(voltages.get("backplate"))
+    if not math.isfinite(midgrid) or not math.isfinite(backplate):
+        raise ValueError("resolved reflectron voltages must be finite")
+
+    assignments = ["1=0"]
+    for ring_index in range(1, stage1_count + 1):
+        electrode = 1 + ring_index
+        voltage = midgrid * ring_index / (stage1_count + 1)
+        assignments.append(f"{electrode}={_lua_number(voltage)}")
+    midgrid_electrode = 2 + stage1_count
+    assignments.append(f"{midgrid_electrode}={_lua_number(midgrid)}")
+    for ring_index in range(1, stage2_count + 1):
+        electrode = midgrid_electrode + ring_index
+        voltage = midgrid + (backplate - midgrid) * ring_index / (stage2_count + 1)
+        assignments.append(f"{electrode}={_lua_number(voltage)}")
+    assignments.append(
+        f"{3 + stage1_count + stage2_count}={_lua_number(backplate)}"
+    )
+    assignments.append(f"{4 + stage1_count + stage2_count}=0")
+    return assignments
+
+
 def _lua_value(value: object) -> str:
     """Serialize a validated Python contract fragment as deterministic Lua."""
     if value is None:
@@ -994,6 +1035,35 @@ end
 
 
 def main() -> int:
+    mode_parser = argparse.ArgumentParser(add_help=False)
+    mode_parser.add_argument("--reflectron-fast-adjust-oatof", type=Path)
+    mode_parser.add_argument("--reflectron-fast-adjust-output", type=Path)
+    mode_args, _ = mode_parser.parse_known_args()
+    if mode_args.reflectron_fast_adjust_oatof is not None:
+        if mode_args.reflectron_fast_adjust_output is None:
+            mode_parser.error(
+                "--reflectron-fast-adjust-oatof requires "
+                "--reflectron-fast-adjust-output"
+            )
+        output = mode_args.reflectron_fast_adjust_output
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "role": "rf_oatof_reflectron_fast_adjust_assignments",
+                    "assignments": reflectron_fast_adjust_assignments(
+                        _load(mode_args.reflectron_fast_adjust_oatof)
+                    ),
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        print(f"REFLECTRON_FAST_ADJUST_ASSIGNMENTS=PASS OUTPUT={output}")
+        return 0
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--analyzer-component", required=True, type=Path)
     parser.add_argument("--pulse-hook", required=True, type=Path)

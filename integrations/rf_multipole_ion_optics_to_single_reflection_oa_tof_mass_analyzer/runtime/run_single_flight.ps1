@@ -1688,19 +1688,23 @@ try {
         throw "Candidate reflectron pa$electrode segmented refine failed."
       }
     }
-    $assignments = @('1=0')
-    foreach ($ringIndex in 1..([int]$rings.stage1_count)) {
-      $assignments += "$(1+$ringIndex)=$($voltage.midgrid*$ringIndex/([int]$rings.stage1_count+1))"
+    $reflectronAssignmentsPath = Join-Path $package.input_dir `
+      'reflectron_fast_adjust_assignments.json'
+    Invoke-SingleFlightPython -Arguments @(
+      '-m',
+      'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.build_single_flight_program',
+      '--reflectron-fast-adjust-oatof',$oatofGeometry,
+      '--reflectron-fast-adjust-output',$reflectronAssignmentsPath
+    ) -Failure 'Reflectron fast-adjust assignment compilation failed.'
+    $assignmentsDocument = Get-Content -LiteralPath $reflectronAssignmentsPath `
+      -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ($assignmentsDocument.role -ne
+        'rf_oatof_reflectron_fast_adjust_assignments' -or
+        @($assignmentsDocument.assignments).Count -ne
+        ($maximumReflectronElectrode + 1)) {
+      throw 'Reflectron fast-adjust assignments are incomplete.'
     }
-    $midgridElectrode = 2 + [int]$rings.stage1_count
-    $assignments += "$midgridElectrode=$($voltage.midgrid)"
-    foreach ($ringIndex in 1..([int]$rings.stage2_count)) {
-      $electrode = $midgridElectrode + $ringIndex
-      $ringVoltage = $voltage.midgrid + ($voltage.backplate-$voltage.midgrid)*$ringIndex/([int]$rings.stage2_count+1)
-      $assignments += "$electrode=$ringVoltage"
-    }
-    $assignments += "$(3+[int]$rings.stage1_count+[int]$rings.stage2_count)=$($voltage.backplate)"
-    $assignments += "$maximumReflectronElectrode=0"
+    $assignments = @($assignmentsDocument.assignments | ForEach-Object { [string]$_ })
     $fastAdjust = Invoke-ResourceBudgetedProcess `
       -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
       -UsagePath (Join-Path $package.log_dir 'reflectron_fast_adjust_resource_usage.json') `
