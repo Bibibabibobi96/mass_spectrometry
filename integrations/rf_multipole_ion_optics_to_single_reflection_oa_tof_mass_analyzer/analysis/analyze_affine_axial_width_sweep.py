@@ -42,6 +42,12 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.reflectron_dual_st
 
 
 CHECKPOINTS = ("accelerator_focus", "reflectron_entrance", "detector")
+WIDTH_SWEEP_SCHEMA_PATH = (
+    INTEGRATION_ROOT
+    / "config"
+    / "schemas"
+    / "rf_oatof_affine_axial_all_ideal_width_sweep_campaign.schema.json"
+)
 
 
 def _finite_positive_sequence(values: object, label: str) -> tuple[float, ...]:
@@ -237,9 +243,7 @@ def compute_width_sweep_report(
 
     campaign_path = campaign_path.resolve()
     sweep = load_json(campaign_path)
-    validate_schema(
-        sweep, "rf_oatof_affine_axial_all_ideal_width_sweep_campaign.schema.json"
-    )
+    validate_schema(sweep, WIDTH_SWEEP_SCHEMA_PATH)
     if not isinstance(sweep, dict) or (
         sweep.get("role") != "rf_oatof_affine_axial_all_ideal_width_sweep_campaign"
         or sweep.get("evidence_level") != "EXPLORATORY_PROVISIONAL"
