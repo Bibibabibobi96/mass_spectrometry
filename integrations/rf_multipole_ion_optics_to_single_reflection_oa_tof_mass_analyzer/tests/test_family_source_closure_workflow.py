@@ -6,6 +6,7 @@ import json
 import hashlib
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -89,6 +90,9 @@ STAGED_GRID2_R03_CAMPAIGN = (
 AUTO_N1000_CONNECTOR_CAMPAIGN = (
     CONFIG_ROOT / "diagnostics" /
     "connector_gap_three_zone_real_pa_full_n1000_campaign_v11.json"
+)
+COMPACT_GAP_FIELD_CAMPAIGN = (
+    CONFIG_ROOT / "diagnostics" / "connector_gap_field_matrix_compact_auto_replay_v2.json"
 )
 
 
@@ -509,6 +513,51 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             )
             self.assertNotEqual(missing.returncode, 0)
             self.assertIn("must resolve exactly one experiment", missing.stderr)
+
+    def test_public_entrypoint_exposes_read_only_semantic_diff(self) -> None:
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("PowerShell 7 is unavailable")
+        campaign = expand_flat_experiment_authoring(load(COMPACT_GAP_FIELD_CAMPAIGN))
+        before, after = campaign["experiments"][:2]
+        command = [
+            pwsh,
+            "-NoProfile",
+            "-File",
+            str(INTEGRATION_ROOT / "workflows" / "family_source_closure" / "execute.ps1"),
+            "-Campaign",
+            str(COMPACT_GAP_FIELD_CAMPAIGN),
+            "-ExperimentId",
+            before["experiment_id"],
+            "-SemanticDiffAgainst",
+            after["experiment_id"],
+        ]
+        completed = subprocess.run(
+            command,
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(
+            json.loads(completed.stdout), semantic_diff_experiments(before, after)
+        )
+        incompatible = subprocess.run(
+            [*command, "-ValidateOnly"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30,
+            check=False,
+        )
+        self.assertNotEqual(incompatible.returncode, 0)
+        self.assertIn("cannot be combined", incompatible.stderr)
 
     def test_memory_policy_freezes_selected_count_and_fails_when_no_batch_fits(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

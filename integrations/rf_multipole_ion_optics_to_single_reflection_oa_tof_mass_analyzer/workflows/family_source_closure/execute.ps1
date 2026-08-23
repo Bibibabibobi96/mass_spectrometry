@@ -5,6 +5,7 @@ param(
   [switch]$AllExperiments,
   [string]$OutputDirectory = '',
   [string]$PythonExe = '',
+  [string]$SemanticDiffAgainst = '',
   [switch]$ValidateOnly,
   [switch]$PrepareOnly,
   [switch]$SolverAuthorized,
@@ -19,11 +20,17 @@ $selectedModeCount = (
   [int][bool]$SolverAuthorized +
   [int][bool]$FinalizeOnly
 )
-if ($selectedModeCount -ne 1) {
+if ([string]::IsNullOrWhiteSpace($SemanticDiffAgainst) -and $selectedModeCount -ne 1) {
   throw 'Select exactly one of ValidateOnly, PrepareOnly, SolverAuthorized or FinalizeOnly.'
+}
+if (-not [string]::IsNullOrWhiteSpace($SemanticDiffAgainst) -and $selectedModeCount -ne 0) {
+  throw 'SemanticDiffAgainst cannot be combined with an execution mode.'
 }
 if ($AllExperiments -and -not [string]::IsNullOrWhiteSpace($ExperimentId)) {
   throw 'AllExperiments and ExperimentId are mutually exclusive.'
+}
+if ($AllExperiments -and -not [string]::IsNullOrWhiteSpace($SemanticDiffAgainst)) {
+  throw 'AllExperiments and SemanticDiffAgainst are mutually exclusive.'
 }
 if (-not $AllExperiments -and [string]::IsNullOrWhiteSpace($ExperimentId)) {
   throw 'ExperimentId is required unless AllExperiments is selected.'
@@ -153,6 +160,15 @@ $prepareModule = (
 )
 $profileRegistry = Join-Path $integrationRoot 'config\connection_profiles.json'
 $adapterRegistry = Join-Path $integrationRoot 'config\execution_adapter_profiles.json'
+if (-not [string]::IsNullOrWhiteSpace($SemanticDiffAgainst)) {
+  & $PythonExe -m $prepareModule --repo-root $repoRoot `
+    --profile-registry $profileRegistry --adapter-registry $adapterRegistry `
+    --campaign $campaignPath --semantic-diff-experiment-json $ExperimentId $SemanticDiffAgainst
+  if ($LASTEXITCODE -ne 0) {
+    throw 'Campaign semantic diff must resolve exactly two experiments.'
+  }
+  return
+}
 $selectedExperimentJson = & $PythonExe -m $prepareModule --repo-root $repoRoot `
   --profile-registry $profileRegistry --adapter-registry $adapterRegistry `
   --campaign $campaignPath --print-experiment-json $ExperimentId

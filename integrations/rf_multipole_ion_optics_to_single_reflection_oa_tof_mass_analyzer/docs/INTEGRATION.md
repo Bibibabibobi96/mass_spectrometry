@@ -43,7 +43,8 @@ campaign 层并行商业求解器，任一行失败即停止。`PrepareOnly` 仍
 
 ## 审查与 dry-run
 
-`prepare.py --semantic-diff-experiment-json BEFORE AFTER` 比较同一 campaign 的两条**已展开**实验行，输出稳定 JSON：
+公开入口可用 `execute.ps1 -ExperimentId BEFORE -SemanticDiffAgainst AFTER` 比较同一 campaign 的两条**已展开**实验行；
+它内部调用 `prepare.py --semantic-diff-experiment-json`，输出稳定 JSON：
 每个字段的旧/新值及其审查类别（物理/场、数值/资源、采样、资格、运行控制或证据）。这是读操作，不参与
 schema 验证、cache 命中、handoff 兼容性或资格决策；这些仍由已冻结的 resolved contract 与实际执行边界决定。
 在不启动求解器的情况下，可用 `execute.ps1 -ValidateOnly` 对某一行生成并校验其完整 resolved connection 与
