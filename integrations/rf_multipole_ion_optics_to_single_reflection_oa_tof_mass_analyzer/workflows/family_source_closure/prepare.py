@@ -2084,10 +2084,10 @@ def prepare_family_source_closure(
     pa_cache_policy_provenance = None
     if execution_strategy == "simion_single_flight":
         if pa_cache_policy is None:
-            pa_cache_policy = "legacy_unspecified"
-            pa_cache_policy_provenance = "legacy_validate_only_compatibility"
-        else:
-            pa_cache_policy_provenance = "explicit_campaign_row"
+            raise ContractError(
+                "single-flight execution requires an explicit PA cache policy"
+            )
+        pa_cache_policy_provenance = "explicit_campaign_row"
     pa_cache_generation_binding = _resolve_pa_cache_generation_binding(experiment)
     pulse_schedule_policy = experiment.get("single_flight_pulse_schedule_policy")
     population_declaration = experiment.get("single_flight_population")

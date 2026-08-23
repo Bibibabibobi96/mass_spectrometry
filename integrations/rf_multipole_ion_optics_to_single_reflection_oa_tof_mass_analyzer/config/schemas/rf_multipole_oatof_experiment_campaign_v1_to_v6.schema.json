@@ -86,7 +86,7 @@
       }
     },
     {
-      "if": {"properties": {"schema_version": {"enum": [4, 5]}}, "required": ["schema_version"]},
+      "if": {"properties": {"schema_version": {"enum": [4, 5, 6]}}, "required": ["schema_version"]},
       "then": {
         "properties": {
           "experiments": {

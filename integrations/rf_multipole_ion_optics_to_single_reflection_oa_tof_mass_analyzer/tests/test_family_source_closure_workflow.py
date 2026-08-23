@@ -1213,6 +1213,12 @@ $result = Get-PulseTimingOrchestration `
         with self.assertRaises(ContractError):
             validate_schema(archived, ACTIVE_CAMPAIGN_SCHEMA)
 
+    def test_active_v6_single_flight_requires_pa_cache_policy(self) -> None:
+        active = expand_flat_experiment_authoring(load(COMPACT_GAP_FIELD_CAMPAIGN))
+        del active["experiments"][0]["single_flight_pa_cache_policy"]
+        with self.assertRaises(ContractError):
+            validate_schema(active, ACTIVE_CAMPAIGN_SCHEMA)
+
     def test_registry_is_the_only_active_campaign_authority(self) -> None:
         campaigns = []
         for path in INTEGRATION_ROOT.rglob("*.json"):

@@ -452,32 +452,25 @@ if ($isThreeZoneLayout) {
 }
 $experimentHasPaCachePolicy =
   $experiment.PSObject.Properties.Name -contains 'single_flight_pa_cache_policy'
-$expectedPaCachePolicy = if ($experimentHasPaCachePolicy) {
-  [string]$experiment.single_flight_pa_cache_policy
-} else { 'legacy_unspecified' }
-$expectedPaCachePolicyProvenance = if ($experimentHasPaCachePolicy) {
-  'explicit_campaign_row'
-} else { 'legacy_validate_only_compatibility' }
-if ([string]$experiment.execution_strategy -eq 'simion_single_flight' -and (
-    [string]$frozenArguments.single_flight_pa_cache_policy -ne
-      $expectedPaCachePolicy -or
-    [string]$frozenArguments.single_flight_pa_cache_policy_provenance -ne
-      $expectedPaCachePolicyProvenance)) {
-  throw 'Frozen PA cache policy differs from the exact campaign row.'
+if ([string]$experiment.execution_strategy -eq 'simion_single_flight') {
+  if (-not $experimentHasPaCachePolicy) {
+    throw 'Single-flight execution requires an explicit PA cache policy.'
+  }
+  $expectedPaCachePolicy = [string]$experiment.single_flight_pa_cache_policy
+  $expectedPaCachePolicyProvenance = 'explicit_campaign_row'
+  if ([string]$frozenArguments.single_flight_pa_cache_policy -ne
+        $expectedPaCachePolicy -or
+      [string]$frozenArguments.single_flight_pa_cache_policy_provenance -ne
+        $expectedPaCachePolicyProvenance) {
+    throw 'Frozen PA cache policy differs from the exact campaign row.'
+  }
 }
 if ($SolverAuthorized -and
     [string]$experiment.execution_strategy -eq 'simion_single_flight' -and (
-      [int]$campaign.schema_version -lt 4 -or
-      -not $experimentHasPaCachePolicy -or
       $expectedPaCachePolicy -notin @(
         'require_existing','build_and_publish_if_missing'
       ))) {
   throw 'SolverAuthorized single-flight execution requires an explicit schema-v4 PA cache policy.'
-}
-if ($PrepareOnly -and
-    [string]$experiment.execution_strategy -eq 'simion_single_flight' -and
-    -not $experimentHasPaCachePolicy) {
-  throw 'Legacy single-flight cache policy is compatible with ValidateOnly only.'
 }
 $campaignHasPrePulseTimeSeries = (
   $campaign.PSObject.Properties.Name -contains
