@@ -1703,6 +1703,13 @@ if ($executionStrategy -eq 'simion_single_flight') {
   # comparing it with the optional static campaign hint would reject a valid
   # memory-bound decision.
   $resolvedBatchCount = [int]$frozenArguments.single_flight_batch_count
+  $dispatchPlan = $budget.single_flight_dispatch_plan
+  if ($null -eq $dispatchPlan -or
+      $null -eq $dispatchPlan.waves -or
+      @($dispatchPlan.waves).Count -ne 1 -or
+      [int]$dispatchPlan.waves[0].batch_count -ne $resolvedBatchCount) {
+    throw 'Resolved dispatch plan and prepared single-flight batch count differ.'
+  }
   if ($resolvedBatchCount -lt 1 -or
       $resolvedBatchCount -gt $expectedExecutionParticleCount) {
     throw 'Prepared single-flight batch count is invalid or exceeds the resolved population.'

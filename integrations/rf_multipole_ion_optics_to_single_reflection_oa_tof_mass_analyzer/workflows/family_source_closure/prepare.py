@@ -557,11 +557,18 @@ def _automatic_pulse_population_binding(
     raise ContractError("automatic pulse timing population differs")
 
 
-def resolve_single_flight_batch_count(
+def resolve_single_flight_dispatch_plan(
     experiment: dict[str, Any], *, execution_particle_count: int,
     workspace: Path | None = None,
-) -> int:
-    """Resolve execution-only batching without deriving the governed population."""
+) -> dict[str, Any]:
+    """Resolve execution-only dispatch without deriving the governed population.
+
+    The returned object is an execution artifact only.  It never contributes to
+    campaign or handoff identity; those remain defined by the resolved source
+    and numerical contracts.  Legacy rows are represented explicitly so their
+    frozen behavior is observable while new memory-policy rows retain the
+    scheduler's automatic decision.
+    """
 
     memory_policy = experiment.get("single_flight_batch_memory_policy")
     if memory_policy is not None:
@@ -588,6 +595,9 @@ def resolve_single_flight_batch_count(
                 "independent_particles": True,
                 "default_parallel_batches": int(memory_policy.get("default_batch_count", 1)),
                 "maximum_parallel_batches": int(memory_policy.get("maximum_batch_count", execution_particle_count)),
+                # The receipt is already the measured upper bound used for a
+                # one-batch bootstrap when no exact profile identity matches.
+                "unknown_per_batch_reservation_bytes": peak,
                 "reserve_available_memory_bytes": int(memory_policy["reserve_available_memory_bytes"]),
                 "memory_safety_numerator": int(memory_policy.get("memory_safety_numerator", 115)),
                 "memory_safety_denominator": int(memory_policy.get("memory_safety_denominator", 100)),
@@ -616,7 +626,7 @@ def resolve_single_flight_batch_count(
             )
         except ValueError as error:
             raise ContractError("single-flight memory batch policy is invalid") from error
-        return int(decision["waves"][0]["batch_count"])
+        return decision
 
     value = experiment.get("single_flight_batch_count", 1)
     if isinstance(value, bool) or not isinstance(value, int):
@@ -625,7 +635,39 @@ def resolve_single_flight_batch_count(
         raise ContractError(
             "single-flight batch count must be between one and the resolved population count"
         )
-    return value
+    return {
+        "schema_version": 1,
+        "role": "simion_legacy_fixed_dispatch_plan",
+        "solver": "SIMION",
+        "field_kind": "rf",
+        "particle_count": execution_particle_count,
+        "resource_identity": {},
+        "estimation": {
+            "kind": "legacy_explicit_batch_count",
+            "reason": "campaign_row_preserves_frozen_execution_contract",
+        },
+        "limits": {"maximum_parallel_batches": value},
+        "waves": [{
+            "index": 1,
+            "kind": "legacy_fixed",
+            "batch_count": value,
+            "particle_count": execution_particle_count,
+        }],
+    }
+
+
+def resolve_single_flight_batch_count(
+    experiment: dict[str, Any], *, execution_particle_count: int,
+    workspace: Path | None = None,
+) -> int:
+    """Compatibility projection of the resolved dispatch plan."""
+
+    plan = resolve_single_flight_dispatch_plan(
+        experiment,
+        execution_particle_count=execution_particle_count,
+        workspace=workspace,
+    )
+    return int(plan["waves"][0]["batch_count"])
 
 
 def validate_pre_pulse_time_series_campaign(campaign: dict[str, Any]) -> None:
@@ -3789,12 +3831,16 @@ def prepare_family_source_closure(
         else evidence["particle_count"]
     )
     if execution_strategy == "simion_single_flight":
-        single_flight_batch_count = resolve_single_flight_batch_count(
+        single_flight_dispatch_plan = resolve_single_flight_dispatch_plan(
             experiment, execution_particle_count=execution_particle_count,
             workspace=workspace,
         )
+        single_flight_batch_count = int(
+            single_flight_dispatch_plan["waves"][0]["batch_count"]
+        )
     else:
         single_flight_batch_count = 1
+        single_flight_dispatch_plan = None
     resolved_budget = {
         "schema_version": 1,
         "role": "integration_resolved_engineering_budget",
@@ -3813,6 +3859,9 @@ def prepare_family_source_closure(
         "budget_exhaustion_result": policy["budget_exhaustion_result"],
     }
     if execution_strategy == "simion_single_flight":
+        resolved_budget["single_flight_dispatch_plan"] = (
+            single_flight_dispatch_plan
+        )
         resolved_budget["single_flight_pa_cache_policy"] = pa_cache_policy
         resolved_budget["single_flight_pa_cache_policy_provenance"] = (
             pa_cache_policy_provenance

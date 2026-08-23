@@ -23,6 +23,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     _repo_byte_record,
     _workspace_record,
     prepare_family_source_closure,
+    resolve_single_flight_dispatch_plan,
     resolve_single_flight_batch_count,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_source import (
@@ -258,6 +259,43 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                     {"single_flight_batch_count": invalid},
                     execution_particle_count=1000,
                 )
+
+    def test_dispatch_plan_makes_legacy_batch_projection_explicit(self) -> None:
+        plan = resolve_single_flight_dispatch_plan(
+            {"single_flight_batch_count": 2}, execution_particle_count=1000,
+        )
+        self.assertEqual(plan["role"], "simion_legacy_fixed_dispatch_plan")
+        self.assertEqual(plan["estimation"]["kind"], "legacy_explicit_batch_count")
+        self.assertEqual(plan["waves"][0]["batch_count"], 2)
+
+    def test_dispatch_plan_uses_scheduler_for_memory_policy(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            receipt = root / "resource_usage.json"
+            receipt.write_text(
+                json.dumps({"peak_process_tree_working_set_bytes": 10}),
+                encoding="utf-8",
+            )
+            plan = resolve_single_flight_dispatch_plan(
+                {
+                    "single_flight_time_integration_profile_id": "dt40",
+                    "single_flight_batch_memory_policy": {
+                        "resource_usage_receipt": {
+                            "path": "resource_usage.json",
+                            "sha256": hashlib.sha256(receipt.read_bytes()).hexdigest().upper(),
+                        },
+                        "reserve_available_memory_bytes": 0,
+                        "unknown_per_batch_reservation_bytes": 10,
+                        "default_batch_count": 1,
+                        "maximum_batch_count": 8,
+                    },
+                },
+                execution_particle_count=8,
+                workspace=root,
+            )
+        self.assertEqual(plan["role"], "simion_repository_dispatch_plan")
+        self.assertEqual(plan["estimation"]["kind"], "nearest_resource_profile")
+        self.assertEqual(plan["waves"][0]["batch_count"], 8)
 
     def test_flat_authoring_expands_shared_controls_and_gap_rows(self) -> None:
         authored = {
