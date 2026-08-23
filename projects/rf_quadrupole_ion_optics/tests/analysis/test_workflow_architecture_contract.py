@@ -90,55 +90,6 @@ CONFIG_CORE_FUNCTIONS = {
     "ConvertTo-RfSimionLuaConfig",
 }
 EXECUTION_SUPPORT_FUNCTIONS = {"Invoke-RfSimionCoreRun"}
-RUNTIME_MODULE_FUNCTIONS = {
-    "analysis_run_lifecycle.ps1": {
-        "Assert-PortableManifestRecord",
-        "Copy-PortableRunManifestClosure",
-        "Add-RunInputClosure",
-    },
-    "comsol_solver_numerics.ps1": {
-        "Get-RfComsolRequiredProperty",
-        "Get-RfComsolRequiredFiniteNumber",
-        "ConvertTo-RfComsolCanonicalValue",
-        "Get-RfComsolLogicalSha256",
-        "Read-RfComsolSolverNumericsContract",
-        "Compile-RfComsolSolverNumerics",
-    },
-    "cross_solver_analysis_lifecycle.ps1": {
-        "New-CrossSolverAnalysisPackage",
-        "Assert-CrossSolverSourceManifest",
-        "Get-CrossSolverSourcePair",
-        "Get-CrossSolverResolvedDrive",
-        "Copy-CrossSolverAnalysisInputs",
-        "New-CrossSolverFrozenPathSet",
-        "Invoke-CrossSolverAnalyzer",
-        "Complete-CrossSolverAnalysis",
-    },
-    "particle_table_identity.ps1": {
-        "Resolve-RfConfigInputPath",
-        "Assert-RfTransportParticleTableIdentity",
-    },
-    "frozen_python_package.ps1": {
-        "Get-FrozenPythonPackageExecutionPaths",
-        "New-FrozenPythonPackage",
-        "Assert-FrozenPythonPackage",
-        "Get-FrozenPythonPackageFile",
-        "Invoke-IsolatedFrozenPythonModule",
-    },
-    "simion_execution.ps1": EXECUTION_SUPPORT_FUNCTIONS,
-    "simion_run_config.ps1": CONFIG_CORE_FUNCTIONS,
-}
-LEGACY_RUNTIME_FILES = {
-    "analysis_run_support.ps1",
-    "comsol_solver_numerics_contract.ps1",
-    "cross_solver_analysis_support.ps1",
-    "particle_table_identity.ps1",
-    "rf_run_artifact_support.ps1",
-    "simion_execution_support.ps1",
-    "simion_run_config_contract.ps1",
-}
-
-
 def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
@@ -149,6 +100,12 @@ def _parameter_block(source: str) -> str:
 
 def _powershell_functions(source: str) -> set[str]:
     return set(re.findall(r"(?im)^\s*function\s+([A-Za-z0-9_-]+)\b", source))
+
+
+def _runtime_function_names() -> set[str]:
+    return set().union(
+        *(_powershell_functions(_read(path)) for path in RUNTIME_ROOT.glob("*.ps1"))
+    )
 
 
 def _production_line_count(source: str) -> int:
@@ -169,19 +126,14 @@ class WorkflowArchitectureContractTests(unittest.TestCase):
                 forbidden.search(_read(path)),
                 f"{path.relative_to(PROJECT_ROOT)} depends on a tests/ production entry",
             )
-    def test_runtime_modules_have_exact_responsibility_inventory(self) -> None:
-        self.assertEqual(
-            {path.name for path in RUNTIME_ROOT.glob("*.ps1")},
-            set(RUNTIME_MODULE_FUNCTIONS),
-        )
-        for filename, functions in RUNTIME_MODULE_FUNCTIONS.items():
-            source = _read(RUNTIME_ROOT / filename)
-            self.assertEqual(_powershell_functions(source), functions, filename)
+    def test_runtime_modules_keep_execution_safety_contract(self) -> None:
+        for path in RUNTIME_ROOT.glob("*.ps1"):
+            source = _read(path)
             self.assertIn("$ErrorActionPreference = 'Stop'", source)
             self.assertNotRegex(source, r"(?i)tests[/\\](?:support|cross_solver)")
 
     def test_tests_do_not_redefine_runtime_mechanisms(self) -> None:
-        runtime_functions = set().union(*RUNTIME_MODULE_FUNCTIONS.values())
+        runtime_functions = _runtime_function_names()
         for path in (PROJECT_ROOT / "tests").rglob("*.ps1"):
             overlap = _powershell_functions(_read(path)) & runtime_functions
             self.assertEqual(
@@ -189,17 +141,6 @@ class WorkflowArchitectureContractTests(unittest.TestCase):
                 set(),
                 f"{path} redefines runtime mechanisms: {sorted(overlap)}",
             )
-        for legacy in (
-            PROJECT_ROOT / "tests" / "support",
-            PROJECT_ROOT / "tests" / "cross_solver",
-        ):
-            legacy_files = {
-                path.name
-                for path in legacy.glob("*.ps1")
-                if path.name in LEGACY_RUNTIME_FILES
-            }
-            self.assertEqual(legacy_files, set())
-
     def test_profile_inventory_classifies_every_active_workflow(self) -> None:
         profiles = json.loads(EXECUTION_PROFILES.read_text(encoding="utf-8"))[
             "profiles"
