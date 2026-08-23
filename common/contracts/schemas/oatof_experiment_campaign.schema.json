@@ -33,8 +33,8 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "profile_id": {"const": "validated_structural_candidate"},
-        "capability_id": {"const": "single_reflection_mass_analysis"},
+        "profile_id": {"$ref": "#/$defs/identifier"},
+        "capability_id": {"$ref": "#/$defs/identifier"},
         "authority": {"$ref": "#/$defs/file_record"}
       },
       "required": ["profile_id", "capability_id", "authority"]

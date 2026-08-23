@@ -126,6 +126,15 @@ class ExperimentCampaignTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "invalid value"):
                 validate_campaign(campaign_path, require_authorized=True)
 
+    def test_profile_identity_is_resolved_from_its_frozen_authority(self):
+        with authorized_campaign_fixture() as (campaign_path, campaign):
+            campaign["execution_profile"]["profile_id"] = "missing_profile"
+            campaign_path.write_text(json.dumps(campaign), encoding="utf-8")
+            with self.assertRaisesRegex(
+                ValueError, "execution profile must resolve exactly once"
+            ):
+                validate_campaign(campaign_path, require_authorized=True)
+
     def test_status_requires_complete_bound_terminal_child_evidence(self):
         with authorized_campaign_fixture() as (campaign_path, campaign):
             with tempfile.TemporaryDirectory() as root:
