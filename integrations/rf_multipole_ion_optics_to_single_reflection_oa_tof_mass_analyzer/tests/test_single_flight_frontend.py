@@ -400,6 +400,15 @@ class SingleFlightFrontendTests(unittest.TestCase):
                 misaligned, cell_mm_xyz={"x": 0.2, "y": 0.2, "z": 0.05}
             )
 
+    def test_three_zone_accepts_registered_topology_identity_with_same_semantics(self) -> None:
+        oatof = copy.deepcopy(self.oatof)
+        oatof["accelerator_topology"] = copy.deepcopy(self.THREE_ZONE_TOPOLOGY)
+        oatof["accelerator_topology"]["topology_id"] = "registered_three_zone_topology_v2"
+        _, frontend = compile_frontend(self.upstream, oatof, self.connection)
+        self.assertEqual(
+            frontend["accelerator_topology_id"], "registered_three_zone_topology_v2"
+        )
+
     def test_three_zone_frontend_consumes_exact_zonewise_one_plus_four_rings(self) -> None:
         oatof = copy.deepcopy(self.oatof)
         topology = copy.deepcopy(self.THREE_ZONE_TOPOLOGY)

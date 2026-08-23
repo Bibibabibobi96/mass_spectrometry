@@ -16,6 +16,7 @@ from common.multipole.simion_geometry import segmented_rod_electrode_ids
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_electrode_contract import (
     ROD_ELECTRODE_IDS,
     require_published_frontend_electrodes,
+    resolve_frontend_electrode_topology,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.resolved_region_field import (
     resolved_region_field_hook_lua,
@@ -165,13 +166,18 @@ def _successor_analyzer_config(
     marker = oatof["simion_detector_marker"]
     electrodes = frontend["electrodes"]
     frontend_topology_id = frontend.get("accelerator_topology_id")
-    three_zone = frontend_topology_id == "three_zone_accelerator_ideal_v1"
+    three_zone = frontend_topology_id is not None
     topology = oatof.get("accelerator_topology") if three_zone else None
     region_topology = region_field_contract["semantic"].get(
         "accelerator_topology"
     )
     if three_zone:
-        if topology != region_topology or topology.get("topology_id") != frontend_topology_id:
+        if (
+            not isinstance(frontend_topology_id, str)
+            or not frontend_topology_id
+            or topology != region_topology
+            or topology.get("topology_id") != frontend_topology_id
+        ):
             raise ValueError(
                 "frontend, oaTOF and region-field three-zone topologies must match exactly"
             )
@@ -270,9 +276,9 @@ def _successor_analyzer_config(
             electrodes["accelerator_intermediate2_id"]
         )
     return {
-        "accelerator_topology_id": (
-            "three_zone_frontend_v1" if three_zone else "two_zone_frontend_v1"
-        ),
+        "accelerator_topology_id": resolve_frontend_electrode_topology(
+            electrodes
+        )["topology_id"],
         "instance_roles": {
             "flight_tube": 1,
             "reflectron": 2,
@@ -402,9 +408,7 @@ def build_successor_program(
             raise ValueError("pre-pulse time-series requires non-restart execution")
     if overlay is not None and overlay.get("role") != "rf_oatof_simion_accelerator_overlay_contract":
         raise ValueError("single-flight Program requires an accelerator overlay contract")
-    three_zone = frontend.get("accelerator_topology_id") == (
-        "three_zone_accelerator_ideal_v1"
-    )
+    three_zone = frontend.get("accelerator_topology_id") is not None
     if three_zone and (
         overlay is None
         or frontend["accelerator_local_region"].get("intermediate2_grid_provider")

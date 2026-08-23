@@ -376,8 +376,8 @@ def compile_frontend(
             "topology_id",
             "planes_global_z_mm",
             "potentials_v",
-        } or accelerator_topology.get("topology_id") != (
-            "three_zone_accelerator_ideal_v1"
+        } or not isinstance(accelerator_topology.get("topology_id"), str) or not (
+            accelerator_topology["topology_id"]
         ):
             raise ValueError("oaTOF accelerator_topology differs from the published three-zone contract")
         planes = accelerator_topology["planes_global_z_mm"]
