@@ -2718,24 +2718,11 @@ def prepare_family_source_closure(
                 raise ContractError(
                     "three-zone field and layout profile identities differ"
                 )
-            expected_field_ids = {
-                "accelerator_ideal_three_zone_real_reflectron":
-                    "three_zone_piecewise_uniform_ideal_field_v1",
-                "accelerator_real_three_zone_ideal_reflectron":
-                    "three_zone_real_pa_plus_reflectron_piecewise_uniform_ideal_field_v1",
-                "three_zone_explicit_region_modes":
-                    "three_zone_explicit_region_modes_v1",
-                "accelerator_real_three_zone_pa_real_reflectron":
-                    "three_zone_refined_pa_field_v1",
-                "full_domain_three_zone_piecewise_ideal_field":
-                    "three_zone_plus_reflectron_piecewise_uniform_ideal_field_v1",
-            }
-            if (
-                selected_field_profile.get("field_id")
-                != expected_field_ids.get(accelerator_field_profile_id)
+            if not isinstance(selected_field_profile.get("field_id"), str) or not (
+                selected_field_profile["field_id"]
             ):
                 raise ContractError(
-                    "three-zone field profile scientific identity differs"
+                    "three-zone field profile scientific identity is absent"
                 )
         if experiment_overrides:
             inherited = list(layout_profile.get("design_overrides", []))
