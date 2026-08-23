@@ -62,17 +62,17 @@ def select_profile(registry: dict[str, Any], profile_id: str) -> dict[str, Any]:
     if not isinstance(overrides, list):
         raise ContractError("single-flight design overrides must be a list")
     if profile["method"] == "t5_frozen_three_zone_candidate_v1":
-        expected_identities = {
-            "topology_id": "three_zone_accelerator_ideal_v1",
-            "geometry_id": "three_zone_focus_origin_planes_v1",
-            "frontend_electrode_topology_id": "three_zone_frontend_v1",
-        }
         if (
             overrides
             or profile.get("finite_interval_accelerator_profile") is not None
             or any(
-                profile.get(key) != value
-                for key, value in expected_identities.items()
+                not isinstance(profile.get(key), str) or not profile[key]
+                for key in (
+                    "topology_id",
+                    "geometry_id",
+                    "frontend_electrode_topology_id",
+                    "candidate_field_id",
+                )
             )
             or profile.get("claim_status") != "CANDIDATE_ONLY"
         ):
@@ -166,7 +166,7 @@ def _compile_three_zone_candidate(
     expected_identities = {
         "topology_id": profile["topology_id"],
         "geometry_id": profile["geometry_id"],
-        "field_id": "three_zone_piecewise_uniform_ideal_field_v1",
+        "field_id": profile["candidate_field_id"],
     }
     if identities != expected_identities:
         raise ContractError("three-zone T5 Candidate scientific identity differs")

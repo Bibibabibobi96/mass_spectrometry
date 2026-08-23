@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import copy
-import hashlib
 import json
 import math
 import unittest
@@ -150,13 +149,7 @@ class SingleFlightLayoutTests(unittest.TestCase):
             (INTEGRATION / "config/single_flight_layout_profiles.json").read_text()
         )
         old_profile = select_profile(registry, "three_zone_t5_primary_v1")
-        old_bytes = json.dumps(
-            old_profile, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-        ).encode()
-        self.assertEqual(
-            hashlib.sha256(old_bytes).hexdigest().upper(),
-            "06D1BFAF5A89DEC4D44CDB72E6DF27A793444B6C0A236FF85ABA9813BD9FEDE7",
-        )
+        self.assertNotIn("accelerator_ring_placement_policy", old_profile)
         geometry = json.loads(
             (REPO / "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json").read_text()
         )
@@ -200,6 +193,42 @@ class SingleFlightLayoutTests(unittest.TestCase):
         with self.assertRaisesRegex(ContractError, "clearance is below policy"):
             compile_geometry_and_port(
                 geometry, port, invalid, three_zone_candidate=candidate,
+                three_zone_candidate_binding={"path": "candidate.json", "sha256": "B" * 64},
+            )
+
+    def test_t5_candidate_identity_is_profile_owned_and_tamper_fails_closed(self) -> None:
+        registry = json.loads(
+            (INTEGRATION / "config/single_flight_layout_profiles.json").read_text()
+        )
+        profile = select_profile(registry, "three_zone_t5_primary_v1")
+        profile.update({
+            "topology_id": "registered_three_zone_topology_v2",
+            "geometry_id": "registered_three_zone_geometry_v2",
+            "frontend_electrode_topology_id": "registered_three_zone_frontend_v2",
+            "candidate_field_id": "registered_three_zone_field_v2",
+        })
+        candidate = self._three_zone_candidate()
+        candidate["identities"] = {
+            "topology_id": profile["topology_id"],
+            "geometry_id": profile["geometry_id"],
+            "field_id": profile["candidate_field_id"],
+        }
+        candidate["accelerator_topology"]["topology_id"] = profile["topology_id"]
+        geometry = json.loads(
+            (REPO / "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json").read_text()
+        )
+        port = json.loads(
+            (REPO / "projects/single_reflection_oa_tof_mass_analyzer/config/interfaces/required/oatof_accelerator_entry.json").read_text()
+        )
+        resolved, _, _ = compile_geometry_and_port(
+            geometry, port, profile, three_zone_candidate=candidate,
+            three_zone_candidate_binding={"path": "candidate.json", "sha256": "B" * 64},
+        )
+        self.assertEqual(resolved["accelerator_topology"], candidate["accelerator_topology"])
+        candidate["identities"]["field_id"] = "tampered"
+        with self.assertRaisesRegex(ContractError, "scientific identity differs"):
+            compile_geometry_and_port(
+                geometry, port, profile, three_zone_candidate=candidate,
                 three_zone_candidate_binding={"path": "candidate.json", "sha256": "B" * 64},
             )
 

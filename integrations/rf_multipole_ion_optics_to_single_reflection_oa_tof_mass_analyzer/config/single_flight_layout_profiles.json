@@ -12,6 +12,7 @@
       "topology_id": "three_zone_accelerator_ideal_v1",
       "geometry_id": "three_zone_focus_origin_planes_v1",
       "frontend_electrode_topology_id": "three_zone_frontend_v1",
+      "candidate_field_id": "three_zone_piecewise_uniform_ideal_field_v1",
       "source_release_full_width_mm": 2.2,
       "focus_to_reflectron_mm": 600.0,
       "claim_status": "CANDIDATE_ONLY"
@@ -26,6 +27,7 @@
       "topology_id": "three_zone_accelerator_ideal_v1",
       "geometry_id": "three_zone_focus_origin_planes_v1",
       "frontend_electrode_topology_id": "three_zone_frontend_v1",
+      "candidate_field_id": "three_zone_piecewise_uniform_ideal_field_v1",
       "accelerator_ring_placement_policy": {
         "policy_id": "three_zone_zonewise_equal_subdivision_1p4_v1",
         "zone2_ring_count": 1,
