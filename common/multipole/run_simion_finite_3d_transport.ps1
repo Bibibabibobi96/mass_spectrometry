@@ -215,7 +215,7 @@ $package=New-RunPackage -Python $python -RepoRoot $repoRoot `
   -Project $ProjectId -Mode 'resolved_design_transport' -Software @('SIMION 2020','Python 3.11') `
   -RetentionContractEnabled `
   -RetentionClass $RetentionClass -RetentionReason $RetentionReason `
-  -AdditionalDirectories @('simion')
+  -AdditionalDirectories @('simion') -UseShortExecutionPath
 $runDir=$package.run_dir;$inputDir=$package.input_dir;$resultDir=$package.result_dir
 $logDir=$package.log_dir;$solverDir=Join-Path $runDir 'simion'
 $runConfig=$package.run_config;$summary=$package.summary;$manifestRepoRoot=$repoRoot
@@ -1124,4 +1124,7 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
   throw
 }finally{
   Remove-Item -LiteralPath $budgetPreflight -Force -ErrorAction SilentlyContinue
+  try { Remove-RunPackageExecutionAlias -Package $package } catch {
+    Write-Warning "Could not remove short execution alias after SIMION run: $($_.Exception.Message)"
+  }
 }

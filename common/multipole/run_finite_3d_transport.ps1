@@ -144,7 +144,7 @@ $package=New-RunPackage -Python $python -RepoRoot $repoRoot `
   -Project $ProjectId -Mode 'resolved_design_transport' `
   -RetentionContractEnabled `
   -RetentionClass $RetentionClass -RetentionReason $RetentionReason `
-  -Software @('COMSOL 6.4','MATLAB R2025b','Python 3.11')
+  -Software @('COMSOL 6.4','MATLAB R2025b','Python 3.11') -UseShortExecutionPath
 $runDir=$package.run_dir;$inputDir=$package.input_dir;$resultDir=$package.result_dir
 $logDir=$package.log_dir;$runConfig=$package.run_config;$summary=$package.summary
 $runtimeDir=Join-Path $logDir 'runtime'
@@ -588,4 +588,7 @@ try{
   throw
 }finally{
   Remove-Item -LiteralPath $budgetPreflight -Force -ErrorAction SilentlyContinue
+  try { Remove-RunPackageExecutionAlias -Package $package } catch {
+    Write-Warning "Could not remove short execution alias after COMSOL run: $($_.Exception.Message)"
+  }
 }

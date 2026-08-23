@@ -81,6 +81,8 @@ class ResourceBudgetTests(unittest.TestCase):
                 "Complete-ResourceUsage",
             ):
                 self.assertIn(token, source)
+            self.assertIn("-UseShortExecutionPath", source)
+            self.assertIn("Remove-RunPackageExecutionAlias", source)
         comsol = (REPO_ROOT / "common/multipole/run_finite_3d_transport.ps1").read_text(
             encoding="utf-8"
         )
