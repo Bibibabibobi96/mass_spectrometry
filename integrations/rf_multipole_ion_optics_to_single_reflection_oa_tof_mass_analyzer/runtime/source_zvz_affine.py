@@ -138,8 +138,13 @@ def derive_three_zone_working_point(
     if set(theory_request) != required:
         raise ValueError("theory request must contain exactly the native constraints")
     topology = resolved_geometry.get("accelerator_topology")
-    if not isinstance(topology, dict) or topology.get("topology_id") != "three_zone_accelerator_ideal_v1":
+    if (
+        not isinstance(topology, dict)
+        or not isinstance(topology.get("topology_id"), str)
+        or not topology["topology_id"]
+    ):
         raise ValueError("automatic working point requires three-zone topology")
+    topology_id = topology["topology_id"]
     planes = topology.get("planes_global_z_mm")
     if not isinstance(planes, dict):
         raise ValueError("three-zone plane mapping is missing")
@@ -196,7 +201,7 @@ def derive_three_zone_working_point(
         "resolved_geometry_input_sha256": geometry_sha256,
         "native_constraints": {key: _finite(theory_request[key], key) for key in sorted(required)},
         "accelerator_topology": {
-            "topology_id": "three_zone_accelerator_ideal_v1",
+            "topology_id": topology_id,
             "planes_global_z_mm": p,
             "potentials_v": {"repeller": state.repeller_v, "intermediate1": state.grid1_v, "intermediate2": state.grid2_v, "exit": state.exit_v},
         },

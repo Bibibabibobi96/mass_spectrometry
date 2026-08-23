@@ -423,6 +423,29 @@ if ($baseline -ne $theory -or $baseline -eq $geometryKey -or $baseline -eq $mesh
                 working_point["accelerator_topology"]["potentials_v"], TOPOLOGY["potentials_v"]
             )
 
+    def test_working_point_preserves_registered_three_zone_topology_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            geometry = copy.deepcopy(GEOMETRY)
+            geometry["accelerator_topology"] = copy.deepcopy(TOPOLOGY)
+            geometry["accelerator_topology"]["topology_id"] = (
+                "registered_three_zone_topology_v2"
+            )
+            working_point = derive_three_zone_working_point(
+                source_receipt=identify(source_state_path=self._state(root)),
+                resolved_geometry=geometry,
+                resolved_geometry_input_sha256="A" * 64,
+                theory_request={
+                    "first_zone_drop_v": 250.0,
+                    "nominal_energy_per_charge_v": 2000.0,
+                    "reflectron_stage1_voltage_v": 1700.0,
+                },
+            )
+            self.assertEqual(
+                working_point["accelerator_topology"]["topology_id"],
+                "registered_three_zone_topology_v2",
+            )
+
     def test_all_three_field_profiles_consume_identical_theory_potentials(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
