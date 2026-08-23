@@ -28,9 +28,6 @@ FAMILY_RUNTIME_IMPLEMENTATION = (
 FAMILY_ADAPTER = (
     INTEGRATION_ROOT / "workflows" / "family_source_closure" / "adapter.ps1"
 )
-PULSE_RESOLUTION_REGISTRAR = (
-    INTEGRATION_ROOT / "analysis" / "register_pulse_resolution_result.py"
-)
 RUNNERS = (
     INTEGRATION_ROOT / "runtime" / "run_transfer.ps1",
     INTEGRATION_ROOT / "stages" / "comsol" / "run_pre_pulse_interface_transport.ps1",
@@ -1270,28 +1267,6 @@ foreach ($case in $cases) {{
             runner,
         )
         self.assertIn("$EligiblePopulationCount = if ($hasPairedCohort)", runner)
-
-    def test_paired_n100_field_authority_is_run_local_contract(self) -> None:
-        runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
-        adapter = FAMILY_ADAPTER.read_text(encoding="utf-8")
-        registrar = PULSE_RESOLUTION_REGISTRAR.read_text(encoding="utf-8")
-        self.assertNotIn("OATOF_IDEAL_ACCEL_STAGE1_ENABLE", runner)
-        self.assertNotIn("OATOF_IDEAL_ACCEL_STAGE2_ENABLE", runner)
-        self.assertNotIn("single_flight_ideal_accel_stage1_enable", runner)
-        self.assertIn("ResolvedRegionFieldContractSha256", runner)
-        self.assertIn("ResolvedRegionFieldSemanticSha256", runner)
-        self.assertNotIn("PulseResolutionBaselineCheckpoints", runner)
-        self.assertIn("pulseRegistrationPath.StartsWith(", adapter)
-        self.assertIn("pulse_resolution_registration_sha256", adapter)
-        self.assertIn("$PulseResolutionRegistrationAuthoritySha256", runner)
-        self.assertIn("--registration-authority-sha256", runner)
-        self.assertIn('campaign.get("pulse_resolution_baseline_evidence", {})', registrar)
-        self.assertIn('baseline_evidence.get("paired_checkpoint_rows", [])', registrar)
-        self.assertIn("'pulse_resolution_' + $PulseResolutionExperimentId + '_result.json'", runner)
-        self.assertIn("$PulseResolutionFieldProfileId -eq 'accelerator_real_pa'", runner)
-        self.assertIn("execution_status=$expectedStatus", runner)
-        self.assertIn("$PulseResolutionExperimentId + '_promotion_receipt.json'", runner)
-
 
 if __name__ == "__main__":
     unittest.main()

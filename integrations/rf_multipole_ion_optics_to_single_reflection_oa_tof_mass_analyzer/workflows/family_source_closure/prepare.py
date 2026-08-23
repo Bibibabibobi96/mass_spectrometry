@@ -39,9 +39,6 @@ from common.integration.resolve_connection import (
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.materialize_simion_grid2_state import (
     materialize as materialize_legacy_grid2_state,
 )
-from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.register_pulse_resolution_result import (
-    validate_frozen_baseline_evidence,
-)
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.select_real_field_pulse_time import (
     pulse_selection_content_identity,
 )
@@ -255,51 +252,6 @@ def _resolve_pulse_transition(
         "path": _workspace_relative(path, workspace),
         "sha256": file_sha256(path),
     }
-
-def validate_pulse_resolution_optimization_campaign(
-    campaign: dict[str, Any], *, execution_requested: bool,
-    experiment: dict[str, Any] | None = None,
-) -> None:
-    """Validate cross-field optimization semantics before any solver input is read."""
-    contract = campaign.get("pulse_resolution_optimization")
-    if contract is None:
-        return
-    matrix = contract["comparison_matrix"]
-    experiments = {row["experiment_id"]: row for row in campaign["experiments"]}
-    if len(matrix) != len(experiments):
-        raise ContractError("pulse-resolution comparison matrix must match campaign rows")
-    for row in matrix:
-        experiment_row = experiments.get(row["experiment_id"])
-        if (
-            experiment_row is None
-            or row["sequence"] != experiment_row["sequence"]
-            or row["source_profile_id"] != experiment_row["source_profile_id"]
-            or row["field_profile_id"]
-            != experiment_row["single_flight_accelerator_field_profile_id"]
-        ):
-            raise ContractError("pulse-resolution direct comparison matrix differs")
-    execution_modes = {
-        row.get("pulse_resolution_execution_mode") for row in experiments.values()
-    }
-    if None in execution_modes or len(execution_modes) != 1:
-        raise ContractError("pulse-resolution campaign must use one execution mode")
-    if campaign.get("status") == "authorized" and "preregistration" in campaign:
-        registration = campaign["preregistration"]
-        frozen_rows = registration["frozen_experiment_row_sha256"]
-        if set(frozen_rows) != set(experiments) or any(
-            frozen_rows[experiment_id] != _canonical_sha256(experiment_row)
-            for experiment_id, experiment_row in experiments.items()
-        ):
-            raise ContractError("authorized candidate experiment row SHA differs")
-    if execution_requested:
-        if campaign.get("status") != "authorized":
-            raise ContractError("pending pulse-resolution campaign cannot execute")
-        if experiment is None:
-            raise ContractError("pulse-resolution execution requires a selected row")
-        if experiment.get("execution_strategy") != "simion_single_flight":
-            raise ContractError("pulse-resolution N=100 experiment is not executable")
-
-
 def _automatic_pulse_population_binding(
     population: dict[str, Any],
 ) -> tuple[str, int]:
@@ -775,54 +727,6 @@ def semantic_diff_experiments(before: dict[str, Any], after: dict[str, Any]) -> 
         "after_experiment_id": after.get("experiment_id"),
         "changed_field_count": len(changes),
         "changes": changes,
-    }
-
-
-def _pulse_resolution_cohort_policy(experiment: dict[str, Any]) -> str:
-    """Derive cohort handling from the existing execution-mode authority."""
-
-    mode = experiment["pulse_resolution_execution_mode"]
-    if mode == "screening_prefix_n100_baseline_registration":
-        return "establish_observed_authority"
-    if mode == "screening_prefix_n100_paired_candidate":
-        return "require_frozen_baseline_authority"
-    raise ContractError(f"unsupported pulse-resolution execution mode: {mode}")
-
-
-def _resolve_pulse_resolution_historical_reference(
-    root: Path, campaign: dict[str, Any]
-) -> dict[str, Any]:
-    """Validate the old checkpoint as migration evidence, not current authority."""
-
-    declaration = campaign["pulse_resolution_cohort_authority"]
-    if declaration["role"] != "rf_oatof_historical_migration_reference":
-        raise ContractError("baseline cohort declaration is not historical evidence")
-    checkpoint_record = declaration["checkpoint"]
-    checkpoint_path = root.parent / checkpoint_record["path"]
-    if (
-        not checkpoint_path.is_file()
-        or file_sha256(checkpoint_path) != checkpoint_record["sha256"]
-    ):
-        raise ContractError("pulse-resolution cohort checkpoint identity differs")
-    with checkpoint_path.open(encoding="utf-8-sig", newline="") as handle:
-        rows = list(csv.DictReader(handle))
-    source_ids = sorted({
-        int(row["particle_id"]) for row in rows if row["event"] == "source_release"
-    })
-    if _canonical_sha256(source_ids) != declaration["source_release"][
-        "ordered_particle_id_sha256"
-    ]:
-        raise ContractError("historical source-release identity differs")
-    return {
-        "role": declaration["role"],
-        "checkpoint": checkpoint_record,
-        "source_release": {
-            "selector": declaration["source_release"]["selector"],
-            "ordered_particle_ids": source_ids,
-            "ordered_particle_id_sha256": declaration["source_release"][
-                "ordered_particle_id_sha256"
-            ],
-        },
     }
 
 
@@ -2417,27 +2321,6 @@ def prepare_family_source_closure(
         raise ContractError("active lifecycle working-point policy is invalid")
     validate_active_post_pulse_restart_working_point(experiment)
     source = experiment["source"]
-    validate_pulse_resolution_optimization_campaign(
-        campaign, execution_requested=True, experiment=experiment
-    )
-    validated_baseline_path = None
-    validated_baseline = None
-    if experiment.get("pulse_resolution_execution_mode") == (
-        "screening_prefix_n100_paired_candidate"
-    ):
-        baseline_record = campaign["pulse_resolution_baseline_evidence"]
-        validated_baseline_path = _workspace_record(
-            workspace, baseline_record, "pulse-resolution baseline result"
-        )
-        validated_baseline = _load(validated_baseline_path)
-        try:
-            validate_frozen_baseline_evidence(
-                campaign,
-                validated_baseline,
-                file_sha256(validated_baseline_path),
-            )
-        except ValueError as error:
-            raise ContractError(str(error)) from error
     execution_strategy = experiment.get("execution_strategy", "staged_three_stage")
     pa_cache_policy = experiment.get("single_flight_pa_cache_policy")
     pa_cache_policy_provenance = None
@@ -2851,45 +2734,11 @@ def prepare_family_source_closure(
         ),
     )
     source = evidence["source"]
-    pulse_contract = campaign.get("pulse_resolution_optimization")
-    pulse_cohort_policy = None
-    historical_cohort_reference = None
-    paired_cohort_authority = None
     pulse_prefix_path = None
     pulse_prefix_sha256 = None
     pulse_population_plan_path = None
     pulse_population_count = None
-    if pulse_contract is not None:
-        pulse_cohort_policy = _pulse_resolution_cohort_policy(experiment)
-        if pulse_cohort_policy == "establish_observed_authority":
-            historical_cohort_reference = (
-                _resolve_pulse_resolution_historical_reference(root, campaign)
-            )
-            prefix_ids = historical_cohort_reference["source_release"][
-                "ordered_particle_ids"
-            ]
-        else:
-            if validated_baseline is None:
-                raise ContractError("paired candidate lacks validated baseline evidence")
-            paired_cohort_authority = validated_baseline.get(
-                "observed_cohort_authority"
-            )
-            if not isinstance(paired_cohort_authority, dict):
-                raise ContractError("baseline observed cohort authority is missing")
-            prefix_ids = paired_cohort_authority["source_release"][
-                "ordered_particle_ids"
-            ]
-        pulse_prefix_path = plan_output.parent / "inputs" / (
-            "pulse_resolution_arm1_all_real_screening_prefix_n100.csv"
-        )
-        pulse_prefix_path.parent.mkdir(parents=True, exist_ok=True)
-        pulse_prefix_sha256 = write_pulse_resolution_screening_prefix(
-            _workspace_record(workspace, source["particle_source"],
-                              "pulse-resolution mother source"),
-            pulse_prefix_path,
-            ordered_particle_ids=prefix_ids,
-        )
-    elif pre_pulse_time_series_specification is not None:
+    if pre_pulse_time_series_specification is not None:
         prefix_ids = list(range(1, 101))
         pulse_prefix_path = plan_output.parent / "inputs" / (
             "pre_pulse_time_series_screening_prefix_n100.csv"
@@ -3269,108 +3118,6 @@ def prepare_family_source_closure(
             observed_pre_pulse_projection
         )
     row_sha256 = _canonical_sha256(experiment)
-    registration_receipt_path = None
-    registration_receipt_sha256 = None
-    if pulse_contract is not None:
-        with pulse_prefix_path.open(encoding="utf-8", newline="") as handle:
-            prefix_ids = [int(row["particle_id"]) for row in csv.DictReader(handle)]
-        expected_prefix_ids = (
-            historical_cohort_reference["source_release"]["ordered_particle_ids"]
-            if pulse_cohort_policy == "establish_observed_authority"
-            else paired_cohort_authority["source_release"]["ordered_particle_ids"]
-        )
-        if prefix_ids != expected_prefix_ids:
-            raise ContractError("pulse-resolution governed prefix IDs differ")
-        paired_candidate = experiment["pulse_resolution_execution_mode"] == (
-            "screening_prefix_n100_paired_candidate"
-        )
-        if paired_candidate:
-            baseline_record = campaign["pulse_resolution_baseline_evidence"]
-            if validated_baseline_path is None or validated_baseline is None:
-                raise ContractError("paired screening baseline preflight was not completed")
-            baseline_path = validated_baseline_path
-            baseline = validated_baseline
-            if (
-                baseline.get("role") != "rf_oatof_pulse_resolution_baseline_result"
-                or baseline.get("baseline_authority_id")
-                != baseline_record["authority_id"]
-                or baseline.get("campaign_id")
-                != baseline_record["baseline_campaign_id"]
-                or baseline.get("campaign_sha256")
-                != baseline_record["baseline_campaign_sha256"]
-                or baseline.get("experiment_id") != "pulse_resolution_baseline"
-                or baseline.get("prefix", {}).get("ordered_particle_ids") != prefix_ids
-                or baseline.get("cohort_authority_mode")
-                != "establish_observed_authority"
-                or baseline.get("observed_cohort_authority")
-                != paired_cohort_authority
-                or baseline.get("analysis_randomness")
-                != population_declaration["analysis_randomness"]
-            ):
-                raise ContractError("paired screening baseline result identity differs")
-            registration_receipt_path = plan_output.parent / "inputs" / (
-                "pulse_resolution_baseline_evidence.json"
-            )
-            shutil.copy2(baseline_path, registration_receipt_path)
-            registration_receipt_sha256 = file_sha256(registration_receipt_path)
-        else:
-            registration_receipt = {
-            "schema_version": 1,
-            "role": "rf_oatof_pulse_resolution_baseline_registration_authority",
-            "campaign_id": campaign["campaign_id"],
-            "campaign_sha256": repository_text_sha256(campaign_path),
-            "experiment_id": experiment_id,
-            "experiment_row_sha256": row_sha256,
-            "direct_contract": {
-                "source_run_id": source["run_id"],
-                "source_state_sha256": source["state"]["sha256"],
-                "layout_profile_id": experiment["single_flight_layout_profile_id"],
-                "frontend_grid_profile_id": experiment[
-                    "single_flight_frontend_grid_profile_id"
-                ],
-                "field_profile_id": experiment[
-                    "single_flight_accelerator_field_profile_id"
-                ],
-            },
-            "mother_sample": {
-                "run_id": source["run_id"],
-                "manifest": source["manifest"],
-                "particle_source": source["particle_source"],
-                "particle_count": source["launched_particle_count"],
-            },
-            "prefix": {
-                "path": "inputs/" + pulse_prefix_path.name,
-                "sha256": pulse_prefix_sha256,
-                "count": len(prefix_ids),
-                "selection_algorithm": population_declaration[
-                    "execution_population"
-                ]["selection_algorithm"],
-                "selection_seed": population_declaration[
-                    "execution_population"
-                ]["selection_seed"],
-                "ordered_particle_ids": prefix_ids,
-                "particle_id_sha256_ordered": _canonical_sha256(prefix_ids).lower(),
-            },
-            "analysis_randomness": population_declaration["analysis_randomness"],
-            "cohort_authority_mode": pulse_cohort_policy,
-            "historical_migration_reference": historical_cohort_reference,
-            "execution_status": "baseline_registered_not_candidate",
-            "solver_execution_performed": False,
-            "promotion_gate_invoked": False,
-            "promotion_status": "not_evaluated",
-            "formal_gate_passed": False,
-        }
-            registration_receipt["receipt_sha256"] = _canonical_sha256(
-                registration_receipt
-            ).lower()
-            registration_receipt_path = plan_output.parent / "inputs" / (
-                "pulse_resolution_real_beam_real_accelerator_real_reflectron_"
-                "n100_baseline_registration_authority.json"
-            )
-            registration_receipt_path.write_text(
-                json.dumps(registration_receipt, indent=2) + "\n", encoding="utf-8"
-            )
-            registration_receipt_sha256 = file_sha256(registration_receipt_path)
     execution_particle_count = (
         int(population_declaration["execution_population"]["particle_count"])
         if execution_strategy == "simion_single_flight"
@@ -4070,8 +3817,6 @@ def prepare_family_source_closure(
             ),
             contract_schema_version=(2 if campaign["schema_version"] >= 5 else 1),
             source_release_validation=staged_loader_validation,
-            paired_cohort_authority=paired_cohort_authority,
-            cohort_authority_mode=pulse_cohort_policy,
         )
         resolved_population_path = plan_output.with_name(
             "resolved_population_contract.json"
@@ -4211,16 +3956,6 @@ def prepare_family_source_closure(
                 "inputs/single_flight_source_materialization_receipt.json",
                 "single_flight_materialization_receipt_sha256="
                 + file_sha256(materialization_receipt_path),
-            ]) + ([] if pulse_contract is None else [
-                "pulse_resolution_execution_mode="
-                + experiment["pulse_resolution_execution_mode"],
-                "pulse_resolution_prefix_filename=inputs/"
-                + pulse_prefix_path.name,
-                "pulse_resolution_prefix_sha256=" + pulse_prefix_sha256,
-                "pulse_resolution_registration_filename=inputs/"
-                + registration_receipt_path.name,
-                "pulse_resolution_registration_sha256="
-                + registration_receipt_sha256,
             ]) + ([] if pre_pulse_time_series_contract_path is None else [
                 "pre_pulse_time_series_prefix_filename="
                 + pulse_population_plan_path,
