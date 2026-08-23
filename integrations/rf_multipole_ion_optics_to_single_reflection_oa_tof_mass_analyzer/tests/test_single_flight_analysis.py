@@ -15,6 +15,7 @@ from common.contracts.particle_physics import kinetic_energy_ev
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.analyze_single_flight import (
     analyze as analyze_with_population_contract,
     validate_resolution_qualification,
+    validate_three_zone_checkpoint_census,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.plot_single_flight_spatial_six_panel import (
     _accelerator,
@@ -107,6 +108,34 @@ class SingleFlightAnalysisTests(unittest.TestCase):
                 ValueError, "bootstrap acceptance failed"
             ):
                 validate_resolution_qualification(invalid)
+
+    def test_three_zone_checkpoint_census_uses_frozen_monotonicity_rule(self) -> None:
+        summary = {
+            "census": {
+                "launched": 3,
+                "accelerator_grid1_forward": 3,
+                "accelerator_intermediate2_forward": 2,
+                "local_accelerator_exit": 1,
+                "detector_crossing": 1,
+            }
+        }
+        validate_three_zone_checkpoint_census(summary)
+        for field, value in (
+            ("accelerator_intermediate2_forward", 0),
+            ("accelerator_intermediate2_forward", 4),
+            ("local_accelerator_exit", 3),
+            ("detector_crossing", 2),
+        ):
+            invalid = json.loads(json.dumps(summary))
+            invalid["census"][field] = value
+            with self.subTest(field=field), self.assertRaisesRegex(
+                ValueError, "checkpoint census differs"
+            ):
+                validate_three_zone_checkpoint_census(invalid)
+        missing = json.loads(json.dumps(summary))
+        del missing["census"]["accelerator_intermediate2_forward"]
+        with self.assertRaisesRegex(ValueError, "checkpoint census differs"):
+            validate_three_zone_checkpoint_census(missing)
 
     def test_accelerator_phase_space_uses_detector_blind_pre_pulse_cohort(self) -> None:
         checkpoints = pd.DataFrame(

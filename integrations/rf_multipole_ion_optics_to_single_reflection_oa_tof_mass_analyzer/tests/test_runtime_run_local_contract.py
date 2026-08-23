@@ -433,72 +433,6 @@ try {{
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         self.assertIn("THREE_ZONE_RUNTIME_IDENTITY=PASS", completed.stdout)
 
-    def test_three_zone_intermediate2_checkpoint_is_required_only_for_three_zone(
-        self,
-    ) -> None:
-        pwsh = shutil.which("pwsh")
-        if pwsh is None:
-            self.skipTest("PowerShell 7 is unavailable")
-        runner_text = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
-        script = f"""
-$errors = $null
-$ast = [System.Management.Automation.Language.Parser]::ParseFile(
-  '{SINGLE_FLIGHT_RUNNER}', [ref]$null, [ref]$errors
-)
-if ($errors) {{ throw $errors[0] }}
-$fn = $ast.Find({{
-  param($node)
-  $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
-    $node.Name -eq 'Assert-RfThreeZoneCheckpointCensus'
-}}, $true)
-if ($null -eq $fn) {{ throw 'three-zone checkpoint assertion is missing' }}
-. ([scriptblock]::Create($fn.Extent.Text))
-$three = [pscustomobject]@{{
-  accelerator_grid1_forward=7
-  accelerator_intermediate2_forward=6
-  local_accelerator_exit=5
-  detector_crossing=4
-}}
-Assert-RfThreeZoneCheckpointCensus -Required $true -Census $three -LaunchedCount 7
-Assert-RfThreeZoneCheckpointCensus -Required $false `
-  -Census ([pscustomobject]@{{}}) -LaunchedCount 7
-try {{
-  Assert-RfThreeZoneCheckpointCensus -Required $true `
-    -Census ([pscustomobject]@{{}}) -LaunchedCount 7
-  throw 'missing intermediate2 checkpoint was accepted'
-}} catch {{
-  if ($_.Exception.Message -notmatch 'checkpoint census differs') {{ throw }}
-}}
-try {{
-  Assert-RfThreeZoneCheckpointCensus -Required $true `
-    -Census ([pscustomobject]@{{
-      accelerator_grid1_forward=5
-      accelerator_intermediate2_forward=6
-      local_accelerator_exit=5
-      detector_crossing=4
-    }}) -LaunchedCount 7
-  throw 'non-monotonic checkpoint census was accepted'
-}} catch {{
-  if ($_.Exception.Message -notmatch 'checkpoint census differs') {{ throw }}
-}}
-'THREE_ZONE_CHECKPOINT_CENSUS=PASS'
-"""
-        completed = subprocess.run(
-            [pwsh, "-NoProfile", "-Command", script],
-            cwd=INTEGRATION_ROOT.parents[1],
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            capture_output=True,
-            check=False, timeout=300,
-        )
-        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
-        self.assertIn("THREE_ZONE_CHECKPOINT_CENSUS=PASS", completed.stdout)
-        self.assertIn(
-            "accelerator_intermediate2_forward_launched_upper_bound", runner_text
-        )
-        self.assertIn("accelerator_intermediate2_forward_count", runner_text)
-
     def test_three_zone_n1_authorization_rejects_missing_fail_tamper_and_identity_mismatch(
         self,
     ) -> None:
@@ -1414,6 +1348,8 @@ foreach ($case in $cases) {{
         )
         self.assertNotIn("'--bootstrap-resamples'", text)
         self.assertIn("'--require-resolution-qualification'", text)
+        self.assertIn("'--require-three-zone-checkpoint-census'", text)
+        self.assertNotIn("Assert-RfThreeZoneCheckpointCensus", text)
 
     def test_population_contract_is_the_only_release_and_mode_authority(self) -> None:
         runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")

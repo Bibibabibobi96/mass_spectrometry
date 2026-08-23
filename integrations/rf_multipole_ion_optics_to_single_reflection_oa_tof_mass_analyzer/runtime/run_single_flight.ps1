@@ -313,41 +313,6 @@ function Assert-RfThreeZoneRuntimeIdentity {
   }
 }
 
-function Assert-RfThreeZoneCheckpointCensus {
-  param(
-    [Parameter(Mandatory)][bool]$Required,
-    [Parameter(Mandatory)]$Census,
-    [Parameter(Mandatory)][int]$LaunchedCount
-  )
-  if (-not $Required) { return }
-  $counts = [ordered]@{}
-  foreach ($eventName in @(
-      'accelerator_grid1_forward',
-      'accelerator_intermediate2_forward',
-      'local_accelerator_exit',
-      'detector_crossing'
-    )) {
-    $countProperty = $Census.PSObject.Properties[$eventName]
-    if ($null -eq $countProperty) {
-      throw 'Three-zone intermediate2 checkpoint census differs.'
-    }
-    $counts[$eventName] = [int]$countProperty.Value
-  }
-  if ($LaunchedCount -lt 1 -or
-      $counts.accelerator_grid1_forward -lt 1 -or
-      $counts.accelerator_intermediate2_forward -lt 1 -or
-      $counts.accelerator_grid1_forward -gt $LaunchedCount -or
-      $counts.accelerator_intermediate2_forward -gt
-        $counts.accelerator_grid1_forward -or
-      $counts.local_accelerator_exit -gt
-        $counts.accelerator_intermediate2_forward -or
-      $counts.detector_crossing -gt $counts.local_accelerator_exit -or
-      $counts.local_accelerator_exit -lt 0 -or
-      $counts.detector_crossing -lt 0) {
-    throw 'Three-zone intermediate2 checkpoint census differs.'
-  }
-}
-
 function Assert-RfThreeZoneAuthorizationFileBinding {
   param(
     [Parameter(Mandatory)]$Binding,
@@ -2694,6 +2659,9 @@ try {
   if ($ResolutionQualification) {
     $analysisArguments += '--require-resolution-qualification'
   }
+  if ($hasThreeZoneCandidate) {
+    $analysisArguments += '--require-three-zone-checkpoint-census'
+  }
   foreach ($batch in $batchRecords) {
     $analysisArguments += @(
       '--log',$batch.stdout,
@@ -2720,8 +2688,6 @@ try {
     '--evolution-data',$evolutionData
   ) -Failure 'Single-flight spatial and phase-space diagnostics failed.'
   $result = Get-Content -LiteralPath $package.summary -Raw -Encoding UTF8 | ConvertFrom-Json
-  Assert-RfThreeZoneCheckpointCensus -Required $hasThreeZoneCandidate `
-    -Census $result.census -LaunchedCount $launched
   if ($hasThreeZoneCandidate) {
     $runConfiguration.parameters.accelerator_intermediate2_forward_count =
       [int]$result.census.accelerator_intermediate2_forward

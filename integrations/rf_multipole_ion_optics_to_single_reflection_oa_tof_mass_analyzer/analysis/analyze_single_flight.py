@@ -66,6 +66,44 @@ def validate_resolution_qualification(summary: dict) -> None:
             > RESOLUTION_QUALIFICATION_MAX_RELATIVE_INTERVAL_WIDTH
         ):
             raise ValueError("resolution qualification bootstrap acceptance failed")
+
+
+def validate_three_zone_checkpoint_census(summary: dict) -> None:
+    """Apply the frozen three-zone checkpoint-census acceptance rule.
+
+    The census is produced by this analyzer from the particle logs, so its
+    physical interpretation belongs here rather than in the orchestration
+    wrapper.  This preserves the former PowerShell rule exactly.
+    """
+
+    census = summary.get("census")
+    if not isinstance(census, dict):
+        raise ValueError("three-zone intermediate2 checkpoint census differs")
+    event_names = (
+        "accelerator_grid1_forward",
+        "accelerator_intermediate2_forward",
+        "local_accelerator_exit",
+        "detector_crossing",
+    )
+    try:
+        launched = int(census["launched"])
+        counts = {event_name: int(census[event_name]) for event_name in event_names}
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("three-zone intermediate2 checkpoint census differs") from exc
+    if (
+        launched < 1
+        or counts["accelerator_grid1_forward"] < 1
+        or counts["accelerator_intermediate2_forward"] < 1
+        or counts["accelerator_grid1_forward"] > launched
+        or counts["accelerator_intermediate2_forward"]
+        > counts["accelerator_grid1_forward"]
+        or counts["local_accelerator_exit"]
+        > counts["accelerator_intermediate2_forward"]
+        or counts["detector_crossing"] > counts["local_accelerator_exit"]
+        or counts["local_accelerator_exit"] < 0
+        or counts["detector_crossing"] < 0
+    ):
+        raise ValueError("three-zone intermediate2 checkpoint census differs")
 PULSE_PATTERN = re.compile(
     r"TRACE: handoff_pulse_on(?: ion=(?P<ion>\d+))? "
     r"instrument_time_us=(?P<t>[-+0-9.eE]+)"
@@ -1448,6 +1486,7 @@ def main() -> int:
     parser.add_argument("--checkpoints", required=True, type=Path)
     parser.add_argument("--summary", required=True, type=Path)
     parser.add_argument("--require-resolution-qualification", action="store_true")
+    parser.add_argument("--require-three-zone-checkpoint-census", action="store_true")
     args = parser.parse_args()
     if file_sha256(args.resolved_population_contract) != \
             args.resolved_population_contract_sha256:
@@ -1519,6 +1558,8 @@ def main() -> int:
     args.summary.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8", newline="\n")
     if args.require_resolution_qualification:
         validate_resolution_qualification(summary)
+    if args.require_three_zone_checkpoint_census:
+        validate_three_zone_checkpoint_census(summary)
     print(f"SINGLE_FLIGHT_ANALYSIS=PASS HANDOFF={summary['census']['multipole_handoff']} DETECTOR={summary['census']['detector_crossing']}")
     return 0
 
