@@ -48,9 +48,7 @@ class CampaignRuntimeAuthoritiesTests(unittest.TestCase):
             if document.get("role") != registry["campaign_selector"]["role"]:
                 continue
             relative = path.relative_to(REPO_ROOT).as_posix()
-            if document.get("status") in registry["excluded_statuses"]:
-                self.assertNotIn(relative, active_paths)
-            else:
+            if document.get("status") == "authorized":
                 discovered.add(relative)
         # The registry is default-deny: an immutable historical campaign may
         # retain `authorized` in order not to mutate a run-manifest input, yet

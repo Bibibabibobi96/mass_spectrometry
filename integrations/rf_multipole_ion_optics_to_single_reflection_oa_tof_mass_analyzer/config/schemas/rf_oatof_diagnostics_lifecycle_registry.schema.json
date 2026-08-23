@@ -9,7 +9,6 @@
     "integration_id",
     "discovery_policy",
     "campaign_selector",
-    "excluded_statuses",
     "active_post_pulse_restart_working_point_policy",
     "active_campaigns"
   ],
@@ -21,17 +20,10 @@
     "campaign_selector": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["root", "role"],
+      "required": ["role"],
       "properties": {
-        "root": {"const": "config/diagnostics"},
         "role": {"const": "rf_multipole_oatof_experiment_campaign"}
       }
-    },
-    "excluded_statuses": {
-      "type": "array",
-      "uniqueItems": true,
-      "minItems": 1,
-      "items": {"enum": ["retired", "archived_invalid", "PENDING_PREREGISTRATION"]}
     },
     "active_post_pulse_restart_working_point_policy": {
       "type": "string",
