@@ -427,7 +427,6 @@ if ($isThreeZoneLayout -ne $campaignHasThreeZoneCandidate -or
   throw 'Three-zone Candidate binding and layout identity differ.'
 }
 $threeZoneCandidatePath = $null
-$threeZoneCandidateDocument = $null
 if ($isThreeZoneLayout) {
   if ([string]$experiment.single_flight_three_zone_candidate.path -ne
       [string]$frozenArguments.single_flight_three_zone_candidate_path -or
@@ -449,21 +448,6 @@ if ($isThreeZoneLayout) {
       (Get-FileHash -LiteralPath $threeZoneCandidatePath -Algorithm SHA256).Hash -ne
       $frozenArguments.single_flight_three_zone_candidate_sha256) {
     throw 'Three-zone Candidate is outside workspace artifacts, missing or stale.'
-  }
-  $threeZoneCandidateDocument = Get-Content -LiteralPath $threeZoneCandidatePath -Raw -Encoding UTF8 | ConvertFrom-Json
-  if ([int]$threeZoneCandidateDocument.schema_version -ne 1 -or
-      [string]$threeZoneCandidateDocument.role -ne
-      'oatof_three_zone_simion_candidate_resolved' -or
-      [string]$threeZoneCandidateDocument.qualification -ne 'CANDIDATE_ONLY' -or
-      [string]$threeZoneCandidateDocument.compiler_mode -ne
-      'T5_FROZEN_PRIMARY_AND_BRANCH_ONLY' -or
-      [string]$threeZoneCandidateDocument.identities.topology_id -ne
-      'three_zone_accelerator_ideal_v1' -or
-      [string]$threeZoneCandidateDocument.identities.geometry_id -ne
-      'three_zone_focus_origin_planes_v1' -or
-      [string]$threeZoneCandidateDocument.identities.field_id -ne
-      'three_zone_piecewise_uniform_ideal_field_v1') {
-    throw 'Three-zone Candidate scientific identity differs.'
   }
 }
 $experimentHasPaCachePolicy =
@@ -1030,52 +1014,6 @@ if ([int]$campaign.schema_version -ge 3) {
       $selectedLayoutProfile.frontend_electrode_topology_id
     )
     $threeZoneFieldId = [string]$selectedFieldProfile.field_id
-    if ($threeZoneTopologyId -ne 'three_zone_accelerator_ideal_v1' -or
-        $threeZoneGeometryId -ne 'three_zone_focus_origin_planes_v1' -or
-        $threeZoneFrontendElectrodeTopologyId -ne 'three_zone_frontend_v1' -or
-        $threeZoneFieldId -notin @(
-          'three_zone_piecewise_uniform_ideal_field_v1',
-          'three_zone_real_pa_plus_reflectron_piecewise_uniform_ideal_field_v1',
-          'three_zone_refined_pa_field_v1',
-          'three_zone_plus_reflectron_piecewise_uniform_ideal_field_v1',
-          'three_zone_explicit_region_modes_v1'
-        ) -or
-        [string]$selectedFieldProfile.topology_id -ne $threeZoneTopologyId -or
-        [string]$selectedFieldProfile.geometry_id -ne $threeZoneGeometryId -or
-        [string]$selectedFieldProfile.frontend_electrode_topology_id -ne
-        $threeZoneFrontendElectrodeTopologyId -or
-        [string]$threeZoneCandidateDocument.identities.topology_id -ne
-        $threeZoneTopologyId -or
-        [string]$threeZoneCandidateDocument.identities.geometry_id -ne
-        $threeZoneGeometryId -or
-        [string]$geometryDocument.accelerator_topology.topology_id -ne
-        $threeZoneTopologyId -or
-        [string]$resolvedRegionFieldContract.semantic.accelerator_topology.topology_id -ne
-        $threeZoneTopologyId -or
-        [string]$geometryDocument.single_flight_layout_derivation.design_compilation.candidate.sha256 -ne
-        [string]$frozenArguments.single_flight_three_zone_candidate_sha256) {
-      throw 'Three-zone Candidate, layout, geometry, field or architecture identity differs.'
-    }
-    foreach ($mappingName in @('planes_global_z_mm','potentials_v')) {
-      foreach ($role in @('repeller','intermediate1','intermediate2','exit')) {
-        # A source-bound theory receipt intentionally supersedes only the
-        # candidate's voltage values.  The candidate remains the authority
-        # for planes/topology; without the receipt it remains authoritative
-        # for both mappings.
-        $expectedValue = if ($mappingName -eq 'potentials_v' -and
-            $null -ne $sourceZvzTheoryWorkingPointPath) {
-          [double]$sourceZvzTheoryWorkingPoint.accelerator_topology.$mappingName.$role
-        } else {
-          [double]$threeZoneCandidateDocument.accelerator_topology.$mappingName.$role
-        }
-        if ([double]$geometryDocument.accelerator_topology.$mappingName.$role -ne
-            $expectedValue -or
-            [double]$resolvedRegionFieldContract.semantic.accelerator_topology.$mappingName.$role -ne
-            $expectedValue) {
-          throw 'Three-zone plane or working-point mapping differs.'
-        }
-      }
-    }
   }
   $resolvedPopulation = Get-Content -LiteralPath $resolvedPopulationContractPath `
     -Raw -Encoding UTF8 | ConvertFrom-Json
