@@ -1570,8 +1570,6 @@ if ($executionStrategy -eq 'simion_single_flight') {
     $pulseCandidateConfirmationPrefixPath
   } elseif ($prePulseTimeSeriesScreening) {
     $prePulseTimeSeriesPrefixPath
-  } elseif ($pulseCandidateConfirmation) {
-    $pulseCandidateConfirmationPrefixPath
   } else { $null }
   if ($null -ne $preparedPrefixPath) {
     $runnerArguments.MotherParticleSource = $preparedPrefixPath
