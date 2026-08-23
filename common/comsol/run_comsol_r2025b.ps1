@@ -23,6 +23,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot '..\require_powershell7.ps1')
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $bootstrapDir = Join-Path $PSScriptRoot 'livelink_r2025b'
 $failureClassifier = Join-Path $PSScriptRoot 'livelink_failure_classification.ps1'
@@ -73,17 +74,7 @@ function Start-ComsolLauncherProcess {
     $startInfo.CreateNoWindow = $true
     $startInfo.RedirectStandardOutput = $true
     $startInfo.RedirectStandardError = $true
-    if ($startInfo.PSObject.Properties.Name -contains 'ArgumentList') {
-        foreach ($argument in $Arguments) { [void]$startInfo.ArgumentList.Add($argument) }
-    } else {
-        # Windows PowerShell 5.1 uses the .NET Framework ProcessStartInfo,
-        # which predates ArgumentList.  The launcher arguments are controlled
-        # by this wrapper; quote every token so paths containing spaces retain
-        # exactly one argument without invoking a shell.
-        $startInfo.Arguments = (($Arguments | ForEach-Object {
-            '"' + ([string]$_).Replace('"', '\"') + '"'
-        }) -join ' ')
-    }
+    foreach ($argument in $Arguments) { [void]$startInfo.ArgumentList.Add($argument) }
     return [Diagnostics.Process]::Start($startInfo)
 }
 
