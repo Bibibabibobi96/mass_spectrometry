@@ -162,12 +162,6 @@ if ($experimentRows.Count -ne 1) {
   throw 'Campaign experiment must resolve exactly once.'
 }
 $selectedExperiment = $experimentRows[0]
-$activePostPulseWorkingPointPolicy =
-  [string]$lifecycleRegistry.active_post_pulse_restart_working_point_policy
-if ($activePostPulseWorkingPointPolicy -ne
-    'source_zvz_three_zone_theory_working_point_required_v1') {
-  throw 'Lifecycle registry post-pulse working-point policy is invalid.'
-}
 $isManifestBoundPostPulseRestart =
   [string]$selectedExperiment.source_release_mode -eq 'pre_pulse_restart' -and
   ($selectedExperiment.PSObject.Properties.Name -contains
