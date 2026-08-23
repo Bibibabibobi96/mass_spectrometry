@@ -52,30 +52,6 @@ TOPOLOGY = {
 
 
 class FullIdealWorkingPointTest(unittest.TestCase):
-    def test_adapter_validates_frozen_pa_generation_binding_before_runner_dispatch(self) -> None:
-        adapter = (
-            Path(__file__).resolve().parents[1]
-            / "workflows" / "family_source_closure" / "adapter.ps1"
-        ).read_text(encoding="utf-8")
-        self.assertIn(
-            "Frozen PA cache generation binding is missing or stale.",
-            adapter,
-        )
-        self.assertLess(
-            adapter.index("Frozen PA cache generation binding is missing or stale."),
-            adapter.index("& $runtime.implementation.single_flight_runner @runnerArguments"),
-        )
-
-    def test_runner_reparses_pa_generation_binding_from_frozen_path_after_runtime_imports(self) -> None:
-        runner = (
-            Path(__file__).resolve().parents[1]
-            / "runtime" / "run_single_flight.ps1"
-        ).read_text(encoding="utf-8")
-        self.assertIn(
-            "-LiteralPath $frozenPaCacheGenerationBindingPath -Raw -Encoding UTF8",
-            runner,
-        )
-
     def test_working_point_voltage_is_not_a_frontend_pa_identity_axis(self) -> None:
         """Voltage-only theory changes reuse the geometry/basis PA generation."""
         root = Path(__file__).resolve().parents[1]

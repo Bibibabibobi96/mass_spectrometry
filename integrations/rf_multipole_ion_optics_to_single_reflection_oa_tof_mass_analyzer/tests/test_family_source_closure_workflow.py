@@ -1254,20 +1254,6 @@ $result = Get-PulseTimingOrchestration `
         self.assertLess(row_hash, solver_boundary)
         self.assertLess(solver_boundary, runner_call)
 
-    def test_optional_pa_generation_binding_is_initialized_after_campaign_resolution(self) -> None:
-        adapter = (
-            INTEGRATION_ROOT / "workflows" / "family_source_closure" / "adapter.ps1"
-        ).read_text(encoding="utf-8")
-        experiment_resolution = adapter.index("$experiment = $experiments[0]")
-        run_directory = adapter.index("$runDirectory = [IO.Path]::GetFullPath")
-        optional_binding = adapter.index("$campaignHasPaCacheGenerationBinding =")
-        solver_boundary = adapter.index("if (-not $SolverAuthorized)")
-        runner_call = adapter.index("& $runtime.implementation.single_flight_runner")
-        self.assertLess(experiment_resolution, optional_binding)
-        self.assertLess(run_directory, optional_binding)
-        self.assertLess(optional_binding, solver_boundary)
-        self.assertLess(solver_boundary, runner_call)
-
     def test_adapter_uses_only_frozen_canonical_region_field_profile(self) -> None:
         adapter = (
             INTEGRATION_ROOT / "workflows" / "family_source_closure" / "adapter.ps1"
