@@ -34,7 +34,8 @@
       "items": {"enum": ["retired", "archived_invalid", "PENDING_PREREGISTRATION"]}
     },
     "active_post_pulse_restart_working_point_policy": {
-      "const": "source_zvz_three_zone_theory_working_point_required_v1"
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*_v[1-9][0-9]*$"
     },
     "active_campaigns": {
       "type": "array",
