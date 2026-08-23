@@ -89,7 +89,7 @@ CAMPAIGN_SCHEMA_PATH = Path(__file__).resolve().parents[2] / "config" / "schemas
     "rf_multipole_oatof_experiment_campaign.schema.json"
 )
 ARCHIVAL_CAMPAIGN_SCHEMA_PATH = (
-    CAMPAIGN_SCHEMA_PATH.parent / "archive" /
+    CAMPAIGN_SCHEMA_PATH.parent /
     "rf_multipole_oatof_experiment_campaign_v1_to_v6.schema.json"
 )
 INTEGRATION_SCHEMA_DIR = CAMPAIGN_SCHEMA_PATH.parent

@@ -52,7 +52,7 @@ SCHEMA_ROOT = CONFIG_ROOT / "schemas"
 ACTIVE_CAMPAIGN_SCHEMA = CONFIG_ROOT / "schemas" / (
     "rf_multipole_oatof_experiment_campaign.schema.json"
 )
-ARCHIVAL_CAMPAIGN_SCHEMA = CONFIG_ROOT / "schemas" / "archive" / (
+ARCHIVAL_CAMPAIGN_SCHEMA = CONFIG_ROOT / "schemas" / (
     "rf_multipole_oatof_experiment_campaign_v1_to_v6.schema.json"
 )
 HISTORICAL_ROOT_CAMPAIGNS = (

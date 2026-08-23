@@ -25,7 +25,7 @@ INTEGRATION_ROOT = REPO_ROOT / (
 ACTIVE_CAMPAIGN_SCHEMA = INTEGRATION_ROOT / "config" / "schemas" / (
     "rf_multipole_oatof_experiment_campaign.schema.json"
 )
-ARCHIVAL_CAMPAIGN_SCHEMA = ACTIVE_CAMPAIGN_SCHEMA.parent / "archive" / (
+ARCHIVAL_CAMPAIGN_SCHEMA = ACTIVE_CAMPAIGN_SCHEMA.parent / (
     "rf_multipole_oatof_experiment_campaign_v1_to_v6.schema.json"
 )
 LEGACY_CAMPAIGN_PATH = INTEGRATION_ROOT / (
