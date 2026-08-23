@@ -11,9 +11,10 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 
 
 INTEGRATION_ROOT = Path(__file__).resolve().parents[1]
-BASELINE = INTEGRATION_ROOT / "config" / "pulse_resolution_direct_baseline_successor_r09_campaign.json"
-ARCHIVED_BASELINE = INTEGRATION_ROOT / "config" / "pulse_resolution_direct_baseline_successor_r07_campaign.json"
-AUTHORIZED_CANDIDATES = INTEGRATION_ROOT / "config" / (
+HISTORICAL_CAMPAIGNS = INTEGRATION_ROOT / "docs" / "history" / "retired_campaigns" / "root_campaigns"
+BASELINE = HISTORICAL_CAMPAIGNS / "pulse_resolution_direct_baseline_successor_r09_campaign.json"
+ARCHIVED_BASELINE = HISTORICAL_CAMPAIGNS / "pulse_resolution_direct_baseline_successor_r07_campaign.json"
+AUTHORIZED_CANDIDATES = HISTORICAL_CAMPAIGNS / (
     "pulse_resolution_direct_candidate_successor_r03_campaign.json"
 )
 SCHEMA = "rf_multipole_oatof_experiment_campaign.schema.json"

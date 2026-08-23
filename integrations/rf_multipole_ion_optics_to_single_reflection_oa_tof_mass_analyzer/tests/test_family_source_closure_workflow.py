@@ -50,7 +50,10 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 REPO_ROOT = Path(__file__).resolve().parents[3]
 INTEGRATION_ROOT = REPO_ROOT / "integrations" / INTEGRATION_ID
 CONFIG_ROOT = INTEGRATION_ROOT / "config"
-CAMPAIGN_PATH = CONFIG_ROOT / "experiment_campaign.json"
+HISTORICAL_ROOT_CAMPAIGNS = (
+    INTEGRATION_ROOT / "docs" / "history" / "retired_campaigns" / "root_campaigns"
+)
+CAMPAIGN_PATH = HISTORICAL_ROOT_CAMPAIGNS / "experiment_campaign.json"
 N1000_CAMPAIGN_PATH = (
     CONFIG_ROOT / "diagnostics" / "octupole_simion_aperture050_n1000_campaign.json"
 )

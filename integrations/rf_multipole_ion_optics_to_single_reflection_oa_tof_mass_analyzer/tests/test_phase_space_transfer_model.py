@@ -28,9 +28,9 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 )
 
 
-CAMPAIGN = Path(__file__).resolve().parents[1] / "config" / "pulse_resolution_direct_baseline_successor_r09_campaign.json"
+CAMPAIGN = Path(__file__).resolve().parents[1] / "docs" / "history" / "retired_campaigns" / "root_campaigns" / "pulse_resolution_direct_baseline_successor_r09_campaign.json"
 CANDIDATE_CAMPAIGN = (
-    Path(__file__).resolve().parents[1] / "config" / "pulse_resolution_direct_candidate_campaign.json"
+    Path(__file__).resolve().parents[1] / "docs" / "history" / "retired_campaigns" / "root_campaigns" / "pulse_resolution_direct_candidate_campaign.json"
 )
 
 

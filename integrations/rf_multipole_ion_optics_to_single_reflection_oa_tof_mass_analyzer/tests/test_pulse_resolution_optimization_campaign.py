@@ -34,11 +34,12 @@ INTEGRATION_ROOT = (
     / "integrations"
     / "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
 )
-BASELINE_PATH = INTEGRATION_ROOT / "config" / "pulse_resolution_direct_baseline_successor_r09_campaign.json"
+HISTORICAL_CAMPAIGNS = INTEGRATION_ROOT / "docs" / "history" / "retired_campaigns" / "root_campaigns"
+BASELINE_PATH = HISTORICAL_CAMPAIGNS / "pulse_resolution_direct_baseline_successor_r09_campaign.json"
 CANDIDATE_PATH = (
-    INTEGRATION_ROOT / "config" / "pulse_resolution_direct_candidate_campaign.json"
+    HISTORICAL_CAMPAIGNS / "pulse_resolution_direct_candidate_campaign.json"
 )
-LEGACY_CAMPAIGN_PATH = INTEGRATION_ROOT / "config" / "experiment_campaign.json"
+LEGACY_CAMPAIGN_PATH = HISTORICAL_CAMPAIGNS / "experiment_campaign.json"
 SCHEMA_NAME = "rf_multipole_oatof_experiment_campaign.schema.json"
 CHECKPOINT_PATH = (
     REPO_ROOT.parent
