@@ -13,6 +13,57 @@ RESOLVED_POPULATION_SCHEMA_PATH = (
     "rf_oatof_resolved_population_contract.schema.json"
 )
 
+_SINGLE_FLIGHT_EXECUTION_BY_POPULATION_MODE = {
+    "continuous_injection_full_population": {
+        "population_basis": "candidate_full_population",
+        "requires_eligible_population": False,
+        "is_pre_pulse_restart": False,
+    },
+    "resolved_layout_pulse_ideal_linear_z_vz": {
+        "population_basis": "candidate_full_population",
+        "requires_eligible_population": False,
+        "is_pre_pulse_restart": False,
+    },
+    "pulse_eligible_conditional": {
+        "population_basis": "pulse_eligible_conditional_population",
+        "requires_eligible_population": True,
+        "is_pre_pulse_restart": False,
+    },
+    "pre_pulse_restart": {
+        "population_basis": "source_contract_population",
+        "requires_eligible_population": False,
+        "is_pre_pulse_restart": True,
+    },
+    "first_100_rows_in_frozen_file_order": {
+        "population_basis": "candidate_full_population",
+        "requires_eligible_population": False,
+        "is_pre_pulse_restart": False,
+    },
+    "first_n_rows_in_frozen_file_order": {
+        "population_basis": "candidate_full_population",
+        "requires_eligible_population": False,
+        "is_pre_pulse_restart": False,
+    },
+}
+
+
+def resolve_single_flight_execution(
+    population_mode: str, source_release_mode: str | None
+) -> dict[str, Any]:
+    """Compile runner-consumed sampling semantics from the declared population mode."""
+
+    try:
+        execution = _SINGLE_FLIGHT_EXECUTION_BY_POPULATION_MODE[population_mode].copy()
+    except KeyError as exc:
+        raise ContractError(
+            f"population mode is not supported by the single-flight runner: {population_mode}"
+        ) from exc
+    if execution["is_pre_pulse_restart"] != (source_release_mode == "pre_pulse_restart"):
+        raise ContractError(
+            "population mode and source release mode differ for single-flight execution"
+        )
+    return execution
+
 
 def compile_resolved_population_contract(
     *,
@@ -125,5 +176,9 @@ def compile_resolved_population_contract(
         contract["cohort_authority_mode"] = cohort_authority_mode
     if source_release_mode is not None:
         contract["source_release_mode"] = source_release_mode
+    if contract_schema_version >= 2 and execution_strategy == "simion_single_flight":
+        contract["single_flight_execution"] = resolve_single_flight_execution(
+            declaration["population_mode"], source_release_mode
+        )
     validate_schema(contract, RESOLVED_POPULATION_SCHEMA_PATH)
     return contract

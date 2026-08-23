@@ -665,10 +665,11 @@ foreach ($case in $cases) {{
             WORKFLOW_ENTRY.read_text(encoding="utf-8"),
         )
 
-    def test_pulse_only_candidate_pilot_skips_downstream_pa_rebuilds(self) -> None:
+    def test_runner_consumes_compiled_population_semantics(self) -> None:
         text = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
-        self.assertEqual(text.count("$SamplingMode -ne 'steady_candidate_pool' -and"), 2)
-        self.assertIn("$programArguments += '--terminate-after-pulse'", text)
+        self.assertIn("single_flight_execution", text)
+        self.assertNotIn("$SamplingMode", text)
+        self.assertNotIn("steady_candidate_pool", text)
 
     def test_joint_single_flight_run_package_is_integration_owned(self) -> None:
         text = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
@@ -868,7 +869,7 @@ foreach ($case in $cases) {{
         self.assertIn("source_region_diagnostic_profiles", runner)
         self.assertIn("--source-region-diagnostic-profile-id", runner)
         self.assertIn("$isPrePulseTimeSeriesScreening -eq $false", runner)
-        self.assertIn("$SamplingMode -notin @('steady_candidate_pool')", runner)
+        self.assertNotIn("$SamplingMode", runner)
         self.assertNotIn("layout_resolved_axial_provisional_xy2_v1", runner)
 
     def test_full_flight_freezes_default_accelerator_phase_space_diagnostic(self) -> None:
@@ -923,19 +924,9 @@ foreach ($case in $cases) {{
         )
         self.assertNotIn("source_release_mode=$sourceReleaseMode", runner)
         self.assertNotIn("source_release_mode=$SourceReleaseMode", runner)
-        for mode in (
-            "staged_three_stage",
-            "continuous_injection_full_population",
-            "resolved_layout_pulse_ideal_linear_z_vz",
-            "pre_pulse_restart",
-            "pulse_eligible_conditional",
-            "first_100_rows_in_frozen_file_order",
-            "first_n_rows_in_frozen_file_order",
-        ):
-            self.assertIn(f"'{mode}'", runner)
-        self.assertIn(
-            'default { throw "Unsupported resolved population mode:', runner
-        )
+        self.assertIn("single_flight_execution", runner)
+        self.assertIn("$populationBasis = [string]", runner)
+        self.assertNotIn("$SamplingMode", runner)
 
     def test_r03_baseline_population_is_strictmode_safe_without_paired_cohort(self) -> None:
         population = (

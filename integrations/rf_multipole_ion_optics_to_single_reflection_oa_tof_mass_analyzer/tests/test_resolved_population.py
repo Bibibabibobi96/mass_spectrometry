@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import unittest
 
-from common.contracts.machine_contracts import ContractError
+from common.contracts.machine_contracts import ContractError, validate_schema
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.resolved_population import (
+    RESOLVED_POPULATION_SCHEMA_PATH,
     compile_resolved_population_contract,
+    resolve_single_flight_execution,
 )
 
 
@@ -17,7 +19,7 @@ MODE_CONTRACTS = {
         "particle_source",
         "staged_upstream_source",
         "all_rows_in_frozen_file_order",
-        "prohibited",
+        "prohibited", None,
     ),
     "continuous_injection_full_population": (
         "simion_single_flight",
@@ -25,7 +27,7 @@ MODE_CONTRACTS = {
         "particle_source",
         "source_contract_particle_source",
         "all_rows_in_frozen_file_order",
-        "prohibited",
+        "prohibited", "candidate_full_population",
     ),
     "resolved_layout_pulse_ideal_linear_z_vz": (
         "simion_single_flight",
@@ -33,7 +35,7 @@ MODE_CONTRACTS = {
         "single_flight_materialized_particle_source",
         "prepared_materialized_particle_source",
         "all_rows_in_frozen_file_order",
-        "prohibited",
+        "prohibited", "candidate_full_population",
     ),
     "pre_pulse_restart": (
         "simion_single_flight",
@@ -41,7 +43,7 @@ MODE_CONTRACTS = {
         "pre_pulse_source_state",
         "experiment_pre_pulse_source_state",
         "all_rows_in_frozen_file_order",
-        "prohibited",
+        "prohibited", "source_contract_population",
     ),
     "pulse_eligible_conditional": (
         "simion_single_flight",
@@ -49,7 +51,7 @@ MODE_CONTRACTS = {
         "single_flight_particle_source",
         "experiment_single_flight_particle_source",
         "all_rows_in_frozen_file_order",
-        "pulse_eligibility_only",
+        "pulse_eligibility_only", "pulse_eligible_conditional_population",
     ),
     "first_100_rows_in_frozen_file_order": (
         "simion_single_flight",
@@ -57,7 +59,7 @@ MODE_CONTRACTS = {
         "single_flight_particle_source",
         "prepared_deterministic_prefix",
         "first_100_rows_in_frozen_file_order",
-        "prohibited",
+        "prohibited", "candidate_full_population",
     ),
     "first_n_rows_in_frozen_file_order": (
         "simion_single_flight",
@@ -65,13 +67,13 @@ MODE_CONTRACTS = {
         "single_flight_particle_source",
         "prepared_deterministic_prefix",
         "first_n_rows_in_frozen_file_order",
-        "prohibited",
+        "prohibited", "candidate_full_population",
     ),
 }
 
 
 def declaration(mode: str) -> dict[str, object]:
-    _, _, input_role, table_binding, selection, postselection = MODE_CONTRACTS[mode]
+    _, _, input_role, table_binding, selection, postselection, _ = MODE_CONTRACTS[mode]
     return {
         "population_id": "fixture_population",
         "population_mode": mode,
@@ -99,7 +101,7 @@ def declaration(mode: str) -> dict[str, object]:
 
 
 def source_table(mode: str) -> dict[str, object]:
-    _, _, input_role, table_binding, _, _ = MODE_CONTRACTS[mode]
+    _, _, input_role, table_binding, _, _, _ = MODE_CONTRACTS[mode]
     return {
         "input_role": input_role,
         "table_binding": table_binding,
@@ -124,6 +126,7 @@ class ResolvedPopulationTests(unittest.TestCase):
             source_release_mode=release_mode,
             declaration=declared or declaration(mode),
             source_table=observed or source_table(mode),
+            contract_schema_version=2 if execution_strategy == "simion_single_flight" else 1,
         )
 
     def test_each_population_mode_accepts_only_its_canonical_tuple(self):
@@ -135,6 +138,43 @@ class ResolvedPopulationTests(unittest.TestCase):
                 self.assertEqual(result.get("source_release_mode"), expected[1])
                 self.assertEqual(result["execution_population"]["particle_count"], 10)
                 self.assertEqual(result["source_authority"]["ordered_particle_ids"]["sha256"], SHA)
+                if expected[6] is None:
+                    self.assertNotIn("single_flight_execution", result)
+                else:
+                    self.assertEqual(
+                        result["single_flight_execution"]["population_basis"],
+                        expected[6],
+                    )
+
+    def test_single_flight_execution_semantics_are_compiled_by_python(self):
+        for mode, expected in MODE_CONTRACTS.items():
+            if expected[0] != "simion_single_flight":
+                continue
+            with self.subTest(mode=mode):
+                execution = resolve_single_flight_execution(mode, expected[1])
+                self.assertEqual(execution["population_basis"], expected[6])
+                self.assertEqual(
+                    execution["requires_eligible_population"],
+                    mode == "pulse_eligible_conditional",
+                )
+                self.assertEqual(
+                    execution["is_pre_pulse_restart"], mode == "pre_pulse_restart"
+                )
+
+    def test_v2_single_flight_execution_semantics_fail_closed_when_missing_or_tampered(
+        self,
+    ):
+        contract = self.compile("pulse_eligible_conditional")
+        del contract["single_flight_execution"]
+        with self.assertRaises(ContractError):
+            validate_schema(contract, RESOLVED_POPULATION_SCHEMA_PATH)
+
+        contract = self.compile("pulse_eligible_conditional")
+        contract["single_flight_execution"]["population_basis"] = (
+            "candidate_full_population"
+        )
+        with self.assertRaises(ContractError):
+            validate_schema(contract, RESOLVED_POPULATION_SCHEMA_PATH)
 
     def test_cross_mode_tuple_substitutions_fail_closed(self):
         mode = "continuous_injection_full_population"

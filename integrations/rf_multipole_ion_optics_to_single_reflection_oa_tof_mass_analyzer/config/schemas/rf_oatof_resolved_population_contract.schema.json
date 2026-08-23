@@ -18,6 +18,7 @@
     "population_declaration_sha256": {"$ref": "#/$defs/sha"},
     "execution_strategy": {"enum": ["staged_three_stage", "simion_single_flight"]},
     "source_release_mode": {"enum": ["continuous_frontend", "pre_pulse_restart"]},
+    "single_flight_execution": {"$ref": "#/$defs/single_flight_execution"},
     "population_id": {"$ref": "#/$defs/id"},
     "population_mode": {
       "enum": [
@@ -99,6 +100,7 @@
         "execution_strategy": {"const": "simion_single_flight"},
         "source_release_mode": {"const": "continuous_frontend"},
         "population_mode": {"const": "continuous_injection_full_population"},
+        "single_flight_execution": {"properties": {"population_basis": {"const": "candidate_full_population"}, "requires_eligible_population": {"const": false}, "is_pre_pulse_restart": {"const": false}}},
         "source_authority": {"properties": {"table_binding": {"const": "source_contract_particle_source"}}},
         "execution_population": {"properties": {"selection_algorithm": {"const": "all_rows_in_frozen_file_order"}}},
         "postselection_policy": {"const": "prohibited"}
@@ -110,6 +112,7 @@
         "execution_strategy": {"const": "simion_single_flight"},
         "source_release_mode": {"const": "continuous_frontend"},
         "population_mode": {"const": "resolved_layout_pulse_ideal_linear_z_vz"},
+        "single_flight_execution": {"properties": {"population_basis": {"const": "candidate_full_population"}, "requires_eligible_population": {"const": false}, "is_pre_pulse_restart": {"const": false}}},
         "source_authority": {"properties": {"table_binding": {"const": "prepared_materialized_particle_source"}}},
         "execution_population": {"properties": {"selection_algorithm": {"const": "all_rows_in_frozen_file_order"}}},
         "postselection_policy": {"const": "prohibited"}
@@ -121,6 +124,7 @@
         "execution_strategy": {"const": "simion_single_flight"},
         "source_release_mode": {"const": "pre_pulse_restart"},
         "population_mode": {"const": "pre_pulse_restart"},
+        "single_flight_execution": {"properties": {"population_basis": {"const": "source_contract_population"}, "requires_eligible_population": {"const": false}, "is_pre_pulse_restart": {"const": true}}},
         "source_authority": {"properties": {"table_binding": {"const": "experiment_pre_pulse_source_state"}}},
         "execution_population": {"properties": {"selection_algorithm": {"const": "all_rows_in_frozen_file_order"}}},
         "postselection_policy": {"const": "prohibited"}
@@ -132,6 +136,7 @@
         "execution_strategy": {"const": "simion_single_flight"},
         "source_release_mode": {"const": "continuous_frontend"},
         "population_mode": {"const": "pulse_eligible_conditional"},
+        "single_flight_execution": {"properties": {"population_basis": {"const": "pulse_eligible_conditional_population"}, "requires_eligible_population": {"const": true}, "is_pre_pulse_restart": {"const": false}}},
         "source_authority": {"properties": {"table_binding": {"const": "experiment_single_flight_particle_source"}}},
         "execution_population": {"properties": {"selection_algorithm": {"const": "all_rows_in_frozen_file_order"}}},
         "postselection_policy": {"const": "pulse_eligibility_only"}
@@ -143,6 +148,7 @@
         "execution_strategy": {"const": "simion_single_flight"},
         "source_release_mode": {"const": "continuous_frontend"},
         "population_mode": {"const": "first_100_rows_in_frozen_file_order"},
+        "single_flight_execution": {"properties": {"population_basis": {"const": "candidate_full_population"}, "requires_eligible_population": {"const": false}, "is_pre_pulse_restart": {"const": false}}},
         "source_authority": {"properties": {"table_binding": {"const": "prepared_deterministic_prefix"}}},
         "execution_population": {"properties": {"selection_algorithm": {"const": "first_100_rows_in_frozen_file_order"}}},
         "postselection_policy": {"const": "prohibited"}
@@ -154,6 +160,7 @@
         "execution_strategy": {"const": "simion_single_flight"},
         "source_release_mode": {"const": "continuous_frontend"},
         "population_mode": {"const": "first_n_rows_in_frozen_file_order"},
+        "single_flight_execution": {"properties": {"population_basis": {"const": "candidate_full_population"}, "requires_eligible_population": {"const": false}, "is_pre_pulse_restart": {"const": false}}},
         "source_authority": {"properties": {"table_binding": {"const": "prepared_deterministic_prefix"}}},
         "execution_population": {"properties": {"selection_algorithm": {"const": "first_n_rows_in_frozen_file_order"}}},
         "postselection_policy": {"const": "prohibited"}
@@ -162,6 +169,16 @@
     }
   ],
   "allOf": [
+    {
+      "if": {
+        "properties": {
+          "schema_version": {"const": 2},
+          "execution_strategy": {"const": "simion_single_flight"}
+        },
+        "required": ["schema_version", "execution_strategy"]
+      },
+      "then": {"required": ["single_flight_execution"]}
+    },
     {
       "if": {"required": ["paired_cohort_authority"]},
       "then": {"properties": {"denominators": {"required": [
@@ -230,6 +247,26 @@
         },
         "count": {"type": "integer", "minimum": 0},
         "ordered_particle_id_sha256": {"$ref": "#/$defs/sha"}
+      }
+    },
+    "single_flight_execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "population_basis",
+        "requires_eligible_population",
+        "is_pre_pulse_restart"
+      ],
+      "properties": {
+        "population_basis": {
+          "enum": [
+            "candidate_full_population",
+            "pulse_eligible_conditional_population",
+            "source_contract_population"
+          ]
+        },
+        "requires_eligible_population": {"type": "boolean"},
+        "is_pre_pulse_restart": {"type": "boolean"}
       }
     }
   }
