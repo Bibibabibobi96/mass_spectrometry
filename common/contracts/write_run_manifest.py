@@ -38,7 +38,7 @@ def retention_api() -> tuple[Any, Any, Any]:
 def resolve_path(value: str, base: Path, project_root: Path | None) -> Path:
     path = Path(value)
     if path.is_absolute():
-        return path
+        return path.resolve()
     root = project_root if project_root is not None else base
     return (root / path).resolve()
 

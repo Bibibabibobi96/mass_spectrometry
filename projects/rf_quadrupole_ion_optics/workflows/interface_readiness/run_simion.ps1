@@ -33,7 +33,7 @@ if ([string]::IsNullOrWhiteSpace($RunId)) {
 }
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -RunId $RunId `
     -Project 'rf_quadrupole_ion_optics' -Mode $mode -Software @('SIMION 2020','Python 3.11') `
-    -AdditionalDirectories @('simion')
+    -AdditionalDirectories @('simion') -UseShortExecutionPath
 $runDir=$package.run_dir
 $candidateDir=Join-Path $runDir 'simion'
 $resultDir=$package.result_dir
@@ -453,4 +453,8 @@ catch {
         -SummaryRole 'rf_quadrupole_transport_summary' -Reason $_.Exception.Message `
         -Software @('SIMION 2020','Python 3.11')
     throw
+} finally {
+    try { Remove-RunPackageExecutionAlias -Package $package } catch {
+        Write-Warning "Could not remove short execution alias after interface SIMION run: $($_.Exception.Message)"
+    }
 }

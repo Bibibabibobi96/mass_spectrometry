@@ -41,7 +41,7 @@ if ([string]::IsNullOrWhiteSpace($RunId)) {
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot `
     -ArtifactRoot $artifactRoot -RunId $RunId `
     -Project 'rf_quadrupole_ion_optics' -Mode $workflowId `
-    -Software $software -AdditionalDirectories @('comsol','runtime')
+    -Software $software -AdditionalDirectories @('comsol','runtime') -UseShortExecutionPath
 $runDir,$inputDir,$resultDir,$logDir = $package.run_dir,$package.input_dir,
     $package.result_dir,$package.log_dir
 $candidateDir,$runtimeDir = (Join-Path $runDir 'comsol'),(Join-Path $runDir 'runtime')
@@ -577,4 +577,7 @@ try {
     throw
 } finally {
     Restore-RunEnvironment -Names $environmentNames -Snapshot $environmentSnapshot
+    try { Remove-RunPackageExecutionAlias -Package $package } catch {
+        Write-Warning "Could not remove short execution alias after interface COMSOL run: $($_.Exception.Message)"
+    }
 }

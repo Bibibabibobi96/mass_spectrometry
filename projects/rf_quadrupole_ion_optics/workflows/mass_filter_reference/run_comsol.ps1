@@ -21,7 +21,7 @@ if([string]::IsNullOrWhiteSpace($RunId)){
 $software=@('COMSOL 6.4','MATLAB R2025b','Python 3.11')
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -RunId $RunId `
   -Project 'rf_quadrupole_ion_optics' -Mode 'mass_filter_reference' -Software $software `
-  -AdditionalDirectories @('comsol','runtime')
+  -AdditionalDirectories @('comsol','runtime') -UseShortExecutionPath
 $runDir=$package.run_dir;$inputDir=$package.input_dir;$resultDir=$package.result_dir;$logDir=$package.log_dir
 $report=Join-Path $logDir 'comsol_mass_filter_scan.txt'
 $scanConfig=Join-Path $inputDir 'comsol_mass_scan_cases.json'
@@ -197,4 +197,8 @@ try {
   Complete-FailedRun -Python $package.python -RepoRoot $repoRoot -RunConfig $package.run_config `
     -Summary $package.summary -SummaryRole 'rf_quadrupole_comsol_mass_filter_summary' -Reason $_.Exception.Message -Software $software
   throw
+} finally {
+  try { Remove-RunPackageExecutionAlias -Package $package } catch {
+    Write-Warning "Could not remove short execution alias after mass-filter COMSOL run: $($_.Exception.Message)"
+  }
 }

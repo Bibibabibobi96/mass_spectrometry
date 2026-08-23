@@ -174,10 +174,22 @@ try {
     throw 'Short package did not return an execution-root alias.'
   }
   $shortManifest = Join-Path $shortPackage.run_dir 'run_manifest.json'
+  $shortInput = Join-Path $shortPackage.input_dir 'short_execution_input.json'
+  Set-Content -LiteralPath $shortInput -Value '{"role":"short_execution_probe"}' -Encoding UTF8
+  $shortConfig = Get-Content -LiteralPath $shortPackage.run_config -Raw -Encoding UTF8 |
+    ConvertFrom-Json -AsHashtable
+  $shortConfig.inputs = [ordered]@{ short_execution_probe = $shortInput }
+  Write-RunJson -Path $shortPackage.run_config -Value $shortConfig
+  Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot `
+    -RunConfig $shortPackage.run_config -Status interrupted -Software @('contract test') `
+    -Outputs @($shortPackage.summary)
   $shortManifestDocument = Get-Content -LiteralPath $shortManifest -Raw -Encoding UTF8 | ConvertFrom-Json
   Assert-Equal ([IO.Path]::GetFullPath([string]$shortManifestDocument.run_config.path)) `
     ([IO.Path]::GetFullPath((Join-Path $shortPackage.artifact_run_dir 'run_config.json'))) `
     'Manifest must resolve the short execution alias to the artifact run.'
+  Assert-Equal ([IO.Path]::GetFullPath([string]$shortManifestDocument.inputs.short_execution_probe.path)) `
+    ([IO.Path]::GetFullPath((Join-Path $shortPackage.artifact_run_dir 'inputs\short_execution_input.json'))) `
+    'Manifest must resolve short execution input paths to the artifact run.'
   Remove-RunPackageExecutionAlias -Package $shortPackage
   if (Test-Path -LiteralPath $shortPackage.execution_alias) {
     throw 'Short execution alias remained after cleanup.'
