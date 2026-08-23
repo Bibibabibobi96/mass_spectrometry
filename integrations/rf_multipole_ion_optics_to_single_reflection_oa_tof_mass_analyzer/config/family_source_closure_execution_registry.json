@@ -1,8 +1,0 @@
-{
-  "schema_version": 1,
-  "role": "rf_oatof_family_source_closure_execution_registry",
-  "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
-  "active_workflow": "workflows/family_source_closure/execute.ps1",
-  "authorization_policy": "default_deny; campaign.status=authorized is necessary but never sufficient; SolverAuthorized requires one exact lifecycle-registry binding",
-  "active_post_pulse_restart_working_point_policy": "source_zvz_three_zone_theory_working_point_required_v1"
-}

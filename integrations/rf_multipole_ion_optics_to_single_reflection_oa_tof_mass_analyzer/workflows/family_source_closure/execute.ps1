@@ -70,7 +70,6 @@ if (-not $campaignPath.StartsWith(
     -not (Test-Path -LiteralPath $campaignPath -PathType Leaf)) {
   throw 'Campaign must be one repository-managed file.'
 }
-$expectedActiveWorkflow = 'workflows/family_source_closure/execute.ps1'
 $campaignRepoRelative = [IO.Path]::GetRelativePath($repoRoot, $campaignPath).Replace('\', '/')
 $campaignDocument = Get-Content -LiteralPath $campaignPath -Raw -Encoding UTF8 |
   ConvertFrom-Json
@@ -104,22 +103,11 @@ if ([string]$campaignDocument.status -in @('retired', 'archived_invalid')) {
 if (($SolverAuthorized -or $FinalizeOnly) -and [string]$campaignDocument.status -ne 'authorized') {
   throw 'SolverAuthorized or FinalizeOnly execution requires campaign.status=authorized.'
 }
-$executionRegistryPath = Join-Path $integrationRoot `
-  'config\family_source_closure_execution_registry.json'
-$executionRegistry = Get-Content -LiteralPath $executionRegistryPath -Raw -Encoding UTF8 |
-  ConvertFrom-Json
-if ($executionRegistry.role -ne
-      'rf_oatof_family_source_closure_execution_registry' -or
-    $executionRegistry.integration_id -ne
-      'rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer' -or
-    $executionRegistry.active_workflow -ne $expectedActiveWorkflow) {
-  throw 'Family execution registry identity is invalid.'
-}
 $currentCampaigns = @($lifecycleRegistry.active_campaigns | Where-Object {
   [string]$_.path -eq $campaignRepoRelative
 })
 if ($currentCampaigns.Count -gt 1) {
-  throw 'Family execution registry resolves the campaign more than once.'
+  throw 'Lifecycle registry resolves the campaign more than once.'
 }
 if ($SolverAuthorized -or $FinalizeOnly) {
   if ($currentCampaigns.Count -ne 1) {
@@ -177,10 +165,10 @@ if ($experimentRows.Count -ne 1) {
 }
 $selectedExperiment = $experimentRows[0]
 $activePostPulseWorkingPointPolicy =
-  [string]$executionRegistry.active_post_pulse_restart_working_point_policy
+  [string]$lifecycleRegistry.active_post_pulse_restart_working_point_policy
 if ($activePostPulseWorkingPointPolicy -ne
     'source_zvz_three_zone_theory_working_point_required_v1') {
-  throw 'Family execution registry post-pulse working-point policy is invalid.'
+  throw 'Lifecycle registry post-pulse working-point policy is invalid.'
 }
 $isManifestBoundPostPulseRestart =
   [string]$selectedExperiment.source_release_mode -eq 'pre_pulse_restart' -and

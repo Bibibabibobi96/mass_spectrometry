@@ -10,6 +10,7 @@
     "discovery_policy",
     "campaign_selector",
     "excluded_statuses",
+    "active_post_pulse_restart_working_point_policy",
     "active_campaigns"
   ],
   "properties": {
@@ -31,6 +32,9 @@
       "uniqueItems": true,
       "minItems": 1,
       "items": {"enum": ["retired", "archived_invalid", "PENDING_PREREGISTRATION"]}
+    },
+    "active_post_pulse_restart_working_point_policy": {
+      "const": "source_zvz_three_zone_theory_working_point_required_v1"
     },
     "active_campaigns": {
       "type": "array",

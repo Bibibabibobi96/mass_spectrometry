@@ -2648,10 +2648,6 @@ def prepare_family_source_closure(
     if len(matches) != 1:
         raise ContractError("campaign experiment must resolve exactly once")
     experiment = matches[0]
-    execution_registry_path = root / "integrations" / INTEGRATION_ID / "config" / (
-        "family_source_closure_execution_registry.json"
-    )
-    execution_registry = _load(execution_registry_path)
     lifecycle_registry = _load(
         root / "integrations" / INTEGRATION_ID / "config" / "diagnostics" /
         "lifecycle_registry.json"
@@ -2663,10 +2659,10 @@ def prepare_family_source_closure(
     ]
     if active_rows:
         if len(active_rows) != 1 or (
-            execution_registry.get("active_post_pulse_restart_working_point_policy")
+            lifecycle_registry.get("active_post_pulse_restart_working_point_policy")
             != ACTIVE_POST_PULSE_WORKING_POINT_POLICY
         ):
-            raise ContractError("active post-pulse working-point registry policy is invalid")
+            raise ContractError("active lifecycle working-point policy is invalid")
         validate_active_post_pulse_restart_working_point(experiment)
     selected_three_zone_gate = experiment.get("three_zone_solver_gate")
     three_zone_gate_pair = (

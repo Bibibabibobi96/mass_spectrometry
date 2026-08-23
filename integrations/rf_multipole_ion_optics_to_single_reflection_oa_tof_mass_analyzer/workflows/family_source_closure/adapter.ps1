@@ -430,10 +430,6 @@ if ($campaign.role -ne 'rf_multipole_oatof_experiment_campaign' -or
   throw 'Campaign or experiment identity no longer resolves uniquely.'
 }
 if ($SolverAuthorized) {
-  $executionRegistryPath = Join-Path $integrationRoot `
-    'config\family_source_closure_execution_registry.json'
-  $executionRegistry = Get-Content -LiteralPath $executionRegistryPath -Raw -Encoding UTF8 |
-    ConvertFrom-Json
   $lifecycleRegistryPath = Join-Path $integrationRoot `
     'config\diagnostics\lifecycle_registry.json'
   $lifecycleRegistry = Get-Content -LiteralPath $lifecycleRegistryPath -Raw -Encoding UTF8 |
@@ -442,19 +438,14 @@ if ($SolverAuthorized) {
   $currentCampaigns = @($lifecycleRegistry.active_campaigns | Where-Object {
     [string]$_.path -eq $campaignRepoRelative
   })
-  if ($executionRegistry.role -ne
-        'rf_oatof_family_source_closure_execution_registry' -or
-      $executionRegistry.integration_id -ne $plan.integration_id -or
-      $executionRegistry.active_workflow -ne
-        'workflows/family_source_closure/execute.ps1' -or
-      $currentCampaigns.Count -ne 1 -or
+  if ($currentCampaigns.Count -ne 1 -or
       (Get-RfOatofRepositoryTextSha256 -Path $campaignPath) -ne
         ([string]$currentCampaigns[0].content_sha256).ToUpperInvariant()) {
     throw 'Campaign is not a current registered execution authority; SolverAuthorized is forbidden.'
   }
-  if ([string]$executionRegistry.active_post_pulse_restart_working_point_policy -ne
+  if ([string]$lifecycleRegistry.active_post_pulse_restart_working_point_policy -ne
       'source_zvz_three_zone_theory_working_point_required_v1') {
-    throw 'Family execution registry post-pulse working-point policy is invalid.'
+    throw 'Lifecycle registry post-pulse working-point policy is invalid.'
   }
 }
 $experiment = $experiments[0]

@@ -12,6 +12,7 @@
     "archived_invalid",
     "PENDING_PREREGISTRATION"
   ],
+  "active_post_pulse_restart_working_point_policy": "source_zvz_three_zone_theory_working_point_required_v1",
   "active_campaigns": [
     {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_12p8_phase_b_post_pulse_field_source_zvz_theory_dt40_v3_no_rf.json",
