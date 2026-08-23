@@ -101,14 +101,6 @@ if ([string]::Join("`n", @($inventory.dependencies.id)) -ne [string]::Join("`n",
             by_id["rf_analyzer_transport_simion_input_adapter"]["consumers"],
             ["analyzer_transport"],
         )
-        for result_dependency in (
-            "rf_pulse_resolution_result_registrar",
-            "rf_pulse_resolution_screening_promotion_gate",
-        ):
-            self.assertEqual(
-                by_id[result_dependency]["consumers"],
-                ["single_flight_transport"],
-            )
         self.assertFalse(
             (
                 REPO_ROOT

@@ -730,82 +730,6 @@ def semantic_diff_experiments(before: dict[str, Any], after: dict[str, Any]) -> 
     }
 
 
-def _resolve_fixed_pulse_schedule(
-    *, root: Path, campaign: dict[str, Any], experiment: dict[str, Any],
-    experiment_id: str, experiment_row_sha256: str,
-    population_declaration_sha256: str, policy: dict[str, Any],
-) -> dict[str, Any]:
-    """Bind a successor schedule to the frozen historical schedule and receipt."""
-
-    authority = policy["fixed_execution_authority"]
-    if authority["authority_mode"] != "frozen_historical_schedule_v1":
-        raise ContractError("fixed pulse execution authority mode is unsupported")
-
-    def load_bound_file(record: dict[str, str]) -> dict[str, Any]:
-        path = root.parent / record["path"]
-        if not path.is_file() or file_sha256(path) != record["sha256"]:
-            raise ContractError(f"fixed pulse authority identity differs: {record['path']}")
-        return _load(path)
-
-    source_schedule = load_bound_file(authority["source_schedule"])
-    source = experiment["source"]
-    execution_population = experiment["single_flight_population"]["execution_population"]
-    if (
-        execution_population["ordered_particle_id_sha256"]
-        != campaign["pulse_resolution_cohort_authority"]["source_release"][
-            "ordered_particle_id_sha256"
-        ]
-        or source["state"]["sha256"] != authority["source_state_sha256"]
-    ):
-        raise ContractError("fixed pulse source/cohort identity differs")
-
-    expected_schedule_fields = {
-        "method": policy["policy_id"],
-        "source_state_sha256": authority["source_state_sha256"],
-        "pulse_base_time_us": authority["pulse_effective_time_us"],
-        "pulse_offset_rf_periods": policy["offset_rf_periods"],
-        "pulse_offset_us": 0.0,
-        "pulse_effective_time_us": authority["pulse_effective_time_us"],
-        "pulse_width_us": policy["pulse_width_us"],
-    }
-    observed_schedule_fields = {
-        "method": source_schedule["method"],
-        "source_state_sha256": source_schedule["source_state_sha256"],
-        "pulse_base_time_us": source_schedule["base_derived_pulse_time_us"],
-        "pulse_offset_rf_periods": source_schedule["pulse_offset_rf_periods"],
-        "pulse_offset_us": source_schedule["pulse_offset_us"],
-        "pulse_effective_time_us": source_schedule["derived_pulse_time_us"],
-        "pulse_width_us": source_schedule["pulse_width_us"],
-    }
-    if observed_schedule_fields != expected_schedule_fields:
-        raise ContractError("fixed pulse source schedule fields differ from successor contract")
-
-    schedule = {
-        "schema_version": 1,
-        "role": "rf_oatof_resolved_single_flight_pulse_schedule",
-        "campaign_id": campaign["campaign_id"],
-        "experiment_id": experiment_id,
-        "experiment_row_sha256": experiment_row_sha256,
-        "population_declaration_sha256": population_declaration_sha256,
-        "policy": {key: policy[key] for key in ("policy_id", "offset_rf_periods", "pulse_width_us")},
-        "rf_period_us": authority["rf_period_us"],
-        "pulse_base_time_us": authority["pulse_effective_time_us"],
-        "pulse_offset_us": 0.0,
-        "pulse_effective_time_us": authority["pulse_effective_time_us"],
-        "pulse_width_us": policy["pulse_width_us"],
-    }
-    for key in (
-        "layout_profile_id", "method", "source_state_sha256", "population_counts",
-        "selected_particle_ids", "mean_entry_time_us", "mean_velocity_x_m_s",
-        "mean_kinetic_energy_eV", "target_centroid_x_mm", "entry_surface_x_mm",
-        "base_predicted_centroid_error_x_mm", "predicted_centroid_error_x_mm",
-        "claim_status",
-    ):
-        schedule[key] = source_schedule[key]
-    schedule["source_state_path"] = experiment["source"]["state"]["path"]
-    return schedule
-
-
 def _resolve_candidate_confirmation_schedule(
     *, root: Path, experiment: dict[str, Any], policy: dict[str, Any],
     authority: dict[str, Any],
@@ -2336,17 +2260,6 @@ def prepare_family_source_closure(
     pre_pulse_time_series_specification = campaign.get(
         "pre_pulse_time_series_screening"
     )
-    fixed_pulse_authority = (
-        pulse_schedule_policy.get("fixed_execution_authority", {})
-        if isinstance(pulse_schedule_policy, dict)
-        else {}
-    )
-    if fixed_pulse_authority.get("authority_mode") == (
-        "detector_blind_candidate_confirmation_v1"
-    ):
-        raise ContractError(
-            "manual pulse candidate confirmation is retired; use the automatic transition"
-        )
     cache_miss_policy = (
         pulse_schedule_policy.get("cache_miss_policy")
         if isinstance(pulse_schedule_policy, dict)
@@ -3250,98 +3163,100 @@ def prepare_family_source_closure(
     if layout_files is not None:
         schedule = None
         if not staged_grid2_mode:
-            fixed_authority = pulse_schedule_policy.get("fixed_execution_authority")
-            authority_mode = (
-                fixed_authority.get("authority_mode")
-                if isinstance(fixed_authority, dict)
-                else None
+            base_schedule = derive_pulse_schedule(
+                design_evidence["state_path"], _load(resolved_path), _load(layout_files["geometry"]),
+                layout_profile,
+                campaign_id=campaign["campaign_id"],
+                experiment_id=experiment_id,
+                experiment_row_sha256=row_sha256,
+                population_declaration_sha256=_canonical_sha256(population_declaration),
+                policy=pulse_schedule_policy,
+                rf_frequency_hz=float(
+                    design_evidence["resolved_design"]["drive"]["frequency_Hz"]
+                ),
             )
-            if authority_mode == "frozen_historical_schedule_v1":
-                schedule = _resolve_fixed_pulse_schedule(
+            if post_pulse_restart_authority is not None:
+                (
+                    pre_pulse_source_path,
+                    pre_pulse_source_state,
+                    restart_reuse,
+                ) = _resolve_post_pulse_restart_reuse(
                     root=root,
-                    campaign=campaign,
                     experiment=experiment,
-                    experiment_id=experiment_id,
-                    experiment_row_sha256=row_sha256,
-                    population_declaration_sha256=_canonical_sha256(population_declaration),
-                    policy=pulse_schedule_policy,
+                    authority=post_pulse_restart_authority,
+                    population_declaration=population_declaration,
+                    resolved_connection_path=resolved_path,
+                    resolved_source_path=resolved_source_contract_path,
+                    resolved_geometry_path=layout_files["geometry"],
+                    upstream_design_path=upstream_resolved_design_path,
+                    plan_output=plan_output,
                 )
+                pre_pulse_receipt_path = restart_reuse[
+                    "materialization_receipt_path"
+                ]
+                pulse_restart_validation_path = plan_output.with_name(
+                    "canonical_pulse_restart_target_state_validation.json"
+                )
+                pulse_restart_validation_path.write_text(
+                    json.dumps(restart_reuse["validation"], indent=2) + "\n",
+                    encoding="utf-8",
+                )
+                producer_schedule = restart_reuse["producer_schedule"]
+                if not math.isclose(
+                    float(base_schedule["rf_period_us"]),
+                    float(producer_schedule["rf_period_us"]),
+                    rel_tol=0.0, abs_tol=1e-15,
+                ):
+                    raise ContractError("post-pulse producer RF period differs")
+                pulse_time_us = float(
+                    producer_schedule["pulse_effective_time_us"]
+                )
+                schedule = copy.deepcopy(base_schedule)
+                schedule.update({
+                    "method": "manifest_bound_post_pulse_restart_reuse_v1",
+                    "pulse_base_time_us": pulse_time_us,
+                    "pulse_offset_us": 0.0,
+                    "pulse_effective_time_us": pulse_time_us,
+                    "pulse_width_us": float(producer_schedule["pulse_width_us"]),
+                    "source_state_path": pre_pulse_source_state["path"],
+                    "source_state_sha256": pre_pulse_source_state["sha256"],
+                    "claim_status": "FUNCTIONAL_ONLY",
+                    "post_pulse_restart_reuse_authority": restart_reuse[
+                        "schedule_authority"
+                    ],
+                })
+                pulse_timing_state = (
+                    "ready_verified" if cache_miss_policy is not None else None
+                )
+            elif transition_authority is not None:
+                if pulse_prefix_sha256 is None:
+                    raise ContractError(
+                        "pulse timing confirmation requires a prepared population prefix"
+                    )
+                schedule = _resolve_candidate_confirmation_schedule(
+                    root=root,
+                    experiment=experiment,
+                    policy=pulse_schedule_policy,
+                    authority=transition_authority,
+                    population_declaration=population_declaration,
+                    prepared_prefix_sha256=pulse_prefix_sha256,
+                    resolved_connection_path=resolved_path,
+                    resolved_source_path=resolved_source_contract_path,
+                    resolved_geometry_path=layout_files["geometry"],
+                    single_flight_configuration=single_flight_configuration,
+                    base_schedule=base_schedule,
+                )
+                pulse_timing_state = "confirmation_required"
             else:
-                base_schedule = derive_pulse_schedule(
-                    design_evidence["state_path"], _load(resolved_path), _load(layout_files["geometry"]),
-                    layout_profile,
-                    campaign_id=campaign["campaign_id"],
-                    experiment_id=experiment_id,
-                    experiment_row_sha256=row_sha256,
-                    population_declaration_sha256=_canonical_sha256(population_declaration),
-                    policy=pulse_schedule_policy,
-                    rf_frequency_hz=float(
-                        design_evidence["resolved_design"]["drive"]["frequency_Hz"]
-                    ),
-                )
-                if post_pulse_restart_authority is not None:
-                    (
-                        pre_pulse_source_path,
-                        pre_pulse_source_state,
-                        restart_reuse,
-                    ) = _resolve_post_pulse_restart_reuse(
-                        root=root,
-                        experiment=experiment,
-                        authority=post_pulse_restart_authority,
-                        population_declaration=population_declaration,
-                        resolved_connection_path=resolved_path,
-                        resolved_source_path=resolved_source_contract_path,
-                        resolved_geometry_path=layout_files["geometry"],
-                        upstream_design_path=upstream_resolved_design_path,
-                        plan_output=plan_output,
-                    )
-                    pre_pulse_receipt_path = restart_reuse[
-                        "materialization_receipt_path"
-                    ]
-                    pulse_restart_validation_path = plan_output.with_name(
-                        "canonical_pulse_restart_target_state_validation.json"
-                    )
-                    pulse_restart_validation_path.write_text(
-                        json.dumps(restart_reuse["validation"], indent=2) + "\n",
-                        encoding="utf-8",
-                    )
-                    producer_schedule = restart_reuse["producer_schedule"]
-                    if not math.isclose(
-                        float(base_schedule["rf_period_us"]),
-                        float(producer_schedule["rf_period_us"]),
-                        rel_tol=0.0, abs_tol=1e-15,
-                    ):
-                        raise ContractError("post-pulse producer RF period differs")
-                    pulse_time_us = float(
-                        producer_schedule["pulse_effective_time_us"]
-                    )
-                    schedule = copy.deepcopy(base_schedule)
-                    schedule.update({
-                        "method": "manifest_bound_post_pulse_restart_reuse_v1",
-                        "pulse_base_time_us": pulse_time_us,
-                        "pulse_offset_us": 0.0,
-                        "pulse_effective_time_us": pulse_time_us,
-                        "pulse_width_us": float(producer_schedule["pulse_width_us"]),
-                        "source_state_path": pre_pulse_source_state["path"],
-                        "source_state_sha256": pre_pulse_source_state["sha256"],
-                        "claim_status": "FUNCTIONAL_ONLY",
-                        "post_pulse_restart_reuse_authority": restart_reuse[
-                            "schedule_authority"
-                        ],
-                    })
-                    pulse_timing_state = (
-                        "ready_verified" if cache_miss_policy is not None else None
-                    )
-                elif transition_authority is not None:
-                    if pulse_prefix_sha256 is None:
-                        raise ContractError(
-                            "pulse timing confirmation requires a prepared population prefix"
-                        )
-                    schedule = _resolve_candidate_confirmation_schedule(
+                schedule = None
+                if (
+                    pulse_prefix_sha256 is not None
+                    and pre_pulse_time_series_specification is None
+                ):
+                    schedule = _resolve_cached_verified_pulse_schedule(
                         root=root,
                         experiment=experiment,
                         policy=pulse_schedule_policy,
-                        authority=transition_authority,
                         population_declaration=population_declaration,
                         prepared_prefix_sha256=pulse_prefix_sha256,
                         resolved_connection_path=resolved_path,
@@ -3350,33 +3265,12 @@ def prepare_family_source_closure(
                         single_flight_configuration=single_flight_configuration,
                         base_schedule=base_schedule,
                     )
-                    pulse_timing_state = "confirmation_required"
-                elif authority_mode is None:
-                    schedule = None
-                    if (
-                        pulse_prefix_sha256 is not None
-                        and pre_pulse_time_series_specification is None
-                    ):
-                        schedule = _resolve_cached_verified_pulse_schedule(
-                            root=root,
-                            experiment=experiment,
-                            policy=pulse_schedule_policy,
-                            population_declaration=population_declaration,
-                            prepared_prefix_sha256=pulse_prefix_sha256,
-                            resolved_connection_path=resolved_path,
-                            resolved_source_path=resolved_source_contract_path,
-                            resolved_geometry_path=layout_files["geometry"],
-                            single_flight_configuration=single_flight_configuration,
-                            base_schedule=base_schedule,
-                        )
-                    if schedule is None:
-                        schedule = base_schedule
-                        if cache_miss_policy is not None:
-                            pulse_timing_state = "discovery_required"
-                    elif cache_miss_policy is not None:
-                        pulse_timing_state = "ready_verified"
-                else:
-                    raise ContractError("single-flight pulse authority mode is unsupported")
+                if schedule is None:
+                    schedule = base_schedule
+                    if cache_miss_policy is not None:
+                        pulse_timing_state = "discovery_required"
+                elif cache_miss_policy is not None:
+                    pulse_timing_state = "ready_verified"
             validate_schema(
                 schedule, "rf_oatof_resolved_single_flight_pulse_schedule.schema.json"
             )

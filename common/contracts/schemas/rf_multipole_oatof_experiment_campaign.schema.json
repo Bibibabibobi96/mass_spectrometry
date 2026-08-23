@@ -14,10 +14,7 @@
     "claim_limit": {"type": "string", "minLength": 1},
     "published_authoring_identity": {"$ref": "#/$defs/published_authoring_identity"},
     "preregistration": {"$ref": "#/$defs/preregistration"},
-    "pulse_resolution_optimization": {"$ref": "#/$defs/pulse_resolution_optimization"},
-    "pulse_resolution_cohort_authority": {"$ref": "#/$defs/pulse_resolution_cohort_authority"},
     "pre_pulse_time_series_screening": {"$ref": "#/$defs/pre_pulse_time_series_screening"},
-    "pulse_resolution_baseline_evidence": {"$ref": "#/$defs/baseline_evidence"},
     "experiments": {
       "oneOf": [
         {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/experiment"}},
@@ -45,77 +42,17 @@
                 {"required": ["generated_pre_pulse_ordered_subset"]},
                 {"required": ["observed_pre_pulse_projection"]},
                 {"required": ["staged_grid2_source_state"]},
-                {"required": ["single_flight_spatial_window_profile_id"]},
-                {"required": ["pulse_resolution_execution_mode"]}
+                {"required": ["single_flight_spatial_window_profile_id"]}
               ]}
             }
           }
-        },
-        "not": {"anyOf": [
-          {"required": ["pulse_resolution_optimization"]},
-          {"required": ["pulse_resolution_cohort_authority"]},
-          {"required": ["pulse_resolution_baseline_evidence"]}
-        ]}
+        }
       }
     },
     {
       "if": {"properties": {"schema_version": {"enum": [2, 3, 4, 5, 6]}}, "required": ["schema_version"]},
       "then": {"properties": {"experiments": {"items": {"required": ["single_flight_layout_profile_id"]}}}},
       "else": {"properties": {"experiments": {"items": {"not": {"required": ["single_flight_layout_profile_id"]}}}}}
-    },
-    {
-      "if": {"required": ["pulse_resolution_optimization"]},
-      "then": {"properties": {"schema_version": {"enum": [2, 3, 4, 5, 6]}}}
-    },
-    {
-      "if": {
-        "properties": {"schema_version": {"const": 5}},
-        "required": ["schema_version", "pulse_resolution_optimization"]
-      },
-      "then": {
-        "required": ["pulse_resolution_cohort_authority"],
-        "properties": {
-          "experiments": {"items": {"not": {"anyOf": [
-            {"required": ["pulse_resolution_baseline_result"]},
-            {"required": ["pulse_resolution_baseline_checkpoints"]}
-          ]}}}
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {"status": {"const": "PENDING_PREREGISTRATION"}},
-        "required": ["status"]
-      },
-      "then": {
-        "not": {"required": ["pulse_resolution_baseline_evidence"]},
-        "properties": {"pulse_resolution_optimization": {
-          "properties": {"comparison_matrix": {"items": {
-            "properties": {"authority_status": {"const": "pending_preregistration"}}
-          }}}
-        }}
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "status": {"const": "authorized"},
-          "experiments": {"contains": {"properties": {
-            "pulse_resolution_execution_mode": {
-              "const": "screening_prefix_n100_paired_candidate"
-            }
-          }, "required": ["pulse_resolution_execution_mode"]}}
-        },
-        "required": ["status", "experiments"]
-      },
-      "then": {
-        "required": ["preregistration", "pulse_resolution_baseline_evidence"],
-        "properties": {"pulse_resolution_optimization": {
-          "properties": {"comparison_matrix": {"items": {
-            "properties": {"authority_status": {"const": "direct_executable_contract"}}
-          }}}
-        }}
-      }
     },
     {
       "if": {"properties": {"schema_version": {"enum": [3, 4, 5]}}, "required": ["schema_version"]},
@@ -270,21 +207,6 @@
       }
     },
     "file": {"type": "object", "additionalProperties": false, "required": ["path", "sha256"], "properties": {"path": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/$defs/sha"}}},
-    "baseline_evidence": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "authority_id", "baseline_campaign_id", "baseline_campaign_sha256",
-        "path", "sha256"
-      ],
-      "properties": {
-        "authority_id": {"$ref": "#/$defs/id"},
-        "baseline_campaign_id": {"$ref": "#/$defs/id"},
-        "baseline_campaign_sha256": {"$ref": "#/$defs/sha"},
-        "path": {"type": "string", "minLength": 1},
-        "sha256": {"$ref": "#/$defs/sha"}
-      }
-    },
     "preregistration": {
       "type": "object", "additionalProperties": false,
       "required": ["status", "document", "frozen_experiment_row_sha256"],
@@ -512,43 +434,6 @@
               "const": "layout_resolved_axial_provisional_xy2_v1"
             }
           }
-        },
-        "fixed_execution_authority": {
-          "oneOf": [
-            {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "authority_mode", "pulse_effective_time_us", "rf_period_us",
-                "source_schedule", "source_state_sha256"
-              ],
-              "properties": {
-                "authority_mode": {"const": "frozen_historical_schedule_v1"},
-                "pulse_effective_time_us": {"type": "number", "minimum": 0},
-                "rf_period_us": {"type": "number", "exclusiveMinimum": 0},
-                "source_schedule": {"$ref": "#/$defs/file"},
-                "source_state_sha256": {"$ref": "#/$defs/sha"}
-              }
-            },
-            {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "authority_mode", "candidate_parent_manifest",
-                "candidate_selection_receipt", "confirmation_policy_id"
-              ],
-              "properties": {
-                "authority_mode": {
-                  "const": "detector_blind_candidate_confirmation_v1"
-                },
-                "candidate_parent_manifest": {"$ref": "#/$defs/file"},
-                "candidate_selection_receipt": {"$ref": "#/$defs/file"},
-                "confirmation_policy_id": {
-                  "const": "identical_identity_pulse_on_full_flight_v1"
-                }
-              }
-            }
-          ]
         }
       }
     },
@@ -628,54 +513,6 @@
         }
       }
     },
-    "pulse_resolution_cohort_authority": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "role", "checkpoint", "source_release", "pre_pulse_state",
-        "pulse_eligible", "outside_transverse_bore",
-        "observed_eligibility_policy", "detector_survivor_reselection"
-      ],
-      "properties": {
-        "role": {"enum": ["rf_oatof_frozen_paired_cohort_authority", "rf_oatof_historical_migration_reference"]},
-        "checkpoint": {"$ref": "#/$defs/file"},
-        "source_release": {
-          "allOf": [
-            {"$ref": "#/$defs/frozen_cohort_selector"},
-            {"properties": {"selector": {"const": "event == source_release"}}}
-          ]
-        },
-        "pre_pulse_state": {
-          "allOf": [
-            {"$ref": "#/$defs/frozen_cohort_selector"},
-            {"properties": {"selector": {"const": "event == pre_pulse_state"}}}
-          ]
-        },
-        "pulse_eligible": {
-          "allOf": [
-            {"$ref": "#/$defs/frozen_cohort_selector"},
-            {"properties": {"selector": {"const": "event == pre_pulse_state and pulse_eligibility == eligible"}}}
-          ]
-        },
-        "outside_transverse_bore": {
-          "allOf": [
-            {"$ref": "#/$defs/frozen_cohort_selector"},
-            {"properties": {"selector": {"const": "event == pre_pulse_state and pulse_eligibility == outside_transverse_bore"}}}
-          ]
-        },
-        "observed_eligibility_policy": {"const": "exact_count_and_ordered_id_sha_fail_closed"},
-        "detector_survivor_reselection": {"const": "prohibited"}
-      }
-    },
-    "frozen_cohort_selector": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["selector", "ordered_particle_id_sha256"],
-      "properties": {
-        "selector": {"type": "string", "minLength": 1},
-        "ordered_particle_id_sha256": {"$ref": "#/$defs/sha"}
-      }
-    },
     "pre_pulse_time_series_screening": {
       "type": "object",
       "additionalProperties": false,
@@ -748,149 +585,6 @@
           }
         }
       ]
-    },
-    "pulse_resolution_optimization": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "purpose", "execution_state", "clock_contract", "population_contract",
-        "stage_order", "comparison_matrix", "screening_promotion", "grid_convergence",
-        "optimization_constraints", "acceptance_window", "acceptance_gates",
-        "comsol_handoff"
-      ],
-      "properties": {
-        "purpose": {"const": "physical_optimization"},
-        "execution_state": {"enum": ["n100_baseline_registration_only", "n100_full_domain_piecewise_ideal_field_screening"]},
-        "clock_contract": {
-          "type": "object", "additionalProperties": false,
-          "required": ["resolution_time_basis", "absolute_instrument_clock_is_resolution_claim"],
-          "properties": {
-            "resolution_time_basis": {"const": "detector_time_minus_pulse_effective_time"},
-            "absolute_instrument_clock_is_resolution_claim": {"const": false}
-          }
-        },
-        "population_contract": {
-          "type": "object", "additionalProperties": false,
-          "required": ["mother_sample_count", "screening_prefix_count", "screening_is_deterministic_prefix", "qualification_population", "random_downsampling_allowed", "parallel_batch_count"],
-          "properties": {
-            "mother_sample_count": {"const": 1000},
-            "screening_prefix_count": {"const": 100},
-            "screening_is_deterministic_prefix": {"const": true},
-            "qualification_population": {"const": "all_pulse_eligible_particles"},
-            "random_downsampling_allowed": {"const": false},
-            "parallel_batch_count": {"const": 5}
-          }
-        },
-        "stage_order": {
-          "type": "array", "prefixItems": [
-            {"const": "implementation_and_observability"},
-            {"const": "ideal_upper_bound_attribution"},
-            {"const": "local_grid_convergence"},
-            {"const": "joint_optimization"},
-            {"const": "detector_blind_acceptance_window"},
-            {"const": "simion_qualification"},
-            {"const": "comsol_handoff"}
-          ], "items": false, "minItems": 7, "maxItems": 7
-        },
-        "comparison_matrix": {
-          "type": "array", "minItems": 1, "maxItems": 8,
-          "items": {
-            "type": "object", "additionalProperties": false,
-            "required": ["sequence", "experiment_id", "source_profile_id", "field_profile_id", "authority_status"],
-            "properties": {
-              "sequence": {"type": "integer", "minimum": 1, "maximum": 8},
-              "experiment_id": {"$ref": "#/$defs/id"},
-              "source_profile_id": {"$ref": "#/$defs/id"},
-              "field_profile_id": {"$ref": "#/$defs/id"},
-              "authority_status": {"enum": ["direct_executable_contract", "pending_preregistration", "planning_only_until_direct_contract"]}
-            }
-          }
-        },
-        "screening_promotion": {
-          "type": "object", "additionalProperties": false,
-          "required": ["unimodal_required", "direct_fwhm_relative_improvement_minimum", "sigma_relative_improvement_minimum", "both_improvements_required", "axial_ideal_closure_experiment_id", "axial_ideal_minimum_mass_resolution", "axial_ideal_failure_action"],
-          "properties": {
-            "unimodal_required": {"const": true},
-            "direct_fwhm_relative_improvement_minimum": {"const": 0.15},
-            "sigma_relative_improvement_minimum": {"const": 0.15},
-            "both_improvements_required": {"const": true},
-            "axial_ideal_closure_experiment_id": {"$ref": "#/$defs/id"},
-            "axial_ideal_minimum_mass_resolution": {"const": 30000},
-            "axial_ideal_failure_action": {"const": "stop_physical_optimization_and_repair_clock_ideal_field_or_theory"}
-          }
-        },
-        "grid_convergence": {
-          "type": "object", "additionalProperties": false,
-          "required": ["mass_resolution_relative_change_maximum", "direct_fwhm_relative_change_maximum", "hit_rate_change_maximum_percentage_points", "refine_only_attributed_limiting_regions"],
-          "properties": {
-            "mass_resolution_relative_change_maximum": {"const": 0.02},
-            "direct_fwhm_relative_change_maximum": {"const": 0.02},
-            "hit_rate_change_maximum_percentage_points": {"const": 1.0},
-            "refine_only_attributed_limiting_regions": {"const": true}
-          }
-        },
-        "optimization_constraints": {
-          "type": "object", "additionalProperties": false,
-          "required": ["candidate_count_maximum", "cartesian_blind_scan_allowed", "derived_variables_prohibited", "diagnostic_variables_are_physical_optima", "external_instrument_radius_increase_allowed", "focus_global_z_mm", "reflectron_minimum_electrode_gap_mm"],
-          "properties": {
-            "candidate_count_maximum": {"const": 5},
-            "cartesian_blind_scan_allowed": {"const": false},
-            "derived_variables_prohibited": {
-              "type": "array", "minItems": 5, "uniqueItems": true,
-              "items": {"enum": ["absolute_electrode_voltages", "focus_plane", "source_center", "reflectron_endpoints", "ring_baseline_voltages", "shield_position"]}
-            },
-            "diagnostic_variables_are_physical_optima": {"const": false},
-            "external_instrument_radius_increase_allowed": {"const": false},
-            "focus_global_z_mm": {"const": 0.0},
-            "reflectron_minimum_electrode_gap_mm": {"minimum": 1.0}
-          }
-        },
-        "acceptance_window": {
-          "type": "object", "additionalProperties": false,
-          "required": ["derivation", "selection_uses_detector_outcome", "center_binding", "allowed_coordinates", "tof_error_budget_ns", "minimum_pulse_eligible_coverage", "shrink_below_minimum_coverage_allowed", "freeze_before_real_beam_application", "outside_window_remains_in_full_beam"],
-          "properties": {
-            "derivation": {"const": "synthetic_phase_space_and_real_minus_ideal_field_error_budget"},
-            "selection_uses_detector_outcome": {"const": false},
-            "center_binding": {"const": "theory_source_center"},
-            "allowed_coordinates": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["x", "y", "z", "angle_x", "angle_y"]}},
-            "tof_error_budget_ns": {"const": 0.537},
-            "minimum_pulse_eligible_coverage": {"const": 0.70},
-            "shrink_below_minimum_coverage_allowed": {"const": false},
-            "freeze_before_real_beam_application": {"const": true},
-            "outside_window_remains_in_full_beam": {"const": true}
-          }
-        },
-        "acceptance_gates": {
-          "type": "object", "additionalProperties": false,
-          "required": ["full_beam", "theoretical_window"],
-          "properties": {
-            "full_beam": {"$ref": "#/$defs/resolution_gate"},
-            "theoretical_window": {"$ref": "#/$defs/resolution_gate"}
-          }
-        },
-        "comsol_handoff": {
-          "type": "object", "additionalProperties": false,
-          "required": ["simion_dual_gate_required", "single_solver_session", "global_cartesian_velocity_error_limit_exclusive_m_per_s", "mass_resolution_relative_difference_maximum", "hit_rate_difference_maximum_percentage_points"],
-          "properties": {
-            "simion_dual_gate_required": {"const": true},
-            "single_solver_session": {"const": true},
-            "global_cartesian_velocity_error_limit_exclusive_m_per_s": {"const": 0.000001},
-            "mass_resolution_relative_difference_maximum": {"const": 0.10},
-            "hit_rate_difference_maximum_percentage_points": {"const": 1.0}
-          }
-        }
-      }
-    },
-    "resolution_gate": {
-      "type": "object", "additionalProperties": false,
-      "required": ["population_basis", "unimodal_required", "conditional_hit_rate_minimum", "mass_resolution_minimum", "direct_fwhm_maximum_ns"],
-      "properties": {
-        "population_basis": {"enum": ["all_pulse_eligible_particles", "detector_blind_theoretical_acceptance_window"]},
-        "unimodal_required": {"const": true},
-        "conditional_hit_rate_minimum": {"const": 0.95},
-        "mass_resolution_minimum": {"enum": [20000, 30000]},
-        "direct_fwhm_maximum_ns": {"enum": [0.806, 0.537]}
-      }
     },
     "experiment": {
       "type": "object", "additionalProperties": false,
@@ -1287,9 +981,6 @@
         "single_flight_pulse_schedule_policy": {"$ref": "#/$defs/single_flight_pulse_schedule_policy"},
         "pulse_timing_transition_authority": {"$ref": "#/$defs/file"},
         "single_flight_population": {"$ref": "#/$defs/single_flight_population"},
-        "pulse_resolution_execution_mode": {"enum": ["screening_prefix_n100_baseline_registration", "screening_prefix_n100_paired_candidate", "qualification_full_n1000"]},
-        "pulse_resolution_baseline_result": {"$ref": "#/$defs/file"},
-        "pulse_resolution_baseline_checkpoints": {"$ref": "#/$defs/file"},
         "single_flight_design_overrides": {
           "type": "array",
           "minItems": 1,

@@ -1382,11 +1382,7 @@ $batchRows = [string[]]$particleRows[0..33]
             REPO_ROOT / "common" / "integration" / "execute_connection.ps1"
         ).read_text(encoding="utf-8")
         self.assertIn('"resolved_region_field_profile_id="', prepare)
-        self.assertIn(
-            "$runnerArguments.PulseResolutionFieldProfileId =\n"
-            "      [string]$frozenArguments.resolved_region_field_profile_id",
-            adapter,
-        )
+        self.assertIn("$runnerArguments.ResolvedRegionFieldContract =", adapter)
         self.assertNotIn(
             "$frozenArguments.single_flight_accelerator_field_profile_id",
             adapter,

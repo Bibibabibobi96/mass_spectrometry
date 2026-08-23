@@ -759,7 +759,7 @@ if ($runtime.resolved_source_contract.authority_scope -ne 'connection_lineage_on
         self.assertNotEqual(completed.returncode, 0)
         self.assertRegex(
             completed.stdout + completed.stderr,
-            "(?:runtime implementation \\w+ SHA-256 differs|"
+            "(?:runtime (?:implementation \\w+|dependency contract) SHA-256 differs|"
             "Resolved source adapter differs from its stable contract: sha256)",
         )
 

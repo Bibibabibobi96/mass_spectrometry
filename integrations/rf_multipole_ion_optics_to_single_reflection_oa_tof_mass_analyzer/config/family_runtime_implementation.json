@@ -93,15 +93,7 @@
     },
     "single_flight_analyzer": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/analysis/analyze_single_flight.py",
-      "sha256": "7CE005F4E6B007542E50E09C08C047C9F575BAEDE61C73F79A86396BCB0879B3"
-    },
-    "pulse_resolution_result_registrar": {
-      "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/analysis/register_pulse_resolution_result.py",
-      "sha256": "344A1C64C3B156185627C17D5993002EAB27CFF4DA94D665D5EADA0A51E98344"
-    },
-    "pulse_resolution_screening_promotion_gate": {
-      "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/analysis/screening_promotion_gate.py",
-      "sha256": "9C76AA1FDD473B031EE56E8C4DDDF8C1453D2F27B42A66C8DA576D49889DE63F"
+      "sha256": "30AF48A263B6EA1A3D6C1C009E06C243B46A9FEE637E21E8F189801AB5959BF1"
     },
     "pre_pulse_runner": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/stages/comsol/run_pre_pulse_interface_transport.ps1",

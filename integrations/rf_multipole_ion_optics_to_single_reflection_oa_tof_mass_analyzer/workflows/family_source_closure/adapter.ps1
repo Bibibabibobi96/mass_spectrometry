@@ -564,15 +564,7 @@ if (($campaignHasPrePulseTimeSeries -or $pulseTimingDiscovery -or
 }
 $prePulseTimeSeriesScreening = $campaignHasPrePulseTimeSeries -or
   $pulseTimingDiscovery -or $pulseTimingDiscoveryRequired
-$fixedAuthorityProperty = if ($null -ne $pulseSchedulePolicy) {
-  $pulseSchedulePolicy.PSObject.Properties['fixed_execution_authority']
-} else { $null }
-$pulseCandidateConfirmation = $pulseTimingConfirmation -or (
-  $null -ne $fixedAuthorityProperty -and
-  $null -ne $fixedAuthorityProperty.Value -and
-  [string]$fixedAuthorityProperty.Value.authority_mode -eq
-    'detector_blind_candidate_confirmation_v1'
-)
+$pulseCandidateConfirmation = $pulseTimingConfirmation
 if ($pulseCandidateConfirmation -ne $hasPulseCandidateConfirmationArguments) {
   throw 'Pulse candidate confirmation and prepared prefix authority differ.'
 }

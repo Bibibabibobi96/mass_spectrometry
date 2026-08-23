@@ -960,9 +960,8 @@ def analyze(
             ),
             "selection_uses_detector_outcome": False,
         }
-        # This analyzer reports what this transport actually observed.  The
-        # result registrar decides, from pulse_resolution_execution_mode,
-        # whether those IDs establish a baseline authority or must reuse one.
+        # This analyzer reports what this transport actually observed; the
+        # resolved population contract governs cohort interpretation.
         eligible_population_count = len(eligible_ids)
         energies = np.asarray(
             [float(row["kinetic_energy_eV"]) for row in eligible], dtype=float
