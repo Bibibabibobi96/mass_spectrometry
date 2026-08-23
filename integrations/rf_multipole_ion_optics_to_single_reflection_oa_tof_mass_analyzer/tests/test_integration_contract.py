@@ -15,6 +15,7 @@ from common.integration.resolve_connection import (
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 INTEGRATION_ROOT = Path(__file__).resolve().parents[1]
+SCHEMA_ROOT = INTEGRATION_ROOT / "config" / "schemas"
 PROFILE_REGISTRY_PATH = INTEGRATION_ROOT / "config" / "connection_profiles.json"
 ADAPTER_REGISTRY_PATH = INTEGRATION_ROOT / "config" / "execution_adapter_profiles.json"
 GLOBAL_REGISTRY_PATH = REPO_ROOT / "integrations" / "registry.json"
@@ -107,14 +108,14 @@ class IntegrationProfileContractTests(unittest.TestCase):
         with self.assertRaises(ContractError):
             validate_schema(
                 binding,
-                "rf_multipole_oatof_runtime_binding.schema.json",
+                SCHEMA_ROOT / "rf_multipole_oatof_runtime_binding.schema.json",
             )
         source = load_json(SOURCE_ADAPTER_PATH)
         source["project_id"] = "forbidden-synonym"
         with self.assertRaises(ContractError):
             validate_schema(
                 source,
-                "rf_multipole_oatof_source_adapter.schema.json",
+                SCHEMA_ROOT / "rf_multipole_oatof_source_adapter.schema.json",
             )
 
     def test_phase_configuration_has_no_connection_topology_authority(self) -> None:

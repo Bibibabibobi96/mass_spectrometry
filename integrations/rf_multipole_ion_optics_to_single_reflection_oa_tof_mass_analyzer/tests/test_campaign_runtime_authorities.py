@@ -20,6 +20,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 REPO_ROOT = Path(__file__).resolve().parents[3]
 INTEGRATION_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_ROOT = INTEGRATION_ROOT / "config"
+SCHEMA_ROOT = CONFIG_ROOT / "schemas"
 RETIRED_CAMPAIGN_ARCHIVE_INDEX = (
     INTEGRATION_ROOT / "docs" / "history" / "retired_campaigns"
     / "diagnostics_archive_index.json"
@@ -127,7 +128,9 @@ class CampaignRuntimeAuthoritiesTests(unittest.TestCase):
 
     def test_source_adapter_is_run_independent(self) -> None:
         contract = load(CONFIG_ROOT / "family_source_adapter.json")
-        validate_schema(contract, "rf_multipole_oatof_source_adapter.schema.json")
+        validate_schema(
+            contract, SCHEMA_ROOT / "rf_multipole_oatof_source_adapter.schema.json"
+        )
         self.assertEqual(
             set(contract),
             {
@@ -145,7 +148,9 @@ class CampaignRuntimeAuthoritiesTests(unittest.TestCase):
 
     def test_execution_policy_is_scientific_input_independent(self) -> None:
         policy = load(CONFIG_ROOT / "execution_policy.json")
-        validate_schema(policy, "rf_multipole_oatof_execution_policy.schema.json")
+        validate_schema(
+            policy, SCHEMA_ROOT / "rf_multipole_oatof_execution_policy.schema.json"
+        )
         self.assertEqual(policy["commercial_solver_concurrency_limit"], 1)
         self.assertNotIn("single_flight_batch_parallel_limit", policy)
         self.assertTrue(policy["stop_after_first_failure"])
@@ -219,7 +224,9 @@ class CampaignRuntimeAuthoritiesTests(unittest.TestCase):
                 CONFIG_ROOT
                 / f"family_{family}_direct_mating_gap_0mm_runtime_binding.json"
             )
-            validate_schema(binding, "rf_multipole_oatof_runtime_binding.schema.json")
+            validate_schema(
+                binding, SCHEMA_ROOT / "rf_multipole_oatof_runtime_binding.schema.json"
+            )
             self.assertEqual(binding["schema_version"], 3)
             contracts = binding["contracts"]
             self.assertNotIn("source_contract", contracts)

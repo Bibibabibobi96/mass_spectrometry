@@ -88,6 +88,7 @@ INTEGRATION_ID = (
 CAMPAIGN_SCHEMA_PATH = Path(__file__).resolve().parents[2] / "config" / "schemas" / (
     "rf_multipole_oatof_experiment_campaign.schema.json"
 )
+INTEGRATION_SCHEMA_DIR = CAMPAIGN_SCHEMA_PATH.parent
 UPSTREAM_PROJECTS = {
     "rf_quadrupole_ion_optics",
     "rf_hexapole_ion_optics",
@@ -2031,7 +2032,8 @@ def _load_source_evidence(
         )
         validate_schema(
             population_receipt,
-            "rf_multipole_oatof_source_population_receipt.schema.json",
+            INTEGRATION_SCHEMA_DIR
+            / "rf_multipole_oatof_source_population_receipt.schema.json",
         )
     except (KeyError, OSError, TypeError, ValueError) as exc:
         raise ContractError("source population derivation failed") from exc
@@ -2380,7 +2382,10 @@ def prepare_family_source_closure(
         root, runtime_binding_record, "family runtime binding"
     )
     runtime_binding = _load(runtime_binding_path)
-    validate_schema(runtime_binding, "rf_multipole_oatof_runtime_binding.schema.json")
+    validate_schema(
+        runtime_binding,
+        INTEGRATION_SCHEMA_DIR / "rf_multipole_oatof_runtime_binding.schema.json",
+    )
     if (
         runtime_binding["schema_version"] != 3
         or runtime_binding["connection_profile_id"]
@@ -2393,11 +2398,17 @@ def prepare_family_source_closure(
         root, source_adapter_record, "family source adapter"
     )
     source_adapter = _load(source_adapter_path)
-    validate_schema(source_adapter, "rf_multipole_oatof_source_adapter.schema.json")
+    validate_schema(
+        source_adapter,
+        INTEGRATION_SCHEMA_DIR / "rf_multipole_oatof_source_adapter.schema.json",
+    )
     policy_record = runtime_binding["contracts"]["execution_policy_contract"]
     policy_path = _repo_record(root, policy_record, "integration execution policy")
     policy = _load(policy_path)
-    validate_schema(policy, "rf_multipole_oatof_execution_policy.schema.json")
+    validate_schema(
+        policy,
+        INTEGRATION_SCHEMA_DIR / "rf_multipole_oatof_execution_policy.schema.json",
+    )
     evidence = _load_source_evidence(
         workspace=workspace,
         experiment=experiment,
@@ -2564,7 +2575,8 @@ def prepare_family_source_closure(
             "manifest": copy.deepcopy(design_reference["manifest"]),
         }
     validate_schema(
-        resolved_source_contract, "rf_multipole_oatof_source_contract.schema.json"
+        resolved_source_contract,
+        INTEGRATION_SCHEMA_DIR / "rf_multipole_oatof_source_contract.schema.json",
     )
     plan_output.parent.mkdir(parents=True, exist_ok=True)
     resolved_source_contract_path = plan_output.with_name(

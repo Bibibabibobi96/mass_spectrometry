@@ -49,6 +49,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 REPO_ROOT = Path(__file__).resolve().parents[3]
 INTEGRATION_ROOT = REPO_ROOT / "integrations" / INTEGRATION_ID
 CONFIG_ROOT = INTEGRATION_ROOT / "config"
+SCHEMA_ROOT = CONFIG_ROOT / "schemas"
 CAMPAIGN_SCHEMA = CONFIG_ROOT / "schemas" / (
     "rf_multipole_oatof_experiment_campaign.schema.json"
 )
@@ -1664,7 +1665,9 @@ $result = Get-PulseTimingOrchestration `
                 binding_path.relative_to(REPO_ROOT).as_posix(),
             )
             binding = load(binding_path)
-            validate_schema(binding, "rf_multipole_oatof_runtime_binding.schema.json")
+            validate_schema(
+                binding, SCHEMA_ROOT / "rf_multipole_oatof_runtime_binding.schema.json"
+            )
             self.assertEqual(binding["connection_profile_id"], profile_id)
 
     def test_single_flight_run_stem_uses_resolved_connector_gap(self) -> None:

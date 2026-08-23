@@ -14,6 +14,7 @@ from common.contracts.machine_contracts import validate_schema
 REPO_ROOT = Path(__file__).resolve().parents[3]
 INTEGRATION_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_ROOT = INTEGRATION_ROOT / "config"
+SCHEMA_ROOT = CONFIG_ROOT / "schemas"
 INVENTORY = CONFIG_ROOT / "family_runtime_dependencies.json"
 FAMILIES = ("quadrupole", "hexapole", "octupole")
 
@@ -162,7 +163,9 @@ if ([string]::Join("`n", @($inventory.dependencies.id)) -ne [string]::Join("`n",
                 CONFIG_ROOT
                 / f"family_{family}_direct_mating_gap_0mm_runtime_binding.json"
             )
-            validate_schema(binding, "rf_multipole_oatof_runtime_binding.schema.json")
+            validate_schema(
+                binding, SCHEMA_ROOT / "rf_multipole_oatof_runtime_binding.schema.json"
+            )
             self.assertEqual(
                 binding["contracts"]["dependency_contract"],
                 {"path": expected_path, "sha256": expected_sha256},
