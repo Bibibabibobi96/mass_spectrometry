@@ -403,22 +403,6 @@ if ($SolverAuthorized) {
   }
 }
 $experiment = $experiments[0]
-$isManifestBoundPostPulseRestart =
-  [string]$experiment.source_release_mode -eq 'pre_pulse_restart' -and
-  ($experiment.PSObject.Properties.Name -contains
-    'post_pulse_restart_reuse_authority')
-if ($SolverAuthorized -and $isManifestBoundPostPulseRestart) {
-  $theoryWorkingPoint = $experiment.single_flight_source_zvz_theory_working_point
-  if ([string]$experiment.single_flight_source_zvz_affine_policy -ne
-        'source_zvz_affine_identify_and_bind_v1' -or
-      $null -eq $theoryWorkingPoint -or
-      [string]$theoryWorkingPoint.policy_id -ne
-        'source_zvz_three_zone_theory_working_point_v1' -or
-      [string]$experiment.post_pulse_restart_reuse_authority.post_pulse_variation_axis -ne
-        'accelerator_field_profile_id_and_source_zvz_theory_working_point') {
-    throw 'Active manifest-bound post-pulse restart requires the source z--vz theory working point.'
-  }
-}
 $threeZoneLayoutProfileIds = @(
   'three_zone_t5_primary_v1',
   'three_zone_t5_primary_shaping_rings_1p4_v1'
