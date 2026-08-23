@@ -367,7 +367,7 @@
       "required": ["run_id", "launched_particle_count", "particle_count_binding", "particle_source_manifest_input_role", "manifest", "state", "particle_source", "metadata"],
       "properties": {
         "run_id": {"type": "string", "minLength": 1},
-        "launched_particle_count": {"type": "integer", "enum": [100, 1000, 5000]},
+        "launched_particle_count": {"type": "integer", "minimum": 1},
         "particle_count_binding": {
           "type": "object",
           "additionalProperties": false,

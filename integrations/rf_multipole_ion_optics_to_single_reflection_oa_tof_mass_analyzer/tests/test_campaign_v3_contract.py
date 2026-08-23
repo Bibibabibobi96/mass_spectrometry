@@ -77,6 +77,14 @@ class CampaignV3ContractTests(unittest.TestCase):
         del value["execution_policy"]
         validate_schema(value, "rf_multipole_oatof_experiment_campaign.schema.json")
 
+    def test_source_population_size_is_not_a_profile_enum(self):
+        value = campaign()
+        value["experiments"][0]["source"]["launched_particle_count"] = 101
+        validate_schema(value, "rf_multipole_oatof_experiment_campaign.schema.json")
+        value["experiments"][0]["source"]["launched_particle_count"] = 0
+        with self.assertRaises(ContractError):
+            validate_schema(value, "rf_multipole_oatof_experiment_campaign.schema.json")
+
     def test_v3_forbids_legacy_scalar_pulse_offset(self):
         value = campaign()
         value["experiments"][0]["single_flight_pulse_offset_rf_periods"] = 0.0
