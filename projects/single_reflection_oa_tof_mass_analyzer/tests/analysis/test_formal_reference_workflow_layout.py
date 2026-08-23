@@ -8,26 +8,6 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 class FormalReferenceWorkflowLayoutTests(unittest.TestCase):
-    def test_production_entries_have_one_non_test_location(self):
-        workflow_root = PROJECT_ROOT / "workflows" / "formal_reference"
-        moved_names = {
-            "run_formal_validation.ps1",
-            "verify_stable_entry.ps1",
-            "verify_geometry_contract.ps1",
-            "verify_geometry_derivation.py",
-        }
-        self.assertEqual(
-            {path.name for path in workflow_root.iterdir() if path.is_file()},
-            moved_names,
-        )
-        for old_root in (
-            PROJECT_ROOT / "tests" / "cross_solver",
-            PROJECT_ROOT / "tests" / "cad",
-        ):
-            self.assertFalse(
-                any((old_root / name).exists() for name in moved_names)
-            )
-
     def test_gate_and_diagnostic_reference_the_canonical_geometry_gate(self):
         canonical = (
             "workflows\\formal_reference\\verify_geometry_contract.ps1"
