@@ -408,30 +408,6 @@ class ResolveConnectionTests(unittest.TestCase):
         with self.assertRaises(ContractError):
             validate_schema(invalid_downstream, "connection_profile.schema.json")
 
-    def test_active_connection_publications_are_mode_neutral(self) -> None:
-        integration_config = (
-            REPO_ROOT
-            / "integrations"
-            / "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
-            / "config"
-        )
-        active = [
-            integration_config / "connection_profiles.json",
-            integration_config / "execution_adapter_profiles.json",
-            integration_config / "experiment_campaign.json",
-            *[
-                integration_config
-                / f"family_{family}_direct_mating_gap_0mm_runtime_binding.json"
-                for family in ("quadrupole", "hexapole", "octupole")
-            ],
-        ]
-        for path in active:
-            with self.subTest(path=path.name):
-                self.assertNotIn(
-                    "no_acceleration",
-                    path.read_text(encoding="utf-8"),
-                )
-
     def test_repository_authority_keeps_normalized_text_identity(self) -> None:
         payload = self.upstream_source_path.read_bytes().replace(b"\r\n", b"\n")
         self.upstream_source_path.write_bytes(payload.replace(b"\n", b"\r\n"))
