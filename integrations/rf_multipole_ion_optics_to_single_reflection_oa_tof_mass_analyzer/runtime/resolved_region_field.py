@@ -59,6 +59,12 @@ def _field_configuration_id(profile_id: str) -> str:
     return str(_field_profile(profile_id)["field_configuration_id"])
 
 
+def field_profile(profile_id: str) -> dict[str, Any]:
+    """Return one active field profile for other configuration resolvers."""
+
+    return _field_profile(profile_id)
+
+
 def _load(path: Path) -> dict[str, Any]:
     value = json.loads(path.read_text(encoding="utf-8-sig"))
     if not isinstance(value, dict):

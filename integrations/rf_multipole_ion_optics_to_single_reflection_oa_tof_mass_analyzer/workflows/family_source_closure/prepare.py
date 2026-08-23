@@ -41,6 +41,7 @@ from common.multipole.component_port import build_exit_component_port
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.resolved_region_field import (
     build_resolved_region_field_contract,
     canonical_profile_id,
+    field_profile,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.source_zvz_affine import (
     derive_three_zone_working_point,
@@ -102,6 +103,20 @@ UPSTREAM_PROJECTS = {
 AUTO_PULSE_POLICY_ID = "auto_detector_blind_discovery_and_confirmation_v1"
 AUTO_PULSE_GRID_PROFILE_ID = "ballistic_seed_native_dt_minus0p35_plus1p65_v1"
 PULSE_TRANSITION_RELATIVE_PATH = "results/pulse_timing_transition.json"
+
+
+def _three_zone_field_profile(profile_id: str) -> dict[str, Any]:
+    """Resolve the active profile whose topology enables three-zone theory."""
+
+    try:
+        profile = field_profile(profile_id)
+    except ValueError as exc:
+        raise ContractError(
+            "post-pulse theory working point requires a supported three-zone field profile"
+        ) from exc
+    if not isinstance(profile.get("topology_id"), str):
+        raise ContractError("post-pulse theory working point requires a supported three-zone field profile")
+    return profile
 def validate_active_post_pulse_restart_working_point(
     experiment: dict[str, Any],
 ) -> None:
@@ -1172,14 +1187,9 @@ def _validate_post_pulse_variation_axis(
             + authority["diagnostic_state_transform"]
         )
     if axis == theory_axis:
-        if experiment["single_flight_accelerator_field_profile_id"] not in {
-            "accelerator_ideal_three_zone_real_reflectron",
-            "accelerator_real_three_zone_ideal_reflectron",
-            "three_zone_explicit_region_modes",
-            "accelerator_real_three_zone_pa_real_reflectron",
-            "full_domain_three_zone_piecewise_ideal_field",
-        }:
-            raise ContractError("post-pulse theory working point requires a supported three-zone field profile")
+        _three_zone_field_profile(
+            experiment["single_flight_accelerator_field_profile_id"]
+        )
         if experiment.get("single_flight_source_zvz_affine_policy") != "source_zvz_affine_identify_and_bind_v1":
             raise ContractError("post-pulse theory working point requires source z--vz binding")
         theory_request = experiment.get("single_flight_source_zvz_theory_working_point")
@@ -3148,13 +3158,9 @@ def prepare_family_source_closure(
         if theory_working_point_request is not None:
             if source_zvz_affine_receipt_path is None or resolved_region_field_contract_path is None:
                 raise ContractError("source theory working point requires source z--vz binding")
-            if accelerator_field_profile_id not in {
-                "accelerator_ideal_three_zone_real_reflectron",
-                "accelerator_real_three_zone_ideal_reflectron",
-                "three_zone_explicit_region_modes",
-                "accelerator_real_three_zone_pa_real_reflectron",
-                "full_domain_three_zone_piecewise_ideal_field",
-            }:
+            if not field_profiles or not isinstance(
+                field_profiles[0].get("topology_id"), str
+            ):
                 raise ContractError("source theory working point requires a supported three-zone field profile")
             try:
                 working_point = derive_three_zone_working_point(

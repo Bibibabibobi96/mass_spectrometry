@@ -215,6 +215,7 @@ if ($baseline -ne $theory -or $baseline -eq $geometryKey -or $baseline -eq $mesh
         )
         for field, value, message in (
             ("single_flight_accelerator_field_profile_id", "unsupported_three_zone_field", "requires a supported three-zone field profile"),
+            ("single_flight_accelerator_field_profile_id", "accelerator_real_pa", "requires a supported three-zone field profile"),
             ("single_flight_source_zvz_affine_policy", None, "requires source z--vz binding"),
             ("single_flight_source_zvz_theory_working_point", None, "authority is missing"),
         ):
