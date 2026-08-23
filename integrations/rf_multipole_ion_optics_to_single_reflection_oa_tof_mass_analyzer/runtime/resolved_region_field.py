@@ -41,15 +41,6 @@ THREE_ZONE_REGIONS = (
     "reflectron_stage1",
     "reflectron_stage2",
 )
-PROFILE_MODES = {
-    "accelerator_real_pa": ("real_pa_field", "real_pa_field"),
-    "accelerator_ideal_stage1_real_stage2": ("analytic_ideal_field", "real_pa_field"),
-    "accelerator_real_stage1_ideal_stage2": ("real_pa_field", "analytic_ideal_field"),
-    "accelerator_ideal_stage1_stage2_real_reflectron": (
-        "analytic_ideal_field",
-        "analytic_ideal_field",
-    ),
-}
 FULL_ID = "full_domain_piecewise_ideal_field"
 THREE_ZONE_PROFILE_IDS = {
     THREE_ZONE_PROFILE_ID,
@@ -104,24 +95,17 @@ def canonical_profile_id(profile_id: str) -> str:
 
 def _region_modes(profile_id: str) -> dict[str, str]:
     canonical = canonical_profile_id(profile_id)
-    if canonical == FULL_ID:
-        return {
-            "accelerator_stage1": "analytic_ideal_field",
-            "accelerator_stage2": "analytic_ideal_field",
-            "drift": "zero_field",
-            "reflectron_stage1": "analytic_ideal_field",
-            "reflectron_stage2": "analytic_ideal_field",
-        }
-    if canonical not in PROFILE_MODES:
+    profile = _field_profile(canonical)
+    keys = set(REGIONS)
+    if not {"accelerator_stage1", "accelerator_stage2"}.issubset(profile):
         raise ValueError(f"unsupported accelerator field profile: {profile_id}")
-    stage1, stage2 = PROFILE_MODES[canonical]
-    return {
-        "accelerator_stage1": stage1,
-        "accelerator_stage2": stage2,
-        "drift": "real_pa_field",
-        "reflectron_stage1": "real_pa_field",
-        "reflectron_stage2": "real_pa_field",
+    modes = {
+        key: str(profile.get(key, "real_pa_field"))
+        for key in REGIONS
     }
+    if set(modes) != keys or any(mode not in MODES for mode in modes.values()):
+        raise ValueError("accelerator field profile contains an unsupported region mode")
+    return modes
 
 
 def build_resolved_region_field_contract(
