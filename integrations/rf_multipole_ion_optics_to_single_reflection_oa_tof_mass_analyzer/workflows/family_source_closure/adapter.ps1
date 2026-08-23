@@ -401,10 +401,6 @@ if ($SolverAuthorized) {
         ([string]$currentCampaigns[0].content_sha256).ToUpperInvariant()) {
     throw 'Campaign is not a current registered execution authority; SolverAuthorized is forbidden.'
   }
-  if ([string]$lifecycleRegistry.active_post_pulse_restart_working_point_policy -ne
-      'source_zvz_three_zone_theory_working_point_required_v1') {
-    throw 'Lifecycle registry post-pulse working-point policy is invalid.'
-  }
 }
 $experiment = $experiments[0]
 $isManifestBoundPostPulseRestart =

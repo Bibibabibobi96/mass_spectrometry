@@ -9,7 +9,6 @@
     "integration_id",
     "discovery_policy",
     "campaign_selector",
-    "active_post_pulse_restart_working_point_policy",
     "active_campaigns"
   ],
   "properties": {
@@ -24,10 +23,6 @@
       "properties": {
         "role": {"const": "rf_multipole_oatof_experiment_campaign"}
       }
-    },
-    "active_post_pulse_restart_working_point_policy": {
-      "type": "string",
-      "pattern": "^[a-z][a-z0-9_]*_v[1-9][0-9]*$"
     },
     "active_campaigns": {
       "type": "array",

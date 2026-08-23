@@ -110,13 +110,6 @@ class CampaignRuntimeAuthoritiesTests(unittest.TestCase):
                 hashlib.sha256(active_path.read_bytes()).hexdigest(),
             )
 
-    def test_lifecycle_registry_declares_a_versioned_working_point_policy(self) -> None:
-        registry = load(CONFIG_ROOT / "diagnostics" / "lifecycle_registry.json")
-        self.assertRegex(
-            registry["active_post_pulse_restart_working_point_policy"],
-            r"^[a-z][a-z0-9_]*_v[1-9][0-9]*$",
-        )
-
     def test_repository_publication_writer_requires_canonical_lf_bytes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "publication.json"

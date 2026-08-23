@@ -93,11 +93,6 @@ UPSTREAM_PROJECTS = {
 AUTO_PULSE_POLICY_ID = "auto_detector_blind_discovery_and_confirmation_v1"
 AUTO_PULSE_GRID_PROFILE_ID = "ballistic_seed_native_dt_minus0p35_plus1p65_v1"
 PULSE_TRANSITION_RELATIVE_PATH = "results/pulse_timing_transition.json"
-ACTIVE_POST_PULSE_WORKING_POINT_POLICY = (
-    "source_zvz_three_zone_theory_working_point_required_v1"
-)
-
-
 def validate_active_post_pulse_restart_working_point(
     experiment: dict[str, Any],
 ) -> None:
@@ -2107,11 +2102,6 @@ def prepare_family_source_closure(
         raise ContractError(
             "active lifecycle campaign must be authorized before preparation"
         )
-    if (
-        lifecycle_registry.get("active_post_pulse_restart_working_point_policy")
-        != ACTIVE_POST_PULSE_WORKING_POINT_POLICY
-    ):
-        raise ContractError("active lifecycle working-point policy is invalid")
     validate_active_post_pulse_restart_working_point(experiment)
     source = experiment["source"]
     execution_strategy = experiment.get("execution_strategy", "staged_three_stage")

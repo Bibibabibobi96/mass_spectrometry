@@ -6,7 +6,6 @@
   "campaign_selector": {
     "role": "rf_multipole_oatof_experiment_campaign"
   },
-  "active_post_pulse_restart_working_point_policy": "source_zvz_three_zone_theory_working_point_required_v1",
   "active_campaigns": [
     {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_field_matrix_compact_auto_replay_v2.json",
