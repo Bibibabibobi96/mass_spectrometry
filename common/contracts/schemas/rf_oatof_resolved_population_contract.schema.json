@@ -23,7 +23,8 @@
       "enum": [
         "staged_three_stage", "continuous_injection_full_population",
         "resolved_layout_pulse_ideal_linear_z_vz", "pre_pulse_restart",
-        "pulse_eligible_conditional", "first_100_rows_in_frozen_file_order"
+        "pulse_eligible_conditional", "first_100_rows_in_frozen_file_order",
+        "first_n_rows_in_frozen_file_order"
       ]
     },
     "source_authority": {
@@ -144,6 +145,17 @@
         "population_mode": {"const": "first_100_rows_in_frozen_file_order"},
         "source_authority": {"properties": {"table_binding": {"const": "prepared_deterministic_prefix"}}},
         "execution_population": {"properties": {"selection_algorithm": {"const": "first_100_rows_in_frozen_file_order"}}},
+        "postselection_policy": {"const": "prohibited"}
+      },
+      "required": ["source_release_mode"]
+    },
+    {
+      "properties": {
+        "execution_strategy": {"const": "simion_single_flight"},
+        "source_release_mode": {"const": "continuous_frontend"},
+        "population_mode": {"const": "first_n_rows_in_frozen_file_order"},
+        "source_authority": {"properties": {"table_binding": {"const": "prepared_deterministic_prefix"}}},
+        "execution_population": {"properties": {"selection_algorithm": {"const": "first_n_rows_in_frozen_file_order"}}},
         "postselection_policy": {"const": "prohibited"}
       },
       "required": ["source_release_mode"]

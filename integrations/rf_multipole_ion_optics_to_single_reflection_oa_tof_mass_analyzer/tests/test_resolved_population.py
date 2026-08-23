@@ -59,6 +59,14 @@ MODE_CONTRACTS = {
         "first_100_rows_in_frozen_file_order",
         "prohibited",
     ),
+    "first_n_rows_in_frozen_file_order": (
+        "simion_single_flight",
+        "continuous_frontend",
+        "single_flight_particle_source",
+        "prepared_deterministic_prefix",
+        "first_n_rows_in_frozen_file_order",
+        "prohibited",
+    ),
 }
 
 
