@@ -40,14 +40,28 @@ def schema_registry() -> Registry:
     return registry
 
 
+def _schema_path(schema_name: str | Path) -> Path:
+    """Resolve a shared schema name or an explicitly owned schema file."""
+
+    path = Path(schema_name)
+    return path if path.is_absolute() else SCHEMA_DIR / path
+
+
 @lru_cache(maxsize=None)
-def _schema_validator(schema_name: str) -> Draft202012Validator:
-    schema = load_json(SCHEMA_DIR / schema_name)
-    return Draft202012Validator(schema, registry=schema_registry())
+def _schema_validator(schema_path: str) -> Draft202012Validator:
+    path = Path(schema_path)
+    schema = load_json(path)
+    Draft202012Validator.check_schema(schema)
+    registry = schema_registry()
+    if path.parent != SCHEMA_DIR:
+        registry = registry.with_resource(schema["$id"], Resource.from_contents(schema))
+    return Draft202012Validator(schema, registry=registry)
 
 
-def validate_schema(instance: Any, schema_name: str) -> None:
-    validator = _schema_validator(schema_name)
+def validate_schema(instance: Any, schema_name: str | Path) -> None:
+    """Validate against a shared schema name or an explicitly owned schema path."""
+
+    validator = _schema_validator(str(_schema_path(schema_name).resolve()))
     errors = sorted(validator.iter_errors(instance), key=lambda error: list(error.absolute_path))
     if not errors:
         return

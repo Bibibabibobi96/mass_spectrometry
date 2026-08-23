@@ -34,6 +34,7 @@ class CampaignRuntimeAuthoritiesTests(unittest.TestCase):
         registry = load(registry_path)
         validate_schema(
             registry,
+            CONFIG_ROOT / "schemas" /
             "rf_oatof_diagnostics_lifecycle_registry.schema.json",
         )
         self.assertEqual(registry["discovery_policy"], "default_deny")
