@@ -434,8 +434,12 @@ if ($SolverAuthorized) {
     'config\family_source_closure_execution_registry.json'
   $executionRegistry = Get-Content -LiteralPath $executionRegistryPath -Raw -Encoding UTF8 |
     ConvertFrom-Json
+  $lifecycleRegistryPath = Join-Path $integrationRoot `
+    'config\diagnostics\lifecycle_registry.json'
+  $lifecycleRegistry = Get-Content -LiteralPath $lifecycleRegistryPath -Raw -Encoding UTF8 |
+    ConvertFrom-Json
   $campaignRepoRelative = [IO.Path]::GetRelativePath($repo, $campaignPath).Replace('\', '/')
-  $currentCampaigns = @($executionRegistry.current_campaigns | Where-Object {
+  $currentCampaigns = @($lifecycleRegistry.active_campaigns | Where-Object {
     [string]$_.path -eq $campaignRepoRelative
   })
   if ($executionRegistry.role -ne

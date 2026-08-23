@@ -63,6 +63,18 @@ class CampaignRuntimeAuthoritiesTests(unittest.TestCase):
                 hashlib.sha256(active_path.read_bytes()).hexdigest(),
             )
 
+    def test_execution_registry_does_not_duplicate_campaign_authority(self) -> None:
+        registry = load(CONFIG_ROOT / "family_source_closure_execution_registry.json")
+        self.assertEqual(
+            registry["active_workflow"],
+            "workflows/family_source_closure/execute.ps1",
+        )
+        self.assertNotIn("current_campaigns", registry)
+        self.assertEqual(
+            registry["authorization_policy"].split(";", 1)[0],
+            "default_deny",
+        )
+
     def test_family_execute_enforces_diagnostics_lifecycle_authority(self) -> None:
         execute = (
             INTEGRATION_ROOT / "workflows" / "family_source_closure" / "execute.ps1"

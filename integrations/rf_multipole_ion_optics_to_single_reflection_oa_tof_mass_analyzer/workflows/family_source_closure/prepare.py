@@ -2763,9 +2763,13 @@ def prepare_family_source_closure(
         "family_source_closure_execution_registry.json"
     )
     execution_registry = _load(execution_registry_path)
+    lifecycle_registry = _load(
+        root / "integrations" / INTEGRATION_ID / "config" / "diagnostics" /
+        "lifecycle_registry.json"
+    )
     campaign_relative_path = campaign_path.relative_to(root).as_posix()
     active_rows = [
-        row for row in execution_registry.get("current_campaigns", [])
+        row for row in lifecycle_registry.get("active_campaigns", [])
         if isinstance(row, dict) and row.get("path") == campaign_relative_path
     ]
     if active_rows:

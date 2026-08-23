@@ -14,7 +14,8 @@
 ## 入口
 
 - 连接profile：[`config/connection_profiles.json`](config/connection_profiles.json)
-- 实验campaign：[`config/experiment_campaign.json`](config/experiment_campaign.json)
+- 当前活动 campaign 发现与 SHA 权威：[`config/diagnostics/lifecycle_registry.json`](config/diagnostics/lifecycle_registry.json)
+- `config/experiment_campaign.json` 仅为历史兼容文件，不参与当前活动发现或执行
 - 单流程布局：[`config/single_flight_layout_profiles.json`](config/single_flight_layout_profiles.json)
 - 唯一公开执行入口：
   [`workflows/family_source_closure/execute.ps1`](workflows/family_source_closure/execute.ps1)

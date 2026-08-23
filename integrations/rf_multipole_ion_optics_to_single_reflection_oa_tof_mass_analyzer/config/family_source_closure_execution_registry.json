@@ -3,48 +3,6 @@
   "role": "rf_oatof_family_source_closure_execution_registry",
   "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
   "active_workflow": "workflows/family_source_closure/execute.ps1",
-  "authorization_policy": "default_deny; campaign.status=authorized is necessary but never sufficient; SolverAuthorized requires one exact current_campaign binding",
-  "active_post_pulse_restart_working_point_policy": "source_zvz_three_zone_theory_working_point_required_v1",
-  "current_campaigns": [
-    {
-      "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_12p8_phase_b_post_pulse_field_source_zvz_theory_dt40_v3_no_rf.json",
-      "content_sha256": "10E0136115E9A847C10A1641822D9A67AE868E85DF82D77F40BEBAB5A409CEA1"
-    },
-    {
-      "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_51p2_post_pulse_field_source_zvz_theory_dt40_n77_v2_no_rf.json",
-      "content_sha256": "6CAF7424E8990DA45D35D8B04A5B3CFF3A06D3FAC5C0327FD2F6D36F8967ABB5"
-    },
-    {
-      "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_0_post_pulse_partial_ideal_source_zvz_theory_dt40_v3_no_rf_successor.json",
-      "content_sha256": "F455DD674561E741FCEBA40074339E4A1C57474C7E74DC12CB3BB0FEF253D278"
-    },
-    {
-      "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_0_post_pulse_full_ideal_source_zvz_theory_dt40_v3_no_rf_successor.json",
-      "content_sha256": "DB1C246AFDF344A3A346583C1C315528AC0BBB9342FB1D42D96BBD4754F93F39"
-    },
-    {
-      "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_6p4_post_pulse_field_source_zvz_theory_dt40_v2_no_rf.json",
-      "content_sha256": "BA04ADE7C2E567532C4EAEB5C176F5800E798AF133042D9A5ADE3A97E9065058"
-    },
-    {
-      "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_25p6_post_pulse_field_source_zvz_theory_dt40_v2_no_rf.json",
-      "content_sha256": "2523424D018F930BCA542F90A01FC86EE9577E3419C967AB2464DB516237280A"
-    },
-    {
-      "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_102p4_post_pulse_real_partial_ideal_source_zvz_theory_dt40_n116_v2_no_rf.json",
-      "content_sha256": "CE7DDDCAF54547A6A126E3073471E3E19E719884E60A3490D082977E33981DA0"
-    },
-    {
-      "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_102p4_post_pulse_full_ideal_source_zvz_theory_dt40_n116_v3_no_rf.json",
-      "content_sha256": "421258066FB10A229D2068AF99F9C1529101CB7C8BC1C9F4EF47E29CAF5FFB56"
-    },
-    {
-      "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_reflectron_ideal_source_zvz_theory_dt40_v8_remaining_no_rf_successor.json",
-      "content_sha256": "D8F3B0AC4858C7D8DB0DECEA1D337B1B60EC71C8DCF8DE4E915AF21816DBD8DF"
-    },
-    {
-      "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_field_matrix_compact_auto_replay_v2.json",
-      "content_sha256": "5F76AAF17DACAECD56E4153F8BC26DF42C5003D6A762873BE270EE5BE0EF4D50"
-    }
-  ]
+  "authorization_policy": "default_deny; campaign.status=authorized is necessary but never sufficient; SolverAuthorized requires one exact lifecycle-registry binding",
+  "active_post_pulse_restart_working_point_policy": "source_zvz_three_zone_theory_working_point_required_v1"
 }

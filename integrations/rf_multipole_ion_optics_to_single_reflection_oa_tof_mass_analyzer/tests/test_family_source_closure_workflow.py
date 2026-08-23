@@ -1366,10 +1366,10 @@ $result = Get-PulseTimingOrchestration `
                 campaigns.append((path, document))
         authorized = [(path, row) for path, row in campaigns if row["status"] == "authorized"]
         self.assertGreater(len(authorized), 0)
-        registry = load(CONFIG_ROOT / "family_source_closure_execution_registry.json")
+        registry = load(CONFIG_ROOT / "diagnostics" / "lifecycle_registry.json")
         registered = {
             (REPO_ROOT / row["path"]).resolve()
-            for row in registry["current_campaigns"]
+            for row in registry["active_campaigns"]
         }
         self.assertEqual({path.resolve() for path, _ in authorized}, registered)
 

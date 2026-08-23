@@ -115,7 +115,7 @@ if ($executionRegistry.role -ne
     $executionRegistry.active_workflow -ne $expectedActiveWorkflow) {
   throw 'Family execution registry identity is invalid.'
 }
-$currentCampaigns = @($executionRegistry.current_campaigns | Where-Object {
+$currentCampaigns = @($lifecycleRegistry.active_campaigns | Where-Object {
   [string]$_.path -eq $campaignRepoRelative
 })
 if ($currentCampaigns.Count -gt 1) {
