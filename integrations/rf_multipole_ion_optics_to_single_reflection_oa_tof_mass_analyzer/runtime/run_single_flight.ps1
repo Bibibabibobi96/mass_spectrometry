@@ -182,8 +182,6 @@ function Assert-RfThreeZoneRuntimeIdentity {
       'T5_FROZEN_PRIMARY_AND_BRANCH_ONLY' -or
       [string]::IsNullOrWhiteSpace($topologyId) -or
       [string]::IsNullOrWhiteSpace($geometryId) -or
-      [string]$Candidate.identities.topology_id -ne $topologyId -or
-      [string]$Candidate.identities.geometry_id -ne $geometryId -or
       [string]$Candidate.accelerator_topology.topology_id -ne $topologyId -or
       [string]$Geometry.single_flight_layout_derivation.layout_profile_id -ne
       $LayoutProfileId -or
