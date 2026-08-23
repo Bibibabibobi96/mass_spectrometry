@@ -25,25 +25,48 @@ if (-not $RunId) { $RunId = Split-Path -Leaf $OutputDir }
 $python = Join-Path $repoRoot '.venv\Scripts\python.exe'
 & $python (Join-Path $repoRoot 'common\contracts\artifact_naming.py') run $RunId
 if ($LASTEXITCODE -ne 0) { throw "Invalid run_id: $RunId" }
-$resultDir = Join-Path $OutputDir 'results'
-$logDir = Join-Path $OutputDir 'logs'
-$simionDir = Join-Path $OutputDir 'simion'
+$OutputDir = [IO.Path]::GetFullPath($OutputDir)
+$artifactResultDir = Join-Path $OutputDir 'results'
+$artifactLogDir = Join-Path $OutputDir 'logs'
+$artifactSimionDir = Join-Path $OutputDir 'simion'
 $inputDir = Join-Path $OutputDir 'inputs'
-New-Item -ItemType Directory -Force -Path $OutputDir,$inputDir,$resultDir,$logDir,$simionDir | Out-Null
+New-Item -ItemType Directory -Force -Path $OutputDir,$inputDir,$artifactResultDir,$artifactLogDir,$artifactSimionDir | Out-Null
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
 Initialize-RunRecord -RunDir $OutputDir -RunId $RunId -Project 'single_reflection_oa_tof_mass_analyzer' `
   -Mode 'simion_ideal_field_matrix' -ProjectRoot (Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer') `
   -RepoRoot $repoRoot -Python $python -ProvisionalSummaryRole 'oa_tof_provisional_run_summary' `
   -TerminalSummaryRole 'oa_tof_terminal_run_summary'
 $runRecordComplete = $false
+$executionAlias = $null
+$runtimeRoot = $null
+$runtimeAlias = $null
 trap {
   if (-not $runRecordComplete) {
     Write-TerminalRunRecord -RunDir $OutputDir -Status failed `
       -Reason $_.Exception.Message -RepoRoot $repoRoot -Python $python `
       -SummaryRole 'oa_tof_terminal_run_summary'
   }
+  if ($null -ne $runtimeAlias) {
+    try { Remove-RunExecutionAlias -ExecutionAlias $runtimeAlias.execution_alias -TargetDirectory $runtimeRoot }
+    catch { Write-Warning "Could not remove short formal-runtime alias: $($_.Exception.Message)" }
+  }
+  if ($null -ne $runtimeRoot) {
+    try { Remove-OaTofFormalSimionRuntime -ArtifactRoot $artifactRoot -RuntimeRoot $runtimeRoot }
+    catch { Write-Warning "Could not remove formal SIMION runtime: $($_.Exception.Message)" }
+  }
+  if ($null -ne $executionAlias) {
+    try { Remove-RunExecutionAlias -ExecutionAlias $executionAlias.execution_alias -TargetDirectory $OutputDir }
+    catch { Write-Warning "Could not remove short diagnostic execution alias: $($_.Exception.Message)" }
+  }
   exit 1
 }
+$executionAlias = New-RunExecutionAlias -TargetDirectory $OutputDir `
+  -AdditionalDirectories @('results','logs','simion') `
+  -ExpectedExecutionRelativePaths @('logs/energy_only__ideal_reflectron.stderr.log','simion/ions_energy_only_N1000000.ion')
+$executionOutputDir = [string]$executionAlias.execution_alias
+$resultDir = Join-Path $executionOutputDir 'results'
+$logDir = Join-Path $executionOutputDir 'logs'
+$simionDir = Join-Path $executionOutputDir 'simion'
 
 $sourceLua = Join-Path $PSScriptRoot 'formal\oatof_ideal_grounded.lua'
 $runtimeLua = Join-Path $formalDir 'oatof_ideal_grounded.lua'
@@ -54,7 +77,6 @@ if ((Get-FileHash $sourceLua -Algorithm SHA256).Hash -ne (Get-FileHash $runtimeL
 }
 $geometryGate = Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer\workflows\formal_reference\verify_geometry_contract.ps1'
 & $geometryGate -SimionExe $SimionExe | ForEach-Object { Write-Host $_ }
-$runtimeRoot = $null
 $runtimeReceipt = Join-Path $inputDir 'formal_simion_runtime_receipt.json'
 if (-not $AnalyzeOnly) {
   $runtimeTaskId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__simion__ideal-field-runtime'
@@ -62,7 +84,9 @@ if (-not $AnalyzeOnly) {
     -ArtifactRoot $artifactRoot -PythonExe $python `
     -Destination (Join-Path $artifactRoot "scratch\$runtimeTaskId") `
     -Receipt $runtimeReceipt
-  $iob = Join-Path $runtimeRoot 'oatof_ideal_grounded.iob'
+  $runtimeAlias = New-RunExecutionAlias -TargetDirectory $runtimeRoot `
+    -ExpectedExecutionRelativePaths @('oatof_ideal_grounded.iob')
+  $iob = Join-Path $runtimeAlias.execution_alias 'oatof_ideal_grounded.iob'
 }
 
 $generator = Join-Path $PSScriptRoot 'generate_comsol_consistent_ions.ps1'
@@ -115,7 +139,7 @@ try {
     )
     if (-not $AnalyzeOnly) {
       Write-Host ("Running {0} / {1}" -f $d.Name,$m.Name)
-      $p = Start-Process -FilePath $SimionExe -ArgumentList $args -WorkingDirectory $runtimeRoot -NoNewWindow -Wait -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+      $p = Start-Process -FilePath $SimionExe -ArgumentList $args -WorkingDirectory $runtimeAlias.execution_alias -NoNewWindow -Wait -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
       if ($p.ExitCode -ne 0) { throw "SIMION failed for $stem with exit code $($p.ExitCode); see $stderr" }
     } elseif (-not (Test-Path -LiteralPath $stdout)) {
       throw "AnalyzeOnly requested but log is missing: $stdout"
@@ -125,8 +149,15 @@ try {
     }
   }
 } finally {
+  if ($null -ne $runtimeAlias) {
+    try { Remove-RunExecutionAlias -ExecutionAlias $runtimeAlias.execution_alias -TargetDirectory $runtimeRoot }
+    catch { Write-Warning "Could not remove short formal-runtime alias: $($_.Exception.Message)" }
+    $runtimeAlias = $null
+  }
   if ($null -ne $runtimeRoot) {
-    Remove-OaTofFormalSimionRuntime -ArtifactRoot $artifactRoot -RuntimeRoot $runtimeRoot
+    try { Remove-OaTofFormalSimionRuntime -ArtifactRoot $artifactRoot -RuntimeRoot $runtimeRoot }
+    catch { Write-Warning "Could not remove formal SIMION runtime: $($_.Exception.Message)" }
+    $runtimeRoot = $null
   }
 }
 
@@ -139,12 +170,15 @@ $summaryPath = Join-Path $OutputDir 'summary.json'
 [ordered]@{schema_version=1;role='oa_tof_ideal_field_matrix_summary';status='success';cases=$summaries.Count;results='results/ideal_field_matrix_summary.csv'} |
   ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $summaryPath -Encoding UTF8
 $manifestArgs=@((Join-Path $repoRoot 'common\contracts\write_run_manifest.py'),'--run-config',$runConfig,'--status','success','--software','SIMION 2020','--output',$summaryPath)
-foreach($file in Get-ChildItem -LiteralPath $resultDir,$logDir,$simionDir -Recurse -File){$manifestArgs+=@('--output',$file.FullName)}
+foreach($file in Get-ChildItem -LiteralPath $artifactResultDir,$artifactLogDir,$artifactSimionDir -Recurse -File){$manifestArgs+=@('--output',$file.FullName)}
 & $python @manifestArgs
 if($LASTEXITCODE -ne 0){throw 'Ideal-field diagnostic manifest failed.'}
 & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') `
   (Join-Path $OutputDir 'run_manifest.json') --require-status success
 if($LASTEXITCODE -ne 0){throw 'Ideal-field diagnostic manifest verification failed.'}
 $runRecordComplete = $true
+try { Remove-RunExecutionAlias -ExecutionAlias $executionAlias.execution_alias -TargetDirectory $OutputDir }
+catch { Write-Warning "Could not remove short diagnostic execution alias: $($_.Exception.Message)" }
+$executionAlias = $null
 $summaries | Sort-Object Distribution,Mode | Format-Table Distribution,Mode,Hit,EfficiencyPct,MeanTofUs,StdTofNs,FwhmTofNs,ResolutionFwhm,MaxCrossingRadiusMm -AutoSize
 Write-Host "Summary: $summaryCsv"
