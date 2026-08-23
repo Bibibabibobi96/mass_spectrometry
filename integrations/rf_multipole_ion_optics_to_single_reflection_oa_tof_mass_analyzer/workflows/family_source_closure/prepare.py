@@ -4626,6 +4626,8 @@ def prepare_family_source_closure(
             ]) + ([] if connector_gap_contract is None else [
                 "connector_gap_prefix_filename=inputs/" + pulse_prefix_path.name,
                 "connector_gap_prefix_sha256=" + pulse_prefix_sha256,
+                "connector_gap_prefix_count="
+                + str(connector_gap_contract["screening_prefix_count"]),
             ]) + ([] if pre_pulse_time_series_contract_path is None else [
                 "pre_pulse_time_series_prefix_filename="
                 + pulse_population_plan_path,

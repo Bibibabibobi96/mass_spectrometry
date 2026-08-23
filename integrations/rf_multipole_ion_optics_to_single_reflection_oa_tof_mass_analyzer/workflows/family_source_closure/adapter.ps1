@@ -331,7 +331,8 @@ $hasConnectorGapPrefixArguments = $frozenArguments.ContainsKey(
 if ($hasConnectorGapPrefixArguments) {
   $expectedArguments += @(
     'connector_gap_prefix_filename',
-    'connector_gap_prefix_sha256'
+    'connector_gap_prefix_sha256',
+    'connector_gap_prefix_count'
   )
 }
 $hasPrePulseTimeSeriesArguments = $frozenArguments.ContainsKey(
@@ -1099,22 +1100,19 @@ if ($pulseN100Screening) {
 }
 $connectorGapPrefixPath = $null
 if ($connectorGapScreening) {
-  $expectedConnectorGapPrefix =
-    'inputs/connector_gap_screening_prefix_n100.csv'
   $connectorGapPrefixPath = [IO.Path]::GetFullPath(
     (Join-Path $runDirectory $frozenArguments.connector_gap_prefix_filename)
   )
-  if ($frozenArguments.connector_gap_prefix_filename -ne
-        $expectedConnectorGapPrefix -or
-      -not $connectorGapPrefixPath.StartsWith(
+  if (-not $connectorGapPrefixPath.StartsWith(
         (Join-Path $runDirectory 'inputs') + [IO.Path]::DirectorySeparatorChar,
         [StringComparison]::OrdinalIgnoreCase
       ) -or
       -not (Test-Path -LiteralPath $connectorGapPrefixPath -PathType Leaf) -or
       (Get-FileHash -LiteralPath $connectorGapPrefixPath -Algorithm SHA256).Hash -ne
         $frozenArguments.connector_gap_prefix_sha256 -or
-      @(Import-Csv -LiteralPath $connectorGapPrefixPath).Count -ne 100) {
-    throw 'Plan-bound connector-gap screening prefix is outside inputs, missing, stale, or not N=100.'
+      @(Import-Csv -LiteralPath $connectorGapPrefixPath).Count -ne
+        [int]$frozenArguments.connector_gap_prefix_count) {
+    throw 'Plan-bound connector-gap screening prefix is outside inputs, missing, stale, or has the wrong count.'
   }
 }
 $prePulseTimeSeriesPrefixPath = $null

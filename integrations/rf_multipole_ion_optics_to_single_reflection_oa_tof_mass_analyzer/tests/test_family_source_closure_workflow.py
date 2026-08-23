@@ -1593,7 +1593,7 @@ $batchRows = [string[]]$particleRows[0..33]
         mutual_exclusion = adapter.index(
             "Pulse-resolution and connector-gap prefix authorities are mutually exclusive."
         )
-        path_gate = adapter.index("$expectedConnectorGapPrefix")
+        path_gate = adapter.index("$connectorGapPrefixPath =")
         missing_gate = adapter.index(
             "Test-Path -LiteralPath $connectorGapPrefixPath", path_gate
         )
@@ -1608,11 +1608,11 @@ $batchRows = [string[]]$particleRows[0..33]
         )
         runner_call = adapter.index("& $runtime.implementation.single_flight_runner")
         self.assertIn("'connector_gap_prefix_sha256'", adapter[argument_gate:campaign_gate])
+        self.assertIn("'connector_gap_prefix_count'", adapter[argument_gate:campaign_gate])
         self.assertIn(
-            "inputs/connector_gap_screening_prefix_n100.csv",
+            "[int]$frozenArguments.connector_gap_prefix_count",
             adapter[path_gate:assignment],
         )
-        self.assertIn("-ne 100", adapter[path_gate:assignment])
         self.assertLess(argument_gate, campaign_gate)
         self.assertLess(campaign_gate, mutual_exclusion)
         self.assertLess(mutual_exclusion, path_gate)
