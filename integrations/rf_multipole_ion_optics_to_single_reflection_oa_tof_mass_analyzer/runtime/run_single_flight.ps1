@@ -2617,7 +2617,6 @@ try {
   $checkpoints = Join-Path $package.result_dir 'single_flight_particle_checkpoints.csv'
   $analysisArguments = @('-m',
     'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.analyze_single_flight',
-    '--mass-amu','100',
     '--resolved-population-contract',$populationContractFrozen,
     '--resolved-population-contract-sha256',$ResolvedPopulationContractSha256,
     '--geometry',$oatofGeometry,

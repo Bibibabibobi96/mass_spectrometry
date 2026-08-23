@@ -39,6 +39,35 @@ RESOLUTION_QUALIFICATION_MIN_VALID_RESAMPLES = 4750
 RESOLUTION_QUALIFICATION_MAX_RELATIVE_INTERVAL_WIDTH = 0.10
 
 
+def resolve_analysis_mass_amu(initial_global_state_path: Path) -> float:
+    """Return the unique physical mass represented by a frozen state table.
+
+    A single-flight resolution is defined for one ion mass.  The initial state
+    table is the frozen particle authority used by the analysis, so a launcher
+    must not substitute a separate hard-coded mass.  Mixed masses need an
+    explicit target-species contract, which this analysis does not yet model.
+    """
+
+    with initial_global_state_path.open(encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle)
+        if reader.fieldnames is None or "mass_amu" not in reader.fieldnames:
+            raise ValueError("initial global state lacks mass_amu")
+        masses: set[float] = set()
+        for row in reader:
+            try:
+                mass = float(row["mass_amu"])
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ValueError("initial global state mass_amu is invalid") from exc
+            if not math.isfinite(mass) or mass <= 0:
+                raise ValueError("initial global state mass_amu must be positive")
+            masses.add(mass)
+    if len(masses) != 1:
+        raise ValueError(
+            "single-flight resolution analysis requires exactly one mass_amu"
+        )
+    return masses.pop()
+
+
 def validate_resolution_qualification(summary: dict) -> None:
     """Apply the frozen bootstrap acceptance rule to an analysis summary.
 
@@ -1460,7 +1489,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--log", required=True, action="append", type=Path)
     parser.add_argument("--batch-particle-count", action="append", type=int)
-    parser.add_argument("--mass-amu", required=True, type=float)
+    parser.add_argument("--mass-amu", type=float)
     parser.add_argument("--resolved-population-contract", required=True, type=Path)
     parser.add_argument("--resolved-population-contract-sha256", required=True)
     parser.add_argument("--geometry", type=Path)
@@ -1494,6 +1523,17 @@ def main() -> int:
     population_contract = json.loads(
         args.resolved_population_contract.read_text(encoding="utf-8-sig")
     )
+    if args.initial_global_state is None:
+        parser.error("initial-global-state is required to resolve analysis mass")
+    try:
+        resolved_mass_amu = resolve_analysis_mass_amu(args.initial_global_state)
+    except ValueError as exc:
+        parser.error(str(exc))
+    if args.mass_amu is not None and not math.isclose(
+        args.mass_amu, resolved_mass_amu, rel_tol=0.0, abs_tol=0.0
+    ):
+        parser.error("mass-amu differs from frozen initial global state")
+    args.mass_amu = resolved_mass_amu
     configuration = None
     if (
         args.spatial_window_profile_id is not None

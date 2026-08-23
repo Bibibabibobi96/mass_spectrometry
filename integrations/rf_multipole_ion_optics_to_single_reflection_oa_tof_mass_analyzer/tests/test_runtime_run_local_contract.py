@@ -865,7 +865,7 @@ if ($failures -ne 3) {{ throw "authority-scope negative cases differ: $failures"
             completed.stdout,
         )
 
-    def test_historical_staged_source_contract_rejects_changed_stable_adapter(self) -> None:
+    def test_historical_staged_source_contract_fails_closed_against_current_runtime(self) -> None:
         pwsh = shutil.which("pwsh")
         if pwsh is None:
             self.skipTest("PowerShell 7 is unavailable")
@@ -912,9 +912,10 @@ if ($runtime.resolved_source_contract.authority_scope -ne 'connection_lineage_on
             check=False, timeout=300,
         )
         self.assertNotEqual(completed.returncode, 0)
-        self.assertIn(
-            "Resolved source adapter differs from its stable contract: sha256",
+        self.assertRegex(
             completed.stdout + completed.stderr,
+            "(?:runtime implementation single_flight_runner SHA-256 differs|"
+            "Resolved source adapter differs from its stable contract: sha256)",
         )
 
     def test_schema_v4_staged_build_budget_constructs_cache_hit_run_identity(self) -> None:

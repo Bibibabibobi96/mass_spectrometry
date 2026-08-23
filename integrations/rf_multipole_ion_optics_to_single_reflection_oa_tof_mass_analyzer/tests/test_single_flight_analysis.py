@@ -14,6 +14,7 @@ import pandas as pd
 from common.contracts.particle_physics import kinetic_energy_ev
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.analyze_single_flight import (
     analyze as analyze_with_population_contract,
+    resolve_analysis_mass_amu,
     validate_resolution_qualification,
     validate_three_zone_checkpoint_census,
 )
@@ -85,6 +86,19 @@ def analyze(log_path, launched, mass_amu, *args, **kwargs):
 
 
 class SingleFlightAnalysisTests(unittest.TestCase):
+    def test_analysis_mass_comes_from_frozen_initial_global_state(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "initial.csv"
+            path.write_text(
+                "particle_id,mass_amu\n1,50\n2,50.0\n", encoding="utf-8"
+            )
+            self.assertEqual(resolve_analysis_mass_amu(path), 50.0)
+            path.write_text(
+                "particle_id,mass_amu\n1,50\n2,100\n", encoding="utf-8"
+            )
+            with self.assertRaisesRegex(ValueError, "exactly one mass_amu"):
+                resolve_analysis_mass_amu(path)
+
     def test_resolution_qualification_uses_frozen_bootstrap_rule(self) -> None:
         valid = {
             "status": "computed",

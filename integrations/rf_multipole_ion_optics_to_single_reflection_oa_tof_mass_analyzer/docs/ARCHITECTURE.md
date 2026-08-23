@@ -13,6 +13,9 @@
 | batch、CPU、内存、timeout、retention | execution policy 与 `single_flight_batch_memory_policy` | Python resource scheduler → `resolved_engineering_budget.json` → runner | dispatch、运行 receipt 和资源使用证据 | campaign/PA/物理 handoff identity |
 | 活动 campaign 授权 | `config/diagnostics/lifecycle_registry.json` | `execute.ps1`、prepare、adapter | 是否可启动；campaign SHA 绑定 | 历史 JSON 原始字节与历史结果 |
 
+单飞行分辨率分析从冻结的 `single_flight_initial_global_state.csv` 读取唯一的正 `mass_amu`，不由
+PowerShell 或恢复路径另行默认。混合质量需要显式的目标物种分析合同；在该合同存在前，分析会拒绝而不以任意质量计算。
+
 ## 生成物与身份
 
 `prepare.py` 将 authoring campaign 展开为完整冻结 experiment，生成 resolved connection、composition plan、

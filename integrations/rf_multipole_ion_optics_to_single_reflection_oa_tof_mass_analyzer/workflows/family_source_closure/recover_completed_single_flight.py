@@ -181,7 +181,7 @@ def recover(*, repo_root: Path, campaign_path: Path, failed_parent_dir: Path, re
     summary = recovery_child_dir / "summary.json"
     analysis = [
         sys.executable, "-m", "integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.analyze_single_flight",
-        "--mass-amu", "100", "--resolved-population-contract", inputs["resolved_population_contract"],
+        "--resolved-population-contract", inputs["resolved_population_contract"],
         "--resolved-population-contract-sha256", file_sha256(Path(inputs["resolved_population_contract"])),
         "--geometry", inputs["oatof_resolved_geometry"], "--clock-basis", str(parameters["clock_basis"]),
         "--initial-global-state", inputs["initial_global_state"], "--particle-row-map", inputs["particle_row_map"],
