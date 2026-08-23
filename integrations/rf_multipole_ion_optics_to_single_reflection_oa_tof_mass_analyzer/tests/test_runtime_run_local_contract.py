@@ -161,6 +161,23 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
             "simion/overlay_iob_stage/mag_quad_2dp.iob",
         ):
             self.assertIn(relative_path, single_flight)
+        analyzer_transport = RUNNERS[3].read_text(encoding="utf-8")
+        self.assertIn(
+            "$analyzerTransportDependencyPaths = @(",
+            analyzer_transport,
+        )
+        self.assertIn(
+            "Where-Object { @($_.consumers) -contains 'analyzer_transport' }",
+            analyzer_transport,
+        )
+        self.assertIn(
+            "'inputs/' + [string]$_.frozen_filename",
+            analyzer_transport,
+        )
+        self.assertIn(
+            "-ExpectedExecutionRelativePaths $executionCapacityPaths",
+            analyzer_transport,
+        )
 
     def test_pre_pulse_time_series_materializer_is_runtime_bound(self) -> None:
         registry = json.loads(
