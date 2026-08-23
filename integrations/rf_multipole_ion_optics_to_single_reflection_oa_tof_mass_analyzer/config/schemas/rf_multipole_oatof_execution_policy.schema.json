@@ -3,15 +3,14 @@
   "$id": "https://mass-spectrometry.local/schemas/rf_multipole_oatof_execution_policy.schema.json",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "role", "integration_id", "policy_id", "workflow_id", "retention_class", "stop_after_first_failure", "budget_exhaustion_result", "stage_limits"],
+  "required": ["schema_version", "role", "integration_id", "policy_id", "workflow_id", "retention_class", "budget_exhaustion_result", "stage_limits"],
   "properties": {
     "schema_version": {"const": 1},
     "role": {"const": "rf_multipole_oatof_execution_policy"},
     "integration_id": {"const": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"},
-    "policy_id": {"const": "compact_serial_commercial_solvers"},
+    "policy_id": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$"},
     "workflow_id": {"const": "family_source_closure"},
     "retention_class": {"const": "compact"},
-    "stop_after_first_failure": {"const": true},
     "budget_exhaustion_result": {"const": "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED"},
     "stage_limits": {
       "type": "object",

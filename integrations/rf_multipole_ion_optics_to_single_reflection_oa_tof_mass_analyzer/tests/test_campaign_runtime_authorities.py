@@ -152,7 +152,6 @@ class CampaignRuntimeAuthoritiesTests(unittest.TestCase):
             policy, SCHEMA_ROOT / "rf_multipole_oatof_execution_policy.schema.json"
         )
         self.assertNotIn("single_flight_batch_parallel_limit", policy)
-        self.assertTrue(policy["stop_after_first_failure"])
         self.assertEqual(policy["retention_class"], "compact")
         self.assertEqual(
             set(policy["stage_limits"]),
@@ -180,6 +179,13 @@ class CampaignRuntimeAuthoritiesTests(unittest.TestCase):
         serialized = json.dumps(policy)
         for forbidden in ("particle_count", "source_run", "operating_mode"):
             self.assertNotIn(forbidden, serialized)
+
+        alternative_policy = dict(policy)
+        alternative_policy["policy_id"] = "adaptive_resource_policy_v2"
+        validate_schema(
+            alternative_policy,
+            SCHEMA_ROOT / "rf_multipole_oatof_execution_policy.schema.json",
+        )
 
     def test_adapter_uses_frozen_execution_policy_authority(self) -> None:
         adapter = ADAPTER.read_text(encoding="utf-8-sig")
