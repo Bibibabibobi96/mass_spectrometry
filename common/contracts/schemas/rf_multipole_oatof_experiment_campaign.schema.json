@@ -461,23 +461,6 @@
         }
       }
     },
-    "three_zone_solver_gate": {
-      "type": "object", "additionalProperties": false,
-      "required": ["gate_id", "stage"],
-      "properties": {
-        "gate_id": {"$ref": "#/$defs/id"},
-        "stage": {"enum": [
-          "n1_smoke_producer", "n100_solver_authorized_consumer",
-          "solver_authorized_consumer"
-        ]},
-        "predecessor_experiment_id": {"$ref": "#/$defs/id"}
-      },
-      "allOf": [{
-        "if": {"properties": {"stage": {"enum": ["n100_solver_authorized_consumer", "solver_authorized_consumer"]}}, "required": ["stage"]},
-        "then": {"required": ["predecessor_experiment_id"]},
-        "else": {"not": {"required": ["predecessor_experiment_id"]}}
-      }]
-    },
     "staged_grid2_source_state": {
       "type": "object", "additionalProperties": false,
       "required": [
@@ -1294,7 +1277,6 @@
         },
         "observed_pre_pulse_projection": {"$ref": "#/$defs/observed_pre_pulse_projection"},
         "generated_pre_pulse_ordered_subset": {"$ref": "#/$defs/generated_pre_pulse_ordered_subset"},
-        "three_zone_solver_gate": {"$ref": "#/$defs/three_zone_solver_gate"},
         "connector_gap_evidence_role": {"enum": ["primary", "stress_report_only"]},
         "staged_grid2_source_state": {"$ref": "#/$defs/staged_grid2_source_state"},
         "single_flight_pulse_offset_rf_periods": {

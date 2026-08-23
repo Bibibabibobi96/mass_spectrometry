@@ -1131,7 +1131,6 @@ def publish_family_source_closure_run(
     ):
         raise ContractError("family parent frozen campaign inputs differ")
     campaign = _load(campaign_path)
-    n1_gate_pair = _n1_gate_pair(campaign, str(receipt["experiment_id"]))
     population = None
     if execution_strategy == "simion_single_flight":
         if (
@@ -1282,22 +1281,6 @@ def publish_family_source_closure_run(
                 workspace_root=workspace_root,
                 receipt=verified_pulse,
             )
-    n1_authorization_path = None
-    n1_authorization = None
-    if n1_gate_pair is not None:
-        if execution_strategy != "simion_single_flight" or particle_count != 1:
-            raise ContractError("N=1 solver gate requires one-particle single flight")
-        n1_authorization_path, n1_authorization = _publish_n1_solver_authorization_receipt(
-            campaign=campaign,
-            campaign_path=campaign_path,
-            producer=n1_gate_pair[0],
-            successor=n1_gate_pair[1],
-            integration_run_id=run_id,
-            stage=stages[-1],
-            workspace_root=workspace_root,
-            parent_run_dir=run_dir,
-            source_identity=receipt["source_identity"],
-        )
     run_config = {
         "schema_version": 2,
         "run_id": run_id,
@@ -1419,18 +1402,6 @@ def publish_family_source_closure_run(
             if verified_pulse is not None
             else {}
         ),
-        **(
-            {
-                "three_zone_solver_authorization": {
-                    "decision": n1_authorization["decision"],
-                    "authorization_status": n1_authorization["authorization_status"],
-                    "receipt": "results/" + N1_RECEIPT_NAME,
-                    "receipt_sha256": file_sha256(n1_authorization_path),
-                }
-            }
-            if n1_authorization_path is not None
-            else {}
-        ),
         "formal_gate_passed": False,
     }
     run_config_path = run_dir / "run_config.json"
@@ -1459,7 +1430,6 @@ def publish_family_source_closure_run(
             f"Python {sys.version_info.major}.{sys.version_info.minor}",
             "--output",
             str(summary_path),
-            *(["--output", str(n1_authorization_path)] if n1_authorization_path is not None else []),
             *(
                 ["--output", str(verified_pulse_path)]
                 if verified_pulse_path is not None
