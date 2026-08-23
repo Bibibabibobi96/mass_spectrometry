@@ -8,6 +8,7 @@ import unittest
 
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.refresh_campaign_source_bindings import (
     compile_campaign,
+    expanded_campaign_semantic_sha256,
     is_fresh,
     write_campaign,
 )
@@ -317,6 +318,58 @@ class CampaignSourceBindingTests(unittest.TestCase):
 
             self.assertFalse(is_fresh(repo, campaign))
             with self.assertRaisesRegex(ValueError, "identity differs"):
+                write_campaign(repo, campaign)
+
+    def test_published_receipt_accepts_only_an_equivalent_flat_authoring_successor(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repo, campaign = self._fixture(Path(directory))
+            fixture = json.loads(campaign.read_text(encoding="utf-8"))
+            fixture["experiments"][0]["sequence"] = 1
+            campaign.write_text(
+                json.dumps(fixture, indent=2) + "\n", encoding="utf-8"
+            )
+            self.assertTrue(write_campaign(repo, campaign))
+            original = json.loads(campaign.read_text(encoding="utf-8"))
+            original_sha256 = hashlib.sha256(campaign.read_bytes()).hexdigest().upper()
+            semantic_sha256 = expanded_campaign_semantic_sha256(original)
+            self._publish_receipt(repo, campaign)
+            row = original["experiments"][0]
+            original["experiments"] = {
+                "shared": {
+                    key: value
+                    for key, value in row.items()
+                    if key not in {"sequence", "experiment_id", "run_id"}
+                },
+                "variation_axes": ["connection_profile_id"],
+                "rows": [{
+                    "sequence": 1,
+                    "experiment_id": row["experiment_id"],
+                    "run_id": row["run_id"],
+                    "overrides": {},
+                }],
+            }
+            original["published_authoring_identity"] = {
+                "legacy_campaign_sha256": original_sha256,
+                "semantic_sha256": semantic_sha256,
+            }
+            campaign.write_text(
+                json.dumps(original, indent=2) + "\n", encoding="utf-8"
+            )
+
+            self.assertEqual(
+                expanded_campaign_semantic_sha256(original), semantic_sha256
+            )
+            self.assertFalse(is_fresh(repo, campaign))
+            self.assertTrue(write_campaign(repo, campaign))
+            self.assertTrue(is_fresh(repo, campaign))
+            self.assertFalse(write_campaign(repo, campaign))
+
+            original["claim_limit"] = "semantic mutation"
+            campaign.write_text(
+                json.dumps(original, indent=2) + "\n", encoding="utf-8"
+            )
+            self.assertFalse(is_fresh(repo, campaign))
+            with self.assertRaisesRegex(ValueError, "semantic projection differs"):
                 write_campaign(repo, campaign)
 
     def test_refuses_published_run_id_mutation(self) -> None:

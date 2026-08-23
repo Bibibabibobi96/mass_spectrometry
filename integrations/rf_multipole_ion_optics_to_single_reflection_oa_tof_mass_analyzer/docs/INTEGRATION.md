@@ -38,6 +38,10 @@ SIMION 运行可调用共享批处理；批内结果必须恢复全局粒子 ID 
 再执行既有 schema 与授权校验；任何未声明的字段变化都失败关闭。这样同一合同可顺序执行多个 gap 或
 其他已授权参数点，而不会复制共享输入。
 
+已发布 campaign 如仅改变 authoring 布局，可用 `published_authoring_identity` 保留旧 receipt 的 raw 文件 SHA；
+它同时冻结完整的、已展开 campaign 语义 SHA。只有二者严格匹配时才接受该旧 SHA；物理、数值、资格、
+执行策略或任一展开行的变化都会使 source-binding 检查失败。这不是通用兼容或结果复用 fallback。
+
 对已注册 campaign，`execute.ps1 -AllExperiments` 按展开后的 `sequence` 逐行调用同一单实验入口；它不在
 campaign 层并行商业求解器，任一行失败即停止。`PrepareOnly` 仍要求逐行显式审阅目录，避免覆盖审阅产物。
 

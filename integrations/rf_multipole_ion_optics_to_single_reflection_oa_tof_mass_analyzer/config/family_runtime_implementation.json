@@ -5,7 +5,7 @@
   "implementation": {
     "campaign_source_binding_refresher": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/workflows/family_source_closure/refresh_campaign_source_bindings.py",
-      "sha256": "7CC86A9B4EAFBB8DD1B8DEE816A307D1117B5DF26099C9160A86F817291CB602"
+      "sha256": "9A2A08A0ECA3DAE9BE3208909CE1C44CD4EDBFBF9C528CC60E733CBA622A627C"
     },
     "run_artifact_support": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/run_artifacts.ps1",

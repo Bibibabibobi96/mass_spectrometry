@@ -82,6 +82,38 @@ def canonical_bytes(document: dict[str, Any]) -> bytes:
     return (json.dumps(document, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
 
 
+def expanded_campaign_semantic_sha256(campaign: dict[str, Any]) -> str:
+    """Hash the execution-relevant campaign, independent of flat authoring layout.
+
+    A legacy raw campaign hash may remain in published receipts.  It is accepted
+    only when this complete semantic projection is unchanged; the projection
+    includes policy, qualification, and all materialized experiment fields.
+    """
+
+    semantic = expand_flat_experiment_authoring(copy.deepcopy(campaign))
+    semantic.pop("published_authoring_identity", None)
+    return _canonical_sha256(semantic)
+
+
+def _accepted_published_campaign_sha256(
+    compiled: dict[str, Any], rendered: bytes
+) -> set[str]:
+    accepted = {hashlib.sha256(rendered).hexdigest().upper()}
+    legacy = compiled.get("published_authoring_identity")
+    if legacy is None:
+        return accepted
+    if (
+        not isinstance(legacy, dict)
+        or set(legacy) != {"legacy_campaign_sha256", "semantic_sha256"}
+        or not all(isinstance(value, str) and re.fullmatch(r"[A-F0-9]{64}", value)
+                   for value in legacy.values())
+        or expanded_campaign_semantic_sha256(compiled) != legacy["semantic_sha256"]
+    ):
+        raise ValueError("published authoring identity semantic projection differs")
+    accepted.add(legacy["legacy_campaign_sha256"])
+    return accepted
+
+
 def is_fresh(repo_root: Path, campaign_path: Path) -> bool:
     compiled = compile_campaign(repo_root, campaign_path)
     materialized = expand_flat_experiment_authoring(compiled)
@@ -254,7 +286,7 @@ def _validate_published_format_recovery(
         if manifests:
             raise ValueError("published campaign identity receipt is missing")
         return
-    expected_sha256 = hashlib.sha256(rendered).hexdigest().upper()
+    accepted_campaign_sha256 = _accepted_published_campaign_sha256(compiled, rendered)
     rows = compiled.get("experiments", [])
     experiments = {str(row["run_id"]): row for row in rows}
     experiments_by_id: dict[str, list[dict[str, Any]]] = {}
@@ -271,7 +303,7 @@ def _validate_published_format_recovery(
             != "integration_family_source_closure_execution_receipt"
             or receipt.get("integration_run_id") != run_id
             or receipt.get("campaign_path") != relative_campaign
-            or receipt.get("campaign_sha256") != expected_sha256
+            or receipt.get("campaign_sha256") not in accepted_campaign_sha256
             or receipt.get("campaign_id") != compiled.get("campaign_id")
             or (
                 experiment is not None

@@ -12,6 +12,7 @@
     "status": {"enum": ["authorized", "PENDING_PREREGISTRATION", "retired", "archived_invalid"]},
     "execution_policy": {"$ref": "#/$defs/file"},
     "claim_limit": {"type": "string", "minLength": 1},
+    "published_authoring_identity": {"$ref": "#/$defs/published_authoring_identity"},
     "preregistration": {"$ref": "#/$defs/preregistration"},
     "pulse_resolution_optimization": {"$ref": "#/$defs/pulse_resolution_optimization"},
     "pulse_resolution_cohort_authority": {"$ref": "#/$defs/pulse_resolution_cohort_authority"},
@@ -306,6 +307,14 @@
     },
     "id": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"},
     "sha": {"type": "string", "pattern": "^[A-F0-9]{64}$"},
+    "published_authoring_identity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["legacy_campaign_sha256", "semantic_sha256"],
+      "properties": {
+        "legacy_campaign_sha256": {"$ref": "#/$defs/sha"},
+        "semantic_sha256": {"$ref": "#/$defs/sha"}
+      }
+    },
     "file": {"type": "object", "additionalProperties": false, "required": ["path", "sha256"], "properties": {"path": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/$defs/sha"}}},
     "baseline_evidence": {
       "type": "object",
