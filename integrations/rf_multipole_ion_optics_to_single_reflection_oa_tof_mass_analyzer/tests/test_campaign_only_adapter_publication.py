@@ -537,7 +537,7 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
             )
             result = subprocess.run(
                 ["pwsh", "-NoProfile", "-Command", command], cwd=REPO_ROOT,
-                capture_output=True, text=True, timeout=120,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120,
             )
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse((legacy / "current_generation.json").exists())
@@ -701,6 +701,8 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
                 check=True,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=120,
             )
             self.assertIn("True", first.stdout)
@@ -719,6 +721,8 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
                 check=True,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=120,
             )
             self.assertIn("False", second.stdout)
@@ -793,6 +797,8 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
                 check=True,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=120,
             )
             self.assertTrue(
@@ -824,7 +830,16 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
                 "-CacheKey '" + key + "' -Role 'simion_single_flight_frontend_pa_cache' "
                 "-InvalidEntryAction preserve; exit 0"
             )
-            result = subprocess.run(["pwsh", "-NoProfile", "-Command", command], cwd=REPO_ROOT, check=True, capture_output=True, text=True, timeout=120)
+            result = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", command],
+                cwd=REPO_ROOT,
+                check=True,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=120,
+            )
             self.assertIn("False", result.stdout)
             self.assertTrue(entry.is_dir())
 
