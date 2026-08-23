@@ -85,6 +85,13 @@ class CampaignV3ContractTests(unittest.TestCase):
         with self.assertRaises(ContractError):
             validate_schema(value, "rf_multipole_oatof_experiment_campaign.schema.json")
 
+    def test_numerical_profile_ids_are_registry_resolved_not_schema_enums(self):
+        value = campaign()
+        row = value["experiments"][0]
+        row["single_flight_trajectory_quality_profile_id"] = "tqual_64"
+        row["single_flight_time_integration_profile_id"] = "dt64"
+        validate_schema(value, "rf_multipole_oatof_experiment_campaign.schema.json")
+
     def test_v3_forbids_legacy_scalar_pulse_offset(self):
         value = campaign()
         value["experiments"][0]["single_flight_pulse_offset_rf_periods"] = 0.0

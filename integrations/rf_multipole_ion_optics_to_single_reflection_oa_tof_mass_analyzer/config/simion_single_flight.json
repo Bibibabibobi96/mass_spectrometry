@@ -198,6 +198,7 @@
       "role": "paired_numerical_diagnostic"
     }
   ],
+  "default_trajectory_quality_profile_id": "tqual_8",
   "default_time_integration_profile_id": "dt40",
   "time_integration_profiles": [
     {

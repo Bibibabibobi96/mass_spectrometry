@@ -745,10 +745,8 @@
         },
         "single_flight_frontend_grid_profile_id": {"$ref": "#/$defs/id"},
         "single_flight_oatof_numerical_profile_id": {"$ref": "#/$defs/id"},
-        "single_flight_trajectory_quality_profile_id": {"enum": ["tqual_8", "tqual_108"]},
-        "single_flight_time_integration_profile_id": {
-          "enum": ["dt10", "dt20", "dt40", "dt80", "dt160", "dt320"]
-        },
+        "single_flight_trajectory_quality_profile_id": {"$ref": "#/$defs/id"},
+        "single_flight_time_integration_profile_id": {"$ref": "#/$defs/id"},
         "single_flight_maximum_time_of_flight_us": {
           "type": "number",
           "exclusiveMinimum": 0

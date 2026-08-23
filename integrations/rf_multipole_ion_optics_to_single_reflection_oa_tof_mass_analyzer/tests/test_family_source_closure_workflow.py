@@ -298,7 +298,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             )
             plan = resolve_single_flight_dispatch_plan(
                 {
-                    "single_flight_time_integration_profile_id": "dt40",
+                    "single_flight_time_integration_profile_id": "dt64",
                     "single_flight_batch_memory_policy": {
                         "resource_usage_receipt": {
                             "path": "resource_usage.json",
@@ -312,6 +312,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                 },
                 execution_particle_count=8,
                 workspace=root,
+                rf_steps_per_period=64,
             )
         self.assertEqual(plan["role"], "simion_repository_dispatch_plan")
         self.assertEqual(plan["estimation"]["kind"], "nearest_resource_profile")
@@ -605,7 +606,8 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             ):
                 self.assertEqual(
                     resolve_single_flight_batch_count(
-                        policy, execution_particle_count=5000, workspace=workspace
+                        policy, execution_particle_count=5000, workspace=workspace,
+                        rf_steps_per_period=40,
                     ),
                     1,
                 )
@@ -614,7 +616,8 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                 return_value=12 * 1024**3,
             ), self.assertRaisesRegex(ContractError, "memory batch policy is invalid"):
                 resolve_single_flight_batch_count(
-                    policy, execution_particle_count=5000, workspace=workspace
+                    policy, execution_particle_count=5000, workspace=workspace,
+                    rf_steps_per_period=40,
                 )
 
     def test_single_flight_batching_is_one_wave_only(self) -> None:

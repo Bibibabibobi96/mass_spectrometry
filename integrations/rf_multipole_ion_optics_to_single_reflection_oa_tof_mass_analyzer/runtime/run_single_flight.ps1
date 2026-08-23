@@ -564,13 +564,13 @@ try {
     throw 'Single-flight oaTOF numerical profile is invalid.'
   }
   $selectedTrajectoryQualityProfileId = if ([string]::IsNullOrWhiteSpace($TrajectoryQualityProfileId)) {
-    'tqual_8'
+    [string]$settings.default_trajectory_quality_profile_id
   } else { $TrajectoryQualityProfileId }
   $trajectoryQualityProfiles = @($settings.trajectory_quality_profiles | Where-Object {
     [string]$_.profile_id -eq $selectedTrajectoryQualityProfileId
   })
   if ($trajectoryQualityProfiles.Count -ne 1 -or
-      [int]$trajectoryQualityProfiles[0].trajectory_quality -notin @(8,108)) {
+      [int]$trajectoryQualityProfiles[0].trajectory_quality -lt 1) {
     throw 'Single-flight trajectory-quality profile is invalid.'
   }
   $trajectoryQuality = [int]$trajectoryQualityProfiles[0].trajectory_quality
@@ -583,7 +583,7 @@ try {
     [string]$_.profile_id -eq $selectedTimeIntegrationProfileId
   })
   if ($timeIntegrationProfiles.Count -ne 1 -or
-      [int]$timeIntegrationProfiles[0].rf_steps_per_period -notin @(10,20,40,80,160,320)) {
+      [int]$timeIntegrationProfiles[0].rf_steps_per_period -lt 1) {
     throw 'Single-flight time-integration profile is invalid.'
   }
   $rfStepsPerPeriod = [int]$timeIntegrationProfiles[0].rf_steps_per_period

@@ -277,7 +277,7 @@ def _automatic_pulse_population_binding(
 
 def resolve_single_flight_dispatch_plan(
     experiment: dict[str, Any], *, execution_particle_count: int,
-    workspace: Path | None = None,
+    workspace: Path | None = None, rf_steps_per_period: int | None = None,
 ) -> dict[str, Any]:
     """Resolve execution-only dispatch without deriving the governed population.
 
@@ -302,13 +302,17 @@ def resolve_single_flight_dispatch_plan(
             raise ContractError("single-flight memory batch receipt lacks a positive peak")
         from common.simion.resource_scheduler import plan_simion_dispatch
         try:
+            if (
+                isinstance(rf_steps_per_period, bool)
+                or not isinstance(rf_steps_per_period, int)
+                or rf_steps_per_period < 1
+            ):
+                raise ValueError("single-flight RF time profile is unresolved")
             time_profile = str(experiment["single_flight_time_integration_profile_id"])
-            if not time_profile.startswith("dt") or not time_profile[2:].isdigit():
-                raise ValueError("single-flight RF time profile lacks its steps per period")
             request = {
                 "solver": "SIMION",
                 "field_kind": "rf",
-                "rf_steps_per_period": int(time_profile[2:]),
+                "rf_steps_per_period": rf_steps_per_period,
                 "particle_count": execution_particle_count,
                 "independent_particles": True,
                 "default_parallel_batches": int(memory_policy.get("default_batch_count", 1)),
@@ -376,7 +380,7 @@ def resolve_single_flight_dispatch_plan(
 
 def resolve_single_flight_batch_count(
     experiment: dict[str, Any], *, execution_particle_count: int,
-    workspace: Path | None = None,
+    workspace: Path | None = None, rf_steps_per_period: int | None = None,
 ) -> int:
     """Compatibility projection of the resolved dispatch plan."""
 
@@ -384,6 +388,7 @@ def resolve_single_flight_batch_count(
         experiment,
         execution_particle_count=execution_particle_count,
         workspace=workspace,
+        rf_steps_per_period=rf_steps_per_period,
     )
     return int(plan["waves"][0]["batch_count"])
 
@@ -2774,6 +2779,10 @@ def prepare_family_source_closure(
         single_flight_dispatch_plan = resolve_single_flight_dispatch_plan(
             experiment, execution_particle_count=execution_particle_count,
             workspace=workspace,
+            rf_steps_per_period=(
+                int(time_integration_profile["rf_steps_per_period"])
+                if time_integration_profile is not None else None
+            ),
         )
         single_flight_batch_count = int(
             single_flight_dispatch_plan["waves"][0]["batch_count"]
