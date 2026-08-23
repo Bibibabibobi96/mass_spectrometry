@@ -85,6 +85,9 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 INTEGRATION_ID = (
     "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
 )
+CAMPAIGN_SCHEMA_PATH = Path(__file__).resolve().parents[2] / "config" / "schemas" / (
+    "rf_multipole_oatof_experiment_campaign.schema.json"
+)
 UPSTREAM_PROJECTS = {
     "rf_quadrupole_ion_optics",
     "rf_hexapole_ion_optics",
@@ -2072,7 +2075,7 @@ def prepare_family_source_closure(
     if not campaign_path.is_relative_to(root):
         raise ContractError("integration campaign must be repository-managed")
     campaign = expand_flat_experiment_authoring(_load(campaign_path))
-    validate_schema(campaign, "rf_multipole_oatof_experiment_campaign.schema.json")
+    validate_schema(campaign, CAMPAIGN_SCHEMA_PATH)
     validate_pre_pulse_time_series_campaign(campaign)
     if campaign["integration_id"] != INTEGRATION_ID:
         raise ContractError("campaign integration identity differs")
@@ -3836,7 +3839,7 @@ def main() -> int:
     args = parser.parse_args()
     if args.list_experiment_ids or args.print_experiment_json or args.semantic_diff_experiment_json:
         campaign = expand_flat_experiment_authoring(_load(args.campaign))
-        validate_schema(campaign, "rf_multipole_oatof_experiment_campaign.schema.json")
+        validate_schema(campaign, CAMPAIGN_SCHEMA_PATH)
         if args.semantic_diff_experiment_json:
             before_id, after_id = args.semantic_diff_experiment_json
             rows_by_id = {

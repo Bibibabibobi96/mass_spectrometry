@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 
 from common.contracts.machine_contracts import ContractError, validate_schema
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.tests.fixtures.campaign_fixture import (
@@ -9,6 +10,11 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 
 
 SHA = "A" * 64
+CAMPAIGN_SCHEMA = (
+    Path(__file__).resolve().parents[3] / "integrations" /
+    "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer" /
+    "config" / "schemas" / "rf_multipole_oatof_experiment_campaign.schema.json"
+)
 
 
 def campaign() -> dict[str, object]:
@@ -70,33 +76,33 @@ def campaign() -> dict[str, object]:
 
 class CampaignV3ContractTests(unittest.TestCase):
     def test_complete_v3_single_flight_is_valid(self):
-        validate_schema(campaign(), "rf_multipole_oatof_experiment_campaign.schema.json")
+        validate_schema(campaign(), CAMPAIGN_SCHEMA)
 
     def test_campaign_execution_policy_is_legacy_optional(self):
         value = campaign()
         del value["execution_policy"]
-        validate_schema(value, "rf_multipole_oatof_experiment_campaign.schema.json")
+        validate_schema(value, CAMPAIGN_SCHEMA)
 
     def test_source_population_size_is_not_a_profile_enum(self):
         value = campaign()
         value["experiments"][0]["source"]["launched_particle_count"] = 101
-        validate_schema(value, "rf_multipole_oatof_experiment_campaign.schema.json")
+        validate_schema(value, CAMPAIGN_SCHEMA)
         value["experiments"][0]["source"]["launched_particle_count"] = 0
         with self.assertRaises(ContractError):
-            validate_schema(value, "rf_multipole_oatof_experiment_campaign.schema.json")
+            validate_schema(value, CAMPAIGN_SCHEMA)
 
     def test_numerical_profile_ids_are_registry_resolved_not_schema_enums(self):
         value = campaign()
         row = value["experiments"][0]
         row["single_flight_trajectory_quality_profile_id"] = "tqual_64"
         row["single_flight_time_integration_profile_id"] = "dt64"
-        validate_schema(value, "rf_multipole_oatof_experiment_campaign.schema.json")
+        validate_schema(value, CAMPAIGN_SCHEMA)
 
     def test_v3_forbids_legacy_scalar_pulse_offset(self):
         value = campaign()
         value["experiments"][0]["single_flight_pulse_offset_rf_periods"] = 0.0
         with self.assertRaises(ContractError):
-            validate_schema(value, "rf_multipole_oatof_experiment_campaign.schema.json")
+            validate_schema(value, CAMPAIGN_SCHEMA)
 
     def test_v3_requires_each_single_flight_authority(self):
         for key in (
@@ -107,7 +113,7 @@ class CampaignV3ContractTests(unittest.TestCase):
             value = campaign()
             del value["experiments"][0][key]
             with self.subTest(key=key), self.assertRaises(ContractError):
-                validate_schema(value, "rf_multipole_oatof_experiment_campaign.schema.json")
+                validate_schema(value, CAMPAIGN_SCHEMA)
 
     def test_population_mode_rejects_cross_mode_tuple_substitution(self):
         mutations = (
@@ -131,7 +137,7 @@ class CampaignV3ContractTests(unittest.TestCase):
                 population[field] = replacement
             with self.subTest(field=field), self.assertRaises(ContractError):
                 validate_schema(
-                    value, "rf_multipole_oatof_experiment_campaign.schema.json"
+                    value, CAMPAIGN_SCHEMA
                 )
 
 

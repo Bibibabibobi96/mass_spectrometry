@@ -49,6 +49,9 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 REPO_ROOT = Path(__file__).resolve().parents[3]
 INTEGRATION_ROOT = REPO_ROOT / "integrations" / INTEGRATION_ID
 CONFIG_ROOT = INTEGRATION_ROOT / "config"
+CAMPAIGN_SCHEMA = CONFIG_ROOT / "schemas" / (
+    "rf_multipole_oatof_experiment_campaign.schema.json"
+)
 HISTORICAL_ROOT_CAMPAIGNS = (
     INTEGRATION_ROOT / "docs" / "history" / "retired_campaigns" / "root_campaigns"
 )
@@ -656,7 +659,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
         )
         external = load(path)
         validate_schema(
-            external, "rf_multipole_oatof_experiment_campaign.schema.json"
+            external, CAMPAIGN_SCHEMA
         )
         campaign = json.loads(json.dumps(external))
         row = campaign["experiments"][2]
@@ -678,14 +681,14 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             "eligible_population_count": 100,
         }
         validate_schema(
-            campaign, "rf_multipole_oatof_experiment_campaign.schema.json"
+            campaign, CAMPAIGN_SCHEMA
         )
         full_width = json.loads(json.dumps(campaign))
         full_width["experiments"][2]["generated_pre_pulse_ordered_subset"] = {
             "selection_id": "n100_uniform_full_width_source_ids_1_to_1000_v1"
         }
         validate_schema(
-            full_width, "rf_multipole_oatof_experiment_campaign.schema.json"
+            full_width, CAMPAIGN_SCHEMA
         )
 
         conflicting = json.loads(json.dumps(campaign))
@@ -695,7 +698,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
         with self.assertRaises(ContractError):
             validate_schema(
                 conflicting,
-                "rf_multipole_oatof_experiment_campaign.schema.json",
+                CAMPAIGN_SCHEMA,
             )
 
         wrong_count = json.loads(json.dumps(campaign))
@@ -705,7 +708,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
         with self.assertRaises(ContractError):
             validate_schema(
                 wrong_count,
-                "rf_multipole_oatof_experiment_campaign.schema.json",
+                CAMPAIGN_SCHEMA,
             )
 
     def test_three_zone_candidate_binding_is_layout_scoped_and_hash_bound(self) -> None:
@@ -723,14 +726,14 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             "sha256": "A" * 64,
         }
         validate_schema(
-            campaign, "rf_multipole_oatof_experiment_campaign.schema.json"
+            campaign, CAMPAIGN_SCHEMA
         )
 
         missing = json.loads(json.dumps(campaign))
         del missing["experiments"][0]["single_flight_three_zone_candidate"]
         with self.assertRaises(ContractError):
             validate_schema(
-                missing, "rf_multipole_oatof_experiment_campaign.schema.json"
+                missing, CAMPAIGN_SCHEMA
             )
 
         wrong_layout = json.loads(json.dumps(campaign))
@@ -739,7 +742,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
         ] = "theory_source_z10_d1_3"
         with self.assertRaises(ContractError):
             validate_schema(
-                wrong_layout, "rf_multipole_oatof_experiment_campaign.schema.json"
+                wrong_layout, CAMPAIGN_SCHEMA
             )
 
     def test_three_zone_candidate_workspace_binding_rejects_escape_and_stale_sha(self) -> None:
@@ -1388,7 +1391,7 @@ $result = Get-PulseTimingOrchestration `
 
     def test_canonical_source_architecture_field_matrix_has_strict_24_rows(self) -> None:
         campaign = load(SOURCE_ARCH_FIELD_MATRIX_PATH)
-        validate_schema(campaign, "rf_multipole_oatof_experiment_campaign.schema.json")
+        validate_schema(campaign, CAMPAIGN_SCHEMA)
         rows = campaign["experiments"]
         self.assertEqual(len(rows), 24)
         self.assertEqual([row["sequence"] for row in rows], list(range(1, 25)))
@@ -1450,7 +1453,7 @@ $result = Get-PulseTimingOrchestration `
         v3 = load(AUTO_N1000_CONNECTOR_CAMPAIGN)
         use_current_time_grid_profile(v2)
         use_current_time_grid_profile(v3)
-        validate_schema(v3, "rf_multipole_oatof_experiment_campaign.schema.json")
+        validate_schema(v3, CAMPAIGN_SCHEMA)
         self.assertIn("single_flight_batch_count=2", v3["claim_limit"])
         self.assertEqual(len(v2["experiments"]), len(v3["experiments"]))
         for before, after in zip(v2["experiments"], v3["experiments"], strict=True):
@@ -1466,7 +1469,7 @@ $result = Get-PulseTimingOrchestration `
     def test_ideal_accelerator_field_is_a_registered_counterfactual(self) -> None:
         campaign = load(IDEAL_FIELD_CAMPAIGN_PATH)
         validate_schema(
-            campaign, "rf_multipole_oatof_experiment_campaign.schema.json"
+            campaign, CAMPAIGN_SCHEMA
         )
         row = campaign["experiments"][0]
         configuration = load(CONFIG_ROOT / "simion_single_flight.json")
@@ -1489,7 +1492,7 @@ $result = Get-PulseTimingOrchestration `
     def test_grid_convergence_campaign_uses_registered_single_variable_profiles(self) -> None:
         campaign = load(GRID_CONVERGENCE_CAMPAIGN_PATH)
         validate_schema(
-            campaign, "rf_multipole_oatof_experiment_campaign.schema.json"
+            campaign, CAMPAIGN_SCHEMA
         )
         configuration = load(CONFIG_ROOT / "simion_single_flight.json")
         profiles = {
@@ -1525,7 +1528,7 @@ $result = Get-PulseTimingOrchestration `
     def test_acceleration_axis_grid_campaign_changes_only_z_discretization(self) -> None:
         campaign = load(ACCELERATION_AXIS_GRID_CAMPAIGN_PATH)
         validate_schema(
-            campaign, "rf_multipole_oatof_experiment_campaign.schema.json"
+            campaign, CAMPAIGN_SCHEMA
         )
         configuration = load(CONFIG_ROOT / "simion_single_flight.json")
         profiles = {
@@ -1560,7 +1563,7 @@ $result = Get-PulseTimingOrchestration `
         )
         candidate = load(Z_ACCEPTANCE_CAMPAIGN_PATH)
         validate_schema(
-            candidate, "rf_multipole_oatof_experiment_campaign.schema.json"
+            candidate, CAMPAIGN_SCHEMA
         )
         overrides = candidate["experiments"][0]["single_flight_design_overrides"]
         self.assertEqual(
@@ -1574,7 +1577,7 @@ $result = Get-PulseTimingOrchestration `
 
     def test_campaign_rows_select_registered_runtime_bound_profiles(self) -> None:
         campaign = load(CAMPAIGN_PATH)
-        validate_schema(campaign, "rf_multipole_oatof_experiment_campaign.schema.json")
+        validate_schema(campaign, CAMPAIGN_SCHEMA)
         profiles = load(PROFILE_REGISTRY)["profiles"]
         profile_by_id = {
             profile["connection_profile_id"]: profile for profile in profiles
@@ -1723,7 +1726,7 @@ $result = Get-PulseTimingOrchestration `
 
     def test_n1000_campaign_freezes_population_specific_handoff_contract(self) -> None:
         campaign = load(N1000_CAMPAIGN_PATH)
-        validate_schema(campaign, "rf_multipole_oatof_experiment_campaign.schema.json")
+        validate_schema(campaign, CAMPAIGN_SCHEMA)
         source = campaign["experiments"][0]["source"]
         record = source["handoff_publication_contract"]
         contract = load(REPO_ROOT / record["path"])

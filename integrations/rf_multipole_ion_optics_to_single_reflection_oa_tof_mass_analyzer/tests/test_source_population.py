@@ -15,6 +15,9 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+CAMPAIGN_SCHEMA = REPO_ROOT / "integrations" / (
+    "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
+) / "config" / "schemas" / "rf_multipole_oatof_experiment_campaign.schema.json"
 CAMPAIGN_PATH = REPO_ROOT / (
     "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/"
     "docs/history/retired_campaigns/connector_gap_102p4_real_pa_full_n5000_v1.json"
@@ -82,12 +85,12 @@ class SourcePopulationTest(unittest.TestCase):
                 "selector": {"event": "handoff", "status": "transmitted"},
             },
         )
-        validate_schema(campaign, "rf_multipole_oatof_experiment_campaign.schema.json")
+        validate_schema(campaign, CAMPAIGN_SCHEMA)
         explicit = deepcopy(campaign)
         explicit["experiments"][0]["source"]["particle_count"] = 4503
         with self.assertRaises(ValueError):
             validate_schema(
-                explicit, "rf_multipole_oatof_experiment_campaign.schema.json"
+                explicit, CAMPAIGN_SCHEMA
             )
 
 
