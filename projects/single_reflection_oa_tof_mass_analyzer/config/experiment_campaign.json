@@ -58,9 +58,7 @@
     }
   ],
   "fixed_runtime_bindings": {
-    "particle_source_seed": 20260720,
-    "particle_count": 100,
-    "statistical_pairing": "common_random_numbers_across_rows"
+    "particle_source_seed": 20260720
   },
   "resource_budget": {
     "stage_wall_clock_seconds": 14400,

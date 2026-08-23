@@ -71,14 +71,10 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "particle_source_seed",
-        "particle_count",
-        "statistical_pairing"
+        "particle_source_seed"
       ],
       "properties": {
-        "particle_source_seed": {"type": "integer"},
-        "particle_count": {"type": "integer", "enum": [100, 1000]},
-        "statistical_pairing": {"const": "common_random_numbers_across_rows"}
+        "particle_source_seed": {"type": "integer"}
       }
     },
     "resource_budget": {
