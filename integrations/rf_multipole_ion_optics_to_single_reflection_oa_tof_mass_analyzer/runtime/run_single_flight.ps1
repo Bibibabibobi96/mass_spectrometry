@@ -540,7 +540,7 @@ $artifactRoot = Join-Path $workspaceRoot "artifacts\projects\$runProjectId"
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
   -RunId $RunId -Project $runProjectId -Mode 'rf_to_oatof_simion_single_flight' `
   -Software @('SIMION 2020','Python 3.11') -RetentionContractEnabled -RetentionClass compact `
-  -AdditionalDirectories @('simion')
+  -AdditionalDirectories @('simion') -UseShortExecutionPath
 if ($BindingParseOnly) {
   if (-not $hasRequiredPaCacheGenerationBinding) {
     throw 'BindingParseOnly requires one PA cache generation binding.'
@@ -555,7 +555,7 @@ if ($BindingParseOnly) {
       @($bindingParseOnlyDocument['cache_generations']).Count -lt 1) {
     throw 'BindingParseOnly PA cache generation binding is invalid.'
   }
-  $testPackageRoot = [IO.Path]::GetFullPath($package.run_dir)
+  $testPackageRoot = [IO.Path]::GetFullPath($package.artifact_run_dir)
   $allowedRoot = [IO.Path]::GetFullPath($artifactRoot).TrimEnd(
     [IO.Path]::DirectorySeparatorChar
   ) + [IO.Path]::DirectorySeparatorChar
@@ -563,6 +563,7 @@ if ($BindingParseOnly) {
       $allowedRoot, [StringComparison]::OrdinalIgnoreCase)) {
     throw 'BindingParseOnly package cleanup escaped the runner artifact root.'
   }
+  Remove-RunPackageExecutionAlias -Package $package
   Remove-Item -LiteralPath $testPackageRoot -Recurse -Force
   'PA_CACHE_GENERATION_POST_PACKAGE_PARSE=PASS'
   exit 0
@@ -2782,6 +2783,9 @@ try {
     if (-not (Complete-ResourceUsage -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir -UsagePath $usage)) { $resourceBudgetExceeded=$true; throw 'Single-flight compact retained-byte budget exceeded.' }
   }
   Write-RunManifest -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config -Status success -Software @('SIMION 2020','Python 3.11') -Outputs $outputs
+  try { Remove-RunPackageExecutionAlias -Package $package } catch {
+    Write-Warning "Could not remove short execution alias after successful run: $($_.Exception.Message)"
+  }
   Write-Output "SIMION_SINGLE_FLIGHT=PASS RUN_ID=$RunId DETECTOR=$($result.census.detector_crossing)/$launched"
 } catch {
   Complete-FailedRun -Python $python -RepoRoot $repoRoot `
@@ -2797,5 +2801,8 @@ try {
       frozen_input_snapshot_completed=[bool]$snapshotReady
     }) `
     -ResourceUsagePath $(if ($resourceBudgetExceeded) {$resourceUsage} else {''})
+  try { Remove-RunPackageExecutionAlias -Package $package } catch {
+    Write-Warning "Could not remove short execution alias after failed run: $($_.Exception.Message)"
+  }
   throw
 }

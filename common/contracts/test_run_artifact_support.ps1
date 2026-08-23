@@ -19,6 +19,7 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $python = Join-Path $repoRoot '.venv\Scripts\python.exe'
 $projectRoot = Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer'
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) ("run_artifact_support_" + [guid]::NewGuid().ToString('N'))
+$executionRoot = Join-Path 'C:\tmp\ms' ("run_artifact_support_" + [guid]::NewGuid().ToString('N'))
 $originalPythonPath=[Environment]::GetEnvironmentVariable('PYTHONPATH')
 $originalNoUserSite=[Environment]::GetEnvironmentVariable('PYTHONNOUSERSITE')
 
@@ -158,6 +159,33 @@ try {
   Assert-Equal $budgetUsage.failure_class 'resource_budget_exceeded' `
     'Resource usage failure class changed.'
 
+  $shortPackage=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $testRoot `
+    -RunId '20260723_170005__test__cross__short-execution-path__n1' `
+    -Project 'single_reflection_oa_tof_mass_analyzer' -Mode 'contract_test' `
+    -Software @('contract test') -UseShortExecutionPath -ExecutionRoot $executionRoot
+  Assert-Equal ([IO.Path]::GetFullPath($shortPackage.artifact_run_dir)) `
+    ([IO.Path]::GetFullPath((Join-Path $testRoot 'runs\20260723_170005__test__cross__short-execution-path__n1'))) `
+    'Short package artifact run path changed.'
+  if (-not $shortPackage.execution_alias -or
+      -not ([IO.Path]::GetFullPath($shortPackage.run_dir).StartsWith(
+        [IO.Path]::GetFullPath($executionRoot) + [IO.Path]::DirectorySeparatorChar,
+        [StringComparison]::OrdinalIgnoreCase
+      ))) {
+    throw 'Short package did not return an execution-root alias.'
+  }
+  $shortManifest = Join-Path $shortPackage.run_dir 'run_manifest.json'
+  $shortManifestDocument = Get-Content -LiteralPath $shortManifest -Raw -Encoding UTF8 | ConvertFrom-Json
+  Assert-Equal ([IO.Path]::GetFullPath([string]$shortManifestDocument.run_config.path)) `
+    ([IO.Path]::GetFullPath((Join-Path $shortPackage.artifact_run_dir 'run_config.json'))) `
+    'Manifest must resolve the short execution alias to the artifact run.'
+  Remove-RunPackageExecutionAlias -Package $shortPackage
+  if (Test-Path -LiteralPath $shortPackage.execution_alias) {
+    throw 'Short execution alias remained after cleanup.'
+  }
+  if (-not (Test-Path -LiteralPath $shortPackage.artifact_run_dir -PathType Container)) {
+    throw 'Short execution alias cleanup removed the artifact run.'
+  }
+
   $writeError = ''
   try {
     Write-VerifiedRunManifest -Python (Join-Path $testRoot 'missing-python.exe') `
@@ -185,5 +213,8 @@ try {
   [Environment]::SetEnvironmentVariable('PYTHONNOUSERSITE',$originalNoUserSite)
   if (Test-Path -LiteralPath $testRoot) {
     [IO.Directory]::Delete($testRoot, $true)
+  }
+  if (Test-Path -LiteralPath $executionRoot) {
+    [IO.Directory]::Delete($executionRoot, $true)
   }
 }

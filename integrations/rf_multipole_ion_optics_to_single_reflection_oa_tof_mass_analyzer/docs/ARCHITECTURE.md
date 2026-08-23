@@ -38,3 +38,8 @@ campaign + lifecycle authority
 
 PowerShell 不定义几何、粒子分布、统计公式或正式阈值；它只读取已解析合同、执行外部进程、保留日志并传递
 失败状态。Lua/GEM 只实现已解析的 SIMION 几何与 callback，不拥有实验选择政策。
+
+单飞 runner 为避免 Windows 求解器路径深度限制，使用公共运行包创建的短 execution junction 作为其运行时
+目录。该 junction 仅是进程路径表示，目标始终是最终`artifacts/.../runs/<run_id>`；manifest在写入前解析到
+真实artifact路径，终态后清理junction。因此它不属于物理、handoff、cache或资格身份，也不改变任何冻结输入
+或产物发布位置。

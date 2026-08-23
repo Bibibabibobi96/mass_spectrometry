@@ -10,6 +10,12 @@
 `artifact_project.py`统一artifact项目根索引，`particle_state.py`统一SIMION/COMSOL适配后的粒子事件字段、
 身份、三维位置/速度、全局时间和RF相位校验；`run_artifact_support.ps1`统一PowerShell运行器创建目录、
 冻结输入、失败收尾和三件套manifest。它们不得内置器件参数，项目包装器只允许保留兼容入口。
+需要规避 Windows 路径深度的外部运行器可在`New-RunPackage`显式选择`-UseShortExecutionPath`。公共层会从
+`MASS_SPECTROMETRY_EXECUTION_ROOT`（未设置时`C:\tmp\ms`）创建一次性短 junction 指向最终
+`artifacts/.../runs/<run_id>`；运行器把短路径仅作为进程工作路径，并在终态后调用
+`Remove-RunPackageExecutionAlias`清理它。实际文件从未搬离最终run，Python manifest解析 junction 后记录真实
+artifact路径，因此run ID、输入/输出身份、SHA和历史引用不变。不能以复制后回迁或只缩短某个求解器子目录
+替代该合同。
 `file_identity.py`是SHA-256身份的唯一共享实现，固定返回大写十六进制。`file_sha256`按原始字节标识
 manifest、正式资产和外部artifact；`repository_text_sha256`只用于Git治理的文本依赖，先把行尾规范为
 LF，从而使Windows工作树与干净checkout得到同一身份。调用者仍负责路径范围、字节数和证据资格。

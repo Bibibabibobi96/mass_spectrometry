@@ -146,7 +146,9 @@ function New-RunPackage {
     [switch]$RetentionContractEnabled,
     [ValidateSet('compact','qualification','solver_review')][string]$RetentionClass='compact',
     [string]$RetentionReason='',
-    [string[]]$AdditionalDirectories=@()
+    [string[]]$AdditionalDirectories=@(),
+    [switch]$UseShortExecutionPath,
+    [string]$ExecutionRoot=''
   )
   if($RetentionContractEnabled-and$RetentionClass-ne'compact'-and[string]::IsNullOrWhiteSpace($RetentionReason)){
     throw "RetentionReason is required for artifact retention class $RetentionClass."
@@ -166,11 +168,32 @@ function New-RunPackage {
   }
   $validation=& $python (Join-Path $RepoRoot 'common\contracts\artifact_naming.py') run $RunId
   if($LASTEXITCODE-ne 0 -or -not($validation-match '^ARTIFACT_ID=PASS ')){throw "Invalid run_id: $RunId"}
-  $runDir=Join-Path $ArtifactRoot "runs\$RunId"
-  if(Test-Path -LiteralPath $runDir){throw "Run already exists: $runDir"}
+  $artifactRunDir=Join-Path $ArtifactRoot "runs\$RunId"
+  if(Test-Path -LiteralPath $artifactRunDir){throw "Run already exists: $artifactRunDir"}
+  $runDir=$artifactRunDir
+  $executionAlias=$null
+  if($UseShortExecutionPath){
+    if([string]::IsNullOrWhiteSpace($ExecutionRoot)){
+      $ExecutionRoot=if($env:MASS_SPECTROMETRY_EXECUTION_ROOT){
+        $env:MASS_SPECTROMETRY_EXECUTION_ROOT
+      }else{'C:\tmp\ms'}
+    }
+    $executionRootPath=[IO.Path]::GetFullPath($ExecutionRoot)
+    New-Item -ItemType Directory -Force -Path $executionRootPath|Out-Null
+    $executionAlias=Join-Path $executionRootPath ('run_'+[guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Force -Path $artifactRunDir|Out-Null
+    try{
+      New-Item -ItemType Junction -Path $executionAlias -Target $artifactRunDir|Out-Null
+    }catch{
+      [IO.Directory]::Delete($artifactRunDir,$true)
+      throw "Could not create short execution alias $executionAlias for artifact run ${artifactRunDir}: $($_.Exception.Message)"
+    }
+    $runDir=$executionAlias
+  }
   $package=[ordered]@{
     python=$python;run_dir=$runDir;input_dir=(Join-Path $runDir 'inputs');result_dir=(Join-Path $runDir 'results');
-    log_dir=(Join-Path $runDir 'logs');run_config=(Join-Path $runDir 'run_config.json');summary=(Join-Path $runDir 'summary.json')
+    log_dir=(Join-Path $runDir 'logs');run_config=(Join-Path $runDir 'run_config.json');summary=(Join-Path $runDir 'summary.json');
+    artifact_run_dir=$artifactRunDir;execution_alias=$executionAlias
   }
   $directories=@($package.input_dir,$package.result_dir,$package.log_dir)
   foreach($relative in $AdditionalDirectories){$directories+=Join-Path $runDir $relative}
@@ -192,6 +215,24 @@ function New-RunPackage {
   $null=Write-VerifiedRunManifest -Python $python -RepoRoot $RepoRoot -RunConfig $package.run_config `
     -Status interrupted -Software $Software -Outputs @($package.summary)
   return [pscustomobject]$package
+}
+
+function Remove-RunPackageExecutionAlias {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][pscustomobject]$Package)
+  if($null-eq$Package.execution_alias){return}
+  $alias=[IO.Path]::GetFullPath([string]$Package.execution_alias)
+  $artifactRunDir=[IO.Path]::GetFullPath([string]$Package.artifact_run_dir)
+  if(-not(Test-Path -LiteralPath $alias -PathType Container)){return}
+  $item=Get-Item -LiteralPath $alias -Force
+  if($item.LinkType-ne'Junction'){
+    throw "Execution alias is not a junction: $alias"
+  }
+  $target=[IO.Path]::GetFullPath([string]@($item.Target)[0])
+  if(-not $target.Equals($artifactRunDir,[StringComparison]::OrdinalIgnoreCase)){
+    throw "Execution alias target differs from artifact run: $alias"
+  }
+  [IO.Directory]::Delete($alias)
 }
 
 function Apply-RunArtifactRetention {
