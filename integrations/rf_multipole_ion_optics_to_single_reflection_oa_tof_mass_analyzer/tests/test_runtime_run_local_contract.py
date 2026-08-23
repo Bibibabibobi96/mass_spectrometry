@@ -923,9 +923,30 @@ foreach ($case in $cases) {{
 
     def test_resolution_qualification_requires_full_bootstrap(self) -> None:
         text = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        configuration = json.loads(
+            (INTEGRATION_ROOT / "config" / "simion_single_flight.json").read_text(
+                encoding="utf-8"
+            )
+        )
         self.assertNotIn("[int]$BootstrapResamples = 0", text)
         self.assertIn("[switch]$ResolutionQualification", text)
-        self.assertIn("$BootstrapResamples -ne 5000", text)
+        self.assertEqual(
+            configuration["resolution_qualification_policy"]
+            ["required_bootstrap_resample_count"],
+            5000,
+        )
+        self.assertIn(
+            "$BootstrapResamples -ne $requiredQualificationBootstrapResamples",
+            text,
+        )
+        self.assertIn(
+            "$settings.resolution_qualification_policy.required_bootstrap_resample_count",
+            text,
+        )
+        self.assertIn(
+            "resolution_qualification_required_bootstrap_resample_count",
+            text,
+        )
         self.assertIn(
             "$populationContract.analysis_randomness.bootstrap_resample_count", text
         )

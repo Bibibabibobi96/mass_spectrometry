@@ -499,6 +499,8 @@ try {
   })
   if ($settings.role -ne 'rf_oatof_simion_single_flight_configuration' -or
       $settings.PSObject.Properties.Name -notcontains 'batching_policy' -or
+      $settings.PSObject.Properties.Name -notcontains 'resolution_qualification_policy' -or
+      [int]$settings.resolution_qualification_policy.required_bootstrap_resample_count -lt 1 -or
       $settings.batching_policy.PSObject.Properties.Name -notcontains
         'parallel_batch_memory_reservation_bytes' -or
       [int64]$settings.batching_policy.parallel_batch_memory_reservation_bytes -le 0 -or
@@ -519,6 +521,9 @@ try {
   $maxParallelBatches = [int]$ExecutionBatchCount
   $parallelBatchMemoryReservationBytes =
     [int64]$settings.batching_policy.parallel_batch_memory_reservation_bytes
+  $requiredQualificationBootstrapResamples = [int](
+    $settings.resolution_qualification_policy.required_bootstrap_resample_count
+  )
   $overlayEnabled = $null -ne $gridProfiles[0].PSObject.Properties['accelerator_overlay'] -and
     [bool]$gridProfiles[0].accelerator_overlay.enabled
   $resolvedFieldOverlayId = [string]$gridProfiles[0].field_overlay_id
@@ -732,8 +737,9 @@ try {
       $sourceRegionDiagnosticProfiles.Count -ne 1) {
     throw 'Default source-region diagnostic profile is invalid.'
   }
-  if ($ResolutionQualification -and $BootstrapResamples -ne 5000) {
-    throw 'Resolution qualification requires exactly 5000 bootstrap resamples.'
+  if ($ResolutionQualification -and
+      $BootstrapResamples -ne $requiredQualificationBootstrapResamples) {
+    throw 'Resolution qualification bootstrap resamples differ from the frozen policy.'
   }
   Copy-Item -LiteralPath $runtime.binding_path -Destination $runtimeBindingFrozen
   $oatofGeometrySource = if ($hasGovernedLayout) {
@@ -1885,6 +1891,10 @@ try {
     artifact_retention=[ordered]@{policy_version=1;class='compact';reason=$null}; formal_gate_passed=$false
   }
   $runConfiguration.parameters.maximum_time_of_flight_us = $maximumTimeOfFlightUs
+  $runConfiguration.parameters.bootstrap_resample_count = $BootstrapResamples
+  $runConfiguration.parameters.bootstrap_seed = $BootstrapSeed
+  $runConfiguration.parameters.resolution_qualification_required_bootstrap_resample_count =
+    $requiredQualificationBootstrapResamples
   if ($isPrePulseTimeSeriesScreening) {
     $runConfiguration.inputs.pre_pulse_time_series_contract =
       $prePulseTimeSeriesContractFrozen
