@@ -1177,8 +1177,18 @@ def _validate_post_pulse_variation_axis(
             raise ContractError("post-pulse diagnostic differs outside state transform")
         return authority["diagnostic_state_transform"]
     if axis == "accelerator_field_profile_id_and_diagnostic_state_transform":
-        if experiment["single_flight_accelerator_field_profile_id"] != "full_domain_three_zone_piecewise_ideal_field":
-            raise ContractError("post-pulse combined diagnostic requires the fixed full-ideal field")
+        try:
+            profile = field_profile(
+                experiment["single_flight_accelerator_field_profile_id"]
+            )
+        except ValueError as exc:
+            raise ContractError(
+                "post-pulse combined diagnostic requires an authorized field profile"
+            ) from exc
+        if profile.get("post_pulse_diagnostic_state_transform_allowed") is not True:
+            raise ContractError(
+                "post-pulse combined diagnostic requires an authorized field profile"
+            )
         return (
             experiment["single_flight_accelerator_field_profile_id"]
             + "_"

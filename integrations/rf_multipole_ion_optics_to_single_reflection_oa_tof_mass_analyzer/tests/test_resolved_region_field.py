@@ -291,6 +291,7 @@ class ResolvedRegionFieldTests(unittest.TestCase):
                 "reflectron_stage2": "analytic_ideal_field",
                 "field_evaluation_mode": "region_overlay",
                 "real_pa_field_blending_allowed": False,
+                "post_pulse_diagnostic_state_transform_allowed": True,
                 "topology_id": "three_zone_accelerator_ideal_v1",
                 "geometry_id": "three_zone_focus_origin_planes_v1",
                 "frontend_electrode_topology_id": "three_zone_frontend_v1",

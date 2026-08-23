@@ -275,6 +275,40 @@ if ($baseline -ne $theory -or $baseline -eq $geometryKey -or $baseline -eq $mesh
                 producer_field_profile="accelerator_real_three_zone_pa_real_reflectron",
             )
 
+    def test_post_pulse_combined_diagnostic_requires_authorized_profile(self) -> None:
+        authority = {
+            "post_pulse_variation_axis": (
+                "accelerator_field_profile_id_and_diagnostic_state_transform"
+            ),
+            "diagnostic_state_transform": "zvz_affine_residual_removed",
+        }
+        experiment = {
+            "single_flight_accelerator_field_profile_id": (
+                "full_domain_three_zone_piecewise_ideal_field"
+            )
+        }
+        self.assertEqual(
+            _validate_post_pulse_variation_axis(
+                experiment=experiment,
+                authority=authority,
+                producer_field_profile="accelerator_real_three_zone_pa_real_reflectron",
+            ),
+            "full_domain_three_zone_piecewise_ideal_field_"
+            "zvz_affine_residual_removed",
+        )
+        for profile_id in (
+            "accelerator_real_three_zone_ideal_reflectron",
+            "unsupported_three_zone_field",
+        ):
+            invalid = copy.deepcopy(experiment)
+            invalid["single_flight_accelerator_field_profile_id"] = profile_id
+            with self.assertRaisesRegex(ContractError, "requires an authorized field profile"):
+                _validate_post_pulse_variation_axis(
+                    experiment=invalid,
+                    authority=authority,
+                    producer_field_profile="accelerator_real_three_zone_pa_real_reflectron",
+                )
+
     def test_active_post_pulse_restart_requires_theory_working_point(self) -> None:
         valid = self._post_pulse_theory_experiment()
         valid.update({
