@@ -74,10 +74,12 @@ species、particle identity和lineage之间显式转换并冻结来源。
 - 建立跨项目、可复现的工具链环境bootstrap与预检：明确仓库Python环境及其锁定依赖，并在COMSOL、
   SIMION和SolidWorks启动前验证各自可执行文件、许可证/连接和必要的桥接模块；它不得用系统PATH或
   临时交互环境替代被冻结的运行时；
-- 建立 Windows 长路径治理：所有临时快照、求解器工作目录和派生 run 路径必须从统一的短工作根目录
-  分配，并在创建前报告路径预算和越界的派生段。当前仅 CLOC 使用短临时根目录修复已验证的统计错误；
-  求解器工作目录与 artifact 发布仍需分别迁移、保留现有 run 身份，并以长路径、短路径和失败清理的
-  回归用例验收，不能再靠各入口临时缩短某一级目录。
+- 推进 Windows 长路径治理：公共 run package 已用短 execution junction（默认`C:\tmp\ms`或
+  `MASS_SPECTROMETRY_EXECUTION_ROOT`）承载已迁移的 COMSOL/SIMION 运行，并在创建前报告 legacy Win32
+  路径预算；最终 artifact、run ID、manifest 与冻结输入仍位于正式 artifact 根。后续需逐一迁移仍直接
+  在深项目目录启动求解器的 oaTOF legacy workbench/formal 入口，以及其临时快照和派生工作目录；每次
+  迁移均须以深路径成功、路径超限失败关闭、异常清理与 artifact 保留的回归用例验收，不能再靠入口局部
+  缩短目录。
 - 建立可持久化的后台run监测与恢复包装器，使受Agent前台调用时限约束的长时商业软件运行仍可记录
   进程身份、阶段终态、日志与正常恢复路径；它不得伪造完成、重启已冻结run或绕过现有三件套收尾；
 - 评估公共异构/并行粒子轨迹执行合同。SIMION当前公开能力未提供原生GPU Fly'm轨迹积分，近期可行
