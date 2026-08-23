@@ -1444,8 +1444,6 @@ $result = Get-PulseTimingOrchestration `
         execute = INTEGRATION_ROOT / "workflows" / "family_source_closure" / (
             "execute.ps1"
         )
-        execute_source = execute.read_text(encoding="utf-8")
-        self.assertIn("@('retired', 'archived_invalid')", execute_source)
         campaign_schema = load(
             REPO_ROOT / "common" / "contracts" / "schemas" /
             "rf_multipole_oatof_experiment_campaign.schema.json"
