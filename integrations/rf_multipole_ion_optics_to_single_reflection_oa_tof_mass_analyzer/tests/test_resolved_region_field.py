@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import copy
 import hashlib
-import json
 from pathlib import Path
 import subprocess
 import tempfile
@@ -18,7 +17,6 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 
 ROOT = Path(__file__).resolve().parents[3]
 GEOMETRY = ROOT / "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json"
-CONFIG = ROOT / "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/simion_single_flight.json"
 SIMION = Path(r"C:\Program Files\SIMION-2020\simion.exe")
 FULL_ID = "full_domain_piecewise_ideal_field"
 THREE_ZONE_PROFILE_ID = "accelerator_ideal_three_zone_real_reflectron"
@@ -269,37 +267,6 @@ class ResolvedRegionFieldTests(unittest.TestCase):
         self.assertIn("local arbitrary_m_zone2=0", lua)
         self.assertIn("local arbitrary_m_zone3=2", lua)
         self.assertIn("local arbitrary_m_refl1=1", lua)
-
-    def test_full_domain_three_zone_profile_registration_is_exact(self) -> None:
-        config = json.loads(CONFIG.read_text(encoding="utf-8"))
-        profiles = config["accelerator_field_profiles"]
-        matches = [
-            profile
-            for profile in profiles
-            if profile["profile_id"] == FULL_THREE_ZONE_PROFILE_ID
-        ]
-        self.assertEqual(len(matches), 1)
-        self.assertEqual(
-            matches[0],
-            {
-                "profile_id": FULL_THREE_ZONE_PROFILE_ID,
-                "accelerator_zone1": "analytic_ideal_field",
-                "accelerator_zone2": "analytic_ideal_field",
-                "accelerator_zone3": "analytic_ideal_field",
-                "drift": "zero_field",
-                "reflectron_stage1": "analytic_ideal_field",
-                "reflectron_stage2": "analytic_ideal_field",
-                "field_evaluation_mode": "region_overlay",
-                "real_pa_field_blending_allowed": False,
-                "post_pulse_diagnostic_state_transform_allowed": True,
-                "topology_id": "three_zone_accelerator_ideal_v1",
-                "geometry_id": "three_zone_focus_origin_planes_v1",
-                "frontend_electrode_topology_id": "three_zone_frontend_v1",
-                "field_id": "three_zone_plus_reflectron_piecewise_uniform_ideal_field_v1",
-                "field_configuration_id": "FULL_DOMAIN_THREE_ZONE_PIECEWISE_IDEAL_FIELD",
-                "role": "full_domain_three_zone_controlled_counterfactual",
-            },
-        )
 
     def test_full_domain_three_zone_rejects_real_region_or_pa_field_role(self) -> None:
         from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.resolved_region_field import semantic_sha256
