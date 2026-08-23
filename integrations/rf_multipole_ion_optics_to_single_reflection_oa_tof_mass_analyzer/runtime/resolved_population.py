@@ -18,7 +18,6 @@ def compile_resolved_population_contract(
     declaration: dict[str, Any],
     source_table: dict[str, Any],
     contract_schema_version: int = 1,
-    source_release_validation: dict[str, Any] | None = None,
     paired_cohort_authority: dict[str, Any] | None = None,
     cohort_authority_mode: str | None = None,
 ) -> dict[str, Any]:
@@ -119,7 +118,5 @@ def compile_resolved_population_contract(
         contract["cohort_authority_mode"] = cohort_authority_mode
     if source_release_mode is not None:
         contract["source_release_mode"] = source_release_mode
-    if source_release_validation is not None:
-        contract["source_release_validation"] = source_release_validation
     validate_schema(contract, "rf_oatof_resolved_population_contract.schema.json")
     return contract

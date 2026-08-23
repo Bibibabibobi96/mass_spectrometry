@@ -25,22 +25,6 @@ function Test-RfOatofImplementationPath {
   )
 }
 
-function Assert-RfOatofSourceAuthorityScope {
-  [CmdletBinding()]
-  param(
-    [Parameter(Mandatory)][psobject]$SourceContract,
-    [Parameter(Mandatory)][bool]$StagedGrid2Mode
-  )
-  $hasScope = $SourceContract.PSObject.Properties.Name -contains 'authority_scope'
-  if ($hasScope -and
-      [string]$SourceContract.authority_scope -ne 'connection_lineage_only') {
-    throw 'Runtime source authority scope differs from connection-lineage-only.'
-  }
-  if ($StagedGrid2Mode -ne $hasScope) {
-    throw 'Staged source authority scope presence differs from the population mode.'
-  }
-}
-
 function Assert-RfOatofExactProperties {
   [CmdletBinding()]
   param(
@@ -440,11 +424,6 @@ function Resolve-RfOatofRuntimeBinding {
   )
   if ($sourceContract.PSObject.Properties.Name -contains 'design_reference') {
     $expectedSourceContractFields += 'design_reference'
-  }
-  if ($sourceContract.PSObject.Properties.Name -contains 'authority_scope') {
-    $expectedSourceContractFields += 'authority_scope'
-    Assert-RfOatofSourceAuthorityScope -SourceContract $sourceContract `
-      -StagedGrid2Mode $true
   }
   Assert-RfOatofExactProperties -Object $sourceContract `
     -Expected $expectedSourceContractFields `

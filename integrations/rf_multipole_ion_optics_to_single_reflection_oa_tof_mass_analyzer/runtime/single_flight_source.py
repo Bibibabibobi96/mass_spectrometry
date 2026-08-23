@@ -10,10 +10,6 @@ import json
 import math
 from pathlib import Path
 
-from common.contracts.component_particle_state import (
-    csv_columns as component_state_columns,
-    validate_component_particle_state_csv,
-)
 from common.contracts.particle_physics import (
     AMU_KG,
     ELEMENTARY_CHARGE_C,
@@ -300,65 +296,6 @@ def materialize_pre_pulse_restart(
     return render_pre_pulse_fly2(global_rows), global_rows
 
 
-def materialize_staged_grid2_restart(
-    source_path: Path,
-) -> tuple[str, list[dict[str, str]]]:
-    """Materialize an exact canonical local-exit state for downstream flight."""
-    validate_component_particle_state_csv(source_path)
-    with source_path.open(encoding="utf-8-sig", newline="") as handle:
-        reader = csv.DictReader(handle)
-        if reader.fieldnames != component_state_columns():
-            raise ValueError(
-                "staged grid2 restart requires the exact canonical 28-column "
-                "component state schema"
-            )
-        rows = list(reader)
-    if not rows:
-        raise ValueError("staged grid2 restart canonical state is empty")
-    particle_ids = [int(row["particle_id"]) for row in rows]
-    if len(particle_ids) != len(set(particle_ids)) or any(
-        particle_id <= 0 for particle_id in particle_ids
-    ):
-        raise ValueError("staged grid2 restart particle IDs must be unique and positive")
-    epochs = {row["clock_epoch_id"] for row in rows}
-    for row in rows:
-        if (
-            row["state_event"] != "local_accelerator_exit"
-            or row["frame_id"] != "oatof_global"
-            or row["target_component_id"]
-            != "single_reflection_oa_tof_mass_analyzer"
-        ):
-            raise ValueError(
-                "staged grid2 restart requires local_accelerator_exit in "
-                "oatof_global for the oaTOF analyzer"
-            )
-    if len(epochs) != 1 or not next(iter(epochs)):
-        raise ValueError("staged grid2 restart requires one canonical clock epoch")
-    global_rows = [
-        {
-            "particle_id": str(int(row["particle_id"])),
-            "instrument_time_us": format(float(row["instrument_time_us"]), ".17g"),
-            "mass_amu": format(float(row["mass_amu"]), ".17g"),
-            "charge_state": str(int(row["charge_state"])),
-            **{
-                f"position_{axis}_mm": format(
-                    float(row[f"position_{axis}_mm"]), ".17g"
-                )
-                for axis in "xyz"
-            },
-            **{
-                f"velocity_{axis}_m_s": format(
-                    float(row[f"velocity_{axis}_m_s"]), ".17g"
-                )
-                for axis in "xyz"
-            },
-            "kinetic_energy_eV": format(float(row["kinetic_energy_eV"]), ".17g"),
-        }
-        for row in rows
-    ]
-    return render_restart_fly2(global_rows), global_rows
-
-
 def materialize(
     source_path: Path,
     connection: dict[str, object],
@@ -438,7 +375,6 @@ def main() -> int:
         choices=(
             "continuous_frontend",
             "pre_pulse_restart",
-            "staged_grid2_restart",
         ),
         default="continuous_frontend",
     )
@@ -451,15 +387,6 @@ def main() -> int:
         particle_input, global_rows = materialize_pre_pulse_restart(
             args.source, args.pulse_time_us
         )
-    elif args.source_release_mode == "staged_grid2_restart":
-        if args.pulse_time_us is not None:
-            raise ValueError(
-                "staged grid2 restart inherits canonical row clocks and does not "
-                "accept a pulse-time override"
-            )
-        particle_input, global_rows = materialize_staged_grid2_restart(args.source)
-        if args.row_map is None:
-            raise ValueError("staged grid2 restart requires an explicit frozen row map")
     else:
         ion_rows, global_rows = materialize(args.source, connection)
         particle_input = None

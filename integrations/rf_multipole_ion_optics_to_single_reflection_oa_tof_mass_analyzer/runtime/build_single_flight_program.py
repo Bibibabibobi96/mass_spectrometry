@@ -277,7 +277,6 @@ def build_successor_program(
     *,
     birth_times_us: list[float],
     particle_ids: list[int] | None = None,
-    restart_context: dict[str, Any] | None = None,
     analyzer_component_source: str,
     pulse_hook_source: str,
     frontend_hook_source: str,
@@ -312,101 +311,11 @@ def build_successor_program(
         or len(set(particle_ids)) != len(particle_ids)
     ):
         raise ValueError("single-flight canonical particle IDs are invalid")
-    staged_restart = restart_context is not None
     if source_release_mode is None:
-        source_release_mode = (
-            "staged_grid2_restart" if staged_restart else "continuous_frontend"
-        )
-    if source_release_mode not in {
-        "continuous_frontend",
-        "pre_pulse_restart",
-        "staged_grid2_restart",
-    }:
+        source_release_mode = "continuous_frontend"
+    if source_release_mode not in {"continuous_frontend", "pre_pulse_restart"}:
         raise ValueError("single-flight source release mode is unsupported")
-    if source_release_mode == "staged_grid2_restart" and not staged_restart:
-        raise ValueError("staged grid2 source release requires its restart context")
-    if source_release_mode != "staged_grid2_restart" and staged_restart:
-        raise ValueError("restart context requires staged grid2 source release mode")
     rf_enabled = source_release_mode != "pre_pulse_restart"
-    if staged_restart:
-        required_restart = {
-            "role": "rf_oatof_staged_grid2_restart_context",
-            "source_release_mode": "staged_grid2_restart",
-            "population_mode": "staged_grid2_restart",
-            "state_event": "local_accelerator_exit",
-            "frame_id": "oatof_global",
-            "clock_basis": "canonical_instrument_time_us",
-            "position_projection_applied": False,
-            "skip_frontend_runtime_writes": True,
-            "skip_pulse_runtime_writes": True,
-            "skip_accelerator_runtime_writes": True,
-            "preserve_analyzer_static_pa_initialization": True,
-            "preserve_downstream_base_then_override_field_semantics": True,
-            "preserve_detector_elapsed_semantics": True,
-            "resolution_claim_allowed": False,
-        }
-        if any(restart_context.get(key) != value for key, value in required_restart.items()):
-            raise ValueError("staged grid2 restart context differs from the supported contract")
-        start_instance = restart_context.get("simion_start_instance")
-        if start_instance not in (3, 5):
-            raise ValueError("staged grid2 restart instance must be explicitly 3 or 5")
-        if not isinstance(restart_context.get("clock_epoch_id"), str) or not restart_context["clock_epoch_id"]:
-            raise ValueError("staged grid2 restart requires one explicit clock epoch")
-        validation = restart_context.get("source_release_validation")
-        velocity = validation.get("velocity") if isinstance(validation, dict) else None
-        energy = validation.get("derived_energy") if isinstance(validation, dict) else None
-        budget = (
-            validation.get("loader_authorization_budget")
-            if isinstance(validation, dict) else None
-        )
-        sha_keys = (
-            "canonical_source_sha256", "solver_executable_sha256",
-            "production_renderer_sha256",
-        )
-        if (
-            not isinstance(validation, dict)
-            or validation.get("role")
-            != "rf_oatof_resolved_source_release_validation"
-            or validation.get("representation")
-            != "standard_beam_direct_velocity_vector"
-            or validation.get("identity_position_clock_policy")
-            != "ordered_id_row_map_position_clock_exact"
-            or validation.get("native_ion_ke_role") != "diagnostic_only"
-            or not isinstance(budget, dict)
-            or not isinstance(budget.get("path"), str)
-            or not budget["path"]
-            or not isinstance(budget.get("sha256"), str)
-            or re.fullmatch(r"[A-F0-9]{64}", budget["sha256"]) is None
-            or any(
-                not isinstance(validation.get(key), str)
-                or re.fullmatch(r"[A-F0-9]{64}", validation[key]) is None
-                for key in sha_keys
-            )
-            or not isinstance(velocity, dict)
-            or isinstance(velocity.get("relative_bound"), bool)
-            or not isinstance(velocity.get("relative_bound"), (int, float))
-            or not math.isfinite(float(velocity["relative_bound"]))
-            or float(velocity["relative_bound"]) <= 0
-            or velocity.get("absolute_floor_m_per_s") != 0
-            or velocity.get("zero_speed_must_be_exact") is not True
-            or not isinstance(energy, dict)
-            or isinstance(energy.get("relative_bound"), bool)
-            or not isinstance(energy.get("relative_bound"), (int, float))
-            or not math.isfinite(float(energy["relative_bound"]))
-            or float(energy["relative_bound"]) <= 0
-            or energy.get("absolute_floor_eV") != 0
-            or energy.get("zero_energy_must_be_exact") is not True
-            or energy.get("authority")
-            != "actual_velocity_plus_canonical_mass_common_function"
-        ):
-            raise ValueError(
-                "staged grid2 restart requires resolved population v2 validation"
-            )
-        if (start_instance == 5) != (overlay is not None):
-            raise ValueError(
-                "staged grid2 restart instance/overlay mapping differs: "
-                "instance 3 requires no overlay and instance 5 requires one overlay"
-            )
     if isinstance(rf_steps_per_period, bool) or not isinstance(rf_steps_per_period, int) or rf_steps_per_period <= 0:
         raise ValueError("RF steps per period must be one positive integer")
     screening = pre_pulse_time_series_contract is not None
@@ -448,17 +357,13 @@ def build_successor_program(
             raise ValueError("pre-pulse time-series sample times must be strictly increasing")
         if sample_times_us[0] < max(birth_times_us):
             raise ValueError("pre-pulse time-series starts before the last source birth")
-        if terminate_after_pulse or staged_restart:
+        if terminate_after_pulse:
             raise ValueError("pre-pulse time-series requires non-restart execution")
     if overlay is not None and overlay.get("role") != "rf_oatof_simion_accelerator_overlay_contract":
         raise ValueError("single-flight Program requires an accelerator overlay contract")
     three_zone = frontend.get("accelerator_topology_id") == (
         "three_zone_accelerator_ideal_v1"
     )
-    if three_zone and staged_restart:
-        raise ValueError(
-            "three-zone single-flight Program does not support the legacy staged-grid2 restart"
-        )
     if three_zone and (
         overlay is None
         or frontend["accelerator_local_region"].get("intermediate2_grid_provider")
@@ -567,12 +472,6 @@ def build_successor_program(
         if three_zone
         else "{accelerator_grid1_z_mm,accelerator_grid2_z_mm}"
     )
-    restart_reported_lua = (
-        "{pre_pulse=true,pulse=true,handoff=true,grid1=true,"
-        "intermediate2=true,local_exit=true}"
-        if three_zone
-        else "{pre_pulse=true,pulse=true,handoff=true,grid1=true,local_exit=true}"
-    )
     intermediate2_crossing_lua = (
         "  _,tc,xc,yc,vxc,vyc,vzc=crossing(accelerator_intermediate2_z_mm,1)\n"
         "  if tc and not reported.intermediate2 then reported.intermediate2=true\n"
@@ -670,8 +569,6 @@ local reflectron_backplate_z_mm={_lua_number(geometry['reflectron_backplate_z_mm
 local single_flight_birth_time_us={birth_table}
 local single_flight_source_particle_id={particle_id_table}
 local single_flight_particle_id_offset=assert(tonumber(os.getenv('OATOF_SINGLE_FLIGHT_PARTICLE_ID_OFFSET') or '0'),'invalid single-flight particle ID offset')
-local single_flight_staged_grid2_restart={1 if staged_restart else 0}
-local single_flight_staged_grid2_start_instance={int(restart_context['simion_start_instance']) if staged_restart else 0}
 local single_flight_terminate_after_pulse={1 if terminate_after_pulse else 0}
 local single_flight_pre_pulse_time_series={1 if screening else 0}
 local single_flight_pre_pulse_sample_times_us={screening_sample_table}
@@ -848,8 +745,7 @@ function segment.initialize_run()
   if single_flight_pre_pulse_time_series==0 then
     single_flight_apply_plan(simion.wb.instances[2].pa,initialized.static_electrode_plans.reflectron)
   end
-  if single_flight_staged_grid2_restart==0 then
-    local rf=false
+  local rf=false
 {rf_initializer}
     single_flight_pulse=single_flight_pulse_component.new{{canonical_clock=single_flight_instrument_time_us,
       pulse_time_us=handoff_pulse_time_us,pulse_width_us=handoff_pulse_width_us,pulse_mode=function() return handoff_pulse_mode end}}
@@ -872,7 +768,6 @@ function segment.initialize_run()
       oi.az,oi.el,oi.rt,oi.scale=0,0,0,1
       oi.pa:fast_adjust(initial)
     end
-  end
   single_flight_particle_state={{}}
   single_flight_analyzer_initialized={{}}
   single_flight_previous={{}}
@@ -887,7 +782,7 @@ function segment.efield_adjust()
   local state={{z_mm=ion_pz_mm,instance_id=ion_instance,instance_dx_mm=instance.pa.dx_mm,
     instance_dz_mm=instance.pa.dz_mm,instance_scale=instance.scale}}
   local base=single_flight_analyzer.efield_adjust(state)
-  state.pulse_active=single_flight_staged_grid2_restart~=0 or single_flight_pulse.is_active_at(single_flight_instrument_time_us())
+  state.pulse_active=single_flight_pulse.is_active_at(single_flight_instrument_time_us())
   local result=single_flight_region_field.apply(base,state)
   if result then
     if result.replace_all then ion_dvoltsx_gu=0; ion_dvoltsy_gu=0; ion_dvoltsz_gu=0 end
@@ -897,7 +792,6 @@ function segment.efield_adjust()
   end
 end
 function segment.fast_adjust()
-  if single_flight_staged_grid2_restart~=0 then return end
   if ion_instance==3 or (single_flight_overlay_enabled~=0 and ion_instance==5) then
     single_flight_frontend.apply_at(single_flight_instrument_time_us(),single_flight_set_electrode)
   end
@@ -919,27 +813,16 @@ function segment.instance_adjust()
 end
 function segment.initialize()
   local time=single_flight_instrument_time_us()
-  if single_flight_staged_grid2_restart~=0 then
-    assert(ion_instance==single_flight_staged_grid2_start_instance,
-      'staged grid2 particle did not start in the contract-bound PA instance')
-  end
   if single_flight_pre_pulse_time_series==0 then
     single_flight_require_analyzer_particle(ion_time_of_flight)
   end
-  if single_flight_staged_grid2_restart==0 then
-    single_flight_particle_state[ion_number]={{frontend=single_flight_frontend.initialize_particle(ion_pz_mm),
-      previous={{time_us=time,position_z_mm=ion_pz_mm,velocity_z_mm_per_us=ion_vz_mm}}}}
-  end
+  single_flight_particle_state[ion_number]={{frontend=single_flight_frontend.initialize_particle(ion_pz_mm),
+    previous={{time_us=time,position_z_mm=ion_pz_mm,velocity_z_mm_per_us=ion_vz_mm}}}}
   single_flight_previous[ion_number]={{t=time,x=ion_px_mm,y=ion_py_mm,z=ion_pz_mm,
     vx=ion_vx_mm,vy=ion_vy_mm,vz=ion_vz_mm}}
-  single_flight_reported[ion_number]=single_flight_staged_grid2_restart~=0 and
-    {restart_reported_lua} or {{}}
+  single_flight_reported[ion_number]={{}}
   single_flight_pre_pulse_next_sample[ion_number]=1
   print(string.format('TRACE: source_release ion=%d particle_id=%d instrument_time_us=%.17g x_mm=%.17g y_mm=%.17g z_mm=%.17g vx_mm_per_us=%.17g vy_mm_per_us=%.17g vz_mm_per_us=%.17g simion_native_kinetic_energy_eV=%.17g',ion_number,single_flight_canonical_particle_id(),time,ion_px_mm,ion_py_mm,ion_pz_mm,ion_vx_mm,ion_vy_mm,ion_vz_mm,ion_ke))
-  if single_flight_staged_grid2_restart~=0 then
-    single_flight_trace_checkpoint('local_accelerator_exit',time,ion_px_mm,ion_py_mm,ion_pz_mm,
-      ion_vx_mm,ion_vy_mm,ion_vz_mm)
-  end
 end
 function segment.tstep_adjust()
   local analyzer_dt=nil
@@ -957,11 +840,9 @@ function segment.tstep_adjust()
       ion_time_step=next_time-time
     end
   end
-  if single_flight_staged_grid2_restart==0 then
-    local pulse_capped=single_flight_pulse.cap_timestep_at(time,ion_time_step)
-    if ion_time_step>pulse_capped then ion_time_step=pulse_capped end
-  end
-  if single_flight_staged_grid2_restart==0 and (ion_instance==3 or (single_flight_overlay_enabled~=0 and ion_instance==5)) then
+  local pulse_capped=single_flight_pulse.cap_timestep_at(time,ion_time_step)
+  if ion_time_step>pulse_capped then ion_time_step=pulse_capped end
+  if ion_instance==3 or (single_flight_overlay_enabled~=0 and ion_instance==5) then
     local state=single_flight_require_particle_state()
     local capped=single_flight_frontend.cap_timestep_at(time,ion_pz_mm,ion_vz_mm,ion_time_step,state.frontend)
     if ion_time_step>capped then ion_time_step=capped end
@@ -972,12 +853,10 @@ function segment.other_actions()
   if single_flight_pre_pulse_time_series==0 then
     single_flight_require_analyzer_particle(ion_time_of_flight)
   end
-  if single_flight_staged_grid2_restart==0 then
-    local state=single_flight_require_particle_state()
-    local current={{time_us=time,position_z_mm=ion_pz_mm,velocity_z_mm_per_us=ion_vz_mm}}
-    single_flight_frontend.observe_step(state.previous,current,state.frontend)
-    state.previous=current
-  end
+  local state=single_flight_require_particle_state()
+  local current={{time_us=time,position_z_mm=ion_pz_mm,velocity_z_mm_per_us=ion_vz_mm}}
+  single_flight_frontend.observe_step(state.previous,current,state.frontend)
+  state.previous=current
   local p=single_flight_previous[ion_number]
   if single_flight_pre_pulse_time_series~=0 then
     local next_index=single_flight_pre_pulse_next_sample[ion_number] or 1
@@ -1125,13 +1004,12 @@ def main() -> int:
     parser.add_argument("--oatof", required=True, type=Path)
     parser.add_argument("--initial-global-state", required=True, type=Path)
     parser.add_argument("--particle-row-map", required=True, type=Path)
-    parser.add_argument("--restart-context", type=Path)
     parser.add_argument("--resolved-region-field-contract", required=True, type=Path)
     parser.add_argument("--rf-drive-kernel", required=True, type=Path)
     parser.add_argument("--rf-steps-per-period", required=True, type=int)
     parser.add_argument(
         "--source-release-mode",
-        choices=("continuous_frontend", "pre_pulse_restart", "staged_grid2_restart"),
+        choices=("continuous_frontend", "pre_pulse_restart"),
         default=None,
     )
     parser.add_argument("--terminate-after-pulse", action="store_true")
@@ -1145,7 +1023,6 @@ def main() -> int:
     validate_resolved_region_field_contract(region_field_contract)
     birth_times, source_ids = load_initial_state(args.initial_global_state)
     row_map_ids = load_row_map(args.particle_row_map, source_ids)
-    restart_context = _load(args.restart_context) if args.restart_context else None
     output = build_successor_program(
         _load(args.upstream),
         _load(args.frontend_contract),
@@ -1153,7 +1030,6 @@ def main() -> int:
         region_field_contract,
         birth_times_us=birth_times,
         particle_ids=row_map_ids,
-        restart_context=restart_context,
         analyzer_component_source=args.analyzer_component.read_text(encoding="utf-8-sig"),
         pulse_hook_source=args.pulse_hook.read_text(encoding="utf-8-sig"),
         frontend_hook_source=args.frontend_hook.read_text(encoding="utf-8-sig"),
@@ -1196,9 +1072,6 @@ def main() -> int:
             else None
         ),
         "particle_row_map_sha256": file_sha256(args.particle_row_map),
-        "restart_context_sha256": (
-            file_sha256(args.restart_context) if args.restart_context else None
-        ),
         "resolved_region_field_contract_sha256": file_sha256(
             args.resolved_region_field_contract
         ),
@@ -1210,10 +1083,7 @@ def main() -> int:
         ],
         "rf_drive_kernel_sha256": file_sha256(args.rf_drive_kernel),
         "rf_steps_per_period": args.rf_steps_per_period,
-        "source_release_mode": (
-            args.source_release_mode
-            or ("staged_grid2_restart" if restart_context is not None else "continuous_frontend")
-        ),
+        "source_release_mode": args.source_release_mode or "continuous_frontend",
         "clock_basis": "canonical_instrument_time_us",
         "terminate_after_pulse": args.terminate_after_pulse,
         "pre_pulse_time_series_contract_sha256": (

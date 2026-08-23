@@ -67,9 +67,7 @@ def record(path: Path) -> dict[str, object]:
     }
 
 
-def make_single_flight_publication_fixture(
-    workspace: Path, *, staged: bool
-) -> dict[str, object]:
+def make_single_flight_publication_fixture(workspace: Path) -> dict[str, object]:
     fixture_repo = workspace / "simulation_repo"
     campaign = fixture_repo / "integrations" / INTEGRATION_ID / "config/campaign.json"
     campaign.parent.mkdir(parents=True)
@@ -79,7 +77,7 @@ def make_single_flight_publication_fixture(
     run_dir.mkdir(parents=True)
     profile_id = "rf_octupole_oatof_direct_mating_gap_0mm"
     canonical = {
-        "authority_role": "staged_grid2_canonical_source_state",
+        "authority_role": "pre_pulse_canonical_source_state",
         "source_branch_id": "simion",
         "solver_id": "simion",
         "run_id": "canonical_grid2_run",
@@ -100,10 +98,6 @@ def make_single_flight_publication_fixture(
         "event_sha256": "D" * 64,
         "particle_source_sha256": "E" * 64,
         "metadata_sha256": "F" * 64,
-    }
-    lineage = {
-        "authority_scope": "connection_lineage_only",
-        "identity": lineage_identity,
     }
     runtime = run_dir / "runtime.json"
     resolved = run_dir / "resolved_connection.json"
@@ -160,17 +154,15 @@ def make_single_flight_publication_fixture(
         {
             "role": "rf_oatof_resolved_population_contract",
             "campaign_id": "publisher_test",
-            "experiment_id": "staged" if staged else "pre_pulse",
+            "experiment_id": "pre_pulse",
             "experiment_row_sha256": "1" * 64,
-            "source_release_mode": (
-                "staged_grid2_restart" if staged else "pre_pulse_restart"
-            ),
+            "source_release_mode": "pre_pulse_restart",
             "execution_population": {"particle_count": 34},
         },
     )
     campaign_identity = {
         "campaign_id": "publisher_test",
-        "experiment_id": "staged" if staged else "pre_pulse",
+        "experiment_id": "pre_pulse",
         "experiment_row_sha256": "1" * 64,
         "launched_particle_count": 34,
         "particle_count": 34,
@@ -207,10 +199,8 @@ def make_single_flight_publication_fixture(
             "resolved_connection": str(resolved.resolve()),
             "resolved_population_contract": str(population.resolve()),
         },
-        ("source_identity" if staged else "upstream_source_identity"): canonical,
+        "upstream_source_identity": canonical,
     }
-    if staged:
-        stage_config["connection_lineage"] = lineage
     write_json(stage_dir / "run_config.json", stage_config)
     write_json(
         stage_dir / "run_manifest.json",
@@ -247,8 +237,6 @@ def make_single_flight_publication_fixture(
         },
         **campaign_identity,
     }
-    if staged:
-        receipt_value["connection_lineage"] = lineage
     write_json(receipt, receipt_value)
     return {
         "repo": fixture_repo,
@@ -259,7 +247,6 @@ def make_single_flight_publication_fixture(
         "budget": budget,
         "stage_config": stage_dir / "run_config.json",
         "canonical": canonical,
-        "lineage": lineage,
     }
 
 
@@ -279,57 +266,9 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
                 budget_path=fixture["budget"],
             )
 
-    def test_staged_single_flight_publishes_one_canonical_source(self) -> None:
+    def test_pre_pulse_single_flight_keeps_upstream_source_branch(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            fixture = make_single_flight_publication_fixture(
-                Path(directory), staged=True
-            )
-            self._publish_single_flight_fixture(fixture)
-            parent = json.loads(
-                (fixture["run_dir"] / "run_config.json").read_text(
-                    encoding="utf-8"
-                )
-            )
-            self.assertEqual(parent["source_identity"], fixture["canonical"])
-            self.assertEqual(parent["connection_lineage"], fixture["lineage"])
-            self.assertNotIn("upstream_source_identity", parent)
-            self.assertNotIn("source_particle_identity", parent)
-
-    def test_staged_single_flight_rejects_canonical_lineage_swap(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            fixture = make_single_flight_publication_fixture(
-                Path(directory), staged=True
-            )
-            stage = json.loads(fixture["stage_config"].read_text(encoding="utf-8"))
-            stage["source_identity"] = fixture["lineage"]["identity"]
-            stage["connection_lineage"] = {
-                "authority_scope": "connection_lineage_only",
-                "identity": fixture["canonical"],
-            }
-            write_json(fixture["stage_config"], stage)
-            stage_manifest = fixture["stage_config"].with_name("run_manifest.json")
-            manifest = json.loads(stage_manifest.read_text(encoding="utf-8"))
-            manifest["run_config"] = record(fixture["stage_config"])
-            write_json(stage_manifest, manifest)
-            with self.assertRaisesRegex(ContractError, "source identities differ"):
-                self._publish_single_flight_fixture(fixture)
-
-    def test_staged_single_flight_rejects_connection_lineage_drift(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            fixture = make_single_flight_publication_fixture(
-                Path(directory), staged=True
-            )
-            receipt = json.loads(fixture["receipt"].read_text(encoding="utf-8"))
-            receipt["connection_lineage"]["identity"]["event_sha256"] = "9" * 64
-            write_json(fixture["receipt"], receipt)
-            with self.assertRaisesRegex(ContractError, "connection lineage differs"):
-                self._publish_single_flight_fixture(fixture)
-
-    def test_nonstaged_single_flight_keeps_upstream_source_branch(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            fixture = make_single_flight_publication_fixture(
-                Path(directory), staged=False
-            )
+            fixture = make_single_flight_publication_fixture(Path(directory))
             self._publish_single_flight_fixture(fixture)
             parent = json.loads(
                 (fixture["run_dir"] / "run_config.json").read_text(

@@ -41,7 +41,6 @@
                 {"required": ["pre_pulse_source_state"]},
                 {"required": ["generated_pre_pulse_ordered_subset"]},
                 {"required": ["observed_pre_pulse_projection"]},
-                {"required": ["staged_grid2_source_state"]},
                 {"required": ["single_flight_spatial_window_profile_id"]}
               ]}
             }
@@ -74,19 +73,10 @@
                       "source_profile_id",
                       "field_overlay_id",
                       "source_release_mode",
-                      "single_flight_population"
+                      "single_flight_population",
+                      "single_flight_pulse_schedule_policy"
                     ],
-                    "allOf": [
-                      {"not": {"required": ["single_flight_pulse_offset_rf_periods"]}},
-                      {
-                        "if": {
-                          "properties": {"source_release_mode": {"const": "staged_grid2_restart"}},
-                          "required": ["source_release_mode"]
-                        },
-                        "then": {"not": {"required": ["single_flight_pulse_schedule_policy"]}},
-                        "else": {"required": ["single_flight_pulse_schedule_policy"]}
-                      }
-                    ]
+                    "allOf": [{"not": {"required": ["single_flight_pulse_offset_rf_periods"]}}]
                   }
                 }
               ]
@@ -107,66 +97,6 @@
               },
               "then": {"required": ["single_flight_pa_cache_policy"]},
               "else": {"not": {"required": ["single_flight_pa_cache_policy"]}}
-            }
-          }
-        }
-      }
-    },
-    {
-      "if": {"properties": {"schema_version": {"const": 5}}, "required": ["schema_version"]},
-      "then": {
-        "properties": {
-          "experiments": {
-            "items": {
-              "if": {
-                "properties": {"source_release_mode": {"const": "staged_grid2_restart"}},
-                "required": ["source_release_mode"]
-              },
-              "then": {
-                "properties": {
-                  "staged_grid2_source_state": {"required": ["loader_authorization_budget"]}
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "experiments": {
-            "contains": {
-              "properties": {
-                "staged_grid2_source_state": {
-                  "required": ["loader_authorization_budget"]
-                }
-              },
-              "required": ["staged_grid2_source_state"]
-            }
-          }
-        },
-        "required": ["experiments"]
-      },
-      "then": {
-        "properties": {
-          "schema_version": {"const": 5},
-          "experiments": {
-            "items": {
-              "if": {
-                "properties": {
-                  "staged_grid2_source_state": {
-                    "required": ["loader_authorization_budget"]
-                  }
-                },
-                "required": ["staged_grid2_source_state"]
-              },
-              "then": {
-                "properties": {
-                  "source_release_mode": {"const": "staged_grid2_restart"}
-                },
-                "required": ["source_release_mode"]
-              }
             }
           }
         }
@@ -383,38 +313,6 @@
         }
       }
     },
-    "staged_grid2_source_state": {
-      "type": "object", "additionalProperties": false,
-      "required": [
-        "path", "sha256", "particle_count", "schema_id", "state_event",
-        "frame_id", "clock_basis", "clock_epoch_id", "simion_start_instance",
-        "position_projection_applied", "producer_run_id", "producer_manifest"
-      ],
-      "properties": {
-        "path": {"type": "string", "minLength": 1},
-        "sha256": {"$ref": "#/$defs/sha"},
-        "particle_count": {"type": "integer", "minimum": 1, "maximum": 10000},
-        "schema_id": {"const": "canonical_component_particle_state_v1"},
-        "state_event": {"const": "local_accelerator_exit"},
-        "frame_id": {"const": "oatof_global"},
-        "clock_basis": {"const": "canonical_instrument_time_us"},
-        "clock_epoch_id": {"type": "string", "minLength": 1},
-        "simion_start_instance": {"enum": [3, 5]},
-        "position_projection_applied": {"const": false},
-        "producer_run_id": {"type": "string", "minLength": 1},
-        "producer_manifest": {"$ref": "#/$defs/file"},
-        "loader_authorization_budget": {"$ref": "#/$defs/file"},
-        "legacy_bridge": {
-          "type": "object", "additionalProperties": false,
-          "required": ["template", "trace", "receipt_characterization"],
-          "properties": {
-            "template": {"$ref": "#/$defs/file"},
-            "trace": {"$ref": "#/$defs/file"},
-            "receipt_characterization": {"$ref": "#/$defs/file"}
-          }
-        }
-      }
-    },
     "single_flight_pulse_schedule_policy": {
       "type": "object",
       "additionalProperties": false,
@@ -453,7 +351,6 @@
             "continuous_injection_full_population",
             "resolved_layout_pulse_ideal_linear_z_vz",
             "pre_pulse_restart",
-            "staged_grid2_restart",
             "pulse_eligible_conditional",
             "first_100_rows_in_frozen_file_order",
             "first_n_rows_in_frozen_file_order"
@@ -470,7 +367,6 @@
                 "source_contract_particle_source",
                 "experiment_single_flight_particle_source",
                 "experiment_pre_pulse_source_state",
-                "experiment_staged_grid2_source_state",
                 "prepared_materialized_particle_source",
                 "prepared_deterministic_prefix",
                 "staged_upstream_source"
@@ -727,37 +623,6 @@
           }
         },
         {
-          "if": {
-            "properties": {"source_release_mode": {"const": "staged_grid2_restart"}},
-            "required": ["source_release_mode"]
-          },
-          "then": {
-            "required": ["architecture_generation_id", "source_profile_id", "field_overlay_id", "staged_grid2_source_state"],
-            "properties": {
-              "source": {"properties": {"authority_scope": {"const": "connection_lineage_only"}}, "required": ["authority_scope"]}
-            },
-            "allOf": [
-              {
-                "if": {"properties": {"field_overlay_id": {"const": "none"}}, "required": ["field_overlay_id"]},
-                "then": {"properties": {"staged_grid2_source_state": {"properties": {"simion_start_instance": {"const": 3}}}}},
-                "else": {"properties": {"staged_grid2_source_state": {"properties": {"simion_start_instance": {"const": 5}}}}}
-              },
-              {
-                "if": {"properties": {"staged_grid2_source_state": {"properties": {"simion_start_instance": {"const": 3}}}}},
-                "then": {"properties": {"field_overlay_id": {"const": "none"}}},
-                "else": {"properties": {"field_overlay_id": {"not": {"const": "none"}}}}
-              }
-            ]
-          }
-        },
-        {
-          "if": {"required": ["staged_grid2_source_state"]},
-          "then": {
-            "properties": {"source_release_mode": {"const": "staged_grid2_restart"}},
-            "required": ["source_release_mode"]
-          }
-        },
-        {
           "if": {"required": ["single_flight_population"]},
           "then": {
             "oneOf": [
@@ -807,19 +672,6 @@
                   "single_flight_population": {"properties": {
                     "population_mode": {"const": "pre_pulse_restart"},
                     "source_authority": {"properties": {"table_binding": {"const": "experiment_pre_pulse_source_state"}}},
-                    "execution_population": {"properties": {"selection_algorithm": {"const": "all_rows_in_frozen_file_order"}}},
-                    "postselection_policy": {"const": "prohibited"}
-                  }}
-                },
-                "required": ["execution_strategy", "source_release_mode"]
-              },
-              {
-                "properties": {
-                  "execution_strategy": {"const": "simion_single_flight"},
-                  "source_release_mode": {"const": "staged_grid2_restart"},
-                  "single_flight_population": {"properties": {
-                    "population_mode": {"const": "staged_grid2_restart"},
-                    "source_authority": {"properties": {"table_binding": {"const": "experiment_staged_grid2_source_state"}}},
                     "execution_population": {"properties": {"selection_algorithm": {"const": "all_rows_in_frozen_file_order"}}},
                     "postselection_policy": {"const": "prohibited"}
                   }}
@@ -964,7 +816,7 @@
         "architecture_generation_id": {"$ref": "#/$defs/id"},
         "source_profile_id": {"$ref": "#/$defs/id"},
         "field_overlay_id": {"$ref": "#/$defs/id"},
-        "source_release_mode": {"enum": ["continuous_frontend", "pre_pulse_restart", "staged_grid2_restart"]},
+        "source_release_mode": {"enum": ["continuous_frontend", "pre_pulse_restart"]},
         "pre_pulse_source_state": {"$ref": "#/$defs/pre_pulse_source_state"},
         "post_pulse_restart_reuse_authority": {
           "$ref": "#/$defs/post_pulse_restart_reuse_authority"
@@ -972,7 +824,6 @@
         "observed_pre_pulse_projection": {"$ref": "#/$defs/observed_pre_pulse_projection"},
         "generated_pre_pulse_ordered_subset": {"$ref": "#/$defs/generated_pre_pulse_ordered_subset"},
         "connector_gap_evidence_role": {"enum": ["primary", "stress_report_only"]},
-        "staged_grid2_source_state": {"$ref": "#/$defs/staged_grid2_source_state"},
         "single_flight_pulse_offset_rf_periods": {
           "type": "number",
           "minimum": -0.5,

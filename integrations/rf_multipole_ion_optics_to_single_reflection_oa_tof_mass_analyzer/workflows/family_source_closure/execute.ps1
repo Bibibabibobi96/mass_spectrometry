@@ -178,15 +178,6 @@ if ($SolverAuthorized -and $isManifestBoundPostPulseRestart) {
     throw 'Active manifest-bound post-pulse restart requires the source z--vz theory working point.'
   }
 }
-$isStagedGrid2 =
-  [string]$selectedExperiment.source_release_mode -eq 'staged_grid2_restart'
-if ($SolverAuthorized -and $isStagedGrid2 -and (
-    [int]$campaignDocument.schema_version -ne 5 -or
-    $null -eq $selectedExperiment.staged_grid2_source_state -or
-    -not ($selectedExperiment.staged_grid2_source_state.PSObject.Properties.Name `
-      -contains 'loader_authorization_budget'))) {
-  throw 'SolverAuthorized staged grid2 execution requires campaign v5 with an explicit loader authorization budget.'
-}
 if (-not $FinalizeOnly) {
   & $PythonExe -m (
     'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.' +

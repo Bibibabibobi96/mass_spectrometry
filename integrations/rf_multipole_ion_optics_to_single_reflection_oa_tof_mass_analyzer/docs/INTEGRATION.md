@@ -41,6 +41,9 @@ SIMION 运行可调用共享批处理；批内结果必须恢复全局粒子 ID 
 合同保留原始字节和 receipt，但已退出 lifecycle registry：它们由该 compact replay 完整替代，且不应因后续运行
 policy（内存、并发、超时或保留）更新而重新成为可执行 authority。
 
+活动单飞来源仅接受 `continuous_frontend` 与 `pre_pulse_restart`。已归档的 staged Grid2 合同及其逐粒子证据
+仍可按归档索引校验，但不再是现行 schema 或运行器可重放的输入。
+
 实验 campaign 可继续使用完整行，也可用扁平 authoring：`experiments.shared` 声明共同控制，
 `variation_axes` 列出允许变化的字段，`rows` 只列行身份和 `overrides`。准备阶段先展开为完整冻结行，
 再执行既有 schema 与授权校验；任何未声明的字段变化都失败关闭。这样同一合同可顺序执行多个 gap 或

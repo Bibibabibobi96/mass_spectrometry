@@ -29,7 +29,6 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     resolve_single_flight_batch_count,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_source import (
-    materialize_staged_grid2_restart,
     resolve_source_materialization_profile,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.ordered_pre_pulse_subset import (
@@ -86,10 +85,6 @@ PROFILE_REGISTRY = CONFIG_ROOT / "connection_profiles.json"
 ADAPTER_REGISTRY = CONFIG_ROOT / "execution_adapter_profiles.json"
 OCTUPOLE_RUNTIME_BINDING = (
     CONFIG_ROOT / "family_octupole_direct_mating_gap_0mm_runtime_binding.json"
-)
-STAGED_GRID2_R03_CAMPAIGN = (
-    RETIRED_CAMPAIGNS /
-    "staged_grid2_restart_legacy_n34_successor_r03_campaign.json"
 )
 AUTO_N1000_CONNECTOR_CAMPAIGN = (
     RETIRED_CAMPAIGNS /
@@ -806,35 +801,6 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                 )
                 self.assertEqual(profile["field_id"], field_id)
 
-    def test_loader_budget_requires_campaign_v5_and_staged_mode_both_ways(self) -> None:
-        campaign = load(
-            RETIRED_CAMPAIGNS /
-            "staged_grid2_restart_legacy_n34_successor_r06_campaign.json"
-        )
-        validate_schema(
-            campaign, "rf_multipole_oatof_experiment_campaign.schema.json"
-        )
-        invalid = json.loads(json.dumps(campaign))
-        invalid["schema_version"] = 4
-        with self.assertRaises(ContractError):
-            validate_schema(
-                invalid, "rf_multipole_oatof_experiment_campaign.schema.json"
-            )
-        invalid = json.loads(json.dumps(campaign))
-        invalid["experiments"][0]["source_release_mode"] = "pre_pulse_restart"
-        with self.assertRaises(ContractError):
-            validate_schema(
-                invalid, "rf_multipole_oatof_experiment_campaign.schema.json"
-            )
-        invalid = json.loads(json.dumps(campaign))
-        del invalid["experiments"][0]["staged_grid2_source_state"][
-            "loader_authorization_budget"
-        ]
-        with self.assertRaises(ContractError):
-            validate_schema(
-                invalid, "rf_multipole_oatof_experiment_campaign.schema.json"
-            )
-
     def test_loader_receipt_identity_is_raw_bytes_not_normalized_text(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -1226,27 +1192,16 @@ $result = Get-PulseTimingOrchestration `
                 stale.stdout + stale.stderr,
             )
 
-    def test_all_modes_reject_retired_campaign_before_schema_or_prepare(self) -> None:
-        campaign = RETIRED_CAMPAIGNS / (
-            "staged_grid2_restart_legacy_n34_successor_campaign.json"
-        )
+    def test_archived_campaign_is_rejected_before_schema_or_prepare(self) -> None:
+        campaign = SINGLE_FLIGHT_CAMPAIGN_PATH
         execute = INTEGRATION_ROOT / "workflows" / "family_source_closure" / (
             "execute.ps1"
         )
-        campaign_schema = load(
-            REPO_ROOT / "common" / "contracts" / "schemas" /
-            "rf_multipole_oatof_experiment_campaign.schema.json"
-        )
-        self.assertIn(
-            "PENDING_PREREGISTRATION",
-            campaign_schema["properties"]["status"]["enum"],
-        )
-        self.assertIn("retired", campaign_schema["properties"]["status"]["enum"])
         completed = subprocess.run(
             [
                 "pwsh", "-NoProfile", "-File", str(execute),
                 "-Campaign", str(campaign.relative_to(REPO_ROOT)),
-                "-ExperimentId", "staged_grid2_restart_legacy_n34_functional",
+                "-ExperimentId", "octupole_segmented_aperture100_simion_single_flight",
                 "-ValidateOnly",
             ],
             cwd=REPO_ROOT,
@@ -1285,65 +1240,6 @@ $result = Get-PulseTimingOrchestration `
             {path.name for path in registered},
             {"connector_gap_field_matrix_compact_auto_replay_v2.json"},
         )
-
-    def test_staged_n34_runner_filters_fly2_framing_before_batch_slice(self) -> None:
-        campaign = load(
-            RETIRED_CAMPAIGNS /
-            "staged_grid2_restart_legacy_n34_successor_r02_campaign.json"
-        )
-        source = REPO_ROOT.parent / campaign["experiments"][0][
-            "staged_grid2_source_state"
-        ]["path"]
-        if not source.is_file():
-            self.skipTest("local staged-grid source evidence is unavailable")
-        fly2_text, rows = materialize_staged_grid2_restart(source)
-        self.assertEqual(len(rows), 34)
-        with tempfile.TemporaryDirectory() as directory:
-            fly2 = Path(directory) / "staged_n34.fly2"
-            fly2.write_text(fly2_text, encoding="utf-8")
-            runner = INTEGRATION_ROOT / "runtime" / "run_single_flight.ps1"
-            script = r"""
-$parseErrors = $null
-$ast = [System.Management.Automation.Language.Parser]::ParseFile(
-  $env:RF_RUNNER_TEST_PATH, [ref]$null, [ref]$parseErrors
-)
-if ($parseErrors) { throw $parseErrors[0] }
-$functionAst = $ast.Find({
-  param($node)
-  $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
-    $node.Name -eq 'Get-RfSingleFlightParticleLines'
-}, $true)
-if ($null -eq $functionAst) { throw 'runner particle parser is missing' }
-. ([scriptblock]::Create($functionAst.Extent.Text))
-$particleRows = @(Get-RfSingleFlightParticleLines `
-  -ParticleInput $env:RF_FLY2_TEST_PATH -RestartFly2 $true)
-$batchRows = [string[]]$particleRows[0..33]
-[ordered]@{
-  particle_row_count = $particleRows.Count
-  non_particle_row_count = @($particleRows | Where-Object {
-    $_ -notmatch '^  standard_beam '
-  }).Count
-  batch_particle_row_count = @($batchRows | Where-Object {
-    $_ -match '^  standard_beam '
-  }).Count
-} | ConvertTo-Json -Compress
-"""
-            environment = os.environ.copy()
-            environment["RF_RUNNER_TEST_PATH"] = str(runner)
-            environment["RF_FLY2_TEST_PATH"] = str(fly2)
-            completed = subprocess.run(
-                ["pwsh", "-NoProfile", "-Command", script],
-                cwd=REPO_ROOT,
-                env=environment,
-                text=True,
-                capture_output=True,
-                check=False, timeout=300,
-            )
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        receipt = json.loads(completed.stdout)
-        self.assertEqual(receipt["particle_row_count"], 34)
-        self.assertEqual(receipt["non_particle_row_count"], 0)
-        self.assertEqual(receipt["batch_particle_row_count"], 34)
 
     def test_adapter_freezes_campaign_and_row_before_solver_authorization(self) -> None:
         adapter = (
@@ -1391,34 +1287,6 @@ $batchRows = [string[]]$particleRows[0..33]
         adapter_call = common_execute.index("& $AdapterEntrypoint @adapterArguments")
         self.assertLess(validate_exit, adapter_call)
         self.assertIn("exit 0", common_execute[validate_exit:adapter_call])
-
-    def test_staged_grid2_schema_forbids_pulse_schedule_and_binds_instance_overlay(self) -> None:
-        campaign_path = RETIRED_CAMPAIGNS / (
-            "staged_grid2_restart_legacy_n34_successor_r02_campaign.json"
-        )
-        campaign = load(campaign_path)
-        validate_schema(campaign, "rf_multipole_oatof_experiment_campaign.schema.json")
-        row = campaign["experiments"][0]
-        self.assertNotIn("single_flight_pulse_schedule_policy", row)
-        self.assertEqual(row["source"]["authority_scope"], "connection_lineage_only")
-        with_schedule = json.loads(json.dumps(campaign))
-        with_schedule["experiments"][0]["single_flight_pulse_schedule_policy"] = {
-            "policy_id": "multipole_handoff_ballistic_centroid_v1",
-            "offset_rf_periods": 0,
-            "pulse_width_us": 1.0,
-        }
-        with self.assertRaises(ContractError):
-            validate_schema(
-                with_schedule, "rf_multipole_oatof_experiment_campaign.schema.json"
-            )
-        wrong_instance = json.loads(json.dumps(campaign))
-        wrong_instance["experiments"][0]["staged_grid2_source_state"][
-            "simion_start_instance"
-        ] = 5
-        with self.assertRaises(ContractError):
-            validate_schema(
-                wrong_instance, "rf_multipole_oatof_experiment_campaign.schema.json"
-            )
 
     def test_affine_source_profile_resolves_only_from_phase_space_authority(self) -> None:
         registry = load(CONFIG_ROOT / "simion_single_flight.json")

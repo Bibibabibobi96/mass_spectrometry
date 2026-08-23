@@ -437,13 +437,9 @@ def analyze(
         raise ValueError("new single-flight analysis requires canonical instrument time")
     if bootstrap_resamples < 0:
         raise ValueError("bootstrap resamples must be non-negative")
-    if source_release_mode not in {
-        "continuous_frontend", "pre_pulse_restart", "staged_grid2_restart"
-    }:
+    if source_release_mode not in {"continuous_frontend", "pre_pulse_restart"}:
         raise ValueError("unknown single-flight source release mode")
     if particle_row_map_path is None:
-        if source_release_mode == "staged_grid2_restart":
-            raise ValueError("staged grid2 analysis requires the frozen particle row map")
         ordered_particle_ids = list(range(1, launched + 1))
     else:
         with particle_row_map_path.open(encoding="utf-8-sig", newline="") as handle:
@@ -604,7 +600,7 @@ def analyze(
     pre_pulse_state_provenance = None
     restart_source_release_validation = None
     if initial_global_state_path is not None:
-        if source_release_mode in {"pre_pulse_restart", "staged_grid2_restart"}:
+        if source_release_mode == "pre_pulse_restart":
             if initial_global_state_sha256 is None:
                 raise ValueError("pre-pulse restart analysis requires the manifest-bound initial-state SHA256")
             actual_sha256 = file_sha256(initial_global_state_path)
@@ -624,32 +620,12 @@ def analyze(
             for row in rows
             if row["event"] == "source_release"
         }
-        if source_release_mode in {"pre_pulse_restart", "staged_grid2_restart"}:
-            resolved_release_validation = population_contract.get(
-                "source_release_validation"
+        if source_release_mode == "pre_pulse_restart":
+            restart_validation_enabled = (
+                restart_validation_contract_sha256 is not None
             )
-            staged_validation = source_release_mode == "staged_grid2_restart"
-            if staged_validation:
-                if (
-                    population_contract.get("schema_version") != 2
-                    or not isinstance(resolved_release_validation, dict)
-                    or resolved_release_validation.get("role")
-                    != "rf_oatof_resolved_source_release_validation"
-                ):
-                    raise ValueError(
-                        "staged grid2 restart requires resolved population v2 validation"
-                    )
-                restart_validation_enabled = True
-                restart_validation_contract_sha256 = resolved_release_validation[
-                    "loader_authorization_budget"
-                ]["sha256"]
-            else:
-                restart_validation_enabled = (
-                    restart_validation_contract_sha256 is not None
-                )
             if (
                 restart_validation_enabled
-                and not staged_validation
                 and (
                 restart_position_tolerance_mm is None
                 or restart_velocity_tolerance_m_per_s is None
@@ -728,38 +704,8 @@ def analyze(
                 )
                 exact_position_passed = exact_position_passed and position_error == 0
                 exact_clock_passed = exact_clock_passed and clock_error == 0
-                if staged_validation:
-                    velocity_contract = resolved_release_validation["velocity"]
-                    energy_contract = resolved_release_validation["derived_energy"]
-                    actual_velocity = tuple(
-                        1000.0 * float(actual[f"v{axis}_mm_per_us"])
-                        for axis in "xyz"
-                    )
-                    velocity_passed = (
-                        actual_velocity == (0.0, 0.0, 0.0)
-                        if expected_speed == 0
-                        else velocity_error
-                        <= float(velocity_contract["relative_bound"]) * expected_speed
-                    )
-                    energy_passed = (
-                        energy_error == 0
-                        if expected_energy == 0
-                        else energy_error
-                        <= float(energy_contract["relative_bound"]) * expected_energy
-                    )
-                    if not (
-                        position_error == 0
-                        and clock_error == 0
-                        and velocity_passed
-                        and energy_passed
-                    ):
-                        raise ValueError(
-                            "actual source_release checkpoint differs from the "
-                            "resolved loader-characterized contract"
-                        )
             if (
                 restart_validation_enabled
-                and not staged_validation
                 and (
                 maximum_position_error > restart_position_tolerance_mm
                 or maximum_velocity_error > restart_velocity_tolerance_m_per_s
@@ -774,32 +720,15 @@ def analyze(
                 "particle_count": launched,
                 "validation_contract_sha256": restart_validation_contract_sha256,
                 "ordered_particle_ids_exact": True,
-                "identity_position_clock_policy": (
-                    "ordered_id_row_map_position_clock_exact"
-                    if staged_validation else "legacy_absolute_tolerances"
-                ),
+                "identity_position_clock_policy": "legacy_absolute_tolerances",
                 "position_exact_passed": exact_position_passed,
                 "clock_exact_passed": exact_clock_passed,
-                "position_rowwise_abs_tolerance_mm": (
-                    None if staged_validation else restart_position_tolerance_mm
-                ),
-                "velocity_rowwise_abs_tolerance_m_per_s": (
-                    None if staged_validation else restart_velocity_tolerance_m_per_s
-                ),
-                "velocity_relative_to_expected_speed_bound": (
-                    resolved_release_validation["velocity"]["relative_bound"]
-                    if staged_validation else None
-                ),
-                "clock_abs_tolerance_us": (
-                    None if staged_validation else restart_clock_tolerance_us
-                ),
-                "energy_abs_tolerance_eV": (
-                    None if staged_validation else restart_energy_tolerance_eV
-                ),
-                "derived_energy_relative_to_expected_energy_bound": (
-                    resolved_release_validation["derived_energy"]["relative_bound"]
-                    if staged_validation else None
-                ),
+                "position_rowwise_abs_tolerance_mm": restart_position_tolerance_mm,
+                "velocity_rowwise_abs_tolerance_m_per_s": restart_velocity_tolerance_m_per_s,
+                "velocity_relative_to_expected_speed_bound": None,
+                "clock_abs_tolerance_us": restart_clock_tolerance_us,
+                "energy_abs_tolerance_eV": restart_energy_tolerance_eV,
+                "derived_energy_relative_to_expected_energy_bound": None,
                 "maximum_position_rowwise_abs_error_mm": maximum_position_error,
                 "maximum_velocity_rowwise_abs_error_m_per_s": maximum_velocity_error,
                 "maximum_velocity_relative_to_expected_speed":
@@ -807,10 +736,7 @@ def analyze(
                 "maximum_clock_abs_error_us": maximum_clock_error,
                 "maximum_energy_abs_error_eV": maximum_energy_error,
                 "maximum_energy_relative_to_expected_energy": maximum_energy_relative,
-                "native_ion_ke_role": (
-                    resolved_release_validation["native_ion_ke_role"]
-                    if staged_validation else None
-                ),
+                "native_ion_ke_role": None,
             } if restart_validation_enabled else None)
         for initial in initial_rows:
             particle_id = int(initial["particle_id"])
@@ -908,7 +834,7 @@ def analyze(
     geometry = None
     if geometry_path is not None:
         geometry = json.loads(geometry_path.read_text(encoding="utf-8-sig"))
-    if geometry is not None and source_release_mode != "staged_grid2_restart":
+    if geometry is not None:
         dimensions = geometry["geometry_mm"]
         axis_x = float(geometry["coordinate_convention"]["accelerator_axis_x"])
         repeller_z = float(dimensions["accelerator_repeller_z"])
@@ -1207,7 +1133,7 @@ def analyze(
         if row["event"] == "pre_pulse_state"
         and row["pulse_eligibility"] == "eligible"
     }
-    if geometry is None or source_release_mode == "staged_grid2_restart":
+    if geometry is None:
         eligible_ids = expected_particle_ids
     source_region_diagnostic = None
     if source_region_diagnostic_profile is not None:
@@ -1414,45 +1340,18 @@ def analyze(
         "pulse_first_observed_us": min(pulse_times) if pulse_times else None,
         "pulse_effective_time_us": effective_pulse_time_us,
         "clock_basis": clock_basis,
-        "analysis_scope": (
-            "downstream_only_from_local_accelerator_exit"
-            if source_release_mode == "staged_grid2_restart"
-            else "full_single_flight_with_pulse_eligibility"
-        ),
-        "pulse_eligibility_validation_applied": (
-            source_release_mode != "staged_grid2_restart"
-        ),
-        "injection_energy_validation_applied": (
-            geometry is not None and source_release_mode != "staged_grid2_restart"
-        ),
-        "resolution_time_basis": (
-            None
-            if source_release_mode == "staged_grid2_restart"
-            else "detector_time_minus_pulse_effective_time"
-        ),
+        "analysis_scope": "full_single_flight_with_pulse_eligibility",
+        "pulse_eligibility_validation_applied": True,
+        "injection_energy_validation_applied": geometry is not None,
+        "resolution_time_basis": "detector_time_minus_pulse_effective_time",
         "pulse_effective_peak": pulse_effective_peak,
         "full_pulse_eligible_bootstrap": full_bootstrap,
         "detector_clock_diagnostic": {
-            "basis": (
-                "canonical_instrument_time_us"
-                if source_release_mode == "staged_grid2_restart"
-                else "detector_time_minus_pulse_effective_time"
-            ),
-            "sample_count": (
-                len(detector_rows)
-                if source_release_mode == "staged_grid2_restart"
-                else int(eligible_detector_tof.size)
-            ),
-            "nonpositive_count": (
-                None
-                if source_release_mode == "staged_grid2_restart"
-                else int(np.count_nonzero(eligible_detector_tof <= 0))
-            ),
+            "basis": "detector_time_minus_pulse_effective_time",
+            "sample_count": int(eligible_detector_tof.size),
+            "nonpositive_count": int(np.count_nonzero(eligible_detector_tof <= 0)),
             "used_for_spatial_selection": False,
-            "peak_metrics_computed": (
-                source_release_mode != "staged_grid2_restart"
-                and not detector_blind_spatial_selection
-            ),
+            "peak_metrics_computed": not detector_blind_spatial_selection,
         },
         "reanalysis_provenance": reanalysis_provenance,
         "detector_time_basis": "canonical_instrument_time_us",
@@ -1461,10 +1360,6 @@ def analyze(
         "pre_pulse_restart_source_release_validation": (
             restart_source_release_validation
             if source_release_mode == "pre_pulse_restart" else None
-        ),
-        "staged_grid2_restart_source_release_validation": (
-            restart_source_release_validation
-            if source_release_mode == "staged_grid2_restart" else None
         ),
         "particle_row_map": {
             "path": str(particle_row_map_path) if particle_row_map_path else None,

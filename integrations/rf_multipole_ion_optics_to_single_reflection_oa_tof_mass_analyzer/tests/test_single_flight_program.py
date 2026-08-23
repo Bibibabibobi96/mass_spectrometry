@@ -60,33 +60,6 @@ segment.__successor_test_get_value=function(name)
 end
 """
 
-
-
-
-def _staged_source_release_validation_v2() -> dict[str, object]:
-    return {
-        "role": "rf_oatof_resolved_source_release_validation",
-        "loader_authorization_budget": {
-            "path": "config/diagnostics/loader_budget.json", "sha256": "A" * 64,
-        },
-        "representation": "standard_beam_direct_velocity_vector",
-        "canonical_source_sha256": "B" * 64,
-        "solver_executable_sha256": "C" * 64,
-        "production_renderer_sha256": "D" * 64,
-        "identity_position_clock_policy": "ordered_id_row_map_position_clock_exact",
-        "velocity": {
-            "relative_bound": 2e-8, "absolute_floor_m_per_s": 0,
-            "zero_speed_must_be_exact": True,
-        },
-        "derived_energy": {
-            "relative_bound": 3e-8, "absolute_floor_eV": 0,
-            "zero_energy_must_be_exact": True,
-            "authority": "actual_velocity_plus_canonical_mass_common_function",
-        },
-        "native_ion_ke_role": "diagnostic_only",
-    }
-
-
 def _successor_callback_program(
     directory: Path,
     *,
@@ -376,21 +349,6 @@ class SingleFlightProgramTests(unittest.TestCase):
         )
         self.assertIn("TRACE: accelerator_intermediate2_forward", program)
 
-    def test_staged_grid2_runner_omits_pulse_authority_and_enforces_instance_overlay(self) -> None:
-        runner = (
-            Path(__file__).resolve().parents[1] / "runtime" / "run_single_flight.ps1"
-        ).read_text(encoding="utf-8")
-        self.assertIn("$isStagedGrid2Restart -eq $hasPulseSchedule", runner)
-        self.assertIn("$runConfiguration.inputs.Remove('pulse_schedule')", runner)
-        self.assertIn("$runConfiguration.parameters.Remove('pulse_time_us')", runner)
-        self.assertIn("$runConfiguration.parameters.Remove('pulse_width_us')", runner)
-        self.assertIn("elseif ($isStagedGrid2Restart) { @() } else", runner)
-        self.assertIn(
-            "(($StagedGrid2StartInstance -eq 5) -ne [bool]$overlayEnabled)",
-            runner,
-        )
-        self.assertIn("authority_scope = 'connection_lineage_only'", runner)
-
     def test_runner_consumes_frozen_electrode_topology_for_overlay_basis(self) -> None:
         runner = (
             Path(__file__).resolve().parents[1] / "runtime" / "run_single_flight.ps1"
@@ -400,76 +358,6 @@ class SingleFlightProgramTests(unittest.TestCase):
         self.assertIn("$maximumFrontendElectrodeId", runner)
         self.assertNotIn("basis_count=20", runner)
         self.assertNotIn("foreach ($electrode in 0..19)", runner)
-
-    def test_staged_grid2_uses_explicit_instance_ids_and_skips_upstream_runtime(self) -> None:
-        upstream, frontend = _minimal_program_contracts()
-        geometry_path = REPO / (
-            "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json"
-        )
-        oatof = json.loads(geometry_path.read_text(encoding="utf-8"))
-        with tempfile.TemporaryDirectory() as directory:
-            region = build_resolved_region_field_contract(
-                geometry_path, Path(directory) / "region.json", "accelerator_real_pa"
-            )
-        context = {
-            "role": "rf_oatof_staged_grid2_restart_context",
-            "source_release_mode": "staged_grid2_restart",
-            "population_mode": "staged_grid2_restart",
-            "state_event": "local_accelerator_exit", "frame_id": "oatof_global",
-            "clock_basis": "canonical_instrument_time_us",
-            "clock_epoch_id": "instrument_clock_epoch_v1",
-            "simion_start_instance": 3, "position_projection_applied": False,
-            "skip_frontend_runtime_writes": True,
-            "skip_pulse_runtime_writes": True,
-            "skip_accelerator_runtime_writes": True,
-            "preserve_analyzer_static_pa_initialization": True,
-            "preserve_downstream_base_then_override_field_semantics": True,
-            "preserve_detector_elapsed_semantics": True,
-            "resolution_claim_allowed": False,
-            "source_release_validation": _staged_source_release_validation_v2(),
-        }
-        program = build_successor_program(
-            upstream, frontend, oatof, region, birth_times_us=[36.0, 37.0],
-            particle_ids=[6, 97], restart_context=context,
-            analyzer_component_source=ANALYZER_COMPONENT_SOURCE,
-            pulse_hook_source=PULSE_HOOK_SOURCE,
-            frontend_hook_source=FRONTEND_HOOK_SOURCE,
-            rf_drive_kernel_source=RF_DRIVE_KERNEL_SOURCE,
-        )
-        self.assertIn("local single_flight_source_particle_id={[1]=6,[2]=97}", program)
-        self.assertIn("local single_flight_staged_grid2_restart=1", program)
-        self.assertIn("local single_flight_staged_grid2_start_instance=3", program)
-        self.assertIn("if single_flight_staged_grid2_restart~=0 then return end", program)
-        self.assertIn("single_flight_trace_checkpoint('local_accelerator_exit'", program)
-        self.assertIn("local result=single_flight_region_field.apply(base,state)", program)
-        legacy_context = copy.deepcopy(context)
-        legacy_context["source_release_validation"] = {
-            "position_rowwise_abs_tolerance_mm": 1e-9,
-            "velocity_rowwise_abs_tolerance_m_per_s": 1e-6,
-            "clock_abs_tolerance_us": 1e-9,
-            "energy_abs_tolerance_eV": 5e-9,
-        }
-        with self.assertRaisesRegex(ValueError, "resolved population v2 validation"):
-            build_successor_program(
-                upstream, frontend, oatof, region,
-                birth_times_us=[36.0, 37.0], particle_ids=[6, 97],
-                restart_context=legacy_context,
-                analyzer_component_source=ANALYZER_COMPONENT_SOURCE,
-                pulse_hook_source=PULSE_HOOK_SOURCE,
-                frontend_hook_source=FRONTEND_HOOK_SOURCE,
-                rf_drive_kernel_source=RF_DRIVE_KERNEL_SOURCE,
-            )
-        with self.assertRaisesRegex(ValueError, "instance/overlay mapping differs"):
-            build_successor_program(
-                upstream, frontend, oatof, region,
-                birth_times_us=[36.0, 37.0], particle_ids=[6, 97],
-                restart_context=context,
-                overlay={"role": "rf_oatof_simion_accelerator_overlay_contract"},
-                analyzer_component_source=ANALYZER_COMPONENT_SOURCE,
-                pulse_hook_source=PULSE_HOOK_SOURCE,
-                frontend_hook_source=FRONTEND_HOOK_SOURCE,
-                rf_drive_kernel_source=RF_DRIVE_KERNEL_SOURCE,
-            )
 
     def test_successor_has_one_workbench_and_one_definition_per_callback(self) -> None:
         upstream, frontend = _minimal_program_contracts()

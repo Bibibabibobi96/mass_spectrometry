@@ -17,12 +17,12 @@
     "experiment_row_sha256": {"$ref": "#/$defs/sha"},
     "population_declaration_sha256": {"$ref": "#/$defs/sha"},
     "execution_strategy": {"enum": ["staged_three_stage", "simion_single_flight"]},
-    "source_release_mode": {"enum": ["continuous_frontend", "pre_pulse_restart", "staged_grid2_restart"]},
+    "source_release_mode": {"enum": ["continuous_frontend", "pre_pulse_restart"]},
     "population_id": {"$ref": "#/$defs/id"},
     "population_mode": {
       "enum": [
         "staged_three_stage", "continuous_injection_full_population",
-        "resolved_layout_pulse_ideal_linear_z_vz", "pre_pulse_restart", "staged_grid2_restart",
+        "resolved_layout_pulse_ideal_linear_z_vz", "pre_pulse_restart",
         "pulse_eligible_conditional", "first_100_rows_in_frozen_file_order"
       ]
     },
@@ -80,7 +80,6 @@
     },
     "postselection_policy": {"enum": ["prohibited", "detector_blind_preregistered", "pulse_eligibility_only"]}
     ,"cohort_authority_mode": {"enum": ["establish_observed_authority", "require_frozen_baseline_authority"]}
-    ,"source_release_validation": {"$ref": "#/$defs/source_release_validation"}
     ,"paired_cohort_authority": {"$ref": "#/$defs/paired_cohort_authority"}
   },
   "oneOf": [
@@ -130,17 +129,6 @@
     {
       "properties": {
         "execution_strategy": {"const": "simion_single_flight"},
-        "source_release_mode": {"const": "staged_grid2_restart"},
-        "population_mode": {"const": "staged_grid2_restart"},
-        "source_authority": {"properties": {"table_binding": {"const": "experiment_staged_grid2_source_state"}}},
-        "execution_population": {"properties": {"selection_algorithm": {"const": "all_rows_in_frozen_file_order"}}},
-        "postselection_policy": {"const": "prohibited"}
-      },
-      "required": ["source_release_mode"]
-    },
-    {
-      "properties": {
-        "execution_strategy": {"const": "simion_single_flight"},
         "source_release_mode": {"const": "continuous_frontend"},
         "population_mode": {"const": "pulse_eligible_conditional"},
         "source_authority": {"properties": {"table_binding": {"const": "experiment_single_flight_particle_source"}}},
@@ -162,17 +150,6 @@
     }
   ],
   "allOf": [
-    {
-      "if": {
-        "properties": {
-          "schema_version": {"const": 2},
-          "source_release_mode": {"const": "staged_grid2_restart"}
-        },
-        "required": ["schema_version", "source_release_mode"]
-      },
-      "then": {"required": ["source_release_validation"]},
-      "else": {"not": {"required": ["source_release_validation"]}}
-    },
     {
       "if": {"required": ["paired_cohort_authority"]},
       "then": {"properties": {"denominators": {"required": [
@@ -214,45 +191,6 @@
       "type": "object", "additionalProperties": false,
       "required": ["path", "sha256"],
       "properties": {"path": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/$defs/sha"}}
-    },
-    "source_release_validation": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "role", "loader_authorization_budget", "representation",
-        "canonical_source_sha256", "solver_executable_sha256",
-        "production_renderer_sha256", "identity_position_clock_policy",
-        "velocity", "derived_energy", "native_ion_ke_role"
-      ],
-      "properties": {
-        "role": {"const": "rf_oatof_resolved_source_release_validation"},
-        "loader_authorization_budget": {"$ref": "#/$defs/file"},
-        "representation": {"const": "standard_beam_direct_velocity_vector"},
-        "canonical_source_sha256": {"$ref": "#/$defs/sha"},
-        "solver_executable_sha256": {"$ref": "#/$defs/sha"},
-        "production_renderer_sha256": {"$ref": "#/$defs/sha"},
-        "identity_position_clock_policy": {"const": "ordered_id_row_map_position_clock_exact"},
-        "velocity": {
-          "type": "object", "additionalProperties": false,
-          "required": ["relative_bound", "absolute_floor_m_per_s", "zero_speed_must_be_exact"],
-          "properties": {
-            "relative_bound": {"type": "number", "exclusiveMinimum": 0},
-            "absolute_floor_m_per_s": {"const": 0},
-            "zero_speed_must_be_exact": {"const": true}
-          }
-        },
-        "derived_energy": {
-          "type": "object", "additionalProperties": false,
-          "required": ["relative_bound", "absolute_floor_eV", "zero_energy_must_be_exact", "authority"],
-          "properties": {
-            "relative_bound": {"type": "number", "exclusiveMinimum": 0},
-            "absolute_floor_eV": {"const": 0},
-            "zero_energy_must_be_exact": {"const": true},
-            "authority": {"const": "actual_velocity_plus_canonical_mass_common_function"}
-          }
-        },
-        "native_ion_ke_role": {"const": "diagnostic_only"}
-      }
     },
     "paired_cohort_authority": {
       "type": "object",
