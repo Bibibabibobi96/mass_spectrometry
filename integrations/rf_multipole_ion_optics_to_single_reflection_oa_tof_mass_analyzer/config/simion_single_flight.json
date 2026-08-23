@@ -3,7 +3,9 @@
   "role": "rf_oatof_simion_single_flight_configuration",
   "clock_basis": "canonical_instrument_time_us",
   "resolution_qualification_policy": {
-    "required_bootstrap_resample_count": 5000
+    "required_bootstrap_resample_count": 5000,
+    "minimum_valid_bootstrap_resample_count": 4750,
+    "maximum_relative_95pct_interval_width": 0.1
   },
   "batching_policy": {
     "parallel_batch_memory_reservation_bytes": 10737418240,

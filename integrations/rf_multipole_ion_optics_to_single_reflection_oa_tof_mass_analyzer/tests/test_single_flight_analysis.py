@@ -33,6 +33,12 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     marker_area,
 )
 
+RESOLUTION_QUALIFICATION_POLICY = json.loads(
+    (Path(__file__).resolve().parents[1] / "config" / "simion_single_flight.json").read_text(
+        encoding="utf-8"
+    )
+)["resolution_qualification_policy"]
+
 
 def analyze(log_path, launched, mass_amu, *args, **kwargs):
     """Test fixture: compile formerly separate population values into one contract."""
@@ -89,7 +95,7 @@ class SingleFlightAnalysisTests(unittest.TestCase):
             "full_pulse_eligible_bootstrap": [valid],
             "spatial_window_peak": {"bootstrap": dict(valid)},
         }
-        validate_resolution_qualification(summary)
+        validate_resolution_qualification(summary, RESOLUTION_QUALIFICATION_POLICY)
         for field, value in (
             ("resamples_requested", 4999),
             ("resamples_valid", 4749),
@@ -100,7 +106,9 @@ class SingleFlightAnalysisTests(unittest.TestCase):
             with self.subTest(field=field), self.assertRaisesRegex(
                 ValueError, "bootstrap acceptance failed"
             ):
-                validate_resolution_qualification(invalid)
+                validate_resolution_qualification(
+                    invalid, RESOLUTION_QUALIFICATION_POLICY
+                )
 
     def test_three_zone_checkpoint_census_uses_frozen_monotonicity_rule(self) -> None:
         summary = {

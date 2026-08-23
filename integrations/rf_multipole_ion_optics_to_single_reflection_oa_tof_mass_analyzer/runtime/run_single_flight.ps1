@@ -2093,7 +2093,8 @@ try {
     )
   }
   if ($spatialWindowProfiles.Count -eq 1 -or
-      $sourceRegionDiagnosticProfiles.Count -eq 1) {
+      $sourceRegionDiagnosticProfiles.Count -eq 1 -or
+      $ResolutionQualification) {
     $analysisArguments += @('--configuration',$configuration)
   }
   if ($spatialWindowProfiles.Count -eq 1) {

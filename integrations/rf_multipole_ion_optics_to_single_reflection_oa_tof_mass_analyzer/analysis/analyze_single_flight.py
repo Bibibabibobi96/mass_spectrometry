@@ -34,11 +34,6 @@ DETECTOR_PATTERN = re.compile(
     r"x=(?P<x>[-+0-9.eE]+) y=(?P<y>[-+0-9.eE]+) z=(?P<z>[-+0-9.eE]+)"
 )
 
-RESOLUTION_QUALIFICATION_RESAMPLES = 5000
-RESOLUTION_QUALIFICATION_MIN_VALID_RESAMPLES = 4750
-RESOLUTION_QUALIFICATION_MAX_RELATIVE_INTERVAL_WIDTH = 0.10
-
-
 def resolve_analysis_mass_amu(initial_global_state_path: Path) -> float:
     """Return the unique physical mass represented by a frozen state table.
 
@@ -68,14 +63,28 @@ def resolve_analysis_mass_amu(initial_global_state_path: Path) -> float:
     return masses.pop()
 
 
-def validate_resolution_qualification(summary: dict) -> None:
+def validate_resolution_qualification(summary: dict, policy: dict) -> None:
     """Apply the frozen bootstrap acceptance rule to an analysis summary.
 
     Python owns interpretation of statistical output; PowerShell only launches
-    this analysis and propagates failure.  Constants preserve the pre-existing
-    qualification rule exactly.
+    this analysis and propagates failure. The frozen configuration supplies
+    the qualification policy.
     """
 
+    try:
+        required_resamples = int(policy["required_bootstrap_resample_count"])
+        minimum_valid_resamples = int(policy["minimum_valid_bootstrap_resample_count"])
+        maximum_interval_width = float(policy["maximum_relative_95pct_interval_width"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("resolution qualification policy is invalid") from exc
+    if (
+        required_resamples < 1
+        or minimum_valid_resamples < 1
+        or minimum_valid_resamples > required_resamples
+        or not math.isfinite(maximum_interval_width)
+        or maximum_interval_width <= 0
+    ):
+        raise ValueError("resolution qualification policy is invalid")
     records = list(summary.get("full_pulse_eligible_bootstrap") or [])
     spatial_peak = summary.get("spatial_window_peak")
     if isinstance(spatial_peak, dict):
@@ -89,10 +98,10 @@ def validate_resolution_qualification(summary: dict) -> None:
             raise ValueError("resolution qualification bootstrap record is invalid")
         if (
             record.get("status") != "computed"
-            or record.get("resamples_requested") != RESOLUTION_QUALIFICATION_RESAMPLES
-            or record.get("resamples_valid", 0) < RESOLUTION_QUALIFICATION_MIN_VALID_RESAMPLES
+            or record.get("resamples_requested") != required_resamples
+            or record.get("resamples_valid", 0) < minimum_valid_resamples
             or record.get("relative_95pct_interval_width", float("inf"))
-            > RESOLUTION_QUALIFICATION_MAX_RELATIVE_INTERVAL_WIDTH
+            > maximum_interval_width
         ):
             raise ValueError("resolution qualification bootstrap acceptance failed")
 
@@ -1432,6 +1441,7 @@ def main() -> int:
     if (
         args.spatial_window_profile_id is not None
         or args.source_region_diagnostic_profile_id is not None
+        or args.require_resolution_qualification
     ):
         if args.configuration is None:
             parser.error("profile selection requires --configuration")
@@ -1491,7 +1501,11 @@ def main() -> int:
         writer.writeheader(); writer.writerows(rows)
     args.summary.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8", newline="\n")
     if args.require_resolution_qualification:
-        validate_resolution_qualification(summary)
+        assert configuration is not None
+        policy = configuration.get("resolution_qualification_policy")
+        if not isinstance(policy, dict):
+            parser.error("resolution qualification requires a valid configuration policy")
+        validate_resolution_qualification(summary, policy)
     if args.require_three_zone_checkpoint_census:
         validate_three_zone_checkpoint_census(summary)
     print(f"SINGLE_FLIGHT_ANALYSIS=PASS HANDOFF={summary['census']['multipole_handoff']} DETECTOR={summary['census']['detector_crossing']}")
