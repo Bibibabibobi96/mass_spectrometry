@@ -38,32 +38,8 @@
             "items": {
               "properties": {
                 "execution_strategy": {"const": "simion_single_flight"},
-                "single_flight_pa_cache_policy": {"const": "require_existing"},
-                "single_flight_layout_profile_id": {"const": "three_zone_t5_primary_shaping_rings_1p4_v1"},
-                "single_flight_frontend_grid_profile_id": {"const": "frontend_isotropic_020_accelerator_overlay_z005"},
-                "single_flight_oatof_numerical_profile_id": {"const": "oatof_formal_mesh"},
-                "single_flight_trajectory_quality_profile_id": {"const": "tqual_8"},
-                "single_flight_time_integration_profile_id": {"const": "dt160"},
-                "single_flight_accelerator_field_profile_id": {"const": "accelerator_real_three_zone_pa_real_reflectron"},
-                "single_flight_source_materialization_profile_id": {"const": "canonical_real_octupole_n1000"},
-                "architecture_generation_id": {"const": "three_zone_t5_frozen_primary_shaping_rings_1p4_v1"},
-                "source_profile_id": {"const": "canonical_real_octupole_n1000"},
-                "field_overlay_id": {"const": "accelerator_overlay_z005"},
                 "source_release_mode": {"const": "continuous_frontend"},
-                "connection_profile_id": {"const": "rf_octupole_oatof_shield_terminal_direct_mating_gap_3p2mm"},
-                "single_flight_population": {
-                  "properties": {
-                    "population_mode": {"const": "first_100_rows_in_frozen_file_order"},
-                    "source_authority": {"properties": {
-                      "input_role": {"const": "pre_pulse_time_series_screening_prefix"},
-                      "table_binding": {"const": "prepared_deterministic_prefix"}
-                    }},
-                    "execution_population": {"properties": {
-                      "particle_count": {"const": 100},
-                      "selection_algorithm": {"const": "first_100_rows_in_frozen_file_order"}
-                    }}
-                  }
-                }
+                "single_flight_population": {"$ref": "#/$defs/single_flight_population"}
               },
               "not": {"anyOf": [
                 {"required": ["pre_pulse_source_state"]},

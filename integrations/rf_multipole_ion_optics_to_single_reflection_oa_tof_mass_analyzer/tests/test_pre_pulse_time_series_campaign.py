@@ -103,6 +103,26 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
         self.assertIsNone(contract["pa_cache_keys"]["reflectron"])
         self.assertEqual(contract["identities"]["mother_particle_source_sha256"], "D" * 64)
 
+    def test_schema_leaves_numerical_profiles_to_campaign_authoring(self) -> None:
+        schema_path = REPO_ROOT / (
+            "common/contracts/schemas/"
+            "rf_multipole_oatof_experiment_campaign.schema.json"
+        )
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        properties = schema["allOf"][0]["then"]["properties"][
+            "experiments"
+        ]["items"]["properties"]
+        self.assertEqual(
+            properties,
+            {
+                "execution_strategy": {"const": "simion_single_flight"},
+                "source_release_mode": {"const": "continuous_frontend"},
+                "single_flight_population": {
+                    "$ref": "#/$defs/single_flight_population"
+                },
+            },
+        )
+
     def test_published_v1_campaign_is_no_longer_active_schema_input(self) -> None:
         legacy = json.loads(LEGACY_CAMPAIGN_PATH.read_text(encoding="utf-8"))
         with self.assertRaises(ContractError):
