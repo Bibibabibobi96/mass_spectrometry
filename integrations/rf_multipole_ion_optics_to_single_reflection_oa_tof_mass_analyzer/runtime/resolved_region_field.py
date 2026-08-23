@@ -6,6 +6,7 @@ import hashlib
 import json
 import math
 from collections.abc import Mapping
+from functools import cache
 from pathlib import Path
 import re
 from typing import Any
@@ -24,7 +25,6 @@ THREE_ZONE_REAL_ACCELERATOR_IDEAL_REFLECTRON_PROFILE_ID = (
 )
 THREE_ZONE_EXPLICIT_REGION_MODES_PROFILE_ID = "three_zone_explicit_region_modes"
 THREE_ZONE_TOPOLOGY_ID = "three_zone_accelerator_ideal_v1"
-FULL_FIELD_NAME = "FULL_DOMAIN_PIECEWISE_IDEAL_FIELD"
 MODES = frozenset({"real_pa_field", "analytic_ideal_field", "zero_field"})
 REGIONS = (
     "accelerator_stage1",
@@ -51,20 +51,6 @@ PROFILE_MODES = {
     ),
 }
 FULL_ID = "full_domain_piecewise_ideal_field"
-FIELD_CONFIGURATION_IDS = {
-    "accelerator_real_pa": "REAL_ACCELERATOR_REAL_REFLECTOR_FIELD",
-    "accelerator_ideal_stage1_real_stage2": "IDEAL_STAGE1_REAL_STAGE2_REAL_REFLECTOR_FIELD",
-    "accelerator_real_stage1_ideal_stage2": "REAL_STAGE1_IDEAL_STAGE2_REAL_REFLECTOR_FIELD",
-    "accelerator_ideal_stage1_stage2_real_reflectron": "IDEAL_ACCELERATOR_REAL_REFLECTOR_FIELD",
-    FULL_ID: FULL_FIELD_NAME,
-    THREE_ZONE_PROFILE_ID: "IDEAL_THREE_ZONE_ACCELERATOR_REAL_REFLECTOR_FIELD",
-    THREE_ZONE_REAL_ACCELERATOR_IDEAL_REFLECTRON_PROFILE_ID:
-        "REAL_THREE_ZONE_ACCELERATOR_IDEAL_REFLECTOR_FIELD",
-    THREE_ZONE_EXPLICIT_REGION_MODES_PROFILE_ID:
-        "EXPLICIT_THREE_ZONE_REGION_MODES_FIELD",
-    FULL_THREE_ZONE_PROFILE_ID: "FULL_DOMAIN_THREE_ZONE_PIECEWISE_IDEAL_FIELD",
-    THREE_ZONE_REAL_PA_PROFILE_ID: "REAL_THREE_ZONE_ACCELERATOR_REAL_REFLECTOR_FIELD",
-}
 THREE_ZONE_PROFILE_IDS = {
     THREE_ZONE_PROFILE_ID,
     THREE_ZONE_REAL_ACCELERATOR_IDEAL_REFLECTRON_PROFILE_ID,
@@ -72,6 +58,28 @@ THREE_ZONE_PROFILE_IDS = {
     FULL_THREE_ZONE_PROFILE_ID,
     THREE_ZONE_REAL_PA_PROFILE_ID,
 }
+
+
+@cache
+def _field_profile(profile_id: str) -> dict[str, Any]:
+    """Return the unique active field profile; JSON owns its public identity."""
+
+    config_path = Path(__file__).resolve().parents[1] / "config" / "simion_single_flight.json"
+    configuration = _load(config_path)
+    matches = [
+        item for item in configuration["accelerator_field_profiles"]
+        if item.get("profile_id") == profile_id
+    ]
+    if len(matches) != 1:
+        raise ValueError(f"unsupported accelerator field profile: {profile_id}")
+    configuration_id = matches[0].get("field_configuration_id")
+    if not isinstance(configuration_id, str) or not configuration_id:
+        raise ValueError("accelerator field profile lacks field configuration identity")
+    return matches[0]
+
+
+def _field_configuration_id(profile_id: str) -> str:
+    return str(_field_profile(profile_id)["field_configuration_id"])
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -90,8 +98,7 @@ def semantic_sha256(semantic: Mapping[str, Any]) -> str:
 
 def canonical_profile_id(profile_id: str) -> str:
     """Return an already canonical profile ID; execution aliases are forbidden."""
-    if profile_id not in {*PROFILE_MODES, FULL_ID, *THREE_ZONE_PROFILE_IDS}:
-        raise ValueError(f"unsupported accelerator field profile: {profile_id}")
+    _field_profile(profile_id)
     return profile_id
 
 
@@ -185,7 +192,7 @@ def build_resolved_region_field_contract(
             raise ValueError("resolved accelerator voltage differs from finite-interval design")
     layout = geometry.get("single_flight_layout_derivation", {})
     semantic = {
-        "field_configuration_id": FIELD_CONFIGURATION_IDS[canonical],
+        "field_configuration_id": _field_configuration_id(canonical),
         "canonical_profile_id": canonical,
         "region_modes": modes,
         "planes_mm": planes,
@@ -382,7 +389,7 @@ def _build_three_zone_contract(
             "outside_longitudinal_domain": "native_pa_base_field_unchanged",
         }
     semantic = {
-        "field_configuration_id": FIELD_CONFIGURATION_IDS[canonical],
+        "field_configuration_id": _field_configuration_id(canonical),
         "canonical_profile_id": canonical,
         "accelerator_topology": {
             "topology_id": THREE_ZONE_TOPOLOGY_ID,
@@ -450,7 +457,7 @@ def validate_resolved_region_field_contract(contract: Mapping[str, Any]) -> None
     if semantic.get("real_pa_field_blending_allowed") is not False:
         raise ValueError("resolved region field must prohibit real-PA blending")
     profile_id = semantic.get("canonical_profile_id")
-    if semantic.get("field_configuration_id") != FIELD_CONFIGURATION_IDS.get(profile_id):
+    if semantic.get("field_configuration_id") != _field_configuration_id(str(profile_id)):
         raise ValueError("resolved region field scientific configuration identity differs")
     if schema_version == THREE_ZONE_SCHEMA_VERSION:
         _validate_three_zone_semantic(semantic)

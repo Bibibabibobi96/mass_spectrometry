@@ -287,6 +287,7 @@ class ResolvedRegionFieldTests(unittest.TestCase):
                 "geometry_id": "three_zone_focus_origin_planes_v1",
                 "frontend_electrode_topology_id": "three_zone_frontend_v1",
                 "field_id": "three_zone_plus_reflectron_piecewise_uniform_ideal_field_v1",
+                "field_configuration_id": "FULL_DOMAIN_THREE_ZONE_PIECEWISE_IDEAL_FIELD",
                 "role": "full_domain_three_zone_controlled_counterfactual",
             },
         )
