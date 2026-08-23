@@ -8,6 +8,9 @@ import subprocess
 import unittest
 
 from common.contracts.machine_contracts import ContractError, validate_schema
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.tests.fixtures.campaign_fixture import (
+    current_campaign_fixture,
+)
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.prepare import (
     _automatic_pulse_population_binding,
     compile_pre_pulse_time_series_contract,
@@ -105,40 +108,21 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
         self.assertIsNone(contract["pa_cache_keys"]["reflectron"])
         self.assertEqual(contract["identities"]["mother_particle_source_sha256"], "D" * 64)
 
-    def test_schema_leaves_numerical_profiles_to_campaign_authoring(self) -> None:
-        schema_path = ARCHIVAL_CAMPAIGN_SCHEMA
-        schema = json.loads(schema_path.read_text(encoding="utf-8"))
-        properties = schema["allOf"][0]["then"]["properties"][
-            "experiments"
-        ]["items"]["properties"]
-        self.assertEqual(
-            properties,
-            {
-                "execution_strategy": {"const": "simion_single_flight"},
-                "source_release_mode": {"const": "continuous_frontend"},
-                "single_flight_population": {
-                    "$ref": "#/$defs/single_flight_population"
-                },
-            },
+    def test_schema_accepts_unregistered_numerics_and_pre_pulse_grid_values(self) -> None:
+        campaign = current_campaign_fixture(self.campaign)
+        screening = campaign["pre_pulse_time_series_screening"]
+        screening["rf_steps_per_period"] = 161
+        screening["sample_count"] = 319
+        screening["spatial_window_profile_id"] = "fixture_window_profile"
+        screening["pa_cache_keys"]["frontend"] = "A" * 64
+        screening["pa_cache_keys"]["accelerator_overlay"] = "B" * 64
+        campaign["experiments"][0]["single_flight_trajectory_quality_profile_id"] = (
+            "fixture_tqual"
         )
-
-    def test_schema_leaves_pre_pulse_grid_and_cache_identity_to_campaign(self) -> None:
-        schema_path = ARCHIVAL_CAMPAIGN_SCHEMA
-        definition = json.loads(schema_path.read_text(encoding="utf-8"))["$defs"][
-            "pre_pulse_time_series_screening"
-        ]["properties"]
-        self.assertEqual(definition["rf_steps_per_period"], {
-            "type": "integer", "minimum": 1,
-        })
-        self.assertEqual(definition["sample_count"], {
-            "type": "integer", "minimum": 1,
-        })
-        self.assertEqual(definition["spatial_window_profile_id"], {
-            "$ref": "#/$defs/id",
-        })
-        self.assertEqual(definition["pa_cache_keys"]["properties"]["frontend"], {
-            "type": "string", "pattern": "^[A-Fa-f0-9]{64}$",
-        })
+        campaign["experiments"][0]["single_flight_time_integration_profile_id"] = (
+            "fixture_dt"
+        )
+        validate_schema(campaign, ARCHIVAL_CAMPAIGN_SCHEMA)
 
     def test_published_v1_campaign_is_no_longer_active_schema_input(self) -> None:
         legacy = json.loads(LEGACY_CAMPAIGN_PATH.read_text(encoding="utf-8"))
