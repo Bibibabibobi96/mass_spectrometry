@@ -100,8 +100,6 @@ UPSTREAM_PROJECTS = {
     "rf_hexapole_ion_optics",
     "rf_octupole_ion_optics",
 }
-AUTO_PULSE_POLICY_ID = "auto_detector_blind_discovery_and_confirmation_v1"
-AUTO_PULSE_GRID_PROFILE_ID = "ballistic_seed_native_dt_minus0p35_plus1p65_v1"
 PULSE_TRANSITION_RELATIVE_PATH = "results/pulse_timing_transition.json"
 
 
