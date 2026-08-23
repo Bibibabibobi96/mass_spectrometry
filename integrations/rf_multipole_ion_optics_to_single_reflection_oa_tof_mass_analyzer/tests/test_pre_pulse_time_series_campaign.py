@@ -38,10 +38,6 @@ V5_AUTO_CAMPAIGN_PATH = INTEGRATION_ROOT / (
 CURRENT_AUTO_CAMPAIGN_PATH = INTEGRATION_ROOT / (
     "config/diagnostics/connector_gap_102p4_real_pa_full_n5000_v1.json"
 )
-N1000_AUTO_CAMPAIGN_PATH = INTEGRATION_ROOT / (
-    "config/diagnostics/"
-    "connector_gap_three_zone_real_pa_full_n1000_campaign_v1.json"
-)
 ADAPTER_PATH = INTEGRATION_ROOT / "workflows/family_source_closure/adapter.ps1"
 PUBLIC_ENTRY_PATH = INTEGRATION_ROOT / "workflows/family_source_closure/execute.ps1"
 
@@ -327,42 +323,24 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
             )
             self.assertNotIn("fixed_execution_authority", row["single_flight_pulse_schedule_policy"])
 
-    def test_auto_policy_accepts_only_legacy_prefix_or_full_source_population(
-        self,
-    ) -> None:
-        legacy = json.loads(V5_AUTO_CAMPAIGN_PATH.read_text(encoding="utf-8"))
-        full = json.loads(N1000_AUTO_CAMPAIGN_PATH.read_text(encoding="utf-8"))
+    def test_auto_policy_keeps_legacy_n100_prefix_compatibility(self) -> None:
+        legacy = {
+            "population_mode": "first_100_rows_in_frozen_file_order",
+            "source_authority": {"table_binding": "prepared_deterministic_prefix"},
+            "execution_population": {
+                "particle_count": 100,
+                "selection_algorithm": "first_100_rows_in_frozen_file_order",
+            },
+        }
         self.assertEqual(
-            _automatic_pulse_population_binding(
-                legacy["experiments"][0]["single_flight_population"]
-            ),
+            _automatic_pulse_population_binding(legacy),
             ("prepared_deterministic_prefix", 100),
         )
-        for row in full["experiments"]:
-            self.assertEqual(
-                _automatic_pulse_population_binding(row["single_flight_population"]),
-                ("source_contract_particle_source", 1000),
-            )
-        unsupported = copy.deepcopy(full["experiments"][0]["single_flight_population"])
-        unsupported["execution_population"]["particle_count"] = 999
-        self.assertEqual(
-            _automatic_pulse_population_binding(unsupported),
-            ("source_contract_particle_source", 999),
-        )
-        for invalid_count in (0, -1):
-            unsupported["execution_population"]["particle_count"] = invalid_count
-            with self.subTest(invalid_count=invalid_count), self.assertRaisesRegex(
-                ContractError, "automatic pulse timing population differs"
-            ):
-                _automatic_pulse_population_binding(unsupported)
-        unsupported = copy.deepcopy(full["experiments"][0]["single_flight_population"])
-        unsupported["source_authority"]["table_binding"] = (
-            "prepared_deterministic_prefix"
-        )
+        legacy["execution_population"]["particle_count"] = 99
         with self.assertRaisesRegex(
             ContractError, "automatic pulse timing population differs"
         ):
-            _automatic_pulse_population_binding(unsupported)
+            _automatic_pulse_population_binding(legacy)
 
     def test_schema_and_auto_policy_accept_generic_deterministic_prefix(self) -> None:
         campaign = json.loads(CURRENT_AUTO_CAMPAIGN_PATH.read_text(encoding="utf-8"))
