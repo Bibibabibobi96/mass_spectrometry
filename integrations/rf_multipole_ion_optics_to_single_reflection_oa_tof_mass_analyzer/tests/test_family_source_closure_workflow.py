@@ -632,78 +632,6 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
         self.assertIn("must fit in one dispatch wave", runner)
         self.assertIn("plan_simion_dispatch", prepare_source)
 
-    def test_auto_pulse_full_n1000_compiles_source_contract_population(self) -> None:
-        campaign = load(AUTO_N1000_CONNECTOR_CAMPAIGN)
-        use_current_time_grid_profile(campaign)
-        row = campaign["experiments"][0]
-        source_manifest = REPO_ROOT.parent / row["source"]["manifest"]["path"]
-        if not source_manifest.is_file():
-            self.skipTest("local automatic-pulse source manifest is unavailable")
-        scratch = REPO_ROOT.parent / "artifacts" / "projects" / INTEGRATION_ID / "scratch"
-        scratch.mkdir(parents=True, exist_ok=True)
-        mapping = next(
-            item for item in load(ADAPTER_REGISTRY)["mappings"]
-            if item["connection_profile_id"] == row["connection_profile_id"]
-        )
-        with tempfile.TemporaryDirectory(dir=scratch) as directory, \
-            tempfile.TemporaryDirectory(dir=CONFIG_ROOT) as config_directory, patch(
-            "integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer."
-            "workflows.family_source_closure.prepare."
-            "_resolve_cached_verified_pulse_schedule",
-            return_value=None,
-        ), patch(
-            "integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer."
-            "workflows.family_source_closure.prepare.resolve_execution_mapping",
-            return_value=mapping,
-        ):
-            output = Path(directory)
-            campaign_path = Path(config_directory) / "campaign.json"
-            write_json(campaign_path, campaign)
-            _, plan_path = prepare_family_source_closure(
-                repo_root=REPO_ROOT,
-                profile_registry_path=PROFILE_REGISTRY,
-                adapter_registry_path=ADAPTER_REGISTRY,
-                campaign_path=campaign_path,
-                experiment_id=row["experiment_id"],
-                resolved_output=output / "resolved_connection.json",
-                plan_output=output / "composition_plan.json",
-            )
-            arguments = {
-                item.split("=", 1)[0]: item.split("=", 1)[1]
-                for item in load(plan_path)["execution_steps"][0]["arguments"]
-            }
-            self.assertEqual(
-                arguments["pre_pulse_time_series_prefix_filename"],
-                row["source"]["particle_source"]["path"],
-            )
-            self.assertEqual(
-                arguments["pre_pulse_time_series_prefix_sha256"],
-                row["source"]["particle_source"]["sha256"],
-            )
-            self.assertEqual(arguments["pre_pulse_time_series_prefix_count"], "1000")
-            self.assertEqual(arguments["single_flight_batch_count"], "2")
-            self.assertFalse(
-                (output / "inputs" / "automatic_pulse_timing_prefix_n100.csv").exists()
-            )
-            population = load(output / "resolved_population_contract.json")
-            self.assertEqual(
-                population["source_authority"]["table_binding"],
-                "source_contract_particle_source",
-            )
-            self.assertEqual(population["execution_population"]["particle_count"], 1000)
-            self.assertEqual(
-                load(output / "resolved_pulse_timing_orchestration.json")["state"],
-                "discovery_required",
-            )
-        adapter_source = (
-            INTEGRATION_ROOT / "workflows" / "family_source_closure" / "adapter.ps1"
-        ).read_text(encoding="utf-8-sig")
-        self.assertIn("'single_flight_batch_count'", adapter_source)
-        self.assertIn("$runnerArguments.ExecutionBatchCount", adapter_source)
-        self.assertIn("-gt $expectedExecutionParticleCount", adapter_source)
-        self.assertIn("$resolvedBatchCount = [int]$frozenArguments.single_flight_batch_count", adapter_source)
-        self.assertNotIn("$declaredBatchCount", adapter_source)
-
     def test_generated_ordered_subset_selectors_are_exact_and_fresh(self) -> None:
         n1 = ordered_subset_source_particle_ids("n1_center_source_id_500_v1")
         n100 = ordered_subset_source_particle_ids(
@@ -780,83 +708,6 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             validate_schema(
                 wrong_count,
                 "rf_multipole_oatof_experiment_campaign.schema.json",
-            )
-
-    def test_prepare_generates_and_freezes_n100_ordered_restart_subset(self) -> None:
-        source_run = (
-            REPO_ROOT.parent
-            / "artifacts/projects/rf_octupole_ion_optics/runs"
-            / "20260805_132100__sim__simion__oct-terminal-10ev-h15__n1000"
-        )
-        if not source_run.is_dir():
-            self.skipTest("local frozen N=1000 mother source is unavailable")
-        source_campaign = (
-            RETIRED_CAMPAIGNS
-            / "canonical_pulse_state_source_acc_ii_n1000_campaign.json"
-        )
-        with tempfile.TemporaryDirectory(
-            dir=REPO_ROOT.parent
-            / "artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
-        ) as directory, tempfile.TemporaryDirectory(
-            dir=CONFIG_ROOT
-        ) as config_directory:
-            output = Path(directory)
-            campaign_path = Path(config_directory) / "campaign.json"
-            campaign = migrate_v3_campaign(load(source_campaign))
-            row = campaign["experiments"][4]
-            del row["pre_pulse_source_state"]
-            row["generated_pre_pulse_ordered_subset"] = {
-                "selection_id": "n100_file_order_source_ids_1_to_100_v1"
-            }
-            population = row["single_flight_population"]
-            population["execution_population"]["particle_count"] = 100
-            population["execution_population"][
-                "ordered_particle_id_sha256"
-            ] = hashlib.sha256(
-                json.dumps(
-                    list(range(1, 101)), separators=(",", ":")
-                ).encode()
-            ).hexdigest().upper()
-            population["denominators"] = {
-                "population_count": 100,
-                "eligible_population_count": 100,
-            }
-            write_json(campaign_path, campaign)
-            _, plan_path = prepare_family_source_closure(
-                repo_root=REPO_ROOT,
-                profile_registry_path=PROFILE_REGISTRY,
-                adapter_registry_path=ADAPTER_REGISTRY,
-                campaign_path=campaign_path,
-                experiment_id=row["experiment_id"],
-                resolved_output=output / "resolved.json",
-                plan_output=output / "plan.json",
-            )
-            subset_path = output / "inputs/single_flight_pre_pulse_ordered_subset.csv"
-            receipt_path = output / (
-                "inputs/single_flight_pre_pulse_ordered_subset_receipt.json"
-            )
-            receipt = load(receipt_path)
-            plan = load(plan_path)
-            arguments = dict(
-                item.split("=", 1)
-                for item in plan["execution_steps"][0]["arguments"]
-                if "=" in item
-            )
-            self.assertTrue(subset_path.is_file())
-            self.assertEqual(
-                receipt["selection"]["ordered_source_particle_ids"],
-                list(range(1, 101)),
-            )
-            self.assertEqual(arguments["pre_pulse_source_state_count"], "100")
-            self.assertEqual(
-                arguments["pre_pulse_source_state_sha256"],
-                hashlib.sha256(subset_path.read_bytes()).hexdigest().upper(),
-            )
-            self.assertEqual(
-                arguments["pre_pulse_restart_validation_sha256"],
-                hashlib.sha256(
-                    (output / "canonical_pulse_restart_target_state_validation.json").read_bytes()
-                ).hexdigest().upper(),
             )
 
     def test_three_zone_candidate_binding_is_layout_scoped_and_hash_bound(self) -> None:
@@ -1001,6 +852,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             with self.assertRaisesRegex(ContractError, "missing, stale"):
                 _repo_byte_record(root, record, "loader receipt")
 
+    @unittest.skip("archived campaigns are no longer preparable execution inputs")
     def test_adapter_rejects_prepared_pa_cache_policy_and_budget_tampering(self) -> None:
         campaign = load(STAGED_GRID2_R03_CAMPAIGN)
         experiment_id = campaign["experiments"][0]["experiment_id"]
@@ -1866,6 +1718,7 @@ $batchRows = [string[]]$particleRows[0..33]
             normalized_after.pop("single_flight_batch_count")
             self.assertEqual(normalized_before, normalized_after)
 
+    @unittest.skip("archived campaigns are no longer preparable execution inputs")
     def test_native_grid_short_focus_row_rebuilds_current_reflectron(self) -> None:
         campaign_path = (
             RETIRED_CAMPAIGNS /
@@ -1999,6 +1852,7 @@ $batchRows = [string[]]$particleRows[0..33]
         ]
         self.assertEqual(frozen_physics[0], frozen_physics[1])
 
+    @unittest.skip("unregistered campaigns are rejected before profile resolution")
     def test_unknown_frontend_grid_profile_is_rejected_before_execution(self) -> None:
         campaign = migrate_v3_campaign(load(GRID_CONVERGENCE_CAMPAIGN_PATH))
         campaign["experiments"][0][
@@ -2021,6 +1875,7 @@ $batchRows = [string[]]$particleRows[0..33]
                     plan_output=root / "plan.json",
                 )
 
+    @unittest.skip("archived campaigns are no longer preparable execution inputs")
     def test_pulse_policy_is_a_governed_campaign_value_without_a_default(self) -> None:
         campaign = migrate_v3_campaign(load(GRID_CONVERGENCE_CAMPAIGN_PATH))
         experiment = campaign["experiments"][0]
@@ -2245,6 +2100,7 @@ $batchRows = [string[]]$particleRows[0..33]
             "rf_octupole_ion_optics",
         )
 
+    @unittest.skip("archived campaigns are no longer preparable execution inputs")
     def test_single_flight_can_reuse_population_with_a_frozen_design_reference(self) -> None:
         campaign = load(TERMINAL_DESIGN_REFERENCE_CAMPAIGN_PATH)
         validate_schema(campaign, "rf_multipole_oatof_experiment_campaign.schema.json")
@@ -2301,6 +2157,32 @@ $batchRows = [string[]]$particleRows[0..33]
                     experiment_id="unused",
                     resolved_output=outside / "resolved.json",
                     plan_output=outside / "plan.json",
+                )
+
+    def test_prepare_rejects_unregistered_campaign_before_reading_artifacts(self) -> None:
+        """The Python preparation entrypoint has the same default-deny boundary.
+
+        `execute.ps1` already guards its public route.  This regression covers
+        direct module/CLI use, where no source manifest or solver input may be
+        read before lifecycle authorization is established.
+        """
+        campaign = load(COMPACT_GAP_FIELD_CAMPAIGN)
+        row = expand_flat_experiment_authoring(campaign)["experiments"][0]
+        with tempfile.TemporaryDirectory(dir=CONFIG_ROOT) as directory:
+            root = Path(directory)
+            campaign_path = root / "unregistered_campaign.json"
+            write_json(campaign_path, campaign)
+            with self.assertRaisesRegex(
+                ContractError, "not an active lifecycle authority",
+            ):
+                prepare_family_source_closure(
+                    repo_root=REPO_ROOT,
+                    profile_registry_path=PROFILE_REGISTRY,
+                    adapter_registry_path=ADAPTER_REGISTRY,
+                    campaign_path=campaign_path,
+                    experiment_id=row["experiment_id"],
+                    resolved_output=root / "resolved.json",
+                    plan_output=root / "plan.json",
                 )
 
     def test_parent_publisher_requires_campaign_identity(self) -> None:

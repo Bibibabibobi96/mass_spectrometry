@@ -2775,13 +2775,26 @@ def prepare_family_source_closure(
         row for row in lifecycle_registry.get("active_campaigns", [])
         if isinstance(row, dict) and row.get("path") == campaign_relative_path
     ]
-    if active_rows:
-        if len(active_rows) != 1 or (
-            lifecycle_registry.get("active_post_pulse_restart_working_point_policy")
-            != ACTIVE_POST_PULSE_WORKING_POINT_POLICY
-        ):
-            raise ContractError("active lifecycle working-point policy is invalid")
-        validate_active_post_pulse_restart_working_point(experiment)
+    if len(active_rows) != 1:
+        raise ContractError(
+            "campaign is not an active lifecycle authority; preparation is forbidden"
+        )
+    if file_sha256(campaign_path).lower() != str(
+        active_rows[0].get("content_sha256", "")
+    ).lower():
+        raise ContractError(
+            "active lifecycle campaign identity differs; preparation is forbidden"
+        )
+    if campaign.get("status") != "authorized":
+        raise ContractError(
+            "active lifecycle campaign must be authorized before preparation"
+        )
+    if (
+        lifecycle_registry.get("active_post_pulse_restart_working_point_policy")
+        != ACTIVE_POST_PULSE_WORKING_POINT_POLICY
+    ):
+        raise ContractError("active lifecycle working-point policy is invalid")
+    validate_active_post_pulse_restart_working_point(experiment)
     selected_three_zone_gate = experiment.get("three_zone_solver_gate")
     three_zone_gate_pair = (
         three_zone_gate_pairs[selected_three_zone_gate["gate_id"]]
