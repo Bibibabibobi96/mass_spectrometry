@@ -1311,6 +1311,19 @@ class CandidateDesignTests(unittest.TestCase):
         self.assertIn("run_n100_transport.ps1", runner)
         self.assertNotIn("'--nogui', 'fly'", runner)
 
+    def test_functional_solver_test_runners_use_short_lived_execution_aliases(self):
+        for relative in (
+            "tests/comsol/run_n100_candidate_functional.ps1",
+            "tests/simion/run_n100_source_build_and_track.ps1",
+        ):
+            runner = (PROJECT_ROOT / relative).read_text(encoding="utf-8")
+            self.assertIn("-UseShortExecutionPath", runner, relative)
+            self.assertIn(
+                "Remove-RunPackageExecutionAlias -Package $package",
+                runner,
+                relative,
+            )
+
     def test_simion_candidate_requires_explicit_nonformal_frozen_template_before_builder(self):
         with tempfile.TemporaryDirectory() as root:
             run_root = Path(root)

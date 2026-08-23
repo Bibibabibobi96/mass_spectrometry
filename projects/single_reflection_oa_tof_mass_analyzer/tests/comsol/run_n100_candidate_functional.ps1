@@ -20,7 +20,7 @@ $ion = Join-Path $artifactRoot 'formal\simion\oatof_comsol_524amu_gaussian_N100.
 $software = @('COMSOL 6.4', 'MATLAB R2025b', 'Python 3.11')
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
   -RunId $RunId -Project 'single_reflection_oa_tof_mass_analyzer' -Mode 'comsol_n100_candidate_functional' `
-  -Software $software -AdditionalDirectories @('comsol')
+  -Software $software -AdditionalDirectories @('comsol') -UseShortExecutionPath
 $model = Join-Path $package.run_dir 'comsol\single_reflection_oa_tof_mass_analyzer__candidate_n100.mph'
 $report = Join-Path $package.log_dir 'comsol_candidate_report.txt'
 
@@ -114,4 +114,7 @@ catch {
 }
 finally {
   Restore-RunEnvironment -Names $names -Snapshot $snapshot
+  try { Remove-RunPackageExecutionAlias -Package $package } catch {
+    Write-Warning "Could not remove short execution alias after COMSOL test run: $($_.Exception.Message)"
+  }
 }

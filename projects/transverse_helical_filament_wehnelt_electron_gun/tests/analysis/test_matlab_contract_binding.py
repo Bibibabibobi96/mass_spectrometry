@@ -219,6 +219,8 @@ class MatlabContractBindingTests(unittest.TestCase):
     def test_commercial_runner_freezes_inputs_and_writes_verified_manifest(self) -> None:
         required = (
             "New-RunPackage",
+            "-UseShortExecutionPath",
+            "Remove-RunPackageExecutionAlias -Package $package",
             "comsol\\build_only_smoke.m",
             "config\\resolved_model.json",
             "WEHNELT_ARTIFACT_ROOT",

@@ -257,7 +257,7 @@ $commercialWrapperCompleted = $false
 try {
   $package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
     -RunId $RunId -Project 'transverse_helical_filament_wehnelt_electron_gun' -Mode 'build_only_smoke' `
-    -Software $software -AdditionalDirectories @('comsol')
+    -Software $software -AdditionalDirectories @('comsol') -UseShortExecutionPath
   $manifestPath = Join-Path $package.run_dir 'run_manifest.json'
   $recordPaths = @($package.run_config,$package.summary,$manifestPath)
   $report = Join-Path $package.log_dir 'build_only_report.txt'
@@ -558,4 +558,9 @@ foreach ($entry in $bootstrapIdentity.GetEnumerator()) {
   throw $runError
 } finally {
   Restore-RunEnvironment -Names $environmentNames -Snapshot $savedEnvironment
+  if ($null -ne $package) {
+    try { Remove-RunPackageExecutionAlias -Package $package } catch {
+      Write-Warning "Could not remove short execution alias after Wehnelt build-only run: $($_.Exception.Message)"
+    }
+  }
 }

@@ -29,7 +29,7 @@ foreach ($path in @($SimionExe, $builder, $analyzer, $transport)) {
 $software = @('SIMION 2020', 'Python 3.11')
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
   -RunId $RunId -Project 'single_reflection_oa_tof_mass_analyzer' -Mode 'simion_n100_source_build_and_track' `
-  -Software $software -AdditionalDirectories @('simion')
+  -Software $software -AdditionalDirectories @('simion') -UseShortExecutionPath
 $simionDir = Join-Path $package.run_dir 'simion'
 $textDir = Join-Path $package.input_dir 'simion_text'
 New-Item -ItemType Directory -Path $textDir | Out-Null
@@ -192,4 +192,9 @@ catch {
     -RunConfig $package.run_config -Status failed -Software $software `
     -Outputs $failedOutputs
   throw
+}
+finally {
+  try { Remove-RunPackageExecutionAlias -Package $package } catch {
+    Write-Warning "Could not remove short execution alias after SIMION test run: $($_.Exception.Message)"
+  }
 }
