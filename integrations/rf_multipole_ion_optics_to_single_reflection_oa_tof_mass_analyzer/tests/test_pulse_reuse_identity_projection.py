@@ -6,6 +6,9 @@ import unittest
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.pulse_reuse_identity_projection import (
     build_verified_pulse_reuse_projection,
 )
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.prepare import (
+    post_pulse_handoff_profile_identity,
+)
 
 
 def _fixture() -> dict[str, object]:
@@ -198,6 +201,33 @@ class PulseReuseIdentityProjectionTests(unittest.TestCase):
         fixture["pa_cache_keys"]["flight_tube"] = "downstream-key"
         with self.assertRaisesRegex(ValueError, "frontend and accelerator-overlay"):
             build_verified_pulse_reuse_projection(**fixture)
+
+    def test_consumer_numerics_do_not_enter_post_pulse_handoff_identity(self) -> None:
+        experiment = {
+            "connection_profile_id": "gap_51p2",
+            "source_profile_id": "canonical_real_octupole",
+            "single_flight_layout_profile_id": "three_zone",
+            "architecture_generation_id": "three_zone_v1",
+            "field_overlay_id": "overlay_z005",
+            "single_flight_frontend_grid_profile_id": "frontend_020",
+            "single_flight_oatof_numerical_profile_id": "formal_mesh",
+            "single_flight_trajectory_quality_profile_id": "tqual_8",
+            "single_flight_time_integration_profile_id": "dt160",
+        }
+        baseline = post_pulse_handoff_profile_identity(experiment)
+        for name, value in (
+            ("single_flight_frontend_grid_profile_id", "frontend_010"),
+            ("single_flight_oatof_numerical_profile_id", "refined_mesh"),
+            ("single_flight_trajectory_quality_profile_id", "tqual_108"),
+            ("single_flight_time_integration_profile_id", "dt40"),
+        ):
+            with self.subTest(name=name):
+                varied = dict(experiment)
+                varied[name] = value
+                self.assertEqual(baseline, post_pulse_handoff_profile_identity(varied))
+        changed_physics = dict(experiment)
+        changed_physics["connection_profile_id"] = "gap_25p6"
+        self.assertNotEqual(baseline, post_pulse_handoff_profile_identity(changed_physics))
 
 
 if __name__ == "__main__":

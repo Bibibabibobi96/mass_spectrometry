@@ -1776,6 +1776,22 @@ def _validate_post_pulse_variation_axis(
     raise ContractError("post-pulse variation axis is unsupported")
 
 
+def post_pulse_handoff_profile_identity(experiment: dict[str, Any]) -> dict[str, str]:
+    """Return only the producer properties that affect a frozen restart state.
+
+    Downstream mesh, grid, trajectory quality, and time integration govern the
+    new consumer run; they cannot alter an already recorded pulse-epoch state.
+    """
+
+    return {
+        "connection_profile_id": experiment["connection_profile_id"],
+        "source_profile_id": experiment["source_profile_id"],
+        "layout_profile_id": experiment["single_flight_layout_profile_id"],
+        "architecture_generation_id": experiment["architecture_generation_id"],
+        "field_overlay_id": experiment["field_overlay_id"],
+    }
+
+
 def _resolve_post_pulse_restart_reuse(
     *,
     root: Path,
@@ -1926,18 +1942,7 @@ def _resolve_post_pulse_restart_reuse(
         raise ContractError("verified pulse does not authorize the producer checkpoint")
 
     parameters = run_config.get("parameters", {})
-    target_profiles = {
-        "connection_profile_id": experiment["connection_profile_id"],
-        "source_profile_id": experiment["source_profile_id"],
-        "layout_profile_id": experiment["single_flight_layout_profile_id"],
-        "architecture_generation_id": experiment["architecture_generation_id"],
-        "frontend_grid_profile_id": experiment["single_flight_frontend_grid_profile_id"],
-        "field_overlay_id": experiment["field_overlay_id"],
-        "oatof_numerical_profile_id": experiment["single_flight_oatof_numerical_profile_id"],
-        "trajectory_quality_profile_id": experiment[
-            "single_flight_trajectory_quality_profile_id"
-        ],
-    }
+    target_profiles = post_pulse_handoff_profile_identity(experiment)
     if any(parameters.get(key) != value for key, value in target_profiles.items()):
         raise ContractError("post-pulse producer and consumer profile identity differs")
     producer_time_profile = parameters.get("time_integration_profile_id")
@@ -3648,7 +3653,6 @@ def prepare_family_source_closure(
     three_zone_authorization: dict[str, str] | None = None
     if three_zone_gate_pair is not None:
         producer, consumer = three_zone_gate_pair
-        gate_stage = experiment["three_zone_solver_gate"]["stage"]
         if _is_solver_authorized_consumer(experiment):
             if (
                 resolved_region_field_contract is None
