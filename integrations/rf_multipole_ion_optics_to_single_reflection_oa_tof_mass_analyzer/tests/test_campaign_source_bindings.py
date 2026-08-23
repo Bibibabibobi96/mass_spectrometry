@@ -157,6 +157,16 @@ class CampaignSourceBindingTests(unittest.TestCase):
             self.assertTrue(is_fresh(repo, campaign))
             self.assertFalse(write_campaign(repo, campaign))
 
+    def test_execution_policy_is_excluded_from_campaign_semantic_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repo, campaign = self._fixture(Path(directory))
+            document = json.loads(campaign.read_text(encoding="utf-8"))
+            baseline = expanded_campaign_semantic_sha256(document)
+            document["execution_policy"] = {
+                "path": "config/legacy-policy.json", "sha256": "A" * 64,
+            }
+            self.assertEqual(expanded_campaign_semantic_sha256(document), baseline)
+
     def test_flat_campaign_refreshes_shared_source_bindings(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             repo, campaign = self._flat_fixture(Path(directory))
