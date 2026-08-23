@@ -5,7 +5,6 @@
   "policy_id": "compact_serial_commercial_solvers",
   "workflow_id": "family_source_closure",
   "retention_class": "compact",
-  "commercial_solver_concurrency_limit": 1,
   "stop_after_first_failure": true,
   "budget_exhaustion_result": "INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED",
   "stage_limits": {
