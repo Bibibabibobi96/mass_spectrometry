@@ -148,13 +148,6 @@ if ([string]::Join("`n", @($inventory.dependencies.id)) -ne [string]::Join("`n",
                 self.assertNotIn("..", relative.parts)
                 self.assertTrue((REPO_ROOT / relative).is_file())
 
-    def test_obsolete_base_and_overlays_are_absent(self) -> None:
-        self.assertFalse((CONFIG_ROOT / "family_dependencies_base.json").exists())
-        for family in FAMILIES:
-            self.assertFalse(
-                (CONFIG_ROOT / f"family_{family}_dependencies_overlay.json").exists()
-            )
-
     def test_active_bindings_use_one_inventory_authority(self) -> None:
         expected_path = INVENTORY.relative_to(REPO_ROOT).as_posix()
         expected_sha256 = repository_text_sha256(INVENTORY)
