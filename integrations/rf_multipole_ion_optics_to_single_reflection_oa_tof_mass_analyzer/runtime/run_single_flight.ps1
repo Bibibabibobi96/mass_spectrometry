@@ -76,8 +76,7 @@ param(
   [string]$PrePulseTimeSeriesContractSha256 = '',
   [ValidateScript({ $_ -ge 1 })][int]$ExecutionBatchCount = 1,
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
-  [string]$PythonExe = '',
-  [switch]$BindingParseOnly
+  [string]$PythonExe = ''
 )
 
 Set-StrictMode -Version Latest
@@ -311,33 +310,6 @@ $package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $art
   -RunId $RunId -Project $runProjectId -Mode 'rf_to_oatof_simion_single_flight' `
   -Software @('SIMION 2020','Python 3.11') -RetentionContractEnabled -RetentionClass compact `
   -AdditionalDirectories @('simion') -UseShortExecutionPath
-if ($BindingParseOnly) {
-  if (-not $hasRequiredPaCacheGenerationBinding) {
-    throw 'BindingParseOnly requires one PA cache generation binding.'
-  }
-  $bindingParseOnlyDocument = Get-Content `
-    -LiteralPath $frozenPaCacheGenerationBindingPath -Raw -Encoding UTF8 |
-    ConvertFrom-Json -AsHashtable
-  if (-not $bindingParseOnlyDocument.ContainsKey('binding_mode') -or
-      -not $bindingParseOnlyDocument.ContainsKey('cache_generations') -or
-      [string]$bindingParseOnlyDocument['binding_mode'] -ne
-        'require_exact_schema_v3_generations_v1' -or
-      @($bindingParseOnlyDocument['cache_generations']).Count -lt 1) {
-    throw 'BindingParseOnly PA cache generation binding is invalid.'
-  }
-  $testPackageRoot = [IO.Path]::GetFullPath($package.artifact_run_dir)
-  $allowedRoot = [IO.Path]::GetFullPath($artifactRoot).TrimEnd(
-    [IO.Path]::DirectorySeparatorChar
-  ) + [IO.Path]::DirectorySeparatorChar
-  if (-not $testPackageRoot.StartsWith(
-      $allowedRoot, [StringComparison]::OrdinalIgnoreCase)) {
-    throw 'BindingParseOnly package cleanup escaped the runner artifact root.'
-  }
-  Remove-RunPackageExecutionAlias -Package $package
-  Remove-Item -LiteralPath $testPackageRoot -Recurse -Force
-  'PA_CACHE_GENERATION_POST_PACKAGE_PARSE=PASS'
-  exit 0
-}
 $requiredPaCacheGenerationBindingDocument = $null
 $requiredPaCacheGenerationEntries = @()
 if ($hasRequiredPaCacheGenerationBinding) {
