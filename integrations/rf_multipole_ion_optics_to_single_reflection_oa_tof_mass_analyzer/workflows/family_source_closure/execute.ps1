@@ -162,22 +162,6 @@ if ($experimentRows.Count -ne 1) {
   throw 'Campaign experiment must resolve exactly once.'
 }
 $selectedExperiment = $experimentRows[0]
-$isManifestBoundPostPulseRestart =
-  [string]$selectedExperiment.source_release_mode -eq 'pre_pulse_restart' -and
-  ($selectedExperiment.PSObject.Properties.Name -contains
-    'post_pulse_restart_reuse_authority')
-if ($SolverAuthorized -and $isManifestBoundPostPulseRestart) {
-  $theoryWorkingPoint = $selectedExperiment.single_flight_source_zvz_theory_working_point
-  if ([string]$selectedExperiment.single_flight_source_zvz_affine_policy -ne
-        'source_zvz_affine_identify_and_bind_v1' -or
-      $null -eq $theoryWorkingPoint -or
-      [string]$theoryWorkingPoint.policy_id -ne
-        'source_zvz_three_zone_theory_working_point_v1' -or
-      [string]$selectedExperiment.post_pulse_restart_reuse_authority.post_pulse_variation_axis -ne
-        'accelerator_field_profile_id_and_source_zvz_theory_working_point') {
-    throw 'Active manifest-bound post-pulse restart requires the source z--vz theory working point.'
-  }
-}
 if (-not $FinalizeOnly) {
   & $PythonExe -m (
     'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.' +
