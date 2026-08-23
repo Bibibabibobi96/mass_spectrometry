@@ -25,6 +25,7 @@ $artifactRoot = if ($ArtifactRootPath) {
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
 $mode = 'transport_interface_readiness'
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+. (Join-Path $repoRoot 'common\multipole\simion_layout_template_support.ps1')
 . (Join-Path $projectRoot 'runtime\simion_run_config.ps1')
 . (Join-Path $projectRoot 'runtime\simion_execution.ps1')
 . (Join-Path $projectRoot 'runtime\frozen_python_package.ps1')
@@ -60,24 +61,14 @@ $frozenDistribution = Join-Path $inputDir 'particle_source_distribution.json'
 $sourceBinding = Join-Path $inputDir 'particle_source_binding.json'
 $frozenNumericalContract = Join-Path $inputDir 'simion_solver_numerics.json'
 $templateDir = Join-Path $inputDir 'simion_layout_template'
-$templateResolution = Join-Path $templateDir 'resolution.json'
-New-Item -ItemType Directory -Path $templateDir | Out-Null
-Push-Location $repoRoot
-try {
-    & $python -m common.multipole.simion_layout_template --repo-root $repoRoot `
-        --output $templateResolution | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw 'Shared SIMION layout template resolution failed.' }
-} finally { Pop-Location }
-$templateProfile = Get-Content -LiteralPath $templateResolution -Raw -Encoding UTF8 |
-    ConvertFrom-Json
-$templateRegistry = Copy-VerifiedRunInput -Source $templateProfile.registry_path `
-    -Destination (Join-Path $templateDir 'simion_layout_template.json')
-$templateManifest = Copy-VerifiedRunInput -Source $templateProfile.run_manifest.path `
-    -Destination (Join-Path $templateDir 'registration_run_manifest.json')
-$templateIob = Copy-VerifiedRunInput -Source $templateProfile.bundle.iob.path `
-    -Destination (Join-Path $templateDir 'quad_monolithic.iob')
-$templateCon = Copy-VerifiedRunInput -Source $templateProfile.bundle.con.path `
-    -Destination (Join-Path $templateDir 'quad_monolithic.con')
+$template = Resolve-MultipoleSimionLayoutTemplate -Python $python `
+    -RepositoryRoot $repoRoot -TemplateDirectory $templateDir
+$templateResolution = $template.resolution
+$templateProfile = $template.profile
+$templateRegistry = $template.registry
+$templateManifest = $template.registration_manifest
+$templateIob = $template.iob
+$templateCon = $template.con
 Copy-VerifiedRunInput -Source (Join-Path $projectRoot ($modeInput -replace '/', '\')) `
     -Destination $frozenMode | Out-Null
 Copy-VerifiedRunInput -Source (Join-Path $projectRoot ($resolvedContractInput -replace '/', '\')) `

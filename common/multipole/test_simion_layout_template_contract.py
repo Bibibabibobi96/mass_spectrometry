@@ -12,6 +12,7 @@ REGISTER = ROOT / "register_simion_layout_template.ps1"
 INSPECTOR = ROOT / "inspect_simion_layout_template.lua"
 RUNNER = ROOT / "run_simion_finite_3d_transport.ps1"
 RUNTIME_BUILDER = ROOT / "build_simion_runtime_iob.lua"
+TEMPLATE_SUPPORT = ROOT / "simion_layout_template_support.ps1"
 
 
 class SimionLayoutTemplateContractTests(unittest.TestCase):
@@ -85,12 +86,22 @@ class SimionLayoutTemplateContractTests(unittest.TestCase):
             / "projects/rf_quadrupole_ion_optics/workflows"
             / "mass_filter_reference/run_simion.ps1",
         )
+        support = TEMPLATE_SUPPORT.read_text(encoding="utf-8-sig")
+        for token in (
+            "common.multipole.simion_layout_template",
+            "registration_run_manifest.json",
+            "quad_monolithic.con",
+            "Copy-VerifiedRunInput",
+        ):
+            self.assertIn(token, support)
+        self.assertNotIn("examples\\quad", support)
         for runner in runners:
             with self.subTest(runner=runner):
                 source = runner.read_text(encoding="utf-8-sig")
-                self.assertIn("common.multipole.simion_layout_template", source)
-                self.assertIn("registration_run_manifest.json", source)
-                self.assertIn("quad_monolithic.con", source)
+                self.assertIn(
+                    "common\\multipole\\simion_layout_template_support.ps1", source
+                )
+                self.assertIn("Resolve-MultipoleSimionLayoutTemplate", source)
                 self.assertNotIn("TemplateIob", source)
                 self.assertNotIn("examples\\quad", source)
 

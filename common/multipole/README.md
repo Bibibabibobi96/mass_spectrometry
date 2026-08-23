@@ -136,7 +136,7 @@ Workbench/PA，不refine、不Fly。
 - GUI登记：[`register_simion_layout_template.ps1`](register_simion_layout_template.ps1)
 - 当前登记：[`simion_layout_template.json`](simion_layout_template.json)
 
-生产run先验证并冻结IOB/CON身份，再重绑run-local PA、更新实例尺寸并恢复Program/Fly2。登记不refine、
+生产run通过 simion_layout_template_support.ps1 一次解析并冻结注册表、登记manifest、IOB和CON，再重绑run-local PA、更新实例尺寸并恢复Program/Fly2。登记不refine、
 不Fly，也不授予Candidate或Formal。SIMION 2026 `.wgem`在许可证和隔离复验完成前不是活动路线。
 
 ## 理论与项目状态

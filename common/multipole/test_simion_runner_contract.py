@@ -114,9 +114,16 @@ class SimionRunnerContractTests(unittest.TestCase):
 
     def test_tool_paths_are_numerical_runtime_parameters(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
+        template_support = (
+            RUNNER.parent / "simion_layout_template_support.ps1"
+        ).read_text(encoding="utf-8")
         self.assertIn("[string]$SimionExe", source)
         self.assertNotIn("TemplateIob", source)
-        self.assertIn("common.multipole.simion_layout_template", source)
+        self.assertIn(
+            "common\\multipole\\simion_layout_template_support.ps1", source
+        )
+        self.assertIn("Resolve-MultipoleSimionLayoutTemplate", source)
+        self.assertIn("common.multipole.simion_layout_template", template_support)
         self.assertIn("build_simion_runtime_iob.lua", source)
         self.assertIn("simion_layout_template_registry", source)
         self.assertIn("simion_layout_template_con", source)

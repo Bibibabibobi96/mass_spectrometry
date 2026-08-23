@@ -241,27 +241,19 @@ try{
   [ordered]@{schema_version=1;role='frozen_code_inventory';files=$inventory}|
     ConvertTo-Json -Depth 5|Set-Content -LiteralPath $codeInventory -Encoding UTF8
   $manifestRepoRoot=$codeRoot
+  . (Join-Path $codeRoot 'common\multipole\simion_layout_template_support.ps1')
 
   $templateDir=Join-Path $inputDir 'simion_layout_template'
-  New-Item -ItemType Directory -Path $templateDir|Out-Null
-  $templateResolution=Join-Path $templateDir 'resolution.json'
   $templateRegistryFrozen=Join-Path $codeRoot 'common\multipole\simion_layout_template.json'
-  Push-Location $codeRoot
-  try{
-    $env:PYTHONPATH=$codeRoot
-    & $python -m common.multipole.simion_layout_template --repo-root $repoRoot `
-      --registry $templateRegistryFrozen --output $templateResolution|Out-Null
-    if($LASTEXITCODE-ne 0){throw 'Approved shared SIMION layout template resolution failed.'}
-  }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
-  $templateProfile=Get-Content -LiteralPath $templateResolution -Raw -Encoding UTF8|ConvertFrom-Json
-  $templateRegistryInput=Copy-VerifiedRunInput -Source $templateProfile.registry_path `
-    -Destination (Join-Path $templateDir 'simion_layout_template.json')
-  $templateRegistrationManifest=Copy-VerifiedRunInput -Source $templateProfile.run_manifest.path `
-    -Destination (Join-Path $templateDir 'registration_run_manifest.json')
-  $templateIob=Copy-VerifiedRunInput -Source $templateProfile.bundle.iob.path `
-    -Destination (Join-Path $templateDir 'quad_monolithic.iob')
-  $templateCon=Copy-VerifiedRunInput -Source $templateProfile.bundle.con.path `
-    -Destination (Join-Path $templateDir 'quad_monolithic.con')
+  $template=Resolve-MultipoleSimionLayoutTemplate -Python $python `
+    -RepositoryRoot $repoRoot -TemplateDirectory $templateDir `
+    -RegistryPath $templateRegistryFrozen -ModuleRoot $codeRoot
+  $templateResolution=$template.resolution
+  $templateProfile=$template.profile
+  $templateRegistryInput=$template.registry
+  $templateRegistrationManifest=$template.registration_manifest
+  $templateIob=$template.iob
+  $templateCon=$template.con
 
   $profileResolution=Join-Path $inputDir 'design_profile_resolution.json'
   $resolvedRuntimeProfile=$null

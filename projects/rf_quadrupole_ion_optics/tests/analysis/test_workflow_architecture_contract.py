@@ -492,6 +492,7 @@ class WorkflowArchitectureContractTests(unittest.TestCase):
             source = _read(runner_path)
             for support_path in (
                 "common\\contracts\\run_artifact_support.ps1",
+                "common\\multipole\\simion_layout_template_support.ps1",
                 "runtime\\simion_run_config.ps1",
                 "runtime\\simion_execution.ps1",
             ):
@@ -500,6 +501,7 @@ class WorkflowArchitectureContractTests(unittest.TestCase):
                 "New-RfSimionCoreRunConfig",
                 "ConvertTo-RfSimionLuaConfig",
                 "Invoke-RfSimionCoreRun",
+                "Resolve-MultipoleSimionLayoutTemplate",
                 "Copy-VerifiedRunInput",
                 "Write-RunDirectoryChecksumInventory",
             ):
