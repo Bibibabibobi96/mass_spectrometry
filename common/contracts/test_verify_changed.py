@@ -71,13 +71,13 @@ class ChangedGateContractTests(unittest.TestCase):
         self.assertIn("$isDocumentationOnly", self.source)
         self.assertIn("GetExtension($_).ToLowerInvariant() -ne '.md'", self.source)
         self.assertIn("CHANGED_GATE_FAST_PATH=DOCUMENTATION_ONLY", self.source)
-        fast_path = self.source.index("if ($isDocumentationOnly)")
         parallel_gate = self.source.index(
             "Invoke-ChangedStageGroup $preFreshnessBarrier"
         )
         documentation_gate = self.source.index(
             "Invoke-ChangedGateStage $documentation.Name"
         )
+        fast_path = self.source.index("if ($isDocumentationOnly)", documentation_gate)
         self.assertLess(documentation_gate, fast_path)
         self.assertLess(fast_path, parallel_gate)
 
@@ -217,6 +217,35 @@ class ChangedGateContractTests(unittest.TestCase):
         self.assertEqual(
             profile_for("projects/rf_hexapole_ion_optics/config/project.json"),
             "locked",
+        )
+
+    def test_plan_mode_reports_documentation_fast_path_effective_stages(self) -> None:
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("PowerShell Core is unavailable")
+        completed = subprocess.run(
+            [
+                pwsh,
+                "-NoProfile",
+                "-File",
+                str(CHANGED_GATE),
+                "-PythonExe",
+                sys.executable,
+                "-ChangedPath",
+                "common/contracts/README.md",
+                "-PlanOnly",
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("EXECUTION_MODE=DOCUMENTATION_ONLY", completed.stdout)
+        self.assertIn(
+            "EFFECTIVE_STAGES=repository_hygiene,repository_text_bytes,documentation",
+            completed.stdout,
         )
 
     def test_ci_fallback_uses_full_scope_without_a_second_path_table(self) -> None:

@@ -332,8 +332,20 @@ if ($PlanOnly) {
     } else {
         'stdlib'
     }
+    $executionMode = if ($isDocumentationOnly) {
+        'DOCUMENTATION_ONLY'
+    } else {
+        'FULL_CHANGED_SCOPE'
+    }
+    $effectiveStages = if ($isDocumentationOnly) {
+        'repository_hygiene,repository_text_bytes,documentation'
+    } else {
+        $selectedStages -join ','
+    }
     Write-Output (
         "CHANGED_GATE_PLAN=PASS DEPENDENCY_PROFILE=$dependencyProfile " +
+        "EXECUTION_MODE=$executionMode " +
+        "EFFECTIVE_STAGES=$effectiveStages " +
         "SELECTED_STAGES=$($selectedStages -join ',')"
     )
     return
