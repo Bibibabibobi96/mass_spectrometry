@@ -54,7 +54,16 @@ def _schema_validator(schema_path: str) -> Draft202012Validator:
     Draft202012Validator.check_schema(schema)
     registry = schema_registry()
     if path.parent != SCHEMA_DIR:
-        registry = registry.with_resource(schema["$id"], Resource.from_contents(schema))
+        # Integration-owned schemas may split active and archival contracts into
+        # a local tree. Register that tree as one ownership unit so a current
+        # schema can explicitly reuse an archival reader without promoting its
+        # historic versions to the shared/common registry.
+        for candidate in sorted(path.parent.rglob("*.schema.json")):
+            candidate_schema = load_json(candidate)
+            Draft202012Validator.check_schema(candidate_schema)
+            registry = registry.with_resource(
+                candidate_schema["$id"], Resource.from_contents(candidate_schema)
+            )
     return Draft202012Validator(schema, registry=registry)
 
 

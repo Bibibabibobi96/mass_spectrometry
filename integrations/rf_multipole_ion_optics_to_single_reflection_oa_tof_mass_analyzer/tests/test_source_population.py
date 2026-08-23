@@ -17,8 +17,10 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CAMPAIGN_SCHEMA = REPO_ROOT / "integrations" / (
     "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
-) / "config" / "schemas" / "rf_multipole_oatof_experiment_campaign.schema.json"
-SCHEMA_ROOT = CAMPAIGN_SCHEMA.parent
+) / "config" / "schemas" / "archive" / (
+    "rf_multipole_oatof_experiment_campaign_v1_to_v6.schema.json"
+)
+SCHEMA_ROOT = CAMPAIGN_SCHEMA.parent.parent
 CAMPAIGN_PATH = REPO_ROOT / (
     "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/"
     "docs/history/retired_campaigns/connector_gap_102p4_real_pa_full_n5000_v1.json"

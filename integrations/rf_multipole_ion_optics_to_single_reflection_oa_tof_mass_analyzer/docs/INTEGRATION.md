@@ -37,6 +37,11 @@ SIMION 运行可调用共享批处理；批内结果必须恢复全局粒子 ID 
 [`common/contracts/`](../../../common/contracts/README.md)。修改活动运行器、合同、资源策略或 campaign 后，应运行
 项目门禁及仓库级集成门禁。历史文档中的数字、状态和链接均不构成活动授权。
 
+活动 campaign 只由 v6
+[`rf_multipole_oatof_experiment_campaign.schema.json`](../config/schemas/rf_multipole_oatof_experiment_campaign.schema.json)
+校验。v1–v6 的旧结构只由同目录 `archive/` 下的归档读取 schema 校验，供历史证据审阅与回归使用；
+它不被执行入口、活动发现或 resolved-plan 编译器接受。
+
 当前唯一活动 campaign 是 `connector_gap_field_matrix_compact_auto_replay_v2.json`。此前 23 个已发布的逐 gap/field
 合同保留原始字节和 receipt，但已退出 lifecycle registry：它们由该 compact replay 完整替代，且不应因后续运行
 policy（内存、并发、超时或保留）更新而重新成为可执行 authority。

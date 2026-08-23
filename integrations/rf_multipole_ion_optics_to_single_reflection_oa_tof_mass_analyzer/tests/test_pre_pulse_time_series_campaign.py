@@ -19,8 +19,11 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 INTEGRATION_ROOT = REPO_ROOT / (
     "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
 )
-CAMPAIGN_SCHEMA = INTEGRATION_ROOT / "config" / "schemas" / (
+ACTIVE_CAMPAIGN_SCHEMA = INTEGRATION_ROOT / "config" / "schemas" / (
     "rf_multipole_oatof_experiment_campaign.schema.json"
+)
+ARCHIVAL_CAMPAIGN_SCHEMA = ACTIVE_CAMPAIGN_SCHEMA.parent / "archive" / (
+    "rf_multipole_oatof_experiment_campaign_v1_to_v6.schema.json"
 )
 LEGACY_CAMPAIGN_PATH = INTEGRATION_ROOT / (
     "docs/history/retired_campaigns/"
@@ -103,7 +106,7 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
         self.assertEqual(contract["identities"]["mother_particle_source_sha256"], "D" * 64)
 
     def test_schema_leaves_numerical_profiles_to_campaign_authoring(self) -> None:
-        schema_path = CAMPAIGN_SCHEMA
+        schema_path = ARCHIVAL_CAMPAIGN_SCHEMA
         schema = json.loads(schema_path.read_text(encoding="utf-8"))
         properties = schema["allOf"][0]["then"]["properties"][
             "experiments"
@@ -120,7 +123,7 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
         )
 
     def test_schema_leaves_pre_pulse_grid_and_cache_identity_to_campaign(self) -> None:
-        schema_path = CAMPAIGN_SCHEMA
+        schema_path = ARCHIVAL_CAMPAIGN_SCHEMA
         definition = json.loads(schema_path.read_text(encoding="utf-8"))["$defs"][
             "pre_pulse_time_series_screening"
         ]["properties"]
@@ -141,7 +144,7 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
         legacy = json.loads(LEGACY_CAMPAIGN_PATH.read_text(encoding="utf-8"))
         with self.assertRaises(ContractError):
             validate_schema(
-                legacy, CAMPAIGN_SCHEMA
+                legacy, ACTIVE_CAMPAIGN_SCHEMA
             )
         with self.assertRaisesRegex(ContractError, "source, population, or grid differs"):
             validate_pre_pulse_time_series_campaign(legacy)
@@ -150,7 +153,7 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
         successor = json.loads(V3_CAMPAIGN_PATH.read_text(encoding="utf-8"))
         with self.assertRaises(ContractError):
             validate_schema(
-                successor, CAMPAIGN_SCHEMA
+                successor, ACTIVE_CAMPAIGN_SCHEMA
             )
         validate_pre_pulse_time_series_campaign(successor)
         self.assertEqual(
@@ -304,13 +307,13 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
         ]["spatial_window_profile_id"] = "legacy_fixed_window"
         with self.assertRaises(ContractError):
             validate_schema(
-                campaign, CAMPAIGN_SCHEMA
+                campaign, ARCHIVAL_CAMPAIGN_SCHEMA
             )
         for row in campaign["experiments"]:
             row["single_flight_pulse_schedule_policy"]["cache_miss_policy"][
                 "spatial_window_profile_id"
             ] = "layout_resolved_axial_provisional_xy2_v1"
-        validate_schema(campaign, CAMPAIGN_SCHEMA)
+        validate_schema(campaign, ARCHIVAL_CAMPAIGN_SCHEMA)
         self.assertEqual(len(campaign["experiments"]), 1)
         for row in campaign["experiments"]:
             policy = row["single_flight_pulse_schedule_policy"]["cache_miss_policy"]
@@ -353,7 +356,7 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
             )
             population["denominators"]["population_count"] = 37
             population["denominators"]["eligible_population_count"] = 37
-        validate_schema(campaign, CAMPAIGN_SCHEMA)
+        validate_schema(campaign, ARCHIVAL_CAMPAIGN_SCHEMA)
         self.assertEqual(
             _automatic_pulse_population_binding(
                 campaign["experiments"][0]["single_flight_population"]

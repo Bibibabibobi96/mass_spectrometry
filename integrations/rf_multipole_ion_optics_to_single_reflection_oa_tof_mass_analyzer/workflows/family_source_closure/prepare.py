@@ -88,6 +88,10 @@ INTEGRATION_ID = (
 CAMPAIGN_SCHEMA_PATH = Path(__file__).resolve().parents[2] / "config" / "schemas" / (
     "rf_multipole_oatof_experiment_campaign.schema.json"
 )
+ARCHIVAL_CAMPAIGN_SCHEMA_PATH = (
+    CAMPAIGN_SCHEMA_PATH.parent / "archive" /
+    "rf_multipole_oatof_experiment_campaign_v1_to_v6.schema.json"
+)
 INTEGRATION_SCHEMA_DIR = CAMPAIGN_SCHEMA_PATH.parent
 UPSTREAM_PROJECTS = {
     "rf_quadrupole_ion_optics",
@@ -3851,7 +3855,7 @@ def main() -> int:
     args = parser.parse_args()
     if args.list_experiment_ids or args.print_experiment_json or args.semantic_diff_experiment_json:
         campaign = expand_flat_experiment_authoring(_load(args.campaign))
-        validate_schema(campaign, CAMPAIGN_SCHEMA_PATH)
+        validate_schema(campaign, ARCHIVAL_CAMPAIGN_SCHEMA_PATH)
         if args.semantic_diff_experiment_json:
             before_id, after_id = args.semantic_diff_experiment_json
             rows_by_id = {

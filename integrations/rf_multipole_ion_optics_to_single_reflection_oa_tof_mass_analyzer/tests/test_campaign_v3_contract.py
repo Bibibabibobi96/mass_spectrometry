@@ -13,7 +13,8 @@ SHA = "A" * 64
 CAMPAIGN_SCHEMA = (
     Path(__file__).resolve().parents[3] / "integrations" /
     "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer" /
-    "config" / "schemas" / "rf_multipole_oatof_experiment_campaign.schema.json"
+    "config" / "schemas" / "archive" /
+    "rf_multipole_oatof_experiment_campaign_v1_to_v6.schema.json"
 )
 
 
