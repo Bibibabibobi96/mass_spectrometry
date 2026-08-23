@@ -593,14 +593,6 @@ try{{Assert-RfThreeZoneSolverAuthorization @failed;throw 'tamper accepted'}}catc
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         self.assertIn("N1_AUTHORIZATION_GATE=PASS", completed.stdout)
 
-    def test_three_zone_authorization_precedes_first_simion_process(self) -> None:
-        runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
-        self.assertLess(
-            runner.index("Assert-RfThreeZoneSolverAuthorization -Stage"),
-            runner.index("Invoke-ResourceBudgetedProcess"),
-        )
-        self.assertNotIn("ThreeZoneAuthorizationReceipt", WORKFLOW_ENTRY.read_text(encoding="utf-8"))
-
     def test_generated_pre_pulse_subset_does_not_require_external_campaign_state(self) -> None:
         adapter = FAMILY_ADAPTER.read_text(encoding="utf-8")
         runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")

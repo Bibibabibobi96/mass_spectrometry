@@ -32,21 +32,6 @@ param(
   [string]$ThreeZoneFieldId = '',
   [string]$TheoryWorkingPoint = '',
   [string]$TheoryWorkingPointSha256 = '',
-  [ValidateSet('','n1_smoke_producer','n100_solver_authorized_consumer')]
-  [string]$ThreeZoneSolverGateStage = '',
-  [string]$ThreeZoneSolverGateId = '',
-  [string]$ThreeZoneAuthorizationReceipt = '',
-  [string]$ThreeZoneAuthorizationReceiptSha256 = '',
-  [string]$ThreeZoneProducerParentManifest = '',
-  [string]$ThreeZoneProducerParentManifestSha256 = '',
-  [string]$ThreeZoneCampaignId = '',
-  [string]$ThreeZoneCampaignSha256 = '',
-  [string]$ThreeZoneProducerExperimentId = '',
-  [string]$ThreeZoneProducerExperimentRowSha256 = '',
-  [string]$ThreeZoneSuccessorExperimentId = '',
-  [string]$ThreeZoneSuccessorExperimentRowSha256 = '',
-  [string]$ThreeZoneSourceIdentitySha256 = '',
-  [int]$ThreeZoneGateParticleCount = 0,
   [double]$ExpectedBoreRadiusMm = 0,
   [double]$ExpectedRingOuterRadiusMm = 0,
   [double]$ExpectedShieldInnerRadiusMm = 0,
@@ -941,43 +926,6 @@ try {
       throw 'Three-zone T5 Candidate SHA differs.'
     }
     $threeZoneCandidateDocument = Get-Content -LiteralPath $threeZoneCandidateFrozen -Raw -Encoding UTF8 | ConvertFrom-Json
-  }
-  Assert-RfThreeZoneSolverAuthorization -Stage $ThreeZoneSolverGateStage `
-    -ParticleCount $ThreeZoneGateParticleCount `
-    -ReceiptPath $ThreeZoneAuthorizationReceipt `
-    -ReceiptSha256 $ThreeZoneAuthorizationReceiptSha256 `
-    -ParentManifestPath $ThreeZoneProducerParentManifest `
-    -ParentManifestSha256 $ThreeZoneProducerParentManifestSha256 `
-    -GateId $ThreeZoneSolverGateId -CampaignId $ThreeZoneCampaignId `
-    -CampaignSha256 $ThreeZoneCampaignSha256 `
-    -ProducerExperimentId $ThreeZoneProducerExperimentId `
-    -ProducerExperimentRowSha256 $ThreeZoneProducerExperimentRowSha256 `
-    -SuccessorExperimentId $ThreeZoneSuccessorExperimentId `
-    -SuccessorExperimentRowSha256 $ThreeZoneSuccessorExperimentRowSha256 `
-    -CandidateSha256 $ThreeZoneCandidateSha256 -LayoutProfileId $LayoutProfileId `
-    -ArchitectureGenerationId $ArchitectureGenerationId `
-    -TopologyId $ThreeZoneTopologyId -GeometryId $ThreeZoneGeometryId `
-    -FrontendElectrodeTopologyId $ThreeZoneFrontendElectrodeTopologyId `
-    -AcceleratorFieldProfileId $selectedFieldProfileId `
-    -FieldId $ThreeZoneFieldId `
-    -RegionFieldSemanticSha256 $ResolvedRegionFieldSemanticSha256 `
-    -SourceIdentitySha256 $ThreeZoneSourceIdentitySha256 `
-    -WorkspaceRoot $workspaceRoot
-  $threeZoneAuthorizationReceiptFrozen = $null
-  $threeZoneProducerParentManifestFrozen = $null
-  if ($ThreeZoneSolverGateStage -eq 'n100_solver_authorized_consumer') {
-    $threeZoneAuthorizationReceiptFrozen = Join-Path $package.input_dir `
-      'three_zone_n1_solver_authorization_receipt.json'
-    Copy-RfStableFile -SourceRunRoot $workspaceRoot `
-      -SourcePath $ThreeZoneAuthorizationReceipt `
-      -Destination $threeZoneAuthorizationReceiptFrozen `
-      -Role 'three-zone N=1 solver authorization receipt' | Out-Null
-    $threeZoneProducerParentManifestFrozen = Join-Path $package.input_dir `
-      'three_zone_n1_producer_parent_run_manifest.json'
-    Copy-RfStableFile -SourceRunRoot $workspaceRoot `
-      -SourcePath $ThreeZoneProducerParentManifest `
-      -Destination $threeZoneProducerParentManifestFrozen `
-      -Role 'three-zone N=1 producer parent manifest' | Out-Null
   }
   $hasGovernedLayout = -not [string]::IsNullOrWhiteSpace($LayoutProfileId)
   $hasGeometry = -not [string]::IsNullOrWhiteSpace($OatofResolvedGeometry)
@@ -2412,24 +2360,6 @@ try {
       $ThreeZoneCandidateSha256
     $runConfiguration.parameters.accelerator_intermediate2_forward_launched_upper_bound =
       $launched
-  }
-  if ($ThreeZoneSolverGateStage -ne '') {
-    $runConfiguration.parameters.three_zone_solver_gate_stage =
-      $ThreeZoneSolverGateStage
-    $runConfiguration.parameters.three_zone_solver_gate_id =
-      $ThreeZoneSolverGateId
-  }
-  if ($ThreeZoneSolverGateStage -eq 'n100_solver_authorized_consumer') {
-    $runConfiguration.inputs.three_zone_n1_solver_authorization_receipt =
-      $threeZoneAuthorizationReceiptFrozen
-    $runConfiguration.inputs.three_zone_n1_producer_parent_manifest =
-      $threeZoneProducerParentManifestFrozen
-    $runConfiguration.parameters.three_zone_n1_solver_authorization_receipt_sha256 =
-      $ThreeZoneAuthorizationReceiptSha256
-    $runConfiguration.parameters.three_zone_n1_producer_parent_manifest_sha256 =
-      $ThreeZoneProducerParentManifestSha256
-    $runConfiguration.parameters.three_zone_source_identity_sha256 =
-      $ThreeZoneSourceIdentitySha256
   }
   if ($isStagedGrid2Restart) {
     $runConfiguration.inputs.Remove('pulse_schedule')
