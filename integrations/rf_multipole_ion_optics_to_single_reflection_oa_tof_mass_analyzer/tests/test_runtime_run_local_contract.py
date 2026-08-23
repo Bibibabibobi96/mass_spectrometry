@@ -665,12 +665,6 @@ foreach ($case in $cases) {{
             WORKFLOW_ENTRY.read_text(encoding="utf-8"),
         )
 
-    def test_runner_consumes_compiled_population_semantics(self) -> None:
-        text = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
-        self.assertIn("single_flight_execution", text)
-        self.assertNotIn("$SamplingMode", text)
-        self.assertNotIn("steady_candidate_pool", text)
-
     def test_joint_single_flight_run_package_is_integration_owned(self) -> None:
         text = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
         integration_id = (
@@ -927,6 +921,7 @@ foreach ($case in $cases) {{
         self.assertIn("single_flight_execution", runner)
         self.assertIn("$populationBasis = [string]", runner)
         self.assertNotIn("$SamplingMode", runner)
+        self.assertNotIn("steady_candidate_pool", runner)
 
     def test_r03_baseline_population_is_strictmode_safe_without_paired_cohort(self) -> None:
         population = (
