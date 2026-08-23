@@ -255,6 +255,17 @@ class CampaignRuntimeAuthoritiesTests(unittest.TestCase):
     def test_active_publication_closure_is_fresh(self) -> None:
         self.assertEqual(publication_differences(REPO_ROOT), [])
 
+    def test_active_publications_follow_every_adapter_mapping(self) -> None:
+        registry = load(CONFIG_ROOT / "execution_adapter_profiles.json")
+        targets = {
+            path.relative_to(REPO_ROOT).as_posix()
+            for path in compile_publications(REPO_ROOT)
+        }
+        self.assertTrue(registry["mappings"])
+        for mapping in registry["mappings"]:
+            with self.subTest(profile=mapping["connection_profile_id"]):
+                self.assertIn(mapping["runtime_binding_path"], targets)
+
     def test_multipole_campaign_terminal_registry_hashes_are_compiled(self) -> None:
         targets = {
             path.relative_to(REPO_ROOT).as_posix()

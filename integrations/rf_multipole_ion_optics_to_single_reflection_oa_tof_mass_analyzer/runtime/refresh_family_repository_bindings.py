@@ -13,39 +13,16 @@ from typing import Any, Iterator
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 from common.contracts.file_identity import repository_text_sha256
+from common.integration.adapter_contract import load_execution_adapter_registry
 
 
 INTEGRATION_ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY_PREFIXES = ("common/", "config/", "docs/", "integrations/", "projects/")
-ACTIVE_CONNECTION_PROFILE_IDS = {
-    "rf_quadrupole_oatof_shield_terminal_direct_mating_gap_0mm",
-    "rf_hexapole_oatof_shield_terminal_direct_mating_gap_0mm",
-    "rf_octupole_oatof_shield_terminal_direct_mating_gap_0mm",
-    "rf_octupole_oatof_shield_terminal_direct_mating_gap_3p2mm",
-    "rf_octupole_oatof_shield_terminal_direct_mating_gap_6p4mm",
-    "rf_octupole_oatof_shield_terminal_direct_mating_gap_12p8mm",
-    "rf_octupole_oatof_shield_terminal_direct_mating_gap_25p6mm",
-    "rf_octupole_to_single_reflection_oatof_direct_mating_gap_51p2mm",
-    "rf_octupole_to_single_reflection_oatof_direct_mating_gap_102p4mm",
-    "rf_octupole_oatof_shield_terminal_aperture_050x050_direct_mating_gap_0mm",
-    "rf_octupole_oatof_shield_terminal_aperture_050x020_direct_mating_gap_0mm",
-}
-ACTIVE_PUBLICATION_PATHS = (
+PUBLICATION_SEED_PATHS = (
     "config/execution_adapter_profiles.json",
     "config/execution_policy.json",
     "config/family_source_adapter.json",
     "config/family_runtime_dependencies.json",
-    "config/family_quadrupole_direct_mating_gap_0mm_runtime_binding.json",
-    "config/family_hexapole_direct_mating_gap_0mm_runtime_binding.json",
-    "config/family_octupole_direct_mating_gap_0mm_runtime_binding.json",
-    "config/family_octupole_direct_mating_gap_3p2mm_runtime_binding.json",
-    "config/family_octupole_direct_mating_gap_6p4mm_runtime_binding.json",
-    "config/family_octupole_direct_mating_gap_12p8mm_runtime_binding.json",
-    "config/family_octupole_direct_mating_gap_25p6mm_runtime_binding.json",
-    "config/family_octupole_direct_mating_gap_51p2mm_runtime_binding.json",
-    "config/family_octupole_direct_mating_gap_102p4mm_runtime_binding.json",
-    "config/family_octupole_aperture_050x050_direct_mating_gap_0mm_runtime_binding.json",
-    "config/family_octupole_aperture_050x020_direct_mating_gap_0mm_runtime_binding.json",
     "config/diagnostics/zero_match_long_all_ideal_theory_order_stage_v2_successor_campaign.json",
 )
 
@@ -93,8 +70,19 @@ def _target_paths(repo_root: Path) -> list[Path]:
     config_root = integration_root / "config"
     targets = {
         (integration_root / relative_path).resolve()
-        for relative_path in ACTIVE_PUBLICATION_PATHS
+        for relative_path in PUBLICATION_SEED_PATHS
     }
+    adapter_registry = load_execution_adapter_registry(
+        config_root / "execution_adapter_profiles.json"
+    )
+    active_profile_ids = {
+        mapping["connection_profile_id"]
+        for mapping in adapter_registry["mappings"]
+    }
+    for mapping in adapter_registry["mappings"]:
+        binding = (repo_root / mapping["runtime_binding_path"]).resolve()
+        binding.relative_to(repo_root.resolve())
+        targets.add(binding)
     campaign_root = repo_root / "common" / "multipole" / "campaigns"
     for path in campaign_root.glob("*.json"):
         document = _load(path)
@@ -102,7 +90,7 @@ def _target_paths(repo_root: Path) -> list[Path]:
             targets.add(path.resolve())
     profiles = _load(config_root / "connection_profiles.json")["profiles"]
     for profile in profiles:
-        if profile["connection_profile_id"] not in ACTIVE_CONNECTION_PROFILE_IDS:
+        if profile["connection_profile_id"] not in active_profile_ids:
             continue
         for side in ("upstream", "downstream"):
             port_contract = profile[side].get("port_contract")
