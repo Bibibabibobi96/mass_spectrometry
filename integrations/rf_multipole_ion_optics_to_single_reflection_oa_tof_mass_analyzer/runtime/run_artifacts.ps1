@@ -266,45 +266,6 @@ function Test-RfReusableCacheEntry {
   return $false
 }
 
-function Test-RfReusableCacheEntryWithLegacyPromotion {
-  <#
-  Resolve a cache hit through the normal v3 verifier, with one compatibility
-  step for a verified schema-v2 payload when the caller explicitly requires
-  an existing entry.  Promotion is identity-bound and leaves the v2 payload
-  untouched; the returned hit is always verified from the resulting v3
-  generation.
-  #>
-  [CmdletBinding()]
-  param(
-    [Parameter(Mandatory)][string]$Python,
-    [Parameter(Mandatory)][string]$RepoRoot,
-    [Parameter(Mandatory)][string]$WorkspaceRoot,
-    [Parameter(Mandatory)][string]$ProjectId,
-    [Parameter(Mandatory)][string]$CacheRoot,
-    [Parameter(Mandatory)][string]$CacheKey,
-    [Parameter(Mandatory)][string]$Role,
-    [Parameter(Mandatory)]$Identity,
-    [ValidateSet('remove','preserve')][string]$InvalidEntryAction = 'remove',
-    [switch]$PromoteLegacyV2
-  )
-  $hit = Test-RfReusableCacheEntry -Python $Python -RepoRoot $RepoRoot `
-    -WorkspaceRoot $WorkspaceRoot -ProjectId $ProjectId -CacheRoot $CacheRoot `
-    -CacheKey $CacheKey -Role $Role -InvalidEntryAction $InvalidEntryAction
-  if ($hit -or -not $PromoteLegacyV2) { return $hit }
-
-  $legacyManifest = Join-Path (Join-Path $CacheRoot $CacheKey) 'cache_manifest.json'
-  if (-not (Test-Path -LiteralPath $legacyManifest -PathType Leaf)) {
-    return $false
-  }
-  $promoted = Promote-RfVerifiedLegacyV2CacheEntry -Python $Python `
-    -RepoRoot $RepoRoot -WorkspaceRoot $WorkspaceRoot -ProjectId $ProjectId `
-    -CacheRoot $CacheRoot -CacheKey $CacheKey -Role $Role -Identity $Identity
-  if ($null -eq $promoted) { return $false }
-  return (Test-RfReusableCacheEntry -Python $Python -RepoRoot $RepoRoot `
-    -WorkspaceRoot $WorkspaceRoot -ProjectId $ProjectId -CacheRoot $CacheRoot `
-    -CacheKey $CacheKey -Role $Role -InvalidEntryAction $InvalidEntryAction)
-}
-
 function Test-RfVerifiedLegacyV2CacheEntry {
   <#
   Verify a schema-v2 cache in place.  Ordinary consumers may reuse this
