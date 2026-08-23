@@ -6,7 +6,7 @@
 ## 阅读顺序
 
 1. 仓库根[`README.md`](../../README.md)。
-2. [当前集成状态](docs/INTEGRATION.md)。
+2. [当前集成状态](docs/INTEGRATION.md) 与[执行身份/失效域](docs/ARCHITECTURE.md)。
 3. 上游目标项目与[oaTOF项目](../../projects/single_reflection_oa_tof_mass_analyzer/README.md)的
    `README.md → docs/PROJECT.md`。
 4. 仅在追溯旧结果时读取仓库根[`docs/history/`](../../docs/history/)。
