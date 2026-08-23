@@ -14,6 +14,7 @@ import pandas as pd
 from common.contracts.particle_physics import kinetic_energy_ev
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.analyze_single_flight import (
     analyze as analyze_with_population_contract,
+    validate_resolution_qualification,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.plot_single_flight_spatial_six_panel import (
     _accelerator,
@@ -83,6 +84,30 @@ def analyze(log_path, launched, mass_amu, *args, **kwargs):
 
 
 class SingleFlightAnalysisTests(unittest.TestCase):
+    def test_resolution_qualification_uses_frozen_bootstrap_rule(self) -> None:
+        valid = {
+            "status": "computed",
+            "resamples_requested": 5000,
+            "resamples_valid": 4750,
+            "relative_95pct_interval_width": 0.10,
+        }
+        summary = {
+            "full_pulse_eligible_bootstrap": [valid],
+            "spatial_window_peak": {"bootstrap": dict(valid)},
+        }
+        validate_resolution_qualification(summary)
+        for field, value in (
+            ("resamples_requested", 4999),
+            ("resamples_valid", 4749),
+            ("relative_95pct_interval_width", 0.1000001),
+        ):
+            invalid = json.loads(json.dumps(summary))
+            invalid["full_pulse_eligible_bootstrap"][0][field] = value
+            with self.subTest(field=field), self.assertRaisesRegex(
+                ValueError, "bootstrap acceptance failed"
+            ):
+                validate_resolution_qualification(invalid)
+
     def test_accelerator_phase_space_uses_detector_blind_pre_pulse_cohort(self) -> None:
         checkpoints = pd.DataFrame(
             [

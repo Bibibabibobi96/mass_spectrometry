@@ -1413,10 +1413,7 @@ foreach ($case in $cases) {{
             "$populationContract.analysis_randomness.bootstrap_resample_count", text
         )
         self.assertNotIn("'--bootstrap-resamples'", text)
-        self.assertIn("[int]$_.resamples_valid -lt 4750", text)
-        self.assertIn(
-            "[double]$_.relative_95pct_interval_width -gt 0.10", text
-        )
+        self.assertIn("'--require-resolution-qualification'", text)
 
     def test_population_contract_is_the_only_release_and_mode_authority(self) -> None:
         runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")

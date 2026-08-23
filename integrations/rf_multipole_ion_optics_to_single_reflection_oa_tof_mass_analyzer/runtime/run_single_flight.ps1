@@ -2691,6 +2691,9 @@ try {
       '--source-region-diagnostic-profile-id',$sourceRegionDiagnosticProfileId
     )
   }
+  if ($ResolutionQualification) {
+    $analysisArguments += '--require-resolution-qualification'
+  }
   foreach ($batch in $batchRecords) {
     $analysisArguments += @(
       '--log',$batch.stdout,
@@ -2699,21 +2702,6 @@ try {
   }
   Invoke-SingleFlightPython -Arguments $analysisArguments `
     -Failure 'Single-flight log analysis failed.'
-  if ($ResolutionQualification) {
-    $qualificationSummary = Get-Content -LiteralPath $package.summary -Raw -Encoding UTF8 | ConvertFrom-Json
-    $bootstrapRecords = @($qualificationSummary.full_pulse_eligible_bootstrap)
-    if ($null -ne $qualificationSummary.spatial_window_peak) {
-      $bootstrapRecords += @($qualificationSummary.spatial_window_peak.bootstrap)
-    }
-    if ($bootstrapRecords.Count -lt 2 -or @($bootstrapRecords | Where-Object {
-          [string]$_.status -ne 'computed' -or
-          [int]$_.resamples_requested -ne 5000 -or
-          [int]$_.resamples_valid -lt 4750 -or
-          [double]$_.relative_95pct_interval_width -gt 0.10
-        }).Count -ne 0) {
-      throw 'Resolution qualification bootstrap acceptance failed.'
-    }
-  }
   $sixPanel = Join-Path $package.result_dir 'single_flight_spatial_six_panel.png'
   $sixPanelMetadata = Join-Path $package.result_dir 'single_flight_spatial_six_panel_metadata.json'
   $phaseSpace = Join-Path $package.result_dir 'single_flight_accelerator_pre_pulse_phase_space.png'

@@ -33,6 +33,39 @@ DETECTOR_PATTERN = re.compile(
     r"TRACE: detector_crossing ion=(?P<ion>\d+) t=(?P<t>[-+0-9.eE]+) "
     r"x=(?P<x>[-+0-9.eE]+) y=(?P<y>[-+0-9.eE]+) z=(?P<z>[-+0-9.eE]+)"
 )
+
+RESOLUTION_QUALIFICATION_RESAMPLES = 5000
+RESOLUTION_QUALIFICATION_MIN_VALID_RESAMPLES = 4750
+RESOLUTION_QUALIFICATION_MAX_RELATIVE_INTERVAL_WIDTH = 0.10
+
+
+def validate_resolution_qualification(summary: dict) -> None:
+    """Apply the frozen bootstrap acceptance rule to an analysis summary.
+
+    Python owns interpretation of statistical output; PowerShell only launches
+    this analysis and propagates failure.  Constants preserve the pre-existing
+    qualification rule exactly.
+    """
+
+    records = list(summary.get("full_pulse_eligible_bootstrap") or [])
+    spatial_peak = summary.get("spatial_window_peak")
+    if isinstance(spatial_peak, dict):
+        bootstrap = spatial_peak.get("bootstrap")
+        if isinstance(bootstrap, dict):
+            records.append(bootstrap)
+    if len(records) < 2:
+        raise ValueError("resolution qualification requires two bootstrap records")
+    for record in records:
+        if not isinstance(record, dict):
+            raise ValueError("resolution qualification bootstrap record is invalid")
+        if (
+            record.get("status") != "computed"
+            or record.get("resamples_requested") != RESOLUTION_QUALIFICATION_RESAMPLES
+            or record.get("resamples_valid", 0) < RESOLUTION_QUALIFICATION_MIN_VALID_RESAMPLES
+            or record.get("relative_95pct_interval_width", float("inf"))
+            > RESOLUTION_QUALIFICATION_MAX_RELATIVE_INTERVAL_WIDTH
+        ):
+            raise ValueError("resolution qualification bootstrap acceptance failed")
 PULSE_PATTERN = re.compile(
     r"TRACE: handoff_pulse_on(?: ion=(?P<ion>\d+))? "
     r"instrument_time_us=(?P<t>[-+0-9.eE]+)"
@@ -1414,6 +1447,7 @@ def main() -> int:
     )
     parser.add_argument("--checkpoints", required=True, type=Path)
     parser.add_argument("--summary", required=True, type=Path)
+    parser.add_argument("--require-resolution-qualification", action="store_true")
     args = parser.parse_args()
     if file_sha256(args.resolved_population_contract) != \
             args.resolved_population_contract_sha256:
@@ -1483,6 +1517,8 @@ def main() -> int:
         writer = csv.DictWriter(handle, fieldnames=COLUMNS, lineterminator="\n")
         writer.writeheader(); writer.writerows(rows)
     args.summary.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8", newline="\n")
+    if args.require_resolution_qualification:
+        validate_resolution_qualification(summary)
     print(f"SINGLE_FLIGHT_ANALYSIS=PASS HANDOFF={summary['census']['multipole_handoff']} DETECTOR={summary['census']['detector_crossing']}")
     return 0
 
