@@ -355,8 +355,8 @@ def campaign_status(
         "authorization_blockers": resolved["authorization_blockers"],
         "allowed_variation_axes": document["allowed_variation_axes"],
         "experiment_count": len(document["experiments"]),
-        "commercial_solver_parallelism": 1,
-        "automatic_retry_count": 0,
+        "commercial_solver_parallelism": document["resource_budget"]["commercial_solver_parallelism"],
+        "automatic_retry_count": document["resource_budget"]["automatic_retry_count"],
         "mass_spectrum_internal_species_are_campaign_rows": False,
         "experiments": [
             _experiment_status(
@@ -598,8 +598,8 @@ def execute_campaign(
         "parameters": {
             "campaign_id": campaign_id,
             "selection": campaign_selection,
-            "commercial_solver_parallelism": 1,
-            "automatic_retry_count": 0,
+            "commercial_solver_parallelism": resolved["document"]["resource_budget"]["commercial_solver_parallelism"],
+            "automatic_retry_count": resolved["document"]["resource_budget"]["automatic_retry_count"],
         },
         "artifact_retention": {
             "policy_version": 1,
