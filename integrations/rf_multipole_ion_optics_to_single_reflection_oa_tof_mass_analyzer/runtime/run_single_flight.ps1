@@ -252,7 +252,16 @@ $artifactRoot = Join-Path $workspaceRoot "artifacts\projects\$runProjectId"
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
   -RunId $RunId -Project $runProjectId -Mode 'rf_to_oatof_simion_single_flight' `
   -Software @('SIMION 2020','Python 3.11') -RetentionContractEnabled -RetentionClass compact `
-  -AdditionalDirectories @('simion') -UseShortExecutionPath
+  -AdditionalDirectories @('simion') -UseShortExecutionPath `
+  -ExpectedExecutionRelativePaths @(
+    'inputs/simion_five_instance_container/mag_quad_2dp.iob',
+    'inputs/single_flight_mother_sample__batch999.fly2',
+    'logs/overlay_interface_verify_resource_usage.json',
+    'results/pre_pulse_time_series_screening_receipt.json',
+    'results/single_flight_accelerator_checkpoint_evolution_metadata.json',
+    'simion/frontend_cache_copy/frontend.pa0',
+    'simion/overlay_iob_stage/mag_quad_2dp.iob'
+  )
 $requiredPaCacheGenerationBindingDocument = $null
 $requiredPaCacheGenerationEntries = @()
 if ($hasRequiredPaCacheGenerationBinding) {

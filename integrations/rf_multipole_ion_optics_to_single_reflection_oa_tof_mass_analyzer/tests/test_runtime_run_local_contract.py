@@ -153,6 +153,14 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
                 runner,
                 runner_path,
             )
+        single_flight = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        for relative_path in (
+            "inputs/simion_five_instance_container/mag_quad_2dp.iob",
+            "inputs/single_flight_mother_sample__batch999.fly2",
+            "results/single_flight_accelerator_checkpoint_evolution_metadata.json",
+            "simion/overlay_iob_stage/mag_quad_2dp.iob",
+        ):
+            self.assertIn(relative_path, single_flight)
 
     def test_pre_pulse_time_series_materializer_is_runtime_bound(self) -> None:
         registry = json.loads(
@@ -563,7 +571,9 @@ try {{
         reflectron_gate = runner.index(
             'Required PA cache MISS or damage: role=$($reflectronCachePlan.role)'
         )
-        overlay_verify = runner.index("overlay_interface_verify_resource_usage.json")
+        overlay_verify = runner.index(
+            "$overlayVerify = Invoke-ResourceBudgetedProcess"
+        )
         topology_verify = runner.index("frontend_aperture_topology_resource_usage.json")
         self.assertLess(reflectron_gate, overlay_verify)
         self.assertLess(reflectron_gate, topology_verify)
