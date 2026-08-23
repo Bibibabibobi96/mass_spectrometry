@@ -778,32 +778,33 @@
       "properties": {
         "mode": {"const": "real_pa_rf_pre_pulse_time_series"},
         "active_scope": {"const": "pre_pulse_frontend_accelerator"},
-        "anchor_time_us": {"const": 46.7467890041091},
-        "relative_start_index": {"const": -160},
-        "relative_end_index": {"const": 160},
-        "rf_steps_per_period": {"const": 160},
-        "expected_upstream_frequency_hz": {"const": 1100000},
-        "sample_count": {"const": 321},
-        "spatial_window_profile_id": {
-          "const": "layout_resolved_axial_provisional_xy2_v1"
+        "anchor_time_us": {"type": "number"},
+        "relative_start_index": {"type": "integer"},
+        "relative_end_index": {"type": "integer"},
+        "rf_steps_per_period": {"type": "integer", "minimum": 1},
+        "expected_upstream_frequency_hz": {"type": "number", "exclusiveMinimum": 0},
+        "sample_count": {"type": "integer", "minimum": 1},
+        "spatial_window_profile_id": {"$ref": "#/$defs/id"},
+        "selection_order": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": {"enum": [
+            "maximize_pulse_eligible_count",
+            "maximize_transverse_bore_count",
+            "minimize_normalized_xyz_centroid_distance",
+            "minimize_normalized_xyz_spread_norm",
+            "minimize_absolute_distance_to_ballistic_seed",
+            "select_earlier_time"
+          ]}
         },
-        "selection_order": {"const": [
-          "maximize_pulse_eligible_count",
-          "maximize_transverse_bore_count",
-          "minimize_normalized_xyz_centroid_distance",
-          "minimize_normalized_xyz_spread_norm",
-          "minimize_absolute_distance_to_ballistic_seed",
-          "select_earlier_time"
-        ]},
         "pa_cache_keys": {
           "type": "object",
           "additionalProperties": false,
           "required": ["frontend", "accelerator_overlay", "flight_tube", "reflectron"],
           "properties": {
-            "frontend": {"const": "328e5b7966e5e4a1883674f7c64d959c59f4c26ba170429e6d49a35126b1a451"},
-            "accelerator_overlay": {"const": "c89f109fb8277b04b58b4e11e1b90bd63f8c23476722a0a4a217e773f214b425"},
-            "flight_tube": {},
-            "reflectron": {}
+            "frontend": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"},
+            "accelerator_overlay": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"},
+            "flight_tube": {"type": ["string", "null"], "pattern": "^[A-Fa-f0-9]{64}$"},
+            "reflectron": {"type": ["string", "null"], "pattern": "^[A-Fa-f0-9]{64}$"}
           }
         },
         "pulse_disabled": {"const": true},
@@ -830,8 +831,8 @@
           "properties": {
             "pa_cache_keys": {
               "properties": {
-                "flight_tube": {"const": "de0ce0ecc05613dbd72c9020b6ace651ec3159788d2fdeea115b2ee6cf6d56ee"},
-                "reflectron": {"const": "252f6012eac06aecf18e73d2036c70098cf5d8d89e763cfe1a8148fca3e3e1e1"}
+                "flight_tube": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"},
+                "reflectron": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"}
               }
             }
           }

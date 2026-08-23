@@ -123,6 +123,27 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
             },
         )
 
+    def test_schema_leaves_pre_pulse_grid_and_cache_identity_to_campaign(self) -> None:
+        schema_path = REPO_ROOT / (
+            "common/contracts/schemas/"
+            "rf_multipole_oatof_experiment_campaign.schema.json"
+        )
+        definition = json.loads(schema_path.read_text(encoding="utf-8"))["$defs"][
+            "pre_pulse_time_series_screening"
+        ]["properties"]
+        self.assertEqual(definition["rf_steps_per_period"], {
+            "type": "integer", "minimum": 1,
+        })
+        self.assertEqual(definition["sample_count"], {
+            "type": "integer", "minimum": 1,
+        })
+        self.assertEqual(definition["spatial_window_profile_id"], {
+            "$ref": "#/$defs/id",
+        })
+        self.assertEqual(definition["pa_cache_keys"]["properties"]["frontend"], {
+            "type": "string", "pattern": "^[A-Fa-f0-9]{64}$",
+        })
+
     def test_published_v1_campaign_is_no_longer_active_schema_input(self) -> None:
         legacy = json.loads(LEGACY_CAMPAIGN_PATH.read_text(encoding="utf-8"))
         with self.assertRaises(ContractError):
