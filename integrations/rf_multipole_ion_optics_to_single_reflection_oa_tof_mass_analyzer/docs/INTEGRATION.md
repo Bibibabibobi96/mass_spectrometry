@@ -62,3 +62,12 @@ campaign 层并行商业求解器，任一行失败即停止。`PrepareOnly` 仍
 schema 验证、cache 命中、handoff 兼容性或资格决策；这些仍由已冻结的 resolved contract 与实际执行边界决定。
 在不启动求解器的情况下，可用 `execute.ps1 -ValidateOnly` 对某一行生成并校验其完整 resolved connection 与
 composition plan。
+
+## 开放任务
+
+- **Windows 路径容量治理（跨工作流）**：把目前仅单飞 runner 使用的短 execution junction 提升为公共、受测试的
+  路径预算与短根运行能力；Git 工作树、准备阶段、外部求解器输入和 artifact 写入均应在启动前报告其实际绝对路径
+  与适用工具的安全上限，并在超限时失败关闭。短根只能改变进程看到的路径表示，不能改变 `run_id`、冻结的相对
+  artifact 引用、manifest 的真实目标路径、SHA 或科学身份。关闭条件是：在启用 Windows 与 Git 长路径支持的干净
+  工作站上，活动 campaign 和至少一个非单飞外部工具入口通过同一公共 preflight；超限 fixture 给出可操作诊断；
+  各入口不再各自创建未登记的临时 junction、复制或缩短科学/证据文件名。
