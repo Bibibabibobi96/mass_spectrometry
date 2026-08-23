@@ -370,6 +370,26 @@ class ClocDeltaReportTests(unittest.TestCase):
         self.assertIn("no fallback counter", completed.stderr)
         self.assertIn("is permitted", completed.stderr)
 
+    def test_identical_commit_has_no_json_delta(self) -> None:
+        completed = _run(
+            [
+                "pwsh",
+                "-NoProfile",
+                "-File",
+                str(REPORT_SCRIPT),
+                "-Base",
+                "HEAD",
+                "-Current",
+                "HEAD",
+            ],
+            REPO_ROOT,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertRegex(
+            completed.stdout,
+            r"LANGUAGE=JSON .* DELTA_CODE=0",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -18,6 +18,13 @@ $codeExtensions=@(
   '.go','.rs','.rb','.php','.swift','.kt','.kts',
   '.sh','.bash','.zsh','.bat','.cmd'
 )
+$scriptExtensions=@(
+  '.py','.m','.ps1','.lua','.gem','.fly2',
+  '.c','.h','.cc','.cpp','.cxx','.hpp',
+  '.cs','.java','.js','.jsx','.ts','.tsx',
+  '.go','.rs','.rb','.php','.swift','.kt','.kts',
+  '.sh','.bash','.zsh','.bat','.cmd'
+)
 $excludedComponents=@(
   '.git','.venv','.tmp','artifacts','generated','vendor','vendors',
   'third_party','third-party','thirdparty','run','runs'
@@ -146,6 +153,28 @@ function Get-PathClassification {
   return [pscustomobject]@{category='production';reason='non_test_source'}
 }
 
+function Get-FunctionalArea {
+  param(
+    [Parameter(Mandatory)][string]$RelativePath,
+    [Parameter(Mandatory)][string]$Category
+  )
+  if($Category-ne'production'){return 'tests'}
+  $normalized=$RelativePath.Replace('\','/').ToLowerInvariant()
+  $components=@($normalized.Split('/',[StringSplitOptions]::RemoveEmptyEntries))
+  $extension=[IO.Path]::GetExtension($normalized).ToLowerInvariant()
+  if($extension-in @('.json','.toml','.yml','.yaml') -or
+     @($components|Where-Object{$_-in @('config','configs','schema','schemas','contracts')}).Count-gt 0){
+    return 'contracts_configuration'
+  }
+  if($components-contains'analysis'){return 'scientific_analysis'}
+  if($extension-in @('.m','.lua','.gem','.fly2')){return 'solver_models'}
+  if(@($components|Where-Object{$_-in @('runtime','workflows')}).Count-gt 0 -or
+     [IO.Path]::GetFileName($normalized)-match '(?i)^(?:run_|verify_)'){
+    return 'runtime_orchestration'
+  }
+  return 'tooling_other'
+}
+
 function New-CommitSnapshot {
   param(
     [Parameter(Mandatory)][string]$Commit,
@@ -190,6 +219,10 @@ function Get-SnapshotFiles {
       full=$selectedFile.full
       category=$classification.category
       reason=$classification.reason
+      function=Get-FunctionalArea -RelativePath $selectedFile.relative `
+        -Category $classification.category
+      is_script=([IO.Path]::GetExtension($selectedFile.relative).ToLowerInvariant() `
+        -in $scriptExtensions)
     })
   }
   return @($records)
@@ -288,9 +321,13 @@ function Invoke-ClocSnapshot {
     tests=@{}
     unclassified=@{}
   }
+  $functionSummaries=@{}
+  $functionScriptCounts=@{}
   if($Records.Count-eq 0){
     return [pscustomobject]@{
       summaries=$summaries
+      function_summaries=$functionSummaries
+      function_script_counts=$functionScriptCounts
       input_identity=(Get-InputIdentity -Records @())
     }
   }
@@ -338,6 +375,12 @@ function Invoke-ClocSnapshot {
     }
     Add-ClocMetric -Summary $summaries.total -Language $language -Item $item
     Add-ClocMetric -Summary $summaries[$record.category] -Language $language -Item $item
+    if(-not$functionSummaries.ContainsKey($record.function)){
+      $functionSummaries[$record.function]=@{}
+      $functionScriptCounts[$record.function]=0
+    }
+    Add-ClocMetric -Summary $functionSummaries[$record.function] -Language $language -Item $item
+    if($record.is_script){$functionScriptCounts[$record.function]+=1}
   }
   if($seen.Count-ne$Records.Count){
     $missing=@($Records|Where-Object{
@@ -347,6 +390,8 @@ function Invoke-ClocSnapshot {
   }
   return [pscustomobject]@{
     summaries=$summaries
+    function_summaries=$functionSummaries
+    function_script_counts=$functionScriptCounts
     input_identity=(Get-InputIdentity -Records $Records)
   }
 }
@@ -383,13 +428,34 @@ function Assert-ClocClassificationAdditivity {
   }
 }
 
+function Assert-ClocFunctionAdditivity {
+  param(
+    [Parameter(Mandatory)][string]$Snapshot,
+    [Parameter(Mandatory)][hashtable]$Total,
+    [Parameter(Mandatory)][hashtable]$Functions
+  )
+  $languages=@($Total.Keys+@($Functions.Values|ForEach-Object{$_.Keys})|Sort-Object -Unique)
+  foreach($language in $languages){
+    foreach($metric in @('files','blank','comment','code')){
+      $expected=$(if($Total.ContainsKey($language)){[int]$Total[$language][$metric]}else{0})
+      $actual=@($Functions.Values|ForEach-Object{
+        if($_.ContainsKey($language)){[int]$_[$language][$metric]}else{0}
+      }|Measure-Object -Sum).Sum
+      if($expected-ne$actual){
+        throw "CLOC_FUNCTION_MISMATCH: snapshot=$Snapshot language=$language metric=$metric total=$expected classified=$actual"
+      }
+    }
+  }
+}
+
 function Write-DeltaSection {
   param(
     [Parameter(Mandatory)][string]$Category,
     [Parameter(Mandatory)][hashtable]$Baseline,
-    [Parameter(Mandatory)][hashtable]$Result
+    [Parameter(Mandatory)][hashtable]$Result,
+    [switch]$SuppressCategory
   )
-  Write-Output "CATEGORY=$Category"
+  if(-not$SuppressCategory){Write-Output "CATEGORY=$Category"}
   $languages=@($Baseline.Keys+$Result.Keys|Sort-Object -Unique)
   $baseSum=@{files=0;blank=0;comment=0;code=0}
   $resultSum=@{files=0;blank=0;comment=0;code=0}
@@ -414,6 +480,23 @@ function Write-DeltaSection {
     "BASE_BLANK=$($baseSum.blank) RESULT_BLANK=$($resultSum.blank) DELTA_BLANK=$($resultSum.blank-$baseSum.blank) " +
     "BASE_COMMENT=$($baseSum.comment) RESULT_COMMENT=$($resultSum.comment) DELTA_COMMENT=$($resultSum.comment-$baseSum.comment) " +
     "BASE_CODE=$($baseSum.code) RESULT_CODE=$($resultSum.code) DELTA_CODE=$($resultSum.code-$baseSum.code)"
+  )
+}
+
+function Write-FunctionDeltaSection {
+  param(
+    [Parameter(Mandatory)][string]$Function,
+    [Parameter(Mandatory)][hashtable]$Baseline,
+    [Parameter(Mandatory)][hashtable]$Result,
+    [Parameter(Mandatory)][int]$BaselineScriptFiles,
+    [Parameter(Mandatory)][int]$ResultScriptFiles
+  )
+  Write-Output "FUNCTION=$Function"
+  Write-DeltaSection -Category $Function -Baseline $Baseline -Result $Result `
+    -SuppressCategory
+  Write-Output (
+    "SCRIPT_FILES BASE=$BaselineScriptFiles RESULT=$ResultScriptFiles " +
+    "DELTA=$($ResultScriptFiles-$BaselineScriptFiles)"
   )
 }
 
@@ -463,7 +546,13 @@ $untrackedCount=@($worktreeStatus|Where-Object{$_.StartsWith('?? ')}).Count
 $worktreeDirty=($worktreeStatus.Count-gt 0).ToString().ToLowerInvariant()
 
 $baseSha=Resolve-Commit $Base
-$temporaryRoot=Join-Path ([IO.Path]::GetTempPath()) ("cloc_delta_"+[guid]::NewGuid().ToString('N'))
+$shortTempParent=Join-Path (Split-Path -Qualifier $repoPath) 'tmp'
+if(-not(Test-Path -LiteralPath $shortTempParent -PathType Container)){
+  $shortTempParent=[IO.Path]::GetTempPath()
+}
+$temporaryRoot=Join-Path $shortTempParent (
+  "cloc_"+[guid]::NewGuid().ToString('N').Substring(0,8)
+)
 New-Item -ItemType Directory -Path $temporaryRoot|Out-Null
 try{
   $baseRoot=Join-Path $temporaryRoot 'base'
@@ -495,6 +584,12 @@ try{
     -Summaries $baseSnapshot.summaries
   Assert-ClocClassificationAdditivity -Snapshot result `
     -Summaries $currentSnapshot.summaries
+  Assert-ClocFunctionAdditivity -Snapshot baseline `
+    -Total $baseSnapshot.summaries.total `
+    -Functions $baseSnapshot.function_summaries
+  Assert-ClocFunctionAdditivity -Snapshot result `
+    -Total $currentSnapshot.summaries.total `
+    -Functions $currentSnapshot.function_summaries
 
   Write-Output 'CLOC_DELTA=PASS'
   Write-Output "BASELINE=$baseSha"
@@ -526,6 +621,13 @@ try{
         "CATEGORY=$($sample.category) REASON=$($sample.reason) FILES=$($group.Count)"
       )
     }
+    foreach($group in @($snapshot.records|Group-Object function|Sort-Object Name)){
+      Write-Output (
+        "FUNCTION_DETAIL SNAPSHOT=$($snapshot.name) " +
+        "FUNCTION=$($group.Name) FILES=$($group.Count) " +
+        "SCRIPT_FILES=$(@($group.Group|Where-Object{$_.is_script}).Count)"
+      )
+    }
     foreach($record in @($snapshot.records|Where-Object{$_.category-eq'unclassified'})){
       Write-Output (
         "CLASSIFICATION_WARNING SNAPSHOT=$($snapshot.name) " +
@@ -537,6 +639,26 @@ try{
     Write-DeltaSection -Category $category `
       -Baseline $baseSnapshot.summaries[$category] `
       -Result $currentSnapshot.summaries[$category]
+  }
+  $functions=@(
+    $baseSnapshot.function_summaries.Keys+
+    $currentSnapshot.function_summaries.Keys|Sort-Object -Unique
+  )
+  foreach($function in $functions){
+    $baseline=$(if($baseSnapshot.function_summaries.ContainsKey($function)){
+      $baseSnapshot.function_summaries[$function]
+    }else{@{}})
+    $result=$(if($currentSnapshot.function_summaries.ContainsKey($function)){
+      $currentSnapshot.function_summaries[$function]
+    }else{@{}})
+    Write-FunctionDeltaSection -Function $function `
+      -Baseline $baseline -Result $result `
+      -BaselineScriptFiles $(if($baseSnapshot.function_script_counts.ContainsKey($function)){
+        [int]$baseSnapshot.function_script_counts[$function]
+      }else{0}) `
+      -ResultScriptFiles $(if($currentSnapshot.function_script_counts.ContainsKey($function)){
+        [int]$currentSnapshot.function_script_counts[$function]
+      }else{0})
   }
 }finally{
   if(Test-Path -LiteralPath $temporaryRoot){
