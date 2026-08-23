@@ -512,11 +512,14 @@
       "required": ["gate_id", "stage"],
       "properties": {
         "gate_id": {"$ref": "#/$defs/id"},
-        "stage": {"enum": ["n1_smoke_producer", "n100_solver_authorized_consumer"]},
+        "stage": {"enum": [
+          "n1_smoke_producer", "n100_solver_authorized_consumer",
+          "solver_authorized_consumer"
+        ]},
         "predecessor_experiment_id": {"$ref": "#/$defs/id"}
       },
       "allOf": [{
-        "if": {"properties": {"stage": {"const": "n100_solver_authorized_consumer"}}, "required": ["stage"]},
+        "if": {"properties": {"stage": {"enum": ["n100_solver_authorized_consumer", "solver_authorized_consumer"]}}, "required": ["stage"]},
         "then": {"required": ["predecessor_experiment_id"]},
         "else": {"not": {"required": ["predecessor_experiment_id"]}}
       }]

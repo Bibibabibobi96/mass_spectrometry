@@ -477,12 +477,12 @@ if ($threeZoneSolverGateStage -eq 'n1_smoke_producer' -and
     $hasThreeZoneAuthorizationArguments) {
   throw 'Three-zone N=1 producer cannot consume an authorization receipt.'
 }
-if (($threeZoneSolverGateStage -eq 'n100_solver_authorized_consumer') -ne
+if (($threeZoneSolverGateStage -in @('n100_solver_authorized_consumer','solver_authorized_consumer')) -ne
     $hasThreeZoneAuthorizationArguments) {
   throw 'Three-zone N=100 consumer requires one frozen N=1 authorization receipt.'
 }
 if ($threeZoneSolverGateStage -notin @(
-      '','n1_smoke_producer','n100_solver_authorized_consumer'
+      '','n1_smoke_producer','n100_solver_authorized_consumer','solver_authorized_consumer'
     )) {
   throw 'Three-zone solver-gate stage is invalid.'
 }
@@ -903,13 +903,13 @@ if ($LASTEXITCODE -ne 0 -or
 }
 $threeZoneProducerExperiment = $null
 $threeZoneProducerExperimentRowSha256 = ''
-if ($threeZoneSolverGateStage -eq 'n100_solver_authorized_consumer') {
+if ($threeZoneSolverGateStage -in @('n100_solver_authorized_consumer','solver_authorized_consumer')) {
   $producerId = [string]$threeZoneSolverGate.predecessor_experiment_id
   $producerExperimentJson = & $PythonExe -m $prepareModule --repo-root $repo `
     --profile-registry $profileRegistry --adapter-registry $adapterRegistry `
     --campaign $campaignPath --print-experiment-json $producerId
   if ($LASTEXITCODE -ne 0) {
-    throw 'Three-zone N=100 predecessor identity no longer resolves uniquely.'
+    throw 'Three-zone solver authorization predecessor identity no longer resolves uniquely.'
   }
   $producerRows = @($producerExperimentJson | ConvertFrom-Json)
   if ($producerRows.Count -ne 1 -or
@@ -917,7 +917,7 @@ if ($threeZoneSolverGateStage -eq 'n100_solver_authorized_consumer') {
         'n1_smoke_producer' -or
       [string]$producerRows[0].three_zone_solver_gate.gate_id -ne
         [string]$threeZoneSolverGate.gate_id) {
-    throw 'Three-zone N=100 predecessor identity no longer resolves uniquely.'
+    throw 'Three-zone solver authorization predecessor identity no longer resolves uniquely.'
   }
   $threeZoneProducerExperiment = $producerRows[0]
   $threeZoneProducerExperimentRowSha256 = (& $PythonExe -c $rowHashCode `
@@ -1487,9 +1487,9 @@ if ($threeZoneSolverGateStage -eq 'n1_smoke_producer' -and
 $threeZoneAuthorizationReceiptPath = $null
 $threeZoneProducerParentManifestPath = $null
 $threeZoneAuthorizationReceipt = $null
-if ($threeZoneSolverGateStage -eq 'n100_solver_authorized_consumer') {
-  if (-not $isThreeZoneLayout -or $expectedExecutionParticleCount -ne 100) {
-    throw 'Three-zone N=100 authorization applies only to the frozen three-zone N=100 layout.'
+if ($threeZoneSolverGateStage -in @('n100_solver_authorized_consumer','solver_authorized_consumer')) {
+  if (-not $isThreeZoneLayout -or $expectedExecutionParticleCount -lt 1) {
+    throw 'Three-zone solver authorization requires a positive population on the frozen three-zone layout.'
   }
   $artifactRoot = [IO.Path]::GetFullPath((Join-Path $workspaceRoot 'artifacts'))
   $threeZoneAuthorizationReceiptPath = [IO.Path]::GetFullPath(
@@ -1535,14 +1535,14 @@ if ($threeZoneSolverGateStage -eq 'n100_solver_authorized_consumer') {
     throw 'Three-zone N=1 authorization receipt is not the frozen parent output.'
   }
   $authorizationIdentityDiffers = (
-    [int]$threeZoneAuthorizationReceipt.schema_version -ne 1 -or
+    [int]$threeZoneAuthorizationReceipt.schema_version -ne $(if ($threeZoneSolverGateStage -eq 'n100_solver_authorized_consumer') { 1 } else { 2 }) -or
     [string]$threeZoneAuthorizationReceipt.role -ne
       'rf_oatof_three_zone_n1_solver_authorization_receipt' -or
     [string]$threeZoneAuthorizationReceipt.gate_id -ne
       [string]$threeZoneSolverGate.gate_id -or
     [string]$threeZoneAuthorizationReceipt.decision -ne 'PASS' -or
     [string]$threeZoneAuthorizationReceipt.authorization_status -ne
-      'N100_SOLVER_AUTHORIZED' -or
+      $(if ($threeZoneSolverGateStage -eq 'n100_solver_authorized_consumer') { 'N100_SOLVER_AUTHORIZED' } else { 'SOLVER_AUTHORIZED' }) -or
     [bool]$threeZoneAuthorizationReceipt.formal_gate_passed -or
     @($threeZoneAuthorizationReceipt.failure_codes).Count -ne 0 -or
     [string]$threeZoneAuthorizationReceipt.campaign.campaign_id -ne
@@ -1557,7 +1557,7 @@ if ($threeZoneSolverGateStage -eq 'n100_solver_authorized_consumer') {
       [string]$experiment.experiment_id -or
     [string]$threeZoneAuthorizationReceipt.authorized_successor.experiment_row_sha256 -ne
       [string]$frozenArguments.experiment_row_sha256 -or
-    [int]$threeZoneAuthorizationReceipt.authorized_successor.particle_count -ne 100 -or
+    [int]$threeZoneAuthorizationReceipt.authorized_successor.particle_count -ne $expectedExecutionParticleCount -or
     [string]$threeZoneAuthorizationReceipt.identities.candidate_sha256 -ne
       [string]$frozenArguments.single_flight_three_zone_candidate_sha256 -or
     [string]$threeZoneAuthorizationReceipt.identities.layout_profile_id -ne
@@ -1744,7 +1744,7 @@ if ($executionStrategy -eq 'simion_single_flight') {
         [string]$threeZoneSolverGate.gate_id
       $runnerArguments.ThreeZoneGateParticleCount = $expectedExecutionParticleCount
     }
-    if ($threeZoneSolverGateStage -eq 'n100_solver_authorized_consumer') {
+    if ($threeZoneSolverGateStage -in @('n100_solver_authorized_consumer','solver_authorized_consumer')) {
       $runnerArguments.ThreeZoneAuthorizationReceipt =
         $threeZoneAuthorizationReceiptPath
       $runnerArguments.ThreeZoneAuthorizationReceiptSha256 =

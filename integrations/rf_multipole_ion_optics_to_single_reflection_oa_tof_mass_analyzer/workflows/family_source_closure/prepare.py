@@ -848,10 +848,18 @@ def semantic_diff_experiments(before: dict[str, Any], after: dict[str, Any]) -> 
     }
 
 
+def _is_solver_authorized_consumer(row: dict[str, Any]) -> bool:
+    """Return whether a row consumes a hash-bound N=1 solver authorization."""
+
+    return row["three_zone_solver_gate"]["stage"] in {
+        "n100_solver_authorized_consumer", "solver_authorized_consumer"
+    }
+
+
 def _validate_three_zone_gate_pair(
     gated: list[dict[str, Any]],
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Validate one N=1 producer/N=100 consumer pair."""
+    """Validate one N=1 producer and its hash-bound solver consumer."""
 
     if len(gated) != 2:
         raise ContractError("each three-zone solver gate requires exactly two rows")
@@ -861,7 +869,7 @@ def _validate_three_zone_gate_pair(
     ]
     consumers = [
         row for row in gated
-        if row["three_zone_solver_gate"]["stage"] == "n100_solver_authorized_consumer"
+        if _is_solver_authorized_consumer(row)
     ]
     if len(producers) != 1 or len(consumers) != 1:
         raise ContractError("three-zone solver gate requires one producer and one consumer")
@@ -873,11 +881,23 @@ def _validate_three_zone_gate_pair(
             raise ContractError("three-zone solver gate run_id is invalid") from exc
     if consumer["three_zone_solver_gate"].get("predecessor_experiment_id") != producer["experiment_id"]:
         raise ContractError("three-zone N=100 predecessor does not identify the N=1 row")
+    consumer_stage = consumer["three_zone_solver_gate"]["stage"]
+    if consumer_stage == "solver_authorized_consumer":
+        count = consumer.get("single_flight_population", {}).get(
+            "execution_population", {}
+        ).get("particle_count")
+        if not isinstance(count, int) or count < 1:
+            raise ContractError("three-zone solver gate successor particle count is invalid")
+        expected = ((producer, 1, "n1_center_source_id_500_v1", "080A9ED428559EF602668B4C00F114F1A11C3F6B02A435F0BDC154578E4D7F22"),)
+    else:
+        expected = ()
     realization = (
         producer.get("single_flight_layout_profile_id"),
         producer.get("architecture_generation_id"),
         consumer.get("generated_pre_pulse_ordered_subset", {}).get("selection_id"),
     )
+    layout_profile_id = producer.get("single_flight_layout_profile_id")
+    architecture_generation_id = producer.get("architecture_generation_id")
     supported_realizations = {
         (
             "three_zone_t5_primary_v1",
@@ -890,25 +910,26 @@ def _validate_three_zone_gate_pair(
             "n100_uniform_full_width_source_ids_1_to_1000_v1",
         ),
     }
-    if realization not in supported_realizations:
+    if consumer_stage == "n100_solver_authorized_consumer" and realization not in supported_realizations:
         raise ContractError(
             "three-zone solver gate layout, architecture, or N=100 selection differs"
         )
-    layout_profile_id, architecture_generation_id, n100_selection_id = realization
-    expected = (
-        (
-            producer,
-            1,
-            "n1_center_source_id_500_v1",
-            "080A9ED428559EF602668B4C00F114F1A11C3F6B02A435F0BDC154578E4D7F22",
-        ),
-        (
-            consumer,
-            100,
-            n100_selection_id,
-            "F9E2DBDE0AE4640704FB66EE02C101CF84ABE35137363D62647622606DF61279",
-        ),
-    )
+    if consumer_stage == "n100_solver_authorized_consumer":
+        _, _, n100_selection_id = realization
+        expected = (
+            (
+                producer,
+                1,
+                "n1_center_source_id_500_v1",
+                "080A9ED428559EF602668B4C00F114F1A11C3F6B02A435F0BDC154578E4D7F22",
+            ),
+            (
+                consumer,
+                100,
+                n100_selection_id,
+                "F9E2DBDE0AE4640704FB66EE02C101CF84ABE35137363D62647622606DF61279",
+            ),
+        )
     for row, count, selection_id, ordered_id_sha256 in expected:
         execution_population = row.get("single_flight_population", {}).get(
             "execution_population", {}
@@ -1090,10 +1111,21 @@ def _resolve_three_zone_n1_authorization(
         "resolved_region_field_semantic_sha256": resolved_region_field_contract["semantic_sha256"],
         "source_identity_sha256": _canonical_sha256(source_identity),
     }
+    consumer_stage = consumer["three_zone_solver_gate"]["stage"]
+    expected_schema_version = 1 if consumer_stage == "n100_solver_authorized_consumer" else 2
+    expected_status = (
+        "N100_SOLVER_AUTHORIZED"
+        if consumer_stage == "n100_solver_authorized_consumer"
+        else "SOLVER_AUTHORIZED"
+    )
+    expected_particle_count = consumer["single_flight_population"][
+        "execution_population"
+    ]["particle_count"]
     if (
-        receipt.get("gate_id") != producer["three_zone_solver_gate"]["gate_id"]
+        receipt.get("schema_version") != expected_schema_version
+        or receipt.get("gate_id") != producer["three_zone_solver_gate"]["gate_id"]
         or receipt.get("decision") != "PASS"
-        or receipt.get("authorization_status") != "N100_SOLVER_AUTHORIZED"
+        or receipt.get("authorization_status") != expected_status
         or receipt.get("campaign") != {
             "campaign_id": campaign["campaign_id"],
             "campaign_sha256": repository_text_sha256(campaign_path),
@@ -1104,7 +1136,7 @@ def _resolve_three_zone_n1_authorization(
         or receipt.get("authorized_successor") != {
             "experiment_id": consumer["experiment_id"],
             "experiment_row_sha256": _canonical_sha256(consumer),
-            "particle_count": 100,
+            "particle_count": expected_particle_count,
         }
         or receipt.get("identities") != expected_identities
     ):
@@ -3617,13 +3649,13 @@ def prepare_family_source_closure(
     if three_zone_gate_pair is not None:
         producer, consumer = three_zone_gate_pair
         gate_stage = experiment["three_zone_solver_gate"]["stage"]
-        if gate_stage == "n100_solver_authorized_consumer":
+        if _is_solver_authorized_consumer(experiment):
             if (
                 resolved_region_field_contract is None
                 or layout_profile is None
                 or not field_profiles
             ):
-                raise ContractError("three-zone N=100 authorization identity is incomplete")
+                raise ContractError("three-zone solver authorization identity is incomplete")
             three_zone_authorization = _resolve_three_zone_n1_authorization(
                 workspace=workspace,
                 campaign=campaign,

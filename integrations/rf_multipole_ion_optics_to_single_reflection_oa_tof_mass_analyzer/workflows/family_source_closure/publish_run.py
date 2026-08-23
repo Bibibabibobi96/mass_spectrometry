@@ -712,14 +712,24 @@ def _n1_gate_pair(campaign: dict[str, Any], experiment_id: str) -> tuple[dict[st
         for row in experiments
         if isinstance(row.get("three_zone_solver_gate"), dict)
         and row["three_zone_solver_gate"].get("gate_id") == gate_id
-        and row["three_zone_solver_gate"].get("stage") == "n100_solver_authorized_consumer"
+        and row["three_zone_solver_gate"].get("stage") in {
+            "n100_solver_authorized_consumer", "solver_authorized_consumer"
+        }
         and row["three_zone_solver_gate"].get("predecessor_experiment_id") == experiment_id
     ]
     if len(consumers) != 1:
-        raise ContractError("N=1 solver gate must bind exactly one N=100 successor")
+        raise ContractError("N=1 solver gate must bind exactly one solver-authorized successor")
     successor = consumers[0]
-    if successor.get("single_flight_population", {}).get("execution_population", {}).get("particle_count") != 100:
-        raise ContractError("N=1 solver gate successor must freeze N=100")
+    successor_count = successor.get("single_flight_population", {}).get(
+        "execution_population", {}
+    ).get("particle_count")
+    if not isinstance(successor_count, int) or successor_count < 1:
+        raise ContractError("N=1 solver gate successor particle count is invalid")
+    if (
+        successor["three_zone_solver_gate"]["stage"] == "n100_solver_authorized_consumer"
+        and successor_count != 100
+    ):
+        raise ContractError("legacy N=1 solver gate successor must freeze N=100")
     return producer, successor
 
 
@@ -877,11 +887,17 @@ def _publish_n1_solver_authorization_receipt(
         raise ContractError("N=1 child three-zone identity bundle is incomplete")
     decision = "PASS" if not failures else "FAIL"
     receipt = {
-        "schema_version": 1,
+        "schema_version": (
+            1 if successor["three_zone_solver_gate"]["stage"] == "n100_solver_authorized_consumer" else 2
+        ),
         "role": "rf_oatof_three_zone_n1_solver_authorization_receipt",
         "gate_id": producer["three_zone_solver_gate"]["gate_id"],
         "decision": decision,
-        "authorization_status": ("N100_SOLVER_AUTHORIZED" if decision == "PASS" else "N100_SOLVER_NOT_AUTHORIZED"),
+        "authorization_status": (
+            ("N100_SOLVER_AUTHORIZED" if decision == "PASS" else "N100_SOLVER_NOT_AUTHORIZED")
+            if successor["three_zone_solver_gate"]["stage"] == "n100_solver_authorized_consumer"
+            else ("SOLVER_AUTHORIZED" if decision == "PASS" else "SOLVER_NOT_AUTHORIZED")
+        ),
         "campaign": {
             "campaign_id": campaign["campaign_id"],
             "campaign_sha256": repository_text_sha256(campaign_path),
@@ -896,7 +912,7 @@ def _publish_n1_solver_authorization_receipt(
         "authorized_successor": {
             "experiment_id": successor["experiment_id"],
             "experiment_row_sha256": _canonical_sha256(successor),
-            "particle_count": 100,
+            "particle_count": successor["single_flight_population"]["execution_population"]["particle_count"],
         },
         "identities": required_identities,
         "evidence": {
@@ -908,7 +924,7 @@ def _publish_n1_solver_authorization_receipt(
         },
         "failure_codes": failures,
         "claim_limit": (
-            "N=1 solver-path authorization for the hash-bound N=100 successor only; "
+            "N=1 solver-path authorization for the hash-bound successor only; "
             "no resolution, transmission, engineering-qualification, or Formal claim."
         ),
         "formal_gate_passed": False,

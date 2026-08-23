@@ -10,12 +10,15 @@
     "failure_codes", "claim_limit", "formal_gate_passed"
   ],
   "properties": {
-    "schema_version": {"const": 1},
+    "schema_version": {"enum": [1, 2]},
     "role": {"const": "rf_oatof_three_zone_n1_solver_authorization_receipt"},
     "gate_id": {"$ref": "#/$defs/id"},
     "decision": {"enum": ["PASS", "FAIL"]},
     "authorization_status": {
-      "enum": ["N100_SOLVER_AUTHORIZED", "N100_SOLVER_NOT_AUTHORIZED"]
+      "enum": [
+        "N100_SOLVER_AUTHORIZED", "N100_SOLVER_NOT_AUTHORIZED",
+        "SOLVER_AUTHORIZED", "SOLVER_NOT_AUTHORIZED"
+      ]
     },
     "campaign": {
       "type": "object", "additionalProperties": false,
@@ -45,7 +48,7 @@
       "properties": {
         "experiment_id": {"$ref": "#/$defs/id"},
         "experiment_row_sha256": {"$ref": "#/$defs/sha"},
-        "particle_count": {"const": 100}
+        "particle_count": {"type": "integer", "minimum": 1, "maximum": 10000}
       }
     },
     "identities": {
@@ -126,10 +129,23 @@
   },
   "allOf": [
     {
-      "if": {"properties": {"decision": {"const": "PASS"}}, "required": ["decision"]},
+      "if": {"properties": {"schema_version": {"const": 1}}, "required": ["schema_version"]},
       "then": {
         "properties": {
-          "authorization_status": {"const": "N100_SOLVER_AUTHORIZED"},
+          "authorized_successor": {"properties": {"particle_count": {"const": 100}}}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"decision": {"const": "PASS"}}, "required": ["decision"]},
+      "then": {
+        "allOf": [
+          {
+            "if": {"properties": {"schema_version": {"const": 1}}, "required": ["schema_version"]},
+            "then": {"properties": {"authorization_status": {"const": "N100_SOLVER_AUTHORIZED"}}},
+            "else": {"properties": {"authorization_status": {"const": "SOLVER_AUTHORIZED"}}}
+          },
+          {"properties": {
           "failure_codes": {"maxItems": 0},
           "evidence": {"properties": {"census": {"properties": {
             "launched": {"const": 1},
@@ -141,13 +157,18 @@
             "reflectron_exit_return": {"const": 1},
             "detector_crossing": {"const": 1}
           }}}}
-        }
+          }}
+        ]
       },
       "else": {
-        "properties": {
-          "authorization_status": {"const": "N100_SOLVER_NOT_AUTHORIZED"},
-          "failure_codes": {"minItems": 1}
-        }
+        "allOf": [
+          {
+            "if": {"properties": {"schema_version": {"const": 1}}, "required": ["schema_version"]},
+            "then": {"properties": {"authorization_status": {"const": "N100_SOLVER_NOT_AUTHORIZED"}}},
+            "else": {"properties": {"authorization_status": {"const": "SOLVER_NOT_AUTHORIZED"}}}
+          },
+          {"properties": {"failure_codes": {"minItems": 1}}}
+        ]
       }
     }
   ],

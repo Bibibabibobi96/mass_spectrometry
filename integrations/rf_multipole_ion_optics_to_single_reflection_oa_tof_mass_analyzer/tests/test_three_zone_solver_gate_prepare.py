@@ -177,6 +177,26 @@ class ThreeZoneSolverGatePrepareTests(unittest.TestCase):
         with self.assertRaisesRegex(ContractError, "differ beyond"):
             _three_zone_gate_pairs(campaign)
 
+    def test_generic_consumer_binds_a_positive_non_n100_population(self) -> None:
+        producer, consumer = _rows()
+        consumer["experiment_id"] = "three_zone_n482"
+        consumer["run_id"] = "20260817_191000__sim__cross__three-zone-n482__n482"
+        consumer["three_zone_solver_gate"]["stage"] = "solver_authorized_consumer"
+        consumer["single_flight_population"]["execution_population"]["particle_count"] = 482
+        consumer["single_flight_population"]["execution_population"]["ordered_particle_id_sha256"] = "5" * 64
+        consumer["single_flight_population"]["denominators"] = {
+            "population_count": 482, "eligible_population_count": 482,
+        }
+        campaign = {"schema_version": 6, "experiments": [producer, consumer]}
+
+        self.assertEqual(
+            _three_zone_gate_pairs(campaign),
+            {"three_zone_gate_v1": (producer, consumer)},
+        )
+        consumer["single_flight_time_integration_profile_id"] = "dt320"
+        with self.assertRaisesRegex(ContractError, "differ beyond"):
+            _three_zone_gate_pairs(campaign)
+
     def test_multiple_pairs_are_grouped_by_gate_id(self) -> None:
         producer_c, consumer_c = _rows()
         producer_d = json.loads(json.dumps(producer_c))
@@ -528,8 +548,36 @@ class ThreeZoneSolverGatePrepareTests(unittest.TestCase):
             self.assertEqual(frozen["three_zone_n1_authorization_receipt_sha256"], file_sha256(receipt_path))
             self.assertEqual(frozen["three_zone_source_identity_sha256"], identities["source_identity_sha256"])
 
+            consumer["experiment_id"] = "three_zone_n482"
+            consumer["run_id"] = "20260817_191000__sim__cross__three-zone-n482__n482"
+            consumer["three_zone_solver_gate"]["stage"] = "solver_authorized_consumer"
+            consumer["single_flight_population"]["execution_population"]["particle_count"] = 482
+            consumer["single_flight_population"]["execution_population"]["ordered_particle_id_sha256"] = "5" * 64
+            consumer["single_flight_population"]["denominators"] = {
+                "population_count": 482, "eligible_population_count": 482,
+            }
+            _write(campaign_path, campaign)
+            receipt["schema_version"] = 2
+            receipt["authorization_status"] = "SOLVER_AUTHORIZED"
+            receipt["campaign"]["campaign_sha256"] = repository_text_sha256(campaign_path)
+            receipt["authorized_successor"] = {
+                "experiment_id": consumer["experiment_id"],
+                "experiment_row_sha256": _canonical_sha256(consumer),
+                "particle_count": 482,
+            }
+            _write(receipt_path, receipt)
+            manifest["outputs"] = [_record(receipt_path, run)]
+            _write(manifest_path, manifest)
+            generic_frozen = _resolve_three_zone_n1_authorization(
+                workspace=workspace, campaign=campaign, campaign_path=campaign_path,
+                producer=producer, consumer=consumer, source_identity=source_identity,
+                layout_profile=layout, selected_field_profile=field,
+                resolved_region_field_contract=region,
+            )
+            self.assertEqual(generic_frozen["three_zone_n1_authorization_receipt_sha256"], file_sha256(receipt_path))
+
             receipt["decision"] = "FAIL"
-            receipt["authorization_status"] = "N100_SOLVER_NOT_AUTHORIZED"
+            receipt["authorization_status"] = "SOLVER_NOT_AUTHORIZED"
             receipt["failure_codes"] = ["DETECTOR_STATUS"]
             _write(receipt_path, receipt)
             with self.assertRaisesRegex(ContractError, "manifest verification failed"):

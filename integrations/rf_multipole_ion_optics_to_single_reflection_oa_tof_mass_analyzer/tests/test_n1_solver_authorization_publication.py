@@ -216,6 +216,64 @@ class N1SolverAuthorizationPublicationTests(unittest.TestCase):
                     source_identity=source_identity,
                 )
 
+    def test_generic_receipt_binds_the_actual_successor_population(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            stage_dir = workspace / "artifacts/projects/integration/runs/child"
+            parent = workspace / "artifacts/projects/integration/runs/parent"
+            stage_dir.mkdir(parents=True)
+            parent.mkdir(parents=True)
+            population = stage_dir / "inputs/resolved_population_contract.json"
+            summary_path = stage_dir / "summary.json"
+            checkpoints = stage_dir / "results/single_flight_particle_checkpoints.csv"
+            rows = _checkpoint_rows()
+            _write_json(population, {"execution_population": {"particle_count": 1}})
+            _write_json(summary_path, _summary(rows))
+            _write_checkpoints(checkpoints, rows)
+            source_identity = {
+                "source_branch_id": "simion", "solver_id": "simion", "run_id": "source_run",
+                "project_id": "source_project", "manifest_sha256": "A" * 64,
+                "event_sha256": "B" * 64, "particle_source_sha256": "C" * 64,
+                "metadata_sha256": "D" * 64,
+            }
+            _write_json(stage_dir / "run_config.json", {"parameters": {
+                "three_zone_candidate_sha256": "1" * 64,
+                "layout_profile_id": "three_zone_t5_primary_v1",
+                "architecture_generation_id": "three_zone_t5_frozen_primary_v1",
+                "three_zone_topology_id": "three_zone_accelerator_ideal_v1",
+                "three_zone_geometry_id": "three_zone_focus_origin_planes_v1",
+                "three_zone_frontend_electrode_topology_id": "three_zone_frontend_v1",
+                "accelerator_field_profile_id": "accelerator_real_three_zone_pa_real_reflectron",
+                "three_zone_field_id": "three_zone_refined_pa_field_v1",
+                "resolved_region_field_semantic_sha256": "2" * 64,
+            }})
+            manifest = {
+                "role": "simulation_run_manifest", "run_id": "child", "project": INTEGRATION_ID,
+                "mode": "rf_to_oatof_simion_single_flight", "status": "success", "formal_eligible": False,
+                "run_config": _record(stage_dir / "run_config.json"),
+                "inputs": {"resolved_population_contract": _record(population)},
+                "outputs": [_record(summary_path), _record(checkpoints)],
+            }
+            _write_json(stage_dir / "run_manifest.json", manifest)
+            producer = {"experiment_id": "three_zone_n1", "three_zone_solver_gate": {
+                "gate_id": "three_zone_real_pa_gate_v2", "stage": "n1_smoke_producer"}}
+            successor = {"experiment_id": "three_zone_n482", "three_zone_solver_gate": {
+                "gate_id": "three_zone_real_pa_gate_v2", "stage": "solver_authorized_consumer",
+                "predecessor_experiment_id": "three_zone_n1"},
+                "single_flight_population": {"execution_population": {"particle_count": 482}}}
+            campaign = {"campaign_id": "three_zone_generic_gate_campaign", "experiments": [producer, successor]}
+            campaign_path = workspace / "simulation_repo/campaign.json"
+            _write_json(campaign_path, campaign)
+            _, receipt = _publish_n1_solver_authorization_receipt(
+                campaign=campaign, campaign_path=campaign_path, producer=producer, successor=successor,
+                integration_run_id="parent", stage={"run_id": "child", "path": stage_dir.relative_to(workspace).as_posix()},
+                workspace_root=workspace, parent_run_dir=parent, source_identity=source_identity,
+            )
+            self.assertEqual(receipt["schema_version"], 2)
+            self.assertEqual(receipt["authorization_status"], "SOLVER_AUTHORIZED")
+            self.assertEqual(receipt["authorized_successor"]["particle_count"], 482)
+            validate_schema(receipt, N1_RECEIPT_SCHEMA)
+
 
 if __name__ == "__main__":
     unittest.main()
