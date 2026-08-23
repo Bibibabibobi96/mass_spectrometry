@@ -595,14 +595,9 @@ try{{Assert-RfThreeZoneSolverAuthorization @failed;throw 'tamper accepted'}}catc
 
     def test_three_zone_authorization_precedes_first_simion_process(self) -> None:
         runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
-        adapter = FAMILY_ADAPTER.read_text(encoding="utf-8")
         self.assertLess(
             runner.index("Assert-RfThreeZoneSolverAuthorization -Stage"),
             runner.index("Invoke-ResourceBudgetedProcess"),
-        )
-        self.assertLess(
-            adapter.index("$authorizationIdentityDiffers"),
-            adapter.index("& $runtime.implementation.single_flight_runner"),
         )
         self.assertNotIn("ThreeZoneAuthorizationReceipt", WORKFLOW_ENTRY.read_text(encoding="utf-8"))
 
