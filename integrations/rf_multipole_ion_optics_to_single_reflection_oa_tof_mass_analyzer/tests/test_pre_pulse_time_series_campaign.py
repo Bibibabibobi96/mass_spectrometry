@@ -20,23 +20,23 @@ INTEGRATION_ROOT = REPO_ROOT / (
     "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
 )
 LEGACY_CAMPAIGN_PATH = INTEGRATION_ROOT / (
-    "config/diagnostics/"
+    "docs/history/retired_campaigns/"
     "pre_pulse_time_series_gap3p2_three_zone_real_pa_first100_n100_campaign.json"
 )
 CAMPAIGN_PATH = INTEGRATION_ROOT / (
-    "config/diagnostics/"
+    "docs/history/retired_campaigns/"
     "pre_pulse_time_series_gap3p2_three_zone_real_pa_first100_n100_campaign_v2.json"
 )
 V3_CAMPAIGN_PATH = INTEGRATION_ROOT / (
-    "config/diagnostics/"
+    "docs/history/retired_campaigns/"
     "pre_pulse_time_series_gap3p2_three_zone_real_pa_first100_n100_campaign_v3.json"
 )
 V5_AUTO_CAMPAIGN_PATH = INTEGRATION_ROOT / (
-    "config/diagnostics/"
+    "docs/history/retired_campaigns/"
     "connector_gap_three_zone_real_pa_first100_n100_campaign_v5.json"
 )
 CURRENT_AUTO_CAMPAIGN_PATH = INTEGRATION_ROOT / (
-    "config/diagnostics/connector_gap_102p4_real_pa_full_n5000_v1.json"
+    "docs/history/retired_campaigns/connector_gap_102p4_real_pa_full_n5000_v1.json"
 )
 ADAPTER_PATH = INTEGRATION_ROOT / "workflows/family_source_closure/adapter.ps1"
 PUBLIC_ENTRY_PATH = INTEGRATION_ROOT / "workflows/family_source_closure/execute.ps1"

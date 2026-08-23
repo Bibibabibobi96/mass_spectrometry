@@ -17,7 +17,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CAMPAIGN_PATH = REPO_ROOT / (
     "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/"
-    "config/diagnostics/connector_gap_102p4_real_pa_full_n5000_v1.json"
+    "docs/history/retired_campaigns/connector_gap_102p4_real_pa_full_n5000_v1.json"
 )
 
 

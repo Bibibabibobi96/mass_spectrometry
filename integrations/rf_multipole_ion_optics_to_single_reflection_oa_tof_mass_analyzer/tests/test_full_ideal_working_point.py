@@ -183,9 +183,8 @@ if ($baseline -ne $theory -or $baseline -eq $geometryKey -or $baseline -eq $mesh
             })
 
     def test_final_working_point_pair_uses_one_exact_pa_generation_set(self) -> None:
-        campaign_path = (
-            Path(__file__).resolve().parents[1] / "config" / "diagnostics"
-            / "connector_gap_102p4_post_pulse_full_ideal_working_point_pair_n116_v15.json"
+        campaign_path = Path(__file__).resolve().parents[1] / "docs" / "history" / (
+            "retired_campaigns/connector_gap_102p4_post_pulse_full_ideal_working_point_pair_n116_v15.json"
         )
         campaign = json.loads(campaign_path.read_text(encoding="utf-8"))
         baseline, theory = campaign["experiments"]

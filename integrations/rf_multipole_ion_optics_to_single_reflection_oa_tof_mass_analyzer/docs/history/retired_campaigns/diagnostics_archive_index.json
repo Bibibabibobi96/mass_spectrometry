@@ -1,0 +1,451 @@
+{
+  "schema_version": 1,
+  "role": "rf_oatof_retired_diagnostics_campaign_archive_index",
+  "content_identity": "sha256_of_preserved_json_bytes",
+  "entries": [
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/canonical_long_affine_arm8_width_numerics_n1000_campaign.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/canonical_long_affine_arm8_width_numerics_n1000_campaign.json",
+      "status": "archived_invalid",
+      "sha256": "96e98f7d0c5bcca4bd2d3f1ea3140fc63e7ef5cb9bc525309c02c0b12f41a6da"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/canonical_long_affine_arm8_width_numerics_restart_n1000_campaign.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/canonical_long_affine_arm8_width_numerics_restart_n1000_campaign.json",
+      "status": "retired",
+      "sha256": "aa8a9ee28ee771ac21bd2b93ef8cfcc4fb6f60a7892b3772cba6a894ced5a2f6"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/canonical_long_full_domain_restart_affine_width_numerics_n1000_v3_successor_campaign.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/canonical_long_full_domain_restart_affine_width_numerics_n1000_v3_successor_campaign.json",
+      "status": "retired",
+      "sha256": "4258138705eec5138682eea296215729937c64f005ce4b7073e69f3ab6b4ce0f"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/canonical_pulse_state_source_acc_ii_n1000_campaign.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/canonical_pulse_state_source_acc_ii_n1000_campaign.json",
+      "status": "retired",
+      "sha256": "cfb74122f21a766c82b18c83136bb43457ba8c50e843abb7631bd1dd7ea7bdb2"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/canonical_source_architecture_accelerator_field_matrix_n1000_campaign.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/canonical_source_architecture_accelerator_field_matrix_n1000_campaign.json",
+      "status": "retired",
+      "sha256": "7b6db9fe4e097a806d6f3295a2a189b5b5ce6704cb76768951b5840b88cc0606"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/canonical_source_architecture_accelerator_field_matrix_n1000_v3_successor_campaign.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/canonical_source_architecture_accelerator_field_matrix_n1000_v3_successor_campaign.json",
+      "status": "retired",
+      "sha256": "538546e5f2b71ef03855f846f696779f147735e9da60644c3d19cff47e0a5434"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_0_dt40_source_zvz_theory_working_point_n1000_v1.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_0_dt40_source_zvz_theory_working_point_n1000_v1.json",
+      "status": "retired",
+      "sha256": "59d6e0ef70c04edd46f1f30eec43232f65e2973eca670bc1b4fd83f9d880384f"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_0_post_pulse_field_source_zvz_theory_dt40_v2_no_rf.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_0_post_pulse_field_source_zvz_theory_dt40_v2_no_rf.json",
+      "status": "retired",
+      "sha256": "245d8619a27b3c28ed4eed2f6c9930aba24be2fa4772888c4da658109b65e701"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_102p4_full_ideal_n5000_v1.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_102p4_full_ideal_n5000_v1.json",
+      "status": "retired",
+      "sha256": "7c33d52497e90734df5c7dff61cc1181f1226f1226524a1cfaf09e2c0d6451aa"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_102p4_partial_ideal_n5000_v1.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_102p4_partial_ideal_n5000_v1.json",
+      "status": "retired",
+      "sha256": "637072b805862d65c318899f91011513a4657a93e809ccb3e0778844eee884f0"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_102p4_post_pulse_full_ideal_cache_repair_seed_n116_v1.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_102p4_post_pulse_full_ideal_cache_repair_seed_n116_v1.json",
+      "status": "retired",
+      "sha256": "df088fdc9a5c38ae30326591093e11ab36c734cadae361d95b1ef48080b62965"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_102p4_post_pulse_full_ideal_cache_seed_n116_v1.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_102p4_post_pulse_full_ideal_cache_seed_n116_v1.json",
+      "status": "retired",
+      "sha256": "2f348ed209a087c6933bcd302c2f60f8bd47d323c3088d5e5e52e0df1e8da538"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_102p4_post_pulse_full_ideal_cache_seed_n116_v2.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_102p4_post_pulse_full_ideal_cache_seed_n116_v2.json",
+      "status": "retired",
+      "sha256": "0b0765198269c92dae640d0c2941e33b7f3ffa5ae7ce5844459b13ab2991149a"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_102p4_post_pulse_full_ideal_flight_tube_projection_seed_n116_v2.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_102p4_post_pulse_full_ideal_flight_tube_projection_seed_n116_v2.json",
+      "status": "retired",
+      "sha256": "60eb89d164ace5c1c175d0c81dad1f52791aa8ab2013ae2cf5c5f3c17926badd"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_102p4_post_pulse_full_ideal_flight_tube_projection_seed_n116_v3.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_102p4_post_pulse_full_ideal_flight_tube_projection_seed_n116_v3.json",
+      "status": "retired",
+      "sha256": "74c3ebc846cd441c8aa250d01ce20fddb8fd7398a835fe10bd31a1261ab82764"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_102p4_post_pulse_full_ideal_theory_working_point_n116_v1.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_102p4_post_pulse_full_ideal_theory_working_point_n116_v1.json",
+      "status": "retired",
+      "sha256": "deb03a1cf0af92fd58ca29e49b3c38eb2d670541304c673b4f7092d469ec7a9c"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_102p4_post_pulse_full_ideal_working_point_pair_n116_v1.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_102p4_post_pulse_full_ideal_working_point_pair_n116_v1.json",
+      "status": "retired",
+      "sha256": "6f9b03e8a1e16bdfd9cddcc5097d749e29c93970a62c88411677af0bb4ffe0da"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_102p4_post_pulse_full_ideal_working_point_pair_n116_v10.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_102p4_post_pulse_full_ideal_working_point_pair_n116_v10.json",
+      "status": "retired",
+      "sha256": "0f452fb356cd0e3be73b255494b23cce9e60ce2a9b3f5982dbf2858a15a30a27"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_102p4_post_pulse_full_ideal_working_point_pair_n116_v11.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_102p4_post_pulse_full_ideal_working_point_pair_n116_v11.json",
+      "status": "retired",
+      "sha256": "fe773d3acd85207d840d0e2c7bb6786dd55741f8a7071093e1703aee23dac141"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_102p4_post_pulse_full_ideal_working_point_pair_n116_v12.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_102p4_post_pulse_full_ideal_working_point_pair_n116_v12.json",
+      "status": "retired",
+      "sha256": "9e0819de6f345988dd17e7091f0e916ae7a6db2022b1f9cd571493ec3d754189"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_102p4_post_pulse_full_ideal_working_point_pair_n116_v13.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_102p4_post_pulse_full_ideal_working_point_pair_n116_v13.json",
+      "status": "retired",
+      "sha256": "75c273af557a21a6b87cbab658ffbdd036476b91a79697d7d4f241c3781686a2"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_102p4_post_pulse_full_ideal_working_point_pair_n116_v14.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_102p4_post_pulse_full_ideal_working_point_pair_n116_v14.json",
+      "status": "retired",
+      "sha256": "830a7a3c9c90eedaae0d90618264fc9878d53ceb28af8cb65b8fd1549298bdf1"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_102p4_post_pulse_full_ideal_working_point_pair_n116_v15.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_102p4_post_pulse_full_ideal_working_point_pair_n116_v15.json",
+      "status": "retired",
+      "sha256": "6e3498c9f6dcaab1e088e30cea53c9ebc64513f0a5cd9785a03ddce65e2d374c"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_102p4_post_pulse_full_ideal_working_point_pair_n116_v16.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_102p4_post_pulse_full_ideal_working_point_pair_n116_v16.json",
+      "status": "retired",
+      "sha256": "b805f4f2f1d19da99c83265be86e2aeb2cb47eb6e9db2f84f5b25c675397fc8c"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_102p4_post_pulse_full_ideal_working_point_pair_n116_v2.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_102p4_post_pulse_full_ideal_working_point_pair_n116_v2.json",
+      "status": "retired",
+      "sha256": "b9b5c445949046177339de514ce574c40eb58721083a20e79293c4bf2aaeed8c"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_102p4_post_pulse_full_ideal_working_point_pair_n116_v3.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_102p4_post_pulse_full_ideal_working_point_pair_n116_v3.json",
+      "status": "retired",
+      "sha256": "93d9cab270b404d86bc76f5f2a4aba3ab92e618cdf80104656737eb29a4eb750"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_102p4_post_pulse_full_ideal_working_point_pair_n116_v4.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_102p4_post_pulse_full_ideal_working_point_pair_n116_v4.json",
+      "status": "retired",
+      "sha256": "77f3b92738374ae398b7f5e345464a116a3ad7c27a06152939d8ff9299aed83d"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_102p4_post_pulse_full_ideal_working_point_pair_n116_v5.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_102p4_post_pulse_full_ideal_working_point_pair_n116_v5.json",
+      "status": "retired",
+      "sha256": "1172d7bddef18b645577f890f15a6660cc0398c2d809b637f9f566bdac0670b1"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_102p4_post_pulse_full_ideal_working_point_pair_n116_v6.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_102p4_post_pulse_full_ideal_working_point_pair_n116_v6.json",
+      "status": "retired",
+      "sha256": "26f7681e669afbfc2497b8028cc3d75b365a42fa702bef32133f3ca44b753995"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_102p4_post_pulse_full_ideal_working_point_pair_n116_v7.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_102p4_post_pulse_full_ideal_working_point_pair_n116_v7.json",
+      "status": "retired",
+      "sha256": "d1e22fd5d942bd65cfb7e6f6a0c42059990d917369e9ccca5a0250b82d423891"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_102p4_post_pulse_full_ideal_working_point_pair_n116_v8.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_102p4_post_pulse_full_ideal_working_point_pair_n116_v8.json",
+      "status": "retired",
+      "sha256": "ed9f3439b7e6f6989a59ca8e17c8930a2424b7d11d7121269780b195866fbbfe"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_102p4_post_pulse_full_ideal_working_point_pair_n116_v9.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_102p4_post_pulse_full_ideal_working_point_pair_n116_v9.json",
+      "status": "retired",
+      "sha256": "0a4cf49a2e62ccd5dc41757961c017ecf2e71de9e5a8bc5acbaec1654e8d12b6"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_102p4_post_pulse_full_ideal_zvz_residual_removed_n116_v1.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_102p4_post_pulse_full_ideal_zvz_residual_removed_n116_v1.json",
+      "status": "retired",
+      "sha256": "df6b0577169a9eca381bb99148668a5bd264724786d965ff7b76354517aae108"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_102p4_post_pulse_real_partial_ideal_source_zvz_theory_n116_successor_v1.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_102p4_post_pulse_real_partial_ideal_source_zvz_theory_n116_successor_v1.json",
+      "status": "retired",
+      "sha256": "96395ae78f001bd016362cf3797d8fcc2cd523be32d497e2e8a3766d04143b90"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_102p4_real_pa_full_n5000_v1.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_102p4_real_pa_full_n5000_v1.json",
+      "status": "retired",
+      "sha256": "bad85b09f9da0b6f0ab0652c0a1a044ae7f2302a0dd47982ed84532001341c0e"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_102p4_real_pa_full_n5000_v3.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_102p4_real_pa_full_n5000_v3.json",
+      "status": "retired",
+      "sha256": "455d64e6ec4c902e95aa0a80b87121f2e7d54741e6a3c1a7d30623b07bc45057"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_25p6_post_pulse_full_ideal_source_zvz_theory_dt40_successor_v1.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_25p6_post_pulse_full_ideal_source_zvz_theory_dt40_successor_v1.json",
+      "status": "retired",
+      "sha256": "ea294f3575bf62f7391bae4052f43e49696aa18bf5a532ec18b56e0654627d1b"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_51p2_post_pulse_full_ideal_cache_seed_n77_v1.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_51p2_post_pulse_full_ideal_cache_seed_n77_v1.json",
+      "status": "retired",
+      "sha256": "c9713420f91ee1e26ea92b7f1b8fac1429997c808906ae671598c7a0b93be1c9"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_51p2_post_pulse_full_ideal_source_zvz_theory_working_point_n77_v1.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_51p2_post_pulse_full_ideal_source_zvz_theory_working_point_n77_v1.json",
+      "status": "retired",
+      "sha256": "fd740359cf42a3af0e4aa74972cbdfee398673687f8dc0d301c057fd18b8152a"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_field_matrix_compact_replay_v1.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_field_matrix_compact_replay_v1.json",
+      "status": "retired",
+      "sha256": "cf38bf718a3420c6e169cbe3d1418f635314a61a2e43d09cee4e57a23e08adc4"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_phase_a_post_pulse_full_ideal_source_zvz_theory_dt40_v1.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_phase_a_post_pulse_full_ideal_source_zvz_theory_dt40_v1.json",
+      "status": "retired",
+      "sha256": "a12b41513d1e3c258dcd18cb79bcc7d62c8e1f6a5963dde63c314513810e769d"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_phase_b_post_pulse_field_source_zvz_theory_dt40_v1.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_phase_b_post_pulse_field_source_zvz_theory_dt40_v1.json",
+      "status": "retired",
+      "sha256": "af4e850721c169d54d628a691eb2b9da698c0bf8fe52ad09e8333c0434c2275f"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_phase_b_post_pulse_field_source_zvz_theory_dt40_v2_no_rf.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_phase_b_post_pulse_field_source_zvz_theory_dt40_v2_no_rf.json",
+      "status": "retired",
+      "sha256": "2566dec6b0a65656dc4cc21e12df8fa9ab085324b34fd6734a93e648753d0d4a"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_post_pulse_field_matrix_n1000_v1.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_post_pulse_field_matrix_n1000_v1.json",
+      "status": "retired",
+      "sha256": "9d0bcd5c37876d5fb6651509dd8218beafb4139fbc678d7273e1f9f8f1955493"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_reflectron_ideal_source_zvz_theory_dt40_v1_no_rf_successor.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_reflectron_ideal_source_zvz_theory_dt40_v1_no_rf_successor.json",
+      "status": "retired",
+      "sha256": "18869678e53664ff06db62ee03b417cb299a90faf87e5fff7f5de6c321b30f1e"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_reflectron_ideal_source_zvz_theory_dt40_v2_no_rf_successor.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_reflectron_ideal_source_zvz_theory_dt40_v2_no_rf_successor.json",
+      "status": "retired",
+      "sha256": "a5f5f7a6a7791245689fe0dcdb8816c46a44e803ef0be6a6e561c8ae746c7796"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_reflectron_ideal_source_zvz_theory_dt40_v3_remaining_no_rf_successor.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_reflectron_ideal_source_zvz_theory_dt40_v3_remaining_no_rf_successor.json",
+      "status": "retired",
+      "sha256": "7b4a94470a18575d1a3649044ea0a84140fe056dffd51f13882c7f1e74f5a55a"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_reflectron_ideal_source_zvz_theory_dt40_v4_remaining_no_rf_successor.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_reflectron_ideal_source_zvz_theory_dt40_v4_remaining_no_rf_successor.json",
+      "status": "retired",
+      "sha256": "36f5985e523b738a63e893580a8f12ddf4623cf3b426b90fd11e26affe504486"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_reflectron_ideal_source_zvz_theory_dt40_v5_remaining_no_rf_successor.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_reflectron_ideal_source_zvz_theory_dt40_v5_remaining_no_rf_successor.json",
+      "status": "retired",
+      "sha256": "54848f5899f70f261af1e2a1679b18df4837bf9b5b2e1550b2263185bfa532be"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_reflectron_ideal_source_zvz_theory_dt40_v6_remaining_no_rf_successor.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_reflectron_ideal_source_zvz_theory_dt40_v6_remaining_no_rf_successor.json",
+      "status": "retired",
+      "sha256": "376d6fec003b549e932b06d98850677d713d34e63db67cb4690aea27dddbf0f4"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_reflectron_ideal_source_zvz_theory_dt40_v7_remaining_no_rf_successor.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_reflectron_ideal_source_zvz_theory_dt40_v7_remaining_no_rf_successor.json",
+      "status": "retired",
+      "sha256": "3a4217e20db0d2ecb28dded51dbd755ae29b1469ad3f0029ba624d79e9a6a522"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_three_zone_real_pa_first100_n100_campaign.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_three_zone_real_pa_first100_n100_campaign.json",
+      "status": "retired",
+      "sha256": "e883700909b3aa7f37a3208399043abfedefa194aa5379222879b505ff6e9dc5"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_three_zone_real_pa_first100_n100_campaign_v5.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_three_zone_real_pa_first100_n100_campaign_v5.json",
+      "status": "retired",
+      "sha256": "e61b0c1b2481444f501c8babd1fdfb068dbefd2f28880937d82e5dea51ff1c22"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_three_zone_real_pa_full_n1000_campaign_v1.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_three_zone_real_pa_full_n1000_campaign_v1.json",
+      "status": "retired",
+      "sha256": "d8c4d47b5077d698b8a061ed340cc56246b5d85a518190eaeebf6fca5f25372b"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_three_zone_real_pa_full_n1000_campaign_v11.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_three_zone_real_pa_full_n1000_campaign_v11.json",
+      "status": "retired",
+      "sha256": "ab2ea16f80d65fbb6634785db27d8ab15ff2b4b17843ade4c268f961c9edc9b3"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_three_zone_real_pa_full_n1000_campaign_v2.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_three_zone_real_pa_full_n1000_campaign_v2.json",
+      "status": "retired",
+      "sha256": "7519da7bc52fe9a0d121091d1a206e892ba9a294843c2a886b14ee004fcfc3ce"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/long_focus_native_method_comparator_n835_campaign.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/long_focus_native_method_comparator_n835_campaign.json",
+      "status": "retired",
+      "sha256": "f9624b5c2c038b97712adefd7f3390c99eeef3045883f067b1321a4cf9520004"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/octupole_accelerator_ideal_field_n1000_campaign.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/octupole_accelerator_ideal_field_n1000_campaign.json",
+      "status": "retired",
+      "sha256": "e0c0cfe2eedfdb315a9eb4d3dbf07ae98ca321dd771edb604baab0bd53cf28ea"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/octupole_frontend_acceleration_axis_grid_n1000_campaign.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/octupole_frontend_acceleration_axis_grid_n1000_campaign.json",
+      "status": "retired",
+      "sha256": "ec25da33894050f92b7b2e34ba83fd40eb61d33ea195cc7c275bbd4792b53251"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/octupole_frontend_grid_convergence_n1000_campaign.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/octupole_frontend_grid_convergence_n1000_campaign.json",
+      "status": "retired",
+      "sha256": "686fceadbc99883b286d9e15379ca34e97ed3ecb550390a0b988d08ee7d6e23a"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/octupole_native_grid_short_focus_r100_n100_campaign.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/octupole_native_grid_short_focus_r100_n100_campaign.json",
+      "status": "retired",
+      "sha256": "933dce7e2003bbe6c07f500c4ea20135661da18971535dede86e1bf6366fef4d"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/octupole_simion_aperture050_n1000_campaign.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/octupole_simion_aperture050_n1000_campaign.json",
+      "status": "retired",
+      "sha256": "1c83828446674bd33e8745260971c751d5f18f46134193cf8517fb37ca8b7ad0"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/octupole_simion_single_flight_aperture100_n1000_campaign.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/octupole_simion_single_flight_aperture100_n1000_campaign.json",
+      "status": "retired",
+      "sha256": "6e47f6ef5d6881d3f922856127756b05c6e969b86d054008dcff44ea7bdeac02"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/octupole_terminal_15mm_sleeve_single_flight_n1000_campaign.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/octupole_terminal_15mm_sleeve_single_flight_n1000_campaign.json",
+      "status": "retired",
+      "sha256": "c786e83e4b0f73270ffe103189913556ef875d9b84f0e7ce56332321cf3d3322"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/octupole_z_acceptance_d1_4mm_n1000_campaign.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/octupole_z_acceptance_d1_4mm_n1000_campaign.json",
+      "status": "retired",
+      "sha256": "e865061d810764650f0d6811504a7dec7278e9748c2fa48a155465f9bbe1615e"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/pre_pulse_time_series_gap3p2_three_zone_real_pa_first100_n100_campaign.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/pre_pulse_time_series_gap3p2_three_zone_real_pa_first100_n100_campaign.json",
+      "status": "retired",
+      "sha256": "88b661f4cc2a85e742f8068a784a81ac9ab789782c3470f958cc39f4c46ae701"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/pre_pulse_time_series_gap3p2_three_zone_real_pa_first100_n100_campaign_v2.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/pre_pulse_time_series_gap3p2_three_zone_real_pa_first100_n100_campaign_v2.json",
+      "status": "retired",
+      "sha256": "f285e70fd6e15d08ea7da92c452b146166a71f977f7cc340cab3be7b5942b795"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/pre_pulse_time_series_gap3p2_three_zone_real_pa_first100_n100_campaign_v3.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/pre_pulse_time_series_gap3p2_three_zone_real_pa_first100_n100_campaign_v3.json",
+      "status": "retired",
+      "sha256": "c2ac5ece08941915902879389478ca4714fb761fdb314201418d3ebe5c43f870"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/short_focus_rr_tqual108_stratified_n100_campaign.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/short_focus_rr_tqual108_stratified_n100_campaign.json",
+      "status": "retired",
+      "sha256": "76f5eee89c9ee6b29e58bbf99f0a7a218c7e43099f2458030813c42338393786"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/short_focus_winner_field_region_attribution_n1000_campaign.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/short_focus_winner_field_region_attribution_n1000_campaign.json",
+      "status": "retired",
+      "sha256": "9c8a66c27c6020a318246bec3b941c80241619dc29cd03cbe2a9efc6c5353d27"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/staged_grid2_restart_legacy_n34_successor_campaign.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/staged_grid2_restart_legacy_n34_successor_campaign.json",
+      "status": "archived_invalid",
+      "sha256": "2112139b532669ec77202dfcfba8fd609d91fc62cc2dd690381ca8d2da927995"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/staged_grid2_restart_legacy_n34_successor_r02_campaign.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/staged_grid2_restart_legacy_n34_successor_r02_campaign.json",
+      "status": "archived_invalid",
+      "sha256": "963821d3f7edb997a21b16e27c515c69bad3b5aea7c3a8a97d078f2a30b60088"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/staged_grid2_restart_legacy_n34_successor_r03_campaign.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/staged_grid2_restart_legacy_n34_successor_r03_campaign.json",
+      "status": "archived_invalid",
+      "sha256": "caa9ab871584c43a77d124116e89103999a0591384ffd9cf1301323b5affb13e"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/staged_grid2_restart_legacy_n34_successor_r06_campaign.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/staged_grid2_restart_legacy_n34_successor_r06_campaign.json",
+      "status": "archived_invalid",
+      "sha256": "ee4d0a2a3bf57b9a5a3812368b930660394c3f44bc50ab570b2cc7cf942f1d6f"
+    }
+  ]
+}

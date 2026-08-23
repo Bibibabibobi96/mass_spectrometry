@@ -35,6 +35,7 @@ INTEGRATION_ROOT = (
     / "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
 )
 HISTORICAL_CAMPAIGNS = INTEGRATION_ROOT / "docs" / "history" / "retired_campaigns" / "root_campaigns"
+RETIRED_CAMPAIGNS = INTEGRATION_ROOT / "docs" / "history" / "retired_campaigns"
 BASELINE_PATH = HISTORICAL_CAMPAIGNS / "pulse_resolution_direct_baseline_successor_r09_campaign.json"
 CANDIDATE_PATH = (
     HISTORICAL_CAMPAIGNS / "pulse_resolution_direct_candidate_campaign.json"
@@ -176,8 +177,9 @@ class PulseResolutionOptimizationCampaignTests(unittest.TestCase):
     def test_schema_v4_still_requires_explicit_pa_cache_policy(self) -> None:
         campaign = load(
             INTEGRATION_ROOT
-            / "config"
-            / "diagnostics"
+            / "docs"
+            / "history"
+            / "retired_campaigns"
             / "canonical_source_architecture_accelerator_field_matrix_n1000_v3_successor_campaign.json"
         )
         campaign["schema_version"] = 4

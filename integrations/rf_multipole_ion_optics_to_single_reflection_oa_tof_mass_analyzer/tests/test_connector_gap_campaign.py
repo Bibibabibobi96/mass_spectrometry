@@ -25,7 +25,7 @@ INTEGRATION_ROOT = REPO_ROOT / (
     "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
 )
 CAMPAIGN_PATH = INTEGRATION_ROOT / (
-    "config/diagnostics/connector_gap_three_zone_real_pa_first100_n100_campaign.json"
+    "docs/history/retired_campaigns/connector_gap_three_zone_real_pa_first100_n100_campaign.json"
 )
 REGISTRY_PATH = INTEGRATION_ROOT / "config/connection_profiles.json"
 

@@ -13,7 +13,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 
 class MethodComparatorTest(unittest.TestCase):
     def test_b_c_only_change_governed_field_flag_and_identities(self) -> None:
-        campaign = Path(__file__).parents[1] / "config/diagnostics/long_focus_native_method_comparator_n835_campaign.json"
+        campaign = Path(__file__).parents[1] / "docs/history/retired_campaigns/long_focus_native_method_comparator_n835_campaign.json"
         with tempfile.TemporaryDirectory() as directory:
             receipt = verify(campaign, Path(directory) / "receipt.json")
         self.assertEqual(receipt["b_c_frozen_identity_assertion"], "pass")
@@ -30,7 +30,7 @@ class MethodComparatorTest(unittest.TestCase):
 
     def test_short_focus_field_region_matrix_is_frozen_2x2(self) -> None:
         integration = Path(__file__).parents[1]
-        campaign = integration / "config/diagnostics/short_focus_winner_field_region_attribution_n1000_campaign.json"
+        campaign = integration / "docs/history/retired_campaigns/short_focus_winner_field_region_attribution_n1000_campaign.json"
         registry = integration / "config/simion_single_flight.json"
         manifest = (
             integration.parents[2]

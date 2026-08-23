@@ -53,32 +53,33 @@ CONFIG_ROOT = INTEGRATION_ROOT / "config"
 HISTORICAL_ROOT_CAMPAIGNS = (
     INTEGRATION_ROOT / "docs" / "history" / "retired_campaigns" / "root_campaigns"
 )
+RETIRED_CAMPAIGNS = INTEGRATION_ROOT / "docs" / "history" / "retired_campaigns"
 CAMPAIGN_PATH = HISTORICAL_ROOT_CAMPAIGNS / "experiment_campaign.json"
 N1000_CAMPAIGN_PATH = (
-    CONFIG_ROOT / "diagnostics" / "octupole_simion_aperture050_n1000_campaign.json"
+    RETIRED_CAMPAIGNS / "octupole_simion_aperture050_n1000_campaign.json"
 )
 SINGLE_FLIGHT_CAMPAIGN_PATH = (
-    CONFIG_ROOT / "diagnostics" / "octupole_simion_single_flight_aperture100_n1000_campaign.json"
+    RETIRED_CAMPAIGNS / "octupole_simion_single_flight_aperture100_n1000_campaign.json"
 )
 TERMINAL_DESIGN_REFERENCE_CAMPAIGN_PATH = (
-    CONFIG_ROOT / "diagnostics"
+    RETIRED_CAMPAIGNS
     / "octupole_terminal_15mm_sleeve_single_flight_n1000_campaign.json"
 )
 Z_ACCEPTANCE_CAMPAIGN_PATH = (
-    CONFIG_ROOT / "diagnostics" / "octupole_z_acceptance_d1_4mm_n1000_campaign.json"
+    RETIRED_CAMPAIGNS / "octupole_z_acceptance_d1_4mm_n1000_campaign.json"
 )
 GRID_CONVERGENCE_CAMPAIGN_PATH = (
-    CONFIG_ROOT / "diagnostics" / "octupole_frontend_grid_convergence_n1000_campaign.json"
+    RETIRED_CAMPAIGNS / "octupole_frontend_grid_convergence_n1000_campaign.json"
 )
 ACCELERATION_AXIS_GRID_CAMPAIGN_PATH = (
-    CONFIG_ROOT / "diagnostics"
+    RETIRED_CAMPAIGNS
     / "octupole_frontend_acceleration_axis_grid_n1000_campaign.json"
 )
 IDEAL_FIELD_CAMPAIGN_PATH = (
-    CONFIG_ROOT / "diagnostics" / "octupole_accelerator_ideal_field_n1000_campaign.json"
+    RETIRED_CAMPAIGNS / "octupole_accelerator_ideal_field_n1000_campaign.json"
 )
 SOURCE_ARCH_FIELD_MATRIX_PATH = (
-    CONFIG_ROOT / "diagnostics" /
+    RETIRED_CAMPAIGNS /
     "canonical_source_architecture_accelerator_field_matrix_n1000_campaign.json"
 )
 PROFILE_REGISTRY = CONFIG_ROOT / "connection_profiles.json"
@@ -87,11 +88,11 @@ OCTUPOLE_RUNTIME_BINDING = (
     CONFIG_ROOT / "family_octupole_direct_mating_gap_0mm_runtime_binding.json"
 )
 STAGED_GRID2_R03_CAMPAIGN = (
-    CONFIG_ROOT / "diagnostics" /
+    RETIRED_CAMPAIGNS /
     "staged_grid2_restart_legacy_n34_successor_r03_campaign.json"
 )
 AUTO_N1000_CONNECTOR_CAMPAIGN = (
-    CONFIG_ROOT / "diagnostics" /
+    RETIRED_CAMPAIGNS /
     "connector_gap_three_zone_real_pa_full_n1000_campaign_v11.json"
 )
 COMPACT_GAP_FIELD_CAMPAIGN = (
@@ -724,8 +725,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
         self,
     ) -> None:
         path = (
-            CONFIG_ROOT
-            / "diagnostics"
+            RETIRED_CAMPAIGNS
             / "canonical_long_full_domain_restart_affine_width_numerics_n1000_v3_successor_campaign.json"
         )
         external = load(path)
@@ -791,8 +791,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
         if not source_run.is_dir():
             self.skipTest("local frozen N=1000 mother source is unavailable")
         source_campaign = (
-            CONFIG_ROOT
-            / "diagnostics"
+            RETIRED_CAMPAIGNS
             / "canonical_pulse_state_source_acc_ii_n1000_campaign.json"
         )
         with tempfile.TemporaryDirectory(
@@ -862,8 +861,8 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
 
     def test_three_zone_candidate_binding_is_layout_scoped_and_hash_bound(self) -> None:
         campaign = load(
-            CONFIG_ROOT
-            / "diagnostics/short_focus_rr_tqual108_stratified_n100_campaign.json"
+            RETIRED_CAMPAIGNS
+            / "short_focus_rr_tqual108_stratified_n100_campaign.json"
         )
         row = campaign["experiments"][0]
         row["single_flight_layout_profile_id"] = "three_zone_t5_primary_v1"
@@ -958,7 +957,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
 
     def test_loader_budget_requires_campaign_v5_and_staged_mode_both_ways(self) -> None:
         campaign = load(
-            CONFIG_ROOT / "diagnostics" /
+            RETIRED_CAMPAIGNS /
             "staged_grid2_restart_legacy_n34_successor_r06_campaign.json"
         )
         validate_schema(
@@ -1457,7 +1456,7 @@ $result = Get-PulseTimingOrchestration `
             )
 
     def test_all_modes_reject_retired_campaign_before_schema_or_prepare(self) -> None:
-        campaign = CONFIG_ROOT / "diagnostics" / (
+        campaign = RETIRED_CAMPAIGNS / (
             "staged_grid2_restart_legacy_n34_successor_campaign.json"
         )
         execute = INTEGRATION_ROOT / "workflows" / "family_source_closure" / (
@@ -1518,7 +1517,7 @@ $result = Get-PulseTimingOrchestration `
 
     def test_staged_n34_runner_filters_fly2_framing_before_batch_slice(self) -> None:
         campaign = load(
-            CONFIG_ROOT / "diagnostics" /
+            RETIRED_CAMPAIGNS /
             "staged_grid2_restart_legacy_n34_successor_r02_campaign.json"
         )
         source = REPO_ROOT.parent / campaign["experiments"][0][
@@ -1668,7 +1667,7 @@ $batchRows = [string[]]$particleRows[0..33]
         self.assertIn("exit 0", common_execute[validate_exit:adapter_call])
 
     def test_staged_grid2_schema_forbids_pulse_schedule_and_binds_instance_overlay(self) -> None:
-        campaign_path = CONFIG_ROOT / "diagnostics" / (
+        campaign_path = RETIRED_CAMPAIGNS / (
             "staged_grid2_restart_legacy_n34_successor_r02_campaign.json"
         )
         campaign = load(campaign_path)
@@ -1848,7 +1847,7 @@ $batchRows = [string[]]$particleRows[0..33]
 
     def test_n1000_v3_changes_only_identity_and_execution_batching(self) -> None:
         v2 = load(
-            CONFIG_ROOT / "diagnostics" /
+            RETIRED_CAMPAIGNS /
             "connector_gap_three_zone_real_pa_full_n1000_campaign_v2.json"
         )
         v3 = load(AUTO_N1000_CONNECTOR_CAMPAIGN)
@@ -1869,7 +1868,7 @@ $batchRows = [string[]]$particleRows[0..33]
 
     def test_native_grid_short_focus_row_rebuilds_current_reflectron(self) -> None:
         campaign_path = (
-            CONFIG_ROOT / "diagnostics" /
+            RETIRED_CAMPAIGNS /
             "octupole_native_grid_short_focus_r100_n100_campaign.json"
         )
         campaign = load(campaign_path)

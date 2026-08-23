@@ -20,6 +20,10 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 REPO_ROOT = Path(__file__).resolve().parents[3]
 INTEGRATION_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_ROOT = INTEGRATION_ROOT / "config"
+RETIRED_CAMPAIGN_ARCHIVE_INDEX = (
+    INTEGRATION_ROOT / "docs" / "history" / "retired_campaigns"
+    / "diagnostics_archive_index.json"
+)
 ADAPTER = INTEGRATION_ROOT / "workflows" / "family_source_closure" / "adapter.ps1"
 FAMILIES = ("quadrupole", "hexapole", "octupole")
 
@@ -29,6 +33,26 @@ def load(path: Path) -> dict[str, object]:
 
 
 class CampaignRuntimeAuthoritiesTests(unittest.TestCase):
+    def test_retired_campaigns_are_archived_with_byte_identity(self) -> None:
+        index = load(RETIRED_CAMPAIGN_ARCHIVE_INDEX)
+        self.assertEqual(
+            index["role"],
+            "rf_oatof_retired_diagnostics_campaign_archive_index",
+        )
+        entries = index["entries"]
+        self.assertEqual(len(entries), 74)
+        for entry in entries:
+            with self.subTest(path=entry["source_path"]):
+                source = REPO_ROOT / entry["source_path"]
+                archived = REPO_ROOT / entry["archived_path"]
+                self.assertFalse(source.exists())
+                self.assertTrue(archived.is_file())
+                self.assertIn(entry["status"], {"retired", "archived_invalid"})
+                self.assertEqual(
+                    entry["sha256"],
+                    hashlib.sha256(archived.read_bytes()).hexdigest(),
+                )
+
     def test_diagnostics_lifecycle_registry_has_current_authorities(self) -> None:
         registry_path = CONFIG_ROOT / "diagnostics" / "lifecycle_registry.json"
         registry = load(registry_path)
@@ -48,6 +72,7 @@ class CampaignRuntimeAuthoritiesTests(unittest.TestCase):
             if document.get("role") != registry["campaign_selector"]["role"]:
                 continue
             relative = path.relative_to(REPO_ROOT).as_posix()
+            self.assertEqual(document.get("status"), "authorized")
             if document.get("status") == "authorized":
                 discovered.add(relative)
         # The registry is default-deny: an immutable historical campaign may
