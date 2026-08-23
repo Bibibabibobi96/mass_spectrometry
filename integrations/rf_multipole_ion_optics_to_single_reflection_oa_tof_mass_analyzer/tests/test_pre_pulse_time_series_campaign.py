@@ -364,6 +364,28 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
         ):
             _automatic_pulse_population_binding(unsupported)
 
+    def test_schema_and_auto_policy_accept_generic_deterministic_prefix(self) -> None:
+        campaign = json.loads(CURRENT_AUTO_CAMPAIGN_PATH.read_text(encoding="utf-8"))
+        for row in campaign["experiments"]:
+            population = row["single_flight_population"]
+            population["population_mode"] = "first_n_rows_in_frozen_file_order"
+            population["source_authority"]["table_binding"] = (
+                "prepared_deterministic_prefix"
+            )
+            population["execution_population"]["particle_count"] = 37
+            population["execution_population"]["selection_algorithm"] = (
+                "first_n_rows_in_frozen_file_order"
+            )
+            population["denominators"]["population_count"] = 37
+            population["denominators"]["eligible_population_count"] = 37
+        validate_schema(campaign, "rf_multipole_oatof_experiment_campaign.schema.json")
+        self.assertEqual(
+            _automatic_pulse_population_binding(
+                campaign["experiments"][0]["single_flight_population"]
+            ),
+            ("prepared_deterministic_prefix", 37),
+        )
+
     def test_adapter_transports_internal_contract_without_new_public_cli(self) -> None:
         adapter = ADAPTER_PATH.read_text(encoding="utf-8")
         public_entry = PUBLIC_ENTRY_PATH.read_text(encoding="utf-8")

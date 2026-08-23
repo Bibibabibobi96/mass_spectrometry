@@ -396,6 +396,12 @@ def _automatic_pulse_population_binding(
     ) and count == 100:
         return "prepared_deterministic_prefix", 100
     if identity == (
+        "first_n_rows_in_frozen_file_order",
+        "prepared_deterministic_prefix",
+        "first_n_rows_in_frozen_file_order",
+    ) and isinstance(count, int) and not isinstance(count, bool) and count > 0:
+        return "prepared_deterministic_prefix", count
+    if identity == (
         "continuous_injection_full_population",
         "source_contract_particle_source",
         "all_rows_in_frozen_file_order",
@@ -3292,7 +3298,7 @@ def prepare_family_source_closure(
         )
         if table_binding == "prepared_deterministic_prefix":
             pulse_prefix_path = plan_output.parent / "inputs" / (
-                "automatic_pulse_timing_prefix_n100.csv"
+            f"automatic_pulse_timing_prefix_n{pulse_population_count}.csv"
             )
             pulse_prefix_path.parent.mkdir(parents=True, exist_ok=True)
             pulse_prefix_sha256 = write_pulse_resolution_screening_prefix(
@@ -3301,7 +3307,7 @@ def prepare_family_source_closure(
                     "automatic pulse timing mother source",
                 ),
                 pulse_prefix_path,
-                ordered_particle_ids=list(range(1, 101)),
+                ordered_particle_ids=list(range(1, pulse_population_count + 1)),
             )
             pulse_population_plan_path = "inputs/" + pulse_prefix_path.name
         else:

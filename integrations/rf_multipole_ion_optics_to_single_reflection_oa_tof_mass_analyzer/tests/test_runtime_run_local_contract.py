@@ -1370,6 +1370,7 @@ foreach ($case in $cases) {{
             "pre_pulse_restart",
             "pulse_eligible_conditional",
             "first_100_rows_in_frozen_file_order",
+            "first_n_rows_in_frozen_file_order",
         ):
             self.assertIn(f"'{mode}'", runner)
         self.assertIn(

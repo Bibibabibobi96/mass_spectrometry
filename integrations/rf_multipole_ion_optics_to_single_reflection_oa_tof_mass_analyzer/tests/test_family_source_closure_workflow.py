@@ -247,6 +247,25 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
         with self.assertRaisesRegex(ContractError, "population differs"):
             _automatic_pulse_population_binding(population)
 
+    def test_automatic_deterministic_prefix_binding_uses_declared_count(self) -> None:
+        population = {
+            "population_mode": "first_n_rows_in_frozen_file_order",
+            "source_authority": {"table_binding": "prepared_deterministic_prefix"},
+            "execution_population": {
+                "particle_count": 37,
+                "selection_algorithm": "first_n_rows_in_frozen_file_order",
+            },
+        }
+        self.assertEqual(
+            _automatic_pulse_population_binding(population),
+            ("prepared_deterministic_prefix", 37),
+        )
+        population["execution_population"]["selection_algorithm"] = (
+            "first_100_rows_in_frozen_file_order"
+        )
+        with self.assertRaisesRegex(ContractError, "population differs"):
+            _automatic_pulse_population_binding(population)
+
     def test_batch_count_is_execution_only_and_defaults_to_one(self) -> None:
         self.assertEqual(
             resolve_single_flight_batch_count({}, execution_particle_count=100),

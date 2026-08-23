@@ -1091,6 +1091,7 @@ try {
     'pre_pulse_restart' { 'governed_upstream_source' }
     'staged_grid2_restart' { 'staged_grid2_canonical_source' }
     'first_100_rows_in_frozen_file_order' { 'continuous_injection_full_population' }
+    'first_n_rows_in_frozen_file_order' { 'continuous_injection_full_population' }
     'staged_three_stage' {
       throw 'Staged-three-stage population cannot execute in the single-flight runner.'
     }

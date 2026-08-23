@@ -609,7 +609,8 @@
             "pre_pulse_restart",
             "staged_grid2_restart",
             "pulse_eligible_conditional",
-            "first_100_rows_in_frozen_file_order"
+            "first_100_rows_in_frozen_file_order",
+            "first_n_rows_in_frozen_file_order"
           ]
         },
         "source_authority": {
@@ -1243,6 +1244,19 @@
                     "population_mode": {"const": "first_100_rows_in_frozen_file_order"},
                     "source_authority": {"properties": {"table_binding": {"const": "prepared_deterministic_prefix"}}},
                     "execution_population": {"properties": {"selection_algorithm": {"const": "first_100_rows_in_frozen_file_order"}}},
+                    "postselection_policy": {"const": "prohibited"}
+                  }}
+                },
+                "required": ["execution_strategy", "source_release_mode"]
+              },
+              {
+                "properties": {
+                  "execution_strategy": {"const": "simion_single_flight"},
+                  "source_release_mode": {"const": "continuous_frontend"},
+                  "single_flight_population": {"properties": {
+                    "population_mode": {"const": "first_n_rows_in_frozen_file_order"},
+                    "source_authority": {"properties": {"table_binding": {"const": "prepared_deterministic_prefix"}}},
+                    "execution_population": {"properties": {"selection_algorithm": {"const": "first_n_rows_in_frozen_file_order"}}},
                     "postselection_policy": {"const": "prohibited"}
                   }}
                 },
