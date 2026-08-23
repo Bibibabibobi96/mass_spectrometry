@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import csv
 import json
 import math
 import re
@@ -14,11 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from common.contracts.artifact_naming import validate_run_id
-from common.contracts.file_identity import (
-    canonical_json_sha256 as _canonical_sha256,
-    file_sha256,
-    repository_text_sha256,
-)
+from common.contracts.file_identity import file_sha256, repository_text_sha256
 from common.contracts.machine_contracts import ContractError, validate_schema
 from common.contracts.verify_run_manifest import record_path, verify_record
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.run_publication import (
@@ -82,24 +77,9 @@ def _single_flight_run_stem(
     return f"__sim__simion__{role}-gap{gap_label}__n"
 
 
-N1_RECEIPT_SCHEMA = "rf_oatof_three_zone_n1_solver_authorization_receipt.schema.json"
-N1_RECEIPT_NAME = "three_zone_n1_solver_authorization_receipt.json"
 VERIFIED_PULSE_RECEIPT_NAME = "verified_pulse_timing_receipt.json"
 PULSE_TRANSITION_NAME = "pulse_timing_transition.json"
 PULSE_PUBLICATION_REPLAY_MODE = "verified_pulse_timing_publication_replay"
-N1_REQUIRED_EVENTS = (
-    "source_release",
-    "pre_pulse_state",
-    "accelerator_grid1_forward",
-    "accelerator_intermediate2_forward",
-    "local_accelerator_exit",
-    "reflectron_entrance_forward",
-    "reflectron_turning_point",
-    "reflectron_exit_return",
-    "detector_crossing",
-)
-
-
 def _retry_suffix(run_id: str) -> str:
     match = re.search(r"(__r\d{2})$", run_id)
     return match.group(1) if match else ""
@@ -693,247 +673,6 @@ def publish_verified_pulse_publication_replay(
         receipt=verified_receipt,
     )
     return manifest_path
-
-
-def _n1_gate_pair(campaign: dict[str, Any], experiment_id: str) -> tuple[dict[str, Any], dict[str, Any]] | None:
-    experiments = campaign.get("experiments")
-    if not isinstance(experiments, list):
-        return None
-    matches = [row for row in experiments if row.get("experiment_id") == experiment_id]
-    if len(matches) != 1:
-        return None
-    producer = matches[0]
-    gate = producer.get("three_zone_solver_gate")
-    if not isinstance(gate, dict) or gate.get("stage") != "n1_smoke_producer":
-        return None
-    gate_id = gate.get("gate_id")
-    consumers = [
-        row
-        for row in experiments
-        if isinstance(row.get("three_zone_solver_gate"), dict)
-        and row["three_zone_solver_gate"].get("gate_id") == gate_id
-        and row["three_zone_solver_gate"].get("stage") in {
-            "n100_solver_authorized_consumer", "solver_authorized_consumer"
-        }
-        and row["three_zone_solver_gate"].get("predecessor_experiment_id") == experiment_id
-    ]
-    if len(consumers) != 1:
-        raise ContractError("N=1 solver gate must bind exactly one solver-authorized successor")
-    successor = consumers[0]
-    successor_count = successor.get("single_flight_population", {}).get(
-        "execution_population", {}
-    ).get("particle_count")
-    if not isinstance(successor_count, int) or successor_count < 1:
-        raise ContractError("N=1 solver gate successor particle count is invalid")
-    if (
-        successor["three_zone_solver_gate"]["stage"] == "n100_solver_authorized_consumer"
-        and successor_count != 100
-    ):
-        raise ContractError("legacy N=1 solver gate successor must freeze N=100")
-    return producer, successor
-
-
-def _n1_gate_assessment(summary: dict[str, Any], checkpoint_path: Path) -> tuple[int, dict[str, int], list[str]]:
-    failures: list[str] = []
-    census = summary.get("census")
-    if (
-        summary.get("role") != "rf_oatof_simion_single_flight_summary"
-        or summary.get("status") != "success"
-        or summary.get("formal_gate_passed") is not False
-        or not isinstance(census, dict)
-    ):
-        failures.append("SUMMARY_IDENTITY")
-        census = {}
-    if census.get("launched") != 1:
-        failures.append("PARTICLE_CENSUS")
-    with checkpoint_path.open(encoding="utf-8", newline="") as stream:
-        rows = list(csv.DictReader(stream))
-    particle_ids: set[int] = set()
-    for row in rows:
-        try:
-            particle_ids.add(int(row["particle_id"]))
-        except (KeyError, TypeError, ValueError):
-            failures.append("PARTICLE_IDENTITY")
-            break
-    if len(particle_ids) != 1:
-        failures.append("PARTICLE_IDENTITY")
-    particle_id = next(iter(particle_ids), 1)
-    event_rows = {event: [row for row in rows if row.get("event") == event] for event in N1_REQUIRED_EVENTS}
-    for event, selected in event_rows.items():
-        if not selected:
-            failures.append("MISSING_EVENT")
-        elif len(selected) > 1:
-            failures.append("DUPLICATE_EVENT")
-        if census.get(event) != len(selected):
-            failures.append("PARTICLE_CENSUS")
-    ordered_rows = [event_rows[event][0] for event in N1_REQUIRED_EVENTS if len(event_rows[event]) == 1]
-    position_fields = (
-        "instrument_time_us",
-        "x_mm",
-        "y_mm",
-        "z_mm",
-    )
-    velocity_fields = (
-        "vx_mm_per_us",
-        "vy_mm_per_us",
-        "vz_mm_per_us",
-    )
-    try:
-        times = [float(row["instrument_time_us"]) for row in ordered_rows]
-        if any(
-            not math.isfinite(float(row[field]))
-            for row in ordered_rows
-            for field in position_fields
-        ) or any(
-            not math.isfinite(float(row[field]))
-            for row in ordered_rows
-            if row["event"] != "detector_crossing"
-            for field in velocity_fields
-        ):
-            failures.append("NONFINITE_STATE")
-        if len(ordered_rows) != len(N1_REQUIRED_EVENTS) or any(left > right for left, right in zip(times, times[1:])):
-            failures.append("EVENT_ORDER")
-    except (KeyError, TypeError, ValueError):
-        failures.append("NONFINITE_STATE")
-    detector = event_rows["detector_crossing"]
-    if len(detector) != 1 or detector[0].get("survival_status") != "detected":
-        failures.append("DETECTOR_STATUS")
-    try:
-        launched = int(census.get("launched", 0))
-    except (TypeError, ValueError):
-        launched = 0
-    receipt_census = {
-        "launched": launched,
-        **{event: int(census.get(event, 0)) for event in N1_REQUIRED_EVENTS[2:]},
-    }
-    return particle_id, receipt_census, list(dict.fromkeys(failures))
-
-
-def _publish_n1_solver_authorization_receipt(
-    *,
-    campaign: dict[str, Any],
-    campaign_path: Path,
-    producer: dict[str, Any],
-    successor: dict[str, Any],
-    integration_run_id: str,
-    stage: dict[str, str],
-    workspace_root: Path,
-    parent_run_dir: Path,
-    source_identity: dict[str, Any],
-) -> tuple[Path, dict[str, Any]]:
-    stage_dir = workspace_root / stage["path"]
-    manifest_path = stage_dir / "run_manifest.json"
-    manifest = _load(manifest_path)
-    expected_manifest_identity = {
-        "role": "simulation_run_manifest",
-        "run_id": stage["run_id"],
-        "project": INTEGRATION_ID,
-        "mode": SINGLE_FLIGHT_STAGES["single_flight_transport"]["mode"],
-        "status": "success",
-    }
-    if any(manifest.get(name) != value for name, value in expected_manifest_identity.items()):
-        raise ContractError("N=1 child manifest identity/status differs")
-    if manifest.get("formal_eligible") is not False:
-        raise ContractError("N=1 child manifest must remain non-Formal")
-    for name, record in manifest.get("inputs", {}).items():
-        try:
-            verify_record(f"N=1 child input {name}", record, base_dir=stage_dir)
-        except (AssertionError, KeyError, TypeError) as exc:
-            raise ContractError("N=1 child manifest input identity differs") from exc
-    for index, record in enumerate(manifest.get("outputs", []), start=1):
-        try:
-            verify_record(f"N=1 child output {index}", record, base_dir=stage_dir)
-        except (AssertionError, KeyError, TypeError) as exc:
-            raise ContractError("N=1 child manifest output identity differs") from exc
-    _, summary_path = _verified_manifest_record(manifest, "inputs", "resolved_population_contract", stage_dir)
-    population = _load(summary_path)
-    if population.get("execution_population", {}).get("particle_count") != 1:
-        raise ContractError("N=1 producer must freeze exactly one particle")
-    output_records = manifest.get("outputs", [])
-    named_outputs = {
-        Path(str(record.get("path", ""))).name: record for record in output_records if isinstance(record, dict)
-    }
-    if set(named_outputs).issuperset({"summary.json", "single_flight_particle_checkpoints.csv"}) is False:
-        raise ContractError("N=1 child summary or checkpoints output is missing")
-    summary_record = named_outputs["summary.json"]
-    checkpoint_record = named_outputs["single_flight_particle_checkpoints.csv"]
-    for label, record in (
-        ("summary", summary_record),
-        ("checkpoints", checkpoint_record),
-    ):
-        try:
-            verify_record(f"N=1 child {label}", record, base_dir=stage_dir)
-        except (AssertionError, KeyError, TypeError) as exc:
-            raise ContractError(f"N=1 child {label} identity differs") from exc
-    summary_path = record_path(summary_record, base_dir=stage_dir)
-    checkpoint_path = record_path(checkpoint_record, base_dir=stage_dir)
-    summary = _load(summary_path)
-    particle_id, census, failures = _n1_gate_assessment(summary, checkpoint_path)
-    stage_config = _load(stage_dir / "run_config.json")
-    parameters = stage_config.get("parameters", {})
-    required_identities = {
-        "candidate_sha256": parameters.get("three_zone_candidate_sha256"),
-        "layout_profile_id": parameters.get("layout_profile_id"),
-        "architecture_generation_id": parameters.get("architecture_generation_id"),
-        "topology_id": parameters.get("three_zone_topology_id"),
-        "geometry_id": parameters.get("three_zone_geometry_id"),
-        "frontend_electrode_topology_id": parameters.get("three_zone_frontend_electrode_topology_id"),
-        "accelerator_field_profile_id": parameters.get("accelerator_field_profile_id"),
-        "field_id": parameters.get("three_zone_field_id"),
-        "resolved_region_field_semantic_sha256": parameters.get("resolved_region_field_semantic_sha256"),
-        "source_identity_sha256": _canonical_sha256(source_identity),
-    }
-    if any(not isinstance(value, str) or not value for value in required_identities.values()):
-        raise ContractError("N=1 child three-zone identity bundle is incomplete")
-    decision = "PASS" if not failures else "FAIL"
-    receipt = {
-        "schema_version": (
-            1 if successor["three_zone_solver_gate"]["stage"] == "n100_solver_authorized_consumer" else 2
-        ),
-        "role": "rf_oatof_three_zone_n1_solver_authorization_receipt",
-        "gate_id": producer["three_zone_solver_gate"]["gate_id"],
-        "decision": decision,
-        "authorization_status": (
-            ("N100_SOLVER_AUTHORIZED" if decision == "PASS" else "N100_SOLVER_NOT_AUTHORIZED")
-            if successor["three_zone_solver_gate"]["stage"] == "n100_solver_authorized_consumer"
-            else ("SOLVER_AUTHORIZED" if decision == "PASS" else "SOLVER_NOT_AUTHORIZED")
-        ),
-        "campaign": {
-            "campaign_id": campaign["campaign_id"],
-            "campaign_sha256": repository_text_sha256(campaign_path),
-        },
-        "producer": {
-            "experiment_id": producer["experiment_id"],
-            "experiment_row_sha256": _canonical_sha256(producer),
-            "integration_run_id": integration_run_id,
-            "transport_run_id": stage["run_id"],
-            "transport_manifest": _file_binding(manifest_path, workspace_root),
-        },
-        "authorized_successor": {
-            "experiment_id": successor["experiment_id"],
-            "experiment_row_sha256": _canonical_sha256(successor),
-            "particle_count": successor["single_flight_population"]["execution_population"]["particle_count"],
-        },
-        "identities": required_identities,
-        "evidence": {
-            "summary": _file_binding(summary_path, workspace_root),
-            "checkpoints": _file_binding(checkpoint_path, workspace_root),
-            "particle_id": particle_id,
-            "census": census,
-            "required_event_sequence": list(N1_REQUIRED_EVENTS),
-        },
-        "failure_codes": failures,
-        "claim_limit": (
-            "N=1 solver-path authorization for the hash-bound successor only; "
-            "no resolution, transmission, engineering-qualification, or Formal claim."
-        ),
-        "formal_gate_passed": False,
-    }
-    validate_schema(receipt, N1_RECEIPT_SCHEMA)
-    output = parent_run_dir / "results" / N1_RECEIPT_NAME
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
-    return output, receipt
 
 
 def _verify_stage(
