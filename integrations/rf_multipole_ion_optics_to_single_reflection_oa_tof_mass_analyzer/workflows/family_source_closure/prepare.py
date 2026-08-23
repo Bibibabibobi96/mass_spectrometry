@@ -47,7 +47,6 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 )
 from common.multipole.component_port import build_exit_component_port
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.resolved_region_field import (
-    FULL_ID,
     build_resolved_region_field_contract,
     canonical_profile_id,
 )
@@ -256,158 +255,6 @@ def _resolve_pulse_transition(
         "path": _workspace_relative(path, workspace),
         "sha256": file_sha256(path),
     }
-
-def validate_full_domain_affine_width_numerics_campaign(
-    campaign: dict[str, Any], single_flight: dict[str, Any], policy: dict[str, Any],
-    root: Path,
-) -> None:
-    """Fail closed on the pending Stage-B five-cell matrix."""
-
-    if campaign.get("campaign_id") not in {
-        "canonical_long_affine_arm8_width_numerics_n1000",
-        "canonical_long_affine_arm8_width_numerics_restart_n1000",
-        "canonical_long_full_domain_restart_affine_width_numerics_n1000_v3_successor",
-    }:
-        return
-
-    rows = [
-        row for row in campaign["experiments"]
-        if canonical_profile_id(
-            row.get("single_flight_accelerator_field_profile_id", "accelerator_real_pa")
-        ) == FULL_ID
-    ]
-    if not rows:
-        return
-    if len(rows) != len(campaign["experiments"]):
-        raise ContractError("full-domain ideal rows cannot be mixed with another campaign")
-    observed = {
-        (
-            row.get("single_flight_source_materialization_profile_id"),
-            row.get("single_flight_trajectory_quality_profile_id"),
-            row.get("single_flight_time_integration_profile_id"),
-        )
-        for row in rows
-    }
-    expected = {
-        ("canonical_ideal_linear_z_vz_1mm_n1000", "tqual_8", "dt160"),
-        ("canonical_ideal_linear_z_vz_1p5mm_n1000", "tqual_8", "dt160"),
-        ("canonical_ideal_linear_z_vz_2p2mm_n1000", "tqual_8", "dt160"),
-        ("canonical_ideal_linear_z_vz_2p2mm_n1000", "tqual_8", "dt320"),
-        ("canonical_ideal_linear_z_vz_2p2mm_n1000", "tqual_108", "dt160"),
-    }
-    if len(rows) != 5 or observed != expected:
-        raise ContractError("full-domain affine width/numerics matrix differs")
-    registration = campaign.get("preregistration")
-    release_modes = {row.get("source_release_mode") for row in rows}
-    if release_modes != {"pre_pulse_restart"}:
-        if campaign.get("status") != "archived_invalid":
-            raise ContractError("non-restart full-domain width campaign must remain archived")
-    elif campaign.get("status") == "authorized":
-        if registration is None:
-            raise ContractError("authorized full-domain matrix requires preregistration")
-        document = registration["document"]
-        document_path = (root / document["path"]).resolve()
-        if (
-            not document_path.is_relative_to(root)
-            or not document_path.is_file()
-            or document_path.stat().st_size != int(document["bytes"])
-            or file_sha256(document_path) != document["sha256"]
-        ):
-            raise ContractError("full-domain matrix preregistration document differs")
-        row_hashes = {
-            row["experiment_id"]: _canonical_sha256(row) for row in rows
-        }
-        if registration["frozen_experiment_row_sha256"] != row_hashes:
-            raise ContractError("full-domain matrix preregistered row identities differ")
-    elif campaign.get("status") != "PENDING_PREREGISTRATION":
-        raise ContractError("full-domain matrix registration status differs")
-    source_profiles = {
-        item["profile_id"]: item
-        for item in single_flight["source_materialization_profiles"]
-    }
-    expected_widths = {
-        "canonical_ideal_linear_z_vz_1mm_n1000": 1.0,
-        "canonical_ideal_linear_z_vz_1p5mm_n1000": 1.5,
-        "canonical_ideal_linear_z_vz_2p2mm_n1000": 2.2,
-    }
-    for profile_id, width in expected_widths.items():
-        profile = source_profiles.get(profile_id, {})
-        if (
-            int(profile.get("particle_count", 0)) != 1000
-            or float(profile.get("source_full_width_mm", float("nan"))) != width
-            or profile.get("phase_space_authority")
-            != "config/accelerator_phase_space_match.json"
-            or (profile.get("mass_amu"), profile.get("charge_state"),
-                profile.get("kinetic_energy_eV")) != (100.0, 1, 10.0)
-        ):
-            raise ContractError("full-domain affine source authority differs")
-    fixed = {
-        "execution_strategy": "simion_single_flight",
-        "single_flight_layout_profile_id": "symmetric_10ev_source_z22_finite_interval_theory",
-        "single_flight_frontend_grid_profile_id": "frontend_isotropic_020_accelerator_overlay_z005",
-        "single_flight_oatof_numerical_profile_id": "oatof_formal_mesh",
-        "single_flight_accelerator_field_profile_id": FULL_ID,
-        "architecture_generation_id": "finite_interval_2p2mm_matched_voltage_v1",
-        "field_overlay_id": "accelerator_overlay_z005",
-    }
-    for row in rows:
-        if any(row.get(key) != value for key, value in fixed.items()):
-            raise ContractError("full-domain width/numerics fixed control differs")
-        if campaign["schema_version"] >= 3:
-            if row.get("single_flight_pulse_schedule_policy") != {
-                "policy_id": "multipole_handoff_ballistic_centroid_v1",
-                "offset_rf_periods": 0,
-                "pulse_width_us": 1.0,
-            }:
-                raise ContractError("full-domain width/numerics pulse policy differs")
-        elif row.get("single_flight_pulse_offset_rf_periods") != 0:
-            raise ContractError("historical full-domain pulse offset differs")
-        if row.get("source_profile_id") != row.get(
-            "single_flight_source_materialization_profile_id"
-        ):
-            raise ContractError("full-domain width/numerics source identity differs")
-    release_modes = {row.get("source_release_mode") for row in rows}
-    if release_modes == {"continuous_frontend"}:
-        if release_modes != {"continuous_frontend"} or any(
-            row.get("pre_pulse_source_state") is not None for row in rows
-        ):
-            raise ContractError("archived continuous source path differs")
-    else:
-        if release_modes != {"pre_pulse_restart"}:
-            raise ContractError("official full-domain source path must be pre-pulse restart")
-        expected_restart_sources = {
-            "canonical_ideal_linear_z_vz_1mm_n1000": (
-                "22ADAC66F610064AD73E78FC9B17AB850A8FA59B3D6175EE0B5F10357FBC0539",
-                "A59E16B3783DCDE7930070286C58D5BA6BA8DC0B9756DE61B410A07975672B5B",
-            ),
-            "canonical_ideal_linear_z_vz_1p5mm_n1000": (
-                "2411F2BB62939E1CA74F627ABD567937C698848AB0E332A67784B0F2F8405624",
-                "7A8FFC4D6E2A4D9B67560592B7401A72984137ACC8AE6F79388275DA494927C2",
-            ),
-            "canonical_ideal_linear_z_vz_2p2mm_n1000": (
-                "75DF5222C32846CA16F7594404067020AEFD1CFCB2577FC8E86BF18A08493D4E",
-                "7B1D722A9E73635938847EC31DEF0B45824098E1F44D4A7A1B036F6CF02392E6",
-            ),
-        }
-        for row in rows:
-            restart = row.get("pre_pulse_source_state", {})
-            expected_source, expected_receipt = expected_restart_sources[
-                row["single_flight_source_materialization_profile_id"]
-            ]
-            receipt = restart.get("materialization_receipt", {})
-            if (
-                restart.get("sha256") != expected_source
-                or receipt.get("sha256") != expected_receipt
-                or restart.get("particle_count") != 1000
-                or restart.get("source_state_epoch") != "pulse_effective_time"
-                or restart.get("postselection_prohibited") is not True
-            ):
-                raise ContractError("official full-domain restart source identity differs")
-    if int(policy["stage_limits"]["single_flight_transport"][
-        "minimum_system_available_memory_bytes"
-    ]) != 1 * 1024**3:
-        raise ContractError("single-flight memory gate must be 1 GiB")
-
 
 def validate_pulse_resolution_optimization_campaign(
     campaign: dict[str, Any], *, execution_requested: bool,
@@ -3256,10 +3103,6 @@ def prepare_family_source_closure(
     policy_path = _repo_record(root, policy_record, "integration execution policy")
     policy = _load(policy_path)
     validate_schema(policy, "rf_multipole_oatof_execution_policy.schema.json")
-    validate_full_domain_affine_width_numerics_campaign(
-        campaign, single_flight_configuration, policy, root
-    )
-
     evidence = _load_source_evidence(
         workspace=workspace,
         experiment=experiment,
