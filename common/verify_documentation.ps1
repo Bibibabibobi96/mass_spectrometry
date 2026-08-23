@@ -306,19 +306,17 @@ foreach ($historyScope in $historyScopes) {
             Add-DocError "$relative`: payload directory has no same-name flat Markdown manifest"
             continue
         }
-        $nestedDirs = @(Get-ChildItem -LiteralPath $payloadDir.FullName -Recurse -Directory)
-        foreach ($nestedDir in $nestedDirs) {
-            $relative = $nestedDir.FullName.Substring($repoRoot.Length + 1)
-            Add-DocError "$relative`: nested directories are forbidden in history payloads"
-        }
         $manifestRaw = [System.IO.File]::ReadAllText($manifestPath, $utf8)
         # Large immutable payload sets may use a machine-readable JSON
         # migration manifest instead of duplicating 100+ links in Markdown.
         # Its entries and hashes are still checked below as part of the same
         # flat manifest directory.
         $machineManifestRaw = ($manifestRaw + "`n" + (
-            @(Get-ChildItem -LiteralPath $payloadDir.FullName -File -Filter '*manifest*.json' |
-                ForEach-Object { [System.IO.File]::ReadAllText($_.FullName, $utf8) }) -join "`n"))
+            @(
+                Get-ChildItem -LiteralPath $payloadDir.FullName -Recurse -File |
+                    Where-Object { $_.Name -match '(^INDEX\.md$|manifest.*\.json$)' } |
+                    ForEach-Object { [System.IO.File]::ReadAllText($_.FullName, $utf8) }
+            ) -join "`n"))
         $checksumPath = Join-Path $payloadDir.FullName 'SHA256SUMS.txt'
         $checksumRaw = if (Test-Path -LiteralPath $checksumPath -PathType Leaf) {
             [System.IO.File]::ReadAllText($checksumPath, $utf8)
@@ -330,11 +328,20 @@ foreach ($historyScope in $historyScopes) {
             if ($LASTEXITCODE -ne 0 -or $textAttribute -notmatch ': text: unset$') {
                 Add-DocError "$relative`: frozen history payload must be marked -text in .gitattributes"
             }
-            if ($payloadFile.Extension -in @('.md', '.pyc') -or
+            # A nested payload collection may retain its immutable INDEX.md
+            # migration map.  It is evidence metadata, not a current document;
+            # all other Markdown and all runtime caches remain forbidden.
+            $isPayloadIndex = $payloadFile.Name -eq 'INDEX.md'
+            if ((($payloadFile.Extension -eq '.md') -and -not $isPayloadIndex) -or
+                $payloadFile.Extension -eq '.pyc' -or
                 $payloadFile.FullName -match '[\\/]__pycache__[\\/]') {
                 Add-DocError "$relative`: forbidden Markdown or runtime cache in history payload"
             }
-            $payloadEntry = $payloadDir.Name + '/' + $payloadFile.Name
+            if ($isPayloadIndex) { continue }
+            $payloadRelative = [IO.Path]::GetRelativePath(
+                $payloadDir.FullName, $payloadFile.FullName
+            ).Replace('\', '/')
+            $payloadEntry = $payloadDir.Name + '/' + $payloadRelative
             $checksumLinksPayload = $checksumRaw -match ('(?im)(?:\s|\*)+' + [regex]::Escape($payloadFile.Name) + '\s*$')
             if ($payloadFile.Name -notin @('SHA256SUMS.txt') -and
                 $payloadFile.Name -notmatch 'manifest' -and -not $checksumLinksPayload -and
