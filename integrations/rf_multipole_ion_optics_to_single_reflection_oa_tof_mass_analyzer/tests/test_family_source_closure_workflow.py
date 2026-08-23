@@ -1768,7 +1768,7 @@ $result = Get-PulseTimingOrchestration `
         with tempfile.TemporaryDirectory(dir=CONFIG_ROOT) as directory:
             root = Path(directory)
             campaign_path = root / "unregistered_campaign.json"
-            write_json(campaign_path, campaign)
+            campaign_path.write_text("{ not valid JSON", encoding="utf-8")
             with self.assertRaisesRegex(
                 ContractError, "not an active lifecycle authority",
             ):

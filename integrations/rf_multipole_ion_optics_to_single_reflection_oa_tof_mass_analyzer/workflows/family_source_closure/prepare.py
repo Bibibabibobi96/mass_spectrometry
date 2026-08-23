@@ -2074,19 +2074,6 @@ def prepare_family_source_closure(
     campaign_path = campaign_path.resolve()
     if not campaign_path.is_relative_to(root):
         raise ContractError("integration campaign must be repository-managed")
-    campaign = expand_flat_experiment_authoring(_load(campaign_path))
-    validate_schema(campaign, CAMPAIGN_SCHEMA_PATH)
-    validate_pre_pulse_time_series_campaign(campaign)
-    if campaign["integration_id"] != INTEGRATION_ID:
-        raise ContractError("campaign integration identity differs")
-    identities = [item["experiment_id"] for item in campaign["experiments"]]
-    sequences = [item["sequence"] for item in campaign["experiments"]]
-    if len(identities) != len(set(identities)) or len(sequences) != len(set(sequences)):
-        raise ContractError("campaign experiment IDs and sequences must be unique")
-    matches = [item for item in campaign["experiments"] if item["experiment_id"] == experiment_id]
-    if len(matches) != 1:
-        raise ContractError("campaign experiment must resolve exactly once")
-    experiment = matches[0]
     lifecycle_registry = _load(
         root / "integrations" / INTEGRATION_ID / "config" / "diagnostics" /
         "lifecycle_registry.json"
@@ -2106,6 +2093,19 @@ def prepare_family_source_closure(
         raise ContractError(
             "active lifecycle campaign identity differs; preparation is forbidden"
         )
+    campaign = expand_flat_experiment_authoring(_load(campaign_path))
+    validate_schema(campaign, CAMPAIGN_SCHEMA_PATH)
+    validate_pre_pulse_time_series_campaign(campaign)
+    if campaign["integration_id"] != INTEGRATION_ID:
+        raise ContractError("campaign integration identity differs")
+    identities = [item["experiment_id"] for item in campaign["experiments"]]
+    sequences = [item["sequence"] for item in campaign["experiments"]]
+    if len(identities) != len(set(identities)) or len(sequences) != len(set(sequences)):
+        raise ContractError("campaign experiment IDs and sequences must be unique")
+    matches = [item for item in campaign["experiments"] if item["experiment_id"] == experiment_id]
+    if len(matches) != 1:
+        raise ContractError("campaign experiment must resolve exactly once")
+    experiment = matches[0]
     if campaign.get("status") != "authorized":
         raise ContractError(
             "active lifecycle campaign must be authorized before preparation"
