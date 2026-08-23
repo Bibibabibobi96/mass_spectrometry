@@ -24,6 +24,10 @@ RETIRED_CAMPAIGN_ARCHIVE_INDEX = (
     INTEGRATION_ROOT / "docs" / "history" / "retired_campaigns"
     / "diagnostics_archive_index.json"
 )
+INACTIVE_AUTHORIZED_CAMPAIGN_ARCHIVE_INDEX = (
+    INTEGRATION_ROOT / "docs" / "history" / "retired_campaigns"
+    / "inactive_authorized_campaign_archive_index.json"
+)
 ADAPTER = INTEGRATION_ROOT / "workflows" / "family_source_closure" / "adapter.ps1"
 FAMILIES = ("quadrupole", "hexapole", "octupole")
 
@@ -48,6 +52,26 @@ class CampaignRuntimeAuthoritiesTests(unittest.TestCase):
                 self.assertFalse(source.exists())
                 self.assertTrue(archived.is_file())
                 self.assertIn(entry["status"], {"retired", "archived_invalid"})
+                self.assertEqual(
+                    entry["sha256"],
+                    hashlib.sha256(archived.read_bytes()).hexdigest(),
+                )
+
+    def test_inactive_authorized_campaigns_are_archived_with_byte_identity(self) -> None:
+        index = load(INACTIVE_AUTHORIZED_CAMPAIGN_ARCHIVE_INDEX)
+        self.assertEqual(
+            index["role"],
+            "rf_oatof_inactive_authorized_campaign_archive_index",
+        )
+        entries = index["entries"]
+        self.assertEqual(len(entries), 9)
+        for entry in entries:
+            with self.subTest(path=entry["source_path"]):
+                source = REPO_ROOT / entry["source_path"]
+                archived = REPO_ROOT / entry["archived_path"]
+                self.assertFalse(source.exists())
+                self.assertTrue(archived.is_file())
+                self.assertEqual(entry["status"], "authorized")
                 self.assertEqual(
                     entry["sha256"],
                     hashlib.sha256(archived.read_bytes()).hexdigest(),
@@ -78,7 +102,7 @@ class CampaignRuntimeAuthoritiesTests(unittest.TestCase):
         # The registry is default-deny: an immutable historical campaign may
         # retain `authorized` in order not to mutate a run-manifest input, yet
         # it is no longer executable once absent from this registry.
-        self.assertTrue(active_paths.issubset(discovered))
+        self.assertEqual(active_paths, discovered)
         for row in active:
             active_path = REPO_ROOT / row["path"]
             self.assertEqual(load(active_path)["status"], "authorized")
