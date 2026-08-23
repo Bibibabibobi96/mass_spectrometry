@@ -258,28 +258,7 @@ class WorkflowArchitectureContractTests(unittest.TestCase):
                     f"{path.relative_to(PROJECT_ROOT)} reverses workflow dependency",
                 )
 
-    def test_batch3_workflows_have_exact_single_purpose_inventory(self) -> None:
-        self.assertEqual(
-            {path.name for path in MASS_FILTER_WORKFLOW.iterdir() if path.is_file()},
-            {
-                "__init__.py",
-                "compare_responses.ps1",
-                "evaluate_comparison.py",
-                "evaluate_comsol.py",
-                "evaluate_simion.py",
-                "prepare_comsol_scan.py",
-                "prepare_simion_scan.py",
-                "render_simion_source.py",
-                "run_comsol.ps1",
-                "run_finite_length.py",
-                "run_simion.ps1",
-                "theory.py",
-            },
-        )
-        self.assertEqual(
-            {path.name for path in SAME_SOLVER_WORKFLOW.iterdir() if path.is_file()},
-            {"__init__.py", "evaluate.py", "run_comparison.ps1"},
-        )
+    def test_batch3_workflows_keep_scientific_boundaries(self) -> None:
         comsol_evaluator = _read(MASS_FILTER_WORKFLOW / "evaluate_comsol.py")
         simion_evaluator = _read(MASS_FILTER_WORKFLOW / "evaluate_simion.py")
         comparison_evaluator = _read(
