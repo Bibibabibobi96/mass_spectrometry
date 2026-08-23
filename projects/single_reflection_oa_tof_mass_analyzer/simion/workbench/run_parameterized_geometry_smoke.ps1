@@ -44,19 +44,23 @@ $reflectronArrayFactor = [int]$contract.rings.stage1_count + [int]$contract.ring
 $reflectronEstimatedGib = $reflectronNx * $reflectronNy * 8 * $reflectronArrayFactor / [Math]::Pow(1024,3)
 if ($acceleratorEstimatedGib -gt [double]$acceleratorBuild.max_gib) { throw 'Formal accelerator PA estimate exceeds its solver-numerics authority.' }
 if ($reflectronEstimatedGib -gt [double]$reflectronBuild.max_gib) { throw 'Formal reflectron PA estimate exceeds its solver-numerics authority.' }
-$outputFull = [IO.Path]::GetFullPath($OutputDir)
-$runDir = Split-Path -Parent $outputFull
-if (Test-Path -LiteralPath $outputFull) { throw "Smoke output already exists: $outputFull" }
-New-Item -ItemType Directory -Path $outputFull | Out-Null
+$artifactOutputFull = [IO.Path]::GetFullPath($OutputDir)
+$runDir = Split-Path -Parent $artifactOutputFull
+if (Test-Path -LiteralPath $artifactOutputFull) { throw "Smoke output already exists: $artifactOutputFull" }
+New-Item -ItemType Directory -Path $artifactOutputFull | Out-Null
+$executionAlias = New-RunExecutionAlias -TargetDirectory $artifactOutputFull `
+  -ExpectedExecutionRelativePaths @('native_ideal_grid_crossing.stderr.log')
+$outputFull = [string]$executionAlias.execution_alias
 $runConfigPath = Join-Path $runDir 'run_config.json'
 $summaryPath = Join-Path $runDir 'summary.json'
 $manifestPath = Join-Path $runDir 'run_manifest.json'
+try {
 $runConfig = [ordered]@{
   schema_version=2; role='oa_tof_native_ideal_grid_smoke_run_config'
   run_id=$RunId; project='single_reflection_oa_tof_mass_analyzer'; mode='native_ideal_grid_smoke'
   project_root=$projectRoot; formal_gate_passed=$false
   inputs=[ordered]@{baseline='config/baseline.json';resolved_geometry='config/resolved_geometry.json';solver_numerics='config/formal_solver_numerics.json';mode='config/modes/formal.json'}
-  output_dir=$outputFull
+  output_dir=$artifactOutputFull
   actual_cells_mm=[ordered]@{
     accelerator=[ordered]@{x=[double]$acceleratorBuild.cell_xy_mm;y=[double]$acceleratorBuild.cell_xy_mm;z=[double]$acceleratorBuild.cell_z_mm}
     reflectron=[ordered]@{axial=[double]$reflectronBuild.cell_axial_mm;radial=[double]$reflectronBuild.cell_radial_mm}
@@ -72,6 +76,10 @@ Write-RunJson -Value $runConfig -Path $runConfigPath
 Write-RunJson -Value ([ordered]@{schema_version=2;role='oa_tof_native_ideal_grid_smoke_summary';status='interrupted';reason='Run package initialized.';threshold_result_eligible=$false}) -Path $summaryPath
 Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfigPath `
   -Manifest $manifestPath -Status interrupted -Software @('SIMION 2020') -Outputs @($summaryPath)
+} catch {
+  Remove-RunExecutionAlias -ExecutionAlias $executionAlias.execution_alias -TargetDirectory $artifactOutputFull
+  throw
+}
 $terminalized = $false
 $failureStage = 'run_initialization'
 $stageWallSeconds = [ordered]@{}
@@ -230,7 +238,7 @@ $terminalized = $true
 "PARAMETERIZED_GEOMETRY_BUILD_STATUS=PASS"
 "NATIVE_IDEAL_GRID_RAW_PA_STATUS=PASS"
 "NATIVE_IDEAL_GRID_CROSSING_STATUS=PASS"
-"OUTPUT_DIR=$outputFull"
+"OUTPUT_DIR=$artifactOutputFull"
 "ACCELERATOR_ELECTRODES=$expectedAcceleratorElectrodes"
 "REFLECTRON_ELECTRODES=$expectedReflectronElectrodes"
 } catch {
@@ -248,5 +256,13 @@ $terminalized = $true
       -SummarySchemaVersion 2 -Status interrupted -Reason 'Runner exited without a terminal status.' `
       -FailureClass 'runner_interrupted' -FailureStage $failureStage `
       -ThresholdResultEligible $false -Software @('SIMION 2020')
+  }
+  if ($null -ne $executionAlias) {
+    try {
+      Remove-RunExecutionAlias -ExecutionAlias $executionAlias.execution_alias `
+        -TargetDirectory $artifactOutputFull
+    } catch {
+      Write-Warning "Could not remove short execution alias after native-grid smoke: $($_.Exception.Message)"
+    }
   }
 }

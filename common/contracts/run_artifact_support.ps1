@@ -185,6 +185,60 @@ function Assert-RunPackagePathCapacity {
     $overLimit.path,$overLimit.length,$overLimit.legacy_windows_path_limit)
 }
 
+function New-RunExecutionAlias {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$TargetDirectory,
+    [string[]]$AdditionalDirectories=@(),
+    [string[]]$ExpectedExecutionRelativePaths=@(),
+    [string]$ExecutionRoot=''
+  )
+  $target=[IO.Path]::GetFullPath($TargetDirectory)
+  if(-not(Test-Path -LiteralPath $target -PathType Container)){
+    throw "Execution alias target directory is missing: $target"
+  }
+  if([string]::IsNullOrWhiteSpace($ExecutionRoot)){
+    $ExecutionRoot=if($env:MASS_SPECTROMETRY_EXECUTION_ROOT){
+      $env:MASS_SPECTROMETRY_EXECUTION_ROOT
+    }else{'C:\tmp\ms'}
+  }
+  $executionRootPath=[IO.Path]::GetFullPath($ExecutionRoot)
+  $alias=Join-Path $executionRootPath ('run_'+[guid]::NewGuid().ToString('N'))
+  $pathCapacity=Get-RunPackagePathCapacity -RunDirectory $alias `
+    -AdditionalDirectories $AdditionalDirectories `
+    -ExpectedExecutionRelativePaths $ExpectedExecutionRelativePaths
+  $null=Assert-RunPackagePathCapacity -Report $pathCapacity
+  New-Item -ItemType Directory -Force -Path $executionRootPath|Out-Null
+  try{
+    New-Item -ItemType Junction -Path $alias -Target $target|Out-Null
+  }catch{
+    throw "Could not create short execution alias $alias for target ${target}: $($_.Exception.Message)"
+  }
+  return [pscustomobject]@{
+    target_directory=$target;execution_alias=$alias;execution_path_capacity=$pathCapacity
+  }
+}
+
+function Remove-RunExecutionAlias {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$ExecutionAlias,
+    [Parameter(Mandatory)][string]$TargetDirectory
+  )
+  $alias=[IO.Path]::GetFullPath($ExecutionAlias)
+  $targetDirectory=[IO.Path]::GetFullPath($TargetDirectory)
+  if(-not(Test-Path -LiteralPath $alias -PathType Container)){return}
+  $item=Get-Item -LiteralPath $alias -Force
+  if($item.LinkType-ne'Junction'){
+    throw "Execution alias is not a junction: $alias"
+  }
+  $target=[IO.Path]::GetFullPath([string]@($item.Target)[0])
+  if(-not $target.Equals($targetDirectory,[StringComparison]::OrdinalIgnoreCase)){
+    throw "Execution alias target differs from expected target: $alias"
+  }
+  [IO.Directory]::Delete($alias)
+}
+
 function New-RunPackage {
   [CmdletBinding()]
   param(
@@ -226,25 +280,17 @@ function New-RunPackage {
   $runDir=$artifactRunDir
   $executionAlias=$null
   if($UseShortExecutionPath){
-    if([string]::IsNullOrWhiteSpace($ExecutionRoot)){
-      $ExecutionRoot=if($env:MASS_SPECTROMETRY_EXECUTION_ROOT){
-        $env:MASS_SPECTROMETRY_EXECUTION_ROOT
-      }else{'C:\tmp\ms'}
-    }
-    $executionRootPath=[IO.Path]::GetFullPath($ExecutionRoot)
-    $executionAlias=Join-Path $executionRootPath ('run_'+[guid]::NewGuid().ToString('N'))
-    $pathCapacity=Get-RunPackagePathCapacity -RunDirectory $executionAlias `
-      -AdditionalDirectories $AdditionalDirectories `
-      -ExpectedExecutionRelativePaths $ExpectedExecutionRelativePaths
-    $null=Assert-RunPackagePathCapacity -Report $pathCapacity
-    New-Item -ItemType Directory -Force -Path $executionRootPath|Out-Null
     New-Item -ItemType Directory -Force -Path $artifactRunDir|Out-Null
     try{
-      New-Item -ItemType Junction -Path $executionAlias -Target $artifactRunDir|Out-Null
+      $aliasRecord=New-RunExecutionAlias -TargetDirectory $artifactRunDir `
+        -AdditionalDirectories $AdditionalDirectories -ExecutionRoot $ExecutionRoot `
+        -ExpectedExecutionRelativePaths $ExpectedExecutionRelativePaths
     }catch{
       [IO.Directory]::Delete($artifactRunDir,$true)
-      throw "Could not create short execution alias $executionAlias for artifact run ${artifactRunDir}: $($_.Exception.Message)"
+      throw
     }
+    $executionAlias=$aliasRecord.execution_alias
+    $pathCapacity=$aliasRecord.execution_path_capacity
     $runDir=$executionAlias
   }else{
     $pathCapacity=Get-RunPackagePathCapacity -RunDirectory $runDir `
@@ -282,18 +328,8 @@ function Remove-RunPackageExecutionAlias {
   [CmdletBinding()]
   param([Parameter(Mandatory)][pscustomobject]$Package)
   if($null-eq$Package.execution_alias){return}
-  $alias=[IO.Path]::GetFullPath([string]$Package.execution_alias)
-  $artifactRunDir=[IO.Path]::GetFullPath([string]$Package.artifact_run_dir)
-  if(-not(Test-Path -LiteralPath $alias -PathType Container)){return}
-  $item=Get-Item -LiteralPath $alias -Force
-  if($item.LinkType-ne'Junction'){
-    throw "Execution alias is not a junction: $alias"
-  }
-  $target=[IO.Path]::GetFullPath([string]@($item.Target)[0])
-  if(-not $target.Equals($artifactRunDir,[StringComparison]::OrdinalIgnoreCase)){
-    throw "Execution alias target differs from artifact run: $alias"
-  }
-  [IO.Directory]::Delete($alias)
+  Remove-RunExecutionAlias -ExecutionAlias ([string]$Package.execution_alias) `
+    -TargetDirectory ([string]$Package.artifact_run_dir)
 }
 
 function Apply-RunArtifactRetention {

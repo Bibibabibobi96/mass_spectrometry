@@ -202,6 +202,21 @@ try {
   if (-not $shortPackage.execution_path_capacity.legacy_windows_compatible) {
     throw 'Short execution alias did not satisfy legacy Windows path capacity.'
   }
+
+  $directTarget=Join-Path $testRoot 'direct_execution_target'
+  New-Item -ItemType Directory -Path $directTarget -Force|Out-Null
+  $directAlias=New-RunExecutionAlias -TargetDirectory $directTarget `
+    -ExecutionRoot $executionRoot -ExpectedExecutionRelativePaths @('simion\nested\result.json')
+  if(-not(Test-Path -LiteralPath $directAlias.execution_alias -PathType Container)){
+    throw 'Generic short execution alias was not created.'
+  }
+  Remove-RunExecutionAlias -ExecutionAlias $directAlias.execution_alias -TargetDirectory $directTarget
+  if(Test-Path -LiteralPath $directAlias.execution_alias){
+    throw 'Generic short execution alias remained after cleanup.'
+  }
+  if(-not(Test-Path -LiteralPath $directTarget -PathType Container)){
+    throw 'Generic short execution alias cleanup removed its target.'
+  }
   try {
     $tooLongRelativePath = ('x' * 260) + '.json'
     New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $testRoot `
