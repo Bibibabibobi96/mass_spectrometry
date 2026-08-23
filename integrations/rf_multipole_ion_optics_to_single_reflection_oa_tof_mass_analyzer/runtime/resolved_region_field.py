@@ -33,7 +33,6 @@ THREE_ZONE_REGIONS = (
     "reflectron_stage1",
     "reflectron_stage2",
 )
-FULL_ID = "full_domain_piecewise_ideal_field"
 THREE_ZONE_EVALUATION_MODES = frozenset({"region_overlay", "native_pa_only"})
 
 
@@ -422,10 +421,8 @@ def validate_resolved_region_field_contract(contract: Mapping[str, Any]) -> None
         _field_profile(str(profile_id))
     ):
         raise ValueError("schema-v1 cannot declare a three-zone accelerator")
-    if profile_id == FULL_ID and any(
-        mode == "real_pa_field" for mode in modes.values()
-    ):
-        raise ValueError("full-domain ideal field cannot contain a real-PA region")
+    elif dict(modes) != _region_modes(str(profile_id)):
+        raise ValueError("five-region modes differ from the selected profile")
     expected_pa_role = (
         "geometry_and_collision_carrier_only"
         if schema_version == THREE_ZONE_SCHEMA_VERSION

@@ -10,7 +10,6 @@ import unittest
 
 from common.contracts.machine_contracts import validate_schema
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.resolved_region_field import (
-    FULL_ID,
     build_resolved_region_field_contract,
     resolved_region_field_hook_lua,
     validate_resolved_region_field_contract,
@@ -21,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[3]
 GEOMETRY = ROOT / "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json"
 CONFIG = ROOT / "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/simion_single_flight.json"
 SIMION = Path(r"C:\Program Files\SIMION-2020\simion.exe")
+FULL_ID = "full_domain_piecewise_ideal_field"
 THREE_ZONE_PROFILE_ID = "accelerator_ideal_three_zone_real_reflectron"
 FULL_THREE_ZONE_PROFILE_ID = "full_domain_three_zone_piecewise_ideal_field"
 THREE_ZONE_REAL_PA_PROFILE_ID = "accelerator_real_three_zone_pa_real_reflectron"
@@ -98,6 +98,11 @@ class ResolvedRegionFieldTests(unittest.TestCase):
         invalid["semantic"]["real_pa_field_blending_allowed"] = True
         invalid["semantic_sha256"] = semantic_sha256(invalid["semantic"])
         with self.assertRaisesRegex(ValueError, "prohibit real-PA blending"):
+            validate_resolved_region_field_contract(invalid)
+        invalid = copy.deepcopy(contract)
+        invalid["semantic"]["region_modes"]["drift"] = "real_pa_field"
+        invalid["semantic_sha256"] = semantic_sha256(invalid["semantic"])
+        with self.assertRaisesRegex(ValueError, "five-region modes differ"):
             validate_resolved_region_field_contract(invalid)
 
     def test_semantic_sha_is_path_free_and_stable(self) -> None:
