@@ -403,17 +403,6 @@ if ($SolverAuthorized) {
   }
 }
 $experiment = $experiments[0]
-$threeZoneLayoutProfileIds = @(
-  'three_zone_t5_primary_v1',
-  'three_zone_t5_primary_shaping_rings_1p4_v1'
-)
-$isThreeZoneLayout = (
-  $experiment.PSObject.Properties.Name -contains
-  'single_flight_layout_profile_id'
-) -and (
-  [string]$experiment.single_flight_layout_profile_id -in
-  $threeZoneLayoutProfileIds
-)
 $campaignHasThreeZoneCandidate = (
   $experiment.PSObject.Properties.Name -contains
   'single_flight_three_zone_candidate'
@@ -422,10 +411,10 @@ $argumentsHaveThreeZoneCandidate = (
   $frozenArguments.ContainsKey('single_flight_three_zone_candidate_path') -and
   $frozenArguments.ContainsKey('single_flight_three_zone_candidate_sha256')
 )
-if ($isThreeZoneLayout -ne $campaignHasThreeZoneCandidate -or
-    $isThreeZoneLayout -ne $argumentsHaveThreeZoneCandidate) {
+if ($campaignHasThreeZoneCandidate -ne $argumentsHaveThreeZoneCandidate) {
   throw 'Three-zone Candidate binding and layout identity differ.'
 }
+$isThreeZoneLayout = $campaignHasThreeZoneCandidate
 $threeZoneCandidatePath = $null
 if ($isThreeZoneLayout) {
   if ([string]$experiment.single_flight_three_zone_candidate.path -ne

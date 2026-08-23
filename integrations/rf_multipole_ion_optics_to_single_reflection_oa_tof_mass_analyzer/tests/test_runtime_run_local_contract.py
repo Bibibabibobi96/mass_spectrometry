@@ -350,6 +350,8 @@ try {{
         self.assertIn(
             "$FrontendElectrodeTopology.topology_id", runner
         )
+        self.assertNotIn("three_zone_t5_primary_v1", adapter)
+        self.assertNotIn("three_zone_t5_primary_shaping_rings_1p4_v1", adapter)
         self.assertNotIn("ThreeZoneCandidate", public_entry)
 
     def test_three_zone_runtime_identity_rejects_mapping_tamper(self) -> None:
