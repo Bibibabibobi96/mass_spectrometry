@@ -72,16 +72,6 @@ param(
   [string]$MotherParticleSourceReceipt = '',
   [string]$MotherParticleSourceReceiptSha256 = '',
   [switch]$ResolutionQualification,
-  [switch]$PulseResolutionN100Screening,
-  [string]$PulseResolutionCampaign = '',
-  [string]$PulseResolutionCampaignSha256 = '',
-  [string]$PulseResolutionExperimentRowSha256 = '',
-  [string]$PulseResolutionExperimentId = '',
-  [string]$PulseResolutionFieldProfileId = '',
-  [string]$PulseResolutionExecutionMode = '',
-  [string]$PulseResolutionPrefixPlanRoot = '',
-  [string]$PulseResolutionRegistrationAuthority = '',
-  [string]$PulseResolutionRegistrationAuthoritySha256 = '',
   [string]$PrePulseTimeSeriesContract = '',
   [string]$PrePulseTimeSeriesContractSha256 = '',
   [ValidateScript({ $_ -ge 1 })][int]$ExecutionBatchCount = 1,
@@ -312,27 +302,9 @@ if ($isPrePulseTimeSeriesScreening -ne (-not [string]::IsNullOrWhiteSpace(
   throw 'Pre-pulse time-series contract path/hash identity is incomplete.'
 }
 if ($isPrePulseTimeSeriesScreening -and (
-    $ResolutionQualification -or $PulseResolutionN100Screening -or
+    $ResolutionQualification -or
     $PaCachePolicy -notin @('require_existing','build_and_publish_if_missing'))) {
   throw 'Pre-pulse time-series screening requires FUNCTIONAL_ONLY cache-governed execution.'
-}
-if ($PulseResolutionN100Screening) {
-  $isBaseline = $PulseResolutionExecutionMode -eq `
-    'screening_prefix_n100_baseline_registration'
-  $isPaired = $PulseResolutionExecutionMode -eq `
-    'screening_prefix_n100_paired_candidate'
-  if (-not ($isBaseline -or $isPaired) -or
-      $ResolutionQualification -or
-      [string]::IsNullOrWhiteSpace($PulseResolutionExperimentId) -or
-      [string]::IsNullOrWhiteSpace($PulseResolutionCampaign) -or
-      [string]::IsNullOrWhiteSpace($PulseResolutionCampaignSha256) -or
-      [string]::IsNullOrWhiteSpace($PulseResolutionExperimentRowSha256)) {
-    throw 'Real multipole beam + real accelerator field + real reflectron field deterministic N=100 baseline result contract differs.'
-  }
-  if (($isBaseline -and $PulseResolutionFieldProfileId -ne 'accelerator_real_pa') -or
-      ($isPaired -and $PulseResolutionFieldProfileId -eq 'accelerator_real_pa')) {
-    throw 'Pulse-resolution field identity conflicts with execution mode.'
-  }
 }
 $artifactRoot = Join-Path $workspaceRoot "artifacts\projects\$runProjectId"
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
@@ -1032,9 +1004,7 @@ try {
   } elseif ($isStagedGrid2Restart) {
     [IO.Path]::GetFullPath($StagedGrid2SourceState)
   } elseif ($hasMotherOverride) { [IO.Path]::GetFullPath($MotherParticleSource) } else { $runtime.source_particle_source }
-  $motherSourceRoot = if ($PulseResolutionN100Screening) {
-    [IO.Path]::GetFullPath($PulseResolutionPrefixPlanRoot)
-  } elseif ($hasMotherSourceRunRoot) {
+  $motherSourceRoot = if ($hasMotherSourceRunRoot) {
     [IO.Path]::GetFullPath($MotherParticleSourceRunRoot)
   } elseif ($isPrePulseRestart -or $isStagedGrid2Restart) { $workspaceRoot } elseif ($hasMaterializedMotherReceipt) {
     Resolve-RfMaterializedMotherSourceRunRoot `
@@ -1116,38 +1086,6 @@ try {
   }
   if (@(Import-Csv -LiteralPath $motherSource).Count -ne $launched) {
     throw 'Single-flight mother sample count differs from source authority.'
-  }
-  $campaignFrozen = $null
-  $sourceIdentity = $null
-  $registrationAuthorityFrozen = $null
-  if ($PulseResolutionN100Screening) {
-    $campaignFrozen = Join-Path $package.input_dir 'pulse_resolution_optimization_campaign.json'
-    Copy-RfStableFile -SourceRunRoot $repoRoot -SourcePath $PulseResolutionCampaign `
-      -Destination $campaignFrozen -Role 'pulse-resolution campaign' | Out-Null
-    if ((Get-FileHash -LiteralPath $campaignFrozen -Algorithm SHA256).Hash -ne
-        $PulseResolutionCampaignSha256) { throw 'Pulse-resolution campaign SHA differs.' }
-    $registrationAuthorityFrozen = Join-Path $package.input_dir `
-      'pulse_resolution_baseline_registration_authority.json'
-    Copy-RfStableFile -SourceRunRoot ([IO.Path]::GetFullPath($PulseResolutionPrefixPlanRoot)) `
-      -SourcePath $PulseResolutionRegistrationAuthority `
-      -Destination $registrationAuthorityFrozen `
-      -Role 'pulse-resolution baseline registration authority' | Out-Null
-    if ((Get-FileHash -LiteralPath $registrationAuthorityFrozen -Algorithm SHA256).Hash -ne
-        $PulseResolutionRegistrationAuthoritySha256) {
-      throw 'Pulse-resolution baseline registration authority SHA differs.'
-    }
-    $sourceIdentity = Join-Path $package.input_dir 'pulse_resolution_source_identity.json'
-    $registrationSourceIdentity = [ordered]@{}
-    foreach ($property in $runtime.source_identity.PSObject.Properties) {
-      $registrationSourceIdentity[$property.Name] = $property.Value
-    }
-    $registrationSourceIdentity.mother_particle_source_sha256 =
-      [string]$runtime.source_identity.particle_source_sha256
-    if ($hasPairedCohort) {
-      $registrationSourceIdentity['paired_cohort_authority'] =
-        $pairedCohortProperty.Value
-    }
-    Write-RunJson -Path $sourceIdentity -Depth 10 -Value $registrationSourceIdentity
   }
   $frontendGem = Join-Path $package.input_dir 'single_flight_frontend.gem'
   $frontendContract = Join-Path $package.input_dir 'single_flight_frontend_contract.json'
@@ -2182,21 +2120,6 @@ try {
       -ResolvedBudgetDocument $resolvedBudgetDocument `
       -ConnectionLineageIdentity $runtime.source_identity
   }
-  if ($PulseResolutionN100Screening) {
-    $runConfiguration.inputs.pulse_resolution_campaign = $campaignFrozen
-    $runConfiguration.inputs.pulse_resolution_source_identity = $sourceIdentity
-    $runConfiguration.inputs.pulse_resolution_baseline_registration_authority =
-      $registrationAuthorityFrozen
-    $runConfiguration.parameters.pulse_resolution_experiment_id =
-      $PulseResolutionExperimentId
-    $runConfiguration.parameters.pulse_resolution_field_profile_id =
-      $PulseResolutionFieldProfileId
-    $runConfiguration.parameters.pulse_resolution_screening_prefix_count = $launched
-    $runConfiguration.parameters.pulse_resolution_selection_rule =
-      [string]$populationContract.execution_population.selection_algorithm
-    $runConfiguration.parameters.pulse_resolution_screening_is_random =
-      $populationContract.execution_population.selection_algorithm -notlike 'first_*'
-  }
   if ($isStagedGrid2Restart) {
     $runConfiguration.parameters.source_release_mode = 'staged_grid2_restart'
     $runConfiguration.parameters.population_mode = 'staged_grid2_restart'
@@ -2459,69 +2382,12 @@ try {
       selection_uses_detector_outcome=$false
     }) -Force
   Write-RunJson -Path $package.summary -Depth 10 -Value $result
-  $baselineReceipt = $null
-  $promotionReceipt = $null
-  if ($PulseResolutionN100Screening) {
-    $resultName = 'pulse_resolution_' + $PulseResolutionExperimentId + '_result.json'
-    $baselineReceipt = Join-Path $package.result_dir $resultName
-    $receiptArguments = @('-m',
-      'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.register_pulse_resolution_result',
-      '--campaign',$campaignFrozen,
-      '--campaign-sha256',$PulseResolutionCampaignSha256,
-      '--experiment-row-sha256',$PulseResolutionExperimentRowSha256,
-      '--experiment-id',$PulseResolutionExperimentId,
-      '--execution-mode',$PulseResolutionExecutionMode,
-      '--summary',$package.summary,'--checkpoints',$checkpoints,
-      '--source-identity',$sourceIdentity,'--prefix',$motherSource,
-      '--prefix-plan-path',('inputs/' + [IO.Path]::GetFileName($motherSource)),
-      '--prefix-sha256',$MotherParticleSourceSha256,
-      '--registration-authority',$registrationAuthorityFrozen,
-      '--registration-authority-sha256',$PulseResolutionRegistrationAuthoritySha256,
-      '--output',$baselineReceipt)
-    if (-not $isBaseline) {
-      $promotionReceipt = Join-Path $package.result_dir (
-        'pulse_resolution_' + $PulseResolutionExperimentId + '_promotion_receipt.json'
-      )
-      $receiptArguments += @('--promotion-receipt',$promotionReceipt)
-    }
-    Invoke-SingleFlightPython -Arguments $receiptArguments `
-      -Failure 'N=100 pulse-resolution result receipt failed.'
-    $registration = Get-Content -LiteralPath $baselineReceipt -Raw -Encoding UTF8 |
-      ConvertFrom-Json
-    $expectedStatus = if ($isBaseline) {
-      'baseline_registered_not_candidate'
-    } else { 'candidate_screening_complete_not_qualified' }
-    if ($registration.execution_status -ne $expectedStatus -or
-        $registration.formal_gate_passed) {
-      throw 'N=100 screening result receipt differs.'
-    }
-    $result | Add-Member -NotePropertyName pulse_resolution_registration `
-      -NotePropertyValue ([ordered]@{
-        execution_status=$expectedStatus
-        receipt=('results/' + $resultName)
-        receipt_sha256=(Get-FileHash -LiteralPath $baselineReceipt -Algorithm SHA256).Hash
-      }) -Force
-    if ($null -ne $promotionReceipt) {
-      $promotion = Get-Content -LiteralPath $promotionReceipt -Raw -Encoding UTF8 |
-        ConvertFrom-Json
-      $result | Add-Member -NotePropertyName pulse_resolution_promotion `
-        -NotePropertyValue ([ordered]@{
-          decision=[string]$promotion.decision
-          population_count=[int]$promotion.pairing.population_count
-          eligible_paired_count=[int]$promotion.pairing.eligible_paired_count
-          failure_codes=@($promotion.failure_reasons | ForEach-Object { [string]$_.code })
-          receipt=('results/' + [IO.Path]::GetFileName($promotionReceipt))
-          receipt_sha256=(Get-FileHash -LiteralPath $promotionReceipt -Algorithm SHA256).Hash
-        }) -Force
-    }
-    Write-RunJson -Path $package.summary -Depth 10 -Value $result
-  }
   $runConfiguration.parameters.multipole_handoff_count = [int]$result.census.multipole_handoff
   $runConfiguration.parameters.local_accelerator_exit_count = [int]$result.census.local_accelerator_exit
   $runConfiguration.parameters.detector_crossing_count = [int]$result.census.detector_crossing
   Write-RunJson -Path $package.run_config -Depth 10 -Value $runConfiguration
   $retentionActions = Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config
-  $outputs = @($checkpoints,$sixPanel,$sixPanelMetadata,$phaseSpace,$phaseSpaceMetadata,$phaseSpaceData,$evolution,$evolutionMetadata,$evolutionData,$baselineReceipt,$promotionReceipt) + $stdoutFiles + $stderrFiles + $resourceUsageFiles + @($flightTubeBuildStdout,$flightTubeBuildStderr,$reflectronBuildStdout,$reflectronBuildStderr,$package.summary,$retentionActions) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) }
+  $outputs = @($checkpoints,$sixPanel,$sixPanelMetadata,$phaseSpace,$phaseSpaceMetadata,$phaseSpaceData,$evolution,$evolutionMetadata,$evolutionData) + $stdoutFiles + $stderrFiles + $resourceUsageFiles + @($flightTubeBuildStdout,$flightTubeBuildStderr,$reflectronBuildStdout,$reflectronBuildStderr,$package.summary,$retentionActions) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) }
   foreach ($usage in $resourceUsageFiles) {
     if (-not (Complete-ResourceUsage -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir -UsagePath $usage)) { $resourceBudgetExceeded=$true; throw 'Single-flight compact retained-byte budget exceeded.' }
   }
