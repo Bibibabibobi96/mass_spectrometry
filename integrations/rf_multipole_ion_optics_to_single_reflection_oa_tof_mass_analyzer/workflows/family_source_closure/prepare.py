@@ -771,6 +771,83 @@ def expand_flat_experiment_authoring(campaign: dict[str, Any]) -> dict[str, Any]
     return result
 
 
+def _semantic_diff_category(path: tuple[str, ...]) -> str:
+    """Classify a resolved field for review output only, never for policy."""
+
+    top_level = path[0] if path else ""
+    if top_level in {"sequence", "experiment_id", "run_id"}:
+        return "run_control"
+    if top_level in {
+        "source",
+        "single_flight_design_reference",
+        "post_pulse_restart_reuse_authority",
+    } or any(part.endswith("sha256") for part in path):
+        return "evidence_or_provenance"
+    if top_level in {"single_flight_population", "analysis_randomness"}:
+        return "source_cohort_or_sampling"
+    if top_level in {
+        "resolution_qualification",
+        "claim_limit",
+        "spatial_window_profile_id",
+        "source_region_diagnostic_profile_id",
+    }:
+        return "analysis_or_qualification"
+    if top_level in {
+        "single_flight_batch_memory_policy",
+        "single_flight_batch_count",
+        "execution_strategy",
+    } or any(
+        token in part
+        for part in path
+        for token in ("grid", "numerical", "trajectory", "time_profile")
+    ):
+        return "solver_numerics_or_resource_control"
+    if top_level in {
+        "connection_profile_id",
+        "source_profile_id",
+        "accelerator_field_profile_id",
+        "single_flight_accelerator_field_profile_id",
+        "field_profile_id",
+        "source_zvz_theory_working_point",
+    }:
+        return "physical_design_or_field"
+    return "declared_configuration"
+
+
+def _semantic_diff_values(
+    before: object, after: object, path: tuple[str, ...] = ()
+) -> list[dict[str, Any]]:
+    if isinstance(before, dict) and isinstance(after, dict):
+        changes: list[dict[str, Any]] = []
+        for key in sorted(set(before) | set(after)):
+            changes.extend(
+                _semantic_diff_values(before.get(key), after.get(key), path + (key,))
+            )
+        return changes
+    if before == after:
+        return []
+    return [{
+        "path": ".".join(path),
+        "category": _semantic_diff_category(path),
+        "before": before,
+        "after": after,
+    }]
+
+
+def semantic_diff_experiments(before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]:
+    """Return a deterministic, review-only diff of two materialized rows."""
+
+    changes = _semantic_diff_values(before, after)
+    return {
+        "role": "rf_oatof_campaign_semantic_diff",
+        "classification_scope": "review_only_not_execution_policy",
+        "before_experiment_id": before.get("experiment_id"),
+        "after_experiment_id": after.get("experiment_id"),
+        "changed_field_count": len(changes),
+        "changes": changes,
+    }
+
+
 def _validate_three_zone_gate_pair(
     gated: list[dict[str, Any]],
 ) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -4809,12 +4886,27 @@ def main() -> int:
     parser.add_argument("--plan-output", type=Path)
     parser.add_argument("--list-experiment-ids", action="store_true")
     parser.add_argument("--print-experiment-json")
+    parser.add_argument(
+        "--semantic-diff-experiment-json", nargs=2, metavar=("BEFORE", "AFTER")
+    )
     parser.add_argument("--pulse-timing-transition", type=Path)
     parser.add_argument("--materialize-pulse-timing-stage", action="store_true")
     args = parser.parse_args()
-    if args.list_experiment_ids or args.print_experiment_json:
+    if args.list_experiment_ids or args.print_experiment_json or args.semantic_diff_experiment_json:
         campaign = expand_flat_experiment_authoring(_load(args.campaign))
         validate_schema(campaign, "rf_multipole_oatof_experiment_campaign.schema.json")
+        if args.semantic_diff_experiment_json:
+            before_id, after_id = args.semantic_diff_experiment_json
+            rows_by_id = {
+                row["experiment_id"]: row for row in campaign["experiments"]
+            }
+            if before_id not in rows_by_id or after_id not in rows_by_id:
+                parser.error("--semantic-diff-experiment-json requires two known experiment IDs")
+            print(json.dumps(
+                semantic_diff_experiments(rows_by_id[before_id], rows_by_id[after_id]),
+                separators=(",", ":"),
+            ))
+            return 0
         if args.print_experiment_json:
             matches = [
                 row for row in campaign["experiments"]

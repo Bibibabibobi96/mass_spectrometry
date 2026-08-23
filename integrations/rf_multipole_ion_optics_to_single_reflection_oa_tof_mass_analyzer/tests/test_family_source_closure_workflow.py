@@ -20,6 +20,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.prepare import (
     _automatic_pulse_population_binding,
     expand_flat_experiment_authoring,
+    semantic_diff_experiments,
     _repo_byte_record,
     _workspace_record,
     prepare_family_source_closure,
@@ -406,6 +407,32 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             with self.subTest(authoring=authoring), self.assertRaises(ContractError):
                 expand_flat_experiment_authoring({"experiments": authoring})
 
+    def test_semantic_diff_reports_materialized_field_changes_without_policy_effect(self) -> None:
+        before = {
+            "experiment_id": "before",
+            "run_id": "run-before",
+            "connection_profile_id": "gap0",
+            "single_flight_population": {"particle_count": 100},
+            "single_flight_batch_count": 2,
+            "source": {"sha256": "A" * 64},
+        }
+        after = {
+            "experiment_id": "after",
+            "run_id": "run-after",
+            "connection_profile_id": "gap3",
+            "single_flight_population": {"particle_count": 1000},
+            "single_flight_batch_count": 4,
+            "source": {"sha256": "B" * 64},
+        }
+        diff = semantic_diff_experiments(before, after)
+        self.assertEqual(diff["classification_scope"], "review_only_not_execution_policy")
+        self.assertEqual(diff["changed_field_count"], 6)
+        categories = {item["path"]: item["category"] for item in diff["changes"]}
+        self.assertEqual(categories["connection_profile_id"], "physical_design_or_field")
+        self.assertEqual(categories["single_flight_population.particle_count"], "source_cohort_or_sampling")
+        self.assertEqual(categories["single_flight_batch_count"], "solver_numerics_or_resource_control")
+        self.assertEqual(categories["source.sha256"], "evidence_or_provenance")
+
     def test_flat_cli_lists_sorted_ids_and_prints_the_materialized_row(self) -> None:
         campaign = load(CAMPAIGN_PATH)
         rows = campaign["experiments"]
@@ -459,6 +486,22 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             )
             self.assertEqual(printed.returncode, 0, printed.stderr)
             self.assertEqual(json.loads(printed.stdout), selected)
+            compared = expected["experiments"][1]
+            semantic_diff = subprocess.run(
+                [
+                    *common,
+                    "--semantic-diff-experiment-json",
+                    selected["experiment_id"],
+                    compared["experiment_id"],
+                ],
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                check=False, timeout=30, cwd=REPO_ROOT,
+            )
+            self.assertEqual(semantic_diff.returncode, 0, semantic_diff.stderr)
+            self.assertEqual(
+                json.loads(semantic_diff.stdout),
+                semantic_diff_experiments(selected, compared),
+            )
             missing = subprocess.run(
                 [*common, "--print-experiment-json", "missing"], capture_output=True,
                 text=True, encoding="utf-8", errors="replace", check=False, timeout=30,
