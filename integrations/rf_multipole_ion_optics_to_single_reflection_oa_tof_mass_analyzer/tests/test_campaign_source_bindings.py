@@ -45,6 +45,29 @@ class CampaignSourceBindingTests(unittest.TestCase):
         }, indent=2) + "\n", encoding="utf-8")
         return repo, campaign
 
+    def _flat_fixture(self, root: Path) -> tuple[Path, Path]:
+        repo, campaign = self._fixture(root)
+        document = json.loads(campaign.read_text(encoding="utf-8"))
+        shared = document["experiments"][0]
+        document["experiments"] = {
+            "shared": {
+                key: value
+                for key, value in shared.items()
+                if key not in {"run_id", "experiment_id"}
+            },
+            "variation_axes": ["connection_profile_id"],
+            "rows": [{
+                "sequence": 1,
+                "experiment_id": shared["experiment_id"],
+                "run_id": shared["run_id"],
+                "overrides": {},
+            }],
+        }
+        campaign.write_text(
+            json.dumps(document, indent=2) + "\n", encoding="utf-8"
+        )
+        return repo, campaign
+
     def _publish_receipt(
         self,
         repo: Path,
@@ -136,6 +159,22 @@ class CampaignSourceBindingTests(unittest.TestCase):
             self.assertTrue(write_campaign(repo, campaign))
             self.assertTrue(is_fresh(repo, campaign))
             self.assertFalse(write_campaign(repo, campaign))
+
+    def test_flat_campaign_refreshes_shared_source_bindings(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repo, campaign = self._flat_fixture(Path(directory))
+            self.assertTrue(write_campaign(repo, campaign))
+            self.assertTrue(is_fresh(repo, campaign))
+
+            source = repo.parent / "artifacts/projects/source/runs/source_run/state.csv"
+            source.write_text("changed state\n", encoding="utf-8")
+            self.assertFalse(is_fresh(repo, campaign))
+            self.assertTrue(write_campaign(repo, campaign))
+
+            document = json.loads(campaign.read_text(encoding="utf-8"))
+            shared_state = document["experiments"]["shared"]["source"]["state"]
+            self.assertNotEqual(shared_state["sha256"], "0" * 64)
+            self.assertTrue(is_fresh(repo, campaign))
 
     def test_flat_authoring_refreshes_shared_and_row_source_bindings(self) -> None:
         for source_location in ("shared", "overrides"):

@@ -1061,6 +1061,68 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
             prepare_source,
         )
 
+    def test_validate_only_all_experiments_stops_before_later_rows(self) -> None:
+        """The public scheduler enumerates rows once and stops at its first child failure."""
+        integration_root = REPO_ROOT / "integrations" / INTEGRATION_ID
+        registry = json.loads((
+            integration_root / "config" / "diagnostics" / "lifecycle_registry.json"
+        ).read_text(encoding="utf-8-sig"))
+        campaign = registry["active_campaigns"][0]["path"]
+        execute = WORKFLOW_ROOT / "execute.ps1"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            log = root / "python_calls.jsonl"
+            shim = root / "python_shim.py"
+            shim.write_text(
+                "from __future__ import annotations\n"
+                "import json\n"
+                "from pathlib import Path\n"
+                "import sys\n"
+                f"log = Path({str(log)!r})\n"
+                "args = sys.argv[1:]\n"
+                "if args and args[0] == '-c':\n"
+                "    print('3.11')\n"
+                "elif '--list-experiment-ids' in args:\n"
+                "    log.write_text(json.dumps(args) + '\\n', encoding='utf-8')\n"
+                "    print('first')\n"
+                "    print('second')\n"
+                "elif '--print-experiment-json' in args:\n"
+                "    with log.open('a', encoding='utf-8') as handle:\n"
+                "        handle.write(json.dumps(args) + '\\n')\n"
+                "    raise SystemExit(23)\n"
+                "else:\n"
+                "    raise SystemExit(24)\n",
+                encoding="utf-8",
+            )
+            launcher = root / "python_shim.cmd"
+            launcher.write_text(
+                f'@echo off\r\n"{sys.executable}" "{shim}" %*\r\n',
+                encoding="ascii",
+            )
+            result = subprocess.run(
+                [
+                    "pwsh", "-NoProfile", "-File", str(execute),
+                    "-Campaign", campaign,
+                    "-AllExperiments",
+                    "-ValidateOnly",
+                    "-PythonExe", str(launcher),
+                ],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            calls = [
+                json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()
+            ]
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(len(calls), 2)
+        self.assertIn("--list-experiment-ids", calls[0])
+        self.assertIn("--print-experiment-json", calls[1])
+        self.assertEqual(calls[1][-1], "first")
+        self.assertNotIn("second", calls[1])
+
     def test_adapter_has_one_campaign_argument_contract(self) -> None:
         source = ADAPTER_PATH.read_text(encoding="utf-8-sig")
         required = (
