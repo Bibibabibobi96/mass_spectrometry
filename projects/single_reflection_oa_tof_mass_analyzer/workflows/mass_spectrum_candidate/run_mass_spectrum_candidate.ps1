@@ -45,6 +45,9 @@ if ($resumeExisting) {
   $comsolDir = New-Item -ItemType Directory -Path (Join-Path $runDir 'comsol')
 }
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+$executionAlias = $null
+$runtimeAlias = $null
+$runtimeRoot = $null
 if (-not $resumeExisting) {
   Initialize-RunRecord -RunDir $runDir -RunId $RunId -Project 'single_reflection_oa_tof_mass_analyzer' `
     -Mode 'mass_spectrum_candidate' -ProjectRoot $projectRoot `
@@ -53,6 +56,18 @@ if (-not $resumeExisting) {
 }
 $runRecordComplete = $false
 trap {
+  if ($null -ne $runtimeAlias) {
+    try { Remove-RunExecutionAlias -ExecutionAlias $runtimeAlias.execution_alias -TargetDirectory $runtimeRoot }
+    catch { Write-Warning "Could not remove short formal-runtime alias: $($_.Exception.Message)" }
+  }
+  if ($null -ne $runtimeRoot) {
+    try { Remove-OaTofFormalSimionRuntime -ArtifactRoot $artifactRoot -RuntimeRoot $runtimeRoot }
+    catch { Write-Warning "Could not remove formal SIMION runtime: $($_.Exception.Message)" }
+  }
+  if ($null -ne $executionAlias) {
+    try { Remove-RunExecutionAlias -ExecutionAlias $executionAlias.execution_alias -TargetDirectory $runDir }
+    catch { Write-Warning "Could not remove short mass-spectrum execution alias: $($_.Exception.Message)" }
+  }
   if (-not $runRecordComplete) {
     Write-TerminalRunRecord -RunDir $runDir -Status failed `
       -Reason $_.Exception.Message -RepoRoot $repoRoot -Python $python `
@@ -330,19 +345,35 @@ if ($ReanalyzeOnly) {
   $runtimeRoot = New-OaTofFormalSimionRuntime -ProjectRoot $projectRoot `
     -ArtifactRoot $artifactRoot -PythonExe $python -Destination $runtimeRoot `
     -Receipt $runtimeReceipt
-  $runtimeIob = Join-Path $runtimeRoot 'oatof_ideal_grounded.iob'
+  $executionAlias = New-RunExecutionAlias -TargetDirectory $runDir `
+    -ExpectedExecutionRelativePaths @('ions\wide_mz_combined.ion')
+  $runtimeAlias = New-RunExecutionAlias -TargetDirectory $runtimeRoot `
+    -ExpectedExecutionRelativePaths @('oatof_ideal_grounded.iob')
+  $runtimeIob = Join-Path $runtimeAlias.execution_alias 'oatof_ideal_grounded.iob'
+  $executionIon = Join-Path $executionAlias.execution_alias 'ions\wide_mz_combined.ion'
+  $executionLog = Join-Path $executionAlias.execution_alias 'logs\simion_stdout.log'
+  $executionStderr = Join-Path $executionAlias.execution_alias 'logs\simion_stderr.log'
   try {
-    $process = Start-Process -FilePath $SimionExe -WorkingDirectory $runtimeRoot `
-      -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput $simionLog `
-      -RedirectStandardError $simionStderr -ArgumentList @(
+    $process = Start-Process -FilePath $SimionExe -WorkingDirectory $runtimeAlias.execution_alias `
+      -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput $executionLog `
+      -RedirectStandardError $executionStderr -ArgumentList @(
         '--default-num-particles',[string]$totalParticles,'--nogui','fly',
-        '--trajectory-quality','8','--retain-trajectories','0','--particles',$combinedIon,
+        '--trajectory-quality','8','--retain-trajectories','0','--particles',$executionIon,
         '--programs','1','--adjustable','trajectory_quality=8','--adjustable',
         'trajectory_log_enable=1','--adjustable',
         ("diagnostic_max_tof_us={0}" -f $simionMaxTofUs),$runtimeIob)
     if ($process.ExitCode -ne 0) { throw "SIMION mixed-species fly failed: $simionStderr" }
   } finally {
+    if ($null -ne $runtimeAlias) {
+      Remove-RunExecutionAlias -ExecutionAlias $runtimeAlias.execution_alias -TargetDirectory $runtimeRoot
+      $runtimeAlias = $null
+    }
     Remove-OaTofFormalSimionRuntime -ArtifactRoot $artifactRoot -RuntimeRoot $runtimeRoot
+    $runtimeRoot = $null
+    if ($null -ne $executionAlias) {
+      Remove-RunExecutionAlias -ExecutionAlias $executionAlias.execution_alias -TargetDirectory $runDir
+      $executionAlias = $null
+    }
   }
   $summary = & $simionAnalyzer -Log $simionLog -IonFile $combinedIon `
     -Mode 'mass_spectrum_candidate' -Distribution 'five_species_shared_source' `
