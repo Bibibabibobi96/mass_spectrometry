@@ -11,7 +11,7 @@ from pathlib import Path
 
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.build_single_flight_program import (
     build_successor_program,
-    load_birth_times,
+    load_initial_state,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.resolved_region_field import (
     build_resolved_region_field_contract,
@@ -582,7 +582,7 @@ class SingleFlightProgramTests(unittest.TestCase):
                 "particle_id,instrument_time_us\n1,0.25\n2,1.5\n",
                 encoding="utf-8",
             )
-            self.assertEqual(load_birth_times(path), [0.25, 1.5])
+            self.assertEqual(load_initial_state(path), ([0.25, 1.5], [1, 2]))
 
     def test_replay_birth_times_use_contiguous_simulation_particle_ids(self) -> None:
         import tempfile
@@ -593,7 +593,7 @@ class SingleFlightProgramTests(unittest.TestCase):
                 "simulation_particle_id,instrument_time_us\n1,31.8\n2,31.8\n",
                 encoding="utf-8",
             )
-            self.assertEqual(load_birth_times(path), [31.8, 31.8])
+            self.assertEqual(load_initial_state(path), ([31.8, 31.8], [1, 2]))
 
     @unittest.skipUnless(SIMION.is_file(), "official SIMION Lua CLI unavailable")
     def test_official_simion_cli_successor_callback_vectors(self) -> None:

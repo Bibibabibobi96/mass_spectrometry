@@ -82,11 +82,6 @@ def load_initial_state(path: Path) -> tuple[list[float], list[int]]:
     return values, actual_ids
 
 
-def load_birth_times(path: Path) -> list[float]:
-    """Compatibility API returning only canonical clocks."""
-    return load_initial_state(path)[0]
-
-
 def load_row_map(path: Path, expected_source_ids: list[int]) -> list[int]:
     """Load the explicit SIMION-row to canonical-source-ID authority."""
     with path.open(encoding="utf-8-sig", newline="") as handle:
