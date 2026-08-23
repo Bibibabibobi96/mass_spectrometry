@@ -26,10 +26,6 @@ param(
   [string]$ArchitectureGenerationId = '',
   [string]$ThreeZoneCandidate = '',
   [string]$ThreeZoneCandidateSha256 = '',
-  [string]$ThreeZoneTopologyId = '',
-  [string]$ThreeZoneGeometryId = '',
-  [string]$ThreeZoneFrontendElectrodeTopologyId = '',
-  [string]$ThreeZoneFieldId = '',
   [string]$TheoryWorkingPoint = '',
   [string]$TheoryWorkingPointSha256 = '',
   [double]$ExpectedBoreRadiusMm = 0,
@@ -146,20 +142,13 @@ function Assert-RfThreeZoneArgumentSet {
   param(
     [Parameter(Mandatory)][string]$LayoutProfileId,
     [string]$Candidate = '',
-    [string]$CandidateSha256 = '',
-    [string]$TopologyId = '',
-    [string]$GeometryId = '',
-    [string]$FrontendElectrodeTopologyId = '',
-    [string]$FieldId = ''
+    [string]$CandidateSha256 = ''
   )
   $isThreeZoneLayout = $LayoutProfileId -in @(
     'three_zone_t5_primary_v1',
     'three_zone_t5_primary_shaping_rings_1p4_v1'
   )
-  $values = @(
-    $Candidate,$CandidateSha256,$TopologyId,$GeometryId,
-    $FrontendElectrodeTopologyId,$FieldId
-  )
+  $values = @($Candidate,$CandidateSha256)
   $hasAny = @($values | Where-Object {
     -not [string]::IsNullOrWhiteSpace([string]$_)
   }).Count -gt 0
@@ -184,20 +173,20 @@ function Assert-RfThreeZoneRuntimeIdentity {
     [Parameter(Mandatory)]$FieldProfile,
     [Parameter(Mandatory)][string]$LayoutProfileId,
     [Parameter(Mandatory)][string]$ArchitectureGenerationId,
-    [Parameter(Mandatory)][string]$TopologyId,
-    [Parameter(Mandatory)][string]$GeometryId,
-    [Parameter(Mandatory)][string]$FrontendElectrodeTopologyId,
-    [Parameter(Mandatory)][string]$FieldId
-    ,[Parameter()]$TheoryWorkingPoint = $null
+    [Parameter()]$TheoryWorkingPoint = $null
   )
+  $topologyId = [string]$Candidate.identities.topology_id
+  $geometryId = [string]$Candidate.identities.geometry_id
+  $frontendElectrodeTopologyId = [string]$FrontendElectrodeTopology.topology_id
+  $fieldId = [string]$FieldProfile.field_id
   if ([int]$Candidate.schema_version -ne 1 -or
       [string]$Candidate.role -ne
       'oatof_three_zone_simion_candidate_resolved' -or
       [string]$Candidate.qualification -ne 'CANDIDATE_ONLY' -or
       [string]$Candidate.compiler_mode -ne
       'T5_FROZEN_PRIMARY_AND_BRANCH_ONLY' -or
-      [string]$Candidate.identities.topology_id -ne $TopologyId -or
-      [string]$Candidate.identities.geometry_id -ne $GeometryId -or
+      $topologyId -ne 'three_zone_accelerator_ideal_v1' -or
+      $geometryId -ne 'three_zone_focus_origin_planes_v1' -or
       [string]$Candidate.identities.field_id -ne
       'three_zone_piecewise_uniform_ideal_field_v1' -or
       [string]$Geometry.single_flight_layout_derivation.layout_profile_id -ne
@@ -206,20 +195,19 @@ function Assert-RfThreeZoneRuntimeIdentity {
       $ArchitectureGenerationId -or
       [string]$Geometry.single_flight_layout_derivation.design_compilation.candidate.sha256 -ne
       $CandidateSha256 -or
-      [string]$Geometry.accelerator_topology.topology_id -ne $TopologyId -or
-      [string]$FrontendContract.accelerator_topology_id -ne $TopologyId -or
-      [string]$FrontendElectrodeTopology.topology_id -ne
-      $FrontendElectrodeTopologyId -or
+      [string]$Geometry.accelerator_topology.topology_id -ne $topologyId -or
+      [string]$FrontendContract.accelerator_topology_id -ne $topologyId -or
+      [string]::IsNullOrWhiteSpace($frontendElectrodeTopologyId) -or
       [string]$RegionField.layout_geometry.sha256 -ne $GeometrySha256 -or
       [string]$RegionField.semantic.accelerator_topology.topology_id -ne
-      $TopologyId -or
+      $topologyId -or
       [string]$RegionField.semantic.canonical_profile_id -ne
       [string]$FieldProfile.profile_id -or
-      [string]$FieldProfile.topology_id -ne $TopologyId -or
-      [string]$FieldProfile.geometry_id -ne $GeometryId -or
+      [string]$FieldProfile.topology_id -ne $topologyId -or
+      [string]$FieldProfile.geometry_id -ne $geometryId -or
       [string]$FieldProfile.frontend_electrode_topology_id -ne
-      $FrontendElectrodeTopologyId -or
-      [string]$FieldProfile.field_id -ne $FieldId) {
+      $frontendElectrodeTopologyId -or
+      [string]::IsNullOrWhiteSpace($fieldId)) {
     throw 'Frozen three-zone Candidate/runtime identity differs.'
   }
   foreach ($mappingName in @('planes_global_z_mm','potentials_v')) {
@@ -246,7 +234,7 @@ function Assert-RfThreeZoneRuntimeIdentity {
 }
 
 
-$hasThreeZoneCandidate = Assert-RfThreeZoneArgumentSet -LayoutProfileId $LayoutProfileId -Candidate $ThreeZoneCandidate -CandidateSha256 $ThreeZoneCandidateSha256 -TopologyId $ThreeZoneTopologyId -GeometryId $ThreeZoneGeometryId -FrontendElectrodeTopologyId $ThreeZoneFrontendElectrodeTopologyId -FieldId $ThreeZoneFieldId
+$hasThreeZoneCandidate = Assert-RfThreeZoneArgumentSet -LayoutProfileId $LayoutProfileId -Candidate $ThreeZoneCandidate -CandidateSha256 $ThreeZoneCandidateSha256
 
 if (-not (Test-Path -LiteralPath $SimionExe -PathType Leaf)) { throw "SIMION is missing: $SimionExe" }
 $runProjectId = 'rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer'
@@ -968,6 +956,10 @@ try {
       }
       $theoryWorkingPointDocument = Get-Content -LiteralPath $TheoryWorkingPoint -Raw -Encoding UTF8 | ConvertFrom-Json
     }
+    $threeZoneTopologyId = [string]$threeZoneCandidateDocument.identities.topology_id
+    $threeZoneGeometryId = [string]$threeZoneCandidateDocument.identities.geometry_id
+    $threeZoneFrontendElectrodeTopologyId = [string]$frontendElectrodeTopology.topology_id
+    $threeZoneFieldId = [string]$selectedFieldProfile.field_id
     $threeZoneRuntimeIdentity = @{
       Candidate = $threeZoneCandidateDocument
       CandidateSha256 = $ThreeZoneCandidateSha256
@@ -981,10 +973,6 @@ try {
       FieldProfile = $selectedFieldProfile
       LayoutProfileId = $LayoutProfileId
       ArchitectureGenerationId = $ArchitectureGenerationId
-      TopologyId = $ThreeZoneTopologyId
-      GeometryId = $ThreeZoneGeometryId
-      FrontendElectrodeTopologyId = $ThreeZoneFrontendElectrodeTopologyId
-      FieldId = $ThreeZoneFieldId
       TheoryWorkingPoint = $theoryWorkingPointDocument
     }
     Assert-RfThreeZoneRuntimeIdentity @threeZoneRuntimeIdentity
@@ -1390,10 +1378,10 @@ try {
       @([string]$identity.layout_profile_id,$LayoutProfileId),
       @([string]$identity.architecture_generation_id,$ArchitectureGenerationId),
       @([string]$identity.candidate_sha256,$ThreeZoneCandidateSha256),
-      @([string]$identity.topology_id,$ThreeZoneTopologyId),
-      @([string]$identity.geometry_id,$ThreeZoneGeometryId),
-      @([string]$identity.frontend_electrode_topology_id,$ThreeZoneFrontendElectrodeTopologyId),
-      @([string]$identity.field_id,$ThreeZoneFieldId),
+      @([string]$identity.topology_id,$threeZoneTopologyId),
+      @([string]$identity.geometry_id,$threeZoneGeometryId),
+      @([string]$identity.frontend_electrode_topology_id,$threeZoneFrontendElectrodeTopologyId),
+      @([string]$identity.field_id,$threeZoneFieldId),
       @([string]$identity.field_profile_id,$selectedFieldProfileId),
       @([string]$identity.region_field_semantic_sha256,$ResolvedRegionFieldSemanticSha256),
       @([string]$identity.frontend_grid_profile_id,$selectedGridProfileId),
@@ -1901,12 +1889,12 @@ try {
     $runConfiguration.inputs.three_zone_t5_candidate =
       $threeZoneCandidateFrozen
     $runConfiguration.parameters.three_zone_topology_id =
-      $ThreeZoneTopologyId
+      $threeZoneTopologyId
     $runConfiguration.parameters.three_zone_geometry_id =
-      $ThreeZoneGeometryId
+      $threeZoneGeometryId
     $runConfiguration.parameters.three_zone_frontend_electrode_topology_id =
-      $ThreeZoneFrontendElectrodeTopologyId
-    $runConfiguration.parameters.three_zone_field_id = $ThreeZoneFieldId
+      $threeZoneFrontendElectrodeTopologyId
+    $runConfiguration.parameters.three_zone_field_id = $threeZoneFieldId
     $runConfiguration.parameters.three_zone_candidate_sha256 =
       $ThreeZoneCandidateSha256
     $runConfiguration.parameters.accelerator_intermediate2_forward_launched_upper_bound =

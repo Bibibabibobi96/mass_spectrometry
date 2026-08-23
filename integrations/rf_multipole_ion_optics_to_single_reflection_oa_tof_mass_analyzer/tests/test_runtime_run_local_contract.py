@@ -273,10 +273,7 @@ if ($null -eq $fn) {{ throw 'three-zone argument assertion is missing' }}
 . ([scriptblock]::Create($fn.Extent.Text))
 $valid = @{{
   LayoutProfileId='three_zone_t5_primary_v1'; Candidate='candidate.json'
-  CandidateSha256=('A' * 64); TopologyId='three_zone_accelerator_ideal_v1'
-  GeometryId='three_zone_focus_origin_planes_v1'
-  FrontendElectrodeTopologyId='three_zone_frontend_v1'
-  FieldId='three_zone_refined_pa_field_v1'
+  CandidateSha256=('A' * 64)
 }}
 if (-not (Assert-RfThreeZoneArgumentSet @valid)) {{ throw 'valid set rejected' }}
 if (Assert-RfThreeZoneArgumentSet -LayoutProfileId 'theory_source_z10_d1_3') {{
@@ -318,12 +315,15 @@ try {{
             "single_flight_three_zone_candidate_path",
             "single_flight_three_zone_candidate_sha256",
             "ThreeZoneCandidate",
+        ):
+            self.assertIn(name, adapter)
+        for name in (
             "ThreeZoneTopologyId",
             "ThreeZoneGeometryId",
             "ThreeZoneFrontendElectrodeTopologyId",
             "ThreeZoneFieldId",
         ):
-            self.assertIn(name, adapter)
+            self.assertNotIn(name, adapter)
         self.assertIn("$workspaceArtifactRoot", adapter)
         self.assertIn("Assert-RfThreeZoneRuntimeIdentity", runner)
         self.assertIn("three_zone_t5_candidate_resolved.json", runner)
@@ -406,10 +406,6 @@ $arguments = @{{
   RegionField=$region; FieldProfile=$field
   LayoutProfileId='three_zone_t5_primary_v1'
   ArchitectureGenerationId='three_zone_t5_frozen_primary_v1'
-  TopologyId='three_zone_accelerator_ideal_v1'
-  GeometryId='three_zone_focus_origin_planes_v1'
-  FrontendElectrodeTopologyId='three_zone_frontend_v1'
-  FieldId='three_zone_refined_pa_field_v1'
 }}
 Assert-RfThreeZoneRuntimeIdentity @arguments
 $region.semantic.accelerator_topology = [pscustomobject]@{{

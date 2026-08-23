@@ -921,10 +921,6 @@ $upstreamResolvedDesignPath = [IO.Path]::GetFullPath(
 $resolvedOatofGeometryPath = $null
 $resolvedPulseSchedulePath = $null
 $resolvedPopulationContractPath = $null
-$threeZoneTopologyId = ''
-$threeZoneGeometryId = ''
-$threeZoneFrontendElectrodeTopologyId = ''
-$threeZoneFieldId = ''
 if ([int]$campaign.schema_version -ge 3) {
   $resolvedOatofGeometryPath = [IO.Path]::GetFullPath(
     (Join-Path $runDirectory $frozenArguments.resolved_oatof_geometry_filename)
@@ -941,15 +937,6 @@ if ([int]$campaign.schema_version -ge 3) {
     (Join-Path $runDirectory $frozenArguments.resolved_population_contract_filename)
   )
   $layoutRegistryPath = Join-Path $integrationRoot 'config\single_flight_layout_profiles.json'
-  $layoutRegistryDocument = Get-Content -LiteralPath $layoutRegistryPath -Raw -Encoding UTF8 |
-    ConvertFrom-Json
-  $selectedLayoutProfiles = @($layoutRegistryDocument.profiles | Where-Object {
-    [string]$_.layout_profile_id -eq [string]$frozenArguments.layout_profile_id
-  })
-  if ($selectedLayoutProfiles.Count -ne 1) {
-    throw 'Prepared single-flight layout profile no longer resolves uniquely.'
-  }
-  $selectedLayoutProfile = $selectedLayoutProfiles[0]
   $declaredArchitectureGeneration = if (
     $experiment.PSObject.Properties.Name -contains 'architecture_generation_id'
   ) { [string]$experiment.architecture_generation_id } else {
@@ -994,26 +981,6 @@ if ([int]$campaign.schema_version -ge 3) {
       [double]$geometryDocument.geometry_mm.flight_tube_r -ne
         [double]$frozenArguments.resolved_oatof_shield_inner_radius_mm) {
     throw 'Prepared oaTOF geometry identity differs.'
-  }
-  if ($isThreeZoneLayout) {
-    $singleFlightConfigurationPath = Join-Path $integrationRoot 'config\simion_single_flight.json'
-    $singleFlightConfiguration = Get-Content -LiteralPath $singleFlightConfigurationPath -Raw -Encoding UTF8 | ConvertFrom-Json
-    $selectedFieldProfiles = @(
-      $singleFlightConfiguration.accelerator_field_profiles | Where-Object {
-        [string]$_.profile_id -eq
-        [string]$resolvedRegionFieldContract.semantic.canonical_profile_id
-      }
-    )
-    if ($selectedFieldProfiles.Count -ne 1) {
-      throw 'Three-zone field profile no longer resolves uniquely.'
-    }
-    $selectedFieldProfile = $selectedFieldProfiles[0]
-    $threeZoneTopologyId = [string]$selectedLayoutProfile.topology_id
-    $threeZoneGeometryId = [string]$selectedLayoutProfile.geometry_id
-    $threeZoneFrontendElectrodeTopologyId = [string](
-      $selectedLayoutProfile.frontend_electrode_topology_id
-    )
-    $threeZoneFieldId = [string]$selectedFieldProfile.field_id
   }
   $resolvedPopulation = Get-Content -LiteralPath $resolvedPopulationContractPath `
     -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -1262,11 +1229,6 @@ if ($executionStrategy -eq 'simion_single_flight') {
       $runnerArguments.ThreeZoneCandidate = $threeZoneCandidatePath
       $runnerArguments.ThreeZoneCandidateSha256 =
         [string]$frozenArguments.single_flight_three_zone_candidate_sha256
-      $runnerArguments.ThreeZoneTopologyId = $threeZoneTopologyId
-      $runnerArguments.ThreeZoneGeometryId = $threeZoneGeometryId
-      $runnerArguments.ThreeZoneFrontendElectrodeTopologyId =
-        $threeZoneFrontendElectrodeTopologyId
-      $runnerArguments.ThreeZoneFieldId = $threeZoneFieldId
       if ($null -ne $sourceZvzTheoryWorkingPointPath) {
         $runnerArguments.TheoryWorkingPoint = $sourceZvzTheoryWorkingPointPath
         $runnerArguments.TheoryWorkingPointSha256 =
