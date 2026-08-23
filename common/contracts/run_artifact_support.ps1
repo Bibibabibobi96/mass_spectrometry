@@ -133,6 +133,58 @@ function Initialize-RunRecord {
     -SummaryRole $TerminalSummaryRole -Software $Software
 }
 
+function Get-RunPackagePathCapacity {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$RunDirectory,
+    [string[]]$AdditionalDirectories=@(),
+    [string[]]$ExpectedExecutionRelativePaths=@()
+  )
+  # 259 is the largest path accepted by legacy Win32 callers (MAX_PATH minus
+  # the terminating NUL).  This is deliberately a compatibility diagnostic,
+  # not a claim about a particular solver's own path limit.
+  $legacyWindowsPathLimit=259
+  $relativePaths=@(
+    'inputs','results','logs','run_config.json','summary.json','run_manifest.json'
+  )
+  $relativePaths+=$AdditionalDirectories
+  $relativePaths+=$ExpectedExecutionRelativePaths
+  $entries=foreach($relative in $relativePaths|Sort-Object -Unique){
+    if([string]::IsNullOrWhiteSpace($relative)){
+      throw 'Execution path capacity entries must not be empty.'
+    }
+    if([IO.Path]::IsPathRooted($relative)-or
+       $relative.Split([IO.Path]::DirectorySeparatorChar,[IO.Path]::AltDirectorySeparatorChar)-contains'..'){
+      throw "Execution path capacity entry must be a contained relative path: $relative"
+    }
+    $path=[IO.Path]::GetFullPath((Join-Path $RunDirectory $relative))
+    [pscustomobject]@{
+      relative_path=$relative.Replace('\','/');path=$path;length=$path.Length
+      legacy_windows_path_limit=$legacyWindowsPathLimit
+      remaining_legacy_windows_characters=$legacyWindowsPathLimit-$path.Length
+      legacy_windows_compatible=($path.Length-le$legacyWindowsPathLimit)
+    }
+  }
+  $longest=@($entries|Sort-Object length -Descending|Select-Object -First 1)
+  return [pscustomobject]@{
+    schema_version=1;role='run_package_execution_path_capacity'
+    run_directory=[IO.Path]::GetFullPath($RunDirectory)
+    legacy_windows_path_limit=$legacyWindowsPathLimit
+    entries=@($entries);longest_path=$longest[0]
+    legacy_windows_compatible=(@($entries|Where-Object{-not$_.legacy_windows_compatible}).Count-eq 0)
+  }
+}
+
+function Assert-RunPackagePathCapacity {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][pscustomobject]$Report)
+  if($Report.legacy_windows_compatible){return $Report}
+  $overLimit=@($Report.entries|Where-Object{-not$_.legacy_windows_compatible}|Select-Object -First 1)[0]
+  throw ('EXECUTION_PATH_CAPACITY=FAIL PATH={0} LENGTH={1} LEGACY_WINDOWS_LIMIT={2} '+
+    'REMEDIATION=choose a shorter MASS_SPECTROMETRY_EXECUTION_ROOT or shorten the declared relative path.' -f
+    $overLimit.path,$overLimit.length,$overLimit.legacy_windows_path_limit)
+}
+
 function New-RunPackage {
   [CmdletBinding()]
   param(
@@ -148,7 +200,8 @@ function New-RunPackage {
     [string]$RetentionReason='',
     [string[]]$AdditionalDirectories=@(),
     [switch]$UseShortExecutionPath,
-    [string]$ExecutionRoot=''
+    [string]$ExecutionRoot='',
+    [string[]]$ExpectedExecutionRelativePaths=@()
   )
   if($RetentionContractEnabled-and$RetentionClass-ne'compact'-and[string]::IsNullOrWhiteSpace($RetentionReason)){
     throw "RetentionReason is required for artifact retention class $RetentionClass."
@@ -179,8 +232,12 @@ function New-RunPackage {
       }else{'C:\tmp\ms'}
     }
     $executionRootPath=[IO.Path]::GetFullPath($ExecutionRoot)
-    New-Item -ItemType Directory -Force -Path $executionRootPath|Out-Null
     $executionAlias=Join-Path $executionRootPath ('run_'+[guid]::NewGuid().ToString('N'))
+    $pathCapacity=Get-RunPackagePathCapacity -RunDirectory $executionAlias `
+      -AdditionalDirectories $AdditionalDirectories `
+      -ExpectedExecutionRelativePaths $ExpectedExecutionRelativePaths
+    $null=Assert-RunPackagePathCapacity -Report $pathCapacity
+    New-Item -ItemType Directory -Force -Path $executionRootPath|Out-Null
     New-Item -ItemType Directory -Force -Path $artifactRunDir|Out-Null
     try{
       New-Item -ItemType Junction -Path $executionAlias -Target $artifactRunDir|Out-Null
@@ -189,11 +246,15 @@ function New-RunPackage {
       throw "Could not create short execution alias $executionAlias for artifact run ${artifactRunDir}: $($_.Exception.Message)"
     }
     $runDir=$executionAlias
+  }else{
+    $pathCapacity=Get-RunPackagePathCapacity -RunDirectory $runDir `
+      -AdditionalDirectories $AdditionalDirectories `
+      -ExpectedExecutionRelativePaths $ExpectedExecutionRelativePaths
   }
   $package=[ordered]@{
     python=$python;run_dir=$runDir;input_dir=(Join-Path $runDir 'inputs');result_dir=(Join-Path $runDir 'results');
     log_dir=(Join-Path $runDir 'logs');run_config=(Join-Path $runDir 'run_config.json');summary=(Join-Path $runDir 'summary.json');
-    artifact_run_dir=$artifactRunDir;execution_alias=$executionAlias
+    artifact_run_dir=$artifactRunDir;execution_alias=$executionAlias;execution_path_capacity=$pathCapacity
   }
   $directories=@($package.input_dir,$package.result_dir,$package.log_dir)
   foreach($relative in $AdditionalDirectories){$directories+=Join-Path $runDir $relative}

@@ -197,6 +197,25 @@ try {
   if (-not (Test-Path -LiteralPath $shortPackage.artifact_run_dir -PathType Container)) {
     throw 'Short execution alias cleanup removed the artifact run.'
   }
+  Assert-Equal $shortPackage.execution_path_capacity.role 'run_package_execution_path_capacity' `
+    'Short package path capacity role changed.'
+  if (-not $shortPackage.execution_path_capacity.legacy_windows_compatible) {
+    throw 'Short execution alias did not satisfy legacy Windows path capacity.'
+  }
+  try {
+    $tooLongRelativePath = ('x' * 260) + '.json'
+    New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $testRoot `
+      -RunId '20260723_170006__test__cross__short-path-capacity__n1' `
+      -Project 'single_reflection_oa_tof_mass_analyzer' -Mode 'contract_test' `
+      -Software @('contract test') -UseShortExecutionPath -ExecutionRoot $executionRoot `
+      -ExpectedExecutionRelativePaths $tooLongRelativePath | Out-Null
+    throw 'Expected execution path capacity rejection did not occur.'
+  } catch {
+    if ($_.Exception.Message -notmatch 'EXECUTION_PATH_CAPACITY=FAIL') { throw }
+  }
+  if (Test-Path -LiteralPath (Join-Path $testRoot 'runs\20260723_170006__test__cross__short-path-capacity__n1')) {
+    throw 'Path-capacity rejection created an artifact run directory.'
+  }
 
   $writeError = ''
   try {
