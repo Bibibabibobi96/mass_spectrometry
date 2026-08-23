@@ -1873,6 +1873,22 @@ def _unique_profile(document: dict[str, Any], profile_id: str) -> dict[str, Any]
     return matches[0]
 
 
+def _unique_named_profile(
+    configuration: dict[str, Any],
+    collection: str,
+    profile_id: str,
+    failure: str,
+) -> dict[str, Any]:
+    matches = [
+        item
+        for item in configuration[collection]
+        if item["profile_id"] == profile_id
+    ]
+    if len(matches) != 1:
+        raise ContractError(failure)
+    return matches[0]
+
+
 def _source_solver(manifest: dict[str, Any]) -> str:
     software = " ".join(str(item).lower() for item in manifest.get("software", []))
     matches = [name for name in ("comsol", "simion") if name in software]
@@ -2146,18 +2162,15 @@ def prepare_family_source_closure(
             raise ContractError(
                 "source materialization profiles require SIMION single flight"
             )
-        matches = [
-            item
-            for item in single_flight_configuration["source_materialization_profiles"]
-            if item["profile_id"] == source_materialization_profile_id
-        ]
-        if len(matches) != 1:
-            raise ContractError(
-                "single-flight source materialization profile must resolve exactly once"
-            )
         try:
             source_materialization_profile = resolve_source_materialization_profile(
-                matches[0], root / "integrations" / INTEGRATION_ID,
+                _unique_named_profile(
+                    single_flight_configuration,
+                    "source_materialization_profiles",
+                    source_materialization_profile_id,
+                    "single-flight source materialization profile must resolve exactly once",
+                ),
+                root / "integrations" / INTEGRATION_ID,
             )
         except (KeyError, OSError, TypeError, ValueError) as exc:
             raise ContractError("source phase-space authority is invalid") from exc
@@ -2168,14 +2181,12 @@ def prepare_family_source_closure(
             if frontend_grid_profile_id is not None
             else single_flight_configuration["default_frontend_grid_profile_id"]
         )
-        grid_profiles = [
-            item for item in single_flight_configuration["frontend_grid_profiles"]
-            if item["profile_id"] == selected_frontend_grid_profile_id
-        ]
-        if len(grid_profiles) != 1:
-            raise ContractError(
-                "single-flight frontend grid profile must resolve exactly once"
-            )
+        grid_profiles = [_unique_named_profile(
+            single_flight_configuration,
+            "frontend_grid_profiles",
+            selected_frontend_grid_profile_id,
+            "single-flight frontend grid profile must resolve exactly once",
+        )]
     elif frontend_grid_profile_id is not None:
         raise ContractError(
             "single-flight frontend grid profiles require SIMION single flight"
@@ -2187,47 +2198,45 @@ def prepare_family_source_closure(
     if oatof_numerical_profile_id is not None:
         if execution_strategy != "simion_single_flight":
             raise ContractError("oaTOF numerical profiles require SIMION single flight")
-        matches = [
-            item for item in single_flight_configuration["oatof_numerical_profiles"]
-            if item["profile_id"] == oatof_numerical_profile_id
-        ]
-        if len(matches) != 1:
-            raise ContractError("oaTOF numerical profile must resolve exactly once")
-        oatof_numerical_profile = matches[0]
+        oatof_numerical_profile = _unique_named_profile(
+            single_flight_configuration,
+            "oatof_numerical_profiles",
+            oatof_numerical_profile_id,
+            "oaTOF numerical profile must resolve exactly once",
+        )
     trajectory_quality_profile_id = experiment.get(
         "single_flight_trajectory_quality_profile_id"
     )
     if trajectory_quality_profile_id is not None:
-        matches = [
-            item for item in single_flight_configuration["trajectory_quality_profiles"]
-            if item["profile_id"] == trajectory_quality_profile_id
-        ]
-        if len(matches) != 1:
-            raise ContractError("trajectory-quality profile must resolve exactly once")
+        _unique_named_profile(
+            single_flight_configuration,
+            "trajectory_quality_profiles",
+            trajectory_quality_profile_id,
+            "trajectory-quality profile must resolve exactly once",
+        )
     time_integration_profile_id = experiment.get(
         "single_flight_time_integration_profile_id"
     )
     time_integration_profile = None
     if time_integration_profile_id is not None:
-        matches = [
-            item for item in single_flight_configuration["time_integration_profiles"]
-            if item["profile_id"] == time_integration_profile_id
-        ]
-        if len(matches) != 1:
-            raise ContractError("time-integration profile must resolve exactly once")
-        time_integration_profile = matches[0]
+        time_integration_profile = _unique_named_profile(
+            single_flight_configuration,
+            "time_integration_profiles",
+            time_integration_profile_id,
+            "time-integration profile must resolve exactly once",
+        )
     spatial_window_profile_id = experiment.get(
         "single_flight_spatial_window_profile_id"
     )
     if spatial_window_profile_id is not None:
         if execution_strategy != "simion_single_flight":
             raise ContractError("spatial-window profiles require SIMION single flight")
-        matches = [
-            item for item in single_flight_configuration["spatial_window_profiles"]
-            if item["profile_id"] == spatial_window_profile_id
-        ]
-        if len(matches) != 1:
-            raise ContractError("spatial-window profile must resolve exactly once")
+        _unique_named_profile(
+            single_flight_configuration,
+            "spatial_window_profiles",
+            spatial_window_profile_id,
+            "spatial-window profile must resolve exactly once",
+        )
     accelerator_field_profile_id = (
         canonical_profile_id(experiment.get(
             "single_flight_accelerator_field_profile_id",
