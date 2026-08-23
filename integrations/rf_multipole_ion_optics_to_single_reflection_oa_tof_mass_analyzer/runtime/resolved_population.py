@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from common.contracts.machine_contracts import ContractError, validate_schema
+
+
+RESOLVED_POPULATION_SCHEMA_PATH = (
+    Path(__file__).resolve().parents[1] / "config" / "schemas" /
+    "rf_oatof_resolved_population_contract.schema.json"
+)
 
 
 def compile_resolved_population_contract(
@@ -118,5 +125,5 @@ def compile_resolved_population_contract(
         contract["cohort_authority_mode"] = cohort_authority_mode
     if source_release_mode is not None:
         contract["source_release_mode"] = source_release_mode
-    validate_schema(contract, "rf_oatof_resolved_population_contract.schema.json")
+    validate_schema(contract, RESOLVED_POPULATION_SCHEMA_PATH)
     return contract
