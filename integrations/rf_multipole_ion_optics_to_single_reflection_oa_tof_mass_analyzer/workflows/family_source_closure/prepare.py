@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import copy
 import csv
+from dataclasses import dataclass
 import hashlib
 import json
 import math
@@ -1889,6 +1890,166 @@ def _unique_named_profile(
     return matches[0]
 
 
+@dataclass(frozen=True)
+class ResolvedSingleFlightProfiles:
+    """Validated single-flight configuration selected by one campaign row."""
+
+    configuration: dict[str, Any]
+    frontend_grid_profile_id: str | None
+    source_materialization_profile_id: str | None
+    source_materialization_profile: dict[str, Any] | None
+    grid_profiles: list[dict[str, Any]]
+    oatof_numerical_profile: dict[str, Any] | None
+    time_integration_profile: dict[str, Any] | None
+    accelerator_field_profile_id: str | None
+    field_profiles: list[dict[str, Any]]
+    three_zone_region_modes: dict[str, Any] | None
+
+
+def _resolve_single_flight_profiles(
+    root: Path,
+    experiment: dict[str, Any],
+    execution_strategy: str,
+) -> ResolvedSingleFlightProfiles:
+    """Load and fail-close validate all runtime profiles selected by one row."""
+
+    configuration = _load(
+        root / "integrations" / INTEGRATION_ID / "config" /
+        "simion_single_flight.json"
+    )
+    frontend_grid_profile_id = experiment.get("single_flight_frontend_grid_profile_id")
+    source_materialization_profile_id = experiment.get(
+        "single_flight_source_materialization_profile_id"
+    )
+    source_materialization_profile = None
+    if source_materialization_profile_id is not None:
+        if execution_strategy != "simion_single_flight":
+            raise ContractError(
+                "source materialization profiles require SIMION single flight"
+            )
+        try:
+            source_materialization_profile = resolve_source_materialization_profile(
+                _unique_named_profile(
+                    configuration,
+                    "source_materialization_profiles",
+                    source_materialization_profile_id,
+                    "single-flight source materialization profile must resolve exactly once",
+                ),
+                root / "integrations" / INTEGRATION_ID,
+            )
+        except (KeyError, OSError, TypeError, ValueError) as exc:
+            raise ContractError("source phase-space authority is invalid") from exc
+    grid_profiles: list[dict[str, Any]] = []
+    if execution_strategy == "simion_single_flight":
+        selected_frontend_grid_profile_id = (
+            frontend_grid_profile_id
+            if frontend_grid_profile_id is not None
+            else configuration["default_frontend_grid_profile_id"]
+        )
+        grid_profiles = [_unique_named_profile(
+            configuration,
+            "frontend_grid_profiles",
+            selected_frontend_grid_profile_id,
+            "single-flight frontend grid profile must resolve exactly once",
+        )]
+    elif frontend_grid_profile_id is not None:
+        raise ContractError(
+            "single-flight frontend grid profiles require SIMION single flight"
+        )
+    oatof_numerical_profile_id = experiment.get(
+        "single_flight_oatof_numerical_profile_id"
+    )
+    oatof_numerical_profile = None
+    if oatof_numerical_profile_id is not None:
+        if execution_strategy != "simion_single_flight":
+            raise ContractError("oaTOF numerical profiles require SIMION single flight")
+        oatof_numerical_profile = _unique_named_profile(
+            configuration,
+            "oatof_numerical_profiles",
+            oatof_numerical_profile_id,
+            "oaTOF numerical profile must resolve exactly once",
+        )
+    trajectory_quality_profile_id = experiment.get(
+        "single_flight_trajectory_quality_profile_id"
+    )
+    if trajectory_quality_profile_id is not None:
+        _unique_named_profile(
+            configuration,
+            "trajectory_quality_profiles",
+            trajectory_quality_profile_id,
+            "trajectory-quality profile must resolve exactly once",
+        )
+    time_integration_profile_id = experiment.get(
+        "single_flight_time_integration_profile_id"
+    )
+    time_integration_profile = None
+    if time_integration_profile_id is not None:
+        time_integration_profile = _unique_named_profile(
+            configuration,
+            "time_integration_profiles",
+            time_integration_profile_id,
+            "time-integration profile must resolve exactly once",
+        )
+    spatial_window_profile_id = experiment.get(
+        "single_flight_spatial_window_profile_id"
+    )
+    if spatial_window_profile_id is not None:
+        if execution_strategy != "simion_single_flight":
+            raise ContractError("spatial-window profiles require SIMION single flight")
+        _unique_named_profile(
+            configuration,
+            "spatial_window_profiles",
+            spatial_window_profile_id,
+            "spatial-window profile must resolve exactly once",
+        )
+    accelerator_field_profile_id = (
+        canonical_profile_id(experiment.get(
+            "single_flight_accelerator_field_profile_id",
+            configuration["default_accelerator_field_profile_id"],
+        ))
+        if execution_strategy == "simion_single_flight"
+        else None
+    )
+    field_profiles: list[dict[str, Any]] = []
+    if accelerator_field_profile_id is not None:
+        if execution_strategy != "simion_single_flight":
+            raise ContractError(
+                "single-flight accelerator field profiles require SIMION single flight"
+            )
+        field_profiles = [
+            item for item in configuration["accelerator_field_profiles"]
+            if canonical_profile_id(item["profile_id"]) == accelerator_field_profile_id
+        ]
+        if len(field_profiles) != 1:
+            raise ContractError(
+                "single-flight accelerator field profile must resolve exactly once"
+            )
+    three_zone_region_modes = experiment.get("single_flight_three_zone_region_modes")
+    if accelerator_field_profile_id == "three_zone_explicit_region_modes":
+        expected_region_modes = {
+            "accelerator_zone1", "accelerator_zone2", "accelerator_zone3",
+            "drift", "reflectron_stage1", "reflectron_stage2",
+        }
+        if not isinstance(three_zone_region_modes, dict) or set(
+            three_zone_region_modes
+        ) != expected_region_modes:
+            raise ContractError("explicit three-zone field profile requires all region modes")
+    elif three_zone_region_modes is not None:
+        raise ContractError("explicit three-zone region modes require their explicit field profile")
+    return ResolvedSingleFlightProfiles(
+        configuration=configuration,
+        frontend_grid_profile_id=frontend_grid_profile_id,
+        source_materialization_profile_id=source_materialization_profile_id,
+        source_materialization_profile=source_materialization_profile,
+        grid_profiles=grid_profiles,
+        oatof_numerical_profile=oatof_numerical_profile,
+        time_integration_profile=time_integration_profile,
+        accelerator_field_profile_id=accelerator_field_profile_id,
+        field_profiles=field_profiles,
+        three_zone_region_modes=three_zone_region_modes,
+    )
+
+
 def _source_solver(manifest: dict[str, Any]) -> str:
     software = " ".join(str(item).lower() for item in manifest.get("software", []))
     matches = [name for name in ("comsol", "simion") if name in software]
@@ -2146,130 +2307,21 @@ def prepare_family_source_closure(
         and pulse_schedule_policy is None
     ):
         raise ContractError("single-flight execution requires a pulse schedule")
-    frontend_grid_profile_id = experiment.get(
-        "single_flight_frontend_grid_profile_id"
+    resolved_profiles = _resolve_single_flight_profiles(
+        root, experiment, execution_strategy
     )
-    single_flight_configuration = _load(
-        root / "integrations" / INTEGRATION_ID / "config" /
-        "simion_single_flight.json"
+    single_flight_configuration = resolved_profiles.configuration
+    frontend_grid_profile_id = resolved_profiles.frontend_grid_profile_id
+    source_materialization_profile_id = (
+        resolved_profiles.source_materialization_profile_id
     )
-    source_materialization_profile_id = experiment.get(
-        "single_flight_source_materialization_profile_id"
-    )
-    source_materialization_profile = None
-    if source_materialization_profile_id is not None:
-        if execution_strategy != "simion_single_flight":
-            raise ContractError(
-                "source materialization profiles require SIMION single flight"
-            )
-        try:
-            source_materialization_profile = resolve_source_materialization_profile(
-                _unique_named_profile(
-                    single_flight_configuration,
-                    "source_materialization_profiles",
-                    source_materialization_profile_id,
-                    "single-flight source materialization profile must resolve exactly once",
-                ),
-                root / "integrations" / INTEGRATION_ID,
-            )
-        except (KeyError, OSError, TypeError, ValueError) as exc:
-            raise ContractError("source phase-space authority is invalid") from exc
-    grid_profiles: list[dict[str, Any]] = []
-    if execution_strategy == "simion_single_flight":
-        selected_frontend_grid_profile_id = (
-            frontend_grid_profile_id
-            if frontend_grid_profile_id is not None
-            else single_flight_configuration["default_frontend_grid_profile_id"]
-        )
-        grid_profiles = [_unique_named_profile(
-            single_flight_configuration,
-            "frontend_grid_profiles",
-            selected_frontend_grid_profile_id,
-            "single-flight frontend grid profile must resolve exactly once",
-        )]
-    elif frontend_grid_profile_id is not None:
-        raise ContractError(
-            "single-flight frontend grid profiles require SIMION single flight"
-        )
-    oatof_numerical_profile_id = experiment.get(
-        "single_flight_oatof_numerical_profile_id"
-    )
-    oatof_numerical_profile = None
-    if oatof_numerical_profile_id is not None:
-        if execution_strategy != "simion_single_flight":
-            raise ContractError("oaTOF numerical profiles require SIMION single flight")
-        oatof_numerical_profile = _unique_named_profile(
-            single_flight_configuration,
-            "oatof_numerical_profiles",
-            oatof_numerical_profile_id,
-            "oaTOF numerical profile must resolve exactly once",
-        )
-    trajectory_quality_profile_id = experiment.get(
-        "single_flight_trajectory_quality_profile_id"
-    )
-    if trajectory_quality_profile_id is not None:
-        _unique_named_profile(
-            single_flight_configuration,
-            "trajectory_quality_profiles",
-            trajectory_quality_profile_id,
-            "trajectory-quality profile must resolve exactly once",
-        )
-    time_integration_profile_id = experiment.get(
-        "single_flight_time_integration_profile_id"
-    )
-    time_integration_profile = None
-    if time_integration_profile_id is not None:
-        time_integration_profile = _unique_named_profile(
-            single_flight_configuration,
-            "time_integration_profiles",
-            time_integration_profile_id,
-            "time-integration profile must resolve exactly once",
-        )
-    spatial_window_profile_id = experiment.get(
-        "single_flight_spatial_window_profile_id"
-    )
-    if spatial_window_profile_id is not None:
-        if execution_strategy != "simion_single_flight":
-            raise ContractError("spatial-window profiles require SIMION single flight")
-        _unique_named_profile(
-            single_flight_configuration,
-            "spatial_window_profiles",
-            spatial_window_profile_id,
-            "spatial-window profile must resolve exactly once",
-        )
-    accelerator_field_profile_id = (
-        canonical_profile_id(experiment.get(
-            "single_flight_accelerator_field_profile_id",
-            single_flight_configuration["default_accelerator_field_profile_id"],
-        ))
-        if execution_strategy == "simion_single_flight"
-        else None
-    )
-    if accelerator_field_profile_id is not None:
-        if execution_strategy != "simion_single_flight":
-            raise ContractError(
-                "single-flight accelerator field profiles require SIMION single flight"
-            )
-        field_profiles = [
-            item for item in single_flight_configuration["accelerator_field_profiles"]
-            if canonical_profile_id(item["profile_id"]) == accelerator_field_profile_id
-        ]
-        if len(field_profiles) != 1:
-            raise ContractError(
-                "single-flight accelerator field profile must resolve exactly once"
-            )
-    three_zone_region_modes = experiment.get("single_flight_three_zone_region_modes")
-    if accelerator_field_profile_id == "three_zone_explicit_region_modes":
-        expected_region_modes = {
-            "accelerator_zone1", "accelerator_zone2", "accelerator_zone3",
-            "drift", "reflectron_stage1", "reflectron_stage2",
-        }
-        if not isinstance(three_zone_region_modes, dict) or set(
-            three_zone_region_modes
-        ) != expected_region_modes:
-            raise ContractError("explicit three-zone field profile requires all region modes")
-    elif three_zone_region_modes is not None:
-        raise ContractError("explicit three-zone region modes require their explicit field profile")
+    source_materialization_profile = resolved_profiles.source_materialization_profile
+    grid_profiles = resolved_profiles.grid_profiles
+    oatof_numerical_profile = resolved_profiles.oatof_numerical_profile
+    time_integration_profile = resolved_profiles.time_integration_profile
+    accelerator_field_profile_id = resolved_profiles.accelerator_field_profile_id
+    field_profiles = resolved_profiles.field_profiles
+    three_zone_region_modes = resolved_profiles.three_zone_region_modes
     source_release_mode = experiment.get("source_release_mode")
     architecture_generation_id = experiment.get("architecture_generation_id")
     source_profile_id = experiment.get("source_profile_id")
