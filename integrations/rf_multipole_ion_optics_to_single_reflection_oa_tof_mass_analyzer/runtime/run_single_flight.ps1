@@ -140,7 +140,6 @@ function Read-RfFrozenResolvedBudgetDocument {
 
 function Assert-RfThreeZoneArgumentSet {
   param(
-    [Parameter(Mandatory)][string]$LayoutProfileId,
     [string]$Candidate = '',
     [string]$CandidateSha256 = ''
   )
@@ -231,7 +230,7 @@ function Assert-RfThreeZoneRuntimeIdentity {
 }
 
 
-$hasThreeZoneCandidate = Assert-RfThreeZoneArgumentSet -LayoutProfileId $LayoutProfileId -Candidate $ThreeZoneCandidate -CandidateSha256 $ThreeZoneCandidateSha256
+$hasThreeZoneCandidate = Assert-RfThreeZoneArgumentSet -Candidate $ThreeZoneCandidate -CandidateSha256 $ThreeZoneCandidateSha256
 
 if (-not (Test-Path -LiteralPath $SimionExe -PathType Leaf)) { throw "SIMION is missing: $SimionExe" }
 $runProjectId = 'rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer'

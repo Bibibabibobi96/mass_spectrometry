@@ -297,15 +297,14 @@ $fn = $ast.Find({{
 if ($null -eq $fn) {{ throw 'three-zone argument assertion is missing' }}
 . ([scriptblock]::Create($fn.Extent.Text))
 $valid = @{{
-  LayoutProfileId='registered_future_three_zone_layout'; Candidate='candidate.json'
-  CandidateSha256=('A' * 64)
+  Candidate='candidate.json'; CandidateSha256=('A' * 64)
 }}
 if (-not (Assert-RfThreeZoneArgumentSet @valid)) {{ throw 'valid set rejected' }}
-if (Assert-RfThreeZoneArgumentSet -LayoutProfileId 'unrelated_layout') {{
+if (Assert-RfThreeZoneArgumentSet) {{
   throw 'absence of a Candidate was misclassified'
 }}
 try {{
-  Assert-RfThreeZoneArgumentSet -LayoutProfileId 'registered_future_three_zone_layout' -Candidate 'candidate.json'
+  Assert-RfThreeZoneArgumentSet -Candidate 'candidate.json'
   throw 'missing Candidate was accepted'
 }} catch {{
   if ($_.Exception.Message -notmatch 'Candidate arguments are incomplete') {{ throw }}

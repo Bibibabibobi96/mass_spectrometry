@@ -414,9 +414,8 @@ $argumentsHaveThreeZoneCandidate = (
 if ($campaignHasThreeZoneCandidate -ne $argumentsHaveThreeZoneCandidate) {
   throw 'Three-zone Candidate binding and layout identity differ.'
 }
-$isThreeZoneLayout = $campaignHasThreeZoneCandidate
 $threeZoneCandidatePath = $null
-if ($isThreeZoneLayout) {
+if ($campaignHasThreeZoneCandidate) {
   if ([string]$experiment.single_flight_three_zone_candidate.path -ne
       [string]$frozenArguments.single_flight_three_zone_candidate_path -or
       [string]$experiment.single_flight_three_zone_candidate.sha256 -ne
@@ -1207,7 +1206,7 @@ if ($executionStrategy -eq 'simion_single_flight') {
       [double]$frozenArguments.resolved_oatof_ring_outer_radius_mm
     $runnerArguments.ExpectedShieldInnerRadiusMm =
       [double]$frozenArguments.resolved_oatof_shield_inner_radius_mm
-    if ($isThreeZoneLayout) {
+    if ($campaignHasThreeZoneCandidate) {
       $runnerArguments.ThreeZoneCandidate = $threeZoneCandidatePath
       $runnerArguments.ThreeZoneCandidateSha256 =
         [string]$frozenArguments.single_flight_three_zone_candidate_sha256
