@@ -233,7 +233,6 @@ if ($baseline -ne $theory -or $baseline -eq $geometryKey -or $baseline -eq $mesh
             _validate_post_pulse_variation_axis(
                 experiment=experiment,
                 authority=authority,
-                producer_time_profile="dt40",
                 producer_field_profile="accelerator_real_three_zone_pa_real_reflectron",
             ),
             "full_domain_three_zone_piecewise_ideal_field_"
@@ -250,7 +249,6 @@ if ($baseline -ne $theory -or $baseline -eq $geometryKey -or $baseline -eq $mesh
                 _validate_post_pulse_variation_axis(
                     experiment=invalid,
                     authority=authority,
-                    producer_time_profile="dt40",
                     producer_field_profile="accelerator_real_three_zone_pa_real_reflectron",
                 )
         for field_profile in (
@@ -265,7 +263,6 @@ if ($baseline -ne $theory -or $baseline -eq $geometryKey -or $baseline -eq $mesh
                 _validate_post_pulse_variation_axis(
                     experiment=field_variant,
                     authority=authority,
-                    producer_time_profile="dt40",
                     producer_field_profile="accelerator_real_three_zone_pa_real_reflectron",
                 ),
                 field_profile + "_source_zvz_three_zone_theory_working_point_v1",
@@ -276,7 +273,6 @@ if ($baseline -ne $theory -or $baseline -eq $geometryKey -or $baseline -eq $mesh
             _validate_post_pulse_variation_axis(
                 experiment=cross_dt,
                 authority=authority,
-                producer_time_profile="dt160",
                 producer_field_profile="accelerator_real_three_zone_pa_real_reflectron",
             ),
             "full_domain_three_zone_piecewise_ideal_field_"
@@ -291,7 +287,6 @@ if ($baseline -ne $theory -or $baseline -eq $geometryKey -or $baseline -eq $mesh
             _validate_post_pulse_variation_axis(
                 experiment=reverse_dt,
                 authority=authority,
-                producer_time_profile="dt40",
                 producer_field_profile="accelerator_real_three_zone_pa_real_reflectron",
             ),
             "full_domain_three_zone_piecewise_ideal_field_"
@@ -301,7 +296,6 @@ if ($baseline -ne $theory -or $baseline -eq $geometryKey -or $baseline -eq $mesh
             _validate_post_pulse_variation_axis(
                 experiment=experiment,
                 authority={"post_pulse_variation_axis": "accelerator_field_profile_id"},
-                producer_time_profile="dt40",
                 producer_field_profile="accelerator_real_three_zone_pa_real_reflectron",
             )
 

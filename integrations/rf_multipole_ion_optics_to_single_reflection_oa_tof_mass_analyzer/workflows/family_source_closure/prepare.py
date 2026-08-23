@@ -1691,7 +1691,6 @@ def _validate_post_pulse_variation_axis(
     *,
     experiment: dict[str, Any],
     authority: dict[str, Any],
-    producer_time_profile: str,
     producer_field_profile: str,
 ) -> str:
     """Fail closed unless a restart consumer changes only its declared axis."""
@@ -1914,7 +1913,6 @@ def _resolve_post_pulse_restart_reuse(
     consumer_profile = _validate_post_pulse_variation_axis(
         experiment=experiment,
         authority=authority,
-        producer_time_profile=producer_time_profile,
         producer_field_profile=producer_field_profile,
     )
 
