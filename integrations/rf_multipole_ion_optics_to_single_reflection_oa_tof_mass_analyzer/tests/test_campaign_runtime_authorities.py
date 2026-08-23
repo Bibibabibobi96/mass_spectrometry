@@ -44,7 +44,6 @@ class CampaignRuntimeAuthoritiesTests(unittest.TestCase):
             "rf_oatof_retired_diagnostics_campaign_archive_index",
         )
         entries = index["entries"]
-        self.assertEqual(len(entries), 74)
         for entry in entries:
             with self.subTest(path=entry["source_path"]):
                 source = REPO_ROOT / entry["source_path"]

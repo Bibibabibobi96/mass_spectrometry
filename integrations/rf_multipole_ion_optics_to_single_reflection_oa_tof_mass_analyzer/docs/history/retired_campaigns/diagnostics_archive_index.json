@@ -446,6 +446,18 @@
       "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/staged_grid2_restart_legacy_n34_successor_r06_campaign.json",
       "status": "archived_invalid",
       "sha256": "ee4d0a2a3bf57b9a5a3812368b930660394c3f44bc50ab570b2cc7cf942f1d6f"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/staged_grid2_n34_simion_fly2_loader_ab_characterization.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/staged_grid2_n34_simion_fly2_loader_ab_characterization.json",
+      "status": "retired",
+      "sha256": "3154ad9ff08660c3636ffbbd80a16bce38956e55db04ebd3592a2c24baead74c"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/staged_grid2_n34_simion_fly2_loader_authorization_budget.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/staged_grid2_n34_simion_fly2_loader_authorization_budget.json",
+      "status": "retired",
+      "sha256": "b8beb73eb1f6b1650a6ab4fa5e50784169cdb7fcce0a3bb044a765ed10e72b32"
     }
   ]
 }
