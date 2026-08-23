@@ -156,78 +156,6 @@ function Assert-RfThreeZoneArgumentSet {
   return $hasAll
 }
 
-function Assert-RfThreeZoneRuntimeIdentity {
-  param(
-    [Parameter(Mandatory)]$Candidate,
-    [Parameter(Mandatory)][string]$CandidateSha256,
-    [Parameter(Mandatory)]$Geometry,
-    [Parameter(Mandatory)][string]$GeometrySha256,
-    [Parameter(Mandatory)]$FrontendContract,
-    [Parameter(Mandatory)]$FrontendElectrodeTopology,
-    [Parameter(Mandatory)]$RegionField,
-    [Parameter(Mandatory)]$FieldProfile,
-    [Parameter(Mandatory)][string]$LayoutProfileId,
-    [Parameter(Mandatory)][string]$ArchitectureGenerationId,
-    [Parameter()]$TheoryWorkingPoint = $null
-  )
-  $topologyId = [string]$Candidate.identities.topology_id
-  $geometryId = [string]$Candidate.identities.geometry_id
-  $frontendElectrodeTopologyId = [string]$FrontendElectrodeTopology.topology_id
-  $fieldId = [string]$FieldProfile.field_id
-  if ([int]$Candidate.schema_version -ne 1 -or
-      [string]$Candidate.role -ne
-      'oatof_three_zone_simion_candidate_resolved' -or
-      [string]$Candidate.qualification -ne 'CANDIDATE_ONLY' -or
-      [string]$Candidate.compiler_mode -ne
-      'T5_FROZEN_PRIMARY_AND_BRANCH_ONLY' -or
-      [string]::IsNullOrWhiteSpace($topologyId) -or
-      [string]::IsNullOrWhiteSpace($geometryId) -or
-      [string]$Candidate.accelerator_topology.topology_id -ne $topologyId -or
-      [string]$Geometry.single_flight_layout_derivation.layout_profile_id -ne
-      $LayoutProfileId -or
-      [string]$Geometry.single_flight_layout_derivation.architecture_generation_id -ne
-      $ArchitectureGenerationId -or
-      [string]$Geometry.single_flight_layout_derivation.design_compilation.candidate.sha256 -ne
-      $CandidateSha256 -or
-      [string]$Geometry.accelerator_topology.topology_id -ne $topologyId -or
-      [string]$FrontendContract.accelerator_topology_id -ne $topologyId -or
-      [string]::IsNullOrWhiteSpace($frontendElectrodeTopologyId) -or
-      [string]$RegionField.layout_geometry.sha256 -ne $GeometrySha256 -or
-      [string]$RegionField.semantic.accelerator_topology.topology_id -ne
-      $topologyId -or
-      [string]$RegionField.semantic.canonical_profile_id -ne
-      [string]$FieldProfile.profile_id -or
-      [string]$FieldProfile.topology_id -ne $topologyId -or
-      [string]$FieldProfile.geometry_id -ne $geometryId -or
-      [string]$FieldProfile.frontend_electrode_topology_id -ne
-      $frontendElectrodeTopologyId -or
-      [string]::IsNullOrWhiteSpace($fieldId)) {
-    throw 'Frozen three-zone Candidate/runtime identity differs.'
-  }
-  foreach ($mappingName in @('planes_global_z_mm','potentials_v')) {
-    foreach ($role in @('repeller','intermediate1','intermediate2','exit')) {
-      $candidateValue = [double]$Candidate.accelerator_topology.$mappingName.$role
-      $expectedValue = if ($null -ne $TheoryWorkingPoint -and $mappingName -eq 'potentials_v') {
-        [double]$TheoryWorkingPoint.accelerator_topology.potentials_v.$role
-      } else { $candidateValue }
-      if ([double]$Geometry.accelerator_topology.$mappingName.$role -ne
-          $expectedValue -or
-          [double]$RegionField.semantic.accelerator_topology.$mappingName.$role -ne
-          $expectedValue) {
-        throw 'Frozen three-zone Candidate plane or potential mapping differs.'
-      }
-    }
-  }
-  if ($null -ne $TheoryWorkingPoint -and
-      ([string]$TheoryWorkingPoint.role -ne 'rf_oatof_theory_working_point' -or
-       [string]$TheoryWorkingPoint.policy_id -ne 'source_zvz_three_zone_theory_working_point_v1' -or
-       [double]$Geometry.electrodes_V.midgrid -ne [double]$TheoryWorkingPoint.reflectron.stage1_voltage_v -or
-       [double]$Geometry.electrodes_V.backplate -ne [double]$TheoryWorkingPoint.reflectron.backplate_voltage_v)) {
-    throw 'Theory working point and resolved electrode potentials differ.'
-  }
-}
-
-
 $hasThreeZoneCandidate = Assert-RfThreeZoneArgumentSet -Candidate $ThreeZoneCandidate -CandidateSha256 $ThreeZoneCandidateSha256
 
 if (-not (Test-Path -LiteralPath $SimionExe -PathType Leaf)) { throw "SIMION is missing: $SimionExe" }
@@ -953,7 +881,6 @@ try {
     throw 'Resolved frontend electrode topology is invalid or non-contiguous.'
   }
   if ($hasThreeZoneCandidate) {
-    $theoryWorkingPointDocument = $null
     if (-not [string]::IsNullOrWhiteSpace($TheoryWorkingPoint)) {
       if ([string]::IsNullOrWhiteSpace($TheoryWorkingPointSha256) -or
           -not (Test-Path -LiteralPath $TheoryWorkingPoint -PathType Leaf) -or
@@ -961,28 +888,30 @@ try {
           $TheoryWorkingPointSha256) {
         throw 'Theory working point is missing or stale.'
       }
-      $theoryWorkingPointDocument = Get-Content -LiteralPath $TheoryWorkingPoint -Raw -Encoding UTF8 | ConvertFrom-Json
     }
     $threeZoneTopologyId = [string]$threeZoneCandidateDocument.identities.topology_id
     $threeZoneGeometryId = [string]$threeZoneCandidateDocument.identities.geometry_id
     $threeZoneFrontendElectrodeTopologyId = [string]$frontendElectrodeTopology.topology_id
     $threeZoneFieldId = [string]$selectedFieldProfile.field_id
-    $threeZoneRuntimeIdentity = @{
-      Candidate = $threeZoneCandidateDocument
-      CandidateSha256 = $ThreeZoneCandidateSha256
-      Geometry = $oatofGeometryDocument
-      GeometrySha256 = (
-        Get-FileHash -LiteralPath $oatofGeometry -Algorithm SHA256
-      ).Hash
-      FrontendContract = $frontendGeometry
-      FrontendElectrodeTopology = $frontendElectrodeTopology
-      RegionField = $resolvedRegionField
-      FieldProfile = $selectedFieldProfile
-      LayoutProfileId = $LayoutProfileId
-      ArchitectureGenerationId = $ArchitectureGenerationId
-      TheoryWorkingPoint = $theoryWorkingPointDocument
+    $threeZoneRuntimeIdentityArguments = @(
+      '-m',
+      'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.three_zone_runtime_identity',
+      '--candidate',$threeZoneCandidateFrozen,
+      '--candidate-sha256',$ThreeZoneCandidateSha256,
+      '--geometry',$oatofGeometry,
+      '--geometry-sha256',(Get-FileHash -LiteralPath $oatofGeometry -Algorithm SHA256).Hash,
+      '--frontend-contract',$frontendContract,
+      '--frontend-electrode-topology',$frontendElectrodeTopologyContract,
+      '--region-field',$resolvedRegionFieldContractFrozen,
+      '--configuration',$configuration,
+      '--layout-profile-id',$LayoutProfileId,
+      '--architecture-generation-id',$ArchitectureGenerationId
+    )
+    if (-not [string]::IsNullOrWhiteSpace($TheoryWorkingPoint)) {
+      $threeZoneRuntimeIdentityArguments += @('--theory-working-point',$TheoryWorkingPoint)
     }
-    Assert-RfThreeZoneRuntimeIdentity @threeZoneRuntimeIdentity
+    Invoke-SingleFlightPython -Arguments $threeZoneRuntimeIdentityArguments `
+      -Failure 'Frozen three-zone Candidate/runtime identity differs.'
   }
   $apertureWidthMm = [double]$frontendGeometry.aperture.width_mm
   $apertureHeightMm = [double]$frontendGeometry.aperture.height_mm

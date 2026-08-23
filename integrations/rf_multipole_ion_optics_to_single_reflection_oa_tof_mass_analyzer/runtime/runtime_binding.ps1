@@ -405,7 +405,7 @@ function Resolve-RfOatofRuntimeBinding {
   $requiredImplementationRoles = @(
     'run_artifact_support','runtime_binding_support','transfer_runner',
     'single_flight_runner','pre_pulse_runner','pulse_capture_runner',
-    'analyzer_transport_runner'
+    'analyzer_transport_runner','three_zone_runtime_identity'
   )
   $availableImplementationRoles = @(
     $implementationRecords | ForEach-Object { [string]$_.Name }

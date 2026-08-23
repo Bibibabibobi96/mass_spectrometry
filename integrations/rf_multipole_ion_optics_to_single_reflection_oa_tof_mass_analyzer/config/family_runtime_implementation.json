@@ -13,7 +13,7 @@
     },
     "runtime_binding_support": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/runtime_binding.ps1",
-      "sha256": "DA480D2ACEDECB4F968B85F14EB626ACB5DB54EADEB08803D94A5843F9FEFE43"
+      "sha256": "69911564EB34E514D02D936F76E65502F7FC56E46462BC067D8984A8C950A492"
     },
     "transfer_runner": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/run_transfer.ps1",
@@ -21,7 +21,11 @@
     },
     "single_flight_runner": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/run_single_flight.ps1",
-      "sha256": "F09EB9190E62CAF0CB372C4D744336D9D2098C3DA7667DC59BF64C8789C262C1"
+      "sha256": "BA6CF2D81113DB2D9215D0C4725A6CEDF2088622E03F093517D956BD76FAAF1C"
+    },
+    "three_zone_runtime_identity": {
+      "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/three_zone_runtime_identity.py",
+      "sha256": "E6EE96D4BB827679B149C87131FD47E3E59A5766941F99079F998CF3ACA5097C"
     },
     "source_zvz_affine": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/source_zvz_affine.py",

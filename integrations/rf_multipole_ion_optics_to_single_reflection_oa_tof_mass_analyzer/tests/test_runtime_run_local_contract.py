@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 from pathlib import Path
@@ -10,6 +11,9 @@ import subprocess
 import unittest
 
 from common.contracts.file_identity import repository_text_sha256
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.three_zone_runtime_identity import (
+    validate_runtime_identity,
+)
 
 
 INTEGRATION_ROOT = Path(__file__).resolve().parents[1]
@@ -341,117 +345,85 @@ try {{
         ):
             self.assertNotIn(name, adapter)
         self.assertIn("$workspaceArtifactRoot", adapter)
-        self.assertIn("Assert-RfThreeZoneRuntimeIdentity", runner)
+        self.assertIn("runtime.three_zone_runtime_identity", runner)
         self.assertIn("three_zone_t5_candidate_resolved.json", runner)
         self.assertIn(
             "$runConfiguration.inputs.three_zone_t5_candidate", runner
         )
-        self.assertIn(
-            "$FrontendElectrodeTopology.topology_id", runner
-        )
+        self.assertIn("--frontend-electrode-topology", runner)
         self.assertNotIn("three_zone_t5_primary_v1", adapter)
         self.assertNotIn("three_zone_t5_primary_shaping_rings_1p4_v1", adapter)
         self.assertNotIn("ThreeZoneCandidate", public_entry)
 
     def test_three_zone_runtime_identity_rejects_mapping_tamper(self) -> None:
-        pwsh = shutil.which("pwsh")
-        if pwsh is None:
-            self.skipTest("PowerShell 7 is unavailable")
-        script = f"""
-$errors = $null
-$ast = [System.Management.Automation.Language.Parser]::ParseFile(
-  '{SINGLE_FLIGHT_RUNNER}', [ref]$null, [ref]$errors
-)
-if ($errors) {{ throw $errors[0] }}
-$fn = $ast.Find({{
-  param($node)
-  $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
-    $node.Name -eq 'Assert-RfThreeZoneRuntimeIdentity'
-}}, $true)
-if ($null -eq $fn) {{ throw 'three-zone runtime assertion is missing' }}
-. ([scriptblock]::Create($fn.Extent.Text))
-$planes = [pscustomobject]@{{
-  repeller=-25.0; intermediate1=-20.0; intermediate2=-10.0; exit=-5.0
-}}
-$potentials = [pscustomobject]@{{
-  repeller=2000.0; intermediate1=1500.0; intermediate2=500.0; exit=0.0
-}}
-$topology = [pscustomobject]@{{
-  topology_id='registered_three_zone_topology_v2'
-  planes_global_z_mm=$planes; potentials_v=$potentials
-}}
-$candidate = [pscustomobject]@{{
-  schema_version=1; role='oatof_three_zone_simion_candidate_resolved'
-  qualification='CANDIDATE_ONLY'; compiler_mode='T5_FROZEN_PRIMARY_AND_BRANCH_ONLY'
-  identities=[pscustomobject]@{{
-    topology_id='registered_three_zone_topology_v2'
-    geometry_id='registered_three_zone_geometry_v2'
-    field_id='candidate_ideal_field_v2'
-  }}
-  accelerator_topology=$topology
-}}
-$geometry = [pscustomobject]@{{
-  accelerator_topology=$topology
-  single_flight_layout_derivation=[pscustomobject]@{{
-    layout_profile_id='registered_future_three_zone_layout'
-    architecture_generation_id='registered_three_zone_generation_v2'
-    design_compilation=[pscustomobject]@{{
-      candidate=[pscustomobject]@{{sha256=('A' * 64)}}
-    }}
-  }}
-}}
-$region = [pscustomobject]@{{
-  layout_geometry=[pscustomobject]@{{sha256=('B' * 64)}}
-  semantic=[pscustomobject]@{{
-  canonical_profile_id='accelerator_real_three_zone_pa_real_reflectron'
-    accelerator_topology=$topology
-  }}
-}}
-$field = [pscustomobject]@{{
-  profile_id='accelerator_real_three_zone_pa_real_reflectron'
-  topology_id='registered_three_zone_topology_v2'
-  geometry_id='registered_three_zone_geometry_v2'
-  frontend_electrode_topology_id='registered_three_zone_frontend_v2'
-  field_id='registered_three_zone_real_field_v2'
-}}
-$arguments = @{{
-  Candidate=$candidate; CandidateSha256=('A' * 64)
-  Geometry=$geometry; GeometrySha256=('B' * 64)
-  FrontendContract=[pscustomobject]@{{
-    accelerator_topology_id='registered_three_zone_topology_v2'
-  }}
-  FrontendElectrodeTopology=[pscustomobject]@{{topology_id='registered_three_zone_frontend_v2'}}
-  RegionField=$region; FieldProfile=$field
-  LayoutProfileId='registered_future_three_zone_layout'
-  ArchitectureGenerationId='registered_three_zone_generation_v2'
-}}
-Assert-RfThreeZoneRuntimeIdentity @arguments
-$region.semantic.accelerator_topology = [pscustomobject]@{{
-  topology_id='registered_three_zone_topology_v2'
-  planes_global_z_mm=$planes
-  potentials_v=[pscustomobject]@{{
-    repeller=2000.0; intermediate1=1500.0; intermediate2=500.0; exit=1.0
-  }}
-}}
-try {{
-  Assert-RfThreeZoneRuntimeIdentity @arguments
-  throw 'mapping tamper was accepted'
-}} catch {{
-  if ($_.Exception.Message -notmatch 'plane or potential mapping differs') {{ throw }}
-}}
-'THREE_ZONE_RUNTIME_IDENTITY=PASS'
-"""
-        completed = subprocess.run(
-            [pwsh, "-NoProfile", "-Command", script],
-            cwd=INTEGRATION_ROOT.parents[1],
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            capture_output=True,
-            check=False, timeout=300,
-        )
-        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
-        self.assertIn("THREE_ZONE_RUNTIME_IDENTITY=PASS", completed.stdout)
+        planes = {"repeller": -25.0, "intermediate1": -20.0, "intermediate2": -10.0, "exit": -5.0}
+        potentials = {"repeller": 2000.0, "intermediate1": 1500.0, "intermediate2": 500.0, "exit": 0.0}
+        topology = {
+            "topology_id": "registered_three_zone_topology_v2",
+            "planes_global_z_mm": planes,
+            "potentials_v": potentials,
+        }
+        candidate = {
+            "schema_version": 1,
+            "role": "oatof_three_zone_simion_candidate_resolved",
+            "qualification": "CANDIDATE_ONLY",
+            "compiler_mode": "T5_FROZEN_PRIMARY_AND_BRANCH_ONLY",
+            "identities": {
+                "topology_id": "registered_three_zone_topology_v2",
+                "geometry_id": "registered_three_zone_geometry_v2",
+            },
+            "accelerator_topology": copy.deepcopy(topology),
+        }
+        geometry = {
+            "accelerator_topology": copy.deepcopy(topology),
+            "single_flight_layout_derivation": {
+                "layout_profile_id": "registered_future_three_zone_layout",
+                "architecture_generation_id": "registered_three_zone_generation_v2",
+                "design_compilation": {"candidate": {"sha256": "A" * 64}},
+            },
+        }
+        region = {
+            "layout_geometry": {"sha256": "B" * 64},
+            "semantic": {
+                "canonical_profile_id": "accelerator_real_three_zone_pa_real_reflectron",
+                "accelerator_topology": copy.deepcopy(topology),
+            },
+        }
+        field = {
+            "profile_id": "accelerator_real_three_zone_pa_real_reflectron",
+            "topology_id": "registered_three_zone_topology_v2",
+            "geometry_id": "registered_three_zone_geometry_v2",
+            "frontend_electrode_topology_id": "registered_three_zone_frontend_v2",
+            "field_id": "registered_three_zone_real_field_v2",
+        }
+        arguments = {
+            "candidate": candidate,
+            "candidate_sha256": "A" * 64,
+            "geometry": geometry,
+            "geometry_sha256": "B" * 64,
+            "frontend_contract": {
+                "accelerator_topology_id": "registered_three_zone_topology_v2"
+            },
+            "frontend_electrode_topology": {
+                "topology_id": "registered_three_zone_frontend_v2"
+            },
+            "region_field": region,
+            "configuration": {"accelerator_field_profiles": [field]},
+            "layout_profile_id": "registered_future_three_zone_layout",
+            "architecture_generation_id": "registered_three_zone_generation_v2",
+        }
+        validate_runtime_identity(**arguments)
+        missing_field_identity = copy.deepcopy(arguments)
+        missing_field_identity["configuration"]["accelerator_field_profiles"][0][
+            "field_id"
+        ] = None
+        with self.assertRaisesRegex(ValueError, "Candidate/runtime identity differs"):
+            validate_runtime_identity(**missing_field_identity)
+        region["semantic"]["accelerator_topology"]["potentials_v"]["exit"] = 1.0
+        with self.assertRaisesRegex(
+            ValueError, "plane or potential mapping differs"
+        ):
+            validate_runtime_identity(**arguments)
 
 
     def test_generated_pre_pulse_subset_does_not_require_external_campaign_state(self) -> None:
