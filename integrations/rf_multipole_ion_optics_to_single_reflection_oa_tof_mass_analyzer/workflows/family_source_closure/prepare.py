@@ -291,12 +291,16 @@ def resolve_single_flight_dispatch_plan(
 
     The returned object is an execution artifact only.  It never contributes to
     campaign or handoff identity; those remain defined by the resolved source
-    and numerical contracts.  Legacy rows are represented explicitly so their
-    frozen behavior is observable while new memory-policy rows retain the
-    scheduler's automatic decision.
+    and numerical contracts.  Active campaigns must declare a measured
+    memory-policy receipt so the scheduler, rather than an archived fixed
+    batch count, selects the execution shape.
     """
 
     memory_policy = experiment.get("single_flight_batch_memory_policy")
+    if not isinstance(memory_policy, dict):
+        raise ContractError(
+            "active single-flight execution requires a memory batch policy"
+        )
     if memory_policy is not None:
         if workspace is None:
             raise ContractError("single-flight memory batch policy lacks workspace context")
@@ -357,48 +361,6 @@ def resolve_single_flight_dispatch_plan(
         except ValueError as error:
             raise ContractError("single-flight memory batch policy is invalid") from error
         return decision
-
-    value = experiment.get("single_flight_batch_count", 1)
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise ContractError("single-flight batch count must be an integer")
-    if not 1 <= value <= execution_particle_count:
-        raise ContractError(
-            "single-flight batch count must be between one and the resolved population count"
-        )
-    return {
-        "schema_version": 1,
-        "role": "simion_legacy_fixed_dispatch_plan",
-        "solver": "SIMION",
-        "field_kind": "rf",
-        "particle_count": execution_particle_count,
-        "resource_identity": {},
-        "estimation": {
-            "kind": "legacy_explicit_batch_count",
-            "reason": "campaign_row_preserves_frozen_execution_contract",
-        },
-        "limits": {"maximum_parallel_batches": value},
-        "waves": [{
-            "index": 1,
-            "kind": "legacy_fixed",
-            "batch_count": value,
-            "particle_count": execution_particle_count,
-        }],
-    }
-
-
-def resolve_single_flight_batch_count(
-    experiment: dict[str, Any], *, execution_particle_count: int,
-    workspace: Path | None = None, rf_steps_per_period: int | None = None,
-) -> int:
-    """Compatibility projection of the resolved dispatch plan."""
-
-    plan = resolve_single_flight_dispatch_plan(
-        experiment,
-        execution_particle_count=execution_particle_count,
-        workspace=workspace,
-        rf_steps_per_period=rf_steps_per_period,
-    )
-    return int(plan["waves"][0]["batch_count"])
 
 
 def validate_pre_pulse_time_series_campaign(campaign: dict[str, Any]) -> None:
@@ -678,7 +640,6 @@ def _semantic_diff_category(path: tuple[str, ...]) -> str:
         return "analysis_or_qualification"
     if top_level in {
         "single_flight_batch_memory_policy",
-        "single_flight_batch_count",
         "execution_strategy",
     } or any(
         token in part

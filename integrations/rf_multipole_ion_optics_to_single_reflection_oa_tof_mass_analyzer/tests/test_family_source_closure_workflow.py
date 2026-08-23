@@ -26,7 +26,6 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     _workspace_record,
     prepare_family_source_closure,
     resolve_single_flight_dispatch_plan,
-    resolve_single_flight_batch_count,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_source import (
     resolve_source_materialization_profile,
@@ -269,32 +268,6 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
         with self.assertRaisesRegex(ContractError, "population differs"):
             _automatic_pulse_population_binding(population)
 
-    def test_batch_count_is_execution_only_and_defaults_to_one(self) -> None:
-        self.assertEqual(
-            resolve_single_flight_batch_count({}, execution_particle_count=100),
-            1,
-        )
-        self.assertEqual(
-            resolve_single_flight_batch_count(
-                {"single_flight_batch_count": 2}, execution_particle_count=1000,
-            ),
-            2,
-        )
-        for invalid in (0, 1001, True, 2.0):
-            with self.subTest(invalid=invalid), self.assertRaises(ContractError):
-                resolve_single_flight_batch_count(
-                    {"single_flight_batch_count": invalid},
-                    execution_particle_count=1000,
-                )
-
-    def test_dispatch_plan_makes_legacy_batch_projection_explicit(self) -> None:
-        plan = resolve_single_flight_dispatch_plan(
-            {"single_flight_batch_count": 2}, execution_particle_count=1000,
-        )
-        self.assertEqual(plan["role"], "simion_legacy_fixed_dispatch_plan")
-        self.assertEqual(plan["estimation"]["kind"], "legacy_explicit_batch_count")
-        self.assertEqual(plan["waves"][0]["batch_count"], 2)
-
     def test_dispatch_plan_uses_scheduler_for_memory_policy(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -325,6 +298,15 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
         self.assertEqual(plan["estimation"]["kind"], "nearest_resource_profile")
         self.assertEqual(plan["waves"][0]["batch_count"], 8)
 
+    def test_dispatch_plan_rejects_retired_fixed_batch_authoring(self) -> None:
+        with self.assertRaisesRegex(
+            ContractError, "requires a memory batch policy"
+        ):
+            resolve_single_flight_dispatch_plan(
+                {"single_flight_batch_count": 2},
+                execution_particle_count=1000,
+            )
+
     def test_flat_authoring_expands_shared_controls_and_gap_rows(self) -> None:
         authored = {
             "experiments": {
@@ -344,9 +326,9 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
     def test_flat_authoring_preserves_fifty_six_gap_field_rows(self) -> None:
         """A large matrix must remain ordered and must not share mutable row state."""
         field_modes = (
-            ("gap0", "full_ideal", 116, 1),
-            ("gap6p4", "partial_ideal", 482, 2),
-            ("gap12p8", "full_real", 482, 3),
+            ("gap0", "full_ideal", 116),
+            ("gap6p4", "partial_ideal", 482),
+            ("gap12p8", "full_real", 482),
         )
         authored = {
             "experiments": {
@@ -357,7 +339,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                 },
                 "variation_axes": [
                     "connection_profile_id", "field_realization",
-                    "execution_particle_count", "single_flight_batch_count",
+                    "execution_particle_count",
                 ],
                 "rows": [
                     {
@@ -368,7 +350,6 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                             "connection_profile_id": mode[0],
                             "field_realization": mode[1],
                             "execution_particle_count": mode[2],
-                            "single_flight_batch_count": mode[3],
                         },
                     }
                     for sequence, mode in enumerate(
@@ -440,7 +421,6 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             "run_id": "run-before",
             "connection_profile_id": "gap0",
             "single_flight_population": {"particle_count": 100},
-            "single_flight_batch_count": 2,
             "source": {"sha256": "A" * 64},
         }
         after = {
@@ -448,16 +428,14 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             "run_id": "run-after",
             "connection_profile_id": "gap3",
             "single_flight_population": {"particle_count": 1000},
-            "single_flight_batch_count": 4,
             "source": {"sha256": "B" * 64},
         }
         diff = semantic_diff_experiments(before, after)
         self.assertEqual(diff["classification_scope"], "review_only_not_execution_policy")
-        self.assertEqual(diff["changed_field_count"], 6)
+        self.assertEqual(diff["changed_field_count"], 5)
         categories = {item["path"]: item["category"] for item in diff["changes"]}
         self.assertEqual(categories["connection_profile_id"], "physical_design_or_field")
         self.assertEqual(categories["single_flight_population.particle_count"], "source_cohort_or_sampling")
-        self.assertEqual(categories["single_flight_batch_count"], "solver_numerics_or_resource_control")
         self.assertEqual(categories["source.sha256"], "evidence_or_provenance")
 
     def test_flat_cli_lists_sorted_ids_and_prints_the_materialized_row(self) -> None:
@@ -591,7 +569,6 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                 encoding="utf-8",
             )
             policy = {
-                "single_flight_batch_count": 3,
                 "single_flight_time_integration_profile_id": "dt40",
                 "single_flight_batch_memory_policy": {
                     "resource_usage_receipt": {
@@ -612,17 +589,17 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                 return_value=15 * 1024**3,
             ):
                 self.assertEqual(
-                    resolve_single_flight_batch_count(
+                    resolve_single_flight_dispatch_plan(
                         policy, execution_particle_count=5000, workspace=workspace,
                         rf_steps_per_period=40,
-                    ),
+                    )["waves"][0]["batch_count"],
                     1,
                 )
             with patch(
                 "common.simion.resource_scheduler.available_physical_memory_bytes",
                 return_value=12 * 1024**3,
             ), self.assertRaisesRegex(ContractError, "memory batch policy is invalid"):
-                resolve_single_flight_batch_count(
+                resolve_single_flight_dispatch_plan(
                     policy, execution_particle_count=5000, workspace=workspace,
                     rf_steps_per_period=40,
                 )
