@@ -31,6 +31,13 @@ $upstreamProjectId = $runtime.upstream_project_id
 $projectRoot = Join-Path $repoRoot "projects\$upstreamProjectId"
 $supportSource = $runtime.run_artifact_support
 . $supportSource
+$executionCapacityPaths = Get-RfOatofExecutionCapacityPaths -Runtime $runtime `
+  -ConsumerId 'pre_pulse_interface_transport' -AdditionalPaths @(
+  'results/pre_pulse_interface_transport_particles.csv',
+  'results/pre_pulse_no_pulse_field_metrics.json',
+  'results/pre_pulse_no_pulse_field_samples.csv',
+  'logs/comsol_pre_pulse_no_pulse_field.txt'
+)
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
 
 function Invoke-PrePulseSnapshotPython {
@@ -114,7 +121,8 @@ $summaryRole = if ($Particles) { 'rf_to_oatof_pre_pulse_interface_transport_summ
 $software = @('COMSOL 6.4','MATLAB R2025b','Python 3.11')
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
   -RunId $RunId -Project $upstreamProjectId -Mode $mode -Software $software `
-  -RetentionContractEnabled -RetentionClass compact -UseShortExecutionPath
+  -RetentionContractEnabled -RetentionClass compact -UseShortExecutionPath `
+  -ExpectedExecutionRelativePaths $executionCapacityPaths
 $manifestToolRoot = $repoRoot
 $resourceBudgetExceeded = $false
 $python = $package.python

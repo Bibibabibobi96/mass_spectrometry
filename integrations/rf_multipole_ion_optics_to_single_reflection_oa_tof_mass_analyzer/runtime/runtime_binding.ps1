@@ -244,6 +244,27 @@ function Publish-RfOatofDependencyInventory {
   }
 }
 
+function Get-RfOatofExecutionCapacityPaths {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][psobject]$Runtime,
+    [Parameter(Mandatory)][string]$ConsumerId,
+    [string[]]$AdditionalPaths = @()
+  )
+  $dependencyPaths = @(
+    $Runtime.dependency_contract.dependencies |
+      Where-Object { @($_.consumers) -contains $ConsumerId } |
+      ForEach-Object { 'inputs/' + [string]$_.frozen_filename }
+  )
+  if ($dependencyPaths.Count -eq 0) {
+    throw "Runtime dependency contract has no paths for consumer: $ConsumerId"
+  }
+  return @(
+    'inputs/runtime_snapshot/' +
+      [string]$Runtime.binding.contracts.dependency_contract.path
+  ) + @($AdditionalPaths) + $dependencyPaths
+}
+
 function Resolve-RfOatofRuntimeBinding {
   [CmdletBinding()]
   param(

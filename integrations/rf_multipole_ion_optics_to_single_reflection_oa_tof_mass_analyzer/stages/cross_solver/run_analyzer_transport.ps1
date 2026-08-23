@@ -45,23 +45,14 @@ $workspaceRoot = Split-Path -Parent $repoRoot
 $artifactRoot = Join-Path $workspaceRoot "artifacts\projects\$upstreamProjectId"
 $supportSource = $runtime.run_artifact_support
 . $supportSource
-$analyzerTransportDependencyPaths = @(
-  $runtime.dependency_contract.dependencies |
-    Where-Object { @($_.consumers) -contains 'analyzer_transport' } |
-    ForEach-Object { 'inputs/' + [string]$_.frozen_filename }
-)
-if ($analyzerTransportDependencyPaths.Count -eq 0) {
-  throw 'Analyzer transport has no registered runtime dependency paths.'
-}
-$executionCapacityPaths = @(
-  'inputs/runtime_snapshot/' +
-    [string]$runtime.binding.contracts.dependency_contract.path,
+$executionCapacityPaths = Get-RfOatofExecutionCapacityPaths -Runtime $runtime `
+  -ConsumerId 'analyzer_transport' -AdditionalPaths @(
   'inputs/reference_comsol_local_accelerator_exit.csv',
   'inputs/materialized_simion_local_accelerator_exit.csv',
   'logs/interface_pa_resource_usage.json',
   'results/simion_comsol_interface_transport_comparison.json',
   'results/analyzer_transport_functional_chain.png'
-) + $analyzerTransportDependencyPaths
+)
 
 function Invoke-AnalyzerTransportSnapshotPython {
   [CmdletBinding()]

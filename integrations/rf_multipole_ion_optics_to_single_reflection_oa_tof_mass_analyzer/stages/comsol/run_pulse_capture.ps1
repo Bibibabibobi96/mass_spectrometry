@@ -31,6 +31,13 @@ $upstreamProjectId = $runtime.upstream_project_id
 $projectRoot = Join-Path $repoRoot "projects\$upstreamProjectId"
 $supportSource = $runtime.run_artifact_support
 . $supportSource
+$executionCapacityPaths = Get-RfOatofExecutionCapacityPaths -Runtime $runtime `
+  -ConsumerId 'pulse_capture' -AdditionalPaths @(
+  'results/pulse_capture_local_accelerator_exit_validation.json',
+  'results/pulse_capture_pulse_geometry_snapshot.json',
+  'results/pulse_capture_pulse_geometry_snapshot.png',
+  'logs/comsol_pulse_capture.txt'
+)
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
 
 function Invoke-PulseCaptureSnapshotPython {
@@ -72,7 +79,8 @@ $software = @('COMSOL 6.4','MATLAB R2025b','Python 3.11')
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
   -RunId $RunId -Project $upstreamProjectId `
   -Mode 'rf_to_oatof_pulse_capture' -Software $software `
-  -RetentionContractEnabled -RetentionClass compact -UseShortExecutionPath
+  -RetentionContractEnabled -RetentionClass compact -UseShortExecutionPath `
+  -ExpectedExecutionRelativePaths $executionCapacityPaths
 $manifestToolRoot = $repoRoot
 $resourceBudgetExceeded = $false
 $python = $package.python
