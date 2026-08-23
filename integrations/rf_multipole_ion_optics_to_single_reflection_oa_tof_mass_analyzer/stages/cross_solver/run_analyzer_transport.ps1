@@ -223,7 +223,7 @@ $package = New-RunPackage -Python $python -RepoRoot $repoRoot `
   -ArtifactRoot $artifactRoot -RunId $RunId `
   -Project $upstreamProjectId `
   -Mode $runMode -Software $software `
-  -RetentionContractEnabled -RetentionClass compact `
+  -RetentionContractEnabled -RetentionClass compact -UseShortExecutionPath `
   -AdditionalDirectories @('simion')
 $python = $package.python
 $runsRoot = Join-Path $artifactRoot 'runs'
@@ -1085,4 +1085,6 @@ try {
     })
   }
   throw
+} finally {
+  Remove-RunPackageExecutionAlias -Package $package
 }

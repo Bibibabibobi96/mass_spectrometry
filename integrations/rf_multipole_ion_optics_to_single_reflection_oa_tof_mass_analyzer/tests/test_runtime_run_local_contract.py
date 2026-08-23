@@ -148,6 +148,16 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
         solver_launch = runner.index("Invoke-ResourceBudgetedProcesses")
         self.assertLess(batch_bound, solver_launch)
 
+    def test_solver_stage_runners_use_short_lived_execution_aliases(self) -> None:
+        for runner_path in RUNNERS[1:]:
+            runner = runner_path.read_text(encoding="utf-8")
+            self.assertIn("-UseShortExecutionPath", runner, runner_path)
+            self.assertIn(
+                "Remove-RunPackageExecutionAlias -Package $package",
+                runner,
+                runner_path,
+            )
+
     def test_pre_pulse_time_series_materializer_is_runtime_bound(self) -> None:
         registry = json.loads(
             FAMILY_RUNTIME_IMPLEMENTATION.read_text(encoding="utf-8")
@@ -914,7 +924,7 @@ if ($runtime.resolved_source_contract.authority_scope -ne 'connection_lineage_on
         self.assertNotEqual(completed.returncode, 0)
         self.assertRegex(
             completed.stdout + completed.stderr,
-            "(?:runtime implementation single_flight_runner SHA-256 differs|"
+            "(?:runtime implementation \\w+ SHA-256 differs|"
             "Resolved source adapter differs from its stable contract: sha256)",
         )
 
