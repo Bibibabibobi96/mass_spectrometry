@@ -3169,8 +3169,6 @@ def prepare_family_source_closure(
     source_adapter = _load(source_adapter_path)
     validate_schema(source_adapter, "rf_multipole_oatof_source_adapter.schema.json")
     policy_record = runtime_binding["contracts"]["execution_policy_contract"]
-    if policy_record != campaign["execution_policy"]:
-        raise ContractError("campaign and runtime execution policies differ")
     policy_path = _repo_record(root, policy_record, "integration execution policy")
     policy = _load(policy_path)
     validate_schema(policy, "rf_multipole_oatof_execution_policy.schema.json")

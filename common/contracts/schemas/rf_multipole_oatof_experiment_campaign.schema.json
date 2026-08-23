@@ -3,7 +3,7 @@
   "$id": "https://mass-spectrometry.local/schemas/rf_multipole_oatof_experiment_campaign.schema.json",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "role", "integration_id", "campaign_id", "status", "execution_policy", "claim_limit", "experiments"],
+  "required": ["schema_version", "role", "integration_id", "campaign_id", "status", "claim_limit", "experiments"],
   "properties": {
     "schema_version": {"enum": [1, 2, 3, 4, 5, 6]},
     "role": {"const": "rf_multipole_oatof_experiment_campaign"},

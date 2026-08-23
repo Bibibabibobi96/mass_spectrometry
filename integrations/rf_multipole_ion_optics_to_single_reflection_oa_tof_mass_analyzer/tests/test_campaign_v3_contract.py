@@ -72,6 +72,11 @@ class CampaignV3ContractTests(unittest.TestCase):
     def test_complete_v3_single_flight_is_valid(self):
         validate_schema(campaign(), "rf_multipole_oatof_experiment_campaign.schema.json")
 
+    def test_campaign_execution_policy_is_legacy_optional(self):
+        value = campaign()
+        del value["execution_policy"]
+        validate_schema(value, "rf_multipole_oatof_experiment_campaign.schema.json")
+
     def test_v3_forbids_legacy_scalar_pulse_offset(self):
         value = campaign()
         value["experiments"][0]["single_flight_pulse_offset_rf_periods"] = 0.0

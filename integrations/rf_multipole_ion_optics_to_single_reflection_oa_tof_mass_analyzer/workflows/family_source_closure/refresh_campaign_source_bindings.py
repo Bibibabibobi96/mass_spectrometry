@@ -50,7 +50,7 @@ def _resolve_record(repo_root: Path, record: dict[str, Any]) -> tuple[Path, bool
 def compile_campaign(repo_root: Path, campaign_path: Path) -> dict[str, Any]:
     """Return a campaign with every declared source identity recomputed."""
     campaign = copy.deepcopy(_load(campaign_path))
-    records = [campaign["execution_policy"]]
+    records: list[dict[str, Any]] = []
     authoring = campaign.get("experiments", [])
     if isinstance(authoring, list):
         authoring_rows = authoring
@@ -87,11 +87,14 @@ def expanded_campaign_semantic_sha256(campaign: dict[str, Any]) -> str:
 
     A legacy raw campaign hash may remain in published receipts.  It is accepted
     only when this complete semantic projection is unchanged; the projection
-    includes policy, qualification, and all materialized experiment fields.
+    includes qualification and all materialized experiment fields.  Execution
+    policy is a runtime-binding concern: it is frozen separately in each run
+    receipt and must not invalidate campaign scientific identity.
     """
 
     semantic = expand_flat_experiment_authoring(copy.deepcopy(campaign))
     semantic.pop("published_authoring_identity", None)
+    semantic.pop("execution_policy", None)
     return _canonical_sha256(semantic)
 
 

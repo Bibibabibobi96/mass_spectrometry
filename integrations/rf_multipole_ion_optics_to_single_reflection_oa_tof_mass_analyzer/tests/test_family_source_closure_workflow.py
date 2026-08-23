@@ -222,9 +222,6 @@ def migrate_v3_campaign(campaign: dict[str, object]) -> dict[str, object]:
 def write_current_policy_campaign(source: Path, destination: Path) -> dict[str, object]:
     """Clone one immutable historical campaign with the active governed policy."""
     campaign = load(source)
-    campaign["execution_policy"] = load(OCTUPOLE_RUNTIME_BINDING)["contracts"][
-        "execution_policy_contract"
-    ]
     migrate_v3_campaign(campaign)
     write_json(destination, campaign)
     return campaign
@@ -640,9 +637,6 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             return_value=mapping,
         ):
             output = Path(directory)
-            campaign["execution_policy"] = load(OCTUPOLE_RUNTIME_BINDING)[
-                "contracts"
-            ]["execution_policy_contract"]
             campaign_path = Path(config_directory) / "campaign.json"
             write_json(campaign_path, campaign)
             _, plan_path = prepare_family_source_closure(
@@ -791,9 +785,6 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             output = Path(directory)
             campaign_path = Path(config_directory) / "campaign.json"
             campaign = migrate_v3_campaign(load(source_campaign))
-            campaign["execution_policy"] = load(OCTUPOLE_RUNTIME_BINDING)[
-                "contracts"
-            ]["execution_policy_contract"]
             row = campaign["experiments"][4]
             del row["pre_pulse_source_state"]
             row["generated_pre_pulse_ordered_subset"] = {
@@ -1009,9 +1000,6 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                 tempfile.TemporaryDirectory(dir=CONFIG_ROOT) as config_directory:
             output = Path(directory)
             current_campaign_path = Path(config_directory) / "campaign.json"
-            campaign["execution_policy"] = load(OCTUPOLE_RUNTIME_BINDING)[
-                "contracts"
-            ]["execution_policy_contract"]
             write_json(current_campaign_path, campaign)
             resolved_path = output / "resolved_connection.json"
             plan_path = output / "composition_plan.json"
@@ -2027,10 +2015,6 @@ $batchRows = [string[]]$particleRows[0..33]
         if not source_run.is_dir():
             self.skipTest("local single-flight design reference is unavailable")
         experiment["single_flight_pulse_schedule_policy"]["offset_rf_periods"] = -0.125
-        experiment_policy = load(OCTUPOLE_RUNTIME_BINDING)["contracts"][
-            "execution_policy_contract"
-        ]
-        campaign["execution_policy"] = experiment_policy
         validate_schema(
             campaign, "rf_multipole_oatof_experiment_campaign.schema.json"
         )

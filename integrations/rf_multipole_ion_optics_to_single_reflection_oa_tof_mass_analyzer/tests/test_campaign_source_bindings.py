@@ -24,15 +24,11 @@ class CampaignSourceBindingTests(unittest.TestCase):
         source = root / "artifacts/projects/source/runs/source_run"
         repo.mkdir()
         source.mkdir(parents=True)
-        policy = repo / "config/policy.json"
-        policy.parent.mkdir()
-        policy.write_text('{"policy":1}\n', encoding="utf-8")
         for name in ("run_manifest.json", "state.csv", "source.csv", "metadata.json"):
             (source / name).write_text(name + "\n", encoding="utf-8")
         campaign = repo / "campaign.json"
         campaign.write_text(json.dumps({
             "campaign_id": "fixture_campaign",
-            "execution_policy": {"path": "config/policy.json", "sha256": "0" * 64},
             "experiments": [{
                 "run_id": "target_run",
                 "experiment_id": "target_experiment",

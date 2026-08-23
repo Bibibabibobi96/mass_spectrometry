@@ -4,10 +4,6 @@
   "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
   "campaign_id": "connector_gap_field_matrix_compact_auto_replay_v2",
   "status": "authorized",
-  "execution_policy": {
-    "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/execution_policy.json",
-    "sha256": "B42F6B94797DD8DF1968C8701DC49EE9C7ED8E7CCCC262C9CDD0B7E52DF75C9D"
-  },
   "claim_limit": "Exact replay of the 23 final successful 2026-08-22 post-pulse no-RF gap-by-field rows. One compact contract; auto-select per-row SIMION batch parallelism from the frozen resource receipt, current available memory, CPU capacity, and the authorized three-batch ceiling. New run identities only; compare each terminal result to its frozen successful baseline. Functional replay and scheduler regression only; no Formal, optimization, or convergence claim.",
   "experiments": {
     "shared": {
@@ -1887,6 +1883,6 @@
   },
   "published_authoring_identity": {
     "legacy_campaign_sha256": "5F76AAF17DACAECD56E4153F8BC26DF42C5003D6A762873BE270EE5BE0EF4D50",
-    "semantic_sha256": "BACB0CD0F8DFC77C4BF8CC3D908042E065068A5F28593CC3836437FE30E63A6E"
+    "semantic_sha256": "709432CEDB6108B3DC28D3892AA8CAA7ACC80251AD959CC2255F0C0BC627298A"
   }
 }
