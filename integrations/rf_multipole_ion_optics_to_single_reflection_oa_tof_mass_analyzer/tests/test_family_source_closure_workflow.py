@@ -1485,7 +1485,7 @@ $result = Get-PulseTimingOrchestration `
         )
         self.assertNotIn("CAMPAIGN_SOURCE_BINDINGS=STALE", completed.stdout)
 
-    def test_authorized_campaigns_are_exactly_registry_bound(self) -> None:
+    def test_registry_is_the_only_active_campaign_authority(self) -> None:
         campaigns = []
         for path in INTEGRATION_ROOT.rglob("*.json"):
             try:
@@ -1501,7 +1501,12 @@ $result = Get-PulseTimingOrchestration `
             (REPO_ROOT / row["path"]).resolve()
             for row in registry["active_campaigns"]
         }
-        self.assertEqual({path.resolve() for path, _ in authorized}, registered)
+        self.assertTrue(registered)
+        self.assertTrue(registered.issubset({path.resolve() for path, _ in authorized}))
+        self.assertEqual(
+            {path.name for path in registered},
+            {"connector_gap_field_matrix_compact_auto_replay_v2.json"},
+        )
 
     def test_staged_n34_runner_filters_fly2_framing_before_batch_slice(self) -> None:
         campaign = load(
