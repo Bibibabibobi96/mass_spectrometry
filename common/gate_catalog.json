@@ -38,7 +38,7 @@
           "reason": "common_contracts_direct_dependency_changed"
         },
         {
-          "prefix": "common/multipole/",
+          "regex": "^common/multipole/(?!README\\.md$)(?!(?:.*/)?test_[^/]+\\.(?:py|ps1|m|lua)$)",
           "reason": "common_multipole_direct_dependency_changed"
         },
         {
@@ -219,7 +219,7 @@
       "repository_integration_group": "regression",
       "matches": [
         {
-          "prefix": "common/multipole/",
+          "regex": "^common/multipole/(?!README\\.md$)(?!(?:.*/)?test_[^/]+\\.(?:py|ps1|m|lua)$)",
           "reason": "common_multipole_changed"
         },
         {
@@ -316,7 +316,7 @@
           "reason": "component_port_changed"
         },
         {
-          "prefix": "common/multipole/",
+          "regex": "^common/multipole/(?!README\\.md$)(?!(?:.*/)?test_[^/]+\\.(?:py|ps1|m|lua)$)",
           "reason": "common_multipole_direct_dependency_changed"
         },
         {
@@ -408,7 +408,7 @@
           "reason": "common_contracts_direct_dependency_changed"
         },
         {
-          "prefix": "common/multipole/",
+          "regex": "^common/multipole/(?!README\\.md$)(?!(?:.*/)?test_[^/]+\\.(?:py|ps1|m|lua)$)",
           "reason": "common_multipole_direct_dependency_changed"
         },
         {
@@ -454,7 +454,7 @@
           "reason": "common_contracts_direct_dependency_changed"
         },
         {
-          "prefix": "common/multipole/",
+          "regex": "^common/multipole/(?!README\\.md$)(?!(?:.*/)?test_[^/]+\\.(?:py|ps1|m|lua)$)",
           "reason": "common_multipole_direct_dependency_changed"
         },
         {
@@ -489,7 +489,7 @@
           "reason": "common_contracts_direct_dependency_changed"
         },
         {
-          "prefix": "common/multipole/",
+          "regex": "^common/multipole/(?!README\\.md$)(?!(?:.*/)?test_[^/]+\\.(?:py|ps1|m|lua)$)",
           "reason": "common_multipole_direct_dependency_changed"
         },
         {
