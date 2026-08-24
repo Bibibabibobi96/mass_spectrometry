@@ -20,7 +20,7 @@ param(
   [string]$SimionExe='',
   [string]$PythonExe='',
   [ValidateRange(4,2147483647)][int]$RfStepsPerPeriod=80,
-  [ValidateRange(0,100)][int]$TrajectoryQuality=10,
+  [ValidateRange(0,2147483647)][int]$TrajectoryQuality=10,
   [ValidateRange(0.001,1.7976931348623157E+308)][double]$MaximumTimeUs=80.0,
   [ValidateSet('primary_and_zero_axial_control','primary_and_rf_off_energy_control','primary_only')]
   [string]$CaseSet='primary_and_zero_axial_control',

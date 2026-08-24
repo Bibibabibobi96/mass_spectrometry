@@ -184,6 +184,12 @@ class SimionRunnerContractTests(unittest.TestCase):
         self.assertIn('axial_axis="x"', source)
         self.assertIn("maps GEM +z to flight +x", source)
 
+    def test_trajectory_quality_is_not_capped_below_the_integer_contract(self) -> None:
+        source = RUNNER.read_text(encoding="utf-8")
+        self.assertIn(
+            "[ValidateRange(0,2147483647)][int]$TrajectoryQuality=10", source
+        )
+
     def test_final_run_id_is_always_forwarded_to_budget_authorization(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
         self.assertNotIn("$runIdWasExplicit", source)
