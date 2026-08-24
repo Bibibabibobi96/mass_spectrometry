@@ -440,6 +440,32 @@ class CampaignSourceBindingTests(unittest.TestCase):
             self.assertTrue(is_fresh(repo, campaign))
             self.assertFalse(write_campaign(repo, campaign))
 
+    def test_published_discovery_accepts_equivalent_run_control_cleanup(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repo, campaign = self._fixture(Path(directory))
+            self._configure_automatic_pulse_row(campaign)
+            document = json.loads(campaign.read_text(encoding="utf-8"))
+            document["experiments"][0]["single_flight_batch_memory_policy"] = {
+                "policy_id": "auto_memory_bound_from_observed_profile_v2",
+                "reserve_available_memory_bytes": 1,
+            }
+            campaign.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+            self.assertTrue(write_campaign(repo, campaign))
+            document = json.loads(campaign.read_text(encoding="utf-8"))
+            original_sha256 = hashlib.sha256(campaign.read_bytes()).hexdigest().upper()
+            semantic_sha256 = expanded_campaign_semantic_sha256(document)
+            self._publish_discovery_receipt(repo, campaign)
+
+            document["experiments"][0].pop("single_flight_batch_memory_policy")
+            document["published_authoring_identity"] = {
+                "legacy_campaign_sha256": original_sha256,
+                "semantic_sha256": semantic_sha256,
+            }
+            campaign.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+
+            self.assertTrue(write_campaign(repo, campaign))
+            self.assertTrue(is_fresh(repo, campaign))
+
     def test_refuses_unknown_or_forged_discovery_receipt(self) -> None:
         cases = (
             {

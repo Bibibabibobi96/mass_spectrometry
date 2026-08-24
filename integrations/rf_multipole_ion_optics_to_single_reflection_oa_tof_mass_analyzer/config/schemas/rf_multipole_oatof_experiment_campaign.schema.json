@@ -23,7 +23,8 @@
                     "single_flight_batch_memory_policy": {
                       "anyOf": [
                         {"required": ["default_batch_count"]},
-                        {"required": ["maximum_batch_count"]}
+                        {"required": ["maximum_batch_count"]},
+                        {"required": ["policy_id"]}
                       ]
                     }
                   },

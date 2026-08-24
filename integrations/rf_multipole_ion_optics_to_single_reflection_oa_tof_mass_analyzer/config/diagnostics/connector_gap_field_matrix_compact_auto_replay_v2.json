@@ -32,7 +32,6 @@
       },
       "single_flight_source_zvz_affine_policy": "source_zvz_affine_identify_and_bind_v1",
       "single_flight_batch_memory_policy": {
-        "policy_id": "auto_memory_bound_from_observed_profile_v2",
         "reserve_available_memory_bytes": 107374182,
         "memory_safety_numerator": 105,
         "memory_safety_denominator": 100,

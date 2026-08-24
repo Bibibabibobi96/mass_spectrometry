@@ -200,7 +200,6 @@ def _validated_failed_parent_recoveries(
             if (
                 retry_config.get("campaign_id") != campaign.get("campaign_id")
                 or retry_config.get("experiment_id") != experiment.get("experiment_id")
-                or retry_config.get("experiment_row_sha256") != _canonical_sha256(experiment)
             ):
                 raise ValueError(f"failed-parent solver retry is invalid: {candidate.parent.name}")
             finalized.add(candidate)
@@ -295,6 +294,11 @@ def _validate_published_format_recovery(
         if manifests:
             raise ValueError("published campaign identity receipt is missing")
         return
+    # Campaign semantic identity already guards every scientific row. A raw
+    # row SHA additionally contains dispatch-only controls (batching, host
+    # reserves and retention), so using it as a retry/discovery compatibility
+    # gate would reject an otherwise equivalent campaign after a run-control
+    # cleanup. Keep the run/experiment mapping and immutable receipt records.
     accepted_campaign_sha256 = _accepted_published_campaign_sha256(compiled, rendered)
     rows = compiled.get("experiments", [])
     experiments = {str(row["run_id"]): row for row in rows}
@@ -331,7 +335,6 @@ def _validate_published_format_recovery(
             if (
                 receipt.get("execution_strategy") != "simion_single_flight"
                 or receipt.get("experiment_id") != retry_experiment.get("experiment_id")
-                or receipt.get("experiment_row_sha256") != _canonical_sha256(retry_experiment)
             ):
                 raise ValueError(f"published campaign retry identity differs: {run_id}")
             continue
@@ -360,7 +363,6 @@ def _validate_internal_discovery_receipt(
     if (
         run_id != expected_run_id
         or receipt.get("execution_strategy") != "simion_single_flight"
-        or receipt.get("experiment_row_sha256") != _canonical_sha256(experiment)
         or not plan_path.is_file()
         or receipt.get("composition_plan_sha256") != file_sha256(plan_path)
     ):

@@ -1289,20 +1289,20 @@ $result = Get-PulseTimingOrchestration `
 
     def test_active_v6_rejects_retired_fixed_batch_controls(self) -> None:
         active = expand_flat_experiment_authoring(load(COMPACT_GAP_FIELD_CAMPAIGN))
-        row = active["experiments"][0]
-        for mutation in (
-            lambda: row.__setitem__("single_flight_batch_count", 2),
-            lambda: row["single_flight_batch_memory_policy"].__setitem__(
-                "default_batch_count", 2
-            ),
-            lambda: row["single_flight_batch_memory_policy"].__setitem__(
-                "maximum_batch_count", 2
-            ),
+        for path in (
+            ("single_flight_batch_count",),
+            ("single_flight_batch_memory_policy", "default_batch_count"),
+            ("single_flight_batch_memory_policy", "maximum_batch_count"),
+            ("single_flight_batch_memory_policy", "policy_id"),
         ):
-            with self.subTest(mutation=mutation):
+            with self.subTest(path=path):
                 candidate = json.loads(json.dumps(active))
-                row = candidate["experiments"][0]
-                mutation()
+                target = candidate["experiments"][0]
+                for field in path[:-1]:
+                    target = target[field]
+                target[path[-1]] = (
+                    "unconsumed_policy_label" if path[-1] == "policy_id" else 2
+                )
                 with self.assertRaises(ContractError):
                     validate_schema(candidate, ACTIVE_CAMPAIGN_SCHEMA)
 
