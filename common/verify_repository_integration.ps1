@@ -24,6 +24,7 @@ if ($LASTEXITCODE -ne 0 -or $pythonVersion -ne '3.11') { throw "Repository integ
 $concurrencyMode = if ($MaxConcurrency -eq 0) { 'auto' } else { 'explicit' }
 $MaxConcurrency = Resolve-GateConcurrency -Requested $MaxConcurrency
 $routes = @(Read-GateCatalog -RepoRoot $repoRoot)
+$catalogCommandInvoker = ${function:Invoke-GateCatalogCommand}
 
 function Invoke-IntegrationStage {
     param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][scriptblock]$Action)
@@ -37,8 +38,6 @@ function Invoke-IntegrationStage {
 $stageActions = [ordered]@{
     documentation = { & (Join-Path $PSScriptRoot 'verify_documentation.ps1') }
     repository_text_bytes = { & $PythonExe (Join-Path $PSScriptRoot 'verify_repository_text_bytes.py') }
-    livelink_failure_classification = { & (Join-Path $PSScriptRoot 'comsol\test_livelink_failure_classification.ps1') }
-    livelink_environment = { & (Join-Path $PSScriptRoot 'comsol\test_livelink_environment.ps1') }
     development_standards = { & $PythonExe (Join-Path $PSScriptRoot 'verify_development_standards.py') }
     ruff_all = {
         & $PythonExe -m ruff check (Join-Path $repoRoot 'common') `
@@ -61,7 +60,7 @@ foreach ($route in $routes) {
         $route.command
     }
     $stageActions[$stage] = {
-        Invoke-GateCatalogCommand -Command $command -RepoRoot $repoRoot `
+        & $catalogCommandInvoker -Command $command -RepoRoot $repoRoot `
             -PythonExe $PythonExe
     }.GetNewClosure()
 }
@@ -123,8 +122,6 @@ Write-Output (
 
 $globalFastStages = @(
     'repository_text_bytes',
-    'livelink_failure_classification',
-    'livelink_environment',
     'development_standards',
     'ruff_all'
 )

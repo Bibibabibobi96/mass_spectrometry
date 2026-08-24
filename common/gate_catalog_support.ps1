@@ -172,12 +172,14 @@ function Invoke-GateCatalogCommand {
         } else {
             $scriptPath = Join-Path $RepoRoot ([string]$Command.script)
             $parameters = @{}
-            foreach ($property in $Command.parameters.PSObject.Properties) {
-                $value = $property.Value
-                if ($value -is [string]) {
-                    $value = $value.Replace('{python}', $PythonExe)
+            if ($null -ne $Command.PSObject.Properties['parameters']) {
+                foreach ($property in $Command.parameters.PSObject.Properties) {
+                    $value = $property.Value
+                    if ($value -is [string]) {
+                        $value = $value.Replace('{python}', $PythonExe)
+                    }
+                    $parameters[$property.Name] = $value
                 }
-                $parameters[$property.Name] = $value
             }
             & $scriptPath @parameters
         }

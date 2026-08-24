@@ -342,6 +342,22 @@ class ChangedGateContractTests(unittest.TestCase):
             {"simion_common": "common_simion_changed"},
         )
 
+    def test_livelink_tests_use_their_direct_fast_stages(self) -> None:
+        self.assertEqual(
+            self.routed_stages("common/comsol/test_livelink_environment.ps1"),
+            {"livelink_environment": "livelink_environment_test_changed"},
+        )
+        self.assertEqual(
+            self.routed_stages(
+                "common/comsol/test_livelink_failure_classification.ps1"
+            ),
+            {
+                "livelink_failure_classification": (
+                    "livelink_failure_classifier_test_changed"
+                )
+            },
+        )
+
     def test_cloc_entrypoint_routes_to_its_focused_contract_tests(self) -> None:
         routed = self.routed_stages("common/report_cloc_delta.ps1")
         self.assertEqual(routed, {"cloc_contract_tests": "cloc_entrypoint_changed"})

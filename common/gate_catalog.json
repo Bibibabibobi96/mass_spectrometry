@@ -25,6 +25,44 @@
       }
     },
     {
+      "stage": "livelink_failure_classification",
+      "dependency_profile": "stdlib",
+      "repository_integration_group": "fast",
+      "matches": [
+        {
+          "exact": "common/comsol/livelink_failure_classification.ps1",
+          "reason": "livelink_failure_classifier_changed"
+        },
+        {
+          "exact": "common/comsol/test_livelink_failure_classification.ps1",
+          "reason": "livelink_failure_classifier_test_changed"
+        }
+      ],
+      "command": {
+        "runner": "powershell",
+        "script": "common/comsol/test_livelink_failure_classification.ps1"
+      }
+    },
+    {
+      "stage": "livelink_environment",
+      "dependency_profile": "stdlib",
+      "repository_integration_group": "fast",
+      "matches": [
+        {
+          "exact": "common/comsol/livelink_environment.ps1",
+          "reason": "livelink_environment_helper_changed"
+        },
+        {
+          "exact": "common/comsol/test_livelink_environment.ps1",
+          "reason": "livelink_environment_test_changed"
+        }
+      ],
+      "command": {
+        "runner": "powershell",
+        "script": "common/comsol/test_livelink_environment.ps1"
+      }
+    },
+    {
       "stage": "rf_quadrupole_generated_publications",
       "dependency_profile": "locked",
       "repository_integration_group": "fast",
@@ -42,7 +80,7 @@
           "reason": "common_multipole_direct_dependency_changed"
         },
         {
-          "prefix": "common/comsol/",
+          "regex": "^common/comsol/(?!test_livelink_(?:environment|failure_classification)\\.ps1$)",
           "reason": "common_comsol_direct_dependency_changed"
         },
         {
@@ -219,7 +257,7 @@
           "reason": "common_simion_dependency_changed"
         },
         {
-          "prefix": "common/comsol/",
+          "regex": "^common/comsol/(?!test_livelink_(?:environment|failure_classification)\\.ps1$)",
           "reason": "common_comsol_dependency_changed"
         }
       ],
@@ -250,7 +288,7 @@
           "reason": "common_simion_dependency_changed"
         },
         {
-          "prefix": "common/comsol/",
+          "regex": "^common/comsol/(?!test_livelink_(?:environment|failure_classification)\\.ps1$)",
           "reason": "common_comsol_dependency_changed"
         }
       ],
@@ -347,7 +385,7 @@
           "reason": "common_contracts_direct_dependency_changed"
         },
         {
-          "prefix": "common/comsol/",
+          "regex": "^common/comsol/(?!test_livelink_(?:environment|failure_classification)\\.ps1$)",
           "reason": "common_comsol_direct_dependency_changed"
         },
         {
@@ -401,7 +439,7 @@
           "reason": "common_contracts_direct_dependency_changed"
         },
         {
-          "prefix": "common/comsol/",
+          "regex": "^common/comsol/(?!test_livelink_(?:environment|failure_classification)\\.ps1$)",
           "reason": "common_comsol_direct_dependency_changed"
         }
       ],
@@ -435,7 +473,7 @@
           "reason": "common_multipole_direct_dependency_changed"
         },
         {
-          "prefix": "common/comsol/",
+          "regex": "^common/comsol/(?!test_livelink_(?:environment|failure_classification)\\.ps1$)",
           "reason": "common_comsol_direct_dependency_changed"
         },
         {
@@ -481,7 +519,7 @@
           "reason": "common_multipole_direct_dependency_changed"
         },
         {
-          "prefix": "common/comsol/",
+          "regex": "^common/comsol/(?!test_livelink_(?:environment|failure_classification)\\.ps1$)",
           "reason": "common_comsol_direct_dependency_changed"
         },
         {
@@ -516,7 +554,7 @@
           "reason": "common_multipole_direct_dependency_changed"
         },
         {
-          "prefix": "common/comsol/",
+          "regex": "^common/comsol/(?!test_livelink_(?:environment|failure_classification)\\.ps1$)",
           "reason": "common_comsol_direct_dependency_changed"
         },
         {
@@ -547,7 +585,7 @@
           "reason": "common_contracts_direct_dependency_changed"
         },
         {
-          "prefix": "common/comsol/",
+          "regex": "^common/comsol/(?!test_livelink_(?:environment|failure_classification)\\.ps1$)",
           "reason": "common_comsol_direct_dependency_changed"
         }
       ],
