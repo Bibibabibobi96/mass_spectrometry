@@ -19,8 +19,10 @@ PowerShell 或恢复路径另行默认。混合质量需要显式的目标物种
 ## 生成物与身份
 
 `prepare.py` 将 authoring campaign 展开为完整冻结 experiment，生成 resolved connection、composition plan、
-resolved source/population contract 和 engineering budget。`resolved_engineering_budget.json` 记录完整 SIMION
-dispatch plan；其 batch 决策必须与 adapter 接收的批次数一致，但它不是物理 handoff 或 PA content identity。
+resolved execution plan、resolved source/population contract 和 engineering budget。新生成的
+`resolved_execution_plan.json` 是 adapter 消费的结构化执行参数；composition plan 中的扁平参数仅用于与它
+逐项等价校验，以保持旧 prepared plan 可重放。`resolved_engineering_budget.json` 记录完整 SIMION dispatch
+plan；其 batch 决策必须与 adapter 接收的批次数一致，但它不是物理 handoff 或 PA content identity。
 
 原始文件 SHA 用于来源、manifest、生成物闭合和审计。跨组件可用性由 schema、单位、frame、clock/event、
 粒子身份和明确的字段投影决定；不能仅因无因果的 provenance 或 consumer numerics 差异拒绝合法 checkpoint。
