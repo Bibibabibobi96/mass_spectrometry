@@ -32,7 +32,7 @@ class ProcessObservationTests(unittest.TestCase):
                 self.assertIsNone(peak)
 
     def test_timeout_terminates_only_the_observed_child(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=os.name == "nt") as directory:
             root = Path(directory)
             with self.assertRaises(subprocess.TimeoutExpired):
                 run_observed_process(

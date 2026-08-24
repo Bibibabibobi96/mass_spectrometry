@@ -115,6 +115,10 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
         self.assertNotIn("$batchCount -ne 5", runner)
         self.assertNotIn("N=1000 single flight requires five batches", runner)
         self.assertIn("common.simion.particle_batching", runner)
+        self.assertIn(
+            "'--default-num-particles',([string]$batch.count)", runner
+        )
+        self.assertNotIn("[Math]::Max(100,[int]$batch.count)", runner)
         self.assertIn("simion_execution_batch_plan.json", runner)
         self.assertIn("simion_single_wave_batch_plan_sha256", runner)
         self.assertNotIn("$quotient = [Math]::Floor($launched / $batchCount)", runner)
