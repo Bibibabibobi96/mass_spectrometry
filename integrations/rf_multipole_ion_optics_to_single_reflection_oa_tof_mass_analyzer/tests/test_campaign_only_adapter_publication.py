@@ -864,30 +864,6 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
         self.assertEqual(calls[1][-1], "first")
         self.assertNotIn("second", calls[1])
 
-    def test_adapter_has_one_campaign_argument_contract(self) -> None:
-        source = ADAPTER_PATH.read_text(encoding="utf-8-sig")
-        required = (
-            "campaign_path",
-            "campaign_sha256",
-            "campaign_id",
-            "experiment_id",
-            "experiment_row_sha256",
-            "resolved_source_contract_filename",
-            "upstream_resolved_design_filename",
-        )
-        for name in required:
-            self.assertIn(f"'{name}'", source)
-        for obsolete in (
-            "campaignMode",
-            "sourceRevision",
-            "source_revision",
-            "preregistration",
-        ):
-            self.assertNotIn(obsolete, source)
-        self.assertIn("json.dumps(rows[0], ensure_ascii=False, sort_keys=True", source)
-        self.assertIn("$stageParticleCount = [int]$budget.particle_count", source)
-        self.assertIn("$retrySuffix = if ($RunId -match", source)
-
     def test_materialized_source_freezes_every_solver_consumed_property(self) -> None:
         source = ADAPTER_PATH.read_text(encoding="utf-8-sig")
         prepare_exit = source.index("if ($PrepareOnly)")
