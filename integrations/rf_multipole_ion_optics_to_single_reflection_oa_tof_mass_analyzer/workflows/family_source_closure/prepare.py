@@ -3787,27 +3787,6 @@ def prepare_family_source_closure(
                 + pulse_restart_validation_path.name,
                 "pre_pulse_restart_validation_sha256="
                 + file_sha256(pulse_restart_validation_path),
-            ]) + ([] if "single_flight_frontend_grid_profile_id" not in experiment else [
-                "single_flight_frontend_grid_profile_id="
-                + experiment["single_flight_frontend_grid_profile_id"],
-            ]) + ([] if "single_flight_oatof_numerical_profile_id" not in experiment else [
-                "single_flight_oatof_numerical_profile_id="
-                + experiment["single_flight_oatof_numerical_profile_id"],
-            ]) + ([] if "single_flight_trajectory_quality_profile_id" not in experiment else [
-                "single_flight_trajectory_quality_profile_id="
-                + experiment["single_flight_trajectory_quality_profile_id"],
-            ]) + ([] if "single_flight_time_integration_profile_id" not in experiment else [
-                "single_flight_time_integration_profile_id="
-                + experiment["single_flight_time_integration_profile_id"],
-            ]) + ([] if "single_flight_maximum_time_of_flight_us" not in experiment else [
-                "single_flight_maximum_time_of_flight_us="
-                + format(
-                    float(experiment["single_flight_maximum_time_of_flight_us"]),
-                    ".17g",
-                ),
-            ]) + ([] if "single_flight_spatial_window_profile_id" not in experiment else [
-                "single_flight_spatial_window_profile_id="
-                + experiment["single_flight_spatial_window_profile_id"],
             ]) + ([] if resolved_region_field_contract_path is None else [
                 "resolved_region_field_contract_filename=inputs/"
                 + resolved_region_field_contract_path.name,

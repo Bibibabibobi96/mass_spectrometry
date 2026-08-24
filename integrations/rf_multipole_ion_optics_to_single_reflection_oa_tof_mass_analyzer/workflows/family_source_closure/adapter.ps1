@@ -233,24 +233,6 @@ if ($frozenArguments.ContainsKey('single_flight_source_materialization_profile_i
     $expectedArguments += $materializedSourceArgumentNames[1..5]
   }
 }
-if ($frozenArguments.ContainsKey('single_flight_frontend_grid_profile_id')) {
-  $expectedArguments += 'single_flight_frontend_grid_profile_id'
-}
-if ($frozenArguments.ContainsKey('single_flight_oatof_numerical_profile_id')) {
-  $expectedArguments += 'single_flight_oatof_numerical_profile_id'
-}
-if ($frozenArguments.ContainsKey('single_flight_trajectory_quality_profile_id')) {
-  $expectedArguments += 'single_flight_trajectory_quality_profile_id'
-}
-if ($frozenArguments.ContainsKey('single_flight_time_integration_profile_id')) {
-  $expectedArguments += 'single_flight_time_integration_profile_id'
-}
-if ($frozenArguments.ContainsKey('single_flight_maximum_time_of_flight_us')) {
-  $expectedArguments += 'single_flight_maximum_time_of_flight_us'
-}
-if ($frozenArguments.ContainsKey('single_flight_spatial_window_profile_id')) {
-  $expectedArguments += 'single_flight_spatial_window_profile_id'
-}
 if ($frozenArguments.ContainsKey('resolved_region_field_contract_filename')) {
   $expectedArguments += @(
     'resolved_region_field_contract_filename',
@@ -1241,57 +1223,6 @@ if ($executionStrategy -eq 'simion_single_flight') {
           [string]$frozenArguments.source_zvz_theory_working_point_sha256
       }
     }
-  }
-  if ($frozenArguments.ContainsKey('single_flight_frontend_grid_profile_id')) {
-    if ([string]$experiment.single_flight_frontend_grid_profile_id -ne
-        [string]$frozenArguments.single_flight_frontend_grid_profile_id) {
-      throw 'Single-flight frontend grid profile changed after preparation.'
-    }
-    $runnerArguments.FrontendGridProfileId =
-      [string]$frozenArguments.single_flight_frontend_grid_profile_id
-  }
-  if ($frozenArguments.ContainsKey('single_flight_oatof_numerical_profile_id')) {
-    if ([string]$experiment.single_flight_oatof_numerical_profile_id -ne
-        [string]$frozenArguments.single_flight_oatof_numerical_profile_id) {
-      throw 'Single-flight oaTOF numerical profile changed after preparation.'
-    }
-    $runnerArguments.OatofNumericalProfileId =
-      [string]$frozenArguments.single_flight_oatof_numerical_profile_id
-  }
-  if ($frozenArguments.ContainsKey('single_flight_trajectory_quality_profile_id')) {
-    if ([string]$experiment.single_flight_trajectory_quality_profile_id -ne
-        [string]$frozenArguments.single_flight_trajectory_quality_profile_id) {
-      throw 'Single-flight trajectory-quality profile changed after preparation.'
-    }
-    $runnerArguments.TrajectoryQualityProfileId =
-      [string]$frozenArguments.single_flight_trajectory_quality_profile_id
-  }
-  if ($frozenArguments.ContainsKey('single_flight_time_integration_profile_id')) {
-    if ([string]$experiment.single_flight_time_integration_profile_id -ne
-        [string]$frozenArguments.single_flight_time_integration_profile_id) {
-      throw 'Single-flight time-integration profile changed after preparation.'
-    }
-    $runnerArguments.TimeIntegrationProfileId =
-      [string]$frozenArguments.single_flight_time_integration_profile_id
-  }
-  if ($frozenArguments.ContainsKey('single_flight_maximum_time_of_flight_us')) {
-    $declaredMaximumTofUs = [double]$experiment.single_flight_maximum_time_of_flight_us
-    $frozenMaximumTofUs = [double]$frozenArguments.single_flight_maximum_time_of_flight_us
-    if ([double]::IsNaN($declaredMaximumTofUs) -or
-        [double]::IsInfinity($declaredMaximumTofUs) -or
-        $declaredMaximumTofUs -le 0 -or
-        $declaredMaximumTofUs -ne $frozenMaximumTofUs) {
-      throw 'Single-flight maximum time of flight changed after preparation or is invalid.'
-    }
-    $runnerArguments.MaximumTimeOfFlightUs = $declaredMaximumTofUs
-  }
-  if ($frozenArguments.ContainsKey('single_flight_spatial_window_profile_id')) {
-    if ([string]$experiment.single_flight_spatial_window_profile_id -ne
-        [string]$frozenArguments.single_flight_spatial_window_profile_id) {
-      throw 'Single-flight spatial-window profile changed after preparation.'
-    }
-    $runnerArguments.SpatialWindowProfileId =
-      [string]$frozenArguments.single_flight_spatial_window_profile_id
   }
   if ($frozenArguments.ContainsKey('source_release_mode')) {
     if ($frozenArguments.ContainsKey('source_profile_id')) {
