@@ -180,7 +180,7 @@ class PhaseMatchedParticleSourceTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "not the deterministic prefix"):
                 self._derive(directory, reference=wrong_reference)
 
-    def test_rejects_nonfinite_input_and_nonstandard_count(self) -> None:
+    def test_rejects_nonfinite_input_and_accepts_nonstandard_positive_count(self) -> None:
         with tempfile.TemporaryDirectory() as directory_name:
             directory = Path(directory_name)
             rows = _read_rows(N100_PATH)
@@ -192,8 +192,11 @@ class PhaseMatchedParticleSourceTests(unittest.TestCase):
 
             short = directory / "short.csv"
             _write_rows(short, _read_rows(N100_PATH)[:-1])
-            with self.assertRaisesRegex(ValueError, "standard particle count"):
-                self._derive(directory, source=short, stem="out_short")
+            output_csv, _, metadata = self._derive(
+                directory, source=short, reference=None, stem="out_short"
+            )
+            self.assertEqual(len(_read_rows(output_csv)), 99)
+            self.assertFalse(metadata["particle_count_policy"]["standard_count_verified"])
 
     def test_rejects_missing_column_duplicate_id_and_negative_birth_time(self) -> None:
         mutations = {

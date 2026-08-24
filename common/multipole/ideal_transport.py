@@ -9,7 +9,7 @@ import random
 from pathlib import Path
 from typing import Any
 
-from common.contracts.particle_count_policy import validate_standard_particle_count
+from common.contracts.particle_count_policy import validate_positive_particle_count
 from common.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
 from common.multipole.family_contract import from_high_order_baseline
 
@@ -32,7 +32,7 @@ def validate_contract(contract: dict[str, Any]) -> None:
     )):
         raise ValueError("minimal L1 reference requires collisions, space charge and magnetic field disabled")
     geometry = contract["geometry_mm"]
-    validate_standard_particle_count(int(contract["particle_source"]["count"]))
+    validate_positive_particle_count(int(contract["particle_source"]["count"]))
     if not 0 < float(geometry["usable_radius"]) < float(geometry["inscribed_radius_r0"]):
         raise ValueError("usable radius must be positive and below r0")
     if not math.isclose(operating.geometry.r0_mm, float(geometry["inscribed_radius_r0"])):
@@ -94,7 +94,7 @@ def adiabaticity(
 
 def source_particles(contract: dict[str, Any]) -> list[dict[str, float]]:
     source = contract["particle_source"]
-    validate_standard_particle_count(int(source["count"]))
+    validate_positive_particle_count(int(source["count"]))
     rng = random.Random(int(source["seed"]))
     mass_kg = float(source["mass_amu"]) * AMU_KG
     speed = math.sqrt(2 * float(source["kinetic_energy_eV"]) * ELEMENTARY_CHARGE_C / mass_kg)

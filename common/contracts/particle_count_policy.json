@@ -7,6 +7,6 @@
   "high_statistical_count": 5000,
   "default_particle_count": 100,
   "prefix_sampling_required": true,
-  "scope": "All present and future independent-particle trajectory projects and modes.",
-  "extension_policy": "Versioned convergence or collective-effect studies may add explicitly named counts, but cannot redefine a count below 100 as a functional, Candidate or Formal baseline."
+  "scope": "Formal and Candidate evidence baselines for independent-particle trajectory projects; not an exploration sample-size restriction.",
+  "extension_policy": "Versioned convergence or collective-effect studies may add explicitly named evidence counts, but cannot redefine a count below 100 as a functional, Candidate or Formal baseline."
 }

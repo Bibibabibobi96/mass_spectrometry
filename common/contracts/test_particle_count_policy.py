@@ -38,6 +38,7 @@ class ParticleCountPolicyTests(unittest.TestCase):
         self.assertIn("N=100是功能检查、日常回归和Candidate功能证据的最低标准档", readme)
         self.assertIn("N=1000是峰形、尾部、束斑/发散分布、损失分布与标准分辨率统计档", readme)
         self.assertIn("N=5000是高统计档", readme)
+        self.assertIn("探索运行可使用任意正整数粒子数", readme)
         self.assertIn("较小标准样本必须是同一种子较大母样本的前缀，不能分别抽样", readme)
 
     def test_prefix_accepts_matching_headered_sources_and_expected_hashes(self) -> None:

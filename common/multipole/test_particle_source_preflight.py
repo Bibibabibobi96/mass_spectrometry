@@ -88,9 +88,10 @@ class ParticleSourcePreflightTest(unittest.TestCase):
                         copy.deepcopy(self.resolved),
                     )
 
-    def test_nonstandard_count_is_rejected(self) -> None:
-        with tempfile.TemporaryDirectory() as directory, self.assertRaises(ValueError):
-            validate_source(self.write_source(directory, count=99), self.resolved)
+    def test_nonstandard_positive_count_remains_a_valid_canonical_source(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            result = validate_source(self.write_source(directory, count=99), self.resolved)
+        self.assertEqual(result["particle_count"], 99)
 
     def test_bounded_distribution_records_actual_statistics_and_rejects_outlier(self) -> None:
         bounded = copy.deepcopy(self.resolved)

@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from common.contracts.particle_physics import kinetic_energy_ev
-from common.contracts.particle_count_policy import validate_standard_particle_count
+from common.contracts.particle_count_policy import validate_positive_particle_count
 
 COLUMNS = [
     "particle_id",
@@ -162,7 +162,10 @@ def validate_source(
         rows = list(reader)
     if not rows:
         raise ValueError("canonical particle source is empty")
-    validate_standard_particle_count(len(rows))
+    # Sample size is a run-control choice.  The source boundary only needs a
+    # non-empty, fully identified particle table; formal evidence applies its
+    # own standard-N qualification separately.
+    validate_positive_particle_count(len(rows))
     particle_ids: set[int] = set()
     masses: set[float] = set()
     energies: list[float] = []

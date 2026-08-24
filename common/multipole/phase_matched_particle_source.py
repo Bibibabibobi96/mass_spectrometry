@@ -23,8 +23,9 @@ from typing import Any
 
 from common.contracts.file_identity import file_sha256
 from common.contracts.particle_count_policy import (
+    load_particle_count_policy,
+    validate_positive_particle_count,
     validate_prefix_particle_sources,
-    validate_standard_particle_count,
 )
 
 
@@ -77,7 +78,7 @@ def _load_rows_from_bytes(payload: bytes, label: str) -> list[dict[str, str]]:
         rows = list(reader)
     if not rows:
         raise ValueError(f"{label} is empty")
-    validate_standard_particle_count(len(rows))
+    validate_positive_particle_count(len(rows))
     expected_ids = list(range(1, len(rows) + 1))
     observed_ids: list[int] = []
     for row_index, row in enumerate(rows, start=1):
@@ -214,7 +215,6 @@ def validate_phase_matched_source_metadata(metadata: dict[str, Any]) -> None:
     particle_count = metadata.get("particle_count")
     if isinstance(particle_count, bool) or not isinstance(particle_count, int):
         raise ValueError("phase-matched source particle count is invalid")
-    validate_standard_particle_count(particle_count)
     for key in ("baseline_source_sha256", "derived_source_sha256"):
         if not _is_sha256(metadata.get(key)):
             raise ValueError(f"phase-matched source metadata {key} is invalid")
@@ -243,8 +243,11 @@ def validate_phase_matched_source_metadata(metadata: dict[str, Any]) -> None:
         ):
             raise ValueError("phase-matched source energy verification is invalid")
     prefix = metadata.get("particle_count_policy")
-    if not isinstance(prefix, dict) or prefix.get("standard_count_verified") is not True:
+    if not isinstance(prefix, dict) or prefix.get("positive_count_verified") is not True:
         raise ValueError("phase-matched source particle-count policy is invalid")
+    is_standard = particle_count in load_particle_count_policy()["standard_particle_counts"]
+    if prefix.get("standard_count_verified") is not is_standard:
+        raise ValueError("phase-matched source standard-count classification is invalid")
     if prefix.get("row_order_preserved") is not True:
         raise ValueError("phase-matched source row-order policy is invalid")
     if particle_count == 100:
@@ -319,10 +322,11 @@ def derive_phase_matched_source(
 ) -> dict[str, Any]:
     """Publish a deterministic phase-matched canonical source and metadata.
 
-    ``source_path`` must contain exactly 100 or 1000 canonical rows.  N=100
-    derivations additionally require the governed N=1000 source so the exact
-    prefix contract can be verified.  Both output paths must be new and distinct
-    from every input.  Existing files are never overwritten.
+    ``source_path`` may contain any positive number of canonical rows.  N=100
+    derivations additionally require the governed N=1000 source so the formal
+    baseline prefix contract can be verified.  Other exploration samples do not
+    acquire an unrelated prefix requirement.  Both output paths must be new and
+    distinct from every input.  Existing files are never overwritten.
     """
     source_path = Path(source_path)
     output_csv_path = Path(output_csv_path)
@@ -353,7 +357,8 @@ def derive_phase_matched_source(
     source_payload = source_path.read_bytes()
     rows = _load_rows_from_bytes(source_payload, "baseline source")
     prefix_metadata: dict[str, Any] = {
-        "standard_count_verified": True,
+        "positive_count_verified": True,
+        "standard_count_verified": len(rows) in load_particle_count_policy()["standard_particle_counts"],
         "row_order_preserved": True,
         "prefixes_preserved_by_row_local_derivation": True,
     }

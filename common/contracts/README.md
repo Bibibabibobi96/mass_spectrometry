@@ -109,9 +109,8 @@ SHA-256、组件到仪器frame的pose、唯一source-to-target相对变换，以
 Euler顺序或器件参数反写到公共刚体语义。供应商局部坐标映射可以留在薄适配器，但不能成为跨组件pose
 或粒子状态的第二权威。
 
-`particle_count_policy.json`是根README“通用验证口径”对应的机器合同。入口使用
-`python -m common.contracts.particle_count_policy --count <N>`在求解前失败关闭；本目录不重复定义档位，
-项目也不得复制后修改该规范。
+`particle_count_policy.json`是根README“正式证据粒子数口径”对应的机器合同。它约束Candidate和Formal
+基线，不限制探索运行的正整数样本量；本目录不重复定义正式档位，项目也不得复制后修改该规范。
 
 ## 项目发现
 
