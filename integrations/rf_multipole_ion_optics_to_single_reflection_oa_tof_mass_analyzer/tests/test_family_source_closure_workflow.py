@@ -1853,7 +1853,9 @@ $result = Get-PulseTimingOrchestration `
                     plan_output=root / "plan.json",
                 )
 
-    def test_prepare_allows_explicit_repository_exploration_campaign(self) -> None:
+    def test_exploration_preparation_freezes_inputs_accepted_by_runtime_resolver(
+        self,
+    ) -> None:
         campaign = load(COMPACT_GAP_FIELD_CAMPAIGN)
         campaign["status"] = "exploration"
         campaign["experiments"]["shared"]["single_flight_numerical_overrides"] = {
@@ -1892,6 +1894,48 @@ $result = Get-PulseTimingOrchestration `
                     "inputs/resolved_single_flight_execution_profile.json",
                     arguments,
                 )
+                frozen = dict(argument.split("=", 1) for argument in arguments)
+                runtime_binding = REPO_ROOT / frozen["runtime_binding_path"]
+                resolved_source = output / frozen[
+                    "resolved_source_contract_filename"
+                ]
+                upstream_design = output / frozen[
+                    "upstream_resolved_design_filename"
+                ]
+                runtime_support = INTEGRATION_ROOT / "runtime" / "run_artifacts.ps1"
+                runtime_resolver = INTEGRATION_ROOT / "runtime" / "runtime_binding.ps1"
+                script = f"""
+$OutputEncoding = [Text.UTF8Encoding]::new($false)
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+. '{runtime_support}'
+. '{runtime_resolver}'
+$runtime = Resolve-RfOatofRuntimeBinding `
+  -RepoRoot '{REPO_ROOT}' `
+  -ResolvedConnection '{resolved}' `
+  -RuntimeBinding '{runtime_binding}' `
+  -ExpectedConnectionProfileId '{load(resolved)["selection"]["connection_profile_id"]}' `
+  -SourceBranchId '{frozen["source_branch_id"]}' `
+  -ResolvedSourceContract '{resolved_source}' `
+  -ResolvedSourceContractSha256 '{frozen["resolved_source_contract_sha256"]}' `
+  -UpstreamResolvedDesign '{upstream_design}' `
+  -UpstreamResolvedDesignSha256 '{frozen["upstream_resolved_design_sha256"]}'
+if ($runtime.binding.schema_version -ne 3) {{ throw 'runtime binding schema differs' }}
+if ($runtime.contracts.resolved_source_contract -ne '{resolved_source}') {{
+  throw 'runtime resolver did not preserve the frozen source contract'
+}}
+'EXPLORATION_RUNTIME_RESOLUTION=PASS'
+"""
+                result = subprocess.run(
+                    ["pwsh", "-NoProfile", "-Command", script],
+                    cwd=REPO_ROOT,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=90,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("EXPLORATION_RUNTIME_RESOLUTION=PASS", result.stdout)
 
     def test_exploration_preparation_requires_explicit_status(self) -> None:
         campaign = load(COMPACT_GAP_FIELD_CAMPAIGN)

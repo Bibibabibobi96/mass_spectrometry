@@ -631,17 +631,6 @@ foreach ($case in $cases) {{
             self.assertNotIn("SourceContractOverride", text, path)
             self.assertNotIn("UpstreamResolvedDesignOverride", text, path)
 
-    def test_runtime_accepts_only_active_v3_and_fixed_parent_run_files(self) -> None:
-        text = RUNTIME_BINDING.read_text(encoding="utf-8")
-        self.assertIn("$binding.schema_version -ne 3", text)
-        self.assertNotRegex(text, r"sourceContract\.schema_version\s+-eq\s+1")
-        self.assertIn("filename = 'resolved_source_contract.json'", text)
-        self.assertIn("filename = 'upstream_resolved_design.json'", text)
-        self.assertIn("-Root $parentRunRoot", text)
-        self.assertIn("contractPaths.resolved_source_contract", text)
-        self.assertNotIn("binding.contracts.source_contract", text)
-        self.assertNotIn("binding.contracts.upstream_resolved_design", text)
-
     def test_stage_modes_and_manifest_roles_are_particle_count_neutral(self) -> None:
         joined = "\n".join(path.read_text(encoding="utf-8") for path in RUNNERS)
         for forbidden in (
