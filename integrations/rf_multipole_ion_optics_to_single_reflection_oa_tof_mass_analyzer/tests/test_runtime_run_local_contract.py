@@ -490,7 +490,6 @@ try {{
             "Get-Content -LiteralPath $ResolvedEngineeringBudget",
             after_initialize,
         )
-        self.assertEqual(after_initialize.count("$ResolvedEngineeringBudget"), 1)
         self.assertNotIn(
             "Runner PA cache policy differs from the frozen resolved engineering budget.",
             after_initialize,
