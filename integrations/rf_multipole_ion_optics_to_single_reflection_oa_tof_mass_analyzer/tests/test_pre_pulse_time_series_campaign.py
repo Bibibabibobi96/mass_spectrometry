@@ -27,7 +27,7 @@ SCHEMA_DIR = Path(__file__).resolve().parents[1] / "config" / "schemas"
 ACTIVE_CAMPAIGN_SCHEMA = INTEGRATION_ROOT / "config" / "schemas" / (
     "rf_multipole_oatof_experiment_campaign.schema.json"
 )
-ARCHIVAL_CAMPAIGN_SCHEMA = ACTIVE_CAMPAIGN_SCHEMA.parent / (
+ARCHIVAL_CAMPAIGN_SCHEMA = ACTIVE_CAMPAIGN_SCHEMA.parent / "archive" / (
     "rf_multipole_oatof_experiment_campaign_v1_to_v6.schema.json"
 )
 LEGACY_CAMPAIGN_PATH = INTEGRATION_ROOT / (
