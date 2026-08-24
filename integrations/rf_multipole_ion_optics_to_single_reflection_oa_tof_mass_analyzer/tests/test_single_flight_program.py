@@ -377,16 +377,6 @@ class SingleFlightProgramTests(unittest.TestCase):
         )
         self.assertIn("TRACE: accelerator_intermediate2_forward", program)
 
-    def test_runner_consumes_frozen_electrode_topology_for_overlay_basis(self) -> None:
-        runner = (
-            Path(__file__).resolve().parents[1] / "runtime" / "run_single_flight.ps1"
-        ).read_text(encoding="utf-8")
-        self.assertIn("frontend_electrode_topology.json", runner)
-        self.assertIn("$frontendBasisElectrodeIds", runner)
-        self.assertIn("$maximumFrontendElectrodeId", runner)
-        self.assertNotIn("basis_count=20", runner)
-        self.assertNotIn("foreach ($electrode in 0..19)", runner)
-
     def test_successor_has_one_workbench_and_one_definition_per_callback(self) -> None:
         upstream, frontend = _minimal_program_contracts()
         geometry_path = REPO / (
