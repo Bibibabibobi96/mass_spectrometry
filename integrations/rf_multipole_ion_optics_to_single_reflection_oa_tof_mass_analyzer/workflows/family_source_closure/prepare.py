@@ -370,7 +370,7 @@ def _automatic_pulse_population_binding(
 
 def resolve_single_flight_dispatch_plan(
     experiment: dict[str, Any], *, execution_particle_count: int,
-    workspace: Path | None = None, rf_steps_per_period: int | None = None,
+    rf_steps_per_period: int | None = None,
     resource_profiles: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Resolve execution-only dispatch without deriving the governed population.
@@ -2936,7 +2936,6 @@ def prepare_family_source_closure(
         )
         single_flight_dispatch_plan = resolve_single_flight_dispatch_plan(
             experiment, execution_particle_count=execution_particle_count,
-            workspace=workspace,
             rf_steps_per_period=(
                 int(execution_profile["rf_steps_per_period"])
                 if execution_profile is not None else None
