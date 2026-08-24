@@ -336,6 +336,12 @@ class ChangedGateContractTests(unittest.TestCase):
             {"multipole_common": "common_multipole_changed"},
         )
 
+    def test_simion_tests_use_their_direct_test_stage(self) -> None:
+        self.assertEqual(
+            self.routed_stages("common/simion/test_resource_scheduler.py"),
+            {"simion_common": "common_simion_changed"},
+        )
+
     def test_cloc_entrypoint_routes_to_its_focused_contract_tests(self) -> None:
         routed = self.routed_stages("common/report_cloc_delta.ps1")
         self.assertEqual(routed, {"cloc_contract_tests": "cloc_entrypoint_changed"})

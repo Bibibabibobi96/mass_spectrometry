@@ -46,7 +46,7 @@
           "reason": "common_comsol_direct_dependency_changed"
         },
         {
-          "prefix": "common/simion/",
+          "regex": "^common/simion/(?!README\\.md$|test_[^/]+\\.(?:py|ps1|m|lua)$)",
           "reason": "common_simion_direct_dependency_changed"
         }
       ],
@@ -183,6 +183,29 @@
       }
     },
     {
+      "stage": "simion_common",
+      "dependency_profile": "locked",
+      "repository_integration_group": "regression",
+      "matches": [
+        {
+          "prefix": "common/simion/",
+          "reason": "common_simion_changed"
+        }
+      ],
+      "command": {
+        "runner": "python",
+        "arguments": [
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "common/simion",
+          "-p",
+          "test_*.py"
+        ]
+      }
+    },
+    {
       "stage": "multipole_common",
       "dependency_profile": "locked",
       "repository_integration_group": "regression",
@@ -192,7 +215,7 @@
           "reason": "common_multipole_changed"
         },
         {
-          "prefix": "common/simion/",
+          "regex": "^common/simion/(?!README\\.md$|test_[^/]+\\.(?:py|ps1|m|lua)$)",
           "reason": "common_simion_dependency_changed"
         },
         {
@@ -223,7 +246,7 @@
           "reason": "common_multipole_changed"
         },
         {
-          "prefix": "common/simion/",
+          "regex": "^common/simion/(?!README\\.md$|test_[^/]+\\.(?:py|ps1|m|lua)$)",
           "reason": "common_simion_dependency_changed"
         },
         {
@@ -328,7 +351,7 @@
           "reason": "common_comsol_direct_dependency_changed"
         },
         {
-          "prefix": "common/simion/",
+          "regex": "^common/simion/(?!README\\.md$|test_[^/]+\\.(?:py|ps1|m|lua)$)",
           "reason": "common_simion_direct_dependency_changed"
         }
       ],
@@ -416,7 +439,7 @@
           "reason": "common_comsol_direct_dependency_changed"
         },
         {
-          "prefix": "common/simion/",
+          "regex": "^common/simion/(?!README\\.md$|test_[^/]+\\.(?:py|ps1|m|lua)$)",
           "reason": "common_simion_direct_dependency_changed"
         }
       ],
@@ -462,7 +485,7 @@
           "reason": "common_comsol_direct_dependency_changed"
         },
         {
-          "prefix": "common/simion/",
+          "regex": "^common/simion/(?!README\\.md$|test_[^/]+\\.(?:py|ps1|m|lua)$)",
           "reason": "common_simion_direct_dependency_changed"
         }
       ],
@@ -497,7 +520,7 @@
           "reason": "common_comsol_direct_dependency_changed"
         },
         {
-          "prefix": "common/simion/",
+          "regex": "^common/simion/(?!README\\.md$|test_[^/]+\\.(?:py|ps1|m|lua)$)",
           "reason": "common_simion_direct_dependency_changed"
         }
       ],
