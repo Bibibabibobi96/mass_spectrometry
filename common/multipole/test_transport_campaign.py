@@ -697,6 +697,17 @@ class TransportCampaignTests(unittest.TestCase):
                     experiment_id=EXPERIMENT_ID,
                 )
 
+        unsupported = campaign_fixture()
+        unsupported["experiments"][0]["solver"] = "comsol"
+        with written_campaign(unsupported) as path:
+            with self.assertRaisesRegex(ValueError, "invalid multipole transport campaign"):
+                resolve_runtime_selection(
+                    REPO_ROOT,
+                    PROJECT_ID,
+                    campaign_path=path,
+                    experiment_id=EXPERIMENT_ID,
+                )
+
     def test_campaign_accepts_large_exploration_numerics_and_batch_count(self) -> None:
         campaign = campaign_fixture()
         values = campaign["experiments"][0]["simion_solver_numerics"]["values"]
@@ -714,20 +725,23 @@ class TransportCampaignTests(unittest.TestCase):
                 campaign_path=path,
                 experiment_id=EXPERIMENT_ID,
             )
-        self.assertEqual(
-            selected["solver_numerics"]["simion"]["values"], values
-        )
+            self.assertEqual(
+                selected["solver_numerics"]["simion"]["values"], values
+            )
 
-        unsupported = campaign_fixture()
-        unsupported["experiments"][0]["solver"] = "comsol"
-        with written_campaign(unsupported) as path:
-            with self.assertRaisesRegex(ValueError, "invalid multipole transport campaign"):
-                resolve_runtime_selection(
-                    REPO_ROOT,
-                    PROJECT_ID,
-                    campaign_path=path,
-                    experiment_id=EXPERIMENT_ID,
-                )
+    def test_campaign_accepts_small_positive_exploration_numerics(self) -> None:
+        campaign = campaign_fixture()
+        values = campaign["experiments"][0]["simion_solver_numerics"]["values"]
+        values["cell_mm_xyz"] = {"x": 1e-6, "y": 2e-6, "z": 3e-6}
+        values["trajectory"]["maximum_global_time_us"] = 1e-6
+        with written_campaign(campaign) as path:
+            selected = resolve_runtime_selection(
+                REPO_ROOT,
+                PROJECT_ID,
+                campaign_path=path,
+                experiment_id=EXPERIMENT_ID,
+            )
+        self.assertEqual(selected["solver_numerics"]["simion"]["values"], values)
 
     def test_campaign_path_must_remain_inside_the_project(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

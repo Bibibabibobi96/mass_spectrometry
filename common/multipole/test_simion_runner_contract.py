@@ -176,7 +176,7 @@ class SimionRunnerContractTests(unittest.TestCase):
         for axis in ("X", "Y", "Z"):
             self.assertIn(
                 f"ParameterSetName='AnisotropicCell')]\n"
-                f"  [ValidateRange(0.001,1.7976931348623157E+308)][double]$CellMm{axis}",
+                f"  [ValidateScript({{[double]::IsFinite($_) -and $_ -gt 0}})][double]$CellMm{axis}",
                 source,
             )
             self.assertIn(f"--cell-mm-{axis.lower()} $resolvedCellMm{axis}", source)
@@ -184,11 +184,30 @@ class SimionRunnerContractTests(unittest.TestCase):
         self.assertIn('axial_axis="x"', source)
         self.assertIn("maps GEM +z to flight +x", source)
 
-    def test_trajectory_quality_is_not_capped_below_the_integer_contract(self) -> None:
+    def test_runner_accepts_small_positive_and_large_exploration_numerics(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
-        self.assertIn(
-            "[ValidateRange(0,2147483647)][int]$TrajectoryQuality=10", source
-        )
+        parameter_block = source[: source.index(")\n\nSet-StrictMode")] + ")\n'BOUND'\n"
+        with tempfile.TemporaryDirectory() as directory:
+            probe = Path(directory) / "parameter_probe.ps1"
+            probe.write_text(parameter_block, encoding="utf-8")
+            result = subprocess.run(
+                [
+                    "pwsh", "-NoProfile", "-NonInteractive", "-File", str(probe),
+                    "-ProjectId", "probe", "-RuntimeProfileId", "probe",
+                    "-DesignProfileId", "probe", "-ParticleSourcePath", "probe",
+                    "-EngineeringBudgetPath", "probe", "-CellMm", "0.000001",
+                    "-MaximumTimeUs", "0.000001", "-TrajectoryQuality", "10001",
+                ],
+                cwd=REPO_ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=20,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("BOUND", result.stdout)
 
     def test_final_run_id_is_always_forwarded_to_budget_authorization(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")

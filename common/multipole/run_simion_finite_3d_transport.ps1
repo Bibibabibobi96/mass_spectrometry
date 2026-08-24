@@ -10,18 +10,18 @@ param(
   [string]$RunId='',
   [string]$ReferenceComsolRunId='',
   [Parameter(ParameterSetName='IsotropicCell')]
-  [ValidateRange(0.001,1.7976931348623157E+308)][double]$CellMm=0.4,
+  [ValidateScript({[double]::IsFinite($_) -and $_ -gt 0})][double]$CellMm=0.4,
   [Parameter(Mandatory=$true,ParameterSetName='AnisotropicCell')]
-  [ValidateRange(0.001,1.7976931348623157E+308)][double]$CellMmX,
+  [ValidateScript({[double]::IsFinite($_) -and $_ -gt 0})][double]$CellMmX,
   [Parameter(Mandatory=$true,ParameterSetName='AnisotropicCell')]
-  [ValidateRange(0.001,1.7976931348623157E+308)][double]$CellMmY,
+  [ValidateScript({[double]::IsFinite($_) -and $_ -gt 0})][double]$CellMmY,
   [Parameter(Mandatory=$true,ParameterSetName='AnisotropicCell')]
-  [ValidateRange(0.001,1.7976931348623157E+308)][double]$CellMmZ,
+  [ValidateScript({[double]::IsFinite($_) -and $_ -gt 0})][double]$CellMmZ,
   [string]$SimionExe='',
   [string]$PythonExe='',
   [ValidateRange(4,2147483647)][int]$RfStepsPerPeriod=80,
   [ValidateRange(0,2147483647)][int]$TrajectoryQuality=10,
-  [ValidateRange(0.001,1.7976931348623157E+308)][double]$MaximumTimeUs=80.0,
+  [ValidateScript({[double]::IsFinite($_) -and $_ -gt 0})][double]$MaximumTimeUs=80.0,
   [ValidateSet('primary_and_zero_axial_control','primary_and_rf_off_energy_control','primary_only')]
   [string]$CaseSet='primary_and_zero_axial_control',
   [ValidateSet('compact','qualification','solver_review')][string]$RetentionClass='compact',

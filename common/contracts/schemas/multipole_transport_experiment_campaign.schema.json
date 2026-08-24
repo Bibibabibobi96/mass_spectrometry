@@ -403,9 +403,9 @@
           "additionalProperties": false,
           "required": ["x", "y", "z"],
           "properties": {
-            "x": {"type": "number", "minimum": 0.001},
-            "y": {"type": "number", "minimum": 0.001},
-            "z": {"type": "number", "minimum": 0.001}
+            "x": {"type": "number", "exclusiveMinimum": 0},
+            "y": {"type": "number", "exclusiveMinimum": 0},
+            "z": {"type": "number", "exclusiveMinimum": 0}
           }
         },
         "trajectory_quality": {"type": "integer", "minimum": 0},
@@ -420,7 +420,7 @@
             },
             "maximum_global_time_us": {
               "type": "number",
-              "minimum": 0.001
+              "exclusiveMinimum": 0
             }
           }
         },
