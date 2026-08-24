@@ -47,6 +47,7 @@ def _record(path: Path) -> dict[str, object]:
 def _profile() -> dict[str, object]:
     return {
         "profile_id": "layout_resolved_axial_provisional_xy2_v1",
+        "role": "layout_resolved_source_region_diagnostic",
         "event": "pre_pulse_state",
         "axes": {
             "x": {
@@ -104,6 +105,24 @@ def _rows() -> list[dict[str, str]]:
 
 
 class RealFieldPulseCoreTests(unittest.TestCase):
+    def test_source_region_bounds_use_profile_role_not_instance_name(self) -> None:
+        profile = _profile()
+        profile["profile_id"] = "renamed_registered_source_region_v1"
+        result = select_detector_blind_real_field_pulse_time(
+            _rows(), _geometry(), profile,
+            candidate_times_us=[10.0, 11.0, 12.0],
+            frozen_particle_ids=[1, 2, 3], ballistic_seed_time_us=11.5,
+        )
+        self.assertEqual(result["source_region_bounds"]["z"]["full_width_mm"], 2.2)
+
+        profile["role"] = "unrelated_diagnostic"
+        with self.assertRaisesRegex(ContractError, "source-region profile"):
+            select_detector_blind_real_field_pulse_time(
+                _rows(), _geometry(), profile,
+                candidate_times_us=[10.0], frozen_particle_ids=[1, 2, 3],
+                ballistic_seed_time_us=10.0,
+            )
+
     def test_verified_reuse_identity_excludes_population_and_selector_provenance(
         self,
     ) -> None:

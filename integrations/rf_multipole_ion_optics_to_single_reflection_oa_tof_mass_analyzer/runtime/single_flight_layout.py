@@ -627,8 +627,8 @@ def resolve_source_region_bounds(
     """Resolve one registered source-region profile against frozen geometry."""
 
     if (
-        source_region_profile.get("profile_id")
-        != "layout_resolved_axial_provisional_xy2_v1"
+        source_region_profile.get("role")
+        != "layout_resolved_source_region_diagnostic"
         or source_region_profile.get("event") != "pre_pulse_state"
         or source_region_profile.get("selection_uses_detector_outcome") is not False
         or set(source_region_profile.get("axes", {})) != {"x", "y", "z"}
