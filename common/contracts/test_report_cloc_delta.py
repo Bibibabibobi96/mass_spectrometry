@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import re
+import os
 import subprocess
 import tempfile
 import textwrap
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 
@@ -77,6 +79,7 @@ class ClocDeltaReportTests(unittest.TestCase):
             textwrap.dedent(
                 r"""
                 param([Parameter(ValueFromRemainingArguments=$true)][string[]]$Arguments)
+                $ErrorActionPreference='Stop'
                 if($Arguments -contains '--version'){
                   Write-Output '2.02-test-double'
                   exit 0
@@ -106,6 +109,12 @@ class ClocDeltaReportTests(unittest.TestCase):
                 $listArgument=@($Arguments|Where-Object{$_ -like '--list-file=*'})
                 if($listArgument.Count-ne 1){throw 'Expected one --list-file argument.'}
                 $listPath=$listArgument[0].Substring('--list-file='.Length)
+                if(
+                  -not [string]::IsNullOrWhiteSpace($env:CLOC_TEST_DELETE_ONCE) -and
+                  (Test-Path -LiteralPath $env:CLOC_TEST_DELETE_ONCE -PathType Leaf)
+                ){
+                  Remove-Item -LiteralPath $env:CLOC_TEST_DELETE_ONCE -Force
+                }
                 Add-Content -LiteralPath (Join-Path $PSScriptRoot 'calls.log') `
                   -Value $listPath -Encoding UTF8
                 $document=[ordered]@{header=[ordered]@{cloc_version='2.02-test-double'}}
@@ -369,6 +378,30 @@ class ClocDeltaReportTests(unittest.TestCase):
         self.assertIn("CLOC_UNAVAILABLE", completed.stderr)
         self.assertIn("no fallback counter", completed.stderr)
         self.assertIn("is permitted", completed.stderr)
+
+    def test_worktree_snapshot_retries_when_selected_file_disappears(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self._initialize_repo(root)
+            fake_cloc = self._write_fake_cloc(root)
+            transient = root / "config" / "transient_campaign.json"
+            transient.write_text('{"temporary": true}\n', encoding="utf-8")
+            with patch.dict(os.environ, {"CLOC_TEST_DELETE_ONCE": str(transient)}):
+                completed = _run(
+                    [
+                        "pwsh", "-NoProfile", "-File", str(REPORT_SCRIPT),
+                        "-Base", "HEAD", "-Current", "WORKTREE",
+                        "-ClocExe", str(fake_cloc), "-RepoRoot", str(root),
+                    ],
+                    root,
+                )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertIn("CLOC_DELTA=PASS", completed.stdout)
+            self.assertFalse(transient.exists())
+            calls = (fake_cloc.parent / "calls.log").read_text(
+                encoding="utf-8"
+            ).splitlines()
+            self.assertEqual(len(calls), 3, calls)
 
     def test_identical_commit_has_no_json_delta(self) -> None:
         completed = _run(

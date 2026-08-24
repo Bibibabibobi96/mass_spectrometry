@@ -114,6 +114,12 @@ def write_json(path: Path, value: object) -> None:
     path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
 
 
+def temporary_config_directory() -> tempfile.TemporaryDirectory[str]:
+    root = CONFIG_ROOT / ".tmp"
+    root.mkdir(exist_ok=True)
+    return tempfile.TemporaryDirectory(dir=root)
+
+
 def use_current_time_grid_profile(campaign: dict[str, object]) -> None:
     """Upgrade legacy test copies to the current native-dt profile contract."""
     for row in campaign.get("experiments", []):
@@ -1830,7 +1836,7 @@ $result = Get-PulseTimingOrchestration `
         """
         campaign = load(COMPACT_GAP_FIELD_CAMPAIGN)
         row = expand_flat_experiment_authoring(campaign)["experiments"][0]
-        with tempfile.TemporaryDirectory(dir=CONFIG_ROOT) as directory:
+        with temporary_config_directory() as directory:
             root = Path(directory)
             campaign_path = root / "unregistered_campaign.json"
             campaign_path.write_text("{ not valid JSON", encoding="utf-8")
@@ -1855,7 +1861,7 @@ $result = Get-PulseTimingOrchestration `
             "rf_steps_per_period": 73,
         }
         row = expand_flat_experiment_authoring(campaign)["experiments"][0]
-        with tempfile.TemporaryDirectory(dir=CONFIG_ROOT) as directory:
+        with temporary_config_directory() as directory:
             root = Path(directory)
             artifact_root = REPO_ROOT.parent / "artifacts" / "projects" / INTEGRATION_ID
             artifact_root.mkdir(parents=True, exist_ok=True)
@@ -1890,7 +1896,7 @@ $result = Get-PulseTimingOrchestration `
     def test_exploration_preparation_requires_explicit_status(self) -> None:
         campaign = load(COMPACT_GAP_FIELD_CAMPAIGN)
         row = expand_flat_experiment_authoring(campaign)["experiments"][0]
-        with tempfile.TemporaryDirectory(dir=CONFIG_ROOT) as directory:
+        with temporary_config_directory() as directory:
             root = Path(directory)
             campaign_path = root / "unregistered_authorized_campaign.json"
             write_json(campaign_path, campaign)
@@ -1911,7 +1917,7 @@ $result = Get-PulseTimingOrchestration `
     def test_public_exploration_validate_only_accepts_unregistered_campaign(self) -> None:
         campaign = load(COMPACT_GAP_FIELD_CAMPAIGN)
         campaign["status"] = "exploration"
-        with tempfile.TemporaryDirectory(dir=CONFIG_ROOT) as directory:
+        with temporary_config_directory() as directory:
             campaign_path = Path(directory) / "exploration_campaign.json"
             write_json(campaign_path, campaign)
             result = subprocess.run(

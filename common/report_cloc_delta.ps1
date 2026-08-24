@@ -560,12 +560,35 @@ try{
   New-CommitSnapshot -Commit $baseSha -Destination $baseRoot `
     -ArchivePath (Join-Path $temporaryRoot 'base.tar')
   $baseRecords=Get-SnapshotFiles -Root $baseRoot
+  $currentSnapshot=$null
 
   if($Current-eq'WORKTREE'){
     $headSha=Resolve-Commit HEAD
     $currentLabel="WORKTREE(head=$headSha)"
-    $paths=@(Invoke-GitText @('ls-files','--cached','--others','--exclude-standard'))
-    $currentRecords=Get-SnapshotFiles -Root $repoPath -RelativePaths $paths
+    for($attempt=1;$attempt-le3;$attempt++){
+      $paths=@(Invoke-GitText @('ls-files','--cached','--others','--exclude-standard')|Sort-Object)
+      $currentRecords=Get-SnapshotFiles -Root $repoPath -RelativePaths $paths
+      $selectedPaths=@($currentRecords|ForEach-Object{$_.relative}|Sort-Object)
+      $snapshotFailure=$null
+      try{
+        $candidateSnapshot=Invoke-ClocSnapshot -Records $currentRecords `
+          -ListPath (Join-Path $temporaryRoot "current_$attempt.txt")
+      }catch{
+        $snapshotFailure=$_
+      }
+      $pathsAfter=@(Invoke-GitText @('ls-files','--cached','--others','--exclude-standard')|Sort-Object)
+      $recordsAfter=Get-SnapshotFiles -Root $repoPath -RelativePaths $pathsAfter
+      $selectedPathsAfter=@($recordsAfter|ForEach-Object{$_.relative}|Sort-Object)
+      if(($selectedPaths-join"`n")-cne($selectedPathsAfter-join"`n")){
+        if($attempt-eq3){
+          throw 'CLOC_WORKTREE_CHANGED: selected files changed while CLOC was sampling; rerun after concurrent work completes.'
+        }
+        continue
+      }
+      if($null-ne$snapshotFailure){throw $snapshotFailure}
+      $currentSnapshot=$candidateSnapshot
+      break
+    }
   }else{
     $currentSha=Resolve-Commit $Current
     $currentLabel=$currentSha
@@ -578,8 +601,10 @@ try{
 
   $baseSnapshot=Invoke-ClocSnapshot -Records $baseRecords `
     -ListPath (Join-Path $temporaryRoot 'base.txt')
-  $currentSnapshot=Invoke-ClocSnapshot -Records $currentRecords `
-    -ListPath (Join-Path $temporaryRoot 'current.txt')
+  if($null-eq$currentSnapshot){
+    $currentSnapshot=Invoke-ClocSnapshot -Records $currentRecords `
+      -ListPath (Join-Path $temporaryRoot 'current.txt')
+  }
   Assert-ClocClassificationAdditivity -Snapshot baseline `
     -Summaries $baseSnapshot.summaries
   Assert-ClocClassificationAdditivity -Snapshot result `

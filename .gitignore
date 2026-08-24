@@ -11,6 +11,7 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .venv/
+.tmp/
 run_comsol_mcp.cmd
 
 # Editor backups and rejected patch remnants are disposable local files.
