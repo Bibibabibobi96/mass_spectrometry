@@ -81,6 +81,7 @@ if (-not $campaignPath.StartsWith(
 $campaignRepoRelative = [IO.Path]::GetRelativePath($repoRoot, $campaignPath).Replace('\', '/')
 $campaignDocument = Get-Content -LiteralPath $campaignPath -Raw -Encoding UTF8 |
   ConvertFrom-Json
+$campaignSha256 = (Get-FileHash -LiteralPath $campaignPath -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($Exploration) {
   if ([string]$campaignDocument.status -in @('retired', 'archived_invalid')) {
     throw 'Retired or invalid campaigns are not executable in any mode.'
@@ -110,7 +111,6 @@ if ($Exploration) {
   if ($registeredCampaigns.Count -ne 1) {
     throw 'Campaign is not an active lifecycle authority; execution is forbidden.'
   }
-  $campaignSha256 = (Get-FileHash -LiteralPath $campaignPath -Algorithm SHA256).Hash.ToLowerInvariant()
   if ($campaignSha256 -ne ([string]$registeredCampaigns[0].content_sha256).ToLowerInvariant()) {
     throw 'Active lifecycle campaign identity differs; execution is forbidden.'
   }
@@ -146,6 +146,7 @@ if ($AllExperiments) {
     elseif ($SolverAuthorized) { $childParameters.SolverAuthorized = $true }
     elseif ($FinalizeOnly) { $childParameters.FinalizeOnly = $true }
     else { throw 'AllExperiments does not support PrepareOnly because each row requires its own review directory.' }
+    if ($Exploration) { $childParameters.Exploration = $true }
     & $PSCommandPath @childParameters
     if ($LASTEXITCODE -ne 0) { throw "Campaign sequence stopped at experiment: $nextExperimentId" }
   }
