@@ -264,9 +264,10 @@ class ChangedGateContractTests(unittest.TestCase):
     def test_ci_fallback_uses_full_scope_without_a_second_path_table(self) -> None:
         workflow = LIGHTWEIGHT_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("verify_changed.ps1", workflow)
-        self.assertEqual(workflow.count("-FullScope"), 2)
-        self.assertEqual(workflow.count("-MaxConcurrency 2"), 5)
-        self.assertEqual(workflow.count("-PlanOnly"), 2)
+        for option in ("-FullScope -PlanOnly -MaxConcurrency 2", "-ChangedPath $scope.changed_paths -PlanOnly -MaxConcurrency 2"):
+            self.assertIn(option, workflow)
+        for option in ("-FullScope -MaxConcurrency 2", "-ChangedPath @($scope.changed_paths) -MaxConcurrency 2"):
+            self.assertIn(option, workflow)
         self.assertIn("dependency_profile == 'locked'", workflow)
         self.assertIn("changed_scope.json", workflow)
         self.assertNotIn("$fallbackChangedPaths", workflow)
