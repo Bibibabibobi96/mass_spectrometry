@@ -1850,6 +1850,10 @@ $result = Get-PulseTimingOrchestration `
     def test_prepare_allows_explicit_repository_exploration_campaign(self) -> None:
         campaign = load(COMPACT_GAP_FIELD_CAMPAIGN)
         campaign["status"] = "exploration"
+        campaign["experiments"]["shared"]["single_flight_numerical_overrides"] = {
+            "trajectory_quality": 17,
+            "rf_steps_per_period": 73,
+        }
         row = expand_flat_experiment_authoring(campaign)["experiments"][0]
         with tempfile.TemporaryDirectory(dir=CONFIG_ROOT) as directory:
             root = Path(directory)
@@ -1871,6 +1875,17 @@ $result = Get-PulseTimingOrchestration `
                 )
                 self.assertTrue(resolved.is_file())
                 self.assertTrue(plan.is_file())
+                execution_profile = load(
+                    output / "inputs" / "resolved_single_flight_execution_profile.json"
+                )
+                self.assertEqual(execution_profile["trajectory_quality"], 17)
+                self.assertEqual(execution_profile["rf_steps_per_period"], 73)
+                arguments = load(plan)["execution_steps"][0]["arguments"]
+                self.assertIn(
+                    "resolved_single_flight_execution_profile_filename="
+                    "inputs/resolved_single_flight_execution_profile.json",
+                    arguments,
+                )
 
     def test_exploration_preparation_requires_explicit_status(self) -> None:
         campaign = load(COMPACT_GAP_FIELD_CAMPAIGN)

@@ -83,6 +83,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     resolve_source_materialization_profile,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_execution_profile import (
+    resolve_execution_profile,
     unique_named_profile,
 )
 
@@ -1982,6 +1983,7 @@ class ResolvedSingleFlightProfiles:
     grid_profiles: list[dict[str, Any]]
     oatof_numerical_profile: dict[str, Any] | None
     time_integration_profile: dict[str, Any] | None
+    execution_profile: dict[str, Any] | None
     accelerator_field_profile_id: str | None
     field_profiles: list[dict[str, Any]]
     three_zone_region_modes: dict[str, Any] | None
@@ -1991,6 +1993,8 @@ def _resolve_single_flight_profiles(
     root: Path,
     experiment: dict[str, Any],
     execution_strategy: str,
+    *,
+    exploration: bool = False,
 ) -> ResolvedSingleFlightProfiles:
     """Load and fail-close validate all runtime profiles selected by one row."""
 
@@ -2124,6 +2128,26 @@ def _resolve_single_flight_profiles(
         raise ContractError("explicit three-zone region modes require their explicit field profile")
     elif region_mode_authority is not None:
         raise ContractError("single-flight field profile region-mode authority is unsupported")
+    numerical_overrides = experiment.get("single_flight_numerical_overrides")
+    if numerical_overrides is not None and not exploration:
+        raise ContractError("inline single-flight numerics require exploration status")
+    execution_profile = None
+    if execution_strategy == "simion_single_flight":
+        try:
+            execution_profile = resolve_execution_profile(
+                configuration,
+                frontend_grid_profile_id=frontend_grid_profile_id,
+                oatof_numerical_profile_id=oatof_numerical_profile_id,
+                trajectory_quality_profile_id=trajectory_quality_profile_id,
+                time_integration_profile_id=time_integration_profile_id,
+                maximum_time_of_flight_us=experiment.get(
+                    "single_flight_maximum_time_of_flight_us"
+                ),
+                spatial_window_profile_id=spatial_window_profile_id,
+                numerical_overrides=numerical_overrides,
+            )
+        except ValueError as exc:
+            raise ContractError("single-flight numerical configuration is invalid") from exc
     return ResolvedSingleFlightProfiles(
         configuration=configuration,
         frontend_grid_profile_id=frontend_grid_profile_id,
@@ -2132,6 +2156,7 @@ def _resolve_single_flight_profiles(
         grid_profiles=grid_profiles,
         oatof_numerical_profile=oatof_numerical_profile,
         time_integration_profile=time_integration_profile,
+        execution_profile=execution_profile,
         accelerator_field_profile_id=accelerator_field_profile_id,
         field_profiles=field_profiles,
         three_zone_region_modes=three_zone_region_modes,
@@ -2411,7 +2436,10 @@ def prepare_family_source_closure(
     ):
         raise ContractError("single-flight execution requires a pulse schedule")
     resolved_profiles = _resolve_single_flight_profiles(
-        root, experiment, execution_strategy
+        root,
+        experiment,
+        execution_strategy,
+        exploration=campaign.get("status") == "exploration",
     )
     single_flight_configuration = resolved_profiles.configuration
     frontend_grid_profile_id = resolved_profiles.frontend_grid_profile_id
@@ -2422,6 +2450,7 @@ def prepare_family_source_closure(
     grid_profiles = resolved_profiles.grid_profiles
     oatof_numerical_profile = resolved_profiles.oatof_numerical_profile
     time_integration_profile = resolved_profiles.time_integration_profile
+    execution_profile = resolved_profiles.execution_profile
     accelerator_field_profile_id = resolved_profiles.accelerator_field_profile_id
     field_profiles = resolved_profiles.field_profiles
     three_zone_region_modes = resolved_profiles.three_zone_region_modes
@@ -2909,8 +2938,8 @@ def prepare_family_source_closure(
             experiment, execution_particle_count=execution_particle_count,
             workspace=workspace,
             rf_steps_per_period=(
-                int(time_integration_profile["rf_steps_per_period"])
-                if time_integration_profile is not None else None
+                int(execution_profile["rf_steps_per_period"])
+                if execution_profile is not None else None
             ),
         )
         single_flight_batch_count = int(
@@ -3623,6 +3652,15 @@ def prepare_family_source_closure(
             json.dumps(pa_cache_generation_binding, indent=2) + "\n",
             encoding="utf-8",
         )
+    resolved_execution_profile_path = None
+    if execution_profile is not None:
+        resolved_execution_profile_path = plan_output.parent / "inputs" / (
+            "resolved_single_flight_execution_profile.json"
+        )
+        resolved_execution_profile_path.write_text(
+            json.dumps(execution_profile, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
     plan = _load(plan_path)
     plan["execution_steps"] = [
         {
@@ -3652,6 +3690,10 @@ def prepare_family_source_closure(
                 "single_flight_pa_cache_policy_provenance="
                 + pa_cache_policy_provenance,
                 "single_flight_batch_count=" + str(single_flight_batch_count),
+                "resolved_single_flight_execution_profile_filename=inputs/"
+                + resolved_execution_profile_path.name,
+                "resolved_single_flight_execution_profile_sha256="
+                + file_sha256(resolved_execution_profile_path),
             ]) + ([] if pa_cache_generation_binding_path is None else [
                 "single_flight_pa_cache_generation_binding_filename=inputs/"
                 + pa_cache_generation_binding_path.name,

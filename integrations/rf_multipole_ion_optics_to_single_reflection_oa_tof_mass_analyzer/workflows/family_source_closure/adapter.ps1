@@ -172,7 +172,9 @@ if ([string]$frozenArguments.execution_strategy -eq 'simion_single_flight') {
   $expectedArguments += @(
     'single_flight_pa_cache_policy',
     'single_flight_pa_cache_policy_provenance',
-    'single_flight_batch_count'
+    'single_flight_batch_count',
+    'resolved_single_flight_execution_profile_filename',
+    'resolved_single_flight_execution_profile_sha256'
   )
   if ($frozenArguments.ContainsKey('single_flight_pa_cache_generation_binding_filename')) {
     $expectedArguments += @(
@@ -909,6 +911,7 @@ $upstreamResolvedDesignPath = [IO.Path]::GetFullPath(
 $resolvedOatofGeometryPath = $null
 $resolvedPulseSchedulePath = $null
 $resolvedPopulationContractPath = $null
+$resolvedExecutionProfilePath = $null
 if ([int]$campaign.schema_version -ge 3) {
   $resolvedOatofGeometryPath = [IO.Path]::GetFullPath(
     (Join-Path $runDirectory $frozenArguments.resolved_oatof_geometry_filename)
@@ -981,6 +984,20 @@ if ([int]$campaign.schema_version -ge 3) {
       [string]$resolvedPopulation.source_release_mode -ne
         [string]$frozenArguments.source_release_mode) {
     throw 'Prepared resolved population contract identity differs.'
+  }
+}
+if ($executionStrategy -eq 'simion_single_flight') {
+  $resolvedExecutionProfilePath = [IO.Path]::GetFullPath((Join-Path $runDirectory `
+    $frozenArguments.resolved_single_flight_execution_profile_filename))
+  $inputsRoot = (Join-Path $runDirectory 'inputs') + [IO.Path]::DirectorySeparatorChar
+  if ($frozenArguments.resolved_single_flight_execution_profile_filename -ne
+        'inputs/resolved_single_flight_execution_profile.json' -or
+      -not $resolvedExecutionProfilePath.StartsWith(
+        $inputsRoot,[StringComparison]::OrdinalIgnoreCase) -or
+      -not (Test-Path -LiteralPath $resolvedExecutionProfilePath -PathType Leaf) -or
+      (Get-FileHash -LiteralPath $resolvedExecutionProfilePath -Algorithm SHA256).Hash -ne
+        $frozenArguments.resolved_single_flight_execution_profile_sha256) {
+    throw 'Prepared single-flight execution profile is missing or stale.'
   }
 }
 if ($frozenArguments.resolved_source_contract_filename -ne
@@ -1194,6 +1211,9 @@ if ($executionStrategy -eq 'simion_single_flight') {
     throw 'Prepared single-flight batch count is invalid or exceeds the resolved population.'
   }
   $runnerArguments.ExecutionBatchCount = $resolvedBatchCount
+  $runnerArguments.ResolvedExecutionProfile = $resolvedExecutionProfilePath
+  $runnerArguments.ResolvedExecutionProfileSha256 =
+    [string]$frozenArguments.resolved_single_flight_execution_profile_sha256
   if ([int]$campaign.schema_version -ge 3) {
     $runnerArguments.OatofResolvedGeometry = $resolvedOatofGeometryPath
     if ($null -ne $resolvedPulseSchedulePath) {

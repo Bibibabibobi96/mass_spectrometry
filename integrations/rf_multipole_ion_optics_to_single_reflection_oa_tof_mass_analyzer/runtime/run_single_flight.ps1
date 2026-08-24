@@ -37,6 +37,8 @@ param(
   [string]$TimeIntegrationProfileId = '',
   [double]$MaximumTimeOfFlightUs = 0,
   [string]$SpatialWindowProfileId = '',
+  [string]$ResolvedExecutionProfile = '',
+  [string]$ResolvedExecutionProfileSha256 = '',
   [Parameter(Mandatory)][string]$ResolvedRegionFieldContract,
   [Parameter(Mandatory)][string]$ResolvedRegionFieldContractSha256,
   [Parameter(Mandatory)][string]$ResolvedRegionFieldSemanticSha256,
@@ -416,18 +418,31 @@ try {
   $configuration = Join-Path $package.input_dir 'simion_single_flight.json'
   Copy-RfStableFile -SourceRunRoot $repoRoot -SourcePath $configurationSource -Destination $configuration -Role 'single-flight configuration' | Out-Null
   $executionProfilePath = Join-Path $package.input_dir 'resolved_single_flight_execution_profile.json'
-  $executionProfileArguments = @('-m',
-    'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_execution_profile',
-    '--configuration',$configuration,'--output',$executionProfilePath)
-  if ($FrontendGridProfileId) { $executionProfileArguments += @('--frontend-grid-profile-id',$FrontendGridProfileId) }
-  if ($OatofNumericalProfileId) { $executionProfileArguments += @('--oatof-numerical-profile-id',$OatofNumericalProfileId) }
-  if ($TrajectoryQualityProfileId) { $executionProfileArguments += @('--trajectory-quality-profile-id',$TrajectoryQualityProfileId) }
-  if ($TimeIntegrationProfileId) { $executionProfileArguments += @('--time-integration-profile-id',$TimeIntegrationProfileId) }
-  if ($MaximumTimeOfFlightUs -gt 0) { $executionProfileArguments += @('--maximum-time-of-flight-us',([string]$MaximumTimeOfFlightUs)) }
-  if ($SpatialWindowProfileId) { $executionProfileArguments += @('--spatial-window-profile-id',$SpatialWindowProfileId) }
-  if (-not $isPrePulseTimeSeriesScreening) { $executionProfileArguments += '--include-source-region-diagnostic' }
-  Invoke-SingleFlightPython -Arguments $executionProfileArguments `
-    -Failure 'Single-flight numerical configuration is invalid.'
+  $hasResolvedExecutionProfile = -not [string]::IsNullOrWhiteSpace($ResolvedExecutionProfile)
+  if ($hasResolvedExecutionProfile -ne (-not [string]::IsNullOrWhiteSpace(
+      $ResolvedExecutionProfileSha256))) {
+    throw 'Prepared single-flight execution profile path/hash identity is incomplete.'
+  }
+  if ($hasResolvedExecutionProfile) {
+    Copy-Item -LiteralPath $ResolvedExecutionProfile -Destination $executionProfilePath -Force
+    if ((Get-FileHash -LiteralPath $executionProfilePath -Algorithm SHA256).Hash -ne
+        $ResolvedExecutionProfileSha256) {
+      throw 'Prepared single-flight execution profile identity differs.'
+    }
+  } else {
+    $executionProfileArguments = @('-m',
+      'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_execution_profile',
+      '--configuration',$configuration,'--output',$executionProfilePath)
+    if ($FrontendGridProfileId) { $executionProfileArguments += @('--frontend-grid-profile-id',$FrontendGridProfileId) }
+    if ($OatofNumericalProfileId) { $executionProfileArguments += @('--oatof-numerical-profile-id',$OatofNumericalProfileId) }
+    if ($TrajectoryQualityProfileId) { $executionProfileArguments += @('--trajectory-quality-profile-id',$TrajectoryQualityProfileId) }
+    if ($TimeIntegrationProfileId) { $executionProfileArguments += @('--time-integration-profile-id',$TimeIntegrationProfileId) }
+    if ($MaximumTimeOfFlightUs -gt 0) { $executionProfileArguments += @('--maximum-time-of-flight-us',([string]$MaximumTimeOfFlightUs)) }
+    if ($SpatialWindowProfileId) { $executionProfileArguments += @('--spatial-window-profile-id',$SpatialWindowProfileId) }
+    if (-not $isPrePulseTimeSeriesScreening) { $executionProfileArguments += '--include-source-region-diagnostic' }
+    Invoke-SingleFlightPython -Arguments $executionProfileArguments `
+      -Failure 'Single-flight numerical configuration is invalid.'
+  }
   $executionProfile = Get-Content -LiteralPath $executionProfilePath -Raw -Encoding UTF8 |
     ConvertFrom-Json
   $selectedGridProfileId = [string]$executionProfile.frontend_grid_profile_id

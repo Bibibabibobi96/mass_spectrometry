@@ -127,6 +127,23 @@
       }
     },
     "id": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"},
+    "numerical_cell": {
+      "type": "object", "additionalProperties": false,
+      "required": ["x", "y", "z"],
+      "properties": {
+        "x": {"type": "number", "exclusiveMinimum": 0},
+        "y": {"type": "number", "exclusiveMinimum": 0},
+        "z": {"type": "number", "exclusiveMinimum": 0}
+      }
+    },
+    "reflectron_numerical_cell": {
+      "type": "object", "additionalProperties": false,
+      "required": ["axial", "radial"],
+      "properties": {
+        "axial": {"type": "number", "exclusiveMinimum": 0},
+        "radial": {"type": "number", "exclusiveMinimum": 0}
+      }
+    },
     "sha": {"type": "string", "pattern": "^[A-F0-9]{64}$"},
     "published_authoring_identity": {
       "type": "object", "additionalProperties": false,
@@ -674,6 +691,16 @@
         "single_flight_oatof_numerical_profile_id": {"$ref": "#/$defs/id"},
         "single_flight_trajectory_quality_profile_id": {"$ref": "#/$defs/id"},
         "single_flight_time_integration_profile_id": {"$ref": "#/$defs/id"},
+        "single_flight_numerical_overrides": {
+          "type": "object", "additionalProperties": false, "minProperties": 1,
+          "properties": {
+            "frontend_cell_mm_xyz": {"$ref": "#/$defs/numerical_cell"},
+            "accelerator_overlay_cell_mm_xyz": {"$ref": "#/$defs/numerical_cell"},
+            "reflectron_cell_mm": {"$ref": "#/$defs/reflectron_numerical_cell"},
+            "trajectory_quality": {"type": "integer", "minimum": 1},
+            "rf_steps_per_period": {"type": "integer", "minimum": 1}
+          }
+        },
         "single_flight_maximum_time_of_flight_us": {
           "type": "number",
           "exclusiveMinimum": 0
