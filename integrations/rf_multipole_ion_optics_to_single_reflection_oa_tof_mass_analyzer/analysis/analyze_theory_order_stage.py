@@ -29,6 +29,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.oatof_oaaccelerato
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+SCHEMA_DIR = Path(__file__).resolve().parents[1] / "config" / "schemas"
 
 
 def _bound_file(root: Path, record: Mapping[str, Any], label: str) -> Path:
@@ -426,7 +427,7 @@ def compute_theory_order_report(
     campaign_path: Path, *, workspace_root: Path = REPOSITORY_ROOT
 ) -> dict[str, Any]:
     campaign = load_json(campaign_path)
-    validate_schema(campaign, "rf_oatof_theory_order_stage_campaign.schema.json")
+    validate_schema(campaign, SCHEMA_DIR / "rf_oatof_theory_order_stage_campaign.schema.json")
     json_inputs = {
         name: record
         for name, record in campaign["inputs"].items()

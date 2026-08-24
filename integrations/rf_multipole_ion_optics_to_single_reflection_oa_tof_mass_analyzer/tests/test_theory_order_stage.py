@@ -18,12 +18,13 @@ CAMPAIGN = (
 LEGACY_CAMPAIGN = CAMPAIGN.with_name(
     "zero_match_long_all_ideal_theory_order_stage_campaign.json"
 )
+SCHEMA = CAMPAIGN.parents[1] / "schemas" / "rf_oatof_theory_order_stage_campaign.schema.json"
 
 
 class TheoryOrderStageTests(unittest.TestCase):
     def test_legacy_provisional_campaign_remains_byte_immutable(self):
         legacy = load_json(LEGACY_CAMPAIGN)
-        validate_schema(legacy, "rf_oatof_theory_order_stage_campaign.schema.json")
+        validate_schema(legacy, SCHEMA)
         self.assertEqual(
             theory_order.file_sha256(LEGACY_CAMPAIGN),
             "BF539E187EDE523F055E2C8B5F91AE2FAEC84CB4E2338F14AF3CFB05803C5D2A",
@@ -35,7 +36,7 @@ class TheoryOrderStageTests(unittest.TestCase):
 
     def test_campaign_is_schema_valid_and_rejects_unknown_fields(self):
         campaign = load_json(CAMPAIGN)
-        validate_schema(campaign, "rf_oatof_theory_order_stage_campaign.schema.json")
+        validate_schema(campaign, SCHEMA)
         self.assertEqual(
             campaign["assessment_design_status"],
             "DECLARED_PROVISIONAL_NOT_PREREGISTERED",
@@ -50,7 +51,7 @@ class TheoryOrderStageTests(unittest.TestCase):
         changed["posthoc_threshold"] = 0.5
         with self.assertRaises(Exception):
             validate_schema(
-                changed, "rf_oatof_theory_order_stage_campaign.schema.json"
+                changed, SCHEMA
             )
 
     def test_symmetric_multistep_audit_recovers_cubic_and_quartic(self):
