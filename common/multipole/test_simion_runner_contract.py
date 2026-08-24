@@ -176,7 +176,7 @@ class SimionRunnerContractTests(unittest.TestCase):
         for axis in ("X", "Y", "Z"):
             self.assertIn(
                 f"ParameterSetName='AnisotropicCell')]\n"
-                f"  [ValidateRange(0.001,100)][double]$CellMm{axis}",
+                f"  [ValidateRange(0.001,1.7976931348623157E+308)][double]$CellMm{axis}",
                 source,
             )
             self.assertIn(f"--cell-mm-{axis.lower()} $resolvedCellMm{axis}", source)

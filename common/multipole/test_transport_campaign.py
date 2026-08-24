@@ -16,6 +16,7 @@ from common.multipole.campaign_status import campaign_status
 from common.multipole.runtime_profile import (
     resolve_runtime_profile,
     resolve_runtime_selection,
+    semantic_diff_campaign_experiments,
 )
 
 
@@ -517,6 +518,50 @@ class TransportCampaignTests(unittest.TestCase):
             expected,
         )
         self.assertTrue(all("solver_numerics" in profile for profile in plan["experiments"]))
+
+    def test_campaign_semantic_diff_resolves_profiles_without_execution_policy(self) -> None:
+        campaign = campaign_fixture()
+        compared = copy.deepcopy(campaign["experiments"][0])
+        compared["experiment_id"] = "quad_noacc_simion_refined_grid"
+        compared["authorized_run_id"] = RUN_ID.replace("t160", "t320")
+        compared["simion_solver_numerics"]["values"]["cell_mm_xyz"]["x"] = 0.12
+        campaign["experiments"].append(compared)
+        with written_campaign(campaign) as path:
+            diff = semantic_diff_campaign_experiments(
+                REPO_ROOT, path, EXPERIMENT_ID, compared["experiment_id"]
+            )
+        self.assertEqual(diff["role"], "multipole_campaign_resolved_semantic_diff")
+        self.assertEqual(diff["classification_scope"], "review_only_not_execution_policy")
+        changes = {item["path"]: item for item in diff["changes"]}
+        self.assertEqual(changes["solver_numerics.simion.values.cell_mm_xyz.x"]["category"], "solver_numerics")
+        self.assertEqual(changes["runtime_profile_id"]["category"], "run_control_or_budget")
+
+    def test_campaign_launcher_exposes_resolved_semantic_diff(self) -> None:
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("PowerShell Core is unavailable")
+        campaign = campaign_fixture()
+        compared = copy.deepcopy(campaign["experiments"][0])
+        compared["experiment_id"] = "quad_noacc_simion_refined_grid"
+        compared["authorized_run_id"] = RUN_ID.replace("t160", "t320")
+        compared["simion_solver_numerics"]["values"]["trajectory_quality"] = 11
+        campaign["experiments"].append(compared)
+        with written_campaign(campaign) as path:
+            completed = subprocess.run(
+                [
+                    pwsh, "-NoProfile", "-File",
+                    str(REPO_ROOT / "common/multipole/run_simion_transport_campaign.ps1"),
+                    "-CampaignPath", str(path), "-ExperimentId", EXPERIMENT_ID,
+                    "-SemanticDiffAgainst", compared["experiment_id"],
+                    "-RepoRoot", str(REPO_ROOT), "-PythonExe", sys.executable,
+                ],
+                cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8",
+                errors="replace", timeout=120, check=False,
+            )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        diff = json.loads(completed.stdout)
+        self.assertEqual(diff["role"], "multipole_campaign_resolved_semantic_diff")
+        self.assertTrue(any(item["path"] == "solver_numerics.simion.values.trajectory_quality" for item in diff["changes"]))
 
 
     def test_campaign_resolves_existing_authorities_and_inline_simion_numerics(

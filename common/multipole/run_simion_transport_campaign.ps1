@@ -3,11 +3,14 @@ param(
   [Parameter(Mandatory = $true)]
   [string]$CampaignPath,
   [Parameter(Mandatory = $true, ParameterSetName = 'One')]
+  [Parameter(Mandatory = $true, ParameterSetName = 'Diff')]
   [string]$ExperimentId,
   [Parameter(Mandatory = $true, ParameterSetName = 'All')]
   [switch]$All,
   [Parameter(Mandatory = $true, ParameterSetName = 'Status')]
   [switch]$Status,
+  [Parameter(Mandatory = $true, ParameterSetName = 'Diff')]
+  [string]$SemanticDiffAgainst,
   [switch]$DryRun,
   [string]$DryRunOutput = '',
   [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')),
@@ -150,6 +153,12 @@ if ($PSCmdlet.ParameterSetName -eq 'Status') {
     Write-Host ('MULTIPOLE_CAMPAIGN_ANALYSIS_STATUS={0} CAPABILITY={1} RUN={2} REASON={3}' -f `
       $display,[string]$plan.capability_id,[string]$plan.analysis_run_id,[string]$plan.reason)
   }
+  return
+}
+if ($PSCmdlet.ParameterSetName -eq 'Diff') {
+  & $python -m common.multipole.runtime_profile --repo-root $repo `
+    --campaign-path $candidate --semantic-diff-experiment-ids $ExperimentId $SemanticDiffAgainst
+  if ($LASTEXITCODE -ne 0) {throw 'Campaign semantic diff could not resolve both experiments.'}
   return
 }
 $selected = if ($PSCmdlet.ParameterSetName -eq 'All') {@($campaign.experiments)} else {

@@ -946,15 +946,104 @@ def resolve_runtime_selection(
     )
 
 
+def _semantic_diff_category(path: tuple[str, ...]) -> str:
+    """Classify resolved-plan fields for review without creating execution policy."""
+
+    top_level = path[0] if path else ""
+    if top_level in {"runtime_profile_id", "stop_stage", "engineering_budget"}:
+        return "run_control_or_budget"
+    if top_level == "particle_source":
+        return "source_cohort_or_sampling"
+    if top_level == "solver_numerics":
+        return "solver_numerics"
+    if top_level in {"design_profile_id", "design_profile_resolution"}:
+        return "physical_design_or_field"
+    if top_level == "downstream_terminal_profile":
+        return "handoff_or_downstream_design"
+    if top_level in {"campaign", "runtime_profile_registry_path", "runtime_profile_registry_sha256"} or any(
+        part.endswith("sha256") for part in path
+    ):
+        return "evidence_or_provenance"
+    return "declared_configuration"
+
+
+def _semantic_diff_values(
+    before: object, after: object, path: tuple[str, ...] = ()
+) -> list[dict[str, Any]]:
+    if isinstance(before, dict) and isinstance(after, dict):
+        changes: list[dict[str, Any]] = []
+        for key in sorted(set(before) | set(after)):
+            changes.extend(
+                _semantic_diff_values(before.get(key), after.get(key), path + (key,))
+            )
+        return changes
+    if before == after:
+        return []
+    return [{
+        "path": ".".join(path),
+        "category": _semantic_diff_category(path),
+        "before": before,
+        "after": after,
+    }]
+
+
+def semantic_diff_campaign_experiments(
+    repo_root: Path, campaign_path: Path, before_experiment_id: str, after_experiment_id: str
+) -> dict[str, Any]:
+    """Resolve two campaign rows and return their deterministic review-only diff."""
+
+    campaign = _load(_campaign_file(repo_root.resolve(), campaign_path))
+    rows_by_id = {item["experiment_id"]: item for item in campaign.get("experiments", [])}
+    if len(rows_by_id) != len(campaign.get("experiments", [])):
+        raise ValueError("campaign experiment_id values must be unique")
+    try:
+        before_row = rows_by_id[before_experiment_id]
+        after_row = rows_by_id[after_experiment_id]
+    except KeyError as error:
+        raise ValueError(f"unknown campaign experiment: {error.args[0]}") from error
+    before = resolve_campaign_experiment(
+        repo_root, before_row["project_id"], campaign_path, before_experiment_id
+    )
+    after = resolve_campaign_experiment(
+        repo_root, after_row["project_id"], campaign_path, after_experiment_id
+    )
+    changes = _semantic_diff_values(before, after)
+    return {
+        "role": "multipole_campaign_resolved_semantic_diff",
+        "classification_scope": "review_only_not_execution_policy",
+        "campaign_id": campaign["campaign_id"],
+        "before_experiment_id": before_experiment_id,
+        "after_experiment_id": after_experiment_id,
+        "changed_field_count": len(changes),
+        "changes": changes,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo-root", required=True, type=Path)
-    parser.add_argument("--project-id", required=True)
+    parser.add_argument("--project-id")
     parser.add_argument("--runtime-profile-id")
     parser.add_argument("--campaign-path", type=Path)
     parser.add_argument("--experiment-id")
-    parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument(
+        "--semantic-diff-experiment-ids", nargs=2, metavar=("BEFORE", "AFTER")
+    )
+    parser.add_argument("--output", type=Path)
     args = parser.parse_args()
+    if args.semantic_diff_experiment_ids:
+        if args.runtime_profile_id or not args.campaign_path or args.experiment_id:
+            parser.error(
+                "--semantic-diff-experiment-ids requires --campaign-path only"
+            )
+        before_id, after_id = args.semantic_diff_experiment_ids
+        result = semantic_diff_campaign_experiments(
+            args.repo_root.resolve(), args.campaign_path, before_id, after_id
+        )
+        print(json.dumps(result, indent=2))
+        return 0
+    if not args.project_id or args.output is None:
+        parser.error("normal profile resolution requires --project-id and --output")
     result = resolve_runtime_selection(
         args.repo_root.resolve(),
         args.project_id,
