@@ -2072,7 +2072,10 @@ def _resolve_single_flight_profiles(
     trajectory_quality_profile_id = experiment.get(
         "single_flight_trajectory_quality_profile_id"
     )
-    if trajectory_quality_profile_id is not None:
+    if (
+        trajectory_quality_profile_id is not None
+        and execution_strategy != "simion_single_flight"
+    ):
         _unique_named_profile(
             configuration,
             "trajectory_quality_profiles",
@@ -2096,12 +2099,6 @@ def _resolve_single_flight_profiles(
     if spatial_window_profile_id is not None:
         if execution_strategy != "simion_single_flight":
             raise ContractError("spatial-window profiles require SIMION single flight")
-        _unique_named_profile(
-            configuration,
-            "spatial_window_profiles",
-            spatial_window_profile_id,
-            "spatial-window profile must resolve exactly once",
-        )
     accelerator_field_profile_id = (
         canonical_profile_id(experiment.get(
             "single_flight_accelerator_field_profile_id",

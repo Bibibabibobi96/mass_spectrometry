@@ -1555,6 +1555,28 @@ $result = Get-PulseTimingOrchestration `
                 "simion_single_flight",
             )
 
+    def test_single_flight_profile_resolution_remains_the_numerical_authority(self) -> None:
+        for field in (
+            "single_flight_trajectory_quality_profile_id",
+            "single_flight_spatial_window_profile_id",
+        ):
+            with self.subTest(field=field), self.assertRaisesRegex(
+                ContractError, "single-flight numerical configuration is invalid"
+            ):
+                _resolve_single_flight_profiles(
+                    REPO_ROOT,
+                    {field: "unknown_profile"},
+                    "simion_single_flight",
+                )
+        with self.assertRaisesRegex(
+            ContractError, "trajectory-quality profile must resolve exactly once"
+        ):
+            _resolve_single_flight_profiles(
+                REPO_ROOT,
+                {"single_flight_trajectory_quality_profile_id": "unknown_profile"},
+                "staged_three_stage",
+            )
+
     def test_ideal_accelerator_field_is_a_registered_counterfactual(self) -> None:
         campaign = load(IDEAL_FIELD_CAMPAIGN_PATH)
         validate_schema(
