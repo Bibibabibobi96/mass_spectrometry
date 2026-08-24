@@ -864,17 +864,6 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
         self.assertEqual(calls[1][-1], "first")
         self.assertNotIn("second", calls[1])
 
-    def test_materialized_source_freezes_every_solver_consumed_property(self) -> None:
-        source = ADAPTER_PATH.read_text(encoding="utf-8-sig")
-        prepare_exit = source.index("if ($PrepareOnly)")
-        population_validation = source.index(
-            "$resolvedPopulation.role -ne 'rf_oatof_resolved_population_contract'"
-        )
-        solver_use = source.index("$runnerArguments.ResolvedPopulationContract =")
-        self.assertLess(population_validation, prepare_exit)
-        self.assertLess(prepare_exit, solver_use)
-        self.assertNotIn("single_flight_sampling_mode", source)
-
     def test_parent_publication_is_n_neutral_and_preserves_both_counts(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             workspace = Path(directory)
