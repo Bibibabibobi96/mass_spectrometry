@@ -9,6 +9,7 @@ param(
   [Parameter(Mandatory = $true, ParameterSetName = 'Status')]
   [switch]$Status,
   [switch]$DryRun,
+  [string]$DryRunOutput = '',
   [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')),
   [string]$PythonExe = '',
   [string]$SimionExe = ''
@@ -178,7 +179,22 @@ try {
       [string]$scope.authorized_run_id -ne [string]$experiment.authorized_run_id) {
       throw "Campaign preflight identity differs: $($experiment.experiment_id)"
     }
-    $resolved += [pscustomobject]@{experiment=$experiment;snapshot=$snapshot}
+    $resolved += [pscustomobject]@{experiment=$experiment;snapshot=$snapshot;profile=$profile}
+  }
+
+  if ($DryRun -and -not [string]::IsNullOrWhiteSpace($DryRunOutput)) {
+    $dryRunPath = [IO.Path]::GetFullPath($DryRunOutput)
+    $dryRunParent = Split-Path -Parent $dryRunPath
+    if (-not (Test-Path -LiteralPath $dryRunParent -PathType Container)) {
+      throw "DryRunOutput parent directory is missing: $dryRunParent"
+    }
+    [ordered]@{
+      schema_version = 1
+      role = 'multipole_campaign_resolved_execution_plan'
+      campaign_path = $candidate
+      campaign_id = [string]$campaign.campaign_id
+      experiments = @($resolved | ForEach-Object { $_.profile })
+    } | ConvertTo-Json -Depth 100 | Set-Content -LiteralPath $dryRunPath -Encoding UTF8
   }
 
   if (-not $DryRun) {

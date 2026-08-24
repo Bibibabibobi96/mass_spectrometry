@@ -488,17 +488,20 @@ class TransportCampaignTests(unittest.TestCase):
         if pwsh is None:
             self.skipTest("PowerShell Core is unavailable")
         campaign = analysis_campaign_fixture()
-        with written_campaign(campaign) as path:
+        with tempfile.TemporaryDirectory() as directory, written_campaign(campaign) as path:
+            plan_path = Path(directory) / "resolved_execution_plan.json"
             completed = subprocess.run(
                 [
                     pwsh, "-NoProfile", "-File",
                     str(REPO_ROOT / "common/multipole/run_simion_transport_campaign.ps1"),
                     "-CampaignPath", str(path), "-All", "-DryRun",
+                    "-DryRunOutput", str(plan_path),
                     "-RepoRoot", str(REPO_ROOT), "-PythonExe", sys.executable,
                 ],
                 cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8",
                 errors="replace", timeout=120, check=False,
             )
+            plan = json.loads(plan_path.read_text(encoding="utf-8"))
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         expected = [row["experiment_id"] for row in campaign["experiments"]]
         observed = [
@@ -508,6 +511,12 @@ class TransportCampaignTests(unittest.TestCase):
         ]
         self.assertEqual(observed, expected)
         self.assertIn("CASE_SET=primary_only", completed.stdout)
+        self.assertEqual(plan["role"], "multipole_campaign_resolved_execution_plan")
+        self.assertEqual(
+            [profile["runtime_profile_id"] for profile in plan["experiments"]],
+            expected,
+        )
+        self.assertTrue(all("solver_numerics" in profile for profile in plan["experiments"]))
 
 
     def test_campaign_resolves_existing_authorities_and_inline_simion_numerics(
