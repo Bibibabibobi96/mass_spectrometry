@@ -1,35 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://mass-spectrometry.local/schemas/rf_multipole_oatof_source_contract.schema.json",
-  "oneOf": [
-    {"$ref": "#/$defs/legacy_v1"},
-    {"$ref": "#/$defs/family_v2"}
-  ],
+  "$ref": "#/$defs/family_v2",
   "$defs": {
-    "legacy_v1": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "schema_version",
-        "role",
-        "upstream_project_id",
-        "recorded_project_id",
-        "selector",
-        "adapter",
-        "canonical_state",
-        "source"
-      ],
-      "properties": {
-        "schema_version": {"const": 1},
-        "role": {"const": "rf_multipole_oatof_source_contract"},
-        "upstream_project_id": {"$ref": "#/$defs/identifier"},
-        "recorded_project_id": {"$ref": "#/$defs/identifier"},
-        "selector": {"$ref": "#/$defs/selector"},
-        "adapter": {"$ref": "#/$defs/legacy_adapter"},
-        "canonical_state": {"$ref": "#/$defs/canonical_state"},
-        "source": {"$ref": "#/$defs/legacy_source"}
-      }
-    },
     "family_v2": {
       "type": "object",
       "additionalProperties": false,
@@ -83,37 +56,6 @@
       "properties": {
         "event": {"const": "handoff"},
         "status": {"const": "transmitted"}
-      }
-    },
-    "legacy_adapter": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "path",
-        "sha256",
-        "callable",
-        "output_schema",
-        "dependencies"
-      ],
-      "properties": {
-        "path": {"$ref": "#/$defs/path"},
-        "sha256": {"$ref": "#/$defs/sha256"},
-        "callable": {"const": "build_handoff"},
-        "output_schema": {"const": "component_particle_state_v1"},
-        "dependencies": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "source_baseline",
-            "energy_match_contract",
-            "source_interface_contract"
-          ],
-          "properties": {
-            "source_baseline": {"$ref": "#/$defs/file"},
-            "energy_match_contract": {"$ref": "#/$defs/file"},
-            "source_interface_contract": {"$ref": "#/$defs/file"}
-          }
-        }
       }
     },
     "family_adapter": {
@@ -181,28 +123,6 @@
         "solver_id": {"const": "simion"},
         "recorded_project_id": {"$ref": "#/$defs/identifier"},
         "source": {"$ref": "#/$defs/family_source"}
-      }
-    },
-    "legacy_source": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "run_id",
-        "particle_count",
-        "particle_source_manifest_input_role",
-        "manifest",
-        "state",
-        "particle_source",
-        "metadata"
-      ],
-      "properties": {
-        "run_id": {"type": "string", "minLength": 1},
-        "particle_count": {"type": "integer", "minimum": 1, "maximum": 100},
-        "particle_source_manifest_input_role": {"const": "particle_table"},
-        "manifest": {"$ref": "#/$defs/file"},
-        "state": {"$ref": "#/$defs/file"},
-        "particle_source": {"$ref": "#/$defs/file"},
-        "metadata": {"$ref": "#/$defs/file"}
       }
     },
     "family_source": {
