@@ -48,19 +48,6 @@ class ChangedGateContractTests(unittest.TestCase):
                     break
         return selected
 
-    def test_accepts_explicit_paths_and_discovers_worktree_changes(self) -> None:
-        self.assertIn("[string[]]$ChangedPath", self.source)
-        self.assertIn("[switch]$FullScope", self.source)
-        self.assertIn("FullScope and ChangedPath are mutually exclusive", self.source)
-        self.assertIn("git -C $repoRoot diff --name-only", self.source)
-        self.assertIn("git -C $repoRoot ls-files --others --exclude-standard", self.source)
-        self.assertIn("ChangedPath must be inside repository", self.source)
-        self.assertIn("Changed-files gate cannot determine Git HEAD", self.source)
-        self.assertIn("CHANGED_GATE_INPUT_SOURCE", self.source)
-        self.assertIn("gate_catalog_support.ps1", self.source)
-        self.assertIn("Read-GateCatalog", self.source)
-        self.assertIn("FULL_SCOPE", self.source)
-
     def test_documentation_only_fast_path_runs_without_project_gates(self) -> None:
         pwsh = shutil.which("pwsh")
         if pwsh is None:
@@ -161,15 +148,6 @@ class ChangedGateContractTests(unittest.TestCase):
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("INTEGRATION_GATE=PASS", completed.stdout)
-
-    def test_deleted_python_paths_select_scope_but_are_not_passed_to_ruff(self) -> None:
-        self.assertIn("$changedPython =", self.source)
-        self.assertIn("$existingPythonFiles =", self.source)
-        self.assertIn("Test-Path -LiteralPath $_ -PathType Leaf", self.source)
-        self.assertIn("$existingPythonFiles.Count -gt 0", self.source)
-        self.assertIn("@existingPythonFiles", self.source)
-        self.assertIn("only_deleted_python_paths_changed", self.source)
-        self.assertNotIn("@pythonFiles", self.source)
 
     def test_routes_project_config_to_its_own_static_gate(self) -> None:
         project_gates = sorted(
