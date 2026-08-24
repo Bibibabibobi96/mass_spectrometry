@@ -223,7 +223,11 @@ try {
             solver_numerics_contract_sha256 = Get-RunFileSha256 -Path $frozenNumericalContract
             rf_steps_per_period = [int]$coreConfig.rf_steps_per_period
             trajectory_quality = [int]$coreConfig.trajectory_quality
-            rf_steps_override = $false
+            numerics_qualification = if ($Exploration) { 'exploration_unqualified' } else { 'registered' }
+            rf_steps_override = (
+                [int]$coreConfig.rf_steps_per_period -ne
+                [int]$numericalContract.baseline_rf_steps_per_period
+            )
             simion_layout_template = [ordered]@{
                 template_id = [string]$templateProfile.template_id
                 registration_run_id = [string]$templateProfile.registration_run_id
