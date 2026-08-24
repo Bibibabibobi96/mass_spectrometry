@@ -86,13 +86,6 @@ def resolve_execution_profile(
             or configuration.get("clock_basis") != "canonical_instrument_time_us"
         ):
             raise ValueError(ERROR)
-        qualification_policy = configuration["resolution_qualification_policy"]
-        if not isinstance(qualification_policy, dict):
-            raise ValueError(ERROR)
-        required_bootstrap_resample_count = _positive_integer(
-            qualification_policy["required_bootstrap_resample_count"]
-        )
-
         selected_grid_id = frontend_grid_profile_id or configuration[
             "default_frontend_grid_profile_id"
         ]
@@ -223,7 +216,6 @@ def resolve_execution_profile(
             if source_region_diagnostic is not None
             else None
         ),
-        "required_qualification_bootstrap_resamples": required_bootstrap_resample_count,
         "clock_basis": configuration["clock_basis"],
         "numerical_authority": (
             "exploration_inline_override_v1"

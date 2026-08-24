@@ -31,6 +31,8 @@ plan；其 batch 决策必须与 adapter 接收的批次数一致，但它不是
 下游网格、轨迹质量、最大飞行时间和空间窗口只由冻结的 `ResolvedExecutionProfile` 输入 runner；
 runner 不提供会绕过该合同的逐项数值覆盖入口。
 
+分辨率资格由 Python 分析器在显式分析/晋升合同中判定；单飞 runner 不含未被公开 workflow 消费的资格开关。
+
 仅服务于本 integration 的 `rf_oatof_*` campaign、resolved plan 与 receipt Schema 均同置于
 `config/schemas/`；它们表达该项目的理论审计与运行证据结构，不属于跨项目公共合同。
 

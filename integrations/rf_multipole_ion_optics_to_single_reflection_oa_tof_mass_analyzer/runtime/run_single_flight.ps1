@@ -47,7 +47,6 @@ param(
   [string]$MotherParticleSourceRunRoot = '',
   [string]$MotherParticleSourceReceipt = '',
   [string]$MotherParticleSourceReceiptSha256 = '',
-  [switch]$ResolutionQualification,
   [string]$PrePulseTimeSeriesContract = '',
   [string]$PrePulseTimeSeriesContractSha256 = '',
   [ValidateScript({ $_ -ge 1 })][int]$ExecutionBatchCount = 1,
@@ -385,9 +384,8 @@ try {
   $PaCachePolicyProvenance = [string](
     $resolvedBudgetDocument.single_flight_pa_cache_policy_provenance
   )
-  if ($isPrePulseTimeSeriesScreening -and (
-      $ResolutionQualification -or
-      $PaCachePolicy -notin @('require_existing','build_and_publish_if_missing'))) {
+  if ($isPrePulseTimeSeriesScreening -and
+      $PaCachePolicy -notin @('require_existing','build_and_publish_if_missing')) {
     throw 'Pre-pulse time-series screening requires FUNCTIONAL_ONLY cache-governed execution.'
   }
   $preCacheRunConfiguration.parameters.single_flight_pa_cache_policy =
@@ -426,7 +424,6 @@ try {
   $frontendCellMmX = [double]$executionProfile.frontend_cell_mm_xyz.x
   $frontendCellMmY = [double]$executionProfile.frontend_cell_mm_xyz.y
   $frontendCellMmZ = [double]$executionProfile.frontend_cell_mm_xyz.z
-  $requiredQualificationBootstrapResamples = [int]$executionProfile.required_qualification_bootstrap_resamples
   $overlayEnabled = [bool]$executionProfile.accelerator_overlay_enabled
   $resolvedFieldOverlayId = [string]$executionProfile.field_overlay_id
   $overlayCellMmX = if ($overlayEnabled) { [double]$executionProfile.accelerator_overlay_cell_mm_xyz.x } else { $null }
@@ -515,10 +512,6 @@ try {
   }
   $sourceRegionDiagnosticProfileId = [string]$executionProfile.source_region_diagnostic_profile_id
   $sourceRegionDiagnosticProfiles = @($sourceRegionDiagnosticProfileId | Where-Object { $_ })
-  if ($ResolutionQualification -and
-      $BootstrapResamples -ne $requiredQualificationBootstrapResamples) {
-    throw 'Resolution qualification bootstrap resamples differ from the frozen policy.'
-  }
   Copy-Item -LiteralPath $runtime.binding_path -Destination $runtimeBindingFrozen
   $oatofGeometrySource = if ($hasGovernedLayout) {
     [IO.Path]::GetFullPath($OatofResolvedGeometry)
@@ -1681,8 +1674,6 @@ try {
   $runConfiguration.parameters.maximum_time_of_flight_us = $maximumTimeOfFlightUs
   $runConfiguration.parameters.bootstrap_resample_count = $BootstrapResamples
   $runConfiguration.parameters.bootstrap_seed = $BootstrapSeed
-  $runConfiguration.parameters.resolution_qualification_required_bootstrap_resample_count =
-    $requiredQualificationBootstrapResamples
   if ($isPrePulseTimeSeriesScreening) {
     $runConfiguration.inputs.pre_pulse_time_series_contract =
       $prePulseTimeSeriesContractFrozen
@@ -1887,8 +1878,7 @@ try {
     )
   }
   if ($spatialWindowProfiles.Count -eq 1 -or
-      $sourceRegionDiagnosticProfiles.Count -eq 1 -or
-      $ResolutionQualification) {
+      $sourceRegionDiagnosticProfiles.Count -eq 1) {
     $analysisArguments += @('--configuration',$configuration)
   }
   if ($spatialWindowProfiles.Count -eq 1) {
@@ -1901,9 +1891,6 @@ try {
     $analysisArguments += @(
       '--source-region-diagnostic-profile-id',$sourceRegionDiagnosticProfileId
     )
-  }
-  if ($ResolutionQualification) {
-    $analysisArguments += '--require-resolution-qualification'
   }
   if ($hasThreeZoneCandidate) {
     $analysisArguments += '--require-three-zone-checkpoint-census'

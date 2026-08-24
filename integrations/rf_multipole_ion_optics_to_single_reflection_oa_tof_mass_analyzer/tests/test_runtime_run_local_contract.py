@@ -987,48 +987,6 @@ foreach ($case in $cases) {{
         self.assertEqual(capability["required_event_plane"], "pre_pulse_state")
         self.assertEqual(capability["claim_class"], "DIAGNOSTIC_ONLY")
 
-    def test_resolution_qualification_requires_full_bootstrap(self) -> None:
-        text = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
-        configuration = json.loads(
-            (INTEGRATION_ROOT / "config" / "simion_single_flight.json").read_text(
-                encoding="utf-8"
-            )
-        )
-        self.assertNotIn("[int]$BootstrapResamples = 0", text)
-        self.assertIn("[switch]$ResolutionQualification", text)
-        self.assertEqual(
-            configuration["resolution_qualification_policy"]
-            ["required_bootstrap_resample_count"],
-            5000,
-        )
-        self.assertEqual(
-            resolve_execution_profile(configuration)[
-                "required_qualification_bootstrap_resamples"
-            ],
-            5000,
-        )
-        self.assertIn(
-            "$BootstrapResamples -ne $requiredQualificationBootstrapResamples",
-            text,
-        )
-        self.assertIn(
-            "runtime.single_flight_execution_profile",
-            text,
-        )
-        self.assertIn(
-            "resolution_qualification_required_bootstrap_resample_count",
-            text,
-        )
-        self.assertIn("runtime.resolved_population", text)
-        self.assertIn(
-            "$BootstrapResamples = [int]$runtimePopulation.bootstrap_resample_count",
-            text,
-        )
-        self.assertNotIn("'--bootstrap-resamples'", text)
-        self.assertIn("'--require-resolution-qualification'", text)
-        self.assertIn("'--require-three-zone-checkpoint-census'", text)
-        self.assertNotIn("Assert-RfThreeZoneCheckpointCensus", text)
-
     def test_population_contract_is_the_only_release_and_mode_authority(self) -> None:
         runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
         adapter = FAMILY_ADAPTER.read_text(encoding="utf-8")
