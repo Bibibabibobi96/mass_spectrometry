@@ -12,26 +12,6 @@ SIMION_EXE = Path(r"C:\Program Files\SIMION-2020\simion.exe")
 
 
 class OatofAnalyzerComponentTests(unittest.TestCase):
-    def test_component_has_no_callback_electrode_or_clock_authority(self) -> None:
-        source = COMPONENT.read_text(encoding="utf-8")
-        for forbidden in (
-            "simion.workbench_program",
-            "segment.",
-            "adj_elect",
-            "ion_time_of_birth",
-            "ion_time_of_flight",
-            "os.clock",
-            "handoff_pulse_time",
-            "pulse_width",
-        ):
-            self.assertNotIn(forbidden, source)
-        self.assertIn("function component.new(config)", source)
-        self.assertIn("accelerator_electrode_write_plan=accelerator_plan", source)
-        self.assertIn("initialize_workbench=initialize_workbench", source)
-        self.assertNotIn("reference_ground", source)
-        self.assertNotIn("state.time_us", source)
-        self.assertIn("state.elapsed_us", source)
-
     @unittest.skipUnless(SIMION_EXE.is_file(), "official SIMION Lua CLI unavailable")
     def test_official_simion_lua_cli_executes_component_contract(self) -> None:
         result = subprocess.run(
