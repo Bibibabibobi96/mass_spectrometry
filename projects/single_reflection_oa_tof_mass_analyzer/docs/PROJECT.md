@@ -142,6 +142,12 @@ Candidate唯一公开入口为`../workflows/design_candidate/run_candidate.py`�
    检查点、相空间、TOF和场诊断；为保留能力建立单一版本化能力目录、固定输入/输出角色和统一分析
    run生命周期，未入目录的实现须归类为测试、迁移历史或删除候选。关闭条件是活动入口不再各自维护
    重叠绘图代码，campaign只声明能力ID和受控参数，且现有Formal/Candidate证据不被重写。
+4. **COMSOL canonical 指标迁移。** 现有 MATLAB/COMSOL 链既生成 GUI 用 Gaussian/KDE FWHM，又在
+   全链 Formal 测试中独立计算并断言 resolution；SIMION 单飞链的 canonical 分析在 Python。先为同一
+   冻结 detector-arrival 表建立 Python 指标与现有 COMSOL Formal 数值的 parity fixture，再将 COMSOL
+   导出接入该 Python 分析器，最后才移除 MATLAB 中决定资格的重复计算。关闭条件是两条链共享同一
+   已版本化指标实现或有明确的非权威 GUI 派生物，并以真实 COMSOL golden 证明 FWHM、R、单位、时钟
+   与 Formal 判定未退化；不得靠重写历史结果或调宽容差达成。
 开放任务只写未完成动作和关闭条件。已完成的Candidate bootstrap、路径修复、receipt治理、历史失败
 run和非零变量复验全部冻结在同日PROJECT history快照。
 
