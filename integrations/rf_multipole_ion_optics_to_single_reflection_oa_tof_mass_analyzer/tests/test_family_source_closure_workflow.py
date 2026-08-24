@@ -307,14 +307,16 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
         self.assertEqual(plan["estimation"]["kind"], "nearest_resource_profile")
         self.assertEqual(plan["waves"][0]["batch_count"], 8)
 
-    def test_dispatch_plan_rejects_retired_fixed_batch_authoring(self) -> None:
-        with self.assertRaisesRegex(
-            ContractError, "requires a memory batch policy"
-        ):
-            resolve_single_flight_dispatch_plan(
-                {"single_flight_batch_count": 2},
-                execution_particle_count=1000,
-            )
+    def test_dispatch_plan_bootstraps_when_exploration_has_no_memory_receipt(self) -> None:
+        plan = resolve_single_flight_dispatch_plan(
+            {
+                "single_flight_time_integration_profile_id": "dt64",
+            },
+            execution_particle_count=1000,
+            rf_steps_per_period=64,
+        )
+        self.assertEqual(plan["estimation"]["kind"], "unknown_resource_profile_bootstrap")
+        self.assertEqual(plan["waves"][0]["batch_count"], 1)
 
     def test_flat_authoring_expands_shared_controls_and_gap_rows(self) -> None:
         authored = {

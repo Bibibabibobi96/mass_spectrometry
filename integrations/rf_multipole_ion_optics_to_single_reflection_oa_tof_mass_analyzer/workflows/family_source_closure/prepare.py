@@ -375,76 +375,92 @@ def resolve_single_flight_dispatch_plan(
 
     The returned object is an execution artifact only.  It never contributes to
     campaign or handoff identity; those remain defined by the resolved source
-    and numerical contracts.  Active campaigns must declare a measured
-    memory-policy receipt so the scheduler, rather than an archived fixed
-    batch count, selects the execution shape.
+    and numerical contracts.  A verified memory-policy receipt permits an
+    immediately measured dispatch; without one the shared scheduler emits a
+    one-batch bootstrap plan.  The retired fixed batch-count field has no
+    role in either decision.
     """
 
+    try:
+        if (
+            isinstance(rf_steps_per_period, bool)
+            or not isinstance(rf_steps_per_period, int)
+            or rf_steps_per_period < 1
+        ):
+            raise ValueError("single-flight RF time profile is unresolved")
+        request = {
+            "solver": "SIMION",
+            "field_kind": "rf",
+            "rf_steps_per_period": rf_steps_per_period,
+            "particle_count": execution_particle_count,
+            "independent_particles": True,
+            "time_integration_profile_id": str(
+                experiment["single_flight_time_integration_profile_id"]
+            ),
+            "frontend_grid_profile_id": experiment.get(
+                "single_flight_frontend_grid_profile_id"
+            ),
+            "oatof_numerical_profile_id": experiment.get(
+                "single_flight_oatof_numerical_profile_id"
+            ),
+            "trajectory_quality_profile_id": experiment.get(
+                "single_flight_trajectory_quality_profile_id"
+            ),
+            "accelerator_field_profile_id": experiment.get(
+                "single_flight_accelerator_field_profile_id"
+            ),
+        }
+    except (KeyError, ValueError) as error:
+        raise ContractError("single-flight automatic dispatch is invalid") from error
+    from common.simion.resource_scheduler import plan_simion_dispatch
     memory_policy = experiment.get("single_flight_batch_memory_policy")
+    if memory_policy is None:
+        return plan_simion_dispatch(request, [])
     if not isinstance(memory_policy, dict):
         raise ContractError(
-            "active single-flight execution requires a memory batch policy"
+            "single-flight memory batch policy is invalid"
         )
-    if memory_policy is not None:
-        if workspace is None:
-            raise ContractError("single-flight memory batch policy lacks workspace context")
-        receipt_ref = memory_policy["resource_usage_receipt"]
-        receipt_path = (workspace / receipt_ref["path"]).resolve()
-        if not receipt_path.is_file() or file_sha256(receipt_path) != receipt_ref["sha256"]:
-            raise ContractError("single-flight memory batch receipt is missing or differs")
-        receipt = _load(receipt_path)
-        peak = receipt.get("peak_process_tree_working_set_bytes")
-        if isinstance(peak, bool) or not isinstance(peak, int) or peak < 1:
-            raise ContractError("single-flight memory batch receipt lacks a positive peak")
-        from common.simion.resource_scheduler import plan_simion_dispatch
-        try:
-            if (
-                isinstance(rf_steps_per_period, bool)
-                or not isinstance(rf_steps_per_period, int)
-                or rf_steps_per_period < 1
-            ):
-                raise ValueError("single-flight RF time profile is unresolved")
-            time_profile = str(experiment["single_flight_time_integration_profile_id"])
-            request = {
-                "solver": "SIMION",
-                "field_kind": "rf",
-                "rf_steps_per_period": rf_steps_per_period,
-                "particle_count": execution_particle_count,
-                "independent_particles": True,
-                "default_parallel_batches": int(memory_policy.get("default_batch_count", 1)),
-                "maximum_parallel_batches": int(memory_policy.get("maximum_batch_count", execution_particle_count)),
-                # The receipt is already the measured upper bound used for a
-                # one-batch bootstrap when no exact profile identity matches.
-                "unknown_per_batch_reservation_bytes": peak,
-                "reserve_available_memory_bytes": int(memory_policy["reserve_available_memory_bytes"]),
-                "memory_safety_numerator": int(memory_policy.get("memory_safety_numerator", 115)),
-                "memory_safety_denominator": int(memory_policy.get("memory_safety_denominator", 100)),
-                "cpu_cores_per_batch": int(memory_policy.get("cpu_cores_per_batch", 1)),
-                "reserve_cpu_cores": int(memory_policy.get("reserve_cpu_cores", 0)),
-                "frontend_grid_profile_id": experiment.get("single_flight_frontend_grid_profile_id"),
-                "oatof_numerical_profile_id": experiment.get("single_flight_oatof_numerical_profile_id"),
-                "trajectory_quality_profile_id": experiment.get("single_flight_trajectory_quality_profile_id"),
-                "time_integration_profile_id": time_profile,
-                "accelerator_field_profile_id": experiment.get("single_flight_accelerator_field_profile_id"),
-            }
-            profile = {
-                "resource_identity": {
-                    key: request[key]
-                    for key in (
-                        "solver", "field_kind", "rf_steps_per_period",
-                        "frontend_grid_profile_id", "oatof_numerical_profile_id",
-                        "trajectory_quality_profile_id", "time_integration_profile_id",
-                        "accelerator_field_profile_id",
-                    )
-                },
-                "per_batch_peak_working_set_bytes": peak,
-            }
-            decision = plan_simion_dispatch(
-                request, [profile],
-            )
-        except ValueError as error:
-            raise ContractError("single-flight memory batch policy is invalid") from error
-        return decision
+    if workspace is None:
+        raise ContractError("single-flight memory batch policy lacks workspace context")
+    receipt_ref = memory_policy["resource_usage_receipt"]
+    receipt_path = (workspace / receipt_ref["path"]).resolve()
+    if not receipt_path.is_file() or file_sha256(receipt_path) != receipt_ref["sha256"]:
+        raise ContractError("single-flight memory batch receipt is missing or differs")
+    receipt = _load(receipt_path)
+    peak = receipt.get("peak_process_tree_working_set_bytes")
+    if isinstance(peak, bool) or not isinstance(peak, int) or peak < 1:
+        raise ContractError("single-flight memory batch receipt lacks a positive peak")
+    try:
+        request.update({
+            "default_parallel_batches": int(memory_policy.get("default_batch_count", 1)),
+            "maximum_parallel_batches": int(memory_policy.get("maximum_batch_count", execution_particle_count)),
+            # The receipt is already the measured upper bound used for a
+            # one-batch bootstrap when no exact profile identity matches.
+            "unknown_per_batch_reservation_bytes": peak,
+            "reserve_available_memory_bytes": int(memory_policy["reserve_available_memory_bytes"]),
+            "memory_safety_numerator": int(memory_policy.get("memory_safety_numerator", 115)),
+            "memory_safety_denominator": int(memory_policy.get("memory_safety_denominator", 100)),
+            "cpu_cores_per_batch": int(memory_policy.get("cpu_cores_per_batch", 1)),
+            "reserve_cpu_cores": int(memory_policy.get("reserve_cpu_cores", 0)),
+        })
+        profile = {
+            "resource_identity": {
+                key: request[key]
+                for key in (
+                    "solver", "field_kind", "rf_steps_per_period",
+                    "frontend_grid_profile_id", "oatof_numerical_profile_id",
+                    "trajectory_quality_profile_id", "time_integration_profile_id",
+                    "accelerator_field_profile_id",
+                )
+            },
+            "per_batch_peak_working_set_bytes": peak,
+        }
+        decision = plan_simion_dispatch(
+            request, [profile],
+        )
+    except ValueError as error:
+        raise ContractError("single-flight memory batch policy is invalid") from error
+    return decision
 
 
 def validate_pre_pulse_time_series_campaign(campaign: dict[str, Any]) -> None:
