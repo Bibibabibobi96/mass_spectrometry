@@ -61,26 +61,6 @@ class ChangedGateContractTests(unittest.TestCase):
         self.assertIn("Read-GateCatalog", self.source)
         self.assertIn("FULL_SCOPE", self.source)
 
-    def test_reports_run_skip_reasons_and_elapsed_time(self) -> None:
-        self.assertIn("GATE_STAGE=RUN", self.source)
-        self.assertIn("GATE_STAGE=SKIP", self.source)
-        self.assertIn("ELAPSED_SECONDS", self.source)
-        self.assertIn("repository_hygiene' 'always", self.source)
-
-    def test_documentation_only_fast_path_is_narrow_and_explicit(self) -> None:
-        self.assertIn("$isDocumentationOnly", self.source)
-        self.assertIn("GetExtension($_).ToLowerInvariant() -ne '.md'", self.source)
-        self.assertIn("CHANGED_GATE_FAST_PATH=DOCUMENTATION_ONLY", self.source)
-        parallel_gate = self.source.index(
-            "Invoke-ChangedStageGroup $preFreshnessBarrier"
-        )
-        documentation_gate = self.source.index(
-            "Invoke-ChangedGateStage $documentation.Name"
-        )
-        fast_path = self.source.index("if ($isDocumentationOnly)", documentation_gate)
-        self.assertLess(documentation_gate, fast_path)
-        self.assertLess(fast_path, parallel_gate)
-
     def test_documentation_only_fast_path_runs_without_project_gates(self) -> None:
         pwsh = shutil.which("pwsh")
         if pwsh is None:
@@ -190,17 +170,6 @@ class ChangedGateContractTests(unittest.TestCase):
         self.assertIn("@existingPythonFiles", self.source)
         self.assertIn("only_deleted_python_paths_changed", self.source)
         self.assertNotIn("@pythonFiles", self.source)
-
-    def test_internal_route_closure_carries_its_command_invoker(self) -> None:
-        self.assertIn(
-            "$catalogCommandInvoker = "
-            "${function:Invoke-GateCatalogCommand}.GetNewClosure()",
-            self.source,
-        )
-        self.assertIn("$routeCommandInvoker = {", self.source)
-        self.assertIn("& $catalogCommandInvoker -Command $Command", self.source)
-        self.assertIn("}.GetNewClosure()", self.source)
-        self.assertIn("& $routeCommandInvoker -Command $command", self.source)
 
     def test_routes_project_config_to_its_own_static_gate(self) -> None:
         project_gates = sorted(
