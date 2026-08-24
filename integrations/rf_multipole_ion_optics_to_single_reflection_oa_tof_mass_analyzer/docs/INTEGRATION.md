@@ -80,6 +80,12 @@ SHA、manifest 与失败记录，但不能 `FinalizeOnly`、发布正式结果�
 探索的粒子数没有 schema 人为上限；它必须是正整数，并与冻结 source、ordered particle IDs 和分析分母一致。
 实际并发由资源调度器按粒子数、CPU 和可用内存决定，不改变 handoff 的科学身份。
 
+下游网格、反射区 cell、trajectory quality 与每周期 RF 步数可选择任一已登记的
+`single_flight_*_profile_id`。探索合同还可在
+`single_flight_numerical_overrides` 中直接给出正的 `trajectory_quality`、`rf_steps_per_period`，以及
+前端/overlay/reflectron 的 cell；prepare 会把最终数值冻结进 `ResolvedExecutionProfile`。这不会修改默认
+profile、上游 handoff 或正式资格；正式 campaign 仍以其预登记 profile 为准。
+
 探索若复用一个已冻结的 post-pulse restart source，仍须验证该 source 的 manifest、checkpoint、pulse schedule、
 粒子身份和所声明的变化轴；但不必为了只扫描加速场 profile 而附带正式资格专用的 source `z--vz` 理论工作点。
 该理论闭合仍是 active/authorized restart 的失败关闭要求。
