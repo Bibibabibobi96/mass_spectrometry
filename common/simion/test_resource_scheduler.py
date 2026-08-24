@@ -172,10 +172,25 @@ class ResourceSchedulerTests(unittest.TestCase):
         self.assertEqual(plan["estimation"]["kind"], "unknown_resource_profile_bootstrap")
         self.assertEqual(plan["waves"][0]["batch_count"], 1)
 
+    def test_profile_with_different_declared_rf_numerics_bootstraps(self) -> None:
+        profile = {
+            "resource_identity": {
+                "solver": "SIMION", "field_kind": "rf",
+                "rf_steps_per_period": 80,
+            },
+            "per_batch_peak_working_set_bytes": 1,
+        }
+        plan = plan_simion_dispatch(
+            self.rf_request(), [profile], available_memory_bytes=100,
+            logical_processors=8,
+        )
+        self.assertEqual(plan["estimation"]["kind"], "unknown_resource_profile_bootstrap")
+        self.assertEqual(plan["waves"][0]["batch_count"], 1)
+
     def test_nearest_matching_profile_prefers_larger_peak_on_a_tie(self) -> None:
         profiles = [
-            {"resource_identity": {"solver": "SIMION", "field_kind": "rf"}, "per_batch_peak_working_set_bytes": 10},
-            {"resource_identity": {"solver": "SIMION", "field_kind": "rf"}, "per_batch_peak_working_set_bytes": 12},
+            {"resource_identity": {"solver": "SIMION", "field_kind": "rf", "rf_steps_per_period": 40}, "per_batch_peak_working_set_bytes": 10},
+            {"resource_identity": {"solver": "SIMION", "field_kind": "rf", "rf_steps_per_period": 40}, "per_batch_peak_working_set_bytes": 12},
         ]
         plan = plan_simion_dispatch(
             self.rf_request(), profiles, available_memory_bytes=100, logical_processors=8,

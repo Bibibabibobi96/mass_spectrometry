@@ -87,6 +87,16 @@ def select_memory_profile(
             or identity.get("field_kind") != resource_identity.get("field_kind")
         ):
             continue
+        # A measured peak can be reused only when it does not contradict a
+        # resource-relevant property declared by this run.  Ranking a profile
+        # with a different RF step count, grid, or trajectory-quality profile
+        # as merely "nearest" could understate its working-set reservation.
+        if any(
+            resource_identity.get(key) is not None
+            and identity.get(key) != resource_identity[key]
+            for key in RESOURCE_IDENTITY_KEYS
+        ):
+            continue
         score = sum(
             resource_identity.get(key) is not None
             and resource_identity.get(key) == identity.get(key)
