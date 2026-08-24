@@ -31,6 +31,8 @@ RESOURCE_IDENTITY_KEYS = (
     "accelerator_overlay_pa0_sha256",
     "reflectron_pa0_sha256",
 )
+DEFAULT_MEMORY_SAFETY_NUMERATOR = 105
+DEFAULT_MEMORY_SAFETY_DENOMINATOR = 100
 
 
 def available_physical_memory_bytes() -> int | None:
@@ -144,8 +146,14 @@ def plan_simion_dispatch(
     reserve = _nonnegative_int(request.get("reserve_available_memory_bytes", 0), "reserve_available_memory_bytes")
     cpu_per_batch = _positive_int(request.get("cpu_cores_per_batch", 1), "cpu_cores_per_batch")
     cpu_reserve = _nonnegative_int(request.get("reserve_cpu_cores", 0), "reserve_cpu_cores")
-    safety_numerator = _positive_int(request.get("memory_safety_numerator", 115), "memory_safety_numerator")
-    safety_denominator = _positive_int(request.get("memory_safety_denominator", 100), "memory_safety_denominator")
+    safety_numerator = _positive_int(
+        request.get("memory_safety_numerator", DEFAULT_MEMORY_SAFETY_NUMERATOR),
+        "memory_safety_numerator",
+    )
+    safety_denominator = _positive_int(
+        request.get("memory_safety_denominator", DEFAULT_MEMORY_SAFETY_DENOMINATOR),
+        "memory_safety_denominator",
+    )
     processor_count = logical_processors if logical_processors is not None else os.cpu_count()
     if processor_count is None:
         processor_count = 1

@@ -416,7 +416,11 @@ def resolve_single_flight_dispatch_plan(
         }
     except (KeyError, ValueError) as error:
         raise ContractError("single-flight automatic dispatch is invalid") from error
-    from common.simion.resource_scheduler import plan_simion_dispatch
+    from common.simion.resource_scheduler import (
+        DEFAULT_MEMORY_SAFETY_DENOMINATOR,
+        DEFAULT_MEMORY_SAFETY_NUMERATOR,
+        plan_simion_dispatch,
+    )
     profiles = [] if resource_profiles is None else resource_profiles
     memory_policy = experiment.get("single_flight_batch_memory_policy")
     if memory_policy is not None and not isinstance(memory_policy, dict):
@@ -428,8 +432,12 @@ def resolve_single_flight_dispatch_plan(
     try:
         request.update({
             "reserve_available_memory_bytes": int(memory_policy["reserve_available_memory_bytes"]),
-            "memory_safety_numerator": int(memory_policy.get("memory_safety_numerator", 115)),
-            "memory_safety_denominator": int(memory_policy.get("memory_safety_denominator", 100)),
+            "memory_safety_numerator": int(memory_policy.get(
+                "memory_safety_numerator", DEFAULT_MEMORY_SAFETY_NUMERATOR
+            )),
+            "memory_safety_denominator": int(memory_policy.get(
+                "memory_safety_denominator", DEFAULT_MEMORY_SAFETY_DENOMINATOR
+            )),
             "cpu_cores_per_batch": int(memory_policy.get("cpu_cores_per_batch", 1)),
             "reserve_cpu_cores": int(memory_policy.get("reserve_cpu_cores", 0)),
         })

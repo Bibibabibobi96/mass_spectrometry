@@ -50,6 +50,8 @@ class ResourceSchedulerTests(unittest.TestCase):
             request, [profile], available_memory_bytes=100, logical_processors=10
         )
         self.assertEqual(plan["limits"]["maximum_parallel_batches"], 100)
+        self.assertEqual(plan["limits"]["memory_safety_numerator"], 105)
+        self.assertEqual(plan["limits"]["memory_safety_denominator"], 100)
         self.assertEqual(plan["waves"][0]["batch_count"], 4)
 
     def test_omitted_parallel_cap_keeps_unobservable_memory_conservative(self) -> None:
@@ -127,7 +129,7 @@ class ResourceSchedulerTests(unittest.TestCase):
             request, [profile], available_memory_bytes=52, logical_processors=8,
         )
         selected = plan["waves"][0]["batch_count"]
-        self.assertEqual(selected, 4)  # floor((52 - 4) / ceil(10 * 1.15))
+        self.assertEqual(selected, 4)  # floor((52 - 4) / ceil(10 * 1.05))
         fixed_policy_makespan = 8000 / 2
         adaptive_makespan = max(batch["count"] for batch in plan["waves"][0]["batches"])
         self.assertEqual(adaptive_makespan, 8000 / selected)
