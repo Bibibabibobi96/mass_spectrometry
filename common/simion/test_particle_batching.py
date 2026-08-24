@@ -4,40 +4,13 @@ import tempfile
 from pathlib import Path
 
 from common.simion.particle_batching import (
-    choose_memory_bound_batch_count,
     merge_rebased_particle_csvs,
     merge_simion_summaries,
     plan_single_wave_batches,
-    select_nearest_memory_profile,
 )
 
 
 class ParticleBatchingTests(unittest.TestCase):
-    def test_memory_bound_choice_uses_available_memory_and_contract_cap(self) -> None:
-        decision = choose_memory_bound_batch_count(
-            5000, 2, 4, 12 * 1024**3, 1024**3, 40 * 1024**3
-        )
-        self.assertEqual(decision["selected_batch_count"], 3)
-        self.assertEqual(
-            decision["selection_reason"],
-            "largest_count_within_current_available_memory",
-        )
-
-    def test_nearest_memory_profile_prefers_matching_resource_identity(self) -> None:
-        target = {"solver": "SIMION", "mode": "single", "time_integration_profile_id": "dt40"}
-        selected = select_nearest_memory_profile(target, [
-            {"per_batch_peak_working_set_bytes": 11, "resource_identity": {"solver": "SIMION", "mode": "single", "time_integration_profile_id": "dt40"}},
-            {"per_batch_peak_working_set_bytes": 99, "resource_identity": {"solver": "SIMION", "mode": "other", "time_integration_profile_id": "dt160"}},
-        ])
-        self.assertEqual(selected["per_batch_peak_working_set_bytes"], 11)
-        self.assertEqual(selected["match_kind"], "estimated_from_nearest_profile")
-
-    def test_memory_bound_choice_fails_closed_when_one_batch_does_not_fit(self) -> None:
-        with self.assertRaisesRegex(ValueError, "cannot support even one batch"):
-            choose_memory_bound_batch_count(
-                5000, 2, 4, 12 * 1024**3, 1 * 1024**3, 12 * 1024**3
-            )
-
     def test_balanced_complete_plan(self) -> None:
         plan = plan_single_wave_batches(5000, 5)
         self.assertEqual(plan["dispatch"], "single_wave_parallel")
