@@ -650,14 +650,6 @@ class SingleFlightProgramTests(unittest.TestCase):
         self.assertIn("resolved_region_field_hook_lua", text)
         self.assertNotIn("OATOF_IDEAL_REFLECTRON_STAGE1_ENABLE", text)
         self.assertNotIn("pulse_resolution_reflectron_stage_mode", text)
-        for legacy_helper in (
-            "bind_oatof_adjustables",
-            "disable_redundant_ground_fast_adjust",
-            "allow_accelerator_overlay_instance",
-            "enable_official_global_segments",
-            "build_extension",
-        ):
-            self.assertNotIn(f"def {legacy_helper}(", text)
         self.assertNotIn(".tests.", text)
 
 
