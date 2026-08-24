@@ -638,6 +638,26 @@ class TransportCampaignTests(unittest.TestCase):
                     experiment_id=EXPERIMENT_ID,
                 )
 
+    def test_campaign_accepts_large_exploration_numerics_and_batch_count(self) -> None:
+        campaign = campaign_fixture()
+        values = campaign["experiments"][0]["simion_solver_numerics"]["values"]
+        values["cell_mm_xyz"] = {"x": 101.0, "y": 125.0, "z": 150.0}
+        values["trajectory"]["rf_steps_per_period"] = 10_001
+        values["trajectory"]["maximum_global_time_us"] = 1_000_001.0
+        values["execution_batching"] = {
+            "dispatch": "single_wave_parallel", "batch_count": 17
+        }
+        with written_campaign(campaign) as path:
+            selected = resolve_runtime_selection(
+                REPO_ROOT,
+                PROJECT_ID,
+                campaign_path=path,
+                experiment_id=EXPERIMENT_ID,
+            )
+        self.assertEqual(
+            selected["solver_numerics"]["simion"]["values"], values
+        )
+
         unsupported = campaign_fixture()
         unsupported["experiments"][0]["solver"] = "comsol"
         with written_campaign(unsupported) as path:
