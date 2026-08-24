@@ -1740,6 +1740,9 @@ try {
       $launched
   }
   $batchPlanPath = Join-Path $package.input_dir 'simion_execution_batch_plan.json'
+  $dispatchPlanPath = Join-Path $package.input_dir 'simion_repository_dispatch_plan.json'
+  $resolvedBudgetDocument.single_flight_dispatch_plan | ConvertTo-Json -Depth 8 |
+    Set-Content -LiteralPath $dispatchPlanPath -Encoding UTF8
   Invoke-SingleFlightPython -Arguments @(
     '-m','common.simion.particle_batching','--particle-count',([string]$launched),
     '--batch-count',([string]$runConfiguration.parameters.execution_batch_count),
@@ -1751,6 +1754,7 @@ try {
     throw 'Shared SIMION batch plan differs from the frozen launched population.'
   }
   $runConfiguration.inputs.simion_execution_batch_plan = $batchPlanPath
+  $runConfiguration.inputs.simion_repository_dispatch_plan = $dispatchPlanPath
   $runConfiguration.parameters.simion_single_wave_batch_plan_sha256 =
     (Get-FileHash -Algorithm SHA256 -LiteralPath $batchPlanPath).Hash
   Write-RunJson -Path $package.run_config -Depth 10 -Value $runConfiguration
@@ -1998,6 +2002,16 @@ try {
   foreach ($usage in $resourceUsageFiles) {
     if (-not (Complete-ResourceUsage -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir -UsagePath $usage)) { $resourceBudgetExceeded=$true; throw 'Single-flight compact retained-byte budget exceeded.' }
   }
+  $resourceProfile = $null
+  if ([string]$resolvedBudgetDocument.single_flight_dispatch_plan.estimation.kind -eq 'unknown_resource_profile_bootstrap') {
+    $resourceProfile = Join-Path $package.result_dir 'simion_resource_profile.json'
+    Invoke-SingleFlightPython -Arguments @(
+      '-m','common.simion.resource_profile','publish','--run-id',$RunId,
+      '--resource-usage',$resourceUsage,'--resource-usage-relative-path','logs/resource_usage.json',
+      '--dispatch-plan',$dispatchPlanPath,'--output',$resourceProfile
+    ) -Failure 'Single-flight SIMION resource profile publication failed.'
+  }
+  if ($resourceProfile) { $outputs += $resourceProfile }
   Write-RunManifest -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config -Status success -Software @('SIMION 2020','Python 3.11') -Outputs $outputs
   try { Remove-RunPackageExecutionAlias -Package $package } catch {
     Write-Warning "Could not remove short execution alias after successful run: $($_.Exception.Message)"
