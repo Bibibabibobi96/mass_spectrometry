@@ -357,7 +357,6 @@ class CampaignRuntimeAuthoritiesTests(unittest.TestCase):
             self.assertNotIn("diagnostic_state_transform", identity)
             self.assertNotIn("max_parallel_batches", identity)
             self.assertNotIn("single_flight_batch_count", identity)
-            self.assertNotIn("parallel_batch_memory_reservation_bytes", identity)
 
         self.assertIn("frontend_gem_sha256", frontend_identity)
         self.assertIn("overlay_gem_sha256", overlay_identity)

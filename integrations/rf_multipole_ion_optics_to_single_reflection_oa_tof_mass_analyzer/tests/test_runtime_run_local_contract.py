@@ -848,6 +848,7 @@ foreach ($case in $cases) {{
         self.assertEqual(defaults["trajectory_quality"], 8)
         self.assertEqual(defaults["rf_steps_per_period"], 40)
         self.assertEqual(defaults["maximum_time_of_flight_us"], 90.0)
+        self.assertNotIn("parallel_batch_memory_reservation_bytes", defaults)
         explicit = resolve_execution_profile(
             settings,
             frontend_grid_profile_id="frontend_isotropic_015",

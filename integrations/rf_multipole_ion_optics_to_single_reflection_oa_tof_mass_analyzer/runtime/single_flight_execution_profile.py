@@ -86,13 +86,9 @@ def resolve_execution_profile(
             or configuration.get("clock_basis") != "canonical_instrument_time_us"
         ):
             raise ValueError(ERROR)
-        batching_policy = configuration["batching_policy"]
         qualification_policy = configuration["resolution_qualification_policy"]
-        if not isinstance(batching_policy, dict) or not isinstance(qualification_policy, dict):
+        if not isinstance(qualification_policy, dict):
             raise ValueError(ERROR)
-        parallel_batch_memory_reservation_bytes = _positive_integer(
-            batching_policy["parallel_batch_memory_reservation_bytes"]
-        )
         required_bootstrap_resample_count = _positive_integer(
             qualification_policy["required_bootstrap_resample_count"]
         )
@@ -227,7 +223,6 @@ def resolve_execution_profile(
             if source_region_diagnostic is not None
             else None
         ),
-        "parallel_batch_memory_reservation_bytes": parallel_batch_memory_reservation_bytes,
         "required_qualification_bootstrap_resamples": required_bootstrap_resample_count,
         "clock_basis": configuration["clock_basis"],
         "numerical_authority": (

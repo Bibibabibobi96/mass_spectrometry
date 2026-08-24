@@ -1475,24 +1475,8 @@ $result = Get-PulseTimingOrchestration `
             if profile["profile_id"]
             == "frontend_isotropic_020_accelerator_overlay_z005"
         )
-        batching = configuration["batching_policy"]
         self.assertNotIn("max_parallel_batches", selected_grid)
-        self.assertEqual(
-            batching["parallel_batch_memory_reservation_bytes"], 10 * 1024**3,
-        )
-        self.assertEqual(
-            batching["parallel_batch_observed_peak_working_set_bytes"],
-            8_700_387_328,
-        )
-        self.assertGreater(
-            batching["parallel_batch_memory_reservation_bytes"],
-            batching["parallel_batch_observed_peak_working_set_bytes"],
-        )
-        for retired in (
-            "enabled_at_particle_count", "default_batch_count",
-            "parallel_after_cache_warmup", "cache_warmup_batch_count",
-        ):
-            self.assertNotIn(retired, batching)
+        self.assertNotIn("batching_policy", configuration)
 
     def test_n1000_v3_changes_only_identity_and_execution_batching(self) -> None:
         v2 = load(

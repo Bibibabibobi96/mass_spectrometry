@@ -7,12 +7,6 @@
     "minimum_valid_bootstrap_resample_count": 4750,
     "maximum_relative_95pct_interval_width": 0.1
   },
-  "batching_policy": {
-    "parallel_batch_memory_reservation_bytes": 10737418240,
-    "parallel_batch_observed_peak_working_set_bytes": 8700387328,
-    "equivalence_requires_collisions_disabled": true,
-    "equivalence_requires_space_charge_disabled": true
-  },
   "default_frontend_grid_profile_id": "frontend_isotropic_020",
   "frontend_grid_profiles": [
     {

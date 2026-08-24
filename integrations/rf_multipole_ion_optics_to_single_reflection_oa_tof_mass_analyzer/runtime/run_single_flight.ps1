@@ -450,8 +450,6 @@ try {
   $frontendCellMmY = [double]$executionProfile.frontend_cell_mm_xyz.y
   $frontendCellMmZ = [double]$executionProfile.frontend_cell_mm_xyz.z
   $maxParallelBatches = [int]$ExecutionBatchCount
-  $parallelBatchMemoryReservationBytes =
-    [int64]$executionProfile.parallel_batch_memory_reservation_bytes
   $requiredQualificationBootstrapResamples = [int]$executionProfile.required_qualification_bootstrap_resamples
   $overlayEnabled = [bool]$executionProfile.accelerator_overlay_enabled
   $resolvedFieldOverlayId = [string]$executionProfile.field_overlay_id
