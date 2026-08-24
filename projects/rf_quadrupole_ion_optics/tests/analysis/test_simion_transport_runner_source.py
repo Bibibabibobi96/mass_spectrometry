@@ -608,6 +608,7 @@ class SimionTransportRunnerSourceTests(unittest.TestCase):
                 "\r\n".join(
                     (
                         "@echo off",
+                        'if "%~1"=="-c" (echo 3.11& exit /b 0)',
                         'if "%~1"=="-m" if "%~2"=="common.multipole.simion_layout_template" goto layout',
                         '"%RF_TEST_REAL_PYTHON%" %*',
                         "exit /b %ERRORLEVEL%",
