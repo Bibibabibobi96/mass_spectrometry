@@ -302,10 +302,21 @@
     },
     "generated_pre_pulse_ordered_subset": {
       "type": "object", "additionalProperties": false,
-      "required": ["selection_id"],
       "properties": {
-        "selection_id": {"type": "string", "minLength": 1}
-      }
+        "selection_id": {"type": "string", "minLength": 1},
+        "selector": {
+          "type": "object", "additionalProperties": false,
+          "required": ["algorithm", "particle_count"],
+          "properties": {
+            "algorithm": {"type": "string", "minLength": 1},
+            "particle_count": {"type": "integer", "minimum": 1, "maximum": 10000}
+          }
+        }
+      },
+      "oneOf": [
+        {"required": ["selection_id"], "not": {"required": ["selector"]}},
+        {"required": ["selector"], "not": {"required": ["selection_id"]}}
+      ]
     },
     "single_flight_pulse_schedule_policy": {
       "type": "object",

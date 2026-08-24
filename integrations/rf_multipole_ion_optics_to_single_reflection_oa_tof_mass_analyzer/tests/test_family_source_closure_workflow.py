@@ -668,7 +668,8 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             campaign, ARCHIVAL_CAMPAIGN_SCHEMA
         )
         profile = {
-            "materialization_mode": "resolved_layout_pulse_ideal_linear_z_vz"
+            "materialization_mode": "resolved_layout_pulse_ideal_linear_z_vz",
+            "particle_count": 1000,
         }
         self.assertEqual(
             resolve_generated_pre_pulse_ordered_subset(row, profile),
@@ -687,6 +688,33 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             )),
             100,
         )
+
+        arbitrary_n = json.loads(json.dumps(campaign))
+        arbitrary_row = arbitrary_n["experiments"][2]
+        arbitrary_row["generated_pre_pulse_ordered_subset"] = {
+            "selector": {
+                "algorithm": "first_n_source_ids_in_frozen_file_order_v1",
+                "particle_count": 37,
+            }
+        }
+        arbitrary_population = arbitrary_row["single_flight_population"]
+        arbitrary_population["execution_population"]["particle_count"] = 37
+        arbitrary_population["execution_population"]["ordered_particle_id_sha256"] = (
+            hashlib.sha256(json.dumps(list(range(1, 38)), separators=(",", ":")).encode()).hexdigest().upper()
+        )
+        arbitrary_population["denominators"] = {
+            "population_count": 37, "eligible_population_count": 37,
+        }
+        validate_schema(arbitrary_n, ARCHIVAL_CAMPAIGN_SCHEMA)
+        self.assertEqual(
+            resolve_generated_pre_pulse_ordered_subset(arbitrary_row, profile),
+            list(range(1, 38)),
+        )
+        insufficient_mother = {**profile, "particle_count": 36}
+        with self.assertRaisesRegex(ContractError, "exceeds mother"):
+            resolve_generated_pre_pulse_ordered_subset(
+                arbitrary_row, insufficient_mother
+            )
 
         conflicting = json.loads(json.dumps(campaign))
         conflicting["experiments"][2]["pre_pulse_source_state"] = external[

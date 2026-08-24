@@ -55,7 +55,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.ordered_pre_pulse_subset import (
     materialize_ordered_pre_pulse_subset,
-    ordered_subset_source_particle_ids,
+    resolve_ordered_subset_source_particle_ids,
     validate_ordered_pre_pulse_subset,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.observed_pre_pulse_projection import (
@@ -156,9 +156,15 @@ def resolve_generated_pre_pulse_ordered_subset(
     ):
         raise ContractError("generated ordered subset requires an ideal-linear mother")
     try:
-        source_ids = ordered_subset_source_particle_ids(declaration["selection_id"])
+        source_ids = resolve_ordered_subset_source_particle_ids(declaration)
     except (KeyError, TypeError, ValueError) as exc:
         raise ContractError("generated ordered subset selection is invalid") from exc
+    try:
+        mother_count = int(source_materialization_profile["particle_count"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ContractError("generated ordered subset mother population is invalid") from exc
+    if max(source_ids) > mother_count:
+        raise ContractError("generated ordered subset exceeds mother population")
     population = experiment.get("single_flight_population")
     execution = population.get("execution_population", {}) if isinstance(population, dict) else {}
     denominators = population.get("denominators", {}) if isinstance(population, dict) else {}

@@ -31,6 +31,34 @@ def ordered_subset_source_particle_ids(selection_id: str) -> list[int]:
         raise ValueError("ordered subset selection identity is unsupported") from exc
 
 
+def resolve_ordered_subset_source_particle_ids(
+    declaration: dict[str, object],
+) -> list[int]:
+    """Resolve a preregistered selector or a deterministic frozen-order prefix."""
+
+    selection_id = declaration.get("selection_id")
+    if isinstance(selection_id, str):
+        if set(declaration) != {"selection_id"}:
+            raise ValueError("ordered subset selection declaration is ambiguous")
+        return ordered_subset_source_particle_ids(selection_id)
+    selector = declaration.get("selector")
+    if not isinstance(selector, dict) or set(declaration) != {"selector"}:
+        raise ValueError("ordered subset selection declaration is invalid")
+    if (
+        set(selector) != {"algorithm", "particle_count"}
+        or selector.get("algorithm") != "first_n_source_ids_in_frozen_file_order_v1"
+        or isinstance(selector.get("particle_count"), bool)
+    ):
+        raise ValueError("ordered subset selection declaration is unsupported")
+    try:
+        count = int(selector["particle_count"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("ordered subset selection declaration is invalid") from exc
+    if count < 1 or count != selector["particle_count"]:
+        raise ValueError("ordered subset selection declaration is invalid")
+    return list(range(1, count + 1))
+
+
 def _id_list_sha256(particle_ids: list[int]) -> str:
     payload = json.dumps(particle_ids, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(payload).hexdigest().upper()
