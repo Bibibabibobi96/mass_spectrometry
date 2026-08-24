@@ -8,6 +8,7 @@ param(
   [string]$SemanticDiffAgainst = '',
   [switch]$ValidateOnly,
   [switch]$PrepareOnly,
+  [switch]$Exploration,
   [switch]$SolverAuthorized,
   [switch]$FinalizeOnly
 )
@@ -37,6 +38,9 @@ if (-not $AllExperiments -and [string]::IsNullOrWhiteSpace($ExperimentId)) {
 }
 if ($PrepareOnly -and [string]::IsNullOrWhiteSpace($OutputDirectory)) {
   throw 'PrepareOnly requires an explicit OutputDirectory for review.'
+}
+if ($Exploration -and -not ($ValidateOnly -or $PrepareOnly)) {
+  throw 'Exploration supports ValidateOnly or PrepareOnly only.'
 }
 if (-not $PrepareOnly -and
     -not $FinalizeOnly -and
@@ -80,32 +84,42 @@ if (-not $campaignPath.StartsWith(
 $campaignRepoRelative = [IO.Path]::GetRelativePath($repoRoot, $campaignPath).Replace('\', '/')
 $campaignDocument = Get-Content -LiteralPath $campaignPath -Raw -Encoding UTF8 |
   ConvertFrom-Json
-$lifecycleRegistryPath = Join-Path $integrationRoot `
-  'config\diagnostics\lifecycle_registry.json'
-$lifecycleRegistry = Get-Content -LiteralPath $lifecycleRegistryPath -Raw -Encoding UTF8 |
-  ConvertFrom-Json
-if ($lifecycleRegistry.role -ne 'rf_oatof_diagnostics_lifecycle_registry' -or
-    $lifecycleRegistry.integration_id -ne
-      'rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer' -or
-    $lifecycleRegistry.discovery_policy -ne 'default_deny') {
-  throw 'Diagnostics lifecycle registry identity or policy is invalid.'
-}
-$campaignRole = [string]$lifecycleRegistry.campaign_selector.role
-if ([string]$campaignDocument.role -ne $campaignRole) {
-  throw 'Only registered experiment campaigns may enter the family workflow.'
-}
-$registeredCampaigns = @($lifecycleRegistry.active_campaigns | Where-Object {
-  [string]$_.path -eq $campaignRepoRelative
-})
-if ($registeredCampaigns.Count -ne 1) {
-  throw 'Campaign is not an active lifecycle authority; execution is forbidden.'
-}
-$campaignSha256 = (Get-FileHash -LiteralPath $campaignPath -Algorithm SHA256).Hash.ToLowerInvariant()
-if ($campaignSha256 -ne ([string]$registeredCampaigns[0].content_sha256).ToLowerInvariant()) {
-  throw 'Active lifecycle campaign identity differs; execution is forbidden.'
-}
-if ([string]$campaignDocument.status -in @('retired', 'archived_invalid')) {
-  throw 'Retired or invalid campaigns are not executable in any mode.'
+if ($Exploration) {
+  if ([string]$campaignDocument.status -in @('retired', 'archived_invalid')) {
+    throw 'Retired or invalid campaigns are not executable in any mode.'
+  }
+  if ([string]$campaignDocument.role -ne 'rf_multipole_oatof_experiment_campaign' -or
+      [string]$campaignDocument.status -ne 'exploration') {
+    throw 'Exploration requires an experiment campaign with campaign.status=exploration.'
+  }
+} else {
+  $lifecycleRegistryPath = Join-Path $integrationRoot `
+    'config\diagnostics\lifecycle_registry.json'
+  $lifecycleRegistry = Get-Content -LiteralPath $lifecycleRegistryPath -Raw -Encoding UTF8 |
+    ConvertFrom-Json
+  if ($lifecycleRegistry.role -ne 'rf_oatof_diagnostics_lifecycle_registry' -or
+      $lifecycleRegistry.integration_id -ne
+        'rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer' -or
+      $lifecycleRegistry.discovery_policy -ne 'default_deny') {
+    throw 'Diagnostics lifecycle registry identity or policy is invalid.'
+  }
+  $campaignRole = [string]$lifecycleRegistry.campaign_selector.role
+  if ([string]$campaignDocument.role -ne $campaignRole) {
+    throw 'Only registered experiment campaigns may enter the family workflow.'
+  }
+  $registeredCampaigns = @($lifecycleRegistry.active_campaigns | Where-Object {
+    [string]$_.path -eq $campaignRepoRelative
+  })
+  if ($registeredCampaigns.Count -ne 1) {
+    throw 'Campaign is not an active lifecycle authority; execution is forbidden.'
+  }
+  $campaignSha256 = (Get-FileHash -LiteralPath $campaignPath -Algorithm SHA256).Hash.ToLowerInvariant()
+  if ($campaignSha256 -ne ([string]$registeredCampaigns[0].content_sha256).ToLowerInvariant()) {
+    throw 'Active lifecycle campaign identity differs; execution is forbidden.'
+  }
+  if ([string]$campaignDocument.status -in @('retired', 'archived_invalid')) {
+    throw 'Retired or invalid campaigns are not executable in any mode.'
+  }
 }
 if (($SolverAuthorized -or $FinalizeOnly) -and [string]$campaignDocument.status -ne 'authorized') {
   throw 'SolverAuthorized or FinalizeOnly execution requires campaign.status=authorized.'
@@ -162,7 +176,7 @@ if ($experimentRows.Count -ne 1) {
   throw 'Campaign experiment must resolve exactly once.'
 }
 $selectedExperiment = $experimentRows[0]
-if (-not $FinalizeOnly) {
+if (-not $FinalizeOnly -and -not $Exploration) {
   & $PythonExe -m (
     'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.' +
     'workflows.family_source_closure.refresh_campaign_source_bindings'
@@ -296,7 +310,8 @@ function Invoke-FamilyPreparation {
     [Parameter(Mandatory)][string]$ResolvedPath,
     [Parameter(Mandatory)][string]$PlanPath,
     [string]$PulseTimingTransition = '',
-    [switch]$MaterializePulseTimingStage
+    [switch]$MaterializePulseTimingStage,
+    [switch]$Exploration
   )
 
   $prepareArguments = @(
@@ -314,6 +329,9 @@ function Invoke-FamilyPreparation {
   }
   if ($MaterializePulseTimingStage) {
     $prepareArguments += '--materialize-pulse-timing-stage'
+  }
+  if ($Exploration) {
+    $prepareArguments += '--exploration'
   }
   Push-Location $repoRoot
   try {
@@ -539,7 +557,7 @@ try {
     $planPath = Join-Path $sourceParentRoot 'composition_plan.json'
   } else {
     Invoke-FamilyPreparation -ResolvedPath $resolvedPath -PlanPath $planPath `
-      -MaterializePulseTimingStage:$SolverAuthorized
+      -MaterializePulseTimingStage:$SolverAuthorized -Exploration:$Exploration
   }
 
   $commonExecute = Join-Path $repoRoot 'common\integration\execute_connection.ps1'

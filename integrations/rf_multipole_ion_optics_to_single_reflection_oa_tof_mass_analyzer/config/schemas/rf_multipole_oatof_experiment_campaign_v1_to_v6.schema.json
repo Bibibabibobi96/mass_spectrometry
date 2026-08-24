@@ -9,7 +9,7 @@
     "role": {"const": "rf_multipole_oatof_experiment_campaign"},
     "integration_id": {"const": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"},
     "campaign_id": {"$ref": "#/$defs/id"},
-    "status": {"enum": ["authorized", "PENDING_PREREGISTRATION", "retired", "archived_invalid"]},
+    "status": {"enum": ["authorized", "exploration", "PENDING_PREREGISTRATION", "retired", "archived_invalid"]},
     "execution_policy": {"$ref": "#/$defs/file"},
     "claim_limit": {"type": "string", "minLength": 1},
     "published_authoring_identity": {"$ref": "#/$defs/published_authoring_identity"},

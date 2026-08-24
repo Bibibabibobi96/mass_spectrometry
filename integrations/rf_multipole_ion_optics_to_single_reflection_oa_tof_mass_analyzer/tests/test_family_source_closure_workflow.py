@@ -1847,6 +1847,104 @@ $result = Get-PulseTimingOrchestration `
                     plan_output=root / "plan.json",
                 )
 
+    def test_prepare_allows_explicit_repository_exploration_campaign(self) -> None:
+        campaign = load(COMPACT_GAP_FIELD_CAMPAIGN)
+        campaign["status"] = "exploration"
+        row = expand_flat_experiment_authoring(campaign)["experiments"][0]
+        with tempfile.TemporaryDirectory(dir=CONFIG_ROOT) as directory:
+            root = Path(directory)
+            artifact_root = REPO_ROOT.parent / "artifacts" / "projects" / INTEGRATION_ID
+            artifact_root.mkdir(parents=True, exist_ok=True)
+            campaign_path = root / "exploration_campaign.json"
+            write_json(campaign_path, campaign)
+            with tempfile.TemporaryDirectory(dir=artifact_root) as output_directory:
+                output = Path(output_directory)
+                resolved, plan = prepare_family_source_closure(
+                    repo_root=REPO_ROOT,
+                    profile_registry_path=PROFILE_REGISTRY,
+                    adapter_registry_path=ADAPTER_REGISTRY,
+                    campaign_path=campaign_path,
+                    experiment_id=row["experiment_id"],
+                    resolved_output=output / "resolved.json",
+                    plan_output=output / "plan.json",
+                    exploration=True,
+                )
+                self.assertTrue(resolved.is_file())
+                self.assertTrue(plan.is_file())
+
+    def test_exploration_preparation_requires_explicit_status(self) -> None:
+        campaign = load(COMPACT_GAP_FIELD_CAMPAIGN)
+        row = expand_flat_experiment_authoring(campaign)["experiments"][0]
+        with tempfile.TemporaryDirectory(dir=CONFIG_ROOT) as directory:
+            root = Path(directory)
+            campaign_path = root / "unregistered_authorized_campaign.json"
+            write_json(campaign_path, campaign)
+            with self.assertRaisesRegex(
+                ContractError, "requires campaign.status=exploration",
+            ):
+                prepare_family_source_closure(
+                    repo_root=REPO_ROOT,
+                    profile_registry_path=PROFILE_REGISTRY,
+                    adapter_registry_path=ADAPTER_REGISTRY,
+                    campaign_path=campaign_path,
+                    experiment_id=row["experiment_id"],
+                    resolved_output=root / "resolved.json",
+                    plan_output=root / "plan.json",
+                    exploration=True,
+                )
+
+    def test_public_exploration_validate_only_accepts_unregistered_campaign(self) -> None:
+        campaign = load(COMPACT_GAP_FIELD_CAMPAIGN)
+        campaign["status"] = "exploration"
+        row = expand_flat_experiment_authoring(campaign)["experiments"][0]
+        with tempfile.TemporaryDirectory(dir=CONFIG_ROOT) as directory:
+            campaign_path = Path(directory) / "exploration_campaign.json"
+            write_json(campaign_path, campaign)
+            result = subprocess.run(
+                [
+                    "pwsh", "-NoProfile", "-File", str(
+                        INTEGRATION_ROOT / "workflows" / "family_source_closure" / "execute.ps1"
+                    ),
+                    "-Campaign", str(campaign_path.relative_to(REPO_ROOT)),
+                    "-ExperimentId", row["experiment_id"],
+                    "-ValidateOnly", "-Exploration",
+                ],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=90,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("INTEGRATION_EXECUTION=VALIDATED", result.stdout)
+
+    def test_public_exploration_rejects_solver_execution(self) -> None:
+        campaign = load(COMPACT_GAP_FIELD_CAMPAIGN)
+        campaign["status"] = "exploration"
+        row = expand_flat_experiment_authoring(campaign)["experiments"][0]
+        with tempfile.TemporaryDirectory(dir=CONFIG_ROOT) as directory:
+            campaign_path = Path(directory) / "exploration_campaign.json"
+            write_json(campaign_path, campaign)
+            result = subprocess.run(
+                [
+                    "pwsh", "-NoProfile", "-File", str(
+                        INTEGRATION_ROOT / "workflows" / "family_source_closure" / "execute.ps1"
+                    ),
+                    "-Campaign", str(campaign_path.relative_to(REPO_ROOT)),
+                    "-ExperimentId", row["experiment_id"],
+                    "-SolverAuthorized", "-Exploration",
+                ],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=60,
+            )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Exploration supports ValidateOnly or PrepareOnly only.", result.stderr)
+
     def test_parent_publisher_requires_campaign_identity(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             workspace = Path(directory)

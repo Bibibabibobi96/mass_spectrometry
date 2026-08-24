@@ -56,7 +56,7 @@ policy（内存、并发、超时或保留）更新而重新成为可执行 auth
 
 已发布 campaign 如仅改变 authoring 布局，可用 `published_authoring_identity` 保留旧 receipt 的 raw 文件 SHA；
 它同时冻结完整的、已展开 campaign 科学语义 SHA。只有二者严格匹配时才接受该旧 SHA；物理、数值、资格或
-任一展开行的变化都会使 source-binding 检查失败。执行策略另由 runtime binding 和每次 run receipt 冻结，
+已注册 campaign 的任一展开行变化都会使 source-binding 检查失败。执行策略另由 runtime binding 和每次 run receipt 冻结，
 不属于 campaign 科学身份。这不是通用兼容或结果复用 fallback。
 
 对已注册 campaign，`execute.ps1 -AllExperiments` 按展开后的 `sequence` 逐行调用同一单实验入口；它不在
@@ -70,6 +70,11 @@ campaign 层并行商业求解器，任一行失败即停止。`PrepareOnly` 仍
 schema 验证、cache 命中、handoff 兼容性或资格决策；这些仍由已冻结的 resolved contract 与实际执行边界决定。
 在不启动求解器的情况下，可用 `execute.ps1 -ValidateOnly` 对某一行生成并校验其完整 resolved connection 与
 composition plan。
+
+普通探索不必预先登记为活动 authority：将 repository-managed campaign 标为 `"status": "exploration"`，并显式传入
+`-Exploration -ValidateOnly` 或 `-Exploration -PrepareOnly -OutputDirectory ...`。该路径仍执行 schema、来源 artifact、
+单位/frame/clock、粒子和 composition-plan 校验；它不以活动 campaign SHA 或 source-binding 刷新拒绝新的参数组合。
+`-Exploration` 不能与 solver 或 finalize 模式组合，因此不会产生正式运行、发布结果或资格结论。
 
 ## 开放任务
 

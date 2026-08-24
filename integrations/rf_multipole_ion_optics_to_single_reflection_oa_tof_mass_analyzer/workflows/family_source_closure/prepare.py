@@ -2300,36 +2300,48 @@ def prepare_family_source_closure(
     plan_output: Path,
     pulse_timing_transition_path: Path | None = None,
     materialize_pulse_timing_stage: bool = False,
+    exploration: bool = False,
 ) -> tuple[Path, Path]:
     root = repo_root.resolve()
     workspace = root.parent
     campaign_path = campaign_path.resolve()
     if not campaign_path.is_relative_to(root):
         raise ContractError("integration campaign must be repository-managed")
-    lifecycle_registry = _load(
-        root / "integrations" / INTEGRATION_ID / "config" / "diagnostics" /
-        "lifecycle_registry.json"
-    )
-    campaign_relative_path = campaign_path.relative_to(root).as_posix()
-    active_rows = [
-        row for row in lifecycle_registry.get("active_campaigns", [])
-        if isinstance(row, dict) and row.get("path") == campaign_relative_path
-    ]
-    if len(active_rows) != 1:
-        raise ContractError(
-            "campaign is not an active lifecycle authority; preparation is forbidden"
+    if exploration:
+        campaign = expand_flat_experiment_authoring(_load(campaign_path))
+        validate_schema(campaign, CAMPAIGN_SCHEMA_PATH)
+        validate_pre_pulse_time_series_campaign(campaign)
+        if campaign["integration_id"] != INTEGRATION_ID:
+            raise ContractError("campaign integration identity differs")
+        if campaign.get("status") != "exploration":
+            raise ContractError(
+                "exploration preparation requires campaign.status=exploration"
+            )
+    else:
+        lifecycle_registry = _load(
+            root / "integrations" / INTEGRATION_ID / "config" / "diagnostics" /
+            "lifecycle_registry.json"
         )
-    if file_sha256(campaign_path).lower() != str(
-        active_rows[0].get("content_sha256", "")
-    ).lower():
-        raise ContractError(
-            "active lifecycle campaign identity differs; preparation is forbidden"
-        )
-    campaign = expand_flat_experiment_authoring(_load(campaign_path))
-    validate_schema(campaign, CAMPAIGN_SCHEMA_PATH)
-    validate_pre_pulse_time_series_campaign(campaign)
-    if campaign["integration_id"] != INTEGRATION_ID:
-        raise ContractError("campaign integration identity differs")
+        campaign_relative_path = campaign_path.relative_to(root).as_posix()
+        active_rows = [
+            row for row in lifecycle_registry.get("active_campaigns", [])
+            if isinstance(row, dict) and row.get("path") == campaign_relative_path
+        ]
+        if len(active_rows) != 1:
+            raise ContractError(
+                "campaign is not an active lifecycle authority; preparation is forbidden"
+            )
+        if file_sha256(campaign_path).lower() != str(
+            active_rows[0].get("content_sha256", "")
+        ).lower():
+            raise ContractError(
+                "active lifecycle campaign identity differs; preparation is forbidden"
+            )
+        campaign = expand_flat_experiment_authoring(_load(campaign_path))
+        validate_schema(campaign, CAMPAIGN_SCHEMA_PATH)
+        validate_pre_pulse_time_series_campaign(campaign)
+        if campaign["integration_id"] != INTEGRATION_ID:
+            raise ContractError("campaign integration identity differs")
     identities = [item["experiment_id"] for item in campaign["experiments"]]
     sequences = [item["sequence"] for item in campaign["experiments"]]
     if len(identities) != len(set(identities)) or len(sequences) != len(set(sequences)):
@@ -2338,7 +2350,7 @@ def prepare_family_source_closure(
     if len(matches) != 1:
         raise ContractError("campaign experiment must resolve exactly once")
     experiment = matches[0]
-    if campaign.get("status") != "authorized":
+    if not exploration and campaign.get("status") != "authorized":
         raise ContractError(
             "active lifecycle campaign must be authorized before preparation"
         )
@@ -3934,6 +3946,7 @@ def main() -> int:
     )
     parser.add_argument("--pulse-timing-transition", type=Path)
     parser.add_argument("--materialize-pulse-timing-stage", action="store_true")
+    parser.add_argument("--exploration", action="store_true")
     args = parser.parse_args()
     if args.list_experiment_ids or args.print_experiment_json or args.semantic_diff_experiment_json:
         campaign = expand_flat_experiment_authoring(_load(args.campaign))
@@ -3974,6 +3987,7 @@ def main() -> int:
         plan_output=args.plan_output,
         pulse_timing_transition_path=args.pulse_timing_transition,
         materialize_pulse_timing_stage=args.materialize_pulse_timing_stage,
+        exploration=args.exploration,
     )
     print(f"FAMILY_SOURCE_CLOSURE_PREPARE=PASS RESOLVED={resolved} PLAN={plan}")
     return 0
