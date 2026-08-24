@@ -24,6 +24,7 @@ from common.contracts.particle_count_policy import validate_positive_particle_co
 from common.contracts.particle_physics import kinetic_energy_ev
 from common.contracts.verify_run_manifest import record_path, verify_record
 from common.contracts.verify_artifact_layout import verify_verified_pulse_cache_entry
+from common.simion.resource_profile import discover_resource_profiles
 from common.integration.adapter_contract import (
     load_execution_adapter_registry,
     resolve_execution_mapping,
@@ -370,6 +371,7 @@ def _automatic_pulse_population_binding(
 def resolve_single_flight_dispatch_plan(
     experiment: dict[str, Any], *, execution_particle_count: int,
     workspace: Path | None = None, rf_steps_per_period: int | None = None,
+    resource_profiles: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Resolve execution-only dispatch without deriving the governed population.
 
@@ -413,9 +415,10 @@ def resolve_single_flight_dispatch_plan(
     except (KeyError, ValueError) as error:
         raise ContractError("single-flight automatic dispatch is invalid") from error
     from common.simion.resource_scheduler import plan_simion_dispatch
+    profiles = [] if resource_profiles is None else resource_profiles
     memory_policy = experiment.get("single_flight_batch_memory_policy")
     if memory_policy is None:
-        return plan_simion_dispatch(request, [])
+        return plan_simion_dispatch(request, profiles)
     if not isinstance(memory_policy, dict):
         raise ContractError(
             "single-flight memory batch policy is invalid"
@@ -456,7 +459,7 @@ def resolve_single_flight_dispatch_plan(
             "per_batch_peak_working_set_bytes": peak,
         }
         decision = plan_simion_dispatch(
-            request, [profile],
+            request, [profile, *profiles],
         )
     except ValueError as error:
         raise ContractError("single-flight memory batch policy is invalid") from error
@@ -2957,6 +2960,9 @@ def prepare_family_source_closure(
         else evidence["particle_count"]
     )
     if execution_strategy == "simion_single_flight":
+        resource_profiles = discover_resource_profiles(
+            workspace / "artifacts" / "projects" / INTEGRATION_ID / "runs"
+        )
         single_flight_dispatch_plan = resolve_single_flight_dispatch_plan(
             experiment, execution_particle_count=execution_particle_count,
             workspace=workspace,
@@ -2964,6 +2970,7 @@ def prepare_family_source_closure(
                 int(execution_profile["rf_steps_per_period"])
                 if execution_profile is not None else None
             ),
+            resource_profiles=resource_profiles,
         )
         single_flight_batch_count = int(
             single_flight_dispatch_plan["waves"][0]["batch_count"]
