@@ -853,6 +853,17 @@ foreach ($case in $cases) {{
         self.assertEqual(explicit["rf_steps_per_period"], 160)
         self.assertEqual(explicit["maximum_time_of_flight_us"], 120.0)
         self.assertEqual(explicit["spatial_window_profile_id"], "accelerator_xy_open_bore")
+        extended = copy.deepcopy(settings)
+        extended["time_integration_profiles"].append({
+            "profile_id": "dt64",
+            "rf_steps_per_period": 64,
+        })
+        self.assertEqual(
+            resolve_execution_profile(
+                extended, time_integration_profile_id="dt64"
+            )["rf_steps_per_period"],
+            64,
+        )
 
     def test_execution_profile_resolver_accepts_exploration_inline_numerics(self) -> None:
         settings = json.loads(
