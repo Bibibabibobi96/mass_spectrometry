@@ -304,13 +304,7 @@
       "type": "object", "additionalProperties": false,
       "required": ["selection_id"],
       "properties": {
-        "selection_id": {
-          "enum": [
-            "n1_center_source_id_500_v1",
-            "n100_file_order_source_ids_1_to_100_v1",
-            "n100_uniform_full_width_source_ids_1_to_1000_v1"
-          ]
-        }
+        "selection_id": {"type": "string", "minLength": 1}
       }
     },
     "single_flight_pulse_schedule_policy": {
@@ -526,9 +520,7 @@
           "if": {"required": ["generated_pre_pulse_ordered_subset"]},
           "then": {
             "properties": {
-              "source_release_mode": {"const": "pre_pulse_restart"},
-              "source_profile_id": {"const": "canonical_ideal_linear_z_vz_2p2mm_n1000"},
-              "single_flight_source_materialization_profile_id": {"const": "canonical_ideal_linear_z_vz_2p2mm_n1000"}
+              "source_release_mode": {"const": "pre_pulse_restart"}
             },
             "required": ["source_release_mode", "single_flight_source_materialization_profile_id"],
             "not": {"required": ["pre_pulse_source_state"]}
@@ -544,67 +536,6 @@
             "properties": {
               "source_release_mode": {"const": "pre_pulse_restart"}
             }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "generated_pre_pulse_ordered_subset": {
-                "properties": {"selection_id": {"const": "n1_center_source_id_500_v1"}},
-                "required": ["selection_id"]
-              }
-            },
-            "required": ["generated_pre_pulse_ordered_subset"]
-          },
-          "then": {
-            "properties": {
-              "single_flight_population": {
-                "properties": {
-                  "execution_population": {"properties": {"particle_count": {"const": 1}}},
-                  "denominators": {
-                    "properties": {
-                      "population_count": {"const": 1},
-                      "eligible_population_count": {"const": 1}
-                    }
-                  }
-                }
-              }
-            },
-            "required": ["single_flight_population"]
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "generated_pre_pulse_ordered_subset": {
-                "properties": {
-                  "selection_id": {
-                    "enum": [
-                      "n100_file_order_source_ids_1_to_100_v1",
-                      "n100_uniform_full_width_source_ids_1_to_1000_v1"
-                    ]
-                  }
-                },
-                "required": ["selection_id"]
-              }
-            },
-            "required": ["generated_pre_pulse_ordered_subset"]
-          },
-          "then": {
-            "properties": {
-              "single_flight_population": {
-                "properties": {
-                  "execution_population": {"properties": {"particle_count": {"const": 100}}},
-                  "denominators": {
-                    "properties": {
-                      "population_count": {"const": 100},
-                      "eligible_population_count": {"const": 100}
-                    }
-                  }
-                }
-              }
-            },
-            "required": ["single_flight_population"]
           }
         },
         {

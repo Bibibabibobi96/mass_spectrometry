@@ -27,6 +27,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     _workspace_record,
     prepare_family_source_closure,
     resolve_single_flight_dispatch_plan,
+    resolve_generated_pre_pulse_ordered_subset,
     validate_three_zone_candidate_binding,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_source import (
@@ -633,7 +634,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unsupported"):
             ordered_subset_source_particle_ids("arbitrary_postselection")
 
-    def test_generated_ordered_subset_schema_is_mutually_exclusive_and_count_bound(
+    def test_generated_ordered_subset_semantics_are_registry_resolved(
         self,
     ) -> None:
         path = (
@@ -666,12 +667,25 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
         validate_schema(
             campaign, ARCHIVAL_CAMPAIGN_SCHEMA
         )
+        profile = {
+            "materialization_mode": "resolved_layout_pulse_ideal_linear_z_vz"
+        }
+        self.assertEqual(
+            resolve_generated_pre_pulse_ordered_subset(row, profile),
+            list(range(1, 101)),
+        )
         full_width = json.loads(json.dumps(campaign))
         full_width["experiments"][2]["generated_pre_pulse_ordered_subset"] = {
             "selection_id": "n100_uniform_full_width_source_ids_1_to_1000_v1"
         }
         validate_schema(
             full_width, ARCHIVAL_CAMPAIGN_SCHEMA
+        )
+        self.assertEqual(
+            len(resolve_generated_pre_pulse_ordered_subset(
+                full_width["experiments"][2], profile
+            )),
+            100,
         )
 
         conflicting = json.loads(json.dumps(campaign))
@@ -688,10 +702,20 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
         wrong_count["experiments"][2]["single_flight_population"][
             "execution_population"
         ]["particle_count"] = 1
-        with self.assertRaises(ContractError):
-            validate_schema(
-                wrong_count,
-                ARCHIVAL_CAMPAIGN_SCHEMA,
+        validate_schema(wrong_count, ARCHIVAL_CAMPAIGN_SCHEMA)
+        with self.assertRaisesRegex(ContractError, "population identity"):
+            resolve_generated_pre_pulse_ordered_subset(
+                wrong_count["experiments"][2], profile
+            )
+
+        unknown_selection = json.loads(json.dumps(campaign))
+        unknown_selection["experiments"][2]["generated_pre_pulse_ordered_subset"] = {
+            "selection_id": "unregistered_selection_v1"
+        }
+        validate_schema(unknown_selection, ARCHIVAL_CAMPAIGN_SCHEMA)
+        with self.assertRaisesRegex(ContractError, "selection is invalid"):
+            resolve_generated_pre_pulse_ordered_subset(
+                unknown_selection["experiments"][2], profile
             )
 
     def test_three_zone_candidate_binding_is_layout_method_scoped_and_hash_bound(self) -> None:

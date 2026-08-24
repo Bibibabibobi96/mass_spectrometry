@@ -134,6 +134,46 @@ def validate_three_zone_candidate_binding(
     return candidate if requires_candidate else None
 
 
+def resolve_generated_pre_pulse_ordered_subset(
+    experiment: dict[str, Any],
+    source_materialization_profile: dict[str, Any] | None,
+) -> list[int] | None:
+    """Resolve a registered ordered subset and bind its declared population."""
+
+    declaration = experiment.get("generated_pre_pulse_ordered_subset")
+    if declaration is None:
+        return None
+    if not isinstance(declaration, dict):
+        raise ContractError("generated ordered subset declaration is invalid")
+    if experiment.get("source_release_mode") != "pre_pulse_restart":
+        raise ContractError("generated ordered subset requires a pre-pulse restart")
+    if experiment.get("pre_pulse_source_state") is not None:
+        raise ContractError("generated ordered subset conflicts with a supplied restart")
+    if (
+        source_materialization_profile is None
+        or source_materialization_profile.get("materialization_mode")
+        != "resolved_layout_pulse_ideal_linear_z_vz"
+    ):
+        raise ContractError("generated ordered subset requires an ideal-linear mother")
+    try:
+        source_ids = ordered_subset_source_particle_ids(declaration["selection_id"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ContractError("generated ordered subset selection is invalid") from exc
+    population = experiment.get("single_flight_population")
+    execution = population.get("execution_population", {}) if isinstance(population, dict) else {}
+    denominators = population.get("denominators", {}) if isinstance(population, dict) else {}
+    expected_count = len(source_ids)
+    expected_ordered_sha256 = _canonical_sha256(list(range(1, expected_count + 1)))
+    if (
+        execution.get("particle_count") != expected_count
+        or execution.get("ordered_particle_id_sha256") != expected_ordered_sha256
+        or denominators.get("population_count") != expected_count
+        or denominators.get("eligible_population_count") != expected_count
+    ):
+        raise ContractError("generated ordered subset population identity differs")
+    return source_ids
+
+
 def validate_active_post_pulse_restart_working_point(
     experiment: dict[str, Any],
 ) -> None:
@@ -2390,6 +2430,9 @@ def prepare_family_source_closure(
         and source_materialization_profile["source_profile_id"] != source_profile_id
     ):
         raise ContractError("source materialization and campaign source identities differ")
+    generated_ordered_source_ids = resolve_generated_pre_pulse_ordered_subset(
+        experiment, source_materialization_profile
+    )
     if (
         field_overlay_id is not None
         and frontend_grid_profile_id is not None
@@ -3224,24 +3267,15 @@ def prepare_family_source_closure(
                 raise ContractError("source theory working point derivation failed") from exc
         if generated_pre_pulse_ordered_subset is not None:
             if (
-                source_materialization_profile is None
-                or source_materialization_profile["materialization_mode"]
-                != "resolved_layout_pulse_ideal_linear_z_vz"
-                or int(source_materialization_profile["particle_count"]) != 1000
-                or pulse_target_source_path is None
+                pulse_target_source_path is None
                 or materialization_receipt_path is None
             ):
                 raise ContractError(
-                    "generated ordered subset requires one N=1000 ideal-linear mother"
+                    "generated ordered subset requires a materialized mother"
                 )
-            try:
-                ordered_source_ids = ordered_subset_source_particle_ids(
-                    generated_pre_pulse_ordered_subset["selection_id"]
-                )
-            except (KeyError, TypeError, ValueError) as exc:
-                raise ContractError(
-                    "generated ordered subset selection is invalid"
-                ) from exc
+            if generated_ordered_source_ids is None:
+                raise ContractError("generated ordered subset resolution is missing")
+            ordered_source_ids = generated_ordered_source_ids
             pre_pulse_source_path = (
                 plan_output.parent
                 / "inputs"
