@@ -875,6 +875,47 @@ foreach ($case in $cases) {{
         self.assertEqual(explicit["maximum_time_of_flight_us"], 120.0)
         self.assertEqual(explicit["spatial_window_profile_id"], "accelerator_xy_open_bore")
 
+    def test_execution_profile_resolver_accepts_exploration_inline_numerics(self) -> None:
+        settings = json.loads(
+            (INTEGRATION_ROOT / "config" / "simion_single_flight.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        resolved = resolve_execution_profile(
+            settings,
+            frontend_grid_profile_id="frontend_isotropic_020_accelerator_overlay_z005",
+            numerical_overrides={
+                "frontend_cell_mm_xyz": {"x": 0.18, "y": 0.18, "z": 0.18},
+                "accelerator_overlay_cell_mm_xyz": {
+                    "x": 0.18,
+                    "y": 0.18,
+                    "z": 0.03125,
+                },
+                "reflectron_cell_mm": {"axial": 0.125, "radial": 0.8},
+                "trajectory_quality": 17,
+                "rf_steps_per_period": 73,
+            },
+        )
+        self.assertEqual(resolved["frontend_cell_mm_xyz"], {"x": 0.18, "y": 0.18, "z": 0.18})
+        self.assertEqual(
+            resolved["accelerator_overlay_cell_mm_xyz"],
+            {"x": 0.18, "y": 0.18, "z": 0.03125},
+        )
+        self.assertEqual(resolved["reflectron_cell_mm"], {"axial": 0.125, "radial": 0.8})
+        self.assertEqual(resolved["trajectory_quality"], 17)
+        self.assertEqual(resolved["rf_steps_per_period"], 73)
+        self.assertEqual(resolved["numerical_authority"], "exploration_inline_override_v1")
+
+        with self.assertRaisesRegex(ValueError, "Single-flight numerical configuration"):
+            resolve_execution_profile(
+                settings,
+                numerical_overrides={
+                    "accelerator_overlay_cell_mm_xyz": {
+                        "x": 0.2, "y": 0.2, "z": 0.05,
+                    }
+                },
+            )
+
     def test_execution_profile_resolver_rejects_invalid_selection_and_overlay(self) -> None:
         settings = json.loads(
             (INTEGRATION_ROOT / "config" / "simion_single_flight.json").read_text(

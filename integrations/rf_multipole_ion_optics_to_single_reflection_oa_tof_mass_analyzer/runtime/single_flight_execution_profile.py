@@ -51,6 +51,20 @@ def _positive_integer(value: Any) -> int:
     return number
 
 
+def _numeric_cell(value: Any) -> dict[str, float]:
+    """Validate a three-dimensional positive grid cell."""
+
+    if not isinstance(value, dict) or set(value) != {"x", "y", "z"}:
+        raise ValueError(ERROR)
+    return {axis: _positive_number(value[axis]) for axis in ("x", "y", "z")}
+
+
+def _numeric_reflectron_cell(value: Any) -> dict[str, float]:
+    if not isinstance(value, dict) or set(value) != {"axial", "radial"}:
+        raise ValueError(ERROR)
+    return {axis: _positive_number(value[axis]) for axis in ("axial", "radial")}
+
+
 def resolve_execution_profile(
     configuration: dict[str, Any],
     *,
@@ -61,6 +75,7 @@ def resolve_execution_profile(
     maximum_time_of_flight_us: float | None = None,
     spatial_window_profile_id: str | None = None,
     include_source_region_diagnostic: bool = False,
+    numerical_overrides: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Return one fully resolved profile or fail closed on invalid numerics."""
 
@@ -86,10 +101,7 @@ def resolve_execution_profile(
             "default_frontend_grid_profile_id"
         ]
         grid = unique_named_profile(configuration, "frontend_grid_profiles", selected_grid_id)
-        cell = grid.get("cell_mm_xyz")
-        if not isinstance(cell, dict) or set(cell) != {"x", "y", "z"}:
-            raise ValueError(ERROR)
-        frontend_cell_mm_xyz = {axis: _positive_number(cell[axis]) for axis in ("x", "y", "z")}
+        frontend_cell_mm_xyz = _numeric_cell(grid.get("cell_mm_xyz"))
 
         overlay = grid.get("accelerator_overlay")
         overlay_enabled = isinstance(overlay, dict) and overlay.get("enabled") is True
@@ -101,30 +113,13 @@ def resolve_execution_profile(
                 or len(set(frontend_cell_mm_xyz.values())) != 1
             ):
                 raise ValueError(ERROR)
-            overlay_cell = overlay.get("cell_mm_xyz")
-            if not isinstance(overlay_cell, dict) or set(overlay_cell) != {"x", "y", "z"}:
-                raise ValueError(ERROR)
-            overlay_cell_mm_xyz = {
-                axis: _positive_number(overlay_cell[axis]) for axis in ("x", "y", "z")
-            }
-            if (
-                overlay_cell_mm_xyz["x"] != frontend_cell_mm_xyz["x"]
-                or overlay_cell_mm_xyz["y"] != frontend_cell_mm_xyz["y"]
-                or overlay_cell_mm_xyz["z"] > frontend_cell_mm_xyz["z"]
-            ):
-                raise ValueError(ERROR)
+            overlay_cell_mm_xyz = _numeric_cell(overlay.get("cell_mm_xyz"))
 
         selected_oatof_id = oatof_numerical_profile_id or configuration[
             "default_oatof_numerical_profile_id"
         ]
         oatof = unique_named_profile(configuration, "oatof_numerical_profiles", selected_oatof_id)
-        reflectron = oatof.get("reflectron_cell_mm")
-        if not isinstance(reflectron, dict):
-            raise ValueError(ERROR)
-        reflectron_cell_mm = {
-            "axial": _positive_number(reflectron.get("axial")),
-            "radial": _positive_number(reflectron.get("radial")),
-        }
+        reflectron_cell_mm = _numeric_reflectron_cell(oatof.get("reflectron_cell_mm"))
 
         selected_trajectory_id = trajectory_quality_profile_id or configuration[
             "default_trajectory_quality_profile_id"
@@ -139,6 +134,48 @@ def resolve_execution_profile(
         ]
         time = unique_named_profile(configuration, "time_integration_profiles", selected_time_id)
         rf_steps_per_period = _positive_integer(time.get("rf_steps_per_period"))
+
+        if numerical_overrides is not None:
+            allowed_overrides = {
+                "frontend_cell_mm_xyz",
+                "accelerator_overlay_cell_mm_xyz",
+                "reflectron_cell_mm",
+                "trajectory_quality",
+                "rf_steps_per_period",
+            }
+            if (
+                not isinstance(numerical_overrides, dict)
+                or not numerical_overrides
+                or set(numerical_overrides) - allowed_overrides
+            ):
+                raise ValueError(ERROR)
+            if "frontend_cell_mm_xyz" in numerical_overrides:
+                frontend_cell_mm_xyz = _numeric_cell(
+                    numerical_overrides["frontend_cell_mm_xyz"]
+                )
+            if "accelerator_overlay_cell_mm_xyz" in numerical_overrides:
+                if not overlay_enabled:
+                    raise ValueError(ERROR)
+                overlay_cell_mm_xyz = _numeric_cell(
+                    numerical_overrides["accelerator_overlay_cell_mm_xyz"]
+                )
+            if "reflectron_cell_mm" in numerical_overrides:
+                reflectron_cell_mm = _numeric_reflectron_cell(
+                    numerical_overrides["reflectron_cell_mm"]
+                )
+            if "trajectory_quality" in numerical_overrides:
+                trajectory_quality = _positive_integer(numerical_overrides["trajectory_quality"])
+            if "rf_steps_per_period" in numerical_overrides:
+                rf_steps_per_period = _positive_integer(
+                    numerical_overrides["rf_steps_per_period"]
+                )
+        if overlay_enabled and (
+            overlay_cell_mm_xyz is None
+            or overlay_cell_mm_xyz["x"] != frontend_cell_mm_xyz["x"]
+            or overlay_cell_mm_xyz["y"] != frontend_cell_mm_xyz["y"]
+            or overlay_cell_mm_xyz["z"] > frontend_cell_mm_xyz["z"]
+        ):
+            raise ValueError(ERROR)
 
         maximum_tof = _positive_number(
             configuration["maximum_time_of_flight_us"]
@@ -193,6 +230,11 @@ def resolve_execution_profile(
         "parallel_batch_memory_reservation_bytes": parallel_batch_memory_reservation_bytes,
         "required_qualification_bootstrap_resamples": required_bootstrap_resample_count,
         "clock_basis": configuration["clock_basis"],
+        "numerical_authority": (
+            "exploration_inline_override_v1"
+            if numerical_overrides is not None
+            else "registered_profile_v1"
+        ),
     }
 
 
@@ -211,6 +253,7 @@ def main() -> None:
     parser.add_argument("--maximum-time-of-flight-us", type=float)
     parser.add_argument("--spatial-window-profile-id")
     parser.add_argument("--include-source-region-diagnostic", action="store_true")
+    parser.add_argument("--numerical-overrides", type=Path)
     args = parser.parse_args()
     args.output.write_text(
         json.dumps(
@@ -223,6 +266,11 @@ def main() -> None:
                 maximum_time_of_flight_us=args.maximum_time_of_flight_us,
                 spatial_window_profile_id=args.spatial_window_profile_id,
                 include_source_region_diagnostic=args.include_source_region_diagnostic,
+                numerical_overrides=(
+                    _load(args.numerical_overrides)
+                    if args.numerical_overrides is not None
+                    else None
+                ),
             ),
             indent=2,
             sort_keys=True,
