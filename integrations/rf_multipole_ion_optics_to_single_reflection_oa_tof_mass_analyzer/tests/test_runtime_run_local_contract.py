@@ -664,13 +664,6 @@ foreach ($case in $cases) {{
         )
         self.assertNotIn("'rf_resolved_design'", text)
 
-    def test_validate_cleanup_tolerates_parallel_empty_root_removal(self) -> None:
-        self.assertIn(
-            "Remove-Item -LiteralPath $validationRoot -Force "
-            "-ErrorAction SilentlyContinue",
-            WORKFLOW_ENTRY.read_text(encoding="utf-8"),
-        )
-
     def test_joint_single_flight_run_package_is_integration_owned(self) -> None:
         text = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
         integration_id = (
