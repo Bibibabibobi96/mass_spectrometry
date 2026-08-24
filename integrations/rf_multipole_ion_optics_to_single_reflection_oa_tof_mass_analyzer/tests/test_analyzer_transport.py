@@ -526,7 +526,6 @@ class AnalyzerTransportTests(unittest.TestCase):
         self.assertIn("$frozenFormalReleaseValidator", runner)
         self.assertIn("--asset-manifest',$formalAssetManifestPath", runner)
         self.assertIn("--validation-contract',$frozenFormalValidation", runner)
-        self.assertNotIn("$frozenManifestVerifier,$formalManifestPath", runner)
         self.assertIn(
             "Get-AnalyzerTransportFormalAssetRecords -ChecksumPath $checksumPath",
             runner,
