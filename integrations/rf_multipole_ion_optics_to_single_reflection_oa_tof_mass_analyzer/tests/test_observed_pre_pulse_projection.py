@@ -28,16 +28,13 @@ class ObservedPrePulseProjectionTests(unittest.TestCase):
         )}
         paths["manifest.json"].write_text(json.dumps({
             "role": "simulation_run_manifest",
-            "run_id": "20260811_003000__sim__simion__rf-oatof-exact-formal-field-bridge__n1000",
-            "project": "rf_octupole_ion_optics",
-            "mode": "rf_oatof_resolution_attribution_counterfactual",
+            "run_id": "arbitrary-observed-authority",
+            "project": "arbitrary_project",
+            "mode": "arbitrary_mode",
             "status": "success",
         }) + "\n")
-        missing = {10, 290, 298, 701}
         observed = []
-        for source_id in range(1, 1001):
-            if source_id in missing:
-                continue
+        for source_id in (1, 11, 15):
             vx, vy, vz = 4000.0 + source_id / 10, -50.0 + source_id / 20, 25.0
             observed.append({
                 "simulation_particle_id": source_id,
@@ -57,9 +54,9 @@ class ObservedPrePulseProjectionTests(unittest.TestCase):
             writer.writeheader(); writer.writerows(observed)
         prepared = {
             "role": "rf_oatof_resolution_attribution_prepared_arms",
-            "profile_id": "pre_pulse_phase_space_attribution_v3",
+            "profile_id": "arbitrary_prepared_profile",
             "pulse_time_us": 45.5, "arms": [{
-            "arm_id": "observed_restart_control", "particles": 996,
+            "arm_id": "arbitrary_observed_arm", "particles": 3,
             "state_sha256": sha(paths["observed.csv"]),
         }]}
         paths["prepared.json"].write_text(json.dumps(prepared) + "\n")

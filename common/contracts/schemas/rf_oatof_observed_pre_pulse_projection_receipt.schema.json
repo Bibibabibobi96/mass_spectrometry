@@ -30,18 +30,9 @@
     "observed_population": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["particle_count", "missing_source_particle_ids"],
+      "required": ["particle_count"],
       "properties": {
-        "particle_count": {"const": 996},
-        "missing_source_particle_ids": {
-          "type": "array",
-          "prefixItems": [
-            {"const": 10}, {"const": 290}, {"const": 298}, {"const": 701}
-          ],
-          "items": false,
-          "minItems": 4,
-          "maxItems": 4
-        }
+        "particle_count": {"type": "integer", "minimum": 1}
       }
     },
     "projection": {
@@ -62,7 +53,6 @@
         "simulation_to_source_particle_id": {
           "type": "array",
           "minItems": 1,
-          "maxItems": 100,
           "items": {"$ref": "#/$defs/particle_map"}
         },
         "fixed_kinetic_energy_eV": {"const": 10.0},
@@ -170,8 +160,8 @@
       "additionalProperties": false,
       "required": ["simulation_particle_id", "source_particle_id"],
       "properties": {
-        "simulation_particle_id": {"type": "integer", "minimum": 1, "maximum": 100},
-        "source_particle_id": {"type": "integer", "minimum": 1, "maximum": 1000}
+        "simulation_particle_id": {"type": "integer", "minimum": 1},
+        "source_particle_id": {"type": "integer", "minimum": 1}
       }
     },
     "affine_authority": {

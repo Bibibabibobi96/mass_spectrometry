@@ -22,14 +22,6 @@ TARGET_COLUMNS = [
     "position_x_mm", "position_y_mm", "position_z_mm", "velocity_x_m_s",
     "velocity_y_m_s", "velocity_z_m_s", "kinetic_energy_eV",
 ]
-EXPECTED_OBSERVED_COUNT = 996
-EXPECTED_MISSING_SOURCE_IDS = [10, 290, 298, 701]
-EXPECTED_AUTHORITY_RUN_ID = (
-    "20260811_003000__sim__simion__rf-oatof-exact-formal-field-bridge__n1000"
-)
-EXPECTED_AUTHORITY_PROJECT = "rf_octupole_ion_optics"
-EXPECTED_AUTHORITY_MODE = "rf_oatof_resolution_attribution_counterfactual"
-EXPECTED_PREPARED_PROFILE = "pre_pulse_phase_space_attribution_v3"
 ARM_FULL = "full_observed_6d"
 ARM_COLLAPSED = "observed_z_vz_energy_transverse_collapsed"
 ARM_AFFINE_FIXED_10EV = "affine_zvz_fixed_10eV_transverse_collapsed"
@@ -123,38 +115,33 @@ def _validate_authority(
     geometry_path: Path,
 ) -> tuple[list[dict[str, str]], list[float], float]:
     manifest = _load_json(manifest_path, "authority manifest")
-    expected_manifest = {
-        "role": "simulation_run_manifest",
-        "run_id": EXPECTED_AUTHORITY_RUN_ID,
-        "project": EXPECTED_AUTHORITY_PROJECT,
-        "mode": EXPECTED_AUTHORITY_MODE,
-        "status": "success",
-    }
-    if any(manifest.get(key) != value for key, value in expected_manifest.items()):
-        raise ValueError("observed authority manifest identity differs")
-    prepared = _load_json(prepared_path, "prepared-arm receipt")
     if (
-        prepared.get("role") != "rf_oatof_resolution_attribution_prepared_arms"
-        or prepared.get("profile_id") != EXPECTED_PREPARED_PROFILE
+        manifest.get("role") != "simulation_run_manifest"
+        or manifest.get("status") != "success"
     ):
-        raise ValueError("prepared-arm receipt identity differs")
+        raise ValueError("observed authority manifest is not a successful simulation run")
+    prepared = _load_json(prepared_path, "prepared-arm receipt")
+    if prepared.get("role") != "rf_oatof_resolution_attribution_prepared_arms":
+        raise ValueError("prepared-arm receipt role differs")
     state_sha = _sha256(state_path)
     arms = prepared.get("arms")
     if not isinstance(arms, list):
         raise ValueError("prepared-arm receipt lacks arms")
-    matches = [arm for arm in arms if arm.get("arm_id") == "observed_restart_control"]
-    if len(matches) != 1 or matches[0].get("state_sha256") != state_sha:
+    matches = [arm for arm in arms if arm.get("state_sha256") == state_sha]
+    if len(matches) != 1:
         raise ValueError("prepared-arm receipt does not bind observed state")
-    if matches[0].get("particles") != EXPECTED_OBSERVED_COUNT:
-        raise ValueError("prepared-arm observed population differs")
 
     rows = _load_csv(state_path, OBSERVED_COLUMNS, "observed state")
-    source_ids = [int(_finite(row, "source_particle_id", "observed state")) for row in rows]
-    if len(rows) != EXPECTED_OBSERVED_COUNT or len(set(source_ids)) != len(source_ids):
-        raise ValueError("observed state population or IDs differ")
-    missing = sorted(set(range(1, 1001)) - set(source_ids))
-    if missing != EXPECTED_MISSING_SOURCE_IDS:
-        raise ValueError("observed state missing-ID census differs")
+    source_ids: list[int] = []
+    for row in rows:
+        source_id_value = _finite(row, "source_particle_id", "observed state")
+        if source_id_value < 1 or not source_id_value.is_integer():
+            raise ValueError("observed state source particle IDs must be positive integers")
+        source_ids.append(int(source_id_value))
+    if len(set(source_ids)) != len(source_ids):
+        raise ValueError("observed state source particle IDs are not unique")
+    if matches[0].get("particles") != len(rows):
+        raise ValueError("prepared-arm observed population differs")
     for row in rows:
         values = [_finite(row, field, "observed state") for field in (
             "instrument_time_us", "mass_amu", "x_mm", "y_mm", "z_mm",
@@ -396,7 +383,6 @@ def project_observed_pre_pulse_states(
         },
         "observed_population": {
             "particle_count": len(observed),
-            "missing_source_particle_ids": EXPECTED_MISSING_SOURCE_IDS,
         },
         "projection": projection,
         "arms": arms,
