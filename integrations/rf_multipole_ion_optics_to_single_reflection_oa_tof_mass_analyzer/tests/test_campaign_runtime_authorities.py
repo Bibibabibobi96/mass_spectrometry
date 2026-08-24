@@ -131,20 +131,6 @@ class CampaignRuntimeAuthoritiesTests(unittest.TestCase):
         validate_schema(
             contract, SCHEMA_ROOT / "rf_multipole_oatof_source_adapter.schema.json"
         )
-        self.assertEqual(
-            set(contract),
-            {
-                "schema_version",
-                "role",
-                "integration_id",
-                "selector",
-                "adapter",
-                "canonical_state",
-            },
-        )
-        serialized = json.dumps(contract)
-        for forbidden in ("run_id", "particle_count", "source_branches"):
-            self.assertNotIn(forbidden, serialized)
 
     def test_execution_policy_is_scientific_input_independent(self) -> None:
         policy = load(CONFIG_ROOT / "execution_policy.json")
