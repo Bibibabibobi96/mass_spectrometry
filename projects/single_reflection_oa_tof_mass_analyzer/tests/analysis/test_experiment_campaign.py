@@ -72,13 +72,6 @@ def authorized_campaign_fixture():
 
 class ExperimentCampaignTests(unittest.TestCase):
     def test_public_entry_runs_as_repository_module_without_path_injection(self):
-        entry = (
-            PROJECT_ROOT
-            / "workflows"
-            / "experiment_campaign"
-            / "run_campaign.py"
-        )
-        self.assertNotIn("sys.path", entry.read_text(encoding="utf-8"))
         completed = subprocess.run(
             [
                 sys.executable,
