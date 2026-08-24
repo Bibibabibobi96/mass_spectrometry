@@ -72,6 +72,20 @@ class IntegrationAdapterContractTests(unittest.TestCase):
                 repo_root=REPO_ROOT,
             )
 
+    def test_resolved_mapping_is_independent_of_other_profiles(self) -> None:
+        path = INTEGRATION_ROOT / "config" / "execution_adapter_profiles.json"
+        registry = json.loads(path.read_text(encoding="utf-8"))
+        selected_profile = registry["mappings"][0]["connection_profile_id"]
+        before = resolve_execution_mapping(
+            registry, selected_profile, repo_root=REPO_ROOT
+        )
+        registry["mappings"][1]["runtime_binding_path"] = "unrelated.json"
+        registry["mappings"][1]["runtime_binding_sha256"] = "0" * 64
+        after = resolve_execution_mapping(
+            registry, selected_profile, repo_root=REPO_ROOT
+        )
+        self.assertEqual(before, after)
+
     def test_mapping_rejects_unknown_shared_adapter_id(self) -> None:
         path = INTEGRATION_ROOT / "config" / "execution_adapter_profiles.json"
         invalid = copy.deepcopy(json.loads(path.read_text(encoding="utf-8")))

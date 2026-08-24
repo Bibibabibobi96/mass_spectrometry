@@ -3722,7 +3722,7 @@ def prepare_family_source_closure(
             "adapter": "powershell",
             "entrypoint": mapping["adapter_entrypoint"],
             "arguments": [
-                f"adapter_registry_sha256={repository_text_sha256(adapter_registry_path)}",
+                f"adapter_sha256={mapping['adapter_sha256']}",
                 f"campaign_path={campaign_path.relative_to(root).as_posix()}",
                 f"campaign_sha256={repository_text_sha256(campaign_path)}",
                 "frozen_campaign_experiment_filename=inputs/"

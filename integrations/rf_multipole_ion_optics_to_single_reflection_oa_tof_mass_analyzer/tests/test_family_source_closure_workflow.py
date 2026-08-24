@@ -1924,6 +1924,17 @@ $result = Get-PulseTimingOrchestration `
                 self.assertEqual(execution_profile["rf_steps_per_period"], 73)
                 arguments = load(plan)["execution_steps"][0]["arguments"]
                 self.assertIn(
+                    "adapter_sha256="
+                    + hashlib.sha256(
+                        (INTEGRATION_ROOT / "workflows" / "family_source_closure" / "adapter.ps1")
+                        .read_bytes()
+                    ).hexdigest().upper(),
+                    arguments,
+                )
+                self.assertFalse(any(
+                    item.startswith("adapter_registry_sha256=") for item in arguments
+                ))
+                self.assertIn(
                     "resolved_single_flight_execution_profile_filename="
                     "inputs/resolved_single_flight_execution_profile.json",
                     arguments,

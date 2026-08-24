@@ -209,8 +209,20 @@ if ($executionPlanReferenceCount -ne 0) {
   }
   $frozenArguments = $resolvedArguments
 }
+$hasLegacyAdapterRegistryIdentity = $frozenArguments.ContainsKey(
+  'adapter_registry_sha256'
+)
+$hasResolvedAdapterIdentity = $frozenArguments.ContainsKey('adapter_sha256')
+if ($hasLegacyAdapterRegistryIdentity -eq $hasResolvedAdapterIdentity) {
+  throw 'Prepared family adapter must contain exactly one adapter identity.'
+}
+$adapterIdentityArgumentName = if ($hasLegacyAdapterRegistryIdentity) {
+  'adapter_registry_sha256'
+} else {
+  'adapter_sha256'
+}
 $expectedArguments = @(
-  'adapter_registry_sha256',
+  $adapterIdentityArgumentName,
   'campaign_path',
   'campaign_sha256',
   'campaign_id',
@@ -401,8 +413,9 @@ $executionStrategy = [string]$frozenArguments.execution_strategy
 if ($executionStrategy -notin @('staged_three_stage','simion_single_flight')) {
   throw 'Prepared family execution strategy is invalid.'
 }
-if ((Get-FileHash -LiteralPath $registryPath -Algorithm SHA256).Hash -ne
-    $frozenArguments.adapter_registry_sha256) {
+if ($hasLegacyAdapterRegistryIdentity -and
+    (Get-FileHash -LiteralPath $registryPath -Algorithm SHA256).Hash -ne
+      $frozenArguments.adapter_registry_sha256) {
   throw 'Family adapter registry changed after preparation.'
 }
 
@@ -776,8 +789,14 @@ $expectedAdapterPath = (
   'workflows/family_source_closure/adapter.ps1'
 )
 if ($adapterImplementation.adapter_entrypoint -ne $expectedAdapterPath -or
+    ($hasResolvedAdapterIdentity -and
+      $adapterImplementation.adapter_sha256 -ne $frozenArguments.adapter_sha256) -or
     (Get-FileHash -LiteralPath $adapterPath -Algorithm SHA256).Hash -ne
-      $adapterImplementation.adapter_sha256) {
+      $(if ($hasResolvedAdapterIdentity) {
+          $frozenArguments.adapter_sha256
+        } else {
+          $adapterImplementation.adapter_sha256
+        })) {
   throw 'Family adapter implementation differs from its registry identity.'
 }
 if ($mapping.runtime_binding_path -ne
