@@ -2971,11 +2971,7 @@ def prepare_family_source_closure(
             ),
             resource_profiles=resource_profiles,
         )
-        single_flight_batch_count = int(
-            single_flight_dispatch_plan["waves"][0]["batch_count"]
-        )
     else:
-        single_flight_batch_count = 1
         single_flight_dispatch_plan = None
     resolved_budget = {
         "schema_version": 1,
@@ -3747,7 +3743,6 @@ def prepare_family_source_closure(
                 "single_flight_pa_cache_policy=" + pa_cache_policy,
                 "single_flight_pa_cache_policy_provenance="
                 + pa_cache_policy_provenance,
-                "single_flight_batch_count=" + str(single_flight_batch_count),
                 "resolved_single_flight_execution_profile_filename=inputs/"
                 + resolved_execution_profile_path.name,
                 "resolved_single_flight_execution_profile_sha256="

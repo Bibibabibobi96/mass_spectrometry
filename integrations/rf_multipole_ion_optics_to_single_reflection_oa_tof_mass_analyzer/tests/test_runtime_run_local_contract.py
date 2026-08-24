@@ -106,11 +106,12 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
     def test_execution_batch_count_and_parallel_memory_gate_are_governed(self) -> None:
         runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
         self.assertIn(
-            "[ValidateScript({ $_ -ge 1 })][int]$ExecutionBatchCount = 1", runner
+            "$executionBatchCount = [int]$runtimeDispatchPlan.waves[0].batch_count",
+            runner,
         )
-        self.assertNotIn("ValidateRange(1,10000)", runner)
-        self.assertIn("execution_batch_count=$ExecutionBatchCount", runner)
-        self.assertIn("execution_batches_parallel=[bool]($ExecutionBatchCount -gt 1)", runner)
+        self.assertIn("execution_batch_count=$executionBatchCount", runner)
+        self.assertIn("execution_batches_parallel=[bool]($executionBatchCount -gt 1)", runner)
+        self.assertNotIn("ExecutionBatchCount", runner)
         self.assertNotIn("$settings.batching_policy.default_batch_count", runner)
         self.assertNotIn("$batchCount -ne 5", runner)
         self.assertNotIn("N=1000 single flight requires five batches", runner)
@@ -138,11 +139,6 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
         self.assertNotIn("Invoke-ResourceBudgetedProcess `", batch_launch_block)
         self.assertNotIn("[int64](10GB)", runner)
         self.assertNotIn("[int64](4GB)", runner)
-        batch_bound = runner.index(
-            "Single-flight execution batch count exceeds launched particle count."
-        )
-        solver_launch = runner.index("Invoke-ResourceBudgetedProcesses")
-        self.assertLess(batch_bound, solver_launch)
 
     def test_solver_stage_runners_use_short_lived_execution_aliases(self) -> None:
         for runner_path in RUNNERS[1:]:

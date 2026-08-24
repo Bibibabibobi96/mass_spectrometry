@@ -23,6 +23,7 @@ PUBLICATION_SEED_PATHS = (
     "config/execution_policy.json",
     "config/family_source_adapter.json",
     "config/family_runtime_dependencies.json",
+    "config/family_runtime_implementation.json",
     "config/diagnostics/zero_match_long_all_ideal_theory_order_stage_v2_successor_campaign.json",
 )
 

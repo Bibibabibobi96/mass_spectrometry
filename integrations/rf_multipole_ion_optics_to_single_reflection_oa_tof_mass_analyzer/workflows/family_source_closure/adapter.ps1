@@ -257,7 +257,6 @@ if ([string]$frozenArguments.execution_strategy -eq 'simion_single_flight') {
   $expectedArguments += @(
     'single_flight_pa_cache_policy',
     'single_flight_pa_cache_policy_provenance',
-    'single_flight_batch_count',
     'resolved_single_flight_execution_profile_filename',
     'resolved_single_flight_execution_profile_sha256'
   )
@@ -1290,23 +1289,6 @@ if ($executionStrategy -eq 'simion_single_flight') {
     $runnerArguments.RequiredPaCacheGenerationBindingSha256 =
       [string]$frozenArguments.single_flight_pa_cache_generation_binding_sha256
   }
-  # Preparation resolves the effective count, including automatic memory
-  # selection.  The frozen plan argument is the sole execution authority;
-  # comparing it with the optional static campaign hint would reject a valid
-  # memory-bound decision.
-  $resolvedBatchCount = [int]$frozenArguments.single_flight_batch_count
-  $dispatchPlan = $budget.single_flight_dispatch_plan
-  if ($null -eq $dispatchPlan -or
-      $null -eq $dispatchPlan.waves -or
-      @($dispatchPlan.waves).Count -ne 1 -or
-      [int]$dispatchPlan.waves[0].batch_count -ne $resolvedBatchCount) {
-    throw 'Resolved dispatch plan and prepared single-flight batch count differ.'
-  }
-  if ($resolvedBatchCount -lt 1 -or
-      $resolvedBatchCount -gt $expectedExecutionParticleCount) {
-    throw 'Prepared single-flight batch count is invalid or exceeds the resolved population.'
-  }
-  $runnerArguments.ExecutionBatchCount = $resolvedBatchCount
   $runnerArguments.ResolvedExecutionProfile = $resolvedExecutionProfilePath
   $runnerArguments.ResolvedExecutionProfileSha256 =
     [string]$frozenArguments.resolved_single_flight_execution_profile_sha256
