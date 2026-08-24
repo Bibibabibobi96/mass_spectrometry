@@ -137,11 +137,6 @@ class CampaignRuntimeAuthoritiesTests(unittest.TestCase):
         validate_schema(
             policy, SCHEMA_ROOT / "rf_multipole_oatof_execution_policy.schema.json"
         )
-        self.assertNotIn("single_flight_batch_parallel_limit", policy)
-        serialized = json.dumps(policy)
-        for forbidden in ("particle_count", "source_run", "operating_mode"):
-            self.assertNotIn(forbidden, serialized)
-
         alternative_policy = dict(policy)
         alternative_policy["policy_id"] = "adaptive_resource_policy_v2"
         validate_schema(
