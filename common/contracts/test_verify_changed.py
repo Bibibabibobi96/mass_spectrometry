@@ -320,6 +320,16 @@ class ChangedGateContractTests(unittest.TestCase):
         ):
             self.assertIn(f"{project_id}_static", routed)
 
+    def test_common_contract_tests_do_not_route_to_runtime_consumers(self) -> None:
+        routed = self.routed_stages("common/contracts/test_verify_changed.py")
+        self.assertEqual(
+            routed,
+            {
+                "common_contracts": "common_contracts_changed",
+                "gate_contract_tests": "changed_scope_contract_tests_changed",
+            },
+        )
+
     def test_cloc_entrypoint_routes_to_its_focused_contract_tests(self) -> None:
         routed = self.routed_stages("common/report_cloc_delta.ps1")
         self.assertEqual(routed, {"cloc_contract_tests": "cloc_entrypoint_changed"})

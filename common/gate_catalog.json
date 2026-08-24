@@ -34,7 +34,7 @@
           "reason": "quadrupole_path_changed"
         },
         {
-          "prefix": "common/contracts/",
+          "regex": "^common/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
           "reason": "common_contracts_direct_dependency_changed"
         },
         {
@@ -320,7 +320,7 @@
           "reason": "common_multipole_direct_dependency_changed"
         },
         {
-          "prefix": "common/contracts/",
+          "regex": "^common/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
           "reason": "common_contracts_direct_dependency_changed"
         },
         {
@@ -374,7 +374,7 @@
           "reason": "single_reflection_oa_tof_mass_analyzer_path_changed"
         },
         {
-          "prefix": "common/contracts/",
+          "regex": "^common/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
           "reason": "common_contracts_direct_dependency_changed"
         },
         {
@@ -404,7 +404,7 @@
           "reason": "rf_quadrupole_path_changed"
         },
         {
-          "prefix": "common/contracts/",
+          "regex": "^common/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
           "reason": "common_contracts_direct_dependency_changed"
         },
         {
@@ -450,7 +450,7 @@
           "reason": "rf_hexapole_path_changed"
         },
         {
-          "prefix": "common/contracts/",
+          "regex": "^common/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
           "reason": "common_contracts_direct_dependency_changed"
         },
         {
@@ -485,7 +485,7 @@
           "reason": "rf_octupole_path_changed"
         },
         {
-          "prefix": "common/contracts/",
+          "regex": "^common/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
           "reason": "common_contracts_direct_dependency_changed"
         },
         {
@@ -520,7 +520,7 @@
           "reason": "wehnelt_path_changed"
         },
         {
-          "prefix": "common/contracts/",
+          "regex": "^common/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
           "reason": "common_contracts_direct_dependency_changed"
         },
         {
@@ -547,7 +547,7 @@
           "reason": "electron_impact_path_changed"
         },
         {
-          "prefix": "common/contracts/",
+          "regex": "^common/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
           "reason": "common_contracts_direct_dependency_changed"
         }
       ],
