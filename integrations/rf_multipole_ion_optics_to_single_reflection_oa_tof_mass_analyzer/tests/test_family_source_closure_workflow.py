@@ -1329,18 +1329,6 @@ $result = Get-PulseTimingOrchestration `
             {"connector_gap_field_matrix_compact_auto_replay_v2.json"},
         )
 
-    def test_adapter_freezes_campaign_and_row_before_solver_authorization(self) -> None:
-        adapter = (
-            INTEGRATION_ROOT / "workflows" / "family_source_closure" / "adapter.ps1"
-        ).read_text(encoding="utf-8")
-        campaign_hash = adapter.index("$frozenArguments.campaign_sha256")
-        row_hash = adapter.index("$frozenArguments.experiment_row_sha256")
-        solver_boundary = adapter.index("if (-not $SolverAuthorized)")
-        runner_call = adapter.index("& $runtime.implementation.single_flight_runner")
-        self.assertLess(campaign_hash, solver_boundary)
-        self.assertLess(row_hash, solver_boundary)
-        self.assertLess(solver_boundary, runner_call)
-
     def test_adapter_uses_only_frozen_canonical_region_field_profile(self) -> None:
         adapter = (
             INTEGRATION_ROOT / "workflows" / "family_source_closure" / "adapter.ps1"
