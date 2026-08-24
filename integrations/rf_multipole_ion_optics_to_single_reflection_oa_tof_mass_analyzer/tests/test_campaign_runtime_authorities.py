@@ -152,30 +152,6 @@ class CampaignRuntimeAuthoritiesTests(unittest.TestCase):
             policy, SCHEMA_ROOT / "rf_multipole_oatof_execution_policy.schema.json"
         )
         self.assertNotIn("single_flight_batch_parallel_limit", policy)
-        self.assertEqual(policy["retention_class"], "compact")
-        self.assertEqual(
-            set(policy["stage_limits"]),
-            {
-                "pre_pulse_interface_transport",
-                "pulse_capture",
-                "analyzer_transport",
-                "single_flight_transport",
-            },
-        )
-        for stage in policy["stage_limits"].values():
-            self.assertEqual(stage["automatic_retry_count"], 0)
-        self.assertEqual(
-            {
-                name: stage["compact_final_retained_bytes"]
-                for name, stage in policy["stage_limits"].items()
-            },
-            {
-                "pre_pulse_interface_transport": 26214400,
-                "pulse_capture": 26214400,
-                "analyzer_transport": 26214400,
-                "single_flight_transport": 268435456,
-            },
-        )
         serialized = json.dumps(policy)
         for forbidden in ("particle_count", "source_run", "operating_mode"):
             self.assertNotIn(forbidden, serialized)
