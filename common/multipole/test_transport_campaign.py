@@ -483,26 +483,31 @@ class TransportCampaignTests(unittest.TestCase):
                 {"x": 0.15, "y": 0.15, "z": 0.2},
             )
 
-    def test_family_campaign_launcher_is_a_serial_thin_selector(self) -> None:
-        source = (
-            REPO_ROOT
-            / "common"
-            / "multipole"
-            / "run_simion_transport_campaign.ps1"
-        ).read_text(encoding="utf-8").lower()
-        self.assertIn("parametersetname = 'one'", source)
-        self.assertIn("parametersetname = 'all'", source)
-        self.assertIn("parametersetname = 'status'", source)
-        self.assertIn("invoke-multipoleprojectfinite3dtransport", source)
-        self.assertNotIn("start-job", source)
-        self.assertNotIn("foreach-object -parallel", source)
-        self.assertNotIn("automaticretry", source)
-        self.assertRegex(
-            source,
-            r"if\s*\(\[int\]\$campaign\.schema_version\s*-in\s*@\(4,\s*5,\s*6\)\)\s*"
-            r"\{\s*\$arguments\.caseset\s*=\s*\[string\]\$experiment\.case_set\s*\}",
-        )
-        self.assertEqual(source.count("$arguments.caseset"), 1)
+    def test_family_campaign_launcher_dry_run_resolves_each_case_without_artifacts(self) -> None:
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("PowerShell Core is unavailable")
+        campaign = analysis_campaign_fixture()
+        with written_campaign(campaign) as path:
+            completed = subprocess.run(
+                [
+                    pwsh, "-NoProfile", "-File",
+                    str(REPO_ROOT / "common/multipole/run_simion_transport_campaign.ps1"),
+                    "-CampaignPath", str(path), "-All", "-DryRun",
+                    "-RepoRoot", str(REPO_ROOT), "-PythonExe", sys.executable,
+                ],
+                cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8",
+                errors="replace", timeout=120, check=False,
+            )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        expected = [row["experiment_id"] for row in campaign["experiments"]]
+        observed = [
+            line.split("EXPERIMENT=", 1)[1].split(" RUN=", 1)[0]
+            for line in completed.stdout.splitlines()
+            if line.startswith("MULTIPOLE_CAMPAIGN=DRY_RUN ")
+        ]
+        self.assertEqual(observed, expected)
+        self.assertIn("CASE_SET=primary_only", completed.stdout)
 
 
     def test_campaign_resolves_existing_authorities_and_inline_simion_numerics(

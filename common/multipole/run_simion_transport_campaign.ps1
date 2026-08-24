@@ -8,6 +8,7 @@ param(
   [switch]$All,
   [Parameter(Mandatory = $true, ParameterSetName = 'Status')]
   [switch]$Status,
+  [switch]$DryRun,
   [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')),
   [string]$PythonExe = '',
   [string]$SimionExe = ''
@@ -180,9 +181,22 @@ try {
     $resolved += [pscustomobject]@{experiment=$experiment;snapshot=$snapshot}
   }
 
-  . (Join-Path $repo 'common\multipole\project_transport_launcher_support.ps1')
+  if (-not $DryRun) {
+    . (Join-Path $repo 'common\multipole\project_transport_launcher_support.ps1')
+  }
   foreach ($item in $resolved) {
     $experiment = $item.experiment
+    if ($DryRun) {
+      $caseSet = if ([int]$campaign.schema_version -in @(4, 5, 6)) {
+        [string]$experiment.case_set
+      } else {
+        'primary_and_zero_axial_control'
+      }
+      Write-Host ('MULTIPOLE_CAMPAIGN=DRY_RUN CAMPAIGN={0} EXPERIMENT={1} RUN={2} CASE_SET={3}' -f `
+        [string]$campaign.campaign_id,[string]$experiment.experiment_id,
+        [string]$experiment.authorized_run_id,$caseSet)
+      continue
+    }
     Write-Host ('MULTIPOLE_CAMPAIGN=START CAMPAIGN={0} EXPERIMENT={1} RUN={2}' -f `
       [string]$campaign.campaign_id,[string]$experiment.experiment_id,[string]$experiment.authorized_run_id)
     $arguments = @{Solver='simion';ProjectId=[string]$experiment.project_id;CampaignPath=$candidate;
