@@ -1052,6 +1052,7 @@ foreach ($case in $cases) {{
     ) -> None:
         """Numeric selection reaches the runner through its frozen profile."""
         runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        adapter = FAMILY_ADAPTER.read_text(encoding="utf-8")
         for parameter in (
             "FrontendGridProfileId",
             "OatofNumericalProfileId",
@@ -1062,6 +1063,8 @@ foreach ($case in $cases) {{
             self.assertNotIn(f"${parameter}", runner)
         self.assertIn("$ResolvedExecutionProfile", runner)
         self.assertIn("resolved_single_flight_execution_profile.json", runner)
+        self.assertNotIn("$FieldOverlayId", runner)
+        self.assertNotIn("$runnerArguments.FieldOverlayId", adapter)
 
     def test_r03_baseline_population_is_strictmode_safe_without_paired_cohort(self) -> None:
         population = (

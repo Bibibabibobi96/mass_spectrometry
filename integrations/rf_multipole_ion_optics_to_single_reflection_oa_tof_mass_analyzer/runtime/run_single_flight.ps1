@@ -38,7 +38,6 @@ param(
   [Parameter(Mandatory)][string]$ResolvedRegionFieldContractSha256,
   [Parameter(Mandatory)][string]$ResolvedRegionFieldSemanticSha256,
   [string]$SourceProfileId = '',
-  [string]$FieldOverlayId = '',
   [string]$PrePulseSourceState = '',
   [string]$PrePulseSourceStateSha256 = '',
   [int]$PrePulseSourceStateCount = 0,
@@ -442,9 +441,6 @@ try {
   $requiredQualificationBootstrapResamples = [int]$executionProfile.required_qualification_bootstrap_resamples
   $overlayEnabled = [bool]$executionProfile.accelerator_overlay_enabled
   $resolvedFieldOverlayId = [string]$executionProfile.field_overlay_id
-  if ($FieldOverlayId -and $FieldOverlayId -ne $resolvedFieldOverlayId) {
-    throw 'Single-flight field-overlay identity differs from the selected grid profile.'
-  }
   $overlayCellMmX = if ($overlayEnabled) { [double]$executionProfile.accelerator_overlay_cell_mm_xyz.x } else { $null }
   $overlayCellMmY = if ($overlayEnabled) { [double]$executionProfile.accelerator_overlay_cell_mm_xyz.y } else { $null }
   $overlayCellMmZ = if ($overlayEnabled) { [double]$executionProfile.accelerator_overlay_cell_mm_xyz.z } else { $null }

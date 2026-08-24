@@ -1283,7 +1283,6 @@ if ($executionStrategy -eq 'simion_single_flight') {
   if ($frozenArguments.ContainsKey('source_release_mode')) {
     if ($frozenArguments.ContainsKey('source_profile_id')) {
       $runnerArguments.SourceProfileId = [string]$frozenArguments.source_profile_id
-      $runnerArguments.FieldOverlayId = [string]$frozenArguments.field_overlay_id
     }
     if ($null -ne $prePulseSourceStatePath) {
       $runnerArguments.PrePulseSourceState = $prePulseSourceStatePath
