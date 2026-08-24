@@ -308,6 +308,10 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
         )
         self.assertEqual(plan["estimation"]["kind"], "unknown_resource_profile_bootstrap")
         self.assertEqual(plan["waves"][0]["batch_count"], 1)
+        self.assertEqual(plan["limits"]["cpu_cores_per_batch"], 1)
+        self.assertEqual(plan["limits"]["reserve_cpu_cores"], 0)
+        self.assertEqual(plan["limits"]["memory_safety_numerator"], 105)
+        self.assertEqual(plan["limits"]["memory_safety_denominator"], 100)
 
     def test_dispatch_plan_uses_discovered_profile_without_memory_receipt(self) -> None:
         profile = {
