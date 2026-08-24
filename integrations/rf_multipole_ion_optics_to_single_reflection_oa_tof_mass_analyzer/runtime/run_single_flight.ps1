@@ -415,7 +415,6 @@ try {
   $configurationSource = Join-Path $integrationRoot 'config\simion_single_flight.json'
   $configuration = Join-Path $package.input_dir 'simion_single_flight.json'
   Copy-RfStableFile -SourceRunRoot $repoRoot -SourcePath $configurationSource -Destination $configuration -Role 'single-flight configuration' | Out-Null
-  $settings = Get-Content -LiteralPath $configuration -Raw -Encoding UTF8 | ConvertFrom-Json
   $executionProfilePath = Join-Path $package.input_dir 'resolved_single_flight_execution_profile.json'
   $executionProfileArguments = @('-m',
     'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_execution_profile',
@@ -471,15 +470,6 @@ try {
     throw 'Resolved region field semantic authority differs.'
   }
   $selectedFieldProfileId = [string]$resolvedRegionField.semantic.canonical_profile_id
-  $selectedFieldProfiles = @($settings.accelerator_field_profiles | Where-Object {
-    [string]$_.profile_id -eq $selectedFieldProfileId
-  })
-  if ($hasThreeZoneCandidate -and $selectedFieldProfiles.Count -ne 1) {
-    throw 'Three-zone field profile does not resolve uniquely in the frozen configuration.'
-  }
-  $selectedFieldProfile = if ($selectedFieldProfiles.Count -eq 1) {
-    $selectedFieldProfiles[0]
-  } else { $null }
   $threeZoneCandidateFrozen = $null
   $threeZoneCandidateDocument = $null
   if ($hasThreeZoneCandidate) {
@@ -805,7 +795,8 @@ try {
     $threeZoneTopologyId = [string]$threeZoneCandidateDocument.identities.topology_id
     $threeZoneGeometryId = [string]$threeZoneCandidateDocument.identities.geometry_id
     $threeZoneFrontendElectrodeTopologyId = [string]$frontendElectrodeTopology.topology_id
-    $threeZoneFieldId = [string]$selectedFieldProfile.field_id
+    $threeZoneRuntimeIdentity = Join-Path $package.input_dir `
+      'three_zone_runtime_identity.json'
     $threeZoneRuntimeIdentityArguments = @(
       '-m',
       'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.three_zone_runtime_identity',
@@ -818,13 +809,21 @@ try {
       '--region-field',$resolvedRegionFieldContractFrozen,
       '--configuration',$configuration,
       '--layout-profile-id',$LayoutProfileId,
-      '--architecture-generation-id',$ArchitectureGenerationId
+      '--architecture-generation-id',$ArchitectureGenerationId,
+      '--output',$threeZoneRuntimeIdentity
     )
     if (-not [string]::IsNullOrWhiteSpace($TheoryWorkingPoint)) {
       $threeZoneRuntimeIdentityArguments += @('--theory-working-point',$TheoryWorkingPoint)
     }
     Invoke-SingleFlightPython -Arguments $threeZoneRuntimeIdentityArguments `
       -Failure 'Frozen three-zone Candidate/runtime identity differs.'
+    $threeZoneFieldId = [string](
+      Get-Content -LiteralPath $threeZoneRuntimeIdentity -Raw -Encoding UTF8 |
+      ConvertFrom-Json
+    ).field_id
+    if ([string]::IsNullOrWhiteSpace($threeZoneFieldId)) {
+      throw 'Frozen three-zone Candidate/runtime identity differs.'
+    }
   }
   $apertureWidthMm = [double]$frontendGeometry.aperture.width_mm
   $apertureHeightMm = [double]$frontendGeometry.aperture.height_mm
@@ -1744,6 +1743,8 @@ try {
   if ($hasThreeZoneCandidate) {
     $runConfiguration.inputs.three_zone_t5_candidate =
       $threeZoneCandidateFrozen
+    $runConfiguration.inputs.three_zone_runtime_identity =
+      $threeZoneRuntimeIdentity
     $runConfiguration.parameters.three_zone_topology_id =
       $threeZoneTopologyId
     $runConfiguration.parameters.three_zone_geometry_id =

@@ -49,7 +49,7 @@ def validate_runtime_identity(
     layout_profile_id: str,
     architecture_generation_id: str,
     theory_working_point: dict[str, Any] | None = None,
-) -> None:
+) -> str:
     """Fail closed unless all compiled three-zone inputs describe one system."""
 
     try:
@@ -144,7 +144,7 @@ def validate_runtime_identity(
         ) from exc
 
     if theory_working_point is None:
-        return
+        return field_id
     try:
         theory_matches = (
             theory_working_point.get("role") == "rf_oatof_theory_working_point"
@@ -159,6 +159,7 @@ def validate_runtime_identity(
         theory_matches = False
     if not theory_matches:
         raise ValueError("Theory working point and resolved electrode potentials differ.")
+    return field_id
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -178,8 +179,9 @@ def main() -> None:
     parser.add_argument("--layout-profile-id", required=True)
     parser.add_argument("--architecture-generation-id", required=True)
     parser.add_argument("--theory-working-point", type=Path)
+    parser.add_argument("--output", type=Path)
     args = parser.parse_args()
-    validate_runtime_identity(
+    field_id = validate_runtime_identity(
         candidate=_load(args.candidate),
         candidate_sha256=args.candidate_sha256,
         geometry=_load(args.geometry),
@@ -196,6 +198,11 @@ def main() -> None:
             else None
         ),
     )
+    if args.output is not None:
+        args.output.write_text(
+            json.dumps({"field_id": field_id}, indent=2) + "\n",
+            encoding="utf-8",
+        )
 
 
 if __name__ == "__main__":

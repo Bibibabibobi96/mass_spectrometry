@@ -415,7 +415,10 @@ try {{
             "layout_profile_id": "registered_future_three_zone_layout",
             "architecture_generation_id": "registered_three_zone_generation_v2",
         }
-        validate_runtime_identity(**arguments)
+        self.assertEqual(
+            validate_runtime_identity(**arguments),
+            "registered_three_zone_real_field_v2",
+        )
         missing_field_identity = copy.deepcopy(arguments)
         missing_field_identity["configuration"]["accelerator_field_profiles"][0][
             "field_id"
