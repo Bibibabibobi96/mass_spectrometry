@@ -674,9 +674,9 @@
         "single_flight_batch_memory_policy": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["policy_id", "reserve_available_memory_bytes", "resource_usage_receipt"],
+          "required": ["policy_id", "reserve_available_memory_bytes"],
           "properties": {
-            "policy_id": {"const": "auto_memory_bound_from_receipt_v1"},
+            "policy_id": {"enum": ["auto_memory_bound_from_receipt_v1", "auto_memory_bound_from_observed_profile_v2"]},
             "default_batch_count": {"type": "integer", "minimum": 1},
             "maximum_batch_count": {"type": "integer", "minimum": 1},
             "reserve_available_memory_bytes": {"type": "integer", "minimum": 0},

@@ -277,35 +277,26 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
         with self.assertRaisesRegex(ContractError, "population differs"):
             _automatic_pulse_population_binding(population)
 
-    def test_dispatch_plan_uses_scheduler_for_memory_policy(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            receipt = root / "resource_usage.json"
-            receipt.write_text(
-                json.dumps({"peak_process_tree_working_set_bytes": 10}),
-                encoding="utf-8",
-            )
-            plan = resolve_single_flight_dispatch_plan(
-                {
-                    "single_flight_time_integration_profile_id": "dt64",
-                    "single_flight_batch_memory_policy": {
-                        "resource_usage_receipt": {
-                            "path": "resource_usage.json",
-                            "sha256": hashlib.sha256(receipt.read_bytes()).hexdigest().upper(),
-                        },
-                        "reserve_available_memory_bytes": 0,
-                        "unknown_per_batch_reservation_bytes": 10,
-                        "default_batch_count": 1,
-                        "maximum_batch_count": 8,
-                    },
+    def test_dispatch_plan_applies_resource_policy_without_legacy_receipt(self) -> None:
+        plan = resolve_single_flight_dispatch_plan(
+            {
+                "single_flight_time_integration_profile_id": "dt64",
+                "single_flight_batch_memory_policy": {
+                    "reserve_available_memory_bytes": 123,
+                    "memory_safety_numerator": 105,
+                    "memory_safety_denominator": 100,
+                    "cpu_cores_per_batch": 2,
+                    "reserve_cpu_cores": 2,
                 },
-                execution_particle_count=8,
-                workspace=root,
-                rf_steps_per_period=64,
-            )
+            },
+            execution_particle_count=8,
+            rf_steps_per_period=64,
+        )
         self.assertEqual(plan["role"], "simion_repository_dispatch_plan")
-        self.assertEqual(plan["estimation"]["kind"], "nearest_resource_profile")
-        self.assertEqual(plan["waves"][0]["batch_count"], 8)
+        self.assertEqual(plan["estimation"]["kind"], "unknown_resource_profile_bootstrap")
+        self.assertEqual(plan["limits"]["memory_reserve_bytes"], 123)
+        self.assertEqual(plan["limits"]["memory_safety_numerator"], 105)
+        self.assertEqual(plan["limits"]["cpu_cores_per_batch"], 2)
 
     def test_dispatch_plan_bootstraps_when_exploration_has_no_memory_receipt(self) -> None:
         plan = resolve_single_flight_dispatch_plan(
@@ -592,49 +583,44 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
         self.assertNotEqual(incompatible.returncode, 0)
         self.assertIn("cannot be combined", incompatible.stderr)
 
-    def test_memory_policy_freezes_selected_count_and_fails_when_no_batch_fits(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            workspace = Path(directory)
-            receipt = workspace / "resource_usage.json"
-            receipt.write_text(
-                json.dumps({"peak_process_tree_working_set_bytes": 12 * 1024**3}),
-                encoding="utf-8",
-            )
-            policy = {
-                "single_flight_time_integration_profile_id": "dt40",
-                "single_flight_batch_memory_policy": {
-                    "resource_usage_receipt": {
-                        "path": "resource_usage.json",
-                        "sha256": hashlib.sha256(receipt.read_bytes()).hexdigest().upper(),
-                    },
-                    "default_batch_count": 2,
-                    "maximum_batch_count": 3,
-                    "reserve_available_memory_bytes": 1024**3,
-                    "memory_safety_numerator": 105,
-                    "memory_safety_denominator": 100,
-                    "cpu_cores_per_batch": 2,
-                    "reserve_cpu_cores": 2,
-                },
-            }
-            with patch(
-                "common.simion.resource_scheduler.available_physical_memory_bytes",
-                return_value=15 * 1024**3,
-            ):
-                self.assertEqual(
-                    resolve_single_flight_dispatch_plan(
-                        policy, execution_particle_count=5000, workspace=workspace,
-                        rf_steps_per_period=40,
-                    )["waves"][0]["batch_count"],
-                    1,
-                )
-            with patch(
-                "common.simion.resource_scheduler.available_physical_memory_bytes",
-                return_value=12 * 1024**3,
-            ), self.assertRaisesRegex(ContractError, "memory batch policy is invalid"):
+    def test_resource_policy_fails_when_measured_profile_cannot_fit(self) -> None:
+        policy = {
+            "single_flight_time_integration_profile_id": "dt40",
+            "single_flight_batch_memory_policy": {
+                "reserve_available_memory_bytes": 1024**3,
+                "memory_safety_numerator": 105,
+                "memory_safety_denominator": 100,
+                "cpu_cores_per_batch": 2,
+                "reserve_cpu_cores": 2,
+            },
+        }
+        profile = {
+            "resource_identity": {
+                "solver": "SIMION", "field_kind": "rf",
+                "rf_steps_per_period": 40,
+                "time_integration_profile_id": "dt40",
+            },
+            "per_batch_peak_working_set_bytes": 12 * 1024**3,
+        }
+        with patch(
+            "common.simion.resource_scheduler.available_physical_memory_bytes",
+            return_value=15 * 1024**3,
+        ):
+            self.assertEqual(
                 resolve_single_flight_dispatch_plan(
-                    policy, execution_particle_count=5000, workspace=workspace,
-                    rf_steps_per_period=40,
-                )
+                    policy, execution_particle_count=5000, rf_steps_per_period=40,
+                    resource_profiles=[profile],
+                )["waves"][0]["batch_count"],
+                1,
+            )
+        with patch(
+            "common.simion.resource_scheduler.available_physical_memory_bytes",
+            return_value=12 * 1024**3,
+        ), self.assertRaisesRegex(ContractError, "resource scheduler policy is invalid"):
+            resolve_single_flight_dispatch_plan(
+                policy, execution_particle_count=5000, rf_steps_per_period=40,
+                resource_profiles=[profile],
+            )
 
     def test_single_flight_batching_is_one_wave_only(self) -> None:
         runner = (INTEGRATION_ROOT / "runtime" / "run_single_flight.ps1").read_text(

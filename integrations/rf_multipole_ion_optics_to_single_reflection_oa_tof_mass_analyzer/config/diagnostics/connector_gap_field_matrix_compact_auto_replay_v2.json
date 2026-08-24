@@ -32,16 +32,12 @@
       },
       "single_flight_source_zvz_affine_policy": "source_zvz_affine_identify_and_bind_v1",
       "single_flight_batch_memory_policy": {
-        "policy_id": "auto_memory_bound_from_receipt_v1",
+        "policy_id": "auto_memory_bound_from_observed_profile_v2",
         "reserve_available_memory_bytes": 107374182,
         "memory_safety_numerator": 105,
         "memory_safety_denominator": 100,
         "cpu_cores_per_batch": 2,
-        "reserve_cpu_cores": 2,
-        "resource_usage_receipt": {
-          "path": "artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20260822_050000__sim__simion__rf-oatof-single-flight-gap12p8__n482/logs/resource_usage.json",
-          "sha256": "ACDF59772172149B7B71277668E5D1181458D6248B54A5DD3035B0358BCFFD8F"
-        }
+        "reserve_cpu_cores": 2
       },
       "source": {
         "authority_scope": "source_population",
