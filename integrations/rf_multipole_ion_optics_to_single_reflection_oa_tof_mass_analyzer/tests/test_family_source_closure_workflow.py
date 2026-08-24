@@ -318,6 +318,27 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
         self.assertEqual(plan["estimation"]["kind"], "unknown_resource_profile_bootstrap")
         self.assertEqual(plan["waves"][0]["batch_count"], 1)
 
+    def test_dispatch_plan_uses_discovered_profile_without_memory_receipt(self) -> None:
+        profile = {
+            "resource_identity": {
+                "solver": "SIMION", "field_kind": "rf",
+                "rf_steps_per_period": 64,
+                "time_integration_profile_id": "dt64",
+            },
+            "per_batch_peak_working_set_bytes": 10,
+        }
+        with patch(
+            "common.simion.resource_scheduler.available_physical_memory_bytes",
+            return_value=1000,
+        ), patch("common.simion.resource_scheduler.os.cpu_count", return_value=8):
+            plan = resolve_single_flight_dispatch_plan(
+                {"single_flight_time_integration_profile_id": "dt64"},
+                execution_particle_count=8, rf_steps_per_period=64,
+                resource_profiles=[profile],
+            )
+        self.assertEqual(plan["estimation"]["kind"], "nearest_resource_profile")
+        self.assertEqual(plan["waves"][0]["batch_count"], 8)
+
     def test_flat_authoring_expands_shared_controls_and_gap_rows(self) -> None:
         authored = {
             "experiments": {
