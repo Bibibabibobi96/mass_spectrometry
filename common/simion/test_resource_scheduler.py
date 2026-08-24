@@ -6,7 +6,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from common.simion.resource_scheduler import plan_adaptive_followup, plan_simion_dispatch
+from common.simion.resource_scheduler import (
+    plan_adaptive_followup,
+    plan_runtime_dispatch,
+    plan_simion_dispatch,
+)
 
 
 class ResourceSchedulerTests(unittest.TestCase):
@@ -274,6 +278,34 @@ class ResourceSchedulerTests(unittest.TestCase):
             with self.subTest(measurement=measurement), self.assertRaises(ValueError):
                 plan_adaptive_followup(bootstrap, measurement)
 
+    def test_runtime_dispatch_reuses_prepared_policy_but_current_host_capacity(self) -> None:
+        profile = {
+            "resource_identity": {
+                "solver": "SIMION", "field_kind": "rf", "rf_steps_per_period": 40,
+            },
+            "per_batch_peak_working_set_bytes": 10,
+        }
+        prepared = plan_simion_dispatch(
+            self.rf_request(maximum_parallel_batches=8), [profile],
+            available_memory_bytes=31, logical_processors=2,
+        )
+        runtime = plan_runtime_dispatch(
+            prepared, available_memory_bytes=100, logical_processors=8,
+        )
+        self.assertEqual(prepared["waves"][0]["batch_count"], 2)
+        self.assertEqual(runtime["waves"][0]["batch_count"], 8)
+        self.assertEqual(runtime["resource_identity"], prepared["resource_identity"])
+        for key in (
+            "maximum_parallel_batches", "memory_reserve_bytes",
+            "cpu_cores_per_batch", "reserve_cpu_cores",
+            "default_parallel_batches", "memory_safety_numerator",
+            "memory_safety_denominator",
+        ):
+            self.assertEqual(runtime["limits"][key], prepared["limits"][key])
+        self.assertEqual(runtime["host"], {
+            "available_memory_bytes": 100, "logical_processors": 8,
+        })
+
     def test_cli_writes_bootstrap_and_observed_followup_plan(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -311,3 +343,27 @@ class ResourceSchedulerTests(unittest.TestCase):
             plan = json.loads(output_path.read_text(encoding="utf-8"))
             self.assertEqual(plan["estimation"]["kind"], "unknown_resource_profile_bootstrap")
             self.assertIsNone(plan["estimation"]["bootstrap_reservation_bytes"])
+
+    def test_cli_replans_a_prepared_dispatch_plan_on_the_current_host(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            prepared_path, output_path = root / "prepared.json", root / "plan.json"
+            prepared = plan_simion_dispatch(
+                self.rf_request(maximum_parallel_batches=8),
+                [{"resource_identity": {"solver": "SIMION", "field_kind": "rf", "rf_steps_per_period": 40}, "per_batch_peak_working_set_bytes": 10}],
+                available_memory_bytes=31, logical_processors=2,
+            )
+            prepared_path.write_text(json.dumps(prepared), encoding="utf-8")
+            result = subprocess.run(
+                [
+                    sys.executable, "-m", "common.simion.resource_scheduler",
+                    "--prepared-plan", str(prepared_path), "--output", str(output_path),
+                    "--available-memory-bytes", "100", "--logical-processors", "8",
+                ],
+                capture_output=True, text=True, check=False, timeout=30,
+                cwd=Path(__file__).resolve().parents[2],
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            plan = json.loads(output_path.read_text(encoding="utf-8"))
+            self.assertEqual(plan["waves"][0]["batch_count"], 8)
+            self.assertEqual(plan["host"]["available_memory_bytes"], 100)

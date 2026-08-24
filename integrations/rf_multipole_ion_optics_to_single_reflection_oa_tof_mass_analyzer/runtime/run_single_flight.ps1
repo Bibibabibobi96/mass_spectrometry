@@ -1663,6 +1663,26 @@ try {
     -StdoutPath (Join-Path $package.log_dir 'single_flight_program_build.stdout.log') `
     -StderrPath (Join-Path $package.log_dir 'single_flight_program_build.stderr.log')
 
+  $preparedDispatchPlan = $resolvedBudgetDocument.single_flight_dispatch_plan
+  $preparedDispatchPlanPath = Join-Path $package.input_dir 'simion_prepared_dispatch_plan.json'
+  $runtimeDispatchPlanPath = Join-Path $package.input_dir 'simion_repository_dispatch_plan.json'
+  $preparedDispatchPlan | ConvertTo-Json -Depth 8 | Set-Content `
+    -LiteralPath $preparedDispatchPlanPath -Encoding UTF8
+  Invoke-SingleFlightPython -Arguments @(
+    '-m','common.simion.resource_scheduler','--prepared-plan',$preparedDispatchPlanPath,
+    '--output',$runtimeDispatchPlanPath
+  ) -Failure 'SIMION runtime resource scheduling failed.'
+  $runtimeDispatchPlan = Get-Content -Raw -LiteralPath $runtimeDispatchPlanPath |
+    ConvertFrom-Json
+  if ($runtimeDispatchPlan.role -ne 'simion_repository_dispatch_plan' -or
+      [int]$runtimeDispatchPlan.particle_count -ne $launched -or
+      @($runtimeDispatchPlan.waves).Count -ne 1 -or
+      [int]$runtimeDispatchPlan.waves[0].batch_count -lt 1 -or
+      [int]$runtimeDispatchPlan.waves[0].batch_count -gt $launched) {
+    throw 'SIMION runtime resource scheduler returned an invalid dispatch plan.'
+  }
+  $ExecutionBatchCount = [int]$runtimeDispatchPlan.waves[0].batch_count
+
   $runConfiguration = [ordered]@{
     schema_version=2; run_id=$RunId; project=$runProjectId; mode='rf_to_oatof_simion_single_flight'; project_root=$repoRoot
     upstream_project_id=$runtime.upstream_project_id
@@ -1699,9 +1719,6 @@ try {
       $launched
   }
   $batchPlanPath = Join-Path $package.input_dir 'simion_execution_batch_plan.json'
-  $dispatchPlanPath = Join-Path $package.input_dir 'simion_repository_dispatch_plan.json'
-  $resolvedBudgetDocument.single_flight_dispatch_plan | ConvertTo-Json -Depth 8 |
-    Set-Content -LiteralPath $dispatchPlanPath -Encoding UTF8
   Invoke-SingleFlightPython -Arguments @(
     '-m','common.simion.particle_batching','--particle-count',([string]$launched),
     '--batch-count',([string]$runConfiguration.parameters.execution_batch_count),
@@ -1713,9 +1730,12 @@ try {
     throw 'Shared SIMION batch plan differs from the frozen launched population.'
   }
   $runConfiguration.inputs.simion_execution_batch_plan = $batchPlanPath
-  $runConfiguration.inputs.simion_repository_dispatch_plan = $dispatchPlanPath
+  $runConfiguration.inputs.simion_prepared_dispatch_plan = $preparedDispatchPlanPath
+  $runConfiguration.inputs.simion_repository_dispatch_plan = $runtimeDispatchPlanPath
   $runConfiguration.parameters.simion_single_wave_batch_plan_sha256 =
     (Get-FileHash -Algorithm SHA256 -LiteralPath $batchPlanPath).Hash
+  $runConfiguration.parameters.simion_repository_dispatch_plan_sha256 =
+    (Get-FileHash -Algorithm SHA256 -LiteralPath $runtimeDispatchPlanPath).Hash
   Write-RunJson -Path $package.run_config -Depth 10 -Value $runConfiguration
   Write-RunJson -Path $package.summary -Depth 10 -Value ([ordered]@{schema_version=1;role=$summaryRole;status='interrupted';reason='Frozen inputs recorded; SIMION flight not complete.';single_flight_pa_cache_policy=$PaCachePolicy;single_flight_pa_cache_policy_provenance=$PaCachePolicyProvenance;pa_cache_dispositions=$paCacheDispositions})
   Write-RunManifest -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config -Status interrupted -Software @('SIMION 2020','Python 3.11')

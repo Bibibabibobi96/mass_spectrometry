@@ -260,41 +260,93 @@ def plan_adaptive_followup(plan: dict[str, Any], observed_peak_bytes: int) -> di
     """Turn an unknown-profile bootstrap result into a measured follow-up plan."""
     if plan.get("estimation", {}).get("kind") != "unknown_resource_profile_bootstrap":
         raise ValueError("adaptive followup requires an unknown-profile bootstrap plan")
-    request = {
-        "solver": "SIMION", "field_kind": plan["field_kind"],
-        "particle_count": plan["particle_count"], "independent_particles": True,
-        "maximum_parallel_batches": plan["limits"]["maximum_parallel_batches"],
-        "reserve_available_memory_bytes": plan["limits"]["memory_reserve_bytes"],
-        "cpu_cores_per_batch": plan["limits"]["cpu_cores_per_batch"],
-        "reserve_cpu_cores": plan["limits"]["reserve_cpu_cores"],
-        "default_parallel_batches": plan["limits"]["default_parallel_batches"],
-        "memory_safety_numerator": plan["limits"]["memory_safety_numerator"],
-        "memory_safety_denominator": plan["limits"]["memory_safety_denominator"],
-        **plan["resource_identity"],
-    }
+    request = _request_from_dispatch_plan(plan)
     profile = {"resource_identity": plan["resource_identity"], "per_batch_peak_working_set_bytes": _positive_int(observed_peak_bytes, "observed_peak_bytes")}
     result = plan_simion_dispatch(request, [profile], available_memory_bytes=plan["host"]["available_memory_bytes"], logical_processors=plan["host"]["logical_processors"])
     result["estimation"]["kind"] = "observed_bootstrap_peak"
     return result
 
 
+def _request_from_dispatch_plan(plan: dict[str, Any]) -> dict[str, Any]:
+    """Project a prepared dispatch plan into the scheduler's policy request."""
+    if plan.get("role") != "simion_repository_dispatch_plan":
+        raise ValueError("prepared dispatch plan has an unsupported role")
+    identity = plan.get("resource_identity")
+    limits = plan.get("limits")
+    if not isinstance(identity, dict) or not isinstance(limits, dict):
+        raise ValueError("prepared dispatch plan lacks resource identity or limits")
+    return {
+        "solver": "SIMION", "field_kind": plan.get("field_kind"),
+        "particle_count": plan.get("particle_count"), "independent_particles": True,
+        "maximum_parallel_batches": limits.get("maximum_parallel_batches"),
+        "reserve_available_memory_bytes": limits.get("memory_reserve_bytes"),
+        "cpu_cores_per_batch": limits.get("cpu_cores_per_batch"),
+        "reserve_cpu_cores": limits.get("reserve_cpu_cores"),
+        "default_parallel_batches": limits.get("default_parallel_batches"),
+        "memory_safety_numerator": limits.get("memory_safety_numerator"),
+        "memory_safety_denominator": limits.get("memory_safety_denominator"),
+        **identity,
+    }
+
+
+def plan_runtime_dispatch(
+    prepared_plan: dict[str, Any], *, available_memory_bytes: int | None = None,
+    logical_processors: int | None = None,
+) -> dict[str, Any]:
+    """Re-plan a prepared independent-particle workload on the current host.
+
+    The prepared plan remains the authority for physics-adjacent resource identity,
+    caps and safety policy. Only observed host capacity is renewed at execution.
+    """
+    request = _request_from_dispatch_plan(prepared_plan)
+    estimation = prepared_plan.get("estimation")
+    if not isinstance(estimation, dict):
+        raise ValueError("prepared dispatch plan lacks estimation")
+    profiles: list[dict[str, Any]] = []
+    observed_peak = estimation.get("observed_peak_bytes")
+    if observed_peak is not None:
+        profiles.append({
+            "resource_identity": prepared_plan["resource_identity"],
+            "per_batch_peak_working_set_bytes": _positive_int(
+                observed_peak, "prepared observed_peak_bytes"
+            ),
+        })
+    return plan_simion_dispatch(
+        request, profiles, available_memory_bytes=available_memory_bytes,
+        logical_processors=logical_processors,
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--request", type=Path, required=True)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--request", type=Path)
+    source.add_argument("--prepared-plan", type=Path)
     parser.add_argument("--profiles", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--available-memory-bytes", type=int)
     parser.add_argument("--logical-processors", type=int)
     parser.add_argument("--observed-bootstrap-peak-bytes", type=int)
     args = parser.parse_args()
-    request = json.loads(args.request.read_text(encoding="utf-8-sig"))
-    profiles = [] if args.profiles is None else json.loads(args.profiles.read_text(encoding="utf-8-sig"))
-    if not isinstance(request, dict) or not isinstance(profiles, list):
-        parser.error("request must be an object and profiles must be an array when supplied")
-    plan = plan_simion_dispatch(
-        request, profiles, available_memory_bytes=args.available_memory_bytes,
-        logical_processors=args.logical_processors,
-    )
+    if args.prepared_plan is not None:
+        if args.profiles is not None or args.observed_bootstrap_peak_bytes is not None:
+            parser.error("prepared-plan cannot be combined with profiles or observed bootstrap peak")
+        prepared_plan = json.loads(args.prepared_plan.read_text(encoding="utf-8-sig"))
+        if not isinstance(prepared_plan, dict):
+            parser.error("prepared-plan must be an object")
+        plan = plan_runtime_dispatch(
+            prepared_plan, available_memory_bytes=args.available_memory_bytes,
+            logical_processors=args.logical_processors,
+        )
+    else:
+        request = json.loads(args.request.read_text(encoding="utf-8-sig"))
+        profiles = [] if args.profiles is None else json.loads(args.profiles.read_text(encoding="utf-8-sig"))
+        if not isinstance(request, dict) or not isinstance(profiles, list):
+            parser.error("request must be an object and profiles must be an array when supplied")
+        plan = plan_simion_dispatch(
+            request, profiles, available_memory_bytes=args.available_memory_bytes,
+            logical_processors=args.logical_processors,
+        )
     if args.observed_bootstrap_peak_bytes is not None:
         plan = plan_adaptive_followup(plan, args.observed_bootstrap_peak_bytes)
     args.output.parent.mkdir(parents=True, exist_ok=True)
