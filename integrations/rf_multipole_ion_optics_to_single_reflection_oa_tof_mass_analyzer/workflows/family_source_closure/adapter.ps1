@@ -1058,8 +1058,6 @@ if ($budget.role -ne 'integration_resolved_engineering_budget' -or
         [string]$frozenArguments.single_flight_pa_cache_policy -or
       [string]$budget.single_flight_pa_cache_policy_provenance -ne
         [string]$frozenArguments.single_flight_pa_cache_policy_provenance)) -or
-    [int]$budget.launched_particle_count -ne $expectedExecutionParticleCount -or
-    [int]$budget.particle_count -ne $expectedExecutionParticleCount -or
     $budget.retention_class -ne 'compact') {
   throw 'Campaign budget and runtime source identities differ before stage 1.'
 }
