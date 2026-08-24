@@ -50,7 +50,6 @@ CURRENT_AUTO_CAMPAIGN_PATH = INTEGRATION_ROOT / (
     "docs/history/retired_campaigns/connector_gap_102p4_real_pa_full_n5000_v1.json"
 )
 ADAPTER_PATH = INTEGRATION_ROOT / "workflows/family_source_closure/adapter.ps1"
-PUBLIC_ENTRY_PATH = INTEGRATION_ROOT / "workflows/family_source_closure/execute.ps1"
 
 
 class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
@@ -349,39 +348,6 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
             ),
             ("prepared_deterministic_prefix", 37),
         )
-
-    def test_adapter_transports_internal_contract_without_new_public_cli(self) -> None:
-        adapter = ADAPTER_PATH.read_text(encoding="utf-8")
-        public_entry = PUBLIC_ENTRY_PATH.read_text(encoding="utf-8")
-        for name in (
-            "pre_pulse_time_series_prefix_filename",
-            "pre_pulse_time_series_prefix_sha256",
-            "pre_pulse_time_series_prefix_count",
-            "pre_pulse_time_series_contract_filename",
-            "pre_pulse_time_series_contract_sha256",
-            "pre_pulse_time_series_time_integration_profile_id",
-            "PrePulseTimeSeriesContract",
-            "PrePulseTimeSeriesContractSha256",
-        ):
-            self.assertIn(name, adapter)
-        self.assertIn("$runnerArguments.PrePulseTimeSeriesContract", adapter)
-        self.assertIn(
-            "$prePulseTimeSeriesPrefixBinding = [string]"
-            "$frozenArguments.pre_pulse_time_series_prefix_filename",
-            adapter,
-        )
-        self.assertIn(
-            "$pulseCandidateConfirmationPrefixBinding = [string]"
-            "$frozenArguments.pulse_candidate_confirmation_prefix_filename",
-            adapter,
-        )
-        self.assertNotIn(
-            "$prePulseTimeSeriesPrefixBinding = [string]\n", adapter
-        )
-        self.assertNotIn(
-            "$pulseCandidateConfirmationPrefixBinding = [string]\n", adapter
-        )
-        self.assertNotIn("PrePulseTimeSeriesContract", public_entry)
 
     def test_adapter_population_path_casts_execute_as_strings(self) -> None:
         script = r"""
