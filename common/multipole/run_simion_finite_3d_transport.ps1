@@ -70,16 +70,6 @@ function Get-SimionPaGridAudit {
   }
 }
 
-function ConvertTo-TransportMetricCase {
-  param([Parameter(Mandatory)]$CaseSummary)
-  $metricCase=[ordered]@{}
-  foreach($property in $CaseSummary.PSObject.Properties){
-    if($property.Name-ne'transmission'){$metricCase[$property.Name]=$property.Value}
-  }
-  $metricCase.transmission_fraction=[double]$CaseSummary.transmission
-  return $metricCase
-}
-
 function Get-TextSha256 {
   param([Parameter(Mandatory=$true)][string]$Text)
   $bytes=[Text.Encoding]::UTF8.GetBytes($Text)
@@ -1011,9 +1001,6 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
       $primaryName='axial_acceleration_rf_on';$controlName='zero_axial_drop_rf_on'
     }
     $primary=Invoke-TransportCase $primaryName 1 1
-    $primaryHandoffTransmission=@(Import-Csv -LiteralPath (
-      Join-Path $resultDir "particle_states__$primaryName.csv"
-    )|Where-Object{$_.event-eq'handoff'-and$_.status-eq'transmitted'}).Count/[double]$primary.particles
     if($CaseSet-eq'primary_and_zero_axial_control'){
       $control=Invoke-TransportCase $controlName 1 0
       $metrics=Join-Path $resultDir $(if($exitAperturePlateStep){'exit_aperture_plate_acceleration_metrics.json'}else{'axial_acceleration_metrics.json'})
@@ -1026,60 +1013,58 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
           --resolved-contract $resolved --output $metrics
         if($LASTEXITCODE-ne 0){throw 'SIMION axial-drive metrics analysis failed.'}
       }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
-      $metricsDoc=Get-Content -LiteralPath $metrics -Raw -Encoding UTF8|ConvertFrom-Json
-      $controlHandoffTransmission=@(Import-Csv -LiteralPath (
-        Join-Path $resultDir "particle_states__$controlName.csv"
-      )|Where-Object{$_.event-eq'handoff'-and$_.status-eq'transmitted'}).Count/[double]$control.particles
-      if(
-        [Math]::Abs([double]$metricsDoc.accelerated_transmission-$primaryHandoffTransmission)-gt 1e-12 -or
-        [Math]::Abs([double]$metricsDoc.control_transmission-$controlHandoffTransmission)-gt 1e-12
-      ){throw 'SIMION paired metrics transmission differs from the raw handoff states.'}
     }elseif($CaseSet-eq'primary_and_rf_off_energy_control'){
       $controlName=$(if($exitAperturePlateStep){'exit_aperture_plate_acceleration_rf_off'}else{'axial_acceleration_rf_off'})
       $control=Invoke-TransportCase $controlName 0 1
-      $controlHandoffTransmission=@(Import-Csv -LiteralPath (
-        Join-Path $resultDir "particle_states__$controlName.csv"
-      )|Where-Object{$_.event-eq'handoff'-and$_.status-eq'transmitted'}).Count/[double]$control.particles
       $metrics=Join-Path $resultDir 'rf_off_energy_control_metrics.json'
-      [ordered]@{schema_version=1;role='multipole_simion_rf_off_energy_control_metrics';status='UNQUALIFIED';
-        project_id=$ProjectId;parent_resolved_design_sha256=$resolvedHash;model_level='L3';
-        case_set=$CaseSet;primary_case_id=$primaryName;control_case_id=$controlName;
-        cases=[ordered]@{rf_on=(ConvertTo-TransportMetricCase $primary);rf_off=(ConvertTo-TransportMetricCase $control)};
-        primary_handoff_transmission=$primaryHandoffTransmission;
-        control_handoff_transmission=$controlHandoffTransmission;
-        claim_limit='RF-off energy-conservation diagnostic only; no evidence or qualification claim.'}|
-        ConvertTo-Json -Depth 8|Set-Content -LiteralPath $metrics -Encoding UTF8
+      Push-Location $codeRoot
+      try{
+        $env:PYTHONPATH=$codeRoot
+        & $python -m common.multipole.analyze_simion_transport_metrics --metric-kind rf_off_energy_control `
+          --project-id $ProjectId --parent-resolved-design-sha256 $resolvedHash --case-set $CaseSet `
+          --primary-case-id $primaryName --primary-summary (Join-Path $resultDir "simion_summary__$primaryName.json") `
+          --primary-state (Join-Path $resultDir "particle_states__$primaryName.csv") `
+          --control-case-id $controlName --control-summary (Join-Path $resultDir "simion_summary__$controlName.json") `
+          --control-state (Join-Path $resultDir "particle_states__$controlName.csv") --output $metrics
+        if($LASTEXITCODE-ne 0){throw 'SIMION RF-off transport metrics analysis failed.'}
+      }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
     }else{
       $metrics=Join-Path $resultDir 'primary_transport_metrics.json'
-      [ordered]@{schema_version=1;role='multipole_simion_primary_transport_metrics';status='UNQUALIFIED';
-        project_id=$ProjectId;parent_resolved_design_sha256=$resolvedHash;model_level='L3';
-        case_set=$CaseSet;primary_case_id=$primaryName;
-        primary_case=(ConvertTo-TransportMetricCase $primary);
-        primary_handoff_transmission=$primaryHandoffTransmission;
-        claim_limit='Primary-case SIMION metrics only; no paired-control or evidence claim.'}|
-        ConvertTo-Json -Depth 8|Set-Content -LiteralPath $metrics -Encoding UTF8
+      Push-Location $codeRoot
+      try{
+        $env:PYTHONPATH=$codeRoot
+        & $python -m common.multipole.analyze_simion_transport_metrics --metric-kind primary `
+          --project-id $ProjectId --parent-resolved-design-sha256 $resolvedHash --case-set $CaseSet `
+          --primary-case-id $primaryName --primary-summary (Join-Path $resultDir "simion_summary__$primaryName.json") `
+          --primary-state (Join-Path $resultDir "particle_states__$primaryName.csv") --output $metrics
+        if($LASTEXITCODE-ne 0){throw 'SIMION primary transport metrics analysis failed.'}
+      }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
     }
   }else{
     $primaryName='rf_on';$controlName='zero_rf_control'
     $primary=Invoke-TransportCase $primaryName 1 0
-    $primaryMetricCase=ConvertTo-TransportMetricCase $primary
     $metrics=Join-Path $resultDir 'finite_3d_transport_metrics.json'
     if($CaseSet-in @('primary_and_zero_axial_control','primary_and_rf_off_energy_control')){
       $control=Invoke-TransportCase $controlName 0 0
-      $controlMetricCase=ConvertTo-TransportMetricCase $control
-      [ordered]@{schema_version=1;role='multipole_simion_finite_3d_transport_metrics';status='UNQUALIFIED';
-        project_id=$ProjectId;parent_resolved_design_sha256=$resolvedHash;model_level='L3';case_set=$CaseSet;
-        primary_case_id=$primaryName;control_case_id=$controlName;
-        cases=[ordered]@{rf_on=$primaryMetricCase;zero_rf_control=$controlMetricCase};
-        rf_minus_zero_transmission=($primary.transmission-$control.transmission);
-        claim_limit='Resolved-design SIMION metrics only; no evidence claim.'}|
-        ConvertTo-Json -Depth 8|Set-Content -LiteralPath $metrics -Encoding UTF8
+      Push-Location $codeRoot
+      try{
+        $env:PYTHONPATH=$codeRoot
+        & $python -m common.multipole.analyze_simion_transport_metrics --metric-kind base_paired `
+          --project-id $ProjectId --parent-resolved-design-sha256 $resolvedHash --case-set $CaseSet `
+          --primary-case-id $primaryName --primary-summary (Join-Path $resultDir "simion_summary__$primaryName.json") `
+          --control-case-id $controlName --control-summary (Join-Path $resultDir "simion_summary__$controlName.json") `
+          --output $metrics
+        if($LASTEXITCODE-ne 0){throw 'SIMION paired transport metrics analysis failed.'}
+      }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
     }else{
-      [ordered]@{schema_version=1;role='multipole_simion_primary_transport_metrics';status='UNQUALIFIED';
-        project_id=$ProjectId;parent_resolved_design_sha256=$resolvedHash;model_level='L3';case_set=$CaseSet;
-        primary_case_id=$primaryName;primary_case=$primaryMetricCase;
-        claim_limit='Primary-case SIMION metrics only; no zero-RF control or evidence claim.'}|
-        ConvertTo-Json -Depth 8|Set-Content -LiteralPath $metrics -Encoding UTF8
+      Push-Location $codeRoot
+      try{
+        $env:PYTHONPATH=$codeRoot
+        & $python -m common.multipole.analyze_simion_transport_metrics --metric-kind base_primary `
+          --project-id $ProjectId --parent-resolved-design-sha256 $resolvedHash --case-set $CaseSet `
+          --primary-case-id $primaryName --primary-summary (Join-Path $resultDir "simion_summary__$primaryName.json") --output $metrics
+        if($LASTEXITCODE-ne 0){throw 'SIMION primary transport metrics analysis failed.'}
+      }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
     }
   }
   $exitStatePlot=Join-Path $resultDir 'exit_state_diagnostics.png'

@@ -263,7 +263,7 @@ class SimionRunnerContractTests(unittest.TestCase):
     def test_pa_grid_budget_accepts_below_cap_and_rejects_over_cap(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
         start = source.index("function Get-SimionPaGridAudit")
-        end = source.index("\nfunction ConvertTo-TransportMetricCase", start)
+        end = source.index("\nfunction Get-TextSha256", start)
         audit_function = source[start:end]
         with tempfile.TemporaryDirectory() as directory:
             gem = Path(directory) / "anisotropic.gem"
@@ -334,12 +334,13 @@ class SimionRunnerContractTests(unittest.TestCase):
 
     def test_raw_and_paired_transmission_cannot_diverge(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
-        self.assertIn(
-            "SIMION paired metrics transmission differs from the raw handoff states.",
-            source,
+        metrics = (RUNNER.parent / "analyze_simion_transport_metrics.py").read_text(
+            encoding="utf-8"
         )
-        self.assertIn("$primaryHandoffTransmission", source)
-        self.assertIn("$controlHandoffTransmission", source)
+        self.assertIn("common.multipole.analyze_simion_transport_metrics", source)
+        self.assertIn("def _handoff_transmission", metrics)
+        self.assertIn('row["event"] == "handoff"', metrics)
+        self.assertNotIn("Import-Csv", source)
 
     def test_waveform_and_all_drive_scalars_come_from_resolved_design(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
@@ -389,11 +390,8 @@ class SimionRunnerContractTests(unittest.TestCase):
         self.assertIn("$qualification='UNQUALIFIED'", source)
         self.assertIn("evaluate_transport_evidence", source)
         self.assertIn("analyze_simion_axial_acceleration", source)
-        self.assertIn("ConvertTo-TransportMetricCase $primary", source)
-        self.assertIn(
-            "$metricCase.transmission_fraction=[double]$CaseSummary.transmission",
-            source,
-        )
+        self.assertIn("common.multipole.analyze_simion_transport_metrics", source)
+        self.assertNotIn("function ConvertTo-TransportMetricCase", source)
         self.assertNotIn("MinimumRfTransmission", source)
         self.assertNotIn("MinimumImprovementOverZeroRf", source)
 
@@ -590,7 +588,7 @@ class SimionRunnerContractTests(unittest.TestCase):
         self.assertIn("if($CaseSet-eq'primary_and_zero_axial_control')", runner)
         self.assertIn("elseif($CaseSet-eq'primary_and_rf_off_energy_control')", runner)
         self.assertIn("$control=Invoke-TransportCase $controlName 0 1", runner)
-        self.assertIn("role='multipole_simion_rf_off_energy_control_metrics'", runner)
+        self.assertIn("--metric-kind rf_off_energy_control", runner)
         self.assertIn("case_set=$CaseSet", runner)
 
     def test_parallel_batching_is_single_wave_and_revalidates_the_merged_state(self) -> None:
@@ -612,7 +610,7 @@ class SimionRunnerContractTests(unittest.TestCase):
             "Primary-only SIMION runs cannot consume a paired-case evidence contract.",
             runner,
         )
-        self.assertIn("role='multipole_simion_primary_transport_metrics'", runner)
+        self.assertIn("--metric-kind primary", runner)
         self.assertIn(
             "control_transmission=$(if($null-ne$control){$control.transmission}else{$null})",
             runner,
