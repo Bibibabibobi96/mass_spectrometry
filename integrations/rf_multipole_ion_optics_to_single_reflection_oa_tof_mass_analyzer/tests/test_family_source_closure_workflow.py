@@ -1287,6 +1287,25 @@ $result = Get-PulseTimingOrchestration `
         with self.assertRaises(ContractError):
             validate_schema(active, ACTIVE_CAMPAIGN_SCHEMA)
 
+    def test_active_v6_rejects_retired_fixed_batch_controls(self) -> None:
+        active = expand_flat_experiment_authoring(load(COMPACT_GAP_FIELD_CAMPAIGN))
+        row = active["experiments"][0]
+        for mutation in (
+            lambda: row.__setitem__("single_flight_batch_count", 2),
+            lambda: row["single_flight_batch_memory_policy"].__setitem__(
+                "default_batch_count", 2
+            ),
+            lambda: row["single_flight_batch_memory_policy"].__setitem__(
+                "maximum_batch_count", 2
+            ),
+        ):
+            with self.subTest(mutation=mutation):
+                candidate = json.loads(json.dumps(active))
+                row = candidate["experiments"][0]
+                mutation()
+                with self.assertRaises(ContractError):
+                    validate_schema(candidate, ACTIVE_CAMPAIGN_SCHEMA)
+
     def test_registry_is_the_only_active_campaign_authority(self) -> None:
         campaigns = []
         for path in INTEGRATION_ROOT.rglob("*.json"):

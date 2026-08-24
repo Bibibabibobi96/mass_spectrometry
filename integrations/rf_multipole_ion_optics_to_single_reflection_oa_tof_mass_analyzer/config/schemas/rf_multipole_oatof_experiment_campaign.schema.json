@@ -9,6 +9,31 @@
       "properties": {
         "schema_version": {"const": 6}
       }
+    },
+    {
+      "properties": {
+        "experiments": {
+          "type": "array",
+          "items": {
+            "not": {
+              "anyOf": [
+                {"required": ["single_flight_batch_count"]},
+                {
+                  "properties": {
+                    "single_flight_batch_memory_policy": {
+                      "anyOf": [
+                        {"required": ["default_batch_count"]},
+                        {"required": ["maximum_batch_count"]}
+                      ]
+                    }
+                  },
+                  "required": ["single_flight_batch_memory_policy"]
+                }
+              ]
+            }
+          }
+        }
+      }
     }
   ]
 }
