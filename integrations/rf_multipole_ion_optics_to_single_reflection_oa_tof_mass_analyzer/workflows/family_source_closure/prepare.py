@@ -2332,21 +2332,15 @@ def _load_source_evidence(
     }
 
 
-def prepare_family_source_closure(
+def _select_preparation_experiment(
     *,
-    repo_root: Path,
-    profile_registry_path: Path,
-    adapter_registry_path: Path,
+    root: Path,
     campaign_path: Path,
     experiment_id: str,
-    resolved_output: Path,
-    plan_output: Path,
-    pulse_timing_transition_path: Path | None = None,
-    materialize_pulse_timing_stage: bool = False,
-    exploration: bool = False,
-) -> tuple[Path, Path]:
-    root = repo_root.resolve()
-    workspace = root.parent
+    exploration: bool,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Load one repository-managed campaign and select its unique experiment."""
+
     campaign_path = campaign_path.resolve()
     if not campaign_path.is_relative_to(root):
         raise ContractError("integration campaign must be repository-managed")
@@ -2389,7 +2383,10 @@ def prepare_family_source_closure(
     sequences = [item["sequence"] for item in campaign["experiments"]]
     if len(identities) != len(set(identities)) or len(sequences) != len(set(sequences)):
         raise ContractError("campaign experiment IDs and sequences must be unique")
-    matches = [item for item in campaign["experiments"] if item["experiment_id"] == experiment_id]
+    matches = [
+        item for item in campaign["experiments"]
+        if item["experiment_id"] == experiment_id
+    ]
     if len(matches) != 1:
         raise ContractError("campaign experiment must resolve exactly once")
     experiment = matches[0]
@@ -2400,6 +2397,30 @@ def prepare_family_source_closure(
     validate_active_post_pulse_restart_working_point(
         experiment,
         require_theory_working_point=not exploration,
+    )
+    return campaign, experiment
+
+
+def prepare_family_source_closure(
+    *,
+    repo_root: Path,
+    profile_registry_path: Path,
+    adapter_registry_path: Path,
+    campaign_path: Path,
+    experiment_id: str,
+    resolved_output: Path,
+    plan_output: Path,
+    pulse_timing_transition_path: Path | None = None,
+    materialize_pulse_timing_stage: bool = False,
+    exploration: bool = False,
+) -> tuple[Path, Path]:
+    root = repo_root.resolve()
+    workspace = root.parent
+    campaign, experiment = _select_preparation_experiment(
+        root=root,
+        campaign_path=campaign_path,
+        experiment_id=experiment_id,
+        exploration=exploration,
     )
     source = experiment["source"]
     execution_strategy = experiment.get("execution_strategy", "staged_three_stage")
