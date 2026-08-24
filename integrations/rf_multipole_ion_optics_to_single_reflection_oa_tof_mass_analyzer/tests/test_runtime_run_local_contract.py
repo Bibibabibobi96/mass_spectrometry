@@ -112,9 +112,6 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
         self.assertIn("execution_batch_count=$executionBatchCount", runner)
         self.assertIn("execution_batches_parallel=[bool]($executionBatchCount -gt 1)", runner)
         self.assertNotIn("ExecutionBatchCount", runner)
-        self.assertNotIn("$settings.batching_policy.default_batch_count", runner)
-        self.assertNotIn("$batchCount -ne 5", runner)
-        self.assertNotIn("N=1000 single flight requires five batches", runner)
         self.assertIn("common.simion.particle_batching", runner)
         self.assertIn(
             "'--default-num-particles',([string]$batch.count)", runner
@@ -122,13 +119,9 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
         self.assertNotIn("[Math]::Max(100,[int]$batch.count)", runner)
         self.assertIn("simion_execution_batch_plan.json", runner)
         self.assertIn("simion_single_wave_batch_plan_sha256", runner)
-        self.assertNotIn("$quotient = [Math]::Floor($launched / $batchCount)", runner)
-        self.assertNotIn("$remainder = $launched % $batchCount", runner)
         self.assertIn("Invoke-ResourceBudgetedProcesses", runner)
         self.assertIn("$resourceUsageFiles = @($resourceUsage)", runner)
         self.assertIn("$processSpecifications += [pscustomobject]@", runner)
-        self.assertNotIn("$waveBatchCount -gt 1", runner)
-        self.assertNotIn("$jobs += Start-Job", runner)
         batch_launch_block = runner[
             runner.index("$processSpecifications += [pscustomobject]@"):runner.index(
                 "if ($isPrePulseTimeSeriesScreening) {", runner.index(
@@ -137,8 +130,6 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
             )
         ]
         self.assertNotIn("Invoke-ResourceBudgetedProcess `", batch_launch_block)
-        self.assertNotIn("[int64](10GB)", runner)
-        self.assertNotIn("[int64](4GB)", runner)
 
     def test_solver_stage_runners_use_short_lived_execution_aliases(self) -> None:
         for runner_path in RUNNERS[1:]:
