@@ -426,6 +426,7 @@ try {
   if ($TimeIntegrationProfileId) { $executionProfileArguments += @('--time-integration-profile-id',$TimeIntegrationProfileId) }
   if ($MaximumTimeOfFlightUs -gt 0) { $executionProfileArguments += @('--maximum-time-of-flight-us',([string]$MaximumTimeOfFlightUs)) }
   if ($SpatialWindowProfileId) { $executionProfileArguments += @('--spatial-window-profile-id',$SpatialWindowProfileId) }
+  if (-not $isPrePulseTimeSeriesScreening) { $executionProfileArguments += '--include-source-region-diagnostic' }
   Invoke-SingleFlightPython -Arguments $executionProfileArguments `
     -Failure 'Single-flight numerical configuration is invalid.'
   $executionProfile = Get-Content -LiteralPath $executionProfilePath -Raw -Encoding UTF8 |
@@ -572,20 +573,8 @@ try {
   if ($ExecutionBatchCount -gt $maxParallelBatches) {
     throw 'Single-flight execution must fit in one dispatch wave; batch count exceeds the selected profile parallel capacity.'
   }
-  $sourceRegionDiagnosticProfileId = if ($isPrePulseTimeSeriesScreening -eq $false) {
-    [string]$settings.default_source_region_diagnostic_profile_id
-  } else { '' }
-  $sourceRegionDiagnosticProfiles = @(
-    if (-not [string]::IsNullOrWhiteSpace($sourceRegionDiagnosticProfileId)) {
-      $settings.source_region_diagnostic_profiles | Where-Object {
-        [string]$_.profile_id -eq $sourceRegionDiagnosticProfileId
-      }
-    }
-  )
-  if (-not [string]::IsNullOrWhiteSpace($sourceRegionDiagnosticProfileId) -and
-      $sourceRegionDiagnosticProfiles.Count -ne 1) {
-    throw 'Default source-region diagnostic profile is invalid.'
-  }
+  $sourceRegionDiagnosticProfileId = [string]$executionProfile.source_region_diagnostic_profile_id
+  $sourceRegionDiagnosticProfiles = @($sourceRegionDiagnosticProfileId | Where-Object { $_ })
   if ($ResolutionQualification -and
       $BootstrapResamples -ne $requiredQualificationBootstrapResamples) {
     throw 'Resolution qualification bootstrap resamples differ from the frozen policy.'
@@ -1921,7 +1910,7 @@ try {
     '--resolved-population-contract',$populationContractFrozen,
     '--resolved-population-contract-sha256',$ResolvedPopulationContractSha256,
     '--geometry',$oatofGeometry,
-    '--clock-basis',([string]$settings.clock_basis),
+    '--clock-basis',([string]$executionProfile.clock_basis),
     '--initial-global-state',$globalSource,
     '--particle-row-map',$particleRowMap,
     '--initial-global-state-sha256',((Get-FileHash -LiteralPath $globalSource -Algorithm SHA256).Hash),

@@ -60,6 +60,7 @@ def resolve_execution_profile(
     time_integration_profile_id: str | None = None,
     maximum_time_of_flight_us: float | None = None,
     spatial_window_profile_id: str | None = None,
+    include_source_region_diagnostic: bool = False,
 ) -> dict[str, Any]:
     """Return one fully resolved profile or fail closed on invalid numerics."""
 
@@ -151,6 +152,15 @@ def resolve_execution_profile(
                 configuration, "spatial_window_profiles", spatial_window_profile_id
             )
         )
+        source_region_diagnostic = (
+            unique_named_profile(
+                configuration,
+                "source_region_diagnostic_profiles",
+                configuration["default_source_region_diagnostic_profile_id"],
+            )
+            if include_source_region_diagnostic
+            else None
+        )
     except (KeyError, TypeError, ValueError) as exc:
         if str(exc) == ERROR:
             raise
@@ -175,6 +185,11 @@ def resolve_execution_profile(
         "spatial_window_profile_id": (
             spatial_window["profile_id"] if spatial_window is not None else None
         ),
+        "source_region_diagnostic_profile_id": (
+            source_region_diagnostic["profile_id"]
+            if source_region_diagnostic is not None
+            else None
+        ),
         "parallel_batch_memory_reservation_bytes": parallel_batch_memory_reservation_bytes,
         "required_qualification_bootstrap_resamples": required_bootstrap_resample_count,
         "clock_basis": configuration["clock_basis"],
@@ -195,6 +210,7 @@ def main() -> None:
     parser.add_argument("--time-integration-profile-id")
     parser.add_argument("--maximum-time-of-flight-us", type=float)
     parser.add_argument("--spatial-window-profile-id")
+    parser.add_argument("--include-source-region-diagnostic", action="store_true")
     args = parser.parse_args()
     args.output.write_text(
         json.dumps(
@@ -206,6 +222,7 @@ def main() -> None:
                 time_integration_profile_id=args.time_integration_profile_id,
                 maximum_time_of_flight_us=args.maximum_time_of_flight_us,
                 spatial_window_profile_id=args.spatial_window_profile_id,
+                include_source_region_diagnostic=args.include_source_region_diagnostic,
             ),
             indent=2,
             sort_keys=True,

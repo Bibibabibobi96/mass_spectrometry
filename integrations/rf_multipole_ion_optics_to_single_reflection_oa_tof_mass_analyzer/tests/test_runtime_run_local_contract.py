@@ -919,11 +919,21 @@ foreach ($case in $cases) {{
             profile_id,
             {item["profile_id"] for item in settings["spatial_window_profiles"]},
         )
+        self.assertEqual(
+            resolve_execution_profile(
+                settings, include_source_region_diagnostic=True
+            )["source_region_diagnostic_profile_id"],
+            profile_id,
+        )
+        self.assertIsNone(
+            resolve_execution_profile(settings)["source_region_diagnostic_profile_id"]
+        )
         runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
-        self.assertIn("default_source_region_diagnostic_profile_id", runner)
-        self.assertIn("source_region_diagnostic_profiles", runner)
+        self.assertIn("--include-source-region-diagnostic", runner)
+        self.assertNotIn("default_source_region_diagnostic_profile_id", runner)
+        self.assertNotIn("source_region_diagnostic_profiles", runner)
         self.assertIn("--source-region-diagnostic-profile-id", runner)
-        self.assertIn("$isPrePulseTimeSeriesScreening -eq $false", runner)
+        self.assertIn("-not $isPrePulseTimeSeriesScreening", runner)
         self.assertNotIn("$SamplingMode", runner)
         self.assertNotIn("layout_resolved_axial_provisional_xy2_v1", runner)
 
