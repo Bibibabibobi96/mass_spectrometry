@@ -116,6 +116,72 @@ class ChangedGateContractTests(unittest.TestCase):
             completed.stdout,
         )
 
+    def test_integration_test_module_change_runs_only_that_module(self) -> None:
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("PowerShell Core is unavailable")
+        changed_module = (
+            "integrations/"
+            "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/"
+            "tests/test_runtime_run_local_contract.py"
+        )
+        completed = subprocess.run(
+            [
+                pwsh,
+                "-NoProfile",
+                "-File",
+                str(CHANGED_GATE),
+                "-PythonExe",
+                sys.executable,
+                "-ChangedPath",
+                changed_module,
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=90,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn(
+            "GATE_STAGE=RUN NAME=rf_multipole_to_single_reflection_"
+            "oatof_integration REASON=integration_test_modules_changed",
+            completed.stdout,
+        )
+        self.assertNotIn("INTEGRATION_GATE=PASS", completed.stdout)
+
+    def test_integration_test_module_with_non_test_change_keeps_full_gate(self) -> None:
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("PowerShell Core is unavailable")
+        integration_root = (
+            "integrations/"
+            "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/"
+        )
+        completed = subprocess.run(
+            [
+                pwsh,
+                "-NoProfile",
+                "-File",
+                str(CHANGED_GATE),
+                "-PythonExe",
+                sys.executable,
+                "-ChangedPath",
+                (
+                    integration_root + "tests/test_runtime_run_local_contract.py"
+                    + ","
+                    + integration_root + "runtime/run_single_flight.ps1"
+                ),
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=90,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("INTEGRATION_GATE=PASS", completed.stdout)
+
     def test_deleted_python_paths_select_scope_but_are_not_passed_to_ruff(self) -> None:
         self.assertIn("$changedPython =", self.source)
         self.assertIn("$existingPythonFiles =", self.source)

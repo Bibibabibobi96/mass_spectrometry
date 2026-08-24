@@ -147,6 +147,20 @@ $hasDocumentationChange = $FullScope -or (Test-AnyPath {
 $isDocumentationOnly = -not $FullScope -and $changedPaths.Count -gt 0 -and -not (Test-AnyPath {
     [IO.Path]::GetExtension($_).ToLowerInvariant() -ne '.md'
 })
+$integrationTestModulePattern = (
+    '^integrations/rf_multipole_ion_optics_to_single_reflection_' +
+    'oa_tof_mass_analyzer/tests/test_[^/]+\.py$'
+)
+$changedIntegrationTestModules = @(
+    $changedPaths | Where-Object { $_ -match $integrationTestModulePattern }
+)
+$integrationTestsOnly = -not $FullScope -and $changedPaths.Count -gt 0 -and
+    $changedIntegrationTestModules.Count -eq $changedPaths.Count
+$existingIntegrationTestModules = @(
+    $changedIntegrationTestModules |
+        ForEach-Object { Join-Path $repoRoot $_ } |
+        Where-Object { Test-Path -LiteralPath $_ -PathType Leaf }
+)
 
 $stageItems = [ordered]@{}
 function Add-ChangedStageItem {
@@ -233,10 +247,20 @@ foreach ($route in $routes) {
     }
     if ($reason) {
         $command = $route.command
-        Add-ChangedStageItem $name $true $reason `
-            ([string]$route.dependency_profile) {
-            & $routeCommandInvoker -Command $command
-        }.GetNewClosure()
+        if ($name -eq 'rf_multipole_to_single_reflection_oatof_integration' -and
+            $integrationTestsOnly -and
+            $existingIntegrationTestModules.Count -eq $changedIntegrationTestModules.Count) {
+            $testModules = @($existingIntegrationTestModules)
+            Add-ChangedStageItem $name $true 'integration_test_modules_changed' `
+                ([string]$route.dependency_profile) {
+                & $PythonExe -m unittest @testModules
+            }.GetNewClosure()
+        } else {
+            Add-ChangedStageItem $name $true $reason `
+                ([string]$route.dependency_profile) {
+                & $routeCommandInvoker -Command $command
+            }.GetNewClosure()
+        }
     } else {
         Add-ChangedStageItem $name $false 'no_route_match' `
             ([string]$route.dependency_profile)
