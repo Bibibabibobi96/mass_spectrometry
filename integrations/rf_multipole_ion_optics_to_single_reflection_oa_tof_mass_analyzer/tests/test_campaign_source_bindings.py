@@ -157,13 +157,22 @@ class CampaignSourceBindingTests(unittest.TestCase):
             self.assertTrue(is_fresh(repo, campaign))
             self.assertFalse(write_campaign(repo, campaign))
 
-    def test_execution_policy_is_excluded_from_campaign_semantic_identity(self) -> None:
+    def test_execution_controls_are_excluded_from_campaign_semantic_identity(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             repo, campaign = self._fixture(Path(directory))
             document = json.loads(campaign.read_text(encoding="utf-8"))
             baseline = expanded_campaign_semantic_sha256(document)
             document["execution_policy"] = {
                 "path": "config/legacy-policy.json", "sha256": "A" * 64,
+            }
+            document["experiments"][0]["single_flight_batch_count"] = 8
+            document["experiments"][0]["single_flight_batch_memory_policy"] = {
+                "policy_id": "auto_memory_bound_from_observed_profile_v2",
+                "reserve_available_memory_bytes": 1,
+                "memory_safety_numerator": 105,
+                "memory_safety_denominator": 100,
+                "cpu_cores_per_batch": 2,
+                "reserve_cpu_cores": 1,
             }
             self.assertEqual(expanded_campaign_semantic_sha256(document), baseline)
 

@@ -89,12 +89,18 @@ def expanded_campaign_semantic_sha256(campaign: dict[str, Any]) -> str:
     only when this complete semantic projection is unchanged; the projection
     includes qualification and all materialized experiment fields.  Execution
     policy is a runtime-binding concern: it is frozen separately in each run
-    receipt and must not invalidate campaign scientific identity.
+    receipt and must not invalidate campaign scientific identity.  Likewise,
+    single-flight batch and scheduler controls affect process dispatch only;
+    they cannot change the resolved particle states, fields, or qualification
+    calculation.
     """
 
     semantic = expand_flat_experiment_authoring(copy.deepcopy(campaign))
     semantic.pop("published_authoring_identity", None)
     semantic.pop("execution_policy", None)
+    for experiment in semantic["experiments"]:
+        experiment.pop("single_flight_batch_count", None)
+        experiment.pop("single_flight_batch_memory_policy", None)
     return _canonical_sha256(semantic)
 
 
