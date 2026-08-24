@@ -19,6 +19,9 @@ LEGACY_CAMPAIGN = CAMPAIGN.with_name(
     "zero_match_long_all_ideal_theory_order_stage_campaign.json"
 )
 SCHEMA = CAMPAIGN.parents[1] / "schemas" / "rf_oatof_theory_order_stage_campaign.schema.json"
+REPORT_SCHEMA = (
+    CAMPAIGN.parents[1] / "schemas" / "rf_oatof_theory_order_stage_report.schema.json"
+)
 
 
 class TheoryOrderStageTests(unittest.TestCase):
@@ -221,7 +224,7 @@ class TheoryOrderStageTests(unittest.TestCase):
         changed = copy.deepcopy(report)
         changed["declared_provisional_assessment"]["allowed_claim"] = "THIRD_ORDER_ONLY"
         with self.assertRaises(Exception):
-            validate_schema(changed, "rf_oatof_theory_order_stage_report.schema.json")
+            validate_schema(changed, REPORT_SCHEMA)
 
 
 if __name__ == "__main__":

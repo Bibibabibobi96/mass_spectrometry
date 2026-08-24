@@ -576,7 +576,9 @@ def compute_theory_order_report(
         },
         "claim_limit": campaign["claim_limit"],
     }
-    validate_schema(report, "rf_oatof_theory_order_stage_report.schema.json")
+    validate_schema(
+        report, SCHEMA_DIR / "rf_oatof_theory_order_stage_report.schema.json"
+    )
     return report
 
 

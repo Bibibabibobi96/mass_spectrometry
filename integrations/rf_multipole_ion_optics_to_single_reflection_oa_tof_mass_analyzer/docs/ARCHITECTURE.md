@@ -28,6 +28,9 @@ plan；其 batch 决策必须与 adapter 接收的批次数一致，但它不是
 粒子身份和明确的字段投影决定；不能仅因无因果的 provenance 或 consumer numerics 差异拒绝合法 checkpoint。
 已支持的 manifest-bound restart 会记录 producer/consumer dt，而不是要求两者相同。
 
+仅服务于本 integration 的 theory-order campaign/report Schema 与其分析器同置于 `config/schemas/`；
+它们表达该项目的临时理论审计结构，不属于跨项目公共合同。
+
 ## 执行路径
 
 ```text
