@@ -1896,6 +1896,25 @@ $result = Get-PulseTimingOrchestration `
                     arguments,
                 )
                 frozen = dict(argument.split("=", 1) for argument in arguments)
+                execution_plan = load(output / frozen["resolved_execution_plan_filename"])
+                self.assertEqual(execution_plan["role"], "rf_oatof_resolved_execution_plan")
+                self.assertEqual(execution_plan["experiment_id"], row["experiment_id"])
+                self.assertEqual(
+                    execution_plan["arguments"],
+                    {
+                        key: value for key, value in frozen.items()
+                        if key not in {
+                            "resolved_execution_plan_filename",
+                            "resolved_execution_plan_sha256",
+                        }
+                    },
+                )
+                self.assertEqual(
+                    hashlib.sha256(
+                        (output / frozen["resolved_execution_plan_filename"]).read_bytes()
+                    ).hexdigest().upper(),
+                    frozen["resolved_execution_plan_sha256"],
+                )
                 runtime_binding = REPO_ROOT / frozen["runtime_binding_path"]
                 resolved_source = output / frozen[
                     "resolved_source_contract_filename"
