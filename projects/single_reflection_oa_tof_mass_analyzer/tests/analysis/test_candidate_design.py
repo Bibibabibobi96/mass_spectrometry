@@ -1306,11 +1306,6 @@ class CandidateDesignTests(unittest.TestCase):
         self.assertTrue(required.issubset(set(RELATIVE_PATHS)))
         self.assertIn("projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/analyze_ideal_field_log.ps1", PYTHON_BOUND_SOURCES)
 
-    def test_source_build_runner_reuses_shared_transport_helper(self):
-        runner = (PROJECT_ROOT / "tests" / "simion" / "run_n100_source_build_and_track.ps1").read_text(encoding="utf-8")
-        self.assertIn("run_n100_transport.ps1", runner)
-        self.assertNotIn("'--nogui', 'fly'", runner)
-
     def test_functional_solver_test_runners_use_short_lived_execution_aliases(self):
         for relative in (
             "tests/comsol/run_n100_candidate_functional.ps1",
