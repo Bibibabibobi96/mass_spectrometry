@@ -144,6 +144,8 @@ def plan_simion_dispatch(
     reserve = _nonnegative_int(request.get("reserve_available_memory_bytes", 0), "reserve_available_memory_bytes")
     cpu_per_batch = _positive_int(request.get("cpu_cores_per_batch", 1), "cpu_cores_per_batch")
     cpu_reserve = _nonnegative_int(request.get("reserve_cpu_cores", 0), "reserve_cpu_cores")
+    safety_numerator = _positive_int(request.get("memory_safety_numerator", 115), "memory_safety_numerator")
+    safety_denominator = _positive_int(request.get("memory_safety_denominator", 100), "memory_safety_denominator")
     processor_count = logical_processors if logical_processors is not None else os.cpu_count()
     if processor_count is None:
         processor_count = 1
@@ -156,11 +158,19 @@ def plan_simion_dispatch(
     available = available_physical_memory_bytes() if available_memory_bytes is None else available_memory_bytes
     fallback = request.get("unknown_per_batch_reservation_bytes")
     if profile is None:
-        fallback = _positive_int(fallback, "unknown_per_batch_reservation_bytes")
         if available is not None:
             available = _nonnegative_int(available, "available_memory_bytes")
-            if available - reserve < fallback:
-                raise ValueError("available memory cannot support one unknown SIMION bootstrap batch after reserve")
+        if fallback is not None:
+            fallback = _positive_int(fallback, "unknown_per_batch_reservation_bytes")
+        if available is not None and (
+            available - reserve < (fallback if fallback is not None else 1)
+        ):
+            reason = (
+                "available memory cannot support one unknown SIMION bootstrap batch after reserve"
+                if fallback is not None
+                else "available memory does not satisfy the SIMION bootstrap reserve"
+            )
+            raise ValueError(reason)
         return {
             "schema_version": 1,
             "role": "simion_repository_dispatch_plan",
@@ -171,6 +181,11 @@ def plan_simion_dispatch(
             "estimation": {
                 "kind": "unknown_resource_profile_bootstrap",
                 "bootstrap_reservation_bytes": fallback,
+                "memory_selection_reason": (
+                    "explicit_bootstrap_reservation"
+                    if fallback is not None
+                    else "no_unverified_memory_estimate"
+                ),
                 "requires_observed_peak_before_followup": True,
             },
             "host": {"available_memory_bytes": available, "logical_processors": processor_count},
@@ -180,6 +195,9 @@ def plan_simion_dispatch(
                 "cpu_capacity": cpu_capacity,
                 "cpu_cores_per_batch": cpu_per_batch,
                 "reserve_cpu_cores": cpu_reserve,
+                "default_parallel_batches": default_batches,
+                "memory_safety_numerator": safety_numerator,
+                "memory_safety_denominator": safety_denominator,
             },
             "waves": [{
                 "index": 1, "kind": "bootstrap", "batch_count": 1,
@@ -188,8 +206,6 @@ def plan_simion_dispatch(
             }],
         }
     peak = _positive_int(profile["per_batch_peak_working_set_bytes"], "profile peak")
-    safety_numerator = _positive_int(request.get("memory_safety_numerator", 115), "memory_safety_numerator")
-    safety_denominator = _positive_int(request.get("memory_safety_denominator", 100), "memory_safety_denominator")
     reserved_peak = (peak * safety_numerator + safety_denominator - 1) // safety_denominator
     if available is None:
         memory_capacity = default_batches
@@ -220,6 +236,9 @@ def plan_simion_dispatch(
             "cpu_capacity": cpu_capacity,
             "cpu_cores_per_batch": cpu_per_batch,
             "reserve_cpu_cores": cpu_reserve,
+            "default_parallel_batches": default_batches,
+            "memory_safety_numerator": safety_numerator,
+            "memory_safety_denominator": safety_denominator,
         },
         "waves": [{
             "index": 1, "kind": "scheduled", "batch_count": parallelism,
@@ -240,6 +259,9 @@ def plan_adaptive_followup(plan: dict[str, Any], observed_peak_bytes: int) -> di
         "reserve_available_memory_bytes": plan["limits"]["memory_reserve_bytes"],
         "cpu_cores_per_batch": plan["limits"]["cpu_cores_per_batch"],
         "reserve_cpu_cores": plan["limits"]["reserve_cpu_cores"],
+        "default_parallel_batches": plan["limits"]["default_parallel_batches"],
+        "memory_safety_numerator": plan["limits"]["memory_safety_numerator"],
+        "memory_safety_denominator": plan["limits"]["memory_safety_denominator"],
         **plan["resource_identity"],
     }
     profile = {"resource_identity": plan["resource_identity"], "per_batch_peak_working_set_bytes": _positive_int(observed_peak_bytes, "observed_peak_bytes")}

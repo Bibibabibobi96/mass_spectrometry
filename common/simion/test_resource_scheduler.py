@@ -82,6 +82,26 @@ class ResourceSchedulerTests(unittest.TestCase):
         self.assertEqual(followup["waves"][0]["batch_count"], 2)
         self.assertEqual(followup["limits"]["cpu_cores_per_batch"], 2)
 
+    def test_unknown_bootstrap_can_avoid_an_unverified_memory_estimate(self) -> None:
+        request = {
+            "solver": "SIMION", "field_kind": "rf", "rf_steps_per_period": 40,
+            "particle_count": 1000, "independent_particles": True,
+            "maximum_parallel_batches": 8, "reserve_available_memory_bytes": 10,
+            "cpu_cores_per_batch": 2, "reserve_cpu_cores": 2,
+            "memory_safety_numerator": 105, "memory_safety_denominator": 100,
+        }
+        bootstrap = plan_simion_dispatch(
+            request, [], available_memory_bytes=100, logical_processors=10
+        )
+        self.assertIsNone(bootstrap["estimation"]["bootstrap_reservation_bytes"])
+        self.assertEqual(
+            bootstrap["estimation"]["memory_selection_reason"],
+            "no_unverified_memory_estimate",
+        )
+        followup = plan_adaptive_followup(bootstrap, 20)
+        self.assertEqual(followup["estimation"]["reserved_peak_bytes"], 21)
+        self.assertEqual(followup["waves"][0]["batch_count"], 4)
+
     def test_parallel_request_requires_independent_particles(self) -> None:
         with self.assertRaisesRegex(ValueError, "independent_particles"):
             plan_simion_dispatch({
