@@ -34,9 +34,7 @@
       "single_flight_batch_memory_policy": {
         "reserve_available_memory_bytes": 107374182,
         "memory_safety_numerator": 105,
-        "memory_safety_denominator": 100,
-        "cpu_cores_per_batch": 2,
-        "reserve_cpu_cores": 2
+        "memory_safety_denominator": 100
       },
       "source": {
         "authority_scope": "source_population",
