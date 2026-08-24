@@ -121,7 +121,11 @@ def check_python() -> tuple[list[str], list[str]]:
                     shell = next((item.value for item in node.keywords if item.arg == "shell"), None)
                     if isinstance(shell, ast.Constant) and shell.value is True:
                         errors.append(f"{location(path, node.lineno)} subprocess uses shell=True")
-                    missing = {"cwd", "timeout"} - keywords
+                    # Popen has no timeout argument.  Its callers must enforce
+                    # timeout in their own observation/wait loop; requiring an
+                    # impossible keyword here rejects the only correct API.
+                    required = {"cwd"} if node.func.attr == "Popen" else {"cwd", "timeout"}
+                    missing = required - keywords
                     if missing:
                         errors.append(
                             f"{location(path, node.lineno)} subprocess omits {', '.join(sorted(missing))}"

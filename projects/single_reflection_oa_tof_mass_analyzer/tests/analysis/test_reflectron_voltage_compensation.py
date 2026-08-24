@@ -3,11 +3,13 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.optimize_reflectron_ring_voltages import (
     render_lua_profile,
 )
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.reflectron_voltage_compensation.run_compensation import (
+    _plan_batches_from_observation,
     _split_ions,
 )
 
@@ -42,6 +44,25 @@ class ReflectronVoltageCompensationTests(unittest.TestCase):
             for batch in batches:
                 combined.extend(batch["ion"].read_text().splitlines())
             self.assertEqual(combined, source.read_text().splitlines())
+
+    def test_observed_bootstrap_peak_selects_the_repository_batch_count(self) -> None:
+        with patch(
+            "common.simion.resource_scheduler.available_physical_memory_bytes",
+            return_value=100,
+        ):
+            plan = _plan_batches_from_observation(1000, 8, 20)
+        self.assertEqual(plan["estimation"]["kind"], "observed_bootstrap_peak")
+        self.assertEqual(plan["waves"][0]["batch_count"], 4)
+        self.assertEqual(sum(batch["count"] for batch in plan["waves"][0]["batches"]), 1000)
+
+    def test_unobservable_peak_stays_on_the_conservative_bootstrap_plan(self) -> None:
+        with patch(
+            "common.simion.resource_scheduler.available_physical_memory_bytes",
+            return_value=100,
+        ):
+            plan = _plan_batches_from_observation(1000, 8, None)
+        self.assertEqual(plan["waves"][0]["kind"], "bootstrap")
+        self.assertEqual(plan["waves"][0]["batch_count"], 1)
 
     def test_simion_program_requires_process_local_enabled_profile(self) -> None:
         program = (

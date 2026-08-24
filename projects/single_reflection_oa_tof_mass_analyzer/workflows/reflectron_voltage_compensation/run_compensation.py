@@ -19,8 +19,11 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.optimize_reflectro
     optimize,
     render_lua_profile,
 )
-from common.analysis.peak_metrics import (
-    compute_peak_metrics,
+from common.analysis.peak_metrics import compute_peak_metrics
+from common.simion.process_observation import run_observed_process
+from common.simion.resource_scheduler import (
+    plan_adaptive_followup,
+    plan_simion_dispatch,
 )
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.solver_diagnostics import (
     analyze_simion_log,
@@ -58,6 +61,22 @@ def _split_ions(source: Path, output_dir: Path, workers: int) -> list[dict[str, 
     return batches
 
 
+def _plan_batches_from_observation(
+    particle_count: int, trajectory_quality: int, observed_peak_bytes: int | None
+) -> dict[str, Any]:
+    """Create the repository dispatch plan for one independent source population."""
+    request = {
+        "solver": "SIMION", "field_kind": "electrostatic",
+        "particle_count": particle_count, "independent_particles": True,
+        "trajectory_quality_profile_id": f"tqual_{trajectory_quality}",
+    }
+    bootstrap = plan_simion_dispatch(request, [])
+    return (
+        plan_adaptive_followup(bootstrap, observed_peak_bytes)
+        if observed_peak_bytes is not None else bootstrap
+    )
+
+
 def _run_batch(
     *,
     batch: dict[str, Any],
@@ -89,11 +108,10 @@ def _run_batch(
     environment = dict(os.environ)
     environment["OATOF_REFLECTRON_VOLTAGE_COMPENSATION"] = str(int(compensation))
     started = time.perf_counter()
-    with log.open("w", encoding="utf-8") as stdout, error.open("w", encoding="utf-8") as stderr:
-        completed = subprocess.run(
-            command, cwd=simion_dir, stdout=stdout, stderr=stderr,
-            env=environment, check=False, timeout=600,
-        )
+    completed, peak_working_set_bytes = run_observed_process(
+        command, cwd=simion_dir, stdout=log, stderr=error,
+        environment=environment, timeout_seconds=600,
+    )
     elapsed = time.perf_counter() - started
     if completed.returncode != 0:
         raise RuntimeError(
@@ -111,6 +129,7 @@ def _run_batch(
     particles["Ion"] = particles["Ion"] + int(batch["offset"])
     diagnostics["ElapsedSeconds"] = elapsed
     diagnostics["BatchIndex"] = int(batch["index"])
+    diagnostics["PeakWorkingSetBytes"] = peak_working_set_bytes
     return particles, diagnostics
 
 
@@ -161,6 +180,9 @@ def _run_mode(
         "wall_seconds": max(item["ElapsedSeconds"] for item in diagnostics),
         "sum_batch_seconds": sum(item["ElapsedSeconds"] for item in diagnostics),
         "batches": sorted(diagnostics, key=lambda item: item["BatchIndex"]),
+        "peak_working_set_bytes": max(
+            (item["PeakWorkingSetBytes"] or 0 for item in diagnostics), default=0
+        ) or None,
         "canonical_peak_metrics": metrics,
     }
 
@@ -172,7 +194,6 @@ def main() -> None:
         "--simion-exe", type=Path,
         default=Path(r"C:\Program Files\SIMION-2020\simion.exe"),
     )
-    parser.add_argument("--workers", type=int, default=5)
     parser.add_argument("--trajectory-quality", type=int, default=8)
     parser.add_argument("--regularization", type=float, default=1e-4)
     args = parser.parse_args()
@@ -225,25 +246,35 @@ def main() -> None:
     )
 
     source = simion_dir / "oatof_comsol_524amu_gaussian_N1000.ion"
-    batches = _split_ions(source, output_dir / "batch_inputs", args.workers)
-    modes = {
-        "baseline": _run_mode(
+    particle_count = len(
+        [line for line in source.read_text(encoding="ascii").splitlines() if line.strip()]
+    )
+    batches = _split_ions(source, output_dir / "batch_inputs", 1)
+    baseline = _run_mode(
             batches=batches, label="baseline", compensation=False,
             ideal_reflectron=False, simion_exe=args.simion_exe, simion_dir=simion_dir,
             output_dir=output_dir, trajectory_quality=args.trajectory_quality,
-            workers=args.workers,
-        ),
+            workers=1,
+        )
+    observed_peak = baseline["peak_working_set_bytes"]
+    dispatch_plan = _plan_batches_from_observation(
+        particle_count, args.trajectory_quality, observed_peak
+    )
+    scheduled_batch_count = int(dispatch_plan["waves"][0]["batch_count"])
+    batches = _split_ions(source, output_dir / "batch_inputs", scheduled_batch_count)
+    modes = {
+        "baseline": baseline,
         "compensated": _run_mode(
             batches=batches, label="compensated", compensation=True,
             ideal_reflectron=False, simion_exe=args.simion_exe, simion_dir=simion_dir,
             output_dir=output_dir, trajectory_quality=args.trajectory_quality,
-            workers=args.workers,
+            workers=scheduled_batch_count,
         ),
         "ideal_reflectron": _run_mode(
             batches=batches, label="ideal_reflectron", compensation=False,
             ideal_reflectron=True, simion_exe=args.simion_exe, simion_dir=simion_dir,
             output_dir=output_dir, trajectory_quality=args.trajectory_quality,
-            workers=args.workers,
+            workers=scheduled_batch_count,
         ),
     }
     baseline_r = modes["baseline"]["canonical_peak_metrics"]["mass_resolution"]
@@ -254,7 +285,8 @@ def main() -> None:
         "role": "oatof_reflectron_voltage_compensation_closed_loop_receipt",
         "status": "success" if compensated_r > baseline_r else "no_resolution_gain",
         "case_dir": str(case_dir),
-        "workers": args.workers,
+        "workers": scheduled_batch_count,
+        "simion_dispatch_plan": dispatch_plan,
         "particle_count": sum(batch["count"] for batch in batches),
         "pa_rebuilt": False,
         "fixed_endpoints_V": fit["fixed_endpoints_V"],
