@@ -150,6 +150,65 @@ foreach ($argument in @($steps[0].arguments)) {
   }
   $frozenArguments[$name] = $argument.Substring($separator + 1)
 }
+$flattenedArguments = $frozenArguments
+$executionPlanReferenceNames = @(
+  'resolved_execution_plan_filename',
+  'resolved_execution_plan_sha256'
+)
+$executionPlanReferenceCount = @($executionPlanReferenceNames | Where-Object {
+  $flattenedArguments.ContainsKey($_)
+}).Count
+if ($executionPlanReferenceCount -ne 0) {
+  if ($executionPlanReferenceCount -ne $executionPlanReferenceNames.Count) {
+    throw 'Prepared resolved execution plan reference must be all-or-none.'
+  }
+  $compositionPlanRoot = Split-Path -Parent ([IO.Path]::GetFullPath($CompositionPlan))
+  $executionPlanFilename = [string]$flattenedArguments.resolved_execution_plan_filename
+  $executionPlanPath = [IO.Path]::GetFullPath((Join-Path $compositionPlanRoot $executionPlanFilename))
+  if ([IO.Path]::GetFileName($executionPlanFilename) -ne $executionPlanFilename -or
+      -not (Split-Path -Parent $executionPlanPath).Equals(
+        $compositionPlanRoot,[StringComparison]::OrdinalIgnoreCase
+      ) -or
+      -not (Test-Path -LiteralPath $executionPlanPath -PathType Leaf) -or
+      (Get-FileHash -LiteralPath $executionPlanPath -Algorithm SHA256).Hash -cne
+        [string]$flattenedArguments.resolved_execution_plan_sha256) {
+    throw 'Prepared resolved execution plan is missing, misplaced or stale.'
+  }
+  $resolvedExecutionPlan = Get-Content -LiteralPath $executionPlanPath -Raw -Encoding UTF8 |
+    ConvertFrom-Json
+  if ($resolvedExecutionPlan.schema_version -ne 1 -or
+      $resolvedExecutionPlan.role -ne 'rf_oatof_resolved_execution_plan' -or
+      $resolvedExecutionPlan.campaign_id -ne $flattenedArguments.campaign_id -or
+      $resolvedExecutionPlan.experiment_id -ne $flattenedArguments.experiment_id -or
+      $resolvedExecutionPlan.experiment_row_sha256 -ne $flattenedArguments.experiment_row_sha256 -or
+      $resolvedExecutionPlan.execution_strategy -ne $flattenedArguments.execution_strategy -or
+      $null -eq $resolvedExecutionPlan.arguments) {
+    throw 'Prepared resolved execution plan identity is invalid.'
+  }
+  $resolvedArguments = @{}
+  foreach ($property in @($resolvedExecutionPlan.arguments.PSObject.Properties)) {
+    if ($property.Name -in $executionPlanReferenceNames -or
+        $property.Value -isnot [string] -or
+        $resolvedArguments.ContainsKey($property.Name)) {
+      throw 'Prepared resolved execution plan arguments are invalid.'
+    }
+    $resolvedArguments[$property.Name] = [string]$property.Value
+  }
+  $flattenedExecutionArguments = @{}
+  foreach ($name in $flattenedArguments.Keys) {
+    if ($name -notin $executionPlanReferenceNames) {
+      $flattenedExecutionArguments[$name] = [string]$flattenedArguments[$name]
+    }
+  }
+  if ($resolvedArguments.Count -ne $flattenedExecutionArguments.Count -or
+      @($resolvedArguments.Keys | Where-Object {
+        -not $flattenedExecutionArguments.ContainsKey($_) -or
+        $resolvedArguments[$_] -cne $flattenedExecutionArguments[$_]
+      }).Count -ne 0) {
+    throw 'Prepared resolved execution plan differs from flattened adapter arguments.'
+  }
+  $frozenArguments = $resolvedArguments
+}
 $expectedArguments = @(
   'adapter_registry_sha256',
   'campaign_path',
