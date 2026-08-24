@@ -603,22 +603,65 @@ foreach ($case in $cases) {{
         )
 
     def test_all_runtime_boundaries_require_four_run_local_identities(self) -> None:
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("PowerShell 7 is unavailable")
         parameters = (
             "ResolvedSourceContract",
             "ResolvedSourceContractSha256",
             "UpstreamResolvedDesign",
             "UpstreamResolvedDesignSha256",
         )
-        for path in (RUNTIME_BINDING, *RUNNERS):
-            text = path.read_text(encoding="utf-8")
-            for parameter in parameters:
-                self.assertRegex(
-                    text,
-                    rf"\[Parameter\(Mandatory\)\]\[string\]\${parameter}\b",
-                    (path, parameter),
-                )
-            self.assertNotIn("SourceContractOverride", text, path)
-            self.assertNotIn("UpstreamResolvedDesignOverride", text, path)
+        commands = [
+            ("runtime_binding", "Resolve-RfOatofRuntimeBinding"),
+            *((path.name, str(path)) for path in RUNNERS),
+        ]
+        cases = ",\n".join(
+            "  [pscustomobject]@{ name = '%s'; command = %s }"
+            % (
+                name,
+                "(Get-Command %r)" % command
+                if command == "Resolve-RfOatofRuntimeBinding"
+                else "(Get-Command -Name %r)" % command,
+            )
+            for name, command in commands
+        )
+        script = f"""
+. '{RUNTIME_BINDING}'
+$required = @({','.join(repr(parameter) for parameter in parameters)})
+$commands = @(
+{cases}
+)
+foreach ($entry in $commands) {{
+  foreach ($name in $required) {{
+    $metadata = $entry.command.Parameters[$name]
+    $mandatory = @($metadata.Attributes | Where-Object {{
+      $_ -is [System.Management.Automation.ParameterAttribute] -and $_.Mandatory
+    }}).Count -gt 0
+    if ($null -eq $metadata -or -not $mandatory) {{
+      throw "missing mandatory run-local parameter: $($entry.name) $name"
+    }}
+  }}
+  foreach ($forbidden in @('SourceContractOverride','UpstreamResolvedDesignOverride')) {{
+    if ($entry.command.Parameters.ContainsKey($forbidden)) {{
+      throw "obsolete override parameter remains: $($entry.name) $forbidden"
+    }}
+  }}
+}}
+'RUNTIME_RUN_LOCAL_PARAMETER_METADATA=PASS'
+"""
+        completed = subprocess.run(
+            [pwsh, "-NoProfile", "-Command", script],
+            cwd=INTEGRATION_ROOT.parents[1],
+            text=True,
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            timeout=90,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertIn("RUNTIME_RUN_LOCAL_PARAMETER_METADATA=PASS", completed.stdout)
 
     def test_stage_modes_and_manifest_roles_are_particle_count_neutral(self) -> None:
         joined = "\n".join(path.read_text(encoding="utf-8") for path in RUNNERS)
