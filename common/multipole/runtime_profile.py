@@ -889,6 +889,8 @@ def resolve_campaign_experiment(
             "runtime_profile_registry_sha256": _sha256(runtime_registry_path),
         },
     }
+    if "simion_dispatch" in experiment:
+        result["simion_dispatch"] = copy.deepcopy(experiment["simion_dispatch"])
     if campaign["schema_version"] in (3, 4, 6):
         result["campaign"]["design_variable_authorization_sha256"] = canonical_sha256(
             campaign["design_variable_authorization"]

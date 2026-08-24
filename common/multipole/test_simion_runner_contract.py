@@ -209,6 +209,11 @@ class SimionRunnerContractTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("BOUND", result.stdout)
 
+    def test_solver_numerics_artifact_excludes_dispatch_control(self) -> None:
+        source = RUNNER.read_text(encoding="utf-8")
+        self.assertIn("simion_execution_batch_plan.json", source)
+        self.assertNotIn("solverNumericsDocument.execution_batching", source)
+
     def test_final_run_id_is_always_forwarded_to_budget_authorization(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
         self.assertNotIn("$runIdWasExplicit", source)

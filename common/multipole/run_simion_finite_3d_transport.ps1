@@ -127,6 +127,7 @@ $engineeringBudgetAuthority=Get-Content -LiteralPath $engineeringBudgetInput -Ra
 $resolvedRuntimeInput=$null
 $resolvedRuntimeDocument=$null
 $resolvedRuntimeInputSha=$null
+$executionBatching=$null
 if(-not[string]::IsNullOrWhiteSpace($ResolvedRuntimeProfilePath)){
   $resolvedRuntimeInput=(Resolve-Path -LiteralPath $ResolvedRuntimeProfilePath).Path
   $resolvedRuntimeInputSha=(Get-FileHash -LiteralPath $resolvedRuntimeInput -Algorithm SHA256).Hash
@@ -139,6 +140,12 @@ if(-not[string]::IsNullOrWhiteSpace($ResolvedRuntimeProfilePath)){
     [string]$resolvedRuntimeDocument.particle_source.path-ne$particleSourceInput-or
     [string]$resolvedRuntimeDocument.engineering_budget.path-ne$engineeringBudgetInput
   ){throw 'Resolved runtime-profile snapshot identity differs from runner arguments.'}
+  if($resolvedRuntimeDocument.PSObject.Properties.Name-contains'simion_dispatch'){
+    $executionBatching=$resolvedRuntimeDocument.simion_dispatch
+    if([string]$executionBatching.dispatch-ne'single_wave_parallel'-or
+      [int]$executionBatching.batch_count-lt 1
+    ){throw 'Resolved SIMION dispatch is invalid.'}
+  }
 }
 $campaignSelection=$null
 if([string]$engineeringBudgetAuthority.role-eq'multipole_transport_experiment_campaign'){
@@ -183,9 +190,6 @@ try{
   if($LASTEXITCODE-ne 0){throw 'SIMION resource-budget preflight failed.'}
   $resolvedBudgetPreflight=Get-Content -LiteralPath $budgetPreflight -Raw -Encoding UTF8|ConvertFrom-Json
   $authorizedNumerics=$resolvedBudgetPreflight.solver_numerics
-  $executionBatching=if($authorizedNumerics.PSObject.Properties.Name-contains'execution_batching'){
-    $authorizedNumerics.execution_batching
-  }else{$null}
   $authorizedCell=$authorizedNumerics.cell_mm_xyz
   if($null-eq$authorizedCell){
     throw 'Authorized SIMION numerics omit canonical cell_mm_xyz.'
@@ -512,7 +516,6 @@ try{
     cell_mm_xyz=[ordered]@{x=$resolvedCellMmX;y=$resolvedCellMmY;z=$resolvedCellMmZ};
     trajectory_quality=$TrajectoryQuality;
     trajectory=[ordered]@{rf_steps_per_period=$RfStepsPerPeriod;maximum_global_time_us=$MaximumTimeUs}}
-  if($null-ne$executionBatching){$solverNumericsDocument.execution_batching=$executionBatching}
   $solverNumericsDocument|
     ConvertTo-Json -Depth 5|Set-Content -LiteralPath $numerics -Encoding UTF8
   $evidence=$null

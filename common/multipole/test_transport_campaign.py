@@ -708,16 +708,17 @@ class TransportCampaignTests(unittest.TestCase):
                     experiment_id=EXPERIMENT_ID,
                 )
 
-    def test_campaign_accepts_large_exploration_numerics_and_batch_count(self) -> None:
+    def test_campaign_keeps_large_exploration_numerics_separate_from_dispatch(self) -> None:
         campaign = campaign_fixture()
         values = campaign["experiments"][0]["simion_solver_numerics"]["values"]
         values["cell_mm_xyz"] = {"x": 101.0, "y": 125.0, "z": 150.0}
         values["trajectory_quality"] = 10_001
         values["trajectory"]["rf_steps_per_period"] = 10_001
         values["trajectory"]["maximum_global_time_us"] = 1_000_001.0
-        values["execution_batching"] = {
+        dispatch = {
             "dispatch": "single_wave_parallel", "batch_count": 17
         }
+        campaign["experiments"][0]["simion_dispatch"] = dispatch
         with written_campaign(campaign) as path:
             selected = resolve_runtime_selection(
                 REPO_ROOT,
@@ -728,6 +729,8 @@ class TransportCampaignTests(unittest.TestCase):
             self.assertEqual(
                 selected["solver_numerics"]["simion"]["values"], values
             )
+            self.assertNotIn("execution_batching", selected["solver_numerics"]["simion"]["values"])
+            self.assertEqual(selected["simion_dispatch"], dispatch)
 
     def test_campaign_accepts_small_positive_exploration_numerics(self) -> None:
         campaign = campaign_fixture()
