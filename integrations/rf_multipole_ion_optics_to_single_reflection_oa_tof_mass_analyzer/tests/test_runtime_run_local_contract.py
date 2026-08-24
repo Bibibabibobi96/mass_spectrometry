@@ -14,6 +14,9 @@ from common.contracts.file_identity import repository_text_sha256
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.three_zone_runtime_identity import (
     validate_runtime_identity,
 )
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_execution_profile import (
+    resolve_execution_profile,
+)
 
 
 INTEGRATION_ROOT = Path(__file__).resolve().parents[1]
@@ -832,10 +835,68 @@ foreach ($case in $cases) {{
             profile["accelerator_overlay"]["boundary_mode"],
             "coarse_electrode_basis_dirichlet_v1",
         )
-        runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
-        self.assertIn("'transient_disk_estimate'", runner)
-        self.assertIn("$frontendCellMmX -ne $frontendCellMmY", runner)
-        self.assertIn("$overlayCellMmX -ne $frontendCellMmX", runner)
+        resolved = resolve_execution_profile(
+            settings,
+            frontend_grid_profile_id=profile["profile_id"],
+        )
+        self.assertEqual(
+            resolved["frontend_cell_mm_xyz"], {"x": 0.2, "y": 0.2, "z": 0.2}
+        )
+        self.assertEqual(
+            resolved["accelerator_overlay_cell_mm_xyz"],
+            {"x": 0.2, "y": 0.2, "z": 0.025},
+        )
+        self.assertEqual(
+            resolved["accelerator_overlay_boundary_mode"],
+            "coarse_electrode_basis_dirichlet_v1",
+        )
+
+    def test_execution_profile_resolver_uses_default_and_explicit_numerics(self) -> None:
+        settings = json.loads(
+            (INTEGRATION_ROOT / "config" / "simion_single_flight.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        defaults = resolve_execution_profile(settings)
+        self.assertEqual(defaults["frontend_grid_profile_id"], "frontend_isotropic_020")
+        self.assertEqual(defaults["oatof_numerical_profile_id"], "oatof_formal_mesh")
+        self.assertEqual(defaults["trajectory_quality"], 8)
+        self.assertEqual(defaults["rf_steps_per_period"], 40)
+        self.assertEqual(defaults["maximum_time_of_flight_us"], 90.0)
+        explicit = resolve_execution_profile(
+            settings,
+            frontend_grid_profile_id="frontend_isotropic_015",
+            oatof_numerical_profile_id="oatof_reflectron_z010_r100",
+            trajectory_quality_profile_id="tqual_108",
+            time_integration_profile_id="dt160",
+            maximum_time_of_flight_us=120.0,
+            spatial_window_profile_id="accelerator_xy_open_bore",
+        )
+        self.assertEqual(explicit["frontend_cell_mm_xyz"], {"x": 0.15, "y": 0.15, "z": 0.15})
+        self.assertEqual(explicit["reflectron_cell_mm"], {"axial": 0.1, "radial": 1.0})
+        self.assertEqual(explicit["trajectory_quality"], 108)
+        self.assertEqual(explicit["rf_steps_per_period"], 160)
+        self.assertEqual(explicit["maximum_time_of_flight_us"], 120.0)
+        self.assertEqual(explicit["spatial_window_profile_id"], "accelerator_xy_open_bore")
+
+    def test_execution_profile_resolver_rejects_invalid_selection_and_overlay(self) -> None:
+        settings = json.loads(
+            (INTEGRATION_ROOT / "config" / "simion_single_flight.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        with self.assertRaisesRegex(ValueError, "Single-flight numerical configuration"):
+            resolve_execution_profile(settings, time_integration_profile_id="not-a-profile")
+        invalid = copy.deepcopy(settings)
+        profile = next(
+            item for item in invalid["frontend_grid_profiles"]
+            if item["profile_id"] == "frontend_isotropic_020_accelerator_overlay_z005"
+        )
+        profile["accelerator_overlay"]["cell_mm_xyz"]["x"] = 0.1
+        with self.assertRaisesRegex(ValueError, "Single-flight numerical configuration"):
+            resolve_execution_profile(
+                invalid, frontend_grid_profile_id=profile["profile_id"]
+            )
 
     def test_full_flight_uses_configured_source_region_diagnostic_default(self) -> None:
         settings = json.loads(
@@ -908,12 +969,18 @@ foreach ($case in $cases) {{
             ["required_bootstrap_resample_count"],
             5000,
         )
+        self.assertEqual(
+            resolve_execution_profile(configuration)[
+                "required_qualification_bootstrap_resamples"
+            ],
+            5000,
+        )
         self.assertIn(
             "$BootstrapResamples -ne $requiredQualificationBootstrapResamples",
             text,
         )
         self.assertIn(
-            "$settings.resolution_qualification_policy.required_bootstrap_resample_count",
+            "runtime.single_flight_execution_profile",
             text,
         )
         self.assertIn(

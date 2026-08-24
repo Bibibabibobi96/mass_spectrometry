@@ -416,121 +416,45 @@ try {
   $configuration = Join-Path $package.input_dir 'simion_single_flight.json'
   Copy-RfStableFile -SourceRunRoot $repoRoot -SourcePath $configurationSource -Destination $configuration -Role 'single-flight configuration' | Out-Null
   $settings = Get-Content -LiteralPath $configuration -Raw -Encoding UTF8 | ConvertFrom-Json
-  $selectedGridProfileId = if ([string]::IsNullOrWhiteSpace($FrontendGridProfileId)) {
-    [string]$settings.default_frontend_grid_profile_id
-  } else { $FrontendGridProfileId }
-  $gridProfiles = @($settings.frontend_grid_profiles | Where-Object {
-    [string]$_.profile_id -eq $selectedGridProfileId
-  })
-  if ($settings.role -ne 'rf_oatof_simion_single_flight_configuration' -or
-      $settings.PSObject.Properties.Name -notcontains 'batching_policy' -or
-      $settings.PSObject.Properties.Name -notcontains 'resolution_qualification_policy' -or
-      [int]$settings.resolution_qualification_policy.required_bootstrap_resample_count -lt 1 -or
-      $settings.batching_policy.PSObject.Properties.Name -notcontains
-        'parallel_batch_memory_reservation_bytes' -or
-      [int64]$settings.batching_policy.parallel_batch_memory_reservation_bytes -le 0 -or
-      $gridProfiles.Count -ne 1 -or
-      @($gridProfiles[0].cell_mm_xyz.PSObject.Properties.Name).Count -ne 3 -or
-      @($gridProfiles[0].cell_mm_xyz.PSObject.Properties.Name | Where-Object {
-        $_ -notin @('x','y','z')
-      }).Count -ne 0 -or
-      [double]$gridProfiles[0].cell_mm_xyz.x -le 0 -or
-      [double]$gridProfiles[0].cell_mm_xyz.y -le 0 -or
-      [double]$gridProfiles[0].cell_mm_xyz.z -le 0 -or
-    [string]$settings.clock_basis -ne 'canonical_instrument_time_us') {
-    throw 'Single-flight numerical configuration is invalid.'
-  }
-  $frontendCellMmX = [double]$gridProfiles[0].cell_mm_xyz.x
-  $frontendCellMmY = [double]$gridProfiles[0].cell_mm_xyz.y
-  $frontendCellMmZ = [double]$gridProfiles[0].cell_mm_xyz.z
+  $executionProfilePath = Join-Path $package.input_dir 'resolved_single_flight_execution_profile.json'
+  $executionProfileArguments = @('-m',
+    'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_execution_profile',
+    '--configuration',$configuration,'--output',$executionProfilePath)
+  if ($FrontendGridProfileId) { $executionProfileArguments += @('--frontend-grid-profile-id',$FrontendGridProfileId) }
+  if ($OatofNumericalProfileId) { $executionProfileArguments += @('--oatof-numerical-profile-id',$OatofNumericalProfileId) }
+  if ($TrajectoryQualityProfileId) { $executionProfileArguments += @('--trajectory-quality-profile-id',$TrajectoryQualityProfileId) }
+  if ($TimeIntegrationProfileId) { $executionProfileArguments += @('--time-integration-profile-id',$TimeIntegrationProfileId) }
+  if ($MaximumTimeOfFlightUs -gt 0) { $executionProfileArguments += @('--maximum-time-of-flight-us',([string]$MaximumTimeOfFlightUs)) }
+  if ($SpatialWindowProfileId) { $executionProfileArguments += @('--spatial-window-profile-id',$SpatialWindowProfileId) }
+  Invoke-SingleFlightPython -Arguments $executionProfileArguments `
+    -Failure 'Single-flight numerical configuration is invalid.'
+  $executionProfile = Get-Content -LiteralPath $executionProfilePath -Raw -Encoding UTF8 |
+    ConvertFrom-Json
+  $selectedGridProfileId = [string]$executionProfile.frontend_grid_profile_id
+  $frontendCellMmX = [double]$executionProfile.frontend_cell_mm_xyz.x
+  $frontendCellMmY = [double]$executionProfile.frontend_cell_mm_xyz.y
+  $frontendCellMmZ = [double]$executionProfile.frontend_cell_mm_xyz.z
   $maxParallelBatches = [int]$ExecutionBatchCount
   $parallelBatchMemoryReservationBytes =
-    [int64]$settings.batching_policy.parallel_batch_memory_reservation_bytes
-  $requiredQualificationBootstrapResamples = [int](
-    $settings.resolution_qualification_policy.required_bootstrap_resample_count
-  )
-  $overlayEnabled = $null -ne $gridProfiles[0].PSObject.Properties['accelerator_overlay'] -and
-    [bool]$gridProfiles[0].accelerator_overlay.enabled
-  $resolvedFieldOverlayId = [string]$gridProfiles[0].field_overlay_id
+    [int64]$executionProfile.parallel_batch_memory_reservation_bytes
+  $requiredQualificationBootstrapResamples = [int]$executionProfile.required_qualification_bootstrap_resamples
+  $overlayEnabled = [bool]$executionProfile.accelerator_overlay_enabled
+  $resolvedFieldOverlayId = [string]$executionProfile.field_overlay_id
   if ($FieldOverlayId -and $FieldOverlayId -ne $resolvedFieldOverlayId) {
     throw 'Single-flight field-overlay identity differs from the selected grid profile.'
   }
-  $overlayCellMmX = $null
-  $overlayCellMmY = $null
-  $overlayCellMmZ = $null
-  if ($overlayEnabled) {
-    $overlayProfile = $gridProfiles[0].accelerator_overlay
-    if (@($overlayProfile.PSObject.Properties.Name | Where-Object {
-          $_ -notin @('enabled','cell_mm_xyz','boundary_mode','transient_disk_estimate')
-        }).Count -ne 0 -or
-        [string]$overlayProfile.boundary_mode -ne 'coarse_electrode_basis_dirichlet_v1' -or
-        $frontendCellMmX -ne $frontendCellMmY -or $frontendCellMmY -ne $frontendCellMmZ) {
-      throw 'Accelerator overlay requires an isotropic coarse grid and the governed boundary mode.'
-    }
-    $overlayCellMmX = [double]$overlayProfile.cell_mm_xyz.x
-    $overlayCellMmY = [double]$overlayProfile.cell_mm_xyz.y
-    $overlayCellMmZ = [double]$overlayProfile.cell_mm_xyz.z
-    if ($overlayCellMmX -ne $frontendCellMmX -or
-        $overlayCellMmY -ne $frontendCellMmY -or
-        $overlayCellMmZ -le 0 -or $overlayCellMmZ -gt $frontendCellMmZ) {
-      throw 'Accelerator overlay may only refine z while preserving the coarse x-y grid.'
-    }
-  }
-  $selectedOatofNumericalProfileId = if ([string]::IsNullOrWhiteSpace($OatofNumericalProfileId)) {
-    [string]$settings.default_oatof_numerical_profile_id
-  } else { $OatofNumericalProfileId }
-  $oatofNumericalProfiles = @($settings.oatof_numerical_profiles | Where-Object {
-    [string]$_.profile_id -eq $selectedOatofNumericalProfileId
-  })
-  if ($oatofNumericalProfiles.Count -ne 1 -or
-      [double]$oatofNumericalProfiles[0].reflectron_cell_mm.axial -le 0 -or
-      [double]$oatofNumericalProfiles[0].reflectron_cell_mm.radial -le 0) {
-    throw 'Single-flight oaTOF numerical profile is invalid.'
-  }
-  $selectedTrajectoryQualityProfileId = if ([string]::IsNullOrWhiteSpace($TrajectoryQualityProfileId)) {
-    [string]$settings.default_trajectory_quality_profile_id
-  } else { $TrajectoryQualityProfileId }
-  $trajectoryQualityProfiles = @($settings.trajectory_quality_profiles | Where-Object {
-    [string]$_.profile_id -eq $selectedTrajectoryQualityProfileId
-  })
-  if ($trajectoryQualityProfiles.Count -ne 1 -or
-      [int]$trajectoryQualityProfiles[0].trajectory_quality -lt 1) {
-    throw 'Single-flight trajectory-quality profile is invalid.'
-  }
-  $trajectoryQuality = [int]$trajectoryQualityProfiles[0].trajectory_quality
-  $selectedTimeIntegrationProfileId = if (
-    [string]::IsNullOrWhiteSpace($TimeIntegrationProfileId)
-  ) {
-    [string]$settings.default_time_integration_profile_id
-  } else { $TimeIntegrationProfileId }
-  $timeIntegrationProfiles = @($settings.time_integration_profiles | Where-Object {
-    [string]$_.profile_id -eq $selectedTimeIntegrationProfileId
-  })
-  if ($timeIntegrationProfiles.Count -ne 1 -or
-      [int]$timeIntegrationProfiles[0].rf_steps_per_period -lt 1) {
-    throw 'Single-flight time-integration profile is invalid.'
-  }
-  $rfStepsPerPeriod = [int]$timeIntegrationProfiles[0].rf_steps_per_period
-  $maximumTimeOfFlightUs = if ($MaximumTimeOfFlightUs -gt 0) {
-    $MaximumTimeOfFlightUs
-  } else {
-    [double]$settings.maximum_time_of_flight_us
-  }
-  if ([double]::IsNaN($maximumTimeOfFlightUs) -or
-      [double]::IsInfinity($maximumTimeOfFlightUs) -or
-      $maximumTimeOfFlightUs -le 0) {
-    throw 'Single-flight maximum time of flight is invalid.'
-  }
-  $spatialWindowProfiles = @(if ([string]::IsNullOrWhiteSpace($SpatialWindowProfileId)) {
-  } else {
-    $settings.spatial_window_profiles | Where-Object {
-      [string]$_.profile_id -eq $SpatialWindowProfileId
-    }
-  })
-  if (-not [string]::IsNullOrWhiteSpace($SpatialWindowProfileId) -and
-      $spatialWindowProfiles.Count -ne 1) {
-    throw 'Single-flight spatial-window profile is invalid.'
-  }
+  $overlayCellMmX = if ($overlayEnabled) { [double]$executionProfile.accelerator_overlay_cell_mm_xyz.x } else { $null }
+  $overlayCellMmY = if ($overlayEnabled) { [double]$executionProfile.accelerator_overlay_cell_mm_xyz.y } else { $null }
+  $overlayCellMmZ = if ($overlayEnabled) { [double]$executionProfile.accelerator_overlay_cell_mm_xyz.z } else { $null }
+  $selectedOatofNumericalProfileId = [string]$executionProfile.oatof_numerical_profile_id
+  $reflectronCellMmAxial = [double]$executionProfile.reflectron_cell_mm.axial
+  $reflectronCellMmRadial = [double]$executionProfile.reflectron_cell_mm.radial
+  $selectedTrajectoryQualityProfileId = [string]$executionProfile.trajectory_quality_profile_id
+  $trajectoryQuality = [int]$executionProfile.trajectory_quality
+  $selectedTimeIntegrationProfileId = [string]$executionProfile.time_integration_profile_id
+  $rfStepsPerPeriod = [int]$executionProfile.rf_steps_per_period
+  $maximumTimeOfFlightUs = [double]$executionProfile.maximum_time_of_flight_us
+  $spatialWindowProfiles = @($executionProfile.spatial_window_profile_id | Where-Object { $_ })
   $resolvedRegionFieldContractFrozen = Join-Path $package.input_dir 'resolved_region_field_contract.json'
   Copy-RfStableFile -SourceRunRoot $workspaceRoot -SourcePath $ResolvedRegionFieldContract `
     -Destination $resolvedRegionFieldContractFrozen -Role 'resolved region field contract' | Out-Null
@@ -678,9 +602,9 @@ try {
   $oatofGeometryDocument = Get-Content -LiteralPath $oatofGeometry -Raw -Encoding UTF8 |
     ConvertFrom-Json
   if ([double]$oatofGeometryDocument.simion_geometry_build.reflectron.cell_axial_mm -ne
-      [double]$oatofNumericalProfiles[0].reflectron_cell_mm.axial -or
+      $reflectronCellMmAxial -or
       [double]$oatofGeometryDocument.simion_geometry_build.reflectron.cell_radial_mm -ne
-      [double]$oatofNumericalProfiles[0].reflectron_cell_mm.radial) {
+      $reflectronCellMmRadial) {
     throw 'Frozen oaTOF geometry differs from the selected numerical profile.'
   }
   $layoutDerivation = if ($hasGovernedLayout) {
@@ -1811,9 +1735,9 @@ try {
   $runConfiguration = [ordered]@{
     schema_version=2; run_id=$RunId; project=$runProjectId; mode='rf_to_oatof_simion_single_flight'; project_root=$repoRoot
     upstream_project_id=$runtime.upstream_project_id
-    inputs=[ordered]@{ configuration=$configuration; runtime_binding=$runtimeBindingFrozen; resolved_connection=$resolvedFrozen; resolved_source_contract=$sourceContractFrozen; resolved_population_contract=$populationContractFrozen; upstream_resolved_design=$upstreamFrozen; oatof_resolved_geometry=$oatofGeometry; pulse_schedule=$pulseScheduleFrozen; resolved_region_field_contract=$resolvedRegionFieldContractFrozen; analyzer_component=$analyzerComponent; pulse_hook=$pulseHook; frontend_hook=$frontendHook; rf_drive_kernel=$rfDriveKernel; resolved_integration_engineering_budget=$budget.frozen_budget; resolved_stage_resource_budget=$budget.stage_budget; mother_particle_source=$motherSource; mother_particle_source_materialization_receipt=$motherSourceReceiptFrozen; initial_global_state=$globalSource; particle_row_map=$particleRowMap; pre_pulse_restart_validation=$prePulseValidationFrozen; particle_input=$particleInput; frontend_gem=$frontendGem; frontend_contract=$frontendContract; frontend_electrode_topology=$frontendElectrodeTopologyContract; frontend_pa_cache_manifest=$frontendCacheManifestInput; accelerator_overlay_gem=$overlayGem; accelerator_overlay_contract=$overlayContract; accelerator_overlay_basis_builder=$overlayBasisBuilderFrozen; accelerator_overlay_refiner=$overlayRefinerFrozen; accelerator_overlay_interface_verifier=$overlayInterfaceVerifierFrozen; accelerator_overlay_pa_cache_manifest=$overlayCacheManifestInput; accelerator_overlay_iob_builder=$overlayIobBuilderFrozen; accelerator_overlay_iob_container=$overlayIobContainerFrozen; accelerator_overlay_iob_container_gems=$overlayIobContainerGemFrozen; accelerator_overlay_basis_report=$overlayBasisReport; accelerator_overlay_interface_report=$overlayInterfaceReport; flight_tube_pa_cache_manifest=$flightTubeCacheManifestInput; reflectron_pa_cache_manifest=$reflectronCacheManifestInput; frontend_aperture_topology_support=$apertureTopologySupport; frontend_aperture_topology_verifier=$apertureVerifier; program_metadata=$programMetadata; candidate_flight_tube_builder=$flightTubeBuilderFrozen; candidate_flight_tube_gem=$flightTubeGemFrozen; candidate_reflectron_builder=$reflectronBuilderFrozen; candidate_reflectron_gem=$reflectronGemFrozen; candidate_reflectron_refiner=$reflectronRefinerFrozen }
+    inputs=[ordered]@{ configuration=$configuration; resolved_single_flight_execution_profile=$executionProfilePath; runtime_binding=$runtimeBindingFrozen; resolved_connection=$resolvedFrozen; resolved_source_contract=$sourceContractFrozen; resolved_population_contract=$populationContractFrozen; upstream_resolved_design=$upstreamFrozen; oatof_resolved_geometry=$oatofGeometry; pulse_schedule=$pulseScheduleFrozen; resolved_region_field_contract=$resolvedRegionFieldContractFrozen; analyzer_component=$analyzerComponent; pulse_hook=$pulseHook; frontend_hook=$frontendHook; rf_drive_kernel=$rfDriveKernel; resolved_integration_engineering_budget=$budget.frozen_budget; resolved_stage_resource_budget=$budget.stage_budget; mother_particle_source=$motherSource; mother_particle_source_materialization_receipt=$motherSourceReceiptFrozen; initial_global_state=$globalSource; particle_row_map=$particleRowMap; pre_pulse_restart_validation=$prePulseValidationFrozen; particle_input=$particleInput; frontend_gem=$frontendGem; frontend_contract=$frontendContract; frontend_electrode_topology=$frontendElectrodeTopologyContract; frontend_pa_cache_manifest=$frontendCacheManifestInput; accelerator_overlay_gem=$overlayGem; accelerator_overlay_contract=$overlayContract; accelerator_overlay_basis_builder=$overlayBasisBuilderFrozen; accelerator_overlay_refiner=$overlayRefinerFrozen; accelerator_overlay_interface_verifier=$overlayInterfaceVerifierFrozen; accelerator_overlay_pa_cache_manifest=$overlayCacheManifestInput; accelerator_overlay_iob_builder=$overlayIobBuilderFrozen; accelerator_overlay_iob_container=$overlayIobContainerFrozen; accelerator_overlay_iob_container_gems=$overlayIobContainerGemFrozen; accelerator_overlay_basis_report=$overlayBasisReport; accelerator_overlay_interface_report=$overlayInterfaceReport; flight_tube_pa_cache_manifest=$flightTubeCacheManifestInput; reflectron_pa_cache_manifest=$reflectronCacheManifestInput; frontend_aperture_topology_support=$apertureTopologySupport; frontend_aperture_topology_verifier=$apertureVerifier; program_metadata=$programMetadata; candidate_flight_tube_builder=$flightTubeBuilderFrozen; candidate_flight_tube_gem=$flightTubeGemFrozen; candidate_reflectron_builder=$reflectronBuilderFrozen; candidate_reflectron_gem=$reflectronGemFrozen; candidate_reflectron_refiner=$reflectronRefinerFrozen }
     upstream_source_identity=$resolvedBudgetDocument.source_identity
-    parameters=[ordered]@{ connection_profile_id=$ConnectionProfileId; source_branch_id=$SourceBranchId; single_flight_pa_cache_policy=$PaCachePolicy; single_flight_pa_cache_policy_provenance=$PaCachePolicyProvenance; pa_cache_dispositions=$paCacheDispositions; layout_profile_id=$(if($hasGovernedLayout){$LayoutProfileId}else{$null}); architecture_generation_id=$(if($hasGovernedLayout){$ArchitectureGenerationId}else{$null}); source_profile_id=$(if($SourceProfileId){$SourceProfileId}else{$null}); field_overlay_id=$resolvedFieldOverlayId; bore_radius_mm=[double]$oatofGeometryDocument.geometry_mm.bore_r; ring_outer_radius_mm=[double]$oatofGeometryDocument.geometry_mm.ring_outer_r; shield_inner_radius_mm=[double]$oatofGeometryDocument.geometry_mm.flight_tube_r; frontend_grid_profile_id=$selectedGridProfileId; frontend_cell_mm_xyz=[ordered]@{x=$frontendCellMmX;y=$frontendCellMmY;z=$frontendCellMmZ}; accelerator_overlay_enabled=$overlayEnabled; accelerator_overlay_cell_mm_xyz=$(if($overlayEnabled){[ordered]@{x=$overlayCellMmX;y=$overlayCellMmY;z=$overlayCellMmZ}}else{$null}); accelerator_overlay_boundary_mode=$(if($overlayEnabled){'coarse_electrode_basis_dirichlet_v1'}else{$null}); oatof_numerical_profile_id=$selectedOatofNumericalProfileId; trajectory_quality_profile_id=$selectedTrajectoryQualityProfileId; trajectory_quality=$trajectoryQuality; time_integration_profile_id=$selectedTimeIntegrationProfileId; rf_steps_per_period=$rfStepsPerPeriod; spatial_window_profile_id=$(if($spatialWindowProfiles.Count -eq 1){$SpatialWindowProfileId}else{$null}); source_region_diagnostic_profile_id=$(if($sourceRegionDiagnosticProfiles.Count -eq 1){$sourceRegionDiagnosticProfileId}else{$null}); accelerator_field_profile_id=$selectedFieldProfileId; resolved_region_field_contract_sha256=$ResolvedRegionFieldContractSha256; resolved_region_field_semantic_sha256=$ResolvedRegionFieldSemanticSha256; resolved_population_contract_sha256=$ResolvedPopulationContractSha256; max_parallel_batches=$maxParallelBatches; clock_basis=[string]$settings.clock_basis; launched_particle_count=$launched; particle_count=$launched; population_denominator_count=$PopulationDenominatorCount; eligible_population_count=$EligiblePopulationCount; population_basis=$populationBasis; execution_batch_count=$ExecutionBatchCount; execution_batches_parallel=[bool]($ExecutionBatchCount -gt 1 -and $maxParallelBatches -gt 1); aperture_width_mm=$apertureWidthMm; aperture_height_mm=$apertureHeightMm; aperture_boolean_boundary_policy=[string]$apertureDiscretization.boolean_boundary_policy; aperture_grid_warnings=$apertureGridWarnings; frontend_open_aperture_column_count=[int]$apertureTopology.open_column_count; frontend_aperture_guard_electrode_check_passed=[bool]$apertureTopology.guard_electrode_check_passed; frontend_aperture_topology_report_sha256=(Get-FileHash -LiteralPath $apertureTopologyReport -Algorithm SHA256).Hash; rod_end_to_accelerator_shield_mm=[double]$frontendGeometry.junction_enclosure.rod_end_to_accelerator_shield_mm; surrounded_transition=$true; accelerator_axis_x_mm=[double]$oatofGeometryDocument.coordinate_convention.accelerator_axis_x; pulse_time_us=$pulseTimeUs; pulse_width_us=$pulseWidthUs; design_compilation=$(if($null -ne $layoutDerivation){$layoutDerivation.design_compilation}else{$null}); source_release_full_width_mm=[double]$oatofGeometryDocument.particle_source.size_z_mm; reflectron_stage2_length_mm=[double]$oatofGeometryDocument.geometry_mm.L_stage2; reflectron_midgrid_voltage_V=[double]$oatofGeometryDocument.electrodes_V.midgrid; reflectron_backplate_voltage_V=[double]$oatofGeometryDocument.electrodes_V.backplate; reflectron_pa0_sha256=(Get-FileHash -LiteralPath $reflectronPa0 -Algorithm SHA256).Hash; frontend_gem_sha256=$frontendHash; frontend_pa0_sha256=(Get-FileHash -LiteralPath $cachePa0 -Algorithm SHA256).Hash; accelerator_overlay_pa0_sha256=$(if($overlayEnabled){(Get-FileHash -LiteralPath $overlayCachePa0 -Algorithm SHA256).Hash}else{$null}) }
+    parameters=[ordered]@{ connection_profile_id=$ConnectionProfileId; source_branch_id=$SourceBranchId; single_flight_pa_cache_policy=$PaCachePolicy; single_flight_pa_cache_policy_provenance=$PaCachePolicyProvenance; pa_cache_dispositions=$paCacheDispositions; layout_profile_id=$(if($hasGovernedLayout){$LayoutProfileId}else{$null}); architecture_generation_id=$(if($hasGovernedLayout){$ArchitectureGenerationId}else{$null}); source_profile_id=$(if($SourceProfileId){$SourceProfileId}else{$null}); field_overlay_id=$resolvedFieldOverlayId; bore_radius_mm=[double]$oatofGeometryDocument.geometry_mm.bore_r; ring_outer_radius_mm=[double]$oatofGeometryDocument.geometry_mm.ring_outer_r; shield_inner_radius_mm=[double]$oatofGeometryDocument.geometry_mm.flight_tube_r; frontend_grid_profile_id=$selectedGridProfileId; frontend_cell_mm_xyz=[ordered]@{x=$frontendCellMmX;y=$frontendCellMmY;z=$frontendCellMmZ}; accelerator_overlay_enabled=$overlayEnabled; accelerator_overlay_cell_mm_xyz=$(if($overlayEnabled){[ordered]@{x=$overlayCellMmX;y=$overlayCellMmY;z=$overlayCellMmZ}}else{$null}); accelerator_overlay_boundary_mode=$(if($overlayEnabled){'coarse_electrode_basis_dirichlet_v1'}else{$null}); oatof_numerical_profile_id=$selectedOatofNumericalProfileId; trajectory_quality_profile_id=$selectedTrajectoryQualityProfileId; trajectory_quality=$trajectoryQuality; time_integration_profile_id=$selectedTimeIntegrationProfileId; rf_steps_per_period=$rfStepsPerPeriod; spatial_window_profile_id=$executionProfile.spatial_window_profile_id; source_region_diagnostic_profile_id=$(if($sourceRegionDiagnosticProfiles.Count -eq 1){$sourceRegionDiagnosticProfileId}else{$null}); accelerator_field_profile_id=$selectedFieldProfileId; resolved_region_field_contract_sha256=$ResolvedRegionFieldContractSha256; resolved_region_field_semantic_sha256=$ResolvedRegionFieldSemanticSha256; resolved_population_contract_sha256=$ResolvedPopulationContractSha256; max_parallel_batches=$maxParallelBatches; clock_basis=[string]$executionProfile.clock_basis; launched_particle_count=$launched; particle_count=$launched; population_denominator_count=$PopulationDenominatorCount; eligible_population_count=$EligiblePopulationCount; population_basis=$populationBasis; execution_batch_count=$ExecutionBatchCount; execution_batches_parallel=[bool]($ExecutionBatchCount -gt 1 -and $maxParallelBatches -gt 1); aperture_width_mm=$apertureWidthMm; aperture_height_mm=$apertureHeightMm; aperture_boolean_boundary_policy=[string]$apertureDiscretization.boolean_boundary_policy; aperture_grid_warnings=$apertureGridWarnings; frontend_open_aperture_column_count=[int]$apertureTopology.open_column_count; frontend_aperture_guard_electrode_check_passed=[bool]$apertureTopology.guard_electrode_check_passed; frontend_aperture_topology_report_sha256=(Get-FileHash -LiteralPath $apertureTopologyReport -Algorithm SHA256).Hash; rod_end_to_accelerator_shield_mm=[double]$frontendGeometry.junction_enclosure.rod_end_to_accelerator_shield_mm; surrounded_transition=$true; accelerator_axis_x_mm=[double]$oatofGeometryDocument.coordinate_convention.accelerator_axis_x; pulse_time_us=$pulseTimeUs; pulse_width_us=$pulseWidthUs; design_compilation=$(if($null -ne $layoutDerivation){$layoutDerivation.design_compilation}else{$null}); source_release_full_width_mm=[double]$oatofGeometryDocument.particle_source.size_z_mm; reflectron_stage2_length_mm=[double]$oatofGeometryDocument.geometry_mm.L_stage2; reflectron_midgrid_voltage_V=[double]$oatofGeometryDocument.electrodes_V.midgrid; reflectron_backplate_voltage_V=[double]$oatofGeometryDocument.electrodes_V.backplate; reflectron_pa0_sha256=(Get-FileHash -LiteralPath $reflectronPa0 -Algorithm SHA256).Hash; frontend_gem_sha256=$frontendHash; frontend_pa0_sha256=(Get-FileHash -LiteralPath $cachePa0 -Algorithm SHA256).Hash; accelerator_overlay_pa0_sha256=$(if($overlayEnabled){(Get-FileHash -LiteralPath $overlayCachePa0 -Algorithm SHA256).Hash}else{$null}) }
     artifact_retention=[ordered]@{policy_version=1;class='compact';reason=$null}; formal_gate_passed=$false
   }
   $runConfiguration.parameters.maximum_time_of_flight_us = $maximumTimeOfFlightUs

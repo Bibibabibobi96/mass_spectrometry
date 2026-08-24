@@ -82,6 +82,9 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     materialize_pre_pulse_restart,
     resolve_source_materialization_profile,
 )
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_execution_profile import (
+    unique_named_profile,
+)
 
 
 INTEGRATION_ID = (
@@ -1898,14 +1901,10 @@ def _unique_named_profile(
     profile_id: str,
     failure: str,
 ) -> dict[str, Any]:
-    matches = [
-        item
-        for item in configuration[collection]
-        if item["profile_id"] == profile_id
-    ]
-    if len(matches) != 1:
-        raise ContractError(failure)
-    return matches[0]
+    try:
+        return unique_named_profile(configuration, collection, profile_id, failure)
+    except ValueError as exc:
+        raise ContractError(str(exc)) from exc
 
 
 @dataclass(frozen=True)
