@@ -307,7 +307,7 @@ class SingleFlightProgramTests(unittest.TestCase):
         }
         overlay = {
             "role": "rf_oatof_simion_accelerator_overlay_contract",
-            "cell_mm_xyz": {"x": 0.2, "y": 0.2, "z": 0.05},
+            "cell_mm_xyz": {"x": 0.2, "y": 0.2, "z": 0.025},
             "instance_origin_mm": {"x": 0.0, "y": 0.0, "z": 0.0},
             "active_bounds_mm": {
                 "x_min": -1.0,

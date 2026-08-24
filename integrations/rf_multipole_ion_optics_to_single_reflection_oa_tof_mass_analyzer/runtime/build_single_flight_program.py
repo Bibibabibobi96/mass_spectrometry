@@ -413,10 +413,11 @@ def build_successor_program(
         overlay is None
         or frontend["accelerator_local_region"].get("intermediate2_grid_provider")
         != "accelerator_overlay"
-        or float(overlay["cell_mm_xyz"]["z"]) != 0.05
+        or not math.isfinite(float(overlay["cell_mm_xyz"]["z"]))
+        or float(overlay["cell_mm_xyz"]["z"]) <= 0
     ):
         raise ValueError(
-            "three-zone single-flight Program requires the governed z=0.05 mm accelerator overlay"
+            "three-zone single-flight Program requires the governed accelerator overlay with a positive grid"
         )
     validate_resolved_region_field_contract(region_field_contract)
     sources = {
