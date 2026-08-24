@@ -72,9 +72,10 @@ schema 验证、cache 命中、handoff 兼容性或资格决策；这些仍由�
 composition plan。
 
 普通探索不必预先登记为活动 authority：将 repository-managed campaign 标为 `"status": "exploration"`，并显式传入
-`-Exploration -ValidateOnly` 或 `-Exploration -PrepareOnly -OutputDirectory ...`。该路径仍执行 schema、来源 artifact、
-单位/frame/clock、粒子和 composition-plan 校验；它不以活动 campaign SHA 或 source-binding 刷新拒绝新的参数组合。
-`-Exploration` 不能与 solver 或 finalize 模式组合，因此不会产生正式运行、发布结果或资格结论。
+`-Exploration -ValidateOnly`、`-Exploration -PrepareOnly -OutputDirectory ...`，或在准备完可审阅合同后使用
+`-Exploration -SolverAuthorized` 执行非正式模拟。该路径仍执行 schema、来源 artifact、单位/frame/clock、粒子和
+composition-plan 校验；它不以活动 campaign SHA 或 source-binding 刷新拒绝新的参数组合。探索运行保留普通的缓存、
+SHA、manifest 与失败记录，但不能 `FinalizeOnly`、发布正式结果或产生资格结论。
 
 ## 开放任务
 

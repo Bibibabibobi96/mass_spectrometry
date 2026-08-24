@@ -11,7 +11,7 @@
 | 下游 field、mesh/grid、trajectory quality、dt | campaign 的 `single_flight_*_profile_id` | Python prepare → runner arguments → SIMION | 仅消费者数值结果、数值资格和对应 cache | 已冻结的 upstream handoff 状态 |
 | 分析与 qualification | campaign preregistration / analysis contract | Python 分析器和 result receipt | analysis result、资格声明 | solver 输入、几何和 particle handoff |
 | batch、CPU、内存、timeout、retention | execution policy 与 `single_flight_batch_memory_policy` | Python resource scheduler → `resolved_engineering_budget.json` → runner | dispatch、运行 receipt 和资源使用证据 | campaign/PA/物理 handoff identity |
-| 活动 campaign 授权 | `config/diagnostics/lifecycle_registry.json` | `execute.ps1`、prepare、adapter | 正式启动、发布与 campaign SHA 绑定 | 历史 JSON 原始字节、历史结果和普通探索 dry-run |
+| 活动 campaign 授权 | `config/diagnostics/lifecycle_registry.json` | `execute.ps1`、prepare、adapter | 正式启动与发布的 campaign SHA 绑定；探索的非正式执行 | 历史 JSON 原始字节、历史结果；探索不能正式发布 |
 
 单飞行分辨率分析从冻结的 `single_flight_initial_global_state.csv` 读取唯一的正 `mass_amu`，不由
 PowerShell 或恢复路径另行默认。混合质量需要显式的目标物种分析合同；在该合同存在前，分析会拒绝而不以任意质量计算。
