@@ -116,11 +116,7 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
         )
         self.assertNotIn("ValidateRange(1,10000)", runner)
         self.assertIn("execution_batch_count=$ExecutionBatchCount", runner)
-        self.assertIn(
-            "execution_batches_parallel=[bool]($ExecutionBatchCount -gt 1 "
-            "-and $maxParallelBatches -gt 1)",
-            runner,
-        )
+        self.assertIn("execution_batches_parallel=[bool]($ExecutionBatchCount -gt 1)", runner)
         self.assertNotIn("$settings.batching_policy.default_batch_count", runner)
         self.assertNotIn("$batchCount -ne 5", runner)
         self.assertNotIn("N=1000 single flight requires five batches", runner)
@@ -132,7 +128,6 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
         self.assertIn("Invoke-ResourceBudgetedProcesses", runner)
         self.assertIn("$resourceUsageFiles = @($resourceUsage)", runner)
         self.assertIn("$processSpecifications += [pscustomobject]@", runner)
-        self.assertNotIn("$waveStart += $maxParallelBatches", runner)
         self.assertNotIn("$waveBatchCount -gt 1", runner)
         self.assertNotIn("$jobs += Start-Job", runner)
         batch_launch_block = runner[
