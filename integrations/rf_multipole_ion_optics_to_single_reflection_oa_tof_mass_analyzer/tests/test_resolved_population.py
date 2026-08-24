@@ -165,6 +165,9 @@ class ResolvedPopulationTests(unittest.TestCase):
     def test_runtime_population_projection_preserves_runner_semantics(self):
         contract = self.compile("pulse_eligible_conditional")
         projection = resolve_runtime_population(contract)
+        self.assertEqual(projection["campaign_id"], "fixture_campaign")
+        self.assertEqual(projection["experiment_id"], "fixture_experiment")
+        self.assertEqual(projection["population_declaration_sha256"], "D" * 64)
         self.assertEqual(projection["launched_particle_count"], 10)
         self.assertEqual(projection["population_denominator_count"], 10)
         self.assertIsNone(projection["eligible_population_count"])

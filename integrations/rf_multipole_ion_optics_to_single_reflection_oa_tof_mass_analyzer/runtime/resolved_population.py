@@ -75,6 +75,14 @@ def resolve_runtime_population(contract: dict[str, Any]) -> dict[str, Any]:
             raise ValueError("Resolved population contract identity differs.")
         if contract.get("role") != "rf_oatof_resolved_population_contract":
             raise ValueError("Resolved population contract identity differs.")
+        campaign_id = contract["campaign_id"]
+        experiment_id = contract["experiment_id"]
+        population_declaration_sha256 = contract["population_declaration_sha256"]
+        if not all(
+            isinstance(value, str) and value
+            for value in (campaign_id, experiment_id, population_declaration_sha256)
+        ):
+            raise ValueError("Resolved population contract identity differs.")
         execution_population = contract["execution_population"]
         if not isinstance(execution_population, dict):
             raise ValueError("Resolved population contract identity differs.")
@@ -152,6 +160,9 @@ def resolve_runtime_population(contract: dict[str, Any]) -> dict[str, Any]:
             raise
         raise ValueError("Resolved population contract identity differs.") from exc
     return {
+        "campaign_id": campaign_id,
+        "experiment_id": experiment_id,
+        "population_declaration_sha256": population_declaration_sha256,
         "launched_particle_count": launched,
         "population_denominator_count": population_denominator_count,
         "eligible_population_count": eligible_population_count,

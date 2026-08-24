@@ -500,8 +500,6 @@ try {
       $ResolvedPopulationContractSha256) {
     throw 'Resolved population contract hash differs.'
   }
-  $populationContract = Get-Content -LiteralPath $populationContractFrozen -Raw `
-    -Encoding UTF8 | ConvertFrom-Json
   $runtimePopulationPath = Join-Path $package.input_dir 'resolved_single_flight_population.json'
   Invoke-SingleFlightPython -Arguments @(
     '-m',
@@ -599,7 +597,7 @@ try {
     if ($pulseScheduleDocument.role -ne 'rf_oatof_resolved_single_flight_pulse_schedule' -or
         $pulseScheduleDocument.layout_profile_id -ne $LayoutProfileId -or
         $pulseScheduleDocument.population_declaration_sha256 -ne
-          $populationContract.population_declaration_sha256 -or
+          $runtimePopulation.population_declaration_sha256 -or
         [double]$pulseScheduleDocument.pulse_effective_time_us -le 0 -or
         [double]$pulseScheduleDocument.pulse_width_us -le 0) {
       throw 'Governed single-flight pulse schedule identity differs.'
@@ -1185,8 +1183,8 @@ try {
     $motherSourceActualSha256 = (Get-FileHash -LiteralPath $motherSource `
       -Algorithm SHA256).Hash
     $identityChecks = @(
-      @([string]$identity.campaign_id,[string]$populationContract.campaign_id),
-      @([string]$identity.experiment_id,[string]$populationContract.experiment_id),
+      @([string]$identity.campaign_id,[string]$runtimePopulation.campaign_id),
+      @([string]$identity.experiment_id,[string]$runtimePopulation.experiment_id),
       @([string]$identity.connection_profile_id,$ConnectionProfileId),
       @([string]$identity.source_profile_id,$SourceProfileId),
       @([string]$identity.resolved_source_contract_sha256,$ResolvedSourceContractSha256),

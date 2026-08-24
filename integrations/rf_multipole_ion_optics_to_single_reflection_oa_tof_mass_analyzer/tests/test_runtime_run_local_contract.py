@@ -1016,6 +1016,7 @@ foreach ($case in $cases) {{
         self.assertNotIn("[string]$SourceReleaseMode", runner)
         self.assertNotIn("$runnerArguments.SourceReleaseMode", adapter)
         self.assertIn("runtime.resolved_population", runner)
+        self.assertNotRegex(runner, r"\$populationContract\b")
         self.assertIn(
             "$sourceReleaseMode = [string]$runtimePopulation.source_release_mode",
             runner,
