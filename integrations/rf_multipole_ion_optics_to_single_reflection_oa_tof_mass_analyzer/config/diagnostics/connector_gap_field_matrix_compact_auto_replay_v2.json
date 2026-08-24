@@ -4,7 +4,7 @@
   "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
   "campaign_id": "connector_gap_field_matrix_compact_auto_replay_v2",
   "status": "authorized",
-  "claim_limit": "Exact replay of the 23 final successful 2026-08-22 post-pulse no-RF gap-by-field rows. One compact contract; auto-select per-row SIMION batch parallelism from the frozen resource receipt, current available memory, CPU capacity, and the authorized three-batch ceiling. New run identities only; compare each terminal result to its frozen successful baseline. Functional replay and scheduler regression only; no Formal, optimization, or convergence claim.",
+  "claim_limit": "Exact replay of the 23 final successful 2026-08-22 post-pulse no-RF gap-by-field rows. One compact contract; auto-select per-row SIMION batch parallelism from the frozen resource receipt, current available memory, and CPU capacity. New run identities only; compare each terminal result to its frozen successful baseline. Functional replay and scheduler regression only; no Formal, optimization, or convergence claim.",
   "experiments": {
     "shared": {
       "execution_strategy": "simion_single_flight",
