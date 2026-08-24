@@ -1996,8 +1996,6 @@ class ResolvedSingleFlightProfiles:
     source_materialization_profile_id: str | None
     source_materialization_profile: dict[str, Any] | None
     grid_profiles: list[dict[str, Any]]
-    oatof_numerical_profile: dict[str, Any] | None
-    time_integration_profile: dict[str, Any] | None
     execution_profile: dict[str, Any] | None
     accelerator_field_profile_id: str | None
     field_profiles: list[dict[str, Any]]
@@ -2059,16 +2057,11 @@ def _resolve_single_flight_profiles(
     oatof_numerical_profile_id = experiment.get(
         "single_flight_oatof_numerical_profile_id"
     )
-    oatof_numerical_profile = None
-    if oatof_numerical_profile_id is not None:
-        if execution_strategy != "simion_single_flight":
-            raise ContractError("oaTOF numerical profiles require SIMION single flight")
-        oatof_numerical_profile = _unique_named_profile(
-            configuration,
-            "oatof_numerical_profiles",
-            oatof_numerical_profile_id,
-            "oaTOF numerical profile must resolve exactly once",
-        )
+    if (
+        oatof_numerical_profile_id is not None
+        and execution_strategy != "simion_single_flight"
+    ):
+        raise ContractError("oaTOF numerical profiles require SIMION single flight")
     trajectory_quality_profile_id = experiment.get(
         "single_flight_trajectory_quality_profile_id"
     )
@@ -2085,9 +2078,11 @@ def _resolve_single_flight_profiles(
     time_integration_profile_id = experiment.get(
         "single_flight_time_integration_profile_id"
     )
-    time_integration_profile = None
-    if time_integration_profile_id is not None:
-        time_integration_profile = _unique_named_profile(
+    if (
+        time_integration_profile_id is not None
+        and execution_strategy != "simion_single_flight"
+    ):
+        _unique_named_profile(
             configuration,
             "time_integration_profiles",
             time_integration_profile_id,
@@ -2166,8 +2161,6 @@ def _resolve_single_flight_profiles(
         source_materialization_profile_id=source_materialization_profile_id,
         source_materialization_profile=source_materialization_profile,
         grid_profiles=grid_profiles,
-        oatof_numerical_profile=oatof_numerical_profile,
-        time_integration_profile=time_integration_profile,
         execution_profile=execution_profile,
         accelerator_field_profile_id=accelerator_field_profile_id,
         field_profiles=field_profiles,
@@ -2484,8 +2477,6 @@ def prepare_family_source_closure(
     )
     source_materialization_profile = resolved_profiles.source_materialization_profile
     grid_profiles = resolved_profiles.grid_profiles
-    oatof_numerical_profile = resolved_profiles.oatof_numerical_profile
-    time_integration_profile = resolved_profiles.time_integration_profile
     execution_profile = resolved_profiles.execution_profile
     accelerator_field_profile_id = resolved_profiles.accelerator_field_profile_id
     field_profiles = resolved_profiles.field_profiles
@@ -2892,8 +2883,11 @@ def prepare_family_source_closure(
             three_zone_candidate=three_zone_candidate,
             three_zone_candidate_binding=three_zone_candidate_binding,
         )
-        if oatof_numerical_profile is not None:
-            reflectron_mesh = oatof_numerical_profile["reflectron_cell_mm"]
+        if (
+            experiment.get("single_flight_oatof_numerical_profile_id") is not None
+            and execution_profile is not None
+        ):
+            reflectron_mesh = execution_profile["reflectron_cell_mm"]
             geometry["simion_geometry_build"]["reflectron"]["cell_axial_mm"] = float(
                 reflectron_mesh["axial"]
             )
@@ -3622,13 +3616,13 @@ def prepare_family_source_closure(
         if (
             pulse_prefix_path is None or pulse_prefix_sha256 is None
             or resolved_population_path is None or resolved_region_field_contract is None
-            or layout_files is None or time_integration_profile is None
+            or layout_files is None or execution_profile is None
             or not field_profiles
         ):
             raise ContractError("pre-pulse time-series prepared identity is incomplete")
         screening_specification = pre_pulse_time_series_specification
         if screening_specification is None:
-            native_rf_steps = int(time_integration_profile["rf_steps_per_period"])
+            native_rf_steps = int(execution_profile["rf_steps_per_period"])
             relative_start_index = math.floor(-0.35 * native_rf_steps)
             relative_end_index = math.ceil(1.65 * native_rf_steps)
             screening_specification = {
