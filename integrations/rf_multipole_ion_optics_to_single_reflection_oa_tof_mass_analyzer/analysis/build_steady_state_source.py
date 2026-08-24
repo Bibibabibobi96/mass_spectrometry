@@ -10,9 +10,6 @@ import random
 from pathlib import Path
 
 from common.contracts.file_identity import file_sha256 as sha256
-from common.simion.particle_batching import plan_single_wave_batches
-
-
 SOURCE_COLUMNS = [
     "particle_id", "birth_time_s", "x_mm", "y_mm", "z_mm", "vx_m_s",
     "vy_m_s", "vz_m_s", "mass_amu", "charge_state",
@@ -35,8 +32,6 @@ def build(
     receipt_path: Path,
     target_count: int | None = 1000,
     seed: int = SELECTION_SEED,
-    batch_directory: Path | None = None,
-    batch_count: int = 5,
     selection_mode: str = "random_subset",
 ) -> dict[str, object]:
     if len(source_paths) != len(checkpoint_paths) or not source_paths:
@@ -93,30 +88,6 @@ def build(
         writer.writeheader()
         for particle_id, (_, _, row) in enumerate(selected, 1):
             writer.writerow(dict(row, particle_id=str(particle_id)))
-    output_batches: list[dict[str, object]] = []
-    execution_batch_plan: dict[str, object] | None = None
-    if batch_directory is not None:
-        execution_batch_plan = plan_single_wave_batches(selected_count, batch_count)
-        batch_directory.mkdir(parents=True, exist_ok=True)
-        for batch in execution_batch_plan["batches"]:
-            size = int(batch["count"])
-            path = batch_directory / (
-                f"{output_path.stem}_batch{int(batch['index']):02d}_{size}.csv"
-            )
-            with path.open("w", encoding="utf-8", newline="") as handle:
-                writer = csv.DictWriter(handle, fieldnames=SOURCE_COLUMNS, lineterminator="\n")
-                writer.writeheader()
-                for local_id, (_, _, row) in enumerate(
-                    selected[int(batch["particle_id_min"]) - 1 : int(batch["particle_id_max"])], 1
-                ):
-                    writer.writerow(dict(row, particle_id=str(local_id)))
-            output_batches.append({
-                "batch_index": batch["index"],
-                "global_particle_id_offset": batch["simion_particle_id_offset"],
-                "particle_count": size,
-                "path": _portable_receipt_path(path),
-                "sha256": sha256(path),
-            })
     receipt: dict[str, object] = {
         "schema_version": 2,
         "role": "rf_oatof_steady_state_source_selection_receipt",
@@ -152,9 +123,6 @@ def build(
         ).hexdigest().upper(),
         "output_path": _portable_receipt_path(output_path),
         "output_sha256": sha256(output_path),
-        "execution_batch_count": batch_count if output_batches else 1,
-        "execution_batch_plan": execution_batch_plan,
-        "execution_batches": output_batches,
     }
     receipt_path.parent.mkdir(parents=True, exist_ok=True)
     receipt_path.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8", newline="\n")
@@ -173,14 +141,11 @@ def main() -> int:
         choices=("random_subset", "all_eligible"),
         default="random_subset",
     )
-    parser.add_argument("--batch-directory", type=Path)
-    parser.add_argument("--batch-count", type=int, default=5)
     args = parser.parse_args()
     receipt = build(
         args.source, args.checkpoints, args.output, args.receipt,
         1000 if args.selection_mode == "random_subset" and args.target_count is None
         else args.target_count,
-        batch_directory=args.batch_directory, batch_count=args.batch_count,
         selection_mode=args.selection_mode,
     )
     print(

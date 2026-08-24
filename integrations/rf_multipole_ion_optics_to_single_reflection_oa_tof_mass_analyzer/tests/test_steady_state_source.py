@@ -4,9 +4,6 @@ import csv
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
-
-from common.simion.particle_batching import plan_single_wave_batches
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.build_steady_state_source import (
     SOURCE_COLUMNS,
     build,
@@ -56,7 +53,6 @@ class SteadyStateSourceTests(unittest.TestCase):
             receipt_path = root / "receipt.json"
             receipt = build(
                 [source], [checkpoints], output, receipt_path, target_count=2,
-                batch_directory=root / "batches", batch_count=2,
             )
             first = output.read_bytes()
             build([source], [checkpoints], output, receipt_path, target_count=2)
@@ -65,8 +61,9 @@ class SteadyStateSourceTests(unittest.TestCase):
         self.assertFalse(receipt["selection_uses_detector_outcome"])
         self.assertRegex(receipt["selected_lineage_sha256"], r"^[0-9A-F]{64}$")
         self.assertNotIn("selected_lineage", receipt)
-        self.assertEqual(receipt["execution_batch_count"], 2)
-        self.assertEqual([item["global_particle_id_offset"] for item in receipt["execution_batches"]], [0, 1])
+        self.assertNotIn("execution_batch_count", receipt)
+        self.assertNotIn("execution_batch_plan", receipt)
+        self.assertNotIn("execution_batches", receipt)
 
     def test_all_eligible_keeps_the_complete_conditional_population(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -91,44 +88,14 @@ class SteadyStateSourceTests(unittest.TestCase):
                 "6,pre_pulse_state,eligible\n",
                 encoding="utf-8",
             )
-            with patch(
-                "integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
-                ".analysis.build_steady_state_source.plan_single_wave_batches",
-                wraps=plan_single_wave_batches,
-            ) as plan_batches:
-                receipt = build(
-                    [source], [checkpoints], root / "selected.csv", root / "receipt.json",
-                    target_count=None, selection_mode="all_eligible",
-                    batch_directory=root / "batches", batch_count=2,
-                )
-            plan_batches.assert_called_once_with(5, 2)
+            receipt = build(
+                [source], [checkpoints], root / "selected.csv", root / "receipt.json",
+                target_count=None, selection_mode="all_eligible",
+            )
             self.assertEqual(receipt["selected_count"], 5)
             self.assertEqual(receipt["unselected_eligible_count"], 0)
             self.assertIsNone(receipt["selection_seed"])
-            self.assertEqual(
-                [item["particle_count"] for item in receipt["execution_batches"]],
-                [3, 2],
-            )
-            self.assertEqual(
-                [item["global_particle_id_offset"] for item in receipt["execution_batches"]],
-                [0, 3],
-            )
-            self.assertEqual(
-                receipt["execution_batch_plan"],
-                {
-                    "schema_version": 1,
-                    "role": "simion_single_wave_particle_batch_plan",
-                    "dispatch": "single_wave_parallel",
-                    "particle_count": 5,
-                    "batch_count": 2,
-                    "batches": [
-                        {"index": 1, "count": 3, "particle_id_min": 1,
-                         "particle_id_max": 3, "simion_particle_id_offset": 0},
-                        {"index": 2, "count": 2, "particle_id_min": 4,
-                         "particle_id_max": 5, "simion_particle_id_offset": 3},
-                    ],
-                },
-            )
+            self.assertNotIn("execution_batch_plan", receipt)
             self.assertEqual(
                 receipt["selected_population_contract"]["efficiency_denominator"],
                 "candidate_launched_count",
