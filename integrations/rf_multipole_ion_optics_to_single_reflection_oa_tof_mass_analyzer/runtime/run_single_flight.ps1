@@ -10,12 +10,6 @@ param(
   [Parameter(Mandatory)][string]$ResolvedSourceContractSha256,
   [Parameter(Mandatory)][string]$UpstreamResolvedDesign,
   [Parameter(Mandatory)][string]$UpstreamResolvedDesignSha256,
-  [Parameter(Mandatory)]
-  [ValidateSet('require_existing','build_and_publish_if_missing')]
-  [string]$PaCachePolicy,
-  [Parameter(Mandatory)]
-  [ValidateSet('explicit_campaign_row')]
-  [string]$PaCachePolicyProvenance,
   [string]$RequiredPaCacheGenerationBinding = '',
   [string]$RequiredPaCacheGenerationBindingSha256 = '',
   [string]$OatofResolvedGeometry = '',
@@ -163,11 +157,6 @@ $isPrePulseTimeSeriesScreening = -not [string]::IsNullOrWhiteSpace(
 if ($isPrePulseTimeSeriesScreening -ne (-not [string]::IsNullOrWhiteSpace(
       $PrePulseTimeSeriesContractSha256))) {
   throw 'Pre-pulse time-series contract path/hash identity is incomplete.'
-}
-if ($isPrePulseTimeSeriesScreening -and (
-    $ResolutionQualification -or
-    $PaCachePolicy -notin @('require_existing','build_and_publish_if_missing'))) {
-  throw 'Pre-pulse time-series screening requires FUNCTIONAL_ONLY cache-governed execution.'
 }
 $artifactRoot = Join-Path $workspaceRoot "artifacts\projects\$runProjectId"
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
@@ -366,8 +355,8 @@ $preCacheRunConfiguration = [ordered]@{
     lifecycle_stage='pa_cache_policy_pending_budget_validation'
     connection_profile_id=$ConnectionProfileId
     source_branch_id=$SourceBranchId
-    single_flight_pa_cache_policy=$PaCachePolicy
-    single_flight_pa_cache_policy_provenance=$PaCachePolicyProvenance
+    single_flight_pa_cache_policy=$null
+    single_flight_pa_cache_policy_provenance=$null
     pa_cache_dispositions=$paCacheDispositions
   }
   formal_gate_passed=$false
@@ -392,16 +381,15 @@ try {
     -Encoding UTF8 | ConvertFrom-Json
   $minimumSystemAvailableMemoryBytes =
     [int64]$stageBudgetDocument.limits.minimum_system_available_memory_bytes
-  if ([string]$resolvedBudgetDocument.single_flight_pa_cache_policy -ne
-      $PaCachePolicy -or
-      [string]$resolvedBudgetDocument.single_flight_pa_cache_policy_provenance -ne
-      $PaCachePolicyProvenance) {
-    throw 'Runner PA cache policy differs from the frozen resolved engineering budget.'
-  }
   $PaCachePolicy = [string]$resolvedBudgetDocument.single_flight_pa_cache_policy
   $PaCachePolicyProvenance = [string](
     $resolvedBudgetDocument.single_flight_pa_cache_policy_provenance
   )
+  if ($isPrePulseTimeSeriesScreening -and (
+      $ResolutionQualification -or
+      $PaCachePolicy -notin @('require_existing','build_and_publish_if_missing'))) {
+    throw 'Pre-pulse time-series screening requires FUNCTIONAL_ONLY cache-governed execution.'
+  }
   $preCacheRunConfiguration.parameters.single_flight_pa_cache_policy =
     [string]$resolvedBudgetDocument.single_flight_pa_cache_policy
   $preCacheRunConfiguration.parameters.single_flight_pa_cache_policy_provenance =

@@ -1223,10 +1223,6 @@ if ($executionStrategy -eq 'simion_single_flight') {
   }
   $singleFlightRunId = "$($RunId.Substring(0, 15))__sim__simion__$singleFlightRole-gap$connectorGapLabel`__n$expectedExecutionParticleCount$retrySuffix"
   $runnerArguments.RunId = $singleFlightRunId
-  $runnerArguments.PaCachePolicy =
-    [string]$frozenArguments.single_flight_pa_cache_policy
-  $runnerArguments.PaCachePolicyProvenance =
-    [string]$frozenArguments.single_flight_pa_cache_policy_provenance
   if ($null -ne $paCacheGenerationBindingPath) {
     $runnerArguments.RequiredPaCacheGenerationBinding = $paCacheGenerationBindingPath
     $runnerArguments.RequiredPaCacheGenerationBindingSha256 =

@@ -497,8 +497,8 @@ try {{
             after_initialize,
         )
         self.assertEqual(after_initialize.count("$ResolvedEngineeringBudget"), 1)
-        self.assertIn(
-            "single_flight_pa_cache_policy -ne\n      $PaCachePolicy",
+        self.assertNotIn(
+            "Runner PA cache policy differs from the frozen resolved engineering budget.",
             after_initialize,
         )
         frozen_policy_rebind = after_initialize.index(
