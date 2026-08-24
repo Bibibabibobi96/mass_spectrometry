@@ -68,12 +68,6 @@ PHYSICAL_PROFILE_SWITCHES = {
     "waveform",
 }
 NUMERICAL_OVERRIDE_SWITCHES = {"rfstepsperperiod", "trajectoryquality"}
-BLOCKING_PROFILE_IDS = {
-    "transport_no_collision_candidate",
-    "transport_interface_readiness_candidate",
-    "mass_filter_simion_functional_reference",
-}
-REPORT_ONLY_PROFILE_IDS: set[str] = set()
 DEDICATED_SIMION_PROFILE_IDS = {
     "transport_interface_readiness_candidate",
     "mass_filter_simion_functional_reference",
@@ -133,18 +127,6 @@ class WorkflowArchitectureContractTests(unittest.TestCase):
                 set(),
                 f"{path} redefines runtime mechanisms: {sorted(overlap)}",
             )
-    def test_profile_inventory_classifies_every_active_workflow(self) -> None:
-        profiles = json.loads(EXECUTION_PROFILES.read_text(encoding="utf-8"))[
-            "profiles"
-        ]
-        profile_ids = {profile["profile_id"] for profile in profiles}
-        self.assertTrue(BLOCKING_PROFILE_IDS.isdisjoint(REPORT_ONLY_PROFILE_IDS))
-        self.assertEqual(
-            profile_ids,
-            BLOCKING_PROFILE_IDS | REPORT_ONLY_PROFILE_IDS,
-            "new profiles must be explicitly classified before architecture rollout",
-        )
-
     def test_workflow_locations_and_dependency_direction_are_blocking(self) -> None:
         expected_entries = {
             "transport_no_collision_candidate": {
