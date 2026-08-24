@@ -77,6 +77,9 @@ composition plan。
 composition-plan 校验；它不以活动 campaign SHA 或 source-binding 刷新拒绝新的参数组合。探索运行保留普通的缓存、
 SHA、manifest 与失败记录，但不能 `FinalizeOnly`、发布正式结果或产生资格结论。
 
+探索的粒子数没有 schema 人为上限；它必须是正整数，并与冻结 source、ordered particle IDs 和分析分母一致。
+实际并发由资源调度器按粒子数、CPU 和可用内存决定，不改变 handoff 的科学身份。
+
 探索若复用一个已冻结的 post-pulse restart source，仍须验证该 source 的 manifest、checkpoint、pulse schedule、
 粒子身份和所声明的变化轴；但不必为了只扫描加速场 profile 而附带正式资格专用的 source `z--vz` 理论工作点。
 该理论闭合仍是 active/authorized restart 的失败关闭要求。

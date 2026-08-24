@@ -221,7 +221,7 @@
       "properties": {
         "path": {"type": "string", "minLength": 1},
         "sha256": {"$ref": "#/$defs/sha"},
-        "particle_count": {"type": "integer", "minimum": 1, "maximum": 10000},
+        "particle_count": {"type": "integer", "minimum": 1},
         "sampling_mode": {"enum": ["steady_candidate_pool", "continuous_injection_full_population", "pulse_eligible_conditional"]},
         "selection_receipt": {"$ref": "#/$defs/file"}
       }
@@ -232,7 +232,7 @@
       "properties": {
         "path": {"type": "string", "minLength": 1},
         "sha256": {"$ref": "#/$defs/sha"},
-        "particle_count": {"type": "integer", "minimum": 1, "maximum": 10000},
+        "particle_count": {"type": "integer", "minimum": 1},
         "coordinate_frame": {"const": "oatof_global_cartesian"},
         "release_event": {"const": "pre_pulse_state"},
         "materialization_receipt": {"$ref": "#/$defs/file"},
@@ -326,7 +326,7 @@
           "required": ["algorithm", "particle_count"],
           "properties": {
             "algorithm": {"type": "string", "minLength": 1},
-            "particle_count": {"type": "integer", "minimum": 1, "maximum": 10000}
+            "particle_count": {"type": "integer", "minimum": 1}
           }
         }
       },
@@ -402,7 +402,7 @@
           "additionalProperties": false,
           "required": ["particle_count", "ordered_particle_id_sha256", "selection_algorithm", "selection_seed"],
           "properties": {
-            "particle_count": {"type": "integer", "minimum": 1, "maximum": 10000},
+            "particle_count": {"type": "integer", "minimum": 1},
             "ordered_particle_id_sha256": {"$ref": "#/$defs/sha"},
             "selection_algorithm": {"type": "string", "minLength": 1},
             "selection_seed": {"type": "integer", "minimum": 0}
@@ -413,8 +413,8 @@
           "additionalProperties": false,
           "required": ["population_count", "eligible_population_count"],
           "properties": {
-            "population_count": {"type": "integer", "minimum": 1, "maximum": 10000},
-            "eligible_population_count": {"type": "integer", "minimum": 1, "maximum": 10000}
+            "population_count": {"type": "integer", "minimum": 1},
+            "eligible_population_count": {"type": "integer", "minimum": 1}
           }
         },
         "analysis_randomness": {

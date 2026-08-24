@@ -716,6 +716,24 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             resolve_generated_pre_pulse_ordered_subset(arbitrary_row, profile),
             list(range(1, 38)),
         )
+        large_n = json.loads(json.dumps(arbitrary_n))
+        large_row = large_n["experiments"][2]
+        large_count = 10001
+        large_row["generated_pre_pulse_ordered_subset"]["selector"][
+            "particle_count"
+        ] = large_count
+        large_population = large_row["single_flight_population"]
+        large_population["execution_population"]["particle_count"] = large_count
+        large_population["execution_population"]["ordered_particle_id_sha256"] = (
+            hashlib.sha256(
+                json.dumps(list(range(1, large_count + 1)), separators=(",", ":")).encode()
+            ).hexdigest().upper()
+        )
+        large_population["denominators"] = {
+            "population_count": large_count,
+            "eligible_population_count": large_count,
+        }
+        validate_schema(large_n, ARCHIVAL_CAMPAIGN_SCHEMA)
         insufficient_mother = {**profile, "particle_count": 36}
         with self.assertRaisesRegex(ContractError, "exceeds mother"):
             resolve_generated_pre_pulse_ordered_subset(
