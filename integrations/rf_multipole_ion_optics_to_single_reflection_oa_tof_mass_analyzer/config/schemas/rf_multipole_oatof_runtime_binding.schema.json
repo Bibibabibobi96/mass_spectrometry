@@ -3,7 +3,6 @@
   "$id": "https://mass-spectrometry.local/schemas/rf_multipole_oatof_runtime_binding.schema.json",
   "oneOf": [
     {"$ref": "#/$defs/historical_v2"},
-    {"$ref": "#/$defs/active_v3"},
     {"$ref": "#/$defs/active_v4"}
   ],
   "$defs": {
@@ -14,17 +13,6 @@
           "properties": {
             "schema_version": {"const": 2},
             "contracts": {"$ref": "#/$defs/historical_contracts"}
-          }
-        }
-      ]
-    },
-    "active_v3": {
-      "allOf": [
-        {"$ref": "#/$defs/common_binding"},
-        {
-          "properties": {
-            "schema_version": {"const": 3},
-            "contracts": {"$ref": "#/$defs/active_contracts"}
           }
         }
       ]
