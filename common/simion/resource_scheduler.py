@@ -125,12 +125,6 @@ def plan_simion_dispatch(
         request.get("maximum_parallel_batches", particles), "maximum_parallel_batches"
     )
     maximum_batches = min(maximum_batches, particles)
-    default_batches = _positive_int(
-        request.get("default_parallel_batches", 1),
-        "default_parallel_batches",
-    )
-    if default_batches > maximum_batches:
-        raise ValueError("default_parallel_batches cannot exceed maximum_parallel_batches")
     if request.get("solver") != "SIMION":
         raise ValueError("scheduler accepts only SIMION requests")
     field_kind = request.get("field_kind")
@@ -203,7 +197,6 @@ def plan_simion_dispatch(
                 "cpu_capacity": cpu_capacity,
                 "cpu_cores_per_batch": cpu_per_batch,
                 "reserve_cpu_cores": cpu_reserve,
-                "default_parallel_batches": default_batches,
                 "memory_safety_numerator": safety_numerator,
                 "memory_safety_denominator": safety_denominator,
             },
@@ -216,8 +209,11 @@ def plan_simion_dispatch(
     peak = _positive_int(profile["per_batch_peak_working_set_bytes"], "profile peak")
     reserved_peak = (peak * safety_numerator + safety_denominator - 1) // safety_denominator
     if available is None:
-        memory_capacity = default_batches
-        memory_reason = "host_memory_unavailable_use_authorized_cap"
+        # Without an observed current memory capacity, one batch is the only
+        # non-speculative choice.  This is deliberately not a project policy
+        # knob: hosts with observable memory are always planned from it.
+        memory_capacity = 1
+        memory_reason = "host_memory_unavailable_single_batch"
     else:
         available = _nonnegative_int(available, "available_memory_bytes")
         memory_capacity = (available - reserve) // reserved_peak
@@ -244,7 +240,6 @@ def plan_simion_dispatch(
             "cpu_capacity": cpu_capacity,
             "cpu_cores_per_batch": cpu_per_batch,
             "reserve_cpu_cores": cpu_reserve,
-            "default_parallel_batches": default_batches,
             "memory_safety_numerator": safety_numerator,
             "memory_safety_denominator": safety_denominator,
         },
@@ -282,7 +277,6 @@ def _request_from_dispatch_plan(plan: dict[str, Any]) -> dict[str, Any]:
         "reserve_available_memory_bytes": limits.get("memory_reserve_bytes"),
         "cpu_cores_per_batch": limits.get("cpu_cores_per_batch"),
         "reserve_cpu_cores": limits.get("reserve_cpu_cores"),
-        "default_parallel_batches": limits.get("default_parallel_batches"),
         "memory_safety_numerator": limits.get("memory_safety_numerator"),
         "memory_safety_denominator": limits.get("memory_safety_denominator"),
         **identity,

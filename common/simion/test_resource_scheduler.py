@@ -120,7 +120,7 @@ class ResourceSchedulerTests(unittest.TestCase):
         request = {
             "solver": "SIMION", "field_kind": "rf", "rf_steps_per_period": 40,
             "particle_count": 8000, "independent_particles": True,
-            "default_parallel_batches": 2, "maximum_parallel_batches": 8,
+            "maximum_parallel_batches": 8,
             "reserve_available_memory_bytes": 4, "cpu_cores_per_batch": 1,
         }
         profile = {
@@ -213,7 +213,7 @@ class ResourceSchedulerTests(unittest.TestCase):
         self.assertEqual(plan["estimation"]["reserved_peak_bytes"], 11)
         self.assertEqual(plan["waves"][0]["batch_count"], 1)
 
-    def test_missing_host_memory_uses_authorized_default_not_maximum(self) -> None:
+    def test_missing_host_memory_uses_one_non_speculative_batch(self) -> None:
         profile = {
             "resource_identity": {"solver": "SIMION", "field_kind": "rf", "rf_steps_per_period": 40},
             "per_batch_peak_working_set_bytes": 10,
@@ -223,11 +223,11 @@ class ResourceSchedulerTests(unittest.TestCase):
             return_value=None,
         ):
             plan = plan_simion_dispatch(
-                self.rf_request(default_parallel_batches=3), [profile],
+                self.rf_request(), [profile],
                 logical_processors=8,
             )
-        self.assertEqual(plan["waves"][0]["batch_count"], 3)
-        self.assertEqual(plan["estimation"]["memory_selection_reason"], "host_memory_unavailable_use_authorized_cap")
+        self.assertEqual(plan["waves"][0]["batch_count"], 1)
+        self.assertEqual(plan["estimation"]["memory_selection_reason"], "host_memory_unavailable_single_batch")
 
     def test_particle_count_caps_lanes_and_all_ids_are_contiguous(self) -> None:
         profile = {
@@ -249,7 +249,6 @@ class ResourceSchedulerTests(unittest.TestCase):
             {**self.rf_request(), "field_kind": "electrostatic", "rf_steps_per_period": 40},
             self.rf_request(solver="COMSOL"),
             self.rf_request(field_kind="magnetic"),
-            self.rf_request(default_parallel_batches=9),
         )
         for request in invalid:
             with self.subTest(request=request), self.assertRaises(ValueError):
@@ -298,7 +297,7 @@ class ResourceSchedulerTests(unittest.TestCase):
         for key in (
             "maximum_parallel_batches", "memory_reserve_bytes",
             "cpu_cores_per_batch", "reserve_cpu_cores",
-            "default_parallel_batches", "memory_safety_numerator",
+            "memory_safety_numerator",
             "memory_safety_denominator",
         ):
             self.assertEqual(runtime["limits"][key], prepared["limits"][key])
