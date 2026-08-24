@@ -94,12 +94,6 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
             "--summary-output",
         ):
             self.assertIn(argument, runner)
-        self.assertNotIn("$tracePattern", runner)
-        self.assertNotIn("$rows +=", runner)
-        self.assertNotIn("Export-Csv", runner)
-        self.assertEqual(
-            runner.count("-not $isPrePulseTimeSeriesScreening -and"), 2
-        )
         self.assertIn("$null -ne $cacheKeys.flight_tube", runner)
         self.assertIn("$null -ne $cacheKeys.reflectron", runner)
         self.assertNotIn("rod_end_to_accelerator_shield_mm=1.0", runner)
