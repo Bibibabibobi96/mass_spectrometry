@@ -14,6 +14,8 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 
 REPO = Path(__file__).resolve().parents[3]
 ARTIFACTS = REPO.parent / "artifacts" / "projects"
+SCHEMA_DIR = Path(__file__).resolve().parents[1] / "config" / "schemas"
+
 
 def sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest().upper()
@@ -98,7 +100,7 @@ class ObservedPrePulseProjectionTests(unittest.TestCase):
             )
             validate_schema(
                 receipt,
-                "rf_oatof_observed_pre_pulse_projection_receipt.schema.json",
+                SCHEMA_DIR / "rf_oatof_observed_pre_pulse_projection_receipt.schema.json",
             )
             with p["full.csv"].open(encoding="utf-8", newline="") as handle:
                 full = list(csv.DictReader(handle))
@@ -149,7 +151,7 @@ class ObservedPrePulseProjectionTests(unittest.TestCase):
                 affine_center_z_mm=-61.49423982071021,
                 fixed_kinetic_energy_eV=15.5,
             )
-            validate_schema(receipt, "rf_oatof_observed_pre_pulse_projection_receipt.schema.json")
+            validate_schema(receipt, SCHEMA_DIR / "rf_oatof_observed_pre_pulse_projection_receipt.schema.json")
             self.assertEqual(receipt["schema_version"], 2)
             with p["full.csv"].open(encoding="utf-8", newline="") as handle:
                 full = list(csv.DictReader(handle))
@@ -223,7 +225,7 @@ class ObservedPrePulseProjectionTests(unittest.TestCase):
             with self.assertRaises(ContractError):
                 validate_schema(
                     receipt,
-                    "rf_oatof_observed_pre_pulse_projection_receipt.schema.json",
+                    SCHEMA_DIR / "rf_oatof_observed_pre_pulse_projection_receipt.schema.json",
                 )
 
     def test_real_authority_projects_current_n100_when_artifacts_exist(self) -> None:
@@ -253,7 +255,7 @@ class ObservedPrePulseProjectionTests(unittest.TestCase):
             )
             validate_schema(
                 receipt,
-                "rf_oatof_observed_pre_pulse_projection_receipt.schema.json",
+                SCHEMA_DIR / "rf_oatof_observed_pre_pulse_projection_receipt.schema.json",
             )
             with (root / "full.csv").open(encoding="utf-8", newline="") as handle:
                 full = list(csv.DictReader(handle))

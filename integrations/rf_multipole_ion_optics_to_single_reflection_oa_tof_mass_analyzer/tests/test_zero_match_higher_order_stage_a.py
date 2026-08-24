@@ -18,26 +18,28 @@ CAMPAIGN = (
     / "zero_match_long_higher_order_stage_a_campaign.json"
 )
 
+SCHEMA_DIR = CAMPAIGN.parents[1] / "schemas"
+
 
 class ZeroMatchHigherOrderStageATests(unittest.TestCase):
     def test_registered_campaign_is_schema_valid_and_fail_closed(self):
         campaign = load_json(CAMPAIGN)
         validate_schema(
-            campaign, "rf_oatof_zero_match_higher_order_stage_a_campaign.schema.json"
+            campaign, SCHEMA_DIR / "rf_oatof_zero_match_higher_order_stage_a_campaign.schema.json"
         )
         changed = copy.deepcopy(campaign)
         changed["unregistered_interpretation"] = True
         with self.assertRaises(Exception):
             validate_schema(
                 changed,
-                "rf_oatof_zero_match_higher_order_stage_a_campaign.schema.json",
+                SCHEMA_DIR / "rf_oatof_zero_match_higher_order_stage_a_campaign.schema.json",
             )
         missing_stop_rule = copy.deepcopy(campaign)
         del missing_stop_rule["stop_rule"]
         with self.assertRaises(Exception):
             validate_schema(
                 missing_stop_rule,
-                "rf_oatof_zero_match_higher_order_stage_a_campaign.schema.json",
+                SCHEMA_DIR / "rf_oatof_zero_match_higher_order_stage_a_campaign.schema.json",
             )
         self.assertNotIn("minimum", campaign["stop_rule"])
         self.assertEqual(

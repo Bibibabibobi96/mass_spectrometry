@@ -25,6 +25,8 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     validate_active_post_pulse_restart_working_point,
 )
 
+SCHEMA_DIR = Path(__file__).resolve().parents[1] / "config" / "schemas"
+
 
 GEOMETRY = {
     "role": "oa_tof_resolved_contract_do_not_edit",
@@ -358,14 +360,14 @@ if ($baseline -ne $theory -or $baseline -eq $geometryKey -or $baseline -eq $mesh
             self.assertAlmostEqual(
                 identified["source_state"]["ols_slope_vz_m_per_s_per_mm"], 90.0
             )
-            validate_schema(identified, "rf_oatof_source_zvz_affine_receipt.schema.json")
+            validate_schema(identified, SCHEMA_DIR / "rf_oatof_source_zvz_affine_receipt.schema.json")
             # Full ideal is separately usable and receives no z--vz-derived voltage change.
             contract = build_resolved_region_field_contract(
                 geometry_path, root / "region.json",
                 "full_domain_three_zone_piecewise_ideal_field",
                 accelerator_topology=TOPOLOGY,
             )
-            validate_schema(contract, "rf_oatof_resolved_region_field_contract.schema.json")
+            validate_schema(contract, SCHEMA_DIR / "rf_oatof_resolved_region_field_contract.schema.json")
             self.assertNotIn("full_ideal_working_point", contract["semantic"])
 
     def test_source_zvz_accepts_continuous_multipole_source_columns(self) -> None:
@@ -417,7 +419,7 @@ if ($baseline -ne $theory -or $baseline -eq $geometryKey -or $baseline -eq $mesh
             self.assertEqual(
                 working_point["resolved_geometry_input_sha256"], "A" * 64
             )
-            validate_schema(working_point, "rf_oatof_theory_working_point.schema.json")
+            validate_schema(working_point, SCHEMA_DIR / "rf_oatof_theory_working_point.schema.json")
             self.assertLess(abs(working_point["verification"]["reflectron_d1_mm_per_sqrt_v"]), 1e-10)
             self.assertNotEqual(
                 working_point["accelerator_topology"]["potentials_v"], TOPOLOGY["potentials_v"]

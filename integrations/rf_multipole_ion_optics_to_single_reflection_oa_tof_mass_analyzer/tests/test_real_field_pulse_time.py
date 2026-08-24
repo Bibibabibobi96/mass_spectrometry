@@ -34,6 +34,8 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
+SCHEMA_DIR = Path(__file__).resolve().parents[1] / "config" / "schemas"
+
 
 def _record(path: Path) -> dict[str, object]:
     return {
@@ -627,7 +629,7 @@ class RealFieldPulseAnalysisTests(unittest.TestCase):
                 candidate_receipt=receipt,
             )
             transition = json.loads(transition_path.read_text(encoding="utf-8"))
-            validate_schema(transition, "rf_oatof_pulse_timing_transition.schema.json")
+            validate_schema(transition, SCHEMA_DIR / "rf_oatof_pulse_timing_transition.schema.json")
             self.assertEqual(transition["content_key"], receipt["content_key"])
             self.assertEqual(
                 transition["screening_child_manifest"]["sha256"],

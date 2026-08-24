@@ -52,6 +52,7 @@ CSV_COLUMNS = (
     "survival_status",
 )
 SHA_PATTERN = re.compile(r"^[A-Fa-f0-9]{64}$")
+INTEGRATION_SCHEMA_DIR = Path(__file__).resolve().parents[1] / "config" / "schemas"
 
 
 @dataclass(frozen=True, slots=True)
@@ -396,7 +397,8 @@ def materialize(
         raise ContractError("pre-pulse time-series contract SHA-256 differs")
     contract = _load_object(contract_path, role="pre-pulse time-series contract")
     validate_schema(
-        contract, "rf_oatof_pre_pulse_time_series_screening_contract.schema.json"
+        contract,
+        INTEGRATION_SCHEMA_DIR / "rf_oatof_pre_pulse_time_series_screening_contract.schema.json",
     )
 
     raw_sample_times = contract.get("sample_times_us")

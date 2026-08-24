@@ -16,6 +16,8 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 
 
 ROOT = Path(__file__).resolve().parents[3]
+SCHEMA_DIR = Path(__file__).resolve().parents[1] / "config" / "schemas"
+
 GEOMETRY = ROOT / "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json"
 SIMION = Path(r"C:\Program Files\SIMION-2020\simion.exe")
 FULL_ID = "full_domain_piecewise_ideal_field"
@@ -73,7 +75,7 @@ class ResolvedRegionFieldTests(unittest.TestCase):
             modes = contract["semantic"]["region_modes"]
             self.assertEqual(tuple(modes.values())[:2], accelerator)
             self.assertEqual(tuple(modes.values())[2:], ("real_pa_field",) * 3)
-            validate_schema(contract, "rf_oatof_resolved_region_field_contract.schema.json")
+            validate_schema(contract, SCHEMA_DIR / "rf_oatof_resolved_region_field_contract.schema.json")
 
     def test_full_ideal_has_no_real_pa_region_or_blending(self) -> None:
         contract = self._build(FULL_ID)
@@ -147,7 +149,7 @@ class ResolvedRegionFieldTests(unittest.TestCase):
         )
         self.assertNotIn("grid2", semantic["planes_mm"])
         self.assertNotIn("accelerator_stage2", semantic["region_modes"])
-        validate_schema(contract, "rf_oatof_resolved_region_field_contract.schema.json")
+        validate_schema(contract, SCHEMA_DIR / "rf_oatof_resolved_region_field_contract.schema.json")
         lua = resolved_region_field_hook_lua(contract)
         self.assertIn("_intermediate1", lua)
         self.assertIn("_intermediate2", lua)
@@ -200,7 +202,7 @@ class ResolvedRegionFieldTests(unittest.TestCase):
         )
         self.assertNotIn("real_pa_field", semantic["region_modes"].values())
         self.assertEqual(semantic["pa_role"], "geometry_and_collision_carrier_only")
-        validate_schema(contract, "rf_oatof_resolved_region_field_contract.schema.json")
+        validate_schema(contract, SCHEMA_DIR / "rf_oatof_resolved_region_field_contract.schema.json")
 
         lua = resolved_region_field_hook_lua(contract, prefix="fullthree")
         self.assertIn("local fullthree_m_drift=2", lua)
@@ -233,7 +235,7 @@ class ResolvedRegionFieldTests(unittest.TestCase):
             semantic["pa_role"],
             "geometry_and_collision_carrier_plus_explicit_real_pa_field_regions",
         )
-        validate_schema(contract, "rf_oatof_resolved_region_field_contract.schema.json")
+        validate_schema(contract, SCHEMA_DIR / "rf_oatof_resolved_region_field_contract.schema.json")
         lua = resolved_region_field_hook_lua(contract, prefix="reflideal")
         self.assertIn("local reflideal_m_zone1=0", lua)
         self.assertIn("local reflideal_m_drift=2", lua)
@@ -261,7 +263,7 @@ class ResolvedRegionFieldTests(unittest.TestCase):
             contract["semantic"]["field_configuration_id"],
             "EXPLICIT_THREE_ZONE_REGION_MODES_FIELD",
         )
-        validate_schema(contract, "rf_oatof_resolved_region_field_contract.schema.json")
+        validate_schema(contract, SCHEMA_DIR / "rf_oatof_resolved_region_field_contract.schema.json")
         lua = resolved_region_field_hook_lua(contract, prefix="arbitrary")
         self.assertIn("local arbitrary_m_zone1=1", lua)
         self.assertIn("local arbitrary_m_zone2=0", lua)
@@ -306,7 +308,7 @@ class ResolvedRegionFieldTests(unittest.TestCase):
                 "outside_longitudinal_domain": "native_pa_base_field_unchanged",
             },
         )
-        validate_schema(contract, "rf_oatof_resolved_region_field_contract.schema.json")
+        validate_schema(contract, SCHEMA_DIR / "rf_oatof_resolved_region_field_contract.schema.json")
         lua = resolved_region_field_hook_lua(contract)
         self.assertIn("return base", lua)
         for forbidden in ("replace_all", "_zone", "_repeller", "local E", "error("):

@@ -17,6 +17,8 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 
 REPO = Path(__file__).resolve().parents[3]
 
+SCHEMA_DIR = Path(__file__).resolve().parents[1] / "config" / "schemas"
+
 
 class SingleFlightSourceTests(unittest.TestCase):
     def test_uniform_n100_selection_spans_the_full_n1000_mother_width(self) -> None:
@@ -100,7 +102,7 @@ class SingleFlightSourceTests(unittest.TestCase):
                     )
                     validate_schema(
                         receipt,
-                        "rf_oatof_pre_pulse_ordered_subset_receipt.schema.json",
+                        SCHEMA_DIR / "rf_oatof_pre_pulse_ordered_subset_receipt.schema.json",
                     )
                     rows = validate_ordered_pre_pulse_subset(
                         subset_source, receipt, mother_source, mother_receipt,

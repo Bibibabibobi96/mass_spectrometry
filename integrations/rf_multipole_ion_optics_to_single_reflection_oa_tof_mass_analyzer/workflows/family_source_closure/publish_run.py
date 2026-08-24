@@ -24,6 +24,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 
 
 INTEGRATION_ID = "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
+INTEGRATION_SCHEMA_DIR = Path(__file__).resolve().parents[2] / "config" / "schemas"
 STAGES = {
     "pre_pulse_interface_transport": {
         "run_stem": "__sim__comsol__rf-oatof-pre-pulse-interface-gap0__n",
@@ -262,7 +263,9 @@ def _publish_pulse_timing_transition(
             child_manifest_path, workspace_root
         ),
     }
-    validate_schema(transition, "rf_oatof_pulse_timing_transition.schema.json")
+    validate_schema(
+        transition, INTEGRATION_SCHEMA_DIR / "rf_oatof_pulse_timing_transition.schema.json"
+    )
     path = parent_run_dir / "results" / PULSE_TRANSITION_NAME
     path.write_text(json.dumps(transition, indent=2) + "\n", encoding="utf-8")
     return path
@@ -365,7 +368,8 @@ def _publish_verified_pulse_receipt(
         prior_receipt_path = authority_path("verified_receipt", reuse_authority)
         prior_receipt = _load(prior_receipt_path)
         validate_schema(
-            prior_receipt, "rf_oatof_verified_pulse_timing_receipt.schema.json"
+            prior_receipt,
+            INTEGRATION_SCHEMA_DIR / "rf_oatof_verified_pulse_timing_receipt.schema.json",
         )
         source_content_key = reuse_authority.get(
             "source_content_key", reuse_authority.get("content_key")
@@ -461,7 +465,10 @@ def _publish_verified_pulse_receipt(
         "census": {name: census[name] for name in names},
         "claim_limit": "IDENTICAL_IDENTITY_FUNCTIONAL_REUSE_ONLY",
     }
-    validate_schema(receipt, "rf_oatof_verified_pulse_timing_receipt.schema.json")
+    validate_schema(
+        receipt,
+        INTEGRATION_SCHEMA_DIR / "rf_oatof_verified_pulse_timing_receipt.schema.json",
+    )
     path = parent_run_dir / "results" / VERIFIED_PULSE_RECEIPT_NAME
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
@@ -486,7 +493,10 @@ def _publish_verified_pulse_cache(
     path = cache_dir / VERIFIED_PULSE_RECEIPT_NAME
     if path.exists():
         existing = _load(path)
-        validate_schema(existing, "rf_oatof_verified_pulse_timing_receipt.schema.json")
+        validate_schema(
+            existing,
+            INTEGRATION_SCHEMA_DIR / "rf_oatof_verified_pulse_timing_receipt.schema.json",
+        )
         if existing != receipt:
             raise ContractError("verified pulse cache content differs")
         return path

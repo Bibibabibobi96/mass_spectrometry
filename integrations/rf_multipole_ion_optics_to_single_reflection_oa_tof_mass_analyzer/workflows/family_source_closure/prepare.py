@@ -278,7 +278,9 @@ def _resolve_pulse_transition(
     if not path.is_relative_to(artifacts) or not path.is_file():
         raise ContractError("pulse timing transition is missing or escapes artifacts")
     transition = _load(path)
-    validate_schema(transition, "rf_oatof_pulse_timing_transition.schema.json")
+    validate_schema(
+        transition, INTEGRATION_SCHEMA_DIR / "rf_oatof_pulse_timing_transition.schema.json"
+    )
     parent_dir = path.parent.parent
     parent_manifest_path = parent_dir / "run_manifest.json"
     if not parent_manifest_path.is_file():
@@ -607,7 +609,8 @@ def compile_pre_pulse_time_series_contract(
     if isinstance(candidate, dict):
         contract["identities"]["candidate_sha256"] = candidate["sha256"]
     validate_schema(
-        contract, "rf_oatof_pre_pulse_time_series_screening_contract.schema.json"
+        contract,
+        INTEGRATION_SCHEMA_DIR / "rf_oatof_pre_pulse_time_series_screening_contract.schema.json",
     )
     return contract
 
@@ -821,7 +824,7 @@ def _resolve_candidate_confirmation_schedule(
     receipt = _load(candidate_receipt_path)
     validate_schema(
         receipt,
-        "rf_oatof_detector_blind_pulse_timing_candidate_receipt.schema.json",
+        INTEGRATION_SCHEMA_DIR / "rf_oatof_detector_blind_pulse_timing_candidate_receipt.schema.json",
     )
     if (
         receipt.get("status") != "success"
@@ -1045,7 +1048,10 @@ def _resolve_cached_verified_pulse_schedule(
             )
         except (AssertionError, OSError, ValueError):
             continue
-        validate_schema(receipt, "rf_oatof_verified_pulse_timing_receipt.schema.json")
+        validate_schema(
+            receipt,
+            INTEGRATION_SCHEMA_DIR / "rf_oatof_verified_pulse_timing_receipt.schema.json",
+        )
         candidate = receipt["candidate_authority"]
         candidate_authority = {
             "authority_mode": "detector_blind_candidate_confirmation_v1",
@@ -1418,8 +1424,14 @@ def _resolve_post_pulse_restart_reuse(
 
     schedule = _load(producer_schedule_path)
     verified_receipt = _load(verified_receipt_path)
-    validate_schema(schedule, "rf_oatof_resolved_single_flight_pulse_schedule.schema.json")
-    validate_schema(verified_receipt, "rf_oatof_verified_pulse_timing_receipt.schema.json")
+    validate_schema(
+        schedule,
+        INTEGRATION_SCHEMA_DIR / "rf_oatof_resolved_single_flight_pulse_schedule.schema.json",
+    )
+    validate_schema(
+        verified_receipt,
+        INTEGRATION_SCHEMA_DIR / "rf_oatof_verified_pulse_timing_receipt.schema.json",
+    )
     verified_child = _workspace_record(
         workspace, verified_receipt["verification_authority"]["child_manifest"],
         "verified pulse child manifest",
@@ -1475,7 +1487,7 @@ def _resolve_post_pulse_restart_reuse(
         )
         validate_schema(
             receipt,
-            "rf_oatof_manifest_bound_pre_pulse_restart_materialization_receipt.schema.json",
+            INTEGRATION_SCHEMA_DIR / "rf_oatof_manifest_bound_pre_pulse_restart_materialization_receipt.schema.json",
         )
     except (ContractError, KeyError, OSError, TypeError, ValueError) as exc:
         raise ContractError("post-pulse restart materialization failed") from exc
@@ -1644,7 +1656,8 @@ def _validate_canonical_pulse_restart_state(
     subset_source_ids = None
     if receipt.get("role") == "rf_oatof_pre_pulse_ordered_subset_receipt":
         validate_schema(
-            receipt, "rf_oatof_pre_pulse_ordered_subset_receipt.schema.json"
+            receipt,
+            INTEGRATION_SCHEMA_DIR / "rf_oatof_pre_pulse_ordered_subset_receipt.schema.json",
         )
         mother = receipt["mother_pulse_target_state"]
         mother_source_path = (
@@ -3149,7 +3162,8 @@ def prepare_family_source_closure(
                 elif cache_miss_policy is not None:
                     pulse_timing_state = "ready_verified"
             validate_schema(
-                schedule, "rf_oatof_resolved_single_flight_pulse_schedule.schema.json"
+                schedule,
+                INTEGRATION_SCHEMA_DIR / "rf_oatof_resolved_single_flight_pulse_schedule.schema.json",
             )
             schedule_path = plan_output.with_name("resolved_single_flight_pulse_schedule.json")
             schedule_path.write_text(json.dumps(schedule, indent=2) + "\n", encoding="utf-8")
@@ -3248,7 +3262,7 @@ def prepare_family_source_closure(
                 )
                 validate_schema(
                     _load(source_zvz_affine_receipt_path),
-                    "rf_oatof_source_zvz_affine_receipt.schema.json",
+                    INTEGRATION_SCHEMA_DIR / "rf_oatof_source_zvz_affine_receipt.schema.json",
                 )
             except (KeyError, TypeError, ValueError) as exc:
                 raise ContractError("automatic source z--vz identification failed") from exc
@@ -3292,7 +3306,7 @@ def prepare_family_source_closure(
                 )
                 validate_schema(
                     _load(source_zvz_theory_working_point_path),
-                    "rf_oatof_theory_working_point.schema.json",
+                    INTEGRATION_SCHEMA_DIR / "rf_oatof_theory_working_point.schema.json",
                 )
                 geometry_path.write_text(json.dumps(geometry, indent=2) + "\n", encoding="utf-8")
                 downstream_port["authority"]["source_sha256"] = file_sha256(geometry_path)
@@ -3348,7 +3362,7 @@ def prepare_family_source_closure(
             )
             validate_schema(
                 ordered_subset_receipt,
-                "rf_oatof_pre_pulse_ordered_subset_receipt.schema.json",
+                INTEGRATION_SCHEMA_DIR / "rf_oatof_pre_pulse_ordered_subset_receipt.schema.json",
             )
             ideal_subset_validation = _validate_canonical_pulse_restart_state(
                 pre_pulse_source_path,
@@ -3456,7 +3470,7 @@ def prepare_family_source_closure(
                 )
                 validate_schema(
                     projection_receipt,
-                    "rf_oatof_observed_pre_pulse_projection_receipt.schema.json",
+                    INTEGRATION_SCHEMA_DIR / "rf_oatof_observed_pre_pulse_projection_receipt.schema.json",
                 )
                 pre_pulse_source_path = {
                     ARM_AFFINE_FIXED_10EV: affine_fixed_10ev_path,
@@ -3927,7 +3941,7 @@ def prepare_family_source_closure(
         }
         validate_schema(
             orchestration,
-            "rf_oatof_resolved_pulse_timing_orchestration.schema.json",
+            INTEGRATION_SCHEMA_DIR / "rf_oatof_resolved_pulse_timing_orchestration.schema.json",
         )
         orchestration_path = plan_output.with_name(
             "resolved_pulse_timing_orchestration.json"

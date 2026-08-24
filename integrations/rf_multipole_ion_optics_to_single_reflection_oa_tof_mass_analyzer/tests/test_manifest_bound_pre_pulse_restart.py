@@ -20,6 +20,8 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     GLOBAL_COLUMNS,
 )
 
+SCHEMA_DIR = Path(__file__).resolve().parents[1] / "config" / "schemas"
+
 
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest().upper()
@@ -198,7 +200,7 @@ class ManifestBoundPrePulseRestartTest(unittest.TestCase):
             )
             validate_schema(
                 receipt,
-                "rf_oatof_manifest_bound_pre_pulse_restart_materialization_receipt.schema.json",
+                SCHEMA_DIR / "rf_oatof_manifest_bound_pre_pulse_restart_materialization_receipt.schema.json",
             )
             with state.open(encoding="utf-8", newline="") as handle:
                 rows = list(csv.DictReader(handle))
@@ -256,7 +258,7 @@ class ManifestBoundPrePulseRestartTest(unittest.TestCase):
             )
             validate_schema(
                 receipt,
-                "rf_oatof_manifest_bound_pre_pulse_restart_materialization_receipt.schema.json",
+                SCHEMA_DIR / "rf_oatof_manifest_bound_pre_pulse_restart_materialization_receipt.schema.json",
             )
 
         self.assertEqual(
@@ -314,7 +316,7 @@ class ManifestBoundPrePulseRestartTest(unittest.TestCase):
             )
             validate_schema(
                 receipt,
-                "rf_oatof_manifest_bound_pre_pulse_restart_materialization_receipt.schema.json",
+                SCHEMA_DIR / "rf_oatof_manifest_bound_pre_pulse_restart_materialization_receipt.schema.json",
             )
             with state.open(encoding="utf-8", newline="") as handle:
                 rows = list(csv.DictReader(handle))

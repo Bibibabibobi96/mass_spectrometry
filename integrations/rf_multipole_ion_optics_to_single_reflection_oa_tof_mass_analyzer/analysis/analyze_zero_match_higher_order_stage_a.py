@@ -25,6 +25,7 @@ from common.analysis.peak_metrics import (
 
 
 WORKSPACE_ROOT = Path(__file__).resolve().parents[4]
+INTEGRATION_SCHEMA_DIR = Path(__file__).resolve().parents[1] / "config" / "schemas"
 EVENTS = (
     "accelerator_focus_forward",
     "reflectron_entrance_forward",
@@ -581,7 +582,8 @@ def compute_stage_a_report(
         raise ValueError("stage-A campaign path escapes the declared workspace root")
     campaign = load_json(resolved_campaign)
     validate_schema(
-        campaign, "rf_oatof_zero_match_higher_order_stage_a_campaign.schema.json"
+        campaign,
+        INTEGRATION_SCHEMA_DIR / "rf_oatof_zero_match_higher_order_stage_a_campaign.schema.json",
     )
     if tuple(campaign["checkpoint_events"]) != EVENTS:
         raise ValueError("campaign checkpoint order differs from the analysis API")

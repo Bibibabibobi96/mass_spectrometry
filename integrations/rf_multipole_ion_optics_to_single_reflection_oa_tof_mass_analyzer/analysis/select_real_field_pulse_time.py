@@ -41,6 +41,7 @@ ALLOWED_STATE_COLUMNS = REQUIRED_STATE_COLUMNS | {
     "vx_mm_per_us", "vy_mm_per_us", "vz_mm_per_us", "kinetic_energy_eV",
     "frame_id", "clock_epoch_id", "status", "checkpoint_provenance",
 }
+INTEGRATION_SCHEMA_DIR = Path(__file__).resolve().parents[1] / "config" / "schemas"
 
 
 def _load_object(path: Path) -> dict[str, Any]:
@@ -453,7 +454,7 @@ def select_and_write(
     )
     validate_schema(
         receipt,
-        "rf_oatof_detector_blind_pulse_timing_candidate_receipt.schema.json",
+        INTEGRATION_SCHEMA_DIR / "rf_oatof_detector_blind_pulse_timing_candidate_receipt.schema.json",
     )
     receipt_path.parent.mkdir(parents=True, exist_ok=True)
     receipt_path.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")

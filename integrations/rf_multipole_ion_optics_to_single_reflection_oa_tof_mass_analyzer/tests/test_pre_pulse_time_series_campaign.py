@@ -22,6 +22,8 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 INTEGRATION_ROOT = REPO_ROOT / (
     "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
 )
+SCHEMA_DIR = Path(__file__).resolve().parents[1] / "config" / "schemas"
+
 ACTIVE_CAMPAIGN_SCHEMA = INTEGRATION_ROOT / "config" / "schemas" / (
     "rf_multipole_oatof_experiment_campaign.schema.json"
 )
@@ -88,7 +90,7 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
         validate_pre_pulse_time_series_campaign(self.campaign)
         contract = self._compile()
         validate_schema(
-            contract, "rf_oatof_pre_pulse_time_series_screening_contract.schema.json"
+            contract, SCHEMA_DIR / "rf_oatof_pre_pulse_time_series_screening_contract.schema.json"
         )
         times = contract["sample_times_us"]
         grid = contract["rf_time_grid"]
@@ -270,7 +272,7 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
         }
         validate_schema(
             automatic,
-            "rf_oatof_pre_pulse_time_series_screening_contract.schema.json",
+            SCHEMA_DIR / "rf_oatof_pre_pulse_time_series_screening_contract.schema.json",
         )
         for crossed in (
             {**copy.deepcopy(legacy), "schema_version": 2},
@@ -281,7 +283,7 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
             with self.assertRaises(ContractError):
                 validate_schema(
                     crossed,
-                    "rf_oatof_pre_pulse_time_series_screening_contract.schema.json",
+                    SCHEMA_DIR / "rf_oatof_pre_pulse_time_series_screening_contract.schema.json",
                 )
 
     def test_active_cache_miss_schema_requires_layout_resolved_profile(self) -> None:
