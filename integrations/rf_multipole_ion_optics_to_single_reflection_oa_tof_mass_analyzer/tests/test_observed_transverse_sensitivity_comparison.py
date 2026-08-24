@@ -74,7 +74,7 @@ def _authority_arm(arm_name: str) -> dict[str, object]:
     }
     projection = {
         "method": "observed_z_four_arm_energy_decomposition_v2",
-        "fixed_kinetic_energy_eV": 10.0,
+        "fixed_kinetic_energy_eV": 15.5,
         "affine_authority": {
             "mean_velocity_z_m_per_s": 1.0,
             "velocity_z_slope_m_per_s_per_mm": 2.0,

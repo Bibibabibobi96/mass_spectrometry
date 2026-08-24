@@ -147,7 +147,7 @@ class ObservedPrePulseProjectionTests(unittest.TestCase):
                 affine_mean_velocity_z_m_per_s=-2.9323518410018137,
                 affine_velocity_z_slope_m_per_s_per_mm=228.80604377795845,
                 affine_center_z_mm=-61.49423982071021,
-                fixed_kinetic_energy_eV=10.0,
+                fixed_kinetic_energy_eV=15.5,
             )
             validate_schema(receipt, "rf_oatof_observed_pre_pulse_projection_receipt.schema.json")
             self.assertEqual(receipt["schema_version"], 2)
@@ -172,7 +172,7 @@ class ObservedPrePulseProjectionTests(unittest.TestCase):
                     self.assertEqual(fixed_row["position_y_mm"], "0")
                     self.assertEqual(fixed_row["velocity_y_m_s"], "0")
                     self.assertGreater(float(fixed_row["velocity_x_m_s"]), 0)
-                    self.assertAlmostEqual(float(fixed_row["kinetic_energy_eV"]), 10.0)
+                    self.assertAlmostEqual(float(fixed_row["kinetic_energy_eV"]), 15.5)
 
     def test_rejects_fixed_energy_below_affine_axial_energy(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

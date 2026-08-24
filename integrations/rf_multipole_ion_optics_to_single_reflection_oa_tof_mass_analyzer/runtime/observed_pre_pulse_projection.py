@@ -205,9 +205,8 @@ def project_observed_pre_pulse_states(
     if four_arm and (
         not math.isfinite(float(fixed_kinetic_energy_eV))
         or fixed_kinetic_energy_eV <= 0
-        or fixed_kinetic_energy_eV != 10.0
     ):
-        raise ValueError("four-arm projection requires fixed kinetic energy of 10 eV")
+        raise ValueError("four-arm projection requires a finite positive fixed kinetic energy")
     observed, old_center, old_clock = _validate_authority(
         authority_manifest_path, prepared_arms_path, observed_state_path,
         old_geometry_path,
@@ -268,7 +267,7 @@ def project_observed_pre_pulse_states(
         full_rows.append(full)
         collapsed_rows.append(collapsed)
         if four_arm:
-            speed_10ev = math.sqrt(
+            fixed_energy_speed = math.sqrt(
                 float(fixed_kinetic_energy_eV)
                 / kinetic_energy_ev(mass, 1.0, 0.0, 0.0)
             )
@@ -278,10 +277,10 @@ def project_observed_pre_pulse_states(
             ) * (position[2] - float(affine_center_z_mm))
 
             def fixed_energy_row(vz: float, arm: str) -> dict[str, object]:
-                transverse_squared = speed_10ev**2 - vz**2
+                transverse_squared = fixed_energy_speed**2 - vz**2
                 if transverse_squared <= 0:
                     raise ValueError(
-                        f"{arm} axial kinetic energy exceeds fixed 10 eV"
+                        f"{arm} axial kinetic energy exceeds fixed energy"
                     )
                 row = dict(base)
                 row.update({
@@ -302,7 +301,7 @@ def project_observed_pre_pulse_states(
                     recomputed_energy, float(fixed_kinetic_energy_eV),
                     rel_tol=1e-14, abs_tol=1e-12,
                 ):
-                    raise ValueError(f"{arm} velocity rounding violates fixed 10 eV")
+                    raise ValueError(f"{arm} velocity rounding violates fixed energy")
                 row["kinetic_energy_eV"] = format(float(fixed_kinetic_energy_eV), ".17g")
                 return row
 

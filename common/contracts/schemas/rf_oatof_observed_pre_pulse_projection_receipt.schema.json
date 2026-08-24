@@ -55,7 +55,7 @@
           "minItems": 1,
           "items": {"$ref": "#/$defs/particle_map"}
         },
-        "fixed_kinetic_energy_eV": {"const": 10.0},
+        "fixed_kinetic_energy_eV": {"type": "number", "exclusiveMinimum": 0},
         "affine_authority": {"$ref": "#/$defs/affine_authority"}
       }
     },

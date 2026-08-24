@@ -1879,7 +1879,9 @@ def _validate_observed_pre_pulse_projection(
         projection = receipt.get("projection", {})
         if (
             affine_authority is None
-            or fixed_kinetic_energy_eV != 10.0
+            or fixed_kinetic_energy_eV is None
+            or not math.isfinite(fixed_kinetic_energy_eV)
+            or fixed_kinetic_energy_eV <= 0
             or projection.get("method")
             != "observed_z_four_arm_energy_decomposition_v2"
             or projection.get("fixed_kinetic_energy_eV") != fixed_kinetic_energy_eV

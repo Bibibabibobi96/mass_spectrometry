@@ -247,7 +247,10 @@ def _load_arm(runs_root: Path, parent_run_id: str, expected_arm: str) -> dict[st
     if expected_arm in {ARM_AFFINE_FIXED, ARM_OBSERVED_FIXED} and (
         projection_receipt_document.get("schema_version") != 2
         or projection.get("method") != "observed_z_four_arm_energy_decomposition_v2"
-        or projection.get("fixed_kinetic_energy_eV") != 10.0
+        or not isinstance(projection.get("fixed_kinetic_energy_eV"), (int, float))
+        or isinstance(projection.get("fixed_kinetic_energy_eV"), bool)
+        or not math.isfinite(float(projection["fixed_kinetic_energy_eV"]))
+        or float(projection["fixed_kinetic_energy_eV"]) <= 0
     ):
         raise ContractError("fixed-energy sequential arm receipt identity differs")
     return {
