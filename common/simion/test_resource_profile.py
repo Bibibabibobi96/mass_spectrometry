@@ -56,6 +56,27 @@ class ResourceProfileTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "exactly one process"):
                 publish_resource_profile(run_id="run", resource_usage_path=usage_path, dispatch_plan_path=run / "inputs" / "simion_repository_dispatch_plan.json")
 
+    def test_discovers_manifest_bound_log_usage_path(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run = self.write_bootstrap_run(root)
+            usage = run / "results" / "resource_usage.json"
+            log_usage = run / "logs" / "resource_usage.json"
+            log_usage.parent.mkdir()
+            usage.replace(log_usage)
+            plan = run / "inputs" / "simion_repository_dispatch_plan.json"
+            profile = publish_resource_profile(
+                run_id=run.name, resource_usage_path=log_usage, dispatch_plan_path=plan,
+                resource_usage_relative_path="logs/resource_usage.json",
+            )
+            profile_path = run / "results" / "simion_resource_profile.json"
+            profile_path.write_text(json.dumps(profile), encoding="utf-8")
+            manifest_path = run / "run_manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["outputs"][0]["sha256"] = file_sha256(profile_path)
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            self.assertEqual(discover_resource_profiles(root), [profile])
+
     def test_discovery_ignores_tampered_profile_and_non_success_run(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

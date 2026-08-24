@@ -47,7 +47,9 @@ def _inside_run(run_dir: Path, relative_path: str, name: str) -> Path:
 
 
 def publish_resource_profile(
-    *, run_id: str, resource_usage_path: Path, dispatch_plan_path: Path
+    *, run_id: str, resource_usage_path: Path, dispatch_plan_path: Path,
+    resource_usage_relative_path: str = "results/resource_usage.json",
+    dispatch_plan_relative_path: str = "inputs/simion_repository_dispatch_plan.json",
 ) -> dict[str, Any]:
     """Build a profile from one completed, single-process bootstrap receipt."""
     usage = _load_json(resource_usage_path, "resource usage")
@@ -80,11 +82,11 @@ def publish_resource_profile(
         "source": {
             "run_id": run_id,
             "resource_usage": {
-                "path": "results/resource_usage.json",
+                "path": resource_usage_relative_path,
                 "sha256": file_sha256(resource_usage_path),
             },
             "dispatch_plan": {
-                "path": "inputs/simion_repository_dispatch_plan.json",
+                "path": dispatch_plan_relative_path,
                 "sha256": file_sha256(dispatch_plan_path),
             },
         },
@@ -131,6 +133,8 @@ def _profile_from_verified_run(run_dir: Path) -> dict[str, Any] | None:
             run_id=str(manifest["run_id"]),
             resource_usage_path=_inside_run(run_dir, source["resource_usage"]["path"], "profile resource usage"),
             dispatch_plan_path=_inside_run(run_dir, source["dispatch_plan"]["path"], "profile dispatch plan"),
+            resource_usage_relative_path=source["resource_usage"]["path"],
+            dispatch_plan_relative_path=source["dispatch_plan"]["path"],
         )
         return profile if rebuilt == profile else None
     except (KeyError, TypeError, ValueError):
@@ -155,6 +159,8 @@ def main() -> int:
     publish.add_argument("--run-id", required=True)
     publish.add_argument("--resource-usage", type=Path, required=True)
     publish.add_argument("--dispatch-plan", type=Path, required=True)
+    publish.add_argument("--resource-usage-relative-path", default="results/resource_usage.json")
+    publish.add_argument("--dispatch-plan-relative-path", default="inputs/simion_repository_dispatch_plan.json")
     publish.add_argument("--output", type=Path, required=True)
     discover = subparsers.add_parser("discover")
     discover.add_argument("--runs-root", type=Path, required=True)
@@ -164,6 +170,8 @@ def main() -> int:
         document = publish_resource_profile(
             run_id=args.run_id, resource_usage_path=args.resource_usage,
             dispatch_plan_path=args.dispatch_plan,
+            resource_usage_relative_path=args.resource_usage_relative_path,
+            dispatch_plan_relative_path=args.dispatch_plan_relative_path,
         )
         message = "SIMION_RESOURCE_PROFILE=PASS"
     else:
