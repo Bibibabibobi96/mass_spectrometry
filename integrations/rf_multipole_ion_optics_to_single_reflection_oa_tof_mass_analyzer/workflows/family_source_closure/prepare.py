@@ -183,8 +183,12 @@ def resolve_generated_pre_pulse_ordered_subset(
 
 def validate_active_post_pulse_restart_working_point(
     experiment: dict[str, Any],
+    *,
+    require_theory_working_point: bool = True,
 ) -> None:
-    """Require automatic theory closure for an active restart row only."""
+    """Require the formal theory closure for an active restart row only."""
+    if not require_theory_working_point:
+        return
     if (
         experiment.get("source_release_mode") != "pre_pulse_restart"
         or experiment.get("post_pulse_restart_reuse_authority") is None
@@ -2382,7 +2386,10 @@ def prepare_family_source_closure(
         raise ContractError(
             "active lifecycle campaign must be authorized before preparation"
         )
-    validate_active_post_pulse_restart_working_point(experiment)
+    validate_active_post_pulse_restart_working_point(
+        experiment,
+        require_theory_working_point=not exploration,
+    )
     source = experiment["source"]
     execution_strategy = experiment.get("execution_strategy", "staged_three_stage")
     pa_cache_policy = experiment.get("single_flight_pa_cache_policy")

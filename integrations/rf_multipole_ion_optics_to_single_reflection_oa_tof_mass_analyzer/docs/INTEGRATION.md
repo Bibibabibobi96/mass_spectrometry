@@ -77,6 +77,10 @@ composition plan。
 composition-plan 校验；它不以活动 campaign SHA 或 source-binding 刷新拒绝新的参数组合。探索运行保留普通的缓存、
 SHA、manifest 与失败记录，但不能 `FinalizeOnly`、发布正式结果或产生资格结论。
 
+探索若复用一个已冻结的 post-pulse restart source，仍须验证该 source 的 manifest、checkpoint、pulse schedule、
+粒子身份和所声明的变化轴；但不必为了只扫描加速场 profile 而附带正式资格专用的 source `z--vz` 理论工作点。
+该理论闭合仍是 active/authorized restart 的失败关闭要求。
+
 ## 开放任务
 
 - **Windows 路径容量治理（跨工作流）**：公共 `New-RunPackage` 已为采用短 execution junction 的外部求解器

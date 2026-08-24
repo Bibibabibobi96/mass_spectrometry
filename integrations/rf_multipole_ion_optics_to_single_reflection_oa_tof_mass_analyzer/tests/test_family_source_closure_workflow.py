@@ -1958,6 +1958,41 @@ if ($runtime.contracts.resolved_source_contract -ne '{resolved_source}') {{
                     exploration=True,
                 )
 
+    def test_exploration_post_pulse_restart_does_not_require_theory_working_point(
+        self,
+    ) -> None:
+        campaign = load(COMPACT_GAP_FIELD_CAMPAIGN)
+        campaign["status"] = "exploration"
+        campaign["experiments"]["variation_axes"].remove(
+            "single_flight_source_zvz_theory_working_point"
+        )
+        for row in campaign["experiments"]["rows"]:
+            overrides = row["overrides"]
+            overrides.pop("single_flight_source_zvz_theory_working_point")
+            overrides["post_pulse_restart_reuse_authority"][
+                "post_pulse_variation_axis"
+            ] = "accelerator_field_profile_id"
+        experiment_id = campaign["experiments"]["rows"][0]["experiment_id"]
+        with temporary_config_directory() as directory:
+            root = Path(directory)
+            artifact_root = REPO_ROOT.parent / "artifacts" / "projects" / INTEGRATION_ID
+            artifact_root.mkdir(parents=True, exist_ok=True)
+            campaign_path = root / "exploration_post_pulse_restart.json"
+            write_json(campaign_path, campaign)
+            with tempfile.TemporaryDirectory(dir=artifact_root) as output_directory:
+                resolved, plan = prepare_family_source_closure(
+                    repo_root=REPO_ROOT,
+                    profile_registry_path=PROFILE_REGISTRY,
+                    adapter_registry_path=ADAPTER_REGISTRY,
+                    campaign_path=campaign_path,
+                    experiment_id=experiment_id,
+                    resolved_output=Path(output_directory) / "resolved.json",
+                    plan_output=Path(output_directory) / "plan.json",
+                    exploration=True,
+                )
+                self.assertTrue(resolved.is_file())
+                self.assertTrue(plan.is_file())
+
     def test_public_exploration_validate_only_accepts_unregistered_campaign(self) -> None:
         campaign = load(COMPACT_GAP_FIELD_CAMPAIGN)
         campaign["status"] = "exploration"
