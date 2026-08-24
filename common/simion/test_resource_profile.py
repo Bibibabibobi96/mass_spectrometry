@@ -6,7 +6,11 @@ import unittest
 from pathlib import Path
 
 from common.contracts.file_identity import file_sha256
-from common.simion.resource_profile import discover_resource_profiles, publish_resource_profile
+from common.simion.resource_profile import (
+    discover_case_resource_profiles,
+    discover_resource_profiles,
+    publish_resource_profile,
+)
 
 
 class ResourceProfileTests(unittest.TestCase):
@@ -92,6 +96,33 @@ class ResourceProfileTests(unittest.TestCase):
             document["status"] = "failed"
             failed_manifest.write_text(json.dumps(document), encoding="utf-8")
             self.assertEqual(discover_resource_profiles(root), [])
+
+    def test_case_profiles_require_a_successful_manifest_bound_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run = root / "case-run"
+            run.mkdir()
+            summary = run / "summary.json"
+            summary.write_text(json.dumps({
+                "role": "oatof_radial_compaction_campaign_summary",
+                "simion_case_resource_profiles": [{
+                    "resource_identity": {
+                        "solver": "SIMION", "field_kind": "electrostatic",
+                        "case_input_sha256": "A" * 64,
+                    },
+                    "per_batch_peak_working_set_bytes": 456,
+                }],
+            }), encoding="utf-8")
+            manifest = run / "run_manifest.json"
+            manifest.write_text(json.dumps({
+                "role": "simulation_run_manifest", "status": "success", "run_id": "case-run",
+                "outputs": [{"path": str(summary), "sha256": file_sha256(summary)}],
+            }), encoding="utf-8")
+            profiles = discover_case_resource_profiles(root)
+            self.assertEqual(len(profiles), 1)
+            self.assertEqual(profiles[0]["per_batch_peak_working_set_bytes"], 456)
+            summary.write_text("{}", encoding="utf-8")
+            self.assertEqual(discover_case_resource_profiles(root), [])
 
     def test_cli_discovers_only_verified_profiles(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

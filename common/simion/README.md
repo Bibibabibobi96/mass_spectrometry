@@ -26,4 +26,5 @@ bootstrap波次，后续必须以观测峰值重新计划。
 [`resource_profile.py`](resource_profile.py)只发布成功、单进程bootstrap run的峰值，并在使用前用run manifest
 及输入收据的SHA-256复核；并行波次的聚合峰值不得拆分成单批画像。PA/IOB构建及没有独立粒子/可合并结果
 合同的SIMION任务保持串行；未知case资源身份每次先单case bootstrap，只有同一完整输入的已观测峰值才可参与
-后续case wave。调度器不会发现、批准或启动campaign，也不会在外层campaign之上创建嵌套并发。
+后续case wave。已完成case campaign可以把画像写入manifest覆盖的summary；后续运行只发现这种受完整性保护的
+画像，不接受裸日志或未受manifest覆盖的JSON。调度器不会发现、批准或启动campaign，也不会在外层campaign之上创建嵌套并发。

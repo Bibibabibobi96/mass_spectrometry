@@ -34,6 +34,7 @@ PYTHON = REPO_ROOT / ".venv" / "Scripts" / "python.exe"
 from common.contracts.artifact_naming import validate_run_id
 from common.contracts.machine_contracts import load_json, sha256
 from common.simion.process_observation import run_observed_process
+from common.simion.resource_profile import discover_case_resource_profiles
 from common.simion.resource_scheduler import plan_simion_case_dispatch
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.compile_candidate_design import (
     compile_design_overrides,
@@ -426,6 +427,22 @@ def _profiles_from_results(results: dict[str, dict[str, Any]]) -> list[dict[str,
     return [profile for result in results.values() if (profile := _case_profile(result)) is not None]
 
 
+def _maximum_profiles(*groups: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    """Collapse repeated observations to the safest peak for each exact input."""
+    selected: dict[str, dict[str, Any]] = {}
+    for group in groups:
+        for profile in _profiles_from_results(group):
+            key = json.dumps(profile["resource_identity"], sort_keys=True)
+            existing = selected.get(key)
+            if (
+                existing is None
+                or profile["per_batch_peak_working_set_bytes"]
+                > existing["per_batch_peak_working_set_bytes"]
+            ):
+                selected[key] = profile
+    return [selected[key] for key in sorted(selected)]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-id", required=True)
@@ -495,7 +512,10 @@ def main() -> None:
             raise ValueError(f"candidate source differs from reference: {case['case_id']}")
         print(f"PA_BUILD=PASS CASE={case['case_id']}", flush=True)
 
-    actual = _run_parallel_flights(primary, "actual", simion_exe, count, quality)
+    persisted_profiles = discover_case_resource_profiles(ARTIFACT_ROOT / "runs")
+    actual = _run_parallel_flights(
+        primary, "actual", simion_exe, count, quality, persisted_profiles
+    )
     resolution_reference = float(reference_metrics["mass_resolution"])
     acceptance = config["acceptance"]
 
@@ -517,7 +537,7 @@ def main() -> None:
         for mode in config["ideal_field_attribution"]["modes"]:
             ideal[mode] = _run_parallel_flights(
                 failed, mode, simion_exe, count, quality,
-                _profiles_from_results(actual),
+                persisted_profiles + _profiles_from_results(actual),
             ) if failed else {}
 
     target_id = config["ring_count_compensation"]["target_case_id"]
@@ -555,7 +575,7 @@ def main() -> None:
             compensation.append(candidate)
             print(f"PA_BUILD=PASS CASE={candidate['case_id']}", flush=True)
         compensation_results = _run_parallel_flights(
-            compensation, "actual", simion_exe, count, quality
+            compensation, "actual", simion_exe, count, quality, persisted_profiles
         )
         diagnostic_ids = set(
             config["ring_count_compensation"].get(
@@ -576,7 +596,7 @@ def main() -> None:
         for mode in config["ideal_field_attribution"]["modes"]:
             compensation_ideal[mode] = _run_parallel_flights(
                 diagnostic_cases, mode, simion_exe, count, quality,
-                _profiles_from_results(compensation_results),
+                persisted_profiles + _profiles_from_results(compensation_results),
             )
 
     rows = []
@@ -625,6 +645,12 @@ def main() -> None:
         "cases": rows,
         "ideal_field_results": ideal,
         "compensation_ideal_field_results": compensation_ideal,
+        "simion_case_resource_profiles": _maximum_profiles(
+            actual,
+            compensation_results,
+            *ideal.values(),
+            *compensation_ideal.values(),
+        ),
         "fixed_contract_verified": True,
         "shared_shield_radius_and_wall_verified": True,
     }

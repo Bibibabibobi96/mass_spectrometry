@@ -152,6 +152,69 @@ def discover_resource_profiles(runs_root: Path) -> list[dict[str, Any]]:
     return profiles
 
 
+def _profiles_from_manifest_summary(run_dir: Path) -> list[dict[str, Any]]:
+    """Read case profiles only from a successful manifest-covered summary."""
+    manifest_path = run_dir / "run_manifest.json"
+    if not manifest_path.is_file():
+        return []
+    try:
+        manifest = _load_json(manifest_path, "run manifest")
+        if manifest.get("role") != "simulation_run_manifest" or manifest.get("status") != "success":
+            return []
+        records = manifest.get("outputs")
+        if not isinstance(records, list):
+            return []
+        profiles: list[dict[str, Any]] = []
+        for record in records:
+            if not isinstance(record, dict) or not isinstance(record.get("path"), str):
+                continue
+            path_value = Path(record["path"])
+            summary_path = path_value.resolve() if path_value.is_absolute() else _inside_run(
+                run_dir, record["path"], "summary output"
+            )
+            try:
+                summary_path.relative_to(run_dir.resolve())
+            except ValueError:
+                continue
+            if not summary_path.is_file() or file_sha256(summary_path) != str(record.get("sha256", "")).upper():
+                continue
+            summary = _load_json(summary_path, "summary output")
+            declarations = summary.get("simion_case_resource_profiles")
+            if not isinstance(declarations, list):
+                continue
+            for declaration in declarations:
+                if not isinstance(declaration, dict):
+                    continue
+                identity = declaration.get("resource_identity")
+                peak = declaration.get("per_batch_peak_working_set_bytes")
+                if (
+                    not isinstance(identity, dict)
+                    or identity.get("solver") != "SIMION"
+                    or isinstance(peak, bool)
+                    or not isinstance(peak, int)
+                    or peak < 1
+                ):
+                    continue
+                profiles.append({
+                    "resource_identity": identity,
+                    "per_batch_peak_working_set_bytes": peak,
+                    "source": {"run_id": manifest.get("run_id"), "summary": str(summary_path)},
+                })
+        return profiles
+    except (KeyError, OSError, TypeError, ValueError):
+        return []
+
+
+def discover_case_resource_profiles(runs_root: Path) -> list[dict[str, Any]]:
+    """Discover only manifest-verified complete-case peak observations."""
+    if not runs_root.is_dir():
+        return []
+    return [
+        profile for run_dir in sorted(runs_root.iterdir()) if run_dir.is_dir()
+        for profile in _profiles_from_manifest_summary(run_dir)
+    ]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
