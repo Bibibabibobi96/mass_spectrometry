@@ -30,6 +30,11 @@ RESOURCE_IDENTITY_KEYS = (
     "frontend_pa0_sha256",
     "accelerator_overlay_pa0_sha256",
     "reflectron_pa0_sha256",
+    # Case campaigns may run distinct, complete SIMION inputs rather than
+    # partitions of one particle table.  This key lets them reuse an observed
+    # process peak only for the same complete input; it does not itself impose
+    # a concurrency limit.
+    "case_input_sha256",
 )
 DEFAULT_MEMORY_SAFETY_NUMERATOR = 105
 DEFAULT_MEMORY_SAFETY_DENOMINATOR = 100
@@ -257,6 +262,141 @@ def plan_simion_dispatch(
             "index": 1, "kind": "scheduled", "batch_count": parallelism,
             "particle_count": particles,
             "batches": plan_single_wave_batches(particles, parallelism)["batches"],
+        }],
+    }
+
+
+def plan_simion_case_dispatch(
+    cases: list[dict[str, Any]],
+    request: dict[str, Any],
+    profiles: list[dict[str, Any]],
+    *,
+    available_memory_bytes: int | None = None,
+    logical_processors: int | None = None,
+) -> dict[str, Any]:
+    """Plan one resource-safe wave of independent complete SIMION cases.
+
+    A case is not a particle batch: its complete input can have a different
+    field array and working set.  Each item therefore supplies a stable
+    ``case_id`` and a resource identity.  Unknown identities are deliberately
+    returned one at a time as bootstrap work.  Once callers add their observed
+    peaks to ``profiles``, the planner packs only known cases into a wave using
+    the same CPU, reserve and safety policy as particle dispatch.
+    """
+    if not isinstance(cases, list) or not cases:
+        raise ValueError("cases must be a non-empty array")
+    case_ids: set[str] = set()
+    normalized: list[tuple[str, dict[str, Any]]] = []
+    for case in cases:
+        if not isinstance(case, dict) or not isinstance(case.get("case_id"), str):
+            raise ValueError("each case requires a string case_id")
+        case_id = case["case_id"]
+        if not case_id or case_id in case_ids:
+            raise ValueError("case IDs must be non-empty and unique")
+        identity = case.get("resource_identity")
+        if not isinstance(identity, dict):
+            raise ValueError("each case requires a resource_identity object")
+        case_ids.add(case_id)
+        normalized.append((case_id, identity))
+
+    # Delegate all policy validation and individual resource estimates to the
+    # particle planner.  Giving it one synthetic independent particle is only
+    # an internal unit of capacity; no particle IDs or physics are produced by
+    # this case-level API.
+    individual_plans: list[tuple[str, dict[str, Any]]] = []
+    for case_id, identity in normalized:
+        individual_request = {
+            **request,
+            **identity,
+            "particle_count": 1,
+            "independent_particles": True,
+            "maximum_parallel_batches": 1,
+        }
+        individual_plans.append((case_id, plan_simion_dispatch(
+            individual_request, profiles,
+            available_memory_bytes=available_memory_bytes,
+            logical_processors=logical_processors,
+        )))
+
+    first_plan = individual_plans[0][1]
+    case_limits = dict(first_plan["limits"])
+    # The one-batch value above was solely used to ask the particle planner
+    # whether an individual case fits.  A case wave intentionally has no
+    # historical fixed cap; its actual cap is current CPU and memory capacity.
+    case_limits.pop("maximum_parallel_batches")
+    case_limits["maximum_parallel_cases"] = len(normalized)
+    unknown = [
+        (case_id, plan) for case_id, plan in individual_plans
+        if plan["estimation"]["kind"] == "unknown_resource_profile_bootstrap"
+    ]
+    if unknown:
+        case_id, bootstrap = unknown[0]
+        return {
+            "schema_version": 1,
+            "role": "simion_repository_case_dispatch_plan",
+            "solver": "SIMION",
+            "field_kind": request.get("field_kind"),
+            "case_count": len(normalized),
+            "estimation": {
+                "kind": "unknown_resource_profile_bootstrap",
+                "requires_observed_peak_before_followup": True,
+                "unknown_case_id": case_id,
+            },
+            "host": bootstrap["host"],
+            "limits": case_limits,
+            "waves": [{
+                "index": 1,
+                "kind": "bootstrap",
+                "case_count": 1,
+                "cases": [{"case_id": case_id}],
+            }],
+        }
+
+    limits = first_plan["limits"]
+    host = first_plan["host"]
+    available = host["available_memory_bytes"]
+    selected: list[dict[str, str]] = []
+    reserved_memory = limits["memory_reserve_bytes"]
+    used_cpu = limits["reserve_cpu_cores"]
+    for case_id, plan in individual_plans:
+        peak = plan["estimation"]["reserved_peak_bytes"]
+        next_cpu = used_cpu + limits["cpu_cores_per_batch"]
+        next_memory = reserved_memory + sum(
+            item["reserved_peak_bytes"] for item in selected
+        ) + peak
+        if next_cpu > host["logical_processors"]:
+            continue
+        if available is None:
+            if selected:
+                continue
+        elif next_memory > available:
+            continue
+        selected.append({"case_id": case_id, "reserved_peak_bytes": peak})
+        used_cpu = next_cpu
+    if not selected:
+        # Every individual plan already established that one known case fits;
+        # reaching this branch would indicate an internal accounting error.
+        raise ValueError("resource policy cannot schedule one known SIMION case")
+    return {
+        "schema_version": 1,
+        "role": "simion_repository_case_dispatch_plan",
+        "solver": "SIMION",
+        "field_kind": request.get("field_kind"),
+        "case_count": len(normalized),
+        "estimation": {
+            "kind": "observed_case_profiles",
+            "memory_selection_reason": (
+                "host_memory_unavailable_single_case"
+                if available is None else "largest_case_wave_within_current_available_memory"
+            ),
+        },
+        "host": host,
+        "limits": case_limits,
+        "waves": [{
+            "index": 1,
+            "kind": "scheduled",
+            "case_count": len(selected),
+            "cases": selected,
         }],
     }
 

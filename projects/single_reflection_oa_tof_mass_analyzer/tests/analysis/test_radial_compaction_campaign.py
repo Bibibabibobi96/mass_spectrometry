@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import copy
 import json
+import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -14,6 +16,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.workflows.radial_compaction
     NUMERICS_PATH,
     _assert_only_allowed_changes,
     _overrides,
+    _run_parallel_flights,
 )
 
 
@@ -43,6 +46,44 @@ class RadialCompactionCampaignTests(unittest.TestCase):
             PROJECT_ROOT / "workflows" / "radial_compaction" / "run_campaign.py"
         ).read_text(encoding="utf-8")
         self.assertIn('config.get("status") != "authorized"', source)
+
+    def test_case_flights_delegate_wave_selection_to_the_shared_scheduler(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            cases = []
+            for case_id in ("one", "two"):
+                case_root = root / case_id
+                simion_dir = case_root / "simion"
+                simion_dir.mkdir(parents=True)
+                (simion_dir / "oatof_ideal_grounded.iob").write_text("iob", encoding="utf-8")
+                (simion_dir / "oatof_comsol_524amu_gaussian_N2.ion").write_text("ions", encoding="utf-8")
+                cases.append({"case_id": case_id, "case_root": case_root, "simion_dir": simion_dir})
+            selected = []
+
+            def fake_fly(case, mode, simion_exe, particle_count, trajectory_quality):
+                selected.append(case["case_id"])
+                return {
+                    "resource_profile": {
+                        "resource_identity": {"case_input_sha256": case["case_id"] * 64},
+                        "per_batch_peak_working_set_bytes": 10,
+                    }
+                }
+
+            dispatch = {
+                "waves": [{"cases": [{"case_id": "one"}, {"case_id": "two"}]}]
+            }
+            with patch(
+                "projects.single_reflection_oa_tof_mass_analyzer.workflows.radial_compaction.run_campaign.plan_simion_case_dispatch",
+                return_value=dispatch,
+            ) as planner, patch(
+                "projects.single_reflection_oa_tof_mass_analyzer.workflows.radial_compaction.run_campaign._fly",
+                side_effect=fake_fly,
+            ):
+                results = _run_parallel_flights(cases, "actual", Path("simion.exe"), 2, 8)
+            self.assertEqual(set(results), {"one", "two"})
+            self.assertEqual(set(selected), {"one", "two"})
+            request = planner.call_args.args[1]
+            self.assertEqual(request, {"solver": "SIMION", "field_kind": "electrostatic"})
 
     def test_smallest_shield_contains_offset_detector(self) -> None:
         smallest = min(

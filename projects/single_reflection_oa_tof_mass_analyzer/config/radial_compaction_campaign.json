@@ -39,11 +39,6 @@
     "minimum_resolution_ratio_to_reference": 1.0,
     "maximum_significant_kde_modes": 2
   },
-  "parallelism": {
-    "pa_build_workers": 1,
-    "n1000_flight_workers": 5,
-    "rationale": "PA refinement is serialized to limit memory and write contention; independent N=1000 flights run with the established five-worker default."
-  },
   "radius_screen": [
     {
       "case_id": "shield260",

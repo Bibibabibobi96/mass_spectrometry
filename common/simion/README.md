@@ -15,13 +15,15 @@ oaTOF、single-flight或具体电极编号。
 `surface=fractional`只提高非对齐表面的场与边界表达精度，不保证连续几何精确，也不能替代真实PA拓扑审计
 或网格敏感性验证。本层不选择PA/IOB和物理参数；商业进程仍由项目runner按统一预算与串行规则启动。
 
-[`resource_scheduler.py`](resource_scheduler.py)是独立粒子SIMION任务的唯一并发决策实现。项目runner只提交已
-授权的工作负载、执行返回的batch plan，并负责本项目的输入格式转换和结果合并；不得自行选择固定批数或
-并发数。请求必须明确RF（含steps/period）或静电模式和粒子数。每批CPU、并发上限和内存保留只有在具有
+[`resource_scheduler.py`](resource_scheduler.py)是独立粒子批次与相互独立完整case的唯一SIMION并发决策实现。
+项目runner只提交已授权的工作负载、执行返回的batch/case wave，并负责本项目的输入格式转换和结果合并；不得
+自行选择固定批数或并发数。粒子请求必须明确RF（含steps/period）或静电模式和粒子数；case请求必须为每个完整
+输入声明稳定的资源身份。每批CPU、并发上限和内存保留只有在具有
 实测或运行环境依据时才声明；省略时调度器使用每批一核、零额外CPU保留，并由当前主机容量决定并发。运行时
 必须以当前CPU与可用内存重新规划；准备阶段的计划只冻结资源身份、已声明上限和已测峰值证据。它只会使用不与
 本次已声明资源身份（例如RF步数、网格或trajectory-quality profile）冲突的已完成峰值；无历史数据时只生成一个
 bootstrap波次，后续必须以观测峰值重新计划。
 [`resource_profile.py`](resource_profile.py)只发布成功、单进程bootstrap run的峰值，并在使用前用run manifest
 及输入收据的SHA-256复核；并行波次的聚合峰值不得拆分成单批画像。PA/IOB构建及没有独立粒子/可合并结果
-合同的SIMION任务保持串行；调度器不会发现、批准或启动campaign，也不会在外层campaign之上创建嵌套并发。
+合同的SIMION任务保持串行；未知case资源身份每次先单case bootstrap，只有同一完整输入的已观测峰值才可参与
+后续case wave。调度器不会发现、批准或启动campaign，也不会在外层campaign之上创建嵌套并发。

@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from common.simion.resource_scheduler import (
     plan_adaptive_followup,
+    plan_simion_case_dispatch,
     plan_runtime_dispatch,
     plan_simion_dispatch,
 )
@@ -319,6 +320,78 @@ class ResourceSchedulerTests(unittest.TestCase):
         self.assertEqual(runtime["host"], {
             "available_memory_bytes": 100, "logical_processors": 8,
         })
+
+    def test_unknown_case_resource_identity_bootstraps_exactly_one_case(self) -> None:
+        plan = plan_simion_case_dispatch(
+            [
+                {"case_id": "first", "resource_identity": {"case_input_sha256": "A" * 64}},
+                {"case_id": "second", "resource_identity": {"case_input_sha256": "B" * 64}},
+            ],
+            {"solver": "SIMION", "field_kind": "electrostatic"}, [],
+            available_memory_bytes=100, logical_processors=8,
+        )
+        self.assertEqual(plan["role"], "simion_repository_case_dispatch_plan")
+        self.assertEqual(plan["waves"][0]["kind"], "bootstrap")
+        self.assertEqual(plan["waves"][0]["cases"], [{"case_id": "first"}])
+
+    def test_known_case_profiles_fill_one_wave_within_memory_and_cpu(self) -> None:
+        cases = [
+            {"case_id": "small", "resource_identity": {"case_input_sha256": "A" * 64}},
+            {"case_id": "large", "resource_identity": {"case_input_sha256": "B" * 64}},
+        ]
+        profiles = [
+            {"resource_identity": {"solver": "SIMION", "field_kind": "electrostatic", "case_input_sha256": "A" * 64}, "per_batch_peak_working_set_bytes": 10},
+            {"resource_identity": {"solver": "SIMION", "field_kind": "electrostatic", "case_input_sha256": "B" * 64}, "per_batch_peak_working_set_bytes": 20},
+        ]
+        plan = plan_simion_case_dispatch(
+            cases,
+            {
+                "solver": "SIMION", "field_kind": "electrostatic",
+                "reserve_available_memory_bytes": 2, "cpu_cores_per_batch": 1,
+            },
+            profiles, available_memory_bytes=34, logical_processors=2,
+        )
+        self.assertEqual(plan["estimation"]["kind"], "observed_case_profiles")
+        self.assertEqual(
+            plan["waves"][0]["cases"],
+            [
+                {"case_id": "small", "reserved_peak_bytes": 11},
+                {"case_id": "large", "reserved_peak_bytes": 21},
+            ],
+        )
+
+    def test_known_case_profiles_leave_later_case_for_next_wave_when_it_does_not_fit(self) -> None:
+        cases = [
+            {"case_id": "small", "resource_identity": {"case_input_sha256": "A" * 64}},
+            {"case_id": "large", "resource_identity": {"case_input_sha256": "B" * 64}},
+        ]
+        profiles = [
+            {"resource_identity": {"solver": "SIMION", "field_kind": "electrostatic", "case_input_sha256": "A" * 64}, "per_batch_peak_working_set_bytes": 10},
+            {"resource_identity": {"solver": "SIMION", "field_kind": "electrostatic", "case_input_sha256": "B" * 64}, "per_batch_peak_working_set_bytes": 20},
+        ]
+        plan = plan_simion_case_dispatch(
+            cases,
+            {"solver": "SIMION", "field_kind": "electrostatic", "reserve_available_memory_bytes": 2},
+            profiles, available_memory_bytes=33, logical_processors=8,
+        )
+        self.assertEqual(plan["waves"][0]["cases"], [{"case_id": "small", "reserved_peak_bytes": 11}])
+
+    def test_case_dispatch_rejects_duplicate_or_unidentified_case(self) -> None:
+        with self.assertRaisesRegex(ValueError, "unique"):
+            plan_simion_case_dispatch(
+                [
+                    {"case_id": "same", "resource_identity": {}},
+                    {"case_id": "same", "resource_identity": {}},
+                ],
+                {"solver": "SIMION", "field_kind": "electrostatic"}, [],
+                available_memory_bytes=100, logical_processors=8,
+            )
+        with self.assertRaisesRegex(ValueError, "resource_identity"):
+            plan_simion_case_dispatch(
+                [{"case_id": "one"}],
+                {"solver": "SIMION", "field_kind": "electrostatic"}, [],
+                available_memory_bytes=100, logical_processors=8,
+            )
 
     def test_cli_writes_bootstrap_and_observed_followup_plan(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

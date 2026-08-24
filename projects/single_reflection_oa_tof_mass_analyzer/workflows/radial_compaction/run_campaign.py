@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import copy
 import csv
+import hashlib
 import json
 import subprocess
 import time
@@ -32,6 +33,8 @@ PYTHON = REPO_ROOT / ".venv" / "Scripts" / "python.exe"
 
 from common.contracts.artifact_naming import validate_run_id
 from common.contracts.machine_contracts import load_json, sha256
+from common.simion.process_observation import run_observed_process
+from common.simion.resource_scheduler import plan_simion_case_dispatch
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.compile_candidate_design import (
     compile_design_overrides,
 )
@@ -264,7 +267,7 @@ def _build_case(
 
 
 def _fly(case: dict[str, Any], mode: str, simion_exe: Path, particle_count: int,
-         trajectory_quality: int) -> dict[str, Any]:
+          trajectory_quality: int) -> dict[str, Any]:
     accel, stage1, stage2 = MODE_FLAGS[mode]
     logs = case["case_root"] / "logs"
     results = case["case_root"] / "results"
@@ -286,11 +289,20 @@ def _fly(case: dict[str, Any], mode: str, simion_exe: Path, particle_count: int,
         "--adjustable", "trajectory_log_enable=1",
         str(case["simion_dir"] / "oatof_ideal_grounded.iob"),
     ]
+    resource_identity = _case_resource_identity(case, ion, particle_count, trajectory_quality)
     if log.is_file() and log.stat().st_size > 0 and error.is_file():
         elapsed = None
         reused_flight = True
+        peak_working_set_bytes = None
     else:
-        elapsed = _run_logged(command, case["simion_dir"], log, error)
+        started = time.perf_counter()
+        completed, peak_working_set_bytes = run_observed_process(
+            command, cwd=case["simion_dir"], stdout=log, stderr=error,
+            timeout_seconds=1800,
+        )
+        elapsed = time.perf_counter() - started
+        if completed.returncode != 0:
+            raise RuntimeError(f"command failed ({completed.returncode}); see {error}")
         reused_flight = False
     analyze = [
         str(PYTHON), "-m",
@@ -313,6 +325,10 @@ def _fly(case: dict[str, Any], mode: str, simion_exe: Path, particle_count: int,
         "mode": mode,
         "flight_seconds": elapsed,
         "flight_reused_from_interrupted_run": reused_flight,
+        "resource_profile": {
+            "resource_identity": resource_identity,
+            "per_batch_peak_working_set_bytes": peak_working_set_bytes,
+        },
         "diagnostics": diagnostics,
         "canonical_peak_metrics": canonical,
     }
@@ -320,23 +336,94 @@ def _fly(case: dict[str, Any], mode: str, simion_exe: Path, particle_count: int,
     return summary
 
 
+def _case_resource_identity(
+    case: dict[str, Any], ion: Path, particle_count: int, trajectory_quality: int,
+) -> dict[str, Any]:
+    """Identify the complete SIMION input that determines one case's memory use."""
+    input_identity = {
+        "iob_sha256": sha256(case["simion_dir"] / "oatof_ideal_grounded.iob"),
+        "ion_sha256": sha256(ion),
+        "particle_count": particle_count,
+        "trajectory_quality": trajectory_quality,
+    }
+    encoded = json.dumps(input_identity, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return {
+        "solver": "SIMION",
+        "field_kind": "electrostatic",
+        "oatof_numerical_profile_id": "radial_compaction_n1000",
+        "trajectory_quality_profile_id": f"explicit-{trajectory_quality}",
+        "case_input_sha256": hashlib.sha256(encoded).hexdigest().upper(),
+    }
+
+
+def _case_profile(result: dict[str, Any]) -> dict[str, Any] | None:
+    profile = result.get("resource_profile")
+    if not isinstance(profile, dict):
+        return None
+    identity = profile.get("resource_identity")
+    peak = profile.get("per_batch_peak_working_set_bytes")
+    if not isinstance(identity, dict) or isinstance(peak, bool) or not isinstance(peak, int) or peak < 1:
+        return None
+    return {"resource_identity": identity, "per_batch_peak_working_set_bytes": peak}
+
+
 def _run_parallel_flights(
     cases: list[dict[str, Any]], mode: str, simion_exe: Path,
-    particle_count: int, trajectory_quality: int, workers: int
+    particle_count: int, trajectory_quality: int,
+    known_profiles: list[dict[str, Any]] | None = None,
 ) -> dict[str, dict[str, Any]]:
+    """Execute only the case wave chosen by the shared resource scheduler."""
     outputs: dict[str, dict[str, Any]] = {}
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = {
-            pool.submit(
-                _fly, case, mode, simion_exe, particle_count, trajectory_quality
-            ): case["case_id"]
-            for case in cases
-        }
-        for future in as_completed(futures):
-            case_id = futures[future]
-            outputs[case_id] = future.result()
-            print(f"FLIGHT=PASS CASE={case_id} MODE={mode}", flush=True)
+    pending = list(cases)
+    profiles: list[dict[str, Any]] = list(known_profiles or [])
+    for case in list(pending):
+        summary = case["case_root"] / "results" / f"{mode}_summary.json"
+        if summary.is_file():
+            outputs[case["case_id"]] = load_json(summary)
+            existing = _case_profile(outputs[case["case_id"]])
+            if existing is not None:
+                profiles.append(existing)
+            pending.remove(case)
+    while pending:
+        descriptors = []
+        for case in pending:
+            ion = case["simion_dir"] / f"oatof_comsol_524amu_gaussian_N{particle_count}.ion"
+            descriptors.append({
+                "case_id": case["case_id"],
+                "resource_identity": _case_resource_identity(
+                    case, ion, particle_count, trajectory_quality
+                ),
+            })
+        dispatch = plan_simion_case_dispatch(
+            descriptors,
+            {"solver": "SIMION", "field_kind": "electrostatic"},
+            profiles,
+        )
+        selected_ids = [item["case_id"] for item in dispatch["waves"][0]["cases"]]
+        selected = [case for case in pending if case["case_id"] in selected_ids]
+        # This executor makes no resource decision: it receives exactly the
+        # wave already chosen by common.simion.resource_scheduler.
+        with ThreadPoolExecutor(max_workers=len(selected)) as pool:
+            futures = {
+                pool.submit(
+                    _fly, case, mode, simion_exe, particle_count, trajectory_quality
+                ): case["case_id"]
+                for case in selected
+            }
+            for future in as_completed(futures):
+                case_id = futures[future]
+                outputs[case_id] = future.result()
+                observed = _case_profile(outputs[case_id])
+                if observed is not None:
+                    profiles.append(observed)
+                print(f"FLIGHT=PASS CASE={case_id} MODE={mode}", flush=True)
+        pending = [case for case in pending if case["case_id"] not in selected_ids]
     return outputs
+
+
+def _profiles_from_results(results: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return only observed, usable resource profiles from completed case results."""
+    return [profile for result in results.values() if (profile := _case_profile(result)) is not None]
 
 
 def main() -> None:
@@ -408,8 +495,7 @@ def main() -> None:
             raise ValueError(f"candidate source differs from reference: {case['case_id']}")
         print(f"PA_BUILD=PASS CASE={case['case_id']}", flush=True)
 
-    workers = int(config["parallelism"]["n1000_flight_workers"])
-    actual = _run_parallel_flights(primary, "actual", simion_exe, count, quality, workers)
+    actual = _run_parallel_flights(primary, "actual", simion_exe, count, quality)
     resolution_reference = float(reference_metrics["mass_resolution"])
     acceptance = config["acceptance"]
 
@@ -430,7 +516,8 @@ def main() -> None:
     if config["ideal_field_attribution"]["execute_for_failed_radius_cases"]:
         for mode in config["ideal_field_attribution"]["modes"]:
             ideal[mode] = _run_parallel_flights(
-                failed, mode, simion_exe, count, quality, workers
+                failed, mode, simion_exe, count, quality,
+                _profiles_from_results(actual),
             ) if failed else {}
 
     target_id = config["ring_count_compensation"]["target_case_id"]
@@ -468,7 +555,7 @@ def main() -> None:
             compensation.append(candidate)
             print(f"PA_BUILD=PASS CASE={candidate['case_id']}", flush=True)
         compensation_results = _run_parallel_flights(
-            compensation, "actual", simion_exe, count, quality, workers
+            compensation, "actual", simion_exe, count, quality
         )
         diagnostic_ids = set(
             config["ring_count_compensation"].get(
@@ -488,7 +575,8 @@ def main() -> None:
             )
         for mode in config["ideal_field_attribution"]["modes"]:
             compensation_ideal[mode] = _run_parallel_flights(
-                diagnostic_cases, mode, simion_exe, count, quality, workers
+                diagnostic_cases, mode, simion_exe, count, quality,
+                _profiles_from_results(compensation_results),
             )
 
     rows = []
