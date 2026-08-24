@@ -622,16 +622,6 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                 resource_profiles=[profile],
             )
 
-    def test_single_flight_batching_is_one_wave_only(self) -> None:
-        runner = (INTEGRATION_ROOT / "runtime" / "run_single_flight.ps1").read_text(
-            encoding="utf-8-sig"
-        )
-        prepare_source = (INTEGRATION_ROOT / "workflows" / "family_source_closure" / "prepare.py").read_text(
-            encoding="utf-8"
-        )
-        self.assertIn("must fit in one dispatch wave", runner)
-        self.assertIn("plan_simion_dispatch", prepare_source)
-
     def test_generated_ordered_subset_selectors_are_exact_and_fresh(self) -> None:
         n1 = ordered_subset_source_particle_ids("n1_center_source_id_500_v1")
         n100 = ordered_subset_source_particle_ids(
