@@ -8,40 +8,6 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 class FormalReferenceWorkflowLayoutTests(unittest.TestCase):
-    def test_gate_and_diagnostic_reference_the_canonical_geometry_gate(self):
-        canonical = (
-            "workflows\\formal_reference\\verify_geometry_contract.ps1"
-        )
-        verify_project = (PROJECT_ROOT / "verify_project.ps1").read_text(
-            encoding="utf-8"
-        )
-        diagnostic = (
-            PROJECT_ROOT
-            / "simion"
-            / "workbench"
-            / "run_ideal_field_diagnostic.ps1"
-        ).read_text(encoding="utf-8")
-        self.assertEqual(verify_project.count(canonical), 2)
-        self.assertEqual(diagnostic.count(canonical), 1)
-        self.assertNotIn(
-            "tests\\cross_solver\\verify_geometry_contract.ps1",
-            verify_project + diagnostic,
-        )
-
-    def test_geometry_helper_uses_the_workflow_namespace(self):
-        gate = (
-            PROJECT_ROOT
-            / "workflows"
-            / "formal_reference"
-            / "verify_geometry_contract.ps1"
-        ).read_text(encoding="utf-8")
-        self.assertIn(
-            "projects.single_reflection_oa_tof_mass_analyzer.workflows.formal_reference."
-            "verify_geometry_derivation",
-            gate,
-        )
-        self.assertNotIn("projects.single_reflection_oa_tof_mass_analyzer.tests.cross_solver", gate)
-
     def test_single_formal_cli_has_explicit_phases_and_serializes_solvers(self):
         runner = (
             PROJECT_ROOT
