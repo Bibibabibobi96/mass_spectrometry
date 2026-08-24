@@ -108,14 +108,6 @@ def _runtime_function_names() -> set[str]:
     )
 
 
-def _production_line_count(source: str) -> int:
-    return sum(
-        1
-        for line in source.splitlines()
-        if line.strip() and not line.lstrip().startswith("#")
-    )
-
-
 class WorkflowArchitectureContractTests(unittest.TestCase):
     def test_active_production_entries_do_not_depend_on_tests(self) -> None:
         forbidden = re.compile(r"(?i)(?:^|[\"'])tests[/\\]")
@@ -664,37 +656,6 @@ class WorkflowArchitectureContractTests(unittest.TestCase):
             ):
                 self.assertIn(function, source)
                 self.assertNotRegex(source, rf"(?im)^\s*function\s+{function}\b")
-
-    def test_production_size_and_duplication_are_report_only(self) -> None:
-        sources = {
-            path.name: _read(path)
-            for path in (
-                SIMION_CONFIG_CORE,
-                SIMION_EXECUTION_SUPPORT,
-                *DEDICATED_RUNNERS,
-            )
-        }
-        line_counts = {
-            name: _production_line_count(source)
-            for name, source in sources.items()
-        }
-        runner_lines = [
-            {
-                line.strip()
-                for line in _read(path).splitlines()
-                if line.strip() and not line.lstrip().startswith("#")
-            }
-            for path in DEDICATED_RUNNERS
-        ]
-        duplicate_ratio = len(runner_lines[0] & runner_lines[1]) / max(
-            1, min(map(len, runner_lines))
-        )
-        print(  # noqa: T201 - intentionally visible, non-blocking architecture report
-            "WORKFLOW_ARCHITECTURE_REPORT "
-            f"production_loc={line_counts} "
-            f"runner_exact_line_overlap={duplicate_ratio:.3f}"
-        )
-
 
 if __name__ == "__main__":
     unittest.main()
