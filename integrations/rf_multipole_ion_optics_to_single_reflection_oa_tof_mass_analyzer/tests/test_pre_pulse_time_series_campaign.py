@@ -109,6 +109,31 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
         self.assertIsNone(contract["pa_cache_keys"]["reflectron"])
         self.assertEqual(contract["identities"]["mother_particle_source_sha256"], "D" * 64)
 
+    def test_screening_contract_records_profile_authority_separately_from_steps(self) -> None:
+        campaign = copy.deepcopy(self.campaign)
+        specification = campaign["pre_pulse_time_series_screening"]
+        specification["rf_steps_per_period"] = 73
+        specification["spatial_window_profile_id"] = (
+            "layout_resolved_axial_provisional_xy2_v1"
+        )
+        row = campaign["experiments"][0]
+        contract = compile_pre_pulse_time_series_contract(
+            campaign=campaign, experiment=row, experiment_row_sha256="A" * 64,
+            upstream_resolved_design={"drive": {
+                "frequency_Hz": 1_100_000, "waveform": "sine", "phase_rad": 0.25,
+            }}, resolved_source_contract_sha256="B" * 64,
+            resolved_population_contract_sha256="C" * 64,
+            prepared_prefix_sha256="D" * 64,
+            layout_profile={"topology_id": "three_zone_accelerator_ideal_v1",
+                            "geometry_id": "three_zone_focus_origin_planes_v1",
+                            "frontend_electrode_topology_id": "three_zone_frontend_v1"},
+            selected_field_profile={"field_id": "three_zone_refined_pa_field_v1"},
+            region_field_semantic_sha256="E" * 64, rf_steps_per_period=73,
+            specification=specification, time_integration_profile_id="dt40",
+        )
+        self.assertEqual(contract["identities"]["time_integration_profile_id"], "dt40")
+        self.assertEqual(contract["rf_time_grid"]["rf_steps_per_period"], 73)
+
     def test_schema_accepts_unregistered_numerics_and_pre_pulse_grid_values(self) -> None:
         campaign = current_campaign_fixture(self.campaign)
         screening = campaign["pre_pulse_time_series_screening"]

@@ -3660,11 +3660,11 @@ def prepare_family_source_closure(
             ],
             rf_steps_per_period=int(screening_specification["rf_steps_per_period"]),
             specification=screening_specification,
-            time_integration_profile_id=next(
-                profile["profile_id"]
-                for profile in single_flight_configuration["time_integration_profiles"]
-                if int(profile["rf_steps_per_period"])
-                == int(screening_specification["rf_steps_per_period"])
+            # The resolved execution profile is the numerical authority.  An
+            # exploration override need not duplicate a registered profile
+            # merely to label this generated screening contract.
+            time_integration_profile_id=str(
+                execution_profile["time_integration_profile_id"]
             ),
             base_schedule=(
                 base_schedule if pulse_timing_state == "discovery_required" else None
