@@ -3,11 +3,16 @@
   "$id": "https://mass-spectrometry.local/schemas/execution_adapter_registry.schema.json",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "role", "integration_id", "mappings"],
+  "required": ["schema_version", "role", "integration_id", "adapter_implementations", "mappings"],
   "properties": {
-    "schema_version": {"const": 1},
+    "schema_version": {"const": 2},
     "role": {"const": "integration_execution_adapter_registry"},
     "integration_id": {"$ref": "#/$defs/identifier"},
+    "adapter_implementations": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {"$ref": "#/$defs/adapter_implementation"}
+    },
     "mappings": {
       "type": "array",
       "minItems": 1,
@@ -16,15 +21,13 @@
         "additionalProperties": false,
         "required": [
           "connection_profile_id",
-          "adapter_entrypoint",
-          "adapter_sha256",
+          "adapter_id",
           "runtime_binding_path",
           "runtime_binding_sha256"
         ],
         "properties": {
           "connection_profile_id": {"$ref": "#/$defs/identifier"},
-          "adapter_entrypoint": {"$ref": "#/$defs/path"},
-          "adapter_sha256": {"$ref": "#/$defs/sha256"},
+          "adapter_id": {"$ref": "#/$defs/identifier"},
           "runtime_binding_path": {"$ref": "#/$defs/path"},
           "runtime_binding_sha256": {"$ref": "#/$defs/sha256"}
         }
@@ -32,6 +35,15 @@
     }
   },
   "$defs": {
+    "adapter_implementation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["adapter_entrypoint", "adapter_sha256"],
+      "properties": {
+        "adapter_entrypoint": {"$ref": "#/$defs/path"},
+        "adapter_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
     "identifier": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"

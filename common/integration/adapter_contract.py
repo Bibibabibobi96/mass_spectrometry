@@ -27,11 +27,20 @@ def _repo_file(repo_root: Path, relative: str) -> Path:
 
 
 def load_execution_adapter_registry(path: Path) -> dict[str, Any]:
-    registry = _load(path)
+    return _validate_execution_adapter_registry(_load(path))
+
+
+def _validate_execution_adapter_registry(registry: dict[str, Any]) -> dict[str, Any]:
     validate_schema(registry, "execution_adapter_registry.schema.json")
     identifiers = [item["connection_profile_id"] for item in registry["mappings"]]
     if len(identifiers) != len(set(identifiers)):
         raise ContractError("duplicate execution adapter connection_profile_id")
+    implementations = registry["adapter_implementations"]
+    for mapping in registry["mappings"]:
+        adapter_id = mapping["adapter_id"]
+        implementation = implementations.get(adapter_id)
+        if not isinstance(implementation, dict):
+            raise ContractError(f"execution adapter implementation is not unique: {adapter_id}")
     return registry
 
 
@@ -41,7 +50,7 @@ def resolve_execution_mapping(
     *,
     repo_root: Path,
 ) -> dict[str, Any]:
-    validate_schema(registry, "execution_adapter_registry.schema.json")
+    registry = _validate_execution_adapter_registry(registry)
     matches = [
         item
         for item in registry["mappings"]
@@ -50,6 +59,7 @@ def resolve_execution_mapping(
     if len(matches) != 1:
         raise ContractError(f"execution adapter mapping is not unique: {profile_id}")
     mapping = copy.deepcopy(matches[0])
+    mapping.update(copy.deepcopy(registry["adapter_implementations"][mapping["adapter_id"]]))
     adapter = _repo_file(repo_root, mapping["adapter_entrypoint"])
     if file_sha256(adapter) != mapping["adapter_sha256"]:
         raise ContractError("execution adapter SHA-256 is stale")

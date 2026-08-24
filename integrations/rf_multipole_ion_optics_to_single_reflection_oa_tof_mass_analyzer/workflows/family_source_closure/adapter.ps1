@@ -680,14 +680,21 @@ if ($mappings.Count -ne 1) {
   throw 'Family execution adapter mapping no longer resolves uniquely.'
 }
 $mapping = $mappings[0]
+$adapterImplementations = $registry.adapter_implementations
+$adapterImplementation = $adapterImplementations.PSObject.Properties[
+  [string]$mapping.adapter_id
+].Value
+if ($null -eq $adapterImplementation) {
+  throw 'Family execution adapter implementation no longer resolves uniquely.'
+}
 $adapterPath = [IO.Path]::GetFullPath($PSCommandPath)
 $expectedAdapterPath = (
   'integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/' +
   'workflows/family_source_closure/adapter.ps1'
 )
-if ($mapping.adapter_entrypoint -ne $expectedAdapterPath -or
+if ($adapterImplementation.adapter_entrypoint -ne $expectedAdapterPath -or
     (Get-FileHash -LiteralPath $adapterPath -Algorithm SHA256).Hash -ne
-      $mapping.adapter_sha256) {
+      $adapterImplementation.adapter_sha256) {
   throw 'Family adapter implementation differs from its registry identity.'
 }
 if ($mapping.runtime_binding_path -ne

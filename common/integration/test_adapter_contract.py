@@ -59,16 +59,29 @@ class IntegrationAdapterContractTests(unittest.TestCase):
             self.assertNotIn("workflow_entrypoint", mapping)
             self.assertNotIn("connector_case_id", mapping)
 
-    def test_mapping_rejects_stale_adapter_sha256(self) -> None:
+    def test_mapping_rejects_stale_shared_adapter_sha256(self) -> None:
         path = INTEGRATION_ROOT / "config" / "execution_adapter_profiles.json"
         invalid = copy.deepcopy(json.loads(path.read_text(encoding="utf-8")))
-        invalid["mappings"][0]["adapter_sha256"] = "0" * 64
+        invalid["adapter_implementations"]["family_source_closure"][
+            "adapter_sha256"
+        ] = "0" * 64
         with self.assertRaisesRegex(ContractError, "adapter SHA-256 is stale"):
             resolve_execution_mapping(
                 invalid,
                 invalid["mappings"][0]["connection_profile_id"],
                 repo_root=REPO_ROOT,
             )
+
+    def test_mapping_rejects_unknown_shared_adapter_id(self) -> None:
+        path = INTEGRATION_ROOT / "config" / "execution_adapter_profiles.json"
+        invalid = copy.deepcopy(json.loads(path.read_text(encoding="utf-8")))
+        invalid["mappings"][0]["adapter_id"] = "missing_adapter"
+        with self.assertRaisesRegex(
+            ContractError, "adapter implementation is not unique"
+        ), tempfile.TemporaryDirectory() as directory:
+            temporary = Path(directory) / "invalid_adapter.json"
+            temporary.write_text(json.dumps(invalid), encoding="utf-8")
+            load_execution_adapter_registry(temporary)
 
     def test_mapping_vocabulary_rejects_physical_overrides(self) -> None:
         path = INTEGRATION_ROOT / "config" / "execution_adapter_profiles.json"
