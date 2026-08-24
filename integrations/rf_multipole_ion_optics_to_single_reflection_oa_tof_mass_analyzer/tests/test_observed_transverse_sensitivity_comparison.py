@@ -136,10 +136,10 @@ class ObservedTransverseSensitivityComparisonTests(unittest.TestCase):
 
     def test_four_arm_sequential_decomposition_closes_at_every_event(self) -> None:
         frames = {
-            ARM_AFFINE_FIXED: _frame(0.0),
-            ARM_OBSERVED_FIXED: _frame(1e-3),
-            ARM_C: _frame(3e-3),
-            ARM_D: _frame(6e-3),
+            ARM_AFFINE_FIXED: _frame(0.0, count=37),
+            ARM_OBSERVED_FIXED: _frame(1e-3, count=37),
+            ARM_C: _frame(3e-3, count=37),
+            ARM_D: _frame(6e-3, count=37),
         }
         result, rows = compare_sequential_frames(frames, {name: 9.0 for name in SEQUENTIAL_ARMS})
         self.assertEqual(result["status"], "FUNCTIONAL_ONLY")
@@ -147,7 +147,8 @@ class ObservedTransverseSensitivityComparisonTests(unittest.TestCase):
         self.assertTrue(result["decomposition"]["order_dependent"])
         self.assertFalse(result["decomposition"]["factorial_effects"])
         self.assertEqual(result["decomposition"]["arm_order"], list(SEQUENTIAL_ARMS))
-        self.assertEqual(len(rows), 11 * 100)
+        self.assertEqual(result["paired_particle_count"], 37)
+        self.assertEqual(len(rows), 11 * 37)
         detector = result["events"]["detector_crossing"]
         closure = detector["telescoping_closure_residual"]["time_ns"]
         self.assertLess(closure["max_abs"], 1e-10)
@@ -265,14 +266,14 @@ class ObservedTransverseSensitivityComparisonTests(unittest.TestCase):
         with self.assertRaisesRegex(ContractError, "different pulse-effective clocks"):
             compare_sequential_frames(frames, clocks)
 
-    def test_strict_100_particle_detector_pair(self) -> None:
+    def test_nonempty_exactly_paired_detector_cohort(self) -> None:
         peak = {"mean_tof_us": 1.0, "std_tof_ns": 2.0, "direct_fwhm_tof_ns": 3.0, "mass_resolution": 4.0}
-        result, rows = compare_frames(_frame(), _frame(1e-3), peak, peak)
+        result, rows = compare_frames(_frame(count=37), _frame(1e-3, count=37), peak, peak)
         self.assertEqual(result["status"], "FUNCTIONAL_ONLY")
         self.assertFalse(result["formal_gate_passed"])
-        self.assertEqual(len(rows), 100)
+        self.assertEqual(len(rows), 37)
         self.assertAlmostEqual(rows[0]["delta_time_full_minus_collapsed_ns"], 1.0)
-        self.assertEqual(result["detector_identity"]["transverse_collapsed_particles"], 100)
+        self.assertEqual(result["detector_identity"]["transverse_collapsed_particles"], 37)
         self.assertAlmostEqual(result["peak_metrics"]["full_minus_collapsed"]["std_tof_pct"], 0.0)
 
     def test_missing_detector_velocity_is_published_as_null(self) -> None:
@@ -289,7 +290,7 @@ class ObservedTransverseSensitivityComparisonTests(unittest.TestCase):
 
     def test_missing_detector_id_fails_closed(self) -> None:
         peak = {"mean_tof_us": 1.0, "std_tof_ns": 2.0, "direct_fwhm_tof_ns": 3.0, "mass_resolution": 4.0}
-        with self.assertRaisesRegex(ContractError, "exactly 1..100"):
+        with self.assertRaisesRegex(ContractError, "nonempty and exactly paired"):
             compare_frames(_frame(), _frame(count=99), peak, peak)
 
 

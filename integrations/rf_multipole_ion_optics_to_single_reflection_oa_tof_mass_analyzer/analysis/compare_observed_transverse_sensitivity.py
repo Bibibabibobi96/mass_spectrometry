@@ -89,7 +89,6 @@ FROZEN_CHILD_INPUT_KEYS = (
     "three_zone_t5_candidate",
 )
 VERSIONED_CHILD_INPUT_KEYS = ("runtime_binding", "resolved_connection", "pulse_schedule")
-EXPECTED_IDS = set(range(1, 101))
 
 
 def _record_path(record: Any, label: str) -> Path:
@@ -168,8 +167,11 @@ def _load_arm(runs_root: Path, parent_run_id: str, expected_arm: str) -> dict[st
     config = load_json(config_path, "parent run_config")
     identity = config.get("source_particle_identity", {})
     projection = identity.get("observed_pre_pulse_projection", {})
+    particle_count = config.get("particle_count")
     if (
-        config.get("particle_count") != 100
+        not isinstance(particle_count, int)
+        or isinstance(particle_count, bool)
+        or particle_count < 1
         or config.get("formal_gate_passed") is not False
         or projection.get("arm_id") != expected_arm
     ):
@@ -219,7 +221,7 @@ def _load_arm(runs_root: Path, parent_run_id: str, expected_arm: str) -> dict[st
         or validation.get("role") != "canonical_pulse_restart_target_state_validation"
         or validation.get("status") != "PASS"
         or validation.get("projection_arm_id") != expected_arm
-        or validation.get("particle_count") != 100
+        or validation.get("particle_count") != particle_count
         or validation.get("materialization_receipt_sha256") != file_sha256(projection_receipt)
     ):
         raise ContractError("parent projection receipt is missing or not child-bound")
@@ -269,6 +271,7 @@ def _load_arm(runs_root: Path, parent_run_id: str, expected_arm: str) -> dict[st
         "child_input_sha256s": input_sha256s,
         "versioned_child_inputs": versioned_inputs,
         "summary_document": summary_document,
+        "particle_count": particle_count,
     }
 
 
@@ -402,8 +405,8 @@ def compare_frames(
     """Compare strict detector cohorts, reusing the canonical event pairing helper."""
     c_detector = _event_maps(c_frame)["detector_crossing"]
     d_detector = _event_maps(d_frame)["detector_crossing"]
-    if set(c_detector) != EXPECTED_IDS or set(d_detector) != EXPECTED_IDS:
-        raise ContractError("collapsed/full detector particle IDs must each be exactly 1..100")
+    if not c_detector or set(c_detector) != set(d_detector):
+        raise ContractError("collapsed/full detector particle IDs must be nonempty and exactly paired")
     metrics, residuals = _pair_event(c_detector, d_detector)
     rows: list[dict[str, Any]] = []
     for residual in residuals:
@@ -455,7 +458,7 @@ def compare_frames(
         "role": "rf_oatof_observed_transverse_sensitivity_comparison",
         "status": "FUNCTIONAL_ONLY",
         "formal_gate_passed": False,
-        "paired_particle_count": 100,
+        "paired_particle_count": len(rows),
         "detector_identity": {
             "transverse_collapsed_particles": metrics["wide_particles"],
             "full_observed_6d_particles": metrics["small_particles"],
@@ -539,13 +542,13 @@ def _renamed_residuals(
 ) -> dict[int, dict[str, float | None]]:
     metrics, residuals = _pair_event(left, right)
     if (
-        metrics["wide_particles"] != 100
-        or metrics["small_particles"] != 100
-        or metrics["common_particles"] != 100
+        metrics["wide_particles"] < 1
+        or metrics["small_particles"] < 1
+        or metrics["common_particles"] != metrics["wide_particles"]
         or metrics["wide_only_particles"] != 0
         or metrics["small_only_particles"] != 0
     ):
-        raise ContractError("sequential checkpoint identities must be exactly paired 1..100")
+        raise ContractError("sequential checkpoint identities must be nonempty and exactly paired")
     result: dict[int, dict[str, float | None]] = {}
     for residual in residuals:
         row: dict[str, float | None] = {
@@ -588,8 +591,9 @@ def compare_sequential_frames(
     paired_rows: list[dict[str, Any]] = []
     for event in SEQUENTIAL_EVENTS:
         event_maps = {name: _event_map(frames[name], event) for name in SEQUENTIAL_ARMS}
-        if any(set(mapping) != EXPECTED_IDS for mapping in event_maps.values()):
-            raise ContractError(f"sequential arm particle IDs at {event} must each be exactly 1..100")
+        particle_ids = set(event_maps[ARM_AFFINE_FIXED])
+        if not particle_ids or any(set(mapping) != particle_ids for mapping in event_maps.values()):
+            raise ContractError(f"sequential arm particle IDs at {event} must be nonempty and exactly paired")
         transitions = {
             name: _renamed_residuals(event_maps[left], event_maps[right])
             for name, left, right in SEQUENTIAL_TRANSITIONS
@@ -599,7 +603,7 @@ def compare_sequential_frames(
         closure_values: dict[str, list[float | None]] = {field: [] for field in fields}
         transition_values = {name: {field: [] for field in fields} for name, _, _ in SEQUENTIAL_TRANSITIONS}
         total_values = {field: [] for field in fields}
-        for particle_id in sorted(EXPECTED_IDS):
+        for particle_id in sorted(particle_ids):
             output_row: dict[str, Any] = {
                 "event": event,
                 "particle_id": particle_id,
@@ -621,7 +625,7 @@ def compare_sequential_frames(
                 closure_values[field].append(closure)
             paired_rows.append(output_row)
         event_results[event] = {
-            "arm_particle_counts": {name: 100 for name in SEQUENTIAL_ARMS},
+            "arm_particle_counts": {name: len(particle_ids) for name in SEQUENTIAL_ARMS},
             "adjacent_transitions": {
                 name: {field: _distribution(values) for field, values in transition_values[name].items()}
                 for name, _, _ in SEQUENTIAL_TRANSITIONS
@@ -633,9 +637,14 @@ def compare_sequential_frames(
     pulse_time = next(iter(pulse_effective_time_us.values()))
     for event in PEAK_EVENTS:
         arms: dict[str, Any] = {}
+        particle_ids: set[int] | None = None
         for name in SEQUENTIAL_ARMS:
             mapping = _event_map(frames[name], event)
-            tof = np.asarray([mapping[particle_id]["time_us"] - pulse_time for particle_id in sorted(EXPECTED_IDS)])
+            if particle_ids is None:
+                particle_ids = set(mapping)
+            if not particle_ids or set(mapping) != particle_ids:
+                raise ContractError(f"sequential arm particle IDs at {event} must be nonempty and exactly paired")
+            tof = np.asarray([mapping[particle_id]["time_us"] - pulse_time for particle_id in sorted(particle_ids)])
             arms[name] = compute_peak_metrics(tof, 100.0)[0]
         peak_metrics[event] = {
             "arms": arms,
@@ -649,7 +658,7 @@ def compare_sequential_frames(
         "role": "rf_oatof_observed_source_sequential_attribution",
         "status": "FUNCTIONAL_ONLY",
         "formal_gate_passed": False,
-        "paired_particle_count": 100,
+        "paired_particle_count": len(_event_map(frames[ARM_AFFINE_FIXED], "detector_crossing")),
         "decomposition": {
             "order_dependent": True,
             "factorial_effects": False,
@@ -755,7 +764,7 @@ def publish(
                 "decomposition_order": list(SEQUENTIAL_ARMS),
                 "order_dependent": True,
                 "analysis_class": "FUNCTIONAL_ONLY",
-                "particle_count": 100,
+                "particle_count": arms[ARM_AFFINE_FIXED]["particle_count"],
                 "qualification_decision_made": False,
             }
             if sequential
@@ -763,7 +772,7 @@ def publish(
                 "transverse_collapsed_parent_run_id": c_parent_id,
                 "full_observed_6d_parent_run_id": d_parent_id,
                 "analysis_class": "FUNCTIONAL_ONLY",
-                "particle_count": 100,
+                "particle_count": c["particle_count"],
                 "qualification_decision_made": False,
             }
         ),
@@ -820,7 +829,7 @@ def publish(
         ),
         "status": "success",
         "analysis_status": "FUNCTIONAL_ONLY",
-        "paired_particle_count": 100,
+        "paired_particle_count": result["paired_particle_count"],
         "result": portable_path(result_path, run_dir),
         "paired_detector_rows": portable_path(pairs_path, run_dir),
         "formal_gate_passed": False,
