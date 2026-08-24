@@ -116,10 +116,15 @@ def plan_simion_dispatch(
     batch, after which :func:`plan_adaptive_followup` consumes its observed peak.
     """
     particles = _positive_int(request.get("particle_count"), "particle_count")
-    maximum_batches = _positive_int(request.get("maximum_parallel_batches", 1), "maximum_parallel_batches")
+    # An omitted cap means "let measured host capacity decide", not the
+    # historical accidental policy of one lane.  The separate default remains
+    # one for hosts whose available memory cannot be observed.
+    maximum_batches = _positive_int(
+        request.get("maximum_parallel_batches", particles), "maximum_parallel_batches"
+    )
     maximum_batches = min(maximum_batches, particles)
     default_batches = _positive_int(
-        request.get("default_parallel_batches", maximum_batches),
+        request.get("default_parallel_batches", 1),
         "default_parallel_batches",
     )
     if default_batches > maximum_batches:

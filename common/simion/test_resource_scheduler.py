@@ -34,6 +34,40 @@ class ResourceSchedulerTests(unittest.TestCase):
         self.assertEqual([batch["count"] for batch in plan["waves"][0]["batches"]], [2500, 2500])
         self.assertEqual(plan["estimation"]["kind"], "nearest_resource_profile")
 
+    def test_omitted_parallel_cap_uses_measured_host_capacity(self) -> None:
+        request = {
+            "solver": "SIMION", "field_kind": "rf", "rf_steps_per_period": 40,
+            "particle_count": 100, "independent_particles": True,
+            "cpu_cores_per_batch": 2, "reserve_cpu_cores": 2,
+        }
+        profile = {
+            "resource_identity": {
+                "solver": "SIMION", "field_kind": "rf", "rf_steps_per_period": 40,
+            },
+            "per_batch_peak_working_set_bytes": 10,
+        }
+        plan = plan_simion_dispatch(
+            request, [profile], available_memory_bytes=100, logical_processors=10
+        )
+        self.assertEqual(plan["limits"]["maximum_parallel_batches"], 100)
+        self.assertEqual(plan["waves"][0]["batch_count"], 4)
+
+    def test_omitted_parallel_cap_keeps_unobservable_memory_conservative(self) -> None:
+        request = {
+            "solver": "SIMION", "field_kind": "electrostatic", "particle_count": 100,
+            "independent_particles": True,
+        }
+        profile = {
+            "resource_identity": {"solver": "SIMION", "field_kind": "electrostatic"},
+            "per_batch_peak_working_set_bytes": 1,
+        }
+        with patch(
+            "common.simion.resource_scheduler.available_physical_memory_bytes",
+            return_value=None,
+        ):
+            plan = plan_simion_dispatch(request, [profile], logical_processors=16)
+        self.assertEqual(plan["waves"][0]["batch_count"], 1)
+
     def test_unknown_electrostatic_request_bootstraps_then_adapts(self) -> None:
         request = {
             "solver": "SIMION", "field_kind": "electrostatic", "particle_count": 1000,
