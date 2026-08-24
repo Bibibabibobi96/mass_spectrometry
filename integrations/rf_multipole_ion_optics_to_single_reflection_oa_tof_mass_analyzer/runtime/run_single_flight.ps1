@@ -1920,7 +1920,10 @@ try {
     $analysisArguments += @('--configuration',$configuration)
   }
   if ($spatialWindowProfiles.Count -eq 1) {
-    $analysisArguments += @('--spatial-window-profile-id',$SpatialWindowProfileId)
+    $analysisArguments += @(
+      '--spatial-window-profile-id',
+      [string]$executionProfile.spatial_window_profile_id
+    )
   }
   if ($sourceRegionDiagnosticProfiles.Count -eq 1) {
     $analysisArguments += @(
