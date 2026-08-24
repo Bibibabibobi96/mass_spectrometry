@@ -2575,7 +2575,7 @@ def prepare_family_source_closure(
         INTEGRATION_SCHEMA_DIR / "rf_multipole_oatof_runtime_binding.schema.json",
     )
     if (
-        runtime_binding["schema_version"] != 3
+        runtime_binding["schema_version"] != 4
         or runtime_binding["connection_profile_id"]
         != experiment["connection_profile_id"]
         or runtime_binding["upstream_project_id"] != expected_project_id

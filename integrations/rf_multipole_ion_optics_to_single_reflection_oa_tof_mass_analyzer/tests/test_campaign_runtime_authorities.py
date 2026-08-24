@@ -232,7 +232,7 @@ class CampaignRuntimeAuthoritiesTests(unittest.TestCase):
             validate_schema(
                 binding, SCHEMA_ROOT / "rf_multipole_oatof_runtime_binding.schema.json"
             )
-            self.assertEqual(binding["schema_version"], 3)
+            self.assertEqual(binding["schema_version"], 4)
             contracts = binding["contracts"]
             self.assertNotIn("source_contract", contracts)
             self.assertNotIn("upstream_resolved_design", contracts)

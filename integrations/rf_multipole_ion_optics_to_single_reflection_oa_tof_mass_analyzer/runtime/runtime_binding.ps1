@@ -321,18 +321,22 @@ function Resolve-RfOatofRuntimeBinding {
     ConvertFrom-Json
   $binding = Get-Content -LiteralPath $bindingPath -Raw -Encoding UTF8 |
     ConvertFrom-Json
+  $bindingProperties = @(
+    'schema_version','role','integration_id','connection_profile_id',
+    'upstream_project_id','contracts'
+  )
+  if ([int]$binding.schema_version -eq 3) {
+    $bindingProperties += 'implementation_binding'
+  }
   Assert-RfOatofExactProperties -Object $binding -Role 'Runtime binding' `
-    -Expected @(
-      'schema_version','role','integration_id','connection_profile_id',
-      'upstream_project_id','contracts','implementation_binding'
-    )
+    -Expected $bindingProperties
   if ($resolved.role -ne 'resolved_connection_do_not_edit' -or
       $resolved.compatibility.status -ne 'pass' -or
       $resolved.selection.connection_profile_id -ne
         $ExpectedConnectionProfileId) {
     throw 'Runtime binding requires the selected compatible resolved connection.'
   }
-  if ([int]$binding.schema_version -ne 3 -or
+  if ([int]$binding.schema_version -notin @(3,4) -or
       $binding.role -ne 'rf_multipole_oatof_runtime_binding' -or
       $binding.integration_id -ne $script:RfOatofIntegrationId -or
       $binding.connection_profile_id -ne $ExpectedConnectionProfileId) {
@@ -383,8 +387,15 @@ function Resolve-RfOatofRuntimeBinding {
     throw 'Run-local upstream resolved design project identity differs.'
   }
 
-  $implementationBindingPath = Resolve-RfOatofBoundFile -Root $repo `
-    -Record $binding.implementation_binding -Role 'runtime implementation binding'
+  $implementationBindingPath = if ([int]$binding.schema_version -eq 3) {
+    Resolve-RfOatofBoundFile -Root $repo `
+      -Record $binding.implementation_binding -Role 'runtime implementation binding'
+  } else {
+    Join-Path $repo (
+      'integrations/' + $script:RfOatofIntegrationId +
+      '/config/family_runtime_implementation.json'
+    )
+  }
   $implementationBinding = Get-Content -LiteralPath $implementationBindingPath `
     -Raw -Encoding UTF8 | ConvertFrom-Json
   Assert-RfOatofExactProperties -Object $implementationBinding `

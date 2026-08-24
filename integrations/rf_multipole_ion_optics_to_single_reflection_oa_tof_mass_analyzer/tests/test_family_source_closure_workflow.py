@@ -1988,7 +1988,7 @@ $runtime = Resolve-RfOatofRuntimeBinding `
   -ResolvedSourceContractSha256 '{frozen["resolved_source_contract_sha256"]}' `
   -UpstreamResolvedDesign '{upstream_design}' `
   -UpstreamResolvedDesignSha256 '{frozen["upstream_resolved_design_sha256"]}'
-if ($runtime.binding.schema_version -ne 3) {{ throw 'runtime binding schema differs' }}
+if ($runtime.binding.schema_version -ne 4) {{ throw 'runtime binding schema differs' }}
 if ($runtime.contracts.resolved_source_contract -ne '{resolved_source}') {{
   throw 'runtime resolver did not preserve the frozen source contract'
 }}

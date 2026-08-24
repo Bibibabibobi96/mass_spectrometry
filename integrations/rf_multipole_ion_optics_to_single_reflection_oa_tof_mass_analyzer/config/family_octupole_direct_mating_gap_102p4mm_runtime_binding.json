@@ -1,5 +1,5 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "role": "rf_multipole_oatof_runtime_binding",
   "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
   "connection_profile_id": "rf_octupole_to_single_reflection_oatof_direct_mating_gap_102p4mm",
@@ -37,9 +37,5 @@
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/execution_policy.json",
       "sha256": "6FDB04133C0AB5F48BE51127296469802E8E31E04DF6FFB539DD96E0F54F4B35"
     }
-  },
-  "implementation_binding": {
-    "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_runtime_implementation.json",
-    "sha256": "49AE5AC7A70A53D676B8197B98E94B5DA9F6E06CBE03ABDEEE4971DC9F354E18"
   }
 }
