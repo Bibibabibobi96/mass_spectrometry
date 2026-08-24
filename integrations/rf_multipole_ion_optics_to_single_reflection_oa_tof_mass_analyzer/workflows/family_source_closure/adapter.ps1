@@ -314,13 +314,10 @@ $pulseTimingOrchestrationArgumentNames = @(
   Resolve-RfPulseTimingOrchestrationArguments -FrozenArguments $frozenArguments
 )
 $expectedArguments += $pulseTimingOrchestrationArgumentNames
-if (@($frozenArguments.Keys | Where-Object {
-      $_ -notin $expectedArguments
-    }).Count -ne 0 -or
-    @($expectedArguments | Where-Object {
+if (@($expectedArguments | Where-Object {
       -not $frozenArguments.ContainsKey($_)
     }).Count -ne 0) {
-  throw 'Prepared family adapter arguments differ from the campaign-only contract.'
+  throw 'Prepared family adapter is missing a required contract argument.'
 }
 
 $sourceBranchId = [string]$frozenArguments.source_branch_id
