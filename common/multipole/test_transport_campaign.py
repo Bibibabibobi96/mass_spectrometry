@@ -701,6 +701,7 @@ class TransportCampaignTests(unittest.TestCase):
         campaign = campaign_fixture()
         values = campaign["experiments"][0]["simion_solver_numerics"]["values"]
         values["cell_mm_xyz"] = {"x": 101.0, "y": 125.0, "z": 150.0}
+        values["trajectory_quality"] = 10_001
         values["trajectory"]["rf_steps_per_period"] = 10_001
         values["trajectory"]["maximum_global_time_us"] = 1_000_001.0
         values["execution_batching"] = {

@@ -408,7 +408,7 @@
             "z": {"type": "number", "minimum": 0.001}
           }
         },
-        "trajectory_quality": {"type": "integer", "minimum": 0, "maximum": 100},
+        "trajectory_quality": {"type": "integer", "minimum": 0},
         "trajectory": {
           "type": "object",
           "additionalProperties": false,
