@@ -41,6 +41,13 @@ def validate_standard_particle_count(count: int) -> int:
     return count
 
 
+def validate_positive_particle_count(count: int) -> int:
+    """Return a physically usable trajectory count without imposing a study size."""
+    if isinstance(count, bool) or not isinstance(count, int) or count < 1:
+        raise ValueError("particle count must be a positive integer")
+    return count
+
+
 def _nonblank_lines(path: Path) -> list[str]:
     return [
         line

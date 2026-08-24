@@ -20,7 +20,7 @@ from common.contracts.file_identity import (
     repository_text_sha256,
 )
 from common.contracts.machine_contracts import ContractError, validate_schema
-from common.contracts.particle_count_policy import validate_standard_particle_count
+from common.contracts.particle_count_policy import validate_positive_particle_count
 from common.contracts.particle_physics import kinetic_energy_ev
 from common.contracts.verify_run_manifest import record_path, verify_record
 from common.contracts.verify_artifact_layout import verify_verified_pulse_cache_entry
@@ -2168,9 +2168,12 @@ def _load_source_evidence(
     receipt_output_path: Path,
 ) -> dict[str, Any]:
     source = copy.deepcopy(experiment["source"])
-    launched_count = validate_standard_particle_count(
-        int(source["launched_particle_count"])
-    )
+    try:
+        launched_count = validate_positive_particle_count(
+            source["launched_particle_count"]
+        )
+    except ValueError as exc:
+        raise ContractError("source launched particle count is invalid") from exc
     population_binding = source.pop("particle_count_binding")
     manifest_path = _workspace_record(workspace, source["manifest"], "source manifest")
     state_path = _workspace_record(workspace, source["state"], "source state")

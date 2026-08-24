@@ -7,6 +7,7 @@ from pathlib import Path
 
 from common.contracts.particle_count_policy import (
     load_particle_count_policy,
+    validate_positive_particle_count,
     validate_prefix_particle_sources,
     validate_standard_particle_count,
 )
@@ -25,6 +26,12 @@ class ParticleCountPolicyTests(unittest.TestCase):
         for count in (1, 25, 30, 99, 101):
             with self.assertRaisesRegex(ValueError, "must be one of"):
                 validate_standard_particle_count(count)
+
+    def test_positive_count_validation_does_not_impose_standard_study_sizes(self) -> None:
+        self.assertEqual(validate_positive_particle_count(37), 37)
+        for count in (0, -1, True, 1.5):
+            with self.assertRaisesRegex(ValueError, "positive integer"):
+                validate_positive_particle_count(count)
 
     def test_root_readme_matches_machine_policy(self) -> None:
         readme = (Path(__file__).resolve().parents[2] / "README.md").read_text(encoding="utf-8")
