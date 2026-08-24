@@ -1,22 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://mass-spectrometry.local/schemas/rf_multipole_oatof_runtime_binding.schema.json",
-  "oneOf": [
-    {"$ref": "#/$defs/historical_v2"},
-    {"$ref": "#/$defs/active_v4"}
-  ],
+  "$ref": "#/$defs/active_v4",
   "$defs": {
-    "historical_v2": {
-      "allOf": [
-        {"$ref": "#/$defs/common_binding"},
-        {
-          "properties": {
-            "schema_version": {"const": 2},
-            "contracts": {"$ref": "#/$defs/historical_contracts"}
-          }
-        }
-      ]
-    },
     "active_v4": {
       "allOf": [
         {"$ref": "#/$defs/current_binding"},
@@ -27,28 +13,6 @@
           }
         }
       ]
-    },
-    "common_binding": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "schema_version",
-        "role",
-        "integration_id",
-        "connection_profile_id",
-        "upstream_project_id",
-        "contracts",
-        "implementation_binding"
-      ],
-      "properties": {
-        "schema_version": {"enum": [2, 3]},
-        "role": {"const": "rf_multipole_oatof_runtime_binding"},
-        "integration_id": {"const": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"},
-        "connection_profile_id": {"$ref": "#/$defs/identifier"},
-        "upstream_project_id": {"$ref": "#/$defs/identifier"},
-        "contracts": {"type": "object"},
-        "implementation_binding": {"$ref": "#/$defs/file"}
-      }
     },
     "current_binding": {
       "type": "object",
@@ -61,29 +25,6 @@
         "connection_profile_id": {"$ref": "#/$defs/identifier"},
         "upstream_project_id": {"$ref": "#/$defs/identifier"},
         "contracts": {"type": "object"}
-      }
-    },
-    "historical_dependency_contract": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["base", "overlay"],
-      "properties": {
-        "base": {"$ref": "#/$defs/file"},
-        "overlay": {"$ref": "#/$defs/file"}
-      }
-    },
-    "historical_contracts": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["dependency_contract", "pre_pulse_contract", "pulse_capture_contract", "pulse_timing_contract", "handoff_contract", "source_contract", "upstream_resolved_design"],
-      "properties": {
-        "dependency_contract": {"$ref": "#/$defs/historical_dependency_contract"},
-        "pre_pulse_contract": {"$ref": "#/$defs/file"},
-        "pulse_capture_contract": {"$ref": "#/$defs/file"},
-        "pulse_timing_contract": {"$ref": "#/$defs/file"},
-        "handoff_contract": {"$ref": "#/$defs/file"},
-        "source_contract": {"$ref": "#/$defs/file"},
-        "upstream_resolved_design": {"$ref": "#/$defs/file"}
       }
     },
     "active_contracts": {
