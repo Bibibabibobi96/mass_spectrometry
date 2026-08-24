@@ -490,6 +490,27 @@ class SimionTransportRunnerSourceTests(unittest.TestCase):
                     root / "official_100amu_2eV_n100.ion",
                 )
 
+    def test_exploration_bundle_allows_an_explicit_nonstandard_particle_count(self) -> None:
+        distribution = PROJECT_ROOT / "config" / "official_particle_source.json"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            metadata = generate_bundle(
+                SOURCE_FAMILY, distribution, RESOLVED, root, particle_counts=[3]
+            )
+            self.assertEqual(metadata["particle_counts"], [3])
+            result = resolve_binding(
+                root / "paired_particle_bundle.json", SOURCE_FAMILY, distribution,
+                RESOLVED, "official_100amu_2eV", 3, "canonical10",
+                root / "official_100amu_2eV_n3_canonical.csv",
+            )
+            self.assertEqual(result["particle_count"], 3)
+            self.assertIsNone(result["n1000_parent"])
+        source = RUNNER.read_text(encoding="utf-8")
+        self.assertIn(
+            "if (-not $Exploration -and $expectedParticles -lt $minimumParticles)",
+            source,
+        )
+
     def test_live_and_frozen_bundle_bindings_reject_cross_root_mixing(self) -> None:
         distribution = PROJECT_ROOT / "config" / "official_particle_source.json"
         with tempfile.TemporaryDirectory() as directory:

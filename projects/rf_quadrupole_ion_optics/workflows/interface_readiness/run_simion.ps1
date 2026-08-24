@@ -264,7 +264,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Canonical particle source preflight failed.' }
     $sourceMetadataDocument = Get-Content -LiteralPath $sourceMetadata -Raw -Encoding UTF8 | ConvertFrom-Json
     $expectedParticles = [int]$sourceMetadataDocument.particle_count
-    if ($expectedParticles -lt $minimumParticles) {
+    if (-not $Exploration -and $expectedParticles -lt $minimumParticles) {
         throw "Interface-readiness mode requires at least $minimumParticles particles."
     }
     $sourceProjectionArguments = @(

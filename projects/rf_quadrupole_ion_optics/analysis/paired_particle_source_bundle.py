@@ -57,6 +57,24 @@ def _policy_counts() -> tuple[dict[str, Any], int, int]:
     return policy, functional, statistical
 
 
+def _bundle_particle_counts(
+    particle_counts: Sequence[int] | None,
+) -> list[int]:
+    """Resolve source sizes without applying Formal study-size policy."""
+    if particle_counts is None:
+        _, functional, statistical = _policy_counts()
+        return [statistical, functional]
+    counts = list(particle_counts)
+    if not counts or any(
+        isinstance(count, bool) or not isinstance(count, int) or count < 1
+        for count in counts
+    ):
+        raise ValueError("paired bundle particle counts must be positive integers")
+    if len(counts) != len(set(counts)):
+        raise ValueError("paired bundle particle counts must be unique")
+    return sorted(counts, reverse=True)
+
+
 def _sample_latent(
     distribution: dict[str, Any], seed: int, count: int
 ) -> dict[str, np.ndarray]:
@@ -304,6 +322,7 @@ def generate_bundle(
     bundle_role: str,
     bundle_version: str,
     seed: int | None = None,
+    particle_counts: Sequence[int] | None = None,
 ) -> dict[str, Any]:
     family, distribution = _load_inputs(source_family_path, distribution_path)
     normalized_ids, normalized_specs = _normalize_bundle_specification(
@@ -314,12 +333,13 @@ def generate_bundle(
         bundle_version,
     )
     policy, functional_count, statistical_count = _policy_counts()
+    selected_counts = _bundle_particle_counts(particle_counts)
     selected_seed = (
         int(seed)
         if seed is not None
         else int(family["paired_sampling"]["base_seed"])
     )
-    latent = _sample_latent(distribution, selected_seed, statistical_count)
+    latent = _sample_latent(distribution, selected_seed, max(selected_counts))
     resolved = json.loads(resolved_path.read_text(encoding="utf-8-sig"))
     output_dir.mkdir(parents=True, exist_ok=True)
     artifacts: list[dict[str, Any]] = []
@@ -329,7 +349,7 @@ def generate_bundle(
         canonical_master = _render_canonical(point, distribution, latent, vectors)
         canonical_lines = canonical_master.decode("ascii").splitlines()
         point_artifacts: dict[tuple[int, str], dict[str, Any]] = {}
-        for count in (statistical_count, functional_count):
+        for count in selected_counts:
             ion_path = output_dir / f"{point_id}_n{count}.ion"
             canonical_path = output_dir / f"{point_id}_n{count}_canonical.csv"
             ion_path.write_bytes(_render_ion(ion_master[:count]))
@@ -347,8 +367,8 @@ def generate_bundle(
                 ("canonical10", canonical_path),
             ):
                 parent = None
-                if count == functional_count:
-                    master = point_artifacts[(statistical_count, representation)]
+                if count != selected_counts[0]:
+                    master = point_artifacts[(selected_counts[0], representation)]
                     parent = {
                         "relative_path": master["relative_path"],
                         "sha256": master["sha256"],
@@ -358,14 +378,15 @@ def generate_bundle(
                 )
                 artifacts.append(entry)
                 point_artifacts[(count, representation)] = entry
-        validate_prefix_particle_sources(
-            output_dir / f"{point_id}_n{functional_count}.ion",
-            output_dir / f"{point_id}_n{statistical_count}.ion",
-        )
-        validate_prefix_particle_sources(
-            output_dir / f"{point_id}_n{functional_count}_canonical.csv",
-            output_dir / f"{point_id}_n{statistical_count}_canonical.csv",
-        )
+        if selected_counts == [statistical_count, functional_count]:
+            validate_prefix_particle_sources(
+                output_dir / f"{point_id}_n{functional_count}.ion",
+                output_dir / f"{point_id}_n{statistical_count}.ion",
+            )
+            validate_prefix_particle_sources(
+                output_dir / f"{point_id}_n{functional_count}_canonical.csv",
+                output_dir / f"{point_id}_n{statistical_count}_canonical.csv",
+            )
     latent_sha = _latent_sha256(latent)
     family_identity = {
         "algorithm_version": bundle_version,
@@ -375,6 +396,7 @@ def generate_bundle(
         "distribution_sha256": sha256(distribution_path),
         "latent_sha256": latent_sha,
         "operating_point_ids": normalized_ids,
+        "particle_counts": selected_counts,
     }
     metadata = {
         "schema_version": BUNDLE_SCHEMA_VERSION,
@@ -395,6 +417,7 @@ def generate_bundle(
             "resolved_design_sha256": resolved["resolved_sha256"],
         },
         "operating_point_ids": normalized_ids,
+        "particle_counts": selected_counts,
         "latent_sha256": latent_sha,
         "sample_family_sha256": _canonical_json_sha256(family_identity),
         "coordinate_mapping_version": "simion_ion11_to_multipole_canonical.v1",
@@ -445,6 +468,8 @@ def validate_bundle(
         bundle_version,
     )
     policy, functional_count, statistical_count = _policy_counts()
+    is_legacy_bundle = "particle_counts" not in metadata
+    selected_counts = _bundle_particle_counts(metadata.get("particle_counts"))
     if metadata.get("algorithm_version") != bundle_version:
         raise ValueError("paired particle bundle algorithm version differs")
     expected_policy = {
@@ -467,7 +492,7 @@ def validate_bundle(
         raise ValueError("paired particle bundle input identity differs")
     if metadata.get("operating_point_ids") != normalized_ids:
         raise ValueError("paired particle bundle operating points differ")
-    latent = _sample_latent(distribution, int(metadata["seed"]), statistical_count)
+    latent = _sample_latent(distribution, int(metadata["seed"]), max(selected_counts))
     latent_sha = _latent_sha256(latent)
     family_identity = {
         "algorithm_version": bundle_version,
@@ -478,6 +503,8 @@ def validate_bundle(
         "latent_sha256": latent_sha,
         "operating_point_ids": normalized_ids,
     }
+    if not is_legacy_bundle:
+        family_identity["particle_counts"] = selected_counts
     if metadata.get("latent_sha256") != latent_sha:
         raise ValueError("paired particle bundle latent identity differs")
     if metadata.get("sample_family_sha256") != _canonical_json_sha256(family_identity):
@@ -486,7 +513,7 @@ def validate_bundle(
     entries = metadata.get("artifacts")
     if (
         not isinstance(entries, list)
-        or len(entries) != len(normalized_ids) * 4
+        or len(entries) != len(normalized_ids) * len(selected_counts) * 2
     ):
         raise ValueError("paired particle bundle artifact inventory is incomplete")
     inventory: dict[tuple[str, int, str], dict[str, Any]] = {}
@@ -515,23 +542,16 @@ def validate_bundle(
             ("ion11", ".ion"),
             ("canonical10", "_canonical.csv"),
         ):
-            small = inventory[(point_id, functional_count, representation)]
-            large = inventory[(point_id, statistical_count, representation)]
-            if small["n1000_parent"] != {
-                "relative_path": large["relative_path"],
-                "sha256": large["sha256"],
-            } or large["n1000_parent"] is not None:
-                raise ValueError("paired particle bundle parent identity differs")
-            validate_prefix_particle_sources(
-                root / f"{point_id}_n{functional_count}{suffix}",
-                root / f"{point_id}_n{statistical_count}{suffix}",
-                expected_n100_sha256=small["sha256"],
-                expected_n1000_sha256=large["sha256"],
-            )
-            for count, entry in (
-                (functional_count, small),
-                (statistical_count, large),
-            ):
+            master = inventory[(point_id, selected_counts[0], representation)]
+            if master["n1000_parent"] is not None:
+                raise ValueError("paired bundle master source has a parent identity")
+            for count in selected_counts:
+                entry = inventory[(point_id, count, representation)]
+                if count != selected_counts[0] and entry["n1000_parent"] != {
+                    "relative_path": master["relative_path"],
+                    "sha256": master["sha256"],
+                }:
+                    raise ValueError("paired particle bundle parent identity differs")
                 expected_bytes = (
                     _render_ion(expected_ion[:count])
                     if representation == "ion11"
@@ -543,18 +563,21 @@ def validate_bundle(
                     raise ValueError(
                         "paired particle bundle artifact differs from frozen latent family"
                     )
-        validate_source(
-            root / inventory[(point_id, functional_count, "canonical10")]["relative_path"],
-            resolved,
-            source_family_path=source_family_path,
-            operating_point_id=point_id,
-        )
-        validate_source(
-            root / inventory[(point_id, statistical_count, "canonical10")]["relative_path"],
-            resolved,
-            source_family_path=source_family_path,
-            operating_point_id=point_id,
-        )
+            if selected_counts == [statistical_count, functional_count]:
+                small = inventory[(point_id, functional_count, representation)]
+                validate_prefix_particle_sources(
+                    root / f"{point_id}_n{functional_count}{suffix}",
+                    root / f"{point_id}_n{statistical_count}{suffix}",
+                    expected_n100_sha256=small["sha256"],
+                    expected_n1000_sha256=master["sha256"],
+                )
+        for count in selected_counts:
+            validate_source(
+                root / inventory[(point_id, count, "canonical10")]["relative_path"],
+                resolved,
+                source_family_path=source_family_path,
+                operating_point_id=point_id,
+            )
     return metadata
 
 

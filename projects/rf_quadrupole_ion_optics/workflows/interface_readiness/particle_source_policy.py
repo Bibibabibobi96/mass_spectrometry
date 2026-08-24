@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -87,6 +88,7 @@ def generate_interface_bundle(
     output_dir: Path,
     *,
     seed: int | None = None,
+    particle_counts: Sequence[int] | None = None,
 ) -> dict[str, Any]:
     point_specs = load_interface_point_specs(source_family_path)
     return generate_bundle(
@@ -99,6 +101,7 @@ def generate_interface_bundle(
         bundle_role=BUNDLE_ROLE,
         bundle_version=BUNDLE_VERSION,
         seed=seed,
+        particle_counts=particle_counts,
     )
 
 

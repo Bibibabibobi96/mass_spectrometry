@@ -17,6 +17,10 @@ def main() -> None:
     parser.add_argument("--distribution", type=Path, required=True)
     parser.add_argument("--resolved-design", type=Path, required=True)
     parser.add_argument("--seed", type=int)
+    parser.add_argument(
+        "--particle-count", type=int, action="append",
+        help="Generate this positive-N paired source size; repeat for prefixes.",
+    )
     action = parser.add_mutually_exclusive_group(required=True)
     action.add_argument("--bundle-output-dir", type=Path)
     action.add_argument("--validate-bundle", type=Path)
@@ -38,6 +42,7 @@ def main() -> None:
         args.resolved_design,
         args.bundle_output_dir,
         seed=args.seed,
+        particle_counts=args.particle_count,
     )
     print(
         "STATUS=PASS "
