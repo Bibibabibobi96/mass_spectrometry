@@ -39,9 +39,6 @@ if (-not $AllExperiments -and [string]::IsNullOrWhiteSpace($ExperimentId)) {
 if ($PrepareOnly -and [string]::IsNullOrWhiteSpace($OutputDirectory)) {
   throw 'PrepareOnly requires an explicit OutputDirectory for review.'
 }
-if ($Exploration -and -not ($ValidateOnly -or $PrepareOnly)) {
-  throw 'Exploration supports ValidateOnly or PrepareOnly only.'
-}
 if (-not $PrepareOnly -and
     -not $FinalizeOnly -and
     -not [string]::IsNullOrWhiteSpace($OutputDirectory)) {
@@ -121,8 +118,12 @@ if ($Exploration) {
     throw 'Retired or invalid campaigns are not executable in any mode.'
   }
 }
-if (($SolverAuthorized -or $FinalizeOnly) -and [string]$campaignDocument.status -ne 'authorized') {
-  throw 'SolverAuthorized or FinalizeOnly execution requires campaign.status=authorized.'
+if ($FinalizeOnly -and [string]$campaignDocument.status -ne 'authorized') {
+  throw 'FinalizeOnly execution requires campaign.status=authorized.'
+}
+if ($SolverAuthorized -and [string]$campaignDocument.status -ne 'authorized' -and
+    -not ($Exploration -and [string]$campaignDocument.status -eq 'exploration')) {
+  throw 'SolverAuthorized execution requires an authorized campaign or explicit exploration status.'
 }
 if ($AllExperiments) {
   $prepareModule = (

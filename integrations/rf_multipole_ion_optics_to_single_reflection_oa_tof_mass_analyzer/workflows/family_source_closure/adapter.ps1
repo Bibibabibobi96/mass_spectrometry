@@ -371,7 +371,7 @@ if ($campaign.role -ne 'rf_multipole_oatof_experiment_campaign' -or
     $experiments.Count -ne 1) {
   throw 'Campaign or experiment identity no longer resolves uniquely.'
 }
-if ($SolverAuthorized) {
+if ($SolverAuthorized -and [string]$campaign.status -ne 'exploration') {
   $lifecycleRegistryPath = Join-Path $integrationRoot `
     'config\diagnostics\lifecycle_registry.json'
   $lifecycleRegistry = Get-Content -LiteralPath $lifecycleRegistryPath -Raw -Encoding UTF8 |
@@ -1077,8 +1077,8 @@ if ($PrepareOnly) {
   )
   exit 0
 }
-if ([string]$campaign.status -ne 'authorized') {
-  throw 'Campaign status permits validation only and cannot execute a solver.'
+if ([string]$campaign.status -notin @('authorized','exploration')) {
+  throw 'Campaign status does not permit solver execution.'
 }
 if (-not $SolverAuthorized) {
   throw 'Family source-closure execution requires explicit solver authorization.'

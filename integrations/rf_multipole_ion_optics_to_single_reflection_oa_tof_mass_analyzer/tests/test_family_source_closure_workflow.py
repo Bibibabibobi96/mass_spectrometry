@@ -1934,31 +1934,23 @@ $result = Get-PulseTimingOrchestration `
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("INTEGRATION_EXECUTION=VALIDATED", result.stdout)
 
-    def test_public_exploration_rejects_solver_execution(self) -> None:
-        campaign = load(COMPACT_GAP_FIELD_CAMPAIGN)
-        campaign["status"] = "exploration"
-        row = expand_flat_experiment_authoring(campaign)["experiments"][0]
-        with tempfile.TemporaryDirectory(dir=CONFIG_ROOT) as directory:
-            campaign_path = Path(directory) / "exploration_campaign.json"
-            write_json(campaign_path, campaign)
-            result = subprocess.run(
-                [
-                    "pwsh", "-NoProfile", "-File", str(
-                        INTEGRATION_ROOT / "workflows" / "family_source_closure" / "execute.ps1"
-                    ),
-                    "-Campaign", str(campaign_path.relative_to(REPO_ROOT)),
-                    "-ExperimentId", row["experiment_id"],
-                    "-SolverAuthorized", "-Exploration",
-                ],
-                cwd=REPO_ROOT,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=60,
-            )
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("Exploration supports ValidateOnly or PrepareOnly only.", result.stderr)
+    def test_public_exploration_can_request_nonformal_solver_execution(self) -> None:
+        execute = (
+            INTEGRATION_ROOT / "workflows" / "family_source_closure" / "execute.ps1"
+        ).read_text(encoding="utf-8")
+        adapter = (
+            INTEGRATION_ROOT / "workflows" / "family_source_closure" / "adapter.ps1"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("Exploration supports ValidateOnly or PrepareOnly only.", execute)
+        self.assertIn(
+            "explicit exploration status",
+            execute,
+        )
+        self.assertIn("'authorized','exploration'", adapter)
+        self.assertIn(
+            "$SolverAuthorized -and [string]$campaign.status -ne 'exploration'",
+            adapter,
+        )
 
     def test_parent_publisher_requires_campaign_identity(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
