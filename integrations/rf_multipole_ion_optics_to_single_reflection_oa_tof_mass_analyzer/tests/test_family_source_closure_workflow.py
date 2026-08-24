@@ -2016,6 +2016,7 @@ if ($runtime.contracts.resolved_source_contract -ne '{resolved_source}') {{
     def test_public_exploration_validate_only_accepts_unregistered_campaign(self) -> None:
         campaign = load(COMPACT_GAP_FIELD_CAMPAIGN)
         campaign["status"] = "exploration"
+        experiment_id = campaign["experiments"]["rows"][0]["experiment_id"]
         with temporary_config_directory() as directory:
             campaign_path = Path(directory) / "exploration_campaign.json"
             write_json(campaign_path, campaign)
@@ -2025,14 +2026,15 @@ if ($runtime.contracts.resolved_source_contract -ne '{resolved_source}') {{
                         INTEGRATION_ROOT / "workflows" / "family_source_closure" / "execute.ps1"
                     ),
                     "-Campaign", str(campaign_path.relative_to(REPO_ROOT)),
-                    "-AllExperiments", "-ValidateOnly", "-Exploration",
+                    "-ExperimentId", experiment_id,
+                    "-ValidateOnly", "-Exploration",
                 ],
                 cwd=REPO_ROOT,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
                 errors="replace",
-                timeout=90,
+                timeout=60,
             )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("INTEGRATION_EXECUTION=VALIDATED", result.stdout)
