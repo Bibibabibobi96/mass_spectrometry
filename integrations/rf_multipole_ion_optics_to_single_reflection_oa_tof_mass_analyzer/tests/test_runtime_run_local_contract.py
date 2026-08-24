@@ -1047,6 +1047,22 @@ foreach ($case in $cases) {{
         self.assertNotIn("$SamplingMode", runner)
         self.assertNotIn("steady_candidate_pool", runner)
 
+    def test_resolved_execution_profile_is_the_only_numeric_override_boundary(
+        self,
+    ) -> None:
+        """Numeric selection reaches the runner through its frozen profile."""
+        runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        for parameter in (
+            "FrontendGridProfileId",
+            "OatofNumericalProfileId",
+            "TrajectoryQualityProfileId",
+            "MaximumTimeOfFlightUs",
+            "SpatialWindowProfileId",
+        ):
+            self.assertNotIn(f"${parameter}", runner)
+        self.assertIn("$ResolvedExecutionProfile", runner)
+        self.assertIn("resolved_single_flight_execution_profile.json", runner)
+
     def test_r03_baseline_population_is_strictmode_safe_without_paired_cohort(self) -> None:
         population = (
             INTEGRATION_ROOT.parents[2]

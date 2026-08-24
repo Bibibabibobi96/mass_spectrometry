@@ -28,6 +28,9 @@ plan；其 batch 决策必须与 adapter 接收的批次数一致，但它不是
 粒子身份和明确的字段投影决定；不能仅因无因果的 provenance 或 consumer numerics 差异拒绝合法 checkpoint。
 已支持的 manifest-bound restart 会记录 producer/consumer dt，而不是要求两者相同。
 
+下游网格、轨迹质量、最大飞行时间和空间窗口只由冻结的 `ResolvedExecutionProfile` 输入 runner；
+runner 不提供会绕过该合同的逐项数值覆盖入口。
+
 仅服务于本 integration 的 `rf_oatof_*` campaign、resolved plan 与 receipt Schema 均同置于
 `config/schemas/`；它们表达该项目的理论审计与运行证据结构，不属于跨项目公共合同。
 
