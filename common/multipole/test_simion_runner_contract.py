@@ -79,6 +79,18 @@ class SimionRunnerContractTests(unittest.TestCase):
         self.assertIn("'--nogui','--noprompt','fly'", source)
         self.assertNotIn("simion_run_fly.lua", source)
 
+    def test_automatic_dispatch_discovers_profiles_and_publishes_only_bootstraps(self) -> None:
+        source = RUNNER.read_text(encoding="utf-8")
+        discover = "common.simion.resource_profile discover"
+        schedule = "common.simion.resource_scheduler"
+        publish = "common.simion.resource_profile publish"
+        self.assertIn(discover, source)
+        self.assertIn("--profiles $resourceProfiles", source)
+        self.assertIn(publish, source)
+        self.assertLess(source.index(discover), source.index(schedule))
+        self.assertLess(source.index("Complete-ResourceUsage"), source.index(publish))
+        self.assertIn("unknown_resource_profile_bootstrap", source)
+
     def test_governed_profile_is_the_only_physical_entry(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
         for token in ("ProjectId", "DesignProfileId", "ParticleSourcePath"):

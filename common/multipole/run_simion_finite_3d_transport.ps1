@@ -536,6 +536,7 @@ try{
     if($null-ne$automaticDispatch){
       $dispatchRequest=Join-Path $inputDir 'simion_dispatch_request.json'
       $dispatchPlan=Join-Path $inputDir 'simion_repository_dispatch_plan.json'
+      $resourceProfiles=Join-Path $inputDir 'simion_resource_profiles.json'
       $request=[ordered]@{solver='SIMION';field_kind=[string]$automaticDispatch.field_kind;
         particle_count=[int]$sourceMeta.particle_count;independent_particles=$true;
         trajectory_quality_profile_id=("tqual_{0}"-f$TrajectoryQuality);
@@ -548,7 +549,11 @@ try{
         }
       }
       $request|ConvertTo-Json -Depth 5|Set-Content -LiteralPath $dispatchRequest -Encoding UTF8
-      & $python -m common.simion.resource_scheduler --request $dispatchRequest --output $dispatchPlan
+      $projectRunsRoot=Join-Path $workspaceRoot "artifacts\projects\$ProjectId\runs"
+      & $python -m common.simion.resource_profile discover --runs-root $projectRunsRoot --output $resourceProfiles
+      if($LASTEXITCODE-ne 0){throw 'SIMION resource profile discovery failed.'}
+      & $python -m common.simion.resource_scheduler --request $dispatchRequest `
+        --profiles $resourceProfiles --output $dispatchPlan
       if($LASTEXITCODE-ne 0){throw 'SIMION repository dispatch planning failed.'}
       $dispatchPlanDocument=Get-Content -LiteralPath $dispatchPlan -Raw -Encoding UTF8|ConvertFrom-Json
       if([string]$dispatchPlanDocument.role-ne'simion_repository_dispatch_plan'-or
@@ -1118,6 +1123,19 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
     $resourceBudgetExceeded=$true
     throw 'SIMION compact final retained-byte budget exceeded.'
   }
+  $resourceProfile=$null
+  if($null-ne$dispatchPlan-and
+    [string]$dispatchPlanDocument.estimation.kind-eq'unknown_resource_profile_bootstrap'){
+    $resourceProfile=Join-Path $resultDir 'simion_resource_profile.json'
+    Push-Location $codeRoot
+    try{
+      $env:PYTHONPATH=$codeRoot
+      & $python -m common.simion.resource_profile publish --run-id $RunId `
+        --resource-usage $resourceUsage --dispatch-plan $dispatchPlan --output $resourceProfile
+      $resourceProfileExit=$LASTEXITCODE
+    }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
+    if($resourceProfileExit-ne 0){throw 'SIMION resource profile publication failed.'}
+  }
   $outputs=@($summary,$metrics,$resourceUsage,$exitStatePlot,$exitStatePlotManifest,
     (Join-Path $solverDir 'quad_monolithic.pa0'),
     (Join-Path $solverDir 'quad_monolithic.iob'),
@@ -1136,6 +1154,7 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
   }
   $outputs+=@(Get-ChildItem -LiteralPath $logDir -Recurse -File|Select-Object -ExpandProperty FullName)
   if(Test-Path -LiteralPath $evaluation){$outputs+=$evaluation}
+  if($resourceProfile){$outputs+=$resourceProfile}
   if($publishedPaBasisManifest){$outputs+=$publishedPaBasisManifest}
   $outputs=@($outputs|Where-Object{Test-Path -LiteralPath $_ -PathType Leaf})
   $outputs+=$retentionActions

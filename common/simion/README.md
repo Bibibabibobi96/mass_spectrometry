@@ -18,4 +18,6 @@ oaTOF、single-flight或具体电极编号。
 [`resource_scheduler.py`](resource_scheduler.py)是所有项目可复用的SIMION并行资源计划器：项目必须提交已经
 授权且粒子相互独立的请求，明确RF（含steps/period）或静电模式、粒子数、每批CPU、并发上限和内存保留。
 它只依据相同资源身份的已完成峰值选择最大安全并发；无历史数据时只生成一个bootstrap波次，后续必须以
-观测峰值重新计划。它不会发现、批准或启动campaign，也不会在外层campaign之上创建嵌套并发。
+观测峰值重新计划。[`resource_profile.py`](resource_profile.py)只发布成功、单进程bootstrap run的峰值，
+并在使用前用run manifest及输入收据的SHA-256复核；并行波次的聚合峰值不得拆分成单批画像。它不会发现、
+批准或启动campaign，也不会在外层campaign之上创建嵌套并发。
