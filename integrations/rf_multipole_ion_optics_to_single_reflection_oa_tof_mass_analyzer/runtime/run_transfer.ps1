@@ -44,41 +44,31 @@ $populationLabel = "n$particleCount"
 $prePulseRunId = "${Stamp}__sim__comsol__rf-oatof-pre-pulse-interface-gap${gapLabel}__${populationLabel}"
 $pulseCaptureRunId = "${Stamp}__sim__comsol__rf-oatof-pulse-capture-gap${gapLabel}__${populationLabel}"
 $analyzerRunId = "${Stamp}__sim__cross__rf-oatof-analyzer-transport-gap${gapLabel}__${populationLabel}"
+$sharedStageArguments = @{
+  ResolvedConnection = $ResolvedConnection
+  ResolvedEngineeringBudget = $ResolvedEngineeringBudget
+  RuntimeBinding = $RuntimeBinding
+  SourceBranchId = $SourceBranchId
+  ResolvedSourceContract = $ResolvedSourceContract
+  ResolvedSourceContractSha256 = $ResolvedSourceContractSha256
+  UpstreamResolvedDesign = $UpstreamResolvedDesign
+  UpstreamResolvedDesignSha256 = $UpstreamResolvedDesignSha256
+  PythonExe = $python
+}
 
 & $runtime.implementation.pre_pulse_runner `
   -RunId $prePulseRunId -Particles -ConnectionProfileId $ConnectionProfileId `
-  -ResolvedConnection $ResolvedConnection `
-  -ResolvedEngineeringBudget $ResolvedEngineeringBudget `
-  -RuntimeBinding $RuntimeBinding -SourceBranchId $SourceBranchId `
-  -ResolvedSourceContract $ResolvedSourceContract `
-  -ResolvedSourceContractSha256 $ResolvedSourceContractSha256 `
-  -UpstreamResolvedDesign $UpstreamResolvedDesign `
-  -UpstreamResolvedDesignSha256 $UpstreamResolvedDesignSha256 `
-  -PythonExe $python
+  @sharedStageArguments
 if ($LASTEXITCODE -ne 0) { throw 'RF-to-oaTOF transfer stopped at pre_pulse_interface_transport.' }
 & $runtime.implementation.pulse_capture_runner `
   -SourceRunId $prePulseRunId -RunId $pulseCaptureRunId `
   -ExpectedConnectionProfileId $ConnectionProfileId `
-  -ResolvedConnection $ResolvedConnection `
-  -ResolvedEngineeringBudget $ResolvedEngineeringBudget `
-  -RuntimeBinding $RuntimeBinding -SourceBranchId $SourceBranchId `
-  -ResolvedSourceContract $ResolvedSourceContract `
-  -ResolvedSourceContractSha256 $ResolvedSourceContractSha256 `
-  -UpstreamResolvedDesign $UpstreamResolvedDesign `
-  -UpstreamResolvedDesignSha256 $UpstreamResolvedDesignSha256 `
-  -PythonExe $python
+  @sharedStageArguments
 if ($LASTEXITCODE -ne 0) { throw 'RF-to-oaTOF transfer stopped at pulse_capture.' }
 & $runtime.implementation.analyzer_transport_runner `
   -SourceRunId $pulseCaptureRunId -RunId $analyzerRunId `
   -ExpectedConnectionProfileId $ConnectionProfileId `
-  -ResolvedConnection $ResolvedConnection `
-  -ResolvedEngineeringBudget $ResolvedEngineeringBudget `
-  -RuntimeBinding $RuntimeBinding -SourceBranchId $SourceBranchId `
-  -ResolvedSourceContract $ResolvedSourceContract `
-  -ResolvedSourceContractSha256 $ResolvedSourceContractSha256 `
-  -UpstreamResolvedDesign $UpstreamResolvedDesign `
-  -UpstreamResolvedDesignSha256 $UpstreamResolvedDesignSha256 `
-  -SimionExe $SimionExe -PythonExe $python
+  -SimionExe $SimionExe @sharedStageArguments
 if ($LASTEXITCODE -ne 0) { throw 'RF-to-oaTOF transfer stopped at analyzer_transport.' }
 
 $endToEndRun = Resolve-RfDirectChildDirectory -ParentRoot $artifactRoot `
