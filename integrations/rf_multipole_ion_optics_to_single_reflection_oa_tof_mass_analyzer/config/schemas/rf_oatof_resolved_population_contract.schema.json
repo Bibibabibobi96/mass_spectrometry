@@ -36,7 +36,7 @@
         "input_role": {"type": "string", "minLength": 1},
         "table_binding": {"type": "string", "minLength": 1},
         "table": {"$ref": "#/$defs/file"},
-        "particle_count": {"type": "integer", "minimum": 1, "maximum": 10000},
+        "particle_count": {"type": "integer", "minimum": 1},
         "ordered_particle_ids": {
           "type": "object",
           "additionalProperties": false,
@@ -53,7 +53,7 @@
       "additionalProperties": false,
       "required": ["particle_count", "ordered_particle_id_sha256", "selection_algorithm", "selection_seed"],
       "properties": {
-        "particle_count": {"type": "integer", "minimum": 1, "maximum": 10000},
+        "particle_count": {"type": "integer", "minimum": 1},
         "ordered_particle_id_sha256": {"$ref": "#/$defs/sha"},
         "selection_algorithm": {"type": "string", "minLength": 1},
         "selection_seed": {"type": "integer", "minimum": 0}
@@ -64,10 +64,10 @@
       "additionalProperties": false,
       "required": ["population_count"],
       "properties": {
-        "population_count": {"type": "integer", "minimum": 1, "maximum": 10000},
-        "pre_pulse_state_count": {"type": "integer", "minimum": 1, "maximum": 10000},
-        "eligible_population_count": {"type": "integer", "minimum": 1, "maximum": 10000},
-        "outside_transverse_bore_count": {"type": "integer", "minimum": 0, "maximum": 10000},
+        "population_count": {"type": "integer", "minimum": 1},
+        "pre_pulse_state_count": {"type": "integer", "minimum": 1},
+        "eligible_population_count": {"type": "integer", "minimum": 1},
+        "outside_transverse_bore_count": {"type": "integer", "minimum": 0},
         "derivation": {"enum": ["frozen_ordered_particle_id_membership", "event_membership_observed_during_analysis"]}
       }
     },
