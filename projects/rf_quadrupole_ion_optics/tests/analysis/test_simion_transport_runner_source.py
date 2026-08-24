@@ -67,6 +67,29 @@ def write_canonical_source(path: Path) -> None:
 
 
 class SimionTransportRunnerSourceTests(unittest.TestCase):
+    def test_dedicated_runners_accept_an_optional_simion_executable(self) -> None:
+        for runner in (RUNNER, MASS_RUNNER):
+            script = (
+                f"$command = Get-Command -Name '{runner}'; "
+                "$parameter = $command.Parameters['SimionExe']; "
+                "if ($null -eq $parameter) { throw 'SimionExe is missing' }; "
+                "$mandatory = @($parameter.Attributes | Where-Object { "
+                "$_ -is [System.Management.Automation.ParameterAttribute] -and $_.Mandatory "
+                "}).Count -gt 0; "
+                "if ($mandatory) { throw 'SimionExe must remain optional' }; "
+                "'SIMION_EXE_PARAMETER=PASS'"
+            )
+            result = subprocess.run(
+                ["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=30,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("SIMION_EXE_PARAMETER=PASS", result.stdout)
+
     def test_pwsh_invalid_utf8_error_output_remains_assertable(self) -> None:
         result = subprocess.run(
             [

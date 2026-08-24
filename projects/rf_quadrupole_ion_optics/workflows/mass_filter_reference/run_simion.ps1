@@ -9,7 +9,8 @@ param(
     [Nullable[int]]$TrajectoryQuality = $null,
     [string]$RunId = '',
     [string]$ArtifactRootPath = '',
-    [string]$PythonExe = ''
+    [string]$PythonExe = '',
+    [string]$SimionExe = ''
 )
 
 Set-StrictMode -Version Latest
@@ -45,7 +46,11 @@ $logDir = $package.log_dir
 $inputDir = $package.input_dir
 $runConfigPath = $package.run_config
 $runSummary = $package.summary
-$simion = 'C:\Program Files\SIMION-2020\simion.exe'
+$simion = if ($SimionExe) {
+    [IO.Path]::GetFullPath($SimionExe)
+} else {
+    'C:\Program Files\SIMION-2020\simion.exe'
+}
 
 try {
     $sourceIon = [IO.Path]::GetFullPath($SourceIonPath)
