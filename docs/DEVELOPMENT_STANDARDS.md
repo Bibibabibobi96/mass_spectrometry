@@ -171,22 +171,25 @@ LiveLink、SIMION Lua/GEM、PowerShell及跨软件数据合同。仓库架构、
   它是既有科学workflow的多工况声明，不是第二套物理模型、参数权威、证据口径或求解器实现。普通
   探索campaign可开放其唯一权威已表达的任意合理参数；只有Candidate/Formal campaign才须按资格合同
   预登记有限变化轴。
-- 每张campaign只声明一种主要目的：物理优化、诊断灵敏度、数值收敛、统计稳定性或重复性。它只选择
-  已注册profile，并沿明确批准的`allowed_variation_axes`生成独立run；未知字段、隐式默认、运行中
-  扩展矩阵和未授权组合均失败关闭。
-- 每个候选参数须在项目权威catalog中唯一归类：原生设计量在普通探索中只要受当前workflow/profile
-  支持即可逐行改变；Candidate/Formal行还须位于本次optimization envelope且列入允许轴。理论严格派生量只由版本化公式或其他权威
+- 每张campaign只声明一种主要目的：物理优化、诊断灵敏度、数值收敛、统计稳定性或重复性。普通探索
+  只选择既有workflow，并显式声明本次实际变化的、由其唯一权威已表达的字段；编译器据此生成独立run。
+  Candidate/Formal campaign才选择已注册资格profile并沿预登记的`allowed_variation_axes`生成run。未知
+  字段、隐式默认、缺少唯一权威或会破坏因果不变量的组合仍失败关闭；不得把“未列入旧矩阵”当作普通
+  探索的拒绝理由。
+- 每个候选参数须在项目权威catalog中唯一归类：原生设计量在普通探索中只要受当前workflow支持即可
+  逐行改变；Candidate/Formal行还须位于本次optimization envelope且列入允许轴。理论严格派生量只由版本化公式或其他权威
   原生量计算；具有理论名义值的工程优化量还须有物理依据且窄于catalog静态安全范围的实验envelope；
-  诊断灵敏度量只允许发布sensitivity/diagnostic声明；数值离散量只用于数值资格或敏感性；统计采样量
-  只按预登记的N、seed和重复策略变化；运行控制量不是科学自由度；坐标、单位、事件、统计定义、阈值、
+  诊断灵敏度量只允许发布sensitivity/diagnostic声明；数值离散量只用于数值资格或敏感性；普通探索的
+  统计采样量可按声明的N、seed和重复策略变化，Candidate/Formal才须预登记；运行控制量不是科学自由度；坐标、单位、事件、统计定义、阈值、
   Schema、阶段图和artifact生命周期等证据与身份量禁止普通行覆盖。
 - 参数依赖必须形成有向无环的单向派生链。campaign不得同时开放一个原生量及其派生量，也不得让同一
   物理量由多份标量互相校准；行内只填写批准的原生轴，依赖坐标、尺寸、电位、时间窗和计算域由唯一
   编译器重算。联动量若由理论关系约束，只开放原生量；若需独立研究，须显式批准多维空间及联合约束。
-- 全表必须在启动任一run前完成校验。一个变化轴须属于catalog、workflow/execution profile支持集合、
-  optimization envelope和本表允许轴的交集；除顺序、experiment/run identity、批准轴和必要proposal
-  identity外，归一化科学语义须跨行相同。每个run冻结原生输入、派生结果、依赖路径、authority SHA
-  和campaign row SHA，派生结果不得回写上游权威。
+- 全表必须在启动任一run前完成校验。普通探索的变化轴须有唯一权威、被workflow实际消费，并满足其
+  因果不变量；Candidate/Formal的变化轴还须位于catalog、资格profile支持集合、optimization envelope
+  和本表允许轴的交集。除顺序、experiment/run identity、声明变化轴和必要proposal identity外，归一化
+  科学语义须跨行相同。每个run冻结原生输入、派生结果、依赖路径、authority SHA和campaign row SHA，
+  派生结果不得回写上游权威。
 - 几何catalog须区分原生尺寸、物理派生几何和数值离散几何。第一反射区长度、杆有效长度等可作为
   原生轴；接口坐标、中心、外壳总长、分段边界和飞行距离由几何编译器派生。每个几何轴还须验证正
   间隙、实体不重叠、端口闭合、屏蔽连续及源/统计面位于合法场域；改变部件数量、连接关系、坐标系、
