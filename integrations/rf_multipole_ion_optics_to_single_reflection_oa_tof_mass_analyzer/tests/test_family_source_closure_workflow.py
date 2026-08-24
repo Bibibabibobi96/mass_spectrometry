@@ -1925,6 +1925,26 @@ $result = Get-PulseTimingOrchestration `
                     arguments,
                 )
                 frozen = dict(argument.split("=", 1) for argument in arguments)
+                frozen_authoring = load(
+                    output / frozen["frozen_campaign_experiment_filename"]
+                )
+                self.assertEqual(
+                    frozen_authoring["role"], "rf_oatof_frozen_campaign_experiment"
+                )
+                self.assertEqual(
+                    frozen_authoring["campaign"]["campaign_id"],
+                    campaign["campaign_id"],
+                )
+                self.assertEqual(
+                    frozen_authoring["experiment"], row,
+                )
+                self.assertEqual(
+                    hashlib.sha256(
+                        (output / frozen["frozen_campaign_experiment_filename"])
+                        .read_bytes()
+                    ).hexdigest().upper(),
+                    frozen["frozen_campaign_experiment_sha256"],
+                )
                 execution_plan = load(output / frozen["resolved_execution_plan_filename"])
                 self.assertEqual(execution_plan["role"], "rf_oatof_resolved_execution_plan")
                 self.assertEqual(execution_plan["experiment_id"], row["experiment_id"])
@@ -1985,6 +2005,29 @@ if ($runtime.contracts.resolved_source_contract -ne '{resolved_source}') {{
                 )
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertIn("EXPLORATION_RUNTIME_RESOLUTION=PASS", result.stdout)
+                campaign_path.write_text("{\"superseded\": true}\n", encoding="utf-8")
+                adapter = INTEGRATION_ROOT / "workflows" / "family_source_closure" / "adapter.ps1"
+                prepared = subprocess.run(
+                    [
+                        "pwsh", "-NoProfile", "-ExecutionPolicy", "Bypass",
+                        "-File", str(adapter),
+                        "-CompositionPlan", str(plan),
+                        "-ResolvedConnection", str(resolved),
+                        "-PythonExe", sys.executable,
+                        "-RepoRoot", str(REPO_ROOT),
+                        "-PrepareOnly",
+                    ],
+                    cwd=REPO_ROOT,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=90,
+                )
+                self.assertEqual(
+                    prepared.returncode, 0, prepared.stdout + prepared.stderr
+                )
+                self.assertIn("FAMILY_SOURCE_CLOSURE_ADAPTER=PREPARED", prepared.stdout)
 
     def test_exploration_preparation_requires_explicit_status(self) -> None:
         campaign = load(COMPACT_GAP_FIELD_CAMPAIGN)

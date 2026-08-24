@@ -227,6 +227,20 @@ $expectedArguments = @(
   'upstream_resolved_design_filename',
   'upstream_resolved_design_sha256'
 )
+$frozenAuthoringArgumentNames = @(
+  'frozen_campaign_experiment_filename',
+  'frozen_campaign_experiment_sha256'
+)
+$frozenAuthoringArgumentCount = @($frozenAuthoringArgumentNames | Where-Object {
+  $frozenArguments.ContainsKey($_)
+}).Count
+if ($frozenAuthoringArgumentCount -ne 0 -and
+    $frozenAuthoringArgumentCount -ne $frozenAuthoringArgumentNames.Count) {
+  throw 'Frozen campaign experiment reference must be all-or-none.'
+}
+if ($frozenAuthoringArgumentCount -eq $frozenAuthoringArgumentNames.Count) {
+  $expectedArguments += $frozenAuthoringArgumentNames
+}
 if ([string]$frozenArguments.execution_strategy -eq 'simion_single_flight') {
   $expectedArguments += @(
     'single_flight_pa_cache_policy',
@@ -394,55 +408,82 @@ if ((Get-FileHash -LiteralPath $registryPath -Algorithm SHA256).Hash -ne
 
 $repo = [IO.Path]::GetFullPath($RepoRoot)
 $workspaceRoot = Split-Path -Parent $repo
-$campaignPath = [IO.Path]::GetFullPath(
-  (Join-Path $repo $frozenArguments.campaign_path)
-)
-if (-not $campaignPath.StartsWith(
-      $repo + [IO.Path]::DirectorySeparatorChar,
-      [StringComparison]::OrdinalIgnoreCase
-    ) -or
-    -not (Test-Path -LiteralPath $campaignPath -PathType Leaf) -or
-    (Get-RfOatofRepositoryTextSha256 -Path $campaignPath) -ne
-      $frozenArguments.campaign_sha256) {
-  throw 'Campaign path is outside the repository, missing or stale.'
-}
-$campaign = Get-Content -LiteralPath $campaignPath -Raw -Encoding UTF8 |
-  ConvertFrom-Json
-$prepareModule = (
-  'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.' +
-  'workflows.family_source_closure.prepare'
-)
-$profileRegistry = Join-Path $integrationRoot 'config\connection_profiles.json'
-$adapterRegistry = Join-Path $integrationRoot 'config\execution_adapter_profiles.json'
-$selectedExperimentJson = & $PythonExe -m $prepareModule --repo-root $repo `
-  --profile-registry $profileRegistry --adapter-registry $adapterRegistry `
-  --campaign $campaignPath --print-experiment-json $frozenArguments.experiment_id
-if ($LASTEXITCODE -ne 0) {
-  throw 'Campaign experiment identity no longer resolves uniquely.'
-}
-$experiments = @($selectedExperimentJson | ConvertFrom-Json)
-if ($campaign.role -ne 'rf_multipole_oatof_experiment_campaign' -or
-    $campaign.integration_id -ne $plan.integration_id -or
-    $campaign.campaign_id -ne $frozenArguments.campaign_id -or
-    $experiments.Count -ne 1) {
-  throw 'Campaign or experiment identity no longer resolves uniquely.'
-}
-if ($SolverAuthorized -and [string]$campaign.status -ne 'exploration') {
-  $lifecycleRegistryPath = Join-Path $integrationRoot `
-    'config\diagnostics\lifecycle_registry.json'
-  $lifecycleRegistry = Get-Content -LiteralPath $lifecycleRegistryPath -Raw -Encoding UTF8 |
-    ConvertFrom-Json
-  $campaignRepoRelative = [IO.Path]::GetRelativePath($repo, $campaignPath).Replace('\', '/')
-  $currentCampaigns = @($lifecycleRegistry.active_campaigns | Where-Object {
-    [string]$_.path -eq $campaignRepoRelative
-  })
-  if ($currentCampaigns.Count -ne 1 -or
-      (Get-RfOatofRepositoryTextSha256 -Path $campaignPath) -ne
-        ([string]$currentCampaigns[0].content_sha256).ToUpperInvariant()) {
-    throw 'Campaign is not a current registered execution authority; SolverAuthorized is forbidden.'
+$compositionPlanRoot = Split-Path -Parent ([IO.Path]::GetFullPath($CompositionPlan))
+if ($frozenAuthoringArgumentCount -eq $frozenAuthoringArgumentNames.Count) {
+  $frozenAuthoringPath = [IO.Path]::GetFullPath((Join-Path $compositionPlanRoot `
+    $frozenArguments.frozen_campaign_experiment_filename))
+  if (-not $frozenAuthoringPath.StartsWith(
+        $compositionPlanRoot + [IO.Path]::DirectorySeparatorChar,
+        [StringComparison]::OrdinalIgnoreCase) -or
+      -not (Test-Path -LiteralPath $frozenAuthoringPath -PathType Leaf) -or
+      (Get-FileHash -LiteralPath $frozenAuthoringPath -Algorithm SHA256).Hash -cne
+        [string]$frozenArguments.frozen_campaign_experiment_sha256) {
+    throw 'Frozen campaign experiment is missing, outside the plan, or stale.'
   }
+  $frozenAuthoring = Get-Content -LiteralPath $frozenAuthoringPath -Raw -Encoding UTF8 |
+    ConvertFrom-Json
+  if ($frozenAuthoring.schema_version -ne 1 -or
+      $frozenAuthoring.role -ne 'rf_oatof_frozen_campaign_experiment' -or
+      $frozenAuthoring.campaign.role -ne 'rf_multipole_oatof_experiment_campaign' -or
+      $frozenAuthoring.campaign.integration_id -ne $plan.integration_id -or
+      $frozenAuthoring.campaign.campaign_id -ne $frozenArguments.campaign_id -or
+      $frozenAuthoring.experiment.experiment_id -ne $frozenArguments.experiment_id -or
+      $frozenAuthoring.experiment_row_sha256 -ne $frozenArguments.experiment_row_sha256) {
+    throw 'Frozen campaign experiment identity is invalid.'
+  }
+  $campaign = $frozenAuthoring.campaign
+  $experiment = $frozenAuthoring.experiment
+} else {
+  $campaignPath = [IO.Path]::GetFullPath(
+    (Join-Path $repo $frozenArguments.campaign_path)
+  )
+  if (-not $campaignPath.StartsWith(
+        $repo + [IO.Path]::DirectorySeparatorChar,
+        [StringComparison]::OrdinalIgnoreCase
+      ) -or
+      -not (Test-Path -LiteralPath $campaignPath -PathType Leaf) -or
+      (Get-RfOatofRepositoryTextSha256 -Path $campaignPath) -ne
+        $frozenArguments.campaign_sha256) {
+    throw 'Campaign path is outside the repository, missing or stale.'
+  }
+  $campaign = Get-Content -LiteralPath $campaignPath -Raw -Encoding UTF8 |
+    ConvertFrom-Json
+  $prepareModule = (
+    'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.' +
+    'workflows.family_source_closure.prepare'
+  )
+  $profileRegistry = Join-Path $integrationRoot 'config\connection_profiles.json'
+  $adapterRegistry = Join-Path $integrationRoot 'config\execution_adapter_profiles.json'
+  $selectedExperimentJson = & $PythonExe -m $prepareModule --repo-root $repo `
+    --profile-registry $profileRegistry --adapter-registry $adapterRegistry `
+    --campaign $campaignPath --print-experiment-json $frozenArguments.experiment_id
+  if ($LASTEXITCODE -ne 0) {
+    throw 'Campaign experiment identity no longer resolves uniquely.'
+  }
+  $experiments = @($selectedExperimentJson | ConvertFrom-Json)
+  if ($campaign.role -ne 'rf_multipole_oatof_experiment_campaign' -or
+      $campaign.integration_id -ne $plan.integration_id -or
+      $campaign.campaign_id -ne $frozenArguments.campaign_id -or
+      $experiments.Count -ne 1) {
+    throw 'Campaign or experiment identity no longer resolves uniquely.'
+  }
+  if ($SolverAuthorized -and [string]$campaign.status -ne 'exploration') {
+    $lifecycleRegistryPath = Join-Path $integrationRoot `
+      'config\diagnostics\lifecycle_registry.json'
+    $lifecycleRegistry = Get-Content -LiteralPath $lifecycleRegistryPath -Raw -Encoding UTF8 |
+      ConvertFrom-Json
+    $campaignRepoRelative = [IO.Path]::GetRelativePath($repo, $campaignPath).Replace('\', '/')
+    $currentCampaigns = @($lifecycleRegistry.active_campaigns | Where-Object {
+      [string]$_.path -eq $campaignRepoRelative
+    })
+    if ($currentCampaigns.Count -ne 1 -or
+        (Get-RfOatofRepositoryTextSha256 -Path $campaignPath) -ne
+          ([string]$currentCampaigns[0].content_sha256).ToUpperInvariant()) {
+      throw 'Campaign is not a current registered execution authority; SolverAuthorized is forbidden.'
+    }
+  }
+  $experiment = $experiments[0]
 }
-$experiment = $experiments[0]
 $campaignHasThreeZoneCandidate = (
   $experiment.PSObject.Properties.Name -contains
   'single_flight_three_zone_candidate'
@@ -705,11 +746,13 @@ if len(rows) != 1:
 payload = json.dumps(rows[0], ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 print(hashlib.sha256(payload.encode("utf-8")).hexdigest().upper())
 '@
-$experimentRowSha256 = (& $PythonExe -c $rowHashCode `
-  $campaignPath $frozenArguments.experiment_id).Trim()
-if ($LASTEXITCODE -ne 0 -or
-    $experimentRowSha256 -ne $frozenArguments.experiment_row_sha256) {
-  throw 'Campaign experiment row identity changed after preparation.'
+if ($frozenAuthoringArgumentCount -eq 0) {
+  $experimentRowSha256 = (& $PythonExe -c $rowHashCode `
+    $campaignPath $frozenArguments.experiment_id).Trim()
+  if ($LASTEXITCODE -ne 0 -or
+      $experimentRowSha256 -ne $frozenArguments.experiment_row_sha256) {
+    throw 'Campaign experiment row identity changed after preparation.'
+  }
 }
 $registry = Get-Content -LiteralPath $registryPath -Raw -Encoding UTF8 |
   ConvertFrom-Json

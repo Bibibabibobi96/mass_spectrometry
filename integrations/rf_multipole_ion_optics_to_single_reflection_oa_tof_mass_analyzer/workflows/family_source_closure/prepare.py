@@ -3695,6 +3695,30 @@ def prepare_family_source_closure(
             json.dumps(execution_profile, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
+    frozen_authoring_path = plan_output.parent / "inputs" / (
+        "frozen_campaign_experiment.json"
+    )
+    frozen_campaign = {
+        key: copy.deepcopy(campaign[key])
+        for key in (
+            "role", "integration_id", "campaign_id", "schema_version", "status",
+        )
+    }
+    if campaign.get("pre_pulse_time_series_screening") is not None:
+        frozen_campaign["pre_pulse_time_series_screening"] = copy.deepcopy(
+            campaign["pre_pulse_time_series_screening"]
+        )
+    frozen_authoring_path.write_text(json.dumps({
+        "schema_version": 1,
+        "role": "rf_oatof_frozen_campaign_experiment",
+        "campaign_source": {
+            "path": campaign_path.relative_to(root).as_posix(),
+            "sha256": repository_text_sha256(campaign_path),
+        },
+        "campaign": frozen_campaign,
+        "experiment_row_sha256": row_sha256,
+        "experiment": experiment,
+    }, indent=2) + "\n", encoding="utf-8")
     plan = _load(plan_path)
     plan["execution_steps"] = [
         {
@@ -3705,6 +3729,10 @@ def prepare_family_source_closure(
                 f"adapter_registry_sha256={repository_text_sha256(adapter_registry_path)}",
                 f"campaign_path={campaign_path.relative_to(root).as_posix()}",
                 f"campaign_sha256={repository_text_sha256(campaign_path)}",
+                "frozen_campaign_experiment_filename=inputs/"
+                + frozen_authoring_path.name,
+                "frozen_campaign_experiment_sha256="
+                + file_sha256(frozen_authoring_path),
                 f"campaign_id={campaign['campaign_id']}",
                 f"experiment_id={experiment_id}",
                 f"experiment_row_sha256={row_sha256}",
