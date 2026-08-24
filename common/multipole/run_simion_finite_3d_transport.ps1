@@ -128,6 +128,7 @@ $resolvedRuntimeInput=$null
 $resolvedRuntimeDocument=$null
 $resolvedRuntimeInputSha=$null
 $executionBatching=$null
+$automaticDispatch=$null
 if(-not[string]::IsNullOrWhiteSpace($ResolvedRuntimeProfilePath)){
   $resolvedRuntimeInput=(Resolve-Path -LiteralPath $ResolvedRuntimeProfilePath).Path
   $resolvedRuntimeInputSha=(Get-FileHash -LiteralPath $resolvedRuntimeInput -Algorithm SHA256).Hash
@@ -141,9 +142,10 @@ if(-not[string]::IsNullOrWhiteSpace($ResolvedRuntimeProfilePath)){
     [string]$resolvedRuntimeDocument.engineering_budget.path-ne$engineeringBudgetInput
   ){throw 'Resolved runtime-profile snapshot identity differs from runner arguments.'}
   if($resolvedRuntimeDocument.PSObject.Properties.Name-contains'simion_dispatch'){
-    $executionBatching=$resolvedRuntimeDocument.simion_dispatch
-    if([string]$executionBatching.dispatch-ne'single_wave_parallel'-or
-      [int]$executionBatching.batch_count-lt 1
+    $automaticDispatch=$resolvedRuntimeDocument.simion_dispatch
+    if([string]$automaticDispatch.kind-ne'automatic'-or
+      [string]$automaticDispatch.field_kind-notin@('rf','electrostatic')-or
+      [bool]$automaticDispatch.independent_particles-ne$true
     ){throw 'Resolved SIMION dispatch is invalid.'}
   }
 }
@@ -530,6 +532,33 @@ try{
   try{
     $env:PYTHONPATH=$codeRoot
     $batchPlan=Join-Path $inputDir 'simion_execution_batch_plan.json'
+    $dispatchPlan=$null
+    if($null-ne$automaticDispatch){
+      $dispatchRequest=Join-Path $inputDir 'simion_dispatch_request.json'
+      $dispatchPlan=Join-Path $inputDir 'simion_repository_dispatch_plan.json'
+      $request=[ordered]@{solver='SIMION';field_kind=[string]$automaticDispatch.field_kind;
+        particle_count=[int]$sourceMeta.particle_count;independent_particles=$true;
+        trajectory_quality_profile_id=("tqual_{0}"-f$TrajectoryQuality);
+        time_integration_profile_id=$RuntimeProfileId;
+        rf_steps_per_period=$(if([string]$automaticDispatch.field_kind-eq'rf'){$RfStepsPerPeriod}else{$null})}
+      foreach($name in @('maximum_parallel_batches','reserve_available_memory_bytes',
+        'cpu_cores_per_batch','reserve_cpu_cores','memory_safety_numerator','memory_safety_denominator')){
+        if($automaticDispatch.PSObject.Properties.Name-contains$name){
+          $request[$name]=[int]$automaticDispatch.$name
+        }
+      }
+      $request|ConvertTo-Json -Depth 5|Set-Content -LiteralPath $dispatchRequest -Encoding UTF8
+      & $python -m common.simion.resource_scheduler --request $dispatchRequest --output $dispatchPlan
+      if($LASTEXITCODE-ne 0){throw 'SIMION repository dispatch planning failed.'}
+      $dispatchPlanDocument=Get-Content -LiteralPath $dispatchPlan -Raw -Encoding UTF8|ConvertFrom-Json
+      if([string]$dispatchPlanDocument.role-ne'simion_repository_dispatch_plan'-or
+        [int]$dispatchPlanDocument.particle_count-ne[int]$sourceMeta.particle_count-or
+        @($dispatchPlanDocument.waves).Count-ne1-or
+        [int]$dispatchPlanDocument.waves[0].batch_count-lt1
+      ){throw 'SIMION repository dispatch plan differs from the canonical source.'}
+      $executionBatching=[pscustomobject]@{dispatch='single_wave_parallel';
+        batch_count=[int]$dispatchPlanDocument.waves[0].batch_count}
+    }
     $declaredBatchCount=if($null-ne$executionBatching){[int]$executionBatching.batch_count}else{1}
     & $python -m common.simion.particle_batching --particle-count ([string]$sourceMeta.particle_count) `
       --batch-count ([string]$declaredBatchCount) --output $batchPlan

@@ -430,10 +430,17 @@
     "simion_dispatch": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["dispatch", "batch_count"],
+      "required": ["kind", "field_kind", "independent_particles"],
       "properties": {
-        "dispatch": {"const": "single_wave_parallel"},
-        "batch_count": {"type": "integer", "minimum": 1}
+        "kind": {"const": "automatic"},
+        "field_kind": {"enum": ["rf", "electrostatic"]},
+        "independent_particles": {"const": true},
+        "maximum_parallel_batches": {"type": "integer", "minimum": 1},
+        "reserve_available_memory_bytes": {"type": "integer", "minimum": 0},
+        "cpu_cores_per_batch": {"type": "integer", "minimum": 1},
+        "reserve_cpu_cores": {"type": "integer", "minimum": 0},
+        "memory_safety_numerator": {"type": "integer", "minimum": 1},
+        "memory_safety_denominator": {"type": "integer", "minimum": 1}
       }
     },
     "resource_authorization": {

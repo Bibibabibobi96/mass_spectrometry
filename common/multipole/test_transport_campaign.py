@@ -716,7 +716,8 @@ class TransportCampaignTests(unittest.TestCase):
         values["trajectory"]["rf_steps_per_period"] = 10_001
         values["trajectory"]["maximum_global_time_us"] = 1_000_001.0
         dispatch = {
-            "dispatch": "single_wave_parallel", "batch_count": 17
+            "kind": "automatic", "field_kind": "rf", "independent_particles": True,
+            "maximum_parallel_batches": 17,
         }
         campaign["experiments"][0]["simion_dispatch"] = dispatch
         with written_campaign(campaign) as path:

@@ -273,16 +273,16 @@ def plan_adaptive_followup(plan: dict[str, Any], observed_peak_bytes: int) -> di
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--request", type=Path, required=True)
-    parser.add_argument("--profiles", type=Path, required=True)
+    parser.add_argument("--profiles", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--available-memory-bytes", type=int)
     parser.add_argument("--logical-processors", type=int)
     parser.add_argument("--observed-bootstrap-peak-bytes", type=int)
     args = parser.parse_args()
     request = json.loads(args.request.read_text(encoding="utf-8-sig"))
-    profiles = json.loads(args.profiles.read_text(encoding="utf-8-sig"))
+    profiles = [] if args.profiles is None else json.loads(args.profiles.read_text(encoding="utf-8-sig"))
     if not isinstance(request, dict) or not isinstance(profiles, list):
-        parser.error("request must be an object and profiles must be an array")
+        parser.error("request must be an object and profiles must be an array when supplied")
     plan = plan_simion_dispatch(
         request, profiles, available_memory_bytes=args.available_memory_bytes,
         logical_processors=args.logical_processors,

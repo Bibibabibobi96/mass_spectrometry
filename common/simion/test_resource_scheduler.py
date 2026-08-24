@@ -288,3 +288,24 @@ class ResourceSchedulerTests(unittest.TestCase):
             plan = json.loads(output_path.read_text(encoding="utf-8"))
             self.assertEqual(plan["estimation"]["kind"], "observed_bootstrap_peak")
             self.assertEqual(plan["waves"][0]["batch_count"], 4)
+
+    def test_cli_bootstraps_without_a_profile_file(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            request_path, output_path = root / "request.json", root / "plan.json"
+            request = self.rf_request()
+            request.pop("unknown_per_batch_reservation_bytes")
+            request_path.write_text(json.dumps(request), encoding="utf-8")
+            result = subprocess.run(
+                [
+                    sys.executable, "-m", "common.simion.resource_scheduler",
+                    "--request", str(request_path), "--output", str(output_path),
+                    "--available-memory-bytes", "100", "--logical-processors", "8",
+                ],
+                capture_output=True, text=True, check=False, timeout=30,
+                cwd=Path(__file__).resolve().parents[2],
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            plan = json.loads(output_path.read_text(encoding="utf-8"))
+            self.assertEqual(plan["estimation"]["kind"], "unknown_resource_profile_bootstrap")
+            self.assertIsNone(plan["estimation"]["bootstrap_reservation_bytes"])
