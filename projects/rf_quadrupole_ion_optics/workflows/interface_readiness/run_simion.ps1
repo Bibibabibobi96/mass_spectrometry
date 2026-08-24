@@ -10,7 +10,8 @@ param(
     [Parameter(Mandatory=$true)][string]$OperatingPoint,
     [string]$ArtifactRootPath = '',
     [string]$PythonExe = '',
-    [string]$SimionExe = ''
+    [string]$SimionExe = '',
+    [switch]$Exploration
 )
 
 Set-StrictMode -Version Latest
@@ -293,10 +294,14 @@ if (-not $PSBoundParameters.ContainsKey('RfStepsPerPeriod')) {
 if (-not $PSBoundParameters.ContainsKey('TrajectoryQuality')) {
     $TrajectoryQuality = [int]$numericalContract.trajectory_quality
 }
-if ($RfStepsPerPeriod -notin @($numericalContract.allowed_rf_steps_per_period | ForEach-Object { [int]$_ })) {
+if ($RfStepsPerPeriod -lt 1 -or $TrajectoryQuality -lt 1) {
+    throw 'SIMION interface numerics must be positive.'
+}
+if (-not $Exploration -and
+    $RfStepsPerPeriod -notin @($numericalContract.allowed_rf_steps_per_period | ForEach-Object { [int]$_ })) {
     throw 'SIMION interface RF steps must be a preregistered baseline or refined value.'
 }
-if ($TrajectoryQuality -ne [int]$numericalContract.trajectory_quality) {
+if (-not $Exploration -and $TrajectoryQuality -ne [int]$numericalContract.trajectory_quality) {
     throw 'SIMION interface trajectory quality differs from its frozen numerical contract.'
 }
 $particleStateCsv = Join-Path $resultDir 'particle_state.csv'
@@ -367,6 +372,7 @@ $runConfig.provenance = [ordered]@{
     solver_numerics_contract_sha256 = Get-RunFileSha256 -Path $frozenNumericalContract
     rf_steps_per_period = [int]$coreConfig.rf_steps_per_period
     trajectory_quality = [int]$coreConfig.trajectory_quality
+    numerics_qualification = if ($Exploration) { 'exploration_unqualified' } else { 'registered' }
     rf_steps_override = (
         [int]$coreConfig.rf_steps_per_period -ne
         [int]$numericalContract.baseline_rf_steps_per_period
@@ -432,6 +438,7 @@ Write-RunDirectoryChecksumInventory -Directory $candidateDir -OutputPath $shaPat
 $rootSummary = [ordered]@{
     schema_version=1;role='rf_quadrupole_transport_summary';status='success';mode=$mode
     physical_decision=$physicalDecision
+    numerics_qualification = if ($Exploration) { 'exploration_unqualified' } else { 'registered' }
     particles=$expectedParticles;hits=$summary.hits;transmission=$summary.transmission
 }
 $rootSummary | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $runSummary -Encoding UTF8

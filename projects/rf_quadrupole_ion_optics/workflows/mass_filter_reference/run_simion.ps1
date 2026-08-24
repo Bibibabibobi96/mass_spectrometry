@@ -10,7 +10,8 @@ param(
     [string]$RunId = '',
     [string]$ArtifactRootPath = '',
     [string]$PythonExe = '',
-    [string]$SimionExe = ''
+    [string]$SimionExe = '',
+    [switch]$Exploration
 )
 
 Set-StrictMode -Version Latest
@@ -80,10 +81,12 @@ try {
         Get-Content -LiteralPath $frozenSourceIon -Encoding UTF8 |
             Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
     ).Count
-    & $python (Join-Path $repoRoot `
-        'common\contracts\particle_count_policy.py') --count $sourceParticleCount
-    if ($LASTEXITCODE -ne 0) {
-        throw 'Mass-filter source violates the repository N=100/N=1000 policy.'
+    if (-not $Exploration) {
+        & $python (Join-Path $repoRoot `
+            'common\contracts\particle_count_policy.py') --count $sourceParticleCount
+        if ($LASTEXITCODE -ne 0) {
+            throw 'Mass-filter source violates the repository N=100/N=1000 policy.'
+        }
     }
     Copy-VerifiedRunInput -Source (Join-Path $projectRoot 'config\baseline.json') `
         -Destination $frozenBaseline | Out-Null
@@ -160,8 +163,12 @@ try {
     if (-not $PSBoundParameters.ContainsKey('TrajectoryQuality')) {
         $TrajectoryQuality = [int]$numericalContract.trajectory_quality
     }
-    if ($RfStepsPerPeriod -ne [int]$numericalContract.baseline_rf_steps_per_period -or
-        $TrajectoryQuality -ne [int]$numericalContract.trajectory_quality) {
+    if ($RfStepsPerPeriod -lt 1 -or $TrajectoryQuality -lt 1) {
+        throw 'SIMION mass-filter numerics must be positive.'
+    }
+    if (-not $Exploration -and (
+        $RfStepsPerPeriod -ne [int]$numericalContract.baseline_rf_steps_per_period -or
+        $TrajectoryQuality -ne [int]$numericalContract.trajectory_quality)) {
         throw 'SIMION mass-filter numerics differ from the frozen baseline contract.'
     }
     $particleStateCsv = Join-Path $resultDir 'particle_state.csv'
@@ -305,6 +312,7 @@ try {
         status = 'success'
         mode = $modeName
         physical_decision = $physicalDecision
+        numerics_qualification = if ($Exploration) { 'exploration_unqualified' } else { 'registered' }
         functional_gate = [string]$massMetrics.status
         particles = $expectedParticles
         hits = $summary.hits

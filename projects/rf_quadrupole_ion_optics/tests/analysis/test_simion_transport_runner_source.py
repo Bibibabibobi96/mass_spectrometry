@@ -90,6 +90,27 @@ class SimionTransportRunnerSourceTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("SIMION_EXE_PARAMETER=PASS", result.stdout)
 
+    def test_dedicated_runners_expose_unqualified_exploration_mode(self) -> None:
+        for runner in (RUNNER, MASS_RUNNER):
+            script = (
+                f"$command = Get-Command -Name '{runner}'; "
+                "if ($null -eq $command.Parameters['Exploration']) { "
+                "throw 'Exploration is missing' }; "
+                "'EXPLORATION_PARAMETER=PASS'"
+            )
+            result = subprocess.run(
+                ["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=30,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("EXPLORATION_PARAMETER=PASS", result.stdout)
+            source = runner.read_text(encoding="utf-8")
+            self.assertIn("exploration_unqualified", source)
+
     def test_pwsh_invalid_utf8_error_output_remains_assertable(self) -> None:
         result = subprocess.run(
             [
