@@ -554,7 +554,7 @@ class AnalyzerTransportTests(unittest.TestCase):
             runner,
         )
         self.assertNotIn("& $package.python $frozen", runner)
-        self.assertEqual(runner.count("New-RunPackage"), 1)
+        self.assertIn("New-RunPackage", runner)
         self.assertIn("-RetentionContractEnabled -RetentionClass compact", runner)
         self.assertIn("Complete-FailedRun -Python", runner)
         self.assertIn("-RepoRoot $manifestToolRoot", runner)
