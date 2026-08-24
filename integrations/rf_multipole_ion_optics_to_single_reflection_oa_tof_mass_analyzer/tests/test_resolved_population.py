@@ -6,6 +6,7 @@ from common.contracts.machine_contracts import ContractError, validate_schema
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.resolved_population import (
     RESOLVED_POPULATION_SCHEMA_PATH,
     compile_resolved_population_contract,
+    resolve_runtime_population,
     resolve_single_flight_execution,
 )
 
@@ -160,6 +161,33 @@ class ResolvedPopulationTests(unittest.TestCase):
                 self.assertEqual(
                     execution["is_pre_pulse_restart"], mode == "pre_pulse_restart"
                 )
+
+    def test_runtime_population_projection_preserves_runner_semantics(self):
+        contract = self.compile("pulse_eligible_conditional")
+        projection = resolve_runtime_population(contract)
+        self.assertEqual(projection["launched_particle_count"], 10)
+        self.assertEqual(projection["population_denominator_count"], 10)
+        self.assertIsNone(projection["eligible_population_count"])
+        self.assertEqual(
+            projection["population_basis"], "pulse_eligible_conditional_population"
+        )
+        self.assertTrue(projection["requires_eligible_population"])
+        self.assertFalse(projection["is_pre_pulse_restart"])
+
+    def test_runtime_population_projection_rejects_tampered_execution_semantics(self):
+        contract = self.compile("pre_pulse_restart")
+        contract["single_flight_execution"]["is_pre_pulse_restart"] = False
+        with self.assertRaisesRegex(ValueError, "execution semantics differ"):
+            resolve_runtime_population(contract)
+
+    def test_runtime_population_projection_rejects_malformed_runtime_fields(self):
+        with self.assertRaisesRegex(ValueError, "identity differs"):
+            resolve_runtime_population([])  # type: ignore[arg-type]
+
+        contract = self.compile("continuous_injection_full_population")
+        contract["analysis_randomness"] = []
+        with self.assertRaisesRegex(ValueError, "identity differs"):
+            resolve_runtime_population(contract)
 
     def test_v2_single_flight_execution_semantics_fail_closed_when_missing_or_tampered(
         self,

@@ -1000,8 +1000,10 @@ foreach ($case in $cases) {{
             "resolution_qualification_required_bootstrap_resample_count",
             text,
         )
+        self.assertIn("runtime.resolved_population", text)
         self.assertIn(
-            "$populationContract.analysis_randomness.bootstrap_resample_count", text
+            "$BootstrapResamples = [int]$runtimePopulation.bootstrap_resample_count",
+            text,
         )
         self.assertNotIn("'--bootstrap-resamples'", text)
         self.assertIn("'--require-resolution-qualification'", text)
@@ -1013,13 +1015,14 @@ foreach ($case in $cases) {{
         adapter = FAMILY_ADAPTER.read_text(encoding="utf-8")
         self.assertNotIn("[string]$SourceReleaseMode", runner)
         self.assertNotIn("$runnerArguments.SourceReleaseMode", adapter)
+        self.assertIn("runtime.resolved_population", runner)
         self.assertIn(
-            "$sourceReleaseMode = [string]$populationContract.source_release_mode",
+            "$sourceReleaseMode = [string]$runtimePopulation.source_release_mode",
             runner,
         )
         self.assertNotIn("source_release_mode=$sourceReleaseMode", runner)
         self.assertNotIn("source_release_mode=$SourceReleaseMode", runner)
-        self.assertIn("single_flight_execution", runner)
+        self.assertIn("resolved_single_flight_population.json", runner)
         self.assertIn("$populationBasis = [string]", runner)
         self.assertNotIn("$SamplingMode", runner)
         self.assertNotIn("steady_candidate_pool", runner)
@@ -1064,11 +1067,11 @@ foreach ($case in $cases) {{
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         self.assertIn("R03_BASELINE_STRICTMODE=PASS", completed.stdout)
         runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        self.assertIn("runtime.resolved_population", runner)
         self.assertIn(
-            "$populationContract.PSObject.Properties['paired_cohort_authority']",
+            "$EligiblePopulationCount = $runtimePopulation.eligible_population_count",
             runner,
         )
-        self.assertIn("$EligiblePopulationCount = if ($hasPairedCohort)", runner)
 
 if __name__ == "__main__":
     unittest.main()

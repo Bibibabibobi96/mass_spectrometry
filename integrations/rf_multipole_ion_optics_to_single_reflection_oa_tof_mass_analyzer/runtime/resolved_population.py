@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import argparse
+import json
 from pathlib import Path
 from typing import Any
 
@@ -63,6 +65,103 @@ def resolve_single_flight_execution(
             "population mode and source release mode differ for single-flight execution"
         )
     return execution
+
+
+def resolve_runtime_population(contract: dict[str, Any]) -> dict[str, Any]:
+    """Project runner-consumed population semantics from one frozen contract."""
+
+    try:
+        if not isinstance(contract, dict):
+            raise ValueError("Resolved population contract identity differs.")
+        if contract.get("role") != "rf_oatof_resolved_population_contract":
+            raise ValueError("Resolved population contract identity differs.")
+        execution_population = contract["execution_population"]
+        if not isinstance(execution_population, dict):
+            raise ValueError("Resolved population contract identity differs.")
+        launched = int(execution_population["particle_count"])
+        paired_cohort = contract.get("paired_cohort_authority")
+        cohort_authority_mode = contract.get("cohort_authority_mode")
+        if (
+            cohort_authority_mode == "establish_observed_authority"
+            and paired_cohort is not None
+        ) or (
+            cohort_authority_mode == "require_frozen_baseline_authority"
+            and paired_cohort is None
+        ):
+            raise ValueError(
+                "Resolved population cohort authority mode and membership differ."
+            )
+        if paired_cohort is not None:
+            if not isinstance(paired_cohort, dict):
+                raise ValueError(
+                    "Resolved population cohort authority mode and membership differ."
+                )
+            population_denominator_count = len(
+                paired_cohort["source_release"]["ordered_particle_ids"]
+            )
+            eligible_population_count: int | None = len(
+                paired_cohort["pulse_eligible"]["ordered_particle_ids"]
+            )
+        else:
+            population_denominator_count = int(contract["denominators"]["population_count"])
+            eligible_population_count = None
+        randomness = contract["analysis_randomness"]
+        if not isinstance(randomness, dict):
+            raise ValueError("Resolved population contract identity differs.")
+        bootstrap_resample_count = int(randomness["bootstrap_resample_count"])
+        bootstrap_seed = int(randomness["bootstrap_seed"])
+        source_release_mode = contract.get("source_release_mode")
+        if not isinstance(source_release_mode, str):
+            source_release_mode = ""
+        if contract.get("execution_strategy") != "simion_single_flight":
+            raise ValueError(
+                "Resolved population execution strategy is not supported by the single-flight runner."
+            )
+        single_flight_execution = contract.get("single_flight_execution")
+        if not isinstance(single_flight_execution, dict):
+            raise ValueError(
+                "Resolved population contract lacks compiled single-flight execution semantics."
+            )
+        population_basis = single_flight_execution.get("population_basis")
+        requires_eligible_population = single_flight_execution.get(
+            "requires_eligible_population"
+        )
+        is_pre_pulse_restart = single_flight_execution.get("is_pre_pulse_restart")
+        if (
+            population_basis
+            not in {
+                "candidate_full_population",
+                "pulse_eligible_conditional_population",
+                "source_contract_population",
+            }
+            or not isinstance(requires_eligible_population, bool)
+            or not isinstance(is_pre_pulse_restart, bool)
+            or is_pre_pulse_restart != (source_release_mode == "pre_pulse_restart")
+        ):
+            raise ValueError(
+                "Compiled single-flight population execution semantics differ from the source contract."
+            )
+    except (KeyError, TypeError, ValueError) as exc:
+        if str(exc) in {
+            "Resolved population contract identity differs.",
+            "Resolved population cohort authority mode and membership differ.",
+            "Resolved population execution strategy is not supported by the single-flight runner.",
+            "Resolved population contract lacks compiled single-flight execution semantics.",
+            "Compiled single-flight population execution semantics differ from the source contract.",
+        }:
+            raise
+        raise ValueError("Resolved population contract identity differs.") from exc
+    return {
+        "launched_particle_count": launched,
+        "population_denominator_count": population_denominator_count,
+        "eligible_population_count": eligible_population_count,
+        "bootstrap_resample_count": bootstrap_resample_count,
+        "bootstrap_seed": bootstrap_seed,
+        "source_release_mode": source_release_mode,
+        "population_basis": population_basis,
+        "requires_eligible_population": requires_eligible_population,
+        "is_pre_pulse_restart": is_pre_pulse_restart,
+    }
 
 
 def compile_resolved_population_contract(
@@ -182,3 +281,19 @@ def compile_resolved_population_contract(
         )
     validate_schema(contract, RESOLVED_POPULATION_SCHEMA_PATH)
     return contract
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--contract", required=True, type=Path)
+    parser.add_argument("--output", required=True, type=Path)
+    args = parser.parse_args()
+    contract = json.loads(args.contract.read_text(encoding="utf-8-sig"))
+    args.output.write_text(
+        json.dumps(resolve_runtime_population(contract), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+if __name__ == "__main__":
+    main()
