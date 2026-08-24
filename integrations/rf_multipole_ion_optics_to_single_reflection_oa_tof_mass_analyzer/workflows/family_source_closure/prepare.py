@@ -118,6 +118,22 @@ def _three_zone_field_profile(profile_id: str) -> dict[str, Any]:
     if not isinstance(profile.get("topology_id"), str):
         raise ContractError("post-pulse theory working point requires a supported three-zone field profile")
     return profile
+
+
+def validate_three_zone_candidate_binding(
+    experiment: dict[str, Any], layout_profile: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Bind Candidate evidence from the selected layout method, not its name."""
+
+    candidate = experiment.get("single_flight_three_zone_candidate")
+    requires_candidate = layout_profile.get("method") == "t5_frozen_three_zone_candidate_v1"
+    if requires_candidate and not isinstance(candidate, dict):
+        raise ContractError("three-zone T5 layout requires a Candidate file binding")
+    if not requires_candidate and candidate is not None:
+        raise ContractError("single-flight Candidate file binding requires a three-zone T5 layout")
+    return candidate if requires_candidate else None
+
+
 def validate_active_post_pulse_restart_working_point(
     experiment: dict[str, Any],
 ) -> None:
@@ -2686,19 +2702,14 @@ def prepare_family_source_closure(
             raise ContractError("layout profile architecture generation differs")
         experiment_overrides = experiment.get("single_flight_design_overrides", [])
         three_zone_candidate = None
-        three_zone_candidate_binding = None
+        three_zone_candidate_binding = validate_three_zone_candidate_binding(
+            experiment, layout_profile
+        )
         three_zone_candidate_path = None
         if layout_profile["method"] == "t5_frozen_three_zone_candidate_v1":
             if experiment_overrides:
                 raise ContractError(
                     "three-zone T5 layout prohibits experiment design overrides"
-                )
-            three_zone_candidate_binding = experiment.get(
-                "single_flight_three_zone_candidate"
-            )
-            if not isinstance(three_zone_candidate_binding, dict):
-                raise ContractError(
-                    "three-zone T5 layout requires a Candidate file binding"
                 )
             three_zone_candidate_path = _workspace_record(
                 workspace,

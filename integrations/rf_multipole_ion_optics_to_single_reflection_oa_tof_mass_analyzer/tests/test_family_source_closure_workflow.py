@@ -27,6 +27,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     _workspace_record,
     prepare_family_source_closure,
     resolve_single_flight_dispatch_plan,
+    validate_three_zone_candidate_binding,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_source import (
     resolve_source_materialization_profile,
@@ -693,7 +694,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                 ARCHIVAL_CAMPAIGN_SCHEMA,
             )
 
-    def test_three_zone_candidate_binding_is_layout_scoped_and_hash_bound(self) -> None:
+    def test_three_zone_candidate_binding_is_layout_method_scoped_and_hash_bound(self) -> None:
         campaign = load(
             RETIRED_CAMPAIGNS
             / "short_focus_rr_tqual108_stratified_n100_campaign.json"
@@ -711,21 +712,16 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             campaign, ARCHIVAL_CAMPAIGN_SCHEMA
         )
 
-        missing = json.loads(json.dumps(campaign))
-        del missing["experiments"][0]["single_flight_three_zone_candidate"]
-        with self.assertRaises(ContractError):
-            validate_schema(
-                missing, ARCHIVAL_CAMPAIGN_SCHEMA
-            )
-
-        wrong_layout = json.loads(json.dumps(campaign))
-        wrong_layout["experiments"][0][
-            "single_flight_layout_profile_id"
-        ] = "theory_source_z10_d1_3"
-        with self.assertRaises(ContractError):
-            validate_schema(
-                wrong_layout, ARCHIVAL_CAMPAIGN_SCHEMA
-            )
+        t5_layout = {"method": "t5_frozen_three_zone_candidate_v1"}
+        self.assertEqual(validate_three_zone_candidate_binding(row, t5_layout), row[
+            "single_flight_three_zone_candidate"
+        ])
+        missing = json.loads(json.dumps(row))
+        del missing["single_flight_three_zone_candidate"]
+        with self.assertRaisesRegex(ContractError, "requires a Candidate"):
+            validate_three_zone_candidate_binding(missing, t5_layout)
+        with self.assertRaisesRegex(ContractError, "requires a three-zone T5"):
+            validate_three_zone_candidate_binding(row, {"method": "other"})
 
     def test_three_zone_candidate_workspace_binding_rejects_escape_and_stale_sha(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
