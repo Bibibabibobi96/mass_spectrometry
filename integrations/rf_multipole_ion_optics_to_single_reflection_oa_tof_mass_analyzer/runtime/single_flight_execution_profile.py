@@ -168,7 +168,7 @@ def resolve_execution_profile(
 
         maximum_tof = _positive_number(
             configuration["maximum_time_of_flight_us"]
-            if maximum_time_of_flight_us is None or maximum_time_of_flight_us <= 0
+            if maximum_time_of_flight_us is None
             else maximum_time_of_flight_us
         )
         spatial_window = (

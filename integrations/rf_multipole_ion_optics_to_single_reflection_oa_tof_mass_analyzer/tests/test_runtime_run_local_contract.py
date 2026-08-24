@@ -853,6 +853,14 @@ foreach ($case in $cases) {{
         self.assertEqual(explicit["rf_steps_per_period"], 160)
         self.assertEqual(explicit["maximum_time_of_flight_us"], 120.0)
         self.assertEqual(explicit["spatial_window_profile_id"], "accelerator_xy_open_bore")
+        for invalid_maximum_tof in (0.0, -1.0):
+            with self.assertRaisesRegex(
+                ValueError, "Single-flight numerical configuration"
+            ):
+                resolve_execution_profile(
+                    settings,
+                    maximum_time_of_flight_us=invalid_maximum_tof,
+                )
         extended = copy.deepcopy(settings)
         extended["time_integration_profiles"].append({
             "profile_id": "dt64",
