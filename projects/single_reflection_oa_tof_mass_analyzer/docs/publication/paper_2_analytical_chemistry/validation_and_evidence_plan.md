@@ -7,6 +7,12 @@
 
 ## 1. Gate A：IP与科学差异
 
+2026-08-25代表性专利族预审已完成，见
+[`prior_art_search_audit_20260825.md`](../prior_art_search_audit_20260825.md)。它确认宽泛active conditioner
+不具备可主张的新颖性，并识别了RF/DC guide、OA guide mode、spatial-temporal correlation、periodic
+lens和upstream conditioner等高风险族；由于尚未选定具体拓扑，也未完成逐权利要求和法域审查，Gate A
+仍为开放状态。
+
 ### 动作
 
 - conditioner、RF/DC序列、自动匹配和波形补偿的patentability/FTO；

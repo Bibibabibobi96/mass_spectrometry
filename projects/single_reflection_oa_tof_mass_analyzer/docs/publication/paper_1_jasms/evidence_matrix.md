@@ -22,14 +22,21 @@ claim的完整投稿要求；目前没有主claim达到`SUPPORTED`。
 
 | Claim | 已有直接证据 | 当前等级 | 主要缺口 |
 |---|---|---|---|
-| J1：切向closure与条件厚度分离 | [`20260817 observed-source归因`](../../history/20260817__three-zone-zvz-nonlinearity-fixed-energy-source-sensitivity.md) | `DIAGNOSTIC / HYPOTHESIS_GENERATING` | N=100、单设计、post-hoc移植；无条件模型、两工况、重新优化或独立求解器 |
+| J1：切向closure与条件厚度分离 | [`20260817 observed-source归因`](../../history/20260817__three-zone-zvz-nonlinearity-fixed-energy-source-sensitivity.md) | `PRIOR_ART_OVERLAP / DIAGNOSTIC_FRAMEWORK` | N=100、单设计、post-hoc移植；且非线性相关与finite spread已有先例，不能独立承担新颖性 |
 | J2：focusability projector预测残差floor | 无 | `NOT_IMPLEMENTED` | 条件协方差、`g`、`G_N`、约束、QP、locked test均缺 |
-| J3：残差模态归因 | observed-affine残差与多项式捕获诊断 | `PARTIAL_SOURCE_DIAGNOSTIC` | 没有无量纲条件模态、bootstrap、逐模态消融或预测验证 |
-| J4：新增场区的source-weighted收益 | solver-free two/three比较与`Γ3` | `LOCAL_SCALAR_ONLY` | 没有`a_perp/DeltaJ`、observed-source公平重优化或blind test |
-| J5：source-weighted优于未加权closure | 无 | `NOT_IMPLEMENTED` | 相同预算A–D架构比较全部缺 |
-| J6：诊断决定改分析器还是改源 | 历史结论提出下一阶段问题 | `HYPOTHESIS_ONLY` | 至少两源工况的事前决策和独立验证缺失 |
+| J3：新增控制方向与未解残差重叠 | observed-affine残差与多项式捕获诊断 | `PARTIAL_SOURCE_DIAGNOSTIC / HIGH_OBVIOUSNESS_RISK` | 没有无量纲条件模态、bootstrap、`a_perp/DeltaJ`、逐模态消融或事前预测验证 |
+| J4：source-weighted优于未加权closure | solver-free two/three比较与`Γ3` | `PRIOR_ART_OVERLAP / LOCAL_SCALAR_ONLY` | 相同预算A–D公平重优化和blind test全部缺；只能作为J2/J3次级结果 |
+| J5：诊断决定改分析器还是改源 | 历史结论提出下一阶段问题 | `PRIOR_ART_OVERLAP / HYPOTHESIS_ONLY` | 至少两源工况的事前决策和独立验证缺失；一般source/analyzer权衡已知 |
 
-## 3. 当前真实源相关证据
+## 3. 先行工作门禁
+
+| 门禁 | 当前证据 | 状态 | 仍需关闭 |
+|---|---|---|---|
+| 定向论文与引用链预审 | [`2026-08-25审计`](../prior_art_search_audit_20260825.md) | `PRESCREEN_COMPLETE` | 2005 thesis、1989、2015和2026正文/SI逐式claim chart |
+| 专利族预审 | 同上，覆盖SVCF、RF guide/conditioner、OA guide mode、spatial-temporal correlation和upstream conditioner代表族 | `PRELIMINARY_LANDSCAPE_COMPLETE` | 具体conditioner逐权利要求、continuation/法域状态和专业FTO |
+| J2/J3同构先例 | 定向关键词检索未发现 | `NO_DIRECT_HIT / NOT_CLEARANCE` | 全文、引文扩展与领域专家独立复核 |
+
+## 4. 当前真实源相关证据
 
 | 证据 | 已证明 | 未证明 |
 |---|---|---|
@@ -38,12 +45,12 @@ claim的完整投稿要求；目前没有主claim达到`SUPPORTED`。
 | [`observed z-vz归因`](../../history/20260817__three-zone-zvz-nonlinearity-fixed-energy-source-sensitivity.md) | 固定设计中observed-affine残差主导首尾顺序退化 | 该残差不可补偿、是光滑高阶曲线或可推广到其他工况 |
 | RF→OA integration历史observed authority | 有冻结pre-pulse状态和有序ID基础 | 当前活动Paper 1 source campaign、两工况和locked split |
 
-## 4. 证据资格结论
+## 5. 证据资格结论
 
 当前仓库足以支持以下写作动作：
 
-- 写Introduction中的问题动机；
-- 写Theory和Methods草案；
+- 按收窄后的J2/J3中心问题写核心全文骨架、Introduction和claim-safe相关工作；
+- 写Theory和Methods草案，但结果数字、摘要结论和新颖性措辞必须留空；
 - 设计并预注册Paper 1 campaign；
 - 把现有N=100结果作为hypothesis-generating历史证据。
 
@@ -56,7 +63,7 @@ claim的完整投稿要求；目前没有主claim达到`SUPPORTED`。
 - “必须改源而不能改分析器”的普遍判断；
 - 任何`first/novel`措辞。
 
-## 5. 更新规则
+## 6. 更新规则
 
 新证据只有在以下字段齐全时加入本表：
 

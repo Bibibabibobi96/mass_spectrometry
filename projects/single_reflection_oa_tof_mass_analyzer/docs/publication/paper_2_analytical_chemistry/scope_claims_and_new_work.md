@@ -27,7 +27,11 @@ Paper 1冻结给定source distribution，回答分析器能控制什么。Paper 
 
 ## 3. 候选新方法
 
-引入实际可控制conditioner：
+2026-08-25预审已确认，RF/DC ion guide、碰撞冷却、beam expander、periodic lens、OA内guide mode、
+spatial-temporal correlation和upstream conditioner均已有论文、厂商实现或专利。`active phase-space
+conditioner`只能是功能类别，不能作为宽泛新颖性主张；证据见
+[`prior_art_search_audit_20260825.md`](../prior_art_search_audit_20260825.md)。未来方法必须先通过具体拓扑、
+波形或控制律的IP/FTO审查，再讨论以下变换：
 
 $$
 \mathcal C_{\boldsymbol\alpha}:
@@ -44,6 +48,8 @@ $$
 - 传输、接受度和占空比。
 
 可能结构在IP审查前只以功能类别记录，不在公开计划中保存最终电极、尺寸、电压、波形或自动控制。
+科学新意必须落在具体机制及其相对于充分重优化既有conditioner/分析器基线的可重复前沿移动，不能落在
+“改变source distribution”这个已知目标。
 
 ## 4. 与Paper 1的理论接口
 
@@ -160,6 +166,8 @@ source-mode change
 当前仓库尚没有：
 
 - 已选定且通过IP审查的conditioner；
+- 相对于SVCF、RF/DC ion-guide conditioning、spatial-temporal correlation和upstream conditioner专利族
+  的逐权利要求差异；
 - conditioner—OA—reflectron联合稳健优化；
 - 实测电极端波形和as-built闭环；
 - prototype baseline/new A/B；

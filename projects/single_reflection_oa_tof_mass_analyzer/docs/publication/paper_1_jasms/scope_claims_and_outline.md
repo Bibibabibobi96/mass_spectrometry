@@ -8,11 +8,11 @@
 
 建议题目：
 
-> **Conditional Phase-Space Thickness and the Limits of Local High-Order Focusing in Orthogonal-Acceleration Time-of-Flight Mass Spectrometry**
+> **Source-Conditioned Control-Subspace Analysis of an Orthogonal-Acceleration Time-of-Flight Mass Spectrometer**
 
 备选：
 
-> **Source-Distribution-Aware Focusability of an Orthogonal Accelerator and Dual-Stage Reflectron**
+> **Predicting the Incremental Value of Analyzer Controls for Finite Phase-Space Sources in Orthogonal-Acceleration TOF Mass Spectrometry**
 
 JASMS当前scope包括质谱基础理论、仪器原理、设计、演示、建模和新算法：
 <https://researcher-resources.acs.org/publish/author_guidelines?coden=jamsef>。理论论文不被形式上要求必须有
@@ -31,7 +31,9 @@ JASMS当前scope包括质谱基础理论、仪器原理、设计、演示、建�
 ## 3. 候选主张
 
 候选claim及风险状态只以
-[`prior_art_claim_registry.md`](../prior_art_claim_registry.md)为准。稿件拟集中在三个层级：
+[`prior_art_claim_registry.md`](../prior_art_claim_registry.md)为准；2026-08-25检索证据见
+[`prior_art_search_audit_20260825.md`](../prior_art_search_audit_20260825.md)。定向查重已确认J1不能独立
+承担首创新颖性，J4/J5只能作为后果。稿件拟集中在三个层级：
 
 ### 3.1 物理分解
 
@@ -47,18 +49,20 @@ $$
 J_\perp=\mathbf g^T\Sigma_\varepsilon\mathbf g
 $$
 
-描述的有限条件厚度时间投影。主张不是总方差公式，而是这一分解在共同pre-pulse真实源、完整
-OA—drift—dual-stage-reflectron和三维detector event中的可计算与可验证意义。
+描述的有限条件厚度时间投影。该分解是定义和归因框架，不作为独立新颖性主张；其作用是给J2/J3提供
+共同pre-pulse真实源、完整OA—drift—dual-stage-reflectron和三维detector event中的可计算输入。
 
 ### 3.2 架构条件化可聚焦性
 
 在保持低阶与工程约束后，以source-whitened可行控制子空间预测局部一阶残差参考下界、有效rank和
-新增方向收益。主张必须限定为source、架构、工作点、约束和线性信赖域条件化的结果。
+新增方向收益。这是Paper 1当前唯一候选主方法claim；必须限定为source、架构、工作点、约束和线性
+信赖域条件化的结果，并由locked direct-particle运行证明预测力。
 
 ### 3.3 可证伪的设计决策
 
-通过至少两种source condition验证：切向/残差占比、focusability和active constraints能否事前判断
-应继续增加分析器控制、做source-weighted重优化，还是改变source distribution。
+通过至少两种source condition验证：focusability、未解残差与新增控制方向重叠能否事前预测新增场区
+的收益或无收益。由此得到的“继续优化分析器、做source-weighted重优化或改变source distribution”只
+作为工况条件化的结果，不写成普遍新设计原则。
 
 ## 4. 不能作为创新的内容
 
@@ -113,7 +117,7 @@ OA—drift—dual-stage-reflectron和三维detector event中的可计算与可�
 
 ### 5.5 Discussion
 
-- 与1996/2005/2006/2015/2026工作的明确差异；
+- 与1974/1994/1996/2005/2006/2010/2015/2016/2017/2024/2026工作的明确差异；
 - 局部projector和协方差近似的边界；
 - 非高斯、孔径、脉冲、空间电荷和实验源推断限制；
 - 对oa-TOF源接口和分析器设计的可推广启示。
@@ -139,7 +143,7 @@ Discussion可以指出主动source matching是后续方向，但不能展示最�
 
 只有同时满足以下条件才进入JASMS稿件冻结：
 
-1. 系统全文与专利检索未发现与核心组合等价的先行工作；
+1. 关键全文逐式claim chart与专利预审未发现与J2/J3核心组合等价的先行工作；
 2. 条件残差不是只用一个N=100事后诊断支持；
 3. projector/mode结论在独立source condition和locked test上有预测力；
 4. two-zone、three-zone和source-weighted方案完成相同预算下的充分重优化；

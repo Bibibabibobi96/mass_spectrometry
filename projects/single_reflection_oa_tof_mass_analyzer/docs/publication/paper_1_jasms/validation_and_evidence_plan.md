@@ -1,6 +1,6 @@
 # Paper 1：JASMS验证与证据计划
 
-> `STATUS: PLANNED / NOT_EXECUTED`
+> `STATUS: PLANNED / PRIOR_ART_PRESCREEN_COMPLETE / SCIENTIFIC_IMPLEMENTATION_NOT_EXECUTED`
 
 本文只定义工作包、进入条件和关闭条件。执行配置、粒子身份、运行结果和SHA仍属于项目config与
 artifacts；这里不保存可变参数或手工抄录结果。
@@ -17,9 +17,16 @@ Paper 1成功不是得到一个高`R`候选，而是同时证明：
 
 ## 2. WP0：先行工作与claim冻结
 
+### 2026-08-25进度
+
+定向论文、引用链、厂商资料和代表性专利族预审已经完成，见
+[`prior_art_search_audit_20260825.md`](../prior_art_search_audit_20260825.md)。预审已否决J1、J4、J5和
+Paper 2 A1的宽泛新颖性表述，并把Paper 1中心收窄到J2/J3；但2005 thesis、1989、2015和2026正文/SI
+的逐式claim chart及专业FTO仍未关闭，因此WP0不是`COMPLETE`。
+
 ### 动作
 
-- 获取1996、2005 thesis、2006、2015、2026核心全文；
+- 获取并保存1996、2005 thesis、2006、1989、2015、2026核心全文/SI；
 - 逐式比较source模型、有限spread、整机时间映射和优化判据；
 - 检索多区OA、相空间调理、RF→OA接口和自动优化专利族；
 - 为J1–J5填写closest work、相同点、差异和允许措辞。
@@ -29,6 +36,18 @@ Paper 1成功不是得到一个高`R`候选，而是同时证明：
 - 每个主claim都有可审查的全文/专利记录；
 - 没有依赖摘要或“未搜到”形成的`first`措辞；
 - 若发现等价先行工作，先重构claim再进入实现。
+
+### WP0后立即执行的最小杀伤试验
+
+在大规模3D或公平架构campaign前，只复用冻结observed source完成：
+
+1. 条件模型与source covariance；
+2. 完整时间灵敏度`g`与约束null space；
+3. source-whitened projector/QP和bootstrap；
+4. 对既有two/three-zone局部扰动预注册收益排序；
+5. 至少两种source condition的小型locked direct-particle检验。
+
+若预测方向、floor或新增控制方向收益不能跨工况闭合，J2/J3直接`NO_GO`，不启动WP3/WP4昂贵矩阵。
 
 ## 3. WP1：冻结真实条件源
 
@@ -189,7 +208,7 @@ condition上预测收益或无收益。
 
 | 门槛 | 当前状态 | 关闭判据 |
 |---|---|---|
-| Novelty | 未关闭 | WP0完成且J1–J5允许措辞冻结 |
+| Novelty | 定向预审完成；未关闭 | WP0全文claim chart完成，J2/J3允许措辞冻结，具体IP另行审查 |
 | Source | 未关闭 | 两工况、detector-blind、locked N≥1000 |
 | Focusability | 未实现 | WP2全部独立校核通过 |
 | Fair baseline | 未关闭 | A–D充分重优化和blind Pareto比较 |

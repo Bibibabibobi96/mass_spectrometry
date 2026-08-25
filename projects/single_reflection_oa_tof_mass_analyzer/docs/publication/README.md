@@ -29,6 +29,8 @@ Paper 1以JASMS为明确目标；如果只完成一维理论和有限模拟，�
   [`paper_2_analytical_chemistry/validation_and_evidence_plan.md`](paper_2_analytical_chemistry/validation_and_evidence_plan.md)
 - 跨论文防火墙：[`overlap_and_claim_firewall.md`](overlap_and_claim_firewall.md)
 - 先行工作与候选claim：[`prior_art_claim_registry.md`](prior_art_claim_registry.md)
+- 2026-08-25论文/引用链/专利族预审：
+  [`prior_art_search_audit_20260825.md`](prior_art_search_audit_20260825.md)
 
 ## 3. 共同规则
 
@@ -38,6 +40,9 @@ Paper 1以JASMS为明确目标；如果只完成一维理论和有限模拟，�
 - Paper 1冻结给定source distribution；Paper 2主动改变source distribution。
 - 任何性能比较都使用充分重优化的baseline、相同母cohort、相同约束和独立locked test。
 - 公开conditioner、电压、波形、自动调谐或制造补偿前先完成公司IP审查。
+
+2026-08-25定向查重已否决J1、J4、J5和Paper 2 A1的宽泛新颖性表述；Paper 1当前只保留J2/J3作为
+候选主贡献。该预审没有关闭关键全文逐式claim chart或法律FTO，也没有使任何claim升级为`GREEN`。
 
 ## 4. RSI不在当前计划内
 
