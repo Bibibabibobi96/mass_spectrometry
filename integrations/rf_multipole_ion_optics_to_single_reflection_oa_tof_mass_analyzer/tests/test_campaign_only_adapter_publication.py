@@ -23,6 +23,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     stage_project_id,
     publish_family_source_closure_failure,
     publish_family_source_closure_run,
+    publish_pre_pulse_selection_publication_replay,
 )
 
 
@@ -1140,6 +1141,18 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
             self.assertEqual(summary["status"], "failed")
             self.assertFalse(summary["threshold_result_eligible"])
             self.assertEqual(summary["reason"], "governed child failed")
+
+class PrePulseSelectionReplayTests(unittest.TestCase):
+    def test_rejects_non_analysis_python_replay_identity_before_reading_parent(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with self.assertRaisesRegex(ContractError, "analysis/python"):
+                publish_pre_pulse_selection_publication_replay(
+                    repo_root=REPO_ROOT,
+                    workspace_root=root,
+                    replay_run_dir=root / "20260825_235200__sim__cross__invalid-replay__n1",
+                    failed_parent_manifest_path=root / "missing-parent" / "run_manifest.json",
+                )
 
 
 if __name__ == "__main__":

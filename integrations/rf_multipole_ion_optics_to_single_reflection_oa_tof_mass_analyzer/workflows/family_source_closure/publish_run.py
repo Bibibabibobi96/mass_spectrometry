@@ -6,6 +6,7 @@ import argparse
 import json
 import math
 import re
+import shutil
 import subprocess
 import sys
 from decimal import Decimal, InvalidOperation
@@ -693,6 +694,107 @@ def publish_verified_pulse_publication_replay(
     return manifest_path
 
 
+def publish_pre_pulse_selection_publication_replay(
+    *,
+    repo_root: Path,
+    workspace_root: Path,
+    replay_run_dir: Path,
+    failed_parent_manifest_path: Path,
+) -> Path:
+    """Publish detector-blind pre-pulse selection from an immutable child run.
+
+    This is deliberately narrower than normal parent publication: it never reads
+    the live campaign file, so a later authoring edit cannot invalidate an already
+    completed child.  The failed parent remains failed and the replay cannot make
+    resolution, optimization, J2/J3, Candidate, or Formal claims.
+    """
+    replay_run_dir = replay_run_dir.resolve()
+    identity = validate_run_id(replay_run_dir.name)
+    if identity["activity"] != "analysis" or identity["scope"] != "python":
+        raise ContractError("pre-pulse selection replay requires an analysis/python run ID")
+    if replay_run_dir.exists():
+        raise ContractError("pre-pulse selection replay run already exists")
+    failed_parent_manifest_path = failed_parent_manifest_path.resolve()
+    parent_dir = failed_parent_manifest_path.parent
+    failed_manifest = _load(failed_parent_manifest_path)
+    receipt_path = parent_dir / "execution_receipt.json"
+    receipt = _load(receipt_path)
+    if (
+        failed_manifest.get("role") != "simulation_run_manifest"
+        or failed_manifest.get("project") != INTEGRATION_ID
+        or failed_manifest.get("mode") != "multipole_family_source_closure"
+        or failed_manifest.get("status") != "failed"
+        or receipt.get("role") != "integration_family_source_closure_execution_receipt"
+        or receipt.get("integration_run_id") != failed_manifest.get("run_id")
+        or receipt.get("execution_strategy") != "simion_single_flight"
+        or receipt.get("execution_status") != "completed_pending_paired_analysis"
+    ):
+        raise ContractError("pre-pulse selection replay parent authority differs")
+    try:
+        verify_record("pre-pulse selection replay parent run_config", failed_manifest["run_config"])
+        for name in ("resolved_connection", "resolved_source_contract", "resolved_population_contract"):
+            verify_record(f"pre-pulse selection replay parent {name}", failed_manifest["inputs"][name])
+    except (AssertionError, KeyError, TypeError) as exc:
+        raise ContractError("pre-pulse selection replay parent records differ") from exc
+    frozen_campaign = parent_dir / "inputs" / "frozen_campaign_experiment.json"
+    if not frozen_campaign.is_file() or _load(frozen_campaign).get("campaign_source", {}).get("sha256") != receipt.get("campaign_sha256"):
+        raise ContractError("pre-pulse selection replay frozen campaign differs")
+    connection = parent_dir / "resolved_connection.json"
+    source = parent_dir / receipt.get("resolved_source_contract_filename", "")
+    population = parent_dir / receipt.get("resolved_population_contract_filename", "")
+    if (
+        not connection.is_file() or not source.is_file() or not population.is_file()
+        or file_sha256(connection) != receipt.get("resolved_connection_sha256")
+        or file_sha256(source) != receipt.get("resolved_source_contract_sha256")
+        or file_sha256(population) != receipt.get("resolved_population_contract_sha256")
+    ):
+        raise ContractError("pre-pulse selection replay resolved identity differs")
+    stage_ids = receipt.get("stage_run_ids")
+    stage_hashes = receipt.get("stage_runtime_binding_sha256s")
+    if not isinstance(stage_ids, dict) or set(stage_ids) != {"single_flight_transport"} or not isinstance(stage_hashes, dict):
+        raise ContractError("pre-pulse selection replay child authority is incomplete")
+    child_id = stage_ids["single_flight_transport"]
+    child_dir = workspace_root / "artifacts" / "projects" / INTEGRATION_ID / "runs" / child_id
+    stage = _verify_stage(run_path=child_dir, run_id=child_id, project_id=INTEGRATION_ID, mode=SINGLE_FLIGHT_STAGES["single_flight_transport"]["mode"], workspace_root=workspace_root)
+    _verify_stage_chain_identity(stage=stage, workspace_root=workspace_root, receipt=receipt, expected_source_field="upstream_source_identity", expected_runtime_binding_sha256=stage_hashes.get("single_flight_transport", ""))
+    replay_run_dir.mkdir(parents=True, exist_ok=False)
+    try:
+        table, candidate_receipt_path, candidate_receipt = _publish_detector_blind_pulse_selection(
+            repo_root=repo_root, workspace_root=workspace_root, parent_run_dir=replay_run_dir,
+            stage=stage, resolved_connection_path=connection, resolved_source_path=source,
+            resolved_population_path=population,
+        )
+    except Exception:
+        # This directory has no manifest yet and belongs solely to this replay attempt.
+        shutil.rmtree(replay_run_dir)
+        raise
+    run_config = {
+        "schema_version": 1, "role": "rf_oatof_pre_pulse_selection_publication_replay_run_config",
+        "run_id": replay_run_dir.name, "project": INTEGRATION_ID,
+        "mode": "rf_oatof_pre_pulse_selection_publication_replay", "project_root": str(workspace_root),
+        "inputs": {"failed_parent_manifest": _portable(failed_parent_manifest_path, workspace_root),
+                   "source_execution_receipt": _portable(receipt_path, workspace_root),
+                   "frozen_campaign_experiment": _portable(frozen_campaign, workspace_root),
+                   "screening_child_manifest": _portable(child_dir / "run_manifest.json", workspace_root),
+                   "publisher_source": _portable(Path(__file__), workspace_root)},
+        "parameters": {"failed_parent_run_id": failed_manifest["run_id"], "screening_child_run_id": child_id,
+                       "selected_time_us": candidate_receipt["selected_time_us"], "solver_rerun": False},
+        "formal_gate_passed": False,
+    }
+    summary = {"schema_version": 1, "role": "rf_oatof_pre_pulse_selection_publication_replay_summary",
+               "status": "success", "claim_status": "FUNCTIONAL_SCREEN_ONLY", "solver_rerun": False,
+               "selected_time_us": candidate_receipt["selected_time_us"], "screening_child_run_id": child_id,
+               "claims_prohibited": ["detector", "resolution", "optimization", "J2", "J3", "Candidate", "Formal"]}
+    config_path, summary_path = replay_run_dir / "run_config.json", replay_run_dir / "summary.json"
+    write_pending_json(config_path, run_config)
+    write_pending_json(summary_path, summary)
+    manifest_path = replay_run_dir / "run_manifest.json"
+    publish_manifest(repo_root=repo_root, run_config=config_path, manifest_path=manifest_path, status="success",
+                     outputs=(table, candidate_receipt_path, summary_path), project=INTEGRATION_ID,
+                     mode="rf_oatof_pre_pulse_selection_publication_replay", label="pre-pulse selection publication replay")
+    return manifest_path
+
+
 def _verify_stage(
     *,
     run_path: Path,
@@ -1299,9 +1401,26 @@ def main() -> int:
     parser.add_argument("--terminal-status", choices=("failed", "interrupted"))
     parser.add_argument("--failure-reason")
     parser.add_argument("--publication-replay-source-parent-manifest", type=Path)
+    parser.add_argument("--pre-pulse-selection-replay-source-parent-manifest", type=Path)
     args = parser.parse_args()
     repo_root = args.repo_root.resolve()
-    if args.publication_replay_source_parent_manifest is not None:
+    if args.pre_pulse_selection_replay_source_parent_manifest is not None:
+        if (
+            args.receipt is not None
+            or args.terminal_status is not None
+            or args.failure_reason is not None
+            or args.publication_replay_source_parent_manifest is not None
+        ):
+            parser.error("pre-pulse selection replay forbids receipt, failure, and pulse replay arguments")
+        manifest = publish_pre_pulse_selection_publication_replay(
+            repo_root=repo_root,
+            workspace_root=repo_root.parent,
+            replay_run_dir=args.integration_run_dir.resolve(),
+            failed_parent_manifest_path=(
+                args.pre_pulse_selection_replay_source_parent_manifest.resolve()
+            ),
+        )
+    elif args.publication_replay_source_parent_manifest is not None:
         if (
             args.receipt is None
             or args.terminal_status is not None

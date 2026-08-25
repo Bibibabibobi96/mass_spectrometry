@@ -39,6 +39,12 @@ SIMION 运行可调用共享批处理；批内结果必须恢复全局粒子 ID 
 run-config、run-local冻结合同、粒子映射和全部批日志；不得改写失败run、不得重跑求解器，也不得把恢复结果升级为
 分辨率或Formal证据。
 
+若子运行已经成功物化预脉冲时间序列、但父发布仅因其后的活动 exploration authoring 文件发生 SHA 漂移而失败，
+`publish_run.py --pre-pulse-selection-replay-source-parent-manifest` 可建立一个新的 immutable
+`analysis/python` replay run。它只读取失败父 run-local 冻结 campaign、resolved 合同和成功子 manifest，
+不重跑求解器、不改写失败父 run，并且只发布探测器盲候选时刻；其声明固定为
+`FUNCTIONAL_SCREEN_ONLY`，不支持 detector、resolution、optimization、J2/J3、Candidate 或 Formal 结论。
+
 活动 runtime binding v4 只冻结连接专属的物理/运行合同；共享的
 `family_runtime_implementation.json` 由运行时统一解析。authorized/Formal 路径校验每个实现脚本 SHA；
 exploration 仅允许实现内容与注册表漂移，并把期望与实际 SHA 写入 run config/receipt，仍关闭角色、路径、
