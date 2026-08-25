@@ -47,3 +47,9 @@ validation选择后，受限二次模型优于仿射模型，五个残差主模�
 不得通过改名现有rod_exit、canonical_handoff、异时OA-entry表或`oatof_shield_entry_gap1mm`端件记录绕过此
 要求。随后按ID哈希冻结四个cohort，只用development/validation选择模型并检查条件协方差和模态排序稳定性。
 C1为`PASS_CONTINUE`前，阶段2及任何三维优化均不得启动。
+
+首个上游重生成输入由
+[`20260825__paper1_s2_segmented_standard_terminal_n100.json`](../../../../../common/multipole/campaigns/20260825__paper1_s2_segmented_standard_terminal_n100.json)
+预注册：它固定S2的六极分段杆、2→5 eV轴向能量契约、H15数值设置和100粒子母cohort，只将下游端件固定为
+当前`oatof_shield_terminal`。该run的唯一角色是产生可连续接入的上游handoff；它本身不支持聚焦、收敛或
+论文主张。
