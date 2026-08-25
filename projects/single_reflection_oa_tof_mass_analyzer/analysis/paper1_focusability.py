@@ -170,13 +170,26 @@ def assign_detector_blind_cohorts(
     return tuple(result)
 
 
-def load_frozen_pre_pulse_source(path: Path) -> FrozenPrePulseSource:
-    """Load one shared-time OA pre-pulse state table and reject downstream outcomes."""
+def load_frozen_pre_pulse_source(
+    path: Path, *, time_series_sample_index: int | None = None
+) -> FrozenPrePulseSource:
+    """Load one shared-time OA pre-pulse state table and reject downstream outcomes.
+
+    A governed pre-pulse time-series record is not itself a source checkpoint:
+    callers must select exactly one positive ``time_series_sample_index``.  The
+    SIMION time-series writer records velocities in mm/us; those fields are
+    explicitly converted to the canonical m/s state basis here.  This loader
+    deliberately returns only states observed alive at the selected checkpoint;
+    the associated full-mother loss census remains a separate required receipt.
+    """
 
     aliases = {
-        "x_mm": ("x_mm", "position_x_mm"), "y_mm": ("y_mm", "position_y_mm"),
-        "z_mm": ("z_mm", "position_z_mm"), "vx_m_per_s": ("vx_m_per_s", "velocity_x_m_s"),
-        "vy_m_per_s": ("vy_m_per_s", "velocity_y_m_s"), "vz_m_per_s": ("vz_m_per_s", "velocity_z_m_s"),
+        "x_mm": ("x_mm", "position_x_mm"),
+        "y_mm": ("y_mm", "position_y_mm"),
+        "z_mm": ("z_mm", "position_z_mm"),
+        "vx_m_per_s": ("vx_m_per_s", "velocity_x_m_s", "vx_mm_per_us"),
+        "vy_m_per_s": ("vy_m_per_s", "velocity_y_m_s", "vy_mm_per_us"),
+        "vz_m_per_s": ("vz_m_per_s", "velocity_z_m_s", "vz_mm_per_us"),
     }
     with path.open(encoding="utf-8-sig", newline="") as handle:
         rows = list(csv.DictReader(handle))
@@ -185,19 +198,41 @@ def load_frozen_pre_pulse_source(path: Path) -> FrozenPrePulseSource:
     fields = set(rows[0])
     event_key = "event" if "event" in fields else "state_event" if "state_event" in fields else None
     time_key = "instrument_time_us" if "instrument_time_us" in fields else None
-    if (
-        event_key is None
-        or time_key is None
-        or "particle_id" not in fields
-        or "pulse_eligibility" not in fields
-    ):
+    if event_key is None or time_key is None or "particle_id" not in fields:
         raise ValueError(
-            "pre-pulse source table lacks particle ID, event, instrument time, or pulse eligibility"
+            "pre-pulse source table lacks particle ID, event, or instrument time"
         )
-    resolved = {name: next((item for item in choices if item in fields), None) for name, choices in aliases.items()}
+    event_values = {row[event_key] for row in rows}
+    time_series_event = "pre_pulse_time_series_state"
+    if event_values == {time_series_event}:
+        if time_series_sample_index is None or time_series_sample_index < 1:
+            raise ValueError(
+                "pre-pulse time-series source requires one positive sample index"
+            )
+        if "sample_index" not in fields or "survival_status" not in fields:
+            raise ValueError("pre-pulse time-series source lacks sample/status fields")
+        rows = [
+            row for row in rows
+            if int(row["sample_index"]) == time_series_sample_index
+        ]
+        if not rows:
+            raise ValueError("pre-pulse time-series sample index is absent")
+        if any(row["survival_status"].strip().lower() != "alive" for row in rows):
+            raise ValueError("selected pre-pulse time-series state is not alive")
+        pulse_eligibility = np.ones(len(rows), dtype=bool)
+    else:
+        if time_series_sample_index is not None:
+            raise ValueError("sample index is only valid for a pre-pulse time-series source")
+        if "pulse_eligibility" not in fields:
+            raise ValueError("pre-pulse source table lacks pulse eligibility")
+        pulse_eligibility = None
+    resolved = {
+        name: next((item for item in choices if item in fields), None)
+        for name, choices in aliases.items()
+    }
     if any(value is None for value in resolved.values()):
         raise ValueError("pre-pulse source table lacks canonical six-dimensional state")
-    allowed_events = {"pre_pulse_state", "accelerator_pre_pulse"}
+    allowed_events = {"pre_pulse_state", "accelerator_pre_pulse", time_series_event}
     if any(row[event_key] not in allowed_events for row in rows):
         raise ValueError("source table is not an OA pre-pulse checkpoint")
     identifiers = np.asarray([int(row["particle_id"]) for row in rows], dtype=np.int64)
@@ -208,21 +243,25 @@ def load_frozen_pre_pulse_source(path: Path) -> FrozenPrePulseSource:
         raise ValueError("pre-pulse source states must share one instrument time")
     state = np.column_stack([
         np.asarray([float(row[str(resolved[name])]) for row in rows], dtype=float)
+        * (1000.0 if str(resolved[name]).endswith("_mm_per_us") else 1.0)
         for name in aliases
     ])
     if not np.isfinite(state).all():
         raise ValueError("pre-pulse source state must be finite")
-    eligibility = np.asarray(
-        [
-            {"eligible": True, "ineligible": False}.get(
-                row["pulse_eligibility"].strip().lower(), None
-            )
-            for row in rows
-        ],
-        dtype=object,
-    )
-    if any(value is None for value in eligibility):
-        raise ValueError("pulse eligibility must be eligible or ineligible")
+    if pulse_eligibility is None:
+        eligibility = np.asarray(
+            [
+                {"eligible": True, "ineligible": False}.get(
+                    row["pulse_eligibility"].strip().lower(), None
+                )
+                for row in rows
+            ],
+            dtype=object,
+        )
+        if any(value is None for value in eligibility):
+            raise ValueError("pulse eligibility must be eligible or ineligible")
+    else:
+        eligibility = pulse_eligibility
     return FrozenPrePulseSource(
         identifiers, state, np.asarray(eligibility, dtype=bool), float(times[0])
     )

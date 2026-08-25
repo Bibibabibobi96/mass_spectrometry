@@ -104,6 +104,22 @@ class Paper1FocusabilityTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "OA pre-pulse"):
                 load_frozen_pre_pulse_source(path)
 
+    def test_pre_pulse_loader_requires_selected_time_series_checkpoint_and_converts_units(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "time_series.csv"
+            fields = ["particle_id", "event", "sample_index", "instrument_time_us", "x_mm", "y_mm", "z_mm", "vx_mm_per_us", "vy_mm_per_us", "vz_mm_per_us", "survival_status"]
+            with path.open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=fields)
+                writer.writeheader()
+                for identifier in (1, 2, 3):
+                    writer.writerow({"particle_id": identifier, "event": "pre_pulse_time_series_state", "sample_index": 1, "instrument_time_us": 1.0, "x_mm": 0.0, "y_mm": 0.0, "z_mm": identifier, "vx_mm_per_us": 1.25, "vy_mm_per_us": 0.0, "vz_mm_per_us": 2.5, "survival_status": "alive"})
+            with self.assertRaisesRegex(ValueError, "requires one positive sample"):
+                load_frozen_pre_pulse_source(path)
+            source = load_frozen_pre_pulse_source(path, time_series_sample_index=1)
+            self.assertTrue(source.pulse_eligibility.all())
+            self.assertTrue(np.allclose(source.state[:, 3], 1250.0))
+            self.assertTrue(np.allclose(source.state[:, 5], 2500.0))
+
 
 if __name__ == "__main__":
     unittest.main()
