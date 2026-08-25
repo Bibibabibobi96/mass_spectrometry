@@ -117,7 +117,7 @@ class ChangedGateContractTests(unittest.TestCase):
         )
         self.assertNotIn("INTEGRATION_GATE=PASS", completed.stdout)
 
-    def test_integration_test_module_with_non_test_change_keeps_full_gate(self) -> None:
+    def test_integration_source_routes_full_gate(self) -> None:
         pwsh = shutil.which("pwsh")
         if pwsh is None:
             self.skipTest("PowerShell Core is unavailable")
@@ -134,20 +134,21 @@ class ChangedGateContractTests(unittest.TestCase):
                 "-PythonExe",
                 sys.executable,
                 "-ChangedPath",
-                (
-                    integration_root + "tests/test_runtime_run_local_contract.py"
-                    + ","
-                    + integration_root + "runtime/run_single_flight.ps1"
-                ),
+                integration_root + "runtime/run_single_flight.ps1",
+                "-PlanOnly",
             ],
             cwd=REPO_ROOT,
             capture_output=True,
             text=True,
-            timeout=90,
+            timeout=30,
             check=False,
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertIn("INTEGRATION_GATE=PASS", completed.stdout)
+        self.assertIn("EXECUTION_MODE=FULL_CHANGED_SCOPE", completed.stdout)
+        self.assertIn(
+            "rf_multipole_to_single_reflection_oatof_integration",
+            completed.stdout,
+        )
 
     def test_routes_project_config_to_its_own_static_gate(self) -> None:
         project_gates = sorted(
