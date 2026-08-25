@@ -160,21 +160,10 @@ function New-RfSimionCoreRunConfig {
     if ($numericsStatus -cne 'current_candidate_solver_numerics') {
         throw 'Solver numerics status is not current_candidate_solver_numerics.'
     }
-    $allowedRfSteps = @(
-        Get-RfSimionRequiredProperty -Object $SolverNumerics `
-            -Property 'allowed_rf_steps_per_period' `
-            -Name 'solver numerics allowed_rf_steps_per_period'
-    )
-    if ($allowedRfSteps.Count -eq 0 -or
-        $RfStepsPerPeriod -notin @($allowedRfSteps | ForEach-Object { [int]$_ })) {
-        throw 'SIMION rf_steps_per_period is not allowed by the solver numerics contract.'
-    }
-    $contractTrajectoryQuality = Get-RfSimionRequiredFiniteNumber `
-        -Object $SolverNumerics -Property 'trajectory_quality' `
-        -Name 'solver numerics trajectory_quality' -Positive
-    if ($TrajectoryQuality -ne [int]$contractTrajectoryQuality) {
-        throw 'SIMION trajectory_quality differs from the solver numerics contract.'
-    }
+    # The numerical contract supplies a documented default and qualification
+    # baseline.  A run may deliberately choose other positive integration
+    # settings; its frozen run-config records those actual settings rather
+    # than misrepresenting it as the registered baseline.
     $maximumTimeUs = Get-RfSimionRequiredFiniteNumber -Object $SolverNumerics `
         -Property 'maximum_time_us' -Name 'solver numerics maximum_time_us' -Positive
     $waveform = Get-VerifiedRfSimionWaveform -ResolvedDesign $ResolvedDesign

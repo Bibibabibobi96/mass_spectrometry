@@ -236,7 +236,8 @@ class SimionTransportRunnerSourceTests(unittest.TestCase):
             "-ParticleStateCsv C:\\tmp\\p.csv -TrajectoryCsv C:\\tmp\\t.csv "
             "-SummaryJson C:\\tmp\\q.json; "
             "ConvertTo-RfSimionLuaConfig -CoreConfig $core "
-            "-SharedProgramPath $env:RF_SHARED_LUA|Out-Null"
+            "-SharedProgramPath $env:RF_SHARED_LUA|Out-Null; "
+            "Write-Output \"$($core.rf_steps_per_period)|$($core.trajectory_quality)\""
         )
         cases = (
             ("", True, ""),
@@ -262,11 +263,11 @@ class SimionTransportRunnerSourceTests(unittest.TestCase):
             ("$n.simion_cell_mm=0; ", False, "simion_cell_mm must be positive"),
             ("$i.planes.handoff.z_mm=90.3; ", False, "handoff plane mapping differs"),
             ("$steps=0; ", False, "rf_steps_per_period must be positive"),
-            ("$steps=99; ", False, "not allowed by the solver numerics contract"),
+            ("$steps=99; ", True, "99|10"),
             (
                 "$quality=11; ",
-                False,
-                "trajectory_quality differs from the solver numerics contract",
+                True,
+                "40|11",
             ),
         )
         environment = os.environ.copy()
@@ -298,6 +299,8 @@ class SimionTransportRunnerSourceTests(unittest.TestCase):
             self.assertEqual(result.returncode == 0, accepted, result.stderr)
             if not accepted:
                 self.assertIn(message, result.stderr)
+            elif message:
+                self.assertIn(message, result.stdout)
 
     def test_full_lua_contract_reports_late_terminate_field_before_launch(self) -> None:
         environment = os.environ.copy()

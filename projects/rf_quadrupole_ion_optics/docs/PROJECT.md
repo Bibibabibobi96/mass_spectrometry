@@ -63,8 +63,9 @@ workflow可复用机制，但不得互相消费run或用`Mode`切换科学声明
 | 接口事件 | [`interface_contract.json`](../config/interface_contract.json) |
 | 执行profile | [`execution_profiles.json`](../config/execution_profiles.json) |
 
-活动runner只消费具名profile编译的完整request/resolved。CLI不得覆盖几何、RF/DC、静态电极、轴向
-加速或数值标量；缺失绑定必须在商业软件启动前失败关闭。
+活动runner只消费具名profile编译的完整request/resolved。CLI不得覆盖几何、RF/DC、静态电极或轴向
+加速；SIMION入口可选择任意正数的RF步数/周期与trajectory quality，实际值会冻结到运行产物，偏离
+数值基线的运行仅为未资格探索。缺失绑定必须在商业软件启动前失败关闭。
 
 ## 当前能力
 

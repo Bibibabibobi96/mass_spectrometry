@@ -166,11 +166,6 @@ try {
     if ($RfStepsPerPeriod -lt 1 -or $TrajectoryQuality -lt 1) {
         throw 'SIMION mass-filter numerics must be positive.'
     }
-    if (-not $Exploration -and (
-        $RfStepsPerPeriod -ne [int]$numericalContract.baseline_rf_steps_per_period -or
-        $TrajectoryQuality -ne [int]$numericalContract.trajectory_quality)) {
-        throw 'SIMION mass-filter numerics differ from the frozen baseline contract.'
-    }
     $particleStateCsv = Join-Path $resultDir 'particle_state.csv'
     $trajectoryCsv = Join-Path $resultDir 'trajectory_samples.csv'
     $summaryJson = Join-Path $resultDir 'solver_summary.json'
@@ -223,7 +218,11 @@ try {
             solver_numerics_contract_sha256 = Get-RunFileSha256 -Path $frozenNumericalContract
             rf_steps_per_period = [int]$coreConfig.rf_steps_per_period
             trajectory_quality = [int]$coreConfig.trajectory_quality
-            numerics_qualification = if ($Exploration) { 'exploration_unqualified' } else { 'registered' }
+            numerics_qualification = if ($Exploration -or
+                [int]$coreConfig.rf_steps_per_period -ne [int]$numericalContract.baseline_rf_steps_per_period -or
+                [int]$coreConfig.trajectory_quality -ne [int]$numericalContract.trajectory_quality) {
+                'exploration_unqualified'
+            } else { 'registered' }
             rf_steps_override = (
                 [int]$coreConfig.rf_steps_per_period -ne
                 [int]$numericalContract.baseline_rf_steps_per_period

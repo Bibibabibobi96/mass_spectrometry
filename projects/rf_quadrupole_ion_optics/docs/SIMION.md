@@ -15,7 +15,9 @@ SHA-256；生成GEM不得手改。Workbench运行使用项目生成的单PA、Fl
 
 Lua只实现RF-only或RF+DC Fast Adjust、静态电极、时间步上限、最长飞行、事件/轨迹和summary，不含
 collision、drag、pressure或buffer-gas逻辑。物理量来自冻结resolved，数值量来自
-`../config/simion_solver_numerics.json`；Program不得用默认值或命令行覆盖权威输入。
+`../config/simion_solver_numerics.json`的默认/资格基线，且实际采用的正数步数与trajectory quality会冻结
+进run config与Lua。入口可用于探索性数值取值；非基线取值只标记为未资格的探索结果，不得冒充既有
+baseline或资格证据。Program不得以未记录的默认值或命令行覆盖物理权威输入。
 
 ## 活动入口
 

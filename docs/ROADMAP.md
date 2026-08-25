@@ -101,7 +101,7 @@ species、particle identity和lineage之间显式转换并冻结来源。
 |分类|数量|状态|已验证事实与下一步|
 |---|---:|---|---|
 |A 必须保留|3|保留|原始 artifact/manifest 身份闭合；独立 SIMION batch/case 的 CPU、内存与已观测画像调度；oaTOF Candidate 的跨 COMSOL/SIMION/SolidWorks 阶段串行。|
-|B 可简化|0|无待办|三域 runtime ID 投影与嵌套 changed-gate 路由测试已分别在 `34bc315`、`a40a599` 关闭。|
+|B 可简化|0|无待办|三域 runtime ID 投影与嵌套 changed-gate 路由测试已分别在 `34bc315`、`a40a599` 关闭；RF 四极杆 SIMION 入口已改为接受任意正数的步数/trajectory quality，并将偏离资格基线的实际值冻结且标记为未资格探索。|
 |C 建议删除|0|无待办|尚无同时具备零消费者、低风险和行为等价证据的项。|
 |D 防御不足|0|无待办|当前直接 SIMION 路径均是共享 PA/IOB、混合物种单次飞行或 Formal 单次证据；没有证据表明可无损并发。|
 |E 需证据|3|审查中|①集成运行时剩余实现形状测试：先补行为等价后再删；②`prepare.py`/`adapter.ps1` 的大函数：先建立数据流与职责切分证据；③仍串行的 SIMION 路径：已盘点的活动独立 case/batch 均经共享调度器；`mass_spectrum_candidate` 仍是单份混合物种 fly/CSV，RF 四极杆 `Invoke-RfSimionCoreRun` 仍在一个 candidate 目录顺序改写 `quad_monolithic.pa#/.iob`，因此只有建立独立分片、输出合并及缓存隔离合同后才迁入。已关闭：④MATLAB 旧 1001 点 direct-KDE 与 Python 同网格设置在 2026-08-25 对同一 90 粒子 COMSOL CSV 逐值一致；MATLAB 仅保留非权威可视化，Python 4001 点 canonical 指标是唯一资格/发布 authority。|
