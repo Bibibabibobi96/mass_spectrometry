@@ -111,6 +111,7 @@ class Paper1S2SourceRegenerationTests(unittest.TestCase):
         self.assertIn("base_schedule=resolved_pulse_schedule", prepare)
         self.assertIn("resolved_pulse_schedule = schedule", prepare)
         self.assertIn('screening_specification["time_grid_profile_id"]', prepare)
+        self.assertIn("resolved_schedule_native_rf_grid_v1", prepare)
 
 
 if __name__ == "__main__":

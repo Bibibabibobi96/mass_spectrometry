@@ -3698,17 +3698,17 @@ def prepare_family_source_closure(
             and screening_specification is not None
             and "time_grid_profile_id" not in screening_specification
         ):
-            if cache_miss_policy is None:
-                raise ContractError(
-                    "resolved pre-pulse schedule lacks a registered RF grid identity"
-                )
             # Legacy authoring contracts named an absolute anchor.  Once a
             # resolved schedule becomes authoritative, inherit its registered
-            # RF-grid identity from the execution policy instead of requiring
-            # a second, hand-maintained authoring field.
+            # RF-grid identity from the execution policy when available.  A
+            # valid already-resolved schedule does not need a cache-miss
+            # policy merely to obtain a label: its own immutable schedule is
+            # the timing authority.
             screening_specification = copy.deepcopy(screening_specification)
             screening_specification["time_grid_profile_id"] = (
                 cache_miss_policy["time_grid_profile_id"]
+                if cache_miss_policy is not None
+                else "resolved_schedule_native_rf_grid_v1"
             )
         if screening_specification is None:
             native_rf_steps = int(execution_profile["rf_steps_per_period"])
