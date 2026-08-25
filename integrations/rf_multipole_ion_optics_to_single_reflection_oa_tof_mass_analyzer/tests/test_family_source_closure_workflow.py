@@ -277,26 +277,19 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
         with self.assertRaisesRegex(ContractError, "population differs"):
             _automatic_pulse_population_binding(population)
 
-    def test_dispatch_plan_applies_resource_policy_without_legacy_receipt(self) -> None:
+    def test_dispatch_plan_uses_only_repository_resource_policy_without_legacy_receipt(self) -> None:
         plan = resolve_single_flight_dispatch_plan(
             {
                 "single_flight_time_integration_profile_id": "dt64",
-                "single_flight_batch_memory_policy": {
-                    "reserve_available_memory_bytes": 123,
-                    "memory_safety_numerator": 105,
-                    "memory_safety_denominator": 100,
-                    "cpu_cores_per_batch": 2,
-                    "reserve_cpu_cores": 2,
-                },
             },
             execution_particle_count=8,
             rf_steps_per_period=64,
         )
         self.assertEqual(plan["role"], "simion_repository_dispatch_plan")
         self.assertEqual(plan["estimation"]["kind"], "unknown_resource_profile_bootstrap")
-        self.assertEqual(plan["limits"]["memory_reserve_bytes"], 123)
+        self.assertEqual(plan["limits"]["memory_reserve_bytes"], 0)
         self.assertEqual(plan["limits"]["memory_safety_numerator"], 105)
-        self.assertEqual(plan["limits"]["cpu_cores_per_batch"], 2)
+        self.assertEqual(plan["limits"]["cpu_cores_per_batch"], 1)
 
     def test_dispatch_plan_bootstraps_when_exploration_has_no_memory_receipt(self) -> None:
         plan = resolve_single_flight_dispatch_plan(
@@ -622,13 +615,6 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
     def test_resource_policy_fails_when_measured_profile_cannot_fit(self) -> None:
         policy = {
             "single_flight_time_integration_profile_id": "dt40",
-            "single_flight_batch_memory_policy": {
-                "reserve_available_memory_bytes": 1024**3,
-                "memory_safety_numerator": 105,
-                "memory_safety_denominator": 100,
-                "cpu_cores_per_batch": 2,
-                "reserve_cpu_cores": 2,
-            },
         }
         profile = {
             "resource_identity": {
@@ -652,7 +638,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
         with patch(
             "common.simion.resource_scheduler.available_physical_memory_bytes",
             return_value=12 * 1024**3,
-        ), self.assertRaisesRegex(ContractError, "resource scheduler policy is invalid"):
+        ), self.assertRaisesRegex(ContractError, "resource scheduler planning failed"):
             resolve_single_flight_dispatch_plan(
                 policy, execution_particle_count=5000, rf_steps_per_period=40,
                 resource_profiles=[profile],
@@ -1327,18 +1313,14 @@ $result = Get-PulseTimingOrchestration `
         active = expand_flat_experiment_authoring(load(COMPACT_GAP_FIELD_CAMPAIGN))
         for path in (
             ("single_flight_batch_count",),
-            ("single_flight_batch_memory_policy", "default_batch_count"),
-            ("single_flight_batch_memory_policy", "maximum_batch_count"),
-            ("single_flight_batch_memory_policy", "policy_id"),
+            ("single_flight_batch_memory_policy",),
         ):
             with self.subTest(path=path):
                 candidate = json.loads(json.dumps(active))
                 target = candidate["experiments"][0]
-                for field in path[:-1]:
-                    target = target[field]
-                target[path[-1]] = (
-                    "unconsumed_policy_label" if path[-1] == "policy_id" else 2
-                )
+                target[path[-1]] = 2 if path[-1] == "single_flight_batch_count" else {
+                    "reserve_available_memory_bytes": 1
+                }
                 with self.assertRaises(ContractError):
                     validate_schema(candidate, ACTIVE_CAMPAIGN_SCHEMA)
 

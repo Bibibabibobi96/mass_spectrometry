@@ -95,6 +95,8 @@ class SimionRunnerContractTests(unittest.TestCase):
         self.assertIn("--observed-bootstrap-peak-bytes", source)
         self.assertIn("RESOURCE_CALIBRATION_ONLY", source)
         self.assertIn("& $python @batchArguments | Out-Null", source)
+        self.assertNotIn("maximum_process_tree_working_set_bytes=[int64]", source)
+        self.assertNotIn("$request[$name]=[int]$automaticDispatch.$name", source)
 
     def test_governed_profile_is_the_only_physical_entry(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")

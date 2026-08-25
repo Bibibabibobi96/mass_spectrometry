@@ -431,27 +431,13 @@ def resolve_single_flight_dispatch_plan(
         plan_simion_dispatch,
     )
     profiles = [] if resource_profiles is None else resource_profiles
-    memory_policy = experiment.get("single_flight_batch_memory_policy")
-    if memory_policy is not None and not isinstance(memory_policy, dict):
-        raise ContractError(
-            "single-flight resource scheduler policy is invalid"
-        )
-    if memory_policy is None:
-        return plan_simion_dispatch(request, profiles)
+    # CPU and memory planning is repository policy.  A scientific campaign
+    # can select the physical workload but cannot tune scheduler reserves,
+    # safety factors, or lane counts.
     try:
-        for key in (
-            "reserve_available_memory_bytes",
-            "memory_safety_numerator",
-            "memory_safety_denominator",
-            "cpu_cores_per_batch",
-            "reserve_cpu_cores",
-        ):
-            if key in memory_policy:
-                request[key] = int(memory_policy[key])
-        decision = plan_simion_dispatch(request, profiles)
+        return plan_simion_dispatch(request, profiles)
     except ValueError as error:
-        raise ContractError("single-flight resource scheduler policy is invalid") from error
-    return decision
+        raise ContractError("single-flight resource scheduler planning failed") from error
 
 
 def validate_pre_pulse_time_series_campaign(campaign: dict[str, Any]) -> None:

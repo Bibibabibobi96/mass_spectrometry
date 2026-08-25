@@ -434,13 +434,7 @@
       "properties": {
         "kind": {"const": "automatic"},
         "field_kind": {"enum": ["rf", "electrostatic"]},
-        "independent_particles": {"const": true},
-        "maximum_parallel_batches": {"type": "integer", "minimum": 1},
-        "reserve_available_memory_bytes": {"type": "integer", "minimum": 0},
-        "cpu_cores_per_batch": {"type": "integer", "minimum": 1},
-        "reserve_cpu_cores": {"type": "integer", "minimum": 0},
-        "memory_safety_numerator": {"type": "integer", "minimum": 1},
-        "memory_safety_denominator": {"type": "integer", "minimum": 1}
+        "independent_particles": {"const": true}
       }
     },
     "resource_authorization": {

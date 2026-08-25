@@ -142,12 +142,6 @@ if(-not[string]::IsNullOrWhiteSpace($ResolvedRuntimeProfilePath)){
     if([string]$declaredDispatch.field_kind-ne'rf'){
       throw 'This RF multipole runner only accepts rf resource identity.'
     }
-    foreach($name in @('maximum_parallel_batches','reserve_available_memory_bytes',
-      'cpu_cores_per_batch','reserve_cpu_cores','memory_safety_numerator','memory_safety_denominator')){
-      if($declaredDispatch.PSObject.Properties.Name-contains$name){
-        $automaticDispatch|Add-Member -NotePropertyName $name -NotePropertyValue $declaredDispatch.$name
-      }
-    }
   }
 }
 $campaignSelection=$null
@@ -542,14 +536,7 @@ try{
         particle_count=[int]$sourceMeta.particle_count;independent_particles=$true;
         trajectory_quality_profile_id=("tqual_{0}"-f$TrajectoryQuality);
         time_integration_profile_id=$RuntimeProfileId;
-        rf_steps_per_period=$(if([string]$automaticDispatch.field_kind-eq'rf'){$RfStepsPerPeriod}else{$null});
-        maximum_process_tree_working_set_bytes=[int64](Get-Content -LiteralPath $resolvedResourceBudget -Raw -Encoding UTF8|ConvertFrom-Json).limits.process_tree_working_set_bytes}
-      foreach($name in @('maximum_parallel_batches','reserve_available_memory_bytes',
-        'cpu_cores_per_batch','reserve_cpu_cores','memory_safety_numerator','memory_safety_denominator')){
-        if($automaticDispatch.PSObject.Properties.Name-contains$name){
-          $request[$name]=[int]$automaticDispatch.$name
-        }
-      }
+        rf_steps_per_period=$(if([string]$automaticDispatch.field_kind-eq'rf'){$RfStepsPerPeriod}else{$null})}
       $request|ConvertTo-Json -Depth 5|Set-Content -LiteralPath $dispatchRequest -Encoding UTF8
       $projectRunsRoot=Join-Path $workspaceRoot "artifacts\projects\$ProjectId\runs"
       & $python -m common.simion.resource_profile discover --runs-root $projectRunsRoot --output $resourceProfiles

@@ -114,7 +114,6 @@ function Invoke-ResourceBudgetedProcess {
   }
   if($Environment.Count-gt 0){$startArguments.Environment=$Environment}
   $process=Start-Process @startArguments
-  $limitName=$null
   $resourceCalibrationComplete=$false
   $lastDirectorySampleAt=$null
   while(-not$process.HasExited){
@@ -136,24 +135,10 @@ function Invoke-ResourceBudgetedProcess {
     $usage.minimum_system_available_memory_bytes=$(if($null-eq$usage.minimum_system_available_memory_bytes){
       $availableBytes
     }else{[math]::Min([int64]$usage.minimum_system_available_memory_bytes,$availableBytes)})
-    if($elapsed-gt[double]$limits.wall_clock_seconds){$limitName='wall_clock_seconds'}
-    elseif($treeBytes-gt[int64]$limits.process_tree_working_set_bytes){$limitName='process_tree_working_set_bytes'}
-    elseif($availableBytes-lt[int64]$limits.minimum_system_available_memory_bytes){
-      if(@($limits.warning_only_limit_names) -contains 'minimum_system_available_memory_bytes'){
-        if(-not(@($usage.warning_names) -contains 'minimum_system_available_memory_bytes')){
-          $usage.warning_names=@($usage.warning_names)+'minimum_system_available_memory_bytes'
-        }
-      }else{$limitName='minimum_system_available_memory_bytes'}
-    }
-    elseif($sampleDirectory-and$directoryBytes-gt[int64]$limits.transient_run_directory_bytes){
-      $limitName='transient_run_directory_bytes'
-    }
     Write-ResourceUsage -Usage $usage -Path $UsagePath
-    if($limitName){
-      & taskkill.exe /PID $process.Id /T /F|Out-Null
-      $process.WaitForExit()
-      break
-    }
+    # The scheduler chooses a wave before launch.  Once a solver process is
+    # healthy, this observer records usage only: project contracts cannot turn
+    # a sampled CPU/RAM/disk value into an automatic process termination.
     if($CalibrationDurationSeconds-gt 0-and$elapsed-ge$CalibrationDurationSeconds){
       & taskkill.exe /PID $process.Id /T /F|Out-Null
       $process.WaitForExit()
@@ -163,22 +148,11 @@ function Invoke-ResourceBudgetedProcess {
     Start-Sleep -Milliseconds 500
     $process.Refresh()
   }
-  if(-not$limitName){
-    $usage.wall_clock_seconds=[math]::Round(
-      ([datetimeoffset]::UtcNow-$started).TotalSeconds,3)
-    $directoryBytes=Get-RunDirectoryBytes -RunDir $RunDir
-    $usage.peak_run_directory_bytes=[math]::Max(
-      [int64]$usage.peak_run_directory_bytes,$directoryBytes)
-    if($directoryBytes-gt[int64]$limits.transient_run_directory_bytes){
-      $limitName='transient_run_directory_bytes'
-    }
-  }
-  if($limitName){
-    $usage.status='resource_budget_exceeded';$usage.failure_class='resource_budget_exceeded'
-    $usage.limit_name=$limitName
-    Write-ResourceUsage -Usage $usage -Path $UsagePath
-    return [pscustomobject]@{exit_code=124;resource_budget_exceeded=$true;limit_name=$limitName}
-  }
+  $usage.wall_clock_seconds=[math]::Round(
+    ([datetimeoffset]::UtcNow-$started).TotalSeconds,3)
+  $directoryBytes=Get-RunDirectoryBytes -RunDir $RunDir
+  $usage.peak_run_directory_bytes=[math]::Max(
+    [int64]$usage.peak_run_directory_bytes,$directoryBytes)
   if($resourceCalibrationComplete){
     $usage.status='resource_calibration_complete'
     $usage.failure_class=$null
@@ -237,7 +211,6 @@ function Invoke-ResourceBudgetedProcesses {
     }
     $running+=[pscustomobject]@{name=[string]$specification.name;process=(Start-Process @arguments)}
   }
-  $limitName=$null
   while(@($running|Where-Object{-not$_.process.HasExited}).Count-gt 0){
     $now=[datetimeoffset]::UtcNow
     $elapsed=($now-$started).TotalSeconds
@@ -249,26 +222,11 @@ function Invoke-ResourceBudgetedProcesses {
     $usage.peak_process_tree_working_set_bytes=[math]::Max([int64]$usage.peak_process_tree_working_set_bytes,$treeBytes)
     $usage.peak_run_directory_bytes=[math]::Max([int64]$usage.peak_run_directory_bytes,$directoryBytes)
     $usage.minimum_system_available_memory_bytes=$(if($null-eq$usage.minimum_system_available_memory_bytes){$availableBytes}else{[math]::Min([int64]$usage.minimum_system_available_memory_bytes,$availableBytes)})
-    if($elapsed-gt[double]$limits.wall_clock_seconds){$limitName='wall_clock_seconds'}
-    elseif($treeBytes-gt[int64]$limits.process_tree_working_set_bytes){$limitName='process_tree_working_set_bytes'}
-    elseif($availableBytes-lt[int64]$limits.minimum_system_available_memory_bytes){$limitName='minimum_system_available_memory_bytes'}
-    elseif($directoryBytes-gt[int64]$limits.transient_run_directory_bytes){$limitName='transient_run_directory_bytes'}
     Write-ResourceUsage -Usage $usage -Path $UsagePath
-    if($limitName){
-      foreach($item in $running|Where-Object{-not$_.process.HasExited}){
-        & taskkill.exe /PID $item.process.Id /T /F|Out-Null
-      }
-      break
-    }
     Start-Sleep -Milliseconds 500
     foreach($item in $running){$item.process.Refresh()}
   }
   foreach($item in $running){if(-not$item.process.HasExited){$item.process.WaitForExit()}}
-  if($limitName){
-    $usage.status='resource_budget_exceeded';$usage.failure_class='resource_budget_exceeded';$usage.limit_name=$limitName
-    Write-ResourceUsage -Usage $usage -Path $UsagePath
-    return [pscustomobject]@{resource_budget_exceeded=$true;limit_name=$limitName;processes=@()}
-  }
   $usage.status=$(if(@($running|Where-Object{$_.process.ExitCode-ne 0}).Count-eq 0){'running'}else{'process_failed'})
   Write-ResourceUsage -Usage $usage -Path $UsagePath
   return [pscustomobject]@{resource_budget_exceeded=$false;limit_name=$null;
@@ -288,12 +246,6 @@ function Complete-ResourceUsage {
   $finalBytes=Get-RunDirectoryBytes -RunDir $RunDir
   $usage.final_retained_bytes=$finalBytes
   $usage.peak_run_directory_bytes=[math]::Max([int64]$usage.peak_run_directory_bytes,$finalBytes)
-  if($finalBytes-gt[int64]$budget.limits.compact_final_retained_bytes){
-    $usage.status='resource_budget_exceeded';$usage.failure_class='resource_budget_exceeded'
-    $usage.limit_name='compact_final_retained_bytes'
-    Write-ResourceUsage -Usage $usage -Path $UsagePath
-    return $false
-  }
   if($usage.status-eq'running'){$usage.status='completed'}
   Write-ResourceUsage -Usage $usage -Path $UsagePath
   return $true

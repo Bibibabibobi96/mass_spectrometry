@@ -620,7 +620,7 @@ class ResourceBudgetTests(unittest.TestCase):
                     self.assertNotEqual(rejected.returncode, 0)
                     self.assertIn(expected, rejected.stdout + rejected.stderr)
 
-    def test_watchdog_interrupts_only_its_child_on_wall_clock_limit(self) -> None:
+    def test_observer_does_not_interrupt_a_healthy_child_on_wall_clock_limit(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             budget = root / "budget.json"
@@ -646,7 +646,7 @@ class ResourceBudgetTests(unittest.TestCase):
                 f"$r=Invoke-ResourceBudgetedProcess -ResolvedBudgetPath '{budget}' "
                 f"-RunDir '{root}' -UsagePath '{usage}' -FilePath (Get-Process -Id $PID).Path "
                 "-ArgumentList @('-NoProfile','-Command','Start-Sleep -Seconds 5');"
-                "if(-not$r.resource_budget_exceeded-or$r.exit_code-ne124){exit 3}"
+                "if($r.resource_budget_exceeded-or$r.exit_code-ne0){exit 3}"
             )
             completed = subprocess.run(
                 ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
@@ -660,8 +660,8 @@ class ResourceBudgetTests(unittest.TestCase):
             )
             self.assertEqual(completed.returncode, 0, completed.stderr)
             measured = json.loads(usage.read_text(encoding="utf-8-sig"))
-            self.assertEqual(measured["status"], "resource_budget_exceeded")
-            self.assertEqual(measured["limit_name"], "wall_clock_seconds")
+            self.assertEqual(measured["status"], "running")
+            self.assertIsNone(measured["limit_name"])
 
     def test_time_limited_resource_calibration_terminates_without_budget_failure(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -740,8 +740,8 @@ class ResourceBudgetTests(unittest.TestCase):
                 f"-RunDir '{root}' -UsagePath '{usage}' "
                 "-FilePath (Get-Process -Id $PID).Path "
                 "-ArgumentList @('-NoProfile','-Command','Start-Sleep -Seconds 1');"
-                "if(-not$r.resource_budget_exceeded-or$r.exit_code-ne124-or"
-                "$r.limit_name-ne'transient_run_directory_bytes'-or"
+                "if($r.resource_budget_exceeded-or$r.exit_code-ne0-or"
+                "$null-ne$r.limit_name-or"
                 "$script:directoryMeasurements-ne 2){exit 3}"
             )
             completed = subprocess.run(
@@ -756,10 +756,8 @@ class ResourceBudgetTests(unittest.TestCase):
             )
             self.assertEqual(completed.returncode, 0, completed.stderr)
             measured = json.loads(usage.read_text(encoding="utf-8-sig"))
-            self.assertEqual(measured["status"], "resource_budget_exceeded")
-            self.assertEqual(
-                measured["limit_name"], "transient_run_directory_bytes"
-            )
+            self.assertEqual(measured["status"], "running")
+            self.assertIsNone(measured["limit_name"])
             self.assertEqual(measured["peak_run_directory_bytes"], 2048)
 
     def test_common_runners_reject_free_numerics_before_run_package(self) -> None:

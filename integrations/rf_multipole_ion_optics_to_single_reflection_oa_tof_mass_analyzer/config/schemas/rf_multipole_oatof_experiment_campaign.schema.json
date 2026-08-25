@@ -18,18 +18,7 @@
             "not": {
               "anyOf": [
                 {"required": ["single_flight_batch_count"]},
-                {
-                  "properties": {
-                    "single_flight_batch_memory_policy": {
-                      "anyOf": [
-                        {"required": ["default_batch_count"]},
-                        {"required": ["maximum_batch_count"]},
-                        {"required": ["policy_id"]}
-                      ]
-                    }
-                  },
-                  "required": ["single_flight_batch_memory_policy"]
-                }
+                {"required": ["single_flight_batch_memory_policy"]}
               ]
             }
           }

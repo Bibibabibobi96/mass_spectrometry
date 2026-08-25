@@ -9,7 +9,7 @@
   "active_campaigns": [
     {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_field_matrix_compact_auto_replay_v2.json",
-      "content_sha256": "f2c94e40fb6f8ddbb37d80aa43027f747eb2b57e9a9dc6e652fc713fb530bd56"
+      "content_sha256": "934a8f0796ede3629df687ce14adf828a5f6e165b36e4c2e2abf07b9cdc8535a"
     }
   ]
 }

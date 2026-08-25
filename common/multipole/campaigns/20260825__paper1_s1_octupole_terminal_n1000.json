@@ -38,7 +38,7 @@
     "particle_source_profile_id": "family_mother_sample_v1_n1000",
     "comsol_solver_numerics_profile_id": "baseline_finite_3d",
     "simion_solver_numerics": {"kind": "inline", "numerics_id": "paper1_s1_h15_r015_z020_t160", "values": {"cell_mm_xyz": {"x": 0.15, "y": 0.15, "z": 0.2}, "trajectory_quality": 10, "trajectory": {"rf_steps_per_period": 160, "maximum_global_time_us": 80.0}}},
-    "simion_dispatch": {"kind": "automatic", "field_kind": "rf", "independent_particles": true, "reserve_available_memory_bytes": 107374182, "memory_safety_numerator": 105, "memory_safety_denominator": 100},
+    "simion_dispatch": {"kind": "automatic", "field_kind": "rf", "independent_particles": true},
     "retention_class": "compact",
     "resource_authorization": {"authorized": true, "limits": {"wall_clock_seconds_by_solver": {"comsol": 1800, "simion": 7200}, "transient_run_directory_bytes": 17179869184, "process_tree_working_set_bytes": 8589934592, "minimum_system_available_memory_bytes": 8589934592, "compact_final_retained_bytes": 52428800, "maximum_pa_grid_points": 35000000, "automatic_retry_count": 0}, "full_matrix_authorization": {"authorized": false, "reason": "Only the preregistered Paper 1 S1 source-regeneration row is authorized."}, "budget_exhaustion_result": "Stop without retry and record the exhausted limit."},
     "claim_limit": "N=1000 S1 octupole source-regeneration run for Paper 1 C1. It establishes the current terminal-step upstream handoff and loss classification only; it does not claim focusability, convergence, Candidate, or Formal qualification. The shared SIMION scheduler selects the permitted batch plan from this frozen resource request."

@@ -721,7 +721,6 @@ class TransportCampaignTests(unittest.TestCase):
         values["trajectory"]["maximum_global_time_us"] = 1_000_001.0
         dispatch = {
             "kind": "automatic", "field_kind": "rf", "independent_particles": True,
-            "maximum_parallel_batches": 17,
         }
         campaign["experiments"][0]["simion_dispatch"] = dispatch
         with written_campaign(campaign) as path:
@@ -736,6 +735,15 @@ class TransportCampaignTests(unittest.TestCase):
             )
             self.assertNotIn("execution_batching", selected["solver_numerics"]["simion"]["values"])
             self.assertEqual(selected["simion_dispatch"], dispatch)
+        campaign["experiments"][0]["simion_dispatch"]["maximum_parallel_batches"] = 17
+        with written_campaign(campaign) as path:
+            with self.assertRaisesRegex(ValueError, "invalid multipole transport campaign"):
+                resolve_runtime_selection(
+                    REPO_ROOT,
+                    PROJECT_ID,
+                    campaign_path=path,
+                    experiment_id=EXPERIMENT_ID,
+                )
 
     def test_campaign_accepts_small_positive_exploration_numerics(self) -> None:
         campaign = campaign_fixture()

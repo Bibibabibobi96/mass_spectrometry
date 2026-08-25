@@ -51,10 +51,7 @@
       "simion_dispatch": {
         "kind": "automatic",
         "field_kind": "rf",
-        "independent_particles": true,
-        "reserve_available_memory_bytes": 107374182,
-        "memory_safety_numerator": 105,
-        "memory_safety_denominator": 100
+        "independent_particles": true
       },
       "resource_authorization": {
         "authorized": true,
