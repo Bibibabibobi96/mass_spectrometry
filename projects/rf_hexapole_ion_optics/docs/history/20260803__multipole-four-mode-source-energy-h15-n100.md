@@ -1,6 +1,8 @@
 # 多极杆四模式与初始能量 H15 N=100 工程对照
 
-DOC_STATUS: ARCHIVED_READ_ONLY
+> DOC_STATUS: ARCHIVED_READ_ONLY
+>
+> Historical snapshot: statements are interpreted at the document date; current authority is the applicable active contract and current project/integration documentation.
 
 ## 范围与证据
 

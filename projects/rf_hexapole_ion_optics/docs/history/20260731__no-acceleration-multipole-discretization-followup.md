@@ -1,6 +1,8 @@
 # 无加速多极杆离散跟进
 
-DOC_STATUS: ARCHIVED_READ_ONLY
+> DOC_STATUS: ARCHIVED_READ_ONLY
+>
+> Historical snapshot: statements are interpreted at the document date; current authority is the applicable active contract and current project/integration documentation.
 
 ## 范围与声明边界
 

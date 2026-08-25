@@ -1,6 +1,8 @@
 # 多极杆三种轴向电势模式 H15 N=100 工程对照
 
-DOC_STATUS: ARCHIVED_READ_ONLY
+> DOC_STATUS: ARCHIVED_READ_ONLY
+>
+> Historical snapshot: statements are interpreted at the document date; current authority is the applicable active contract and current project/integration documentation.
 
 日期：2026-07-31；求解器：SIMION 2020；源：四/六/八极杆共同N=100母样本前缀。
 

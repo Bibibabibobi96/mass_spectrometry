@@ -1,6 +1,8 @@
 # 多极杆三模式 N=100 事后描述报告
 
-DOC_STATUS: ARCHIVED_READ_ONLY
+> DOC_STATUS: ARCHIVED_READ_ONLY
+>
+> Historical snapshot: statements are interpreted at the document date; current authority is the applicable active contract and current project/integration documentation.
 
 ## 声明边界
 

@@ -1,6 +1,8 @@
 # 多极杆工程推进18项重分析
 
-DOC_STATUS: ARCHIVED_READ_ONLY
+> DOC_STATUS: ARCHIVED_READ_ONLY
+>
+> Historical snapshot: statements are interpreted at the document date; current authority is the applicable active contract and current project/integration documentation.
 
 ## 目的与证据边界
 

@@ -1,6 +1,8 @@
 # 多极杆无加速与分段加速 H15 对照
 
-DOC_STATUS: ARCHIVED_READ_ONLY
+> DOC_STATUS: ARCHIVED_READ_ONLY
+>
+> Historical snapshot: statements are interpreted at the document date; current authority is the applicable active contract and current project/integration documentation.
 
 日期：2026-07-31
 
