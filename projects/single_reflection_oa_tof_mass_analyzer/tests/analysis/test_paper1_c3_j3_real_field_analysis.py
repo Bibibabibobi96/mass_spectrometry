@@ -30,9 +30,10 @@ class Paper1C3J3RealFieldAnalysisTest(unittest.TestCase):
             writer.writeheader()
             for event in EVENTS:
                 for particle_id, detector_time in detector_ns.items():
+                    event_time = 10.0 if event == "pre_pulse_state" else 10.0 + detector_time / 1000.0
                     writer.writerow({
                         "particle_id": particle_id, "event": event,
-                        "instrument_time_us": 10.0 + detector_time / 1000.0,
+                        "instrument_time_us": event_time,
                     })
         return run
 

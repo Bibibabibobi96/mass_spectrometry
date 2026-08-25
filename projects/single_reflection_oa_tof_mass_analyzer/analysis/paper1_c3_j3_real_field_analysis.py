@@ -45,19 +45,25 @@ def _scale_key(value: float) -> str:
     return f"{value:+.0f}h"
 
 
-def _detector_times_ns(checkpoints: Path, *, pulse_time_us: float) -> dict[int, float]:
-    times: dict[int, float] = {}
+def _local_accelerator_segment_times_ns(checkpoints: Path) -> dict[int, float]:
+    """Return pre-pulse to local-exit elapsed time for particles with both events."""
+    pre_pulse: dict[int, float] = {}
+    local_exit: dict[int, float] = {}
     with checkpoints.open(newline="", encoding="utf-8") as stream:
         for row in csv.DictReader(stream):
-            if row.get("event") != "detector_crossing":
-                continue
             particle_id = int(row["particle_id"])
-            if particle_id in times:
-                raise ValueError(f"duplicate detector event for particle {particle_id}")
-            times[particle_id] = (float(row["instrument_time_us"]) - pulse_time_us) * 1000.0
-    if not times:
-        raise ValueError("checkpoint table has no detector crossings")
-    return times
+            event = row.get("event")
+            target = pre_pulse if event == "pre_pulse_state" else (
+                local_exit if event == "local_accelerator_exit" else None
+            )
+            if target is not None:
+                if particle_id in target:
+                    raise ValueError(f"duplicate {event} for particle {particle_id}")
+                target[particle_id] = float(row["instrument_time_us"])
+    common = set(pre_pulse).intersection(local_exit)
+    if not common:
+        raise ValueError("checkpoint table has no complete pre-pulse to local-exit paths")
+    return {particle_id: (local_exit[particle_id] - pre_pulse[particle_id]) * 1000.0 for particle_id in common}
 
 
 def _event_particle_ids(checkpoints: Path) -> dict[str, set[int]]:
@@ -93,7 +99,7 @@ def _run_observation(scale: float, run_directory: Path) -> dict[str, Any]:
         "summary": summary,
         "census": {event: int(census[event]) for event in EVENTS},
         "pulse_time_us": pulse_time_us,
-        "detector_times_ns": _detector_times_ns(checkpoints, pulse_time_us=pulse_time_us),
+        "local_accelerator_segment_times_ns": _local_accelerator_segment_times_ns(checkpoints),
         "event_particle_ids": event_ids,
     }
 
@@ -121,17 +127,17 @@ def analyze_c3_real_field_platform(
     pulses = {item["pulse_time_us"] for item in observations.values()}
     if len(pulses) != 1:
         raise ValueError("C3 points use different effective pulse times")
-    detector_sets = {scale: set(item["detector_times_ns"]) for scale, item in observations.items()}
-    first = detector_sets[-2.0]
-    if any(ids != first for ids in detector_sets.values()):
-        raise ValueError("C3 points do not retain the same detector cohort")
+    segment_sets = {scale: set(item["local_accelerator_segment_times_ns"]) for scale, item in observations.items()}
+    first = segment_sets[-2.0]
+    if any(ids != first for ids in segment_sets.values()):
+        raise ValueError("C3 points do not retain the same local accelerator cohort")
     topology_stable = all(
         item["event_particle_ids"] == observations[0.0]["event_particle_ids"]
         for item in observations.values()
     )
     particle_ids = np.asarray(sorted(first), dtype=int)
     arrival = {
-        scale: np.asarray([observations[scale]["detector_times_ns"][particle_id] for particle_id in particle_ids])
+        scale: np.asarray([observations[scale]["local_accelerator_segment_times_ns"][particle_id] for particle_id in particle_ids])
         for scale in SCALES
     }
     one_h = (arrival[1.0] - arrival[-1.0]) / 2.0
@@ -148,7 +154,7 @@ def analyze_c3_real_field_platform(
         reference_error = abs(mean_two_h - axis_reference_derivative_ns_per_h) / abs(axis_reference_derivative_ns_per_h)
     gates = {
         "same_effective_pulse": True,
-        "same_detector_cohort": True,
+        "same_local_accelerator_cohort": True,
         "event_topology_stable": topology_stable,
         "paired_step_platform_le_5_percent": platform_error <= 0.05,
         "independent_axis_reference_supplied": reference_error is not None,
@@ -168,10 +174,10 @@ def analyze_c3_real_field_platform(
         },
         "metrics": {
             "effective_pulse_time_us": next(iter(pulses)),
-            "common_detector_particle_count": int(particle_ids.size),
+            "common_local_accelerator_particle_count": int(particle_ids.size),
             "event_census_by_scale": {_scale_key(scale): observations[scale]["census"] for scale in SCALES},
             "event_topology_stable": topology_stable,
-            "central_difference_ns_per_h": {
+            "local_accelerator_segment_central_difference_ns_per_h": {
                 "plus_minus_h_mean": mean_one_h,
                 "plus_minus_2h_mean": mean_two_h,
                 "plus_minus_h_sample_sigma": float(np.std(one_h, ddof=1)),
@@ -183,7 +189,7 @@ def analyze_c3_real_field_platform(
             "gates": gates,
         },
         "claims_supported": [
-            "The pre-registered real-PA C3 five-point family has a stable paired local arrival-time derivative and unchanged observed event topology."
+            "The pre-registered real-PA C3 five-point family has a stable paired pre-pulse-to-local-exit derivative and unchanged observed event topology."
         ],
         "claims_prohibited": [
             "Peak-width, resolution, transmission, optimization, structure-superiority, Candidate, Formal, or multi-mass claims.",

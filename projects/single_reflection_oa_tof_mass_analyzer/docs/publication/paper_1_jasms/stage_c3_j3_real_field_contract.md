@@ -34,7 +34,9 @@ N=100的正式campaign是[`paper1_c3_j3_s1_fixed_pulse_derivative_n100.json`](..
 
 首次`−2h` N=100运行（`20260826_081000__sim__cross__paper1-c3-j3-s1-fixed-pulse-derivative-m2__n100`）的原始三批飞行与checkpoint已完成，但在空间图后处理时被错误要求存在上游source-region diagnostic 而失败。terminal-handoff continuation 的合法起点没有该checkpoint，因此这不是场、粒子事件或物理`FAIL_STOP`；原run按失败证据保留。修复后的重跑必须使用新的run ID，且仍使用同一五点、cohort、固定pulse与母cohort分母。
 
-五点N=100的当前闭合状态是：`−2h`以`20260826_082000__sim__simion__rf-oatof-single-flight-gap0__n100__r02`成功，`−h`的原始N=100行因一个已损坏的前端PA cache generation而在飞行前失败，保留为非物理失败证据；`−h`以`20260826_083000__sim__simion__rf-oatof-single-flight-gap0__n100__r02`重建并重新校验缓存后成功，`0,+h,+2h`三个原登记行也均成功。五点均为100个固定source ID启动、98个在固定pulse时刻合格且98个完整到达探测器，所有登记的下游事件均为98。求解器无关配对分析器`paper1_c3_j3_real_field_analysis.py`报告`±h`与`±2h`中心差分均值分别为`−0.5054074133`与`−0.5054064436 ns/h`，步长平台相对误差`1.9185e-6`；此结果只证明真实PA局部差分和事件拓扑稳定。独立导出轴场积分器尚未提供参考导数，因此当前机器结论仍为`INCONCLUSIVE_REVISE`，不得进入C4。
+五点N=100的当前闭合状态是：`−2h`以`20260826_082000__sim__simion__rf-oatof-single-flight-gap0__n100__r02`成功，`−h`的原始N=100行因一个已损坏的前端PA cache generation而在飞行前失败，保留为非物理失败证据；`−h`以`20260826_083000__sim__simion__rf-oatof-single-flight-gap0__n100__r02`重建并重新校验缓存后成功，`0,+h,+2h`三个原登记行也均成功。五点均为100个固定source ID启动、98个在固定pulse时刻合格且98个完整到达探测器，所有登记的下游事件均为98。
+
+独立轴场积分器只能重算从`pre_pulse_state`到`local_accelerator_exit`的传播，不能与完整 detector TOF 混合比较。因此配对分析器也按同一段计算：`±h`与`±2h`中心差分均值分别为`1.5042704087e-4`与`1.5042704087e-4 ns/h`，步长平台相对误差`1.1568e-11`，98个共同粒子的事件拓扑不变。该结果只证明真实PA局部差分和事件拓扑稳定；独立导出轴场积分器尚未提供同段参考导数，因此当前机器结论仍为`INCONCLUSIVE_REVISE`，不得进入C4。
 
 ## 结论格式
 
