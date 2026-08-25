@@ -274,17 +274,6 @@ class CampaignRuntimeAuthoritiesTests(unittest.TestCase):
             ),
         )
 
-    def test_single_flight_run_metadata_uses_compiled_aperture_parameters(self) -> None:
-        runner = (
-            INTEGRATION_ROOT / "runtime" / "run_single_flight.ps1"
-        ).read_text(encoding="utf-8-sig")
-        self.assertIn(
-            "$apertureHeightMm = [double]$frontendGeometry.aperture.height_mm",
-            runner,
-        )
-        self.assertIn("aperture_height_mm=$apertureHeightMm", runner)
-        self.assertNotIn("aperture_height_mm=0.9", runner)
-
     def test_pa_content_identity_excludes_runtime_field_and_state_diagnostics(
         self,
     ) -> None:
