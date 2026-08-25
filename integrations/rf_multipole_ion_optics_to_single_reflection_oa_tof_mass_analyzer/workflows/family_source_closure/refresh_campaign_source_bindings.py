@@ -100,7 +100,6 @@ def expanded_campaign_semantic_sha256(campaign: dict[str, Any]) -> str:
     semantic.pop("execution_policy", None)
     for experiment in semantic["experiments"]:
         experiment.pop("single_flight_batch_count", None)
-        experiment.pop("single_flight_batch_memory_policy", None)
     return _canonical_sha256(semantic)
 
 

@@ -748,10 +748,7 @@ def _semantic_diff_category(path: tuple[str, ...]) -> str:
         "source_region_diagnostic_profile_id",
     }:
         return "analysis_or_qualification"
-    if top_level in {
-        "single_flight_batch_memory_policy",
-        "execution_strategy",
-    } or any(
+    if top_level == "execution_strategy" or any(
         token in part
         for part in path
         for token in ("grid", "numerical", "trajectory", "time_profile")
