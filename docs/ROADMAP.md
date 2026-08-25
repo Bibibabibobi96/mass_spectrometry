@@ -104,7 +104,7 @@ species、particle identity和lineage之间显式转换并冻结来源。
 |B 可简化|0|无待办|三域 runtime ID 投影与嵌套 changed-gate 路由测试已分别在 `34bc315`、`a40a599` 关闭。|
 |C 建议删除|0|无待办|尚无同时具备零消费者、低风险和行为等价证据的项。|
 |D 防御不足|0|无待办|当前直接 SIMION 路径均是共享 PA/IOB、混合物种单次飞行或 Formal 单次证据；没有证据表明可无损并发。|
-|E 需证据|4|审查中|①集成运行时剩余实现形状测试：先补行为等价后再删；②`prepare.py`/`adapter.ps1` 的大函数：先建立数据流与职责切分证据；③仍串行的 SIMION 路径：只有建立独立分片、输出合并及缓存隔离合同后才迁入调度器；④COMSOL 内部 FWHM/KDE 与 Python canonical 指标：先用受控 golden 输入完成 parity，再收敛为单一指标实现。|
+|E 需证据|4|审查中|①集成运行时剩余实现形状测试：先补行为等价后再删；②`prepare.py`/`adapter.ps1` 的大函数：先建立数据流与职责切分证据；③仍串行的 SIMION 路径：只有建立独立分片、输出合并及缓存隔离合同后才迁入调度器；④COMSOL 内部 FWHM/KDE 与 Python canonical 指标：2026-08-25 已核验回放 artifact 保存了可重算的到达 CSV 与 Python 指标，却没有同一输入的 MATLAB `ksdensity`/直算 FWHM 输出；须先补受控 golden parity，才能收敛为单一指标实现。|
 
 因此当前**已确认但未关闭的候选为 4 项，均为 E**；没有已证实而未处理的 B/C/D 项。此计数不等同
 “全仓审计完成”：每完成一个审查域，新增的已证实候选必须先登记到本表，不能用推测补数。
