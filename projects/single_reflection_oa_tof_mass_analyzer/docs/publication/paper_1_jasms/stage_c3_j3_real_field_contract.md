@@ -32,6 +32,8 @@ N=100中心差分、事件拓扑稳定性和独立轴场积分器比较后才能
 
 N=100的正式campaign是[`paper1_c3_j3_s1_fixed_pulse_derivative_n100.json`](../../../../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/explorations/paper1_c3_j3_s1_fixed_pulse_derivative_n100.json)。其执行cohort由`first_n_transmitted_terminal_handoffs_in_source_particle_id_order`唯一指定，ID序列哈希已冻结；五点共享现有`multipole_handoff_ballistic_centroid_v1`脉冲计划，不含时间窗扫描。
 
+首次`−2h` N=100运行（`20260826_081000__sim__cross__paper1-c3-j3-s1-fixed-pulse-derivative-m2__n100`）的原始三批飞行与checkpoint已完成，但在空间图后处理时被错误要求存在上游source-region diagnostic 而失败。terminal-handoff continuation 的合法起点没有该checkpoint，因此这不是场、粒子事件或物理`FAIL_STOP`；原run按失败证据保留。修复后的重跑必须使用新的run ID，且仍使用同一五点、cohort、固定pulse与母cohort分母。
+
 ## 结论格式
 
 唯一结论为`PASS_CONTINUE`、`FAIL_STOP`或`INCONCLUSIVE_REVISE`，并连同`stage_contract.md`、`stage_manifest.json`、`stage_report.md/json`、`stage_conclusion.md`发布到C3_J3 artifact目录。`PASS_CONTINUE`只授权C4_J3的锁定三维预测设计；它不支持J2、FWHM、传输、结构优越性、工程可制造性或Formal主张。

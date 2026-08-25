@@ -5,6 +5,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from matplotlib import pyplot as plt
 from matplotlib.patches import PathPatch
@@ -30,6 +31,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     _source_region_cross_section,
     _source_region_longitudinal,
     build_accelerator_phase_space_figure,
+    build_figure,
     marker_area,
 )
 
@@ -71,6 +73,69 @@ def analyze(log_path, launched, mass_amu, *args, **kwargs):
 
 
 class SingleFlightAnalysisTests(unittest.TestCase):
+    def test_spatial_figure_marks_terminal_handoff_source_region_not_applicable(self) -> None:
+        initial = pd.DataFrame({
+            "particle_id": [1], "position_x_mm": [0.0],
+            "position_y_mm": [0.0], "position_z_mm": [0.0],
+        })
+        checkpoints = pd.DataFrame({
+            "particle_id": [1] * 4,
+            "event": [
+                "multipole_handoff", "pre_pulse_state",
+                "local_accelerator_exit", "detector_crossing",
+            ],
+            "instrument_time_us": [0.0, 1.0, 2.0, 3.0],
+            "x_mm": [0.0, 0.0, 1.0, 2.0],
+            "y_mm": [0.0, 0.0, 1.0, 2.0],
+            "z_mm": [0.0, 0.0, 1.0, 2.0],
+        })
+        frontend = {
+            "source_exit_center_mm": {"z": 0.0},
+            "aperture": {"width_mm": 1.0, "height_mm": 1.0},
+        }
+        oatof = {
+            "coordinate_convention": {"detector_x": 0.0},
+            "geometry_mm": {"detector_radius": 1.0},
+        }
+        with (
+            mock.patch(
+                "integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.plot_single_flight_spatial_six_panel._rod_cross_section"
+            ),
+            mock.patch(
+                "integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.plot_single_flight_spatial_six_panel._multipole_longitudinal"
+            ),
+            mock.patch(
+                "integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.plot_single_flight_spatial_six_panel._accelerator"
+            ),
+            mock.patch(
+                "integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.plot_single_flight_spatial_six_panel._accelerator_cross_section"
+            ),
+            mock.patch(
+                "integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.plot_single_flight_spatial_six_panel._cloud"
+            ),
+            mock.patch(
+                "integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.plot_single_flight_spatial_six_panel._apply_shared_nice_ticks",
+                return_value=1.0,
+            ),
+            mock.patch(
+                "integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.plot_single_flight_spatial_six_panel._source_region_longitudinal",
+                side_effect=AssertionError("must not draw absent source-region bounds"),
+            ),
+            mock.patch(
+                "integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.plot_single_flight_spatial_six_panel._source_region_cross_section",
+                side_effect=AssertionError("must not draw absent source-region bounds"),
+            ),
+        ):
+            figure, metadata = build_figure(
+                initial, checkpoints, {}, frontend, oatof, None
+            )
+        try:
+            self.assertEqual(
+                metadata["source_region_diagnostic"]["status"], "NOT_APPLICABLE"
+            )
+        finally:
+            plt.close(figure)
+
     def test_analysis_mass_comes_from_frozen_initial_global_state(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "initial.csv"

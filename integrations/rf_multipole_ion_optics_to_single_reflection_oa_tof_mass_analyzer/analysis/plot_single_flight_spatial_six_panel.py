@@ -728,7 +728,7 @@ def build_figure(
     upstream: dict[str, Any],
     frontend: dict[str, Any],
     oatof: dict[str, Any],
-    source_region_diagnostic: dict[str, Any],
+    source_region_diagnostic: dict[str, Any] | None,
 ) -> tuple[plt.Figure, dict[str, Any]]:
     required = {"particle_id", "event", "instrument_time_us", "x_mm", "y_mm", "z_mm"}
     if missing := sorted(required - set(checkpoints.columns)):
@@ -788,14 +788,22 @@ def build_figure(
     ax_c.set(title="C  Grounded connector / oaTOF entrance handoff", xlabel="global y (mm)", ylabel="global z (mm)")
 
     _accelerator(ax_d, oatof, frontend)
-    _source_region_longitudinal(ax_d, source_region_diagnostic, oatof, frontend)
+    if source_region_diagnostic is not None:
+        _source_region_longitudinal(ax_d, source_region_diagnostic, oatof, frontend)
+    else:
+        ax_d.text(
+            0.02, 0.02,
+            "source-region diagnostic: not applicable\nterminal-handoff continuation",
+            transform=ax_d.transAxes, fontsize=7, va="bottom",
+        )
     _cloud(ax_d, prepulse, "x_mm", "z_mm", size=size, label="immediately before pulse", color="#fdae61")
     ax_d.set_aspect("equal", adjustable="box")
     ax_d.set(title="D  Ion distribution in accelerator before pulse", xlabel="global x (mm)", ylabel="global z (mm)")
 
     _cloud(ax_e, accelerator_exit, "x_mm", "y_mm", size=size, label="local accelerator exit", color="#756bb1")
     _accelerator_cross_section(ax_e, oatof, frontend)
-    _source_region_cross_section(ax_e, source_region_diagnostic)
+    if source_region_diagnostic is not None:
+        _source_region_cross_section(ax_e, source_region_diagnostic)
     shared_tick_step = _apply_shared_nice_ticks((ax_d, ax_e))
     ax_e.set_aspect("equal", adjustable="box")
     ax_e.set(title="E  Local accelerator exit plane", xlabel="global x (mm)", ylabel="global y (mm)")
@@ -815,19 +823,19 @@ def build_figure(
         if handles:
             ax.legend(handles, labels, fontsize=7, loc="best", frameon=False)
     figure.suptitle(
-        "Continuous octupole → grounded connector → oaTOF spatial checkpoints\n"
+        "RF multipole → grounded connector → oaTOF spatial checkpoints\n"
         f"small markers preserve geometry visibility; capability={CAPABILITY_ID}",
         fontsize=12,
     )
-    source_bounds = _source_region_bounds(source_region_diagnostic)
-    return figure, {
-        "released": len(initial),
-        "handoff": len(handoff),
-        "pre_pulse": len(prepulse),
-        "accelerator_exit": len(accelerator_exit),
-        "detector": len(detector),
-        "particle_marker_area_pt2": size,
-        "source_region_diagnostic": {
+    source_metadata: dict[str, Any]
+    if source_region_diagnostic is None:
+        source_metadata = {
+            "status": "NOT_APPLICABLE",
+            "reason": "terminal_handoff_continuation_has_no_source_region_checkpoint",
+        }
+    else:
+        source_bounds = _source_region_bounds(source_region_diagnostic)
+        source_metadata = {
             "profile_id": source_region_diagnostic["profile_id"],
             "claim_status": source_region_diagnostic["claim_status"],
             "event": source_region_diagnostic["event"],
@@ -836,7 +844,15 @@ def build_figure(
             "eligible_count": source_region_diagnostic["eligible_count"],
             "selected_count": source_region_diagnostic["selected_count"],
             "occupancy_fraction": source_region_diagnostic["occupancy_fraction"],
-        },
+        }
+    return figure, {
+        "released": len(initial),
+        "handoff": len(handoff),
+        "pre_pulse": len(prepulse),
+        "accelerator_exit": len(accelerator_exit),
+        "detector": len(detector),
+        "particle_marker_area_pt2": size,
+        "source_region_diagnostic": source_metadata,
         "accelerator_shared_tick_step_mm": shared_tick_step,
     }
 
@@ -1200,8 +1216,10 @@ def main() -> int:
     assert args.metadata is not None
     summary = _load(args.output.parent.parent / "summary.json")
     source_region_diagnostic = summary.get("source_region_diagnostic")
-    if not isinstance(source_region_diagnostic, dict):
-        parser.error("summary does not contain the default source-region diagnostic")
+    if source_region_diagnostic is not None and not isinstance(
+        source_region_diagnostic, dict
+    ):
+        parser.error("summary source-region diagnostic is invalid")
     figure, counts = build_figure(
         pd.read_csv(args.initial),
         pd.read_csv(args.checkpoints),
