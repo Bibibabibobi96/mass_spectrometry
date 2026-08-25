@@ -56,9 +56,9 @@ function Initialize-RfSimionPreparedBatch {
             -RedirectStandardOutput $iobStdoutPath -RedirectStandardError $iobStderrPath
         [string]$inspectProcess.ExitCode |
             Set-Content -LiteralPath $iobExitCodePath -Encoding ASCII
-        Get-Content -LiteralPath $iobStdoutPath -Encoding UTF8
+        Get-Content -LiteralPath $iobStdoutPath -Encoding UTF8 | Write-Host
         if ((Get-Item -LiteralPath $iobStderrPath).Length -gt 0) {
-            Get-Content -LiteralPath $iobStderrPath -Encoding UTF8
+            Get-Content -LiteralPath $iobStderrPath -Encoding UTF8 | Write-Host
         }
         if ($inspectProcess.ExitCode -ne 0) {
             throw "SIMION IOB runtime contract failed with exit code $($inspectProcess.ExitCode)."
@@ -192,7 +192,7 @@ function Invoke-RfSimionPreparedBatch {
         -Name 'batch_001' -SimionExe $SimionExe -CandidateDir $CandidateDir -IobPath $IobPath `
         -Fly2Path $Fly2Path -RunConfigLua $RunConfigLua -IobReport $IobReport -LogDir $LogDir `
         -TrajectoryQuality $TrajectoryQuality -RfStepsPerPeriod $RfStepsPerPeriod
-    Invoke-RfSimionFlyWave -ProcessSpecifications @($flySpecification) | Out-Null
+    return Invoke-RfSimionFlyWave -ProcessSpecifications @($flySpecification)
 }
 
 function Invoke-RfSimionCoreRun {
@@ -213,5 +213,5 @@ function Invoke-RfSimionCoreRun {
     )
 
     Initialize-RfSimionPaBasis -SimionExe $SimionExe -CandidateDir $CandidateDir
-    Invoke-RfSimionPreparedBatch @PSBoundParameters
+    return Invoke-RfSimionPreparedBatch @PSBoundParameters
 }
