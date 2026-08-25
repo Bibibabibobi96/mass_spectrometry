@@ -1209,7 +1209,8 @@ try {
     $rfGrid = $prePulseTimeSeries.rf_time_grid
     $upstreamDocument = Get-Content -LiteralPath $upstreamFrozen -Raw -Encoding UTF8 |
       ConvertFrom-Json
-    $motherSourceActualSha256 = (Get-FileHash -LiteralPath $motherSource `
+    $motherSourceActualSha256 = (Get-FileHash -LiteralPath $(if (
+        $isTerminalHandoffContinuation) { $globalSource } else { $motherSource }) `
       -Algorithm SHA256).Hash
     $identityChecks = @(
       @([string]$identity.campaign_id,[string]$runtimePopulation.campaign_id),
