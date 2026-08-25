@@ -1000,7 +1000,7 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
           throw 'SIMION calibrated dispatch plan is invalid.'
         }
         & $python -m common.simion.particle_batching --particle-count ([string]$sourceMeta.particle_count) `
-          --batch-count ([string]$updatedDispatch.waves[0].batch_count) --output $batchPlan
+          --batch-count ([string]$updatedDispatch.waves[0].batch_count) --output $batchPlan | Out-Null
         if($LASTEXITCODE-ne 0){throw 'SIMION calibrated particle batch planning failed.'}
         $updatedBatchPlan=Get-Content -LiteralPath $batchPlan -Raw -Encoding UTF8|ConvertFrom-Json
         Set-SimionBatchesFromPlan -Plan $updatedBatchPlan

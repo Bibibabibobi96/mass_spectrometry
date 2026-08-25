@@ -613,6 +613,10 @@ class SimionRunnerContractTests(unittest.TestCase):
             "--observed-bootstrap-peak-bytes ([string]$probe.observed_peak_process_tree_working_set_bytes) | Out-Null",
             runner,
         )
+        self.assertIn(
+            "--batch-count ([string]$updatedDispatch.waves[0].batch_count) --output $batchPlan | Out-Null",
+            runner,
+        )
         self.assertNotIn("Add-Content -LiteralPath $caseState", runner)
         self.assertIn("Get-ProcessTreeWorkingSetBytes", support)
         self.assertIn("execution_wave", support)
