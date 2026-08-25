@@ -109,7 +109,7 @@ class SimionTransportRunnerSourceTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("EXPLORATION_PARAMETER=PASS", result.stdout)
             source = runner.read_text(encoding="utf-8")
-            self.assertIn("exploration_unqualified", source)
+            self.assertIn("Get-RfSimionNumericsQualification", source)
 
     def test_pwsh_invalid_utf8_error_output_remains_assertable(self) -> None:
         result = subprocess.run(
@@ -301,6 +301,37 @@ class SimionTransportRunnerSourceTests(unittest.TestCase):
                 self.assertIn(message, result.stderr)
             elif message:
                 self.assertIn(message, result.stdout)
+
+    def test_nonbaseline_numerics_are_explicitly_unqualified(self) -> None:
+        command = (
+            ". $env:RF_SIMION_CONFIG_CONTRACT; "
+            "$n=Get-Content $env:RF_NUMERICS_JSON -Raw|ConvertFrom-Json; "
+            "$values=@("
+            "Get-RfSimionNumericsQualification -SolverNumerics $n -RfStepsPerPeriod 40 -TrajectoryQuality 10; "
+            "Get-RfSimionNumericsQualification -SolverNumerics $n -RfStepsPerPeriod 99 -TrajectoryQuality 10; "
+            "Get-RfSimionNumericsQualification -SolverNumerics $n -RfStepsPerPeriod 40 -TrajectoryQuality 11; "
+            "Get-RfSimionNumericsQualification -SolverNumerics $n -RfStepsPerPeriod 40 -TrajectoryQuality 10 -Exploration $true); "
+            "Write-Output ($values -join ',')"
+        )
+        environment = os.environ.copy()
+        environment.update({
+            "RF_SIMION_CONFIG_CONTRACT": str(RUN_CONFIG_CONTRACT),
+            "RF_NUMERICS_JSON": str(SOLVER_NUMERICS),
+        })
+        result = subprocess.run(
+            ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            env=environment,
+            timeout=30,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(
+            "registered,exploration_unqualified,exploration_unqualified,exploration_unqualified",
+            result.stdout,
+        )
 
     def test_full_lua_contract_reports_late_terminate_field_before_launch(self) -> None:
         environment = os.environ.copy()

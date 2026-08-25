@@ -79,6 +79,7 @@ CONFIG_CORE_FUNCTIONS = {
     "Assert-RfSimionEqualLength",
     "Get-RfSimionRequiredProperty",
     "Get-RfSimionRequiredFiniteNumber",
+    "Get-RfSimionNumericsQualification",
     "New-RfSimionCoreRunConfig",
     "ConvertTo-RfSimionLuaLongString",
     "ConvertTo-RfSimionLuaConfig",

@@ -365,11 +365,11 @@ $runConfig.provenance = [ordered]@{
     solver_numerics_contract_sha256 = Get-RunFileSha256 -Path $frozenNumericalContract
     rf_steps_per_period = [int]$coreConfig.rf_steps_per_period
     trajectory_quality = [int]$coreConfig.trajectory_quality
-    numerics_qualification = if ($Exploration -or
-        [int]$coreConfig.rf_steps_per_period -ne [int]$numericalContract.baseline_rf_steps_per_period -or
-        [int]$coreConfig.trajectory_quality -ne [int]$numericalContract.trajectory_quality) {
-        'exploration_unqualified'
-    } else { 'registered' }
+    numerics_qualification = Get-RfSimionNumericsQualification `
+        -SolverNumerics $numericalContract `
+        -RfStepsPerPeriod ([int]$coreConfig.rf_steps_per_period) `
+        -TrajectoryQuality ([int]$coreConfig.trajectory_quality) `
+        -Exploration ([bool]$Exploration)
     rf_steps_override = (
         [int]$coreConfig.rf_steps_per_period -ne
         [int]$numericalContract.baseline_rf_steps_per_period
@@ -435,7 +435,11 @@ Write-RunDirectoryChecksumInventory -Directory $candidateDir -OutputPath $shaPat
 $rootSummary = [ordered]@{
     schema_version=1;role='rf_quadrupole_transport_summary';status='success';mode=$mode
     physical_decision=$physicalDecision
-    numerics_qualification = if ($Exploration) { 'exploration_unqualified' } else { 'registered' }
+    numerics_qualification = Get-RfSimionNumericsQualification `
+        -SolverNumerics $numericalContract `
+        -RfStepsPerPeriod ([int]$coreConfig.rf_steps_per_period) `
+        -TrajectoryQuality ([int]$coreConfig.trajectory_quality) `
+        -Exploration ([bool]$Exploration)
     particles=$expectedParticles;hits=$summary.hits;transmission=$summary.transmission
 }
 $rootSummary | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $runSummary -Encoding UTF8

@@ -126,6 +126,27 @@ function Get-RfSimionRequiredFiniteNumber {
     return $value
 }
 
+function Get-RfSimionNumericsQualification {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$SolverNumerics,
+        [Parameter(Mandatory = $true)][int]$RfStepsPerPeriod,
+        [Parameter(Mandatory = $true)][int]$TrajectoryQuality,
+        [bool]$Exploration = $false
+    )
+
+    if ($Exploration -or
+        $RfStepsPerPeriod -ne [int](Get-RfSimionRequiredFiniteNumber `
+            -Object $SolverNumerics -Property 'baseline_rf_steps_per_period' `
+            -Name 'solver numerics baseline_rf_steps_per_period' -Positive) -or
+        $TrajectoryQuality -ne [int](Get-RfSimionRequiredFiniteNumber `
+            -Object $SolverNumerics -Property 'trajectory_quality' `
+            -Name 'solver numerics trajectory_quality' -Positive)) {
+        return 'exploration_unqualified'
+    }
+    return 'registered'
+}
+
 function New-RfSimionCoreRunConfig {
     [CmdletBinding()]
     param(

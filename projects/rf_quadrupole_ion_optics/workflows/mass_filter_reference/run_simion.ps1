@@ -218,11 +218,11 @@ try {
             solver_numerics_contract_sha256 = Get-RunFileSha256 -Path $frozenNumericalContract
             rf_steps_per_period = [int]$coreConfig.rf_steps_per_period
             trajectory_quality = [int]$coreConfig.trajectory_quality
-            numerics_qualification = if ($Exploration -or
-                [int]$coreConfig.rf_steps_per_period -ne [int]$numericalContract.baseline_rf_steps_per_period -or
-                [int]$coreConfig.trajectory_quality -ne [int]$numericalContract.trajectory_quality) {
-                'exploration_unqualified'
-            } else { 'registered' }
+            numerics_qualification = Get-RfSimionNumericsQualification `
+                -SolverNumerics $numericalContract `
+                -RfStepsPerPeriod ([int]$coreConfig.rf_steps_per_period) `
+                -TrajectoryQuality ([int]$coreConfig.trajectory_quality) `
+                -Exploration ([bool]$Exploration)
             rf_steps_override = (
                 [int]$coreConfig.rf_steps_per_period -ne
                 [int]$numericalContract.baseline_rf_steps_per_period
@@ -315,7 +315,11 @@ try {
         status = 'success'
         mode = $modeName
         physical_decision = $physicalDecision
-        numerics_qualification = if ($Exploration) { 'exploration_unqualified' } else { 'registered' }
+        numerics_qualification = Get-RfSimionNumericsQualification `
+            -SolverNumerics $numericalContract `
+            -RfStepsPerPeriod ([int]$coreConfig.rf_steps_per_period) `
+            -TrajectoryQuality ([int]$coreConfig.trajectory_quality) `
+            -Exploration ([bool]$Exploration)
         functional_gate = [string]$massMetrics.status
         particles = $expectedParticles
         hits = $summary.hits
