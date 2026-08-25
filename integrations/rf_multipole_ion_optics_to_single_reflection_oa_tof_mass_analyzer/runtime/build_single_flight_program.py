@@ -26,6 +26,12 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     validate_pure_lua_component_source,
 )
 
+SOURCE_RELEASE_MODES = (
+    "continuous_frontend",
+    "continuous_frontend_handoff",
+    "pre_pulse_restart",
+)
+
 
 def _load(path: Path) -> dict[str, Any]:
     value = json.loads(path.read_text(encoding="utf-8-sig"))
@@ -360,9 +366,7 @@ def build_successor_program(
         raise ValueError("single-flight canonical particle IDs are invalid")
     if source_release_mode is None:
         source_release_mode = "continuous_frontend"
-    if source_release_mode not in {
-        "continuous_frontend", "continuous_frontend_handoff", "pre_pulse_restart"
-    }:
+    if source_release_mode not in SOURCE_RELEASE_MODES:
         raise ValueError("single-flight source release mode is unsupported")
     rf_enabled = source_release_mode != "pre_pulse_restart"
     if isinstance(rf_steps_per_period, bool) or not isinstance(rf_steps_per_period, int) or rf_steps_per_period <= 0:
@@ -1095,7 +1099,7 @@ def main() -> int:
     parser.add_argument("--rf-steps-per-period", required=True, type=int)
     parser.add_argument(
         "--source-release-mode",
-        choices=("continuous_frontend", "pre_pulse_restart"),
+        choices=SOURCE_RELEASE_MODES,
         default=None,
     )
     parser.add_argument("--terminate-after-pulse", action="store_true")

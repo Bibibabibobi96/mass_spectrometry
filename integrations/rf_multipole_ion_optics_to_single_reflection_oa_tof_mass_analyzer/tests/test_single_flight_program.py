@@ -10,6 +10,7 @@ import unittest
 from pathlib import Path
 
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.build_single_flight_program import (
+    SOURCE_RELEASE_MODES,
     build_successor_program,
     load_initial_state,
     reflectron_fast_adjust_assignments,
@@ -144,6 +145,9 @@ def _minimal_program_contracts() -> tuple[dict[str, object], dict[str, object]]:
 
 
 class SingleFlightProgramTests(unittest.TestCase):
+    def test_terminal_handoff_is_an_advertised_release_mode(self) -> None:
+        self.assertIn("continuous_frontend_handoff", SOURCE_RELEASE_MODES)
+
     def test_reflectron_fast_adjust_assignments_are_python_compiled(self) -> None:
         oatof = {
             "rings": {"stage1_count": 2, "stage2_count": 3},
