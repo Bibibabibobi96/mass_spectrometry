@@ -51,6 +51,13 @@ ATTRIBUTION_COLUMNS = [
     "z_mm", "vx_m_s", "vy_m_s", "vz_m_s", "kinetic_energy_eV",
 ]
 ROW_MAP_COLUMNS = ["simulation_particle_id", "source_particle_id"]
+UPSTREAM_TERMINAL_COLUMNS = [
+    "particle_id", "event", "status", "terminal_reason", "time_us",
+    "elapsed_time_us", "rf_phase_rad", "axial_z_mm", "transverse_x_mm",
+    "transverse_y_mm", "velocity_axial_m_s", "velocity_x_m_s",
+    "velocity_y_m_s", "kinetic_energy_eV", "radial_position_mm",
+    "divergence_angle_deg", "max_rod_radius_mm",
+]
 
 def _file_sha256(path: Path) -> str:
     digest = hashlib.sha256()
@@ -296,6 +303,83 @@ def materialize_pre_pulse_restart(
     return render_pre_pulse_fly2(global_rows), global_rows
 
 
+def materialize_terminal_handoff_continuation(
+    source_path: Path,
+    connection: dict[str, object],
+    *,
+    mass_amu: float,
+    charge_state: int,
+) -> tuple[list[list[str]], list[dict[str, str]], list[dict[str, str]], dict[str, object]]:
+    """Continue only manifest-recorded terminal handoffs into the OA frame.
+
+    This is not a pre-pulse restart: each successful upstream handoff retains
+    its own absolute instrument time and starts the downstream continuous-field
+    trajectory there.  Upstream losses remain in the returned mother-cohort
+    census and never become simulated particles.
+    """
+    if not math.isfinite(mass_amu) or mass_amu <= 0 or charge_state <= 0:
+        raise ValueError("terminal-handoff mass or charge is invalid")
+    with source_path.open(encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle)
+        if reader.fieldnames != UPSTREAM_TERMINAL_COLUMNS:
+            raise ValueError("terminal-handoff source columns differ from the governed upstream contract")
+        all_rows = list(reader)
+    final_by_id: dict[int, dict[str, str]] = {}
+    for row in all_rows:
+        if row["event"] not in {"handoff", "terminal"}:
+            continue
+        particle_id = int(row["particle_id"])
+        if particle_id in final_by_id:
+            raise ValueError("terminal-handoff source has duplicate terminal rows")
+        final_by_id[particle_id] = row
+    if not final_by_id or sorted(final_by_id) != list(range(1, len(final_by_id) + 1)):
+        raise ValueError("terminal-handoff source lacks one final row per contiguous mother particle ID")
+    registration = connection["spatial_registration"]
+    if registration["rotation_upstream_to_downstream"] != [[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]:
+        raise ValueError("terminal-handoff continuation requires the canonical multipole-to-oaTOF rotation")
+    tx, ty, tz = map(float, registration["translation_mm"])
+    ion_rows: list[list[str]] = []
+    global_rows: list[dict[str, str]] = []
+    row_map: list[dict[str, str]] = []
+    loss_ids: list[int] = []
+    for particle_id, row in sorted(final_by_id.items()):
+        transmitted = row["event"] == "handoff" and row["status"] == "transmitted" and row["terminal_reason"] == "none"
+        if not transmitted:
+            loss_ids.append(particle_id)
+            continue
+        local_position = (float(row["transverse_x_mm"]), float(row["transverse_y_mm"]), float(row["axial_z_mm"]))
+        local_velocity = (float(row["velocity_x_m_s"]), float(row["velocity_y_m_s"]), float(row["velocity_axial_m_s"]))
+        x, y, z = local_position[2] + tx, local_position[0] + ty, local_position[1] + tz
+        vx, vy, vz = local_velocity[2], local_velocity[0], local_velocity[1]
+        time_us = float(row["time_us"])
+        if not math.isfinite(time_us) or time_us < 0:
+            raise ValueError("terminal-handoff source clock is invalid")
+        energy = kinetic_energy_ev(mass_amu, vx, vy, vz)
+        azimuth, elevation = encode_simion_accelerator_velocity((vx, vy, vz))
+        ion_rows.append(["0", format(mass_amu, ".17g"), str(charge_state), format(x, ".17g"), format(y, ".17g"), format(z, ".17g"), format(azimuth, ".17g"), format(elevation, ".17g"), format(energy, ".17g"), "1", "3"])
+        global_rows.append({
+            "particle_id": str(particle_id), "instrument_time_us": format(time_us, ".17g"),
+            "mass_amu": format(mass_amu, ".17g"), "charge_state": str(charge_state),
+            "position_x_mm": format(x, ".17g"), "position_y_mm": format(y, ".17g"), "position_z_mm": format(z, ".17g"),
+            "velocity_x_m_s": format(vx, ".17g"), "velocity_y_m_s": format(vy, ".17g"), "velocity_z_m_s": format(vz, ".17g"),
+            "kinetic_energy_eV": format(energy, ".17g"),
+        })
+        row_map.append({"simulation_particle_id": str(len(row_map) + 1), "source_particle_id": str(particle_id)})
+    if not global_rows:
+        raise ValueError("terminal-handoff source has no transmitted particles")
+    receipt = {
+        "role": "rf_oatof_terminal_handoff_continuation_receipt", "schema_version": 1,
+        "source_event": "handoff", "source_status": "transmitted",
+        "source_release_mode": "continuous_frontend_handoff",
+        "coordinate_frame": "oatof_global_cartesian", "clock_basis": "canonical_instrument_time_us",
+        "mother_particle_count": len(final_by_id), "continued_particle_count": len(global_rows),
+        "upstream_loss_count": len(loss_ids), "upstream_loss_particle_ids": loss_ids,
+        "continued_particle_ids": [int(row["particle_id"]) for row in global_rows],
+        "transform": {"rotation_upstream_to_downstream": registration["rotation_upstream_to_downstream"], "translation_mm": [tx, ty, tz]},
+    }
+    return ion_rows, global_rows, row_map, receipt
+
+
 def materialize(
     source_path: Path,
     connection: dict[str, object],
@@ -374,11 +458,15 @@ def main() -> int:
         "--source-release-mode",
         choices=(
             "continuous_frontend",
+            "continuous_frontend_handoff",
             "pre_pulse_restart",
         ),
         default="continuous_frontend",
     )
     parser.add_argument("--pulse-time-us", type=float)
+    parser.add_argument("--handoff-mass-amu", type=float)
+    parser.add_argument("--handoff-charge-state", type=int)
+    parser.add_argument("--handoff-receipt", type=Path)
     args = parser.parse_args()
     connection = json.loads(args.connection.read_text(encoding="utf-8-sig"))
     if args.source_release_mode == "pre_pulse_restart":
@@ -387,9 +475,25 @@ def main() -> int:
         particle_input, global_rows = materialize_pre_pulse_restart(
             args.source, args.pulse_time_us
         )
+        row_map = None
+    elif args.source_release_mode == "continuous_frontend_handoff":
+        if (
+            args.handoff_mass_amu is None
+            or args.handoff_charge_state is None
+            or args.handoff_receipt is None
+        ):
+            raise ValueError("terminal-handoff continuation requires mass, charge, and receipt output")
+        ion_rows, global_rows, row_map, receipt = materialize_terminal_handoff_continuation(
+            args.source, connection, mass_amu=args.handoff_mass_amu,
+            charge_state=args.handoff_charge_state,
+        )
+        args.handoff_receipt.parent.mkdir(parents=True, exist_ok=True)
+        args.handoff_receipt.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
+        particle_input = None
     else:
         ion_rows, global_rows = materialize(args.source, connection)
         particle_input = None
+        row_map = None
     args.particle_input.parent.mkdir(parents=True, exist_ok=True)
     args.global_state.parent.mkdir(parents=True, exist_ok=True)
     if particle_input is not None:
@@ -408,13 +512,10 @@ def main() -> int:
                 handle, fieldnames=ROW_MAP_COLUMNS, lineterminator="\n"
             )
             writer.writeheader()
-            writer.writerows(
-                {
-                    "simulation_particle_id": simulation_id,
-                    "source_particle_id": row["particle_id"],
-                }
+            writer.writerows(row_map if row_map is not None else (
+                {"simulation_particle_id": simulation_id, "source_particle_id": row["particle_id"]}
                 for simulation_id, row in enumerate(global_rows, start=1)
-            )
+            ))
     print(
         "SINGLE_FLIGHT_SOURCE=PASS "
         f"PARTICLES={len(global_rows)} PARTICLE_INPUT={args.particle_input}"

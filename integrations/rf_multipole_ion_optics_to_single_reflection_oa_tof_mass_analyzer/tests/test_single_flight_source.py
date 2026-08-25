@@ -11,7 +11,7 @@ from pathlib import Path
 from common.contracts.file_identity import file_sha256
 from common.contracts.machine_contracts import validate_schema
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.ordered_pre_pulse_subset import materialize_ordered_pre_pulse_subset, ordered_subset_source_particle_ids, validate_ordered_pre_pulse_subset
-from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_source import materialize, materialize_ideal_linear_source, materialize_pre_pulse_restart, render_pre_pulse_fly2
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_source import UPSTREAM_TERMINAL_COLUMNS, materialize, materialize_ideal_linear_source, materialize_pre_pulse_restart, materialize_terminal_handoff_continuation, render_pre_pulse_fly2
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.prepare import _validate_canonical_pulse_restart_state
 
 
@@ -21,6 +21,38 @@ SCHEMA_DIR = Path(__file__).resolve().parents[1] / "config" / "schemas"
 
 
 class SingleFlightSourceTests(unittest.TestCase):
+    def test_terminal_handoff_continuation_preserves_clock_ids_and_upstream_losses(self) -> None:
+        connection = {
+            "spatial_registration": {
+                "rotation_upstream_to_downstream": [[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+                "translation_mm": [-168.61362184380704, 0.0, -61.49423982071021],
+            }
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "terminal.csv"
+            rows = []
+            for particle_id, event, status, reason, time_us, axial in [
+                (1, "handoff", "transmitted", "none", 42.0, 80.6),
+                (2, "terminal", "lost", "acceptance_aperture", 42.1, 80.6),
+                (3, "handoff", "transmitted", "none", 42.2, 80.6),
+            ]:
+                row = {key: "0" for key in UPSTREAM_TERMINAL_COLUMNS}
+                row.update(particle_id=str(particle_id), event=event, status=status, terminal_reason=reason, time_us=str(time_us), axial_z_mm=str(axial), transverse_x_mm="0.2", transverse_y_mm="-0.3", velocity_axial_m_s="2000", velocity_x_m_s="10", velocity_y_m_s="-20")
+                rows.append(row)
+            with source.open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=UPSTREAM_TERMINAL_COLUMNS)
+                writer.writeheader()
+                writer.writerows(rows)
+            ion_rows, global_rows, row_map, receipt = materialize_terminal_handoff_continuation(source, connection, mass_amu=100.0, charge_state=1)
+        self.assertEqual(len(ion_rows), 2)
+        self.assertEqual([row["particle_id"] for row in global_rows], ["1", "3"])
+        self.assertEqual([row["source_particle_id"] for row in row_map], ["1", "3"])
+        self.assertAlmostEqual(float(global_rows[0]["position_x_mm"]), -88.01362184380704)
+        self.assertAlmostEqual(float(global_rows[0]["velocity_x_m_s"]), 2000.0)
+        self.assertEqual([float(row["instrument_time_us"]) for row in global_rows], [42.0, 42.2])
+        self.assertEqual(receipt["mother_particle_count"], 3)
+        self.assertEqual(receipt["upstream_loss_particle_ids"], [2])
+
     def test_uniform_n100_selection_spans_the_full_n1000_mother_width(self) -> None:
         n1 = ordered_subset_source_particle_ids("n1_center_source_id_500_v1")
         prefix = ordered_subset_source_particle_ids(
