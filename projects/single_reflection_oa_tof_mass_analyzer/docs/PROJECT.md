@@ -148,6 +148,19 @@ Candidate唯一公开入口为`../workflows/design_candidate/run_candidate.py`�
    导出接入该 Python 分析器，最后才移除 MATLAB 中决定资格的重复计算。关闭条件是两条链共享同一
    已版本化指标实现或有明确的非权威 GUI 派生物，并以真实 COMSOL golden 证明 FWHM、R、单位、时钟
    与 Formal 判定未退化；不得靠重写历史结果或调宽容差达成。
+5. **JASMS Paper 1证据闭合。** 按
+   [`publication/paper_1_jasms/validation_and_evidence_plan.md`](publication/paper_1_jasms/validation_and_evidence_plan.md)
+   完成全文/专利查重、预注册源分布、条件可聚焦性实现、公平再优化、消融、三质量与三维跨求解器验证；
+   实时缺口只查
+   [`publication/paper_1_jasms/evidence_matrix.md`](publication/paper_1_jasms/evidence_matrix.md)。关闭条件是候选
+   主张通过prior-art gate，预测量能在锁定测试集区分可修正切向失配与不可修正条件厚度，并以受控统计、
+   传输率、峰形尾部、数值收敛和独立三维复核支持；当前Formal结果不自动满足该条件。
+6. **Analytical Chemistry Paper 2新工作。** 只有Paper 1核心诊断与知识产权顺序闭合后，才按
+   [`publication/paper_2_analytical_chemistry/validation_and_evidence_plan.md`](publication/paper_2_analytical_chemistry/validation_and_evidence_plan.md)
+   开展上游条件器、条件器—分析器联合鲁棒设计、样机/实验源测量与应用终点验证。关闭条件是产生不依赖
+   Paper 1数据复用的独立实验资产、可复现工作流和相对于固定分析器基线的应用收益；当前仓库没有为硬件、
+   商业求解器大规模运行或投稿作出授权。
+
 开放任务只写未完成动作和关闭条件。已完成的Candidate bootstrap、路径修复、receipt治理、历史失败
 run和非零变量复验全部冻结在同日PROJECT history快照。
 

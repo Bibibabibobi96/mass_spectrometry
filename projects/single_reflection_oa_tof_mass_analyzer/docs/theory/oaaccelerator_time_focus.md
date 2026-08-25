@@ -1,5 +1,9 @@
 # Wiley–McLaren 型双区正交空间聚焦加速器
 
+> `THEORY_ROLE: FOUNDATIONAL / PROJECT_ORACLE`
+>
+> `PUBLICATION_NOVELTY: NONE_BY_ITSELF`
+
 ## 1. 文档职责
 
 离子带非零初速度且存在实测线性 $z-v_z$ 相关时，使用

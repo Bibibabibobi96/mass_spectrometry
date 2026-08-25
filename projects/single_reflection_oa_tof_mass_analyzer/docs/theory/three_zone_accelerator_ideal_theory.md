@@ -5,6 +5,10 @@
 > `EVIDENCE_LEVEL: FUNCTIONAL / PROVISIONAL`
 >
 > `EXECUTION_SCOPE: SOLVER_FREE_ONE_DIMENSIONAL_IDEAL_FIELD_ONLY`
+>
+> `THEORY_ROLE: FOUNDATIONAL_MULTIZONE_SPECIAL_CASE / PROJECT_ORACLE`
+>
+> `PUBLICATION_NOVELTY: NONE_BY_ITSELF`
 
 ## 1. 职责和资格边界
 
@@ -281,53 +285,17 @@ T4c的 `32,955` 只是离散外层域笛卡尔积的点数：
 它不是性能指标、不是外部文档结论、不是已执行点数，也不是32,955次SIMION/COMSOL运行。T4a/T4b
 足以给出可冻结primary时，默认不执行T4c；只有边界或覆盖不足触发并取得G2人工授权后才可扩展。
 
-### 2026-08-17 canonical solver-free结果
+### 已完成结果的历史边界
 
-canonical链实际执行了`T0,T1,T2,G1,T3,T4a,T4b,G2,T5`，没有执行可选T4c。T2在冻结域和同一
-baseline连接分支内得到的最佳可行二区基准为
-`d1=4.5 mm, l23=15.0 mm, lambda=0.5, DeltaV1=475 V`；其2.2 mm cohort
-`population sigma=0.8159038773341178 ns`、直接
-`FWHM=0.679286964277992 ns`。
+2026-08-17已完成的canonical solver-free链、真实SIMION PA后继、observed-source顺序归因、全部数值、
+run身份和限制已冻结在
+[`20260823__three-zone-completed-results-snapshot.md`](../history/20260823__three-zone-completed-results-snapshot.md)。
+本理论正文不再复制日期化结果。
 
-G2冻结的三区primary为
-`d1=3.25 mm, l23=17.0 mm, lambda=0.30, DeltaV1=250 V`。它的场对比度为
-`2.826764127118471`，尺度化Jacobian条件数为`561.8473678`，尺度化
-`Gamma3=1.12487848e-4`；所有post-root门禁通过，但因`l23=17.0 mm`落在冻结域上界而标记为
-`boundary_limited=true`。这支持冻结域内的primary，不支持向域外外推。
-
-T5在1001点cohort上得到：
-
-| 宽度 | population sigma (ns) | 直接FWHM (ns) |
-|---|---:|---:|
-| 2.2 mm | `0.18240109086706416` | `0.14113517445224488` |
-| 1.0 mm | `0.004970459371531842` | `0.003840889778672363` |
-
-相对最佳可行二区，2.2 mm的sigma和直接FWHM分别改善`77.6443%`和`79.2230%`。primary在
-2.2 mm和1.0 mm上的501/1001/2001点population-sigma最大相对差分别为`0.7647%`和`0.6353%`，
-峰模态均稳定。最终结论为
-`PRIMARY_CONFIRMATION_PASSED_OVER_BEST_TWO_ZONE`，canonical T5 run是
-`20260817_122700__analysis__python__three-zone-t5`。
-
-这些数值仍只是post-pilot、solver-free、一维理想分段场证据，不是工程资格、SIMION/COMSOL/CAD
-结果或当前Formal设计变更。
-
-### 2026-08-17真实SIMION PA后继
-
-冻结四平面和电势不变；successor只把整形环按二区5.1 mm放1个、三区11.9 mm放4个。完整2.2 mm
-N=100从同一N=1000母样本按`ID(k)=1+round(k*999/99)`取样，母ID覆盖1..1000。真实PA得到100/100
-探测、pulse-relative `sigma=0.2035735674 ns`、直接`FWHM=0.2338558848 ns`、质量
-`R=66988.23`、单峰；父run为
-`20260817_235900__sim__cross__three-zone-segmented-rings-real-pa-full-width__n100`。相对理想
-T5，sigma增加约11.61%，直接FWHM增加约65.70%，说明fringe/真实电极主要扩大峰宽和尾部，但没有
-消除三区补偿收益。该后继仍是N=100 Functional/CANDIDATE_ONLY，不是Formal或工程资格。
-
-同一真实PA后续又用经验非线性`z-vz`和逐粒子能谱做了严格配对的横向敏感性。`transverse_collapsed`
-与`full_observed_6d`均100/100探测；恢复完整横向位置与速度方向只使sigma/FWHM增加
-`4.2174%/4.5120%`，而两个经验纵向束臂相对affine理想源的FWHM已放大约10.6—11.0倍。因此当前
-主要差距属于完整纵向源bundle与真实场的组合，不应把它归因于横向展宽，也不能用这一结果反过来修改
-solver-free理论。配对run为
-`20260817_235959__analysis__python__three-zone-observed-transverse-sensitivity__n100`，仍只允许
-`FUNCTIONAL_ONLY`源敏感性声明。
+该历史证据最高仍为100 Th、N=100真实PA或求解器无关post-pilot结论，不改变524 Da Formal，也未完成
+条件源模型、source-weighted受约束重优化、N≥1000、多质量、独立求解器、COMSOL/CAD或工程资格。
+它可以支持提出[`条件相空间可聚焦性`](conditional_phase_space_focusability.md)问题，不能直接支持
+Paper 1投稿结论。
 
 ## 9. 晋级与停止条件
 

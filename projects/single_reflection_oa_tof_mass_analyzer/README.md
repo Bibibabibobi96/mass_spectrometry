@@ -8,10 +8,12 @@
 1. 先读仓库根[`README.md`](../../README.md)。
 2. 再读[`docs/PROJECT.md`](docs/PROJECT.md)。
 3. 修改时间聚焦、场强、电压或轴向长度时，读[`docs/theory/README.md`](docs/theory/README.md)。
-4. 操作COMSOL、SIMION或CAD时，只读相应的
+4. 评估论文主张、证据边界或JASMS/Analytical Chemistry分工时，读
+   [`docs/publication/README.md`](docs/publication/README.md)。
+5. 操作COMSOL、SIMION或CAD时，只读相应的
    [`docs/COMSOL.md`](docs/COMSOL.md)、[`docs/SIMION.md`](docs/SIMION.md)或
    [`docs/CAD.md`](docs/CAD.md)。
-5. 只有追溯旧结论、run ID或失败链时才进入[`docs/history/`](docs/history/)。
+6. 只有追溯旧结论、run ID或失败链时才进入[`docs/history/`](docs/history/)。
 
 2026-07-28以前四份current文档的完整内容已冻结为`docs/history/20260728__pre-document-consolidation-*.md`；
 它们保留全部实施时间线和数值，但不覆盖当前文档。
@@ -81,7 +83,7 @@ single_reflection_oa_tof_mass_analyzer/
 ├─ cad/          # STEP与SolidWorks同步
 ├─ analysis/     # 求解器无关理论、分析和候选编译
 ├─ tests/        # 静态、软件及跨求解器门禁
-└─ docs/         # 当前文档、理论和只读history
+└─ docs/         # 当前文档、理论、投稿边界和只读history
 ```
 
 新运行和未来vNext Formal只写入工作区
@@ -98,7 +100,7 @@ single_reflection_oa_tof_mass_analyzer/
 - SIMION检测器PA是GUI可见数值终止层，不是机械检测器厚度。
 - Program与Data Recording必须同时开启；关闭Program窗口不等于禁用Program。
 - Candidate成功不自动恢复Formal资格，也不授权性能声明或baseline晋升。
-- 理论、机器合同、软件实现和历史各自只维护本层职责，不在README重复状态正文。
+- 理论、投稿主张、机器合同、软件实现和历史各自只维护本层职责，不在README重复状态正文。
 
 ## History索引
 

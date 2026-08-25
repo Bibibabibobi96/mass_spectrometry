@@ -1,5 +1,9 @@
 # oa-TOF 双区正交加速器—二级反射镜纵向耦合
 
+> `THEORY_ROLE: FOUNDATIONAL / PROJECT_ORACLE`
+>
+> `PUBLICATION_NOVELTY: NONE_BY_ITSELF`
+
 ## 1. 文档职责
 
 实测线性 $z-v_z$ 束的实际能量及替代导数 $A_1/A_2$ 由

@@ -1,5 +1,9 @@
 # 单次反射 oa-TOF 二级反射镜等时聚焦参考
 
+> `THEORY_ROLE: FOUNDATIONAL / PROJECT_ORACLE`
+>
+> `PUBLICATION_NOVELTY: NONE_BY_ITSELF`
+
 ## 1. 文档职责
 
 本文定义单次反射 oa-TOF 中二级、分段均匀场反射镜的一维参考模型，包括：

@@ -1,5 +1,9 @@
 # 线性 z–vz 相空间下的 oa-TOF 纵向耦合
 
+> `THEORY_ROLE: KNOWN_PRIOR_ART_CONTEXT / PROJECT_ORACLE`
+>
+> `PUBLICATION_NOVELTY: NONE_BY_ITSELF`
+
 ## 1. 职责与权威边界
 
 本文是“离子进入正交加速器时已有加速方向速度，且该速度与加速坐标线性相关”的公式权威。它扩展
