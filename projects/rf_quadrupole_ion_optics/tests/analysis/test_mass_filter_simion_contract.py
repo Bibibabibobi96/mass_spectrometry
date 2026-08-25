@@ -101,7 +101,7 @@ class MassFilterSimionContractTests(unittest.TestCase):
         self.assertIn("$numericalContract.baseline_rf_steps_per_period", runner)
         self.assertIn("New-RfSimionCoreRunConfig", runner)
         self.assertIn("ConvertTo-RfSimionLuaConfig", runner)
-        self.assertIn("Invoke-RfSimionCoreRun", runner)
+        self.assertIn("Invoke-RfSimionParticleBatchWave", runner)
         self.assertNotIn("$resolved.mode", runner)
         self.assertEqual(
             runner.count("$massResponseCsv = Join-Path $resultDir 'mass-response__simion.csv'"),

@@ -195,6 +195,69 @@ function Invoke-RfSimionPreparedBatch {
     return Invoke-RfSimionFlyWave -ProcessSpecifications @($flySpecification)
 }
 
+function Invoke-RfSimionParticleBatchWave {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$SimionExe,
+        [Parameter(Mandatory = $true)][string]$CandidateDir,
+        [Parameter(Mandatory = $true)][string]$IobPath,
+        [Parameter(Mandatory = $true)][string]$RootFly2Path,
+        [Parameter(Mandatory = $true)][string]$IobBuilderScript,
+        [Parameter(Mandatory = $true)][string]$ProgramSourcePath,
+        [Parameter(Mandatory = $true)][string]$RootRunConfigLua,
+        [Parameter(Mandatory = $true)][string]$InspectScript,
+        [Parameter(Mandatory = $true)][string]$IobReport,
+        [Parameter(Mandatory = $true)][string]$LogDir,
+        [Parameter(Mandatory = $true)][int]$TrajectoryQuality,
+        [Parameter(Mandatory = $true)][int]$RfStepsPerPeriod,
+        [Parameter(Mandatory = $true)][object[]]$BatchRuns,
+        [Parameter(Mandatory = $true)][string]$BatchPlanPath,
+        [Parameter(Mandatory = $true)][string]$PythonExe,
+        [Parameter(Mandatory = $true)][string]$RepositoryRoot
+    )
+
+    if ($BatchRuns.Count -eq 0) { throw 'SIMION particle batch wave requires at least one batch.' }
+    if ($BatchRuns.Count -eq 1) {
+        return Invoke-RfSimionCoreRun -SimionExe $SimionExe -CandidateDir $CandidateDir `
+            -IobPath $IobPath -Fly2Path $RootFly2Path -IobBuilderScript $IobBuilderScript `
+            -ProgramSourcePath $ProgramSourcePath -RunConfigLua $RootRunConfigLua `
+            -InspectScript $InspectScript -IobReport $IobReport -LogDir $LogDir `
+            -TrajectoryQuality $TrajectoryQuality -RfStepsPerPeriod $RfStepsPerPeriod
+    }
+    Initialize-RfSimionPaBasis -SimionExe $SimionExe -CandidateDir $CandidateDir
+    Initialize-RfSimionPreparedBatch -SimionExe $SimionExe -CandidateDir $CandidateDir `
+        -IobPath $IobPath -Fly2Path $RootFly2Path -IobBuilderScript $IobBuilderScript `
+        -ProgramSourcePath $ProgramSourcePath -RunConfigLua $RootRunConfigLua `
+        -InspectScript $InspectScript -IobReport $IobReport -LogDir $LogDir
+    $specifications = @($BatchRuns | ForEach-Object {
+        New-RfSimionFlyProcessSpecification -Name ([string]$_.name) `
+            -SimionExe $SimionExe -CandidateDir $CandidateDir -IobPath ([string]$_.config.iob) `
+            -Fly2Path ([string]$_.config.fly2) -RunConfigLua ([string]$_.lua) -IobReport $IobReport `
+            -LogDir ([string]$_.log_dir) -TrajectoryQuality ([int]$_.config.trajectory_quality) `
+            -RfStepsPerPeriod ([int]$_.config.rf_steps_per_period)
+    })
+    $receipt = @(Invoke-RfSimionFlyWave -ProcessSpecifications $specifications)
+    Push-Location $RepositoryRoot
+    try {
+        foreach ($merge in @(@{output = $BatchRuns[0].merged_state; property = 'state'}, @{output = $BatchRuns[0].merged_trajectory; property = 'trajectory'})) {
+            $arguments = @('-m','common.simion.particle_batching','--merge-rebase-csv','--output',$merge.output)
+            foreach ($batchRun in $BatchRuns) {
+                $arguments += @('--batch-csv',$batchRun.($merge.property),[string]$batchRun.batch.simion_particle_id_offset)
+            }
+            & $PythonExe @arguments | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw 'SIMION shared particle CSV merge failed.' }
+        }
+        $summaryArguments = @('-m','common.simion.particle_batching','--merge-summaries',
+            '--batch-plan',$BatchPlanPath,'--output',$BatchRuns[0].merged_summary)
+        foreach ($batchRun in $BatchRuns) { $summaryArguments += @('--batch-summary',$batchRun.summary) }
+        & $PythonExe @summaryArguments | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw 'SIMION shared summary merge failed.' }
+    } finally {
+        Pop-Location
+    }
+    return $receipt
+}
+
 function Invoke-RfSimionCoreRun {
     [CmdletBinding()]
     param(

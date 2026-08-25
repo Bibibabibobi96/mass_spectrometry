@@ -362,49 +362,16 @@ try {
         $batchRuns += [pscustomobject]@{
             batch = $batch; config = $batchConfig; fly = $batchFly; states = $batchStates
             state = $batchState; trajectory = $batchTrajectory; summary = $batchSummary
-            lua = $batchLua; log_dir = $batchLogDir
+            lua = $batchLua; log_dir = $batchLogDir; name = ('mass_filter_' + $batchIndex)
+            merged_state = $particleStateCsv; merged_trajectory = $trajectoryCsv; merged_summary = $summaryJson
         }
     }
-    if ($batchRuns.Count -eq 1) {
-        $waveReceipt = @(Invoke-RfSimionCoreRun -SimionExe $simion -CandidateDir $candidateDir `
-            -IobPath ([string]$coreConfig.iob) -Fly2Path ([string]$coreConfig.fly2) `
-            -IobBuilderScript $iobBuilder -ProgramSourcePath $programSource -RunConfigLua $runConfigLua `
-            -InspectScript $inspectScript -IobReport $iobReport -LogDir $logDir `
-            -TrajectoryQuality ([int]$coreConfig.trajectory_quality) `
-            -RfStepsPerPeriod ([int]$coreConfig.rf_steps_per_period))
-    } else {
-        Initialize-RfSimionPaBasis -SimionExe $simion -CandidateDir $candidateDir
-        Initialize-RfSimionPreparedBatch -SimionExe $simion -CandidateDir $candidateDir `
-            -IobPath ([string]$coreConfig.iob) -Fly2Path ([string]$coreConfig.fly2) `
-            -IobBuilderScript $iobBuilder -ProgramSourcePath $programSource -RunConfigLua $runConfigLua `
-            -InspectScript $inspectScript -IobReport $iobReport -LogDir $logDir
-        $specifications = @($batchRuns | ForEach-Object {
-            New-RfSimionFlyProcessSpecification -Name ('mass_filter_' + $_.batch.index) `
-                -SimionExe $simion -CandidateDir $candidateDir -IobPath ([string]$_.config.iob) `
-                -Fly2Path ([string]$_.config.fly2) -RunConfigLua $_.lua -IobReport $iobReport `
-                -LogDir $_.log_dir -TrajectoryQuality ([int]$_.config.trajectory_quality) `
-                -RfStepsPerPeriod ([int]$_.config.rf_steps_per_period)
-        })
-        $waveReceipt = @(Invoke-RfSimionFlyWave -ProcessSpecifications $specifications)
-        Push-Location $repoRoot
-        try {
-            foreach ($merge in @(@{output = $particleStateCsv; property = 'state'}, @{output = $trajectoryCsv; property = 'trajectory'})) {
-                $mergeArguments = @('-m','common.simion.particle_batching','--merge-rebase-csv','--output',$merge.output)
-                foreach ($batchRun in $batchRuns) {
-                    $mergeArguments += @('--batch-csv',$batchRun.($merge.property),[string]$batchRun.batch.simion_particle_id_offset)
-                }
-                & $python @mergeArguments | Out-Null
-                if ($LASTEXITCODE -ne 0) { throw 'SIMION mass-filter particle CSV merge failed.' }
-            }
-            $summaryArguments = @('-m','common.simion.particle_batching','--merge-summaries',
-                '--batch-plan',$batchPlan,'--output',$summaryJson)
-            foreach ($batchRun in $batchRuns) { $summaryArguments += @('--batch-summary',$batchRun.summary) }
-            & $python @summaryArguments | Out-Null
-            if ($LASTEXITCODE -ne 0) { throw 'SIMION mass-filter summary merge failed.' }
-        } finally {
-            Pop-Location
-        }
-    }
+    $waveReceipt = @(Invoke-RfSimionParticleBatchWave -SimionExe $simion -CandidateDir $candidateDir `
+        -IobPath ([string]$coreConfig.iob) -RootFly2Path ([string]$coreConfig.fly2) `
+        -IobBuilderScript $iobBuilder -ProgramSourcePath $programSource -RootRunConfigLua $runConfigLua `
+        -InspectScript $inspectScript -IobReport $iobReport -LogDir $logDir `
+        -TrajectoryQuality ([int]$coreConfig.trajectory_quality) -RfStepsPerPeriod ([int]$coreConfig.rf_steps_per_period) `
+        -BatchRuns $batchRuns -BatchPlanPath $batchPlan -PythonExe $python -RepositoryRoot $repoRoot)
 
     $resourceUsage = Join-Path $resultDir 'simion_resource_usage.json'
     $resourceProfile = $null
