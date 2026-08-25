@@ -234,6 +234,7 @@ class SingleFlightProgramTests(unittest.TestCase):
         self.assertIn("actual_instrument_time_us=%.17g", program)
         self.assertNotIn("fraction=(sample_time-p.t)", program)
         self.assertIn("if single_flight_pre_pulse_time_series~=0 then return end", program)
+        self.assertIn("adjustable trajectory_log_enable=1", program)
         invalid = dict(contract, pulse_disabled=False)
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaisesRegex(ValueError, "contract mode differs"):
