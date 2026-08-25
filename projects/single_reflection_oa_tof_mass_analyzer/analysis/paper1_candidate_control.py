@@ -18,6 +18,7 @@ from typing import Any, Mapping
 
 ELECTRODES = ("repeller", "intermediate1", "intermediate2", "exit")
 MOVABLE_PLANES = ("intermediate2", "exit")
+REFLECTRON_CONTROLS = ("u_r1_v", "f_r2_v_per_mm")
 FINITE_DIFFERENCE_SCALES = (-2.0, -1.0, 0.0, 1.0, 2.0)
 
 
@@ -58,6 +59,8 @@ class CandidateControlRequest:
     plane_direction_mm: Mapping[str, float]
     voltage_abs_bounds_v: Mapping[str, float]
     plane_abs_bounds_mm: Mapping[str, float]
+    reflectron_direction: Mapping[str, float]
+    reflectron_abs_bounds: Mapping[str, float]
 
     def validated(self) -> "CandidateControlRequest":
         if not self.request_id or not self.request_id.replace("_", "").isalnum():
@@ -72,16 +75,18 @@ class CandidateControlRequest:
         planes = _mapping(self.plane_direction_mm, keys=MOVABLE_PLANES, label="plane_direction_mm")
         voltage_bounds = _mapping(self.voltage_abs_bounds_v, keys=ELECTRODES, label="voltage_abs_bounds_v")
         plane_bounds = _mapping(self.plane_abs_bounds_mm, keys=MOVABLE_PLANES, label="plane_abs_bounds_mm")
-        if any(value < 0.0 for value in (*voltage_bounds.values(), *plane_bounds.values())):
+        reflectron = _mapping(self.reflectron_direction, keys=REFLECTRON_CONTROLS, label="reflectron_direction")
+        reflectron_bounds = _mapping(self.reflectron_abs_bounds, keys=REFLECTRON_CONTROLS, label="reflectron_abs_bounds")
+        if any(value < 0.0 for value in (*voltage_bounds.values(), *plane_bounds.values(), *reflectron_bounds.values())):
             raise ValueError("control bounds must be non-negative")
         if any(voltage[name] != 0.0 for name in ELECTRODES if name not in self.adjustable_electrodes):
             raise ValueError("a fixed electrode has a nonzero voltage direction")
-        if not any(value != 0.0 for value in voltage.values()) and not any(value != 0.0 for value in planes.values()):
+        if not any(value != 0.0 for value in voltage.values()) and not any(value != 0.0 for value in planes.values()) and not any(value != 0.0 for value in reflectron.values()):
             raise ValueError("local control direction is identically zero")
         return self
 
 
-def _candidate_topology(candidate: Mapping[str, Any]) -> tuple[dict[str, float], dict[str, float]]:
+def _candidate_topology(candidate: Mapping[str, Any]) -> tuple[dict[str, float], dict[str, float], dict[str, float]]:
     if (
         candidate.get("role") != "oatof_three_zone_simion_candidate_resolved"
         or candidate.get("qualification") != "CANDIDATE_ONLY"
@@ -99,7 +104,13 @@ def _candidate_topology(candidate: Mapping[str, Any]) -> tuple[dict[str, float],
         raise ValueError("C3 local control Candidate planes are not ordered")
     if not all(potentials[left] > potentials[right] for left, right in zip(ELECTRODES, ELECTRODES[1:])):
         raise ValueError("C3 local control Candidate potentials are not ordered")
-    return planes, potentials
+    reflectron_raw = candidate.get("reflectron")
+    if not isinstance(reflectron_raw, Mapping):
+        raise ValueError("C3 local control Candidate reflectron is incomplete")
+    reflectron = _mapping(reflectron_raw, keys=REFLECTRON_CONTROLS, label="candidate reflectron")
+    if any(value <= 0.0 for value in reflectron.values()):
+        raise ValueError("C3 local control Candidate reflectron is not physical")
+    return planes, potentials, reflectron
 
 
 def compile_local_control_candidates(
@@ -113,27 +124,35 @@ def compile_local_control_candidates(
     """
 
     request = request.validated()
-    reference_planes, reference_potentials = _candidate_topology(candidate)
+    reference_planes, reference_potentials, reference_reflectron = _candidate_topology(candidate)
     voltage = _mapping(request.voltage_direction_v, keys=ELECTRODES, label="voltage_direction_v")
     plane = _mapping(request.plane_direction_mm, keys=MOVABLE_PLANES, label="plane_direction_mm")
     voltage_bounds = _mapping(request.voltage_abs_bounds_v, keys=ELECTRODES, label="voltage_abs_bounds_v")
     plane_bounds = _mapping(request.plane_abs_bounds_mm, keys=MOVABLE_PLANES, label="plane_abs_bounds_mm")
+    reflectron_direction = _mapping(request.reflectron_direction, keys=REFLECTRON_CONTROLS, label="reflectron_direction")
+    reflectron_bounds = _mapping(request.reflectron_abs_bounds, keys=REFLECTRON_CONTROLS, label="reflectron_abs_bounds")
     variants: list[dict[str, Any]] = []
     for scale in FINITE_DIFFERENCE_SCALES:
         potentials = {name: reference_potentials[name] + scale * voltage[name] for name in ELECTRODES}
         planes = {**reference_planes, **{name: reference_planes[name] + scale * plane[name] for name in MOVABLE_PLANES}}
+        reflectron = {name: reference_reflectron[name] + scale * reflectron_direction[name] for name in REFLECTRON_CONTROLS}
         if any(abs(potentials[name] - reference_potentials[name]) > voltage_bounds[name] + 1e-12 for name in ELECTRODES):
             raise ValueError("C3 voltage perturbation exceeds its pre-registered bound")
         if any(abs(planes[name] - reference_planes[name]) > plane_bounds[name] + 1e-12 for name in MOVABLE_PLANES):
             raise ValueError("C3 plane perturbation exceeds its pre-registered bound")
+        if any(abs(reflectron[name] - reference_reflectron[name]) > reflectron_bounds[name] + 1e-12 for name in REFLECTRON_CONTROLS):
+            raise ValueError("C3 reflectron perturbation exceeds its pre-registered bound")
         if not all(planes[left] < planes[right] for left, right in zip(ELECTRODES, ELECTRODES[1:])):
             raise ValueError("C3 plane perturbation changes event topology")
         if not all(potentials[left] > potentials[right] for left, right in zip(ELECTRODES, ELECTRODES[1:])):
             raise ValueError("C3 voltage perturbation inverts an accelerator field")
+        if any(value <= 0.0 for value in reflectron.values()):
+            raise ValueError("C3 reflectron perturbation is not physical")
         variants.append({
             "scale": scale,
             "variant_id": f"{request.request_id}_{scale:+.0f}h".replace("+", "plus").replace("-", "minus"),
             "accelerator_topology": {"topology_id": "three_zone_accelerator_ideal_v1", "planes_global_z_mm": planes, "potentials_v": potentials},
+            "reflectron": reflectron,
             "requires_pa_rebuild": True,
         })
     semantic = {
@@ -146,6 +165,8 @@ def compile_local_control_candidates(
             "plane_direction_mm": plane,
             "voltage_abs_bounds_v": voltage_bounds,
             "plane_abs_bounds_mm": plane_bounds,
+            "reflectron_direction": reflectron_direction,
+            "reflectron_abs_bounds": reflectron_bounds,
         },
         "scales_h": list(FINITE_DIFFERENCE_SCALES),
         "variants": variants,
