@@ -49,8 +49,8 @@ def validate_runtime_identity(
     layout_profile_id: str,
     architecture_generation_id: str,
     theory_working_point: dict[str, Any] | None = None,
-) -> str:
-    """Fail closed unless all compiled three-zone inputs describe one system."""
+) -> dict[str, str | int]:
+    """Return the identity projection when all compiled three-zone inputs agree."""
 
     try:
         topology_id = _text(candidate, "identities", "topology_id")
@@ -143,23 +143,30 @@ def validate_runtime_identity(
             "Frozen three-zone Candidate plane or potential mapping differs."
         ) from exc
 
-    if theory_working_point is None:
-        return field_id
-    try:
-        theory_matches = (
-            theory_working_point.get("role") == "rf_oatof_theory_working_point"
-            and theory_working_point.get("policy_id")
-            == "source_zvz_three_zone_theory_working_point_v1"
-            and float(_value(geometry, "electrodes_V", "midgrid"))
-            == float(_value(theory_working_point, "reflectron", "stage1_voltage_v"))
-            and float(_value(geometry, "electrodes_V", "backplate"))
-            == float(_value(theory_working_point, "reflectron", "backplate_voltage_v"))
-        )
-    except (KeyError, TypeError, ValueError):
-        theory_matches = False
-    if not theory_matches:
-        raise ValueError("Theory working point and resolved electrode potentials differ.")
-    return field_id
+    if theory_working_point is not None:
+        try:
+            theory_matches = (
+                theory_working_point.get("role") == "rf_oatof_theory_working_point"
+                and theory_working_point.get("policy_id")
+                == "source_zvz_three_zone_theory_working_point_v1"
+                and float(_value(geometry, "electrodes_V", "midgrid"))
+                == float(_value(theory_working_point, "reflectron", "stage1_voltage_v"))
+                and float(_value(geometry, "electrodes_V", "backplate"))
+                == float(_value(theory_working_point, "reflectron", "backplate_voltage_v"))
+            )
+        except (KeyError, TypeError, ValueError):
+            theory_matches = False
+        if not theory_matches:
+            raise ValueError("Theory working point and resolved electrode potentials differ.")
+    return {
+        "schema_version": 1,
+        "role": "rf_oatof_three_zone_runtime_identity",
+        "topology_id": topology_id,
+        "geometry_id": geometry_id,
+        "frontend_electrode_topology_id": frontend_topology_id,
+        "field_profile_id": field_profile_id,
+        "field_id": field_id,
+    }
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -181,7 +188,7 @@ def main() -> None:
     parser.add_argument("--theory-working-point", type=Path)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
-    field_id = validate_runtime_identity(
+    projection = validate_runtime_identity(
         candidate=_load(args.candidate),
         candidate_sha256=args.candidate_sha256,
         geometry=_load(args.geometry),
@@ -200,7 +207,7 @@ def main() -> None:
     )
     if args.output is not None:
         args.output.write_text(
-            json.dumps({"field_id": field_id}, indent=2) + "\n",
+            json.dumps(projection, indent=2) + "\n",
             encoding="utf-8",
         )
 

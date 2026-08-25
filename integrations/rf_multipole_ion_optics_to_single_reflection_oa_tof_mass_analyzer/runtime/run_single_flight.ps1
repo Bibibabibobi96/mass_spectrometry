@@ -453,7 +453,6 @@ try {
   }
   $selectedFieldProfileId = [string]$resolvedRegionField.semantic.canonical_profile_id
   $threeZoneCandidateFrozen = $null
-  $threeZoneCandidateDocument = $null
   if ($hasThreeZoneCandidate) {
     $threeZoneCandidateFrozen = Join-Path $package.input_dir 'three_zone_t5_candidate_resolved.json'
     Copy-RfStableFile -SourceRunRoot $workspaceRoot -SourcePath $ThreeZoneCandidate -Destination $threeZoneCandidateFrozen -Role 'three-zone T5 Candidate resolved input' | Out-Null
@@ -461,7 +460,6 @@ try {
         $ThreeZoneCandidateSha256) {
       throw 'Three-zone T5 Candidate SHA differs.'
     }
-    $threeZoneCandidateDocument = Get-Content -LiteralPath $threeZoneCandidateFrozen -Raw -Encoding UTF8 | ConvertFrom-Json
   }
   $hasGovernedLayout = -not [string]::IsNullOrWhiteSpace($LayoutProfileId)
   $hasGeometry = -not [string]::IsNullOrWhiteSpace($OatofResolvedGeometry)
@@ -731,9 +729,6 @@ try {
         throw 'Theory working point is missing or stale.'
       }
     }
-    $threeZoneTopologyId = [string]$threeZoneCandidateDocument.identities.topology_id
-    $threeZoneGeometryId = [string]$threeZoneCandidateDocument.identities.geometry_id
-    $threeZoneFrontendElectrodeTopologyId = [string]$frontendElectrodeTopology.topology_id
     $threeZoneRuntimeIdentity = Join-Path $package.input_dir `
       'three_zone_runtime_identity.json'
     $threeZoneRuntimeIdentityArguments = @(
@@ -756,11 +751,27 @@ try {
     }
     Invoke-SingleFlightPython -Arguments $threeZoneRuntimeIdentityArguments `
       -Failure 'Frozen three-zone Candidate/runtime identity differs.'
-    $threeZoneFieldId = [string](
+    $threeZoneRuntimeProjection =
       Get-Content -LiteralPath $threeZoneRuntimeIdentity -Raw -Encoding UTF8 |
       ConvertFrom-Json
-    ).field_id
-    if ([string]::IsNullOrWhiteSpace($threeZoneFieldId)) {
+    if ([int]$threeZoneRuntimeProjection.schema_version -ne 1 -or
+        [string]$threeZoneRuntimeProjection.role -ne
+          'rf_oatof_three_zone_runtime_identity') {
+      throw 'Frozen three-zone Candidate/runtime identity differs.'
+    }
+    $threeZoneTopologyId = [string]$threeZoneRuntimeProjection.topology_id
+    $threeZoneGeometryId = [string]$threeZoneRuntimeProjection.geometry_id
+    $threeZoneFrontendElectrodeTopologyId =
+      [string]$threeZoneRuntimeProjection.frontend_electrode_topology_id
+    $selectedFieldProfileId = [string]$threeZoneRuntimeProjection.field_profile_id
+    $threeZoneFieldId = [string]$threeZoneRuntimeProjection.field_id
+    $threeZoneRuntimeIdentityValues = @(
+      $threeZoneTopologyId,$threeZoneGeometryId,
+      $threeZoneFrontendElectrodeTopologyId,$selectedFieldProfileId,$threeZoneFieldId
+    )
+    if (@($threeZoneRuntimeIdentityValues |
+        Where-Object { [string]::IsNullOrWhiteSpace([string]$_) }
+      ).Count -gt 0) {
       throw 'Frozen three-zone Candidate/runtime identity differs.'
     }
   }

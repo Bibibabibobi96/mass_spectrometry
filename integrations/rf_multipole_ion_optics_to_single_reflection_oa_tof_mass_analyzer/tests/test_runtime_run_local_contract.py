@@ -397,7 +397,15 @@ try {{
         }
         self.assertEqual(
             validate_runtime_identity(**arguments),
-            "registered_three_zone_real_field_v2",
+            {
+                "schema_version": 1,
+                "role": "rf_oatof_three_zone_runtime_identity",
+                "topology_id": "registered_three_zone_topology_v2",
+                "geometry_id": "registered_three_zone_geometry_v2",
+                "frontend_electrode_topology_id": "registered_three_zone_frontend_v2",
+                "field_profile_id": "accelerator_real_three_zone_pa_real_reflectron",
+                "field_id": "registered_three_zone_real_field_v2",
+            },
         )
         missing_field_identity = copy.deepcopy(arguments)
         missing_field_identity["configuration"]["accelerator_field_profiles"][0][
