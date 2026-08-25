@@ -172,6 +172,11 @@ def plan_simion_dispatch(
         request.get("memory_safety_denominator", DEFAULT_MEMORY_SAFETY_DENOMINATOR),
         "memory_safety_denominator",
     )
+    process_tree_cap = request.get("maximum_process_tree_working_set_bytes")
+    if process_tree_cap is not None:
+        process_tree_cap = _positive_int(
+            process_tree_cap, "maximum_process_tree_working_set_bytes"
+        )
     processor_count = logical_processors if logical_processors is not None else os.cpu_count()
     if processor_count is None:
         processor_count = 1
@@ -229,6 +234,7 @@ def plan_simion_dispatch(
                 "reserve_cpu_cores": cpu_reserve,
                 "memory_safety_numerator": safety_numerator,
                 "memory_safety_denominator": safety_denominator,
+                "maximum_process_tree_working_set_bytes": process_tree_cap,
             },
             "waves": [{
                 "index": 1, "kind": "bootstrap", "batch_count": 1,
@@ -251,6 +257,14 @@ def plan_simion_dispatch(
             raise ValueError("available memory cannot support one SIMION batch after reserve")
         memory_reason = "largest_count_within_current_available_memory"
     parallelism = min(maximum_batches, cpu_capacity, int(memory_capacity), particles)
+    process_tree_capacity = None
+    if process_tree_cap is not None:
+        process_tree_capacity = process_tree_cap // reserved_peak
+        if process_tree_capacity < 1:
+            raise ValueError(
+                "authorized process-tree cap cannot support one SIMION batch"
+            )
+        parallelism = min(parallelism, process_tree_capacity)
     return {
         "schema_version": 1,
         "role": "simion_repository_dispatch_plan",
@@ -272,6 +286,8 @@ def plan_simion_dispatch(
             "reserve_cpu_cores": cpu_reserve,
             "memory_safety_numerator": safety_numerator,
             "memory_safety_denominator": safety_denominator,
+            "maximum_process_tree_working_set_bytes": process_tree_cap,
+            "process_tree_capacity": process_tree_capacity,
         },
         "waves": [{
             "index": 1, "kind": "scheduled", "batch_count": parallelism,
@@ -444,6 +460,9 @@ def _request_from_dispatch_plan(plan: dict[str, Any]) -> dict[str, Any]:
         "reserve_cpu_cores": limits.get("reserve_cpu_cores"),
         "memory_safety_numerator": limits.get("memory_safety_numerator"),
         "memory_safety_denominator": limits.get("memory_safety_denominator"),
+        "maximum_process_tree_working_set_bytes": limits.get(
+            "maximum_process_tree_working_set_bytes"
+        ),
         **identity,
     }
 

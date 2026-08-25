@@ -150,19 +150,13 @@ function Invoke-ResourceBudgetedProcess {
     }
     Write-ResourceUsage -Usage $usage -Path $UsagePath
     if($limitName){
-      & taskkill.exe /PID $process.Id /T|Out-Null
-      if(-not$process.WaitForExit(5000)){
-        & taskkill.exe /PID $process.Id /T /F|Out-Null
-        $process.WaitForExit()
-      }
+      & taskkill.exe /PID $process.Id /T /F|Out-Null
+      $process.WaitForExit()
       break
     }
     if($CalibrationDurationSeconds-gt 0-and$elapsed-ge$CalibrationDurationSeconds){
-      & taskkill.exe /PID $process.Id /T|Out-Null
-      if(-not$process.WaitForExit(5000)){
-        & taskkill.exe /PID $process.Id /T /F|Out-Null
-        $process.WaitForExit()
-      }
+      & taskkill.exe /PID $process.Id /T /F|Out-Null
+      $process.WaitForExit()
       $resourceCalibrationComplete=$true
       break
     }

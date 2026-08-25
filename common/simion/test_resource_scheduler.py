@@ -254,6 +254,18 @@ class ResourceSchedulerTests(unittest.TestCase):
         self.assertEqual(plan["estimation"]["reserved_peak_bytes"], 11)
         self.assertEqual(plan["waves"][0]["batch_count"], 1)
 
+    def test_authorized_process_tree_cap_bounds_parallelism(self) -> None:
+        profile = {
+            "resource_identity": {"solver": "SIMION", "field_kind": "rf", "rf_steps_per_period": 40},
+            "per_batch_peak_working_set_bytes": 10,
+        }
+        plan = plan_simion_dispatch(
+            self.rf_request(maximum_process_tree_working_set_bytes=22),
+            [profile], available_memory_bytes=100, logical_processors=8,
+        )
+        self.assertEqual(plan["limits"]["process_tree_capacity"], 2)
+        self.assertEqual(plan["waves"][0]["batch_count"], 2)
+
     def test_missing_host_memory_uses_one_non_speculative_batch(self) -> None:
         profile = {
             "resource_identity": {"solver": "SIMION", "field_kind": "rf", "rf_steps_per_period": 40},
