@@ -96,6 +96,12 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
             runner,
         )
 
+    def test_program_builder_optional_restart_context_is_strictmode_safe(self) -> None:
+        runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        initialization = runner.index("$restartContext = $null")
+        optional_argument = runner.index("if ($null -ne $restartContext)")
+        self.assertLess(initialization, optional_argument)
+
     def test_execution_batch_count_and_parallel_memory_gate_are_governed(self) -> None:
         runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
         self.assertIn(

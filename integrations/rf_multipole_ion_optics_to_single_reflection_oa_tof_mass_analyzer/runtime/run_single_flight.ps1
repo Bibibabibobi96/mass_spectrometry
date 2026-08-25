@@ -154,6 +154,11 @@ $simionSolverCacheIdentity = Get-RfSimionSolverCacheIdentity -SimionExe $SimionE
 $isPrePulseTimeSeriesScreening = -not [string]::IsNullOrWhiteSpace(
   $PrePulseTimeSeriesContract
 )
+# The current public single-flight contract does not expose a restart context.
+# Keep this explicit optional value initialized under StrictMode so the Program
+# builder may remain forward-compatible without making ordinary or pre-pulse
+# runs depend on an undeclared variable.
+$restartContext = $null
 if ($isPrePulseTimeSeriesScreening -ne (-not [string]::IsNullOrWhiteSpace(
       $PrePulseTimeSeriesContractSha256))) {
   throw 'Pre-pulse time-series contract path/hash identity is incomplete.'
