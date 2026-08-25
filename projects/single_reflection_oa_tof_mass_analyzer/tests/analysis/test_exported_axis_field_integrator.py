@@ -21,3 +21,16 @@ class ExportedAxisFieldIntegratorTests(unittest.TestCase):
                 z_stop_mm=10.0, mass_th=1.0, charge_state=1, dt_us=1e-4,
             )
         self.assertAlmostEqual(elapsed, 0.455286, delta=2e-5)
+
+    def test_allows_initial_upstream_velocity_before_accelerator_turnaround(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "field.csv"
+            with path.open("w", newline="", encoding="utf-8") as stream:
+                writer = csv.DictWriter(stream, fieldnames=["z_mm", "Ez_V_per_mm"])
+                writer.writeheader()
+                writer.writerows({"z_mm": z / 10, "Ez_V_per_mm": 10.0} for z in range(0, 101))
+            elapsed = integrate_axis_to_plane_us(
+                load_total_axis_field(path), z0_mm=1.0, vz0_mm_per_us=-0.1,
+                z_stop_mm=9.0, mass_th=1.0, charge_state=1, dt_us=1e-5,
+            )
+        self.assertGreater(elapsed, 0.0)

@@ -40,10 +40,11 @@ def integrate_axis_to_plane_us(
     field: AxisField, *, z0_mm: float, vz0_mm_per_us: float, z_stop_mm: float,
     mass_th: float, charge_state: int, dt_us: float = 1.0e-5,
 ) -> float:
-    """Integrate positive-z motion to ``z_stop_mm`` using RK4 with interpolated E.
+    """Integrate to the first positive-z crossing of ``z_stop_mm`` with RK4.
 
     The caller must supply a start and stop within the exported field extent;
-    failure to reach the stop plane is explicit rather than silently clipped.
+    a particle may initially move upstream and turn around in the accelerator.
+    Failure to reach the stop plane is explicit rather than silently clipped.
     """
     if not (field.z_mm[0] <= z0_mm < z_stop_mm <= field.z_mm[-1]):
         raise ValueError("start/stop plane lies outside exported field")
@@ -57,7 +58,10 @@ def integrate_axis_to_plane_us(
     for _ in range(10_000_000):
         if z >= z_stop_mm:
             return elapsed
-        h = min(dt_us, (z_stop_mm - z) / max(v, 1.0e-12))
+        if not field.z_mm[0] <= z <= field.z_mm[-1]:
+            raise RuntimeError("axis integration left exported field before reaching stop plane")
+        h = dt_us
+        previous_z = z
         a1 = acceleration(z); k1z, k1v = v, a1
         a2 = acceleration(z + 0.5 * h * k1z); k2z, k2v = v + 0.5 * h * k1v, a2
         a3 = acceleration(z + 0.5 * h * k2z); k3z, k3v = v + 0.5 * h * k2v, a3
@@ -65,4 +69,9 @@ def integrate_axis_to_plane_us(
         z += h * (k1z + 2 * k2z + 2 * k3z + k4z) / 6
         v += h * (k1v + 2 * k2v + 2 * k3v + k4v) / 6
         elapsed += h
+        if previous_z < z_stop_mm <= z:
+            # The interpolation only localizes the final accepted RK4 step;
+            # convergence is checked by varying ``dt_us`` in the C3 contract.
+            fraction = (z_stop_mm - previous_z) / (z - previous_z)
+            return elapsed - h + h * fraction
     raise RuntimeError("axis integration did not reach stop plane")
