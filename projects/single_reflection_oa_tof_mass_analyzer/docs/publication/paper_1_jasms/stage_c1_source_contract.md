@@ -16,6 +16,13 @@ validation选择。C1分析还会报告条件分箱协方差、残差主模态bo
 - S2分段杆当前的canonical handoff表具有六维状态和时钟，但事件是`canonical_handoff`，不是OA提取前
   检查点。历史COMSOL连接run虽记录了离子分别抵达OA入口的时间，却明确`oa_extraction_pulse=false`且
   `pre_pulse_stage_passed=false`；它不是同一脉冲时刻的快照。两者都不得用于C1模型。
+- 已存在的S2终端分段杆SIMION run
+  `20260731_210400__sim__simion__hex-segmented-oatof-terminal-h15-n100`也不能直接接入：其**实验计划**声明
+  `oatof_shield_terminal`，但实际冻结的`multipole_resolved_design.json`记录
+  `downstream_terminal.terminal_profile_id=oatof_shield_entry_gap1mm`；本集成的连续飞行连接合同要求前者。
+  这是历史计划与实际资产不一致，不是分段杆固有的下游限制。两种端件的接口几何不同，因而不得通过更改
+  selector、文件名或manifest字段把该run升级为连续前端输入。它仍可保留为`DEVELOPMENT_ONLY`的上游分段杆
+  传输记录。
 
 ## C1结论
 
@@ -34,8 +41,9 @@ validation选择后，受限二次模型优于仿射模型，五个残差主模�
 
 ## 唯一后续动作
 
-保持S1只作开发证据；在现有source-to-detector集成链为S2生成一次`pre_pulse_state` checkpoint，至少包含
+保持S1只作开发证据；保持S2的分段杆、RF和轴向电位契约不变，只以`oatof_shield_terminal`端件和当前连接
+几何重新编译其上游连续前端，再在同一source-to-detector run中生成一次`pre_pulse_state` checkpoint，至少包含
 `particle_id,event,instrument_time_us,x/y/z_mm,vx/vy/vz_m_per_s,pulse_eligibility`，并由run manifest冻结。
-不得通过改名现有rod_exit、canonical_handoff或异时OA-entry表绕过此要求。随后按ID哈希冻结四个cohort，
-只用development/validation选择模型并检查条件协方差和模态排序稳定性。C1为`PASS_CONTINUE`前，阶段2及
-任何三维优化均不得启动。
+不得通过改名现有rod_exit、canonical_handoff、异时OA-entry表或`oatof_shield_entry_gap1mm`端件记录绕过此
+要求。随后按ID哈希冻结四个cohort，只用development/validation选择模型并检查条件协方差和模态排序稳定性。
+C1为`PASS_CONTINUE`前，阶段2及任何三维优化均不得启动。
