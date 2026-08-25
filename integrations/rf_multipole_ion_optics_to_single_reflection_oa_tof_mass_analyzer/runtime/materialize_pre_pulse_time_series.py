@@ -33,6 +33,18 @@ TRACE_PATTERN = re.compile(
     r"kinetic_energy_eV=(?P<energy>[-+0-9.eE]+) "
     r"survival_status=(?P<status>\S+)$"
 )
+TERMINAL_PREFIX = "TRACE: pre_pulse_screening_terminal"
+TERMINAL_PATTERN = re.compile(
+    r"^TRACE: pre_pulse_screening_terminal "
+    r"ion=(?P<ion>\d+) particle_id=(?P<particle_id>\d+) "
+    r"instrument_time_us=(?P<instrument_time>[-+0-9.eE]+) "
+    r"x_mm=(?P<x>[-+0-9.eE]+) y_mm=(?P<y>[-+0-9.eE]+) "
+    r"z_mm=(?P<z>[-+0-9.eE]+) "
+    r"vx_mm_per_us=(?P<vx>[-+0-9.eE]+) "
+    r"vy_mm_per_us=(?P<vy>[-+0-9.eE]+) "
+    r"vz_mm_per_us=(?P<vz>[-+0-9.eE]+) "
+    r"terminal_reason=(?P<reason>window_complete|splat)$"
+)
 PROHIBITED_DOWNSTREAM_PATTERN = re.compile(
     r"^TRACE: (?:detector_crossing|diagnostic_return_plane)"
 )
@@ -228,13 +240,15 @@ def _parse_logs(
     *,
     frozen_particle_ids: Sequence[int],
     sample_times_us: Sequence[float],
-) -> tuple[dict[int, list[StateRow]], list[list[int]], int]:
+) -> tuple[dict[int, list[StateRow]], list[list[int]], int, dict[str, list[int]]]:
     if not stdout_paths:
         raise ContractError("at least one SIMION stdout log is required")
     frozen_set = set(frozen_particle_ids)
     rows_by_particle = {particle_id: [] for particle_id in frozen_set}
     alive_by_sample: list[list[int]] = [[] for _ in sample_times_us]
     seen: set[tuple[int, int]] = set()
+    terminal_ids: set[int] = set()
+    terminal_by_reason: dict[str, list[int]] = {"window_complete": [], "splat": []}
     row_count = 0
     for stdout_path in stdout_paths:
         if not stdout_path.is_file():
@@ -247,6 +261,23 @@ def _parse_logs(
                         raise ContractError(
                             "pre-pulse screening emitted a prohibited downstream event"
                         )
+                    if line.startswith(TERMINAL_PREFIX):
+                        match = TERMINAL_PATTERN.fullmatch(line)
+                        if match is None:
+                            raise ContractError("pre-pulse terminal TRACE line is malformed")
+                        particle_id = int(match["particle_id"])
+                        if particle_id not in frozen_set:
+                            raise ContractError("pre-pulse terminal particle identity differs")
+                        if particle_id in terminal_ids:
+                            raise ContractError("pre-pulse terminal particle is duplicated")
+                        numeric = [float(match[name]) for name in (
+                            "instrument_time", "x", "y", "z", "vx", "vy", "vz"
+                        )]
+                        if not all(math.isfinite(value) for value in numeric):
+                            raise ContractError("pre-pulse terminal TRACE contains a non-finite number")
+                        terminal_ids.add(particle_id)
+                        terminal_by_reason[match["reason"]].append(particle_id)
+                        continue
                     if not line.startswith(TRACE_PREFIX):
                         continue
                     match = TRACE_PATTERN.fullmatch(line)
@@ -330,7 +361,11 @@ def _parse_logs(
             )
     for alive_ids in alive_by_sample:
         alive_ids.sort()
-    return rows_by_particle, alive_by_sample, row_count
+    for ids in terminal_by_reason.values():
+        ids.sort()
+    if terminal_ids and terminal_ids != frozen_set:
+        raise ContractError("pre-pulse terminal census differs from the frozen cohort")
+    return rows_by_particle, alive_by_sample, row_count, terminal_by_reason
 
 
 def _write_states_csv(path: Path, rows_by_particle: dict[int, list[StateRow]]) -> None:
@@ -454,7 +489,7 @@ def materialize(
         raise ContractError("pre-pulse frozen particle identity differs")
     cache_keys = _cache_keys(contract, run_config)
 
-    rows_by_particle, alive_by_sample, row_count = _parse_logs(
+    rows_by_particle, alive_by_sample, row_count, terminal_by_reason = _parse_logs(
         [path.resolve() for path in stdout_paths],
         frozen_particle_ids=frozen_ids,
         sample_times_us=sample_times,
@@ -497,6 +532,13 @@ def materialize(
         "sample_times_us": copy.deepcopy(raw_sample_times),
         "particle_count": particle_count,
         "state_row_count": row_count,
+        "terminal_census": {
+            reason: {
+                "count": len(ids),
+                "ordered_particle_ids_sha256": _census_id_sha256(ids),
+            }
+            for reason, ids in terminal_by_reason.items()
+        },
         "sample_census": sample_census,
         "outputs": {"states": states_record},
         "prohibited_outputs": copy.deepcopy(contract["prohibited_outputs"]),
@@ -522,6 +564,10 @@ def materialize(
             "sample_count": len(sample_times),
             "observed_state_rows": row_count,
             "sample_census": sample_census,
+            "terminal_census": {
+                reason: {"count": len(ids)}
+                for reason, ids in terminal_by_reason.items()
+            },
         },
         "pa_cache_dispositions": copy.deepcopy(
             parameters["pa_cache_dispositions"]

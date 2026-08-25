@@ -167,6 +167,15 @@ def _trace(
     )
 
 
+def _terminal(*, ion: int, particle_id: int, reason: str = "window_complete") -> str:
+    return (
+        "TRACE: pre_pulse_screening_terminal "
+        f"ion={ion} particle_id={particle_id} instrument_time_us=3 "
+        "x_mm=0 y_mm=0 z_mm=0 vx_mm_per_us=1 vy_mm_per_us=0 vz_mm_per_us=0 "
+        f"terminal_reason={reason}"
+    )
+
+
 def _write_fixture(
     root: Path,
     *,
@@ -246,6 +255,22 @@ def _materialize(paths: dict[str, object]):
 
 
 class PrePulseTimeSeriesMaterializationTests(unittest.TestCase):
+    def test_terminal_census_retains_physical_loss_without_postselection(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            paths = _write_fixture(
+                Path(directory), particle_ids=[1, 2, 3], sample_times=[1.0],
+                log_groups=[[
+                    _trace(ion=1, particle_id=1, sample_index=1, time_us=1.0),
+                    _terminal(ion=1, particle_id=1),
+                    _terminal(ion=2, particle_id=2, reason="splat"),
+                    _terminal(ion=3, particle_id=3, reason="splat"),
+                ]],
+            )
+            _materialize(paths)
+            receipt = json.loads(paths["receipt"].read_text(encoding="utf-8"))
+            self.assertEqual(receipt["terminal_census"]["window_complete"]["count"], 1)
+            self.assertEqual(receipt["terminal_census"]["splat"]["count"], 2)
+
     def test_retained_contract_is_used_after_short_execution_alias_is_removed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             paths = _write_fixture(

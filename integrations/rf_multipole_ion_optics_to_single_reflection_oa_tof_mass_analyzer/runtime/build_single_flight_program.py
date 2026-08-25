@@ -1008,7 +1008,16 @@ function segment.other_actions()
 end
 function segment.terminate()
   local time=single_flight_instrument_time_us()
-  if single_flight_pre_pulse_time_series~=0 then return end
+  if single_flight_pre_pulse_time_series~=0 then
+    if trajectory_log_enable~=0 then
+      local next_index=single_flight_pre_pulse_next_sample[ion_number] or 1
+      local terminal_reason=next_index>#{screening_sample_table} and 'window_complete' or 'splat'
+      print(string.format('TRACE: pre_pulse_screening_terminal ion=%d particle_id=%d instrument_time_us=%.17g x_mm=%.17g y_mm=%.17g z_mm=%.17g vx_mm_per_us=%.17g vy_mm_per_us=%.17g vz_mm_per_us=%.17g terminal_reason=%s',
+        ion_number,single_flight_canonical_particle_id(),time,ion_px_mm,ion_py_mm,ion_pz_mm,
+        ion_vx_mm,ion_vy_mm,ion_vz_mm,terminal_reason))
+    end
+    return
+  end
   if handoff_pulse_mode==1 and trajectory_log_enable~=0 then
     print(string.format('TRACE: handoff_terminal_raw ion=%d instance=%d instrument_time_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_per_us=%.12g vy_mm_per_us=%.12g vz_mm_per_us=%.12g',
       ion_number,ion_instance,time,ion_px_mm,ion_py_mm,ion_pz_mm,ion_vx_mm,ion_vy_mm,ion_vz_mm))
