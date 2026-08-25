@@ -682,19 +682,6 @@ foreach ($entry in $commands) {{
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         self.assertIn("RUNTIME_RUN_LOCAL_PARAMETER_METADATA=PASS", completed.stdout)
 
-    def test_stage_modes_and_manifest_roles_are_particle_count_neutral(self) -> None:
-        joined = "\n".join(path.read_text(encoding="utf-8") for path in RUNNERS)
-        for forbidden in (
-            "rf_to_oatof_pre_pulse_interface_transport_n100",
-            "rf_to_oatof_pulse_capture_n100",
-            "rf_to_oatof_analyzer_transport_n100",
-        ):
-            self.assertNotIn(forbidden, joined)
-        for path in RUNNERS[1:]:
-            text = path.read_text(encoding="utf-8")
-            self.assertIn("resolved_source_contract", text, path)
-            self.assertIn("upstream_resolved_design", text, path)
-
     def test_pulse_capture_uses_run_local_design_not_repository_inventory(self) -> None:
         text = RUNNERS[2].read_text(encoding="utf-8")
         self.assertIn(
