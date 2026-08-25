@@ -116,6 +116,18 @@ class ArtifactRetentionTests(unittest.TestCase):
         action = json.loads(action_path.read_text(encoding="utf-8"))
         self.assertEqual(action["removed_file_count"], 0)
 
+    def test_large_detector_blind_candidate_receipt_is_required_evidence(self) -> None:
+        self.write_config("compact", None)
+        receipt = self.run / "detector_blind_pulse_timing_candidate_receipt.json"
+        receipt.write_bytes(b"0" * (101 * 1024 * 1024))
+
+        action_path = apply_retention(self.config)
+
+        self.assertTrue(receipt.exists())
+        self.assertEqual(classify_file(receipt), "required_evidence")
+        action = json.loads(action_path.read_text(encoding="utf-8"))
+        self.assertEqual(action["removed_file_count"], 0)
+
     def test_terminal_manifest_blocks_retention_mutation(self) -> None:
         self.write_config("compact", None)
         (self.run / "run_manifest.json").write_text(
