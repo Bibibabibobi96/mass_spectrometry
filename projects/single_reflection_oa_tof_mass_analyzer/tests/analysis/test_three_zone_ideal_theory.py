@@ -31,7 +31,9 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_ideal_t
     derive_three_zone_state,
     evaluate_three_zone_design,
     exact_accelerator_normalized_time,
+    exact_accelerator_normalized_time_from_state,
     exact_total_normalized_time,
+    exact_total_normalized_time_from_state,
     source_energy_per_charge,
 )
 
@@ -109,6 +111,35 @@ class ThreeZoneIdealTheoryTests(unittest.TestCase):
             delta=1e-15,
         )
         self.assertLess(source.chi_center_sqrt_v, 0.0)
+
+    def test_independent_state_oracle_matches_affine_manifold(self) -> None:
+        source = self.source()
+        outer = self.outer()
+        inner = self.candidate()
+        state = derive_three_zone_state(source, outer, inner.eta)
+        derivatives = compute_time_derivatives(source, state, self.reflectron(), inner)
+        positions = np.linspace(source.center_x_mm - 0.2, source.center_x_mm + 0.2, 7)
+        chi = source.chi(positions)
+        self.assertTrue(np.allclose(
+            exact_accelerator_normalized_time(
+                source, state, positions, derivatives.focus_drift_after_exit_mm
+            ),
+            exact_accelerator_normalized_time_from_state(
+                state, positions, chi, derivatives.focus_drift_after_exit_mm
+            ),
+            rtol=0.0, atol=1e-14,
+        ))
+        self.assertTrue(np.allclose(
+            exact_total_normalized_time(
+                source, state, self.reflectron(), inner, positions,
+                derivatives.focus_drift_after_exit_mm,
+            ),
+            exact_total_normalized_time_from_state(
+                state, self.reflectron(), inner, positions, chi,
+                derivatives.focus_drift_after_exit_mm,
+            ),
+            rtol=0.0, atol=1e-14,
+        ))
 
         state = derive_three_zone_state(source, self.outer(), self.candidate().eta)
         drift = compute_time_derivatives(

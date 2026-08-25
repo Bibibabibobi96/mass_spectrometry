@@ -487,7 +487,34 @@ def exact_accelerator_normalized_time(
 
     x_values = np.asarray(x_mm, dtype=float)
     chi = np.asarray(source.chi(x_values), dtype=float)
-    energy = np.asarray(source_energy_per_charge(source, state, x_values), dtype=float)
+    return exact_accelerator_normalized_time_from_state(
+        state, x_values, chi, focus_drift_mm
+    )
+
+
+def exact_accelerator_normalized_time_from_state(
+    state: ThreeZoneState,
+    x_mm: float | NDArray[np.float64],
+    chi_sqrt_v: float | NDArray[np.float64],
+    focus_drift_mm: float,
+) -> float | NDArray[np.float64]:
+    """Return exact accelerator time for independently specified axial states.
+
+    ``x_mm`` is the local accelerator coordinate and ``chi_sqrt_v`` is the
+    signed axial velocity expressed as ``v_z*sqrt((m/q)/2)``.  This is the
+    same ideal-field formula used by :func:`exact_accelerator_normalized_time`,
+    but keeps a conditional velocity residual independent of the fitted source
+    manifold.  It is therefore the required exact oracle boundary for C2's
+    axial residual test; it is not a three-dimensional trajectory model.
+    """
+
+    x_values = np.asarray(x_mm, dtype=float)
+    chi = np.asarray(chi_sqrt_v, dtype=float)
+    try:
+        x_values, chi = np.broadcast_arrays(x_values, chi)
+    except ValueError as error:
+        raise TheoryDomainError("x_mm and chi_sqrt_v cannot be broadcast") from error
+    energy = state.repeller_v - state.field1_v_per_mm * x_values + chi**2
     if np.any(energy <= state.grid1_v):
         raise TheoryDomainError("source cohort cannot cross accelerator grid1")
     term = (
@@ -514,13 +541,41 @@ def exact_total_normalized_time(
     """Return exact source-to-detector normalized TOF for source coordinates."""
 
     x_values = np.asarray(x_mm, dtype=float)
-    energy = np.asarray(source_energy_per_charge(source, state, x_values), dtype=float)
+    chi = np.asarray(source.chi(x_values), dtype=float)
+    return exact_total_normalized_time_from_state(
+        state, reflectron, inner, x_values, chi, focus_drift_mm
+    )
+
+
+def exact_total_normalized_time_from_state(
+    state: ThreeZoneState,
+    reflectron: ReflectronGeometry,
+    inner: InnerSolution,
+    x_mm: float | NDArray[np.float64],
+    chi_sqrt_v: float | NDArray[np.float64],
+    focus_drift_mm: float,
+) -> float | NDArray[np.float64]:
+    """Return exact source-to-detector time for independent axial states.
+
+    The function deliberately shares the accelerator and reflectron equations
+    with the fitted-manifold oracle.  It only removes the otherwise implicit
+    relation ``chi(x)`` so an observed conditional residual can be perturbed
+    without changing its conditional coordinate.
+    """
+
+    x_values = np.asarray(x_mm, dtype=float)
+    chi = np.asarray(chi_sqrt_v, dtype=float)
+    try:
+        x_values, chi = np.broadcast_arrays(x_values, chi)
+    except ValueError as error:
+        raise TheoryDomainError("x_mm and chi_sqrt_v cannot be broadcast") from error
+    energy = state.repeller_v - state.field1_v_per_mm * x_values + chi**2
     if np.any(energy <= inner.stage1_voltage_drop_v):
         raise TheoryDomainError("reflectron stage1 voltage reaches the source energy")
     field1 = inner.stage1_voltage_drop_v / reflectron.stage1_length_mm
     accelerator = np.asarray(
-        exact_accelerator_normalized_time(
-            source, state, x_values, focus_drift_mm
+        exact_accelerator_normalized_time_from_state(
+            state, x_values, chi, focus_drift_mm
         ),
         dtype=float,
     )

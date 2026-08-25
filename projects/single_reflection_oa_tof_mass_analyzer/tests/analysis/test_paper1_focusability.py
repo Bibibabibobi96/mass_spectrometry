@@ -24,6 +24,18 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.paper1_focusabilit
     evaluate_focusability,
     fit_source_condition_model,
     load_frozen_pre_pulse_source,
+    stack_focusability_problems,
+)
+from projects.single_reflection_oa_tof_mass_analyzer.analysis.paper1_c2_axial_oracle import (
+    AxialC2Design,
+    load_c2_axial_source,
+    run_axial_c2_screen,
+)
+from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_ideal_theory import (
+    AffineSource,
+    InnerSolution,
+    OuterGeometry,
+    ReflectronGeometry,
 )
 
 
@@ -90,6 +102,37 @@ class Paper1FocusabilityTest(unittest.TestCase):
         self.assertAlmostEqual(result.constraint_residual_norm, 0.0)
         self.assertLess(result.predicted_conditional_variance, result.initial_conditional_variance)
         self.assertIn("lower", result.active_constraints)
+
+    def test_stacked_bins_preserve_shared_constraints_and_weights(self) -> None:
+        bins = tuple(
+            FocusabilityProblem(
+                time_gradient=np.array([gradient]),
+                design_response=np.array([[1.0, 1.0]]),
+                source_factor=np.array([[factor]]),
+                constraint_jacobian=np.array([[1.0, 0.0]]),
+                parameter_scale=np.ones(2),
+                rank_relative_tolerance=1e-10,
+            )
+            for gradient, factor in ((2.0, 1.0), (4.0, 2.0))
+        )
+        stacked = stack_focusability_problems(bins)
+        result = evaluate_focusability(stacked)
+        self.assertEqual(result.effective_rank, 1)
+        self.assertAlmostEqual(result.constraint_residual_norm, 0.0)
+        self.assertLess(result.predicted_conditional_variance, result.initial_conditional_variance)
+
+    def test_fully_constrained_problem_reports_zero_control_not_failure(self) -> None:
+        result = evaluate_focusability(FocusabilityProblem(
+            time_gradient=np.array([1.0]), design_response=np.array([[1.0, 2.0]]),
+            source_factor=np.eye(1), constraint_jacobian=np.eye(2),
+            parameter_scale=np.ones(2), rank_relative_tolerance=1e-10,
+        ))
+        self.assertEqual(result.eta.size, 0)
+        self.assertEqual(result.null_space.shape, (2, 0))
+        self.assertAlmostEqual(
+            result.predicted_conditional_variance,
+            result.initial_conditional_variance,
+        )
 
     def test_rejects_duplicate_particle_identifiers(self) -> None:
         with self.assertRaisesRegex(ValueError, "unique"):
@@ -195,6 +238,27 @@ class Paper1FocusabilityTest(unittest.TestCase):
             second.write_text(json.dumps(assessment("S1")), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "distinct"):
                 assess_c1_stage(first_path=first, second_path=second)
+
+    def test_c2_axial_screen_uses_only_source_state_and_locked_cohort(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state_path, assessment_path = root / "states.csv", root / "assessment.json"
+            fields = ["particle_id", "event", "sample_index", "instrument_time_us", "x_mm", "y_mm", "z_mm", "vx_mm_per_us", "vy_mm_per_us", "vz_mm_per_us", "kinetic_energy_eV", "survival_status"]
+            with state_path.open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=fields)
+                writer.writeheader()
+                for identifier in range(1, 241):
+                    z = -61.0 + (identifier - 120) / 200.0
+                    writer.writerow({"particle_id": identifier, "event": "pre_pulse_time_series_state", "sample_index": 1, "instrument_time_us": 1.0, "x_mm": 0.0, "y_mm": 0.0, "z_mm": z, "vx_mm_per_us": 4.0, "vy_mm_per_us": 0.0, "vz_mm_per_us": 0.01 + 0.0001 * z + (identifier % 5) * 1e-5, "kinetic_energy_eV": 10.0, "survival_status": "alive"})
+            assessment_path.write_text(json.dumps({"qualification": "DETECTOR_BLIND_SOURCE_ONLY", "source_id": "synthetic", "anchor": {"time_series_sample_index": 1}, "state_table": {"path": str(state_path)}, "selected_model": {"degree": 1}, "cohort": {"salt": "c2-test"}}), encoding="utf-8")
+            source = load_c2_axial_source(assessment_path=assessment_path, mass_to_charge_th=100.0, release_position_mm=1.498375640839315)
+            design_source = AffineSource.from_velocity(mass_to_charge_th=100.0, center_x_mm=1.498375640839315, center_velocity_m_per_s=-2.9, velocity_slope_m_per_s_per_mm=228.0)
+            design = AxialC2Design(design_source, OuterGeometry(3.25, 17.0, 0.3, 250.0, 2000.0), ReflectronGeometry(120.0, 96.1563, 600.0, 600.0), InnerSolution(1701.7426470171715, 9.880402594968652, -1.0391326394747527), True, np.array([50.0, 1.0, 0.2]))
+            result = run_axial_c2_screen(source, design)
+            self.assertEqual(result["architecture"], "three_zone")
+            self.assertGreater(result["locked_test_count"], 0)
+            self.assertEqual(result["weighted"]["prediction"]["effective_rank"], 1)
+            self.assertEqual(set(result["directions"]), {"improve", "zero", "worsen"})
 
 
 if __name__ == "__main__":

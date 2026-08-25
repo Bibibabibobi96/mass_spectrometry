@@ -107,6 +107,7 @@ class FocusabilityProblem:
     lower_eta: NDArray[np.float64] | None = None
     upper_eta: NDArray[np.float64] | None = None
     trust_radius: float | None = None
+    rank_relative_tolerance: float | None = None
 
 
 @dataclass(frozen=True)
@@ -124,6 +125,7 @@ class PredictionResult:
     focusability_fraction: float
     active_constraints: tuple[str, ...]
     constraint_residual_norm: float
+    rank_tolerance: float
 
 
 def _matrix(values: NDArray[np.float64] | Sequence[Sequence[float]], label: str) -> NDArray[np.float64]:
@@ -432,13 +434,72 @@ def choose_detector_blind_model(
     return models[int(np.argmin(scores))]
 
 
-def _null_space(matrix: NDArray[np.float64], column_count: int) -> NDArray[np.float64]:
+def _rank_tolerance(
+    singular_values: NDArray[np.float64], shape: tuple[int, int], relative: float | None
+) -> float:
+    """Return the frozen absolute SVD cutoff for one scaled matrix."""
+
+    if relative is not None and (not math.isfinite(relative) or relative <= 0.0):
+        raise ValueError("rank_relative_tolerance must be finite and positive")
+    leading = float(singular_values[0]) if singular_values.size else 1.0
+    factor = relative if relative is not None else max(shape) * np.finfo(float).eps
+    return factor * leading
+
+
+def _null_space(
+    matrix: NDArray[np.float64], column_count: int, relative_tolerance: float | None
+) -> NDArray[np.float64]:
     if matrix.size == 0:
         return np.eye(column_count)
     _, singular, vectors_t = np.linalg.svd(matrix, full_matrices=True)
-    tolerance = max(matrix.shape) * np.finfo(float).eps * (singular[0] if singular.size else 1.0)
+    tolerance = _rank_tolerance(singular, matrix.shape, relative_tolerance)
     rank = int(np.sum(singular > tolerance))
     return vectors_t[rank:].T.copy()
+
+
+def stack_focusability_problems(
+    problems: Sequence[FocusabilityProblem],
+) -> FocusabilityProblem:
+    """Stack frozen condition bins into one source-weighted local problem.
+
+    All bins must use the same scaled control coordinates and equality
+    constraints.  Their state dimensions may differ, but each block retains its
+    own covariance factor; this is the executable form of the theory's
+    ``A_stack``/``b_stack`` construction.
+    """
+
+    if not problems:
+        raise ValueError("at least one focusability bin is required")
+    first = problems[0]
+    scale = _vector(first.parameter_scale, "parameter_scale")
+    constraints = np.asarray(first.constraint_jacobian, dtype=float)
+    if constraints.ndim != 2 or constraints.shape[1] != scale.size:
+        raise ValueError("first constraint Jacobian has an invalid shape")
+    for problem in problems:
+        if not np.allclose(_vector(problem.parameter_scale, "parameter_scale"), scale):
+            raise ValueError("stacked bins must have identical parameter scales")
+        if not np.allclose(np.asarray(problem.constraint_jacobian, dtype=float), constraints):
+            raise ValueError("stacked bins must have identical constraint Jacobians")
+        if problem.lower_eta is not None or problem.upper_eta is not None or problem.trust_radius is not None:
+            raise ValueError("bounds belong to the stacked problem, not individual bins")
+        if problem.rank_relative_tolerance != first.rank_relative_tolerance:
+            raise ValueError("stacked bins must have one rank tolerance")
+    total_dimension = sum(_vector(item.time_gradient, "time_gradient").size for item in problems)
+    factor = np.zeros((total_dimension, total_dimension), dtype=float)
+    cursor = 0
+    for item in problems:
+        item_factor = _matrix(item.source_factor, "source_factor")
+        next_cursor = cursor + item_factor.shape[0]
+        factor[cursor:next_cursor, cursor:next_cursor] = item_factor
+        cursor = next_cursor
+    return FocusabilityProblem(
+        time_gradient=np.concatenate([_vector(item.time_gradient, "time_gradient") for item in problems]),
+        design_response=np.vstack([_matrix(item.design_response, "design_response") for item in problems]),
+        source_factor=factor,
+        constraint_jacobian=constraints,
+        parameter_scale=scale,
+        rank_relative_tolerance=first.rank_relative_tolerance,
+    )
 
 
 def evaluate_focusability(problem: FocusabilityProblem) -> PredictionResult:
@@ -456,20 +517,33 @@ def evaluate_focusability(problem: FocusabilityProblem) -> PredictionResult:
     if constraints.ndim != 2 or constraints.shape[1] != scale.size or not np.isfinite(constraints).all():
         raise ValueError("constraint Jacobian has an invalid shape")
     scaled_response = response * scale[np.newaxis, :]
-    null_space = _null_space(constraints, scale.size)
-    if null_space.shape[1] == 0:
-        raise ValueError("constraints leave no feasible control direction")
+    null_space = _null_space(
+        constraints, scale.size, problem.rank_relative_tolerance
+    )
     b = factor.T @ gradient
     a = factor.T @ scaled_response @ null_space
     singular = np.linalg.svd(a, compute_uv=False)
-    tolerance = max(a.shape) * np.finfo(float).eps * (singular[0] if singular.size else 1.0)
+    tolerance = _rank_tolerance(
+        singular, a.shape, problem.rank_relative_tolerance
+    )
     rank = int(np.sum(singular > tolerance))
     condition_number = math.inf if rank == 0 else float(singular[0] / singular[rank - 1])
-    eta_reference, *_ = np.linalg.lstsq(a, -b, rcond=tolerance)
+    eta_reference = (
+        np.zeros(0, dtype=float)
+        if null_space.shape[1] == 0
+        else np.linalg.lstsq(a, -b, rcond=tolerance)[0]
+    )
     reference_variance = float(np.dot(b + a @ eta_reference, b + a @ eta_reference))
     lower = problem.lower_eta if problem.lower_eta is not None else np.full(null_space.shape[1], -np.inf)
     upper = problem.upper_eta if problem.upper_eta is not None else np.full(null_space.shape[1], np.inf)
-    lower_values, upper_values = _vector(lower, "lower_eta"), _vector(upper, "upper_eta")
+    lower_values, upper_values = np.asarray(lower, dtype=float), np.asarray(upper, dtype=float)
+    if (
+        lower_values.ndim != 1
+        or upper_values.ndim != 1
+        or not np.all(np.isfinite(lower_values) | np.isinf(lower_values))
+        or not np.all(np.isfinite(upper_values) | np.isinf(upper_values))
+    ):
+        raise ValueError("eta bounds must be finite or infinite vectors")
     if lower_values.shape != eta_reference.shape or upper_values.shape != eta_reference.shape or np.any(lower_values > upper_values):
         raise ValueError("eta bounds do not match the feasible control dimension")
     radius = problem.trust_radius
@@ -477,10 +551,13 @@ def evaluate_focusability(problem: FocusabilityProblem) -> PredictionResult:
         raise ValueError("trust_radius must be finite and positive")
     objective = lambda eta: float(np.dot(b + a @ eta, b + a @ eta))
     constraints_qp = [] if radius is None else [{"type": "ineq", "fun": lambda eta: radius**2 - float(np.dot(eta, eta))}]
-    solution = minimize(objective, np.clip(eta_reference, lower_values, upper_values), method="SLSQP", bounds=list(zip(lower_values, upper_values, strict=True)), constraints=constraints_qp, options={"ftol": 1e-12, "maxiter": 500})
-    if not solution.success:
-        raise ValueError(f"bounded focusability QP failed: {solution.message}")
-    eta = np.asarray(solution.x, dtype=float)
+    if eta_reference.size == 0:
+        eta = eta_reference
+    else:
+        solution = minimize(objective, np.clip(eta_reference, lower_values, upper_values), method="SLSQP", bounds=list(zip(lower_values, upper_values, strict=True)), constraints=constraints_qp, options={"ftol": 1e-12, "maxiter": 500})
+        if not solution.success:
+            raise ValueError(f"bounded focusability QP failed: {solution.message}")
+        eta = np.asarray(solution.x, dtype=float)
     active = tuple(
         name for name, values in (("lower", np.isclose(eta, lower_values)), ("upper", np.isclose(eta, upper_values)))
         if bool(np.any(values))
@@ -490,5 +567,5 @@ def evaluate_focusability(problem: FocusabilityProblem) -> PredictionResult:
     return PredictionResult(
         eta, null_space, singular, rank, condition_number, initial, predicted,
         reference_variance, 0.0 if initial == 0.0 else 1.0 - reference_variance / initial,
-        active, float(np.linalg.norm(constraints @ (null_space @ eta))),
+        active, float(np.linalg.norm(constraints @ (null_space @ eta))), tolerance,
     )
