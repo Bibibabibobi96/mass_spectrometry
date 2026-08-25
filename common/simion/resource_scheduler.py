@@ -25,6 +25,14 @@ RESOURCE_IDENTITY_KEYS = (
     "oatof_numerical_profile_id",
     "trajectory_quality_profile_id",
     "time_integration_profile_id",
+    # Profile IDs describe a registered default, but exploration may resolve
+    # different numerics inline.  Use the resulting values for a memory
+    # profile match so an old, coarser observation cannot authorize parallel
+    # work for a finer override merely because its source profile ID matches.
+    "frontend_cell_mm_xyz",
+    "accelerator_overlay_cell_mm_xyz",
+    "reflectron_cell_mm",
+    "trajectory_quality",
     "rf_steps_per_period",
     "accelerator_field_profile_id",
     "frontend_pa0_sha256",

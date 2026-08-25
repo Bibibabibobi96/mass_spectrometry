@@ -188,6 +188,21 @@ class ResourceSchedulerTests(unittest.TestCase):
         self.assertEqual(plan["estimation"]["kind"], "unknown_resource_profile_bootstrap")
         self.assertEqual(plan["waves"][0]["batch_count"], 1)
 
+    def test_inline_numerical_override_does_not_reuse_profile_default_peak(self) -> None:
+        profile = {
+            "resource_identity": {
+                "solver": "SIMION", "field_kind": "rf",
+                "rf_steps_per_period": 40, "trajectory_quality": 8,
+            },
+            "per_batch_peak_working_set_bytes": 10,
+        }
+        plan = plan_simion_dispatch(
+            self.rf_request(trajectory_quality=17), [profile],
+            available_memory_bytes=100, logical_processors=8,
+        )
+        self.assertEqual(plan["estimation"]["kind"], "unknown_resource_profile_bootstrap")
+        self.assertEqual(plan["waves"][0]["batch_count"], 1)
+
     def test_nearest_matching_profile_prefers_larger_peak_on_a_tie(self) -> None:
         profiles = [
             {"resource_identity": {"solver": "SIMION", "field_kind": "rf", "rf_steps_per_period": 40}, "per_batch_peak_working_set_bytes": 10},

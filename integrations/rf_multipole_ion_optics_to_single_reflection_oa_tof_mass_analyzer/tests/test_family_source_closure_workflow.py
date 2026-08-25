@@ -334,6 +334,38 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
         self.assertEqual(plan["estimation"]["kind"], "nearest_resource_profile")
         self.assertEqual(plan["waves"][0]["batch_count"], 8)
 
+    def test_dispatch_plan_uses_resolved_inline_numerics_for_profile_match(self) -> None:
+        profile = {
+            "resource_identity": {
+                "solver": "SIMION", "field_kind": "rf",
+                "rf_steps_per_period": 64,
+                "time_integration_profile_id": "dt64",
+            },
+            "per_batch_peak_working_set_bytes": 10,
+        }
+        execution_profile = {
+            "frontend_cell_mm_xyz": {"x": 0.02, "y": 0.02, "z": 0.02},
+            "accelerator_overlay_cell_mm_xyz": {"x": 0.02, "y": 0.02, "z": 0.005},
+            "reflectron_cell_mm": {"axial": 0.02, "radial": 0.02},
+            "trajectory_quality": 17,
+        }
+        with patch(
+            "common.simion.resource_scheduler.available_physical_memory_bytes",
+            return_value=1000,
+        ), patch("common.simion.resource_scheduler.os.cpu_count", return_value=8):
+            plan = resolve_single_flight_dispatch_plan(
+                {"single_flight_time_integration_profile_id": "dt64"},
+                execution_particle_count=8, rf_steps_per_period=64,
+                execution_profile=execution_profile, resource_profiles=[profile],
+            )
+        self.assertEqual(plan["estimation"]["kind"], "unknown_resource_profile_bootstrap")
+        self.assertEqual(plan["waves"][0]["batch_count"], 1)
+        self.assertEqual(plan["resource_identity"]["trajectory_quality"], 17)
+        self.assertEqual(
+            plan["resource_identity"]["frontend_cell_mm_xyz"],
+            execution_profile["frontend_cell_mm_xyz"],
+        )
+
     def test_flat_authoring_expands_shared_controls_and_gap_rows(self) -> None:
         authored = {
             "experiments": {

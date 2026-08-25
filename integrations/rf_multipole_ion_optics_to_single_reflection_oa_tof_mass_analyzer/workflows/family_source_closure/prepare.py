@@ -373,6 +373,7 @@ def _automatic_pulse_population_binding(
 def resolve_single_flight_dispatch_plan(
     experiment: dict[str, Any], *, execution_particle_count: int,
     rf_steps_per_period: int | None = None,
+    execution_profile: dict[str, Any] | None = None,
     resource_profiles: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Resolve execution-only dispatch without deriving the governed population.
@@ -414,6 +415,15 @@ def resolve_single_flight_dispatch_plan(
                 "single_flight_accelerator_field_profile_id"
             ),
         }
+        if execution_profile is not None:
+            request.update({
+                "frontend_cell_mm_xyz": execution_profile["frontend_cell_mm_xyz"],
+                "accelerator_overlay_cell_mm_xyz": execution_profile[
+                    "accelerator_overlay_cell_mm_xyz"
+                ],
+                "reflectron_cell_mm": execution_profile["reflectron_cell_mm"],
+                "trajectory_quality": execution_profile["trajectory_quality"],
+            })
     except (KeyError, ValueError) as error:
         raise ContractError("single-flight automatic dispatch is invalid") from error
     from common.simion.resource_scheduler import (
@@ -2970,6 +2980,7 @@ def prepare_family_source_closure(
                 int(execution_profile["rf_steps_per_period"])
                 if execution_profile is not None else None
             ),
+            execution_profile=execution_profile,
             resource_profiles=resource_profiles,
         )
     else:

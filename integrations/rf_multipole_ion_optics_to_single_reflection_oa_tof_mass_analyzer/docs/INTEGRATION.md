@@ -23,6 +23,8 @@ SIMION 运行可调用共享批处理；批内结果必须恢复全局粒子 ID 
 仓库级 [`common/simion/resource_scheduler.py`](../../../common/simion/resource_scheduler.py) 仅为已授权请求
 规划 RF/静电批次：它综合粒子数、每批 CPU、可用内存、预留内存、已观测的同资源身份峰值及并发上限。
 没有匹配历史时，首次运行只能采用单批 bootstrap；观测到峰值后才可为同一资源身份提高并发。
+探索的 inline 网格或 trajectory-quality 覆盖使用**已解析数值**而非原 profile ID 匹配画像；因此旧 profile
+的峰值不会为不同离散量授权并发，新的组合先以单批 bootstrap 建立自己的观测。
 
 每个 run 必须冻结 `run_config.json`、`summary.json` 和 `run_manifest.json`。缓存只用于完全相同的冻结身份，
 且不可替代来源 run。功能成功不自动证明数值收敛、跨求解器等价、参数最优或 Formal 资格。
