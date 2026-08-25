@@ -324,14 +324,26 @@ def materialize_terminal_handoff_continuation(
         if reader.fieldnames != UPSTREAM_TERMINAL_COLUMNS:
             raise ValueError("terminal-handoff source columns differ from the governed upstream contract")
         all_rows = list(reader)
-    final_by_id: dict[int, dict[str, str]] = {}
+    handoff_by_id: dict[int, dict[str, str]] = {}
+    terminal_by_id: dict[int, dict[str, str]] = {}
     for row in all_rows:
         if row["event"] not in {"handoff", "terminal"}:
             continue
         particle_id = int(row["particle_id"])
-        if particle_id in final_by_id:
-            raise ValueError("terminal-handoff source has duplicate terminal rows")
-        final_by_id[particle_id] = row
+        target = handoff_by_id if row["event"] == "handoff" else terminal_by_id
+        if particle_id in target:
+            raise ValueError("terminal-handoff source has duplicate rows for one event")
+        target[particle_id] = row
+    # A successful handoff may later receive a terminal diagnostic at the
+    # acceptance surface.  The handoff, not that downstream diagnostic, is
+    # the physical state to continue into the OA coordinate frame.
+    final_by_id = {
+        particle_id: (
+            handoff_by_id[particle_id]
+            if particle_id in handoff_by_id else terminal_by_id[particle_id]
+        )
+        for particle_id in set(handoff_by_id) | set(terminal_by_id)
+    }
     if not final_by_id or sorted(final_by_id) != list(range(1, len(final_by_id) + 1)):
         raise ValueError("terminal-handoff source lacks one final row per contiguous mother particle ID")
     registration = connection["spatial_registration"]

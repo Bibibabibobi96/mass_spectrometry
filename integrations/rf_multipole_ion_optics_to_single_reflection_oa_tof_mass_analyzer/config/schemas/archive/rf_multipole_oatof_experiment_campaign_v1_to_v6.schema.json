@@ -372,7 +372,7 @@
             "staged_three_stage",
             "continuous_injection_full_population",
             "resolved_layout_pulse_ideal_linear_z_vz",
-            "pre_pulse_restart",
+            "pre_pulse_restart", "terminal_handoff_continuation",
             "pulse_eligible_conditional",
             "first_100_rows_in_frozen_file_order",
             "first_n_rows_in_frozen_file_order"
@@ -391,7 +391,7 @@
                 "experiment_pre_pulse_source_state",
                 "prepared_materialized_particle_source",
                 "prepared_deterministic_prefix",
-                "staged_upstream_source"
+                "staged_upstream_source", "terminal_handoff_continuation_global_state"
               ]
             },
             "ordered_particle_id_encoding": {"const": "canonical_compact_json_integer_array_v1"}
@@ -570,6 +570,19 @@
           "if": {"required": ["single_flight_population"]},
           "then": {
             "oneOf": [
+              {
+                "properties": {
+                  "execution_strategy": {"const": "simion_single_flight"},
+                  "source_release_mode": {"const": "continuous_frontend_handoff"},
+                  "single_flight_population": {"properties": {
+                    "population_mode": {"const": "terminal_handoff_continuation"},
+                    "source_authority": {"properties": {"table_binding": {"const": "terminal_handoff_continuation_global_state"}}},
+                    "execution_population": {"properties": {"selection_algorithm": {"const": "all_transmitted_terminal_handoffs_in_source_particle_id_order"}}},
+                    "postselection_policy": {"const": "prohibited"}
+                  }}
+                },
+                "required": ["execution_strategy", "source_release_mode"]
+              },
               {
                 "properties": {
                   "execution_strategy": {"const": "staged_three_stage"},
@@ -768,7 +781,7 @@
         "architecture_generation_id": {"$ref": "#/$defs/id"},
         "source_profile_id": {"$ref": "#/$defs/id"},
         "field_overlay_id": {"$ref": "#/$defs/id"},
-        "source_release_mode": {"enum": ["continuous_frontend", "pre_pulse_restart"]},
+        "source_release_mode": {"enum": ["continuous_frontend", "continuous_frontend_handoff", "pre_pulse_restart"]},
         "pre_pulse_source_state": {"$ref": "#/$defs/pre_pulse_source_state"},
         "post_pulse_restart_reuse_authority": {
           "$ref": "#/$defs/post_pulse_restart_reuse_authority"

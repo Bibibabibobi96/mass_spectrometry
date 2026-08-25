@@ -47,6 +47,12 @@ param(
   [string]$MotherParticleSourceRunRoot = '',
   [string]$MotherParticleSourceReceipt = '',
   [string]$MotherParticleSourceReceiptSha256 = '',
+  [string]$TerminalHandoffState = '',
+  [string]$TerminalHandoffStateSha256 = '',
+  [int]$TerminalHandoffMotherParticleCount = 0,
+  [int]$TerminalHandoffContinuedParticleCount = 0,
+  [double]$TerminalHandoffMassAmu = 0,
+  [int]$TerminalHandoffChargeState = 0,
   [string]$PrePulseTimeSeriesContract = '',
   [string]$PrePulseTimeSeriesContractSha256 = '',
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
@@ -613,6 +619,15 @@ try {
     }
   }
   $motherSource = Join-Path $package.input_dir 'mother_particle_source.csv'
+  $isTerminalHandoffContinuation = $sourceReleaseMode -eq 'continuous_frontend_handoff'
+  $hasTerminalHandoffState = -not [string]::IsNullOrWhiteSpace($TerminalHandoffState)
+  if ($isTerminalHandoffContinuation -ne ($hasTerminalHandoffState -and
+      -not [string]::IsNullOrWhiteSpace($TerminalHandoffStateSha256) -and
+      $TerminalHandoffMotherParticleCount -gt 0 -and
+      $TerminalHandoffContinuedParticleCount -gt 0 -and
+      $TerminalHandoffMassAmu -gt 0 -and $TerminalHandoffChargeState -gt 0)) {
+    throw 'Terminal-handoff continuation identity is incomplete.'
+  }
   $hasMotherOverride = -not [string]::IsNullOrWhiteSpace($MotherParticleSource)
   if ($hasMotherOverride -ne (-not [string]::IsNullOrWhiteSpace($MotherParticleSourceSha256) -and $MotherParticleCount -gt 0)) {
     throw 'Single-flight mother-source override identity is incomplete.'
@@ -636,10 +651,12 @@ try {
   }
   $sourceToCopy = if ($isPrePulseRestart) {
     [IO.Path]::GetFullPath($PrePulseSourceState)
+  } elseif ($isTerminalHandoffContinuation) {
+    [IO.Path]::GetFullPath($TerminalHandoffState)
   } elseif ($hasMotherOverride) { [IO.Path]::GetFullPath($MotherParticleSource) } else { $runtime.source_particle_source }
   $motherSourceRoot = if ($hasMotherSourceRunRoot) {
     [IO.Path]::GetFullPath($MotherParticleSourceRunRoot)
-  } elseif ($isPrePulseRestart) { $workspaceRoot } elseif ($hasMaterializedMotherReceipt) {
+  } elseif ($isPrePulseRestart -or $isTerminalHandoffContinuation) { $workspaceRoot } elseif ($hasMaterializedMotherReceipt) {
     Resolve-RfMaterializedMotherSourceRunRoot `
       -WorkspaceRoot $workspaceRoot `
       -SourcePath $sourceToCopy `
@@ -667,7 +684,11 @@ try {
   if ($hasMotherOverride -and -not $isPrePulseRestart -and (Get-FileHash -LiteralPath $motherSource -Algorithm SHA256).Hash -ne $MotherParticleSourceSha256) {
     throw 'Single-flight mother-source override hash differs.'
   }
+  if ($isTerminalHandoffContinuation -and (Get-FileHash -LiteralPath $motherSource -Algorithm SHA256).Hash -ne $TerminalHandoffStateSha256) {
+    throw 'Terminal-handoff source-state hash differs.'
+  }
   if (($isPrePulseRestart -and $PrePulseSourceStateCount -ne $launched) -or
+      ($isTerminalHandoffContinuation -and ($TerminalHandoffContinuedParticleCount -ne $launched -or $TerminalHandoffMotherParticleCount -ne $PopulationDenominatorCount)) -or
       ($hasMotherOverride -and $MotherParticleCount -ne $launched) -or
       (-not $isPrePulseRestart -and
        -not $hasMotherOverride -and
@@ -679,7 +700,7 @@ try {
        $EligiblePopulationCount -lt $launched)) {
     throw 'Conditional-source population counts are inconsistent.'
   }
-  if (@(Import-Csv -LiteralPath $motherSource).Count -ne $launched) {
+  if (-not $isTerminalHandoffContinuation -and @(Import-Csv -LiteralPath $motherSource).Count -ne $launched) {
     throw 'Single-flight mother sample count differs from source authority.'
   }
   $frontendGem = Join-Path $package.input_dir 'single_flight_frontend.gem'
@@ -1045,16 +1066,33 @@ try {
     })
   $globalSource = Join-Path $package.input_dir 'single_flight_initial_global_state.csv'
   $particleRowMap = Join-Path $package.input_dir 'single_flight_particle_row_map.csv'
+  $terminalHandoffReceiptFrozen = $null
   $sourceArguments = @('-m',
     'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_source',
     '--source',$motherSource,'--connection',$resolvedFrozen,'--particle-input',$particleInput,'--global-state',$globalSource,
     '--row-map',$particleRowMap,
     '--source-release-mode',$sourceReleaseMode)
+  if ($isTerminalHandoffContinuation) {
+    $terminalHandoffReceiptFrozen = Join-Path $package.input_dir 'terminal_handoff_continuation_receipt.json'
+    $sourceArguments += @('--handoff-mass-amu',([string]$TerminalHandoffMassAmu),
+      '--handoff-charge-state',([string]$TerminalHandoffChargeState),
+      '--handoff-receipt',$terminalHandoffReceiptFrozen)
+  }
   if ($isPrePulseRestart) {
     $sourceArguments += @('--pulse-time-us',([string]$pulseTimeUs))
   }
   Invoke-SingleFlightPython -Arguments $sourceArguments `
     -Failure 'Single-flight source materialization failed.'
+  if ($isTerminalHandoffContinuation) {
+    $terminalHandoffReceipt = Get-Content -LiteralPath $terminalHandoffReceiptFrozen `
+      -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ($terminalHandoffReceipt.role -ne 'rf_oatof_terminal_handoff_continuation_receipt' -or
+        [int]$terminalHandoffReceipt.mother_particle_count -ne $TerminalHandoffMotherParticleCount -or
+        [int]$terminalHandoffReceipt.continued_particle_count -ne $launched -or
+        [int]$terminalHandoffReceipt.upstream_loss_count -ne ($PopulationDenominatorCount - $launched)) {
+      throw 'Terminal-handoff continuation materialization receipt differs from population authority.'
+    }
+  }
 
   $runtimeDir = Join-Path $package.run_dir 'simion'
   $formalDir = Join-Path $workspaceRoot 'artifacts\projects\single_reflection_oa_tof_mass_analyzer\formal\simion'

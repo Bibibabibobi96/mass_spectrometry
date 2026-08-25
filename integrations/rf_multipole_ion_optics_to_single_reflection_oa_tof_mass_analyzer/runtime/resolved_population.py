@@ -36,6 +36,11 @@ _SINGLE_FLIGHT_EXECUTION_BY_POPULATION_MODE = {
         "requires_eligible_population": False,
         "is_pre_pulse_restart": True,
     },
+    "terminal_handoff_continuation": {
+        "population_basis": "terminal_handoff_continuation_population",
+        "requires_eligible_population": False,
+        "is_pre_pulse_restart": False,
+    },
     "first_100_rows_in_frozen_file_order": {
         "population_basis": "candidate_full_population",
         "requires_eligible_population": False,
@@ -141,6 +146,7 @@ def resolve_runtime_population(contract: dict[str, Any]) -> dict[str, Any]:
                 "candidate_full_population",
                 "pulse_eligible_conditional_population",
                 "source_contract_population",
+                "terminal_handoff_continuation_population",
             }
             or not isinstance(requires_eligible_population, bool)
             or not isinstance(is_pre_pulse_restart, bool)

@@ -81,6 +81,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     materialize as materialize_single_flight_source,
     materialize_ideal_linear_source,
     materialize_pre_pulse_restart,
+    materialize_terminal_handoff_continuation,
     resolve_source_materialization_profile,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_execution_profile import (
@@ -3081,12 +3082,51 @@ def prepare_family_source_closure(
         repo_root=root,
     )
     materialized_source_path = None
+    terminal_handoff_global_state_path = None
+    terminal_handoff_receipt_path = None
     source_zvz_affine_receipt_path = None
     source_zvz_theory_working_point_path = None
     resolved_population_path = None
     pulse_timing_state = None
     base_schedule = None
     pulse_restart_validation_path = None
+    if source_release_mode == "continuous_frontend_handoff":
+        # The upstream terminal state is the physical handoff.  Build an
+        # identity-bearing global view only for population registration; the
+        # runner re-materializes from this same immutable terminal CSV.
+        raw_source_path = _workspace_record(
+            workspace, source["particle_source"], "terminal handoff mass/charge source"
+        )
+        with raw_source_path.open(encoding="utf-8-sig", newline="") as handle:
+            raw_rows = list(csv.DictReader(handle))
+        masses = {float(row["mass_amu"]) for row in raw_rows}
+        charges = {int(row["charge_state"]) for row in raw_rows}
+        if len(masses) != 1 or len(charges) != 1:
+            raise ContractError("terminal handoff requires one frozen mass and charge")
+        terminal_handoff_mass_amu = next(iter(masses))
+        terminal_handoff_charge_state = next(iter(charges))
+        try:
+            _, handoff_rows, _, handoff_receipt = materialize_terminal_handoff_continuation(
+                design_evidence["state_path"], _load(resolved_path),
+                mass_amu=terminal_handoff_mass_amu,
+                charge_state=terminal_handoff_charge_state,
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ContractError("terminal handoff continuation materialization failed") from exc
+        if int(handoff_receipt["mother_particle_count"]) != evidence["launched_particle_count"]:
+            raise ContractError("terminal handoff mother cohort differs from source authority")
+        terminal_handoff_global_state_path = plan_output.parent / "inputs" / (
+            "terminal_handoff_continuation_global_state.csv"
+        )
+        terminal_handoff_global_state_path.parent.mkdir(parents=True, exist_ok=True)
+        with terminal_handoff_global_state_path.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=list(handoff_rows[0]), lineterminator="\n")
+            writer.writeheader()
+            writer.writerows(handoff_rows)
+        terminal_handoff_receipt_path = plan_output.parent / "inputs" / (
+            "terminal_handoff_continuation_receipt.json"
+        )
+        _write_json(terminal_handoff_receipt_path, handoff_receipt)
     if layout_files is not None:
         schedule = None
         if pulse_schedule_policy is not None:
@@ -3583,6 +3623,11 @@ def prepare_family_source_closure(
             population_input_role = population_declaration["source_authority"][
                 "input_role"
             ]
+        elif table_binding == "terminal_handoff_continuation_global_state":
+            if terminal_handoff_global_state_path is None:
+                raise ContractError("population declaration requires a terminal handoff state")
+            population_path = terminal_handoff_global_state_path
+            population_input_role = "terminal_handoff_continuation_global_state"
         elif table_binding == "staged_upstream_source":
             population_path = _workspace_record(
                 workspace, source["particle_source"], "staged population source table"
@@ -3821,6 +3866,21 @@ def prepare_family_source_closure(
                 + experiment["single_flight_three_zone_candidate"]["sha256"],
             ]) + ([] if source_release_mode is None else [
                 "source_release_mode=" + source_release_mode,
+            ]) + ([] if terminal_handoff_global_state_path is None else [
+                "terminal_handoff_state_path=" + _workspace_relative(
+                    design_evidence["state_path"], workspace
+                ),
+                "terminal_handoff_state_sha256=" + source["state"]["sha256"],
+                "terminal_handoff_mother_particle_count="
+                + str(evidence["launched_particle_count"]),
+                "terminal_handoff_continued_particle_count="
+                + str(len(handoff_rows)),
+                "terminal_handoff_mass_amu=" + format(terminal_handoff_mass_amu, ".17g"),
+                "terminal_handoff_charge_state=" + str(terminal_handoff_charge_state),
+                "terminal_handoff_receipt_filename=inputs/"
+                + terminal_handoff_receipt_path.name,
+                "terminal_handoff_receipt_sha256="
+                + file_sha256(terminal_handoff_receipt_path),
             ]) + ([] if source_profile_id is None else [
                 "source_profile_id=" + source_profile_id,
                 "field_overlay_id=" + field_overlay_id,

@@ -328,6 +328,15 @@ if ($frozenArguments.ContainsKey('source_zvz_theory_working_point_filename')) {
 }
 if ($frozenArguments.ContainsKey('source_release_mode')) {
   $expectedArguments += 'source_release_mode'
+  if ($frozenArguments.ContainsKey('terminal_handoff_state_path')) {
+    $expectedArguments += @(
+      'terminal_handoff_state_path','terminal_handoff_state_sha256',
+      'terminal_handoff_mother_particle_count',
+      'terminal_handoff_continued_particle_count',
+      'terminal_handoff_mass_amu','terminal_handoff_charge_state',
+      'terminal_handoff_receipt_filename','terminal_handoff_receipt_sha256'
+    )
+  }
   if ($frozenArguments.ContainsKey('source_profile_id')) {
     $expectedArguments += @('source_profile_id','field_overlay_id')
   }
@@ -714,7 +723,7 @@ if ($frozenArguments.ContainsKey('source_release_mode')) {
             [int]$frozenArguments.pre_pulse_source_state_count)) {
       throw 'Pre-pulse source-state identity is missing, stale or outside artifacts.'
     }
-  } elseif ($frozenArguments.source_release_mode -ne 'continuous_frontend' -or
+  } elseif ($frozenArguments.source_release_mode -notin @('continuous_frontend','continuous_frontend_handoff') -or
             $frozenArguments.ContainsKey('pre_pulse_source_state_path')) {
     throw 'Source release mode and pre-pulse source-state identity differ.'
   }
@@ -1341,6 +1350,30 @@ if ($executionStrategy -eq 'simion_single_flight') {
       $runnerArguments.MotherParticleSourceReceiptSha256 =
         $frozenArguments.single_flight_materialization_receipt_sha256
     }
+  }
+  if ($frozenArguments.source_release_mode -eq 'continuous_frontend_handoff') {
+    $terminalHandoffStatePath = [IO.Path]::GetFullPath(
+      (Join-Path $workspaceRoot $frozenArguments.terminal_handoff_state_path)
+    )
+    $terminalHandoffReceiptPath = Join-Path (Split-Path -Parent $CompositionPlan) `
+      $frozenArguments.terminal_handoff_receipt_filename
+    if (-not (Test-Path -LiteralPath $terminalHandoffStatePath -PathType Leaf) -or
+        (Get-FileHash -LiteralPath $terminalHandoffStatePath -Algorithm SHA256).Hash -ne
+          $frozenArguments.terminal_handoff_state_sha256 -or
+        -not (Test-Path -LiteralPath $terminalHandoffReceiptPath -PathType Leaf) -or
+        (Get-FileHash -LiteralPath $terminalHandoffReceiptPath -Algorithm SHA256).Hash -ne
+          $frozenArguments.terminal_handoff_receipt_sha256) {
+      throw 'Terminal-handoff continuation input is missing or stale.'
+    }
+    $runnerArguments.TerminalHandoffState = $terminalHandoffStatePath
+    $runnerArguments.TerminalHandoffStateSha256 =
+      [string]$frozenArguments.terminal_handoff_state_sha256
+    $runnerArguments.TerminalHandoffMotherParticleCount =
+      [int]$frozenArguments.terminal_handoff_mother_particle_count
+    $runnerArguments.TerminalHandoffContinuedParticleCount =
+      [int]$frozenArguments.terminal_handoff_continued_particle_count
+    $runnerArguments.TerminalHandoffMassAmu = [double]$frozenArguments.terminal_handoff_mass_amu
+    $runnerArguments.TerminalHandoffChargeState = [int]$frozenArguments.terminal_handoff_charge_state
   }
   if ($null -eq $resolvedRegionFieldContractPath) {
     throw 'SIMION single flight requires one resolved region field contract.'

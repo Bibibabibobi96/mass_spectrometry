@@ -195,8 +195,8 @@ class SingleFlightProgramTests(unittest.TestCase):
                 Path(directory), source_release_mode="continuous_frontend_handoff",
             )
         self.assertIn("local single_flight_rf_enabled=1", program)
-        self.assertNotIn("single_flight_rf_kernel.new", program)
-        self.assertNotIn("single_flight_rf_steps", program)
+        self.assertIn("single_flight_rf_kernel.new", program)
+        self.assertIn("single_flight_rf_steps", program)
         self.assertIn("single_flight_frontend.apply_at", program)
         self.assertIn("single_flight_pulse.cap_timestep_at", program)
 
