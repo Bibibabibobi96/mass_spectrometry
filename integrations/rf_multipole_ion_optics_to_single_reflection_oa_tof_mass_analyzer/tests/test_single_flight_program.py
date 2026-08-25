@@ -188,6 +188,13 @@ class SingleFlightProgramTests(unittest.TestCase):
             )
         self.assertIn("local single_flight_rf_enabled=0", program)
         self.assertIn("rf_drive=false", program)
+
+    def test_terminal_handoff_continuation_keeps_rf_enabled(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            program = _successor_callback_program(
+                Path(directory), source_release_mode="continuous_frontend_handoff",
+            )
+        self.assertIn("local single_flight_rf_enabled=1", program)
         self.assertNotIn("single_flight_rf_kernel.new", program)
         self.assertNotIn("single_flight_rf_steps", program)
         self.assertIn("single_flight_frontend.apply_at", program)
