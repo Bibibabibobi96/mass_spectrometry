@@ -610,7 +610,9 @@ try{
             '--particle-id-max',[string]$last,'--simion-particle-id-offset',[string]$plannedBatch.simion_particle_id_offset)
           $replaceFly=[array]::IndexOf($batchArguments,'--fly2');$replaceStates=[array]::IndexOf($batchArguments,'--source-states-lua')
           $batchArguments[$replaceFly+1]=$batchFly2;$batchArguments[$replaceStates+1]=$batchStates
-          & $python @batchArguments
+          # The projection CLI reports a diagnostic line on stdout.  This
+          # function returns only the final case summary to its caller.
+          & $python @batchArguments | Out-Null
           if($LASTEXITCODE-ne 0){throw "SIMION particle batch projection failed: $batchIndex"}
           $updatedBatches+=[pscustomobject]@{index=$batchIndex;particle_id_min=$first;
             particle_id_max=$last;simion_particle_id_offset=[int]$plannedBatch.simion_particle_id_offset;

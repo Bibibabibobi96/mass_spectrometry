@@ -94,6 +94,7 @@ class SimionRunnerContractTests(unittest.TestCase):
         self.assertIn("-CalibrationDurationSeconds ([int]$calibration.duration_seconds)", source)
         self.assertIn("--observed-bootstrap-peak-bytes", source)
         self.assertIn("RESOURCE_CALIBRATION_ONLY", source)
+        self.assertIn("& $python @batchArguments | Out-Null", source)
 
     def test_governed_profile_is_the_only_physical_entry(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
