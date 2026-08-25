@@ -59,3 +59,8 @@ C1为`PASS_CONTINUE`前，阶段2及任何三维优化均不得启动。
 上游损失。后续连续前端必须保持100为总分母，并单列这8个损失；92个handoff不是共同命中后挑选出来的峰宽
 样本。该结果只修复S2输入的端件可追溯性，仍不构成同一OA脉冲时刻的`pre_pulse_state`，故C1结论保持
 `INCONCLUSIVE_REVISE`。
+
+为避免把100粒子功能档误作C1统计证据，同一冻结S2契约已按N=1000母样本重跑，run ID为
+`20260825_103000__sim__simion__paper1-s2-segmented-standard-terminal__n1000`。其上游primary arm为
+770/1000 transmitted，零轴向对照为572/1000；所有损失仍属于完整母cohort分母。该run只提供可追溯的
+N=1000连续前端输入和损失分类，不是共同OA pre-pulse状态，也不改变本阶段的`INCONCLUSIVE_REVISE`结论。
