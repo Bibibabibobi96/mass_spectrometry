@@ -188,6 +188,45 @@ def _time_gradient(
     return float((plus - minus) / 1.0) * design.source.time_scale_s_per_mm_sqrt_v * 1.0e6
 
 
+def analytic_time_gradient(
+    design: AxialC2Design, controls: NDArray[np.float64], x_mm: float, vz_m_per_s: float
+) -> float:
+    """Return the independent analytic ``d t / d v_z`` of the exact oracle.
+
+    The expression differentiates the direct axial-state timing equation at
+    fixed position, rather than differentiating the finite-difference routine.
+    It is C2's second derivative path; real-field derivatives remain C3 work.
+    """
+
+    state, inner, drift = _design_state(design, controls)
+    root = design.source.time_scale_s_per_mm_sqrt_v / 1.0e-3
+    chi = vz_m_per_s * root
+    energy = state.repeller_v - state.field1_v_per_mm * x_mm + chi**2
+    if energy <= max(state.grid1_v, inner.stage1_voltage_drop_v):
+        raise ValueError("analytic axial state cannot cross accelerator or reflectron")
+    root_energy = math.sqrt(energy)
+    root_grid1 = math.sqrt(energy - state.grid1_v)
+    root_grid2 = math.sqrt(energy - state.grid2_v)
+    root_reflectron = math.sqrt(energy - inner.stage1_voltage_drop_v)
+    accelerator_energy_gradient = (
+        1.0 / (state.field1_v_per_mm * root_grid1)
+        + (1.0 / root_grid2 - 1.0 / root_grid1) / state.field2_v_per_mm
+        + (1.0 / root_energy - 1.0 / root_grid2) / state.field3_v_per_mm
+        - drift / (2.0 * energy**1.5)
+    )
+    reflectron_field = inner.stage1_voltage_drop_v / design.reflectron.stage1_length_mm
+    reflectron_energy_gradient = (
+        2.0 / reflectron_field * (1.0 / root_energy - 1.0 / root_reflectron)
+        + 2.0 / inner.stage2_field_v_per_mm / root_reflectron
+        - (design.reflectron.upstream_drift_mm + design.reflectron.downstream_drift_mm)
+        / (2.0 * energy**1.5)
+    )
+    normalized_gradient = 2.0 * chi * (
+        accelerator_energy_gradient + reflectron_energy_gradient
+    ) - 2.0 / state.field1_v_per_mm
+    return normalized_gradient * root * design.source.time_scale_s_per_mm_sqrt_v * 1.0e6
+
+
 def _constraint_values(design: AxialC2Design, controls: NDArray[np.float64]) -> NDArray[np.float64]:
     state, inner, _ = _design_state(design, controls)
     derivatives = compute_time_derivatives(design.source, state, design.reflectron, inner)
@@ -219,6 +258,7 @@ def _build_problem(
     all_z = source.z_mm[optimization]
     all_vz = source.vz_m_per_s[optimization]
     blocks: list[FocusabilityProblem] = []
+    derivative_audits: list[dict[str, float]] = []
     for group in groups:
         z_bin, vz_bin = all_z[group], all_vz[group]
         center_z = float(np.mean(z_bin))
@@ -230,6 +270,22 @@ def _build_problem(
             lambda values: np.asarray([_time_gradient(design, values, center_x, float(mean(np.asarray([center_z]))[0]))]),
             controls, steps,
         )
+        response_double_step = _derivative(
+            lambda values: np.asarray([_time_gradient(design, values, center_x, float(mean(np.asarray([center_z]))[0]))]),
+            controls, 2.0 * steps,
+        )
+        analytic_gradient = analytic_time_gradient(
+            design, controls, center_x, float(mean(np.asarray([center_z]))[0])
+        )
+        derivative_audits.append({
+            "analytic_gradient_us_per_m_per_s": analytic_gradient,
+            "finite_difference_gradient_us_per_m_per_s": gradient,
+            "gradient_relative_error": abs(analytic_gradient - gradient) / max(abs(analytic_gradient), 1e-30),
+            "design_response_step_platform_relative_error": float(
+                np.linalg.norm(response - response_double_step)
+                / max(np.linalg.norm(response), 1e-30)
+            ),
+        })
         blocks.append(FocusabilityProblem(
             time_gradient=np.asarray([gradient]), design_response=response,
             source_factor=np.asarray([[math.sqrt(variance) if source_weighted else 1.0]]),
@@ -254,7 +310,7 @@ def _build_problem(
         trust_radius=0.5,
         rank_relative_tolerance=stacked.rank_relative_tolerance,
     )
-    return problem, {"design": design, "controls": controls, "steps": steps, "mean": mean}
+    return problem, {"design": design, "controls": controls, "steps": steps, "mean": mean, "derivative_audits": derivative_audits}
 
 
 def run_axial_c2_screen(source: AxialC2Source, design: AxialC2Design) -> dict[str, Any]:
@@ -271,6 +327,15 @@ def run_axial_c2_screen(source: AxialC2Source, design: AxialC2Design) -> dict[st
     train_z = source.z_mm[np.isin(source.roles, ("development", "validation"))]
     x = source.release_position_mm + source.z_mm[test] - float(np.mean(train_z))
     residual = source.vz_m_per_s[test] - metadata["mean"](source.z_mm[test])
+    unweighted_controls = controls + design.parameter_scale * (
+        unweighted_result.null_space @ unweighted_result.eta
+    )
+    unweighted_direct = _axial_time_us(
+        metadata["design"], unweighted_controls, x, source.vz_m_per_s[test]
+    )
+    unweighted_mean = _axial_time_us(
+        metadata["design"], unweighted_controls, x, source.vz_m_per_s[test] - residual
+    )
     b = weighted.source_factor.T @ weighted.time_gradient
     a = weighted.source_factor.T @ (
         weighted.design_response * weighted.parameter_scale[np.newaxis, :]
@@ -295,8 +360,15 @@ def run_axial_c2_screen(source: AxialC2Source, design: AxialC2Design) -> dict[st
         "locked_test_count": int(np.sum(test)),
         "constraint_jacobian": weighted.constraint_jacobian.tolist(),
         "finite_difference_steps": metadata["steps"].tolist(),
+        "derivative_audits": metadata["derivative_audits"],
         "weighted": {"prediction": _prediction_dict(weighted_result), "controls": prediction_controls.tolist()},
-        "unweighted": {"prediction": _prediction_dict(unweighted_result)},
+        "unweighted": {
+            "prediction": _prediction_dict(unweighted_result),
+            "controls": unweighted_controls.tolist(),
+            "locked_exact_conditional_residual_variance_us2": float(
+                np.var(unweighted_direct - unweighted_mean, ddof=0)
+            ),
+        },
         "directions": directions,
     }
 

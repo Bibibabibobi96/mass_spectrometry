@@ -259,6 +259,10 @@ class Paper1FocusabilityTest(unittest.TestCase):
             self.assertGreater(result["locked_test_count"], 0)
             self.assertEqual(result["weighted"]["prediction"]["effective_rank"], 1)
             self.assertEqual(set(result["directions"]), {"improve", "zero", "worsen"})
+            self.assertLess(
+                max(item["gradient_relative_error"] for item in result["derivative_audits"]),
+                1e-4,
+            )
 
 
 if __name__ == "__main__":

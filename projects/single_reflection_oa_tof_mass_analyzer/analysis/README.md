@@ -77,6 +77,7 @@ shield边界和rebuild plan均由该函数一次性闭合。API严格拒绝profi
 - `analyze_paper1_c1_source.py`：冻结单一预脉冲源的C1诊断入口；验证母cohort收据与状态SHA，按粒子ID哈希登记四个cohort，并且仅以development/validation选择条件模型。它不生成C1 PASS结论，跨源资格仍由阶段合同决定。
 - `analyze_paper1_c1_stage.py`：仅汇总两份已冻结、detector-blind的C1源诊断，核验各自母cohort、四个ID cohort和残差模态稳定性；它只关闭C1输入门禁，不生成J2/J3或性能结论。
 - `paper1_c2_axial_oracle.py`：C2的低成本纵向淘汰实现。它把C1冻结的`z-v_z`源按粒子ID cohort映射到现有精确三区理想场 oracle，堆叠条件bin、保持`D1/D2`约束并比较两区零自由度与三区新增方向；其输出只能是后续C2导数与locked预测检验的输入，不能表述为6D、3D或分辨率证据。
+- `analyze_paper1_c2_stage.py`：运行两份C1 assessment上的C2 axial screen，固定T5 ideal-field anchor与已有phase-match release coordinate，审计解析/中心差分`g`、`G`步长平台、两区零自由度、三区改善/零效/恶化排序及其locked bootstrap。它在J2不优于未加权基线时失败关闭，不授权C3。
 
 正式数据优先CSV/JSON。XLSX只接收人工导出，导入后立即规范化。严格配对必须使用相同粒子ID，并区分
 整体时移与去均值逐粒子残差。
