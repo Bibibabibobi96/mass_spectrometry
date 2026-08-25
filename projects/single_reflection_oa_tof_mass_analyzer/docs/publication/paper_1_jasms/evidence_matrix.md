@@ -44,7 +44,7 @@ claim的完整投稿要求；目前没有主claim达到`SUPPORTED`。
 | [`三区完成结果快照`](../../history/20260823__three-zone-completed-results-snapshot.md) | 一维三区理论、N=100真实PA和固定设计源敏感性已完成 | N≥1000、条件模型、可补偿性、COMSOL/CAD和工程资格 |
 | [`observed横向敏感性`](../../history/20260817__three-zone-observed-transverse-sensitivity.md) | 同一N=100 ID下横向恢复是较小但可测增量 | 横向普遍不重要、连续真实handoff或统计稳定性 |
 | [`observed z-vz归因`](../../history/20260817__three-zone-zvz-nonlinearity-fixed-energy-source-sensitivity.md) | 固定设计中observed-affine残差主导首尾顺序退化 | 该残差不可补偿、是光滑高阶曲线或可推广到其他工况 |
-| RF→OA integration历史observed authority | 有冻结pre-pulse状态和有序ID基础 | 当前活动Paper 1 source campaign、两工况和locked split |
+| RF→OA integration历史observed authority | 有冻结pre-pulse状态和有序ID基础 | [`C1 source contract`](stage_c1_source_contract.md)判定S1/S2现有资产不是两个可用OA共同pre-pulse cohort；须重建两工况并锁定split |
 
 ## 5. 证据资格结论
 
