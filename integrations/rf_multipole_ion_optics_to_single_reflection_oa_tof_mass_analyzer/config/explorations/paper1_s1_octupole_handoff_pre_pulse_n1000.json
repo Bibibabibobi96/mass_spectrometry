@@ -33,7 +33,7 @@
   "experiments": [{
     "sequence": 1,
     "experiment_id": "paper1_s1_octupole_handoff_pre_pulse_n1000",
-    "run_id": "20260825_224000__sim__cross__paper1-s1-octupole-handoff-pre-pulse__n1000",
+    "run_id": "20260825_215100__sim__cross__paper1-s1-octupole-handoff-pre-pulse__n1000",
     "execution_strategy": "simion_single_flight",
     "single_flight_pa_cache_policy": "build_and_publish_if_missing",
     "single_flight_layout_profile_id": "three_zone_t5_primary_shaping_rings_1p4_v1",
@@ -54,14 +54,14 @@
     "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_0mm",
     "source": {
       "authority_scope": "source_population",
-      "run_id": "20260805_132100__sim__simion__oct-terminal-10ev-h15__n1000",
+      "run_id": "20260825_214000__sim__simion__paper1-s1-oct-terminal-h15__n1000__r03",
       "launched_particle_count": 1000,
       "particle_count_binding": {"mode": "derive_from_frozen_source_state_v1", "selector": {"event": "handoff", "status": "transmitted"}},
       "particle_source_manifest_input_role": "particle_source",
-      "manifest": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_132100__sim__simion__oct-terminal-10ev-h15__n1000/run_manifest.json", "sha256": "EAA006E0C916CE4A2AD50C68ACF8F07DFB2A79FAB21D23C5F2E1168451300ABB"},
-      "state": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_132100__sim__simion__oct-terminal-10ev-h15__n1000/results/particle_states__exit_aperture_plate_acceleration_rf_on.csv", "sha256": "A3762E69EE3E91265EC208B29F3C10A7A057AD6D61F2EAC450E291F6034EDCAB"},
-      "particle_source": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_132100__sim__simion__oct-terminal-10ev-h15__n1000/inputs/particle_source.csv", "sha256": "302C03DC29737CE9D46EB1A8D258DB2A8D3C0F8B6A53F7702A33B1ECF9D5320D"},
-      "metadata": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260805_132100__sim__simion__oct-terminal-10ev-h15__n1000/inputs/particle_source_metadata.json", "sha256": "9B3399D9B70AC5946190ABDF1CFFD1C713A665A09F918C532B4E8F7B95743A8F"},
+      "manifest": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260825_214000__sim__simion__paper1-s1-oct-terminal-h15__n1000__r03/run_manifest.json", "sha256": "A3C8ACC5E8CDDB98FCEAB597FBF501883964C737CD1E5ADB9CF9B2F01E78C936"},
+      "state": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260825_214000__sim__simion__paper1-s1-oct-terminal-h15__n1000__r03/results/particle_states__exit_aperture_plate_acceleration_rf_on.csv", "sha256": "3830C646D10E169B4B503C912859C95C70ADDB194DCA5103E6A01BE2A7B255C8"},
+      "particle_source": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260825_214000__sim__simion__paper1-s1-oct-terminal-h15__n1000__r03/inputs/particle_source.csv", "sha256": "302C03DC29737CE9D46EB1A8D258DB2A8D3C0F8B6A53F7702A33B1ECF9D5320D"},
+      "metadata": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260825_214000__sim__simion__paper1-s1-oct-terminal-h15__n1000__r03/inputs/particle_source_metadata.json", "sha256": "2BE5BBEAD1BF782D6294616B79C1FB1FC60021099EF5BE309480E1A2005139E7"},
       "handoff_publication_contract": {"path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/octupole_handoff_publication_n1000.json", "sha256": "BF3DD74CE90CFE4E9811FECADE8F38D95C9DF16E61C1828D52889135094616A4"}
     },
     "single_flight_pulse_schedule_policy": {"policy_id": "multipole_handoff_ballistic_centroid_v1", "offset_rf_periods": 0.0, "pulse_width_us": 1.0},
@@ -69,7 +69,7 @@
       "population_id": "paper1_s1_complete_ordered_terminal_handoff_n1000",
       "population_mode": "terminal_handoff_continuation",
       "source_authority": {"input_role": "terminal_handoff_continuation_global_state", "table_binding": "terminal_handoff_continuation_global_state", "ordered_particle_id_encoding": "canonical_compact_json_integer_array_v1"},
-      "execution_population": {"particle_count": 893, "ordered_particle_id_sha256": "0B26409BE06778DAE4A2B10BD94494F84B3341A38F1652CE2A5717FD48EF69AB", "selection_algorithm": "all_transmitted_terminal_handoffs_in_source_particle_id_order", "selection_seed": 0},
+      "execution_population": {"particle_count": 900, "ordered_particle_id_sha256": "A7148D0914CC2B30C2911C0CC91A0D310772EA1842075824498A24729D6ED84A", "selection_algorithm": "all_transmitted_terminal_handoffs_in_source_particle_id_order", "selection_seed": 0},
       "denominators": {"population_count": 1000, "eligible_population_count": 1000},
       "analysis_randomness": {"bootstrap_resample_count": 400, "bootstrap_seed": 20260825},
       "postselection_policy": "prohibited"
