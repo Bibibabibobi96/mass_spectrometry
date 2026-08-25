@@ -104,6 +104,13 @@ class Paper1S2SourceRegenerationTests(unittest.TestCase):
         self.assertEqual(population["denominators"]["eligible_population_count"], 1000)
         self.assertEqual(population["postselection_policy"], "prohibited")
 
+    def test_handoff_screening_uses_the_resolved_pulse_schedule_epoch(self) -> None:
+        prepare = (INTEGRATION_ROOT / "workflows/family_source_closure/prepare.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("base_schedule=resolved_pulse_schedule", prepare)
+        self.assertIn("resolved_pulse_schedule = schedule", prepare)
+
 
 if __name__ == "__main__":
     unittest.main()

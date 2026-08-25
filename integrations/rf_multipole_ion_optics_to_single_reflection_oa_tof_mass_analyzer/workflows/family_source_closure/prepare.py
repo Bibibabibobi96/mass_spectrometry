@@ -3101,6 +3101,7 @@ def prepare_family_source_closure(
     resolved_population_path = None
     pulse_timing_state = None
     base_schedule = None
+    resolved_pulse_schedule = None
     pulse_restart_validation_path = None
     if source_release_mode == "continuous_frontend_handoff":
         # The upstream terminal state is the physical handoff.  Build an
@@ -3263,6 +3264,11 @@ def prepare_family_source_closure(
             schedule_path = plan_output.with_name("resolved_single_flight_pulse_schedule.json")
             _write_json(schedule_path, schedule)
             layout_files["schedule"] = schedule_path
+            # A pre-pulse screen must be centred on the exact schedule that
+            # this run will use.  A campaign may describe window width and RF
+            # sampling density, but it must not replace the resolved physical
+            # pulse time with a stale hand-written epoch.
+            resolved_pulse_schedule = schedule
         if (
             pre_pulse_source_path is not None
             and source_materialization_profile is not None
@@ -3732,9 +3738,7 @@ def prepare_family_source_closure(
             time_integration_profile_id=str(
                 execution_profile["time_integration_profile_id"]
             ),
-            base_schedule=(
-                base_schedule if pulse_timing_state == "discovery_required" else None
-            ),
+            base_schedule=resolved_pulse_schedule,
         )
         pre_pulse_time_series_contract_path = plan_output.parent / "inputs" / (
             "pre_pulse_time_series_screening_contract.json"

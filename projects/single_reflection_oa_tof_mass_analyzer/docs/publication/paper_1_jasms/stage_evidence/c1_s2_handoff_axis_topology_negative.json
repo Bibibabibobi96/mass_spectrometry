@@ -1,7 +1,7 @@
 {
   "stage_id": "C1",
   "conclusion": "INCONCLUSIVE_REVISE",
-  "claim_limit": "Detector-blind continuous-handoff reachability and source-to-accelerator axis compatibility only; no source-quality, focusability, resolution, or structure-performance claim.",
+  "claim_limit": "Detector-blind continuous-handoff reachability and pulse-to-beam timing consistency only; no source-quality, focusability, resolution, or structure-performance claim.",
   "inputs": {
     "parent_run_id": "20260825_223400__sim__cross__paper1-s2-segmented-handoff-pre-pulse__n1000",
     "child_run_id": "20260825_223400__sim__simion__rf-oatof-single-flight-gap0__n914",
@@ -24,22 +24,24 @@
     "handoff_velocity_x_m_per_s_range": [3052.20738481, 3133.63642956],
     "source_transport_axis": "oatof_global_x",
     "oa_accelerator_extraction_axis": "oatof_global_z",
+    "resolved_pulse_effective_time_us": 39.5576984204705,
+    "screening_anchor_time_us": 46.7467890041091,
     "resource_calibration_peak_working_set_bytes": 8699854848
   },
   "claims_supported": [
     "The S2 terminal-handoff continuation reached the governed real-PA single-flight program with all 914 transmitted handoffs and retained the 86 upstream losses against the complete mother cohort of 1000.",
     "The repository scheduler completed calibration and replanned the 914 physical handoffs into four formal SIMION batches.",
     "Under the frozen side-entry interface, zero of 914 continued ions reached any of the 321 detector-blind pre-pulse samples; all 914 splatted.",
-    "The negative result identifies an unmodeled x-to-z injection topology mismatch: the continued source motion is along global x whereas the frozen OA accelerator extraction coordinate is global z."
+    "The side-entry x transport and z extraction are the expected orthogonal-acceleration geometry; the failed screen instead exposes that its hand-written sampling epoch was detached from the resolved 39.557698 µs beam-centre pulse schedule."
   ],
   "claims_prohibited": [
     "Any S2 conditional covariance, emittance, tail, modal, transmission, or source-quality conclusion.",
     "Any comparison between S1 and S2.",
     "Any J2 or J3 prediction, optimization, resolution, or three-zone performance conclusion.",
-    "Any inference that the observed all-splat result is intrinsic to segmented rods rather than to the frozen interface topology."
+    "Any inference that the observed all-splat result is intrinsic to segmented rods or to the orthogonal x-to-z geometry rather than to the detached screening epoch."
   ],
   "failures": [
-    "The frozen interface sends the terminal handoff through a lateral shield opening without a physically modeled bend or an axial injection aperture into the OA extraction region.",
-    "No common OA pre-pulse state exists for S2; C1 model selection and every subsequent J2/J3 stage remain blocked until an axis-compatible injection topology is frozen and verified."
+    "The pre-pulse time-series compiler used the campaign's stale 46.746789 µs anchor instead of the resolved 39.557698 µs pulse schedule, after the beam had reached the far wall.",
+    "No common OA pre-pulse state exists for S2; C1 model selection and every subsequent J2/J3 stage remain blocked until the screen is regenerated from the resolved pulse schedule."
   ]
 }
