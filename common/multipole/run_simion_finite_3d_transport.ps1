@@ -118,7 +118,9 @@ $resolvedRuntimeInput=$null
 $resolvedRuntimeDocument=$null
 $resolvedRuntimeInputSha=$null
 $executionBatching=$null
-$automaticDispatch=$null
+# Repository scheduling is the default for this independent-particle runner.
+# A runtime profile may constrain resource identity, but cannot opt out.
+$automaticDispatch=[pscustomobject]@{kind='automatic';field_kind='rf';independent_particles=$true}
 if(-not[string]::IsNullOrWhiteSpace($ResolvedRuntimeProfilePath)){
   $resolvedRuntimeInput=(Resolve-Path -LiteralPath $ResolvedRuntimeProfilePath).Path
   $resolvedRuntimeInputSha=(Get-FileHash -LiteralPath $resolvedRuntimeInput -Algorithm SHA256).Hash
@@ -132,11 +134,20 @@ if(-not[string]::IsNullOrWhiteSpace($ResolvedRuntimeProfilePath)){
     [string]$resolvedRuntimeDocument.engineering_budget.path-ne$engineeringBudgetInput
   ){throw 'Resolved runtime-profile snapshot identity differs from runner arguments.'}
   if($resolvedRuntimeDocument.PSObject.Properties.Name-contains'simion_dispatch'){
-    $automaticDispatch=$resolvedRuntimeDocument.simion_dispatch
-    if([string]$automaticDispatch.kind-ne'automatic'-or
-      [string]$automaticDispatch.field_kind-notin@('rf','electrostatic')-or
-      [bool]$automaticDispatch.independent_particles-ne$true
+    $declaredDispatch=$resolvedRuntimeDocument.simion_dispatch
+    if([string]$declaredDispatch.kind-ne'automatic'-or
+      [string]$declaredDispatch.field_kind-notin@('rf','electrostatic')-or
+      [bool]$declaredDispatch.independent_particles-ne$true
     ){throw 'Resolved SIMION dispatch is invalid.'}
+    if([string]$declaredDispatch.field_kind-ne'rf'){
+      throw 'This RF multipole runner only accepts rf resource identity.'
+    }
+    foreach($name in @('maximum_parallel_batches','reserve_available_memory_bytes',
+      'cpu_cores_per_batch','reserve_cpu_cores','memory_safety_numerator','memory_safety_denominator')){
+      if($declaredDispatch.PSObject.Properties.Name-contains$name){
+        $automaticDispatch|Add-Member -NotePropertyName $name -NotePropertyValue $declaredDispatch.$name
+      }
+    }
   }
 }
 $campaignSelection=$null
@@ -580,28 +591,36 @@ try{
     }
     & $python @sourceProjectionArguments
     if($LASTEXITCODE-ne 0){throw 'SIMION particle projection failed.'}
-    $simionBatches=@([pscustomobject]@{index=1;particle_id_min=1;
-      particle_id_max=[int]$sourceMeta.particle_count;fly2=$fly2;states=$states})
-    if($null-ne$executionBatching){
-      if([string]$executionBatching.dispatch-ne'single_wave_parallel'){
+    function Set-SimionBatchesFromPlan {
+      param([Parameter(Mandatory)]$Plan)
+      if([string]$Plan.dispatch-ne'single_wave_parallel'){
         throw 'SIMION execution batching dispatch is not supported.'
       }
-      $simionBatches=@()
-      foreach($plannedBatch in @($batchPlanDocument.batches)){
+      $updatedBatches=@()
+      foreach($plannedBatch in @($Plan.batches)){
         $batchIndex=[int]$plannedBatch.index;$first=[int]$plannedBatch.particle_id_min;$last=[int]$plannedBatch.particle_id_max
-        $batchFly2=Join-Path $solverDir ("quad_monolithic_batch_{0:D2}.fly2" -f $batchIndex)
-        $batchStates=Join-Path $inputDir ("source_states_batch_{0:D2}.lua" -f $batchIndex)
-        $batchArguments=@($sourceProjectionArguments)+@('--particle-id-min',[string]$first,
-          '--particle-id-max',[string]$last,'--simion-particle-id-offset',[string]$plannedBatch.simion_particle_id_offset)
-        $replaceFly=[array]::IndexOf($batchArguments,'--fly2');$replaceStates=[array]::IndexOf($batchArguments,'--source-states-lua')
-        $batchArguments[$replaceFly+1]=$batchFly2;$batchArguments[$replaceStates+1]=$batchStates
-        & $python @batchArguments
-        if($LASTEXITCODE-ne 0){throw "SIMION particle batch projection failed: $batchIndex"}
-        $simionBatches+=[pscustomobject]@{index=$batchIndex;particle_id_min=$first;
-          particle_id_max=$last;simion_particle_id_offset=[int]$plannedBatch.simion_particle_id_offset;
-          fly2=$batchFly2;states=$batchStates}
+        if(@($Plan.batches).Count-eq 1){
+          $updatedBatches+=[pscustomobject]@{index=1;particle_id_min=$first;particle_id_max=$last;
+            simion_particle_id_offset=[int]$plannedBatch.simion_particle_id_offset;fly2=$fly2;states=$states}
+        }else{
+          $batchFly2=Join-Path $solverDir ("quad_monolithic_batch_{0:D2}.fly2" -f $batchIndex)
+          $batchStates=Join-Path $inputDir ("source_states_batch_{0:D2}.lua" -f $batchIndex)
+          $batchArguments=@($sourceProjectionArguments)+@('--particle-id-min',[string]$first,
+            '--particle-id-max',[string]$last,'--simion-particle-id-offset',[string]$plannedBatch.simion_particle_id_offset)
+          $replaceFly=[array]::IndexOf($batchArguments,'--fly2');$replaceStates=[array]::IndexOf($batchArguments,'--source-states-lua')
+          $batchArguments[$replaceFly+1]=$batchFly2;$batchArguments[$replaceStates+1]=$batchStates
+          & $python @batchArguments
+          if($LASTEXITCODE-ne 0){throw "SIMION particle batch projection failed: $batchIndex"}
+          $updatedBatches+=[pscustomobject]@{index=$batchIndex;particle_id_min=$first;
+            particle_id_max=$last;simion_particle_id_offset=[int]$plannedBatch.simion_particle_id_offset;
+            fly2=$batchFly2;states=$batchStates}
+        }
       }
+      $script:simionBatches=@($updatedBatches)
     }
+    Set-SimionBatchesFromPlan -Plan $batchPlanDocument
+    $resourceCalibrationRequired=($null-ne$dispatchPlan-and
+      [string]$dispatchPlanDocument.estimation.kind-eq'unknown_resource_profile_bootstrap')
   }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
   $maximumPaGridPoints=if(
     $resolvedBudgetPreflight.limits.PSObject.Properties.Name-contains'maximum_pa_grid_points'
@@ -933,6 +952,72 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
     $flyArguments=@('--nogui','--noprompt','fly','--remove-pas=3','--trajectory-quality',
       [string]$TrajectoryQuality,'--programs','1','--retain-trajectories','0','--adjustable',
       "transport_rf_steps_per_period=$RfStepsPerPeriod",(Join-Path $solverDir 'quad_monolithic.iob'))
+    if($script:resourceCalibrationRequired){
+      if($batchRuns.Count-ne 1){throw 'Unknown-resource calibration must start from one complete SIMION batch.'}
+      $calibration=$dispatchPlanDocument.estimation.resource_calibration
+      if($null-eq$calibration-or[string]$calibration.kind-ne'time_limited_process_peak_v1'-or
+        [int]$calibration.duration_seconds-lt1-or
+        [string]$calibration.output_scope-ne'RESOURCE_CALIBRATION_ONLY'){
+        throw 'SIMION repository calibration contract is invalid.'
+      }
+      $calibrationDir=Join-Path $logDir ("resource_calibration__{0}"-f$name)
+      New-Item -ItemType Directory -Force -Path $calibrationDir|Out-Null
+      $probeState=Join-Path $calibrationDir 'particle_states.csv'
+      $probeTrajectory=Join-Path $calibrationDir 'trajectory_samples.csv'
+      $probeSummary=Join-Path $calibrationDir 'simion_summary.json'
+      $probeLua=Join-Path $calibrationDir 'simion_config.lua'
+      $probeText=Get-Content -LiteralPath $batchRuns[0].lua_config -Raw -Encoding ASCII
+      $probeText=$probeText.Replace([string]$batchRuns[0].state,$probeState)
+      $probeText=$probeText.Replace([string]$batchRuns[0].trajectory,$probeTrajectory)
+      $probeText=$probeText.Replace([string]$batchRuns[0].summary,$probeSummary)
+      $probeText|Set-Content -LiteralPath $probeLua -Encoding ASCII
+      $calibrationUsage=Join-Path $resultDir 'resource_calibration.json'
+      $env:MULTIPOLE_SIMION_RUN_CONFIG_LUA=$probeLua
+      $env:MULTIPOLE_SIMION_RF_DRIVE_KERNEL_LUA=$rfDriveKernelLua
+      try{
+        $probe=Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $resolvedResourceBudget `
+          -RunDir $runDir -UsagePath $calibrationUsage -FilePath $simion -WorkingDirectory $solverDir `
+          -ArgumentList ($flyArguments[0..5]+@('--particles',$batchRuns[0].fly2)+$flyArguments[6..($flyArguments.Count-1)]) `
+          -RedirectStandardOutput (Join-Path $calibrationDir 'simion_stdout.txt') `
+          -RedirectStandardError (Join-Path $calibrationDir 'simion_stderr.txt') `
+          -CalibrationDurationSeconds ([int]$calibration.duration_seconds)
+      }finally{
+        Remove-Item Env:MULTIPOLE_SIMION_RUN_CONFIG_LUA -ErrorAction SilentlyContinue
+        Remove-Item Env:MULTIPOLE_SIMION_RF_DRIVE_KERNEL_LUA -ErrorAction SilentlyContinue
+      }
+      if($probe.resource_budget_exceeded){
+        $script:resourceBudgetExceeded=$true
+        throw "SIMION $name resource calibration exceeded its resource budget."
+      }
+      if(-not$probe.resource_calibration_complete-or
+        [int64]$probe.observed_peak_process_tree_working_set_bytes-lt1){
+        throw "SIMION $name resource calibration did not obtain a usable process peak."
+      }
+      Push-Location $codeRoot
+      try{
+        $env:PYTHONPATH=$codeRoot
+        & $python -m common.simion.resource_scheduler --request $dispatchRequest `
+          --profiles $resourceProfiles --output $dispatchPlan `
+          --observed-bootstrap-peak-bytes ([string]$probe.observed_peak_process_tree_working_set_bytes)
+        if($LASTEXITCODE-ne 0){throw 'SIMION calibrated dispatch replanning failed.'}
+        $updatedDispatch=Get-Content -LiteralPath $dispatchPlan -Raw -Encoding UTF8|ConvertFrom-Json
+        if([string]$updatedDispatch.estimation.kind-ne'observed_bootstrap_peak'-or
+          @($updatedDispatch.waves).Count-ne1-or[int]$updatedDispatch.waves[0].batch_count-lt1){
+          throw 'SIMION calibrated dispatch plan is invalid.'
+        }
+        & $python -m common.simion.particle_batching --particle-count ([string]$sourceMeta.particle_count) `
+          --batch-count ([string]$updatedDispatch.waves[0].batch_count) --output $batchPlan
+        if($LASTEXITCODE-ne 0){throw 'SIMION calibrated particle batch planning failed.'}
+        $updatedBatchPlan=Get-Content -LiteralPath $batchPlan -Raw -Encoding UTF8|ConvertFrom-Json
+        Set-SimionBatchesFromPlan -Plan $updatedBatchPlan
+        $script:dispatchPlanDocument=$updatedDispatch
+        $script:batchPlanDocument=$updatedBatchPlan
+        $script:executionBatching=[pscustomobject]@{dispatch='single_wave_parallel';
+          batch_count=[int]$updatedDispatch.waves[0].batch_count}
+        $script:resourceCalibrationRequired=$false
+      }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
+      return Invoke-TransportCase $name $rfScale $axialScale
+    }
     if($batchRuns.Count-eq 1){
       $env:MULTIPOLE_SIMION_RUN_CONFIG_LUA=$batchRuns[0].lua_config
       $env:MULTIPOLE_SIMION_RF_DRIVE_KERNEL_LUA=$rfDriveKernelLua
@@ -1129,6 +1214,8 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
     (Join-Path $resultDir "particle_states__$primaryName.csv"),
     (Join-Path $resultDir "trajectory_samples__$primaryName.csv"),
     (Join-Path $resultDir "particle_state_contract__$primaryName.json"))
+  $calibrationUsage=Join-Path $resultDir 'resource_calibration.json'
+  if(Test-Path -LiteralPath $calibrationUsage -PathType Leaf){$outputs+=$calibrationUsage}
   if($null-ne$control){
     $outputs+=@(
       (Join-Path $resultDir "simion_summary__$controlName.json"),

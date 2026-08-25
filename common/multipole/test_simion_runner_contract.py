@@ -79,7 +79,7 @@ class SimionRunnerContractTests(unittest.TestCase):
         self.assertIn("'--nogui','--noprompt','fly'", source)
         self.assertNotIn("simion_run_fly.lua", source)
 
-    def test_automatic_dispatch_discovers_profiles_and_publishes_only_bootstraps(self) -> None:
+    def test_default_dispatch_calibrates_unknown_profiles_before_parallel_replan(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
         discover = "common.simion.resource_profile discover"
         schedule = "common.simion.resource_scheduler"
@@ -90,6 +90,10 @@ class SimionRunnerContractTests(unittest.TestCase):
         self.assertLess(source.index(discover), source.index(schedule))
         self.assertLess(source.index("Complete-ResourceUsage"), source.index(publish))
         self.assertIn("unknown_resource_profile_bootstrap", source)
+        self.assertIn("$automaticDispatch=[pscustomobject]@{kind='automatic';field_kind='rf';independent_particles=$true}", source)
+        self.assertIn("-CalibrationDurationSeconds ([int]$calibration.duration_seconds)", source)
+        self.assertIn("--observed-bootstrap-peak-bytes", source)
+        self.assertIn("RESOURCE_CALIBRATION_ONLY", source)
 
     def test_governed_profile_is_the_only_physical_entry(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")

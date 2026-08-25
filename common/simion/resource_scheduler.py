@@ -18,6 +18,7 @@ from typing import Any
 from common.simion.particle_batching import plan_single_wave_batches
 
 
+DEFAULT_RESOURCE_CALIBRATION_SECONDS = 20
 RESOURCE_IDENTITY_KEYS = (
     "solver",
     "field_kind",
@@ -212,6 +213,12 @@ def plan_simion_dispatch(
                     else "no_unverified_memory_estimate"
                 ),
                 "requires_observed_peak_before_followup": True,
+                "resource_calibration": {
+                    "kind": "time_limited_process_peak_v1",
+                    "duration_seconds": DEFAULT_RESOURCE_CALIBRATION_SECONDS,
+                    "terminal_action": "terminate_process_tree_then_replan",
+                    "output_scope": "RESOURCE_CALIBRATION_ONLY",
+                },
             },
             "host": {"available_memory_bytes": available, "logical_processors": processor_count},
             "limits": {

@@ -69,7 +69,8 @@ function Invoke-ResourceBudgetedProcess {
     [Parameter(Mandatory)][string[]]$ArgumentList,
     [string]$WorkingDirectory='',
     [string]$RedirectStandardOutput='',
-    [string]$RedirectStandardError=''
+    [string]$RedirectStandardError='',
+    [ValidateRange(0,2147483647)][int]$CalibrationDurationSeconds=0
   )
   $budget=Get-Content -LiteralPath $ResolvedBudgetPath -Raw -Encoding UTF8|ConvertFrom-Json
   $limits=$budget.limits
@@ -112,6 +113,7 @@ function Invoke-ResourceBudgetedProcess {
   }
   $process=Start-Process @startArguments
   $limitName=$null
+  $resourceCalibrationComplete=$false
   $lastDirectorySampleAt=$null
   while(-not$process.HasExited){
     $now=[datetimeoffset]::UtcNow
@@ -153,6 +155,15 @@ function Invoke-ResourceBudgetedProcess {
       }
       break
     }
+    if($CalibrationDurationSeconds-gt 0-and$elapsed-ge$CalibrationDurationSeconds){
+      & taskkill.exe /PID $process.Id /T|Out-Null
+      if(-not$process.WaitForExit(5000)){
+        & taskkill.exe /PID $process.Id /T /F|Out-Null
+        $process.WaitForExit()
+      }
+      $resourceCalibrationComplete=$true
+      break
+    }
     Start-Sleep -Milliseconds 500
     $process.Refresh()
   }
@@ -172,9 +183,24 @@ function Invoke-ResourceBudgetedProcess {
     Write-ResourceUsage -Usage $usage -Path $UsagePath
     return [pscustomobject]@{exit_code=124;resource_budget_exceeded=$true;limit_name=$limitName}
   }
+  if($resourceCalibrationComplete){
+    $usage.status='resource_calibration_complete'
+    $usage.failure_class=$null
+    $usage.resource_calibration=[ordered]@{
+      scope='RESOURCE_CALIBRATION_ONLY'
+      duration_seconds=$CalibrationDurationSeconds
+      terminal_action='terminate_process_tree_then_replan'
+      observed_peak_process_tree_working_set_bytes=[int64]$usage.peak_process_tree_working_set_bytes
+    }
+    Write-ResourceUsage -Usage $usage -Path $UsagePath
+    return [pscustomobject]@{exit_code=0;resource_budget_exceeded=$false;limit_name=$null;
+      resource_calibration_complete=$true;
+      observed_peak_process_tree_working_set_bytes=[int64]$usage.peak_process_tree_working_set_bytes}
+  }
   $usage.status=$(if($process.ExitCode-eq 0){'running'}else{'process_failed'})
   Write-ResourceUsage -Usage $usage -Path $UsagePath
-  return [pscustomobject]@{exit_code=$process.ExitCode;resource_budget_exceeded=$false;limit_name=$null}
+  return [pscustomobject]@{exit_code=$process.ExitCode;resource_budget_exceeded=$false;limit_name=$null;
+    resource_calibration_complete=$false}
 }
 
 function Invoke-ResourceBudgetedProcesses {

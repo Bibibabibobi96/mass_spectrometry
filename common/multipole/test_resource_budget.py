@@ -663,6 +663,49 @@ class ResourceBudgetTests(unittest.TestCase):
             self.assertEqual(measured["status"], "resource_budget_exceeded")
             self.assertEqual(measured["limit_name"], "wall_clock_seconds")
 
+    def test_time_limited_resource_calibration_terminates_without_budget_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            budget = root / "budget.json"
+            usage = root / "usage.json"
+            budget.write_text(
+                json.dumps(
+                    {"limits": {
+                        "wall_clock_seconds": 10,
+                        "transient_run_directory_bytes": 1024**3,
+                        "process_tree_working_set_bytes": 1024**3,
+                        "minimum_system_available_memory_bytes": 1,
+                        "compact_final_retained_bytes": 1024**2,
+                        "automatic_retry_count": 0,
+                    }},
+                ),
+                encoding="utf-8",
+            )
+            support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
+            command = (
+                f". '{support}';"
+                f"$r=Invoke-ResourceBudgetedProcess -ResolvedBudgetPath '{budget}' "
+                f"-RunDir '{root}' -UsagePath '{usage}' -FilePath (Get-Process -Id $PID).Path "
+                "-ArgumentList @('-NoProfile','-Command','Start-Sleep -Seconds 5') "
+                "-CalibrationDurationSeconds 1;"
+                "if(-not$r.resource_calibration_complete-or$r.resource_budget_exceeded-or$r.exit_code-ne0){exit 3}"
+            )
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                cwd=REPO_ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=15,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            measured = json.loads(usage.read_text(encoding="utf-8-sig"))
+            self.assertEqual(measured["status"], "resource_calibration_complete")
+            self.assertEqual(measured["resource_calibration"]["scope"], "RESOURCE_CALIBRATION_ONLY")
+            self.assertGreater(measured["peak_process_tree_working_set_bytes"], 0)
+
     def test_watchdog_samples_run_directory_on_frozen_cadence_and_at_exit(
         self,
     ) -> None:

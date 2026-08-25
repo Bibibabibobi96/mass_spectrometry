@@ -109,6 +109,16 @@ class ResourceSchedulerTests(unittest.TestCase):
         self.assertEqual(followup["estimation"]["reserved_peak_bytes"], 21)
         self.assertEqual(followup["waves"][0]["batch_count"], 4)
 
+    def test_unknown_profile_uses_repository_default_calibration_contract(self) -> None:
+        plan = plan_simion_dispatch(
+            self.rf_request(), [], available_memory_bytes=100, logical_processors=8,
+        )
+        calibration = plan["estimation"]["resource_calibration"]
+        self.assertEqual(calibration["kind"], "time_limited_process_peak_v1")
+        self.assertEqual(calibration["duration_seconds"], 20)
+        self.assertEqual(calibration["terminal_action"], "terminate_process_tree_then_replan")
+        self.assertEqual(calibration["output_scope"], "RESOURCE_CALIBRATION_ONLY")
+
     def test_parallel_request_requires_independent_particles(self) -> None:
         with self.assertRaisesRegex(ValueError, "independent_particles"):
             plan_simion_dispatch({
