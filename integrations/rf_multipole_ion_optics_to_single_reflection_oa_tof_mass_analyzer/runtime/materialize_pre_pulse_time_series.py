@@ -166,6 +166,22 @@ def _resolve_frozen_pre_pulse_contract(
         raise
 
 
+def _resolve_frozen_particle_row_map(value: object, *, run_dir: Path) -> Path:
+    """Resolve the retained immutable particle identity map after alias cleanup.
+
+    The map is frozen beside the screening contract before a short execution
+    path may be removed.  Falling back only to this canonical run-local name
+    preserves the original identity contract; it never regenerates a map.
+    """
+    try:
+        return _resolve_run_path(value, role="particle row map")
+    except ContractError:
+        retained = run_dir / "inputs" / "single_flight_particle_row_map.csv"
+        if retained.is_file():
+            return retained.resolve()
+        raise
+
+
 def _frozen_particle_ids(path: Path) -> list[int]:
     try:
         with path.open("r", encoding="utf-8-sig", newline="") as handle:
@@ -468,8 +484,8 @@ def materialize(
     ):
         raise ContractError("pre-pulse sample-time grid identity differs")
 
-    particle_row_map = _resolve_run_path(
-        inputs.get("particle_row_map"), role="particle row map"
+    particle_row_map = _resolve_frozen_particle_row_map(
+        inputs.get("particle_row_map"), run_dir=run_dir
     )
     frozen_ids = _frozen_particle_ids(particle_row_map)
     particle_count = parameters.get("particle_count")

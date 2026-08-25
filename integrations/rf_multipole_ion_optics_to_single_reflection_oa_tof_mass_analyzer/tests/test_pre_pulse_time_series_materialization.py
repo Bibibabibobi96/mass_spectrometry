@@ -271,7 +271,7 @@ class PrePulseTimeSeriesMaterializationTests(unittest.TestCase):
             self.assertEqual(receipt["terminal_census"]["window_complete"]["count"], 1)
             self.assertEqual(receipt["terminal_census"]["splat"]["count"], 2)
 
-    def test_retained_contract_is_used_after_short_execution_alias_is_removed(self) -> None:
+    def test_retained_inputs_are_used_after_short_execution_alias_is_removed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             paths = _write_fixture(
                 Path(directory), particle_ids=[1, 2, 3], sample_times=[1.0],
@@ -280,6 +280,9 @@ class PrePulseTimeSeriesMaterializationTests(unittest.TestCase):
             run_config = json.loads(paths["run_config"].read_text(encoding="utf-8"))
             run_config["inputs"]["pre_pulse_time_series_contract"] = str(
                 Path(directory) / "deleted-short-alias" / "pre_pulse_time_series_screening_contract.json"
+            )
+            run_config["inputs"]["particle_row_map"] = str(
+                Path(directory) / "deleted-short-alias" / "single_flight_particle_row_map.csv"
             )
             paths["run_config"].write_text(json.dumps(run_config), encoding="utf-8")
             result = _materialize(paths)
