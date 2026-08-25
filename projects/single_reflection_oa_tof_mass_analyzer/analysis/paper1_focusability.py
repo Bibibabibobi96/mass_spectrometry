@@ -36,6 +36,7 @@ class FrozenPrePulseSource:
 
     particle_ids: NDArray[np.int64]
     state: NDArray[np.float64]
+    pulse_eligibility: NDArray[np.bool_]
     instrument_time_us: float
     state_names: tuple[str, ...] = (
         "x_mm", "y_mm", "z_mm", "vx_m_per_s", "vy_m_per_s", "vz_m_per_s"
@@ -57,6 +58,9 @@ class SourceConditionModel:
     effective_sample_count: int
     tail_fraction: float
     residual_rms: NDArray[np.float64]
+    pulse_eligible_fraction: float
+    transverse_emittance_x_mm_m_per_s: float | None
+    transverse_emittance_y_mm_m_per_s: float | None
 
     def predict_mean(self, condition: NDArray[np.float64]) -> NDArray[np.float64]:
         """Return conditional means for ``condition`` with shape ``(n, k)``."""
@@ -68,6 +72,26 @@ class SourceConditionModel:
             (values - self.condition_center) / self.condition_scale, self.degree
         )
         return features @ self.coefficients
+
+
+@dataclass(frozen=True)
+class CovarianceBin:
+    """Detector-blind local residual covariance in one condition bin."""
+
+    lower_condition: float
+    upper_condition: float
+    sample_count: int
+    covariance: NDArray[np.float64]
+
+
+@dataclass(frozen=True)
+class SourceConditionAssessment:
+    """C1 diagnostics that may be computed without detector arrival data."""
+
+    selected_model: SourceConditionModel
+    covariance_bins: tuple[CovarianceBin, ...]
+    residual_mode_variance: NDArray[np.float64]
+    residual_mode_bootstrap_alignment: NDArray[np.float64]
 
 
 @dataclass(frozen=True)
@@ -160,8 +184,15 @@ def load_frozen_pre_pulse_source(path: Path) -> FrozenPrePulseSource:
     fields = set(rows[0])
     event_key = "event" if "event" in fields else "state_event" if "state_event" in fields else None
     time_key = "instrument_time_us" if "instrument_time_us" in fields else None
-    if event_key is None or time_key is None or "particle_id" not in fields:
-        raise ValueError("pre-pulse source table lacks particle ID, event, or instrument time")
+    if (
+        event_key is None
+        or time_key is None
+        or "particle_id" not in fields
+        or "pulse_eligibility" not in fields
+    ):
+        raise ValueError(
+            "pre-pulse source table lacks particle ID, event, instrument time, or pulse eligibility"
+        )
     resolved = {name: next((item for item in choices if item in fields), None) for name, choices in aliases.items()}
     if any(value is None for value in resolved.values()):
         raise ValueError("pre-pulse source table lacks canonical six-dimensional state")
@@ -180,7 +211,20 @@ def load_frozen_pre_pulse_source(path: Path) -> FrozenPrePulseSource:
     ])
     if not np.isfinite(state).all():
         raise ValueError("pre-pulse source state must be finite")
-    return FrozenPrePulseSource(identifiers, state, float(times[0]))
+    eligibility = np.asarray(
+        [
+            {"eligible": True, "ineligible": False}.get(
+                row["pulse_eligibility"].strip().lower(), None
+            )
+            for row in rows
+        ],
+        dtype=object,
+    )
+    if any(value is None for value in eligibility):
+        raise ValueError("pulse eligibility must be eligible or ineligible")
+    return FrozenPrePulseSource(
+        identifiers, state, np.asarray(eligibility, dtype=bool), float(times[0])
+    )
 
 
 def _polynomial_features(values: NDArray[np.float64], degree: int) -> NDArray[np.float64]:
@@ -203,6 +247,7 @@ def fit_source_condition_model(
     condition_names: Sequence[str],
     state_names: Sequence[str],
     degree: int,
+    pulse_eligible_fraction: float = 1.0,
 ) -> SourceConditionModel:
     """Fit a detector-blind conditional source model with shrinkage covariance."""
 
@@ -212,6 +257,8 @@ def fit_source_condition_model(
         raise ValueError("condition and state must have the same row count")
     if len(condition_names) != condition_values.shape[1] or len(state_names) != state_values.shape[1]:
         raise ValueError("state or condition names do not match array columns")
+    if not math.isfinite(pulse_eligible_fraction) or not 0.0 < pulse_eligible_fraction <= 1.0:
+        raise ValueError("pulse_eligible_fraction must lie in (0, 1]")
     if condition_values.shape[0] <= _polynomial_features(condition_values[:1], degree).shape[1]:
         raise ValueError("source cohort is too small for the requested conditional model")
     center = np.mean(condition_values, axis=0)
@@ -232,10 +279,94 @@ def fit_source_condition_model(
     factor = eigenvectors @ np.diag(np.sqrt(eigenvalues))
     mahalanobis = np.sum(np.linalg.solve(factor, residual.T) ** 2, axis=0)
     cutoff = float(np.quantile(mahalanobis, 0.95))
+    name_to_index = {name: index for index, name in enumerate(state_names)}
+
+    def emittance(position: str, velocity: str) -> float | None:
+        if position not in name_to_index or velocity not in name_to_index:
+            return None
+        plane = state_values[:, [name_to_index[position], name_to_index[velocity]]]
+        determinant = float(np.linalg.det(np.cov(plane, rowvar=False, ddof=0)))
+        return math.sqrt(max(0.0, determinant))
+
     return SourceConditionModel(
         tuple(condition_names), tuple(state_names), degree, center, scale,
         coefficients, covariance, factor, state_values.shape[0],
         float(np.mean(mahalanobis > cutoff)), np.sqrt(np.mean(residual * residual, axis=0)),
+        pulse_eligible_fraction,
+        emittance("x_mm", "vx_m_per_s"),
+        emittance("y_mm", "vy_m_per_s"),
+    )
+
+
+def assess_source_condition(
+    *,
+    development_condition: NDArray[np.float64] | Sequence[Sequence[float]],
+    development_state: NDArray[np.float64] | Sequence[Sequence[float]],
+    validation_condition: NDArray[np.float64] | Sequence[Sequence[float]],
+    validation_state: NDArray[np.float64] | Sequence[Sequence[float]],
+    condition_names: Sequence[str],
+    state_names: Sequence[str],
+    pulse_eligible_fraction: float,
+    covariance_bin_count: int = 4,
+    bootstrap_replicates: int = 200,
+    bootstrap_seed: int = 20260825,
+) -> SourceConditionAssessment:
+    """Select a blind source model and quantify C1 covariance/mode stability.
+
+    The caller must provide only the development and validation cohorts.  This
+    deliberate interface makes it impossible to use an optimization or locked
+    cohort for model selection by accident.
+    """
+
+    if covariance_bin_count < 2:
+        raise ValueError("covariance_bin_count must be at least two")
+    if bootstrap_replicates < 1:
+        raise ValueError("bootstrap_replicates must be positive")
+    development_condition_values = _matrix(development_condition, "development_condition")
+    development_state_values = _matrix(development_state, "development_state")
+    validation_condition_values = _matrix(validation_condition, "validation_condition")
+    validation_state_values = _matrix(validation_state, "validation_state")
+    candidates = tuple(
+        fit_source_condition_model(
+            development_condition_values,
+            development_state_values,
+            condition_names=condition_names,
+            state_names=state_names,
+            degree=degree,
+            pulse_eligible_fraction=pulse_eligible_fraction,
+        )
+        for degree in (1, 2)
+    )
+    selected = choose_detector_blind_model(
+        validation_condition_values, validation_state_values, candidates
+    )
+    residual = development_state_values - selected.predict_mean(development_condition_values)
+    ordering = np.argsort(development_condition_values[:, 0], kind="stable")
+    groups = np.array_split(ordering, covariance_bin_count)
+    if any(group.size < 2 for group in groups):
+        raise ValueError("development cohort is too small for covariance bins")
+    covariance_bins = tuple(
+        CovarianceBin(
+            float(np.min(development_condition_values[group, 0])),
+            float(np.max(development_condition_values[group, 0])),
+            int(group.size),
+            np.cov(residual[group], rowvar=False, ddof=0),
+        )
+        for group in groups
+    )
+    eigenvalues, eigenvectors = np.linalg.eigh(selected.covariance)
+    descending = np.argsort(eigenvalues)[::-1]
+    mode_variance = eigenvalues[descending]
+    reference_modes = eigenvectors[:, descending]
+    generator = np.random.default_rng(bootstrap_seed)
+    alignments = np.empty((bootstrap_replicates, residual.shape[1]), dtype=float)
+    for index in range(bootstrap_replicates):
+        sample = residual[generator.integers(0, residual.shape[0], residual.shape[0])]
+        values, vectors = np.linalg.eigh(np.cov(sample, rowvar=False, ddof=0))
+        modes = vectors[:, np.argsort(values)[::-1]]
+        alignments[index] = np.abs(np.sum(reference_modes * modes, axis=0))
+    return SourceConditionAssessment(
+        selected, covariance_bins, mode_variance, np.quantile(alignments, 0.025, axis=0)
     )
 
 

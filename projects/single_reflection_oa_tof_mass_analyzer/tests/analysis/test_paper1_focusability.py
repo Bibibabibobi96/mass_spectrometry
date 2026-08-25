@@ -9,6 +9,7 @@ import numpy as np
 
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.paper1_focusability import (
     FocusabilityProblem,
+    assess_source_condition,
     assign_detector_blind_cohorts,
     choose_detector_blind_model,
     evaluate_focusability,
@@ -33,6 +34,29 @@ class Paper1FocusabilityTest(unittest.TestCase):
         self.assertEqual(selected.degree, 1)
         self.assertLess(selected.tail_fraction, 0.1)
 
+    def test_source_assessment_is_detector_blind_and_reports_c1_diagnostics(self) -> None:
+        generator = np.random.default_rng(7)
+        condition = np.linspace(-2.0, 2.0, 48).reshape(-1, 1)
+        state = np.column_stack((
+            0.4 * condition[:, 0] + generator.normal(0.0, 0.02, 48),
+            4.0 * condition[:, 0] + generator.normal(0.0, 0.2, 48),
+            generator.normal(0.0, 0.1, 48),
+            generator.normal(0.0, 2.0, 48),
+        ))
+        assessment = assess_source_condition(
+            development_condition=condition[:32], development_state=state[:32],
+            validation_condition=condition[32:], validation_state=state[32:],
+            condition_names=("z_mm",),
+            state_names=("x_mm", "vx_m_per_s", "y_mm", "vy_m_per_s"),
+            pulse_eligible_fraction=0.8, covariance_bin_count=4,
+            bootstrap_replicates=20, bootstrap_seed=11,
+        )
+        self.assertEqual(len(assessment.covariance_bins), 4)
+        self.assertEqual(assessment.residual_mode_variance.shape, (4,))
+        self.assertGreaterEqual(float(np.min(assessment.residual_mode_bootstrap_alignment)), 0.0)
+        self.assertAlmostEqual(assessment.selected_model.pulse_eligible_fraction, 0.8)
+        self.assertIsNotNone(assessment.selected_model.transverse_emittance_x_mm_m_per_s)
+
     def test_projector_respects_constraint_and_bound(self) -> None:
         result = evaluate_focusability(FocusabilityProblem(
             time_gradient=np.array([2.0, 1.0]),
@@ -55,17 +79,18 @@ class Paper1FocusabilityTest(unittest.TestCase):
     def test_pre_pulse_loader_requires_common_checkpoint_event(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "source.csv"
-            fields = ["particle_id", "event", "instrument_time_us", "x_mm", "y_mm", "z_mm", "vx_m_per_s", "vy_m_per_s", "vz_m_per_s"]
+            fields = ["particle_id", "event", "instrument_time_us", "x_mm", "y_mm", "z_mm", "vx_m_per_s", "vy_m_per_s", "vz_m_per_s", "pulse_eligibility"]
             with path.open("w", encoding="utf-8", newline="") as handle:
                 writer = csv.DictWriter(handle, fieldnames=fields)
                 writer.writeheader()
                 for identifier in (1, 2, 3):
-                    writer.writerow({"particle_id": identifier, "event": "pre_pulse_state", "instrument_time_us": 1.0, "x_mm": identifier, "y_mm": 0.0, "z_mm": identifier, "vx_m_per_s": 0.0, "vy_m_per_s": 0.0, "vz_m_per_s": 2.0})
+                    writer.writerow({"particle_id": identifier, "event": "pre_pulse_state", "instrument_time_us": 1.0, "x_mm": identifier, "y_mm": 0.0, "z_mm": identifier, "vx_m_per_s": 0.0, "vy_m_per_s": 0.0, "vz_m_per_s": 2.0, "pulse_eligibility": "eligible"})
             source = load_frozen_pre_pulse_source(path)
             self.assertEqual(source.state.shape, (3, 6))
+            self.assertTrue(source.pulse_eligibility.all())
             with path.open("a", encoding="utf-8", newline="") as handle:
                 writer = csv.DictWriter(handle, fieldnames=fields)
-                writer.writerow({"particle_id": 4, "event": "rod_exit", "instrument_time_us": 1.0, "x_mm": 4.0, "y_mm": 0.0, "z_mm": 4.0, "vx_m_per_s": 0.0, "vy_m_per_s": 0.0, "vz_m_per_s": 2.0})
+                writer.writerow({"particle_id": 4, "event": "rod_exit", "instrument_time_us": 1.0, "x_mm": 4.0, "y_mm": 0.0, "z_mm": 4.0, "vx_m_per_s": 0.0, "vy_m_per_s": 0.0, "vz_m_per_s": 2.0, "pulse_eligibility": "eligible"})
             with self.assertRaisesRegex(ValueError, "OA pre-pulse"):
                 load_frozen_pre_pulse_source(path)
 
