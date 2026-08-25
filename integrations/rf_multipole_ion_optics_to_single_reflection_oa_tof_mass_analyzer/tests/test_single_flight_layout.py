@@ -119,6 +119,23 @@ class SingleFlightLayoutTests(unittest.TestCase):
             },
         )
 
+    def test_c3_j3_three_zone_candidate_keeps_the_bound_layout_surface(self) -> None:
+        registry = json.loads((INTEGRATION / "config/single_flight_layout_profiles.json").read_text())
+        geometry = json.loads((REPO / "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json").read_text())
+        port = json.loads((REPO / "projects/single_reflection_oa_tof_mass_analyzer/config/interfaces/required/oatof_accelerator_entry.json").read_text())
+        candidate = self._three_zone_candidate()
+        candidate["compiler_mode"] = "C3_J3_EXACT_LOCAL_DIRECTION_V1"
+        candidate["c3_j3_evidence"] = {"physical_family": {"path": "family.json", "bytes": 1, "sha256": "C" * 64}, "scale_h": 1}
+        resolved, _, _ = compile_geometry_and_port(
+            geometry, port, select_profile(registry, "three_zone_t5_primary_v1"),
+            three_zone_candidate=candidate,
+            three_zone_candidate_binding={"path": "candidate.json", "sha256": "B" * 64},
+        )
+        self.assertEqual(
+            resolved["single_flight_layout_derivation"]["design_compilation"]["candidate_compiler_mode"],
+            "C3_J3_EXACT_LOCAL_DIRECTION_V1",
+        )
+
     def test_t5_three_zone_profile_requires_bound_candidate(self) -> None:
         registry = json.loads(
             (INTEGRATION / "config/single_flight_layout_profiles.json").read_text()

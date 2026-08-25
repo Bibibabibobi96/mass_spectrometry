@@ -8,6 +8,12 @@ from pathlib import Path
 from typing import Any
 
 
+SUPPORTED_CANDIDATE_MODES = {
+    "T5_FROZEN_PRIMARY_AND_BRANCH_ONLY",
+    "C3_J3_EXACT_LOCAL_DIRECTION_V1",
+}
+
+
 def _value(document: dict[str, Any], *keys: str) -> Any:
     value: Any = document
     for key in keys:
@@ -64,7 +70,7 @@ def validate_runtime_identity(
             int(candidate.get("schema_version", 0)) == 1
             and candidate.get("role") == "oatof_three_zone_simion_candidate_resolved"
             and candidate.get("qualification") == "CANDIDATE_ONLY"
-            and candidate.get("compiler_mode") == "T5_FROZEN_PRIMARY_AND_BRANCH_ONLY"
+            and candidate.get("compiler_mode") in SUPPORTED_CANDIDATE_MODES
             and bool(topology_id.strip())
             and bool(geometry_id.strip())
             and _text(candidate, "accelerator_topology", "topology_id") == topology_id
@@ -99,6 +105,14 @@ def validate_runtime_identity(
         identity_matches = False
     if not identity_matches:
         raise ValueError("Frozen three-zone Candidate/runtime identity differs.")
+    if candidate.get("compiler_mode") == "C3_J3_EXACT_LOCAL_DIRECTION_V1":
+        evidence = candidate.get("c3_j3_evidence")
+        if (
+            not isinstance(evidence, dict)
+            or set(evidence) != {"physical_family", "scale_h"}
+            or theory_working_point is not None
+        ):
+            raise ValueError("C3 J3 Candidate/runtime identity differs.")
 
     try:
         for mapping_name in ("planes_global_z_mm", "potentials_v"):

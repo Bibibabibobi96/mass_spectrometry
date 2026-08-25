@@ -153,15 +153,18 @@ def _compile_three_zone_candidate(
     candidate: dict[str, Any],
     candidate_binding: dict[str, str],
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Map one hash-bound T5 Candidate into the legacy-compatible geometry surface."""
+    """Map one hash-bound T5 or C3_J3 Candidate into the layout surface."""
 
     if (
         candidate.get("role") != "oatof_three_zone_simion_candidate_resolved"
         or candidate.get("qualification") != "CANDIDATE_ONLY"
-        or candidate.get("compiler_mode") != "T5_FROZEN_PRIMARY_AND_BRANCH_ONLY"
+        or candidate.get("compiler_mode") not in {
+            "T5_FROZEN_PRIMARY_AND_BRANCH_ONLY",
+            "C3_J3_EXACT_LOCAL_DIRECTION_V1",
+        }
         or set(candidate_binding) != {"path", "sha256"}
     ):
-        raise ContractError("three-zone T5 Candidate identity is invalid")
+        raise ContractError("three-zone Candidate identity is invalid")
     identities = candidate.get("identities", {})
     expected_identities = {
         "topology_id": profile["topology_id"],
@@ -331,6 +334,7 @@ def _compile_three_zone_candidate(
         "candidate": copy.deepcopy(candidate_binding),
         "candidate_campaign_id": candidate["campaign"]["campaign_id"],
         "candidate_plan_sha256": candidate["t5_evidence"]["plan_sha256"],
+        "candidate_compiler_mode": candidate["compiler_mode"],
         "changed_variables": [
             "three_zone_accelerator_topology",
             "source_release_full_width",

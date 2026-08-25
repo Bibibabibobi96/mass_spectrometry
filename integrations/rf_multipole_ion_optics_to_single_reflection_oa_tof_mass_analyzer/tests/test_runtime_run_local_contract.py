@@ -460,6 +460,16 @@ try {{
         ):
             validate_runtime_identity(**arguments)
 
+    def test_c3_identity_requires_its_evidence_and_rejects_theory_anchor(self) -> None:
+        # Reuse the complete mapping fixture above but turn it into a C3 local arm.
+        planes = {"repeller": -25.0, "intermediate1": -20.0, "intermediate2": -10.0, "exit": -5.0}
+        topology = {"topology_id": "topology", "planes_global_z_mm": planes, "potentials_v": {"repeller": 2000.0, "intermediate1": 1500.0, "intermediate2": 500.0, "exit": 0.0}}
+        candidate = {"schema_version": 1, "role": "oatof_three_zone_simion_candidate_resolved", "qualification": "CANDIDATE_ONLY", "compiler_mode": "C3_J3_EXACT_LOCAL_DIRECTION_V1", "c3_j3_evidence": {"physical_family": {}, "scale_h": 1}, "identities": {"topology_id": "topology", "geometry_id": "geometry"}, "accelerator_topology": topology}
+        arguments = {"candidate": candidate, "candidate_sha256": "A" * 64, "geometry": {"accelerator_topology": topology, "single_flight_layout_derivation": {"layout_profile_id": "layout", "architecture_generation_id": "generation", "design_compilation": {"candidate": {"sha256": "A" * 64}}}}, "geometry_sha256": "B" * 64, "frontend_contract": {"accelerator_topology_id": "topology"}, "frontend_electrode_topology": {"topology_id": "frontend"}, "region_field": {"layout_geometry": {"sha256": "B" * 64}, "semantic": {"canonical_profile_id": "field", "accelerator_topology": topology}}, "configuration": {"accelerator_field_profiles": [{"profile_id": "field", "topology_id": "topology", "geometry_id": "geometry", "frontend_electrode_topology_id": "frontend", "field_id": "field-id"}]}, "layout_profile_id": "layout", "architecture_generation_id": "generation"}
+        self.assertEqual(validate_runtime_identity(**arguments)["field_id"], "field-id")
+        with self.assertRaisesRegex(ValueError, "C3 J3 Candidate"):
+            validate_runtime_identity(**{**arguments, "theory_working_point": {}})
+
 
     def test_generated_pre_pulse_subset_does_not_require_external_campaign_state(self) -> None:
         adapter = FAMILY_ADAPTER.read_text(encoding="utf-8")
