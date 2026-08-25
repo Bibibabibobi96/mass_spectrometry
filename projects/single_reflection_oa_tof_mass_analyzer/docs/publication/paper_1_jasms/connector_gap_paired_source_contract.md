@@ -1,6 +1,6 @@
 # Paper 1：connector gap 配对源残差合同
 
-> `STATUS: ACTIVE_EXPLORATION / DETECTOR_BLIND_SOURCE_ONLY`
+> `STATUS: ACTIVE_EXPLORATION / DETECTOR_BLIND_SOURCE_ONLY / FIXED_INTEGRATION_PULSE`
 
 ## 问题
 
@@ -10,31 +10,62 @@
 
 ## 冻结对照
 
-- **0 mm 对照：** 已冻结 S1 terminal-octupole N=1000 pulse-disabled pre-pulse screen。
-- **51.2 mm 实验：** 冻结 exploration 输入仅保存在其失败父 run 的
-  `inputs/frozen_campaign_experiment.json`；未提交一个可被误重放的活动配置。
+- **0 mm 对照：** S1 terminal-octupole 的 N=1000 母 cohort，900 个 transmitted terminal handoff。
+- **51.2 mm 实验：** 完全相同的 S1 母 cohort 和 900 个 transmitted terminal handoff。
 - 唯一物理改变为连接 profile；上游 S1 的 N=1000 母表、source SHA、RF source、布局、场 profile、数值
   profile、三分区候选和脉冲策略必须相同。
-- 每臂只运行 OA 脉冲前 `frontend + accelerator` 时间序列；禁止 detector crossing、峰宽、优化和候选结论。
+- 每臂的唯一取样时刻是该臂冻结 `resolved_single_flight_pulse_schedule.json` 的
+  `pulse_effective_time_us`。它由既有 `multipole_handoff_ballistic_centroid_v1` integration 机制解析；
+  不做 RF 时间窗扫描、不执行 pulse-disabled screen、也不由 detector、峰宽或传输结果选择时刻。
 
 调度器必须按仓库公共策略决定正式批并行度；该合同不携带 CPU、内存或并发覆盖。900 是 S1 已冻结的全部
 transmitted terminal handoff 数，不是为加速而缩小的统计样本；完整 N=1000 母分母仍保留。
 
 ## 判定方法
 
-`analyze_paper1_connector_gap_residual.py`仅读取每臂 detector-blind 选定时刻的状态和其 receipt：
+`analyze_paper1_connector_gap_residual.py`仅读取每臂由成功 run manifest 和 summary 绑定的
+`pre_pulse_state` checkpoint：
 
 1. 以同一 source particle ID hash 划分 development、validation、optimization、locked test；
 2. 每臂在 development 拟合 `v_z(z)` 的 1/2/3 次模型，以 validation 选择次数；
 3. 仅对两臂都存活的 locked IDs 比较平方残差；paired bootstrap 给出二臂 MSE 差的 95% CI；
-4. 同时报告每臂母群、screened、OA 前观测与缺失数。共同 ID 只服务因果诊断，绝不可作为 FWHM/传输的
+4. 同时报告每臂母群、900 handoff、OA 前观测与缺失数，并验证两臂的 handoff particle-ID hash 相同。
+   共同 ID 只服务因果诊断，绝不可作为 FWHM/传输的
    共同幸存者筛选。
 
 若 CI 不能支持方向或共同 locked IDs 少于32，结论为`INCONCLUSIVE_REVISE`；若支持残差降低，也只支持
 “该冻结 S1、两 gap、无碰撞独立粒子链中的 detector-blind source residual 改变”。它不是 gap 最优、J2/J3
 优势或投稿性能结论。之后才可决定是否把该源条件纳入修订后的 C2，而非直接进入 C3。
 
-## 2026-08-25—26 执行结果：时间窗已修订，仍未作残差比较
+## 已废止的时间窗诊断记录
+
+下列记录保留以审计此前的 pulse-disabled time-series 探索和它暴露的实现问题；它们均为
+`DEVELOPMENT_ONLY`，不再是本合同的输入，也不进入 paired residual analysis。当前有效运行配置为：
+
+- [`paper1_s1_connector_gap0_fixed_pulse_n1000.json`](../../../../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/explorations/paper1_s1_connector_gap0_fixed_pulse_n1000.json)
+- [`paper1_s1_connector_gap51p2_fixed_pulse_n1000.json`](../../../../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/explorations/paper1_s1_connector_gap51p2_fixed_pulse_n1000.json)
+
+两者均已完成 direct fixed-pulse 运行并通过只分析恢复的 manifest 复核，但未产生可比较的残差样本。
+
+## 2026-08-26 直接 integration 脉冲结果
+
+| 臂 | 恢复后的成功运行 | integration 脉冲时刻 | 900 handoff 后的 OA 脉冲前状态 | 脉冲适格数 | 检测器命中 |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 0 mm | `20260826_011500__analysis__simion__recovered-single-flight__n900__r02` | 45.5649582037 µs | 875 | 875 | 873 |
+| 51.2 mm | `20260826_011600__analysis__simion__recovered-single-flight__n900` | 57.3440193779 µs | 4 | 0 | 0 |
+
+两个 run 均使用同一 S1 母 cohort、同一 900 transmitted handoff ID hash
+`A7148D0914CC2B30C2911C0CC91A0D310772EA1842075824498A24729D6ED84A`。51.2 mm 的 4 个
+脉冲前状态均在横向 bore 外；其余 896 个在脉冲前缺失，且 105 个虽记录到 grid1 前向事件但没有任何粒子
+到达 intermediate2、出口或 detector。这是完整母 cohort 的实际损失账本，不是共同幸存者筛选。
+
+**结论：`FAIL_STOP`（仅针对“以 51.2 mm gap 作为固定 integration 脉冲的配对残差臂”）。**
+该臂的脉冲适格数为零，无法形成 development/validation/locked-test 残差模型；因此不能声称大 gap 降低
+随机残差，也不能以其支持 J2/J3、聚焦改善或投稿性能。该失败不否定历史时间窗探索中“某些时刻存在
+可选择状态”的诊断现象，但两者不可替代：后者是 `DEVELOPMENT_ONLY`，而本文的主合同禁止按窗口选择时刻。
+在重新设计连接器/入口几何或重新预注册可物理解释的脉冲契约前，不得将这个长 gap 推进到 C2/C3。
+
+### 2026-08-25—26 时间窗探索
 
 51.2 mm 的真实 `N=900` 脉冲前子运行已成功物化时间序列：前 177/321 个时刻仍有粒子存活。
 修正后的 selector 确认全部 177 个仍存活样本的 `pulse_eligible_count=0` 且`source_region_count=0`，

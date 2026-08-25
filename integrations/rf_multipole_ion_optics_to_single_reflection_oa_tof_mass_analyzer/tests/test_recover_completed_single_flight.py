@@ -1,0 +1,82 @@
+from __future__ import annotations
+
+import tempfile
+import unittest
+from pathlib import Path
+import json
+
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.recover_completed_single_flight import (
+    _completed_batch_logs,
+    _find_failed_child,
+    _recovery_child_dir,
+    _source_region_diagnostic_profile_id,
+)
+
+
+class CompletedSingleFlightRecoveryTests(unittest.TestCase):
+    def test_finds_terminal_handoff_child_when_restart_count_is_absent(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            parent = root / "20260826_011500__sim__cross__fixed-pulse__n1000__r01"
+            parent.mkdir()
+            child = root / "20260826_011500__sim__simion__rf-oatof-single-flight-gap0__n900__r01"
+            child.mkdir()
+            (child / "run_manifest.json").write_text("{}\n", encoding="utf-8")
+            plan = {
+                "execution_steps": [{"arguments": [
+                    "terminal_handoff_continued_particle_count=900",
+                ]}],
+            }
+            resolved = {"connector": {"length_mm": 0}}
+            self.assertEqual(_find_failed_child(parent, plan, resolved), child)
+
+    def test_recovery_child_has_a_valid_distinct_retry_identity(self) -> None:
+        parent = Path(
+            "20260826_011500__analysis__cross__fixed-pulse-recovery__n1000__r01"
+        )
+        self.assertEqual(
+            _recovery_child_dir(parent, 900).name,
+            "20260826_011500__analysis__simion__recovered-single-flight__n900__r01",
+        )
+
+    def test_uses_sole_frozen_diagnostic_profile_when_campaign_is_legacy(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            configuration = Path(directory) / "configuration.json"
+            configuration.write_text(
+                json.dumps({"source_region_diagnostic_profiles": [
+                    {"profile_id": "diagnostic-v1"},
+                ]}),
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                _source_region_diagnostic_profile_id({}, configuration),
+                "diagnostic-v1",
+            )
+
+    def test_recovers_each_completed_parallel_batch_with_its_own_count(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            logs = root / "logs"
+            logs.mkdir()
+            inputs = root / "inputs"
+            inputs.mkdir()
+            for index in (1, 2, 3):
+                (logs / f"simion__batch{index:02d}.stdout.log").write_text(
+                    "status,Fly completed.\n", encoding="utf-8",
+                )
+            (inputs / "simion_execution_batch_plan.json").write_text(
+                json.dumps({"batches": [
+                    {"count": 3}, {"count": 4}, {"count": 5},
+                ]}),
+                encoding="utf-8",
+            )
+            paths, counts = _completed_batch_logs(
+                child_dir=root,
+                inputs={"simion_execution_batch_plan": "missing-temporary-path.json"},
+                launched_count=12,
+            )
+        self.assertEqual([path.name for path in paths], [
+            "simion__batch01.stdout.log", "simion__batch02.stdout.log",
+            "simion__batch03.stdout.log",
+        ])
+        self.assertEqual(counts, [3, 4, 5])

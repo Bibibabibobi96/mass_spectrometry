@@ -1,11 +1,13 @@
 """Compare OA-pre-pulse axial residuals across connector gaps without detector data.
 
-This Paper 1 diagnostic consumes two pulse-disabled, governed time-series state
-tables from the *same* root mother cohort.  It uses deterministic particle-ID
-roles: development fits a ``v_z(z)`` model, validation selects its degree, and
-only IDs present in both locked-test sets estimate the paired residual change.
-The common-ID statistic is a phase-space diagnostic, never a peak-width or
-transmission result; each arm's full mother-cohort loss census is retained.
+This Paper 1 diagnostic consumes two governed OA ``pre_pulse_state`` checkpoint
+tables from the *same* root mother cohort.  The checkpoint time is the
+integration-resolved ``pulse_effective_time_us``; it is not selected from a
+time series.  It uses deterministic particle-ID roles: development fits a
+``v_z(z)`` model, validation selects its degree, and only IDs present in both
+locked-test sets estimate the paired residual change.  The common-ID statistic
+is a phase-space diagnostic, never a peak-width or transmission result; each
+arm's full mother-cohort loss census is retained.
 """
 
 from __future__ import annotations
@@ -39,7 +41,8 @@ class GovernedSource:
     receipt_path: Path
     mother_count: int
     screened_count: int
-    sample_index: int
+    checkpoint_kind: str
+    screened_id_sha256: str | None = None
 
 
 def _sha256(path: Path) -> str:
@@ -87,7 +90,82 @@ def load_governed_source(
     if source.particle_ids.size != alive:
         raise ValueError("selected state count differs from the receipt census")
     return GovernedSource(
-        source, state_path, receipt_path, mother_count, screened_count, sample_index
+        source, state_path, receipt_path, mother_count, screened_count,
+        "pulse_disabled_time_series", None,
+    )
+
+
+def _manifest_output_record(manifest: dict[str, Any], name: str) -> dict[str, Any]:
+    records = [
+        item for item in manifest.get("outputs", [])
+        if isinstance(item, dict) and Path(str(item.get("path", ""))).name == name
+    ]
+    if len(records) != 1:
+        raise ValueError(f"run manifest lacks one {name} output record")
+    return records[0]
+
+
+def load_fixed_pulse_checkpoint_source(
+    *, state_path: Path, summary_path: Path, run_manifest_path: Path,
+    mother_count: int, screened_count: int,
+) -> GovernedSource:
+    """Load one direct integration-pulse checkpoint with manifest binding.
+
+    This is intentionally separate from the legacy pulse-disabled time-series
+    reader.  The fixed checkpoint is valid only when the successful run summary
+    and manifest bind it to the resolved pulse epoch and complete handoff
+    population.  It never chooses an RF sample index.
+    """
+
+    if mother_count < 1 or not 1 <= screened_count <= mother_count:
+        raise ValueError("mother and screened population counts are invalid")
+    manifest = _load_json(run_manifest_path)
+    if (
+        manifest.get("role") != "simulation_run_manifest"
+        or manifest.get("status") != "success"
+    ):
+        raise ValueError("fixed-pulse run manifest is not successful")
+    output = _manifest_output_record(manifest, "single_flight_particle_checkpoints.csv")
+    if output.get("sha256") != _sha256(state_path):
+        raise ValueError("fixed-pulse run manifest does not bind the checkpoint table")
+    summary = _load_json(summary_path)
+    if (
+        summary.get("role") != "rf_oatof_simion_single_flight_summary"
+        or summary.get("status") != "success"
+    ):
+        raise ValueError("fixed-pulse summary is not successful")
+    try:
+        pulse_time_us = float(summary["pulse_effective_time_us"])
+        census = summary["census"]
+        observed = summary["observed_cohort_authority"]
+        released = observed["source_release"]
+        checkpoint = observed["pre_pulse_state"]
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("fixed-pulse summary lacks governed checkpoint census") from exc
+    released_ids = released.get("ordered_particle_ids") if isinstance(released, dict) else None
+    if (
+        not isinstance(released_ids, list)
+        or released_ids != sorted(set(released_ids))
+        or len(released_ids) != screened_count
+        or census.get("launched") != screened_count
+        or released.get("count") != screened_count
+    ):
+        raise ValueError("fixed-pulse source-release census differs from screened count")
+    screened_id_sha256 = hashlib.sha256(
+        json.dumps(released_ids, separators=(",", ":")).encode("utf-8")
+    ).hexdigest().upper()
+    if released.get("ordered_particle_id_sha256") != screened_id_sha256:
+        raise ValueError("fixed-pulse source-release identity differs")
+    source = load_frozen_pre_pulse_source(state_path)
+    if (
+        not np.isclose(source.instrument_time_us, pulse_time_us, rtol=0.0, atol=1e-9)
+        or checkpoint.get("count") != int(source.particle_ids.size)
+        or census.get("pre_pulse_state") != int(source.particle_ids.size)
+    ):
+        raise ValueError("fixed-pulse checkpoint differs from summary")
+    return GovernedSource(
+        source, state_path, run_manifest_path, mother_count, screened_count,
+        "integration_fixed_pulse", screened_id_sha256,
     )
 
 
@@ -176,6 +254,12 @@ def compare_connector_gap_sources(
 
     if first.mother_count != second.mother_count:
         raise ValueError("connector-gap comparison requires one shared mother count")
+    if (
+        first.screened_id_sha256 is not None
+        and second.screened_id_sha256 is not None
+        and first.screened_id_sha256 != second.screened_id_sha256
+    ):
+        raise ValueError("connector-gap arms do not share one screened particle-ID cohort")
     first_roles, first_degree, first_fit, first_scores = _arm_model(first.source, salt=cohort_salt)
     second_roles, second_degree, second_fit, second_scores = _arm_model(second.source, salt=cohort_salt)
     common_locked_ids = sorted(
@@ -200,11 +284,11 @@ def compare_connector_gap_sources(
         "claim_limit": "Paired OA-pre-pulse phase-space diagnostic only; no detector, peak-width, transmission, optimization, Candidate, or Formal claim.",
         "cohort": {"salt": cohort_salt, "mother_count": first.mother_count, "common_locked_test_count": len(common_locked_ids), "common_locked_test_id_sha256": hashlib.sha256(json.dumps(common_locked_ids, separators=(",", ":")).encode("utf-8")).hexdigest().upper()},
         "arms": [
-            {"state_table": {"path": str(item.state_path.resolve()), "sha256": _sha256(item.state_path)}, "time_series_receipt": {"path": str(item.receipt_path.resolve()), "sha256": _sha256(item.receipt_path)}, "anchor": {"instrument_time_us": item.source.instrument_time_us, "sample_index": item.sample_index}, "census": {"mother_count": item.mother_count, "screened_count": item.screened_count, "observed_pre_pulse_count": int(item.source.particle_ids.size), "unobserved_or_lost_count": item.mother_count - int(item.source.particle_ids.size)}, "selected_polynomial_degree": degree, "validation_mse_m2_per_s2": scores}
+            {"state_table": {"path": str(item.state_path.resolve()), "sha256": _sha256(item.state_path)}, "evidence_receipt": {"path": str(item.receipt_path.resolve()), "sha256": _sha256(item.receipt_path)}, "checkpoint": {"kind": item.checkpoint_kind, "instrument_time_us": item.source.instrument_time_us}, "census": {"mother_count": item.mother_count, "screened_count": item.screened_count, "screened_particle_id_sha256": item.screened_id_sha256, "observed_pre_pulse_count": int(item.source.particle_ids.size), "unobserved_or_lost_count": item.mother_count - int(item.source.particle_ids.size)}, "selected_polynomial_degree": degree, "validation_mse_m2_per_s2": scores}
             for item, degree, scores in ((first, first_degree, first_scores), (second, second_degree, second_scores))
         ],
         "paired_locked_axial_residual": {"first_rms_m_per_s": float(np.sqrt(first_mse)), "second_rms_m_per_s": float(np.sqrt(second_mse)), "second_minus_first_mse_m2_per_s2": paired, "relative_mse_change": float(second_mse / first_mse - 1.0) if first_mse > 0.0 else None},
-        "claims_supported": ["The two arms use only pulse-disabled OA-pre-pulse states and deterministic ID roles.", "The reported residual difference is evaluated only on common locked-test source IDs while each arm retains its full mother-cohort loss census."],
+        "claims_supported": ["The two arms use integration-fixed OA-pre-pulse states and deterministic ID roles.", "The reported residual difference is evaluated only on common locked-test source IDs while each arm retains its full mother-cohort loss census."],
         "claims_prohibited": ["A common-ID residual statistic proves a peak-width, resolution, transmission, or connector-gap optimum.", "Observed residual change has a detector-level or engineering interpretation without the subsequent locked particle campaign."],
     }
 
@@ -213,17 +297,17 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     for prefix in ("first", "second"):
         parser.add_argument(f"--{prefix}-state-table", type=Path, required=True)
-        parser.add_argument(f"--{prefix}-time-series-receipt", type=Path, required=True)
+        parser.add_argument(f"--{prefix}-summary", type=Path, required=True)
+        parser.add_argument(f"--{prefix}-run-manifest", type=Path, required=True)
         parser.add_argument(f"--{prefix}-mother-count", type=int, required=True)
         parser.add_argument(f"--{prefix}-screened-count", type=int, required=True)
-        parser.add_argument(f"--{prefix}-sample-index", type=int, required=True)
     parser.add_argument("--cohort-salt", required=True)
     parser.add_argument("--bootstrap-replicates", type=int, default=1000)
     parser.add_argument("--bootstrap-seed", type=int, default=20260825)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    first = load_governed_source(state_path=args.first_state_table, receipt_path=args.first_time_series_receipt, mother_count=args.first_mother_count, screened_count=args.first_screened_count, sample_index=args.first_sample_index)
-    second = load_governed_source(state_path=args.second_state_table, receipt_path=args.second_time_series_receipt, mother_count=args.second_mother_count, screened_count=args.second_screened_count, sample_index=args.second_sample_index)
+    first = load_fixed_pulse_checkpoint_source(state_path=args.first_state_table, summary_path=args.first_summary, run_manifest_path=args.first_run_manifest, mother_count=args.first_mother_count, screened_count=args.first_screened_count)
+    second = load_fixed_pulse_checkpoint_source(state_path=args.second_state_table, summary_path=args.second_summary, run_manifest_path=args.second_run_manifest, mother_count=args.second_mother_count, screened_count=args.second_screened_count)
     result = compare_connector_gap_sources(first=first, second=second, cohort_salt=args.cohort_salt, bootstrap_replicates=args.bootstrap_replicates, bootstrap_seed=args.bootstrap_seed)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")

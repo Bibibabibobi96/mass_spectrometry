@@ -121,8 +121,14 @@ class SingleFlightAnalysisTests(unittest.TestCase):
             }
         }
         validate_three_zone_checkpoint_census(summary)
+        loss_before_intermediate2 = json.loads(json.dumps(summary))
+        loss_before_intermediate2["census"].update({
+            "accelerator_intermediate2_forward": 0,
+            "local_accelerator_exit": 0,
+            "detector_crossing": 0,
+        })
+        validate_three_zone_checkpoint_census(loss_before_intermediate2)
         for field, value in (
-            ("accelerator_intermediate2_forward", 0),
             ("accelerator_intermediate2_forward", 4),
             ("local_accelerator_exit", 3),
             ("detector_crossing", 2),
@@ -645,6 +651,45 @@ class SingleFlightAnalysisTests(unittest.TestCase):
         self.assertNotIn("instrument_clock_peak_is_resolution_claim", summary)
         pre_pulse = next(row for row in rows if row["event"] == "pre_pulse_state")
         self.assertGreater(pre_pulse["kinetic_energy_eV"], 0.0)
+
+    def test_accepts_terminal_handoff_continuation_source_mode(self) -> None:
+        text = (
+            "TRACE: pre_pulse_state ion=1 particle_id=1 "
+            "instrument_time_us=20 x_mm=-48.8 y_mm=0 z_mm=1.5 "
+            "vx_mm_per_us=1 vy_mm_per_us=2 vz_mm_per_us=3\n"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "log.txt"
+            path.write_text(text, encoding="utf-8")
+            rows, summary = analyze(
+                path, 1, 100.0,
+                source_release_mode="continuous_frontend_handoff",
+            )
+        self.assertEqual(rows[0]["event"], "pre_pulse_state")
+        self.assertEqual(summary["census"]["pre_pulse_state"], 1)
+
+    def test_terminal_handoff_allows_physical_loss_before_pulse(self) -> None:
+        text = (
+            "TRACE: pre_pulse_state ion=1 particle_id=1 "
+            "instrument_time_us=20 x_mm=-48.8 y_mm=0 z_mm=1.5 "
+            "vx_mm_per_us=1 vy_mm_per_us=2 vz_mm_per_us=3\n"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "log.txt"
+            path.write_text(text, encoding="utf-8")
+            _, summary = analyze(
+                path, 2, 100.0, pulse_time_us=20.0,
+                population_denominator_count=3,
+                eligible_population_count=2,
+                source_release_mode="continuous_frontend_handoff",
+            )
+        self.assertEqual(
+            summary["source_population"]["simulation_population_basis"],
+            "terminal_handoff_full_population",
+        )
+        self.assertIsNone(
+            summary["source_population"]["simulated_fraction_of_pulse_eligible_population"]
+        )
 
     def test_publishes_three_zone_intermediate2_checkpoint_and_census(self) -> None:
         text = "\n".join(

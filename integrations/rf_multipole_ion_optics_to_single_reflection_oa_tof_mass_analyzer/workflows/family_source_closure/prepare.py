@@ -3221,6 +3221,7 @@ def prepare_family_source_closure(
                 if (
                     pulse_prefix_sha256 is not None
                     and pre_pulse_time_series_specification is None
+                    and cache_miss_policy is not None
                 ):
                     schedule = _resolve_cached_verified_pulse_schedule(
                         root=root,

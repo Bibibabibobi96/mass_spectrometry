@@ -130,8 +130,8 @@ def validate_three_zone_checkpoint_census(summary: dict) -> None:
         raise ValueError("three-zone intermediate2 checkpoint census differs") from exc
     if (
         launched < 1
-        or counts["accelerator_grid1_forward"] < 1
-        or counts["accelerator_intermediate2_forward"] < 1
+        or counts["accelerator_grid1_forward"] < 0
+        or counts["accelerator_intermediate2_forward"] < 0
         or counts["accelerator_grid1_forward"] > launched
         or counts["accelerator_intermediate2_forward"]
         > counts["accelerator_grid1_forward"]
@@ -446,7 +446,11 @@ def analyze(
         raise ValueError("new single-flight analysis requires canonical instrument time")
     if bootstrap_resamples < 0:
         raise ValueError("bootstrap resamples must be non-negative")
-    if source_release_mode not in {"continuous_frontend", "pre_pulse_restart"}:
+    if source_release_mode not in {
+        "continuous_frontend",
+        "continuous_frontend_handoff",
+        "pre_pulse_restart",
+    }:
         raise ValueError("unknown single-flight source release mode")
     if particle_row_map_path is None:
         ordered_particle_ids = list(range(1, launched + 1))
@@ -1128,7 +1132,16 @@ def analyze(
         raise ValueError("source population counts are inconsistent")
     if not 0 < launched <= population_denominator_count:
         raise ValueError("simulated population count is inconsistent")
-    if not full_candidate_population_simulated and launched > eligible_population_count:
+    # A pre-pulse restart is explicitly a conditional simulation, so its
+    # launched set must be no larger than the eligible set it was selected
+    # from.  A continuous handoff, in contrast, propagates every frozen
+    # handoff ion through the pulse.  Ions missing at the checkpoint are a
+    # physical pre-pulse loss, not an illicit conditional selection.
+    if (
+        source_release_mode == "pre_pulse_restart"
+        and not full_candidate_population_simulated
+        and launched > eligible_population_count
+    ):
         raise ValueError("conditional population exceeds the pulse-eligible population")
     if (
         full_candidate_population_simulated
@@ -1294,6 +1307,7 @@ def analyze(
     )
     complete_eligible_population_simulated = (
         full_candidate_population_simulated
+        or source_release_mode == "continuous_frontend_handoff"
         or (
             launched == eligible_population_count
             and eligible_ids == expected_particle_ids
@@ -1325,7 +1339,11 @@ def analyze(
             "simulation_population_basis": (
                 "candidate_full_population"
                 if full_candidate_population_simulated
-                else "pulse_eligible_conditional_population"
+                else (
+                    "terminal_handoff_full_population"
+                    if source_release_mode == "continuous_frontend_handoff"
+                    else "pulse_eligible_conditional_population"
+                )
             ),
             "raw_pulse_capture_fraction": (
                 eligible_population_count / population_denominator_count
@@ -1335,7 +1353,10 @@ def analyze(
             ),
             "simulated_fraction_of_pulse_eligible_population": (
                 None
-                if full_candidate_population_simulated
+                if (
+                    full_candidate_population_simulated
+                    or source_release_mode == "continuous_frontend_handoff"
+                )
                 else launched / eligible_population_count
             ),
             "efficiency_denominator": "candidate_population_count",
