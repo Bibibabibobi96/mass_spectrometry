@@ -1,6 +1,6 @@
 # Paper 1：connector gap 配对源残差合同
 
-> `STATUS: ACTIVE_EXPLORATION / DETECTOR_BLIND_SOURCE_ONLY / FIXED_INTEGRATION_PULSE`
+> `STATUS: ACTIVE_EXPLORATION / DETECTOR_BLIND_SOURCE_ONLY / REAL_FIELD_PULSE_CONFIRMATION_REQUIRED`
 
 ## 问题
 
@@ -14,9 +14,12 @@
 - **51.2 mm 实验：** 完全相同的 S1 母 cohort 和 900 个 transmitted terminal handoff。
 - 唯一物理改变为连接 profile；上游 S1 的 N=1000 母表、source SHA、RF source、布局、场 profile、数值
   profile、三分区候选和脉冲策略必须相同。
-- 每臂的唯一取样时刻是该臂冻结 `resolved_single_flight_pulse_schedule.json` 的
-  `pulse_effective_time_us`。它由既有 `multipole_handoff_ballistic_centroid_v1` integration 机制解析；
-  不做 RF 时间窗扫描、不执行 pulse-disabled screen、也不由 detector、峰宽或传输结果选择时刻。
+- 每臂首先由既有 `multipole_handoff_ballistic_centroid_v1` 给出**弹道种子时刻**，而非把该无场外推值
+  误作真实前端场中的最终脉冲时刻。随后必须复用 integration 已有的
+  `auto_detector_blind_discovery_and_confirmation_v1`：以完整冻结 handoff ID、真实前端/加速器 PA 和
+  固定 RF 时间网格物化脉冲前状态，按既有的 `pulse_eligible_count → transverse_bore_count → source-region
+  moments → 与种子距离` 次序选择一个候选，并在 pulse-on run 中确认。整个选择过程禁止读取 detector、
+  峰宽、分辨率或下游传输结果。
 
 调度器必须按仓库公共策略决定正式批并行度；该合同不携带 CPU、内存或并发覆盖。900 是 S1 已冻结的全部
 transmitted terminal handoff 数，不是为加速而缩小的统计样本；完整 N=1000 母分母仍保留。
@@ -37,15 +40,16 @@ transmitted terminal handoff 数，不是为加速而缩小的统计样本；完
 “该冻结 S1、两 gap、无碰撞独立粒子链中的 detector-blind source residual 改变”。它不是 gap 最优、J2/J3
 优势或投稿性能结论。之后才可决定是否把该源条件纳入修订后的 C2，而非直接进入 C3。
 
-## 已废止的时间窗诊断记录
+## 弹道种子失配与真实场确认
 
-下列记录保留以审计此前的 pulse-disabled time-series 探索和它暴露的实现问题；它们均为
-`DEVELOPMENT_ONLY`，不再是本合同的输入，也不进入 paired residual analysis。当前有效运行配置为：
+下列固定脉冲运行保留以审计“把弹道种子错误地当作最终脉冲”这一失配；它们是
+`DEVELOPMENT_ONLY`，不进入配对残差分析，也不能排除任何 gap。当前固定种子配置为：
 
 - [`paper1_s1_connector_gap0_fixed_pulse_n1000.json`](../../../../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/explorations/paper1_s1_connector_gap0_fixed_pulse_n1000.json)
 - [`paper1_s1_connector_gap51p2_fixed_pulse_n1000.json`](../../../../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/explorations/paper1_s1_connector_gap51p2_fixed_pulse_n1000.json)
 
-两者均已完成 direct fixed-pulse 运行并通过只分析恢复的 manifest 复核，但未产生可比较的残差样本。
+两者均已完成 direct fixed-pulse 运行并通过只分析恢复的 manifest 复核，但不能作为最终脉冲的运行
+身份。最终脉冲只接受 manifest-bound、真实场 detector-blind candidate-confirmation receipt。
 
 ## 2026-08-26 直接 integration 脉冲结果
 
@@ -59,13 +63,12 @@ transmitted terminal handoff 数，不是为加速而缩小的统计样本；完
 脉冲前状态均在横向 bore 外；其余 896 个在脉冲前缺失，且 105 个虽记录到 grid1 前向事件但没有任何粒子
 到达 intermediate2、出口或 detector。这是完整母 cohort 的实际损失账本，不是共同幸存者筛选。
 
-**结论：`FAIL_STOP`（仅针对“以 51.2 mm gap 作为固定 integration 脉冲的配对残差臂”）。**
-该臂的脉冲适格数为零，无法形成 development/validation/locked-test 残差模型；因此不能声称大 gap 降低
-随机残差，也不能以其支持 J2/J3、聚焦改善或投稿性能。该失败不否定历史时间窗探索中“某些时刻存在
-可选择状态”的诊断现象，但两者不可替代：后者是 `DEVELOPMENT_ONLY`，而本文的主合同禁止按窗口选择时刻。
-在重新设计连接器/入口几何或重新预注册可物理解释的脉冲契约前，不得将这个长 gap 推进到 C2/C3。
+**结论：`INCONCLUSIVE_REVISE`（仅针对“把弹道种子直接用作最终脉冲”的错误用法）。**
+该臂的脉冲适格数为零，因此这一次 run 不能形成 development/validation/locked-test 残差模型；它不构成
+长 gap 无效、更不能反证“长 gap 降低条件随机残差”。正确后继是使用已有的 detector-blind real-field
+confirmation，而不是重设计连接器或把无效种子推进 C2/C3。
 
-### 2026-08-25—26 时间窗探索
+### 2026-08-25—26 真实场脉冲确认
 
 51.2 mm 的真实 `N=900` 脉冲前子运行已成功物化时间序列：前 177/321 个时刻仍有粒子存活。
 修正后的 selector 确认全部 177 个仍存活样本的 `pulse_eligible_count=0` 且`source_region_count=0`，
@@ -76,8 +79,9 @@ transmitted terminal handoff 数，不是为加速而缩小的统计样本；完
 `20260825_235102__analysis__python__paper1-s1-gap51p2-pre-pulse-publication-replay__n1000`是在修复
 “尾部全损失不能阻断早期样本”后生成的诊断 replay；它暴露上述零可捕获状态缺口，不能作为成功候选证据。
 
-结论：本臂为`INCONCLUSIVE_REVISE`。在重订能够覆盖该连接器传播时间的 detector-blind 时间窗之前，
-不得运行 `analyze_paper1_connector_gap_residual.py`、不得用此 gap 修订 C2，也不得据此进入 C3。
+结论：初始窄网格为`INCONCLUSIVE_REVISE`，原因是其覆盖范围不足；这不是对 gap 的物理否定。后继只可
+使用同一 integration 的全母 cohort、真实场、detector-blind confirmation 路径；不得由 detector 或峰宽
+回选脉冲。
 
 上述结论只适用于最初的窄时间窗，不能外推到 51.2 mm gap 本身。2026-08-26 的修订窗口以同一
 S1 母 cohort、同一真实 PA 和同一 RF 步长，扫描 `46.5485648325` 至 `58.8440193779 us`（2165 个
@@ -86,12 +90,22 @@ S1 母 cohort、同一真实 PA 和同一 RF 步长，扫描 `46.5485648325` 至
 仍为 1000），候选时刻有 76 个存活且横向 bore 合格的粒子，其中 16 个位于注册的 source region。该结果只证明“这个长 gap 存在可选择的
 OA 脉冲前状态”；不证明随机残差变小、聚焦改善或传输合格。
 
-本次也暴露并修复了两个证据链缺口：时间窗允许整体落在 ballistic seed 上游，且
+本次也暴露并修复了两个证据链缺口：确认网格必须允许整体落在 ballistic seed 上游，且
 `pre_pulse_time_series_states.csv` 与大型候选选择 receipt 都被列为紧凑保留中的必留 child→parent
 证据。旧 `001500` 父运行的同类状态表已按旧规则删除，所以受审计的只读重放正确拒绝了它；首次
 `002000` 尝试也因重用 child run ID 而安全失败，两份失败父记录均保持失败，未被改写为成功。
 
 以相同冻结输入建立的重试链
 `20260826_002000__sim__cross__paper1-s1-gap51p2-real-field-window-pre-pulse__n1000__r01` 及其
-N=900 child 均已成功通过 manifest 复核。它是本合同当前有效的 51.2 mm 臂；下一步可建立同源 0 mm
-臂，再把两侧的预脉冲状态输入配对残差分析。
+N=900 child 均已成功通过 manifest 复核。候选时刻的 76/900 粒子全部处于加速器 bore 且脉冲适格，
+其中 16 个在注册 source region；候选比弹道种子早 `3.2784090909 µs`。这证明原固定种子是时序失配，
+不证明残差已经降低。它是本合同当前有效的 51.2 mm **候选确认前驱**；下一步以同源 0 mm 的相同
+real-field confirmation 建立另一臂，再对两个已确认脉冲的预脉冲状态进行配对残差分析。
+
+## 机制主张与边界
+
+本合同要检验的机制是：在同一完整母 cohort、相同入口接受定义和各 gap 自己的真实场 detector-blind
+确认脉冲下，较长连接器提供额外传播距离，使纵向相关及高阶残差在可抽取截面上重新组织；历史
+`gap×field` 诊断观察到该工作点下 gap 增大时直接 FWHM 下降，同时可传输粒子数下降。故长 gap 的预期
+收益必须与完整母 cohort 的传输/损失代价并列报告。它不主张完整六维相空间体积无碰撞地减少，不主张
+任意脉冲时刻都改善，也不把历史 FWHM 趋势直接升级为投稿性能证据。

@@ -45,7 +45,7 @@ claim的完整投稿要求；目前没有主claim达到`SUPPORTED`。
 | [`observed横向敏感性`](../../history/20260817__three-zone-observed-transverse-sensitivity.md) | 同一N=100 ID下横向恢复是较小但可测增量 | 横向普遍不重要、连续真实handoff或统计稳定性 |
 | [`observed z-vz归因`](../../history/20260817__three-zone-zvz-nonlinearity-fixed-energy-source-sensitivity.md) | 固定设计中observed-affine残差主导首尾顺序退化 | 该残差不可补偿、是光滑高阶曲线或可推广到其他工况 |
 | RF→OA integration observed authority | S1的N=1000母cohort/900 handoff同步真实PA筛查提供875个所选时刻状态；S2的N=1000母cohort/914 handoff筛查提供828个所选时刻状态。两源均由冻结脉冲计划和detector-blind selector选择，且母分母与损失账本保留 | [`C1 source contract`](stage_c1_source_contract.md)为`PASS_CONTINUE`：只证明两源各自可稳定识别；它不比较模型相等性，也不升级为J2/J3或性能结论 |
-| S1 connector-gap fixed integration pulse | 同一N=1000母 cohort / 900 handoff ID下，0 mm 在其 integration 脉冲时有875个适格状态、873个检测器命中；51.2 mm 在其 integration 脉冲时为0个适格、0个检测器命中，所有损失保留 | [`connector-gap paired-source contract`](connector_gap_paired_source_contract.md)为`FAIL_STOP`：排除51.2 mm gap作为当前固定脉冲的配对残差/性能候选；不支持“gap降低残差”或J2/J3，不可用历史时间窗结果替代 |
+| S1 connector-gap pulse anchoring | 同一N=1000母 cohort / 900 handoff ID下，0 mm 的弹道种子可用；51.2 mm 的弹道种子 57.344019 µs 为零适格，但现有真实场、detector-blind selector 在 54.065610 µs 找到 76 个 bore/脉冲适格状态（16 个注册 source-region 状态），全母分母和损失账本保留 | [`connector-gap paired-source contract`](connector_gap_paired_source_contract.md)为`INCONCLUSIVE_REVISE`：固定弹道种子被判定为时序失配，不能排除 51.2 mm gap，更不能反证“gap降低残差”。下一步须完成两臂的 manifest-bound real-field pulse confirmation，再进行 pre-pulse 配对残差比较；尚不支持 J2/J3 或投稿性能主张 |
 | C2 ideal axial total-objective revision | 两源的解析/有限差分`g`、`G`步长平台、两区零控制、三区改善/零效/恶化的锁定排序均闭合；目标同时含条件均值方差和条件厚度 | 对J2：`INCONCLUSIVE_REVISE / STOP`，不得进入三维。对预注册拆分的J3：`PASS_CONTINUE / IDEAL_AXIAL_ONLY`，只允许冻结一份C3_J3真实场局部导数合同；不允许借此恢复J2、FWHM、传输或普适结构优越性主张 |
 
 ## 5. 证据资格结论
