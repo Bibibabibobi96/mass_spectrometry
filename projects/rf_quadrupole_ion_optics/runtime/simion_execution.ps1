@@ -1,7 +1,25 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-function Invoke-RfSimionCoreRun {
+function Initialize-RfSimionPaBasis {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$SimionExe,
+        [Parameter(Mandatory = $true)][string]$CandidateDir
+    )
+
+    Push-Location $CandidateDir
+    try {
+        & $SimionExe --nogui --noprompt gem2pa quad_monolithic.gem quad_monolithic.pa#
+        if ($LASTEXITCODE -ne 0) { throw 'SIMION gem2pa failed.' }
+        & $SimionExe --nogui --noprompt refine quad_monolithic.pa#
+        if ($LASTEXITCODE -ne 0) { throw 'SIMION refine failed.' }
+    } finally {
+        Pop-Location
+    }
+}
+
+function Invoke-RfSimionPreparedBatch {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)][string]$SimionExe,
@@ -28,10 +46,6 @@ function Invoke-RfSimionCoreRun {
     $stderrPath = Join-Path $LogDir 'simion_stderr.txt'
     Push-Location $CandidateDir
     try {
-        & $SimionExe --nogui --noprompt gem2pa quad_monolithic.gem quad_monolithic.pa#
-        if ($LASTEXITCODE -ne 0) { throw 'SIMION gem2pa failed.' }
-        & $SimionExe --nogui --noprompt refine quad_monolithic.pa#
-        if ($LASTEXITCODE -ne 0) { throw 'SIMION refine failed.' }
         & $SimionExe --nogui --noprompt lua $IobBuilderScript $IobPath `
             $ProgramSourcePath $Fly2Path
         if ($LASTEXITCODE -ne 0) { throw 'SIMION runtime IOB build failed.' }
@@ -81,4 +95,25 @@ function Invoke-RfSimionCoreRun {
         Remove-Item Env:RFQUAD_SIMION_REFERENCE_IOB -ErrorAction SilentlyContinue
         Pop-Location
     }
+}
+
+function Invoke-RfSimionCoreRun {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$SimionExe,
+        [Parameter(Mandatory = $true)][string]$CandidateDir,
+        [Parameter(Mandatory = $true)][string]$IobPath,
+        [Parameter(Mandatory = $true)][string]$Fly2Path,
+        [Parameter(Mandatory = $true)][string]$IobBuilderScript,
+        [Parameter(Mandatory = $true)][string]$ProgramSourcePath,
+        [Parameter(Mandatory = $true)][string]$RunConfigLua,
+        [Parameter(Mandatory = $true)][string]$InspectScript,
+        [Parameter(Mandatory = $true)][string]$IobReport,
+        [Parameter(Mandatory = $true)][string]$LogDir,
+        [Parameter(Mandatory = $true)][int]$TrajectoryQuality,
+        [Parameter(Mandatory = $true)][int]$RfStepsPerPeriod
+    )
+
+    Initialize-RfSimionPaBasis -SimionExe $SimionExe -CandidateDir $CandidateDir
+    Invoke-RfSimionPreparedBatch @PSBoundParameters
 }

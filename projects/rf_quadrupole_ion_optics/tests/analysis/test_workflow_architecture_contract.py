@@ -84,7 +84,11 @@ CONFIG_CORE_FUNCTIONS = {
     "ConvertTo-RfSimionLuaLongString",
     "ConvertTo-RfSimionLuaConfig",
 }
-EXECUTION_SUPPORT_FUNCTIONS = {"Invoke-RfSimionCoreRun"}
+EXECUTION_SUPPORT_FUNCTIONS = {
+    "Initialize-RfSimionPaBasis",
+    "Invoke-RfSimionPreparedBatch",
+    "Invoke-RfSimionCoreRun",
+}
 def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
