@@ -654,6 +654,15 @@ def _load(path: Path) -> dict[str, Any]:
     return value
 
 
+def _write_json(
+    path: Path, document: dict[str, Any], *, sort_keys: bool = False
+) -> None:
+    path.write_text(
+        json.dumps(document, indent=2, sort_keys=sort_keys) + "\n",
+        encoding="utf-8",
+    )
+
+
 def expand_flat_experiment_authoring(campaign: dict[str, Any]) -> dict[str, Any]:
     """Expand shared experiment controls and explicit per-row variation axes.
 
@@ -2766,9 +2775,7 @@ def prepare_family_source_closure(
     resolved_source_contract_path = plan_output.with_name(
         "resolved_source_contract.json"
     )
-    resolved_source_contract_path.write_text(
-        json.dumps(resolved_source_contract, indent=2) + "\n", encoding="utf-8"
-    )
+    _write_json(resolved_source_contract_path, resolved_source_contract)
 
     upstream_resolved_design_path = plan_output.with_name(
         "upstream_resolved_design.json"
@@ -2784,9 +2791,7 @@ def prepare_family_source_closure(
         authority_sha256=design_evidence["resolved_design_sha256"],
     )
     upstream_port_path = plan_output.with_name("resolved_upstream_port.json")
-    upstream_port_path.write_text(
-        json.dumps(upstream_port, indent=2) + "\n", encoding="utf-8"
-    )
+    _write_json(upstream_port_path, upstream_port)
     resolved_registry = {
         "schema_version": profile_registry["schema_version"],
         "role": profile_registry["role"],
@@ -2891,7 +2896,7 @@ def prepare_family_source_closure(
                 reflectron_mesh["radial"]
             )
         geometry_path = plan_output.with_name("resolved_oatof_geometry.json")
-        geometry_path.write_text(json.dumps(geometry, indent=2) + "\n", encoding="utf-8")
+        _write_json(geometry_path, geometry)
         resolved_region_field_contract_path = (
             plan_output.parent / "inputs" / "resolved_region_field_contract.json"
         )
@@ -2910,9 +2915,7 @@ def prepare_family_source_closure(
         )
         downstream_port["authority"]["source_sha256"] = file_sha256(geometry_path)
         downstream_port_path = plan_output.with_name("resolved_downstream_port.json")
-        downstream_port_path.write_text(
-            json.dumps(downstream_port, indent=2) + "\n", encoding="utf-8"
-        )
+        _write_json(downstream_port_path, downstream_port)
         validate_schema(downstream_port, "component_port.schema.json")
         resolved_registry["profiles"][0]["downstream"]["port_contract"] = (
             _workspace_relative(downstream_port_path, workspace)
@@ -2935,9 +2938,7 @@ def prepare_family_source_closure(
     resolved_registry_path = plan_output.with_name(
         "resolved_connection_profile_registry.json"
     )
-    resolved_registry_path.write_text(
-        json.dumps(resolved_registry, indent=2) + "\n", encoding="utf-8"
-    )
+    _write_json(resolved_registry_path, resolved_registry)
 
     source_identity = {
         "source_branch_id": solver_id,
@@ -3044,9 +3045,7 @@ def prepare_family_source_closure(
                 "estimated_bytes": transient_bytes,
             }
     resolved_budget_path = plan_output.with_name("resolved_engineering_budget.json")
-    resolved_budget_path.write_text(
-        json.dumps(resolved_budget, indent=2) + "\n", encoding="utf-8"
-    )
+    _write_json(resolved_budget_path, resolved_budget)
 
     resolved_path, plan_path = write_resolved_and_plan(
         resolved_registry_path,
@@ -3099,9 +3098,8 @@ def prepare_family_source_closure(
                 pulse_restart_validation_path = plan_output.with_name(
                     "canonical_pulse_restart_target_state_validation.json"
                 )
-                pulse_restart_validation_path.write_text(
-                    json.dumps(restart_reuse["validation"], indent=2) + "\n",
-                    encoding="utf-8",
+                _write_json(
+                    pulse_restart_validation_path, restart_reuse["validation"]
                 )
                 producer_schedule = restart_reuse["producer_schedule"]
                 if not math.isclose(
@@ -3178,7 +3176,7 @@ def prepare_family_source_closure(
                 INTEGRATION_SCHEMA_DIR / "rf_oatof_resolved_single_flight_pulse_schedule.schema.json",
             )
             schedule_path = plan_output.with_name("resolved_single_flight_pulse_schedule.json")
-            schedule_path.write_text(json.dumps(schedule, indent=2) + "\n", encoding="utf-8")
+            _write_json(schedule_path, schedule)
             layout_files["schedule"] = schedule_path
         if (
             pre_pulse_source_path is not None
@@ -3196,10 +3194,7 @@ def prepare_family_source_closure(
             pulse_restart_validation_path = plan_output.with_name(
                 "canonical_pulse_restart_target_state_validation.json"
             )
-            pulse_restart_validation_path.write_text(
-                json.dumps(pulse_restart_validation, indent=2) + "\n",
-                encoding="utf-8",
-            )
+            _write_json(pulse_restart_validation_path, pulse_restart_validation)
         if (
             source_materialization_profile is not None
             and source_materialization_profile["materialization_mode"]
@@ -3313,21 +3308,15 @@ def prepare_family_source_closure(
                     "backplate": working_point["reflectron"]["backplate_voltage_v"],
                 })
                 source_zvz_theory_working_point_path = plan_output.parent / "inputs" / "source_zvz_theory_working_point.json"
-                source_zvz_theory_working_point_path.write_text(
-                    json.dumps(working_point, indent=2) + "\n", encoding="utf-8"
-                )
+                _write_json(source_zvz_theory_working_point_path, working_point)
                 validate_schema(
                     _load(source_zvz_theory_working_point_path),
                     INTEGRATION_SCHEMA_DIR / "rf_oatof_theory_working_point.schema.json",
                 )
-                geometry_path.write_text(json.dumps(geometry, indent=2) + "\n", encoding="utf-8")
+                _write_json(geometry_path, geometry)
                 downstream_port["authority"]["source_sha256"] = file_sha256(geometry_path)
-                downstream_port_path.write_text(
-                    json.dumps(downstream_port, indent=2) + "\n", encoding="utf-8"
-                )
-                resolved_registry_path.write_text(
-                    json.dumps(resolved_registry, indent=2) + "\n", encoding="utf-8"
-                )
+                _write_json(downstream_port_path, downstream_port)
+                _write_json(resolved_registry_path, resolved_registry)
                 resolved_path, _ = write_resolved_and_plan(
                     resolved_registry_path,
                     experiment["connection_profile_id"],
@@ -3539,10 +3528,7 @@ def prepare_family_source_closure(
             pulse_restart_validation_path = plan_output.with_name(
                 "canonical_pulse_restart_target_state_validation.json"
             )
-            pulse_restart_validation_path.write_text(
-                json.dumps(pulse_restart_validation, indent=2) + "\n",
-                encoding="utf-8",
-            )
+            _write_json(pulse_restart_validation_path, pulse_restart_validation)
         table_binding = population_declaration["source_authority"]["table_binding"]
         if table_binding == "source_contract_particle_source":
             population_path = _workspace_record(
@@ -3597,9 +3583,7 @@ def prepare_family_source_closure(
         resolved_population_path = plan_output.with_name(
             "resolved_population_contract.json"
         )
-        resolved_population_path.write_text(
-            json.dumps(resolved_population, indent=2) + "\n", encoding="utf-8"
-        )
+        _write_json(resolved_population_path, resolved_population)
     pre_pulse_time_series_contract_path = None
     if (
         pre_pulse_time_series_specification is not None
@@ -3665,28 +3649,21 @@ def prepare_family_source_closure(
         pre_pulse_time_series_contract_path = plan_output.parent / "inputs" / (
             "pre_pulse_time_series_screening_contract.json"
         )
-        pre_pulse_time_series_contract_path.write_text(
-            json.dumps(pre_pulse_time_series_contract, indent=2) + "\n",
-            encoding="utf-8",
+        _write_json(
+            pre_pulse_time_series_contract_path, pre_pulse_time_series_contract
         )
     pa_cache_generation_binding_path = None
     if pa_cache_generation_binding is not None:
         pa_cache_generation_binding_path = plan_output.parent / "inputs" / (
             "single_flight_pa_cache_generation_binding.json"
         )
-        pa_cache_generation_binding_path.write_text(
-            json.dumps(pa_cache_generation_binding, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        _write_json(pa_cache_generation_binding_path, pa_cache_generation_binding)
     resolved_execution_profile_path = None
     if execution_profile is not None:
         resolved_execution_profile_path = plan_output.parent / "inputs" / (
             "resolved_single_flight_execution_profile.json"
         )
-        resolved_execution_profile_path.write_text(
-            json.dumps(execution_profile, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
+        _write_json(resolved_execution_profile_path, execution_profile, sort_keys=True)
     frozen_authoring_path = plan_output.parent / "inputs" / (
         "frozen_campaign_experiment.json"
     )
@@ -3700,7 +3677,7 @@ def prepare_family_source_closure(
         frozen_campaign["pre_pulse_time_series_screening"] = copy.deepcopy(
             campaign["pre_pulse_time_series_screening"]
         )
-    frozen_authoring_path.write_text(json.dumps({
+    _write_json(frozen_authoring_path, {
         "schema_version": 1,
         "role": "rf_oatof_frozen_campaign_experiment",
         "campaign_source": {
@@ -3710,7 +3687,7 @@ def prepare_family_source_closure(
         "campaign": frozen_campaign,
         "experiment_row_sha256": row_sha256,
         "experiment": experiment,
-    }, indent=2) + "\n", encoding="utf-8")
+    })
     plan = _load(plan_path)
     plan["execution_steps"] = [
         {
@@ -3985,9 +3962,7 @@ def prepare_family_source_closure(
         orchestration_path = plan_output.with_name(
             "resolved_pulse_timing_orchestration.json"
         )
-        orchestration_path.write_text(
-            json.dumps(orchestration, indent=2) + "\n", encoding="utf-8"
-        )
+        _write_json(orchestration_path, orchestration)
         plan["execution_steps"][0]["arguments"].extend([
             "pulse_timing_orchestration_filename=" + orchestration_path.name,
             "pulse_timing_orchestration_sha256=" + file_sha256(orchestration_path),
@@ -4009,16 +3984,13 @@ def prepare_family_source_closure(
         "arguments": execution_arguments,
     }
     resolved_execution_plan_path = plan_output.with_name("resolved_execution_plan.json")
-    resolved_execution_plan_path.write_text(
-        json.dumps(resolved_execution_plan, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    _write_json(resolved_execution_plan_path, resolved_execution_plan, sort_keys=True)
     plan["execution_steps"][0]["arguments"].extend([
         "resolved_execution_plan_filename=" + resolved_execution_plan_path.name,
         "resolved_execution_plan_sha256=" + file_sha256(resolved_execution_plan_path),
     ])
     validate_schema(plan, "composition_plan.schema.json")
-    plan_path.write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
+    _write_json(plan_path, plan)
     verify_composition_plan(plan_path, resolved_path, repo_root=root)
     if materialized_discovery is not None:
         _materialize_pulse_discovery_package(
