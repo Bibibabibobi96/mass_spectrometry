@@ -259,23 +259,27 @@ def _build_problem(
     all_vz = source.vz_m_per_s[optimization]
     blocks: list[FocusabilityProblem] = []
     derivative_audits: list[dict[str, float]] = []
+    mean_time: list[float] = []
+    mean_response: list[NDArray[np.float64]] = []
+    mean_weight: list[float] = []
     for group in groups:
         z_bin, vz_bin = all_z[group], all_vz[group]
         center_z = float(np.mean(z_bin))
         center_x = source.release_position_mm + center_z - float(np.mean(source.z_mm[np.isin(source.roles, ("development", "validation"))]))
         residual = vz_bin - mean(z_bin)
         variance = max(float(np.var(residual, ddof=0)), 1e-18)
-        gradient = _time_gradient(design, controls, center_x, float(mean(np.asarray([center_z]))[0]))
+        center_velocity = float(mean(np.asarray([center_z]))[0])
+        gradient = _time_gradient(design, controls, center_x, center_velocity)
         response = _derivative(
-            lambda values: np.asarray([_time_gradient(design, values, center_x, float(mean(np.asarray([center_z]))[0]))]),
+            lambda values: np.asarray([_time_gradient(design, values, center_x, center_velocity)]),
             controls, steps,
         )
         response_double_step = _derivative(
-            lambda values: np.asarray([_time_gradient(design, values, center_x, float(mean(np.asarray([center_z]))[0]))]),
+            lambda values: np.asarray([_time_gradient(design, values, center_x, center_velocity)]),
             controls, 2.0 * steps,
         )
         analytic_gradient = analytic_time_gradient(
-            design, controls, center_x, float(mean(np.asarray([center_z]))[0])
+            design, controls, center_x, center_velocity
         )
         derivative_audits.append({
             "analytic_gradient_us_per_m_per_s": analytic_gradient,
@@ -292,6 +296,32 @@ def _build_problem(
             constraint_jacobian=constraints, parameter_scale=design.parameter_scale,
             rank_relative_tolerance=1e-10,
         ))
+        mean_time.append(float(_axial_time_us(
+            design, controls, np.asarray([center_x]), np.asarray([center_velocity])
+        )[0]))
+        mean_response.append(_derivative(
+            lambda values: _axial_time_us(
+                design, values, np.asarray([center_x]), np.asarray([center_velocity])
+            ),
+            controls, steps,
+        )[0])
+        mean_weight.append(math.sqrt(group.size / all_z.size))
+    # The total objective is Var_j[mu_j + h_j delta] plus the conditional
+    # thickness contribution above.  Center both mean blocks under their
+    # frozen bin weights; an absolute flight-time offset must not steer J2.
+    weights = np.asarray(mean_weight)
+    means = np.asarray(mean_time)
+    responses = np.asarray(mean_response)
+    centered_mean = means - float(np.dot(weights**2, means))
+    centered_response = responses - np.sum(weights[:, None]**2 * responses, axis=0)
+    blocks.append(FocusabilityProblem(
+        time_gradient=weights * centered_mean,
+        design_response=weights[:, None] * centered_response,
+        source_factor=np.eye(weights.size),
+        constraint_jacobian=constraints,
+        parameter_scale=design.parameter_scale,
+        rank_relative_tolerance=1e-10,
+    ))
     stacked = stack_focusability_problems(blocks)
     # C2 is an elimination screen: retain an explicitly local, scaled trust
     # region rather than treating the unconstrained projector minimum as a
@@ -310,7 +340,7 @@ def _build_problem(
         trust_radius=0.5,
         rank_relative_tolerance=stacked.rank_relative_tolerance,
     )
-    return problem, {"design": design, "controls": controls, "steps": steps, "mean": mean, "derivative_audits": derivative_audits}
+    return problem, {"design": design, "controls": controls, "steps": steps, "mean": mean, "derivative_audits": derivative_audits, "conditional_mean_bin_time_us": mean_time}
 
 
 def run_axial_c2_screen(source: AxialC2Source, design: AxialC2Design) -> dict[str, Any]:
@@ -350,8 +380,10 @@ def run_axial_c2_screen(source: AxialC2Source, design: AxialC2Design) -> dict[st
         direct = _axial_time_us(metadata["design"], trial_controls, x, source.vz_m_per_s[test])
         direct_mean = _axial_time_us(metadata["design"], trial_controls, x, source.vz_m_per_s[test] - residual)
         directions[name] = {
-            "predicted_conditional_variance": float(np.dot(b + a @ eta, b + a @ eta)),
+            "predicted_total_objective_us2": float(np.dot(b + a @ eta, b + a @ eta)),
             "locked_exact_conditional_residual_us": (direct - direct_mean).tolist(),
+            "locked_exact_total_time_us": direct.tolist(),
+            "locked_exact_total_variance_us2": float(np.var(direct, ddof=0)),
             "controls": trial_controls.tolist(),
         }
     return {
@@ -368,6 +400,7 @@ def run_axial_c2_screen(source: AxialC2Source, design: AxialC2Design) -> dict[st
             "locked_exact_conditional_residual_variance_us2": float(
                 np.var(unweighted_direct - unweighted_mean, ddof=0)
             ),
+            "locked_exact_total_variance_us2": float(np.var(unweighted_direct, ddof=0)),
         },
         "directions": directions,
     }

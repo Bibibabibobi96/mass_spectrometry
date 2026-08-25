@@ -61,24 +61,26 @@ def _designs(campaign: dict[str, Any], phase: dict[str, Any]) -> tuple[AxialC2De
 def _direction_summary(rows: list[dict[str, Any]], *, bootstrap_seed: int, replicates: int) -> dict[str, Any]:
     predicted: list[float] = []
     observed: list[float] = []
-    residual_samples: list[np.ndarray] = []
+    total_time_samples: list[np.ndarray] = []
     for row in rows:
         if row["architecture"] != "three_zone":
             continue
         for direction in ("improve", "zero", "worsen"):
             record = row["directions"][direction]
             residual = np.asarray(record.pop("locked_exact_conditional_residual_us"), dtype=float)
-            predicted.append(float(record["predicted_conditional_variance"]))
-            observed.append(float(np.var(residual, ddof=0)))
-            residual_samples.append(residual)
-            record["locked_exact_conditional_residual_variance_us2"] = observed[-1]
+            total_time = np.asarray(record.pop("locked_exact_total_time_us"), dtype=float)
+            predicted.append(float(record["predicted_total_objective_us2"]))
+            observed.append(float(np.var(total_time, ddof=0)))
+            total_time_samples.append(total_time)
+            record["locked_exact_conditional_residual_variance_us2"] = float(np.var(residual, ddof=0))
+            record["locked_exact_total_variance_us2"] = observed[-1]
     correlation = float(spearmanr(predicted, observed).statistic)
     generator = np.random.default_rng(bootstrap_seed)
     samples: list[float] = []
     for _ in range(replicates):
         bootstrap_variance = [
             float(np.var(values[generator.integers(0, values.size, values.size)], ddof=0))
-            for values in residual_samples
+            for values in total_time_samples
         ]
         samples.append(float(spearmanr(predicted, bootstrap_variance).statistic))
     return {
@@ -119,8 +121,8 @@ def analyze_c2_stage(
     )
     direction = _direction_summary(rows, bootstrap_seed=bootstrap_seed, replicates=bootstrap_replicates)
     weighted_beats_unweighted = all(
-        row["directions"]["improve"]["locked_exact_conditional_residual_variance_us2"]
-        < row["unweighted"]["locked_exact_conditional_residual_variance_us2"]
+        row["directions"]["improve"]["locked_exact_total_variance_us2"]
+        < row["unweighted"]["locked_exact_total_variance_us2"]
         for row in rows if row["architecture"] == "three_zone"
     )
     gates = {
