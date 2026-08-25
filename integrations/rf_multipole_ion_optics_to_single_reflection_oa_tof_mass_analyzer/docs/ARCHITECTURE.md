@@ -56,6 +56,11 @@ registered campaign + lifecycle authority, or explicit exploration campaign
   -> Python analysis, manifest and qualification receipts
 ```
 
+对于正式 campaign，生命周期 registry 在三个不同边界复核：`execute.ps1` 保护公开请求入口，
+`prepare.py` 保护直接 Python 制备入口且先于源 artifact 读取，`adapter.ps1` 在已冻结 plan 到求解器
+启动的时间间隔重新确认 SHA。三者不是可互换的重复校验；后两者分别防止绕过公开入口和制备后
+campaign 被退役或变更仍启动求解器。探索 campaign 不进入正式发布路径。
+
 PowerShell 不定义几何、粒子分布、统计公式或正式阈值；它只读取已解析合同、执行外部进程、保留日志并传递
 失败状态。Lua/GEM 只实现已解析的 SIMION 几何与 callback，不拥有实验选择政策。
 
