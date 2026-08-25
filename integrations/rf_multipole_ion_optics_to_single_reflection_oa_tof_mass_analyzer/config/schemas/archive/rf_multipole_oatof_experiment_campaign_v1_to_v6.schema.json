@@ -34,7 +34,9 @@
             "items": {
               "properties": {
                 "execution_strategy": {"const": "simion_single_flight"},
-                "source_release_mode": {"const": "continuous_frontend"},
+                "source_release_mode": {
+                  "enum": ["continuous_frontend", "continuous_frontend_handoff"]
+                },
                 "single_flight_population": {"$ref": "#/$defs/single_flight_population"}
               },
               "not": {"anyOf": [

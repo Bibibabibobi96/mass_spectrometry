@@ -926,7 +926,10 @@ if ($prePulseTimeSeriesScreening) {
     $pulseTimingDiscoveryRequired
   $declaredPrePulsePopulationCount = [int]`
     $experiment.single_flight_population.execution_population.particle_count
-  $expectedTimeSeriesPrefix = if ($pulseTimingDiscoveryAuthority) {
+  $expectedTimeSeriesPrefix = if ($frozenArguments.source_release_mode -eq
+      'continuous_frontend_handoff') {
+    'inputs/terminal_handoff_continuation_global_state.csv'
+  } elseif ($pulseTimingDiscoveryAuthority) {
     $prePulseTimeSeriesPrefixBinding
   } else {
     'inputs/pre_pulse_time_series_screening_prefix_n' +
@@ -1390,7 +1393,8 @@ if ($executionStrategy -eq 'simion_single_flight') {
   } elseif ($prePulseTimeSeriesScreening) {
     $prePulseTimeSeriesPrefixPath
   } else { $null }
-  if ($null -ne $preparedPrefixPath) {
+  if ($null -ne $preparedPrefixPath -and
+      $frozenArguments.source_release_mode -ne 'continuous_frontend_handoff') {
     $runnerArguments.MotherParticleSource = $preparedPrefixPath
     $runnerArguments.MotherParticleSourceRunRoot = $runDirectory
     if ($preparedPrefixPath.StartsWith(

@@ -484,6 +484,14 @@ def validate_pre_pulse_time_series_campaign(campaign: dict[str, Any]) -> None:
         "prepared_deterministic_prefix",
         "first_n_rows_in_frozen_file_order",
     ) and execution.get("particle_count") == source.get("launched_particle_count")
+    is_terminal_handoff_population = population_identity == (
+        "terminal_handoff_continuation",
+        "terminal_handoff_continuation_global_state",
+        "all_transmitted_terminal_handoffs_in_source_particle_id_order",
+    ) and (
+        row.get("source_release_mode") == "continuous_frontend_handoff"
+        and 0 < execution.get("particle_count", 0) < source.get("launched_particle_count", 0)
+    )
     if (
         contract.get("active_scope") != "pre_pulse_frontend_accelerator"
         or contract.get("pa_cache_keys", {}).get("flight_tube") is not None
@@ -491,10 +499,14 @@ def validate_pre_pulse_time_series_campaign(campaign: dict[str, Any]) -> None:
         or source.get("authority_scope") != "source_population"
         or not isinstance(source.get("launched_particle_count"), int)
         or source["launched_particle_count"] < execution.get("particle_count", 0)
-        or not (is_legacy_n100_prefix or is_full_prepared_population)
-        or denominators.get("population_count") != execution.get("particle_count")
+        or not (is_legacy_n100_prefix or is_full_prepared_population or is_terminal_handoff_population)
+        or denominators.get("population_count") != (
+            source.get("launched_particle_count") if is_terminal_handoff_population
+            else execution.get("particle_count")
+        )
         or denominators.get("eligible_population_count")
-        != execution.get("particle_count")
+        != (source.get("launched_particle_count") if is_terminal_handoff_population
+            else execution.get("particle_count"))
         or contract["sample_count"]
         != contract["relative_end_index"] - contract["relative_start_index"] + 1
     ):
@@ -3127,6 +3139,13 @@ def prepare_family_source_closure(
             "terminal_handoff_continuation_receipt.json"
         )
         _write_json(terminal_handoff_receipt_path, handoff_receipt)
+        # Detector-blind pre-pulse screening must use the same physical
+        # handoff population that will enter the OA run, never a raw-source
+        # prefix selected only for the legacy continuous-front-end path.
+        pulse_prefix_path = terminal_handoff_global_state_path
+        pulse_prefix_sha256 = file_sha256(terminal_handoff_global_state_path)
+        pulse_population_count = len(handoff_rows)
+        pulse_population_plan_path = "inputs/" + terminal_handoff_global_state_path.name
     if layout_files is not None:
         schedule = None
         if pulse_schedule_policy is not None:

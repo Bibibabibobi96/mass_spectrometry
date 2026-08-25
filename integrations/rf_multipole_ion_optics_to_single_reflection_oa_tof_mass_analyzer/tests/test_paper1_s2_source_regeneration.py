@@ -20,6 +20,9 @@ INTEGRATION_ROOT = REPO / "integrations" / (
 PRE_PULSE_CAMPAIGN_N1000 = INTEGRATION_ROOT / "config" / "explorations" / (
     "paper1_s2_segmented_pre_pulse_n1000.json"
 )
+HANDOFF_PRE_PULSE_CAMPAIGN_N1000 = INTEGRATION_ROOT / "config" / "explorations" / (
+    "paper1_s2_segmented_handoff_pre_pulse_n1000.json"
+)
 PRE_PULSE_SCHEMA = INTEGRATION_ROOT / "config" / "schemas" / (
     "rf_multipole_oatof_experiment_campaign.schema.json"
 )
@@ -84,6 +87,22 @@ class Paper1S2SourceRegenerationTests(unittest.TestCase):
         self.assertEqual(population["denominators"]["population_count"], 1000)
         self.assertEqual(population["postselection_policy"], "prohibited")
         self.assertTrue(campaign["pre_pulse_time_series_screening"]["pulse_disabled"])
+
+    def test_handoff_pre_pulse_contract_continues_only_terminal_transmissions(self) -> None:
+        campaign = json.loads(HANDOFF_PRE_PULSE_CAMPAIGN_N1000.read_text(encoding="utf-8"))
+        validate_schema(campaign, PRE_PULSE_SCHEMA)
+        row = campaign["experiments"][0]
+        population = row["single_flight_population"]
+        self.assertEqual(row["source_release_mode"], "continuous_frontend_handoff")
+        self.assertEqual(population["population_mode"], "terminal_handoff_continuation")
+        self.assertEqual(
+            population["source_authority"]["table_binding"],
+            "terminal_handoff_continuation_global_state",
+        )
+        self.assertEqual(population["execution_population"]["particle_count"], 914)
+        self.assertEqual(population["denominators"]["population_count"], 1000)
+        self.assertEqual(population["denominators"]["eligible_population_count"], 1000)
+        self.assertEqual(population["postselection_policy"], "prohibited")
 
 
 if __name__ == "__main__":
