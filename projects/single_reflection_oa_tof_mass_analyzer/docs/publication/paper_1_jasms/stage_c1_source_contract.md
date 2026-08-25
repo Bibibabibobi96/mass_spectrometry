@@ -124,3 +124,19 @@ stdout日志和run-local输入执行确定性materialization，得到成功recei
 
 因此C1维持`INCONCLUSIVE_REVISE / INPUT_CONTRACT_BLOCKED`。下一步不是继续运行同一合同，而是先设计并冻结
 可到达的OA提取前保持/门控或manifest-bound restart物理合同，再从完整母cohort重新生成预脉冲状态。
+
+## 2026-08-25 S2 terminal-handoff axis-topology negative result
+
+新的连续交接筛查 parent run
+`20260825_223400__sim__cross__paper1-s2-segmented-handoff-pre-pulse__n1000`保留母cohort 1000：其中914个
+`handoff/transmitted`进入OA single-flight child
+`20260825_223400__sim__simion__rf-oatof-single-flight-gap0__n914`，86个上游损失仍计入完整分母。默认调度器在短资源校准后将914个物理交接粒子规划为4个正式SIMION批次；child本身成功完成，但321个预脉冲采样时刻记录到0行状态，914个粒子全部`Splat`。
+
+这一次的终端位置揭示了先前仅凭“到不了采样窗”无法区分的根因。冻结的handoff表中离子以
+`v_x=3052.21`--`3133.64 m/s`沿OA全局`x`正向传播；而冻结OA accelerator的repeller、grid1和grid2是沿全局`z`定义的提取面。914条终端记录中788条在`x=-54 mm`附近撞击。故当前负结果是**横向侧入口与纵向提取轴之间未建模的注入拓扑不相容**，不是S2分段杆本身的传输、相空间或峰宽结论。
+
+对应的冻结阶段证据输入为[`c1_s2_handoff_axis_topology_negative.json`](stage_evidence/c1_s2_handoff_axis_topology_negative.json)。
+
+### 更新后的唯一后续动作
+
+保持524 Da Formal OA资产不变。为C1新建一个显式的**接口候选**，其粒子初始状态、有效孔径、静电边界和提取轴必须共同定义一条可到达的OA预脉冲路径：要么轴向注入到`z`提取区，要么明确建模并验证一个真实的转向/导引元件。不得以旋转状态表、提前采样、过滤撞壁粒子或重命名handoff事件来代替该物理路径。该候选先以N=1贯通检查，再以完整母cohort重新生成S2 pre-pulse状态；在此之前C1继续为`INCONCLUSIVE_REVISE`，阶段2禁止启动。
