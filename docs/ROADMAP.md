@@ -120,6 +120,14 @@ campaign 的串行限制。`run_n100_candidate_functional.ps1` 同时修复其�
 因此当前**已确认但未关闭的候选为 3 项，均为 E**；没有已证实而未处理的 B/C/D 项。此计数不等同
 “全仓审计完成”：每完成一个审查域，新增的已证实候选必须先登记到本表，不能用推测补数。
 
+`prepare.py` 与 `adapter.ps1` 的职责盘点已完成：前者按一个冻结状态依次完成 campaign 选择、authority/
+source 解析、layout/profile、pulse/source materialization、resolved 产物和 execution-plan 发布；后者只
+完成 plan→frozen inputs→runtime→receipt 的生命周期闭合，未实现物理公式或统计指标。它们之间不存在
+不依赖前序冻结状态的可安全抽取块；当前拆分会把同一状态转发给多个薄 helper，增加而非减少依赖边。
+`0790f90` 已收拢前者的重复 JSON 写入边界（不改变字节格式），但大型职责拆分仍保留为 E，直到能以独立
+输入/输出合同和行为回归证明净收益。剩余 runtime 形状测试同样不能只按字符串数量删除：抽样确认其中
+仍覆盖 Python fixture 未模拟的 PowerShell adapter→runner 接线、产物归属和失败关闭顺序。
+
 启动未来平台任务的触发条件包括：相同运行协议已在至少两个项目稳定复用、一次合同修改需要同步三个
 以上入口、轻量门禁时间显著妨碍普通提交，或artifact清单扫描成为日常等待的主要部分。完成判据不是
 “增加框架”，而是减少重复真值、缩小变更影响范围，并保持现有正式资产和失败证据可追溯。
