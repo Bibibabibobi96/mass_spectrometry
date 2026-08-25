@@ -77,7 +77,8 @@ function Resolve-RfOatofBoundFile {
     [Parameter(Mandatory)][string]$Root,
     [Parameter(Mandatory)][pscustomobject]$Record,
     [Parameter(Mandatory)][string]$Role,
-    [switch]$AllowWorkspaceArtifact
+    [switch]$AllowWorkspaceArtifact,
+    [switch]$AllowContentShaMismatch
   )
   if ($Record.PSObject.Properties.Name -notcontains 'path' -or
       $Record.PSObject.Properties.Name -notcontains 'sha256') {
@@ -107,7 +108,7 @@ function Resolve-RfOatofBoundFile {
     Get-RfOatofRepositoryTextSha256 -Path $path
   }
   if ($expectedSha256 -notmatch '^[0-9A-F]{64}$' -or
-      $actualSha256 -ne $expectedSha256) {
+      (-not $AllowContentShaMismatch -and $actualSha256 -ne $expectedSha256)) {
     throw "$Role SHA-256 differs: $declaredPath"
   }
   return $path
@@ -277,7 +278,8 @@ function Resolve-RfOatofRuntimeBinding {
     [Parameter(Mandatory)][string]$ResolvedSourceContract,
     [Parameter(Mandatory)][string]$ResolvedSourceContractSha256,
     [Parameter(Mandatory)][string]$UpstreamResolvedDesign,
-    [Parameter(Mandatory)][string]$UpstreamResolvedDesignSha256
+    [Parameter(Mandatory)][string]$UpstreamResolvedDesignSha256,
+    [switch]$AllowImplementationContentShaMismatch
   )
   $repo = [IO.Path]::GetFullPath($RepoRoot)
   $resolvedPath = [IO.Path]::GetFullPath($ResolvedConnection)
@@ -419,6 +421,7 @@ function Resolve-RfOatofRuntimeBinding {
     }
   }
   $implementation = [ordered]@{}
+  $implementationIdentity = [ordered]@{}
   foreach ($property in $implementationRecords) {
     $name = [string]$property.Name
     $record = $property.Value
@@ -431,7 +434,15 @@ function Resolve-RfOatofRuntimeBinding {
       throw "Runtime implementation role or integration-local path differs: $name"
     }
     $implementation[$name] = Resolve-RfOatofBoundFile -Root $repo `
-      -Record $record -Role "runtime implementation $name"
+      -Record $record -Role "runtime implementation $name" `
+      -AllowContentShaMismatch:$AllowImplementationContentShaMismatch
+    $actualSha256 = Get-RfOatofRepositoryTextSha256 -Path $implementation[$name]
+    $implementationIdentity[$name] = [ordered]@{
+      path = [string]$record.path
+      expected_sha256 = ([string]$record.sha256).ToUpperInvariant()
+      actual_sha256 = $actualSha256
+      registry_match = ($actualSha256 -eq ([string]$record.sha256).ToUpperInvariant())
+    }
   }
   $runArtifactSupport = $implementation.run_artifact_support
 
@@ -737,6 +748,7 @@ function Resolve-RfOatofRuntimeBinding {
     dependency_contract = $dependencyContract
     implementation_binding = $implementationBindingPath
     implementation = [pscustomobject]$implementation
+    implementation_identity = [pscustomobject]$implementationIdentity
     run_artifact_support = $runArtifactSupport
     resolved_source_contract = $sourceContract
     source_record = $sourceRecord

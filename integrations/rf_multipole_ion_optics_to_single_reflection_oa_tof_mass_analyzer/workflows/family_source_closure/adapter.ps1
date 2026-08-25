@@ -1110,7 +1110,8 @@ $runtime = Resolve-RfOatofRuntimeBinding -RepoRoot $repo `
   -ResolvedSourceContract $resolvedSourceContractPath `
   -ResolvedSourceContractSha256 $frozenArguments.resolved_source_contract_sha256 `
   -UpstreamResolvedDesign $upstreamResolvedDesignPath `
-  -UpstreamResolvedDesignSha256 $frozenArguments.upstream_resolved_design_sha256
+  -UpstreamResolvedDesignSha256 $frozenArguments.upstream_resolved_design_sha256 `
+  -AllowImplementationContentShaMismatch:([string]$campaign.status -eq 'exploration')
 $budget = Get-Content -LiteralPath $resolvedBudgetPath -Raw -Encoding UTF8 |
   ConvertFrom-Json
 $executionPolicy = Get-Content `
@@ -1237,6 +1238,9 @@ $runnerArguments = @{
   UpstreamResolvedDesign = $upstreamResolvedDesignPath
   UpstreamResolvedDesignSha256 = $frozenArguments.upstream_resolved_design_sha256
   PythonExe = $PythonExe
+  RuntimeImplementationBindingMode = if ([string]$campaign.status -eq 'exploration') {
+    'exploration'
+  } else { 'strict' }
 }
 $retrySuffix = if ($RunId -match '(__r\d{2})$') { $Matches[1] } else { '' }
 if ($executionStrategy -eq 'simion_single_flight') {
@@ -1458,6 +1462,8 @@ $receipt = [ordered]@{
   upstream_resolved_design_sha256 =
     $frozenArguments.upstream_resolved_design_sha256
   runtime_binding_sha256 = $runtimeBindingSha256
+  runtime_implementation_binding_mode = $runnerArguments.RuntimeImplementationBindingMode
+  runtime_implementation_identity = $runtime.implementation_identity
   stage_run_ids = if ($executionStrategy -eq 'simion_single_flight') { [ordered]@{
     single_flight_transport = $singleFlightRunId
   } } else { [ordered]@{

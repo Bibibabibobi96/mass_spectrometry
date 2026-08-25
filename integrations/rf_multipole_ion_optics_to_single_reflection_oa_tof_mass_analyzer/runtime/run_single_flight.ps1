@@ -50,7 +50,8 @@ param(
   [string]$PrePulseTimeSeriesContract = '',
   [string]$PrePulseTimeSeriesContractSha256 = '',
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
-  [string]$PythonExe = ''
+  [string]$PythonExe = '',
+  [ValidateSet('strict','exploration')][string]$RuntimeImplementationBindingMode = 'strict'
 )
 
 Set-StrictMode -Version Latest
@@ -76,7 +77,8 @@ $runtime = Resolve-RfOatofRuntimeBinding -RepoRoot $repoRoot `
   -ResolvedSourceContract $ResolvedSourceContract `
   -ResolvedSourceContractSha256 $ResolvedSourceContractSha256 `
   -UpstreamResolvedDesign $UpstreamResolvedDesign `
-  -UpstreamResolvedDesignSha256 $UpstreamResolvedDesignSha256
+  -UpstreamResolvedDesignSha256 $UpstreamResolvedDesignSha256 `
+  -AllowImplementationContentShaMismatch:($RuntimeImplementationBindingMode -eq 'exploration')
 . $runtime.run_artifact_support
 . (Join-Path $repoRoot 'common\multipole\resource_budget_support.ps1')
 
@@ -1743,6 +1745,10 @@ try {
     (Get-FileHash -Algorithm SHA256 -LiteralPath $batchPlanPath).Hash
   $runConfiguration.parameters.simion_repository_dispatch_plan_sha256 =
     (Get-FileHash -Algorithm SHA256 -LiteralPath $runtimeDispatchPlanPath).Hash
+  $runConfiguration.parameters.runtime_implementation_binding_mode =
+    $RuntimeImplementationBindingMode
+  $runConfiguration.parameters.runtime_implementation_identity =
+    $runtime.implementation_identity
   Write-RunJson -Path $package.run_config -Depth 10 -Value $runConfiguration
   Write-RunJson -Path $package.summary -Depth 10 -Value ([ordered]@{schema_version=1;role=$summaryRole;status='interrupted';reason='Frozen inputs recorded; SIMION flight not complete.';single_flight_pa_cache_policy=$PaCachePolicy;single_flight_pa_cache_policy_provenance=$PaCachePolicyProvenance;pa_cache_dispositions=$paCacheDispositions})
   Write-RunManifest -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config -Status interrupted -Software @('SIMION 2020','Python 3.11')

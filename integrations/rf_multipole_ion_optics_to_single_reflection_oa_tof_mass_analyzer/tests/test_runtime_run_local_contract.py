@@ -184,6 +184,52 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
             repository_text_sha256(PRE_PULSE_TIME_SERIES_MATERIALIZER),
         )
 
+    def test_exploration_may_record_but_not_enforce_implementation_content_drift(self) -> None:
+        """Only implementation content drift is permissive; path and hash syntax stay closed."""
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("PowerShell 7 is unavailable")
+        script = f"""
+$ErrorActionPreference = 'Stop'
+. '{RUNTIME_BINDING}'
+$root = Join-Path ([IO.Path]::GetTempPath()) ('rf_oatof_binding_' + [guid]::NewGuid())
+New-Item -ItemType Directory -Path $root | Out-Null
+try {{
+  $path = Join-Path $root 'implementation.ps1'
+  [IO.File]::WriteAllText($path, 'Write-Output exploration')
+  $stale = [pscustomobject]@{{path='implementation.ps1';sha256=('A' * 64)}}
+  try {{
+    Resolve-RfOatofBoundFile -Root $root -Record $stale -Role 'test implementation'
+    throw 'strict binding accepted changed implementation content'
+  }} catch {{
+    if ($_.Exception.Message -notmatch 'SHA-256 differs') {{ throw }}
+  }}
+  $resolved = Resolve-RfOatofBoundFile -Root $root -Record $stale `
+    -Role 'test implementation' -AllowContentShaMismatch
+  if ($resolved -ne $path) {{ throw 'exploration binding did not resolve its local path' }}
+  $malformed = [pscustomobject]@{{path='implementation.ps1';sha256='not-a-sha'}}
+  try {{
+    Resolve-RfOatofBoundFile -Root $root -Record $malformed `
+      -Role 'test implementation' -AllowContentShaMismatch
+    throw 'exploration binding accepted malformed expected hash'
+  }} catch {{
+    if ($_.Exception.Message -notmatch 'SHA-256 differs') {{ throw }}
+  }}
+}} finally {{
+  Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+}}
+'EXPLORATION_IMPLEMENTATION_PROVENANCE=PASS'
+"""
+        completed = subprocess.run(
+            [pwsh, "-NoProfile", "-Command", script],
+            check=True,
+            text=True,
+            capture_output=True,
+            cwd=INTEGRATION_ROOT.parents[2],
+            timeout=30,
+        )
+        self.assertIn("EXPLORATION_IMPLEMENTATION_PROVENANCE=PASS", completed.stdout)
+
     def test_observed_projection_identity_is_promoted_before_solver(self) -> None:
         pwsh = shutil.which("pwsh")
         if pwsh is None:

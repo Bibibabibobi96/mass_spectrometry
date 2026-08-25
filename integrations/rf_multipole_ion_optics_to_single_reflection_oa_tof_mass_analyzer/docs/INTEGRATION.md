@@ -28,8 +28,10 @@ SIMION 运行可调用共享批处理；批内结果必须恢复全局粒子 ID 
 且不可替代来源 run。功能成功不自动证明数值收敛、跨求解器等价、参数最优或 Formal 资格。
 
 活动 runtime binding v4 只冻结连接专属的物理/运行合同；共享的
-`family_runtime_implementation.json` 由运行时统一解析并各自校验其脚本 SHA。故一次共享实现更新不再要求
-逐连接复制同一 implementation binding 或改写其物理合同；新 prepared plan 仍冻结所选 binding 的原始 SHA。
+`family_runtime_implementation.json` 由运行时统一解析。authorized/Formal 路径校验每个实现脚本 SHA；
+exploration 仅允许实现内容与注册表漂移，并把期望与实际 SHA 写入 run config/receipt，仍关闭角色、路径、
+哈希格式和所有物理/输入合同。故一次共享实现更新不再要求逐连接复制同一 implementation binding 或改写其
+物理合同；新 prepared plan 仍冻结所选 binding 的原始 SHA。
 归档 v2/v3 binding 仅用于历史证据读取，不是活动 authoring 输入。
 
 三区 N=1 路径 smoke 只证明已冻结路径可贯通；其授权 receipt 绑定一个具名后继行的完整行 SHA、

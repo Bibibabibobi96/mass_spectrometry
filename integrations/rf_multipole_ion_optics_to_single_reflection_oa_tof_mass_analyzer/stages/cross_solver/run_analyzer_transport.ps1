@@ -19,7 +19,8 @@ param(
   [string]$InterfacePaDirectory = '',
   [string]$InterfaceApertureContract = '',
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
-  [string]$PythonExe = ''
+  [string]$PythonExe = '',
+  [ValidateSet('strict','exploration')][string]$RuntimeImplementationBindingMode = 'strict'
 )
 
 Set-StrictMode -Version Latest
@@ -34,7 +35,8 @@ $runtime = Resolve-RfOatofRuntimeBinding -RepoRoot $repoRoot `
   -ResolvedSourceContract $ResolvedSourceContract `
   -ResolvedSourceContractSha256 $ResolvedSourceContractSha256 `
   -UpstreamResolvedDesign $UpstreamResolvedDesign `
-  -UpstreamResolvedDesignSha256 $UpstreamResolvedDesignSha256
+  -UpstreamResolvedDesignSha256 $UpstreamResolvedDesignSha256 `
+  -AllowImplementationContentShaMismatch:($RuntimeImplementationBindingMode -eq 'exploration')
 $upstreamProjectId = $runtime.upstream_project_id
 $python = if ($PythonExe) {
   [IO.Path]::GetFullPath($PythonExe)
