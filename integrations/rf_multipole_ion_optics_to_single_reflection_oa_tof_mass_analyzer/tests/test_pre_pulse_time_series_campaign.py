@@ -316,6 +316,14 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
             automatic,
             SCHEMA_DIR / "rf_oatof_pre_pulse_time_series_screening_contract.schema.json",
         )
+        earlier_only = copy.deepcopy(automatic)
+        earlier_only["rf_time_grid"]["requested_relative_start_index"] = -2200
+        earlier_only["rf_time_grid"]["requested_relative_end_index"] = -1880
+        earlier_only["rf_time_grid"]["ballistic_seed_sample_index"] = 2200
+        validate_schema(
+            earlier_only,
+            SCHEMA_DIR / "rf_oatof_pre_pulse_time_series_screening_contract.schema.json",
+        )
         for crossed in (
             {**copy.deepcopy(legacy), "schema_version": 2},
             {**copy.deepcopy(automatic), "schema_version": 1},

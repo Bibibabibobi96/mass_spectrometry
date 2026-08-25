@@ -34,7 +34,7 @@ transmitted terminal handoff 数，不是为加速而缩小的统计样本；完
 “该冻结 S1、两 gap、无碰撞独立粒子链中的 detector-blind source residual 改变”。它不是 gap 最优、J2/J3
 优势或投稿性能结论。之后才可决定是否把该源条件纳入修订后的 C2，而非直接进入 C3。
 
-## 2026-08-25 执行结果：不适格，未作残差比较
+## 2026-08-25—26 执行结果：时间窗已修订，仍未作残差比较
 
 51.2 mm 的真实 `N=900` 脉冲前子运行已成功物化时间序列：前 177/321 个时刻仍有粒子存活。
 修正后的 selector 确认全部 177 个仍存活样本的 `pulse_eligible_count=0` 且`source_region_count=0`，
@@ -47,3 +47,17 @@ transmitted terminal handoff 数，不是为加速而缩小的统计样本；完
 
 结论：本臂为`INCONCLUSIVE_REVISE`。在重订能够覆盖该连接器传播时间的 detector-blind 时间窗之前，
 不得运行 `analyze_paper1_connector_gap_residual.py`、不得用此 gap 修订 C2，也不得据此进入 C3。
+
+上述结论只适用于最初的窄时间窗，不能外推到 51.2 mm gap 本身。2026-08-26 的修订窗口以同一
+S1 母 cohort、同一真实 PA 和同一 RF 步长，扫描 `46.5485648325` 至 `58.8440193779 us`（2165 个
+时刻，步长约 `5.682 ns`），覆盖 ballistic seed 的上游传播时间。它在不读取 detector、FWHM 或
+分辨率的前提下找到候选时刻 `54.0656102870 us`：screening 分母为 900 个已交接粒子（上游来源母分母
+仍为 1000），候选时刻有 76 个存活且横向 bore 合格的粒子，其中 16 个位于注册的 source region。该结果只证明“这个长 gap 存在可选择的
+OA 脉冲前状态”；不证明随机残差变小、聚焦改善或传输合格。
+
+本次也暴露并修复了两个证据链缺口：时间窗允许整体落在 ballistic seed 上游，且
+`pre_pulse_time_series_states.csv` 被列为紧凑保留中的必留 child→parent 证据。旧 `001500` 父运行的
+同类状态表已按旧规则删除，所以受审计的只读重放正确拒绝了它；新 `002000` 子运行保留了状态表，
+但其父运行在重用既有 child run ID 时被安全拒绝，缺少可核验的父 execution receipt。两份失败父记录
+均保持失败，未被改写为成功。下一步必须建立一个新的、完整冻结的父—子链，随后才可把 0 mm 与
+51.2 mm 的同源预脉冲状态输入配对残差分析。

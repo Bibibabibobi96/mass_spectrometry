@@ -1269,6 +1269,20 @@ $result = Get-PulseTimingOrchestration `
                 stale.stdout + stale.stderr,
             )
 
+    def test_solver_failure_preserves_unpublished_pulse_evidence(self) -> None:
+        entry = (
+            INTEGRATION_ROOT / "workflows" / "family_source_closure" / "execute.ps1"
+        )
+        source = entry.read_text(encoding="utf-8")
+        self.assertIn("Preserve that negative result for audit and", source)
+        self.assertNotIn(
+            "Remove-Item -LiteralPath $unpublishedDiscoveryRoot", source
+        )
+        self.assertIn(
+            "if ($cleanupOutput -and (Test-Path -LiteralPath $outputRoot))",
+            source,
+        )
+
     def test_archived_campaign_is_rejected_before_schema_or_prepare(self) -> None:
         campaign = SINGLE_FLIGHT_CAMPAIGN_PATH
         execute = INTEGRATION_ROOT / "workflows" / "family_source_closure" / (

@@ -229,7 +229,10 @@ if ($ValidateOnly) {
   $outputRoot = [IO.Path]::GetFullPath((Join-Path $runsRoot $campaignRunId))
 }
 $outputRoot = [IO.Path]::GetFullPath($outputRoot)
-$removeUnpublishedTargetOnExit = [bool]($SolverAuthorized -or $FinalizeOnly)
+# Solver runs may have already produced a valid child artifact when a governed
+# parent publication fails.  Preserve that negative result for audit and
+# recovery; only ValidateOnly scratch output is disposable.
+$removeUnpublishedTargetOnExit = $false
 if ($SolverAuthorized -and (Test-Path -LiteralPath $outputRoot)) {
   $publishedManifest = $null
   $publishedManifestPath = Join-Path $outputRoot 'run_manifest.json'
@@ -651,32 +654,9 @@ try {
     }
   }
 } finally {
-  if (-not [string]::IsNullOrWhiteSpace($unpublishedDiscoveryRoot) -and
-      (Test-Path -LiteralPath $unpublishedDiscoveryRoot) -and
-      -not (Test-Path -LiteralPath (
-        Join-Path $unpublishedDiscoveryRoot 'run_manifest.json'
-      ))) {
-    $managedRunsRoot = [IO.Path]::GetFullPath($runsRoot)
-    if (-not $unpublishedDiscoveryRoot.StartsWith(
-          ($managedRunsRoot + [IO.Path]::DirectorySeparatorChar),
-          [StringComparison]::OrdinalIgnoreCase
-        )) {
-      throw 'Unpublished discovery cleanup escaped the managed runs root.'
-    }
-    Remove-Item -LiteralPath $unpublishedDiscoveryRoot -Recurse -Force
-  }
-  if ($removeUnpublishedTargetOnExit -and
-      (Test-Path -LiteralPath $outputRoot) -and
-      -not (Test-Path -LiteralPath (Join-Path $outputRoot 'run_manifest.json'))) {
-    $managedRunsRoot = [IO.Path]::GetFullPath($runsRoot)
-    if (-not $outputRoot.StartsWith(
-          ($managedRunsRoot + [IO.Path]::DirectorySeparatorChar),
-          [StringComparison]::OrdinalIgnoreCase
-        )) {
-      throw 'Unpublished target cleanup escaped the managed runs root.'
-    }
-    Remove-Item -LiteralPath $outputRoot -Recurse -Force
-  }
+  # Do not delete SolverAuthorized/FinalizeOnly runs that lack a terminal
+  # parent manifest.  They can contain an auditable child run or the direct
+  # evidence needed to diagnose a governed publication failure.
   if ($cleanupOutput -and (Test-Path -LiteralPath $outputRoot)) {
     Remove-Item -LiteralPath $outputRoot -Recurse -Force
   }

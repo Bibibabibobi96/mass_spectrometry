@@ -93,6 +93,12 @@ def classify_file(
         suffix, policy["solver_native_numbered_suffix_prefixes"]
     ):
         return "solver_native_binary"
+    # This table is the mandatory handoff from the pre-pulse SIMION child to
+    # the detector-blind selector in its governed parent.  It may be large,
+    # but removing it at the child's terminal boundary makes that parent
+    # impossible to execute or reproduce.
+    if name == "pre_pulse_time_series_states.csv":
+        return "required_evidence"
     size = path.stat().st_size if bytes_count is None and path.is_file() else bytes_count
     if size is not None and size >= int(policy["large_file_threshold_bytes"]):
         return "large_optional"

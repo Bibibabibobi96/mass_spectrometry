@@ -163,7 +163,7 @@
         "ballistic_seed_time_us": {"type": "number", "minimum": 0},
         "grid_origin_us": {"type": "number", "minimum": 0},
         "requested_relative_start_index": {"type": "integer", "maximum": 0},
-        "requested_relative_end_index": {"type": "integer", "minimum": 0},
+        "requested_relative_end_index": {"type": "integer"},
         "ballistic_seed_sample_index": {"type": "integer", "minimum": 0},
         "start_index": {"const": 0},
         "end_index": {"type": "integer", "minimum": 0},

@@ -104,6 +104,18 @@ class ArtifactRetentionTests(unittest.TestCase):
         self.assertEqual(action["removed_file_count"], 0)
         self.assertEqual(classify_file(model), "solver_native_binary")
 
+    def test_pre_pulse_state_table_is_required_compact_handoff_evidence(self) -> None:
+        self.write_config("compact", None)
+        states = self.run / "pre_pulse_time_series_states.csv"
+        states.write_bytes(b"0" * (101 * 1024 * 1024))
+
+        action_path = apply_retention(self.config)
+
+        self.assertTrue(states.exists())
+        self.assertEqual(classify_file(states), "required_evidence")
+        action = json.loads(action_path.read_text(encoding="utf-8"))
+        self.assertEqual(action["removed_file_count"], 0)
+
     def test_terminal_manifest_blocks_retention_mutation(self) -> None:
         self.write_config("compact", None)
         (self.run / "run_manifest.json").write_text(
