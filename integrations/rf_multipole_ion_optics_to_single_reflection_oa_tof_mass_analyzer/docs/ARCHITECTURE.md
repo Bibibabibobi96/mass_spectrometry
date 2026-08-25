@@ -33,6 +33,14 @@ runner 不提供会绕过该合同的逐项数值覆盖入口。
 
 分辨率资格由 Python 分析器在显式分析/晋升合同中判定；单飞 runner 不含未被公开 workflow 消费的资格开关。
 
+MATLAB/COMSOL 脚本中的 direct-KDE mass spectrum 仅保留为本地可视化诊断，不是资格或发布指标。
+其旧 1001 点网格算法已在 2026-08-25 用 `COMSOL-pre-pulse-replay` 的同一 90 粒子 CSV
+（SHA-256 `1F2861CCCCA53FD406106E25772EFFAB38BF208F77899C883B613EF566F87526`）与
+Python `AnalysisSettings(grid_points=1001)` 逐值复现：FWHM 为
+`0.0332642671768326 Da`、R 为 `3006.22886018804`。Python canonical 默认 4001 点网格的
+FWHM 为 `0.033263494636671 Da`，是同一 KDE 定义的网格收敛结果；只有 Python 结果可进入
+analysis/qualification receipt。
+
 仅服务于本 integration 的 `rf_oatof_*` campaign、resolved plan 与 receipt Schema 均同置于
 `config/schemas/`；它们表达该项目的理论审计与运行证据结构，不属于跨项目公共合同。
 
