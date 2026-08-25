@@ -21,7 +21,7 @@ $software = @('COMSOL 6.4', 'MATLAB R2025b', 'Python 3.11')
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
   -RunId $RunId -Project 'single_reflection_oa_tof_mass_analyzer' -Mode 'comsol_n100_candidate_functional' `
   -Software $software -AdditionalDirectories @('comsol') -UseShortExecutionPath
-$model = Join-Path $package.run_dir 'comsol\single_reflection_oa_tof_mass_analyzer__candidate_n100.mph'
+$model = Join-Path $package.artifact_run_dir 'comsol\single_reflection_oa_tof_mass_analyzer__candidate_n100.mph'
 $report = Join-Path $package.log_dir 'comsol_candidate_report.txt'
 
 $frozen = [ordered]@{}
@@ -37,6 +37,10 @@ foreach ($item in @(
     throw "Required input is missing: $($item.Path)"
   }
   $destination = Join-Path $package.input_dir $item.File
+  $destinationParent = Split-Path -Parent $destination
+  if (-not (Test-Path -LiteralPath $destinationParent -PathType Container)) {
+    New-Item -ItemType Directory -Path $destinationParent -Force | Out-Null
+  }
   Copy-Item -LiteralPath $item.Path -Destination $destination
   $frozen[$item.Name] = $destination
 }
@@ -44,6 +48,11 @@ foreach ($item in @(
 $config = Get-Content -LiteralPath $package.run_config -Raw -Encoding UTF8 |
   ConvertFrom-Json -AsHashtable
 $config.inputs = $frozen
+$config.inputs.candidate_particle_table = $frozen.particle_table
+$config.run_instance = [ordered]@{
+  particle_source_seed = 20260720
+  particle_count = 100
+}
 $config.parameters = [ordered]@{
   particle_count = 100
   lifecycle_stage = 'inputs_frozen'
@@ -56,6 +65,7 @@ Write-RunManifest -Python $package.python -RepoRoot $repoRoot `
 $names = @(
   'OATOF_CANDIDATE_CONTRACT_PATH',
   'OATOF_CANDIDATE_MODEL_PATH',
+  'OATOF_CANDIDATE_RUN_CONFIG_PATH',
   'OATOF_CANDIDATE_ION_PATH',
   'OATOF_RESULTS_DIR',
   'OATOF_RUNTIME_DIR'
@@ -64,6 +74,7 @@ $snapshot = Save-RunEnvironment -Names $names
 try {
   $env:OATOF_CANDIDATE_CONTRACT_PATH = $frozen.resolved_geometry
   $env:OATOF_CANDIDATE_MODEL_PATH = $model
+  $env:OATOF_CANDIDATE_RUN_CONFIG_PATH = $package.run_config
   $env:OATOF_CANDIDATE_ION_PATH = $frozen.particle_table
   $env:OATOF_RESULTS_DIR = $package.result_dir
   $env:OATOF_RUNTIME_DIR = Join-Path $package.run_dir 'comsol'
