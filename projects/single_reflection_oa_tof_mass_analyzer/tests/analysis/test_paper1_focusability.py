@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import unittest
 import csv
+import hashlib
+import json
 import tempfile
 from pathlib import Path
 
 import numpy as np
 
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.analyze_paper1_c1_source import (
+    _verify_time_series_receipt,
     analyze_source,
 )
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.paper1_focusability import (
@@ -135,12 +138,37 @@ class Paper1FocusabilityTest(unittest.TestCase):
             result = analyze_source(
                 state_path=path, source_id="test", cohort_salt="c1-test",
                 time_series_sample_index=None, mother_particle_count=160,
-                source_receipt=None, bootstrap_replicates=10, bootstrap_seed=7,
+                source_receipt=None, time_series_population_count=None,
+                bootstrap_replicates=10, bootstrap_seed=7,
             )
             self.assertEqual(result["qualification"], "DETECTOR_BLIND_SOURCE_ONLY")
             self.assertEqual(sum(result["cohort"]["counts"].values()), 160)
             self.assertEqual(result["cohort"]["model_selection_roles"], ["development", "validation"])
             self.assertIn("locked-test model selection", result["claims_prohibited"])
+
+    def test_c1_receipt_keeps_terminal_handoff_and_mother_denominators_distinct(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            states = root / "states.csv"
+            receipt = root / "receipt.json"
+            states.write_text("particle_id\n1\n", encoding="utf-8")
+            receipt.write_text(json.dumps({
+                "role": "rf_oatof_pre_pulse_time_series_screening_receipt",
+                "status": "success", "pulse_disabled": True,
+                "particle_count": 914,
+                "outputs": {"states": {"sha256": hashlib.sha256(states.read_bytes()).hexdigest().upper()}},
+                "sample_census": [{"sample_index": 1, "alive_count": 828, "missing_count": 86}],
+            }), encoding="utf-8")
+            verified = _verify_time_series_receipt(
+                receipt, states, sample_index=1, mother_count=1000,
+                screened_count=914,
+            )
+            self.assertEqual(verified["anchor_census"]["alive_count"], 828)
+            with self.assertRaisesRegex(ValueError, "screened-population"):
+                _verify_time_series_receipt(
+                    receipt, states, sample_index=1, mother_count=1000,
+                    screened_count=1000,
+                )
 
 
 if __name__ == "__main__":

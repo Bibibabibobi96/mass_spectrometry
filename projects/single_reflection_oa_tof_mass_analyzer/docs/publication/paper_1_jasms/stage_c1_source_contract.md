@@ -140,3 +140,21 @@ stdout日志和run-local输入执行确定性materialization，得到成功recei
 ### 更新后的唯一后续动作
 
 保持524 Da Formal OA资产不变。将pre-pulse RF时间栅格的中心强制绑定到本次运行的`resolved_single_flight_pulse_schedule.json`，即由冻结handoff表和目标提取中心确定的时刻；campaign只继续描述窗口宽度、RF步长和禁止输出。随后以完整母cohort重新生成S2 pre-pulse状态。不得以任意手动提前采样、过滤撞壁粒子或重命名handoff事件代替这个可追溯的时相绑定。在此之前C1继续为`INCONCLUSIVE_REVISE`，阶段2禁止启动。
+
+## 2026-08-25 S2 terminal-handoff：同步筛查与单源 C1 诊断
+
+同步screen parent `20260825_223900__sim__cross__paper1-s2-segmented-handoff-pre-pulse__n1000`及其SIMION child
+`20260825_223900__sim__simion__rf-oatof-single-flight-gap0__n914`成功闭合。筛查栅格仅由冻结的
+`resolved_single_flight_pulse_schedule.json`导出；detector-blind selector在321个样本中选择第97个，即
+`39.19406205683414 µs`，相对解析seed为`-0.363636 µs`。它不读取探测器、到达时间、峰宽或候选控制量。
+
+完整母cohort仍为1000，914个终端handoff进入OA；所选样本中828个保持存活、827个pulse-eligible，故172个
+未观测/损失粒子始终保留在母分母（86个上游损失加86个OA预脉冲损失）。C1读取器现显式区分母cohort与
+实际筛查子cohort，拒绝两者身份不闭合；不会把914当成1000或把828当成共同命中样本。S2单源诊断以固定
+`paper1-c1-v1` ID哈希划分为development/validation/optimization/locked-test = 418/171/138/101；只用前两者
+选择模型。仿射条件模型被选中，尾部比例为0.0023923，六个残差主模态的bootstrap 95%下界为
+0.99909--1.0。这只证明S2输入已可由C1接口稳定、探测器盲地读取，不是跨源可重复性、J2/J3或性能结论。
+
+对应五件套阶段证据为`paper1_stage_evidence/C1/20260825_223900__s2_handoff_synchronised_source`。由于S1仍只有
+`DEVELOPMENT_ONLY`的N=850输入，C1总体结论不变：`INCONCLUSIVE_REVISE`。唯一后续动作是以同一冻结cohort
+治理重建S1的N≥1000共同OA pre-pulse源状态，然后才允许跨源C1结论；不得因S2单源结果进入阶段2。

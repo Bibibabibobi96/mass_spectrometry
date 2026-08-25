@@ -29,15 +29,20 @@ def _json(path: Path) -> dict[str, Any]:
 
 
 def _verify_time_series_receipt(
-    receipt_path: Path, state_path: Path, *, sample_index: int, mother_count: int
+    receipt_path: Path, state_path: Path, *, sample_index: int,
+    mother_count: int, screened_count: int,
 ) -> dict[str, Any]:
     receipt = _json(receipt_path)
     if receipt.get("role") != "rf_oatof_pre_pulse_time_series_screening_receipt":
         raise ValueError("source receipt role is not a governed pre-pulse time-series receipt")
     if receipt.get("status") != "success" or receipt.get("pulse_disabled") is not True:
         raise ValueError("source receipt is not a successful pulse-disabled screening")
-    if receipt.get("particle_count") != mother_count:
-        raise ValueError("source receipt mother-cohort count differs")
+    if (
+        screened_count < 1
+        or screened_count > mother_count
+        or receipt.get("particle_count") != screened_count
+    ):
+        raise ValueError("source receipt screened-population count differs")
     states = receipt.get("outputs", {}).get("states", {})
     if states.get("sha256") != _sha256(state_path):
         raise ValueError("source receipt state-table SHA-256 differs")
@@ -49,15 +54,20 @@ def _verify_time_series_receipt(
         raise ValueError("source receipt sample index differs")
     alive = selected.get("alive_count")
     missing = selected.get("missing_count")
-    if not isinstance(alive, int) or not isinstance(missing, int) or alive + missing != mother_count:
-        raise ValueError("source receipt anchor census does not preserve mother cohort")
+    if (
+        not isinstance(alive, int)
+        or not isinstance(missing, int)
+        or alive + missing != screened_count
+    ):
+        raise ValueError("source receipt anchor census does not preserve screened population")
     return {"anchor_census": selected, "receipt_sha256": _sha256(receipt_path)}
 
 
 def analyze_source(
     *, state_path: Path, source_id: str, cohort_salt: str,
     time_series_sample_index: int | None, mother_particle_count: int,
-    source_receipt: Path | None, bootstrap_replicates: int, bootstrap_seed: int,
+    source_receipt: Path | None, time_series_population_count: int | None,
+    bootstrap_replicates: int, bootstrap_seed: int,
 ) -> dict[str, Any]:
     """Return source-only C1 diagnostics without detector or design information."""
     if mother_particle_count < 1:
@@ -66,9 +76,14 @@ def analyze_source(
     if source_receipt is not None:
         if time_series_sample_index is None:
             raise ValueError("a governed time-series receipt requires an anchor sample")
+        screened_count = (
+            mother_particle_count
+            if time_series_population_count is None
+            else time_series_population_count
+        )
         receipt = _verify_time_series_receipt(
             source_receipt, state_path, sample_index=time_series_sample_index,
-            mother_count=mother_particle_count,
+            mother_count=mother_particle_count, screened_count=screened_count,
         )
     source = load_frozen_pre_pulse_source(
         state_path, time_series_sample_index=time_series_sample_index
@@ -102,7 +117,7 @@ def analyze_source(
         "source_id": source_id,
         "state_table": {"path": str(state_path.resolve()), "sha256": _sha256(state_path)},
         "anchor": {"instrument_time_us": source.instrument_time_us, "time_series_sample_index": time_series_sample_index},
-        "mother_cohort": {"count": mother_particle_count, "observed_pre_pulse_count": int(source.particle_ids.size), "unobserved_or_lost_count": mother_particle_count - int(source.particle_ids.size)},
+        "mother_cohort": {"count": mother_particle_count, "screened_count": (mother_particle_count if source_receipt is None or time_series_population_count is None else time_series_population_count), "observed_pre_pulse_count": int(source.particle_ids.size), "unobserved_or_lost_count": mother_particle_count - int(source.particle_ids.size)},
         "cohort": {"salt": cohort_salt, "counts": counts, "model_selection_roles": ["development", "validation"], "prohibited_from_model_selection": ["optimization", "locked_test"]},
         "selected_model": {"degree": model.degree, "effective_sample_count": model.effective_sample_count, "tail_fraction": model.tail_fraction, "residual_rms": model.residual_rms.tolist(), "pulse_eligible_fraction": model.pulse_eligible_fraction, "transverse_emittance_x_mm_m_per_s": model.transverse_emittance_x_mm_m_per_s, "transverse_emittance_y_mm_m_per_s": model.transverse_emittance_y_mm_m_per_s},
         "covariance_bins": [{"lower_condition": item.lower_condition, "upper_condition": item.upper_condition, "sample_count": item.sample_count, "covariance": item.covariance.tolist()} for item in assessment.covariance_bins],
@@ -120,6 +135,7 @@ def main() -> None:
     parser.add_argument("--mother-particle-count", type=int, required=True)
     parser.add_argument("--time-series-sample-index", type=int)
     parser.add_argument("--time-series-receipt", type=Path)
+    parser.add_argument("--time-series-population-count", type=int)
     parser.add_argument("--bootstrap-replicates", type=int, default=200)
     parser.add_argument("--bootstrap-seed", type=int, default=20260825)
     parser.add_argument("--output", type=Path, required=True)
@@ -130,6 +146,7 @@ def main() -> None:
         time_series_sample_index=args.time_series_sample_index,
         mother_particle_count=args.mother_particle_count,
         source_receipt=args.time_series_receipt,
+        time_series_population_count=args.time_series_population_count,
         bootstrap_replicates=args.bootstrap_replicates,
         bootstrap_seed=args.bootstrap_seed,
     )

@@ -44,7 +44,7 @@ claim的完整投稿要求；目前没有主claim达到`SUPPORTED`。
 | [`三区完成结果快照`](../../history/20260823__three-zone-completed-results-snapshot.md) | 一维三区理论、N=100真实PA和固定设计源敏感性已完成 | N≥1000、条件模型、可补偿性、COMSOL/CAD和工程资格 |
 | [`observed横向敏感性`](../../history/20260817__three-zone-observed-transverse-sensitivity.md) | 同一N=100 ID下横向恢复是较小但可测增量 | 横向普遍不重要、连续真实handoff或统计稳定性 |
 | [`observed z-vz归因`](../../history/20260817__three-zone-zvz-nonlinearity-fixed-energy-source-sensitivity.md) | 固定设计中observed-affine残差主导首尾顺序退化 | 该残差不可补偿、是光滑高阶曲线或可推广到其他工况 |
-| RF→OA integration历史observed authority | S1有850行共同脉冲时刻的连续单飞pre-pulse开发cohort和有序ID基础 | [`C1 source contract`](stage_c1_source_contract.md)判定S2仍无共同OA pre-pulse cohort；最新914-handoff真实PA筛查将失败归因于screening anchor未绑定已解析脉冲时刻，而非正交侧入口几何；修复后须重新生成S2状态；S1仅`DEVELOPMENT_ONLY` |
+| RF→OA integration observed authority | S1有850行共同脉冲时刻的连续单飞pre-pulse开发cohort；S2的N=1000母cohort/914 handoff同步真实PA筛查已提供828个所选时刻存活状态和detector-blind单源稳定诊断 | [`C1 source contract`](stage_c1_source_contract.md)仍为`INCONCLUSIVE_REVISE`：S1仅`DEVELOPMENT_ONLY`且N不足，故尚无两个可比较、冻结的源条件；S2单源结果不得升级为J2/J3或性能结论 |
 
 ## 5. 证据资格结论
 
