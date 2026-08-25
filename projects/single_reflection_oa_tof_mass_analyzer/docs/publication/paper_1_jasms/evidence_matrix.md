@@ -17,6 +17,7 @@ claim的完整投稿要求；目前没有主claim达到`SUPPORTED`。
 | 一维整机耦合 | [`oatof_oaaccelerator_coupling.md`](../../theory/oatof_oaaccelerator_coupling.md)及测试 | `PROJECT_ORACLE` | 参考面和低阶闭合基础 |
 | N=3、`A1–A4`、`Γ3` | [`three_zone_accelerator_ideal_theory.md`](../../theory/three_zone_accelerator_ideal_theory.md)及测试 | `PROJECT_ORACLE / PROVISIONAL` | 三区不是创新；100 Th理论身份 |
 | 524 Da N=1000双求解器Formal | [`PROJECT.md`](../../PROJECT.md)与机器合同 | `FORMAL_REFERENCE` | 理想项目基线；不是RF observed source的Paper 1闭环 |
+| C0理论与声明闭合 | [`stage_c0_theory_closure.md`](stage_c0_theory_closure.md) | `PASS_CONTINUE / THEORY_ONLY` | 不含source cohort、直接粒子或性能证据 |
 
 ## 2. 主claim证据
 
