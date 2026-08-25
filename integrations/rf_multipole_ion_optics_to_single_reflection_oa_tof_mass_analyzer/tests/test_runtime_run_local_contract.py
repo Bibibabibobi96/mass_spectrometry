@@ -120,10 +120,8 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
         self.assertIn("execution_batches_parallel=[bool]($executionBatchCount -gt 1)", runner)
         self.assertNotIn("ExecutionBatchCount", runner)
         self.assertIn("common.simion.particle_batching", runner)
-        self.assertIn(
-            "'--nogui','--noprompt','--default-num-particles',([string]$batch.count),'fly'", runner
-        )
-        self.assertNotIn("[Math]::Max(100,[int]$batch.count)", runner)
+        self.assertIn("'--nogui','--noprompt','fly'", runner)
+        self.assertNotIn("--default-num-particles", runner)
         self.assertIn("simion_execution_batch_plan.json", runner)
         self.assertIn("simion_single_wave_batch_plan_sha256", runner)
         self.assertIn("Invoke-ResourceBudgetedProcesses", runner)

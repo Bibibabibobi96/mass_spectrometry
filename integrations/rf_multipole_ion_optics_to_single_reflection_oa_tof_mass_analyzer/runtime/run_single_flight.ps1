@@ -1871,7 +1871,7 @@ try {
         OATOF_SINGLE_FLIGHT_PARTICLE_ID_OFFSET = [string]$batch.offset
       }
       argument_list = [string[]](@(
-        '--nogui','--noprompt','--default-num-particles',([string]$batch.count),'fly',
+        '--nogui','--noprompt','fly',
         '--trajectory-quality',([string]$trajectoryQuality),
         '--retain-trajectories','0','--particles',$batch.particle_input,'--programs','1',
         '--adjustable',("trajectory_quality={0}" -f $trajectoryQuality),
