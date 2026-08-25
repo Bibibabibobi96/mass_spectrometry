@@ -174,7 +174,7 @@ def _publish_detector_blind_pulse_selection(
     source_authority = population.get("source_authority", {})
     table_binding = source_authority.get("table_binding")
     population_table_input = (
-        "single_flight_initial_global_state"
+        "initial_global_state"
         if table_binding == "terminal_handoff_continuation_global_state"
         else "mother_particle_source"
     )

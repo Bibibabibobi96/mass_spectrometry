@@ -621,7 +621,7 @@ class RealFieldPulseAnalysisTests(unittest.TestCase):
             manifest = json.loads(paths["manifest"].read_text(encoding="utf-8"))
             manifest["inputs"]["resolved_population_contract"] = _record(paths["population"])
             manifest["inputs"]["mother_particle_source"] = _record(mother)
-            manifest["inputs"]["single_flight_initial_global_state"] = _record(initial_state)
+            manifest["inputs"]["initial_global_state"] = _record(initial_state)
             paths["manifest"].write_text(json.dumps(manifest), encoding="utf-8")
             stage["manifest_sha256"] = file_sha256(paths["manifest"])
 
