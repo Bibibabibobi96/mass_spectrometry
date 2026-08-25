@@ -1,0 +1,43 @@
+{
+  "stage_id": "C1",
+  "conclusion": "INCONCLUSIVE_REVISE",
+  "claim_limit": "detector-blind source-state availability and full-mother-cohort terminal-loss census only; no focusability, resolution, or structure claim",
+  "inputs": {
+    "parent_run_id": "20260825_174500__sim__cross__paper1-s2-segmented-pre-pulse__n1000__r05",
+    "child_run_id": "20260825_174500__sim__simion__rf-oatof-single-flight-gap0__n1000__r05",
+    "mother_cohort_count": 1000,
+    "source_condition": "S2_segmented_rods",
+    "sampling_window_us": [45.83769809501819, 47.66114791320001],
+    "resource_calibration_duration_seconds": 20,
+    "execution_batches": 4,
+    "raw_stdout_logs": 4,
+    "postprocessing": "deterministic materialization of frozen r05 logs after audited run-local identity fallback and hexadecimal case-normalization fixes; no particle rerun"
+  },
+  "metrics": {
+    "particles_per_batch": 250,
+    "completed_batches": 4,
+    "completed_particles": 1000,
+    "unique_terminal_particles": 1000,
+    "pre_pulse_time_series_state_rows": 0,
+    "terminal_splat_count": 1000,
+    "terminal_window_complete_count": 0,
+    "terminal_time_us": {"minimum": 33.009596, "maximum": 45.755457, "mean": 42.531614},
+    "terminal_position_mm_mean": {"x": -59.843111, "y": -0.026042, "z": -61.552189},
+    "materialization_status": "success_from_frozen_raw_logs"
+  },
+  "claims_supported": [
+    "The repository default scheduler calibrated, terminated its calibration process tree, replanned, and completed the N=1000 run in four independent SIMION batches.",
+    "Under the frozen S2 continuous-frontend time and boundary contract, every member of the full 1000-particle mother cohort splatted before the required OA pre-pulse sampling window.",
+    "The terminal loss time and location range is available from one terminal record per particle."
+  ],
+  "claims_prohibited": [
+    "S2 conditional covariance, emittance, tail, or modal ranking",
+    "S1 versus S2 comparison",
+    "J2 or J3 prediction",
+    "resolution, transmission, or three-zone performance claim"
+  ],
+  "failures": [
+    "No particle survived to the first required pre-pulse sample time, so no detector-blind source state can be fitted.",
+    "The current continuous-frontend timing and boundary contract is not a reachable OA pre-pulse source contract."
+  ]
+}
