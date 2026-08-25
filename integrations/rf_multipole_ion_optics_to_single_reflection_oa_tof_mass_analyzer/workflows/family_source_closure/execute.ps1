@@ -231,6 +231,7 @@ if ($ValidateOnly) {
 $outputRoot = [IO.Path]::GetFullPath($outputRoot)
 $removeUnpublishedTargetOnExit = [bool]($SolverAuthorized -or $FinalizeOnly)
 if ($SolverAuthorized -and (Test-Path -LiteralPath $outputRoot)) {
+  $publishedManifest = $null
   $publishedManifestPath = Join-Path $outputRoot 'run_manifest.json'
   if (Test-Path -LiteralPath $publishedManifestPath -PathType Leaf) {
     $publishedManifest = Get-Content -LiteralPath $publishedManifestPath -Raw |
@@ -265,7 +266,8 @@ if ($SolverAuthorized -and (Test-Path -LiteralPath $outputRoot)) {
   # next unused suffix may be attempted only when its immediate predecessor is
   # a failed manifest.  This keeps an --AllExperiments campaign continuous
   # without ever overwriting a solver result.
-  if ($publishedManifest.role -eq 'simulation_run_manifest' -and
+  if ($null -ne $publishedManifest -and
+      $publishedManifest.role -eq 'simulation_run_manifest' -and
       $publishedManifest.status -eq 'failed') {
     $publishedRecovery = @(Get-ChildItem -LiteralPath $runsRoot -Directory `
       -Filter ($campaignRunId + '__r??') | ForEach-Object {
