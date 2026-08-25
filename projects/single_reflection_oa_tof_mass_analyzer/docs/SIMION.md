@@ -94,6 +94,18 @@ GUI必须可见并可编辑四实例、Fast Adjust电压、实例坐标、Fly2�
 记录Ion Number、TOF、X/Y/Z和Event；单一TOF列不能证明来自正确终止面。命令行只可改变线程、无GUI和
 输出路径，不能覆盖GUI不可见物理参数。
 
+## C3 总轴场诊断
+
+Paper 1 C3 的五实例 Candidate IOB 不能使用单一 PA 的局部场作为独立轴向参考；局部 overlay 必须与
+其余实例按 Workbench 总场共同采样。`workflows/cross_solver_diagnostics/simion/export_total_axis_field.lua`
+只通过 SIMION 2020 官方 `simion.wb:epotential` 和 `simion.wb:efield` 导出该总场，不启动粒子，也不选择
+脉冲时间。官方支持路径为安装目录
+`C:\Program Files\SIMION-2020\examples\field_dump\fielddumplib.lua`（`get_point`）和
+`examples\molecular_beam\README.html`（Workbench `efield` 示例），查阅日期为2026-08-26。
+导出器是基于官方 API 的项目实现，不是供应商对本项目积分或论文结论的推荐。历史 single-flight run
+可能按保留策略裁剪 PA0；此时必须由冻结 cache generation 重建短暂 runtime IOB 并在派生 manifest
+记录来源，不能用残缺 IOB 或单 PA 代替总场。
+
 ## 当前限制
 
 - `.wgem`受许可证限制时使用已验收的SIMION 2020 legacy-GEM模板；许可证升级并完成隔离GUI/结构复验
