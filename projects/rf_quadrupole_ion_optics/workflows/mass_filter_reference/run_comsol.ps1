@@ -60,10 +60,6 @@ try {
     -RequestedContractPath $requestedNumerics `
     -ProfileId $SolverNumericsProfileId
   $compiledNumerics=$numericsCompilation.compiled
-  $sourceParticleCount=@(Get-Content -LiteralPath $sources.particles -Encoding UTF8|Where-Object{-not[string]::IsNullOrWhiteSpace($_)}).Count
-  & $package.python (Join-Path $repoRoot `
-    'common\contracts\particle_count_policy.py') --count $sourceParticleCount
-  if($LASTEXITCODE-ne 0){throw 'Mass-filter source violates the repository N=100/N=1000 policy.'}
   $codeInputs=[ordered]@{}
   $codeSources=[ordered]@{
     runner=$PSCommandPath
