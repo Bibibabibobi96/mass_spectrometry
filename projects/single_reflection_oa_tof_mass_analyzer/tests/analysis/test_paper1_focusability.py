@@ -34,6 +34,16 @@ class Paper1FocusabilityTest(unittest.TestCase):
         self.assertEqual(selected.degree, 1)
         self.assertLess(selected.tail_fraction, 0.1)
 
+    def test_tail_fraction_is_not_fixed_by_a_sample_quantile(self) -> None:
+        condition = np.arange(40, dtype=float).reshape(-1, 1)
+        state = np.column_stack((condition[:, 0], condition[:, 0]))
+        state[-1, 1] += 100.0
+        model = fit_source_condition_model(
+            condition, state, condition_names=("z_mm",),
+            state_names=("x_mm", "vx_m_per_s"), degree=1,
+        )
+        self.assertNotAlmostEqual(model.tail_fraction, 0.05, places=3)
+
     def test_source_assessment_is_detector_blind_and_reports_c1_diagnostics(self) -> None:
         generator = np.random.default_rng(7)
         condition = np.linspace(-2.0, 2.0, 48).reshape(-1, 1)

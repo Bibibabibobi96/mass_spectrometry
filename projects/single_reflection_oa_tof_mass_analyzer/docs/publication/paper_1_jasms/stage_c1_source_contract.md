@@ -23,6 +23,15 @@ validation选择。C1分析还会报告条件分箱协方差、残差主模态bo
 脉冲时刻的OA pre-pulse cohort。因此不能比较两个源条件、冻结跨源协方差/模态排序、生成锁定split或形成
 J2/J3科学结论。
 
+## S1开发集检查（不可升级为C1结论）
+
+以固定salt `paper1-c1-v1`对S1共同预脉冲表进行一次纯源侧检查：源表SHA256为
+`C06620E8EE4064EA65A9377C935B4867049D0B83B3893C7D17C911084B6480B7`，850/850粒子标为eligible；
+development/validation/optimization/locked-test分别为424/173/147/106。仅使用development拟合、
+validation选择后，受限二次模型优于仿射模型，五个残差主模态的最小bootstrap方向对齐为0.998637，
+按卡方0.975阈值的尾部比例为0。这个结果只说明**S1的开发数据可以被当前C1分析接口读取和稳定诊断**；
+它不使用optimization或locked-test，也不能证明跨源稳定性、J2预测力或论文主张。
+
 ## 唯一后续动作
 
 保持S1只作开发证据；在现有source-to-detector集成链为S2生成一次`pre_pulse_state` checkpoint，至少包含

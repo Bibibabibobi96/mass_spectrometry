@@ -17,6 +17,7 @@ from typing import Iterable, Sequence
 import numpy as np
 from numpy.typing import NDArray
 from scipy.optimize import minimize
+from scipy.stats import chi2
 
 
 _ROLES = ("development", "validation", "optimization", "locked_test")
@@ -278,7 +279,10 @@ def fit_source_condition_model(
         raise ValueError("regularized covariance is not positive definite")
     factor = eigenvectors @ np.diag(np.sqrt(eigenvalues))
     mahalanobis = np.sum(np.linalg.solve(factor, residual.T) ** 2, axis=0)
-    cutoff = float(np.quantile(mahalanobis, 0.95))
+    # A sample quantile would force this fraction to about five percent by
+    # construction.  Use the reference chi-square tail instead so that C1 can
+    # distinguish a genuinely heavy residual tail from a near-Gaussian cloud.
+    cutoff = float(chi2.ppf(0.975, df=residual.shape[1]))
     name_to_index = {name: index for index, name in enumerate(state_names)}
 
     def emittance(position: str, velocity: str) -> float | None:
