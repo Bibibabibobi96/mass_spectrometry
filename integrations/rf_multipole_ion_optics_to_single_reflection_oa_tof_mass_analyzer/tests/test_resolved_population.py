@@ -200,6 +200,48 @@ class ResolvedPopulationTests(unittest.TestCase):
         with self.assertRaises(ContractError):
             validate_schema(contract, RESOLVED_POPULATION_SCHEMA_PATH)
 
+    def test_registered_terminal_handoff_smoke_is_a_one_particle_population(self):
+        declared = {
+            "population_id": "registered_handoff_smoke",
+            "population_mode": "terminal_handoff_continuation",
+            "source_authority": {
+                "input_role": "terminal_handoff_continuation_global_state",
+                "table_binding": "terminal_handoff_continuation_global_state",
+                "ordered_particle_id_encoding": "canonical_compact_json_integer_array_v1",
+            },
+            "execution_population": {
+                "particle_count": 1,
+                "ordered_particle_id_sha256": SHA,
+                "selection_algorithm": "explicit_single_terminal_handoff_particle_id_v1",
+                "selection_seed": 0,
+            },
+            "denominators": {"population_count": 10, "eligible_population_count": 10},
+            "analysis_randomness": {"bootstrap_resample_count": 0, "bootstrap_seed": 20260812},
+            "postselection_policy": "prohibited",
+        }
+        observed = {
+            **source_table("continuous_injection_full_population"),
+            "input_role": "terminal_handoff_continuation_global_state",
+            "table_binding": "terminal_handoff_continuation_global_state",
+            "particle_count": 1,
+        }
+        result = compile_resolved_population_contract(
+            campaign_id="fixture_campaign",
+            experiment_id="fixture_experiment",
+            experiment_row_sha256="C" * 64,
+            population_declaration_sha256="D" * 64,
+            execution_strategy="simion_single_flight",
+            source_release_mode="continuous_frontend_handoff",
+            declaration=declared,
+            source_table=observed,
+            contract_schema_version=2,
+        )
+        self.assertEqual(result["execution_population"]["particle_count"], 1)
+        self.assertEqual(
+            result["execution_population"]["selection_algorithm"],
+            "explicit_single_terminal_handoff_particle_id_v1",
+        )
+
         contract = self.compile("pulse_eligible_conditional")
         contract["single_flight_execution"]["population_basis"] = (
             "candidate_full_population"
