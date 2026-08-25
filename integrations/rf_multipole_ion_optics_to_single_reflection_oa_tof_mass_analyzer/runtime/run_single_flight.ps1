@@ -1900,7 +1900,13 @@ try {
   }
   $processSpecifications = @(New-SingleFlightProcessSpecifications $batchRecords)
   $resourceCalibrationOutputs = @()
-  if ([string]$runtimeDispatchPlan.estimation.kind -eq 'unknown_resource_profile_bootstrap') {
+  # A one-ion functional smoke has one mandatory batch and cannot benefit from
+  # a measured parallelism estimate.  Running it once as a calibration would
+  # either duplicate the scientific flight or, if it completes between polls,
+  # create a meaningless zero-byte peak.  Larger cohorts retain the public
+  # scheduler's bootstrap-and-replan path.
+  if ([string]$runtimeDispatchPlan.estimation.kind -eq 'unknown_resource_profile_bootstrap' -and
+      $launched -gt 1) {
     if ($processSpecifications.Count -ne 1) {
       throw 'Unknown-resource calibration must start from one complete single-flight batch.'
     }

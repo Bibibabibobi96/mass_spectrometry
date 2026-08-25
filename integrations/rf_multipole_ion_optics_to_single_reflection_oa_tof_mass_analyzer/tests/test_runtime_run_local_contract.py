@@ -130,6 +130,7 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
         self.assertIn("Invoke-ResourceBudgetedProcesses", runner)
         self.assertIn("time_limited_process_peak_v1", runner)
         self.assertIn("RESOURCE_CALIBRATION_ONLY", runner)
+        self.assertIn("$launched -gt 1", runner)
         self.assertIn("-CalibrationDurationSeconds ([int]$calibration.duration_seconds)", runner)
         self.assertIn("--observed-bootstrap-peak-bytes", runner)
         self.assertIn("New-SingleFlightBatchRecords", runner)
