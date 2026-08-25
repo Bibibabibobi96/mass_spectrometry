@@ -75,6 +75,7 @@ shield边界和rebuild plan均由该函数一次性闭合。API严格拒绝profi
 - `truncation_diagnostics.py`：能量窗、检测半径和源宽截断。
 - `paper1_focusability.py`：C1 detector-blind条件源模型以及C2局部受限白化投影；时序预脉冲记录必须显式选择一个锚点样本，且只允许作为状态输入，不可混入检测器结果。
 - `analyze_paper1_c1_source.py`：冻结单一预脉冲源的C1诊断入口；验证母cohort收据与状态SHA，按粒子ID哈希登记四个cohort，并且仅以development/validation选择条件模型。它不生成C1 PASS结论，跨源资格仍由阶段合同决定。
+- `analyze_paper1_c1_stage.py`：仅汇总两份已冻结、detector-blind的C1源诊断，核验各自母cohort、四个ID cohort和残差模态稳定性；它只关闭C1输入门禁，不生成J2/J3或性能结论。
 
 正式数据优先CSV/JSON。XLSX只接收人工导出，导入后立即规范化。严格配对必须使用相同粒子ID，并区分
 整体时移与去均值逐粒子残差。

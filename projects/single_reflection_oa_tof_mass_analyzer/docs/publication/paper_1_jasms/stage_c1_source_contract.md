@@ -1,6 +1,6 @@
 # Paper 1 C1：探测器盲条件源合同
 
-> `STATUS: INCONCLUSIVE_REVISE / INPUT_CONTRACT_BLOCKED`
+> `STATUS: PASS_CONTINUE / DETECTOR_BLIND_SOURCE_IDENTIFICATION_COMPLETE`
 
 本阶段已实现确定性ID cohort分配、affine/受限二次条件均值候选、shrinkage残差协方差和detector-blind
 validation选择。C1分析还会报告条件分箱协方差、残差主模态bootstrap稳定性、二维横向发射度和脉冲适格率。
@@ -155,6 +155,24 @@ stdout日志和run-local输入执行确定性materialization，得到成功recei
 选择模型。仿射条件模型被选中，尾部比例为0.0023923，六个残差主模态的bootstrap 95%下界为
 0.99909--1.0。这只证明S2输入已可由C1接口稳定、探测器盲地读取，不是跨源可重复性、J2/J3或性能结论。
 
-对应五件套阶段证据为`paper1_stage_evidence/C1/20260825_223900__s2_handoff_synchronised_source`。由于S1仍只有
-`DEVELOPMENT_ONLY`的N=850输入，C1总体结论不变：`INCONCLUSIVE_REVISE`。唯一后续动作是以同一冻结cohort
-治理重建S1的N≥1000共同OA pre-pulse源状态，然后才允许跨源C1结论；不得因S2单源结果进入阶段2。
+对应五件套阶段证据为`paper1_stage_evidence/C1/20260825_223900__s2_handoff_synchronised_source`。这一记录保留
+当时的单源`INCONCLUSIVE_REVISE`状态；后续S1同步证据与它共同构成当前C1关闭证据。
+
+## 2026-08-25 S1同步筛查与C1关闭
+
+S1已用新成功的上游r03源run重新生成同步真实PA筛查。其900个`handoff/transmitted`粒子保持完整1000粒子母分母；
+由冻结handoff的弹道质心解析脉冲种子`45.56495820366112 µs`，并以detector-blind选择器选中第148个采样点
+`45.49109456729749 µs`。该点有875个预脉冲状态，125个未观测/损失粒子仍在母分母；没有探测器、到达时间、
+峰宽或控制量参与选择。S1选择受限二次条件模型，S2选择仿射条件模型；这表明源条件不同，不能被表述为模型相等。
+
+以同一salt `paper1-c1-v1`，S1的development/validation/optimization/locked-test为429/178/156/112，
+S2为418/171/138/101。两源均只以development/validation选择模型，所有残差主模态bootstrap 95%方向对齐下界
+均大于0（实际最小值分别为0.9991307和0.9990477）。两份完整协方差分箱、模型、发射度、尾部、来源SHA和
+母cohort损失账本由最终五件套阶段证据冻结于
+`paper1_stage_evidence/C1/20260825_220400__s1_s2_synchronised_source`。
+
+### 当前C1结论
+
+`PASS_CONTINUE`：两种不同RF源工况均提供了可哈希、同步、detector-blind的OA预脉冲状态，且各自条件残差模型和
+主模态在预先隔离的cohort下稳定可识别。因此允许进入C2的solver-free J2/J3淘汰试验。该通过只关闭**输入识别门禁**；
+它不说明两源条件模型相同，也不支持J2/J3预测、任何优化、探测器性能、分辨率、传输率或三区优越性结论。

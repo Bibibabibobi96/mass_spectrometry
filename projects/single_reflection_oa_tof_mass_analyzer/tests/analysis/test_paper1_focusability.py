@@ -13,6 +13,9 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.analyze_paper1_c1_
     _verify_time_series_receipt,
     analyze_source,
 )
+from projects.single_reflection_oa_tof_mass_analyzer.analysis.analyze_paper1_c1_stage import (
+    assess_c1_stage,
+)
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.paper1_focusability import (
     FocusabilityProblem,
     assess_source_condition,
@@ -169,6 +172,29 @@ class Paper1FocusabilityTest(unittest.TestCase):
                     receipt, states, sample_index=1, mother_count=1000,
                     screened_count=1000,
                 )
+
+    def test_c1_stage_requires_two_distinct_detector_blind_source_assessments(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            def assessment(source_id: str) -> dict[str, object]:
+                return {
+                    "role": "oatof_paper1_c1_source_assessment",
+                    "qualification": "DETECTOR_BLIND_SOURCE_ONLY",
+                    "source_id": source_id,
+                    "anchor": {"instrument_time_us": 1.0},
+                    "mother_cohort": {"count": 1000, "observed_pre_pulse_count": 800},
+                    "cohort": {"salt": "fixed", "counts": {"development": 400, "validation": 200, "optimization": 200, "locked_test": 200}, "model_selection_roles": ["development", "validation"], "prohibited_from_model_selection": ["optimization", "locked_test"]},
+                    "selected_model": {"degree": 1}, "covariance_bins": [],
+                    "residual_modes": {"bootstrap_alignment_lower_95": [0.9]},
+                }
+            first, second = root / "first.json", root / "second.json"
+            first.write_text(json.dumps(assessment("S1")), encoding="utf-8")
+            second.write_text(json.dumps(assessment("S2")), encoding="utf-8")
+            result = assess_c1_stage(first_path=first, second_path=second)
+            self.assertEqual(result["conclusion"], "PASS_CONTINUE")
+            second.write_text(json.dumps(assessment("S1")), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "distinct"):
+                assess_c1_stage(first_path=first, second_path=second)
 
 
 if __name__ == "__main__":
