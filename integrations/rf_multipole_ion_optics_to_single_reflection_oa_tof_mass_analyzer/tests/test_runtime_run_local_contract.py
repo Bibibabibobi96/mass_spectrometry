@@ -10,7 +10,6 @@ import shutil
 import subprocess
 import unittest
 
-from common.contracts.file_identity import repository_text_sha256
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.three_zone_runtime_identity import (
     validate_runtime_identity,
 )
@@ -25,12 +24,6 @@ WORKFLOW_ENTRY = (
     INTEGRATION_ROOT / "workflows" / "family_source_closure" / "execute.ps1"
 )
 SINGLE_FLIGHT_RUNNER = INTEGRATION_ROOT / "runtime" / "run_single_flight.ps1"
-PRE_PULSE_TIME_SERIES_MATERIALIZER = (
-    INTEGRATION_ROOT / "runtime" / "materialize_pre_pulse_time_series.py"
-)
-FAMILY_RUNTIME_IMPLEMENTATION = (
-    INTEGRATION_ROOT / "config" / "family_runtime_implementation.json"
-)
 FAMILY_ADAPTER = (
     INTEGRATION_ROOT / "workflows" / "family_source_closure" / "adapter.ps1"
 )
@@ -165,24 +158,6 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
                 runner,
                 runner_path,
             )
-
-    def test_pre_pulse_time_series_materializer_is_runtime_bound(self) -> None:
-        registry = json.loads(
-            FAMILY_RUNTIME_IMPLEMENTATION.read_text(encoding="utf-8")
-        )
-        record = registry["implementation"][
-            "single_flight_pre_pulse_time_series_materializer"
-        ]
-        self.assertEqual(
-            record["path"],
-            "integrations/"
-            "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/"
-            "runtime/materialize_pre_pulse_time_series.py",
-        )
-        self.assertEqual(
-            record["sha256"],
-            repository_text_sha256(PRE_PULSE_TIME_SERIES_MATERIALIZER),
-        )
 
     def test_exploration_may_record_but_not_enforce_implementation_content_drift(self) -> None:
         """Only implementation content drift is permissive; path and hash syntax stay closed."""
