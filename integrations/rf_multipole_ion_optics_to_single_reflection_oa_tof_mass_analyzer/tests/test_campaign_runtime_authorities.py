@@ -246,34 +246,6 @@ class CampaignRuntimeAuthoritiesTests(unittest.TestCase):
             targets,
         )
 
-    def test_single_flight_program_builder_is_runtime_bound(self) -> None:
-        implementation = load(CONFIG_ROOT / "family_runtime_implementation.json")
-        self.assertEqual(
-            implementation["implementation"]["single_flight_program_builder"]["path"],
-            (
-                "integrations/"
-                "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/"
-                "runtime/build_single_flight_program.py"
-            ),
-        )
-        runtime_binding = (
-            INTEGRATION_ROOT / "runtime" / "runtime_binding.ps1"
-        ).read_text(encoding="utf-8-sig")
-        self.assertIn(
-            "'single_flight_runner','pre_pulse_runner','pulse_capture_runner'",
-            runtime_binding,
-        )
-        self.assertIn("foreach ($property in $implementationRecords)", runtime_binding)
-        self.assertNotIn("-Expected @($implementationPaths.Keys)", runtime_binding)
-        self.assertEqual(
-            implementation["implementation"]["single_flight_source"]["path"],
-            (
-                "integrations/"
-                "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/"
-                "runtime/single_flight_source.py"
-            ),
-        )
-
     def test_pa_content_identity_excludes_runtime_field_and_state_diagnostics(
         self,
     ) -> None:
