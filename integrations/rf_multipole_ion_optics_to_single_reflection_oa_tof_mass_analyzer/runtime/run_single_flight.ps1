@@ -60,6 +60,7 @@ param(
   [string]$PrePulseTimeSeriesContractSha256 = '',
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
   [string]$PythonExe = '',
+  [switch]$BuildOnly,
   [ValidateSet('strict','exploration')][string]$RuntimeImplementationBindingMode = 'strict'
 )
 
@@ -1825,6 +1826,17 @@ try {
   Write-RunJson -Path $package.summary -Depth 10 -Value ([ordered]@{schema_version=1;role=$summaryRole;status='interrupted';reason='Frozen inputs recorded; SIMION flight not complete.';single_flight_pa_cache_policy=$PaCachePolicy;single_flight_pa_cache_policy_provenance=$PaCachePolicyProvenance;pa_cache_dispositions=$paCacheDispositions})
   Write-RunManifest -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config -Status interrupted -Software @('SIMION 2020','Python 3.11')
   $snapshotReady = $true
+
+  if ($BuildOnly) {
+    Write-RunJson -Path $package.summary -Depth 10 -Value ([ordered]@{
+      schema_version=1; role=$summaryRole; status='success'
+      execution_mode='build_only'; claim_limit='PA/IOB construction only; no particle flight or physics result.'
+      single_flight_pa_cache_policy=$PaCachePolicy
+      pa_cache_dispositions=$paCacheDispositions
+    })
+    Write-RunManifest -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config -Status success -Software @('SIMION 2020','Python 3.11')
+    return
+  }
 
   $batchCount = [int]$batchPlan.batch_count
   $particleLines = @(Get-RfSingleFlightParticleLines `

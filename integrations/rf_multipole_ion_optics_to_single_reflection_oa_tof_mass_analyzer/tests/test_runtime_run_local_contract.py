@@ -841,6 +841,19 @@ foreach ($entry in $commands) {{
         self.assertLess(guard, manifest_copy)
         self.assertLess(manifest_copy, fly_override)
 
+    def test_build_only_stops_after_frozen_iob_without_particle_dispatch(self) -> None:
+        text = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        self.assertIn("[switch]$BuildOnly", text)
+        build_only = text.index("if ($BuildOnly) {")
+        batching = text.index("$batchCount = [int]$batchPlan.batch_count")
+        fly = text.index("'--nogui','--noprompt','fly'")
+        self.assertLess(build_only, batching)
+        self.assertLess(build_only, fly)
+        window = text[build_only:batching]
+        self.assertIn("status='success'", window)
+        self.assertIn("execution_mode='build_only'", window)
+        self.assertIn("no particle flight or physics result", window)
+
     def test_all_four_pa_cache_roles_use_one_verified_contract(self) -> None:
         runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
         artifacts = (INTEGRATION_ROOT / "runtime" / "run_artifacts.ps1").read_text(
