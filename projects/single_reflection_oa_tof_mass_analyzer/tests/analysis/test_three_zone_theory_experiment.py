@@ -27,7 +27,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_theory_
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CAMPAIGN_PATH = (
-    PROJECT_ROOT / "config" / "experiments" / "three_zone_solver_free_funnel_v1.json"
+    PROJECT_ROOT / "config" / "experiments" / "three_zone_solver_free_funnel_v2.json"
 )
 
 

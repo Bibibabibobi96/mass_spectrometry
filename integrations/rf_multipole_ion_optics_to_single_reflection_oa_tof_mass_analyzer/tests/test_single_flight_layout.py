@@ -24,7 +24,7 @@ class SingleFlightLayoutTests(unittest.TestCase):
             "role": "oatof_three_zone_simion_candidate_resolved",
             "qualification": "CANDIDATE_ONLY",
             "compiler_mode": "T5_FROZEN_PRIMARY_AND_BRANCH_ONLY",
-            "campaign": {"campaign_id": "three_zone_solver_free_funnel_v1"},
+            "campaign": {"campaign_id": "three_zone_solver_free_funnel_v2"},
             "t5_evidence": {"plan_sha256": "A" * 64},
             "source_identity": {
                 "frozen_source": {

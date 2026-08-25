@@ -1,0 +1,479 @@
+{
+  "schema_version": 1,
+  "role": "oatof_three_zone_solver_free_funnel",
+  "project_id": "single_reflection_oa_tof_mass_analyzer",
+  "campaign_id": "three_zone_solver_free_funnel_v2",
+  "status": "authorized",
+  "assessment_design_status": "POST_PILOT_STAGE_GATED_OPTIMIZATION_THEN_FROZEN_CONFIRMATION",
+  "evidence_level": "PROVISIONAL",
+  "solver_execution_allowed": false,
+  "stage_execution_mode": "single_stage_only",
+  "automatic_retry_count": 0,
+  "authorities": {
+    "baseline": {
+      "path": "projects/single_reflection_oa_tof_mass_analyzer/config/baseline.json",
+      "bytes": 5191,
+      "sha256": "4248B3D34CF3784F3F00FF6E64B0EB734CD20ECF1D82DEDF9A7BA11C7EF98B67"
+    },
+    "resolved_geometry": {
+      "path": "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json",
+      "bytes": 10543,
+      "sha256": "F9C2152E5B1216242D6605A990BA40DC4586D5A278DFE3B1B3D59ABD9DC941A3"
+    },
+    "analysis_contract": {
+      "path": "projects/single_reflection_oa_tof_mass_analyzer/config/analysis_contract.json",
+      "bytes": 4361,
+      "sha256": "9AC9DF480DC0D57499E39F26FE358C437C0D30F103417BB4A02E3B1730A36BDD"
+    },
+    "peak_metrics": {
+      "path": "common/analysis/peak_metrics.py",
+      "bytes": 24684,
+      "sha256": "DF50A675272A92C88E1150822925257B509A892F2EA69D8B4FE6A368ED809ED3"
+    },
+    "two_zone_theory": {
+      "path": "projects/single_reflection_oa_tof_mass_analyzer/analysis/oatof_oaaccelerator_coupling.py",
+      "bytes": 33360,
+      "sha256": "7A350A0747176A74CEBE75012D4C546F750236434BBFB317737E48D0AF8E19C0"
+    },
+    "reflectron_theory": {
+      "path": "projects/single_reflection_oa_tof_mass_analyzer/analysis/reflectron_dual_stage_solver.py",
+      "bytes": 26700,
+      "sha256": "8B2ECC239DF75E3FD7CC2406C6E851D8137E2FBD01244CFE14E81541FC4AFA8A"
+    },
+    "three_zone_theory": {
+      "path": "projects/single_reflection_oa_tof_mass_analyzer/analysis/three_zone_ideal_theory.py",
+      "bytes": 32212,
+      "sha256": "72B7DE29A9C3939F618C9420947C410A2A4DEB3AB1D45389CE16A56106E15E08"
+    },
+    "three_zone_root_solver": {
+      "path": "projects/single_reflection_oa_tof_mass_analyzer/analysis/three_zone_ideal_root_solver.py",
+      "bytes": 29695,
+      "sha256": "03A52F38D7E412B7EBD08C75BF1B6FA04FB3969F7B66B24579ACDEAAD02FCFF1"
+    },
+    "three_zone_funnel_schema": {
+      "path": "common/contracts/schemas/oatof_three_zone_solver_free_funnel.schema.json",
+      "bytes": 24523,
+      "sha256": "6828F3B7581A1A1B7D3378929B023B36D7F0456EB73859CC36FE472EB32FFC18"
+    },
+    "three_zone_resolved_plan_schema": {
+      "path": "common/contracts/schemas/oatof_three_zone_resolved_plan.schema.json",
+      "bytes": 4174,
+      "sha256": "A68FD3D2505483545E40E6F079324ABF48E6FC06EE19AA0BE6D4DA7A92947FFB"
+    },
+    "three_zone_stage_receipt_schema": {
+      "path": "common/contracts/schemas/oatof_three_zone_stage_receipt.schema.json",
+      "bytes": 2799,
+      "sha256": "0710A2A9AA765448B69DE88BEE9C78C93E5907ED625F6A3F68BFA06544CC27E6"
+    },
+    "three_zone_stage_report_schema": {
+      "path": "common/contracts/schemas/oatof_three_zone_stage_report.schema.json",
+      "bytes": 1888,
+      "sha256": "AB6853788F463D332C3ABA2C3D497D570CD0CB9F4B31E5A97B14BBF934F6693A"
+    },
+    "three_zone_numeric_execution": {
+      "path": "projects/single_reflection_oa_tof_mass_analyzer/analysis/three_zone_theory_numeric_execution.py",
+      "bytes": 39447,
+      "sha256": "3653426A7B03165E5AB677B30BCE0F4D9E830AB2A5CE4BF55FBE799C9815F62C"
+    },
+    "three_zone_experiment": {
+      "path": "projects/single_reflection_oa_tof_mass_analyzer/analysis/three_zone_theory_experiment.py",
+      "bytes": 28866,
+      "sha256": "59E50D95CDACE0ECADC5EB25E5D32F6B6D039438670009EFD525154437232AEA"
+    },
+    "three_zone_cli": {
+      "path": "projects/single_reflection_oa_tof_mass_analyzer/workflows/three_zone_ideal_theory/run_theory.py",
+      "bytes": 4810,
+      "sha256": "9D6CE0C76F113F220A8C23EDF9FEEC9485239040728B9C9E9C2A385425B647B4"
+    }
+  },
+  "identity": {
+    "prior_pilot_results_seen": true,
+    "primary_status": "PENDING_G2_FREEZE",
+    "historical_pilot_role": "HIGH_CONTRAST_UPPER_BOUND_ONLY",
+    "working_candidate_binding_required": true,
+    "focus_to_reflectron_mm": 600.0,
+    "accelerator_translation_policy": "derive_DA_from_A1_zero_then_translate_exit_to_z_minus_DA",
+    "exit_to_reflectron_rule": "focus_to_reflectron_mm_plus_DA",
+    "confirmation_benchmark": "best_feasible_two_zone_in_frozen_domain_branch"
+  },
+  "frozen_source": {
+    "mass_to_charge_th": 100.0,
+    "charge_sign": 1,
+    "center_x_mm": 1.498375640839315,
+    "center_velocity_m_per_s": -2.9323518410018137,
+    "velocity_slope_m_per_s_per_mm": 228.80604377795845,
+    "nominal_energy_per_charge_v": 2000.0
+  },
+  "reflectron_geometry": {
+    "stage1_length_mm": 120.0,
+    "stage2_length_mm": 96.1563,
+    "upstream_drift_mm": 600.0,
+    "downstream_drift_mm": 600.0
+  },
+  "theory_domain": {
+    "d1_mm": {"minimum": 3.0, "maximum": 6.0, "step": 0.25},
+    "l23_mm": {"minimum": 5.0, "maximum": 17.0, "step": 1.0},
+    "lambda": {"minimum": 0.20, "maximum": 0.80, "step": 0.05},
+    "delta_v1_v": {"minimum": 150.0, "maximum": 500.0, "step": 25.0},
+    "minimum_zone_length_mm": 0.84,
+    "field_ratio": {"minimum": 0.1, "maximum": 10.0},
+    "maximum_accelerator_field_v_per_mm": 420.103491,
+    "maximum_da_plus_accelerator_length_mm": 67.3503680966
+  },
+  "physics_limits": {
+    "minimum_zone_length_mm": 0.84,
+    "minimum_electrode_clearance_mm": 0.1,
+    "minimum_energy_margin_v": 1.0,
+    "minimum_abs_energy_slope_v_per_mm": 1.0,
+    "minimum_focus_drift_mm": 0.0,
+    "maximum_accelerator_focus_envelope_mm": 67.3503680966,
+    "minimum_stage1_voltage_v": 0.0,
+    "maximum_stage1_voltage_v": 2000.0,
+    "maximum_accelerator_field_v_per_mm": 420.103491,
+    "maximum_accelerator_field_contrast": 10.0,
+    "minimum_stage2_depth_margin_mm": 0.0
+  },
+  "root_policy": {
+    "scaled_variables": ["u=U_R1/Wc", "f=F_R2*L_R2/Wc", "eta_hat=eta/ln(10)"],
+    "scaled_bounds": {
+      "u": {"minimum": 0.000001, "maximum": 0.999999},
+      "f": {"minimum": 0.000001, "maximum": 2.0},
+      "eta_hat": {"minimum": -1.0, "maximum": 1.0}
+    },
+    "two_zone_seeds": [[0.70, 0.40], [0.70, 0.60], [0.82, 0.50], [0.90, 0.40], [0.90, 0.60]],
+    "eta_hat_seeds": [-0.90, -0.45, 0.0, 0.45, 0.90],
+    "seed_order": "eta_hat_then_two_zone_seed;collect_all_roots",
+    "newton_central_difference_step": 1e-5,
+    "newton_convergence_tolerance": 1e-10,
+    "maximum_iterations": 80,
+    "maximum_backtracks": 12,
+    "minimum_backtracking_factor": 0.000244140625,
+    "invalid_trial_policy": "shrink_step_only",
+    "maximum_scaled_residual": 1e-10,
+    "root_cluster_scaled_distance": 1e-8,
+    "rank_relative_tolerance": 1e-10,
+    "minimum_reciprocal_condition": 0.0001,
+    "branch_selection": "baseline_continuation_then_parameter_distance_never_performance",
+    "three_zone_branch_reference_fixture_id": "low_contrast_c3_anchor",
+    "branch_distance_coordinates": ["u", "f", "eta_hat"],
+    "branch_distance_metric": "scaled_euclidean",
+    "branch_selection_requires_unique_nearest": true,
+    "branch_selection_never_uses_performance": true,
+    "two_zone_branch_selection": "unique_accepted_root_only",
+    "pilot_warm_start_allowed": false,
+    "post_root_composite_audit": {
+      "central_difference_steps_h": [0.00005, 0.0001, 0.0002],
+      "required_checks_at_each_step": [
+        "scaled_derivative_residual",
+        "full_numerical_rank",
+        "jacobian_condition_number",
+        "gamma3_uncertainty_separation"
+      ],
+      "require_all_checks_at_all_steps": true,
+      "cross_step_quantities": ["scaled_jacobian", "gamma3_scaled"],
+      "maximum_cross_step_relative_change": 0.01
+    },
+    "minimum_gamma3_uncertainty_multiple": 1.0
+  },
+  "sampling_policy": {
+    "source_full_widths_mm": [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.8, 2.2],
+    "population_sample_counts": [501, 1001, 2001],
+    "population_sigma_relative_convergence": 0.01,
+    "primary_sample_count": 1001,
+    "fwhm_algorithm": "common.analysis.peak_metrics.compute_peak_metrics",
+    "fwhm_cross_sample_convergence_allowed": false,
+    "mode_count_cross_sample_stability_required": true
+  },
+  "scientific_gates": {
+    "maximum_scaled_derivative_residual": 1e-10,
+    "maximum_scaled_jacobian_condition": 10000.0,
+    "eta_zero_oracle_relative_tolerance": 1e-10,
+    "exact_vs_taylor_relative_tolerance": 0.01,
+    "two_zone_sufficiency_relative_to_current": {
+      "minimum_2p2mm_population_sigma_reduction": 0.50,
+      "minimum_2p2mm_direct_fwhm_reduction": 0.30,
+      "maximum_1p0mm_population_sigma_degradation": 0.10,
+      "mode_count_must_not_increase": true
+    },
+    "three_zone_performance_relative_to_best_two_zone": {
+      "minimum_2p2mm_population_sigma_reduction": 0.50,
+      "minimum_2p2mm_direct_fwhm_reduction": 0.30,
+      "maximum_1p0mm_population_sigma_degradation": 0.10,
+      "mode_count_must_not_increase": true
+    }
+  },
+  "engineering_annotations": {
+    "current_approved_voltage_envelope_gating": false,
+    "real_fringe_gating": false,
+    "manufacturing_gating": false
+  },
+  "fixtures": {
+    "current_exact_baseline": {
+      "fixture_id": "current_exact_baseline",
+      "outer": {
+        "d1_mm": 3.0,
+        "l23_mm": 16.8,
+        "lambda": 0.5,
+        "delta_v1_v": 315.077618429449
+      },
+      "inner_policy": "resolve_eta_zero_d1_d2_with_common_five_seeds",
+      "scope": "context_only_outside_frozen_grid"
+    },
+    "low_contrast_anchor": {
+      "fixture_id": "low_contrast_c3_anchor",
+      "evidence_identity": "POST_PILOT_WORKING_ANCHOR_NOT_PRIMARY",
+      "outer": {
+        "d1_mm": 3.25,
+        "l23_mm": 17.0,
+        "lambda": 0.3,
+        "delta_v1_v": 250.0
+      },
+      "inner": {
+        "eta": -1.0391326394747527,
+        "u_r1_v": 1701.7426470171715,
+        "f_r2_v_per_mm": 9.880402594968652
+      },
+      "expected": {
+        "focus_drift_after_exit_mm": 42.742615461548496,
+        "field1_v_per_mm": 76.92307692307692,
+        "field2_v_per_mm": 48.15003152685739,
+        "field3_v_per_mm": 136.1087818397458,
+        "field_ratio_2_over_3": 0.35376138759032566,
+        "accelerator_field_contrast": 2.8267641271185107
+      },
+      "expected_derivatives": {
+        "d1": 0.0,
+        "d2": 2.541098841762901e-21,
+        "d3": -1.9025154088719637e-23,
+        "d4": 2.4892814297124147e-10
+      }
+    }
+  },
+  "stage_design": {
+    "T1": {
+      "formula_fixtures": [
+        "low_contrast_c3_anchor",
+        "eta_zero_degeneration",
+        "focus_reference_translation"
+      ],
+      "expected_rows": 3
+    },
+    "T2": {
+      "grid_axes": ["d1_mm", "l23_mm", "delta_v1_v"],
+      "grid_rows": 2535,
+      "include_current_baseline": true,
+      "expected_rows": 2536
+    },
+    "T3": {
+      "d1_values_mm": [3.25, 3.5],
+      "l23_values_mm": [16.0, 17.0],
+      "delta_v1_values_v": [250.0, 315.077618429449],
+      "lambda_values": [0.3, 0.35, 0.4, 0.45],
+      "three_zone_rows": 32,
+      "paired_two_zone_rows": 8,
+      "include_current_baseline": true,
+      "expected_rows": 41,
+      "anchor_fixture_id": "low_contrast_c3_anchor"
+    },
+    "T4a": {
+      "d1_values_mm": [3.0, 3.75, 4.5, 5.25, 6.0],
+      "l23_values_mm": [5.0, 8.0, 11.0, 14.0, 17.0],
+      "delta_v1_values_v": [150.0, 250.0, 325.0, 400.0, 500.0],
+      "lambda_values": [0.2, 0.35, 0.5, 0.65, 0.8],
+      "expected_rows": 625,
+      "include_predecessor_selected_points_in_ranking": true
+    },
+    "T4b": {
+      "top_k": 8,
+      "offset_multipliers": [-1, 0, 1],
+      "full_domain_steps": {
+        "d1_mm": 0.25,
+        "l23_mm": 1.0,
+        "lambda": 0.05,
+        "delta_v1_v": 25.0
+      },
+      "contrast_tier_upper_bounds": [3.0, 4.0, 6.0, 10.0],
+      "ranking_tuple": [
+        "contrast_tier_index",
+        "boundary_limited",
+        "target_gate_failed",
+        "sigma_2p2_population_ns",
+        "fwhm_2p2_ns",
+        "sigma_1p0_population_ns",
+        "jacobian_condition",
+        "d1_mm",
+        "l23_mm",
+        "delta_v1_v",
+        "lambda"
+      ],
+      "deduplication_policy": "omit_out_of_domain_then_lexicographic_deduplicate_no_replacement",
+      "maximum_rows": 648
+    },
+    "T4c": {
+      "grid_axes": ["d1_mm", "l23_mm", "lambda", "delta_v1_v"],
+      "expected_rows": 32955,
+      "authorization_conclusion": "G2_AUTHORIZE_OPTIONAL_FULL_GRID",
+      "default_enabled": false
+    },
+    "T5": {
+      "primary_selection_policy": "predecessor_receipt_frozen_deterministic_ranking_before_confirmation_metrics",
+      "primary_benchmark": "best_feasible_two_zone_in_frozen_domain_branch",
+      "include_same_outer_control": true,
+      "include_current_baseline": true,
+      "expected_rows": 4
+    }
+  },
+  "stages": [
+    {
+      "stage_id": "T0",
+      "purpose": "Freeze the post-pilot contract, authorities, coordinate identity, and claim boundary.",
+      "kind": "validate",
+      "allowed_predecessors": [],
+      "row_policy": "no_numeric_rows",
+      "conclusions": ["CONTRACT_READY_FOR_ORACLE", "CONTRACT_INVALID"],
+      "transitions": {
+        "CONTRACT_READY_FOR_ORACLE": ["T1"],
+        "CONTRACT_INVALID": []
+      }
+    },
+    {
+      "stage_id": "T1",
+      "purpose": "Validate exact formulas, units, signs, eta-zero and beta-zero oracles, and derivative conventions.",
+      "kind": "analyze",
+      "allowed_predecessors": ["T0"],
+      "row_policy": "three_identity_fixtures",
+      "conclusions": ["THEORY_ORACLE_SUPPORTED", "THEORY_ORACLE_FAILED"],
+      "transitions": {
+        "THEORY_ORACLE_SUPPORTED": ["T2"],
+        "THEORY_ORACLE_FAILED": []
+      }
+    },
+    {
+      "stage_id": "T2",
+      "purpose": "Identify the best feasible two-zone design in the complete frozen domain and baseline-connected branch.",
+      "kind": "analyze",
+      "allowed_predecessors": ["T1"],
+      "row_policy": "complete_2535_two_zone_grid_plus_current_baseline",
+      "conclusions": [
+        "TWO_ZONE_TARGET_MET_IN_FROZEN_DOMAIN_BRANCH",
+        "TWO_ZONE_TARGET_NOT_MET_IN_FROZEN_DOMAIN_BRANCH",
+        "TWO_ZONE_BENCHMARK_INCOMPLETE"
+      ],
+      "transitions": {
+        "TWO_ZONE_TARGET_MET_IN_FROZEN_DOMAIN_BRANCH": [],
+        "TWO_ZONE_TARGET_NOT_MET_IN_FROZEN_DOMAIN_BRANCH": ["G1"],
+        "TWO_ZONE_BENCHMARK_INCOMPLETE": []
+      }
+    },
+    {
+      "stage_id": "G1",
+      "purpose": "Human authorization to test the third direction after reviewing the two-zone limitation receipt.",
+      "kind": "manual_gate",
+      "allowed_predecessors": ["T2"],
+      "row_policy": "manual_receipt_only",
+      "conclusions": ["G1_AUTHORIZE_THIRD_DIRECTION_TEST", "G1_STOP", "G1_REQUIRE_SUCCESSOR_CONTRACT"],
+      "transitions": {
+        "G1_AUTHORIZE_THIRD_DIRECTION_TEST": ["T3"],
+        "G1_STOP": [],
+        "G1_REQUIRE_SUCCESSOR_CONTRACT": []
+      }
+    },
+    {
+      "stage_id": "T3",
+      "purpose": "Audit the C3 low-contrast anchor, third-direction qualification, and the frozen 32+8+1 sparse panel.",
+      "kind": "analyze",
+      "allowed_predecessors": ["G1"],
+      "row_policy": "revised_32_three_zone_plus_8_controls_plus_current_baseline",
+      "conclusions": [
+        "SPARSE_THIRD_DIRECTION_AND_FINITE_WIDTH_SIGNAL_SUPPORTED",
+        "THIRD_DIRECTION_DEGENERATE_OR_ILL_CONDITIONED",
+        "SPARSE_NO_FINITE_WIDTH_SIGNAL_OVER_BEST_TWO_ZONE",
+        "SPARSE_SCREEN_INCOMPLETE"
+      ],
+      "transitions": {
+        "SPARSE_THIRD_DIRECTION_AND_FINITE_WIDTH_SIGNAL_SUPPORTED": ["T4a"],
+        "THIRD_DIRECTION_DEGENERATE_OR_ILL_CONDITIONED": [],
+        "SPARSE_NO_FINITE_WIDTH_SIGNAL_OVER_BEST_TWO_ZONE": [],
+        "SPARSE_SCREEN_INCOMPLETE": []
+      }
+    },
+    {
+      "stage_id": "T4a",
+      "purpose": "Run the deterministic 625-point coarse three-zone grid.",
+      "kind": "analyze",
+      "allowed_predecessors": ["T3"],
+      "row_policy": "deterministic_5x5x5x5_coarse_grid",
+      "conclusions": ["COARSE_THREE_ZONE_CANDIDATES_IDENTIFIED", "COARSE_NO_VIABLE_CANDIDATE", "COARSE_SEARCH_INCOMPLETE"],
+      "transitions": {
+        "COARSE_THREE_ZONE_CANDIDATES_IDENTIFIED": ["T4b"],
+        "COARSE_NO_VIABLE_CANDIDATE": [],
+        "COARSE_SEARCH_INCOMPLETE": []
+      }
+    },
+    {
+      "stage_id": "T4b",
+      "purpose": "Refine the preregistered top eight coarse candidates on deduplicated full-step 3^4 neighborhoods.",
+      "kind": "analyze",
+      "allowed_predecessors": ["T4a"],
+      "row_policy": "top8_deterministic_rank_then_3pow4_local_deduplicated",
+      "conclusions": [
+        "FINITE_WIDTH_TARGET_CANDIDATE_FOUND",
+        "FINITE_WIDTH_IMPROVEMENT_FOUND_BELOW_TARGET",
+        "REFINEMENT_BOUNDARY_OR_COVERAGE_LIMITED",
+        "REFINEMENT_INCOMPLETE"
+      ],
+      "transitions": {
+        "FINITE_WIDTH_TARGET_CANDIDATE_FOUND": ["G2"],
+        "FINITE_WIDTH_IMPROVEMENT_FOUND_BELOW_TARGET": ["G2"],
+        "REFINEMENT_BOUNDARY_OR_COVERAGE_LIMITED": ["G2"],
+        "REFINEMENT_INCOMPLETE": []
+      }
+    },
+    {
+      "stage_id": "T4c",
+      "purpose": "Optionally run the complete 32955-point grid only after a human-authorized boundary or coverage trigger.",
+      "kind": "analyze",
+      "allowed_predecessors": ["G2"],
+      "row_policy": "optional_complete_32955_grid_no_point_replacement",
+      "conclusions": ["FULL_DOMAIN_TARGET_CANDIDATE_FOUND", "FULL_DOMAIN_NO_TARGET_CANDIDATE", "FULL_DOMAIN_INCOMPLETE"],
+      "transitions": {
+        "FULL_DOMAIN_TARGET_CANDIDATE_FOUND": ["T5"],
+        "FULL_DOMAIN_NO_TARGET_CANDIDATE": ["T5"],
+        "FULL_DOMAIN_INCOMPLETE": []
+      }
+    },
+    {
+      "stage_id": "G2",
+      "purpose": "Human authorization to freeze the primary or to authorize the optional complete grid.",
+      "kind": "manual_gate",
+      "allowed_predecessors": ["T4b"],
+      "row_policy": "manual_receipt_with_primary_or_full_grid_decision",
+      "conclusions": ["G2_PRIMARY_FROZEN", "G2_AUTHORIZE_OPTIONAL_FULL_GRID", "G2_STOP"],
+      "transitions": {
+        "G2_PRIMARY_FROZEN": ["T5"],
+        "G2_AUTHORIZE_OPTIONAL_FULL_GRID": ["T4c"],
+        "G2_STOP": []
+      }
+    },
+    {
+      "stage_id": "T5",
+      "purpose": "Independently confirm the frozen primary against the best feasible two-zone benchmark and report robustness.",
+      "kind": "analyze",
+      "allowed_predecessors": ["G2", "T4c"],
+      "row_policy": "frozen_primary_best_two_zone_same_outer_control_current_baseline_and_robustness_panel",
+      "conclusions": [
+        "PRIMARY_CONFIRMATION_PASSED_OVER_BEST_TWO_ZONE",
+        "PRIMARY_THEORY_ONLY_SUPPORTED",
+        "PRIMARY_CONFIRMATION_FAILED",
+        "PRIMARY_CONFIRMATION_DEFERRED_TO_SOLVER"
+      ],
+      "transitions": {
+        "PRIMARY_CONFIRMATION_PASSED_OVER_BEST_TWO_ZONE": [],
+        "PRIMARY_THEORY_ONLY_SUPPORTED": [],
+        "PRIMARY_CONFIRMATION_FAILED": [],
+        "PRIMARY_CONFIRMATION_DEFERRED_TO_SOLVER": []
+      }
+    }
+  ],
+  "claim_limit": "Post-pilot, solver-free, one-dimensional ideal-field evidence only. Scientific conclusions are limited to the frozen discrete theory domain, declared seeds, and baseline-connected branch. Current approved voltage envelopes, real fringe fields, grids, transmission, manufacturing, SIMION, COMSOL, Candidate, and Formal qualification are non-gating or outside scope."
+}

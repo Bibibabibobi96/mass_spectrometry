@@ -34,7 +34,7 @@ CANONICAL_CAMPAIGN = (
     / "single_reflection_oa_tof_mass_analyzer"
     / "config"
     / "experiments"
-    / "three_zone_solver_free_funnel_v1.json"
+    / "three_zone_solver_free_funnel_v2.json"
 )
 
 

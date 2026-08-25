@@ -14,7 +14,7 @@
 
 本文是三区分段均匀场加速器的当前理论权威，并定义其隔离、阶段化、求解器无关验证漏斗。机器精确的
 campaign、阈值、seed、前驱关系和输出结构由
-[`three_zone_solver_free_funnel_v1.json`](../../config/experiments/three_zone_solver_free_funnel_v1.json)
+[`three_zone_solver_free_funnel_v2.json`](../../config/experiments/three_zone_solver_free_funnel_v2.json)
 管理；公式参考实现为
 [`three_zone_ideal_theory.py`](../../analysis/three_zone_ideal_theory.py)。外部输入的审阅与处置记录见
 [`20260817__three-zone-accelerator-external-document-review.md`](../history/20260817__three-zone-accelerator-external-document-review.md)。
