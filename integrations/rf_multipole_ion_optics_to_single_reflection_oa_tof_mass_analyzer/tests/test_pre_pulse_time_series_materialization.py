@@ -246,6 +246,20 @@ def _materialize(paths: dict[str, object]):
 
 
 class PrePulseTimeSeriesMaterializationTests(unittest.TestCase):
+    def test_retained_contract_is_used_after_short_execution_alias_is_removed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            paths = _write_fixture(
+                Path(directory), particle_ids=[1, 2, 3], sample_times=[1.0],
+                log_groups=[[_trace(ion=i, particle_id=i, sample_index=1, time_us=1.0) for i in (1, 2, 3)]],
+            )
+            run_config = json.loads(paths["run_config"].read_text(encoding="utf-8"))
+            run_config["inputs"]["pre_pulse_time_series_contract"] = str(
+                Path(directory) / "deleted-short-alias" / "pre_pulse_time_series_screening_contract.json"
+            )
+            paths["run_config"].write_text(json.dumps(run_config), encoding="utf-8")
+            result = _materialize(paths)
+            self.assertEqual(result.state_row_count, 3)
+
     def test_n100_v1_v2_preserves_prefix_census_and_output_bytes(self) -> None:
         particle_ids = list(range(1, 101))
         sample_times = [1.0, 2.0, 3.0]

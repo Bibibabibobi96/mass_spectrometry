@@ -135,6 +135,25 @@ def _resolve_run_path(value: object, *, role: str) -> Path:
     return path
 
 
+def _resolve_frozen_pre_pulse_contract(
+    value: object, *, run_dir: Path
+) -> Path:
+    """Resolve the immutable contract after a short execution alias disappears.
+
+    ``UseShortExecutionPath`` legitimately records a temporary execution path in
+    the live run configuration.  The governed copy is always retained under the
+    run's canonical ``inputs`` directory.  Only this fixed name may be used as
+    a fallback, and its SHA is still verified by the caller.
+    """
+    try:
+        return _resolve_run_path(value, role="pre-pulse time-series contract")
+    except ContractError:
+        retained = run_dir / "inputs" / "pre_pulse_time_series_screening_contract.json"
+        if retained.is_file():
+            return retained.resolve()
+        raise
+
+
 def _frozen_particle_ids(path: Path) -> list[int]:
     try:
         with path.open("r", encoding="utf-8-sig", newline="") as handle:
@@ -385,9 +404,8 @@ def materialize(
     if supplied_outputs != expected_outputs:
         raise ContractError("pre-pulse materializer output paths differ")
 
-    contract_path = _resolve_run_path(
-        inputs.get("pre_pulse_time_series_contract"),
-        role="pre-pulse time-series contract",
+    contract_path = _resolve_frozen_pre_pulse_contract(
+        inputs.get("pre_pulse_time_series_contract"), run_dir=run_dir
     )
     if (
         not isinstance(expected_contract_sha256, str)
