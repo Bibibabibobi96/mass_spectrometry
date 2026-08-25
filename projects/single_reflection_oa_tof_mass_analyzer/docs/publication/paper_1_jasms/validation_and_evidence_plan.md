@@ -1,9 +1,10 @@
 # Paper 1：JASMS验证与证据计划
 
-> `STATUS: PLANNED / PRIOR_ART_PRESCREEN_COMPLETE / SCIENTIFIC_IMPLEMENTATION_NOT_EXECUTED`
+> `STATUS: ACTIVE / PRIOR_ART_PRESCREEN_COMPLETE / PARTIALLY_EXECUTED`
 
 本文只定义工作包、进入条件和关闭条件。执行配置、粒子身份、运行结果和SHA仍属于项目config与
-artifacts；这里不保存可变参数或手工抄录结果。
+artifacts；这里不保存可变参数或手工抄录结果。C0、C1及C2轴向筛选已执行；当前结果资格以
+[`evidence_matrix.md`](evidence_matrix.md)为准，尤其不得把C2的J2暂停误读为对冻结一维J3有限束宽证据的否定。
 
 ## 1. 成功判据
 
