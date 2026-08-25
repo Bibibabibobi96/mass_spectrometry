@@ -60,6 +60,10 @@ policy（内存、并发、超时或保留）更新而重新成为可执行 auth
 活动单飞来源仅接受 `continuous_frontend` 与 `pre_pulse_restart`。已归档的 staged Grid2 合同及其逐粒子证据
 仍可按归档索引校验，但不再是现行 schema 或运行器可重放的输入。
 
+预脉冲时间序列可使用历史的冻结前 `N=100` 前缀，也可使用与冻结母表等长的完整有序人口；后者仍先
+物化为 run-local 的确定性表，因而不会以“共同幸存粒子”替换母 cohort。所有来源损失继续由原上游
+manifest 和这份完整分母共同报告。
+
 活动 resolved source contract 仅接受 family v2：它显式按 `comsol` 或 `simion` 记录来源 branch，且运行时只
 消费所选 branch。早期 v1 source contract 与其 adapter 仅是历史证据格式，不在活动 schema 或重放入口中保留兼容分支。
 

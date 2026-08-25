@@ -468,6 +468,21 @@ def validate_pre_pulse_time_series_campaign(campaign: dict[str, Any]) -> None:
     execution = population["execution_population"]
     denominators = population.get("denominators", {})
     source_authority = population.get("source_authority", {})
+    population_identity = (
+        population.get("population_mode"),
+        source_authority.get("table_binding"),
+        execution.get("selection_algorithm"),
+    )
+    is_legacy_n100_prefix = population_identity == (
+        "first_100_rows_in_frozen_file_order",
+        "prepared_deterministic_prefix",
+        "first_100_rows_in_frozen_file_order",
+    ) and execution.get("particle_count") == 100
+    is_full_prepared_population = population_identity == (
+        "first_n_rows_in_frozen_file_order",
+        "prepared_deterministic_prefix",
+        "first_n_rows_in_frozen_file_order",
+    ) and execution.get("particle_count") == source.get("launched_particle_count")
     if (
         contract.get("active_scope") != "pre_pulse_frontend_accelerator"
         or contract.get("pa_cache_keys", {}).get("flight_tube") is not None
@@ -475,11 +490,7 @@ def validate_pre_pulse_time_series_campaign(campaign: dict[str, Any]) -> None:
         or source.get("authority_scope") != "source_population"
         or not isinstance(source.get("launched_particle_count"), int)
         or source["launched_particle_count"] < execution.get("particle_count", 0)
-        or population.get("population_mode")
-        != "first_100_rows_in_frozen_file_order"
-        or source_authority.get("table_binding") != "prepared_deterministic_prefix"
-        or execution.get("selection_algorithm")
-        != "first_100_rows_in_frozen_file_order"
+        or not (is_legacy_n100_prefix or is_full_prepared_population)
         or denominators.get("population_count") != execution.get("particle_count")
         or denominators.get("eligible_population_count")
         != execution.get("particle_count")
@@ -2626,9 +2637,13 @@ def prepare_family_source_closure(
     pulse_population_plan_path = None
     pulse_population_count = None
     if pre_pulse_time_series_specification is not None:
-        prefix_ids = list(range(1, 101))
+        pulse_population_count = int(
+            population_declaration["execution_population"]["particle_count"]
+        )
+        prefix_ids = list(range(1, pulse_population_count + 1))
         pulse_prefix_path = plan_output.parent / "inputs" / (
-            "pre_pulse_time_series_screening_prefix_n100.csv"
+            "pre_pulse_time_series_screening_prefix_n"
+            + str(pulse_population_count) + ".csv"
         )
         pulse_prefix_path.parent.mkdir(parents=True, exist_ok=True)
         pulse_prefix_sha256 = write_pulse_resolution_screening_prefix(

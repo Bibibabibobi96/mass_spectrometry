@@ -27,7 +27,7 @@
       "if": {"required": ["pre_pulse_time_series_screening"]},
       "then": {
         "properties": {
-          "schema_version": {"const": 5},
+          "schema_version": {"enum": [5, 6]},
           "experiments": {
             "minItems": 1,
             "maxItems": 1,

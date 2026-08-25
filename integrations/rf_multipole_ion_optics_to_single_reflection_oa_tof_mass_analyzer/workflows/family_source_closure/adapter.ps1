@@ -915,9 +915,14 @@ if ($prePulseTimeSeriesScreening) {
     [IO.Path]::DirectorySeparatorChar
   $pulseTimingDiscoveryAuthority = $pulseTimingDiscovery -or
     $pulseTimingDiscoveryRequired
+  $declaredPrePulsePopulationCount = [int]`
+    $experiment.single_flight_population.execution_population.particle_count
   $expectedTimeSeriesPrefix = if ($pulseTimingDiscoveryAuthority) {
     $prePulseTimeSeriesPrefixBinding
-  } else { 'inputs/pre_pulse_time_series_screening_prefix_n100.csv' }
+  } else {
+    'inputs/pre_pulse_time_series_screening_prefix_n' +
+      $declaredPrePulsePopulationCount + '.csv'
+  }
   if ([IO.Path]::IsPathRooted($prePulseTimeSeriesPrefixBinding) -or
       $prePulseTimeSeriesPrefixBinding -ne
         $expectedTimeSeriesPrefix -or

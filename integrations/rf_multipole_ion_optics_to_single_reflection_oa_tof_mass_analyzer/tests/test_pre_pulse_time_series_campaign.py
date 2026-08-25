@@ -206,6 +206,24 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
                 rf_steps_per_period=160,
             )
 
+    def test_campaign_accepts_full_prepared_mother_population(self) -> None:
+        campaign = current_campaign_fixture(self.campaign)
+        campaign["schema_version"] = 6
+        row = campaign["experiments"][0]
+        row["source"]["launched_particle_count"] = 1000
+        population = row["single_flight_population"]
+        population["population_mode"] = "first_n_rows_in_frozen_file_order"
+        population["execution_population"]["particle_count"] = 1000
+        population["execution_population"]["selection_algorithm"] = (
+            "first_n_rows_in_frozen_file_order"
+        )
+        population["denominators"] = {
+            "population_count": 1000,
+            "eligible_population_count": 1000,
+        }
+        validate_pre_pulse_time_series_campaign(campaign)
+        validate_schema(campaign, ACTIVE_CAMPAIGN_SCHEMA)
+
     def test_auto_policy_uses_ballistic_seed_minus56_plus264_without_pa_keys(self) -> None:
         row = self.campaign["experiments"][0]
         contract = compile_pre_pulse_time_series_contract(

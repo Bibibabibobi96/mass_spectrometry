@@ -480,6 +480,13 @@
       "role": "canonical_multipole_source_transform"
     },
     {
+      "profile_id": "canonical_real_hexapole_n1000",
+      "source_profile_id": "canonical_real_hexapole_n1000",
+      "materialization_mode": "canonical_multipole_source",
+      "particle_count": 1000,
+      "role": "canonical_multipole_source_transform"
+    },
+    {
       "profile_id": "canonical_real_octupole_n5000",
       "source_profile_id": "canonical_real_octupole_n5000",
       "materialization_mode": "canonical_multipole_source",
