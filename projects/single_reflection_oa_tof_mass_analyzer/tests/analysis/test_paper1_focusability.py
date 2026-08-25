@@ -7,6 +7,9 @@ from pathlib import Path
 
 import numpy as np
 
+from projects.single_reflection_oa_tof_mass_analyzer.analysis.analyze_paper1_c1_source import (
+    analyze_source,
+)
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.paper1_focusability import (
     FocusabilityProblem,
     assess_source_condition,
@@ -119,6 +122,25 @@ class Paper1FocusabilityTest(unittest.TestCase):
             self.assertTrue(source.pulse_eligibility.all())
             self.assertTrue(np.allclose(source.state[:, 3], 1250.0))
             self.assertTrue(np.allclose(source.state[:, 5], 2500.0))
+
+    def test_c1_source_analysis_is_detector_blind_and_registers_all_cohorts(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "source.csv"
+            fields = ["particle_id", "event", "instrument_time_us", "x_mm", "y_mm", "z_mm", "vx_m_per_s", "vy_m_per_s", "vz_m_per_s", "pulse_eligibility"]
+            with path.open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=fields)
+                writer.writeheader()
+                for identifier in range(1, 161):
+                    writer.writerow({"particle_id": identifier, "event": "pre_pulse_state", "instrument_time_us": 1.0, "x_mm": identifier / 100.0, "y_mm": 0.0, "z_mm": identifier / 80.0, "vx_m_per_s": identifier * 2.0, "vy_m_per_s": identifier / 10.0, "vz_m_per_s": 500.0 + identifier, "pulse_eligibility": "eligible"})
+            result = analyze_source(
+                state_path=path, source_id="test", cohort_salt="c1-test",
+                time_series_sample_index=None, mother_particle_count=160,
+                source_receipt=None, bootstrap_replicates=10, bootstrap_seed=7,
+            )
+            self.assertEqual(result["qualification"], "DETECTOR_BLIND_SOURCE_ONLY")
+            self.assertEqual(sum(result["cohort"]["counts"].values()), 160)
+            self.assertEqual(result["cohort"]["model_selection_roles"], ["development", "validation"])
+            self.assertIn("locked-test model selection", result["claims_prohibited"])
 
 
 if __name__ == "__main__":
