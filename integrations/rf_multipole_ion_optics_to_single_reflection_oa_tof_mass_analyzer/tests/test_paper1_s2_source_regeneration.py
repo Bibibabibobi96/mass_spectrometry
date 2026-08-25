@@ -75,6 +75,10 @@ class Paper1S2SourceRegenerationTests(unittest.TestCase):
         population = row["single_flight_population"]
         self.assertEqual(campaign["status"], "exploration")
         self.assertEqual(row["source_profile_id"], "canonical_real_hexapole_n1000")
+        self.assertEqual(
+            row["single_flight_pa_cache_policy"],
+            "build_and_publish_if_missing",
+        )
         self.assertEqual(row["source"]["launched_particle_count"], 1000)
         self.assertEqual(population["execution_population"]["particle_count"], 1000)
         self.assertEqual(population["denominators"]["population_count"], 1000)
