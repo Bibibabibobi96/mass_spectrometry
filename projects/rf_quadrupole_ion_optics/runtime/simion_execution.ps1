@@ -19,7 +19,7 @@ function Initialize-RfSimionPaBasis {
     }
 }
 
-function Invoke-RfSimionPreparedBatch {
+function Initialize-RfSimionPreparedBatch {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)][string]$SimionExe,
@@ -31,14 +31,9 @@ function Invoke-RfSimionPreparedBatch {
         [Parameter(Mandatory = $true)][string]$RunConfigLua,
         [Parameter(Mandatory = $true)][string]$InspectScript,
         [Parameter(Mandatory = $true)][string]$IobReport,
-        [Parameter(Mandatory = $true)][string]$LogDir,
-        [Parameter(Mandatory = $true)][int]$TrajectoryQuality,
-        [Parameter(Mandatory = $true)][int]$RfStepsPerPeriod
+        [Parameter(Mandatory = $true)][string]$LogDir
     )
 
-    if ($TrajectoryQuality -le 0 -or $RfStepsPerPeriod -le 0) {
-        throw 'SIMION launch numerics must be positive.'
-    }
     $iobStdoutPath = Join-Path $LogDir 'simion_iob_stdout.txt'
     $iobStderrPath = Join-Path $LogDir 'simion_iob_stderr.txt'
     $iobExitCodePath = Join-Path $LogDir 'simion_iob_exit_code.txt'
@@ -70,7 +65,37 @@ function Invoke-RfSimionPreparedBatch {
         }
         Start-Sleep -Milliseconds 500
 
-        $flyArguments = @(
+    } finally {
+        Remove-Item Env:MULTIPOLE_SIMION_RUN_CONFIG_LUA -ErrorAction SilentlyContinue
+        Remove-Item Env:RFQUAD_SIMION_REFERENCE_REPORT -ErrorAction SilentlyContinue
+        Remove-Item Env:RFQUAD_SIMION_REFERENCE_IOB -ErrorAction SilentlyContinue
+        Pop-Location
+    }
+}
+
+function New-RfSimionFlyProcessSpecification {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][string]$SimionExe,
+        [Parameter(Mandatory = $true)][string]$CandidateDir,
+        [Parameter(Mandatory = $true)][string]$IobPath,
+        [Parameter(Mandatory = $true)][string]$Fly2Path,
+        [Parameter(Mandatory = $true)][string]$RunConfigLua,
+        [Parameter(Mandatory = $true)][string]$IobReport,
+        [Parameter(Mandatory = $true)][string]$LogDir,
+        [Parameter(Mandatory = $true)][int]$TrajectoryQuality,
+        [Parameter(Mandatory = $true)][int]$RfStepsPerPeriod
+    )
+
+    if ($TrajectoryQuality -le 0 -or $RfStepsPerPeriod -le 0) {
+        throw 'SIMION launch numerics must be positive.'
+    }
+    [pscustomobject]@{
+        name = $Name
+        file_path = $SimionExe
+        working_directory = $CandidateDir
+        argument_list = @(
             '--nogui','--noprompt','fly',
             '--trajectory-quality',[string]$TrajectoryQuality,
             '--particles',$Fly2Path,
@@ -79,22 +104,95 @@ function Invoke-RfSimionPreparedBatch {
             '--adjustable',"transport_rf_steps_per_period=$RfStepsPerPeriod",
             $IobPath
         )
-        $flyProcess = Start-Process -FilePath $SimionExe -ArgumentList $flyArguments `
-            -WindowStyle Hidden -Wait -PassThru `
-            -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
-        Get-Content -LiteralPath $stdoutPath -Encoding UTF8
-        if ((Get-Item -LiteralPath $stderrPath).Length -gt 0) {
-            Get-Content -LiteralPath $stderrPath -Encoding UTF8
+        stdout_path = Join-Path $LogDir 'simion_stdout.txt'
+        stderr_path = Join-Path $LogDir 'simion_stderr.txt'
+        environment = @{
+            MULTIPOLE_SIMION_RUN_CONFIG_LUA = $RunConfigLua
+            RFQUAD_SIMION_REFERENCE_REPORT = $IobReport
+            RFQUAD_SIMION_REFERENCE_IOB = $IobPath
         }
-        if ($flyProcess.ExitCode -ne 0) {
-            throw "SIMION fly failed with exit code $($flyProcess.ExitCode)."
-        }
-    } finally {
-        Remove-Item Env:MULTIPOLE_SIMION_RUN_CONFIG_LUA -ErrorAction SilentlyContinue
-        Remove-Item Env:RFQUAD_SIMION_REFERENCE_REPORT -ErrorAction SilentlyContinue
-        Remove-Item Env:RFQUAD_SIMION_REFERENCE_IOB -ErrorAction SilentlyContinue
-        Pop-Location
     }
+}
+
+function Invoke-RfSimionFlyWave {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][object[]]$ProcessSpecifications
+    )
+
+    if ($ProcessSpecifications.Count -eq 0) {
+        throw 'SIMION fly wave requires at least one process specification.'
+    }
+    $running = @()
+    foreach ($specification in $ProcessSpecifications) {
+        $process = Start-Process -FilePath $specification.file_path `
+            -ArgumentList $specification.argument_list `
+            -WorkingDirectory $specification.working_directory `
+            -Environment $specification.environment `
+            -WindowStyle Hidden -PassThru `
+            -RedirectStandardOutput $specification.stdout_path `
+            -RedirectStandardError $specification.stderr_path
+        $running += [pscustomobject]@{
+            specification = $specification
+            process = $process
+            peak_working_set_bytes = [int64]0
+        }
+    }
+    do {
+        $activeCount = 0
+        foreach ($entry in $running) {
+            if (-not $entry.process.HasExited) {
+                $entry.process.Refresh()
+                $entry.peak_working_set_bytes = [Math]::Max(
+                    $entry.peak_working_set_bytes, [int64]$entry.process.WorkingSet64)
+                $activeCount++
+            }
+        }
+        if ($activeCount -gt 0) { Start-Sleep -Milliseconds 100 }
+    } while ($activeCount -gt 0)
+
+    foreach ($entry in $running) {
+        $entry.process.WaitForExit()
+        $entry.process.Refresh()
+        $entry.peak_working_set_bytes = [Math]::Max(
+            $entry.peak_working_set_bytes, [int64]$entry.process.PeakWorkingSet64)
+        Get-Content -LiteralPath $entry.specification.stdout_path -Encoding UTF8 | Write-Host
+        if ((Get-Item -LiteralPath $entry.specification.stderr_path).Length -gt 0) {
+            Get-Content -LiteralPath $entry.specification.stderr_path -Encoding UTF8 | Write-Host
+        }
+        if ($entry.process.ExitCode -ne 0) {
+            throw "SIMION fly '$($entry.specification.name)' failed with exit code $($entry.process.ExitCode)."
+        }
+    }
+    return $running
+}
+
+function Invoke-RfSimionPreparedBatch {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$SimionExe,
+        [Parameter(Mandatory = $true)][string]$CandidateDir,
+        [Parameter(Mandatory = $true)][string]$IobPath,
+        [Parameter(Mandatory = $true)][string]$Fly2Path,
+        [Parameter(Mandatory = $true)][string]$IobBuilderScript,
+        [Parameter(Mandatory = $true)][string]$ProgramSourcePath,
+        [Parameter(Mandatory = $true)][string]$RunConfigLua,
+        [Parameter(Mandatory = $true)][string]$InspectScript,
+        [Parameter(Mandatory = $true)][string]$IobReport,
+        [Parameter(Mandatory = $true)][string]$LogDir,
+        [Parameter(Mandatory = $true)][int]$TrajectoryQuality,
+        [Parameter(Mandatory = $true)][int]$RfStepsPerPeriod
+    )
+
+    Initialize-RfSimionPreparedBatch `
+        -SimionExe $SimionExe -CandidateDir $CandidateDir -IobPath $IobPath -Fly2Path $Fly2Path `
+        -IobBuilderScript $IobBuilderScript -ProgramSourcePath $ProgramSourcePath `
+        -RunConfigLua $RunConfigLua -InspectScript $InspectScript -IobReport $IobReport -LogDir $LogDir
+    $flySpecification = New-RfSimionFlyProcessSpecification `
+        -Name 'batch_001' -SimionExe $SimionExe -CandidateDir $CandidateDir -IobPath $IobPath `
+        -Fly2Path $Fly2Path -RunConfigLua $RunConfigLua -IobReport $IobReport -LogDir $LogDir `
+        -TrajectoryQuality $TrajectoryQuality -RfStepsPerPeriod $RfStepsPerPeriod
+    Invoke-RfSimionFlyWave -ProcessSpecifications @($flySpecification) | Out-Null
 }
 
 function Invoke-RfSimionCoreRun {

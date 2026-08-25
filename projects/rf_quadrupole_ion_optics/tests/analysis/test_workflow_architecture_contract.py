@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -86,6 +89,9 @@ CONFIG_CORE_FUNCTIONS = {
 }
 EXECUTION_SUPPORT_FUNCTIONS = {
     "Initialize-RfSimionPaBasis",
+    "Initialize-RfSimionPreparedBatch",
+    "New-RfSimionFlyProcessSpecification",
+    "Invoke-RfSimionFlyWave",
     "Invoke-RfSimionPreparedBatch",
     "Invoke-RfSimionCoreRun",
 }
@@ -108,6 +114,38 @@ def _runtime_function_names() -> set[str]:
 
 
 class WorkflowArchitectureContractTests(unittest.TestCase):
+    def test_fly_wave_executes_isolated_environment_and_reports_peak_memory(self) -> None:
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("PowerShell 7 is required for the SIMION process-wave contract")
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_path = Path(temporary_directory)
+            execution_path = str(SIMION_EXECUTION_SUPPORT).replace("'", "''")
+            working_directory = str(temporary_path).replace("'", "''")
+            command = f"""
+. '{execution_path}'
+$specification = New-RfSimionFlyProcessSpecification `
+    -Name 'contract_wave' -SimionExe '{pwsh}' -CandidateDir '{working_directory}' `
+    -IobPath 'candidate.iob' -Fly2Path 'particles.fly2' -RunConfigLua 'isolated_config.lua' `
+    -IobReport 'iob_report.json' -LogDir '{working_directory}' `
+    -TrajectoryQuality 20 -RfStepsPerPeriod 40
+$specification.argument_list = @('-NoProfile', '-NonInteractive', '-Command', 'Write-Output $env:MULTIPOLE_SIMION_RUN_CONFIG_LUA')
+$results = Invoke-RfSimionFlyWave -ProcessSpecifications @($specification)
+$results | Select-Object specification, peak_working_set_bytes | ConvertTo-Json -Compress
+"""
+            completed = subprocess.run(
+                [pwsh, "-NoProfile", "-NonInteractive", "-Command", command],
+                check=True,
+                text=True,
+                capture_output=True,
+                cwd=REPO_ROOT,
+                timeout=30,
+            )
+            self.assertIn("isolated_config.lua", completed.stdout)
+            result = json.loads(completed.stdout.strip().splitlines()[-1])
+            self.assertEqual(result["specification"]["name"], "contract_wave")
+            self.assertGreater(result["peak_working_set_bytes"], 0)
+
     def test_active_production_entries_do_not_depend_on_tests(self) -> None:
         forbidden = re.compile(r"(?i)(?:^|[\"'])tests[/\\]")
         for path in (PROJECT_ROOT / "workflows").rglob("*"):
