@@ -223,7 +223,10 @@ def _cache_keys(
             "built_and_published",
         }:
             raise ContractError("pre-pulse active PA cache disposition differs")
-        expected[role] = key
+        # File/cache identities are hexadecimal identifiers, not case-sensitive
+        # display strings.  Contracts emitted by the governed PowerShell path
+        # use uppercase hashes whereas the live cache receipt uses lowercase.
+        expected[role] = key.upper()
     for role in ("flight_tube", "reflectron"):
         disposition = dispositions.get(role)
         if (

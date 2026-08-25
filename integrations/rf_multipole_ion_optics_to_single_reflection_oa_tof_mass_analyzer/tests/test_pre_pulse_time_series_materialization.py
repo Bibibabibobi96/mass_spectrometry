@@ -288,6 +288,21 @@ class PrePulseTimeSeriesMaterializationTests(unittest.TestCase):
             result = _materialize(paths)
             self.assertEqual(result.state_row_count, 3)
 
+    def test_schema_v1_cache_identity_is_case_stable(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            paths = _write_fixture(
+                Path(directory), particle_ids=[1], sample_times=[1.0],
+                log_groups=[[_trace(ion=1, particle_id=1, sample_index=1, time_us=1.0)]],
+                schema_version=1,
+            )
+            run_config = json.loads(paths["run_config"].read_text(encoding="utf-8"))
+            for role in ("frontend", "accelerator_overlay"):
+                run_config["parameters"]["pa_cache_dispositions"][role]["key"] = (
+                    run_config["parameters"]["pa_cache_dispositions"][role]["key"].lower()
+                )
+            paths["run_config"].write_text(json.dumps(run_config), encoding="utf-8")
+            self.assertEqual(_materialize(paths).state_row_count, 1)
+
     def test_n100_v1_v2_preserves_prefix_census_and_output_bytes(self) -> None:
         particle_ids = list(range(1, 101))
         sample_times = [1.0, 2.0, 3.0]
