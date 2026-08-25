@@ -999,9 +999,13 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
       Push-Location $codeRoot
       try{
         $env:PYTHONPATH=$codeRoot
+        # The scheduler emits a diagnostic on stdout.  This function returns a
+        # case-summary object to its caller, so suppress that diagnostic just
+        # as for the batch mergers below; otherwise `$primary` becomes a mixed
+        # array and its `.transmission` property is unavailable.
         & $python -m common.simion.resource_scheduler --request $dispatchRequest `
           --profiles $resourceProfiles --output $dispatchPlan `
-          --observed-bootstrap-peak-bytes ([string]$probe.observed_peak_process_tree_working_set_bytes)
+          --observed-bootstrap-peak-bytes ([string]$probe.observed_peak_process_tree_working_set_bytes) | Out-Null
         if($LASTEXITCODE-ne 0){throw 'SIMION calibrated dispatch replanning failed.'}
         $updatedDispatch=Get-Content -LiteralPath $dispatchPlan -Raw -Encoding UTF8|ConvertFrom-Json
         if([string]$updatedDispatch.estimation.kind-ne'observed_bootstrap_peak'-or

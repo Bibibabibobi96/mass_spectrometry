@@ -607,6 +607,10 @@ class SimionRunnerContractTests(unittest.TestCase):
         self.assertIn("SIMION $name particle-state contract failed.", runner)
         self.assertIn("--merge-rebase-csv", runner)
         self.assertIn("--merge-summaries", runner)
+        self.assertIn(
+            "--observed-bootstrap-peak-bytes ([string]$probe.observed_peak_process_tree_working_set_bytes) | Out-Null",
+            runner,
+        )
         self.assertNotIn("Add-Content -LiteralPath $caseState", runner)
         self.assertIn("Get-ProcessTreeWorkingSetBytes", support)
         self.assertIn("execution_wave", support)
