@@ -64,3 +64,33 @@ C1为`PASS_CONTINUE`前，阶段2及任何三维优化均不得启动。
 `20260825_103000__sim__simion__paper1-s2-segmented-standard-terminal__n1000`。其上游primary arm为
 770/1000 transmitted，零轴向对照为572/1000；所有损失仍属于完整母cohort分母。该run只提供可追溯的
 N=1000连续前端输入和损失分类，不是共同OA pre-pulse状态，也不改变本阶段的`INCONCLUSIVE_REVISE`结论。
+
+## 2026-08-25 S2连续前端筛查：负结果登记
+
+全母cohort S2筛查`20260825_174500__sim__cross__paper1-s2-segmented-pre-pulse__n1000__r04`的SIMION child
+`20260825_174500__sim__simion__rf-oatof-single-flight-gap0__n1000__r04`，在仓库默认资源调度器完成20秒
+资源校准后，按4个并行批次各250个粒子完成。四个stdout日志各有250条`status2`，总计1000个粒子；全部在
+合同采样窗`45.83769809501819`--`47.66114791320001` µs前发生`Splat`，没有任何
+`pre_pulse_time_series_state` TRACE。因此观测状态行数为0，既不能估计条件协方差，也不能从共同命中子集
+构造峰宽改善。
+
+本轮首先因运行配置遗漏`pre_pulse_time_series_contract_sha256`而在materialization处失败；修复已作为
+`c8e6fee`提交。该实现缺陷不改变原始飞行事实：即使合同哈希被保留，本轮也没有可物化的存活状态。初始
+全局状态位于OA全局`x≈-170.11` mm，采样窗前粒子已到达/撞击前端—加速区；这表明当前
+`continuous_frontend`契约没有提供在提取前保持该源包的物理边界或适当的提取时序。它不是S2分段杆本身的
+性能结论。
+
+### 本轮声明边界
+
+- `claims_supported`：默认调度器可以在实测峰值后以4个独立SIMION进程并行完成N=1000；当前S2
+  `continuous_frontend`时间—边界合同在既定采样窗内产生0个OA pre-pulse存活状态。
+- `claims_prohibited`：S2源协方差、发射度、尾部或模态排序；S1/S2比较；J2/J3预测；任何分辨率、传输率或
+  三区优越性结论。
+
+### 修订门槛
+
+下一次S2 C1运行前，必须冻结并验证一个**可到达的OA提取前源合同**：它要么在来源端保留真实的保持/门控
+物理直至预脉冲时刻，要么以有manifest的终端状态在OA入口重新启动，并把新脉冲时刻、状态事件和完整母
+cohort损失账本一起冻结。仅把采样窗提前、过滤已撞壁粒子，或将终端handoff重命名为`pre_pulse_state`
+都不满足该门槛。通过该门槛并得到S1、S2均有足量共同采样时刻状态之前，C1继续为
+`INCONCLUSIVE_REVISE`，阶段2禁止启动。
