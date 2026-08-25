@@ -14,6 +14,15 @@ ROOT = Path(__file__).resolve().parents[1]
 REPO = ROOT.parents[1]
 CAMPAIGN = REPO / "common" / "multipole" / "campaigns" / "20260825__paper1_s2_segmented_standard_terminal_n100.json"
 CAMPAIGN_N1000 = REPO / "common" / "multipole" / "campaigns" / "20260825__paper1_s2_segmented_standard_terminal_n1000.json"
+INTEGRATION_ROOT = REPO / "integrations" / (
+    "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
+)
+PRE_PULSE_CAMPAIGN_N1000 = INTEGRATION_ROOT / "config" / "explorations" / (
+    "paper1_s2_segmented_pre_pulse_n1000.json"
+)
+PRE_PULSE_SCHEMA = INTEGRATION_ROOT / "config" / "schemas" / (
+    "rf_multipole_oatof_experiment_campaign.schema.json"
+)
 
 
 class Paper1S2SourceRegenerationTests(unittest.TestCase):
@@ -58,6 +67,19 @@ class Paper1S2SourceRegenerationTests(unittest.TestCase):
         )
         self.assertEqual(resolved["simion_dispatch"]["kind"], "automatic")
         self.assertTrue(resolved["simion_dispatch"]["independent_particles"])
+
+    def test_pre_pulse_contract_preserves_the_complete_s2_mother_cohort(self) -> None:
+        campaign = json.loads(PRE_PULSE_CAMPAIGN_N1000.read_text(encoding="utf-8"))
+        validate_schema(campaign, PRE_PULSE_SCHEMA)
+        row = campaign["experiments"][0]
+        population = row["single_flight_population"]
+        self.assertEqual(campaign["status"], "exploration")
+        self.assertEqual(row["source_profile_id"], "canonical_real_hexapole_n1000")
+        self.assertEqual(row["source"]["launched_particle_count"], 1000)
+        self.assertEqual(population["execution_population"]["particle_count"], 1000)
+        self.assertEqual(population["denominators"]["population_count"], 1000)
+        self.assertEqual(population["postselection_policy"], "prohibited")
+        self.assertTrue(campaign["pre_pulse_time_series_screening"]["pulse_disabled"])
 
 
 if __name__ == "__main__":
