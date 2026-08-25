@@ -17,7 +17,7 @@ C3_J3只检验一个问题：C2_J3中理想轴向的三区局部控制方向，�
 ## 分两步门槛
 
 1. N=1贯通：五个点均能构建、运行、记录grid2/exit/reflectron/detector事件和完整数值身份。失败即`FAIL_STOP`，不得把缺失事件当作零导数。
-2. N=100步长平台：以同一100母样本完成五点。拟合`+h/-h`与`+2h/-2h`的中心差分，并与独立导出轴场积分器比较。每个可比较方向的相对导数偏差必须不超过5%；五点事件拓扑和母cohort损失分类必须稳定。
+2. N=100步长平台：以同一冻结100离子执行cohort完成五点。该cohort是按源粒子ID顺序取得的前100个实际传输terminal handoff，不读取探测器结果；完整1000离子母cohort及上游损失仍为分母。拟合`+h/-h`与`+2h/-2h`的中心差分，并与独立导出轴场积分器比较。每个可比较方向的相对导数偏差必须不超过5%；五点事件拓扑和母cohort损失分类必须稳定。
 
 N=1只允许使用`terminal_handoff_smoke_source_particle_id`明确登记的一个、已实际传输的上游粒子；运行器仍保留完整母cohort的上游损失记录，并将该粒子映射为SIMION粒子1。它只是构建、时钟和事件序列的功能烟雾测试，禁止输出或解释峰宽、传输率、导数、排序或任何性能指标。
 
@@ -29,6 +29,8 @@ N=1只允许使用`terminal_handoff_smoke_source_particle_id`明确登记的一�
 五点均为`1 → grid1 → intermediate2 → accelerator exit → reflectron → detector`，检测器`1/1`。
 这只关闭N=1贯通门槛：它既不比较五点TOF，也不支持导数、峰宽、传输或J3主张。C3仍须完成同一五点的
 N=100中心差分、事件拓扑稳定性和独立轴场积分器比较后才能形成阶段结论。
+
+N=100的正式campaign是[`paper1_c3_j3_s1_fixed_pulse_derivative_n100.json`](../../../../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/explorations/paper1_c3_j3_s1_fixed_pulse_derivative_n100.json)。其执行cohort由`first_n_transmitted_terminal_handoffs_in_source_particle_id_order`唯一指定，ID序列哈希已冻结；五点共享现有`multipole_handoff_ballistic_centroid_v1`脉冲计划，不含时间窗扫描。
 
 ## 结论格式
 

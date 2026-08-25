@@ -54,6 +54,7 @@ param(
   [double]$TerminalHandoffMassAmu = 0,
   [int]$TerminalHandoffChargeState = 0,
   [int]$TerminalHandoffSmokeSourceParticleId = 0,
+  [int]$TerminalHandoffExecutionParticleCount = 0,
   [int]$TerminalHandoffUpstreamLossCount = -1,
   [string]$PrePulseTimeSeriesContract = '',
   [string]$PrePulseTimeSeriesContractSha256 = '',
@@ -1084,6 +1085,10 @@ try {
       $sourceArguments += @('--handoff-smoke-source-particle-id',
         ([string]$TerminalHandoffSmokeSourceParticleId))
     }
+    if ($TerminalHandoffExecutionParticleCount -gt 0) {
+      $sourceArguments += @('--handoff-execution-particle-count',
+        ([string]$TerminalHandoffExecutionParticleCount))
+    }
   }
   if ($isPrePulseRestart) {
     $sourceArguments += @('--pulse-time-us',([string]$pulseTimeUs))
@@ -1105,6 +1110,10 @@ try {
     if ($TerminalHandoffSmokeSourceParticleId -gt 0 -and
         [int]$terminalHandoffReceipt.smoke_source_particle_id -ne $TerminalHandoffSmokeSourceParticleId) {
       throw 'Terminal-handoff smoke particle identity differs from the frozen request.'
+    }
+    if ($TerminalHandoffExecutionParticleCount -gt 0 -and
+        [int]$terminalHandoffReceipt.execution_particle_count -ne $TerminalHandoffExecutionParticleCount) {
+      throw 'Terminal-handoff execution population differs from the frozen request.'
     }
   }
 

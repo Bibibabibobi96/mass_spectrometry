@@ -470,11 +470,18 @@ def validate_pre_pulse_time_series_campaign(campaign: dict[str, Any]) -> None:
         "prepared_deterministic_prefix",
         "first_n_rows_in_frozen_file_order",
     ) and execution.get("particle_count") == source.get("launched_particle_count")
-    is_terminal_handoff_population = population_identity == (
-        "terminal_handoff_continuation",
-        "terminal_handoff_continuation_global_state",
-        "all_transmitted_terminal_handoffs_in_source_particle_id_order",
-    ) and (
+    is_terminal_handoff_population = population_identity in {
+        (
+            "terminal_handoff_continuation",
+            "terminal_handoff_continuation_global_state",
+            "all_transmitted_terminal_handoffs_in_source_particle_id_order",
+        ),
+        (
+            "terminal_handoff_continuation",
+            "terminal_handoff_continuation_global_state",
+            "first_n_transmitted_terminal_handoffs_in_source_particle_id_order",
+        ),
+    } and (
         row.get("source_release_mode") == "continuous_frontend_handoff"
         and 0 < execution.get("particle_count", 0) < source.get("launched_particle_count", 0)
     )
@@ -3080,6 +3087,7 @@ def prepare_family_source_closure(
     terminal_handoff_global_state_path = None
     terminal_handoff_receipt_path = None
     terminal_handoff_smoke_source_particle_id = None
+    terminal_handoff_execution_particle_count = None
     terminal_handoff_upstream_loss_count = None
     source_zvz_affine_receipt_path = None
     source_zvz_theory_working_point_path = None
@@ -3115,12 +3123,19 @@ def prepare_family_source_closure(
             ):
                 raise ContractError("terminal-handoff smoke population declaration differs")
             terminal_handoff_smoke_source_particle_id = smoke_value
+        elif population_declaration["execution_population"]["selection_algorithm"] == (
+            "first_n_transmitted_terminal_handoffs_in_source_particle_id_order"
+        ):
+            terminal_handoff_execution_particle_count = population_declaration[
+                "execution_population"
+            ]["particle_count"]
         try:
             _, handoff_rows, _, handoff_receipt = materialize_terminal_handoff_continuation(
                 design_evidence["state_path"], _load(resolved_path),
                 mass_amu=terminal_handoff_mass_amu,
                 charge_state=terminal_handoff_charge_state,
                 smoke_source_particle_id=terminal_handoff_smoke_source_particle_id,
+                execution_particle_count=terminal_handoff_execution_particle_count,
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise ContractError("terminal handoff continuation materialization failed") from exc
@@ -3922,6 +3937,9 @@ def prepare_family_source_closure(
             ] + ([] if terminal_handoff_smoke_source_particle_id is None else [
                 "terminal_handoff_smoke_source_particle_id="
                 + str(terminal_handoff_smoke_source_particle_id),
+            ]) + ([] if terminal_handoff_execution_particle_count is None else [
+                "terminal_handoff_execution_particle_count="
+                + str(terminal_handoff_execution_particle_count),
             ]) + [
             "terminal_handoff_receipt_filename=inputs/"
                 + terminal_handoff_receipt_path.name,

@@ -85,6 +85,39 @@ class SingleFlightSourceTests(unittest.TestCase):
         self.assertEqual(receipt["smoke_source_particle_id"], 3)
         self.assertEqual(receipt["upstream_loss_particle_ids"], [2])
 
+    def test_terminal_handoff_prefix_uses_only_transmitted_source_ids(self) -> None:
+        connection = {"spatial_registration": {
+            "rotation_upstream_to_downstream": [[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+            "translation_mm": [0.0, 0.0, 0.0],
+        }}
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "terminal.csv"
+            rows = []
+            for particle_id, event, status, reason in (
+                (1, "terminal", "lost", "acceptance_aperture"),
+                (2, "handoff", "transmitted", "none"),
+                (3, "handoff", "transmitted", "none"),
+                (4, "terminal", "lost", "acceptance_aperture"),
+                (5, "handoff", "transmitted", "none"),
+            ):
+                row = {key: "0" for key in UPSTREAM_TERMINAL_COLUMNS}
+                row.update(particle_id=str(particle_id), event=event, status=status,
+                           terminal_reason=reason, time_us="42", axial_z_mm="80",
+                           transverse_x_mm="0", transverse_y_mm="0",
+                           velocity_axial_m_s="2000", velocity_x_m_s="0", velocity_y_m_s="0")
+                rows.append(row)
+            with source.open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=UPSTREAM_TERMINAL_COLUMNS)
+                writer.writeheader(); writer.writerows(rows)
+            _, states, row_map, receipt = materialize_terminal_handoff_continuation(
+                source, connection, mass_amu=100.0, charge_state=1,
+                execution_particle_count=2,
+            )
+        self.assertEqual([row["particle_id"] for row in states], ["2", "3"])
+        self.assertEqual([row["source_particle_id"] for row in row_map], ["2", "3"])
+        self.assertEqual(receipt["continued_particle_ids"], [2, 3])
+        self.assertEqual(receipt["execution_particle_count"], 2)
+
     def test_uniform_n100_selection_spans_the_full_n1000_mother_width(self) -> None:
         n1 = ordered_subset_source_particle_ids("n1_center_source_id_500_v1")
         prefix = ordered_subset_source_particle_ids(

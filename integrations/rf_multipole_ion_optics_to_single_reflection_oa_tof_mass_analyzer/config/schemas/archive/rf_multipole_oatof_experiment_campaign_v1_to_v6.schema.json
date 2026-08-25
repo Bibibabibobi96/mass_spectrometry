@@ -604,7 +604,7 @@
                   "single_flight_population": {"properties": {
                     "population_mode": {"const": "terminal_handoff_continuation"},
                     "source_authority": {"properties": {"table_binding": {"const": "terminal_handoff_continuation_global_state"}}},
-                    "execution_population": {"properties": {"selection_algorithm": {"enum": ["all_transmitted_terminal_handoffs_in_source_particle_id_order", "explicit_single_terminal_handoff_particle_id_v1"]}}},
+                    "execution_population": {"properties": {"selection_algorithm": {"enum": ["all_transmitted_terminal_handoffs_in_source_particle_id_order", "first_n_transmitted_terminal_handoffs_in_source_particle_id_order", "explicit_single_terminal_handoff_particle_id_v1"]}}},
                     "postselection_policy": {"const": "prohibited"}
                   }}
                 },

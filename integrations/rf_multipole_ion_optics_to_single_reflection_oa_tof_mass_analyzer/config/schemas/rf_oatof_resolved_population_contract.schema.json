@@ -92,7 +92,7 @@
         "population_mode": {"const": "terminal_handoff_continuation"},
         "single_flight_execution": {"properties": {"population_basis": {"const": "terminal_handoff_continuation_population"}, "requires_eligible_population": {"const": false}, "is_pre_pulse_restart": {"const": false}}},
         "source_authority": {"properties": {"table_binding": {"const": "terminal_handoff_continuation_global_state"}}},
-        "execution_population": {"properties": {"selection_algorithm": {"enum": ["all_transmitted_terminal_handoffs_in_source_particle_id_order", "explicit_single_terminal_handoff_particle_id_v1"]}}},
+        "execution_population": {"properties": {"selection_algorithm": {"enum": ["all_transmitted_terminal_handoffs_in_source_particle_id_order", "first_n_transmitted_terminal_handoffs_in_source_particle_id_order", "explicit_single_terminal_handoff_particle_id_v1"]}}},
         "postselection_policy": {"const": "prohibited"}
       },
       "required": ["source_release_mode"]

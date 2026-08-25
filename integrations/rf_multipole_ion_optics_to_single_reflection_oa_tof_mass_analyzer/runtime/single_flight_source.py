@@ -310,6 +310,7 @@ def materialize_terminal_handoff_continuation(
     mass_amu: float,
     charge_state: int,
     smoke_source_particle_id: int | None = None,
+    execution_particle_count: int | None = None,
 ) -> tuple[list[list[str]], list[dict[str, str]], list[dict[str, str]], dict[str, object]]:
     """Continue only manifest-recorded terminal handoffs into the OA frame.
 
@@ -359,10 +360,26 @@ def materialize_terminal_handoff_continuation(
         if not (item["event"] == "handoff" and item["status"] == "transmitted"
                 and item["terminal_reason"] == "none")
     ]
+    if smoke_source_particle_id is not None and execution_particle_count is not None:
+        raise ValueError("terminal-handoff selection modes cannot be combined")
+    transmitted_ids = [
+        particle_id for particle_id in sorted(final_by_id)
+        if final_by_id[particle_id]["event"] == "handoff"
+        and final_by_id[particle_id]["status"] == "transmitted"
+        and final_by_id[particle_id]["terminal_reason"] == "none"
+    ]
     if smoke_source_particle_id is not None:
         if isinstance(smoke_source_particle_id, bool) or smoke_source_particle_id < 1:
             raise ValueError("terminal-handoff smoke source particle ID is invalid")
         selected_ids = [smoke_source_particle_id]
+    elif execution_particle_count is not None:
+        if (
+            isinstance(execution_particle_count, bool)
+            or execution_particle_count < 1
+            or execution_particle_count > len(transmitted_ids)
+        ):
+            raise ValueError("terminal-handoff execution particle count is invalid")
+        selected_ids = transmitted_ids[:execution_particle_count]
     else:
         selected_ids = sorted(final_by_id)
     for particle_id in selected_ids:
@@ -409,6 +426,7 @@ def materialize_terminal_handoff_continuation(
         "upstream_loss_count": len(loss_ids), "upstream_loss_particle_ids": loss_ids,
         "continued_particle_ids": [int(row["source_particle_id"]) for row in row_map],
         "smoke_source_particle_id": smoke_source_particle_id,
+        "execution_particle_count": execution_particle_count,
         "transform": {"rotation_upstream_to_downstream": registration["rotation_upstream_to_downstream"], "translation_mm": [tx, ty, tz]},
     }
     return ion_rows, global_rows, row_map, receipt
@@ -502,6 +520,7 @@ def main() -> int:
     parser.add_argument("--handoff-charge-state", type=int)
     parser.add_argument("--handoff-receipt", type=Path)
     parser.add_argument("--handoff-smoke-source-particle-id", type=int)
+    parser.add_argument("--handoff-execution-particle-count", type=int)
     args = parser.parse_args()
     connection = json.loads(args.connection.read_text(encoding="utf-8-sig"))
     if args.source_release_mode == "pre_pulse_restart":
@@ -522,6 +541,7 @@ def main() -> int:
             args.source, connection, mass_amu=args.handoff_mass_amu,
             charge_state=args.handoff_charge_state,
             smoke_source_particle_id=args.handoff_smoke_source_particle_id,
+            execution_particle_count=args.handoff_execution_particle_count,
         )
         args.handoff_receipt.parent.mkdir(parents=True, exist_ok=True)
         args.handoff_receipt.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")

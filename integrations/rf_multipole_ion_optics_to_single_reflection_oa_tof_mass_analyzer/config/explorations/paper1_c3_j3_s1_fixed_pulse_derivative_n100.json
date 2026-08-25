@@ -1,0 +1,60 @@
+{
+  "schema_version": 6,
+  "role": "rf_multipole_oatof_experiment_campaign",
+  "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+  "campaign_id": "paper1_c3_j3_s1_fixed_pulse_derivative_n100",
+  "status": "exploration",
+  "execution_policy": {
+    "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/execution_policy.json",
+    "sha256": "6FDB04133C0AB5F48BE51127296469802E8E31E04DF6FFB539DD96E0F54F4B35"
+  },
+  "claim_limit": "C3_J3_LOCAL_DERIVATIVE_PLATFORM_ONLY. At the integration-derived fixed pulse, use the deterministically registered first 100 transmitted S1 terminal handoffs for the five pre-published C3 J3 physical candidates. Preserve the 1000-ion mother cohort and all upstream losses as denominators. This campaign may establish only real-PA finite-difference stability and event-topology evidence; it may not claim peak-width improvement, resolution, transmission improvement, optimization, Candidate, or Formal status.",
+  "experiments": {
+    "shared": {
+      "execution_strategy": "simion_single_flight",
+      "single_flight_pa_cache_policy": "build_and_publish_if_missing",
+      "single_flight_layout_profile_id": "three_zone_t5_primary_shaping_rings_1p4_v1",
+      "single_flight_frontend_grid_profile_id": "frontend_isotropic_020_accelerator_overlay_z005",
+      "single_flight_oatof_numerical_profile_id": "oatof_formal_mesh",
+      "single_flight_trajectory_quality_profile_id": "tqual_8",
+      "single_flight_time_integration_profile_id": "dt160",
+      "single_flight_accelerator_field_profile_id": "accelerator_real_three_zone_pa_real_reflectron",
+      "single_flight_source_materialization_profile_id": "canonical_real_octupole_n1000",
+      "architecture_generation_id": "three_zone_t5_frozen_primary_shaping_rings_1p4_v1",
+      "source_profile_id": "canonical_real_octupole_n1000",
+      "field_overlay_id": "accelerator_overlay_z005",
+      "source_release_mode": "continuous_frontend_handoff",
+      "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_0mm",
+      "source": {
+        "authority_scope": "source_population",
+        "run_id": "20260825_214000__sim__simion__paper1-s1-oct-terminal-h15__n1000__r03",
+        "launched_particle_count": 1000,
+        "particle_count_binding": {"mode": "derive_from_frozen_source_state_v1", "selector": {"event": "handoff", "status": "transmitted"}},
+        "particle_source_manifest_input_role": "particle_source",
+        "manifest": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260825_214000__sim__simion__paper1-s1-oct-terminal-h15__n1000__r03/run_manifest.json", "sha256": "A3C8ACC5E8CDDB98FCEAB597FBF501883964C737CD1E5ADB9CF9B2F01E78C936"},
+        "state": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260825_214000__sim__simion__paper1-s1-oct-terminal-h15__n1000__r03/results/particle_states__exit_aperture_plate_acceleration_rf_on.csv", "sha256": "3830C646D10E169B4B503C912859C95C70ADDB194DCA5103E6A01BE2A7B255C8"},
+        "particle_source": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260825_214000__sim__simion__paper1-s1-oct-terminal-h15__n1000__r03/inputs/particle_source.csv", "sha256": "302C03DC29737CE9D46EB1A8D258DB2A8D3C0F8B6A53F7702A33B1ECF9D5320D"},
+        "metadata": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260825_214000__sim__simion__paper1-s1-oct-terminal-h15__n1000__r03/inputs/particle_source_metadata.json", "sha256": "2BE5BBEAD1BF782D6294616B79C1FB1FC60021099EF5BE309480E1A2005139E7"},
+        "handoff_publication_contract": {"path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/octupole_handoff_publication_n1000.json", "sha256": "BF3DD74CE90CFE4E9811FECADE8F38D95C9DF16E61C1828D52889135094616A4"}
+      },
+      "single_flight_pulse_schedule_policy": {"policy_id": "multipole_handoff_ballistic_centroid_v1", "offset_rf_periods": 0.0, "pulse_width_us": 1.0},
+      "single_flight_population": {
+        "population_id": "paper1_c3_j3_s1_first_100_transmitted_terminal_handoffs",
+        "population_mode": "terminal_handoff_continuation",
+        "source_authority": {"input_role": "terminal_handoff_continuation_global_state", "table_binding": "terminal_handoff_continuation_global_state", "ordered_particle_id_encoding": "canonical_compact_json_integer_array_v1"},
+        "execution_population": {"particle_count": 100, "ordered_particle_id_sha256": "11C5A18A2A4CC09FBA5408502E86703BD310C8A63E1E3C30615CA42287EB6CF4", "selection_algorithm": "first_n_transmitted_terminal_handoffs_in_source_particle_id_order", "selection_seed": 0},
+        "denominators": {"population_count": 1000, "eligible_population_count": 1000},
+        "analysis_randomness": {"bootstrap_resample_count": 400, "bootstrap_seed": 20260825},
+        "postselection_policy": "prohibited"
+      }
+    },
+    "variation_axes": ["single_flight_three_zone_candidate"],
+    "rows": [
+      {"sequence": 1, "experiment_id": "paper1_c3_j3_s1_fixed_pulse_derivative_scale_m2_n100", "run_id": "20260826_081000__sim__cross__paper1-c3-j3-s1-fixed-pulse-derivative-m2__n100", "overrides": {"single_flight_three_zone_candidate": {"path": "artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20260826_023000__build__python__paper1-c3-j3-s1-candidates/results/three_zone_c3_j3_scale_-2_candidate_resolved.json", "sha256": "50B3EEBC234105D3BB1B3FF0E4A8BE29997E857D85005F8246DCF9BC74ABEB70"}}},
+      {"sequence": 2, "experiment_id": "paper1_c3_j3_s1_fixed_pulse_derivative_scale_m1_n100", "run_id": "20260826_081100__sim__cross__paper1-c3-j3-s1-fixed-pulse-derivative-m1__n100", "overrides": {"single_flight_three_zone_candidate": {"path": "artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20260826_023000__build__python__paper1-c3-j3-s1-candidates/results/three_zone_c3_j3_scale_-1_candidate_resolved.json", "sha256": "22296960E42DA3E2F60226620B38345D124A3A4FF8DE58868A3DBD6950CD807C"}}},
+      {"sequence": 3, "experiment_id": "paper1_c3_j3_s1_fixed_pulse_derivative_scale_0_n100", "run_id": "20260826_081200__sim__cross__paper1-c3-j3-s1-fixed-pulse-derivative-0__n100", "overrides": {"single_flight_three_zone_candidate": {"path": "artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20260826_023000__build__python__paper1-c3-j3-s1-candidates/results/three_zone_c3_j3_scale_+0_candidate_resolved.json", "sha256": "02D30951F3DEC5C1012458441965F3FA1A248D08CD0C9BA9D2E9689B42940292"}}},
+      {"sequence": 4, "experiment_id": "paper1_c3_j3_s1_fixed_pulse_derivative_scale_p1_n100", "run_id": "20260826_081300__sim__cross__paper1-c3-j3-s1-fixed-pulse-derivative-p1__n100", "overrides": {"single_flight_three_zone_candidate": {"path": "artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20260826_023000__build__python__paper1-c3-j3-s1-candidates/results/three_zone_c3_j3_scale_+1_candidate_resolved.json", "sha256": "174F43DBF766AE64F98691FBA9F13D263E02E88F3615C12EE44994206DB5EF07"}}},
+      {"sequence": 5, "experiment_id": "paper1_c3_j3_s1_fixed_pulse_derivative_scale_p2_n100", "run_id": "20260826_081400__sim__cross__paper1-c3-j3-s1-fixed-pulse-derivative-p2__n100", "overrides": {"single_flight_three_zone_candidate": {"path": "artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20260826_023000__build__python__paper1-c3-j3-s1-candidates/results/three_zone_c3_j3_scale_+2_candidate_resolved.json", "sha256": "E0759C5E84A6073EAE8385DBDBDEB1D7AF19D6AD83A405793FF68A591FBE5F1C"}}}
+    ]
+  }
+}

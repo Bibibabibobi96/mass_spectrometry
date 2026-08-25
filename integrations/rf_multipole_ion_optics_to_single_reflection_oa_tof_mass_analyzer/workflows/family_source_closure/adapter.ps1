@@ -340,6 +340,9 @@ if ($frozenArguments.ContainsKey('source_release_mode')) {
     if ($frozenArguments.ContainsKey('terminal_handoff_smoke_source_particle_id')) {
       $expectedArguments += 'terminal_handoff_smoke_source_particle_id'
     }
+    if ($frozenArguments.ContainsKey('terminal_handoff_execution_particle_count')) {
+      $expectedArguments += 'terminal_handoff_execution_particle_count'
+    }
   }
   if ($frozenArguments.ContainsKey('source_profile_id')) {
     $expectedArguments += @('source_profile_id','field_overlay_id')
@@ -1385,6 +1388,10 @@ if ($executionStrategy -eq 'simion_single_flight') {
     if ($frozenArguments.ContainsKey('terminal_handoff_smoke_source_particle_id')) {
       $runnerArguments.TerminalHandoffSmokeSourceParticleId =
         [int]$frozenArguments.terminal_handoff_smoke_source_particle_id
+    }
+    if ($frozenArguments.ContainsKey('terminal_handoff_execution_particle_count')) {
+      $runnerArguments.TerminalHandoffExecutionParticleCount =
+        [int]$frozenArguments.terminal_handoff_execution_particle_count
     }
   }
   if ($null -eq $resolvedRegionFieldContractPath) {
