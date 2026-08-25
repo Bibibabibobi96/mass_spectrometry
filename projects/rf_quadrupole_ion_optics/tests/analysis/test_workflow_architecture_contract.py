@@ -436,15 +436,10 @@ $results | Select-Object specification, peak_working_set_bytes | ConvertTo-Json 
                 "runtime\\simion_execution.ps1",
             ):
                 self.assertIn(support_path, source)
-            launch_function = (
-                "Invoke-RfSimionParticleBatchWave"
-                if runner_path == MASS_FILTER_RUNNER
-                else "Invoke-RfSimionCoreRun"
-            )
             for function in (
                 "New-RfSimionCoreRunConfig",
                 "ConvertTo-RfSimionLuaConfig",
-                launch_function,
+                "Invoke-RfSimionParticleBatchWave",
                 "Resolve-MultipoleSimionLayoutTemplate",
                 "Copy-VerifiedRunInput",
                 "Write-RunDirectoryChecksumInventory",
@@ -494,13 +489,8 @@ $results | Select-Object specification, peak_working_set_bytes | ConvertTo-Json 
         )
         for runner_path in DEDICATED_RUNNERS:
             runner = _read(runner_path)
-            launch_function = (
-                "Invoke-RfSimionParticleBatchWave"
-                if runner_path == MASS_FILTER_RUNNER
-                else "Invoke-RfSimionCoreRun"
-            )
             for function in (
-                launch_function,
+                "Invoke-RfSimionParticleBatchWave",
                 "Write-RunDirectoryChecksumInventory",
             ):
                 self.assertRegex(runner, rf"\b{function}\b")

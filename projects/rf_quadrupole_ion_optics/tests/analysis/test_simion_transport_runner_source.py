@@ -160,15 +160,10 @@ class SimionTransportRunnerSourceTests(unittest.TestCase):
             self.assertIn(token, helper)
         for runner_path in (RUNNER, MASS_RUNNER):
             runner = runner_path.read_text(encoding="utf-8")
-            launch_function = (
-                "Invoke-RfSimionParticleBatchWave"
-                if runner_path == MASS_RUNNER
-                else "Invoke-RfSimionCoreRun"
-            )
             for token in (
                 "New-RfSimionCoreRunConfig",
                 "ConvertTo-RfSimionLuaConfig",
-                launch_function,
+                "Invoke-RfSimionParticleBatchWave",
                 "Copy-VerifiedRunInput",
                 "Write-RunDirectoryChecksumInventory",
                 "parent_resolved_design_sha256 = $coreConfig.parent_resolved_design_sha256",
