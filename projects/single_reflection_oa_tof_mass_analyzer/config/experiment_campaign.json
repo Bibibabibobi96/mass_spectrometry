@@ -3,8 +3,8 @@
   "role": "oatof_structural_candidate_experiment_campaign",
   "project_id": "single_reflection_oa_tof_mass_analyzer",
   "campaign_id": "reflectron_midgrid_structural_v3",
-  "status": "authorized",
-  "execution_authorized": true,
+  "status": "retired",
+  "execution_authorized": false,
   "preregistered_before_run": true,
   "execution_profile": {
     "profile_id": "validated_structural_candidate",

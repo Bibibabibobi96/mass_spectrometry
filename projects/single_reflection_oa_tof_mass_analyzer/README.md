@@ -30,7 +30,7 @@
 | 已冻结Formal验证记录 | [`config/formal_validation.json`](config/formal_validation.json) |
 | SIMION资产身份 | [`config/simion_stable_entry.json`](config/simion_stable_entry.json) |
 | 可执行workflow | [`config/execution_profiles.json`](config/execution_profiles.json) |
-| 声明式Candidate campaign | [`config/experiment_campaign.json`](config/experiment_campaign.json) |
+| 已完成的声明式Candidate campaign | [`config/experiment_campaign.json`](config/experiment_campaign.json)（retired；历史结果见history） |
 
 数据流固定为`baseline + science + solver numerics → resolved → COMSOL/SIMION/CAD`。seed、run ID和
 冻结路径只属于run instance；候选不得反写baseline或Formal资产。当前项目生命周期为
@@ -47,7 +47,7 @@
 | COMSOL生产 | [`comsol/run_oatof_model.m`](comsol/run_oatof_model.m) | `config/baseline.json`与显式Candidate合同 |
 | SIMION交付构建 | [`simion/workbench/build_formal_delivery.ps1`](simion/workbench/build_formal_delivery.ps1) | Formal只读；Candidate输出不得反写Formal |
 | 单个结构Candidate | [`workflows/design_candidate/run_candidate.py`](workflows/design_candidate/run_candidate.py) | 获批request、显式seed、完整COMSOL/SIMION/CAD链 |
-| 预注册Candidate campaign | [`workflows/experiment_campaign/run_campaign.py`](workflows/experiment_campaign/run_campaign.py) | `config/experiment_campaign.json`；执行须显式选择实验或`--all` |
+| 预注册Candidate campaign | [`workflows/experiment_campaign/run_campaign.py`](workflows/experiment_campaign/run_campaign.py) | 默认合同已完成并retired；新campaign须使用新的合同与run ID，执行时显式选择实验或`--all` |
 | Formal验证、发布、复核 | [`workflows/formal_reference/run_formal_validation.ps1`](workflows/formal_reference/run_formal_validation.ps1) | `-Phase Validate|Publish|Verify` |
 | 五质量候选 | [`workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1`](workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1) | 五个固定质量点，不自动推广Formal |
 | Formal跨求解器诊断 | [`workflows/cross_solver_diagnostics/run_cross_solver_diagnostics.ps1`](workflows/cross_solver_diagnostics/run_cross_solver_diagnostics.ps1) | 只读冻结场与轨迹，只发布diagnostic结果 |
