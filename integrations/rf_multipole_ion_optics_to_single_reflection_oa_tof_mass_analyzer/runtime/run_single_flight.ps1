@@ -2137,7 +2137,8 @@ try {
     if (-not (Complete-ResourceUsage -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir -UsagePath $usage)) { $resourceBudgetExceeded=$true; throw 'Single-flight compact retained-byte budget exceeded.' }
   }
   $resourceProfile = $null
-  if ([string]$runtimeDispatchPlan.estimation.kind -eq 'unknown_resource_profile_bootstrap') {
+  if ([string]$runtimeDispatchPlan.estimation.kind -eq 'unknown_resource_profile_bootstrap' -and
+      $launched -gt 1) {
     $resourceProfile = Join-Path $package.result_dir 'simion_resource_profile.json'
     Invoke-SingleFlightPython -Arguments @(
       '-m','common.simion.resource_profile','publish','--run-id',$RunId,
