@@ -31,6 +31,8 @@ Paper 1以JASMS为明确目标；如果只完成一维理论和有限模拟，�
 - 先行工作与候选claim：[`prior_art_claim_registry.md`](prior_art_claim_registry.md)
 - 2026-08-25论文/引用链/专利族预审：
   [`prior_art_search_audit_20260825.md`](prior_art_search_audit_20260825.md)
+- 四份本地核心全文逐式claim chart与理论审计：
+  [`prior_art_equation_claim_chart_20260825.md`](prior_art_equation_claim_chart_20260825.md)
 
 ## 3. 共同规则
 
@@ -42,7 +44,8 @@ Paper 1以JASMS为明确目标；如果只完成一维理论和有限模拟，�
 - 公开conditioner、电压、波形、自动调谐或制造补偿前先完成公司IP审查。
 
 2026-08-25定向查重已否决J1、J4、J5和Paper 2 A1的宽泛新颖性表述；Paper 1当前只保留J2/J3作为
-候选主贡献。该预审没有关闭关键全文逐式claim chart或法律FTO，也没有使任何claim升级为`GREEN`。
+候选主贡献。Yefchak 1989、2005 thesis、2015与2026四份本地主文本的相关公式已逐式核对，但
+2015/2026 SI、其他closest-work全文、扩展引用链和法律FTO仍未关闭，也没有任何claim升级为`GREEN`。
 
 ## 4. RSI不在当前计划内
 

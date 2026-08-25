@@ -1,6 +1,6 @@
 # OA-TOF投稿先行工作与专利族预审（2026-08-25）
 
-> `DOC_STATUS: COMPLETED_TARGETED_PRESCREEN / MANUAL_FULL_TEXT_AND_LEGAL_REVIEW_OPEN`
+> `DOC_STATUS: FOUR_LOCAL_MAIN_TEXTS_REVIEWED / REMAINING_FULL_TEXT_AND_LEGAL_REVIEW_OPEN`
 >
 > `SCOPE: SCIENTIFIC_NOVELTY_AND_PRELIMINARY_PATENT_LANDSCAPE / NOT_LEGAL_ADVICE`
 
@@ -18,10 +18,11 @@
 - 本轮检索没有发现把**共同pre-pulse实测源协方差、完整OA—reflectron时间灵敏度、低阶与工程约束的
   可行控制子空间、source whitening和锁定测试中的直接粒子收益预测**组合成同一OA-TOF方法的先例；
 - 因此Paper 1应以J2/J3的定量预测能力为主，J1为定义与归因，J4/J5为被验证的设计后果；“未发现”
-  不是新颖性证明，只有完成关键全文逐式核查和blind direct-particle验证后才可升级claim；
+  不是新颖性证明；四份本地主文本虽已逐式核查，仍需关闭剩余正文/SI并完成blind direct-particle验证；
 - Paper 2的宽泛“active phase-space conditioner”已被拥挤的RF ion-guide、beam conditioning、
-  spatial-temporal correlation和upstream conditioner专利覆盖。未来只能围绕明确拓扑、波形、控制律和
-  实验Pareto前沿另做IP/FTO审查，不能从功能名称推导可专利性。
+  spatial-temporal correlation和upstream conditioner专利覆盖；Yefchak 1989还已公开time-encoded
+  dynamic post-source focusing。未来只能围绕明确拓扑、波形、控制律和实验Pareto前沿另做IP/FTO审查，
+  不能从功能名称推导可专利性。
 
 当前判定：`JASMS_PATH_REMAINS / NOT_SUBMISSION_READY / CLAIM_REWRITE_REQUIRED`。
 
@@ -48,9 +49,9 @@
 
 明确限制：
 
-1. 2005 thesis的官方9.71 MB下载端点在本次环境未能成功取得；库记录与搜索索引显示了正文关键段落，
-   但280页正文的逐式比较仍未关闭；
-2. 2015 JASMS正文、2026 JASMS正文/SI和部分付费IJMS文章仍需保存可审查副本并完成逐式对照；
+1. Yefchak 1989、2005 thesis、2015 JASMS正文和2026 JASMS正文现已有本地可审查副本；相关公式已
+   逐式核对，结果见[`逐式claim chart`](prior_art_equation_claim_chart_20260825.md)；
+2. 2015/2026 Supporting Information和部分closest-work全文仍未取得或逐式关闭；
 3. Google Patents法律状态是平台提示，不是法律结论；本轮不是claim construction、validity或FTO意见；
 4. 关键词检索没有同构结果只支持“当前未发现”，不能支持`first`或`patentable`。
 
@@ -60,16 +61,16 @@
 |---|---|---|---|
 | Stein 1974, DOI [`10.1016/0020-7381(74)80008-2`](https://www.sciencedirect.com/science/article/pii/0020738174800082) | 给出所有一维恒定场TOF的space/velocity focusing关系、指出一维一阶双时间聚焦不可能，并导出最低时间分辨表达式 | “空间与速度贡献分离”及宽泛“基本极限”不是新概念；J1不得写成普遍或fundamental limit | `PRIMARY_ABSTRACT_PLUS_EXTRACTS` |
 | Stein 1994, DOI [`10.1016/0168-1176(93)03934-E`](https://doi.org/10.1016/0168-1176(93)03934-E) | 从phase-space dynamics讨论time focusing与time resolution；后续综述明确引用非相关相空间体积守恒 | Liouville/phase-space volume、一般下界和相空间投影不能作为本项目原创理论 | `PRIMARY_ABSTRACT_PLUS_EXTRACTS` |
-| Yefchak, Enke & Holland 1989, *IJMSIP* 87, 313–330 | dynamic post-source acceleration模型联合考虑提取电压、场区长度和动态加速函数，目标为mass-independent space/energy focusing | 多场或动态场联合消除space/energy spread不是新颖性 | `DISCOVERY_ONLY`，待取得正文 |
+| Yefchak, Enke & Holland 1989, DOI [`10.1016/0168-1176(89)80031-X`](https://doi.org/10.1016/0168-1176(89)80031-X) | dynamic post-source acceleration以第一漂移区到达时刻编码质量，反解同步时变波形；联合提取能量、漂移长度和波形优化，以Monte Carlo峰和FWHM/峰谷评价空间、能量与turn-around补偿 | 动态场、按质量包同步、空间/能量联合聚焦、经验分布权重和几何—波形联合优化均不是新颖性；进一步加重J3、J5及Paper 2 A1/A2风险 | `PRIMARY_FULL_OR_SECTIONED`，式(1)–(37)已逐式核对 |
 | Colby & Reilly 1996, DOI [`10.1021/ac950716q`](https://pubs.acs.org/doi/10.1021/ac950716q) | 根据初始位置—速度函数关系消去一个变量，以时间展宽为目标优化仪器参数；计算和实验验证time-dependent extraction | 广义“利用相关源分布优化TOF”已知；J1/J4不能只靠相关性或分布目标成立 | `PRIMARY_ABSTRACT_PLUS_EXTRACTS` |
-| Papanastasiou 2005 thesis, DOI [`10.83056/mmu.32482788`](https://repository.mmu.ac.uk/articles/thesis/Space_velocity_correlation_in_orthogonal_time-of-flight_mass_spectrometry/32482788) | 明确从线性分布扩展到非线性分布及其有限到达时间展宽；考虑finite initial spatial distributions、focal region、Taylor截断误差、reflecting geometry的virtual source | J1的“非线性+finite thickness/spread”宽泛表述高度重合；只有条件统计、完整实测源归因和控制子空间预测可能构成差异 | `REPOSITORY_RECORD`，逐式全文未关闭 |
+| Papanastasiou 2005 thesis, DOI [`10.83056/mmu.32482788`](https://repository.mmu.ac.uk/articles/thesis/Space_velocity_correlation_in_orthogonal_time-of-flight_mass_spectrometry/32482788) | 明确从线性分布扩展到非线性分布及其有限到达时间展宽；考虑finite initial spatial distributions、focal region、Taylor截断误差、reflecting geometry的virtual source；附录协方差传播含错误混合项 | J1的“非线性+finite thickness/spread”宽泛表述高度重合；只有条件统计、完整实测源归因和控制子空间预测可能构成差异 | `PRIMARY_FULL_OR_SECTIONED`，相关理论公式已逐式核对 |
 | Papanastasiou & McMahon 2006, DOI [`10.1016/j.ijms.2006.04.014`](https://www.sciencedirect.com/science/article/abs/pii/S1387380606002478) | OA原型、两种源、两级加速、可变探测器位置；线性相关分布的一/二阶解析聚焦；指出真实情况为非线性分布，virtual source有限尺寸由初始空间和速度spread决定 | OA、相关源、source-dependent optimum、有限virtual source和非线性都不是新意 | `PRIMARY_ABSTRACT_PLUS_EXTRACTS` |
 | Yildirim et al. 2010, DOI [`10.1016/j.ijms.2009.12.014`](https://www.sciencedirect.com/science/article/pii/S1387380610000047) | 系统设计multi-field高阶space focusing；数值和实验表明初始速度分散/turn-around可主导，使增加space-focus阶次在实际条件下无显著收益 | “新增场区未必改善真实源”已有物理先例；J3必须给出不同的source-weighted增量判据和事前预测 | `PRIMARY_FULL_OR_SECTIONED` |
-| Cai et al. 2015, DOI [`10.1007/s13361-015-1206-y`](https://pubs.acs.org/doi/10.1007/s13361-015-1206-y) | 以所有关键离子而非两粒子简式联合优化空间/速度聚焦、提取区长度、电位与delay；提出对新设计和商业产品的综合优化 | J4的“finite-distribution/source-weighted优化”若只是换目标函数，很可能是routine extension | `PRIMARY_ABSTRACT_PLUS_EXTRACTS`，正文逐式未关闭 |
+| Cai et al. 2015, DOI [`10.1007/s13361-015-1206-y`](https://pubs.acs.org/doi/10.1007/s13361-015-1206-y) | 以所有关键离子而非两粒子简式联合优化空间/速度聚焦、提取区长度、电位与delay；正文漂移式缺少距离且多元Taylor混合项量纲错误 | J4的“finite-distribution/source-weighted优化”若只是换目标函数，很可能是routine extension；原文错误式不得复用 | `PRIMARY_FULL_OR_SECTIONED`，正文已逐式核对，SI开放 |
 | SCIEX ASMS 2016, [N geometry poster](https://sciex.com/content/dam/SCIEX/pdf/posters/asms2016_431_Tue_Loyd_Haufler.pdf) | 从碰撞池到OA的传播自然按速度排序位置；显式利用space–velocity correlation、对速度的一/二阶导数、两反射镜、SIMION/Lorentz，并声称近全束流接受 | 与“RF/碰撞池真实源相关+整机导数优化+高接受度”的组合非常接近；不能声称首次把RF源相关带入OA-reflectron设计 | `PRIMARY_FULL_OR_SECTIONED` |
 | Waters ASMS 2017, [TP391](https://support.waters.com/Select/cIMS/Posters_and_Publications/Conference_Posters/ASMS_2017/TP391_A_high_performance_OA-ToF_mass_spectrometer_for_accurate_mass_measurement_of_mobility_separated_ions) | RF-only quadrupole gas cell叠加轴向DC，调理/压缩phase space以兼顾灵敏度与TOF分辨率，并报告窄峰和高分辨率 | Paper 2宽泛“RF/DC conditioner提升OA性能”已有公开实现先例 | `PRIMARY_FULL_OR_SECTIONED` |
 | Kambarova et al. 2024, DOI [`10.1088/2631-8695/ad1c0a`](https://doi.org/10.1088/2631-8695/ad1c0a) | 从数值轨迹数据寻找相对初始位置、角度、能量或速度的高阶TOF聚焦条件和焦面，并用相关分析检查更高阶 | 导数、数值轨迹、自动focus-order搜索本身不是新方法 | `PRIMARY_FULL_OR_SECTIONED` |
-| Cai & Wang 2026, DOI [`10.1021/jasms.5c00167`](https://pubs.acs.org/doi/10.1021/jasms.5c00167) | 用coupled space/velocity focusing说明单级reflectron结合delayed extraction可实现二阶速度聚焦，优化完整几何和参数 | “单/多级reflectron、高阶导数、联合调参产生新focus条件”不能成为本稿核心 | `PRIMARY_ABSTRACT_PLUS_EXTRACTS`，正文/SI逐式未关闭 |
+| Cai & Wang 2026, DOI [`10.1021/jasms.5c00167`](https://pubs.acs.org/doi/10.1021/jasms.5c00167) | 用coupled space/velocity focusing说明单级reflectron结合delayed extraction可产生多个速度焦点并优化完整几何；其“二阶”按转折点数定义，不等于局部二阶导数闭合 | “单/多级reflectron、高阶导数、联合调参产生新focus条件”不能成为本稿核心；必须区分端点等时、转折点和导数阶 | `PRIMARY_FULL_OR_SECTIONED`，正文已逐式核对，SI开放 |
 
 ## 4. 引用链审查结果
 
@@ -125,11 +126,11 @@ patentability或FTO。
 |---|---|---|---|
 | J1 条件均值流形/有限条件厚度 | `ORANGE_OVERLAP` | Stein 1974/1994；1996 SVCF；2005 thesis；2006 OA nonlinear/finite spread | 共同pre-pulse经验RF源上的detector-blind条件统计、完整source-to-detector归因和与J2联立的验证框架；不作独立首创claim |
 | J2 受约束source-whitened focusability projector | `YELLOW_CANDIDATE / STRONGEST` | 数学构件来自标准加权最小二乘、null-space、projector/SVD；本轮未发现OA-TOF同构组合 | 只主张其在完整OA-reflectron、实测源和工程约束下对direct-particle residual floor的定量预测，不主张数学工具发明 |
-| J3 新控制方向与未解残差的重叠 | `YELLOW_CANDIDATE / HIGH_OBVIOUSNESS_RISK` | multi-field/high-order设计、2010负结果、2016 N-geometry和一般controllability | 预注册的source-weighted incremental criterion能在不同源工况事前预测“新增场区有用/无用” |
+| J3 新控制方向与未解残差的重叠 | `YELLOW_CANDIDATE / HIGH_OBVIOUSNESS_RISK` | Yefchak 1989四类后源控制选择/分布权重、multi-field/high-order设计、2010负结果、2016 N-geometry和一般controllability | 预注册的source-weighted incremental criterion能在不同源工况事前预测“新增场区有用/无用” |
 | J4 source-weighted优于unweighted closure | `ORANGE_OVERLAP` | 1996按相关分布优化、2015 all-essential-ion综合计算、2024 numerical focus search | 只能作为J2/J3预测的实验性结果；目标函数替换本身不是贡献 |
 | J5 选择改分析器还是改源 | `ORANGE_OVERLAP` | RF guide/conditioner专利、2010速度spread主导、SCIEX/Waters工程路线 | 只能保留为被盲验证的、工况条件化的triage结果；一般权衡不是新原则 |
-| A1 active conditioner | `RED_KNOWN_AS_BROAD_CLAIM / INTERNAL_IP_IF_SPECIFIC` | RF/DC ion guide、beam expander、periodic lens、spatial-temporal correlation等专利族 | 仅具体未披露拓扑、波形或控制律可能进入内部IP审查 |
-| A2 conditioner—OA—reflectron联合设计 | `ORANGE_OVERLAP` | 多个active专利已联合源接口、OA和analyzer | 科学贡献必须是充分重优化后仍出现的新Pareto前沿及可解释机制，不能只把模块放进同一optimizer |
+| A1 active conditioner | `RED_KNOWN_AS_BROAD_CLAIM / INTERNAL_IP_IF_SPECIFIC` | Yefchak 1989时变后源加速；RF/DC ion guide、beam expander、periodic lens、spatial-temporal correlation等专利族 | 仅具体未披露拓扑、波形或控制律可能进入内部IP审查 |
+| A2 conditioner—OA—reflectron联合设计 | `ORANGE_OVERLAP` | Yefchak 1989已联合源参数、漂移几何和动态波形；多个active专利已联合源接口、OA和analyzer | 科学贡献必须是充分重优化后仍出现的新Pareto前沿及可解释机制，不能只把模块放进同一optimizer |
 | A3 实验性移动分析前沿 | `YELLOW_CANDIDATE` | 产业资料已有高分辨/高接受度主张 | 只有同平台、同输入、同采集约束的prototype A/B和预定义分析终点可升级 |
 
 ## 7. JASMS的新颖性与投稿条件
@@ -146,7 +147,7 @@ patentability或FTO。
 
 ### 7.2 当前不具备投稿条件的原因
 
-- 2005 thesis、2015与2026核心全文/SI尚未逐式关闭；
+- 四份本地主文本已逐式关闭，但2015/2026 SI、其他closest-work全文和扩展引文链仍未关闭；
 - J2尚未实现，J3尚无事前预测；
 - 只有N=100、单工况、post-hoc历史归因；
 - two-zone/three-zone/source-weighted/unweighted尚未在相同预算下充分重优化；
@@ -168,7 +169,8 @@ patentability或FTO。
 
 当前不应先启动大规模3D campaign。顺序应为：
 
-1. **关闭剩余全文。** 人工取得2005 thesis、2015正文、2026正文/SI和1989正文，完成逐式claim chart；
+1. **关闭剩余全文。** 在已完成四份本地主文本claim chart的基础上，取得2015/2026 SI及仍停留在
+   摘要/摘录等级的closest-work正文，核对补充推导、优化目标与未展示质量点；
 2. **冻结claim。** J2为唯一主方法claim，J3为主要物理检验，J1为框架，J4/J5为后果；冻结禁止措辞；
 3. **最小solver-free杀伤试验。** 复用冻结observed source，实现条件模型、`g`、约束null space、
    projector/QP和bootstrap；对已有two/three-zone小扰动预注册收益排序；

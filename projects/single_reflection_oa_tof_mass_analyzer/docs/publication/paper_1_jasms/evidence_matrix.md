@@ -32,9 +32,9 @@ claim的完整投稿要求；目前没有主claim达到`SUPPORTED`。
 
 | 门禁 | 当前证据 | 状态 | 仍需关闭 |
 |---|---|---|---|
-| 定向论文与引用链预审 | [`2026-08-25审计`](../prior_art_search_audit_20260825.md) | `PRESCREEN_COMPLETE` | 2005 thesis、1989、2015和2026正文/SI逐式claim chart |
+| 定向论文与引用链预审 | [`2026-08-25审计`](../prior_art_search_audit_20260825.md)及[`逐式claim chart`](../prior_art_equation_claim_chart_20260825.md) | `FOUR_LOCAL_MAIN_TEXTS_REVIEWED` | 2015/2026 SI、其他closest-work全文、扩展引用链与独立专家复核 |
 | 专利族预审 | 同上，覆盖SVCF、RF guide/conditioner、OA guide mode、spatial-temporal correlation和upstream conditioner代表族 | `PRELIMINARY_LANDSCAPE_COMPLETE` | 具体conditioner逐权利要求、continuation/法域状态和专业FTO |
-| J2/J3同构先例 | 定向关键词检索未发现 | `NO_DIRECT_HIT / NOT_CLEARANCE` | 全文、引文扩展与领域专家独立复核 |
+| J2/J3同构先例 | 定向检索及四份本地主文本均未发现完整同构组合；Yefchak 1989进一步加重J3明显性风险 | `NO_DIRECT_HIT / NOT_CLEARANCE` | 剩余正文/SI、引文扩展与领域专家独立复核 |
 
 ## 4. 当前真实源相关证据
 

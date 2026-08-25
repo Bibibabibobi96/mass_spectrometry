@@ -7,7 +7,8 @@
 本表用于科学新颖性和投稿措辞治理，不是完整文献综述、专利FTO或法律意见。任何`first`、`novel`、
 `unprecedented`必须先完成全文、引用链、专利族和公司IP审查。目前没有任何候选claim处于已确认
 `GREEN`状态。2026-08-25定向检索的证据、claim碰撞和查询边界冻结在
-[`prior_art_search_audit_20260825.md`](prior_art_search_audit_20260825.md)。
+[`prior_art_search_audit_20260825.md`](prior_art_search_audit_20260825.md)；四份本地核心全文的逐式结果和
+公式错误见[`prior_art_equation_claim_chart_20260825.md`](prior_art_equation_claim_chart_20260825.md)。
 
 ## 1. 风险等级
 
@@ -35,6 +36,7 @@
 | RF/DC gas-cell phase-space conditioning | `RED_KNOWN/ORANGE_OVERLAP` | Waters ASMS 2017 TP391；相关ion-guide专利族 | 宽泛active conditioner和resolution—sensitivity权衡不是新意 |
 | 轨迹数据驱动的高阶focus条件搜索 | `RED_KNOWN` | Kambarova et al. 2024, DOI `10.1088/2631-8695/ad1c0a` | 导数、有限差分、数值focus-order搜索本身不是新方法 |
 | 高阶reflectron联合聚焦 | `ORANGE_OVERLAP` | Cai & Wang 2026, DOI `10.1021/jasms.5c00167` | 场区数、高阶导数和联合调参本身不足以构成新意 |
+| 到达时刻编码的动态后源聚焦 | `RED_KNOWN` | Yefchak et al. 1989, DOI `10.1016/0168-1176(89)80031-X` | 时变波形、按质量包同步、空间/能量/turn-around联合补偿和几何—波形联合优化不能作为宽泛新意 |
 | phase space/emittance/matching | `RED_KNOWN/ORANGE_OVERLAP` | charged-particle optics与beam matching文献 | 不能把Liouville、辛映射或相空间匹配本身称为新理论 |
 | 协方差、PCA、投影、SVD、KKT、Pareto | `RED_KNOWN` | 标准统计、线性代数和优化 | 不能把数学工具本身称为发明 |
 
@@ -42,6 +44,7 @@
 
 - <https://pubs.acs.org/doi/10.1021/ac950716q>
 - <https://www.sciencedirect.com/science/article/pii/0020738174800082>
+- <https://doi.org/10.1016/0168-1176(89)80031-X>
 - <https://doi.org/10.1016/j.ijms.2006.04.014>
 - <https://repository.mmu.ac.uk/articles/thesis/Space_velocity_correlation_in_orthogonal_time-of-flight_mass_spectrometry/32482788>
 - <https://pubs.acs.org/doi/10.1007/s13361-015-1206-y>
@@ -78,8 +81,9 @@
 - 候选表述：新增场区只有在保持旧约束后增加独立source-weighted控制方向，并与未解决残差时间方向
   重叠时，才稳定改善有限源峰宽。
 - 与`Γ3`区别：`Γ3`只针对单个`D3`标量；J3针对真实源metric下的未控制时间方向。
-- 风险：一般控制理论存在等价controllability表述，2010 multi-field负结果和2016 SCIEX整机导数优化
-  也已给出接近物理语境；价值必须来自source-weighted增量判据的事前、跨工况预测。
+- 风险：一般控制理论存在等价controllability表述，Yefchak 1989已比较四类后源控制并建议按源空间/
+  速度展宽调整权重，2010 multi-field负结果和2016 SCIEX整机导数优化也已给出接近物理语境；价值
+  必须来自source-weighted增量判据的事前、跨工况预测。
 
 ### 3.4 J4：source-weighted设计优于未加权导数closure
 
@@ -100,8 +104,9 @@
 ### 4.1 A1：实际active phase-space conditioner
 
 - 状态：`RED_KNOWN_AS_BROAD_CLAIM / INTERNAL_IP_IF_TOPOLOGY_SPECIFIC`
-- 已知重叠：ion-beam conditioning、emittance matching、RF guides/coolers、RF/DC gas cell、beam expander、
-  periodic lens、spatial-temporal correlation和多个active专利族。
+- 已知重叠：Yefchak 1989 time-encoded dynamic post-source focusing、ion-beam conditioning、emittance
+  matching、RF guides/coolers、RF/DC gas cell、beam expander、periodic lens、spatial-temporal correlation
+  和多个active专利族。
 - 要求：功能级“conditioner”不能作为新颖性；选定具体拓扑、波形或控制律后再做patentability与FTO，
   公开前冻结可披露范围。
 
@@ -125,7 +130,8 @@
 
 Paper 1投稿前仍至少完成：
 
-1. 人工取得并保存2005 thesis、1989、2015和2026正文/SI，完成逐式claim chart；
+1. 已完成Yefchak 1989、2005 thesis相关理论章节、2015正文和2026正文逐式claim chart；仍须取得并
+   核对2015/2026 SI及其他停留在摘要/摘录等级的closest-work全文；
 2. 对J2/J3做引文向前/向后补搜，并让领域专家独立复核等价表述；
 3. 对未来具体conditioner按独立权利要求逐元件比较continuation、同族、法域和有效状态；
 4. 由公司/专利律师完成patentability/FTO；

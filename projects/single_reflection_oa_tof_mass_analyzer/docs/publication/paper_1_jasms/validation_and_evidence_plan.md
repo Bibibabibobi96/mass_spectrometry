@@ -21,12 +21,13 @@ Paper 1成功不是得到一个高`R`候选，而是同时证明：
 
 定向论文、引用链、厂商资料和代表性专利族预审已经完成，见
 [`prior_art_search_audit_20260825.md`](../prior_art_search_audit_20260825.md)。预审已否决J1、J4、J5和
-Paper 2 A1的宽泛新颖性表述，并把Paper 1中心收窄到J2/J3；但2005 thesis、1989、2015和2026正文/SI
-的逐式claim chart及专业FTO仍未关闭，因此WP0不是`COMPLETE`。
+Paper 2 A1的宽泛新颖性表述，并把Paper 1中心收窄到J2/J3。Yefchak 1989、2005 thesis相关理论章节、
+2015正文和2026正文已完成[`逐式claim chart`](../prior_art_equation_claim_chart_20260825.md)；但两篇
+Supporting Information、其他closest-work全文、扩展引文链和专业FTO仍未关闭，因此WP0不是`COMPLETE`。
 
 ### 动作
 
-- 获取并保存1996、2005 thesis、2006、1989、2015、2026核心全文/SI；
+- 保存已核对正文的哈希，继续获取2015/2026 SI及其他closest-work全文；
 - 逐式比较source模型、有限spread、整机时间映射和优化判据；
 - 检索多区OA、相空间调理、RF→OA接口和自动优化专利族；
 - 为J1–J5填写closest work、相同点、差异和允许措辞。

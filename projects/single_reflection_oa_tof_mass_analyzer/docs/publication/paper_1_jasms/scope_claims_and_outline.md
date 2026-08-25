@@ -32,7 +32,8 @@ JASMS当前scope包括质谱基础理论、仪器原理、设计、演示、建�
 
 候选claim及风险状态只以
 [`prior_art_claim_registry.md`](../prior_art_claim_registry.md)为准；2026-08-25检索证据见
-[`prior_art_search_audit_20260825.md`](../prior_art_search_audit_20260825.md)。定向查重已确认J1不能独立
+[`prior_art_search_audit_20260825.md`](../prior_art_search_audit_20260825.md)，四份本地全文逐式核对见
+[`prior_art_equation_claim_chart_20260825.md`](../prior_art_equation_claim_chart_20260825.md)。定向查重已确认J1不能独立
 承担首创新颖性，J4/J5只能作为后果。稿件拟集中在三个层级：
 
 ### 3.1 物理分解
@@ -143,7 +144,7 @@ Discussion可以指出主动source matching是后续方向，但不能展示最�
 
 只有同时满足以下条件才进入JASMS稿件冻结：
 
-1. 关键全文逐式claim chart与专利预审未发现与J2/J3核心组合等价的先行工作；
+1. 剩余关键正文/SI、扩展引用链与专利预审未发现与J2/J3核心组合等价的先行工作；
 2. 条件残差不是只用一个N=100事后诊断支持；
 3. projector/mode结论在独立source condition和locked test上有预测力；
 4. two-zone、three-zone和source-weighted方案完成相同预算下的充分重优化；

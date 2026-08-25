@@ -10,8 +10,9 @@
 2026-08-25代表性专利族预审已完成，见
 [`prior_art_search_audit_20260825.md`](../prior_art_search_audit_20260825.md)。它确认宽泛active conditioner
 不具备可主张的新颖性，并识别了RF/DC guide、OA guide mode、spatial-temporal correlation、periodic
-lens和upstream conditioner等高风险族；由于尚未选定具体拓扑，也未完成逐权利要求和法域审查，Gate A
-仍为开放状态。
+lens和upstream conditioner等高风险族。新增全文审查还确认Yefchak 1989已公开time-encoded dynamic
+post-source focusing及源—几何—波形联合优化；由于尚未选定具体拓扑，也未完成逐权利要求和法域审查，
+Gate A仍为开放状态。
 
 ### 动作
 

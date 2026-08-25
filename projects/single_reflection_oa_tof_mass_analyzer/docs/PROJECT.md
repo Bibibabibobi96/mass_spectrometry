@@ -150,8 +150,10 @@ Candidate唯一公开入口为`../workflows/design_candidate/run_candidate.py`�
    与 Formal 判定未退化；不得靠重写历史结果或调宽容差达成。
 5. **JASMS Paper 1证据闭合。** 按
    [`publication/paper_1_jasms/validation_and_evidence_plan.md`](publication/paper_1_jasms/validation_and_evidence_plan.md)
-   继续完成人工核心全文逐式claim chart、预注册源分布、条件可聚焦性实现、公平再优化、消融、三质量与
-   三维跨求解器验证；2026-08-25定向论文/引用链/专利族预审已完成并把候选主贡献收窄为J2/J3，见
+   继续完成剩余核心正文/SI查重、预注册源分布、条件可聚焦性实现、公平再优化、消融、三质量与
+   三维跨求解器验证；Yefchak 1989、2005 thesis相关理论章节、2015正文和2026正文的逐式claim chart已完成，见
+   [`publication/prior_art_equation_claim_chart_20260825.md`](publication/prior_art_equation_claim_chart_20260825.md)；
+   2026-08-25定向论文/引用链/专利族预审已把候选主贡献收窄为J2/J3，见
    [`publication/prior_art_search_audit_20260825.md`](publication/prior_art_search_audit_20260825.md)，但该预审
    不等于专业FTO或novelty gate关闭；
    实时缺口只查
