@@ -91,9 +91,25 @@ def _direction_summary(rows: list[dict[str, Any]], *, bootstrap_seed: int, repli
     }
 
 
+def _target_gates(
+    *, target: str, base_gates: dict[str, bool], weighted_beats_unweighted: bool,
+) -> dict[str, bool]:
+    """Select a preregistered claim gate without silently changing evidence."""
+
+    if target == "j2_j3":
+        return {
+            **base_gates,
+            "J2_locked_exact_better_than_unweighted": bool(weighted_beats_unweighted),
+        }
+    if target == "j3_local_direction":
+        return base_gates
+    raise ValueError("C2 claim target is unsupported")
+
+
 def analyze_c2_stage(
     *, first_assessment: Path, second_assessment: Path, theory_campaign: Path,
     phase_match: Path, bootstrap_seed: int = 20260825, bootstrap_replicates: int = 200,
+    claim_target: str = "j2_j3",
 ) -> dict[str, Any]:
     """Evaluate C2 gates without consuming detector outcomes for model selection."""
 
@@ -125,7 +141,7 @@ def analyze_c2_stage(
         < row["unweighted"]["locked_exact_total_variance_us2"]
         for row in rows if row["architecture"] == "three_zone"
     )
-    gates = {
+    base_gates = {
         "independent_g_derivative_le_1_percent": bool(derivative_error <= 0.01),
         "G_step_platform_le_1_percent": bool(response_platform_error <= 0.01),
         "direction_spearman_ge_0p7": bool(direction["spearman_point_estimate"] >= 0.7),
@@ -134,17 +150,33 @@ def analyze_c2_stage(
             row["weighted"]["prediction"]["effective_rank"] == 0
             for row in rows if row["architecture"] == "two_zone"
         )),
-        "J2_locked_exact_better_than_unweighted": bool(weighted_beats_unweighted),
     }
+    gates = _target_gates(
+        target=claim_target, base_gates=base_gates,
+        weighted_beats_unweighted=weighted_beats_unweighted,
+    )
     conclusion = "PASS_CONTINUE" if all(gates.values()) else "INCONCLUSIVE_REVISE"
+    claims_supported = (
+        [
+            "Within the frozen ideal axial oracle, the constrained two-zone "
+            "control space has zero remaining D1/D2-preserving direction while "
+            "the three-zone arm has one source-weighted direction."
+        ]
+        if claim_target == "j2_j3" else [
+            "Within the frozen ideal axial oracle and two frozen source "
+            "conditions, the three-zone D1/D2-preserving direction has a "
+            "locked improve/zero/worsen ordering while the two-zone reference "
+            "has no remaining local control direction."
+        ]
+    )
     return {
-        "stage_id": "C2",
+        "stage_id": "C2" if claim_target == "j2_j3" else "C2_J3",
         "conclusion": conclusion,
         "claim_limit": "Exact ideal-field axial z-vz oracle only; not a full 6D source, real field, transmission, peak-width, or Formal conclusion.",
         "inputs": {"c1_assessments": [str(path.resolve()) for path in (first_assessment, second_assessment)], "theory_campaign": str(theory_campaign.resolve()), "phase_match": str(phase_match.resolve())},
-        "metrics": {"maximum_g_derivative_relative_error": derivative_error, "maximum_G_step_platform_relative_error": response_platform_error, "direction_prediction": direction, "gates": gates, "rows": rows},
+        "metrics": {"claim_target": claim_target, "maximum_g_derivative_relative_error": derivative_error, "maximum_G_step_platform_relative_error": response_platform_error, "direction_prediction": direction, "gates": gates, "rows": rows},
         "failures": [name for name, passed in gates.items() if not passed],
-        "claims_supported": ["Within the frozen ideal axial oracle, the constrained two-zone control space has zero remaining D1/D2-preserving direction while the three-zone arm has one source-weighted direction."],
+        "claims_supported": claims_supported,
         "claims_prohibited": ["Any 6D, 3D, detector, FWHM, transmission, cross-mass, or Formal claim."],
     }
 
@@ -157,9 +189,13 @@ def main() -> None:
     parser.add_argument("--phase-match", required=True, type=Path)
     parser.add_argument("--bootstrap-replicates", type=int, default=200)
     parser.add_argument("--bootstrap-seed", type=int, default=20260825)
+    parser.add_argument(
+        "--claim-target", choices=("j2_j3", "j3_local_direction"),
+        default="j2_j3",
+    )
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
-    result = analyze_c2_stage(first_assessment=args.first_c1, second_assessment=args.second_c1, theory_campaign=args.theory_campaign, phase_match=args.phase_match, bootstrap_replicates=args.bootstrap_replicates, bootstrap_seed=args.bootstrap_seed)
+    result = analyze_c2_stage(first_assessment=args.first_c1, second_assessment=args.second_c1, theory_campaign=args.theory_campaign, phase_match=args.phase_match, bootstrap_replicates=args.bootstrap_replicates, bootstrap_seed=args.bootstrap_seed, claim_target=args.claim_target)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 

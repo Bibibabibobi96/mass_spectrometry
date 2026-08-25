@@ -31,6 +31,9 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.paper1_c2_axial_or
     load_c2_axial_source,
     run_axial_c2_screen,
 )
+from projects.single_reflection_oa_tof_mass_analyzer.analysis.analyze_paper1_c2_stage import (
+    _target_gates,
+)
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_ideal_theory import (
     AffineSource,
     InnerSolution,
@@ -40,6 +43,23 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_ideal_t
 
 
 class Paper1FocusabilityTest(unittest.TestCase):
+    def test_j3_revised_gate_does_not_smuggle_in_failed_j2_comparison(self) -> None:
+        base = {
+            "independent_g_derivative_le_1_percent": True,
+            "G_step_platform_le_1_percent": True,
+            "direction_spearman_ge_0p7": True,
+            "direction_bootstrap_lower_gt_zero": True,
+            "two_zone_is_zero_control_reference": True,
+        }
+        self.assertTrue(all(_target_gates(
+            target="j3_local_direction", base_gates=base,
+            weighted_beats_unweighted=False,
+        ).values()))
+        self.assertFalse(all(_target_gates(
+            target="j2_j3", base_gates=base,
+            weighted_beats_unweighted=False,
+        ).values()))
+
     def test_assignment_is_deterministic_and_exhaustive(self) -> None:
         first = assign_detector_blind_cohorts(range(1, 101), salt="paper1-v1")
         second = assign_detector_blind_cohorts(range(1, 101), salt="paper1-v1")
