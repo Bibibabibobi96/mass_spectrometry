@@ -3693,6 +3693,23 @@ def prepare_family_source_closure(
         ):
             raise ContractError("pre-pulse time-series prepared identity is incomplete")
         screening_specification = pre_pulse_time_series_specification
+        if (
+            resolved_pulse_schedule is not None
+            and screening_specification is not None
+            and "time_grid_profile_id" not in screening_specification
+        ):
+            if cache_miss_policy is None:
+                raise ContractError(
+                    "resolved pre-pulse schedule lacks a registered RF grid identity"
+                )
+            # Legacy authoring contracts named an absolute anchor.  Once a
+            # resolved schedule becomes authoritative, inherit its registered
+            # RF-grid identity from the execution policy instead of requiring
+            # a second, hand-maintained authoring field.
+            screening_specification = copy.deepcopy(screening_specification)
+            screening_specification["time_grid_profile_id"] = (
+                cache_miss_policy["time_grid_profile_id"]
+            )
         if screening_specification is None:
             native_rf_steps = int(execution_profile["rf_steps_per_period"])
             relative_start_index = math.floor(-0.35 * native_rf_steps)
