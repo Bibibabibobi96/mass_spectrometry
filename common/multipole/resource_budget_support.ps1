@@ -70,6 +70,7 @@ function Invoke-ResourceBudgetedProcess {
     [string]$WorkingDirectory='',
     [string]$RedirectStandardOutput='',
     [string]$RedirectStandardError='',
+    [hashtable]$Environment=@{},
     [ValidateRange(0,2147483647)][int]$CalibrationDurationSeconds=0
   )
   $budget=Get-Content -LiteralPath $ResolvedBudgetPath -Raw -Encoding UTF8|ConvertFrom-Json
@@ -111,6 +112,7 @@ function Invoke-ResourceBudgetedProcess {
   if(-not[string]::IsNullOrWhiteSpace($RedirectStandardError)){
     $startArguments.RedirectStandardError=$RedirectStandardError
   }
+  if($Environment.Count-gt 0){$startArguments.Environment=$Environment}
   $process=Start-Process @startArguments
   $limitName=$null
   $resourceCalibrationComplete=$false

@@ -1760,45 +1760,44 @@ try {
   if ($particleLines.Count -ne $launched) {
     throw 'Single-flight particle-input row count differs from the launched mother sample.'
   }
-  $batchRecords = @()
-  foreach ($plannedBatch in @($batchPlan.batches)) {
-    $batchIndex = [int]$plannedBatch.index
-    $count = [int]$plannedBatch.count
-    $offset = [int]$plannedBatch.simion_particle_id_offset
-    $batchParticleInput = Join-Path $package.input_dir (
-      'single_flight_mother_sample__batch{0:D2}.{1}' -f $batchIndex,$(if ($isRestartFly2) {'fly2'} else {'ion'})
-    )
-    $batchParticleLines = [string[]]$particleLines[$offset..($offset + $count - 1)]
-    if ($isRestartFly2) {
-      $batchParticleLines = [string[]](@('particles {','  coordinates = 0,') + $batchParticleLines + @('}'))
-    }
-    [IO.File]::WriteAllLines(
-      $batchParticleInput,
-      $batchParticleLines,
-      [Text.UTF8Encoding]::new($false)
-    )
-    $batchRecords += [pscustomobject]@{
-      index = $batchIndex
-      count = $count
-      offset = $offset
-      particle_input = $batchParticleInput
-      stdout = Join-Path $package.log_dir (
-        'simion__batch{0:D2}.stdout.log' -f $batchIndex
+  function New-SingleFlightBatchRecords($Plan) {
+    $records = @()
+    foreach ($plannedBatch in @($Plan.batches)) {
+      $batchIndex = [int]$plannedBatch.index
+      $count = [int]$plannedBatch.count
+      $offset = [int]$plannedBatch.simion_particle_id_offset
+      $batchParticleInput = Join-Path $package.input_dir (
+        'single_flight_mother_sample__batch{0:D2}.{1}' -f $batchIndex,$(if ($isRestartFly2) {'fly2'} else {'ion'})
       )
-      stderr = Join-Path $package.log_dir (
-        'simion__batch{0:D2}.stderr.log' -f $batchIndex
+      $batchParticleLines = [string[]]$particleLines[$offset..($offset + $count - 1)]
+      if ($isRestartFly2) {
+        $batchParticleLines = [string[]](@('particles {','  coordinates = 0,') + $batchParticleLines + @('}'))
+      }
+      [IO.File]::WriteAllLines(
+        $batchParticleInput,
+        $batchParticleLines,
+        [Text.UTF8Encoding]::new($false)
       )
+      $records += [pscustomobject]@{
+        index = $batchIndex; count = $count; offset = $offset
+        particle_input = $batchParticleInput
+        stdout = Join-Path $package.log_dir ('simion__batch{0:D2}.stdout.log' -f $batchIndex)
+        stderr = Join-Path $package.log_dir ('simion__batch{0:D2}.stderr.log' -f $batchIndex)
+      }
     }
+    return @($records)
   }
+  $batchRecords = @(New-SingleFlightBatchRecords $batchPlan)
   $stdoutFiles = @($batchRecords | ForEach-Object { $_.stdout })
   $stderrFiles = @($batchRecords | ForEach-Object { $_.stderr })
   # The whole batch set is one dispatch wave.  The shared aggregate helper owns
   # process-tree and available-memory accounting; per-batch helpers would make
   # the frozen process-tree limit apply independently to every SIMION child.
   $resourceUsageFiles = @($resourceUsage)
-  $processSpecifications = @()
-  foreach ($batch in $batchRecords) {
-    $processSpecifications += [pscustomobject]@{
+  function New-SingleFlightProcessSpecifications($Records) {
+    $specifications = @()
+    foreach ($batch in $Records) {
+      $specifications += [pscustomobject]@{
       name = 'simion_batch_{0:D2}' -f [int]$batch.index
       file_path = $SimionExe
       working_directory = $runtimeDir
@@ -1828,7 +1827,74 @@ try {
         } else { @() }),
         (Join-Path $runtimeDir 'oatof_ideal_grounded.iob')
       ))
+      }
     }
+    return @($specifications)
+  }
+  $processSpecifications = @(New-SingleFlightProcessSpecifications $batchRecords)
+  $resourceCalibrationOutputs = @()
+  if ([string]$runtimeDispatchPlan.estimation.kind -eq 'unknown_resource_profile_bootstrap') {
+    if ($processSpecifications.Count -ne 1) {
+      throw 'Unknown-resource calibration must start from one complete single-flight batch.'
+    }
+    $calibration = $runtimeDispatchPlan.estimation.resource_calibration
+    if ($null -eq $calibration -or
+        [string]$calibration.kind -ne 'time_limited_process_peak_v1' -or
+        [int]$calibration.duration_seconds -lt 1 -or
+        [string]$calibration.output_scope -ne 'RESOURCE_CALIBRATION_ONLY') {
+      throw 'Single-flight resource calibration contract is invalid.'
+    }
+    $probe = $processSpecifications[0]
+    $calibrationUsage = Join-Path $package.log_dir 'resource_calibration.json'
+    $calibrationStdout = Join-Path $package.log_dir 'resource_calibration.stdout.log'
+    $calibrationStderr = Join-Path $package.log_dir 'resource_calibration.stderr.log'
+    $calibrationResult = Invoke-ResourceBudgetedProcess `
+      -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
+      -UsagePath $calibrationUsage -FilePath $probe.file_path `
+      -WorkingDirectory $probe.working_directory -ArgumentList $probe.argument_list `
+      -RedirectStandardOutput $calibrationStdout -RedirectStandardError $calibrationStderr `
+      -Environment ([hashtable]$probe.environment) `
+      -CalibrationDurationSeconds ([int]$calibration.duration_seconds)
+    if ($calibrationResult.resource_budget_exceeded) {
+      $resourceBudgetExceeded = $true
+      throw 'Single-flight SIMION resource calibration exceeded its resource budget.'
+    }
+    if (-not $calibrationResult.resource_calibration_complete -or
+        [int64]$calibrationResult.observed_peak_process_tree_working_set_bytes -lt 1) {
+      throw 'Single-flight SIMION resource calibration did not obtain a usable process peak.'
+    }
+    Invoke-SingleFlightPython -Arguments @(
+      '-m','common.simion.resource_scheduler','--prepared-plan',$preparedDispatchPlanPath,
+      '--output',$runtimeDispatchPlanPath,
+      '--observed-bootstrap-peak-bytes',([string]$calibrationResult.observed_peak_process_tree_working_set_bytes)
+    ) -Failure 'Single-flight calibrated resource replanning failed.'
+    $runtimeDispatchPlan = Get-Content -Raw -LiteralPath $runtimeDispatchPlanPath |
+      ConvertFrom-Json
+    if ([string]$runtimeDispatchPlan.estimation.kind -ne 'observed_bootstrap_peak' -or
+        @($runtimeDispatchPlan.waves).Count -ne 1 -or
+        [int]$runtimeDispatchPlan.waves[0].batch_count -lt 1 -or
+        [int]$runtimeDispatchPlan.waves[0].batch_count -gt $launched) {
+      throw 'Single-flight calibrated dispatch plan is invalid.'
+    }
+    $executionBatchCount = [int]$runtimeDispatchPlan.waves[0].batch_count
+    Invoke-SingleFlightPython -Arguments @(
+      '-m','common.simion.particle_batching','--particle-count',([string]$launched),
+      '--batch-count',([string]$executionBatchCount),'--output',$batchPlanPath
+    ) -Failure 'Single-flight calibrated batch planning failed.'
+    $batchPlan = Get-Content -Raw -LiteralPath $batchPlanPath | ConvertFrom-Json
+    $batchRecords = @(New-SingleFlightBatchRecords $batchPlan)
+    $stdoutFiles = @($batchRecords | ForEach-Object { $_.stdout })
+    $stderrFiles = @($batchRecords | ForEach-Object { $_.stderr })
+    $processSpecifications = @(New-SingleFlightProcessSpecifications $batchRecords)
+    $runConfiguration.inputs.resource_calibration = $calibrationUsage
+    $runConfiguration.parameters.execution_batch_count = $executionBatchCount
+    $runConfiguration.parameters.execution_batches_parallel = [bool]($executionBatchCount -gt 1)
+    $runConfiguration.parameters.simion_single_wave_batch_plan_sha256 =
+      (Get-FileHash -Algorithm SHA256 -LiteralPath $batchPlanPath).Hash
+    $runConfiguration.parameters.simion_repository_dispatch_plan_sha256 =
+      (Get-FileHash -Algorithm SHA256 -LiteralPath $runtimeDispatchPlanPath).Hash
+    Write-RunJson -Path $package.run_config -Depth 10 -Value $runConfiguration
+    $resourceCalibrationOutputs = @($calibrationUsage,$calibrationStdout,$calibrationStderr)
   }
   $waveResult = Invoke-ResourceBudgetedProcesses `
     -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
@@ -1873,8 +1939,8 @@ try {
         throw 'Pre-pulse time-series compact retained-byte budget exceeded.'
       }
     }
-    $outputs = @($statesCsv,$screeningReceipt,$package.summary,$retentionActions) +
-      $stdoutFiles + $stderrFiles + $resourceUsageFiles |
+  $outputs = @($statesCsv,$screeningReceipt,$package.summary,$retentionActions) +
+      $stdoutFiles + $stderrFiles + $resourceUsageFiles + $resourceCalibrationOutputs |
       Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) }
     Write-RunManifest -Python $python -RepoRoot $repoRoot `
       -RunConfig $package.run_config -Status success `
@@ -1986,12 +2052,12 @@ try {
   $runConfiguration.parameters.detector_crossing_count = [int]$result.census.detector_crossing
   Write-RunJson -Path $package.run_config -Depth 10 -Value $runConfiguration
   $retentionActions = Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config
-  $outputs = @($checkpoints,$sixPanel,$sixPanelMetadata,$phaseSpace,$phaseSpaceMetadata,$phaseSpaceData,$evolution,$evolutionMetadata,$evolutionData) + $stdoutFiles + $stderrFiles + $resourceUsageFiles + @($flightTubeBuildStdout,$flightTubeBuildStderr,$reflectronBuildStdout,$reflectronBuildStderr,$package.summary,$retentionActions) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) }
+  $outputs = @($checkpoints,$sixPanel,$sixPanelMetadata,$phaseSpace,$phaseSpaceMetadata,$phaseSpaceData,$evolution,$evolutionMetadata,$evolutionData) + $stdoutFiles + $stderrFiles + $resourceUsageFiles + $resourceCalibrationOutputs + @($flightTubeBuildStdout,$flightTubeBuildStderr,$reflectronBuildStdout,$reflectronBuildStderr,$package.summary,$retentionActions) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) }
   foreach ($usage in $resourceUsageFiles) {
     if (-not (Complete-ResourceUsage -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir -UsagePath $usage)) { $resourceBudgetExceeded=$true; throw 'Single-flight compact retained-byte budget exceeded.' }
   }
   $resourceProfile = $null
-  if ([string]$resolvedBudgetDocument.single_flight_dispatch_plan.estimation.kind -eq 'unknown_resource_profile_bootstrap') {
+  if ([string]$runtimeDispatchPlan.estimation.kind -eq 'unknown_resource_profile_bootstrap') {
     $resourceProfile = Join-Path $package.result_dir 'simion_resource_profile.json'
     Invoke-SingleFlightPython -Arguments @(
       '-m','common.simion.resource_profile','publish','--run-id',$RunId,

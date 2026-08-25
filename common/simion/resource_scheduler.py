@@ -488,8 +488,8 @@ def main() -> int:
     parser.add_argument("--observed-bootstrap-peak-bytes", type=int)
     args = parser.parse_args()
     if args.prepared_plan is not None:
-        if args.profiles is not None or args.observed_bootstrap_peak_bytes is not None:
-            parser.error("prepared-plan cannot be combined with profiles or observed bootstrap peak")
+        if args.profiles is not None:
+            parser.error("prepared-plan cannot be combined with profiles")
         prepared_plan = json.loads(args.prepared_plan.read_text(encoding="utf-8-sig"))
         if not isinstance(prepared_plan, dict):
             parser.error("prepared-plan must be an object")

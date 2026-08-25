@@ -113,12 +113,18 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
         self.assertIn("simion_execution_batch_plan.json", runner)
         self.assertIn("simion_single_wave_batch_plan_sha256", runner)
         self.assertIn("Invoke-ResourceBudgetedProcesses", runner)
+        self.assertIn("time_limited_process_peak_v1", runner)
+        self.assertIn("RESOURCE_CALIBRATION_ONLY", runner)
+        self.assertIn("-CalibrationDurationSeconds ([int]$calibration.duration_seconds)", runner)
+        self.assertIn("--observed-bootstrap-peak-bytes", runner)
+        self.assertIn("New-SingleFlightBatchRecords", runner)
+        self.assertIn("New-SingleFlightProcessSpecifications", runner)
         self.assertIn("$resourceUsageFiles = @($resourceUsage)", runner)
-        self.assertIn("$processSpecifications += [pscustomobject]@", runner)
+        self.assertIn("$specifications += [pscustomobject]@", runner)
         batch_launch_block = runner[
-            runner.index("$processSpecifications += [pscustomobject]@"):runner.index(
+            runner.index("$specifications += [pscustomobject]@"):runner.index(
                 "if ($isPrePulseTimeSeriesScreening) {", runner.index(
-                    "$processSpecifications += [pscustomobject]@"
+                    "$specifications += [pscustomobject]@"
                 )
             )
         ]

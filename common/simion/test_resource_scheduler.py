@@ -479,3 +479,27 @@ class ResourceSchedulerTests(unittest.TestCase):
             plan = json.loads(output_path.read_text(encoding="utf-8"))
             self.assertEqual(plan["waves"][0]["batch_count"], 8)
             self.assertEqual(plan["host"]["available_memory_bytes"], 100)
+
+    def test_cli_replans_unknown_prepared_plan_from_calibration_peak(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            prepared_path, output_path = root / "prepared.json", root / "plan.json"
+            prepared = plan_simion_dispatch(
+                self.rf_request(maximum_parallel_batches=4), [],
+                available_memory_bytes=100, logical_processors=8,
+            )
+            prepared_path.write_text(json.dumps(prepared), encoding="utf-8")
+            result = subprocess.run(
+                [
+                    sys.executable, "-m", "common.simion.resource_scheduler",
+                    "--prepared-plan", str(prepared_path), "--output", str(output_path),
+                    "--available-memory-bytes", "100", "--logical-processors", "8",
+                    "--observed-bootstrap-peak-bytes", "20",
+                ],
+                capture_output=True, text=True, check=False, timeout=30,
+                cwd=Path(__file__).resolve().parents[2],
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            plan = json.loads(output_path.read_text(encoding="utf-8"))
+            self.assertEqual(plan["estimation"]["kind"], "observed_bootstrap_peak")
+            self.assertEqual(plan["waves"][0]["batch_count"], 4)
