@@ -53,3 +53,9 @@ C1为`PASS_CONTINUE`前，阶段2及任何三维优化均不得启动。
 预注册：它固定S2的六极分段杆、2→5 eV轴向能量契约、H15数值设置和100粒子母cohort，只将下游端件固定为
 当前`oatof_shield_terminal`。该run的唯一角色是产生可连续接入的上游handoff；它本身不支持聚焦、收敛或
 论文主张。
+
+该重生成已成功完成，run ID为`20260825_090000__sim__simion__paper1-s2-segmented-standard-terminal__n100`：
+冻结resolved design的端件为`oatof_shield_terminal`，100个母粒子中92个产生`handoff/transmitted`，另有8个
+上游损失。后续连续前端必须保持100为总分母，并单列这8个损失；92个handoff不是共同命中后挑选出来的峰宽
+样本。该结果只修复S2输入的端件可追溯性，仍不构成同一OA脉冲时刻的`pre_pulse_state`，故C1结论保持
+`INCONCLUSIVE_REVISE`。
