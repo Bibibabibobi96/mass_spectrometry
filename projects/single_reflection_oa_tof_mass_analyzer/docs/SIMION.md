@@ -98,8 +98,9 @@ GUI必须可见并可编辑四实例、Fast Adjust电压、实例坐标、Fly2�
 
 Paper 1 C3 的五实例 Candidate IOB 不能使用单一 PA 的局部场作为独立轴向参考；局部 overlay 必须与
 其余实例按 Workbench 总场共同采样。`workflows/cross_solver_diagnostics/simion/export_total_axis_field.lua`
-只通过 SIMION 2020 官方 `simion.wb:epotential` 和 `simion.wb:efield` 导出该总场，不启动粒子，也不选择
-脉冲时间。官方支持路径为安装目录
+只通过 SIMION 2020 官方 `simion.wb:epotential` 和 `simion.wb:efield` 导出该总场，不启动粒子。导出前它加载
+同一冻结 single-flight Program，执行`segment.initialize_run()`，并在冻结 pulse 时刻对实例3和5执行其既有
+`segment.fast_adjust()`；因此采样的是候选电压对应的总场，而不是 PA basis 的默认场。官方支持路径为安装目录
 `C:\Program Files\SIMION-2020\examples\field_dump\fielddumplib.lua`（`get_point`）和
 `examples\molecular_beam\README.html`（Workbench `efield` 示例），查阅日期为2026-08-26。
 导出器是基于官方 API 的项目实现，不是供应商对本项目积分或论文结论的推荐。历史 single-flight run
