@@ -140,8 +140,8 @@ def analyze_c2_stage(
         "conclusion": conclusion,
         "claim_limit": "Exact ideal-field axial z-vz oracle only; not a full 6D source, real field, transmission, peak-width, or Formal conclusion.",
         "inputs": {"c1_assessments": [str(path.resolve()) for path in (first_assessment, second_assessment)], "theory_campaign": str(theory_campaign.resolve()), "phase_match": str(phase_match.resolve())},
-        "metrics": {"maximum_g_derivative_relative_error": derivative_error, "maximum_G_step_platform_relative_error": response_platform_error, "direction_prediction": direction, "rows": rows},
-        "gates": gates,
+        "metrics": {"maximum_g_derivative_relative_error": derivative_error, "maximum_G_step_platform_relative_error": response_platform_error, "direction_prediction": direction, "gates": gates, "rows": rows},
+        "failures": [name for name, passed in gates.items() if not passed],
         "claims_supported": ["Within the frozen ideal axial oracle, the constrained two-zone control space has zero remaining D1/D2-preserving direction while the three-zone arm has one source-weighted direction."],
         "claims_prohibited": ["Any 6D, 3D, detector, FWHM, transmission, cross-mass, or Formal claim."],
     }

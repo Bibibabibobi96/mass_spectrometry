@@ -24,8 +24,8 @@ claim的完整投稿要求；目前没有主claim达到`SUPPORTED`。
 | Claim | 已有直接证据 | 当前等级 | 主要缺口 |
 |---|---|---|---|
 | J1：切向closure与条件厚度分离 | [`20260817 observed-source归因`](../../history/20260817__three-zone-zvz-nonlinearity-fixed-energy-source-sensitivity.md) | `PRIOR_ART_OVERLAP / DIAGNOSTIC_FRAMEWORK` | N=100、单设计、post-hoc移植；且非线性相关与finite spread已有先例，不能独立承担新颖性 |
-| J2：focusability projector预测残差floor | 无 | `NOT_IMPLEMENTED` | 条件协方差、`g`、`G_N`、约束、QP、locked test均缺 |
-| J3：新增控制方向与未解残差重叠 | observed-affine残差与多项式捕获诊断 | `PARTIAL_SOURCE_DIAGNOSTIC / HIGH_OBVIOUSNESS_RISK` | 没有无量纲条件模态、bootstrap、`a_perp/DeltaJ`、逐模态消融或事前预测验证 |
+| J2：focusability projector预测残差floor | [`C2 axial eliminator`](../../../../../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/paper1_stage_evidence/C2/20260825_143200__axial_j2_j3_eliminator/stage_conclusion.md) | `AXIAL_SCREEN_INCONCLUSIVE_REVISE` | 两源的理想轴向缩减中，source-weighted与未加权控制折叠为同一可行方向，未得到J2增益；完整6D covariance-only、真实场和峰形/传输检验仍缺 |
+| J3：新增控制方向与未解残差重叠 | C2显示`D1/D2`约束后两区零自由度、三区保留一个理想轴向方向；方向排序在locked axial residual上成立 | `AXIAL_SCREEN_ONLY / HIGH_OBVIOUSNESS_RISK` | 不等于真实场或工程新增场区价值；仍缺完整6D、`a_perp/DeltaJ`、逐模态消融、多质量和三维检验 |
 | J4：source-weighted优于未加权closure | solver-free two/three比较与`Γ3` | `PRIOR_ART_OVERLAP / LOCAL_SCALAR_ONLY` | 相同预算A–D公平重优化和blind test全部缺；只能作为J2/J3次级结果 |
 | J5：诊断决定改分析器还是改源 | 历史结论提出下一阶段问题 | `PRIOR_ART_OVERLAP / HYPOTHESIS_ONLY` | 至少两源工况的事前决策和独立验证缺失；一般source/analyzer权衡已知 |
 
@@ -45,6 +45,7 @@ claim的完整投稿要求；目前没有主claim达到`SUPPORTED`。
 | [`observed横向敏感性`](../../history/20260817__three-zone-observed-transverse-sensitivity.md) | 同一N=100 ID下横向恢复是较小但可测增量 | 横向普遍不重要、连续真实handoff或统计稳定性 |
 | [`observed z-vz归因`](../../history/20260817__three-zone-zvz-nonlinearity-fixed-energy-source-sensitivity.md) | 固定设计中observed-affine残差主导首尾顺序退化 | 该残差不可补偿、是光滑高阶曲线或可推广到其他工况 |
 | RF→OA integration observed authority | S1的N=1000母cohort/900 handoff同步真实PA筛查提供875个所选时刻状态；S2的N=1000母cohort/914 handoff筛查提供828个所选时刻状态。两源均由冻结脉冲计划和detector-blind selector选择，且母分母与损失账本保留 | [`C1 source contract`](stage_c1_source_contract.md)为`PASS_CONTINUE`：只证明两源各自可稳定识别；它不比较模型相等性，也不升级为J2/J3或性能结论 |
+| C2 ideal axial eliminator | 两源的解析/有限差分`g`、`G`步长平台、两区零控制、三区改善/零效/恶化排序和locked bootstrap闭合 | `INCONCLUSIVE_REVISE / STOP_BEFORE_C3`：J2未优于未加权对照；此负结果禁止直接启动三维矩阵，须先扩展为完整条件残差与公平基线 |
 
 ## 5. 证据资格结论
 
