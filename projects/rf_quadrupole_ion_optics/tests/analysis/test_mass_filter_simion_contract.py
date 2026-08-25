@@ -4,7 +4,13 @@ import json
 import math
 import re
 import unittest
+import tempfile
 from pathlib import Path
+
+from common.multipole.simion_particle_source import (
+    render_ion11_fly2,
+    render_ion11_source_states,
+)
 
 
 PROJECT_ROOT = Path(__file__).parents[2]
@@ -12,6 +18,25 @@ REPO_ROOT = PROJECT_ROOT.parents[1]
 
 
 class MassFilterSimionContractTests(unittest.TestCase):
+    def test_ion11_source_projection_supports_complete_rebased_batches(self) -> None:
+        rows = [
+            f"{index},100,1,0,0,0,0,0,2,1,3" for index in range(1, 5)
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "source.ion"
+            source.write_text("\n".join(rows) + "\n", encoding="utf-8")
+            fly = render_ion11_fly2(
+                source, particle_id_min=3, particle_id_max=4
+            )
+            states = render_ion11_source_states(
+                source, particle_id_min=3, particle_id_max=4
+            )
+        self.assertEqual(fly.count("standard_beam"), 2)
+        self.assertIn("tob = 3", fly)
+        self.assertIn("[1]={t=3", states)
+        self.assertIn("[2]={t=4", states)
+        self.assertNotIn("[3]", states)
+
     def test_lua_applies_dc_and_rf_as_one_differential_voltage(self) -> None:
         wrapper = (PROJECT_ROOT / "simion" / "programs" / "quad_transport.lua").read_text(encoding="utf-8")
         self.assertIn("MULTIPOLE_SIMION_SHARED_PROGRAM_LUA", wrapper)

@@ -14,14 +14,28 @@ from common.multipole.simion_particle_source import (
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ion-table", required=True, type=Path)
+    parser.add_argument("--particle-id-min", type=int)
+    parser.add_argument("--particle-id-max", type=int)
     parser.add_argument("--fly2", required=True, type=Path)
     parser.add_argument("--source-states-lua", required=True, type=Path)
     args = parser.parse_args()
     args.fly2.parent.mkdir(parents=True, exist_ok=True)
     args.source_states_lua.parent.mkdir(parents=True, exist_ok=True)
-    args.fly2.write_text(render_ion11_fly2(args.ion_table), encoding="ascii")
+    args.fly2.write_text(
+        render_ion11_fly2(
+            args.ion_table,
+            particle_id_min=args.particle_id_min,
+            particle_id_max=args.particle_id_max,
+        ),
+        encoding="ascii",
+    )
     args.source_states_lua.write_text(
-        render_ion11_source_states(args.ion_table), encoding="ascii"
+        render_ion11_source_states(
+            args.ion_table,
+            particle_id_min=args.particle_id_min,
+            particle_id_max=args.particle_id_max,
+        ),
+        encoding="ascii",
     )
     print("RFQUAD_SIMION_SOURCE=PASS FORMAT=ion11")
     return 0

@@ -17,17 +17,41 @@ from common.multipole.particle_source_preflight import validate_source
 from common.simion.particle_source import render_source_states, render_standard_beams
 
 
-def _ion11_rows(source: Path) -> list[list[str]]:
+def _ion11_rows(
+    source: Path,
+    *,
+    particle_id_min: int | None = None,
+    particle_id_max: int | None = None,
+) -> list[list[str]]:
     rows = list(csv.reader(source.read_text(encoding="utf-8-sig").splitlines()))
     for index, row in enumerate(rows, start=1):
         if len(row) != 11:
             raise ValueError(f"row {index} has {len(row)} columns, expected 11")
+    if particle_id_min is not None or particle_id_max is not None:
+        if (
+            particle_id_min is None
+            or particle_id_max is None
+            or particle_id_min < 1
+            or particle_id_max < particle_id_min
+        ):
+            raise ValueError("ION11 particle ID batch interval is invalid")
+        rows = rows[particle_id_min - 1 : particle_id_max]
+        if len(rows) != particle_id_max - particle_id_min + 1:
+            raise ValueError("ION11 particle ID batch interval is not a complete source slice")
     return rows
 
 
-def render_ion11_fly2(source: Path, axial_offset_mm: float = 0.0) -> str:
+def render_ion11_fly2(
+    source: Path,
+    axial_offset_mm: float = 0.0,
+    *,
+    particle_id_min: int | None = None,
+    particle_id_max: int | None = None,
+) -> str:
     """Render the established eleven-column SIMION source without numeric drift."""
-    rows = _ion11_rows(source)
+    rows = _ion11_rows(
+        source, particle_id_min=particle_id_min, particle_id_max=particle_id_max
+    )
     beams = []
     for row in rows:
         tob, mass, charge, x, y, z, az, el, energy, cwf, color = row
@@ -38,10 +62,19 @@ def render_ion11_fly2(source: Path, axial_offset_mm: float = 0.0) -> str:
     return render_standard_beams(beams)
 
 
-def render_ion11_source_states(source: Path, axial_offset_mm: float = 0.0) -> str:
+def render_ion11_source_states(
+    source: Path,
+    axial_offset_mm: float = 0.0,
+    *,
+    particle_id_min: int | None = None,
+    particle_id_max: int | None = None,
+) -> str:
     """Render exact pre-integration states in the established SIMION workbench frame."""
     states = []
-    for index, row in enumerate(_ion11_rows(source), start=1):
+    rows = _ion11_rows(
+        source, particle_id_min=particle_id_min, particle_id_max=particle_id_max
+    )
+    for index, row in enumerate(rows, start=1):
         tob, mass, _, axial, transverse_1, transverse_2, azimuth, elevation, energy, _, _ = map(float, row)
         speed = math.sqrt(2 * energy * ELEMENTARY_CHARGE_C / (mass * AMU_KG))
         az, el = math.radians(azimuth), math.radians(elevation)
