@@ -689,8 +689,9 @@ try {
   }
   if (($isPrePulseRestart -and $PrePulseSourceStateCount -ne $launched) -or
       ($isTerminalHandoffContinuation -and ($TerminalHandoffContinuedParticleCount -ne $launched -or $TerminalHandoffMotherParticleCount -ne $PopulationDenominatorCount)) -or
-      ($hasMotherOverride -and $MotherParticleCount -ne $launched) -or
-      (-not $isPrePulseRestart -and
+      ($hasMotherOverride -and -not $isTerminalHandoffContinuation -and
+       $MotherParticleCount -ne $launched) -or
+      (-not $isPrePulseRestart -and -not $isTerminalHandoffContinuation -and
        -not $hasMotherOverride -and
        [int]$runtime.source_record.launched_particle_count -ne $launched)) {
     throw 'Single-flight source count differs from the resolved population authority.'
