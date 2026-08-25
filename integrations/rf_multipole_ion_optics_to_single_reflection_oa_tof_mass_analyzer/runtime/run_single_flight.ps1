@@ -1860,10 +1860,10 @@ try {
   function New-SingleFlightProcessSpecifications($Records) {
     $specifications = @()
     foreach ($batch in $Records) {
-      # SIMION rejects its UI/default particle-count setting below two.  This
+      # SIMION rejects its UI/default particle-count setting below ten.  This
       # does not alter the frozen particle input: an N=1 smoke batch still
       # contains and tracks exactly one registered ion.
-      $simionDefaultParticleCount = [Math]::Max(2, [int]$batch.count)
+      $simionDefaultParticleCount = [Math]::Max(10, [int]$batch.count)
       $specifications += [pscustomobject]@{
       name = 'simion_batch_{0:D2}' -f [int]$batch.index
       file_path = $SimionExe

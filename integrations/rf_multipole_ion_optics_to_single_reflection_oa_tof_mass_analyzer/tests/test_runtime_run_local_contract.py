@@ -123,7 +123,7 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
         self.assertIn(
             "'--default-num-particles',([string]$simionDefaultParticleCount)", runner
         )
-        self.assertIn("[Math]::Max(2, [int]$batch.count)", runner)
+        self.assertIn("[Math]::Max(10, [int]$batch.count)", runner)
         self.assertNotIn("[Math]::Max(100,[int]$batch.count)", runner)
         self.assertIn("simion_execution_batch_plan.json", runner)
         self.assertIn("simion_single_wave_batch_plan_sha256", runner)
