@@ -334,8 +334,12 @@ if ($frozenArguments.ContainsKey('source_release_mode')) {
       'terminal_handoff_mother_particle_count',
       'terminal_handoff_continued_particle_count',
       'terminal_handoff_mass_amu','terminal_handoff_charge_state',
+      'terminal_handoff_upstream_loss_count',
       'terminal_handoff_receipt_filename','terminal_handoff_receipt_sha256'
     )
+    if ($frozenArguments.ContainsKey('terminal_handoff_smoke_source_particle_id')) {
+      $expectedArguments += 'terminal_handoff_smoke_source_particle_id'
+    }
   }
   if ($frozenArguments.ContainsKey('source_profile_id')) {
     $expectedArguments += @('source_profile_id','field_overlay_id')
@@ -1377,6 +1381,11 @@ if ($executionStrategy -eq 'simion_single_flight') {
       [int]$frozenArguments.terminal_handoff_continued_particle_count
     $runnerArguments.TerminalHandoffMassAmu = [double]$frozenArguments.terminal_handoff_mass_amu
     $runnerArguments.TerminalHandoffChargeState = [int]$frozenArguments.terminal_handoff_charge_state
+    $runnerArguments.TerminalHandoffUpstreamLossCount = [int]$frozenArguments.terminal_handoff_upstream_loss_count
+    if ($frozenArguments.ContainsKey('terminal_handoff_smoke_source_particle_id')) {
+      $runnerArguments.TerminalHandoffSmokeSourceParticleId =
+        [int]$frozenArguments.terminal_handoff_smoke_source_particle_id
+    }
   }
   if ($null -eq $resolvedRegionFieldContractPath) {
     throw 'SIMION single flight requires one resolved region field contract.'

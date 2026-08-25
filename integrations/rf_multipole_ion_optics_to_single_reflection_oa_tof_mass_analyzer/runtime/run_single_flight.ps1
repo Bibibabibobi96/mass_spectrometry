@@ -53,6 +53,8 @@ param(
   [int]$TerminalHandoffContinuedParticleCount = 0,
   [double]$TerminalHandoffMassAmu = 0,
   [int]$TerminalHandoffChargeState = 0,
+  [int]$TerminalHandoffSmokeSourceParticleId = 0,
+  [int]$TerminalHandoffUpstreamLossCount = -1,
   [string]$PrePulseTimeSeriesContract = '',
   [string]$PrePulseTimeSeriesContractSha256 = '',
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
@@ -1078,6 +1080,10 @@ try {
     $sourceArguments += @('--handoff-mass-amu',([string]$TerminalHandoffMassAmu),
       '--handoff-charge-state',([string]$TerminalHandoffChargeState),
       '--handoff-receipt',$terminalHandoffReceiptFrozen)
+    if ($TerminalHandoffSmokeSourceParticleId -gt 0) {
+      $sourceArguments += @('--handoff-smoke-source-particle-id',
+        ([string]$TerminalHandoffSmokeSourceParticleId))
+    }
   }
   if ($isPrePulseRestart) {
     $sourceArguments += @('--pulse-time-us',([string]$pulseTimeUs))
@@ -1087,11 +1093,18 @@ try {
   if ($isTerminalHandoffContinuation) {
     $terminalHandoffReceipt = Get-Content -LiteralPath $terminalHandoffReceiptFrozen `
       -Raw -Encoding UTF8 | ConvertFrom-Json
+    $expectedTerminalLossCount = if ($TerminalHandoffUpstreamLossCount -ge 0) {
+      $TerminalHandoffUpstreamLossCount
+    } else { $PopulationDenominatorCount - $launched }
     if ($terminalHandoffReceipt.role -ne 'rf_oatof_terminal_handoff_continuation_receipt' -or
         [int]$terminalHandoffReceipt.mother_particle_count -ne $TerminalHandoffMotherParticleCount -or
         [int]$terminalHandoffReceipt.continued_particle_count -ne $launched -or
-        [int]$terminalHandoffReceipt.upstream_loss_count -ne ($PopulationDenominatorCount - $launched)) {
+        [int]$terminalHandoffReceipt.upstream_loss_count -ne $expectedTerminalLossCount) {
       throw 'Terminal-handoff continuation materialization receipt differs from population authority.'
+    }
+    if ($TerminalHandoffSmokeSourceParticleId -gt 0 -and
+        [int]$terminalHandoffReceipt.smoke_source_particle_id -ne $TerminalHandoffSmokeSourceParticleId) {
+      throw 'Terminal-handoff smoke particle identity differs from the frozen request.'
     }
   }
 

@@ -19,6 +19,8 @@ C3_J3只检验一个问题：C2_J3中理想轴向的三区局部控制方向，�
 1. N=1贯通：五个点均能构建、运行、记录grid2/exit/reflectron/detector事件和完整数值身份。失败即`FAIL_STOP`，不得把缺失事件当作零导数。
 2. N=100步长平台：以同一100母样本完成五点。拟合`+h/-h`与`+2h/-2h`的中心差分，并与独立导出轴场积分器比较。每个可比较方向的相对导数偏差必须不超过5%；五点事件拓扑和母cohort损失分类必须稳定。
 
+N=1只允许使用`terminal_handoff_smoke_source_particle_id`明确登记的一个、已实际传输的上游粒子；运行器仍保留完整母cohort的上游损失记录，并将该粒子映射为SIMION粒子1。它只是构建、时钟和事件序列的功能烟雾测试，禁止输出或解释峰宽、传输率、导数、排序或任何性能指标。
+
 ## 结论格式
 
 唯一结论为`PASS_CONTINUE`、`FAIL_STOP`或`INCONCLUSIVE_REVISE`，并连同`stage_contract.md`、`stage_manifest.json`、`stage_report.md/json`、`stage_conclusion.md`发布到C3_J3 artifact目录。`PASS_CONTINUE`只授权C4_J3的锁定三维预测设计；它不支持J2、FWHM、传输、结构优越性、工程可制造性或Formal主张。

@@ -309,6 +309,7 @@ def materialize_terminal_handoff_continuation(
     *,
     mass_amu: float,
     charge_state: int,
+    smoke_source_particle_id: int | None = None,
 ) -> tuple[list[list[str]], list[dict[str, str]], list[dict[str, str]], dict[str, object]]:
     """Continue only manifest-recorded terminal handoffs into the OA frame.
 
@@ -353,11 +354,25 @@ def materialize_terminal_handoff_continuation(
     ion_rows: list[list[str]] = []
     global_rows: list[dict[str, str]] = []
     row_map: list[dict[str, str]] = []
-    loss_ids: list[int] = []
-    for particle_id, row in sorted(final_by_id.items()):
+    loss_ids: list[int] = [
+        particle_id for particle_id, item in final_by_id.items()
+        if not (item["event"] == "handoff" and item["status"] == "transmitted"
+                and item["terminal_reason"] == "none")
+    ]
+    if smoke_source_particle_id is not None:
+        if isinstance(smoke_source_particle_id, bool) or smoke_source_particle_id < 1:
+            raise ValueError("terminal-handoff smoke source particle ID is invalid")
+        selected_ids = [smoke_source_particle_id]
+    else:
+        selected_ids = sorted(final_by_id)
+    for particle_id in selected_ids:
+        if particle_id not in final_by_id:
+            raise ValueError("terminal-handoff smoke source particle is absent")
+        row = final_by_id[particle_id]
         transmitted = row["event"] == "handoff" and row["status"] == "transmitted" and row["terminal_reason"] == "none"
         if not transmitted:
-            loss_ids.append(particle_id)
+            if smoke_source_particle_id is not None:
+                raise ValueError("terminal-handoff smoke source particle is not transmitted")
             continue
         local_position = (float(row["transverse_x_mm"]), float(row["transverse_y_mm"]), float(row["axial_z_mm"]))
         local_velocity = (float(row["velocity_x_m_s"]), float(row["velocity_y_m_s"]), float(row["velocity_axial_m_s"]))
@@ -369,14 +384,20 @@ def materialize_terminal_handoff_continuation(
         energy = kinetic_energy_ev(mass_amu, vx, vy, vz)
         azimuth, elevation = encode_simion_accelerator_velocity((vx, vy, vz))
         ion_rows.append(["0", format(mass_amu, ".17g"), str(charge_state), format(x, ".17g"), format(y, ".17g"), format(z, ".17g"), format(azimuth, ".17g"), format(elevation, ".17g"), format(energy, ".17g"), "1", "3"])
+        simulation_particle_id = (
+            len(global_rows) + 1 if smoke_source_particle_id is not None else particle_id
+        )
         global_rows.append({
-            "particle_id": str(particle_id), "instrument_time_us": format(time_us, ".17g"),
+            "particle_id": str(simulation_particle_id), "instrument_time_us": format(time_us, ".17g"),
             "mass_amu": format(mass_amu, ".17g"), "charge_state": str(charge_state),
             "position_x_mm": format(x, ".17g"), "position_y_mm": format(y, ".17g"), "position_z_mm": format(z, ".17g"),
             "velocity_x_m_s": format(vx, ".17g"), "velocity_y_m_s": format(vy, ".17g"), "velocity_z_m_s": format(vz, ".17g"),
             "kinetic_energy_eV": format(energy, ".17g"),
         })
-        row_map.append({"simulation_particle_id": str(len(row_map) + 1), "source_particle_id": str(particle_id)})
+        row_map.append({
+            "simulation_particle_id": str(len(row_map) + 1),
+            "source_particle_id": str(particle_id),
+        })
     if not global_rows:
         raise ValueError("terminal-handoff source has no transmitted particles")
     receipt = {
@@ -386,7 +407,8 @@ def materialize_terminal_handoff_continuation(
         "coordinate_frame": "oatof_global_cartesian", "clock_basis": "canonical_instrument_time_us",
         "mother_particle_count": len(final_by_id), "continued_particle_count": len(global_rows),
         "upstream_loss_count": len(loss_ids), "upstream_loss_particle_ids": loss_ids,
-        "continued_particle_ids": [int(row["particle_id"]) for row in global_rows],
+        "continued_particle_ids": [int(row["source_particle_id"]) for row in row_map],
+        "smoke_source_particle_id": smoke_source_particle_id,
         "transform": {"rotation_upstream_to_downstream": registration["rotation_upstream_to_downstream"], "translation_mm": [tx, ty, tz]},
     }
     return ion_rows, global_rows, row_map, receipt
@@ -479,6 +501,7 @@ def main() -> int:
     parser.add_argument("--handoff-mass-amu", type=float)
     parser.add_argument("--handoff-charge-state", type=int)
     parser.add_argument("--handoff-receipt", type=Path)
+    parser.add_argument("--handoff-smoke-source-particle-id", type=int)
     args = parser.parse_args()
     connection = json.loads(args.connection.read_text(encoding="utf-8-sig"))
     if args.source_release_mode == "pre_pulse_restart":
@@ -498,6 +521,7 @@ def main() -> int:
         ion_rows, global_rows, row_map, receipt = materialize_terminal_handoff_continuation(
             args.source, connection, mass_amu=args.handoff_mass_amu,
             charge_state=args.handoff_charge_state,
+            smoke_source_particle_id=args.handoff_smoke_source_particle_id,
         )
         args.handoff_receipt.parent.mkdir(parents=True, exist_ok=True)
         args.handoff_receipt.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")

@@ -3079,6 +3079,8 @@ def prepare_family_source_closure(
     materialized_source_path = None
     terminal_handoff_global_state_path = None
     terminal_handoff_receipt_path = None
+    terminal_handoff_smoke_source_particle_id = None
+    terminal_handoff_upstream_loss_count = None
     source_zvz_affine_receipt_path = None
     source_zvz_theory_working_point_path = None
     resolved_population_path = None
@@ -3101,16 +3103,30 @@ def prepare_family_source_closure(
             raise ContractError("terminal handoff requires one frozen mass and charge")
         terminal_handoff_mass_amu = next(iter(masses))
         terminal_handoff_charge_state = next(iter(charges))
+        smoke_value = experiment.get("terminal_handoff_smoke_source_particle_id")
+        if smoke_value is not None:
+            if (
+                isinstance(smoke_value, bool)
+                or not isinstance(smoke_value, int)
+                or smoke_value < 1
+                or population_declaration["execution_population"]["particle_count"] != 1
+                or population_declaration["execution_population"]["selection_algorithm"]
+                != "explicit_single_terminal_handoff_particle_id_v1"
+            ):
+                raise ContractError("terminal-handoff smoke population declaration differs")
+            terminal_handoff_smoke_source_particle_id = smoke_value
         try:
             _, handoff_rows, _, handoff_receipt = materialize_terminal_handoff_continuation(
                 design_evidence["state_path"], _load(resolved_path),
                 mass_amu=terminal_handoff_mass_amu,
                 charge_state=terminal_handoff_charge_state,
+                smoke_source_particle_id=terminal_handoff_smoke_source_particle_id,
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise ContractError("terminal handoff continuation materialization failed") from exc
         if int(handoff_receipt["mother_particle_count"]) != evidence["launched_particle_count"]:
             raise ContractError("terminal handoff mother cohort differs from source authority")
+        terminal_handoff_upstream_loss_count = int(handoff_receipt["upstream_loss_count"])
         terminal_handoff_global_state_path = plan_output.parent / "inputs" / (
             "terminal_handoff_continuation_global_state.csv"
         )
@@ -3901,7 +3917,13 @@ def prepare_family_source_closure(
                 + str(len(handoff_rows)),
                 "terminal_handoff_mass_amu=" + format(terminal_handoff_mass_amu, ".17g"),
                 "terminal_handoff_charge_state=" + str(terminal_handoff_charge_state),
-                "terminal_handoff_receipt_filename=inputs/"
+                "terminal_handoff_upstream_loss_count="
+                + str(terminal_handoff_upstream_loss_count),
+            ] + ([] if terminal_handoff_smoke_source_particle_id is None else [
+                "terminal_handoff_smoke_source_particle_id="
+                + str(terminal_handoff_smoke_source_particle_id),
+            ]) + [
+            "terminal_handoff_receipt_filename=inputs/"
                 + terminal_handoff_receipt_path.name,
                 "terminal_handoff_receipt_sha256="
                 + file_sha256(terminal_handoff_receipt_path),

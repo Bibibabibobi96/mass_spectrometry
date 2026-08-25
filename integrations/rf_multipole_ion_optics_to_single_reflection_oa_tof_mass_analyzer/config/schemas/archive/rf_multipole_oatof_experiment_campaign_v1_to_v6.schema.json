@@ -515,6 +515,31 @@
           "then": {"required": ["source_profile_id", "field_overlay_id", "source_release_mode"]}
         },
         {
+          "if": {"required": ["terminal_handoff_smoke_source_particle_id"]},
+          "then": {
+            "required": ["execution_strategy", "source_release_mode", "single_flight_population"],
+            "properties": {
+              "execution_strategy": {"const": "simion_single_flight"},
+              "source_release_mode": {"const": "continuous_frontend_handoff"},
+              "single_flight_population": {
+                "properties": {
+                  "population_mode": {"const": "terminal_handoff_continuation"},
+                  "source_authority": {"properties": {
+                    "table_binding": {"const": "terminal_handoff_continuation_global_state"}
+                  }},
+                  "execution_population": {"properties": {
+                    "particle_count": {"const": 1},
+                    "selection_algorithm": {
+                      "const": "explicit_single_terminal_handoff_particle_id_v1"
+                    }
+                  }},
+                  "postselection_policy": {"const": "prohibited"}
+                }
+              }
+            }
+          }
+        },
+        {
           "if": {
             "properties": {"source_release_mode": {"const": "pre_pulse_restart"}},
             "required": ["source_release_mode"]
@@ -579,7 +604,7 @@
                   "single_flight_population": {"properties": {
                     "population_mode": {"const": "terminal_handoff_continuation"},
                     "source_authority": {"properties": {"table_binding": {"const": "terminal_handoff_continuation_global_state"}}},
-                    "execution_population": {"properties": {"selection_algorithm": {"const": "all_transmitted_terminal_handoffs_in_source_particle_id_order"}}},
+                    "execution_population": {"properties": {"selection_algorithm": {"enum": ["all_transmitted_terminal_handoffs_in_source_particle_id_order", "explicit_single_terminal_handoff_particle_id_v1"]}}},
                     "postselection_policy": {"const": "prohibited"}
                   }}
                 },
@@ -784,6 +809,7 @@
         "source_profile_id": {"$ref": "#/$defs/id"},
         "field_overlay_id": {"$ref": "#/$defs/id"},
         "source_release_mode": {"enum": ["continuous_frontend", "continuous_frontend_handoff", "pre_pulse_restart"]},
+        "terminal_handoff_smoke_source_particle_id": {"type": "integer", "minimum": 1},
         "pre_pulse_source_state": {"$ref": "#/$defs/pre_pulse_source_state"},
         "post_pulse_restart_reuse_authority": {
           "$ref": "#/$defs/post_pulse_restart_reuse_authority"
