@@ -110,9 +110,11 @@ cohort损失账本一起冻结。仅把采样窗提前、过滤已撞壁粒子�
 
 首次r05包装运行在SIMION完成后因两个**后处理身份解析**缺陷而标记失败：短执行别名清理后未回退到运行目录内
 冻结的particle-row map，以及同一cache SHA的大小写表示不一致。提交`12938a0`和`84b5d66`以回归测试修复这两点。
-随后只对原始、已冻结的r05 stdout日志和run-local输入执行确定性materialization，得到成功receipt（状态行0、
-完整1000粒子终端普查）；没有重新发射粒子、改动场、采样窗或合同。该恢复仅用于冻结负结果，不能把r05升级为
-任何聚焦或分辨率证据。
+随后以新 recovery run
+`20260825_174500__analysis__simion__paper1-s2-pre-pulse-recovery__n1000__r01`只对原始、已冻结的r05
+stdout日志和run-local输入执行确定性materialization，得到成功receipt（状态行0、完整1000粒子终端普查）；
+没有重新发射粒子、改动场、采样窗或合同。原始r05的`summary.json`已经恢复并再次匹配其失败manifest哈希。
+该恢复仅用于冻结负结果，不能把r05升级为任何聚焦或分辨率证据。
 
 ### r05声明边界
 

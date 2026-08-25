@@ -31,6 +31,12 @@ SIMION 运行可调用共享批处理；批内结果必须恢复全局粒子 ID 
 每个 run 必须冻结 `run_config.json`、`summary.json` 和 `run_manifest.json`。缓存只用于完全相同的冻结身份，
 且不可替代来源 run。功能成功不自动证明数值收敛、跨求解器等价、参数最优或 Formal 资格。
 
+若SIMION批次已经全部完成、但**只**在受治理的预脉冲TRACE物化步骤失败，
+[`recover_completed_pre_pulse_screening.py`](../workflows/family_source_closure/recover_completed_pre_pulse_screening.py)
+可从失败run的manifest-verified原始日志建立一个新的 analysis recovery run。它逐一绑定失败manifest、原始
+run-config、run-local冻结合同、粒子映射和全部批日志；不得改写失败run、不得重跑求解器，也不得把恢复结果升级为
+分辨率或Formal证据。
+
 活动 runtime binding v4 只冻结连接专属的物理/运行合同；共享的
 `family_runtime_implementation.json` 由运行时统一解析。authorized/Formal 路径校验每个实现脚本 SHA；
 exploration 仅允许实现内容与注册表漂移，并把期望与实际 SHA 写入 run config/receipt，仍关闭角色、路径、

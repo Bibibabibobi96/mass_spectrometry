@@ -5,13 +5,14 @@
   "inputs": {
     "parent_run_id": "20260825_174500__sim__cross__paper1-s2-segmented-pre-pulse__n1000__r05",
     "child_run_id": "20260825_174500__sim__simion__rf-oatof-single-flight-gap0__n1000__r05",
+    "recovery_run_id": "20260825_174500__analysis__simion__paper1-s2-pre-pulse-recovery__n1000__r01",
     "mother_cohort_count": 1000,
     "source_condition": "S2_segmented_rods",
     "sampling_window_us": [45.83769809501819, 47.66114791320001],
     "resource_calibration_duration_seconds": 20,
     "execution_batches": 4,
     "raw_stdout_logs": 4,
-    "postprocessing": "deterministic materialization of frozen r05 logs after audited run-local identity fallback and hexadecimal case-normalization fixes; no particle rerun"
+    "postprocessing": "new manifest-bound recovery run deterministically materialized frozen r05 logs after audited run-local identity fallback and hexadecimal case-normalization fixes; no particle rerun"
   },
   "metrics": {
     "particles_per_batch": 250,
