@@ -5,6 +5,9 @@
 
 ## 已完成审计
 
+- [2026-08-25 历史占位文档恢复审计](history/20260825__history-placeholder-recovery-audit.md)：
+  扫描全仓库历史 Markdown，恢复有 manifest、矩阵和退役合同支撑的 RF 多极杆—oaTOF 事实索引，并明确
+  原始叙述或唯一存档不存在时的不可恢复边界。
 - [2026-08-14 artifact 授权处置审计](history/20260814__artifact-authorized-disposition-audit.md)：
   记录用户授权下对 scratch、失败/中断及锁死排查产物的17目标处置、硬链接导致的逻辑大小与实际释放差异，
   以及当前理想源/束源和真实场/理想场实验PA与cache的保护边界。
