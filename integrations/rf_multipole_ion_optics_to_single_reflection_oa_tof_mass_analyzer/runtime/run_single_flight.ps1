@@ -1711,6 +1711,11 @@ try {
   if ($isPrePulseTimeSeriesScreening) {
     $runConfiguration.inputs.pre_pulse_time_series_contract =
       $prePulseTimeSeriesContractFrozen
+    # The materializer validates this identity after the short execution
+    # directory is retired.  Preserve the supplied hash in the immutable run
+    # configuration instead of relying on the process-local argument.
+    $runConfiguration.parameters.pre_pulse_time_series_contract_sha256 =
+      $PrePulseTimeSeriesContractSha256
     $runConfiguration.parameters.execution_mode =
       'real_pa_rf_pre_pulse_time_series'
     $runConfiguration.parameters.resolution_claim_allowed = $false

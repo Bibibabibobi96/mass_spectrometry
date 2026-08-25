@@ -76,6 +76,14 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
         self.assertIn("pre_pulse_time_series_states.csv", runner)
         self.assertIn("pre_pulse_time_series_screening_receipt.json", runner)
         self.assertIn(
+            "pre_pulse_time_series_contract_sha256 =",
+            runner,
+        )
+        self.assertIn(
+            "$PrePulseTimeSeriesContractSha256",
+            runner,
+        )
+        self.assertIn(
             "runtime.materialize_pre_pulse_time_series", runner
         )
         for argument in (
