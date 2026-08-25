@@ -17,6 +17,7 @@ from typing import Any, Mapping
 
 import numpy as np
 
+from common.contracts.machine_contracts import validate_schema
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.paper1_candidate_control import (
     FINITE_DIFFERENCE_SCALES,
 )
@@ -104,6 +105,11 @@ def _topology(
             "potentials_v": potentials,
         },
         "reflectron": {"u_r1_v": inner.stage1_voltage_drop_v, "f_r2_v_per_mm": inner.stage2_field_v_per_mm},
+        "accelerator_physics": {
+            "lengths_mm": {"d1": state.zone1_length_mm, "d2": state.zone2_length_mm, "d3": state.zone3_length_mm},
+            "fields_v_per_mm": {"e1": state.field1_v_per_mm, "e2": state.field2_v_per_mm, "e3": state.field3_v_per_mm},
+            "focus_drift_after_exit_mm": derivatives.focus_drift_after_exit_mm,
+        },
     }
 
 
@@ -188,12 +194,50 @@ def compile_c2_j3_physical_control_family(
     }
 
 
+def compile_c3_j3_variant_candidate(
+    *, base_candidate_path: Path, physical_family_path: Path, scale_h: float,
+) -> dict[str, Any]:
+    """Materialize one C3 variant in the established Candidate input shape."""
+
+    base_candidate_path, physical_family_path = base_candidate_path.resolve(), physical_family_path.resolve()
+    base, family = _load_object(base_candidate_path), _load_object(physical_family_path)
+    validate_schema(base, "oatof_three_zone_simion_candidate_resolved.schema.json")
+    if family.get("role") != "oatof_paper1_c3_j3_physical_control_family":
+        raise ValueError("C3 physical family identity differs")
+    binding = family.get("base_candidate")
+    if not isinstance(binding, Mapping) or binding.get("sha256") != _sha256(base_candidate_path):
+        raise ValueError("C3 physical family is not bound to this Candidate")
+    variants = family.get("variants")
+    matches = [item for item in variants if isinstance(item, Mapping) and float(item.get("scale_h", math.nan)) == scale_h] if isinstance(variants, list) else []
+    if len(matches) != 1:
+        raise ValueError("C3 physical family does not contain the requested scale")
+    variant = matches[0]
+    result = json.loads(json.dumps(base))
+    result["compiler_mode"] = "C3_J3_EXACT_LOCAL_DIRECTION_V1"
+    result["accelerator_topology"] = variant["accelerator_topology"]
+    result["accelerator_physics"] = variant["accelerator_physics"]
+    result["reflectron"] = variant["reflectron"]
+    result["c3_j3_evidence"] = {
+        "physical_family": {
+            "path": str(physical_family_path),
+            "bytes": physical_family_path.stat().st_size,
+            "sha256": _sha256(physical_family_path),
+        },
+        "scale_h": scale_h,
+    }
+    result["claim_limit"] = "C3 J3 local Candidate only; requires PA rebuild and does not establish a real-field result."
+    validate_schema(result, "oatof_three_zone_simion_candidate_resolved.schema.json")
+    return result
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--campaign", required=True, type=Path)
     parser.add_argument("--c2-j3-result", required=True, type=Path)
     parser.add_argument("--source-id", required=True)
     parser.add_argument("--candidate", type=Path)
+    parser.add_argument("--variant-candidate-output", type=Path)
+    parser.add_argument("--scale-h", type=float)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
     result = compile_c2_j3_physical_control_family(
@@ -204,6 +248,14 @@ def main() -> None:
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    if args.variant_candidate_output is not None:
+        if args.candidate is None or args.scale_h is None:
+            parser.error("--variant-candidate-output requires --candidate and --scale-h")
+        candidate = compile_c3_j3_variant_candidate(
+            base_candidate_path=args.candidate, physical_family_path=args.output,
+            scale_h=args.scale_h,
+        )
+        args.variant_candidate_output.write_text(json.dumps(candidate, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":

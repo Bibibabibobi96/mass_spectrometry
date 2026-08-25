@@ -12,6 +12,7 @@ import unittest
 from common.contracts.file_identity import file_sha256
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.paper1_c3_j3_mapping import (
     compile_c2_j3_physical_control_family,
+    compile_c3_j3_variant_candidate,
 )
 
 
@@ -41,7 +42,16 @@ class Paper1C3J3MappingTests(unittest.TestCase):
         self.assertEqual(family["variants"][2]["inner_controls"]["eta"], -1.0391326394747527)
         self.assertTrue(all(item["requires_pa_rebuild"] for item in family["variants"]))
         self.assertEqual(family["campaign"]["sha256"], file_sha256(CAMPAIGN))
-        candidate = {"role": "oatof_three_zone_simion_candidate_resolved", **family["variants"][2]}
+        candidate = {
+            "schema_version": 1, "role": "oatof_three_zone_simion_candidate_resolved",
+            "project_id": "single_reflection_oa_tof_mass_analyzer", "qualification": "CANDIDATE_ONLY",
+            "compiler_mode": "T5_FROZEN_PRIMARY_AND_BRANCH_ONLY",
+            "campaign": {"campaign_id": "three_zone_solver_free_funnel_v2", "file": {"path": str(CAMPAIGN), "bytes": CAMPAIGN.stat().st_size, "sha256": file_sha256(CAMPAIGN)}},
+            "t5_evidence": {"stage_id": "T5", "status": "success", "conclusion": "PRIMARY_THEORY_ONLY_SUPPORTED", "plan_sha256": "A" * 64, "receipt": {"path": str(CAMPAIGN), "bytes": CAMPAIGN.stat().st_size, "sha256": file_sha256(CAMPAIGN)}, "report": {"path": str(CAMPAIGN), "bytes": CAMPAIGN.stat().st_size, "sha256": file_sha256(CAMPAIGN)}, "frozen_primary_row_id": "frozen_primary", "frozen_branch_root": {"policy": "scaled_parameter_distance_unique_nearest", "reference_fixture_id": "anchor", "accepted_index": 0, "cluster_index": 0, "coordinates": [0.0, 0.0, 0.0], "distance_to_branch_reference": 0.0, "inner": {"eta": -1.0, "u_r1_v": 1600.0, "f_r2_v_per_mm": 10.0}}},
+            "source_identity": {"authority": "campaign.frozen_source", "campaign_id": "three_zone_solver_free_funnel_v2", "campaign_sha256": file_sha256(CAMPAIGN), "frozen_source": {"mass_to_charge_th": 100.0, "charge_sign": 1, "center_x_mm": 1.5, "center_velocity_m_per_s": 0.0, "velocity_slope_m_per_s_per_mm": 1.0, "nominal_energy_per_charge_v": 2000.0}},
+            "identities": {"topology_id": "three_zone_accelerator_ideal_v1", "geometry_id": "three_zone_focus_origin_planes_v1", "field_id": "three_zone_piecewise_uniform_ideal_field_v1"},
+            "claim_limit": "test", **family["variants"][2],
+        }
         candidate.pop("scale_h")
         candidate.pop("inner_controls")
         candidate.pop("requires_pa_rebuild")
@@ -49,6 +59,11 @@ class Paper1C3J3MappingTests(unittest.TestCase):
         candidate_path.write_text(json.dumps(candidate), encoding="utf-8")
         checked = compile_c2_j3_physical_control_family(campaign_path=CAMPAIGN, c2_result_path=self.path, source_id="S1", candidate_path=candidate_path)
         self.assertEqual(checked["base_candidate"]["sha256"], file_sha256(candidate_path))
+        family_path = Path(self.temp.name) / "family.json"
+        family_path.write_text(json.dumps(checked), encoding="utf-8")
+        variant = compile_c3_j3_variant_candidate(base_candidate_path=candidate_path, physical_family_path=family_path, scale_h=1.0)
+        self.assertEqual(variant["compiler_mode"], "C3_J3_EXACT_LOCAL_DIRECTION_V1")
+        self.assertEqual(variant["c3_j3_evidence"]["scale_h"], 1.0)
 
     def test_rejects_asymmetric_direction(self) -> None:
         self.result["metrics"]["rows"][0]["directions"]["worsen"]["controls"][0] -= 0.1

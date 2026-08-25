@@ -15,7 +15,15 @@
     "role": {"const": "oatof_three_zone_simion_candidate_resolved"},
     "project_id": {"const": "single_reflection_oa_tof_mass_analyzer"},
     "qualification": {"const": "CANDIDATE_ONLY"},
-    "compiler_mode": {"const": "T5_FROZEN_PRIMARY_AND_BRANCH_ONLY"},
+    "compiler_mode": {"enum": ["T5_FROZEN_PRIMARY_AND_BRANCH_ONLY", "C3_J3_EXACT_LOCAL_DIRECTION_V1"]},
+    "c3_j3_evidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["physical_family", "scale_h"],
+      "properties": {
+        "physical_family": {"$ref": "#/$defs/file"},
+        "scale_h": {"enum": [-2, -1, 0, 1, 2]}
+      }
+    },
     "campaign": {
       "type": "object", "additionalProperties": false,
       "required": ["campaign_id", "file"],
@@ -145,6 +153,16 @@
     },
     "claim_limit": {"type": "string", "minLength": 1}
   },
+  "allOf": [
+    {
+      "if": {"required": ["compiler_mode"], "properties": {"compiler_mode": {"const": "C3_J3_EXACT_LOCAL_DIRECTION_V1"}}},
+      "then": {"required": ["c3_j3_evidence"]}
+    },
+    {
+      "if": {"required": ["compiler_mode"], "properties": {"compiler_mode": {"const": "T5_FROZEN_PRIMARY_AND_BRANCH_ONLY"}}},
+      "then": {"not": {"required": ["c3_j3_evidence"]}}
+    }
+  ],
   "$defs": {
     "id": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"},
     "sha": {"type": "string", "pattern": "^[A-F0-9]{64}$"},
