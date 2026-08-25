@@ -20,6 +20,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     INTEGRATION_ID,
     SINGLE_FLIGHT_STAGES,
     STAGES,
+    _verify_stage_chain_identity,
     stage_project_id,
     publish_family_source_closure_failure,
     publish_family_source_closure_run,
@@ -53,6 +54,40 @@ class JointSingleFlightOwnershipTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ContractError, "unsupported"):
             stage_project_id("unknown", upstream)
+
+    def test_stage_identity_uses_published_input_snapshot_after_staging_cleanup(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            stage_dir = workspace / "artifacts/projects/integration/runs/child"
+            input_dir = stage_dir / "inputs"
+            input_dir.mkdir(parents=True)
+            runtime = input_dir / "runtime_binding.json"
+            resolved = input_dir / "resolved_connection.json"
+            population = input_dir / "resolved_population_contract.json"
+            for path, value in ((runtime, {"runtime": True}), (resolved, {"resolved": True}), (population, {"population": True})):
+                write_json(path, value)
+            source_identity = {"source": "frozen"}
+            write_json(stage_dir / "run_config.json", {
+                "parameters": {"connection_profile_id": "profile", "source_branch_id": "simion"},
+                "upstream_source_identity": source_identity,
+                "inputs": {
+                    "runtime_binding": "C:/retired-staging/inputs/runtime_binding.json",
+                    "resolved_connection": "C:/retired-staging/inputs/resolved_connection.json",
+                    "resolved_population_contract": "C:/retired-staging/inputs/resolved_population_contract.json",
+                },
+            })
+            _verify_stage_chain_identity(
+                stage={"phase": "single_flight_transport", "path": "artifacts/projects/integration/runs/child"},
+                workspace_root=workspace,
+                receipt={
+                    "connection_profile_id": "profile", "source_branch_id": "simion",
+                    "source_identity": source_identity,
+                    "resolved_connection_sha256": file_sha256(resolved),
+                    "resolved_population_contract_sha256": file_sha256(population),
+                },
+                expected_source_field="upstream_source_identity",
+                expected_runtime_binding_sha256=file_sha256(runtime),
+            )
 
 
 def write_json(path: Path, value: object) -> None:

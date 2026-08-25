@@ -848,8 +848,17 @@ def _verify_stage_chain_identity(
     ):
         raise ContractError(f"family stage source/profile identity differs: {stage['phase']}")
     inputs = run_config.get("inputs", {})
-    runtime_path = Path(inputs.get("runtime_binding", ""))
-    resolved_path = Path(inputs.get("resolved_connection", ""))
+    stage_input_dir = workspace_root / stage["path"] / "inputs"
+
+    def frozen_input_path(name: str) -> Path:
+        """Use the immutable run snapshot after the staging directory is retired."""
+        configured = Path(inputs.get(name, ""))
+        if configured.is_file():
+            return configured
+        return stage_input_dir / configured.name
+
+    runtime_path = frozen_input_path("runtime_binding")
+    resolved_path = frozen_input_path("resolved_connection")
     if (
         not runtime_path.is_file()
         or file_sha256(runtime_path) != expected_runtime_binding_sha256
@@ -858,7 +867,7 @@ def _verify_stage_chain_identity(
     ):
         raise ContractError(f"family stage runtime/resolved identity differs: {stage['phase']}")
     if stage["phase"] == "single_flight_transport":
-        population_path = Path(inputs.get("resolved_population_contract", ""))
+        population_path = frozen_input_path("resolved_population_contract")
         if (
             not population_path.is_file()
             or file_sha256(population_path) != receipt["resolved_population_contract_sha256"]
