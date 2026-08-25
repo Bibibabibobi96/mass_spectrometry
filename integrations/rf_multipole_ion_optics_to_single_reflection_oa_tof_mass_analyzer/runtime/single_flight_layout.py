@@ -334,7 +334,6 @@ def _compile_three_zone_candidate(
         "candidate": copy.deepcopy(candidate_binding),
         "candidate_campaign_id": candidate["campaign"]["campaign_id"],
         "candidate_plan_sha256": candidate["t5_evidence"]["plan_sha256"],
-        "candidate_compiler_mode": candidate["compiler_mode"],
         "changed_variables": [
             "three_zone_accelerator_topology",
             "source_release_full_width",
@@ -353,6 +352,11 @@ def _compile_three_zone_candidate(
             "reflectron_pa": False,
         },
     }
+    # T5 geometry was already published and can be consumed by manifest-bound
+    # post-pulse restarts.  Keep that resolved surface byte-for-byte semantic
+    # compatible; only the newly introduced C3 route needs an explicit mode.
+    if candidate["compiler_mode"] == "C3_J3_EXACT_LOCAL_DIRECTION_V1":
+        compilation["candidate_compiler_mode"] = candidate["compiler_mode"]
     return geometry, compilation
 
 

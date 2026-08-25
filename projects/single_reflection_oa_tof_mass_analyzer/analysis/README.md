@@ -80,6 +80,7 @@ shield边界和rebuild plan均由该函数一次性闭合。API严格拒绝profi
 - `analyze_paper1_c2_stage.py`：运行两份C1 assessment上的C2 axial screen，固定T5 ideal-field anchor与已有phase-match release coordinate，审计解析/中心差分`g`、`G`步长平台、两区零自由度、三区改善/零效/恶化排序及其locked bootstrap。它在J2不优于未加权基线时失败关闭，不授权C3。
 - `paper1_candidate_control.py`：C3_J3的求解器无关候选控制编译器。它把事先声明的grid2/exit几何和电极电压方向编译为完整`-2h,-h,0,+h,+2h`家族，冻结数值身份并拒绝场反转、平面交叉、无界扰动和固定电极移动；它不启动SIMION、拟合方向或读取探测器结果。
 - `paper1_c3_j3_mapping.py`：从通过的C2_J3结果提取已锁定的improve/zero/worsen方向，并在每个`k*h`上重新推导三区几何、电位和反射器控制。它拒绝非对称方向，避免把非线性的`eta`误写成线性电压插值；输出仍只是C3真实PA编译输入。
+- `paper1_c3_j3_publish.py`：将上述五点物理控制家族和每一个schema-valid Candidate原子发布为一个非Formal artifact run。它只冻结C2→物理控制的映射与文件身份；不构建PA、不启动SIMION、不读取探测器结果，也不产生C3结论。
 
 正式数据优先CSV/JSON。XLSX只接收人工导出，导入后立即规范化。严格配对必须使用相同粒子ID，并区分
 整体时移与去均值逐粒子残差。
