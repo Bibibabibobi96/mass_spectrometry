@@ -11,8 +11,8 @@
 ## 冻结对照
 
 - **0 mm 对照：** 已冻结 S1 terminal-octupole N=1000 pulse-disabled pre-pulse screen。
-- **51.2 mm 实验：**
-  [`paper1_s1_connector_gap51p2_pre_pulse_n1000.json`](../../../../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/explorations/paper1_s1_connector_gap51p2_pre_pulse_n1000.json)。
+- **51.2 mm 实验：** 冻结 exploration 输入仅保存在其失败父 run 的
+  `inputs/frozen_campaign_experiment.json`；未提交一个可被误重放的活动配置。
 - 唯一物理改变为连接 profile；上游 S1 的 N=1000 母表、source SHA、RF source、布局、场 profile、数值
   profile、三分区候选和脉冲策略必须相同。
 - 每臂只运行 OA 脉冲前 `frontend + accelerator` 时间序列；禁止 detector crossing、峰宽、优化和候选结论。
@@ -36,10 +36,14 @@ transmitted terminal handoff 数，不是为加速而缩小的统计样本；完
 
 ## 2026-08-25 执行结果：不适格，未作残差比较
 
-51.2 mm 的真实 `N=900` 脉冲前子运行已成功物化时间序列，但在冻结的 321 个采样时刻中没有存活粒子。
-受治理的 publication replay 因而以 `real-field pulse candidate has no alive states` 失败关闭；这不表示
-残差改善、恶化或无效，只表示当前 gap、时间窗和 pulse-anchor 组合不具备本合同要求的可选择 OA 前状态。
+51.2 mm 的真实 `N=900` 脉冲前子运行已成功物化时间序列：前 177/321 个时刻仍有粒子存活。
+修正后的 selector 确认全部 177 个仍存活样本的 `pulse_eligible_count=0` 且`source_region_count=0`，
+因而以 `real-field pulse screen has no pulse-eligible states` 失败关闭。此结果不表示残差改善、恶化或无效，
+只表示当前 gap、时间窗、pulse-anchor 与空间捕获窗口组合不具备本合同要求的可选择 OA 前状态。
 失败父 run 和成功子 run 均保留在 artifacts；未将共同幸存者、下游 detector 或峰宽用于绕过该条件。
+
+`20260825_235102__analysis__python__paper1-s1-gap51p2-pre-pulse-publication-replay__n1000`是在修复
+“尾部全损失不能阻断早期样本”后生成的诊断 replay；它暴露上述零可捕获状态缺口，不能作为成功候选证据。
 
 结论：本臂为`INCONCLUSIVE_REVISE`。在重订能够覆盖该连接器传播时间的 detector-blind 时间窗之前，
 不得运行 `analyze_paper1_connector_gap_residual.py`、不得用此 gap 修订 C2，也不得据此进入 C3。

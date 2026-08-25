@@ -787,7 +787,10 @@ def select_detector_blind_real_field_pulse_time(
         prior_alive_ids = set(alive_ids)
         missing_ids = sorted(expected_id_set - set(alive_ids))
         if not alive_ids:
-            raise ContractError("real-field pulse candidate has no alive states")
+            # Complete physical loss at a late registered sample is informative
+            # census data, not a malformed earlier pulse candidate.  It is kept
+            # in the screening receipt and omitted from the rankable candidates.
+            continue
         states = [states_by_id[particle_id] for particle_id in alive_ids]
         bore_ids = [
             int(state["particle_id"])
@@ -865,6 +868,10 @@ def select_detector_blind_real_field_pulse_time(
                 "tolerance_us": 1e-12 * max(1.0, abs(time_us)),
             },
         })
+    if not candidates:
+        raise ContractError("real-field pulse screen has no alive states")
+    if not any(int(item["pulse_eligible_count"]) > 0 for item in candidates):
+        raise ContractError("real-field pulse screen has no pulse-eligible states")
     candidates.sort(key=lambda item: (
         -int(item["pulse_eligible_count"]),
         -int(item["transverse_bore_count"]),

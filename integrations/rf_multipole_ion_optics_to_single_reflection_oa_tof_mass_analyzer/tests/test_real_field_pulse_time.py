@@ -277,9 +277,29 @@ class RealFieldPulseCoreTests(unittest.TestCase):
                 frozen_particle_ids=[1, 2, 3], ballistic_seed_time_us=11.5,
             )
 
-    def test_rejects_candidate_with_no_alive_states(self) -> None:
+    def test_allows_late_complete_physical_loss(self) -> None:
         rows = [row for row in _rows() if row["sample_index"] != "3"]
-        with self.assertRaisesRegex(ContractError, "no alive states"):
+        result = select_detector_blind_real_field_pulse_time(
+            rows, _geometry(), _profile(),
+            candidate_times_us=[10.0, 11.0, 12.0],
+            frozen_particle_ids=[1, 2, 3], ballistic_seed_time_us=11.5,
+        )
+        self.assertEqual(len(result["candidates_ranked"]), 2)
+        self.assertNotIn(12.0, [row["candidate_time_us"] for row in result["candidates_ranked"]])
+
+    def test_rejects_screen_with_no_alive_states(self) -> None:
+        with self.assertRaisesRegex(ContractError, "screen has no alive states"):
+            select_detector_blind_real_field_pulse_time(
+                [], _geometry(), _profile(),
+                candidate_times_us=[10.0], frozen_particle_ids=[1, 2, 3],
+                ballistic_seed_time_us=11.5,
+            )
+
+    def test_rejects_screen_with_no_pulse_eligible_states(self) -> None:
+        rows = _rows()
+        for row in rows:
+            row["z_mm"] = "-10"
+        with self.assertRaisesRegex(ContractError, "no pulse-eligible states"):
             select_detector_blind_real_field_pulse_time(
                 rows, _geometry(), _profile(),
                 candidate_times_us=[10.0, 11.0, 12.0],
