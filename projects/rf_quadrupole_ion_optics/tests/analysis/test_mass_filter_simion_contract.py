@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import math
 import re
+import shutil
+import subprocess
 import unittest
 import tempfile
 from pathlib import Path
@@ -18,6 +20,27 @@ REPO_ROOT = PROJECT_ROOT.parents[1]
 
 
 class MassFilterSimionContractTests(unittest.TestCase):
+    def test_mass_filter_runner_parses_after_batch_dispatch_wiring(self) -> None:
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("PowerShell 7 is required for runner syntax validation")
+        runner = PROJECT_ROOT / "workflows" / "mass_filter_reference" / "run_simion.ps1"
+        escaped_runner = str(runner).replace("'", "''")
+        command = (
+            "$tokens=$null; $errors=$null; "
+            f"[System.Management.Automation.Language.Parser]::ParseFile('{escaped_runner}', "
+            "[ref]$tokens,[ref]$errors)|Out-Null; "
+            "if($errors.Count){$errors|ForEach-Object{$_.ToString()}; exit 1}"
+        )
+        subprocess.run(
+            [pwsh, "-NoProfile", "-NonInteractive", "-Command", command],
+            check=True,
+            text=True,
+            capture_output=True,
+            cwd=REPO_ROOT,
+            timeout=30,
+        )
+
     def test_ion11_source_projection_supports_complete_rebased_batches(self) -> None:
         rows = [
             f"{index},100,1,0,0,0,0,0,2,1,3" for index in range(1, 5)
