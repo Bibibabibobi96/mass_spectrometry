@@ -170,6 +170,14 @@ def _publish_detector_blind_pulse_selection(
     if file_sha256(child_manifest_path) != stage.get("manifest_sha256"):
         raise ContractError("pulse screening child manifest identity differs")
     child_manifest = _load(child_manifest_path)
+    population = _load(resolved_population_path)
+    source_authority = population.get("source_authority", {})
+    table_binding = source_authority.get("table_binding")
+    population_table_input = (
+        "single_flight_initial_global_state"
+        if table_binding == "terminal_handoff_continuation_global_state"
+        else "mother_particle_source"
+    )
     inputs = {
         name: _verified_stage_record(
             child_manifest, collection="inputs", name=name, run_dir=child_dir
@@ -181,7 +189,7 @@ def _publish_detector_blind_pulse_selection(
             "resolved_population_contract",
             "oatof_resolved_geometry",
             "pulse_schedule",
-            "mother_particle_source",
+            population_table_input,
             "pre_pulse_time_series_contract",
         )
     }
@@ -227,7 +235,7 @@ def _publish_detector_blind_pulse_selection(
         screening_contract_path=inputs["pre_pulse_time_series_contract"],
         screening_receipt_path=screening_receipt,
         resolved_population_path=resolved_population_path,
-        population_table_path=inputs["mother_particle_source"],
+        population_table_path=inputs[population_table_input],
         resolved_source_path=resolved_source_path,
         resolved_connection_path=resolved_connection_path,
         screening_manifest_path=child_manifest_path,

@@ -604,6 +604,39 @@ class RealFieldPulseAnalysisTests(unittest.TestCase):
             self.assertEqual(receipt["selected_time_us"], 11.0)
             self.assertFalse(receipt["reusable_verified_pulse"])
 
+    def test_parent_publisher_uses_terminal_handoff_state_table(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            paths, child, parent, stage = self._write_publisher_child(workspace)
+            initial_state = child / "single_flight_initial_global_state.csv"
+            initial_state.write_bytes(paths["population_table"].read_bytes())
+            population = json.loads(paths["population"].read_text(encoding="utf-8"))
+            population["source_authority"]["table_binding"] = (
+                "terminal_handoff_continuation_global_state"
+            )
+            population["source_authority"]["table"]["sha256"] = file_sha256(initial_state)
+            paths["population"].write_text(json.dumps(population), encoding="utf-8")
+            mother = paths["population_table"]
+            mother.write_text("particle_id,legacy_only\n1,x\n2,x\n3,x\n", encoding="utf-8")
+            manifest = json.loads(paths["manifest"].read_text(encoding="utf-8"))
+            manifest["inputs"]["resolved_population_contract"] = _record(paths["population"])
+            manifest["inputs"]["mother_particle_source"] = _record(mother)
+            manifest["inputs"]["single_flight_initial_global_state"] = _record(initial_state)
+            paths["manifest"].write_text(json.dumps(manifest), encoding="utf-8")
+            stage["manifest_sha256"] = file_sha256(paths["manifest"])
+
+            _table, _receipt_path, receipt = _publish_detector_blind_pulse_selection(
+                repo_root=REPO_ROOT,
+                workspace_root=workspace,
+                parent_run_dir=parent,
+                stage=stage,
+                resolved_connection_path=paths["connection"],
+                resolved_source_path=paths["source"],
+                resolved_population_path=paths["population"],
+            )
+
+            self.assertEqual(receipt["selected_time_us"], 11.0)
+
     def test_discovery_publisher_emits_manifest_ready_transition(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             workspace = Path(directory)
