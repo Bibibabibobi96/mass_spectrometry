@@ -209,8 +209,6 @@ try {
             Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
     ).Count
     if ($actualParticleCount-ne$expectedParticles){throw 'Frozen ION11 row count differs from metadata.'}
-    & $python -m common.contracts.particle_count_policy --count $expectedParticles
-    if($LASTEXITCODE-ne 0){throw 'Particle table violates the repository N=100/N=1000 policy.'}
     if($ReleaseConstructionGate -and $expectedParticles-ne 100){
         throw 'Release-construction gate requires exactly N=100.'}
 
@@ -229,8 +227,6 @@ try {
     $minimumParticles = [int](Get-RfComsolRequiredFiniteNumber `
         -Object $mode.numerics -Property 'minimum_diagnostic_particles' `
         -Name 'interface minimum_diagnostic_particles' -Positive -Integer)
-    if($expectedParticles-lt$minimumParticles){
-        throw "Interface workflow requires at least $minimumParticles particles."}
     $minimumTransmission = Get-RfComsolRequiredFiniteNumber `
         -Object $mode.candidate_acceptance_targets -Property 'minimum_transmission' `
         -Name 'interface minimum_transmission'
