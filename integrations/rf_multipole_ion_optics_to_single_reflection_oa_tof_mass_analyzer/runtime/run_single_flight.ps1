@@ -2078,15 +2078,18 @@ try {
   $evolution = Join-Path $package.result_dir 'single_flight_accelerator_checkpoint_evolution.png'
   $evolutionMetadata = Join-Path $package.result_dir 'single_flight_accelerator_checkpoint_evolution_metadata.json'
   $evolutionData = Join-Path $package.result_dir 'single_flight_accelerator_checkpoint_evolution.csv'
-  Invoke-SingleFlightPython -Arguments @('-m',
-    'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.plot_single_flight_spatial_six_panel',
-    '--initial',$globalSource,'--checkpoints',$checkpoints,'--upstream',$upstreamFrozen,
-    '--frontend',$frontendContract,'--oatof',$oatofGeometry,'--output',$sixPanel,
-    '--metadata',$sixPanelMetadata,'--phase-space-output',$phaseSpace,
-    '--phase-space-metadata',$phaseSpaceMetadata,'--phase-space-data',$phaseSpaceData,
-    '--evolution-output',$evolution,'--evolution-metadata',$evolutionMetadata,
-    '--evolution-data',$evolutionData
-  ) -Failure 'Single-flight spatial and phase-space diagnostics failed.'
+  $hasStatisticalDiagnostics = $launched -gt 1
+  if ($hasStatisticalDiagnostics) {
+    Invoke-SingleFlightPython -Arguments @('-m',
+      'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.plot_single_flight_spatial_six_panel',
+      '--initial',$globalSource,'--checkpoints',$checkpoints,'--upstream',$upstreamFrozen,
+      '--frontend',$frontendContract,'--oatof',$oatofGeometry,'--output',$sixPanel,
+      '--metadata',$sixPanelMetadata,'--phase-space-output',$phaseSpace,
+      '--phase-space-metadata',$phaseSpaceMetadata,'--phase-space-data',$phaseSpaceData,
+      '--evolution-output',$evolution,'--evolution-metadata',$evolutionMetadata,
+      '--evolution-data',$evolutionData
+    ) -Failure 'Single-flight spatial and phase-space diagnostics failed.'
+  }
   $result = Get-Content -LiteralPath $package.summary -Raw -Encoding UTF8 | ConvertFrom-Json
   if ($hasThreeZoneCandidate) {
     $runConfiguration.parameters.accelerator_intermediate2_forward_count =
@@ -2099,28 +2102,37 @@ try {
   $result | Add-Member -NotePropertyName pa_cache_dispositions `
     -NotePropertyValue $paCacheDispositions -Force
   $result | Add-Member -NotePropertyName accelerator_pre_pulse_phase_space `
-    -NotePropertyValue ([ordered]@{
+    -NotePropertyValue $(if ($hasStatisticalDiagnostics) { [ordered]@{
       figure='results/single_flight_accelerator_pre_pulse_phase_space.png'
       metadata='results/single_flight_accelerator_pre_pulse_phase_space_metadata.json'
       data='results/single_flight_accelerator_pre_pulse_phase_space.csv'
       claim_status='DIAGNOSTIC_ONLY'
       selection_uses_detector_outcome=$false
-    }) -Force
+    }} else { [ordered]@{
+      status='NOT_RUN';reason='one_ion_functional_smoke_has_no_statistical_phase_space_diagnostic'
+      claim_status='PROHIBITED';selection_uses_detector_outcome=$false
+    }}) -Force
   $result | Add-Member -NotePropertyName accelerator_checkpoint_evolution `
-    -NotePropertyValue ([ordered]@{
+    -NotePropertyValue $(if ($hasStatisticalDiagnostics) { [ordered]@{
       figure='results/single_flight_accelerator_checkpoint_evolution.png'
       metadata='results/single_flight_accelerator_checkpoint_evolution_metadata.json'
       data='results/single_flight_accelerator_checkpoint_evolution.csv'
       claim_status='DIAGNOSTIC_ONLY'
       selection_uses_detector_outcome=$false
-    }) -Force
+    }} else { [ordered]@{
+      status='NOT_RUN';reason='one_ion_functional_smoke_has_no_statistical_checkpoint_evolution'
+      claim_status='PROHIBITED';selection_uses_detector_outcome=$false
+    }}) -Force
   Write-RunJson -Path $package.summary -Depth 10 -Value $result
   $runConfiguration.parameters.multipole_handoff_count = [int]$result.census.multipole_handoff
   $runConfiguration.parameters.local_accelerator_exit_count = [int]$result.census.local_accelerator_exit
   $runConfiguration.parameters.detector_crossing_count = [int]$result.census.detector_crossing
   Write-RunJson -Path $package.run_config -Depth 10 -Value $runConfiguration
   $retentionActions = Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config
-  $outputs = @($checkpoints,$sixPanel,$sixPanelMetadata,$phaseSpace,$phaseSpaceMetadata,$phaseSpaceData,$evolution,$evolutionMetadata,$evolutionData) + $stdoutFiles + $stderrFiles + $resourceUsageFiles + $resourceCalibrationOutputs + @($flightTubeBuildStdout,$flightTubeBuildStderr,$reflectronBuildStdout,$reflectronBuildStderr,$package.summary,$retentionActions) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) }
+  $diagnosticOutputs = if ($hasStatisticalDiagnostics) {
+    @($sixPanel,$sixPanelMetadata,$phaseSpace,$phaseSpaceMetadata,$phaseSpaceData,$evolution,$evolutionMetadata,$evolutionData)
+  } else { @() }
+  $outputs = @($checkpoints) + $diagnosticOutputs + $stdoutFiles + $stderrFiles + $resourceUsageFiles + $resourceCalibrationOutputs + @($flightTubeBuildStdout,$flightTubeBuildStderr,$reflectronBuildStdout,$reflectronBuildStderr,$package.summary,$retentionActions) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) }
   foreach ($usage in $resourceUsageFiles) {
     if (-not (Complete-ResourceUsage -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir -UsagePath $usage)) { $resourceBudgetExceeded=$true; throw 'Single-flight compact retained-byte budget exceeded.' }
   }

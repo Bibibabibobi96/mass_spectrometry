@@ -128,6 +128,7 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
         self.assertIn("time_limited_process_peak_v1", runner)
         self.assertIn("RESOURCE_CALIBRATION_ONLY", runner)
         self.assertIn("$launched -gt 1", runner)
+        self.assertIn("one_ion_functional_smoke_has_no_statistical_phase_space_diagnostic", runner)
         self.assertIn("-CalibrationDurationSeconds ([int]$calibration.duration_seconds)", runner)
         self.assertIn("--observed-bootstrap-peak-bytes", runner)
         self.assertIn("New-SingleFlightBatchRecords", runner)
