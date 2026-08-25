@@ -97,12 +97,19 @@ def classify_file(
     # the detector-blind selector in its governed parent.  It may be large,
     # but removing it at the child's terminal boundary makes that parent
     # impossible to execute or reproduce.
-    if name in {
-        "pre_pulse_time_series_states.csv",
-        "detector_blind_pulse_timing_candidate_receipt.json",
-    }:
+    if name == "pre_pulse_time_series_states.csv":
         return "required_evidence"
     size = path.stat().st_size if bytes_count is None and path.is_file() else bytes_count
+    # Small candidate receipts have historically been lightweight optional
+    # outputs.  Only promote an oversized receipt, which compact retention
+    # would otherwise forbid, because it is the complete auditable selector
+    # record behind the governed parent conclusion.
+    if (
+        name == "detector_blind_pulse_timing_candidate_receipt.json"
+        and size is not None
+        and size >= int(policy["large_file_threshold_bytes"])
+    ):
+        return "required_evidence"
     if size is not None and size >= int(policy["large_file_threshold_bytes"]):
         return "large_optional"
     if (
