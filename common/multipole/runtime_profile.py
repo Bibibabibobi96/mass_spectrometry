@@ -866,6 +866,7 @@ def resolve_campaign_experiment(
         "runtime_profile_registry_path": str(path),
         "runtime_profile_registry_sha256": _sha256(path),
         "stop_stage": experiment["stop_stage"],
+        "case_set": experiment.get("case_set"),
         "design_profile_id": experiment["design_profile_id"],
         "design_profile_resolution": _serializable_design(design),
         "particle_source": source,

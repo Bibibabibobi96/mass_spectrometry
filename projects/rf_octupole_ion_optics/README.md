@@ -35,7 +35,8 @@
 - SIMION：[`analysis/run_simion_finite_3d_transport.ps1`](analysis/run_simion_finite_3d_transport.ps1)
 - 静态门禁：[`verify_project.ps1`](verify_project.ps1)
 
-入口只接受具名runtime profile。产物只写
+入口接受具名 runtime profile，或一个已预登记的 multipole campaign 加 experiment ID；后者仍解析为同一份
+冻结 runtime contract，不能用作任意参数覆盖。产物只写
 `artifacts/projects/rf_octupole_ion_optics/`；历史证据只按项目descriptor的
 `archived_verified`位置读取。
 

@@ -110,7 +110,11 @@ function Invoke-MultipoleProjectFinite3dTransport {
       $arguments.CellMmY = [double]$numerics.cell_mm_xyz.y
       $arguments.CellMmZ = [double]$numerics.cell_mm_xyz.z
       $arguments.TrajectoryQuality = [int]$numerics.trajectory_quality
-      $arguments.CaseSet = $CaseSet
+      $arguments.CaseSet = if ($PSCmdlet.ParameterSetName -eq 'CampaignExperiment' -and -not [string]::IsNullOrWhiteSpace([string]$profile.case_set)) {
+        [string]$profile.case_set
+      } else {
+        $CaseSet
+      }
       $arguments.ResolvedRuntimeProfilePath = $resolutionPath
       if ($SimionExe) {
         $arguments.SimionExe = $SimionExe

@@ -436,6 +436,10 @@ class TransportCampaignTests(unittest.TestCase):
                 "pilot_authorization"
             ]
             scope = pilot["scope"]
+            if "case_set" in experiment:
+                self.assertEqual(resolved["case_set"], experiment["case_set"])
+            else:
+                self.assertIsNone(resolved["case_set"])
             self.assertEqual(
                 scope["authorized_run_id"], experiment["authorized_run_id"]
             )
