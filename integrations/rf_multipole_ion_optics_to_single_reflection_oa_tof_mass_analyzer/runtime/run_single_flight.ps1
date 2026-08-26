@@ -61,6 +61,7 @@ param(
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
   [string]$PythonExe = '',
   [switch]$BuildOnly,
+  [switch]$ProgramAxisFieldExport,
   [ValidateSet('strict','exploration')][string]$RuntimeImplementationBindingMode = 'strict'
 )
 
@@ -157,6 +158,9 @@ function Assert-RfThreeZoneArgumentSet {
 }
 
 $hasThreeZoneCandidate = Assert-RfThreeZoneArgumentSet -Candidate $ThreeZoneCandidate -CandidateSha256 $ThreeZoneCandidateSha256
+if ($ProgramAxisFieldExport -and -not $BuildOnly) {
+  throw 'Program axis-field export requires BuildOnly because it is not a particle flight.'
+}
 
 if (-not (Test-Path -LiteralPath $SimionExe -PathType Leaf)) { throw "SIMION is missing: $SimionExe" }
 $runProjectId = 'rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer'
@@ -1597,6 +1601,7 @@ try {
   $overlayIobBuilderFrozen = $null
   $overlayIobContainerFrozen = $null
   $overlayIobContainerGemFrozen = @()
+  $totalAxisFieldIob = $null
   if ($overlayEnabled) {
     $overlayIobBuilderSource = Join-Path $PSScriptRoot 'build_single_flight_overlay_iob.lua'
     $overlayIobBuilderFrozen = Join-Path $package.input_dir 'build_single_flight_overlay_iob.lua'
@@ -1639,13 +1644,31 @@ try {
           (Join-Path $runtimeDir 'accelerator_overlay.pa0'),
           ([string]$overlayGeometry.instance_origin_mm.x),([string]$overlayGeometry.instance_origin_mm.y),([string]$overlayGeometry.instance_origin_mm.z),
           (Join-Path $runtimeDir 'oatof_ideal_grounded.lua'),(Join-Path $runtimeDir 'oatof_ideal_grounded.fly2'))
+      if ($overlayIobBuild.resource_budget_exceeded) { $resourceBudgetExceeded=$true; throw 'Overlay IOB build exceeded its resource budget.' }
+      if ($overlayIobBuild.exit_code -ne 0) { throw 'Overlay IOB build failed.' }
+      if ($ProgramAxisFieldExport) {
+        # Same five PA files and transforms as the runnable IOB, but no
+        # same-basename Program/Fly2 for SIMION to auto-run during top-level Lua.
+        $totalAxisFieldIob = Join-Path $runtimeDir 'total_axis_field.iob'
+        $axisFieldIobBuild = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget `
+          -RunDir $package.run_dir -UsagePath (Join-Path $package.log_dir 'total_axis_field_iob_build_resource_usage.json') `
+          -FilePath $SimionExe -WorkingDirectory $runtimeDir `
+          -RedirectStandardOutput (Join-Path $package.log_dir 'total_axis_field_iob_build.stdout.log') `
+          -RedirectStandardError (Join-Path $package.log_dir 'total_axis_field_iob_build.stderr.log') `
+          -ArgumentList @('--nogui','--noprompt','lua',$overlayIobBuilderFrozen,
+            (Join-Path $runtimeDir 'oatof_ideal_grounded.iob'),$overlayIobContainerRuntime,$totalAxisFieldIob,
+            (Join-Path $runtimeDir 'flight_tube_ground.pa0'),(Join-Path $runtimeDir 'reflectron.pa0'),
+            (Join-Path $runtimeDir 'accelerator.pa0'),(Join-Path $runtimeDir 'detector_ground.pa0'),
+            (Join-Path $runtimeDir 'accelerator_overlay.pa0'),
+            ([string]$overlayGeometry.instance_origin_mm.x),([string]$overlayGeometry.instance_origin_mm.y),([string]$overlayGeometry.instance_origin_mm.z))
+        if ($axisFieldIobBuild.resource_budget_exceeded) { $resourceBudgetExceeded=$true; throw 'Total-axis-field IOB build exceeded its resource budget.' }
+        if ($axisFieldIobBuild.exit_code -ne 0 -or -not (Test-Path -LiteralPath $totalAxisFieldIob -PathType Leaf)) { throw 'Total-axis-field IOB build failed.' }
+      }
     } finally {
       if (Test-Path -LiteralPath $overlayIobStageDir) {
         Remove-Item -LiteralPath $overlayIobStageDir -Recurse -Force
       }
     }
-    if ($overlayIobBuild.resource_budget_exceeded) { $resourceBudgetExceeded=$true; throw 'Overlay IOB build exceeded its resource budget.' }
-    if ($overlayIobBuild.exit_code -ne 0) { throw 'Overlay IOB build failed.' }
   }
   if ($null -eq (Resolve-RfReusableCacheDirectory -Python $python -RepoRoot $repoRoot `
       -WorkspaceRoot $workspaceRoot -ProjectId $runProjectId `
@@ -1695,6 +1718,7 @@ try {
   }
   $program = Join-Path $runtimeDir 'oatof_ideal_grounded.lua'
   $programMetadata = Join-Path $package.input_dir 'single_flight_program_build.json'
+  $totalAxisFieldExporter = Join-Path $package.input_dir 'total_axis_field_exporter.lua'
   $analyzerComponent = Join-Path $package.input_dir 'oatof_analyzer_component.lua'
   $pulseHook = Join-Path $package.input_dir 'single_flight_pulse_hook.lua'
   $frontendHook = Join-Path $package.input_dir 'single_flight_frontend_hook.lua'
@@ -1725,6 +1749,9 @@ try {
     '--rf-steps-per-period',([string]$rfStepsPerPeriod),
     '--source-release-mode',$sourceReleaseMode,
     '--output',$program,'--metadata',$programMetadata)
+  if ($ProgramAxisFieldExport) {
+    $programArguments += '--total-axis-field-exporter-output',$totalAxisFieldExporter
+  }
   if ($null -ne $restartContext) {
     $programArguments += @('--restart-context',$restartContext)
   }
@@ -1771,6 +1798,7 @@ try {
   $runConfiguration.parameters.maximum_time_of_flight_us = $maximumTimeOfFlightUs
   $runConfiguration.parameters.bootstrap_resample_count = $BootstrapResamples
   $runConfiguration.parameters.bootstrap_seed = $BootstrapSeed
+  $runConfiguration.parameters.program_axis_field_export_requested = [bool]$ProgramAxisFieldExport
   if ($isPrePulseTimeSeriesScreening) {
     $runConfiguration.inputs.pre_pulse_time_series_contract =
       $prePulseTimeSeriesContractFrozen
@@ -1802,8 +1830,7 @@ try {
   }
   $batchPlanPath = Join-Path $package.input_dir 'simion_execution_batch_plan.json'
   Invoke-SingleFlightPython -Arguments @(
-    '-m','common.simion.particle_batching','--particle-count',([string]$launched),
-    '--batch-count',([string]$executionBatchCount),
+    '-m','common.simion.particle_batching','--from-dispatch-plan',$runtimeDispatchPlanPath,
     '--output',$batchPlanPath
   ) -Failure 'Shared SIMION single-wave batch planning failed.'
   $batchPlan = Get-Content -Raw -LiteralPath $batchPlanPath | ConvertFrom-Json
@@ -1828,13 +1855,72 @@ try {
   $snapshotReady = $true
 
   if ($BuildOnly) {
+    $axisFieldOutput = $null
+    $axisFieldUsage = $null
+    if ($ProgramAxisFieldExport) {
+      if (-not $hasThreeZoneCandidate -or -not $overlayEnabled) {
+        throw 'Program axis-field export requires a three-zone Candidate with overlay PA.'
+      }
+      if ([string]::IsNullOrWhiteSpace($totalAxisFieldIob) -or -not (Test-Path -LiteralPath $totalAxisFieldIob -PathType Leaf)) {
+        throw 'Program axis-field export requires the field-only five-instance IOB.'
+      }
+      $axisFieldOutput = Join-Path $package.result_dir 'total_axis_field.csv'
+      if (-not (Test-Path -LiteralPath $totalAxisFieldExporter -PathType Leaf)) {
+        throw 'Top-level total-axis field exporter was not generated.'
+      }
+      $axisFieldUsage = Join-Path $package.log_dir 'total_axis_field_resource_usage.json'
+      $axisFieldResult = Invoke-ResourceBudgetedProcess `
+        -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
+        -UsagePath $axisFieldUsage -FilePath $SimionExe -WorkingDirectory $runtimeDir `
+        -RedirectStandardOutput (Join-Path $package.log_dir 'total_axis_field.stdout.log') `
+        -RedirectStandardError (Join-Path $package.log_dir 'total_axis_field.stderr.log') `
+        -Environment @{
+          OATOF_ACCELERATOR_PA_OVERRIDE = $frontendWorkingPa0
+          OATOF_TOTAL_AXIS_FIELD_CSV = $axisFieldOutput
+          OATOF_TOTAL_AXIS_FIELD_IOB = $totalAxisFieldIob
+          OATOF_TOTAL_AXIS_FIELD_PULSE_TIME_US = ([string]$pulseTimeUs)
+          OATOF_TOTAL_AXIS_FIELD_PULSE_WIDTH_US = ([string]$pulseWidthUs)
+        } -ArgumentList ([string[]](@(
+          '--nogui','--noprompt','lua',$totalAxisFieldExporter
+        )))
+      if ($axisFieldResult.resource_budget_exceeded -or $axisFieldResult.exit_code -ne 0 -or
+          -not (Test-Path -LiteralPath $axisFieldOutput -PathType Leaf)) {
+        throw 'Top-level total-axis field export failed.'
+      }
+    }
+    # BuildOnly may still materialize large PA families before the top-level
+    # diagnostic.  Apply the same compact retention contract as a particle
+    # flight before publishing its immutable manifest.
+    $retentionActions = Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot `
+      -RunConfig $package.run_config
+    if ($axisFieldUsage -and -not (Complete-ResourceUsage `
+          -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
+          -UsagePath $axisFieldUsage)) {
+      $resourceBudgetExceeded = $true
+      throw 'BuildOnly total-axis-field compact retained-byte budget exceeded.'
+    }
+    $axisFieldOutputArtifact = if ($axisFieldOutput) {
+      Join-Path $package.artifact_run_dir 'results\total_axis_field.csv'
+    } else { $null }
+    $axisFieldUsageArtifact = if ($axisFieldUsage) {
+      Join-Path $package.artifact_run_dir 'logs\total_axis_field_resource_usage.json'
+    } else { $null }
     Write-RunJson -Path $package.summary -Depth 10 -Value ([ordered]@{
       schema_version=1; role=$summaryRole; status='success'
-      execution_mode='build_only'; claim_limit='PA/IOB construction only; no particle flight or physics result.'
+      execution_mode=$(if($ProgramAxisFieldExport){'program_axis_field_export'}else{'build_only'})
+      claim_limit='PA/IOB construction and optional static field export only; no particle flight or physics result.'
       single_flight_pa_cache_policy=$PaCachePolicy
       pa_cache_dispositions=$paCacheDispositions
+      total_axis_field_csv=$axisFieldOutputArtifact
+      total_axis_field_iob_status='CONSTRUCTION_ONLY_COMPACT_NOT_REPLAYABLE'
+      total_axis_field_resource_usage=$axisFieldUsageArtifact
     })
-    Write-RunManifest -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config -Status success -Software @('SIMION 2020','Python 3.11')
+    $buildOnlyOutputs = @(
+      $axisFieldOutput,$axisFieldUsage,$retentionActions,
+      (Join-Path $package.log_dir 'total_axis_field.stdout.log'),
+      (Join-Path $package.log_dir 'total_axis_field.stderr.log'),$package.summary
+    ) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) }
+    Write-RunManifest -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config -Status success -Software @('SIMION 2020','Python 3.11') -Outputs $buildOnlyOutputs
     return
   }
 
@@ -1857,11 +1943,13 @@ try {
       if ($isRestartFly2) {
         $batchParticleLines = [string[]](@('particles {','  coordinates = 0,') + $batchParticleLines + @('}'))
       }
-      [IO.File]::WriteAllLines(
-        $batchParticleInput,
-        $batchParticleLines,
-        [Text.UTF8Encoding]::new($false)
-      )
+      if (-not (Test-Path -LiteralPath $batchParticleInput -PathType Leaf)) {
+        [IO.File]::WriteAllLines(
+          $batchParticleInput,
+          $batchParticleLines,
+          [Text.UTF8Encoding]::new($false)
+        )
+      }
       $records += [pscustomobject]@{
         index = $batchIndex; count = $count; offset = $offset
         particle_input = $batchParticleInput
@@ -1915,67 +2003,53 @@ try {
     return @($specifications)
   }
   $processSpecifications = @(New-SingleFlightProcessSpecifications $batchRecords)
-  $resourceCalibrationOutputs = @()
-  # A one-ion functional smoke has one mandatory batch and cannot benefit from
-  # a measured parallelism estimate.  Running it once as a calibration would
-  # either duplicate the scientific flight or, if it completes between polls,
-  # create a meaningless zero-byte peak.  Larger cohorts retain the public
-  # scheduler's bootstrap-and-replan path.
-  if ([string]$runtimeDispatchPlan.estimation.kind -eq 'unknown_resource_profile_bootstrap' -and
-      $launched -gt 1) {
+  $resourceIdentityWasUnknown =
+    [string]$runtimeDispatchPlan.estimation.kind -eq 'formal_first_batch_observation'
+  $existingProcessRecords = @()
+  if ($resourceIdentityWasUnknown) {
     if ($processSpecifications.Count -ne 1) {
-      throw 'Unknown-resource calibration must start from one complete single-flight batch.'
+      throw 'Unknown resource identity must start from one formal first batch.'
     }
-    $calibration = $runtimeDispatchPlan.estimation.resource_calibration
-    if ($null -eq $calibration -or
-        [string]$calibration.kind -ne 'time_limited_process_peak_v1' -or
-        [int]$calibration.duration_seconds -lt 1 -or
-        [string]$calibration.output_scope -ne 'RESOURCE_CALIBRATION_ONLY') {
-      throw 'Single-flight resource calibration contract is invalid.'
+    $formalObservation = Start-ObservedFormalProcess `
+      -DispatchPlanPath $runtimeDispatchPlanPath `
+      -ProcessSpecification $processSpecifications[0]
+    if ([int64]$formalObservation.observed_peak_process_tree_working_set_bytes -lt 1) {
+      throw 'The first formal SIMION batch did not produce a usable resource observation.'
     }
-    $probe = $processSpecifications[0]
-    $calibrationUsage = Join-Path $package.log_dir 'resource_calibration.json'
-    $calibrationStdout = Join-Path $package.log_dir 'resource_calibration.stdout.log'
-    $calibrationStderr = Join-Path $package.log_dir 'resource_calibration.stderr.log'
-    $calibrationResult = Invoke-ResourceBudgetedProcess `
-      -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
-      -UsagePath $calibrationUsage -FilePath $probe.file_path `
-      -WorkingDirectory $probe.working_directory -ArgumentList $probe.argument_list `
-      -RedirectStandardOutput $calibrationStdout -RedirectStandardError $calibrationStderr `
-      -Environment ([hashtable]$probe.environment) `
-      -CalibrationDurationSeconds ([int]$calibration.duration_seconds)
-    if ($calibrationResult.resource_budget_exceeded) {
-      $resourceBudgetExceeded = $true
-      throw 'Single-flight SIMION resource calibration exceeded its resource budget.'
-    }
-    if (-not $calibrationResult.resource_calibration_complete -or
-        [int64]$calibrationResult.observed_peak_process_tree_working_set_bytes -lt 1) {
-      throw 'Single-flight SIMION resource calibration did not obtain a usable process peak.'
-    }
-    Invoke-SingleFlightPython -Arguments @(
+    $replanArguments = @(
       '-m','common.simion.resource_scheduler','--prepared-plan',$preparedDispatchPlanPath,
       '--output',$runtimeDispatchPlanPath,
-      '--observed-bootstrap-peak-bytes',([string]$calibrationResult.observed_peak_process_tree_working_set_bytes)
-    ) -Failure 'Single-flight calibrated resource replanning failed.'
+      '--available-memory-bytes',([string]$formalObservation.available_memory_bytes),
+      '--total-physical-memory-bytes',([string]$formalObservation.total_physical_memory_bytes),
+      '--observed-formal-peak-bytes',([string]$formalObservation.observed_peak_process_tree_working_set_bytes),
+      '--observed-formal-cpu-percent',([string]$formalObservation.observed_process_cpu_percent),
+      '--observed-background-cpu-percent',([string]$formalObservation.observed_background_cpu_percent)
+    )
+    if ($formalObservation.completed_naturally) {
+      $replanArguments += '--first-batch-completed'
+    }
+    Invoke-SingleFlightPython -Arguments $replanArguments `
+      -Failure 'Single-flight formal-first resource replanning failed.'
     $runtimeDispatchPlan = Get-Content -Raw -LiteralPath $runtimeDispatchPlanPath |
       ConvertFrom-Json
-    if ([string]$runtimeDispatchPlan.estimation.kind -ne 'observed_bootstrap_peak' -or
+    if ([string]$runtimeDispatchPlan.estimation.kind -ne 'observed_formal_batch' -or
         @($runtimeDispatchPlan.waves).Count -ne 1 -or
         [int]$runtimeDispatchPlan.waves[0].batch_count -lt 1 -or
         [int]$runtimeDispatchPlan.waves[0].batch_count -gt $launched) {
-      throw 'Single-flight calibrated dispatch plan is invalid.'
+      throw 'Single-flight formal-first dispatch plan is invalid.'
     }
     $executionBatchCount = [int]$runtimeDispatchPlan.waves[0].batch_count
     Invoke-SingleFlightPython -Arguments @(
-      '-m','common.simion.particle_batching','--particle-count',([string]$launched),
-      '--batch-count',([string]$executionBatchCount),'--output',$batchPlanPath
-    ) -Failure 'Single-flight calibrated batch planning failed.'
+      '-m','common.simion.particle_batching','--from-dispatch-plan',$runtimeDispatchPlanPath,
+      '--output',$batchPlanPath
+    ) -Failure 'Single-flight formal-first batch planning failed.'
     $batchPlan = Get-Content -Raw -LiteralPath $batchPlanPath | ConvertFrom-Json
     $batchRecords = @(New-SingleFlightBatchRecords $batchPlan)
     $stdoutFiles = @($batchRecords | ForEach-Object { $_.stdout })
     $stderrFiles = @($batchRecords | ForEach-Object { $_.stderr })
     $processSpecifications = @(New-SingleFlightProcessSpecifications $batchRecords)
-    $runConfiguration.inputs.resource_calibration = $calibrationUsage
+    $existingProcessRecords = @($formalObservation.process_record)
+    $processSpecifications = @($processSpecifications | Select-Object -Skip 1)
     $runConfiguration.parameters.execution_batch_count = $executionBatchCount
     $runConfiguration.parameters.execution_batches_parallel = [bool]($executionBatchCount -gt 1)
     $runConfiguration.parameters.simion_single_wave_batch_plan_sha256 =
@@ -1983,11 +2057,12 @@ try {
     $runConfiguration.parameters.simion_repository_dispatch_plan_sha256 =
       (Get-FileHash -Algorithm SHA256 -LiteralPath $runtimeDispatchPlanPath).Hash
     Write-RunJson -Path $package.run_config -Depth 10 -Value $runConfiguration
-    $resourceCalibrationOutputs = @($calibrationUsage,$calibrationStdout,$calibrationStderr)
   }
   $waveResult = Invoke-ResourceBudgetedProcesses `
-    -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
-    -UsagePath $resourceUsage -ProcessSpecifications $processSpecifications
+    -DispatchPlanPath $runtimeDispatchPlanPath `
+    -RunDir $package.run_dir -UsagePath $resourceUsage `
+    -ProcessSpecifications $processSpecifications `
+    -ExistingProcessRecords $existingProcessRecords
   if ($waveResult.resource_budget_exceeded) {
     $resourceBudgetExceeded = $true
     throw 'Single-flight SIMION batch wave exceeded its aggregate resource budget.'
@@ -2029,7 +2104,7 @@ try {
       }
     }
   $outputs = @($statesCsv,$screeningReceipt,$package.summary,$retentionActions) +
-      $stdoutFiles + $stderrFiles + $resourceUsageFiles + $resourceCalibrationOutputs |
+      $stdoutFiles + $stderrFiles + $resourceUsageFiles |
       Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) }
     Write-RunManifest -Python $python -RepoRoot $repoRoot `
       -RunConfig $package.run_config -Status success `
@@ -2153,18 +2228,17 @@ try {
   $diagnosticOutputs = if ($hasStatisticalDiagnostics) {
     @($sixPanel,$sixPanelMetadata,$phaseSpace,$phaseSpaceMetadata,$phaseSpaceData,$evolution,$evolutionMetadata,$evolutionData)
   } else { @() }
-  $outputs = @($checkpoints) + $diagnosticOutputs + $stdoutFiles + $stderrFiles + $resourceUsageFiles + $resourceCalibrationOutputs + @($flightTubeBuildStdout,$flightTubeBuildStderr,$reflectronBuildStdout,$reflectronBuildStderr,$package.summary,$retentionActions) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) }
+  $outputs = @($checkpoints) + $diagnosticOutputs + $stdoutFiles + $stderrFiles + $resourceUsageFiles + @($flightTubeBuildStdout,$flightTubeBuildStderr,$reflectronBuildStdout,$reflectronBuildStderr,$package.summary,$retentionActions) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) }
   foreach ($usage in $resourceUsageFiles) {
     if (-not (Complete-ResourceUsage -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir -UsagePath $usage)) { $resourceBudgetExceeded=$true; throw 'Single-flight compact retained-byte budget exceeded.' }
   }
   $resourceProfile = $null
-  if ([string]$runtimeDispatchPlan.estimation.kind -eq 'unknown_resource_profile_bootstrap' -and
-      $launched -gt 1) {
+  if ($resourceIdentityWasUnknown) {
     $resourceProfile = Join-Path $package.result_dir 'simion_resource_profile.json'
     Invoke-SingleFlightPython -Arguments @(
       '-m','common.simion.resource_profile','publish','--run-id',$RunId,
       '--resource-usage',$resourceUsage,'--resource-usage-relative-path','logs/resource_usage.json',
-      '--dispatch-plan',$dispatchPlanPath,'--output',$resourceProfile
+      '--dispatch-plan',$runtimeDispatchPlanPath,'--output',$resourceProfile
     ) -Failure 'Single-flight SIMION resource profile publication failed.'
   }
   if ($resourceProfile) { $outputs += $resourceProfile }

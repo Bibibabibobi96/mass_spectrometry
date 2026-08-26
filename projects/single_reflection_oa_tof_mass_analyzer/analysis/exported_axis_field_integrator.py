@@ -38,24 +38,28 @@ def load_total_axis_field(path: Path) -> AxisField:
 
 def integrate_axis_to_plane_us(
     field: AxisField, *, z0_mm: float, vz0_mm_per_us: float, z_stop_mm: float,
-    mass_th: float, charge_state: int, dt_us: float = 1.0e-5,
+    mass_th: float, charge_state: int, dt_us: float = 1.0e-4,
+    max_elapsed_us: float = 10.0,
 ) -> float:
     """Integrate to the first positive-z crossing of ``z_stop_mm`` with RK4.
 
     The caller must supply a start and stop within the exported field extent;
     a particle may initially move upstream and turn around in the accelerator.
-    Failure to reach the stop plane is explicit rather than silently clipped.
+    Failure to reach the stop plane within the declared local propagation
+    horizon is explicit rather than silently clipped or iterated to a generic
+    implementation step cap.
     """
     if not (field.z_mm[0] <= z0_mm < z_stop_mm <= field.z_mm[-1]):
         raise ValueError("start/stop plane lies outside exported field")
-    if mass_th <= 0 or charge_state == 0 or dt_us <= 0:
+    if mass_th <= 0 or charge_state == 0 or dt_us <= 0 or max_elapsed_us <= 0:
         raise ValueError("mass, charge, and time step must be nonzero and positive where applicable")
     q_over_m_si = charge_state * ELEMENTARY_CHARGE_C / (mass_th * ATOMIC_MASS_KG)
     # 1 V/mm = 1e3 V/m; 1 m/s^2 = 1e-9 mm/us^2.
     def acceleration(z_mm: float) -> float:
         return q_over_m_si * float(np.interp(z_mm, field.z_mm, field.ez_v_per_mm * 1.0e3)) * 1.0e-9
     z, v, elapsed = z0_mm, vz0_mm_per_us, 0.0
-    for _ in range(10_000_000):
+    maximum_steps = int(np.ceil(max_elapsed_us / dt_us))
+    for _ in range(maximum_steps):
         if z >= z_stop_mm:
             return elapsed
         if not field.z_mm[0] <= z <= field.z_mm[-1]:
@@ -74,4 +78,4 @@ def integrate_axis_to_plane_us(
             # convergence is checked by varying ``dt_us`` in the C3 contract.
             fraction = (z_stop_mm - previous_z) / (z - previous_z)
             return elapsed - h + h * fraction
-    raise RuntimeError("axis integration did not reach stop plane")
+    raise RuntimeError("axis integration did not reach stop plane within max_elapsed_us")

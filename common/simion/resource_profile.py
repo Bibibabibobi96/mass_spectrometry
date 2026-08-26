@@ -1,9 +1,8 @@
-"""Publish and discover verified per-batch SIMION resource observations.
+"""Publish and discover verified first-formal-batch SIMION observations.
 
-Only a completed single-process bootstrap run can teach the repository scheduler
-about memory use.  In particular, an aggregate measurement from a parallel
-wave is deliberately not divided by its process count: the processes can have
-different peaks and shared memory makes that inference unsafe.
+An aggregate parallel peak is never divided by process count.  New profiles use
+the explicitly recorded first formal batch, whose scientific result is retained.
+Legacy completed one-process bootstrap receipts remain readable.
 """
 
 from __future__ import annotations
@@ -51,32 +50,39 @@ def publish_resource_profile(
     resource_usage_relative_path: str = "results/resource_usage.json",
     dispatch_plan_relative_path: str = "inputs/simion_repository_dispatch_plan.json",
 ) -> dict[str, Any]:
-    """Build a profile from one completed, single-process bootstrap receipt."""
+    """Build a profile from a completed formal-first or legacy receipt."""
     usage = _load_json(resource_usage_path, "resource usage")
     plan = _load_json(dispatch_plan_path, "dispatch plan")
     if usage.get("role") != "multipole_resource_usage" or usage.get("status") != "completed":
         raise ValueError("resource usage must be a completed multipole receipt")
-    wave = usage.get("execution_wave")
-    if wave is not None and (
-        not isinstance(wave, dict) or wave.get("process_count") != 1
-    ):
-        raise ValueError("resource usage must represent exactly one process")
     if plan.get("role") != "simion_repository_dispatch_plan":
         raise ValueError("dispatch plan role is not simion_repository_dispatch_plan")
     waves = plan.get("waves")
     if not isinstance(waves, list) or len(waves) != 1 or not isinstance(waves[0], dict):
         raise ValueError("dispatch plan must contain exactly one wave")
-    if waves[0].get("kind") != "bootstrap" or waves[0].get("batch_count") != 1:
-        raise ValueError("resource profile requires a one-batch bootstrap plan")
+    first_observation = usage.get("first_formal_observation")
+    is_new = isinstance(first_observation, dict)
+    is_legacy = waves[0].get("kind") == "bootstrap" and waves[0].get("batch_count") == 1
+    legacy_wave = usage.get("execution_wave")
+    if is_legacy and legacy_wave is not None and (
+        not isinstance(legacy_wave, dict) or legacy_wave.get("process_count") != 1
+    ):
+        raise ValueError("legacy resource usage must represent exactly one process")
+    if not is_new and not is_legacy:
+        raise ValueError("resource profile requires an explicit first formal observation")
     identity = plan.get("resource_identity")
     if not isinstance(identity, dict) or identity.get("solver") != "SIMION":
         raise ValueError("dispatch plan has no SIMION resource identity")
-    return {
+    peak = (
+        first_observation.get("peak_working_set_bytes")
+        if is_new else usage.get("peak_process_tree_working_set_bytes")
+    )
+    result = {
         "schema_version": 1,
         "role": PROFILE_ROLE,
         "resource_identity": {key: identity.get(key) for key in RESOURCE_IDENTITY_KEYS},
         "per_batch_peak_working_set_bytes": _positive_int(
-            usage.get("peak_process_tree_working_set_bytes"),
+            peak,
             "peak_process_tree_working_set_bytes",
         ),
         "source": {
@@ -91,6 +97,11 @@ def publish_resource_profile(
             },
         },
     }
+    if is_new:
+        cpu = first_observation.get("process_cpu_percent")
+        if isinstance(cpu, (int, float)) and not isinstance(cpu, bool) and cpu >= 0:
+            result["per_batch_cpu_percent"] = float(cpu)
+    return result
 
 
 def _profile_from_verified_run(run_dir: Path) -> dict[str, Any] | None:

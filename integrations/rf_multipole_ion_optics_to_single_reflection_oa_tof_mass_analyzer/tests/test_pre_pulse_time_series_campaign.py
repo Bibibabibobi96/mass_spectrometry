@@ -224,6 +224,39 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
         validate_pre_pulse_time_series_campaign(campaign)
         validate_schema(campaign, ACTIVE_CAMPAIGN_SCHEMA)
 
+    def test_single_frozen_pulse_snapshot_allows_gap_triplet_full_cohort(self) -> None:
+        campaign = current_campaign_fixture(self.campaign)
+        campaign["schema_version"] = 6
+        campaign["claim_limit"] = "DETECTOR_BLIND_SOURCE_ONLY"
+        screening = campaign["pre_pulse_time_series_screening"]
+        screening.update(
+            relative_start_index=0,
+            relative_end_index=0,
+            sample_count=1,
+        )
+        rows = []
+        for index in range(3):
+            row = copy.deepcopy(campaign["experiments"][0])
+            row["sequence"] = index + 1
+            row["experiment_id"] = f"single_snapshot_gap{index}"
+            row["run_id"] = f"20260826_151{index}00__sim__cross__snapshot-gap{index}__n1000"
+            row["source"]["launched_particle_count"] = 1000
+            population = row["single_flight_population"]
+            population["population_mode"] = "continuous_injection_full_population"
+            population["source_authority"]["table_binding"] = "source_contract_particle_source"
+            population["execution_population"]["particle_count"] = 1000
+            population["execution_population"]["selection_algorithm"] = (
+                "all_rows_in_frozen_file_order"
+            )
+            population["denominators"] = {
+                "population_count": 1000,
+                "eligible_population_count": 1000,
+            }
+            rows.append(row)
+        campaign["experiments"] = rows
+        validate_pre_pulse_time_series_campaign(campaign)
+        validate_schema(campaign, ACTIVE_CAMPAIGN_SCHEMA)
+
     def test_auto_policy_uses_ballistic_seed_minus56_plus264_without_pa_keys(self) -> None:
         row = self.campaign["experiments"][0]
         contract = compile_pre_pulse_time_series_contract(

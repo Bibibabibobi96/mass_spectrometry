@@ -94,6 +94,8 @@ EXECUTION_SUPPORT_FUNCTIONS = {
     "Invoke-RfSimionFlyWave",
     "Invoke-RfSimionPreparedBatch",
     "Invoke-RfSimionParticleBatchWave",
+    "Start-RfSimionFormalFirstBatch",
+    "Update-RfSimionDispatchAfterFormalObservation",
     "Invoke-RfSimionCoreRun",
 }
 def _read(path: Path) -> str:
@@ -491,9 +493,20 @@ $results | Select-Object specification, peak_working_set_bytes | ConvertTo-Json 
             runner = _read(runner_path)
             for function in (
                 "Invoke-RfSimionParticleBatchWave",
+                "Start-RfSimionFormalFirstBatch",
+                "Update-RfSimionDispatchAfterFormalObservation",
                 "Write-RunDirectoryChecksumInventory",
             ):
                 self.assertRegex(runner, rf"\b{function}\b")
+            self.assertIn("formal_first_batch_observation", runner)
+            self.assertIn("Complete-ResourceUsage", runner)
+            for retired_control in (
+                "reserve_available_memory_bytes",
+                "memory_safety_numerator",
+                "memory_safety_denominator",
+                "maximum_parallel_batches",
+            ):
+                self.assertNotIn(retired_control, runner)
 
     def test_shared_config_core_covers_complete_unconditional_lua_contract(self) -> None:
         lua = _read(SHARED_SIMION_LUA)

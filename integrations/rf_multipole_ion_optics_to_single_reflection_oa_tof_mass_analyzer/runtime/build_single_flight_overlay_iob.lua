@@ -5,7 +5,12 @@
 --   simion.exe --nogui --noprompt lua build_single_flight_overlay_iob.lua
 --     formal.iob container5.iob output.iob
 --     flight.pa0 reflectron.pa0 accelerator.pa0 detector.pa0 overlay.pa0
---     overlay_ox overlay_oy overlay_oz program.lua particles.fly2
+--     overlay_ox overlay_oy overlay_oz [program.lua particles.fly2]
+--
+-- The optional same-basename Program/Fly2 arguments preserve the normal
+-- runnable IOB contract.  A field-only IOB deliberately omits them: SIMION
+-- otherwise auto-loads the Workbench Program while a top-level Lua diagnostic
+-- is sampling the static total field.
 
 local formal=assert(arg[1], 'formal IOB is required')
 local container=assert(arg[2], 'five-instance container IOB is required')
@@ -22,8 +27,10 @@ local overlay_origin={
   assert(tonumber(arg[10]), 'overlay origin y is invalid'),
   assert(tonumber(arg[11]), 'overlay origin z is invalid'),
 }
-local program_path=assert(arg[12], 'same-basename Program is required')
-local fly2_path=assert(arg[13], 'same-basename Fly2 is required')
+local program_path=arg[12]
+local fly2_path=arg[13]
+assert((program_path==nil)==(fly2_path==nil),
+  'same-basename Program and Fly2 must either both be supplied or both be omitted')
 
 local function read_file(path,label)
   local handle=io.open(path,'rb')
@@ -40,12 +47,19 @@ local function write_file(path,content,label)
   handle:close()
 end
 
-local program=read_file(program_path,'Program')
-local fly2=read_file(fly2_path,'Fly2')
+local program=program_path and read_file(program_path,'Program') or nil
+local fly2=fly2_path and read_file(fly2_path,'Fly2') or nil
 
 -- Read only the documented positioning properties from the governed formal IOB.
+-- The first build starts from the four-instance Formal IOB.  The field-only
+-- diagnostic is rebuilt from that already constructed five-instance IOB so it
+-- inherits the exact physical transforms but deliberately drops the fifth
+-- instance's Program/Fly2 basename association.  In both cases only the first
+-- four physical instances supply transforms; the overlay transform remains the
+-- governed explicit argument below.
 simion.command('"'..formal..'"')
-assert(#simion.wb.instances==4,'formal single-flight IOB must contain four instances')
+assert(#simion.wb.instances==4 or #simion.wb.instances==5,
+  'formal single-flight IOB must contain four or five instances')
 local transforms={}
 for index=1,4 do
   local item=simion.wb.instances[index]
@@ -72,8 +86,10 @@ for index=1,5 do
   if item.pa.nz==1 and transform.nz_use~=nil then item.nz_use=transform.nz_use end
 end
 simion.wb:save(output)
-write_file(program_path,program,'Program')
-write_file(fly2_path,fly2,'Fly2')
+if program_path then
+  write_file(program_path,program,'Program')
+  write_file(fly2_path,fly2,'Fly2')
+end
 print(string.format(
   'SINGLE_FLIGHT_OVERLAY_IOB=PASS INSTANCES=%d OVERLAY_ORIGIN=(%.12g,%.12g,%.12g)',
   #simion.wb.instances,overlay_origin[1],overlay_origin[2],overlay_origin[3]))

@@ -1,56 +1,61 @@
-"""Repository-level planning for independent SIMION particle batches.
+"""Repository-owned resource planning for independent SIMION particle batches.
 
-This module does not discover or launch campaigns.  A project submits an already
-authorized request and keeps ownership of its physics, inputs and outputs.  The
-shared planner makes the resource decision reproducible for RF and electrostatic
-SIMION work alike, using a matching completed profile when available and a
-one-batch bootstrap when it is not.
+Particle count controls run time, not the assumed instantaneous footprint of a
+SIMION process. Resource-safe concurrency therefore controls only the number
+of *simultaneously active* processes. For one numerical identity, independent
+particle work is divided evenly across those concurrent lanes; no arbitrary
+per-process particle ceiling is imposed. With no exact resource profile, the
+first batch is formal work: it keeps running during a 30-second observation
+and its result is retained.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 from pathlib import Path
 from typing import Any
 
-from common.simion.particle_batching import plan_single_wave_batches
-
-
-DEFAULT_RESOURCE_CALIBRATION_SECONDS = 20
+FORMAL_OBSERVATION_SECONDS = 30
+INITIAL_CPU_LANES = 10
+MINIMUM_PROCESS_CPU_PERCENT = 10.0
+CPU_ADMISSION_PERCENT = 95.0
+# These are repository-wide Windows safety reserves, deliberately expressed in
+# binary bytes rather than as fractions of installed RAM.  A percentage made the same
+# safe free-memory level vary with host capacity and caused an unnecessarily
+# large reservation on the 48 GiB research workstation.
+MEMORY_ADMISSION_RESERVE_BYTES = 2 * 1024**3
+MEMORY_CRITICAL_RESERVE_BYTES = 1 * 1024**3
+MEMORY_CRITICAL_SECONDS = 15
+LAUNCH_STAGGER_SECONDS = 5
+KNOWN_MEMORY_SAFETY_FACTOR = 1.10
+# A formal batch observes the actual solver identity for 30 seconds and keeps
+# running afterwards.  Its peak therefore receives the same 10% headroom as
+# an exact historical profile; admission continues to be guarded by the 2 GiB
+# system reserve and live peak checks in the executor.
+OBSERVED_MEMORY_SAFETY_FACTOR = 1.10
 RESOURCE_IDENTITY_KEYS = (
-    "solver",
-    "field_kind",
-    "frontend_grid_profile_id",
-    "oatof_numerical_profile_id",
-    "trajectory_quality_profile_id",
-    "time_integration_profile_id",
-    # Profile IDs describe a registered default, but exploration may resolve
-    # different numerics inline.  Use the resulting values for a memory
-    # profile match so an old, coarser observation cannot authorize parallel
-    # work for a finer override merely because its source profile ID matches.
-    "frontend_cell_mm_xyz",
-    "accelerator_overlay_cell_mm_xyz",
-    "reflectron_cell_mm",
-    "trajectory_quality",
-    "rf_steps_per_period",
-    "accelerator_field_profile_id",
-    "frontend_pa0_sha256",
-    "accelerator_overlay_pa0_sha256",
-    "reflectron_pa0_sha256",
-    # Case campaigns may run distinct, complete SIMION inputs rather than
-    # partitions of one particle table.  This key lets them reuse an observed
-    # process peak only for the same complete input; it does not itself impose
-    # a concurrency limit.
-    "case_input_sha256",
+    "solver", "field_kind", "frontend_grid_profile_id",
+    "oatof_numerical_profile_id", "trajectory_quality_profile_id",
+    "time_integration_profile_id", "frontend_cell_mm_xyz",
+    "accelerator_overlay_cell_mm_xyz", "reflectron_cell_mm",
+    "trajectory_quality", "rf_steps_per_period", "accelerator_field_profile_id",
+    "frontend_pa0_sha256", "accelerator_overlay_pa0_sha256",
+    "reflectron_pa0_sha256", "case_input_sha256",
 )
-DEFAULT_MEMORY_SAFETY_NUMERATOR = 105
-DEFAULT_MEMORY_SAFETY_DENOMINATOR = 100
+
+RETIRED_PROJECT_RESOURCE_KEYS = frozenset({
+    "maximum_parallel_batches", "unknown_per_batch_reservation_bytes",
+    "reserve_available_memory_bytes", "cpu_cores_per_batch",
+    "reserve_cpu_cores", "memory_safety_numerator", "memory_safety_denominator",
+    "maximum_process_tree_working_set_bytes",
+})
 
 
-def available_physical_memory_bytes() -> int | None:
-    """Return currently available physical memory on Windows, if observable."""
+def physical_memory_bytes() -> tuple[int, int] | None:
+    """Return ``(available, total)`` physical memory on Windows."""
     if os.name != "nt":
         return None
     import ctypes
@@ -66,12 +71,16 @@ def available_physical_memory_bytes() -> int | None:
             ("available_virtual", ctypes.c_ulonglong),
             ("available_extended_virtual", ctypes.c_ulonglong),
         ]
-
     status = MemoryStatus()
     status.length = ctypes.sizeof(status)
     if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
         return None
-    return int(status.available_physical)
+    return int(status.available_physical), int(status.total_physical)
+
+
+def available_physical_memory_bytes() -> int | None:
+    observed = physical_memory_bytes()
+    return None if observed is None else observed[0]
 
 
 def _positive_int(value: Any, name: str) -> int:
@@ -80,419 +89,396 @@ def _positive_int(value: Any, name: str) -> int:
     return value
 
 
-def _nonnegative_int(value: Any, name: str) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-        raise ValueError(f"{name} must be a non-negative integer")
-    return value
+def _nonnegative_number(value: Any, name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+        raise ValueError(f"{name} must be a non-negative number")
+    return float(value)
 
 
-def select_memory_profile(
-    resource_identity: dict[str, Any], profiles: list[dict[str, Any]]
-) -> dict[str, Any] | None:
-    """Return the closest completed profile, preferring the safer peak on ties."""
-    ranked: list[tuple[int, int, dict[str, Any]]] = []
-    for profile in profiles:
-        identity = profile.get("resource_identity")
-        peak = profile.get("per_batch_peak_working_set_bytes")
-        if not isinstance(identity, dict) or isinstance(peak, bool) or not isinstance(peak, int) or peak < 1:
-            continue
-        if (
-            identity.get("solver") != resource_identity.get("solver")
-            or identity.get("field_kind") != resource_identity.get("field_kind")
-        ):
-            continue
-        # A measured peak can be reused only when it does not contradict a
-        # resource-relevant property declared by this run.  Ranking a profile
-        # with a different RF step count, grid, or trajectory-quality profile
-        # as merely "nearest" could understate its working-set reservation.
-        if any(
-            resource_identity.get(key) is not None
-            and identity.get(key) != resource_identity[key]
-            for key in RESOURCE_IDENTITY_KEYS
-        ):
-            continue
-        score = sum(
-            resource_identity.get(key) is not None
-            and resource_identity.get(key) == identity.get(key)
-            for key in RESOURCE_IDENTITY_KEYS
+def _validate_request(request: dict[str, Any]) -> tuple[int, str]:
+    retired = sorted(RETIRED_PROJECT_RESOURCE_KEYS.intersection(request))
+    if retired:
+        raise ValueError(
+            "project request contains retired repository resource controls: "
+            + ", ".join(retired)
         )
-        ranked.append((score, peak, profile))
-    if not ranked:
-        return None
-    score, _peak, profile = max(ranked, key=lambda item: (item[0], item[1]))
-    result = dict(profile)
-    result["match_score"] = score
-    result["match_kind"] = (
-        "exact_resource_profile" if score == len(RESOURCE_IDENTITY_KEYS) else "nearest_resource_profile"
-    )
-    return result
-
-
-def plan_simion_dispatch(
-    request: dict[str, Any],
-    profiles: list[dict[str, Any]],
-    *,
-    available_memory_bytes: int | None = None,
-    logical_processors: int | None = None,
-) -> dict[str, Any]:
-    """Plan safe parallel waves for an authorized, independent SIMION request.
-
-    An RF request must state a positive ``rf_steps_per_period``; an electrostatic
-    request must not.  Unknown resource identities deliberately get one pilot
-    batch, after which :func:`plan_adaptive_followup` consumes its observed peak.
-    """
     particles = _positive_int(request.get("particle_count"), "particle_count")
-    # An omitted cap means "let measured host capacity decide", not the
-    # historical accidental policy of one lane.  The separate default remains
-    # one for hosts whose available memory cannot be observed.
-    maximum_batches = _positive_int(
-        request.get("maximum_parallel_batches", particles), "maximum_parallel_batches"
-    )
-    maximum_batches = min(maximum_batches, particles)
     if request.get("solver") != "SIMION":
         raise ValueError("scheduler accepts only SIMION requests")
     field_kind = request.get("field_kind")
     if field_kind not in {"rf", "electrostatic"}:
         raise ValueError("field_kind must be rf or electrostatic")
     rf_steps = request.get("rf_steps_per_period")
-    if field_kind == "rf" and (isinstance(rf_steps, bool) or not isinstance(rf_steps, int) or rf_steps < 1):
+    if field_kind == "rf" and (
+        isinstance(rf_steps, bool) or not isinstance(rf_steps, int) or rf_steps < 1
+    ):
         raise ValueError("RF scheduling requires a positive rf_steps_per_period")
     if field_kind == "electrostatic" and rf_steps is not None:
         raise ValueError("electrostatic scheduling must not carry rf_steps_per_period")
-    if maximum_batches > 1 and request.get("independent_particles") is not True:
-        raise ValueError("parallel batches require independent_particles=true")
-    reserve = _nonnegative_int(request.get("reserve_available_memory_bytes", 0), "reserve_available_memory_bytes")
-    cpu_per_batch = _positive_int(request.get("cpu_cores_per_batch", 1), "cpu_cores_per_batch")
-    cpu_reserve = _nonnegative_int(request.get("reserve_cpu_cores", 0), "reserve_cpu_cores")
-    safety_numerator = _positive_int(
-        request.get("memory_safety_numerator", DEFAULT_MEMORY_SAFETY_NUMERATOR),
-        "memory_safety_numerator",
-    )
-    safety_denominator = _positive_int(
-        request.get("memory_safety_denominator", DEFAULT_MEMORY_SAFETY_DENOMINATOR),
-        "memory_safety_denominator",
-    )
-    process_tree_cap = request.get("maximum_process_tree_working_set_bytes")
-    if process_tree_cap is not None:
-        process_tree_cap = _positive_int(
-            process_tree_cap, "maximum_process_tree_working_set_bytes"
+    if particles > 1 and request.get("independent_particles") is not True:
+        raise ValueError("parallel-capable particle work requires independent_particles=true")
+    return particles, field_kind
+
+
+def select_memory_profile(
+    resource_identity: dict[str, Any], profiles: list[dict[str, Any]]
+) -> dict[str, Any] | None:
+    """Return the safest profile with the exact complete numerical identity."""
+    expected = {key: resource_identity.get(key) for key in RESOURCE_IDENTITY_KEYS}
+    matches = []
+    for profile in profiles:
+        identity = profile.get("resource_identity")
+        peak = profile.get("per_batch_peak_working_set_bytes")
+        if not isinstance(identity, dict) or isinstance(peak, bool) or not isinstance(peak, int) or peak < 1:
+            continue
+        actual = {key: identity.get(key) for key in RESOURCE_IDENTITY_KEYS}
+        if actual == expected:
+            matches.append(profile)
+    if not matches:
+        return None
+    result = dict(max(matches, key=lambda item: item["per_batch_peak_working_set_bytes"]))
+    result["match_kind"] = "exact_resource_profile"
+    return result
+
+
+def _capacity(
+    *, particle_count: int, available_memory_bytes: int | None,
+    total_physical_memory_bytes: int | None, per_process_memory_bytes: int,
+    process_cpu_percent: float, background_cpu_percent: float,
+) -> tuple[int, int, int]:
+    cpu_cost = max(MINIMUM_PROCESS_CPU_PERCENT, process_cpu_percent)
+    cpu_capacity = max(1, math.floor(
+        max(0.0, CPU_ADMISSION_PERCENT - background_cpu_percent) / cpu_cost
+    ))
+    if available_memory_bytes is None or total_physical_memory_bytes is None:
+        memory_capacity = 1
+    else:
+        memory_capacity = max(
+            1,
+            (available_memory_bytes - MEMORY_ADMISSION_RESERVE_BYTES)
+            // per_process_memory_bytes,
         )
-    processor_count = logical_processors if logical_processors is not None else os.cpu_count()
-    if processor_count is None:
-        processor_count = 1
-    processor_count = _positive_int(processor_count, "logical_processors")
-    cpu_capacity = (processor_count - cpu_reserve) // cpu_per_batch
-    if cpu_capacity < 1:
-        raise ValueError("available CPU cores cannot support one SIMION batch after reserve")
+    return min(particle_count, cpu_capacity, memory_capacity), cpu_capacity, memory_capacity
+
+
+def _public_limits(maximum_concurrency: int, cpu_capacity: int, memory_capacity: int) -> dict[str, Any]:
+    return {
+        "maximum_concurrency": maximum_concurrency,
+        "cpu_capacity": cpu_capacity,
+        "memory_capacity": memory_capacity,
+        "formal_observation_seconds": FORMAL_OBSERVATION_SECONDS,
+        "minimum_process_cpu_percent": MINIMUM_PROCESS_CPU_PERCENT,
+        "cpu_admission_percent": CPU_ADMISSION_PERCENT,
+        "memory_admission_reserve_bytes": MEMORY_ADMISSION_RESERVE_BYTES,
+        "memory_critical_reserve_bytes": MEMORY_CRITICAL_RESERVE_BYTES,
+        "memory_critical_seconds": MEMORY_CRITICAL_SECONDS,
+        "launch_stagger_seconds": LAUNCH_STAGGER_SECONDS,
+    }
+
+
+def _initial_formal_batch(particles: int) -> dict[str, int]:
+    count = math.ceil(particles / min(particles, INITIAL_CPU_LANES))
+    return {
+        "index": 1, "count": count, "particle_id_min": 1,
+        "particle_id_max": count, "simion_particle_id_offset": 0,
+    }
+
+
+def _balanced_lane_loads(total: int, lane_count: int) -> list[int]:
+    """Split positive independent-particle work as evenly as possible."""
+    if total < 0 or lane_count < 1:
+        raise ValueError("balanced lane inputs are invalid")
+    quotient, remainder = divmod(total, lane_count)
+    return [quotient + (1 if index < remainder else 0) for index in range(lane_count)]
+
+
+def _batches_from_counts(counts: list[int], first_count: int = 0) -> list[dict[str, int]]:
+    """Publish contiguous canonical particle-ID ranges for scheduled counts."""
+    batches: list[dict[str, int]] = []
+    next_particle_id = first_count + 1
+    for index, count in enumerate(counts, start=1):
+        batches.append({
+            "index": index,
+            "count": count,
+            "particle_id_min": next_particle_id,
+            "particle_id_max": next_particle_id + count - 1,
+            "simion_particle_id_offset": next_particle_id - 1,
+        })
+        next_particle_id += count
+    return batches
+
+
+def _batches_after_formal_first(
+    particles: int, first: dict[str, int], concurrency: int, first_completed: bool
+) -> list[dict[str, int]]:
+    """Balance remaining work while retaining the first formal result."""
+    first_count = first["count"]
+    remaining = particles - first_count
+    if remaining <= 0:
+        return [dict(first)]
+    if first_completed:
+        tail_counts = _balanced_lane_loads(remaining, concurrency)
+    elif concurrency == 1:
+        tail_counts = [remaining]
+    else:
+        target_lane_load = max(first_count, math.ceil(particles / concurrency))
+        first_lane_remainder = target_lane_load - first_count
+        other_lane_counts = _balanced_lane_loads(
+            remaining - first_lane_remainder, concurrency - 1
+        )
+        # Start each previously idle lane first.  The retained observation
+        # batch receives its one balancing remainder only after it finishes.
+        tail_counts = other_lane_counts + ([first_lane_remainder] if first_lane_remainder else [])
+    batches = [dict(first)]
+    for batch in _batches_from_counts(tail_counts, first_count):
+        batch["index"] += 1
+        batches.append(batch)
+    return batches
+
+
+def plan_simion_dispatch(
+    request: dict[str, Any], profiles: list[dict[str, Any]], *,
+    available_memory_bytes: int | None = None,
+    total_physical_memory_bytes: int | None = None,
+    logical_processors: int | None = None,
+    background_cpu_percent: float = 0.0,
+) -> dict[str, Any]:
+    """Create an initial repository dispatch plan."""
+    particles, field_kind = _validate_request(request)
+    if available_memory_bytes is None or total_physical_memory_bytes is None:
+        observed = physical_memory_bytes()
+        if observed is not None:
+            available_memory_bytes = observed[0] if available_memory_bytes is None else available_memory_bytes
+            total_physical_memory_bytes = observed[1] if total_physical_memory_bytes is None else total_physical_memory_bytes
     identity = {key: request.get(key) for key in RESOURCE_IDENTITY_KEYS}
     profile = select_memory_profile(identity, profiles)
-    available = available_physical_memory_bytes() if available_memory_bytes is None else available_memory_bytes
-    fallback = request.get("unknown_per_batch_reservation_bytes")
+    host = {
+        "available_memory_bytes": available_memory_bytes,
+        "total_physical_memory_bytes": total_physical_memory_bytes,
+        "logical_processors": logical_processors or os.cpu_count() or 1,
+    }
     if profile is None:
-        if available is not None:
-            available = _nonnegative_int(available, "available_memory_bytes")
-        if fallback is not None:
-            fallback = _positive_int(fallback, "unknown_per_batch_reservation_bytes")
-        if available is not None and (
-            available - reserve < (fallback if fallback is not None else 1)
-        ):
-            reason = (
-                "available memory cannot support one unknown SIMION bootstrap batch after reserve"
-                if fallback is not None
-                else "available memory does not satisfy the SIMION bootstrap reserve"
-            )
-            raise ValueError(reason)
+        first = _initial_formal_batch(particles)
         return {
-            "schema_version": 1,
-            "role": "simion_repository_dispatch_plan",
-            "solver": "SIMION",
-            "field_kind": field_kind,
-            "particle_count": particles,
-            "resource_identity": identity,
+            "schema_version": 2, "role": "simion_repository_dispatch_plan",
+            "solver": "SIMION", "field_kind": field_kind,
+            "particle_count": particles, "resource_identity": identity,
             "estimation": {
-                "kind": "unknown_resource_profile_bootstrap",
-                "bootstrap_reservation_bytes": fallback,
-                "memory_selection_reason": (
-                    "explicit_bootstrap_reservation"
-                    if fallback is not None
-                    else "no_unverified_memory_estimate"
-                ),
-                "requires_observed_peak_before_followup": True,
-                "resource_calibration": {
-                    "kind": "time_limited_process_peak_v1",
-                    "duration_seconds": DEFAULT_RESOURCE_CALIBRATION_SECONDS,
-                    "terminal_action": "terminate_process_tree_then_replan",
-                    "output_scope": "RESOURCE_CALIBRATION_ONLY",
-                },
+                "kind": "formal_first_batch_observation",
+                "requires_observation_before_remaining_launches": particles > first["count"],
+                "observation_seconds": FORMAL_OBSERVATION_SECONDS,
+                "first_batch_result_retained": True,
+                "terminal_action": "continue_process_and_replan_remaining_particles",
             },
-            "host": {"available_memory_bytes": available, "logical_processors": processor_count},
-            "limits": {
-                "maximum_parallel_batches": maximum_batches,
-                "memory_reserve_bytes": reserve,
-                "cpu_capacity": cpu_capacity,
-                "cpu_cores_per_batch": cpu_per_batch,
-                "reserve_cpu_cores": cpu_reserve,
-                "memory_safety_numerator": safety_numerator,
-                "memory_safety_denominator": safety_denominator,
-                "maximum_process_tree_working_set_bytes": process_tree_cap,
-            },
+            "host": host, "limits": _public_limits(1, 1, 1),
             "waves": [{
-                "index": 1, "kind": "bootstrap", "batch_count": 1,
-                "particle_count": particles,
-                "batches": plan_single_wave_batches(particles, 1)["batches"],
+                "index": 1, "kind": "formal_observation", "batch_count": 1,
+                "particle_count": particles, "coverage": "initial_formal_batch_only",
+                "batches": [first],
             }],
         }
     peak = _positive_int(profile["per_batch_peak_working_set_bytes"], "profile peak")
-    reserved_peak = (peak * safety_numerator + safety_denominator - 1) // safety_denominator
-    if available is None:
-        # Without an observed current memory capacity, one batch is the only
-        # non-speculative choice.  This is deliberately not a project policy
-        # knob: hosts with observable memory are always planned from it.
-        memory_capacity = 1
-        memory_reason = "host_memory_unavailable_single_batch"
-    else:
-        available = _nonnegative_int(available, "available_memory_bytes")
-        memory_capacity = (available - reserve) // reserved_peak
-        if memory_capacity < 1:
-            raise ValueError("available memory cannot support one SIMION batch after reserve")
-        memory_reason = "largest_count_within_current_available_memory"
-    parallelism = min(maximum_batches, cpu_capacity, int(memory_capacity), particles)
-    process_tree_capacity = None
-    if process_tree_cap is not None:
-        process_tree_capacity = process_tree_cap // reserved_peak
-        if process_tree_capacity < 1:
-            raise ValueError(
-                "authorized process-tree cap cannot support one SIMION batch"
-            )
-        parallelism = min(parallelism, process_tree_capacity)
+    memory_budget = math.ceil(peak * KNOWN_MEMORY_SAFETY_FACTOR)
+    process_cpu = _nonnegative_number(profile.get("per_batch_cpu_percent", 0.0), "profile CPU")
+    concurrency, cpu_capacity, memory_capacity = _capacity(
+        particle_count=particles, available_memory_bytes=available_memory_bytes,
+        total_physical_memory_bytes=total_physical_memory_bytes,
+        per_process_memory_bytes=memory_budget, process_cpu_percent=process_cpu,
+        background_cpu_percent=_nonnegative_number(background_cpu_percent, "background CPU"),
+    )
+    batches = _batches_from_counts(_balanced_lane_loads(particles, concurrency))
     return {
-        "schema_version": 1,
-        "role": "simion_repository_dispatch_plan",
-        "solver": "SIMION",
-        "field_kind": field_kind,
-        "particle_count": particles,
+        "schema_version": 2, "role": "simion_repository_dispatch_plan",
+        "solver": "SIMION", "field_kind": field_kind, "particle_count": particles,
         "resource_identity": identity,
         "estimation": {
-            "kind": profile["match_kind"], "match_score": profile["match_score"],
-            "observed_peak_bytes": peak, "reserved_peak_bytes": reserved_peak,
-            "memory_selection_reason": memory_reason,
+            "kind": "exact_resource_profile", "observed_peak_bytes": peak,
+            "per_process_memory_budget_bytes": memory_budget,
+            "per_process_cpu_percent": max(MINIMUM_PROCESS_CPU_PERCENT, process_cpu),
+            "memory_safety_factor": KNOWN_MEMORY_SAFETY_FACTOR,
+            "observation_wait_skipped": True,
         },
-        "host": {"available_memory_bytes": available, "logical_processors": processor_count},
-        "limits": {
-            "maximum_parallel_batches": maximum_batches,
-            "memory_reserve_bytes": reserve,
-            "cpu_capacity": cpu_capacity,
-            "cpu_cores_per_batch": cpu_per_batch,
-            "reserve_cpu_cores": cpu_reserve,
-            "memory_safety_numerator": safety_numerator,
-            "memory_safety_denominator": safety_denominator,
-            "maximum_process_tree_working_set_bytes": process_tree_cap,
-            "process_tree_capacity": process_tree_capacity,
-        },
+        "host": host, "limits": _public_limits(concurrency, cpu_capacity, memory_capacity),
         "waves": [{
-            "index": 1, "kind": "scheduled", "batch_count": parallelism,
-            "particle_count": particles,
-            "batches": plan_single_wave_batches(particles, parallelism)["batches"],
+            "index": 1, "kind": "scheduled", "batch_count": len(batches),
+            "particle_count": particles, "coverage": "complete_population",
+            "batches": batches,
         }],
     }
 
 
-def plan_simion_case_dispatch(
-    cases: list[dict[str, Any]],
-    request: dict[str, Any],
-    profiles: list[dict[str, Any]],
-    *,
+def plan_adaptive_followup(
+    plan: dict[str, Any], observed_peak_bytes: int, *,
+    observed_cpu_percent: float = 0.0, background_cpu_percent: float = 0.0,
     available_memory_bytes: int | None = None,
-    logical_processors: int | None = None,
+    total_physical_memory_bytes: int | None = None,
+    first_batch_completed: bool = False,
 ) -> dict[str, Any]:
-    """Plan one resource-safe wave of independent complete SIMION cases.
-
-    A case is not a particle batch: its complete input can have a different
-    field array and working set.  Each item therefore supplies a stable
-    ``case_id`` and a resource identity.  Unknown identities are deliberately
-    returned one at a time as bootstrap work.  Once callers add their observed
-    peaks to ``profiles``, the planner packs only known cases into a wave using
-    the same CPU, reserve and safety policy as particle dispatch.
-    """
-    if not isinstance(cases, list) or not cases:
-        raise ValueError("cases must be a non-empty array")
-    case_ids: set[str] = set()
-    normalized: list[tuple[str, dict[str, Any]]] = []
-    for case in cases:
-        if not isinstance(case, dict) or not isinstance(case.get("case_id"), str):
-            raise ValueError("each case requires a string case_id")
-        case_id = case["case_id"]
-        if not case_id or case_id in case_ids:
-            raise ValueError("case IDs must be non-empty and unique")
-        identity = case.get("resource_identity")
-        if not isinstance(identity, dict):
-            raise ValueError("each case requires a resource_identity object")
-        case_ids.add(case_id)
-        normalized.append((case_id, identity))
-
-    # Delegate all policy validation and individual resource estimates to the
-    # particle planner.  Giving it one synthetic independent particle is only
-    # an internal unit of capacity; no particle IDs or physics are produced by
-    # this case-level API.
-    individual_plans: list[tuple[str, dict[str, Any]]] = []
-    for case_id, identity in normalized:
-        individual_request = {
-            **request,
-            **identity,
-            "particle_count": 1,
-            "independent_particles": True,
-            "maximum_parallel_batches": 1,
-        }
-        individual_plans.append((case_id, plan_simion_dispatch(
-            individual_request, profiles,
-            available_memory_bytes=available_memory_bytes,
-            logical_processors=logical_processors,
-        )))
-
-    first_plan = individual_plans[0][1]
-    case_limits = dict(first_plan["limits"])
-    # The one-batch value above was solely used to ask the particle planner
-    # whether an individual case fits.  A case wave intentionally has no
-    # historical fixed cap; its actual cap is current CPU and memory capacity.
-    case_limits.pop("maximum_parallel_batches")
-    case_limits["maximum_parallel_cases"] = len(normalized)
-    unknown = [
-        (case_id, plan) for case_id, plan in individual_plans
-        if plan["estimation"]["kind"] == "unknown_resource_profile_bootstrap"
-    ]
-    if unknown:
-        case_id, bootstrap = unknown[0]
-        return {
-            "schema_version": 1,
-            "role": "simion_repository_case_dispatch_plan",
-            "solver": "SIMION",
-            "field_kind": request.get("field_kind"),
-            "case_count": len(normalized),
-            "estimation": {
-                "kind": "unknown_resource_profile_bootstrap",
-                "requires_observed_peak_before_followup": True,
-                "unknown_case_id": case_id,
-            },
-            "host": bootstrap["host"],
-            "limits": case_limits,
-            "waves": [{
-                "index": 1,
-                "kind": "bootstrap",
-                "case_count": 1,
-                "cases": [{"case_id": case_id}],
-            }],
-        }
-
-    limits = first_plan["limits"]
-    host = first_plan["host"]
-    available = host["available_memory_bytes"]
-    selected: list[dict[str, str]] = []
-    reserved_memory = limits["memory_reserve_bytes"]
-    used_cpu = limits["reserve_cpu_cores"]
-    for case_id, plan in individual_plans:
-        peak = plan["estimation"]["reserved_peak_bytes"]
-        next_cpu = used_cpu + limits["cpu_cores_per_batch"]
-        next_memory = reserved_memory + sum(
-            item["reserved_peak_bytes"] for item in selected
-        ) + peak
-        if next_cpu > host["logical_processors"]:
-            continue
-        if available is None:
-            if selected:
-                continue
-        elif next_memory > available:
-            continue
-        selected.append({"case_id": case_id, "reserved_peak_bytes": peak})
-        used_cpu = next_cpu
-    if not selected:
-        # Every individual plan already established that one known case fits;
-        # reaching this branch would indicate an internal accounting error.
-        raise ValueError("resource policy cannot schedule one known SIMION case")
-    return {
-        "schema_version": 1,
-        "role": "simion_repository_case_dispatch_plan",
-        "solver": "SIMION",
-        "field_kind": request.get("field_kind"),
-        "case_count": len(normalized),
-        "estimation": {
-            "kind": "observed_case_profiles",
-            "memory_selection_reason": (
-                "host_memory_unavailable_single_case"
-                if available is None else "largest_case_wave_within_current_available_memory"
-            ),
-        },
-        "host": host,
-        "limits": case_limits,
-        "waves": [{
-            "index": 1,
-            "kind": "scheduled",
-            "case_count": len(selected),
-            "cases": selected,
-        }],
+    """Finalize batching while retaining the already-started formal batch."""
+    if plan.get("estimation", {}).get("kind") != "formal_first_batch_observation":
+        raise ValueError("adaptive followup requires a formal-first-batch plan")
+    peak = _positive_int(observed_peak_bytes, "observed_peak_bytes")
+    cpu = _nonnegative_number(observed_cpu_percent, "observed_cpu_percent")
+    background = _nonnegative_number(background_cpu_percent, "background_cpu_percent")
+    available_memory_bytes = (
+        plan.get("host", {}).get("available_memory_bytes")
+        if available_memory_bytes is None else available_memory_bytes
+    )
+    total_physical_memory_bytes = (
+        plan.get("host", {}).get("total_physical_memory_bytes")
+        if total_physical_memory_bytes is None else total_physical_memory_bytes
+    )
+    memory_budget = math.ceil(peak * OBSERVED_MEMORY_SAFETY_FACTOR)
+    particles = _positive_int(plan.get("particle_count"), "particle_count")
+    concurrency, cpu_capacity, memory_capacity = _capacity(
+        particle_count=particles, available_memory_bytes=available_memory_bytes,
+        total_physical_memory_bytes=total_physical_memory_bytes,
+        per_process_memory_bytes=memory_budget, process_cpu_percent=cpu,
+        background_cpu_percent=background,
+    )
+    if not first_batch_completed:
+        # ``available_memory_bytes`` and background CPU are sampled while the
+        # retained first formal batch is already running.  _capacity therefore
+        # describes *additional* safe launches, not total concurrency.  Count
+        # that existing formal process exactly once instead of wasting a lane.
+        concurrency = min(particles, concurrency + 1)
+        cpu_capacity += 1
+        memory_capacity += 1
+    first = dict(plan["waves"][0]["batches"][0])
+    batches = _batches_after_formal_first(particles, first, concurrency, first_batch_completed)
+    result = json.loads(json.dumps(plan))
+    result["estimation"] = {
+        "kind": "observed_formal_batch", "observed_peak_bytes": peak,
+        "per_process_memory_budget_bytes": memory_budget,
+        "per_process_cpu_percent": max(MINIMUM_PROCESS_CPU_PERCENT, cpu),
+        "background_cpu_percent": background,
+        "memory_safety_factor": OBSERVED_MEMORY_SAFETY_FACTOR,
+        "first_batch_completed_during_observation": bool(first_batch_completed),
+        "retained_first_batch_counts_toward_concurrency": not first_batch_completed,
+        "first_batch_result_retained": True,
     }
-
-
-def plan_adaptive_followup(plan: dict[str, Any], observed_peak_bytes: int) -> dict[str, Any]:
-    """Turn an unknown-profile bootstrap result into a measured follow-up plan."""
-    if plan.get("estimation", {}).get("kind") != "unknown_resource_profile_bootstrap":
-        raise ValueError("adaptive followup requires an unknown-profile bootstrap plan")
-    request = _request_from_dispatch_plan(plan)
-    profile = {"resource_identity": plan["resource_identity"], "per_batch_peak_working_set_bytes": _positive_int(observed_peak_bytes, "observed_peak_bytes")}
-    result = plan_simion_dispatch(request, [profile], available_memory_bytes=plan["host"]["available_memory_bytes"], logical_processors=plan["host"]["logical_processors"])
-    result["estimation"]["kind"] = "observed_bootstrap_peak"
+    result["host"]["available_memory_bytes"] = available_memory_bytes
+    result["host"]["total_physical_memory_bytes"] = total_physical_memory_bytes
+    result["limits"] = _public_limits(concurrency, cpu_capacity, memory_capacity)
+    result["waves"] = [{
+        "index": 1, "kind": "scheduled", "batch_count": len(batches),
+        "particle_count": particles, "coverage": "complete_population",
+        "batches": batches,
+    }]
     return result
 
 
 def _request_from_dispatch_plan(plan: dict[str, Any]) -> dict[str, Any]:
-    """Project a prepared dispatch plan into the scheduler's policy request."""
     if plan.get("role") != "simion_repository_dispatch_plan":
         raise ValueError("prepared dispatch plan has an unsupported role")
-    identity = plan.get("resource_identity")
-    limits = plan.get("limits")
-    if not isinstance(identity, dict) or not isinstance(limits, dict):
-        raise ValueError("prepared dispatch plan lacks resource identity or limits")
     return {
         "solver": "SIMION", "field_kind": plan.get("field_kind"),
         "particle_count": plan.get("particle_count"), "independent_particles": True,
-        "maximum_parallel_batches": limits.get("maximum_parallel_batches"),
-        "reserve_available_memory_bytes": limits.get("memory_reserve_bytes"),
-        "cpu_cores_per_batch": limits.get("cpu_cores_per_batch"),
-        "reserve_cpu_cores": limits.get("reserve_cpu_cores"),
-        "memory_safety_numerator": limits.get("memory_safety_numerator"),
-        "memory_safety_denominator": limits.get("memory_safety_denominator"),
-        "maximum_process_tree_working_set_bytes": limits.get(
-            "maximum_process_tree_working_set_bytes"
-        ),
-        **identity,
+        **dict(plan.get("resource_identity", {})),
     }
 
 
 def plan_runtime_dispatch(
     prepared_plan: dict[str, Any], *, available_memory_bytes: int | None = None,
+    total_physical_memory_bytes: int | None = None,
     logical_processors: int | None = None,
 ) -> dict[str, Any]:
-    """Re-plan a prepared independent-particle workload on the current host.
-
-    The prepared plan remains the authority for physics-adjacent resource identity,
-    caps and safety policy. Only observed host capacity is renewed at execution.
-    """
-    request = _request_from_dispatch_plan(prepared_plan)
-    estimation = prepared_plan.get("estimation")
-    if not isinstance(estimation, dict):
-        raise ValueError("prepared dispatch plan lacks estimation")
+    estimation = prepared_plan.get("estimation", {})
     profiles: list[dict[str, Any]] = []
-    observed_peak = estimation.get("observed_peak_bytes")
-    if observed_peak is not None:
+    if estimation.get("kind") == "exact_resource_profile":
         profiles.append({
             "resource_identity": prepared_plan["resource_identity"],
-            "per_batch_peak_working_set_bytes": _positive_int(
-                observed_peak, "prepared observed_peak_bytes"
-            ),
+            "per_batch_peak_working_set_bytes": estimation["observed_peak_bytes"],
+            "per_batch_cpu_percent": estimation.get("per_process_cpu_percent", 0.0),
         })
     return plan_simion_dispatch(
-        request, profiles, available_memory_bytes=available_memory_bytes,
+        _request_from_dispatch_plan(prepared_plan), profiles,
+        available_memory_bytes=available_memory_bytes,
+        total_physical_memory_bytes=total_physical_memory_bytes,
         logical_processors=logical_processors,
     )
+
+
+def plan_simion_case_dispatch(
+    cases: list[dict[str, Any]], request: dict[str, Any], profiles: list[dict[str, Any]],
+    *, available_memory_bytes: int | None = None,
+    total_physical_memory_bytes: int | None = None,
+    logical_processors: int | None = None,
+) -> dict[str, Any]:
+    """Conservatively schedule complete cases; particle batching is preferred."""
+    if not isinstance(cases, list) or not cases:
+        raise ValueError("cases must be a non-empty array")
+    seen: set[str] = set()
+    plans: list[tuple[str, dict[str, Any]]] = []
+    for case in cases:
+        case_id, identity = case.get("case_id"), case.get("resource_identity")
+        if not isinstance(case_id, str) or not case_id or case_id in seen:
+            raise ValueError("case IDs must be non-empty and unique")
+        if not isinstance(identity, dict):
+            raise ValueError("each case requires a resource_identity object")
+        seen.add(case_id)
+        plans.append((case_id, plan_simion_dispatch(
+            {**request, **identity, "particle_count": 1, "independent_particles": True},
+            profiles, available_memory_bytes=available_memory_bytes,
+            total_physical_memory_bytes=total_physical_memory_bytes,
+            logical_processors=logical_processors,
+        )))
+    unknown = [
+        (case_id, plan) for case_id, plan in plans
+        if plan["estimation"]["kind"] == "formal_first_batch_observation"
+    ]
+    if unknown:
+        selected = [{"case_id": unknown[0][0]}]
+        limits = plans[0][1]["limits"]
+        estimation = "formal_first_case_observation"
+        kind = "formal_observation"
+    else:
+        host = plans[0][1]["host"]
+        available = host["available_memory_bytes"]
+        memory_left = None if available is None else (
+            available - MEMORY_ADMISSION_RESERVE_BYTES
+        )
+        cpu_left = CPU_ADMISSION_PERCENT
+        selected = []
+        for case_id, plan in plans:
+            memory = int(plan["estimation"]["per_process_memory_budget_bytes"])
+            cpu = float(plan["estimation"]["per_process_cpu_percent"])
+            if memory_left is not None and memory > memory_left:
+                continue
+            if cpu > cpu_left:
+                continue
+            selected.append({
+                "case_id": case_id,
+                "per_process_memory_budget_bytes": memory,
+                "per_process_cpu_percent": cpu,
+            })
+            if memory_left is not None:
+                memory_left -= memory
+            cpu_left -= cpu
+        if not selected:
+            selected = [{
+                "case_id": plans[0][0],
+                "per_process_memory_budget_bytes": plans[0][1]["estimation"][
+                    "per_process_memory_budget_bytes"
+                ],
+                "per_process_cpu_percent": plans[0][1]["estimation"][
+                    "per_process_cpu_percent"
+                ],
+            }]
+        limits = _public_limits(len(selected), len(selected), len(selected))
+        estimation = "exact_resource_profiles"
+        kind = "scheduled"
+    return {
+        "schema_version": 2, "role": "simion_repository_case_dispatch_plan",
+        "solver": "SIMION", "field_kind": request.get("field_kind"),
+        "case_count": len(cases),
+        "estimation": {"kind": estimation},
+        "host": plans[0][1]["host"], "limits": limits,
+        "waves": [{
+            "index": 1, "kind": kind,
+            "case_count": len(selected), "cases": selected,
+        }],
+    }
 
 
 def main() -> int:
@@ -503,36 +489,40 @@ def main() -> int:
     parser.add_argument("--profiles", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--available-memory-bytes", type=int)
+    parser.add_argument("--total-physical-memory-bytes", type=int)
     parser.add_argument("--logical-processors", type=int)
-    parser.add_argument("--observed-bootstrap-peak-bytes", type=int)
+    parser.add_argument("--observed-formal-peak-bytes", type=int)
+    parser.add_argument("--observed-formal-cpu-percent", type=float, default=0.0)
+    parser.add_argument("--observed-background-cpu-percent", type=float, default=0.0)
+    parser.add_argument("--first-batch-completed", action="store_true")
     args = parser.parse_args()
-    if args.prepared_plan is not None:
-        if args.profiles is not None:
-            parser.error("prepared-plan cannot be combined with profiles")
-        prepared_plan = json.loads(args.prepared_plan.read_text(encoding="utf-8-sig"))
-        if not isinstance(prepared_plan, dict):
-            parser.error("prepared-plan must be an object")
+    if args.prepared_plan:
+        prepared = json.loads(args.prepared_plan.read_text(encoding="utf-8-sig"))
         plan = plan_runtime_dispatch(
-            prepared_plan, available_memory_bytes=args.available_memory_bytes,
+            prepared, available_memory_bytes=args.available_memory_bytes,
+            total_physical_memory_bytes=args.total_physical_memory_bytes,
             logical_processors=args.logical_processors,
         )
     else:
         request = json.loads(args.request.read_text(encoding="utf-8-sig"))
         profiles = [] if args.profiles is None else json.loads(args.profiles.read_text(encoding="utf-8-sig"))
-        if not isinstance(request, dict) or not isinstance(profiles, list):
-            parser.error("request must be an object and profiles must be an array when supplied")
         plan = plan_simion_dispatch(
             request, profiles, available_memory_bytes=args.available_memory_bytes,
+            total_physical_memory_bytes=args.total_physical_memory_bytes,
             logical_processors=args.logical_processors,
         )
-    if args.observed_bootstrap_peak_bytes is not None:
-        plan = plan_adaptive_followup(plan, args.observed_bootstrap_peak_bytes)
+    if args.observed_formal_peak_bytes is not None:
+        plan = plan_adaptive_followup(
+            plan, args.observed_formal_peak_bytes,
+            observed_cpu_percent=args.observed_formal_cpu_percent,
+            background_cpu_percent=args.observed_background_cpu_percent,
+            available_memory_bytes=args.available_memory_bytes,
+            total_physical_memory_bytes=args.total_physical_memory_bytes,
+            first_batch_completed=args.first_batch_completed,
+        )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
-    print(
-        "SIMION_REPOSITORY_DISPATCH_PLAN=PASS "
-        f"FIELD_KIND={plan['field_kind']} WAVES={len(plan['waves'])}"
-    )
+    print(f"SIMION_REPOSITORY_DISPATCH_PLAN=PASS FIELD_KIND={plan['field_kind']} WAVES={len(plan['waves'])}")
     return 0
 
 

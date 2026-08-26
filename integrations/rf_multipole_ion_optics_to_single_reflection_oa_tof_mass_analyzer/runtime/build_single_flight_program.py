@@ -340,7 +340,8 @@ def build_successor_program(
     overlay: dict[str, Any] | None = None,
     rf_steps_per_period: int = 160,
     global_segments: bool = False,
-) -> str:
+    include_total_axis_field_exporter: bool = False,
+) -> str | tuple[str, str]:
     """Assemble the callback-neutral components behind one SIMION callback set."""
     if upstream.get("role") != "multipole_resolved_design_do_not_edit":
         raise ValueError("single-flight Program requires a multipole resolved design")
@@ -1051,7 +1052,164 @@ end
         count = len(re.findall(rf"function\s+segment\.{callback}\s*\(", program))
         if count != 1:
             raise ValueError(f"combined single-flight Program callback {callback} count is {count}")
-    return program
+    if not include_total_axis_field_exporter:
+        return program
+    if overlay is None:
+        raise ValueError("total-axis exporter requires a three-zone overlay")
+    static_analyzer_config_lua = _lua_value(analyzer_config)
+    axis_planes_export_lua = _lua_value(
+        [
+            geometry["accelerator_grid1_z_mm"],
+            *(
+                [geometry["accelerator_intermediate2_z_mm"]]
+                if three_zone
+                else []
+            ),
+            geometry["accelerator_grid2_z_mm"],
+        ]
+    )
+    active_voltage_lua = _lua_value(
+        {
+            "pre_all_v": 0.0,
+            "repeller_v": analyzer_config["voltages"]["repeller_v"],
+            "grid1_v": analyzer_config["voltages"]["grid1_v"],
+            **(
+                {
+                    "intermediate2_v": analyzer_config["voltages"]["intermediate2_v"],
+                    "exit_v": analyzer_config["voltages"]["exit_v"],
+                }
+                if three_zone
+                else {}
+            ),
+        }
+    )
+    rf_export_initializer = (
+        f"local rf=single_flight_rf_kernel.new{{waveform={json.dumps(drive['waveform'])},"
+        f"frequency_hz={_lua_number(drive['frequency_Hz'])},"
+        f"phase_rad={_lua_number(drive['phase_rad'])},"
+        f"rf_amplitude_v={_lua_number(drive['rf_amplitude_V_zero_to_peak_per_group'])},"
+        "rf_scale=1,common_mode_scale=1,"
+        f"group_dc_v={{[1]={_lua_number(drive['dc_amplitude_V_per_group'])},"
+        f"[2]={_lua_number(-drive['dc_amplitude_V_per_group'])}}},"
+        f"rf_steps_per_period={rf_steps_per_period},electrodes={_lua_value(rf_electrodes)}}}"
+        if rf_enabled
+        else "local rf=false"
+    )
+    exporter = f"""-- Generated C3 total-field exporter.  It is a top-level SIMION Lua script,
+-- not a Workbench Program callback: SIMION's documented wb field API is only
+-- queried after this script loads the frozen runtime IOB and reproduces its
+-- post-pulse fast-adjust plan.
+{embedded}
+local output_path=assert(os.getenv('OATOF_TOTAL_AXIS_FIELD_CSV'),'missing output path')
+local iob_path=assert(os.getenv('OATOF_TOTAL_AXIS_FIELD_IOB'),'missing runtime IOB path')
+local pulse_time_us=assert(tonumber(os.getenv('OATOF_TOTAL_AXIS_FIELD_PULSE_TIME_US')),'missing pulse time')
+local pulse_width_us=assert(tonumber(os.getenv('OATOF_TOTAL_AXIS_FIELD_PULSE_WIDTH_US')),'missing pulse width')
+assert(pulse_width_us>0,'pulse width must be positive')
+-- This is a standalone Lua diagnostic, not a Workbench Program.  SIMION only
+-- permits the Workbench Program declaration in files it auto-executes during
+-- Fly'm; declaring one here fails before any field can be sampled.
+simion.command('"'..iob_path..'"')
+assert(#simion.wb.instances==5,'C3 total-field exporter requires five IOB instances')
+for index=1,#simion.wb.instances do
+  local item=simion.wb.instances[index]
+  assert(item.x and item.y and item.z and item.az and item.el and item.rt and item.scale,
+    'C3 total-field exporter found an incomplete IOB transform')
+  print(string.format(
+    'TOTAL_AXIS_FIELD_INSTANCE index=%d x_mm=%.12g y_mm=%.12g z_mm=%.12g az_deg=%.12g el_deg=%.12g rt_deg=%.12g scale=%.12g',
+    index,item.x,item.y,item.z,item.az,item.el,item.rt,item.scale))
+end
+local analyzer_config={static_analyzer_config_lua}
+local analyzer=single_flight_analyzer_component.new(analyzer_config)
+{rf_export_initializer}
+local pulse=single_flight_pulse_component.new{{canonical_clock=function() return pulse_time_us end,
+  pulse_time_us=pulse_time_us,pulse_width_us=pulse_width_us,pulse_mode=function() return 1 end}}
+local function electrode_plan()
+  return {{apply_at=function(_,pulse_state,setter)
+    setter({int(electrodes['grounded_shield_id'])},0)
+    local plan=analyzer.accelerator_electrode_write_plan(pulse_state.active and 'on' or 'off',
+      {active_voltage_lua})
+    for _,item in ipairs(plan) do setter(item.electrode_id,item.voltage_v) end
+    setter({int(electrodes['entrance_reference_sleeve_id'])},{_lua_number(entrance_reference_v)})
+    setter({int(electrodes['entrance_plate_id'])},{_lua_number(entrance_plate_v)})
+  end}}
+end
+local frontend=single_flight_frontend_component.new{{rf_drive=rf,pulse_hook=pulse,
+  electrode_plan=electrode_plan(),planes_z_mm={axis_planes_export_lua}}}
+local active={{}}
+frontend.apply_at(pulse_time_us,function(id,value) active[id]=value end)
+local function pa_adjustments(ids)
+  local values={{}}
+  for _,id in ipairs(ids) do
+    assert(active[id]~=nil,'frozen post-pulse adjustment is missing electrode '..id)
+    values[id]=active[id]
+  end
+  return values
+end
+local ai=assert(simion.wb.instances[3],'accelerator instance is missing')
+local oi=assert(simion.wb.instances[5],'accelerator overlay instance is missing')
+local frontend_pa=assert(os.getenv('OATOF_ACCELERATOR_PA_OVERRIDE'),
+  'missing run-local frontend PA override')
+ai.pa:load(frontend_pa)
+ai:_debug_update_size()
+-- The run-local frontend PA has different extents from the container
+-- placeholder.  Fly'm recomputes placements after that load, so the static
+-- exporter must do the same before querying the total Workbench field.
+analyzer_config.instance_filenames.accelerator='frontend.pa0'
+local function instance_state(instance)
+  return {{filename=instance.filename,nx=instance.pa.nx,ny=instance.pa.ny,
+    nz=instance.pa.nz,dx_mm=instance.pa.dx_mm,dy_mm=instance.pa.dy_mm,
+    dz_mm=instance.pa.dz_mm,scale=instance.scale}}
+end
+local function apply_placement(instance,placement)
+  instance.x,instance.y,instance.z=placement.x_mm,placement.y_mm,placement.z_mm
+  instance.az,instance.el,instance.rt,instance.scale=placement.az_deg,placement.el_deg,
+    placement.rt_deg,placement.scale
+end
+local workbench_instances={{}}
+for index=1,4 do workbench_instances[index]=instance_state(simion.wb.instances[index]) end
+local initialized=analyzer.initialize_workbench({{instances=workbench_instances}})
+apply_placement(simion.wb.instances[1],initialized.placements.flight_tube)
+apply_placement(simion.wb.instances[2],initialized.placements.reflectron)
+apply_placement(ai,initialized.placements.accelerator)
+apply_placement(simion.wb.instances[4],initialized.placements.detector)
+print(string.format(
+  'TOTAL_AXIS_FIELD_ACCELERATOR_POSTPLACEMENT x_mm=%.12g y_mm=%.12g z_mm=%.12g az_deg=%.12g el_deg=%.12g rt_deg=%.12g scale=%.12g',
+  ai.x,ai.y,ai.z,ai.az,ai.el,ai.rt,ai.scale))
+for _,item in ipairs(initialized.static_electrode_plans.legacy_accelerator_characterization) do
+  active[item.electrode_id]=item.voltage_v
+end
+for _,item in ipairs(initialized.static_electrode_plans.reflectron) do
+  active[item.electrode_id]=item.voltage_v
+end
+-- Fly'm applies the time-dependent frontend plan after the static seed.
+frontend.apply_at(pulse_time_us,function(id,value) active[id]=value end)
+-- The top-level PA API rejects electrodes absent from that PA.  The Program's
+-- all-electrode setter is therefore partitioned without changing any value.
+ai.pa:fast_adjust(pa_adjustments({{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19}}))
+oi.pa:fast_adjust(pa_adjustments({{20}}))
+local z_start={_lua_number(geometry['accelerator_repeller_front_z_mm'])}
+local z_end={_lua_number(geometry['accelerator_grid2_z_mm'])}
+local z_step=ai.pa.dz_mm
+assert(z_step>0 and z_end>z_start,'axis interval is invalid')
+local count=math.ceil((z_end-z_start)/z_step)+1
+local output=assert(io.open(output_path,'w'))
+output:write('sample_index,x_mm,y_mm,z_mm,potential_V,Ex_V_per_mm,Ey_V_per_mm,Ez_V_per_mm\\n')
+for index=1,count do
+  local z=(index==count) and z_end or z_start+(index-1)*z_step
+  local potential=simion.wb:epotential({_lua_number(geometry['accelerator_axis_x_mm'])},
+    {_lua_number(geometry['accelerator_axis_y_mm'])},z)
+  local ex,ey,ez=simion.wb:efield({_lua_number(geometry['accelerator_axis_x_mm'])},
+    {_lua_number(geometry['accelerator_axis_y_mm'])},z)
+  assert(potential and ex and ey and ez,'workbench field is undefined on C3 axis')
+  output:write(string.format('%d,%.12g,%.12g,%.12g,%.15g,%.15g,%.15g,%.15g\\n',index,
+    {_lua_number(geometry['accelerator_axis_x_mm'])},{_lua_number(geometry['accelerator_axis_y_mm'])},z,
+    potential,ex,ey,ez))
+end
+output:close()
+print(string.format('TOTAL_AXIS_FIELD=PASS INSTANCES=%d POINTS=%d PULSE_TIME_US=%.12g',
+  #simion.wb.instances,count,pulse_time_us))
+"""
+    return program, exporter
 
 
 def main() -> int:
@@ -1105,6 +1263,7 @@ def main() -> int:
     parser.add_argument("--terminate-after-pulse", action="store_true")
     parser.add_argument("--pre-pulse-time-series-contract", type=Path)
     parser.add_argument("--global-segments", action="store_true")
+    parser.add_argument("--total-axis-field-exporter-output", type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--metadata", required=True, type=Path)
     args = parser.parse_args()
@@ -1113,7 +1272,7 @@ def main() -> int:
     validate_resolved_region_field_contract(region_field_contract)
     birth_times, source_ids = load_initial_state(args.initial_global_state)
     row_map_ids = load_row_map(args.particle_row_map, source_ids)
-    output = build_successor_program(
+    built = build_successor_program(
         _load(args.upstream),
         _load(args.frontend_contract),
         oatof,
@@ -1138,10 +1297,23 @@ def main() -> int:
         ),
         rf_steps_per_period=args.rf_steps_per_period,
         global_segments=args.global_segments,
+        include_total_axis_field_exporter=(
+            args.total_axis_field_exporter_output is not None
+        ),
     )
+    if args.total_axis_field_exporter_output is None:
+        output = built
+        exporter = None
+    else:
+        output, exporter = built
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.metadata.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(output, encoding="utf-8", newline="\n")
+    if exporter is not None:
+        args.total_axis_field_exporter_output.parent.mkdir(parents=True, exist_ok=True)
+        args.total_axis_field_exporter_output.write_text(
+            exporter, encoding="utf-8", newline="\n"
+        )
     metadata = {
         "schema_version": 1,
         "role": "rf_oatof_simion_single_flight_program_build",
@@ -1182,6 +1354,11 @@ def main() -> int:
             else None
         ),
         "global_segments": args.global_segments,
+        "total_axis_field_exporter_sha256": (
+            file_sha256(args.total_axis_field_exporter_output)
+            if args.total_axis_field_exporter_output is not None
+            else None
+        ),
         "output_sha256": file_sha256(args.output),
     }
     args.metadata.write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8", newline="\n")

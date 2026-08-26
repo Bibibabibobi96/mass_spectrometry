@@ -125,13 +125,13 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
         self.assertIn("simion_execution_batch_plan.json", runner)
         self.assertIn("simion_single_wave_batch_plan_sha256", runner)
         self.assertIn("Invoke-ResourceBudgetedProcesses", runner)
-        self.assertIn("time_limited_process_peak_v1", runner)
-        self.assertIn("RESOURCE_CALIBRATION_ONLY", runner)
-        self.assertIn("$launched -gt 1", runner)
-        self.assertGreaterEqual(runner.count("$launched -gt 1"), 2)
+        self.assertIn("Start-ObservedFormalProcess", runner)
+        self.assertIn("formal_first_batch_observation", runner)
+        self.assertNotIn("RESOURCE_CALIBRATION_ONLY", runner)
         self.assertIn("one_ion_functional_smoke_has_no_statistical_phase_space_diagnostic", runner)
-        self.assertIn("-CalibrationDurationSeconds ([int]$calibration.duration_seconds)", runner)
-        self.assertIn("--observed-bootstrap-peak-bytes", runner)
+        self.assertNotIn("CalibrationDurationSeconds", runner)
+        self.assertIn("--observed-formal-peak-bytes", runner)
+        self.assertIn("--first-batch-completed", runner)
         self.assertIn("New-SingleFlightBatchRecords", runner)
         self.assertIn("New-SingleFlightProcessSpecifications", runner)
         self.assertIn("$resourceUsageFiles = @($resourceUsage)", runner)
@@ -841,17 +841,38 @@ foreach ($entry in $commands) {{
         self.assertLess(guard, manifest_copy)
         self.assertLess(manifest_copy, fly_override)
 
-    def test_build_only_stops_after_frozen_iob_without_particle_dispatch(self) -> None:
+    def test_build_only_stops_after_frozen_iob_except_top_level_axis_export(self) -> None:
         text = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
         self.assertIn("[switch]$BuildOnly", text)
+        self.assertIn("[switch]$ProgramAxisFieldExport", text)
+        self.assertIn("OATOF_TOTAL_AXIS_FIELD_CSV", text)
+        self.assertIn("OATOF_TOTAL_AXIS_FIELD_IOB", text)
+        self.assertIn("$totalAxisFieldIob = Join-Path $runtimeDir 'total_axis_field.iob'", text)
+        self.assertIn("Program axis-field export requires the field-only five-instance IOB.", text)
+        self.assertIn("total_axis_field_iob_build_resource_usage.json", text)
+        self.assertIn("CONSTRUCTION_ONLY_COMPACT_NOT_REPLAYABLE", text)
+        self.assertIn("$package.artifact_run_dir 'results\\total_axis_field.csv'", text)
+        iob_builder = (INTEGRATION_ROOT / "runtime" / "build_single_flight_overlay_iob.lua").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("formal single-flight IOB must contain four or five instances", iob_builder)
+        self.assertIn("--total-axis-field-exporter-output", text)
+        self.assertIn("Join-Path $package.result_dir 'total_axis_field.csv'", text)
+        self.assertIn("Program axis-field export requires BuildOnly", text)
         build_only = text.index("if ($BuildOnly) {")
         batching = text.index("$batchCount = [int]$batchPlan.batch_count")
         fly = text.index("'--nogui','--noprompt','fly'")
         self.assertLess(build_only, batching)
         self.assertLess(build_only, fly)
         window = text[build_only:batching]
+        self.assertIn("'--nogui','--noprompt','lua',$totalAxisFieldExporter", window)
+        self.assertNotIn("total_axis_field_sentinel", window)
+        self.assertNotIn("'--nogui','--noprompt','fly',", window)
         self.assertIn("status='success'", window)
-        self.assertIn("execution_mode='build_only'", window)
+        self.assertIn(
+            "execution_mode=$(if($ProgramAxisFieldExport){'program_axis_field_export'}else{'build_only'})",
+            window,
+        )
         self.assertIn("no particle flight or physics result", window)
 
     def test_all_four_pa_cache_roles_use_one_verified_contract(self) -> None:

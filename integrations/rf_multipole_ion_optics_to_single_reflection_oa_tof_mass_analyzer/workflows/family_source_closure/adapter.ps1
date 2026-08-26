@@ -1234,9 +1234,9 @@ if ($expectedRunId -ne $RunId) {
     $recoveryParentStatus = [string]((Get-Content `
       -LiteralPath $recoveryParentManifest -Raw | ConvertFrom-Json).status)
   }
-  $isFailedRecovery = $recoveryMatch.Success -and
-    $recoveryParentStatus -eq 'failed'
-  if (-not $isFailedRecovery) {
+  $isTerminalRecovery = $recoveryMatch.Success -and
+    $recoveryParentStatus -in @('failed','interrupted')
+  if (-not $isTerminalRecovery) {
     throw 'Solver-authorized RunId differs from the campaign row.'
   }
 }

@@ -190,9 +190,6 @@ try {
         )
         trajectory_quality = [int]$coreConfig.trajectory_quality
         rf_steps_per_period = [int]$coreConfig.rf_steps_per_period
-        reserve_available_memory_bytes = 107374182
-        memory_safety_numerator = 105
-        memory_safety_denominator = 100
     }
     $dispatchRequestDocument | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $dispatchRequest -Encoding UTF8
     Push-Location $repoRoot
@@ -213,8 +210,8 @@ try {
         [int]$dispatchPlanDocument.waves[0].batch_count -lt 1) {
         throw 'SIMION repository dispatch plan differs from the mass-scan population.'
     }
-    & $python -m common.simion.particle_batching --particle-count $expectedParticles `
-        --batch-count ([int]$dispatchPlanDocument.waves[0].batch_count) --output $batchPlan
+    & $python -m common.simion.particle_batching --from-dispatch-plan $dispatchPlan `
+        --output $batchPlan
     if ($LASTEXITCODE -ne 0) { throw 'SIMION shared particle batch planning failed.' }
     $batchPlanDocument = Get-Content -LiteralPath $batchPlan -Raw -Encoding UTF8 | ConvertFrom-Json
     if ([int]$batchPlanDocument.particle_count -ne $expectedParticles) {
@@ -299,32 +296,35 @@ try {
     $luaConfig | Set-Content -LiteralPath $runConfigLua -Encoding ASCII
 
     $inspectScript = Join-Path $projectRoot 'simion\workbench\inspect_builtin_quad_reference.lua'
-    $batchRuns = @()
-    foreach ($batch in @($batchPlanDocument.batches)) {
+    function New-MassFilterBatchRuns {
+      param([Parameter(Mandatory)]$PlanDocument,[bool]$ReuseFirst=$false)
+      $runs=@();$singleComplete=([int]$PlanDocument.batch_count-eq1-and
+        [string]$PlanDocument.coverage-eq'complete_population')
+      foreach ($batch in @($PlanDocument.batches)) {
         $batchIndex = [int]$batch.index
         $batchSuffix = 'batch_{0:D2}' -f $batchIndex
-        $batchFly = if ($batchPlanDocument.batch_count -eq 1) { $flyPath } else {
+        $batchFly = if ($singleComplete) { $flyPath } else {
             Join-Path $candidateDir ("quad_monolithic__$batchSuffix.fly2")
         }
-        $batchStates = if ($batchPlanDocument.batch_count -eq 1) { $sourceStatesLua } else {
+        $batchStates = if ($singleComplete) { $sourceStatesLua } else {
             Join-Path $inputDir ("source_states__$batchSuffix.lua")
         }
-        $batchState = if ($batchPlanDocument.batch_count -eq 1) { $particleStateCsv } else {
+        $batchState = if ($singleComplete) { $particleStateCsv } else {
             Join-Path $resultDir ("particle_state__$batchSuffix.csv")
         }
-        $batchTrajectory = if ($batchPlanDocument.batch_count -eq 1) { $trajectoryCsv } else {
+        $batchTrajectory = if ($singleComplete) { $trajectoryCsv } else {
             Join-Path $resultDir ("trajectory_samples__$batchSuffix.csv")
         }
-        $batchSummary = if ($batchPlanDocument.batch_count -eq 1) { $summaryJson } else {
+        $batchSummary = if ($singleComplete) { $summaryJson } else {
             Join-Path $resultDir ("solver_summary__$batchSuffix.json")
         }
-        $batchLua = if ($batchPlanDocument.batch_count -eq 1) { $runConfigLua } else {
+        $batchLua = if ($singleComplete) { $runConfigLua } else {
             Join-Path $inputDir ("simion_run_config__$batchSuffix.lua")
         }
-        $batchLogDir = if ($batchPlanDocument.batch_count -eq 1) { $logDir } else {
+        $batchLogDir = if ($singleComplete) { $logDir } else {
             Join-Path $logDir $batchSuffix
         }
-        if ($batchPlanDocument.batch_count -gt 1) {
+        if (-not $singleComplete -and -not ($ReuseFirst -and $batchIndex -eq 1)) {
             New-Item -ItemType Directory -Path $batchLogDir -Force | Out-Null
             Push-Location $repoRoot
             try {
@@ -343,38 +343,53 @@ try {
             -ModeName $modeName -OperatingPoint 'mass_filter_reference' `
             -IobPath ([string]$coreConfig.iob) -Fly2Path $batchFly -SourceStatesLua $batchStates `
             -ParticleStateCsv $batchState -TrajectoryCsv $batchTrajectory -SummaryJson $batchSummary
-        if ($batchPlanDocument.batch_count -gt 1) {
+        if (-not $singleComplete -and -not ($ReuseFirst -and $batchIndex -eq 1)) {
             (ConvertTo-RfSimionLuaConfig -CoreConfig $batchConfig `
                 -SharedProgramPath (Join-Path $candidateDir 'quad_monolithic.lua')) |
                 Set-Content -LiteralPath $batchLua -Encoding ASCII
         }
-        $batchRuns += [pscustomobject]@{
+        $runs += [pscustomobject]@{
             batch = $batch; config = $batchConfig; fly = $batchFly; states = $batchStates
             state = $batchState; trajectory = $batchTrajectory; summary = $batchSummary
             lua = $batchLua; log_dir = $batchLogDir; name = ('mass_filter_' + $batchIndex)
             merged_state = $particleStateCsv; merged_trajectory = $trajectoryCsv; merged_summary = $summaryJson
         }
+      }
+      return @($runs)
     }
-    $waveReceipt = @(Invoke-RfSimionParticleBatchWave -SimionExe $simion -CandidateDir $candidateDir `
+    $batchRuns=@(New-MassFilterBatchRuns -PlanDocument $batchPlanDocument)
+    $resourceUsage = Join-Path $resultDir 'simion_resource_usage.json'
+    $resourceIdentityWasUnknown=([string]$dispatchPlanDocument.estimation.kind-eq'formal_first_batch_observation')
+    $existingProcessRecords=@()
+    if($resourceIdentityWasUnknown){
+      $observation=Start-RfSimionFormalFirstBatch -SimionExe $simion -CandidateDir $candidateDir `
         -IobPath ([string]$coreConfig.iob) -RootFly2Path ([string]$coreConfig.fly2) `
         -IobBuilderScript $iobBuilder -ProgramSourcePath $programSource -RootRunConfigLua $runConfigLua `
         -InspectScript $inspectScript -IobReport $iobReport -LogDir $logDir `
         -TrajectoryQuality ([int]$coreConfig.trajectory_quality) -RfStepsPerPeriod ([int]$coreConfig.rf_steps_per_period) `
-        -BatchRuns $batchRuns -BatchPlanPath $batchPlan -PythonExe $python -RepositoryRoot $repoRoot)
+        -FirstBatchRun $batchRuns[0] -DispatchPlanPath $dispatchPlan
+      $replanned=Update-RfSimionDispatchAfterFormalObservation -PythonExe $python `
+        -RepositoryRoot $repoRoot -DispatchRequestPath $dispatchRequest `
+        -ResourceProfilesPath $resourceProfiles -DispatchPlanPath $dispatchPlan `
+        -BatchPlanPath $batchPlan -Observation $observation
+      $dispatchPlanDocument=$replanned.dispatch;$batchPlanDocument=$replanned.batches
+      $batchRuns=@(New-MassFilterBatchRuns -PlanDocument $batchPlanDocument -ReuseFirst $true)
+      $existingProcessRecords=@($observation.process_record)
+      $runConfig.execution_batch_count=[int]$batchPlanDocument.batch_count
+      $runConfig|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $runConfigPath -Encoding UTF8
+    }
+    $waveReceipt = Invoke-RfSimionParticleBatchWave -SimionExe $simion -CandidateDir $candidateDir `
+        -IobPath ([string]$coreConfig.iob) -RootFly2Path ([string]$coreConfig.fly2) `
+        -IobBuilderScript $iobBuilder -ProgramSourcePath $programSource -RootRunConfigLua $runConfigLua `
+        -InspectScript $inspectScript -IobReport $iobReport -LogDir $logDir `
+        -TrajectoryQuality ([int]$coreConfig.trajectory_quality) -RfStepsPerPeriod ([int]$coreConfig.rf_steps_per_period) `
+        -BatchRuns $batchRuns -BatchPlanPath $batchPlan -DispatchPlanPath $dispatchPlan `
+        -RunDir $runDir -UsagePath $resourceUsage -PythonExe $python -RepositoryRoot $repoRoot `
+        -ExistingProcessRecords $existingProcessRecords -Prepared:$resourceIdentityWasUnknown
+    Complete-ResourceUsage -RunDir $runDir -UsagePath $resourceUsage | Out-Null
 
-    $resourceUsage = Join-Path $resultDir 'simion_resource_usage.json'
     $resourceProfile = $null
-    if ($dispatchPlanDocument.estimation.kind -eq 'unknown_resource_profile_bootstrap') {
-        if ($waveReceipt.Count -ne 1 -or [int64]$waveReceipt[0].peak_working_set_bytes -lt 1) {
-            throw 'SIMION bootstrap did not return exactly one observed process peak.'
-        }
-        [ordered]@{
-            schema_version = 1
-            role = 'multipole_resource_usage'
-            status = 'completed'
-            peak_process_tree_working_set_bytes = [int64]$waveReceipt[0].peak_working_set_bytes
-            execution_wave = [ordered]@{ process_count = 1 }
-        } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $resourceUsage -Encoding UTF8
+    if ($resourceIdentityWasUnknown) {
         $resourceProfile = Join-Path $resultDir 'simion_resource_profile.json'
         Push-Location $repoRoot
         try {
@@ -465,7 +480,8 @@ try {
             (Join-Path $batchRun.log_dir 'simion_stderr.txt')
         )
     }
-    if ($resourceProfile) { $manifestOutputs += @($resourceUsage,$resourceProfile) }
+    $manifestOutputs += $resourceUsage
+    if ($resourceProfile) { $manifestOutputs += $resourceProfile }
     $manifestOutputs = @($manifestOutputs | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -Unique)
     Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfigPath -Status success `
         -Software @('SIMION 2020','Python 3.11') -Outputs $manifestOutputs

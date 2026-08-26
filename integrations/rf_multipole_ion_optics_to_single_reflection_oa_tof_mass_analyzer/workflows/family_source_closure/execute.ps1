@@ -264,14 +264,14 @@ if ($SolverAuthorized -and (Test-Path -LiteralPath $outputRoot)) {
       return
     }
   }
-  # Preserve the failed run as evidence, then make exactly one explicitly
-  # named recovery attempt.  A failed recovery itself is evidence too, so the
-  # next unused suffix may be attempted only when its immediate predecessor is
-  # a failed manifest.  This keeps an --AllExperiments campaign continuous
+  # Preserve a terminal failed or user-interrupted run as evidence, then make
+  # one explicitly named recovery attempt.  A terminal recovery itself is
+  # evidence too, so the next unused suffix may be attempted only when its
+  # immediate predecessor is terminal.  This keeps an --AllExperiments campaign continuous
   # without ever overwriting a solver result.
   if ($null -ne $publishedManifest -and
       $publishedManifest.role -eq 'simulation_run_manifest' -and
-      $publishedManifest.status -eq 'failed') {
+      $publishedManifest.status -in @('failed','interrupted')) {
     $publishedRecovery = @(Get-ChildItem -LiteralPath $runsRoot -Directory `
       -Filter ($campaignRunId + '__r??') | ForEach-Object {
         $manifestPath = Join-Path $_.FullName 'run_manifest.json'

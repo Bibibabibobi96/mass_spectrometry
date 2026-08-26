@@ -19,6 +19,19 @@ OCT = "rf_octupole_ion_optics"
 
 
 class ResourceBudgetTests(unittest.TestCase):
+    def test_repository_scheduler_owns_stagger_and_latest_first_memory_recovery(self) -> None:
+        source = (REPO_ROOT / "common/multipole/resource_budget_support.ps1").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("$seconds-ne 30", source)
+        self.assertIn("$now.AddSeconds(5)", source)
+        self.assertIn("Sort-Object started_at -Descending", source)
+        self.assertIn("available_memory_below_1_gib_for_15_seconds", source)
+        self.assertIn("$warningBytes-ne 2GB-or$criticalBytes-ne 1GB", source)
+        self.assertIn("$null=$pending.Add($victim.specification)", source)
+        self.assertIn("$maximumConcurrency-1", source)
+        self.assertNotIn("CalibrationDurationSeconds", source)
+
     def validate(
         self,
         project_id: str = OCT,
@@ -663,47 +676,71 @@ class ResourceBudgetTests(unittest.TestCase):
             self.assertEqual(measured["status"], "running")
             self.assertIsNone(measured["limit_name"])
 
-    def test_time_limited_resource_calibration_terminates_without_budget_failure(self) -> None:
+    def test_parallel_wave_tracks_worker_after_short_lived_launcher_exits(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             budget = root / "budget.json"
+            dispatch = root / "dispatch.json"
             usage = root / "usage.json"
+            stdout = root / "stdout.log"
+            stderr = root / "stderr.log"
             budget.write_text(
                 json.dumps(
-                    {"limits": {
-                        "wall_clock_seconds": 10,
-                        "transient_run_directory_bytes": 1024**3,
-                        "process_tree_working_set_bytes": 1024**3,
-                        "minimum_system_available_memory_bytes": 1,
-                        "compact_final_retained_bytes": 1024**2,
-                        "automatic_retry_count": 0,
-                    }},
+                    {
+                        "schema_version": 1,
+                        "role": "multipole_engineering_budget",
+                        "limits": {
+                            "wall_clock_seconds": 60,
+                            "transient_run_directory_bytes": 1_000_000_000,
+                            "process_tree_working_set_bytes": 1_000_000_000,
+                            "minimum_system_available_memory_bytes": 1,
+                            "compact_final_retained_bytes": 1_000_000_000,
+                            "automatic_retry_count": 0,
+                        },
+                    }
                 ),
                 encoding="utf-8",
             )
+            dispatch.write_text(json.dumps({
+                "role": "simion_repository_dispatch_plan",
+                "estimation": {"kind": "exact_resource_profile"},
+                "limits": {
+                    "maximum_concurrency": 1, "launch_stagger_seconds": 5,
+                    "memory_critical_seconds": 15,
+                    "memory_admission_reserve_bytes": 2 * 1024**3,
+                    "memory_critical_reserve_bytes": 1 * 1024**3,
+                    "cpu_admission_percent": 95.0,
+                },
+            }), encoding="utf-8")
             support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
             command = (
                 f". '{support}';"
-                f"$r=Invoke-ResourceBudgetedProcess -ResolvedBudgetPath '{budget}' "
-                f"-RunDir '{root}' -UsagePath '{usage}' -FilePath (Get-Process -Id $PID).Path "
-                "-ArgumentList @('-NoProfile','-Command','Start-Sleep -Seconds 5') "
-                "-CalibrationDurationSeconds 1;"
-                "if(-not$r.resource_calibration_complete-or$r.resource_budget_exceeded-or$r.exit_code-ne0){exit 3}"
+                "$child=(Get-Process -Id $PID).Path;"
+                "$spec=[pscustomobject]@{name='launcher';file_path=$child;"
+                "argument_list=@('-NoProfile','-Command',"
+                "'Start-Process -FilePath $env:ComSpec "
+                "-ArgumentList @(''/c'',''timeout /t 2 /nobreak >nul'') "
+                "-WindowStyle Hidden');"
+                f"stdout='{stdout}';stderr='{stderr}';environment=@{{}};working_directory='{root}'}};"
+                f"$r=Invoke-ResourceBudgetedProcesses -DispatchPlanPath '{dispatch}' "
+                f"-RunDir '{root}' -UsagePath '{usage}' "
+                "-ProcessSpecifications @($spec);"
+                "if($r.resource_budget_exceeded-or$r.processes[0].exit_code-ne0){exit 3}"
             )
             completed = subprocess.run(
                 ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
                 cwd=REPO_ROOT,
                 check=False,
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
-                encoding="utf-8",
                 errors="replace",
                 timeout=15,
             )
             self.assertEqual(completed.returncode, 0, completed.stderr)
             measured = json.loads(usage.read_text(encoding="utf-8-sig"))
-            self.assertEqual(measured["status"], "resource_calibration_complete")
-            self.assertEqual(measured["resource_calibration"]["scope"], "RESOURCE_CALIBRATION_ONLY")
+            self.assertEqual(measured["status"], "running")
+            self.assertGreaterEqual(measured["wall_clock_seconds"], 1.5)
             self.assertGreater(measured["peak_process_tree_working_set_bytes"], 0)
 
     def test_watchdog_samples_run_directory_on_frozen_cadence_and_at_exit(

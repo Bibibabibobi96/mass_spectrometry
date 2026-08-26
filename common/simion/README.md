@@ -16,18 +16,36 @@ oaTOF、single-flight或具体电极编号。
 或网格敏感性验证。本层不选择PA/IOB和物理参数；商业进程仍由项目runner按统一预算与串行规则启动。
 
 [`resource_scheduler.py`](resource_scheduler.py)是独立粒子批次与相互独立完整case的唯一SIMION并发决策实现。
-项目runner只提交已授权的工作负载、执行返回的batch/case wave，并负责本项目的输入格式转换和结果合并；不得
-自行选择固定批数或并发数。粒子请求必须明确RF（含steps/period）或静电模式和粒子数；case请求必须为每个完整
-输入声明稳定的资源身份。每批CPU、并发上限和内存保留只有在具有
-实测或运行环境依据时才声明；省略时调度器使用每批一核、零额外CPU保留，并由当前主机容量决定并发。运行时
-必须以当前CPU与可用内存重新规划；准备阶段的计划只冻结资源身份、已声明上限和已测峰值证据。它只会使用不与
-本次已声明资源身份（例如RF步数、网格或trajectory-quality profile）冲突的已完成峰值；无历史数据时只生成一个
-bootstrap波次，后续必须以观测峰值重新计划。未知身份的默认bootstrap是一次仅用于资源校准的、限时的真实
-进程探针：记录峰值后终止进程树，并立即重规划正式独立粒子波次。这个策略是公共调度器的实现不变量，项目、
-功能和科学合同均不能关闭或改写；项目只能提供安全匹配所必需的资源身份。校准输出只能标为
-`RESOURCE_CALIBRATION_ONLY`，绝不构成科学或数值证据。
-[`resource_profile.py`](resource_profile.py)只发布成功、单进程bootstrap run的峰值，并在使用前用run manifest
-及输入收据的SHA-256复核；并行波次的聚合峰值不得拆分成单批画像。PA/IOB构建及没有独立粒子/可合并结果
-合同的SIMION任务保持串行；未知case资源身份每次先单case bootstrap，只有同一完整输入的已观测峰值才可参与
+项目只提交总粒子数、独立性和网格、RF步数、trajectory quality、PA哈希等客观数值身份；CPU、内存、并发、
+安全系数、观察时长和危险处置均由公共层固定，项目参数会被拒绝。粒子数只改变运行时间，不用来假定单进程
+瞬时资源占用。资源允许的并发数决定同时活跃的进程数与同一数值身份的工作通道数；粒子数不构成
+单进程资源上限。调度器在每个通道只安排完成其份额所需的批次，并使各通道的总粒子数尽可能相等，
+避免没有物理或实测依据的单批粒子数上限及由此造成的额外分波。
+
+完全相同的历史数值身份可直接复用单进程峰值并跳过观察。没有历史时，首个正式批次取
+`ceil(N/min(N,10))`个粒子；它最多观察30秒但始终继续运行，若提前自然完成也直接保留结果。实测后按CPU
+`floor((95%-后台占用)/max(10%,单进程实测))`和内存
+`floor((当前可用内存-2 GiB)/单进程安全预算)`的较小值确定最终并发。Windows 设置页虽显示为
+“GB”，但本公共合同按其二进制容量语义明确记为`GiB = 1024³ bytes`，避免歧义。首次正式观测与精确历史画像
+都使用实测峰值的1.10倍作为单进程预算；每次错峰启动前还以仍在运行任务的新峰值重新计算一个进程的准入
+余量，故后续内存增长会立即暂停扩容。观测时的可用内存已排除仍在运行的首批，因而内存/CPU计算的是可新增
+槽位，调度器会再准确加上该首批；首批仍运行时占用一个槽位，剩余
+粒子只分给其余槽位；首批结束后，该通道只补齐到与其余通道相同的总工作量。首批已完成时全部槽位
+分配剩余粒子，绝不重跑首批。各进程相隔5秒启动；CPU高只暂停
+新启动，不终止进程。可用内存低于2 GiB暂停启动；低于1 GiB持续15秒才按“最晚启动优先”逐个终止、重新排队并
+降低并发，每次处置后等待5秒再判断。
+
+成功运行只保留紧凑调度收据，不保留逐秒探测文件。 [`resource_profile.py`](resource_profile.py)发布首个正式
+批次的独立峰值并用run manifest及输入收据SHA-256复核；并行聚合峰值不得按进程数拆分。PA/IOB构建及没有独立粒子/可合并结果
+合同的SIMION任务保持串行；未知case资源身份每次先运行一个正式case，只有同一完整输入的已观测峰值才可参与
 后续case wave。已完成case campaign可以把画像写入manifest覆盖的summary；后续运行只发现这种受完整性保护的
 画像，不接受裸日志或未受manifest覆盖的JSON。调度器不会发现、批准或启动campaign，也不会在外层campaign之上创建嵌套并发。
+
+Windows能力依据（2026-08-26查阅）：Microsoft `MEMORYSTATUSEX/GlobalMemoryStatusEx`文档说明
+`ullAvailPhys`表示可立即复用的物理内存，用于2 GiB/1 GiB门限；.NET `System.Diagnostics.Process`文档支持读取
+`WorkingSet64`和`TotalProcessorTime`；Microsoft `taskkill /T`文档支持只终止选中PID及其子进程。采用这些接口
+是为了测量真实SIMION进程族，并在持续内存危险时只回收最新批次。
+
+- https://learn.microsoft.com/en-us/windows/win32/api/sysinfoapi/ns-sysinfoapi-memorystatusex
+- https://learn.microsoft.com/en-us/dotnet/api/system.diagnostics.process?view=net-10.0
+- https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/taskkill

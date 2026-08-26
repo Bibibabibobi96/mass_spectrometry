@@ -286,10 +286,10 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             rf_steps_per_period=64,
         )
         self.assertEqual(plan["role"], "simion_repository_dispatch_plan")
-        self.assertEqual(plan["estimation"]["kind"], "unknown_resource_profile_bootstrap")
-        self.assertEqual(plan["limits"]["memory_reserve_bytes"], 0)
-        self.assertEqual(plan["limits"]["memory_safety_numerator"], 105)
-        self.assertEqual(plan["limits"]["cpu_cores_per_batch"], 1)
+        self.assertEqual(plan["estimation"]["kind"], "formal_first_batch_observation")
+        self.assertEqual(plan["limits"]["formal_observation_seconds"], 30)
+        self.assertEqual(plan["limits"]["launch_stagger_seconds"], 5)
+        self.assertNotIn("cpu_cores_per_batch", plan["limits"])
 
     def test_dispatch_plan_bootstraps_when_exploration_has_no_memory_receipt(self) -> None:
         plan = resolve_single_flight_dispatch_plan(
@@ -299,12 +299,10 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             execution_particle_count=1000,
             rf_steps_per_period=64,
         )
-        self.assertEqual(plan["estimation"]["kind"], "unknown_resource_profile_bootstrap")
+        self.assertEqual(plan["estimation"]["kind"], "formal_first_batch_observation")
         self.assertEqual(plan["waves"][0]["batch_count"], 1)
-        self.assertEqual(plan["limits"]["cpu_cores_per_batch"], 1)
-        self.assertEqual(plan["limits"]["reserve_cpu_cores"], 0)
-        self.assertEqual(plan["limits"]["memory_safety_numerator"], 105)
-        self.assertEqual(plan["limits"]["memory_safety_denominator"], 100)
+        self.assertEqual(plan["waves"][0]["batches"][0]["count"], 100)
+        self.assertTrue(plan["estimation"]["first_batch_result_retained"])
 
     def test_dispatch_plan_uses_discovered_profile_without_memory_receipt(self) -> None:
         profile = {
@@ -324,7 +322,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                 execution_particle_count=8, rf_steps_per_period=64,
                 resource_profiles=[profile],
             )
-        self.assertEqual(plan["estimation"]["kind"], "nearest_resource_profile")
+        self.assertEqual(plan["estimation"]["kind"], "exact_resource_profile")
         self.assertEqual(plan["waves"][0]["batch_count"], 8)
 
     def test_dispatch_plan_uses_resolved_inline_numerics_for_profile_match(self) -> None:
@@ -351,7 +349,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                 execution_particle_count=8, rf_steps_per_period=64,
                 execution_profile=execution_profile, resource_profiles=[profile],
             )
-        self.assertEqual(plan["estimation"]["kind"], "unknown_resource_profile_bootstrap")
+        self.assertEqual(plan["estimation"]["kind"], "formal_first_batch_observation")
         self.assertEqual(plan["waves"][0]["batch_count"], 1)
         self.assertEqual(plan["resource_identity"]["trajectory_quality"], 17)
         self.assertEqual(
@@ -612,7 +610,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
         self.assertNotEqual(incompatible.returncode, 0)
         self.assertIn("cannot be combined", incompatible.stderr)
 
-    def test_resource_policy_fails_when_measured_profile_cannot_fit(self) -> None:
+    def test_resource_policy_falls_back_to_one_lane_when_memory_is_tight(self) -> None:
         policy = {
             "single_flight_time_integration_profile_id": "dt40",
         }
@@ -625,24 +623,29 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             "per_batch_peak_working_set_bytes": 12 * 1024**3,
         }
         with patch(
-            "common.simion.resource_scheduler.available_physical_memory_bytes",
-            return_value=15 * 1024**3,
+            "common.simion.resource_scheduler.physical_memory_bytes",
+            return_value=(15 * 1024**3, 16 * 1024**3),
         ):
             self.assertEqual(
                 resolve_single_flight_dispatch_plan(
                     policy, execution_particle_count=5000, rf_steps_per_period=40,
                     resource_profiles=[profile],
-                )["waves"][0]["batch_count"],
+                )["limits"]["maximum_concurrency"],
                 1,
             )
         with patch(
-            "common.simion.resource_scheduler.available_physical_memory_bytes",
-            return_value=12 * 1024**3,
-        ), self.assertRaisesRegex(ContractError, "resource scheduler planning failed"):
-            resolve_single_flight_dispatch_plan(
+            "common.simion.resource_scheduler.physical_memory_bytes",
+            return_value=(12 * 1024**3, 16 * 1024**3),
+        ):
+            constrained = resolve_single_flight_dispatch_plan(
                 policy, execution_particle_count=5000, rf_steps_per_period=40,
                 resource_profiles=[profile],
             )
+        self.assertEqual(constrained["limits"]["maximum_concurrency"], 1)
+        # Memory determines concurrent lanes. With one allowed lane, all
+        # independent particles belong to its one complete work batch.
+        self.assertEqual(constrained["waves"][0]["batch_count"], 1)
+        self.assertEqual(constrained["waves"][0]["batches"][0]["count"], 5_000)
 
     def test_generated_ordered_subset_selectors_are_exact_and_fresh(self) -> None:
         n1 = ordered_subset_source_particle_ids("n1_center_source_id_500_v1")
@@ -1282,6 +1285,17 @@ $result = Get-PulseTimingOrchestration `
             "if ($cleanupOutput -and (Test-Path -LiteralPath $outputRoot))",
             source,
         )
+
+    def test_terminal_interruption_can_create_a_distinct_recovery_identity(self) -> None:
+        """An external stop is terminal evidence, not an immutable retry dead end."""
+        execute = (
+            INTEGRATION_ROOT / "workflows" / "family_source_closure" / "execute.ps1"
+        ).read_text(encoding="utf-8")
+        adapter = (
+            INTEGRATION_ROOT / "workflows" / "family_source_closure" / "adapter.ps1"
+        ).read_text(encoding="utf-8")
+        self.assertIn("$publishedManifest.status -in @('failed','interrupted')", execute)
+        self.assertIn("$recoveryParentStatus -in @('failed','interrupted')", adapter)
 
     def test_archived_campaign_is_rejected_before_schema_or_prepare(self) -> None:
         campaign = SINGLE_FLIGHT_CAMPAIGN_PATH

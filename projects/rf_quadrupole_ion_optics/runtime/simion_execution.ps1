@@ -1,5 +1,6 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot '..\..\..\common\multipole\resource_budget_support.ps1')
 
 function Initialize-RfSimionPaBasis {
     [CmdletBinding()]
@@ -104,8 +105,8 @@ function New-RfSimionFlyProcessSpecification {
             '--adjustable',"transport_rf_steps_per_period=$RfStepsPerPeriod",
             $IobPath
         )
-        stdout_path = Join-Path $LogDir 'simion_stdout.txt'
-        stderr_path = Join-Path $LogDir 'simion_stderr.txt'
+        stdout = Join-Path $LogDir 'simion_stdout.txt'
+        stderr = Join-Path $LogDir 'simion_stderr.txt'
         environment = @{
             MULTIPOLE_SIMION_RUN_CONFIG_LUA = $RunConfigLua
             RFQUAD_SIMION_REFERENCE_REPORT = $IobReport
@@ -130,8 +131,8 @@ function Invoke-RfSimionFlyWave {
             -WorkingDirectory $specification.working_directory `
             -Environment $specification.environment `
             -WindowStyle Hidden -PassThru `
-            -RedirectStandardOutput $specification.stdout_path `
-            -RedirectStandardError $specification.stderr_path
+            -RedirectStandardOutput $specification.stdout `
+            -RedirectStandardError $specification.stderr
         $running += [pscustomobject]@{
             specification = $specification
             process = $process
@@ -156,9 +157,9 @@ function Invoke-RfSimionFlyWave {
         $entry.process.Refresh()
         $entry.peak_working_set_bytes = [Math]::Max(
             $entry.peak_working_set_bytes, [int64]$entry.process.PeakWorkingSet64)
-        Get-Content -LiteralPath $entry.specification.stdout_path -Encoding UTF8 | Write-Host
-        if ((Get-Item -LiteralPath $entry.specification.stderr_path).Length -gt 0) {
-            Get-Content -LiteralPath $entry.specification.stderr_path -Encoding UTF8 | Write-Host
+        Get-Content -LiteralPath $entry.specification.stdout -Encoding UTF8 | Write-Host
+        if ((Get-Item -LiteralPath $entry.specification.stderr).Length -gt 0) {
+            Get-Content -LiteralPath $entry.specification.stderr -Encoding UTF8 | Write-Host
         }
         if ($entry.process.ExitCode -ne 0) {
             throw "SIMION fly '$($entry.specification.name)' failed with exit code $($entry.process.ExitCode)."
@@ -212,23 +213,23 @@ function Invoke-RfSimionParticleBatchWave {
         [Parameter(Mandatory = $true)][int]$RfStepsPerPeriod,
         [Parameter(Mandatory = $true)][object[]]$BatchRuns,
         [Parameter(Mandatory = $true)][string]$BatchPlanPath,
+        [Parameter(Mandatory = $true)][string]$DispatchPlanPath,
+        [Parameter(Mandatory = $true)][string]$RunDir,
+        [Parameter(Mandatory = $true)][string]$UsagePath,
         [Parameter(Mandatory = $true)][string]$PythonExe,
-        [Parameter(Mandatory = $true)][string]$RepositoryRoot
+        [Parameter(Mandatory = $true)][string]$RepositoryRoot,
+        [object[]]$ExistingProcessRecords = @(),
+        [switch]$Prepared
     )
 
     if ($BatchRuns.Count -eq 0) { throw 'SIMION particle batch wave requires at least one batch.' }
-    if ($BatchRuns.Count -eq 1) {
-        return Invoke-RfSimionCoreRun -SimionExe $SimionExe -CandidateDir $CandidateDir `
+    if (-not $Prepared) {
+        Initialize-RfSimionPaBasis -SimionExe $SimionExe -CandidateDir $CandidateDir
+        Initialize-RfSimionPreparedBatch -SimionExe $SimionExe -CandidateDir $CandidateDir `
             -IobPath $IobPath -Fly2Path $RootFly2Path -IobBuilderScript $IobBuilderScript `
             -ProgramSourcePath $ProgramSourcePath -RunConfigLua $RootRunConfigLua `
-            -InspectScript $InspectScript -IobReport $IobReport -LogDir $LogDir `
-            -TrajectoryQuality $TrajectoryQuality -RfStepsPerPeriod $RfStepsPerPeriod
+            -InspectScript $InspectScript -IobReport $IobReport -LogDir $LogDir
     }
-    Initialize-RfSimionPaBasis -SimionExe $SimionExe -CandidateDir $CandidateDir
-    Initialize-RfSimionPreparedBatch -SimionExe $SimionExe -CandidateDir $CandidateDir `
-        -IobPath $IobPath -Fly2Path $RootFly2Path -IobBuilderScript $IobBuilderScript `
-        -ProgramSourcePath $ProgramSourcePath -RunConfigLua $RootRunConfigLua `
-        -InspectScript $InspectScript -IobReport $IobReport -LogDir $LogDir
     $specifications = @($BatchRuns | ForEach-Object {
         New-RfSimionFlyProcessSpecification -Name ([string]$_.name) `
             -SimionExe $SimionExe -CandidateDir $CandidateDir -IobPath ([string]$_.config.iob) `
@@ -236,7 +237,17 @@ function Invoke-RfSimionParticleBatchWave {
             -LogDir ([string]$_.log_dir) -TrajectoryQuality ([int]$_.config.trajectory_quality) `
             -RfStepsPerPeriod ([int]$_.config.rf_steps_per_period)
     })
-    $receipt = @(Invoke-RfSimionFlyWave -ProcessSpecifications $specifications)
+    if ($ExistingProcessRecords.Count -gt 0) {
+        $specifications = @($specifications | Select-Object -Skip 1)
+    }
+    $receipt = Invoke-ResourceBudgetedProcesses -DispatchPlanPath $DispatchPlanPath `
+        -RunDir $RunDir -UsagePath $UsagePath -ProcessSpecifications $specifications `
+        -ExistingProcessRecords $ExistingProcessRecords
+    if ($receipt.resource_budget_exceeded) {
+        throw 'SIMION particle batch wave reached sustained critical memory pressure.'
+    }
+    $failed = @($receipt.processes | Where-Object { $null -ne $_.exit_code -and [int]$_.exit_code -ne 0 })
+    if ($failed.Count -gt 0) { throw "SIMION particle batch wave failed: $($failed.name -join ', ')" }
     Push-Location $RepositoryRoot
     try {
         foreach ($merge in @(@{output = $BatchRuns[0].merged_state; property = 'state'}, @{output = $BatchRuns[0].merged_trajectory; property = 'trajectory'})) {
@@ -256,6 +267,79 @@ function Invoke-RfSimionParticleBatchWave {
         Pop-Location
     }
     return $receipt
+}
+
+function Start-RfSimionFormalFirstBatch {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$SimionExe,
+        [Parameter(Mandatory = $true)][string]$CandidateDir,
+        [Parameter(Mandatory = $true)][string]$IobPath,
+        [Parameter(Mandatory = $true)][string]$RootFly2Path,
+        [Parameter(Mandatory = $true)][string]$IobBuilderScript,
+        [Parameter(Mandatory = $true)][string]$ProgramSourcePath,
+        [Parameter(Mandatory = $true)][string]$RootRunConfigLua,
+        [Parameter(Mandatory = $true)][string]$InspectScript,
+        [Parameter(Mandatory = $true)][string]$IobReport,
+        [Parameter(Mandatory = $true)][string]$LogDir,
+        [Parameter(Mandatory = $true)][int]$TrajectoryQuality,
+        [Parameter(Mandatory = $true)][int]$RfStepsPerPeriod,
+        [Parameter(Mandatory = $true)]$FirstBatchRun,
+        [Parameter(Mandatory = $true)][string]$DispatchPlanPath
+    )
+    Initialize-RfSimionPaBasis -SimionExe $SimionExe -CandidateDir $CandidateDir
+    Initialize-RfSimionPreparedBatch -SimionExe $SimionExe -CandidateDir $CandidateDir `
+        -IobPath $IobPath -Fly2Path $RootFly2Path -IobBuilderScript $IobBuilderScript `
+        -ProgramSourcePath $ProgramSourcePath -RunConfigLua $RootRunConfigLua `
+        -InspectScript $InspectScript -IobReport $IobReport -LogDir $LogDir
+    $specification = New-RfSimionFlyProcessSpecification -Name ([string]$FirstBatchRun.name) `
+        -SimionExe $SimionExe -CandidateDir $CandidateDir -IobPath ([string]$FirstBatchRun.config.iob) `
+        -Fly2Path ([string]$FirstBatchRun.config.fly2) -RunConfigLua ([string]$FirstBatchRun.lua) `
+        -IobReport $IobReport -LogDir ([string]$FirstBatchRun.log_dir) `
+        -TrajectoryQuality ([int]$FirstBatchRun.config.trajectory_quality) `
+        -RfStepsPerPeriod ([int]$FirstBatchRun.config.rf_steps_per_period)
+    return Start-ObservedFormalProcess -DispatchPlanPath $DispatchPlanPath `
+        -ProcessSpecification $specification
+}
+
+function Update-RfSimionDispatchAfterFormalObservation {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$PythonExe,
+        [Parameter(Mandatory = $true)][string]$RepositoryRoot,
+        [Parameter(Mandatory = $true)][string]$DispatchRequestPath,
+        [Parameter(Mandatory = $true)][string]$ResourceProfilesPath,
+        [Parameter(Mandatory = $true)][string]$DispatchPlanPath,
+        [Parameter(Mandatory = $true)][string]$BatchPlanPath,
+        [Parameter(Mandatory = $true)]$Observation
+    )
+    if ([int64]$Observation.observed_peak_process_tree_working_set_bytes -lt 1) {
+        throw 'The first formal SIMION batch did not produce a usable resource observation.'
+    }
+    $arguments = @(
+        '-m','common.simion.resource_scheduler','--request',$DispatchRequestPath,
+        '--profiles',$ResourceProfilesPath,'--output',$DispatchPlanPath,
+        '--available-memory-bytes',([string]$Observation.available_memory_bytes),
+        '--total-physical-memory-bytes',([string]$Observation.total_physical_memory_bytes),
+        '--observed-formal-peak-bytes',([string]$Observation.observed_peak_process_tree_working_set_bytes),
+        '--observed-formal-cpu-percent',([string]$Observation.observed_process_cpu_percent),
+        '--observed-background-cpu-percent',([string]$Observation.observed_background_cpu_percent)
+    )
+    if ($Observation.completed_naturally) { $arguments += '--first-batch-completed' }
+    Push-Location $RepositoryRoot
+    try {
+        & $PythonExe @arguments | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw 'SIMION formal-first dispatch replanning failed.' }
+        & $PythonExe -m common.simion.particle_batching --from-dispatch-plan $DispatchPlanPath `
+            --output $BatchPlanPath | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw 'SIMION formal-first particle batch planning failed.' }
+    } finally {
+        Pop-Location
+    }
+    return [pscustomobject]@{
+        dispatch = Get-Content -LiteralPath $DispatchPlanPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        batches = Get-Content -LiteralPath $BatchPlanPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    }
 }
 
 function Invoke-RfSimionCoreRun {

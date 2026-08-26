@@ -4,6 +4,7 @@ import tempfile
 from pathlib import Path
 
 from common.simion.particle_batching import (
+    batch_plan_from_dispatch,
     merge_rebased_particle_csvs,
     merge_simion_summaries,
     plan_single_wave_batches,
@@ -29,6 +30,23 @@ class ParticleBatchingTests(unittest.TestCase):
         for particle_count, batch_count in ((0, 1), (1000, 0), (2, 3)):
             with self.assertRaises(ValueError):
                 plan_single_wave_batches(particle_count, batch_count)
+
+    def test_projects_unequal_formal_first_partition_without_rebalancing(self) -> None:
+        batches = [
+            {"index": 1, "count": 500, "particle_id_min": 1,
+             "particle_id_max": 500, "simion_particle_id_offset": 0},
+            {"index": 2, "count": 1500, "particle_id_min": 501,
+             "particle_id_max": 2000, "simion_particle_id_offset": 500},
+            {"index": 3, "count": 1500, "particle_id_min": 2001,
+             "particle_id_max": 3500, "simion_particle_id_offset": 2000},
+            {"index": 4, "count": 1500, "particle_id_min": 3501,
+             "particle_id_max": 5000, "simion_particle_id_offset": 3500},
+        ]
+        plan = batch_plan_from_dispatch({
+            "role": "simion_repository_dispatch_plan", "particle_count": 5000,
+            "waves": [{"coverage": "complete_population", "batches": batches}],
+        })
+        self.assertEqual([item["count"] for item in plan["batches"]], [500, 1500, 1500, 1500])
 
     def test_python_merges_rebased_data_and_summaries(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -72,7 +72,9 @@ def _plan_batches_from_observation(
     }
     bootstrap = plan_simion_dispatch(request, [])
     return (
-        plan_adaptive_followup(bootstrap, observed_peak_bytes)
+        plan_adaptive_followup(
+            bootstrap, observed_peak_bytes, first_batch_completed=True
+        )
         if observed_peak_bytes is not None else bootstrap
     )
 

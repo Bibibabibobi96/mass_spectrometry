@@ -98,12 +98,18 @@ GUI必须可见并可编辑四实例、Fast Adjust电压、实例坐标、Fly2�
 
 Paper 1 C3 的五实例 Candidate IOB 不能使用单一 PA 的局部场作为独立轴向参考；局部 overlay 必须与
 其余实例按 Workbench 总场共同采样。`workflows/cross_solver_diagnostics/simion/export_total_axis_field.lua`
-只通过 SIMION 2020 官方 `simion.wb:epotential` 和 `simion.wb:efield` 导出该总场，不启动粒子。C3的实际导出
-还必须从冻结 single-flight Program 的执行入口触发其`initialize_run()`和`fast_adjust()`；普通 Lua 脚本不能
-`dofile` Workbench Program（已由2026-08-26真实烟雾测试确认）。因此当前脚本只提供 Workbench 总场采样，
-不能单独作为候选电压场的C3证据。官方支持路径为安装目录
+只通过 SIMION 2020 官方 `simion.wb:epotential` 和 `simion.wb:efield` 导出该总场。C3 的实际导出由唯一
+single-flight 入口生成**顶层** Lua 脚本：它先载入该次 run-local 的 field-only 五实例 IOB（与可飞行
+IOB 使用相同 PA 和变换，但不同 basename 且不带 Program/Fly2，防止 SIMION 自动执行粒子 Program），再以同一冻结 RF、脉冲、
+前端和加速器电极计划复现 post-pulse fast-adjust，最后采样`repeller → grid2`轴场；该范围覆盖记录的预脉冲
+状态至局部加速器出口。Workbench Program callback 中调用总场 API 会使真实 Fly 失败，已由2026-08-26
+烟雾运行确认，故该路径不得用哨兵粒子、`initialize_run()`或任何粒子飞行触发。普通 Lua 脚本不能`dofile`
+Workbench Program，因而导出器必须由冻结的 Program 输入生成，不能单独对历史 IOB 施加未知电压。官方支持路径为安装目录
 `C:\Program Files\SIMION-2020\examples\field_dump\fielddumplib.lua`（`get_point`）和
-`examples\molecular_beam\README.html`（Workbench `efield` 示例），查阅日期为2026-08-26。
+`examples\field_dump\field_dump.lua`（顶层 Workbench field dump），查阅日期为2026-08-26。
+该导出只能由 integration 的唯一单飞入口以`-BuildOnly -ProgramAxisFieldExport`执行；它消费该次冻结的
+Candidate、PA/IOB、脉冲计划和数值身份，并把CSV及资源记录发布到同一个immutable run，不能绕开run manifest
+直接对历史IOB调用；它不启动粒子，也不构成粒子物理或数值结果。
 导出器是基于官方 API 的项目实现，不是供应商对本项目积分或论文结论的推荐。历史 single-flight run
 可能按保留策略裁剪 PA0；此时必须由冻结 cache generation 重建短暂 runtime IOB 并在派生 manifest
 记录来源，不能用残缺 IOB 或单 PA 代替总场。

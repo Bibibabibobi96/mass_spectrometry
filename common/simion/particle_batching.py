@@ -49,6 +49,40 @@ def plan_single_wave_batches(particle_count: int, batch_count: int) -> dict[str,
     }
 
 
+def batch_plan_from_dispatch(dispatch_plan: dict[str, Any]) -> dict[str, Any]:
+    """Project the scheduler's current particle partition into merge format."""
+    if dispatch_plan.get("role") != "simion_repository_dispatch_plan":
+        raise ValueError("dispatch plan has an unsupported role")
+    waves = dispatch_plan.get("waves")
+    if not isinstance(waves, list) or len(waves) != 1 or not isinstance(waves[0], dict):
+        raise ValueError("dispatch plan must contain exactly one wave")
+    wave = waves[0]
+    batches = wave.get("batches")
+    if not isinstance(batches, list) or not batches:
+        raise ValueError("dispatch wave has no particle batches")
+    result = {
+        "schema_version": 1,
+        "role": "simion_single_wave_particle_batch_plan",
+        "dispatch": "single_wave_parallel",
+        "particle_count": dispatch_plan.get("particle_count"),
+        "batch_count": len(batches),
+        "coverage": wave.get("coverage"),
+        "batches": batches,
+    }
+    if wave.get("coverage") == "complete_population":
+        expected = list(range(1, int(result["particle_count"]) + 1))
+        actual = [
+            particle_id
+            for batch in batches
+            for particle_id in range(
+                batch["particle_id_min"], batch["particle_id_max"] + 1
+            )
+        ]
+        if actual != expected:
+            raise ValueError("complete dispatch wave does not cover each particle exactly once")
+    return result
+
+
 def merge_rebased_particle_csvs(
     batches: list[tuple[Path, int]], output: Path
 ) -> None:
@@ -144,9 +178,22 @@ def main() -> int:
     parser.add_argument("--batch-summary", action="append", type=Path)
     parser.add_argument("--batch-plan", type=Path)
     parser.add_argument("--count-csv", type=Path)
+    parser.add_argument("--from-dispatch-plan", type=Path)
     parser.add_argument("--event")
     parser.add_argument("--status")
     args = parser.parse_args()
+    if args.from_dispatch_plan:
+        if (
+            args.count_csv or args.merge_rebase_csv or args.merge_summaries
+            or args.particle_count or args.batch_count
+        ):
+            parser.error("dispatch projection accepts no other operation")
+        dispatch = json.loads(args.from_dispatch_plan.read_text(encoding="utf-8-sig"))
+        result = batch_plan_from_dispatch(dispatch)
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+        print(f"SIMION_DISPATCH_BATCH_PLAN=PASS BATCHES={result['batch_count']}")
+        return 0
     if args.count_csv:
         if args.merge_rebase_csv or args.merge_summaries or args.particle_count or args.batch_count:
             parser.error("CSV count accepts no batch or merge arguments")

@@ -45,24 +45,27 @@ class ReflectronVoltageCompensationTests(unittest.TestCase):
                 combined.extend(batch["ion"].read_text().splitlines())
             self.assertEqual(combined, source.read_text().splitlines())
 
-    def test_observed_bootstrap_peak_selects_the_repository_batch_count(self) -> None:
+    def test_completed_formal_batch_is_retained_before_repository_tail(self) -> None:
         with patch(
-            "common.simion.resource_scheduler.available_physical_memory_bytes",
-            return_value=100,
+            "common.simion.resource_scheduler.physical_memory_bytes",
+            return_value=(130, 200),
         ):
             plan = _plan_batches_from_observation(1000, 8, 20)
-        self.assertEqual(plan["estimation"]["kind"], "observed_bootstrap_peak")
-        self.assertEqual(plan["waves"][0]["batch_count"], 4)
+        self.assertEqual(plan["estimation"]["kind"], "observed_formal_batch")
+        self.assertTrue(plan["estimation"]["first_batch_result_retained"])
+        self.assertEqual(plan["limits"]["maximum_concurrency"], 4)
+        self.assertEqual(plan["waves"][0]["batch_count"], 5)
         self.assertEqual(sum(batch["count"] for batch in plan["waves"][0]["batches"]), 1000)
 
-    def test_unobservable_peak_stays_on_the_conservative_bootstrap_plan(self) -> None:
+    def test_unknown_identity_starts_one_formal_tenth_population_batch(self) -> None:
         with patch(
-            "common.simion.resource_scheduler.available_physical_memory_bytes",
-            return_value=100,
+            "common.simion.resource_scheduler.physical_memory_bytes",
+            return_value=(130, 200),
         ):
             plan = _plan_batches_from_observation(1000, 8, None)
-        self.assertEqual(plan["waves"][0]["kind"], "bootstrap")
+        self.assertEqual(plan["waves"][0]["kind"], "formal_observation")
         self.assertEqual(plan["waves"][0]["batch_count"], 1)
+        self.assertEqual(plan["waves"][0]["batches"][0]["count"], 100)
 
     def test_simion_program_requires_process_local_enabled_profile(self) -> None:
         program = (

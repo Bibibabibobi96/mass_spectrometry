@@ -74,12 +74,12 @@ class SimionRunnerContractTests(unittest.TestCase):
         )
         self.assertIn("Invoke-ResourceBudgetedProcess", source)
         self.assertIn("Start-Process @startArguments", watchdog)
-        self.assertIn("$process.WaitForExit", watchdog)
+        self.assertIn("$record.process.WaitForExit", watchdog)
         self.assertIn("Start-Sleep -Milliseconds 500", source)
         self.assertIn("'--nogui','--noprompt','fly'", source)
         self.assertNotIn("simion_run_fly.lua", source)
 
-    def test_default_dispatch_calibrates_unknown_profiles_before_parallel_replan(self) -> None:
+    def test_default_dispatch_retains_first_formal_batch_before_parallel_replan(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
         discover = "common.simion.resource_profile discover"
         schedule = "common.simion.resource_scheduler"
@@ -89,11 +89,12 @@ class SimionRunnerContractTests(unittest.TestCase):
         self.assertIn(publish, source)
         self.assertLess(source.index(discover), source.index(schedule))
         self.assertLess(source.index("Complete-ResourceUsage"), source.index(publish))
-        self.assertIn("unknown_resource_profile_bootstrap", source)
+        self.assertIn("formal_first_batch_observation", source)
         self.assertIn("$automaticDispatch=[pscustomobject]@{kind='automatic';field_kind='rf';independent_particles=$true}", source)
-        self.assertIn("-CalibrationDurationSeconds ([int]$calibration.duration_seconds)", source)
-        self.assertIn("--observed-bootstrap-peak-bytes", source)
-        self.assertIn("RESOURCE_CALIBRATION_ONLY", source)
+        self.assertIn("Start-ObservedFormalProcess", source)
+        self.assertIn("--observed-formal-peak-bytes", source)
+        self.assertIn("--first-batch-completed", source)
+        self.assertNotIn("RESOURCE_CALIBRATION_ONLY", source)
         self.assertIn("& $python @batchArguments | Out-Null", source)
         self.assertNotIn("maximum_process_tree_working_set_bytes=[int64]", source)
         self.assertNotIn("$request[$name]=[int]$automaticDispatch.$name", source)
@@ -610,11 +611,11 @@ class SimionRunnerContractTests(unittest.TestCase):
         self.assertIn("--merge-rebase-csv", runner)
         self.assertIn("--merge-summaries", runner)
         self.assertIn(
-            "--observed-bootstrap-peak-bytes ([string]$probe.observed_peak_process_tree_working_set_bytes) | Out-Null",
+            "'--observed-formal-peak-bytes',([string]$formalObservation.observed_peak_process_tree_working_set_bytes)",
             runner,
         )
         self.assertIn(
-            "--batch-count ([string]$updatedDispatch.waves[0].batch_count) --output $batchPlan | Out-Null",
+            "--from-dispatch-plan $dispatchPlan",
             runner,
         )
         self.assertNotIn("Add-Content -LiteralPath $caseState", runner)

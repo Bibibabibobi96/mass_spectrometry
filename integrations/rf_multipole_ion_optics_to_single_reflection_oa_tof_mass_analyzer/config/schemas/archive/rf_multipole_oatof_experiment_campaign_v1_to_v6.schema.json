@@ -24,7 +24,15 @@
   },
   "allOf": [
     {
-      "if": {"required": ["pre_pulse_time_series_screening"]},
+      "if": {
+        "required": ["pre_pulse_time_series_screening"],
+        "properties": {
+          "pre_pulse_time_series_screening": {
+            "properties": {"sample_count": {"minimum": 2}},
+            "required": ["sample_count"]
+          }
+        }
+      },
       "then": {
         "properties": {
           "schema_version": {"enum": [5, 6]},

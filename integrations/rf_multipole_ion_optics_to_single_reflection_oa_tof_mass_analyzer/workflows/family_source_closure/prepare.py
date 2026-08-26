@@ -441,69 +441,89 @@ def resolve_single_flight_dispatch_plan(
 
 
 def validate_pre_pulse_time_series_campaign(campaign: dict[str, Any]) -> None:
-    """Fail closed on a one-row detector-blind actual-field time screen."""
+    """Fail closed on detector-blind RF pre-pulse screening or a single snapshot."""
 
     contract = campaign.get("pre_pulse_time_series_screening")
     if contract is None:
         return
     rows = campaign["experiments"]
-    if len(rows) != 1 or "FUNCTIONAL_ONLY" not in campaign["claim_limit"]:
-        raise ContractError("pre-pulse time-series campaign scope differs")
-    row = rows[0]
-    source = row["source"]
-    population = row["single_flight_population"]
-    execution = population["execution_population"]
-    denominators = population.get("denominators", {})
-    source_authority = population.get("source_authority", {})
-    population_identity = (
-        population.get("population_mode"),
-        source_authority.get("table_binding"),
-        execution.get("selection_algorithm"),
+    is_single_snapshot = (
+        contract.get("sample_count") == 1
+        and contract.get("relative_start_index") == 0
+        and contract.get("relative_end_index") == 0
     )
-    is_legacy_n100_prefix = population_identity == (
-        "first_100_rows_in_frozen_file_order",
-        "prepared_deterministic_prefix",
-        "first_100_rows_in_frozen_file_order",
-    ) and execution.get("particle_count") == 100
-    is_full_prepared_population = population_identity == (
-        "first_n_rows_in_frozen_file_order",
-        "prepared_deterministic_prefix",
-        "first_n_rows_in_frozen_file_order",
-    ) and execution.get("particle_count") == source.get("launched_particle_count")
-    is_terminal_handoff_population = population_identity in {
-        (
-            "terminal_handoff_continuation",
-            "terminal_handoff_continuation_global_state",
-            "all_transmitted_terminal_handoffs_in_source_particle_id_order",
-        ),
-        (
-            "terminal_handoff_continuation",
-            "terminal_handoff_continuation_global_state",
-            "first_n_transmitted_terminal_handoffs_in_source_particle_id_order",
-        ),
-    } and (
-        row.get("source_release_mode") == "continuous_frontend_handoff"
-        and 0 < execution.get("particle_count", 0) < source.get("launched_particle_count", 0)
+    required_claim = (
+        "DETECTOR_BLIND_SOURCE_ONLY" if is_single_snapshot else "FUNCTIONAL_ONLY"
     )
-    if (
-        contract.get("active_scope") != "pre_pulse_frontend_accelerator"
-        or contract.get("pa_cache_keys", {}).get("flight_tube") is not None
-        or contract.get("pa_cache_keys", {}).get("reflectron") is not None
-        or source.get("authority_scope") != "source_population"
-        or not isinstance(source.get("launched_particle_count"), int)
-        or source["launched_particle_count"] < execution.get("particle_count", 0)
-        or not (is_legacy_n100_prefix or is_full_prepared_population or is_terminal_handoff_population)
-        or denominators.get("population_count") != (
-            source.get("launched_particle_count") if is_terminal_handoff_population
-            else execution.get("particle_count")
-        )
-        or denominators.get("eligible_population_count")
-        != (source.get("launched_particle_count") if is_terminal_handoff_population
-            else execution.get("particle_count"))
-        or contract["sample_count"]
-        != contract["relative_end_index"] - contract["relative_start_index"] + 1
+    if not rows or required_claim not in campaign["claim_limit"] or (
+        not is_single_snapshot and len(rows) != 1
     ):
-        raise ContractError("pre-pulse time-series source, population, or grid differs")
+        raise ContractError("pre-pulse time-series campaign scope differs")
+    for row in rows:
+        source = row["source"]
+        population = row["single_flight_population"]
+        execution = population["execution_population"]
+        denominators = population.get("denominators", {})
+        source_authority = population.get("source_authority", {})
+        population_identity = (
+            population.get("population_mode"),
+            source_authority.get("table_binding"),
+            execution.get("selection_algorithm"),
+        )
+        is_legacy_n100_prefix = population_identity == (
+            "first_100_rows_in_frozen_file_order",
+            "prepared_deterministic_prefix",
+            "first_100_rows_in_frozen_file_order",
+        ) and execution.get("particle_count") == 100
+        is_full_prepared_population = population_identity == (
+            "first_n_rows_in_frozen_file_order",
+            "prepared_deterministic_prefix",
+            "first_n_rows_in_frozen_file_order",
+        ) and execution.get("particle_count") == source.get("launched_particle_count")
+        is_full_source_contract_population = population_identity == (
+            "continuous_injection_full_population",
+            "source_contract_particle_source",
+            "all_rows_in_frozen_file_order",
+        ) and execution.get("particle_count") == source.get("launched_particle_count")
+        is_terminal_handoff_population = population_identity in {
+            (
+                "terminal_handoff_continuation",
+                "terminal_handoff_continuation_global_state",
+                "all_transmitted_terminal_handoffs_in_source_particle_id_order",
+            ),
+            (
+                "terminal_handoff_continuation",
+                "terminal_handoff_continuation_global_state",
+                "first_n_transmitted_terminal_handoffs_in_source_particle_id_order",
+            ),
+        } and (
+            row.get("source_release_mode") == "continuous_frontend_handoff"
+            and 0 < execution.get("particle_count", 0) < source.get("launched_particle_count", 0)
+        )
+        if (
+            contract.get("active_scope") != "pre_pulse_frontend_accelerator"
+            or contract.get("pa_cache_keys", {}).get("flight_tube") is not None
+            or contract.get("pa_cache_keys", {}).get("reflectron") is not None
+            or source.get("authority_scope") != "source_population"
+            or not isinstance(source.get("launched_particle_count"), int)
+            or source["launched_particle_count"] < execution.get("particle_count", 0)
+            or not (
+                is_legacy_n100_prefix
+                or is_full_prepared_population
+                or is_full_source_contract_population
+                or is_terminal_handoff_population
+            )
+            or denominators.get("population_count") != (
+                source.get("launched_particle_count") if is_terminal_handoff_population
+                else execution.get("particle_count")
+            )
+            or denominators.get("eligible_population_count")
+            != (source.get("launched_particle_count") if is_terminal_handoff_population
+                else execution.get("particle_count"))
+            or contract["sample_count"]
+            != contract["relative_end_index"] - contract["relative_start_index"] + 1
+        ):
+            raise ContractError("pre-pulse time-series source, population, or grid differs")
 
 
 def compile_pre_pulse_time_series_contract(
