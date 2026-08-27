@@ -85,6 +85,11 @@ $$
 instrument clock仅用于调度与诊断，禁止作为分辨率声明；集成分析输出必须保持
 `instrument_clock_peak_is_resolution_claim=false`。
 
+2026-08-27 connector-gap工作点对照的旧派生报告曾误用absolute instrument clock；其R与无符号
+差异区间已由[脉冲相对时钟勘误与新派生证据](publication/paper_1_jasms/connector_gap_working_point_mechanism_20260827.md)
+替代。直接FWHM、粒子命中及原始轨迹不变；收益区间现为以继承工作点为分母的有符号配对统计。
+该修正不改变524 Da Formal资产，也不把单源100 Th对照升级为通用算法优越性证据。
+
 ## 当前能力与边界
 
 | 能力 | 当前范围 | 资格 |
