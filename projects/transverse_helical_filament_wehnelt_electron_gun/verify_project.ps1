@@ -5,6 +5,13 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
 $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
+$hostExecutionLease = $null
+$hostExecutionLeaseSupport = Join-Path $repoRoot 'common\host_execution_lease.ps1'
+if (Test-Path -LiteralPath $hostExecutionLeaseSupport -PathType Leaf) {
+  . $hostExecutionLeaseSupport
+  $hostExecutionLease = Enter-HostExecutionLease -Role GATE
+}
+try {
 . (Join-Path $repoRoot 'common\require_powershell7.ps1')
 if (-not $PythonExe) {
   $PythonExe = Join-Path $repoRoot '.venv\Scripts\python.exe'
@@ -48,3 +55,8 @@ try {
 Write-Output (
   'PROJECT_GATE=PASS PROJECT=transverse_helical_filament_wehnelt_electron_gun LEVEL=Static'
 )
+} finally {
+  if ($null -ne $hostExecutionLease) {
+    Exit-HostExecutionLease -Lease $hostExecutionLease
+  }
+}

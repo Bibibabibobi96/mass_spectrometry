@@ -92,6 +92,7 @@ $runtime = Resolve-RfOatofRuntimeBinding -RepoRoot $repoRoot `
   -AllowImplementationContentShaMismatch:($RuntimeImplementationBindingMode -eq 'exploration')
 . $runtime.run_artifact_support
 . (Join-Path $repoRoot 'common\multipole\resource_budget_support.ps1')
+. (Join-Path $repoRoot 'common\host_execution_lease.ps1')
 
 function Invoke-SingleFlightPython {
   param(
@@ -433,6 +434,7 @@ function Write-RfPreCacheRunConfiguration {
 Write-RfPreCacheRunConfiguration `
   -LifecycleStage 'pa_cache_policy_pending_budget_validation'
 
+$hostExecutionLease = Enter-HostExecutionLease -Role SIMION
 try {
   $budget = Initialize-RfIntegrationStageBudget -ResolvedBudget $ResolvedEngineeringBudget `
     -InputDir $package.input_dir -ExpectedIntegrationId `
@@ -2334,4 +2336,6 @@ try {
     Write-Warning "Could not remove short execution alias after failed run: $($_.Exception.Message)"
   }
   throw
+} finally {
+  Exit-HostExecutionLease -Lease $hostExecutionLease
 }

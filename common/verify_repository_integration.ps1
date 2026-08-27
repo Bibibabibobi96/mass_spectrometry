@@ -12,6 +12,9 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'parallel_gate_support.ps1')
 . (Join-Path $PSScriptRoot 'gate_catalog_support.ps1')
 $repoRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'host_execution_lease.ps1')
+$hostExecutionLease = Enter-HostExecutionLease -Role GATE
+try {
 if (-not $PythonExe) {
     $venvPython = Join-Path $repoRoot '.venv\Scripts\python.exe'
     if (Test-Path -LiteralPath $venvPython -PathType Leaf) { $PythonExe = $venvPython }
@@ -147,3 +150,6 @@ Invoke-ParallelIntegrationGroup $fastFailStages
 Invoke-ParallelIntegrationGroup $fullRegressionStages
 
 Write-Output "REPOSITORY_INTEGRATION_GATE=PASS PYTHON=$pythonVersion"
+} finally {
+    Exit-HostExecutionLease -Lease $hostExecutionLease
+}

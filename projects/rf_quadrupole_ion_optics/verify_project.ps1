@@ -8,6 +8,13 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
 $repoRoot = (Resolve-Path (Join-Path $projectRoot '..\..')).Path
+$hostExecutionLease = $null
+$hostExecutionLeaseSupport = Join-Path $repoRoot 'common\host_execution_lease.ps1'
+if (Test-Path -LiteralPath $hostExecutionLeaseSupport -PathType Leaf) {
+  . $hostExecutionLeaseSupport
+  $hostExecutionLease = Enter-HostExecutionLease -Role GATE
+}
+try {
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Python 3.11 runtime missing: $python" }
 if ($FreshnessPrevalidated -and $Level -eq 'Freshness') {
@@ -82,3 +89,8 @@ if ($Level -eq 'Formal') {
 }
 
 "PROJECT_GATE=PASS PROJECT=rf_quadrupole_ion_optics LEVEL=$Level"
+} finally {
+  if ($null -ne $hostExecutionLease) {
+    Exit-HostExecutionLease -Lease $hostExecutionLease
+  }
+}

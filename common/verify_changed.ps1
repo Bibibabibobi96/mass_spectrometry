@@ -17,6 +17,9 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'gate_catalog_support.ps1')
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'host_execution_lease.ps1')
+$hostExecutionLease = Enter-HostExecutionLease -Role GATE
+try {
 if ($InternalStage) {
     if (-not $InternalRequestPath -or
         -not (Test-Path -LiteralPath $InternalRequestPath -PathType Leaf)) {
@@ -424,3 +427,6 @@ $postFreshnessStages = @(
 Invoke-ChangedStageGroup $postFreshnessStages
 
 Write-Output "CHANGED_GATE=PASS PYTHON=$pythonVersion CHANGED_PATHS=$($changedPaths.Count) FULL_SCOPE=$([bool]$FullScope)"
+} finally {
+    Exit-HostExecutionLease -Lease $hostExecutionLease
+}

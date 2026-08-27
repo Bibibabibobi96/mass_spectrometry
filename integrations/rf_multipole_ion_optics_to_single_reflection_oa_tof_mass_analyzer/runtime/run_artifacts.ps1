@@ -360,9 +360,15 @@ function Resolve-RfReusableCacheDirectory {
     return (Resolve-RfCurrentCacheGeneration -CacheRoot $CacheRoot `
       -CacheKey $CacheKey -Role $Role)
   }
-  if (Test-RfVerifiedLegacyV2CacheEntry -Python $Python -RepoRoot $RepoRoot `
+  # A true legacy v2 entry has no generation pointer.  If a pointer is
+  # present but cannot be resolved, the cache is a broken partial migration;
+  # do not silently fall back to its mutable root files.  Returning a miss
+  # lets the caller publish a verified v3 generation alongside the old data.
+  $legacyPointer = Join-Path (Join-Path $CacheRoot $CacheKey) 'current_generation.json'
+  if (-not (Test-Path -LiteralPath $legacyPointer -PathType Leaf) -and
+      (Test-RfVerifiedLegacyV2CacheEntry -Python $Python -RepoRoot $RepoRoot `
       -CacheRoot $CacheRoot -CacheKey $CacheKey `
-      -Role $Role -Identity $Identity) {
+      -Role $Role -Identity $Identity)) {
     return (Join-Path $CacheRoot $CacheKey)
   }
   return $null

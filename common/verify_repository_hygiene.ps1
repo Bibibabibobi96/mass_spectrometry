@@ -4,6 +4,13 @@ param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
+$hostExecutionLease = $null
+$hostExecutionLeaseSupport = Join-Path $PSScriptRoot 'host_execution_lease.ps1'
+if (Test-Path -LiteralPath $hostExecutionLeaseSupport -PathType Leaf) {
+  . $hostExecutionLeaseSupport
+  $hostExecutionLease = Enter-HostExecutionLease -Role GATE
+}
+try {
 $workspaceRoot = Split-Path -Parent $repoRoot
 $errors = [Collections.Generic.List[string]]::new()
 
@@ -80,3 +87,8 @@ if ($errors.Count -gt 0) {
   throw "Repository hygiene gate failed with $($errors.Count) error(s)."
 }
 Write-Output "REPOSITORY_HYGIENE=PASS TRACKED_FILES=$($tracked.Count)"
+} finally {
+  if ($null -ne $hostExecutionLease) {
+    Exit-HostExecutionLease -Lease $hostExecutionLease
+  }
+}

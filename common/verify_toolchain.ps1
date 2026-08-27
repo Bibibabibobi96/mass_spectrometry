@@ -7,6 +7,9 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'host_execution_lease.ps1')
+$hostExecutionLease = Enter-HostExecutionLease -Role GATE
+try {
 $matlabRoot = if ($env:MATLAB_R2025B_ROOT) {
     [IO.Path]::GetFullPath($env:MATLAB_R2025B_ROOT)
 } else {
@@ -104,3 +107,6 @@ if (-not $SkipSolidWorksProbe) {
     SolidWorksProbeMode = $solidWorksProbeMode
     STATUS = 'PASS'
 } | Format-List
+} finally {
+  Exit-HostExecutionLease -Lease $hostExecutionLease
+}

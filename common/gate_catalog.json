@@ -132,6 +132,14 @@
           "reason": "changed_scope_entrypoint_changed"
         },
         {
+          "exact": "common/host_execution_lease.ps1",
+          "reason": "host_execution_lease_changed"
+        },
+        {
+          "exact": "common/test_host_execution_lease.ps1",
+          "reason": "host_execution_lease_test_changed"
+        },
+        {
           "exact": "common/parallel_gate_support.ps1",
           "reason": "parallel_gate_support_changed"
         },

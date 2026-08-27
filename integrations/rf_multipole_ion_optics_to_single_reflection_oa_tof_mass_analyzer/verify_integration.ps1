@@ -8,6 +8,13 @@ $ErrorActionPreference = 'Stop'
 
 $integrationRoot = $PSScriptRoot
 $repoRoot = Split-Path -Parent (Split-Path -Parent $integrationRoot)
+$hostExecutionLease = $null
+$hostExecutionLeaseSupport = Join-Path $repoRoot 'common\host_execution_lease.ps1'
+if (Test-Path -LiteralPath $hostExecutionLeaseSupport -PathType Leaf) {
+    . $hostExecutionLeaseSupport
+    $hostExecutionLease = Enter-HostExecutionLease -Role GATE
+}
+try {
 if ([string]::IsNullOrWhiteSpace($PythonExe)) {
     $venvPython = Join-Path $repoRoot '.venv\Scripts\python.exe'
     if (Test-Path -LiteralPath $venvPython -PathType Leaf) {
@@ -60,3 +67,8 @@ finally {
 }
 
 Write-Output "INTEGRATION_GATE=PASS FAMILY=rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
+} finally {
+    if ($null -ne $hostExecutionLease) {
+        Exit-HostExecutionLease -Lease $hostExecutionLease
+    }
+}

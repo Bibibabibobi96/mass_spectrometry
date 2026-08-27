@@ -4,6 +4,9 @@ param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'host_execution_lease.ps1')
+$hostExecutionLease = Enter-HostExecutionLease -Role GATE
+try {
 & (Join-Path $PSScriptRoot 'verify_repository_hygiene.ps1')
 $errors = New-Object System.Collections.Generic.List[string]
 $markdownFiles = @(Get-ChildItem -LiteralPath $repoRoot -Recurse -File -Filter '*.md' |
@@ -474,3 +477,6 @@ if ($errors.Count -gt 0) {
     ComsolReferenceBytes = if (Test-Path -LiteralPath $comsolApiPath) { (Get-Item $comsolApiPath).Length } else { 0 }
     STATUS = 'PASS'
 } | Format-List
+} finally {
+    Exit-HostExecutionLease -Lease $hostExecutionLease
+}
