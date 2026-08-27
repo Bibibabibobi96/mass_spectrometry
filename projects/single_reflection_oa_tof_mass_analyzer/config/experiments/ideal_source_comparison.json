@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "role": "ideal_source_comparison",
+  "source": {
+    "mass_to_charge_th": 100.0,
+    "center_x_mm": 1.498375640839315,
+    "center_velocity_m_per_s": -2.9323518410018137,
+    "velocity_slope_m_per_s_per_mm": 228.80604377795845,
+    "velocity_quadratic_m_per_s_per_mm2": 0.0
+  },
+  "outer": {
+    "zone1_length_mm": 3.25,
+    "downstream_length_mm": 17.0,
+    "split_fraction": 0.3,
+    "zone1_voltage_drop_v": 250.0,
+    "nominal_energy_per_charge_v": 2000.0
+  },
+  "reflectron": {
+    "stage1_length_mm": 120.0,
+    "stage2_length_mm": 96.1563,
+    "upstream_drift_mm": 600.0,
+    "downstream_drift_mm": 600.0
+  },
+  "focus_drift_mm": 42.742615461548496,
+  "three_zone_eta": -1.0391326394747527,
+  "sampling": {"particle_count": 1000, "replicate_count": 3},
+  "residual_scan": {
+    "full_width_mm": 1.0,
+    "residual_sigma_m_per_s": [0.0, 1.0, 3.0, 10.0, 30.0, 60.0, 100.0],
+    "minimum_low_residual_gain_percent": 20.0,
+    "maximum_high_residual_gain_percent": 10.0
+  },
+  "width_scan": {
+    "full_widths_mm": [0.25, 0.5, 1.0, 1.5, 2.2, 2.6, 2.8],
+    "residual_sigma_m_per_s": [0.0, 1.0, 10.0],
+    "minimum_resolution": 25000.0,
+    "minimum_model_arrival_fraction": 1.0
+  },
+  "analysis_contract": "config/analysis_contract.json",
+  "scope": "Synthetic uniform axial sources; independent Gaussian velocity residuals; exact piecewise-uniform static fields. Residual comparison changes only the two reflectron voltages using the known affine source relation; accelerator fields and all distances stay fixed. Width comparison uses matched reflectrons and the same outer geometry, with eta=0 for two zones and the declared historical three-zone anchor. No global optimization, physical source production, aperture transmission, 3D, or Formal claim."
+}

@@ -24,7 +24,7 @@
     },
     {
       "descriptor": "projects/single_reflection_oa_tof_mass_analyzer/config/project.json",
-      "sha256": "6765BC8E46ACB383C2B8AE2E8CE9C4E7BD027556694F0623B75D392E53A058EF"
+      "sha256": "424F9EAABD2F8D99A6AF57D1EC8CA103355FF3137C70E21960494FD3CB1294D9"
     },
     {
       "descriptor": "projects/transverse_helical_filament_wehnelt_electron_gun/config/project.json",
@@ -620,7 +620,8 @@
           "modes": [
             "formal",
             "mass_spectrum",
-            "design_candidate"
+            "design_candidate",
+            "ideal_source_comparison"
           ],
           "metrics": [
             "mass_resolving_power",

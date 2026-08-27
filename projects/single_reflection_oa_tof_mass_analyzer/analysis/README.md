@@ -64,6 +64,8 @@ shield边界和rebuild plan均由该函数一次性闭合。API严格拒绝profi
 
 ## 核心分析
 
+- `ideal_source_comparison.py`：可控均匀空间源、线性/二次速度关系和独立Gaussian残差；复用精确轴向TOF与canonical峰宽，保留完整母cohort及模型域/碰撞分类。工作点仅重算反射器电压，不移动加速器或漂移参考面。
+- `ideal_source_experiment.py`：版本化实验校验、残差优先的确定性case计划和自动科学结论；执行成功不等于假设成立。活动入口和自动续跑说明见下节。
 - `peak_metrics.py`：KDE、直接FWHM和分辨率的唯一参考实现。
 - `reference_analysis.py`：CSV/XLSX/TRACE导入、Recording审计、source mapping、bootstrap和CLI。
 - `mass_spectrum.py`：五质量标定、峰形与探测落点比较。
@@ -89,6 +91,30 @@ shield边界和rebuild plan均由该函数一次性闭合。API严格拒绝profi
 
 正式数据优先CSV/JSON。XLSX只接收人工导出，导入后立即规范化。严格配对必须使用相同粒子ID，并区分
 整体时移与去均值逐粒子残差。
+
+## 自动理想场比较
+
+从仓库根使用Python 3.11运行：
+
+```powershell
+.\.venv\Scripts\python.exe -m projects.single_reflection_oa_tof_mass_analyzer.workflows.ideal_source_comparison.run_comparison --seed 20260827
+```
+
+默认一次完成残差扫描、两区/三区束宽比较，逐case输出进度，自动保存粒子终态CSV、峰宽/尾部/模式、
+电压、阶段结论、总报告与schema-v2 manifest。`--plan`只列计划；`--config`选择同一schema的科学配置。
+科学配置控制源分布、固定几何、扫描轴和科学阈值；峰宽数值口径仍来自项目分析合同；seed/run ID只在
+run instance冻结。`--resume-from <旧run目录>`保持相同配置和seed，自动创建新run，校验代码/配置/环境
+及已完成case内容后复用；旧run及失败证据不改写，不需要手工指定下一阶段。未原子发布的case重算。
+
+运行状态为`success/failed/interrupted`，科学状态独立报告`SUPPORTED/NOT_SUPPORTED/INCONCLUSIVE`
+或已表征的接受范围；负结果不阻止另一项低成本比较。技术异常停止并保存`failure_stage`、`failure_reason`
+和`logs/failure.log`。同种子不重新抽样、归一化残差或挑选共同命中交集；不同seed给出重复范围而非CI。
+束宽接受为从最小已测束宽起、所有seed均通过R与完整母cohort模型可达率的连续已测范围；未知峰或模型
+不支持的反射器一级折返不作为已确认物理上限。最后一个采样点仍通过时只给下界，不外推极限。
+
+此入口属于长期正式分析功能，但结果仅为合成源、理想轴向场的探索证据。它不复用历史T0—T5漏斗的
+人工逐阶段操作，也不改变其只读历史语义；共同模型/指标直接复用。它不启动SIMION/COMSOL、不改Formal，
+不声称实际RF源、真实孔径收集率、完整电压/几何最优化或论文新颖性已证明。
 
 ## Formal与跨求解器
 

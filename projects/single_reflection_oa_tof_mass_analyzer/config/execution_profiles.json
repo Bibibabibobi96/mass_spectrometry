@@ -4,6 +4,31 @@
   "project_id": "single_reflection_oa_tof_mass_analyzer",
   "profiles": [
     {
+      "profile_id": "ideal_source_comparison",
+      "capability_id": "single_reflection_mass_analysis",
+      "mode": "ideal_source_comparison",
+      "evidence_levels": ["static"],
+      "supported_objectives": ["mass_resolving_power"],
+      "supported_operating_points": [{"mass": {"value": 100, "unit": "Da"}, "charge_state": 1}],
+      "supported_design_variables": [],
+      "supported_constraints": [],
+      "deliverable_outputs": ["simulation_results", "validation_report"],
+      "required_bindings": ["particle_source_seed"],
+      "steps": [{
+        "step_id": "ideal_source_comparison",
+        "kind": "analyze",
+        "shell": "python",
+        "entrypoint": "workflows/ideal_source_comparison/run_comparison.py",
+        "run_id_template": null,
+        "arguments": ["--config", "projects/single_reflection_oa_tof_mass_analyzer/config/experiments/ideal_source_comparison.json", "--seed", "{particle_source_seed}", "--run-id", "{run_id}"]
+      }],
+      "limitations": [
+        "Exact axial ideal fields and synthetic sources only; no commercial solver or Formal qualification",
+        "Residual scan recomputes mirror voltages at fixed accelerator fields and geometry; width scan compares the declared same-outer two-zone control and three-zone anchor, not global optima",
+        "Science is owned by config/experiments/ideal_source_comparison.json; numerical peak settings by config/analysis_contract.json; seed and run identity are explicit run bindings"
+      ]
+    },
+    {
       "profile_id": "mass_spectrum_candidate",
       "capability_id": "single_reflection_mass_analysis",
       "mode": "mass_spectrum",

@@ -50,7 +50,8 @@
       "modes": [
         "formal",
         "mass_spectrum",
-        "design_candidate"
+        "design_candidate",
+        "ideal_source_comparison"
       ],
       "metrics": [
         "mass_resolving_power",
