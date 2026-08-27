@@ -12,6 +12,7 @@ import csv
 import math
 import time
 import traceback
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -21,11 +22,14 @@ from common.contracts.file_identity import file_sha256
 from common.contracts.machine_contracts import load_json
 from common.contracts.particle_count_policy import validate_positive_particle_count
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_source_comparison import (
-    NumericalSourceSpec, build_numerical_source, build_working_point,
+    NumericalSourceSpec, build_numerical_source,
     propagate_ideal_source,
 )
+from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_acceptance_linear_design import (
+    solve_linear_third_order_design,
+)
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_ideal_theory import (
-    OuterGeometry, ReflectronGeometry,
+    ReflectronGeometry,
 )
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.ideal_source_comparison.run_comparison import (
     REPO_ROOT, _prepare_run, _publish_manifest, _settings,
@@ -49,7 +53,7 @@ def _finite(value: Any, label: str, *, positive: bool = False) -> float:
 
 def validate_slope_scan_config(config: dict[str, Any]) -> None:
     """Validate the scientific inputs before freezing or calculating a run."""
-    _keys(config, "schema_version role source_template source_slopes_m_per_s_per_mm historical_slope_receipt outer reflectron focus_drift_mm three_zone_eta full_width_mm residual_sigma_m_per_s sampling analysis_contract scope", "slope scan")
+    _keys(config, "schema_version role source_template source_slopes_m_per_s_per_mm historical_slope_receipt theory_controls reflectron full_width_mm residual_sigma_m_per_s sampling analysis_contract scope", "slope scan")
     if config["schema_version"] != 1 or config["role"] != "ideal_source_slope_scan":
         raise ValueError("unsupported slope-scan schema or role")
     _keys(config["source_template"], "mass_to_charge_th center_x_mm center_velocity_m_per_s velocity_quadratic_m_per_s_per_mm2", "source template")
@@ -72,10 +76,16 @@ def validate_slope_scan_config(config: dict[str, Any]) -> None:
     historical_slope = _finite(receipt["slope_m_per_s_per_mm"], "historical source slope")
     if historical_slope not in parsed_slopes:
         raise ValueError("source slopes must include the frozen historical slope")
-    OuterGeometry(**config["outer"])
     ReflectronGeometry(**config["reflectron"])
-    _finite(config["focus_drift_mm"], "focus drift")
-    _finite(config["three_zone_eta"], "three-zone eta")
+    _keys(config["theory_controls"], "field1_v_per_mm center_to_grid1_mm grid2_voltage_fraction reflectron_stage1_voltage_v nominal_energy_per_charge_v focus_drift_mm characteristic_half_width_mm condition_limit coefficient_tolerance_ns order", "theory controls")
+    controls = config["theory_controls"]
+    for name in ("field1_v_per_mm", "center_to_grid1_mm", "reflectron_stage1_voltage_v", "nominal_energy_per_charge_v", "characteristic_half_width_mm", "condition_limit", "coefficient_tolerance_ns"):
+        _finite(controls[name], name, positive=True)
+    if not 0.0 < _finite(controls["grid2_voltage_fraction"], "grid2 voltage fraction") < 1.0:
+        raise ValueError("grid2 voltage fraction must be between zero and one")
+    _finite(controls["focus_drift_mm"], "focus drift")
+    if isinstance(controls["order"], bool) or not isinstance(controls["order"], int) or controls["order"] < 4:
+        raise ValueError("theory order must be an integer at least four")
     _keys(config["sampling"], "particle_count replicate_count", "sampling")
     for name, value in config["sampling"].items():
         validate_positive_particle_count(value)
@@ -106,15 +116,19 @@ def _source(config: dict[str, Any], slope: float) -> NumericalSourceSpec:
 
 
 def _arms(config: dict[str, Any], slope: float) -> dict[str, Any]:
-    """Derive the zero-slope and matching fields from the same source geometry."""
-    source = _source(config, slope)
-    outer, reflectron = OuterGeometry(**config["outer"]), ReflectronGeometry(**config["reflectron"])
-    return {
-        "zero_slope_design": build_working_point(source, outer, reflectron, eta=config["three_zone_eta"],
-            design_velocity_slope_m_per_s_per_mm=0.0, focus_drift_mm=config["focus_drift_mm"]),
-        "matching_slope_design": build_working_point(source, outer, reflectron, eta=config["three_zone_eta"],
-            design_velocity_slope_m_per_s_per_mm=slope, focus_drift_mm=config["focus_drift_mm"]),
-    }
+    """Solve dependent three-zone fields for zero-slope and matching-slope designs."""
+    source, reflectron, controls = _source(config, slope), ReflectronGeometry(**config["reflectron"]), config["theory_controls"]
+
+    def design(design_slope: float):
+        return solve_linear_third_order_design(
+            replace(source, velocity_slope_m_per_s_per_mm=design_slope), reflectron,
+            field1_v_per_mm=controls["field1_v_per_mm"], center_to_grid1_mm=controls["center_to_grid1_mm"],
+            grid2_voltage_fraction=controls["grid2_voltage_fraction"], reflectron_stage1_voltage_v=controls["reflectron_stage1_voltage_v"],
+            nominal_energy_per_charge_v=controls["nominal_energy_per_charge_v"], focus_drift_mm=controls["focus_drift_mm"],
+            characteristic_half_width_mm=controls["characteristic_half_width_mm"], condition_limit=controls["condition_limit"],
+            coefficient_tolerance_ns=controls["coefficient_tolerance_ns"], order=controls["order"]).point
+
+    return {"zero_slope_design": design(0.0), "matching_slope_design": design(slope)}
 
 
 def _record_case(config: dict[str, Any], slope: float, seed: int, result_dir: Path) -> dict[str, Any]:

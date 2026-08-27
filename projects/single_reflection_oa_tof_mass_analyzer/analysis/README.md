@@ -119,6 +119,12 @@ run instance冻结。`--resume-from <旧run目录>`保持相同配置和seed，�
 人工逐阶段操作，也不改变其只读历史语义；共同模型/指标直接复用。它不启动SIMION/COMSOL、不改Formal，
 不声称实际RF源、真实孔径收集率、完整电压/几何最优化或论文新颖性已证明。
 
+`ideal_source_affine_slope_scan.json`是该入口的最小机制模式：在同一均匀位置、Gaussian随机残差与
+随机种子下，比较`k=0`、一个历史标量参考和现有人造源的线性`z-v_z`斜率。历史输入只是一份带哈希的
+标量receipt，不读取或拟合其粒子表。每个非零`k`把第一场、源到grid1距离、grid2电位比例和反射器一级
+电压冻结，再由`a1=a2=a3=0`反求后两区场/长度与反射器二级场；所以结果检验“已知线性关系是否可被理论
+工作点利用”，不是对峰宽或全部工程变量的寻优。
+
 ### 从聚焦方程重设计宽束接受
 
 同一入口加上`--config projects/single_reflection_oa_tof_mass_analyzer/config/experiments/ideal_acceptance_theory.json`

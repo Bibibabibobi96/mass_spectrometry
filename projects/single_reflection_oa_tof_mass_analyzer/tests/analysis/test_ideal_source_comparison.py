@@ -134,6 +134,10 @@ class IdealSourceComparisonTests(unittest.TestCase):
         self.assertNotEqual(historical["matching_slope_design"].design_source.chi_slope_sqrt_v_per_mm, 0.0)
         self.assertEqual(historical["zero_slope_design"].design_source.chi_slope_sqrt_v_per_mm, 0.0)
         self.assertNotEqual(historical["matching_slope_design"].inner, historical["zero_slope_design"].inner)
+        self.assertNotEqual(
+            historical["matching_slope_design"].state.field3_v_per_mm,
+            historical["zero_slope_design"].state.field3_v_per_mm,
+        )
 
 
 if __name__ == "__main__":

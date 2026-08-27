@@ -4,7 +4,7 @@
   "source_template": {
     "mass_to_charge_th": 100.0,
     "center_x_mm": 1.498375640839315,
-    "center_velocity_m_per_s": -0.28381850999711783,
+    "center_velocity_m_per_s": -2.9323518410018137,
     "velocity_quadratic_m_per_s_per_mm2": 0.0
   },
   "source_slopes_m_per_s_per_mm": [0.0, 37.79182865654923, 228.80604377795845],
@@ -13,12 +13,17 @@
     "sha256": "E52B174F103CA38344E35F726CDB3133B8DA4FF4750AB112CF9DB40DD90A4CF4",
     "slope_m_per_s_per_mm": 37.79182865654923
   },
-  "outer": {
-    "zone1_length_mm": 3.25,
-    "downstream_length_mm": 17.0,
-    "split_fraction": 0.3,
-    "zone1_voltage_drop_v": 250.0,
-    "nominal_energy_per_charge_v": 2000.0
+  "theory_controls": {
+    "field1_v_per_mm": 76.92307692307692,
+    "center_to_grid1_mm": 1.751624359160685,
+    "grid2_voltage_fraction": 0.868348002459428,
+    "reflectron_stage1_voltage_v": 1701.7426470174573,
+    "nominal_energy_per_charge_v": 2000.0,
+    "focus_drift_mm": 42.742615461548496,
+    "characteristic_half_width_mm": 0.5,
+    "condition_limit": 10000000000,
+    "coefficient_tolerance_ns": 0.000001,
+    "order": 8
   },
   "reflectron": {
     "stage1_length_mm": 120.0,
@@ -26,11 +31,9 @@
     "upstream_drift_mm": 600.0,
     "downstream_drift_mm": 600.0
   },
-  "focus_drift_mm": 42.742615461548496,
-  "three_zone_eta": -1.0391326394747527,
   "full_width_mm": 1.0,
   "residual_sigma_m_per_s": 11.125088044125832,
   "sampling": {"particle_count": 5000, "replicate_count": 3},
   "analysis_contract": "config/analysis_contract.json",
-  "scope": "Synthetic one-dimensional affine-source mechanism comparison. The historical 102.4 mm connector-arm OLS slope and residual RMS are scalar references only; particle positions and residuals are regenerated as paired uniform-position, Gaussian-residual numerical sources. For each declared source slope k, the same source is propagated through a zero-slope-derived design and a matching-k-derived three-zone/reflectron design. Fields and voltages are theory-derived from k, not separately optimized. No claim about the historical finite source population, 3D transmission, source production, global optimization, collision or space charge."
+  "scope": "Synthetic one-dimensional affine-source mechanism comparison. The historical 102.4 mm connector-arm OLS slope and residual RMS are scalar references only; particle positions and residuals are regenerated as paired uniform-position, Gaussian-residual numerical sources. The shared intercept is the existing synthetic-source baseline. For each declared source slope k, the same source is propagated through a zero-slope-derived design and a matching-k-derived three-zone/reflectron design. With the declared first-field, source-to-grid1, grid2-ratio and reflectron-stage1 controls frozen, the first-through-third focus equations derive the remaining two accelerator fields/lengths and reflectron second-stage field from k; they are not independently optimized. No claim about the historical finite source population, 3D transmission, source production, global optimization, collision or space charge."
 }
