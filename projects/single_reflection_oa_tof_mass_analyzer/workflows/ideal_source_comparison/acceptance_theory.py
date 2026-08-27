@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import csv
 import itertools
+import os
 import time
 import traceback
 from collections import Counter
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import replace
+from math import ceil
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +33,66 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.ideal_source_exper
 from projects.single_reflection_oa_tof_mass_analyzer.workflows.ideal_source_comparison.run_comparison import (
     PROJECT_ROOT, _prepare_run, _publish_manifest, _settings, _working_points, _write_json,
 )
+
+
+MAX_PARALLEL_WIDTH_WORKERS = 8
+
+
+def _resolve_parallel_workers(requested: int | None, task_count: int) -> int:
+    """Resolve a run-instance worker count without changing scientific inputs."""
+    if task_count < 1:
+        return 1
+    available = min(MAX_PARALLEL_WIDTH_WORKERS, os.cpu_count() or 1)
+    if requested is None:
+        return min(task_count, available)
+    if isinstance(requested, bool) or not isinstance(requested, int) or requested < 1:
+        raise ValueError("max workers must be a positive integer")
+    return min(task_count, requested, available)
+
+
+def _balanced_chunks(items: list[tuple[int, float, float, float, float | None]], workers: int) -> list[list[tuple[int, float, float, float, float | None]]]:
+    """Make several equal-cost control chunks for dynamic process-pool dispatch."""
+    if not items:
+        return []
+    chunk_count = min(len(items), max(1, workers*4))
+    chunk_size = ceil(len(items)/chunk_count)
+    return [items[index:index+chunk_size] for index in range(0, len(items), chunk_size)]
+
+
+def _solve_control_chunk(config: dict[str, Any], baseline: dict[str, Any], reference: Any,
+                         spec: NumericalSourceSpec,
+                         controls_chunk: list[tuple[int, float, float, float, float | None]]) -> list[dict[str, Any]]:
+    """Solve independent fixed-control roots; all output publication stays in parent."""
+    design, num = config["design"], config["numerics"]
+    fixed_length = design.get("total_acceleration_length_mm")
+    voltage_grid = [value*baseline["outer"]["nominal_energy_per_charge_v"]
+                    for value in design["reflectron_stage1_energy_fraction"]]
+    records = []
+    for index, field, distance, fraction, mirror_fraction in controls_chunk:
+        try:
+            keyword = dict(field1_v_per_mm=field, center_to_grid1_mm=distance,
+                grid2_voltage_fraction=fraction,
+                nominal_energy_per_charge_v=baseline["outer"]["nominal_energy_per_charge_v"],
+                focus_drift_mm=baseline["focus_drift_mm"],
+                characteristic_half_width_mm=config["full_widths_mm"][0]/2,
+                condition_limit=num["condition_limit"], coefficient_tolerance_ns=num["coefficient_tolerance_ns"],
+                order=num["coefficient_order"])
+            if fixed_length is None:
+                solutions = [solve_linear_third_order_design(replace(spec, center_x_mm=distance), reference.reflectron,
+                    **keyword, reflectron_stage1_voltage_v=mirror_fraction*baseline["outer"]["nominal_energy_per_charge_v"])]
+            else:
+                solutions = find_fixed_length_designs(replace(spec, center_x_mm=distance), reference.reflectron,
+                    **keyword, total_accel_length_mm=fixed_length, stage1_voltage_grid_v=voltage_grid,
+                    length_tolerance_mm=num["length_tolerance_mm"], root_xtol_v=num["root_xtol_v"])
+                if not solutions:
+                    raise ValueError("NO_FIXED_LENGTH_POSITIVE_ROOT_IN_DECLARED_BRACKETS")
+        except ValueError as error:
+            records.append({"index": index, "field": field, "distance": distance, "fraction": fraction,
+                "mirror_fraction": mirror_fraction, "reason": str(error), "solutions": []})
+            continue
+        records.append({"index": index, "field": field, "distance": distance, "fraction": fraction,
+            "mirror_fraction": mirror_fraction, "reason": None, "solutions": solutions})
+    return records
 
 
 def validate_theory_config(config: dict[str, Any]) -> None:
@@ -103,7 +166,8 @@ def validate_theory_config(config: dict[str, Any]) -> None:
 
 
 def _select(config: dict[str, Any], baseline: dict[str, Any], reference: Any,
-            spec: NumericalSourceSpec, result_dir: Path) -> dict[float, list[dict[str, Any]]]:
+            spec: NumericalSourceSpec, result_dir: Path, *, max_workers: int | None = None,
+            return_dispatch: bool = False) -> dict[float, list[dict[str, Any]]] | tuple[dict[float, list[dict[str, Any]]], dict[str, Any]]:
     design, num = config["design"], config["numerics"]
     widths = config["full_widths_mm"]
     quadratures = {w: prepare_source_quadrature(spec, full_width_mm=w,
@@ -115,34 +179,30 @@ def _select(config: dict[str, Any], baseline: dict[str, Any], reference: Any,
     fixed_length = design.get("total_acceleration_length_mm")
     if fixed_length is not None:
         axes[-1] = [None]
-    total = int(np.prod([len(axis) for axis in axes]))
+    controls = [(index, field, distance, fraction, mirror_fraction)
+                for index, (field, distance, fraction, mirror_fraction)
+                in enumerate(itertools.product(*axes), 1)]
+    total = len(controls)
+    workers = _resolve_parallel_workers(max_workers, len(controls))
+    chunks = _balanced_chunks(controls, workers)
+    solved: list[dict[str, Any]] = []
+    with ProcessPoolExecutor(max_workers=workers) as executor:
+        futures = [executor.submit(_solve_control_chunk, config, baseline, reference, spec, chunk)
+                   for chunk in chunks]
+        for future in as_completed(futures):
+            solved.extend(future.result())
+    solved.sort(key=lambda item: item["index"])
     with (result_dir / "all_theory_equations.csv").open("w", newline="", encoding="utf-8") as stream:
         writer = csv.writer(stream)
         writer.writerow(["design_id", "field1_v_per_mm", "center_to_grid1_mm", "grid2_fraction", "mirror1_fraction", "status", "reason"])
-        for index, (field, distance, fraction, mirror_fraction) in enumerate(itertools.product(*axes), 1):
+        for result in solved:
+            index, field, distance, fraction = (result[key] for key in ("index", "field", "distance", "fraction"))
             candidate_id = f"theory_{index:06d}"
-            try:
-                controls = dict(
-                    field1_v_per_mm=field, center_to_grid1_mm=distance, grid2_voltage_fraction=fraction,
-                    nominal_energy_per_charge_v=baseline["outer"]["nominal_energy_per_charge_v"],
-                    focus_drift_mm=baseline["focus_drift_mm"], characteristic_half_width_mm=widths[0]/2,
-                    condition_limit=num["condition_limit"], coefficient_tolerance_ns=num["coefficient_tolerance_ns"],
-                    order=num["coefficient_order"])
-                if fixed_length is None:
-                    solutions = [solve_linear_third_order_design(replace(spec, center_x_mm=distance), reference.reflectron,
-                        **controls, reflectron_stage1_voltage_v=mirror_fraction*baseline["outer"]["nominal_energy_per_charge_v"])]
-                else:
-                    solutions = find_fixed_length_designs(replace(spec, center_x_mm=distance), reference.reflectron,
-                        **controls, total_accel_length_mm=fixed_length,
-                        stage1_voltage_grid_v=[v*baseline["outer"]["nominal_energy_per_charge_v"] for v in design["reflectron_stage1_energy_fraction"]],
-                        length_tolerance_mm=num["length_tolerance_mm"], root_xtol_v=num["root_xtol_v"])
-                    if not solutions:
-                        raise ValueError("NO_FIXED_LENGTH_POSITIVE_ROOT_IN_DECLARED_BRACKETS")
-            except ValueError as error:
-                counts[str(error)] += 1
-                writer.writerow([candidate_id, field, distance, fraction, mirror_fraction, "REJECTED", str(error)])
+            if result["reason"] is not None:
+                counts[result["reason"]] += 1
+                writer.writerow([candidate_id, field, distance, fraction, result["mirror_fraction"], "REJECTED", result["reason"]])
                 continue
-            for branch, solution in enumerate(solutions):
+            for branch, solution in enumerate(result["solutions"]):
                 counts["positive_third_order_solution"] += 1
                 root_id = candidate_id if fixed_length is None else f"{candidate_id}_r{branch+1:02d}"
                 mirror_fraction = solution.point.inner.stage1_voltage_drop_v/baseline["outer"]["nominal_energy_per_charge_v"]
@@ -156,7 +216,7 @@ def _select(config: dict[str, Any], baseline: dict[str, Any], reference: Any,
                              "moments": moments, "controls": {"field1_v_per_mm": field, "center_to_grid1_mm": distance,
                              "grid2_voltage_fraction": fraction, "reflectron_stage1_energy_fraction": mirror_fraction}}
                     selected[width].append(entry)
-                    selected[width].sort(key=lambda item: item["moments"]["relative_variance"])
+                    selected[width].sort(key=lambda item: (item["moments"]["relative_variance"], item["design_id"]))
                     del selected[width][design.get("screened_per_width", design["selected_per_width"]):]
             if index % (len(axes[2])*len(axes[3])) == 0:
                 print(f"ACCEPTANCE_THEORY EVENT=EQUATIONS DONE={index}/{total} POSITIVE={counts['positive_third_order_solution']}", flush=True)
@@ -164,11 +224,15 @@ def _select(config: dict[str, Any], baseline: dict[str, Any], reference: Any,
                 "scope": "discrete theoretical control domain; rejected roots are not global impossibility proofs"})
     _write_json(result_dir / "screened_designs.json", {str(w): [{**{k:v for k,v in item.items() if k != "point"},
                 "point": item["point"].to_dict()} for item in rows] for w, rows in selected.items()})
-    return selected
+    dispatch = {"stage": "equation_controls", "dispatch": "dynamic_equal_control_chunks",
+                "workers": workers, "chunk_count": len(chunks), "control_count": total,
+                "estimated_work_units": total*len(design["reflectron_stage1_energy_fraction"])}
+    return (selected, dispatch) if return_dispatch else selected
 
 
 def _confirm(config: dict[str, Any], spec: NumericalSourceSpec, point: Any, *, width: float,
-             design_id: str, seed: int, result_dir: Path, include_particles: bool = True) -> dict[str, Any]:
+             design_id: str, seed: int, result_dir: Path, include_particles: bool = True,
+             emit: bool = True) -> dict[str, Any]:
     spec = source_at_point(spec, point)
     settings, num = _settings(), config["numerics"]
     population = []
@@ -228,7 +292,8 @@ def _confirm(config: dict[str, Any], spec: NumericalSourceSpec, point: Any, *, w
               "particle_replicates": records, "particle_confirmation_performed": include_particles,
               "uncertainty": "independent source seed range, not a confidence interval"}
     _write_json(result_dir / f"{design_id}__w{width:g}.json", report)
-    print(f"ACCEPTANCE_THEORY EVENT=CONFIRMED DESIGN={design_id} WIDTH_MM={width} POPULATION_PASS={report['theoretical_population_pass']} PARTICLE_PASS={report['independent_particle_pass']}", flush=True)
+    if emit:
+        print(f"ACCEPTANCE_THEORY EVENT=CONFIRMED DESIGN={design_id} WIDTH_MM={width} POPULATION_PASS={report['theoretical_population_pass']} PARTICLE_PASS={report['independent_particle_pass']}", flush=True)
     return report
 
 
@@ -245,8 +310,83 @@ def _population_accepted(item: dict[str, Any], minimum_resolution: float) -> boo
     return accepted(item, minimum_resolution)
 
 
+def _width_work_units(config: dict[str, Any], candidate_count: int, include_original: bool) -> int:
+    """Estimate relative work from frozen density and particle contracts."""
+    density = config["numerics"].get("density", {})
+    root_iterations = density.get("root_iterations", 1)
+    population_units = sum(position_order * grid_points * root_iterations
+                           for position_order, grid_points in config["numerics"]["population_orders"])
+    particle_units = (config["sampling"]["particle_count"]
+                      * config["sampling"]["replicate_count"])
+    selected_count = config["design"]["selected_per_width"]
+    return (candidate_count * population_units
+            + selected_count * (population_units + particle_units)
+            + (population_units + particle_units if include_original else 0))
+
+
+def _is_original_width_supported(spec: NumericalSourceSpec, point: Any, width: float) -> bool:
+    """Return whether the fixed reference point contains the requested source width."""
+    return width < 2 * min(spec.center_x_mm, point.state.zone1_length_mm - spec.center_x_mm)
+
+
+def _confirm_width_task(config: dict[str, Any], spec: NumericalSourceSpec, reference_point: Any,
+                        width: float, screened: list[dict[str, Any]], seed: int,
+                        result_dir_text: str) -> dict[str, Any]:
+    """Run one width's dependent density-selection and particle-confirmation chain."""
+    result_dir = Path(result_dir_text)
+    reports: list[dict[str, Any]] = []
+    original_supported = _is_original_width_supported(spec, reference_point, width)
+    if original_supported:
+        reports.append(_confirm(config, spec, reference_point, width=width,
+            design_id="original_design", seed=seed, result_dir=result_dir, emit=False))
+    population_screen = [_confirm(config, spec, item["point"], width=width,
+        design_id=item["design_id"]+"__screen", seed=seed, result_dir=result_dir,
+        include_particles=False, emit=False) for item in screened]
+    qualifying = [(item, result) for item, result in zip(screened, population_screen)
+                  if result["theoretical_population_pass"]]
+    qualifying.sort(key=lambda pair: _population_resolution(pair[1]["population"][-1]) or -np.inf,
+                    reverse=True)
+    winners = qualifying[:config["design"]["selected_per_width"]]
+    _write_json(result_dir / f"w{width:g}__selection.json", {
+        "screened_by": config["design"]["selection"], "screened_count": len(screened),
+        "population_fwhm_selection": "highest direct population mass resolution among theory-pass screened candidates",
+        "selected_design_ids": [item["design_id"] for item, _ in winners],
+        "rejected_population_records": population_screen})
+    for item, _ in winners:
+        reports.append(_confirm(config, spec, item["point"], width=width,
+            design_id=item["design_id"], seed=seed, result_dir=result_dir, emit=False))
+    return {"width_mm": width, "reports": reports, "screened_count": len(screened),
+            "selected_count": len(winners), "estimated_work_units": _width_work_units(
+                config, len(screened), original_supported)}
+
+
+def _confirm_widths_parallel(config: dict[str, Any], spec: NumericalSourceSpec, reference_point: Any,
+                             screened: dict[float, list[dict[str, Any]]], seed: int,
+                             result_dir: Path, requested_workers: int | None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Dispatch independent widths by estimated cost; each width remains sequential internally."""
+    widths = config["full_widths_mm"]
+    workers = _resolve_parallel_workers(requested_workers, len(widths))
+    tasks = sorted(widths, key=lambda width: (-_width_work_units(
+        config, len(screened[width]), _is_original_width_supported(spec, reference_point, width)), width))
+    completed: list[dict[str, Any]] = []
+    with ProcessPoolExecutor(max_workers=workers) as executor:
+        futures = {executor.submit(_confirm_width_task, config, spec, reference_point, width,
+                                  screened[width], seed, str(result_dir)): width for width in tasks}
+        for done, future in enumerate(as_completed(futures), 1):
+            result = future.result()
+            completed.append(result)
+            print("ACCEPTANCE_THEORY EVENT=WIDTH_COMPLETE "
+                  f"DONE={done}/{len(tasks)} WIDTH_MM={result['width_mm']} "
+                  f"SCREENED={result['screened_count']} SELECTED={result['selected_count']}", flush=True)
+    completed.sort(key=lambda item: item["width_mm"])
+    return [report for item in completed for report in item["reports"]], {
+        "stage": "width_confirmations", "dispatch": "dynamic_descending_estimated_width_work",
+        "workers": workers, "width_count": len(widths),
+        "estimated_work_units": sum(item["estimated_work_units"] for item in completed)}
+
+
 def execute_theory(config_path: Path, *, seed: int, run_id: str, resume_from: Path | None,
-                    artifact_root: Path) -> Path:
+                    artifact_root: Path, max_workers: int | None = None) -> Path:
     config = load_json(config_path)
     validate_theory_config(config)
     if resume_from is not None:
@@ -272,24 +412,16 @@ def execute_theory(config_path: Path, *, seed: int, run_id: str, resume_from: Pa
             order=config["numerics"]["coefficient_order"], position_order=config["numerics"]["position_order"])
             for w in config["full_widths_mm"] if w < 2*min(spec.center_x_mm, point.state.zone1_length_mm-spec.center_x_mm)]})
         stage = "theory_linear_equations"
-        screened = _select(config, baseline, point, spec, run_dir / "results")
+        screened, equation_dispatch = _select(config, baseline, point, spec, run_dir / "results",
+                                                max_workers=max_workers, return_dispatch=True)
         stage = "independent_confirmation"
-        for width in config["full_widths_mm"]:
-            if width < 2*min(spec.center_x_mm, point.state.zone1_length_mm-spec.center_x_mm):
-                reports.append(_confirm(config, spec, point, width=width, design_id="original_design", seed=seed, result_dir=run_dir / "results"))
-            population_screen = [_confirm(config, spec, item["point"], width=width, design_id=item["design_id"]+"__screen", seed=seed, result_dir=run_dir / "results", include_particles=False)
-                                 for item in screened[width]]
-            qualifying = [(item, result) for item, result in zip(screened[width], population_screen)
-                          if result["theoretical_population_pass"]]
-            qualifying.sort(key=lambda pair: _population_resolution(pair[1]["population"][-1]) or -np.inf, reverse=True)
-            winners = qualifying[:config["design"]["selected_per_width"]]
-            _write_json(run_dir / "results" / f"w{width:g}__selection.json", {
-                "screened_by": config["design"]["selection"], "screened_count": len(screened[width]),
-                "population_fwhm_selection": "highest direct population mass resolution among theory-pass screened candidates",
-                "selected_design_ids": [item["design_id"] for item, _ in winners],
-                "rejected_population_records": population_screen})
-            for item, _ in winners:
-                reports.append(_confirm(config, spec, item["point"], width=width, design_id=item["design_id"], seed=seed, result_dir=run_dir / "results"))
+        reports, confirmation_dispatch = _confirm_widths_parallel(
+            config, spec, point, screened, seed, run_dir / "results", max_workers)
+        run_config = load_json(run_dir / "run_config.json")
+        run_config["execution"] = {"requested_max_workers": max_workers,
+                                   "resolved_stages": [equation_dispatch, confirmation_dispatch],
+                                   "scientific_inputs_changed": False}
+        _write_json(run_dir / "run_config.json", run_config)
     except (Exception, KeyboardInterrupt) as exc:
         status = "interrupted" if isinstance(exc, KeyboardInterrupt) else "failed"
         error = f"{type(exc).__name__}: {exc}"

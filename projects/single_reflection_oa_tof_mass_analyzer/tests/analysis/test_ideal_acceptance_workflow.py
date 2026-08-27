@@ -28,6 +28,14 @@ class AcceptanceWorkflowTests(unittest.TestCase):
             with self.subTest(key=key), self.assertRaises(ValueError):
                 workflow.validate_theory_config(invalid)
 
+    def test_parallel_worker_cap_is_execution_only_and_bounded(self):
+        with patch.object(workflow.os, "cpu_count", return_value=32):
+            self.assertEqual(workflow._resolve_parallel_workers(None, 12), 8)
+            self.assertEqual(workflow._resolve_parallel_workers(2, 12), 2)
+            self.assertEqual(workflow._resolve_parallel_workers(20, 3), 3)
+        with self.assertRaises(ValueError):
+            workflow._resolve_parallel_workers(0, 1)
+
     def test_single_candidate_automatic_end_to_end(self):
         self.config["design"].update(field1_v_per_mm=[250/3.25], center_to_grid1_mm=[3.25-1.498375640839315],
             grid2_voltage_fraction=[0.868348002459428], reflectron_stage1_energy_fraction=[1701.7426470174573/2000],
@@ -41,7 +49,7 @@ class AcceptanceWorkflowTests(unittest.TestCase):
             config_path.write_text(json.dumps(self.config), encoding="utf-8")
             with patch.object(workflow, "_publish_manifest") as publish, contextlib.redirect_stdout(io.StringIO()):
                 result = runner.execute(config_path, seed=41, run_id="20260827_210001__analysis__python__theory-test",
-                                        artifact_root=Path(directory) / "artifacts")
+                                        artifact_root=Path(directory) / "artifacts", max_workers=2)
             summary = load_json(result / "summary.json")
             self.assertEqual(summary["status"], "success", summary)
             self.assertGreaterEqual(summary["completed_confirmations"], 1)
@@ -51,6 +59,9 @@ class AcceptanceWorkflowTests(unittest.TestCase):
             self.assertEqual(len(selected["2.8"]), 1)
             self.assertFalse(selected["2.8"][0]["theory"]["particle_peak_optimization_performed"])
             self.assertGreaterEqual(len(list((result / "results").glob("*__seed41.csv"))), 1)
+            receipt = load_json(result / "run_config.json")["execution"]
+            self.assertEqual(receipt["requested_max_workers"], 2)
+            self.assertFalse(receipt["scientific_inputs_changed"])
             publish.assert_called_once_with(result, "success")
 
     def test_fixed_length_and_direct_density_end_to_end(self):

@@ -226,7 +226,7 @@ def _prepare_run(config_path: Path, *, seed: int, run_id: str, resume_from: Path
 
 
 def execute(config_path: Path, *, seed: int, run_id: str, resume_from: Path | None = None,
-            artifact_root: Path = ARTIFACT_ROOT) -> Path:
+            artifact_root: Path = ARTIFACT_ROOT, max_workers: int | None = None) -> Path:
     """Execute the selected ideal analysis with frozen inputs and terminal evidence.
 
 Resume verifies identical code/config/environment and copies completed cases into
@@ -237,7 +237,9 @@ a new run. It never edits or finalizes a previous run, including crash leftovers
     if config.get("role") == "ideal_acceptance_theory":
         from projects.single_reflection_oa_tof_mass_analyzer.workflows.ideal_source_comparison.acceptance_theory import execute_theory
         return execute_theory(config_path, seed=seed, run_id=run_id, resume_from=resume_from,
-                              artifact_root=artifact_root)
+                              artifact_root=artifact_root, max_workers=max_workers)
+    if max_workers is not None:
+        raise ValueError("max workers is supported only by ideal_acceptance_theory runs")
     plan = build_case_plan(config, seed)
     run_dir, identity = _prepare_run(config_path, seed=seed, run_id=run_id,
                                     resume_from=resume_from, artifact_root=artifact_root)
@@ -305,6 +307,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--seed", type=int, required=True)
     parser.add_argument("--run-id")
     parser.add_argument("--resume-from", type=Path)
+    parser.add_argument("--max-workers", type=int,
+                        help="Theory-only process-pool cap; does not change frozen science inputs.")
     parser.add_argument("--plan", action="store_true")
     args = parser.parse_args(argv)
     try:
@@ -319,7 +323,8 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(plan, indent=2))
             return 0
         run_id = args.run_id or datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y%m%d_%H%M%S__analysis__python__ideal-source-comparison")
-        run_dir = execute(args.config, seed=args.seed, run_id=run_id, resume_from=args.resume_from)
+        run_dir = execute(args.config, seed=args.seed, run_id=run_id,
+                          resume_from=args.resume_from, max_workers=args.max_workers)
         return 0 if load_json(run_dir / "summary.json")["status"] == "success" else 1
     except Exception as exc:
         print(f"IDEAL_COMPARISON STATUS=failed REASON={type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
