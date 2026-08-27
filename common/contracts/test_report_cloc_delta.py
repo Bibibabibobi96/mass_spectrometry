@@ -404,19 +404,23 @@ class ClocDeltaReportTests(unittest.TestCase):
             self.assertEqual(len(calls), 3, calls)
 
     def test_identical_commit_has_no_json_delta(self) -> None:
-        completed = _run(
-            [
-                "pwsh",
-                "-NoProfile",
-                "-File",
-                str(REPORT_SCRIPT),
-                "-Base",
-                "HEAD",
-                "-Current",
-                "HEAD",
-            ],
-            REPO_ROOT,
-        )
+        with tempfile.TemporaryDirectory() as temporary:
+            fake_cloc = self._write_fake_cloc(Path(temporary))
+            completed = _run(
+                [
+                    "pwsh",
+                    "-NoProfile",
+                    "-File",
+                    str(REPORT_SCRIPT),
+                    "-Base",
+                    "HEAD",
+                    "-Current",
+                    "HEAD",
+                    "-ClocExe",
+                    str(fake_cloc),
+                ],
+                REPO_ROOT,
+            )
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertRegex(
             completed.stdout,

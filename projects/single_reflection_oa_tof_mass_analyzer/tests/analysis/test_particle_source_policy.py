@@ -230,7 +230,7 @@ class ParticleSourcePolicyTests(unittest.TestCase):
                 "particle_source_parent_test": parent,
             }
             for role, path in expected_inputs.items():
-                self.assertEqual(manifest["inputs"][role]["path"], str(path))
+                self.assertTrue(os.path.samefile(manifest["inputs"][role]["path"], path))
                 self.assertTrue(manifest["inputs"][role]["exists"])
                 self.assertRegex(manifest["inputs"][role]["sha256"], r"^[0-9A-F]{64}$")
 
