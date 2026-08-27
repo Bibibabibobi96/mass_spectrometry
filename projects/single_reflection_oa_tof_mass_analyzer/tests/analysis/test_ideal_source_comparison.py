@@ -1,6 +1,7 @@
 """Small deterministic regressions for the ideal numerical-source comparison."""
 
 from dataclasses import replace
+from pathlib import Path
 import unittest
 
 import numpy as np
@@ -19,6 +20,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_ideal_t
     ReflectronGeometry,
     exact_total_normalized_time,
 )
+from projects.single_reflection_oa_tof_mass_analyzer.workflows.ideal_source_comparison import slope_scan
 
 
 class IdealSourceComparisonTests(unittest.TestCase):
@@ -122,6 +124,16 @@ class IdealSourceComparisonTests(unittest.TestCase):
             AxialParticleSource(np.array([1, 1]), np.zeros(2), np.zeros(2), np.zeros(2), 100.)
         with self.assertRaises(ValueError):
             propagate_ideal_source(replace(self.sample(), mass_to_charge_th=300.), self.point(), settings=self.settings)
+
+    def test_slope_scan_uses_theory_derived_matching_and_zero_slope_arms(self) -> None:
+        config = slope_scan.load_json(Path(__file__).parents[2] / "config" / "experiments" / "ideal_source_affine_slope_scan.json")
+        slope_scan.validate_slope_scan_config(config)
+        zero = slope_scan._arms(config, 0.0)
+        self.assertEqual(zero["zero_slope_design"], zero["matching_slope_design"])
+        historical = slope_scan._arms(config, 37.79182865654923)
+        self.assertNotEqual(historical["matching_slope_design"].design_source.chi_slope_sqrt_v_per_mm, 0.0)
+        self.assertEqual(historical["zero_slope_design"].design_source.chi_slope_sqrt_v_per_mm, 0.0)
+        self.assertNotEqual(historical["matching_slope_design"].inner, historical["zero_slope_design"].inner)
 
 
 if __name__ == "__main__":

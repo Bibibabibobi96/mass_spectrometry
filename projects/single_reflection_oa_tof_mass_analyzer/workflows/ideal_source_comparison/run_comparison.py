@@ -238,6 +238,12 @@ a new run. It never edits or finalizes a previous run, including crash leftovers
         from projects.single_reflection_oa_tof_mass_analyzer.workflows.ideal_source_comparison.acceptance_theory import execute_theory
         return execute_theory(config_path, seed=seed, run_id=run_id, resume_from=resume_from,
                               artifact_root=artifact_root, max_workers=max_workers)
+    if config.get("role") == "ideal_source_slope_scan":
+        if max_workers is not None:
+            raise ValueError("max workers is unsupported by ideal_source_slope_scan")
+        from projects.single_reflection_oa_tof_mass_analyzer.workflows.ideal_source_comparison.slope_scan import execute_slope_scan
+        return execute_slope_scan(config_path, seed=seed, run_id=run_id, resume_from=resume_from,
+                                  artifact_root=artifact_root)
     if max_workers is not None:
         raise ValueError("max workers is supported only by ideal_acceptance_theory runs")
     plan = build_case_plan(config, seed)
@@ -317,6 +323,10 @@ def main(argv: list[str] | None = None) -> int:
             if config.get("role") == "ideal_acceptance_theory":
                 from projects.single_reflection_oa_tof_mass_analyzer.workflows.ideal_source_comparison.acceptance_theory import validate_theory_config
                 validate_theory_config(config)
+                plan = config
+            elif config.get("role") == "ideal_source_slope_scan":
+                from projects.single_reflection_oa_tof_mass_analyzer.workflows.ideal_source_comparison.slope_scan import validate_slope_scan_config
+                validate_slope_scan_config(config)
                 plan = config
             else:
                 plan = build_case_plan(config, args.seed)

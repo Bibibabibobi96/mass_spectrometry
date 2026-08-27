@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "role": "ideal_source_slope_scan",
+  "source_template": {
+    "mass_to_charge_th": 100.0,
+    "center_x_mm": 1.498375640839315,
+    "center_velocity_m_per_s": -0.28381850999711783,
+    "velocity_quadratic_m_per_s_per_mm2": 0.0
+  },
+  "source_slopes_m_per_s_per_mm": [0.0, 37.79182865654923, 228.80604377795845],
+  "historical_slope_receipt": {
+    "path": "artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20260827_125100__sim__cross__paper1-s1-gap102p4-zvz__n117/inputs/source_zvz_affine_receipt.json",
+    "sha256": "E52B174F103CA38344E35F726CDB3133B8DA4FF4750AB112CF9DB40DD90A4CF4",
+    "slope_m_per_s_per_mm": 37.79182865654923
+  },
+  "outer": {
+    "zone1_length_mm": 3.25,
+    "downstream_length_mm": 17.0,
+    "split_fraction": 0.3,
+    "zone1_voltage_drop_v": 250.0,
+    "nominal_energy_per_charge_v": 2000.0
+  },
+  "reflectron": {
+    "stage1_length_mm": 120.0,
+    "stage2_length_mm": 96.1563,
+    "upstream_drift_mm": 600.0,
+    "downstream_drift_mm": 600.0
+  },
+  "focus_drift_mm": 42.742615461548496,
+  "three_zone_eta": -1.0391326394747527,
+  "full_width_mm": 1.0,
+  "residual_sigma_m_per_s": 11.125088044125832,
+  "sampling": {"particle_count": 5000, "replicate_count": 3},
+  "analysis_contract": "config/analysis_contract.json",
+  "scope": "Synthetic one-dimensional affine-source mechanism comparison. The historical 102.4 mm connector-arm OLS slope and residual RMS are scalar references only; particle positions and residuals are regenerated as paired uniform-position, Gaussian-residual numerical sources. For each declared source slope k, the same source is propagated through a zero-slope-derived design and a matching-k-derived three-zone/reflectron design. Fields and voltages are theory-derived from k, not separately optimized. No claim about the historical finite source population, 3D transmission, source production, global optimization, collision or space charge."
+}
