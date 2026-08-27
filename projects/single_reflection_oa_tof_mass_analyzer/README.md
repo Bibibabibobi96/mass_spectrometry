@@ -111,6 +111,7 @@ single_reflection_oa_tof_mass_analyzer/
 
 - [理想场残差扫描与两区/三区束宽比较](docs/history/20260827__ideal-source-residual-and-width-comparison.md)
 - [200 mm三区理想场束宽接受扫描](docs/history/20260827__200mm-ideal-acceptance-scan.md)
+- [300 mm三区理想场束宽接受公平对照](docs/history/20260827__300mm-ideal-acceptance-scan.md)
 - [`docs/history/20260716__simion-gui-recording-and-program-audit.md`](docs/history/20260716__simion-gui-recording-and-program-audit.md)
 - [`docs/history/20260719__analysis-scaling-and-field-diagnostics.md`](docs/history/20260719__analysis-scaling-and-field-diagnostics.md)
 - [`docs/history/20260720__midgrid-candidate-runtime-coverage.md`](docs/history/20260720__midgrid-candidate-runtime-coverage.md)
