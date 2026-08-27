@@ -218,6 +218,36 @@ function Clear-RfCacheEntryReadOnly {
   }
 }
 
+function Test-RfCacheManifestPayloadSha256 {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$CacheEntry,
+        [Parameter(Mandatory)]$Manifest)
+  try {
+    $records = @($Manifest.files | ForEach-Object {
+      $name = [string]$_.name
+      $path = Join-Path $CacheEntry $name
+      if ([IO.Path]::GetFileName($name) -ne $name -or
+          -not (Test-Path -LiteralPath $path -PathType Leaf) -or
+          [int64](Get-Item -LiteralPath $path).Length -ne [int64]$_.bytes -or
+          (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -cne
+            [string]$_.sha256) {
+        throw 'Cache payload file differs from its manifest.'
+      }
+      [ordered]@{name=$name;bytes=[int64]$_.bytes;sha256=[string]$_.sha256}
+    })
+    if ($records.Count -eq 0) { return $false }
+    $payloadInput = $records | ConvertTo-Json -Depth 8 -Compress
+    $payloadSha256 = [Convert]::ToHexString(
+      [Security.Cryptography.SHA256]::HashData(
+        [Text.Encoding]::UTF8.GetBytes($payloadInput)
+      )
+    ).ToLowerInvariant()
+    return $payloadSha256 -ceq [string]$Manifest.payload_sha256
+  } catch {
+    return $false
+  }
+}
+
 function Test-RfReusableCacheEntry {
   [CmdletBinding()]
   param(
@@ -235,6 +265,14 @@ function Test-RfReusableCacheEntry {
   } catch { return $false }
   $manifest = Join-Path $entry 'cache_manifest.json'
   if (-not (Test-Path -LiteralPath $manifest -PathType Leaf)) { return $false }
+  try {
+    $manifestDocument = Get-Content -LiteralPath $manifest -Raw -Encoding UTF8 |
+      ConvertFrom-Json
+  } catch { return $false }
+  if (-not (Test-RfCacheManifestPayloadSha256 -CacheEntry $entry `
+      -Manifest $manifestDocument)) {
+    return $false
+  }
   $verificationExitCode = 0
   try {
     & $Python (Join-Path $RepoRoot 'common\contracts\verify_artifact_layout.py') `
@@ -250,18 +288,8 @@ function Test-RfReusableCacheEntry {
     return $true
   }
   $global:LASTEXITCODE = 0
-  $document = $null
-  try {
-    $document = Get-Content -LiteralPath $manifest -Raw -Encoding UTF8 | ConvertFrom-Json
-  } catch {
-    $document = $null
-  }
-  if ($null -ne $document -and [int]$document.schema_version -eq 3 -and
-      $InvalidEntryAction -eq 'remove') {
-    Clear-RfCacheEntryReadOnly -CacheEntry $entry
-    Remove-Item -LiteralPath $entry -Recurse -Force
-    return $false
-  }
+  # A content-addressed generation is evidence even when damaged.  Rebuilders
+  # publish a fresh generation and move the pointer; they never erase it.
   $null = Test-Path -LiteralPath $entry
   return $false
 }

@@ -214,9 +214,16 @@
         }
       },
       "else": {
-        "properties": {
-          "experiments": {
-            "items": {"not": {"required": ["case_set"]}}
+        "if": {
+          "properties": {"schema_version": {"const": 3}},
+          "required": ["schema_version"]
+        },
+        "then": {},
+        "else": {
+          "properties": {
+            "experiments": {
+              "items": {"not": {"required": ["case_set"]}}
+            }
           }
         }
       }

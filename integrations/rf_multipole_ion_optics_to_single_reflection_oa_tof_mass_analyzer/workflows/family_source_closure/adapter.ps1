@@ -85,6 +85,71 @@ function Resolve-RfPulseTimingOrchestrationArguments {
   return $names
 }
 
+function Resolve-RfRecoveryFailureAncestor {
+  param(
+    [Parameter(Mandatory)][string]$RequestedRunId,
+    [Parameter(Mandatory)][string]$ExpectedRunId,
+    [Parameter(Mandatory)][string]$RunsRoot,
+    [Parameter(Mandatory)][string]$CampaignId
+  )
+
+  $recoveryMatch = [regex]::Match($RequestedRunId, ('^' +
+    [regex]::Escape($ExpectedRunId) + '__r(?<index>[0-9]{2})$'))
+  if (-not $recoveryMatch.Success -or
+      [int]$recoveryMatch.Groups['index'].Value -lt 1) {
+    return $null
+  }
+  for ($index = [int]$recoveryMatch.Groups['index'].Value - 1;
+       $index -ge 0;
+       $index--) {
+    $candidateRunId = if ($index -eq 0) {
+      $ExpectedRunId
+    } else {
+      $ExpectedRunId + ('__r{0:D2}' -f $index)
+    }
+    $candidateDirectory = Join-Path $RunsRoot $candidateRunId
+    $candidateManifestPath = Join-Path $candidateDirectory 'run_manifest.json'
+    if (-not (Test-Path -LiteralPath $candidateManifestPath -PathType Leaf)) {
+      # A base run can fail before the runner is able to publish its manifest.
+      # Its directory remains immutable audit evidence, while the first suffix
+      # is the only safe new identity that may resume this same prepared row.
+      if ($index -eq 0 -and
+          [int]$recoveryMatch.Groups['index'].Value -eq 1 -and
+          (Test-Path -LiteralPath $candidateDirectory -PathType Container)) {
+        return [pscustomobject]@{ run_id = $candidateRunId; status = 'unpublished' }
+      }
+      continue
+    }
+    $candidateConfigPath = Join-Path $candidateDirectory 'run_config.json'
+    if (-not (Test-Path -LiteralPath $candidateConfigPath -PathType Leaf)) {
+      return $null
+    }
+    try {
+      $candidateManifest = Get-Content -LiteralPath $candidateManifestPath -Raw |
+        ConvertFrom-Json
+      $candidateConfig = Get-Content -LiteralPath $candidateConfigPath -Raw |
+        ConvertFrom-Json
+    } catch {
+      return $null
+    }
+    if ([string]$candidateManifest.run_id -ne $candidateRunId -or
+        [string]$candidateConfig.campaign_id -ne $CampaignId) {
+      return $null
+    }
+    $candidateStatus = [string]$candidateManifest.status
+    if ($candidateStatus -in @('failed','interrupted')) {
+      return [pscustomobject]@{
+        run_id = $candidateRunId
+        status = $candidateStatus
+      }
+    }
+    # A published terminal/non-terminal predecessor is an authority boundary:
+    # only a failed or interrupted member can authorize a later retry.
+    return $null
+  }
+  return $null
+}
+
 $plan = Get-Content -LiteralPath $CompositionPlan -Raw -Encoding UTF8 |
   ConvertFrom-Json
 $resolved = Get-Content -LiteralPath $ResolvedConnection -Raw -Encoding UTF8 |
@@ -242,6 +307,9 @@ if ($frozenAuthoringArgumentCount -eq $frozenAuthoringArgumentNames.Count) {
   $expectedArguments += $frozenAuthoringArgumentNames
 }
 if ([string]$frozenArguments.execution_strategy -eq 'simion_single_flight') {
+  if ($frozenArguments.ContainsKey('single_flight_execution_mode')) {
+    $expectedArguments += 'single_flight_execution_mode'
+  }
   $expectedArguments += @(
     'single_flight_pa_cache_policy',
     'single_flight_pa_cache_policy_provenance',
@@ -416,6 +484,17 @@ $executionStrategy = [string]$frozenArguments.execution_strategy
 if ($executionStrategy -notin @('staged_three_stage','simion_single_flight')) {
   throw 'Prepared family execution strategy is invalid.'
 }
+$singleFlightExecutionMode = if (
+  $frozenArguments.ContainsKey('single_flight_execution_mode')
+) { [string]$frozenArguments.single_flight_execution_mode } else { 'particle_flight' }
+if ($executionStrategy -ne 'simion_single_flight' -and
+    $singleFlightExecutionMode -ne 'particle_flight') {
+  throw 'Non-single-flight execution cannot select a single-flight execution mode.'
+}
+if ($executionStrategy -eq 'simion_single_flight' -and
+    $singleFlightExecutionMode -notin @('particle_flight','program_axis_field_export')) {
+  throw 'Prepared single-flight execution mode is unsupported.'
+}
 $repo = [IO.Path]::GetFullPath($RepoRoot)
 $workspaceRoot = Split-Path -Parent $repo
 $compositionPlanRoot = Split-Path -Parent ([IO.Path]::GetFullPath($CompositionPlan))
@@ -506,7 +585,7 @@ if ($campaignHasThreeZoneCandidate -ne $argumentsHaveThreeZoneCandidate) {
   throw 'Three-zone Candidate binding and layout identity differ.'
 }
 $threeZoneCandidatePath = $null
-if ($campaignHasThreeZoneCandidate) {
+  if ($campaignHasThreeZoneCandidate) {
   if ([string]$experiment.single_flight_three_zone_candidate.path -ne
       [string]$frozenArguments.single_flight_three_zone_candidate_path -or
       [string]$experiment.single_flight_three_zone_candidate.sha256 -ne
@@ -1214,29 +1293,13 @@ if ($pulseTimingDiscovery) {
   )
 }
 if ($expectedRunId -ne $RunId) {
-  $recoveryMatch = [regex]::Match($RunId, ('^' +
-    [regex]::Escape($expectedRunId) + '__r(?<index>[0-9]{2})$'))
-  $recoveryParentRunId = ''
-  if ($recoveryMatch.Success -and [int]$recoveryMatch.Groups['index'].Value -ge 1) {
-    $recoveryIndex = [int]$recoveryMatch.Groups['index'].Value
-    $recoveryParentRunId = if ($recoveryIndex -eq 1) {
-      $expectedRunId
-    } else {
-      $expectedRunId + ('__r{0:D2}' -f ($recoveryIndex - 1))
-    }
-  }
-  $recoveryParentDirectory = [IO.Path]::GetFullPath((Join-Path (
-    Join-Path $workspaceRoot ('artifacts\projects\' + $plan.integration_id + '\runs')
-  ) $recoveryParentRunId))
-  $recoveryParentManifest = Join-Path $recoveryParentDirectory 'run_manifest.json'
-  $recoveryParentStatus = ''
-  if (Test-Path -LiteralPath $recoveryParentManifest -PathType Leaf) {
-    $recoveryParentStatus = [string]((Get-Content `
-      -LiteralPath $recoveryParentManifest -Raw | ConvertFrom-Json).status)
-  }
-  $isTerminalRecovery = $recoveryMatch.Success -and
-    $recoveryParentStatus -in @('failed','interrupted')
-  if (-not $isTerminalRecovery) {
+  $recoveryRunsRoot = Join-Path $workspaceRoot (
+    'artifacts\projects\' + $plan.integration_id + '\runs'
+  )
+  $recoveryAncestor = Resolve-RfRecoveryFailureAncestor `
+    -RequestedRunId $RunId -ExpectedRunId $expectedRunId `
+    -RunsRoot $recoveryRunsRoot -CampaignId $campaign.campaign_id
+  if ($null -eq $recoveryAncestor) {
     throw 'Solver-authorized RunId differs from the campaign row.'
   }
 }
@@ -1265,6 +1328,15 @@ $runnerArguments = @{
   RuntimeImplementationBindingMode = if ([string]$campaign.status -eq 'exploration') {
     'exploration'
   } else { 'strict' }
+}
+if ($singleFlightExecutionMode -eq 'program_axis_field_export') {
+  # The export remains a run-local SIMION build, but must be configured only
+  # after the common runner request exists under StrictMode.
+  if (-not $campaignHasThreeZoneCandidate) {
+    throw 'Program axis-field export requires a frozen three-zone Candidate.'
+  }
+  $runnerArguments.BuildOnly = $true
+  $runnerArguments.ProgramAxisFieldExport = $true
 }
 $retrySuffix = if ($RunId -match '(__r\d{2})$') { $Matches[1] } else { '' }
 if ($executionStrategy -eq 'simion_single_flight') {

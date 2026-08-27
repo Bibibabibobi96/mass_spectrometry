@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "role": "rf_multipole_paper1_prospective_mother_sample_contract",
+  "purpose": "A previously unused, deterministic N=5000 source population for prospective Paper 1 S1/S2 source-to-OA runs. It is not a prefix, resampling, or relabeling of the v1 family source.",
+  "output": {
+    "path": "common/multipole/sources/rf_multipole_paper1_prospective_mother_sample_v1_5000.csv",
+    "sha256": "38BF87E06C210A05BFFB21EE4997EF39343CE17B8924AFF606CEAEC79A2335C6",
+    "particle_count": 5000
+  },
+  "n1000_reference": {
+    "path": "common/multipole/sources/rf_multipole_paper1_prospective_mother_sample_v1_1000.csv",
+    "sha256": "03DCEB7CCD763075696145CD370E9D14CA2FADAE86BA83370BAF7B171E13126D",
+    "particle_count": 1000,
+    "relationship": "exact ordered prefix of output"
+  },
+  "generator": {
+    "implementation": "common/multipole/sources/generate_rf_multipole_family_mother_sample.py",
+    "implementation_identity": "python_random_mt19937_v1",
+    "seed": 2026082602,
+    "particle_id_start": 1,
+    "particle_id_end": 5000,
+    "distribution_contract": "same physical source distribution as rf_multipole_family_mother_sample_v1, independent MT19937 sequence",
+    "generation_command": "python -m common.multipole.sources.generate_rf_multipole_family_mother_sample --output-sample common/multipole/sources/rf_multipole_paper1_prospective_mother_sample_v1_5000.csv --sample-count 5000 --seed 2026082602"
+  },
+  "claim_limit": "Prospective frozen input authority only. It conveys no transport, source-performance, focusability, or resolution result."
+}

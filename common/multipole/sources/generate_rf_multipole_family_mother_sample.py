@@ -130,12 +130,36 @@ def build_steady_batches(directory: Path, batch_count: int = 4) -> list[Path]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output-n100", required=True, type=Path)
-    parser.add_argument("--output-n1000", required=True, type=Path)
+    parser.add_argument("--output-n100", type=Path)
+    parser.add_argument("--output-n1000", type=Path)
     parser.add_argument("--output-n5000", type=Path)
     parser.add_argument("--output-steady-candidate", type=Path)
     parser.add_argument("--steady-batch-directory", type=Path)
+    parser.add_argument("--output-sample", type=Path,
+                        help="Write one independently seeded canonical source sample.")
+    parser.add_argument("--sample-count", type=int,
+                        help="Particle count used with --output-sample.")
+    parser.add_argument("--seed", type=int, default=SEED,
+                        help="MT19937 seed; the default rebuilds the v1 family.")
     args = parser.parse_args()
+    if args.output_sample is not None:
+        if args.sample_count is None or args.sample_count < 1:
+            parser.error("--output-sample requires a positive --sample-count")
+        if any((args.output_n100, args.output_n1000, args.output_n5000,
+                args.output_steady_candidate, args.steady_batch_directory)):
+            parser.error("--output-sample cannot be combined with family rebuild outputs")
+        args.output_sample.parent.mkdir(parents=True, exist_ok=True)
+        args.output_sample.write_bytes(_render(generate_rows(args.seed, args.sample_count)))
+        print(
+            "RF_MULTIPOLE_INDEPENDENT_MOTHER_SAMPLE=PASS "
+            f"SEED={args.seed} COUNT={args.sample_count} "
+            f"SHA256={sha256(args.output_sample)}"
+        )
+        return 0
+    if args.seed != SEED:
+        parser.error("--seed is only valid with --output-sample")
+    if args.output_n100 is None or args.output_n1000 is None:
+        parser.error("family rebuild requires --output-n100 and --output-n1000")
     build(
         args.output_n100, args.output_n1000, args.output_n5000,
         args.output_steady_candidate,

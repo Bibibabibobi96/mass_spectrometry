@@ -5,15 +5,43 @@ import unittest
 from pathlib import Path
 import json
 
+from common.contracts.file_identity import file_sha256
+
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.recover_completed_single_flight import (
     _completed_batch_logs,
     _find_failed_child,
     _recovery_child_dir,
     _source_region_diagnostic_profile_id,
+    _verify_manifest,
 )
 
 
 class CompletedSingleFlightRecoveryTests(unittest.TestCase):
+    def test_accepts_interrupted_manifest_only_when_explicitly_allowed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = Path(directory) / "run_manifest.json"
+            run_config = Path(directory) / "run_config.json"
+            run_config.write_text("{}\n", encoding="utf-8")
+            manifest.write_text(json.dumps({
+                "role": "simulation_run_manifest", "status": "interrupted",
+                "mode": "rf_to_oatof_simion_single_flight", "inputs": {}, "outputs": [],
+                "run_config": {
+                    "path": str(run_config), "exists": True,
+                    "bytes": run_config.stat().st_size, "sha256": file_sha256(run_config),
+                },
+            }), encoding="utf-8")
+            self.assertEqual(
+                _verify_manifest(
+                    manifest, status=("failed", "interrupted"),
+                    mode="rf_to_oatof_simion_single_flight",
+                )["status"],
+                "interrupted",
+            )
+            with self.assertRaises(Exception):
+                _verify_manifest(
+                    manifest, status="failed", mode="rf_to_oatof_simion_single_flight",
+                )
+
     def test_finds_terminal_handoff_child_when_restart_count_is_absent(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

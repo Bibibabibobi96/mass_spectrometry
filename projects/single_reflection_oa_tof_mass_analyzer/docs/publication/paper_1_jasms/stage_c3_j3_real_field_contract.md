@@ -1,6 +1,6 @@
 # Paper 1 C3_J3：真实场局部可微性合同
 
-> `STATUS: N=1 FUNCTIONAL GATE PASSED / N=100 DERIVATIVE PLATFORM PENDING`
+> `STATUS: N=1 FUNCTIONAL GATE PASSED / N=100 REAL-PA PLATFORM COMPLETE / INDEPENDENT AXIS REFERENCE PENDING`
 
 C3_J3只检验一个问题：C2_J3中理想轴向的三区局部控制方向，经过真实PA、真实边缘场和完整事件分类后，是否仍可在一个有限信赖域内定义稳定的一阶响应。它不恢复失败的J2比较，也不检验峰宽、传输率、锁定预测或多质量普适性。
 
@@ -18,6 +18,14 @@ C3_J3只检验一个问题：C2_J3中理想轴向的三区局部控制方向，�
 
 1. N=1贯通：五个点均能构建、运行、记录grid2/exit/reflectron/detector事件和完整数值身份。失败即`FAIL_STOP`，不得把缺失事件当作零导数。
 2. N=100步长平台：以同一冻结100离子执行cohort完成五点。该cohort是按源粒子ID顺序取得的前100个实际传输terminal handoff，不读取探测器结果；完整1000离子母cohort及上游损失仍为分母。拟合`+h/-h`与`+2h/-2h`的中心差分，并与独立导出轴场积分器比较。每个可比较方向的相对导数偏差必须不超过5%；五点事件拓扑和母cohort损失分类必须稳定。
+
+独立参考的每一点必须通过唯一 single-flight 入口以`BuildOnly + ProgramAxisFieldExport`建立新的 immutable
+field-only run；它必须绑定与对应真实PA点逐字节相同的 Candidate，使用相同有效脉冲时刻，并输出
+`repeller → grid2`的五实例 Workbench 总轴场。积分器只读取同一真实PA点、同一粒子的
+`pre_pulse_state(z,v_z)`并积分到该点记录的共同`local_accelerator_exit`面。它以
+`dt=1e-4, 5e-5, 2.5e-5 µs`重算中心导数；最细两档相对差必须不超过1%，否则独立参考未收敛，阶段只能
+`INCONCLUSIVE_REVISE`。历史上缺少 run-local frontend/overlay placement 重放的导出即使产生CSV也不具备
+这一身份和数值对照条件，保留为失败排错证据，不得复用。
 
 N=1只允许使用`terminal_handoff_smoke_source_particle_id`明确登记的一个、已实际传输的上游粒子；运行器仍保留完整母cohort的上游损失记录，并将该粒子映射为SIMION粒子1。它只是构建、时钟和事件序列的功能烟雾测试，禁止输出或解释峰宽、传输率、导数、排序或任何性能指标。
 

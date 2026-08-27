@@ -120,8 +120,15 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
         self.assertIn("execution_batches_parallel=[bool]($executionBatchCount -gt 1)", runner)
         self.assertNotIn("ExecutionBatchCount", runner)
         self.assertIn("common.simion.particle_batching", runner)
-        self.assertIn("'--nogui','--noprompt','fly'", runner)
-        self.assertNotIn("--default-num-particles", runner)
+        self.assertIn(
+            "'--default-num-particles',([string]$ionListCapacity),'--nogui','--noprompt','fly'",
+            runner,
+        )
+        self.assertIn("Measure-Object -Property count -Maximum", runner)
+        self.assertIn("[Math]::Max(100,$largestPlannedBatchCount)", runner)
+        self.assertIn("external particle tables still determine the exact physical batch population", runner)
+        self.assertIn("simion_ion_list_capacity = $ionListCapacity", runner)
+        self.assertIn("continuing without a batch-size limit", runner)
         self.assertIn("simion_execution_batch_plan.json", runner)
         self.assertIn("simion_single_wave_batch_plan_sha256", runner)
         self.assertIn("Invoke-ResourceBudgetedProcesses", runner)
@@ -471,6 +478,15 @@ try {{
         with self.assertRaisesRegex(ValueError, "C3 J3 Candidate"):
             validate_runtime_identity(**{**arguments, "theory_working_point": {}})
 
+    def test_j2_identity_requires_pool_evidence_and_rejects_theory_anchor(self) -> None:
+        planes = {"repeller": -25.0, "intermediate1": -20.0, "intermediate2": -10.0, "exit": -5.0}
+        topology = {"topology_id": "topology", "planes_global_z_mm": planes, "potentials_v": {"repeller": 2000.0, "intermediate1": 1500.0, "intermediate2": 500.0, "exit": 0.0}}
+        candidate = {"schema_version": 1, "role": "oatof_three_zone_simion_candidate_resolved", "qualification": "CANDIDATE_ONLY", "compiler_mode": "J2_REAL_FIELD_CANDIDATE_POOL_V1", "j2_evidence": {"candidate_pool_id": "j2_pool", "candidate_id": "baseline", "pool_request_sha256": "C" * 64}, "identities": {"topology_id": "topology", "geometry_id": "geometry"}, "accelerator_topology": topology}
+        arguments = {"candidate": candidate, "candidate_sha256": "A" * 64, "geometry": {"accelerator_topology": topology, "single_flight_layout_derivation": {"layout_profile_id": "layout", "architecture_generation_id": "generation", "design_compilation": {"candidate": {"sha256": "A" * 64}}}}, "geometry_sha256": "B" * 64, "frontend_contract": {"accelerator_topology_id": "topology"}, "frontend_electrode_topology": {"topology_id": "frontend"}, "region_field": {"layout_geometry": {"sha256": "B" * 64}, "semantic": {"canonical_profile_id": "field", "accelerator_topology": topology}}, "configuration": {"accelerator_field_profiles": [{"profile_id": "field", "topology_id": "topology", "geometry_id": "geometry", "frontend_electrode_topology_id": "frontend", "field_id": "field-id"}]}, "layout_profile_id": "layout", "architecture_generation_id": "generation"}
+        self.assertEqual(validate_runtime_identity(**arguments)["field_id"], "field-id")
+        with self.assertRaisesRegex(ValueError, "J2 Candidate"):
+            validate_runtime_identity(**{**arguments, "theory_working_point": {}})
+
 
     def test_generated_pre_pulse_subset_does_not_require_external_campaign_state(self) -> None:
         adapter = FAMILY_ADAPTER.read_text(encoding="utf-8")
@@ -804,7 +820,7 @@ foreach ($entry in $commands) {{
         self.assertIn("$frontendWorkingPa0,$overlayBuildPaSharp", text)
         self.assertIn("frontend_pa_cache_key=$frontendCacheKey", text)
 
-    def test_simion_consumes_physical_pa_copies_and_rechecks_frontend_cache(
+    def test_simion_consumes_physical_pa_copies_and_rechecks_selected_generation(
         self,
     ) -> None:
         text = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
@@ -829,17 +845,36 @@ foreach ($entry in $commands) {{
             "OATOF_ACCELERATOR_PA_OVERRIDE = $frontendWorkingPa0",
             text,
         )
-        guard = text.index(
-            "Frontend PA cache changed during construction-time SIMION access."
+        freeze = text.index(
+            "$frontendCacheManifestInput = Copy-RfCacheManifestInput",
+            text.index("$cacheGem = Join-Path $cacheDir"),
         )
+        guard = text.index("Test-RfFrozenCacheGeneration -Python $python")
         manifest_copy = text.index(
             "$frontendCacheManifestInput = Copy-RfCacheManifestInput"
         )
         fly_override = text.index(
             "OATOF_ACCELERATOR_PA_OVERRIDE = $frontendWorkingPa0"
         )
-        self.assertLess(guard, manifest_copy)
-        self.assertLess(manifest_copy, fly_override)
+        self.assertEqual(freeze, manifest_copy)
+        self.assertLess(manifest_copy, guard)
+        self.assertLess(guard, fly_override)
+
+    def test_frontend_cache_recheck_is_generation_pinned_and_diagnostic(self) -> None:
+        text = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        helper_start = text.index("function Test-RfFrozenCacheGeneration")
+        helper_end = text.index("function Assert-RfThreeZoneArgumentSet", helper_start)
+        # The helper checks its exact generation path rather than following a
+        # mutable current_generation pointer after construction.
+        helper = text[helper_start:helper_end]
+        self.assertIn("--cache-entry $CacheEntry", helper)
+        self.assertIn("--expected-cache-key $CacheKey", helper)
+        self.assertIn("$FrozenManifest", helper)
+        self.assertNotIn("Resolve-RfReusableCacheDirectory", helper)
+        self.assertIn("frontend_cache_construction_recheck.stdout.log", helper)
+        self.assertIn("frontend_cache_construction_recheck.stderr.log", helper)
+        self.assertIn("verifier_exit_code", helper)
+        self.assertIn("frozen_manifest_matches", helper)
 
     def test_build_only_stops_after_frozen_iob_except_top_level_axis_export(self) -> None:
         text = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
@@ -850,7 +885,7 @@ foreach ($entry in $commands) {{
         self.assertIn("$totalAxisFieldIob = Join-Path $runtimeDir 'total_axis_field.iob'", text)
         self.assertIn("Program axis-field export requires the field-only five-instance IOB.", text)
         self.assertIn("total_axis_field_iob_build_resource_usage.json", text)
-        self.assertIn("CONSTRUCTION_ONLY_COMPACT_NOT_REPLAYABLE", text)
+        self.assertIn("TOP_LEVEL_FIVE_INSTANCE_EXPORT", text)
         self.assertIn("$package.artifact_run_dir 'results\\total_axis_field.csv'", text)
         iob_builder = (INTEGRATION_ROOT / "runtime" / "build_single_flight_overlay_iob.lua").read_text(
             encoding="utf-8"

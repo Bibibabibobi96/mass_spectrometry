@@ -1,0 +1,45 @@
+{
+  "schema_version": 3,
+  "role": "multipole_transport_experiment_campaign",
+  "family_id": "rf_multipole_ion_optics",
+  "campaign_id": "20260826__paper1_s2_prospective_segmented_source_n5000",
+  "preregistered_before_run": true,
+  "downstream_terminal_profile": {
+    "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+    "terminal_profile_id": "oatof_shield_terminal",
+    "registry_sha256": "4D9F3F699910AE2973A84914B32C710E83CBEB4D29F0551D0EAF15910170E1A8"
+  },
+  "design_variable_authorization": {
+    "allowed_variable_ids": ["rf_amplitude", "rf_frequency"],
+    "variable_limits": [
+      {"variable_id": "rf_amplitude", "unit": "V", "minimum": 139.81792, "maximum": 139.81792},
+      {"variable_id": "rf_frequency", "unit": "Hz", "minimum": 1100000.0, "maximum": 1100000.0}
+    ]
+  },
+  "particle_source_phase_policy": {
+    "kind": "match_baseline_rf_phase",
+    "baseline_frequency_Hz": 1100000.0,
+    "frequency_variable_id": "rf_frequency",
+    "n1000_reference_profile_id": "paper1_prospective_mother_sample_v1_n1000"
+  },
+  "simion_pa_basis_policy": {"kind": "content_addressed_geometry_basis", "reuse_scope": "same_project_same_fingerprint"},
+  "experiments": [{
+    "experiment_id": "paper1_s2_prospective_segmented_source_n5000",
+    "project_id": "rf_hexapole_ion_optics",
+    "authorized_run_id": "20260826_235100__sim__simion__paper1-s2-prospective-segmented-source__n5000",
+    "solver": "simion",
+    "stop_stage": "transport",
+    "case_set": "primary_only",
+    "design_profile_id": "segmented_rod_axial_acceleration",
+    "execution_profile_id": "simion_transport_campaign_engineering",
+    "design_variable_values": {"rf_amplitude": 139.81792, "rf_frequency": 1100000.0},
+    "particle_source_profile_id": "paper1_prospective_mother_sample_v1_n5000",
+    "comsol_solver_numerics_profile_id": "baseline_finite_3d",
+    "simion_solver_numerics": {"kind": "inline", "numerics_id": "paper1_s2_source_r015_z020_t40", "values": {"cell_mm_xyz": {"x": 0.15, "y": 0.15, "z": 0.2}, "trajectory_quality": 10, "trajectory": {"rf_steps_per_period": 40, "maximum_global_time_us": 80.0}}},
+    "retention_class": "compact",
+    "simion_dispatch": {"kind": "automatic", "field_kind": "rf", "independent_particles": true},
+    "resource_authorization": {"authorized": true, "limits": {"wall_clock_seconds_by_solver": {"comsol": 1800, "simion": 12000}, "transient_run_directory_bytes": 17179869184, "process_tree_working_set_bytes": 25769803776, "minimum_system_available_memory_bytes": 8589934592, "compact_final_retained_bytes": 52428800, "maximum_pa_grid_points": 35000000, "automatic_retry_count": 0}, "full_matrix_authorization": {"authorized": false, "reason": "One prospective N=5000 S2 source-authority row is authorized; scheduler resource decisions remain public and identity-bound."}, "budget_exhaustion_result": "Stop without retry and record the exhausted limit."},
+    "claim_limit": "DETECTOR_BLIND_SOURCE_ONLY prospective Paper 1 C1 S2 segmented-rod source run. It establishes a newly frozen full N=5000 upstream source and loss census for subsequent OA pre-pulse screening. It supports no detector, resolution, focusability, optimization, Candidate, or Formal claim."
+  }],
+  "claim_limit": "One preregistered prospective S2 N=5000 upstream RF segmented-rod transport. It replaces neither historical source evidence nor Formal assets."
+}

@@ -145,12 +145,32 @@ def _vector(values: NDArray[np.float64] | Sequence[float], label: str) -> NDArra
 
 
 def assign_detector_blind_cohorts(
-    particle_ids: Iterable[int], *, salt: str
+    particle_ids: Iterable[int], *, salt: str,
+    role_upper_bounds: Sequence[tuple[str, float]] | None = None,
 ) -> tuple[CohortAssignment, ...]:
     """Split unique IDs by SHA-256 without consulting any detector-level outcome."""
 
     if not salt:
         raise ValueError("cohort salt must be non-empty")
+    bounds = role_upper_bounds or (
+        ("development", 0.50),
+        ("validation", 0.70),
+        ("optimization", 0.85),
+        ("locked_test", 1.00),
+    )
+    if (
+        len(bounds) != 4
+        or tuple(role for role, _ in bounds) != (
+            "development", "validation", "optimization", "locked_test"
+        )
+        or any(
+            not isinstance(upper, float) or not 0.0 < upper <= 1.0
+            for _, upper in bounds
+        )
+        or any(current[1] >= following[1] for current, following in zip(bounds, bounds[1:]))
+        or bounds[-1][1] != 1.0
+    ):
+        raise ValueError("cohort role upper bounds must be increasing and end at 1.0")
     result: list[CohortAssignment] = []
     seen: set[int] = set()
     for particle_id in particle_ids:
@@ -162,10 +182,7 @@ def assign_detector_blind_cohorts(
             hashlib.sha256(f"{salt}:{identifier}".encode("utf-8")).digest()[:8],
             "big",
         ) / 2**64
-        role = (
-            "development" if bucket < 0.50 else "validation" if bucket < 0.70
-            else "optimization" if bucket < 0.85 else "locked_test"
-        )
+        role = next(role for role, upper in bounds if bucket < upper)
         result.append(CohortAssignment(identifier, role))
     if not result:
         raise ValueError("at least one particle ID is required")
@@ -200,34 +217,50 @@ def load_frozen_pre_pulse_source(
     fields = set(rows[0])
     event_key = "event" if "event" in fields else "state_event" if "state_event" in fields else None
     time_key = "instrument_time_us" if "instrument_time_us" in fields else None
-    if event_key is None or time_key is None or "particle_id" not in fields:
+    if time_key is None or "particle_id" not in fields:
         raise ValueError(
-            "pre-pulse source table lacks particle ID, event, or instrument time"
+            "pre-pulse source table lacks particle ID or instrument time"
         )
-    event_values = {row[event_key] for row in rows}
     time_series_event = "pre_pulse_time_series_state"
-    if event_values == {time_series_event}:
-        if time_series_sample_index is None or time_series_sample_index < 1:
-            raise ValueError(
-                "pre-pulse time-series source requires one positive sample index"
-            )
-        if "sample_index" not in fields or "survival_status" not in fields:
-            raise ValueError("pre-pulse time-series source lacks sample/status fields")
-        rows = [
-            row for row in rows
-            if int(row["sample_index"]) == time_series_sample_index
-        ]
-        if not rows:
-            raise ValueError("pre-pulse time-series sample index is absent")
-        if any(row["survival_status"].strip().lower() != "alive" for row in rows):
-            raise ValueError("selected pre-pulse time-series state is not alive")
+    # A manifest-bound restart state intentionally has no event column: it is
+    # a single canonical source checkpoint, not a re-usable time series.  Its
+    # caller must separately validate the materialization receipt.  Do not
+    # confuse this with accepting arbitrary event-less CSV files.
+    restart_columns = {
+        "mass_amu", "charge_state", "position_x_mm", "position_y_mm",
+        "position_z_mm", "velocity_x_m_s", "velocity_y_m_s", "velocity_z_m_s",
+        "kinetic_energy_eV",
+    }
+    if event_key is None:
+        if time_series_sample_index is not None:
+            raise ValueError("sample index is invalid for a canonical pre-pulse restart")
+        if not restart_columns.issubset(fields):
+            raise ValueError("event-less pre-pulse source is not a canonical restart state")
         pulse_eligibility = np.ones(len(rows), dtype=bool)
     else:
-        if time_series_sample_index is not None:
-            raise ValueError("sample index is only valid for a pre-pulse time-series source")
-        if "pulse_eligibility" not in fields:
-            raise ValueError("pre-pulse source table lacks pulse eligibility")
-        pulse_eligibility = None
+        event_values = {row[event_key] for row in rows}
+        if event_values == {time_series_event}:
+            if time_series_sample_index is None or time_series_sample_index < 1:
+                raise ValueError(
+                    "pre-pulse time-series source requires one positive sample index"
+                )
+            if "sample_index" not in fields or "survival_status" not in fields:
+                raise ValueError("pre-pulse time-series source lacks sample/status fields")
+            rows = [
+                row for row in rows
+                if int(row["sample_index"]) == time_series_sample_index
+            ]
+            if not rows:
+                raise ValueError("pre-pulse time-series sample index is absent")
+            if any(row["survival_status"].strip().lower() != "alive" for row in rows):
+                raise ValueError("selected pre-pulse time-series state is not alive")
+            pulse_eligibility = np.ones(len(rows), dtype=bool)
+        else:
+            if time_series_sample_index is not None:
+                raise ValueError("sample index is only valid for a pre-pulse time-series source")
+            if "pulse_eligibility" not in fields:
+                raise ValueError("pre-pulse source table lacks pulse eligibility")
+            pulse_eligibility = None
     resolved = {
         name: next((item for item in choices if item in fields), None)
         for name, choices in aliases.items()
@@ -235,7 +268,7 @@ def load_frozen_pre_pulse_source(
     if any(value is None for value in resolved.values()):
         raise ValueError("pre-pulse source table lacks canonical six-dimensional state")
     allowed_events = {"pre_pulse_state", "accelerator_pre_pulse", time_series_event}
-    if any(row[event_key] not in allowed_events for row in rows):
+    if event_key is not None and any(row[event_key] not in allowed_events for row in rows):
         raise ValueError("source table is not an OA pre-pulse checkpoint")
     identifiers = np.asarray([int(row["particle_id"]) for row in rows], dtype=np.int64)
     if np.any(identifiers < 1) or np.unique(identifiers).size != identifiers.size:

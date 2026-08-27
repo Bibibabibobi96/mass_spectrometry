@@ -10,6 +10,14 @@
     "family_mother_sample_v1_n1000": {
       "path": "common/multipole/sources/rf_multipole_family_mother_sample_v1_1000.csv",
       "sha256": "CE68A6B47DC5726D9C45CBE28E4397A2321D782FAED265067824891AAF4D0FBF"
+    },
+    "paper1_prospective_mother_sample_v1_n1000": {
+      "path": "common/multipole/sources/rf_multipole_paper1_prospective_mother_sample_v1_1000.csv",
+      "sha256": "03DCEB7CCD763075696145CD370E9D14CA2FADAE86BA83370BAF7B171E13126D"
+    },
+    "paper1_prospective_mother_sample_v1_n5000": {
+      "path": "common/multipole/sources/rf_multipole_paper1_prospective_mother_sample_v1_5000.csv",
+      "sha256": "38BF87E06C210A05BFFB21EE4997EF39343CE17B8924AFF606CEAEC79A2335C6"
     }
   }
 }

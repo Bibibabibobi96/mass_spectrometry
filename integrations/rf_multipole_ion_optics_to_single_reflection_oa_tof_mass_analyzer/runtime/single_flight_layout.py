@@ -153,7 +153,7 @@ def _compile_three_zone_candidate(
     candidate: dict[str, Any],
     candidate_binding: dict[str, str],
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Map one hash-bound T5 or C3_J3 Candidate into the layout surface."""
+    """Map one hash-bound T5, C3_J3, or J2 Candidate into the layout surface."""
 
     if (
         candidate.get("role") != "oatof_three_zone_simion_candidate_resolved"
@@ -161,6 +161,7 @@ def _compile_three_zone_candidate(
         or candidate.get("compiler_mode") not in {
             "T5_FROZEN_PRIMARY_AND_BRANCH_ONLY",
             "C3_J3_EXACT_LOCAL_DIRECTION_V1",
+            "J2_REAL_FIELD_CANDIDATE_POOL_V1",
         }
         or set(candidate_binding) != {"path", "sha256"}
     ):
@@ -353,9 +354,9 @@ def _compile_three_zone_candidate(
         },
     }
     # T5 geometry was already published and can be consumed by manifest-bound
-    # post-pulse restarts.  Keep that resolved surface byte-for-byte semantic
-    # compatible; only the newly introduced C3 route needs an explicit mode.
-    if candidate["compiler_mode"] == "C3_J3_EXACT_LOCAL_DIRECTION_V1":
+    # post-pulse restarts.  Preserve that resolved surface byte-for-byte;
+    # later controlled candidate families declare their compiler identity.
+    if candidate["compiler_mode"] != "T5_FROZEN_PRIMARY_AND_BRANCH_ONLY":
         compilation["candidate_compiler_mode"] = candidate["compiler_mode"]
     return geometry, compilation
 

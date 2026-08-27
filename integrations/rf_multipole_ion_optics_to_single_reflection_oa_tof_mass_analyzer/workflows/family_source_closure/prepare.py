@@ -72,6 +72,9 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.materialize_manifest_bound_pre_pulse_restart import (
     materialize as materialize_manifest_bound_pre_pulse_restart,
 )
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.materialize_pre_pulse_time_series import (
+    TIME_SERIES_RESTART_RECEIPT_ROLE,
+)
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_layout import (
     compile_geometry_and_port,
     derive_pulse_schedule,
@@ -1842,6 +1845,112 @@ def _validate_canonical_pulse_restart_state(
     }
 
 
+def _validate_time_series_restart_state(
+    source_path: Path,
+    receipt_path: Path,
+    source_record: dict[str, Any],
+    schedule: dict[str, Any],
+) -> dict[str, Any]:
+    """Bind a detector-blind time-series restart to its exact pulse schedule."""
+
+    receipt = _load(receipt_path)
+    validate_schema(
+        receipt,
+        INTEGRATION_SCHEMA_DIR
+        / "rf_oatof_manifest_bound_time_series_restart_materialization_receipt.schema.json",
+    )
+    target = receipt["pulse_target_state"]
+    selection = receipt["selection"]
+    pulse_time_us = float(schedule["pulse_effective_time_us"])
+    expected_locus = "accelerator_stage1_interior_finite_observed_3d_cloud"
+    if (
+        receipt["role"] != TIME_SERIES_RESTART_RECEIPT_ROLE
+        or target["sha256"] != source_record["sha256"]
+        or target["particle_count"] != source_record["particle_count"]
+        or target["source_state_epoch"] != "pulse_effective_time"
+        or target["source_state_locus"]["kind"] != expected_locus
+        or target["coordinate_frame"] != "oatof_global_cartesian"
+        or target["clock_basis"] != "canonical_instrument_time_us"
+        or target["clock_authority"] != "resolved_single_flight_pulse_schedule"
+        or not math.isclose(
+            float(target["pulse_effective_time_us"]),
+            pulse_time_us,
+            rel_tol=0.0,
+            abs_tol=1e-9,
+        )
+        or selection["detector_results_used"]
+        or selection["selection_uses_detector_outcome"]
+        or not selection["pulse_disabled"]
+        or not selection["postselection_prohibited"]
+    ):
+        raise ContractError("time-series restart receipt identity differs")
+    _, rows = materialize_pre_pulse_restart(source_path, pulse_time_us)
+    count = len(rows)
+    ordered_ids = [int(row["particle_id"]) for row in rows]
+    ordered_id_sha256 = _canonical_sha256(ordered_ids)
+    if (
+        count != source_record["particle_count"]
+        or target["particle_count"] != count
+        or target["ordered_particle_id_sha256"] != ordered_id_sha256
+    ):
+        raise ContractError("time-series restart population differs")
+    tolerances = {
+        "position_rowwise_abs_tolerance_mm": float(
+            source_record["position_rowwise_abs_tolerance_mm"]
+        ),
+        "velocity_rowwise_abs_tolerance_m_per_s": float(
+            source_record["velocity_rowwise_abs_tolerance_m_per_s"]
+        ),
+        "clock_abs_tolerance_us": float(source_record["clock_abs_tolerance_us"]),
+        "energy_abs_tolerance_eV": float(source_record["energy_abs_tolerance_eV"]),
+    }
+    if any(value <= 0.0 or not math.isfinite(value) for value in tolerances.values()):
+        raise ContractError("time-series restart tolerances must be positive")
+    maximum_clock_error = 0.0
+    maximum_energy_error = 0.0
+    for row in rows:
+        maximum_clock_error = max(
+            maximum_clock_error,
+            abs(float(row["instrument_time_us"]) - pulse_time_us),
+        )
+        maximum_energy_error = max(
+            maximum_energy_error,
+            abs(
+                kinetic_energy_ev(
+                    float(row["mass_amu"]),
+                    *(float(row[f"velocity_{axis}_m_s"]) for axis in "xyz"),
+                )
+                - float(row["kinetic_energy_eV"])
+            ),
+        )
+    if (
+        maximum_clock_error > tolerances["clock_abs_tolerance_us"]
+        or maximum_energy_error > tolerances["energy_abs_tolerance_eV"]
+    ):
+        raise ContractError("time-series restart target-state validation failed")
+    return {
+        "schema_version": 1,
+        "role": "canonical_pulse_restart_target_state_validation",
+        "status": "PASS",
+        "target_pulse_state_sha256": source_record["sha256"],
+        "materialization_receipt_sha256": source_record["materialization_receipt"]["sha256"],
+        "source_state_epoch": "pulse_effective_time",
+        "source_state_locus": expected_locus,
+        "coordinate_frame": "oatof_global_cartesian",
+        "clock_basis": "canonical_instrument_time_us",
+        "clock_authority": "resolved_single_flight_pulse_schedule",
+        "ordered_particle_id_sha256": ordered_id_sha256,
+        "particle_count": count,
+        "tolerances": tolerances,
+        "maximum_errors": {
+            "position_rowwise_abs_mm": 0.0,
+            "velocity_rowwise_abs_m_per_s": 0.0,
+            "clock_abs_us": maximum_clock_error,
+            "energy_abs_eV": maximum_energy_error,
+        },
+    }
+
+
 def _validate_observed_pre_pulse_projection(
     *,
     receipt: dict[str, Any],
@@ -2463,6 +2572,18 @@ def prepare_family_source_closure(
     )
     source = experiment["source"]
     execution_strategy = experiment.get("execution_strategy", "staged_three_stage")
+    single_flight_execution_mode = experiment.get(
+        "single_flight_execution_mode", "particle_flight"
+    )
+    if execution_strategy != "simion_single_flight":
+        if "single_flight_execution_mode" in experiment:
+            raise ContractError(
+                "single-flight execution mode requires simion_single_flight"
+            )
+    elif single_flight_execution_mode not in (
+        "particle_flight", "program_axis_field_export"
+    ):
+        raise ContractError("single-flight execution mode is unsupported")
     pa_cache_policy = experiment.get("single_flight_pa_cache_policy")
     pa_cache_policy_provenance = None
     if execution_strategy == "simion_single_flight":
@@ -2580,10 +2701,7 @@ def prepare_family_source_closure(
             pre_pulse_source_path = _workspace_record(
                 workspace, pre_pulse_source_state, "pre-pulse source state"
             )
-        if (
-            pre_pulse_source_state is not None
-            and source_materialization_profile is not None
-        ):
+        if pre_pulse_source_state is not None:
             required_restart_fields = {
                 "materialization_receipt", "source_state_epoch", "source_state_locus",
                 "position_rowwise_abs_tolerance_mm",
@@ -3321,6 +3439,24 @@ def prepare_family_source_closure(
                 "canonical_pulse_restart_target_state_validation.json"
             )
             _write_json(pulse_restart_validation_path, pulse_restart_validation)
+        elif (
+            pre_pulse_source_path is not None
+            and pre_pulse_source_state is not None
+            and pre_pulse_receipt_path is not None
+            and post_pulse_restart_authority is None
+            and _load(pre_pulse_receipt_path).get("role")
+            == TIME_SERIES_RESTART_RECEIPT_ROLE
+        ):
+            pulse_restart_validation = _validate_time_series_restart_state(
+                pre_pulse_source_path,
+                pre_pulse_receipt_path,
+                pre_pulse_source_state,
+                schedule,
+            )
+            pulse_restart_validation_path = plan_output.with_name(
+                "canonical_pulse_restart_target_state_validation.json"
+            )
+            _write_json(pulse_restart_validation_path, pulse_restart_validation)
         if (
             source_materialization_profile is not None
             and source_materialization_profile["materialization_mode"]
@@ -3863,6 +3999,7 @@ def prepare_family_source_closure(
                 "upstream_resolved_design_sha256="
                 + design_evidence["resolved_design_sha256"],
             ] + ([] if execution_strategy != "simion_single_flight" else [
+                "single_flight_execution_mode=" + single_flight_execution_mode,
                 "single_flight_pa_cache_policy=" + pa_cache_policy,
                 "single_flight_pa_cache_policy_provenance="
                 + pa_cache_policy_provenance,

@@ -326,7 +326,7 @@ class TransportCampaignTests(unittest.TestCase):
                     experiment_id=campaign["experiments"][0]["experiment_id"],
                 )
 
-    def test_campaign_v1_to_v3_forbid_case_set(self) -> None:
+    def test_campaign_v1_to_v2_forbid_case_set_and_v3_accepts_it(self) -> None:
         v3 = analysis_campaign_fixture()
         v3["schema_version"] = 3
         del v3["analysis_requests"]
@@ -346,7 +346,7 @@ class TransportCampaignTests(unittest.TestCase):
                 del campaign["downstream_terminal_profile"]
             campaign["experiments"][0]["case_set"] = "primary_only"
             campaigns.append(campaign)
-        for campaign in campaigns:
+        for campaign in campaigns[:2]:
             with self.subTest(schema_version=campaign["schema_version"]), written_campaign(
                 campaign
             ) as path:
@@ -356,9 +356,17 @@ class TransportCampaignTests(unittest.TestCase):
                     resolve_runtime_selection(
                         REPO_ROOT,
                         campaign["experiments"][0]["project_id"],
-                        campaign_path=path,
-                        experiment_id=campaign["experiments"][0]["experiment_id"],
-                    )
+                    campaign_path=path,
+                    experiment_id=campaign["experiments"][0]["experiment_id"],
+                )
+        with written_campaign(campaigns[2]) as path:
+            resolved = resolve_runtime_selection(
+                REPO_ROOT,
+                campaigns[2]["experiments"][0]["project_id"],
+                campaign_path=path,
+                experiment_id=campaigns[2]["experiments"][0]["experiment_id"],
+            )
+        self.assertEqual(resolved["case_set"], "primary_only")
 
     def test_campaign_status_accepts_repository_relative_path(self) -> None:
         status = campaign_status(

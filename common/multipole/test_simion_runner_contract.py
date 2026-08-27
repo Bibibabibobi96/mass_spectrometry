@@ -94,10 +94,21 @@ class SimionRunnerContractTests(unittest.TestCase):
         self.assertIn("Start-ObservedFormalProcess", source)
         self.assertIn("--observed-formal-peak-bytes", source)
         self.assertIn("--first-batch-completed", source)
+        self.assertIn("$retainedFormalBatchOutputs", source)
+        self.assertIn("retained first formal", source)
+        self.assertIn("shared $($merge.property) CSV is incomplete", source)
         self.assertNotIn("RESOURCE_CALIBRATION_ONLY", source)
         self.assertIn("& $python @batchArguments | Out-Null", source)
         self.assertNotIn("maximum_process_tree_working_set_bytes=[int64]", source)
         self.assertNotIn("$request[$name]=[int]$automaticDispatch.$name", source)
+
+    def test_scheduler_rejects_reused_process_ids(self) -> None:
+        support = (RUNNER.parent / "resource_budget_support.ps1").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("TrackedProcessStartedAtUtcTicks", support)
+        self.assertIn("tracked_process_started_at_utc_ticks", support)
+        self.assertIn("$staleProcessIds", support)
 
     def test_governed_profile_is_the_only_physical_entry(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")

@@ -19,18 +19,319 @@ OCT = "rf_octupole_ion_optics"
 
 
 class ResourceBudgetTests(unittest.TestCase):
+    def test_scheduler_lifecycle_event_reports_real_batch_metadata(self) -> None:
+        """Public executor events must identify the completed work exactly."""
+        support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
+        command = (
+            f". '{support}';"
+            "$spec=[pscustomobject]@{scheduler_batch=[pscustomobject]@{"
+            "index=2;total_batches=4;particle_id_min=1251;particle_id_max=2500;count=1250}};"
+            "$record=[pscustomobject]@{name='fly__test__batch_2';specification=$spec};"
+            "Write-RepositorySchedulerEvent -Event 'BATCH_COMPLETED' -Record $record "
+            "-ActiveCount 1 -PendingCount 2 -Details @{EXIT_CODE=0;NATURAL='true';"
+            "WALL_CLOCK_SECONDS=12.5;MORE_PENDING='true'}"
+        )
+        completed = subprocess.run(
+            ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+            cwd=REPO_ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=15,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        for token in (
+            "SIMION_RESOURCE_EVENT=BATCH_COMPLETED",
+            "BATCH=2",
+            "TOTAL_BATCHES=4",
+            "PARTICLE_ID_MIN=1251",
+            "PARTICLE_ID_MAX=2500",
+            "PARTICLE_COUNT=1250",
+            "ACTIVE=1",
+            "PENDING=2",
+            "EXIT_CODE=0",
+            "MORE_PENDING=true",
+            "WALL_CLOCK_SECONDS=12.5",
+        ):
+            self.assertIn(token, completed.stdout)
+
     def test_repository_scheduler_owns_stagger_and_latest_first_memory_recovery(self) -> None:
         source = (REPO_ROOT / "common/multipole/resource_budget_support.ps1").read_text(
             encoding="utf-8"
         )
-        self.assertIn("$seconds-ne 30", source)
+        self.assertIn("$seconds-ne 45", source)
         self.assertIn("$now.AddSeconds(5)", source)
         self.assertIn("Sort-Object started_at -Descending", source)
-        self.assertIn("available_memory_below_1_gib_for_15_seconds", source)
-        self.assertIn("$warningBytes-ne 2GB-or$criticalBytes-ne 1GB", source)
-        self.assertIn("$null=$pending.Add($victim.specification)", source)
+        self.assertIn("available_memory_below_0p5_gib_for_15_seconds", source)
+        self.assertIn("$warningBytes-ne 1GB-or$criticalBytes-ne 512MB", source)
+        self.assertIn("maximum_memory_danger_termination_attempts-ne 2", source)
+        self.assertIn("$dangerTerminationAttempts-ge$maximumDangerTerminations", source)
+        self.assertIn("PrivateMemorySize64", source)
+        self.assertIn("peak_process_tree_managed_memory_bytes", source)
+        self.assertIn("$dangerRecoveryPending=$true", source)
+        self.assertIn("-not$dangerRecoveryPending", source)
+        self.assertIn("available_memory_below_dynamic_admission", source)
+        self.assertIn("$pending.Insert(0,$victim.specification)", source)
+        self.assertIn("requeue_priority='front'", source)
         self.assertIn("$maximumConcurrency-1", source)
         self.assertNotIn("CalibrationDurationSeconds", source)
+
+    def test_invalid_windows_cpu_sample_is_discarded(self) -> None:
+        """An out-of-range WMI sample must not suppress otherwise safe lanes."""
+        support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
+        command = (
+            f". '{support}';"
+            "function Get-CimInstance { [pscustomobject]@{LoadPercentage=109.072} };"
+            "if($null -ne (Get-SystemCpuPercent)){exit 3};"
+            "function Get-CimInstance { [pscustomobject]@{LoadPercentage=6} };"
+            "if((Get-SystemCpuPercent)-ne6){exit 4}"
+        )
+        completed = subprocess.run(
+            ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+            cwd=REPO_ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=15,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
+    def test_process_sample_discards_reused_root_pid(self) -> None:
+        """A new process with an old solver PID must not hold its watchdog open."""
+        support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
+        command = (
+            f". '{support}';"
+            "$ticks=[int64]((Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks-1);"
+            "$sample=Get-ManagedSolverProcessSample -RootProcessIds @($PID) "
+            "-RootProcessStartedAtUtcTicks @{([string]$PID)=$ticks};"
+            "if(@($sample.active_process_ids).Count-ne0){exit 3}"
+        )
+        completed = subprocess.run(
+            ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+            cwd=REPO_ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=15,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
+    def test_formal_observation_exports_conservative_managed_peak(self) -> None:
+        """A trimmed working set must not lower the profile passed to admission."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dispatch = root / "dispatch.json"
+            dispatch.write_text(
+                json.dumps(
+                    {
+                        "role": "simion_repository_dispatch_plan",
+                        "estimation": {"kind": "formal_first_batch_observation"},
+                        "limits": {"formal_observation_seconds": 45},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
+            stdout, stderr = root / "stdout.log", root / "stderr.log"
+            command = (
+                f". '{support}';"
+                "$script:sampleCalls=0;"
+                "function Get-ManagedSolverProcessSample {"
+                "param([int[]]$RootProcessIds,[int[]]$TrackedProcessIds);"
+                "$script:sampleCalls+=1;"
+                "$active=$(if($script:sampleCalls-lt3){@($RootProcessIds[0])}else{@()});"
+                "[pscustomobject]@{tracked_process_ids=@($RootProcessIds[0]);"
+                "active_process_ids=$active;working_set_bytes=1073741824;"
+                "private_bytes=4294967296;managed_memory_bytes=4294967296;"
+                "total_processor_time_ticks=0}"
+                "};"
+                "$spec=[pscustomobject]@{name='formal';file_path=(Get-Process -Id $PID).Path;"
+                "argument_list=@('-NoProfile','-Command','Start-Sleep -Seconds 1');"
+                f"stdout='{stdout}';stderr='{stderr}';environment=@{{}};working_directory='{root}'}};"
+                f"$r=Start-ObservedFormalProcess -DispatchPlanPath '{dispatch}' -ProcessSpecification $spec;"
+                "if($r.observed_peak_process_tree_working_set_bytes-ne4294967296 -or"
+                "$r.observed_peak_process_tree_managed_memory_bytes-ne4294967296 -or"
+                "$r.observed_peak_process_tree_resident_working_set_bytes-ne1073741824){exit 3}"
+            )
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                cwd=REPO_ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=15,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    def test_scheduler_recovers_twice_then_fails_closed_after_third_danger(self) -> None:
+        """Exercise the 15 s danger, 45 s recovery, and terminal-fail state machine."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dispatch, usage = root / "dispatch.json", root / "usage.json"
+            dispatch.write_text(
+                json.dumps(
+                    {
+                        "role": "simion_repository_dispatch_plan",
+                        "estimation": {
+                            "kind": "exact_resource_profile",
+                            "per_process_memory_budget_bytes": 1024**3,
+                            "memory_safety_factor": 1.10,
+                        },
+                        "limits": {
+                            "maximum_concurrency": 2,
+                            "launch_stagger_seconds": 5,
+                            "memory_critical_seconds": 15,
+                            "memory_recovery_stable_seconds": 45,
+                            "maximum_memory_recovery_attempts": 2,
+                            "maximum_memory_danger_termination_attempts": 2,
+                            "memory_admission_reserve_bytes": 1024**3,
+                            "memory_critical_reserve_bytes": 512 * 1024**2,
+                            "cpu_admission_percent": 95.0,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
+            command = (
+                f". '{support}';"
+                "$script:now=[datetimeoffset]'2026-08-26T00:00:00Z';$script:nextPid=100;"
+                "function Get-RepositoryUtcNow {$script:now};"
+                "function Start-Sleep {param([int]$Seconds=0,[int]$Milliseconds=0);"
+                "$script:now=$script:now.AddSeconds($Seconds+($Milliseconds/1000.0))};"
+                "function Get-RepositoryAvailableMemoryBytes {"
+                "$seconds=($script:now-[datetimeoffset]'2026-08-26T00:00:00Z').TotalSeconds;"
+                "if(($seconds-ge1-and$seconds-lt17)-or($seconds-ge72-and$seconds-lt88)-or$seconds-ge138){return [int64](256MB)};"
+                "return [int64](8GB)};"
+                "function Get-SystemCpuPercent {[double]0};"
+                "function Start-RepositoryScheduledProcess {param($Specification);$script:nextPid+=1;"
+                "[pscustomobject]@{name=[string]$Specification.name;specification=$Specification;process=$null;"
+                "root_process_id=$script:nextPid;started_at=(Get-RepositoryUtcNow);tracked_process_ids=@($script:nextPid);"
+                "active=$true;completed=$false;exit_code=$null;peak_working_set_bytes=[int64]0;"
+                "peak_managed_memory_bytes=[int64]0;pressure_terminated=$false}};"
+                "function Get-ManagedSolverProcessSample {param([int[]]$RootProcessIds,[int[]]$TrackedProcessIds);"
+                "[pscustomobject]@{tracked_process_ids=@($RootProcessIds[0]);active_process_ids=@($RootProcessIds[0]);"
+                "working_set_bytes=1073741824;private_bytes=2147483648;managed_memory_bytes=2147483648;"
+                "total_processor_time_ticks=0}};"
+                "function Stop-ManagedSolverProcesses {param([int[]]$ProcessIds)};"
+                "$specs=@('a','b'|ForEach-Object {[pscustomobject]@{name=$_;file_path='unused';argument_list=@();"
+                "stdout='unused';stderr='unused';environment=@{};working_directory=''}});"
+                f"$r=Invoke-ResourceBudgetedProcesses -DispatchPlanPath '{dispatch}' -RunDir '{root}' "
+                f"-UsagePath '{usage}' -ProcessSpecifications $specs;"
+                "if(-not$r.resource_budget_exceeded){exit 3};"
+                f"$receipt=Get-Content -Raw '{usage}'|ConvertFrom-Json;"
+                "if($receipt.status-ne'resource_pressure_failed' -or"
+                "$receipt.failure_class-ne'memory_danger_recovery_attempts_exhausted' -or"
+                "$receipt.scheduler_receipt.termination_requeue_events.Count-ne2 -or"
+                "$receipt.scheduler_receipt.recovery_relaunch_events.Count-ne2 -or"
+                "$receipt.scheduler_receipt.recovery_relaunch_events[0].attempt-ne1 -or"
+                "$receipt.scheduler_receipt.recovery_relaunch_events[1].attempt-ne2){exit 4};"
+                "if(([datetimeoffset]$receipt.scheduler_receipt.recovery_relaunch_events[0].at_utc-"
+                "[datetimeoffset]$receipt.scheduler_receipt.termination_requeue_events[0].at_utc).TotalSeconds-lt45){exit 5}"
+            )
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                cwd=REPO_ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=20,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
+    def test_dynamic_admission_pause_records_memory_reason_with_two_gib_free(self) -> None:
+        """The 1 GiB reserve alone is insufficient when the next worker is larger."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dispatch, usage = root / "dispatch.json", root / "usage.json"
+            dispatch.write_text(
+                json.dumps(
+                    {
+                        "role": "simion_repository_dispatch_plan",
+                        "estimation": {
+                            "kind": "exact_resource_profile",
+                            "per_process_memory_budget_bytes": 5 * 1024**3,
+                            "memory_safety_factor": 1.10,
+                        },
+                        "limits": {
+                            "maximum_concurrency": 2,
+                            "launch_stagger_seconds": 5,
+                            "memory_critical_seconds": 15,
+                            "memory_recovery_stable_seconds": 45,
+                            "maximum_memory_recovery_attempts": 2,
+                            "maximum_memory_danger_termination_attempts": 2,
+                            "memory_admission_reserve_bytes": 1024**3,
+                            "memory_critical_reserve_bytes": 512 * 1024**2,
+                            "cpu_admission_percent": 95.0,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
+            command = (
+                f". '{support}';$script:memorySamples=0;"
+                "function Get-SystemCpuPercent {[double]0};"
+                "function Get-RepositoryAvailableMemoryBytes {$script:memorySamples+=1;"
+                "if($script:memorySamples-eq1-or$script:memorySamples-gt11){return [int64](10GB)};"
+                "return [int64](5GB)};"
+                "$exe=(Get-Process -Id $PID).Path;"
+                "$specs=@('a','b'|ForEach-Object {[pscustomobject]@{name=$_;file_path=$exe;"
+                "argument_list=@('-NoProfile','-Command','Start-Sleep -Seconds 7');"
+                f"stdout='{root}\\$_.out';stderr='{root}\\$_.err';environment=@{{}};working_directory='{root}'}}}});"
+                f"$r=Invoke-ResourceBudgetedProcesses -DispatchPlanPath '{dispatch}' -RunDir '{root}' "
+                f"-UsagePath '{usage}' -ProcessSpecifications $specs;"
+                "if($r.resource_budget_exceeded){exit 3};"
+                f"$receipt=Get-Content -Raw '{usage}'|ConvertFrom-Json;"
+                "$pauses=@($receipt.scheduler_receipt.launch_pause_events|Where-Object {$_.reason-eq'available_memory_below_dynamic_admission'});"
+                "if($pauses.Count-lt1-or$pauses[0].available_memory_bytes-ne(5GB)-or"
+                "$pauses[0].required_available_memory_bytes-le(5GB)){exit 4}"
+            )
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                cwd=REPO_ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=30,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
+    def test_process_sampler_drops_a_reused_tracked_pid(self) -> None:
+        """A reused child PID must not keep a completed SIMION lane alive."""
+        support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
+        command = (
+            f". '{support}';"
+            "$stale=@{([string]$PID)=[int64]1};"
+            "$sample=Get-ManagedSolverProcessSample -RootProcessIds @($PID) "
+            "-TrackedProcessIds @($PID) -TrackedProcessStartedAtUtcTicks $stale;"
+            "if(@($sample.active_process_ids).Count-ne0){exit 3};"
+            "if(@($sample.tracked_process_ids).Count-ne0){exit 4}"
+        )
+        completed = subprocess.run(
+            ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+            cwd=REPO_ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=20,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
 
     def validate(
         self,
@@ -703,12 +1004,16 @@ class ResourceBudgetTests(unittest.TestCase):
             )
             dispatch.write_text(json.dumps({
                 "role": "simion_repository_dispatch_plan",
+                "particle_count": 1,
                 "estimation": {"kind": "exact_resource_profile"},
                 "limits": {
                     "maximum_concurrency": 1, "launch_stagger_seconds": 5,
                     "memory_critical_seconds": 15,
-                    "memory_admission_reserve_bytes": 2 * 1024**3,
-                    "memory_critical_reserve_bytes": 1 * 1024**3,
+                    "memory_recovery_stable_seconds": 45,
+                    "maximum_memory_recovery_attempts": 2,
+                    "maximum_memory_danger_termination_attempts": 2,
+                    "memory_admission_reserve_bytes": 1024**3,
+                    "memory_critical_reserve_bytes": 512 * 1024**2,
                     "cpu_admission_percent": 95.0,
                 },
             }), encoding="utf-8")

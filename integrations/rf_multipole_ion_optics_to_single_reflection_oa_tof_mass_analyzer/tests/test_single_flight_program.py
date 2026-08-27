@@ -390,6 +390,62 @@ class SingleFlightProgramTests(unittest.TestCase):
         )
         self.assertIn("TRACE: accelerator_intermediate2_forward", program)
 
+    def test_three_zone_axis_exporter_replays_frozen_dynamic_pa_values(self) -> None:
+        topology = {
+            "topology_id": "three_zone_accelerator_ideal_v1",
+            "planes_global_z_mm": {
+                "repeller": -19.92918680341103,
+                "intermediate1": -16.87918680341103,
+                "intermediate2": -11.57918680341103,
+                "exit": -0.12918680341102995,
+            },
+            "potentials_v": {
+                "repeller": 2000.0,
+                "intermediate1": 1750.0,
+                "intermediate2": 1450.0,
+                "exit": 100.0,
+            },
+        }
+        overlay = {
+            "role": "rf_oatof_simion_accelerator_overlay_contract",
+            "cell_mm_xyz": {"x": 0.2, "y": 0.2, "z": 0.025},
+            "instance_origin_mm": {"x": 0.0, "y": 0.0, "z": 0.0},
+            "active_bounds_mm": {
+                "x_min": -1.0, "x_max": 1.0, "y_min": -1.0, "y_max": 1.0,
+                "z_min": -20.0, "z_max": 1.0,
+            },
+        }
+        geometry_path = REPO / "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json"
+        oatof = json.loads(geometry_path.read_text(encoding="utf-8"))
+        oatof["accelerator_topology"] = copy.deepcopy(topology)
+        upstream, frontend = _minimal_program_contracts()
+        frontend["accelerator_topology_id"] = topology["topology_id"]
+        frontend["electrodes"] = copy.deepcopy(THREE_ZONE_FRONTEND_ELECTRODES)
+        frontend["accelerator_local_region"] = {
+            "intermediate2_grid_provider": "accelerator_overlay",
+            "ring_z_mm": [-14.5, -12.0, -9.5, -7.0, -4.5],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            region = build_resolved_region_field_contract(
+                geometry_path, Path(directory) / "region.json",
+                "accelerator_ideal_three_zone_real_reflectron",
+                accelerator_topology=topology,
+            )
+            _, exporter = build_successor_program(
+                upstream, frontend, oatof, region, overlay=overlay,
+                birth_times_us=[0.25], analyzer_component_source=ANALYZER_COMPONENT_SOURCE,
+                pulse_hook_source=PULSE_HOOK_SOURCE, frontend_hook_source=FRONTEND_HOOK_SOURCE,
+                rf_drive_kernel_source=RF_DRIVE_KERNEL_SOURCE,
+                include_total_axis_field_exporter=True,
+            )
+        self.assertIn("local inside_overlay=not detector:inside_wc(x,y,z)", exporter)
+        self.assertIn("instance:field_wc(x,y,z,values)", exporter)
+        self.assertIn("instance:potential_wc(x,y,z,values)", exporter)
+        self.assertNotIn("simion.wb:efield", exporter)
+        self.assertNotIn("simion.wb:epotential", exporter)
+        self.assertIn("Program suppresses overlay points outside its active bounds", exporter)
+        self.assertIn("-- overlapping PA fields must not be added", exporter)
+
     def test_successor_has_one_workbench_and_one_definition_per_callback(self) -> None:
         upstream, frontend = _minimal_program_contracts()
         geometry_path = REPO / (

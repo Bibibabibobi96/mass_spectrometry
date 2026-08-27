@@ -11,6 +11,7 @@ from typing import Any
 SUPPORTED_CANDIDATE_MODES = {
     "T5_FROZEN_PRIMARY_AND_BRANCH_ONLY",
     "C3_J3_EXACT_LOCAL_DIRECTION_V1",
+    "J2_REAL_FIELD_CANDIDATE_POOL_V1",
 }
 
 
@@ -113,6 +114,14 @@ def validate_runtime_identity(
             or theory_working_point is not None
         ):
             raise ValueError("C3 J3 Candidate/runtime identity differs.")
+    if candidate.get("compiler_mode") == "J2_REAL_FIELD_CANDIDATE_POOL_V1":
+        evidence = candidate.get("j2_evidence")
+        if (
+            not isinstance(evidence, dict)
+            or set(evidence) != {"candidate_pool_id", "candidate_id", "pool_request_sha256"}
+            or theory_working_point is not None
+        ):
+            raise ValueError("J2 Candidate/runtime identity differs.")
 
     try:
         for mapping_name in ("planes_global_z_mm", "potentials_v"):

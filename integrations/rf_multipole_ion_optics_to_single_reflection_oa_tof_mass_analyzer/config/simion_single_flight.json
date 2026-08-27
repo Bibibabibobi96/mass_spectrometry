@@ -492,6 +492,13 @@
       "materialization_mode": "canonical_multipole_source",
       "particle_count": 5000,
       "role": "canonical_multipole_high_statistical_source_transform"
+    },
+    {
+      "profile_id": "canonical_real_hexapole_n5000",
+      "source_profile_id": "canonical_real_hexapole_n5000",
+      "materialization_mode": "canonical_multipole_source",
+      "particle_count": 5000,
+      "role": "canonical_multipole_high_statistical_source_transform"
     }
   ],
   "pulse_time_us": 39.58788438081105,

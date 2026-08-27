@@ -1,0 +1,86 @@
+{
+  "schema_version": 6,
+  "role": "rf_multipole_oatof_experiment_campaign",
+  "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+  "campaign_id": "paper1_segmented_hexapole_handoff_pre_pulse_n5000_r02",
+  "status": "exploration",
+  "execution_policy": {
+    "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/execution_policy.json",
+    "sha256": "6FDB04133C0AB5F48BE51127296469802E8E31E04DF6FFB539DD96E0F54F4B35"
+  },
+  "claim_limit": "FUNCTIONAL_ONLY. Segmented-hexapole source condition: all N=5000 launched particles remain in the mother denominator, and only the frozen transmitted terminal handoffs enter the OA frontend. The ballistic-centroid schedule is a seed only; the existing detector-blind real-field pre-pulse time series ranks the frozen native-RF time grid. Detector, peak-width, resolution, optimization, Candidate, and Formal claims are prohibited.",
+  "pre_pulse_time_series_screening": {
+    "mode": "real_pa_rf_pre_pulse_time_series",
+    "active_scope": "pre_pulse_frontend_accelerator",
+    "anchor_time_us": 0.0,
+    "relative_start_index": -157,
+    "relative_end_index": 66,
+    "rf_steps_per_period": 40,
+    "expected_upstream_frequency_hz": 1100000.0,
+    "sample_count": 224,
+    "selection_order": [
+      "maximize_pulse_eligible_count",
+      "maximize_transverse_bore_count",
+      "minimize_normalized_xyz_centroid_distance",
+      "minimize_normalized_xyz_spread_norm",
+      "minimize_absolute_distance_to_ballistic_seed",
+      "select_earlier_time"
+    ],
+    "spatial_window_profile_id": "layout_resolved_axial_provisional_xy2_v1",
+    "pa_cache_keys": {
+      "frontend": "920B9B6CD5995EA5E30AB44E0DD18A1FF4CC3605289D434C21B83347F670CFB8",
+      "accelerator_overlay": "BCD4802B5730BC1A756688142228B6EA272C5D38F1195A30053730183D5A2154",
+      "flight_tube": null,
+      "reflectron": null
+    },
+    "pulse_disabled": true,
+    "terminate_at_window_end": true,
+    "resolution_claim_allowed": false,
+    "prohibited_outputs": ["detector_crossing", "resolution_metrics", "single_flight_spatial_six_panel"]
+  },
+  "experiments": [{
+    "sequence": 1,
+    "experiment_id": "paper1_segmented_hexapole_handoff_pre_pulse_n5000_r02",
+    "run_id": "20260827_004100__sim__cross__paper1-segmented-hexapole-real-field-window__n5000",
+    "execution_strategy": "simion_single_flight",
+    "single_flight_pa_cache_policy": "build_and_publish_if_missing",
+    "single_flight_layout_profile_id": "three_zone_t5_primary_shaping_rings_1p4_v1",
+    "single_flight_frontend_grid_profile_id": "frontend_isotropic_020_accelerator_overlay_z005",
+    "single_flight_oatof_numerical_profile_id": "oatof_formal_mesh",
+    "single_flight_trajectory_quality_profile_id": "tqual_8",
+    "single_flight_time_integration_profile_id": "dt40",
+    "single_flight_accelerator_field_profile_id": "accelerator_real_three_zone_pa_real_reflectron",
+    "single_flight_source_materialization_profile_id": "canonical_real_hexapole_n5000",
+    "single_flight_three_zone_candidate": {
+      "path": "artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20260817_181000__build__python__three-zone-t5-candidate/results/three_zone_t5_simion_candidate_resolved.json",
+      "sha256": "CF744FD57957DF18D627F71EE2D2252A62420B343D7DD0AB1CEF493B876A7339"
+    },
+    "architecture_generation_id": "three_zone_t5_frozen_primary_shaping_rings_1p4_v1",
+    "source_profile_id": "canonical_real_hexapole_n5000",
+    "field_overlay_id": "accelerator_overlay_z005",
+    "source_release_mode": "continuous_frontend_handoff",
+    "connection_profile_id": "rf_hexapole_oatof_shield_terminal_direct_mating_gap_0mm",
+    "source": {
+      "authority_scope": "source_population",
+      "run_id": "20260826_235100__sim__simion__paper1-s2-prospective-segmented-source__n5000",
+      "launched_particle_count": 5000,
+      "particle_count_binding": {"mode": "derive_from_frozen_source_state_v1", "selector": {"event": "handoff", "status": "transmitted"}},
+      "particle_source_manifest_input_role": "particle_source",
+      "manifest": {"path": "artifacts/projects/rf_hexapole_ion_optics/runs/20260826_235100__sim__simion__paper1-s2-prospective-segmented-source__n5000/run_manifest.json", "sha256": "4E982A13E5D12257AC04ADAF29EBEC35DDFB77A73BC1EE4B20179A72CE7BB566"},
+      "state": {"path": "artifacts/projects/rf_hexapole_ion_optics/runs/20260826_235100__sim__simion__paper1-s2-prospective-segmented-source__n5000/results/particle_states__axial_acceleration_rf_on.csv", "sha256": "67808B9C878F58D5D06B9E5C1FD333C11214D62BD55D3C394F33766F305199ED"},
+      "particle_source": {"path": "artifacts/projects/rf_hexapole_ion_optics/runs/20260826_235100__sim__simion__paper1-s2-prospective-segmented-source__n5000/inputs/particle_source.csv", "sha256": "38BF87E06C210A05BFFB21EE4997EF39343CE17B8924AFF606CEAEC79A2335C6"},
+      "metadata": {"path": "artifacts/projects/rf_hexapole_ion_optics/runs/20260826_235100__sim__simion__paper1-s2-prospective-segmented-source__n5000/inputs/particle_source_metadata.json", "sha256": "75BE453DF3E2E9FE573AE8BC74B888A6EA2BD51F9BE8ACDBE918C5F606A3DCAD"},
+      "handoff_publication_contract": {"path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_hexapole_handoff_publication_n5000.json", "sha256": "6E053118040E1B458AE6F92B2840066E1F91646C98C7D8BAE9EB45AF4818AF76"}
+    },
+    "single_flight_pulse_schedule_policy": {"policy_id": "multipole_handoff_ballistic_centroid_v1", "offset_rf_periods": 0.0, "pulse_width_us": 1.0},
+    "single_flight_population": {
+      "population_id": "segmented_hexapole_complete_ordered_terminal_handoff_n5000",
+      "population_mode": "terminal_handoff_continuation",
+      "source_authority": {"input_role": "terminal_handoff_continuation_global_state", "table_binding": "terminal_handoff_continuation_global_state", "ordered_particle_id_encoding": "canonical_compact_json_integer_array_v1"},
+      "execution_population": {"particle_count": 4509, "ordered_particle_id_sha256": "C7AAA0A948CC499B6F42932FDCD7A96B141A48D7BA51B2D90EB6B45D6A41223A", "selection_algorithm": "all_transmitted_terminal_handoffs_in_source_particle_id_order", "selection_seed": 0},
+      "denominators": {"population_count": 5000, "eligible_population_count": 5000},
+      "analysis_randomness": {"bootstrap_resample_count": 1000, "bootstrap_seed": 20260826},
+      "postselection_policy": "prohibited"
+    }
+  }]
+}

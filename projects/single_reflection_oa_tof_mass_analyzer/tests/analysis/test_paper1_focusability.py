@@ -10,6 +10,7 @@ from pathlib import Path
 import numpy as np
 
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.analyze_paper1_c1_source import (
+    _verify_restart_receipt,
     _verify_time_series_receipt,
     analyze_source,
 )
@@ -52,12 +53,12 @@ class Paper1FocusabilityTest(unittest.TestCase):
             "two_zone_is_zero_control_reference": True,
         }
         self.assertTrue(all(_target_gates(
-            target="j3_local_direction", base_gates=base,
-            weighted_beats_unweighted=False,
+            target="additional_control_direction", base_gates=base,
+            source_distribution_beats_simple_baselines=False,
         ).values()))
         self.assertFalse(all(_target_gates(
-            target="j2_j3", base_gates=base,
-            weighted_beats_unweighted=False,
+            target="source_weighted_focus_prediction", base_gates=base,
+            source_distribution_beats_simple_baselines=False,
         ).values()))
 
     def test_assignment_is_deterministic_and_exhaustive(self) -> None:
@@ -65,6 +66,25 @@ class Paper1FocusabilityTest(unittest.TestCase):
         second = assign_detector_blind_cohorts(range(1, 101), salt="paper1-v1")
         self.assertEqual(first, second)
         self.assertEqual({item.role for item in first}, {"development", "validation", "optimization", "locked_test"})
+
+    def test_assignment_accepts_an_explicit_detector_blind_partition(self) -> None:
+        partition = (
+            ("development", 0.40), ("validation", 0.55),
+            ("optimization", 0.65), ("locked_test", 1.00),
+        )
+        assigned = assign_detector_blind_cohorts(
+            range(1, 1001), salt="paper1-c1-v2", role_upper_bounds=partition,
+        )
+        counts = {role: sum(item.role == role for item in assigned) for role, _ in partition}
+        self.assertEqual(sum(counts.values()), 1000)
+        self.assertGreater(counts["locked_test"], counts["optimization"])
+
+    def test_assignment_rejects_non_exhaustive_partition(self) -> None:
+        with self.assertRaisesRegex(ValueError, "end at 1.0"):
+            assign_detector_blind_cohorts(
+                range(1, 10), salt="paper1-c1-v2",
+                role_upper_bounds=(("development", 0.5), ("validation", 0.7), ("optimization", 0.85), ("locked_test", 0.99)),
+            )
 
     def test_affine_model_beats_quadratic_overfit_on_affine_validation(self) -> None:
         condition = np.arange(30, dtype=float).reshape(-1, 1)
@@ -204,13 +224,41 @@ class Paper1FocusabilityTest(unittest.TestCase):
             result = analyze_source(
                 state_path=path, source_id="test", cohort_salt="c1-test",
                 time_series_sample_index=None, mother_particle_count=160,
-                source_receipt=None, time_series_population_count=None,
+                source_receipt=None, restart_receipt=None, time_series_population_count=None,
                 bootstrap_replicates=10, bootstrap_seed=7,
+                evidence_tier="DEVELOPMENT_ONLY",
             )
             self.assertEqual(result["qualification"], "DETECTOR_BLIND_SOURCE_ONLY")
+            self.assertEqual(result["evidence_tier"], "DEVELOPMENT_ONLY")
             self.assertEqual(sum(result["cohort"]["counts"].values()), 160)
             self.assertEqual(result["cohort"]["model_selection_roles"], ["development", "validation"])
             self.assertIn("locked-test model selection", result["claims_prohibited"])
+
+    def test_c1_restart_input_requires_a_detector_blind_materialization_receipt(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state, receipt = root / "restart.csv", root / "restart_receipt.json"
+            fields = ["particle_id", "instrument_time_us", "mass_amu", "charge_state", "position_x_mm", "position_y_mm", "position_z_mm", "velocity_x_m_s", "velocity_y_m_s", "velocity_z_m_s", "kinetic_energy_eV"]
+            with state.open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=fields)
+                writer.writeheader()
+                for identifier in range(1, 161):
+                    writer.writerow({"particle_id": identifier, "instrument_time_us": 2.0, "mass_amu": 100, "charge_state": 1, "position_x_mm": 0.0, "position_y_mm": 0.0, "position_z_mm": identifier / 80.0, "velocity_x_m_s": identifier, "velocity_y_m_s": 0.0, "velocity_z_m_s": 1000 + identifier, "kinetic_energy_eV": 10.0})
+            receipt.write_text(json.dumps({
+                "role": "rf_oatof_manifest_bound_time_series_restart_materialization_receipt", "status": "PASS",
+                "selection": {"selection_uses_detector_outcome": False, "detector_results_used": False, "pulse_disabled": True, "producer_population_denominator_count": 160, "producer_execution_population_count": 160, "producer_particle_count": 160},
+                "pulse_target_state": {"sha256": hashlib.sha256(state.read_bytes()).hexdigest().upper(), "particle_count": 160, "source_state_epoch": "pulse_effective_time", "clock_basis": "canonical_instrument_time_us", "pulse_effective_time_us": 2.0},
+                "reuse_scope": {"qualification": "DEVELOPMENT_ONLY"},
+            }), encoding="utf-8")
+            verified = _verify_restart_receipt(receipt, state, mother_count=160, evidence_tier="DEVELOPMENT_ONLY")
+            self.assertEqual(verified["producer_particle_count"], 160)
+            result = analyze_source(
+                state_path=state, source_id="restart", cohort_salt="restart-c1",
+                time_series_sample_index=None, mother_particle_count=160,
+                source_receipt=None, restart_receipt=receipt, time_series_population_count=None,
+                bootstrap_replicates=10, bootstrap_seed=7, evidence_tier="DEVELOPMENT_ONLY",
+            )
+            self.assertEqual(result["restart_materialization_receipt"]["producer_particle_count"], 160)
 
     def test_c1_receipt_keeps_terminal_handoff_and_mother_denominators_distinct(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -243,6 +291,7 @@ class Paper1FocusabilityTest(unittest.TestCase):
                 return {
                     "role": "oatof_paper1_c1_source_assessment",
                     "qualification": "DETECTOR_BLIND_SOURCE_ONLY",
+                    "evidence_tier": "PROSPECTIVE",
                     "source_id": source_id,
                     "anchor": {"instrument_time_us": 1.0},
                     "mother_cohort": {"count": 1000, "observed_pre_pulse_count": 800},
@@ -255,6 +304,9 @@ class Paper1FocusabilityTest(unittest.TestCase):
             second.write_text(json.dumps(assessment("S2")), encoding="utf-8")
             result = assess_c1_stage(first_path=first, second_path=second)
             self.assertEqual(result["conclusion"], "PASS_CONTINUE")
+            first.write_text(json.dumps({**assessment("S1"), "evidence_tier": "DEVELOPMENT_ONLY"}), encoding="utf-8")
+            result = assess_c1_stage(first_path=first, second_path=second)
+            self.assertEqual(result["conclusion"], "INCONCLUSIVE_REVISE")
             second.write_text(json.dumps(assessment("S1")), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "distinct"):
                 assess_c1_stage(first_path=first, second_path=second)
@@ -277,7 +329,20 @@ class Paper1FocusabilityTest(unittest.TestCase):
             result = run_axial_c2_screen(source, design)
             self.assertEqual(result["architecture"], "three_zone")
             self.assertGreater(result["locked_test_count"], 0)
-            self.assertEqual(result["weighted"]["prediction"]["effective_rank"], 1)
+            self.assertEqual(
+                result["source_distribution_weighted"]["prediction"]["effective_rank"],
+                1,
+            )
+            self.assertEqual(
+                set(result) & {
+                    "nominal", "unweighted", "total_covariance",
+                    "source_distribution_weighted",
+                },
+                {
+                    "nominal", "unweighted", "total_covariance",
+                    "source_distribution_weighted",
+                },
+            )
             self.assertEqual(set(result["directions"]), {"improve", "zero", "worsen"})
             self.assertLess(
                 max(item["gradient_relative_error"] for item in result["derivative_audits"]),

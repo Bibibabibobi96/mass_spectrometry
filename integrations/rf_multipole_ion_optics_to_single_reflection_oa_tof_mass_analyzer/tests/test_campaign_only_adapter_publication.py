@@ -491,7 +491,7 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
             self.assertFalse((mismatch_legacy / "current_generation.json").exists())
             self.assertEqual((mismatch_legacy / "frontend.pa0").read_bytes(), b"mismatch-legacy")
 
-    def test_shared_cache_helper_verifies_hit_and_removes_invalid_generation(self) -> None:
+    def test_corrupt_frontend_pa_generation_is_preserved_and_not_reused(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             workspace = Path(directory)
             cache_root = (
@@ -516,7 +516,7 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
                 f"$identity=Get-Content -Raw -LiteralPath '{identity_path}' | ConvertFrom-Json; "
                 "$key=Get-RfContentIdentitySha256 -Identity $identity; "
                 f"$staging=New-RfCacheStagingDirectory -CacheRoot '{cache_root}'; "
-                "'frontend.gem','frontend.pa#','frontend.pa0' | ForEach-Object { "
+                "'frontend.gem','frontend.pa#','frontend.pa0','frontend.pa7' | ForEach-Object { "
                 "[IO.File]::WriteAllText((Join-Path $staging $_), $_) }; "
                 f"Publish-RfVerifiedCacheEntry -Python '{Path(sys.executable)}' "
                 f"-RepoRoot '{REPO_ROOT}' -WorkspaceRoot '{workspace}' "
@@ -547,12 +547,12 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
                 timeout=120,
             )
             self.assertIn("True", first.stdout)
-            for name in ("frontend.gem", "frontend.pa#", "frontend.pa0"):
+            for name in ("frontend.gem", "frontend.pa#", "frontend.pa0", "frontend.pa7"):
                 self.assertTrue(
                     (entry / name).stat().st_file_attributes
                     & stat.FILE_ATTRIBUTE_READONLY
                 )
-            changed = entry / "frontend.pa0"
+            changed = entry / "frontend.pa7"
             changed.chmod(stat.S_IWRITE)
             changed.write_text("changed\n", encoding="utf-8")
             changed.chmod(stat.S_IREAD)
@@ -567,8 +567,28 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
                 timeout=120,
             )
             self.assertIn("False", second.stdout)
-            self.assertFalse(entry.exists())
+            self.assertTrue(entry.exists())
             self.assertTrue((cache_root / key).exists())
+            resolution = (
+                f". '{RUN_ARTIFACTS_PATH}'; "
+                f"$identity=Get-Content -Raw -LiteralPath '{identity_path}' | ConvertFrom-Json; "
+                f"$directory=Resolve-RfReusableCacheDirectory -Python '{Path(sys.executable)}' "
+                f"-RepoRoot '{REPO_ROOT}' -WorkspaceRoot '{workspace}' "
+                f"-ProjectId '{INTEGRATION_ID}' -CacheRoot '{cache_root}' "
+                f"-CacheKey '{key}' -Role $identity.role -Identity $identity "
+                "-InvalidEntryAction preserve; "
+                "if ($null -ne $directory) { throw 'corrupt PA generation was reused' }"
+            )
+            miss = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", resolution],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=120,
+            )
+            self.assertEqual(miss.returncode, 0, miss.stdout + miss.stderr)
 
     def test_rebuild_publishes_new_generation_without_overwriting_prior_payload(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -765,15 +785,15 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
         self.assertLess(publish_index, unlock_index)
         self.assertNotIn("-PromoteLegacyV2:$true", runner)
 
-    def test_construction_time_frontend_recheck_uses_the_same_reuse_resolver(self) -> None:
+    def test_construction_time_frontend_recheck_pins_the_selected_generation(self) -> None:
         runner = (RUN_ARTIFACTS_PATH.parent / "run_single_flight.ps1").read_text(encoding="utf-8")
-        message = "Frontend PA cache changed during construction-time SIMION access."
-        recheck_start = runner.rfind("Resolve-RfReusableCacheDirectory -Python $python", 0, runner.index(message))
-        self.assertGreaterEqual(recheck_start, 0)
-        self.assertNotIn(
-            "Test-RfReusableCacheEntry -Python $python",
-            runner[recheck_start:runner.index(message)],
-        )
+        freeze = runner.index("$frontendCacheManifestInput = Copy-RfCacheManifestInput")
+        recheck = runner.index("Test-RfFrozenCacheGeneration -Python $python")
+        self.assertLess(freeze, recheck)
+        window = runner[recheck:runner.index("$flightTubeCacheManifestInput", recheck)]
+        self.assertIn("-CacheEntry $cacheDir", window)
+        self.assertIn("-FrozenManifest $frontendCacheManifestInput", window)
+        self.assertNotIn("Resolve-RfReusableCacheDirectory", window)
 
     def test_ordinary_cache_freeze_accepts_verified_v2_but_strict_pairing_requires_v3(self) -> None:
         runner = (RUN_ARTIFACTS_PATH.parent / "run_single_flight.ps1").read_text(encoding="utf-8")

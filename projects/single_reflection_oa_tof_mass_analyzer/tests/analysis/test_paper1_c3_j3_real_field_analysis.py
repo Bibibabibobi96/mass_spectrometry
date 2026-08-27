@@ -9,6 +9,7 @@ from pathlib import Path
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.paper1_c3_j3_real_field_analysis import (
     EVENTS,
     analyze_c3_real_field_platform,
+    build_c3_axis_reference,
 )
 
 
@@ -24,9 +25,10 @@ class Paper1C3J3RealFieldAnalysisTest(unittest.TestCase):
         (run / "run_manifest.json").write_text(json.dumps({"status": "success"}), encoding="utf-8")
         (run / "inputs" / "three_zone_t5_candidate_resolved.json").write_text(json.dumps({
             "c3_j3_evidence": {"scale_h": scale},
+            "source_identity": {"frozen_source": {"mass_to_charge_th": 1.0, "charge_sign": 1}},
         }), encoding="utf-8")
         with (run / "results" / "single_flight_particle_checkpoints.csv").open("w", newline="", encoding="utf-8") as stream:
-            writer = csv.DictWriter(stream, fieldnames=("particle_id", "event", "instrument_time_us"))
+            writer = csv.DictWriter(stream, fieldnames=("particle_id", "event", "instrument_time_us", "z_mm", "vz_mm_per_us"))
             writer.writeheader()
             for event in EVENTS:
                 for particle_id, detector_time in detector_ns.items():
@@ -34,7 +36,29 @@ class Paper1C3J3RealFieldAnalysisTest(unittest.TestCase):
                     writer.writerow({
                         "particle_id": particle_id, "event": event,
                         "instrument_time_us": event_time,
+                        "z_mm": 10.0 if event == "local_accelerator_exit" else 0.0,
+                        "vz_mm_per_us": 0.0,
                     })
+        return run
+
+    def _axis_export(self, root: Path, scale: float, real_run: Path) -> Path:
+        run = root / ("field_" + str(scale).replace("-", "m").replace(".", "p"))
+        (run / "inputs").mkdir(parents=True)
+        (run / "results").mkdir()
+        (run / "summary.json").write_text(json.dumps({
+            "status": "success", "execution_mode": "program_axis_field_export",
+        }), encoding="utf-8")
+        (run / "run_manifest.json").write_text(json.dumps({"status": "success"}), encoding="utf-8")
+        (run / "run_config.json").write_text(json.dumps({
+            "parameters": {"pulse_time_us": 10.0},
+        }), encoding="utf-8")
+        (run / "inputs" / "three_zone_t5_candidate_resolved.json").write_bytes(
+            (real_run / "inputs" / "three_zone_t5_candidate_resolved.json").read_bytes()
+        )
+        with (run / "results" / "total_axis_field.csv").open("w", newline="", encoding="utf-8") as stream:
+            writer = csv.DictWriter(stream, fieldnames=("z_mm", "Ez_V_per_mm"))
+            writer.writeheader()
+            writer.writerows({"z_mm": z, "Ez_V_per_mm": 1000.0 + 50.0 * scale} for z in range(11))
         return run
 
     def test_reports_incomplete_without_independent_axis_reference(self) -> None:
@@ -80,6 +104,24 @@ class Paper1C3J3RealFieldAnalysisTest(unittest.TestCase):
             )
         self.assertEqual(result["conclusion"], "INCONCLUSIVE_REVISE")
         self.assertIn("event_topology_stable", result["failures"])
+
+    def test_builds_axis_reference_only_from_matching_governed_exports(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runs = {
+                scale: self._run(root, scale, {1: 100.0, 2: 120.0})
+                for scale in (-2.0, -1.0, 0.0, 1.0, 2.0)
+            }
+            exports = {
+                scale: self._axis_export(root, scale, runs[scale])
+                for scale in runs
+            }
+            result = build_c3_axis_reference(
+                runs=runs, axis_field_runs=exports,
+                dt_us_values=(1.0e-4, 5.0e-5),
+            )
+        self.assertTrue(result["dt_converged_le_1_percent"])
+        self.assertNotEqual(result["axis_reference_derivative_ns_per_h"], 0.0)
 
 
 if __name__ == "__main__":

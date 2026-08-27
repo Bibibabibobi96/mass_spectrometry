@@ -1,22 +1,32 @@
-# Paper 1 C1：探测器盲条件源合同
+# Paper 1 阶段 1：探测器盲源合同
 
-> `STATUS: PASS_CONTINUE / DETECTOR_BLIND_SOURCE_IDENTIFICATION_COMPLETE`
+> `STATUS: DEVELOPMENT_ONLY / PROSPECTIVE_C1_REBUILD_REQUIRED`
+
+## 术语（本页及后续报告的唯一含义）
+
+- **阶段 1：探测器盲源侧识别**：只以 OA 提取脉冲前的粒子状态建立条件源模型；机器阶段 ID 为
+  `C1`。`C1`不是物理量，也不是源工况名称。
+- **终端八极杆源工况**：RF 八极杆末端直接连接 OA-TOF 前端的来源条件；历史机器短名为 `S1`。
+- **分段六极杆源工况**：具有分段轴向加速电极的 RF 六极杆来源条件；历史机器短名为 `S2`。
+
+面向读者的结论、图题和普通叙述必须使用上述全称。`C1`、`S1`、`S2`只可出现在既有 run ID、
+文件名、schema 字段或首次已经给出全称的括号中，不能单独承担科学含义。
 
 本阶段已实现确定性ID cohort分配、affine/受限二次条件均值候选、shrinkage残差协方差和detector-blind
-validation选择。C1分析还会报告条件分箱协方差、残差主模态bootstrap稳定性、二维横向发射度和脉冲适格率。
+validation选择。阶段 1 分析还会报告条件分箱协方差、残差主模态bootstrap稳定性、二维横向发射度和脉冲适格率。
 输入读取器只接受同一`instrument_time_us`、明确OA pre-pulse事件、完整六维状态和逐粒子
 `pulse_eligibility`的冻结表；它保留全表，不会静默丢弃不适格粒子。
 
 ## 已审查资产
 
-- S1终端八极杆的原始N=5000状态表仍是杆内`source`/`rod_exit`，不能重新标记；但连续单飞run
+- 终端八极杆源工况的原始N=5000状态表仍是杆内`source`/`rod_exit`，不能重新标记；但连续单飞run
   `20260822_130100__sim__simion__rf-oatof-single-flight-gap3p2__n850`已产生850行、共同
-  `instrument_time_us=47.4513344586562`的`pre_pulse_state`。它可作为`DEVELOPMENT_ONLY`的S1输入，
+  `instrument_time_us=47.4513344586562`的`pre_pulse_state`。它可作为`DEVELOPMENT_ONLY`的终端八极杆源工况输入，
   不能升级为锁定或N≥1000证据。
-- S2分段杆当前的canonical handoff表具有六维状态和时钟，但事件是`canonical_handoff`，不是OA提取前
+- 分段六极杆源工况当前的canonical handoff表具有六维状态和时钟，但事件是`canonical_handoff`，不是OA提取前
   检查点。历史COMSOL连接run虽记录了离子分别抵达OA入口的时间，却明确`oa_extraction_pulse=false`且
-  `pre_pulse_stage_passed=false`；它不是同一脉冲时刻的快照。两者都不得用于C1模型。
-- 已存在的S2终端分段杆SIMION run
+  `pre_pulse_stage_passed=false`；它不是同一脉冲时刻的快照。两者都不得用于阶段 1 模型。
+- 已存在的分段六极杆源工况终端分段杆SIMION run
   `20260731_210400__sim__simion__hex-segmented-oatof-terminal-h15-n100`也不能直接接入：其**实验计划**声明
   `oatof_shield_terminal`，但实际冻结的`multipole_resolved_design.json`记录
   `downstream_terminal.terminal_profile_id=oatof_shield_entry_gap1mm`；本集成的连续飞行连接合同要求前者。
@@ -24,50 +34,50 @@ validation选择。C1分析还会报告条件分箱协方差、残差主模态bo
   selector、文件名或manifest字段把该run升级为连续前端输入。它仍可保留为`DEVELOPMENT_ONLY`的上游分段杆
   传输记录。
 
-## C1结论
+## 阶段 1 结论
 
-`INCONCLUSIVE_REVISE`：实现和输入拒绝门禁已通过，且S1已有可用开发cohort；但S2尚无可哈希、共同
+`INCONCLUSIVE_REVISE`：实现和输入拒绝门禁已通过，且终端八极杆源工况已有可用开发cohort；但分段六极杆源工况尚无可哈希、共同
 脉冲时刻的OA pre-pulse cohort。因此不能比较两个源条件、冻结跨源协方差/模态排序、生成锁定split或形成
-J2/J3科学结论。
+受约束源加权聚焦预测和新增控制方向增量价值的科学结论。
 
-## S1开发集检查（不可升级为C1结论）
+## 终端八极杆源工况开发集检查（不可升级为阶段 1 结论）
 
-以固定salt `paper1-c1-v1`对S1共同预脉冲表进行一次纯源侧检查：源表SHA256为
+以固定salt `paper1-c1-v1`对终端八极杆源工况共同预脉冲表进行一次纯源侧检查：源表SHA256为
 `C06620E8EE4064EA65A9377C935B4867049D0B83B3893C7D17C911084B6480B7`，850/850粒子标为eligible；
 development/validation/optimization/locked-test分别为424/173/147/106。仅使用development拟合、
 validation选择后，受限二次模型优于仿射模型，五个残差主模态的最小bootstrap方向对齐为0.998637，
-按卡方0.975阈值的尾部比例为0。这个结果只说明**S1的开发数据可以被当前C1分析接口读取和稳定诊断**；
-它不使用optimization或locked-test，也不能证明跨源稳定性、J2预测力或论文主张。
+按卡方0.975阈值的尾部比例为0。这个结果只说明**终端八极杆源工况的开发数据可以被当前阶段 1 分析接口读取和稳定诊断**；
+它不使用optimization或locked-test，也不能证明跨源稳定性、受约束源加权聚焦预测力或论文主张。
 
 ## 唯一后续动作
 
-保持S1只作开发证据；保持S2的分段杆、RF和轴向电位契约不变，只以`oatof_shield_terminal`端件和当前连接
+保持终端八极杆源工况只作开发证据；保持分段六极杆源工况的分段杆、RF和轴向电位契约不变，只以`oatof_shield_terminal`端件和当前连接
 几何重新编译其上游连续前端，再在同一source-to-detector run中生成一次`pre_pulse_state` checkpoint，至少包含
 `particle_id,event,instrument_time_us,x/y/z_mm,vx/vy/vz_m_per_s,pulse_eligibility`，并由run manifest冻结。
 不得通过改名现有rod_exit、canonical_handoff、异时OA-entry表或`oatof_shield_entry_gap1mm`端件记录绕过此
 要求。随后按ID哈希冻结四个cohort，只用development/validation选择模型并检查条件协方差和模态排序稳定性。
-C1为`PASS_CONTINUE`前，阶段2及任何三维优化均不得启动。
+阶段 1为`PASS_CONTINUE`前，阶段 2及任何三维优化均不得启动。
 
 首个上游重生成输入由
 [`20260825__paper1_s2_segmented_standard_terminal_n100.json`](../../../../../common/multipole/campaigns/20260825__paper1_s2_segmented_standard_terminal_n100.json)
-预注册：它固定S2的六极分段杆、2→5 eV轴向能量契约、H15数值设置和100粒子母cohort，只将下游端件固定为
+预注册：它固定分段六极杆源工况的六极分段杆、2→5 eV轴向能量契约、H15数值设置和100粒子母cohort，只将下游端件固定为
 当前`oatof_shield_terminal`。该run的唯一角色是产生可连续接入的上游handoff；它本身不支持聚焦、收敛或
 论文主张。
 
 该重生成已成功完成，run ID为`20260825_090000__sim__simion__paper1-s2-segmented-standard-terminal__n100`：
 冻结resolved design的端件为`oatof_shield_terminal`，100个母粒子中92个产生`handoff/transmitted`，另有8个
 上游损失。后续连续前端必须保持100为总分母，并单列这8个损失；92个handoff不是共同命中后挑选出来的峰宽
-样本。该结果只修复S2输入的端件可追溯性，仍不构成同一OA脉冲时刻的`pre_pulse_state`，故C1结论保持
+样本。该结果只修复分段六极杆源工况输入的端件可追溯性，仍不构成同一OA脉冲时刻的`pre_pulse_state`，故阶段 1 结论保持
 `INCONCLUSIVE_REVISE`。
 
-为避免把100粒子功能档误作C1统计证据，同一冻结S2契约已按N=1000母样本重跑，run ID为
+为避免把100粒子功能档误作阶段 1 统计证据，同一冻结分段六极杆源工况契约已按N=1000母样本重跑，run ID为
 `20260825_103000__sim__simion__paper1-s2-segmented-standard-terminal__n1000`。其上游primary arm为
 770/1000 transmitted，零轴向对照为572/1000；所有损失仍属于完整母cohort分母。该run只提供可追溯的
 N=1000连续前端输入和损失分类，不是共同OA pre-pulse状态，也不改变本阶段的`INCONCLUSIVE_REVISE`结论。
 
-## 2026-08-25 S2连续前端筛查：负结果登记
+## 2026-08-25 分段六极杆源工况连续前端筛查：负结果登记
 
-全母cohort S2筛查`20260825_174500__sim__cross__paper1-s2-segmented-pre-pulse__n1000__r04`的SIMION child
+全母cohort的分段六极杆源工况筛查（run ID：`20260825_174500__sim__cross__paper1-s2-segmented-pre-pulse__n1000__r04`）的SIMION child
 `20260825_174500__sim__simion__rf-oatof-single-flight-gap0__n1000__r04`，在仓库默认资源调度器完成20秒
 资源校准后，按4个并行批次各250个粒子完成。四个stdout日志各有250条`status2`，总计1000个粒子；全部在
 合同采样窗`45.83769809501819`--`47.66114791320001` µs前发生`Splat`，没有任何
@@ -77,25 +87,25 @@ N=1000连续前端输入和损失分类，不是共同OA pre-pulse状态，也�
 本轮首先因运行配置遗漏`pre_pulse_time_series_contract_sha256`而在materialization处失败；修复已作为
 `c8e6fee`提交。该实现缺陷不改变原始飞行事实：即使合同哈希被保留，本轮也没有可物化的存活状态。初始
 全局状态位于OA全局`x≈-170.11` mm，采样窗前粒子已到达/撞击前端—加速区；这表明当前
-`continuous_frontend`契约没有提供在提取前保持该源包的物理边界或适当的提取时序。它不是S2分段杆本身的
-性能结论。
+`continuous_frontend`契约没有提供在提取前保持该源包的物理边界或适当的提取时序。它不是分段六极杆源工况本身的
+源工况性能结论。
 
 ### 本轮声明边界
 
-- `claims_supported`：默认调度器可以在实测峰值后以4个独立SIMION进程并行完成N=1000；当前S2
+- `claims_supported`：默认调度器可以在实测峰值后以4个独立SIMION进程并行完成N=1000；当前分段六极杆源工况
   `continuous_frontend`时间—边界合同在既定采样窗内产生0个OA pre-pulse存活状态。
-- `claims_prohibited`：S2源协方差、发射度、尾部或模态排序；S1/S2比较；J2/J3预测；任何分辨率、传输率或
+- `claims_prohibited`：分段六极杆源工况的源协方差、发射度、尾部或模态排序；两种源工况比较；受约束源加权聚焦预测或新增控制方向增量价值；任何分辨率、传输率或
   三区优越性结论。
 
 ### 修订门槛
 
-下一次S2 C1运行前，必须冻结并验证一个**可到达的OA提取前源合同**：它要么在来源端保留真实的保持/门控
+下一次分段六极杆源工况的阶段 1 运行前，必须冻结并验证一个**可到达的OA提取前源合同**：它要么在来源端保留真实的保持/门控
 物理直至预脉冲时刻，要么以有manifest的终端状态在OA入口重新启动，并把新脉冲时刻、状态事件和完整母
 cohort损失账本一起冻结。仅把采样窗提前、过滤已撞壁粒子，或将终端handoff重命名为`pre_pulse_state`
-都不满足该门槛。通过该门槛并得到S1、S2均有足量共同采样时刻状态之前，C1继续为
+都不满足该门槛。通过该门槛并得到两种源工况均有足量共同采样时刻状态之前，阶段 1 继续为
 `INCONCLUSIVE_REVISE`，阶段2禁止启动。
 
-## 2026-08-25 S2连续前端筛查：完整终端普查（r05）
+## 2026-08-25 分段六极杆源工况连续前端筛查：完整终端普查（r05）
 
 同一冻结合同的重试 child
 `20260825_174500__sim__simion__rf-oatof-single-flight-gap0__n1000__r05`保留了每一个粒子的
@@ -118,30 +128,30 @@ stdout日志和run-local输入执行确定性materialization，得到成功recei
 
 ### r05声明边界
 
-- `claims_supported`：完整母cohort在当前S2连续前端合同下均在OA预脉冲窗前损失；损失发生的时空范围已被
+- `claims_supported`：完整母cohort在当前分段六极杆源工况连续前端合同下均在OA预脉冲窗前损失；损失发生的时空范围已被
   逐粒子终端记录限定；默认调度器的校准—终止—重规划策略实际产生4个并行SIMION批次。
-- `claims_prohibited`：S2条件源模型或发射度；S1/S2比较；J2/J3；任何峰宽、传输率、分辨率或三区结构优越性。
+- `claims_prohibited`：分段六极杆源工况条件源模型或发射度；两种源工况比较；受约束源加权聚焦预测或新增控制方向增量价值；任何峰宽、传输率、分辨率或三区结构优越性。
 
-因此C1维持`INCONCLUSIVE_REVISE / INPUT_CONTRACT_BLOCKED`。下一步不是继续运行同一合同，而是先设计并冻结
+因此阶段 1 维持`INCONCLUSIVE_REVISE / INPUT_CONTRACT_BLOCKED`。下一步不是继续运行同一合同，而是先设计并冻结
 可到达的OA提取前保持/门控或manifest-bound restart物理合同，再从完整母cohort重新生成预脉冲状态。
 
-## 2026-08-25 S2 terminal-handoff timing negative result
+## 2026-08-25 分段六极杆源工况 terminal-handoff 时相负结果
 
-新的连续交接筛查 parent run
+新的分段六极杆源工况连续交接筛查 parent run
 `20260825_223400__sim__cross__paper1-s2-segmented-handoff-pre-pulse__n1000`保留母cohort 1000：其中914个
 `handoff/transmitted`进入OA single-flight child
 `20260825_223400__sim__simion__rf-oatof-single-flight-gap0__n914`，86个上游损失仍计入完整分母。默认调度器在短资源校准后将914个物理交接粒子规划为4个正式SIMION批次；child本身成功完成，但321个预脉冲采样时刻记录到0行状态，914个粒子全部`Splat`。
 
 这一次的终端位置揭示了先前仅凭“到不了采样窗”无法区分的根因。冻结的handoff表中离子以
-`v_x=3052.21`--`3133.64 m/s`沿OA全局`x`正向传播；冻结OA accelerator再沿全局`z`正交提取，这正是OA几何本身，并非错误。由handoff状态作的弹道核对显示束团中心在`39.557698 µs`附近穿过提取中心，而914条终端记录中788条在`x=-54 mm`附近撞击，弹道到该壁的中位时刻约`44.384479 µs`。本轮screening却围绕陈旧的`46.746789 µs` anchor采样，因此所有样本均发生在束团离开后。故当前负结果是**预脉冲采样时相没有绑定到已解析的束团中心时刻**，不是S2分段杆、正交x→z结构、相空间或峰宽结论。
+`v_x=3052.21`--`3133.64 m/s`沿OA全局`x`正向传播；冻结OA accelerator再沿全局`z`正交提取，这正是OA几何本身，并非错误。由handoff状态作的弹道核对显示束团中心在`39.557698 µs`附近穿过提取中心，而914条终端记录中788条在`x=-54 mm`附近撞击，弹道到该壁的中位时刻约`44.384479 µs`。本轮screening却围绕陈旧的`46.746789 µs` anchor采样，因此所有样本均发生在束团离开后。故当前负结果是**预脉冲采样时相没有绑定到已解析的束团中心时刻**，不是分段六极杆、正交x→z结构、相空间或峰宽结论。
 
 对应的冻结阶段证据输入为[`c1_s2_handoff_axis_topology_negative.json`](stage_evidence/c1_s2_handoff_axis_topology_negative.json)。
 
 ### 更新后的唯一后续动作
 
-保持524 Da Formal OA资产不变。将pre-pulse RF时间栅格的中心强制绑定到本次运行的`resolved_single_flight_pulse_schedule.json`，即由冻结handoff表和目标提取中心确定的时刻；campaign只继续描述窗口宽度、RF步长和禁止输出。随后以完整母cohort重新生成S2 pre-pulse状态。不得以任意手动提前采样、过滤撞壁粒子或重命名handoff事件代替这个可追溯的时相绑定。在此之前C1继续为`INCONCLUSIVE_REVISE`，阶段2禁止启动。
+保持524 Da Formal OA资产不变。将pre-pulse RF时间栅格的中心强制绑定到本次运行的`resolved_single_flight_pulse_schedule.json`，即由冻结handoff表和目标提取中心确定的时刻；campaign只继续描述窗口宽度、RF步长和禁止输出。随后以完整母cohort重新生成分段六极杆源工况的预脉冲状态。不得以任意手动提前采样、过滤撞壁粒子或重命名handoff事件代替这个可追溯的时相绑定。在此之前阶段 1 继续为`INCONCLUSIVE_REVISE`，阶段 2 禁止启动。
 
-## 2026-08-25 S2 terminal-handoff：同步筛查与单源 C1 诊断
+## 2026-08-25 分段六极杆源工况 terminal-handoff：同步筛查与单源阶段 1 诊断
 
 同步screen parent `20260825_223900__sim__cross__paper1-s2-segmented-handoff-pre-pulse__n1000`及其SIMION child
 `20260825_223900__sim__simion__rf-oatof-single-flight-gap0__n914`成功闭合。筛查栅格仅由冻结的
@@ -149,30 +159,35 @@ stdout日志和run-local输入执行确定性materialization，得到成功recei
 `39.19406205683414 µs`，相对解析seed为`-0.363636 µs`。它不读取探测器、到达时间、峰宽或候选控制量。
 
 完整母cohort仍为1000，914个终端handoff进入OA；所选样本中828个保持存活、827个pulse-eligible，故172个
-未观测/损失粒子始终保留在母分母（86个上游损失加86个OA预脉冲损失）。C1读取器现显式区分母cohort与
-实际筛查子cohort，拒绝两者身份不闭合；不会把914当成1000或把828当成共同命中样本。S2单源诊断以固定
+未观测/损失粒子始终保留在母分母（86个上游损失加86个OA预脉冲损失）。阶段 1 读取器现显式区分母cohort与
+实际筛查子cohort，拒绝两者身份不闭合；不会把914当成1000或把828当成共同命中样本。分段六极杆源工况单源诊断以固定
 `paper1-c1-v1` ID哈希划分为development/validation/optimization/locked-test = 418/171/138/101；只用前两者
 选择模型。仿射条件模型被选中，尾部比例为0.0023923，六个残差主模态的bootstrap 95%下界为
-0.99909--1.0。这只证明S2输入已可由C1接口稳定、探测器盲地读取，不是跨源可重复性、J2/J3或性能结论。
+0.99909--1.0。这只证明分段六极杆源工况输入已可由阶段 1 接口稳定、探测器盲地读取，不是跨源可重复性、受约束源加权聚焦预测、新增控制方向增量价值或性能结论。
 
-对应五件套阶段证据为`paper1_stage_evidence/C1/20260825_223900__s2_handoff_synchronised_source`。这一记录保留
-当时的单源`INCONCLUSIVE_REVISE`状态；后续S1同步证据与它共同构成当前C1关闭证据。
+对应五件套阶段证据为`paper1_stage_evidence/C1/20260825_223900__s2_handoff_synchronised_source`（路径中的`C1`和`s2`是既有机器目录/运行标识）。这一记录保留
+当时的单源`INCONCLUSIVE_REVISE`状态；后续终端八极杆源工况同步证据与它共同构成当前阶段 1 关闭证据。
 
-## 2026-08-25 S1同步筛查与C1关闭
+## 2026-08-25 终端八极杆源工况同步筛查与阶段 1 关闭
 
-S1已用新成功的上游r03源run重新生成同步真实PA筛查。其900个`handoff/transmitted`粒子保持完整1000粒子母分母；
+终端八极杆源工况已用新成功的上游r03源run重新生成同步真实PA筛查。其900个`handoff/transmitted`粒子保持完整1000粒子母分母；
 由冻结handoff的弹道质心解析脉冲种子`45.56495820366112 µs`，并以detector-blind选择器选中第148个采样点
 `45.49109456729749 µs`。该点有875个预脉冲状态，125个未观测/损失粒子仍在母分母；没有探测器、到达时间、
-峰宽或控制量参与选择。S1选择受限二次条件模型，S2选择仿射条件模型；这表明源条件不同，不能被表述为模型相等。
+峰宽或控制量参与选择。终端八极杆源工况选择受限二次条件模型，分段六极杆源工况选择仿射条件模型；这表明源条件不同，不能被表述为模型相等。
 
-以同一salt `paper1-c1-v1`，S1的development/validation/optimization/locked-test为429/178/156/112，
-S2为418/171/138/101。两源均只以development/validation选择模型，所有残差主模态bootstrap 95%方向对齐下界
+以同一salt `paper1-c1-v1`，终端八极杆源工况的development/validation/optimization/locked-test为429/178/156/112，
+分段六极杆源工况为418/171/138/101。两源均只以development/validation选择模型，所有残差主模态bootstrap 95%方向对齐下界
 均大于0（实际最小值分别为0.9991307和0.9990477）。两份完整协方差分箱、模型、发射度、尾部、来源SHA和
 母cohort损失账本由最终五件套阶段证据冻结于
-`paper1_stage_evidence/C1/20260825_220400__s1_s2_synchronised_source`。
+`paper1_stage_evidence/C1/20260825_220400__s1_s2_synchronised_source`（路径中的缩写为既有机器标识）。
 
-### 当前C1结论
+### 历史阶段 1 结论与当前资格
 
-`PASS_CONTINUE`：两种不同RF源工况均提供了可哈希、同步、detector-blind的OA预脉冲状态，且各自条件残差模型和
-主模态在预先隔离的cohort下稳定可识别。因此允许进入C2的solver-free J2/J3淘汰试验。该通过只关闭**输入识别门禁**；
-它不说明两源条件模型相同，也不支持J2/J3预测、任何优化、探测器性能、分辨率、传输率或三区优越性结论。
+上述`PASS_CONTINUE`是历史阶段 1 的开发诊断结论：两种不同RF源工况曾提供可哈希、同步、detector-blind的
+OA预脉冲状态，且各自条件残差模型和主模态在隔离cohort下稳定可识别。根据当前 Paper 1 证据治理，它们只可标记
+为`DEVELOPMENT_ONLY`，不可作为新的受约束源加权聚焦预测或新增控制方向增量价值的锁定输入，也不自动授权三维工作。
+
+新的阶段 1 只有在两份独立母cohort的 source assessment 均显式标为`PROSPECTIVE`时才可为`PASS_CONTINUE`；
+任何历史或重放输入都会得到`INCONCLUSIVE_REVISE`。51.2 mm 终端八极杆源工况的新母群应首先完成该重建，再作为新的受约束源加权聚焦预测
+主工况输入。无论资格如何，阶段 1 都不说明两源条件模型相同，也不支持受约束源加权聚焦预测、新增控制方向增量价值、任何优化、探测器性能、分辨率、
+传输率或三区优越性结论。

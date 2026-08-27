@@ -1171,10 +1171,22 @@ local initialized=analyzer.initialize_workbench({{instances=workbench_instances}
 apply_placement(simion.wb.instances[1],initialized.placements.flight_tube)
 apply_placement(simion.wb.instances[2],initialized.placements.reflectron)
 apply_placement(ai,initialized.placements.accelerator)
+-- The runnable Program immediately replaces the nominal placement of the
+-- run-local frontend PA after it is loaded.  The field-only IOB begins from
+-- the same container, so it must replay this exact frozen transform before
+-- querying the workbench total field.  Omitting it can leave the sampling
+-- axis outside the physical accelerator even though the top-level Lua exits
+-- successfully.
+ai.x,ai.y,ai.z={_lua_number(origin['x'])},{_lua_number(origin['y'])},{_lua_number(origin['z'])}
 apply_placement(simion.wb.instances[4],initialized.placements.detector)
+oi.x,oi.y,oi.z={_lua_number(overlay_origin['x'])},{_lua_number(overlay_origin['y'])},{_lua_number(overlay_origin['z'])}
+oi.az,oi.el,oi.rt,oi.scale=0,0,0,1
 print(string.format(
   'TOTAL_AXIS_FIELD_ACCELERATOR_POSTPLACEMENT x_mm=%.12g y_mm=%.12g z_mm=%.12g az_deg=%.12g el_deg=%.12g rt_deg=%.12g scale=%.12g',
   ai.x,ai.y,ai.z,ai.az,ai.el,ai.rt,ai.scale))
+print(string.format(
+  'TOTAL_AXIS_FIELD_OVERLAY_POSTPLACEMENT x_mm=%.12g y_mm=%.12g z_mm=%.12g az_deg=%.12g el_deg=%.12g rt_deg=%.12g scale=%.12g',
+  oi.x,oi.y,oi.z,oi.az,oi.el,oi.rt,oi.scale))
 for _,item in ipairs(initialized.static_electrode_plans.legacy_accelerator_characterization) do
   active[item.electrode_id]=item.voltage_v
 end
@@ -1185,8 +1197,34 @@ end
 frontend.apply_at(pulse_time_us,function(id,value) active[id]=value end)
 -- The top-level PA API rejects electrodes absent from that PA.  The Program's
 -- all-electrode setter is therefore partitioned without changing any value.
-ai.pa:fast_adjust(pa_adjustments({{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19}}))
-oi.pa:fast_adjust(pa_adjustments({{20}}))
+local ai_values=pa_adjustments({{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19}})
+local oi_values=pa_adjustments({{20}})
+ai.pa:fast_adjust(ai_values)
+oi.pa:fast_adjust(oi_values)
+-- wb:efield and wb:epotential deliberately ignore time-dependent user
+-- programming.  Reproduce the frozen Program's instance_adjust predicate,
+-- then provide the selected PA its frozen post-pulse electrode table
+-- explicitly.  The static IOB priority alone is insufficient because the
+-- Program suppresses overlay points outside its active bounds.  As in Fly'm,
+-- overlapping PA fields must not be added.
+local overlay_bounds={_lua_value(overlay_bounds)}
+local function frozen_axis_field(x,y,z)
+  local detector=simion.wb.instances[4]
+  local inside_overlay=not detector:inside_wc(x,y,z) and
+    x>overlay_bounds.x_min and x<overlay_bounds.x_max and
+    y>overlay_bounds.y_min and y<overlay_bounds.y_max and
+    z>overlay_bounds.z_min and z<overlay_bounds.z_max
+  local instance_number=inside_overlay and 5 or 3
+  local instance=simion.wb.instances[instance_number]
+  local values=(instance_number==3) and ai_values or oi_values
+  assert(instance:inside_wc(x,y,z),
+    'runtime-selected C3 PA does not contain the axis point; instance='..instance_number)
+  local potential=instance:potential_wc(x,y,z,values)
+  local ex,ey,ez=instance:field_wc(x,y,z,values)
+  assert(potential and ex and ey and ez,
+    'frozen PA field is undefined on C3 axis for instance '..instance_number)
+  return potential,ex,ey,ez,instance_number
+end
 local z_start={_lua_number(geometry['accelerator_repeller_front_z_mm'])}
 local z_end={_lua_number(geometry['accelerator_grid2_z_mm'])}
 local z_step=ai.pa.dz_mm
@@ -1196,14 +1234,12 @@ local output=assert(io.open(output_path,'w'))
 output:write('sample_index,x_mm,y_mm,z_mm,potential_V,Ex_V_per_mm,Ey_V_per_mm,Ez_V_per_mm\\n')
 for index=1,count do
   local z=(index==count) and z_end or z_start+(index-1)*z_step
-  local potential=simion.wb:epotential({_lua_number(geometry['accelerator_axis_x_mm'])},
-    {_lua_number(geometry['accelerator_axis_y_mm'])},z)
-  local ex,ey,ez=simion.wb:efield({_lua_number(geometry['accelerator_axis_x_mm'])},
-    {_lua_number(geometry['accelerator_axis_y_mm'])},z)
-  assert(potential and ex and ey and ez,'workbench field is undefined on C3 axis')
+  local potential,ex,ey,ez,instance_number=frozen_axis_field(
+    {_lua_number(geometry['accelerator_axis_x_mm'])},{_lua_number(geometry['accelerator_axis_y_mm'])},z)
   output:write(string.format('%d,%.12g,%.12g,%.12g,%.15g,%.15g,%.15g,%.15g\\n',index,
     {_lua_number(geometry['accelerator_axis_x_mm'])},{_lua_number(geometry['accelerator_axis_y_mm'])},z,
     potential,ex,ey,ez))
+  print(string.format('TOTAL_AXIS_FIELD_SAMPLE index=%d active_instance=%d',index,instance_number))
 end
 output:close()
 print(string.format('TOTAL_AXIS_FIELD=PASS INSTANCES=%d POINTS=%d PULSE_TIME_US=%.12g',

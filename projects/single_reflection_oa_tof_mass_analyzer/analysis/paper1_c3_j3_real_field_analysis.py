@@ -18,6 +18,11 @@ from typing import Any, Mapping
 
 import numpy as np
 
+from projects.single_reflection_oa_tof_mass_analyzer.analysis.exported_axis_field_integrator import (
+    integrate_axis_to_plane_us,
+    load_total_axis_field,
+)
+
 
 SCALES = (-2.0, -1.0, 0.0, 1.0, 2.0)
 EVENTS = (
@@ -74,6 +79,152 @@ def _event_particle_ids(checkpoints: Path) -> dict[str, set[int]]:
             if event in result:
                 result[event].add(int(row["particle_id"]))
     return result
+
+
+def _local_axis_initial_states(checkpoints: Path) -> tuple[dict[int, tuple[float, float]], float]:
+    """Read the exact C3 pre-pulse z/vz states and common local-exit plane."""
+    initial: dict[int, tuple[float, float]] = {}
+    exit_planes: dict[int, float] = {}
+    with checkpoints.open(newline="", encoding="utf-8") as stream:
+        for row in csv.DictReader(stream):
+            particle_id = int(row["particle_id"])
+            if row.get("event") == "pre_pulse_state":
+                if particle_id in initial:
+                    raise ValueError(f"duplicate pre_pulse_state for particle {particle_id}")
+                initial[particle_id] = (float(row["z_mm"]), float(row["vz_mm_per_us"]))
+            elif row.get("event") == "local_accelerator_exit":
+                if particle_id in exit_planes:
+                    raise ValueError(f"duplicate local_accelerator_exit for particle {particle_id}")
+                exit_planes[particle_id] = float(row["z_mm"])
+    common = set(initial).intersection(exit_planes)
+    if not common:
+        raise ValueError("checkpoint table has no local axis paths")
+    if set(initial) != common or set(exit_planes) != common:
+        raise ValueError("local axis reference may not discard incomplete checkpoint paths")
+    values = np.asarray([exit_planes[item] for item in sorted(common)], dtype=float)
+    if not np.all(np.isfinite(values)) or np.ptp(values) > 1.0e-9:
+        raise ValueError("local_accelerator_exit is not one common axial plane")
+    return initial, float(values[0])
+
+
+def _candidate_species(candidate: Mapping[str, Any]) -> tuple[float, int]:
+    source = candidate.get("source_identity", {}).get("frozen_source", {})
+    mass_to_charge = float(source.get("mass_to_charge_th", math.nan))
+    charge_sign = source.get("charge_sign")
+    if not math.isfinite(mass_to_charge) or mass_to_charge <= 0 or charge_sign not in (-1, 1):
+        raise ValueError("C3 Candidate lacks a finite signed mass-to-charge identity")
+    return mass_to_charge, int(charge_sign)
+
+
+def _axis_export_field_path(
+    scale: float, *, field_run_directory: Path, expected_candidate_bytes: bytes,
+    expected_pulse_time_us: float,
+) -> Path:
+    """Validate one governed field-only run and return its canonical CSV."""
+    summary = _load_json(field_run_directory / "summary.json")
+    manifest = _load_json(field_run_directory / "run_manifest.json")
+    if summary.get("status") != "success" or manifest.get("status") != "success":
+        raise ValueError(f"{_scale_key(scale)} axis export is not a successful immutable record")
+    if summary.get("execution_mode") != "program_axis_field_export":
+        raise ValueError(f"{_scale_key(scale)} run is not a top-level total-axis-field export")
+    configuration = _load_json(field_run_directory / "run_config.json")
+    actual_pulse = float(configuration.get("parameters", {}).get("pulse_time_us", math.nan))
+    if not math.isfinite(actual_pulse) or not math.isclose(
+        actual_pulse, expected_pulse_time_us, rel_tol=0.0, abs_tol=1.0e-10
+    ):
+        raise ValueError(f"{_scale_key(scale)} axis export uses a different effective pulse")
+    candidate_path = field_run_directory / "inputs" / "three_zone_t5_candidate_resolved.json"
+    if not candidate_path.is_file() or candidate_path.read_bytes() != expected_candidate_bytes:
+        raise ValueError(f"{_scale_key(scale)} axis export is not bound to its real-PA Candidate")
+    path = field_run_directory / "results" / "total_axis_field.csv"
+    if not path.is_file():
+        raise ValueError(f"{_scale_key(scale)} axis export lacks total_axis_field.csv")
+    return path
+
+
+def build_c3_axis_reference(
+    *, runs: Mapping[float, Path], axis_field_runs: Mapping[float, Path],
+    dt_us_values: tuple[float, ...] = (1.0e-4, 5.0e-5, 2.5e-5),
+) -> dict[str, Any]:
+    """Build the detector-blind C3 1D reference from five governed field exports.
+
+    Every integration begins from the recorded pre-pulse state of the same
+    particle in the matching real-PA run and stops at that run's declared
+    local accelerator-exit plane.  This is deliberately not a whole-flight
+    surrogate.  The smallest two time steps must agree within one percent
+    before their central derivative can be compared with real PA.
+    """
+    if set(runs) != set(SCALES) or set(axis_field_runs) != set(SCALES):
+        raise ValueError("C3 axis reference requires exactly five real and five field-export scales")
+    if len(dt_us_values) < 2 or any(
+        not math.isfinite(value) or value <= 0 for value in dt_us_values
+    ) or any(right >= left for left, right in zip(dt_us_values, dt_us_values[1:])):
+        raise ValueError("axis reference time steps must be strictly decreasing positive values")
+    observations = {scale: _run_observation(scale, Path(runs[scale])) for scale in SCALES}
+    pulses = {item["pulse_time_us"] for item in observations.values()}
+    if len(pulses) != 1:
+        raise ValueError("C3 real-PA points use different effective pulse times")
+    reference_times: dict[float, dict[float, np.ndarray]] = {}
+    field_bindings: dict[str, str] = {}
+    species: tuple[float, int] | None = None
+    for scale in SCALES:
+        real_directory = Path(runs[scale])
+        candidate_path = real_directory / "inputs" / "three_zone_t5_candidate_resolved.json"
+        candidate_bytes = candidate_path.read_bytes()
+        candidate = _load_json(candidate_path)
+        candidate_species = _candidate_species(candidate)
+        if species is None:
+            species = candidate_species
+        elif candidate_species != species:
+            raise ValueError("C3 field-reference candidates use different species identities")
+        field_path = _axis_export_field_path(
+            scale, field_run_directory=Path(axis_field_runs[scale]),
+            expected_candidate_bytes=candidate_bytes,
+            expected_pulse_time_us=next(iter(pulses)),
+        )
+        field = load_total_axis_field(field_path)
+        states, exit_plane = _local_axis_initial_states(
+            real_directory / "results" / "single_flight_particle_checkpoints.csv"
+        )
+        expected_ids = set(observations[scale]["local_accelerator_segment_times_ns"])
+        if set(states) != expected_ids:
+            raise ValueError(f"{_scale_key(scale)} C3 axis state cohort differs from real-PA local cohort")
+        values_by_dt: dict[float, np.ndarray] = {}
+        assert species is not None
+        for dt_us in dt_us_values:
+            values_by_dt[dt_us] = np.asarray([
+                integrate_axis_to_plane_us(
+                    field, z0_mm=states[particle_id][0],
+                    vz0_mm_per_us=states[particle_id][1], z_stop_mm=exit_plane,
+                    mass_th=species[0], charge_state=species[1], dt_us=dt_us,
+                ) * 1000.0
+                for particle_id in sorted(expected_ids)
+            ], dtype=float)
+        reference_times[scale] = values_by_dt
+        field_bindings[_scale_key(scale)] = str(field_path.resolve())
+    derivatives: dict[float, float] = {}
+    for dt_us in dt_us_values:
+        derivatives[dt_us] = float(np.mean(
+            (reference_times[2.0][dt_us] - reference_times[-2.0][dt_us]) / 4.0
+        ))
+    finest, next_finest = dt_us_values[-1], dt_us_values[-2]
+    finest_derivative = derivatives[finest]
+    if finest_derivative == 0.0:
+        raise ValueError("C3 axis reference derivative is zero and cannot support a relative comparison")
+    convergence_error = abs(derivatives[next_finest] - finest_derivative) / abs(finest_derivative)
+    return {
+        "role": "paper1_c3_j3_exported_axis_field_reference",
+        "claim_limit": "Local pre-pulse-to-local-exit 1D reference only; no detector, peak-width, transmission, optimization, Candidate, Formal, or multi-mass claim.",
+        "axis_field_runs": {_scale_key(scale): str(Path(axis_field_runs[scale]).resolve()) for scale in SCALES},
+        "axis_field_csv": field_bindings,
+        "mass_to_charge_th": species[0] if species is not None else None,
+        "charge_state": species[1] if species is not None else None,
+        "dt_us_values": list(dt_us_values),
+        "central_derivative_ns_per_h_by_dt_us": {str(dt_us): derivatives[dt_us] for dt_us in dt_us_values},
+        "axis_reference_derivative_ns_per_h": finest_derivative,
+        "finest_pair_relative_difference": convergence_error,
+        "dt_converged_le_1_percent": convergence_error <= 0.01,
+    }
 
 
 def _run_observation(scale: float, run_directory: Path) -> dict[str, Any]:
@@ -202,6 +353,14 @@ def analyze_c3_real_field_platform(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run", action="append", required=True, metavar="SCALE=PATH")
+    parser.add_argument(
+        "--axis-field-run", action="append", metavar="SCALE=PATH",
+        help="matching governed BuildOnly program_axis_field_export run; supply all five or none",
+    )
+    parser.add_argument(
+        "--axis-reference-dt-us", action="append", type=float,
+        help="strictly decreasing 1D RK4 steps; default is 1e-4, 5e-5, 2.5e-5 us",
+    )
     parser.add_argument("--axis-reference-derivative-ns-per-h", type=float)
     parser.add_argument("--bootstrap-seed", type=int, default=20260825)
     parser.add_argument("--bootstrap-replicates", type=int, default=400)
@@ -216,11 +375,40 @@ def main() -> None:
         if scale in runs:
             parser.error("--run repeats a scale")
         runs[scale] = Path(value)
+    axis_runs: dict[float, Path] = {}
+    for item in args.axis_field_run or []:
+        key, separator, value = item.partition("=")
+        if not separator:
+            parser.error("--axis-field-run must be SCALE=PATH")
+        scale = float(key)
+        if scale in axis_runs:
+            parser.error("--axis-field-run repeats a scale")
+        axis_runs[scale] = Path(value)
+    if args.axis_reference_dt_us and not axis_runs:
+        parser.error("--axis-reference-dt-us requires all five --axis-field-run values")
+    axis_reference: dict[str, Any] | None = None
+    axis_derivative = args.axis_reference_derivative_ns_per_h
+    if axis_runs:
+        if axis_derivative is not None:
+            parser.error("provide either governed --axis-field-run values or a scalar axis reference, not both")
+        axis_reference = build_c3_axis_reference(
+            runs=runs, axis_field_runs=axis_runs,
+            dt_us_values=tuple(args.axis_reference_dt_us or (1.0e-4, 5.0e-5, 2.5e-5)),
+        )
+        axis_derivative = float(axis_reference["axis_reference_derivative_ns_per_h"])
     result = analyze_c3_real_field_platform(
         runs=runs, bootstrap_seed=args.bootstrap_seed,
         bootstrap_replicates=args.bootstrap_replicates,
-        axis_reference_derivative_ns_per_h=args.axis_reference_derivative_ns_per_h,
+        axis_reference_derivative_ns_per_h=axis_derivative,
     )
+    if axis_reference is not None:
+        result["axis_reference"] = axis_reference
+        result["metrics"]["gates"]["axis_reference_dt_converged_le_1_percent"] = bool(
+            axis_reference["dt_converged_le_1_percent"]
+        )
+        if not axis_reference["dt_converged_le_1_percent"]:
+            result["conclusion"] = "INCONCLUSIVE_REVISE"
+            result["failures"].append("axis_reference_dt_converged_le_1_percent")
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 

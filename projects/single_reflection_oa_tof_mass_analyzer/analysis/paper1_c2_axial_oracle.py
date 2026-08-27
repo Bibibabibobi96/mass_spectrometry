@@ -1,4 +1,4 @@
-"""C2 axial-only J2/J3 falsification on the exact ideal-field oracle.
+"""C2 axial-only focusability falsification on the exact ideal-field oracle.
 
 This module deliberately reduces a frozen C1 source to its declared OA axial
 ``z, v_z`` coordinates.  It is a low-cost gate, not a replacement for the
@@ -245,8 +245,14 @@ def _axial_time_us(
 
 
 def _build_problem(
-    source: AxialC2Source, design: AxialC2Design, *, source_weighted: bool
+    source: AxialC2Source, design: AxialC2Design, *, weighting_mode: str,
 ) -> tuple[FocusabilityProblem, dict[str, Any]]:
+    """Build one preregistered weighting baseline from identical axial bins."""
+
+    if weighting_mode not in {
+        "unweighted", "total_covariance", "source_distribution_weighted",
+    }:
+        raise ValueError("C2 weighting mode is unsupported")
     manifold, mean = _source_manifold(source)
     design = AxialC2Design(manifold, design.outer, design.reflectron, design.inner, design.include_eta, design.parameter_scale)
     controls = _controls(design)
@@ -257,6 +263,10 @@ def _build_problem(
     groups = np.array_split(ordered, 4)
     all_z = source.z_mm[optimization]
     all_vz = source.vz_m_per_s[optimization]
+    all_residual = all_vz - mean(all_z)
+    total_residual_variance = float(np.var(all_residual, ddof=0))
+    if not math.isfinite(total_residual_variance) or total_residual_variance <= 0.0:
+        raise ValueError("C2 total conditional residual variance is invalid")
     blocks: list[FocusabilityProblem] = []
     derivative_audits: list[dict[str, float]] = []
     mean_time: list[float] = []
@@ -292,7 +302,12 @@ def _build_problem(
         })
         blocks.append(FocusabilityProblem(
             time_gradient=np.asarray([gradient]), design_response=response,
-            source_factor=np.asarray([[math.sqrt(variance) if source_weighted else 1.0]]),
+            source_factor=np.asarray([[
+                1.0 if weighting_mode == "unweighted" else math.sqrt(
+                    variance if weighting_mode == "source_distribution_weighted"
+                    else total_residual_variance
+                )
+            ]]),
             constraint_jacobian=constraints, parameter_scale=design.parameter_scale,
             rank_relative_tolerance=1e-10,
         ))
@@ -308,7 +323,8 @@ def _build_problem(
         mean_weight.append(math.sqrt(group.size / all_z.size))
     # The total objective is Var_j[mu_j + h_j delta] plus the conditional
     # thickness contribution above.  Center both mean blocks under their
-    # frozen bin weights; an absolute flight-time offset must not steer J2.
+    # frozen bin weights; an absolute flight-time offset must not steer the
+    # source-distribution-weighted focusability objective.
     weights = np.asarray(mean_weight)
     means = np.asarray(mean_time)
     responses = np.asarray(mean_response)
@@ -340,43 +356,94 @@ def _build_problem(
         trust_radius=0.5,
         rank_relative_tolerance=stacked.rank_relative_tolerance,
     )
-    return problem, {"design": design, "controls": controls, "steps": steps, "mean": mean, "derivative_audits": derivative_audits, "conditional_mean_bin_time_us": mean_time}
+    return problem, {
+        "design": design,
+        "controls": controls,
+        "steps": steps,
+        "mean": mean,
+        "derivative_audits": derivative_audits,
+        "conditional_mean_bin_time_us": mean_time,
+        "total_conditional_residual_variance_m2_per_s2": total_residual_variance,
+    }
 
 
 def run_axial_c2_screen(source: AxialC2Source, design: AxialC2Design) -> dict[str, Any]:
     """Run the C2 axial screen for one source/architecture pair."""
 
-    weighted, metadata = _build_problem(source, design, source_weighted=True)
-    unweighted, _ = _build_problem(source, design, source_weighted=False)
-    weighted_result = evaluate_focusability(weighted)
+    source_distribution_weighted, metadata = _build_problem(
+        source, design, weighting_mode="source_distribution_weighted"
+    )
+    total_covariance, _ = _build_problem(
+        source, design, weighting_mode="total_covariance"
+    )
+    unweighted, _ = _build_problem(source, design, weighting_mode="unweighted")
+    source_distribution_weighted_result = evaluate_focusability(
+        source_distribution_weighted
+    )
+    total_covariance_result = evaluate_focusability(total_covariance)
     unweighted_result = evaluate_focusability(unweighted)
     controls = metadata["controls"]
-    delta = design.parameter_scale * (weighted_result.null_space @ weighted_result.eta)
-    prediction_controls = controls + delta
     test = source.roles == "locked_test"
     train_z = source.z_mm[np.isin(source.roles, ("development", "validation"))]
     x = source.release_position_mm + source.z_mm[test] - float(np.mean(train_z))
     residual = source.vz_m_per_s[test] - metadata["mean"](source.z_mm[test])
-    unweighted_controls = controls + design.parameter_scale * (
-        unweighted_result.null_space @ unweighted_result.eta
+
+    def direct_metrics(trial_controls: NDArray[np.float64]) -> dict[str, float]:
+        direct = _axial_time_us(
+            metadata["design"], trial_controls, x, source.vz_m_per_s[test]
+        )
+        direct_mean = _axial_time_us(
+            metadata["design"], trial_controls, x, source.vz_m_per_s[test] - residual
+        )
+        return {
+            "locked_exact_conditional_residual_variance_us2": float(
+                np.var(direct - direct_mean, ddof=0)
+            ),
+            "locked_exact_total_variance_us2": float(np.var(direct, ddof=0)),
+        }
+
+    def optimized_working_point(
+        result: Any,
+    ) -> tuple[NDArray[np.float64], dict[str, Any]]:
+        trial_controls = controls + design.parameter_scale * (
+            result.null_space @ result.eta
+        )
+        return trial_controls, {
+            "prediction": _prediction_dict(result),
+            "controls": trial_controls.tolist(),
+            **direct_metrics(trial_controls),
+        }
+
+    unweighted_controls, unweighted_working_point = optimized_working_point(
+        unweighted_result
     )
-    unweighted_direct = _axial_time_us(
-        metadata["design"], unweighted_controls, x, source.vz_m_per_s[test]
+    total_covariance_controls, total_covariance_working_point = optimized_working_point(
+        total_covariance_result
     )
-    unweighted_mean = _axial_time_us(
-        metadata["design"], unweighted_controls, x, source.vz_m_per_s[test] - residual
+    source_distribution_controls, source_distribution_working_point = (
+        optimized_working_point(source_distribution_weighted_result)
     )
-    b = weighted.source_factor.T @ weighted.time_gradient
-    a = weighted.source_factor.T @ (
-        weighted.design_response * weighted.parameter_scale[np.newaxis, :]
-    ) @ weighted_result.null_space
+    nominal_working_point = {
+        "controls": controls.tolist(),
+        **direct_metrics(controls),
+    }
+    b = (
+        source_distribution_weighted.source_factor.T
+        @ source_distribution_weighted.time_gradient
+    )
+    a = source_distribution_weighted.source_factor.T @ (
+        source_distribution_weighted.design_response
+        * source_distribution_weighted.parameter_scale[np.newaxis, :]
+    ) @ source_distribution_weighted_result.null_space
     directions: dict[str, dict[str, Any]] = {}
     for name, eta in (
-        ("improve", weighted_result.eta),
-        ("zero", np.zeros_like(weighted_result.eta)),
-        ("worsen", -weighted_result.eta),
+        ("improve", source_distribution_weighted_result.eta),
+        ("zero", np.zeros_like(source_distribution_weighted_result.eta)),
+        ("worsen", -source_distribution_weighted_result.eta),
     ):
-        trial_controls = controls + design.parameter_scale * (weighted_result.null_space @ eta)
+        trial_controls = controls + design.parameter_scale * (
+            source_distribution_weighted_result.null_space @ eta
+        )
         direct = _axial_time_us(metadata["design"], trial_controls, x, source.vz_m_per_s[test])
         direct_mean = _axial_time_us(metadata["design"], trial_controls, x, source.vz_m_per_s[test] - residual)
         directions[name] = {
@@ -390,18 +457,16 @@ def run_axial_c2_screen(source: AxialC2Source, design: AxialC2Design) -> dict[st
         "source_id": source.source_id,
         "architecture": "three_zone" if design.include_eta else "two_zone",
         "locked_test_count": int(np.sum(test)),
-        "constraint_jacobian": weighted.constraint_jacobian.tolist(),
+        "constraint_jacobian": source_distribution_weighted.constraint_jacobian.tolist(),
         "finite_difference_steps": metadata["steps"].tolist(),
         "derivative_audits": metadata["derivative_audits"],
-        "weighted": {"prediction": _prediction_dict(weighted_result), "controls": prediction_controls.tolist()},
-        "unweighted": {
-            "prediction": _prediction_dict(unweighted_result),
-            "controls": unweighted_controls.tolist(),
-            "locked_exact_conditional_residual_variance_us2": float(
-                np.var(unweighted_direct - unweighted_mean, ddof=0)
-            ),
-            "locked_exact_total_variance_us2": float(np.var(unweighted_direct, ddof=0)),
-        },
+        "total_conditional_residual_variance_m2_per_s2": metadata[
+            "total_conditional_residual_variance_m2_per_s2"
+        ],
+        "nominal": nominal_working_point,
+        "unweighted": unweighted_working_point,
+        "total_covariance": total_covariance_working_point,
+        "source_distribution_weighted": source_distribution_working_point,
         "directions": directions,
     }
 

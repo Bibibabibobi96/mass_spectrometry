@@ -717,6 +717,9 @@
         "sequence": {"type": "integer", "minimum": 1},
         "experiment_id": {"$ref": "#/$defs/id"},
         "execution_strategy": {"enum": ["staged_three_stage", "simion_single_flight"]},
+        "single_flight_execution_mode": {
+          "enum": ["particle_flight", "program_axis_field_export"]
+        },
         "single_flight_layout_profile_id": {"$ref": "#/$defs/id"},
         "single_flight_batch_count": {"type": "integer", "minimum": 1},
         "single_flight_batch_memory_policy": {

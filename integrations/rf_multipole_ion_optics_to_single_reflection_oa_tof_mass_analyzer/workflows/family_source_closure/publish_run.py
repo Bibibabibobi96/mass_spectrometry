@@ -160,6 +160,7 @@ def _publish_detector_blind_pulse_selection(
     workspace_root: Path,
     parent_run_dir: Path,
     stage: dict[str, Any],
+    recovered_output_stage: dict[str, Any] | None = None,
     resolved_connection_path: Path,
     resolved_source_path: Path,
     resolved_population_path: Path,
@@ -171,6 +172,12 @@ def _publish_detector_blind_pulse_selection(
     if file_sha256(child_manifest_path) != stage.get("manifest_sha256"):
         raise ContractError("pulse screening child manifest identity differs")
     child_manifest = _load(child_manifest_path)
+    output_stage = recovered_output_stage or stage
+    output_dir = (workspace_root / output_stage["path"]).resolve()
+    output_manifest_path = output_dir / "run_manifest.json"
+    if file_sha256(output_manifest_path) != output_stage.get("manifest_sha256"):
+        raise ContractError("pulse screening output manifest identity differs")
+    output_manifest = _load(output_manifest_path)
     population = _load(resolved_population_path)
     source_authority = population.get("source_authority", {})
     table_binding = source_authority.get("table_binding")
@@ -195,16 +202,16 @@ def _publish_detector_blind_pulse_selection(
         )
     }
     state_table = _verified_stage_record(
-        child_manifest,
+        output_manifest,
         collection="outputs",
         name="pre_pulse_time_series_states.csv",
-        run_dir=child_dir,
+        run_dir=output_dir,
     )
     screening_receipt = _verified_stage_record(
-        child_manifest,
+        output_manifest,
         collection="outputs",
         name="pre_pulse_time_series_screening_receipt.json",
-        run_dir=child_dir,
+        run_dir=output_dir,
     )
     parent_identities = {
         "resolved_connection": resolved_connection_path,
@@ -239,7 +246,7 @@ def _publish_detector_blind_pulse_selection(
         population_table_path=inputs[population_table_input],
         resolved_source_path=resolved_source_path,
         resolved_connection_path=resolved_connection_path,
-        screening_manifest_path=child_manifest_path,
+        screening_manifest_path=output_manifest_path,
         selector_source_path=selector_source,
         geometry_path=inputs["oatof_resolved_geometry"],
         single_flight_configuration_path=inputs["configuration"],
@@ -700,13 +707,14 @@ def publish_pre_pulse_selection_publication_replay(
     workspace_root: Path,
     replay_run_dir: Path,
     failed_parent_manifest_path: Path,
+    recovered_screening_manifest_path: Path | None = None,
 ) -> Path:
     """Publish detector-blind pre-pulse selection from an immutable child run.
 
     This is deliberately narrower than normal parent publication: it never reads
     the live campaign file, so a later authoring edit cannot invalidate an already
     completed child.  The failed parent remains failed and the replay cannot make
-    resolution, optimization, J2/J3, Candidate, or Formal claims.
+    detector, resolution, optimization, Candidate, or Formal claims.
     """
     replay_run_dir = replay_run_dir.resolve()
     identity = validate_run_id(replay_run_dir.name)
@@ -755,14 +763,48 @@ def publish_pre_pulse_selection_publication_replay(
         raise ContractError("pre-pulse selection replay child authority is incomplete")
     child_id = stage_ids["single_flight_transport"]
     child_dir = workspace_root / "artifacts" / "projects" / INTEGRATION_ID / "runs" / child_id
-    stage = _verify_stage(run_path=child_dir, run_id=child_id, project_id=INTEGRATION_ID, mode=SINGLE_FLIGHT_STAGES["single_flight_transport"]["mode"], workspace_root=workspace_root)
+    if recovered_screening_manifest_path is None:
+        stage = _verify_stage(run_path=child_dir, run_id=child_id, project_id=INTEGRATION_ID, mode=SINGLE_FLIGHT_STAGES["single_flight_transport"]["mode"], workspace_root=workspace_root)
+        recovered_output_stage = None
+    else:
+        child_manifest = _load(child_dir / "run_manifest.json")
+        if (
+            child_manifest.get("role") != "simulation_run_manifest"
+            or child_manifest.get("project") != INTEGRATION_ID
+            or child_manifest.get("mode") != SINGLE_FLIGHT_STAGES["single_flight_transport"]["mode"]
+            or child_manifest.get("status") != "failed"
+        ):
+            raise ContractError("recovered pulse screening source child differs")
+        stage = {
+            "phase": "single_flight_transport",
+            "run_id": child_id,
+            "path": _portable(child_dir, workspace_root),
+            "manifest_sha256": file_sha256(child_dir / "run_manifest.json"),
+        }
+        recovery_manifest_path = recovered_screening_manifest_path.resolve()
+        recovery_dir = recovery_manifest_path.parent
+        recovery_manifest = _load(recovery_manifest_path)
+        recovery_config = _load(recovery_dir / "run_config.json")
+        if (
+            recovery_manifest.get("role") != "simulation_run_manifest"
+            or recovery_manifest.get("project") != INTEGRATION_ID
+            or recovery_manifest.get("mode") != "rf_oatof_pre_pulse_time_series_analysis_recovery"
+            or recovery_manifest.get("status") != "success"
+            or Path(str(recovery_config.get("inputs", {}).get("failed_child_manifest", ""))).resolve()
+            != (child_dir / "run_manifest.json").resolve()
+        ):
+            raise ContractError("recovered pulse screening authority differs")
+        recovered_output_stage = {
+            "path": _portable(recovery_dir, workspace_root),
+            "manifest_sha256": file_sha256(recovery_manifest_path),
+        }
     _verify_stage_chain_identity(stage=stage, workspace_root=workspace_root, receipt=receipt, expected_source_field="upstream_source_identity", expected_runtime_binding_sha256=stage_hashes.get("single_flight_transport", ""))
     replay_run_dir.mkdir(parents=True, exist_ok=False)
     try:
         table, candidate_receipt_path, candidate_receipt = _publish_detector_blind_pulse_selection(
             repo_root=repo_root, workspace_root=workspace_root, parent_run_dir=replay_run_dir,
             stage=stage, resolved_connection_path=connection, resolved_source_path=source,
-            resolved_population_path=population,
+            resolved_population_path=population, recovered_output_stage=recovered_output_stage,
         )
     except Exception:
         # This directory has no manifest yet and belongs solely to this replay attempt.
@@ -776,6 +818,10 @@ def publish_pre_pulse_selection_publication_replay(
                    "source_execution_receipt": _portable(receipt_path, workspace_root),
                    "frozen_campaign_experiment": _portable(frozen_campaign, workspace_root),
                    "screening_child_manifest": _portable(child_dir / "run_manifest.json", workspace_root),
+                   "recovered_screening_manifest": (
+                       _portable(recovered_screening_manifest_path, workspace_root)
+                       if recovered_screening_manifest_path is not None else None
+                   ),
                    "publisher_source": _portable(Path(__file__), workspace_root)},
         "parameters": {"failed_parent_run_id": failed_manifest["run_id"], "screening_child_run_id": child_id,
                        "selected_time_us": candidate_receipt["selected_time_us"], "solver_rerun": False},
@@ -784,7 +830,7 @@ def publish_pre_pulse_selection_publication_replay(
     summary = {"schema_version": 1, "role": "rf_oatof_pre_pulse_selection_publication_replay_summary",
                "status": "success", "claim_status": "FUNCTIONAL_SCREEN_ONLY", "solver_rerun": False,
                "selected_time_us": candidate_receipt["selected_time_us"], "screening_child_run_id": child_id,
-               "claims_prohibited": ["detector", "resolution", "optimization", "J2", "J3", "Candidate", "Formal"]}
+               "claims_prohibited": ["detector", "resolution", "optimization", "Candidate", "Formal"]}
     config_path, summary_path = replay_run_dir / "run_config.json", replay_run_dir / "summary.json"
     write_pending_json(config_path, run_config)
     write_pending_json(summary_path, summary)
@@ -1411,6 +1457,7 @@ def main() -> int:
     parser.add_argument("--failure-reason")
     parser.add_argument("--publication-replay-source-parent-manifest", type=Path)
     parser.add_argument("--pre-pulse-selection-replay-source-parent-manifest", type=Path)
+    parser.add_argument("--recovered-pre-pulse-screening-manifest", type=Path)
     args = parser.parse_args()
     repo_root = args.repo_root.resolve()
     if args.pre_pulse_selection_replay_source_parent_manifest is not None:
@@ -1427,6 +1474,10 @@ def main() -> int:
             replay_run_dir=args.integration_run_dir.resolve(),
             failed_parent_manifest_path=(
                 args.pre_pulse_selection_replay_source_parent_manifest.resolve()
+            ),
+            recovered_screening_manifest_path=(
+                args.recovered_pre_pulse_screening_manifest.resolve()
+                if args.recovered_pre_pulse_screening_manifest is not None else None
             ),
         )
     elif args.publication_replay_source_parent_manifest is not None:

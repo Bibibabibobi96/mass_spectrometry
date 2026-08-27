@@ -6,7 +6,11 @@ import unittest
 from pathlib import Path
 
 from common.simion.resource_scheduler import (
+    MAXIMUM_MEMORY_DANGER_TERMINATION_ATTEMPTS,
+    MAXIMUM_MEMORY_RECOVERY_ATTEMPTS,
+    MEMORY_RECOVERY_STABLE_SECONDS,
     RESOURCE_IDENTITY_KEYS,
+    format_dispatch_decision_event,
     plan_adaptive_followup,
     plan_runtime_dispatch,
     plan_simion_case_dispatch,
@@ -46,10 +50,17 @@ class ResourceSchedulerTests(unittest.TestCase):
             total_physical_memory_bytes=20_000, logical_processors=16,
         )
         self.assertEqual(plan["estimation"]["kind"], "formal_first_batch_observation")
-        self.assertEqual(plan["estimation"]["observation_seconds"], 30)
+        self.assertEqual(plan["estimation"]["observation_seconds"], 45)
         self.assertTrue(plan["estimation"]["first_batch_result_retained"])
         self.assertEqual(plan["waves"][0]["batches"][0]["count"], 500)
         self.assertEqual(plan["waves"][0]["coverage"], "initial_formal_batch_only")
+        self.assertEqual(
+            format_dispatch_decision_event(plan),
+            "SIMION_RESOURCE_EVENT=DISPATCH_DECISION MEASUREMENT=FIRST_FORMAL_BATCH "
+            "PARTICLES=5000 BATCHES=1 MAX_CONCURRENCY=1 CPU_CAPACITY=1 "
+            "MEMORY_CAPACITY=1 AVAILABLE_MEMORY=0.00GiB MEMORY_RESERVE=1.00GiB "
+            "OBSERVATION_SECONDS=45",
+        )
 
     def test_formal_observation_batch_is_one_tenth_of_large_population(self) -> None:
         plan = plan_simion_dispatch(
@@ -58,6 +69,24 @@ class ResourceSchedulerTests(unittest.TestCase):
         )
         self.assertEqual(plan["waves"][0]["batches"][0]["count"], 2_000)
         self.assertNotIn("simion_max_ions_per_process", plan["limits"])
+
+    def test_public_plan_requires_45_second_stability_and_two_recovery_trials(self) -> None:
+        plan = plan_simion_dispatch(
+            self.request(), [self.profile()], available_memory_bytes=6 * GIB,
+            total_physical_memory_bytes=10 * GIB,
+        )
+        self.assertEqual(
+            plan["limits"]["memory_recovery_stable_seconds"],
+            MEMORY_RECOVERY_STABLE_SECONDS,
+        )
+        self.assertEqual(
+            plan["limits"]["maximum_memory_recovery_attempts"],
+            MAXIMUM_MEMORY_RECOVERY_ATTEMPTS,
+        )
+        self.assertEqual(
+            plan["limits"]["maximum_memory_danger_termination_attempts"],
+            MAXIMUM_MEMORY_DANGER_TERMINATION_ATTEMPTS,
+        )
 
     def test_running_first_batch_balances_total_work_across_lanes(self) -> None:
         initial = plan_simion_dispatch(
@@ -69,14 +98,27 @@ class ResourceSchedulerTests(unittest.TestCase):
             available_memory_bytes=int(5.5 * GIB), total_physical_memory_bytes=10 * GIB,
             first_batch_completed=False,
         )
-        self.assertEqual(final["limits"]["maximum_concurrency"], 4)
+        self.assertEqual(final["limits"]["maximum_concurrency"], 5)
         counts = [item["count"] for item in final["waves"][0]["batches"]]
-        self.assertEqual(counts, [500, 1_250, 1_250, 1_250, 750])
-        self.assertEqual(final["waves"][0]["batch_count"], 5)
+        self.assertEqual(counts, [500, 1_000, 1_000, 1_000, 1_000, 500])
+        self.assertEqual(final["waves"][0]["batch_count"], 6)
         self.assertEqual(sum(counts), 5_000)
         self.assertEqual(counts[0] + counts[-1], counts[1])
         self.assertEqual(final["estimation"]["memory_safety_factor"], 1.10)
         self.assertTrue(final["estimation"]["retained_first_batch_counts_toward_concurrency"])
+
+    def test_adaptive_followup_does_not_freeze_background_cpu_into_lane_count(self) -> None:
+        initial = plan_simion_dispatch(
+            self.request(), [], available_memory_bytes=100 * GIB,
+            total_physical_memory_bytes=128 * GIB,
+        )
+        final = plan_adaptive_followup(
+            initial, GIB, observed_cpu_percent=8, background_cpu_percent=80,
+            available_memory_bytes=100 * GIB, total_physical_memory_bytes=128 * GIB,
+            first_batch_completed=False,
+        )
+        self.assertEqual(final["limits"]["cpu_capacity"], 10)
+        self.assertEqual(final["limits"]["maximum_concurrency"], 10)
 
     def test_naturally_completed_first_batch_is_not_repeated(self) -> None:
         initial = plan_simion_dispatch(
@@ -88,11 +130,11 @@ class ResourceSchedulerTests(unittest.TestCase):
             available_memory_bytes=int(5.5 * GIB), total_physical_memory_bytes=10 * GIB,
             first_batch_completed=True,
         )
-        self.assertEqual(final["limits"]["maximum_concurrency"], 3)
+        self.assertEqual(final["limits"]["maximum_concurrency"], 4)
         self.assertFalse(final["estimation"]["retained_first_batch_counts_toward_concurrency"])
         self.assertEqual(
             [item["count"] for item in final["waves"][0]["batches"]],
-            [500, 1_500, 1_500, 1_500],
+            [500, 1_125, 1_125, 1_125, 1_125],
         )
         self.assertEqual(final["waves"][0]["batches"][1]["particle_id_min"], 501)
 
@@ -111,7 +153,7 @@ class ResourceSchedulerTests(unittest.TestCase):
             total_physical_memory_bytes=int(47.924 * 1024**3),
             first_batch_completed=False,
         )
-        # Two further 1.10x peak budgets fit after the 2 GiB reserve.  The formal
+        # Two further 1.10x peak budgets fit after the 1 GiB reserve.  The formal
         # first batch already consumes the third, retained lane.
         self.assertEqual(final["limits"]["memory_capacity"], 3)
         self.assertEqual(final["limits"]["maximum_concurrency"], 3)
@@ -138,9 +180,13 @@ class ResourceSchedulerTests(unittest.TestCase):
         )
         self.assertEqual(plan["estimation"]["kind"], "exact_resource_profile")
         self.assertTrue(plan["estimation"]["observation_wait_skipped"])
-        self.assertEqual(plan["limits"]["maximum_concurrency"], 3)
-        self.assertEqual(plan["waves"][0]["batch_count"], 3)
-        self.assertEqual([item["count"] for item in plan["waves"][0]["batches"]], [1_667, 1_667, 1_666])
+        self.assertEqual(plan["limits"]["maximum_concurrency"], 4)
+        self.assertEqual(plan["waves"][0]["batch_count"], 4)
+        self.assertEqual([item["count"] for item in plan["waves"][0]["batches"]], [1_250, 1_250, 1_250, 1_250])
+        event = format_dispatch_decision_event(plan)
+        self.assertIn("MEASUREMENT=EXACT_HISTORICAL_PROFILE", event)
+        self.assertIn("BATCHES=4", event)
+        self.assertIn("PROCESS_MEMORY_BUDGET=1.10GiB", event)
 
     def test_profile_requires_exact_numerical_identity(self) -> None:
         plan = plan_simion_dispatch(
@@ -227,11 +273,13 @@ class ResourceSchedulerTests(unittest.TestCase):
                 text=True, timeout=30, check=False,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("SIMION_RESOURCE_EVENT=DISPATCH_DECISION", result.stdout)
+            self.assertIn("MEASUREMENT=OBSERVED_FORMAL_BATCH", result.stdout)
             plan = json.loads(output_path.read_text(encoding="utf-8"))
-            self.assertEqual(plan["waves"][0]["batch_count"], 5)
+            self.assertEqual(plan["waves"][0]["batch_count"], 6)
             self.assertEqual(
                 [item["count"] for item in plan["waves"][0]["batches"]],
-                [500, 1_250, 1_250, 1_250, 750],
+                [500, 1_000, 1_000, 1_000, 1_000, 500],
             )
 
 

@@ -294,6 +294,18 @@ if ($SolverAuthorized -and (Test-Path -LiteralPath $outputRoot)) {
     } while (Test-Path -LiteralPath $outputRoot)
     $outputRoot = [IO.Path]::GetFullPath((Join-Path $runsRoot $executionRunId))
     Write-Output "INTEGRATION_EXECUTION=RECOVER_FAILED_RUN PARENT=$campaignRunId RETRY=$executionRunId"
+  } elseif ($null -eq $publishedManifest) {
+    # The package directory is retained when preparation fails before the
+    # runner can publish a manifest.  Never overwrite it: continue under the
+    # first unused recovery identity and let the adapter bind that exact
+    # current campaign row again.
+    $retryIndex = 1
+    do {
+      $executionRunId = $campaignRunId + ('__r{0:D2}' -f $retryIndex)
+      $outputRoot = [IO.Path]::GetFullPath((Join-Path $runsRoot $executionRunId))
+      $retryIndex += 1
+    } while (Test-Path -LiteralPath $outputRoot)
+    Write-Output "INTEGRATION_EXECUTION=RECOVER_UNPUBLISHED_RUN PARENT=$campaignRunId RETRY=$executionRunId"
   } else {
     throw 'SolverAuthorized target run directory already exists.'
   }

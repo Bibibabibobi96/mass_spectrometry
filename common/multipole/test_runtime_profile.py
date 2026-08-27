@@ -115,10 +115,57 @@ class RuntimeProfileTests(unittest.TestCase):
             resolved["campaign"]["design_variable_authorization_sha256"],
             r"^[A-F0-9]{64}$",
         )
+
+    def test_phase_matched_n5000_requires_and_accepts_its_n1000_prefix(self) -> None:
+        campaign = self._v3_campaign()
+        campaign["particle_source_phase_policy"]["n1000_reference_profile_id"] = (
+            "paper1_prospective_mother_sample_v1_n1000"
+        )
+        experiment = campaign["experiments"][0]
+        experiment["particle_source_profile_id"] = "paper1_prospective_mother_sample_v1_n5000"
+        resolved = self._resolve_campaign_document(campaign)
+        derivation = resolved["particle_source_phase_derivation"]
+        self.assertEqual(derivation["authority_particle_count"], 5000)
+        self.assertEqual(
+            derivation["n1000_reference_source"]["sha256"],
+            "03DCEB7CCD763075696145CD370E9D14CA2FADAE86BA83370BAF7B171E13126D",
+        )
         self.assertEqual(
             resolved["particle_source_phase_derivation"]["candidate_frequency_Hz"],
             1_210_000.0,
         )
+
+    def test_prospective_paper1_s1_and_s2_campaigns_bind_independent_n5000_source(self) -> None:
+        cases = (
+            (
+                "rf_octupole_ion_optics",
+                "20260826__paper1_s1_prospective_octupole_source_n5000.json",
+                "paper1_s1_prospective_octupole_source_n5000",
+                "particle_source_derivation",
+            ),
+            (
+                "rf_hexapole_ion_optics",
+                "20260826__paper1_s2_prospective_segmented_source_n5000.json",
+                "paper1_s2_prospective_segmented_source_n5000",
+                "particle_source_phase_derivation",
+            ),
+        )
+        for project_id, campaign_name, experiment_id, derivation_key in cases:
+            with self.subTest(project_id=project_id):
+                resolved = resolve_campaign_experiment(
+                    REPO_ROOT,
+                    project_id,
+                    Path(campaign_name),
+                    experiment_id,
+                )
+                self.assertEqual(
+                    resolved["particle_source"]["profile_id"],
+                    "paper1_prospective_mother_sample_v1_n5000",
+                )
+                self.assertEqual(
+                    resolved[derivation_key]["authority_particle_count"], 5000
+                )
+                self.assertEqual(resolved["case_set"], "primary_only")
 
     def test_campaign_v4_accepts_n1000_phase_matched_primary_only_row(self) -> None:
         resolved = resolve_campaign_experiment(

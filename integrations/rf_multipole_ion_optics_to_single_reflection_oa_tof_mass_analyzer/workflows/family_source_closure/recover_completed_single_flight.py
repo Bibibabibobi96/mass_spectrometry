@@ -66,9 +66,15 @@ def _gap_label(value: Any) -> str:
     return text.replace(".", "p")
 
 
-def _verify_manifest(path: Path, *, status: str, mode: str | None = None) -> dict[str, Any]:
+def _verify_manifest(
+    path: Path, *, status: str | tuple[str, ...], mode: str | None = None
+) -> dict[str, Any]:
     manifest = _load(path)
-    if manifest.get("role") != "simulation_run_manifest" or manifest.get("status") != status:
+    allowed_statuses = (status,) if isinstance(status, str) else status
+    if (
+        manifest.get("role") != "simulation_run_manifest"
+        or manifest.get("status") not in allowed_statuses
+    ):
         raise ContractError(f"recovery source manifest identity/status differs: {path}")
     if mode is not None and manifest.get("mode") != mode:
         raise ContractError(f"recovery source manifest mode differs: {path}")
@@ -217,7 +223,8 @@ def _write_manifest(*, repo_root: Path, run_dir: Path, outputs: list[Path]) -> P
 def recover(*, repo_root: Path, campaign_path: Path, failed_parent_dir: Path, recovery_parent_dir: Path) -> tuple[Path, Path]:
     failed_parent_manifest_path = failed_parent_dir / "run_manifest.json"
     _verify_manifest(
-        failed_parent_manifest_path, status="failed", mode="multipole_family_source_closure"
+        failed_parent_manifest_path, status=("failed", "interrupted"),
+        mode="multipole_family_source_closure"
     )
     parent_summary = _load(failed_parent_dir / "summary.json")
     plan = _load(failed_parent_dir / "composition_plan.json")
@@ -248,7 +255,8 @@ def recover(*, repo_root: Path, campaign_path: Path, failed_parent_dir: Path, re
     child_dir = _find_failed_child(failed_parent_dir, plan, resolved)
     child_manifest_path = child_dir / "run_manifest.json"
     child_manifest = _verify_manifest(
-        child_manifest_path, status="failed", mode="rf_to_oatof_simion_single_flight"
+        child_manifest_path, status=("failed", "interrupted", "success"),
+        mode="rf_to_oatof_simion_single_flight"
     )
     config_path = record_path(child_manifest["run_config"], base_dir=child_dir)
     config = _load(config_path)

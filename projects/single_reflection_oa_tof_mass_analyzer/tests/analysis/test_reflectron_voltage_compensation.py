@@ -48,9 +48,12 @@ class ReflectronVoltageCompensationTests(unittest.TestCase):
     def test_completed_formal_batch_is_retained_before_repository_tail(self) -> None:
         with patch(
             "common.simion.resource_scheduler.physical_memory_bytes",
-            return_value=(130, 200),
+            # 20 GiB observed peak with 10% headroom needs 22 GiB/lane.
+            # With the public 1 GiB reserve, 89 GiB available admits four
+            # lanes under the current byte-based scheduler.
+            return_value=(89 * 1024**3, 100 * 1024**3),
         ):
-            plan = _plan_batches_from_observation(1000, 8, 20)
+            plan = _plan_batches_from_observation(1000, 8, 20 * 1024**3)
         self.assertEqual(plan["estimation"]["kind"], "observed_formal_batch")
         self.assertTrue(plan["estimation"]["first_batch_result_retained"])
         self.assertEqual(plan["limits"]["maximum_concurrency"], 4)

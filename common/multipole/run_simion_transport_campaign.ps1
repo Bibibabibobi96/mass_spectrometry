@@ -212,7 +212,7 @@ try {
   foreach ($item in $resolved) {
     $experiment = $item.experiment
     if ($DryRun) {
-      $caseSet = if ([int]$campaign.schema_version -in @(4, 5, 6)) {
+      $caseSet = if (-not [string]::IsNullOrWhiteSpace([string]$experiment.case_set)) {
         [string]$experiment.case_set
       } else {
         'primary_and_zero_axial_control'
@@ -228,7 +228,7 @@ try {
       ExperimentId=[string]$experiment.experiment_id;RepoRoot=$repo;RunId=[string]$experiment.authorized_run_id;
       RetentionClass=[string]$experiment.retention_class;PythonExe=$python}
     if ($SimionExe) {$arguments.SimionExe = $SimionExe}
-    if ([int]$campaign.schema_version -in @(4, 5, 6)) {$arguments.CaseSet = [string]$experiment.case_set}
+    if (-not [string]::IsNullOrWhiteSpace([string]$experiment.case_set)) {$arguments.CaseSet = [string]$experiment.case_set}
     Invoke-MultipoleProjectFinite3dTransport @arguments
     Write-Host ('MULTIPOLE_CAMPAIGN=PASS CAMPAIGN={0} EXPERIMENT={1}' -f `
       [string]$campaign.campaign_id,[string]$experiment.experiment_id)

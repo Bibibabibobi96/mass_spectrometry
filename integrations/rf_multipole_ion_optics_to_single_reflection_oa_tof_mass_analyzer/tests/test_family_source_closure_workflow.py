@@ -287,7 +287,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
         )
         self.assertEqual(plan["role"], "simion_repository_dispatch_plan")
         self.assertEqual(plan["estimation"]["kind"], "formal_first_batch_observation")
-        self.assertEqual(plan["limits"]["formal_observation_seconds"], 30)
+        self.assertEqual(plan["limits"]["formal_observation_seconds"], 45)
         self.assertEqual(plan["limits"]["launch_stagger_seconds"], 5)
         self.assertNotIn("cpu_cores_per_batch", plan["limits"])
 
@@ -1295,7 +1295,91 @@ $result = Get-PulseTimingOrchestration `
             INTEGRATION_ROOT / "workflows" / "family_source_closure" / "adapter.ps1"
         ).read_text(encoding="utf-8")
         self.assertIn("$publishedManifest.status -in @('failed','interrupted')", execute)
-        self.assertIn("$recoveryParentStatus -in @('failed','interrupted')", adapter)
+        self.assertIn("function Resolve-RfRecoveryFailureAncestor", adapter)
+
+    def test_recovery_chain_skips_partial_suffix_only_for_same_campaign_failure(
+        self,
+    ) -> None:
+        """A partial unpublished suffix may not hide the last terminal retry result."""
+        adapter = (
+            INTEGRATION_ROOT / "workflows" / "family_source_closure" / "adapter.ps1"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            script = r"""
+$parseErrors = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile(
+  $env:RF_ADAPTER_PATH, [ref]$null, [ref]$parseErrors
+)
+if ($parseErrors) { throw $parseErrors[0] }
+$functionAst = $ast.Find({
+  param($node)
+  $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+  $node.Name -eq 'Resolve-RfRecoveryFailureAncestor'
+}, $true)
+if ($null -eq $functionAst) { throw 'missing recovery ancestor resolver' }
+. ([scriptblock]::Create($functionAst.Extent.Text))
+
+function Write-RecoveryEvidence {
+  param([string]$RunId, [string]$Status, [string]$CampaignId)
+  $dir = Join-Path $env:RF_RECOVERY_ROOT $RunId
+  New-Item -ItemType Directory -Path $dir -Force | Out-Null
+  @{ run_id = $RunId; status = $Status } |
+    ConvertTo-Json | Set-Content -LiteralPath (Join-Path $dir 'run_manifest.json')
+  @{ campaign_id = $CampaignId } |
+    ConvertTo-Json | Set-Content -LiteralPath (Join-Path $dir 'run_config.json')
+}
+
+$expected = '20260826_160000__sim__cross__case__n100'
+$requested = $expected + '__r03'
+$partial = Join-Path $env:RF_RECOVERY_ROOT ($expected + '__r02')
+New-Item -ItemType Directory -Path $partial -Force | Out-Null
+
+Write-RecoveryEvidence -RunId ($expected + '__r01') -Status 'failed' -CampaignId 'campaign_a'
+$accepted = Resolve-RfRecoveryFailureAncestor -RequestedRunId $requested `
+  -ExpectedRunId $expected -RunsRoot $env:RF_RECOVERY_ROOT -CampaignId 'campaign_a'
+if ($null -eq $accepted -or $accepted.run_id -ne ($expected + '__r01') -or $accepted.status -ne 'failed') {
+  throw 'partial suffix did not recover prior same-campaign failure'
+}
+
+Write-RecoveryEvidence -RunId ($expected + '__r01') -Status 'failed' -CampaignId 'campaign_b'
+if ($null -ne (Resolve-RfRecoveryFailureAncestor -RequestedRunId $requested `
+    -ExpectedRunId $expected -RunsRoot $env:RF_RECOVERY_ROOT -CampaignId 'campaign_a')) {
+  throw 'wrong campaign was accepted'
+}
+
+Write-RecoveryEvidence -RunId ($expected + '__r01') -Status 'success' -CampaignId 'campaign_a'
+if ($null -ne (Resolve-RfRecoveryFailureAncestor -RequestedRunId $requested `
+    -ExpectedRunId $expected -RunsRoot $env:RF_RECOVERY_ROOT -CampaignId 'campaign_a')) {
+  throw 'successful ancestor was accepted'
+}
+
+Write-RecoveryEvidence -RunId ($expected + '__r01') -Status 'created' -CampaignId 'campaign_a'
+if ($null -ne (Resolve-RfRecoveryFailureAncestor -RequestedRunId $requested `
+    -ExpectedRunId $expected -RunsRoot $env:RF_RECOVERY_ROOT -CampaignId 'campaign_a')) {
+  throw 'nonterminal ancestor was accepted'
+}
+Write-Output 'RECOVERY_CHAIN=PASS'
+"""
+            environment = os.environ.copy()
+            environment.update({
+                "RF_ADAPTER_PATH": str(adapter),
+                "RF_RECOVERY_ROOT": directory,
+            })
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", script],
+                cwd=REPO_ROOT,
+                env=environment,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                capture_output=True,
+                check=False,
+                timeout=300,
+            )
+            self.assertEqual(
+                completed.returncode, 0, completed.stdout + completed.stderr
+            )
+            self.assertIn("RECOVERY_CHAIN=PASS", completed.stdout)
 
     def test_archived_campaign_is_rejected_before_schema_or_prepare(self) -> None:
         campaign = SINGLE_FLIGHT_CAMPAIGN_PATH
@@ -1387,6 +1471,13 @@ $result = Get-PulseTimingOrchestration `
         ).read_text(encoding="utf-8")
         self.assertIn('"resolved_region_field_profile_id="', prepare)
         self.assertIn("$runnerArguments.ResolvedRegionFieldContract =", adapter)
+        runner_arguments_init = adapter.index("$runnerArguments = @{")
+        axis_export_flags = adapter.index("$runnerArguments.BuildOnly = $true")
+        self.assertLess(
+            runner_arguments_init,
+            axis_export_flags,
+            "axis-field export must not write the runner request before it exists",
+        )
         self.assertNotIn(
             "$frozenArguments.single_flight_accelerator_field_profile_id",
             adapter,

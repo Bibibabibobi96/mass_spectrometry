@@ -14,6 +14,25 @@
 - [`runtime/run_single_flight.ps1`](../runtime/run_single_flight.ps1) 是单飞 SIMION 的唯一运行入口；项目或分析脚本
   不得复制其 PA cache、FLY2、粒子重编号或资源预算实现。
 
+已冻结的单飞 campaign 默认执行`particle_flight`。仅 C3 的
+`program_axis_field_export`可替代它：该模式仍由同一入口构建五实例 PA/IOB、
+复现冻结脉冲后的电压并导出总轴场。它对每个采样点按冻结 Program 的`instance_adjust`边界先选择实际 PA，
+再将该 PA 的冻结 post-pulse electrode table 显式传给 SIMION 的`instance:field_wc`/`potential_wc` API；
+不得把重叠 PA 场相加。
+它不启动粒子、不会产生批处理或粒子物理结论；它要求一个
+冻结三区 Candidate，且只可作为独立轴场积分器的输入。
+
+源分布加权的受约束到达时间聚焦候选池也可走同一单飞入口；每一项必须保留同一候选池请求哈希、
+候选 ID 和完整母cohort。runtime只核验其物理身份与派生几何的一致性，绝不在此处读取峰宽、传输
+或选择结果；加权/未加权的选择仍由项目侧的 detector-blind 分析合同完成。
+
+这条实现依据 SIMION 官方 Multiple PAs 文档（2026-08-26检索，适用 API 从8.1起）：粒子只看包含该点的
+最高优先级电静 PA，`instance:field_wc(..., voltage_table)`可显式复现`fast_adjust`的电压表；本机SIMION 2020
+自带`bradbury_nielsen_grid`例程实际使用相同的兼容 API。Program的`instance_adjust`可抑制原始最高优先级 PA，
+因此导出器必须重放其空间谓词，不能仅读取静态 IOB 优先级。
+官方 Field I/O 文档同时明确`wb:efield`/`wb:epotential`会忽略时变`efield_adjust`，故不能作为该独立参考。
+来源：[Multiple PAs](https://simion.com/info/multiple_pas.html)、[Field I/O](https://simion.com/info/field_io.html)。
+
 ## 运行边界
 
 商业求解器默认按 campaign 串行调度。粒子相互独立、无碰撞、无空间电荷且 campaign 显式授权时，单个
@@ -22,14 +41,24 @@ SIMION 运行可调用共享批处理；批内结果必须恢复全局粒子 ID 
 
 仓库级 [`common/simion/resource_scheduler.py`](../../../common/simion/resource_scheduler.py) 仅为已授权请求
 规划 RF/静电批次：它综合粒子数、公共的每批 CPU 策略、当前可用内存、已观测的同资源身份峰值及并发上限。
-没有匹配历史时，运行器把第一个正式粒子批次作为30秒资源识别批次；该进程不因观察结束而终止，提前完成的
+没有匹配历史时，运行器把第一个正式粒子批次作为45秒资源识别批次；该进程不因观察结束而终止，提前完成的
 结果也直接保留。随后只对尚未执行的粒子重新分批，并由公共调度器错峰启动、持续监控；不再生成
 `RESOURCE_CALIBRATION_ONLY`探针或重复首批。
 该策略属于公共调度器而非 campaign、功能或科学合同；这些合同只能提供资源身份，不得覆盖CPU、内存、
-安全系数、并发或危险处置。CPU满载只暂停新启动；仅当可用内存低于2%持续15秒，执行器才逐个回收最晚
-启动的批次并重新排队。普通资源波动、墙钟和目录采样不终止健康进程。
+安全系数、并发或危险处置。CPU满载只暂停新启动；普通内存暂缓也只是不满足“1 GiB系统保留量加下一
+进程动态峰值预算”的启动条件，条件恢复后可随时再次准入，不计尝试次数。动态峰值取每个SIMION进程
+的驻留工作集与私有提交量中较大者，避免Windows暂时修剪工作集后低估下一路的内存需求。仅当可用内
+存低于0.5 GiB持续15秒，执行器才逐个回收最晚启动的批次并置于待启动队列最前；这样被打断的通道会先恢复，
+不会被尚未启动的平衡补偿批次插队。每次回收后必须连续45秒满足下一
+条通道的1 GiB准入和动态峰值预算，才可恢复试开一个通道。至多进行两次这样的危险恢复；第三次同类
+危险将失败关闭该运行，以免Windows长时间资源抖动。普通资源波动、墙钟和目录采样不终止健康进程。
 探索的 inline 网格或 trajectory-quality 覆盖使用**已解析数值**而非原 profile ID 匹配画像；因此旧 profile
 的峰值不会为不同离散量授权并发，新的组合由首个正式批次建立自己的观测。
+
+运行器在把分片外部 ION 表交给 SIMION 前，以本次**最大实际分片**设置官方
+`--default-num-particles` 的 IOB ion-list 容量；这不是调度器的批量上限，也不改变分片。容量超过
+10,000 时只记录运行时警告，仍照原计划执行。这样不会因继承 SIMION 的默认 1,000 容量而漏读后续离子，
+同时不把 50,000 一类固定容量常驻到所有运行中。
 
 每个 run 必须冻结 `run_config.json`、`summary.json` 和 `run_manifest.json`。缓存只用于完全相同的冻结身份，
 且不可替代来源 run。功能成功不自动证明数值收敛、跨求解器等价、参数最优或 Formal 资格。
@@ -44,7 +73,14 @@ run-config、run-local冻结合同、粒子映射和全部批日志；不得改�
 `publish_run.py --pre-pulse-selection-replay-source-parent-manifest` 可建立一个新的 immutable
 `analysis/python` replay run。它只读取失败父 run-local 冻结 campaign、resolved 合同和成功子 manifest，
 不重跑求解器、不改写失败父 run，并且只发布探测器盲候选时刻；其声明固定为
-`FUNCTIONAL_SCREEN_ONLY`，不支持 detector、resolution、optimization、J2/J3、Candidate 或 Formal 结论。
+`FUNCTIONAL_SCREEN_ONLY`，不支持 detector、resolution、optimization、Candidate 或 Formal 结论。
+
+对于已成功的、单一冻结时刻的 `pulse_disabled` time-series，
+`runtime/materialize_pre_pulse_time_series.py` 还提供 manifest-bound restart materialization：它只能把该
+run 已记录的存活状态重编号为 canonical `pre_pulse_restart` 表，并逐行核对时间、ID、质量/电荷与由速度重算的
+能量。receipt 同时绑定原始全母群分母及终端损失 census，因此 conditional restart 绝不能被表述为全人口传输。
+它当前仅授权同源的 inherited-vs-`z-vz` working-point `DEVELOPMENT_ONLY` 复现；不得用 CSV 转换替代新的
+脉冲搜索、上游传播、锁定测试或真实场源分布加权聚焦结论。
 
 活动 runtime binding v4 只冻结连接专属的物理/运行合同；共享的
 `family_runtime_implementation.json` 由运行时统一解析。authorized/Formal 路径校验每个实现脚本 SHA；

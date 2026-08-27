@@ -5,7 +5,7 @@ SIMION process. Resource-safe concurrency therefore controls only the number
 of *simultaneously active* processes. For one numerical identity, independent
 particle work is divided evenly across those concurrent lanes; no arbitrary
 per-process particle ceiling is imposed. With no exact resource profile, the
-first batch is formal work: it keeps running during a 30-second observation
+first batch is formal work: it keeps running during a 45-second observation
 and its result is retained.
 """
 
@@ -18,7 +18,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-FORMAL_OBSERVATION_SECONDS = 30
+FORMAL_OBSERVATION_SECONDS = 45
 INITIAL_CPU_LANES = 10
 MINIMUM_PROCESS_CPU_PERCENT = 10.0
 CPU_ADMISSION_PERCENT = 95.0
@@ -26,14 +26,25 @@ CPU_ADMISSION_PERCENT = 95.0
 # binary bytes rather than as fractions of installed RAM.  A percentage made the same
 # safe free-memory level vary with host capacity and caused an unnecessarily
 # large reservation on the 48 GiB research workstation.
-MEMORY_ADMISSION_RESERVE_BYTES = 2 * 1024**3
-MEMORY_CRITICAL_RESERVE_BYTES = 1 * 1024**3
+MEMORY_ADMISSION_RESERVE_BYTES = 1 * 1024**3
+MEMORY_CRITICAL_RESERVE_BYTES = 512 * 1024**2
 MEMORY_CRITICAL_SECONDS = 15
 LAUNCH_STAGGER_SECONDS = 5
+# After a memory-danger recovery, the scheduler must observe a full mature
+# window before restoring one lane.  This prevents a delayed SIMION working-set
+# expansion from turning a brief initial underestimate into repeated churn.
+MEMORY_RECOVERY_STABLE_SECONDS = 45
+MAXIMUM_MEMORY_RECOVERY_ATTEMPTS = 2
+# A danger response is deliberately gradual: remove the newest worker, observe
+# again, and permit at most one further newest-worker removal.  If memory still
+# remains critically low after those two measured attempts, the executor must
+# fail closed rather than repeatedly churn workers until Windows becomes
+# unresponsive.
+MAXIMUM_MEMORY_DANGER_TERMINATION_ATTEMPTS = 2
 KNOWN_MEMORY_SAFETY_FACTOR = 1.10
-# A formal batch observes the actual solver identity for 30 seconds and keeps
+# A formal batch observes the actual solver identity for 45 seconds and keeps
 # running afterwards.  Its peak therefore receives the same 10% headroom as
-# an exact historical profile; admission continues to be guarded by the 2 GiB
+# an exact historical profile; admission continues to be guarded by the 1 GiB
 # system reserve and live peak checks in the executor.
 OBSERVED_MEMORY_SAFETY_FACTOR = 1.10
 RESOURCE_IDENTITY_KEYS = (
@@ -172,8 +183,59 @@ def _public_limits(maximum_concurrency: int, cpu_capacity: int, memory_capacity:
         "memory_admission_reserve_bytes": MEMORY_ADMISSION_RESERVE_BYTES,
         "memory_critical_reserve_bytes": MEMORY_CRITICAL_RESERVE_BYTES,
         "memory_critical_seconds": MEMORY_CRITICAL_SECONDS,
+        "memory_recovery_stable_seconds": MEMORY_RECOVERY_STABLE_SECONDS,
+        "maximum_memory_recovery_attempts": MAXIMUM_MEMORY_RECOVERY_ATTEMPTS,
+        "maximum_memory_danger_termination_attempts": (
+            MAXIMUM_MEMORY_DANGER_TERMINATION_ATTEMPTS
+        ),
         "launch_stagger_seconds": LAUNCH_STAGGER_SECONDS,
     }
+
+
+def _format_gib(byte_count: Any) -> str:
+    """Format an optional byte count for a concise scheduler event."""
+    if not isinstance(byte_count, int):
+        return "UNKNOWN"
+    return f"{byte_count / 1024**3:.2f}GiB"
+
+
+def format_dispatch_decision_event(plan: dict[str, Any]) -> str:
+    """Return one human-readable event describing a frozen dispatch decision.
+
+    This reports planned capacity, never a live process count.  The executor
+    owns live process lifecycle events because it is the only layer that can
+    observe them truthfully.
+    """
+    estimation = plan.get("estimation", {})
+    limits = plan.get("limits", {})
+    host = plan.get("host", {})
+    wave = plan.get("waves", [{}])[0]
+    kind = str(estimation.get("kind", "unknown"))
+    measurement = {
+        "formal_first_batch_observation": "FIRST_FORMAL_BATCH",
+        "observed_formal_batch": "OBSERVED_FORMAL_BATCH",
+        "exact_resource_profile": "EXACT_HISTORICAL_PROFILE",
+    }.get(kind, kind.upper())
+    fields = [
+        "SIMION_RESOURCE_EVENT=DISPATCH_DECISION",
+        f"MEASUREMENT={measurement}",
+        f"PARTICLES={plan.get('particle_count', 'UNKNOWN')}",
+        f"BATCHES={wave.get('batch_count', 'UNKNOWN')}",
+        f"MAX_CONCURRENCY={limits.get('maximum_concurrency', 'UNKNOWN')}",
+        f"CPU_CAPACITY={limits.get('cpu_capacity', 'UNKNOWN')}",
+        f"MEMORY_CAPACITY={limits.get('memory_capacity', 'UNKNOWN')}",
+        f"AVAILABLE_MEMORY={_format_gib(host.get('available_memory_bytes'))}",
+        f"MEMORY_RESERVE={_format_gib(limits.get('memory_admission_reserve_bytes'))}",
+    ]
+    if kind == "formal_first_batch_observation":
+        fields.append(f"OBSERVATION_SECONDS={estimation.get('observation_seconds', 'UNKNOWN')}")
+    else:
+        fields.extend((
+            f"PEAK_MEMORY={_format_gib(estimation.get('observed_peak_bytes'))}",
+            f"PROCESS_MEMORY_BUDGET={_format_gib(estimation.get('per_process_memory_budget_bytes'))}",
+            f"PROCESS_CPU_PERCENT={estimation.get('per_process_cpu_percent', 'UNKNOWN')}",
+        ))
+    return " ".join(fields)
 
 
 def _initial_formal_batch(particles: int) -> dict[str, int]:
@@ -284,7 +346,7 @@ def plan_simion_dispatch(
         particle_count=particles, available_memory_bytes=available_memory_bytes,
         total_physical_memory_bytes=total_physical_memory_bytes,
         per_process_memory_bytes=memory_budget, process_cpu_percent=process_cpu,
-        background_cpu_percent=_nonnegative_number(background_cpu_percent, "background CPU"),
+        background_cpu_percent=0.0,
     )
     batches = _batches_from_counts(_balanced_lane_loads(particles, concurrency))
     return {
@@ -334,7 +396,10 @@ def plan_adaptive_followup(
         particle_count=particles, available_memory_bytes=available_memory_bytes,
         total_physical_memory_bytes=total_physical_memory_bytes,
         per_process_memory_bytes=memory_budget, process_cpu_percent=cpu,
-        background_cpu_percent=background,
+        # Background CPU is transient host state, not a durable per-run
+        # capacity. The executor gates every staggered launch against the
+        # live CPU value plus this observed per-process cost.
+        background_cpu_percent=0.0,
     )
     if not first_batch_completed:
         # ``available_memory_bytes`` and background CPU are sampled while the
@@ -522,6 +587,7 @@ def main() -> int:
         )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
+    print(format_dispatch_decision_event(plan))
     print(f"SIMION_REPOSITORY_DISPATCH_PLAN=PASS FIELD_KIND={plan['field_kind']} WAVES={len(plan['waves'])}")
     return 0
 

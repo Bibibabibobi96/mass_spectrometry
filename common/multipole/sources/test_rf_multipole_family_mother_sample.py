@@ -20,6 +20,9 @@ N100_PATH = SOURCE_ROOT / "rf_multipole_family_mother_sample_v1_100.csv"
 N1000_PATH = SOURCE_ROOT / "rf_multipole_family_mother_sample_v1_1000.csv"
 N5000_PATH = SOURCE_ROOT / "rf_multipole_family_mother_sample_v1_5000.csv"
 METADATA_PATH = SOURCE_ROOT / "rf_multipole_family_mother_sample_v1.json"
+PAPER1_PROSPECTIVE_PATH = SOURCE_ROOT / "rf_multipole_paper1_prospective_mother_sample_v1_5000.csv"
+PAPER1_PROSPECTIVE_N1000_PATH = SOURCE_ROOT / "rf_multipole_paper1_prospective_mother_sample_v1_1000.csv"
+PAPER1_PROSPECTIVE_METADATA_PATH = SOURCE_ROOT / "rf_multipole_paper1_prospective_mother_sample_v1.json"
 
 
 class RfMultipoleFamilyMotherSampleTests(unittest.TestCase):
@@ -73,6 +76,21 @@ class RfMultipoleFamilyMotherSampleTests(unittest.TestCase):
             n5000_rows = list(csv.DictReader(handle))
         self.assertEqual(n5000_rows[:1000], n1000_rows)
         self.assertEqual([int(row["particle_id"]) for row in n5000_rows], list(range(1, 5001)))
+
+    def test_paper1_prospective_sample_is_independent_and_hash_bound(self) -> None:
+        metadata = json.loads(PAPER1_PROSPECTIVE_METADATA_PATH.read_text(encoding="utf-8"))
+        generated = generate_rows(metadata["generator"]["seed"], 5000)
+        with PAPER1_PROSPECTIVE_PATH.open(encoding="utf-8", newline="") as handle:
+            rows = list(csv.DictReader(handle))
+        with PAPER1_PROSPECTIVE_N1000_PATH.open(encoding="utf-8", newline="") as handle:
+            n1000_rows = list(csv.DictReader(handle))
+        self.assertEqual(len(rows), 5000)
+        self.assertEqual([int(row["particle_id"]) for row in rows], list(range(1, 5001)))
+        self.assertEqual(metadata["output"]["sha256"], sha256(PAPER1_PROSPECTIVE_PATH))
+        self.assertEqual(metadata["n1000_reference"]["sha256"], sha256(PAPER1_PROSPECTIVE_N1000_PATH))
+        self.assertEqual(rows[:1000], n1000_rows)
+        self.assertNotEqual(rows[0], generate_rows(2026072801, 5000)[0])
+        self.assertEqual(rows[0], {key: str(value) for key, value in generated[0].items()})
 
 
 if __name__ == "__main__":

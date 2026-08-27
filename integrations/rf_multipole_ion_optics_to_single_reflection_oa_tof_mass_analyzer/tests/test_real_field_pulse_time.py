@@ -624,6 +624,40 @@ class RealFieldPulseAnalysisTests(unittest.TestCase):
             self.assertEqual(receipt["selected_time_us"], 11.0)
             self.assertFalse(receipt["reusable_verified_pulse"])
 
+    def test_parent_publisher_can_read_verified_recovery_outputs(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            paths, _child, parent, stage = self._write_publisher_child(workspace)
+            recovery = workspace / "recovery"
+            recovery.mkdir()
+            recovered_states = recovery / "pre_pulse_time_series_states.csv"
+            recovered_receipt = recovery / "pre_pulse_time_series_screening_receipt.json"
+            recovered_states.write_bytes(paths["states"].read_bytes())
+            recovered_receipt.write_bytes(paths["screening_receipt"].read_bytes())
+            recovered_manifest = recovery / "run_manifest.json"
+            recovered_manifest.write_text(json.dumps({
+                "outputs": [_record(recovered_states), _record(recovered_receipt)],
+            }), encoding="utf-8")
+            recovered_stage = {
+                "path": recovery.relative_to(workspace).as_posix(),
+                "manifest_sha256": file_sha256(recovered_manifest),
+            }
+
+            table, receipt_path, receipt = _publish_detector_blind_pulse_selection(
+                repo_root=REPO_ROOT,
+                workspace_root=workspace,
+                parent_run_dir=parent,
+                stage=stage,
+                recovered_output_stage=recovered_stage,
+                resolved_connection_path=paths["connection"],
+                resolved_source_path=paths["source"],
+                resolved_population_path=paths["population"],
+            )
+
+            self.assertTrue(table.is_file())
+            self.assertTrue(receipt_path.is_file())
+            self.assertEqual(receipt["selected_time_us"], 11.0)
+
     def test_parent_publisher_uses_terminal_handoff_state_table(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             workspace = Path(directory)

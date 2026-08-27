@@ -1,4 +1,4 @@
-"""Run the C2 axial J2/J3 eliminator from frozen C1 source assessments."""
+"""Run the C2 axial focusability screen from frozen C1 source assessments."""
 
 from __future__ import annotations
 
@@ -92,16 +92,19 @@ def _direction_summary(rows: list[dict[str, Any]], *, bootstrap_seed: int, repli
 
 
 def _target_gates(
-    *, target: str, base_gates: dict[str, bool], weighted_beats_unweighted: bool,
+    *, target: str, base_gates: dict[str, bool],
+    source_distribution_beats_simple_baselines: bool,
 ) -> dict[str, bool]:
     """Select a preregistered claim gate without silently changing evidence."""
 
-    if target == "j2_j3":
+    if target == "source_weighted_focus_prediction":
         return {
             **base_gates,
-            "J2_locked_exact_better_than_unweighted": bool(weighted_beats_unweighted),
+            "source_distribution_weighted_locked_exact_better_than_simple_baselines": bool(
+                source_distribution_beats_simple_baselines
+            ),
         }
-    if target == "j3_local_direction":
+    if target == "additional_control_direction":
         return base_gates
     raise ValueError("C2 claim target is unsupported")
 
@@ -109,7 +112,7 @@ def _target_gates(
 def analyze_c2_stage(
     *, first_assessment: Path, second_assessment: Path, theory_campaign: Path,
     phase_match: Path, bootstrap_seed: int = 20260825, bootstrap_replicates: int = 200,
-    claim_target: str = "j2_j3",
+    claim_target: str = "source_weighted_focus_prediction",
 ) -> dict[str, Any]:
     """Evaluate C2 gates without consuming detector outcomes for model selection."""
 
@@ -136,9 +139,12 @@ def analyze_c2_stage(
         for row in rows
     )
     direction = _direction_summary(rows, bootstrap_seed=bootstrap_seed, replicates=bootstrap_replicates)
-    weighted_beats_unweighted = all(
+    source_distribution_beats_simple_baselines = all(
         row["directions"]["improve"]["locked_exact_total_variance_us2"]
-        < row["unweighted"]["locked_exact_total_variance_us2"]
+        < min(
+            row[baseline]["locked_exact_total_variance_us2"]
+            for baseline in ("nominal", "unweighted", "total_covariance")
+        )
         for row in rows if row["architecture"] == "three_zone"
     )
     base_gates = {
@@ -147,13 +153,16 @@ def analyze_c2_stage(
         "direction_spearman_ge_0p7": bool(direction["spearman_point_estimate"] >= 0.7),
         "direction_bootstrap_lower_gt_zero": bool(direction["spearman_bootstrap_lower_95"] > 0.0),
         "two_zone_is_zero_control_reference": bool(all(
-            row["weighted"]["prediction"]["effective_rank"] == 0
+            row["source_distribution_weighted"]["prediction"]["effective_rank"] == 0
             for row in rows if row["architecture"] == "two_zone"
         )),
     }
     gates = _target_gates(
-        target=claim_target, base_gates=base_gates,
-        weighted_beats_unweighted=weighted_beats_unweighted,
+        target=claim_target,
+        base_gates=base_gates,
+        source_distribution_beats_simple_baselines=(
+            source_distribution_beats_simple_baselines
+        ),
     )
     conclusion = "PASS_CONTINUE" if all(gates.values()) else "INCONCLUSIVE_REVISE"
     claims_supported = (
@@ -162,7 +171,7 @@ def analyze_c2_stage(
             "control space has zero remaining D1/D2-preserving direction while "
             "the three-zone arm has one source-weighted direction."
         ]
-        if claim_target == "j2_j3" else [
+        if claim_target == "source_weighted_focus_prediction" else [
             "Within the frozen ideal axial oracle and two frozen source "
             "conditions, the three-zone D1/D2-preserving direction has a "
             "locked improve/zero/worsen ordering while the two-zone reference "
@@ -170,7 +179,7 @@ def analyze_c2_stage(
         ]
     )
     return {
-        "stage_id": "C2" if claim_target == "j2_j3" else "C2_J3",
+        "stage_id": "C2" if claim_target == "source_weighted_focus_prediction" else "C2_ADDITIONAL_CONTROL_DIRECTION",
         "conclusion": conclusion,
         "claim_limit": "Exact ideal-field axial z-vz oracle only; not a full 6D source, real field, transmission, peak-width, or Formal conclusion.",
         "inputs": {"c1_assessments": [str(path.resolve()) for path in (first_assessment, second_assessment)], "theory_campaign": str(theory_campaign.resolve()), "phase_match": str(phase_match.resolve())},
@@ -190,8 +199,9 @@ def main() -> None:
     parser.add_argument("--bootstrap-replicates", type=int, default=200)
     parser.add_argument("--bootstrap-seed", type=int, default=20260825)
     parser.add_argument(
-        "--claim-target", choices=("j2_j3", "j3_local_direction"),
-        default="j2_j3",
+        "--claim-target",
+        choices=("source_weighted_focus_prediction", "additional_control_direction"),
+        default="source_weighted_focus_prediction",
     )
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()

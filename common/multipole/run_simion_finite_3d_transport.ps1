@@ -119,6 +119,7 @@ $resolvedRuntimeDocument=$null
 $resolvedRuntimeInputSha=$null
 $executionBatching=$null
 $existingFormalProcessRecords=@()
+$retainedFormalBatchOutputs=@{}
 $resourceIdentityWasUnknown=$false
 # Repository scheduling is the default for this independent-particle runner.
 # A runtime profile may constrain resource identity, but cannot opt out.
@@ -959,6 +960,7 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
         stdout=(Join-Path $logDir "simion_stdout__fly__$name`__batch_1.txt")
         stderr=(Join-Path $logDir "simion_stderr__fly__$name`__batch_1.txt")
         environment=@{MULTIPOLE_SIMION_RUN_CONFIG_LUA=$batchRuns[0].lua_config;MULTIPOLE_SIMION_RF_DRIVE_KERNEL_LUA=$rfDriveKernelLua}
+        scheduler_batch=[pscustomobject]@{index=[int]$batchRuns[0].batch.index;total_batches='OBSERVATION_ONLY';particle_id_min=[int]$batchRuns[0].batch.particle_id_min;particle_id_max=[int]$batchRuns[0].batch.particle_id_max;count=([int]$batchRuns[0].batch.particle_id_max-[int]$batchRuns[0].batch.particle_id_min+1)}
       }
       $formalObservation=Start-ObservedFormalProcess -DispatchPlanPath $dispatchPlan `
         -ProcessSpecification $firstSpecification
@@ -976,7 +978,7 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
           '--observed-formal-cpu-percent',([string]$formalObservation.observed_process_cpu_percent),
           '--observed-background-cpu-percent',([string]$formalObservation.observed_background_cpu_percent))
         if($formalObservation.completed_naturally){$replanArguments+='--first-batch-completed'}
-        & $python @replanArguments | Out-Null
+        & $python @replanArguments
         if($LASTEXITCODE-ne 0){throw 'SIMION formal-first dispatch replanning failed.'}
         $updatedDispatch=Get-Content -LiteralPath $dispatchPlan -Raw -Encoding UTF8|ConvertFrom-Json
         if([string]$updatedDispatch.estimation.kind-ne'observed_formal_batch'-or
@@ -993,7 +995,17 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
         $script:executionBatching=[pscustomobject]@{dispatch='single_wave_parallel';
           batch_count=[int]$updatedDispatch.waves[0].batch_count}
         $script:resourceCalibrationRequired=$false
+        $formalObservation.process_record.specification.scheduler_batch=[pscustomobject]@{index=[int]$batchRuns[0].batch.index;total_batches=[int]$batchRuns.Count;particle_id_min=[int]$batchRuns[0].batch.particle_id_min;particle_id_max=[int]$batchRuns[0].batch.particle_id_max;count=([int]$batchRuns[0].batch.particle_id_max-[int]$batchRuns[0].batch.particle_id_min+1)}
         $script:existingFormalProcessRecords=@($formalObservation.process_record)
+        # The first formal worker began before the replan, when the run had a
+        # single unsuffixed output name.  Keep that completed-or-live output
+        # identity so the recursive, multi-batch invocation can publish it as
+        # canonical batch_01 before merging.  The first worker is formal work,
+        # not a disposable resource probe.
+        $script:retainedFormalBatchOutputs[$name]=[pscustomobject]@{
+          state=$batchRuns[0].state;trajectory=$batchRuns[0].trajectory
+          summary=$batchRuns[0].summary
+        }
       }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
       return Invoke-TransportCase $name $rfScale $axialScale
     }
@@ -1008,7 +1020,8 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
           argument_list=($flyArguments[0..5]+@('--particles',$_.fly2)+$flyArguments[6..($flyArguments.Count-1)]);
           working_directory=$solverDir;stdout=(Join-Path $logDir "simion_stdout__fly__$name`__batch_$($_.batch.index).txt");
           stderr=(Join-Path $logDir "simion_stderr__fly__$name`__batch_$($_.batch.index).txt");
-          environment=@{MULTIPOLE_SIMION_RUN_CONFIG_LUA=$_.lua_config;MULTIPOLE_SIMION_RF_DRIVE_KERNEL_LUA=$rfDriveKernelLua}}
+          environment=@{MULTIPOLE_SIMION_RUN_CONFIG_LUA=$_.lua_config;MULTIPOLE_SIMION_RF_DRIVE_KERNEL_LUA=$rfDriveKernelLua}
+          scheduler_batch=[pscustomobject]@{index=[int]$_.batch.index;total_batches=[int]$batchRuns.Count;particle_id_min=[int]$_.batch.particle_id_min;particle_id_max=[int]$_.batch.particle_id_max;count=([int]$_.batch.particle_id_max-[int]$_.batch.particle_id_min+1)}}
       })
       if($script:existingFormalProcessRecords.Count-gt 0){
         $specifications=@($specifications|Select-Object -Skip 1)
@@ -1022,10 +1035,36 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
       if($failed.Count-ne 0){throw "SIMION $name batch wave failed: $($failed.name -join ',')"}
     }
     if($batchRuns.Count-gt 1){
+      if($script:retainedFormalBatchOutputs.ContainsKey($name)){
+        $retained=$script:retainedFormalBatchOutputs[$name]
+        $firstBatch=$batchRuns[0]
+        foreach($kind in @('state','summary')){
+          $source=[string]$retained.$kind
+          $destination=[string]$firstBatch.$kind
+          if(-not(Test-Path -LiteralPath $source)){throw "SIMION $name retained first formal $kind output is missing."}
+          Move-Item -LiteralPath $source -Destination $destination -Force
+        }
+        $trajectorySource=[string]$retained.trajectory
+        if(Test-Path -LiteralPath $trajectorySource){
+          Move-Item -LiteralPath $trajectorySource -Destination ([string]$firstBatch.trajectory) -Force
+        }
+        $null=$script:retainedFormalBatchOutputs.Remove($name)
+      }
       Push-Location $codeRoot
       try{
         $env:PYTHONPATH=$codeRoot
-        foreach($merge in @(@{output=$caseState;property='state'},@{output=$caseTrajectory;property='trajectory'})){
+        foreach($merge in @(
+          @{output=$caseState;property='state';required=$true},
+          @{output=$caseTrajectory;property='trajectory';required=$false}
+        )){
+          $existingBatchPaths=@($batchRuns|ForEach-Object{
+            $path=[string]$_.($merge.property)
+            if(Test-Path -LiteralPath $path){$path}
+          })
+          if ($existingBatchPaths.Count -eq 0 -and -not [bool]$merge.required) { continue }
+          if ($existingBatchPaths.Count -ne $batchRuns.Count) {
+            throw "SIMION $name shared $($merge.property) CSV is incomplete across batches."
+          }
           $mergeArguments=@('-m','common.simion.particle_batching','--merge-rebase-csv','--output',$merge.output)
           foreach($batchRun in $batchRuns){
             $mergeArguments+=@('--batch-csv',[string]$batchRun.($merge.property),[string]$batchRun.batch.simion_particle_id_offset)

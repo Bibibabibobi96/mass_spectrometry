@@ -74,13 +74,18 @@ shield边界和rebuild plan均由该函数一次性闭合。API严格拒绝profi
 - `analyze_accelerator_transverse_field_uniformity.py`：轴心/偏轴场均匀性诊断。
 - `truncation_diagnostics.py`：能量窗、检测半径和源宽截断。
 - `paper1_focusability.py`：C1 detector-blind条件源模型以及C2局部受限白化投影；时序预脉冲记录必须显式选择一个锚点样本，且只允许作为状态输入，不可混入检测器结果。
-- `analyze_paper1_c1_source.py`：冻结单一预脉冲源的C1诊断入口；验证母cohort收据与状态SHA，按粒子ID哈希登记四个cohort，并且仅以development/validation选择条件模型。它不生成C1 PASS结论，跨源资格仍由阶段合同决定。
-- `analyze_paper1_c1_stage.py`：仅汇总两份已冻结、detector-blind的C1源诊断，核验各自母cohort、四个ID cohort和残差模态稳定性；它只关闭C1输入门禁，不生成J2/J3或性能结论。
+- `paper1_j2_real_field_selection.py`：J2真实场公平选择的纯分析入口。它只以冻结C1条件源协方差和具有内容哈希的真实场局部灵敏度收据，对同一候选池分别计算未加权与源白化分数；拒绝来源、状态尺度或候选池身份不一致，且绝不读取探测器、峰宽或传输结果。
+- `paper1_j2_candidate_pool.py`：J2真实场的公共候选池编译器。它在预注册边界内扰动三区grid2/末端几何、电极及反射器控制，并从每个候选的平面和电势重新导出区长、场强和焦点漂移；候选池本身不评分、不运行SIMION，也不接触检测器结果。
+- `paper1_j2_real_field_sensitivity.py`：把同一数值身份下、同一局部初态的`+/-`真实场到达时间中心差分压缩为六维灵敏度收据。它只接受预注册步长和候选池身份，拒绝FWHM、传输、尾部及锁定结果字段。
+- `analyze_paper1_c1_source.py`：冻结单一预脉冲源的C1诊断入口；验证母cohort收据与状态SHA，按粒子ID哈希登记四个cohort，并且仅以development/validation选择条件模型。它必须标记`DEVELOPMENT_ONLY`或`PROSPECTIVE`，不生成C1 PASS结论。
+- `analyze_paper1_c1_stage.py`：仅汇总两份已冻结、detector-blind的C1源诊断，核验各自母cohort、四个ID cohort和残差模态稳定性；只在两份输入均为`PROSPECTIVE`时关闭C1输入门禁，历史`DEVELOPMENT_ONLY`输入必为`INCONCLUSIVE_REVISE`。
+- `analyze_paper1_connector_gap_residual.py`：两臂残差比较以及 C1 S1 `0/51.2/102.4 mm`三臂发布入口。三臂 request 必须声明唯一 checkpoint mode；可用 fixed-pulse，或经 resolved-pulse-epoch、RF、场、数值和source身份逐项核验的`PRE_PULSE_EQUIVALENT_TIME_SERIES`。未验证或混合模式必须失败关闭为`INCONCLUSIVE_REVISE`，不能生成性能结论。
 - `paper1_c2_axial_oracle.py`：C2的低成本纵向淘汰实现。它把C1冻结的`z-v_z`源按粒子ID cohort映射到现有精确三区理想场 oracle，堆叠条件bin、保持`D1/D2`约束并比较两区零自由度与三区新增方向；其输出只能是后续C2导数与locked预测检验的输入，不能表述为6D、3D或分辨率证据。
-- `analyze_paper1_c2_stage.py`：运行两份C1 assessment上的C2 axial screen，固定T5 ideal-field anchor与已有phase-match release coordinate，审计解析/中心差分`g`、`G`步长平台、两区零自由度、三区改善/零效/恶化排序及其locked bootstrap。它在J2不优于未加权基线时失败关闭，不授权C3。
+- `analyze_paper1_c2_stage.py`：运行两份C1 assessment上的C2 axial screen，固定T5 ideal-field anchor与已有phase-match release coordinate，审计解析/中心差分`g`、`G`步长平台、两区零自由度、三区改善/零效/恶化排序及其locked bootstrap。它在源分布加权的受约束到达时间聚焦预测不优于未加权基线时失败关闭，不授权C3。
 - `paper1_candidate_control.py`：C3_J3的求解器无关候选控制编译器。它把事先声明的grid2/exit几何和电极电压方向编译为完整`-2h,-h,0,+h,+2h`家族，冻结数值身份并拒绝场反转、平面交叉、无界扰动和固定电极移动；它不启动SIMION、拟合方向或读取探测器结果。
 - `paper1_c3_j3_mapping.py`：从通过的C2_J3结果提取已锁定的improve/zero/worsen方向，并在每个`k*h`上重新推导三区几何、电位和反射器控制。它拒绝非对称方向，避免把非线性的`eta`误写成线性电压插值；输出仍只是C3真实PA编译输入。
 - `paper1_c3_j3_publish.py`：将上述五点物理控制家族和每一个schema-valid Candidate原子发布为一个非Formal artifact run。它只冻结C2→物理控制的映射与文件身份；不构建PA、不启动SIMION、不读取探测器结果，也不产生C3结论。
+- `paper1_c4_locked_prediction.py`：C4_J3锁定三维预测分析。它必须先读取C3_J3的`PASS_CONTINUE`五件套，随后才读取已完成的三方向run receipt；核验锁定ID、共同脉冲、母cohort分母、直接FWHM顺序和传输防御，不启动求解器。
 
 正式数据优先CSV/JSON。XLSX只接收人工导出，导入后立即规范化。严格配对必须使用相同粒子ID，并区分
 整体时移与去均值逐粒子残差。

@@ -16,6 +16,15 @@ from typing import Any, Sequence
 
 from common.contracts.file_identity import file_sha256
 from common.contracts.machine_contracts import ContractError, validate_schema
+from common.contracts.particle_physics import kinetic_energy_ev
+from common.contracts.verify_run_manifest import record_path, verify_record
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.run_publication import (
+    portable_path,
+)
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_source import (
+    GLOBAL_COLUMNS,
+    materialize_pre_pulse_restart,
+)
 
 
 TRACE_PREFIX = "TRACE: pre_pulse_time_series_state"
@@ -65,6 +74,9 @@ CSV_COLUMNS = (
 )
 SHA_PATTERN = re.compile(r"^[A-Fa-f0-9]{64}$")
 INTEGRATION_SCHEMA_DIR = Path(__file__).resolve().parents[1] / "config" / "schemas"
+TIME_SERIES_RESTART_RECEIPT_ROLE = (
+    "rf_oatof_manifest_bound_time_series_restart_materialization_receipt"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,6 +99,307 @@ class MaterializationResult:
     state_row_count: int
     states_record: dict[str, object]
     receipt_record: dict[str, object]
+
+
+def _manifest_local_record(
+    manifest: dict[str, Any],
+    *,
+    collection: str,
+    name: str,
+    run_dir: Path,
+) -> Path:
+    """Resolve exactly one verified manifest record inside its producer run."""
+
+    records = manifest.get(collection)
+    if collection == "inputs":
+        record = records.get(name) if isinstance(records, dict) else None
+    else:
+        matches = [
+            item for item in records or []
+            if isinstance(item, dict)
+            and Path(str(item.get("path", ""))).name == name
+        ]
+        record = matches[0] if len(matches) == 1 else None
+    if not isinstance(record, dict):
+        raise ContractError(f"time-series producer {collection}.{name} is missing")
+    try:
+        verify_record(
+            f"time-series producer {collection}.{name}", record,
+            base_dir=run_dir,
+        )
+        path = record_path(record, base_dir=run_dir).resolve()
+    except (AssertionError, KeyError, TypeError) as exc:
+        raise ContractError(
+            f"time-series producer {collection}.{name} identity differs"
+        ) from exc
+    if not path.is_relative_to(run_dir.resolve()):
+        raise ContractError(f"time-series producer {collection}.{name} is nonlocal")
+    return path
+
+
+def _restart_file_binding(path: Path, workspace_root: Path) -> dict[str, object]:
+    return {
+        "path": portable_path(path, workspace_root),
+        "bytes": path.stat().st_size,
+        "sha256": file_sha256(path),
+    }
+
+
+def _restart_id_sha256(particle_ids: Sequence[int]) -> str:
+    return hashlib.sha256(
+        json.dumps(list(particle_ids), separators=(",", ":")).encode("utf-8")
+    ).hexdigest().upper()
+
+
+def _load_global_state_by_id(path: Path) -> dict[int, dict[str, str]]:
+    try:
+        with path.open(encoding="utf-8-sig", newline="") as handle:
+            reader = csv.DictReader(handle)
+            if reader.fieldnames != GLOBAL_COLUMNS:
+                raise ContractError("time-series initial global state columns differ")
+            rows = list(reader)
+    except (OSError, UnicodeError, csv.Error) as exc:
+        raise ContractError("time-series initial global state is unreadable") from exc
+    result: dict[int, dict[str, str]] = {}
+    for row in rows:
+        try:
+            particle_id = int(row["particle_id"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ContractError("time-series initial global state ID is invalid") from exc
+        if particle_id < 1 or particle_id in result:
+            raise ContractError("time-series initial global state IDs differ")
+        result[particle_id] = row
+    if not result:
+        raise ContractError("time-series initial global state is empty")
+    return result
+
+
+def materialize_manifest_bound_restart(
+    *,
+    child_manifest_path: Path,
+    workspace_root: Path,
+    state_output_path: Path,
+    receipt_output_path: Path,
+    sample_index: int = 1,
+) -> dict[str, Any]:
+    """Convert one pulse-disabled screening sample into a canonical restart.
+
+    This is a state-format conversion only.  The source is detector blind and
+    conditional on reaching the frozen pulse epoch; its original full mother
+    population and terminal loss census remain bound in the receipt.
+    """
+
+    if isinstance(sample_index, bool) or sample_index < 1:
+        raise ContractError("time-series restart sample index is invalid")
+    workspace_root = workspace_root.resolve()
+    child_manifest_path = child_manifest_path.resolve()
+    portable_path(child_manifest_path, workspace_root)
+    run_dir = child_manifest_path.parent
+    manifest = _load_object(child_manifest_path, role="time-series child manifest")
+    if (
+        manifest.get("role") != "simulation_run_manifest"
+        or manifest.get("project")
+        != "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
+        or manifest.get("mode") != "rf_to_oatof_simion_single_flight"
+        or manifest.get("status") != "success"
+    ):
+        raise ContractError("time-series child manifest identity or status differs")
+    try:
+        verify_record(
+            "time-series child run_config", manifest["run_config"], base_dir=run_dir
+        )
+    except (AssertionError, KeyError, TypeError) as exc:
+        raise ContractError("time-series child run_config identity differs") from exc
+
+    run_config_path = record_path(manifest["run_config"], base_dir=run_dir)
+    run_config = _load_object(run_config_path, role="time-series child run_config")
+    if run_config.get("parameters", {}).get("execution_mode") != (
+        "real_pa_rf_pre_pulse_time_series"
+    ):
+        raise ContractError("time-series child mode differs")
+    states_path = _manifest_local_record(
+        manifest, collection="outputs", name="pre_pulse_time_series_states.csv",
+        run_dir=run_dir,
+    )
+    screening_receipt_path = _manifest_local_record(
+        manifest, collection="outputs",
+        name="pre_pulse_time_series_screening_receipt.json", run_dir=run_dir,
+    )
+    summary_path = _manifest_local_record(
+        manifest, collection="outputs", name="summary.json", run_dir=run_dir,
+    )
+    initial_state_path = _manifest_local_record(
+        manifest, collection="inputs", name="initial_global_state", run_dir=run_dir,
+    )
+    schedule_path = _manifest_local_record(
+        manifest, collection="inputs", name="pulse_schedule", run_dir=run_dir,
+    )
+    population_path = _manifest_local_record(
+        manifest, collection="inputs", name="resolved_population_contract",
+        run_dir=run_dir,
+    )
+    geometry_path = _manifest_local_record(
+        manifest, collection="inputs", name="oatof_resolved_geometry", run_dir=run_dir,
+    )
+    screening = _load_object(screening_receipt_path, role="time-series receipt")
+    summary = _load_object(summary_path, role="time-series summary")
+    schedule = _load_object(schedule_path, role="time-series pulse schedule")
+    population = _load_object(population_path, role="time-series population")
+    if (
+        screening.get("role") != "rf_oatof_pre_pulse_time_series_screening_receipt"
+        or screening.get("status") != "success"
+        or screening.get("pulse_disabled") is not True
+        or summary.get("status") != "success"
+    ):
+        raise ContractError("time-series receipt or summary identity differs")
+    sample_times = screening.get("sample_times_us")
+    if not isinstance(sample_times, list) or sample_index > len(sample_times):
+        raise ContractError("time-series restart sample is absent")
+    pulse_time_us = float(sample_times[sample_index - 1])
+    scheduled_time_us = float(schedule.get("pulse_effective_time_us", math.nan))
+    if (
+        not math.isfinite(pulse_time_us)
+        or not math.isfinite(scheduled_time_us)
+        or abs(pulse_time_us - scheduled_time_us) > 1e-9
+    ):
+        raise ContractError("time-series restart clock differs from pulse schedule")
+    try:
+        with states_path.open(encoding="utf-8-sig", newline="") as handle:
+            reader = csv.DictReader(handle)
+            if tuple(reader.fieldnames or ()) != CSV_COLUMNS:
+                raise ContractError("time-series state columns differ")
+            state_rows = [
+                row for row in reader if int(row["sample_index"]) == sample_index
+            ]
+    except (OSError, UnicodeError, csv.Error, KeyError, ValueError) as exc:
+        if isinstance(exc, ContractError):
+            raise
+        raise ContractError("time-series state is unreadable") from exc
+    if not state_rows:
+        raise ContractError("time-series restart sample has no surviving particles")
+    state_rows.sort(key=lambda row: int(row["particle_id"]))
+    source_ids = [int(row["particle_id"]) for row in state_rows]
+    if len(source_ids) != len(set(source_ids)) or any(value < 1 for value in source_ids):
+        raise ContractError("time-series restart state IDs differ")
+    initial_by_id = _load_global_state_by_id(initial_state_path)
+    if not set(source_ids).issubset(initial_by_id):
+        raise ContractError("time-series restart state is absent from mother source")
+    output_rows: list[dict[str, str | int]] = []
+    identity_map: list[dict[str, int]] = []
+    for restart_id, row in enumerate(state_rows, start=1):
+        source_id = int(row["particle_id"])
+        initial = initial_by_id[source_id]
+        values = {
+            key: float(row[key]) for key in (
+                "instrument_time_us", "actual_instrument_time_us", "x_mm", "y_mm",
+                "z_mm", "vx_mm_per_us", "vy_mm_per_us", "vz_mm_per_us",
+                "kinetic_energy_eV",
+            )
+        }
+        if (
+            row.get("event") != "pre_pulse_time_series_state"
+            or row.get("survival_status") != "alive"
+            or not all(math.isfinite(value) for value in values.values())
+            or abs(values["instrument_time_us"] - pulse_time_us) > 1e-9
+            or abs(values["actual_instrument_time_us"] - pulse_time_us) > 1e-9
+        ):
+            raise ContractError("time-series restart state identity or clock differs")
+        mass = float(initial["mass_amu"])
+        charge = int(initial["charge_state"])
+        velocity = tuple(1000.0 * values[f"v{axis}_mm_per_us"] for axis in "xyz")
+        energy = kinetic_energy_ev(mass, *velocity)
+        if (
+            mass <= 0 or charge == 0
+            or not math.isclose(energy, values["kinetic_energy_eV"], rel_tol=0.0, abs_tol=5e-9)
+        ):
+            raise ContractError("time-series restart state energy or species differs")
+        output_rows.append({
+            "particle_id": restart_id,
+            "instrument_time_us": format(pulse_time_us, ".17g"),
+            "mass_amu": format(mass, ".17g"),
+            "charge_state": charge,
+            **{f"position_{axis}_mm": format(values[f"{axis}_mm"], ".17g") for axis in "xyz"},
+            **{f"velocity_{axis}_m_s": format(value, ".17g") for axis, value in zip("xyz", velocity, strict=True)},
+            "kinetic_energy_eV": format(energy, ".17g"),
+        })
+        identity_map.append({"restart_particle_id": restart_id, "producer_particle_id": source_id})
+    state_output_path = state_output_path.resolve()
+    receipt_output_path = receipt_output_path.resolve()
+    portable_path(state_output_path, workspace_root)
+    portable_path(receipt_output_path, workspace_root)
+    if state_output_path == receipt_output_path:
+        raise ContractError("time-series restart output paths must differ")
+    state_output_path.parent.mkdir(parents=True, exist_ok=True)
+    with state_output_path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=GLOBAL_COLUMNS, lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(output_rows)
+    materialize_pre_pulse_restart(state_output_path, pulse_time_us)
+    execution_count = population.get("execution_population", {}).get("particle_count")
+    denominator = population.get("denominators", {}).get("population_count")
+    if execution_count != len(initial_by_id) or not isinstance(denominator, int) or denominator < execution_count:
+        raise ContractError("time-series mother population differs")
+    terminal_census = screening.get("terminal_census")
+    if not isinstance(terminal_census, dict):
+        raise ContractError("time-series terminal census is missing")
+    receipt = {
+        "schema_version": 1,
+        "role": TIME_SERIES_RESTART_RECEIPT_ROLE,
+        "status": "PASS",
+        "method": "manifest_bound_pulse_disabled_time_series_restart_v1",
+        "producer": {
+            "run_id": manifest["run_id"],
+            "manifest": _restart_file_binding(child_manifest_path, workspace_root),
+            "summary": _restart_file_binding(summary_path, workspace_root),
+            "states": _restart_file_binding(states_path, workspace_root),
+            "screening_receipt": _restart_file_binding(screening_receipt_path, workspace_root),
+        },
+        "authorities": {
+            "initial_global_state": _restart_file_binding(initial_state_path, workspace_root),
+            "pulse_schedule": _restart_file_binding(schedule_path, workspace_root),
+            "resolved_population_contract": _restart_file_binding(population_path, workspace_root),
+            "resolved_geometry": _restart_file_binding(geometry_path, workspace_root),
+        },
+        "selection": {
+            "event": "pre_pulse_time_series_state",
+            "sample_index": sample_index,
+            "selection_uses_detector_outcome": False,
+            "detector_results_used": False,
+            "pulse_disabled": True,
+            "producer_population_denominator_count": denominator,
+            "producer_execution_population_count": execution_count,
+            "producer_particle_count": len(source_ids),
+            "producer_ordered_particle_ids_sha256": _restart_id_sha256(source_ids),
+            "restart_to_producer_particle_id": identity_map,
+            "terminal_census": terminal_census,
+            "postselection_prohibited": True,
+        },
+        "pulse_target_state": {
+            **_restart_file_binding(state_output_path, workspace_root),
+            "particle_count": len(output_rows),
+            "source_state_epoch": "pulse_effective_time",
+            "source_state_locus": {"kind": "accelerator_stage1_interior_finite_observed_3d_cloud"},
+            "coordinate_frame": "oatof_global_cartesian",
+            "clock_basis": "canonical_instrument_time_us",
+            "clock_authority": "resolved_single_flight_pulse_schedule",
+            "pulse_effective_time_us": pulse_time_us,
+            "ordered_particle_id_sha256": _restart_id_sha256(list(range(1, len(output_rows) + 1))),
+        },
+        "reuse_scope": {
+            "role": "conditional_post_pulse_transport_initial_state",
+            "allowed_variation_axes": ["accelerator_working_point"],
+            "pulse_timing_reselection_required": False,
+            "upstream_repropagation_required": False,
+            "qualification": "DEVELOPMENT_ONLY",
+        },
+        "claim_limit": (
+            "Detector-blind pulse-disabled source snapshot for paired inherited-versus-z-vz "
+            "working-point reproduction; full mother losses remain reported and this is not locked evidence."
+        ),
+    }
+    receipt_output_path.parent.mkdir(parents=True, exist_ok=True)
+    receipt_output_path.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8", newline="\n")
+    return receipt
 
 
 def _load_object(path: Path, *, role: str) -> dict[str, Any]:

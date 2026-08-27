@@ -139,6 +139,50 @@ function Read-RfFrozenResolvedBudgetDocument {
     -Raw -Encoding UTF8 | ConvertFrom-Json
 }
 
+function Test-RfFrozenCacheGeneration {
+  <#
+  Verify the exact cache generation selected before construction.  Do not
+  resolve current_generation again: another producer may atomically advance
+  that pointer without changing the immutable generation this run consumed.
+  #>
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$Python,
+    [Parameter(Mandatory)][string]$RepoRoot,
+    [Parameter(Mandatory)][string]$WorkspaceRoot,
+    [Parameter(Mandatory)][string]$ProjectId,
+    [Parameter(Mandatory)][string]$CacheEntry,
+    [Parameter(Mandatory)][string]$CacheRole,
+    [Parameter(Mandatory)][string]$CacheKey,
+    [Parameter(Mandatory)][string]$FrozenManifest,
+    [Parameter(Mandatory)][string]$LogDirectory
+  )
+  $stdoutPath = Join-Path $LogDirectory 'frontend_cache_construction_recheck.stdout.log'
+  $stderrPath = Join-Path $LogDirectory 'frontend_cache_construction_recheck.stderr.log'
+  $exitCode = 1
+  try {
+    & $Python (Join-Path $RepoRoot 'common\contracts\verify_artifact_layout.py') `
+      (Join-Path $WorkspaceRoot 'artifacts\projects') --cache-entry $CacheEntry `
+      --expected-cache-role $CacheRole --expected-cache-key $CacheKey `
+      --expected-cache-project $ProjectId 1> $stdoutPath 2> $stderrPath
+    $exitCode = $LASTEXITCODE
+  } catch {
+    $_ | Out-File -LiteralPath $stderrPath -Encoding utf8 -Append
+  }
+  $currentManifest = Join-Path $CacheEntry 'cache_manifest.json'
+  $manifestMatches = (Test-Path -LiteralPath $currentManifest -PathType Leaf) -and
+    ((Get-FileHash -LiteralPath $currentManifest -Algorithm SHA256).Hash -eq
+      (Get-FileHash -LiteralPath $FrozenManifest -Algorithm SHA256).Hash)
+  return [pscustomobject]@{
+    passed = ($exitCode -eq 0 -and $manifestMatches)
+    verifier_exit_code = $exitCode
+    frozen_manifest_matches = $manifestMatches
+    cache_entry = $CacheEntry
+    stdout_log = $stdoutPath
+    stderr_log = $stderrPath
+  }
+}
+
 function Assert-RfThreeZoneArgumentSet {
   param(
     [string]$Candidate = '',
@@ -910,6 +954,11 @@ try {
     Exit-RfCacheKeyLock -Mutex $frontendCacheLock
   }
   $cacheGem = Join-Path $cacheDir 'frontend.gem'; $cachePaSharp = Join-Path $cacheDir 'frontend.pa#'; $cachePa0 = Join-Path $cacheDir 'frontend.pa0'
+  # Freeze the selected immutable generation before any construction work.  A
+  # later cache publication may advance current_generation, but cannot change
+  # which exact PA generation this run consumed.
+  $frontendCacheManifestInput = Copy-RfCacheManifestInput -CacheEntry $cacheDir `
+    -Destination (Join-Path $package.input_dir 'frontend_pa_cache_manifest.json')
   $frontendWorkingDir = Join-Path $package.run_dir 'simion\frontend_cache_copy'
   New-Item -ItemType Directory -Path $frontendWorkingDir -Force | Out-Null
   foreach ($source in Get-ChildItem -LiteralPath $cacheDir -Filter 'frontend.pa*' -File) {
@@ -1670,14 +1719,17 @@ try {
       }
     }
   }
-  if ($null -eq (Resolve-RfReusableCacheDirectory -Python $python -RepoRoot $repoRoot `
-      -WorkspaceRoot $workspaceRoot -ProjectId $runProjectId `
-      -CacheRoot $cacheRoot -CacheKey $frontendCacheKey -Role $frontendCacheRole `
-      -Identity $frontendCacheIdentity -InvalidEntryAction 'preserve')) {
-    throw 'Frontend PA cache changed during construction-time SIMION access.'
+  $frontendCacheRecheck = Test-RfFrozenCacheGeneration -Python $python `
+    -RepoRoot $repoRoot -WorkspaceRoot $workspaceRoot -ProjectId $runProjectId `
+    -CacheEntry $cacheDir -CacheRole $frontendCacheRole -CacheKey $frontendCacheKey `
+    -FrozenManifest $frontendCacheManifestInput -LogDirectory $package.log_dir
+  if (-not $frontendCacheRecheck.passed) {
+    throw ('Frontend PA cache generation verification failed after construction: ' +
+      "exit_code=$($frontendCacheRecheck.verifier_exit_code); " +
+      "frozen_manifest_matches=$($frontendCacheRecheck.frozen_manifest_matches); " +
+      "cache_entry=$($frontendCacheRecheck.cache_entry); " +
+      "stdout=$($frontendCacheRecheck.stdout_log); stderr=$($frontendCacheRecheck.stderr_log)")
   }
-  $frontendCacheManifestInput = Copy-RfCacheManifestInput -CacheEntry $cacheDir `
-    -Destination (Join-Path $package.input_dir 'frontend_pa_cache_manifest.json')
   $flightTubeCacheManifestInput = if ($flightTubeCacheUsed) {
     Copy-RfCacheManifestInput -CacheEntry $flightTubeCacheDir `
       -Destination (Join-Path $package.input_dir 'flight_tube_pa_cache_manifest.json')
@@ -1912,7 +1964,7 @@ try {
       single_flight_pa_cache_policy=$PaCachePolicy
       pa_cache_dispositions=$paCacheDispositions
       total_axis_field_csv=$axisFieldOutputArtifact
-      total_axis_field_iob_status='CONSTRUCTION_ONLY_COMPACT_NOT_REPLAYABLE'
+      total_axis_field_iob_status='TOP_LEVEL_FIVE_INSTANCE_EXPORT'
       total_axis_field_resource_usage=$axisFieldUsageArtifact
     })
     $buildOnlyOutputs = @(
@@ -1968,9 +2020,26 @@ try {
   $resourceUsageFiles = @($resourceUsage)
   function New-SingleFlightProcessSpecifications($Records) {
     $specifications = @()
+    $largestPlannedBatchCount = [int](($Records | Measure-Object -Property count -Maximum).Maximum)
+    if ($largestPlannedBatchCount -lt 1) {
+      throw 'SIMION ion-list capacity requires at least one particle in the execution batch plan.'
+    }
+    # SIMION sizes the IOB ion list before reading an external ION table and
+    # rejects a capacity below 100.  This is preallocation only: external particle tables still determine the exact physical batch population.
+    $ionListCapacity = [Math]::Max(100,$largestPlannedBatchCount)
+    # Size the list to the largest planned batch above the SIMION minimum, not
+    # to a repository-wide cap.
+    # Batches above 10,000 remain valid; this is visibility only.
+    if ($ionListCapacity -gt 10000) {
+      Write-Warning (
+        'SIMION ion-list capacity is {0} particles (>10000 operational warning threshold); ' +
+        'continuing without a batch-size limit.' -f $ionListCapacity
+      )
+    }
     foreach ($batch in $Records) {
       $specifications += [pscustomobject]@{
       name = 'simion_batch_{0:D2}' -f [int]$batch.index
+      simion_ion_list_capacity = $ionListCapacity
       file_path = $SimionExe
       working_directory = $runtimeDir
       stdout = $batch.stdout
@@ -1980,7 +2049,7 @@ try {
         OATOF_SINGLE_FLIGHT_PARTICLE_ID_OFFSET = [string]$batch.offset
       }
       argument_list = [string[]](@(
-        '--nogui','--noprompt','fly',
+        '--default-num-particles',([string]$ionListCapacity),'--nogui','--noprompt','fly',
         '--trajectory-quality',([string]$trajectoryQuality),
         '--retain-trajectories','0','--particles',$batch.particle_input,'--programs','1',
         '--adjustable',("trajectory_quality={0}" -f $trajectoryQuality),

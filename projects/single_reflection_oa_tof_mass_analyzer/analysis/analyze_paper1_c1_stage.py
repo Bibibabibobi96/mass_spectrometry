@@ -26,6 +26,9 @@ def _summarize(path: Path) -> dict[str, Any]:
         raise ValueError("C1 source assessment role differs")
     if assessment.get("qualification") != "DETECTOR_BLIND_SOURCE_ONLY":
         raise ValueError("C1 source assessment is not detector blind")
+    evidence_tier = assessment.get("evidence_tier")
+    if evidence_tier not in {"DEVELOPMENT_ONLY", "PROSPECTIVE"}:
+        raise ValueError("C1 source assessment evidence tier differs")
     cohort = assessment.get("cohort", {})
     counts = cohort.get("counts", {})
     if (
@@ -51,6 +54,7 @@ def _summarize(path: Path) -> dict[str, Any]:
     return {
         "assessment": {"path": str(path.resolve()), "sha256": _sha256(path)},
         "source_id": assessment.get("source_id"),
+        "evidence_tier": evidence_tier,
         "anchor": assessment.get("anchor"),
         "mother_cohort": mother,
         "cohort": {"salt": cohort.get("salt"), "counts": counts},
@@ -69,9 +73,10 @@ def assess_c1_stage(*, first_path: Path, second_path: Path) -> dict[str, Any]:
         raise ValueError("C1 source identifier differs")
     if len(set(identifiers)) != len(identifiers):
         raise ValueError("C1 source identifiers must be distinct")
+    prospective = all(source["evidence_tier"] == "PROSPECTIVE" for source in sources)
     return {
         "stage_id": "C1",
-        "conclusion": "PASS_CONTINUE",
+        "conclusion": "PASS_CONTINUE" if prospective else "INCONCLUSIVE_REVISE",
         "claim_limit": (
             "C1 source identifiability only; does not predict focusability, "
             "optimize controls, or make detector or resolution claims."
@@ -81,13 +86,16 @@ def assess_c1_stage(*, first_path: Path, second_path: Path) -> dict[str, Any]:
             "source_ids": identifiers,
         },
         "metrics": {"sources": sources},
-        "claims_supported": [
+        "claims_supported": ([
             "Two distinct frozen RF-source conditions provide detector-blind OA pre-pulse states with preserved mother-cohort denominators.",
             "Each source has deterministic development/validation/optimization/locked-test cohorts and a stable source-specific conditional residual model.",
-        ],
+        ] if prospective else [
+            "Development-only source assessments remain detector-blind diagnostics and cannot become a prospective C1 gate."
+        ]),
         "claims_prohibited": [
             "Cross-source equality of conditional models or residual modes.",
-            "J2/J3 prediction, control optimization, detector performance, resolution, transmission, or Formal claims.",
+            "Source-distribution-weighted focus prediction, additional-control-direction value, control optimization, detector performance, resolution, transmission, or Formal claims.",
+            "A development-only source assessment is promoted to prospective or locked evidence.",
         ],
         "failures": [],
     }
