@@ -185,18 +185,14 @@ def _write_report(run_dir: Path, records: list[dict[str, Any]], summary: dict[st
     (run_dir / "results/report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def execute(config_path: Path, *, seed: int, run_id: str, resume_from: Path | None = None,
-            artifact_root: Path = ARTIFACT_ROOT) -> Path:
-    """Execute both scans in sequence, checkpoint cases and publish terminal evidence.
-
-Resume verifies identical code/config/environment and copies completed cases into
-a new run. It never edits or finalizes a previous run, including crash leftovers.
-"""
+def _prepare_run(config_path: Path, *, seed: int, run_id: str, resume_from: Path | None,
+                 artifact_root: Path, extra_inputs: dict[str, Path] | None = None,
+                 mode: str = "ideal_source_comparison") -> tuple[Path, str]:
+    """Shared immutable input freeze for ideal-source analysis modes."""
     validate_run_id(run_id)
     config_path = config_path.resolve()
     config = load_json(config_path)
-    plan = build_case_plan(config, seed)
-    inputs = _inputs(config_path)
+    inputs = {**_inputs(config_path), **(extra_inputs or {})}
     identities = {name: file_sha256(path) for name, path in inputs.items()}
     identity = _digest({"inputs": identities, "seed": seed, "python": platform.python_version(), "numpy": np.__version__, "scipy": scipy.__version__})
     if resume_from is not None:
@@ -219,13 +215,32 @@ a new run. It never edits or finalizes a previous run, including crash leftovers
             raise ValueError(f"input changed during freeze: {name}")
         frozen[name] = str(destination.resolve())
     _write_json(run_dir / "run_config.json", {"schema_version": 2, "run_id": run_id,
-                "project": PROJECT_ROOT.name, "mode": "ideal_source_comparison", "inputs": frozen,
+                "project": PROJECT_ROOT.name, "mode": mode, "inputs": frozen,
                 "input_sha256": identities, "numerical_identity": identity,
                 "git_head": _command(["git", "rev-parse", "HEAD"]),
                 "git_worktree_status": _command(["git", "status", "--short"]),
                 "run_instance": {"seed": seed, "resume_from": str(resume_from) if resume_from else None},
                 "artifact_retention": {"policy_version": 1, "class": "compact", "reason": None},
                 "formal_gate_passed": False, "claim_scope": config["scope"]})
+    return run_dir, identity
+
+
+def execute(config_path: Path, *, seed: int, run_id: str, resume_from: Path | None = None,
+            artifact_root: Path = ARTIFACT_ROOT) -> Path:
+    """Execute the selected ideal analysis with frozen inputs and terminal evidence.
+
+Resume verifies identical code/config/environment and copies completed cases into
+a new run. It never edits or finalizes a previous run, including crash leftovers.
+"""
+    config_path = config_path.resolve()
+    config = load_json(config_path)
+    if config.get("role") == "ideal_acceptance_theory":
+        from projects.single_reflection_oa_tof_mass_analyzer.workflows.ideal_source_comparison.acceptance_theory import execute_theory
+        return execute_theory(config_path, seed=seed, run_id=run_id, resume_from=resume_from,
+                              artifact_root=artifact_root)
+    plan = build_case_plan(config, seed)
+    run_dir, identity = _prepare_run(config_path, seed=seed, run_id=run_id,
+                                    resume_from=resume_from, artifact_root=artifact_root)
     _write_json(run_dir / "results/resolved_plan.json", plan)
     started = time.perf_counter()
     records: list[dict[str, Any]] = []
@@ -294,7 +309,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         if args.plan:
-            print(json.dumps(build_case_plan(load_json(args.config), args.seed), indent=2))
+            config = load_json(args.config)
+            if config.get("role") == "ideal_acceptance_theory":
+                from projects.single_reflection_oa_tof_mass_analyzer.workflows.ideal_source_comparison.acceptance_theory import validate_theory_config
+                validate_theory_config(config)
+                plan = config
+            else:
+                plan = build_case_plan(config, args.seed)
+            print(json.dumps(plan, indent=2))
             return 0
         run_id = args.run_id or datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y%m%d_%H%M%S__analysis__python__ideal-source-comparison")
         run_dir = execute(args.config, seed=args.seed, run_id=run_id, resume_from=args.resume_from)

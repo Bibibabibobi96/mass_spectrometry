@@ -47,6 +47,9 @@
 | 用途 | 唯一入口 | 合同或资格边界 |
 |---|---|---|
 | 理想场源残差与束宽比较 | [`workflows/ideal_source_comparison/run_comparison.py`](workflows/ideal_source_comparison/run_comparison.py) | [`config/experiments/ideal_source_comparison.json`](config/experiments/ideal_source_comparison.json)；一次执行残差扫描和两区/三区束宽比较，无商业求解器；支持新run复用已验证断点 |
+| 理论先行的宽束接受重设计 | 同上，使用`--config`选择理论角色 | [`config/experiments/ideal_acceptance_theory.json`](config/experiments/ideal_acceptance_theory.json)；从三阶聚焦方程求场与长度，自动完成总体计算和独立粒子检验；不声称全局最大值 |
+| 固定总长的宽束接受对照 | 同上，使用`--config`选择固定长度配置 | [`config/experiments/ideal_acceptance_fixed_length.json`](config/experiments/ideal_acceptance_fixed_length.json)；总加速器长度20.25 mm，解额外长度方程，总体密度不依赖KDE带宽 |
+| 200 mm宽束接受扫描 | 同上，使用`--config`选择200 mm配置 | [`config/experiments/ideal_acceptance_200mm.json`](config/experiments/ideal_acceptance_200mm.json)和[`ideal_acceptance_200mm_boundary.json`](config/experiments/ideal_acceptance_200mm_boundary.json)；固定总长、反求三区正场，历史结果只代表声明离散域 |
 | COMSOL生产 | [`comsol/run_oatof_model.m`](comsol/run_oatof_model.m) | `config/baseline.json`与显式Candidate合同 |
 | SIMION交付构建 | [`simion/workbench/build_formal_delivery.ps1`](simion/workbench/build_formal_delivery.ps1) | Formal只读；Candidate输出不得反写Formal |
 | 单个结构Candidate | [`workflows/design_candidate/run_candidate.py`](workflows/design_candidate/run_candidate.py) | 获批request、显式seed、完整COMSOL/SIMION/CAD链 |
@@ -106,6 +109,7 @@ single_reflection_oa_tof_mass_analyzer/
 ## History索引
 
 - [理想场残差扫描与两区/三区束宽比较](docs/history/20260827__ideal-source-residual-and-width-comparison.md)
+- [200 mm三区理想场束宽接受扫描](docs/history/20260827__200mm-ideal-acceptance-scan.md)
 - [`docs/history/20260716__simion-gui-recording-and-program-audit.md`](docs/history/20260716__simion-gui-recording-and-program-audit.md)
 - [`docs/history/20260719__analysis-scaling-and-field-diagnostics.md`](docs/history/20260719__analysis-scaling-and-field-diagnostics.md)
 - [`docs/history/20260720__midgrid-candidate-runtime-coverage.md`](docs/history/20260720__midgrid-candidate-runtime-coverage.md)

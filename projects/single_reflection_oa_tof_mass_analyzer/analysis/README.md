@@ -66,6 +66,9 @@ shield边界和rebuild plan均由该函数一次性闭合。API严格拒绝profi
 
 - `ideal_source_comparison.py`：可控均匀空间源、线性/二次速度关系和独立Gaussian残差；复用精确轴向TOF与canonical峰宽，保留完整母cohort及模型域/碰撞分类。工作点仅重算反射器电压，不移动加速器或漂移参考面。
 - `ideal_source_experiment.py`：版本化实验校验、残差优先的确定性case计划和自动科学结论；执行成功不等于假设成立。活动入口和自动续跑说明见下节。
+- `ideal_acceptance_theory.py`、`ideal_acceptance_linear_design.py`：从精确时间的空间Taylor系数诊断有限束宽误差，以三乘三线性聚焦方程反求后两段场强、长度和匹配反射器场；不以粒子峰宽调压。
+- `ideal_acceptance_design.py`、`ideal_acceptance_experiment.py`：规定源的加权求积、有限包络检查、总方差分解、等概率总体近似及独立粒子验收；区分方差目标与直接FWHM。
+- `ideal_acceptance_density.py`：从精确残差到时间映射求总体推前密度，不使用有限粒子KDE带宽；复用canonical半高交点并保留质量密度Jacobian、概率积分和单调性适用域。
 - `peak_metrics.py`：KDE、直接FWHM和分辨率的唯一参考实现。
 - `reference_analysis.py`：CSV/XLSX/TRACE导入、Recording审计、source mapping、bootstrap和CLI。
 - `mass_spectrum.py`：五质量标定、峰形与探测落点比较。
@@ -101,7 +104,7 @@ shield边界和rebuild plan均由该函数一次性闭合。API严格拒绝profi
 ```
 
 默认一次完成残差扫描、两区/三区束宽比较，逐case输出进度，自动保存粒子终态CSV、峰宽/尾部/模式、
-电压、阶段结论、总报告与schema-v2 manifest。`--plan`只列计划；`--config`选择同一schema的科学配置。
+电压、阶段结论、总报告与schema-v2 manifest。`--plan`只列计划；`--config`选择有版本角色的科学配置。
 科学配置控制源分布、固定几何、扫描轴和科学阈值；峰宽数值口径仍来自项目分析合同；seed/run ID只在
 run instance冻结。`--resume-from <旧run目录>`保持相同配置和seed，自动创建新run，校验代码/配置/环境
 及已完成case内容后复用；旧run及失败证据不改写，不需要手工指定下一阶段。未原子发布的case重算。
@@ -115,6 +118,33 @@ run instance冻结。`--resume-from <旧run目录>`保持相同配置和seed，�
 此入口属于长期正式分析功能，但结果仅为合成源、理想轴向场的探索证据。它不复用历史T0—T5漏斗的
 人工逐阶段操作，也不改变其只读历史语义；共同模型/指标直接复用。它不启动SIMION/COMSOL、不改Formal，
 不声称实际RF源、真实孔径收集率、完整电压/几何最优化或论文新颖性已证明。
+
+### 从聚焦方程重设计宽束接受
+
+同一入口加上`--config projects/single_reflection_oa_tof_mass_analyzer/config/experiments/ideal_acceptance_theory.json`
+即可自动运行理论重设计。流程先诊断原工作点高阶系数，再枚举声明的理论控制域、解
+`a1=a2=a3=0`线性方程，由正逆场派生长度；以精确总体相对时间方差选择各束宽候选，最后冻结候选进行
+等概率总体近似与独立粒子检验。不是先对粒子分辨率寻优再解释理论，也不启动三维求解器。
+
+源斜率、中心速度和10 m/s残差保持不变；第一场区采用显式的居中设计族，长度和场强比可变。
+当前比较固定中心静电能、反射器长度和无场路径。这些是比较范围，不是三区结构的普适限制。
+首轮总体近似使用等概率节点及canonical KDE；Gauss求积节点只用于加权矩和方差，不冒充等权粒子。
+配置包含`numerics.density`时，改用不依赖KDE带宽的精确总体推前密度；`population_orders`两列此时
+分别是位置积分阶数与时间网格点数。数值收敛与三组粒子重复分别报告，所有母粒子保留分类。
+
+[`ideal_acceptance_fixed_length.json`](../config/experiments/ideal_acceptance_fixed_length.json)另增加总长
+20.25 mm的长度方程，从每个正场分支求镜一级电势；场区分配可变，但不能通过延长整个加速器换取
+分辨率。它仍使用同一入口。有限电压网格只定义检测到的根，不构成连续域根完备性或全局上界证明。
+总体密度在有限Gaussian包络内计算并报告遗漏尾概率；有限粒子分辨率继续沿用原canonical KDE。
+
+[`ideal_acceptance_200mm.json`](../config/experiments/ideal_acceptance_200mm.json)把三区总长固定为200 mm；
+[`ideal_acceptance_200mm_boundary.json`](../config/experiments/ideal_acceptance_200mm_boundary.json)只加密该扫描
+的3.2--5.0 mm过渡区。两者保持相同源、能量、反射器、门槛和粒子政策，结果见
+[`200 mm扫描快照`](../docs/history/20260827__200mm-ideal-acceptance-scan.md)。
+
+每个束宽可以有不同理论候选；“最大已验证宽度”不是一个冻结设计覆盖全部较小束宽的证明，也不是
+全局极限。该模式暂不支持`--resume-from`，失败会输出具体阶段及完整日志，修正后用新run自动重算；
+原残差/束宽比较模式的断点复用行为不变。所有新增实现是维护中的正式分析功能，结果仍为理想场探索证据。
 
 ## Formal与跨求解器
 

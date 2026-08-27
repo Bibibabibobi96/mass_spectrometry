@@ -144,7 +144,7 @@ class IdealWorkingPoint:
     reflectron: ReflectronGeometry
     inner: InnerSolution
     focus_drift_mm: float
-    reflectron_solution: CoupledReflectronSolution
+    reflectron_solution: CoupledReflectronSolution | None
 
     def to_dict(self) -> dict[str, Any]:
         """Return JSON-safe voltages, fixed lengths, and the analytic closure receipt."""
@@ -155,7 +155,11 @@ class IdealWorkingPoint:
             self.inner.stage1_voltage_drop_v
             + self.inner.stage2_field_v_per_mm * self.reflectron.stage2_length_mm
         )
-        result["working_point_policy"] = "fixed_accelerator_and_geometry_recompute_two_reflectron_fields"
+        result["working_point_policy"] = (
+            "fixed_accelerator_and_geometry_recompute_two_reflectron_fields"
+            if self.reflectron_solution is not None else
+            "explicit_theoretical_controls_without_coupled_reflectron_solver_receipt"
+        )
         result["source_model_for_design"] = "prescribed_center_tangent_not_detector_fit"
         result["derivative_reference"] = "fixed_reference_plane_not_relocated_accelerator_focus"
         return result
