@@ -15,6 +15,7 @@ ROUTE_TABLE = REPO_ROOT / "common" / "gate_catalog.json"
 INTEGRATION_GATE = REPO_ROOT / "common" / "verify_repository_integration.ps1"
 PARALLEL_GATE_SUPPORT = REPO_ROOT / "common" / "parallel_gate_support.ps1"
 LIGHTWEIGHT_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "lightweight-gate.yml"
+DOCUMENTATION_GATE = REPO_ROOT / "common" / "verify_documentation.ps1"
 QUADRUPOLE_GATE = (
     REPO_ROOT / "projects" / "rf_quadrupole_ion_optics" / "verify_project.ps1"
 )
@@ -273,6 +274,14 @@ class ChangedGateContractTests(unittest.TestCase):
         self.assertIn("changed_scope.json", workflow)
         self.assertNotIn("$fallbackChangedPaths", workflow)
         self.assertNotIn("projects/rf_quadrupole_ion_optics/README.md", workflow)
+
+    def test_documentation_gate_accepts_workspace_artifact_links(self) -> None:
+        source = DOCUMENTATION_GATE.read_text(encoding="utf-8")
+        self.assertIn("function Test-ExternalArtifactLink", source)
+        self.assertIn("Join-Path $workspaceRoot 'artifacts'", source)
+        self.assertIn(
+            "-not (Test-ExternalArtifactLink -ResolvedPath $resolved)", source
+        )
 
     def test_shared_dependencies_route_to_actual_consumers(self) -> None:
         multipole = self.routed_stages("common/multipole/simion_particle_source.py")

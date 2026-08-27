@@ -17,10 +17,27 @@ $comsolApiPath = Join-Path $repoRoot 'docs\COMSOL_API.md'
 $visionPath = Join-Path $repoRoot 'docs\VISION.md'
 $roadmapPath = Join-Path $repoRoot 'docs\ROADMAP.md'
 $rootReadmePath = Join-Path $repoRoot 'README.md'
+$workspaceRoot = Split-Path -Parent $repoRoot
+$externalArtifactsRoot = [IO.Path]::GetFullPath(
+    (Join-Path $workspaceRoot 'artifacts')
+).TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
+$externalArtifactsPrefix = $externalArtifactsRoot + [IO.Path]::DirectorySeparatorChar
 
 function Add-DocError {
     param([string]$Message)
     $errors.Add($Message)
+}
+
+function Test-ExternalArtifactLink {
+    param([Parameter(Mandatory)][string]$ResolvedPath)
+    $candidate = [IO.Path]::GetFullPath($ResolvedPath)
+    return $candidate.Equals(
+        $externalArtifactsRoot,
+        [StringComparison]::OrdinalIgnoreCase
+    ) -or $candidate.StartsWith(
+        $externalArtifactsPrefix,
+        [StringComparison]::OrdinalIgnoreCase
+    )
 }
 
 foreach ($file in $markdownFiles) {
@@ -167,9 +184,16 @@ foreach ($file in $markdownFiles) {
         $pathPart = ($target -split '#', 2)[0]
         $anchorPart = if ($target -match '#') { ($target -split '#', 2)[1] } else { '' }
         $pathPart = [uri]::UnescapeDataString($pathPart)
-        $resolved = Join-Path -Path $file.DirectoryName -ChildPath $pathPart
+        $resolved = [IO.Path]::GetFullPath(
+            (Join-Path -Path $file.DirectoryName -ChildPath $pathPart)
+        )
         if (-not (Test-Path -LiteralPath $resolved)) {
-            Add-DocError "$relative`: broken relative link '$target'"
+            # Artifacts are deliberately stored beside, rather than inside, the
+            # Git checkout.  Their relative links remain valid evidence links
+            # in a workspace, but a clean CI checkout cannot contain them.
+            if (-not (Test-ExternalArtifactLink -ResolvedPath $resolved)) {
+                Add-DocError "$relative`: broken relative link '$target'"
+            }
         }
         elseif (-not [string]::IsNullOrWhiteSpace($anchorPart) -and
                 $anchorPart -match '^[A-Za-z0-9][A-Za-z0-9_-]*$') {
