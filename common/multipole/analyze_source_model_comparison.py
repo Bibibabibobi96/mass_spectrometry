@@ -79,6 +79,44 @@ def _source_authority(data: dict[str, Any]) -> str:
     return authority.upper()
 
 
+def _source_distribution(manifest: dict[str, Any], run_dir: Path) -> dict[str, Any]:
+    """Summarize the frozen source's axial phase space without a fit model."""
+
+    try:
+        source_path = record_path(manifest["inputs"]["particle_source"], base_dir=run_dir)
+        with source_path.open(encoding="utf-8-sig", newline="") as handle:
+            rows = list(csv.DictReader(handle))
+        z = [float(row["z_mm"]) for row in rows]
+        vz = [float(row["vz_m_s"]) for row in rows]
+        births = [float(row["birth_time_s"]) for row in rows]
+    except (KeyError, OSError, TypeError, ValueError) as error:
+        raise ValueError("source-model arm lacks a readable canonical particle source") from error
+    if not z or len(z) != len(vz) or len(z) != len(births):
+        raise ValueError("source-model arm has an empty or inconsistent particle source")
+    count = len(z)
+    mean_z, mean_vz = sum(z) / count, sum(vz) / count
+    centered_z = [value - mean_z for value in z]
+    centered_vz = [value - mean_vz for value in vz]
+    z_sum_sq = sum(value * value for value in centered_z)
+    vz_sum_sq = sum(value * value for value in centered_vz)
+    covariance_sum = sum(left * right for left, right in zip(centered_z, centered_vz))
+    correlation = None if z_sum_sq == 0 or vz_sum_sq == 0 else covariance_sum / math.sqrt(z_sum_sq * vz_sum_sq)
+    slope = None if z_sum_sq == 0 else covariance_sum / z_sum_sq
+    return {
+        "particle_count": count,
+        "birth_time_min_s": min(births),
+        "birth_time_max_s": max(births),
+        "z_min_mm": min(z),
+        "z_max_mm": max(z),
+        "z_mean_mm": mean_z,
+        "z_rms_spread_mm": math.sqrt(z_sum_sq / count),
+        "vz_mean_m_s": mean_vz,
+        "vz_rms_spread_m_s": math.sqrt(vz_sum_sq / count),
+        "z_vz_pearson_correlation": correlation,
+        "z_vz_linear_slope_m_s_per_mm": slope,
+    }
+
+
 def _loss_census(data: dict[str, Any]) -> dict[str, Any]:
     """Return a per-terminal-reason census when terminal events were retained."""
 
@@ -151,6 +189,7 @@ def _arm(manifest_path: Path, label: str) -> dict[str, Any]:
         },
         "loss_census": _loss_census(data),
         "resource_metrics": _resource_metrics(manifest, run_dir),
+        "source_distribution": _source_distribution(manifest, run_dir),
     }
 
 
@@ -229,9 +268,22 @@ def markdown_report(document: dict[str, Any]) -> str:
     lines = [
         "# 平面源与独立轴向体积源：八极杆传输对比", "",
         "仅来源模型不同；设计、数值、终端和 N=1000 粒子 ID 母队列已逐项核对。", "",
+        "|臂|z 范围 (mm)|z RMS (mm)|vz RMS (m/s)|z–vz Pearson r|同刻释放|",
+        "|---|---:|---:|---:|---:|---:|",
+    ]
+    for arm in (baseline, candidate):
+        source = arm["source_distribution"]
+        correlation = source["z_vz_pearson_correlation"]
+        correlation_text = "无定义" if correlation is None else f"{correlation:+.5f}"
+        snapshot = "是" if source["birth_time_min_s"] == source["birth_time_max_s"] else "否"
+        lines.append(
+            f"|{arm['label']}|{source['z_min_mm']:.4f} 至 {source['z_max_mm']:.4f}|"
+            f"{source['z_rms_spread_mm']:.4f}|{source['vz_rms_spread_m_s']:.4f}|{correlation_text}|{snapshot}|")
+    lines.extend([
+        "",
         "|臂|传输率|空间 RMS (mm)|角 RMS (°)|平均能量 (eV)|平均飞行时间 (µs)|损失分类|",
         "|---|---:|---:|---:|---:|---:|---:|",
-    ]
+    ])
     for arm in (baseline, candidate):
         summary, census = arm["summary"], arm["loss_census"]
         loss = "不可用" if not census["available"] else str(census["lost_particle_count"])

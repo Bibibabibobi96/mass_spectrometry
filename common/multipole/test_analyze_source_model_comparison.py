@@ -7,6 +7,7 @@ from pathlib import Path
 
 from common.multipole.analyze_source_model_comparison import (
     _require_equal_identity,
+    _source_distribution,
     analyze_source_models,
     main,
     markdown_report,
@@ -34,11 +35,33 @@ def arm(authority: str, *, source_ids: list[int] | None = None) -> dict:
                          "unclassified_particle_count": 0, "by_terminal_reason": {"rod": 1}},
         "resource_metrics": {"wall_clock_seconds": 10.0, "peak_process_tree_working_set_bytes": 100.0,
                              "peak_run_directory_bytes": 200.0, "final_retained_bytes": 20.0},
+        "source_distribution": {
+            "particle_count": 2, "birth_time_min_s": 0.0, "birth_time_max_s": 0.0,
+            "z_min_mm": -1.0, "z_max_mm": 1.0, "z_mean_mm": 0.0,
+            "z_rms_spread_mm": 0.5, "vz_mean_m_s": 2000.0, "vz_rms_spread_m_s": 10.0,
+            "z_vz_pearson_correlation": 0.0, "z_vz_linear_slope_m_s_per_mm": 0.0,
+        },
         "label": "unused", "manifest_path": "fixture",
     }
 
 
 class SourceModelComparisonTests(unittest.TestCase):
+    def test_source_distribution_reports_empirical_axial_phase_space(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source.csv"
+            source.write_text(
+                "particle_id,birth_time_s,x_mm,y_mm,z_mm,vx_m_s,vy_m_s,vz_m_s,mass_amu,charge_state\n"
+                "1,0,0,0,-1,0,0,100,100,1\n"
+                "2,0,0,0,1,0,0,300,100,1\n",
+                encoding="utf-8",
+            )
+            distribution = _source_distribution({"inputs": {"particle_source": {"path": "source.csv"}}}, root)
+        self.assertEqual(distribution["particle_count"], 2)
+        self.assertEqual(distribution["birth_time_min_s"], distribution["birth_time_max_s"])
+        self.assertAlmostEqual(distribution["z_vz_pearson_correlation"], 1.0)
+        self.assertAlmostEqual(distribution["z_vz_linear_slope_m_s_per_mm"], 100.0)
+
     def test_identity_allows_only_different_source_authorities(self) -> None:
         _require_equal_identity(arm("A" * 64), arm("B" * 64))
         with self.assertRaisesRegex(ValueError, "source authorities"):
@@ -63,6 +86,7 @@ class SourceModelComparisonTests(unittest.TestCase):
         self.assertAlmostEqual(document["candidate_minus_baseline"]["transport_exit_metrics"]["transmission"], 0.25)
         self.assertAlmostEqual(document["candidate_minus_baseline"]["resource_metrics"]["wall_clock_seconds"], 2.5)
         self.assertIn("墙钟时间", markdown_report(document))
+        self.assertIn("z–vz Pearson r", markdown_report(document))
 
     def test_generic_series_cli_uses_declared_baseline_and_standard_outputs(self) -> None:
         baseline, candidate = arm("A" * 64), arm("B" * 64)
