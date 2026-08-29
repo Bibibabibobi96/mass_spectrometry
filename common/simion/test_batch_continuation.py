@@ -71,7 +71,7 @@ class BatchContinuationTests(unittest.TestCase):
             policy=POLICY, output_dir=output,
         )
 
-    def test_preserves_completed_batch_and_other_batch_prefix_independently(self) -> None:
+    def test_preserves_only_a_contiguous_prefix_of_complete_batches(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             run, contract = _parent(root, [[1, 2], [3, 4], [5, 6]], [
@@ -79,8 +79,20 @@ class BatchContinuationTests(unittest.TestCase):
                 ["TERMINAL 5", "TERMINAL 6", "COMPLETE"],
             ])
             plan = self._build(run, contract, root / "child", list(range(1, 7)))
-        self.assertEqual([entry["replay_particle_count"] for entry in plan["batches"]], [0, 1, 0])
-        self.assertEqual(plan["completed_particle_count"], 5)
+        # Batch 2 did not finish; batch 3's otherwise complete raw log cannot
+        # leapfrog it into a global mother-cohort checkpoint.
+        self.assertEqual([entry["replay_particle_count"] for entry in plan["batches"]], [0, 2, 2])
+        self.assertEqual(plan["completed_particle_count"], 2)
+
+    def test_rejects_partial_or_appended_completed_batch(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run, contract = _parent(root, [[1, 2]], [["TERMINAL 1", "COMPLETE"]])
+            with self.assertRaisesRegex(ContractError, "completion sentinel"):
+                self._build(run, contract, root / "partial", [1, 2])
+            run, contract = _parent(root / "appended", [[1]], [["TERMINAL 1", "COMPLETE", "noise"]])
+            with self.assertRaisesRegex(ContractError, "completion sentinel"):
+                self._build(run, contract, root / "appended-child", [1])
 
     def test_rejects_noncontiguous_prefix_and_manifest_hash_drift(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

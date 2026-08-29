@@ -183,12 +183,28 @@ def _prior_imported_hashes(
 def _completed_prefix(
     paths: Iterable[Path], *, first: int, count: int, hashes: dict[Path, str], policy: TraceContinuationPolicy,
 ) -> tuple[int, list[str], list[dict[str, str]]]:
+    """Return one *complete* checkpoint batch, or no reusable rows.
+
+    A SIMION worker may be interrupted after emitting a valid-looking terminal
+    prefix.  That prefix is useful diagnostic evidence, but it is not a
+    checkpoint: other workers can have finished out of order and a later
+    recovery must never splice an arbitrary particle prefix into a newly
+    planned wave.  Reusing only a terminally completed whole batch makes the
+    batch plan an immutable checkpoint boundary.
+    """
+    paths = list(paths)
+    if len(paths) > 1:
+        # A canonical recovery stores one imported log for a completed batch;
+        # a newly launched worker stores one raw log.  Two candidates for the
+        # same global batch indicate an ambiguous/old partial-replay lineage.
+        raise ContractError("continuation batch has multiple source logs")
     expected = first
     terminal_ids: set[int] = set()
     state_keys: set[tuple[int, int]] = set()
     retained: list[tuple[int, str]] = []
     sources: list[dict[str, str]] = []
-    saw_completed = False
+    completion_line_index: int | None = None
+    nonempty_line_index = -1
     for path in paths:
         digest = hashes.get(path.resolve())
         if digest is None or file_sha256(path).upper() != digest:
@@ -198,7 +214,9 @@ def _completed_prefix(
         except (OSError, UnicodeError) as exc:
             raise ContractError("continuation source log is unreadable") from exc
         sources.append({"path": str(path), "sha256": digest})
-        for line in lines:
+        for line_index, line in enumerate(lines):
+            if line:
+                nonempty_line_index = line_index
             if any(pattern.match(line) for pattern in policy.prohibited_patterns):
                 raise ContractError("continuation source emitted prohibited TRACE")
             if line.startswith(policy.terminal_prefix):
@@ -208,6 +226,9 @@ def _completed_prefix(
                 particle_id = int(match["particle_id"])
                 if particle_id != expected or particle_id in terminal_ids:
                     raise ContractError("continuation terminal IDs are not a contiguous prefix within their batch")
+                ion = match.groupdict().get("ion")
+                if ion is not None and int(ion) != particle_id - first + 1:
+                    raise ContractError("continuation terminal local ion identity differs")
                 terminal_ids.add(particle_id)
                 retained.append((particle_id, line))
                 expected += 1
@@ -218,16 +239,28 @@ def _completed_prefix(
                 particle_id, sample_index = int(match["particle_id"]), int(match["sample_index"])
                 if particle_id < first or particle_id >= first + count or (particle_id, sample_index) in state_keys:
                     raise ContractError("continuation state identity differs")
+                ion = match.groupdict().get("ion")
+                if ion is not None and int(ion) != particle_id - first + 1:
+                    raise ContractError("continuation state local ion identity differs")
                 state_keys.add((particle_id, sample_index))
                 retained.append((particle_id, line))
             elif line.startswith(policy.completion_prefix):
-                saw_completed = True
+                if completion_line_index is not None:
+                    raise ContractError("continuation completion sentinel is duplicated")
+                completion_line_index = line_index
             elif line.startswith("TRACE:"):
                 raise ContractError("continuation source emitted unrecognized TRACE")
     completed = len(terminal_ids)
-    if completed > count or (saw_completed and completed != count):
+    if completed > count:
         raise ContractError("continuation completion sentinel differs")
-    return completed, [line for particle_id, line in retained if particle_id < first + completed], sources
+    # The sentinel is accepted only as the last nonempty line in its log.  A
+    # normal SIMION completion is therefore not confused with a stale prefix
+    # followed by a crash or another execution appended to the same file.
+    if completion_line_index is None:
+        return 0, [], sources
+    if completion_line_index != nonempty_line_index or completed != count:
+        raise ContractError("continuation completion sentinel differs")
+    return count, [line for _, line in retained], sources
 
 
 def build_batch_continuation_plan(
@@ -273,11 +306,18 @@ def build_batch_continuation_plan(
         predecessor_run_dir, manifest, config, continuation_dir_name, plan_sha256, frozen_inputs,
     ))
     output: list[dict[str, Any]] = []
+    prefix_open = True
     for batch in batches:
         paths = _source_logs(
             predecessor_run_dir, batch["index"], imported_dir_name, continuation_dir_name, log_glob,
-        )
-        completed, retained, sources = _completed_prefix(paths, first=batch["first"], count=batch["count"], hashes=expected_hashes, policy=policy) if paths else (0, [], [])
+        ) if prefix_open else []
+        completed, retained, sources = _completed_prefix(
+            paths, first=batch["first"], count=batch["count"], hashes=expected_hashes, policy=policy,
+        ) if paths else (0, [], [])
+        if completed != batch["count"]:
+            # Checkpoints are a global ordered prefix, not a set of whichever
+            # workers happened to terminate before a host interruption.
+            prefix_open = False
         imported = None
         if completed:
             imported_root.mkdir(parents=True, exist_ok=True)
