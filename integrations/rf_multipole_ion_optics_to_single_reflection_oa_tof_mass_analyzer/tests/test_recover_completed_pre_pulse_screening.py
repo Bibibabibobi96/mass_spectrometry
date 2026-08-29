@@ -9,11 +9,37 @@ from pathlib import Path
 
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.recover_completed_pre_pulse_screening import (
     RECOVERY_MODE,
+    _is_recoverable_stale_config,
     build_recovery_config,
 )
 
 
 class RecoveryConfigurationTests(unittest.TestCase):
+    def test_allows_only_manifest_bound_stale_input_index_config(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            run_dir = Path(directory) / "20260830_150004__sim__simion__fixture__n1"
+            manifest = {
+                "inputs": {
+                    "pre_pulse_time_series_contract": {"sha256": "A" * 64},
+                },
+            }
+            config = {
+                "run_id": run_dir.name,
+                "project": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+                "mode": "rf_to_oatof_simion_single_flight",
+                "parameters": {
+                    "execution_mode": "real_pa_rf_pre_pulse_time_series",
+                    "pre_pulse_time_series_contract_sha256": "A" * 64,
+                },
+            }
+            self.assertTrue(_is_recoverable_stale_config(
+                manifest=manifest, config=config, run_dir=run_dir
+            ))
+            config["parameters"]["pre_pulse_time_series_contract_sha256"] = "B" * 64
+            self.assertFalse(_is_recoverable_stale_config(
+                manifest=manifest, config=config, run_dir=run_dir
+            ))
+
     def test_binds_only_run_local_frozen_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             failed = Path(directory) / "failed"

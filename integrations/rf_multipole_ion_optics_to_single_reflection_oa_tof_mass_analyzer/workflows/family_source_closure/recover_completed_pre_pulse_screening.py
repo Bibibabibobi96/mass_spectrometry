@@ -42,6 +42,34 @@ def _write(path: Path, value: dict[str, Any]) -> None:
     path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
 
 
+def _is_recoverable_stale_config(
+    *, manifest: dict[str, Any], config: dict[str, Any], run_dir: Path
+) -> bool:
+    """Accept only the known post-dispatch input-index enrichment mismatch.
+
+    A failed runner can append discovery-only input records while assembling its
+    failure manifest.  If that final manifest publication itself fails, its
+    earlier run-config record becomes stale.  The raw logs are still usable
+    only when their governing frozen contract remains manifest-bound.
+    """
+    inputs = manifest.get("inputs")
+    parameters = config.get("parameters")
+    if not isinstance(inputs, dict) or not isinstance(parameters, dict):
+        return False
+    contract_record = inputs.get("pre_pulse_time_series_contract")
+    if not isinstance(contract_record, dict):
+        return False
+    contract_sha256 = contract_record.get("sha256")
+    return (
+        config.get("run_id") == run_dir.name
+        and config.get("project") == INTEGRATION_ID
+        and config.get("mode") == "rf_to_oatof_simion_single_flight"
+        and parameters.get("execution_mode") == "real_pa_rf_pre_pulse_time_series"
+        and isinstance(contract_sha256, str)
+        and parameters.get("pre_pulse_time_series_contract_sha256") == contract_sha256
+    )
+
+
 def _verify_failed_run(run_dir: Path) -> tuple[Path, dict[str, Any], list[Path]]:
     manifest_path = run_dir / "run_manifest.json"
     manifest = _load(manifest_path, "failed screening manifest")
@@ -51,8 +79,18 @@ def _verify_failed_run(run_dir: Path) -> tuple[Path, dict[str, Any], list[Path]]
         or manifest.get("mode") != "rf_to_oatof_simion_single_flight"
     ):
         raise ContractError("failed screening manifest identity differs")
+    config_path = run_dir / "run_config.json"
+    config = _load(config_path, "failed screening run configuration")
+    config_matches_manifest = True
     try:
         verify_record("failed screening run_config", manifest["run_config"], base_dir=run_dir)
+    except (AssertionError, KeyError, TypeError):
+        config_matches_manifest = False
+    try:
+        # The complete set of frozen input records is the recovery authority,
+        # including the time-series contract that governs every TRACE row.
+        for name, record in manifest.get("inputs", {}).items():
+            verify_record(f"failed screening input {name}", record, base_dir=run_dir)
         # A recovery may have already materialized the completed logs before
         # the parent is marked failed/interrupted.  The mutable summary is not
         # recovery evidence; all raw SIMION logs are independently verified
@@ -63,8 +101,10 @@ def _verify_failed_run(run_dir: Path) -> tuple[Path, dict[str, Any], list[Path]]
             verify_record(f"failed screening output {index}", record, base_dir=run_dir)
     except (AssertionError, KeyError, TypeError) as exc:
         raise ContractError("failed screening manifest records differ") from exc
-    config_path = run_dir / "run_config.json"
-    config = _load(config_path, "failed screening run configuration")
+    if not config_matches_manifest and not _is_recoverable_stale_config(
+        manifest=manifest, config=config, run_dir=run_dir
+    ):
+        raise ContractError("failed screening run configuration differs outside the recoverable input-index case")
     parameters = config.get("parameters")
     if not isinstance(parameters, dict) or parameters.get("execution_mode") != "real_pa_rf_pre_pulse_time_series":
         raise ContractError("failed run is not a pre-pulse screening")
