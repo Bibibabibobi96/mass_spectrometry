@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from common.contracts.reconcile_artifact_capacity import plan
@@ -55,6 +57,20 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
             candidate = self._cache(root, "role", "e" * 64, age=time.time() - 100)
             receipt = plan(root, target_bytes=2048, required_headroom_bytes=4096)
             self.assertFalse(receipt["satisfied"])
+            self.assertEqual(receipt["planned"][0]["path"], str(candidate))
+
+    def test_minimum_free_space_tightens_the_same_ordered_plan(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            candidate = self._cache(root, "role", "f" * 64, age=time.time() - 100)
+            # The artifact watermark alone is satisfied, but the host volume
+            # is 512 bytes short of its governed free-space floor.
+            with patch(
+                "common.contracts.reconcile_artifact_capacity.shutil.disk_usage",
+                return_value=shutil._ntuple_diskusage(10_000, 9_700, 300),
+            ):
+                receipt = plan(root, target_bytes=10_000, minimum_free_bytes=812)
+            self.assertEqual(receipt["free_deficit_bytes"], 512)
             self.assertEqual(receipt["planned"][0]["path"], str(candidate))
 
 

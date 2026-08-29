@@ -148,6 +148,7 @@ def _compact_candidates(root: Path, protected_paths: Iterable[Path]) -> list[dic
 
 
 def plan(root: Path, *, target_bytes: int, required_headroom_bytes: int = 0,
+         minimum_free_bytes: int = 0,
          staging_grace_seconds: int = 900, protected_paths: Iterable[Path] = (),
          protected_cache_keys: Iterable[str] = ()) -> dict[str, Any]:
     root = root.resolve()
@@ -161,7 +162,15 @@ def plan(root: Path, *, target_bytes: int, required_headroom_bytes: int = 0,
     candidates.extend(_compact_candidates(root, protected))
     candidates.sort(key=lambda item: ({"L1": 1, "L2": 2, "L3": 3}[item["level"]], item["timestamp"], item["path"]))
     measured = _tree_bytes(root)
-    limit = target_bytes - required_headroom_bytes
+    if minimum_free_bytes < 0:
+        raise ValueError("minimum free bytes must be nonnegative")
+    free_bytes = shutil.disk_usage(root).free
+    free_deficit = max(0, minimum_free_bytes - free_bytes)
+    # Every byte removed from this artifact root returns one byte to the same
+    # volume.  Intersect the repository watermark with the physical-free-space
+    # requirement so the existing L1/L2/L3 ordering remains the sole deletion
+    # policy.
+    limit = min(target_bytes - required_headroom_bytes, measured - free_deficit)
     planned: list[dict[str, Any]] = []
     projected = measured
     for candidate in candidates:
@@ -171,6 +180,8 @@ def plan(root: Path, *, target_bytes: int, required_headroom_bytes: int = 0,
         projected -= candidate["bytes"]
     return {"schema_version": 1, "role": "artifact_capacity_gate", "artifact_root": str(root),
             "target_bytes": target_bytes, "required_headroom_bytes": required_headroom_bytes,
+            "minimum_free_bytes": minimum_free_bytes, "free_bytes_before": free_bytes,
+            "free_deficit_bytes": free_deficit,
             "measured_bytes": measured, "limit_bytes": limit, "active_cache_key_count": len(active_keys),
             "candidate_count": len(candidates), "planned": planned, "projected_bytes": projected,
             "satisfied": projected <= limit}
@@ -202,7 +213,11 @@ def apply(receipt: dict[str, Any]) -> dict[str, Any]:
     receipt["removed"] = removed
     receipt["removed_bytes"] = sum(item["bytes"] for item in removed)
     receipt["measured_after_bytes"] = _tree_bytes(Path(receipt["artifact_root"]))
-    receipt["satisfied_after_apply"] = receipt["measured_after_bytes"] + receipt["required_headroom_bytes"] <= receipt["target_bytes"]
+    receipt["free_bytes_after"] = shutil.disk_usage(Path(receipt["artifact_root"])).free
+    receipt["satisfied_after_apply"] = (
+        receipt["measured_after_bytes"] + receipt["required_headroom_bytes"] <= receipt["target_bytes"]
+        and receipt["free_bytes_after"] >= receipt["minimum_free_bytes"]
+    )
     return receipt
 
 
@@ -211,15 +226,18 @@ def main() -> None:
     parser.add_argument("--artifact-root", required=True, type=Path)
     parser.add_argument("--target-gib", type=float, default=500.0)
     parser.add_argument("--required-headroom-bytes", type=int, default=0)
+    parser.add_argument("--minimum-free-gib", type=float, default=500.0)
     parser.add_argument("--staging-grace-seconds", type=int, default=900)
     parser.add_argument("--protect-path", action="append", type=Path, default=[])
     parser.add_argument("--protect-cache-key", action="append", default=[])
     parser.add_argument("--apply", action="store_true")
     args = parser.parse_args()
-    if args.target_gib <= 0 or args.required_headroom_bytes < 0 or args.staging_grace_seconds < 0:
+    if (args.target_gib <= 0 or args.required_headroom_bytes < 0 or
+            args.minimum_free_gib < 0 or args.staging_grace_seconds < 0):
         parser.error("capacity values must be nonnegative and target positive")
     receipt = plan(args.artifact_root, target_bytes=int(args.target_gib * GIB),
                    required_headroom_bytes=args.required_headroom_bytes,
+                   minimum_free_bytes=int(args.minimum_free_gib * GIB),
                    staging_grace_seconds=args.staging_grace_seconds, protected_paths=args.protect_path,
                    protected_cache_keys=args.protect_cache_key)
     if args.apply:
