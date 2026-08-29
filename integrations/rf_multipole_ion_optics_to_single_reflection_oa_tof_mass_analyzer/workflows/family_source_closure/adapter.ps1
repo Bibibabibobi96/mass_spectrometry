@@ -90,7 +90,8 @@ function Resolve-RfRecoveryFailureAncestor {
     [Parameter(Mandatory)][string]$RequestedRunId,
     [Parameter(Mandatory)][string]$ExpectedRunId,
     [Parameter(Mandatory)][string]$RunsRoot,
-    [Parameter(Mandatory)][string]$CampaignId
+    [Parameter(Mandatory)][string]$CampaignId,
+    [Parameter(Mandatory)][string]$ExperimentId
   )
 
   $recoveryMatch = [regex]::Match($RequestedRunId, ('^' +
@@ -100,6 +101,7 @@ function Resolve-RfRecoveryFailureAncestor {
     return $null
   }
   $fallbackFailure = $null
+  $fallbackUnpublished = $null
   for ($index = [int]$recoveryMatch.Groups['index'].Value - 1;
        $index -ge 0;
        $index--) {
@@ -124,7 +126,14 @@ function Resolve-RfRecoveryFailureAncestor {
             ConvertFrom-Json
           if ([string]$frozenExperiment.campaign.campaign_id -eq $CampaignId -and
               [string]$frozenExperiment.experiment.run_id -eq $ExpectedRunId) {
-            return [pscustomobject]@{ run_id = $candidateRunId; status = 'unpublished' }
+            # An unpublished recovery has no trustworthy child-run identity.
+            # Keep it only as the last fallback, then continue looking for an
+            # earlier published batch checkpoint that can be resumed exactly.
+            if ($null -eq $fallbackUnpublished) {
+              $fallbackUnpublished = [pscustomobject]@{
+                run_id = $candidateRunId; status = 'unpublished'
+              }
+            }
           }
         } catch {
           return $null
@@ -162,7 +171,49 @@ function Resolve-RfRecoveryFailureAncestor {
         -Filter 'simion__batch*.stdout.log' -File -ErrorAction SilentlyContinue |
         Where-Object { Select-String -LiteralPath $_.FullName -SimpleMatch `
           -Quiet -Pattern 'status,Fly completed.' })
-      if ($completedBatchLog.Count -gt 0) { return $candidate }
+      # The governed integration parent does not own the SIMION stdout.  A
+      # single-flight child does, so recover its completion evidence only when
+      # the child's frozen screening contract proves that it belongs to this
+      # exact campaign/experiment and retry suffix.
+      if ($completedBatchLog.Count -eq 0 -and $candidateRunId.Length -ge 15) {
+        $candidateRetrySuffix = if ($candidateRunId -match '(__r\d{2})$') {
+          $Matches[1]
+        } else { '' }
+        $childNamePattern = '^' + [regex]::Escape($candidateRunId.Substring(0, 15)) +
+          '__sim__simion__.+__n\d+' + [regex]::Escape($candidateRetrySuffix) + '$'
+        $completedBatchLog = @(
+          Get-ChildItem -LiteralPath $RunsRoot -Directory -ErrorAction SilentlyContinue |
+          Where-Object { $_.Name -match $childNamePattern } |
+          ForEach-Object {
+            $screeningPath = Join-Path $_.FullName `
+              'inputs\pre_pulse_time_series_screening_contract.json'
+            if (-not (Test-Path -LiteralPath $screeningPath -PathType Leaf)) { return }
+            try {
+              $screening = Get-Content -LiteralPath $screeningPath -Raw -Encoding UTF8 |
+                ConvertFrom-Json
+              if ([string]$screening.identities.campaign_id -ne $CampaignId -or
+                  [string]$screening.identities.experiment_id -ne $ExperimentId) { return }
+              Get-ChildItem -LiteralPath (Join-Path $_.FullName 'logs') `
+                -Filter 'simion__batch*.stdout.log' -File -ErrorAction SilentlyContinue |
+                Where-Object { Select-String -LiteralPath $_.FullName -SimpleMatch `
+                  -Quiet -Pattern 'status,Fly completed.' }
+            } catch { return }
+          }
+        )
+      }
+      if ($completedBatchLog.Count -gt 0) {
+        $childRunDirectory = @($completedBatchLog | ForEach-Object {
+          $_.Directory.Parent.FullName
+        } | Where-Object {
+          -not $_.Equals($candidateDirectory,[StringComparison]::OrdinalIgnoreCase)
+        } | Select-Object -First 1)
+        return [pscustomobject]@{
+          run_id=$candidateRunId; status=$candidateStatus
+          pre_pulse_child_run_directory=$(if ($childRunDirectory.Count -eq 1) {
+            [string]$childRunDirectory[0]
+          } else { $null })
+        }
+      }
       if ($null -eq $fallbackFailure) { $fallbackFailure = $candidate }
       continue
     }
@@ -170,7 +221,8 @@ function Resolve-RfRecoveryFailureAncestor {
     # only a failed or interrupted member can authorize a later retry.
     return $null
   }
-  return $fallbackFailure
+  if ($null -ne $fallbackFailure) { return $fallbackFailure }
+  return $fallbackUnpublished
 }
 
 $plan = Get-Content -LiteralPath $CompositionPlan -Raw -Encoding UTF8 |
@@ -918,6 +970,30 @@ if (-not (Test-Path -LiteralPath $runtimeBinding -PathType Leaf) -or
 }
 
 $runDirectory = [IO.Path]::GetFullPath((Split-Path -Parent $CompositionPlan))
+$expectedRunId = [string]$experiment.run_id
+$recoveryAncestor = $null
+if ($pulseTimingDiscovery) {
+  if ($expectedRunId -notmatch
+      '^(?<stamp>[0-9]{8}_[0-9]{6})__.+__(?<detail>n[0-9]+)(?<retry>__r[0-9]{2})?$') {
+    throw 'Automatic pulse-timing target RunId cannot derive a discovery RunId.'
+  }
+  $expectedRunId = (
+    $Matches.stamp + '__sim__cross__pulse-timing-discovery__' +
+    $Matches.detail + [string]$Matches['retry']
+  )
+}
+if ($expectedRunId -ne $RunId) {
+  $recoveryRunsRoot = Join-Path $workspaceRoot (
+    'artifacts\projects\' + $plan.integration_id + '\runs'
+  )
+  $recoveryAncestor = Resolve-RfRecoveryFailureAncestor `
+    -RequestedRunId $RunId -ExpectedRunId $expectedRunId `
+    -RunsRoot $recoveryRunsRoot -CampaignId $campaign.campaign_id `
+    -ExperimentId $experiment.experiment_id
+  if ($null -eq $recoveryAncestor) {
+    throw 'Solver-authorized RunId differs from the campaign row.'
+  }
+}
 $paCacheGenerationBindingPath = $null
 $campaignHasPaCacheGenerationBinding =
   $experiment.PSObject.Properties.Name -contains
@@ -1113,6 +1189,69 @@ if ($pulseCandidateConfirmation) {
 $resolvedSourceContractPath = [IO.Path]::GetFullPath(
   (Join-Path $runDirectory $frozenArguments.resolved_source_contract_filename)
 )
+if ($null -ne $recoveryAncestor) {
+  $recoveryChildRunDirectory = [string]$recoveryAncestor.pre_pulse_child_run_directory
+  if ([string]::IsNullOrWhiteSpace($recoveryChildRunDirectory)) {
+    $ancestorRetrySuffix = if ([string]$recoveryAncestor.run_id -match '(__r\d{2})$') {
+      $Matches[1]
+    } else { '' }
+    $childPattern = '^' + [regex]::Escape(
+      ([string]$recoveryAncestor.run_id).Substring(0, 15)
+    ) + '__sim__simion__.+__n\d+' + [regex]::Escape($ancestorRetrySuffix) + '$'
+    $recoveryChildren = @(
+      Get-ChildItem -LiteralPath $recoveryRunsRoot -Directory -ErrorAction SilentlyContinue |
+      Where-Object { $_.Name -match $childPattern } |
+      Where-Object {
+        $screeningPath = Join-Path $_.FullName 'inputs\pre_pulse_time_series_screening_contract.json'
+        if (-not (Test-Path -LiteralPath $screeningPath -PathType Leaf)) { return $false }
+        try {
+          $screening = Get-Content -LiteralPath $screeningPath -Raw -Encoding UTF8 | ConvertFrom-Json
+          [string]$screening.identities.campaign_id -eq [string]$campaign.campaign_id -and
+            [string]$screening.identities.experiment_id -eq [string]$experiment.experiment_id -and
+            @(Get-ChildItem -LiteralPath (Join-Path $_.FullName 'logs') `
+              -Filter 'simion__batch*.stdout.log' -File -ErrorAction SilentlyContinue |
+              Where-Object { Select-String -LiteralPath $_.FullName -SimpleMatch `
+                -Quiet -Pattern 'status,Fly completed.' }).Count -gt 0
+        } catch { return $false }
+      }
+    )
+    if ($recoveryChildren.Count -ne 1) {
+      throw 'Pre-pulse continuation cannot resolve exactly one completed child run.'
+    }
+    $recoveryChildRunDirectory = $recoveryChildren[0].FullName
+  }
+  $predecessorSourceContract = Join-Path `
+    $recoveryChildRunDirectory `
+    'inputs\resolved_source_contract.json'
+  $predecessorScreeningContract = Join-Path `
+    $recoveryChildRunDirectory `
+    'inputs\pre_pulse_time_series_screening_contract.json'
+  if (-not (Test-Path -LiteralPath $predecessorSourceContract -PathType Leaf) -or
+      -not (Test-Path -LiteralPath $predecessorScreeningContract -PathType Leaf)) {
+    throw 'Pre-pulse continuation child lacks frozen source identity inputs.'
+  }
+  $predecessorScreening = Get-Content -LiteralPath $predecessorScreeningContract `
+    -Raw -Encoding UTF8 | ConvertFrom-Json
+  $predecessorSourceSha256 = (Get-FileHash -LiteralPath $predecessorSourceContract `
+    -Algorithm SHA256).Hash
+  if ($predecessorSourceSha256 -ne
+      [string]$predecessorScreening.identities.resolved_source_contract_sha256) {
+    throw 'Pre-pulse continuation child source contract identity differs.'
+  }
+  $preparedSourceSha256 = (Get-FileHash -LiteralPath $resolvedSourceContractPath `
+    -Algorithm SHA256).Hash
+  Copy-Item -LiteralPath $predecessorSourceContract -Destination $resolvedSourceContractPath -Force
+  $frozenArguments.resolved_source_contract_sha256 = $predecessorSourceSha256
+  [ordered]@{
+    schema_version=1;role='rf_oatof_pre_pulse_continuation_source_authority'
+    predecessor_run_id=[string]$recoveryAncestor.run_id
+    predecessor_single_flight_run=$recoveryChildRunDirectory
+    predecessor_source_contract_sha256=$predecessorSourceSha256
+    superseded_prepared_source_contract_sha256=$preparedSourceSha256
+  } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (
+    Join-Path $runDirectory 'pre_pulse_continuation_source_authority.json'
+  ) -Encoding UTF8
+}
 $resolvedBudgetPath = [IO.Path]::GetFullPath(
   (Join-Path $runDirectory $frozenArguments.resolved_budget_filename)
 )
@@ -1312,29 +1451,6 @@ if ([string]$campaign.status -notin @('authorized','exploration')) {
 }
 if (-not $SolverAuthorized) {
   throw 'Family source-closure execution requires explicit solver authorization.'
-}
-$expectedRunId = [string]$experiment.run_id
-$recoveryAncestor = $null
-if ($pulseTimingDiscovery) {
-  if ($expectedRunId -notmatch
-      '^(?<stamp>[0-9]{8}_[0-9]{6})__.+__(?<detail>n[0-9]+)(?<retry>__r[0-9]{2})?$') {
-    throw 'Automatic pulse-timing target RunId cannot derive a discovery RunId.'
-  }
-  $expectedRunId = (
-    $Matches.stamp + '__sim__cross__pulse-timing-discovery__' +
-    $Matches.detail + [string]$Matches['retry']
-  )
-}
-if ($expectedRunId -ne $RunId) {
-  $recoveryRunsRoot = Join-Path $workspaceRoot (
-    'artifacts\projects\' + $plan.integration_id + '\runs'
-  )
-  $recoveryAncestor = Resolve-RfRecoveryFailureAncestor `
-    -RequestedRunId $RunId -ExpectedRunId $expectedRunId `
-    -RunsRoot $recoveryRunsRoot -CampaignId $campaign.campaign_id
-  if ($null -eq $recoveryAncestor) {
-    throw 'Solver-authorized RunId differs from the campaign row.'
-  }
 }
 $runsRoot = Join-Path $workspaceRoot (
   'artifacts\projects\' + $plan.integration_id + '\runs'
@@ -1554,8 +1670,14 @@ if ($executionStrategy -eq 'simion_single_flight') {
         $Matches[1]
       } else { '' }
       $ancestorSingleFlightRunId = "$($ancestorRunId.Substring(0, 15))__sim__simion__$singleFlightRole-gap$connectorGapLabel`__n$expectedExecutionParticleCount$ancestorRetrySuffix"
-      $runnerArguments.ResumePrePulseFromRun = Join-Path $runsRoot `
+      $expectedAncestorSingleFlightRun = Join-Path $runsRoot `
         $ancestorSingleFlightRunId
+      if (-not $recoveryChildRunDirectory.Equals(
+        $expectedAncestorSingleFlightRun,[StringComparison]::OrdinalIgnoreCase
+      )) {
+        throw 'Pre-pulse continuation source authority and completed-batch child differ.'
+      }
+      $runnerArguments.ResumePrePulseFromRun = $recoveryChildRunDirectory
       # A resumed batch must retain the predecessor's exact screening
       # contract, not a newly materialized byte-different copy from the
       # recovery composition plan.  The shared continuation protocol verifies
@@ -1569,6 +1691,23 @@ if ($executionStrategy -eq 'simion_single_flight') {
       }
       $predecessorScreeningDocument = Get-Content -LiteralPath $predecessorScreeningContract `
         -Raw -Encoding UTF8 | ConvertFrom-Json
+      # Completed trace batches are only valid under the predecessor's exact
+      # source contract: it contributes to both the time-series identity and
+      # the static PA cache keys.  The recovery composition can legitimately
+      # have a new run-local source receipt, but it must not rebuild a field
+      # and then combine it with predecessor trajectories.
+      $predecessorResolvedSourceContract = Join-Path `
+        $runnerArguments.ResumePrePulseFromRun 'inputs\resolved_source_contract.json'
+      if (-not (Test-Path -LiteralPath $predecessorResolvedSourceContract -PathType Leaf)) {
+        throw 'Pre-pulse continuation predecessor lacks its frozen resolved source contract.'
+      }
+      $predecessorResolvedSourceContractSha256 = (
+        Get-FileHash -LiteralPath $predecessorResolvedSourceContract -Algorithm SHA256
+      ).Hash
+      if ($predecessorResolvedSourceContractSha256 -ne
+          [string]$predecessorScreeningDocument.identities.resolved_source_contract_sha256) {
+        throw 'Pre-pulse continuation predecessor resolved source contract identity differs.'
+      }
       $runnerArguments.TimeIntegrationProfileId =
         [string]$predecessorScreeningDocument.identities.time_integration_profile_id
       $runnerArguments.PrePulseTimeSeriesContract = $predecessorScreeningContract

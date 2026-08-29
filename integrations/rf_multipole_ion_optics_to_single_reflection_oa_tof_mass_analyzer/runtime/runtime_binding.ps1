@@ -311,13 +311,19 @@ function Resolve-RfOatofRuntimeBinding {
     }
   )
   foreach ($inputRecord in $runLocalInputs) {
-    if (-not (Test-RfOatofPathWithin -Path $inputRecord.path -Root $parentRunRoot) -or
-        -not (Test-Path -LiteralPath $inputRecord.path -PathType Leaf) -or
-        [IO.Path]::GetFileName($inputRecord.path) -ne $inputRecord.filename -or
-        [string]$inputRecord.sha256 -notmatch '^[A-F0-9]{64}$' -or
-        (Get-FileHash -LiteralPath $inputRecord.path -Algorithm SHA256).Hash -ne
-          [string]$inputRecord.sha256) {
-      throw "$($inputRecord.role) must be one current parent-run input with its raw SHA-256."
+    $isWithinParent = Test-RfOatofPathWithin -Path $inputRecord.path -Root $parentRunRoot
+    $exists = Test-Path -LiteralPath $inputRecord.path -PathType Leaf
+    $filenameMatches = [IO.Path]::GetFileName($inputRecord.path) -eq $inputRecord.filename
+    $declaredShaValid = [string]$inputRecord.sha256 -match '^[A-F0-9]{64}$'
+    $actualSha = if ($exists) {
+      (Get-FileHash -LiteralPath $inputRecord.path -Algorithm SHA256).Hash
+    } else { '<missing>' }
+    if (-not $isWithinParent -or -not $exists -or -not $filenameMatches -or
+        -not $declaredShaValid -or $actualSha -ne [string]$inputRecord.sha256) {
+      throw ("{0} must be one current parent-run input with its raw SHA-256: " +
+        "within_parent={1}; exists={2}; filename_matches={3}; declared_sha={4}; actual_sha={5}; input_path={6}; parent_run_root={7}" -f
+        $inputRecord.role,$isWithinParent,$exists,$filenameMatches,
+        [string]$inputRecord.sha256,$actualSha,[string]$inputRecord.path,$parentRunRoot)
     }
   }
   $resolved = Get-Content -LiteralPath $resolvedPath -Raw -Encoding UTF8 |

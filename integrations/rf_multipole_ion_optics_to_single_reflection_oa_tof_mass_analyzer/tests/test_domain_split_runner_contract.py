@@ -126,6 +126,13 @@ class DomainSplitRunnerContractTests(unittest.TestCase):
         self.assertIn('"disjoint_six_faces_v1"', builder)
         self.assertIn("duplicate_boundary_writes", builder)
 
+    def test_semantically_equivalent_boundary_builder_cache_is_reused(self) -> None:
+        self.assertIn("function Resolve-RfSemanticallyEquivalentFineCache", self.source)
+        self.assertIn("8236707F574393E796DC4CF0A75C4CA79C13AFD86992C75C0F8199551084B73D", self.source)
+        self.assertIn("399BA109A1559BD8BE90E1725BB0A8138435628D5AFD70A6113C1FB0B3ED3C17", self.source)
+        self.assertIn("cache_hit_semantically_equivalent_boundary_builder", self.source)
+        self.assertIn("$candidateIdentity.inputs.basis_builder_sha256 = $CurrentBuilderSha256", self.source)
+
     def test_disjoint_face_partition_is_the_same_complete_boundary_as_the_legacy_loops(self) -> None:
         # Small non-cubic dimensions exercise each edge/corner ownership rule.
         nx, ny, nz = 7, 5, 4

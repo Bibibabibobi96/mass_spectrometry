@@ -63,15 +63,41 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
         self.assertIn("inputs\\pre_pulse_time_series_screening_contract.json", recovery_block)
         self.assertIn("Get-FileHash -LiteralPath $predecessorScreeningContract", recovery_block)
         self.assertIn("$runnerArguments.PrePulseTimeSeriesContract = $predecessorScreeningContract", recovery_block)
+        self.assertIn("inputs\\resolved_source_contract.json", recovery_block)
+        self.assertIn(
+            "Get-FileHash -LiteralPath $predecessorResolvedSourceContract",
+            recovery_block,
+        )
+        self.assertIn(
+            "predecessor resolved source contract identity differs.", recovery_block
+        )
+        self.assertNotIn(
+            "$runnerArguments.ResolvedSourceContract = $predecessorResolvedSourceContract",
+            recovery_block,
+        )
+        guard = adapter[adapter.rindex("$expectedAncestorSingleFlightRun", 0, recovery):recovery]
+        self.assertIn("source authority and completed-batch child differ.", guard)
+        self.assertIn(
+            "$runnerArguments.ResumePrePulseFromRun = $recoveryChildRunDirectory",
+            recovery_block,
+        )
 
     def test_recovery_prefers_the_earliest_completed_batch_checkpoint(self) -> None:
         adapter = FAMILY_ADAPTER.read_text(encoding="utf-8")
         resolver = adapter.index("function Resolve-RfRecoveryFailureAncestor")
         resolver_block = adapter[resolver:adapter.index("$plan = Get-Content", resolver)]
         self.assertIn("$fallbackFailure = $null", resolver_block)
+        self.assertIn("$fallbackUnpublished = $null", resolver_block)
         self.assertIn("-Filter 'simion__batch*.stdout.log'", resolver_block)
         self.assertIn("'status,Fly completed.'", resolver_block)
-        self.assertIn("if ($completedBatchLog.Count -gt 0) { return $candidate }", resolver_block)
+        self.assertIn("__sim__simion__.+__n\\d+", resolver_block)
+        self.assertIn("inputs\\pre_pulse_time_series_screening_contract.json", resolver_block)
+        self.assertIn("$screening.identities.experiment_id", resolver_block)
+        self.assertIn("pre_pulse_child_run_directory", resolver_block)
+        self.assertIn("if ($completedBatchLog.Count -gt 0) {", resolver_block)
+        self.assertIn("$fallbackUnpublished = [pscustomobject]", resolver_block)
+        self.assertIn("if ($null -ne $fallbackFailure) { return $fallbackFailure }", resolver_block)
+        self.assertIn("return $fallbackUnpublished", resolver_block)
         self.assertIn("return $fallbackFailure", resolver_block)
 
     def test_pre_pulse_time_series_is_pre_solver_fail_closed_and_gap_bound(self) -> None:
@@ -172,6 +198,20 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
         self.assertIn("simion_execution_batch_plan.json", runner)
         self.assertIn("simion_single_wave_batch_plan_sha256", runner)
         self.assertIn("Invoke-ResourceBudgetedProcesses", runner)
+
+    def test_terminal_capacity_reconciliation_protects_the_just_published_run_and_cache_keys(self) -> None:
+        runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        terminal_gate = runner.index("$terminalCapacityArguments = @(")
+        manifest = runner.rindex("Write-RunManifest", 0, terminal_gate)
+        release = runner.index("Exit-HostExecutionLease", terminal_gate)
+        gate = runner[terminal_gate:release]
+        self.assertLess(manifest, terminal_gate)
+        self.assertIn("ARTIFACT_CAPACITY_TERMINAL=PASS", gate)
+        self.assertIn("--minimum-free-gib','500'", gate)
+        self.assertIn("--protect-path',$package.run_dir", gate)
+        self.assertIn("foreach ($cacheDisposition in $paCacheDispositions.Values)", gate)
+        self.assertIn("--protect-cache-key',$cacheKey", gate)
+        self.assertIn("satisfied_after_apply", gate)
         self.assertIn("Start-ObservedFormalProcess", runner)
         self.assertIn("formal_first_batch_observation", runner)
         self.assertNotIn("RESOURCE_CALIBRATION_ONLY", runner)

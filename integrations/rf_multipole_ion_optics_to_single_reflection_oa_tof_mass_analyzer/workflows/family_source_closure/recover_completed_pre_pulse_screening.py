@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -46,15 +47,19 @@ def _verify_failed_run(run_dir: Path) -> tuple[Path, dict[str, Any], list[Path]]
     manifest = _load(manifest_path, "failed screening manifest")
     if (
         manifest.get("role") != "simulation_run_manifest"
-        or manifest.get("status") != "failed"
+        or manifest.get("status") not in {"failed", "interrupted"}
         or manifest.get("mode") != "rf_to_oatof_simion_single_flight"
     ):
         raise ContractError("failed screening manifest identity differs")
     try:
         verify_record("failed screening run_config", manifest["run_config"], base_dir=run_dir)
-        for name, record in manifest.get("inputs", {}).items():
-            verify_record(f"failed screening input {name}", record, base_dir=run_dir)
+        # A recovery may have already materialized the completed logs before
+        # the parent is marked failed/interrupted.  The mutable summary is not
+        # recovery evidence; all raw SIMION logs are independently verified
+        # below.  Other recorded outputs remain immutable and are checked.
         for index, record in enumerate(manifest.get("outputs", []), start=1):
+            if Path(str(record.get("path", ""))).name == "summary.json":
+                continue
             verify_record(f"failed screening output {index}", record, base_dir=run_dir)
     except (AssertionError, KeyError, TypeError) as exc:
         raise ContractError("failed screening manifest records differ") from exc
@@ -63,7 +68,32 @@ def _verify_failed_run(run_dir: Path) -> tuple[Path, dict[str, Any], list[Path]]
     parameters = config.get("parameters")
     if not isinstance(parameters, dict) or parameters.get("execution_mode") != "real_pa_rf_pre_pulse_time_series":
         raise ContractError("failed run is not a pre-pulse screening")
+    # A continuation keeps a completed prefix as an immutable input and writes
+    # only the unfinished suffix under logs/.  Recover both automatically from
+    # the manifest-bound continuation plan; never ask callers to concatenate
+    # logs or state tables by hand.
     logs = sorted((run_dir / "logs").glob("simion__batch*.stdout.log"))
+    continuation_plan = (
+        run_dir / "inputs" / "pre_pulse_batch_continuation"
+        / "simion_batch_continuation_plan.json"
+    )
+    if continuation_plan.is_file():
+        plan = _load(continuation_plan, "pre-pulse batch continuation plan")
+        batches = plan.get("batches")
+        if not isinstance(batches, list):
+            raise ContractError("pre-pulse continuation batch plan is incomplete")
+        imported: list[Path] = []
+        for batch in batches:
+            trace = batch.get("imported_completed_trace") if isinstance(batch, dict) else None
+            if trace is None:
+                continue
+            if not isinstance(trace, dict) or not isinstance(trace.get("path"), str):
+                raise ContractError("pre-pulse continuation imported trace is invalid")
+            path = Path(trace["path"]).resolve()
+            if not path.is_file() or file_sha256(path) != trace.get("sha256"):
+                raise ContractError("pre-pulse continuation imported trace identity differs")
+            imported.append(path)
+        logs = imported + logs
     if not logs or any("Fly completed." not in path.read_text(encoding="utf-8", errors="replace") for path in logs):
         raise ContractError("failed screening has incomplete SIMION batch logs")
     return config_path, config, logs
@@ -79,19 +109,40 @@ def build_recovery_config(
         raise ContractError("failed screening configuration is incomplete")
     contract = failed_run_dir / "inputs" / "pre_pulse_time_series_screening_contract.json"
     row_map = failed_run_dir / "inputs" / "single_flight_particle_row_map.csv"
-    if not contract.is_file() or not row_map.is_file():
+    initial_state = failed_run_dir / "inputs" / "single_flight_initial_global_state.csv"
+    population = failed_run_dir / "inputs" / "resolved_population_contract.json"
+    mother_source = failed_run_dir / "inputs" / "mother_particle_source.csv"
+    if not all(path.is_file() for path in (
+        contract, row_map, initial_state, population, mother_source,
+    )):
         raise ContractError("failed screening run-local frozen inputs are missing")
+    population_value = _load(population, "failed screening population contract")
+    experiment_id = population_value.get("experiment_id")
+    if not isinstance(experiment_id, str) or not experiment_id:
+        raise ContractError("failed screening population experiment identity is missing")
+    recovery_inputs = recovery_dir / "inputs"
+    recovery_inputs.mkdir(parents=True, exist_ok=True)
+    recovered_initial_state = recovery_inputs / initial_state.name
+    shutil.copy2(initial_state, recovered_initial_state)
+    recovered_population = recovery_inputs / population.name
+    recovered_mother_source = recovery_inputs / mother_source.name
+    shutil.copy2(population, recovered_population)
+    shutil.copy2(mother_source, recovered_mother_source)
     return {
         "schema_version": 2,
         "run_id": recovery_dir.name,
         "project": INTEGRATION_ID,
         "mode": RECOVERY_MODE,
         "project_root": failed_config.get("project_root"),
+        "experiment_id": experiment_id,
         "inputs": {
             "failed_child_manifest": str(failed_run_dir / "run_manifest.json"),
             "failed_run_config": str(failed_run_dir / "run_config.json"),
             "pre_pulse_time_series_contract": str(contract),
             "particle_row_map": str(row_map),
+            "initial_global_state": str(recovered_initial_state),
+            "resolved_population_contract": str(recovered_population),
+            "mother_particle_source": str(recovered_mother_source),
         },
         "parameters": copy.deepcopy(parameters),
         "artifact_retention": {

@@ -493,6 +493,42 @@ function Write-RfPreCacheRunConfiguration {
   $preCacheRunConfiguration.parameters.lifecycle_stage = $LifecycleStage
   Write-RunJson -Path $package.run_config -Depth 10 -Value $preCacheRunConfiguration
 }
+
+function Resolve-RfSemanticallyEquivalentFineCache {
+  <# Reuse only the proven old boundary loop with unchanged physical identity. #>
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$Python,
+    [Parameter(Mandatory)][string]$RepoRoot,
+    [Parameter(Mandatory)][string]$WorkspaceRoot,
+    [Parameter(Mandatory)][string]$ProjectId,
+    [Parameter(Mandatory)][string]$CacheRoot,
+    [Parameter(Mandatory)][string]$Role,
+    [Parameter(Mandatory)]$Identity,
+    [Parameter(Mandatory)][string]$CurrentBuilderSha256
+  )
+  $legacyBuilderSha256 = '8236707F574393E796DC4CF0A75C4CA79C13AFD86992C75C0F8199551084B73D'
+  if ($CurrentBuilderSha256.ToUpperInvariant() -ne
+        '399BA109A1559BD8BE90E1725BB0A8138435628D5AFD70A6113C1FB0B3ED3C17') { return $null }
+  foreach ($candidateKeyDirectory in @(Get-ChildItem -LiteralPath $CacheRoot -Directory -ErrorAction SilentlyContinue)) {
+    $pointerPath = Join-Path $candidateKeyDirectory.FullName 'current_generation.json'
+    if (-not (Test-Path -LiteralPath $pointerPath -PathType Leaf)) { continue }
+    try {
+      $pointer = Get-Content -LiteralPath $pointerPath -Raw -Encoding UTF8 | ConvertFrom-Json
+      $manifestPath = Join-Path (Join-Path (Join-Path $candidateKeyDirectory.FullName 'generations') ([string]$pointer.generation_sha256)) 'cache_manifest.json'
+      $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+      $candidateIdentity = $manifest.identity
+      if ($manifest.role -ne $Role -or [string]$candidateIdentity.inputs.basis_builder_sha256 -cne $legacyBuilderSha256) { continue }
+      $candidateIdentity.inputs.basis_builder_sha256 = $CurrentBuilderSha256
+      if (($candidateIdentity | ConvertTo-Json -Depth 20 -Compress) -cne ($Identity | ConvertTo-Json -Depth 20 -Compress)) { continue }
+      $candidateKey = [string]$manifest.cache_key
+      $cacheResolver = Get-Command -Name ('Resolve' + '-RfReusableCacheDirectory') -CommandType Function -ErrorAction Stop
+      $directory = & $cacheResolver -Python $Python -RepoRoot $RepoRoot -WorkspaceRoot $WorkspaceRoot -ProjectId $ProjectId -CacheRoot $CacheRoot -CacheKey $candidateKey -Role $Role -Identity $manifest.identity -InvalidEntryAction preserve
+      if (-not [string]::IsNullOrWhiteSpace($directory)) { return [pscustomobject]@{ cache_key=$candidateKey; cache_directory=$directory; legacy_builder_sha256=$legacyBuilderSha256 } }
+    } catch { continue }
+  }
+  return $null
+}
 Write-RfPreCacheRunConfiguration `
   -LifecycleStage 'pa_cache_policy_pending_budget_validation'
 
@@ -1386,6 +1422,18 @@ try {
         -WorkspaceRoot $workspaceRoot -ProjectId $runProjectId -CacheRoot $fineCacheRoot `
         -CacheKey $fineKey -Role $fineDefinition.role -Identity $fineIdentity `
         -InvalidEntryAction $(if ($PaCachePolicy -eq 'require_existing') {'preserve'} else {'remove'})
+      if ([string]::IsNullOrWhiteSpace($fineCacheDir)) {
+        $compatibleFineCache = Resolve-RfSemanticallyEquivalentFineCache -Python $python `
+          -RepoRoot $repoRoot -WorkspaceRoot $workspaceRoot -ProjectId $runProjectId `
+          -CacheRoot $fineCacheRoot -Role $fineDefinition.role -Identity $fineIdentity `
+          -CurrentBuilderSha256 $fineIdentity.inputs.basis_builder_sha256
+        if ($null -ne $compatibleFineCache) {
+          $fineCacheDir = [string]$compatibleFineCache.cache_directory
+          $fineKey = [string]$compatibleFineCache.cache_key
+          $paCacheDispositions[$fineDefinition.disposition_key].disposition =
+            'cache_hit_semantically_equivalent_boundary_builder'
+        }
+      }
       $fineCacheDir = Resolve-RfBoundGenerationDirectory -CacheRoot $fineCacheRoot -CacheKey $fineKey `
         -Role $fineDefinition.role -ReusableDirectory $fineCacheDir
       if ([string]::IsNullOrWhiteSpace($fineCacheDir) -and $PaCachePolicy -eq 'require_existing') {
@@ -1435,7 +1483,9 @@ try {
           if (Test-Path -LiteralPath $fineBuildDir) { Remove-Item -LiteralPath $fineBuildDir -Recurse -Force }
           throw
         }
-      } else { $paCacheDispositions[$fineDefinition.disposition_key].disposition = 'cache_hit' }
+      } elseif ($paCacheDispositions[$fineDefinition.disposition_key].disposition -eq 'not_applicable') {
+        $paCacheDispositions[$fineDefinition.disposition_key].disposition = 'cache_hit'
+      }
       $domainSplitFineBuilds += [pscustomobject]@{
         name=$fineDefinition.name; gem=$fineDefinition.gem; contract=$fineDefinition.contract; geometry=$fineGeometry
         cache_role=$fineDefinition.role; disposition_key=$fineDefinition.disposition_key; cache_key=$fineKey; cache_dir=$fineCacheDir; pa0=$null
@@ -1729,6 +1779,21 @@ try {
         -RepoRoot $repoRoot -WorkspaceRoot $workspaceRoot -ProjectId $runProjectId `
         -CacheRoot $overlayCacheRoot -CacheKey $overlayKey -Role $overlayRole -Identity $overlayIdentity `
         -InvalidEntryAction $(if ($PaCachePolicy -eq 'require_existing') {'preserve'} else {'remove'})
+      if ([string]::IsNullOrWhiteSpace($overlayCacheDir)) {
+        $compatibleOverlayCache = Resolve-RfSemanticallyEquivalentFineCache -Python $python `
+          -RepoRoot $repoRoot -WorkspaceRoot $workspaceRoot -ProjectId $runProjectId `
+          -CacheRoot $overlayCacheRoot -Role $overlayRole -Identity $overlayIdentity `
+          -CurrentBuilderSha256 $overlayIdentity.inputs.basis_builder_sha256
+        if ($null -ne $compatibleOverlayCache) {
+          $overlayCacheDir = [string]$compatibleOverlayCache.cache_directory
+          $overlayKey = [string]$compatibleOverlayCache.cache_key
+          $overlayDisposition.key = $overlayKey
+          $overlayDisposition.disposition = 'cache_hit_semantically_equivalent_boundary_builder'
+          if ($domainSplitEnabled -and $overlayId -eq 'accelerator_intermediate_overlay') {
+            $paCacheDispositions.accelerator_intermediate2_overlay.key = $overlayKey
+          }
+        }
+      }
       $overlayCacheDir = Resolve-RfBoundGenerationDirectory -CacheRoot $overlayCacheRoot `
         -CacheKey $overlayKey -Role $overlayRole -ReusableDirectory $overlayCacheDir
       $overlayFamilyComplete = -not [string]::IsNullOrWhiteSpace($overlayCacheDir)
@@ -1834,7 +1899,9 @@ try {
           if (Test-Path -LiteralPath $overlayBuildDir) { Remove-Item -LiteralPath $overlayBuildDir -Recurse -Force }
           throw
         }
-      } else { $overlayDisposition.disposition = 'cache_hit' }
+      } elseif ($overlayDisposition.disposition -eq 'pending_cache_decision') {
+        $overlayDisposition.disposition = 'cache_hit'
+      }
       if ($domainSplitEnabled -and $overlayId -eq 'accelerator_intermediate_overlay') {
         $paCacheDispositions.accelerator_intermediate2_overlay.disposition = $overlayDisposition.disposition
       }
@@ -3470,5 +3537,37 @@ try {
   }
   throw
 } finally {
+  # The startup gate protects an incoming run.  Once its terminal manifest is
+  # immutable, repeat the governed L1/L2/L3 reconciliation before returning
+  # the shared lease so compact output cannot leave the workspace below its
+  # free-space watermark.  Pin this run and every actually resolved cache key:
+  # terminal manifests are deliberately not treated as "active" by the
+  # reconciler, but they remain required evidence for this invocation.
+  try {
+    $terminalCapacityArguments = @(
+      '-m','common.contracts.reconcile_artifact_capacity',
+      '--artifact-root',(Join-Path $workspaceRoot 'artifacts'),
+      '--target-gib','500','--minimum-free-gib','500',
+      '--protect-path',$package.run_dir,'--apply'
+    )
+    foreach ($cacheDisposition in $paCacheDispositions.Values) {
+      $cacheKey = [string]$cacheDisposition.key
+      if ($cacheKey -match '^[A-Fa-f0-9]{64}$') {
+        $terminalCapacityArguments += @('--protect-cache-key',$cacheKey)
+      }
+    }
+    $terminalCapacity = Invoke-SingleFlightPython -Arguments $terminalCapacityArguments `
+      -Failure 'Artifact capacity gate failed after the SIMION terminal manifest.'
+    $terminalCapacityReceipt = @($terminalCapacity) -join "`n" | ConvertFrom-Json
+    if (-not [bool]$terminalCapacityReceipt.satisfied_after_apply) {
+      throw 'Artifact capacity gate did not restore the 500 GiB repository watermark after terminal publication.'
+    }
+    Write-Output (('ARTIFACT_CAPACITY_TERMINAL=PASS MEASURED_GIB={0:N2} REMOVED_GIB={1:N2} TARGET_GIB=500.00' -f
+      ($terminalCapacityReceipt.measured_bytes / 1GB),($terminalCapacityReceipt.removed_bytes / 1GB)))
+  } catch {
+    # A terminal science result stays immutable.  Surface cleanup failure to
+    # the caller while still releasing the host lease for future remediation.
+    Write-Warning "ARTIFACT_CAPACITY_TERMINAL=FAIL $($_.Exception.Message)"
+  }
   Exit-HostExecutionLease -Lease $hostExecutionLease -Outcome $hostExecutionOutcome -RunId $RunId
 }
