@@ -495,6 +495,16 @@
     "downstream_terminal": {
       "type": "object",
       "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {"properties": {"owner": {"const": "upstream"}}},
+          "then": {"properties": {"upstream_terminal_electrode_present": {"const": true}}}
+        },
+        {
+          "if": {"properties": {"owner": {"const": "downstream"}}},
+          "then": {"properties": {"upstream_terminal_electrode_present": {"const": false}}}
+        }
+      ],
       "required": [
         "terminal_profile_id", "owner", "surface_role", "surface_plane_z_mm",
         "rod_end_clearance_mm", "upstream_enclosure_end_plane_z_mm",
@@ -515,18 +525,31 @@
         "electrode_outer_width_mm": {"type": "number", "exclusiveMinimum": 0},
         "electrode_outer_height_mm": {"type": "number", "exclusiveMinimum": 0},
         "aperture": {
-          "type": "object", "additionalProperties": false,
-          "required": ["shape", "width_mm", "height_mm", "width_axis", "height_axis"],
-          "properties": {
-            "shape": {"enum": ["rectangular", "circular"]},
-            "width_mm": {"type": "number", "exclusiveMinimum": 0},
-            "height_mm": {"type": "number", "exclusiveMinimum": 0},
-            "width_axis": {"const": "multipole_x"},
-            "height_axis": {"const": "multipole_y"}
-          }
+          "type": "object",
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "required": ["shape", "width_mm", "height_mm", "width_axis", "height_axis"],
+              "properties": {
+                "shape": {"const": "rectangular"},
+                "width_mm": {"type": "number", "exclusiveMinimum": 0},
+                "height_mm": {"type": "number", "exclusiveMinimum": 0},
+                "width_axis": {"const": "multipole_x"},
+                "height_axis": {"const": "multipole_y"}
+              }
+            },
+            {
+              "additionalProperties": false,
+              "required": ["shape", "radius_mm"],
+              "properties": {
+                "shape": {"const": "circular"},
+                "radius_mm": {"type": "number", "exclusiveMinimum": 0}
+              }
+            }
+          ]
         },
         "terminal_potential_V": {"const": 0.0},
-        "upstream_terminal_electrode_present": {"const": false}
+        "upstream_terminal_electrode_present": {"type": "boolean"}
       }
     },
     "axial_dc": {

@@ -33,6 +33,15 @@ PRE_PULSE_PHASE_PATH = (
 )
 PULSE_CAPTURE_PHASE_PATH = INTEGRATION_ROOT / "config" / "family_pulse_capture.json"
 SOURCE_ADAPTER_PATH = INTEGRATION_ROOT / "config" / "family_source_adapter.json"
+APERTURE_HEIGHT_CAMPAIGN_PATH = (
+    INTEGRATION_ROOT
+    / "config"
+    / "explorations"
+    / "paper1_s1_gap0_aperture_height_pre_pulse_n5000.json"
+)
+SHARED_JOINT_GEOMETRY_PATH = (
+    INTEGRATION_ROOT / "config" / "family_shared_physical_port_joint_geometry.json"
+)
 
 
 def load_json(path: Path) -> dict:
@@ -73,6 +82,12 @@ class IntegrationProfileContractTests(unittest.TestCase):
                 "rf_quadrupole_oatof_shield_terminal_direct_mating_gap_0mm",
                 "rf_hexapole_oatof_shield_terminal_direct_mating_gap_0mm",
                 "rf_octupole_oatof_shield_terminal_direct_mating_gap_0mm",
+                "rf_octupole_oatof_shield_terminal_aperture_100x150_direct_mating_gap_0mm",
+                "rf_octupole_oatof_shield_terminal_aperture_100x200_direct_mating_gap_0mm",
+                "rf_octupole_oatof_shield_terminal_aperture_100x250_direct_mating_gap_0mm",
+                "rf_octupole_oatof_accelerator_port_100x150_gap_102p4mm",
+                "rf_octupole_oatof_accelerator_port_100x200_gap_102p4mm",
+                "rf_octupole_oatof_accelerator_port_100x250_gap_102p4mm",
                 "rf_octupole_oatof_shield_terminal_direct_mating_gap_3p2mm",
                 "rf_octupole_oatof_shield_terminal_direct_mating_gap_6p4mm",
                 "rf_octupole_oatof_shield_terminal_direct_mating_gap_12p8mm",
@@ -97,6 +112,91 @@ class IntegrationProfileContractTests(unittest.TestCase):
                         profile_id,
                         repo_root=REPO_ROOT,
                     )
+
+    def test_aperture_height_screen_has_one_resolved_aperture_authority(self) -> None:
+        """Keep the detector-blind four-arm screen a height-only comparison."""
+        campaign = load_json(APERTURE_HEIGHT_CAMPAIGN_PATH)
+        self.assertEqual(campaign["status"], "exploration")
+        self.assertEqual(campaign["experiments"]["variation_axes"], ["connection_profile_id"])
+        shared = campaign["experiments"]["shared"]
+        self.assertEqual(shared["source_release_mode"], "continuous_frontend")
+        self.assertEqual(
+            shared["single_flight_population"]["execution_population"]["particle_count"],
+            5000,
+        )
+
+        expected = {
+            "rf_octupole_oatof_shield_terminal_direct_mating_gap_0mm": (0.9, 0.45),
+            "rf_octupole_oatof_shield_terminal_aperture_100x150_direct_mating_gap_0mm": (1.5, 0.5),
+            "rf_octupole_oatof_shield_terminal_aperture_100x200_direct_mating_gap_0mm": (2.0, 0.5),
+            "rf_octupole_oatof_shield_terminal_aperture_100x250_direct_mating_gap_0mm": (2.5, 0.5),
+        }
+        selected = [
+            row["overrides"]["connection_profile_id"]
+            for row in campaign["experiments"]["rows"]
+        ]
+        self.assertEqual(selected, list(expected))
+
+        adapter_registry = load_json(ADAPTER_REGISTRY_PATH)
+        mappings = {
+            mapping["connection_profile_id"]: mapping
+            for mapping in adapter_registry["mappings"]
+        }
+        base_binding = load_json(
+            REPO_ROOT
+            / mappings[
+                "rf_octupole_oatof_shield_terminal_direct_mating_gap_0mm"
+            ]["runtime_binding_path"]
+        )
+        for profile_id, (height_mm, minimum_clear_radius_mm) in expected.items():
+            with self.subTest(profile_id=profile_id):
+                profile = self.profiles[profile_id]
+                aperture = profile["transition_aperture"]
+                self.assertEqual(aperture["shape"], "rectangle")
+                self.assertEqual(aperture["full_width_mm"], 1.0)
+                self.assertEqual(aperture["full_height_mm"], height_mm)
+                self.assertEqual(
+                    profile["minimum_clear_radius_mm"], minimum_clear_radius_mm
+                )
+                self.assertEqual(profile["connector"]["length_mm"], 0.0)
+
+                binding = load_json(
+                    REPO_ROOT / mappings[profile_id]["runtime_binding_path"]
+                )
+                validate_schema(
+                    binding,
+                    SCHEMA_ROOT / "rf_multipole_oatof_runtime_binding.schema.json",
+                )
+                self.assertEqual(binding["connection_profile_id"], profile_id)
+                comparable = dict(binding)
+                comparable["connection_profile_id"] = base_binding[
+                    "connection_profile_id"
+                ]
+                self.assertEqual(comparable, base_binding)
+
+        joint = load_json(SHARED_JOINT_GEOMETRY_PATH)
+        aperture = joint["physical_boundaries"]["source_exit_surface"][
+            "physical_aperture"
+        ]
+        self.assertEqual(
+            aperture["shape_binding"],
+            "resolved_connection:/transition_aperture/shape",
+        )
+        self.assertEqual(
+            aperture["full_width_y_mm_binding"],
+            "resolved_connection:/transition_aperture/full_width_mm",
+        )
+        self.assertEqual(
+            aperture["full_height_z_mm_binding"],
+            "resolved_connection:/transition_aperture/full_height_mm",
+        )
+        self.assertNotIn("full_height_z_mm", aperture)
+        port_sweep = joint["port_sweep"]
+        self.assertEqual(
+            port_sweep["full_height_z_mm_binding"],
+            "resolved_connection:/transition_aperture/full_height_mm",
+        )
+        self.assertNotIn("full_height_z_mm", port_sweep)
 
     def test_runtime_and_source_schemas_reject_unknown_synonym_fields(self) -> None:
         adapter_registry = load_json(ADAPTER_REGISTRY_PATH)

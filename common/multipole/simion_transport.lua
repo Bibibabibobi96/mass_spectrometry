@@ -109,10 +109,15 @@ handoff_aperture = run_config.handoff_aperture
 if handoff_aperture then
   assert(handoff_aperture.shape == 'rectangular' or handoff_aperture.shape == 'circular',
     'handoff aperture shape must be rectangular or circular')
-  assert(handoff_aperture.width_mm and handoff_aperture.width_mm > 0,
-    'handoff aperture width must be positive')
-  assert(handoff_aperture.height_mm and handoff_aperture.height_mm > 0,
-    'handoff aperture height must be positive')
+  if handoff_aperture.shape == 'rectangular' then
+    assert(handoff_aperture.width_mm and handoff_aperture.width_mm > 0,
+      'handoff aperture width must be positive')
+    assert(handoff_aperture.height_mm and handoff_aperture.height_mm > 0,
+      'handoff aperture height must be positive')
+  else
+    assert(handoff_aperture.radius_mm and handoff_aperture.radius_mm > 0,
+      'handoff aperture radius must be positive')
+  end
 end
 radial_escape_radius_mm = assert(run_config.radial_escape_radius_mm)
 axial_axis = run_config.axial_axis or 'x'
@@ -188,7 +193,7 @@ local function inside_handoff_aperture(state)
     return math.abs(state.y) <= handoff_aperture.width_mm / 2 and
       math.abs(state.z) <= handoff_aperture.height_mm / 2
   end
-  return radial_mm(state) <= handoff_aperture.width_mm / 2
+  return radial_mm(state) <= handoff_aperture.radius_mm
 end
 
 local function write_trajectory(particle, state)

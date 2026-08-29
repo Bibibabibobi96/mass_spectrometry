@@ -123,8 +123,8 @@ def compose_downstream_terminal(
     }
     if set(profile) != required_profile_fields:
         raise DownstreamTerminalError("terminal profile fields differ")
-    if profile["owner"] != "downstream":
-        raise DownstreamTerminalError("composed terminal must be downstream-owned")
+    if profile["owner"] not in {"upstream", "downstream"}:
+        raise DownstreamTerminalError("composed terminal owner is unsupported")
     if profile["surface_role"] != "aperture_outer_tangent_plane":
         raise DownstreamTerminalError("terminal surface role differs")
     if profile["upstream_enclosure_end_plane_binding"] != (
@@ -134,7 +134,6 @@ def compose_downstream_terminal(
     numeric_values = [
         profile["rod_end_clearance_mm"], profile["electrode_thickness_mm"],
         profile["outer_envelope"]["width_mm"], profile["outer_envelope"]["height_mm"],
-        profile["aperture"]["width_mm"], profile["aperture"]["height_mm"],
         profile["upstream_entrance_reference_sleeve"]["inner_radius_mm"],
         profile["upstream_entrance_reference_sleeve"]["outer_radius_mm"],
         profile["upstream_entrance_reference_sleeve"]["minimum_insulation_gap_mm"],
@@ -155,15 +154,33 @@ def compose_downstream_terminal(
     aperture = profile["aperture"]
     if outer.get("shape") != "rectangular":
         raise DownstreamTerminalError("terminal outer envelope must be rectangular")
-    if aperture.get("shape") not in {"rectangular", "circular"}:
+    aperture_shape = aperture.get("shape")
+    if aperture_shape not in {"rectangular", "circular"}:
         raise DownstreamTerminalError("terminal aperture shape is unsupported")
-    if aperture.get("width_axis") != "multipole_x" or aperture.get("height_axis") != "multipole_y":
-        raise DownstreamTerminalError("terminal aperture local axes differ")
-    if (
-        float(aperture["width_mm"]) >= float(outer["width_mm"])
-        or float(aperture["height_mm"]) >= float(outer["height_mm"])
-    ):
-        raise DownstreamTerminalError("terminal aperture must remain inside its outer envelope")
+    if aperture_shape == "rectangular":
+        try:
+            aperture_width = float(aperture["width_mm"])
+            aperture_height = float(aperture["height_mm"])
+        except (KeyError, TypeError, ValueError) as error:
+            raise DownstreamTerminalError("rectangular terminal aperture dimensions are invalid") from error
+        if not all(math.isfinite(value) and value > 0 for value in (aperture_width, aperture_height)):
+            raise DownstreamTerminalError("rectangular terminal aperture dimensions must be positive")
+        if aperture.get("width_axis") != "multipole_x" or aperture.get("height_axis") != "multipole_y":
+            raise DownstreamTerminalError("terminal aperture local axes differ")
+        if aperture_width >= float(outer["width_mm"]) or aperture_height >= float(outer["height_mm"]):
+            raise DownstreamTerminalError("terminal aperture must remain inside its outer envelope")
+    else:
+        try:
+            raw_aperture_radius = aperture["radius_mm"]
+            if isinstance(raw_aperture_radius, bool):
+                raise TypeError("boolean radius is not physical")
+            aperture_radius = float(raw_aperture_radius)
+        except (KeyError, TypeError, ValueError) as error:
+            raise DownstreamTerminalError("circular terminal aperture radius is invalid") from error
+        if not math.isfinite(aperture_radius) or aperture_radius <= 0:
+            raise DownstreamTerminalError("circular terminal aperture radius must be positive")
+        if 2.0 * aperture_radius >= min(float(outer["width_mm"]), float(outer["height_mm"])):
+            raise DownstreamTerminalError("terminal aperture must remain inside its outer envelope")
 
     rod_end = float(resolved["geometry_mm"]["rod_z_max"])
     surface_plane = rod_end + float(profile["rod_end_clearance_mm"])
@@ -226,7 +243,7 @@ def compose_downstream_terminal(
     }
     resolved["downstream_terminal"] = {
         "terminal_profile_id": profile["terminal_profile_id"],
-        "owner": "downstream",
+        "owner": profile["owner"],
         "surface_role": profile["surface_role"],
         "surface_plane_z_mm": surface_plane,
         "rod_end_clearance_mm": float(profile["rod_end_clearance_mm"]),
@@ -238,7 +255,7 @@ def compose_downstream_terminal(
         "electrode_outer_height_mm": float(outer["height_mm"]),
         "aperture": copy.deepcopy(aperture),
         "terminal_potential_V": terminal_potential,
-        "upstream_terminal_electrode_present": False,
+        "upstream_terminal_electrode_present": profile["owner"] == "upstream",
     }
     resolved["axial_dc"] = {
         "rod_electrodes": rod_electrodes,

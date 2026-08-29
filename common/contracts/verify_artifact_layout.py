@@ -71,7 +71,11 @@ LEGACY_POLICY = {
 }
 INTEGRATION_CACHE_ROLES = {
     "simion_single_flight_frontend": {"simion_single_flight_frontend_pa_cache"},
-    "simion_accelerator_overlay": {"simion_accelerator_overlay_pa_cache"},
+    "simion_accelerator_overlay": {
+        "simion_accelerator_overlay_pa_cache",
+        "simion_accelerator_entrance_overlay_pa_cache",
+        "simion_accelerator_intermediate_overlay_pa_cache",
+    },
     "simion_oatof_downstream_pa": {
         "simion_oatof_flight_tube_pa_cache",
         "simion_oatof_reflectron_pa_cache",
@@ -196,6 +200,18 @@ def verify_integration_cache_entry(
             "accelerator_overlay.pa#",
             "basis_build.json",
             *(f"accelerator_overlay.pa{electrode}" for electrode in range(20)),
+        },
+        "simion_accelerator_entrance_overlay_pa_cache": {
+            "accelerator_entrance_overlay.gem",
+            "accelerator_entrance_overlay.pa#",
+            "basis_build.json",
+            *(f"accelerator_entrance_overlay.pa{electrode}" for electrode in range(20)),
+        },
+        "simion_accelerator_intermediate_overlay_pa_cache": {
+            "accelerator_intermediate_overlay.gem",
+            "accelerator_intermediate_overlay.pa#",
+            "basis_build.json",
+            *(f"accelerator_intermediate_overlay.pa{electrode}" for electrode in range(20)),
         },
         "simion_oatof_flight_tube_pa_cache": {
             "flight_tube_ground.pa#", "flight_tube_ground.pa0"
@@ -687,6 +703,7 @@ def main() -> None:
     parser.add_argument("--expected-cache-role")
     parser.add_argument("--expected-cache-key")
     parser.add_argument("--expected-cache-project")
+    parser.add_argument("--allow-noncurrent-generation", action="store_true")
     args = parser.parse_args()
     projects = args.root.resolve()
     verify_artifacts_root(projects)
@@ -739,8 +756,13 @@ def main() -> None:
                 )
             )
             if (
-                pointer.get("generation_sha256") != manifest.get("generation_sha256")
-                or pointer.get("payload_sha256") != manifest.get("payload_sha256")
+                not args.allow_noncurrent_generation
+                and (
+                    pointer.get("generation_sha256")
+                    != manifest.get("generation_sha256")
+                    or pointer.get("payload_sha256")
+                    != manifest.get("payload_sha256")
+                )
             ):
                 raise AssertionError("cache generation pointer differs from frozen payload")
         print(

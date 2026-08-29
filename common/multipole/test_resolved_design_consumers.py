@@ -207,6 +207,18 @@ class ResolvedDesignConsumerContractTest(unittest.TestCase):
             self.assertIn(output, comsol)
         self.assertIn("common.multipole.analyze_simion_axial_acceleration", comsol)
         self.assertIn("--metrics $evidenceMetrics", comsol)
+        self.assertIn("common.multipole.analyze_comsol_transport_metrics", comsol)
+        matlab = (MULTIPOLE / "solve_finite_3d_transport.m").read_text(
+            encoding="utf-8"
+        )
+        for forbidden in (
+            "'transmission_fraction'",
+            "'exit_rms_radius_mm'",
+            "'mean_output_energy_eV'",
+            "'output_energy_standard_deviation_eV'",
+            "write_transport_plot",
+        ):
+            self.assertNotIn(forbidden, matlab)
         matlab = (MULTIPOLE / "solve_finite_3d_transport.m").read_text(
             encoding="utf-8"
         )

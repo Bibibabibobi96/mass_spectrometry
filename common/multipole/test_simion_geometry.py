@@ -92,6 +92,24 @@ def resolved_design(
 
 
 class SimionGeometryTests(unittest.TestCase):
+    def test_connector_owned_terminal_is_not_rendered_by_the_multipole_pa(self) -> None:
+        source = resolved_design("cylindrical_bore", 0.0)
+        source["downstream_terminal"] = {
+            "owner": "downstream",
+            "upstream_terminal_electrode_present": False,
+            "surface_plane_z_mm": 16.0,
+            "rod_end_clearance_mm": 1.0,
+            "upstream_enclosure_end_plane_z_mm": 15.5,
+            "electrode_thickness_mm": 4.0,
+            "electrode_outer_shape": "rectangular",
+            "electrode_outer_width_mm": 38.0,
+            "electrode_outer_height_mm": 38.0,
+            "aperture": {"shape": "circular", "radius_mm": 1.5},
+        }
+        gem = render_gem(source, 0.2)
+        self.assertNotIn("Exactly one physical terminal", gem)
+        self.assertIn("GUI-visible numerical absorber", gem)
+
     def test_composed_downstream_terminal_replaces_legacy_exit_electrodes(self) -> None:
         source = resolved_design("cylindrical_bore", 0.0)
         source["axial_dc"] = {
@@ -104,7 +122,8 @@ class SimionGeometryTests(unittest.TestCase):
             }
         }
         source["downstream_terminal"] = {
-            "owner": "downstream",
+            "owner": "upstream",
+            "upstream_terminal_electrode_present": True,
             "surface_plane_z_mm": 16.0,
             "rod_end_clearance_mm": 1.0,
             "upstream_enclosure_end_plane_z_mm": 15.5,
@@ -130,6 +149,26 @@ class SimionGeometryTests(unittest.TestCase):
         self.assertIn("Functional source-reference sleeve", gem)
         self.assertIn("e(6)", gem)
         self.assertIn("e(7) { fill {\n    within { cylinder(0,0,1.5,10,,0.5) }", gem)
+
+    def test_composed_circular_terminal_uses_cylindrical_void_and_census_marker(self) -> None:
+        source = resolved_design("cylindrical_bore", 0.0)
+        source["downstream_terminal"] = {
+            "owner": "upstream",
+            "upstream_terminal_electrode_present": True,
+            "surface_plane_z_mm": 16.0,
+            "rod_end_clearance_mm": 1.0,
+            "upstream_enclosure_end_plane_z_mm": 15.5,
+            "electrode_thickness_mm": 4.0,
+            "electrode_outer_shape": "rectangular",
+            "electrode_outer_width_mm": 38.0,
+            "electrode_outer_height_mm": 38.0,
+            "aperture": {"shape": "circular", "radius_mm": 1.5},
+        }
+        gem = render_gem(source, 0.2)
+        self.assertIn("notin_inside { cylinder(0,0,20.2,1.5,,4.4) }", gem)
+        self.assertIn("Numerical absorber fills only the circular aperture", gem)
+        self.assertIn("e(5) { fill { within { cylinder(0,0,20.2,1.5,,0.2) } } }", gem)
+        self.assertNotIn("box3d(0.5,0.45", gem)
 
     def test_cli_accepts_xyz_and_rejects_mixed_cell_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

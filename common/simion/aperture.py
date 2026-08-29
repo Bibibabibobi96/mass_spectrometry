@@ -82,14 +82,24 @@ def resolve_rectangular_aperture_discretization(
         name: on_integer(value, cell_y_mm if name.startswith("y_") else cell_z_mm)
         for name, value in edge_coordinates.items()
     }
+    # ``notin_inside_or_on`` defines the open bore by excluding nodes inside
+    # the continuous box.  A centred physical edge can therefore correctly
+    # lie halfway between nodes: that is a grid cell face, not a geometry
+    # error.  Warn only when an edge is neither a node nor a cell face.
+    edge_compatible = {
+        name: on_integer(
+            2 * value, cell_y_mm if name.startswith("y_") else cell_z_mm
+        )
+        for name, value in edge_coordinates.items()
+    }
     warnings: list[str] = []
     if not width_integer:
         warnings.append("aperture_width_not_integer_cell_multiple")
     if not height_integer:
         warnings.append("aperture_height_not_integer_cell_multiple")
-    if not edge_alignment["y_min"] or not edge_alignment["y_max"]:
+    if not edge_compatible["y_min"] or not edge_compatible["y_max"]:
         warnings.append("aperture_y_edges_not_on_grid_nodes")
-    if not edge_alignment["z_min"] or not edge_alignment["z_max"]:
+    if not edge_compatible["z_min"] or not edge_compatible["z_max"]:
         warnings.append("aperture_z_edges_not_on_grid_nodes")
 
     contract = {

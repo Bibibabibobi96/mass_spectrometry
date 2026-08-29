@@ -75,19 +75,29 @@ for iy = iy_min, iy_max do
 end
 
 local guard_electrode_check_passed = true
+local guard_electrode_counts = {}
 local guard_columns = {
   {iy_min - 1, math.floor((iz_min + iz_max) / 2)},
   {iy_max + 1, math.floor((iz_min + iz_max) / 2)},
   {math.floor((iy_min + iy_max) / 2), iz_min - 1},
   {math.floor((iy_min + iy_max) / 2), iz_max + 1},
 }
-for _, guard in ipairs(guard_columns) do
+for guard_index, guard in ipairs(guard_columns) do
+  local electrode_count = 0
+  local interior_guard_intact = true
   for ix = ix_min, ix_max do
     local _, is_electrode = pa:point(ix, guard[1], guard[2])
-    if not is_electrode then
-      guard_electrode_check_passed = false
-      break
+    if is_electrode then electrode_count = electrode_count + 1 end
+    -- The two flange endpoints join the adjacent vacuum domains, so they are
+    -- not a side-wall test.  Every interior node through the flange thickness
+    -- must remain electrode, preventing a slit beside the defined aperture.
+    if ix > ix_min and ix < ix_max and not is_electrode then
+      interior_guard_intact = false
     end
+  end
+  guard_electrode_counts[guard_index] = electrode_count
+  if not interior_guard_intact then
+    guard_electrode_check_passed = false
   end
 end
 
@@ -105,5 +115,8 @@ report:write(string.format(
 report:close()
 print(string.format('APERTURE_TOPOLOGY=%s OPEN_COLUMNS=%d CANDIDATES=%d',
   status, open_columns, candidate_columns))
+print(string.format('APERTURE_GUARD_COVERAGE=%d,%d,%d,%d OF %d',
+  guard_electrode_counts[1], guard_electrode_counts[2],
+  guard_electrode_counts[3], guard_electrode_counts[4], ix_max - ix_min + 1))
 assert(status == 'PASS',
   'compiled PA aperture is closed or its surrounding electrode guard is missing')

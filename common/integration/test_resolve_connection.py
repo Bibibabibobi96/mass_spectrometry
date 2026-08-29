@@ -189,7 +189,7 @@ class ResolveConnectionTests(unittest.TestCase):
             },
             "connector": {
                 "length_mm": 1.0,
-                "inner_radius_mm": 2.0,
+                "cross_section_binding": "upstream_grounded_shield_v1",
                 "wall_thickness_mm": 0.5,
             },
             "transition_aperture": {
@@ -577,7 +577,6 @@ class ResolveConnectionTests(unittest.TestCase):
 
     def test_rejects_aperture_potential_and_clock_conflicts(self) -> None:
         self.profile["minimum_clear_radius_mm"] = 2.1
-        self.profile["connector"]["inner_radius_mm"] = 2.0
         self._write_inputs()
         with self.assertRaisesRegex(ContractError, "aperture"):
             self._resolve()

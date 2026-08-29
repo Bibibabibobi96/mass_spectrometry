@@ -22,11 +22,8 @@
         "height_mm": 38.0
       },
       "aperture": {
-        "shape": "rectangular",
-        "width_mm": 1.0,
-        "height_mm": 0.9,
-        "width_axis": "multipole_x",
-        "height_axis": "multipole_y"
+        "shape": "circular",
+        "radius_mm": 1.5
       },
       "upstream_entrance_reference_sleeve": {
         "profile_id": "source_reference_sleeve_v1",

@@ -207,6 +207,27 @@ class DownstreamTerminalCompositionTest(unittest.TestCase):
         del invalid["profiles"][0]["aperture"]["width_axis"]
         with self.assertRaises(ContractError):
             validate_schema(invalid, "multipole_downstream_terminal_profiles.schema.json")
+
+    def test_circular_terminal_profile_composes_a_radius_only_aperture(self) -> None:
+        registry = terminal_registry()
+        profile = registry["profiles"][0]
+        profile["owner"] = "upstream"
+        profile["aperture"] = {"shape": "circular", "radius_mm": 1.5}
+        validate_schema(registry, "multipole_downstream_terminal_profiles.schema.json")
+        composed = compose_downstream_terminal(
+            compile_mode("segmented_rod_axial_acceleration"), profile
+        )
+        self.assertEqual(
+            composed["downstream_terminal"]["aperture"],
+            {"shape": "circular", "radius_mm": 1.5},
+        )
+        self.assertEqual(composed["downstream_terminal"]["owner"], "upstream")
+        self.assertTrue(composed["downstream_terminal"]["upstream_terminal_electrode_present"])
+
+        invalid = copy.deepcopy(registry)
+        invalid["profiles"][0]["aperture"]["width_mm"] = 3.0
+        with self.assertRaises(ContractError):
+            validate_schema(invalid, "multipole_downstream_terminal_profiles.schema.json")
         invalid = terminal_registry()
         invalid["profiles"][0]["upstream_terminal_electrode_present"] = True
         with self.assertRaises(ContractError):

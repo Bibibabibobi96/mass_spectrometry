@@ -1,0 +1,15 @@
+{
+  "schema_version": 4, "role": "rf_multipole_oatof_runtime_binding",
+  "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+  "connection_profile_id": "rf_octupole_oatof_accelerator_port_100x200_gap_102p4mm", "upstream_project_id": "rf_octupole_ion_optics",
+  "contracts": {
+    "dependency_contract": {"path":"integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_runtime_dependencies.json","sha256":"9795F1CC8863FF112432DA224F513FF2E87074A8505568AB428A8BCC77CEC725"},
+    "pre_pulse_contract": {"path":"integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_pre_pulse_interface_transport.json","sha256":"31F0E423E9D05612B9A2E055A3E5F52E0940D458D0DC5C89D59D240588E02AE6"},
+    "pulse_capture_contract": {"path":"integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_pulse_capture.json","sha256":"00009E9211E6EB871C94B9803CF7E8B00F00BFF3E9919DF8DE269434B8BB2E53"},
+    "pulse_timing_contract": {"path":"integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_pulse_timing.json","sha256":"8EF5D963F602225E1C2E5DA65AC6D49812B3D17A21D1402014D9A499860B59A2"},
+    "handoff_contract": {"path":"integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_handoff.json","sha256":"FED3E8BA8629155FF12C38764D683672D1CB6B241113DD22E9C6DC5617C3068F"},
+    "handoff_publication_contract": {"path":"integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_octupole_handoff_publication_contract.json","sha256":"4A79A6259A299FCD1E9AE9DD0650495FC94BDA618F0D5795FD7736BF400964F3"},
+    "source_adapter_contract": {"path":"integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_source_adapter.json","sha256":"667E5E184C78834E98F53C7C2A56A5DA1148459597057D37B14972C12025FF26"},
+    "execution_policy_contract": {"path":"integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/execution_policy.json","sha256":"6FDB04133C0AB5F48BE51127296469802E8E31E04DF6FFB539DD96E0F54F4B35"}
+  }
+}

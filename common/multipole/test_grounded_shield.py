@@ -5,6 +5,7 @@ from __future__ import annotations
 import unittest
 
 from common.contracts.machine_contracts import validate_schema
+from common.simion.aperture import resolve_rectangular_aperture_discretization
 
 from common.multipole.grounded_shield import (
     render_grounded_circular_to_rectangular_connection,
@@ -89,6 +90,24 @@ class GroundedShieldTests(unittest.TestCase):
             "notin_inside_or_on { centered_box3D(-65.8,0,-18.4,4.4,0.5,0.2)",
             "\n".join(lines),
         )
+
+    def test_integral_height_on_grid_faces_has_no_false_alignment_warning(self) -> None:
+        """A centred aperture may correctly end at half-node cell faces."""
+        contract = resolve_rectangular_aperture_discretization(
+            mechanical_width_mm=1.0,
+            mechanical_height_mm=1.5,
+            cell_mm_xyz={"x": 0.2, "y": 0.2, "z": 0.1},
+            flange_x_min_mm=-68.3,
+            flange_x_max_mm=-64.3,
+            center_y_mm=0.0,
+            center_z_mm=0.0,
+            pa_origin_y_mm=-21.2,
+            pa_origin_z_mm=-39.5,
+        )
+        alignment = contract["grid_alignment"]
+        self.assertEqual(alignment["height_cells"], 15.0)
+        self.assertTrue(alignment["height_is_integer_cell_multiple"])
+        self.assertEqual(alignment["warnings"], [])
 
     def test_rejects_aperture_smaller_than_one_cell_in_either_axis(self) -> None:
         common = {

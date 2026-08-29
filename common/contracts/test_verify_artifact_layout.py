@@ -265,6 +265,33 @@ class ArtifactLayoutIdentityTests(unittest.TestCase):
             with self.assertRaisesRegex(AssertionError, "not registered"):
                 verify_cache(project, verify_hashes=True)
 
+    def test_reusable_two_local_accelerator_overlay_roles_are_registered(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory) / "integration"
+            root = project / "cache" / "simion_accelerator_overlay"
+            for role, stem in (
+                ("simion_accelerator_entrance_overlay_pa_cache", "accelerator_entrance_overlay"),
+                ("simion_accelerator_intermediate_overlay_pa_cache", "accelerator_intermediate_overlay"),
+            ):
+                with self.subTest(role=role):
+                    entry = self.write_reusable_cache(
+                        root / (role[-1] * 64),
+                        role,
+                        project.name,
+                        (
+                            f"{stem}.gem",
+                            f"{stem}.pa#",
+                            "basis_build.json",
+                            *(f"{stem}.pa{index}" for index in range(20)),
+                        ),
+                    )
+                    verify_integration_cache_entry(
+                        entry,
+                        expected_role=role,
+                        expected_key=entry.parents[1].name,
+                        expected_project_id=project.name,
+                    )
+
     def test_reusable_cache_rejects_missing_solver_or_extra_file(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             project = Path(directory) / "integration"

@@ -25,6 +25,75 @@ def require_grounded_potential(value: Any, label: str) -> float:
     return GROUND_POTENTIAL_V
 
 
+def render_fixed_upstream_shield_connector(
+    *,
+    electrode_id: int,
+    sleeve_x_min_mm: float,
+    sleeve_x_max_mm: float,
+    center_y_mm: float,
+    center_z_mm: float,
+    outer_radius_mm: float,
+    inner_radius_mm: float,
+    cell_mm_xyz: dict[str, float],
+) -> tuple[list[str], dict[str, Any]]:
+    """Render the fixed, grounded continuation of an upstream circular shield.
+
+    The connector has no flange, reducer, or independent aperture.  Its only
+    varying mechanical extent is the already-resolved gap length; both radii
+    are inherited from the upstream multipole shield.
+    """
+    if set(cell_mm_xyz) != {"x", "y", "z"}:
+        raise ValueError("fixed shield connector cell_mm_xyz must contain exactly x, y and z")
+    values = {
+        "sleeve_x_min_mm": sleeve_x_min_mm,
+        "sleeve_x_max_mm": sleeve_x_max_mm,
+        "center_y_mm": center_y_mm,
+        "center_z_mm": center_z_mm,
+        "outer_radius_mm": outer_radius_mm,
+        "inner_radius_mm": inner_radius_mm,
+        **cell_mm_xyz,
+    }
+    if not isinstance(electrode_id, int) or electrode_id <= 0:
+        raise ValueError("fixed shield connector electrode_id must be a positive integer")
+    if not all(math.isfinite(float(value)) for value in values.values()):
+        raise ValueError("fixed shield connector dimensions must be finite")
+    if sleeve_x_max_mm < sleeve_x_min_mm:
+        raise ValueError("fixed shield connector axial dimensions are inconsistent")
+    if not (0 < inner_radius_mm < outer_radius_mm):
+        raise ValueError("fixed shield connector radii are inconsistent")
+    cell_x_mm = float(cell_mm_xyz["x"])
+    if cell_x_mm <= 0:
+        raise ValueError("fixed shield connector cell size must be positive")
+
+    length_mm = sleeve_x_max_mm - sleeve_x_min_mm
+    if length_mm == 0:
+        return [], {
+            "topology": "fixed_upstream_grounded_shield_connector_v1",
+            "shield_potential_V": GROUND_POTENTIAL_V,
+            "length_mm": 0.0,
+            "cross_section_source": "upstream.geometry_mm.enclosure.shield",
+            "inner_radius_mm": round(inner_radius_mm, 12),
+            "outer_radius_mm": round(outer_radius_mm, 12),
+            "shared_ground_electrode_id": electrode_id,
+        }
+    fmt = lambda value: format(float(value), ".12g")
+    lines = [
+        f"  e({electrode_id}) {{ fill {{",
+        f"    within {{ locate({fmt(sleeve_x_max_mm)},{fmt(center_y_mm)},{fmt(center_z_mm)},1,90) {{ cylinder(0,0,0,{fmt(outer_radius_mm)},,{fmt(length_mm)}) }} }}",
+        f"    notin_inside {{ locate({fmt(sleeve_x_max_mm+cell_x_mm)},{fmt(center_y_mm)},{fmt(center_z_mm)},1,90) {{ cylinder(0,0,0,{fmt(inner_radius_mm)},,{fmt(length_mm+2*cell_x_mm)}) }} }}",
+        "  } }",
+    ]
+    return lines, {
+        "topology": "fixed_upstream_grounded_shield_connector_v1",
+        "shield_potential_V": GROUND_POTENTIAL_V,
+        "length_mm": round(length_mm, 12),
+        "cross_section_source": "upstream.geometry_mm.enclosure.shield",
+        "inner_radius_mm": round(inner_radius_mm, 12),
+        "outer_radius_mm": round(outer_radius_mm, 12),
+        "shared_ground_electrode_id": electrode_id,
+    }
+
+
 def render_grounded_circular_to_rectangular_connection(
     *,
     electrode_id: int,

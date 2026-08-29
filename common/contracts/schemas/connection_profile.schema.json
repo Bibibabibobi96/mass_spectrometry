@@ -38,21 +38,17 @@
     "connector": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["length_mm", "inner_radius_mm", "wall_thickness_mm"],
+      "required": ["length_mm", "cross_section_binding", "wall_thickness_mm"],
       "properties": {
         "length_mm": {"type": "number", "minimum": 0},
-        "inner_radius_mm": {"type": "number", "exclusiveMinimum": 0},
+        "cross_section_binding": {
+          "const": "upstream_grounded_shield_v1"
+        },
         "wall_thickness_mm": {"type": "number", "minimum": 0},
         "shield_connection_profile_id": {
           "const": "grounded_circular_to_rectangular_shield_v1"
         },
-        "aperture_reducer_profile_id": {
-          "const": "grounded_rectangular_aperture_reducer_v1"
-        },
-        "shield_potential_V": {"const": 0.0},
-        "flange_thickness_binding": {
-          "const": "oatof.geometry_mm.accelerator_shield_wall"
-        }
+        "shield_potential_V": {"const": 0.0}
       }
     },
     "transition_aperture": {

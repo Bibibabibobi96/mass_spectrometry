@@ -380,7 +380,6 @@ def _resolve_profile(
     effective_radius = min(
         upstream_surface["aperture_radius_mm"],
         downstream_surface["aperture_radius_mm"],
-        profile["connector"]["inner_radius_mm"],
         transition_clear_radius,
     )
     if effective_radius + position_tolerance < profile["minimum_clear_radius_mm"]:

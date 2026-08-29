@@ -25,7 +25,7 @@
         ],
         "properties": {
           "terminal_profile_id": {"$ref": "#/$defs/identifier"},
-          "owner": {"const": "downstream"},
+          "owner": {"enum": ["upstream", "downstream"]},
           "surface_role": {"const": "aperture_outer_tangent_plane"},
           "rod_end_clearance_mm": {"type": "number", "exclusiveMinimum": 0},
           "upstream_enclosure_end_plane_binding": {"const": "interfaces_mm.exit.aperture_plate_upstream_face_z_mm"},
@@ -41,15 +41,27 @@
           },
           "aperture": {
             "type": "object",
-            "additionalProperties": false,
-            "required": ["shape", "width_mm", "height_mm", "width_axis", "height_axis"],
-            "properties": {
-              "shape": {"enum": ["rectangular", "circular"]},
-              "width_mm": {"type": "number", "exclusiveMinimum": 0},
-              "height_mm": {"type": "number", "exclusiveMinimum": 0},
-              "width_axis": {"const": "multipole_x"},
-              "height_axis": {"const": "multipole_y"}
-            }
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "required": ["shape", "width_mm", "height_mm", "width_axis", "height_axis"],
+                "properties": {
+                  "shape": {"const": "rectangular"},
+                  "width_mm": {"type": "number", "exclusiveMinimum": 0},
+                  "height_mm": {"type": "number", "exclusiveMinimum": 0},
+                  "width_axis": {"const": "multipole_x"},
+                  "height_axis": {"const": "multipole_y"}
+                }
+              },
+              {
+                "additionalProperties": false,
+                "required": ["shape", "radius_mm"],
+                "properties": {
+                  "shape": {"const": "circular"},
+                  "radius_mm": {"type": "number", "exclusiveMinimum": 0}
+                }
+              }
+            ]
           },
           "upstream_entrance_reference_sleeve": {
             "type": "object",

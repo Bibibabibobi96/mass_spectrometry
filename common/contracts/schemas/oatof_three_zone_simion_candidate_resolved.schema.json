@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://mass-spectrometry.local/schemas/oatof_three_zone_simion_candidate_resolved.schema.json",
-  "title": "oaTOF T5-frozen three-zone SIMION Candidate resolved input",
+  "title": "oaTOF three-zone SIMION Candidate resolved input",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "schema_version", "role", "project_id", "qualification",
-    "compiler_mode", "campaign", "t5_evidence", "source_identity",
+    "compiler_mode", "campaign", "source_identity",
     "identities", "accelerator_topology", "accelerator_physics",
     "reflectron", "claim_limit"
   ],
@@ -15,7 +15,7 @@
     "role": {"const": "oatof_three_zone_simion_candidate_resolved"},
     "project_id": {"const": "single_reflection_oa_tof_mass_analyzer"},
     "qualification": {"const": "CANDIDATE_ONLY"},
-    "compiler_mode": {"enum": ["T5_FROZEN_PRIMARY_AND_BRANCH_ONLY", "C3_J3_EXACT_LOCAL_DIRECTION_V1", "J2_REAL_FIELD_CANDIDATE_POOL_V1"]},
+    "compiler_mode": {"enum": ["T5_FROZEN_PRIMARY_AND_BRANCH_ONLY", "C3_J3_EXACT_LOCAL_DIRECTION_V1", "J2_REAL_FIELD_CANDIDATE_POOL_V1", "IDEAL_ACCEPTANCE_250MM_SELECTED_POINT_V1", "IDEAL_ACCEPTANCE_250MM_GRID_REALIZED_V1", "IDEAL_ACCEPTANCE_300MM_SELECTED_POINT_V1", "IDEAL_ACCEPTANCE_300MM_GRID_REALIZED_V1"]},
     "c3_j3_evidence": {
       "type": "object", "additionalProperties": false,
       "required": ["physical_family", "scale_h"],
@@ -31,6 +31,39 @@
         "candidate_pool_id": {"$ref": "#/$defs/id"},
         "candidate_id": {"$ref": "#/$defs/id"},
         "pool_request_sha256": {"$ref": "#/$defs/sha"}
+      }
+    },
+    "ideal_acceptance_evidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["configuration", "run_manifest", "selected_result", "selected_design_id", "full_width_mm", "total_acceleration_length_mm"],
+      "properties": {
+        "configuration": {"$ref": "#/$defs/file"},
+        "run_manifest": {"$ref": "#/$defs/file"},
+        "selected_result": {"$ref": "#/$defs/file"},
+        "selected_design_id": {"type": "string", "minLength": 1},
+        "full_width_mm": {"const": 4.0},
+        "total_acceleration_length_mm": {"enum": [250.0, 300.0]}
+      }
+    },
+    "numerical_grid_realization": {
+      "type": "object", "additionalProperties": false,
+      "required": ["axial_grid_z_mm", "zone_lengths_mm", "scaled_focus_equation_residual_ns", "method"],
+      "properties": {
+        "axial_grid_z_mm": {"type": "number", "exclusiveMinimum": 0},
+        "zone_lengths_mm": {
+          "type": "object", "additionalProperties": false,
+          "required": ["d1", "d2", "d3"],
+          "properties": {
+            "d1": {"type": "number", "exclusiveMinimum": 0},
+            "d2": {"type": "number", "exclusiveMinimum": 0},
+            "d3": {"type": "number", "exclusiveMinimum": 0}
+          }
+        },
+        "scaled_focus_equation_residual_ns": {
+          "type": "array", "minItems": 3, "maxItems": 3,
+          "items": {"type": "number"}
+        },
+        "method": {"const": "three_zone_a1_a2_a3_root_on_grid_realized_lengths_v1"}
       }
     },
     "campaign": {
@@ -88,7 +121,7 @@
       "type": "object", "additionalProperties": false,
       "required": ["authority", "campaign_id", "campaign_sha256", "frozen_source"],
       "properties": {
-        "authority": {"const": "campaign.frozen_source"},
+        "authority": {"enum": ["campaign.frozen_source", "ideal_acceptance.selected_point"]},
         "campaign_id": {"$ref": "#/$defs/id"},
         "campaign_sha256": {"$ref": "#/$defs/sha"},
         "frozen_source": {
@@ -164,16 +197,32 @@
   },
   "allOf": [
     {
+      "if": {"required": ["compiler_mode"], "properties": {"compiler_mode": {"const": "IDEAL_ACCEPTANCE_250MM_SELECTED_POINT_V1"}}},
+      "then": {"required": ["ideal_acceptance_evidence"], "not": {"anyOf": [{"required": ["t5_evidence"]}, {"required": ["c3_j3_evidence"]}, {"required": ["j2_evidence"]}]}}
+    },
+    {
+      "if": {"required": ["compiler_mode"], "properties": {"compiler_mode": {"const": "IDEAL_ACCEPTANCE_250MM_GRID_REALIZED_V1"}}},
+      "then": {"required": ["ideal_acceptance_evidence", "numerical_grid_realization"], "not": {"anyOf": [{"required": ["t5_evidence"]}, {"required": ["c3_j3_evidence"]}, {"required": ["j2_evidence"]}]}}
+    },
+    {
       "if": {"required": ["compiler_mode"], "properties": {"compiler_mode": {"const": "C3_J3_EXACT_LOCAL_DIRECTION_V1"}}},
       "then": {"required": ["c3_j3_evidence"], "not": {"required": ["j2_evidence"]}}
     },
     {
       "if": {"required": ["compiler_mode"], "properties": {"compiler_mode": {"const": "T5_FROZEN_PRIMARY_AND_BRANCH_ONLY"}}},
-      "then": {"not": {"anyOf": [{"required": ["c3_j3_evidence"]}, {"required": ["j2_evidence"]}]}}
+      "then": {"required": ["t5_evidence"], "not": {"anyOf": [{"required": ["c3_j3_evidence"]}, {"required": ["j2_evidence"]}, {"required": ["ideal_acceptance_evidence"]}]}}
     },
     {
       "if": {"required": ["compiler_mode"], "properties": {"compiler_mode": {"const": "J2_REAL_FIELD_CANDIDATE_POOL_V1"}}},
       "then": {"required": ["j2_evidence"], "not": {"required": ["c3_j3_evidence"]}}
+    },
+    {
+      "if": {"required": ["compiler_mode"], "properties": {"compiler_mode": {"const": "IDEAL_ACCEPTANCE_300MM_SELECTED_POINT_V1"}}},
+      "then": {"required": ["ideal_acceptance_evidence"], "not": {"anyOf": [{"required": ["t5_evidence"]}, {"required": ["c3_j3_evidence"]}, {"required": ["j2_evidence"]}]}}
+    },
+    {
+      "if": {"required": ["compiler_mode"], "properties": {"compiler_mode": {"const": "IDEAL_ACCEPTANCE_300MM_GRID_REALIZED_V1"}}},
+      "then": {"required": ["ideal_acceptance_evidence", "numerical_grid_realization"], "not": {"anyOf": [{"required": ["t5_evidence"]}, {"required": ["c3_j3_evidence"]}, {"required": ["j2_evidence"]}]}}
     }
   ],
   "$defs": {

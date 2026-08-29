@@ -31,9 +31,9 @@
         }
       },
       "physical_aperture": {
-        "shape": "rectangle",
-        "full_width_y_mm": 1.0,
-        "full_height_z_mm": 0.9,
+        "shape_binding": "resolved_connection:/transition_aperture/shape",
+        "full_width_y_mm_binding": "resolved_connection:/transition_aperture/full_width_mm",
+        "full_height_z_mm_binding": "resolved_connection:/transition_aperture/full_height_mm",
         "source_binding": "resolved_connection:/transition_aperture"
       }
     },
@@ -103,10 +103,10 @@
     }
   },
   "port_sweep": {
-    "shape": "rectangle",
-    "center_z_mm": -18.42918680341103,
-    "full_height_z_mm": 0.9,
-    "selected_n100_candidate_full_width_y_mm": 1.0,
+    "shape_binding": "resolved_connection:/transition_aperture/shape",
+    "center_z_binding": "resolved_connection:/spatial_registration/translation_mm/2",
+    "full_width_y_mm_binding": "resolved_connection:/transition_aperture/full_width_mm",
+    "full_height_z_mm_binding": "resolved_connection:/transition_aperture/full_height_mm",
     "particle_release_offset_inside_outer_face_mm": 0.001
   },
   "field_basis": {
