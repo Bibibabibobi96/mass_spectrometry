@@ -105,6 +105,14 @@ class ResourceBudgetTests(unittest.TestCase):
         self.assertIn("$maximumConcurrency-1", source)
         self.assertNotIn("CalibrationDurationSeconds", source)
 
+    def test_scheduler_suppresses_checkpoint_callback_pipeline_output(self) -> None:
+        """A manifest-publishing callback must not turn the wave receipt into an array."""
+        source = (REPO_ROOT / "common/multipole/resource_budget_support.ps1").read_text(
+            encoding="utf-8"
+        )
+        self.assertEqual(source.count("$null = & $OnProcessCompleted $record"), 2)
+        self.assertNotIn("      & $OnProcessCompleted $record", source)
+
     def test_invalid_windows_cpu_sample_is_discarded(self) -> None:
         """An out-of-range WMI sample must not suppress otherwise safe lanes."""
         support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"

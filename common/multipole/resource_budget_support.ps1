@@ -642,7 +642,11 @@ function Invoke-ResourceBudgetedProcesses {
   }
   if($null-ne$OnProcessCompleted){
     foreach($record in @($completed)){
-      & $OnProcessCompleted $record
+      # Checkpoint callbacks may publish a manifest, whose helper deliberately
+      # writes a receipt object to the pipeline.  The scheduler's contract is
+      # a single result object, so callback output must not leak into callers
+      # such as $waveResult (where it would turn the result into an array).
+      $null = & $OnProcessCompleted $record
     }
   }
   if($pending.Count+$running.Count+$completed.Count-lt 1){throw 'No formal process was supplied.'}
@@ -726,7 +730,7 @@ function Invoke-ResourceBudgetedProcesses {
         $null=$completed.Add($record)
         $null=$completedThisCycle.Add($record)
         if($null-ne$OnProcessCompleted){
-          & $OnProcessCompleted $record
+          $null = & $OnProcessCompleted $record
         }
       }
     }

@@ -555,6 +555,11 @@ def _cache_keys(
         ) not in {
             "cache_hit",
             "built_and_published",
+            # The runner permits this only after it has checked every physical
+            # identity field and the exact legacy/current boundary-builder
+            # hash mapping.  Preserve that verified cache key in the
+            # materialized receipt; do not force an identical PA rebuild.
+            "cache_hit_semantically_equivalent_boundary_builder",
         }:
             raise ContractError("pre-pulse active PA cache disposition differs")
         # File/cache identities are hexadecimal identifiers, not case-sensitive
