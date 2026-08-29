@@ -75,6 +75,12 @@ particle_id,birth_time_s,x_mm,y_mm,z_mm,vx_m_s,vy_m_s,vz_m_s,mass_amu,charge_sta
 公开生产wrapper只接受`RuntimeProfileId`。runtime profile一次绑定design、particle source、
 solver numerics、资源预算和保留类；CLI不得覆盖几何、RF/DC、源能量或网格物理语义。
 
+已接入的平面源—连续轴向体积源成对传输由
+[`analyze_source_model_comparison.py`](analyze_source_model_comparison.py)分析。它只接受两个
+已验证的成功 manifest，要求项目、求解器、设计、数值、下游终端和完整粒子 ID 母队列完全一致，
+并且要求两臂的 source authority SHA 不同；输出传输/出口差值、可用的损失原因普查与冻结资源指标。
+它是描述性来源模型比较，不授予收敛、探测器、Candidate 或 Formal 资格。
+
 家族SIMION campaign入口为：
 
 ```powershell

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import csv
 import json
 import math
 from pathlib import Path
@@ -412,6 +413,22 @@ def _particle_count(path: Path) -> int:
         return max(sum(1 for line in stream if line.strip()) - 1, 0)
 
 
+def _particle_ids(path: Path) -> tuple[int, ...]:
+    """Read the canonical source cohort identity without interpreting its physics."""
+
+    with path.open(encoding="utf-8-sig", newline="") as stream:
+        reader = csv.DictReader(stream)
+        if not reader.fieldnames or "particle_id" not in reader.fieldnames:
+            raise ValueError("particle source lacks particle_id column")
+        try:
+            ids = tuple(int(row["particle_id"]) for row in reader)
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValueError("particle source has an invalid particle_id") from error
+    if len(ids) != len(set(ids)):
+        raise ValueError("particle source has duplicate particle IDs")
+    return ids
+
+
 def _set_pointer(document: dict[str, Any], pointer: str, value: int | float) -> None:
     """Replace one existing scalar selected by a catalog JSON Pointer."""
 
@@ -479,6 +496,13 @@ def _resolve_phase_policy(
     """Bind phase-matched source derivation without materializing run artifacts."""
 
     policy = campaign["particle_source_phase_policy"]
+    authority_relationship = policy.get(
+        "n1000_authority_relationship", "same_as_reference"
+    )
+    if authority_relationship not in {
+        "same_as_reference", "source_model_comparison_with_same_particle_ids"
+    }:
+        raise ValueError("phase-policy N=1000 authority relationship is invalid")
     baseline_frequency = float(policy["baseline_frequency_Hz"])
     candidate_frequency = float(design["resolved_design"]["drive"]["frequency_Hz"])
     declared_frequency = float(
@@ -503,8 +527,12 @@ def _resolve_phase_policy(
         raise ValueError("phase-matched source must contain N=100, N=1000, or N=5000 particles")
     if _particle_count(Path(reference["path"])) != 1000:
         raise ValueError("phase-matched reference source must contain N=1000 particles")
-    if authority_count == 1000 and authority["sha256"] != reference["sha256"]:
-        raise ValueError("N=1000 phase-matched authority differs from its reference")
+    if authority_count == 1000:
+        if authority_relationship == "same_as_reference" and authority["sha256"] != reference["sha256"]:
+            raise ValueError("N=1000 phase-matched authority differs from its reference")
+        if authority_relationship == "source_model_comparison_with_same_particle_ids":
+            if _particle_ids(Path(authority["path"])) != _particle_ids(Path(reference["path"])):
+                raise ValueError("N=1000 source-model authority differs in particle-ID cohort")
     if authority_count == 5000:
         authority_lines = Path(authority["path"]).read_text(encoding="utf-8-sig").splitlines()
         reference_lines = Path(reference["path"]).read_text(encoding="utf-8-sig").splitlines()
@@ -517,6 +545,7 @@ def _resolve_phase_policy(
         "frequency_variable_id": policy["frequency_variable_id"],
         "authority_source": authority,
         "authority_particle_count": authority_count,
+        "n1000_authority_relationship": authority_relationship,
         "n1000_reference_source": reference,
         "formula": "t_new = t_old * baseline_frequency_Hz / candidate_frequency_Hz",
     }

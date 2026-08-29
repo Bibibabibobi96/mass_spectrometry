@@ -87,7 +87,13 @@
         "kind": {"const": "match_baseline_rf_phase"},
         "baseline_frequency_Hz": {"type": "number", "exclusiveMinimum": 0},
         "frequency_variable_id": {"const": "rf_frequency"},
-        "n1000_reference_profile_id": {"type": "string", "minLength": 1}
+        "n1000_reference_profile_id": {"type": "string", "minLength": 1},
+        "n1000_authority_relationship": {
+          "enum": [
+            "same_as_reference",
+            "source_model_comparison_with_same_particle_ids"
+          ]
+        }
       }
     },
     "particle_source_transform_policy": {

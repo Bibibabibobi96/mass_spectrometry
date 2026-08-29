@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 4,
   "role": "multipole_transport_experiment_campaign",
   "family_id": "rf_multipole_ion_optics",
   "campaign_id": "20260829__oct_planar_vs_volume_source_n1000",
@@ -8,6 +8,20 @@
     "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
     "terminal_profile_id": "oatof_shield_terminal",
     "registry_sha256": "45659F6BE130394CCF1CEEEA1077C080C248135F9D4F10C468235B40CA3905FF"
+  },
+  "design_variable_authorization": {
+    "allowed_variable_ids": ["rf_amplitude", "rf_frequency"],
+    "variable_limits": [
+      {"variable_id": "rf_amplitude", "unit": "V", "minimum": 139.81792, "maximum": 139.81792},
+      {"variable_id": "rf_frequency", "unit": "Hz", "minimum": 1100000.0, "maximum": 1100000.0}
+    ]
+  },
+  "particle_source_phase_policy": {
+    "kind": "match_baseline_rf_phase",
+    "baseline_frequency_Hz": 1100000.0,
+    "frequency_variable_id": "rf_frequency",
+    "n1000_reference_profile_id": "family_mother_sample_v1_n1000",
+    "n1000_authority_relationship": "source_model_comparison_with_same_particle_ids"
   },
   "experiments": [
     {
@@ -28,6 +42,9 @@
           "trajectory": {"rf_steps_per_period": 160, "maximum_global_time_us": 80.0}
         }
       },
+      "execution_profile_id": "simion_transport_campaign_engineering",
+      "case_set": "primary_only",
+      "design_variable_values": {"rf_amplitude": 139.81792, "rf_frequency": 1100000.0},
       "retention_class": "compact",
       "resource_authorization": {
         "authorized": true,
@@ -66,6 +83,9 @@
           "trajectory": {"rf_steps_per_period": 160, "maximum_global_time_us": 80.0}
         }
       },
+      "execution_profile_id": "simion_transport_campaign_engineering",
+      "case_set": "primary_only",
+      "design_variable_values": {"rf_amplitude": 139.81792, "rf_frequency": 1100000.0},
       "retention_class": "compact",
       "resource_authorization": {
         "authorized": true,
@@ -85,6 +105,15 @@
         "budget_exhaustion_result": "Stop without retry and record the exhausted limit."
       },
       "claim_limit": "Paired N=1000 independent axial-volume source snapshot for source-model comparison. Its receipt-bound spatial and velocity distribution is the only source difference; it supports transport, loss-census and elapsed-runtime comparison only; no convergence, detector, Candidate or Formal claim."
+    }
+  ],
+  "analysis_requests": [
+    {
+      "capability_id": "multipole_source_model_comparison_v1",
+      "experiment_ids": ["oct_planar_source_control_n1000", "oct_volume_source_n1000"],
+      "baseline_experiment_id": "oct_planar_source_control_n1000",
+      "analysis_run_id": "20260829_230200__analysis__cross__oct-source-model-comparison__n1000",
+      "parameters": {}
     }
   ],
   "claim_limit": "Two-row paired SIMION N=1000 octupole source-model comparison. The no-acceleration octupole design, oaTOF shield terminal, SIMION grid, timestep, run budget and retention are fixed; only the receipt-bound source model changes."

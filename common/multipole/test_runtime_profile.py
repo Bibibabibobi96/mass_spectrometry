@@ -135,6 +135,21 @@ class RuntimeProfileTests(unittest.TestCase):
             1_210_000.0,
         )
 
+    def test_source_model_campaign_allows_distinct_authority_only_with_same_cohort(self) -> None:
+        campaign = (
+            REPO_ROOT / "common/multipole/campaigns/"
+            "20260829__oct_planar_vs_volume_source_n1000.json"
+        )
+        resolved = resolve_campaign_experiment(
+            REPO_ROOT, "rf_octupole_ion_optics", campaign, "oct_volume_source_n1000"
+        )
+        derivation = resolved["particle_source_phase_derivation"]
+        self.assertEqual(
+            derivation["n1000_authority_relationship"],
+            "source_model_comparison_with_same_particle_ids",
+        )
+        self.assertEqual(derivation["authority_particle_count"], 1000)
+
     def test_prospective_paper1_s1_and_s2_campaigns_bind_independent_n5000_source(self) -> None:
         cases = (
             (

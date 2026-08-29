@@ -45,6 +45,49 @@
         "figure_manifest": "results/figure_manifest.json"
       },
       "claim_class": "UNQUALIFIED_DIAGNOSTIC_ONLY"
+    },
+    {
+      "capability_id": "multipole_source_model_comparison_v1",
+      "consumer": {
+        "analysis_module": "common.multipole.analyze_source_model_comparison",
+        "plot_module": "common.multipole.exit_state_plot"
+      },
+      "allowed_projects": ["rf_octupole_ion_optics"],
+      "allowed_solvers": ["simion"],
+      "input_roles": {
+        "source_run_manifest": "simulation_run_manifest",
+        "source_figure_manifest": "multipole_exit_state_figure_manifest",
+        "source_state": "canonical_component_particle_state"
+      },
+      "required_consistency": [
+        "campaign_id",
+        "solver",
+        "stop_stage",
+        "case_set",
+        "design_profile_id",
+        "execution_profile_id",
+        "design_variable_values",
+        "comsol_solver_numerics_profile_id",
+        "simion_solver_numerics",
+        "retention_class",
+        "resource_authorization"
+      ],
+      "series_count": {"minimum": 2, "maximum": 2},
+      "allowed_parameters": {
+        "bin_count": {"type": "integer", "minimum": 12, "maximum": 64, "default": 24},
+        "dpi": {"type": "integer", "minimum": 180, "maximum": 300, "default": 200}
+      },
+      "fixed_settings": {
+        "title": "RF octupole planar versus independent axial-volume source comparison",
+        "purpose": "Preregistered two-arm source-model transport comparison; only the receipt-bound source model differs"
+      },
+      "fixed_output_roles": {
+        "metrics": "results/metrics.json",
+        "report": "results/report.md",
+        "figure": "results/figure.png",
+        "figure_manifest": "results/figure_manifest.json"
+      },
+      "claim_class": "UNQUALIFIED_DIAGNOSTIC_ONLY"
     }
   ]
 }
