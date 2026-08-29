@@ -107,6 +107,14 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
             runner,
         )
 
+    def test_pre_pulse_batch_checkpoint_writes_the_package_run_manifest_path(self) -> None:
+        runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        checkpoint = runner.index("$prePulseCheckpointAction = {")
+        manifest_write = runner.index("Write-VerifiedRunManifest", checkpoint)
+        checkpoint_block = runner[checkpoint:manifest_write + 400]
+        self.assertIn("(Join-Path $package.run_dir 'run_manifest.json')", checkpoint_block)
+        self.assertNotIn("$package.run_manifest", checkpoint_block)
+
     def test_program_builder_optional_restart_context_is_strictmode_safe(self) -> None:
         runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
         initialization = runner.index("$restartContext = $null")

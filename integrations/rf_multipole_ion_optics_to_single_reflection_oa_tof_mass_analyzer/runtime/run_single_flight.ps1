@@ -3250,7 +3250,7 @@ try {
         }
       }
       Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot `
-        -RunConfig $package.run_config -Manifest $package.run_manifest `
+        -RunConfig $package.run_config -Manifest (Join-Path $package.run_dir 'run_manifest.json') `
         -Status interrupted -Software @('SIMION 2020','Python 3.11') `
         -Outputs @($prePulseCheckpointOutputs)
     }
