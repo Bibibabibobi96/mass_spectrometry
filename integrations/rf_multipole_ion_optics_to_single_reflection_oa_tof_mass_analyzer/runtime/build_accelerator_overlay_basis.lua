@@ -34,6 +34,8 @@ end
 simion.pas:close()
 local initializer=simion.pas:open(fine_pa_sharp)
 initializer:refine{}
+assert(initializer.nx>=3 and initializer.ny>=3 and initializer.nz>=3,
+  'accelerator-overlay PA must have at least three points on every axis')
 simion.pas:close()
 
 local total_boundary_points=0
@@ -44,12 +46,8 @@ for basis=0,maximum_electrode do
   simion.pas:close()
   local coarse=simion.pas:open(coarse_path)
   local fine=simion.pas:open(fine_path)
-  local seen={}
   local count=0
   local function copy(ix,iy,iz)
-    local key=ix..':'..iy..':'..iz
-    if seen[key] then return end
-    seen[key]=true
     local wx=fine_origin[1]+ix*fine.dx_mm
     local wy=fine_origin[2]+iy*fine.dy_mm
     local wz=fine_origin[3]+iz*fine.dz_mm
@@ -67,15 +65,22 @@ for basis=0,maximum_electrode do
     if residual>maximum_copy_residual then maximum_copy_residual=residual end
     count=count+1
   end
+
+  -- The six faces are disjoint: x owns all edges/corners, y omits x edges,
+  -- and z omits both x and y edges.  This retains exactly the legacy surface
+  -- values without allocating a string key and hash-table entry per point.
   for iz=0,fine.nz-1 do for iy=0,fine.ny-1 do
     copy(0,iy,iz); copy(fine.nx-1,iy,iz)
   end end
-  for iz=0,fine.nz-1 do for ix=0,fine.nx-1 do
+  for iz=0,fine.nz-1 do for ix=1,fine.nx-2 do
     copy(ix,0,iz); copy(ix,fine.ny-1,iz)
   end end
-  for iy=0,fine.ny-1 do for ix=0,fine.nx-1 do
+  for iy=1,fine.ny-2 do for ix=1,fine.nx-2 do
     copy(ix,iy,0); copy(ix,iy,fine.nz-1)
   end end
+  local expected=2*fine.ny*fine.nz + 2*(fine.nx-2)*fine.nz +
+    2*(fine.nx-2)*(fine.ny-2)
+  assert(count==expected, 'disjoint accelerator-overlay boundary traversal is incomplete')
   fine:save()
   total_boundary_points=total_boundary_points+count
   print(string.format(
@@ -86,7 +91,7 @@ simion.pas:close()
 
 local report=assert(io.open(report_path,'w'))
 report:write(string.format(
-  '{\n  "schema_version": 1,\n  "role": "simion_accelerator_overlay_basis_build",\n  "status": "pass",\n  "maximum_electrode_id": %d,\n  "basis_array_count": %d,\n  "boundary_point_write_count": %d,\n  "maximum_immediate_copy_residual_V": %.17g\n}\n',
+  '{\n  "schema_version": 2,\n  "role": "simion_accelerator_overlay_basis_build",\n  "status": "pass",\n  "boundary_traversal": "disjoint_six_faces_v1",\n  "duplicate_boundary_writes": 0,\n  "maximum_electrode_id": %d,\n  "basis_array_count": %d,\n  "boundary_point_write_count": %d,\n  "maximum_immediate_copy_residual_V": %.17g\n}\n',
   maximum_electrode,maximum_electrode+1,total_boundary_points,
   maximum_copy_residual))
 report:close()

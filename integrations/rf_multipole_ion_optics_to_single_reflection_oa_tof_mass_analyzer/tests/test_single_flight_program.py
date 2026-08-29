@@ -245,6 +245,26 @@ class SingleFlightProgramTests(unittest.TestCase):
         self.assertIn("upstream_bridge=5", program)
         self.assertIn("accelerator_intermediate_overlay=6", program)
         self.assertIn("single_flight_active_field_instances={1,3,5,6}", program)
+        full_flight_program = build_successor_program(
+            upstream, frontend, oatof, region, birth_times_us=[0.25],
+            analyzer_component_source=ANALYZER_COMPONENT_SOURCE,
+            pulse_hook_source=PULSE_HOOK_SOURCE,
+            frontend_hook_source=FRONTEND_HOOK_SOURCE,
+            rf_drive_kernel_source=RF_DRIVE_KERNEL_SOURCE,
+            intermediate_overlay=intermediate, domain_split=domain,
+        )
+        self.assertIn("coarse_frontend=1", full_flight_program)
+        self.assertIn("reflectron=2", full_flight_program)
+        self.assertIn("detector=4", full_flight_program)
+        self.assertIn("upstream_bridge=5", full_flight_program)
+        self.assertIn("accelerator_intermediate_overlay=6", full_flight_program)
+        self.assertIn(
+            "single_flight_active_field_instances={1,3,5,6}",
+            full_flight_program,
+        )
+        self.assertIn("active_scope=='pre_pulse_frontend_accelerator'", full_flight_program)
+        self.assertIn("or 'full_flight'", full_flight_program)
+        self.assertIn("TRACE: detector_crossing", full_flight_program)
 
     def test_pre_pulse_screening_accepts_identity_bearing_schema_v4(self) -> None:
         screening = {
@@ -548,6 +568,32 @@ class SingleFlightProgramTests(unittest.TestCase):
         self.assertIn("single_flight_is_active_field_instance(ion_instance)", program)
         self.assertIn("assert(#simion.wb.instances==6", exporter)
         self.assertIn("C3 overlay active bounds overlap", exporter)
+
+        # The production positive-gap topology has no entrance overlay in the
+        # IOB.  Its intermediate2 overlay is the governed fine field source.
+        with tempfile.TemporaryDirectory() as directory:
+            region = build_resolved_region_field_contract(geometry_path, Path(directory) / "region.json", "accelerator_ideal_three_zone_real_reflectron", accelerator_topology=topology)
+            program, exporter = build_successor_program(
+                upstream, frontend, oatof, region, birth_times_us=[0.25],
+                analyzer_component_source=ANALYZER_COMPONENT_SOURCE, pulse_hook_source=PULSE_HOOK_SOURCE,
+                frontend_hook_source=FRONTEND_HOOK_SOURCE, rf_drive_kernel_source=RF_DRIVE_KERNEL_SOURCE,
+                intermediate_overlay=overlay("intermediate2", -13.5, -9.5),
+                domain_split={
+                    "upstream_instance_index": 5, "accelerator_instance_index": 3,
+                    "upstream_end_x_mm": -20.0, "accelerator_start_x_mm": -10.0,
+                    "upstream_bounds_mm": {"x_min": -30.0, "x_max": -20.0},
+                    "accelerator_bounds_mm": {"x_min": -10.0, "x_max": 1.0},
+                    "upstream_origin_mm": {"x": -30.0, "y": -1.0, "z": -1.0},
+                    "accelerator_origin_mm": {"x": -10.0, "y": -1.0, "z": -1.0},
+                },
+                include_total_axis_field_exporter=True,
+            )
+        self.assertIn("single_flight_domain_split_enabled=1", program)
+        self.assertIn("assert(#simion.wb.instances==6", exporter)
+        self.assertIn("accelerator_main in slot 3", exporter)
+        self.assertIn("active_scope='pre_pulse_frontend_accelerator'", exporter)
+        self.assertNotIn("OATOF_ACCELERATOR_PA_OVERRIDE", exporter)
+        self.assertIn("math.floor((z_end-z_start)/z_step+0.5)+1", exporter)
 
     def test_three_zone_axis_exporter_replays_frozen_dynamic_pa_values(self) -> None:
         topology = {

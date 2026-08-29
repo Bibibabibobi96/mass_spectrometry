@@ -2,7 +2,7 @@
   "schema_version": 4,
   "role": "rf_multipole_oatof_runtime_binding",
   "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
-  "connection_profile_id": "rf_octupole_oatof_accelerator_port_100x250_gap_102p4mm",
+  "connection_profile_id": "rf_octupole_oatof_cylindrical_sideport_100x090_direct_mating_gap_0mm",
   "upstream_project_id": "rf_octupole_ion_optics",
   "contracts": {
     "dependency_contract": {

@@ -94,7 +94,12 @@
       "frontend_electrode_topology_id": "three_zone_frontend_v1",
       "candidate_field_id": "three_zone_piecewise_uniform_ideal_field_v1",
       "accelerator_realization_id": "square_3d",
-      "accelerator_ring_placement_policy": {"policy_id": "three_zone_zonewise_equal_subdivision_1p4_v1", "zone2_ring_count": 1, "zone3_ring_count": 4, "minimum_grid_to_ring_edge_clearance_mm": 1.0},
+      "accelerator_ring_placement_policy": {
+        "policy_id": "three_zone_zonewise_equal_subdivision_1p4_v1",
+        "zone2_ring_count": 1,
+        "zone3_ring_count": 4,
+        "minimum_grid_to_ring_edge_clearance_mm": 1.0
+      },
       "source_release_full_width_mm": 4.0,
       "focus_to_reflectron_mm": 600.0,
       "claim_status": "CANDIDATE_ONLY"
@@ -111,7 +116,12 @@
       "frontend_electrode_topology_id": "three_zone_frontend_v1",
       "candidate_field_id": "three_zone_piecewise_uniform_ideal_field_v1",
       "accelerator_realization_id": "cylindrical_3d",
-      "accelerator_ring_placement_policy": {"policy_id": "three_zone_zonewise_equal_subdivision_1p4_v1", "zone2_ring_count": 1, "zone3_ring_count": 4, "minimum_grid_to_ring_edge_clearance_mm": 1.0},
+      "accelerator_ring_placement_policy": {
+        "policy_id": "three_zone_zonewise_equal_subdivision_1p4_v1",
+        "zone2_ring_count": 1,
+        "zone3_ring_count": 4,
+        "minimum_grid_to_ring_edge_clearance_mm": 1.0
+      },
       "source_release_full_width_mm": 4.0,
       "focus_to_reflectron_mm": 600.0,
       "claim_status": "CANDIDATE_ONLY"

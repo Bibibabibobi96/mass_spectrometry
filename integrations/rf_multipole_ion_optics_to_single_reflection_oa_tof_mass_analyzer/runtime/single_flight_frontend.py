@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from common.multipole.grounded_shield import (
+    render_grounded_circular_to_rectangular_connection,
     render_fixed_upstream_shield_connector,
     require_grounded_potential,
 )
@@ -522,6 +523,14 @@ def compile_accelerator_main(
     }.get(requested_realization)
     if expected_cross_section is None or geometry.get("cross_section") != expected_cross_section:
         raise ValueError("accelerator main realization differs from the compiled frontend")
+    cylindrical_sideport = frontend.get("cylindrical_sideport")
+    if expected_cross_section == "cylindrical":
+        if not isinstance(cylindrical_sideport, dict) or cylindrical_sideport.get("profile_id") != (
+            "grounded_circular_to_cylindrical_sideport_v1"
+        ):
+            raise ValueError("accelerator main requires the cylindrical side-port collar contract")
+    elif cylindrical_sideport is not None:
+        raise ValueError("square accelerator main must not receive a cylindrical side-port collar")
 
     split = (
         resolve_positive_gap_domain_split(frontend, connection)
@@ -623,16 +632,29 @@ def compile_accelerator_main(
         source_exit = frontend.get("source_exit_center_mm")
         if not isinstance(junction, dict) or not isinstance(source_exit, dict):
             raise ValueError("domain split main connector geometry is missing")
-        connector_lines, _ = render_fixed_upstream_shield_connector(
-            electrode_id=int(electrodes["grounded_shield_id"]),
-            sleeve_x_min_mm=float(split["accelerator_start_x_mm"]),
-            sleeve_x_max_mm=float(source_exit["x"]),
-            center_y_mm=float(source_exit["y"]),
-            center_z_mm=float(source_exit["z"]),
-            outer_radius_mm=float(junction["outer_radius_mm"]),
-            inner_radius_mm=float(junction["inner_radius_mm"]),
-            cell_mm_xyz=cells,
-        )
+        if cylindrical_sideport is None:
+            connector_lines, _ = render_fixed_upstream_shield_connector(
+                electrode_id=int(electrodes["grounded_shield_id"]),
+                sleeve_x_min_mm=float(split["accelerator_start_x_mm"]),
+                sleeve_x_max_mm=float(source_exit["x"]), center_y_mm=float(source_exit["y"]),
+                center_z_mm=float(source_exit["z"]), outer_radius_mm=float(junction["outer_radius_mm"]),
+                inner_radius_mm=float(junction["inner_radius_mm"]), cell_mm_xyz=cells,
+            )
+        else:
+            sideport_lines, rendered_sideport = render_grounded_circular_to_rectangular_connection(
+                electrode_id=int(electrodes["grounded_shield_id"]),
+                sleeve_x_min_mm=float(split["accelerator_start_x_mm"]),
+                sleeve_x_max_mm=float(source_exit["x"]),
+                flange_thickness_mm=float(cylindrical_sideport["positive_volume_overlap_mm"]),
+                center_y_mm=float(source_exit["y"]), center_z_mm=float(source_exit["z"]),
+                outer_radius_mm=float(cylindrical_sideport["outer_radius_mm"]),
+                inner_radius_mm=float(cylindrical_sideport["connector_inner_radius_mm"]),
+                aperture_width_mm=float(cylindrical_sideport["mechanical_aperture_mm"]["width"]),
+                aperture_height_mm=float(cylindrical_sideport["mechanical_aperture_mm"]["height"]),
+                cell_mm_xyz=cells, pa_origin_y_mm=bounds["y_min"], pa_origin_z_mm=bounds["z_min"],
+            )
+            connector_lines = ["  ; Grounded cylindrical side-port collar/end plate.", *sideport_lines]
+            cylindrical_sideport = {**cylindrical_sideport, "fine_aperture_discretization": rendered_sideport["aperture_discretization"]}
     gem_lines = [
         "; Generated standalone three-zone accelerator main PA; do not edit.",
         "; It requires bridge-electrode-basis Dirichlet initialization before Refine.",
@@ -663,6 +685,7 @@ def compile_accelerator_main(
         },
         "instance_bounds_mm": bounds,
         "cross_section": expected_cross_section,
+        "cylindrical_sideport": cylindrical_sideport,
         "accelerator_port_aperture": {
             "authority": "fine_accelerator_main_pa_v1",
             "discretization": fine_aperture_discretization,
@@ -907,7 +930,9 @@ def compile_upstream_bridge(
             "owner": "accelerator_main" if split is not None else "upstream_bridge",
             "numerical_port_aperture_discretization": aperture_discretization,
             "screen_span_mm": {"y": screen_span_y, "z": screen_span_z},
+            "cylindrical_sideport": frontend.get("cylindrical_sideport"),
         },
+        "cylindrical_sideport": frontend.get("cylindrical_sideport"),
         "connector_terminal": dict(frontend["connector_terminal"]),
         "domain_split": (
             {
@@ -955,10 +980,6 @@ def compile_frontend(
     connector_length = float(connector.get("length_mm", -1.0))
     if connector_length < 0:
         raise ValueError("single-flight grounded connector length must be nonnegative")
-    if connector.get("shield_connection_profile_id") != (
-        "grounded_circular_to_rectangular_shield_v1"
-    ):
-        raise ValueError("single-flight frontend requires the published grounded shield connector")
     require_grounded_potential(connector.get("shield_potential_V"), "connection profile shield")
     if connector.get("cross_section_binding") != "upstream_grounded_shield_v1":
         raise ValueError("connector must inherit the upstream grounded shield cross section")
@@ -1064,6 +1085,14 @@ def compile_frontend(
     }
     if realization not in cross_section_by_realization:
         raise ValueError("oaTOF accelerator realization is unsupported")
+    expected_shield_profile = {
+        "square_3d": "grounded_circular_to_rectangular_shield_v1",
+        "cylindrical_3d": "grounded_circular_to_cylindrical_sideport_v1",
+    }[realization]
+    if connector.get("shield_connection_profile_id") != expected_shield_profile:
+        raise ValueError(
+            "single-flight frontend shield connection profile differs from accelerator realization"
+        )
     ring_count = int(oatof["rings"]["accelerator_count"])
     axis_x = float(oatof["coordinate_convention"]["accelerator_axis_x"])
     axis_y = 0.0
@@ -1114,6 +1143,28 @@ def compile_frontend(
     shield_inner_width = shield_outer_width - 2 * shield_wall
     negative_x_face = axis_x - shield_outer_width / 2
     _require_close(negative_x_face, exit_x, "mated shield face")
+    cylindrical_sideport: dict[str, Any] | None = None
+    if realization == "cylindrical_3d":
+        accelerator_outer_radius = shield_outer_width / 2
+        if outer_radius < accelerator_outer_radius or shield_wall <= 0:
+            raise ValueError("cylindrical side-port collar cannot enclose the accelerator shell")
+        cylindrical_sideport = {
+            "profile_id": "grounded_circular_to_cylindrical_sideport_v1",
+            "topology": "grounded_circular_sideport_collar_end_plate_v1",
+            "grounded_electrode_id": grounded_shield_id,
+            "outer_radius_mm": outer_radius,
+            "connector_inner_radius_mm": inner_radius,
+            "accelerator_shell_outer_radius_mm": accelerator_outer_radius,
+            "accelerator_shell_inner_radius_mm": shield_inner_width / 2,
+            "accelerator_shell_wall_mm": shield_wall,
+            "collar_x_min_mm": negative_x_face,
+            "collar_x_max_mm": negative_x_face + shield_wall,
+            "positive_volume_overlap_mm": shield_wall,
+            "mechanical_aperture_mm": {
+                "width": float(aperture["full_width_mm"]),
+                "height": float(aperture["full_height_mm"]),
+            },
+        }
 
     x_min = exit_x - math.ceil(
         (exit_x - source_x_min + cell_x_mm) / cell_x_mm
@@ -1237,16 +1288,26 @@ def compile_frontend(
                 "  } }",
             ]
         )
-    connection_lines, connection_contract = render_fixed_upstream_shield_connector(
-        electrode_id=grounded_shield_id,
-        sleeve_x_min_mm=terminal_end_x,
-        sleeve_x_max_mm=exit_x,
-        center_y_mm=center_y,
-        center_z_mm=center_z,
-        outer_radius_mm=outer_radius,
-        inner_radius_mm=inner_radius,
-        cell_mm_xyz={"x": cell_x_mm, "y": cell_y_mm, "z": cell_z_mm},
-    )
+    if cylindrical_sideport is None:
+        connection_lines, connection_contract = render_fixed_upstream_shield_connector(
+            electrode_id=grounded_shield_id, sleeve_x_min_mm=terminal_end_x,
+            sleeve_x_max_mm=exit_x, center_y_mm=center_y, center_z_mm=center_z,
+            outer_radius_mm=outer_radius, inner_radius_mm=inner_radius,
+            cell_mm_xyz={"x": cell_x_mm, "y": cell_y_mm, "z": cell_z_mm},
+        )
+    else:
+        connection_lines, rendered_sideport = render_grounded_circular_to_rectangular_connection(
+            electrode_id=grounded_shield_id, sleeve_x_min_mm=terminal_end_x,
+            sleeve_x_max_mm=exit_x, flange_thickness_mm=shield_wall,
+            center_y_mm=center_y, center_z_mm=center_z, outer_radius_mm=outer_radius,
+            inner_radius_mm=inner_radius, aperture_width_mm=port_width,
+            aperture_height_mm=port_height,
+            cell_mm_xyz={"x": cell_x_mm, "y": cell_y_mm, "z": cell_z_mm},
+            pa_origin_y_mm=y_min, pa_origin_z_mm=z_min,
+        )
+        connection_lines.insert(0, "  ; Grounded cylindrical side-port collar/end plate.")
+        cylindrical_sideport["coarse_aperture_discretization"] = rendered_sideport["aperture_discretization"]
+        connection_contract = {**rendered_sideport, "profile_id": cylindrical_sideport["profile_id"]}
     lines.extend(connection_lines)
     aperture_discretization = resolve_rectangular_aperture_discretization(
         mechanical_width_mm=port_width,
@@ -1397,6 +1458,7 @@ def compile_frontend(
             "profile_gap_mm": round(connector_length, 12),
             **connection_contract,
         },
+        "cylindrical_sideport": cylindrical_sideport,
         "aperture": {"shape": "rectangular", "width_mm": port_width, "height_mm": port_height},
         "accelerator_port_aperture_authority": {
             "mode": "coarse_bridge_boundary_only_v1",

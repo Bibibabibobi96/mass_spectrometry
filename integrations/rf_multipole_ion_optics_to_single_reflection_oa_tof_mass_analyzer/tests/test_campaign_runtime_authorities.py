@@ -294,7 +294,11 @@ class CampaignRuntimeAuthoritiesTests(unittest.TestCase):
         self.assertIn("simion_aperture_topology_support.ps1", runner)
         self.assertIn("Invoke-SimionCompiledApertureTopologyCheck", runner)
         self.assertIn("frontend_open_aperture_column_count", runner)
-        refine = runner.index("accelerator_main_refine_pa")
+        # Fine-domain refinement is dispatched per electrode through the
+        # generic domain-split loop.  The cache publish is therefore the
+        # stable post-refinement marker, rather than an obsolete hard-coded
+        # accelerator-main log filename.
+        refine = runner.index("$fineCacheDir = Publish-RfVerifiedCacheEntry")
         audit = runner.index("Invoke-SimionCompiledApertureTopologyCheck")
         flight = runner.index("'--nogui','--noprompt','fly'")
         self.assertLess(refine, audit)

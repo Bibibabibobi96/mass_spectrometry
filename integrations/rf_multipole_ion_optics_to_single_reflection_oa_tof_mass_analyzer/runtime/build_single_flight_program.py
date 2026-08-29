@@ -513,8 +513,6 @@ def build_successor_program(
             "three-zone single-flight Program requires the governed accelerator overlay with a positive grid"
         )
     if domain_split is not None:
-        if not screening:
-            raise ValueError("domain-split Program is currently limited to detector-blind pre-pulse screening")
         required_domain_keys = {
             "upstream_instance_index", "accelerator_instance_index",
             "upstream_end_x_mm", "accelerator_start_x_mm",
@@ -1245,8 +1243,11 @@ end
             raise ValueError(f"combined single-flight Program callback {callback} count is {count}")
     if not include_total_axis_field_exporter:
         return program
-    if overlay is None:
-        raise ValueError("total-axis exporter requires a three-zone overlay")
+    # In the positive-gap domain split the entrance overlay is deliberately
+    # absent: the intermediate2 overlay is the governed fine-domain source
+    # for both the Program and the total-field exporter.
+    if governed_overlay is None:
+        raise ValueError("total-axis exporter requires a governed three-zone overlay")
     static_analyzer_config_lua = _lua_value(analyzer_config)
     axis_planes_export_lua = _lua_value(
         [
@@ -1286,6 +1287,48 @@ end
         if rf_enabled
         else "local rf=false"
     )
+    exporter_workbench_initialization = (
+        """-- Domain split keeps accelerator_main in slot 3.  Do not replay the
+-- legacy whole-accelerator PA override here: that PA is absent by design.
+local function instance_state(instance)
+  return {filename=instance.filename,nx=instance.pa.nx,ny=instance.pa.ny,
+    nz=instance.pa.nz,dx_mm=instance.pa.dx_mm,dy_mm=instance.pa.dy_mm,
+    dz_mm=instance.pa.dz_mm,scale=instance.scale}
+end
+local function apply_placement(instance,placement)
+  instance.x,instance.y,instance.z=placement.x_mm,placement.y_mm,placement.z_mm
+  instance.az,instance.el,instance.rt,instance.scale=placement.az_deg,placement.el_deg,
+    placement.rt_deg,placement.scale
+end
+local initialized=analyzer.initialize_workbench({active_scope='pre_pulse_frontend_accelerator',
+  instances={[3]=instance_state(ai)}})
+apply_placement(ai,initialized.placements.accelerator)"""
+        if domain_split is not None
+        else """local frontend_pa=assert(os.getenv('OATOF_ACCELERATOR_PA_OVERRIDE'),
+  'missing run-local frontend PA override')
+ai.pa:load(frontend_pa)
+ai:_debug_update_size()
+-- The run-local frontend PA has different extents from the container
+-- placeholder.  Fly'm recomputes placements after that load, so the static
+-- exporter must do the same before querying the total Workbench field.
+analyzer_config.instance_filenames.accelerator='frontend.pa0'
+local function instance_state(instance)
+  return {filename=instance.filename,nx=instance.pa.nx,ny=instance.pa.ny,
+    nz=instance.pa.nz,dx_mm=instance.pa.dx_mm,dy_mm=instance.pa.dy_mm,
+    dz_mm=instance.pa.dz_mm,scale=instance.scale}
+end
+local function apply_placement(instance,placement)
+  instance.x,instance.y,instance.z=placement.x_mm,placement.y_mm,placement.z_mm
+  instance.az,instance.el,instance.rt,instance.scale=placement.az_deg,placement.el_deg,
+    placement.rt_deg,placement.scale
+end
+local workbench_instances={}
+for index=1,4 do workbench_instances[index]=instance_state(simion.wb.instances[index]) end
+local initialized=analyzer.initialize_workbench({instances=workbench_instances})
+apply_placement(simion.wb.instances[1],initialized.placements.flight_tube)
+apply_placement(simion.wb.instances[2],initialized.placements.reflectron)
+apply_placement(ai,initialized.placements.accelerator)"""
+    )
     exporter = f"""-- Generated C3 total-field exporter.  It is a top-level SIMION Lua script,
 -- not a Workbench Program callback: SIMION's documented wb field API is only
 -- queried after this script loads the frozen runtime IOB and reproduces its
@@ -1300,7 +1343,7 @@ assert(pulse_width_us>0,'pulse width must be positive')
 -- permits the Workbench Program declaration in files it auto-executes during
 -- Fly'm; declaring one here fails before any field can be sampled.
 simion.command('"'..iob_path..'"')
-assert(#simion.wb.instances=={4 + len(overlay_specs)},
+assert(#simion.wb.instances=={6 if domain_split is not None else 4 + len(overlay_specs)},
   'C3 total-field exporter IOB instance count differs')
 for index=1,#simion.wb.instances do
   local item=simion.wb.instances[index]
@@ -1343,30 +1386,7 @@ for _,overlay in ipairs(overlay_specs) do
   assert(simion.wb.instances[overlay.instance_index],
     'accelerator overlay instance is missing')
 end
-local frontend_pa=assert(os.getenv('OATOF_ACCELERATOR_PA_OVERRIDE'),
-  'missing run-local frontend PA override')
-ai.pa:load(frontend_pa)
-ai:_debug_update_size()
--- The run-local frontend PA has different extents from the container
--- placeholder.  Fly'm recomputes placements after that load, so the static
--- exporter must do the same before querying the total Workbench field.
-analyzer_config.instance_filenames.accelerator='frontend.pa0'
-local function instance_state(instance)
-  return {{filename=instance.filename,nx=instance.pa.nx,ny=instance.pa.ny,
-    nz=instance.pa.nz,dx_mm=instance.pa.dx_mm,dy_mm=instance.pa.dy_mm,
-    dz_mm=instance.pa.dz_mm,scale=instance.scale}}
-end
-local function apply_placement(instance,placement)
-  instance.x,instance.y,instance.z=placement.x_mm,placement.y_mm,placement.z_mm
-  instance.az,instance.el,instance.rt,instance.scale=placement.az_deg,placement.el_deg,
-    placement.rt_deg,placement.scale
-end
-local workbench_instances={{}}
-for index=1,4 do workbench_instances[index]=instance_state(simion.wb.instances[index]) end
-local initialized=analyzer.initialize_workbench({{instances=workbench_instances}})
-apply_placement(simion.wb.instances[1],initialized.placements.flight_tube)
-apply_placement(simion.wb.instances[2],initialized.placements.reflectron)
-apply_placement(ai,initialized.placements.accelerator)
+{exporter_workbench_initialization}
 -- The runnable Program immediately replaces the nominal placement of the
 -- run-local frontend PA after it is loaded.  The field-only IOB begins from
 -- the same container, so it must replay this exact frozen transform before
@@ -1374,7 +1394,7 @@ apply_placement(ai,initialized.placements.accelerator)
 -- axis outside the physical accelerator even though the top-level Lua exits
 -- successfully.
 ai.x,ai.y,ai.z={_lua_number(origin['x'])},{_lua_number(origin['y'])},{_lua_number(origin['z'])}
-apply_placement(simion.wb.instances[4],initialized.placements.detector)
+{'' if domain_split is not None else 'apply_placement(simion.wb.instances[4],initialized.placements.detector)'}
 for _,overlay in ipairs(overlay_specs) do
   local oi=simion.wb.instances[overlay.instance_index]
   oi.x,oi.y,oi.z=overlay.origin_mm.x,overlay.origin_mm.y,overlay.origin_mm.z
@@ -1438,7 +1458,11 @@ local z_start={_lua_number(geometry['accelerator_repeller_front_z_mm'])}
 local z_end={_lua_number(geometry['accelerator_grid2_z_mm'])}
 local z_step=ai.pa.dz_mm
 assert(z_step>0 and z_end>z_start,'axis interval is invalid')
-local count=math.ceil((z_end-z_start)/z_step)+1
+-- The exported interval is deliberately an integer number of accelerator
+-- z-cells.  Round the quotient before adding the inclusive endpoint: ceil
+-- can turn an exact integer into N+1 after binary roundoff and duplicate the
+-- final clamped sample.
+local count=math.floor((z_end-z_start)/z_step+0.5)+1
 local output=assert(io.open(output_path,'w'))
 output:write('sample_index,x_mm,y_mm,z_mm,potential_V,Ex_V_per_mm,Ey_V_per_mm,Ez_V_per_mm\\n')
 for index=1,count do

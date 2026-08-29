@@ -52,6 +52,10 @@ class ResourceSchedulerTests(unittest.TestCase):
         self.assertEqual(plan["estimation"]["kind"], "formal_first_batch_observation")
         self.assertEqual(plan["estimation"]["observation_seconds"], 45)
         self.assertTrue(plan["estimation"]["first_batch_result_retained"])
+        self.assertEqual(
+            plan["estimation"]["terminal_action"],
+            "observe_first_formal_batch_for_45_seconds_then_replan_remaining_particles",
+        )
         self.assertEqual(plan["waves"][0]["batches"][0]["count"], 500)
         self.assertEqual(plan["waves"][0]["coverage"], "initial_formal_batch_only")
         self.assertEqual(

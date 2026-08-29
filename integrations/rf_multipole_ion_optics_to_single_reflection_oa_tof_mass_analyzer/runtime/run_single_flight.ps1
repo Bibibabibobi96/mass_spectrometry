@@ -58,6 +58,7 @@ param(
   [int]$TerminalHandoffUpstreamLossCount = -1,
   [string]$PrePulseTimeSeriesContract = '',
   [string]$PrePulseTimeSeriesContractSha256 = '',
+  [string]$ResumePrePulseFromRun = '',
   [string]$SimionExe = 'C:\Program Files\SIMION-2020\simion.exe',
   [string]$PythonExe = '',
   [switch]$BuildOnly,
@@ -241,6 +242,10 @@ $simionSolverCacheIdentity = Get-RfSimionSolverCacheIdentity -SimionExe $SimionE
 $isPrePulseTimeSeriesScreening = -not [string]::IsNullOrWhiteSpace(
   $PrePulseTimeSeriesContract
 )
+if (-not [string]::IsNullOrWhiteSpace($ResumePrePulseFromRun) -and
+    -not $isPrePulseTimeSeriesScreening) {
+  throw 'Pre-pulse batch continuation requires pre-pulse time-series screening mode.'
+}
 # The current public single-flight contract does not expose a restart context.
 # Keep this explicit optional value initialized under StrictMode so the Program
 # builder may remain forward-compatible without making ordinary or pre-pulse
@@ -2637,7 +2642,18 @@ try {
     $stage = New-RfCacheStagingDirectory -CacheRoot (Join-Path $workspaceRoot 'scratch\simion_iob')
     try {
       Copy-Item -LiteralPath $container -Destination $stage; Get-ChildItem -LiteralPath $containerDir -Filter 'current_sphere_3dp-*.gem' -File | Copy-Item -Destination $stage
-      $built = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir -UsagePath (Join-Path $package.log_dir 'domain_split_iob_build_resource_usage.json') -FilePath $SimionExe -WorkingDirectory $runtimeDir -RedirectStandardOutput (Join-Path $package.log_dir 'domain_split_iob_build.stdout.log') -RedirectStandardError (Join-Path $package.log_dir 'domain_split_iob_build.stderr.log') -ArgumentList @('--nogui','--noprompt','lua',$domainSplitIobBuilder,(Join-Path $runtimeDir 'oatof_ideal_grounded.iob'),(Join-Path $stage 'current_sphere_3dp.iob'),(Join-Path $runtimeDir 'oatof_ideal_grounded.iob'),$coarseFrontendRuntimePa0,(Join-Path $runtimeDir 'reflectron.pa0'),$acceleratorMainRuntimePa0,(Join-Path $runtimeDir 'detector_ground.pa0'),$domainUpstream[0].pa0,(Join-Path $runtimeDir 'accelerator_intermediate_overlay.pa0'),([string]$frontendGeometry.instance_origin_mm.x),([string]$frontendGeometry.instance_origin_mm.y),([string]$frontendGeometry.instance_origin_mm.z),([string]$domainMain[0].geometry.instance_origin_mm.x),([string]$domainMain[0].geometry.instance_origin_mm.y),([string]$domainMain[0].geometry.instance_origin_mm.z),([string]$domainUpstream[0].geometry.instance_origin_mm.x),([string]$domainUpstream[0].geometry.instance_origin_mm.y),([string]$domainUpstream[0].geometry.instance_origin_mm.z),([string]$intermediateOverlay[0].geometry.instance_origin_mm.x),([string]$intermediateOverlay[0].geometry.instance_origin_mm.y),([string]$intermediateOverlay[0].geometry.instance_origin_mm.z))
+      $domainSplitIobArguments = @('--nogui','--noprompt','lua',$domainSplitIobBuilder,(Join-Path $runtimeDir 'oatof_ideal_grounded.iob'),(Join-Path $stage 'current_sphere_3dp.iob'),(Join-Path $runtimeDir 'oatof_ideal_grounded.iob'),$coarseFrontendRuntimePa0,(Join-Path $runtimeDir 'reflectron.pa0'),$acceleratorMainRuntimePa0,(Join-Path $runtimeDir 'detector_ground.pa0'),$domainUpstream[0].pa0,(Join-Path $runtimeDir 'accelerator_intermediate_overlay.pa0'),([string]$frontendGeometry.instance_origin_mm.x),([string]$frontendGeometry.instance_origin_mm.y),([string]$frontendGeometry.instance_origin_mm.z),([string]$domainMain[0].geometry.instance_origin_mm.x),([string]$domainMain[0].geometry.instance_origin_mm.y),([string]$domainMain[0].geometry.instance_origin_mm.z),([string]$domainUpstream[0].geometry.instance_origin_mm.x),([string]$domainUpstream[0].geometry.instance_origin_mm.y),([string]$domainUpstream[0].geometry.instance_origin_mm.z),([string]$intermediateOverlay[0].geometry.instance_origin_mm.x),([string]$intermediateOverlay[0].geometry.instance_origin_mm.y),([string]$intermediateOverlay[0].geometry.instance_origin_mm.z))
+      if ($ProgramAxisFieldExport) {
+        # The standalone field exporter must load a same-transform IOB without
+        # a same-basename Program/Fly2 auto-running during top-level Lua.  The
+        # regular build below intentionally replaces its Formal IOB in place,
+        # so this export IOB must be built first from the unmodified Formal one.
+        $totalAxisFieldIob = Join-Path $runtimeDir 'total_axis_field.iob'
+        $domainSplitAxisFieldArguments = @($domainSplitIobArguments[0..5]) + @($totalAxisFieldIob) + @($domainSplitIobArguments[7..24])
+        $axisFieldIobBuild = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir -UsagePath (Join-Path $package.log_dir 'domain_split_total_axis_field_iob_build_resource_usage.json') -FilePath $SimionExe -WorkingDirectory $runtimeDir -RedirectStandardOutput (Join-Path $package.log_dir 'domain_split_total_axis_field_iob_build.stdout.log') -RedirectStandardError (Join-Path $package.log_dir 'domain_split_total_axis_field_iob_build.stderr.log') -ArgumentList $domainSplitAxisFieldArguments
+        if ($axisFieldIobBuild.resource_budget_exceeded -or $axisFieldIobBuild.exit_code -ne 0 -or -not (Test-Path -LiteralPath $totalAxisFieldIob -PathType Leaf)) { throw 'Domain-split total-axis-field IOB build failed.' }
+      }
+      $built = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir -UsagePath (Join-Path $package.log_dir 'domain_split_iob_build_resource_usage.json') -FilePath $SimionExe -WorkingDirectory $runtimeDir -RedirectStandardOutput (Join-Path $package.log_dir 'domain_split_iob_build.stdout.log') -RedirectStandardError (Join-Path $package.log_dir 'domain_split_iob_build.stderr.log') -ArgumentList $domainSplitIobArguments
       if ($built.resource_budget_exceeded -or $built.exit_code -ne 0) { throw 'Domain-split IOB build failed.' }
     } finally { if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force } }
   }
@@ -2978,6 +2994,41 @@ try {
   if ($particleLines.Count -ne $launched) {
     throw 'Single-flight particle-input row count differs from the launched mother sample.'
   }
+  $prePulseContinuationPlan = $null
+  $importedCompletedTraceFiles = @()
+  if (-not [string]::IsNullOrWhiteSpace($ResumePrePulseFromRun)) {
+    $continuationRoot = Join-Path $package.input_dir 'pre_pulse_batch_continuation'
+    Invoke-SingleFlightPython -Arguments @(
+      '-m',
+      'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.pre_pulse_batch_continuation',
+      '--predecessor-run-dir',$ResumePrePulseFromRun,
+      '--particle-row-map',$particleRowMap,
+      '--contract-sha256',$PrePulseTimeSeriesContractSha256,
+      '--output-dir',$continuationRoot
+    ) -Failure 'Pre-pulse batch continuation planning failed.'
+    $prePulseContinuationPlan = Get-Content -LiteralPath (
+      Join-Path $continuationRoot 'pre_pulse_batch_continuation_plan.json'
+    ) -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ($prePulseContinuationPlan.role -ne 'rf_oatof_pre_pulse_batch_continuation_plan' -or
+        [int]$prePulseContinuationPlan.particle_count -ne $launched -or
+        [int]$prePulseContinuationPlan.completed_particle_count +
+          [int]$prePulseContinuationPlan.replay_particle_count -ne $launched) {
+      throw 'Pre-pulse batch continuation plan differs from the frozen cohort.'
+    }
+    if ([int]$prePulseContinuationPlan.replay_particle_count -eq 0) {
+      throw 'All pre-pulse batches are complete; use the zero-SIMION completed-screening recovery path.'
+    }
+    $importedCompletedTraceFiles = @($prePulseContinuationPlan.batches |
+      Where-Object { $null -ne $_.imported_completed_trace } |
+      ForEach-Object { [string]$_.imported_completed_trace.path })
+    $runConfiguration.inputs.pre_pulse_batch_continuation_plan = Join-Path `
+      $continuationRoot 'pre_pulse_batch_continuation_plan.json'
+    $runConfiguration.parameters.pre_pulse_continuation_completed_particle_count =
+      [int]$prePulseContinuationPlan.completed_particle_count
+    $runConfiguration.parameters.pre_pulse_continuation_replay_particle_count =
+      [int]$prePulseContinuationPlan.replay_particle_count
+    Write-RunJson -Path $package.run_config -Depth 10 -Value $runConfiguration
+  }
   function New-SingleFlightBatchRecords($Plan) {
     $records = @()
     foreach ($plannedBatch in @($Plan.batches)) {
@@ -3008,7 +3059,34 @@ try {
     return @($records)
   }
   $batchRecords = @(New-SingleFlightBatchRecords $batchPlan)
+  if ($null -ne $prePulseContinuationPlan) {
+    $replayRecords = @()
+    foreach ($continuationBatch in @($prePulseContinuationPlan.batches)) {
+      $replayCount = [int]$continuationBatch.replay_particle_count
+      if ($replayCount -eq 0) { continue }
+      $batchIndex = [int]$continuationBatch.index
+      $replayOffset = [int]$continuationBatch.replay_particle_id_min - 1
+      $batchParticleInput = Join-Path $package.input_dir (
+        'single_flight_mother_sample__batch{0:D2}__continuation.{1}' -f
+          $batchIndex,$(if ($isRestartFly2) {'fly2'} else {'ion'})
+      )
+      $batchParticleLines = [string[]]$particleLines[$replayOffset..($replayOffset + $replayCount - 1)]
+      if ($isRestartFly2) {
+        $batchParticleLines = [string[]](@('particles {','  coordinates = 0,') +
+          $batchParticleLines + @('}'))
+      }
+      [IO.File]::WriteAllLines($batchParticleInput,$batchParticleLines,[Text.UTF8Encoding]::new($false))
+      $replayRecords += [pscustomobject]@{
+        index=$batchIndex;count=$replayCount;offset=$replayOffset
+        particle_input=$batchParticleInput
+        stdout=Join-Path $package.log_dir ('simion__batch{0:D2}__continuation.stdout.log' -f $batchIndex)
+        stderr=Join-Path $package.log_dir ('simion__batch{0:D2}__continuation.stderr.log' -f $batchIndex)
+      }
+    }
+    $batchRecords = @($replayRecords)
+  }
   $stdoutFiles = @($batchRecords | ForEach-Object { $_.stdout })
+  $stdoutFiles += $importedCompletedTraceFiles
   $stderrFiles = @($batchRecords | ForEach-Object { $_.stderr })
   # The whole batch set is one dispatch wave.  The shared aggregate helper owns
   # process-tree and available-memory accounting; per-batch helpers would make
@@ -3079,7 +3157,7 @@ try {
     [string]$runtimeDispatchPlan.estimation.kind -eq 'formal_first_batch_observation'
   $existingProcessRecords = @()
   if ($resourceIdentityWasUnknown) {
-    if ($processSpecifications.Count -ne 1) {
+    if ($null -eq $prePulseContinuationPlan -and $processSpecifications.Count -ne 1) {
       throw 'Unknown resource identity must start from one formal first batch.'
     }
     $formalObservation = Start-ObservedFormalProcess `
@@ -3124,10 +3202,12 @@ try {
       '--output',$batchPlanPath
     ) -Failure 'Single-flight formal-first batch planning failed.'
     $batchPlan = Get-Content -Raw -LiteralPath $batchPlanPath | ConvertFrom-Json
-    $batchRecords = @(New-SingleFlightBatchRecords $batchPlan)
-    $stdoutFiles = @($batchRecords | ForEach-Object { $_.stdout })
-    $stderrFiles = @($batchRecords | ForEach-Object { $_.stderr })
-    $processSpecifications = @(New-SingleFlightProcessSpecifications $batchRecords)
+    if ($null -eq $prePulseContinuationPlan) {
+      $batchRecords = @(New-SingleFlightBatchRecords $batchPlan)
+      $stdoutFiles = @($batchRecords | ForEach-Object { $_.stdout })
+      $stderrFiles = @($batchRecords | ForEach-Object { $_.stderr })
+      $processSpecifications = @(New-SingleFlightProcessSpecifications $batchRecords)
+    }
     $existingProcessRecords = @($formalObservation.process_record)
     $processSpecifications = @($processSpecifications | Select-Object -Skip 1)
     $runConfiguration.parameters.execution_batch_count = $executionBatchCount

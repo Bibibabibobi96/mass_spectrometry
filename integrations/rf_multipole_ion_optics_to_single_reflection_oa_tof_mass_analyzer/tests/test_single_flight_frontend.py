@@ -131,11 +131,20 @@ class SingleFlightFrontendTests(unittest.TestCase):
         oatof = copy.deepcopy(self.oatof)
         oatof["accelerator_topology"] = copy.deepcopy(self.THREE_ZONE_TOPOLOGY)
         oatof["geometry_derivation"]["accelerator"]["realization_id"] = "cylindrical_3d"
-        gem, contract = compile_frontend(self.upstream, oatof, self.connection)
+        connection = copy.deepcopy(self.connection)
+        connection["connector"]["shield_connection_profile_id"] = (
+            "grounded_circular_to_cylindrical_sideport_v1"
+        )
+        gem, contract = compile_frontend(self.upstream, oatof, connection)
         region = contract["accelerator_local_region"]
         self.assertEqual(region["cross_section"], "cylindrical")
         self.assertIn("Zero-grid-unit circular sheets", gem)
         self.assertIn("cylinder(0,0,0,15", gem)
+        self.assertIn("Grounded cylindrical side-port collar/end plate", gem)
+        self.assertEqual(
+            contract["cylindrical_sideport"]["positive_volume_overlap_mm"],
+            contract["cylindrical_sideport"]["accelerator_shell_wall_mm"],
+        )
         self.assertNotIn(
             "unsupported", gem.lower(),
         )
@@ -167,7 +176,12 @@ class SingleFlightFrontendTests(unittest.TestCase):
         for realization_id in ("square_3d", "cylindrical_3d"):
             with self.subTest(realization_id=realization_id):
                 oatof = self._three_zone_main_oatof(realization_id)
-                _, frontend = compile_frontend(self.upstream, oatof, self.connection)
+                connection = copy.deepcopy(self.connection)
+                if realization_id == "cylindrical_3d":
+                    connection["connector"]["shield_connection_profile_id"] = (
+                        "grounded_circular_to_cylindrical_sideport_v1"
+                    )
+                _, frontend = compile_frontend(self.upstream, oatof, connection)
                 results[realization_id] = compile_accelerator_main(
                     frontend,
                     oatof,
@@ -186,6 +200,79 @@ class SingleFlightFrontendTests(unittest.TestCase):
         self.assertIn("centered_box3D", square_gem)
         self.assertIn("cylinder(0,0,0", cylindrical_gem)
         self.assertNotEqual(square_gem, cylindrical_gem)
+
+    def test_cylindrical_sideport_rejects_the_square_connector_profile(self) -> None:
+        oatof = self._three_zone_main_oatof("cylindrical_3d")
+        with self.assertRaisesRegex(ValueError, "profile differs from accelerator realization"):
+            compile_frontend(self.upstream, oatof, self.connection)
+
+    def test_cylindrical_sideport_direct_mating_has_no_connector_void(self) -> None:
+        """A zero-length connector begins its apertured collar at the mating plane."""
+        oatof = self._three_zone_main_oatof("cylindrical_3d")
+        connection = copy.deepcopy(self.connection)
+        self.assertEqual(connection["connector"]["length_mm"], 0.0)
+        connection["connector"]["shield_connection_profile_id"] = (
+            "grounded_circular_to_cylindrical_sideport_v1"
+        )
+        _, frontend = compile_frontend(self.upstream, oatof, connection)
+        sideport = frontend["cylindrical_sideport"]
+        junction = frontend["junction_enclosure"]
+        self.assertEqual(junction["profile_gap_mm"], 0.0)
+        self.assertEqual(junction["grounded_sleeve_length_mm"], 0.0)
+        self.assertEqual(
+            sideport["collar_x_min_mm"], frontend["source_exit_center_mm"]["x"]
+        )
+        self.assertEqual(junction["aperture_discretization"]["flange_x_min_mm"], sideport["collar_x_min_mm"])
+        self.assertEqual(junction["aperture_discretization"]["flange_x_max_mm"], sideport["collar_x_max_mm"])
+        self.assertEqual(
+            sideport["collar_x_max_mm"] - sideport["collar_x_min_mm"],
+            sideport["positive_volume_overlap_mm"],
+        )
+
+    def test_cylindrical_sideport_contract_reaches_all_domain_compilers(self) -> None:
+        oatof = self._three_zone_main_oatof("cylindrical_3d")
+        connection = self._positive_gap_connection(102.4)
+        connection["connector"]["shield_connection_profile_id"] = (
+            "grounded_circular_to_cylindrical_sideport_v1"
+        )
+        _, frontend = compile_frontend(
+            self.upstream, oatof, connection, cell_mm_xyz={"x": 0.5, "y": 0.5, "z": 0.5}
+        )
+        main_gem, main = compile_accelerator_main(
+            frontend, oatof, connection=connection, cell_mm_xyz={"x": 0.25, "y": 0.25, "z": 0.05}
+        )
+        _, bridge = compile_upstream_bridge(
+            self.upstream, oatof, connection, cell_mm_xyz={"x": 0.5, "y": 0.5, "z": 0.5}
+        )
+        sideport = frontend["cylindrical_sideport"]
+        self.assertGreaterEqual(sideport["outer_radius_mm"], 21.0)
+        self.assertEqual(
+            sideport["positive_volume_overlap_mm"], sideport["accelerator_shell_wall_mm"]
+        )
+        self.assertEqual(sideport["mechanical_aperture_mm"], {"width": 1.0, "height": 0.9})
+        self.assertEqual(bridge["cylindrical_sideport"]["profile_id"], sideport["profile_id"])
+        self.assertEqual(main["cylindrical_sideport"]["profile_id"], sideport["profile_id"])
+        self.assertIn("Grounded cylindrical side-port collar/end plate", main_gem)
+
+    def test_cylindrical_sideport_collar_tracks_changed_accelerator_wall(self) -> None:
+        """The collar overlap is derived from, rather than independently set from, wall thickness."""
+        oatof = self._three_zone_main_oatof("cylindrical_3d")
+        original_wall = oatof["geometry_mm"]["accelerator_shield_wall"]
+        changed_wall = original_wall + 2.0
+        oatof["geometry_mm"]["accelerator_shield_wall"] = changed_wall
+        # Keep the accelerator's negative-x shield face at the registered port.
+        oatof["coordinate_convention"]["accelerator_axis_x"] += changed_wall - original_wall
+        connection = copy.deepcopy(self.connection)
+        connection["connector"]["shield_connection_profile_id"] = (
+            "grounded_circular_to_cylindrical_sideport_v1"
+        )
+        _, frontend = compile_frontend(self.upstream, oatof, connection)
+        sideport = frontend["cylindrical_sideport"]
+        self.assertEqual(sideport["accelerator_shell_wall_mm"], changed_wall)
+        self.assertEqual(sideport["positive_volume_overlap_mm"], changed_wall)
+        self.assertEqual(
+            sideport["collar_x_max_mm"] - sideport["collar_x_min_mm"], changed_wall
+        )
 
     def test_domain_main_encloses_the_intermediate_overlay_boundary(self) -> None:
         oatof = copy.deepcopy(self.oatof)

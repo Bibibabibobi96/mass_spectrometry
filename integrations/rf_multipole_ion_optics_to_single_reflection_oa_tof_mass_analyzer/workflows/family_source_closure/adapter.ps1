@@ -1302,6 +1302,7 @@ if (-not $SolverAuthorized) {
   throw 'Family source-closure execution requires explicit solver authorization.'
 }
 $expectedRunId = [string]$experiment.run_id
+$recoveryAncestor = $null
 if ($pulseTimingDiscovery) {
   if ($expectedRunId -notmatch
       '^(?<stamp>[0-9]{8}_[0-9]{6})__.+__(?<detail>n[0-9]+)(?<retry>__r[0-9]{2})?$') {
@@ -1535,6 +1536,15 @@ if ($executionStrategy -eq 'simion_single_flight') {
       $prePulseTimeSeriesContractPath
     $runnerArguments.PrePulseTimeSeriesContractSha256 =
       $frozenArguments.pre_pulse_time_series_contract_sha256
+    if ($null -ne $recoveryAncestor) {
+      $ancestorRunId = [string]$recoveryAncestor.run_id
+      $ancestorRetrySuffix = if ($ancestorRunId -match '(__r\d{2})$') {
+        $Matches[1]
+      } else { '' }
+      $ancestorSingleFlightRunId = "$($ancestorRunId.Substring(0, 15))__sim__simion__$singleFlightRole-gap$connectorGapLabel`__n$expectedExecutionParticleCount$ancestorRetrySuffix"
+      $runnerArguments.ResumePrePulseFromRun = Join-Path $runsRoot `
+        $ancestorSingleFlightRunId
+    }
   }
   & $runtime.implementation.single_flight_runner @runnerArguments
 } else {

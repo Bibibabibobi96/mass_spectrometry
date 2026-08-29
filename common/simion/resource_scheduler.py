@@ -367,7 +367,7 @@ def plan_simion_dispatch(
                 "requires_observation_before_remaining_launches": work_count > first["count"],
                 "observation_seconds": FORMAL_OBSERVATION_SECONDS,
                 "first_batch_result_retained": True,
-                "terminal_action": "complete_first_formal_batch_then_replan_remaining_particles",
+                "terminal_action": "observe_first_formal_batch_for_45_seconds_then_replan_remaining_particles",
             },
             "host": host, "limits": _public_limits(1, 1, 1),
             "waves": [{

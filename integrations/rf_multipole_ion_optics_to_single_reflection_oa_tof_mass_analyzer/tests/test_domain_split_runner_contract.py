@@ -117,6 +117,15 @@ class DomainSplitRunnerContractTests(unittest.TestCase):
         self.assertIn('"disjoint_six_faces_v1"', builder)
         self.assertIn("duplicate_boundary_writes", builder)
 
+    def test_accelerator_overlay_builder_covers_six_faces_without_duplicate_key_tracking(self) -> None:
+        builder = RUNNER.with_name("build_accelerator_overlay_basis.lua").read_text(encoding="utf-8")
+        self.assertNotIn("local seen={}", builder)
+        self.assertNotIn("ix..':'..iy..':'..iz", builder)
+        self.assertIn("for ix=1,fine.nx-2 do", builder)
+        self.assertIn("for iy=1,fine.ny-2 do", builder)
+        self.assertIn('"disjoint_six_faces_v1"', builder)
+        self.assertIn("duplicate_boundary_writes", builder)
+
     def test_disjoint_face_partition_is_the_same_complete_boundary_as_the_legacy_loops(self) -> None:
         # Small non-cubic dimensions exercise each edge/corner ownership rule.
         nx, ny, nz = 7, 5, 4

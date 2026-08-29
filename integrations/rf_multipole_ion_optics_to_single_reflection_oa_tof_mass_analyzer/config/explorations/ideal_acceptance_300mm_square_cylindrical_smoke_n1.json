@@ -8,7 +8,7 @@
     "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/execution_policy.json",
     "sha256": "6FDB04133C0AB5F48BE51127296469802E8E31E04DF6FFB539DD96E0F54F4B35"
   },
-  "claim_limit": "DETECTOR_BLIND_SOURCE_ONLY; FUNCTIONAL_SMOKE_ONLY. One registered terminal-octupole handoff particle is propagated detector-blind through each 300 mm three-zone realization and the 102.4 mm grounded connector. Both arms bind the identical grid010 Candidate, plane potentials, source, numerical settings, upstream source and connector; only accelerator cross section differs. This checks long-gap domain-split PA construction and pre-pulse trajectory continuity only. It cannot support collection, field-equivalence, peak-width, resolution, optimization, or Formal claims.",
+  "claim_limit": "DETECTOR_BLIND_SOURCE_ONLY; FUNCTIONAL_SMOKE_ONLY. One registered terminal-octupole handoff particle is propagated detector-blind through each 300 mm three-zone realization and the 102.4 mm grounded connector. Both arms bind the identical grid010 Candidate, plane potentials, source, numerical settings and upstream connector cross section; the circular arm uses its required circular side-port collar rather than the square terminal profile. This checks long-gap domain-split PA construction and pre-pulse trajectory continuity only. It cannot support collection, field-equivalence, peak-width, resolution, optimization, or Formal claims.",
   "pre_pulse_time_series_screening": {
     "mode": "real_pa_rf_pre_pulse_time_series",
     "active_scope": "pre_pulse_frontend_accelerator",
@@ -67,10 +67,10 @@
         "postselection_policy": "prohibited"
       }
     },
-    "variation_axes": ["single_flight_layout_profile_id"],
+    "variation_axes": ["single_flight_layout_profile_id", "connection_profile_id"],
     "rows": [
       {"sequence": 1, "experiment_id": "ideal_acceptance_300mm_square_smoke_n1", "run_id": "20260828_234100__sim__cross__ideal-300-square-gap102p4-domain-smoke__n1", "overrides": {"single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_square_v1"}},
-      {"sequence": 2, "experiment_id": "ideal_acceptance_300mm_cylindrical_smoke_n1", "run_id": "20260828_234200__sim__cross__ideal-300-cylindrical-gap102p4-domain-smoke__n1", "overrides": {"single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_cylindrical_v1"}}
+      {"sequence": 2, "experiment_id": "ideal_acceptance_300mm_cylindrical_smoke_n1", "run_id": "20260828_234200__sim__cross__ideal-300-cylindrical-gap102p4-domain-smoke__n1", "overrides": {"single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_cylindrical_v1", "connection_profile_id": "rf_octupole_oatof_cylindrical_sideport_100x090_gap_102p4mm"}}
     ]
   }
 }

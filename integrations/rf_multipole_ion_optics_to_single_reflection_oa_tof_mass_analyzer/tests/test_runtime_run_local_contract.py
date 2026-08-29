@@ -129,6 +129,15 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
         )
         self.assertIn("Measure-Object -Property count -Maximum", runner)
         self.assertIn("[Math]::Max(100,$largestPlannedBatchCount)", runner)
+
+    def test_formal_observation_replans_after_45_seconds_while_probe_continues(self) -> None:
+        support = (INTEGRATION_ROOT.parents[1] / "common" / "multipole" / "resource_budget_support.ps1").read_text(encoding="utf-8")
+        observation_end = support.index("FORMAL_OBSERVATION_COMPLETE")
+        self.assertIn("PROCESS_CONTINUES='true'", support[observation_end:observation_end + 400])
+        runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        observe = runner.index("Start-ObservedFormalProcess", runner.index("$resourceIdentityWasUnknown"))
+        replan = runner.index("common.simion.resource_scheduler", observe)
+        self.assertLess(observe, replan)
         self.assertIn("external particle tables still determine the exact physical batch population", runner)
         self.assertIn("simion_ion_list_capacity = $ionListCapacity", runner)
         self.assertIn("continuing without a batch-size limit", runner)
@@ -860,7 +869,12 @@ foreach ($entry in $commands) {{
             text,
         )
         self.assertIn("Set-RfMaterializedCacheFileWritable -Path $target", text)
-        self.assertIn("-PaPath $frontendWorkingPa0", text)
+        # Direct-mating runs retain the frontend override; the long-gap
+        # domain-split path instead consumes the physical copies through the
+        # six-slot IOB, including its dedicated accelerator-main PA.
+        self.assertIn("$coarseFrontendRuntimePa0", text)
+        self.assertIn("$acceleratorMainRuntimePa0", text)
+        self.assertIn("$domainUpstream[0].pa0", text)
         self.assertIn(
             "OATOF_ACCELERATOR_PA_OVERRIDE = $frontendWorkingPa0",
             text,
@@ -1214,7 +1228,7 @@ foreach ($entry in $commands) {{
         self.assertIn("$overlayLayout -eq 'whole_accelerator_v1'", runner)
         self.assertIn("$overlayLayout -eq 'two_local_v1'", runner)
         self.assertIn(
-            "$prePulseTimeSeries.schema_version -in @(2, 3)", runner
+            "$prePulseTimeSeries.schema_version -in @(2, 3, 4)", runner
         )
         self.assertNotIn("$flightTubeCacheRole", runner)
         self.assertNotIn("$reflectronCacheRole", runner)

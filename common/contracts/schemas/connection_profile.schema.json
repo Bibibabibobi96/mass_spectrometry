@@ -46,7 +46,10 @@
         },
         "wall_thickness_mm": {"type": "number", "minimum": 0},
         "shield_connection_profile_id": {
-          "const": "grounded_circular_to_rectangular_shield_v1"
+          "enum": [
+            "grounded_circular_to_rectangular_shield_v1",
+            "grounded_circular_to_cylindrical_sideport_v1"
+          ]
         },
         "shield_potential_V": {"const": 0.0}
       }
