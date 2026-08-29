@@ -38,7 +38,9 @@ def arm(authority: str, *, source_ids: list[int] | None = None) -> dict:
         "source_distribution": {
             "particle_count": 2, "birth_time_min_s": 0.0, "birth_time_max_s": 0.0,
             "z_min_mm": -1.0, "z_max_mm": 1.0, "z_mean_mm": 0.0,
-            "z_rms_spread_mm": 0.5, "vz_mean_m_s": 2000.0, "vz_rms_spread_m_s": 10.0,
+            "z_rms_spread_mm": 0.5, "radial_rms_mm": 0.2, "radial_max_mm": 0.3,
+            "vz_mean_m_s": 2000.0, "vz_rms_spread_m_s": 10.0,
+            "kinetic_energy_mean_eV": 10.0, "kinetic_energy_rms_spread_eV": 0.5,
             "z_vz_pearson_correlation": 0.0, "z_vz_linear_slope_m_s_per_mm": 0.0,
         },
         "label": "unused", "manifest_path": "fixture",
@@ -61,6 +63,7 @@ class SourceModelComparisonTests(unittest.TestCase):
         self.assertEqual(distribution["birth_time_min_s"], distribution["birth_time_max_s"])
         self.assertAlmostEqual(distribution["z_vz_pearson_correlation"], 1.0)
         self.assertAlmostEqual(distribution["z_vz_linear_slope_m_s_per_mm"], 100.0)
+        self.assertGreater(distribution["kinetic_energy_mean_eV"], 0.0)
 
     def test_identity_allows_only_different_source_authorities(self) -> None:
         _require_equal_identity(arm("A" * 64), arm("B" * 64))

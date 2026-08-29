@@ -10,6 +10,7 @@ import math
 from pathlib import Path
 from typing import Any
 
+from common.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
 from common.contracts.verify_run_manifest import record_path, verify_record
 from common.multipole.campaign_analysis import SERIES_DELTA_FIELDS, summarize_run
 from common.multipole.numerical_observables import (
@@ -86,12 +87,18 @@ def _source_distribution(manifest: dict[str, Any], run_dir: Path) -> dict[str, A
         source_path = record_path(manifest["inputs"]["particle_source"], base_dir=run_dir)
         with source_path.open(encoding="utf-8-sig", newline="") as handle:
             rows = list(csv.DictReader(handle))
+        x = [float(row["x_mm"]) for row in rows]
+        y = [float(row["y_mm"]) for row in rows]
         z = [float(row["z_mm"]) for row in rows]
+        vx = [float(row["vx_m_s"]) for row in rows]
+        vy = [float(row["vy_m_s"]) for row in rows]
         vz = [float(row["vz_m_s"]) for row in rows]
         births = [float(row["birth_time_s"]) for row in rows]
+        masses = [float(row["mass_amu"]) for row in rows]
+        charges = [int(row["charge_state"]) for row in rows]
     except (KeyError, OSError, TypeError, ValueError) as error:
         raise ValueError("source-model arm lacks a readable canonical particle source") from error
-    if not z or len(z) != len(vz) or len(z) != len(births):
+    if not z or any(len(values) != len(z) for values in (x, y, vx, vy, vz, births, masses, charges)):
         raise ValueError("source-model arm has an empty or inconsistent particle source")
     count = len(z)
     mean_z, mean_vz = sum(z) / count, sum(vz) / count
@@ -102,6 +109,13 @@ def _source_distribution(manifest: dict[str, Any], run_dir: Path) -> dict[str, A
     covariance_sum = sum(left * right for left, right in zip(centered_z, centered_vz))
     correlation = None if z_sum_sq == 0 or vz_sum_sq == 0 else covariance_sum / math.sqrt(z_sum_sq * vz_sum_sq)
     slope = None if z_sum_sq == 0 else covariance_sum / z_sum_sq
+    radial = [math.hypot(x_value, y_value) for x_value, y_value in zip(x, y)]
+    energy = [
+        0.5 * mass * AMU_KG * (x_velocity * x_velocity + y_velocity * y_velocity + z_velocity * z_velocity)
+        / (abs(charge) * ELEMENTARY_CHARGE_C)
+        for mass, charge, x_velocity, y_velocity, z_velocity in zip(masses, charges, vx, vy, vz)
+    ]
+    mean_energy = sum(energy) / count
     return {
         "particle_count": count,
         "birth_time_min_s": min(births),
@@ -110,8 +124,12 @@ def _source_distribution(manifest: dict[str, Any], run_dir: Path) -> dict[str, A
         "z_max_mm": max(z),
         "z_mean_mm": mean_z,
         "z_rms_spread_mm": math.sqrt(z_sum_sq / count),
+        "radial_rms_mm": math.sqrt(sum(value * value for value in radial) / count),
+        "radial_max_mm": max(radial),
         "vz_mean_m_s": mean_vz,
         "vz_rms_spread_m_s": math.sqrt(vz_sum_sq / count),
+        "kinetic_energy_mean_eV": mean_energy,
+        "kinetic_energy_rms_spread_eV": math.sqrt(sum((value - mean_energy) ** 2 for value in energy) / count),
         "z_vz_pearson_correlation": correlation,
         "z_vz_linear_slope_m_s_per_mm": slope,
     }
@@ -268,8 +286,8 @@ def markdown_report(document: dict[str, Any]) -> str:
     lines = [
         "# 平面源与独立轴向体积源：八极杆传输对比", "",
         "仅来源模型不同；设计、数值、终端和 N=1000 粒子 ID 母队列已逐项核对。", "",
-        "|臂|z 范围 (mm)|z RMS (mm)|vz RMS (m/s)|z–vz Pearson r|同刻释放|",
-        "|---|---:|---:|---:|---:|---:|",
+        "|臂|z 范围 (mm)|z RMS (mm)|径向 RMS (mm)|动能均值 ± RMS (eV)|vz RMS (m/s)|z–vz Pearson r|同刻释放|",
+        "|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for arm in (baseline, candidate):
         source = arm["source_distribution"]
@@ -278,7 +296,9 @@ def markdown_report(document: dict[str, Any]) -> str:
         snapshot = "是" if source["birth_time_min_s"] == source["birth_time_max_s"] else "否"
         lines.append(
             f"|{arm['label']}|{source['z_min_mm']:.4f} 至 {source['z_max_mm']:.4f}|"
-            f"{source['z_rms_spread_mm']:.4f}|{source['vz_rms_spread_m_s']:.4f}|{correlation_text}|{snapshot}|")
+            f"{source['z_rms_spread_mm']:.4f}|{source['radial_rms_mm']:.4f}|"
+            f"{source['kinetic_energy_mean_eV']:.4f} ± {source['kinetic_energy_rms_spread_eV']:.4f}|"
+            f"{source['vz_rms_spread_m_s']:.4f}|{correlation_text}|{snapshot}|")
     lines.extend([
         "",
         "|臂|传输率|空间 RMS (mm)|角 RMS (°)|平均能量 (eV)|平均飞行时间 (µs)|损失分类|",
