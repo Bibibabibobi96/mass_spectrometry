@@ -308,9 +308,17 @@ def build_batch_continuation_plan(
     output: list[dict[str, Any]] = []
     prefix_open = True
     for batch in batches:
-        paths = _source_logs(
+        candidate_paths = _source_logs(
             predecessor_run_dir, batch["index"], imported_dir_name, continuation_dir_name, log_glob,
         ) if prefix_open else []
+        # A host/process interruption can leave the currently active worker's
+        # redirected stdout on disk after the last published checkpoint.  It
+        # is intentionally not trusted: only a byte hash recorded in the
+        # predecessor manifest may contribute to a resumed population.
+        paths = [
+            path for path in candidate_paths
+            if path.resolve() in expected_hashes
+        ]
         completed, retained, sources = _completed_prefix(
             paths, first=batch["first"], count=batch["count"], hashes=expected_hashes, policy=policy,
         ) if paths else (0, [], [])

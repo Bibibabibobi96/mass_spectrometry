@@ -94,6 +94,24 @@ class BatchContinuationTests(unittest.TestCase):
             with self.assertRaisesRegex(ContractError, "completion sentinel"):
                 self._build(run, contract, root / "appended-child", [1])
 
+    def test_ignores_unmanifested_active_suffix_log(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run, contract = _parent(root, [[1], [2]], [
+                ["TERMINAL 1", "COMPLETE"], ["TERMINAL 2"],
+            ])
+            manifest_path = run / "run_manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            # The first batch was checkpointed before the host interruption;
+            # stdout from the active second worker exists but is not bound.
+            manifest["outputs"] = manifest["outputs"][:1]
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            plan = self._build(run, contract, root / "child", [1, 2])
+        self.assertEqual(plan["completed_particle_count"], 1)
+        self.assertEqual(
+            [entry["replay_particle_count"] for entry in plan["batches"]], [0, 1]
+        )
+
     def test_rejects_noncontiguous_prefix_and_manifest_hash_drift(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
