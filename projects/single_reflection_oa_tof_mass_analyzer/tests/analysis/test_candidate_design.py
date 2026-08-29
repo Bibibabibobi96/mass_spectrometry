@@ -1247,7 +1247,7 @@ class CandidateDesignTests(unittest.TestCase):
             files = {}
             for name in (
                 "particle_table", "model", "sync_report", "iob", "ion_n100", "stage_summary",
-                "runtime_report", "transport_diagnostics", "cad_report",
+                "runtime_report", "transport_diagnostics", "cad_report", "analysis_request", "analysis_receipt",
             ):
                 path = run_root / f"{name}.dat"
                 content = "\n".join(["same particle table"] * 100) if name in ("particle_table", "ion_n100") else "evidence"
@@ -1268,7 +1268,10 @@ class CandidateDesignTests(unittest.TestCase):
                 "run_root": str(run_root),
                 "stage_results_so_far": [
                     {"stage_id": "static_inputs", "evidence": {"particle_table": files["particle_table"]}},
-                    {"stage_id": "comsol_candidate", "evidence": {"model": files["model"], "sync_report": files["sync_report"]}},
+                    {"stage_id": "comsol_candidate", "evidence": {
+                        "model": files["model"], "sync_report": files["sync_report"],
+                        "analysis_request": files["analysis_request"], "analysis_receipt": files["analysis_receipt"],
+                    }},
                     {"stage_id": "simion_candidate", "evidence": {
                         "iob": files["iob"], "ion_n100": files["ion_n100"], "stage_summary": files["stage_summary"],
                         "runtime_report": files["runtime_report"], "transport_summary": files["transport_summary"],
@@ -1474,10 +1477,24 @@ class CandidateDesignTests(unittest.TestCase):
 
             def fake_run(command, _log_path, _environment=None):
                 observed.append(command)
-                report_index = command.index("-ReportPath") + 1
-                report = Path(command[report_index])
-                report.parent.mkdir(parents=True, exist_ok=True)
-                report.write_text("STATUS=PASS\n", encoding="utf-8")
+                if "-ReportPath" in command:
+                    report = Path(command[command.index("-ReportPath") + 1])
+                    report.parent.mkdir(parents=True, exist_ok=True)
+                    task = command[command.index("-TaskScript") + 1]
+                    if task.endswith("run_candidate_contract_build.m"):
+                        request = report.parent / "analysis_request.json"
+                        analysis_dir = report.parent / "analysis"
+                        request.write_text(json.dumps({"analysis_output_dir": str(analysis_dir)}), encoding="utf-8")
+                        report.write_text(
+                            f"PYTHON_ANALYSIS_REQUEST={request}\nSTATUS=PASS\n", encoding="utf-8"
+                        )
+                    else:
+                        report.write_text("STATUS=PASS\n", encoding="utf-8")
+                else:
+                    request = Path(command[-1])
+                    analysis_dir = Path(json.loads(request.read_text(encoding="utf-8"))["analysis_output_dir"])
+                    analysis_dir.mkdir(parents=True, exist_ok=True)
+                    (analysis_dir / "analysis_receipt.json").write_text("{}", encoding="utf-8")
 
             with mock.patch(
                 "projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.run_candidate_workflow._verify_frozen_cad_python",
@@ -1489,15 +1506,17 @@ class CandidateDesignTests(unittest.TestCase):
                 execute_stage(stage, plan, "unused")
 
             code_root = Path(plan["execution_source_closure"]["code_root"])
-            self.assertEqual(len(observed), 2)
-            for command in observed:
+            self.assertEqual(len(observed), 3)
+            commercial_commands = [command for command in observed if "-TaskScript" in command]
+            self.assertEqual(len(commercial_commands), 2)
+            for command in commercial_commands:
                 Path(command[5]).resolve().relative_to(code_root.resolve())
                 task_index = command.index("-TaskScript") + 1
                 Path(command[task_index]).resolve().relative_to(
                     code_root.resolve()
                 )
             self.assertEqual(
-                {Path(command[5]).resolve() for command in observed},
+                {Path(command[5]).resolve() for command in commercial_commands},
                 {
                     (
                         code_root

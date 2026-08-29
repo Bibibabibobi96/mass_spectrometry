@@ -82,6 +82,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_source import (
     materialize as materialize_single_flight_source,
+    materialize_independent_ion_source_volume,
     materialize_ideal_linear_source,
     materialize_pre_pulse_restart,
     materialize_terminal_handoff_continuation,
@@ -499,6 +500,11 @@ def validate_pre_pulse_time_series_campaign(campaign: dict[str, Any]) -> None:
                 "terminal_handoff_continuation_global_state",
                 "first_n_transmitted_terminal_handoffs_in_source_particle_id_order",
             ),
+            (
+                "terminal_handoff_continuation",
+                "terminal_handoff_continuation_global_state",
+                "explicit_single_terminal_handoff_particle_id_v1",
+            ),
         } and (
             row.get("source_release_mode") == "continuous_frontend_handoff"
             and 0 < execution.get("particle_count", 0) < source.get("launched_particle_count", 0)
@@ -538,6 +544,8 @@ def compile_pre_pulse_time_series_contract(
     rf_steps_per_period: int, specification: dict[str, Any] | None = None,
     base_schedule: dict[str, Any] | None = None,
     time_integration_profile_id: str | None = None,
+    execution_profile: dict[str, Any] | None = None,
+    resolved_connection: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Compile exact RF-grid sample times and all runner-checked identities."""
 
@@ -575,8 +583,32 @@ def compile_pre_pulse_time_series_contract(
         ))
     ):
         raise ContractError("pre-pulse time-series RF grid does not close")
+    overlay_layout = (
+        "whole_accelerator_v1"
+        if execution_profile is None
+        else execution_profile.get("accelerator_overlay_layout", "whole_accelerator_v1")
+    )
+    connector_length_mm = (
+        0.0 if resolved_connection is None
+        else float(resolved_connection["connector"]["length_mm"])
+    )
+    if connector_length_mm >= 50.0:
+        active_pa_cache_roles = [
+            "full_coarse_bridge", "fine_upstream", "accelerator_main",
+            "accelerator_intermediate2_overlay",
+        ]
+    elif overlay_layout == "whole_accelerator_v1":
+        active_pa_cache_roles = ["frontend", "accelerator_overlay"]
+    elif overlay_layout == "two_local_v1":
+        active_pa_cache_roles = [
+            "frontend",
+            "accelerator_entrance_overlay",
+            "accelerator_intermediate_overlay",
+        ]
+    else:
+        raise ContractError("pre-pulse accelerator-overlay layout is unsupported")
     contract = {
-        "schema_version": 2 if automatic else 1,
+        "schema_version": 4 if automatic and connector_length_mm >= 50.0 else 3 if automatic and overlay_layout == "two_local_v1" else 2 if automatic else 1,
         "role": "rf_oatof_pre_pulse_time_series_screening_contract",
         "mode": specification["mode"],
         "active_scope": specification["active_scope"],
@@ -614,7 +646,7 @@ def compile_pre_pulse_time_series_contract(
         **(
             {"pa_cache_roles": {
                 "identity_source": "runner_materialized_verified_pa_cache_receipt",
-                "required": ["frontend", "accelerator_overlay"],
+                "required": active_pa_cache_roles,
                 "prohibited": ["flight_tube", "reflectron"],
             }}
             if automatic
@@ -3483,6 +3515,23 @@ def prepare_family_source_closure(
         elif (
             source_materialization_profile is not None
             and source_materialization_profile["materialization_mode"]
+            == "independent_spatial_velocity_ion_source_snapshot"
+        ):
+            materialized_source_path = plan_output.parent / "inputs" / (
+                "single_flight_materialized_particle_source.csv"
+            )
+            materialization_receipt_path = plan_output.parent / "inputs" / (
+                "single_flight_source_materialization_receipt.json"
+            )
+            materialization_receipt = materialize_independent_ion_source_volume(
+                materialized_source_path,
+                materialization_receipt_path,
+                source_materialization_profile,
+                root / "integrations" / INTEGRATION_ID,
+            )
+        elif (
+            source_materialization_profile is not None
+            and source_materialization_profile["materialization_mode"]
             != "canonical_multipole_source"
         ):
             raise ContractError("source materialization mode is unsupported")
@@ -3807,11 +3856,18 @@ def prepare_family_source_closure(
                 raise ContractError("population declaration requires a pre-pulse source table")
             population_path = pre_pulse_source_path
             population_input_role = "pre_pulse_source_state"
-        elif table_binding == "prepared_materialized_particle_source":
+        elif table_binding in {
+            "prepared_materialized_particle_source",
+            "prepared_materialized_ion_source_volume",
+        }:
             if materialized_source_path is None:
                 raise ContractError("population declaration requires a materialized source table")
             population_path = materialized_source_path
-            population_input_role = "single_flight_materialized_particle_source"
+            population_input_role = (
+                "single_flight_materialized_ion_source_volume"
+                if table_binding == "prepared_materialized_ion_source_volume"
+                else "single_flight_materialized_particle_source"
+            )
         elif table_binding == "prepared_deterministic_prefix":
             if pulse_prefix_path is None:
                 raise ContractError("population declaration requires a deterministic prefix table")
@@ -3914,6 +3970,7 @@ def prepare_family_source_closure(
             resolved_population_contract_sha256=file_sha256(resolved_population_path),
             prepared_prefix_sha256=pulse_prefix_sha256,
             layout_profile=layout_profile,
+            resolved_connection=_load(resolved_path),
             selected_field_profile=field_profiles[0],
             region_field_semantic_sha256=resolved_region_field_contract[
                 "semantic_sha256"
@@ -3927,6 +3984,7 @@ def prepare_family_source_closure(
                 execution_profile["time_integration_profile_id"]
             ),
             base_schedule=resolved_pulse_schedule,
+            execution_profile=execution_profile,
         )
         pre_pulse_time_series_contract_path = plan_output.parent / "inputs" / (
             "pre_pulse_time_series_screening_contract.json"

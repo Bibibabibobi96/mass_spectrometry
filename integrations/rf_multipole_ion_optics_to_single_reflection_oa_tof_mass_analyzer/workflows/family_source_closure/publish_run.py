@@ -257,6 +257,25 @@ def _publish_detector_blind_pulse_selection(
     return candidate_table, candidate_receipt, receipt
 
 
+def _selection_is_explicitly_authorized(
+    campaign: dict[str, Any], *, pulse_timing_internal_stage: str | None,
+) -> bool:
+    """Distinguish a functional pre-pulse smoke from candidate selection.
+
+    A screening contract alone authorizes detector-blind state collection, not
+    choosing a pulse time.  Selection is permitted only by its frozen order,
+    or by the dedicated discovery stage.  This keeps an empty N=1 smoke as a
+    published functional loss census while an authorized statistical screen
+    with no surviving state remains fail-closed in the selector.
+    """
+
+    screening = campaign.get("pre_pulse_time_series_screening")
+    return (
+        pulse_timing_internal_stage == "pulse_timing_discovery"
+        or isinstance(screening, dict) and "selection_order" in screening
+    )
+
+
 def _publish_pulse_timing_transition(
     *, workspace_root: Path, parent_run_dir: Path, stage: dict[str, Any],
     candidate_receipt_path: Path, candidate_receipt: dict[str, Any],
@@ -1108,9 +1127,8 @@ def publish_family_source_closure_run(
     pulse_candidate_receipt_path = None
     pulse_candidate_receipt = None
     pulse_transition_path = None
-    if (
-        campaign.get("pre_pulse_time_series_screening") is not None
-        or pulse_timing_internal_stage == "pulse_timing_discovery"
+    if _selection_is_explicitly_authorized(
+        campaign, pulse_timing_internal_stage=pulse_timing_internal_stage,
     ):
         if execution_strategy != "simion_single_flight":
             raise ContractError("pulse screening requires single-flight execution")

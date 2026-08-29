@@ -359,7 +359,12 @@
           "required": ["mode", "time_grid_profile_id", "spatial_window_profile_id"],
           "properties": {
             "mode": {"const": "auto_detector_blind_discovery_and_confirmation_v1"},
-            "time_grid_profile_id": {"const": "ballistic_seed_native_dt_minus0p35_plus1p65_v1"},
+            "time_grid_profile_id": {
+              "enum": [
+                "ballistic_seed_native_dt_minus0p35_plus1p65_v1",
+                "ballistic_seed_rf40_single_snapshot_v1"
+              ]
+            },
             "spatial_window_profile_id": {
               "const": "layout_resolved_axial_provisional_xy2_v1"
             }
@@ -445,15 +450,16 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "mode", "anchor_time_us", "relative_start_index", "relative_end_index",
+        "mode", "relative_start_index", "relative_end_index",
         "rf_steps_per_period", "expected_upstream_frequency_hz", "sample_count",
-        "spatial_window_profile_id", "pa_cache_keys", "pulse_disabled",
-        "terminate_at_window_end", "resolution_claim_allowed", "prohibited_outputs"
+        "spatial_window_profile_id", "pulse_disabled", "terminate_at_window_end",
+        "resolution_claim_allowed", "prohibited_outputs"
       ],
       "properties": {
         "mode": {"const": "real_pa_rf_pre_pulse_time_series"},
         "active_scope": {"const": "pre_pulse_frontend_accelerator"},
         "anchor_time_us": {"type": "number"},
+        "time_grid_profile_id": {"$ref": "#/$defs/id"},
         "relative_start_index": {"type": "integer"},
         "relative_end_index": {"type": "integer"},
         "rf_steps_per_period": {"type": "integer", "minimum": 1},
@@ -489,6 +495,21 @@
           "detector_crossing", "resolution_metrics", "single_flight_spatial_six_panel"
         ]}
       },
+      "allOf": [{
+        "oneOf": [
+          {
+            "required": ["anchor_time_us", "pa_cache_keys"],
+            "not": {"required": ["time_grid_profile_id"]}
+          },
+          {
+            "required": ["time_grid_profile_id"],
+            "not": {"anyOf": [
+              {"required": ["anchor_time_us"]},
+              {"required": ["pa_cache_keys"]}
+            ]}
+          }
+        ]
+      }, {
       "oneOf": [
         {
           "required": ["active_scope"],
@@ -513,6 +534,7 @@
           }
         }
       ]
+      }]
     },
     "experiment": {
       "type": "object", "additionalProperties": false,

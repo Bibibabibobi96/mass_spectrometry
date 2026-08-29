@@ -39,6 +39,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.publish_run import (
     INTEGRATION_ID,
     _retry_suffix,
+    _selection_is_explicitly_authorized,
     _single_flight_run_stem,
     publish_family_source_closure_run,
 )
@@ -180,6 +181,12 @@ def migrate_v3_campaign(campaign: dict[str, object]) -> dict[str, object]:
                     else source["sampling_mode"]
                 ), "single_flight_particle_source",
                 "experiment_single_flight_particle_source",
+            )
+        elif materialization == "independent_ion_source_volume_n5000":
+            mode, role, binding = (
+                "independent_spatial_velocity_ion_source_snapshot",
+                "single_flight_materialized_ion_source_volume",
+                "prepared_materialized_ion_source_volume",
             )
         elif materialization and materialization != "canonical_real_octupole_n1000":
             mode, role, binding = (
@@ -1358,6 +1365,17 @@ if ($null -ne (Resolve-RfRecoveryFailureAncestor -RequestedRunId $requested `
     -ExpectedRunId $expected -RunsRoot $env:RF_RECOVERY_ROOT -CampaignId 'campaign_a')) {
   throw 'nonterminal ancestor was accepted'
 }
+
+$sameCampaignPartial = Join-Path $env:RF_RECOVERY_ROOT ($expected + '__r02')
+New-Item -ItemType Directory -Path (Join-Path $sameCampaignPartial 'inputs') -Force | Out-Null
+@{ campaign = @{ campaign_id = 'campaign_a' }; experiment = @{ run_id = $expected } } |
+  ConvertTo-Json | Set-Content -LiteralPath (Join-Path $sameCampaignPartial 'inputs\frozen_campaign_experiment.json')
+$accepted = Resolve-RfRecoveryFailureAncestor -RequestedRunId $requested `
+  -ExpectedRunId $expected -RunsRoot $env:RF_RECOVERY_ROOT -CampaignId 'campaign_a'
+if ($null -eq $accepted -or $accepted.run_id -ne ($expected + '__r02') -or
+    $accepted.status -ne 'unpublished') {
+  throw 'same-campaign unpublished suffix was not accepted'
+}
 Write-Output 'RECOVERY_CHAIN=PASS'
 """
             environment = os.environ.copy()
@@ -2290,6 +2308,29 @@ if ($runtime.contracts.resolved_source_contract -ne '{resolved_source}') {{
                     plan_path=plan,
                     budget_path=budget,
                 )
+
+    def test_pre_pulse_selection_requires_explicit_frozen_selection_order(self) -> None:
+        smoke = {"pre_pulse_time_series_screening": {"mode": "screen"}}
+        self.assertFalse(
+            _selection_is_explicitly_authorized(
+                smoke, pulse_timing_internal_stage=None
+            )
+        )
+        selected = {
+            "pre_pulse_time_series_screening": {
+                "mode": "screen", "selection_order": ["alive_count"]
+            }
+        }
+        self.assertTrue(
+            _selection_is_explicitly_authorized(
+                selected, pulse_timing_internal_stage=None
+            )
+        )
+        self.assertTrue(
+            _selection_is_explicitly_authorized(
+                smoke, pulse_timing_internal_stage="pulse_timing_discovery"
+            )
+        )
 
 
 if __name__ == "__main__":

@@ -115,15 +115,60 @@ def build_verified_pulse_reuse_projection(
         raise ValueError("resolved connection pulse identity is incomplete")
     frontend_key = pa_cache_keys.get("frontend")
     overlay_key = pa_cache_keys.get("accelerator_overlay")
+    entrance_overlay_key = pa_cache_keys.get("accelerator_entrance_overlay")
+    intermediate_overlay_key = pa_cache_keys.get("accelerator_intermediate_overlay")
+    coarse_bridge_key = pa_cache_keys.get("full_coarse_bridge")
+    fine_upstream_key = pa_cache_keys.get("fine_upstream")
+    accelerator_main_key = pa_cache_keys.get("accelerator_main")
+    intermediate2_key = pa_cache_keys.get("accelerator_intermediate2_overlay")
+    has_legacy_overlay = overlay_key is not None
+    has_two_local_overlays = (
+        entrance_overlay_key is not None or intermediate_overlay_key is not None
+    )
+    has_domain_split = any(
+        value is not None
+        for value in (coarse_bridge_key, fine_upstream_key, accelerator_main_key, intermediate2_key)
+    )
     if (
-        not isinstance(frontend_key, str)
-        or not frontend_key
-        or not isinstance(overlay_key, str)
-        or not overlay_key
+        (not has_domain_split and (not isinstance(frontend_key, str) or not frontend_key))
         or pa_cache_keys.get("flight_tube") is not None
         or pa_cache_keys.get("reflectron") is not None
     ):
         raise ValueError("pulse reuse requires frontend and accelerator-overlay PA keys only")
+    if sum((has_legacy_overlay, has_two_local_overlays, has_domain_split)) != 1:
+        raise ValueError("pulse reuse accelerator-overlay layout is ambiguous")
+    if has_legacy_overlay:
+        if not isinstance(overlay_key, str) or not overlay_key:
+            raise ValueError("pulse reuse requires frontend and accelerator-overlay PA keys only")
+        cache_key_projection = {
+            "frontend": frontend_key,
+            "accelerator_overlay": overlay_key,
+        }
+    elif has_two_local_overlays:
+        if (
+            not isinstance(entrance_overlay_key, str)
+            or not entrance_overlay_key
+            or not isinstance(intermediate_overlay_key, str)
+            or not intermediate_overlay_key
+        ):
+            raise ValueError("pulse reuse requires both local accelerator-overlay PA keys")
+        cache_key_projection = {
+            "frontend": frontend_key,
+            "accelerator_entrance_overlay": entrance_overlay_key,
+            "accelerator_intermediate_overlay": intermediate_overlay_key,
+        }
+    else:
+        if not all(
+            isinstance(value, str) and value
+            for value in (coarse_bridge_key, fine_upstream_key, accelerator_main_key, intermediate2_key)
+        ):
+            raise ValueError("pulse reuse requires all domain-split PA keys")
+        cache_key_projection = {
+            "full_coarse_bridge": coarse_bridge_key,
+            "fine_upstream": fine_upstream_key,
+            "accelerator_main": accelerator_main_key,
+            "accelerator_intermediate2_overlay": intermediate2_key,
+        }
     time_grid = copy.deepcopy(
         _require_mapping(screening_contract.get("rf_time_grid"), "RF time grid")
     )
@@ -151,9 +196,6 @@ def build_verified_pulse_reuse_projection(
                 "resolution_claim_allowed"
             ),
         },
-        "pa_cache_keys": {
-            "frontend": frontend_key,
-            "accelerator_overlay": overlay_key,
-        },
+        "pa_cache_keys": cache_key_projection,
     }
     return basis, _canonical_sha256(basis)

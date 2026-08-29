@@ -26,6 +26,11 @@ _SINGLE_FLIGHT_EXECUTION_BY_POPULATION_MODE = {
         "requires_eligible_population": False,
         "is_pre_pulse_restart": False,
     },
+    "independent_spatial_velocity_ion_source_snapshot": {
+        "population_basis": "candidate_full_population",
+        "requires_eligible_population": False,
+        "is_pre_pulse_restart": False,
+    },
     "pulse_eligible_conditional": {
         "population_basis": "pulse_eligible_conditional_population",
         "requires_eligible_population": True,

@@ -33,6 +33,12 @@ DETECTOR_PATTERN = re.compile(
     r"TRACE: detector_crossing ion=(?P<ion>\d+) t=(?P<t>[-+0-9.eE]+) "
     r"x=(?P<x>[-+0-9.eE]+) y=(?P<y>[-+0-9.eE]+) z=(?P<z>[-+0-9.eE]+)"
 )
+NON_DETECTOR_SPLAT_PATTERN = re.compile(
+    r"TRACE: non_detector_splat ion=(?P<ion>\d+) instance=(?P<instance>\d+) "
+    r"t=(?P<t>[-+0-9.eE]+) x=(?P<x>[-+0-9.eE]+) "
+    r"y=(?P<y>[-+0-9.eE]+) z=(?P<z>[-+0-9.eE]+) "
+    r"zmax=(?P<zmax>[-+0-9.eE]+)"
+)
 
 def resolve_analysis_mass_amu(initial_global_state_path: Path) -> float:
     """Return the unique physical mass represented by a frozen state table.
@@ -300,6 +306,33 @@ def _peak_summary(
     return peak, bootstrap
 
 
+def _terminal_taxonomy(
+    expected_particle_ids: set[int],
+    terminal_outcomes: dict[int, dict[str, object]],
+) -> dict[str, object]:
+    """Return one exhaustive terminal category for every frozen mother ID."""
+
+    missing = sorted(expected_particle_ids - set(terminal_outcomes))
+    if missing:
+        raise ValueError("full-flight terminal taxonomy lacks terminal outcome")
+    extra = set(terminal_outcomes) - expected_particle_ids
+    if extra:
+        raise ValueError("full-flight terminal taxonomy has unknown particle ID")
+    records = [terminal_outcomes[particle_id] for particle_id in sorted(expected_particle_ids)]
+    category_counts: dict[str, int] = {}
+    for record in records:
+        category = str(record["category"])
+        category_counts[category] = category_counts.get(category, 0) + 1
+    return {
+        "role": "rf_oatof_full_flight_terminal_taxonomy",
+        "classification_is_mutually_exclusive_and_exhaustive": True,
+        "mother_cohort_count": len(expected_particle_ids),
+        "terminal_outcome_count": len(records),
+        "category_counts": category_counts,
+        "particle_outcomes": records,
+    }
+
+
 def _segment_diagnostics(
     rows: list[dict[str, object]], eligible_ids: set[int]
 ) -> dict[str, object]:
@@ -420,6 +453,7 @@ def analyze(
     restart_validation_contract_sha256: str | None = None,
     particle_row_map_path: Path | None = None,
     source_region_diagnostic_profile: dict[str, object] | None = None,
+    require_terminal_taxonomy: bool = False,
 ) -> tuple[list[dict[str, object]], dict[str, object]]:
     if population_contract.get("role") != "rf_oatof_resolved_population_contract":
         raise ValueError("resolved population contract identity differs")
@@ -515,6 +549,7 @@ def analyze(
         raise ValueError("single-flight batch log/count identity differs")
     rows: list[dict[str, object]] = []
     seen: set[tuple[int, str]] = set()
+    terminal_outcomes: dict[int, dict[str, object]] = {}
     pulse_times: list[float] = []
     offset = 0
     lines: list[tuple[str, int, int]] = []
@@ -594,7 +629,20 @@ def analyze(
             key = (ordered_particle_ids[source_row - 1], "detector_crossing")
             if key in seen:
                 raise ValueError(f"duplicate detector crossing: particle={key[0]}")
+            if key[0] in terminal_outcomes:
+                raise ValueError(f"duplicate terminal outcome: particle={key[0]}")
             seen.add(key)
+            terminal_outcomes[key[0]] = {
+                "particle_id": key[0],
+                "category": "detector_crossing",
+                "terminal_event": "detector_crossing",
+                "instance_id": 4,
+                "terminal_elapsed_us": float(match["t"]),
+                "x_mm": float(match["x"]),
+                "y_mm": float(match["y"]),
+                "z_mm": float(match["z"]),
+                "zmax_mm": None,
+            }
             rows.append({
                 "particle_id": key[0], "event": key[1],
                 "solver_local_elapsed_us": float(match["t"]),
@@ -606,6 +654,28 @@ def analyze(
                 "pulse_effective_elapsed_us": "",
                 "survival_status": "detected",
             })
+            continue
+        match = NON_DETECTOR_SPLAT_PATTERN.search(line)
+        if match:
+            local_id = int(match["ion"])
+            if not 1 <= local_id <= batch_count:
+                raise ValueError("logged particle identity is outside its batch")
+            source_row = local_id + particle_offset
+            particle_id = ordered_particle_ids[source_row - 1]
+            if particle_id in terminal_outcomes:
+                raise ValueError(f"duplicate terminal outcome: particle={particle_id}")
+            instance_id = int(match["instance"])
+            terminal_outcomes[particle_id] = {
+                "particle_id": particle_id,
+                "category": f"non_detector_splat_instance_{instance_id}",
+                "terminal_event": "non_detector_splat",
+                "instance_id": instance_id,
+                "terminal_elapsed_us": float(match["t"]),
+                "x_mm": float(match["x"]),
+                "y_mm": float(match["y"]),
+                "z_mm": float(match["z"]),
+                "zmax_mm": float(match["zmax"]),
+            }
             continue
         match = PULSE_PATTERN.search(line)
         if match:
@@ -811,6 +881,15 @@ def analyze(
                         "checkpoint_provenance": "pre_pulse_restart_initial_global_state",
                     })
                 pre_pulse_state_provenance = "pre_pulse_restart_initial_global_state"
+    terminal_taxonomy = (
+        _terminal_taxonomy(expected_particle_ids, terminal_outcomes)
+        if require_terminal_taxonomy
+        else {
+            "role": "rf_oatof_full_flight_terminal_taxonomy",
+            "classification_is_mutually_exclusive_and_exhaustive": False,
+            "status": "not_applicable_detector_blind_pre_pulse_or_unqualified_analysis",
+        }
+    )
     rows.sort(key=lambda row: (int(row["particle_id"]), str(row["event"])))
     _validate_reflectron_event_order(rows)
     counts = {event: sum(row["event"] == event for row in rows) for event in (
@@ -1365,6 +1444,7 @@ def analyze(
                 complete_eligible_population_simulated
             ),
         },
+        "terminal_taxonomy": terminal_taxonomy,
         "observed_cohort_authority": observed_cohort_authority,
         "observed_handoff": observed_handoff,
         "pulse_first_observed_us": min(pulse_times) if pulse_times else None,
@@ -1440,6 +1520,7 @@ def main() -> int:
     parser.add_argument("--summary", required=True, type=Path)
     parser.add_argument("--require-resolution-qualification", action="store_true")
     parser.add_argument("--require-three-zone-checkpoint-census", action="store_true")
+    parser.add_argument("--require-terminal-taxonomy", action="store_true")
     args = parser.parse_args()
     if file_sha256(args.resolved_population_contract) != \
             args.resolved_population_contract_sha256:
@@ -1515,6 +1596,7 @@ def main() -> int:
         args.restart_validation_contract_sha256,
         args.particle_row_map,
         source_region_diagnostic_profile,
+        args.require_terminal_taxonomy,
     )
     args.checkpoints.parent.mkdir(parents=True, exist_ok=True)
     with args.checkpoints.open("w", encoding="utf-8", newline="") as handle:

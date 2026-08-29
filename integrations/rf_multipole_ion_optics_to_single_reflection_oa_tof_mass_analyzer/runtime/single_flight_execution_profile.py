@@ -65,6 +65,63 @@ def _numeric_reflectron_cell(value: Any) -> dict[str, float]:
     return {axis: _positive_number(value[axis]) for axis in ("axial", "radial")}
 
 
+def _resolve_accelerator_overlays(
+    overlay: Any, frontend_cell_mm_xyz: dict[str, float]
+) -> tuple[bool, str | None, dict[str, float] | None, list[dict[str, Any]]]:
+    """Resolve legacy whole or explicit two-local accelerator PA overlays."""
+
+    if not isinstance(overlay, dict) or overlay.get("enabled") is not True:
+        return False, None, None, []
+    layout = overlay.get("layout", "whole_accelerator_v1")
+    common = {"enabled", "layout", "boundary_mode", "transient_disk_estimate"}
+    if (
+        overlay.get("boundary_mode") != "coarse_electrode_basis_dirichlet_v1"
+        or frontend_cell_mm_xyz["x"] != frontend_cell_mm_xyz["y"]
+    ):
+        raise ValueError(ERROR)
+    if layout == "whole_accelerator_v1":
+        if set(overlay) - (common | {"cell_mm_xyz"}):
+            raise ValueError(ERROR)
+        cell = _numeric_cell(overlay.get("cell_mm_xyz"))
+        specs = [{"region_id": "whole_accelerator", "cell_mm_xyz": cell}]
+    elif layout == "two_local_v1":
+        if set(overlay) - (common | {"entrance", "intermediate2"}):
+            raise ValueError(ERROR)
+        entrance = overlay.get("entrance")
+        intermediate = overlay.get("intermediate2")
+        if (
+            not isinstance(entrance, dict)
+            or set(entrance) != {"cell_mm_xyz"}
+            or not isinstance(intermediate, dict)
+            or set(intermediate) != {"cell_mm_xyz", "half_span_mm"}
+        ):
+            raise ValueError(ERROR)
+        entrance_cell = _numeric_cell(entrance["cell_mm_xyz"])
+        intermediate_cell = _numeric_cell(intermediate["cell_mm_xyz"])
+        specs = [
+            {"region_id": "entrance", "cell_mm_xyz": entrance_cell},
+            {
+                "region_id": "intermediate2",
+                "cell_mm_xyz": intermediate_cell,
+                "intermediate_half_span_mm": _positive_number(
+                    intermediate["half_span_mm"]
+                ),
+            },
+        ]
+        cell = entrance_cell
+    else:
+        raise ValueError(ERROR)
+    for spec in specs:
+        cell_mm_xyz = spec["cell_mm_xyz"]
+        if (
+            cell_mm_xyz["x"] != frontend_cell_mm_xyz["x"]
+            or cell_mm_xyz["y"] != frontend_cell_mm_xyz["y"]
+            or cell_mm_xyz["z"] > frontend_cell_mm_xyz["z"]
+        ):
+            raise ValueError(ERROR)
+    return True, layout, cell, specs
+
+
 def resolve_execution_profile(
     configuration: dict[str, Any],
     *,
@@ -91,18 +148,23 @@ def resolve_execution_profile(
         ]
         grid = unique_named_profile(configuration, "frontend_grid_profiles", selected_grid_id)
         frontend_cell_mm_xyz = _numeric_cell(grid.get("cell_mm_xyz"))
+        raw_coarse_bridge_cell = grid.get("coarse_bridge_cell_mm_xyz")
+        coarse_bridge_cell_mm_xyz = (
+            frontend_cell_mm_xyz
+            if raw_coarse_bridge_cell is None
+            else _numeric_cell(raw_coarse_bridge_cell)
+        )
+        if any(
+            coarse_bridge_cell_mm_xyz[axis] < frontend_cell_mm_xyz[axis]
+            for axis in ("x", "y", "z")
+        ):
+            raise ValueError(ERROR)
 
-        overlay = grid.get("accelerator_overlay")
-        overlay_enabled = isinstance(overlay, dict) and overlay.get("enabled") is True
-        overlay_cell_mm_xyz: dict[str, float] | None = None
-        if overlay_enabled:
-            if (
-                set(overlay) - {"enabled", "cell_mm_xyz", "boundary_mode", "transient_disk_estimate"}
-                or overlay.get("boundary_mode") != "coarse_electrode_basis_dirichlet_v1"
-                or len(set(frontend_cell_mm_xyz.values())) != 1
-            ):
-                raise ValueError(ERROR)
-            overlay_cell_mm_xyz = _numeric_cell(overlay.get("cell_mm_xyz"))
+        overlay_enabled, overlay_layout, overlay_cell_mm_xyz, overlay_specs = (
+            _resolve_accelerator_overlays(
+                grid.get("accelerator_overlay"), frontend_cell_mm_xyz
+            )
+        )
 
         selected_oatof_id = oatof_numerical_profile_id or configuration[
             "default_oatof_numerical_profile_id"
@@ -143,7 +205,7 @@ def resolve_execution_profile(
                     numerical_overrides["frontend_cell_mm_xyz"]
                 )
             if "accelerator_overlay_cell_mm_xyz" in numerical_overrides:
-                if not overlay_enabled:
+                if not overlay_enabled or overlay_layout != "whole_accelerator_v1":
                     raise ValueError(ERROR)
                 overlay_cell_mm_xyz = _numeric_cell(
                     numerical_overrides["accelerator_overlay_cell_mm_xyz"]
@@ -158,13 +220,19 @@ def resolve_execution_profile(
                 rf_steps_per_period = _positive_integer(
                     numerical_overrides["rf_steps_per_period"]
                 )
-        if overlay_enabled and (
-            overlay_cell_mm_xyz is None
-            or overlay_cell_mm_xyz["x"] != frontend_cell_mm_xyz["x"]
-            or overlay_cell_mm_xyz["y"] != frontend_cell_mm_xyz["y"]
-            or overlay_cell_mm_xyz["z"] > frontend_cell_mm_xyz["z"]
-        ):
-            raise ValueError(ERROR)
+        if overlay_layout == "whole_accelerator_v1":
+            assert overlay_cell_mm_xyz is not None
+            overlay_specs = [
+                {"region_id": "whole_accelerator", "cell_mm_xyz": overlay_cell_mm_xyz}
+            ]
+        for spec in overlay_specs:
+            cell_mm_xyz = spec["cell_mm_xyz"]
+            if (
+                cell_mm_xyz["x"] != frontend_cell_mm_xyz["x"]
+                or cell_mm_xyz["y"] != frontend_cell_mm_xyz["y"]
+                or cell_mm_xyz["z"] > frontend_cell_mm_xyz["z"]
+            ):
+                raise ValueError(ERROR)
 
         maximum_tof = _positive_number(
             configuration["maximum_time_of_flight_us"]
@@ -195,9 +263,12 @@ def resolve_execution_profile(
     return {
         "frontend_grid_profile_id": selected_grid_id,
         "frontend_cell_mm_xyz": frontend_cell_mm_xyz,
+        "coarse_bridge_cell_mm_xyz": coarse_bridge_cell_mm_xyz,
         "field_overlay_id": grid.get("field_overlay_id"),
         "accelerator_overlay_enabled": overlay_enabled,
+        "accelerator_overlay_layout": overlay_layout,
         "accelerator_overlay_cell_mm_xyz": overlay_cell_mm_xyz,
+        "accelerator_overlay_specs": overlay_specs,
         "accelerator_overlay_boundary_mode": (
             "coarse_electrode_basis_dirichlet_v1" if overlay_enabled else None
         ),

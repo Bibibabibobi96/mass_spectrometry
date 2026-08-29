@@ -26,9 +26,34 @@ def _cache_dispositions() -> dict[str, object]:
             "key": "1" * 64,
             "disposition": "cache_hit",
         },
+        "full_coarse_bridge": {
+            "role": "simion_single_flight_frontend_pa_cache",
+            "key": "1" * 64,
+            "disposition": "cache_hit",
+        },
+        "fine_upstream": {
+            "role": "simion_single_flight_upstream_bridge_pa_cache",
+            "key": "5" * 64,
+            "disposition": "built_and_published",
+        },
+        "accelerator_main": {
+            "role": "simion_single_flight_accelerator_main_pa_cache",
+            "key": "6" * 64,
+            "disposition": "built_and_published",
+        },
         "accelerator_overlay": {
             "role": "simion_accelerator_overlay_pa_cache",
             "key": "2" * 64,
+            "disposition": "built_and_published",
+        },
+        "accelerator_entrance_overlay": {
+            "role": "simion_accelerator_entrance_overlay_pa_cache",
+            "key": "3" * 64,
+            "disposition": "built_and_published",
+        },
+        "accelerator_intermediate_overlay": {
+            "role": "simion_accelerator_intermediate_overlay_pa_cache",
+            "key": "4" * 64,
             "disposition": "built_and_published",
         },
         "flight_tube": {
@@ -139,10 +164,31 @@ def _contract(
             "flight_tube": None,
             "reflectron": None,
         }
-    else:
+    elif schema_version == 2:
         contract["pa_cache_roles"] = {
             "identity_source": "runner_materialized_verified_pa_cache_receipt",
             "required": ["frontend", "accelerator_overlay"],
+            "prohibited": ["flight_tube", "reflectron"],
+        }
+    elif schema_version == 3:
+        contract["pa_cache_roles"] = {
+            "identity_source": "runner_materialized_verified_pa_cache_receipt",
+            "required": [
+                "frontend",
+                "accelerator_entrance_overlay",
+                "accelerator_intermediate_overlay",
+            ],
+            "prohibited": ["flight_tube", "reflectron"],
+        }
+    else:
+        contract["pa_cache_roles"] = {
+            "identity_source": "runner_materialized_verified_pa_cache_receipt",
+            "required": [
+                "full_coarse_bridge",
+                "fine_upstream",
+                "accelerator_main",
+                "accelerator_intermediate2_overlay",
+            ],
             "prohibited": ["flight_tube", "reflectron"],
         }
     return contract
@@ -302,6 +348,68 @@ class PrePulseTimeSeriesMaterializationTests(unittest.TestCase):
                 )
             paths["run_config"].write_text(json.dumps(run_config), encoding="utf-8")
             self.assertEqual(_materialize(paths).state_row_count, 1)
+
+    def test_schema_v3_records_both_local_overlay_cache_keys(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            paths = _write_fixture(
+                Path(directory),
+                particle_ids=[1],
+                sample_times=[1.0],
+                log_groups=[[_trace(ion=1, particle_id=1, sample_index=1, time_us=1.0)]],
+                schema_version=3,
+            )
+            _materialize(paths)
+            receipt = json.loads(paths["receipt"].read_text(encoding="utf-8"))
+            self.assertEqual(receipt["pa_cache_keys"], {
+                "frontend": "1" * 64,
+                "accelerator_entrance_overlay": "3" * 64,
+                "accelerator_intermediate_overlay": "4" * 64,
+                "flight_tube": None,
+                "reflectron": None,
+            })
+
+    def test_schema_v3_rejects_missing_local_overlay_disposition(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            paths = _write_fixture(
+                Path(directory),
+                particle_ids=[1],
+                sample_times=[1.0],
+                log_groups=[[_trace(ion=1, particle_id=1, sample_index=1, time_us=1.0)]],
+                schema_version=3,
+            )
+            run_config = json.loads(paths["run_config"].read_text(encoding="utf-8"))
+            del run_config["parameters"]["pa_cache_dispositions"][
+                "accelerator_intermediate_overlay"
+            ]
+            paths["run_config"].write_text(json.dumps(run_config), encoding="utf-8")
+            with self.assertRaisesRegex(ContractError, "active PA cache disposition"):
+                _materialize(paths)
+
+    def test_schema_v4_records_all_domain_split_cache_keys(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            paths = _write_fixture(
+                Path(directory), particle_ids=[1], sample_times=[1.0],
+                log_groups=[[_trace(ion=1, particle_id=1, sample_index=1, time_us=1.0)]],
+                schema_version=4,
+            )
+            run_config = json.loads(paths["run_config"].read_text(encoding="utf-8"))
+            dispositions = run_config["parameters"]["pa_cache_dispositions"]
+            dispositions["accelerator_intermediate2_overlay"] = {
+                "role": "simion_accelerator_intermediate_overlay_pa_cache",
+                "key": "4" * 64,
+                "disposition": "built_and_published",
+            }
+            paths["run_config"].write_text(json.dumps(run_config), encoding="utf-8")
+            _materialize(paths)
+            receipt = json.loads(paths["receipt"].read_text(encoding="utf-8"))
+            self.assertEqual(receipt["pa_cache_keys"], {
+                "full_coarse_bridge": "1" * 64,
+                "fine_upstream": "5" * 64,
+                "accelerator_main": "6" * 64,
+                "accelerator_intermediate2_overlay": "4" * 64,
+                "flight_tube": None,
+                "reflectron": None,
+            })
 
     def test_n100_v1_v2_preserves_prefix_census_and_output_bytes(self) -> None:
         particle_ids = list(range(1, 101))

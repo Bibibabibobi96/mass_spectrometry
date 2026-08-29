@@ -232,7 +232,7 @@ def _select(config: dict[str, Any], baseline: dict[str, Any], reference: Any,
 
 def _confirm(config: dict[str, Any], spec: NumericalSourceSpec, point: Any, *, width: float,
              design_id: str, seed: int, result_dir: Path, include_particles: bool = True,
-             emit: bool = True) -> dict[str, Any]:
+             retain_population_density: bool = True, emit: bool = True) -> dict[str, Any]:
     spec = source_at_point(spec, point)
     settings, num = _settings(), config["numerics"]
     population = []
@@ -251,13 +251,16 @@ def _confirm(config: dict[str, Any], spec: NumericalSourceSpec, point: Any, *, w
                     "resolution_mass": None, "finite_envelope_reachable": None,
                     "event_interpretation": "method_not_certified_not_particle_loss"})
                 continue
-            density_path = result_dir / f"{design_id}__w{width:g}__population{nx}_{nv}.csv"
-            with density_path.open("w", newline="", encoding="utf-8") as stream:
-                writer = csv.writer(stream)
-                writer.writerow(["time_us", "density_per_us", "mass_da", "density_per_da"])
-                writer.writerows(zip(result.time_grid_us, result.time_density_per_us, result.mass_grid_da, result.mass_density_per_da))
-            population.append({"orders": [nx, nv], "method": "exact_population_pushforward",
-                               "density_path": density_path.name, **result.summary})
+            density_record = {"orders": [nx, nv], "method": "exact_population_pushforward",
+                              **result.summary}
+            if retain_population_density:
+                density_path = result_dir / f"{design_id}__w{width:g}__population{nx}_{nv}.csv"
+                with density_path.open("w", newline="", encoding="utf-8") as stream:
+                    writer = csv.writer(stream)
+                    writer.writerow(["time_us", "density_per_us", "mass_da", "density_per_da"])
+                    writer.writerows(zip(result.time_grid_us, result.time_density_per_us, result.mass_grid_da, result.mass_density_per_da))
+                density_record["density_path"] = density_path.name
+            population.append(density_record)
         else:
             source = midpoint_population(spec, full_width_mm=width, residual_sigma_m_per_s=config["residual_sigma_m_per_s"],
                                           position_order=nx, residual_order=nv)
@@ -339,9 +342,12 @@ def _confirm_width_task(config: dict[str, Any], spec: NumericalSourceSpec, refer
     if original_supported:
         reports.append(_confirm(config, spec, reference_point, width=width,
             design_id="original_design", seed=seed, result_dir=result_dir, emit=False))
+    # Screening needs only the deterministic population metrics.  Its sampled
+    # density curves are rebuildable intermediates and must not inflate a
+    # compact run's terminal evidence.
     population_screen = [_confirm(config, spec, item["point"], width=width,
         design_id=item["design_id"]+"__screen", seed=seed, result_dir=result_dir,
-        include_particles=False, emit=False) for item in screened]
+        include_particles=False, retain_population_density=False, emit=False) for item in screened]
     qualifying = [(item, result) for item, result in zip(screened, population_screen)
                   if result["theoretical_population_pass"]]
     qualifying.sort(key=lambda pair: _population_resolution(pair[1]["population"][-1]) or -np.inf,

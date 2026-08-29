@@ -1,0 +1,76 @@
+{
+  "schema_version": 6,
+  "role": "rf_multipole_oatof_experiment_campaign",
+  "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+  "campaign_id": "ideal_acceptance_300mm_square_cylindrical_smoke_n1",
+  "status": "exploration",
+  "execution_policy": {
+    "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/execution_policy.json",
+    "sha256": "6FDB04133C0AB5F48BE51127296469802E8E31E04DF6FFB539DD96E0F54F4B35"
+  },
+  "claim_limit": "DETECTOR_BLIND_SOURCE_ONLY; FUNCTIONAL_SMOKE_ONLY. One registered terminal-octupole handoff particle is propagated detector-blind through each 300 mm three-zone realization and the 102.4 mm grounded connector. Both arms bind the identical grid010 Candidate, plane potentials, source, numerical settings, upstream source and connector; only accelerator cross section differs. This checks long-gap domain-split PA construction and pre-pulse trajectory continuity only. It cannot support collection, field-equivalence, peak-width, resolution, optimization, or Formal claims.",
+  "pre_pulse_time_series_screening": {
+    "mode": "real_pa_rf_pre_pulse_time_series",
+    "active_scope": "pre_pulse_frontend_accelerator",
+    "relative_start_index": 0,
+    "relative_end_index": 0,
+    "rf_steps_per_period": 40,
+    "time_grid_profile_id": "ballistic_seed_rf40_single_snapshot_v1",
+    "expected_upstream_frequency_hz": 1100000.0,
+    "sample_count": 1,
+    "spatial_window_profile_id": "layout_resolved_axial_provisional_xy2_v1",
+    "pulse_disabled": true,
+    "terminate_at_window_end": true,
+    "resolution_claim_allowed": false,
+    "prohibited_outputs": ["detector_crossing", "resolution_metrics", "single_flight_spatial_six_panel"]
+  },
+  "experiments": {
+    "shared": {
+      "execution_strategy": "simion_single_flight",
+      "single_flight_pa_cache_policy": "build_and_publish_if_missing",
+      "single_flight_frontend_grid_profile_id": "frontend_acceleration_xy025_z010_accelerator_two_local_xy025_z005",
+      "single_flight_oatof_numerical_profile_id": "oatof_formal_mesh",
+      "single_flight_trajectory_quality_profile_id": "tqual_8",
+      "single_flight_time_integration_profile_id": "dt40",
+      "single_flight_accelerator_field_profile_id": "accelerator_real_three_zone_pa_real_reflectron",
+      "single_flight_source_materialization_profile_id": "canonical_real_octupole_n1000",
+      "single_flight_three_zone_candidate": {
+        "path": "artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20260828_220500__build__python__ideal-acceptance-300mm-grid010-candidate/results/ideal_acceptance_300mm_simion_candidate_resolved.json",
+        "sha256": "B25EEF7E5F37403BC9AC1CE5CAD8F3C80036C0E606912EC11BC7C9076BC7B77F"
+      },
+      "architecture_generation_id": "three_zone_ideal_acceptance_300mm_v1",
+      "source_profile_id": "canonical_real_octupole_n1000",
+      "field_overlay_id": "accelerator_two_local_z005",
+      "source_release_mode": "continuous_frontend_handoff",
+      "terminal_handoff_smoke_source_particle_id": 1,
+      "connection_profile_id": "rf_octupole_to_single_reflection_oatof_direct_mating_gap_102p4mm",
+      "source": {
+        "authority_scope": "source_population",
+        "run_id": "20260825_214000__sim__simion__paper1-s1-oct-terminal-h15__n1000__r03",
+        "launched_particle_count": 1000,
+        "particle_count_binding": {"mode": "derive_from_frozen_source_state_v1", "selector": {"event": "handoff", "status": "transmitted"}},
+        "particle_source_manifest_input_role": "particle_source",
+        "manifest": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260825_214000__sim__simion__paper1-s1-oct-terminal-h15__n1000__r03/run_manifest.json", "sha256": "A3C8ACC5E8CDDB98FCEAB597FBF501883964C737CD1E5ADB9CF9B2F01E78C936"},
+        "state": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260825_214000__sim__simion__paper1-s1-oct-terminal-h15__n1000__r03/results/particle_states__exit_aperture_plate_acceleration_rf_on.csv", "sha256": "3830C646D10E169B4B503C912859C95C70ADDB194DCA5103E6A01BE2A7B255C8"},
+        "particle_source": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260825_214000__sim__simion__paper1-s1-oct-terminal-h15__n1000__r03/inputs/particle_source.csv", "sha256": "302C03DC29737CE9D46EB1A8D258DB2A8D3C0F8B6A53F7702A33B1ECF9D5320D"},
+        "metadata": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260825_214000__sim__simion__paper1-s1-oct-terminal-h15__n1000__r03/inputs/particle_source_metadata.json", "sha256": "2BE5BBEAD1BF782D6294616B79C1FB1FC60021099EF5BE309480E1A2005139E7"},
+        "handoff_publication_contract": {"path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/octupole_handoff_publication_n1000.json", "sha256": "BF3DD74CE90CFE4E9811FECADE8F38D95C9DF16E61C1828D52889135094616A4"}
+      },
+      "single_flight_pulse_schedule_policy": {"policy_id": "multipole_handoff_ballistic_centroid_v1", "offset_rf_periods": 0.0, "pulse_width_us": 1.0},
+      "single_flight_population": {
+        "population_id": "ideal_acceptance_300mm_registered_terminal_handoff_smoke_n1",
+        "population_mode": "terminal_handoff_continuation",
+        "source_authority": {"input_role": "terminal_handoff_continuation_global_state", "table_binding": "terminal_handoff_continuation_global_state", "ordered_particle_id_encoding": "canonical_compact_json_integer_array_v1"},
+        "execution_population": {"particle_count": 1, "ordered_particle_id_sha256": "080A9ED428559EF602668B4C00F114F1A11C3F6B02A435F0BDC154578E4D7F22", "selection_algorithm": "explicit_single_terminal_handoff_particle_id_v1", "selection_seed": 0},
+        "denominators": {"population_count": 1000, "eligible_population_count": 1000},
+        "analysis_randomness": {"bootstrap_resample_count": 400, "bootstrap_seed": 20260827},
+        "postselection_policy": "prohibited"
+      }
+    },
+    "variation_axes": ["single_flight_layout_profile_id"],
+    "rows": [
+      {"sequence": 1, "experiment_id": "ideal_acceptance_300mm_square_smoke_n1", "run_id": "20260828_234100__sim__cross__ideal-300-square-gap102p4-domain-smoke__n1", "overrides": {"single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_square_v1"}},
+      {"sequence": 2, "experiment_id": "ideal_acceptance_300mm_cylindrical_smoke_n1", "run_id": "20260828_234200__sim__cross__ideal-300-cylindrical-gap102p4-domain-smoke__n1", "overrides": {"single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_cylindrical_v1"}}
+    ]
+  }
+}

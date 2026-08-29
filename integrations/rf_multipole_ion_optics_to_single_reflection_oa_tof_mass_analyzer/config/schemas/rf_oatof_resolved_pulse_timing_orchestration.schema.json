@@ -24,7 +24,10 @@
       "const": "auto_detector_blind_discovery_and_confirmation_v1"
     },
     "time_grid_profile_id": {
-      "const": "ballistic_seed_native_dt_minus0p35_plus1p65_v1"
+      "enum": [
+        "ballistic_seed_native_dt_minus0p35_plus1p65_v1",
+        "ballistic_seed_rf40_single_snapshot_v1"
+      ]
     },
     "spatial_window_profile_id": {"$ref": "#/$defs/id"},
     "requested_schedule": {"$ref": "#/$defs/workspace_file"},

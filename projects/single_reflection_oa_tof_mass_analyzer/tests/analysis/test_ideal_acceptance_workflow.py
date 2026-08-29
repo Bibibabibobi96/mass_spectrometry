@@ -86,7 +86,12 @@ class AcceptanceWorkflowTests(unittest.TestCase):
             report = load_json(result / "results" / (selected["design_id"]+"__w3.json"))
             self.assertEqual(report["population"][-1]["method"], "exact_population_pushforward")
             self.assertGreater(report["population"][-1]["resolution_mass"], 25000)
-            self.assertEqual(len(list((result / "results").glob("*__population*.csv"))), 4)
+            self.assertEqual(len(list((result / "results").glob("*__population*.csv"))), 2)
+            self.assertFalse(list((result / "results").glob("*__screen__*__population*.csv")))
+            selection = load_json(result / "results/w3__selection.json")
+            screened = selection["rejected_population_records"]
+            self.assertTrue(screened)
+            self.assertTrue(all("density_path" not in record["population"][-1] for record in screened))
 
     def test_screen_limit_applies_to_every_width(self):
         config = load_json(runner.PROJECT_ROOT / "config/experiments/ideal_acceptance_fixed_length.json")

@@ -198,7 +198,7 @@ timed_stage('raw_grid_audit',function()
   audit_raw_grid(3+ring_count,'grid2',math.floor(grid2_gu+0.5))
 end)
 timed_stage('refine',function()
-  simion.command(string.format('refine --resume=0 --convergence=5e-7 %q',output))
+  simion.command(string.format('refine --resume=0 %q',output))
 end)
 local voltage_assignments={string.format('1=%.12g',repeller_voltage),
   string.format('2=%.12g',grid1_voltage)}

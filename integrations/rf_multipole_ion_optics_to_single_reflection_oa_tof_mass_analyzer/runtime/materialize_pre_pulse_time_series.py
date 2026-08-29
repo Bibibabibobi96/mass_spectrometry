@@ -518,10 +518,31 @@ def _cache_keys(
     if not isinstance(dispositions, dict):
         raise ContractError("pre-pulse PA cache dispositions are missing")
     expected: dict[str, str | None] = {}
-    active_roles = {
+    schema_version = contract.get("schema_version")
+    active_roles = (
+        {
+            "full_coarse_bridge": "simion_single_flight_frontend_pa_cache",
+            "fine_upstream": "simion_single_flight_upstream_bridge_pa_cache",
+            "accelerator_main": "simion_single_flight_accelerator_main_pa_cache",
+            "accelerator_intermediate2_overlay": "simion_accelerator_intermediate_overlay_pa_cache",
+        }
+        if schema_version == 4
+        else {
         "frontend": "simion_single_flight_frontend_pa_cache",
-        "accelerator_overlay": "simion_accelerator_overlay_pa_cache",
-    }
+        **(
+            {
+                "accelerator_entrance_overlay": (
+                    "simion_accelerator_entrance_overlay_pa_cache"
+                ),
+                "accelerator_intermediate_overlay": (
+                    "simion_accelerator_intermediate_overlay_pa_cache"
+                ),
+            }
+            if schema_version == 3
+            else {"accelerator_overlay": "simion_accelerator_overlay_pa_cache"}
+        ),
+        }
+    )
     for role, expected_role in active_roles.items():
         disposition = dispositions.get(role)
         if not isinstance(disposition, dict):
@@ -550,20 +571,21 @@ def _cache_keys(
             raise ContractError("pre-pulse downstream PA cache must be formal")
         expected[role] = None
 
-    if contract.get("schema_version") == 1:
+    if schema_version == 1:
         declared = contract.get("pa_cache_keys")
         if declared != expected:
             raise ContractError("pre-pulse schema-v1 PA cache keys differ")
         return copy.deepcopy(declared)
     roles = contract.get("pa_cache_roles")
+    required_roles = list(active_roles)
     if (
         not isinstance(roles, dict)
         or roles.get("identity_source")
         != "runner_materialized_verified_pa_cache_receipt"
-        or roles.get("required") != ["frontend", "accelerator_overlay"]
+        or roles.get("required") != required_roles
         or roles.get("prohibited") != ["flight_tube", "reflectron"]
     ):
-        raise ContractError("pre-pulse schema-v2 PA cache role policy differs")
+        raise ContractError("pre-pulse PA cache role policy differs")
     return expected
 
 

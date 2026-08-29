@@ -311,6 +311,84 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
             contract["sample_times_us"][56], grid["ballistic_seed_time_us"], places=13
         )
 
+    def test_two_local_execution_profile_selects_schema_v3_pa_roles(self) -> None:
+        row = self.campaign["experiments"][0]
+        contract = compile_pre_pulse_time_series_contract(
+            campaign=self.campaign,
+            experiment=row,
+            experiment_row_sha256="A" * 64,
+            upstream_resolved_design={"drive": {
+                "frequency_Hz": 1_100_000, "waveform": "sine", "phase_rad": 0.25,
+            }},
+            resolved_source_contract_sha256="B" * 64,
+            resolved_population_contract_sha256="C" * 64,
+            prepared_prefix_sha256="D" * 64,
+            layout_profile={
+                "topology_id": "three_zone_accelerator_ideal_v1",
+                "geometry_id": "three_zone_focus_origin_planes_v1",
+                "frontend_electrode_topology_id": "three_zone_frontend_v1",
+            },
+            selected_field_profile={"field_id": "three_zone_refined_pa_field_v1"},
+            region_field_semantic_sha256="E" * 64,
+            rf_steps_per_period=160,
+            specification={
+                "mode": "real_pa_rf_pre_pulse_time_series",
+                "active_scope": "pre_pulse_frontend_accelerator",
+                "time_grid_profile_id": "ballistic_seed_rf160_single_snapshot_v1",
+                "relative_start_index": 0,
+                "relative_end_index": 0,
+                "rf_steps_per_period": 160,
+                "sample_count": 1,
+                "spatial_window_profile_id": "layout_resolved_axial_provisional_xy2_v1",
+                "pulse_disabled": True,
+                "terminate_at_window_end": True,
+                "resolution_claim_allowed": False,
+                "prohibited_outputs": [
+                    "detector_crossing", "resolution_metrics",
+                    "single_flight_spatial_six_panel",
+                ],
+            },
+            base_schedule={"pulse_effective_time_us": 45.4167939656417},
+            execution_profile={"accelerator_overlay_layout": "two_local_v1"},
+        )
+        self.assertEqual(contract["schema_version"], 3)
+        self.assertEqual(
+            contract["pa_cache_roles"]["required"],
+            [
+                "frontend",
+                "accelerator_entrance_overlay",
+                "accelerator_intermediate_overlay",
+            ],
+        )
+        validate_schema(
+            contract,
+            SCHEMA_DIR / "rf_oatof_pre_pulse_time_series_screening_contract.schema.json",
+        )
+
+    def test_long_gap_selects_schema_v4_domain_split_pa_roles(self) -> None:
+        row = self.campaign["experiments"][0]
+        contract = compile_pre_pulse_time_series_contract(
+            campaign=self.campaign, experiment=row, experiment_row_sha256="A" * 64,
+            upstream_resolved_design={"drive": {
+                "frequency_Hz": 1_100_000, "waveform": "sine", "phase_rad": 0.25,
+            }}, resolved_source_contract_sha256="B" * 64,
+            resolved_population_contract_sha256="C" * 64,
+            prepared_prefix_sha256="D" * 64,
+            layout_profile={"topology_id": "three_zone_accelerator_ideal_v1", "geometry_id": "three_zone_focus_origin_planes_v1", "frontend_electrode_topology_id": "three_zone_frontend_v1"},
+            selected_field_profile={"field_id": "three_zone_refined_pa_field_v1"},
+            region_field_semantic_sha256="E" * 64, rf_steps_per_period=160,
+            specification={"mode": "real_pa_rf_pre_pulse_time_series", "active_scope": "pre_pulse_frontend_accelerator", "time_grid_profile_id": "ballistic_seed_rf160_single_snapshot_v1", "relative_start_index": 0, "relative_end_index": 0, "rf_steps_per_period": 160, "sample_count": 1, "spatial_window_profile_id": "layout_resolved_axial_provisional_xy2_v1", "pulse_disabled": True, "terminate_at_window_end": True, "resolution_claim_allowed": False, "prohibited_outputs": ["detector_crossing", "resolution_metrics", "single_flight_spatial_six_panel"]},
+            base_schedule={"pulse_effective_time_us": 45.4167939656417},
+            execution_profile={"accelerator_overlay_layout": "two_local_v1"},
+            resolved_connection={"connector": {"length_mm": 102.4}},
+        )
+        self.assertEqual(contract["schema_version"], 4)
+        self.assertEqual(contract["pa_cache_roles"]["required"], [
+            "full_coarse_bridge", "fine_upstream", "accelerator_main",
+            "accelerator_intermediate2_overlay",
+        ])
+        validate_schema(contract, SCHEMA_DIR / "rf_oatof_pre_pulse_time_series_screening_contract.schema.json")
+
     def test_screening_schema_closes_version_to_pa_authority_and_grid(self) -> None:
         legacy = self._compile()
         automatic = copy.deepcopy(legacy)

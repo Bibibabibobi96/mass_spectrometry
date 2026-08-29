@@ -2,6 +2,20 @@
   "schema_version": 5,
   "role": "rf_oatof_simion_single_flight_configuration",
   "clock_basis": "canonical_instrument_time_us",
+  "positive_gap_pa_partition": {
+    "policy_id": "connector_overlap_guard_10mm_min_gap_50mm_v1",
+    "applies_when_connector_length_mm_greater_than": 0.0,
+    "minimum_connector_length_mm": 50.0,
+    "upstream_end_guard_mm": 10.0,
+    "accelerator_end_guard_mm": 10.0,
+    "minimum_overlap_mm": 30.0,
+    "boundary_condition": "common_coarse_bridge_electrode_basis_dirichlet_v1",
+    "acceptance": [
+      "overlap_potential_comparison_required",
+      "overlap_normal_field_comparison_required",
+      "paired_particle_interface_comparison_required"
+    ]
+  },
   "resolution_qualification_policy": {
     "required_bootstrap_resample_count": 5000,
     "minimum_valid_bootstrap_resample_count": 4750,
@@ -134,6 +148,101 @@
         "boundary_mode": "coarse_electrode_basis_dirichlet_v1"
       },
       "role": "accelerator_local_refinement_single_wave_parallel3_execution"
+    },
+    {
+      "profile_id": "frontend_acceleration_z010_accelerator_two_local_z005",
+      "field_overlay_id": "accelerator_two_local_z005",
+      "cell_mm_xyz": {
+        "x": 0.2,
+        "y": 0.2,
+        "z": 0.1
+      },
+      "accelerator_overlay": {
+        "enabled": true,
+        "layout": "two_local_v1",
+        "boundary_mode": "coarse_electrode_basis_dirichlet_v1",
+        "entrance": {
+          "cell_mm_xyz": {
+            "x": 0.2,
+            "y": 0.2,
+            "z": 0.05
+          }
+        },
+        "intermediate2": {
+          "cell_mm_xyz": {
+            "x": 0.2,
+            "y": 0.2,
+            "z": 0.05
+          },
+          "half_span_mm": 2.0
+        }
+      },
+      "role": "accelerator_two_local_refinement_exact_terminal_aperture_z010"
+    },
+    {
+      "profile_id": "frontend_acceleration_xy025_z010_accelerator_two_local_xy025_z005",
+      "field_overlay_id": "accelerator_two_local_z005",
+      "cell_mm_xyz": {
+        "x": 0.25,
+        "y": 0.25,
+        "z": 0.1
+      },
+      "coarse_bridge_cell_mm_xyz": {
+        "x": 0.5,
+        "y": 0.5,
+        "z": 0.5
+      },
+      "accelerator_overlay": {
+        "enabled": true,
+        "layout": "two_local_v1",
+        "boundary_mode": "coarse_electrode_basis_dirichlet_v1",
+        "entrance": {
+          "cell_mm_xyz": {
+            "x": 0.25,
+            "y": 0.25,
+            "z": 0.05
+          }
+        },
+        "intermediate2": {
+          "cell_mm_xyz": {
+            "x": 0.25,
+            "y": 0.25,
+            "z": 0.05
+          },
+          "half_span_mm": 2.0
+        }
+      },
+      "role": "accelerator_two_local_refinement_exact_terminal_aperture_xy025_z010"
+    },
+    {
+      "profile_id": "frontend_isotropic_020_accelerator_two_local_z005",
+      "field_overlay_id": "accelerator_two_local_z005",
+      "cell_mm_xyz": {
+        "x": 0.2,
+        "y": 0.2,
+        "z": 0.2
+      },
+      "accelerator_overlay": {
+        "enabled": true,
+        "layout": "two_local_v1",
+        "boundary_mode": "coarse_electrode_basis_dirichlet_v1",
+        "entrance": {
+          "cell_mm_xyz": {
+            "x": 0.2,
+            "y": 0.2,
+            "z": 0.05
+          }
+        },
+        "intermediate2": {
+          "cell_mm_xyz": {
+            "x": 0.2,
+            "y": 0.2,
+            "z": 0.05
+          },
+          "half_span_mm": 2.0
+        }
+      },
+      "role": "accelerator_two_local_refinement_candidate"
     },
     {
       "profile_id": "frontend_isotropic_020_accelerator_overlay_z0025",
@@ -396,6 +505,14 @@
     }
   ],
   "source_materialization_profiles": [
+    {
+      "profile_id": "independent_ion_source_volume_n5000",
+      "source_profile_id": "independent_ion_source_volume_n5000",
+      "materialization_mode": "independent_spatial_velocity_ion_source_snapshot",
+      "particle_count": 5000,
+      "source_spec": "config/ion_sources/continuous_axial_volume_source_n5000.json",
+      "role": "frozen_independent_ion_source_volume_snapshot"
+    },
     {
       "profile_id": "canonical_ideal_linear_z_vz_1mm_center_n1_smoke",
       "source_profile_id": "canonical_ideal_linear_z_vz_1mm_center_n1_smoke",

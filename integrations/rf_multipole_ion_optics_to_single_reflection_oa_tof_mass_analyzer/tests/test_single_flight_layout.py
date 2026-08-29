@@ -136,6 +136,139 @@ class SingleFlightLayoutTests(unittest.TestCase):
             "C3_J3_EXACT_LOCAL_DIRECTION_V1",
         )
 
+    def test_300mm_profiles_rebase_one_candidate_without_changing_its_axis_design(self) -> None:
+        registry = json.loads((INTEGRATION / "config/single_flight_layout_profiles.json").read_text())
+        geometry = json.loads((REPO / "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json").read_text())
+        port = json.loads((REPO / "projects/single_reflection_oa_tof_mass_analyzer/config/interfaces/required/oatof_accelerator_entry.json").read_text())
+        candidate = self._three_zone_candidate()
+        candidate.update({
+            "compiler_mode": "IDEAL_ACCEPTANCE_300MM_SELECTED_POINT_V1",
+            "ideal_acceptance_evidence": {
+                "selected_design_id": "theory_002255_r01",
+                "full_width_mm": 4.0,
+                "total_acceleration_length_mm": 300.0,
+            },
+        })
+        candidate["source_identity"]["frozen_source"]["center_x_mm"] = 3.5
+        candidate["accelerator_topology"]["planes_global_z_mm"] = {
+            "repeller": -342.0, "intermediate1": -335.0,
+            "intermediate2": -279.0, "exit": -42.0,
+        }
+        candidate["accelerator_physics"] = {
+            "lengths_mm": {"d1": 7.0, "d2": 56.0, "d3": 237.0},
+            "focus_drift_after_exit_mm": 42.0,
+        }
+        resolved_values = []
+        for profile_id, realization in (
+            ("three_zone_ideal_acceptance_300mm_square_v1", "square_3d"),
+            ("three_zone_ideal_acceptance_300mm_cylindrical_v1", "cylindrical_3d"),
+        ):
+            resolved, _, _ = compile_geometry_and_port(
+                geometry, port, select_profile(registry, profile_id),
+                three_zone_candidate=candidate,
+                three_zone_candidate_binding={"path": "candidate.json", "sha256": "B" * 64},
+            )
+            accelerator = resolved["geometry_derivation"]["accelerator"]
+            compilation = resolved["single_flight_layout_derivation"]["design_compilation"]
+            self.assertEqual(accelerator["realization_id"], realization)
+            self.assertAlmostEqual(resolved["particle_source"]["center_z_mm"], geometry["particle_source"]["center_z_mm"])
+            self.assertAlmostEqual(accelerator["d1_mm"] + accelerator["d2_mm"], 300.0)
+            self.assertGreater(compilation["candidate_axial_translation_z_mm"], 0.0)
+            resolved_values.append(resolved["accelerator_topology"])
+        self.assertEqual(resolved_values[0], resolved_values[1])
+
+    def test_grid_realized_300mm_candidate_rebases_both_cross_sections(self) -> None:
+        registry = json.loads((INTEGRATION / "config/single_flight_layout_profiles.json").read_text())
+        geometry = json.loads((REPO / "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json").read_text())
+        port = json.loads((REPO / "projects/single_reflection_oa_tof_mass_analyzer/config/interfaces/required/oatof_accelerator_entry.json").read_text())
+        candidate = self._three_zone_candidate()
+        candidate.update({
+            "compiler_mode": "IDEAL_ACCEPTANCE_300MM_GRID_REALIZED_V1",
+            "ideal_acceptance_evidence": {
+                "selected_design_id": "theory_002255_r01",
+                "full_width_mm": 4.0,
+                "total_acceleration_length_mm": 300.0,
+            },
+            "numerical_grid_realization": {
+                "axial_grid_z_mm": 0.05,
+                "zone_lengths_mm": {"d1": 7.0, "d2": 56.15, "d3": 236.85},
+                "scaled_focus_equation_residual_ns": [0.0, 0.0, 0.0],
+                "method": "three_zone_a1_a2_a3_root_on_grid_realized_lengths_v1",
+            },
+        })
+        candidate["source_identity"]["frozen_source"]["center_x_mm"] = 3.5
+        candidate["accelerator_topology"]["planes_global_z_mm"] = {
+            "repeller": -342.7426154615485, "intermediate1": -335.7426154615485,
+            "intermediate2": -279.5926154615485, "exit": -42.742615461548496,
+        }
+        candidate["accelerator_physics"] = {
+            "lengths_mm": {"d1": 7.0, "d2": 56.15, "d3": 236.85},
+            "focus_drift_after_exit_mm": 42.742615461548496,
+        }
+        values = []
+        for profile_id in (
+            "three_zone_ideal_acceptance_300mm_square_v1",
+            "three_zone_ideal_acceptance_300mm_cylindrical_v1",
+        ):
+            resolved, _, _ = compile_geometry_and_port(
+                geometry, port, select_profile(registry, profile_id),
+                three_zone_candidate=candidate,
+                three_zone_candidate_binding={"path": "candidate.json", "sha256": "B" * 64},
+            )
+            values.append(resolved["accelerator_topology"])
+        self.assertEqual(values[0], values[1])
+        self.assertAlmostEqual(
+            values[0]["planes_global_z_mm"]["intermediate2"]
+            - values[0]["planes_global_z_mm"]["intermediate1"],
+            56.15,
+        )
+
+    def test_grid_realized_250mm_candidate_rebases_both_cross_sections(self) -> None:
+        registry = json.loads((INTEGRATION / "config/single_flight_layout_profiles.json").read_text())
+        geometry = json.loads((REPO / "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json").read_text())
+        port = json.loads((REPO / "projects/single_reflection_oa_tof_mass_analyzer/config/interfaces/required/oatof_accelerator_entry.json").read_text())
+        candidate = self._three_zone_candidate()
+        candidate.update({
+            "compiler_mode": "IDEAL_ACCEPTANCE_250MM_GRID_REALIZED_V1",
+            "ideal_acceptance_evidence": {
+                "selected_design_id": "theory_002255_r01",
+                "full_width_mm": 4.0,
+                "total_acceleration_length_mm": 250.0,
+            },
+            "numerical_grid_realization": {
+                "axial_grid_z_mm": 0.05,
+                "zone_lengths_mm": {"d1": 7.0, "d2": 57.15, "d3": 185.85},
+                "scaled_focus_equation_residual_ns": [0.0, 0.0, 0.0],
+                "method": "three_zone_a1_a2_a3_root_on_grid_realized_lengths_v1",
+            },
+        })
+        candidate["source_identity"]["frozen_source"]["center_x_mm"] = 3.5
+        candidate["accelerator_topology"]["planes_global_z_mm"] = {
+            "repeller": -292.7426154615485, "intermediate1": -285.7426154615485,
+            "intermediate2": -228.5926154615485, "exit": -42.742615461548496,
+        }
+        candidate["accelerator_physics"] = {
+            "lengths_mm": {"d1": 7.0, "d2": 57.15, "d3": 185.85},
+            "focus_drift_after_exit_mm": 42.742615461548496,
+        }
+        values = []
+        for profile_id in (
+            "three_zone_ideal_acceptance_250mm_square_v1",
+            "three_zone_ideal_acceptance_250mm_cylindrical_v1",
+        ):
+            resolved, _, _ = compile_geometry_and_port(
+                geometry, port, select_profile(registry, profile_id),
+                three_zone_candidate=candidate,
+                three_zone_candidate_binding={"path": "candidate.json", "sha256": "B" * 64},
+            )
+            values.append(resolved["accelerator_topology"])
+        self.assertEqual(values[0], values[1])
+        self.assertAlmostEqual(
+            values[0]["planes_global_z_mm"]["exit"]
+            - values[0]["planes_global_z_mm"]["repeller"],
+            250.0,
+        )
+
     def test_t5_three_zone_profile_requires_bound_candidate(self) -> None:
         registry = json.loads(
             (INTEGRATION / "config/single_flight_layout_profiles.json").read_text()

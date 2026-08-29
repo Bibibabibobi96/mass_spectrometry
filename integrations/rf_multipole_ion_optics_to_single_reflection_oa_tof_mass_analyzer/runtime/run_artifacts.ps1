@@ -218,34 +218,40 @@ function Clear-RfCacheEntryReadOnly {
   }
 }
 
-function Test-RfCacheManifestPayloadSha256 {
+function Test-RfReusableCacheGeneration {
   [CmdletBinding()]
-  param([Parameter(Mandatory)][string]$CacheEntry,
-        [Parameter(Mandatory)]$Manifest)
+  param(
+    [Parameter(Mandatory)][string]$Python,
+    [Parameter(Mandatory)][string]$RepoRoot,
+    [Parameter(Mandatory)][string]$WorkspaceRoot,
+    [Parameter(Mandatory)][string]$ProjectId,
+    [Parameter(Mandatory)][string]$CacheEntry,
+    [Parameter(Mandatory)][string]$CacheKey,
+    [Parameter(Mandatory)][string]$Role,
+    [switch]$AllowNoncurrentGeneration
+  )
+  $verificationExitCode = 0
   try {
-    $records = @($Manifest.files | ForEach-Object {
-      $name = [string]$_.name
-      $path = Join-Path $CacheEntry $name
-      if ([IO.Path]::GetFileName($name) -ne $name -or
-          -not (Test-Path -LiteralPath $path -PathType Leaf) -or
-          [int64](Get-Item -LiteralPath $path).Length -ne [int64]$_.bytes -or
-          (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -cne
-            [string]$_.sha256) {
-        throw 'Cache payload file differs from its manifest.'
-      }
-      [ordered]@{name=$name;bytes=[int64]$_.bytes;sha256=[string]$_.sha256}
-    })
-    if ($records.Count -eq 0) { return $false }
-    $payloadInput = $records | ConvertTo-Json -Depth 8 -Compress
-    $payloadSha256 = [Convert]::ToHexString(
-      [Security.Cryptography.SHA256]::HashData(
-        [Text.Encoding]::UTF8.GetBytes($payloadInput)
-      )
-    ).ToLowerInvariant()
-    return $payloadSha256 -ceq [string]$Manifest.payload_sha256
+    $arguments = @(
+      (Join-Path $RepoRoot 'common\contracts\verify_artifact_layout.py'),
+      (Join-Path $WorkspaceRoot 'artifacts\projects'), '--cache-entry',$CacheEntry,
+      '--expected-cache-role',$Role,'--expected-cache-key',$CacheKey,
+      '--expected-cache-project',$ProjectId
+    )
+    if ($AllowNoncurrentGeneration) {
+      $arguments += '--allow-noncurrent-generation'
+    }
+    & $Python @arguments *> $null
+    $verificationExitCode = $LASTEXITCODE
   } catch {
-    return $false
+    $verificationExitCode = if ($LASTEXITCODE) { $LASTEXITCODE } else { 1 }
   }
+  if ($verificationExitCode -eq 0) {
+    Set-RfCachePayloadReadOnly -CacheEntry $CacheEntry
+    return $true
+  }
+  $global:LASTEXITCODE = 0
+  return $false
 }
 
 function Test-RfReusableCacheEntry {
@@ -261,37 +267,68 @@ function Test-RfReusableCacheEntry {
     [ValidateSet('remove','preserve')][string]$InvalidEntryAction = 'remove'
   )
   try {
-    $entry = Resolve-RfCurrentCacheGeneration -CacheRoot $CacheRoot -CacheKey $CacheKey -Role $Role
+    $entry = Resolve-RfCurrentCacheGeneration -CacheRoot $CacheRoot `
+      -CacheKey $CacheKey -Role $Role
   } catch { return $false }
-  $manifest = Join-Path $entry 'cache_manifest.json'
-  if (-not (Test-Path -LiteralPath $manifest -PathType Leaf)) { return $false }
+  <#
+    A v3 generation is fully hashed while still private staging data, then
+    atomically published and made read-only.  Re-hashing every multi-gigabyte
+    PA family before every consumer is redundant I/O: it neither strengthens
+    the already-bound generation identity nor changes the physical input.
+    Ordinary reuse therefore verifies the current pointer, manifest role/key,
+    complete inventory and every recorded byte length.  Discovery of a
+    non-current generation and explicit artifact audits keep the full
+    byte/hash path in Test-RfReusableCacheGeneration.
+  #>
+  return Test-RfPublishedCacheGeneration -CacheRoot $CacheRoot `
+    -CacheKey $CacheKey -Role $Role -ExpectedGeneration $entry
+}
+
+function Test-RfPublishedCacheGeneration {
+  <#
+  Verify the cheap post-publication invariants.  Publication has just hashed
+  every staging payload file, then atomically moved that exact directory into
+  its content-addressed generation.  Re-hashing the same multi-gigabyte
+  payload twice here is therefore redundant.  Ordinary later consumers still
+  call Test-RfReusableCacheEntry and perform the full byte/hash verification.
+  #>
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$CacheRoot,
+    [Parameter(Mandatory)][string]$CacheKey,
+    [Parameter(Mandatory)][string]$Role,
+    [Parameter(Mandatory)][string]$ExpectedGeneration
+  )
   try {
-    $manifestDocument = Get-Content -LiteralPath $manifest -Raw -Encoding UTF8 |
+    $entry = Resolve-RfCurrentCacheGeneration -CacheRoot $CacheRoot `
+      -CacheKey $CacheKey -Role $Role
+    if (-not ([IO.Path]::GetFullPath($entry).Equals(
+        [IO.Path]::GetFullPath($ExpectedGeneration),
+        [StringComparison]::OrdinalIgnoreCase))) {
+      return $false
+    }
+    $manifestPath = Join-Path $entry 'cache_manifest.json'
+    $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 |
       ConvertFrom-Json
-  } catch { return $false }
-  if (-not (Test-RfCacheManifestPayloadSha256 -CacheEntry $entry `
-      -Manifest $manifestDocument)) {
-    return $false
-  }
-  $verificationExitCode = 0
-  try {
-    & $Python (Join-Path $RepoRoot 'common\contracts\verify_artifact_layout.py') `
-      (Join-Path $WorkspaceRoot 'artifacts\projects') --cache-entry $entry `
-      --expected-cache-role $Role --expected-cache-key $CacheKey `
-      --expected-cache-project $ProjectId *> $null
-    $verificationExitCode = $LASTEXITCODE
-  } catch {
-    $verificationExitCode = if ($LASTEXITCODE) { $LASTEXITCODE } else { 1 }
-  }
-  if ($verificationExitCode -eq 0) {
+    if ([int]$manifest.schema_version -ne 3 -or $manifest.role -ne $Role -or
+        $manifest.cache_key -ne $CacheKey -or $manifest.generation_sha256 -ne
+        (Split-Path -Leaf $entry) -or @($manifest.files).Count -eq 0) {
+      return $false
+    }
+    foreach ($record in @($manifest.files)) {
+      $name = [string]$record.name
+      $path = Join-Path $entry $name
+      if ([IO.Path]::GetFileName($name) -ne $name -or
+          -not (Test-Path -LiteralPath $path -PathType Leaf) -or
+          [int64](Get-Item -LiteralPath $path).Length -ne [int64]$record.bytes) {
+        return $false
+      }
+    }
     Set-RfCachePayloadReadOnly -CacheEntry $entry
     return $true
+  } catch {
+    return $false
   }
-  $global:LASTEXITCODE = 0
-  # A content-addressed generation is evidence even when damaged.  Rebuilders
-  # publish a fresh generation and move the pointer; they never erase it.
-  $null = Test-Path -LiteralPath $entry
-  return $false
 }
 
 function Test-RfVerifiedLegacyV2CacheEntry {
@@ -354,11 +391,61 @@ function Resolve-RfReusableCacheDirectory {
     [Parameter(Mandatory)]$Identity,
     [ValidateSet('remove','preserve')][string]$InvalidEntryAction = 'remove'
   )
-  if (Test-RfReusableCacheEntry -Python $Python -RepoRoot $RepoRoot `
-      -WorkspaceRoot $WorkspaceRoot -ProjectId $ProjectId -CacheRoot $CacheRoot `
-      -CacheKey $CacheKey -Role $Role -InvalidEntryAction $InvalidEntryAction) {
-    return (Resolve-RfCurrentCacheGeneration -CacheRoot $CacheRoot `
-      -CacheKey $CacheKey -Role $Role)
+  $currentEntry = $null
+  $currentPayloadSha256 = $null
+  try {
+    $currentEntry = Resolve-RfCurrentCacheGeneration -CacheRoot $CacheRoot `
+      -CacheKey $CacheKey -Role $Role
+    $currentPointer = Get-Content -LiteralPath (
+      Join-Path (Join-Path $CacheRoot $CacheKey) 'current_generation.json'
+    ) -Raw -Encoding UTF8 | ConvertFrom-Json
+    $currentPayloadSha256 = [string]$currentPointer.payload_sha256
+  } catch {
+    $currentEntry = $null
+  }
+  if ($null -ne $currentEntry -and
+      (Test-RfPublishedCacheGeneration -CacheRoot $CacheRoot -CacheKey $CacheKey `
+        -Role $Role -ExpectedGeneration $currentEntry)) {
+    # The normal path is an atomically published, immutable current payload.
+    # Its complete byte hashes were proven before publication; pointer,
+    # manifest and inventory verification is enough to reuse it.  Do not
+    # walk the full PA payload before every ordinary consumer.
+    return $currentEntry
+  }
+  # A current pointer can legitimately become stale if an interrupted solver
+  # mutates its last PA after publication.  Preserve that negative evidence,
+  # but recover a prior immutable generation only when it has the same cache
+  # key and declared payload identity and passes the full byte/hash verifier.
+  # Prefer an older matching immutable generation: a valid old generation
+  # proves the same declared payload without repeatedly scanning a known-bad
+  # current generation before every consumer run.
+  $generationRoot = Join-Path (Join-Path $CacheRoot $CacheKey) 'generations'
+  if (Test-Path -LiteralPath $generationRoot -PathType Container) {
+    $candidates = @(Get-ChildItem -LiteralPath $generationRoot -Directory |
+      Sort-Object @{Expression={
+        if ($null -ne $currentEntry -and [IO.Path]::GetFullPath($_.FullName).Equals(
+            [IO.Path]::GetFullPath($currentEntry),[StringComparison]::OrdinalIgnoreCase)) { 1 } else { 0 }
+      }}, Name)
+    foreach ($candidate in $candidates) {
+      try {
+        $manifest = Get-Content -LiteralPath (Join-Path $candidate.FullName `
+          'cache_manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ([int]$manifest.schema_version -ne 3 -or $manifest.role -ne $Role -or
+            $manifest.cache_key -ne $CacheKey -or
+            (-not [string]::IsNullOrWhiteSpace($currentPayloadSha256) -and
+             [string]$manifest.payload_sha256 -ne $currentPayloadSha256)) {
+          continue
+        }
+      } catch {
+        continue
+      }
+      if (Test-RfReusableCacheGeneration -Python $Python -RepoRoot $RepoRoot `
+          -WorkspaceRoot $WorkspaceRoot -ProjectId $ProjectId `
+          -CacheEntry $candidate.FullName -CacheKey $CacheKey -Role $Role `
+          -AllowNoncurrentGeneration) {
+        return $candidate.FullName
+      }
+    }
   }
   # A true legacy v2 entry has no generation pointer.  If a pointer is
   # present but cannot be resolved, the cache is a broken partial migration;
@@ -463,6 +550,70 @@ function Exit-RfCacheKeyLock {
   }
 }
 
+function Assert-RfArtifactCapacityBeforeCachePublication {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$Python,
+    [Parameter(Mandatory)][string]$RepoRoot,
+    [Parameter(Mandatory)][string]$WorkspaceRoot,
+    [Parameter(Mandatory)][string]$StagingDirectory
+  )
+  # The live staging directory is protected from the cleanup scan.  This
+  # checks capacity before Move-Item can make a newly-built PA visible as a
+  # cache generation, so the repository cannot cross its 500 GiB watermark.
+  $stagingBytes = [int64]((Get-ChildItem -LiteralPath $StagingDirectory -File -Recurse |
+    Measure-Object -Property Length -Sum).Sum)
+  $savedPythonPath = $env:PYTHONPATH
+  $savedNoUserSite = $env:PYTHONNOUSERSITE
+  try {
+    $env:PYTHONPATH = $RepoRoot; $env:PYTHONNOUSERSITE = '1'
+    Push-Location -LiteralPath $RepoRoot
+    try {
+      $output = & $Python -m common.contracts.reconcile_artifact_capacity `
+        --artifact-root (Join-Path $WorkspaceRoot 'artifacts') --target-gib 500 `
+        --required-headroom-bytes $stagingBytes --protect-path $StagingDirectory --apply
+      if ($LASTEXITCODE -ne 0) { throw "artifact capacity gate exit_code=$LASTEXITCODE" }
+      $receipt = @($output) -join "`n" | ConvertFrom-Json
+      if (-not [bool]$receipt.satisfied_after_apply) {
+        throw 'artifact capacity gate could not satisfy the 500 GiB watermark'
+      }
+      return $receipt
+    } finally { Pop-Location }
+  } finally {
+    $env:PYTHONPATH = $savedPythonPath; $env:PYTHONNOUSERSITE = $savedNoUserSite
+  }
+}
+
+function Wait-RfCacheStagingWriterExit {
+  <# The resource wrapper normally waits for its direct child.  This final
+     fail-closed guard also detects a detached SIMION child before Move-Item
+     changes the directory it is still refining.  The shared host lease means
+     a matching SIMION command line is necessarily part of this publication. #>
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$StagingDirectory,
+    [int]$TimeoutSeconds = 7200
+  )
+  $needle = [IO.Path]::GetFullPath($StagingDirectory).TrimEnd('\\').ToLowerInvariant()
+  $deadline = [datetimeoffset]::UtcNow.AddSeconds($TimeoutSeconds)
+  while ($true) {
+    try {
+      $writers = @(Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object {
+        $_.Name -ieq 'simion.exe' -and -not [string]::IsNullOrWhiteSpace($_.CommandLine) -and
+        $_.CommandLine.ToLowerInvariant().Contains($needle)
+      })
+    } catch {
+      throw "Cannot prove SIMION released cache staging: $($_.Exception.Message)"
+    }
+    if ($writers.Count -eq 0) { return }
+    if ([datetimeoffset]::UtcNow -ge $deadline) {
+      throw ('Timed out waiting for SIMION staging writer(s): ' +
+        (($writers | ForEach-Object { $_.ProcessId }) -join ','))
+    }
+    Start-Sleep -Seconds 1
+  }
+}
+
 function Publish-RfVerifiedCacheEntry {
   [CmdletBinding()]
   param(
@@ -514,6 +665,9 @@ function Publish-RfVerifiedCacheEntry {
     cache_key_input=$cacheKeyInput; identity=$Identity; payload_sha256=$payloadSha256
     generation_sha256=$generationSha256; generation_input=$generationInput; files=$records
   })
+  Wait-RfCacheStagingWriterExit -StagingDirectory $staging
+  $null = Assert-RfArtifactCapacityBeforeCachePublication -Python $Python `
+    -RepoRoot $RepoRoot -WorkspaceRoot $WorkspaceRoot -StagingDirectory $staging
   New-Item -ItemType Directory -Path $generationRoot -Force | Out-Null
   if (Test-Path -LiteralPath $target) {
     Remove-Item -LiteralPath $staging -Recurse -Force
@@ -528,9 +682,8 @@ function Publish-RfVerifiedCacheEntry {
   })
   $pointer = Join-Path $keyDirectory 'current_generation.json'
   Move-Item -LiteralPath $pointerStage -Destination $pointer -Force
-  if (-not (Test-RfReusableCacheEntry -Python $Python -RepoRoot $RepoRoot `
-      -WorkspaceRoot $WorkspaceRoot -ProjectId $ProjectId -CacheRoot $root `
-      -CacheKey $CacheKey -Role $Role)) {
+  if (-not (Test-RfPublishedCacheGeneration -CacheRoot $root `
+      -CacheKey $CacheKey -Role $Role -ExpectedGeneration $target)) {
     throw 'Published cache generation did not pass the shared verifier.'
   }
   return $target

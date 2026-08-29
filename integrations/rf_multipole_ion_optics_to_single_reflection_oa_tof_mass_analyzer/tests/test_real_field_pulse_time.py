@@ -84,6 +84,7 @@ def _geometry() -> dict[str, object]:
             "accelerator_grid1_z": 1.0,
             "accelerator_bore_half": 1.0,
         },
+        "accelerator_topology": {"planes_global_z_mm": {}},
     }
 
 
@@ -319,7 +320,8 @@ class RealFieldPulseCoreTests(unittest.TestCase):
 
 class RealFieldPulseAnalysisTests(unittest.TestCase):
     def _write_inputs(
-        self, root: Path, *, detector_column: bool = False, physical_loss: bool = False,
+        self, root: Path, *, detector_column: bool = False,
+        physical_loss: bool = False, two_local_overlay: bool = False,
     ) -> dict[str, Path]:
         paths = {name: root / filename for name, filename in (
             ("states", "states.csv"), ("geometry", "geometry.json"),
@@ -364,6 +366,7 @@ class RealFieldPulseAnalysisTests(unittest.TestCase):
             "pulse_effective_time_us": 11.5,
         }), encoding="utf-8")
         contract = {
+            **({"schema_version": 3} if two_local_overlay else {}),
             "role": "rf_oatof_pre_pulse_time_series_screening_contract",
             "mode": "real_pa_rf_pre_pulse_time_series",
             "pulse_disabled": True,
@@ -408,6 +411,9 @@ class RealFieldPulseAnalysisTests(unittest.TestCase):
         }), encoding="utf-8")
         paths["source"].write_text(json.dumps({
             "role": "rf_multipole_oatof_source_contract",
+            "upstream_project_id": "test-upstream",
+            "selector": {"source_profile_id": "test"},
+            "canonical_state": {"frame_id": "global"},
         }), encoding="utf-8")
         paths["connection"].write_text(json.dumps({
             "role": "resolved_connection_do_not_edit",
@@ -441,6 +447,15 @@ class RealFieldPulseAnalysisTests(unittest.TestCase):
                 }
             },
             "identities": receipt_identities,
+            **({
+                "pa_cache_keys": {
+                    "frontend": "A" * 64,
+                    "accelerator_entrance_overlay": "B" * 64,
+                    "accelerator_intermediate_overlay": "C" * 64,
+                    "flight_tube": None,
+                    "reflectron": None,
+                }
+            } if two_local_overlay else {}),
         }), encoding="utf-8")
         paths["manifest"].write_text(json.dumps({
             "role": "simulation_run_manifest", "status": "success",
@@ -575,6 +590,20 @@ class RealFieldPulseAnalysisTests(unittest.TestCase):
             self.assertEqual(receipt["schema_version"], 2)
             self.assertIn("source_region_bounds", receipt)
             self.assertTrue(paths["receipt"].is_file())
+
+    def test_two_local_overlay_receipt_retains_both_pa_identities(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            paths = self._write_inputs(Path(directory), two_local_overlay=True)
+            receipt = self._select(paths)
+            self.assertEqual(receipt["schema_version"], 3)
+            self.assertEqual(receipt["pa_cache_keys"], {
+                "frontend": "A" * 64,
+                "accelerator_entrance_overlay": "B" * 64,
+                "accelerator_intermediate_overlay": "C" * 64,
+                "flight_tube": None,
+                "reflectron": None,
+            })
+            self.assertIn("verified_reuse_content_key", receipt)
 
     def test_receipt_publishes_alive_and_missing_sample_census(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

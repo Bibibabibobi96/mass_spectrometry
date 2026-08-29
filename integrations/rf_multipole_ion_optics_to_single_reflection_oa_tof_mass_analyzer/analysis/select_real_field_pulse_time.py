@@ -155,15 +155,25 @@ def _validate_screening_receipt(
     ):
         if receipt_ids.get(key) != contract_ids.get(key):
             raise ContractError("pre-pulse screening receipt identity differs")
-    if contract.get("schema_version") == 2:
-        keys = receipt.get("pa_cache_keys", {})
-        if (
-            not isinstance(keys.get("frontend"), str)
-            or not isinstance(keys.get("accelerator_overlay"), str)
-            or keys.get("flight_tube") is not None
-            or keys.get("reflectron") is not None
-        ):
-            raise ContractError("pre-pulse screening PA cache roles differ")
+    keys = receipt.get("pa_cache_keys", {})
+    schema_version = contract.get("schema_version")
+    if schema_version == 2:
+        required = ("frontend", "accelerator_overlay")
+    elif schema_version == 3:
+        required = (
+            "frontend",
+            "accelerator_entrance_overlay",
+            "accelerator_intermediate_overlay",
+        )
+    else:
+        required = ()
+    if required and (
+        set(keys) != {*required, "flight_tube", "reflectron"}
+        or any(not isinstance(keys.get(role), str) for role in required)
+        or keys.get("flight_tube") is not None
+        or keys.get("reflectron") is not None
+    ):
+        raise ContractError("pre-pulse screening PA cache roles differ")
 
 
 def pulse_selection_content_identity(
@@ -208,9 +218,9 @@ def pulse_selection_content_identity(
         "spatial_window_profile_sha256": _canonical_sha256(spatial_profile),
         "selector_source_sha256": selector_sha256,
     }
-    if contract.get("schema_version") == 2 and pa_cache_keys is None:
-        raise ContractError("actual PA cache keys are required for v2 pulse selection")
-    if contract.get("schema_version") == 2:
+    if contract.get("schema_version") in (2, 3) and pa_cache_keys is None:
+        raise ContractError("actual PA cache keys are required for PA-backed pulse selection")
+    if contract.get("schema_version") in (2, 3):
         basis["pa_cache_keys"] = copy.deepcopy(pa_cache_keys)
     return basis, _canonical_sha256(basis)
 
@@ -313,12 +323,7 @@ def select_and_write(
     verified_reuse_basis = None
     verified_reuse_key = None
     reuse_pa_keys = screening_receipt.get("pa_cache_keys")
-    if (
-        contract.get("schema_version") == 2
-        and isinstance(reuse_pa_keys, dict)
-        and isinstance(reuse_pa_keys.get("frontend"), str)
-        and isinstance(reuse_pa_keys.get("accelerator_overlay"), str)
-    ):
+    if contract.get("schema_version") in (2, 3) and isinstance(reuse_pa_keys, dict):
         verified_reuse_basis, verified_reuse_key = (
             build_verified_pulse_reuse_projection(
                 screening_contract=contract,
@@ -391,7 +396,7 @@ def select_and_write(
             })
 
     receipt: dict[str, Any] = {
-        "schema_version": 2,
+        "schema_version": 3 if contract.get("schema_version") == 3 else 2,
         "role": "rf_oatof_detector_blind_real_field_pulse_timing_selection_receipt",
         "status": "success",
         "qualification": "candidate_selection",
@@ -447,7 +452,7 @@ def select_and_write(
     if verified_reuse_key is not None:
         receipt["verified_reuse_content_key"] = verified_reuse_key
         receipt["verified_reuse_content_key_basis"] = verified_reuse_basis
-    if contract.get("schema_version") == 2:
+    if contract.get("schema_version") in (2, 3):
         receipt["pa_cache_keys"] = copy.deepcopy(screening_receipt["pa_cache_keys"])
     receipt["authorities"]["selector_source"] = _binding(
         selector_source_path, repository_text=True

@@ -38,6 +38,14 @@ MODE_CONTRACTS = {
         "all_rows_in_frozen_file_order",
         "prohibited", "candidate_full_population",
     ),
+    "independent_spatial_velocity_ion_source_snapshot": (
+        "simion_single_flight",
+        "continuous_frontend",
+        "single_flight_materialized_ion_source_volume",
+        "prepared_materialized_ion_source_volume",
+        "all_rows_in_frozen_file_order",
+        "prohibited", "candidate_full_population",
+    ),
     "pre_pulse_restart": (
         "simion_single_flight",
         "pre_pulse_restart",

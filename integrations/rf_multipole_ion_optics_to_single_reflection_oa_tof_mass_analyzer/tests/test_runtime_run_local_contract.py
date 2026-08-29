@@ -65,7 +65,10 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
         identity_gate = runner.index(
             "Pre-pulse time-series source/layout/field/PA identity differs."
         )
-        solver_launch = runner.index("Invoke-ResourceBudgetedProcesses")
+        # Overlay electrode-basis refinements are an earlier independent
+        # static-field wave.  The pulse contract must precede the later,
+        # actual particle-flight wave.
+        solver_launch = runner.rindex("Invoke-ResourceBudgetedProcesses")
         self.assertLess(identity_gate, solver_launch)
         completion = runner.index("if ($isPrePulseTimeSeriesScreening) {", solver_launch)
         downstream = runner.index("analysis.analyze_single_flight")
@@ -820,6 +823,23 @@ foreach ($entry in $commands) {{
         self.assertIn("$frontendWorkingPa0,$overlayBuildPaSharp", text)
         self.assertIn("frontend_pa_cache_key=$frontendCacheKey", text)
 
+    def test_overlay_independent_refinements_use_public_work_item_scheduler(self) -> None:
+        text = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        basis_transfer = text.index("Overlay basis transfer failed.")
+        scheduler_request = text.index(
+            "accelerator_overlay_refine_dispatch_request.json"
+        )
+        scheduler_wave = text.index("$overlayRefineWave = Invoke-ResourceBudgetedProcesses")
+        cache_publication = text.index("Publish-RfVerifiedCacheEntry", scheduler_wave)
+        self.assertLess(basis_transfer, scheduler_request)
+        self.assertLess(scheduler_request, scheduler_wave)
+        self.assertLess(scheduler_wave, cache_publication)
+        self.assertIn("work_item_count=$frontendBasisElectrodeIds.Count", text)
+        self.assertIn("independent_work_items=$true", text)
+        self.assertIn("Start-ObservedFormalProcess", text[scheduler_request:scheduler_wave])
+        self.assertIn("-m','common.simion.resource_scheduler'", text[scheduler_request:scheduler_wave])
+        self.assertNotIn("maximum_parallel_batches", text[scheduler_request:scheduler_wave])
+
     def test_simion_consumes_physical_pa_copies_and_rechecks_selected_generation(
         self,
     ) -> None:
@@ -860,19 +880,21 @@ foreach ($entry in $commands) {{
         self.assertLess(manifest_copy, guard)
         self.assertLess(guard, fly_override)
 
-    def test_frontend_cache_recheck_is_generation_pinned_and_diagnostic(self) -> None:
+    def test_frontend_cache_recheck_is_generation_pinned_without_rehashing_immutable_pa(self) -> None:
         text = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
         helper_start = text.index("function Test-RfFrozenCacheGeneration")
         helper_end = text.index("function Assert-RfThreeZoneArgumentSet", helper_start)
-        # The helper checks its exact generation path rather than following a
-        # mutable current_generation pointer after construction.
+        # The selected generation has already passed the complete verifier.
+        # The post-construction check must only bind the frozen small manifest,
+        # rather than rehashing tens of GiB of immutable PA data or following a
+        # mutable current-generation pointer.
         helper = text[helper_start:helper_end]
-        self.assertIn("--cache-entry $CacheEntry", helper)
-        self.assertIn("--expected-cache-key $CacheKey", helper)
+        self.assertIn("$currentManifest = Join-Path $CacheEntry 'cache_manifest.json'", helper)
         self.assertIn("$FrozenManifest", helper)
         self.assertNotIn("Resolve-RfReusableCacheDirectory", helper)
-        self.assertIn("frontend_cache_construction_recheck.stdout.log", helper)
-        self.assertIn("frontend_cache_construction_recheck.stderr.log", helper)
+        self.assertNotIn("verify_artifact_layout.py", helper)
+        self.assertNotIn("frontend_cache_construction_recheck.stdout.log", helper)
+        self.assertNotIn("frontend_cache_construction_recheck.stderr.log", helper)
         self.assertIn("verifier_exit_code", helper)
         self.assertIn("frozen_manifest_matches", helper)
 
@@ -1166,6 +1188,44 @@ foreach ($entry in $commands) {{
         self.assertIn("$populationBasis = [string]", runner)
         self.assertNotIn("$SamplingMode", runner)
         self.assertNotIn("steady_candidate_pool", runner)
+
+    def test_two_local_accelerator_overlays_use_distinct_cache_and_six_slot_iob_paths(self) -> None:
+        runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        for required in (
+            "accelerator_entrance_overlay",
+            "accelerator_intermediate_overlay",
+            "simion_accelerator_entrance_overlay_pa_cache",
+            "simion_accelerator_intermediate_overlay_pa_cache",
+            "build_single_flight_two_overlay_iob.lua",
+            "simion_six_instance_container",
+            "current_sphere_3dp.iob",
+            "current_sphere_3dp-Ax.gem",
+            "current_sphere_3dp-Ay.gem",
+            "current_sphere_3dp-Az.gem",
+            "current_sphere_3dp-jx.gem",
+            "current_sphere_3dp-jy.gem",
+            "current_sphere_3dp-jz.gem",
+            "six-instance IOB companion GEM is missing:",
+            "--intermediate-accelerator-overlay-contract",
+            "Invoke-ResourceBudgetedProcesses",
+            "Two-local overlay build set is incomplete.",
+        ):
+            self.assertIn(required, runner)
+        self.assertIn("$overlayLayout -eq 'whole_accelerator_v1'", runner)
+        self.assertIn("$overlayLayout -eq 'two_local_v1'", runner)
+        self.assertIn(
+            "$prePulseTimeSeries.schema_version -in @(2, 3)", runner
+        )
+        self.assertNotIn("$flightTubeCacheRole", runner)
+        self.assertNotIn("$reflectronCacheRole", runner)
+        # The resolved profile deliberately exposes physical region names rather
+        # than runner-internal cache IDs.  Keep that boundary explicit: a
+        # two-local run must map both regions before it derives file paths.
+        self.assertIn("'entrance' { 'accelerator_entrance_overlay' }", runner)
+        self.assertIn(
+            "'intermediate2' { 'accelerator_intermediate_overlay' }", runner
+        )
+        self.assertIn("intermediate_half_span_mm", runner)
 
     def test_r03_baseline_population_is_strictmode_safe_without_paired_cohort(self) -> None:
         population = (

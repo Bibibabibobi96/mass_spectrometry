@@ -19,6 +19,8 @@
 - 单流程布局：[`config/single_flight_layout_profiles.json`](config/single_flight_layout_profiles.json)
 - 唯一公开执行入口：
   [`workflows/family_source_closure/execute.ps1`](workflows/family_source_closure/execute.ps1)
+- 已预注册的脉冲前 time-series 到 pulse-on 后继：
+  [`workflows/family_source_closure/run_time_series_successor.py`](workflows/family_source_closure/run_time_series_successor.py)
 - 静态门禁：[`verify_integration.ps1`](verify_integration.ps1)
 
 ## 目录职责

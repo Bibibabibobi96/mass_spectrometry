@@ -33,7 +33,7 @@ end
 -- technique used by SIMION's bundled resistive/lens2_pa0_build.lua example.
 simion.pas:close()
 local initializer=simion.pas:open(fine_pa_sharp)
-initializer:refine{convergence=1E+6}
+initializer:refine{}
 simion.pas:close()
 
 local total_boundary_points=0

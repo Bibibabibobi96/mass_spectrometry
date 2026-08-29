@@ -110,13 +110,24 @@ function Resolve-RfRecoveryFailureAncestor {
     $candidateDirectory = Join-Path $RunsRoot $candidateRunId
     $candidateManifestPath = Join-Path $candidateDirectory 'run_manifest.json'
     if (-not (Test-Path -LiteralPath $candidateManifestPath -PathType Leaf)) {
-      # A base run can fail before the runner is able to publish its manifest.
-      # Its directory remains immutable audit evidence, while the first suffix
-      # is the only safe new identity that may resume this same prepared row.
-      if ($index -eq 0 -and
-          [int]$recoveryMatch.Groups['index'].Value -eq 1 -and
-          (Test-Path -LiteralPath $candidateDirectory -PathType Container)) {
-        return [pscustomobject]@{ run_id = $candidateRunId; status = 'unpublished' }
+      # An externally stopped execution can leave a prepared suffix without a
+      # manifest.  It may authorize exactly the next recovery identity only
+      # when its frozen campaign row proves that it is this same experiment.
+      # A bare directory is never enough: it could belong to another campaign
+      # or be an abandoned manual path.
+      $frozenExperimentPath = Join-Path $candidateDirectory `
+        'inputs\frozen_campaign_experiment.json'
+      if (Test-Path -LiteralPath $frozenExperimentPath -PathType Leaf) {
+        try {
+          $frozenExperiment = Get-Content -LiteralPath $frozenExperimentPath -Raw |
+            ConvertFrom-Json
+          if ([string]$frozenExperiment.campaign.campaign_id -eq $CampaignId -and
+              [string]$frozenExperiment.experiment.run_id -eq $ExpectedRunId) {
+            return [pscustomobject]@{ run_id = $candidateRunId; status = 'unpublished' }
+          }
+        } catch {
+          return $null
+        }
       }
       continue
     }
@@ -720,7 +731,16 @@ if ($frozenArguments.ContainsKey('single_flight_materialized_source_filename')) 
   }
   $materializationReceipt = Get-Content -LiteralPath $materializationReceiptPath -Raw -Encoding UTF8 |
     ConvertFrom-Json
-  if ($materializationReceipt.role -ne 'rf_oatof_single_flight_source_materialization_receipt' -or
+  $isIdealMaterialization = $materializationReceipt.role -eq
+    'rf_oatof_single_flight_source_materialization_receipt'
+  $isIndependentIonSourceVolume = (
+    $materializationReceipt.role -eq 'continuous_axial_volume_ion_beam_source' -and
+    $materializationReceipt.method -eq
+      'independent_spatial_velocity_ion_source_snapshot_v1' -and
+    $materializationReceipt.materialization_mode -eq
+      'independent_spatial_velocity_ion_source_snapshot'
+  )
+  if ((-not $isIdealMaterialization -and -not $isIndependentIonSourceVolume) -or
       $materializationReceipt.profile_id -ne
         $frozenArguments.single_flight_source_materialization_profile_id -or
       [int]$materializationReceipt.particle_count -ne

@@ -14,6 +14,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     build_successor_program,
     load_initial_state,
     reflectron_fast_adjust_assignments,
+    resolve_domain_split_program_contract,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.resolved_region_field import (
     build_resolved_region_field_contract,
@@ -145,6 +146,127 @@ def _minimal_program_contracts() -> tuple[dict[str, object], dict[str, object]]:
 
 
 class SingleFlightProgramTests(unittest.TestCase):
+    def test_long_connector_contract_requires_disjoint_fine_pa_endpoints(self) -> None:
+        split = {
+            "connector_length_mm": 98.4,
+            "terminal_end_x_mm": 1.6,
+            "upstream_end_x_mm": 11.6,
+            "accelerator_start_x_mm": 90.0,
+            "coarse_sleeve_x_min_mm": 11.6,
+            "coarse_sleeve_x_max_mm": 90.0,
+            "endpoint_guard_mm": 10.0,
+            "partition_policy_id": "grounded_sleeve_disjoint_fine_domains_v1",
+        }
+        upstream = {
+            "role": "rf_oatof_simion_upstream_bridge_contract",
+            "status": "bridge_coupling_required",
+            "domain_split": split,
+            "instance_bounds_mm": {"x_min": -100.0, "x_max": 11.6},
+            "instance_origin_mm": {"x": -100.0, "y": -10.0, "z": -10.0},
+        }
+        accelerator = {
+            "role": "rf_oatof_simion_accelerator_main_contract",
+            "status": "bridge_coupling_required",
+            "domain_split": split,
+            "instance_bounds_mm": {"x_min": 90.0, "x_max": 125.0},
+            "instance_origin_mm": {"x": 90.0, "y": -10.0, "z": -350.0},
+        }
+        resolved = resolve_domain_split_program_contract(upstream, accelerator)
+        self.assertEqual(resolved["upstream_end_x_mm"], 11.6)
+        self.assertEqual(resolved["accelerator_start_x_mm"], 90.0)
+        self.assertGreater(
+            resolved["accelerator_start_x_mm"], resolved["upstream_end_x_mm"]
+        )
+        accelerator["instance_bounds_mm"]["x_min"] = 89.9
+        with self.assertRaisesRegex(ValueError, "must start"):
+            resolve_domain_split_program_contract(upstream, accelerator)
+
+    def test_domain_split_pre_pulse_program_uses_coarse_and_disjoint_fine_roles(self) -> None:
+        topology = {
+            "topology_id": "three_zone_accelerator_ideal_v1",
+            "planes_global_z_mm": {
+                "repeller": -19.9, "intermediate1": -16.9,
+                "intermediate2": -11.6, "exit": -0.1,
+            },
+            "potentials_v": {
+                "repeller": 2000.0, "intermediate1": 1750.0,
+                "intermediate2": 1450.0, "exit": 0.0,
+            },
+        }
+        geometry_path = REPO / "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json"
+        oatof = json.loads(geometry_path.read_text(encoding="utf-8"))
+        oatof["accelerator_topology"] = topology
+        upstream, frontend = _minimal_program_contracts()
+        frontend["accelerator_topology_id"] = topology["topology_id"]
+        frontend["electrodes"] = copy.deepcopy(THREE_ZONE_FRONTEND_ELECTRODES)
+        frontend["accelerator_local_region"] = {
+            "intermediate2_grid_provider": "accelerator_overlay",
+            "ring_z_mm": [-14.2, -9.3, -7.0, -4.7, -2.4],
+        }
+        region = build_resolved_region_field_contract(
+            geometry_path, Path(tempfile.gettempdir()) / "domain_split_region.json",
+            "accelerator_ideal_three_zone_real_reflectron", accelerator_topology=topology,
+        )
+        domain = {
+            "upstream_instance_index": 5, "accelerator_instance_index": 3,
+            "upstream_end_x_mm": 11.6, "accelerator_start_x_mm": 90.0,
+            "upstream_bounds_mm": {"x_min": -100.0, "x_max": 11.6},
+            "accelerator_bounds_mm": {"x_min": 90.0, "x_max": 125.0},
+            "upstream_origin_mm": {"x": -100.0, "y": -10.0, "z": -10.0},
+            "accelerator_origin_mm": {"x": 90.0, "y": -10.0, "z": -20.0},
+        }
+        intermediate = {
+            "role": "rf_oatof_simion_accelerator_overlay_contract",
+            "region_id": "intermediate2",
+            "cell_mm_xyz": {"x": 0.2, "y": 0.2, "z": 0.05},
+            "instance_origin_mm": {"x": 90.0, "y": -1.0, "z": -13.6},
+            "active_bounds_mm": {"x_min": 89.9, "x_max": 91.0, "y_min": -1.0, "y_max": 1.0, "z_min": -13.5, "z_max": -9.5},
+        }
+        screening = {
+            "schema_version": 3,
+            "role": "rf_oatof_pre_pulse_time_series_screening_contract",
+            "mode": "real_pa_rf_pre_pulse_time_series",
+            "active_scope": "pre_pulse_frontend_accelerator",
+            "pulse_disabled": True, "terminate_at_window_end": True,
+            "resolution_claim_allowed": False,
+            "prohibited_outputs": ["detector_crossing", "resolution_metrics", "single_flight_spatial_six_panel"],
+            "sample_times_us": [1.0],
+        }
+        program = build_successor_program(
+            upstream, frontend, oatof, region, birth_times_us=[0.25],
+            analyzer_component_source=ANALYZER_COMPONENT_SOURCE,
+            pulse_hook_source=PULSE_HOOK_SOURCE,
+            frontend_hook_source=FRONTEND_HOOK_SOURCE,
+            rf_drive_kernel_source=RF_DRIVE_KERNEL_SOURCE,
+            pre_pulse_time_series_contract=screening,
+            intermediate_overlay=intermediate, domain_split=domain,
+        )
+        self.assertIn("coarse_frontend=1", program)
+        self.assertIn("upstream_bridge=5", program)
+        self.assertIn("accelerator_intermediate_overlay=6", program)
+        self.assertIn("single_flight_active_field_instances={1,3,5,6}", program)
+
+    def test_pre_pulse_screening_accepts_identity_bearing_schema_v4(self) -> None:
+        screening = {
+            "schema_version": 4,
+            "role": "rf_oatof_pre_pulse_time_series_screening_contract",
+            "mode": "real_pa_rf_pre_pulse_time_series",
+            "active_scope": "pre_pulse_frontend_accelerator",
+            "pulse_disabled": True,
+            "terminate_at_window_end": True,
+            "resolution_claim_allowed": False,
+            "prohibited_outputs": [
+                "detector_crossing", "resolution_metrics", "single_flight_spatial_six_panel",
+            ],
+            "sample_times_us": [1.0],
+            "identities": {"experiment_row_sha256": "A" * 64},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            program = _successor_callback_program(
+                Path(directory), pre_pulse_time_series_contract=screening
+            )
+        self.assertIn("pre-pulse time-series", program)
+
     def test_terminal_handoff_is_an_advertised_release_mode(self) -> None:
         self.assertIn("continuous_frontend_handoff", SOURCE_RELEASE_MODES)
 
@@ -206,7 +328,8 @@ class SingleFlightProgramTests(unittest.TestCase):
 
     def test_pre_pulse_time_series_uses_native_contract_dt40_landings(self) -> None:
         contract = {
-            "schema_version": 2,
+            # The public family workflow currently materializes v3 contracts.
+            "schema_version": 3,
             "role": "rf_oatof_pre_pulse_time_series_screening_contract",
             "mode": "real_pa_rf_pre_pulse_time_series",
             "active_scope": "pre_pulse_frontend_accelerator",
@@ -389,6 +512,42 @@ class SingleFlightProgramTests(unittest.TestCase):
             program,
         )
         self.assertIn("TRACE: accelerator_intermediate2_forward", program)
+
+    def test_two_disjoint_accelerator_overlays_use_six_iob_slots(self) -> None:
+        topology = {
+            "topology_id": "three_zone_accelerator_ideal_v1",
+            "planes_global_z_mm": {"repeller": -19.92918680341103, "intermediate1": -16.87918680341103, "intermediate2": -11.57918680341103, "exit": -0.12918680341102995},
+            "potentials_v": {"repeller": 2000.0, "intermediate1": 1750.0, "intermediate2": 1450.0, "exit": 100.0},
+        }
+        geometry_path = REPO / "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json"
+        oatof = json.loads(geometry_path.read_text(encoding="utf-8"))
+        oatof["accelerator_topology"] = copy.deepcopy(topology)
+        upstream, frontend = _minimal_program_contracts()
+        frontend["accelerator_topology_id"] = topology["topology_id"]
+        frontend["electrodes"] = copy.deepcopy(THREE_ZONE_FRONTEND_ELECTRODES)
+        frontend["accelerator_local_region"] = {"intermediate2_grid_provider": "accelerator_overlay", "ring_z_mm": [-14.5, -12.0, -9.5, -7.0, -4.5]}
+        def overlay(region_id: str, z_min: float, z_max: float) -> dict[str, object]:
+            return {
+                "role": "rf_oatof_simion_accelerator_overlay_contract", "region_id": region_id,
+                "cell_mm_xyz": {"x": 0.2, "y": 0.2, "z": 0.025},
+                "instance_origin_mm": {"x": 0.0, "y": 0.0, "z": z_min},
+                "active_bounds_mm": {"x_min": -1.0, "x_max": 1.0, "y_min": -1.0, "y_max": 1.0, "z_min": z_min, "z_max": z_max},
+            }
+        with tempfile.TemporaryDirectory() as directory:
+            region = build_resolved_region_field_contract(geometry_path, Path(directory) / "region.json", "accelerator_ideal_three_zone_real_reflectron", accelerator_topology=topology)
+            program, exporter = build_successor_program(
+                upstream, frontend, oatof, region, birth_times_us=[0.25],
+                analyzer_component_source=ANALYZER_COMPONENT_SOURCE, pulse_hook_source=PULSE_HOOK_SOURCE,
+                frontend_hook_source=FRONTEND_HOOK_SOURCE, rf_drive_kernel_source=RF_DRIVE_KERNEL_SOURCE,
+                overlay=overlay("entrance", -20.0, -16.0),
+                intermediate_overlay=overlay("intermediate2", -13.5, -9.5),
+                include_total_axis_field_exporter=True,
+            )
+        self.assertIn("accelerator_entrance_overlay", program)
+        self.assertIn("accelerator_intermediate_overlay", program)
+        self.assertIn("single_flight_is_active_field_instance(ion_instance)", program)
+        self.assertIn("assert(#simion.wb.instances==6", exporter)
+        self.assertIn("C3 overlay active bounds overlap", exporter)
 
     def test_three_zone_axis_exporter_replays_frozen_dynamic_pa_values(self) -> None:
         topology = {

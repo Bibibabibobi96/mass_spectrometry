@@ -1,0 +1,65 @@
+{
+  "schema_version": 6,
+  "role": "rf_multipole_oatof_experiment_campaign",
+  "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+  "campaign_id": "ideal_acceptance_300mm_aperture_height_full_flight_n5000",
+  "status": "exploration",
+  "execution_policy": {
+    "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/execution_policy.json",
+    "sha256": "6FDB04133C0AB5F48BE51127296469802E8E31E04DF6FFB539DD96E0F54F4B35"
+  },
+  "claim_limit": "REAL_FIELD_EXPLORATORY_COMPARISON_ONLY. The same ordered N=5000 terminal-octupole mother cohort is propagated through the same hash-bound 300 mm three-zone Candidate for square and cylindrical realizations. Within each realization, only the grounded rectangular transition-aperture downstream-z height changes: 0.9, 1.5, 2.0, or 2.5 mm; its downstream-y width remains 1.0 mm. Report complete-mother-cohort transmission and loss census, detector time, peak width, resolution, z-vz slope, residual, and bootstrap intervals without common-hit postselection. This does not establish field equivalence, optimization, experimental performance, or Formal claims.",
+  "experiments": {
+    "shared": {
+      "execution_strategy": "simion_single_flight",
+      "single_flight_pa_cache_policy": "build_and_publish_if_missing",
+      "single_flight_frontend_grid_profile_id": "frontend_isotropic_020_accelerator_two_local_z005",
+      "single_flight_oatof_numerical_profile_id": "oatof_formal_mesh",
+      "single_flight_trajectory_quality_profile_id": "tqual_8",
+      "single_flight_time_integration_profile_id": "dt40",
+      "single_flight_accelerator_field_profile_id": "accelerator_real_three_zone_pa_real_reflectron",
+      "single_flight_source_materialization_profile_id": "canonical_real_octupole_n5000",
+      "single_flight_three_zone_candidate": {
+        "path": "artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20260827_182300__build__python__ideal-acceptance-300mm-grid050-candidate/results/ideal_acceptance_300mm_simion_candidate_resolved.json",
+        "sha256": "4B5EAFEDF84447F007D2484B9036E4D314259E1929CCDB937E8CDC1FC345F380"
+      },
+      "architecture_generation_id": "three_zone_ideal_acceptance_300mm_v1",
+      "source_profile_id": "canonical_real_octupole_n5000",
+      "field_overlay_id": "accelerator_two_local_z005",
+      "source_release_mode": "continuous_frontend",
+      "source": {
+        "authority_scope": "source_population",
+        "run_id": "20260820_215000__sim__simion__oct-terminal-10ev-h15-finalize-recovery-downstream__n5000",
+        "launched_particle_count": 5000,
+        "particle_count_binding": {"mode": "derive_from_frozen_source_state_v1", "selector": {"event": "handoff", "status": "transmitted"}},
+        "particle_source_manifest_input_role": "particle_source",
+        "manifest": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260820_215000__sim__simion__oct-terminal-10ev-h15-finalize-recovery-downstream__n5000/run_manifest.json", "sha256": "7CF69AA9A1D10FC4E8CE8859C83A4A5354FEE72ED5DC87C62F2D25E271CD424B"},
+        "state": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260820_215000__sim__simion__oct-terminal-10ev-h15-finalize-recovery-downstream__n5000/results/particle_states__exit_aperture_plate_acceleration_rf_on.csv", "sha256": "08E910AF9ABAB79C033256047A5F32E46D521B57589234414B6A618AD34067EB"},
+        "particle_source": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260820_215000__sim__simion__oct-terminal-10ev-h15-finalize-recovery-downstream__n5000/inputs/particle_source.csv", "sha256": "91E7EA09A9C06680001E18E6DA19C1EBC70142E8EC635210439B68A9A84B0FBE"},
+        "metadata": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260820_215000__sim__simion__oct-terminal-10ev-h15-finalize-recovery-downstream__n5000/inputs/particle_source_metadata.json", "sha256": "578D73970F5CC45BA6A9C1A8CF5217ECB0F9C44DC2E109F75DD1743B5B732B05"},
+        "handoff_publication_contract": {"path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/octupole_handoff_publication_n5000.json", "sha256": "2F0554287B0A236ABD5DE4CE0140F05E056D281060093D1AC8A4FD8729B7C237"}
+      },
+      "single_flight_pulse_schedule_policy": {"policy_id": "multipole_handoff_ballistic_centroid_v1", "offset_rf_periods": 0.0, "pulse_width_us": 1.0},
+      "single_flight_population": {
+        "population_id": "ideal_acceptance_300mm_aperture_height_complete_ordered_entrance_n5000",
+        "population_mode": "continuous_injection_full_population",
+        "source_authority": {"input_role": "particle_source", "table_binding": "source_contract_particle_source", "ordered_particle_id_encoding": "canonical_compact_json_integer_array_v1"},
+        "execution_population": {"particle_count": 5000, "ordered_particle_id_sha256": "37DC4C2E241AB6B87C39D1AD1CE5CD4CC3E92B05F539AB8ECBB999F88DC98C33", "selection_algorithm": "all_rows_in_frozen_file_order", "selection_seed": 0},
+        "denominators": {"population_count": 5000, "eligible_population_count": 5000},
+        "analysis_randomness": {"bootstrap_resample_count": 1000, "bootstrap_seed": 20260828},
+        "postselection_policy": "prohibited"
+      }
+    },
+    "variation_axes": ["single_flight_layout_profile_id", "connection_profile_id"],
+    "rows": [
+      {"sequence": 1, "experiment_id": "ideal_acceptance_300mm_square_aperture_height090_full_flight_n5000", "run_id": "20260828_080000__sim__cross__ideal-300-square-aperture-h090-full__n5000", "overrides": {"single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_square_v1", "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_0mm"}},
+      {"sequence": 2, "experiment_id": "ideal_acceptance_300mm_square_aperture_height150_full_flight_n5000", "run_id": "20260828_080100__sim__cross__ideal-300-square-aperture-h150-full__n5000", "overrides": {"single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_square_v1", "connection_profile_id": "rf_octupole_oatof_shield_terminal_aperture_100x150_direct_mating_gap_0mm"}},
+      {"sequence": 3, "experiment_id": "ideal_acceptance_300mm_square_aperture_height200_full_flight_n5000", "run_id": "20260828_080200__sim__cross__ideal-300-square-aperture-h200-full__n5000", "overrides": {"single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_square_v1", "connection_profile_id": "rf_octupole_oatof_shield_terminal_aperture_100x200_direct_mating_gap_0mm"}},
+      {"sequence": 4, "experiment_id": "ideal_acceptance_300mm_square_aperture_height250_full_flight_n5000", "run_id": "20260828_080300__sim__cross__ideal-300-square-aperture-h250-full__n5000", "overrides": {"single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_square_v1", "connection_profile_id": "rf_octupole_oatof_shield_terminal_aperture_100x250_direct_mating_gap_0mm"}},
+      {"sequence": 5, "experiment_id": "ideal_acceptance_300mm_cylindrical_aperture_height090_full_flight_n5000", "run_id": "20260828_080400__sim__cross__ideal-300-cylindrical-aperture-h090-full__n5000", "overrides": {"single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_cylindrical_v1", "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_0mm"}},
+      {"sequence": 6, "experiment_id": "ideal_acceptance_300mm_cylindrical_aperture_height150_full_flight_n5000", "run_id": "20260828_080500__sim__cross__ideal-300-cylindrical-aperture-h150-full__n5000", "overrides": {"single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_cylindrical_v1", "connection_profile_id": "rf_octupole_oatof_shield_terminal_aperture_100x150_direct_mating_gap_0mm"}},
+      {"sequence": 7, "experiment_id": "ideal_acceptance_300mm_cylindrical_aperture_height200_full_flight_n5000", "run_id": "20260828_080600__sim__cross__ideal-300-cylindrical-aperture-h200-full__n5000", "overrides": {"single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_cylindrical_v1", "connection_profile_id": "rf_octupole_oatof_shield_terminal_aperture_100x200_direct_mating_gap_0mm"}},
+      {"sequence": 8, "experiment_id": "ideal_acceptance_300mm_cylindrical_aperture_height250_full_flight_n5000", "run_id": "20260828_080700__sim__cross__ideal-300-cylindrical-aperture-h250-full__n5000", "overrides": {"single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_cylindrical_v1", "connection_profile_id": "rf_octupole_oatof_shield_terminal_aperture_100x250_direct_mating_gap_0mm"}}
+    ]
+  }
+}

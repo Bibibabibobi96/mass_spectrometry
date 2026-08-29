@@ -146,6 +146,76 @@ def load_row_map(path: Path, expected_source_ids: list[int]) -> list[int]:
     return source_ids
 
 
+def resolve_domain_split_program_contract(
+    upstream: dict[str, Any], accelerator: dict[str, Any]
+) -> dict[str, Any]:
+    """Validate two disjoint fine PA domains around a coarse connector sleeve."""
+
+    expected = (
+        (upstream, "rf_oatof_simion_upstream_bridge_contract", "upstream"),
+        (accelerator, "rf_oatof_simion_accelerator_main_contract", "accelerator"),
+    )
+    normalized: dict[str, Any] = {}
+    for document, role, label in expected:
+        if document.get("role") != role or document.get("status") != "bridge_coupling_required":
+            raise ValueError(f"domain split {label} contract identity differs")
+        split = document.get("domain_split")
+        bounds = document.get("instance_bounds_mm")
+        if not isinstance(split, dict) or not isinstance(bounds, dict):
+            raise ValueError(f"domain split {label} geometry is missing")
+        if split.get("partition_policy_id") != "grounded_sleeve_disjoint_fine_domains_v1":
+            raise ValueError(f"domain split {label} partition policy differs")
+        try:
+            upstream_end_x = float(split["upstream_end_x_mm"])
+            accelerator_start_x = float(split["accelerator_start_x_mm"])
+            x_min = float(bounds["x_min"])
+            x_max = float(bounds["x_max"])
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValueError(f"domain split {label} axial bounds are invalid") from error
+        if not all(math.isfinite(value) for value in (upstream_end_x, accelerator_start_x, x_min, x_max)):
+            raise ValueError(f"domain split {label} axial bounds are invalid")
+        normalized[label] = {
+            "instance_bounds_mm": bounds,
+            "instance_origin_mm": document.get("instance_origin_mm"),
+            "upstream_end_x_mm": upstream_end_x,
+            "accelerator_start_x_mm": accelerator_start_x,
+        }
+    if not math.isclose(normalized["upstream"]["upstream_end_x_mm"], normalized["accelerator"]["upstream_end_x_mm"], abs_tol=1e-9) or not math.isclose(normalized["upstream"]["accelerator_start_x_mm"], normalized["accelerator"]["accelerator_start_x_mm"], abs_tol=1e-9):
+        raise ValueError("domain split fine-domain endpoints differ")
+    if normalized["upstream"]["upstream_end_x_mm"] >= normalized["upstream"]["accelerator_start_x_mm"]:
+        raise ValueError("domain split fine domains overlap or omit the coarse sleeve")
+    upstream_bounds = normalized["upstream"]["instance_bounds_mm"]
+    accelerator_bounds = normalized["accelerator"]["instance_bounds_mm"]
+    if not math.isclose(
+        float(upstream_bounds["x_max"]),
+        normalized["upstream"]["upstream_end_x_mm"],
+        abs_tol=1e-9,
+    ):
+        raise ValueError("upstream fine PA must stop at the coarse-sleeve boundary")
+    if not math.isclose(
+        float(accelerator_bounds["x_min"]),
+        normalized["upstream"]["accelerator_start_x_mm"],
+        abs_tol=1e-9,
+    ):
+        raise ValueError("accelerator fine PA must start at the coarse-sleeve boundary")
+    for label in ("upstream", "accelerator"):
+        origin = normalized[label]["instance_origin_mm"]
+        if not isinstance(origin, dict) or set(origin) != {"x", "y", "z"}:
+            raise ValueError(f"domain split {label} PA origin is invalid")
+        if not all(math.isfinite(float(origin[axis])) for axis in ("x", "y", "z")):
+            raise ValueError(f"domain split {label} PA origin is invalid")
+    return {
+        "upstream_instance_index": 5,
+        "accelerator_instance_index": 3,
+        "upstream_end_x_mm": normalized["upstream"]["upstream_end_x_mm"],
+        "accelerator_start_x_mm": normalized["upstream"]["accelerator_start_x_mm"],
+        "upstream_bounds_mm": normalized["upstream"]["instance_bounds_mm"],
+        "accelerator_bounds_mm": normalized["accelerator"]["instance_bounds_mm"],
+        "upstream_origin_mm": normalized["upstream"]["instance_origin_mm"],
+        "accelerator_origin_mm": normalized["accelerator"]["instance_origin_mm"],
+    }
+
+
 _SUCCESSOR_CALLBACKS = (
     "load",
     "initialize_run",
@@ -338,6 +408,8 @@ def build_successor_program(
     terminate_after_pulse: bool = False,
     pre_pulse_time_series_contract: dict[str, Any] | None = None,
     overlay: dict[str, Any] | None = None,
+    intermediate_overlay: dict[str, Any] | None = None,
+    domain_split: dict[str, Any] | None = None,
     rf_steps_per_period: int = 160,
     global_segments: bool = False,
     include_total_axis_field_exporter: bool = False,
@@ -386,7 +458,7 @@ def build_successor_program(
             "resolution_claim_allowed": False,
         }
         if (
-            contract.get("schema_version") not in {1, 2}
+            contract.get("schema_version") not in {1, 2, 3, 4}
             or any(contract.get(key) != value for key, value in required.items())
         ):
             raise ValueError("pre-pulse time-series screening contract mode differs")
@@ -413,19 +485,51 @@ def build_successor_program(
             raise ValueError("pre-pulse time-series starts before the last source birth")
         if terminate_after_pulse:
             raise ValueError("pre-pulse time-series requires non-restart execution")
-    if overlay is not None and overlay.get("role") != "rf_oatof_simion_accelerator_overlay_contract":
-        raise ValueError("single-flight Program requires an accelerator overlay contract")
+    for label, candidate in (
+        ("accelerator", overlay),
+        ("intermediate", intermediate_overlay),
+    ):
+        if candidate is not None and candidate.get("role") != "rf_oatof_simion_accelerator_overlay_contract":
+            raise ValueError(
+                f"single-flight Program requires a valid {label} accelerator overlay contract"
+            )
+    if intermediate_overlay is not None and domain_split is None:
+        if overlay is None:
+            raise ValueError("intermediate accelerator overlay requires an entrance overlay")
+        if overlay.get("region_id") != "entrance":
+            raise ValueError("two-overlay Program requires an entrance primary overlay")
+        if intermediate_overlay.get("region_id") != "intermediate2":
+            raise ValueError("two-overlay Program requires an intermediate2 secondary overlay")
     three_zone = frontend.get("accelerator_topology_id") is not None
+    governed_overlay = intermediate_overlay if domain_split is not None else overlay
     if three_zone and (
-        overlay is None
+        governed_overlay is None
         or frontend["accelerator_local_region"].get("intermediate2_grid_provider")
         != "accelerator_overlay"
-        or not math.isfinite(float(overlay["cell_mm_xyz"]["z"]))
-        or float(overlay["cell_mm_xyz"]["z"]) <= 0
+        or not math.isfinite(float(governed_overlay["cell_mm_xyz"]["z"]))
+        or float(governed_overlay["cell_mm_xyz"]["z"]) <= 0
     ):
         raise ValueError(
             "three-zone single-flight Program requires the governed accelerator overlay with a positive grid"
         )
+    if domain_split is not None:
+        if not screening:
+            raise ValueError("domain-split Program is currently limited to detector-blind pre-pulse screening")
+        required_domain_keys = {
+            "upstream_instance_index", "accelerator_instance_index",
+            "upstream_end_x_mm", "accelerator_start_x_mm",
+            "upstream_bounds_mm", "accelerator_bounds_mm",
+            "upstream_origin_mm", "accelerator_origin_mm",
+        }
+        if (
+            not isinstance(domain_split, dict)
+            or set(domain_split) != required_domain_keys
+            or domain_split["upstream_instance_index"] != 5
+            or domain_split["accelerator_instance_index"] != 3
+            or overlay is not None
+            or intermediate_overlay is None
+        ):
+            raise ValueError("domain-split Program contract is incomplete")
     validate_resolved_region_field_contract(region_field_contract)
     sources = {
         "analyzer component": analyzer_component_source,
@@ -471,24 +575,86 @@ def build_successor_program(
             }
         )
     analyzer_config = _successor_analyzer_config(oatof, frontend, region_field_contract)
+    overlay_specs: list[dict[str, Any]] = []
+    if domain_split is not None:
+        overlay_specs.append(
+            {
+                "role": "accelerator_intermediate_overlay",
+                "instance_index": 6,
+                "filename": "accelerator_intermediate_overlay.pa0",
+                "origin_mm": intermediate_overlay["instance_origin_mm"],
+                "bounds_mm": intermediate_overlay["active_bounds_mm"],
+            }
+        )
+    elif overlay is not None:
+        if intermediate_overlay is None:
+            overlay_specs.append(
+                {
+                    "role": "accelerator_overlay",
+                    "instance_index": 5,
+                    "filename": "accelerator_overlay.pa0",
+                    "origin_mm": overlay["instance_origin_mm"],
+                    "bounds_mm": overlay["active_bounds_mm"],
+                }
+            )
+        else:
+            overlay_specs.append(
+                {
+                    "role": "accelerator_entrance_overlay",
+                    "instance_index": 5,
+                    "filename": "accelerator_entrance_overlay.pa0",
+                    "origin_mm": overlay["instance_origin_mm"],
+                    "bounds_mm": overlay["active_bounds_mm"],
+                }
+            )
+            overlay_specs.append(
+                {
+                    "role": "accelerator_intermediate_overlay",
+                    "instance_index": 6,
+                    "filename": "accelerator_intermediate_overlay.pa0",
+                    "origin_mm": intermediate_overlay["instance_origin_mm"],
+                    "bounds_mm": intermediate_overlay["active_bounds_mm"],
+                }
+            )
+    overlay_roles = {
+        str(item["role"]): int(item["instance_index"])
+        for item in overlay_specs
+    }
+    overlay_filenames = {
+        str(item["role"]): str(item["filename"])
+        for item in overlay_specs
+    }
+    domain_active_roles = (
+        ["coarse_frontend", "accelerator", "upstream_bridge", *overlay_roles]
+        if domain_split is not None
+        else ["accelerator", *overlay_roles]
+    )
     formal_iob_config = {
         "instance_roles": {
-            "flight_tube": 1,
+            **({"coarse_frontend": 1} if domain_split is not None else {"flight_tube": 1}),
             "reflectron": 2,
             "accelerator": 3,
             "detector": 4,
-            **({"accelerator_overlay": 5} if overlay is not None else {}),
+            **({"upstream_bridge": 5} if domain_split is not None else {}),
+            **overlay_roles,
         },
         "instance_filenames": {
-            "flight_tube": "flight_tube_ground.pa0",
+            **({"coarse_frontend": "coarse_frontend.pa0"} if domain_split is not None else {"flight_tube": "flight_tube_ground.pa0"}),
             "reflectron": "reflectron.pa0",
             "accelerator": "accelerator.pa0",
             "detector": "detector_ground.pa0",
-            **(
-                {"accelerator_overlay": "accelerator_overlay.pa0"}
-                if overlay is not None else {}
-            ),
+            **({"upstream_bridge": "upstream_bridge.pa0"} if domain_split is not None else {}),
+            **overlay_filenames,
         },
+        "pre_pulse_active_roles": domain_active_roles,
+        "accelerator_overlays": [
+            {
+                "role": str(item["role"]),
+                "instance_index": int(item["instance_index"]),
+                "filename": str(item["filename"]),
+            }
+            for item in overlay_specs
+        ],
     }
     formal_iob_config_lua = _lua_value(formal_iob_config)
     analyzer_config_static = dict(analyzer_config)
@@ -534,11 +700,18 @@ def build_successor_program(
         else ""
     )
     electrodes = frontend["electrodes"]
-    origin = frontend["instance_origin_mm"]
-    overlay_origin = overlay["instance_origin_mm"] if overlay is not None else {"x": 0, "y": 0, "z": 0}
-    overlay_bounds = overlay["active_bounds_mm"] if overlay is not None else {
-        "x_min": 0, "x_max": 0, "y_min": 0, "y_max": 0, "z_min": 0, "z_max": 0
-    }
+    origin = (
+        domain_split["accelerator_origin_mm"]
+        if domain_split is not None
+        else frontend["instance_origin_mm"]
+    )
+    active_field_instance_indices = (
+        [1, 3, 5, *[int(item["instance_index"]) for item in overlay_specs]]
+        if domain_split is not None
+        else [3, *[int(item["instance_index"]) for item in overlay_specs]]
+    )
+    overlay_specs_lua = _lua_value(overlay_specs)
+    active_field_instance_indices_lua = _lua_value(active_field_instance_indices)
     entrance_reference_v = float(
         upstream["axial_dc"]["entrance_reference_sleeve"]["potential_V"]
     )
@@ -626,9 +799,10 @@ local single_flight_terminate_after_pulse={1 if terminate_after_pulse else 0}
 local single_flight_pre_pulse_time_series={1 if screening else 0}
 local single_flight_pre_pulse_sample_times_us={screening_sample_table}
 local single_flight_pre_pulse_next_sample={{}}
-local single_flight_overlay_enabled={1 if overlay is not None else 0}
-local single_flight_overlay_origin={_lua_value(overlay_origin)}
-local single_flight_overlay_bounds={_lua_value(overlay_bounds)}
+  local single_flight_overlay_enabled={1 if overlay_specs else 0}
+  local single_flight_overlays={overlay_specs_lua}
+local single_flight_active_field_instances={active_field_instance_indices_lua}
+local single_flight_domain_split_enabled={1 if domain_split is not None else 0}
 local single_flight_analyzer=nil
 local single_flight_pulse=nil
 local single_flight_frontend=nil
@@ -690,20 +864,13 @@ local function single_flight_exact_basename(value,label)
 end
 local function single_flight_assert_formal_iob_roles(config)
   if single_flight_pre_pulse_time_series~=0 then
-    local accelerator_index=config.instance_roles.accelerator
-    local accelerator=assert(simion.wb.instances[accelerator_index],
-      'pre-pulse screening accelerator instance is missing')
-    assert(single_flight_exact_basename(accelerator.filename,
-      'formal IOB role accelerator')==config.instance_filenames.accelerator,
-      'formal IOB role accelerator filename differs')
-    if single_flight_overlay_enabled~=0 then
-      local overlay_index=config.instance_roles.accelerator_overlay
-      local overlay_instance=assert(simion.wb.instances[overlay_index],
-        'pre-pulse screening accelerator overlay instance is missing')
-      assert(single_flight_exact_basename(overlay_instance.filename,
-        'formal IOB role accelerator_overlay')==
-        config.instance_filenames.accelerator_overlay,
-        'formal IOB role accelerator_overlay filename differs')
+    for _,role in ipairs(config.pre_pulse_active_roles) do
+      local index=config.instance_roles[role]
+      local item=assert(simion.wb.instances[index],
+        'pre-pulse screening '..role..' instance is missing')
+      assert(single_flight_exact_basename(item.filename,
+        'formal IOB role '..role)==config.instance_filenames[role],
+        'formal IOB role '..role..' filename differs')
     end
     return
   end
@@ -716,6 +883,21 @@ local function single_flight_assert_formal_iob_roles(config)
       'formal IOB role '..role)==config.instance_filenames[role],
       'formal IOB role '..role..' filename differs')
   end
+end
+local function single_flight_overlay_for_instance(instance_index)
+  for _,overlay in ipairs(single_flight_overlays) do
+    if overlay.instance_index==instance_index then return overlay end
+  end
+  return nil
+end
+local function single_flight_is_overlay_instance(instance_index)
+  return single_flight_overlay_for_instance(instance_index)~=nil
+end
+local function single_flight_is_active_field_instance(instance_index)
+  for _,index in ipairs(single_flight_active_field_instances) do
+    if index==instance_index then return true end
+  end
+  return false
 end
 local function single_flight_instance_state(instance)
   return {{filename=instance.filename,nx=instance.pa.nx,ny=instance.pa.ny,
@@ -767,13 +949,17 @@ function segment.initialize_run()
   local formal_iob_config={formal_iob_config_lua}
   single_flight_assert_formal_iob_roles(formal_iob_config)
   local ai=simion.wb.instances[analyzer_config.instance_roles.accelerator]
-  if single_flight_accelerator_pa_override and single_flight_accelerator_pa_override~='' and
+  if single_flight_domain_split_enabled~=0 then
+    assert(not single_flight_accelerator_pa_override or
+      single_flight_accelerator_pa_override=='',
+      'domain-split Program must use its accelerator-main PA, not a monolithic override')
+  elseif single_flight_accelerator_pa_override and single_flight_accelerator_pa_override~='' and
       not single_flight_accelerator_pa_override_loaded then
     ai.pa:load(single_flight_accelerator_pa_override)
     ai:_debug_update_size()
     single_flight_accelerator_pa_override_loaded=true
   end
-  if single_flight_accelerator_pa_override and
+  if single_flight_domain_split_enabled==0 and single_flight_accelerator_pa_override and
       single_flight_accelerator_pa_override~='' then
     assert(single_flight_exact_basename(single_flight_accelerator_pa_override,
       'accelerator override')=='frontend.pa0',
@@ -811,15 +997,19 @@ function segment.initialize_run()
         {initial_voltage_lua})) do initial[item.electrode_id]=item.voltage_v end
     initial[{int(electrodes['entrance_reference_sleeve_id'])}]={_lua_number(entrance_reference_v)}
     initial[{int(electrodes['entrance_plate_id'])}]={_lua_number(entrance_plate_v)}
-    ai.pa:fast_adjust(initial)
-    if single_flight_overlay_enabled~=0 then
-      local oi=assert(simion.wb.instances[5],'accelerator overlay instance is missing')
+    for _,index in ipairs(single_flight_active_field_instances) do
+      local active_instance=assert(simion.wb.instances[index],
+        'active domain field instance is missing')
+      active_instance.pa:fast_adjust(initial)
+    end
+    for _,overlay in ipairs(single_flight_overlays) do
+      local oi=assert(simion.wb.instances[overlay.instance_index],
+        'accelerator overlay instance is missing')
       assert(single_flight_exact_basename(oi.filename,
-        'accelerator overlay')=='accelerator_overlay.pa0',
-        'instance 5 must be the accelerator overlay')
-      oi.x,oi.y,oi.z=single_flight_overlay_origin.x,single_flight_overlay_origin.y,single_flight_overlay_origin.z
+        overlay.role)==overlay.filename,
+        'accelerator overlay filename differs')
+      oi.x,oi.y,oi.z=overlay.origin_mm.x,overlay.origin_mm.y,overlay.origin_mm.z
       oi.az,oi.el,oi.rt,oi.scale=0,0,0,1
-      oi.pa:fast_adjust(initial)
     end
   single_flight_particle_state={{}}
   single_flight_analyzer_initialized={{}}
@@ -828,7 +1018,7 @@ function segment.initialize_run()
 end
 function segment.efield_adjust()
   if single_flight_pre_pulse_time_series~=0 then
-    assert(ion_instance==3 or (single_flight_overlay_enabled~=0 and ion_instance==5),
+    assert(single_flight_is_active_field_instance(ion_instance),
       'pre-pulse screening particle escaped its frontend/accelerator active scope')
   end
   local instance=assert(simion.wb.instances[ion_instance],'field callback requires one PA instance')
@@ -845,13 +1035,14 @@ function segment.efield_adjust()
   end
 end
 function segment.fast_adjust()
-  if ion_instance==3 or (single_flight_overlay_enabled~=0 and ion_instance==5) then
+  if single_flight_is_active_field_instance(ion_instance) then
     single_flight_frontend.apply_at(single_flight_instrument_time_us(),single_flight_set_electrode)
   end
 end
 function segment.instance_adjust()
-  if single_flight_overlay_enabled==0 or ion_instance~=5 then return end
-  local b=single_flight_overlay_bounds
+  local overlay=single_flight_overlay_for_instance(ion_instance)
+  if overlay==nil then return end
+  local b=overlay.bounds_mm
   if single_flight_pre_pulse_time_series~=0 then
     if ion_px_mm<=b.x_min or ion_px_mm>=b.x_max or
         ion_py_mm<=b.y_min or ion_py_mm>=b.y_max or
@@ -895,7 +1086,7 @@ function segment.tstep_adjust()
   end
   local pulse_capped=single_flight_pulse.cap_timestep_at(time,ion_time_step)
   if ion_time_step>pulse_capped then ion_time_step=pulse_capped end
-  if ion_instance==3 or (single_flight_overlay_enabled~=0 and ion_instance==5) then
+  if single_flight_is_active_field_instance(ion_instance) then
     local state=single_flight_require_particle_state()
     local capped=single_flight_frontend.cap_timestep_at(time,ion_pz_mm,ion_vz_mm,ion_time_step,state.frontend)
     if ion_time_step>capped then ion_time_step=capped end
@@ -1109,7 +1300,8 @@ assert(pulse_width_us>0,'pulse width must be positive')
 -- permits the Workbench Program declaration in files it auto-executes during
 -- Fly'm; declaring one here fails before any field can be sampled.
 simion.command('"'..iob_path..'"')
-assert(#simion.wb.instances==5,'C3 total-field exporter requires five IOB instances')
+assert(#simion.wb.instances=={4 + len(overlay_specs)},
+  'C3 total-field exporter IOB instance count differs')
 for index=1,#simion.wb.instances do
   local item=simion.wb.instances[index]
   assert(item.x and item.y and item.z and item.az and item.el and item.rt and item.scale,
@@ -1146,7 +1338,11 @@ local function pa_adjustments(ids)
   return values
 end
 local ai=assert(simion.wb.instances[3],'accelerator instance is missing')
-local oi=assert(simion.wb.instances[5],'accelerator overlay instance is missing')
+local overlay_specs={overlay_specs_lua}
+for _,overlay in ipairs(overlay_specs) do
+  assert(simion.wb.instances[overlay.instance_index],
+    'accelerator overlay instance is missing')
+end
 local frontend_pa=assert(os.getenv('OATOF_ACCELERATOR_PA_OVERRIDE'),
   'missing run-local frontend PA override')
 ai.pa:load(frontend_pa)
@@ -1179,14 +1375,20 @@ apply_placement(ai,initialized.placements.accelerator)
 -- successfully.
 ai.x,ai.y,ai.z={_lua_number(origin['x'])},{_lua_number(origin['y'])},{_lua_number(origin['z'])}
 apply_placement(simion.wb.instances[4],initialized.placements.detector)
-oi.x,oi.y,oi.z={_lua_number(overlay_origin['x'])},{_lua_number(overlay_origin['y'])},{_lua_number(overlay_origin['z'])}
-oi.az,oi.el,oi.rt,oi.scale=0,0,0,1
+for _,overlay in ipairs(overlay_specs) do
+  local oi=simion.wb.instances[overlay.instance_index]
+  oi.x,oi.y,oi.z=overlay.origin_mm.x,overlay.origin_mm.y,overlay.origin_mm.z
+  oi.az,oi.el,oi.rt,oi.scale=0,0,0,1
+end
 print(string.format(
   'TOTAL_AXIS_FIELD_ACCELERATOR_POSTPLACEMENT x_mm=%.12g y_mm=%.12g z_mm=%.12g az_deg=%.12g el_deg=%.12g rt_deg=%.12g scale=%.12g',
   ai.x,ai.y,ai.z,ai.az,ai.el,ai.rt,ai.scale))
-print(string.format(
-  'TOTAL_AXIS_FIELD_OVERLAY_POSTPLACEMENT x_mm=%.12g y_mm=%.12g z_mm=%.12g az_deg=%.12g el_deg=%.12g rt_deg=%.12g scale=%.12g',
-  oi.x,oi.y,oi.z,oi.az,oi.el,oi.rt,oi.scale))
+for _,overlay in ipairs(overlay_specs) do
+  local oi=simion.wb.instances[overlay.instance_index]
+  print(string.format(
+    'TOTAL_AXIS_FIELD_OVERLAY_POSTPLACEMENT index=%d x_mm=%.12g y_mm=%.12g z_mm=%.12g az_deg=%.12g el_deg=%.12g rt_deg=%.12g scale=%.12g',
+    overlay.instance_index,oi.x,oi.y,oi.z,oi.az,oi.el,oi.rt,oi.scale))
+end
 for _,item in ipairs(initialized.static_electrode_plans.legacy_accelerator_characterization) do
   active[item.electrode_id]=item.voltage_v
 end
@@ -1198,23 +1400,30 @@ frontend.apply_at(pulse_time_us,function(id,value) active[id]=value end)
 -- The top-level PA API rejects electrodes absent from that PA.  The Program's
 -- all-electrode setter is therefore partitioned without changing any value.
 local ai_values=pa_adjustments({{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19}})
-local oi_values=pa_adjustments({{20}})
+local oi_values=pa_adjustments({{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20}})
 ai.pa:fast_adjust(ai_values)
-oi.pa:fast_adjust(oi_values)
+for _,overlay in ipairs(overlay_specs) do
+  simion.wb.instances[overlay.instance_index].pa:fast_adjust(oi_values)
+end
 -- wb:efield and wb:epotential deliberately ignore time-dependent user
 -- programming.  Reproduce the frozen Program's instance_adjust predicate,
 -- then provide the selected PA its frozen post-pulse electrode table
 -- explicitly.  The static IOB priority alone is insufficient because the
 -- Program suppresses overlay points outside its active bounds.  As in Fly'm,
 -- overlapping PA fields must not be added.
-local overlay_bounds={_lua_value(overlay_bounds)}
 local function frozen_axis_field(x,y,z)
   local detector=simion.wb.instances[4]
-  local inside_overlay=not detector:inside_wc(x,y,z) and
-    x>overlay_bounds.x_min and x<overlay_bounds.x_max and
-    y>overlay_bounds.y_min and y<overlay_bounds.y_max and
-    z>overlay_bounds.z_min and z<overlay_bounds.z_max
-  local instance_number=inside_overlay and 5 or 3
+  local instance_number=3
+  for _,overlay in ipairs(overlay_specs) do
+    local b=overlay.bounds_mm
+    local inside_overlay=not detector:inside_wc(x,y,z) and
+      x>b.x_min and x<b.x_max and y>b.y_min and y<b.y_max and
+      z>b.z_min and z<b.z_max
+    if inside_overlay then
+      assert(instance_number==3,'C3 overlay active bounds overlap')
+      instance_number=overlay.instance_index
+    end
+  end
   local instance=simion.wb.instances[instance_number]
   local values=(instance_number==3) and ai_values or oi_values
   assert(instance:inside_wc(x,y,z),
@@ -1285,6 +1494,9 @@ def main() -> int:
     parser.add_argument("--upstream", required=True, type=Path)
     parser.add_argument("--frontend-contract", required=True, type=Path)
     parser.add_argument("--accelerator-overlay-contract", type=Path)
+    parser.add_argument("--intermediate-accelerator-overlay-contract", type=Path)
+    parser.add_argument("--upstream-bridge-contract", type=Path)
+    parser.add_argument("--accelerator-main-contract", type=Path)
     parser.add_argument("--oatof", required=True, type=Path)
     parser.add_argument("--initial-global-state", required=True, type=Path)
     parser.add_argument("--particle-row-map", required=True, type=Path)
@@ -1308,6 +1520,18 @@ def main() -> int:
     validate_resolved_region_field_contract(region_field_contract)
     birth_times, source_ids = load_initial_state(args.initial_global_state)
     row_map_ids = load_row_map(args.particle_row_map, source_ids)
+    split_paths = (args.upstream_bridge_contract, args.accelerator_main_contract)
+    if any(path is not None for path in split_paths) and any(path is None for path in split_paths):
+        raise ValueError(
+            "domain-split Program requires both upstream-bridge and accelerator-main contracts"
+        )
+    domain_split = (
+        resolve_domain_split_program_contract(
+            _load(args.upstream_bridge_contract), _load(args.accelerator_main_contract)
+        )
+        if args.upstream_bridge_contract is not None
+        else None
+    )
     built = build_successor_program(
         _load(args.upstream),
         _load(args.frontend_contract),
@@ -1331,6 +1555,12 @@ def main() -> int:
             if args.accelerator_overlay_contract is not None
             else None
         ),
+        intermediate_overlay=(
+            _load(args.intermediate_accelerator_overlay_contract)
+            if args.intermediate_accelerator_overlay_contract is not None
+            else None
+        ),
+        domain_split=domain_split,
         rf_steps_per_period=args.rf_steps_per_period,
         global_segments=args.global_segments,
         include_total_axis_field_exporter=(
@@ -1361,6 +1591,21 @@ def main() -> int:
         "accelerator_overlay_contract_sha256": (
             file_sha256(args.accelerator_overlay_contract)
             if args.accelerator_overlay_contract is not None
+            else None
+        ),
+        "intermediate_accelerator_overlay_contract_sha256": (
+            file_sha256(args.intermediate_accelerator_overlay_contract)
+            if args.intermediate_accelerator_overlay_contract is not None
+            else None
+        ),
+        "upstream_bridge_contract_sha256": (
+            file_sha256(args.upstream_bridge_contract)
+            if args.upstream_bridge_contract is not None
+            else None
+        ),
+        "accelerator_main_contract_sha256": (
+            file_sha256(args.accelerator_main_contract)
+            if args.accelerator_main_contract is not None
             else None
         ),
         "oatof_sha256": file_sha256(args.oatof),

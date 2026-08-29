@@ -15,6 +15,10 @@ from common.contracts.particle_physics import (
     ELEMENTARY_CHARGE_C,
     kinetic_energy_ev,
 )
+from common.multipole.sources.continuous_axial_volume_source import (
+    METHOD as ION_SOURCE_VOLUME_METHOD,
+    materialize as materialize_ion_source_volume,
+)
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.rf_handoff_adapter import (
     encode_simion_accelerator_velocity,
 )
@@ -105,6 +109,37 @@ def resolve_source_materialization_profile(
         frozen["velocity_slope_m_per_s_per_mm"]
     )
     return resolved
+
+
+def materialize_independent_ion_source_volume(
+    output_path: Path,
+    receipt_path: Path,
+    profile: dict[str, object],
+    integration_root: Path,
+) -> dict[str, object]:
+    """Materialize a frozen ion-source volume without inventing z--vz coupling."""
+    source_spec = profile.get("source_spec")
+    if not isinstance(source_spec, str) or not source_spec.startswith("config/"):
+        raise ValueError("ion-source volume profile lacks a local source specification")
+    spec_path = (integration_root / source_spec).resolve()
+    try:
+        spec_path.relative_to(integration_root.resolve())
+    except ValueError as exc:
+        raise ValueError("ion-source volume specification escapes integration") from exc
+    receipt = materialize_ion_source_volume(spec_path, output_path, receipt_path)
+    if int(receipt["particle_count"]) != int(profile["particle_count"]):
+        raise ValueError("ion-source volume profile and source specification counts differ")
+    if receipt.get("method") != ION_SOURCE_VOLUME_METHOD:
+        raise ValueError("ion-source volume materialization method differs")
+    receipt.update({
+        "profile_id": profile["profile_id"],
+        "source_profile_id": profile["source_profile_id"],
+        "materialization_mode": "independent_spatial_velocity_ion_source_snapshot",
+        "source_spec": source_spec,
+        "coordinate_transform": "canonical_multipole_to_oatof_registration_applied_by_single_flight_source",
+    })
+    receipt_path.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
+    return receipt
 
 
 def materialize_ideal_linear_source(

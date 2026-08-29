@@ -9,7 +9,7 @@
     "terminate_at_window_end", "resolution_claim_allowed", "prohibited_outputs"
   ],
   "properties": {
-    "schema_version": {"enum": [1, 2]},
+    "schema_version": {"enum": [1, 2, 3, 4]},
     "role": {"const": "rf_oatof_pre_pulse_time_series_screening_contract"},
     "mode": {"const": "real_pa_rf_pre_pulse_time_series"},
     "active_scope": {"const": "pre_pulse_frontend_accelerator"},
@@ -73,7 +73,13 @@
       "required": ["identity_source", "required", "prohibited"],
       "properties": {
         "identity_source": {"const": "runner_materialized_verified_pa_cache_receipt"},
-        "required": {"const": ["frontend", "accelerator_overlay"]},
+        "required": {
+          "oneOf": [
+            {"const": ["frontend", "accelerator_overlay"]},
+            {"const": ["frontend", "accelerator_entrance_overlay", "accelerator_intermediate_overlay"]},
+            {"const": ["full_coarse_bridge", "fine_upstream", "accelerator_main", "accelerator_intermediate2_overlay"]}
+          ]
+        },
         "prohibited": {"const": ["flight_tube", "reflectron"]}
       }
     },
@@ -103,6 +109,11 @@
               "const": "layout_resolved_axial_provisional_xy2_v1"
             }
           }
+        },
+        "pa_cache_roles": {
+          "properties": {
+            "required": {"const": ["frontend", "accelerator_overlay"]}
+          }
         }
       },
       "required": ["pa_cache_keys"],
@@ -119,6 +130,38 @@
             }
           }
         }
+      },
+      "required": ["pa_cache_roles"],
+      "not": {"required": ["pa_cache_keys"]}
+    },
+    {
+      "properties": {
+        "schema_version": {"const": 3},
+        "rf_time_grid": {"$ref": "#/$defs/rf_time_grid_v2"},
+        "identities": {
+          "properties": {
+            "spatial_window_profile_id": {
+              "const": "layout_resolved_axial_provisional_xy2_v1"
+            }
+          }
+        },
+        "pa_cache_roles": {
+          "properties": {
+            "required": {
+              "const": ["frontend", "accelerator_entrance_overlay", "accelerator_intermediate_overlay"]
+            }
+          }
+        }
+      },
+      "required": ["pa_cache_roles"],
+      "not": {"required": ["pa_cache_keys"]}
+    },
+    {
+      "properties": {
+        "schema_version": {"const": 4},
+        "rf_time_grid": {"$ref": "#/$defs/rf_time_grid_v2"},
+        "identities": {"properties": {"spatial_window_profile_id": {"const": "layout_resolved_axial_provisional_xy2_v1"}}},
+        "pa_cache_roles": {"properties": {"required": {"const": ["full_coarse_bridge", "fine_upstream", "accelerator_main", "accelerator_intermediate2_overlay"]}}}
       },
       "required": ["pa_cache_roles"],
       "not": {"required": ["pa_cache_keys"]}

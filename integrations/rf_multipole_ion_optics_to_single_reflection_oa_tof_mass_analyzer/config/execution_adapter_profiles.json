@@ -5,7 +5,7 @@
   "adapter_implementations": {
     "family_source_closure": {
       "adapter_entrypoint": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/workflows/family_source_closure/adapter.ps1",
-      "adapter_sha256": "F3E05D09195277C0814D3F96503CE2DC8F7780ACFF040F0E856B82447634EE04"
+      "adapter_sha256": "056A5DF358CA47414B27DEFCA6149ACE81022720102F722A66C617935E7C247A"
     }
   },
   "mappings": [
@@ -26,6 +26,24 @@
       "adapter_id": "family_source_closure",
       "runtime_binding_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_octupole_direct_mating_gap_0mm_runtime_binding.json",
       "runtime_binding_sha256": "C4F5794CDFF8C49C9596C5A591E286A71A865EC5D55BA9B3CBB81FD43124C16F"
+    },
+    {
+      "connection_profile_id": "rf_octupole_oatof_shield_terminal_aperture_100x150_direct_mating_gap_0mm",
+      "adapter_id": "family_source_closure",
+      "runtime_binding_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_octupole_aperture_100x150_direct_mating_gap_0mm_runtime_binding.json",
+      "runtime_binding_sha256": "15836EFD532459C8BDCB2B3E82F6F565EF6C91C4CD6EEA6D6EAE903620723169"
+    },
+    {
+      "connection_profile_id": "rf_octupole_oatof_shield_terminal_aperture_100x200_direct_mating_gap_0mm",
+      "adapter_id": "family_source_closure",
+      "runtime_binding_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_octupole_aperture_100x200_direct_mating_gap_0mm_runtime_binding.json",
+      "runtime_binding_sha256": "97086307428460DECD929F345463C89779FAC8FDE473A3113BD7DAF8F4C7F73B"
+    },
+    {
+      "connection_profile_id": "rf_octupole_oatof_shield_terminal_aperture_100x250_direct_mating_gap_0mm",
+      "adapter_id": "family_source_closure",
+      "runtime_binding_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_octupole_aperture_100x250_direct_mating_gap_0mm_runtime_binding.json",
+      "runtime_binding_sha256": "34C4C5C26DF0AF55B5EBDD21F6A4BFFA3E1E227A0F609B679C75A2CAA69304D4"
     },
     {
       "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_3p2mm",
@@ -74,6 +92,24 @@
       "adapter_id": "family_source_closure",
       "runtime_binding_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_octupole_aperture_050x020_direct_mating_gap_0mm_runtime_binding.json",
       "runtime_binding_sha256": "BA874C88604C96EF63ECB6058B86743F67AD0B0DE3292F2229952CD6BA3983A4"
+    },
+    {
+      "connection_profile_id": "rf_octupole_oatof_accelerator_port_100x150_gap_102p4mm",
+      "adapter_id": "family_source_closure",
+      "runtime_binding_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_octupole_accelerator_port_100x150_gap_102p4mm_runtime_binding.json",
+      "runtime_binding_sha256": "BCAB12BCB83BB70C42A326E56A8CF25CDFBBE5A961B4F5C10DA45F6C0314AB29"
+    },
+    {
+      "connection_profile_id": "rf_octupole_oatof_accelerator_port_100x200_gap_102p4mm",
+      "adapter_id": "family_source_closure",
+      "runtime_binding_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_octupole_accelerator_port_100x200_gap_102p4mm_runtime_binding.json",
+      "runtime_binding_sha256": "47FEBBED094BACFCA475C264613BA22DF793438B542ED20950651DC3CF6B8589"
+    },
+    {
+      "connection_profile_id": "rf_octupole_oatof_accelerator_port_100x250_gap_102p4mm",
+      "adapter_id": "family_source_closure",
+      "runtime_binding_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_octupole_accelerator_port_100x250_gap_102p4mm_runtime_binding.json",
+      "runtime_binding_sha256": "D58C81159BEA37C4064CFF3572B561DE4E54D619FC12866307C03E71D06F0859"
     }
   ]
 }

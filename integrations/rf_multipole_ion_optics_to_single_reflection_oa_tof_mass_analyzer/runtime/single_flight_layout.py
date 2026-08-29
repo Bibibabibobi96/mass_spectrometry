@@ -76,7 +76,7 @@ def select_profile(registry: dict[str, Any], profile_id: str) -> dict[str, Any]:
             )
             or profile.get("claim_status") != "CANDIDATE_ONLY"
         ):
-            raise ContractError("three-zone T5 layout profile identity is invalid")
+            raise ContractError("three-zone Candidate layout profile identity is invalid")
         ring_policy = profile.get("accelerator_ring_placement_policy")
         if ring_policy is not None and (
             set(ring_policy) != {
@@ -94,7 +94,10 @@ def select_profile(registry: dict[str, Any], profile_id: str) -> dict[str, Any]:
             )
             or float(ring_policy["minimum_grid_to_ring_edge_clearance_mm"]) <= 0.0
         ):
-            raise ContractError("three-zone accelerator ring placement policy is invalid")
+            raise ContractError("three-zone Candidate ring placement policy is invalid")
+        realization = profile.get("accelerator_realization_id", "square_3d")
+        if realization not in {"square_3d", "cylindrical_3d"}:
+            raise ContractError("three-zone Candidate realization is invalid")
     return profile
 
 
@@ -153,7 +156,7 @@ def _compile_three_zone_candidate(
     candidate: dict[str, Any],
     candidate_binding: dict[str, str],
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Map one hash-bound T5, C3_J3, or J2 Candidate into the layout surface."""
+    """Map one hash-bound three-zone Candidate into the layout surface."""
 
     if (
         candidate.get("role") != "oatof_three_zone_simion_candidate_resolved"
@@ -162,6 +165,10 @@ def _compile_three_zone_candidate(
             "T5_FROZEN_PRIMARY_AND_BRANCH_ONLY",
             "C3_J3_EXACT_LOCAL_DIRECTION_V1",
             "J2_REAL_FIELD_CANDIDATE_POOL_V1",
+            "IDEAL_ACCEPTANCE_250MM_SELECTED_POINT_V1",
+            "IDEAL_ACCEPTANCE_250MM_GRID_REALIZED_V1",
+            "IDEAL_ACCEPTANCE_300MM_SELECTED_POINT_V1",
+            "IDEAL_ACCEPTANCE_300MM_GRID_REALIZED_V1",
         }
         or set(candidate_binding) != {"path", "sha256"}
     ):
@@ -173,18 +180,18 @@ def _compile_three_zone_candidate(
         "field_id": profile["candidate_field_id"],
     }
     if identities != expected_identities:
-        raise ContractError("three-zone T5 Candidate scientific identity differs")
+        raise ContractError("three-zone Candidate scientific identity differs")
     topology = candidate.get("accelerator_topology")
     if (
         not isinstance(topology, dict)
         or topology.get("topology_id") != profile["topology_id"]
     ):
-        raise ContractError("three-zone T5 Candidate topology differs")
+        raise ContractError("three-zone Candidate topology differs")
     planes = topology.get("planes_global_z_mm", {})
     potentials = topology.get("potentials_v", {})
     plane_keys = {"repeller", "intermediate1", "intermediate2", "exit"}
     if set(planes) != plane_keys or set(potentials) != plane_keys:
-        raise ContractError("three-zone T5 Candidate planes or potentials are incomplete")
+        raise ContractError("three-zone Candidate planes or potentials are incomplete")
     order = ("repeller", "intermediate1", "intermediate2", "exit")
     plane_values = {key: float(planes[key]) for key in order}
     potential_values = {key: float(potentials[key]) for key in order}
@@ -202,12 +209,12 @@ def _compile_three_zone_candidate(
             for left, right in zip(order, order[1:])
         )
     ):
-        raise ContractError("three-zone T5 Candidate topology is not ordered")
+        raise ContractError("three-zone Candidate topology is not ordered")
 
     physics = candidate.get("accelerator_physics", {})
     lengths = physics.get("lengths_mm", {})
     if set(lengths) != {"d1", "d2", "d3"}:
-        raise ContractError("three-zone T5 Candidate lengths are incomplete")
+        raise ContractError("three-zone Candidate lengths are incomplete")
     d1 = float(lengths["d1"])
     d2 = float(lengths["d2"])
     d3 = float(lengths["d3"])
@@ -215,15 +222,38 @@ def _compile_three_zone_candidate(
     if not all(
         math.isfinite(value) and value > 0.0 for value in (d1, d2, d3)
     ):
-        raise ContractError("three-zone T5 Candidate lengths must be positive")
+        raise ContractError("three-zone Candidate lengths must be positive")
+    axial_translation_z_mm = 0.0
+    if candidate["compiler_mode"] in {
+        "IDEAL_ACCEPTANCE_250MM_SELECTED_POINT_V1",
+        "IDEAL_ACCEPTANCE_250MM_GRID_REALIZED_V1",
+        "IDEAL_ACCEPTANCE_300MM_SELECTED_POINT_V1",
+        "IDEAL_ACCEPTANCE_300MM_GRID_REALIZED_V1",
+    }:
+        source_center = float(candidate["source_identity"]["frozen_source"]["center_x_mm"])
+        axial_translation_z_mm = float(base_geometry["particle_source"]["center_z_mm"]) - (
+            plane_values["repeller"] + source_center
+        )
+        plane_values = {
+            key: value + axial_translation_z_mm for key, value in plane_values.items()
+        }
     for label, actual, expected in (
         ("d1", plane_values["intermediate1"] - plane_values["repeller"], d1),
         ("d2", plane_values["intermediate2"] - plane_values["intermediate1"], d2),
         ("d3", plane_values["exit"] - plane_values["intermediate2"], d3),
-        ("focus", -plane_values["exit"], focus_drift),
     ):
         if not math.isclose(actual, expected, rel_tol=0.0, abs_tol=1e-9):
-            raise ContractError(f"three-zone T5 Candidate {label} geometry differs")
+            raise ContractError(f"three-zone Candidate {label} geometry differs")
+    if (
+        candidate["compiler_mode"] not in {
+            "IDEAL_ACCEPTANCE_250MM_SELECTED_POINT_V1",
+            "IDEAL_ACCEPTANCE_250MM_GRID_REALIZED_V1",
+            "IDEAL_ACCEPTANCE_300MM_SELECTED_POINT_V1",
+            "IDEAL_ACCEPTANCE_300MM_GRID_REALIZED_V1",
+        }
+        and not math.isclose(-plane_values["exit"], focus_drift, rel_tol=0.0, abs_tol=1e-9)
+    ):
+        raise ContractError("three-zone Candidate focus geometry differs")
 
     geometry = copy.deepcopy(base_geometry)
     geom = geometry["geometry_mm"]
@@ -254,9 +284,13 @@ def _compile_three_zone_candidate(
     geom["accelerator_repeller_z"] = plane_values["repeller"]
     geom["accelerator_grid1_z"] = plane_values["intermediate1"]
     geom["accelerator_grid2_z"] = plane_values["exit"]
-    geom["accelerator_focus_z"] = 0.0
+    geom["accelerator_focus_z"] = axial_translation_z_mm
     geom["L_flight"] = focus_to_reflectron
-    geometry["accelerator_topology"] = copy.deepcopy(topology)
+    geometry["accelerator_topology"] = {
+        "topology_id": topology["topology_id"],
+        "planes_global_z_mm": dict(plane_values),
+        "potentials_v": dict(potential_values),
+    }
     geometry["electrodes_V"].update(
         {
             "repeller": potential_values["repeller"],
@@ -297,14 +331,15 @@ def _compile_three_zone_candidate(
             "canonical_grid1_z_mm": plane_values["intermediate1"],
             "canonical_intermediate2_z_mm": plane_values["intermediate2"],
             "canonical_grid2_z_mm": plane_values["exit"],
-            "canonical_focus_z_mm": 0.0,
+            "canonical_focus_z_mm": axial_translation_z_mm,
             "focus_drift_after_grid2_mm": focus_drift,
             "source_center_from_repeller_mm": source_center,
             "source_release_full_width_mm": source_width,
             "rule": (
-                "Consume the hash-bound T5 frozen primary and preserve its "
+                "Consume the hash-bound three-zone Candidate and preserve its "
                 "exact four-plane topology."
             ),
+            "realization_id": profile.get("accelerator_realization_id", "square_3d"),
         }
     )
     reflectron_derivation = geometry["geometry_derivation"]["reflectron"]
@@ -322,7 +357,7 @@ def _compile_three_zone_candidate(
             ),
             "source_release_full_width_mm": source_width,
             "rule": (
-                "Consume the hash-bound T5 frozen U_R1 and F_R2; retain "
+                "Consume the hash-bound Candidate U_R1 and F_R2; retain "
                 "the published reflectron lengths."
             ),
         }
@@ -330,11 +365,25 @@ def _compile_three_zone_candidate(
     derive_shield_bounds(
         geometry, derive_accelerator_outer_envelope_min_z(geometry)
     )
+    evidence_identity = (
+        {"candidate_plan_sha256": candidate["t5_evidence"]["plan_sha256"]}
+        if candidate["compiler_mode"] not in {
+            "IDEAL_ACCEPTANCE_250MM_SELECTED_POINT_V1",
+            "IDEAL_ACCEPTANCE_250MM_GRID_REALIZED_V1",
+            "IDEAL_ACCEPTANCE_300MM_SELECTED_POINT_V1",
+            "IDEAL_ACCEPTANCE_300MM_GRID_REALIZED_V1",
+        }
+        else {
+            "ideal_acceptance_selected_design_id": candidate[
+                "ideal_acceptance_evidence"
+            ]["selected_design_id"]
+        }
+    )
     compilation = {
         "method": profile["method"],
         "candidate": copy.deepcopy(candidate_binding),
         "candidate_campaign_id": candidate["campaign"]["campaign_id"],
-        "candidate_plan_sha256": candidate["t5_evidence"]["plan_sha256"],
+        **evidence_identity,
         "changed_variables": [
             "three_zone_accelerator_topology",
             "source_release_full_width",
@@ -347,6 +396,10 @@ def _compile_three_zone_candidate(
             "accelerator_axial_position",
             "reflectron_voltage",
         ],
+        "accelerator_realization_id": profile.get(
+            "accelerator_realization_id", "square_3d"
+        ),
+        "candidate_axial_translation_z_mm": axial_translation_z_mm,
         "simion_rebuild_plan": {
             "frontend_pa": True,
             "flight_tube_pa": True,
@@ -390,7 +443,7 @@ def compile_geometry_and_port(
     if profile["method"] == "t5_frozen_three_zone_candidate_v1":
         if three_zone_candidate is None or three_zone_candidate_binding is None:
             raise ContractError(
-                "three-zone T5 layout requires a hash-bound Candidate"
+                "three-zone Candidate layout requires a hash-bound Candidate"
             )
         geometry, design_derivation = _compile_three_zone_candidate(
             base_geometry,

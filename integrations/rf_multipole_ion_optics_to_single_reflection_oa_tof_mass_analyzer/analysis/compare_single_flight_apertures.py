@@ -44,6 +44,142 @@ EVENTS = (
     "detector_crossing",
 )
 COLORS = {"wide": "#0072B2", "small": "#D55E00", "common": "#009E73"}
+PRE_PULSE_AXIAL_FULL_WIDTH_ACCEPTANCE_MM = 4.0
+
+
+def _polynomial_fit_diagnostics(
+    z_mm: np.ndarray, vz_mm_per_us: np.ndarray, *, degree: int
+) -> dict[str, Any]:
+    """Return an explicitly model-conditioned residual diagnostic.
+
+    A linear residual contains both stochastic scatter and deterministic field
+    curvature.  Reporting the residual after degree two and three fits makes
+    that distinction visible instead of labelling all linear-model residual as
+    random noise.
+    """
+
+    coefficients = np.polyfit(z_mm, vz_mm_per_us, degree)
+    residual = vz_mm_per_us - np.polyval(coefficients, z_mm)
+    result: dict[str, Any] = {
+        "degree": degree,
+        "coefficients_descending_power": [float(value) for value in coefficients],
+        "coefficient_units_descending_power": [
+            "mm_per_us_per_mm" if power == 1 else (
+                "mm_per_us" if power == 0 else f"mm_per_us_per_mm{power}"
+            )
+            for power in range(degree, -1, -1)
+        ],
+        "residual_sample_sigma_mm_per_us": float(np.std(residual, ddof=1)),
+        "residual_rms_mm_per_us": float(np.sqrt(np.mean(np.square(residual)))),
+        "residual_max_abs_mm_per_us": float(np.max(np.abs(residual))),
+        "residual_abs_p95_mm_per_us": float(np.quantile(np.abs(residual), .95)),
+    }
+    # These named terms use exactly the position/velocity unit convention of
+    # the campaign's default affine diagnostic: z in mm and vz in mm/us.
+    result["intercept_mm_per_us"] = float(coefficients[-1])
+    result["k_per_us"] = float(coefficients[-2])
+    if degree >= 2:
+        result["quadratic_coefficient_per_mm_us"] = float(coefficients[-3])
+    if degree >= 3:
+        result["cubic_coefficient_per_mm2_us"] = float(coefficients[-4])
+    return result
+
+
+def analyze_pre_pulse_source_only_apertures(
+    cases: dict[str, Path],
+) -> dict[str, Any]:
+    """Compare frozen pre-pulse source-only runs without downstream observables."""
+
+    if len(cases) < 2:
+        raise ContractError("pre-pulse aperture comparison requires at least two cases")
+    mother_ids: set[int] | None = None
+    metrics: dict[str, Any] = {}
+    for case_id, run in sorted(cases.items()):
+        _validate_source_run(run)
+        config = _load_json(run / "run_config.json")
+        if config.get("parameters", {}).get("execution_mode") != "real_pa_rf_pre_pulse_time_series":
+            raise ContractError(f"{case_id} is not a pre-pulse source-only run")
+        states = pd.read_csv(run / "results" / "pre_pulse_time_series_states.csv")
+        required = {"particle_id", "sample_index", "z_mm", "vz_mm_per_us"}
+        if missing := sorted(required - set(states.columns)):
+            raise ContractError(f"{case_id} states are missing: {', '.join(missing)}")
+        initial = pd.read_csv(run / "inputs" / "single_flight_initial_global_state.csv")
+        if "particle_id" not in initial or initial["particle_id"].duplicated().any():
+            raise ContractError(f"{case_id} mother cohort is invalid")
+        ids = {int(value) for value in initial["particle_id"]}
+        if mother_ids is None:
+            mother_ids = ids
+        elif ids != mother_ids:
+            raise ContractError("pre-pulse cases must share identical mother particle IDs")
+        final = states.loc[states["sample_index"].eq(states["sample_index"].max())].copy()
+        if final["particle_id"].duplicated().any() or not set(final["particle_id"]).issubset(ids):
+            raise ContractError(f"{case_id} final pre-pulse state identities are invalid")
+        z, vz = final["z_mm"].to_numpy(float), final["vz_mm_per_us"].to_numpy(float)
+        if len(z) < 2 or not (np.isfinite(z).all() and np.isfinite(vz).all()):
+            raise ContractError(f"{case_id} needs two finite final pre-pulse states")
+        linear = _polynomial_fit_diagnostics(z, vz, degree=1)
+        quadratic = _polynomial_fit_diagnostics(z, vz, degree=2) if len(z) >= 3 else None
+        cubic = _polynomial_fit_diagnostics(z, vz, degree=3) if len(z) >= 4 else None
+        random_residual_model = cubic or quadratic or linear
+        receipt = _load_json(run / "results" / "pre_pulse_time_series_screening_receipt.json")
+        census = receipt.get("terminal_census")
+        if not isinstance(census, dict):
+            raise ContractError(f"{case_id} terminal loss census is missing")
+        full_width_mm = float(np.max(z) - np.min(z))
+        metrics[case_id] = {
+            "mother_cohort_count": len(ids),
+            "accelerator_entry_count": len(final),
+            "transmission_fraction_of_mother": len(final) / len(ids),
+            "accelerator_entry_axial_width_mm": {
+                "full_width": full_width_mm,
+                "quantile_width_05_to_95": float(np.quantile(z, .95) - np.quantile(z, .05)),
+            },
+            "accelerator_entry_axial_full_width_acceptance": {
+                "threshold_full_width_mm": PRE_PULSE_AXIAL_FULL_WIDTH_ACCEPTANCE_MM,
+                "observed_full_width_mm": full_width_mm,
+                "passed": full_width_mm <= PRE_PULSE_AXIAL_FULL_WIDTH_ACCEPTANCE_MM,
+            },
+            "z_vz_linear_fit": {
+                "k_per_us": linear["k_per_us"],
+                "slope_per_us": linear["k_per_us"],
+                "slope_vz_mm_per_us_per_mm": linear["k_per_us"],
+                "intercept_mm_per_us": linear["intercept_mm_per_us"],
+                "linear_residual_sample_sigma_mm_per_us": linear["residual_sample_sigma_mm_per_us"],
+                "linear_residual_rms_mm_per_us": linear["residual_rms_mm_per_us"],
+                "random_residual_sample_sigma_mm_per_us": random_residual_model["residual_sample_sigma_mm_per_us"],
+                "random_residual_rms_mm_per_us": random_residual_model["residual_rms_mm_per_us"],
+                "random_residual_model_degree": random_residual_model["degree"],
+                "quadratic_coefficient_per_mm_us": None if quadratic is None else quadratic["quadratic_coefficient_per_mm_us"],
+                "interpretation": (
+                    "k_per_us, intercept_mm_per_us, and residual_*_mm_per_us follow the "
+                    "default affine diagnostic units. Random residual is the residual after "
+                    "the highest reported polynomial degree, not the linear-model residual."
+                ),
+            },
+            "z_vz_polynomial_diagnostics": {
+                "model_definition": "vz_mm_per_us = sum(coefficients_descending_power[i] * z_mm**(degree-i)); z_mm is in mm",
+                "linear": linear,
+                "quadratic": quadratic,
+                "cubic": cubic,
+                "higher_order_residual_sigma_reduction_vs_linear_mm_per_us": {
+                    "quadratic": None if quadratic is None else (
+                        linear["residual_sample_sigma_mm_per_us"]
+                        - quadratic["residual_sample_sigma_mm_per_us"]
+                    ),
+                    "cubic": None if cubic is None else (
+                        linear["residual_sample_sigma_mm_per_us"]
+                        - cubic["residual_sample_sigma_mm_per_us"]
+                    ),
+                },
+                "random_residual_interpretation": (
+                    "Residual scatter after the highest reported polynomial degree is the "
+                    "available random-residual estimate; degree-to-degree reduction is "
+                    "deterministic higher-order z-vz structure."
+                ),
+            },
+            "loss_classification": census,
+        }
+    return {"schema_version": 1, "role": "rf_oatof_pre_pulse_aperture_comparison", "status": "DETECTOR_BLIND_SOURCE_ONLY", "controlled_variables": {"mother_particle_ids_identical": True, "comparison_denominator": "full_mother_cohort"}, "cases": metrics}
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -294,6 +430,84 @@ def analyze_runs(wide_run: Path, small_run: Path) -> tuple[dict[str, Any], dict[
         "detector_common": detector_common,
     }
     return result, data
+
+
+def analyze_multi_arm_runs(
+    cases: dict[str, Path], *, baseline_case: str, bootstrap_samples: int = 500
+) -> dict[str, Any]:
+    """Compare any number of complete continuous-flight arms against one baseline.
+
+    Peak metrics are deliberately computed from each arm's complete detector
+    cohort.  Common detector IDs are reserved for paired state/time effects.
+    """
+
+    if len(cases) < 2 or baseline_case not in cases or bootstrap_samples < 1:
+        raise ContractError("multi-arm comparison requires a baseline, two arms, and bootstrap samples")
+    mother_ids: set[int] | None = None
+    event_maps: dict[str, dict[str, dict[int, dict[str, float]]]] = {}
+    arms: dict[str, Any] = {}
+    for case_id, run in sorted(cases.items()):
+        _validate_source_run(run)
+        initial = pd.read_csv(run / "inputs" / "single_flight_initial_global_state.csv")
+        if "particle_id" not in initial or initial["particle_id"].duplicated().any():
+            raise ContractError(f"{case_id} mother cohort is invalid")
+        ids = set(initial["particle_id"].astype(int))
+        if mother_ids is None:
+            mother_ids = ids
+        elif ids != mother_ids:
+            raise ContractError("multi-arm branches do not use identical mother particle IDs")
+        events = _event_maps(pd.read_csv(run / "results" / "single_flight_particle_checkpoints.csv"))
+        if set(events["source_release"]) != ids:
+            raise ContractError(f"{case_id} source-release IDs do not close the mother denominator")
+        detector_times = np.asarray(
+            [row["time_us"] for row in events["detector_crossing"].values()], dtype=float
+        )
+        if detector_times.size < 2:
+            raise ContractError(f"{case_id} has too few detector arrivals for peak metrics")
+        peak, _ = compute_peak_metrics(detector_times, 100.0)
+        counts = {event: len(rows) for event, rows in events.items()}
+        arms[case_id] = {
+            "source_run_id": run.name,
+            "mother_cohort_count": len(ids),
+            "event_counts": counts,
+            "event_transmission_fraction_of_mother": {event: count / len(ids) for event, count in counts.items()},
+            "loss_classification": {event: {"not_reaching_event_count": len(ids) - count} for event, count in counts.items()},
+            "all_detector_peak_metrics": peak,
+        }
+        event_maps[case_id] = events
+    comparisons: dict[str, Any] = {}
+    baseline_peak = arms[baseline_case]["all_detector_peak_metrics"]
+    rng = np.random.default_rng(0)
+    for case_id, events in event_maps.items():
+        if case_id == baseline_case:
+            continue
+        paired_events: dict[str, Any] = {}
+        for event in EVENTS:
+            paired, _ = _pair_event(event_maps[baseline_case][event], events[event])
+            paired_events[event] = paired
+        common_ids = sorted(set(event_maps[baseline_case]["detector_crossing"]) & set(events["detector_crossing"]))
+        delta_ns = np.asarray([
+            (events["detector_crossing"][particle_id]["time_us"] - event_maps[baseline_case]["detector_crossing"][particle_id]["time_us"]) * 1e3
+            for particle_id in common_ids
+        ])
+        bootstrap = rng.choice(delta_ns, size=(bootstrap_samples, len(delta_ns)), replace=True).mean(axis=1) if len(delta_ns) else np.asarray([])
+        peak = arms[case_id]["all_detector_peak_metrics"]
+        comparisons[case_id] = {
+            "baseline_case": baseline_case,
+            "all_detector_peak_delta": {
+                "mass_resolution": peak["mass_resolution"] - baseline_peak["mass_resolution"],
+                "direct_fwhm_tof_ns": peak["direct_fwhm_tof_ns"] - baseline_peak["direct_fwhm_tof_ns"],
+                "population_definition": "each arm's complete detector cohort; never the common-ID intersection",
+            },
+            "paired_common_detector_time_difference_ns": {
+                "common_particle_count": len(common_ids),
+                "mean": None if not len(delta_ns) else float(np.mean(delta_ns)),
+                "bootstrap_mean_95pct_interval": None if not len(bootstrap) else [float(np.quantile(bootstrap, .025)), float(np.quantile(bootstrap, .975))],
+                "bootstrap_samples": bootstrap_samples,
+            },
+            "paired_event_state_differences": paired_events,
+        }
+    return {"schema_version": 1, "role": "rf_oatof_multi_arm_aperture_comparison", "status": "INCONCLUSIVE_DIAGNOSTIC_ONLY", "baseline_case": baseline_case, "controlled_variables": {"mother_particle_ids_identical": True, "paired_ids_are_not_peak_population": True}, "arms": arms, "comparisons": comparisons}
 
 
 def write_paired_csv(path: Path, data: dict[str, Any]) -> None:

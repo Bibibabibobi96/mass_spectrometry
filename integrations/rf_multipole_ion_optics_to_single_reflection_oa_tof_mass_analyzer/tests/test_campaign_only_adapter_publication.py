@@ -639,6 +639,68 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
             self.assertEqual((second_entry / "frontend.pa0").read_text(encoding="utf-8"), "second:frontend.pa0")
             self.assertEqual(len(list((key_directory / "generations").iterdir())), 2)
 
+    def test_resolver_recovers_a_valid_prior_generation_with_same_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            cache_root = (
+                workspace / "artifacts" / "projects" / INTEGRATION_ID / "cache"
+                / "simion_single_flight_frontend"
+            )
+            identity = {
+                "schema_version": 2,
+                "role": "simion_single_flight_frontend_pa_cache",
+                "project_id": INTEGRATION_ID,
+                "solver": {"name": "SIMION", "product_version": "2020", "executable_sha256": "E" * 64},
+                "critical_options": {"refine": ["--nogui", "refine"]},
+            }
+            identity_path = workspace / "identity.json"
+            write_json(identity_path, identity)
+
+            def publish(provider: str) -> None:
+                command = (
+                    f". '{RUN_ARTIFACTS_PATH}'; "
+                    f"$identity=Get-Content -Raw -LiteralPath '{identity_path}' | ConvertFrom-Json; "
+                    "$key=Get-RfContentIdentitySha256 -Identity $identity; "
+                    f"$staging=New-RfCacheStagingDirectory -CacheRoot '{cache_root}'; "
+                    "'frontend.gem','frontend.pa#','frontend.pa0' | ForEach-Object { "
+                    "[IO.File]::WriteAllText((Join-Path $staging $_), 'identical:' + $_) }; "
+                    f"Publish-RfVerifiedCacheEntry -Python '{Path(sys.executable)}' "
+                    f"-RepoRoot '{REPO_ROOT}' -WorkspaceRoot '{workspace}' "
+                    f"-ProjectId '{INTEGRATION_ID}' -CacheRoot '{cache_root}' "
+                    "-CacheKey $key -Role $identity.role -Identity $identity "
+                    f"-StagingDirectory $staging -ProviderRunId '{provider}' | Out-Null"
+                )
+                subprocess.run(["pwsh", "-NoProfile", "-Command", command], cwd=REPO_ROOT,
+                               check=True, capture_output=True, text=True, timeout=120)
+
+            publish("first")
+            key_directory = next(cache_root.iterdir())
+            first_pointer = json.loads((key_directory / "current_generation.json").read_text(encoding="utf-8-sig"))
+            first_entry = key_directory / first_pointer["generation_relative_path"]
+            publish("second")
+            second_pointer = json.loads((key_directory / "current_generation.json").read_text(encoding="utf-8-sig"))
+            second_entry = key_directory / second_pointer["generation_relative_path"]
+            self.assertEqual(first_pointer["payload_sha256"], second_pointer["payload_sha256"])
+            damaged = second_entry / "frontend.pa0"
+            damaged.chmod(stat.S_IWRITE)
+            damaged.write_text("damaged\n", encoding="utf-8")
+            damaged.chmod(stat.S_IREAD)
+            command = (
+                f". '{RUN_ARTIFACTS_PATH}'; "
+                f"$identity=Get-Content -Raw -LiteralPath '{identity_path}' | ConvertFrom-Json; "
+                "$key=Get-RfContentIdentitySha256 -Identity $identity; "
+                f"Resolve-RfReusableCacheDirectory -Python '{Path(sys.executable)}' "
+                f"-RepoRoot '{REPO_ROOT}' -WorkspaceRoot '{workspace}' "
+                f"-ProjectId '{INTEGRATION_ID}' -CacheRoot '{cache_root}' "
+                "-CacheKey $key -Role $identity.role -Identity $identity -InvalidEntryAction preserve"
+            )
+            recovered = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", command], cwd=REPO_ROOT,
+                check=True, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120,
+            )
+            self.assertIn(str(first_entry), recovered.stdout)
+            self.assertTrue(second_entry.is_dir())
+
     def test_materialized_cache_copy_is_writable_without_mutating_source(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

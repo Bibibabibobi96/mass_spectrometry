@@ -64,6 +64,6 @@ _G.var=nil
 os.remove(staged_source)
 os.remove(staged_source:gsub('%.gem$','.processed.gem'))
 simion.command(string.format(
-  'refine --resume=0 --convergence=5e-7 %q',output))
+  'refine --resume=0 %q',output))
 simion.command(string.format('fastadj %q 1=0',output:gsub('#$','0')))
 print('BUILD: PASS')

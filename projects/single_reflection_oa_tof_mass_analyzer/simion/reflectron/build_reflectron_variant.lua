@@ -176,16 +176,15 @@ end)
 if build_mode == 'initialize-only' then
   simion.pas:close()
   local pa=simion.pas:open(output)
-  -- SIMION's bundled resistive/lens2_pa0_build.lua uses a deliberately
-  -- unreachable objective to create PA0 and every basis PA without refining.
-  pa:refine{convergence=1E+6}
+  -- Materialize PA0 and every basis PA using SIMION's official default.
+  pa:refine{}
   simion.pas:close()
   print('BUILD: INITIALIZED')
   return
 end
 timed_stage('refine',function()
   simion.command(string.format(
-    'refine --resume=0 --convergence=5e-7 %q',output))
+    'refine --resume=0 %q',output))
 end)
 local voltage_assignments={'1=0'}
 for ring_index=1,stage1_ring_count do

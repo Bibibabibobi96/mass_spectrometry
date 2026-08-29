@@ -202,6 +202,47 @@ class PulseReuseIdentityProjectionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "frontend and accelerator-overlay"):
             build_verified_pulse_reuse_projection(**fixture)
 
+    def test_two_local_overlay_keys_enter_verified_reuse_identity(self) -> None:
+        fixture = _fixture()
+        fixture["pa_cache_keys"] = {
+            "frontend": "frontend-key",
+            "accelerator_entrance_overlay": "entrance-key",
+            "accelerator_intermediate_overlay": "intermediate-key",
+            "flight_tube": None,
+            "reflectron": None,
+        }
+        basis, baseline_key = build_verified_pulse_reuse_projection(**fixture)
+        self.assertEqual(basis["pa_cache_keys"], {
+            "frontend": "frontend-key",
+            "accelerator_entrance_overlay": "entrance-key",
+            "accelerator_intermediate_overlay": "intermediate-key",
+        })
+        for role in (
+            "accelerator_entrance_overlay",
+            "accelerator_intermediate_overlay",
+        ):
+            varied = copy.deepcopy(fixture)
+            varied["pa_cache_keys"][role] = "other-key"
+            self.assertNotEqual(
+                baseline_key,
+                build_verified_pulse_reuse_projection(**varied)[1],
+            )
+
+    def test_two_local_overlay_identity_rejects_incomplete_or_mixed_keys(self) -> None:
+        fixture = _fixture()
+        fixture["pa_cache_keys"] = {
+            "frontend": "frontend-key",
+            "accelerator_entrance_overlay": "entrance-key",
+            "flight_tube": None,
+            "reflectron": None,
+        }
+        with self.assertRaisesRegex(ValueError, "both local"):
+            build_verified_pulse_reuse_projection(**fixture)
+        fixture["pa_cache_keys"]["accelerator_intermediate_overlay"] = "intermediate-key"
+        fixture["pa_cache_keys"]["accelerator_overlay"] = "legacy-key"
+        with self.assertRaisesRegex(ValueError, "layout is ambiguous"):
+            build_verified_pulse_reuse_projection(**fixture)
+
     def test_consumer_numerics_do_not_enter_post_pulse_handoff_identity(self) -> None:
         experiment = {
             "connection_profile_id": "gap_51p2",

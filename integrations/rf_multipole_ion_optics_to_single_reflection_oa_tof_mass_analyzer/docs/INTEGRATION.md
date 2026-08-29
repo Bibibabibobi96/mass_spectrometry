@@ -39,11 +39,51 @@
 SIMION 运行可调用共享批处理；批内结果必须恢复全局粒子 ID 并合并为一个来源 run。不得在外层 campaign
 并发之上再启动嵌套并发。
 
+连接器是集成拥有的固定接地屏蔽续段：其截面必须继承上游多极杆屏蔽，而不是另行指定半径、法兰或缩径。
+当且仅当`gap > 0`，连接器入口生成一块接地圆盘；圆盘外半径等于连接器内半径，孔可在活动连接器合同中
+选择圆形半径或矩形宽高。`gap = 0`是多极杆屏蔽端面直接对接加速器屏蔽开口：连接器、套筒和带孔端板
+均不存在。加速器屏蔽的矩形开口是独立下游几何，不能反向定义连接器端板孔，也不能以旧源端孔径约束。
+当扫描高度为 0.9、1.5、2.0 与 2.5 mm 时，前端 PA 的加速方向网格必须为 0.1 mm 或更细，使各高度均为
+整数个轴向单元；`frontend_acceleration_z010_accelerator_two_local_z005`保留现有的两处 0.05 mm 局部三区
+场覆盖，并只改变前端的轴向离散。0.2 mm 前端网格产生的相同行不得作为这些标称孔高的比较证据。
+
+### 长 gap 的分域 PA 路径
+
+`gap = 0`继续使用整体前端 PA 路径：多极杆端面直接接到加速器屏蔽开口，不能因为引入分域能力而改变
+这一已验证几何或场边界。`gap > 0`的长连接器可使用统一分域路径，以避免让一个高分辨率 PA 同时覆盖
+长的连接器方向跨度和 300 mm 加速器轴向跨度：
+
+- 当前受控初值是连接器总长至少 50 mm；上游细域止于带孔端板后 10 mm，主加速器细域从加速器小孔向
+  连接器内延伸 10 mm。因此最短合格连接器留下 30 mm 的粗网格接地套筒，而不是细域重叠区。该数值是
+  带 1.5 mm 孔接地端板的屏蔽初始约定，不是“场为零”的宣称；
+  小于 50 mm 的正 gap 不得伪造分域结果，仍走整体路径。
+- 上游 PA 只含多极杆、接地连接器端板/套筒和加速器入口的局部接地屏蔽；独立主 PA 含三区加速器主体，
+  仅中间零厚度栅可由 0.05 mm 小型 overlay 精化。四个矩形孔高由主加速器 PA 的 0.1 mm 轴向网格离散；
+  粗全局 PA 的孔光栅化不具有权威性，不因主体 PA 分离而改变。
+- 两段细域不在连接器中重叠、不“拼接”、不把场值相加；中段由同一个粗 bridge PA 覆盖。粗 PA 可采用更
+  粗的网格（当前注册 `0.5 × 0.5 × 0.5 mm`），仅为细 PA 提供远端 electrode-basis Dirichlet 边界；每个
+  细 PA 在 refine 前获得其全部电极基底的边界值。SIMION 的优先级只用于让细 PA 替换背景粗 PA，绝不允许
+  两个实例的 field 或 potential 相加为总场。
+- 分域实现只有在验收后才能替换整体路径：在每个交接面报告电势连续性和法向电场跳变，并用相同的冻结
+  电压、粒子 ID、脉冲时刻和完整母 cohort 做整体 PA 与分域 PA 的配对粒子比较。验收至少覆盖到达时间、
+  命中/损失分类和入口附近轨迹；仅有 PA refine 成功、边界电势相等或峰宽单值改善均不足以证明可替代。
+
+`gap > 0`的分域拓扑现已由同一冻结 bridge contract 驱动 IOB、Program、cache 和 manifest，并已完成
+真实 SIMION N=1 贯通；该 smoke 仅证明执行链可用。主加速器细 PA 的 basis 边界复制使用六个互不重叠的
+外表面循环，逐点读取同一粗 bridge basis 后以 SIMION 官方默认 refine 收敛；它替代旧的逐点字符串去重，
+但不以“接地面”为捷径，因为每个 electrode basis 的远端 Dirichlet 值都可能非零。对相同 0.9 mm 几何，
+优化前后 PA/GEM 的逐文件 SHA-256 一致，main-basis 阶段由 1043.390 s 降为 587.634 s。N=5000 预脉冲
+筛选及跨整体 PA 的配对验收仍是物理/性能结论的必要前提。
+
 仓库级 [`common/simion/resource_scheduler.py`](../../../common/simion/resource_scheduler.py) 仅为已授权请求
 规划 RF/静电批次：它综合粒子数、公共的每批 CPU 策略、当前可用内存、已观测的同资源身份峰值及并发上限。
-没有匹配历史时，运行器把第一个正式粒子批次作为45秒资源识别批次；该进程不因观察结束而终止，提前完成的
-结果也直接保留。随后只对尚未执行的粒子重新分批，并由公共调度器错峰启动、持续监控；不再生成
+没有匹配历史时，运行器把第一个正式粒子批次作为至少45秒的资源识别批次；该进程不因观察结束而终止，
+并必须自然完成，以记录穿过全部 PA 家族后的完整内存峰值；其结果直接保留。随后只对尚未执行的粒子重新
+分批，并由公共调度器错峰启动、持续监控；不再生成
 `RESOURCE_CALIBRATION_ONLY`探针或重复首批。
+同一机制也调度已证明相互独立的静电 PA 工作项：例如完整边界 basis 写入后，各电极的 overlay refine
+以一个正式电极作45秒首批观测，余下电极只按公共CPU/内存准入错峰启动；basis 写入本身仍串行，
+不得把它与后续 refine 混为可并发工作。
 该策略属于公共调度器而非 campaign、功能或科学合同；这些合同只能提供资源身份，不得覆盖CPU、内存、
 安全系数、并发或危险处置。CPU满载只暂停新启动；普通内存暂缓也只是不满足“1 GiB系统保留量加下一
 进程动态峰值预算”的启动条件，条件恢复后可随时再次准入，不计尝试次数。动态峰值取每个SIMION进程
@@ -51,7 +91,9 @@ SIMION 运行可调用共享批处理；批内结果必须恢复全局粒子 ID 
 存低于0.5 GiB持续15秒，执行器才逐个回收最晚启动的批次并置于待启动队列最前；这样被打断的通道会先恢复，
 不会被尚未启动的平衡补偿批次插队。每次回收后必须连续45秒满足下一
 条通道的1 GiB准入和动态峰值预算，才可恢复试开一个通道。至多进行两次这样的危险恢复；第三次同类
-危险将失败关闭该运行，以免Windows长时间资源抖动。普通资源波动、墙钟和目录采样不终止健康进程。
+危险将失败关闭该运行，以免Windows长时间资源抖动。普通资源波动、墙钟和目录采样不终止健康进程；但
+任一同波 SIMION 子进程以非零状态退出时，该波已不具备完整母cohort资格，调度器立即停止该波其余
+子进程并取消待启动批次，保留原始日志供父运行记录失败原因。
 探索的 inline 网格或 trajectory-quality 覆盖使用**已解析数值**而非原 profile ID 匹配画像；因此旧 profile
 的峰值不会为不同离散量授权并发，新的组合由首个正式批次建立自己的观测。
 
@@ -61,7 +103,10 @@ SIMION 运行可调用共享批处理；批内结果必须恢复全局粒子 ID 
 同时不把 50,000 一类固定容量常驻到所有运行中。
 
 每个 run 必须冻结 `run_config.json`、`summary.json` 和 `run_manifest.json`。缓存只用于完全相同的冻结身份，
-且不可替代来源 run。功能成功不自动证明数值收敛、跨求解器等价、参数最优或 Formal 资格。
+且不可替代来源 run。v3 PA cache 在私有 staging 时逐文件全量哈希、原子发布并设为只读；普通复用只复核
+当前 generation pointer、manifest、角色/键、文件清单和字节数，避免每个消费者重复读取数十 GiB 不变 PA。
+发现非 current generation 与显式 artifact 审计仍执行全量字节哈希。功能成功不自动证明数值收敛、跨求解器
+等价、参数最优或 Formal 资格。
 
 若SIMION批次已经全部完成、但**只**在受治理的预脉冲TRACE物化步骤失败，
 [`recover_completed_pre_pulse_screening.py`](../workflows/family_source_closure/recover_completed_pre_pulse_screening.py)
@@ -81,6 +126,11 @@ run 已记录的存活状态重编号为 canonical `pre_pulse_restart` 表，并
 能量。receipt 同时绑定原始全母群分母及终端损失 census，因此 conditional restart 绝不能被表述为全人口传输。
 它当前仅授权同源的 inherited-vs-`z-vz` working-point `DEVELOPMENT_ONLY` 复现；不得用 CSV 转换替代新的
 脉冲搜索、上游传播、锁定测试或真实场源分布加权聚焦结论。
+
+`workflows/family_source_closure/run_time_series_successor.py` 将这一物化结果与一条**预注册**的 pulse-on
+消费者行绑定。它在调度前逐项拒绝 connection、layout/cross section/aperture、three-zone candidate SHA、上游
+source identity 或完整 restart population 的漂移；仅允许从 producer 的 `pulse_disabled=true` 转换为 consumer 的
+正常脉冲。它不生成或改写 campaign；`--execute` 时仍只委托唯一的、持有主机租约的 `execute.ps1`。
 
 活动 runtime binding v4 只冻结连接专属的物理/运行合同；共享的
 `family_runtime_implementation.json` 由运行时统一解析。authorized/Formal 路径校验每个实现脚本 SHA；
@@ -114,6 +164,20 @@ policy（内存、并发、超时或保留）更新而重新成为可执行 auth
 预脉冲时间序列可使用历史的冻结前 `N=100` 前缀，也可使用与冻结母表等长的完整有序人口；后者仍先
 物化为 run-local 的确定性表，因而不会以“共同幸存粒子”替换母 cohort。所有来源损失继续由原上游
 manifest 和这份完整分母共同报告。
+
+当同一冻结母 cohort 的两个或更多 detector-blind 预脉冲 arm 均成功时，
+[`publish_pre_pulse_aperture_comparison.py`](../analysis/publish_pre_pulse_aperture_comparison.py) 发布一个新的
+immutable analysis run。它冻结各 arm 的 manifest、resolved config、初始母表、time-series states 与终态
+census，报告完整母群分母下的传输、损失、`z--vz` 拟合/残差和加速方向 full-width。300 mm 孔径筛选将
+full-width 的 4.0 mm 阈值、实测值和 pass/fail 一并写出；该 artifact 始终是
+`DETECTOR_BLIND_SOURCE_ONLY`，不输出 detector peak、分辨率或 Formal 结论。
+
+[`author_full_flight_campaign_from_pre_pulse.py`](../workflows/family_source_closure/author_full_flight_campaign_from_pre_pulse.py)
+是该筛选后的唯一 campaign authoring 边界：它为每一个 full-flight row 绑定相应成功 producer 的
+`pulse_timing_transition_authority`，并在进入求解器前复核 layout、connection、Candidate、网格、场、source
+与完整有序人口。生成行必须继续使用`continuous_frontend`的完整母 cohort，禁止用`pre_pulse_restart`或共同
+detector-hit 人口；其唯一允许的 cache-miss 时间格是当前已登记的 native-dt 范围或与 producer 匹配的 RF40
+单快照。
 
 活动 resolved source contract 仅接受 family v2：它显式按 `comsol` 或 `simion` 记录来源 branch，且运行时只
 消费所选 branch。早期 v1 source contract 与其 adapter 仅是历史证据格式，不在活动 schema 或重放入口中保留兼容分支。

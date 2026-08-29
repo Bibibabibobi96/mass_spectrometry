@@ -12,6 +12,10 @@ SUPPORTED_CANDIDATE_MODES = {
     "T5_FROZEN_PRIMARY_AND_BRANCH_ONLY",
     "C3_J3_EXACT_LOCAL_DIRECTION_V1",
     "J2_REAL_FIELD_CANDIDATE_POOL_V1",
+    "IDEAL_ACCEPTANCE_250MM_SELECTED_POINT_V1",
+    "IDEAL_ACCEPTANCE_250MM_GRID_REALIZED_V1",
+    "IDEAL_ACCEPTANCE_300MM_SELECTED_POINT_V1",
+    "IDEAL_ACCEPTANCE_300MM_GRID_REALIZED_V1",
 }
 
 
@@ -122,8 +126,58 @@ def validate_runtime_identity(
             or theory_working_point is not None
         ):
             raise ValueError("J2 Candidate/runtime identity differs.")
+    if candidate.get("compiler_mode") in {
+        "IDEAL_ACCEPTANCE_250MM_SELECTED_POINT_V1",
+        "IDEAL_ACCEPTANCE_250MM_GRID_REALIZED_V1",
+        "IDEAL_ACCEPTANCE_300MM_SELECTED_POINT_V1",
+        "IDEAL_ACCEPTANCE_300MM_GRID_REALIZED_V1",
+    }:
+        evidence = candidate.get("ideal_acceptance_evidence")
+        if (
+            not isinstance(evidence, dict)
+            or evidence.get("full_width_mm") != 4.0
+            or evidence.get("total_acceleration_length_mm") not in {250.0, 300.0}
+            or theory_working_point is not None
+        ):
+            raise ValueError("ideal-acceptance Candidate/runtime identity differs.")
+    if candidate.get("compiler_mode") in {
+        "IDEAL_ACCEPTANCE_250MM_GRID_REALIZED_V1",
+        "IDEAL_ACCEPTANCE_300MM_GRID_REALIZED_V1",
+    }:
+        realization = candidate.get("numerical_grid_realization")
+        if not isinstance(realization, dict):
+            raise ValueError("grid-realized Candidate lacks numerical realization evidence.")
+        try:
+            grid_z = float(realization["axial_grid_z_mm"])
+            lengths = realization["zone_lengths_mm"]
+            residual = realization["scaled_focus_equation_residual_ns"]
+            aligned = all(
+                abs(float(lengths[role]) / grid_z - round(float(lengths[role]) / grid_z))
+                <= 1.0e-8
+                for role in ("d1", "d2", "d3")
+            )
+            closed = len(residual) == 3 and all(abs(float(value)) <= 1.0e-6 for value in residual)
+        except (KeyError, TypeError, ValueError, ZeroDivisionError):
+            aligned = False
+            closed = False
+        if not aligned or not closed:
+            raise ValueError("grid-realized Candidate numerical closure differs.")
 
     try:
+        compilation = _value(
+            geometry, "single_flight_layout_derivation", "design_compilation"
+        )
+        translation = float(compilation.get("candidate_axial_translation_z_mm", 0.0))
+        if candidate.get("compiler_mode") in {
+            "IDEAL_ACCEPTANCE_250MM_SELECTED_POINT_V1",
+            "IDEAL_ACCEPTANCE_250MM_GRID_REALIZED_V1",
+            "IDEAL_ACCEPTANCE_300MM_SELECTED_POINT_V1",
+            "IDEAL_ACCEPTANCE_300MM_GRID_REALIZED_V1",
+        }:
+            if not translation:
+                raise ValueError("ideal-acceptance Candidate axial placement is missing.")
+        elif translation != 0.0:
+            raise ValueError("unexpected Candidate axial placement.")
         for mapping_name in ("planes_global_z_mm", "potentials_v"):
             for role in ("repeller", "intermediate1", "intermediate2", "exit"):
                 candidate_value = float(
@@ -142,6 +196,11 @@ def validate_runtime_identity(
                     and mapping_name == "potentials_v"
                     else candidate_value
                 )
+                if (
+                    mapping_name == "planes_global_z_mm"
+                    and theory_working_point is None
+                ):
+                    expected_value += translation
                 if (
                     float(_value(geometry, "accelerator_topology", mapping_name, role))
                     != expected_value

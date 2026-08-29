@@ -168,7 +168,7 @@ function Invoke-SegmentedReflectronRefine([int]$MaxElectrode) {
   $singleRefiner = Join-Path $projectRoot 'simion\reflectron\refine_single_pa.lua'
   foreach ($electrode in 0..$MaxElectrode) {
     Invoke-SimionLua $singleRefiner @(
-      (Join-Path $outputFull "reflectron.pa$electrode"), 5e-7
+      (Join-Path $outputFull "reflectron.pa$electrode")
     )
   }
 }

@@ -965,6 +965,71 @@ class SingleFlightAnalysisTests(unittest.TestCase):
         self.assertEqual(detector["instrument_time_us"], 70.75)
         self.assertEqual(summary["census"]["source_release"], 1)
 
+    def test_full_flight_terminal_taxonomy_is_exhaustive_and_exclusive(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            log = root / "log.txt"
+            initial = root / "initial.csv"
+            log.write_text(
+                "TRACE: source_release ion=1 instrument_time_us=0 x_mm=0 y_mm=0 z_mm=0 vx_mm_per_us=1 vy_mm_per_us=0 vz_mm_per_us=0\n"
+                "TRACE: source_release ion=2 instrument_time_us=0 x_mm=0 y_mm=0 z_mm=0 vx_mm_per_us=1 vy_mm_per_us=0 vz_mm_per_us=0\n"
+                "TRACE: detector_crossing ion=1 t=70 x=0 y=0 z=0\n"
+                "TRACE: non_detector_splat ion=2 instance=3 t=1 x=0 y=0 z=0 zmax=0\n",
+                encoding="utf-8",
+            )
+            initial.write_text(
+                "particle_id,instrument_time_us,mass_amu,charge_state,position_x_mm,position_y_mm,position_z_mm,velocity_x_m_s,velocity_y_m_s,velocity_z_m_s,kinetic_energy_eV\n"
+                "1,0,100,1,0,0,0,1000,0,0,0.5182137\n"
+                "2,0,100,1,0,0,0,1000,0,0,0.5182137\n",
+                encoding="utf-8",
+            )
+            _, summary = analyze(
+                log, 2, 100.0, initial_global_state_path=initial,
+                require_terminal_taxonomy=True,
+            )
+        taxonomy = summary["terminal_taxonomy"]
+        self.assertTrue(taxonomy["classification_is_mutually_exclusive_and_exhaustive"])
+        self.assertEqual(taxonomy["mother_cohort_count"], 2)
+        self.assertEqual(taxonomy["terminal_outcome_count"], 2)
+        self.assertEqual(taxonomy["category_counts"], {
+            "detector_crossing": 1, "non_detector_splat_instance_3": 1,
+        })
+        self.assertEqual(
+            taxonomy["particle_outcomes"],
+            [
+                {"particle_id": 1, "category": "detector_crossing", "terminal_event": "detector_crossing", "instance_id": 4, "terminal_elapsed_us": 70.0, "x_mm": 0.0, "y_mm": 0.0, "z_mm": 0.0, "zmax_mm": None},
+                {"particle_id": 2, "category": "non_detector_splat_instance_3", "terminal_event": "non_detector_splat", "instance_id": 3, "terminal_elapsed_us": 1.0, "x_mm": 0.0, "y_mm": 0.0, "z_mm": 0.0, "zmax_mm": 0.0},
+            ],
+        )
+
+    def test_full_flight_terminal_taxonomy_rejects_missing_or_duplicate_terminal(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            initial = root / "initial.csv"
+            initial.write_text(
+                "particle_id,instrument_time_us,mass_amu,charge_state,position_x_mm,position_y_mm,position_z_mm,velocity_x_m_s,velocity_y_m_s,velocity_z_m_s,kinetic_energy_eV\n"
+                "1,0,100,1,0,0,0,1000,0,0,0.5182137\n"
+                "2,0,100,1,0,0,0,1000,0,0,0.5182137\n",
+                encoding="utf-8",
+            )
+            base = (
+                "TRACE: source_release ion=1 instrument_time_us=0 x_mm=0 y_mm=0 z_mm=0 vx_mm_per_us=1 vy_mm_per_us=0 vz_mm_per_us=0\n"
+                "TRACE: source_release ion=2 instrument_time_us=0 x_mm=0 y_mm=0 z_mm=0 vx_mm_per_us=1 vy_mm_per_us=0 vz_mm_per_us=0\n"
+            )
+            missing = root / "missing.txt"
+            missing.write_text(base + "TRACE: detector_crossing ion=1 t=70 x=0 y=0 z=0\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "lacks terminal outcome"):
+                analyze(missing, 2, 100.0, initial_global_state_path=initial, require_terminal_taxonomy=True)
+            duplicate = root / "duplicate.txt"
+            duplicate.write_text(
+                base
+                + "TRACE: detector_crossing ion=1 t=70 x=0 y=0 z=0\n"
+                + "TRACE: non_detector_splat ion=1 instance=3 t=1 x=0 y=0 z=0 zmax=0\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "duplicate terminal outcome: particle=1"):
+                analyze(duplicate, 2, 100.0, initial_global_state_path=initial, require_terminal_taxonomy=True)
+
     def test_prepulse_restart_synthesizes_analysis_only_checkpoint(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
