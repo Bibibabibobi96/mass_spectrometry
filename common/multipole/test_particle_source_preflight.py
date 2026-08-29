@@ -19,6 +19,7 @@ from common.multipole.particle_source_preflight import (
     COLUMNS,
     validate_source,
 )
+from common.multipole.sources.continuous_axial_volume_source import materialize
 from common.multipole.test_compile_design_request import design_request
 
 
@@ -92,6 +93,58 @@ class ParticleSourcePreflightTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             result = validate_source(self.write_source(directory, count=99), self.resolved)
         self.assertEqual(result["particle_count"], 99)
+
+    def test_hash_bound_volume_snapshot_is_the_only_nonplanar_source_exception(self) -> None:
+        spec = {
+            "schema_version": 1,
+            "role": "continuous_axial_volume_ion_beam_source",
+            "method": "independent_spatial_velocity_ion_source_snapshot_v1",
+            "source_region_model": "ion_source_volume_cylinder_v1",
+            "source_frame_id": "multipole_cartesian_z_axis_v1",
+            "particle_count": 20,
+            "seed": 7,
+            "snapshot_time_s": 0.0,
+            "geometry_mm": {
+                "center_x_mm": 0.0, "center_y_mm": 0.0,
+                "center_z_mm": -1.5, "radius_mm": 0.5,
+                "axial_length_mm": 2.2,
+            },
+            "velocity_distribution": {
+                "mean_vx_m_s": 0.0, "mean_vy_m_s": 0.0,
+                "mean_vz_m_s": 1964.668136, "sigma_vx_m_s": 35.0,
+                "sigma_vy_m_s": 35.0, "sigma_vz_m_s": 50.0,
+                "minimum_vz_m_s": 1500.0,
+            },
+            "ion": {"mass_amu": 100.0, "charge_state": 1},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            spec_path = root / "spec.json"
+            source_path = root / "source.csv"
+            receipt_path = root / "receipt.json"
+            spec_path.write_text(json.dumps(spec), encoding="utf-8")
+            materialize(spec_path, source_path, receipt_path)
+            with self.assertRaisesRegex(ValueError, "source plane"):
+                validate_source(source_path, self.resolved)
+            result = validate_source(
+                source_path,
+                self.resolved,
+                volume_snapshot_receipt_path=receipt_path,
+            )
+            self.assertTrue(result["source_volume_snapshot"])
+            self.assertEqual(
+                result["energy_model_authority"],
+                "continuous_axial_volume_source_receipt",
+            )
+            receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+            receipt["particle_source"]["sha256"] = "0" * 64
+            receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "does not bind"):
+                validate_source(
+                    source_path,
+                    self.resolved,
+                    volume_snapshot_receipt_path=receipt_path,
+                )
 
     def test_bounded_distribution_records_actual_statistics_and_rejects_outlier(self) -> None:
         bounded = copy.deepcopy(self.resolved)

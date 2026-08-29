@@ -401,6 +401,7 @@ try{
     ){throw 'Candidate design request identity differs from the frozen resolved design.'}
   }
   $particleSource=Join-Path $inputDir 'particle_source.csv'
+  $volumeSnapshotReceipt=$null
   $phaseDerivationMetadata=$null
   $phaseAuthoritySource=$null
   $phaseReferenceSource=$null
@@ -447,6 +448,22 @@ try{
   }else{
     Copy-Item -LiteralPath $particleSourceInput -Destination $particleSource
   }
+  if($resolvedRuntimeDocument-and
+    $resolvedRuntimeDocument.particle_source.PSObject.Properties.Name-contains'volume_snapshot_receipt'){
+    $volumeBinding=$resolvedRuntimeDocument.particle_source.volume_snapshot_receipt
+    if($null-eq$volumeBinding-or
+      -not($volumeBinding.PSObject.Properties.Name-contains'path')-or
+      -not($volumeBinding.PSObject.Properties.Name-contains'sha256')){
+      throw 'Resolved volume-source receipt binding is invalid.'
+    }
+    $volumeSourcePath=(Resolve-Path -LiteralPath ([string]$volumeBinding.path)).Path
+    if((Get-FileHash -LiteralPath $volumeSourcePath -Algorithm SHA256).Hash-ne
+      [string]$volumeBinding.sha256){
+      throw 'Resolved volume-source receipt differs from its frozen hash.'
+    }
+    $volumeSnapshotReceipt=Join-Path $inputDir 'particle_source_volume_snapshot_receipt.json'
+    Copy-Item -LiteralPath $volumeSourcePath -Destination $volumeSnapshotReceipt
+  }
   $sourceFamily=$null;$sourceFamilySha=$null
   if($sourceFamilyInput){
     $sourceFamily=Join-Path $inputDir 'particle_source_family.json'
@@ -466,6 +483,9 @@ try{
     }
     if($null-ne$sourceEnergyOverride){
       $preflightArguments+=@('--expected-kinetic-energy-ev',([string]$sourceEnergyOverride))
+    }
+    if($volumeSnapshotReceipt){
+      $preflightArguments+=@('--volume-snapshot-receipt',$volumeSnapshotReceipt)
     }
     & $python @preflightArguments
     if($LASTEXITCODE-ne 0){throw 'Canonical particle source preflight failed.'}

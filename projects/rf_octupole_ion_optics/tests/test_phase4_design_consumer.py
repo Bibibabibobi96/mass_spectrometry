@@ -144,6 +144,19 @@ class ThreeModeRuntimeAndQualificationTests(unittest.TestCase):
             expected_n1000_sha256=n1000["sha256"],
         )
 
+    def test_volume_snapshot_runtime_binds_csv_and_generator_receipt(self) -> None:
+        resolved = resolve_runtime_profile(
+            REPO_ROOT,
+            "rf_octupole_ion_optics",
+            "no_acceleration_full_length_volume_snapshot_n100",
+        )
+        source = resolved["particle_source"]
+        self.assertEqual(source["profile_id"], "continuous_axial_volume_snapshot_v1_n100")
+        self.assertIn("volume_snapshot_receipt", source)
+        receipt = source["volume_snapshot_receipt"]
+        self.assertTrue(Path(receipt["path"]).is_file())
+        self.assertRegex(receipt["sha256"], r"^[A-F0-9]{64}$")
+
     def test_preregistration_fails_inconclusive_without_supported_thresholds(self) -> None:
         plan = load("config/qualification/n100_convergence_preregistration.json")
         acceptance = load(

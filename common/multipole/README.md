@@ -67,6 +67,11 @@ particle_id,birth_time_s,x_mm,y_mm,z_mm,vx_m_s,vy_m_s,vz_m_s,mass_amu,charge_sta
 时钟、释放面、质量、电荷和动能，并绑定CSV与resolved SHA。四、六、八极杆家族共同使用N=1000母样本
 及其精确N=100前缀；精确路径和SHA由项目`particle_source_profiles.json`绑定。
 
+默认源仍必须位于唯一的规范释放面并满足设计的单能源模型。唯一受支持的例外是由
+[`continuous_axial_volume_source.py`](sources/continuous_axial_volume_source.py)生成、且其receipt与CSV
+哈希互相绑定的连续轴向体积快照：它表示离子源内部的一个同一时刻圆柱体状态，位置与三向速度独立采样，
+不预设`z-vz`相关；它不能被解释为已经通过多极杆后的出口束流。
+
 公开生产wrapper只接受`RuntimeProfileId`。runtime profile一次绑定design、particle source、
 solver numerics、资源预算和保留类；CLI不得覆盖几何、RF/DC、源能量或网格物理语义。
 

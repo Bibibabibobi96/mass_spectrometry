@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "role": "continuous_axial_volume_ion_beam_source",
+  "method": "independent_spatial_velocity_ion_source_snapshot_v1",
+  "source_region_model": "ion_source_volume_cylinder_v1",
+  "particle_count": 1000,
+  "source_frame_id": "multipole_cartesian_z_axis_v1",
+  "seed": 2026082802,
+  "geometry_mm": {
+    "center_x_mm": 0.0,
+    "center_y_mm": 0.0,
+    "center_z_mm": -1.5,
+    "radius_mm": 0.5,
+    "axial_length_mm": 2.2
+  },
+  "velocity_distribution": {
+    "mean_vx_m_s": 0.0,
+    "mean_vy_m_s": 0.0,
+    "mean_vz_m_s": 1964.668136,
+    "sigma_vx_m_s": 35.0,
+    "sigma_vy_m_s": 35.0,
+    "sigma_vz_m_s": 50.0,
+    "minimum_vz_m_s": 1500.0,
+    "components": "independent_gaussian_with_positive_vz_truncation"
+  },
+  "snapshot_time_s": 0.0,
+  "primary_table_time_semantics": "all_rows_are_states_at_snapshot_time_s",
+  "phase_space_assumption": "spatial_density_and_velocity_distribution_are_independent; no_z_vz_correlation_prescribed",
+  "kinetic_energy_eV": {
+    "mean": 1.9993471710889776,
+    "minimum": 1.6465147359551753,
+    "maximum": 2.3354058874644608
+  },
+  "integration_precondition": "ion_source_volume_model; downstream_fields_have_not_yet_acted",
+  "particle_source": {
+    "path": "rf_octupole_continuous_axial_volume_snapshot_v1_1000.csv",
+    "sha256": "6FEC36E244C723148800E792EFA329B236A3AD8E188C75E055EE77E2F2D845A2",
+    "particle_count": 1000,
+    "sampling_mode": "continuous_injection_full_population"
+  }
+}

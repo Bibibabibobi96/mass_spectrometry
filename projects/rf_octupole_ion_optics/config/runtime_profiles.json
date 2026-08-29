@@ -10,6 +10,18 @@
       "comsol_solver_numerics_profile_id": "baseline_finite_3d",
       "simion_solver_numerics_profile_id": "baseline_finite_3d"
     },
+    "no_acceleration_full_length_volume_snapshot_n100": {
+      "design_profile_id": "no_acceleration_full_length",
+      "particle_source_profile_id": "continuous_axial_volume_snapshot_v1_n100",
+      "comsol_solver_numerics_profile_id": "baseline_finite_3d",
+      "simion_solver_numerics_profile_id": "baseline_finite_3d"
+    },
+    "no_acceleration_full_length_volume_snapshot_n1000": {
+      "design_profile_id": "no_acceleration_full_length",
+      "particle_source_profile_id": "continuous_axial_volume_snapshot_v1_n1000",
+      "comsol_solver_numerics_profile_id": "baseline_finite_3d",
+      "simion_solver_numerics_profile_id": "baseline_finite_3d"
+    },
     "no_acceleration_full_length_n100_spatial_refined": {
       "design_profile_id": "no_acceleration_full_length",
       "particle_source_profile_id": "family_mother_sample_v1_n100",

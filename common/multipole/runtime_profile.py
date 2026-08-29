@@ -106,12 +106,27 @@ def resolve_runtime_profile(
     source_profile = source_registry["profiles"].get(source_id)
     if not isinstance(source_profile, dict):
         raise ValueError(f"unknown particle-source profile: {source_id}")
-    _require_keys(source_profile, {"path", "sha256"}, "particle-source profile")
+    if not isinstance(source_profile, dict) or set(source_profile) not in (
+        {"path", "sha256"}, {"path", "sha256", "volume_snapshot_receipt"}
+    ):
+        raise ValueError("particle-source profile keys differ")
     source_path = (repo_root / source_profile["path"]).resolve()
     if not source_path.is_relative_to(repo_root.resolve()):
         raise ValueError("particle-source profile escapes the repository")
     if _sha256(source_path) != str(source_profile["sha256"]).upper():
         raise ValueError("particle-source SHA-256 differs from its profile")
+    source_snapshot_receipt: dict[str, str] | None = None
+    if "volume_snapshot_receipt" in source_profile:
+        receipt_profile = source_profile["volume_snapshot_receipt"]
+        if not isinstance(receipt_profile, dict) or set(receipt_profile) != {"path", "sha256"}:
+            raise ValueError("volume-source receipt profile is invalid")
+        receipt_path = (repo_root / receipt_profile["path"]).resolve()
+        if not receipt_path.is_relative_to(repo_root.resolve()) or not receipt_path.is_file():
+            raise ValueError("volume-source receipt profile escapes the repository")
+        receipt_sha256 = _sha256(receipt_path)
+        if receipt_sha256 != str(receipt_profile["sha256"]).upper():
+            raise ValueError("volume-source receipt SHA-256 differs from its profile")
+        source_snapshot_receipt = {"path": str(receipt_path), "sha256": receipt_sha256}
 
     numerics: dict[str, Any] = {}
     numerics_paths: dict[str, str] = {}
@@ -184,6 +199,8 @@ def resolve_runtime_profile(
             "sha256": _sha256(source_path),
             "registry_path": str(source_registry_path.resolve()),
             "registry_sha256": _sha256(source_registry_path),
+            **({"volume_snapshot_receipt": source_snapshot_receipt}
+               if source_snapshot_receipt is not None else {}),
         },
         "solver_numerics": numerics,
         "solver_numerics_registry_paths": numerics_paths,
