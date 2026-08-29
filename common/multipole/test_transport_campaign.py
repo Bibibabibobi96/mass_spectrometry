@@ -531,6 +531,33 @@ class TransportCampaignTests(unittest.TestCase):
         )
         self.assertTrue(all("solver_numerics" in profile for profile in plan["experiments"]))
 
+    def test_checked_in_v2_source_comparison_campaign_dry_runs_without_case_set(self) -> None:
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("PowerShell Core is unavailable")
+        campaign = CAMPAIGN_ROOT / "20260829__oct_planar_vs_volume_source_n1000.json"
+        with tempfile.TemporaryDirectory() as directory:
+            plan_path = Path(directory) / "resolved_execution_plan.json"
+            completed = subprocess.run(
+                [
+                    pwsh, "-NoProfile", "-File",
+                    str(REPO_ROOT / "common/multipole/run_simion_transport_campaign.ps1"),
+                    "-CampaignPath", str(campaign), "-All", "-DryRun",
+                    "-DryRunOutput", str(plan_path), "-RepoRoot", str(REPO_ROOT),
+                    "-PythonExe", sys.executable,
+                ],
+                cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8",
+                errors="replace", timeout=120, check=False,
+            )
+            plan = json.loads(plan_path.read_text(encoding="utf-8"))
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertEqual(
+            [item["runtime_profile_id"] for item in plan["experiments"]],
+            ["oct_planar_source_control_n1000", "oct_volume_source_n1000"],
+        )
+        self.assertIn("volume_snapshot_receipt", plan["experiments"][1]["particle_source"])
+        self.assertIn("CASE_SET=primary_and_zero_axial_control", completed.stdout)
+
     def test_campaign_semantic_diff_resolves_profiles_without_execution_policy(self) -> None:
         campaign = campaign_fixture()
         compared = copy.deepcopy(campaign["experiments"][0])

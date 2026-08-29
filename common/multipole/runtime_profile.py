@@ -304,7 +304,7 @@ def _resolve_particle_source(
     project_root: Path,
     project_id: str,
     source_id: str,
-) -> dict[str, str]:
+) -> dict[str, Any]:
     registry_path = project_root / "config" / "particle_source_profiles.json"
     registry = _load(registry_path)
     _require_keys(
@@ -321,19 +321,38 @@ def _resolve_particle_source(
     selected = registry["profiles"].get(source_id)
     if not isinstance(selected, dict):
         raise ValueError(f"unknown particle-source profile: {source_id}")
-    _require_keys(selected, {"path", "sha256"}, "particle-source profile")
+    if set(selected) not in (
+        {"path", "sha256"},
+        {"path", "sha256", "volume_snapshot_receipt"},
+    ):
+        raise ValueError("particle-source profile keys differ")
     source_path = (repo_root / selected["path"]).resolve()
     if not source_path.is_relative_to(repo_root.resolve()):
         raise ValueError("particle-source profile escapes the repository")
     if _sha256(source_path) != str(selected["sha256"]).upper():
         raise ValueError("particle-source SHA-256 differs from its profile")
-    return {
+    result: dict[str, Any] = {
         "profile_id": source_id,
         "path": str(source_path),
         "sha256": _sha256(source_path),
         "registry_path": str(registry_path.resolve()),
         "registry_sha256": _sha256(registry_path),
     }
+    if "volume_snapshot_receipt" in selected:
+        receipt = selected["volume_snapshot_receipt"]
+        if not isinstance(receipt, dict) or set(receipt) != {"path", "sha256"}:
+            raise ValueError("volume-source receipt profile is invalid")
+        receipt_path = (repo_root / receipt["path"]).resolve()
+        if not receipt_path.is_relative_to(repo_root.resolve()) or not receipt_path.is_file():
+            raise ValueError("volume-source receipt profile escapes the repository")
+        receipt_sha256 = _sha256(receipt_path)
+        if receipt_sha256 != str(receipt["sha256"]).upper():
+            raise ValueError("volume-source receipt SHA-256 differs from its profile")
+        result["volume_snapshot_receipt"] = {
+            "path": str(receipt_path),
+            "sha256": receipt_sha256,
+        }
+    return result
 
 
 def _solver_registry_paths(

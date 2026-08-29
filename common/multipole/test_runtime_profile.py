@@ -190,6 +190,21 @@ class RuntimeProfileTests(unittest.TestCase):
             "content_addressed_geometry_basis",
         )
 
+    def test_campaign_binds_volume_snapshot_receipt_for_solver_preflight(self) -> None:
+        resolved = resolve_campaign_experiment(
+            REPO_ROOT,
+            "rf_octupole_ion_optics",
+            Path("20260829__oct_planar_vs_volume_source_n1000.json"),
+            "oct_volume_source_n1000",
+        )
+        binding = resolved["particle_source"]["volume_snapshot_receipt"]
+        self.assertEqual(
+            resolved["particle_source"]["profile_id"],
+            "continuous_axial_volume_snapshot_v1_n1000",
+        )
+        self.assertTrue(Path(binding["path"]).is_file())
+        self.assertRegex(binding["sha256"], r"^[A-F0-9]{64}$")
+
     def test_campaign_v5_binds_governed_n100_energy_transform_for_each_family(self) -> None:
         cases = (
             ("rf_quadrupole_ion_optics", "quad_noacc_5ev_h15_n100"),
