@@ -536,16 +536,19 @@ $hostExecutionLease = Enter-HostExecutionLease -Role SIMION -RunId $RunId
 $hostExecutionOutcome = 'failed'
 try {
   # Repository-wide waterline: automatic cleanup is constrained to L1/L2/L3
-  # reconstructible material and is fail-closed if 500 GiB cannot be reached.
+  # reconstructible material.  Fifty GiB is the conservative observed compact
+  # SIMION staging envelope; retaining it above the 500 GiB post-launch floor
+  # prevents an admitted run from immediately violating that floor.
   # The receipt is frozen with this run, making every automatic removal auditible.
   $artifactCapacityStartup = Invoke-SingleFlightPython -Arguments @(
     '-m','common.contracts.reconcile_artifact_capacity',
-    '--artifact-root',(Join-Path $workspaceRoot 'artifacts'),'--target-gib','500','--apply'
+    '--artifact-root',(Join-Path $workspaceRoot 'artifacts'),'--target-gib','500',
+    '--minimum-free-gib','550','--apply'
   ) -Failure 'Artifact capacity gate failed at SIMION startup.'
   $artifactCapacityStartupReceipt = @($artifactCapacityStartup) -join "`n" |
     ConvertFrom-Json
   if (-not [bool]$artifactCapacityStartupReceipt.satisfied_after_apply) {
-    throw 'Artifact capacity gate did not reach the 500 GiB repository watermark.'
+    throw 'Artifact capacity gate did not reach the conservative 550 GiB launch watermark.'
   }
   $artifactCapacityStartupReceiptPath = Join-Path $package.input_dir 'artifact_capacity_gate_startup.json'
   Write-RunJson -Path $artifactCapacityStartupReceiptPath -Depth 14 -Value $artifactCapacityStartupReceipt
@@ -587,7 +590,8 @@ try {
     [int64]$stageBudgetDocument.limits.minimum_system_available_memory_bytes
   try {
     $diskCapacity = Test-RepositoryDiskCapacity -TargetPath $package.run_dir `
-      -TransientRunDirectoryBytes ([int64]$stageBudgetDocument.limits.transient_run_directory_bytes)
+      -TransientRunDirectoryBytes ([int64]$stageBudgetDocument.limits.transient_run_directory_bytes) `
+      -MinimumFreeBytes ([int64](500GB))
   } catch {
     $diskFailure = $_.TargetObject
     if ($diskFailure -is [pscustomobject] -and

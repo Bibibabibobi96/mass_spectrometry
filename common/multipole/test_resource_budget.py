@@ -20,17 +20,17 @@ OCT = "rf_octupole_ion_optics"
 
 class ResourceBudgetTests(unittest.TestCase):
     def test_disk_capacity_check_reports_live_volume_capacity_and_fails_closed(self) -> None:
-        """The public preflight keeps a fixed 10 GiB reserve on its target volume."""
+        """The public preflight adds transient demand above the requested floor."""
         support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
         command = (
             f". '{support}';"
             "$pass=Test-RepositoryDiskCapacity -TargetPath $env:TEMP "
-            "-TransientRunDirectoryBytes 0;"
+            "-TransientRunDirectoryBytes 0 -MinimumFreeBytes 10GB;"
             "if($pass.role-ne'repository_disk_capacity_check'-or"
-            "$pass.system_disk_reserve_bytes-ne10GB-or-not$pass.passed-or"
+            "$pass.system_disk_reserve_bytes-ne10GB-or$pass.minimum_free_bytes-ne10GB-or-not$pass.passed-or"
             "$pass.free_bytes-lt$pass.required_available_bytes){exit 3};"
             "try{Test-RepositoryDiskCapacity -TargetPath $env:TEMP "
-            "-TransientRunDirectoryBytes ([int64]::MaxValue-10GB);exit 4}catch{"
+            "-TransientRunDirectoryBytes ([int64]::MaxValue-10GB) -MinimumFreeBytes 10GB;exit 4}catch{"
             "$failed=$_.TargetObject;if($failed.role-ne'repository_disk_capacity_check'-or"
             "$failed.passed-or$failed.free_bytes-ge$failed.required_available_bytes){exit 5}}"
         )
