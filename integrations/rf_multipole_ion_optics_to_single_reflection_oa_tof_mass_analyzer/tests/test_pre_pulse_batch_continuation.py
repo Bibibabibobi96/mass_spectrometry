@@ -28,6 +28,12 @@ def _predecessor(root: Path, batches: list[list[int]], logs: list[list[str]]) ->
     count = sum(len(batch) for batch in batches)
     contract = run / "inputs" / "pre_pulse_time_series_screening_contract.json"
     contract.write_text("{}\n", encoding="utf-8")
+    mother = run / "inputs" / "mother_particle_source.csv"
+    state = run / "inputs" / "single_flight_initial_global_state.csv"
+    row_map = run / "inputs" / "single_flight_particle_row_map.csv"
+    mother.write_text("particle_id,source\n1,fixture\n", encoding="utf-8")
+    state.write_text("particle_id,state\n1,fixture\n", encoding="utf-8")
+    row_map.write_text("source_particle_id\n" + "\n".join(str(index) for index in range(1, count + 1)) + "\n", encoding="utf-8")
     plan = {
         "role": "simion_single_wave_particle_batch_plan",
         "batches": [
@@ -44,6 +50,11 @@ def _predecessor(root: Path, batches: list[list[int]], logs: list[list[str]]) ->
     (run / "run_config.json").write_text(json.dumps({"parameters": {
         "execution_mode": "real_pa_rf_pre_pulse_time_series", "particle_count": count,
         "launched_particle_count": count,
+    }, "inputs": {
+        "pre_pulse_time_series_contract": str(contract.resolve()),
+        "simion_execution_batch_plan": str((run / "inputs" / "simion_execution_batch_plan.json").resolve()),
+        "mother_particle_source": str(mother.resolve()),
+        "initial_global_state": str(state.resolve()), "particle_row_map": str(row_map.resolve()),
     }}), encoding="utf-8")
     for index, lines in enumerate(logs, start=1):
         (run / "logs" / f"simion__batch{index:02d}.stdout.log").write_text(
@@ -52,15 +63,32 @@ def _predecessor(root: Path, batches: list[list[int]], logs: list[list[str]]) ->
     manifest_outputs = []
     for path in (run / "logs").glob("*.stdout.log"):
         manifest_outputs.append({"path": str(path), "sha256": file_sha256(path)})
+    manifest_inputs = {key: {"path": str(path.resolve()), "exists": True, "sha256": file_sha256(path)} for key, path in {
+        "pre_pulse_time_series_contract": contract,
+        "simion_execution_batch_plan": run / "inputs" / "simion_execution_batch_plan.json",
+        "mother_particle_source": mother, "initial_global_state": state, "particle_row_map": row_map,
+    }.items()}
     (run / "run_manifest.json").write_text(json.dumps({
         "role": "simulation_run_manifest", "status": "interrupted",
         "run_config": {"sha256": file_sha256(run / "run_config.json")},
-        "outputs": manifest_outputs,
+        "inputs": manifest_inputs, "outputs": manifest_outputs,
     }), encoding="utf-8")
     return run, file_sha256(contract)
 
 
 class PrePulseBatchContinuationTests(unittest.TestCase):
+    @staticmethod
+    def _build(predecessor: Path, contract_sha: str, output: Path, ids: list[int]) -> dict:
+        inputs = predecessor / "inputs"
+        return build_continuation_plan(
+            predecessor_run_dir=predecessor, particle_ids=ids,
+            expected_contract_sha256=contract_sha,
+            mother_particle_source=inputs / "mother_particle_source.csv",
+            initial_global_state=inputs / "single_flight_initial_global_state.csv",
+            particle_row_map=inputs / "single_flight_particle_row_map.csv",
+            output_dir=output,
+        )
+
     def test_recovery_wiring_is_pre_pulse_only_and_keeps_imported_traces(self) -> None:
         root = Path(__file__).resolve().parents[1]
         runner = (root / "runtime" / "run_single_flight.ps1").read_text(encoding="utf-8")
@@ -81,10 +109,7 @@ class PrePulseBatchContinuationTests(unittest.TestCase):
                 [_terminal(3)],
                 [_terminal(5), _terminal(6), "status,Fly completed. 2 splats, 1 seconds"],
             ])
-            result = build_continuation_plan(
-                predecessor_run_dir=predecessor, particle_ids=list(range(1, 7)),
-                expected_contract_sha256=contract_sha, output_dir=root / "continuation",
-            )
+            result = self._build(predecessor, contract_sha, root / "continuation", list(range(1, 7)))
         self.assertEqual(result["completed_particle_count"], 5)
         self.assertEqual(result["replay_particle_count"], 1)
         self.assertEqual(
@@ -96,32 +121,41 @@ class PrePulseBatchContinuationTests(unittest.TestCase):
             root = Path(directory)
             predecessor, contract_sha = _predecessor(root, [[1, 2]], [[_terminal(2)]])
             with self.assertRaisesRegex(ContractError, "contiguous prefix"):
-                build_continuation_plan(
-                    predecessor_run_dir=predecessor, particle_ids=[1, 2],
-                    expected_contract_sha256=contract_sha, output_dir=root / "continuation",
-                )
+                self._build(predecessor, contract_sha, root / "continuation", [1, 2])
 
     def test_second_recovery_reuses_prior_imported_trace_binding(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            predecessor, contract_sha = _predecessor(root, [[1, 2], [3, 4]], [
+            ancestor, contract_sha = _predecessor(root / "ancestor", [[1, 2], [3, 4]], [
+                [_terminal(1), _terminal(2), "status,Fly completed. 2 splats, 1 seconds"], [],
+            ])
+            predecessor, _ = _predecessor(root / "predecessor", [[1, 2], [3, 4]], [
                 [], [_terminal(3), _terminal(4), "status,Fly completed. 2 splats, 1 seconds"],
             ])
-            imported = predecessor / "inputs" / "imported_completed_batches"
-            imported.mkdir()
-            trace = imported / "batch01.stdout.log"
-            trace.write_text("\n".join([_terminal(1), _terminal(2)]) + "\n", encoding="utf-8")
-            prior = predecessor / "inputs" / "pre_pulse_batch_continuation"
-            prior.mkdir()
-            (prior / "pre_pulse_batch_continuation_plan.json").write_text(json.dumps({
-                "role": "rf_oatof_pre_pulse_batch_continuation_plan", "batches": [
-                    {"imported_completed_trace": {"path": str(trace), "sha256": file_sha256(trace)}},
-                ],
-            }), encoding="utf-8")
-            result = build_continuation_plan(
-                predecessor_run_dir=predecessor, particle_ids=[1, 2, 3, 4],
-                expected_contract_sha256=contract_sha, output_dir=root / "continuation",
+            continuation_root = predecessor / "inputs" / "pre_pulse_batch_continuation"
+            self._build(ancestor, contract_sha, continuation_root, [1, 2, 3, 4])
+            config_path = predecessor / "run_config.json"
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            config["inputs"]["simion_execution_batch_plan"] = str(
+                (continuation_root / "simion_execution_batch_plan.json").resolve()
             )
+            config["inputs"]["simion_batch_continuation_plan"] = str(
+                (continuation_root / "simion_batch_continuation_plan.json").resolve()
+            )
+            config_path.write_text(json.dumps(config), encoding="utf-8")
+            manifest_path = predecessor / "run_manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["run_config"]["sha256"] = file_sha256(config_path)
+            for role, relative in {
+                "simion_execution_batch_plan": "simion_execution_batch_plan.json",
+                "simion_batch_continuation_plan": "simion_batch_continuation_plan.json",
+            }.items():
+                path = continuation_root / relative
+                manifest["inputs"][role] = {
+                    "path": str(path.resolve()), "exists": True, "sha256": file_sha256(path),
+                }
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            result = self._build(predecessor, contract_sha, root / "continuation", [1, 2, 3, 4])
         self.assertEqual(result["completed_particle_count"], 4)
         self.assertEqual(result["replay_particle_count"], 0)
 
@@ -132,10 +166,7 @@ class PrePulseBatchContinuationTests(unittest.TestCase):
                 _terminal(1), "status,Fly completed. 2 splats, 1 seconds",
             ]])
             with self.assertRaisesRegex(ContractError, "completion sentinel"):
-                build_continuation_plan(
-                    predecessor_run_dir=predecessor, particle_ids=[1, 2],
-                    expected_contract_sha256=contract_sha, output_dir=root / "continuation",
-                )
+                self._build(predecessor, contract_sha, root / "continuation", [1, 2])
 
 
 if __name__ == "__main__":

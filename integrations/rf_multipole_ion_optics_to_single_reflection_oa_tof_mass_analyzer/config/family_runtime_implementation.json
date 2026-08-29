@@ -13,7 +13,7 @@
     },
     "runtime_binding_support": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/runtime_binding.ps1",
-      "sha256": "F448DFDA6BEA7018395D2ADF5E517A92E80A44AA0908D32A8A444DAF405DC2B5"
+      "sha256": "63C600E4203448877D41011991164D851F0CFD9CAE0E54B121A2C6686A7A201B"
     },
     "transfer_runner": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/run_transfer.ps1",
@@ -21,7 +21,15 @@
     },
     "single_flight_runner": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/run_single_flight.ps1",
-      "sha256": "ED6B9279A4E16D30DE726D78AB00FDD2A4FD19DAF28965124C2A9FC1F12C25AA"
+      "sha256": "1ED685216C68F8B440F876D52C51ED5626B9219115997475CC47F32EDEAA82CD"
+    },
+    "pre_pulse_batch_continuation": {
+      "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/pre_pulse_batch_continuation.py",
+      "sha256": "5D47EF433D08CBDDE4B89BAA4F742C31AC08785120D6C8D468FE796AFC7D1C03"
+    },
+    "shared_simion_batch_continuation": {
+      "path": "common/simion/batch_continuation.py",
+      "sha256": "4178E0DF29E5E5775DA00EBA1726094BEA31264633418B5C450625E0C2880662"
     },
     "three_zone_runtime_identity": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/three_zone_runtime_identity.py",

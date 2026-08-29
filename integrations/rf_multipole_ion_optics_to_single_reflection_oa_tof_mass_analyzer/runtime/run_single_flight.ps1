@@ -3003,14 +3003,16 @@ try {
       'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.pre_pulse_batch_continuation',
       '--predecessor-run-dir',$ResumePrePulseFromRun,
       '--particle-row-map',$particleRowMap,
+      '--mother-particle-source',$motherSource,
+      '--initial-global-state',$globalSource,
       '--contract-sha256',$PrePulseTimeSeriesContractSha256,
       '--output-dir',$continuationRoot
     ) -Failure 'Pre-pulse batch continuation planning failed.'
     $prePulseContinuationPlan = Get-Content -LiteralPath (
-      Join-Path $continuationRoot 'pre_pulse_batch_continuation_plan.json'
+      Join-Path $continuationRoot 'simion_batch_continuation_plan.json'
     ) -Raw -Encoding UTF8 | ConvertFrom-Json
-    if ($prePulseContinuationPlan.role -ne 'rf_oatof_pre_pulse_batch_continuation_plan' -or
-        [int]$prePulseContinuationPlan.particle_count -ne $launched -or
+    if ($prePulseContinuationPlan.role -ne 'simion_batch_continuation_plan' -or
+        [int]$prePulseContinuationPlan.batch_plan.particle_count -ne $launched -or
         [int]$prePulseContinuationPlan.completed_particle_count +
           [int]$prePulseContinuationPlan.replay_particle_count -ne $launched) {
       throw 'Pre-pulse batch continuation plan differs from the frozen cohort.'
@@ -3018,11 +3020,19 @@ try {
     if ([int]$prePulseContinuationPlan.replay_particle_count -eq 0) {
       throw 'All pre-pulse batches are complete; use the zero-SIMION completed-screening recovery path.'
     }
+    $batchPlanPath = [string]$prePulseContinuationPlan.batch_plan.path
+    $batchPlan = Get-Content -LiteralPath $batchPlanPath -Raw -Encoding UTF8 |
+      ConvertFrom-Json
+    if ((Get-FileHash -LiteralPath $batchPlanPath -Algorithm SHA256).Hash -ne
+        [string]$prePulseContinuationPlan.batch_plan.sha256) {
+      throw 'Pre-pulse continuation canonical batch plan hash differs.'
+    }
     $importedCompletedTraceFiles = @($prePulseContinuationPlan.batches |
       Where-Object { $null -ne $_.imported_completed_trace } |
       ForEach-Object { [string]$_.imported_completed_trace.path })
-    $runConfiguration.inputs.pre_pulse_batch_continuation_plan = Join-Path `
-      $continuationRoot 'pre_pulse_batch_continuation_plan.json'
+    $runConfiguration.inputs.simion_batch_continuation_plan = Join-Path `
+      $continuationRoot 'simion_batch_continuation_plan.json'
+    $runConfiguration.inputs.simion_execution_batch_plan = $batchPlanPath
     $runConfiguration.parameters.pre_pulse_continuation_completed_particle_count =
       [int]$prePulseContinuationPlan.completed_particle_count
     $runConfiguration.parameters.pre_pulse_continuation_replay_particle_count =
@@ -3197,12 +3207,12 @@ try {
       throw 'Single-flight formal-first dispatch plan is invalid.'
     }
     $executionBatchCount = [int]$runtimeDispatchPlan.waves[0].batch_count
-    Invoke-SingleFlightPython -Arguments @(
-      '-m','common.simion.particle_batching','--from-dispatch-plan',$runtimeDispatchPlanPath,
-      '--output',$batchPlanPath
-    ) -Failure 'Single-flight formal-first batch planning failed.'
-    $batchPlan = Get-Content -Raw -LiteralPath $batchPlanPath | ConvertFrom-Json
     if ($null -eq $prePulseContinuationPlan) {
+      Invoke-SingleFlightPython -Arguments @(
+        '-m','common.simion.particle_batching','--from-dispatch-plan',$runtimeDispatchPlanPath,
+        '--output',$batchPlanPath
+      ) -Failure 'Single-flight formal-first batch planning failed.'
+      $batchPlan = Get-Content -Raw -LiteralPath $batchPlanPath | ConvertFrom-Json
       $batchRecords = @(New-SingleFlightBatchRecords $batchPlan)
       $stdoutFiles = @($batchRecords | ForEach-Object { $_.stdout })
       $stderrFiles = @($batchRecords | ForEach-Object { $_.stderr })

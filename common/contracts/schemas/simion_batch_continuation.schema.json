@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "simion_batch_continuation.schema.json",
+  "title": "Immutable shared SIMION continuation plans",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "role", "status", "predecessor", "batch_plan", "contract", "frozen_inputs", "batches", "completed_particle_count", "replay_particle_count"],
+      "properties": {
+        "schema_version": {"const": 1}, "role": {"const": "simion_batch_continuation_plan"}, "status": {"const": "ready"},
+        "predecessor": {"$ref": "#/$defs/predecessor"},
+        "batch_plan": {"type": "object", "additionalProperties": false, "required": ["path", "sha256", "particle_count", "batch_count", "predecessor_path"], "properties": {"path": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/$defs/sha"}, "particle_count": {"type": "integer", "minimum": 1}, "batch_count": {"type": "integer", "minimum": 1}, "predecessor_path": {"type": "string", "minLength": 1}}},
+        "contract": {"type": "object", "additionalProperties": false, "required": ["path", "sha256", "input_role"], "properties": {"path": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/$defs/sha"}, "input_role": {"type": "string", "minLength": 1}}},
+        "frozen_inputs": {"type": "object", "additionalProperties": {"$ref": "#/$defs/sha"}},
+        "batches": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/batch"}},
+        "completed_particle_count": {"type": "integer", "minimum": 0}, "replay_particle_count": {"type": "integer", "minimum": 0}
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "role", "status", "predecessor", "units", "reusable_unit_count", "replay_unit_count"],
+      "properties": {
+        "schema_version": {"const": 1}, "role": {"const": "simion_whole_unit_replay_plan"}, "status": {"const": "ready"},
+        "predecessor": {"$ref": "#/$defs/predecessor"},
+        "units": {"type": "array", "minItems": 1, "items": {"type": "object", "additionalProperties": false, "required": ["key", "action", "terminal_outputs"], "properties": {"key": {"type": "string", "minLength": 1}, "action": {"enum": ["reuse", "replay"]}, "terminal_outputs": {"type": "array", "items": {"$ref": "#/$defs/artifact"}}}}},
+        "reusable_unit_count": {"type": "integer", "minimum": 0}, "replay_unit_count": {"type": "integer", "minimum": 0}
+      }
+    }
+  ],
+  "$defs": {
+    "sha": {"type": "string", "pattern": "^[0-9A-F]{64}$"},
+    "predecessor": {"type": "object", "additionalProperties": false, "required": ["run_dir", "run_id", "manifest_sha256", "run_config_sha256"], "properties": {"run_dir": {"type": "string", "minLength": 1}, "run_id": {}, "manifest_sha256": {"$ref": "#/$defs/sha"}, "run_config_sha256": {"$ref": "#/$defs/sha"}}},
+    "artifact": {"type": "object", "additionalProperties": false, "required": ["path", "sha256"], "properties": {"path": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/$defs/sha"}}},
+    "batch": {"type": "object", "additionalProperties": false, "required": ["index", "particle_id_min", "particle_id_max", "count", "completed_particle_count", "replay_particle_id_min", "replay_particle_count", "imported_completed_trace", "source_logs"], "properties": {"index": {"type": "integer", "minimum": 1}, "particle_id_min": {"type": "integer", "minimum": 1}, "particle_id_max": {"type": "integer", "minimum": 1}, "count": {"type": "integer", "minimum": 1}, "completed_particle_count": {"type": "integer", "minimum": 0}, "replay_particle_id_min": {"type": "integer", "minimum": 1}, "replay_particle_count": {"type": "integer", "minimum": 0}, "imported_completed_trace": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/artifact"}]}, "source_logs": {"type": "array", "items": {"$ref": "#/$defs/artifact"}}}}
+  }
+}

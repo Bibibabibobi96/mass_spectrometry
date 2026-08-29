@@ -119,10 +119,10 @@ run-config、run-local冻结合同、粒子映射和全部批日志；不得改�
 分辨率或Formal证据。
 
 若一个或多个 SIMION 逻辑通道在预脉冲粒子飞行中断，下一次带 `__rNN` 身份的
-预脉冲恢复会由
-[`pre_pulse_batch_continuation.py`](../runtime/pre_pulse_batch_continuation.py)建立批级 continuation plan：
-每个批独立核验 predecessor `failed/interrupted` manifest、run-config、冻结 time-series 合同、原始 stdout
-SHA-256 与终态 TRACE。完整批可直接导入；未完成批只能导入从该批起点开始、逐 ID 连续且无重复的终态
+预脉冲恢复由仓库共享的[`batch_continuation.py`](../../../common/simion/batch_continuation.py)与本项目的
+[`pre_pulse_batch_continuation.py`](../runtime/pre_pulse_batch_continuation.py) TRACE适配器建立批级 continuation plan：
+每个批独立核验 predecessor `failed/interrupted` manifest、run-config、冻结 time-series 合同、母源、initial-global-state、
+row-map、原始 stdout SHA-256 与终态 TRACE；新 run 的上述三个 cohort 输入必须逐项同 SHA。完整批可直接导入；未完成批只能导入从该批起点开始、逐 ID 连续且无重复的终态
 前缀，SIMION 只重跑其余后缀。不同通道已完成的独立粒子结果不会因为另一个通道中断而丢弃；但任一
 SHA 漂移、跳号、重复/畸形 TRACE、禁止的下游事件或伪 `Fly completed` 标记都失败关闭。导入日志与
 continuation plan 冻结到新的 run，旧 run 永不改写；连续多次中断时，前一轮导入日志继续由其 plan 中的

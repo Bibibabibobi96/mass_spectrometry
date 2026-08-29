@@ -653,6 +653,7 @@ try {{
 $root = 'integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/'
 $cases = @(
   @('simion_rf_drive_kernel','common/multipole/simion_rf_drive.lua',$true),
+  @('shared_simion_batch_continuation','common/simion/batch_continuation.py',$true),
   @('oatof_analyzer_component','projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/candidates/oatof_analyzer_component.lua',$true),
   @('single_flight_runner',$root + 'runtime/run_single_flight.ps1',$true),
   @('simion_rf_drive_kernel','common/multipole/not_the_kernel.lua',$false),
@@ -666,7 +667,7 @@ foreach ($case in $cases) {{
     throw "implementation path case differs: $($case[0]) $($case[1])"
   }}
 }}
-'RUNTIME_IMPLEMENTATION_PATH_CASES=PASS COUNT=6'
+'RUNTIME_IMPLEMENTATION_PATH_CASES=PASS COUNT=7'
 """
         completed = subprocess.run(
             [pwsh, "-NoProfile", "-Command", script],
@@ -677,7 +678,7 @@ foreach ($case in $cases) {{
         )
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         self.assertIn(
-            "RUNTIME_IMPLEMENTATION_PATH_CASES=PASS COUNT=6", completed.stdout
+            "RUNTIME_IMPLEMENTATION_PATH_CASES=PASS COUNT=7", completed.stdout
         )
 
     def test_all_runtime_boundaries_require_four_run_local_identities(self) -> None:

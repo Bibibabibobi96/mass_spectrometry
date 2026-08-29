@@ -41,6 +41,14 @@ oaTOF、single-flight或具体电极编号。
 危险，调度器终止其余受管worker并以`memory_danger_recovery_attempts_exhausted`失败关闭，绝不无限回退或混同为
 普通逐次降并发。
 
+跨运行中断续算由[`batch_continuation.py`](batch_continuation.py)提供统一的不可变协议，有两种互斥策略：
+`build_batch_continuation_plan`验证失败/中断父run的manifest、冻结run-config、批区间、合同、母cohort输入和原始输出SHA-256，
+再把每个逻辑通道中无洞的已终态粒子前缀物化到新run，并只计划缺失后缀；
+`build_whole_unit_replay_plan`则只复用每个独立工作单元的全部manifest绑定终态产物，未完整的单元整体重放。
+前者的consumer必须提供本机TRACE语法、可复用终态定义和新run输入投影；后者的consumer只提供独立单元键及
+run相对的终态产物清单。两者都不解析项目物理或替代结果物化。该协议与运行中的45秒观测、内存准入/重排互补，
+均为全仓库SIMION运行器可接入的公共能力。
+
 成功运行只保留紧凑调度收据，不保留逐秒探测文件。 [`resource_profile.py`](resource_profile.py)发布首个正式
 批次的独立峰值并用run manifest及输入收据SHA-256复核；并行聚合峰值不得按进程数拆分。PA/IOB构建及没有独立粒子/可合并结果
 合同的SIMION任务保持串行；未知case资源身份每次先运行一个正式case，只有同一完整输入的已观测峰值才可参与

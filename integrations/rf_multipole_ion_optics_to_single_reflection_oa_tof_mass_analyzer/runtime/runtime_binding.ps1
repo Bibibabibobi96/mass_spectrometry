@@ -17,6 +17,7 @@ function Test-RfOatofImplementationPath {
   }
   $externalProviderPaths = @{
     simion_rf_drive_kernel = 'common/multipole/simion_rf_drive.lua'
+    shared_simion_batch_continuation = 'common/simion/batch_continuation.py'
     oatof_analyzer_component = 'projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/candidates/oatof_analyzer_component.lua'
   }
   return (
@@ -410,7 +411,8 @@ function Resolve-RfOatofRuntimeBinding {
     'run_artifact_support','runtime_binding_support','transfer_runner',
     'single_flight_runner','pre_pulse_runner','pulse_capture_runner',
     'analyzer_transport_runner','three_zone_runtime_identity',
-    'single_flight_execution_profile','resolved_population'
+    'single_flight_execution_profile','resolved_population',
+    'pre_pulse_batch_continuation','shared_simion_batch_continuation'
   )
   $availableImplementationRoles = @(
     $implementationRecords | ForEach-Object { [string]$_.Name }
