@@ -5,6 +5,14 @@
 
 ## 已完成审计
 
+- [2026-08-28 compact artifact hygiene audit](history/20260828__compact-artifact-hygiene-audit.md)：
+  定位当前 989.11 GiB artifact 占用中的 394.000 GiB `compact` interrupted-run PA 阵列、29.915 GiB
+  无 manifest scratch/cache staging 的精确待处置目录；保留当前 generation 与所有运行证据边界，并记录
+  执行环境阻止删除的事实及理想场筛选曲线的预防性修复。
+
+- [2026-08-27 repository hygiene disposition audit](history/20260827__repository-hygiene-disposition-audit.md)：
+  记录28个无效 scratch 任务目录和4个无 manifest/代际指针的 cache-MISS 暂存目录；执行环境阻止了已授权
+  删除，故保留逐路径、字节数和手动处置清单，并明确未触碰任何有效 cache generation 或运行证据。
 - [2026-08-25 历史占位文档恢复审计](history/20260825__history-placeholder-recovery-audit.md)：
   扫描全仓库历史 Markdown，恢复有 manifest、矩阵和退役合同支撑的 RF 多极杆—oaTOF 事实索引，并明确
   原始叙述或唯一存档不存在时的不可恢复边界。

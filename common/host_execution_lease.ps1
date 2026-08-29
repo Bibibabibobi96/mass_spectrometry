@@ -56,7 +56,8 @@ function Enter-HostExecutionLease {
     [Parameter(Mandatory)][ValidateSet('SIMION', 'GATE')][string]$Role,
     [string]$MutexName = $script:HostExecutionLeaseMutexName,
     [string]$ReceiptPath = $script:HostExecutionLeaseReceiptPath,
-    [ValidateRange(100, 10000)][int]$PollMilliseconds = 1000
+    [ValidateRange(100, 10000)][int]$PollMilliseconds = 1000,
+    [ValidateRange(1, 3600)][int]$StatusIntervalSeconds = 30
   )
   $ownerProcessId = [Diagnostics.Process]::GetCurrentProcess().Id
   if ($env:MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID) {
@@ -74,7 +75,7 @@ function Enter-HostExecutionLease {
 
   $mutex = [Threading.Mutex]::new($false, $MutexName)
   $timer = [Diagnostics.Stopwatch]::StartNew()
-  $lastReportedSecond = -1
+  $lastReportedSecond = $null
   $acquired = $false
   try {
     while (-not $acquired) {
@@ -86,7 +87,10 @@ function Enter-HostExecutionLease {
       }
       if ($acquired) { break }
       $elapsedSeconds = [int][Math]::Floor($timer.Elapsed.TotalSeconds)
-      if ($elapsedSeconds -ne $lastReportedSecond) {
+      # Announce contention immediately, then periodically.  Per-poll output
+      # makes a long, normal wait unreadable without conveying new state.
+      if ($null -eq $lastReportedSecond -or
+          $elapsedSeconds - $lastReportedSecond -ge $StatusIntervalSeconds) {
         $receipt = Get-HostExecutionLeaseReceipt -Path $ReceiptPath
         $holder = if ($null -ne $receipt -and $receipt.PSObject.Properties.Name -contains 'owner_pid') {
           [string]$receipt.owner_pid

@@ -1,12 +1,15 @@
-"""Repository-owned resource planning for independent SIMION particle batches.
+"""Repository-owned resource planning for independent SIMION work.
 
 Particle count controls run time, not the assumed instantaneous footprint of a
 SIMION process. Resource-safe concurrency therefore controls only the number
 of *simultaneously active* processes. For one numerical identity, independent
 particle work is divided evenly across those concurrent lanes; no arbitrary
-per-process particle ceiling is imposed. With no exact resource profile, the
-first batch is formal work: it keeps running during a 45-second observation
-and its result is retained.
+per-process particle ceiling is imposed.  The same public mechanism also
+schedules a fixed set of independent SIMION jobs (for example, PA basis
+refinements) without inventing project-local CPU or memory controls. With no
+exact resource profile, the first work item is formal work: it has a minimum
+45-second observation, completes its whole lifecycle, and its result is
+retained before sibling work is admitted.
 """
 
 from __future__ import annotations
@@ -42,10 +45,10 @@ MAXIMUM_MEMORY_RECOVERY_ATTEMPTS = 2
 # unresponsive.
 MAXIMUM_MEMORY_DANGER_TERMINATION_ATTEMPTS = 2
 KNOWN_MEMORY_SAFETY_FACTOR = 1.10
-# A formal batch observes the actual solver identity for 45 seconds and keeps
-# running afterwards.  Its peak therefore receives the same 10% headroom as
-# an exact historical profile; admission continues to be guarded by the 1 GiB
-# system reserve and live peak checks in the executor.
+# A formal batch has a minimum 45-second observation and then runs to natural
+# completion before siblings can be admitted.  Its full-lifecycle peak receives
+# the same 10% headroom as an exact historical profile; admission continues to
+# be guarded by the 1 GiB system reserve and live peak checks in the executor.
 OBSERVED_MEMORY_SAFETY_FACTOR = 1.10
 RESOURCE_IDENTITY_KEYS = (
     "solver", "field_kind", "frontend_grid_profile_id",
@@ -106,14 +109,22 @@ def _nonnegative_number(value: Any, name: str) -> float:
     return float(value)
 
 
-def _validate_request(request: dict[str, Any]) -> tuple[int, str]:
+def _validate_request(request: dict[str, Any]) -> tuple[int, str, str]:
     retired = sorted(RETIRED_PROJECT_RESOURCE_KEYS.intersection(request))
     if retired:
         raise ValueError(
             "project request contains retired repository resource controls: "
             + ", ".join(retired)
         )
-    particles = _positive_int(request.get("particle_count"), "particle_count")
+    has_particles = "particle_count" in request
+    has_work_items = "work_item_count" in request
+    if has_particles == has_work_items:
+        raise ValueError(
+            "scheduler request requires exactly one of particle_count or work_item_count"
+        )
+    unit = "particles" if has_particles else "independent_work_items"
+    count_name = "particle_count" if has_particles else "work_item_count"
+    count = _positive_int(request.get(count_name), count_name)
     if request.get("solver") != "SIMION":
         raise ValueError("scheduler accepts only SIMION requests")
     field_kind = request.get("field_kind")
@@ -126,9 +137,14 @@ def _validate_request(request: dict[str, Any]) -> tuple[int, str]:
         raise ValueError("RF scheduling requires a positive rf_steps_per_period")
     if field_kind == "electrostatic" and rf_steps is not None:
         raise ValueError("electrostatic scheduling must not carry rf_steps_per_period")
-    if particles > 1 and request.get("independent_particles") is not True:
-        raise ValueError("parallel-capable particle work requires independent_particles=true")
-    return particles, field_kind
+    independence_key = (
+        "independent_particles" if unit == "particles" else "independent_work_items"
+    )
+    if count > 1 and request.get(independence_key) is not True:
+        raise ValueError(
+            f"parallel-capable {unit} require {independence_key}=true"
+        )
+    return count, field_kind, unit
 
 
 def select_memory_profile(
@@ -216,10 +232,13 @@ def format_dispatch_decision_event(plan: dict[str, Any]) -> str:
         "observed_formal_batch": "OBSERVED_FORMAL_BATCH",
         "exact_resource_profile": "EXACT_HISTORICAL_PROFILE",
     }.get(kind, kind.upper())
+    unit = plan.get("dispatch_unit", "particles")
+    count_key = "particle_count" if unit == "particles" else "work_item_count"
+    count_label = "PARTICLES" if unit == "particles" else "WORK_ITEMS"
     fields = [
         "SIMION_RESOURCE_EVENT=DISPATCH_DECISION",
         f"MEASUREMENT={measurement}",
-        f"PARTICLES={plan.get('particle_count', 'UNKNOWN')}",
+        f"{count_label}={plan.get(count_key, 'UNKNOWN')}",
         f"BATCHES={wave.get('batch_count', 'UNKNOWN')}",
         f"MAX_CONCURRENCY={limits.get('maximum_concurrency', 'UNKNOWN')}",
         f"CPU_CAPACITY={limits.get('cpu_capacity', 'UNKNOWN')}",
@@ -238,11 +257,17 @@ def format_dispatch_decision_event(plan: dict[str, Any]) -> str:
     return " ".join(fields)
 
 
-def _initial_formal_batch(particles: int) -> dict[str, int]:
-    count = math.ceil(particles / min(particles, INITIAL_CPU_LANES))
+def _initial_formal_batch(work_count: int, unit: str) -> dict[str, int]:
+    # A particle observation is an even one-tenth prefix.  A fixed job cannot
+    # be split without changing the job's numerical identity, so observe one.
+    count = 1 if unit == "independent_work_items" else math.ceil(
+        work_count / min(work_count, INITIAL_CPU_LANES)
+    )
+    range_prefix = "particle" if unit == "particles" else "work_item"
     return {
-        "index": 1, "count": count, "particle_id_min": 1,
-        "particle_id_max": count, "simion_particle_id_offset": 0,
+        "index": 1, "count": count, f"{range_prefix}_id_min": 1,
+        f"{range_prefix}_id_max": count,
+        **({"simion_particle_id_offset": 0} if unit == "particles" else {}),
     }
 
 
@@ -254,36 +279,46 @@ def _balanced_lane_loads(total: int, lane_count: int) -> list[int]:
     return [quotient + (1 if index < remainder else 0) for index in range(lane_count)]
 
 
-def _batches_from_counts(counts: list[int], first_count: int = 0) -> list[dict[str, int]]:
-    """Publish contiguous canonical particle-ID ranges for scheduled counts."""
+def _batches_from_counts(
+    counts: list[int], first_count: int = 0, unit: str = "particles"
+) -> list[dict[str, int]]:
+    """Publish contiguous canonical particle or work-item ranges."""
     batches: list[dict[str, int]] = []
     next_particle_id = first_count + 1
+    range_prefix = "particle" if unit == "particles" else "work_item"
     for index, count in enumerate(counts, start=1):
         batches.append({
             "index": index,
             "count": count,
-            "particle_id_min": next_particle_id,
-            "particle_id_max": next_particle_id + count - 1,
-            "simion_particle_id_offset": next_particle_id - 1,
+            f"{range_prefix}_id_min": next_particle_id,
+            f"{range_prefix}_id_max": next_particle_id + count - 1,
+            **({"simion_particle_id_offset": next_particle_id - 1}
+               if unit == "particles" else {}),
         })
         next_particle_id += count
     return batches
 
 
 def _batches_after_formal_first(
-    particles: int, first: dict[str, int], concurrency: int, first_completed: bool
+    work_count: int, first: dict[str, int], concurrency: int,
+    first_completed: bool, unit: str = "particles"
 ) -> list[dict[str, int]]:
-    """Balance remaining work while retaining the first formal result."""
+    """Balance lanes, with one later remainder for the retained first batch.
+
+    The first formal batch may already have completed when this is called.  It
+    is still a partial lane, rather than a reason to make every following
+    lane smaller.  Keep the original lane target and emit its remainder as a
+    final batch.  That gives the same total work per logical lane whether the
+    full-lifecycle observation finished quickly or slowly.
+    """
     first_count = first["count"]
-    remaining = particles - first_count
+    remaining = work_count - first_count
     if remaining <= 0:
         return [dict(first)]
-    if first_completed:
-        tail_counts = _balanced_lane_loads(remaining, concurrency)
-    elif concurrency == 1:
+    if concurrency == 1:
         tail_counts = [remaining]
     else:
-        target_lane_load = max(first_count, math.ceil(particles / concurrency))
+        target_lane_load = max(first_count, math.ceil(work_count / concurrency))
         first_lane_remainder = target_lane_load - first_count
         other_lane_counts = _balanced_lane_loads(
             remaining - first_lane_remainder, concurrency - 1
@@ -292,7 +327,7 @@ def _batches_after_formal_first(
         # batch receives its one balancing remainder only after it finishes.
         tail_counts = other_lane_counts + ([first_lane_remainder] if first_lane_remainder else [])
     batches = [dict(first)]
-    for batch in _batches_from_counts(tail_counts, first_count):
+    for batch in _batches_from_counts(tail_counts, first_count, unit):
         batch["index"] += 1
         batches.append(batch)
     return batches
@@ -306,7 +341,7 @@ def plan_simion_dispatch(
     background_cpu_percent: float = 0.0,
 ) -> dict[str, Any]:
     """Create an initial repository dispatch plan."""
-    particles, field_kind = _validate_request(request)
+    work_count, field_kind, unit = _validate_request(request)
     if available_memory_bytes is None or total_physical_memory_bytes is None:
         observed = physical_memory_bytes()
         if observed is not None:
@@ -320,22 +355,24 @@ def plan_simion_dispatch(
         "logical_processors": logical_processors or os.cpu_count() or 1,
     }
     if profile is None:
-        first = _initial_formal_batch(particles)
+        first = _initial_formal_batch(work_count, unit)
+        count_field = "particle_count" if unit == "particles" else "work_item_count"
         return {
             "schema_version": 2, "role": "simion_repository_dispatch_plan",
             "solver": "SIMION", "field_kind": field_kind,
-            "particle_count": particles, "resource_identity": identity,
+            "dispatch_unit": unit, count_field: work_count,
+            "resource_identity": identity,
             "estimation": {
                 "kind": "formal_first_batch_observation",
-                "requires_observation_before_remaining_launches": particles > first["count"],
+                "requires_observation_before_remaining_launches": work_count > first["count"],
                 "observation_seconds": FORMAL_OBSERVATION_SECONDS,
                 "first_batch_result_retained": True,
-                "terminal_action": "continue_process_and_replan_remaining_particles",
+                "terminal_action": "complete_first_formal_batch_then_replan_remaining_particles",
             },
             "host": host, "limits": _public_limits(1, 1, 1),
             "waves": [{
                 "index": 1, "kind": "formal_observation", "batch_count": 1,
-                "particle_count": particles, "coverage": "initial_formal_batch_only",
+                count_field: work_count, "coverage": "initial_formal_batch_only",
                 "batches": [first],
             }],
         }
@@ -343,15 +380,19 @@ def plan_simion_dispatch(
     memory_budget = math.ceil(peak * KNOWN_MEMORY_SAFETY_FACTOR)
     process_cpu = _nonnegative_number(profile.get("per_batch_cpu_percent", 0.0), "profile CPU")
     concurrency, cpu_capacity, memory_capacity = _capacity(
-        particle_count=particles, available_memory_bytes=available_memory_bytes,
+        particle_count=work_count, available_memory_bytes=available_memory_bytes,
         total_physical_memory_bytes=total_physical_memory_bytes,
         per_process_memory_bytes=memory_budget, process_cpu_percent=process_cpu,
         background_cpu_percent=0.0,
     )
-    batches = _batches_from_counts(_balanced_lane_loads(particles, concurrency))
+    batches = _batches_from_counts(
+        _balanced_lane_loads(work_count, concurrency), unit=unit
+    )
+    count_field = "particle_count" if unit == "particles" else "work_item_count"
     return {
         "schema_version": 2, "role": "simion_repository_dispatch_plan",
-        "solver": "SIMION", "field_kind": field_kind, "particle_count": particles,
+        "solver": "SIMION", "field_kind": field_kind, "dispatch_unit": unit,
+        count_field: work_count,
         "resource_identity": identity,
         "estimation": {
             "kind": "exact_resource_profile", "observed_peak_bytes": peak,
@@ -363,7 +404,7 @@ def plan_simion_dispatch(
         "host": host, "limits": _public_limits(concurrency, cpu_capacity, memory_capacity),
         "waves": [{
             "index": 1, "kind": "scheduled", "batch_count": len(batches),
-            "particle_count": particles, "coverage": "complete_population",
+            count_field: work_count, "coverage": "complete_population",
             "batches": batches,
         }],
     }
@@ -391,9 +432,11 @@ def plan_adaptive_followup(
         if total_physical_memory_bytes is None else total_physical_memory_bytes
     )
     memory_budget = math.ceil(peak * OBSERVED_MEMORY_SAFETY_FACTOR)
-    particles = _positive_int(plan.get("particle_count"), "particle_count")
+    unit = plan.get("dispatch_unit", "particles")
+    count_field = "particle_count" if unit == "particles" else "work_item_count"
+    work_count = _positive_int(plan.get(count_field), count_field)
     concurrency, cpu_capacity, memory_capacity = _capacity(
-        particle_count=particles, available_memory_bytes=available_memory_bytes,
+        particle_count=work_count, available_memory_bytes=available_memory_bytes,
         total_physical_memory_bytes=total_physical_memory_bytes,
         per_process_memory_bytes=memory_budget, process_cpu_percent=cpu,
         # Background CPU is transient host state, not a durable per-run
@@ -402,15 +445,30 @@ def plan_adaptive_followup(
         background_cpu_percent=0.0,
     )
     if not first_batch_completed:
-        # ``available_memory_bytes`` and background CPU are sampled while the
-        # retained first formal batch is already running.  _capacity therefore
-        # describes *additional* safe launches, not total concurrency.  Count
-        # that existing formal process exactly once instead of wasting a lane.
-        concurrency = min(particles, concurrency + 1)
+        # Available RAM is sampled while the retained formal batch is already
+        # running.  It can therefore admit zero additional workers.  _capacity
+        # deliberately floors every standalone plan at one lane; reusing that
+        # floor as an *additional* lane would turn a one-process host into a
+        # false two-lane plan and leave the executor waiting forever.  Count
+        # the already-running formal lane once, then add only whole extra
+        # process budgets that genuinely fit after the fixed Windows reserve.
+        if available_memory_bytes is None:
+            additional_memory_capacity = 0
+        else:
+            additional_memory_capacity = max(
+                0,
+                (available_memory_bytes - MEMORY_ADMISSION_RESERVE_BYTES)
+                // memory_budget,
+            )
+        memory_capacity = 1 + additional_memory_capacity
+        # CPU capacity is an independent process count.  The active formal
+        # worker is one of those processes, so preserve its existing lane.
         cpu_capacity += 1
-        memory_capacity += 1
+        concurrency = min(work_count, cpu_capacity, memory_capacity)
     first = dict(plan["waves"][0]["batches"][0])
-    batches = _batches_after_formal_first(particles, first, concurrency, first_batch_completed)
+    batches = _batches_after_formal_first(
+        work_count, first, concurrency, first_batch_completed, unit
+    )
     result = json.loads(json.dumps(plan))
     result["estimation"] = {
         "kind": "observed_formal_batch", "observed_peak_bytes": peak,
@@ -427,7 +485,7 @@ def plan_adaptive_followup(
     result["limits"] = _public_limits(concurrency, cpu_capacity, memory_capacity)
     result["waves"] = [{
         "index": 1, "kind": "scheduled", "batch_count": len(batches),
-        "particle_count": particles, "coverage": "complete_population",
+        count_field: work_count, "coverage": "complete_population",
         "batches": batches,
     }]
     return result
@@ -436,10 +494,19 @@ def plan_adaptive_followup(
 def _request_from_dispatch_plan(plan: dict[str, Any]) -> dict[str, Any]:
     if plan.get("role") != "simion_repository_dispatch_plan":
         raise ValueError("prepared dispatch plan has an unsupported role")
+    unit = plan.get("dispatch_unit", "particles")
+    if unit == "particles":
+        count = {"particle_count": plan.get("particle_count"), "independent_particles": True}
+    elif unit == "independent_work_items":
+        count = {
+            "work_item_count": plan.get("work_item_count"),
+            "independent_work_items": True,
+        }
+    else:
+        raise ValueError("prepared dispatch plan has an unsupported dispatch_unit")
     return {
         "solver": "SIMION", "field_kind": plan.get("field_kind"),
-        "particle_count": plan.get("particle_count"), "independent_particles": True,
-        **dict(plan.get("resource_identity", {})),
+        **count, **dict(plan.get("resource_identity", {})),
     }
 
 

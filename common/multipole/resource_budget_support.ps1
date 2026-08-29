@@ -47,6 +47,47 @@ function Get-RepositoryAvailableMemoryBytes {
   return [int64][MultipoleMemoryStatus]::AvailableBytes()
 }
 
+function Test-RepositoryDiskCapacity {
+  <#
+    Fail closed before a transient solver run can exhaust its target volume.
+    The fixed reserve protects Windows and unrelated repository work; callers
+    supply only the frozen run-directory budget.
+  #>
+  [OutputType([pscustomobject])]
+  param(
+    [Parameter(Mandatory)][string]$TargetPath,
+    [Parameter(Mandatory)][int64]$TransientRunDirectoryBytes
+  )
+  if($TransientRunDirectoryBytes -lt 0){
+    throw 'Transient run-directory bytes must be non-negative.'
+  }
+  $systemDiskReserveBytes=[int64](10GB)
+  if($TransientRunDirectoryBytes -gt ([int64]::MaxValue-$systemDiskReserveBytes)){
+    throw 'Transient run-directory bytes exceed the representable disk-capacity limit.'
+  }
+  $resolvedTargetPath=[IO.Path]::GetFullPath($TargetPath)
+  $drive=@(Get-PSDrive -PSProvider FileSystem|Where-Object{
+    $resolvedTargetPath.StartsWith([string]$_.Root,[StringComparison]::OrdinalIgnoreCase)
+  }|Sort-Object {$_.Root.Length} -Descending|Select-Object -First 1)
+  if($drive.Count-ne1){
+    throw "Target path is not on a mounted FileSystem volume: $resolvedTargetPath"
+  }
+  $requiredAvailableBytes=[int64]($TransientRunDirectoryBytes+$systemDiskReserveBytes)
+  $freeBytes=[int64]$drive[0].Free
+  $check=[pscustomobject][ordered]@{
+    role='repository_disk_capacity_check'
+    target_path=$resolvedTargetPath
+    volume_root=[string]$drive[0].Root
+    transient_run_directory_bytes=$TransientRunDirectoryBytes
+    system_disk_reserve_bytes=$systemDiskReserveBytes
+    required_available_bytes=$requiredAvailableBytes
+    free_bytes=$freeBytes
+    passed=($freeBytes-ge$requiredAvailableBytes)
+  }
+  if(-not $check.passed){throw $check}
+  return $check
+}
+
 function Get-ProcessTreeWorkingSetBytes {
   param([Parameter(Mandatory)][int]$RootProcessId)
   $processes=@(Get-Process -ErrorAction SilentlyContinue)
@@ -171,6 +212,26 @@ function Get-ManagedSolverProcessSample {
   }
 }
 
+function Test-ManagedRootProcessIsLive {
+  <#
+    A process-tree sample is observational: a transient failure to enumerate
+    the root must not authorize its caller to treat a still-running solver as
+    complete.  Only the originally launched PID with its recorded start
+    identity can keep the single-process watchdog alive; a reused PID cannot.
+  #>
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][int]$ProcessId,
+    [Parameter(Mandatory)][int64]$ExpectedStartedAtUtcTicks
+  )
+  try {
+    $process = Get-Process -Id $ProcessId -ErrorAction Stop
+    return [int64]$process.StartTime.ToUniversalTime().Ticks -eq $ExpectedStartedAtUtcTicks
+  } catch {
+    return $false
+  }
+}
+
 function Stop-ManagedSolverProcesses {
   param([Parameter(Mandatory)][int[]]$ProcessIds)
   foreach($processId in $ProcessIds){
@@ -184,7 +245,20 @@ function Write-ResourceUsage {
   param([Parameter(Mandatory)][hashtable]$Usage,[Parameter(Mandatory)][string]$Path)
   $temporary="$Path.tmp"
   $Usage|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $temporary -Encoding UTF8
-  Move-Item -LiteralPath $temporary -Destination $Path -Force
+  # Antivirus/indexing and a concurrent read may briefly hold the previous
+  # receipt open on Windows.  A metering publication failure must not abandon
+  # a still-running solver and leave its PA staging directory orphaned.
+  $lastMoveError=$null
+  foreach($attempt in 1..20){
+    try {
+      Move-Item -LiteralPath $temporary -Destination $Path -Force -ErrorAction Stop
+      return
+    } catch {
+      $lastMoveError=$_.Exception
+      Start-Sleep -Milliseconds 250
+    }
+  }
+  throw "Could not publish resource usage after 20 attempts: $($lastMoveError.Message)"
 }
 
 function Invoke-ResourceBudgetedProcess {
@@ -247,6 +321,13 @@ function Invoke-ResourceBudgetedProcess {
   $rootProcessStartedAtUtcTicks=[int64]$process.StartTime.ToUniversalTime().Ticks
   $lastDirectorySampleAt=$null
   $trackedProcessIds=@([int]$process.Id)
+  # Retain birth identities for descendants as well as the launcher.  A
+  # completed SIMION helper PID can be reused by an unrelated long-lived
+  # process before the next 500 ms poll; treating that PID as the old helper
+  # would otherwise leave this metered stage waiting indefinitely.
+  $trackedProcessStartedAtUtcTicks=@{
+    ([string]$process.Id)=$rootProcessStartedAtUtcTicks
+  }
   $managedActive=$true
   while($managedActive){
     $now=[datetimeoffset]::UtcNow
@@ -254,9 +335,20 @@ function Invoke-ResourceBudgetedProcess {
     $sample=Get-ManagedSolverProcessSample -RootProcessIds @([int]$process.Id) `
       -TrackedProcessIds $trackedProcessIds -RootProcessStartedAtUtcTicks @{
         ([string]$process.Id)=$rootProcessStartedAtUtcTicks
-      }
+      } -TrackedProcessStartedAtUtcTicks $trackedProcessStartedAtUtcTicks
     $trackedProcessIds=@($sample.tracked_process_ids)
+    if($sample.PSObject.Properties.Name -contains 'tracked_process_started_at_utc_ticks'){
+      $trackedProcessStartedAtUtcTicks=$sample.tracked_process_started_at_utc_ticks
+    }
     $managedActive=@($sample.active_process_ids).Count -gt 0
+    # Do not let a transient process-tree enumeration gap tear down a staging
+    # directory while the exact root process is still refining it.  Descendant
+    # tracking remains responsible after the root exits; this guard only adds
+    # the verified live root as a minimum completion condition.
+    if (-not $managedActive) {
+      $managedActive = Test-ManagedRootProcessIsLive -ProcessId ([int]$process.Id) `
+        -ExpectedStartedAtUtcTicks $rootProcessStartedAtUtcTicks
+    }
     $treeBytes=[int64]$sample.working_set_bytes
     $availableBytes=[int64][MultipoleMemoryStatus]::AvailableBytes()
     $sampleDirectory=$null-eq$lastDirectorySampleAt-or
@@ -276,6 +368,15 @@ function Invoke-ResourceBudgetedProcess {
     Write-ResourceUsage -Usage $usage -Path $UsagePath
     if(-not$managedActive){break}
     Start-Sleep -Milliseconds 500
+  }
+  # A process-tree sample is advisory.  It must never let a cache publisher or
+  # its catch-cleanup run while the directly launched solver is still alive.
+  # This is especially important for SIMION refinement: a transient WMI/sample
+  # gap would otherwise make the runner remove a staging cache that SIMION is
+  # actively writing.  Waiting here retains the normal child-tree monitoring
+  # above, but makes the root process's actual exit the final completion fact.
+  if (-not $process.HasExited) {
+    $process.WaitForExit()
   }
   $usage.wall_clock_seconds=[math]::Round(
     ([datetimeoffset]::UtcNow-$started).TotalSeconds,3)
@@ -338,9 +439,12 @@ function Write-RepositorySchedulerEvent {
       $batch=$Record.specification.scheduler_batch
     }
     if($null-ne$batch){
-      foreach($property in @('index','total_batches','particle_id_min','particle_id_max','count')){
+      $workItem=$batch.PSObject.Properties.Name-contains'execution_unit'-and
+        [string]$batch.execution_unit-eq'independent_work_items'
+      $properties=$(if($workItem){@('index','total_batches','work_item_id_min','work_item_id_max','count')}else{@('index','total_batches','particle_id_min','particle_id_max','count')})
+      foreach($property in $properties){
         if($batch.PSObject.Properties.Name-contains$property){
-          $name=@{index='BATCH';total_batches='TOTAL_BATCHES';particle_id_min='PARTICLE_ID_MIN';particle_id_max='PARTICLE_ID_MAX';count='PARTICLE_COUNT'}[$property]
+          $name=@{index='BATCH';total_batches='TOTAL_BATCHES';particle_id_min='PARTICLE_ID_MIN';particle_id_max='PARTICLE_ID_MAX';work_item_id_min='WORK_ITEM_ID_MIN';work_item_id_max='WORK_ITEM_ID_MAX';count=$(if($workItem){'WORK_ITEM_COUNT'}else{'PARTICLE_COUNT'})}[$property]
           $fields.Add("$name=$([string]$batch.$property)")
         }
       }
@@ -374,7 +478,7 @@ function Get-SystemCpuPercent {
 }
 
 function Start-ObservedFormalProcess {
-  <# Start the first formal batch and observe it without terminating it. #>
+  <# Start the first formal batch, retain it, and observe the fixed first window. #>
   [CmdletBinding()]
   param(
     [Parameter(Mandatory)][string]$DispatchPlanPath,
@@ -391,7 +495,18 @@ function Start-ObservedFormalProcess {
     -Details @{OBSERVATION_SECONDS=$seconds;MEASUREMENT='FIRST_FORMAL_BATCH'}
   $previousTicks=[int64]0;$previousAt=$record.started_at
   $peakCpu=[double]0;$peakBackground=[double]0;$systemCpu=[double]0;$lastSystemAt=$null
-  while($record.active-and((Get-RepositoryUtcNow)-$record.started_at).TotalSeconds-lt$seconds){
+  $criticalBytes=[int64]$plan.limits.memory_critical_reserve_bytes
+  $criticalSeconds=[int]$plan.limits.memory_critical_seconds
+  if($criticalBytes-ne512MB-or$criticalSeconds-ne15){
+    throw 'Repository first-formal memory-danger policy differs from the public invariant.'
+  }
+  $criticalSince=$null;$resourceBudgetExceeded=$false
+  # The formal first batch remains alive after the fixed 45 s observation.  Its
+  # measured peak determines the initial lane count; subsequent live admission
+  # and the existing memory-danger state machine protect against later growth.
+  # Waiting for natural completion here would serialize every otherwise
+  # parallel run and would make the 45 s observation meaningless.
+  while($record.active){
     $now=Get-RepositoryUtcNow
     $sampleArgs=@{RootProcessIds=@($record.root_process_id);TrackedProcessIds=$record.tracked_process_ids}
     if($record.PSObject.Properties.Name -contains 'root_process_started_at_utc_ticks'){
@@ -415,6 +530,16 @@ function Start-ObservedFormalProcess {
       [int64]$record.peak_working_set_bytes,[int64]$sample.working_set_bytes)
     $record.peak_managed_memory_bytes=[math]::Max(
       [int64]$record.peak_managed_memory_bytes,[int64]$sample.managed_memory_bytes)
+    $available=Get-RepositoryAvailableMemoryBytes
+    if($available-lt$criticalBytes){
+      if($null-eq$criticalSince){$criticalSince=$now}
+      elseif(($now-$criticalSince).TotalSeconds-ge$criticalSeconds){
+        Stop-ManagedSolverProcesses -ProcessIds @($record.tracked_process_ids)
+        $record.pressure_terminated=$true;$resourceBudgetExceeded=$true
+        Write-RepositorySchedulerEvent -Event 'MEMORY_DANGER_TERMINATION' -Record $record `
+          -ActiveCount 1 -Details @{AVAILABLE_MEMORY_BYTES=$available;CRITICAL_SECONDS=$criticalSeconds;CRITICAL_THRESHOLD_BYTES=$criticalBytes;ACTION='STOP_ONLY_FORMAL_BATCH'}
+      }
+    }else{$criticalSince=$null}
     $elapsed=($now-$previousAt).TotalSeconds
     if($previousTicks-gt 0-and$elapsed-gt 0){
       $cpu=100.0*(([int64]$sample.total_processor_time_ticks-$previousTicks)/1.0e7)/
@@ -428,7 +553,15 @@ function Start-ObservedFormalProcess {
       $peakBackground=[math]::Max($peakBackground,[math]::Max(0.0,$systemCpu-$cpu))
     }
     $previousTicks=[int64]$sample.total_processor_time_ticks;$previousAt=$now
+    if($record.pressure_terminated){
+      $record.process.WaitForExit();$record.active=$false;break
+    }
     if(-not$record.active){break}
+    if(($now-$record.started_at).TotalSeconds-ge$seconds){
+      Write-RepositorySchedulerEvent -Event 'FORMAL_OBSERVATION_COMPLETE' -Record $record -ActiveCount 1 `
+        -Details @{OBSERVATION_SECONDS=$seconds;MEASUREMENT='FIRST_FORMAL_BATCH';PROCESS_CONTINUES='true'}
+      break
+    }
     Start-Sleep -Milliseconds 500
   }
   if(-not$record.active){
@@ -440,9 +573,10 @@ function Start-ObservedFormalProcess {
       $record.peak_managed_memory_bytes=[math]::Max(
         [int64]$record.peak_managed_memory_bytes,[int64]$record.process.PeakWorkingSet64)
     }catch{}
-    $record.completed=$true;$record.exit_code=[int]$record.process.ExitCode
+    $record.completed=$true
+    $record.exit_code=$(if($record.pressure_terminated){$null}else{[int]$record.process.ExitCode})
     Write-RepositorySchedulerEvent -Event 'BATCH_COMPLETED' -Record $record -ActiveCount 0 `
-      -Details @{EXIT_CODE=$record.exit_code;NATURAL='true';MEASUREMENT='FIRST_FORMAL_BATCH';WALL_CLOCK_SECONDS=([math]::Round(((Get-RepositoryUtcNow)-$record.started_at).TotalSeconds,3));MORE_PENDING='UNKNOWN'}
+      -Details @{EXIT_CODE=$record.exit_code;NATURAL=$(if($record.pressure_terminated){'false'}else{'true'});MEASUREMENT='FIRST_FORMAL_BATCH';WALL_CLOCK_SECONDS=([math]::Round(((Get-RepositoryUtcNow)-$record.started_at).TotalSeconds,3));MORE_PENDING='UNKNOWN'}
     $record.process.Dispose()
   }
   $record|Add-Member -NotePropertyName completed_during_observation `
@@ -452,7 +586,8 @@ function Start-ObservedFormalProcess {
   $record|Add-Member -NotePropertyName observed_background_cpu_percent `
     -NotePropertyValue ([math]::Round($peakBackground,3)) -Force
   return [pscustomobject]@{
-    process_record=$record;completed_naturally=[bool]$record.completed;exit_code=$record.exit_code
+    process_record=$record;completed_naturally=([bool]$record.completed -and -not [bool]$record.pressure_terminated);exit_code=$record.exit_code
+    resource_budget_exceeded=[bool]$resourceBudgetExceeded
     # The legacy working-set key remains the active runner input.  Its value is
     # deliberately upgraded to the conservative managed peak so existing
     # callers immediately use max(working set, private bytes) for admission.
@@ -523,12 +658,18 @@ function Invoke-ResourceBudgetedProcesses {
       $memorySafetyFactor=[double]$estimation.memory_safety_factor
     }
   }
+  # A first formal observation can complete before dispatch begins.  In that
+  # valid one-batch path the scheduler loop is skipped, but the final receipt
+  # still records the admission basis.
+  $dynamicAdmissionBytes=[int64]$plannedMemoryBudget
+  $launchAdmissionBytes=$dynamicAdmissionBytes
   $criticalSince=$null;$recoverySafeSince=$null;$dangerRecoveryPending=$false
   $lastCpuAt=$null;$systemCpu=[double]0
   $peakWorkingSetAggregate=[int64]0;$peakManagedMemoryAggregate=[int64]0
   $minimumAvailable=$null;$peakConcurrency=$running.Count
   $pauseEvents=[Collections.ArrayList]::new();$terminationEvents=[Collections.ArrayList]::new()
   $recoveryEvents=[Collections.ArrayList]::new();$requeueCounts=@{};$recoveryAttempts=0
+  $batchFailureEvents=[Collections.ArrayList]::new();$batchFailureDetected=$false
   $dangerTerminationAttempts=0;$unschedulable=$false
   $resourcePauseActive=$false;$resourcePauseReason=$null
   $estimatedProcessCpu=[double]10.0
@@ -586,6 +727,29 @@ function Invoke-ResourceBudgetedProcesses {
         -ActiveCount $running.Count -PendingCount $pending.Count `
         -Details @{EXIT_CODE=$record.exit_code;NATURAL='true';WALL_CLOCK_SECONDS=([math]::Round(((Get-RepositoryUtcNow)-$record.started_at).TotalSeconds,3));MORE_PENDING=($(if($pending.Count-gt0){'true'}else{'false'}))}
     }
+    $failedThisCycle=@($completedThisCycle|Where-Object{
+      $null-ne$_.exit_code-and[int]$_.exit_code-ne0
+    })
+    if($failedThisCycle.Count -gt 0 -and -not $batchFailureDetected){
+      # A non-zero SIMION exit makes this wave unusable as a complete-cohort
+      # result.  Do not spend hours completing siblings or start queued work;
+      # stop only workers belonging to this same wave and leave their logs for
+      # the parent lifecycle to publish as the causal failure record.
+      foreach($record in @($running)){
+        Stop-ManagedSolverProcesses -ProcessIds @($record.tracked_process_ids)
+      }
+      $cancelledPending=$pending.Count
+      $pending.Clear()
+      $null=$batchFailureEvents.Add([ordered]@{
+        at_utc=$now.ToString('o');failed_batch_count=$failedThisCycle.Count
+        cancelled_pending_batch_count=$cancelledPending
+        stopped_active_batch_count=$running.Count
+      })
+      $batchFailureDetected=$true
+      Write-RepositorySchedulerEvent -Event 'BATCH_FAILURE_CANCELLATION' `
+        -ActiveCount $running.Count -PendingCount $cancelledPending `
+        -Details @{FAILED_BATCH_COUNT=$failedThisCycle.Count;ACTION='STOP_CURRENT_WAVE'}
+    }
     $peakWorkingSetAggregate=[math]::Max($peakWorkingSetAggregate,$aggregateWorkingSet)
     $peakManagedMemoryAggregate=[math]::Max($peakManagedMemoryAggregate,$aggregateManagedMemory)
     $available=Get-RepositoryAvailableMemoryBytes
@@ -606,6 +770,17 @@ function Invoke-ResourceBudgetedProcesses {
     }
     $dynamicAdmissionBytes=[int64][math]::Max(
       $plannedMemoryBudget,[math]::Ceiling($livePeak*$memorySafetyFactor))
+    # A one-lane plan has no additional worker to protect.  Its next batch may
+    # start only after the retained formal batch exits, so admit it against the
+    # measured single-process peak plus the repository reserve.  Keep the
+    # inflated budget for every multi-lane launch and all live-growth checks.
+    $launchAdmissionBytes=$dynamicAdmissionBytes
+    if($running.Count-eq 0-and$maximumConcurrency-eq 1-and
+       $null-ne$estimation-and[string]$estimation.kind-in@('exact_resource_profile','observed_formal_batch')-and
+       $estimation.PSObject.Properties.Name-contains'observed_peak_bytes' -and
+       [int64]$estimation.observed_peak_bytes -gt 0){
+      $launchAdmissionBytes=[int64]$estimation.observed_peak_bytes
+    }
     if($available-lt$criticalBytes){if($null-eq$criticalSince){$criticalSince=$now}}else{$criticalSince=$null}
     if($null-ne$criticalSince-and($now-$criticalSince).TotalSeconds-ge 15-and$running.Count-gt 0){
       if($dangerTerminationAttempts-ge$maximumDangerTerminations){
@@ -674,7 +849,7 @@ function Invoke-ResourceBudgetedProcesses {
       }else{$recoverySafeSince=$null}
     }else{$recoverySafeSince=$null}
     $canLaunch=$pending.Count-gt 0-and$running.Count-lt$maximumConcurrency-and
-      -not$dangerRecoveryPending-and$now-ge$nextLaunch-and$available-ge($warningBytes+$dynamicAdmissionBytes)-and
+      -not$dangerRecoveryPending-and$now-ge$nextLaunch-and$available-ge($warningBytes+$launchAdmissionBytes)-and
       ($systemCpu+$estimatedProcessCpu-lt[double]$limits.cpu_admission_percent)
     if($canLaunch){
       if($resourcePauseActive){
@@ -694,17 +869,17 @@ function Invoke-ResourceBudgetedProcesses {
     }elseif($pending.Count-gt 0-and$running.Count-lt$maximumConcurrency){
       if($pauseEvents.Count-eq 0-or($now-[datetimeoffset]$pauseEvents[$pauseEvents.Count-1].at_utc).TotalSeconds-ge 5){
         $reason=$(if($dangerRecoveryPending){'post_danger_recovery_observation'}elseif(
-          $available-lt($warningBytes+$dynamicAdmissionBytes)){'available_memory_below_dynamic_admission'}elseif(
+          $available-lt($warningBytes+$launchAdmissionBytes)){'available_memory_below_dynamic_admission'}elseif(
           ($systemCpu+$estimatedProcessCpu)-ge[double]$limits.cpu_admission_percent){'cpu_admission_exceeded'}else{'launch_stagger_pending'})
         $null=$pauseEvents.Add([ordered]@{
           at_utc=$now.ToString('o');reason=$reason;available_memory_bytes=$available
-          required_available_memory_bytes=($warningBytes+$dynamicAdmissionBytes)
-          dynamic_admission_bytes=$dynamicAdmissionBytes;system_cpu_percent=$systemCpu
+          required_available_memory_bytes=($warningBytes+$launchAdmissionBytes)
+          dynamic_admission_bytes=$dynamicAdmissionBytes;launch_admission_bytes=$launchAdmissionBytes;system_cpu_percent=$systemCpu
         })
         if($reason-ne'launch_stagger_pending'){
           Write-RepositorySchedulerEvent -Event 'RESOURCE_ADMISSION_PAUSED' `
             -ActiveCount $running.Count -PendingCount $pending.Count `
-            -Details @{AVAILABLE_MEMORY_BYTES=$available;DYNAMIC_ADMISSION_BYTES=$dynamicAdmissionBytes;REASON=$reason;REQUIRED_AVAILABLE_MEMORY_BYTES=($warningBytes+$dynamicAdmissionBytes);SYSTEM_CPU_PERCENT=$systemCpu}
+          -Details @{AVAILABLE_MEMORY_BYTES=$available;DYNAMIC_ADMISSION_BYTES=$dynamicAdmissionBytes;LAUNCH_ADMISSION_BYTES=$launchAdmissionBytes;REASON=$reason;REQUIRED_AVAILABLE_MEMORY_BYTES=($warningBytes+$launchAdmissionBytes);SYSTEM_CPU_PERCENT=$systemCpu}
           $resourcePauseActive=$true;$resourcePauseReason=$reason
         }
       }
@@ -713,20 +888,23 @@ function Invoke-ResourceBudgetedProcesses {
   }
   if($unschedulable){foreach($record in @($running)){Stop-ManagedSolverProcesses -ProcessIds @($record.tracked_process_ids)}}
   $failed=@($completed|Where-Object{$null-ne$_.exit_code-and[int]$_.exit_code-ne 0})
-  $completedParticles=[int64]0
+  $completedWorkUnits=[int64]0
   foreach($record in @($completed)){
     if($record.PSObject.Properties.Name-contains'specification'-and
        $record.specification.PSObject.Properties.Name-contains'scheduler_batch'-and
        $record.specification.scheduler_batch.PSObject.Properties.Name-contains'count'){
-      $completedParticles+=[int64]$record.specification.scheduler_batch.count
+      $completedWorkUnits+=[int64]$record.specification.scheduler_batch.count
     }
   }
-  $expectedParticles=$(if($plan.PSObject.Properties.Name-contains'particle_count'){
-    [string]$plan.particle_count
-  }else{'UNKNOWN'})
+  $isWorkItemDispatch=$plan.PSObject.Properties.Name-contains'dispatch_unit'-and
+    [string]$plan.dispatch_unit-eq'independent_work_items'
+  $expectedWorkUnits=$(if($isWorkItemDispatch){[string]$plan.work_item_count}elseif(
+    $plan.PSObject.Properties.Name-contains'particle_count'){[string]$plan.particle_count}else{'UNKNOWN'})
+  $completedLabel=$(if($isWorkItemDispatch){'COMPLETED_WORK_ITEMS'}else{'COMPLETED_PARTICLES'})
+  $expectedLabel=$(if($isWorkItemDispatch){'EXPECTED_WORK_ITEMS'}else{'EXPECTED_PARTICLES'})
   Write-RepositorySchedulerEvent -Event $(if($unschedulable){'BATCH_WAVE_TERMINATED'}else{'BATCH_WAVE_COMPLETED'}) `
     -ActiveCount $running.Count -PendingCount $pending.Count `
-    -Details @{COMPLETED_BATCHES=$completed.Count;COMPLETED_PARTICLES=$completedParticles;EXPECTED_PARTICLES=$expectedParticles;FAILED_BATCHES=$failed.Count;STATUS=$(if($unschedulable){'RESOURCE_PRESSURE_FAILED'}elseif($failed.Count-gt0){'PROCESS_FAILED'}else{'COMPLETED'});TOTAL_WALL_CLOCK_SECONDS=([math]::Round(((Get-RepositoryUtcNow)-$started).TotalSeconds,3))}
+    -Details @{COMPLETED_BATCHES=$completed.Count;$completedLabel=$completedWorkUnits;$expectedLabel=$expectedWorkUnits;FAILED_BATCHES=$failed.Count;STATUS=$(if($unschedulable){'RESOURCE_PRESSURE_FAILED'}elseif($failed.Count-gt0){'PROCESS_FAILED'}else{'COMPLETED'});TOTAL_WALL_CLOCK_SECONDS=([math]::Round(((Get-RepositoryUtcNow)-$started).TotalSeconds,3))}
   $usage=[ordered]@{
     schema_version=2;role='multipole_resource_usage'
     status=$(if($unschedulable){'resource_pressure_failed'}elseif($failed.Count-gt 0){'process_failed'}else{'running'})
@@ -748,6 +926,7 @@ function Invoke-ResourceBudgetedProcesses {
       launch_pause_events=@($pauseEvents);termination_requeue_events=@($terminationEvents)
       recovery_relaunch_events=@($recoveryEvents);recovery_attempt_count=$recoveryAttempts
       danger_termination_attempt_count=$dangerTerminationAttempts
+      batch_failure_cancellation_events=@($batchFailureEvents)
     }
   }
   if($ExistingProcessRecords.Count-gt 0){

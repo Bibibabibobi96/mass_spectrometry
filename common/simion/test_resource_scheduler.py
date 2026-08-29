@@ -70,6 +70,29 @@ class ResourceSchedulerTests(unittest.TestCase):
         self.assertEqual(plan["waves"][0]["batches"][0]["count"], 2_000)
         self.assertNotIn("simion_max_ions_per_process", plan["limits"])
 
+    def test_independent_work_items_observe_one_unsplittable_first_job(self) -> None:
+        request = {
+            "solver": "SIMION", "field_kind": "electrostatic",
+            "work_item_count": 21, "independent_work_items": True,
+            "case_input_sha256": "A" * 64,
+        }
+        initial = plan_simion_dispatch(
+            request, [], available_memory_bytes=10 * GIB,
+            total_physical_memory_bytes=20 * GIB,
+        )
+        self.assertEqual(initial["dispatch_unit"], "independent_work_items")
+        self.assertEqual(initial["waves"][0]["batches"][0]["count"], 1)
+        self.assertEqual(initial["waves"][0]["batches"][0]["work_item_id_min"], 1)
+        self.assertIn("WORK_ITEMS=21", format_dispatch_decision_event(initial))
+        final = plan_adaptive_followup(
+            initial, GIB, observed_cpu_percent=8,
+            available_memory_bytes=10 * GIB,
+            total_physical_memory_bytes=20 * GIB,
+            first_batch_completed=False,
+        )
+        self.assertEqual(final["work_item_count"], 21)
+        self.assertEqual(final["dispatch_unit"], "independent_work_items")
+
     def test_public_plan_requires_45_second_stability_and_two_recovery_trials(self) -> None:
         plan = plan_simion_dispatch(
             self.request(), [self.profile()], available_memory_bytes=6 * GIB,
@@ -120,7 +143,7 @@ class ResourceSchedulerTests(unittest.TestCase):
         self.assertEqual(final["limits"]["cpu_capacity"], 10)
         self.assertEqual(final["limits"]["maximum_concurrency"], 10)
 
-    def test_naturally_completed_first_batch_is_not_repeated(self) -> None:
+    def test_completed_first_batch_keeps_balanced_lane_remainder(self) -> None:
         initial = plan_simion_dispatch(
             self.request(), [], available_memory_bytes=10_000,
             total_physical_memory_bytes=20_000,
@@ -134,7 +157,7 @@ class ResourceSchedulerTests(unittest.TestCase):
         self.assertFalse(final["estimation"]["retained_first_batch_counts_toward_concurrency"])
         self.assertEqual(
             [item["count"] for item in final["waves"][0]["batches"]],
-            [500, 1_125, 1_125, 1_125, 1_125],
+            [500, 1_250, 1_250, 1_250, 750],
         )
         self.assertEqual(final["waves"][0]["batches"][1]["particle_id_min"], 501)
 
@@ -158,14 +181,35 @@ class ResourceSchedulerTests(unittest.TestCase):
         self.assertEqual(final["limits"]["memory_capacity"], 3)
         self.assertEqual(final["limits"]["maximum_concurrency"], 3)
 
+    def test_live_formal_first_does_not_invent_an_extra_lane_when_none_fits(self) -> None:
+        """The retained first lane is not evidence that one sibling fits."""
+        initial = plan_simion_dispatch(
+            self.request(), [], available_memory_bytes=1,
+            total_physical_memory_bytes=1,
+        )
+        final = plan_adaptive_followup(
+            initial,
+            int(36.86 * GIB),
+            observed_cpu_percent=10,
+            available_memory_bytes=int(3.42 * GIB),
+            total_physical_memory_bytes=int(47.92 * GIB),
+            first_batch_completed=False,
+        )
+        self.assertEqual(final["limits"]["memory_capacity"], 1)
+        self.assertEqual(final["limits"]["maximum_concurrency"], 1)
+        self.assertEqual(
+            [item["count"] for item in final["waves"][0]["batches"]],
+            [500, 4_500],
+        )
+
     def test_two_lanes_retain_first_then_balance_one_remainder(self) -> None:
         initial = plan_simion_dispatch(
             self.request(), [], available_memory_bytes=10_000,
             total_physical_memory_bytes=20_000,
         )
         final = plan_adaptive_followup(
-            initial, 2_000, observed_cpu_percent=10, background_cpu_percent=0,
-            available_memory_bytes=2_900, total_physical_memory_bytes=10_000,
+            initial, GIB, observed_cpu_percent=10, background_cpu_percent=0,
+            available_memory_bytes=int(2.2 * GIB), total_physical_memory_bytes=10 * GIB,
         )
         self.assertEqual(final["limits"]["maximum_concurrency"], 2)
         self.assertEqual(

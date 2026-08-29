@@ -273,6 +273,8 @@ artifacts/projects/<project>/
 |---|---|
 | `cache/simion_pa_basis/<SHA-256>/` | `multipole_simion_pa_basis_cache` |
 | `cache/simion_single_flight_frontend/<SHA-256>/` | `simion_single_flight_frontend_pa_cache` |
+| `cache/simion_single_flight_upstream_bridge/<SHA-256>/` | `simion_single_flight_upstream_bridge_pa_cache` |
+| `cache/simion_single_flight_accelerator_main/<SHA-256>/` | `simion_single_flight_accelerator_main_pa_cache` |
 | `cache/simion_accelerator_overlay/<SHA-256>/` | `simion_accelerator_overlay_pa_cache` |
 | `cache/simion_oatof_downstream_pa/<SHA-256>/` | `simion_oatof_flight_tube_pa_cache`或`simion_oatof_reflectron_pa_cache`，由entry manifest唯一消歧 |
 | `cache/verified_pulse/<SHA-256>/` | `rf_oatof_verified_pulse_timing_receipt`；仅保存相同内容身份下已通过完整pulse-on飞行确认的可删除时刻收据 |
@@ -349,6 +351,10 @@ schema v2冻结保留类别；默认类别是`compact`。保留类别在`run_con
 |`compact`|功能回归、常规参数运行、失败关闭的默认类别|三件套、冻结输入、代码身份、summary/metrics、canonical粒子终态/事件、必要日志和轻量图；禁止MPH、SIMION PA解阵列和完整轨迹|
 |`qualification`|预注册的最终收敛参考点、跨求解器资格参考资产或正式证据源run|允许完整轨迹及求解器原生重型文件；必须在运行前写明保留理由|
 |`solver_review`|需要GUI重开、节点/网格审查或供应商缺陷复现的专项诊断|允许完整轨迹及求解器原生重型文件；必须在运行前写明保留理由，不自动获得资格|
+
+`compact`的终态只保留为该次结论、复核或下游受管 handoff 所必需的文件；可由冻结输入重算的筛选中间量、
+缓存工作副本、临时曲线和调试输出必须在写终态manifest前清理，不能因文件较小、运行中断或已经写入
+初始manifest而留下。非`compact`类别才可额外保留重型或可重建输出，并须在运行合同中事先说明理由。
 
 `finite_3d_transport.mph`、`.pa#/.paN/.pa-surf`、完整`trajectory_samples*`以及达到策略阈值的其他大文件
 属于可选重型或可重建临时输出，不是每个成功run的必需证据。`compact`运行可在求解期间生成它们，但须在
@@ -432,6 +438,23 @@ Markdown入口。这里的“载荷”表示只读原始证据，不限于二进
 不作为引用来源。删除仍遵守`AGENTS.md`的用户确认规则；
 “已进入history”“已被superseded”或“manifest已生成”本身均不授权删除原始证据。
 run生成阶段的自动保留行为只按上文预注册的run产物保留合同执行；它不授权事后清理既有run。
+
+### 工作区容量水位线
+
+工作区`artifacts/`的目标上限为 **500 GiB**。当该树的实占用即将达到或超过此水位线时，运行器不得继续
+发布会使其越线的重型载荷；必须先按本节的必要性顺序执行可审计处置。**同一必要性等级内严格按时间从旧到新**
+（以受管 run 的终态时间、cache generation 发布时刻或 scratch 创建时刻为准）处置，不得因文件更大而跳过较旧对象：
+
+1. 无 manifest 的 scratch、临时 staging 与损坏/不完整 cache generation；
+2. 未被活动实验引用、可由冻结输入重建的非 Formal cache；
+3. `compact` 类中断 run 的可重建重型 payload（仅 PA、轨迹和其他 retention 合同允许移除的文件），保留冻结输入、日志、summary、manifest 与处置 receipt；
+4. 仅在用户针对精确对象明确授权后，处置不再被文档/manifest引用且已有替代证据的非 Formal run 重型副本。
+
+`formal/`、`archive/`、活动 cache generation、当前实验引用的 cache、唯一来源输入及任何被当前文档引用的科学结果
+始终禁止由容量治理删除。历史 run 内已冻结的 cache manifest 是重建 provenance，不把相应非活动、可重建 cache
+提升为不可删除证据。每次处置必须先验证对象身份、活动引用、终态、可重建性和精确路径，随后
+写入日期化审计与处置 receipt（路径、字节数、SHA-256、理由、删除后可用空间）；水位线不是放宽证据保护
+或删除权限的例外。
 
 模型生成代码不能自动替代正式二进制：代码描述构建过程，`.mph`、SolidWorks装配体和SIMION交付包
 还承载已验收的节点、选择、网格、解或外部引用状态。每个项目只保留一套通过门禁的当前正式二进制；

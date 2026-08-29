@@ -234,6 +234,22 @@ function Invoke-ClocText {
   )
   $filePath=$ClocExe
   $argumentsToRun=@($Arguments)
+  # The official Windows CLOC 2.10 executable is a packaged Perl runtime
+  # that is broken on this host (it fails before parsing any input).  The
+  # adjacent official 2.10 source is equivalent and is run only through the
+  # repository's existing Git Perl interpreter.
+  if([IO.Path]::GetExtension($filePath)-ieq'.pl'){
+    $perlCommand=Get-Command perl -ErrorAction SilentlyContinue
+    if($null-eq$perlCommand){
+      $gitPerl='C:\Program Files\Git\usr\bin\perl.exe'
+      if(Test-Path -LiteralPath $gitPerl -PathType Leaf){
+        $perlCommand=[pscustomobject]@{Source=$gitPerl}
+      }
+    }
+    if($null-eq$perlCommand){throw "CLOC_UNAVAILABLE: Perl is required for $filePath"}
+    $argumentsToRun=@($filePath)+$argumentsToRun
+    $filePath=$perlCommand.Source
+  }
   if([IO.Path]::GetExtension($filePath)-ieq'.ps1'){
     $output=(& $ClocExe @argumentsToRun|Out-String)
     return [pscustomobject]@{
@@ -508,6 +524,9 @@ if(-not(Test-Path -LiteralPath $languageDefinitionPath -PathType Leaf)){
 $workspaceCloc=Join-Path (
   Split-Path -Parent $repoPath
 ) '.tools\cloc\2.10\cloc.exe'
+$workspaceClocScript=Join-Path (
+  Split-Path -Parent $repoPath
+) '.tools\cloc\2.10\cloc-2.10.pl'
 $clocRequest=if($ClocExe-eq'cloc' -and (Test-Path -LiteralPath $workspaceCloc -PathType Leaf)){
   $workspaceCloc
 }else{
@@ -532,6 +551,12 @@ if($null-eq$clocCommand){
 $ClocExe=$clocCommand.Source
 $versionResult=Invoke-ClocText @('--version')
 $clocVersion=$versionResult.stdout.Trim()
+if($versionResult.exit_code-ne 0 -and $ClocExe-eq$workspaceCloc -and
+   (Test-Path -LiteralPath $workspaceClocScript -PathType Leaf)){
+  $ClocExe=$workspaceClocScript
+  $versionResult=Invoke-ClocText @('--version')
+  $clocVersion=$versionResult.stdout.Trim()
+}
 if($versionResult.exit_code-ne 0 -or [string]::IsNullOrWhiteSpace($clocVersion)){
   throw "CLOC_UNAVAILABLE: '$ClocExe --version' failed."
 }
