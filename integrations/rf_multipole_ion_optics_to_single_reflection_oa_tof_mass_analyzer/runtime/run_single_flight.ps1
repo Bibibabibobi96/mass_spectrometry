@@ -3228,11 +3228,37 @@ try {
       (Get-FileHash -Algorithm SHA256 -LiteralPath $runtimeDispatchPlanPath).Hash
     Write-RunJson -Path $package.run_config -Depth 10 -Value $runConfiguration
   }
+  $prePulseCheckpointOutputs = [System.Collections.Generic.List[string]]::new()
+  $prePulseCheckpointAction = $null
+  if ($isPrePulseTimeSeriesScreening) {
+    # A batch becomes a reusable checkpoint only after SIMION exits naturally.
+    # The shared scheduler invokes this action after each such completion;
+    # publishing the manifest atomically binds the current frozen run config
+    # and every completed raw log before another batch may fail or be stopped.
+    $prePulseCheckpointAction = {
+      param($completedRecord)
+      foreach ($path in @(
+          [string]$completedRecord.specification.stdout,
+          [string]$completedRecord.specification.stderr
+      )) {
+        if (-not [string]::IsNullOrWhiteSpace($path) -and
+            (Test-Path -LiteralPath $path -PathType Leaf) -and
+            -not $prePulseCheckpointOutputs.Contains($path)) {
+          $prePulseCheckpointOutputs.Add($path)
+        }
+      }
+      Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot `
+        -RunConfig $package.run_config -Manifest $package.run_manifest `
+        -Status interrupted -Software @('SIMION 2020','Python 3.11') `
+        -Outputs @($prePulseCheckpointOutputs)
+    }
+  }
   $waveResult = Invoke-ResourceBudgetedProcesses `
     -DispatchPlanPath $runtimeDispatchPlanPath `
     -RunDir $package.run_dir -UsagePath $resourceUsage `
     -ProcessSpecifications $processSpecifications `
-    -ExistingProcessRecords $existingProcessRecords
+    -ExistingProcessRecords $existingProcessRecords `
+    -OnProcessCompleted $prePulseCheckpointAction
   if ($waveResult.resource_budget_exceeded) {
     $resourceBudgetExceeded = $true
     throw 'Single-flight SIMION batch wave exceeded its aggregate resource budget.'

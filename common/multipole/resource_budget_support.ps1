@@ -609,7 +609,11 @@ function Invoke-ResourceBudgetedProcesses {
     [Parameter(Mandatory)][string]$RunDir,
     [Parameter(Mandatory)][string]$UsagePath,
     [object[]]$ProcessSpecifications=@(),
-    [object[]]$ExistingProcessRecords=@()
+    [object[]]$ExistingProcessRecords=@(),
+    # Optional caller-owned durable checkpoint publication.  It is invoked
+    # only after a worker has exited naturally with a record available; the
+    # callback must fail closed if its immutable receipt cannot be published.
+    [scriptblock]$OnProcessCompleted=$null
   )
   $plan=Get-Content -LiteralPath $DispatchPlanPath -Raw -Encoding UTF8|ConvertFrom-Json
   if([string]$plan.role-ne'simion_repository_dispatch_plan'){
@@ -635,6 +639,11 @@ function Invoke-ResourceBudgetedProcesses {
         -NotePropertyValue ([int64]$record.peak_working_set_bytes) -Force
     }
     if($record.completed){$null=$completed.Add($record)}else{$null=$running.Add($record)}
+  }
+  if($null-ne$OnProcessCompleted){
+    foreach($record in @($completed)){
+      & $OnProcessCompleted $record
+    }
   }
   if($pending.Count+$running.Count+$completed.Count-lt 1){throw 'No formal process was supplied.'}
   $started=Get-RepositoryUtcNow;$nextLaunch=$started
@@ -716,6 +725,9 @@ function Invoke-ResourceBudgetedProcesses {
       if(-not$record.pressure_terminated){
         $null=$completed.Add($record)
         $null=$completedThisCycle.Add($record)
+        if($null-ne$OnProcessCompleted){
+          & $OnProcessCompleted $record
+        }
       }
     }
     $running=$nextRunning
