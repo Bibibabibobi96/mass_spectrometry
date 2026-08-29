@@ -19,6 +19,7 @@ from common.multipole.particle_source_preflight import (
     COLUMNS,
     validate_source,
 )
+from common.multipole.simion_particle_source import render_canonical_source
 from common.multipole.sources.continuous_axial_volume_source import materialize
 from common.multipole.test_compile_design_request import design_request
 
@@ -122,7 +123,9 @@ class ParticleSourcePreflightTest(unittest.TestCase):
             spec_path = root / "spec.json"
             source_path = root / "source.csv"
             receipt_path = root / "receipt.json"
+            resolved_path = root / "resolved.json"
             spec_path.write_text(json.dumps(spec), encoding="utf-8")
+            resolved_path.write_text(json.dumps(self.resolved), encoding="utf-8")
             materialize(spec_path, source_path, receipt_path)
             with self.assertRaisesRegex(ValueError, "source plane"):
                 validate_source(source_path, self.resolved)
@@ -136,6 +139,13 @@ class ParticleSourcePreflightTest(unittest.TestCase):
                 result["energy_model_authority"],
                 "continuous_axial_volume_source_receipt",
             )
+            _, states, count = render_canonical_source(
+                source_path,
+                resolved_path,
+                volume_snapshot_receipt_path=receipt_path,
+            )
+            self.assertEqual(count, 20)
+            self.assertIn("[1]", states)
             receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
             receipt["particle_source"]["sha256"] = "0" * 64
             receipt_path.write_text(json.dumps(receipt), encoding="utf-8")

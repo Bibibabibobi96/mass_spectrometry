@@ -23,11 +23,15 @@
     "n1000_reference_profile_id": "family_mother_sample_v1_n1000",
     "n1000_authority_relationship": "source_model_comparison_with_same_particle_ids"
   },
+  "simion_pa_basis_policy": {
+    "kind": "content_addressed_geometry_basis",
+    "reuse_scope": "same_project_same_fingerprint"
+  },
   "experiments": [
     {
       "experiment_id": "oct_planar_source_control_n1000",
       "project_id": "rf_octupole_ion_optics",
-      "authorized_run_id": "20260829_230000__sim__simion__oct-planar-source-control__n1000",
+      "authorized_run_id": "20260829_230000__sim__simion__oct-planar-source-control__n1000__r10",
       "solver": "simion",
       "stop_stage": "transport",
       "design_profile_id": "no_acceleration_full_length",
@@ -68,7 +72,7 @@
     {
       "experiment_id": "oct_volume_source_n1000",
       "project_id": "rf_octupole_ion_optics",
-      "authorized_run_id": "20260829_230100__sim__simion__oct-volume-source__n1000",
+      "authorized_run_id": "20260829_230100__sim__simion__oct-volume-source__n1000__r10",
       "solver": "simion",
       "stop_stage": "transport",
       "design_profile_id": "no_acceleration_full_length",
@@ -112,7 +116,7 @@
       "capability_id": "multipole_source_model_comparison_v1",
       "experiment_ids": ["oct_planar_source_control_n1000", "oct_volume_source_n1000"],
       "baseline_experiment_id": "oct_planar_source_control_n1000",
-      "analysis_run_id": "20260829_230200__analysis__cross__oct-source-model-comparison__n1000",
+      "analysis_run_id": "20260829_230200__analysis__cross__oct-source-model-comparison__n1000__r10",
       "parameters": {}
     }
   ],

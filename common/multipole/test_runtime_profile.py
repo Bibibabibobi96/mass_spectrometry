@@ -219,6 +219,11 @@ class RuntimeProfileTests(unittest.TestCase):
         )
         self.assertTrue(Path(binding["path"]).is_file())
         self.assertRegex(binding["sha256"], r"^[A-F0-9]{64}$")
+        # The frozen planar arm is permitted to publish the one missing
+        # geometry/basis seed; the volume-source arm must reuse it.
+        self.assertFalse(
+            resolved["simion_pa_basis_policy"].get("require_existing", False)
+        )
 
     def test_campaign_v5_binds_governed_n100_energy_transform_for_each_family(self) -> None:
         cases = (

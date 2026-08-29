@@ -97,6 +97,7 @@ def render_canonical_source(
     operating_point_id: str | None = None,
     expected_source_family_sha256: str | None = None,
     expected_kinetic_energy_ev: float | None = None,
+    volume_snapshot_receipt_path: Path | None = None,
     particle_id_min: int | None = None,
     particle_id_max: int | None = None,
     simion_particle_id_offset: int = 0,
@@ -110,6 +111,7 @@ def render_canonical_source(
         operating_point_id=operating_point_id,
         expected_source_family_sha256=expected_source_family_sha256,
         expected_kinetic_energy_ev=expected_kinetic_energy_ev,
+        volume_snapshot_receipt_path=volume_snapshot_receipt_path,
     )
     if simion_particle_id_offset < 0:
         raise ValueError("SIMION particle ID offset must be non-negative")
@@ -120,6 +122,7 @@ def render_canonical_source(
     z_shift = 0.0 if rectangular else -float(enclosure["vacuum_z_min_mm"])
     charge = int(resolved["particle_source"]["charge_state"])
     source_z = float(resolved["interfaces_mm"]["entrance"]["release_plane_z_mm"])
+    is_volume_snapshot = bool(metadata.get("source_volume_snapshot"))
     with particles.open(encoding="utf-8-sig", newline="") as stream:
         rows = list(csv.DictReader(stream))
     if particle_id_min is not None or particle_id_max is not None:
@@ -131,7 +134,7 @@ def render_canonical_source(
     fly = ["particles {", "  coordinates = 0,"]
     states = ["return {"]
     for row in rows:
-        if abs(float(row["z_mm"]) - source_z) > 1e-12:
+        if not is_volume_snapshot and abs(float(row["z_mm"]) - source_z) > 1e-12:
             raise ValueError("canonical particle source plane differs from resolved design")
         vx, vy, vz = (float(row[key]) for key in ("vx_m_s", "vy_m_s", "vz_m_s"))
         ke = kinetic_energy_ev(mass_amu, vx, vy, vz)
@@ -168,6 +171,7 @@ def main() -> int:
     parser.add_argument("--operating-point")
     parser.add_argument("--expected-source-family-sha256")
     parser.add_argument("--expected-kinetic-energy-ev", type=float)
+    parser.add_argument("--volume-snapshot-receipt", type=Path)
     parser.add_argument("--particle-id-min", type=int)
     parser.add_argument("--particle-id-max", type=int)
     parser.add_argument("--simion-particle-id-offset", type=int, default=0)
@@ -183,6 +187,7 @@ def main() -> int:
         operating_point_id=args.operating_point,
         expected_source_family_sha256=args.expected_source_family_sha256,
         expected_kinetic_energy_ev=args.expected_kinetic_energy_ev,
+        volume_snapshot_receipt_path=args.volume_snapshot_receipt,
         particle_id_min=args.particle_id_min,
         particle_id_max=args.particle_id_max,
         simion_particle_id_offset=args.simion_particle_id_offset,

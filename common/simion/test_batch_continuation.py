@@ -143,6 +143,23 @@ class BatchContinuationTests(unittest.TestCase):
                     cohort_input_paths={"cohort": other}, policy=POLICY, output_dir=root / "cohort-child",
                 )
 
+    def test_accepts_manifest_bound_input_after_staging_path_relocation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run, contract = _parent(root, [[1]], [["TERMINAL 1", "COMPLETE"]])
+            config_path = run / "run_config.json"
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            config["inputs"]["screening_contract"] = (
+                r"C:\\tmp\\retired\\inputs\\screening.json"
+            )
+            config_path.write_text(json.dumps(config), encoding="utf-8")
+            manifest_path = run / "run_manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["run_config"]["sha256"] = file_sha256(config_path)
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            plan = self._build(run, contract, root / "child", [1])
+        self.assertEqual(plan["completed_particle_count"], 1)
+
     def test_rejects_overwriting_a_continuation_target(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

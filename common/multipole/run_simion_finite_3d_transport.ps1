@@ -409,10 +409,15 @@ try{
   $phaseAuthoritySource=$null
   $phaseReferenceSource=$null
   $sourceEnergyOverride=$null
-  $sourceDerivationProperty=if($resolvedRuntimeDocument-and
+  # A physical source-volume snapshot is already a frozen simultaneous state.
+  # Re-serializing it through the planar phase matcher changes its bytes and
+  # invalidates the receipt despite unchanged physics.
+  $hasVolumeSnapshotReceipt=($resolvedRuntimeDocument-and
+    $resolvedRuntimeDocument.particle_source.PSObject.Properties.Name-contains'volume_snapshot_receipt')
+  $sourceDerivationProperty=if(-not$hasVolumeSnapshotReceipt-and$resolvedRuntimeDocument-and
     $resolvedRuntimeDocument.PSObject.Properties.Name-contains'particle_source_derivation'){
     'particle_source_derivation'
-  }elseif($resolvedRuntimeDocument-and
+  }elseif(-not$hasVolumeSnapshotReceipt-and$resolvedRuntimeDocument-and
     $resolvedRuntimeDocument.PSObject.Properties.Name-contains'particle_source_phase_derivation'){
     'particle_source_phase_derivation'
   }else{$null}
@@ -451,8 +456,7 @@ try{
   }else{
     Copy-Item -LiteralPath $particleSourceInput -Destination $particleSource
   }
-  if($resolvedRuntimeDocument-and
-    $resolvedRuntimeDocument.particle_source.PSObject.Properties.Name-contains'volume_snapshot_receipt'){
+  if($hasVolumeSnapshotReceipt){
     $volumeBinding=$resolvedRuntimeDocument.particle_source.volume_snapshot_receipt
     if($null-eq$volumeBinding-or
       -not($volumeBinding.PSObject.Properties.Name-contains'path')-or
@@ -607,6 +611,9 @@ try{
     if($null-ne$sourceEnergyOverride){
       $sourceProjectionArguments+=@('--expected-kinetic-energy-ev',([string]$sourceEnergyOverride))
     }
+    if($volumeSnapshotReceipt){
+      $sourceProjectionArguments+=@('--volume-snapshot-receipt',$volumeSnapshotReceipt)
+    }
     & $python @sourceProjectionArguments
     if($LASTEXITCODE-ne 0){throw 'SIMION particle projection failed.'}
     function Set-SimionBatchesFromPlan {
@@ -677,14 +684,29 @@ try{
     $resolvedRuntimeDocument.PSObject.Properties.Name-contains'simion_pa_basis_policy'-and
     [string]$resolvedRuntimeDocument.simion_pa_basis_policy.kind-eq'content_addressed_geometry_basis'-and
     [string]$resolvedRuntimeDocument.simion_pa_basis_policy.reuse_scope-eq'same_project_same_fingerprint')
+  $paBasisRequireExisting=($paBasisReuseAuthorized-and
+    $resolvedRuntimeDocument.simion_pa_basis_policy.PSObject.Properties.Name-contains'require_existing'-and
+    $resolvedRuntimeDocument.simion_pa_basis_policy.require_existing-eq$true)
   $paBasisReuse=$false
   $paBasisFiles=@()
   if($paBasisReuseAuthorized-and(Test-Path -LiteralPath $paBasisCacheManifest -PathType Leaf)){
-    $paBasisFiles=@(Get-VerifiedPaBasisFiles -ManifestPath $paBasisCacheManifest `
-      -ExpectedFingerprint $paBasisFingerprint)
-    $paBasisCacheManifestInput=Copy-VerifiedRunInput -Source $paBasisCacheManifest `
-      -Destination (Join-Path $inputDir 'simion_pa_basis_cache_manifest.json')
-    $paBasisReuse=$true
+    try{
+      $paBasisFiles=@(Get-VerifiedPaBasisFiles -ManifestPath $paBasisCacheManifest `
+        -ExpectedFingerprint $paBasisFingerprint)
+      $paBasisCacheManifestInput=Copy-VerifiedRunInput -Source $paBasisCacheManifest `
+        -Destination (Join-Path $inputDir 'simion_pa_basis_cache_manifest.json')
+      $paBasisReuse=$true
+    }catch{
+      if($paBasisRequireExisting){throw}
+      # A verified cache is disposable only after its own file-integrity gate
+      # fails.  Remove this exact content-addressed key, never its cache root.
+      Write-Warning "SIMION PA-basis cache is corrupt and will be rebuilt: $paBasisFingerprint"
+      Remove-Item -LiteralPath $paBasisCacheDir -Recurse -Force
+      $paBasisFiles=@();$paBasisCacheManifestInput=$null;$paBasisReuse=$false
+    }
+  }
+  if($paBasisRequireExisting -and -not $paBasisReuse){
+    throw "SIMION_PA_BASIS_CACHE_REQUIRED: source-model comparison requires an existing verified PA basis for fingerprint $paBasisFingerprint."
   }
   $publishedPaBasisManifest=$null
   Copy-Item -LiteralPath $templateIob -Destination (Join-Path $solverDir 'quad_monolithic.iob')
@@ -764,7 +786,31 @@ try{
     $physicalDetectorVoltage=$exitVoltage
   }elseif($segmentedRodGeometry){
     $segments=$design.segmentation.segmented_rod_array
-    $entries=@($segments.electrodes|ForEach-Object{
+    # One PA electrode may consist of several physical rods in the same
+    # segment.  The RF kernel receives electrode voltages, not rod geometry;
+    # collapse such identical electrode records while rejecting any ambiguous
+    # group or common-mode assignment.
+    $electrodesById=[ordered]@{}
+    foreach($electrode in @($segments.electrodes)){
+      $electrodeId=[int]$electrode.electrode_id
+      $candidate=[pscustomobject]@{
+        electrode_id=$electrodeId
+        electrode_group=[int]$electrode.electrode_group
+        common_mode_V=[double]$electrode.common_mode_V
+      }
+      if($electrodesById.Contains($electrodeId)){
+        # OrderedDictionary's untyped numeric indexer means “ordinal slot”,
+        # not the physical PA electrode ID.  Force the object-key overload.
+        $existing=$electrodesById[[object]$electrodeId]
+        if($existing.electrode_group-ne$candidate.electrode_group -or
+          $existing.common_mode_V-ne$candidate.common_mode_V){
+          throw "Segmented RF electrode $electrodeId has inconsistent group or common-mode voltage."
+        }
+        continue
+      }
+      $electrodesById.Add($electrodeId,$candidate)
+    }
+    $entries=@($electrodesById.Values|Sort-Object electrode_id|ForEach-Object{
       "{electrode_id=$([int]$_.electrode_id),electrode_group=$([int]$_.electrode_group),common_mode_v=$([double]$_.common_mode_V)}"
     })
     $segmentedLua="segmented_rod_electrodes={$($entries -join ',')},"
@@ -786,7 +832,7 @@ try{
     simion_pa_basis=[ordered]@{
       fingerprint_sha256=$paBasisFingerprint
       authorized=$paBasisReuseAuthorized
-      action=$(if(-not$paBasisReuseAuthorized){'independent_refine'}elseif($paBasisReuse){'reuse'}else{'publish'})
+      action=$(if(-not$paBasisReuseAuthorized){'independent_refine'}elseif($paBasisReuse){'reuse'}elseif($paBasisRequireExisting){'required_reuse'}else{'publish'})
     }}
   if($resolvedRuntimeProfile){
     $provenance.resolved_runtime_profile_sha256=(
@@ -874,7 +920,9 @@ try{
   if($paBasisReuse){
     foreach($basisFile in $paBasisFiles){
       $destination=Join-Path $solverDir $basisFile.name
-      New-Item -ItemType HardLink -Path $destination -Target $basisFile.path|Out-Null
+      # SIMION's --remove-pas can mutate or remove the solver copy.  A hard
+      # link would therefore corrupt the content-addressed cache itself.
+      Copy-Item -LiteralPath $basisFile.path -Destination $destination
     }
     Write-Output "MULTIPOLE_SIMION_PA_BASIS=REUSE FINGERPRINT=$paBasisFingerprint"
   }else{
@@ -890,7 +938,9 @@ try{
         $_.Name-match'^quad_monolithic\.pa(?:#|-surf|\d+)$'
       }|Sort-Object Name)){
         $destination=Join-Path $staging $source.Name
-        New-Item -ItemType HardLink -Path $destination -Target $source.FullName|Out-Null
+        # The cache must be physically independent before fly is allowed to
+        # apply --remove-pas to its solver-local PA family.
+        Copy-Item -LiteralPath $source.FullName -Destination $destination
         $records+=[ordered]@{name=$source.Name;bytes=$source.Length;
           sha256=(Get-FileHash -LiteralPath $source.FullName -Algorithm SHA256).Hash}
       }
@@ -1232,11 +1282,29 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
     if($evidenceExit-ne 0){throw 'SIMION evidence contract gate failed.'}
     $qualification='PASS'
   }
+  # Invoke-TransportCase performs several external lifecycle operations.  Its
+  # pipeline value is not a stable summary interface under StrictMode; use the
+  # already merged, contract-checked case summaries as the sole source here.
+  $primaryCaseSummary=Get-Content -LiteralPath (Join-Path $resultDir "simion_summary__$primaryName.json") `
+    -Raw -Encoding UTF8|ConvertFrom-Json
+  if($primaryCaseSummary.PSObject.Properties.Match('transmission').Count-ne 1){
+    throw 'Primary SIMION case did not produce a transmission.'
+  }
+  $primaryTransmission=[double]$primaryCaseSummary.transmission
+  $controlTransmission=$null
+  if($CaseSet-ne'primary_only'){
+    $controlCaseSummary=Get-Content -LiteralPath (Join-Path $resultDir "simion_summary__$controlName.json") `
+      -Raw -Encoding UTF8|ConvertFrom-Json
+    if($controlCaseSummary.PSObject.Properties.Match('transmission').Count-ne 1){
+      throw 'Paired SIMION case set did not produce a control transmission.'
+    }
+    $controlTransmission=[double]$controlCaseSummary.transmission
+  }
   [ordered]@{schema_version=1;role='multipole_simion_finite_3d_transport_summary';status='success';
     qualification_status=$qualification;project_id=$ProjectId;design_profile_id=$DesignProfileId;
-    parent_resolved_design_sha256=$resolvedHash;primary_transmission=$primary.transmission;
+    parent_resolved_design_sha256=$resolvedHash;primary_transmission=$primaryTransmission;
     case_set=$CaseSet;
-    control_transmission=$(if($null-ne$control){$control.transmission}else{$null});
+    control_transmission=$controlTransmission;
     model_level='L3';formal_gate_passed=$false}|
     ConvertTo-Json -Depth 5|Set-Content -LiteralPath $summary -Encoding UTF8
   $retentionActions=Apply-RunArtifactRetention -Python $python -RepoRoot $manifestRepoRoot `

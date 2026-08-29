@@ -31,6 +31,15 @@ class SimionRunnerContractTests(unittest.TestCase):
             source.index("Invoke-SimionStep 'gem2pa'"),
         )
 
+    def test_source_model_comparison_can_require_an_existing_pa_basis(self) -> None:
+        source = RUNNER.read_text(encoding="utf-8-sig")
+        self.assertIn("$paBasisRequireExisting", source)
+        self.assertIn("SIMION_PA_BASIS_CACHE_REQUIRED", source)
+        self.assertLess(
+            source.index("SIMION_PA_BASIS_CACHE_REQUIRED"),
+            source.index("Invoke-SimionStep 'gem2pa'"),
+        )
+
     def test_runner_freezes_terminal_authority_and_consumes_resolved_snapshot(self) -> None:
         source = RUNNER.read_text(encoding="utf-8-sig")
         for token in (
@@ -104,6 +113,37 @@ class SimionRunnerContractTests(unittest.TestCase):
         self.assertIn("$design.segmentation.segmented_rod_array", runner)
         self.assertIn("zero_axial_drop_rf_on", runner)
         self.assertNotIn("--segmented-rods", runner)
+
+    def test_segmented_rf_program_collapses_shared_pa_electrodes(self) -> None:
+        runner = RUNNER.read_text(encoding="utf-8")
+        self.assertIn("$electrodesById=[ordered]@{}", runner)
+        self.assertIn("$electrodesById.Contains($electrodeId)", runner)
+        self.assertIn("$electrodesById[[object]$electrodeId]", runner)
+        self.assertIn(
+            "Segmented RF electrode $electrodeId has inconsistent group or common-mode voltage.",
+            runner,
+        )
+        self.assertIn("$electrodesById.Values|Sort-Object electrode_id", runner)
+
+    def test_reused_pa_basis_is_copied_and_corruption_is_rebuilt(self) -> None:
+        runner = RUNNER.read_text(encoding="utf-8")
+        self.assertIn("SIMION PA-basis cache is corrupt and will be rebuilt", runner)
+        self.assertIn(
+            "Remove-Item -LiteralPath $paBasisCacheDir -Recurse -Force", runner
+        )
+        self.assertIn(
+            "Copy-Item -LiteralPath $basisFile.path -Destination $destination", runner
+        )
+        self.assertNotIn("-ItemType HardLink", runner)
+
+    def test_volume_source_skips_planar_phase_reserialization(self) -> None:
+        runner = RUNNER.read_text(encoding="utf-8")
+        self.assertIn("$hasVolumeSnapshotReceipt=", runner)
+        self.assertEqual(
+            runner.count("-not$hasVolumeSnapshotReceipt-and$resolvedRuntimeDocument"),
+            2,
+        )
+        self.assertIn("Re-serializing it through the planar phase matcher", runner)
 
     def test_build_and_fly_are_serialized_without_nested_reentry(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
@@ -677,9 +717,12 @@ class SimionRunnerContractTests(unittest.TestCase):
             runner,
         )
         self.assertIn("--metric-kind primary", runner)
+        self.assertIn("$controlTransmission=$null", runner)
+        self.assertIn('"simion_summary__$primaryName.json"', runner)
+        self.assertIn("Primary SIMION case did not produce a transmission.", runner)
+        self.assertIn("if($CaseSet-ne'primary_only')", runner)
         self.assertIn(
-            "control_transmission=$(if($null-ne$control){$control.transmission}else{$null})",
-            runner,
+            "Paired SIMION case set did not produce a control transmission.", runner
         )
 
 

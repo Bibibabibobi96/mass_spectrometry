@@ -87,7 +87,7 @@ def _manifest_hashes(run_dir: Path) -> tuple[dict[Path, str], dict[str, Any]]:
 
 
 def _bound_input(manifest: dict[str, Any], config: dict[str, Any], role: str) -> tuple[Path, str]:
-    """Return one parent input only if config, manifest, and bytes agree."""
+    """Return a manifest-bound parent input, allowing retired staging paths."""
 
     config_inputs = config.get("inputs")
     records = manifest.get("inputs")
@@ -100,8 +100,12 @@ def _bound_input(manifest: dict[str, Any], config: dict[str, Any], role: str) ->
     path_value, digest = record.get("path"), record.get("sha256")
     if not isinstance(path_value, str) or not isinstance(digest, str) or len(digest) != 64:
         raise ContractError(f"continuation predecessor input binding differs: {role}")
-    path = Path(configured).resolve()
-    if path != Path(path_value).resolve() or not record.get("exists") or not path.is_file():
+    path = Path(path_value).resolve()
+    if (
+        Path(configured).name != path.name
+        or not record.get("exists")
+        or not path.is_file()
+    ):
         raise ContractError(f"continuation predecessor input binding differs: {role}")
     if file_sha256(path).upper() != digest.upper():
         raise ContractError(f"continuation predecessor input hash differs: {role}")

@@ -43,11 +43,13 @@ def _verify_success_manifest(path: Path) -> dict[str, Any]:
     manifest = _load_json(path)
     if manifest.get("status") != "success":
         raise ValueError(f"source-model arm is not a success manifest: {path}")
-    run_dir = path.parent
-    verify_record("run_config", manifest["run_config"], base_dir=run_dir)
-    config_path = record_path(manifest["run_config"], base_dir=run_dir)
-    if config_path.parent != run_dir:
-        raise ValueError("run_config must be local to the verified run")
+    manifest_copy_dir = path.parent
+    verify_record("run_config", manifest["run_config"], base_dir=manifest_copy_dir)
+    # Campaign analysis freezes a copy of each source manifest.  The copied
+    # record still deliberately points at the original, hash-verified source
+    # run, which is the authority for its input/output records.
+    config_path = record_path(manifest["run_config"], base_dir=manifest_copy_dir)
+    run_dir = config_path.parent
     for name, record in manifest.get("inputs", {}).items():
         verify_record(f"input {name}", record, base_dir=run_dir)
     for index, record in enumerate(manifest.get("outputs", []), start=1):
@@ -75,9 +77,16 @@ def _terminal_fingerprint(manifest: dict[str, Any], run_dir: Path) -> str:
 
 def _source_authority(data: dict[str, Any]) -> str:
     authority = data["config"].get("provenance", {}).get("particle_source_authority_sha256")
-    if not isinstance(authority, str) or len(authority) != 64:
-        raise ValueError("source-model arm lacks particle_source_authority_sha256")
-    return authority.upper()
+    if isinstance(authority, str) and len(authority) == 64:
+        return authority.upper()
+    # A volume snapshot intentionally bypasses planar phase derivation, so it
+    # has no derivation provenance.  Its frozen manifest input is the direct,
+    # hash-verified source authority instead.
+    record = data["manifest"].get("inputs", {}).get("particle_source")
+    source_sha = record.get("sha256") if isinstance(record, dict) else None
+    if not isinstance(source_sha, str) or len(source_sha) != 64:
+        raise ValueError("source-model arm lacks particle-source authority")
+    return source_sha.upper()
 
 
 def _source_distribution(manifest: dict[str, Any], run_dir: Path) -> dict[str, Any]:

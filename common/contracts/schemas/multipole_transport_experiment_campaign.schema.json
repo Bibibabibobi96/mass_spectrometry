@@ -112,7 +112,8 @@
       "required": ["kind", "reuse_scope"],
       "properties": {
         "kind": {"const": "content_addressed_geometry_basis"},
-        "reuse_scope": {"const": "same_project_same_fingerprint"}
+        "reuse_scope": {"const": "same_project_same_fingerprint"},
+        "require_existing": {"type": "boolean"}
       }
     },
     "experiments": {
