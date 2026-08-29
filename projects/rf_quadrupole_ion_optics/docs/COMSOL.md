@@ -35,8 +35,9 @@ integration入口内部顺序调用COMSOL/SIMION stage；内部stage不是可独
 和状态导出，不按workflow名称选择科学问题。接口准备任务负责验证RF-only、无碰撞、无静态端场；
 质量过滤任务显式建立差分RF/DC与静态公共偏置；轴向加速走公共multipole模型入口。
 
-标准输出为canonical逐粒子事件表、稀疏轨迹、solver summary、MPH及run三件套。求解器专属终点表
-不是新运行的稳定接口。跨软件统计只由Python参考分析执行。
+标准输出为canonical逐粒子事件表、稀疏轨迹、原始 solver metadata、Python 生成的 solver summary、MPH及
+run三件套。MATLAB/COMSOL只导出原始状态、事件和求解器元数据；传输率、出口 RMS、输出能量均值/标准差
+及其他发布的聚合统计均由Python从canonical状态生成。求解器专属终点表不是新运行的稳定接口。
 
 ## 数值与物理边界
 

@@ -520,6 +520,16 @@ try{
   Push-Location $codeRoot
   try{
     $env:PYTHONPATH=$codeRoot
+    & $python -m common.multipole.analyze_comsol_transport_metrics `
+      --events $events --primary-state $primaryState --control-state $controlState `
+      --resolved-design $resolved --numerics $numerics --output $metrics
+    if($LASTEXITCODE-ne 0){throw 'Python COMSOL transport metrics analysis failed.'}
+  }finally{Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue;Pop-Location}
+  if(-not(Test-Path -LiteralPath $metrics -PathType Leaf)){
+    throw 'Python COMSOL transport metrics did not create finite_3d_transport_metrics.json.'}
+  Push-Location $codeRoot
+  try{
+    $env:PYTHONPATH=$codeRoot
     $exitStatePlotLabel=$ProjectId.Replace('_',' ')
     & $python -m common.multipole.exit_state_plot `
       --series "$exitStatePlotLabel=$primaryState=$RunId" `

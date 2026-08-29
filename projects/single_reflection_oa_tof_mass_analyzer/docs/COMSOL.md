@@ -30,7 +30,7 @@
 - 当前批准几何为闭合加速器屏蔽，没有RF注入侧孔；`interfacePort`只用于隔离候选，不属于Formal。
 - 正式数值合同以加速器`hmax=1 mm`为日常值、`0.5 mm`为收敛参考；反射器无需无目标全域加密。
 - 分段时间输出必须以全局细时间格对齐；求解器只存合同规定的窗口与状态。
-- 固定粒子释放按mm读取，逐粒子到达事件统一由项目提取器处理；MATLAB不重复FWHM或bootstrap分析。
+- 固定粒子释放按mm读取，逐粒子到达事件统一由项目提取器处理。COMSOL/MATLAB只导出带终态分类的原始事件CSV及Python分析请求；FWHM、R、均值/标准差、KDE、bootstrap和源映射拟合只由`analysis/analyze_comsol_detector_events.py`经`reference_analysis`发布。
 - 可组合理想场替换只用于原因隔离，不形成Formal性能声明。
 
 ## GUI与验收

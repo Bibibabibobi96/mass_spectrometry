@@ -32,6 +32,7 @@ $frozenPythonRelativePaths = @(
     'projects\rf_quadrupole_ion_optics\workflows\interface_readiness\generate_particle_table.py',
     'projects\rf_quadrupole_ion_optics\workflows\interface_readiness\particle_source_policy.py',
     'projects\rf_quadrupole_ion_optics\analysis\paired_particle_source_bundle.py',
+    'projects\rf_quadrupole_ion_optics\analysis\analyze_comsol_particle_state_metrics.py',
     'projects\rf_quadrupole_ion_optics\analysis\validate_release_construction_gate.py',
     'common\contracts\particle_physics.py',
     'common\contracts\particle_count_policy.py',
@@ -484,12 +485,13 @@ try {
 
     $modelPath=Join-Path $candidateDir 'rf_quadrupole_ion_optics__model.mph'
     $summaryPath=Join-Path $resultDir 'solver_summary.json'
+    $rawMetadataPath=Join-Path $resultDir 'solver_raw_metadata.json'
     $trajectoryPath,$particleStatePath,$rawPhaseSpacePath =
         (Join-Path $resultDir 'trajectory_samples.csv'),
         (Join-Path $resultDir 'particle_state.csv'),(Join-Path $resultDir 'particle_raw.csv')
     foreach ($expected in @(
         $modelPath,
-        $summaryPath,
+        $rawMetadataPath,
         $trajectoryPath,
         $particleStatePath,
         $rawPhaseSpacePath,
@@ -498,6 +500,17 @@ try {
         if(-not(Test-Path -LiteralPath $expected -PathType Leaf)){
             throw "COMSOL interface output is missing: $expected"}
     }
+    $failureStage = 'python_particle_state_metrics'
+    Push-Location $repoRoot
+    try {
+        & $python -m `
+            projects.rf_quadrupole_ion_optics.analysis.analyze_comsol_particle_state_metrics `
+            --raw-metadata $rawMetadataPath --particle-state $particleStatePath `
+            --output $summaryPath
+        if($LASTEXITCODE-ne 0){throw 'Python COMSOL particle-state metrics analysis failed.'}
+    } finally { Pop-Location }
+    if(-not(Test-Path -LiteralPath $summaryPath -PathType Leaf)){
+        throw 'Python COMSOL particle-state metrics did not create solver_summary.json.'}
     $solverSummary = Get-Content -LiteralPath $summaryPath -Raw -Encoding UTF8 |
         ConvertFrom-Json
 
@@ -545,7 +558,7 @@ try {
     })
     $runConfig.parameters.lifecycle_stage = 'complete'
     Write-RunJson -Value $runConfig -Path $package.run_config
-    $outputs = @($modelPath,$summaryPath,$trajectoryPath,$particleStatePath,
+    $outputs = @($modelPath,$rawMetadataPath,$summaryPath,$trajectoryPath,$particleStatePath,
         $rawPhaseSpacePath,$bootstrapReport,$guiVerifyReport,$stateContractReport,
         $package.summary)
     Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot `

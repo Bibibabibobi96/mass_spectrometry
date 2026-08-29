@@ -1,4 +1,4 @@
-function t_resultplots = oatof_create_result_nodes(model,p,label,Ez_accel_ideal,Ez_drift_ideal,Ez_stage1_ideal,Ez_stage2_ideal,R_resolution,nDet,mass_bandwidth,mass_grid,mass_intensity)
+function t_resultplots = oatof_create_result_nodes(model,p,label,Ez_accel_ideal,Ez_drift_ideal,Ez_stage1_ideal,Ez_stage2_ideal)
 t_resultplots_start = tic;
 try
     cpl_y0 = model.result.dataset.create('cpl_y0', 'CutPlane');
@@ -196,28 +196,6 @@ try
 catch ME
     fprintf('[%s] WARNING: five-z-position radial field-error profile failed (%s).\n', label, ME.message);
 end
-try
-    tbl_ms = model.result.table.create('tbl_massspec', 'Table');
-    tbl_ms.label(sprintf('Mass spectrum data: %s', label));
-    tbl_ms.comments(sprintf('%s: Gaussian-KDE apparent-mass intensity, R_FWHM=%.1f, N=%d, bandwidth=%.6gDa', label, R_resolution, nDet, mass_bandwidth));
-    tbl_ms.setTableData([mass_grid(:), mass_intensity(:)]);
-    pg_ms = model.result.create('pg_massspec', 'PlotGroup1D');
-    pg_ms.label(sprintf('Mass spectrum: %s', label));
-    pg_ms.set('titletype', 'manual');
-    pg_ms.set('title', sprintf('Mass spectrum (apparent mass, R_FWHM=%.1f, N=%d)', R_resolution, nDet));
-    pg_ms.set('xlabel', 'apparent mass [Da]');
-    pg_ms.set('ylabel', 'intensity [counts]');
-    tg_ms = pg_ms.create('tg_ms', 'Table');
-    tg_ms.label('Mass spectrum (Table Graph)');
-    tg_ms.set('table', 'tbl_massspec');
-    tg_ms.set('plotcolumninput', 'manual');
-    tg_ms.set('xaxisdata', '1');
-    tg_ms.set('plotcolumns', '2');
-    pg_ms.run;
-    fprintf('[%s] SUCCESS: mass spectrum table plot (pg_massspec) created.\n', label);
-catch ME
-    fprintf('[%s] WARNING: mass spectrum table plot failed (%s).\n', label, ME.message);
-end
 t_resultplots = toc(t_resultplots_start);
-fprintf('[TIMING] native Result plots (5 field diagnostics + mass spectrum table): %.2fs\n', t_resultplots);
+fprintf('[TIMING] native Result plots (5 field diagnostics): %.2fs\n', t_resultplots);
 end

@@ -369,9 +369,9 @@ p.set('accel_focus_drift', sprintf('%.17g[mm]', acceleratorDesign.focus_drift_af
 % longer flight path improves mass resolution -- for a system where the
 % dominant timing spread comes from geometric/spatial effects that don't
 % scale with distance (not a genuine energy-focusing defect the
-% reflectron should fix), FWHM resolution R=t/(2*FWHM_t) should improve
-% roughly proportionally to flight length, since t grows while sigma_t
-% stays close to constant.
+% reflectron should fix), downstream Python peak analysis should improve
+% roughly proportionally to flight length, since flight time grows while
+% the geometric timing spread stays close to constant.
 % !!! Redesigned per explicit request: search over (drift length,
 % stage1/stage2 lengths) for a design achieving R>=2000 (exact non-
 % linearized T(K) model) while keeping k1=V_mid/K0<=0.8 (safety margin,
@@ -1052,8 +1052,8 @@ pdset1.set('solution', 'sol2');
 % time at sub-nanosecond spacing can exhaust the client JVM even for N=100.
 % Keep a sparse whole-flight trace for penetration/plot diagnostics and the
 % exact fine output spacing in a generous window around the expected return.
-% The latter preserves detector-crossing interpolation and therefore the
-% direct FWHM, while omitting output points irrelevant to detector arrival.
+% The latter preserves detector-crossing interpolation while omitting
+% output points irrelevant to detector arrival.
 arrival_half_window = 200e-9;
 arrival_times = (expected_tof-arrival_half_window):fine_tstep: ...
     (expected_tof+arrival_half_window);
@@ -1077,7 +1077,7 @@ fprintf('[%s] ions released: %d\n', label, nP);
 zEnd = z(end,:);
 zmax = max(z,[],1);
 fprintf('[%s] z_max reached: %.2fmm (entrance grid at %gmm, backplate at %gmm)\n', label, max(zmax), p.evaluate('L_flight','mm'), p.evaluate('L_flight','mm')+p.evaluate('L_refl','mm'));
-fprintf('[%s] final z: mean=%.3fmm\n', label, mean(zEnd,'omitnan'));
+fprintf('[%s] final z extracted for raw trajectory evidence.\n', label);
 
 % --- Verify the deepest ACTUAL penetration INTO STAGE 2 ONLY (over all
 % nP simulated ions) matches the corrected THEORETICAL d2_min=(U0-U1)/E2
@@ -1106,9 +1106,8 @@ arrivals = oatof_extract_detector_arrivals( ...
     detector_x_exact,0,detector_radius);
 detTimes = arrivals.time_s.';
 detTimes(~arrivals.hit.') = NaN;
-meanT = mean(detTimes,'omitnan'); stdT = std(detTimes,'omitnan');
 nDet = sum(arrivals.hit);
-fprintf('[%s] detected on detector plate: %d/%d, arrival time: mean=%.5fus, std=%.5fus\n', label, nDet, nP, meanT*1e6, stdT*1e6);
+fprintf('[%s] detected on detector plate: %d/%d. Arrival-time metrics are delegated to Python.\n', label, nDet, nP);
 % Parameter-link gate: actual events must remain safely inside the predicted
 % fine windows. This catches future mass/voltage/length/source changes that
 % invalidate the one-dimensional reference formulas instead of silently
@@ -1159,15 +1158,6 @@ fprintf(['[%s] event-window gate PASS: accel exit <=%.4fus; reflectron ' ...
     max(t_refl_entry_complete)*1e6, min(t_refl_exit_complete)*1e6, ...
     max(t_refl_exit_complete)*1e6, min(det_complete)*1e6, max(det_complete)*1e6, ...
     sum(completeEvent), nP);
-% Unified mass resolving-power convention (2026-07-15): R=m/FWHM_m.
-% Since m is proportional to t^2, the narrow-peak TOF-equivalent form is
-% R=t/(2*FWHM_t), with FWHM_t=2*sqrt(2*ln(2))*sample_std(t).
-fwhm_factor = 2*sqrt(2*log(2));
-fwhmT = fwhm_factor*stdT;
-R_resolution = meanT/(2*fwhmT);
-fprintf('[%s] arrival-time FWHM = %.6f ns (2*sqrt(2*ln(2))*sigma)\n', label, fwhmT*1e9);
-fprintf('[%s] mass resolution R_FWHM=m/FWHM_m=t/(2*FWHM_t) = %.1f\n', label, R_resolution);
-
 % !!! Safety check for the "fix B" adaptive fine_end window (per explicit
 % speed-optimization request): if any detected ion's arrival landed close
 % to fine_end, its recorded timestamp may have snapped to the COARSE
@@ -1184,32 +1174,8 @@ if nDet > 0
     end
 end
 
-% !!! Diagnostic: is the residual timing spread actually explained by
-% z0 (hence KE, hence the Mamyrin/accelerator theory)? Must run BEFORE
-% the N_plot re-solve below overwrites sol2's full-population data.
-z0_diag = z(1,:);
-valid_diag = ~isnan(detTimes);
-if sum(valid_diag) > 10
-    cc = corrcoef(z0_diag(valid_diag), detTimes(valid_diag));
-    fprintf('[%s] DIAG corr(z0,detTime) = %.6f\n', label, cc(1,2));
-    p1d = polyfit(z0_diag(valid_diag), detTimes(valid_diag), 1);
-    resid1 = detTimes(valid_diag) - polyval(p1d, z0_diag(valid_diag));
-    p2d = polyfit(z0_diag(valid_diag), detTimes(valid_diag), 2);
-    resid2 = detTimes(valid_diag) - polyval(p2d, z0_diag(valid_diag));
-    fprintf('[%s] DIAG std(detTime)=%.4fns, std(resid after linear z0 fit)=%.4fns, std(resid after quadratic)=%.4fns\n', ...
-        label, std(detTimes(valid_diag))*1e9, std(resid1)*1e9, std(resid2)*1e9);
-end
 t_extract = toc(t_extract_start);
-fprintf('[TIMING] full-population extraction (mphparticle N=%d) + detection/R/DIAG post-processing: %.2fs\n', nP, t_extract);
-
-result = struct('label', label, 'mass_amu', mass_amu, 'nP', nP, 'zEnd', zEnd, ...
-    'detTimes', detTimes, 'meanT', meanT, 'stdT', stdT, 'fwhmT', fwhmT, ...
-    'R_fwhm_sigma_proxy', R_resolution, 'nDet', nDet, ...
-    'detectorStatus', arrivals.status.', ...
-    'detectorRadiusMm', arrivals.radius_mm.', ...
-    'penetration_max_mm', penetration_max_mm, ...
-    'd2min_mm', reflectron_stage2_min_mm, 'd2_mm', d2_mm, ...
-    'field_idealization', particle.field_idealization);
+fprintf('[TIMING] full-population extraction plus solver-native detector-event classification: %.2fs\n', nP, t_extract);
 
 resultsDir = getenv('OATOF_RESULTS_DIR');
 if isempty(resultsDir)
@@ -1223,6 +1189,17 @@ if isempty(resultsDir)
     end
 end
 if ~exist(resultsDir,'dir'), mkdir(resultsDir); end
+handoff = oatof_export_detector_events(resultsDir,label,mass_amu,arrivals, ...
+    x_full(1,:).',y_full(1,:).',z(1,:).');
+result = struct('label', label, 'mass_amu', mass_amu, 'nP', nP, 'zEnd', zEnd, ...
+    'nDet', nDet, 'detectorStatus', arrivals.status.', ...
+    'detectorRadiusMm', arrivals.radius_mm.', ...
+    'raw_detector_events_path', handoff.events_path, ...
+    'analysis_request_path', handoff.request_path, ...
+    'analysis_output_dir', handoff.analysis_output_dir, ...
+    'penetration_max_mm', penetration_max_mm, ...
+    'd2min_mm', reflectron_stage2_min_mm, 'd2_mm', d2_mm, ...
+    'field_idealization', particle.field_idealization);
 
 % !!! Speed optimization (per explicit request, "fix A"): the trajectory
 % plot only needs x/y/z for a small subset of particles -- previously
@@ -1278,63 +1255,20 @@ fprintf('[TIMING] trajectory-plot data acquisition (re-solve or reuse): %.2fs\n'
 
 t_matlabplot_start = tic;
 fh = figure('Visible','off');
-subplot(1,3,1);
+subplot(1,2,1);
 hold on;
 for i = 1:nP_plot
     plot(x_plot(:,i), z_plot(:,i), '-');
 end
 xlabel('x [mm]'); ylabel('z [mm]'); grid on;
 title(sprintf('ion trajectory (N=%d subset): x vs z', nP_plot));
-subplot(1,3,2);
+subplot(1,2,2);
 hold on;
 for i = 1:nP_plot
     plot(t_plot*1e6, z_plot(:,i), '-');
 end
 xlabel('t [\mus]'); ylabel('z [mm]'); grid on;
 title('z position vs time');
-
-% --- Intensity vs apparent-mass curve: since t (TOF) scales as
-% sqrt(mass) at fixed accelerating voltage, each detected ion's arrival
-% time maps to an "apparent mass" m_app = mass_amu*(t/meanT)^2. A
-% histogram of m_app over all DETECTED ions (from the full nP
-% population, not just the N_plot subset) is the mass-spectrum peak
-% this design would produce for a single-mass ion population -- its
-% width directly visualizes the resolution R computed above.
-subplot(1,3,3);
-detected_t = detTimes(~isnan(detTimes));
-assert(~isempty(detected_t), ...
-    'No detector hits are available for mass-spectrum/FWHM analysis.');
-detected_t = double(detected_t(:));
-m_app = double(mass_amu*(detected_t./meanT).^2);
-m_app = m_app(:);
-mass_sigma = std(m_app);
-mass_min = min(m_app);
-mass_max = max(m_app);
-mass_span = mass_max - mass_min;
-mass_padding = double(max([0.20*mass_span; 4*mass_sigma; 1e-6]));
-assert(isscalar(mass_min) && isscalar(mass_max) && isscalar(mass_padding), ...
-    'Mass-spectrum bounds must be scalar (sizes: min=%s max=%s padding=%s).', ...
-    mat2str(size(mass_min)), mat2str(size(mass_max)), mat2str(size(mass_padding)));
-mass_grid = linspace(mass_min-mass_padding, mass_max+mass_padding, 1001);
-mass_bandwidth = max(1.06*mass_sigma*numel(m_app)^(-1/5), 1e-6);
-mass_density = mean(exp(-0.5*((mass_grid(:)-m_app(:).')/mass_bandwidth).^2), 2) ./ (sqrt(2*pi)*mass_bandwidth);
-mass_intensity = mass_density * numel(m_app) * mean(diff(mass_grid));
-peak_index = find(mass_intensity == max(mass_intensity), 1, 'first');
-half_max = mass_intensity(peak_index)/2;
-left_index = find(mass_intensity(1:peak_index) < half_max, 1, 'last');
-right_offset = find(mass_intensity(peak_index:end) < half_max, 1, 'first');
-assert(~isempty(left_index) && ~isempty(right_offset), 'Direct FWHM could not be bracketed on mass grid.');
-right_index = peak_index + right_offset - 1;
-left_mass = interp1(mass_intensity(left_index:left_index+1), mass_grid(left_index:left_index+1), half_max, 'linear');
-right_mass = interp1(mass_intensity(right_index-1:right_index), mass_grid(right_index-1:right_index), half_max, 'linear');
-mass_fwhm_direct = right_mass - left_mass;
-R_direct = mass_amu/mass_fwhm_direct;
-fprintf('[%s] direct KDE mass FWHM = %.9g Da; R=m/FWHM_m = %.6g\n', label, mass_fwhm_direct, R_direct);
-result.mass_fwhm_direct_Da = mass_fwhm_direct;
-result.R_fwhm_direct = R_direct;
-plot(mass_grid, mass_intensity, '-');
-xlabel('apparent mass [Da]'); ylabel('intensity [counts]'); grid on;
-title(sprintf('mass peak (direct FWHM R=%.0f, N=%d)', R_direct, nDet));
 
 % !!! Title now includes N (statistical sample size, nP -- NOT the N_plot=50
 % trajectory-rendering subset) and field_mode, per doc convention (always
@@ -1344,12 +1278,12 @@ title(sprintf('mass peak (direct FWHM R=%.0f, N=%d)', R_direct, nDet));
 % per d1_mm/d2_margin_frac and no longer a fixed literal) in favor of the
 % actual computed value.
 sgtitle({sprintf('oa-TOF two-stage ring-stack reflectron: %s (N=%d, field_mode=%s)', label, nP, field_mode), ...
-    sprintf('%gamu +1 ion, baseline source when selected, d1=%gmm, V_mirror=%.2fV, direct R=%.1f', ...
-    mass_amu, d1_mm, reflectron_backplate_voltage_v, R_direct)}, 'Interpreter','none');
+    sprintf('%gamu +1 ion, baseline source when selected, d1=%gmm, V_mirror=%.2fV; peak metrics exported to Python', ...
+    mass_amu, d1_mm, reflectron_backplate_voltage_v)}, 'Interpreter','none');
 print(fh, fullfile(resultsDir, sprintf('ms_oaTOF_ringstack_reflectron_%s.png', strrep(label,' ','_'))), '-dpng', '-r150');
-fprintf('[%s] SUCCESS: trajectory + mass-spectrum plot saved.\n', label);
+fprintf('[%s] SUCCESS: trajectory plot saved; peak visualization is generated by Python analysis.\n', label);
 t_matlabplot = toc(t_matlabplot_start);
-fprintf('[TIMING] MATLAB figure (trajectory+mass-spectrum PNG): %.2fs\n', t_matlabplot);
+fprintf('[TIMING] MATLAB trajectory figure (PNG): %.2fs\n', t_matlabplot);
 
 % !!! Native in-model field diagnostics are deliberately limited to FIVE
 % plots: (1) signed-log full-domain Ez, (2) signed-log full-domain
@@ -1369,7 +1303,7 @@ fprintf('[TIMING] MATLAB figure (trajectory+mass-spectrum PNG): %.2fs\n', t_matl
 % mirror x<0 side reflects the same profile) -- only the Surface plot's
 % expr differs between the two.
 t_resultplots = oatof_create_result_nodes(model,p,label,Ez_accel_ideal,Ez_drift_ideal, ...
-    Ez_stage1_ideal,Ez_stage2_ideal,R_resolution,nDet,mass_bandwidth,mass_grid,mass_intensity);
+    Ez_stage1_ideal,Ez_stage2_ideal);
 
 t_save1_start = tic;
 pg1 = model.result.create('pg_traj', 'PlotGroup3D');
@@ -1422,7 +1356,7 @@ phase_names = {'geometry (params+features+geom1.run)', ...
     'electrostatics solve (sol1)', 'field diagnostic queries', ...
     'CPT setup (before solve)', sprintf('CPT solve (N=%d, statistics population)', nP), ...
     'full-population extraction+post-processing', sprintf('trajectory-plot data (N=%d, reuse or re-solve)', nP_plot), ...
-    'MATLAB figure (PNG)', 'native Result plots (field diag+mass spectrum table)', ...
+    'MATLAB trajectory figure (PNG)', 'native Result plots (field diagnostics)', ...
     'first model.save', 'native 3D plot (pg1.run)+re-save'};
 phase_times = [t_geom, t_sel, t_mesh, t_es, t_diag, t_cptsetup, t_cpt, t_extract, t_replot, t_matlabplot, t_resultplots, t_save1, t_native];
 for pi_ = 1:numel(phase_names)

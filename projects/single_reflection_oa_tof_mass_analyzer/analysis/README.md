@@ -154,6 +154,26 @@ run instance冻结。`--resume-from <旧run目录>`保持相同配置和seed，�
 完成不同束宽；每个束宽内部仍保持“总体筛选后再粒子确认”的因果顺序。`--max-workers`只降低本次运行的
 执行并发，不改变冻结的科学输入或数值身份，也不调用SIMION资源调度器。
 
+`ideal_acceptance_300mm_simion_candidate.py`是这一个已选`300 mm / 4 mm`理想轴向点进入真实场的唯一
+候选编译器。它不重搜参数，必须绑定已发布的理想场configuration、manifest和已通过独立粒子检验的
+selected result；`--run-dir`原子发布一个`CANDIDATE_ONLY`候选，`--output`只用于临时单文件检查。集成
+侧的`three_zone_ideal_acceptance_300mm_square_v1`与`..._cylindrical_v1`必须消费同一候选的四个轴向平面、
+电位和反射器工作点；二者只允许改变横截面。候选的坐标会整体平移到现有多极杆直连端口，内部长度、
+场强和相对焦点不变；这不是额外加上一段300 mm连接器。真实方/圆场、孔径收集、轴场等价和数值收敛
+仍需由对应SIMION运行单独验证。
+
+`analyze_square_cylindrical_axis_target.py`是这对方形/圆形真实PA运行后的只读比较入口。它失败关闭地核验同一Candidate SHA、四个轴向平面与电位、加速器环位置、数值profile、脉冲和上游源身份；随后从两份`total_axis_field.csv`分别积分三区及总电势降，并报告方减圆的轴向`E_z` RMS/max诊断。若另行提供身份相同的完整飞行run，它只从已保存的`pre_pulse_state`和`local_accelerator_exit`调用独立轴场积分器；没有保存状态时明确`NOT_RUN`，绝不启动求解器或伪造参考轨迹。它不将同轴目标或小轴场差异表述为三维场、收集率或分辨率等价。
+
+`analyze_ideal_acceptance_aperture_campaign.py`只读八臂预脉冲屏幕，量化完整`N=5000`母cohort上的源侧收集、加速方向`z`展宽及`z-v_z`线性残差；它明确不报告分辨率。`analyze_ideal_acceptance_aperture_full_flight.py`消费同一八臂的已发布全脉冲飞行run，逐臂核验Candidate和输出身份，并在不取共同命中交集的前提下报告完整母cohort传输/损失、预脉冲展宽和线性残差，以及每一臂自身全部探测命中的直接FWHM、分辨率、峰形和bootstrap。二者都只是方形/圆形、孔高对照的真实场探索分析，不证明横向场等价、优化或Formal性能。
+
+`publish_ideal_acceptance_aperture_comparison.py`是上述两类八臂比较的唯一正式发布入口。它先运行对应的失败关闭读取器，再在项目canonical artifact根原子发布比较JSON、`run_config.json`、`summary.json`和`run_manifest.json`；预脉冲模式绑定campaign与八个父run manifest，全飞行模式还逐一绑定八个已核验的SIMION子run manifest。读取器拒绝任一臂时不会留下部分或成功样式的分析产物。发布结果仍分别仅为`DETECTOR_BLIND_SOURCE_ONLY`或真实场探索证据，不能据此作Formal或三维横向场等价声明。
+
+真实PA的轴向细网格若不能表示连续理论平面，可显式传入`--axial-grid-z-mm`。编译器只将三区长度投影到
+该已声明网格、保持300 mm总长与第一场区/源契约固定，并重新求解同一`a1=a2=a3=0`方程；结果模式为
+`IDEAL_ACCEPTANCE_300MM_GRID_REALIZED_V1`，会记录网格、三段长度和方程残差。它不是电压或几何搜索，
+也不把网格闭合误称为真实场等价。当前真实运行使用已注册的`0.05 mm`轴向overlay网格，故其网格可实现
+候选为`7.000 / 56.150 / 236.850 mm`。
+
 每个束宽可以有不同理论候选；“最大已验证宽度”不是一个冻结设计覆盖全部较小束宽的证明，也不是
 全局极限。该模式暂不支持`--resume-from`，失败会输出具体阶段及完整日志，修正后用新run自动重算；
 原残差/束宽比较模式的断点复用行为不变。所有新增实现是维护中的正式分析功能，结果仍为理想场探索证据。

@@ -9,7 +9,7 @@
 `exclude_shape_inside_or_on_v1`，不得用隐藏epsilon扩大机械孔。编译或缓存PA后，所有生产消费者还必须
 通过[`aperture_topology_support.ps1`](aperture_topology_support.ps1)调用
 [`verify_aperture_topology.lua`](verify_aperture_topology.lua)，确认法兰厚度方向至少有一条贯通非电极节点列，
-并确认孔外四侧接地guard仍存在；FAIL禁止Fly。该入口面向仓库内所有未来SIMION项目连接，不绑定多极杆、
+并确认孔外四侧接地guard在法兰内部厚度节点仍存在（两端面连接相邻真空域，不作为侧壁判据）；FAIL禁止Fly。该入口面向仓库内所有未来SIMION项目连接，不绑定多极杆、
 oaTOF、single-flight或具体电极编号。
 
 `surface=fractional`只提高非对齐表面的场与边界表达精度，不保证连续几何精确，也不能替代真实PA拓扑审计

@@ -30,7 +30,9 @@ foreach ($item in @(
   @{Name='particle_table'; Path=$ion; File='particles_n100.ion'},
   @{Name='stable_entry'; Path=(Join-Path $projectRoot 'comsol\run_oatof_model.m'); File='run_oatof_model.m'},
   @{Name='model_core'; Path=(Join-Path $projectRoot 'comsol\oatof_build_model_core.m'); File='oatof_build_model_core.m'},
+  @{Name='detector_event_export'; Path=(Join-Path $projectRoot 'comsol\oatof_export_detector_events.m'); File='oatof_export_detector_events.m'},
   @{Name='detector_extractor'; Path=(Join-Path $projectRoot 'comsol\oatof_extract_detector_arrivals.m'); File='oatof_extract_detector_arrivals.m'},
+  @{Name='python_event_analyzer'; Path=(Join-Path $projectRoot 'analysis\analyze_comsol_detector_events.py'); File='analyze_comsol_detector_events.py'},
   @{Name='task'; Path=$task; File='workflows/design_candidate/run_candidate_contract_build.m'}
 )) {
   if (-not (Test-Path -LiteralPath $item.Path -PathType Leaf)) {
@@ -87,7 +89,18 @@ try {
       $text -notmatch 'DETECTOR_HIT_CLASSIFICATIONS=100') {
     throw 'COMSOL candidate report did not satisfy the N=100 detector contract.'
   }
-  $meanTof = [double]([regex]::Match($text, 'MEAN_TOF_US=([0-9.eE+-]+)').Groups[1].Value)
+  $analysisRequest = [regex]::Match($text, 'PYTHON_ANALYSIS_REQUEST=(.+)').Groups[1].Value.Trim()
+  if (-not $analysisRequest -or -not (Test-Path -LiteralPath $analysisRequest -PathType Leaf)) {
+    throw 'COMSOL candidate did not emit a Python analysis request.'
+  }
+  & $package.python -m projects.single_reflection_oa_tof_mass_analyzer.analysis.analyze_comsol_detector_events --request $analysisRequest
+  if ($LASTEXITCODE -ne 0) { throw 'Python COMSOL detector-event analysis failed.' }
+  $analysisRequestDocument = Get-Content -LiteralPath $analysisRequest -Raw | ConvertFrom-Json
+  $analysisDir = [IO.Path]::GetFullPath([string]$analysisRequestDocument.analysis_output_dir)
+  $analysisReceipt = Join-Path $analysisDir 'analysis_receipt.json'
+  if (-not (Test-Path -LiteralPath $analysisReceipt -PathType Leaf)) {
+    throw 'Python COMSOL detector-event analysis receipt is missing.'
+  }
   Write-RunJson -Path $package.summary -Value ([ordered]@{
     schema_version = 1
     role = 'oa_tof_comsol_n100_candidate_functional_summary'
@@ -97,11 +110,15 @@ try {
     detector_extraction = 'one_detector_hit_classification_per_particle'
     parameterized_ring_counts = 'contract_verified'
     segmented_time_window = 'six_required_tokens_verified'
-    mean_tof_us = $meanTof
+    raw_detector_events = [regex]::Match($text, 'RAW_DETECTOR_EVENTS=(.+)').Groups[1].Value.Trim()
+    python_analysis_receipt = $analysisReceipt
+    aggregate_metrics_owner = 'python_reference_analysis'
     formal_modified = $false
   })
   $outputs = @($model, $report, $package.summary)
   $outputs += @(Get-ChildItem -LiteralPath $package.result_dir -File |
+    ForEach-Object { $_.FullName })
+  $outputs += @(Get-ChildItem -LiteralPath $analysisDir -File |
     ForEach-Object { $_.FullName })
   Write-RunManifest -Python $package.python -RepoRoot $repoRoot `
     -RunConfig $package.run_config -Status success -Software $software -Outputs $outputs

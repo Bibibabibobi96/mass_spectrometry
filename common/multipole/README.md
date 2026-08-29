@@ -124,8 +124,9 @@ segment callback、PA实例或时钟；调用者必须显式传入唯一instrume
 `simion.exe --nogui --noprompt lua`入口执行[`test_simion_rf_drive.lua`](test_simion_rf_drive.lua)，不加载
 Workbench/PA，不refine、不Fly。
 
-运行器统一发布canonical状态、metrics、轻量诊断图、summary和manifest。SIMION summary 与 canonical
-状态的传输率、成对差和指标JSON由Python分析器生成；PowerShell只编排已冻结的输入与外部进程。跨run图必须共享坐标与分箱；
+运行器统一发布canonical状态、metrics、轻量诊断图、summary和manifest。SIMION与COMSOL的传输率、出口
+RMS、输出能量统计、成对差和指标JSON均由Python分析器从canonical状态/事件生成；MATLAB仅输出原始
+求解器元数据、状态和事件。PowerShell只编排已冻结的输入与外部进程。跨run图必须共享坐标与分箱；
 图和工程metrics本身不授予资格。资源越界时停止本次进程树并报告
 `INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED`，不自动重试。
 

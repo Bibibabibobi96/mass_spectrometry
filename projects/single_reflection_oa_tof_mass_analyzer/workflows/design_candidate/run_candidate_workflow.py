@@ -31,6 +31,9 @@ STAGE_SOURCE_PREFIXES = {
     "comsol_candidate": (
         "common/comsol/",
         "projects/single_reflection_oa_tof_mass_analyzer/comsol/",
+        "projects/single_reflection_oa_tof_mass_analyzer/analysis/analyze_comsol_detector_events.py",
+        "projects/single_reflection_oa_tof_mass_analyzer/analysis/reference_analysis.py",
+        "projects/single_reflection_oa_tof_mass_analyzer/analysis/reference_analysis_core.py",
         "projects/single_reflection_oa_tof_mass_analyzer/load_oatof_contract.m",
         "projects/single_reflection_oa_tof_mass_analyzer/oatof_assert_formal_write_authorized.m",
         "projects/single_reflection_oa_tof_mass_analyzer/oatof_lifecycle_preflight.ps1",
@@ -119,6 +122,16 @@ def _ps_arguments(values: dict[str, Any]) -> list[str]:
 def _require_pass_report(path: Path) -> None:
     if not path.is_file() or "STATUS=PASS" not in path.read_text(encoding="utf-8", errors="replace"):
         raise RuntimeError(f"required PASS report is missing or failed: {path}")
+
+
+def _report_value(path: Path, key: str) -> str:
+    prefix = f"{key}="
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        if line.startswith(prefix):
+            value = line[len(prefix):].strip()
+            if value:
+                return value
+    raise RuntimeError(f"required {key} record is missing from {path}")
 
 
 def _verify_frozen_cad_python(closure: dict[str, Any], log_path: Path) -> str:
@@ -243,6 +256,24 @@ def execute_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: str) 
         )
         _run_command(build_command, logs / "comsol_build_launcher.log", environment)
         _require_pass_report(build_report)
+        analysis_request = Path(_report_value(build_report, "PYTHON_ANALYSIS_REQUEST"))
+        if not analysis_request.is_file():
+            raise RuntimeError(f"COMSOL detector-event analysis request is missing: {analysis_request}")
+        _run_command(
+            [
+                str(Path(closure["runtime"]["python_executable"]).resolve()),
+                "-m",
+                "projects.single_reflection_oa_tof_mass_analyzer.analysis.analyze_comsol_detector_events",
+                "--request",
+                str(analysis_request),
+            ],
+            logs / "comsol_detector_event_analysis.log",
+        )
+        request_document = load_json(analysis_request)
+        analysis_output = Path(request_document["analysis_output_dir"])
+        analysis_receipt = analysis_output / "analysis_receipt.json"
+        if not analysis_receipt.is_file():
+            raise RuntimeError(f"COMSOL detector-event Python analysis receipt is missing: {analysis_receipt}")
         sync_report = logs / "comsol_sync.txt"
         sync_environment = {
             "OATOF_COMSOL_MODEL_PATH": stage["model_path"],
@@ -262,7 +293,11 @@ def execute_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: str) 
         )
         _run_command(sync_command, logs / "comsol_sync_launcher.log", sync_environment)
         _require_pass_report(sync_report)
-        return {"model": stage["model_path"], "build_report": str(build_report), "sync_report": str(sync_report)}
+        return {
+            "model": stage["model_path"], "build_report": str(build_report),
+            "sync_report": str(sync_report), "analysis_request": str(analysis_request),
+            "analysis_receipt": str(analysis_receipt),
+        }
 
     if stage_id == "simion_candidate":
         template = _nonformal_template(stage, plan)
@@ -401,7 +436,7 @@ def execute_stage(stage: dict[str, Any], plan: dict[str, Any], simion_exe: str) 
         evidence = {item["stage_id"]: item.get("evidence", {}) for item in plan["stage_results_so_far"]}
         required = {
             "static_inputs": ("particle_table",),
-            "comsol_candidate": ("model", "sync_report"),
+            "comsol_candidate": ("model", "sync_report", "analysis_request", "analysis_receipt"),
             "simion_candidate": (
                 "iob", "ion_n100", "stage_summary", "runtime_report",
                 "transport_summary", "particle_csv", "transport_diagnostics",

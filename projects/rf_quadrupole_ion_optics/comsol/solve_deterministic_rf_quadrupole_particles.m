@@ -382,7 +382,7 @@ pg.create('traj1','ParticleTrajectories');
 pd=mphparticle(model,'dataset','pdset1'); x=squeeze(pd.p(:,:,1)); y=squeeze(pd.p(:,:,2)); z=squeeze(pd.p(:,:,3));
 vx=squeeze(pd.v(:,:,1)); vy=squeeze(pd.v(:,:,2)); vz=squeeze(pd.v(:,:,3)); radial=sqrt(x.^2+y.^2);
 nP=size(z,2); assert(nP==size(ions,1),'Solved particle count mismatch.');
-arrival=nan(1,nP); arrivalRadius=nan(1,nP); crossedCensusPlane=false(1,nP); hit=false(1,nP); maxRadius=max(radial,[],1,'omitnan'); threshold=censusPlaneZ-1e-6;
+hit=false(1,nP); threshold=censusPlaneZ-1e-6;
 rodRadial=radial; rodRadial(z<g.rod_z_min | z>g.rod_z_max)=NaN;
 maxRodRadius=max(rodRadial,[],1,'omitnan');
 terminalX=nan(1,nP); terminalY=nan(1,nP); terminalZ=nan(1,nP);
@@ -394,25 +394,22 @@ for i=1:nP
     terminalIndex(i)=finalSample;
     k=find(z(:,i)>=threshold,1,'first');
     if ~isempty(k)
-        crossedCensusPlane(i)=true;
-        arrivalRadius(i)=radial(k,i);
-        if arrivalRadius(i)<=enclosure.physical_detector_radius_mm
+        if radial(k,i)<=enclosure.physical_detector_radius_mm
             hit(i)=true;
-            arrival(i)=pd.t(k)*1e6;
         end
     end
 end
-hitRodRadius=maxRodRadius(hit); if isempty(hitRodRadius), maxHitRodRadius=NaN; else, maxHitRodRadius=max(hitRodRadius); end
 featureTags=cell(cpt.feature.tags()); collisionPresent=any(contains(lower(string(featureTags)),'coll'));
-result=struct('solver','COMSOL','mode',workflowId,'workflow_id',workflowId,'operating_point',operatingPoint,'collision_feature_present',collisionPresent,'q_mathieu',mphglobal(model,'q_mathieu','dataset','dset1'),'a_mathieu',mphglobal(model,'a_mathieu','dataset','dset1'), ...
-    'particles',nP,'hits',sum(hit),'transmission',mean(hit),'max_radius_mm',max(maxRadius),'max_hit_rod_radius_mm',maxHitRodRadius, ...
-    'census_plane_crossings',sum(crossedCensusPlane),'max_census_hit_radius_mm',max(arrivalRadius(hit),[],'omitnan'), ...
-    'mean_census_time_us',mean(arrival,'omitnan'),'rf_steps_per_period',rfStepsPerPeriod,'mesh_auto_level',meshAuto,'mesh_hmax_mm',meshHmaxMm,'mesh_elements_total',sum(mi.numelem), ...
+result=struct('role','rf_quadrupole_comsol_raw_solver_metadata', ...
+    'solver','COMSOL','mode',workflowId,'workflow_id',workflowId, ...
+    'operating_point',operatingPoint,'collision_feature_present',collisionPresent, ...
+    'q_mathieu',mphglobal(model,'q_mathieu','dataset','dset1'), ...
+    'a_mathieu',mphglobal(model,'a_mathieu','dataset','dset1'), ...
+    'rf_steps_per_period',rfStepsPerPeriod,'mesh_auto_level',meshAuto, ...
+    'mesh_hmax_mm',meshHmaxMm,'mesh_elements_total',sum(mi.numelem), ...
     'source_axial_offset_mm',sourceAxialOffsetMm,'mass_Th',source.mass_amu,'rf_peak_V',rfPeakV,'dc_per_group_V',dcV, ...
     'axis_common_mode_V',axisV,'static_entrance_V',staticEntranceV,'static_exit_V',staticExitV,'static_physical_detector_V',physicalDetectorV, ...
     'run_label',runLabel);
-primaryMetrics=summarizeCensusEnergy(pd,censusPlaneZ,enclosure.physical_detector_radius_mm,source.mass_amu);
-result.mean_output_energy_eV=primaryMetrics.mean_output_energy_eV;
 if collisionPresent
     error('COMSOL no-collision case contains a collision feature.');
 end
@@ -472,7 +469,7 @@ assert(isequal(stateNames(:),cellstr(string(interface.particle_state_columns(:))
 writetable(cell2table(stateRows,'VariableNames',stateNames),particleStatePath);
 
 modelPath=fullfile(comsolOutputDir,modelName); if saveModel, model.save(modelPath); end
-summaryPath=fullfile(resultsOutputDir,'solver_summary.json'); fid=fopen(summaryPath,'w'); fprintf(fid,'%s',jsonencode(result,'PrettyPrint',true)); fclose(fid);
+rawMetadataPath=fullfile(resultsOutputDir,'solver_raw_metadata.json'); fid=fopen(rawMetadataPath,'w'); fprintf(fid,'%s',jsonencode(result,'PrettyPrint',true)); fclose(fid);
 if writeDetailedOutputs
     trajectoryPath=fullfile(resultsOutputDir,'trajectory_samples.csv');
     trajectoryFile=fopen(trajectoryPath,'w'); assert(trajectoryFile>=0,'Could not open trajectory CSV.');
@@ -512,23 +509,6 @@ divergenceDeg=atan2d(hypot(state.vx_m_s,state.vy_m_s),state.vz_m_s);
 row={particleId,event,status,reason,state.t_s*1e6,(state.t_s-birthTimeS)*1e6, ...
     mod(2*pi*frequencyHz*state.t_s+phaseRad,2*pi),state.z_mm,state.x_mm,state.y_mm, ...
     state.vz_m_s,state.vx_m_s,state.vy_m_s,energyEv,radiusMm,divergenceDeg,maxRodRadiusMm};
-end
-
-function metrics=summarizeCensusEnergy(pd,censusPlaneZ,censusRadius,massAmu)
-x=squeeze(pd.p(:,:,1)); y=squeeze(pd.p(:,:,2)); z=squeeze(pd.p(:,:,3));
-vx=squeeze(pd.v(:,:,1)); vy=squeeze(pd.v(:,:,2)); vz=squeeze(pd.v(:,:,3));
-if isvector(z), x=x(:); y=y(:); z=z(:); vx=vx(:); vy=vy(:); vz=vz(:); end
-energy=nan(1,size(z,2)); hit=false(1,size(z,2));
-for particle=1:size(z,2)
-    sample=find(z(:,particle)>=censusPlaneZ-1e-6,1,'first');
-    if ~isempty(sample) && hypot(x(sample,particle),y(sample,particle))<=censusRadius
-        hit(particle)=true;
-        speed2=vx(sample,particle)^2+vy(sample,particle)^2+vz(sample,particle)^2;
-        energy(particle)=0.5*massAmu*1.66053906660e-27*speed2/1.602176634e-19;
-    end
-end
-metrics=struct('transmission',mean(hit),'mean_output_energy_eV',mean(energy,'omitnan'), ...
-    'output_energy_standard_deviation_eV',std(energy,'omitnan'));
 end
 
 function value=requireStruct(parent,fieldName)

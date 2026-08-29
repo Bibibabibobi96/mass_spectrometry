@@ -681,7 +681,10 @@ try{
   $segmented=($axialTopology-eq'segmented_rod_axial_acceleration')
   $segmentedRodGeometry=($null-ne$design.segmentation.segmented_rod_array)
   $exitAperturePlateStep=($axialTopology-eq'exit_aperture_plate_potential_step')
-  $hasDownstreamTerminal=($design.PSObject.Properties.Name-contains'downstream_terminal')
+  # A connector-owned terminal remains serialized in the integration binding
+  # but is not part of a standalone multipole PA or handoff plane.
+  $hasDownstreamTerminal=(($design.PSObject.Properties.Name-contains'downstream_terminal') -and
+    $design.downstream_terminal.upstream_terminal_electrode_present -eq $true)
   $handoffPlaneMm=if($hasDownstreamTerminal){
     [double]$design.downstream_terminal.surface_plane_z_mm
   }else{[double]$interfaces.exit.handoff_plane_z_mm}
@@ -909,7 +912,11 @@ try{
     $surfaceToleranceMm=[Math]::Max(1e-6*$resolvedCellMmZ,1e-9)
     $handoffApertureLua=if($hasDownstreamTerminal){
       $terminalAperture=$design.downstream_terminal.aperture
-      "handoff_aperture={shape=`"$([string]$terminalAperture.shape)`",width_mm=$([double]$terminalAperture.width_mm),height_mm=$([double]$terminalAperture.height_mm)},"
+      if([string]$terminalAperture.shape -eq 'rectangular'){
+        "handoff_aperture={shape=`"rectangular`",width_mm=$([double]$terminalAperture.width_mm),height_mm=$([double]$terminalAperture.height_mm)},"
+      }elseif([string]$terminalAperture.shape -eq 'circular'){
+        "handoff_aperture={shape=`"circular`",radius_mm=$([double]$terminalAperture.radius_mm)},"
+      }else{throw 'Resolved downstream terminal aperture shape is unsupported.'}
     }else{''}
     $batchRuns=@()
     foreach($batch in $simionBatches){

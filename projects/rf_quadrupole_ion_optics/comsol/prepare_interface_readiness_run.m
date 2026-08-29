@@ -64,13 +64,10 @@ assert(requiredFinite(spec,'minimum_transmission')==minimumTransmission && ...
     requiredFinite(spec,'source_axial_offset_mm')==0, ...
     'Compiled interface thresholds or source placement differ from the frozen scientific mode.');
 
+% The solver exports only raw COMSOL metadata and canonical particle state.
+% The PowerShell lifecycle invokes the Python authority after this task returns;
+% it alone evaluates transmission and radius acceptance.
 result=solve_deterministic_rf_quadrupole_particles(runConfig);
-r0=requiredFinite(requiredStruct(resolved,'geometry_mm'),'inscribed_radius_r0');
-if result.transmission<minimumTransmission || ...
-        result.max_hit_rod_radius_mm>=maximumRadiusFraction*r0
-    error(['COMSOL interface transport gate failed: transmission=%.6g ' ...
-        'maxHitRodRadius=%.6g'],result.transmission,result.max_hit_rod_radius_mm);
-end
 end
 
 function value=requiredStruct(parent,fieldName)

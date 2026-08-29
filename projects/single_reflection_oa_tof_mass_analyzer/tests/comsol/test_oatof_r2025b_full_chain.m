@@ -58,25 +58,19 @@ detectorX = model.param.evaluate('detector_x') * 1e3;
 detectorRadius = model.param.evaluate('detector_radius') * 1e3;
 arrivals = oatof_extract_detector_arrivals( ...
     t(:),x,y,z,detectorZ,1e-3,0.5,detectorX,0,detectorRadius);
-detTimes = arrivals.time_s;
-detTimes(~arrivals.hit) = NaN;
 zMax = max(z, [], 1);
 
 nDetected = sum(arrivals.hit);
-meanTime = mean(detTimes, 'omitnan');
-stdTime = std(detTimes, 'omitnan');
-fwhmFactor = 2*sqrt(2*log(2));
-fwhmTime = fwhmFactor*stdTime;
-resolution = meanTime / (2*fwhmTime);
 stage2Penetration = max(zMax) - ...
     model.param.evaluate('L_flight') * 1e3 - 120;
+handoff = oatof_export_detector_events(fileparts(reportPath), ...
+    'FormalFullChainVerify', 524, arrivals, x(1,:).', y(1,:).', z(1,:).');
 
 fprintf(fid, 'PARTICLES=%d\n', nParticles);
 fprintf(fid, 'DETECTED=%d\n', nDetected);
-fprintf(fid, 'MEAN_TOF_US=%.12g\n', meanTime * 1e6);
-fprintf(fid, 'STD_TOF_NS=%.12g\n', stdTime * 1e9);
-fprintf(fid, 'FWHM_TOF_NS=%.12g\n', fwhmTime * 1e9);
-fprintf(fid, 'RESOLUTION_R_FWHM=%.12g\n', resolution);
+fprintf(fid, 'RAW_DETECTOR_EVENTS=%s\n', handoff.events_path);
+fprintf(fid, 'PYTHON_ANALYSIS_REQUEST=%s\n', handoff.request_path);
+fprintf(fid, 'AGGREGATE_METRICS_OWNER=python_reference_analysis\n');
 fprintf(fid, 'MAX_STAGE2_PENETRATION_MM=%.12g\n', stage2Penetration);
 for status = unique(arrivals.status).'
     fprintf(fid, 'DETECTOR_STATUS_%s=%d\n', ...
@@ -86,10 +80,8 @@ end
 assert(nDetected == expectedParticles, ...
     'Only %d/%d particles reached the detector.', ...
     nDetected, expectedParticles);
-assert(abs(meanTime * 1e6 - 31.44793) < 0.05, ...
-    'Mean TOF moved outside the formal baseline tolerance.');
-assert(resolution > 15000/fwhmFactor, ...
-    'Resolution %.6g is below the accepted formal-baseline floor.', resolution);
+assert(isfile(handoff.events_path) && isfile(handoff.request_path), ...
+    'Formal full-chain test did not export the Python analysis handoff.');
 
 fprintf(fid, 'STATUS=PASS\n');
 clear cleanup

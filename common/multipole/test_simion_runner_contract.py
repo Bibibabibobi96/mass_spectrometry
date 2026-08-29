@@ -42,6 +42,7 @@ class SimionRunnerContractTests(unittest.TestCase):
             "$design.axial_dc",
             "$design.downstream_terminal.surface_plane_z_mm",
             "handoff_aperture={shape=",
+            "radius_mm=$([double]$terminalAperture.radius_mm)",
         ):
             self.assertIn(token, source)
         self.assertLess(
@@ -343,6 +344,7 @@ class SimionRunnerContractTests(unittest.TestCase):
             program,
         )
         self.assertIn("inside_handoff_aperture(handoff)", program)
+        self.assertIn("handoff_aperture.radius_mm", program)
         self.assertIn("terminal_written[ion_number] = true", program)
         self.assertIn("if terminal_written[particle] then return end", program)
         self.assertIn(

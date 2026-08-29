@@ -19,6 +19,33 @@ OCT = "rf_octupole_ion_optics"
 
 
 class ResourceBudgetTests(unittest.TestCase):
+    def test_disk_capacity_check_reports_live_volume_capacity_and_fails_closed(self) -> None:
+        """The public preflight keeps a fixed 10 GiB reserve on its target volume."""
+        support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
+        command = (
+            f". '{support}';"
+            "$pass=Test-RepositoryDiskCapacity -TargetPath $env:TEMP "
+            "-TransientRunDirectoryBytes 0;"
+            "if($pass.role-ne'repository_disk_capacity_check'-or"
+            "$pass.system_disk_reserve_bytes-ne10GB-or-not$pass.passed-or"
+            "$pass.free_bytes-lt$pass.required_available_bytes){exit 3};"
+            "try{Test-RepositoryDiskCapacity -TargetPath $env:TEMP "
+            "-TransientRunDirectoryBytes ([int64]::MaxValue-10GB);exit 4}catch{"
+            "$failed=$_.TargetObject;if($failed.role-ne'repository_disk_capacity_check'-or"
+            "$failed.passed-or$failed.free_bytes-ge$failed.required_available_bytes){exit 5}}"
+        )
+        completed = subprocess.run(
+            ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+            cwd=REPO_ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=15,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
     def test_scheduler_lifecycle_event_reports_real_batch_metadata(self) -> None:
         """Public executor events must identify the completed work exactly."""
         support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
@@ -132,7 +159,11 @@ class ResourceBudgetTests(unittest.TestCase):
                     {
                         "role": "simion_repository_dispatch_plan",
                         "estimation": {"kind": "formal_first_batch_observation"},
-                        "limits": {"formal_observation_seconds": 45},
+                        "limits": {
+                            "formal_observation_seconds": 45,
+                            "memory_critical_reserve_bytes": 512 * 1024**2,
+                            "memory_critical_seconds": 15,
+                        },
                     }
                 ),
                 encoding="utf-8",
@@ -170,6 +201,50 @@ class ResourceBudgetTests(unittest.TestCase):
                 timeout=15,
             )
             self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    def test_completed_first_formal_observation_still_writes_admission_receipt(self) -> None:
+        """A naturally completed N=1 observation skips the dispatch loop safely."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dispatch, usage = root / "dispatch.json", root / "usage.json"
+            dispatch.write_text(json.dumps({
+                "role": "simion_repository_dispatch_plan",
+                "particle_count": 1,
+                "estimation": {
+                    "kind": "observed_formal_batch",
+                    "per_process_memory_budget_bytes": 123456,
+                    "memory_safety_factor": 1.0,
+                },
+                "limits": {
+                    "maximum_concurrency": 1, "launch_stagger_seconds": 5,
+                    "memory_critical_seconds": 15,
+                    "memory_recovery_stable_seconds": 45,
+                    "maximum_memory_recovery_attempts": 2,
+                    "maximum_memory_danger_termination_attempts": 2,
+                    "memory_admission_reserve_bytes": 1024**3,
+                    "memory_critical_reserve_bytes": 512 * 1024**2,
+                    "cpu_admission_percent": 95.0,
+                },
+            }), encoding="utf-8")
+            support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
+            command = (
+                f". '{support}';"
+                "$record=[pscustomobject]@{name='batch01';completed=$true;exit_code=0;"
+                "peak_working_set_bytes=[int64]10;peak_managed_memory_bytes=[int64]20;"
+                "completed_during_observation=$true;observed_process_cpu_percent=0.0;"
+                "observed_background_cpu_percent=0.0};"
+                f"$r=Invoke-ResourceBudgetedProcesses -DispatchPlanPath '{dispatch}' "
+                f"-RunDir '{root}' -UsagePath '{usage}' -ExistingProcessRecords @($record);"
+                "if($r.resource_budget_exceeded){exit 3};"
+                f"$receipt=Get-Content -Raw '{usage}'|ConvertFrom-Json;"
+                "if($receipt.scheduler_receipt.dynamic_admission_bytes_at_finish-ne123456){exit 4}"
+            )
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                cwd=REPO_ROOT, check=False, capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=15,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
     def test_scheduler_recovers_twice_then_fails_closed_after_third_danger(self) -> None:
         """Exercise the 15 s danger, 45 s recovery, and terminal-fail state machine."""
@@ -249,6 +324,71 @@ class ResourceBudgetTests(unittest.TestCase):
             )
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
+    def test_failed_batch_cancels_its_wave_without_claiming_resource_pressure(self) -> None:
+        """A solver failure stops siblings and queued work, preserving its cause."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dispatch, usage = root / "dispatch.json", root / "usage.json"
+            dispatch.write_text(
+                json.dumps(
+                    {
+                        "role": "simion_repository_dispatch_plan",
+                        "estimation": {
+                            "kind": "exact_resource_profile",
+                            "per_process_memory_budget_bytes": 1024**2,
+                            "memory_safety_factor": 1.10,
+                        },
+                        "limits": {
+                            "maximum_concurrency": 2,
+                            "launch_stagger_seconds": 5,
+                            "memory_critical_seconds": 15,
+                            "memory_recovery_stable_seconds": 45,
+                            "maximum_memory_recovery_attempts": 2,
+                            "maximum_memory_danger_termination_attempts": 2,
+                            "memory_admission_reserve_bytes": 1024**3,
+                            "memory_critical_reserve_bytes": 512 * 1024**2,
+                            "cpu_admission_percent": 95.0,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
+            command = (
+                f". '{support}';"
+                "function Get-SystemCpuPercent {[double]0};"
+                "function Get-RepositoryAvailableMemoryBytes {[int64](32GB)};"
+                "$exe=(Get-Process -Id $PID).Path;"
+                "$specs=@("
+                "[pscustomobject]@{name='fails';file_path=$exe;"
+                "argument_list=@('-NoProfile','-Command','Start-Sleep -Seconds 7; exit 7');"
+                f"stdout='{root}\\fails.out';stderr='{root}\\fails.err';environment=@{{}};working_directory='{root}'}},"
+                "[pscustomobject]@{name='sibling';file_path=$exe;"
+                "argument_list=@('-NoProfile','-Command','Start-Sleep -Seconds 20');"
+                f"stdout='{root}\\sibling.out';stderr='{root}\\sibling.err';environment=@{{}};working_directory='{root}'}},"
+                "[pscustomobject]@{name='queued';file_path=$exe;"
+                "argument_list=@('-NoProfile','-Command','Start-Sleep -Seconds 20');"
+                f"stdout='{root}\\queued.out';stderr='{root}\\queued.err';environment=@{{}};working_directory='{root}'}}) ;"
+                f"$r=Invoke-ResourceBudgetedProcesses -DispatchPlanPath '{dispatch}' -RunDir '{root}' "
+                f"-UsagePath '{usage}' -ProcessSpecifications $specs;"
+                "if($r.resource_budget_exceeded){exit 3};"
+                f"$receipt=Get-Content -Raw '{usage}'|ConvertFrom-Json;"
+                "if($receipt.status-ne'process_failed' -or "
+                "$receipt.scheduler_receipt.batch_failure_cancellation_events.Count-ne1){exit 4};"
+                "if(Test-Path -LiteralPath '" + str(root / "queued.out") + "'){exit 5}"
+            )
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                cwd=REPO_ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=25,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
     def test_dynamic_admission_pause_records_memory_reason_with_two_gib_free(self) -> None:
         """The 1 GiB reserve alone is insufficient when the next worker is larger."""
         with tempfile.TemporaryDirectory() as directory:
@@ -309,6 +449,64 @@ class ResourceBudgetTests(unittest.TestCase):
             )
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
+    def test_one_lane_observed_formal_profile_starts_from_single_peak_not_concurrency_headroom(self) -> None:
+        """A completed formal batch must allow its sole remaining lane to start."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dispatch, usage = root / "dispatch.json", root / "usage.json"
+            observed_peak = 35 * 1024**3
+            dispatch.write_text(
+                json.dumps(
+                    {
+                        "role": "simion_repository_dispatch_plan",
+                        "estimation": {
+                            "kind": "observed_formal_batch",
+                            "observed_peak_bytes": observed_peak,
+                            "per_process_memory_budget_bytes": int(observed_peak * 1.10),
+                            "memory_safety_factor": 1.10,
+                        },
+                        "limits": {
+                            "maximum_concurrency": 1,
+                            "launch_stagger_seconds": 5,
+                            "memory_critical_seconds": 15,
+                            "memory_recovery_stable_seconds": 45,
+                            "maximum_memory_recovery_attempts": 2,
+                            "maximum_memory_danger_termination_attempts": 2,
+                            "memory_admission_reserve_bytes": 1024**3,
+                            "memory_critical_reserve_bytes": 512 * 1024**2,
+                            "cpu_admission_percent": 95.0,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
+            command = (
+                f". '{support}';"
+                "function Get-SystemCpuPercent {[double]0};"
+                "function Get-RepositoryAvailableMemoryBytes {[int64](38GB)};"
+                "$exe=(Get-Process -Id $PID).Path;"
+                "$specs=@([pscustomobject]@{name='only';file_path=$exe;"
+                "argument_list=@('-NoProfile','-Command','Start-Sleep -Milliseconds 200');"
+                f"stdout='{root}\\only.out';stderr='{root}\\only.err';environment=@{{}};working_directory='{root}'}});"
+                f"$r=Invoke-ResourceBudgetedProcesses -DispatchPlanPath '{dispatch}' -RunDir '{root}' "
+                f"-UsagePath '{usage}' -ProcessSpecifications $specs;"
+                "if($r.resource_budget_exceeded-or$r.processes.Count-ne1-or$r.processes[0].exit_code-ne0){exit 3};"
+                f"$receipt=Get-Content -Raw '{usage}'|ConvertFrom-Json;"
+                "if(@($receipt.scheduler_receipt.launch_pause_events).Count-ne0){exit 4}"
+            )
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                cwd=REPO_ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=20,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
     def test_process_sampler_drops_a_reused_tracked_pid(self) -> None:
         """A reused child PID must not keep a completed SIMION lane alive."""
         support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
@@ -331,6 +529,23 @@ class ResourceBudgetTests(unittest.TestCase):
             timeout=20,
         )
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
+    def test_single_process_meter_carries_descendant_birth_identities(self) -> None:
+        """The lightweight meter must not confuse a reused helper PID with SIMION."""
+        support = (REPO_ROOT / "common/multipole/resource_budget_support.ps1").read_text(
+            encoding="utf-8"
+        )
+        start = support.index("function Invoke-ResourceBudgetedProcess")
+        end = support.index("function Assert-RepositoryProcessSpecification", start)
+        meter = support[start:end]
+        self.assertIn(
+            "-TrackedProcessStartedAtUtcTicks $trackedProcessStartedAtUtcTicks",
+            meter,
+        )
+        self.assertIn(
+            "$trackedProcessStartedAtUtcTicks=$sample.tracked_process_started_at_utc_ticks",
+            meter,
+        )
 
 
     def validate(
@@ -976,6 +1191,60 @@ class ResourceBudgetTests(unittest.TestCase):
             measured = json.loads(usage.read_text(encoding="utf-8-sig"))
             self.assertEqual(measured["status"], "running")
             self.assertIsNone(measured["limit_name"])
+
+    def test_single_process_waits_for_verified_live_root_when_tree_sample_is_empty(
+        self,
+    ) -> None:
+        """A transient empty tree observation cannot release a live solver's staging area."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            budget = root / "budget.json"
+            usage = root / "usage.json"
+            budget.write_text(
+                json.dumps(
+                    {
+                        "limits": {
+                            "wall_clock_seconds": 10,
+                            "transient_run_directory_bytes": 1024**3,
+                            "process_tree_working_set_bytes": 1024**3,
+                            "minimum_system_available_memory_bytes": 1,
+                            "compact_final_retained_bytes": 1024**2,
+                            "automatic_retry_count": 0,
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
+            command = (
+                f". '{support}';"
+                "function Get-ManagedSolverProcessSample {"
+                "param([int[]]$RootProcessIds,[int[]]$TrackedProcessIds,"
+                "[hashtable]$RootProcessStartedAtUtcTicks,[hashtable]$TrackedProcessStartedAtUtcTicks);"
+                "[pscustomobject]@{tracked_process_ids=@($RootProcessIds);"
+                "active_process_ids=@();working_set_bytes=0;private_bytes=0;"
+                "managed_memory_bytes=0;total_processor_time_ticks=0}"
+                "};"
+                f"$started=[Diagnostics.Stopwatch]::StartNew();$r=Invoke-ResourceBudgetedProcess "
+                f"-ResolvedBudgetPath '{budget}' -RunDir '{root}' -UsagePath '{usage}' "
+                "-FilePath (Get-Process -Id $PID).Path "
+                "-ArgumentList @('-NoProfile','-Command','Start-Sleep -Seconds 2');"
+                "$started.Stop();if($r.resource_budget_exceeded-or$r.exit_code-ne0-or"
+                "$started.Elapsed.TotalSeconds-lt1.5){exit 3}"
+            )
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                cwd=REPO_ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=15,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            measured = json.loads(usage.read_text(encoding="utf-8-sig"))
+            self.assertGreaterEqual(measured["wall_clock_seconds"], 1.5)
 
     def test_parallel_wave_tracks_worker_after_short_lived_launcher_exits(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

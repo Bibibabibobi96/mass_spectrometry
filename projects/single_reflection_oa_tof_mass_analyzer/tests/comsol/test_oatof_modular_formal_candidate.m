@@ -27,6 +27,7 @@ assert(isfile(modelPath), 'Modular formal candidate MPH was not saved.');
 fprintf(fid, 'MODEL=%s\n', modelPath);
 fprintf(fid, 'PARTICLES=%d\n', result.nP);
 fprintf(fid, 'DETECTED=%d\n', result.nDet);
-fprintf(fid, 'MEAN_TOF_US=%.12g\n', result.meanT*1e6);
+fprintf(fid, 'RAW_DETECTOR_EVENTS=%s\n', result.raw_detector_events_path);
+fprintf(fid, 'PYTHON_ANALYSIS_REQUEST=%s\n', result.analysis_request_path);
 fprintf(fid, 'STATUS=PASS\n');
 clear cleanup

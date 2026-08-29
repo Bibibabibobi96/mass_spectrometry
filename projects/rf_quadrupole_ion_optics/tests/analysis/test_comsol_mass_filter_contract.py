@@ -107,6 +107,29 @@ class ComsolMassFilterContractTests(unittest.TestCase):
             "solve_deterministic_rf_quadrupole_particles(caseConfig)", mass_task
         )
 
+    def test_matlab_exports_raw_metadata_while_python_owns_aggregate_metrics(self) -> None:
+        builder = (
+            PROJECT_ROOT / "comsol" / "solve_deterministic_rf_quadrupole_particles.m"
+        ).read_text(encoding="utf-8")
+        interface_runner = (
+            PROJECT_ROOT / "workflows/interface_readiness/run_comsol.ps1"
+        ).read_text(encoding="utf-8")
+        mass_runner = (
+            PROJECT_ROOT / "workflows/mass_filter_reference/run_comsol.ps1"
+        ).read_text(encoding="utf-8")
+        self.assertIn("solver_raw_metadata.json", builder)
+        self.assertNotIn("solver_summary.json", builder)
+        for forbidden in (
+            "summarizeCensusEnergy",
+            "mean_output_energy_eV",
+            "output_energy_standard_deviation_eV",
+            "sum(hit)",
+            "mean(hit)",
+        ):
+            self.assertNotIn(forbidden, builder)
+        for runner in (interface_runner, mass_runner):
+            self.assertIn("analyze_comsol_particle_state_metrics", runner)
+
     def test_comsol_runners_freeze_the_governed_resolved_design(self) -> None:
         transport_runner = (
             PROJECT_ROOT / "workflows" / "interface_readiness" / "run_comsol.ps1"

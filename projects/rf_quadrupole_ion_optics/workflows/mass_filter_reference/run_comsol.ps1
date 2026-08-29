@@ -69,6 +69,7 @@ try {
     contract_loader=(Join-Path $projectRoot 'load_rf_quadrupole_contract.m')
     case_preparer=(Join-Path $PSScriptRoot 'prepare_comsol_scan.py')
     result_analyzer=(Join-Path $PSScriptRoot 'evaluate_comsol.py')
+    state_metrics_analyzer=(Join-Path $projectRoot 'analysis\analyze_comsol_particle_state_metrics.py')
     paired_mass_library=(Join-Path $repoRoot 'common\multipole\paired_mass_scan.py')
   }
   foreach($key in $codeSources.Keys){
@@ -126,7 +127,7 @@ try {
       }
     }
     Write-RunJson -Value $caseConfig -Path $caseConfigPath
-    $cases+=,[ordered]@{mass_Th=$mass;run_config=$caseConfigPath;solver_summary=(Join-Path $caseResultDir 'solver_summary.json');particle_state=(Join-Path $caseResultDir 'particle_state.csv')}
+    $cases+=,[ordered]@{mass_Th=$mass;run_config=$caseConfigPath;solver_summary=(Join-Path $caseResultDir 'solver_summary.json');raw_metadata=(Join-Path $caseResultDir 'solver_raw_metadata.json');particle_state=(Join-Path $caseResultDir 'particle_state.csv')}
   }
   Write-RunJson -Value ([ordered]@{schema_version=1;role='rf_quadrupole_comsol_mass_filter_scan_execution';cases=$cases}) -Path $scanConfig
   $runConfiguration=[ordered]@{
@@ -163,9 +164,16 @@ try {
   } finally { Restore-RunEnvironment -Names @('RFQUAD_SCAN_CONFIG','COMSOL_BOOTSTRAP_REPORT') -Snapshot $environment }
 
   foreach($case in $cases){
-    foreach($path in @($case.solver_summary,$case.particle_state)){
+    foreach($path in @($case.raw_metadata,$case.particle_state)){
       if(-not(Test-Path -LiteralPath $path -PathType Leaf)){throw "Mass-case output is missing: $path"}
     }
+    & $package.python -m `
+      projects.rf_quadrupole_ion_optics.analysis.analyze_comsol_particle_state_metrics `
+      --raw-metadata $case.raw_metadata --particle-state $case.particle_state `
+      --output $case.solver_summary
+    if($LASTEXITCODE-ne 0){throw "Python COMSOL particle-state metrics analysis failed: $($case.mass_Th) Th"}
+    if(-not(Test-Path -LiteralPath $case.solver_summary -PathType Leaf)){
+      throw "Python COMSOL particle-state metrics did not create summary: $($case.mass_Th) Th"}
   }
   $response=Join-Path $resultDir 'mass-response__comsol.csv'
   $metrics=Join-Path $resultDir 'mass-filter__comsol-functional-metrics.json'
@@ -182,7 +190,7 @@ try {
     claim_limit=$metricDocument.claim_limit
   })
   $outputs=@($report,$response,$metrics,$package.summary)
-  foreach($case in $cases){$outputs+=@($case.solver_summary,$case.particle_state)}
+  foreach($case in $cases){$outputs+=@($case.raw_metadata,$case.solver_summary,$case.particle_state)}
   $centerToken=('{0:g}' -f $centerMass).Replace('.','p')
   $centerModel=Join-Path $runDir "comsol\mass_$centerToken`_Th\rf_quadrupole_ion_optics__model.mph"
   if(Test-Path -LiteralPath $centerModel -PathType Leaf){$outputs+=$centerModel}
