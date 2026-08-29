@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import csv
 from pathlib import Path
+import re
 from typing import Any
 
 from common.contracts.machine_contracts import ContractError
@@ -21,6 +22,12 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 )
 
 
+SOURCE_RELEASE_PREFIX = "TRACE: source_release"
+SOURCE_RELEASE_PATTERN = re.compile(
+    r"^TRACE: source_release ion=(?P<ion>\d+) particle_id=(?P<particle_id>\d+) .+$"
+)
+
+
 PRE_PULSE_POLICY = TraceContinuationPolicy(
     terminal_prefix=TERMINAL_PREFIX,
     terminal_pattern=TERMINAL_PATTERN,
@@ -28,6 +35,8 @@ PRE_PULSE_POLICY = TraceContinuationPolicy(
     state_pattern=TRACE_PATTERN,
     completion_prefix="status,Fly completed.",
     prohibited_patterns=(PROHIBITED_DOWNSTREAM_PATTERN,),
+    release_prefix=SOURCE_RELEASE_PREFIX,
+    release_pattern=SOURCE_RELEASE_PATTERN,
 )
 
 

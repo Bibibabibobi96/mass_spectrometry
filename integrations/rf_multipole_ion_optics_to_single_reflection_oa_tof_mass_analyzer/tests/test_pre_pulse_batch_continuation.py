@@ -12,13 +12,19 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 )
 
 
-def _terminal(particle_id: int) -> str:
+def _terminal(particle_id: int, ion: int | None = None) -> str:
+    ion = particle_id if ion is None else ion
     return (
         "TRACE: pre_pulse_screening_terminal "
-        f"ion={particle_id} particle_id={particle_id} instrument_time_us=3 "
+        f"ion={ion} particle_id={particle_id} instrument_time_us=3 "
         "x_mm=0 y_mm=0 z_mm=0 vx_mm_per_us=1 vy_mm_per_us=0 vz_mm_per_us=0 "
         "terminal_reason=splat"
     )
+
+
+def _release(particle_id: int, ion: int | None = None) -> str:
+    ion = particle_id if ion is None else ion
+    return f"TRACE: source_release ion={ion} particle_id={particle_id} fixture=1"
 
 
 def _predecessor(root: Path, batches: list[list[int]], logs: list[list[str]]) -> tuple[Path, str]:
@@ -101,25 +107,25 @@ class PrePulseBatchContinuationTests(unittest.TestCase):
         self.assertIn("if ($prePulseTimeSeriesScreening)", adapter)
         self.assertIn("$runnerArguments.ResumePrePulseFromRun", adapter)
 
-    def test_preserves_each_independent_completed_or_terminal_prefix(self) -> None:
+    def test_preserves_only_contiguous_complete_batch_prefix(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             predecessor, contract_sha = _predecessor(root, [[1, 2], [3, 4], [5, 6]], [
-                [_terminal(1), _terminal(2), "status,Fly completed. 2 splats, 1 seconds"],
-                [_terminal(3)],
-                [_terminal(5), _terminal(6), "status,Fly completed. 2 splats, 1 seconds"],
+                [_release(1), _terminal(1), _release(2), _terminal(2), "status,Fly completed. 2 splats, 1 seconds"],
+                [_release(3, 1), _terminal(3, 1)],
+                [_release(5, 1), _terminal(5, 1), _release(6, 2), _terminal(6, 2), "status,Fly completed. 2 splats, 1 seconds"],
             ])
             result = self._build(predecessor, contract_sha, root / "continuation", list(range(1, 7)))
-        self.assertEqual(result["completed_particle_count"], 5)
-        self.assertEqual(result["replay_particle_count"], 1)
+        self.assertEqual(result["completed_particle_count"], 2)
+        self.assertEqual(result["replay_particle_count"], 4)
         self.assertEqual(
-            [item["replay_particle_count"] for item in result["batches"]], [0, 1, 0]
+            [item["replay_particle_count"] for item in result["batches"]], [0, 2, 2]
         )
 
     def test_rejects_noncontiguous_terminal_prefix(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            predecessor, contract_sha = _predecessor(root, [[1, 2]], [[_terminal(2)]])
+            predecessor, contract_sha = _predecessor(root, [[1, 2]], [[_release(1), _terminal(2, 2)]])
             with self.assertRaisesRegex(ContractError, "contiguous prefix"):
                 self._build(predecessor, contract_sha, root / "continuation", [1, 2])
 
@@ -127,10 +133,10 @@ class PrePulseBatchContinuationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             ancestor, contract_sha = _predecessor(root / "ancestor", [[1, 2], [3, 4]], [
-                [_terminal(1), _terminal(2), "status,Fly completed. 2 splats, 1 seconds"], [],
+                [_release(1), _terminal(1), _release(2), _terminal(2), "status,Fly completed. 2 splats, 1 seconds"], [],
             ])
             predecessor, _ = _predecessor(root / "predecessor", [[1, 2], [3, 4]], [
-                [], [_terminal(3), _terminal(4), "status,Fly completed. 2 splats, 1 seconds"],
+                [], [_release(3, 1), _terminal(3, 1), _release(4, 2), _terminal(4, 2), "status,Fly completed. 2 splats, 1 seconds"],
             ])
             continuation_root = predecessor / "inputs" / "pre_pulse_batch_continuation"
             self._build(ancestor, contract_sha, continuation_root, [1, 2, 3, 4])
@@ -163,10 +169,25 @@ class PrePulseBatchContinuationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             predecessor, contract_sha = _predecessor(root, [[1, 2]], [[
-                _terminal(1), "status,Fly completed. 2 splats, 1 seconds",
+                _release(1), _terminal(1), "status,Fly completed. 2 splats, 1 seconds",
             ]])
             with self.assertRaisesRegex(ContractError, "completion sentinel"):
                 self._build(predecessor, contract_sha, root / "continuation", [1, 2])
+
+    def test_rejects_missing_or_wrong_source_release(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            predecessor, contract_sha = _predecessor(root, [[1]], [[
+                _terminal(1), "status,Fly completed. 1 splats, 1 seconds",
+            ]])
+            with self.assertRaisesRegex(ContractError, "source-release census"):
+                self._build(predecessor, contract_sha, root / "missing", [1])
+            predecessor, contract_sha = _predecessor(root / "wrong", [[1]], [[
+                "TRACE: source_release ion=2 particle_id=1 fixture=1", _terminal(1),
+                "status,Fly completed. 1 splats, 1 seconds",
+            ]])
+            with self.assertRaisesRegex(ContractError, "source-release identity"):
+                self._build(predecessor, contract_sha, root / "wrong-child", [1])
 
 
 if __name__ == "__main__":

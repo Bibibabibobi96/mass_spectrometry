@@ -40,6 +40,8 @@ class TraceContinuationPolicy:
     state_pattern: re.Pattern[str]
     completion_prefix: str
     prohibited_patterns: tuple[re.Pattern[str], ...] = ()
+    release_prefix: str | None = None
+    release_pattern: re.Pattern[str] | None = None
 
 
 @dataclass(frozen=True)
@@ -138,7 +140,12 @@ def _source_logs(
         run_dir / "inputs" / imported_dir_name / f"batch{index:02d}.stdout.log",
     )
     result = [path for path in imported_candidates if path.is_file()]
-    result.extend(sorted(run_dir.glob(log_glob.format(index=index))))
+    # A scheduled-but-never-started worker may leave an empty redirected file.
+    # It contains no evidence and must not conflict with an imported checkpoint.
+    result.extend(
+        path for path in sorted(run_dir.glob(log_glob.format(index=index)))
+        if path.read_bytes().strip()
+    )
     if len({path.resolve() for path in result}) != len(result):
         raise ContractError("continuation batch log is duplicated")
     return result
@@ -200,6 +207,8 @@ def _completed_prefix(
         raise ContractError("continuation batch has multiple source logs")
     expected = first
     terminal_ids: set[int] = set()
+    release_ids: set[int] = set()
+    expected_release = first
     state_keys: set[tuple[int, int]] = set()
     retained: list[tuple[int, str]] = []
     sources: list[dict[str, str]] = []
@@ -219,7 +228,21 @@ def _completed_prefix(
                 nonempty_line_index = line_index
             if any(pattern.match(line) for pattern in policy.prohibited_patterns):
                 raise ContractError("continuation source emitted prohibited TRACE")
-            if line.startswith(policy.terminal_prefix):
+            if policy.release_prefix is not None and line.startswith(policy.release_prefix):
+                if policy.release_pattern is None:
+                    raise ContractError("continuation release policy is incomplete")
+                match = policy.release_pattern.fullmatch(line)
+                if match is None:
+                    raise ContractError("continuation source-release TRACE is malformed")
+                particle_id = int(match["particle_id"])
+                ion = match.groupdict().get("ion")
+                if (particle_id != expected_release or particle_id in release_ids or
+                        (ion is not None and int(ion) != particle_id - first + 1)):
+                    raise ContractError("continuation source-release identity differs")
+                release_ids.add(particle_id)
+                expected_release += 1
+                retained.append((particle_id, line))
+            elif line.startswith(policy.terminal_prefix):
                 match = policy.terminal_pattern.fullmatch(line)
                 if match is None:
                     raise ContractError("continuation terminal TRACE is malformed")
@@ -248,6 +271,7 @@ def _completed_prefix(
                 if completion_line_index is not None:
                     raise ContractError("continuation completion sentinel is duplicated")
                 completion_line_index = line_index
+                retained.append((first, line))
             elif line.startswith("TRACE:"):
                 raise ContractError("continuation source emitted unrecognized TRACE")
     completed = len(terminal_ids)
@@ -260,6 +284,8 @@ def _completed_prefix(
         return 0, [], sources
     if completion_line_index != nonempty_line_index or completed != count:
         raise ContractError("continuation completion sentinel differs")
+    if policy.release_prefix is not None and len(release_ids) != count:
+        raise ContractError("continuation source-release census differs")
     return count, [line for _, line in retained], sources
 
 
