@@ -23,8 +23,9 @@ function Get-HostExecutionLeaseReceipt {
 function Set-HostExecutionLeaseReceipt {
   param(
     [Parameter(Mandatory)][string]$Path,
-    [Parameter(Mandatory)][ValidateSet('SIMION', 'GATE')][string]$Role,
-    [Parameter(Mandatory)][int]$OwnerProcessId
+    [Parameter(Mandatory)][ValidateSet('SIMION', 'COMSOL', 'GATE')][string]$Role,
+    [Parameter(Mandatory)][int]$OwnerProcessId,
+    [string]$RunId = ''
   )
   $parent = Split-Path -Parent $Path
   if (-not (Test-Path -LiteralPath $parent -PathType Container)) {
@@ -34,6 +35,7 @@ function Set-HostExecutionLeaseReceipt {
     schema_version = 1
     role = $Role
     owner_pid = $OwnerProcessId
+    run_id = $RunId
     acquired_at_utc = [DateTimeOffset]::UtcNow.ToString('o')
   }
   $temporary = "$Path.$OwnerProcessId.tmp"
@@ -47,13 +49,14 @@ function Set-HostExecutionLeaseReceipt {
 
 function Enter-HostExecutionLease {
   <#
-    Serialize real SIMION execution and repository gates on this Windows host.
+    Serialize real SIMION/COMSOL execution and repository gates on this Windows host.
     A child gate inherits the environment marker from its owning gate and must
     not attempt a second, cross-process mutex acquisition.
   #>
   [CmdletBinding()]
   param(
-    [Parameter(Mandatory)][ValidateSet('SIMION', 'GATE')][string]$Role,
+    [Parameter(Mandatory)][ValidateSet('SIMION', 'COMSOL', 'GATE')][string]$Role,
+    [string]$RunId = '',
     [string]$MutexName = $script:HostExecutionLeaseMutexName,
     [string]$ReceiptPath = $script:HostExecutionLeaseReceiptPath,
     [ValidateRange(100, 10000)][int]$PollMilliseconds = 1000,
@@ -69,6 +72,7 @@ function Enter-HostExecutionLease {
     return [pscustomobject]@{
       role = $Role; owner_pid = $ownerProcessId; inherited = $true
       mutex = $null; receipt_path = $ReceiptPath
+      run_id = $RunId
       previous_role = $null; previous_owner_pid = $null
     }
   }
@@ -103,7 +107,7 @@ function Enter-HostExecutionLease {
       }
     }
     Set-HostExecutionLeaseReceipt -Path $ReceiptPath -Role $Role `
-      -OwnerProcessId $ownerProcessId
+      -OwnerProcessId $ownerProcessId -RunId $RunId
     $previousRole = $env:MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE
     $previousOwnerPid = $env:MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID
     $env:MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE = $Role
@@ -115,6 +119,7 @@ function Enter-HostExecutionLease {
     return [pscustomobject]@{
       role = $Role; owner_pid = $ownerProcessId; inherited = $false
       mutex = $mutex; receipt_path = $ReceiptPath
+      run_id = $RunId
       previous_role = $previousRole; previous_owner_pid = $previousOwnerPid
     }
   } catch {
@@ -124,9 +129,42 @@ function Enter-HostExecutionLease {
   }
 }
 
+function Invoke-HostExecutionCompletionNotification {
+  <# Best-effort local notification for a terminal solver run. #>
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)]
+    [ValidateSet('success', 'failed', 'interrupted')]
+    [string]$Outcome,
+    [Parameter(Mandatory)]
+    [string]$RunId
+  )
+  $setting = [Environment]::GetEnvironmentVariable('SIMULATION_COMPLETION_SOUND')
+  if ([string]::Equals($setting, 'off', [StringComparison]::OrdinalIgnoreCase)) {
+    Write-Verbose "Solver completion sound is disabled for run $RunId."
+    return
+  }
+  try {
+    if ($Outcome -eq 'success') {
+      [System.Media.SystemSounds]::Asterisk.Play()
+    } else {
+      [System.Media.SystemSounds]::Hand.Play()
+    }
+    Write-Host "HOST_EXECUTION_NOTIFICATION=PLAYED OUTCOME=$Outcome RUN_ID=$RunId"
+  } catch {
+    # Audio cannot alter a scientific run's terminal status.
+    Write-Warning "HOST_EXECUTION_NOTIFICATION=UNAVAILABLE OUTCOME=$Outcome RUN_ID=$RunId REASON=$($_.Exception.Message)"
+  }
+}
+
 function Exit-HostExecutionLease {
   [CmdletBinding()]
-  param([Parameter(Mandatory)]$Lease)
+  param(
+    [Parameter(Mandatory)]$Lease,
+    [ValidateSet('', 'success', 'failed', 'interrupted')]
+    [string]$Outcome = '',
+    [string]$RunId = ''
+  )
   if ([bool]$Lease.inherited) { return }
   try {
     $receipt = Get-HostExecutionLeaseReceipt -Path ([string]$Lease.receipt_path)
@@ -146,5 +184,9 @@ function Exit-HostExecutionLease {
     }
     try { $Lease.mutex.ReleaseMutex() } finally { $Lease.mutex.Dispose() }
     Write-Host "HOST_EXECUTION_LEASE=RELEASED ROLE=$($Lease.role) PID=$($Lease.owner_pid)"
+    if ($Lease.role -in @('SIMION', 'COMSOL') -and -not [string]::IsNullOrWhiteSpace($Outcome)) {
+      $notificationRunId = if ([string]::IsNullOrWhiteSpace($RunId)) { "pid-$($Lease.owner_pid)" } else { $RunId }
+      Invoke-HostExecutionCompletionNotification -Outcome $Outcome -RunId $notificationRunId
+    }
   }
 }

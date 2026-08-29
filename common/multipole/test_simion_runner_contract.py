@@ -59,6 +59,43 @@ class SimionRunnerContractTests(unittest.TestCase):
             self.assertIn("$($DesignProfileId.Replace('_','-'))__resolved-l3", source)
             self.assertNotIn("$DesignProfileId__resolved-l3", source)
 
+    def test_shared_host_lease_reports_one_manifest_bound_terminal_outcome(self) -> None:
+        for runner_name, role, successful_manifests in (
+            ("run_simion_finite_3d_transport.ps1", "SIMION", 1),
+            ("run_finite_3d_transport.ps1", "COMSOL", 3),
+        ):
+            source = (RUNNER.parent / runner_name).read_text(encoding="utf-8-sig")
+            self.assertIn(
+                ". (Join-Path $repoRoot 'common\\host_execution_lease.ps1')",
+                source,
+            )
+            self.assertIn(
+                f"$hostExecutionLease=Enter-HostExecutionLease -Role {role} -RunId $RunId",
+                source,
+            )
+            self.assertIn("$hostExecutionOutcome='failed'", source)
+            self.assertEqual(
+                source.count("$hostExecutionOutcome='success'"), successful_manifests,
+            )
+            self.assertIn(
+                "$hostExecutionOutcome=if($resourceBudgetExceeded){'interrupted'}else{'failed'}",
+                source,
+            )
+            self.assertIn(
+                "Exit-HostExecutionLease -Lease $hostExecutionLease -Outcome $hostExecutionOutcome -RunId $RunId",
+                source,
+            )
+            self.assertEqual(source.count("Exit-HostExecutionLease"), 1)
+            self.assertEqual(source.count("Write-VerifiedRunManifest"), successful_manifests)
+            self.assertLess(
+                source.rindex("Write-VerifiedRunManifest"),
+                source.rindex("$hostExecutionOutcome='success'"),
+            )
+            self.assertLess(
+                source.rindex("$hostExecutionOutcome='success'"),
+                source.rindex("Exit-HostExecutionLease"),
+            )
+
     def test_segmented_voltage_binding_uses_resolved_dynamic_electrodes(self) -> None:
         lua = (RUNNER.parent / "simion_transport.lua").read_text(encoding="utf-8")
         runner = RUNNER.read_text(encoding="utf-8")

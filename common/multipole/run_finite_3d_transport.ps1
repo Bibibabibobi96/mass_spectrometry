@@ -157,6 +157,9 @@ $manifestRepoRoot=$repoRoot
 $resourceBudgetExceeded=$false
 New-Item -ItemType Directory -Force -Path $runtimeDir|Out-Null
 New-Item -ItemType Directory -Force -Path $solverProgressDir|Out-Null
+. (Join-Path $repoRoot 'common\host_execution_lease.ps1')
+$hostExecutionOutcome='failed'
+$hostExecutionLease=Enter-HostExecutionLease -Role COMSOL -RunId $RunId
 
 try{
   $codeRoot=Join-Path $inputDir 'code'
@@ -433,6 +436,7 @@ try{
     $outputs+=$retentionActions
     Write-VerifiedRunManifest -Python $python -RepoRoot $manifestRepoRoot -RunConfig $runConfig `
       -Status success -Software @('COMSOL 6.4','MATLAB R2025b','Python 3.11') -Outputs $outputs
+    $hostExecutionOutcome='success'
     Write-Output "MULTIPOLE_COMSOL_RESOLVED=PASS PROJECT=$ProjectId PROFILE=$DesignProfileId RUN_ID=$RunId STOP_STAGE=mesh_build QUALIFICATION=UNQUALIFIED"
     return
   }
@@ -514,6 +518,7 @@ try{
     $outputs+=$retentionActions
     Write-VerifiedRunManifest -Python $python -RepoRoot $manifestRepoRoot -RunConfig $runConfig `
       -Status success -Software @('COMSOL 6.4','MATLAB R2025b','Python 3.11') -Outputs $outputs
+    $hostExecutionOutcome='success'
     Write-Output "MULTIPOLE_COMSOL_RESOLVED=PASS PROJECT=$ProjectId PROFILE=$DesignProfileId RUN_ID=$RunId STOP_STAGE=field_solve QUALIFICATION=UNQUALIFIED"
     return
   }
@@ -591,8 +596,10 @@ try{
   $outputs+=$retentionActions
   Write-VerifiedRunManifest -Python $python -RepoRoot $manifestRepoRoot -RunConfig $runConfig `
     -Status success -Software @('COMSOL 6.4','MATLAB R2025b','Python 3.11') -Outputs $outputs
+  $hostExecutionOutcome='success'
   Write-Output "MULTIPOLE_COMSOL_RESOLVED=PASS PROJECT=$ProjectId PROFILE=$DesignProfileId RUN_ID=$RunId PARENT_SHA256=$resolvedHash QUALIFICATION=$qualification"
 }catch{
+  $hostExecutionOutcome=if($resourceBudgetExceeded){'interrupted'}else{'failed'}
   Complete-FailedRun -Python $python -RepoRoot $manifestRepoRoot -RunConfig $runConfig -Summary $summary `
     -SummaryRole 'multipole_finite_3d_transport_summary' -Reason $_.Exception.Message `
     -Software @('COMSOL 6.4','MATLAB R2025b','Python 3.11') `
@@ -605,4 +612,5 @@ try{
   try { Remove-RunPackageExecutionAlias -Package $package } catch {
     Write-Warning "Could not remove short execution alias after COMSOL run: $($_.Exception.Message)"
   }
+  Exit-HostExecutionLease -Lease $hostExecutionLease -Outcome $hostExecutionOutcome -RunId $RunId
 }

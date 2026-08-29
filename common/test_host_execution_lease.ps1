@@ -24,10 +24,12 @@ $parentLease = $null
 try {
   New-Item -ItemType Directory -Path $testRoot -Force | Out-Null
   . $leasePath
-  $parentLease = Enter-HostExecutionLease -Role GATE -MutexName $mutexName `
+  $parentLease = Enter-HostExecutionLease -Role GATE -RunId 'gate-test' -MutexName $mutexName `
     -ReceiptPath $receiptPath -PollMilliseconds 100
   Assert-True (Test-Path -LiteralPath $receiptPath -PathType Leaf) `
     'Lease acquisition did not publish its human-readable receipt.'
+  Assert-True ((Get-HostExecutionLeaseReceipt -Path $receiptPath).run_id -eq 'gate-test') `
+    'Lease receipt did not retain its run identity.'
 
   $quotedLeasePath = $leasePath.Replace("'", "''")
   $quotedMutexName = $mutexName.Replace("'", "''")
@@ -61,6 +63,12 @@ Exit-HostExecutionLease -Lease `$lease
   Assert-True (-not (Test-Path -LiteralPath $receiptPath)) `
     'Lease receipt remained after the final holder released it.'
 
+  $comsolLease = Enter-HostExecutionLease -Role COMSOL -RunId 'comsol-test' -MutexName $mutexName `
+    -ReceiptPath $receiptPath -PollMilliseconds 100
+  Assert-True ((Get-HostExecutionLeaseReceipt -Path $receiptPath).role -eq 'COMSOL') `
+    'COMSOL solver lease did not publish its role.'
+  Exit-HostExecutionLease -Lease $comsolLease
+
   $env:MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID = 'synthetic-parent'
   $inherited = Enter-HostExecutionLease -Role GATE -MutexName $mutexName `
     -ReceiptPath $receiptPath -PollMilliseconds 100
@@ -69,6 +77,14 @@ Exit-HostExecutionLease -Lease `$lease
   Exit-HostExecutionLease -Lease $inherited
   Remove-Item Env:MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID `
     -ErrorAction SilentlyContinue
+  $savedSound = [Environment]::GetEnvironmentVariable('SIMULATION_COMPLETION_SOUND', 'Process')
+  try {
+    $env:SIMULATION_COMPLETION_SOUND = 'off'
+    Invoke-HostExecutionCompletionNotification -Outcome success -RunId 'lease-test'
+    Invoke-HostExecutionCompletionNotification -Outcome interrupted -RunId 'lease-test'
+  } finally {
+    [Environment]::SetEnvironmentVariable('SIMULATION_COMPLETION_SOUND', $savedSound, 'Process')
+  }
   Write-Output 'HOST_EXECUTION_LEASE_TEST=PASS'
 } finally {
   if ($null -ne $parentLease) { Exit-HostExecutionLease -Lease $parentLease }

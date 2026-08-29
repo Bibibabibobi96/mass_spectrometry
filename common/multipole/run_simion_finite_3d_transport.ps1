@@ -228,6 +228,9 @@ $runDir=$package.run_dir;$inputDir=$package.input_dir;$resultDir=$package.result
 $logDir=$package.log_dir;$solverDir=Join-Path $runDir 'simion'
 $runConfig=$package.run_config;$summary=$package.summary;$manifestRepoRoot=$repoRoot
 $resourceBudgetExceeded=$false
+. (Join-Path $repoRoot 'common\host_execution_lease.ps1')
+$hostExecutionOutcome='failed'
+$hostExecutionLease=Enter-HostExecutionLease -Role SIMION -RunId $RunId
 
 try{
   $codeRoot=Join-Path $inputDir 'code'
@@ -1279,8 +1282,10 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
   $outputs+=$retentionActions
   Write-VerifiedRunManifest -Python $python -RepoRoot $manifestRepoRoot -RunConfig $runConfig `
     -Status success -Software @('SIMION 2020','Python 3.11') -Outputs $outputs
+  $hostExecutionOutcome='success'
   Write-Output "MULTIPOLE_SIMION_RESOLVED=PASS PROJECT=$ProjectId PROFILE=$DesignProfileId RUN_ID=$RunId PARENT_SHA256=$resolvedHash QUALIFICATION=$qualification"
 }catch{
+  $hostExecutionOutcome=if($resourceBudgetExceeded){'interrupted'}else{'failed'}
   Complete-FailedRun -Python $python -RepoRoot $manifestRepoRoot -RunConfig $runConfig -Summary $summary `
     -SummaryRole 'multipole_simion_finite_3d_transport_summary' -Reason $_.Exception.Message `
     -Software @('SIMION 2020','Python 3.11') `
@@ -1293,4 +1298,5 @@ origin_z_mm=$origin, backward_escape_plane_mm=$($enclosure.vacuum_z_min_mm)}
   try { Remove-RunPackageExecutionAlias -Package $package } catch {
     Write-Warning "Could not remove short execution alias after SIMION run: $($_.Exception.Message)"
   }
+  Exit-HostExecutionLease -Lease $hostExecutionLease -Outcome $hostExecutionOutcome -RunId $RunId
 }

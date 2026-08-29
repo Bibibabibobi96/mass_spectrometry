@@ -496,7 +496,8 @@ function Write-RfPreCacheRunConfiguration {
 Write-RfPreCacheRunConfiguration `
   -LifecycleStage 'pa_cache_policy_pending_budget_validation'
 
-$hostExecutionLease = Enter-HostExecutionLease -Role SIMION
+$hostExecutionLease = Enter-HostExecutionLease -Role SIMION -RunId $RunId
+$hostExecutionOutcome = 'failed'
 try {
   # Repository-wide waterline: automatic cleanup is constrained to L1/L2/L3
   # reconstructible material and is fail-closed if 500 GiB cannot be reached.
@@ -2985,6 +2986,7 @@ try {
       (Join-Path $package.log_dir 'total_axis_field.stderr.log'),$package.summary
     ) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) }
     Write-RunManifest -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config -Status success -Software @('SIMION 2020','Python 3.11') -Outputs $buildOnlyOutputs
+    $hostExecutionOutcome = 'success'
     return
   }
 
@@ -3305,6 +3307,7 @@ try {
     Write-RunManifest -Python $python -RepoRoot $repoRoot `
       -RunConfig $package.run_config -Status success `
       -Software @('SIMION 2020','Python 3.11') -Outputs $outputs
+    $hostExecutionOutcome = 'success'
     Write-Output "SIMION_PRE_PULSE_TIME_SERIES=PASS RUN_ID=$RunId ROWS=$stateRowCount"
     return
   }
@@ -3440,11 +3443,13 @@ try {
   }
   if ($resourceProfile) { $outputs += $resourceProfile }
   Write-RunManifest -Python $python -RepoRoot $repoRoot -RunConfig $package.run_config -Status success -Software @('SIMION 2020','Python 3.11') -Outputs $outputs
+  $hostExecutionOutcome = 'success'
   try { Remove-RunPackageExecutionAlias -Package $package } catch {
     Write-Warning "Could not remove short execution alias after successful run: $($_.Exception.Message)"
   }
   Write-Output "SIMION_SINGLE_FLIGHT=PASS RUN_ID=$RunId DETECTOR=$($result.census.detector_crossing)/$launched"
 } catch {
+  $hostExecutionOutcome = if ($resourceBudgetExceeded) {'interrupted'} else {'failed'}
   Complete-FailedRun -Python $python -RepoRoot $repoRoot `
     -RunConfig $package.run_config -Summary $package.summary `
     -SummaryRole $summaryRole -Reason $_.Exception.Message `
@@ -3465,5 +3470,5 @@ try {
   }
   throw
 } finally {
-  Exit-HostExecutionLease -Lease $hostExecutionLease
+  Exit-HostExecutionLease -Lease $hostExecutionLease -Outcome $hostExecutionOutcome -RunId $RunId
 }

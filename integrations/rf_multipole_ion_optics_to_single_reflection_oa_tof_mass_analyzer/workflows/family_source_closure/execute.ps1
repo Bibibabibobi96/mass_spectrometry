@@ -229,6 +229,7 @@ if ($ValidateOnly) {
   $outputRoot = [IO.Path]::GetFullPath((Join-Path $runsRoot $campaignRunId))
 }
 $outputRoot = [IO.Path]::GetFullPath($outputRoot)
+. (Join-Path $repoRoot 'common\host_execution_lease.ps1')
 # Solver runs may have already produced a valid child artifact when a governed
 # parent publication fails.  Preserve that negative result for audit and
 # recovery; only ValidateOnly scratch output is disposable.
@@ -272,6 +273,21 @@ if ($SolverAuthorized -and (Test-Path -LiteralPath $outputRoot)) {
   if ($null -ne $publishedManifest -and
       $publishedManifest.role -eq 'simulation_run_manifest' -and
       $publishedManifest.status -in @('failed','interrupted')) {
+    $activeLease = Get-HostExecutionLeaseReceipt -Path $script:HostExecutionLeaseReceiptPath
+    $activeOwner = if ($null -ne $activeLease -and
+        $activeLease.PSObject.Properties.Name -contains 'owner_pid') {
+      Get-Process -Id ([int]$activeLease.owner_pid) -ErrorAction SilentlyContinue
+    } else {
+      $null
+    }
+    if ($null -ne $activeOwner -and [string]$activeLease.role -eq 'SIMION' -and
+        [string]$activeLease.run_id -eq $campaignRunId) {
+      Write-Output (
+        "INTEGRATION_EXECUTION=ALREADY_ACTIVE RUN_ID=$campaignRunId " +
+        "HOLDER_PID=$($activeLease.owner_pid)"
+      )
+      return
+    }
     $publishedRecovery = @(Get-ChildItem -LiteralPath $runsRoot -Directory `
       -Filter ($campaignRunId + '__r??') | ForEach-Object {
         $manifestPath = Join-Path $_.FullName 'run_manifest.json'
