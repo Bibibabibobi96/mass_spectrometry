@@ -99,6 +99,7 @@ function Resolve-RfRecoveryFailureAncestor {
       [int]$recoveryMatch.Groups['index'].Value -lt 1) {
     return $null
   }
+  $fallbackFailure = $null
   for ($index = [int]$recoveryMatch.Groups['index'].Value - 1;
        $index -ge 0;
        $index--) {
@@ -149,16 +150,27 @@ function Resolve-RfRecoveryFailureAncestor {
     }
     $candidateStatus = [string]$candidateManifest.status
     if ($candidateStatus -in @('failed','interrupted')) {
-      return [pscustomobject]@{
+      $candidate = [pscustomobject]@{
         run_id = $candidateRunId
         status = $candidateStatus
       }
+      # Prefer the oldest predecessor that already contains a naturally
+      # completed SIMION batch.  A later retry can fail before launching any
+      # batch (for example in continuation planning); resuming from it would
+      # discard the earlier checkpoint and force needless replay.
+      $completedBatchLog = @(Get-ChildItem -LiteralPath (Join-Path $candidateDirectory 'logs') `
+        -Filter 'simion__batch*.stdout.log' -File -ErrorAction SilentlyContinue |
+        Where-Object { Select-String -LiteralPath $_.FullName -SimpleMatch `
+          -Quiet -Pattern 'status,Fly completed.' })
+      if ($completedBatchLog.Count -gt 0) { return $candidate }
+      if ($null -eq $fallbackFailure) { $fallbackFailure = $candidate }
+      continue
     }
     # A published terminal/non-terminal predecessor is an authority boundary:
     # only a failed or interrupted member can authorize a later retry.
     return $null
   }
-  return $null
+  return $fallbackFailure
 }
 
 $plan = Get-Content -LiteralPath $CompositionPlan -Raw -Encoding UTF8 |
@@ -1544,6 +1556,24 @@ if ($executionStrategy -eq 'simion_single_flight') {
       $ancestorSingleFlightRunId = "$($ancestorRunId.Substring(0, 15))__sim__simion__$singleFlightRole-gap$connectorGapLabel`__n$expectedExecutionParticleCount$ancestorRetrySuffix"
       $runnerArguments.ResumePrePulseFromRun = Join-Path $runsRoot `
         $ancestorSingleFlightRunId
+      # A resumed batch must retain the predecessor's exact screening
+      # contract, not a newly materialized byte-different copy from the
+      # recovery composition plan.  The shared continuation protocol verifies
+      # this frozen input against the predecessor manifest before it imports
+      # any completed TRACE records.
+      $predecessorScreeningContract = Join-Path `
+        $runnerArguments.ResumePrePulseFromRun `
+        'inputs\pre_pulse_time_series_screening_contract.json'
+      if (-not (Test-Path -LiteralPath $predecessorScreeningContract -PathType Leaf)) {
+        throw 'Pre-pulse continuation predecessor lacks its frozen screening contract.'
+      }
+      $predecessorScreeningDocument = Get-Content -LiteralPath $predecessorScreeningContract `
+        -Raw -Encoding UTF8 | ConvertFrom-Json
+      $runnerArguments.TimeIntegrationProfileId =
+        [string]$predecessorScreeningDocument.identities.time_integration_profile_id
+      $runnerArguments.PrePulseTimeSeriesContract = $predecessorScreeningContract
+      $runnerArguments.PrePulseTimeSeriesContractSha256 =
+        (Get-FileHash -LiteralPath $predecessorScreeningContract -Algorithm SHA256).Hash
     }
   }
   & $runtime.implementation.single_flight_runner @runnerArguments

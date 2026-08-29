@@ -54,6 +54,26 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
             "pre_pulse_restart_validation_sha256", adapter
         )
 
+    def test_pre_pulse_batch_recovery_reuses_the_predecessor_contract_bytes(self) -> None:
+        adapter = FAMILY_ADAPTER.read_text(encoding="utf-8")
+        recovery = adapter.index("$runnerArguments.ResumePrePulseFromRun")
+        contract = adapter.index("$predecessorScreeningContract", recovery)
+        invocation = adapter.index("& $runtime.implementation.single_flight_runner", contract)
+        recovery_block = adapter[recovery:invocation]
+        self.assertIn("inputs\\pre_pulse_time_series_screening_contract.json", recovery_block)
+        self.assertIn("Get-FileHash -LiteralPath $predecessorScreeningContract", recovery_block)
+        self.assertIn("$runnerArguments.PrePulseTimeSeriesContract = $predecessorScreeningContract", recovery_block)
+
+    def test_recovery_prefers_the_earliest_completed_batch_checkpoint(self) -> None:
+        adapter = FAMILY_ADAPTER.read_text(encoding="utf-8")
+        resolver = adapter.index("function Resolve-RfRecoveryFailureAncestor")
+        resolver_block = adapter[resolver:adapter.index("$plan = Get-Content", resolver)]
+        self.assertIn("$fallbackFailure = $null", resolver_block)
+        self.assertIn("-Filter 'simion__batch*.stdout.log'", resolver_block)
+        self.assertIn("'status,Fly completed.'", resolver_block)
+        self.assertIn("if ($completedBatchLog.Count -gt 0) { return $candidate }", resolver_block)
+        self.assertIn("return $fallbackFailure", resolver_block)
+
     def test_pre_pulse_time_series_is_pre_solver_fail_closed_and_gap_bound(self) -> None:
         runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
         self.assertIn("[string]$PrePulseTimeSeriesContract = ''", runner)
