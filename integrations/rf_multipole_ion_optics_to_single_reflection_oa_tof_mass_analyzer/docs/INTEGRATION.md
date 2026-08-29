@@ -41,8 +41,12 @@ SIMION 运行可调用共享批处理；批内结果必须恢复全局粒子 ID 
 
 连接器是集成拥有的固定接地屏蔽续段：其截面必须继承上游多极杆屏蔽，而不是另行指定半径、法兰或缩径。
 当且仅当`gap > 0`，连接器入口生成一块接地圆盘；圆盘外半径等于连接器内半径，孔可在活动连接器合同中
-选择圆形半径或矩形宽高。`gap = 0`是多极杆屏蔽端面直接对接加速器屏蔽开口：连接器、套筒和带孔端板
-均不存在。加速器屏蔽的矩形开口是独立下游几何，不能反向定义连接器端板孔，也不能以旧源端孔径约束。
+选择圆形半径或矩形宽高。方形加速器的`gap = 0`是多极杆屏蔽端面直接对接加速器屏蔽开口，连接器、套筒和
+带孔端板均不存在。圆形加速器则使用具名的`grounded_circular_to_cylindrical_sideport_v1`：零长度套筒的
+带孔接地 collar 从已注册的对接平面开始，并在圆壳的**当前派生壁厚**内与其正体积重叠（当前几何为
+4 mm，但 collar 厚度直接绑定`accelerator_shield_wall`）；它是下游圆形侧口几何，
+不是零 gap 连接器。该 collar 的唯一孔仍由 1.0 mm × 受控高度的矩形 aperture 合同定义。加速器屏蔽的
+矩形开口不能反向定义上游连接器端板孔，也不能以旧源端孔径约束。
 当扫描高度为 0.9、1.5、2.0 与 2.5 mm 时，前端 PA 的加速方向网格必须为 0.1 mm 或更细，使各高度均为
 整数个轴向单元；`frontend_acceleration_z010_accelerator_two_local_z005`保留现有的两处 0.05 mm 局部三区
 场覆盖，并只改变前端的轴向离散。0.2 mm 前端网格产生的相同行不得作为这些标称孔高的比较证据。
@@ -114,6 +118,16 @@ SIMION 运行可调用共享批处理；批内结果必须恢复全局粒子 ID 
 run-config、run-local冻结合同、粒子映射和全部批日志；不得改写失败run、不得重跑求解器，也不得把恢复结果升级为
 分辨率或Formal证据。
 
+若一个或多个 SIMION 逻辑通道在预脉冲粒子飞行中断，下一次带 `__rNN` 身份的
+预脉冲恢复会由
+[`pre_pulse_batch_continuation.py`](../runtime/pre_pulse_batch_continuation.py)建立批级 continuation plan：
+每个批独立核验 predecessor `failed/interrupted` manifest、run-config、冻结 time-series 合同、原始 stdout
+SHA-256 与终态 TRACE。完整批可直接导入；未完成批只能导入从该批起点开始、逐 ID 连续且无重复的终态
+前缀，SIMION 只重跑其余后缀。不同通道已完成的独立粒子结果不会因为另一个通道中断而丢弃；但任一
+SHA 漂移、跳号、重复/畸形 TRACE、禁止的下游事件或伪 `Fly completed` 标记都失败关闭。导入日志与
+continuation plan 冻结到新的 run，旧 run 永不改写；连续多次中断时，前一轮导入日志继续由其 plan 中的
+SHA-256 绑定。该机制是执行恢复，不改变45秒资源观测、通道准入、母 cohort、物理输入或统计口径。
+
 若子运行已经成功物化预脉冲时间序列、但父发布仅因其后的活动 exploration authoring 文件发生 SHA 漂移而失败，
 `publish_run.py --pre-pulse-selection-replay-source-parent-manifest` 可建立一个新的 immutable
 `analysis/python` replay run。它只读取失败父 run-local 冻结 campaign、resolved 合同和成功子 manifest，
@@ -172,10 +186,18 @@ census，报告完整母群分母下的传输、损失、`z--vz` 拟合/残差�
 full-width 的 4.0 mm 阈值、实测值和 pass/fail 一并写出；该 artifact 始终是
 `DETECTOR_BLIND_SOURCE_ONLY`，不输出 detector peak、分辨率或 Formal 结论。
 
+八个完整 full-flight arm 成功后，
+[`publish_full_flight_aperture_comparison.py`](../analysis/publish_full_flight_aperture_comparison.py) 才可发布方形/圆形
+与四个孔高的可比结果。它要求每臂都绑定同一完整 N=5000 母表，拒绝 restart、条件幸存群和共同命中筛选；
+结果按完整母群分母报告传输及互斥损失、4 mm 入口宽度、`z--vz` 线性斜率 k、线性/二次/三次及三次拟合后
+点残差、直接 detector peak 的 FWHM/分辨率、尾部和 bootstrap CI。
+
 [`author_full_flight_campaign_from_pre_pulse.py`](../workflows/family_source_closure/author_full_flight_campaign_from_pre_pulse.py)
-是该筛选后的唯一 campaign authoring 边界：它为每一个 full-flight row 绑定相应成功 producer 的
-`pulse_timing_transition_authority`，并在进入求解器前复核 layout、connection、Candidate、网格、场、source
-与完整有序人口。生成行必须继续使用`continuous_frontend`的完整母 cohort，禁止用`pre_pulse_restart`或共同
+是该筛选后的唯一 campaign authoring 边界：它为每一个 full-flight row 绑定相应成功 producer 的既有
+`pulse_timing_transition_authority`；若 producer 是合法的 pulse-disabled 筛选而尚无 transition，它只接受
+manifest-bound receipt、完整连续母表和有序 ID/SHA，并把公开 pulse discovery → transition → confirmation
+留给执行路径。两种情形都会在进入求解器前复核 layout、connection、Candidate、网格、场、source 与完整
+有序人口。生成行必须继续使用`continuous_frontend`的完整母 cohort，禁止用`pre_pulse_restart`或共同
 detector-hit 人口；其唯一允许的 cache-miss 时间格是当前已登记的 native-dt 范围或与 producer 匹配的 RF40
 单快照。
 

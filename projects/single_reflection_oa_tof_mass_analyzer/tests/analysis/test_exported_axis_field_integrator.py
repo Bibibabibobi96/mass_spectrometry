@@ -49,6 +49,29 @@ class ExportedAxisFieldIntegratorTests(unittest.TestCase):
                     dt_us=1.0e-3, max_elapsed_us=0.01,
                 )
 
+    def test_identical_adjacent_endpoint_is_folded_but_conflict_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "field.csv"
+            with path.open("w", newline="", encoding="utf-8") as stream:
+                writer = csv.DictWriter(stream, fieldnames=["z_mm", "Ez_V_per_mm"])
+                writer.writeheader()
+                writer.writerows([
+                    {"z_mm": 0.0, "Ez_V_per_mm": 1.0},
+                    {"z_mm": 1.0, "Ez_V_per_mm": 2.0},
+                    {"z_mm": 1.0, "Ez_V_per_mm": 2.0},
+                ])
+            self.assertEqual(load_total_axis_field(path).z_mm.size, 2)
+            with path.open("w", newline="", encoding="utf-8") as stream:
+                writer = csv.DictWriter(stream, fieldnames=["z_mm", "Ez_V_per_mm"])
+                writer.writeheader()
+                writer.writerows([
+                    {"z_mm": 0.0, "Ez_V_per_mm": 1.0},
+                    {"z_mm": 1.0, "Ez_V_per_mm": 2.0},
+                    {"z_mm": 1.0, "Ez_V_per_mm": 3.0},
+                ])
+            with self.assertRaisesRegex(ValueError, "conflicting Ez"):
+                load_total_axis_field(path)
+
     def test_c3_export_is_top_level_and_reproduces_post_pulse_fast_adjust(self) -> None:
         builder = Path(__file__).resolve().parents[4] / (
             "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/"
@@ -60,20 +83,23 @@ class ExportedAxisFieldIntegratorTests(unittest.TestCase):
         self.assertIn("simion.command('", source)
         self.assertIn("frontend.apply_at(pulse_time_us", source)
         self.assertIn("ai.pa:fast_adjust(ai_values)", source)
-        self.assertIn("oi.pa:fast_adjust(oi_values)", source)
+        self.assertIn(
+            "simion.wb.instances[overlay.instance_index].pa:fast_adjust(oi_values)",
+            source,
+        )
         self.assertIn("ai.pa:load(frontend_pa)", source)
         self.assertIn("{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19}", source)
-        self.assertIn("{20}", source)
+        self.assertIn("1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20", source)
         self.assertIn("instance:potential_wc(x,y,z,values)", source)
         self.assertIn("instance:field_wc(x,y,z,values)", source)
         self.assertIn("TOTAL_AXIS_FIELD_INSTANCE", source)
         self.assertIn("for index=1,#simion.wb.instances do", source)
         exporter_source = source[source.index('exporter = f"""'):]
         self.assertNotIn("simion.workbench_program()", exporter_source)
-        self.assertIn("analyzer.initialize_workbench", exporter_source)
-        self.assertIn("apply_placement(ai,initialized.placements.accelerator)", exporter_source)
+        self.assertIn("analyzer.initialize_workbench", source)
+        self.assertIn("apply_placement(ai,initialized.placements.accelerator)", source)
         self.assertIn("ai.x,ai.y,ai.z={_lua_number(origin['x'])}", exporter_source)
-        self.assertIn("oi.x,oi.y,oi.z={_lua_number(overlay_origin['x'])}", exporter_source)
+        self.assertIn("oi.x,oi.y,oi.z=overlay.origin_mm.x", exporter_source)
         self.assertIn("oi.az,oi.el,oi.rt,oi.scale=0,0,0,1", exporter_source)
         self.assertIn("TOTAL_AXIS_FIELD_ACCELERATOR_POSTPLACEMENT", exporter_source)
         self.assertIn("TOTAL_AXIS_FIELD_OVERLAY_POSTPLACEMENT", exporter_source)

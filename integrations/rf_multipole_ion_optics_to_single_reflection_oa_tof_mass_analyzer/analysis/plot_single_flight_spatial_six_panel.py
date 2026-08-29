@@ -59,6 +59,142 @@ def _quantiles(values: np.ndarray) -> dict[str, float]:
     }
 
 
+def _phase_space_fit_diagnostics(
+    position_mm: np.ndarray, velocity_m_per_s: np.ndarray
+) -> dict[str, Any]:
+    """Fit linear through cubic position--velocity diagnostics in native units.
+
+    The polynomial coefficients use the uncentred physical position in mm:
+    ``v = c0 + c1*z + c2*z^2 + c3*z^3``.  This makes the reported units
+    explicit, but means the higher-order coefficients are origin-dependent.
+    ``cubic_random_residual`` is the retained pointwise residual after the
+    cubic least-squares fit; it is not a stochastic model assumption.
+    """
+
+    position = np.asarray(position_mm, dtype=float)
+    velocity = np.asarray(velocity_m_per_s, dtype=float)
+    if (
+        position.ndim != 1
+        or velocity.ndim != 1
+        or position.size != velocity.size
+        or position.size == 0
+        or not np.isfinite(position).all()
+        or not np.isfinite(velocity).all()
+    ):
+        raise ValueError("phase-space fit requires equal non-empty finite vectors")
+
+    common = {
+        "population_basis": "all_retained_checkpoint_particles",
+        "particle_count": int(position.size),
+        "position_unit": "mm",
+        "velocity_unit": "m_per_s",
+        "polynomial_basis": "velocity_m_per_s = sum(c_power * position_mm**power)",
+    }
+    if position.size < 2 or float(np.ptp(position)) == 0.0:
+        return {
+            "status": "not_computed",
+            "reason": "fewer_than_two_particles_or_zero_position_span",
+            **common,
+            "slope_m_per_s_per_mm": None,
+            "intercept_m_per_s": None,
+            "r_squared": None,
+            "residual_sigma_m_per_s": None,
+            "residual_rms_m_per_s": None,
+            "residual_max_abs_m_per_s": None,
+            "residual_p95_abs_m_per_s": None,
+            "quadratic_fit": None,
+            "cubic_fit": None,
+            "cubic_random_residual": None,
+        }
+
+    def polynomial(degree: int) -> dict[str, Any] | None:
+        design = np.column_stack([position**power for power in range(degree + 1)])
+        coefficients, _, rank, _ = np.linalg.lstsq(design, velocity, rcond=None)
+        if int(rank) != degree + 1:
+            return None
+        residual = velocity - design @ coefficients
+        rms = float(np.sqrt(np.mean(residual**2)))
+        return {
+            "degree": degree,
+            "coefficients_m_per_s": {
+                "constant": float(coefficients[0]),
+                **{
+                    (
+                        "linear_per_mm" if power == 1
+                        else "quadratic_per_mm2" if power == 2
+                        else "cubic_per_mm3"
+                    ):
+                    float(coefficients[power])
+                    for power in range(1, degree + 1)
+                },
+            },
+            "residual_sigma_m_per_s": float(np.std(residual, ddof=1)) if residual.size > 1 else 0.0,
+            "residual_rms_m_per_s": rms,
+            "residual_max_abs_m_per_s": float(np.max(np.abs(residual))),
+            "residual_p95_abs_m_per_s": float(np.quantile(np.abs(residual), 0.95)),
+        }
+
+    linear = polynomial(1)
+    assert linear is not None  # non-zero span guarantees a full-rank linear fit
+    linear_residual_rms = float(linear["residual_rms_m_per_s"])
+    total_sum_squares = float(np.sum((velocity - np.mean(velocity)) ** 2))
+    residual_sum_squares = float(
+        linear_residual_rms**2 * position.size
+    )
+    quadratic = polynomial(2)
+    cubic = polynomial(3)
+
+    def higher_order_payload(fit: dict[str, Any] | None) -> dict[str, Any]:
+        if fit is None:
+            return {
+                "status": "not_computed",
+                "reason": "insufficient_rank_or_particles_for_polynomial_degree",
+            }
+        rms = float(fit["residual_rms_m_per_s"])
+        reduction = (
+            None
+            if linear_residual_rms == 0.0
+            else float((linear_residual_rms - rms) / linear_residual_rms)
+        )
+        return {
+            "status": "computed",
+            **fit,
+            "relative_linear_residual_rms_reduction": reduction,
+        }
+
+    cubic_payload = higher_order_payload(cubic)
+    cubic_random_residual = (
+        None
+        if cubic is None
+        else {
+            "definition": "pointwise residual after the cubic least-squares fit",
+            "sigma_m_per_s": cubic["residual_sigma_m_per_s"],
+            "rms_m_per_s": cubic["residual_rms_m_per_s"],
+            "max_abs_m_per_s": cubic["residual_max_abs_m_per_s"],
+            "p95_abs_m_per_s": cubic["residual_p95_abs_m_per_s"],
+        }
+    )
+    return {
+        "status": "computed",
+        **common,
+        # Retain these legacy affine names for existing consumers.
+        "slope_m_per_s_per_mm": linear["coefficients_m_per_s"]["linear_per_mm"],
+        "intercept_m_per_s": linear["coefficients_m_per_s"]["constant"],
+        "r_squared": (
+            1.0 - residual_sum_squares / total_sum_squares
+            if total_sum_squares > 0.0
+            else 1.0
+        ),
+        "residual_sigma_m_per_s": linear["residual_sigma_m_per_s"],
+        "residual_rms_m_per_s": linear_residual_rms,
+        "residual_max_abs_m_per_s": linear["residual_max_abs_m_per_s"],
+        "residual_p95_abs_m_per_s": linear["residual_p95_abs_m_per_s"],
+        "quadratic_fit": higher_order_payload(quadratic),
+        "cubic_fit": cubic_payload,
+        "cubic_random_residual": cubic_random_residual,
+    }
+
+
 def _checkpoint_distribution_summary(rows: pd.DataFrame, event: str) -> dict[str, Any]:
     """Summarize one detector-blind checkpoint using its local propagation axis."""
 
@@ -96,18 +232,17 @@ def _checkpoint_distribution_summary(rows: pd.DataFrame, event: str) -> dict[str
     )
     z = position[:, 2]
     vz = None if velocity is None else velocity[:, 2]
-    if vz is not None and len(z) >= 2 and float(np.ptp(z)) > 0.0:
-        intercept, slope = np.linalg.lstsq(
-            np.column_stack([np.ones(len(z)), z]), vz, rcond=None
-        )[0]
-        residual = vz - (intercept + slope * z)
-        zvz = {
-            "status": "computed",
-            "slope_m_per_s_per_mm": float(slope),
-            "residual_rms_m_per_s": float(np.sqrt(np.mean(residual**2))),
-        }
+    if vz is not None:
+        zvz = _phase_space_fit_diagnostics(z, vz)
+        if zvz["status"] == "not_computed":
+            # Preserve the legacy checkpoint reason while exposing the richer
+            # null-valued diagnostics from the common fitting implementation.
+            zvz["reason"] = "zero_z_span_or_single_particle"
     else:
-        zvz = {"status": "not_computed", "reason": "detector_blind_or_zero_z_span_or_single_particle" if vz is None else "zero_z_span_or_single_particle"}
+        zvz = {
+            "status": "not_computed",
+            "reason": "detector_blind_or_zero_z_span_or_single_particle",
+        }
     return {
         "event": event,
         "particle_count": int(len(rows)),
@@ -932,33 +1067,13 @@ def build_accelerator_phase_space_figure(
         )
         position_values = prepulse[position].to_numpy(dtype=float)
         velocity_values = prepulse[velocity].to_numpy(dtype=float)
-        fit_metadata: dict[str, Any]
-        if len(prepulse) >= 2 and float(np.ptp(position_values)) > 0:
-            design = np.column_stack([np.ones(len(prepulse)), position_values])
-            intercept, slope = np.linalg.lstsq(
-                design, velocity_values, rcond=None
-            )[0]
-            predicted = intercept + slope * position_values
-            residual = velocity_values - predicted
-            residual_sum_squares = float(np.sum(residual**2))
-            total_sum_squares = float(
-                np.sum((velocity_values - np.mean(velocity_values)) ** 2)
-            )
-            r_squared = (
-                1.0 - residual_sum_squares / total_sum_squares
-                if total_sum_squares > 0
-                else 1.0
-            )
-            fit_metadata = {
-                "status": "computed",
-                "population_basis": "all_retained_pre_pulse_particles",
-                "particle_count": len(prepulse),
-                "slope_m_per_s_per_mm": float(slope),
-                "intercept_m_per_s": float(intercept),
-                "r_squared": float(r_squared),
-                "residual_rms_m_per_s": float(np.sqrt(np.mean(residual**2))),
-                "residual_max_abs_m_per_s": float(np.max(np.abs(residual))),
-            }
+        fit_metadata = _phase_space_fit_diagnostics(
+            position_values, velocity_values
+        ) | {"population_basis": "all_retained_pre_pulse_particles"}
+        if fit_metadata["status"] == "computed":
+            slope = float(fit_metadata["slope_m_per_s_per_mm"])
+            intercept = float(fit_metadata["intercept_m_per_s"])
+            r_squared = float(fit_metadata["r_squared"])
             line_x = np.asarray(
                 [float(np.min(position_values)), float(np.max(position_values))]
             )
@@ -992,17 +1107,6 @@ def build_accelerator_phase_space_figure(
                 zorder=7,
             )
         else:
-            fit_metadata = {
-                "status": "not_computed",
-                "reason": "fewer_than_two_particles_or_zero_position_span",
-                "population_basis": "all_retained_pre_pulse_particles",
-                "particle_count": len(prepulse),
-                "slope_m_per_s_per_mm": None,
-                "intercept_m_per_s": None,
-                "r_squared": None,
-                "residual_rms_m_per_s": None,
-                "residual_max_abs_m_per_s": None,
-            }
             ax.text(
                 0.02,
                 0.98,
@@ -1113,6 +1217,15 @@ def write_checkpoint_evolution_outputs(
             summaries.append(_checkpoint_distribution_summary(rows, event))
     if not summaries:
         raise ValueError("checkpoint evolution requires at least one registered checkpoint")
+
+    def fit_value(summary: dict[str, Any], *path: str) -> Any:
+        value: Any = summary["z_vz_affine"]
+        for name in path:
+            if not isinstance(value, dict):
+                return None
+            value = value.get(name)
+        return value
+
     table = pd.DataFrame(
         {
             "event": [item["event"] for item in summaries],
@@ -1121,6 +1234,21 @@ def write_checkpoint_evolution_outputs(
             "transverse_radius_p95_mm": [item["transverse_radius_mm"]["p95"] for item in summaries],
             "angle_p95_deg": [None if item["total_off_axis_angle_deg"] is None else item["total_off_axis_angle_deg"]["p95"] for item in summaries],
             "z_vz_residual_rms_m_per_s": [item["z_vz_affine"].get("residual_rms_m_per_s") for item in summaries],
+            "z_vz_k_m_per_s_per_mm": [fit_value(item, "slope_m_per_s_per_mm") for item in summaries],
+            "z_vz_intercept_m_per_s": [fit_value(item, "intercept_m_per_s") for item in summaries],
+            "z_vz_linear_residual_sigma_m_per_s": [fit_value(item, "residual_sigma_m_per_s") for item in summaries],
+            "z_vz_linear_residual_max_abs_m_per_s": [fit_value(item, "residual_max_abs_m_per_s") for item in summaries],
+            "z_vz_linear_residual_p95_abs_m_per_s": [fit_value(item, "residual_p95_abs_m_per_s") for item in summaries],
+            "z_vz_quadratic_coefficient_m_per_s_per_mm2": [fit_value(item, "quadratic_fit", "coefficients_m_per_s", "quadratic_per_mm2") for item in summaries],
+            "z_vz_quadratic_residual_sigma_m_per_s": [fit_value(item, "quadratic_fit", "residual_sigma_m_per_s") for item in summaries],
+            "z_vz_quadratic_residual_rms_m_per_s": [fit_value(item, "quadratic_fit", "residual_rms_m_per_s") for item in summaries],
+            "z_vz_quadratic_relative_linear_residual_rms_reduction": [fit_value(item, "quadratic_fit", "relative_linear_residual_rms_reduction") for item in summaries],
+            "z_vz_cubic_coefficient_m_per_s_per_mm3": [fit_value(item, "cubic_fit", "coefficients_m_per_s", "cubic_per_mm3") for item in summaries],
+            "z_vz_cubic_residual_sigma_m_per_s": [fit_value(item, "cubic_fit", "residual_sigma_m_per_s") for item in summaries],
+            "z_vz_cubic_residual_rms_m_per_s": [fit_value(item, "cubic_fit", "residual_rms_m_per_s") for item in summaries],
+            "z_vz_cubic_relative_linear_residual_rms_reduction": [fit_value(item, "cubic_fit", "relative_linear_residual_rms_reduction") for item in summaries],
+            "z_vz_cubic_random_residual_sigma_m_per_s": [fit_value(item, "cubic_random_residual", "sigma_m_per_s") for item in summaries],
+            "z_vz_cubic_random_residual_rms_m_per_s": [fit_value(item, "cubic_random_residual", "rms_m_per_s") for item in summaries],
         }
     )
     figure, axes = plt.subplots(2, 2, figsize=(13.5, 8.0), constrained_layout=True)

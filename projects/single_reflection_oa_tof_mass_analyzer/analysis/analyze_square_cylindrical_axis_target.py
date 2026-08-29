@@ -72,7 +72,24 @@ def _projection(run_directory: Path, *, require_axis_field: bool = True) -> dict
         declared_sha = geometry["single_flight_layout_derivation"]["design_compilation"]["candidate"]["sha256"]
         if candidate_sha != str(declared_sha).upper():
             raise ValueError("geometry Candidate SHA does not bind the run-local Candidate")
-        if _canonical(candidate_planes) != _canonical(geometry_planes) or _canonical(candidate_potentials) != _canonical(geometry_potentials):
+        translation = float(
+            geometry.get("single_flight_layout_derivation", {})
+            .get("design_compilation", {})
+            .get("candidate_axial_translation_z_mm", 0.0)
+        )
+        translated_candidate_planes = {
+            role: float(value) + translation
+            for role, value in candidate_planes.items()
+        }
+        planes_match = (
+            set(translated_candidate_planes) == set(geometry_planes)
+            and all(
+                abs(translated_candidate_planes[role] - float(geometry_planes[role]))
+                <= 1.0e-9
+                for role in translated_candidate_planes
+            )
+        )
+        if not planes_match or _canonical(candidate_potentials) != _canonical(geometry_potentials):
             raise ValueError("geometry planes or potentials differ from the run-local Candidate")
         source_branch = source["source_branches"]["simion"]["source"]
         source_identity = {"state_sha256": source_branch["state"]["sha256"], "manifest_sha256": source_branch["manifest"]["sha256"], "particle_count": source_branch["particle_count"]}
@@ -80,7 +97,7 @@ def _projection(run_directory: Path, *, require_axis_field: bool = True) -> dict
         rings = geometry["rings"]
     except (KeyError, TypeError) as error:
         raise ValueError(f"{run.name} lacks a complete 300 mm realization identity") from error
-    return {"run_directory": str(run), "candidate_sha256": candidate_sha, "candidate": candidate, "planes_global_z_mm": candidate_planes, "potentials_v": candidate_potentials, "rings": rings, "numerics": numerics, "pulse": pulse_identity, "source": source_identity, "realization_id": geometry.get("geometry_derivation", {}).get("accelerator", {}).get("realization_id"), "field_path": _required(run, _FIELD) if require_axis_field else run / _FIELD}
+    return {"run_directory": str(run), "candidate_sha256": candidate_sha, "candidate": candidate, "planes_global_z_mm": geometry_planes, "candidate_axial_translation_z_mm": translation, "potentials_v": candidate_potentials, "rings": rings, "numerics": numerics, "pulse": pulse_identity, "source": source_identity, "realization_id": geometry.get("geometry_derivation", {}).get("accelerator", {}).get("realization_id"), "field_path": _required(run, _FIELD) if require_axis_field else run / _FIELD}
 
 
 def _same(label: str, first: Any, second: Any) -> None:
@@ -89,7 +106,11 @@ def _same(label: str, first: Any, second: Any) -> None:
 
 
 def _integral(field_z: np.ndarray, field_ez: np.ndarray, start: float, stop: float) -> float:
-    if not (field_z[0] <= start < stop <= field_z[-1]):
+    endpoint_tolerance_mm = 1.0e-9
+    if not (
+        field_z[0] - endpoint_tolerance_mm <= start < stop
+        <= field_z[-1] + endpoint_tolerance_mm
+    ):
         raise ValueError("axis export does not cover the Candidate accelerator planes")
     inside = (field_z > start) & (field_z < stop)
     z = np.concatenate(([start], field_z[inside], [stop]))

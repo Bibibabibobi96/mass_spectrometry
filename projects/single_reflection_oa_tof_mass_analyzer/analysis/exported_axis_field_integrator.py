@@ -24,14 +24,25 @@ class AxisField:
 
 
 def load_total_axis_field(path: Path) -> AxisField:
-    """Load and validate a strictly increasing total-axis field CSV."""
+    """Load a total-axis field, folding only identical adjacent endpoints."""
     with path.open(newline="", encoding="utf-8") as stream:
         values = list(csv.DictReader(stream))
     if len(values) < 2:
         raise ValueError("axis field needs at least two samples")
     z = np.asarray([float(row["z_mm"]) for row in values], dtype=float)
     ez = np.asarray([float(row["Ez_V_per_mm"]) for row in values], dtype=float)
-    if not (np.all(np.isfinite(z)) and np.all(np.isfinite(ez)) and np.all(np.diff(z) > 0)):
+    if not (np.all(np.isfinite(z)) and np.all(np.isfinite(ez))):
+        raise ValueError("axis field must be finite and strictly increasing")
+    steps = np.diff(z)
+    if np.any(steps < 0):
+        raise ValueError("axis field must be finite and strictly increasing")
+    duplicate_indices = np.flatnonzero(steps == 0)
+    if duplicate_indices.size:
+        if not np.allclose(ez[duplicate_indices], ez[duplicate_indices + 1], rtol=0.0, atol=1.0e-12):
+            raise ValueError("axis field duplicate coordinates have conflicting Ez values")
+        keep = np.concatenate(([True], steps > 0))
+        z, ez = z[keep], ez[keep]
+    if not np.all(np.diff(z) > 0):
         raise ValueError("axis field must be finite and strictly increasing")
     return AxisField(z_mm=z, ez_v_per_mm=ez)
 

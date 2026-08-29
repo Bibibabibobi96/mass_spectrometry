@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import csv
 import json
 from pathlib import Path
 from typing import Any
@@ -93,6 +94,170 @@ def _transition_record(
     }
 
 
+def _manifest_record(
+    manifest: dict[str, Any], *, run_dir: Path, name: str,
+) -> tuple[Path, dict[str, Any]]:
+    """Return one verified manifest record whose basename is *name*."""
+
+    matches: list[tuple[Path, dict[str, Any]]] = []
+    for record in manifest.get("inputs", {}).values():
+        if not isinstance(record, dict):
+            continue
+        path = record_path(record, base_dir=run_dir)
+        if path.name == name:
+            matches.append((path, record))
+    for record in manifest.get("outputs", []):
+        if not isinstance(record, dict):
+            continue
+        path = record_path(record, base_dir=run_dir)
+        if path.name == name:
+            matches.append((path, record))
+    if len(matches) != 1:
+        raise ContractError(f"pre-pulse producer manifest lacks unique {name}")
+    path, record = matches[0]
+    try:
+        verify_record(f"pre-pulse producer {name}", record, base_dir=run_dir)
+    except (AssertionError, KeyError, TypeError) as exc:
+        raise ContractError(f"pre-pulse producer {name} identity differs") from exc
+    return path, record
+
+
+def _require_complete_mother_source(source_path: Path, expected_count: int) -> None:
+    """Require one manifest-bound CSV row and unique particle ID per mother ion."""
+
+    try:
+        with source_path.open(encoding="utf-8-sig", newline="") as handle:
+            reader = csv.DictReader(handle)
+            if reader.fieldnames is None or "particle_id" not in reader.fieldnames:
+                raise ContractError("pre-pulse producer mother source lacks particle_id")
+            particle_ids = [row.get("particle_id") for row in reader]
+    except (OSError, UnicodeError, csv.Error) as exc:
+        raise ContractError("pre-pulse producer mother source is unreadable") from exc
+    if (
+        len(particle_ids) != expected_count
+        or any(not isinstance(value, str) or not value for value in particle_ids)
+        or len(set(particle_ids)) != expected_count
+    ):
+        raise ContractError("pre-pulse producer mother source is not the complete cohort")
+
+
+def _validate_screening_producer(
+    *, run_directory: Path, experiment_id: str,
+    shared_population: dict[str, Any],
+) -> None:
+    """Require a successful detector-blind screen of the full mother cohort.
+
+    The full-flight campaign deliberately does not carry a survivor restart or
+    a preselected timing transition.  This verification is an authoring gate:
+    it proves that the supplied producer is the corresponding detector-blind
+    screen and that its frozen population is the same full continuous cohort.
+    """
+
+    run_dir = run_directory.resolve()
+    manifest = _load_object(run_dir / "run_manifest.json", "pre-pulse producer manifest")
+    if (
+        manifest.get("status") != "success"
+        or manifest.get("project") != INTEGRATION_ID
+        or manifest.get("run_id") != run_dir.name
+    ):
+        raise ContractError("pre-pulse producer manifest is not a successful matching run")
+    try:
+        verify_record("pre-pulse producer run_config", manifest["run_config"], base_dir=run_dir)
+    except (AssertionError, KeyError, TypeError) as exc:
+        raise ContractError("pre-pulse producer run_config identity differs") from exc
+
+    population_path, population_record = _manifest_record(
+        manifest, run_dir=run_dir, name="resolved_population_contract.json"
+    )
+    mother_source_path, mother_source_record = _manifest_record(
+        manifest, run_dir=run_dir, name="mother_particle_source.csv"
+    )
+    receipt_path, receipt_record = _manifest_record(
+        manifest, run_dir=run_dir,
+        name="pre_pulse_time_series_screening_receipt.json",
+    )
+    population = _load_object(population_path, "pre-pulse producer population")
+    receipt = _load_object(receipt_path, "pre-pulse screening receipt")
+    execution = population.get("execution_population")
+    authority = population.get("source_authority")
+    denominators = population.get("denominators")
+    expected_execution = shared_population["execution_population"]
+    expected_denominators = shared_population.get("denominators")
+    expected_source = shared_population.get("source_authority")
+    if not all(isinstance(value, dict) for value in (
+        execution, authority, denominators, expected_execution,
+        expected_denominators, expected_source,
+    )) or not isinstance(population.get("single_flight_execution"), dict) or not isinstance(
+        authority.get("table"), dict
+    ):
+        raise ContractError("pre-pulse producer population contract is incomplete")
+    expected_count = expected_execution.get("particle_count")
+    if (
+        population.get("role") != "rf_oatof_resolved_population_contract"
+        or population.get("experiment_id") != experiment_id
+        or population.get("population_mode") != "continuous_injection_full_population"
+        or population.get("source_release_mode") != "continuous_frontend"
+        or population.get("postselection_policy") != "prohibited"
+        or population.get("single_flight_execution", {}).get("is_pre_pulse_restart") is not False
+        or execution.get("selection_algorithm") != "all_rows_in_frozen_file_order"
+        or execution.get("particle_count") != expected_count
+        or execution.get("ordered_particle_id_sha256")
+        != expected_execution.get("ordered_particle_id_sha256")
+        or denominators.get("population_count") != expected_denominators.get("population_count")
+        or denominators.get("eligible_population_count")
+        != expected_denominators.get("eligible_population_count")
+        or authority.get("table_binding") != expected_source.get("table_binding")
+        or authority.get("particle_count") != expected_count
+        or authority.get("table", {}).get("sha256") != mother_source_record.get("sha256")
+        or file_sha256(population_path) != population_record.get("sha256")
+    ):
+        raise ContractError("pre-pulse producer full mother population identity differs")
+    identities = receipt.get("identities")
+    if (
+        receipt.get("role") != "rf_oatof_pre_pulse_time_series_screening_receipt"
+        or receipt.get("status") != "success"
+        or receipt.get("qualification") != "FUNCTIONAL_ONLY"
+        or receipt.get("execution_mode") != "real_pa_rf_pre_pulse_time_series"
+        or receipt.get("pulse_disabled") is not True
+        or receipt.get("resolution_claim_allowed") is not False
+        or receipt.get("particle_count") != expected_count
+        or not isinstance(identities, dict)
+        or identities.get("experiment_id") != experiment_id
+        or identities.get("resolved_population_contract_sha256") != population_record.get("sha256")
+        or identities.get("mother_particle_source_sha256") != mother_source_record.get("sha256")
+        or identities.get("ordered_particle_id_sha256")
+        != expected_execution.get("ordered_particle_id_sha256")
+        or not isinstance(receipt.get("sample_census"), list)
+        or not receipt["sample_census"]
+        or not isinstance(receipt.get("terminal_census"), dict)
+        or receipt_record.get("sha256") != file_sha256(receipt_path)
+    ):
+        raise ContractError("pre-pulse screening receipt full-cohort identity differs")
+    # The source is verified via its manifest record above.  Keeping this
+    # content check makes malformed but correctly addressed records fail before
+    # authoring a supposedly complete-cohort full flight.
+    _require_complete_mother_source(mother_source_path, expected_count)
+
+
+def _producer_transition_or_screening(
+    *, workspace: Path, run_directory: Path, experiment_id: str,
+    shared_population: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Use legacy transition authority when present, otherwise validate screen."""
+
+    transition_path = run_directory.resolve() / "results" / TRANSITION_NAME
+    if transition_path.is_file():
+        return _transition_record(
+            workspace=workspace, run_directory=run_directory,
+            experiment_id=experiment_id,
+        )
+    _validate_screening_producer(
+        run_directory=run_directory, experiment_id=experiment_id,
+        shared_population=shared_population,
+    )
+    return None
+
+
 def author_campaign(
     *, source_campaign_path: Path, producer_mapping_path: Path,
     run_id_mapping_path: Path, output_path: Path, campaign_id: str,
@@ -139,22 +304,27 @@ def author_campaign(
 
     authored_rows: list[dict[str, Any]] = []
     seen_transitions: set[str] = set()
+    has_transition_authority = False
     for row in rows:
         experiment_id = row["experiment_id"]
         if experiment_id not in producer_mapping:
             continue
-        transition = _transition_record(
+        transition = _producer_transition_or_screening(
             workspace=workspace.resolve(),
             run_directory=Path(producer_mapping[experiment_id]),
             experiment_id=experiment_id,
+            shared_population=shared["single_flight_population"],
         )
-        if transition["sha256"] in seen_transitions:
-            raise ContractError("duplicate pre-pulse transition authority")
-        seen_transitions.add(transition["sha256"])
+        if transition is not None:
+            if transition["sha256"] in seen_transitions:
+                raise ContractError("duplicate pre-pulse transition authority")
+            seen_transitions.add(transition["sha256"])
+            has_transition_authority = True
         overrides = copy.deepcopy(row.get("overrides"))
         if not isinstance(overrides, dict):
             raise ContractError("pre-pulse row overrides are incomplete")
-        overrides["pulse_timing_transition_authority"] = transition
+        if transition is not None:
+            overrides["pulse_timing_transition_authority"] = transition
         authored_rows.append({
             "sequence": len(authored_rows) + 1,
             "experiment_id": experiment_id.replace("_pre_pulse_", "_full_flight_"),
@@ -177,7 +347,8 @@ def author_campaign(
     result["experiments"] = {
         "shared": copy.deepcopy(shared),
         "variation_axes": list(experiments["variation_axes"])
-        + ([] if "pulse_timing_transition_authority" in experiments["variation_axes"]
+        + ([] if not has_transition_authority
+           or "pulse_timing_transition_authority" in experiments["variation_axes"]
            else ["pulse_timing_transition_authority"]),
         "rows": authored_rows,
     }

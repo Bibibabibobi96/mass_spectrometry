@@ -25,6 +25,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     _accelerator_cross_section,
     _accelerator_shield_geometry,
     _connector_through_hole_geometry,
+    _checkpoint_distribution_summary,
     _rectangular_frame_path,
     _repeller_body_geometry,
     _source_region_bounds,
@@ -33,6 +34,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     build_accelerator_phase_space_figure,
     build_figure,
     marker_area,
+    write_checkpoint_evolution_outputs,
 )
 
 RESOLUTION_QUALIFICATION_POLICY = json.loads(
@@ -305,6 +307,118 @@ class SingleFlightAnalysisTests(unittest.TestCase):
             )
         finally:
             plt.close(figure)
+
+    def test_z_vz_diagnostics_report_linear_higher_order_and_random_residuals(self) -> None:
+        """The checkpoint diagnostic retains an unfiltered, fixed nonlinear cohort."""
+
+        z_values = [-2.0, -1.0, 0.0, 1.0, 2.0]
+        rows = pd.DataFrame(
+            {
+                "x_mm": [0.0] * len(z_values),
+                "y_mm": [0.0] * len(z_values),
+                "z_mm": z_values,
+                "vx_mm_per_us": [0.0] * len(z_values),
+                "vy_mm_per_us": [0.0] * len(z_values),
+                # v = 10 + 3z + 2z² + 0.5z³ in m/s.
+                "vz_mm_per_us": [
+                    (10.0 + 3.0 * z + 2.0 * z**2 + 0.5 * z**3) / 1000.0
+                    for z in z_values
+                ],
+            }
+        )
+        diagnostic = _checkpoint_distribution_summary(rows, "local_accelerator_exit")["z_vz_affine"]
+        self.assertEqual(diagnostic["status"], "computed")
+        self.assertEqual(diagnostic["position_unit"], "mm")
+        self.assertEqual(diagnostic["velocity_unit"], "m_per_s")
+        self.assertAlmostEqual(diagnostic["slope_m_per_s_per_mm"], 4.7)
+        self.assertAlmostEqual(diagnostic["intercept_m_per_s"], 14.0)
+        self.assertGreater(diagnostic["residual_sigma_m_per_s"], 0.0)
+        self.assertGreater(diagnostic["residual_rms_m_per_s"], 0.0)
+        self.assertGreater(diagnostic["residual_max_abs_m_per_s"], 0.0)
+        self.assertGreater(diagnostic["residual_p95_abs_m_per_s"], 0.0)
+        quadratic = diagnostic["quadratic_fit"]
+        cubic = diagnostic["cubic_fit"]
+        self.assertEqual(quadratic["status"], "computed")
+        self.assertEqual(cubic["status"], "computed")
+        self.assertAlmostEqual(
+            cubic["coefficients_m_per_s"]["constant"], 10.0
+        )
+        self.assertAlmostEqual(
+            cubic["coefficients_m_per_s"]["linear_per_mm"], 3.0
+        )
+        self.assertAlmostEqual(
+            cubic["coefficients_m_per_s"]["quadratic_per_mm2"], 2.0
+        )
+        self.assertAlmostEqual(
+            cubic["coefficients_m_per_s"]["cubic_per_mm3"], 0.5
+        )
+        self.assertAlmostEqual(cubic["residual_rms_m_per_s"], 0.0, places=11)
+        self.assertGreater(quadratic["relative_linear_residual_rms_reduction"], 0.0)
+        self.assertAlmostEqual(cubic["relative_linear_residual_rms_reduction"], 1.0, places=11)
+        random_residual = diagnostic["cubic_random_residual"]
+        self.assertEqual(
+            random_residual["definition"],
+            "pointwise residual after the cubic least-squares fit",
+        )
+        self.assertAlmostEqual(random_residual["rms_m_per_s"], 0.0, places=11)
+
+    def test_z_vz_diagnostics_fail_closed_for_degenerate_position_span(self) -> None:
+        rows = pd.DataFrame(
+            {
+                "x_mm": [0.0, 0.0],
+                "y_mm": [0.0, 0.0],
+                "z_mm": [1.0, 1.0],
+                "vx_mm_per_us": [0.0, 0.0],
+                "vy_mm_per_us": [0.0, 0.0],
+                "vz_mm_per_us": [0.1, 0.2],
+            }
+        )
+        diagnostic = _checkpoint_distribution_summary(rows, "local_accelerator_exit")["z_vz_affine"]
+        self.assertEqual(diagnostic["status"], "not_computed")
+        self.assertEqual(diagnostic["reason"], "zero_z_span_or_single_particle")
+        self.assertIsNone(diagnostic["slope_m_per_s_per_mm"])
+        self.assertIsNone(diagnostic["quadratic_fit"])
+        self.assertIsNone(diagnostic["cubic_fit"])
+        self.assertIsNone(diagnostic["cubic_random_residual"])
+
+    def test_checkpoint_evolution_csv_records_extended_z_vz_metrics(self) -> None:
+        z_values = [-2.0, -1.0, 0.0, 1.0, 2.0]
+        checkpoints = pd.DataFrame(
+            {
+                "particle_id": list(range(1, len(z_values) + 1)),
+                "event": ["local_accelerator_exit"] * len(z_values),
+                "instrument_time_us": [1.0] * len(z_values),
+                "x_mm": [0.0] * len(z_values),
+                "y_mm": [0.0] * len(z_values),
+                "z_mm": z_values,
+                "vx_mm_per_us": [0.0] * len(z_values),
+                "vy_mm_per_us": [0.0] * len(z_values),
+                "vz_mm_per_us": [
+                    (10.0 + 3.0 * z + 2.0 * z**2 + 0.5 * z**3) / 1000.0
+                    for z in z_values
+                ],
+            }
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            checkpoints_path = root / "checkpoints.csv"
+            figure_path = root / "evolution.png"
+            metadata_path = root / "evolution.json"
+            data_path = root / "evolution.csv"
+            checkpoints.to_csv(checkpoints_path, index=False)
+            write_checkpoint_evolution_outputs(
+                checkpoints_path, figure_path, metadata_path, data_path
+            )
+            table = pd.read_csv(data_path)
+        self.assertIn("z_vz_k_m_per_s_per_mm", table.columns)
+        self.assertIn("z_vz_linear_residual_sigma_m_per_s", table.columns)
+        self.assertIn("z_vz_quadratic_coefficient_m_per_s_per_mm2", table.columns)
+        self.assertIn("z_vz_cubic_coefficient_m_per_s_per_mm3", table.columns)
+        self.assertIn("z_vz_cubic_random_residual_rms_m_per_s", table.columns)
+        self.assertAlmostEqual(table.loc[0, "z_vz_k_m_per_s_per_mm"], 4.7)
+        self.assertAlmostEqual(
+            table.loc[0, "z_vz_cubic_coefficient_m_per_s_per_mm3"], 0.5
+        )
 
     def test_n1000_marker_does_not_obscure_geometry(self) -> None:
         self.assertLess(marker_area(1000), marker_area(100))
