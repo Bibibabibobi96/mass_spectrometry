@@ -29,8 +29,25 @@ TERMINAL = {"completed", "failed", "interrupted", "cancelled", "aborted"}
 CACHE_KEY = re.compile(r"\b[a-f0-9]{64}\b", re.IGNORECASE)
 
 
-def _tree_bytes(path: Path) -> int:
-    return sum(item.stat().st_size for item in path.rglob("*") if item.is_file() and not item.is_symlink())
+def _directory_bytes(root: Path) -> dict[Path, int]:
+    """Return inclusive byte counts for every real directory in one walk.
+
+    Capacity planning needs both the whole artifact footprint and individual
+    cache footprints.  Re-walking each cache made a dry-run scale with the
+    number of cache keys.  A bottom-up walk preserves the exact file and
+    symlink rules while sharing that I/O across all candidates.
+    """
+    sizes: dict[Path, int] = {}
+    for directory, child_dirs, files in os.walk(root, topdown=False):
+        path = Path(directory)
+        total = sum(
+            (path / filename).stat().st_size
+            for filename in files
+            if not (path / filename).is_symlink()
+        )
+        total += sum(sizes.get(path / child, 0) for child in child_dirs)
+        sizes[path] = total
+    return sizes
 
 
 def _load_object(path: Path) -> dict[str, Any] | None:
@@ -65,12 +82,12 @@ def _protected(path: Path, protected_paths: Iterable[Path]) -> bool:
 
 
 def _cache_candidate(cache_key_dir: Path, protected_keys: set[str], now: float, staging_grace_seconds: int,
-                     protected_paths: Iterable[Path]) -> dict[str, Any] | None:
+                     protected_paths: Iterable[Path], directory_bytes: dict[Path, int]) -> dict[str, Any] | None:
     if _is_formal(cache_key_dir) or _protected(cache_key_dir, protected_paths):
         return None
     name = cache_key_dir.name.lower()
     mtime = cache_key_dir.stat().st_mtime
-    payload = {"path": str(cache_key_dir), "bytes": _tree_bytes(cache_key_dir), "timestamp": mtime}
+    payload = {"path": str(cache_key_dir), "bytes": directory_bytes.get(cache_key_dir, 0), "timestamp": mtime}
     if name.startswith("b-") and not (cache_key_dir / "cache_manifest.json").exists():
         if now - mtime >= staging_grace_seconds:
             payload.update(level="L1", reason="old_unpublished_cache_staging")
@@ -101,7 +118,7 @@ def _cache_candidate(cache_key_dir: Path, protected_keys: set[str], now: float, 
 
 
 def _cache_candidates(root: Path, protected_keys: set[str], now: float, staging_grace_seconds: int,
-                      protected_paths: Iterable[Path]) -> list[dict[str, Any]]:
+                      protected_paths: Iterable[Path], directory_bytes: dict[Path, int]) -> list[dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
     for cache_root in root.rglob("cache"):
         if not cache_root.is_dir() or _is_formal(cache_root):
@@ -111,7 +128,7 @@ def _cache_candidates(root: Path, protected_keys: set[str], now: float, staging_
                 continue
             for child in role_dir.iterdir():
                 if child.is_dir():
-                    candidate = _cache_candidate(child, protected_keys, now, staging_grace_seconds, protected_paths)
+                    candidate = _cache_candidate(child, protected_keys, now, staging_grace_seconds, protected_paths, directory_bytes)
                     if candidate:
                         candidates.append(candidate)
     return candidates
@@ -147,10 +164,11 @@ def plan(root: Path, *, target_bytes: int, required_headroom_bytes: int = 0,
     now = time.time()
     active_keys = _active_cache_keys(root)
     active_keys.update(key.lower() for key in protected_cache_keys if CACHE_KEY.fullmatch(key))
-    candidates = _cache_candidates(root, active_keys, now, staging_grace_seconds, protected)
+    directory_bytes = _directory_bytes(root)
+    candidates = _cache_candidates(root, active_keys, now, staging_grace_seconds, protected, directory_bytes)
     candidates.extend(_compact_candidates(root, protected))
     candidates.sort(key=lambda item: ({"L1": 1, "L2": 2, "L3": 3}[item["level"]], item["timestamp"], item["path"]))
-    measured = _tree_bytes(root)
+    measured = directory_bytes[root]
     if minimum_free_bytes < 0:
         raise ValueError("minimum free bytes must be nonnegative")
     free_bytes = shutil.disk_usage(root).free
@@ -216,7 +234,9 @@ def apply(receipt: dict[str, Any]) -> dict[str, Any]:
     receipt["applied"] = True
     receipt["removed"] = removed
     receipt["removed_bytes"] = sum(item["bytes"] for item in removed)
-    receipt["measured_after_bytes"] = _tree_bytes(Path(receipt["artifact_root"]))
+    receipt["measured_after_bytes"] = _directory_bytes(Path(receipt["artifact_root"]))[
+        Path(receipt["artifact_root"])
+    ]
     receipt["free_bytes_after"] = shutil.disk_usage(Path(receipt["artifact_root"])).free
     receipt["satisfied_after_apply"] = (
         receipt["measured_after_bytes"] + receipt["required_headroom_bytes"] <= receipt["target_bytes"]
