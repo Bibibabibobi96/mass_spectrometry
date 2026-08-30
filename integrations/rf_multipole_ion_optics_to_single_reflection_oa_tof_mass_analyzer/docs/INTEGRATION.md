@@ -82,6 +82,9 @@ SIMION 运行可调用共享批处理；批内结果必须恢复全局粒子 ID 
 主加速器和中间 overlay。反射器、下游飞行管和探测器 PA 不物化到 runtime，也不绑定到 IOB；SIMION 必需的
 六槽容器仅在槽 2/4 保留小型占位结构。Program 的 pre-pulse contract 只验证四个可达角色，且该轻量模式不能
 用于全程飞行或总轴场导出；run manifest 明确记录该模式及省略角色。
+六槽 seed container 与其临时占位 PA 在 Lua 替换实例前写入保留的 run-local runtime 目录。SIMION 在加载
+container 时会把这些 seed PA 路径序列化到最终 IOB，故它们不能来自随后删除的 staging；此规则同时适用于
+pre-pulse 与 full-flight，且不改变 pre-pulse 的四个实际可达 PA 角色。
 N=5000 预脉冲筛选及跨整体 PA 的配对验收仍是物理/性能结论的必要前提。
 
 仓库级 [`common/simion/resource_scheduler.py`](../../../common/simion/resource_scheduler.py) 仅为已授权请求

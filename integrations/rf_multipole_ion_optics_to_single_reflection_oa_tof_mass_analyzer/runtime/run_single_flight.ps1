@@ -2738,12 +2738,17 @@ try {
     $acceleratorMainRuntimePa0 = Join-Path $runtimeDir 'accelerator.pa0'
     $containerDir = Join-Path (Split-Path -Parent $SimionExe) 'examples\magnetic_potential'; $container = Join-Path $containerDir 'current_sphere_3dp.iob'
     if (-not (Test-Path -LiteralPath $container -PathType Leaf)) { throw 'SIMION-distributed six-instance IOB container is missing.' }
-    $stage = New-RfCacheStagingDirectory -CacheRoot (Join-Path $workspaceRoot 'scratch\simion_iob')
-    try {
-      Copy-Item -LiteralPath $container -Destination $stage; Get-ChildItem -LiteralPath $containerDir -Filter 'current_sphere_3dp-*.gem' -File | Copy-Item -Destination $stage
-      $domainSplitIobArguments = @('--nogui','--noprompt','lua',$domainSplitIobBuilder,(Join-Path $runtimeDir 'oatof_ideal_grounded.iob'),(Join-Path $stage 'current_sphere_3dp.iob'),(Join-Path $runtimeDir 'oatof_ideal_grounded.iob'),$coarseFrontendRuntimePa0,(Join-Path $runtimeDir 'reflectron.pa0'),$acceleratorMainRuntimePa0,(Join-Path $runtimeDir 'detector_ground.pa0'),$domainUpstream[0].pa0,(Join-Path $runtimeDir 'accelerator_intermediate_overlay.pa0'),([string]$frontendGeometry.instance_origin_mm.x),([string]$frontendGeometry.instance_origin_mm.y),([string]$frontendGeometry.instance_origin_mm.z),([string]$domainMain[0].geometry.instance_origin_mm.x),([string]$domainMain[0].geometry.instance_origin_mm.y),([string]$domainMain[0].geometry.instance_origin_mm.z),([string]$domainUpstream[0].geometry.instance_origin_mm.x),([string]$domainUpstream[0].geometry.instance_origin_mm.y),([string]$domainUpstream[0].geometry.instance_origin_mm.z),([string]$intermediateOverlay[0].geometry.instance_origin_mm.x),([string]$intermediateOverlay[0].geometry.instance_origin_mm.y),([string]$intermediateOverlay[0].geometry.instance_origin_mm.z))
-      $domainSplitIobArguments += $(if ($prePulseReachableIob) {'pre_pulse_reachable_v1'} else {'full_flight_v1'})
-      if ($ProgramAxisFieldExport) {
+    # A SIMION IOB persists the placeholder PA paths it loaded before the Lua
+    # builder replaces all six instances.  Materialize that container beside
+    # the final IOB rather than in disposable staging; otherwise the final IOB
+    # points at a removed staging directory and cannot be reopened for Fly.
+    $runtimeContainer = Join-Path $runtimeDir 'current_sphere_3dp.iob'
+    Copy-Item -LiteralPath $container -Destination $runtimeContainer
+    Get-ChildItem -LiteralPath $containerDir -Filter 'current_sphere_3dp-*.gem' -File |
+      Copy-Item -Destination $runtimeDir
+    $domainSplitIobArguments = @('--nogui','--noprompt','lua',$domainSplitIobBuilder,(Join-Path $runtimeDir 'oatof_ideal_grounded.iob'),$runtimeContainer,(Join-Path $runtimeDir 'oatof_ideal_grounded.iob'),$coarseFrontendRuntimePa0,(Join-Path $runtimeDir 'reflectron.pa0'),$acceleratorMainRuntimePa0,(Join-Path $runtimeDir 'detector_ground.pa0'),$domainUpstream[0].pa0,(Join-Path $runtimeDir 'accelerator_intermediate_overlay.pa0'),([string]$frontendGeometry.instance_origin_mm.x),([string]$frontendGeometry.instance_origin_mm.y),([string]$frontendGeometry.instance_origin_mm.z),([string]$domainMain[0].geometry.instance_origin_mm.x),([string]$domainMain[0].geometry.instance_origin_mm.y),([string]$domainMain[0].geometry.instance_origin_mm.z),([string]$domainUpstream[0].geometry.instance_origin_mm.x),([string]$domainUpstream[0].geometry.instance_origin_mm.y),([string]$domainUpstream[0].geometry.instance_origin_mm.z),([string]$intermediateOverlay[0].geometry.instance_origin_mm.x),([string]$intermediateOverlay[0].geometry.instance_origin_mm.y),([string]$intermediateOverlay[0].geometry.instance_origin_mm.z))
+    $domainSplitIobArguments += $(if ($prePulseReachableIob) {'pre_pulse_reachable_v1'} else {'full_flight_v1'})
+    if ($ProgramAxisFieldExport) {
         # The standalone field exporter must load a same-transform IOB without
         # a same-basename Program/Fly2 auto-running during top-level Lua.  The
         # regular build below intentionally replaces its Formal IOB in place,
@@ -2752,10 +2757,9 @@ try {
         $domainSplitAxisFieldArguments = @($domainSplitIobArguments[0..5]) + @($totalAxisFieldIob) + @($domainSplitIobArguments[7..24])
         $axisFieldIobBuild = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir -UsagePath (Join-Path $package.log_dir 'domain_split_total_axis_field_iob_build_resource_usage.json') -FilePath $SimionExe -WorkingDirectory $runtimeDir -RedirectStandardOutput (Join-Path $package.log_dir 'domain_split_total_axis_field_iob_build.stdout.log') -RedirectStandardError (Join-Path $package.log_dir 'domain_split_total_axis_field_iob_build.stderr.log') -ArgumentList $domainSplitAxisFieldArguments
         if ($axisFieldIobBuild.resource_budget_exceeded -or $axisFieldIobBuild.exit_code -ne 0 -or -not (Test-Path -LiteralPath $totalAxisFieldIob -PathType Leaf)) { throw 'Domain-split total-axis-field IOB build failed.' }
-      }
-      $built = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir -UsagePath (Join-Path $package.log_dir 'domain_split_iob_build_resource_usage.json') -FilePath $SimionExe -WorkingDirectory $runtimeDir -RedirectStandardOutput (Join-Path $package.log_dir 'domain_split_iob_build.stdout.log') -RedirectStandardError (Join-Path $package.log_dir 'domain_split_iob_build.stderr.log') -ArgumentList $domainSplitIobArguments
-      if ($built.resource_budget_exceeded -or $built.exit_code -ne 0) { throw 'Domain-split IOB build failed.' }
-    } finally { if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force } }
+    }
+    $built = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir -UsagePath (Join-Path $package.log_dir 'domain_split_iob_build_resource_usage.json') -FilePath $SimionExe -WorkingDirectory $runtimeDir -RedirectStandardOutput (Join-Path $package.log_dir 'domain_split_iob_build.stdout.log') -RedirectStandardError (Join-Path $package.log_dir 'domain_split_iob_build.stderr.log') -ArgumentList $domainSplitIobArguments
+    if ($built.resource_budget_exceeded -or $built.exit_code -ne 0) { throw 'Domain-split IOB build failed.' }
   }
   $frontendCacheRecheck = Test-RfFrozenCacheGeneration -Python $python `
     -RepoRoot $repoRoot -WorkspaceRoot $workspaceRoot -ProjectId $runProjectId `

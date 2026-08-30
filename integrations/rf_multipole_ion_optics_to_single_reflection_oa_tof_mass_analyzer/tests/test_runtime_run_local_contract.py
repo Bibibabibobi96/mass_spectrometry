@@ -1328,6 +1328,13 @@ foreach ($entry in $commands) {{
             self.assertIn(required, runner)
         self.assertIn("$overlayLayout -eq 'whole_accelerator_v1'", runner)
         self.assertIn("$overlayLayout -eq 'two_local_v1'", runner)
+        # The seed IOB serializes the paths of its six placeholder PAs.  It
+        # must be built in the retained runtime directory, not scratch that is
+        # removed before SIMION later reopens the final full-flight IOB.
+        self.assertIn("$runtimeContainer = Join-Path $runtimeDir 'current_sphere_3dp.iob'", runner)
+        self.assertIn("Copy-Item -LiteralPath $container -Destination $runtimeContainer", runner)
+        self.assertIn("$runtimeContainer,(Join-Path $runtimeDir 'oatof_ideal_grounded.iob')", runner)
+        self.assertNotIn("-Destination $stage", runner)
         self.assertIn(
             "$prePulseTimeSeries.schema_version -in @(2, 3, 4)", runner
         )
