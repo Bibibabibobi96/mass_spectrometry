@@ -535,20 +535,38 @@ Write-RfPreCacheRunConfiguration `
 $hostExecutionLease = Enter-HostExecutionLease -Role SIMION -RunId $RunId
 $hostExecutionOutcome = 'failed'
 try {
+  # Freeze the stage budget before making the capacity decision: its transient
+  # footprint is the only run-specific launch headroom authority.
+  $budget = Initialize-RfIntegrationStageBudget -ResolvedBudget $ResolvedEngineeringBudget `
+    -InputDir $package.input_dir -ExpectedIntegrationId `
+    'rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer' `
+    -ExpectedConnectionProfileId $ConnectionProfileId -StageId 'single_flight_transport' -Solver simion
+  $resolvedBudgetDocument = Read-RfFrozenResolvedBudgetDocument `
+    -StageBudgetReceipt $budget
+  $stageBudgetDocument = Get-Content -Raw -LiteralPath $budget.stage_budget `
+    -Encoding UTF8 | ConvertFrom-Json
+  $minimumSystemAvailableMemoryBytes =
+    [int64]$stageBudgetDocument.limits.minimum_system_available_memory_bytes
+  # 500 GiB is the repository policy floor.  Do not turn a measured staging
+  # requirement into a second policy constant: derive it from this frozen run.
+  $artifactCapacityLaunchMinimumFreeBytes =
+    [int64](500GB) + [int64]$stageBudgetDocument.limits.transient_run_directory_bytes
+  $artifactCapacityLaunchMinimumFreeGiB = ([double]$artifactCapacityLaunchMinimumFreeBytes / 1GB).ToString(
+    '0.#########',[System.Globalization.CultureInfo]::InvariantCulture)
   # Repository-wide waterline: automatic cleanup is constrained to L1/L2/L3
-  # reconstructible material.  Fifty GiB is the conservative observed compact
-  # SIMION staging envelope; retaining it above the 500 GiB post-launch floor
-  # prevents an admitted run from immediately violating that floor.
+  # reconstructible material.  Retaining this run's frozen transient staging
+  # envelope above the 500 GiB post-launch floor prevents an admitted run from
+  # immediately violating that floor.
   # The receipt is frozen with this run, making every automatic removal auditible.
   $artifactCapacityStartup = Invoke-SingleFlightPython -Arguments @(
     '-m','common.contracts.reconcile_artifact_capacity',
     '--artifact-root',(Join-Path $workspaceRoot 'artifacts'),'--target-gib','500',
-    '--minimum-free-gib','550','--apply'
+    '--minimum-free-gib',$artifactCapacityLaunchMinimumFreeGiB,'--protect-path',$package.run_dir,'--apply'
   ) -Failure 'Artifact capacity gate failed at SIMION startup.'
   $artifactCapacityStartupReceipt = @($artifactCapacityStartup) -join "`n" |
     ConvertFrom-Json
   if (-not [bool]$artifactCapacityStartupReceipt.satisfied_after_apply) {
-    throw 'Artifact capacity gate did not reach the conservative 550 GiB launch watermark.'
+    throw 'Artifact capacity gate did not reach the frozen transient-staging launch watermark.'
   }
   $artifactCapacityStartupReceiptPath = Join-Path $package.input_dir 'artifact_capacity_gate_startup.json'
   Write-RunJson -Path $artifactCapacityStartupReceiptPath -Depth 14 -Value $artifactCapacityStartupReceipt
@@ -578,16 +596,6 @@ try {
     $interruptedReconciliationReceipt.applied_runs,
     $interruptedReconciliationReceipt.removed_bytes
   )
-  $budget = Initialize-RfIntegrationStageBudget -ResolvedBudget $ResolvedEngineeringBudget `
-    -InputDir $package.input_dir -ExpectedIntegrationId `
-    'rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer' `
-    -ExpectedConnectionProfileId $ConnectionProfileId -StageId 'single_flight_transport' -Solver simion
-  $resolvedBudgetDocument = Read-RfFrozenResolvedBudgetDocument `
-    -StageBudgetReceipt $budget
-  $stageBudgetDocument = Get-Content -Raw -LiteralPath $budget.stage_budget `
-    -Encoding UTF8 | ConvertFrom-Json
-  $minimumSystemAvailableMemoryBytes =
-    [int64]$stageBudgetDocument.limits.minimum_system_available_memory_bytes
   try {
     $diskCapacity = Test-RepositoryDiskCapacity -TargetPath $package.run_dir `
       -TransientRunDirectoryBytes ([int64]$stageBudgetDocument.limits.transient_run_directory_bytes) `

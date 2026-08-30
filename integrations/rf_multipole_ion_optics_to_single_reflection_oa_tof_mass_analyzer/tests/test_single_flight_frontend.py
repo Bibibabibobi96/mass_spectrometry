@@ -392,7 +392,7 @@ class SingleFlightFrontendTests(unittest.TestCase):
         malformed_frontend["accelerator_local_region"]["ring_placement"][
             "zone_ring_counts"
         ] = {"zone2": 2, "zone3": 3}
-        with self.assertRaisesRegex(ValueError, "one-plus-four ring placement"):
+        with self.assertRaisesRegex(ValueError, "ring placement differs"):
             compile_accelerator_main(
                 malformed_frontend,
                 oatof,
@@ -763,7 +763,7 @@ class SingleFlightFrontendTests(unittest.TestCase):
         invalid["rings"]["accelerator_placement"]["zone_ring_counts"] = {
             "zone2": 2, "zone3": 3
         }
-        with self.assertRaisesRegex(ValueError, "placement count differs"):
+        with self.assertRaisesRegex(ValueError, "placement centers differ"):
             compile_frontend(self.upstream, invalid, self.connection)
         invalid = copy.deepcopy(oatof)
         invalid["rings"]["accelerator_placement"][

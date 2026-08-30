@@ -44,7 +44,23 @@ EVENTS = (
     "detector_crossing",
 )
 COLORS = {"wide": "#0072B2", "small": "#D55E00", "common": "#009E73"}
-PRE_PULSE_AXIAL_FULL_WIDTH_ACCEPTANCE_MM = 4.0
+
+
+def _pre_pulse_axial_full_width_acceptance_mm(
+    configuration: dict[str, Any], *, case_id: str
+) -> float:
+    """Return the run-resolved source-width acceptance criterion in mm."""
+
+    parameters = configuration.get("parameters")
+    if not isinstance(parameters, dict):
+        raise ContractError(f"{case_id} resolved run parameters are missing")
+    value = parameters.get("source_release_full_width_mm")
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ContractError(f"{case_id} source-release full-width acceptance is missing")
+    acceptance_mm = float(value)
+    if not np.isfinite(acceptance_mm) or acceptance_mm <= 0:
+        raise ContractError(f"{case_id} source-release full-width acceptance is invalid")
+    return acceptance_mm
 
 
 def _polynomial_fit_diagnostics(
@@ -99,6 +115,9 @@ def analyze_pre_pulse_source_only_apertures(
         config = _load_json(run / "run_config.json")
         if config.get("parameters", {}).get("execution_mode") != "real_pa_rf_pre_pulse_time_series":
             raise ContractError(f"{case_id} is not a pre-pulse source-only run")
+        full_width_acceptance_mm = _pre_pulse_axial_full_width_acceptance_mm(
+            config, case_id=case_id
+        )
         states = pd.read_csv(run / "results" / "pre_pulse_time_series_states.csv")
         required = {"particle_id", "sample_index", "z_mm", "vz_mm_per_us"}
         if missing := sorted(required - set(states.columns)):
@@ -135,9 +154,9 @@ def analyze_pre_pulse_source_only_apertures(
                 "quantile_width_05_to_95": float(np.quantile(z, .95) - np.quantile(z, .05)),
             },
             "accelerator_entry_axial_full_width_acceptance": {
-                "threshold_full_width_mm": PRE_PULSE_AXIAL_FULL_WIDTH_ACCEPTANCE_MM,
+                "threshold_full_width_mm": full_width_acceptance_mm,
                 "observed_full_width_mm": full_width_mm,
-                "passed": full_width_mm <= PRE_PULSE_AXIAL_FULL_WIDTH_ACCEPTANCE_MM,
+                "passed": full_width_mm <= full_width_acceptance_mm,
             },
             "z_vz_linear_fit": {
                 "k_per_us": linear["k_per_us"],

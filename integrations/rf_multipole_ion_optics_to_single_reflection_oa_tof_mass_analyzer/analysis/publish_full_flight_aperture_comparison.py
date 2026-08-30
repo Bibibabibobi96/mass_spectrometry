@@ -1,7 +1,7 @@
 """Publish an immutable eight-arm, full-mother-cohort aperture comparison.
 
 This publisher deliberately has no paired-survivor mode.  Each arm is read
-against its own complete frozen 5,000-particle mother cohort; detector hits
+against its own complete frozen mother cohort; detector hits
 only determine that arm's detected peak and never define a comparison cohort.
 """
 
@@ -32,8 +32,6 @@ INTEGRATION_ID = "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 MODE = "rf_oatof_full_flight_aperture_comparison"
 RESULT_ROLE = "rf_oatof_full_flight_aperture_comparison"
 SUMMARY_ROLE = "rf_oatof_full_flight_aperture_comparison_summary"
-MOTHER_COHORT_COUNT = 5000
-AXIAL_WIDTH_LIMIT_MM = 4.0
 IMPLEMENTATION_RELATIVE_PATH = (
     "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/"
     "analysis/publish_full_flight_aperture_comparison.py"
@@ -69,9 +67,28 @@ def _read_mother_ids(path: Path, case_id: str) -> tuple[list[int], str]:
             ids = [int(row["particle_id"]) for row in reader]
     except (OSError, TypeError, ValueError) as error:
         raise ContractError(f"{case_id} mother table particle IDs are invalid") from error
-    if len(ids) != MOTHER_COHORT_COUNT or len(set(ids)) != len(ids) or any(value <= 0 for value in ids):
-        raise ContractError(f"{case_id} must contain exactly the complete 5000-particle mother cohort")
+    if not ids or len(set(ids)) != len(ids) or any(value <= 0 for value in ids):
+        raise ContractError(f"{case_id} mother cohort identities are invalid")
     return ids, file_sha256(path)
+
+
+def _positive_population_count(value: Any, *, case_id: str, field: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ContractError(f"{case_id} {field} is invalid")
+    return value
+
+
+def _source_release_width_acceptance_mm(config: Mapping[str, Any], *, case_id: str) -> float:
+    parameters = config.get("parameters")
+    if not isinstance(parameters, Mapping):
+        raise ContractError(f"{case_id} resolved run parameters are missing")
+    value = parameters.get("source_release_full_width_mm")
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ContractError(f"{case_id} source-release full-width acceptance is missing")
+    acceptance_mm = float(value)
+    if not math.isfinite(acceptance_mm) or acceptance_mm <= 0:
+        raise ContractError(f"{case_id} source-release full-width acceptance is invalid")
+    return acceptance_mm
 
 
 def _checkpoint_entry_arrays(path: Path, mother_ids: set[int], case_id: str) -> tuple[np.ndarray, np.ndarray, set[int]]:
@@ -211,12 +228,21 @@ def _analyze_case(case_id: str, run: Path) -> tuple[dict[str, Any], str]:
     source = summary.get("source_population")
     if not isinstance(source, dict) or source.get("simulation_population_basis") != "candidate_full_population":
         raise ContractError(f"{case_id} uses a conditional or restart population")
-    if source.get("candidate_population_count") != MOTHER_COHORT_COUNT or source.get("simulated_population_count") != MOTHER_COHORT_COUNT:
-        raise ContractError(f"{case_id} does not simulate the complete 5000-particle mother cohort")
     if summary.get("pulse_eligibility_validation_applied") is not True:
         raise ContractError(f"{case_id} did not validate pulse eligibility")
     mother_order, mother_sha = _read_mother_ids(run / "inputs" / "single_flight_initial_global_state.csv", case_id)
     mother_ids = set(mother_order)
+    candidate_count = _positive_population_count(
+        source.get("candidate_population_count"), case_id=case_id,
+        field="candidate population count"
+    )
+    simulated_count = _positive_population_count(
+        source.get("simulated_population_count"), case_id=case_id,
+        field="simulated population count"
+    )
+    if candidate_count != len(mother_ids) or simulated_count != len(mother_ids):
+        raise ContractError(f"{case_id} does not simulate its complete frozen mother cohort")
+    full_width_acceptance_mm = _source_release_width_acceptance_mm(config, case_id=case_id)
     z_mm, vz_mm_per_us, entry_ids = _checkpoint_entry_arrays(
         run / "results" / "single_flight_particle_checkpoints.csv", mother_ids, case_id
     )
@@ -236,8 +262,8 @@ def _analyze_case(case_id: str, run: Path) -> tuple[dict[str, Any], str]:
         "accelerator_entry_axial_width_mm": {
             "full_width": float(np.max(z_mm) - np.min(z_mm)),
             "quantile_width_05_to_95": float(np.quantile(z_mm, .95) - np.quantile(z_mm, .05)),
-            "threshold_full_width_mm": AXIAL_WIDTH_LIMIT_MM,
-            "passed": bool(float(np.max(z_mm) - np.min(z_mm)) <= AXIAL_WIDTH_LIMIT_MM),
+            "threshold_full_width_mm": full_width_acceptance_mm,
+            "passed": bool(float(np.max(z_mm) - np.min(z_mm)) <= full_width_acceptance_mm),
             "population_basis": "all_observed_pre_pulse_state_particles_without_detector_filter",
         },
         "z_vz": {
@@ -296,13 +322,17 @@ def publish_full_flight_aperture_comparison(*, repo_root: Path, run_id: str, cas
     source_shas = {value[1] for value in analyzed.values()}
     if len(source_shas) != 1:
         raise ContractError("full-flight arms do not use the same frozen mother cohort")
+    mother_counts = {value[0]["mother_cohort_count"] for value in analyzed.values()}
+    if len(mother_counts) != 1:
+        raise ContractError("full-flight arms do not use the same mother cohort count")
+    mother_cohort_count = next(iter(mother_counts))
     result = {
         "schema_version": 1,
         "role": RESULT_ROLE,
         "status": "REAL_FIELD_EXPLORATORY_ONLY",
         "controlled_variables": {
             "case_count": 8,
-            "mother_cohort_count": MOTHER_COHORT_COUNT,
+            "mother_cohort_count": mother_cohort_count,
             "mother_cohort_initial_state_sha256_identical": True,
             "comparison_denominator": "full_mother_cohort",
             "common_hit_selection_used": False,
@@ -333,7 +363,7 @@ def publish_full_flight_aperture_comparison(*, repo_root: Path, run_id: str, cas
         for name in SOURCE_FILES:
             input_paths[f"case_{index}_{name.replace('/', '_').replace('.', '_')}"] = path / name
     frozen = freeze_repository_inputs(input_paths, repo_root=repo_root, run_dir=run_dir)
-    run_config = {"schema_version": 2, "run_id": run_id, "project": INTEGRATION_ID, "mode": MODE, "project_root": str(workspace_root), "inputs": {name: portable_path(path, workspace_root) for name, path in sorted(frozen.items())}, "parameters": {"case_count": 8, "mother_cohort_count": MOTHER_COHORT_COUNT, "axial_width_threshold_mm": AXIAL_WIDTH_LIMIT_MM, "common_hit_selection_allowed": False, "formal_gate_passed": False}, "artifact_retention": {"policy_version": 1, "class": "compact", "reason": None}, "formal_gate_passed": False}
+    run_config = {"schema_version": 2, "run_id": run_id, "project": INTEGRATION_ID, "mode": MODE, "project_root": str(workspace_root), "inputs": {name: portable_path(path, workspace_root) for name, path in sorted(frozen.items())}, "parameters": {"case_count": 8, "mother_cohort_count": mother_cohort_count, "axial_width_threshold_mm_by_case": {case_id: value[0]["accelerator_entry_axial_width_mm"]["threshold_full_width_mm"] for case_id, value in analyzed.items()}, "common_hit_selection_allowed": False, "formal_gate_passed": False}, "artifact_retention": {"policy_version": 1, "class": "compact", "reason": None}, "formal_gate_passed": False}
     write_pending_json(run_config_path, run_config)
     write_pending_json(summary_path, {"schema_version": 1, "role": SUMMARY_ROLE, "status": "interrupted", "analysis_status": "NOT_RUN", "formal_gate_passed": False})
     pending_manifest = manifest_path.with_name(".run_manifest.json.pending")

@@ -77,7 +77,9 @@ def _source_run(root: Path, name: str, *, altered_mother: bool = False) -> Path:
         "full_pulse_eligible_bootstrap": {"status": "computed", "resamples_requested": 100, "resolution_p2p5": 9000.0, "resolution_p97p5": 11000.0},
     })
     config_path = run / "run_config.json"
-    _write_json(config_path, {"mode": "rf_to_oatof_simion_single_flight"})
+    _write_json(config_path, {"mode": "rf_to_oatof_simion_single_flight", "parameters": {
+        "source_release_full_width_mm": 4.0,
+    }})
     _write_json(run / "run_manifest.json", {
         "role": "simulation_run_manifest", "status": "success", "run_id": name,
         "run_config": _record(config_path),

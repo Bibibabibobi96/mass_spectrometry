@@ -234,6 +234,21 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
         ]
         self.assertNotIn("Invoke-ResourceBudgetedProcess `", batch_launch_block)
 
+    def test_startup_capacity_headroom_derives_from_frozen_stage_budget(self) -> None:
+        runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        budget = runner.index("$budget = Initialize-RfIntegrationStageBudget")
+        capacity = runner.index("$artifactCapacityStartup = Invoke-SingleFlightPython")
+        self.assertLess(budget, capacity)
+        gate = runner[capacity:runner.index("$interruptedReconciliation", capacity)]
+        self.assertIn(
+            "$artifactCapacityLaunchMinimumFreeBytes =\n"
+            "    [int64](500GB) + [int64]$stageBudgetDocument.limits.transient_run_directory_bytes",
+            runner,
+        )
+        self.assertIn("$artifactCapacityLaunchMinimumFreeGiB", gate)
+        self.assertIn("'--protect-path',$package.run_dir", gate)
+        self.assertNotIn("'--minimum-free-gib','550'", gate)
+
     def test_solver_stage_runners_use_short_lived_execution_aliases(self) -> None:
         for runner_path in RUNNERS[1:]:
             runner = runner_path.read_text(encoding="utf-8")

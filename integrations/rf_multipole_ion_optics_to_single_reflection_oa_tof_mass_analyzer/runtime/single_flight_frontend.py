@@ -492,17 +492,30 @@ def compile_accelerator_main(
     if (
         not isinstance(placement, dict)
         or placement.get("policy_id") != "three_zone_zonewise_equal_subdivision_1p4_v1"
-        or placement.get("zone_ring_counts") != {"zone2": 1, "zone3": 4}
+        or not isinstance(placement.get("zone_ring_counts"), dict)
         or not isinstance(ring_z_mm, list)
-        or len(ring_z_mm) != 5
     ):
-        raise ValueError("accelerator main requires the exact three-zone one-plus-four ring placement")
+        raise ValueError("accelerator main requires the declared three-zone ring placement")
+    zone_ring_counts = placement["zone_ring_counts"]
+    if set(zone_ring_counts) != {"zone2", "zone3"} or any(
+        isinstance(value, bool) or not isinstance(value, int) or value < 1
+        for value in zone_ring_counts.values()
+    ):
+        raise ValueError("accelerator main ring placement counts are invalid")
+    zone2_ring_count = zone_ring_counts["zone2"]
+    zone3_ring_count = zone_ring_counts["zone3"]
+    if len(ring_z_mm) != zone2_ring_count + zone3_ring_count:
+        raise ValueError("accelerator main ring placement count differs")
     expected_ring_z = [
-        (plane_values["intermediate1"] + plane_values["intermediate2"]) / 2.0,
+        plane_values["intermediate1"] + (index + .5) * (
+            plane_values["intermediate2"] - plane_values["intermediate1"]
+        ) / zone2_ring_count
+        for index in range(zone2_ring_count)
+    ] + [
         *[
             plane_values["intermediate2"]
-            + index * (plane_values["exit"] - plane_values["intermediate2"]) / 5.0
-            for index in range(1, 5)
+            + index * (plane_values["exit"] - plane_values["intermediate2"]) / (zone3_ring_count + 1)
+            for index in range(1, zone3_ring_count + 1)
         ],
     ]
     resolved_ring_z = [float(value) for value in ring_z_mm]
@@ -510,7 +523,7 @@ def compile_accelerator_main(
         not math.isfinite(actual) or not math.isclose(actual, expected, abs_tol=1e-9)
         for actual, expected in zip(resolved_ring_z, expected_ring_z)
     ):
-        raise ValueError("accelerator main ring placement differs from the exact one-plus-four policy")
+        raise ValueError("accelerator main ring placement differs from the declared policy")
 
     requested_realization = (
         oatof.get("geometry_derivation", {})
@@ -1345,15 +1358,23 @@ def compile_frontend(
         } or placement["policy_id"] != "three_zone_zonewise_equal_subdivision_1p4_v1":
             raise ValueError("accelerator ring placement policy identity differs")
         counts = placement["zone_ring_counts"]
-        if counts != {"zone2": 1, "zone3": 4} or sum(counts.values()) != ring_count:
+        if set(counts) != {"zone2", "zone3"} or any(
+            isinstance(value, bool) or not isinstance(value, int) or value < 1
+            for value in counts.values()
+        ) or sum(counts.values()) != ring_count:
             raise ValueError("accelerator ring placement count differs")
+        zone2_ring_count = counts["zone2"]
+        zone3_ring_count = counts["zone3"]
         intermediate2_z = float(
             accelerator_topology["planes_global_z_mm"]["intermediate2"]
         )
-        expected_ring_z = [grid1_z + (intermediate2_z - grid1_z) / 2.0]
+        expected_ring_z = [
+            grid1_z + (index + .5) * (intermediate2_z - grid1_z) / zone2_ring_count
+            for index in range(zone2_ring_count)
+        ]
         expected_ring_z.extend(
-            intermediate2_z + index * (grid2_z - intermediate2_z) / 5.0
-            for index in range(1, 5)
+            intermediate2_z + index * (grid2_z - intermediate2_z) / (zone3_ring_count + 1)
+            for index in range(1, zone3_ring_count + 1)
         )
         ring_z_mm = [float(value) for value in placement["ring_z_mm"]]
         if len(ring_z_mm) != ring_count or any(
@@ -1361,12 +1382,15 @@ def compile_frontend(
             for actual, expected in zip(ring_z_mm, expected_ring_z)
         ):
             raise ValueError("accelerator ring placement centers differ")
-        edge_clearance = min(
-            ring_z_mm[0] - ring_thickness / 2.0 - grid1_z,
-            intermediate2_z - ring_z_mm[0] - ring_thickness / 2.0,
-            ring_z_mm[1] - ring_thickness / 2.0 - intermediate2_z,
-            grid2_z - ring_z_mm[-1] - ring_thickness / 2.0,
-        )
+        zone2_ring_z = ring_z_mm[:zone2_ring_count]
+        zone3_ring_z = ring_z_mm[zone2_ring_count:]
+        edge_clearances = [
+            zone2_ring_z[0] - ring_thickness / 2.0 - grid1_z,
+            intermediate2_z - zone2_ring_z[-1] - ring_thickness / 2.0,
+            zone3_ring_z[0] - ring_thickness / 2.0 - intermediate2_z,
+            grid2_z - zone3_ring_z[-1] - ring_thickness / 2.0,
+        ]
+        edge_clearance = min(edge_clearances)
         required_clearance = float(
             placement["minimum_grid_to_ring_edge_clearance_mm"]
         )

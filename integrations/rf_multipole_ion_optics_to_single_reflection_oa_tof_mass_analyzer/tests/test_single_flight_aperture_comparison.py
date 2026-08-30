@@ -61,7 +61,11 @@ class SingleFlightApertureComparisonTests(unittest.TestCase):
                 run = root / name; (run / "inputs").mkdir(parents=True); (run / "results").mkdir()
                 (run / "run_manifest.json").write_text(json.dumps({"status": "success", "run_id": name}), encoding="utf-8")
                 (run / "summary.json").write_text(json.dumps({"status": "success", "role": "rf_oatof_simion_single_flight_summary"}), encoding="utf-8")
-                (run / "run_config.json").write_text(json.dumps({"parameters": {"execution_mode": "real_pa_rf_pre_pulse_time_series"}}), encoding="utf-8")
+                acceptance_mm = 4.0 if name == "square_0p9" else 4.5
+                (run / "run_config.json").write_text(json.dumps({"parameters": {
+                    "execution_mode": "real_pa_rf_pre_pulse_time_series",
+                    "source_release_full_width_mm": acceptance_mm,
+                }}), encoding="utf-8")
                 pd.DataFrame({"particle_id": [1, 2, 3, 4]}).to_csv(run / "inputs" / "single_flight_initial_global_state.csv", index=False)
                 pd.DataFrame({"particle_id": [1, 2, 3], "sample_index": [1, 1, 1], "z_mm": z_values, "vz_mm_per_us": [1 + .5*z for z in z_values]}).to_csv(run / "results" / "pre_pulse_time_series_states.csv", index=False)
                 (run / "results" / "pre_pulse_time_series_screening_receipt.json").write_text(json.dumps({"terminal_census": {"window_complete": {"count": 3}, "splat": {"count": 1}}}), encoding="utf-8")
@@ -79,6 +83,10 @@ class SingleFlightApertureComparisonTests(unittest.TestCase):
         self.assertFalse(
             result["cases"]["round_2p5"]["accelerator_entry_axial_full_width_acceptance"]
             ["passed"]
+        )
+        self.assertEqual(
+            result["cases"]["round_2p5"]["accelerator_entry_axial_full_width_acceptance"]
+            ["threshold_full_width_mm"], 4.5
         )
         self.assertAlmostEqual(square["z_vz_linear_fit"]["slope_vz_mm_per_us_per_mm"], .5)
         self.assertAlmostEqual(square["z_vz_linear_fit"]["k_per_us"], .5)
@@ -129,7 +137,10 @@ class SingleFlightApertureComparisonTests(unittest.TestCase):
                         encoding="utf-8",
                     )
                     (run / "run_config.json").write_text(
-                        json.dumps({"parameters": {"execution_mode": "real_pa_rf_pre_pulse_time_series"}}),
+                        json.dumps({"parameters": {
+                            "execution_mode": "real_pa_rf_pre_pulse_time_series",
+                            "source_release_full_width_mm": 4.0,
+                        }}),
                         encoding="utf-8",
                     )
                     pd.DataFrame({"particle_id": [1, 2]}).to_csv(
