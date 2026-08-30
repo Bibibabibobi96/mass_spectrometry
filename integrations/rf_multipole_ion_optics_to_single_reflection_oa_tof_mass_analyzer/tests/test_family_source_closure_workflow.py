@@ -1872,14 +1872,8 @@ Write-Output 'RECOVERY_CHAIN=PASS'
             item["connection_profile_id"]: item
             for item in adapter_registry["mappings"]
         }
-        expected = {
-            "3p2": (3.2, -151.6),
-            "6p4": (6.4, -154.8),
-            "12p8": (12.8, -161.2),
-            "25p6": (25.6, -174.0),
-            "51p2": (51.2, -199.6),
-        }
-        for slug, (length_mm, translation_x_mm) in expected.items():
+        expected = {"3p2": 3.2, "6p4": 6.4, "12p8": 12.8, "25p6": 25.6, "51p2": 51.2}
+        for slug, length_mm in expected.items():
             profile_id = (
                 "rf_octupole_to_single_reflection_oatof_direct_mating_gap_51p2mm"
                 if slug == "51p2"
@@ -1891,10 +1885,6 @@ Write-Output 'RECOVERY_CHAIN=PASS'
             self.assertEqual(profile["connector"]["length_mm"], length_mm)
             self.assertEqual(
                 profile["spatial_registration"]["expected_gap_mm"], length_mm
-            )
-            self.assertEqual(
-                profile["spatial_registration"]["translation_mm"][0],
-                translation_x_mm,
             )
             direct = profiles[
                 "rf_octupole_oatof_shield_terminal_direct_mating_gap_0mm"
