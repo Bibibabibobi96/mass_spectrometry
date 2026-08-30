@@ -368,7 +368,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-campaign", required=True, type=Path)
     parser.add_argument("--producer-map", required=True, type=Path,
-                        help="JSON object: pre-pulse experiment id -> parent run directory")
+                        help="Path to a JSON object mapping pre-pulse experiment ID to parent run directory")
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--campaign-id", required=True)
     parser.add_argument("--workspace", required=True, type=Path)
