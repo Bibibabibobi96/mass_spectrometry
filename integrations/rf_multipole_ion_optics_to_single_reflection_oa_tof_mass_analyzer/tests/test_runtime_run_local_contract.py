@@ -584,6 +584,21 @@ try {{
         with self.assertRaisesRegex(ValueError, "J2 Candidate"):
             validate_runtime_identity(**{**arguments, "theory_working_point": {}})
 
+    def test_ideal_acceptance_identity_uses_candidate_owned_extents(self) -> None:
+        """Identity validation must not hard-code historical scan dimensions."""
+        planes = {"repeller": -25.0, "intermediate1": -20.0, "intermediate2": -10.0, "exit": -5.0}
+        topology = {"topology_id": "topology", "planes_global_z_mm": planes, "potentials_v": {"repeller": 2000.0, "intermediate1": 1500.0, "intermediate2": 500.0, "exit": 0.0}}
+        candidate = {"schema_version": 1, "role": "oatof_three_zone_simion_candidate_resolved", "qualification": "CANDIDATE_ONLY", "compiler_mode": "IDEAL_ACCEPTANCE_300MM_SELECTED_POINT_V1", "ideal_acceptance_evidence": {"full_width_mm": 4.5, "total_acceleration_length_mm": 350.0}, "identities": {"topology_id": "topology", "geometry_id": "geometry"}, "accelerator_topology": topology}
+        realized_topology = {
+            **topology,
+            "planes_global_z_mm": {key: value + 1.0 for key, value in planes.items()},
+        }
+        arguments = {"candidate": candidate, "candidate_sha256": "A" * 64, "geometry": {"accelerator_topology": realized_topology, "single_flight_layout_derivation": {"layout_profile_id": "layout", "architecture_generation_id": "generation", "design_compilation": {"candidate": {"sha256": "A" * 64}, "candidate_axial_translation_z_mm": 1.0}}}, "geometry_sha256": "B" * 64, "frontend_contract": {"accelerator_topology_id": "topology"}, "frontend_electrode_topology": {"topology_id": "frontend"}, "region_field": {"layout_geometry": {"sha256": "B" * 64}, "semantic": {"canonical_profile_id": "field", "accelerator_topology": realized_topology}}, "configuration": {"accelerator_field_profiles": [{"profile_id": "field", "topology_id": "topology", "geometry_id": "geometry", "frontend_electrode_topology_id": "frontend", "field_id": "field-id"}]}, "layout_profile_id": "layout", "architecture_generation_id": "generation"}
+        self.assertEqual(validate_runtime_identity(**arguments)["field_id"], "field-id")
+        candidate["ideal_acceptance_evidence"]["full_width_mm"] = 0.0
+        with self.assertRaisesRegex(ValueError, "ideal-acceptance Candidate"):
+            validate_runtime_identity(**arguments)
+
 
     def test_generated_pre_pulse_subset_does_not_require_external_campaign_state(self) -> None:
         adapter = FAMILY_ADAPTER.read_text(encoding="utf-8")

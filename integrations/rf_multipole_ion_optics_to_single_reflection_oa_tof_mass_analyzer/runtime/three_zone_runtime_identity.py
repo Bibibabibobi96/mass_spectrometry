@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +32,16 @@ def _value(document: dict[str, Any], *keys: str) -> Any:
 def _text(document: dict[str, Any], *keys: str) -> str:
     value = _value(document, *keys)
     return "" if value is None else str(value)
+
+
+def _positive_finite(document: dict[str, Any], key: str) -> bool:
+    """Whether a candidate-owned physical extent is a usable scalar."""
+
+    try:
+        value = float(document[key])
+    except (KeyError, TypeError, ValueError):
+        return False
+    return math.isfinite(value) and value > 0.0
 
 
 def _field_profile(
@@ -135,8 +146,11 @@ def validate_runtime_identity(
         evidence = candidate.get("ideal_acceptance_evidence")
         if (
             not isinstance(evidence, dict)
-            or evidence.get("full_width_mm") != 4.0
-            or evidence.get("total_acceleration_length_mm") not in {250.0, 300.0}
+            # These are candidate-owned physical values.  Requiring the old
+            # 4 mm and 250/300 mm study points here would turn an identity
+            # check into an unnecessary limit on future realizations.
+            or not _positive_finite(evidence, "full_width_mm")
+            or not _positive_finite(evidence, "total_acceleration_length_mm")
             or theory_working_point is not None
         ):
             raise ValueError("ideal-acceptance Candidate/runtime identity differs.")
