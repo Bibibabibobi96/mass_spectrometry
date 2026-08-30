@@ -76,8 +76,13 @@ SIMION 运行可调用共享批处理；批内结果必须恢复全局粒子 ID 
 真实 SIMION N=1 贯通；该 smoke 仅证明执行链可用。主加速器细 PA 的 basis 边界复制使用六个互不重叠的
 外表面循环，逐点读取同一粗 bridge basis 后以 SIMION 官方默认 refine 收敛；它替代旧的逐点字符串去重，
 但不以“接地面”为捷径，因为每个 electrode basis 的远端 Dirichlet 值都可能非零。对相同 0.9 mm 几何，
-优化前后 PA/GEM 的逐文件 SHA-256 一致，main-basis 阶段由 1043.390 s 降为 587.634 s。N=5000 预脉冲
-筛选及跨整体 PA 的配对验收仍是物理/性能结论的必要前提。
+优化前后 PA/GEM 的逐文件 SHA-256 一致，main-basis 阶段由 1043.390 s 降为 587.634 s。
+
+对于 detector-blind 的 pre-pulse，运行器构建 `pre_pulse_reachable_v1` IOB：只加载粗前端、上游细域、
+主加速器和中间 overlay。反射器、下游飞行管和探测器 PA 不物化到 runtime，也不绑定到 IOB；SIMION 必需的
+六槽容器仅在槽 2/4 保留小型占位结构。Program 的 pre-pulse contract 只验证四个可达角色，且该轻量模式不能
+用于全程飞行或总轴场导出；run manifest 明确记录该模式及省略角色。
+N=5000 预脉冲筛选及跨整体 PA 的配对验收仍是物理/性能结论的必要前提。
 
 仓库级 [`common/simion/resource_scheduler.py`](../../../common/simion/resource_scheduler.py) 仅为已授权请求
 规划 RF/静电批次：它综合粒子数、公共的每批 CPU 策略、当前可用内存、已观测的同资源身份峰值及并发上限。

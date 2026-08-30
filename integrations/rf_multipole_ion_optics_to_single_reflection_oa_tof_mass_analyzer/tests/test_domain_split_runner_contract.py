@@ -45,6 +45,12 @@ class DomainSplitRunnerContractTests(unittest.TestCase):
         self.assertIn("build_single_flight_domain_split_iob.lua", self.source)
         self.assertIn("coarse_electrode_basis_dirichlet_v1", self.source)
 
+    def test_detector_blind_pre_pulse_uses_only_the_reachable_iob_roles(self) -> None:
+        self.assertIn("$prePulseReachableIob = [bool]($isPrePulseTimeSeriesScreening -and $domainSplitEnabled -and -not $ProgramAxisFieldExport)", self.source)
+        self.assertIn("if (-not $prePulseReachableIob) {", self.source)
+        self.assertIn("'pre_pulse_reachable_v1'", self.source)
+        self.assertIn("pre_pulse_iob_omitted_roles", self.source)
+
     def test_domain_split_prohibits_monolithic_accelerator_override(self) -> None:
         self.assertIn("if ($domainSplitEnabled)", self.source)
         self.assertIn("OATOF_ACCELERATOR_PA_OVERRIDE", self.source)

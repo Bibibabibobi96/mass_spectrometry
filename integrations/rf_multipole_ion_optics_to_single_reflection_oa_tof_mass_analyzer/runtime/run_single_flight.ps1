@@ -1975,6 +1975,13 @@ try {
   }
 
   $runtimeDir = Join-Path $package.run_dir 'simion'
+  # Detector-blind pre-pulse screening never reaches the downstream flight
+  # region.  Its Program validates and accesses only the four listed roles, so
+  # keep slots two/four as container placeholders instead of materializing the
+  # flight-tube, reflectron, or detector PA families.  Field export is an
+  # explicit full-geometry construction operation and therefore keeps the
+  # ordinary IOB.
+  $prePulseReachableIob = [bool]($isPrePulseTimeSeriesScreening -and $domainSplitEnabled -and -not $ProgramAxisFieldExport)
   function Copy-RfPaCacheFamilyToRuntime {
     param([Parameter(Mandatory)][string]$CacheDirectory,[Parameter(Mandatory)][string]$Pattern)
     foreach ($source in Get-ChildItem -LiteralPath $CacheDirectory -Filter $Pattern -File) {
@@ -1984,7 +1991,9 @@ try {
     }
   }
   $formalDir = Join-Path $workspaceRoot 'artifacts\projects\single_reflection_oa_tof_mass_analyzer\formal\simion'
-  Copy-RfOatofFormalPaSet -FormalDir $formalDir -Destination $runtimeDir
+  if (-not $prePulseReachableIob) {
+    Copy-RfOatofFormalPaSet -FormalDir $formalDir -Destination $runtimeDir
+  }
   foreach ($domainSplitFineBuild in $domainSplitFineBuilds) {
     Copy-RfPaCacheFamilyToRuntime -CacheDirectory $domainSplitFineBuild.cache_dir `
       -Pattern ($domainSplitFineBuild.name + '.pa*')
@@ -1993,7 +2002,13 @@ try {
   $reflectronBuilderFrozen = $null
   $reflectronGemFrozen = $null
   $reflectronRefinerFrozen = $null
-  $reflectronPa0 = Join-Path $runtimeDir 'reflectron.pa0'
+  # Preserve the immutable design hash in the pre-pulse manifest without
+  # bringing the downstream PA into its runtime IOB.
+  $reflectronPa0 = if ($prePulseReachableIob) {
+    Join-Path $formalDir 'reflectron.pa0'
+  } else {
+    Join-Path $runtimeDir 'reflectron.pa0'
+  }
   $reflectronBuildStdout = $null
   $reflectronBuildStderr = $null
   $flightTubeBuilderFrozen = $null
@@ -2269,7 +2284,9 @@ try {
     throw "Required PA cache MISS or damage: role=$($flightTubeCachePlan.role) key=$($flightTubeCachePlan.key)"
   }
   if ($flightTubeCacheHit) {
-    Copy-RfPaCacheFamilyToRuntime -CacheDirectory $flightTubeCacheDir -Pattern 'flight_tube_ground.pa*'
+    if (-not $prePulseReachableIob) {
+      Copy-RfPaCacheFamilyToRuntime -CacheDirectory $flightTubeCacheDir -Pattern 'flight_tube_ground.pa*'
+    }
     $flightTubeCacheUsed = $true
     $hasFlightTubeRebuild = $false
     $paCacheDispositions.flight_tube.disposition = 'cache_hit'
@@ -2292,7 +2309,9 @@ try {
     throw "Required PA cache MISS or damage: role=$($reflectronCachePlan.role) key=$($reflectronCachePlan.key)"
   }
   if ($reflectronCacheHit) {
-    Copy-RfPaCacheFamilyToRuntime -CacheDirectory $reflectronCacheDir -Pattern 'reflectron.pa*'
+    if (-not $prePulseReachableIob) {
+      Copy-RfPaCacheFamilyToRuntime -CacheDirectory $reflectronCacheDir -Pattern 'reflectron.pa*'
+    }
     $reflectronCacheUsed = $true
     $hasReflectronRebuild = $false
     $paCacheDispositions.reflectron.disposition = 'cache_hit'
@@ -2715,6 +2734,7 @@ try {
     try {
       Copy-Item -LiteralPath $container -Destination $stage; Get-ChildItem -LiteralPath $containerDir -Filter 'current_sphere_3dp-*.gem' -File | Copy-Item -Destination $stage
       $domainSplitIobArguments = @('--nogui','--noprompt','lua',$domainSplitIobBuilder,(Join-Path $runtimeDir 'oatof_ideal_grounded.iob'),(Join-Path $stage 'current_sphere_3dp.iob'),(Join-Path $runtimeDir 'oatof_ideal_grounded.iob'),$coarseFrontendRuntimePa0,(Join-Path $runtimeDir 'reflectron.pa0'),$acceleratorMainRuntimePa0,(Join-Path $runtimeDir 'detector_ground.pa0'),$domainUpstream[0].pa0,(Join-Path $runtimeDir 'accelerator_intermediate_overlay.pa0'),([string]$frontendGeometry.instance_origin_mm.x),([string]$frontendGeometry.instance_origin_mm.y),([string]$frontendGeometry.instance_origin_mm.z),([string]$domainMain[0].geometry.instance_origin_mm.x),([string]$domainMain[0].geometry.instance_origin_mm.y),([string]$domainMain[0].geometry.instance_origin_mm.z),([string]$domainUpstream[0].geometry.instance_origin_mm.x),([string]$domainUpstream[0].geometry.instance_origin_mm.y),([string]$domainUpstream[0].geometry.instance_origin_mm.z),([string]$intermediateOverlay[0].geometry.instance_origin_mm.x),([string]$intermediateOverlay[0].geometry.instance_origin_mm.y),([string]$intermediateOverlay[0].geometry.instance_origin_mm.z))
+      $domainSplitIobArguments += $(if ($prePulseReachableIob) {'pre_pulse_reachable_v1'} else {'full_flight_v1'})
       if ($ProgramAxisFieldExport) {
         # The standalone field exporter must load a same-transform IOB without
         # a same-basename Program/Fly2 auto-running during top-level Lua.  The
@@ -2946,6 +2966,12 @@ try {
     $runConfiguration.parameters.execution_mode =
       'real_pa_rf_pre_pulse_time_series'
     $runConfiguration.parameters.resolution_claim_allowed = $false
+    $runConfiguration.parameters.pre_pulse_reachable_iob = $prePulseReachableIob
+    $runConfiguration.parameters.pre_pulse_iob_omitted_roles = $(if ($prePulseReachableIob) {
+      @('flight_tube','reflectron','detector')
+    } else {
+      @()
+    })
   }
   if ($hasThreeZoneCandidate) {
     $runConfiguration.inputs.three_zone_t5_candidate =
