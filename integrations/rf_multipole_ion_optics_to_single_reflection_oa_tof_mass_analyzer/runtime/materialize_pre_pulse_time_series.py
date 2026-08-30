@@ -607,6 +607,11 @@ def _parse_logs(
     alive_by_sample: list[list[int]] = [[] for _ in sample_times_us]
     seen: set[tuple[int, int]] = set()
     terminal_ids: set[int] = set()
+    # SIMION may invoke the terminal callback twice for a splat while it
+    # resolves the collision.  A byte-identical terminal record is therefore
+    # an idempotent duplicate, not a second physical outcome.  Keep its full
+    # parsed identity so that any conflicting repeat remains a hard failure.
+    terminal_records: dict[int, tuple[float, float, float, float, float, float, float, str]] = {}
     terminal_by_reason: dict[str, list[int]] = {"window_complete": [], "splat": []}
     row_count = 0
     for stdout_path in stdout_paths:
@@ -627,13 +632,20 @@ def _parse_logs(
                         particle_id = int(match["particle_id"])
                         if particle_id not in frozen_set:
                             raise ContractError("pre-pulse terminal particle identity differs")
-                        if particle_id in terminal_ids:
-                            raise ContractError("pre-pulse terminal particle is duplicated")
                         numeric = [float(match[name]) for name in (
                             "instrument_time", "x", "y", "z", "vx", "vy", "vz"
                         )]
                         if not all(math.isfinite(value) for value in numeric):
                             raise ContractError("pre-pulse terminal TRACE contains a non-finite number")
+                        terminal_record = (*numeric, match["reason"])
+                        previous_terminal = terminal_records.get(particle_id)
+                        if previous_terminal is not None:
+                            if previous_terminal != terminal_record:
+                                raise ContractError(
+                                    "pre-pulse terminal particle has conflicting duplicates"
+                                )
+                            continue
+                        terminal_records[particle_id] = terminal_record
                         terminal_ids.add(particle_id)
                         terminal_by_reason[match["reason"]].append(particle_id)
                         continue

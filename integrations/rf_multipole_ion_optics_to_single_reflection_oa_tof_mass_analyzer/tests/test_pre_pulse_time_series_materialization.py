@@ -317,6 +317,33 @@ class PrePulseTimeSeriesMaterializationTests(unittest.TestCase):
             self.assertEqual(receipt["terminal_census"]["window_complete"]["count"], 1)
             self.assertEqual(receipt["terminal_census"]["splat"]["count"], 2)
 
+    def test_identical_terminal_callback_repeat_is_idempotent(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            paths = _write_fixture(
+                Path(directory), particle_ids=[1, 2], sample_times=[1.0],
+                log_groups=[[
+                    _trace(ion=1, particle_id=1, sample_index=1, time_us=1.0),
+                    _terminal(ion=1, particle_id=1, reason="splat"),
+                    _terminal(ion=1, particle_id=1, reason="splat"),
+                    _terminal(ion=2, particle_id=2),
+                ]],
+            )
+            _materialize(paths)
+            receipt = json.loads(paths["receipt"].read_text(encoding="utf-8"))
+            self.assertEqual(receipt["terminal_census"]["splat"]["count"], 1)
+
+            conflicting = _terminal(ion=1, particle_id=1, reason="window_complete")
+            paths["stdout_paths"][0].write_text(
+                "\n".join([
+                    _terminal(ion=1, particle_id=1, reason="splat"),
+                    conflicting,
+                    _terminal(ion=2, particle_id=2),
+                ]) + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ContractError, "conflicting duplicates"):
+                _materialize(paths)
+
     def test_retained_inputs_are_used_after_short_execution_alias_is_removed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             paths = _write_fixture(
