@@ -46,7 +46,9 @@ if ($workspaceManaged) {
       -not (Test-Path -LiteralPath $toolsRoot -PathType Container)) {
     $errors.Add('workspace tool cache must be a directory: .tools')
   } elseif (Test-Path -LiteralPath $toolsRoot -PathType Container) {
-    $allowedToolEntries = @('cloc','cloc\2.10','cloc\2.10\cloc.exe')
+    # report_cloc_delta.ps1 deliberately falls back to the official Perl
+    # distribution when cloc.exe cannot execute on this host.
+    $allowedToolEntries = @('cloc','cloc\2.10','cloc\2.10\cloc.exe','cloc\2.10\cloc-2.10.pl')
     foreach ($entry in Get-ChildItem -Force -Recurse -LiteralPath $toolsRoot) {
       $relative = [IO.Path]::GetRelativePath($toolsRoot, $entry.FullName)
       if ($relative -notin $allowedToolEntries) {
