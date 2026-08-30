@@ -16,7 +16,6 @@ import os
 import re
 import shutil
 import stat
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -55,16 +54,6 @@ def _active_cache_keys(root: Path) -> set[str]:
         except (OSError, UnicodeDecodeError):
             continue
     return {key.lower() for key in protected}
-
-
-def _has_active_simion() -> bool:
-    if os.name != "nt":
-        return False
-    listing = subprocess.run(["tasklist", "/FO", "CSV", "/NH"], cwd=Path.cwd(), text=True, capture_output=True,
-                             encoding="utf-8", errors="replace", check=False, timeout=15)
-    if listing.returncode != 0:
-        raise RuntimeError("cannot establish that SIMION is inactive")
-    return any(line.lower().startswith('"simion') for line in listing.stdout.splitlines())
 
 
 def _is_formal(path: Path) -> bool:
@@ -181,6 +170,9 @@ def plan(root: Path, *, target_bytes: int, required_headroom_bytes: int = 0,
     return {"schema_version": 1, "role": "artifact_capacity_gate", "artifact_root": str(root),
             "target_bytes": target_bytes, "required_headroom_bytes": required_headroom_bytes,
             "minimum_free_bytes": minimum_free_bytes, "free_bytes_before": free_bytes,
+            "staging_grace_seconds": staging_grace_seconds,
+            "protected_paths": [str(path) for path in protected],
+            "protected_cache_keys": sorted(active_keys),
             "free_deficit_bytes": free_deficit,
             "measured_bytes": measured, "limit_bytes": limit, "active_cache_key_count": len(active_keys),
             "candidate_count": len(candidates), "planned": planned, "projected_bytes": projected,
@@ -195,8 +187,20 @@ def _remove_tree(path: Path) -> None:
 
 
 def apply(receipt: dict[str, Any]) -> dict[str, Any]:
-    if _has_active_simion():
-        raise RuntimeError("refusing capacity cleanup while SIMION is active")
+    # Active SIMION does not prohibit cleanup: plan() excludes every cache key
+    # mentioned by a non-terminal manifest, and the plan is refreshed here to
+    # close the interval between a capacity decision and deletion.  This keeps
+    # the disk floor enforceable while another independent channel is solving.
+    root = Path(receipt["artifact_root"])
+    receipt = plan(
+        root,
+        target_bytes=int(receipt["target_bytes"]),
+        required_headroom_bytes=int(receipt["required_headroom_bytes"]),
+        minimum_free_bytes=int(receipt["minimum_free_bytes"]),
+        staging_grace_seconds=int(receipt.get("staging_grace_seconds", 900)),
+        protected_paths=(Path(path) for path in receipt.get("protected_paths", ())),
+        protected_cache_keys=receipt.get("protected_cache_keys", ()),
+    )
     removed: list[dict[str, Any]] = []
     for item in receipt["planned"]:
         path = Path(item["path"])

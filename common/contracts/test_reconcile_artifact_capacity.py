@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import patch
 from pathlib import Path
 
-from common.contracts.reconcile_artifact_capacity import plan
+from common.contracts.reconcile_artifact_capacity import apply, plan
 
 
 class ArtifactCapacityPlanTest(unittest.TestCase):
@@ -72,6 +72,22 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
                 receipt = plan(root, target_bytes=10_000, minimum_free_bytes=812)
             self.assertEqual(receipt["free_deficit_bytes"], 512)
             self.assertEqual(receipt["planned"][0]["path"], str(candidate))
+
+    def test_apply_refreshes_plan_and_protects_a_newly_live_cache_key(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            key = "9" * 64
+            candidate = self._cache(root, "role", key, age=time.time() - 100)
+            receipt = plan(root, target_bytes=0, staging_grace_seconds=0)
+            self.assertIn(str(candidate), [item["path"] for item in receipt["planned"]])
+            run = root / "projects" / "p" / "runs" / "newly-live"
+            run.mkdir(parents=True)
+            (run / "run_manifest.json").write_text(
+                json.dumps({"status": "running", "cache_key": key}), encoding="utf-8"
+            )
+            applied = apply(receipt)
+            self.assertTrue(candidate.exists())
+            self.assertEqual(applied["removed"], [])
 
 
 if __name__ == "__main__":
