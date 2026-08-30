@@ -187,7 +187,17 @@ if (-not $FinalizeOnly -and -not $Exploration) {
     throw 'Campaign source bindings must be refreshed before execution.'
   }
 }
-$campaignRunId = [string]$experimentRows[0].run_id
+$authoredRunId = [string]$experimentRows[0].run_id
+$campaignRunId = $authoredRunId
+if ($authoredRunId -eq 'execution_pending') {
+  $population = $experimentRows[0].single_flight_population
+  $particleCount = if ($null -ne $population) { [int]$population.particle_count } else { 0 }
+  if ($particleCount -lt 1) {
+    throw 'Minimal authored campaign requires a positive single-flight particle count.'
+  }
+  $campaignRunId = (Get-Date -Format 'yyyyMMdd_HHmmss') +
+    '__sim__cross__' + [string]$experimentRows[0].experiment_id + '__n' + $particleCount
+}
 & $PythonExe -m common.contracts.artifact_naming run $campaignRunId
 if ($LASTEXITCODE -ne 0) {
   throw 'Campaign row run_id fails the repository artifact naming contract.'
@@ -359,6 +369,9 @@ function Invoke-FamilyPreparation {
     '--resolved-output', $ResolvedPath,
     '--plan-output', $PlanPath
   )
+  if ($authoredRunId -eq 'execution_pending') {
+    $prepareArguments += @('--execution-run-id', $campaignRunId)
+  }
   if (-not [string]::IsNullOrWhiteSpace($PulseTimingTransition)) {
     $prepareArguments += @('--pulse-timing-transition', $PulseTimingTransition)
   }

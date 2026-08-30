@@ -380,6 +380,22 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
         self.assertEqual(expanded["experiments"][0]["source_profile_id"], "n100")
         self.assertEqual(authored["experiments"]["rows"][0]["overrides"], {"connection_profile_id": "gap0", "connector_gap_evidence_role": "primary"})
 
+    def test_minimal_flat_authoring_derives_sequence_and_freezes_execution_id(self) -> None:
+        authored = {
+            "experiments": {
+                "shared": {"execution_strategy": "simion_single_flight"},
+                "variation_axes": ["connection_profile_id"],
+                "rows": [{"experiment_id": "gap0", "values": {"connection_profile_id": "gap0"}}],
+            }
+        }
+        listed = expand_flat_experiment_authoring(authored)
+        frozen = expand_flat_experiment_authoring(
+            authored, execution_run_id="20260830_120000__sim__cross__gap0__n1"
+        )
+        self.assertEqual(listed["experiments"][0]["sequence"], 1)
+        self.assertEqual(listed["experiments"][0]["run_id"], "execution_pending")
+        self.assertEqual(frozen["experiments"][0]["run_id"], "20260830_120000__sim__cross__gap0__n1")
+
     def test_flat_authoring_preserves_fifty_six_gap_field_rows(self) -> None:
         """A large matrix must remain ordered and must not share mutable row state."""
         field_modes = (

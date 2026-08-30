@@ -745,7 +745,9 @@ def _write_json(
     )
 
 
-def expand_flat_experiment_authoring(campaign: dict[str, Any]) -> dict[str, Any]:
+def expand_flat_experiment_authoring(
+    campaign: dict[str, Any], *, execution_run_id: str | None = None
+) -> dict[str, Any]:
     """Expand shared experiment controls and explicit per-row variation axes.
 
     The on-disk authoring form remains compact.  Consumers receive the same
@@ -770,17 +772,32 @@ def expand_flat_experiment_authoring(campaign: dict[str, Any]) -> dict[str, Any]
     if set(axes).intersection(row_identity):
         raise ContractError("flat experiment variation axes cannot contain row identity")
     expanded: list[dict[str, Any]] = []
-    for row in rows:
-        if not isinstance(row, dict) or set(row) != {"sequence", "experiment_id", "run_id", "overrides"}:
-            raise ContractError("flat experiment row must contain identity and overrides only")
-        overrides = row["overrides"]
+    minimal_rows = all(
+        isinstance(row, dict) and set(row) == {"experiment_id", "values"}
+        for row in rows
+    )
+    if execution_run_id is not None and (not minimal_rows or len(rows) != 1):
+        raise ContractError("an execution run ID requires exactly one minimal authored row")
+    for sequence, row in enumerate(rows, start=1):
+        if not isinstance(row, dict):
+            raise ContractError("flat experiment row must be an object")
+        is_minimal = set(row) == {"experiment_id", "values"}
+        is_legacy = set(row) == {"sequence", "experiment_id", "run_id", "overrides"}
+        if not is_minimal and not is_legacy:
+            raise ContractError("flat experiment row must use the minimal or legacy shape")
+        overrides = row["values"] if is_minimal else row["overrides"]
         if not isinstance(overrides, dict) or not set(overrides).issubset(set(axes)):
             raise ContractError("flat experiment row override is not an allowed variation axis")
         materialized = copy.deepcopy(shared)
         if set(materialized).intersection(row_identity):
             raise ContractError("flat experiment shared controls cannot contain row identity")
         materialized.update(copy.deepcopy(overrides))
-        materialized.update({key: row[key] for key in ("sequence", "experiment_id", "run_id")})
+        materialized["sequence"] = sequence if is_minimal else row["sequence"]
+        materialized["experiment_id"] = row["experiment_id"]
+        materialized["run_id"] = (
+            execution_run_id if is_minimal and execution_run_id is not None
+            else ("execution_pending" if is_minimal else row["run_id"])
+        )
         expanded.append(materialized)
     if not expanded:
         raise ContractError("flat experiment authoring must contain at least one row")
@@ -2593,6 +2610,7 @@ def prepare_family_source_closure(
     pulse_timing_transition_path: Path | None = None,
     materialize_pulse_timing_stage: bool = False,
     exploration: bool = False,
+    execution_run_id: str | None = None,
 ) -> tuple[Path, Path]:
     root = repo_root.resolve()
     workspace = root.parent
@@ -2602,6 +2620,10 @@ def prepare_family_source_closure(
         experiment_id=experiment_id,
         exploration=exploration,
     )
+    if execution_run_id is not None:
+        validate_run_id(execution_run_id)
+        experiment = copy.deepcopy(experiment)
+        experiment["run_id"] = execution_run_id
     source = experiment["source"]
     execution_strategy = experiment.get("execution_strategy", "staged_three_stage")
     single_flight_execution_mode = experiment.get(
@@ -4385,6 +4407,7 @@ def main() -> int:
     parser.add_argument("--pulse-timing-transition", type=Path)
     parser.add_argument("--materialize-pulse-timing-stage", action="store_true")
     parser.add_argument("--exploration", action="store_true")
+    parser.add_argument("--execution-run-id")
     args = parser.parse_args()
     if args.list_experiment_ids or args.print_experiment_json or args.semantic_diff_experiment_json:
         campaign = expand_flat_experiment_authoring(_load(args.campaign))
@@ -4426,6 +4449,7 @@ def main() -> int:
         pulse_timing_transition_path=args.pulse_timing_transition,
         materialize_pulse_timing_stage=args.materialize_pulse_timing_stage,
         exploration=args.exploration,
+        execution_run_id=args.execution_run_id,
     )
     print(f"FAMILY_SOURCE_CLOSURE_PREPARE=PASS RESOLVED={resolved} PLAN={plan}")
     return 0

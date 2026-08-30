@@ -117,6 +117,11 @@ N=5000 预脉冲筛选及跨整体 PA 的配对验收仍是物理/性能结论�
 发现非 current generation 与显式 artifact 审计仍执行全量字节哈希。功能成功不自动证明数值收敛、跨求解器
 等价、参数最优或 Formal 资格。
 
+哈希只用于已发布输入、来源 cohort、缓存 generation 和 immutable receipt 的身份绑定；它们证明重放时读取的
+确是同一对象。作者 campaign、普通探索和资源策略不以文件哈希作为日常维护门槛：探索只在冻结输出记录实际
+身份，资源不足首先暂停新工作并报告 warning，只有会覆写证据、混入不同 cohort、损坏 cache 或触及用户设定的
+500 GiB 容量下限时才失败关闭。
+
 若SIMION批次已经全部完成、但**只**在受治理的预脉冲TRACE物化步骤失败，
 [`recover_completed_pre_pulse_screening.py`](../workflows/family_source_closure/recover_completed_pre_pulse_screening.py)
 可从失败run的manifest-verified原始日志建立一个新的 analysis recovery run。它逐一绑定失败manifest、原始
@@ -209,9 +214,11 @@ detector-hit 人口；其唯一允许的 cache-miss 时间格是当前已登记�
 活动 resolved source contract 仅接受 family v2：它显式按 `comsol` 或 `simion` 记录来源 branch，且运行时只
 消费所选 branch。早期 v1 source contract 与其 adapter 仅是历史证据格式，不在活动 schema 或重放入口中保留兼容分支。
 
-实验 campaign 可继续使用完整行，也可用扁平 authoring：`experiments.shared` 声明共同控制，
-`variation_axes` 列出允许变化的字段，`rows` 只列行身份和 `overrides`。准备阶段先展开为完整冻结行，
-再执行既有 schema 与授权校验；任何未声明的字段变化都失败关闭。这样同一合同可顺序执行多个 gap 或
+实验 campaign 默认使用最小扁平 authoring：`experiments.shared` 声明共同控制，
+`variation_axes` 列出允许变化的原生字段，`rows` 的每行只写稳定的 `experiment_id` 与 `values`。
+作者文件不写顺序、派生量或 run ID：准备阶段按行顺序派生 `sequence`，实际执行时生成 run ID，随后冻结完整
+resolved row、来源身份和 execution receipt。旧的完整行及含 `overrides` 的扁平行仅为已发布证据的兼容读取；
+新 campaign 不应再采用它们。任何未声明的字段变化仍失败关闭。这样同一合同可顺序执行多个 gap 或
 其他已授权参数点，而不会复制共享输入。
 
 已发布 campaign 如仅改变 authoring 布局，可用 `published_authoring_identity` 保留旧 receipt 的 raw 文件 SHA；
