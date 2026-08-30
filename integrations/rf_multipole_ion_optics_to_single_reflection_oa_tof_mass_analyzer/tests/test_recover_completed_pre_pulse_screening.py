@@ -48,6 +48,9 @@ class RecoveryConfigurationTests(unittest.TestCase):
             (failed / "inputs" / "single_flight_particle_row_map.csv").write_text("source_particle_id\n1\n", encoding="utf-8")
             (failed / "inputs" / "single_flight_initial_global_state.csv").write_text("particle_id\n1\n", encoding="utf-8")
             (failed / "inputs" / "mother_particle_source.csv").write_text("particle_id\n1\n", encoding="utf-8")
+            (failed / "inputs" / "resolved_source_contract.json").write_text("{}\n", encoding="utf-8")
+            (failed / "inputs" / "resolved_single_flight_pulse_schedule.json").write_text("{}\n", encoding="utf-8")
+            (failed / "inputs" / "oatof_resolved_geometry.json").write_text("{}\n", encoding="utf-8")
             (failed / "inputs" / "resolved_population_contract.json").write_text(
                 json.dumps({"experiment_id": "pre_pulse_fixture"}), encoding="utf-8"
             )
@@ -73,6 +76,9 @@ class RecoveryConfigurationTests(unittest.TestCase):
             self.assertEqual(config["experiment_id"], "pre_pulse_fixture")
             self.assertTrue(Path(config["inputs"]["resolved_population_contract"]).is_file())
             self.assertTrue(Path(config["inputs"]["mother_particle_source"]).is_file())
+            self.assertTrue(Path(config["inputs"]["resolved_source_contract"]).is_file())
+            self.assertTrue(Path(config["inputs"]["pulse_schedule"]).is_file())
+            self.assertTrue(Path(config["inputs"]["oatof_resolved_geometry"]).is_file())
             self.assertFalse(config["formal_gate_passed"])
 
 

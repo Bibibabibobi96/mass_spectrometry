@@ -200,7 +200,10 @@ def materialize_manifest_bound_restart(
         manifest.get("role") != "simulation_run_manifest"
         or manifest.get("project")
         != "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
-        or manifest.get("mode") != "rf_to_oatof_simion_single_flight"
+        or manifest.get("mode") not in {
+            "rf_to_oatof_simion_single_flight",
+            "rf_oatof_pre_pulse_time_series_analysis_recovery",
+        }
         or manifest.get("status") != "success"
     ):
         raise ContractError("time-series child manifest identity or status differs")

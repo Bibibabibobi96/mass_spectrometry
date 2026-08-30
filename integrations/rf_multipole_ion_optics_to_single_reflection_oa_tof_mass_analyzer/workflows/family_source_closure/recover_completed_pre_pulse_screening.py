@@ -152,8 +152,12 @@ def build_recovery_config(
     initial_state = failed_run_dir / "inputs" / "single_flight_initial_global_state.csv"
     population = failed_run_dir / "inputs" / "resolved_population_contract.json"
     mother_source = failed_run_dir / "inputs" / "mother_particle_source.csv"
+    source_contract = failed_run_dir / "inputs" / "resolved_source_contract.json"
+    pulse_schedule = failed_run_dir / "inputs" / "resolved_single_flight_pulse_schedule.json"
+    geometry = failed_run_dir / "inputs" / "oatof_resolved_geometry.json"
     if not all(path.is_file() for path in (
         contract, row_map, initial_state, population, mother_source,
+        source_contract, pulse_schedule, geometry,
     )):
         raise ContractError("failed screening run-local frozen inputs are missing")
     population_value = _load(population, "failed screening population contract")
@@ -162,12 +166,18 @@ def build_recovery_config(
         raise ContractError("failed screening population experiment identity is missing")
     recovery_inputs = recovery_dir / "inputs"
     recovery_inputs.mkdir(parents=True, exist_ok=True)
-    recovered_initial_state = recovery_inputs / initial_state.name
-    shutil.copy2(initial_state, recovered_initial_state)
-    recovered_population = recovery_inputs / population.name
-    recovered_mother_source = recovery_inputs / mother_source.name
-    shutil.copy2(population, recovered_population)
-    shutil.copy2(mother_source, recovered_mother_source)
+    recovered_paths: dict[str, Path] = {}
+    for key, source_path in {
+        "initial_global_state": initial_state,
+        "resolved_population_contract": population,
+        "mother_particle_source": mother_source,
+        "resolved_source_contract": source_contract,
+        "pulse_schedule": pulse_schedule,
+        "oatof_resolved_geometry": geometry,
+    }.items():
+        destination = recovery_inputs / source_path.name
+        shutil.copy2(source_path, destination)
+        recovered_paths[key] = destination
     return {
         "schema_version": 2,
         "run_id": recovery_dir.name,
@@ -180,9 +190,7 @@ def build_recovery_config(
             "failed_run_config": str(failed_run_dir / "run_config.json"),
             "pre_pulse_time_series_contract": str(contract),
             "particle_row_map": str(row_map),
-            "initial_global_state": str(recovered_initial_state),
-            "resolved_population_contract": str(recovered_population),
-            "mother_particle_source": str(recovered_mother_source),
+            **{key: str(path) for key, path in recovered_paths.items()},
         },
         "parameters": copy.deepcopy(parameters),
         "artifact_retention": {

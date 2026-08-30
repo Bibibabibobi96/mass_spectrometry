@@ -52,7 +52,10 @@ def materialize_run(
     if (
         producer.get("role") != "simulation_run_manifest"
         or producer.get("project") != INTEGRATION_ID
-        or producer.get("mode") != "rf_to_oatof_simion_single_flight"
+        or producer.get("mode") not in {
+            "rf_to_oatof_simion_single_flight",
+            "rf_oatof_pre_pulse_time_series_analysis_recovery",
+        }
         or producer.get("status") != "success"
     ):
         raise ContractError("time-series producer manifest is not a successful screening run")
