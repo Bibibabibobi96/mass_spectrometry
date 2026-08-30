@@ -190,6 +190,18 @@ def _required_peak_metrics(summary: Mapping[str, Any], case_id: str) -> tuple[di
         raise ContractError(f"{case_id} direct peak metrics are invalid")
     if bootstrap.get("status") != "computed":
         raise ContractError(f"{case_id} bootstrap resolution interval was not computed")
+    interval_keys = ("resolution_p2p5", "resolution_p97p5")
+    try:
+        interval_low, interval_high = (float(bootstrap[key]) for key in interval_keys)
+    except (KeyError, TypeError, ValueError) as error:
+        raise ContractError(f"{case_id} bootstrap resolution interval is incomplete") from error
+    if (
+        not math.isfinite(interval_low)
+        or not math.isfinite(interval_high)
+        or interval_low <= 0
+        or interval_high < interval_low
+    ):
+        raise ContractError(f"{case_id} bootstrap resolution interval is invalid")
     return peak, bootstrap
 
 

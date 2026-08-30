@@ -121,6 +121,24 @@ class FullFlightApertureComparisonPublicationTest(unittest.TestCase):
                 publish_full_flight_aperture_comparison(repo_root=REPO_ROOT, run_id=run_id, cases=cases)
             self.assertFalse(output.exists())
 
+    def test_rejects_incomplete_bootstrap_interval_before_creating_result(self) -> None:
+        with tempfile.TemporaryDirectory(dir=WORKSPACE_ROOT) as temporary:
+            root = Path(temporary)
+            cases = {f"arm_{index}": _source_run(root, f"source-{index}") for index in range(8)}
+            summary_path = cases["arm_7"] / "summary.json"
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+            del summary["full_pulse_eligible_bootstrap"]["resolution_p97p5"]
+            _write_json(summary_path, summary)
+            manifest_path = cases["arm_7"] / "run_manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["outputs"][0] = _record(summary_path)
+            _write_json(manifest_path, manifest)
+            run_id = "20260829_120003__analysis__python__full-flight-aperture-comparison__n5000"
+            output = WORKSPACE_ROOT / "artifacts" / "projects" / INTEGRATION_ID / "runs" / run_id
+            with self.assertRaisesRegex(ContractError, "bootstrap resolution interval is incomplete"):
+                publish_full_flight_aperture_comparison(repo_root=REPO_ROOT, run_id=run_id, cases=cases)
+            self.assertFalse(output.exists())
+
 
 if __name__ == "__main__":
     unittest.main()
