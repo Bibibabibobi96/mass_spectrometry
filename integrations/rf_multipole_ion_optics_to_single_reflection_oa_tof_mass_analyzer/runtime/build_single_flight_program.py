@@ -573,6 +573,12 @@ def build_successor_program(
             }
         )
     analyzer_config = _successor_analyzer_config(oatof, frontend, region_field_contract)
+    if domain_split is not None:
+        # Slot 1 is the coarse bridge in a six-instance domain-split IOB.  The
+        # analyzer component still names that logical role flight_tube, so its
+        # payload identity must describe the PA actually loaded in slot 1.
+        analyzer_config["instance_filenames"]["flight_tube"] = "coarse_frontend.pa0"
+    analyzer_config["domain_split"] = domain_split is not None
     overlay_specs: list[dict[str, Any]] = []
     if domain_split is not None:
         overlay_specs.append(
@@ -969,8 +975,10 @@ function segment.initialize_run()
     'pre_pulse_frontend_accelerator' or 'full_flight'
   local initialized=single_flight_analyzer.initialize_workbench(
     single_flight_workbench_state(active_scope))
-  if single_flight_pre_pulse_time_series==0 then
+  if single_flight_pre_pulse_time_series==0 and single_flight_domain_split_enabled==0 then
     single_flight_apply_placement(simion.wb.instances[1],initialized.placements.flight_tube)
+  end
+  if single_flight_pre_pulse_time_series==0 then
     single_flight_apply_placement(simion.wb.instances[2],initialized.placements.reflectron)
   end
   single_flight_apply_placement(ai,initialized.placements.accelerator)
@@ -1019,7 +1027,10 @@ function segment.efield_adjust()
     assert(single_flight_is_active_field_instance(ion_instance),
       'pre-pulse screening particle escaped its frontend/accelerator active scope')
   end
-  local instance=assert(simion.wb.instances[ion_instance],'field callback requires one PA instance')
+  -- SIMION invokes this callback while an ion traverses the vacuum gap between
+  -- non-overlapping PA instances.  There is no PA field to adjust in that gap.
+  local instance=simion.wb.instances[ion_instance]
+  if instance==nil then return end
   local state={{z_mm=ion_pz_mm,instance_id=ion_instance,instance_dx_mm=instance.pa.dx_mm,
     instance_dz_mm=instance.pa.dz_mm,instance_scale=instance.scale}}
   local base=single_flight_analyzer.efield_adjust(state)

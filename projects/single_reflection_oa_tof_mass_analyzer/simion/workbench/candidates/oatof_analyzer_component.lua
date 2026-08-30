@@ -84,7 +84,9 @@ function component.new(config)
     geometry=true, field_modes=true, accelerator_topology_id=true,
     voltages=true, accelerator_ring_count=true, electrode_ids=true,
     reflectron_stage1_ring_count=true, reflectron_stage2_ring_count=true,
-    detector=true, diagnostics=true}, 'config')
+    detector=true, diagnostics=true, domain_split=true}, 'config')
+  assert(config.domain_split == true or config.domain_split == false,
+    'domain_split must be boolean')
   exact_keys(config.instance_roles, {flight_tube=true, reflectron=true,
     accelerator=true, detector=true}, 'instance_roles')
   exact_keys(config.instance_filenames, {flight_tube=true, reflectron=true,
@@ -375,9 +377,11 @@ function component.new(config)
       'detector marker PA z span does not match linked numerical parameters')
     local flight_axial_span = (flight.nx - 1) * flight.dx_mm * flight.scale
     local reflectron_axial_span = (reflectron.nx - 1) * reflectron.dx_mm * reflectron.scale
-    assert(flight_axial_span + 1e-9 >=
-      g.reflectron_entgrid_z_mm - g.flight_tube_near_outer_z_mm,
-      'flight-tube PA does not reach the reflectron interface')
+    if not config.domain_split then
+      assert(flight_axial_span + 1e-9 >=
+        g.reflectron_entgrid_z_mm - g.flight_tube_near_outer_z_mm,
+        'flight-tube PA does not reach the reflectron interface')
+    end
     assert(reflectron_axial_span + 1e-9 >=
       g.flight_tube_far_outer_z_mm - g.reflectron_entgrid_z_mm,
       'reflectron PA does not contain the far shield end cap')

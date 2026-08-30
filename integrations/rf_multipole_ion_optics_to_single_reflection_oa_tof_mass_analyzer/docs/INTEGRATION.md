@@ -157,7 +157,8 @@ run 已记录的存活状态重编号为 canonical `pre_pulse_restart` 表，并
 `workflows/family_source_closure/run_time_series_successor.py` 将这一物化结果与一条**预注册**的 pulse-on
 消费者行绑定。它在调度前逐项拒绝 connection、layout/cross section/aperture、three-zone candidate SHA、上游
 source identity 或完整 restart population 的漂移；仅允许从 producer 的 `pulse_disabled=true` 转换为 consumer 的
-正常脉冲。它不生成或改写 campaign；`--execute` 时仍只委托唯一的、持有主机租约的 `execute.ps1`。
+正常脉冲。已绑定的 materialization manifest 可直接复用；不会为同一 consumer 重写一个 receipt 不同的
+等价状态。它不生成或改写 campaign；`--execute` 时仍只委托唯一的、持有主机租约的 `execute.ps1`。
 
 活动 runtime binding v4 只冻结连接专属的物理/运行合同；共享的
 `family_runtime_implementation.json` 由运行时统一解析。authorized/Formal 路径校验每个实现脚本 SHA；

@@ -33,7 +33,7 @@ class TimeSeriesSuccessorTest(unittest.TestCase):
         receipt = materialized_dir / "results" / "time_series_restart_materialization_receipt.json"
         receipt.parent.mkdir()
         receipt.write_text(json.dumps({"pulse_target_state": {"sha256": "STATE", "particle_count": 3,
-            "ordered_particle_id_sha256": "IDS"}}))
+            "ordered_particle_id_sha256": "IDS"}, "selection": {"sample_index": 1}}))
         materialized_config = materialized_dir / "run_config.json"
         materialized_config.write_text(json.dumps({"inputs": {"producer_manifest": str(producer_manifest.resolve())}}))
         materialized_manifest = materialized_dir / "run_manifest.json"
@@ -43,7 +43,7 @@ class TimeSeriesSuccessorTest(unittest.TestCase):
             "architecture_generation_id": "architecture", "source_profile_id": "source", "field_overlay_id": "field",
             "three_zone_candidate_sha256": "candidate", "source": source,
             "pre_pulse_source_state": {"sha256": "STATE", "particle_count": 3,
-                "materialization_receipt": {"sha256": successor.file_sha256(receipt)}},
+                "materialization_receipt": {"path": str(receipt), "sha256": successor.file_sha256(receipt)}},
             "single_flight_population": {"execution_population": {"particle_count": 3, "ordered_particle_id_sha256": "IDS"}}}
         campaign = root / "campaign.json"
         campaign.write_text(json.dumps({"role": "rf_multipole_oatof_experiment_campaign", "integration_id": successor.INTEGRATION_ID,
@@ -71,6 +71,22 @@ class TimeSeriesSuccessorTest(unittest.TestCase):
                 successor.validate_successor(producer_manifest_path=producer, consumer_campaign_path=campaign,
                     consumer_experiment_id="consumer", materialization_manifest_path=materialized)
 
+    def test_accepts_compact_candidate_record_against_prepared_scalar_sha(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            producer, materialized, campaign = self._fixture(Path(directory))
+            document = json.loads(campaign.read_text())
+            shared = document["experiments"]["shared"]
+            shared["single_flight_three_zone_candidate"] = {"sha256": "candidate"}
+            del shared["three_zone_candidate_sha256"]
+            campaign.write_text(json.dumps(document))
+            result = successor.validate_successor(
+                producer_manifest_path=producer,
+                consumer_campaign_path=campaign,
+                consumer_experiment_id="consumer",
+                materialization_manifest_path=materialized,
+            )
+        self.assertEqual(result["status"], "PASS")
+
     def test_orchestration_delegates_only_after_validation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             producer, materialized, campaign = self._fixture(Path(directory))
@@ -81,6 +97,20 @@ class TimeSeriesSuccessorTest(unittest.TestCase):
         command = dispatch.call_args.kwargs.get("command", dispatch.call_args.args[0])
         self.assertIn("execute.ps1", " ".join(command))
         self.assertIn("-SolverAuthorized", command)
+
+    def test_orchestration_reuses_the_campaign_bound_materialization(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            producer, materialized, campaign = self._fixture(Path(directory))
+            with patch.object(successor, "materialize_run") as materialize, patch.object(successor, "_run"):
+                result = successor.orchestrate(
+                    repo_root=Path(directory), producer_manifest_path=producer,
+                    materialization_run_dir=Path(directory) / "unused",
+                    materialization_manifest_path=materialized,
+                    consumer_campaign_path=campaign, consumer_experiment_id="consumer",
+                    execute=True,
+                )
+        materialize.assert_not_called()
+        self.assertEqual(result["sample_index"], 1)
 
 
 if __name__ == "__main__":

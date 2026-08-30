@@ -254,6 +254,7 @@ class SingleFlightProgramTests(unittest.TestCase):
             intermediate_overlay=intermediate, domain_split=domain,
         )
         self.assertIn("coarse_frontend=1", full_flight_program)
+        self.assertIn('flight_tube="coarse_frontend.pa0"', full_flight_program)
         self.assertIn("reflectron=2", full_flight_program)
         self.assertIn("detector=4", full_flight_program)
         self.assertIn("upstream_bridge=5", full_flight_program)
@@ -566,6 +567,7 @@ class SingleFlightProgramTests(unittest.TestCase):
         self.assertIn("accelerator_entrance_overlay", program)
         self.assertIn("accelerator_intermediate_overlay", program)
         self.assertIn("single_flight_is_active_field_instance(ion_instance)", program)
+        self.assertIn("if instance==nil then return end", program)
         self.assertIn("assert(#simion.wb.instances==6", exporter)
         self.assertIn("C3 overlay active bounds overlap", exporter)
 

@@ -13,6 +13,7 @@ end
 local function config()
   return {
     accelerator_topology_id='two_zone_frontend_v1',
+    domain_split=false,
     instance_roles={flight_tube=1, reflectron=2, accelerator=3, detector=4},
     instance_filenames={flight_tube='flight_tube_ground.pa0',
       reflectron='reflectron.pa0', accelerator='accelerator.pa0',

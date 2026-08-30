@@ -3478,23 +3478,6 @@ def prepare_family_source_closure(
             resolved_pulse_schedule = schedule
         if (
             pre_pulse_source_path is not None
-            and source_materialization_profile is not None
-            and post_pulse_restart_authority is None
-        ):
-            pulse_restart_validation = _validate_canonical_pulse_restart_state(
-                pre_pulse_source_path,
-                pre_pulse_receipt_path,
-                pre_pulse_source_state,
-                source_materialization_profile,
-                geometry,
-                schedule,
-            )
-            pulse_restart_validation_path = plan_output.with_name(
-                "canonical_pulse_restart_target_state_validation.json"
-            )
-            _write_json(pulse_restart_validation_path, pulse_restart_validation)
-        elif (
-            pre_pulse_source_path is not None
             and pre_pulse_source_state is not None
             and pre_pulse_receipt_path is not None
             and post_pulse_restart_authority is None
@@ -3505,6 +3488,23 @@ def prepare_family_source_closure(
                 pre_pulse_source_path,
                 pre_pulse_receipt_path,
                 pre_pulse_source_state,
+                schedule,
+            )
+            pulse_restart_validation_path = plan_output.with_name(
+                "canonical_pulse_restart_target_state_validation.json"
+            )
+            _write_json(pulse_restart_validation_path, pulse_restart_validation)
+        elif (
+            pre_pulse_source_path is not None
+            and source_materialization_profile is not None
+            and post_pulse_restart_authority is None
+        ):
+            pulse_restart_validation = _validate_canonical_pulse_restart_state(
+                pre_pulse_source_path,
+                pre_pulse_receipt_path,
+                pre_pulse_source_state,
+                source_materialization_profile,
+                geometry,
                 schedule,
             )
             pulse_restart_validation_path = plan_output.with_name(

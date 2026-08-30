@@ -37,6 +37,23 @@ REQUIRED_IDENTITY_KEYS = (
 )
 
 
+def _consumer_identity_value(consumer: dict[str, Any], key: str) -> Any:
+    """Read one identity from the resolved campaign representation.
+
+    The compact campaign intentionally retains the Candidate as a path/SHA
+    record.  The prepared producer records its SHA as a scalar parameter, so
+    normalize that one representation difference before identity comparison.
+    """
+
+    if key == "layout_profile_id":
+        return consumer.get("single_flight_layout_profile_id")
+    if key == "three_zone_candidate_sha256":
+        candidate = consumer.get("single_flight_three_zone_candidate")
+        if isinstance(candidate, dict):
+            return candidate.get("sha256")
+    return consumer.get(key)
+
+
 def _load(path: Path, label: str) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text(encoding="utf-8-sig"))
@@ -62,6 +79,27 @@ def _consumer_row(campaign_path: Path, experiment_id: str) -> dict[str, Any]:
     if len(rows) != 1:
         raise ContractError("successor consumer experiment must resolve exactly once")
     return rows[0]
+
+
+def _restart_sample_index(
+    *, campaign_path: Path, experiment_id: str, workspace_root: Path,
+) -> int:
+    """Recover the detector-blind sample index bound by the consumer receipt."""
+
+    consumer = _consumer_row(campaign_path, experiment_id)
+    state = consumer.get("pre_pulse_source_state")
+    receipt_record = state.get("materialization_receipt") if isinstance(state, dict) else None
+    if not isinstance(receipt_record, dict) or not isinstance(receipt_record.get("path"), str):
+        raise ContractError("successor materialization receipt is missing")
+    receipt_path = Path(receipt_record["path"])
+    if not receipt_path.is_absolute():
+        receipt_path = workspace_root / receipt_path
+    receipt = _load(receipt_path, "successor materialization receipt")
+    selection = receipt.get("selection")
+    sample_index = selection.get("sample_index") if isinstance(selection, dict) else None
+    if isinstance(sample_index, bool) or not isinstance(sample_index, int) or sample_index < 1:
+        raise ContractError("successor materialization sample index is invalid")
+    return sample_index
 
 
 def _producer_identity(producer_manifest_path: Path) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
@@ -106,9 +144,7 @@ def validate_successor(
         raise ContractError("successor consumer must use pre_pulse_restart")
     mismatches = [
         key for key in REQUIRED_IDENTITY_KEYS
-        if consumer.get(
-            "single_flight_layout_profile_id" if key == "layout_profile_id" else key
-        ) != producer_parameters.get(key)
+        if _consumer_identity_value(consumer, key) != producer_parameters.get(key)
     ]
     if mismatches:
         raise ContractError("successor physical identity differs: " + ", ".join(mismatches))
@@ -162,13 +198,29 @@ def _run(command: list[str], *, repo_root: Path, failure: str) -> None:
 def orchestrate(
     *, repo_root: Path, producer_manifest_path: Path, materialization_run_dir: Path,
     consumer_campaign_path: Path, consumer_experiment_id: str, execute: bool,
+    materialization_manifest_path: Path | None = None,
 ) -> dict[str, Any]:
     """Materialize, validate, and optionally dispatch through the governed entry point."""
 
-    materialization_manifest = materialize_run(
-        repo_root=repo_root, producer_manifest_path=producer_manifest_path,
-        run_dir=materialization_run_dir,
-    )
+    if materialization_manifest_path is None:
+        sample_index = _restart_sample_index(
+            campaign_path=consumer_campaign_path,
+            experiment_id=consumer_experiment_id,
+            workspace_root=repo_root.parent,
+        )
+        materialization_manifest = materialize_run(
+            repo_root=repo_root, producer_manifest_path=producer_manifest_path,
+            run_dir=materialization_run_dir, sample_index=sample_index,
+        )
+    else:
+        materialization_manifest = materialization_manifest_path.resolve()
+        receipt = _load(
+            materialization_manifest.parent / "results" / "time_series_restart_materialization_receipt.json",
+            "time-series restart materialization receipt",
+        )
+        sample_index = int(receipt.get("selection", {}).get("sample_index", 0))
+        if sample_index < 1:
+            raise ContractError("successor materialization sample index is invalid")
     result = validate_successor(
         producer_manifest_path=producer_manifest_path,
         consumer_campaign_path=consumer_campaign_path,
@@ -176,6 +228,7 @@ def orchestrate(
         materialization_manifest_path=materialization_manifest,
     )
     result["materialization_manifest"] = str(materialization_manifest)
+    result["sample_index"] = sample_index
     if execute:
         runner = Path(__file__).with_name("execute.ps1")
         _run(
@@ -193,16 +246,23 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo-root", required=True, type=Path)
     parser.add_argument("--producer-manifest", required=True, type=Path)
-    parser.add_argument("--materialization-run-dir", required=True, type=Path)
+    parser.add_argument("--materialization-run-dir", type=Path)
+    parser.add_argument("--materialization-manifest", type=Path)
     parser.add_argument("--consumer-campaign", required=True, type=Path)
     parser.add_argument("--consumer-experiment-id", required=True)
     parser.add_argument("--execute", action="store_true", help="dispatch the validated consumer via execute.ps1")
     args = parser.parse_args()
+    if (args.materialization_run_dir is None) == (args.materialization_manifest is None):
+        parser.error("supply exactly one of --materialization-run-dir or --materialization-manifest")
     result = orchestrate(
         repo_root=args.repo_root.resolve(), producer_manifest_path=args.producer_manifest.resolve(),
-        materialization_run_dir=args.materialization_run_dir.resolve(),
+        materialization_run_dir=(args.materialization_run_dir or Path(".")).resolve(),
         consumer_campaign_path=args.consumer_campaign.resolve(),
         consumer_experiment_id=args.consumer_experiment_id, execute=args.execute,
+        materialization_manifest_path=(
+            args.materialization_manifest.resolve()
+            if args.materialization_manifest is not None else None
+        ),
     )
     print("TIME_SERIES_SUCCESSOR=PASS " + json.dumps(result, sort_keys=True))
     return 0
