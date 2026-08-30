@@ -178,6 +178,24 @@ class AuthorFullFlightCampaignFromPrePulseTests(unittest.TestCase):
                 "auto_detector_blind_discovery_and_confirmation_v1",
             )
 
+    def test_accepts_workspace_relative_producer_path(self) -> None:
+        experiment_id = "ideal_acceptance_300mm_square_accelerator_port_h150_pre_pulse_n5000"
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            workspace = root / "workspace"
+            parent = self._parent(workspace, experiment_id=experiment_id, run_id="producer-a")
+            producers = root / "producers.json"
+            producers.write_text(
+                json.dumps({experiment_id: str(parent.relative_to(workspace))}),
+                encoding="utf-8",
+            )
+            result = author_campaign(
+                source_campaign_path=self._source_campaign(root), producer_mapping_path=producers,
+                output_path=root / "full.json", campaign_id="full_flight_test",
+                workspace=workspace,
+            )
+            self.assertEqual(len(result["experiments"]["rows"]), 1)
+
     def test_rejects_parent_experiment_mapping_drift(self) -> None:
         experiment_id = "ideal_acceptance_300mm_square_accelerator_port_h150_pre_pulse_n5000"
         with tempfile.TemporaryDirectory() as temporary:

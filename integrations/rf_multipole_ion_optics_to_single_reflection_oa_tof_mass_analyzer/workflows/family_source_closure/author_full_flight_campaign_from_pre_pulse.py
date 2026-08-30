@@ -306,9 +306,12 @@ def author_campaign(
         experiment_id = row["experiment_id"]
         if experiment_id not in producer_mapping:
             continue
+        producer_directory = Path(producer_mapping[experiment_id])
+        if not producer_directory.is_absolute():
+            producer_directory = workspace / producer_directory
         transition = _producer_transition_or_screening(
             workspace=workspace.resolve(),
-            run_directory=Path(producer_mapping[experiment_id]),
+            run_directory=producer_directory,
             experiment_id=experiment_id,
             shared_population=shared["single_flight_population"],
         )
