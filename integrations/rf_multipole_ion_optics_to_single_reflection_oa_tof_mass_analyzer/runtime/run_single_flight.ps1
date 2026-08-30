@@ -3317,13 +3317,18 @@ try {
         if (-not [string]::IsNullOrWhiteSpace($path) -and
             (Test-Path -LiteralPath $path -PathType Leaf) -and
             -not $prePulseCheckpointOutputs.Contains($path)) {
-          $prePulseCheckpointOutputs.Add($path)
+            # The completion callback is invoked inside the scheduler's output
+            # pipeline.  HashSet.Add() returns a Boolean, which would otherwise
+            # be prepended to the scheduler result and turn $waveResult into an
+            # array (hiding resource_budget_exceeded/processes after a healthy
+            # batch completes).
+            [void]$prePulseCheckpointOutputs.Add($path)
         }
       }
       Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot `
         -RunConfig $package.run_config -Manifest (Join-Path $package.run_dir 'run_manifest.json') `
         -Status interrupted -Software @('SIMION 2020','Python 3.11') `
-        -Outputs @($prePulseCheckpointOutputs)
+        -Outputs @($prePulseCheckpointOutputs) | Out-Null
     }
   }
   $waveResult = Invoke-ResourceBudgetedProcesses `

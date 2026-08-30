@@ -160,6 +160,8 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
         checkpoint_block = runner[checkpoint:manifest_write + 400]
         self.assertIn("(Join-Path $package.run_dir 'run_manifest.json')", checkpoint_block)
         self.assertNotIn("$package.run_manifest", checkpoint_block)
+        self.assertIn("[void]$prePulseCheckpointOutputs.Add($path)", checkpoint_block)
+        self.assertIn("-Outputs @($prePulseCheckpointOutputs) | Out-Null", checkpoint_block)
 
     def test_program_builder_optional_restart_context_is_strictmode_safe(self) -> None:
         runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
