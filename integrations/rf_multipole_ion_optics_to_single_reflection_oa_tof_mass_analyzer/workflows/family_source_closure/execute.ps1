@@ -191,12 +191,22 @@ $authoredRunId = [string]$experimentRows[0].run_id
 $campaignRunId = $authoredRunId
 if ($authoredRunId -eq 'execution_pending') {
   $population = $experimentRows[0].single_flight_population
-  $particleCount = if ($null -ne $population) { [int]$population.particle_count } else { 0 }
+  $executionPopulation = if ($null -ne $population) { $population.execution_population } else { $null }
+  $particleCount = if ($null -ne $executionPopulation) { [int]$executionPopulation.particle_count } else { 0 }
   if ($particleCount -lt 1) {
     throw 'Minimal authored campaign requires a positive single-flight particle count.'
   }
+  # The stable experiment ID remains in the frozen resolved row.  Run folders
+  # use a compact, deterministic derivative so they retain the repository's
+  # bounded human-readable artifact-name format.
+  $experimentSlug = ([string]$experimentRows[0].experiment_id).Replace('_','-')
+  if ($experimentSlug.Length -gt 48) {
+    $prefixSlug = $experimentSlug.Substring(0,31).TrimEnd('-')
+    $suffixSlug = $experimentSlug.Substring($experimentSlug.Length - 16).TrimStart('-')
+    $experimentSlug = $prefixSlug + '-' + $suffixSlug
+  }
   $campaignRunId = (Get-Date -Format 'yyyyMMdd_HHmmss') +
-    '__sim__cross__' + [string]$experimentRows[0].experiment_id + '__n' + $particleCount
+    '__sim__cross__' + $experimentSlug + '__n' + $particleCount
 }
 & $PythonExe -m common.contracts.artifact_naming run $campaignRunId
 if ($LASTEXITCODE -ne 0) {

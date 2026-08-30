@@ -260,7 +260,7 @@ def _producer_transition_or_screening(
 
 def author_campaign(
     *, source_campaign_path: Path, producer_mapping_path: Path,
-    run_id_mapping_path: Path, output_path: Path, campaign_id: str,
+    output_path: Path, campaign_id: str,
     workspace: Path,
 ) -> dict[str, Any]:
     """Create a flat pulse-on campaign for the explicitly supplied producers."""
@@ -293,9 +293,6 @@ def author_campaign(
     if not isinstance(time_grid, str) or not isinstance(spatial_window, str):
         raise ContractError("pre-pulse screening timing identities are incomplete")
     producer_mapping = _load_mapping(producer_mapping_path, "producer mapping")
-    run_id_mapping = _load_mapping(run_id_mapping_path, "run-id mapping")
-    if set(producer_mapping) != set(run_id_mapping):
-        raise ContractError("producer and run-id experiment mappings differ")
     rows_by_id = {
         row.get("experiment_id"): row for row in rows if isinstance(row, dict)
     }
@@ -320,16 +317,14 @@ def author_campaign(
                 raise ContractError("duplicate pre-pulse transition authority")
             seen_transitions.add(transition["sha256"])
             has_transition_authority = True
-        overrides = copy.deepcopy(row.get("overrides"))
-        if not isinstance(overrides, dict):
-            raise ContractError("pre-pulse row overrides are incomplete")
+        values = copy.deepcopy(row.get("values"))
+        if not isinstance(values, dict):
+            raise ContractError("pre-pulse row values are incomplete")
         if transition is not None:
-            overrides["pulse_timing_transition_authority"] = transition
+            values["pulse_timing_transition_authority"] = transition
         authored_rows.append({
-            "sequence": len(authored_rows) + 1,
             "experiment_id": experiment_id.replace("_pre_pulse_", "_full_flight_"),
-            "run_id": run_id_mapping[experiment_id],
-            "overrides": overrides,
+            "values": values,
         })
     if not authored_rows:
         raise ContractError("no producer-aligned pre-pulse rows were selected")
@@ -374,15 +369,13 @@ def main() -> int:
     parser.add_argument("--source-campaign", required=True, type=Path)
     parser.add_argument("--producer-map", required=True, type=Path,
                         help="JSON object: pre-pulse experiment id -> parent run directory")
-    parser.add_argument("--run-id-map", required=True, type=Path,
-                        help="JSON object: pre-pulse experiment id -> new full-flight run id")
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--campaign-id", required=True)
     parser.add_argument("--workspace", required=True, type=Path)
     args = parser.parse_args()
     result = author_campaign(
         source_campaign_path=args.source_campaign, producer_mapping_path=args.producer_map,
-        run_id_mapping_path=args.run_id_map, output_path=args.output,
+        output_path=args.output,
         campaign_id=args.campaign_id, workspace=args.workspace,
     )
     print("FULL_FLIGHT_CAMPAIGN_AUTHORED=PASS " + json.dumps({

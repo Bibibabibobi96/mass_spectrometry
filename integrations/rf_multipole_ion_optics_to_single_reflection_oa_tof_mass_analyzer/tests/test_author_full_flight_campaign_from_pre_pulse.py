@@ -141,12 +141,10 @@ class AuthorFullFlightCampaignFromPrePulseTests(unittest.TestCase):
         (run_dir / "run_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
         return run_dir
 
-    def _maps(self, root: Path, experiment_id: str, parent: Path) -> tuple[Path, Path]:
+    def _producer_map(self, root: Path, experiment_id: str, parent: Path) -> Path:
         producers = root / "producers.json"
-        runs = root / "runs.json"
         producers.write_text(json.dumps({experiment_id: str(parent)}), encoding="utf-8")
-        runs.write_text(json.dumps({experiment_id: "20260829_010000__sim__cross__full__n5000"}), encoding="utf-8")
-        return producers, runs
+        return producers
 
     def test_authors_continuous_full_population_with_manifest_bound_transition(self) -> None:
         experiment_id = "ideal_acceptance_300mm_square_accelerator_port_h150_pre_pulse_n5000"
@@ -154,10 +152,10 @@ class AuthorFullFlightCampaignFromPrePulseTests(unittest.TestCase):
             root = Path(temporary)
             workspace = root / "workspace"
             parent = self._parent(workspace, experiment_id=experiment_id, run_id="producer-a")
-            producers, runs = self._maps(root, experiment_id, parent)
+            producers = self._producer_map(root, experiment_id, parent)
             result = author_campaign(
                 source_campaign_path=self._source_campaign(root), producer_mapping_path=producers,
-                run_id_mapping_path=runs, output_path=root / "full.json",
+                output_path=root / "full.json",
                 campaign_id="full_flight_test", workspace=workspace,
             )
             self.assertNotIn("pre_pulse_time_series_screening", result)
@@ -171,7 +169,7 @@ class AuthorFullFlightCampaignFromPrePulseTests(unittest.TestCase):
             self.assertIn("pulse_timing_transition_authority", result["experiments"]["variation_axes"])
             self.assertEqual(len(result["experiments"]["rows"]), 1)
             self.assertEqual(
-                result["experiments"]["rows"][0]["overrides"]
+                result["experiments"]["rows"][0]["values"]
                 ["pulse_timing_transition_authority"]["path"],
                 "artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/producer-a/results/pulse_timing_transition.json",
             )
@@ -186,11 +184,11 @@ class AuthorFullFlightCampaignFromPrePulseTests(unittest.TestCase):
             root = Path(temporary)
             workspace = root / "workspace"
             parent = self._parent(workspace, experiment_id="wrong", run_id="producer-a")
-            producers, runs = self._maps(root, experiment_id, parent)
+            producers = self._producer_map(root, experiment_id, parent)
             with self.assertRaisesRegex(ContractError, "experiment mapping differs"):
                 author_campaign(
                     source_campaign_path=self._source_campaign(root), producer_mapping_path=producers,
-                    run_id_mapping_path=runs, output_path=root / "full.json",
+                    output_path=root / "full.json",
                     campaign_id="full_flight_test", workspace=workspace,
                 )
 
@@ -203,14 +201,14 @@ class AuthorFullFlightCampaignFromPrePulseTests(unittest.TestCase):
                 workspace, experiment_id=experiment_id, run_id="producer-a",
                 with_transition=False,
             )
-            producers, runs = self._maps(root, experiment_id, parent)
+            producers = self._producer_map(root, experiment_id, parent)
             result = author_campaign(
                 source_campaign_path=self._source_campaign(root), producer_mapping_path=producers,
-                run_id_mapping_path=runs, output_path=root / "full.json",
+                output_path=root / "full.json",
                 campaign_id="full_flight_test", workspace=workspace,
             )
             row = result["experiments"]["rows"][0]
-            self.assertNotIn("pulse_timing_transition_authority", row["overrides"])
+            self.assertNotIn("pulse_timing_transition_authority", row["values"])
             self.assertNotIn(
                 "pulse_timing_transition_authority", result["experiments"]["variation_axes"],
             )
@@ -238,11 +236,11 @@ class AuthorFullFlightCampaignFromPrePulseTests(unittest.TestCase):
             value["execution_population"]["selection_algorithm"] = "survivors_only"
             population.write_text(json.dumps(value), encoding="utf-8")
             # The changed file deliberately invalidates the producer manifest.
-            producers, runs = self._maps(root, experiment_id, parent)
+            producers = self._producer_map(root, experiment_id, parent)
             with self.assertRaisesRegex(ContractError, "population.*identity differs"):
                 author_campaign(
                     source_campaign_path=self._source_campaign(root), producer_mapping_path=producers,
-                    run_id_mapping_path=runs, output_path=root / "full.json",
+                    output_path=root / "full.json",
                     campaign_id="full_flight_test", workspace=workspace,
                 )
 
@@ -252,11 +250,11 @@ class AuthorFullFlightCampaignFromPrePulseTests(unittest.TestCase):
             root = Path(temporary)
             workspace = root / "workspace"
             parent = self._parent(workspace, experiment_id=experiment_id, run_id="producer-a")
-            producers, runs = self._maps(root, experiment_id, parent)
+            producers = self._producer_map(root, experiment_id, parent)
             with self.assertRaisesRegex(ContractError, "not continuous_frontend"):
                 author_campaign(
                     source_campaign_path=self._source_campaign(root, continuous=False), producer_mapping_path=producers,
-                    run_id_mapping_path=runs, output_path=root / "full.json",
+                    output_path=root / "full.json",
                     campaign_id="full_flight_test", workspace=workspace,
                 )
             existing = root / "existing.json"
@@ -264,7 +262,7 @@ class AuthorFullFlightCampaignFromPrePulseTests(unittest.TestCase):
             with self.assertRaisesRegex(ContractError, "output already exists"):
                 author_campaign(
                     source_campaign_path=self._source_campaign(root), producer_mapping_path=producers,
-                    run_id_mapping_path=runs, output_path=existing,
+                    output_path=existing,
                     campaign_id="full_flight_test", workspace=workspace,
                 )
 
