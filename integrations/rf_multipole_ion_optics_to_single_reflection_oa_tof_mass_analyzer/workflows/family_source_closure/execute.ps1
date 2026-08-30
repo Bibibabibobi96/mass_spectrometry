@@ -201,8 +201,11 @@ if ($authoredRunId -eq 'execution_pending') {
   # bounded human-readable artifact-name format.
   $experimentSlug = ([string]$experimentRows[0].experiment_id).Replace('_','-')
   if ($experimentSlug.Length -gt 48) {
-    $prefixSlug = $experimentSlug.Substring(0,31).TrimEnd('-')
-    $suffixSlug = $experimentSlug.Substring($experimentSlug.Length - 16).TrimStart('-')
+    # Keep the suffix long enough to retain the changed physical axis (for
+    # example, port-h150) when several experiment IDs share a timestamp.
+    $suffixSlug = (($experimentSlug -split '-') | Select-Object -Last 5) -join '-'
+    $prefixBudget = 48 - 1 - $suffixSlug.Length
+    $prefixSlug = $experimentSlug.Substring(0,$prefixBudget).TrimEnd('-')
     $experimentSlug = $prefixSlug + '-' + $suffixSlug
   }
   $campaignRunId = (Get-Date -Format 'yyyyMMdd_HHmmss') +
