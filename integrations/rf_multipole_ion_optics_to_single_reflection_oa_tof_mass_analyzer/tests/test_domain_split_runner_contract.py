@@ -212,6 +212,15 @@ class DomainSplitRunnerContractTests(unittest.TestCase):
         self.assertIn("$apertureTopologyGeometry.accelerator_port_aperture.discretization", self.source)
         self.assertIn("-PaPath $apertureTopologyPa", self.source)
 
+    def test_pre_pulse_collision_aperture_gate_uses_its_materialized_raw_pa0(self) -> None:
+        self.assertIn("geometry_collision_zero_field_v1", self.source)
+        self.assertIn("not infer", self.source)
+        topology_block = self.source[
+            self.source.index("$topologyPa = if ("):
+            self.source.index("$domainSplitFineBuild | Add-Member", self.source.index("$topologyPa = if ("))
+        ]
+        self.assertIn("$domainSplitFineBuild.pa0", topology_block)
+
     def test_shared_main_local_aperture_profile_is_connected_end_to_end(self) -> None:
         self.assertIn("--coarse-bridge-reference-aperture-width-mm", self.source)
         self.assertIn("--accelerator-main-reference-aperture-width-mm", self.source)

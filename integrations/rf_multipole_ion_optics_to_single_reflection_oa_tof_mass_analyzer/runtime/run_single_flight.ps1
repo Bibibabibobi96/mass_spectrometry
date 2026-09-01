@@ -2792,7 +2792,13 @@ try {
     # controller of the same PA+ family.
     $domainSplitFineBuild.pa0 = Join-Path $runtimeDir (
       $domainSplitFineBuild.name + '.pa0')
+    # A collision-only entrance zone deliberately retains the main geometry
+    # contract (including its PA+ voltage model) while materializing only a
+    # raw `.pa0`.  Its topology gate must inspect that real raw PA, not infer
+    # a non-existent `.pa#` from the inactive field-model metadata.
     $topologyPa = if (
+      [string]$domainSplitFineBuild.geometry.boundary_condition.mode -ne
+        'geometry_collision_zero_field_v1' -and
       $null -ne $domainSplitFineBuild.geometry.PSObject.Properties['pa_plus_solution_model'] -and
       $null -ne $domainSplitFineBuild.geometry.pa_plus_solution_model
     ) {
