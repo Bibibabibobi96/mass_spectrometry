@@ -1445,7 +1445,7 @@ foreach ($entry in $commands) {{
         )
         runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
         self.assertIn("build_single_flight_full_iob.lua", runner)
-        self.assertIn("assets\\iob_instance_seeds", runner)
+        self.assertIn("common\\simion\\assets\\iob_instance_seeds", runner)
         self.assertIn("seven_instance_seed.iob", runner)
         self.assertIn("accelerator_entrance_local", runner)
 

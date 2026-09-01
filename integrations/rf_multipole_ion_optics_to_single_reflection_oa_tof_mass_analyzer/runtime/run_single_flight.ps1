@@ -978,7 +978,7 @@ try {
   # arbitrary Workbench instance counts in SIMION 2020.  All reusable counts
   # and their one physical placeholder PA live in this single asset directory;
   # each builder replaces every placeholder before saving its output IOB.
-  $iobSeedDirectory = Join-Path $PSScriptRoot 'assets\iob_instance_seeds'
+  $iobSeedDirectory = Join-Path $repoRoot 'common\simion\assets\iob_instance_seeds'
   $prePulseThreeInstanceSeed = Join-Path $iobSeedDirectory 'three_instance_seed.iob'
   $postPulseFiveInstanceSeed = Join-Path $iobSeedDirectory 'five_instance_seed.iob'
   $fullFlightSeedDir = $iobSeedDirectory
