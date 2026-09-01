@@ -1,5 +1,5 @@
 {
-  "schema_version": 6,
+  "schema_version": 7,
   "role": "rf_multipole_oatof_experiment_campaign",
   "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
   "campaign_id": "paper1_c3_j3_s1_fixed_pulse_derivative_m1_n100_r02",
@@ -41,7 +41,7 @@
     },
     "variation_axes": ["single_flight_three_zone_candidate"],
     "rows": [
-      {"sequence": 1, "experiment_id": "paper1_c3_j3_s1_fixed_pulse_derivative_scale_m1_n100_r02", "run_id": "20260826_083000__sim__cross__paper1-c3-j3-s1-fixed-pulse-derivative-m1__n100__r02", "overrides": {"single_flight_three_zone_candidate": {"path": "artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20260826_023000__build__python__paper1-c3-j3-s1-candidates/results/three_zone_c3_j3_scale_-1_candidate_resolved.json", "sha256": "22296960E42DA3E2F60226620B38345D124A3A4FF8DE58868A3DBD6950CD807C"}}}
+      {"experiment_id": "paper1_c3_j3_s1_fixed_pulse_derivative_scale_m1_n100_r02", "values": {"single_flight_three_zone_candidate": {"path": "artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20260826_023000__build__python__paper1-c3-j3-s1-candidates/results/three_zone_c3_j3_scale_-1_candidate_resolved.json", "sha256": "22296960E42DA3E2F60226620B38345D124A3A4FF8DE58868A3DBD6950CD807C"}}}
     ]
   }
 }

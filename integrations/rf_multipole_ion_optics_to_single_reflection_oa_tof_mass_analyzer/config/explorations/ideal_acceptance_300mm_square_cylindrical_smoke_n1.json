@@ -1,5 +1,5 @@
 {
-  "schema_version": 6,
+  "schema_version": 7,
   "role": "rf_multipole_oatof_experiment_campaign",
   "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
   "campaign_id": "ideal_acceptance_300mm_square_cylindrical_smoke_n1",
@@ -69,8 +69,8 @@
     },
     "variation_axes": ["single_flight_layout_profile_id", "connection_profile_id"],
     "rows": [
-      {"sequence": 1, "experiment_id": "ideal_acceptance_300mm_square_smoke_n1", "run_id": "20260828_234100__sim__cross__ideal-300-square-gap102p4-domain-smoke__n1", "overrides": {"single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_square_v1"}},
-      {"sequence": 2, "experiment_id": "ideal_acceptance_300mm_cylindrical_smoke_n1", "run_id": "20260828_234200__sim__cross__ideal-300-cylindrical-gap102p4-domain-smoke__n1", "overrides": {"single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_cylindrical_v1", "connection_profile_id": "rf_octupole_oatof_cylindrical_sideport_100x090_gap_102p4mm"}}
+      {"experiment_id": "ideal_acceptance_300mm_square_smoke_n1", "values": {"single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_square_v1"}},
+      {"experiment_id": "ideal_acceptance_300mm_cylindrical_smoke_n1", "values": {"single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_cylindrical_v1", "connection_profile_id": "rf_octupole_oatof_cylindrical_sideport_100x090_gap_102p4mm"}}
     ]
   }
 }

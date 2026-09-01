@@ -2,7 +2,7 @@
   "schema_version": 7,
   "role": "rf_multipole_oatof_experiment_campaign",
   "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
-  "campaign_id": "ideal_acceptance_300mm_accelerator_port_height_gap102p4_pre_pulse_receipt_successor_r07_n5000",
+  "campaign_id": "ideal_acceptance_300mm_accelerator_port_height_gap102p4_pre_pulse_receipt_successor_r05_n5000",
   "status": "exploration",
   "execution_policy": {
     "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/execution_policy.json",
@@ -122,14 +122,62 @@
       "connection_profile_id"
     ],
     "rows": [
-      {"experiment_id": "ideal_acceptance_300mm_square_accelerator_port_h090_pre_pulse_n5000", "values": {"single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_square_v1", "connection_profile_id": "rf_octupole_to_single_reflection_oatof_direct_mating_gap_102p4mm"}},
-      {"experiment_id": "ideal_acceptance_300mm_square_accelerator_port_h150_pre_pulse_n5000", "values": {"single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_square_v1", "connection_profile_id": "rf_octupole_oatof_accelerator_port_100x150_gap_102p4mm"}},
-      {"experiment_id": "ideal_acceptance_300mm_square_accelerator_port_h200_pre_pulse_n5000", "values": {"single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_square_v1", "connection_profile_id": "rf_octupole_oatof_accelerator_port_100x200_gap_102p4mm"}},
-      {"experiment_id": "ideal_acceptance_300mm_square_accelerator_port_h250_pre_pulse_n5000", "values": {"single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_square_v1", "connection_profile_id": "rf_octupole_oatof_accelerator_port_100x250_gap_102p4mm"}},
-      {"experiment_id": "ideal_acceptance_300mm_cylindrical_accelerator_port_h090_pre_pulse_n5000", "values": {"single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_cylindrical_v1", "connection_profile_id": "rf_octupole_oatof_cylindrical_sideport_100x090_gap_102p4mm"}},
-      {"experiment_id": "ideal_acceptance_300mm_cylindrical_accelerator_port_h150_pre_pulse_n5000", "values": {"single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_cylindrical_v1", "connection_profile_id": "rf_octupole_oatof_cylindrical_sideport_100x150_gap_102p4mm"}},
-      {"experiment_id": "ideal_acceptance_300mm_cylindrical_accelerator_port_h200_pre_pulse_n5000", "values": {"single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_cylindrical_v1", "connection_profile_id": "rf_octupole_oatof_cylindrical_sideport_100x200_gap_102p4mm"}},
-      {"experiment_id": "ideal_acceptance_300mm_cylindrical_accelerator_port_h250_pre_pulse_n5000", "values": {"single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_cylindrical_v1", "connection_profile_id": "rf_octupole_oatof_cylindrical_sideport_100x250_gap_102p4mm"}}
+      {
+        "experiment_id": "ideal_acceptance_300mm_square_accelerator_port_h090_pre_pulse_n5000",
+        "values": {
+          "single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_square_v1",
+          "connection_profile_id": "rf_octupole_to_single_reflection_oatof_direct_mating_gap_102p4mm"
+        }
+      },
+      {
+        "experiment_id": "ideal_acceptance_300mm_square_accelerator_port_h150_pre_pulse_n5000",
+        "values": {
+          "single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_square_v1",
+          "connection_profile_id": "rf_octupole_oatof_accelerator_port_100x150_gap_102p4mm"
+        }
+      },
+      {
+        "experiment_id": "ideal_acceptance_300mm_square_accelerator_port_h200_pre_pulse_n5000",
+        "values": {
+          "single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_square_v1",
+          "connection_profile_id": "rf_octupole_oatof_accelerator_port_100x200_gap_102p4mm"
+        }
+      },
+      {
+        "experiment_id": "ideal_acceptance_300mm_square_accelerator_port_h250_pre_pulse_n5000",
+        "values": {
+          "single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_square_v1",
+          "connection_profile_id": "rf_octupole_oatof_accelerator_port_100x250_gap_102p4mm"
+        }
+      },
+      {
+        "experiment_id": "ideal_acceptance_300mm_cylindrical_accelerator_port_h090_pre_pulse_n5000",
+        "values": {
+          "single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_cylindrical_v1",
+          "connection_profile_id": "rf_octupole_oatof_cylindrical_sideport_100x090_gap_102p4mm"
+        }
+      },
+      {
+        "experiment_id": "ideal_acceptance_300mm_cylindrical_accelerator_port_h150_pre_pulse_n5000",
+        "values": {
+          "single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_cylindrical_v1",
+          "connection_profile_id": "rf_octupole_oatof_cylindrical_sideport_100x150_gap_102p4mm"
+        }
+      },
+      {
+        "experiment_id": "ideal_acceptance_300mm_cylindrical_accelerator_port_h200_pre_pulse_n5000",
+        "values": {
+          "single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_cylindrical_v1",
+          "connection_profile_id": "rf_octupole_oatof_cylindrical_sideport_100x200_gap_102p4mm"
+        }
+      },
+      {
+        "experiment_id": "ideal_acceptance_300mm_cylindrical_accelerator_port_h250_pre_pulse_n5000",
+        "values": {
+          "single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_cylindrical_v1",
+          "connection_profile_id": "rf_octupole_oatof_cylindrical_sideport_100x250_gap_102p4mm"
+        }
+      }
     ]
   }
 }

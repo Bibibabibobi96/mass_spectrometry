@@ -24,7 +24,7 @@
           [1.0, 0.0, 0.0],
           [0.0, 1.0, 0.0]
         ],
-        "translation_mm": [-147.9, 0.0, -18.42918680341103],
+        "translation_mm": [-148.4, 0.0, -18.42918680341103],
         "expected_gap_mm": 0.0,
         "position_tolerance_mm": 1e-9,
         "angular_tolerance_rad": 1e-12

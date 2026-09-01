@@ -23,7 +23,7 @@
     },
     "handoff_contract": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_handoff.json",
-      "sha256": "FED3E8BA8629155FF12C38764D683672D1CB6B241113DD22E9C6DC5617C3068F"
+      "sha256": "C3E8FDB0260C7901148A9DF756513D0135CD41619EFBE728840E6FC9CDFF5793"
     },
     "handoff_publication_contract": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/family_quadrupole_handoff_publication_contract.json",
@@ -35,7 +35,7 @@
     },
     "execution_policy_contract": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/execution_policy.json",
-      "sha256": "6FDB04133C0AB5F48BE51127296469802E8E31E04DF6FFB539DD96E0F54F4B35"
+      "sha256": "03EFC1B8DB418168C00872364FC8CCC5FF0C8DAF35C5A396C7687E935824BAF6"
     }
   }
 }

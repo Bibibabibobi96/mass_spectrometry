@@ -2,46 +2,27 @@
   "schema_version": 7,
   "role": "rf_multipole_oatof_experiment_campaign",
   "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
-  "campaign_id": "paper1_s1_gap0_aperture_height_pre_pulse_n5000",
+  "campaign_id": "ideal_acceptance_300mm_kinematic_envelope_axis_field_export_n5000",
   "status": "exploration",
-  "execution_policy": {
-    "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/execution_policy.json",
-    "sha256": "6FDB04133C0AB5F48BE51127296469802E8E31E04DF6FFB539DD96E0F54F4B35"
-  },
-  "claim_limit": "DETECTOR_BLIND_SOURCE_ONLY. Same ordered N=5000 terminal-octupole source population, zero connector gap, continuous frontend, frozen ballistic-centroid pulse snapshot, real frontend/accelerator field profiles, dt40 and tqual8 are held fixed. The sole physical variation is the rectangular transition-aperture downstream-z height: 0.9, 1.5, 2.0, or 2.5 mm; downstream-y width remains 1.0 mm. This pre-pulse screen may report mother-cohort port transmission, losses, and longitudinal phase space only. Detector, peak-width, resolution, optimization, Candidate, and Formal claims are prohibited.",
-  "pre_pulse_time_series_screening": {
-    "mode": "real_pa_rf_pre_pulse_time_series",
-    "active_scope": "pre_pulse_frontend_accelerator",
-    "relative_start_index": 0,
-    "relative_end_index": 0,
-    "rf_steps_per_period": 40,
-    "time_grid_profile_id": "ballistic_seed_rf40_single_snapshot_v1",
-    "expected_upstream_frequency_hz": 1100000.0,
-    "sample_count": 1,
-    "spatial_window_profile_id": "layout_resolved_axial_provisional_xy2_v1",
-    "pulse_disabled": true,
-    "terminate_at_window_end": true,
-    "resolution_claim_allowed": false,
-    "prohibited_outputs": ["detector_crossing", "resolution_metrics", "single_flight_spatial_six_panel"]
-  },
+  "claim_limit": "AXIS_FIELD_AND_N1_REACHABILITY_ONLY. This campaign evaluates the 300 mm three-zone Candidate with the explicitly declared 60 mm transverse physical bore, 20 rings, and directed fine numerical corridor. It exports frozen post-pulse total axial fields only. No particle-performance, aperture-scan, resolution, Candidate, or Formal conclusion is permitted until the matching N=1 trajectory validates the corridor and pulse transition.",
   "experiments": {
     "shared": {
       "execution_strategy": "simion_single_flight",
+      "single_flight_execution_mode": "program_axis_field_export",
       "single_flight_pa_cache_policy": "build_and_publish_if_missing",
-      "single_flight_layout_profile_id": "three_zone_t5_primary_shaping_rings_1p4_v1",
-      "single_flight_frontend_grid_profile_id": "frontend_isotropic_020_accelerator_overlay_z005",
+      "single_flight_frontend_grid_profile_id": "frontend_acceleration_xy025_z010_accelerator_two_local_xy025_z005_directed_corridor",
       "single_flight_oatof_numerical_profile_id": "oatof_formal_mesh",
       "single_flight_trajectory_quality_profile_id": "tqual_8",
       "single_flight_time_integration_profile_id": "dt40",
-      "single_flight_accelerator_field_profile_id": "accelerator_real_three_zone_pa_real_reflectron",
+      "single_flight_accelerator_field_profile_id": "accelerator_real_three_zone_dynamic_electrodes_pa_real_reflectron",
       "single_flight_source_materialization_profile_id": "canonical_real_octupole_n5000",
       "single_flight_three_zone_candidate": {
-        "path": "artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20260817_181000__build__python__three-zone-t5-candidate/results/three_zone_t5_simion_candidate_resolved.json",
-        "sha256": "CF744FD57957DF18D627F71EE2D2252A62420B343D7DD0AB1CEF493B876A7339"
+        "path": "artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20260828_220500__build__python__ideal-acceptance-300mm-grid010-candidate/results/ideal_acceptance_300mm_simion_candidate_resolved.json",
+        "sha256": "B25EEF7E5F37403BC9AC1CE5CAD8F3C80036C0E606912EC11BC7C9076BC7B77F"
       },
-      "architecture_generation_id": "three_zone_t5_frozen_primary_shaping_rings_1p4_v1",
+      "architecture_generation_id": "three_zone_ideal_acceptance_300mm_kinematic_envelope_v1",
       "source_profile_id": "canonical_real_octupole_n5000",
-      "field_overlay_id": "accelerator_overlay_z005",
+      "field_overlay_id": "accelerator_two_local_z005",
       "source_release_mode": "continuous_frontend",
       "source": {
         "authority_scope": "source_population",
@@ -57,7 +38,7 @@
       },
       "single_flight_pulse_schedule_policy": {"policy_id": "multipole_handoff_ballistic_centroid_v1", "offset_rf_periods": 0.0, "pulse_width_us": 1.0},
       "single_flight_population": {
-        "population_id": "paper1_s1_gap0_aperture_height_complete_ordered_entrance_n5000",
+        "population_id": "ideal_acceptance_300mm_aperture_height_complete_ordered_entrance_n5000",
         "population_mode": "continuous_injection_full_population",
         "source_authority": {"input_role": "particle_source", "table_binding": "source_contract_particle_source", "ordered_particle_id_encoding": "canonical_compact_json_integer_array_v1"},
         "execution_population": {"particle_count": 5000, "ordered_particle_id_sha256": "37DC4C2E241AB6B87C39D1AD1CE5CD4CC3E92B05F539AB8ECBB999F88DC98C33", "selection_algorithm": "all_rows_in_frozen_file_order", "selection_seed": 0},
@@ -66,12 +47,10 @@
         "postselection_policy": "prohibited"
       }
     },
-    "variation_axes": ["connection_profile_id"],
+    "variation_axes": ["single_flight_layout_profile_id", "connection_profile_id"],
     "rows": [
-      {"experiment_id": "paper1_s1_gap0_aperture_height090_pre_pulse_n5000", "values": {"connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_0mm"}},
-      {"experiment_id": "paper1_s1_gap0_aperture_height150_pre_pulse_n5000", "values": {"connection_profile_id": "rf_octupole_oatof_shield_terminal_aperture_100x150_direct_mating_gap_0mm"}},
-      {"experiment_id": "paper1_s1_gap0_aperture_height200_pre_pulse_n5000", "values": {"connection_profile_id": "rf_octupole_oatof_shield_terminal_aperture_100x200_direct_mating_gap_0mm"}},
-      {"experiment_id": "paper1_s1_gap0_aperture_height250_pre_pulse_n5000", "values": {"connection_profile_id": "rf_octupole_oatof_shield_terminal_aperture_100x250_direct_mating_gap_0mm"}}
+      {"experiment_id": "ideal_acceptance_300mm_square_kinematic_envelope_axis_field_export_n5000", "values": {"single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_square_kinematic_envelope_v1", "connection_profile_id": "rf_octupole_to_single_reflection_oatof_direct_mating_gap_102p4mm"}},
+      {"experiment_id": "ideal_acceptance_300mm_cylindrical_kinematic_envelope_axis_field_export_n5000", "values": {"single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_cylindrical_kinematic_envelope_v1", "connection_profile_id": "rf_octupole_oatof_cylindrical_sideport_100x090_gap_102p4mm"}}
     ]
   }
 }
