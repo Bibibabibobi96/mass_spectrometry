@@ -64,6 +64,7 @@ assert(#simion.wb.instances==5,'SIMION container must contain exactly five insta
 for index=1,5 do
   local item=simion.wb.instances[index]
   item.pa:load(pa_paths[index])
+  item.pa.filename=pa_paths[index]
   item:_debug_update_size()
   local transform=transforms[index] or ((index==1) and {
     x=coarse_origin[1],y=coarse_origin[2],z=coarse_origin[3],
