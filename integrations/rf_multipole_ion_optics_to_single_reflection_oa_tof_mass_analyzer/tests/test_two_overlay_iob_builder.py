@@ -35,7 +35,8 @@ class TwoOverlayIobBuilderContractTests(unittest.TestCase):
         ):
             self.assertIn(f"assert(arg[{argument}], '{role} is required')", self.source)
         self.assertIn("for index=1,6 do", self.source)
-        self.assertIn("item.pa:load(pa_paths[index])", self.source)
+        self.assertIn("item.pa.filename=pa_paths[index]", self.source)
+        self.assertIn("item.pa:load()", self.source)
 
     def test_requires_two_explicit_local_origins(self) -> None:
         for argument, label in (
@@ -72,7 +73,8 @@ class TwoOverlayIobBuilderContractTests(unittest.TestCase):
         self.assertIn("simion.wb:save(output)", self.source)
         self.assertNotIn("simion.wb:save(formal)", self.source)
         self.assertIn("for index=1,6 do", self.source)
-        self.assertIn("item.pa:load(pa_paths[index])", self.source)
+        self.assertIn("item.pa.filename=pa_paths[index]", self.source)
+        self.assertIn("item.pa:load()", self.source)
         self.assertIn("item.x,item.y,item.z=transform.x,transform.y,transform.z", self.source)
 
 
