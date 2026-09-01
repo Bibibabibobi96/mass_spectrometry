@@ -47,8 +47,8 @@ class TimeSeriesSuccessorTest(unittest.TestCase):
             "single_flight_population": {"execution_population": {"particle_count": 3, "ordered_particle_id_sha256": "IDS"}}}
         campaign = root / "campaign.json"
         campaign.write_text(json.dumps({"role": "rf_multipole_oatof_experiment_campaign", "integration_id": successor.INTEGRATION_ID,
-            "experiments": {"shared": shared, "variation_axes": ["connection_profile_id"], "rows": [{"sequence": 1,
-                "experiment_id": "consumer", "run_id": "20260827_200000__sim__cross__successor__n3", "overrides": {}}]}}))
+            "experiments": {"shared": shared, "variation_axes": ["connection_profile_id"], "rows": [{
+                "experiment_id": "consumer", "values": {}}]}}))
         return producer_manifest, materialized_manifest, campaign
 
     def test_accepts_exactly_bound_successor_from_shared_row_authoring(self) -> None:
@@ -63,7 +63,7 @@ class TimeSeriesSuccessorTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             producer, materialized, campaign = self._fixture(Path(directory))
             document = json.loads(campaign.read_text())
-            document["experiments"]["rows"][0]["overrides"] = {
+            document["experiments"]["rows"][0]["values"] = {
                 "connection_profile_id": "other"
             }
             campaign.write_text(json.dumps(document))
