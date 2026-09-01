@@ -198,9 +198,9 @@ class DomainSplitRunnerContractTests(unittest.TestCase):
     def test_domain_split_aperture_check_uses_the_authoritative_local_or_main_pa(self) -> None:
         self.assertIn("Domain-split aperture topology check requires exactly one authoritative aperture PA.", self.source)
         self.assertIn("{'accelerator_entrance_local'} else {'accelerator_main'}", self.source)
-        self.assertIn("$runtimeGeometryPaSuffix", self.source)
-        self.assertIn("$domainSplitFineBuild.geometry.pa_plus_solution_model", self.source)
-        self.assertIn(") { '.pa#' } else { '.pa0' }", self.source)
+        self.assertIn("Materialize this name-only alias locally", self.source)
+        self.assertIn("$geometryTemplate = Join-Path $runtimeDir ($prefix + '.pa#')", self.source)
+        self.assertIn("$geometryPa0 = Join-Path $runtimeDir ($prefix + '.pa0')", self.source)
         self.assertIn("$apertureTopologyPa = [string]$domainApertureProvider[0].pa0", self.source)
         self.assertIn("$apertureTopologyGeometry.accelerator_port_aperture.discretization", self.source)
         self.assertIn("-PaPath $apertureTopologyPa", self.source)

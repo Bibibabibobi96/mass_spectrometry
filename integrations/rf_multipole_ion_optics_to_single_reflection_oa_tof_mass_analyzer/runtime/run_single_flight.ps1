@@ -2723,6 +2723,20 @@ try {
       Copy-Item -LiteralPath $source.FullName -Destination $target -Force
       Set-RfMaterializedCacheFileWritable -Path $target
     }
+    # GEM conversion uses .pa# as the PA+ geometry template, whereas an IOB
+    # must load an ordinary .pa0.  Materialize this name-only alias locally:
+    # it is the same immutable geometry bytes and avoids rebuilding or
+    # duplicating every published cache generation merely for its consumer.
+    foreach ($map in Get-ChildItem -LiteralPath $CacheDirectory -Filter '*.pa+' -File) {
+      $prefix = $map.BaseName
+      $geometryTemplate = Join-Path $runtimeDir ($prefix + '.pa#')
+      $geometryPa0 = Join-Path $runtimeDir ($prefix + '.pa0')
+      if ((Test-Path -LiteralPath $geometryTemplate -PathType Leaf) -and
+          -not (Test-Path -LiteralPath $geometryPa0 -PathType Leaf)) {
+        Copy-Item -LiteralPath $geometryTemplate -Destination $geometryPa0
+        Set-RfMaterializedCacheFileWritable -Path $geometryPa0
+      }
+    }
   }
   $formalDir = Join-Path $workspaceRoot 'artifacts\projects\single_reflection_oa_tof_mass_analyzer\formal\simion'
   if (-not $prePulseReachableIob) {
@@ -2741,17 +2755,10 @@ try {
   foreach ($domainSplitFineBuild in $domainSplitRuntimeBuilds) {
     Copy-RfPaCacheFamilyToRuntime -CacheDirectory $domainSplitFineBuild.cache_dir `
       -Pattern ($domainSplitFineBuild.name + '.pa*')
-    # PA+ families retain the GEM-produced .pa# as their geometry-only base;
-    # their numbered arrays are the independently refined voltage modes.
-    # The aperture verifier only reads electrode topology, so use that real
-    # base member rather than inventing a nonexistent .pa0 alias.  Ordinary
-    # fast-adjust and zero-field families continue to expose .pa0.
-    $runtimeGeometryPaSuffix = if (
-      $null -ne $domainSplitFineBuild.geometry.PSObject.Properties['pa_plus_solution_model'] -and
-      $null -ne $domainSplitFineBuild.geometry.pa_plus_solution_model
-    ) { '.pa#' } else { '.pa0' }
+    # `Copy-RfPaCacheFamilyToRuntime` materializes the PA+ geometry alias as
+    # .pa0, so every consumer has one canonical loadable PA path.
     $domainSplitFineBuild.pa0 = Join-Path $runtimeDir (
-      $domainSplitFineBuild.name + $runtimeGeometryPaSuffix)
+      $domainSplitFineBuild.name + '.pa0')
   }
   $reflectronBuilderFrozen = $null
   $reflectronGemFrozen = $null
