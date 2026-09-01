@@ -284,6 +284,10 @@ function Resolve-RfOatofRuntimeBinding {
     [switch]$AllowImplementationContentShaMismatch
   )
   $repo = [IO.Path]::GetFullPath($RepoRoot)
+  $pythonExe = Join-Path $repo '.venv\Scripts\python.exe'
+  if (-not (Test-Path -LiteralPath $pythonExe -PathType Leaf)) {
+    $pythonExe = (Get-Command python -ErrorAction Stop).Source
+  }
   $resolvedPath = [IO.Path]::GetFullPath($ResolvedConnection)
   $bindingPath = [IO.Path]::GetFullPath($RuntimeBinding)
   $parentRunRoot = [IO.Path]::GetFullPath((Split-Path -Parent $resolvedPath))
@@ -638,7 +642,7 @@ function Resolve-RfOatofRuntimeBinding {
   }
   $countReceipt = Join-Path ([IO.Path]::GetTempPath()) ('rf_oatof_csv_count_{0}.json' -f [guid]::NewGuid())
   try {
-    & (Join-Path $repo '.venv\Scripts\python.exe') -m common.simion.particle_batching `
+    & $pythonExe -m common.simion.particle_batching `
       --count-csv $sourceParticleSource --output $countReceipt | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Python particle-source CSV count failed.' }
     $particleSourceRowCount = [int]((Get-Content -Raw -LiteralPath $countReceipt | ConvertFrom-Json).rows)
@@ -711,7 +715,7 @@ function Resolve-RfOatofRuntimeBinding {
   }
   $countReceipt = Join-Path ([IO.Path]::GetTempPath()) ('rf_oatof_csv_count_{0}.json' -f [guid]::NewGuid())
   try {
-    & (Join-Path $repo '.venv\Scripts\python.exe') -m common.simion.particle_batching `
+    & $pythonExe -m common.simion.particle_batching `
       --count-csv $sourceState `
       --event ([string]$sourcePopulationReceipt.selector.event) `
       --status ([string]$sourcePopulationReceipt.selector.status) `
