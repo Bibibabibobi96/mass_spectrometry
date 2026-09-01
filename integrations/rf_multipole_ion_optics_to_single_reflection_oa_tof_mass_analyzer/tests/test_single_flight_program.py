@@ -397,7 +397,7 @@ class SingleFlightProgramTests(unittest.TestCase):
             )
         self.assertIn("accelerator_entrance_aperture_local=6", program)
         self.assertIn(
-            'accelerator_entrance_aperture_local="accelerator_entrance_local.pa+"',
+            'accelerator_entrance_aperture_local="accelerator_entrance_local.pa0"',
             program,
         )
         self.assertNotIn("accelerator_intermediate_overlay=6", program)
