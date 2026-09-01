@@ -5,12 +5,16 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from copy import deepcopy
 from pathlib import Path
 
 from common.contracts.file_identity import file_sha256
 from common.contracts.machine_contracts import ContractError
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.author_full_flight_campaign_from_pre_pulse import (
     author_campaign,
+)
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.prepare import (
+    expand_pre_pulse_campaign_profile,
 )
 
 
@@ -40,35 +44,23 @@ def _run_record(path: Path, run_dir: Path) -> dict[str, object]:
 
 class AuthorFullFlightCampaignFromPrePulseTests(unittest.TestCase):
     def _source_campaign(self, root: Path, *, continuous: bool = True) -> Path:
-        campaign = json.loads(SOURCE_CAMPAIGN.read_text(encoding="utf-8"))
-        campaign.pop("pre_pulse_campaign_profile_id", None)
+        campaign = expand_pre_pulse_campaign_profile(
+            json.loads(SOURCE_CAMPAIGN.read_text(encoding="utf-8"))
+        )
         campaign["experiments"]["shared"]["source_release_mode"] = (
             "continuous_frontend" if continuous else "pre_pulse_restart"
         )
-        if continuous:
-            campaign["experiments"]["shared"]["single_flight_population"] = {
-                "population_mode": "continuous_injection_full_population",
-                "postselection_policy": "prohibited",
-                "execution_population": {
-                    "particle_count": 5000,
-                    "ordered_particle_id_sha256": "37DC4C2E241AB6B87C39D1AD1CE5CD4CC3E92B05F539AB8ECBB999F88DC98C33",
-                },
-                "denominators": {
-                    "population_count": 5000, "eligible_population_count": 5000,
-                },
-                "source_authority": {
-                    "table_binding": "source_contract_particle_source",
-                    "particle_count": 5000, "table": {"sha256": "B" * 64},
-                },
-            }
-            campaign["pre_pulse_time_series_screening"] = {
-                "time_grid_profile_id": "fixture_time_grid",
-                "spatial_window_profile_id": "fixture_spatial_window",
-            }
-            campaign["experiments"]["shared"]["single_flight_pulse_schedule_policy"] = {}
         path = root / "source.json"
         path.write_text(json.dumps(campaign), encoding="utf-8")
         return path
+
+    def _full_mother_population(self) -> dict[str, object]:
+        """Return the active complete-cohort profile, not a hand-made subset."""
+
+        campaign = expand_pre_pulse_campaign_profile(
+            json.loads(SOURCE_CAMPAIGN.read_text(encoding="utf-8"))
+        )
+        return deepcopy(campaign["experiments"]["shared"]["single_flight_population"])
 
     def _parent(
         self, workspace: Path, *, experiment_id: str, run_id: str,
@@ -84,7 +76,9 @@ class AuthorFullFlightCampaignFromPrePulseTests(unittest.TestCase):
         population = inputs / "resolved_population_contract.json"
         mother_source = inputs / "mother_particle_source.csv"
         source_sha = "B" * 64
-        ordered_sha = "37DC4C2E241AB6B87C39D1AD1CE5CD4CC3E92B05F539AB8ECBB999F88DC98C33"
+        shared_population = self._full_mother_population()
+        execution_population = shared_population["execution_population"]
+        source_authority = shared_population["source_authority"]
         mother_source.write_text(
             "particle_id\n" + "".join(f"{particle_id}\n" for particle_id in range(1, 5001)),
             encoding="utf-8",
@@ -92,23 +86,17 @@ class AuthorFullFlightCampaignFromPrePulseTests(unittest.TestCase):
         population.write_text(json.dumps({
             "role": "rf_oatof_resolved_population_contract",
             "experiment_id": experiment_id,
-            "population_mode": "continuous_injection_full_population",
+            "population_mode": shared_population["population_mode"],
             "source_release_mode": "continuous_frontend",
             "postselection_policy": "prohibited",
             "single_flight_execution": {"is_pre_pulse_restart": False},
             "source_authority": {
-                "table_binding": "source_contract_particle_source",
+                **source_authority,
                 "particle_count": 5000,
                 "table": {"sha256": source_sha},
             },
-            "execution_population": {
-                "particle_count": 5000,
-                "ordered_particle_id_sha256": ordered_sha,
-                "selection_algorithm": "all_rows_in_frozen_file_order",
-            },
-            "denominators": {
-                "population_count": 5000, "eligible_population_count": 5000,
-            },
+            "execution_population": execution_population,
+            "denominators": shared_population["denominators"],
         }), encoding="utf-8")
         # The fixture uses the actual file identity in both the resolved
         # population and screening receipt, just as a real producer does.
@@ -127,7 +115,7 @@ class AuthorFullFlightCampaignFromPrePulseTests(unittest.TestCase):
                 "experiment_id": experiment_id,
                 "resolved_population_contract_sha256": file_sha256(population),
                 "mother_particle_source_sha256": source_sha,
-                "ordered_particle_id_sha256": ordered_sha,
+                "ordered_particle_id_sha256": execution_population["ordered_particle_id_sha256"],
             },
             "sample_census": [{"sample_index": 1, "alive_count": 3}],
             "terminal_census": {"window_complete": {"count": 3}},
@@ -186,7 +174,7 @@ class AuthorFullFlightCampaignFromPrePulseTests(unittest.TestCase):
             self.assertEqual(shared["source_release_mode"], "continuous_frontend")
             self.assertEqual(
                 shared["single_flight_population"]["population_mode"],
-                "continuous_injection_full_population",
+                "independent_spatial_velocity_ion_source_snapshot",
             )
             self.assertEqual(shared["single_flight_population"]["postselection_policy"], "prohibited")
             self.assertIn("pulse_timing_transition_authority", result["experiments"]["variation_axes"])

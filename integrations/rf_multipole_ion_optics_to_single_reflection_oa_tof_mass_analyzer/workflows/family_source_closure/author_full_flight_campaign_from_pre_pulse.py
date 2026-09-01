@@ -30,6 +30,16 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 INTEGRATION_ID = "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
 TRANSITION_NAME = "pulse_timing_transition.json"
 REQUIRED_CACHE_MISS_MODE = "auto_detector_blind_discovery_and_confirmation_v1"
+FULL_MOTHER_POPULATION_IDENTITIES = {
+    (
+        "continuous_injection_full_population",
+        "source_contract_particle_source",
+    ),
+    (
+        "independent_spatial_velocity_ion_source_snapshot",
+        "prepared_materialized_ion_source_volume",
+    ),
+}
 
 
 def _load_object(path: Path, label: str) -> dict[str, Any]:
@@ -54,9 +64,14 @@ def _require_continuous_full_population(shared: dict[str, Any]) -> None:
     if shared.get("source_release_mode") != "continuous_frontend":
         raise ContractError("pre-pulse source_release_mode is not continuous_frontend")
     population = shared.get("single_flight_population")
-    if not isinstance(population, dict) or population.get("population_mode") != (
-        "continuous_injection_full_population"
-    ):
+    if not isinstance(population, dict):
+        raise ContractError("pre-pulse population is not a continuous full population")
+    authority = population.get("source_authority")
+    identity = (
+        population.get("population_mode"),
+        authority.get("table_binding") if isinstance(authority, dict) else None,
+    )
+    if identity not in FULL_MOTHER_POPULATION_IDENTITIES:
         raise ContractError("pre-pulse population is not a continuous full population")
     execution = population.get("execution_population")
     if not isinstance(execution, dict) or int(execution.get("particle_count", 0)) < 1:
@@ -196,7 +211,9 @@ def _validate_screening_producer(
     if (
         population.get("role") != "rf_oatof_resolved_population_contract"
         or population.get("experiment_id") != experiment_id
-        or population.get("population_mode") != "continuous_injection_full_population"
+        or (
+            population.get("population_mode"), authority.get("table_binding"),
+        ) not in FULL_MOTHER_POPULATION_IDENTITIES
         or population.get("source_release_mode") != "continuous_frontend"
         or population.get("postselection_policy") != "prohibited"
         or population.get("single_flight_execution", {}).get("is_pre_pulse_restart") is not False
