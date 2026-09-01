@@ -44,6 +44,12 @@ class AuthorFullFlightCampaignFromPrePulseTests(unittest.TestCase):
         campaign["experiments"]["shared"]["source_release_mode"] = (
             "continuous_frontend" if continuous else "pre_pulse_restart"
         )
+        if continuous:
+            campaign["experiments"]["shared"]["single_flight_population"] = {
+                "population_mode": "continuous_injection_full_population",
+                "postselection_policy": "prohibited",
+                "execution_population": {"particle_count": 5000},
+            }
         path = root / "source.json"
         path.write_text(json.dumps(campaign), encoding="utf-8")
         return path
