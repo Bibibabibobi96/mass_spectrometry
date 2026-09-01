@@ -76,10 +76,19 @@ foreach ($pattern in $rootDebrisPatterns) {
 
 $tracked = @(& git -C $repoRoot ls-files)
 if ($LASTEXITCODE -ne 0) { throw 'git ls-files failed.' }
+$sharedIobSeedPrefix = 'common/simion/assets/iob_instance_seeds/'
+$sharedIobSeedFiles = @(
+  'one_instance_seed.iob','two_instance_seed.iob','three_instance_seed.iob',
+  'four_instance_seed.iob','five_instance_seed.iob','six_instance_seed.iob',
+  'seven_instance_seed.iob','eight_instance_seed.iob','nine_instance_seed.iob',
+  'ten_instance_seed.iob','iob_seed_placeholder.pa0'
+) | ForEach-Object { "$sharedIobSeedPrefix$_" }
 foreach ($path in $tracked) {
   $normalized = $path.Replace('\','/')
+  $isSharedIobSeed = $normalized -in $sharedIobSeedFiles
   if ($normalized -match '(^|/)artifacts/' -or
-      $normalized -match '(?i)\.(mph|iob|pa(?:\d+|#)?|sldprt|sldasm|step|stp|dmp|log)$') {
+      ((-not $isSharedIobSeed) -and
+       $normalized -match '(?i)\.(mph|iob|pa(?:\d+|#)?|sldprt|sldasm|step|stp|dmp|log)$')) {
     $errors.Add("generated/binary artifact is tracked by Git: $path")
   }
 }

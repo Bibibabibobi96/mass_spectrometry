@@ -190,6 +190,15 @@ class LightweightGateIntegrationTests(unittest.TestCase):
         self.assertNotIn('REPO_ROOT / ".tmp"', adapter_test)
         self.assertNotIn('REPO_ROOT / ".tmp"', family_test)
 
+    def test_hygiene_allows_only_canonical_shared_iob_seed_binaries(self):
+        hygiene = (
+            self.repo_root / "common" / "verify_repository_hygiene.ps1"
+        ).read_text(encoding="utf-8")
+        self.assertIn("$sharedIobSeedPrefix", hygiene)
+        self.assertIn("iob_seed_placeholder.pa0", hygiene)
+        self.assertIn("ten_instance_seed.iob", hygiene)
+        self.assertIn("-not $isSharedIobSeed", hygiene)
+
     def test_hygiene_accepts_a_standalone_ci_checkout(self):
         hygiene = (
             self.repo_root / "common" / "verify_repository_hygiene.ps1"
