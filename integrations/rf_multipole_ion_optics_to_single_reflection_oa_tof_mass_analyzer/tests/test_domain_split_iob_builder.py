@@ -27,7 +27,7 @@ class DomainSplitIobBuilderTests(unittest.TestCase):
             "build_single_flight_two_overlay_iob.lua",
         ):
             source = RUNTIME.joinpath(name).read_text(encoding="utf-8")
-            self.assertIn("item.filename=pa_paths[index]\n  item.pa:load()", source)
+            self.assertIn("item.pa.filename=pa_paths[index]\n  item.pa:load()", source)
             self.assertNotIn("item.pa:load(pa_paths[index])", source)
 
     def test_continuous_full_flight_has_seven_consecutive_physical_slots(self) -> None:

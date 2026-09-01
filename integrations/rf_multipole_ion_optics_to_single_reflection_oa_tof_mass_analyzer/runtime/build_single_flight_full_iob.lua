@@ -56,7 +56,7 @@ assert(#simion.wb.instances==7, 'full-flight container must contain exactly seve
 for index=1,7 do
   local item=simion.wb.instances[index]
   local transform=assert(transforms[index], 'full-flight transform is missing')
-  item.filename=pa_paths[index]
+  item.pa.filename=pa_paths[index]
   item.pa:load()
   item:_debug_update_size()
   item.x,item.y,item.z=transform.x,transform.y,transform.z
