@@ -1968,11 +1968,14 @@ try {
             -MaximumNewArtifactBytes $cachePublicationAdditionalArtifactBytes
           $paCacheDispositions[$fineDefinition.disposition_key].disposition = 'built_and_published'
         } catch {
-          # Publication may fail only because capacity reconciliation needs a
-          # warning/retry.  Preserve an identity-marked, manifest-complete
-          # fine family so the next run resumes it rather than rebuilding it.
+          # Preserve identity-bound stage checkpoints as well as a completed
+          # publication candidate.  The basis builder writes a receipt only
+          # after SIMION has saved that individual PA member, so a subsequent
+          # run safely resumes the remaining bases rather than discarding
+          # completed solver work after an interruption.
           $recoverableFineStaging = (Test-Path -LiteralPath (Join-Path $fineBuildDir '.rf_cache_staging.json') -PathType Leaf) -and
-            (Test-Path -LiteralPath (Join-Path $fineBuildDir 'cache_manifest.json') -PathType Leaf)
+            ((Test-Path -LiteralPath (Join-Path $fineBuildDir 'cache_manifest.json') -PathType Leaf) -or
+              @((Get-ChildItem -LiteralPath $fineBuildDir -Filter 'basis_build.json.basis_*.complete' -File -ErrorAction SilentlyContinue)).Count -gt 0)
           if ((Test-Path -LiteralPath $fineBuildDir) -and -not $recoverableFineStaging) {
             Remove-Item -LiteralPath $fineBuildDir -Recurse -Force
           }

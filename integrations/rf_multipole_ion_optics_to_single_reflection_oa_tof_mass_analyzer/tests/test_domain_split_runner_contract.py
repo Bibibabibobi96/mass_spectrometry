@@ -303,6 +303,19 @@ class DomainSplitRunnerContractTests(unittest.TestCase):
         self.assertNotIn("boundary_readback", builder)
         self.assertNotIn("potential(ix,iy,iz)", builder)
 
+    def test_upstream_basis_builder_checkpoints_each_saved_basis_for_safe_resume(self) -> None:
+        builder = RUNNER.with_name("build_accelerator_overlay_basis.lua").read_text(encoding="utf-8")
+        self.assertIn(".basis_", builder)
+        self.assertIn("has_receipt", builder)
+        self.assertIn("write_receipt(basis)", builder)
+        self.assertLess(builder.index("fine:save()"), builder.index("write_receipt(basis)"))
+        self.assertIn("resumed=true", builder)
+        self.assertIn("interrupted basis family is missing a materialized member", builder)
+
+    def test_interrupted_fine_cache_staging_keeps_per_basis_checkpoints(self) -> None:
+        self.assertIn("basis_build.json.basis_*.complete", self.source)
+        self.assertIn("completed solver work after an interruption", self.source)
+
     def test_semantically_equivalent_boundary_builder_cache_is_reused(self) -> None:
         self.assertIn("function Resolve-RfSemanticallyEquivalentFineCache", self.source)
         self.assertIn("8236707F574393E796DC4CF0A75C4CA79C13AFD86992C75C0F8199551084B73D", self.source)

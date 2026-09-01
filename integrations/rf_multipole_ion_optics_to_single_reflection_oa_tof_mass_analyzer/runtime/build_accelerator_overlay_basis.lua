@@ -29,19 +29,61 @@ local function indexed(path,index)
   return path:gsub('#$',tostring(index))
 end
 
+-- A basis is a durable unit of work: it is safe to reuse only after SIMION
+-- has saved the full array and this small receipt has been written.  The
+-- cache staging directory is identity-bound by the caller, so receipts from a
+-- different geometry, coarse boundary family, or builder cannot be reused.
+local function receipt_path(index)
+  return report_path .. '.basis_' .. tostring(index) .. '.complete'
+end
+local function exists(path)
+  local file=io.open(path,'rb')
+  if file==nil then return false end
+  file:close()
+  return true
+end
+local function write_receipt(index)
+  local receipt=assert(io.open(receipt_path(index),'w'))
+  receipt:write('complete\n')
+  receipt:close()
+end
+
 -- Create every paN without doing a real Refine.  This is the same supported
 -- technique used by SIMION's bundled resistive/lens2_pa0_build.lua example.
-simion.pas:close()
-local initializer=simion.pas:open(fine_pa_sharp)
-initializer:refine{}
-assert(initializer.nx>=3 and initializer.ny>=3 and initializer.nz>=3,
-  'accelerator-overlay PA must have at least three points on every axis')
-simion.pas:close()
+local has_receipt=false
+for basis=0,maximum_electrode do
+  if exists(receipt_path(basis)) then has_receipt=true break end
+end
+if not has_receipt then
+  simion.pas:close()
+  local initializer=simion.pas:open(fine_pa_sharp)
+  initializer:refine{}
+  assert(initializer.nx>=3 and initializer.ny>=3 and initializer.nz>=3,
+    'accelerator-overlay PA must have at least three points on every axis')
+  simion.pas:close()
+else
+  -- The initial fast-adjust materialization creates every family member in
+  -- one operation.  Do not invoke it again: SIMION would overwrite already
+  -- coupled bases before their checkpoint receipts could protect them.
+  for basis=0,maximum_electrode do
+    assert(exists(indexed(fine_pa_sharp,basis)),
+      'interrupted basis family is missing a materialized member')
+  end
+end
 
 local total_boundary_points=0
 for basis=0,maximum_electrode do
   local coarse_path=indexed(coarse_pa0,basis)
   local fine_path=indexed(fine_pa_sharp,basis)
+  if exists(receipt_path(basis)) then
+    assert(exists(fine_path),'completed basis receipt lacks its PA array')
+    local resumed=simion.pas:open(fine_path)
+    local count=2*resumed.ny*resumed.nz + 2*(resumed.nx-2)*resumed.nz +
+      2*(resumed.nx-2)*(resumed.ny-2)
+    simion.pas:close()
+    total_boundary_points=total_boundary_points+count
+    print(string.format('OVERLAY_BASIS: basis=%d resumed=true fine=%s',basis,fine_path))
+  else
   simion.pas:close()
   local coarse=simion.pas:open(coarse_path)
   local fine=simion.pas:open(fine_path)
@@ -79,10 +121,12 @@ for basis=0,maximum_electrode do
     2*(fine.nx-2)*(fine.ny-2)
   assert(count==expected, 'disjoint accelerator-overlay boundary traversal is incomplete')
   fine:save()
+  write_receipt(basis)
   total_boundary_points=total_boundary_points+count
   print(string.format(
     'OVERLAY_BASIS: basis=%d boundary_points=%d coarse=%s fine=%s',
     basis,count,coarse_path,fine_path))
+  end
 end
 simion.pas:close()
 
