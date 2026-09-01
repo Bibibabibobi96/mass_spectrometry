@@ -591,7 +591,8 @@ function Assert-RfArtifactCapacityBeforeCachePublication {
     [Parameter(Mandatory)][string]$StagingDirectory,
     [string[]]$ProtectedCacheKeys = @(),
     [long]$KnownMeasuredBytes = -1,
-    [long]$MaximumNewArtifactBytes = -1
+    [long]$MaximumNewArtifactBytes = -1,
+    [double]$MinimumFreeGiB = 500.0
   )
   # The live staging directory is protected from the cleanup scan.  It is
   # already below artifact-root, so its bytes are present in the gate's
@@ -609,6 +610,7 @@ function Assert-RfArtifactCapacityBeforeCachePublication {
       $capacityArguments = @(
         '-m','common.contracts.reconcile_artifact_capacity',
         '--artifact-root',(Join-Path $WorkspaceRoot 'artifacts'),'--target-gib','500',
+        '--minimum-free-gib',([string]$MinimumFreeGiB),
         '--protect-path',$StagingDirectory,'--apply'
       )
       if (($KnownMeasuredBytes -ge 0) -xor ($MaximumNewArtifactBytes -ge 0)) {
@@ -694,7 +696,8 @@ function Publish-RfVerifiedCacheEntry {
     [string[]]$ProtectedCacheKeys = @(),
     [hashtable]$ArtifactCapacityState = $null,
     [long]$KnownMeasuredBytes = -1,
-    [long]$MaximumNewArtifactBytes = -1
+    [long]$MaximumNewArtifactBytes = -1,
+    [double]$MinimumFreeGiB = 500.0
   )
   $root = [IO.Path]::GetFullPath($CacheRoot).TrimEnd([IO.Path]::DirectorySeparatorChar)
   $staging = [IO.Path]::GetFullPath($StagingDirectory)
@@ -745,7 +748,8 @@ function Publish-RfVerifiedCacheEntry {
   $capacityReceipt = Assert-RfArtifactCapacityBeforeCachePublication -Python $Python `
     -RepoRoot $RepoRoot -WorkspaceRoot $WorkspaceRoot -StagingDirectory $staging `
     -ProtectedCacheKeys $ProtectedCacheKeys `
-    -KnownMeasuredBytes $knownMeasuredForPublication -MaximumNewArtifactBytes $MaximumNewArtifactBytes
+    -KnownMeasuredBytes $knownMeasuredForPublication -MaximumNewArtifactBytes $MaximumNewArtifactBytes `
+    -MinimumFreeGiB $MinimumFreeGiB
   # Retain the identity marker until all fallible publication gates have
   # completed.  A capacity warning/failure then leaves a complete, reusable
   # staging family rather than forcing its field solve to be repeated.

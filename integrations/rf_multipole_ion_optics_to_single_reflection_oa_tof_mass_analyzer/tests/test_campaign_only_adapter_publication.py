@@ -368,7 +368,7 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
                 f"-RepoRoot '{REPO_ROOT}' -WorkspaceRoot '{workspace}' "
                 f"-ProjectId '{INTEGRATION_ID}' -CacheRoot '{cache_root}' "
                 "-CacheKey $key -Role $identity.role -Identity $identity "
-                "-StagingDirectory $staging -ProviderRunId fixture "
+                "-StagingDirectory $staging -ProviderRunId fixture -MinimumFreeGiB 0 "
                 "-ArtifactCapacityState $capacity -MaximumNewArtifactBytes 1048576; "
                 "if($capacity.known_measured_bytes-le 0){throw 'capacity state was not advanced'}; "
                 "Write-Output $published"
@@ -546,7 +546,7 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
                 f"-RepoRoot '{REPO_ROOT}' -WorkspaceRoot '{workspace}' "
                 f"-ProjectId '{INTEGRATION_ID}' -CacheRoot '{cache_root}' "
                 "-CacheKey $key -Role $identity.role -Identity $identity "
-                "-StagingDirectory $staging -ProviderRunId fixture | Out-Null"
+                "-StagingDirectory $staging -ProviderRunId fixture -MinimumFreeGiB 0 | Out-Null"
             )
             subprocess.run(["pwsh", "-NoProfile", "-Command", publish], cwd=REPO_ROOT,
                            check=True, capture_output=True, text=True, timeout=120)
@@ -643,7 +643,7 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
                     f"-RepoRoot '{REPO_ROOT}' -WorkspaceRoot '{workspace}' "
                     f"-ProjectId '{INTEGRATION_ID}' -CacheRoot '{cache_root}' "
                     "-CacheKey $key -Role $identity.role -Identity $identity "
-                    f"-StagingDirectory $staging -ProviderRunId '{label}' | Out-Null"
+                    f"-StagingDirectory $staging -ProviderRunId '{label}' -MinimumFreeGiB 0 | Out-Null"
                 )
                 subprocess.run(["pwsh", "-NoProfile", "-Command", command], cwd=REPO_ROOT,
                                check=True, capture_output=True, text=True, timeout=120)
@@ -692,7 +692,7 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
                     f"-RepoRoot '{REPO_ROOT}' -WorkspaceRoot '{workspace}' "
                     f"-ProjectId '{INTEGRATION_ID}' -CacheRoot '{cache_root}' "
                     "-CacheKey $key -Role $identity.role -Identity $identity "
-                    f"-StagingDirectory $staging -ProviderRunId '{provider}' | Out-Null"
+                    f"-StagingDirectory $staging -ProviderRunId '{provider}' -MinimumFreeGiB 0 | Out-Null"
                 )
                 subprocess.run(["pwsh", "-NoProfile", "-Command", command], cwd=REPO_ROOT,
                                check=True, capture_output=True, text=True, timeout=120)
@@ -833,7 +833,7 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
                     f"-RepoRoot '{REPO_ROOT}' -WorkspaceRoot '{workspace}' "
                     f"-ProjectId '{INTEGRATION_ID}' -CacheRoot '{cache_root}' "
                     "-CacheKey $key -Role $identity.role -Identity $identity "
-                    f"-StagingDirectory $staging -ProviderRunId '{label}' | Out-Null "
+                    f"-StagingDirectory $staging -ProviderRunId '{label}' -MinimumFreeGiB 0 | Out-Null "
                     "} "
                     "} finally { Exit-RfCacheKeyLock -Mutex $lock }"
                 )
