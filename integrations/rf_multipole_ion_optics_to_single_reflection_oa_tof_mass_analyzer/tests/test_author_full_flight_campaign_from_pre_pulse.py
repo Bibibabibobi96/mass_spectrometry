@@ -41,6 +41,7 @@ def _run_record(path: Path, run_dir: Path) -> dict[str, object]:
 class AuthorFullFlightCampaignFromPrePulseTests(unittest.TestCase):
     def _source_campaign(self, root: Path, *, continuous: bool = True) -> Path:
         campaign = json.loads(SOURCE_CAMPAIGN.read_text(encoding="utf-8"))
+        campaign.pop("pre_pulse_campaign_profile_id", None)
         campaign["experiments"]["shared"]["source_release_mode"] = (
             "continuous_frontend" if continuous else "pre_pulse_restart"
         )
@@ -48,8 +49,23 @@ class AuthorFullFlightCampaignFromPrePulseTests(unittest.TestCase):
             campaign["experiments"]["shared"]["single_flight_population"] = {
                 "population_mode": "continuous_injection_full_population",
                 "postselection_policy": "prohibited",
-                "execution_population": {"particle_count": 5000},
+                "execution_population": {
+                    "particle_count": 5000,
+                    "ordered_particle_id_sha256": "37DC4C2E241AB6B87C39D1AD1CE5CD4CC3E92B05F539AB8ECBB999F88DC98C33",
+                },
+                "denominators": {
+                    "population_count": 5000, "eligible_population_count": 5000,
+                },
+                "source_authority": {
+                    "table_binding": "source_contract_particle_source",
+                    "particle_count": 5000, "table": {"sha256": "B" * 64},
+                },
             }
+            campaign["pre_pulse_time_series_screening"] = {
+                "time_grid_profile_id": "fixture_time_grid",
+                "spatial_window_profile_id": "fixture_spatial_window",
+            }
+            campaign["experiments"]["shared"]["single_flight_pulse_schedule_policy"] = {}
         path = root / "source.json"
         path.write_text(json.dumps(campaign), encoding="utf-8")
         return path
