@@ -272,11 +272,40 @@ if ($FinalizeOnly) {
   $campaignPath = Join-Path $RepoRoot (([string]$campaignArgument[0]).Substring('campaign_path='.Length))
   Push-Location -LiteralPath $RepoRoot
   try {
-    & $PythonExe -m (
-      'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.' +
-      'workflows.family_source_closure.recover_completed_single_flight'
-    ) --repo-root $RepoRoot --campaign $campaignPath --failed-parent-run-dir $sourceParentRoot `
-      --recovery-parent-run-dir $recoveryParentRoot
+    $hasPrePulseTimeSeries = @($plan.execution_steps[0].arguments | Where-Object {
+      [string]$_ -like 'pre_pulse_time_series_contract_filename=*'
+    }).Count -eq 1
+    if ($hasPrePulseTimeSeries) {
+      # The successful child already contains the detector-blind states and
+      # screening receipt. Rebuild neither trajectories nor full-flight-only
+      # diagnostics; publish a manifest-bound pre-pulse replay instead.
+      $sourceReceipt = Get-Content -LiteralPath (Join-Path $sourceParentRoot `
+        'execution_receipt.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+      $sourceRunId = Split-Path -Leaf $sourceParentRoot
+      $retrySuffix = if ($RunId -match '(__r\d{2})$') { $Matches[1] } else { '' }
+      $prePulseReplayRunId = (
+        $sourceRunId.Substring(0, 15) +
+        '__analysis__python__pre-pulse-selection-replay__n' +
+        [int]$sourceReceipt.launched_particle_count + $retrySuffix
+      )
+      $prePulseReplayRoot = Join-Path $workspaceRoot (
+        'artifacts\projects\rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer\runs\' +
+        $prePulseReplayRunId
+      )
+      & $PythonExe -m (
+        'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.' +
+        'workflows.family_source_closure.publish_run'
+      ) --repo-root $RepoRoot --integration-run-dir $prePulseReplayRoot `
+        --resolved-connection $ResolvedConnection --composition-plan $CompositionPlan `
+        --resolved-engineering-budget (Join-Path $sourceParentRoot 'resolved_engineering_budget.json') `
+        --pre-pulse-selection-replay-source-parent-manifest (Join-Path $sourceParentRoot 'run_manifest.json')
+    } else {
+      & $PythonExe -m (
+        'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.' +
+        'workflows.family_source_closure.recover_completed_single_flight'
+      ) --repo-root $RepoRoot --campaign $campaignPath --failed-parent-run-dir $sourceParentRoot `
+        --recovery-parent-run-dir $recoveryParentRoot
+    }
     if ($LASTEXITCODE -ne 0) {
       throw 'FinalizeOnly completed-single-flight recovery failed.'
     }

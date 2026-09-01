@@ -10,7 +10,8 @@ param(
   [switch]$PrepareOnly,
   [switch]$Exploration,
   [switch]$SolverAuthorized,
-  [switch]$FinalizeOnly
+  [switch]$FinalizeOnly,
+  [string]$RecoveryRunId = ''
 )
 
 Set-StrictMode -Version Latest
@@ -32,6 +33,12 @@ if ($AllExperiments -and -not [string]::IsNullOrWhiteSpace($ExperimentId)) {
 }
 if ($AllExperiments -and -not [string]::IsNullOrWhiteSpace($SemanticDiffAgainst)) {
   throw 'AllExperiments and SemanticDiffAgainst are mutually exclusive.'
+}
+if ($AllExperiments -and -not [string]::IsNullOrWhiteSpace($RecoveryRunId)) {
+  throw 'AllExperiments and RecoveryRunId are mutually exclusive.'
+}
+if (-not [string]::IsNullOrWhiteSpace($RecoveryRunId) -and -not $FinalizeOnly) {
+  throw 'RecoveryRunId is accepted only for FinalizeOnly.'
 }
 if (-not $AllExperiments -and [string]::IsNullOrWhiteSpace($ExperimentId)) {
   throw 'ExperimentId is required unless AllExperiments is selected.'
@@ -198,6 +205,12 @@ if ($authoredRunId -eq 'execution_pending') {
   }
   $campaignRunId = (Get-Date -Format 'yyyyMMdd_HHmmss') +
     '__sim__cross__' + $experimentSlug + '__n' + $particleCount
+}
+if ($FinalizeOnly -and -not [string]::IsNullOrWhiteSpace($RecoveryRunId)) {
+  # Dynamic authoring rows receive their run ID only at execution time. A
+  # publish-only recovery must therefore name the immutable failed parent,
+  # rather than synthesizing a new timestamp and missing its evidence.
+  $campaignRunId = $RecoveryRunId
 }
 & $PythonExe -m common.contracts.artifact_naming run $campaignRunId
 if ($LASTEXITCODE -ne 0) {

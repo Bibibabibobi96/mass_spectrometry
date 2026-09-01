@@ -89,16 +89,19 @@ def _verify_manifest(
     return manifest
 
 
-def _find_failed_child(parent_dir: Path, plan: dict[str, Any], resolved: dict[str, Any]) -> Path:
-    arguments = _arguments(plan)
-    try:
-        count_text = arguments.get("pre_pulse_source_state_count")
-        if count_text is None:
-            count_text = arguments["terminal_handoff_continued_particle_count"]
-        particle_count = int(count_text)
-        stamp = parent_dir.name[:15]
-    except (KeyError, ValueError) as exc:
-        raise ContractError("failed parent cannot derive its single-flight child identity") from exc
+def _find_failed_child(
+    parent_dir: Path, resolved: dict[str, Any], launched_particle_count: Any,
+) -> Path:
+    """Locate the sibling SIMION run from the parent's frozen population count."""
+
+    if (
+        isinstance(launched_particle_count, bool)
+        or not isinstance(launched_particle_count, int)
+        or launched_particle_count < 1
+    ):
+        raise ContractError("failed parent launched particle count is invalid")
+    particle_count = launched_particle_count
+    stamp = parent_dir.name[:15]
     expected = f"{stamp}__sim__simion__rf-oatof-single-flight-gap{_gap_label(resolved['connector']['length_mm'])}__n{particle_count}"
     candidates = [
         parent_dir.parent / (expected + "__r01")
@@ -251,7 +254,10 @@ def recover(*, repo_root: Path, campaign_path: Path, failed_parent_dir: Path, re
         raise ContractError("failed parent frozen campaign identity differs")
     if parent_summary.get("experiment_id") != args["experiment_id"]:
         raise ContractError("failed parent summary experiment identity differs")
-    child_dir = _find_failed_child(failed_parent_dir, plan, resolved)
+    budget = _load(failed_parent_dir / "resolved_engineering_budget.json")
+    child_dir = _find_failed_child(
+        failed_parent_dir, resolved, budget.get("launched_particle_count"),
+    )
     child_manifest_path = child_dir / "run_manifest.json"
     child_manifest = _verify_manifest(
         child_manifest_path, status=("failed", "interrupted", "success"),

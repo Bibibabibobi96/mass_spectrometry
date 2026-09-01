@@ -70,7 +70,7 @@ class CompletedSingleFlightRecoveryTests(unittest.TestCase):
                     manifest, status="failed", mode="rf_to_oatof_simion_single_flight",
                 )
 
-    def test_finds_terminal_handoff_child_when_restart_count_is_absent(self) -> None:
+    def test_finds_child_from_the_frozen_parent_population_count(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             parent = root / "20260826_011500__sim__cross__fixed-pulse__n1000__r01"
@@ -78,13 +78,8 @@ class CompletedSingleFlightRecoveryTests(unittest.TestCase):
             child = root / "20260826_011500__sim__simion__rf-oatof-single-flight-gap0__n900__r01"
             child.mkdir()
             (child / "run_manifest.json").write_text("{}\n", encoding="utf-8")
-            plan = {
-                "execution_steps": [{"arguments": [
-                    "terminal_handoff_continued_particle_count=900",
-                ]}],
-            }
             resolved = {"connector": {"length_mm": 0}}
-            self.assertEqual(_find_failed_child(parent, plan, resolved), child)
+            self.assertEqual(_find_failed_child(parent, resolved, 900), child)
 
     def test_recovery_child_has_a_valid_distinct_retry_identity(self) -> None:
         parent = Path(

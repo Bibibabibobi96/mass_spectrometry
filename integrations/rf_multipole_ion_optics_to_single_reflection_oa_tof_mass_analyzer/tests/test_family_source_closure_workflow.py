@@ -1544,6 +1544,23 @@ $result = Get-PulseTimingOrchestration `
         )
         source = entry.read_text(encoding="utf-8")
         self.assertIn("Preserve that negative result for audit and", source)
+
+    def test_finalize_only_accepts_an_explicit_dynamic_parent_run_id(self) -> None:
+        entry = (
+            INTEGRATION_ROOT / "workflows" / "family_source_closure" / "execute.ps1"
+        )
+        source = entry.read_text(encoding="utf-8")
+        self.assertIn("[string]$RecoveryRunId = ''", source)
+        self.assertIn("RecoveryRunId is accepted only for FinalizeOnly.", source)
+        self.assertIn("$campaignRunId = $RecoveryRunId", source)
+
+    def test_finalize_only_replays_pre_pulse_without_full_flight_reanalysis(self) -> None:
+        adapter = (
+            INTEGRATION_ROOT / "workflows" / "family_source_closure" / "adapter.ps1"
+        ).read_text(encoding="utf-8")
+        self.assertIn("pre-pulse-selection-replay-source-parent-manifest", adapter)
+        self.assertIn("pre_pulse_time_series_contract_filename", adapter)
+        self.assertIn("__analysis__python__pre-pulse-selection-replay__n", adapter)
         self.assertNotIn(
             "Remove-Item -LiteralPath $unpublishedDiscoveryRoot", source
         )
