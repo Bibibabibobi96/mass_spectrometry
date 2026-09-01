@@ -217,6 +217,12 @@ function Test-RfPaPlusModeFamily {
       -not (Test-Path -LiteralPath (Join-Path $Directory ($Prefix + '.pa+')) -PathType Leaf)) {
     return $false
   }
+  # `.pa#` is only a GEM-derived fast-adjust template.  SIMION loads the
+  # family through its Refine-materialized `.pa0` controller, which records
+  # the fast-adjust metadata and dispatches to the mapped solution arrays.
+  if (-not (Test-Path -LiteralPath (Join-Path $Directory ($Prefix + '.pa0')) -PathType Leaf)) {
+    return $false
+  }
   return @($SolutionIds | Where-Object {
     -not (Test-Path -LiteralPath (Join-Path $Directory ($Prefix + '.pa' + [int]$_)) -PathType Leaf)
   }).Count -eq 0
@@ -1718,6 +1724,7 @@ try {
   } elseif ($domainSplitEnabled) {
     $basisBuilderSource = Join-Path $PSScriptRoot 'build_accelerator_overlay_basis.lua'
     $acceleratorMainBasisBuilderSource = Join-Path $PSScriptRoot 'build_accelerator_pa_plus_basis.lua'
+    $paPlusInitializerSource = Join-Path $PSScriptRoot 'initialize_fast_adjust_pa_basis.lua'
     $refinerSource = Join-Path $repoRoot 'projects\single_reflection_oa_tof_mass_analyzer\simion\reflectron\refine_single_pa.lua'
     $fineDefinitions = @()
     if (-not $postPulseHandoffMinimal) {
@@ -1771,6 +1778,7 @@ try {
           fine_gem_sha256=(Get-FileHash -LiteralPath $fineDefinition.gem -Algorithm SHA256).Hash
           coarse_frontend_cache_key=$frontendCacheKey
           basis_builder_sha256=(Get-FileHash -LiteralPath $fineBasisBuilderSource -Algorithm SHA256).Hash
+          pa_plus_initializer_sha256=$(if($fineUsesPaPlus){(Get-FileHash -LiteralPath $paPlusInitializerSource -Algorithm SHA256).Hash}else{$null})
           refiner_sha256=(Get-FileHash -LiteralPath $refinerSource -Algorithm SHA256).Hash
         }
         critical_options=[ordered]@{
@@ -1820,6 +1828,7 @@ try {
           $finePaPlus = if ($fineUsesPaPlus) {
             Join-Path $fineBuildDir ($fineDefinition.name + '.pa+')
           } else { $null }
+          $finePa0 = Join-Path $fineBuildDir ($fineDefinition.name + '.pa0')
           $fineBasisFiles = @($fineSolutionIds | ForEach-Object {
             Join-Path $fineBuildDir ("{0}.pa{1}" -f $fineDefinition.name,[int]$_)
           })
@@ -1830,7 +1839,8 @@ try {
           # same values after an external interruption.
           $fineBasisComplete = (Test-Path -LiteralPath $fineBasisReport -PathType Leaf) -and
             @($fineBasisFiles | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Leaf) }).Count -eq 0 -and
-            ($null -eq $finePaPlus -or (Test-Path -LiteralPath $finePaPlus -PathType Leaf))
+            ($null -eq $finePaPlus -or ((Test-Path -LiteralPath $finePaPlus -PathType Leaf) -and
+              (Test-Path -LiteralPath $finePa0 -PathType Leaf)))
           if (-not $fineBasisComplete) {
             Copy-Item -LiteralPath $fineDefinition.gem -Destination $fineBuildGem
             $gem2pa = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
@@ -1845,6 +1855,16 @@ try {
                 'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_electrode_contract',
                 '--pa-plus-contract',$fineDefinition.contract,'--pa-plus-output',$finePaPlus) `
                 -Failure 'Accelerator-main PA+ file rendering failed.'
+              $paPlusInitialization = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget `
+                -RunDir $package.run_dir -UsagePath (Join-Path $package.log_dir ($fineDefinition.name + '_pa_plus_initialization_resource_usage.json')) `
+                -FilePath $SimionExe -WorkingDirectory $fineBuildDir `
+                -RedirectStandardOutput (Join-Path $package.log_dir ($fineDefinition.name + '_pa_plus_initialization.stdout.log')) `
+                -RedirectStandardError (Join-Path $package.log_dir ($fineDefinition.name + '_pa_plus_initialization.stderr.log')) `
+                -ArgumentList @('--nogui','--noprompt','lua',$paPlusInitializerSource,$fineBuildSharp)
+              if ($paPlusInitialization.resource_budget_exceeded -or $paPlusInitialization.exit_code -ne 0 -or
+                  -not (Test-Path -LiteralPath $finePa0 -PathType Leaf)) {
+                throw "$($fineDefinition.name) PA+ controller initialization failed."
+              }
             }
             $basis = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
               -UsagePath (Join-Path $package.log_dir ($fineDefinition.name + '_basis_resource_usage.json')) `
@@ -2723,18 +2743,15 @@ try {
       Copy-Item -LiteralPath $source.FullName -Destination $target -Force
       Set-RfMaterializedCacheFileWritable -Path $target
     }
-    # GEM conversion uses .pa# as the PA+ geometry template, whereas an IOB
-    # must load an ordinary .pa0.  Materialize this name-only alias locally:
-    # it is the same immutable geometry bytes and avoids rebuilding or
-    # duplicating every published cache generation merely for its consumer.
+    # A PA+ IOB loads the Refine-materialized `.pa0` controller, not a byte
+    # renamed `.pa#` template.  Its adjacent map selects the numbered solution
+    # arrays during `fast_adjust`; fail closed if a claimed PA+ family lacks
+    # that controller.
     foreach ($map in Get-ChildItem -LiteralPath $CacheDirectory -Filter '*.pa+' -File) {
       $prefix = $map.BaseName
-      $geometryTemplate = Join-Path $runtimeDir ($prefix + '.pa#')
       $geometryPa0 = Join-Path $runtimeDir ($prefix + '.pa0')
-      if ((Test-Path -LiteralPath $geometryTemplate -PathType Leaf) -and
-          -not (Test-Path -LiteralPath $geometryPa0 -PathType Leaf)) {
-        Copy-Item -LiteralPath $geometryTemplate -Destination $geometryPa0
-        Set-RfMaterializedCacheFileWritable -Path $geometryPa0
+      if (-not (Test-Path -LiteralPath $geometryPa0 -PathType Leaf)) {
+        throw "PA+ cache family is missing its Refine-materialized controller: $prefix"
       }
     }
   }
@@ -2755,10 +2772,9 @@ try {
   foreach ($domainSplitFineBuild in $domainSplitRuntimeBuilds) {
     Copy-RfPaCacheFamilyToRuntime -CacheDirectory $domainSplitFineBuild.cache_dir `
       -Pattern ($domainSplitFineBuild.name + '.pa*')
-    # `Copy-RfPaCacheFamilyToRuntime` materializes the PA+ geometry alias as
-    # .pa0 for IOB consumers.  The compiled-topology verifier opens the
-    # GEM-produced .pa# geometry member directly: PA+ maps are attached to
-    # that native member, while the .pa0 alias exists only for `pa:load`.
+    # The compiled-topology verifier opens the GEM-produced `.pa#` template;
+    # the formal IOB separately consumes the Refine-materialized `.pa0`
+    # controller of the same PA+ family.
     $domainSplitFineBuild.pa0 = Join-Path $runtimeDir (
       $domainSplitFineBuild.name + '.pa0')
     $topologyPa = if (

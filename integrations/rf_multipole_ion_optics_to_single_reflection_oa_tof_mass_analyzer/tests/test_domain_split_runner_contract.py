@@ -198,9 +198,9 @@ class DomainSplitRunnerContractTests(unittest.TestCase):
     def test_domain_split_aperture_check_uses_the_authoritative_local_or_main_pa(self) -> None:
         self.assertIn("Domain-split aperture topology check requires exactly one authoritative aperture PA.", self.source)
         self.assertIn("{'accelerator_entrance_local'} else {'accelerator_main'}", self.source)
-        self.assertIn("Materialize this name-only alias locally", self.source)
-        self.assertIn("$geometryTemplate = Join-Path $runtimeDir ($prefix + '.pa#')", self.source)
+        self.assertIn("Refine-materialized `.pa0` controller", self.source)
         self.assertIn("$geometryPa0 = Join-Path $runtimeDir ($prefix + '.pa0')", self.source)
+        self.assertIn("PA+ cache family is missing its Refine-materialized controller", self.source)
         self.assertIn("-NotePropertyName topology_pa", self.source)
         self.assertIn("$apertureTopologyPa = [string]$domainApertureProvider[0].topology_pa", self.source)
         self.assertIn("$apertureTopologyGeometry.accelerator_port_aperture.discretization", self.source)
@@ -255,8 +255,10 @@ class DomainSplitRunnerContractTests(unittest.TestCase):
         self.assertIn("$fineUsesPaPlus", self.source)
         self.assertIn("$finePaPlusModeSpec", self.source)
         self.assertIn("Test-RfPaPlusModeFamily", self.source)
-        self.assertIn("$finePaPlus -or (Test-Path -LiteralPath $finePaPlus", self.source)
+        self.assertIn("$finePa0 = Join-Path $fineBuildDir", self.source)
+        self.assertIn("PA+ controller initialization failed", self.source)
         self.assertIn("basis_builder_sha256=(Get-FileHash -LiteralPath $fineBasisBuilderSource", self.source)
+        self.assertIn("pa_plus_initializer_sha256", self.source)
 
     def test_accelerator_main_builder_covers_six_faces_without_duplicate_key_tracking(self) -> None:
         builder = RUNNER.with_name("build_accelerator_main_basis_fast.lua").read_text(encoding="utf-8")
