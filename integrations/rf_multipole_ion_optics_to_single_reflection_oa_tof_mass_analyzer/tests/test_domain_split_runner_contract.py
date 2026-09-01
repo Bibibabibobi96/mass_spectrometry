@@ -139,6 +139,12 @@ class DomainSplitRunnerContractTests(unittest.TestCase):
         self.assertIn("$localRefineWave", self.source)
         self.assertIn("Accelerator entrance-local refinement dispatch plan is invalid.", self.source)
 
+    def test_local_pa_plus_family_materializes_its_controller_before_basis_transfer(self) -> None:
+        self.assertIn("pa_plus_initializer_sha256=(Get-FileHash -LiteralPath $paPlusInitializerSource", self.source)
+        self.assertIn("$localPa0 = Join-Path $localBuildDir 'accelerator_entrance_local.pa0'", self.source)
+        self.assertIn("$localPaPlusInitialization = Invoke-ResourceBudgetedProcess", self.source)
+        self.assertIn("Accelerator entrance-local PA+ controller initialization failed.", self.source)
+
     def test_local_basis_reads_the_immutable_main_generation_through_a_short_junction(self) -> None:
         self.assertIn("function New-RfSimionShortPathJunction", self.source)
         self.assertIn("SIMION 2020 cannot reliably open PA files beyond the legacy MAX_PATH", self.source)

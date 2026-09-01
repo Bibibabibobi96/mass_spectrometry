@@ -423,6 +423,12 @@ class SingleFlightProgramTests(unittest.TestCase):
             "if initial[physical_id]==nil then initial[physical_id]=0 end",
             program,
         )
+        self.assertIn("local function single_flight_project_pa_plus(source)\n  local values={}", program)
+        self.assertNotIn("for id,value in pairs(source) do values[id]=value end", program)
+        self.assertIn("local single_flight_pa_plus_source={}", program)
+        self.assertIn("single_flight_pa_plus_source[id]=value", program)
+        self.assertIn("single_flight_pa_plus_source=initial", program)
+        self.assertNotIn("adj_elect[id]=value\n  if #single_flight_pa_plus_modes>0", program)
         self.assertNotIn("ipairs({1,2,3,4,5,6,7,8,9,10", program)
         self.assertIn("adjustable V_intermediate2=1450", program)
         self.assertIn(

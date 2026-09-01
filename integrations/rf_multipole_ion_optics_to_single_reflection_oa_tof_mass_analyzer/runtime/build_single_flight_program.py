@@ -1150,9 +1150,9 @@ local function single_flight_instrument_time_us()
 end
 handoff_instrument_time_us=single_flight_instrument_time_us
 local single_flight_pa_plus_modes={pa_plus_modes_lua}
+local single_flight_pa_plus_source={{}}
 local function single_flight_project_pa_plus(source)
   local values={{}}
-  for id,value in pairs(source) do values[id]=value end
   for _,mode in ipairs(single_flight_pa_plus_modes) do
     local total=0
     for _,term in ipairs(mode.terms) do
@@ -1165,15 +1165,13 @@ local function single_flight_project_pa_plus(source)
   return values
 end
 local function single_flight_set_electrode(id,value)
-  adj_elect[id]=value
-  if #single_flight_pa_plus_modes>0 then
-    local source={{}}
-    for _,physical_id in ipairs({_lua_value(dynamic_basis_electrode_ids)}) do
-      source[physical_id]=adj_elect[physical_id]
-    end
-    for mode_id,mode_value in pairs(single_flight_project_pa_plus(source)) do
-      if mode_id>=36 then adj_elect[mode_id]=mode_value end
-    end
+  if #single_flight_pa_plus_modes==0 then
+    adj_elect[id]=value
+    return
+  end
+  single_flight_pa_plus_source[id]=value
+  for mode_id,mode_value in pairs(single_flight_project_pa_plus(single_flight_pa_plus_source)) do
+    adj_elect[mode_id]=mode_value
   end
 end
 local function single_flight_trace_checkpoint(event,t,x,y,z,vx,vy,vz)
@@ -1365,6 +1363,7 @@ function segment.initialize_run()
         {initial_voltage_lua})) do initial[item.electrode_id]=item.voltage_v end
     initial[{int(electrodes['entrance_reference_sleeve_id'])}]={_lua_number(entrance_reference_v)}
     initial[{int(electrodes['entrance_plate_id'])}]={_lua_number(entrance_plate_v)}
+    single_flight_pa_plus_source=initial
     for _,index in ipairs(single_flight_active_field_instances) do
       local active_instance=assert(simion.wb.instances[index],
         'active domain field instance is missing')

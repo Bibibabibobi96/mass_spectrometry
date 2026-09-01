@@ -2019,11 +2019,12 @@ try {
       $localBasisBuilderSource = $acceleratorMainBasisBuilderSource
       $localRole = 'simion_single_flight_accelerator_entrance_local_pa_cache'
       $localIdentity = [ordered]@{
-        schema_version=1; role=$localRole; project_id=$runProjectId; solver=$simionSolverCacheIdentity
+        schema_version=2; role=$localRole; project_id=$runProjectId; solver=$simionSolverCacheIdentity
         inputs=[ordered]@{
           local_gem_sha256=(Get-FileHash -LiteralPath $acceleratorEntranceLocalGem -Algorithm SHA256).Hash
           accelerator_main_cache_key=$mainBuild.cache_key
           basis_builder_sha256=(Get-FileHash -LiteralPath $localBasisBuilderSource -Algorithm SHA256).Hash
+          pa_plus_initializer_sha256=(Get-FileHash -LiteralPath $paPlusInitializerSource -Algorithm SHA256).Hash
           refiner_sha256=(Get-FileHash -LiteralPath $refinerSource -Algorithm SHA256).Hash
         }
         critical_options=[ordered]@{
@@ -2059,6 +2060,7 @@ try {
         try {
           $localBuildGem = Join-Path $localBuildDir 'accelerator_entrance_local.gem'
           $localBuildSharp = Join-Path $localBuildDir 'accelerator_entrance_local.pa#'
+          $localPa0 = Join-Path $localBuildDir 'accelerator_entrance_local.pa0'
           $localBasisReport = Join-Path $localBuildDir 'basis_build.json'
           Copy-Item -LiteralPath $acceleratorEntranceLocalGem -Destination $localBuildGem
           $gem2pa = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
@@ -2075,6 +2077,16 @@ try {
             'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_electrode_contract',
             '--pa-plus-contract',$acceleratorEntranceLocalContract,'--pa-plus-output',$localPaPlus) `
             -Failure 'Accelerator entrance-local PA+ file rendering failed.'
+          $localPaPlusInitialization = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget `
+            -RunDir $package.run_dir -UsagePath (Join-Path $package.log_dir 'accelerator_entrance_local_pa_plus_initialization_resource_usage.json') `
+            -FilePath $SimionExe -WorkingDirectory $localBuildDir `
+            -RedirectStandardOutput (Join-Path $package.log_dir 'accelerator_entrance_local_pa_plus_initialization.stdout.log') `
+            -RedirectStandardError (Join-Path $package.log_dir 'accelerator_entrance_local_pa_plus_initialization.stderr.log') `
+            -ArgumentList @('--nogui','--noprompt','lua',$paPlusInitializerSource,$localBuildSharp)
+          if ($localPaPlusInitialization.resource_budget_exceeded -or $localPaPlusInitialization.exit_code -ne 0 -or
+              -not (Test-Path -LiteralPath $localPa0 -PathType Leaf)) {
+            throw 'Accelerator entrance-local PA+ controller initialization failed.'
+          }
           $mainSourceJunction = $null
           try {
             $mainSourceJunction = New-RfSimionShortPathJunction -TargetDirectory $mainBuild.cache_dir `
