@@ -2756,9 +2756,19 @@ try {
     Copy-RfPaCacheFamilyToRuntime -CacheDirectory $domainSplitFineBuild.cache_dir `
       -Pattern ($domainSplitFineBuild.name + '.pa*')
     # `Copy-RfPaCacheFamilyToRuntime` materializes the PA+ geometry alias as
-    # .pa0, so every consumer has one canonical loadable PA path.
+    # .pa0 for IOB consumers.  The compiled-topology verifier opens the
+    # GEM-produced .pa# geometry member directly: PA+ maps are attached to
+    # that native member, while the .pa0 alias exists only for `pa:load`.
     $domainSplitFineBuild.pa0 = Join-Path $runtimeDir (
       $domainSplitFineBuild.name + '.pa0')
+    $domainSplitFineBuild | Add-Member -NotePropertyName topology_pa -Force -NotePropertyValue (
+      if ($null -ne $domainSplitFineBuild.geometry.PSObject.Properties['pa_plus_solution_model'] -and
+          $null -ne $domainSplitFineBuild.geometry.pa_plus_solution_model) {
+        Join-Path $runtimeDir ($domainSplitFineBuild.name + '.pa#')
+      } else {
+        $domainSplitFineBuild.pa0
+      }
+    )
   }
   $reflectronBuilderFrozen = $null
   $reflectronGemFrozen = $null
@@ -3184,10 +3194,10 @@ try {
     $domainApertureProvider = @($domainSplitFineBuilds | Where-Object {
       $_.name -eq $(if ($acceleratorEntranceLocalEnabled) {'accelerator_entrance_local'} else {'accelerator_main'})
     })
-    if ($domainApertureProvider.Count -ne 1 -or [string]::IsNullOrWhiteSpace($domainApertureProvider[0].pa0)) {
+    if ($domainApertureProvider.Count -ne 1 -or [string]::IsNullOrWhiteSpace($domainApertureProvider[0].topology_pa)) {
       throw 'Domain-split aperture topology check requires exactly one authoritative aperture PA.'
     }
-    $apertureTopologyPa = [string]$domainApertureProvider[0].pa0
+    $apertureTopologyPa = [string]$domainApertureProvider[0].topology_pa
     $apertureTopologyGeometry = $domainApertureProvider[0].geometry
     $apertureTopologyDiscretization =
       $apertureTopologyGeometry.accelerator_port_aperture.discretization

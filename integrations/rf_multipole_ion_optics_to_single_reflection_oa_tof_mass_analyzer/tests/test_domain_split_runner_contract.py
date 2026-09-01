@@ -201,7 +201,8 @@ class DomainSplitRunnerContractTests(unittest.TestCase):
         self.assertIn("Materialize this name-only alias locally", self.source)
         self.assertIn("$geometryTemplate = Join-Path $runtimeDir ($prefix + '.pa#')", self.source)
         self.assertIn("$geometryPa0 = Join-Path $runtimeDir ($prefix + '.pa0')", self.source)
-        self.assertIn("$apertureTopologyPa = [string]$domainApertureProvider[0].pa0", self.source)
+        self.assertIn("-NotePropertyName topology_pa", self.source)
+        self.assertIn("$apertureTopologyPa = [string]$domainApertureProvider[0].topology_pa", self.source)
         self.assertIn("$apertureTopologyGeometry.accelerator_port_aperture.discretization", self.source)
         self.assertIn("-PaPath $apertureTopologyPa", self.source)
 
