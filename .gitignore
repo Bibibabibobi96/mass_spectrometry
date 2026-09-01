@@ -28,11 +28,12 @@ run_comsol_mcp.cmd
 *.pa#
 *.pa[0-9]*
 *.iob
-# Version-controlled, GUI-created Workbench containers.  These seeds encode
-# only the required instance count; builders replace every placeholder PA.
+# Version-controlled, GUI-created Workbench containers.  Their distinct
+# per-slot placeholder PAs are necessary because SIMION keeps instances that
+# share a filename attached to the same PA object.
 !common/simion/assets/iob_instance_seeds/
 !common/simion/assets/iob_instance_seeds/*.iob
-!common/simion/assets/iob_instance_seeds/iob_seed_placeholder.pa0
+!common/simion/assets/iob_instance_seeds/iob_seed_placeholder_*.pa0
 trj*.tmp
 
 # CAD binaries are generated into artifacts/cad.

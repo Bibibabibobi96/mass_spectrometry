@@ -195,8 +195,8 @@ class LightweightGateIntegrationTests(unittest.TestCase):
             self.repo_root / "common" / "verify_repository_hygiene.ps1"
         ).read_text(encoding="utf-8")
         self.assertIn("$sharedIobSeedPrefix", hygiene)
-        self.assertIn("iob_seed_placeholder.pa0", hygiene)
-        self.assertIn("ten_instance_seed.iob", hygiene)
+        self.assertIn("iob_seed_placeholder_01.pa0", hygiene)
+        self.assertIn("10_instance_seed.iob", hygiene)
         self.assertIn("-not $isSharedIobSeed", hygiene)
 
     def test_hygiene_accepts_a_standalone_ci_checkout(self):

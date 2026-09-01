@@ -78,10 +78,15 @@ $tracked = @(& git -C $repoRoot ls-files)
 if ($LASTEXITCODE -ne 0) { throw 'git ls-files failed.' }
 $sharedIobSeedPrefix = 'common/simion/assets/iob_instance_seeds/'
 $sharedIobSeedFiles = @(
-  'one_instance_seed.iob','two_instance_seed.iob','three_instance_seed.iob',
-  'four_instance_seed.iob','five_instance_seed.iob','six_instance_seed.iob',
-  'seven_instance_seed.iob','eight_instance_seed.iob','nine_instance_seed.iob',
-  'ten_instance_seed.iob','iob_seed_placeholder.pa0'
+  '1_instance_seed.iob','2_instance_seed.iob','3_instance_seed.iob',
+  '4_instance_seed.iob','5_instance_seed.iob','6_instance_seed.iob',
+  '7_instance_seed.iob','8_instance_seed.iob','9_instance_seed.iob',
+  '10_instance_seed.iob',
+  'iob_seed_placeholder_01.pa0','iob_seed_placeholder_02.pa0',
+  'iob_seed_placeholder_03.pa0','iob_seed_placeholder_04.pa0',
+  'iob_seed_placeholder_05.pa0','iob_seed_placeholder_06.pa0',
+  'iob_seed_placeholder_07.pa0','iob_seed_placeholder_08.pa0',
+  'iob_seed_placeholder_09.pa0','iob_seed_placeholder_10.pa0'
 ) | ForEach-Object { "$sharedIobSeedPrefix$_" }
 foreach ($path in $tracked) {
   $normalized = $path.Replace('\','/')

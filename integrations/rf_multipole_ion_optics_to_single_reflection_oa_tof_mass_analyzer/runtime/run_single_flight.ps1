@@ -975,14 +975,14 @@ try {
     -not $domainSplitMainPaOnlyAxisField -and -not $domainSplitLocalAxisField
   )
   # GUI-created contiguous-slot seeds are the only supported way to supply
-  # arbitrary Workbench instance counts in SIMION 2020.  All reusable counts
-  # and their one physical placeholder PA live in this single asset directory;
-  # each builder replaces every placeholder before saving its output IOB.
+  # arbitrary Workbench instance counts in SIMION 2020.  Every slot has a
+  # distinct placeholder PA in this single asset directory so each builder can
+  # independently replace it before saving its output IOB.
   $iobSeedDirectory = Join-Path $repoRoot 'common\simion\assets\iob_instance_seeds'
-  $prePulseThreeInstanceSeed = Join-Path $iobSeedDirectory 'three_instance_seed.iob'
-  $postPulseFiveInstanceSeed = Join-Path $iobSeedDirectory 'five_instance_seed.iob'
+  $prePulseThreeInstanceSeed = Join-Path $iobSeedDirectory '3_instance_seed.iob'
+  $postPulseFiveInstanceSeed = Join-Path $iobSeedDirectory '5_instance_seed.iob'
   $fullFlightSeedDir = $iobSeedDirectory
-  $fullFlightSeed = Join-Path $fullFlightSeedDir 'seven_instance_seed.iob'
+  $fullFlightSeed = Join-Path $fullFlightSeedDir '7_instance_seed.iob'
   if ($requiresFullFlightSevenInstanceSeed -and
       -not (Test-Path -LiteralPath $fullFlightSeed -PathType Leaf)) {
     throw 'Versioned seven-instance continuous full-flight IOB seed is missing.'
@@ -3525,7 +3525,7 @@ try {
       $coarseFrontendRuntimePa0 = Join-Path $runtimeDir 'coarse_frontend.pa0'
       $container = $postPulseFiveInstanceSeed
       if (-not (Test-Path -LiteralPath $container -PathType Leaf)) { throw 'Versioned five-instance post-pulse IOB seed is missing.' }
-      $runtimeContainer = Join-Path $runtimeDir 'five_instance_seed.iob'
+      $runtimeContainer = Join-Path $runtimeDir '5_instance_seed.iob'
       Copy-Item -LiteralPath $container -Destination $runtimeContainer
       Get-ChildItem -LiteralPath $iobSeedDirectory -File | Copy-Item -Destination $runtimeDir
       $totalAxisFieldIob = Join-Path $runtimeDir 'total_axis_field.iob'
@@ -3556,13 +3556,13 @@ try {
       if (-not (Test-Path -LiteralPath $prePulseThreeInstanceSeed -PathType Leaf)) {
         throw 'Versioned three-instance pre-pulse IOB seed is missing.'
       }
-      # The seed and its single placeholder PA are copied together because
-      # SIMION resolves the placeholder while opening the container.  The Lua
+      # The seed and all of its distinct slot placeholders are copied together
+      # because SIMION resolves them while opening the container.  The Lua
       # builder immediately replaces all three instances with the real coarse,
       # upstream, and zero-field entrance PA families.
       Get-ChildItem -LiteralPath $iobSeedDirectory -File |
         Copy-Item -Destination $runtimeDir
-      $prePulseRuntimeContainer = Join-Path $runtimeDir 'three_instance_seed.iob'
+      $prePulseRuntimeContainer = Join-Path $runtimeDir '3_instance_seed.iob'
       $prePulseIobArguments = @('--nogui','--noprompt','lua',$prePulseIobBuilder,
         $prePulseRuntimeContainer,(Join-Path $runtimeDir 'oatof_ideal_grounded.iob'),
         (Join-Path $runtimeDir 'coarse_frontend.pa0'),$domainUpstream[0].pa0,(Join-Path $runtimeDir 'accelerator_main.pa0'),
@@ -3579,7 +3579,7 @@ try {
       if ($domainMain.Count -ne 1 -or $entranceLocalBuild.Count -ne 1) { throw 'Local axis-field IOB requires exactly one main and one entrance-local PA.' }
       $container = $postPulseFiveInstanceSeed
       if (-not (Test-Path -LiteralPath $container -PathType Leaf)) { throw 'Versioned five-instance post-pulse IOB seed is missing.' }
-      $runtimeContainer = Join-Path $runtimeDir 'five_instance_seed.iob'
+      $runtimeContainer = Join-Path $runtimeDir '5_instance_seed.iob'
       Copy-Item -LiteralPath $container -Destination $runtimeContainer
       Get-ChildItem -LiteralPath $iobSeedDirectory -File | Copy-Item -Destination $runtimeDir
       $totalAxisFieldIob = Join-Path $runtimeDir 'total_axis_field.iob'
@@ -3616,7 +3616,7 @@ try {
       if ($domainMain.Count -ne 1 -or $entranceLocalBuild.Count -ne 1) { throw 'Post-pulse handoff PA family requires exactly one main and one entrance-local PA.' }
       $container = $postPulseFiveInstanceSeed
       if (-not (Test-Path -LiteralPath $container -PathType Leaf)) { throw 'Versioned five-instance post-pulse IOB seed is missing.' }
-      $runtimeContainer = Join-Path $runtimeDir 'five_instance_seed.iob'
+      $runtimeContainer = Join-Path $runtimeDir '5_instance_seed.iob'
       Copy-Item -LiteralPath $container -Destination $runtimeContainer
       Get-ChildItem -LiteralPath $iobSeedDirectory -File | Copy-Item -Destination $runtimeDir
       $postPulseIobArguments = @('--nogui','--noprompt','lua',$postPulseIobBuilder,
@@ -3650,7 +3650,7 @@ try {
     $acceleratorMainRuntimePa0 = Join-Path $runtimeDir 'accelerator_main.pa#'
     $coarseFrontendRuntimePa0 = Join-Path $runtimeDir 'coarse_frontend.pa0'
     Get-ChildItem -LiteralPath $fullFlightSeedDir -File | Copy-Item -Destination $runtimeDir
-    $runtimeContainer = Join-Path $runtimeDir 'seven_instance_seed.iob'
+    $runtimeContainer = Join-Path $runtimeDir '7_instance_seed.iob'
     $fullFlightIobArguments = @('--nogui','--noprompt','lua',$fullFlightIobBuilder,
       (Join-Path $runtimeDir 'oatof_ideal_grounded.iob'),$runtimeContainer,
       (Join-Path $runtimeDir 'oatof_ideal_grounded.iob'),$coarseFrontendRuntimePa0,
