@@ -174,6 +174,18 @@ def _minimal_program_contracts() -> tuple[dict[str, object], dict[str, object]]:
 
 
 class SingleFlightProgramTests(unittest.TestCase):
+    def test_domain_accelerator_filename_drives_analyzer_and_iob_contracts(self) -> None:
+        source = (
+            REPO
+            / "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
+            / "runtime/build_single_flight_program.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            'analyzer_config["instance_filenames"]["accelerator"] = (\n'
+            "        domain_accelerator_filename",
+            source,
+        )
+
     def test_analyzer_component_accepts_the_published_three_zone_topology(self) -> None:
         self.assertIn(
             "config.accelerator_topology_id == 'three_zone_frontend_v1'",

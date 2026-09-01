@@ -897,6 +897,12 @@ def build_successor_program(
         if domain_split is not None
         else "accelerator.pa0"
     )
+    # The analyzer component validates the physical Workbench payload before
+    # the Program's separate role map is consulted.  Keep both views derived
+    # from the same resolved domain contract.
+    analyzer_config["instance_filenames"]["accelerator"] = (
+        domain_accelerator_filename
+    )
     formal_iob_config = (
         {
             "instance_roles": {
