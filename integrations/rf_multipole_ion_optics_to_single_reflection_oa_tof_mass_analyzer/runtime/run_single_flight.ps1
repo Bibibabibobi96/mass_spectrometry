@@ -2761,14 +2761,16 @@ try {
     # that native member, while the .pa0 alias exists only for `pa:load`.
     $domainSplitFineBuild.pa0 = Join-Path $runtimeDir (
       $domainSplitFineBuild.name + '.pa0')
-    $domainSplitFineBuild | Add-Member -NotePropertyName topology_pa -Force -NotePropertyValue (
-      if ($null -ne $domainSplitFineBuild.geometry.PSObject.Properties['pa_plus_solution_model'] -and
-          $null -ne $domainSplitFineBuild.geometry.pa_plus_solution_model) {
-        Join-Path $runtimeDir ($domainSplitFineBuild.name + '.pa#')
-      } else {
-        $domainSplitFineBuild.pa0
-      }
-    )
+    $topologyPa = if (
+      $null -ne $domainSplitFineBuild.geometry.PSObject.Properties['pa_plus_solution_model'] -and
+      $null -ne $domainSplitFineBuild.geometry.pa_plus_solution_model
+    ) {
+      Join-Path $runtimeDir ($domainSplitFineBuild.name + '.pa#')
+    } else {
+      $domainSplitFineBuild.pa0
+    }
+    $domainSplitFineBuild | Add-Member -NotePropertyName topology_pa -Force `
+      -NotePropertyValue $topologyPa
   }
   $reflectronBuilderFrozen = $null
   $reflectronGemFrozen = $null
