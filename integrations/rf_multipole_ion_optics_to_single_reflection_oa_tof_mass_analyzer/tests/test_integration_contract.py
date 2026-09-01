@@ -137,7 +137,7 @@ class IntegrationProfileContractTests(unittest.TestCase):
             "rf_octupole_oatof_shield_terminal_aperture_100x250_direct_mating_gap_0mm": (2.5, 0.5),
         }
         selected = [
-            row["overrides"]["connection_profile_id"]
+            row["values"]["connection_profile_id"]
             for row in campaign["experiments"]["rows"]
         ]
         self.assertEqual(selected, list(expected))

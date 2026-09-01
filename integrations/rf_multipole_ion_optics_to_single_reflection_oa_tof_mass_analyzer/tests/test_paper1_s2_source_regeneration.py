@@ -74,15 +74,15 @@ class Paper1S2SourceRegenerationTests(unittest.TestCase):
     def test_pre_pulse_contract_preserves_the_complete_s2_mother_cohort(self) -> None:
         campaign = json.loads(PRE_PULSE_CAMPAIGN_N1000.read_text(encoding="utf-8"))
         validate_schema(campaign, PRE_PULSE_SCHEMA)
-        row = campaign["experiments"][0]
-        population = row["single_flight_population"]
+        shared = campaign["experiments"]["shared"]
+        population = shared["single_flight_population"]
         self.assertEqual(campaign["status"], "exploration")
-        self.assertEqual(row["source_profile_id"], "canonical_real_hexapole_n1000")
+        self.assertEqual(shared["source_profile_id"], "canonical_real_hexapole_n1000")
         self.assertEqual(
-            row["single_flight_pa_cache_policy"],
+            shared["single_flight_pa_cache_policy"],
             "build_and_publish_if_missing",
         )
-        self.assertEqual(row["source"]["launched_particle_count"], 1000)
+        self.assertEqual(shared["source"]["launched_particle_count"], 1000)
         self.assertEqual(population["execution_population"]["particle_count"], 1000)
         self.assertEqual(population["denominators"]["population_count"], 1000)
         self.assertEqual(population["postselection_policy"], "prohibited")
@@ -91,9 +91,9 @@ class Paper1S2SourceRegenerationTests(unittest.TestCase):
     def test_handoff_pre_pulse_contract_continues_only_terminal_transmissions(self) -> None:
         campaign = json.loads(HANDOFF_PRE_PULSE_CAMPAIGN_N1000.read_text(encoding="utf-8"))
         validate_schema(campaign, PRE_PULSE_SCHEMA)
-        row = campaign["experiments"][0]
-        population = row["single_flight_population"]
-        self.assertEqual(row["source_release_mode"], "continuous_frontend_handoff")
+        shared = campaign["experiments"]["shared"]
+        population = shared["single_flight_population"]
+        self.assertEqual(shared["source_release_mode"], "continuous_frontend_handoff")
         self.assertEqual(population["population_mode"], "terminal_handoff_continuation")
         self.assertEqual(
             population["source_authority"]["table_binding"],
