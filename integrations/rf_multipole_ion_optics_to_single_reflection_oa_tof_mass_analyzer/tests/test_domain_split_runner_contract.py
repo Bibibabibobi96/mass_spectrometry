@@ -310,9 +310,8 @@ class DomainSplitRunnerContractTests(unittest.TestCase):
         self.assertIn("write_receipt(basis)", builder)
         self.assertLess(builder.index("fine:save()"), builder.index("write_receipt(basis)"))
         self.assertIn("resumed=true", builder)
-        self.assertIn("completed basis receipt lacks its PA array", builder)
-        self.assertIn("copy_file(fine_pa_sharp,indexed(fine_pa_sharp,basis))", builder)
-        self.assertNotIn("initializer:refine", builder)
+        self.assertIn("interrupted basis family is missing a materialized member", builder)
+        self.assertIn("initializer:refine{}", builder)
 
     def test_interrupted_fine_cache_staging_keeps_per_basis_checkpoints(self) -> None:
         self.assertIn("basis_build.json.basis_*.complete", self.source)

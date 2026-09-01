@@ -47,40 +47,28 @@ local function write_receipt(index)
   receipt:write('complete\n')
   receipt:close()
 end
-local function copy_file(source,destination)
-  local input=assert(io.open(source,'rb'),'cannot open PA template: '..source)
-  local output=assert(io.open(destination,'wb'),'cannot create PA basis: '..destination)
-  output:write(assert(input:read('*a'),'cannot read PA template: '..source))
-  input:close()
-  output:close()
-end
 
--- Materialize ordinary PA members from the unrefined fast-adjust template.
--- Calling ``refine{}`` here would first solve every member with provisional
--- boundaries, then the runner would solve every member again after Dirichlet
--- projection.  The only field solve is the runner's later official-default
--- Refine, after each basis has its physical outer boundary.
+-- SIMION's ordinary fast-adjust .pa# is a family-definition format, not a
+-- binary PA template.  ``refine{}`` is the supported materialization route;
+-- unlike PA+, raw file copying makes an invalid .pa0 in SIMION 2020.
 local has_receipt=false
 for basis=0,maximum_electrode do
   if exists(receipt_path(basis)) then has_receipt=true break end
 end
 if not has_receipt then
-  -- Without a completed-basis receipt a prior process may have stopped while
-  -- writing any member.  Replace the whole family from the immutable GEM
-  -- template instead of trusting a partial array.
-  for basis=0,maximum_electrode do
-    copy_file(fine_pa_sharp,indexed(fine_pa_sharp,basis))
-  end
+  simion.pas:close()
+  local initializer=simion.pas:open(fine_pa_sharp)
+  initializer:refine{}
+  assert(initializer.nx>=3 and initializer.ny>=3 and initializer.nz>=3,
+    'accelerator-overlay PA must have at least three points on every axis')
+  simion.pas:close()
 else
-  -- Keep receipt-protected arrays; materialize only a missing uncompleted
-  -- member after an interruption.
+  -- The initial supported materialization creates every family member in one
+  -- operation.  Do not invoke it again: it would overwrite receipt-protected
+  -- bases before they could be resumed.
   for basis=0,maximum_electrode do
     local fine_path=indexed(fine_pa_sharp,basis)
-    if exists(receipt_path(basis)) then
-      assert(exists(fine_path),'completed basis receipt lacks its PA array')
-    elseif not exists(fine_path) then
-      copy_file(fine_pa_sharp,fine_path)
-    end
+    assert(exists(fine_path),'interrupted basis family is missing a materialized member')
   end
 end
 
@@ -91,8 +79,6 @@ for basis=0,maximum_electrode do
   if exists(receipt_path(basis)) then
     assert(exists(fine_path),'completed basis receipt lacks its PA array')
     local resumed=simion.pas:open(fine_path)
-    assert(resumed.nx>=3 and resumed.ny>=3 and resumed.nz>=3,
-      'completed accelerator-overlay basis has fewer than three points')
     local count=2*resumed.ny*resumed.nz + 2*(resumed.nx-2)*resumed.nz +
       2*(resumed.nx-2)*(resumed.ny-2)
     simion.pas:close()
@@ -102,8 +88,6 @@ for basis=0,maximum_electrode do
   simion.pas:close()
   local coarse=simion.pas:open(coarse_path)
   local fine=simion.pas:open(fine_path)
-  assert(fine.nx>=3 and fine.ny>=3 and fine.nz>=3,
-    'accelerator-overlay PA must have at least three points on every axis')
   local count=0
   local function copy(ix,iy,iz)
     local wx=fine_origin[1]+ix*fine.dx_mm
