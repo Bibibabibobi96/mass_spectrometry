@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from common.contracts.artifact_naming import validate_run_id
-from common.contracts.file_identity import file_sha256, repository_text_sha256
+from common.contracts.file_identity import file_sha256
 from common.contracts.machine_contracts import ContractError, validate_schema
 from common.contracts.verify_run_manifest import record_path, verify_record
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.run_publication import (
@@ -764,7 +764,11 @@ def publish_pre_pulse_selection_publication_replay(
     except (AssertionError, KeyError, TypeError) as exc:
         raise ContractError("pre-pulse selection replay parent records differ") from exc
     frozen_campaign = parent_dir / "inputs" / "frozen_campaign_experiment.json"
-    if not frozen_campaign.is_file() or _load(frozen_campaign).get("campaign_source", {}).get("sha256") != receipt.get("campaign_sha256"):
+    if (
+        not frozen_campaign.is_file()
+        or file_sha256(frozen_campaign)
+        != receipt.get("frozen_campaign_experiment_sha256")
+    ):
         raise ContractError("pre-pulse selection replay frozen campaign differs")
     connection = parent_dir / "resolved_connection.json"
     source = parent_dir / receipt.get("resolved_source_contract_filename", "")
@@ -1000,8 +1004,7 @@ def publish_family_source_closure_run(
         or budget["execution_strategy"] != execution_strategy
         or budget["source_identity"]["source_branch_id"] != source_branch_id
         or any(budget[key] != receipt[key] for key in campaign_keys)
-        or receipt.get("campaign_sha256") is None
-        or receipt.get("campaign_path") is None
+        or receipt.get("frozen_campaign_experiment_sha256") is None
     ):
         raise ContractError("family parent campaign, profile or source identity differs")
     launched_particle_count = receipt["launched_particle_count"]
@@ -1013,7 +1016,9 @@ def publish_family_source_closure_run(
         or launched_particle_count < particle_count
     ):
         raise ContractError("family parent particle census is invalid")
-    campaign_path = (repo_root / receipt["campaign_path"]).resolve()
+    frozen_campaign_path = (
+        receipt_path.parent / "inputs" / "frozen_campaign_experiment.json"
+    ).resolve()
     resolved_source_contract_path = (
         receipt_path.parent / receipt.get("resolved_source_contract_filename", "")
     ).resolve()
@@ -1024,9 +1029,10 @@ def publish_family_source_closure_run(
         receipt_path.parent / receipt.get("resolved_population_contract_filename", "")
     ).resolve()
     if (
-        not campaign_path.is_relative_to(repo_root.resolve())
-        or not campaign_path.is_file()
-        or repository_text_sha256(campaign_path) != receipt["campaign_sha256"]
+        frozen_campaign_path.parent != (receipt_path.parent / "inputs").resolve()
+        or not frozen_campaign_path.is_file()
+        or file_sha256(frozen_campaign_path)
+        != receipt["frozen_campaign_experiment_sha256"]
         or resolved_source_contract_path.parent != receipt_path.parent.resolve()
         or not resolved_source_contract_path.is_file()
         or file_sha256(resolved_source_contract_path) != receipt.get("resolved_source_contract_sha256")
@@ -1035,7 +1041,18 @@ def publish_family_source_closure_run(
         or file_sha256(upstream_resolved_design_path) != receipt.get("upstream_resolved_design_sha256")
     ):
         raise ContractError("family parent frozen campaign inputs differ")
-    campaign = _load(campaign_path)
+    frozen_campaign = _load(frozen_campaign_path)
+    campaign = frozen_campaign.get("campaign")
+    frozen_experiment = frozen_campaign.get("experiment")
+    if (
+        not isinstance(campaign, dict)
+        or not isinstance(frozen_experiment, dict)
+        or campaign.get("campaign_id") != receipt["campaign_id"]
+        or frozen_experiment.get("experiment_id") != receipt["experiment_id"]
+        or frozen_campaign.get("experiment_row_sha256")
+        != receipt["experiment_row_sha256"]
+    ):
+        raise ContractError("family parent frozen campaign identity differs")
     population = None
     if execution_strategy == "simion_single_flight":
         if (
@@ -1174,7 +1191,9 @@ def publish_family_source_closure_run(
         "mode": "multipole_family_source_closure",
         "project_root": str(workspace_root),
         "inputs": {
-            "campaign": _portable(campaign_path, workspace_root),
+            "frozen_campaign_experiment": _portable(
+                frozen_campaign_path, workspace_root
+            ),
             "execution_receipt": _portable(receipt_path, workspace_root),
             "resolved_connection": _portable(resolved_path, workspace_root),
             "composition_plan": _portable(plan_path, workspace_root),
@@ -1198,8 +1217,9 @@ def publish_family_source_closure_run(
             ),
         },
         "connection_profile_id": profile_id,
-        "campaign_path": receipt["campaign_path"],
-        "campaign_sha256": receipt["campaign_sha256"],
+        "frozen_campaign_experiment_sha256": receipt[
+            "frozen_campaign_experiment_sha256"
+        ],
         "campaign_id": receipt["campaign_id"],
         "experiment_id": receipt["experiment_id"],
         "experiment_row_sha256": receipt["experiment_row_sha256"],

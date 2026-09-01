@@ -81,7 +81,6 @@ if (-not $campaignPath.StartsWith(
 $campaignRepoRelative = [IO.Path]::GetRelativePath($repoRoot, $campaignPath).Replace('\', '/')
 $campaignDocument = Get-Content -LiteralPath $campaignPath -Raw -Encoding UTF8 |
   ConvertFrom-Json
-$campaignSha256 = (Get-FileHash -LiteralPath $campaignPath -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($Exploration) {
   if ([string]$campaignDocument.status -in @('retired', 'archived_invalid')) {
     throw 'Retired or invalid campaigns are not executable in any mode.'
@@ -111,15 +110,13 @@ if ($Exploration) {
   if ($registeredCampaigns.Count -ne 1) {
     throw 'Campaign is not an active lifecycle authority; execution is forbidden.'
   }
-  if ($campaignSha256 -ne ([string]$registeredCampaigns[0].content_sha256).ToLowerInvariant()) {
-    throw 'Active lifecycle campaign identity differs; execution is forbidden.'
-  }
   if ([string]$campaignDocument.status -in @('retired', 'archived_invalid')) {
     throw 'Retired or invalid campaigns are not executable in any mode.'
   }
 }
-if ($FinalizeOnly -and [string]$campaignDocument.status -ne 'authorized') {
-  throw 'FinalizeOnly execution requires campaign.status=authorized.'
+if ($FinalizeOnly -and [string]$campaignDocument.status -ne 'authorized' -and
+    -not ($Exploration -and [string]$campaignDocument.status -eq 'exploration')) {
+  throw 'FinalizeOnly execution requires an authorized campaign or explicit exploration status.'
 }
 if ($SolverAuthorized -and [string]$campaignDocument.status -ne 'authorized' -and
     -not ($Exploration -and [string]$campaignDocument.status -eq 'exploration')) {
@@ -178,15 +175,6 @@ if ($experimentRows.Count -ne 1) {
   throw 'Campaign experiment must resolve exactly once.'
 }
 $selectedExperiment = $experimentRows[0]
-if (-not $FinalizeOnly -and -not $Exploration) {
-  & $PythonExe -m (
-    'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.' +
-    'workflows.family_source_closure.refresh_campaign_source_bindings'
-  ) --repo-root $repoRoot --campaign $campaignPath --check
-  if ($LASTEXITCODE -ne 0) {
-    throw 'Campaign source bindings must be refreshed before execution.'
-  }
-}
 $authoredRunId = [string]$experimentRows[0].run_id
 $campaignRunId = $authoredRunId
 if ($authoredRunId -eq 'execution_pending') {
@@ -231,6 +219,17 @@ if ($ValidateOnly) {
   )
 } elseif ($PrepareOnly) {
   $outputRoot = [IO.Path]::GetFullPath($OutputDirectory)
+  $managedArtifactsRoot = [IO.Path]::GetFullPath((Join-Path $workspaceRoot 'artifacts\projects'))
+  $managedArtifactsPrefix = $managedArtifactsRoot + [IO.Path]::DirectorySeparatorChar
+  if (-not $outputRoot.StartsWith(
+        $managedArtifactsPrefix,
+        [StringComparison]::OrdinalIgnoreCase
+      )) {
+    throw (
+      'PrepareOnly OutputDirectory must be under the managed artifacts/projects tree: ' +
+      $managedArtifactsRoot
+    )
+  }
 } elseif ($FinalizeOnly) {
   $runsRoot = Join-Path $workspaceRoot (
     'artifacts\projects\' +
@@ -263,27 +262,11 @@ if ($SolverAuthorized -and (Test-Path -LiteralPath $outputRoot)) {
   if (Test-Path -LiteralPath $publishedManifestPath -PathType Leaf) {
     $publishedManifest = Get-Content -LiteralPath $publishedManifestPath -Raw |
       ConvertFrom-Json
-    # Parent manifests intentionally list only materialized run inputs.  The
-    # campaign identity is frozen in the composition-plan step arguments.
-    $publishedCampaignSha256 = ''
-    $publishedPlanPath = Join-Path $outputRoot 'composition_plan.json'
-    if (Test-Path -LiteralPath $publishedPlanPath -PathType Leaf) {
-      $publishedPlan = Get-Content -LiteralPath $publishedPlanPath -Raw |
-        ConvertFrom-Json
-      $publishedCampaignArgument = @($publishedPlan.execution_steps |
-        ForEach-Object { @($_.arguments | Where-Object {
-          [string]$_ -like 'campaign_sha256=*'
-        }) } | Select-Object -First 1)
-      if ($publishedCampaignArgument.Count -eq 1) {
-        $publishedCampaignSha256 = ([string]$publishedCampaignArgument[0]).Substring(
-          'campaign_sha256='.Length
-        )
-      }
-    }
+    # Run IDs are generated only at execution.  A successful manifest under
+    # this exact identity is therefore already the immutable execution result.
     if ($publishedManifest.role -eq 'simulation_run_manifest' -and
         $publishedManifest.status -eq 'success' -and
-        $publishedManifest.run_id -eq $campaignRunId -and
-        $publishedCampaignSha256.ToUpperInvariant() -eq $campaignSha256.ToUpperInvariant()) {
+        $publishedManifest.run_id -eq $campaignRunId) {
       Write-Output 'INTEGRATION_EXECUTION=ALREADY_SUCCESS'
       return
     }

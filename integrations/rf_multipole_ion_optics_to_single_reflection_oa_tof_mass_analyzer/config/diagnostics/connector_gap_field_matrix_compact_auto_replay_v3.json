@@ -1,8 +1,8 @@
 {
-  "schema_version": 6,
+  "schema_version": 7,
   "role": "rf_multipole_oatof_experiment_campaign",
   "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
-  "campaign_id": "connector_gap_field_matrix_compact_auto_replay_v2",
+  "campaign_id": "connector_gap_field_matrix_compact_auto_replay_v3",
   "status": "authorized",
   "claim_limit": "Exact replay of the 23 final successful 2026-08-22 post-pulse no-RF gap-by-field rows. One compact contract; auto-select per-row SIMION batch parallelism from the frozen resource receipt, current available memory, and CPU capacity. New run identities only; compare each terminal result to its frozen successful baseline. Functional replay and scheduler regression only; no Formal, optimization, or convergence claim.",
   "experiments": {
@@ -82,10 +82,8 @@
     ],
     "rows": [
       {
-        "sequence": 1,
         "experiment_id": "connector_gap_12p8_post_pulse_real_source_zvz_theory_dt40_n482_v3_compact_auto_replay_v2",
-        "run_id": "20260822_210000__sim__cross__gap-field-replay-01__n482",
-        "overrides": {
+        "values": {
           "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_12p8mm",
           "post_pulse_restart_reuse_authority": {
             "authority_mode": "manifest_bound_post_pulse_restart_reuse_v1",
@@ -146,10 +144,8 @@
         }
       },
       {
-        "sequence": 2,
         "experiment_id": "connector_gap_12p8_post_pulse_partial_ideal_source_zvz_theory_dt40_n482_v3_compact_auto_replay_v2",
-        "run_id": "20260822_210001__sim__cross__gap-field-replay-02__n482",
-        "overrides": {
+        "values": {
           "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_12p8mm",
           "post_pulse_restart_reuse_authority": {
             "authority_mode": "manifest_bound_post_pulse_restart_reuse_v1",
@@ -210,10 +206,8 @@
         }
       },
       {
-        "sequence": 3,
         "experiment_id": "connector_gap_12p8_post_pulse_full_ideal_source_zvz_theory_dt40_n482_v3_compact_auto_replay_v2",
-        "run_id": "20260822_210002__sim__cross__gap-field-replay-03__n482",
-        "overrides": {
+        "values": {
           "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_12p8mm",
           "post_pulse_restart_reuse_authority": {
             "authority_mode": "manifest_bound_post_pulse_restart_reuse_v1",
@@ -274,10 +268,8 @@
         }
       },
       {
-        "sequence": 4,
         "experiment_id": "connector_gap_51p2_post_pulse_real_source_zvz_theory_dt40_n77_v2_compact_auto_replay_v2",
-        "run_id": "20260822_210003__sim__cross__gap-field-replay-04__n77",
-        "overrides": {
+        "values": {
           "connection_profile_id": "rf_octupole_to_single_reflection_oatof_direct_mating_gap_51p2mm",
           "post_pulse_restart_reuse_authority": {
             "authority_mode": "manifest_bound_post_pulse_restart_reuse_v1",
@@ -360,10 +352,8 @@
         }
       },
       {
-        "sequence": 5,
         "experiment_id": "connector_gap_51p2_post_pulse_partial_ideal_source_zvz_theory_dt40_n77_v2_compact_auto_replay_v2",
-        "run_id": "20260822_210004__sim__cross__gap-field-replay-05__n77",
-        "overrides": {
+        "values": {
           "connection_profile_id": "rf_octupole_to_single_reflection_oatof_direct_mating_gap_51p2mm",
           "post_pulse_restart_reuse_authority": {
             "authority_mode": "manifest_bound_post_pulse_restart_reuse_v1",
@@ -446,10 +436,8 @@
         }
       },
       {
-        "sequence": 6,
         "experiment_id": "connector_gap_51p2_post_pulse_full_ideal_source_zvz_theory_dt40_n77_v2_compact_auto_replay_v2",
-        "run_id": "20260822_210005__sim__cross__gap-field-replay-06__n77",
-        "overrides": {
+        "values": {
           "connection_profile_id": "rf_octupole_to_single_reflection_oatof_direct_mating_gap_51p2mm",
           "post_pulse_restart_reuse_authority": {
             "authority_mode": "manifest_bound_post_pulse_restart_reuse_v1",
@@ -532,10 +520,8 @@
         }
       },
       {
-        "sequence": 7,
         "experiment_id": "connector_gap_0_post_pulse_partial_ideal_source_zvz_theory_dt40_n911_v3_compact_auto_replay_v2",
-        "run_id": "20260822_210006__sim__cross__gap-field-replay-07__n911",
-        "overrides": {
+        "values": {
           "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_0mm",
           "post_pulse_restart_reuse_authority": {
             "authority_mode": "manifest_bound_post_pulse_restart_reuse_v1",
@@ -596,10 +582,8 @@
         }
       },
       {
-        "sequence": 8,
         "experiment_id": "connector_gap_0_post_pulse_full_ideal_source_zvz_theory_dt40_n911_v3_compact_auto_replay_v2",
-        "run_id": "20260822_210007__sim__cross__gap-field-replay-08__n911",
-        "overrides": {
+        "values": {
           "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_0mm",
           "post_pulse_restart_reuse_authority": {
             "authority_mode": "manifest_bound_post_pulse_restart_reuse_v1",
@@ -660,10 +644,8 @@
         }
       },
       {
-        "sequence": 9,
         "experiment_id": "connector_gap_6p4_post_pulse_real_source_zvz_theory_dt40_n740_v2_compact_auto_replay_v2",
-        "run_id": "20260822_210008__sim__cross__gap-field-replay-09__n740",
-        "overrides": {
+        "values": {
           "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_6p4mm",
           "post_pulse_restart_reuse_authority": {
             "authority_mode": "manifest_bound_post_pulse_restart_reuse_v1",
@@ -724,10 +706,8 @@
         }
       },
       {
-        "sequence": 10,
         "experiment_id": "connector_gap_6p4_post_pulse_partial_ideal_source_zvz_theory_dt40_n740_v2_compact_auto_replay_v2",
-        "run_id": "20260822_210009__sim__cross__gap-field-replay-10__n740",
-        "overrides": {
+        "values": {
           "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_6p4mm",
           "post_pulse_restart_reuse_authority": {
             "authority_mode": "manifest_bound_post_pulse_restart_reuse_v1",
@@ -788,10 +768,8 @@
         }
       },
       {
-        "sequence": 11,
         "experiment_id": "connector_gap_6p4_post_pulse_full_ideal_source_zvz_theory_dt40_n740_v2_compact_auto_replay_v2",
-        "run_id": "20260822_210010__sim__cross__gap-field-replay-11__n740",
-        "overrides": {
+        "values": {
           "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_6p4mm",
           "post_pulse_restart_reuse_authority": {
             "authority_mode": "manifest_bound_post_pulse_restart_reuse_v1",
@@ -852,10 +830,8 @@
         }
       },
       {
-        "sequence": 12,
         "experiment_id": "connector_gap_25p6_post_pulse_real_source_zvz_theory_dt40_n199_v2_compact_auto_replay_v2",
-        "run_id": "20260822_210011__sim__cross__gap-field-replay-12__n199",
-        "overrides": {
+        "values": {
           "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_25p6mm",
           "post_pulse_restart_reuse_authority": {
             "authority_mode": "manifest_bound_post_pulse_restart_reuse_v1",
@@ -916,10 +892,8 @@
         }
       },
       {
-        "sequence": 13,
         "experiment_id": "connector_gap_25p6_post_pulse_partial_ideal_source_zvz_theory_dt40_n199_v2_compact_auto_replay_v2",
-        "run_id": "20260822_210012__sim__cross__gap-field-replay-13__n199",
-        "overrides": {
+        "values": {
           "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_25p6mm",
           "post_pulse_restart_reuse_authority": {
             "authority_mode": "manifest_bound_post_pulse_restart_reuse_v1",
@@ -980,10 +954,8 @@
         }
       },
       {
-        "sequence": 14,
         "experiment_id": "connector_gap_25p6_post_pulse_full_ideal_source_zvz_theory_dt40_n199_v2_compact_auto_replay_v2",
-        "run_id": "20260822_210013__sim__cross__gap-field-replay-14__n199",
-        "overrides": {
+        "values": {
           "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_25p6mm",
           "post_pulse_restart_reuse_authority": {
             "authority_mode": "manifest_bound_post_pulse_restart_reuse_v1",
@@ -1044,10 +1016,8 @@
         }
       },
       {
-        "sequence": 15,
         "experiment_id": "connector_gap_102p4_post_pulse_real_source_zvz_theory_dt40_n116_v2_no_rf_compact_auto_replay_v2",
-        "run_id": "20260822_210014__sim__cross__gap-field-replay-15__n116",
-        "overrides": {
+        "values": {
           "connection_profile_id": "rf_octupole_to_single_reflection_oatof_direct_mating_gap_102p4mm",
           "post_pulse_restart_reuse_authority": {
             "authority_mode": "manifest_bound_post_pulse_restart_reuse_v1",
@@ -1164,10 +1134,8 @@
         }
       },
       {
-        "sequence": 16,
         "experiment_id": "connector_gap_102p4_post_pulse_partial_ideal_source_zvz_theory_dt40_n116_v2_no_rf_compact_auto_replay_v2",
-        "run_id": "20260822_210015__sim__cross__gap-field-replay-16__n116",
-        "overrides": {
+        "values": {
           "connection_profile_id": "rf_octupole_to_single_reflection_oatof_direct_mating_gap_102p4mm",
           "post_pulse_restart_reuse_authority": {
             "authority_mode": "manifest_bound_post_pulse_restart_reuse_v1",
@@ -1284,10 +1252,8 @@
         }
       },
       {
-        "sequence": 17,
         "experiment_id": "connector_gap_102p4_post_pulse_full_ideal_source_zvz_theory_dt40_n116_v3_no_rf_compact_auto_replay_v2",
-        "run_id": "20260822_210016__sim__cross__gap-field-replay-17__n116",
-        "overrides": {
+        "values": {
           "connection_profile_id": "rf_octupole_to_single_reflection_oatof_direct_mating_gap_102p4mm",
           "post_pulse_restart_reuse_authority": {
             "authority_mode": "manifest_bound_post_pulse_restart_reuse_v1",
@@ -1404,10 +1370,8 @@
         }
       },
       {
-        "sequence": 18,
         "experiment_id": "connector_gap_3p2_post_pulse_reflectron_ideal_source_zvz_theory_dt40_n850_v8_compact_auto_replay_v2",
-        "run_id": "20260822_210017__sim__cross__gap-field-replay-18__n850",
-        "overrides": {
+        "values": {
           "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_3p2mm",
           "post_pulse_restart_reuse_authority": {
             "authority_mode": "manifest_bound_post_pulse_restart_reuse_v1",
@@ -1476,10 +1440,8 @@
         }
       },
       {
-        "sequence": 19,
         "experiment_id": "connector_gap_6p4_post_pulse_reflectron_ideal_source_zvz_theory_dt40_n740_v8_compact_auto_replay_v2",
-        "run_id": "20260822_210018__sim__cross__gap-field-replay-19__n740",
-        "overrides": {
+        "values": {
           "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_6p4mm",
           "post_pulse_restart_reuse_authority": {
             "authority_mode": "manifest_bound_post_pulse_restart_reuse_v1",
@@ -1548,10 +1510,8 @@
         }
       },
       {
-        "sequence": 20,
         "experiment_id": "connector_gap_12p8_post_pulse_reflectron_ideal_source_zvz_theory_dt40_n482_v8_compact_auto_replay_v2",
-        "run_id": "20260822_210019__sim__cross__gap-field-replay-20__n482",
-        "overrides": {
+        "values": {
           "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_12p8mm",
           "post_pulse_restart_reuse_authority": {
             "authority_mode": "manifest_bound_post_pulse_restart_reuse_v1",
@@ -1620,10 +1580,8 @@
         }
       },
       {
-        "sequence": 21,
         "experiment_id": "connector_gap_25p6_post_pulse_reflectron_ideal_source_zvz_theory_dt40_n199_v8_compact_auto_replay_v2",
-        "run_id": "20260822_210020__sim__cross__gap-field-replay-21__n199",
-        "overrides": {
+        "values": {
           "connection_profile_id": "rf_octupole_oatof_shield_terminal_direct_mating_gap_25p6mm",
           "post_pulse_restart_reuse_authority": {
             "authority_mode": "manifest_bound_post_pulse_restart_reuse_v1",
@@ -1692,10 +1650,8 @@
         }
       },
       {
-        "sequence": 22,
         "experiment_id": "connector_gap_51p2_post_pulse_reflectron_ideal_source_zvz_theory_dt40_n77_v8_compact_auto_replay_v2",
-        "run_id": "20260822_210021__sim__cross__gap-field-replay-22__n77",
-        "overrides": {
+        "values": {
           "connection_profile_id": "rf_octupole_to_single_reflection_oatof_direct_mating_gap_51p2mm",
           "post_pulse_restart_reuse_authority": {
             "authority_mode": "manifest_bound_post_pulse_restart_reuse_v1",
@@ -1763,10 +1719,8 @@
         }
       },
       {
-        "sequence": 23,
         "experiment_id": "connector_gap_102p4_post_pulse_reflectron_ideal_source_zvz_theory_dt40_n116_v8_compact_auto_replay_v2",
-        "run_id": "20260822_210022__sim__cross__gap-field-replay-23__n116",
-        "overrides": {
+        "values": {
           "connection_profile_id": "rf_octupole_to_single_reflection_oatof_direct_mating_gap_102p4mm",
           "post_pulse_restart_reuse_authority": {
             "authority_mode": "manifest_bound_post_pulse_restart_reuse_v1",
@@ -1868,9 +1822,5 @@
         }
       }
     ]
-  },
-  "published_authoring_identity": {
-    "legacy_campaign_sha256": "5F76AAF17DACAECD56E4153F8BC26DF42C5003D6A762873BE270EE5BE0EF4D50",
-    "semantic_sha256": "890129112EB6C382C623DE28D3B5E610A054A5C67FE6B2B7078AA0A6606AFED7"
   }
 }

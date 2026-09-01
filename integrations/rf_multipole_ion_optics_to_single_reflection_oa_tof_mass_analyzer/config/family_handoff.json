@@ -16,6 +16,43 @@
     "candidate_consumer": "fixed_particle_table_runtime_qualified_candidate_only",
     "formal_assets_read_only": true
   },
+  "execution_architecture": {
+    "policy_id": "decoupled_component_handoff_default_v1",
+    "default_workflow": "archive_verified_prepulse_upstream_trajectory_then_run_downstream_only",
+    "upstream_scope": "multipole_to_accelerator_handoff_plane",
+    "downstream_scope": "accelerator_to_detector",
+    "upstream_authority": {
+      "artifact": "pulse_disabled_trajectory_archive",
+      "sampling_rule": "all surviving particles are recorded on one explicit canonical-instrument-time grid until terminal loss or the declared archive horizon",
+      "required_state": [
+        "particle_id",
+        "instrument_time_us",
+        "position_x_mm",
+        "position_y_mm",
+        "position_z_mm",
+        "velocity_x_mm_per_us",
+        "velocity_y_mm_per_us",
+        "velocity_z_mm_per_us",
+        "mass_amu",
+        "charge_state",
+        "kinetic_energy_eV",
+        "frame_id",
+        "clock_epoch_id"
+      ],
+      "required_terminal_event": [
+        "particle_id",
+        "terminal_time_us",
+        "terminal_reason",
+        "terminal_position_mm",
+        "terminal_velocity_mm_per_us"
+      ],
+      "derived_handoff": "a pulse-time handoff CSV is a materialized view of one archive time slice, never the sole upstream authority"
+    },
+    "reuse_rule": "downstream accelerator or TOF geometry, voltage, pulse timing or algorithm, and analysis changes reuse an unchanged verified upstream trajectory archive and materialize the required pulse-time slice",
+    "invalidation_rule": "a changed upstream source, multipole geometry, upstream field program, archive time grid or horizon, handoff plane, frame transform, or handoff state contract requires a new trajectory archive",
+    "full_chain_policy": "full multipole-to-detector runs are low-frequency handoff-equivalence validation only and are not the default design or optimization workflow",
+    "rationale": "separating component scopes makes accelerator and TOF iteration tractable while retaining one governed end-to-end equivalence check"
+  },
   "identity_contract": {
     "particle_id_policy": "stable_across_transport_components",
     "row_order_policy": "sort_by_integer_particle_id_and_record_row_map",

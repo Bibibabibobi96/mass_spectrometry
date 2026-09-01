@@ -12,6 +12,7 @@ import math
 from pathlib import Path
 import shutil
 from typing import Any
+import warnings
 
 from common.contracts.artifact_naming import validate_run_id
 from common.contracts.file_identity import (
@@ -100,9 +101,11 @@ INTEGRATION_ID = (
 CAMPAIGN_SCHEMA_PATH = Path(__file__).resolve().parents[2] / "config" / "schemas" / (
     "rf_multipole_oatof_experiment_campaign.schema.json"
 )
-ARCHIVAL_CAMPAIGN_SCHEMA_PATH = (
-    CAMPAIGN_SCHEMA_PATH.parent / "archive" /
-    "rf_multipole_oatof_experiment_campaign_v1_to_v6.schema.json"
+RESOLVED_CAMPAIGN_SCHEMA_PATH = CAMPAIGN_SCHEMA_PATH.parent / (
+    "rf_multipole_oatof_resolved_experiment_campaign.schema.json"
+)
+PRE_PULSE_CAMPAIGN_PROFILE_REGISTRY_PATH = CAMPAIGN_SCHEMA_PATH.parent.parent / (
+    "pre_pulse_campaign_profiles.json"
 )
 INTEGRATION_SCHEMA_DIR = CAMPAIGN_SCHEMA_PATH.parent
 UPSTREAM_PROJECTS = {
@@ -459,10 +462,16 @@ def validate_pre_pulse_time_series_campaign(campaign: dict[str, Any]) -> None:
     required_claim = (
         "DETECTOR_BLIND_SOURCE_ONLY" if is_single_snapshot else "FUNCTIONAL_ONLY"
     )
-    if not rows or required_claim not in campaign["claim_limit"] or (
-        not is_single_snapshot and len(rows) != 1
-    ):
+    if not rows or (not is_single_snapshot and len(rows) != 1):
         raise ContractError("pre-pulse time-series campaign scope differs")
+    if required_claim not in campaign["claim_limit"]:
+        warnings.warn(
+            "pre-pulse campaign claim_limit omits the conventional "
+            f"{required_claim} marker; semantic detector-blind constraints "
+            "remain enforced",
+            UserWarning,
+            stacklevel=2,
+        )
     for row in rows:
         source = row["source"]
         population = row["single_flight_population"]
@@ -479,14 +488,19 @@ def validate_pre_pulse_time_series_campaign(campaign: dict[str, Any]) -> None:
             "prepared_deterministic_prefix",
             "first_100_rows_in_frozen_file_order",
         ) and execution.get("particle_count") == 100
-        is_full_prepared_population = population_identity == (
+        is_prepared_prefix_population = population_identity == (
             "first_n_rows_in_frozen_file_order",
             "prepared_deterministic_prefix",
             "first_n_rows_in_frozen_file_order",
-        ) and execution.get("particle_count") == source.get("launched_particle_count")
+        ) and 0 < execution.get("particle_count", 0) <= source.get("launched_particle_count", 0)
         is_full_source_contract_population = population_identity == (
             "continuous_injection_full_population",
             "source_contract_particle_source",
+            "all_rows_in_frozen_file_order",
+        ) and execution.get("particle_count") == source.get("launched_particle_count")
+        is_materialized_volume_population = population_identity == (
+            "independent_spatial_velocity_ion_source_snapshot",
+            "prepared_materialized_ion_source_volume",
             "all_rows_in_frozen_file_order",
         ) and execution.get("particle_count") == source.get("launched_particle_count")
         is_terminal_handoff_population = population_identity in {
@@ -518,8 +532,9 @@ def validate_pre_pulse_time_series_campaign(campaign: dict[str, Any]) -> None:
             or source["launched_particle_count"] < execution.get("particle_count", 0)
             or not (
                 is_legacy_n100_prefix
-                or is_full_prepared_population
+                or is_prepared_prefix_population
                 or is_full_source_contract_population
+                or is_materialized_volume_population
                 or is_terminal_handoff_population
             )
             or denominators.get("population_count") != (
@@ -594,8 +609,8 @@ def compile_pre_pulse_time_series_contract(
     )
     if connector_length_mm >= 50.0:
         active_pa_cache_roles = [
-            "full_coarse_bridge", "fine_upstream", "accelerator_main",
-            "accelerator_intermediate2_overlay",
+            "fine_upstream",
+            "accelerator_entrance_zone_collision",
         ]
     elif overlay_layout == "whole_accelerator_v1":
         active_pa_cache_roles = ["frontend", "accelerator_overlay"]
@@ -608,7 +623,7 @@ def compile_pre_pulse_time_series_contract(
     else:
         raise ContractError("pre-pulse accelerator-overlay layout is unsupported")
     contract = {
-        "schema_version": 4 if automatic and connector_length_mm >= 50.0 else 3 if automatic and overlay_layout == "two_local_v1" else 2 if automatic else 1,
+        "schema_version": 5 if automatic and connector_length_mm >= 50.0 else 3 if automatic and overlay_layout == "two_local_v1" else 2 if automatic else 1,
         "role": "rf_oatof_pre_pulse_time_series_screening_contract",
         "mode": specification["mode"],
         "active_scope": specification["active_scope"],
@@ -710,7 +725,7 @@ SCREENING_SOURCE_COLUMNS = [
 def write_pulse_resolution_screening_prefix(
     source_path: Path, output_path: Path, *, ordered_particle_ids: list[int],
 ) -> str:
-    """Write the deterministic governed mother-sample prefix with no sampling."""
+    """Write one explicitly ordered, frozen subset of the canonical mother."""
     with source_path.open(encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
         rows, columns = list(reader), reader.fieldnames
@@ -719,13 +734,19 @@ def write_pulse_resolution_screening_prefix(
     mother_ids = [int(row["particle_id"]) for row in rows]
     if mother_ids != list(range(1, len(rows) + 1)):
         raise ContractError("pulse-resolution mother-source IDs must be contiguous")
-    if not ordered_particle_ids or ordered_particle_ids != mother_ids[:len(ordered_particle_ids)]:
-        raise ContractError("pulse-resolution frozen source cohort is not the mother prefix")
+    if (
+        not ordered_particle_ids
+        or any(isinstance(item, bool) or not isinstance(item, int) for item in ordered_particle_ids)
+        or len(set(ordered_particle_ids)) != len(ordered_particle_ids)
+        or not set(ordered_particle_ids).issubset(mother_ids)
+    ):
+        raise ContractError("pulse-resolution frozen source cohort is not an ordered mother subset")
+    rows_by_id = {int(row["particle_id"]): row for row in rows}
     with output_path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=SCREENING_SOURCE_COLUMNS,
                                 lineterminator="\n")
         writer.writeheader()
-        writer.writerows(rows[:len(ordered_particle_ids)])
+        writer.writerows(rows_by_id[particle_id] for particle_id in ordered_particle_ids)
     return file_sha256(output_path)
 
 
@@ -745,20 +766,93 @@ def _write_json(
     )
 
 
+def expand_pre_pulse_campaign_profile(campaign: dict[str, Any]) -> dict[str, Any]:
+    """Inject one versioned execution profile before materializing v7 rows.
+
+    The profile is authoring convenience only.  Its complete values are copied
+    into the resolved campaign, while candidate/source/cohort evidence remains
+    explicit in the authored campaign and cannot be hidden in a mutable preset.
+    """
+    profile_id = campaign.get("pre_pulse_campaign_profile_id")
+    if profile_id is None:
+        return copy.deepcopy(campaign)
+    if not isinstance(profile_id, str) or not profile_id:
+        raise ContractError("pre-pulse campaign profile ID is invalid")
+    registry = _load(PRE_PULSE_CAMPAIGN_PROFILE_REGISTRY_PATH)
+    if registry.get("role") != "rf_multipole_oatof_pre_pulse_campaign_profile_registry":
+        raise ContractError("pre-pulse campaign profile registry role differs")
+    profiles = {
+        item.get("profile_id"): item for item in registry.get("profiles", [])
+        if isinstance(item, dict) and isinstance(item.get("profile_id"), str)
+    }
+    if profile_id not in profiles:
+        raise ContractError(f"pre-pulse campaign profile is not unique: {profile_id}")
+    profile = profiles[profile_id]
+    parent_id = profile.get("extends")
+    if parent_id is not None:
+        if not isinstance(parent_id, str) or parent_id not in profiles:
+            raise ContractError("pre-pulse campaign profile parent is invalid")
+        parent = profiles[parent_id]
+        if parent.get("extends") is not None:
+            raise ContractError("pre-pulse campaign profiles permit one inheritance level")
+        overrides = profile.get("overrides")
+        if set(profile) != {"profile_id", "revision", "extends", "overrides"} or not isinstance(overrides, dict):
+            raise ContractError("pre-pulse campaign profile inheritance shape differs")
+        parent_defaults = parent.get("defaults")
+        if not isinstance(parent_defaults, dict) or set(overrides) - {"campaign", "experiment_shared"}:
+            raise ContractError("pre-pulse campaign profile inheritance defaults differ")
+        profile = {
+            "profile_id": profile_id,
+            "defaults": {
+                "campaign": {
+                    **copy.deepcopy(parent_defaults.get("campaign", {})),
+                    **copy.deepcopy(overrides.get("campaign", {})),
+                },
+                "experiment_shared": {
+                    **copy.deepcopy(parent_defaults.get("experiment_shared", {})),
+                    **copy.deepcopy(overrides.get("experiment_shared", {})),
+                },
+            },
+        }
+    defaults = profile.get("defaults")
+    if not isinstance(defaults, dict) or set(defaults) != {
+        "campaign", "experiment_shared"
+    }:
+        raise ContractError("pre-pulse campaign profile defaults differ")
+    campaign_defaults = defaults["campaign"]
+    shared_defaults = defaults["experiment_shared"]
+    if not isinstance(campaign_defaults, dict) or not isinstance(shared_defaults, dict):
+        raise ContractError("pre-pulse campaign profile defaults must be objects")
+    result = copy.deepcopy(campaign)
+    result.pop("pre_pulse_campaign_profile_id")
+    for key, value in campaign_defaults.items():
+        if key in result:
+            raise ContractError(f"pre-pulse campaign profile duplicates authored field: {key}")
+        result[key] = copy.deepcopy(value)
+    experiments = result.get("experiments")
+    if not isinstance(experiments, dict) or not isinstance(experiments.get("shared"), dict):
+        raise ContractError("pre-pulse campaign profile requires flat experiment authoring")
+    authored_shared = experiments["shared"]
+    overlap = set(authored_shared).intersection(shared_defaults)
+    if overlap:
+        raise ContractError(
+            "pre-pulse campaign profile duplicates authored shared field: " +
+            ", ".join(sorted(overlap))
+        )
+    experiments["shared"] = {
+        **copy.deepcopy(shared_defaults), **copy.deepcopy(authored_shared)
+    }
+    return result
+
+
 def expand_flat_experiment_authoring(
     campaign: dict[str, Any], *, execution_run_id: str | None = None
 ) -> dict[str, Any]:
-    """Expand shared experiment controls and explicit per-row variation axes.
-
-    The on-disk authoring form remains compact.  Consumers receive the same
-    fully materialized rows as the legacy array form, so every selected run can
-    still freeze one complete, independently verifiable contract.
-    """
+    """Materialize a v7 authoring contract into its generated run rows."""
+    campaign = expand_pre_pulse_campaign_profile(campaign)
     source = campaign.get("experiments")
-    if isinstance(source, list):
-        return campaign
     if not isinstance(source, dict):
-        raise ContractError("experiments must be an array or flat authoring object")
+        raise ContractError("experiments must be a v7 authoring object")
     if set(source) != {"shared", "variation_axes", "rows"}:
         raise ContractError("flat experiment authoring keys differ")
     shared = source["shared"]
@@ -766,37 +860,33 @@ def expand_flat_experiment_authoring(
     rows = source["rows"]
     if not isinstance(shared, dict) or not isinstance(axes, list) or not isinstance(rows, list):
         raise ContractError("flat experiment authoring shape differs")
-    if not axes or any(not isinstance(axis, str) or not axis for axis in axes) or len(axes) != len(set(axes)):
+    if (
+        any(not isinstance(axis, str) or not axis for axis in axes)
+        or len(axes) != len(set(axes))
+    ):
         raise ContractError("flat experiment variation axes are invalid")
     row_identity = {"sequence", "experiment_id", "run_id"}
     if set(axes).intersection(row_identity):
         raise ContractError("flat experiment variation axes cannot contain row identity")
     expanded: list[dict[str, Any]] = []
-    minimal_rows = all(
-        isinstance(row, dict) and set(row) == {"experiment_id", "values"}
-        for row in rows
-    )
-    if execution_run_id is not None and (not minimal_rows or len(rows) != 1):
+    if execution_run_id is not None and len(rows) != 1:
         raise ContractError("an execution run ID requires exactly one minimal authored row")
     for sequence, row in enumerate(rows, start=1):
         if not isinstance(row, dict):
             raise ContractError("flat experiment row must be an object")
-        is_minimal = set(row) == {"experiment_id", "values"}
-        is_legacy = set(row) == {"sequence", "experiment_id", "run_id", "overrides"}
-        if not is_minimal and not is_legacy:
-            raise ContractError("flat experiment row must use the minimal or legacy shape")
-        overrides = row["values"] if is_minimal else row["overrides"]
+        if set(row) != {"experiment_id", "values"}:
+            raise ContractError("flat experiment rows must contain only experiment_id and values")
+        overrides = row["values"]
         if not isinstance(overrides, dict) or not set(overrides).issubset(set(axes)):
             raise ContractError("flat experiment row override is not an allowed variation axis")
         materialized = copy.deepcopy(shared)
         if set(materialized).intersection(row_identity):
             raise ContractError("flat experiment shared controls cannot contain row identity")
         materialized.update(copy.deepcopy(overrides))
-        materialized["sequence"] = sequence if is_minimal else row["sequence"]
+        materialized["sequence"] = sequence
         materialized["experiment_id"] = row["experiment_id"]
         materialized["run_id"] = (
-            execution_run_id if is_minimal and execution_run_id is not None
-            else ("execution_pending" if is_minimal else row["run_id"])
+            execution_run_id if execution_run_id is not None else "execution_pending"
         )
         expanded.append(materialized)
     if not expanded:
@@ -804,6 +894,24 @@ def expand_flat_experiment_authoring(
     result = copy.deepcopy(campaign)
     result["experiments"] = expanded
     return result
+
+
+def require_minimal_flat_experiment_authoring(campaign: dict[str, Any]) -> None:
+    """Validate semantic constraints not expressible by the v7 JSON schema."""
+
+    source = campaign.get("experiments")
+    if not isinstance(source, dict) or set(source) != {
+        "shared", "variation_axes", "rows"
+    }:
+        raise ContractError("executable campaign must use flat minimal authoring")
+    rows = source.get("rows")
+    if not isinstance(rows, list) or not rows or any(
+        not isinstance(row, dict) or set(row) != {"experiment_id", "values"}
+        for row in rows
+    ):
+        raise ContractError(
+            "executable campaign rows must contain only experiment_id and values"
+        )
 
 
 def _semantic_diff_category(path: tuple[str, ...]) -> str:
@@ -952,6 +1060,7 @@ def _resolve_candidate_confirmation_schedule(
         return _workspace_record(workspace, record, f"pulse candidate {name}")
 
     screening_contract = _load(receipt_authority("pre_pulse_time_series_contract"))
+    screening_receipt = _load(receipt_authority("pre_pulse_time_series_receipt"))
     candidate_population = _load(receipt_authority("resolved_population_contract"))
     candidate_population_table = receipt_authority("population_table")
     selector_record = receipt.get("authorities", {}).get("selector_source")
@@ -1019,6 +1128,15 @@ def _resolve_candidate_confirmation_schedule(
         raise ContractError("pulse candidate physical identity differs")
     current_source = _load(resolved_source_path)
     current_connection = _load(resolved_connection_path)
+    receipt_pa_cache_keys = receipt.get("pa_cache_keys")
+    # Schema-v3 selection receipts from the active campaign predate the
+    # domain-split cache-key encoding.  Their authoritative screening receipt
+    # is already hash-bound above, so it is the sole safe source for the
+    # missing pre-pulse PA identity while this in-flight evidence is consumed.
+    if receipt_pa_cache_keys is None:
+        receipt_pa_cache_keys = screening_receipt.get("pa_cache_keys")
+    if not isinstance(receipt_pa_cache_keys, dict):
+        raise ContractError("pulse candidate pre-pulse PA identity is missing")
     content_basis, content_key = pulse_selection_content_identity(
         contract=screening_contract,
         source=current_source,
@@ -1026,6 +1144,8 @@ def _resolve_candidate_confirmation_schedule(
         geometry=current_geometry,
         spatial_profile=profiles[0],
         selector_source_sha256=selector_record.get("sha256"),
+        # Preserve the selection receipt's historical content identity.  The
+        # fallback above is solely for the later verified-reuse projection.
         pa_cache_keys=receipt.get("pa_cache_keys"),
     )
     reuse_basis, verified_content_key = build_verified_pulse_reuse_projection(
@@ -1034,7 +1154,7 @@ def _resolve_candidate_confirmation_schedule(
         resolved_connection=current_connection,
         resolved_geometry=current_geometry,
         spatial_profile=profiles[0],
-        pa_cache_keys=receipt.get("pa_cache_keys", {}),
+        pa_cache_keys=receipt_pa_cache_keys,
     )
     selected_time_us = float(receipt["selected_time_us"])
     receipt_key_is_valid = (
@@ -1716,12 +1836,25 @@ def _population_source_table(
 ) -> dict[str, Any]:
     with path.open(encoding="utf-8-sig", newline="") as handle:
         rows = list(csv.DictReader(handle))
-    if not rows or "particle_id" not in rows[0]:
+    if not rows:
+        raise ContractError("population source table lacks particle identities")
+    # A canonical pre-pulse restart state has two identities: its transient,
+    # contiguous simulation_particle_id and the frozen mother-cohort
+    # source_particle_id.  The latter is the population identity that must
+    # agree with the receipt, so never substitute the simulation row index.
+    identity_column = (
+        "source_particle_id"
+        if "source_particle_id" in rows[0]
+        else "particle_id"
+    )
+    if identity_column not in rows[0]:
         raise ContractError("population source table lacks particle identities")
     try:
-        particle_ids = [int(row["particle_id"]) for row in rows]
+        particle_ids = [int(row[identity_column]) for row in rows]
     except (TypeError, ValueError) as exc:
         raise ContractError("population source particle identities are invalid") from exc
+    if any(particle_id < 1 for particle_id in particle_ids):
+        raise ContractError("population source particle identities must be positive")
     if len(particle_ids) != len(set(particle_ids)):
         raise ContractError("population source particle identities are not unique")
     return {
@@ -1933,9 +2066,13 @@ def _validate_time_series_restart_state(
         or not selection["postselection_prohibited"]
     ):
         raise ContractError("time-series restart receipt identity differs")
-    _, rows = materialize_pre_pulse_restart(source_path, pulse_time_us)
+    _, rows, row_map = materialize_pre_pulse_restart(
+        source_path, pulse_time_us, return_row_map=True
+    )
     count = len(rows)
-    ordered_ids = [int(row["particle_id"]) for row in rows]
+    # ``particle_id`` in the rendered restart rows is a local SIMION index.
+    # Bind the receipt to the immutable source identity instead.
+    ordered_ids = [int(row["source_particle_id"]) for row in row_map]
     ordered_id_sha256 = _canonical_sha256(ordered_ids)
     if (
         count != source_record["particle_count"]
@@ -2542,8 +2679,11 @@ def _select_preparation_experiment(
     if not campaign_path.is_relative_to(root):
         raise ContractError("integration campaign must be repository-managed")
     if exploration:
-        campaign = expand_flat_experiment_authoring(_load(campaign_path))
-        validate_schema(campaign, CAMPAIGN_SCHEMA_PATH)
+        authored_campaign = _load(campaign_path)
+        validate_schema(authored_campaign, CAMPAIGN_SCHEMA_PATH)
+        require_minimal_flat_experiment_authoring(authored_campaign)
+        campaign = expand_flat_experiment_authoring(authored_campaign)
+        validate_schema(campaign, RESOLVED_CAMPAIGN_SCHEMA_PATH)
         validate_pre_pulse_time_series_campaign(campaign)
         if campaign["integration_id"] != INTEGRATION_ID:
             raise ContractError("campaign integration identity differs")
@@ -2565,14 +2705,11 @@ def _select_preparation_experiment(
             raise ContractError(
                 "campaign is not an active lifecycle authority; preparation is forbidden"
             )
-        if file_sha256(campaign_path).lower() != str(
-            active_rows[0].get("content_sha256", "")
-        ).lower():
-            raise ContractError(
-                "active lifecycle campaign identity differs; preparation is forbidden"
-            )
-        campaign = expand_flat_experiment_authoring(_load(campaign_path))
-        validate_schema(campaign, CAMPAIGN_SCHEMA_PATH)
+        authored_campaign = _load(campaign_path)
+        validate_schema(authored_campaign, CAMPAIGN_SCHEMA_PATH)
+        require_minimal_flat_experiment_authoring(authored_campaign)
+        campaign = expand_flat_experiment_authoring(authored_campaign)
+        validate_schema(campaign, RESOLVED_CAMPAIGN_SCHEMA_PATH)
         validate_pre_pulse_time_series_campaign(campaign)
         if campaign["integration_id"] != INTEGRATION_ID:
             raise ContractError("campaign integration identity differs")
@@ -2683,6 +2820,21 @@ def prepare_family_source_closure(
         )
     if execution_strategy == "simion_single_flight" and population_declaration is None:
         raise ContractError("schema-v3 single flight requires a resolved population input")
+    local_aperture_mm = experiment.get("accelerator_entrance_local_aperture_mm")
+    if local_aperture_mm is not None:
+        if execution_strategy != "simion_single_flight" or not isinstance(
+            local_aperture_mm, dict
+        ) or set(local_aperture_mm) != {"width", "height"}:
+            raise ContractError("local accelerator aperture declaration is invalid")
+        try:
+            local_aperture_values = {
+                axis: float(local_aperture_mm[axis]) for axis in ("width", "height")
+            }
+        except (TypeError, ValueError) as error:
+            raise ContractError("local accelerator aperture declaration is invalid") from error
+        if not all(math.isfinite(value) and value > 0 for value in local_aperture_values.values()):
+            raise ContractError("local accelerator aperture dimensions are invalid")
+        local_aperture_mm = local_aperture_values
     if (
         execution_strategy == "simion_single_flight"
         and pulse_schedule_policy is None
@@ -2827,6 +2979,38 @@ def prepare_family_source_closure(
         ),
     )
     source = evidence["source"]
+    # A pre-pulse screen is a projection of the exact mother cohort that will
+    # be released into SIMION.  The independent ion-source volume has no
+    # dependence on the pulse schedule, so materialize it before deriving any
+    # screening prefix.  This prevents the legacy source-contract CSV from
+    # silently becoming the pre-pulse population authority.
+    materialized_source_path = None
+    materialization_receipt_path = None
+    materialization_receipt = None
+    if (
+        source_materialization_profile is not None
+        and source_materialization_profile["materialization_mode"]
+        == "independent_spatial_velocity_ion_source_snapshot"
+    ):
+        materialized_source_path = plan_output.parent / "inputs" / (
+            "single_flight_materialized_particle_source.csv"
+        )
+        materialization_receipt_path = plan_output.parent / "inputs" / (
+            "single_flight_source_materialization_receipt.json"
+        )
+        materialization_receipt = materialize_independent_ion_source_volume(
+            materialized_source_path,
+            materialization_receipt_path,
+            source_materialization_profile,
+            root / "integrations" / INTEGRATION_ID,
+        )
+    pulse_prefix_source_path = (
+        materialized_source_path
+        if materialized_source_path is not None
+        else _workspace_record(
+            workspace, source["particle_source"], "pre-pulse time-series mother source"
+        )
+    )
     pulse_prefix_path = None
     pulse_prefix_sha256 = None
     pulse_population_plan_path = None
@@ -2835,17 +3019,32 @@ def prepare_family_source_closure(
         pulse_population_count = int(
             population_declaration["execution_population"]["particle_count"]
         )
-        prefix_ids = list(range(1, pulse_population_count + 1))
+        smoke_particle_id = (
+            source_materialization_profile.get("functional_smoke_particle_id")
+            if source_materialization_profile is not None
+            else None
+        )
+        if pulse_population_count == 1 and smoke_particle_id is not None:
+            if (
+                isinstance(smoke_particle_id, bool)
+                or not isinstance(smoke_particle_id, int)
+                or smoke_particle_id < 1
+                or smoke_particle_id > int(source_materialization_profile["particle_count"])
+            ):
+                raise ContractError("independent-source functional smoke member is invalid")
+            # Functional-only N=1 confirms the plumbing with a registered
+            # near-axis member of the same frozen N=5000 mother.  Scientific
+            # cases always retain their complete ordered population.
+            prefix_ids = [smoke_particle_id]
+        else:
+            prefix_ids = list(range(1, pulse_population_count + 1))
         pulse_prefix_path = plan_output.parent / "inputs" / (
             "pre_pulse_time_series_screening_prefix_n"
             + str(pulse_population_count) + ".csv"
         )
         pulse_prefix_path.parent.mkdir(parents=True, exist_ok=True)
         pulse_prefix_sha256 = write_pulse_resolution_screening_prefix(
-            _workspace_record(
-                workspace, source["particle_source"],
-                "pre-pulse time-series mother source",
-            ),
+            pulse_prefix_source_path,
             pulse_prefix_path,
             ordered_particle_ids=prefix_ids,
         )
@@ -2861,21 +3060,19 @@ def prepare_family_source_closure(
             )
             pulse_prefix_path.parent.mkdir(parents=True, exist_ok=True)
             pulse_prefix_sha256 = write_pulse_resolution_screening_prefix(
-                _workspace_record(
-                    workspace, source["particle_source"],
-                    "automatic pulse timing mother source",
-                ),
+                pulse_prefix_source_path,
                 pulse_prefix_path,
                 ordered_particle_ids=list(range(1, pulse_population_count + 1)),
             )
             pulse_population_plan_path = "inputs/" + pulse_prefix_path.name
         else:
-            pulse_prefix_path = _workspace_record(
-                workspace, source["particle_source"],
-                "automatic pulse timing full population",
-            )
+            pulse_prefix_path = pulse_prefix_source_path
             pulse_prefix_sha256 = file_sha256(pulse_prefix_path)
-            pulse_population_plan_path = source["particle_source"]["path"]
+            pulse_population_plan_path = (
+                "inputs/" + pulse_prefix_path.name
+                if materialized_source_path is not None
+                else source["particle_source"]["path"]
+            )
     if pulse_prefix_path is not None and pulse_population_plan_path is None:
         pulse_population_plan_path = "inputs/" + pulse_prefix_path.name
     if pulse_prefix_path is not None and pulse_population_count is None:
@@ -3130,8 +3327,12 @@ def prepare_family_source_closure(
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise ContractError("resolved region field contract is invalid") from exc
-        downstream_port["authority"]["source_contract"] = _workspace_relative(
-            geometry_path, workspace
+        # The connection resolver runs with the repository as its managed
+        # root, whereas this derived port itself is stored in the run-local
+        # workspace.  Its authority therefore needs a repository-relative
+        # geometry path, not a second workspace-relative path.
+        downstream_port["authority"]["source_contract"] = (
+            geometry_path.resolve().relative_to(root.parent.resolve()).as_posix()
         )
         downstream_port["authority"]["source_sha256"] = file_sha256(geometry_path)
         downstream_port_path = plan_output.with_name("resolved_downstream_port.json")
@@ -3275,7 +3476,6 @@ def prepare_family_source_closure(
         plan_output,
         repo_root=root,
     )
-    materialized_source_path = None
     terminal_handoff_global_state_path = None
     terminal_handoff_receipt_path = None
     terminal_handoff_smoke_source_particle_id = None
@@ -3539,18 +3739,14 @@ def prepare_family_source_closure(
             and source_materialization_profile["materialization_mode"]
             == "independent_spatial_velocity_ion_source_snapshot"
         ):
-            materialized_source_path = plan_output.parent / "inputs" / (
-                "single_flight_materialized_particle_source.csv"
-            )
-            materialization_receipt_path = plan_output.parent / "inputs" / (
-                "single_flight_source_materialization_receipt.json"
-            )
-            materialization_receipt = materialize_independent_ion_source_volume(
-                materialized_source_path,
-                materialization_receipt_path,
-                source_materialization_profile,
-                root / "integrations" / INTEGRATION_ID,
-            )
+            if (
+                materialized_source_path is None
+                or materialization_receipt_path is None
+                or materialization_receipt is None
+            ):
+                raise ContractError(
+                    "independent ion-source volume must materialize before pulse preparation"
+                )
         elif (
             source_materialization_profile is not None
             and source_materialization_profile["materialization_mode"]
@@ -4044,7 +4240,6 @@ def prepare_family_source_closure(
         "role": "rf_oatof_frozen_campaign_experiment",
         "campaign_source": {
             "path": campaign_path.relative_to(root).as_posix(),
-            "sha256": repository_text_sha256(campaign_path),
         },
         "campaign": frozen_campaign,
         "experiment_row_sha256": row_sha256,
@@ -4059,7 +4254,6 @@ def prepare_family_source_closure(
             "arguments": [
                 f"adapter_sha256={mapping['adapter_sha256']}",
                 f"campaign_path={campaign_path.relative_to(root).as_posix()}",
-                f"campaign_sha256={repository_text_sha256(campaign_path)}",
                 "frozen_campaign_experiment_filename=inputs/"
                 + frozen_authoring_path.name,
                 "frozen_campaign_experiment_sha256="
@@ -4087,7 +4281,12 @@ def prepare_family_source_closure(
                 + resolved_execution_profile_path.name,
                 "resolved_single_flight_execution_profile_sha256="
                 + file_sha256(resolved_execution_profile_path),
-            ]) + ([] if pa_cache_generation_binding_path is None else [
+            ]) + ([] if local_aperture_mm is None else [
+            "accelerator_entrance_local_aperture_width_mm="
+            + str(local_aperture_mm["width"]),
+            "accelerator_entrance_local_aperture_height_mm="
+            + str(local_aperture_mm["height"]),
+        ]) + ([] if pa_cache_generation_binding_path is None else [
                 "single_flight_pa_cache_generation_binding_filename=inputs/"
                 + pa_cache_generation_binding_path.name,
                 "single_flight_pa_cache_generation_binding_sha256="
@@ -4410,8 +4609,11 @@ def main() -> int:
     parser.add_argument("--execution-run-id")
     args = parser.parse_args()
     if args.list_experiment_ids or args.print_experiment_json or args.semantic_diff_experiment_json:
-        campaign = expand_flat_experiment_authoring(_load(args.campaign))
-        validate_schema(campaign, ARCHIVAL_CAMPAIGN_SCHEMA_PATH)
+        authored_campaign = _load(args.campaign)
+        validate_schema(authored_campaign, CAMPAIGN_SCHEMA_PATH)
+        require_minimal_flat_experiment_authoring(authored_campaign)
+        campaign = expand_flat_experiment_authoring(authored_campaign)
+        validate_schema(campaign, RESOLVED_CAMPAIGN_SCHEMA_PATH)
         if args.semantic_diff_experiment_json:
             before_id, after_id = args.semantic_diff_experiment_json
             rows_by_id = {

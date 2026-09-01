@@ -9,12 +9,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
-try:
-    from common.contracts.file_identity import file_sha256
-except ModuleNotFoundError:
-    from file_identity import file_sha256
-
-
 POLICY_PATH = Path(__file__).with_name("artifact_retention.json")
 
 
@@ -183,7 +177,6 @@ def apply_retention(run_config_path: Path) -> Path:
         record = {
             "path": path.relative_to(run_dir).as_posix(),
             "bytes": path.stat().st_size,
-            "sha256": file_sha256(path),
             "retention_role": role,
             "action": "removed_before_terminal_manifest",
         }

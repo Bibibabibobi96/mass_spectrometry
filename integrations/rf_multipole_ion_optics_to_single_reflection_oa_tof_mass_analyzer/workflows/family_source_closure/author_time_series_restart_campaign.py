@@ -12,8 +12,10 @@ from common.contracts.file_identity import file_sha256
 from common.contracts.machine_contracts import ContractError, validate_schema
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.prepare import (
     INTEGRATION_SCHEMA_DIR,
+    RESOLVED_CAMPAIGN_SCHEMA_PATH,
     _workspace_relative,
     expand_flat_experiment_authoring,
+    expand_pre_pulse_campaign_profile,
 )
 
 
@@ -62,7 +64,9 @@ def author_campaign(
 
     if output_path.exists():
         raise ContractError("restart campaign output already exists")
-    source = _load(source_campaign_path, "source full-flight campaign")
+    source = expand_pre_pulse_campaign_profile(
+        _load(source_campaign_path, "source full-flight campaign")
+    )
     experiments = source.get("experiments")
     if not isinstance(experiments, dict) or set(experiments) != {"shared", "variation_axes", "rows"}:
         raise ContractError("source campaign must use compact authoring")
@@ -109,13 +113,22 @@ def author_campaign(
         "schema_version": source["schema_version"], "role": source["role"],
         "integration_id": source["integration_id"], "campaign_id": campaign_id,
         "status": "exploration", "execution_policy": copy.deepcopy(source["execution_policy"]),
-        "claim_limit": "DEVELOPMENT_ONLY conditional restart transport. Detector timing metrics condition on the 152 detector-blind pre-pulse survivors; all transmission and loss rates retain the frozen 5000-ion mother denominator.",
+        "claim_limit": (
+            "DEVELOPMENT_ONLY conditional restart transport. Detector timing "
+            f"metrics condition on the {count} detector-blind pre-pulse states; "
+            f"all transmission and loss rates retain the frozen {denominator}-ion "
+            "mother denominator."
+        ),
         "experiments": {
             "shared": shared, "variation_axes": list(experiments["variation_axes"]),
             "rows": [{"experiment_id": consumer_experiment_id, "values": copy.deepcopy(matches[0]["values"])}],
         },
     }
-    validate_schema(expand_flat_experiment_authoring(result), INTEGRATION_SCHEMA_DIR / "rf_multipole_oatof_experiment_campaign.schema.json")
+    validate_schema(
+        result,
+        INTEGRATION_SCHEMA_DIR / "rf_multipole_oatof_experiment_campaign.schema.json",
+    )
+    validate_schema(expand_flat_experiment_authoring(result), RESOLVED_CAMPAIGN_SCHEMA_PATH)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     return result

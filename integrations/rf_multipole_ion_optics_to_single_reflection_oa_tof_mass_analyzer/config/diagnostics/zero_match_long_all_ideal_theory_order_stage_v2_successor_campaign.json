@@ -40,8 +40,8 @@
     },
     "layout_profile_registry": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/single_flight_layout_profiles.json",
-      "bytes": 12759,
-      "sha256": "CB824FE0D80B4B06BDB1CCA609B60D69A8ABBDAA28AA4C4C179241E2ADDD6953"
+      "bytes": 15755,
+      "sha256": "347472D6AF8235DEEAD93287FEFF203774783C9B826B3DA7C7986A4673CC5A01"
     },
     "phase_space_match_contract": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/accelerator_phase_space_match.json",

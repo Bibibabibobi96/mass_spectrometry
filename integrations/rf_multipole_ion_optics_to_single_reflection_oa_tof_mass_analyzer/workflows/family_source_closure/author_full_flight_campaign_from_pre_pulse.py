@@ -20,6 +20,7 @@ from common.contracts.machine_contracts import ContractError, validate_schema
 from common.contracts.verify_run_manifest import record_path, verify_record
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.prepare import (
     INTEGRATION_SCHEMA_DIR,
+    RESOLVED_CAMPAIGN_SCHEMA_PATH,
     _resolve_pulse_transition,
     _workspace_relative,
     expand_flat_experiment_authoring,
@@ -359,9 +360,10 @@ def author_campaign(
         "spatial_window_profile_id": spatial_window,
     }
     validate_schema(
-        expand_flat_experiment_authoring(result),
+        result,
         INTEGRATION_SCHEMA_DIR / "rf_multipole_oatof_experiment_campaign.schema.json",
     )
+    validate_schema(expand_flat_experiment_authoring(result), RESOLVED_CAMPAIGN_SCHEMA_PATH)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     return result

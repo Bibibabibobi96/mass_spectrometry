@@ -125,6 +125,7 @@ function Resolve-RfRecoveryFailureAncestor {
           $frozenExperiment = Get-Content -LiteralPath $frozenExperimentPath -Raw |
             ConvertFrom-Json
           if ([string]$frozenExperiment.campaign.campaign_id -eq $CampaignId -and
+              [string]$frozenExperiment.experiment.experiment_id -eq $ExperimentId -and
               [string]$frozenExperiment.experiment.run_id -eq $ExpectedRunId) {
             # An unpublished recovery has no trustworthy child-run identity.
             # Keep it only as the last fallback, then continue looking for an
@@ -154,7 +155,8 @@ function Resolve-RfRecoveryFailureAncestor {
       return $null
     }
     if ([string]$candidateManifest.run_id -ne $candidateRunId -or
-        [string]$candidateConfig.campaign_id -ne $CampaignId) {
+        [string]$candidateConfig.campaign_id -ne $CampaignId -or
+        [string]$candidateConfig.experiment_id -ne $ExperimentId) {
       return $null
     }
     $candidateStatus = [string]$candidateManifest.status
@@ -217,12 +219,19 @@ function Resolve-RfRecoveryFailureAncestor {
       if ($null -eq $fallbackFailure) { $fallbackFailure = $candidate }
       continue
     }
-    # A published terminal/non-terminal predecessor is an authority boundary:
-    # only a failed or interrupted member can authorize a later retry.
+    # A successful predecessor is an authority boundary.  A bare ``created``
+    # parent predating a same-experiment prepared retry carries no result
+    # evidence, so it must not hide that newer durable retry input.
+    if ($candidateStatus -eq 'created' -and $null -ne $fallbackUnpublished) {
+      continue
+    }
     return $null
   }
-  if ($null -ne $fallbackFailure) { return $fallbackFailure }
-  return $fallbackUnpublished
+  # A same-experiment prepared retry is newer than an earlier failed ancestor
+  # and retains its frozen inputs.  Prefer it so recovery can continue from the
+  # latest durable boundary without replaying preparation unnecessarily.
+  if ($null -ne $fallbackUnpublished) { return $fallbackUnpublished }
+  return $fallbackFailure
 }
 
 $plan = Get-Content -LiteralPath $CompositionPlan -Raw -Encoding UTF8 |
@@ -352,7 +361,6 @@ if ($executionPlanReferenceCount -ne 0) {
 $expectedArguments = @(
   'adapter_sha256',
   'campaign_path',
-  'campaign_sha256',
   'campaign_id',
   'experiment_id',
   'experiment_row_sha256',
@@ -374,13 +382,10 @@ $frozenAuthoringArgumentNames = @(
 $frozenAuthoringArgumentCount = @($frozenAuthoringArgumentNames | Where-Object {
   $frozenArguments.ContainsKey($_)
 }).Count
-if ($frozenAuthoringArgumentCount -ne 0 -and
-    $frozenAuthoringArgumentCount -ne $frozenAuthoringArgumentNames.Count) {
-  throw 'Frozen campaign experiment reference must be all-or-none.'
+if ($frozenAuthoringArgumentCount -ne $frozenAuthoringArgumentNames.Count) {
+  throw 'Prepared execution requires exactly one frozen campaign experiment.'
 }
-if ($frozenAuthoringArgumentCount -eq $frozenAuthoringArgumentNames.Count) {
-  $expectedArguments += $frozenAuthoringArgumentNames
-}
+$expectedArguments += $frozenAuthoringArgumentNames
 if ([string]$frozenArguments.execution_strategy -eq 'simion_single_flight') {
   if ($frozenArguments.ContainsKey('single_flight_execution_mode')) {
     $expectedArguments += 'single_flight_execution_mode'
@@ -391,6 +396,21 @@ if ([string]$frozenArguments.execution_strategy -eq 'simion_single_flight') {
     'resolved_single_flight_execution_profile_filename',
     'resolved_single_flight_execution_profile_sha256'
   )
+  $hasPreparedLocalApertureWidth = $frozenArguments.ContainsKey(
+    'accelerator_entrance_local_aperture_width_mm'
+  )
+  $hasPreparedLocalApertureHeight = $frozenArguments.ContainsKey(
+    'accelerator_entrance_local_aperture_height_mm'
+  )
+  if ($hasPreparedLocalApertureWidth -ne $hasPreparedLocalApertureHeight) {
+    throw 'Prepared local accelerator aperture arguments are incomplete.'
+  }
+  if ($hasPreparedLocalApertureWidth) {
+    $expectedArguments += @(
+      'accelerator_entrance_local_aperture_width_mm',
+      'accelerator_entrance_local_aperture_height_mm'
+    )
+  }
   if ($frozenArguments.ContainsKey('single_flight_pa_cache_generation_binding_filename')) {
     $expectedArguments += @(
       'single_flight_pa_cache_generation_binding_filename',
@@ -573,8 +593,7 @@ if ($executionStrategy -eq 'simion_single_flight' -and
 $repo = [IO.Path]::GetFullPath($RepoRoot)
 $workspaceRoot = Split-Path -Parent $repo
 $compositionPlanRoot = Split-Path -Parent ([IO.Path]::GetFullPath($CompositionPlan))
-if ($frozenAuthoringArgumentCount -eq $frozenAuthoringArgumentNames.Count) {
-  $frozenAuthoringPath = [IO.Path]::GetFullPath((Join-Path $compositionPlanRoot `
+$frozenAuthoringPath = [IO.Path]::GetFullPath((Join-Path $compositionPlanRoot `
     $frozenArguments.frozen_campaign_experiment_filename))
   if (-not $frozenAuthoringPath.StartsWith(
         $compositionPlanRoot + [IO.Path]::DirectorySeparatorChar,
@@ -595,58 +614,33 @@ if ($frozenAuthoringArgumentCount -eq $frozenAuthoringArgumentNames.Count) {
       $frozenAuthoring.experiment_row_sha256 -ne $frozenArguments.experiment_row_sha256) {
     throw 'Frozen campaign experiment identity is invalid.'
   }
-  $campaign = $frozenAuthoring.campaign
-  $experiment = $frozenAuthoring.experiment
-} else {
-  $campaignPath = [IO.Path]::GetFullPath(
-    (Join-Path $repo $frozenArguments.campaign_path)
-  )
-  if (-not $campaignPath.StartsWith(
-        $repo + [IO.Path]::DirectorySeparatorChar,
-        [StringComparison]::OrdinalIgnoreCase
-      ) -or
-      -not (Test-Path -LiteralPath $campaignPath -PathType Leaf) -or
-      (Get-RfOatofRepositoryTextSha256 -Path $campaignPath) -ne
-        $frozenArguments.campaign_sha256) {
-    throw 'Campaign path is outside the repository, missing or stale.'
+$campaign = $frozenAuthoring.campaign
+$experiment = $frozenAuthoring.experiment
+$hasLocalApertureArguments = $frozenArguments.ContainsKey(
+  'accelerator_entrance_local_aperture_width_mm'
+)
+if ($hasLocalApertureArguments -ne $frozenArguments.ContainsKey(
+    'accelerator_entrance_local_aperture_height_mm')) {
+  throw 'Prepared local accelerator aperture arguments are incomplete.'
+}
+$experimentLocalAperture = if (
+  $experiment.PSObject.Properties.Name -contains
+  'accelerator_entrance_local_aperture_mm'
+) {
+  $experiment.accelerator_entrance_local_aperture_mm
+} else { $null }
+if ($hasLocalApertureArguments) {
+  if ($null -eq $experimentLocalAperture -or
+      [double]$frozenArguments.accelerator_entrance_local_aperture_width_mm -le 0.0 -or
+      [double]$frozenArguments.accelerator_entrance_local_aperture_height_mm -le 0.0 -or
+      [double]$experimentLocalAperture.width -ne
+        [double]$frozenArguments.accelerator_entrance_local_aperture_width_mm -or
+      [double]$experimentLocalAperture.height -ne
+        [double]$frozenArguments.accelerator_entrance_local_aperture_height_mm) {
+    throw 'Prepared local accelerator aperture arguments differ from the frozen experiment.'
   }
-  $campaign = Get-Content -LiteralPath $campaignPath -Raw -Encoding UTF8 |
-    ConvertFrom-Json
-  $prepareModule = (
-    'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.' +
-    'workflows.family_source_closure.prepare'
-  )
-  $profileRegistry = Join-Path $integrationRoot 'config\connection_profiles.json'
-  $adapterRegistry = Join-Path $integrationRoot 'config\execution_adapter_profiles.json'
-  $selectedExperimentJson = & $PythonExe -m $prepareModule --repo-root $repo `
-    --profile-registry $profileRegistry --adapter-registry $adapterRegistry `
-    --campaign $campaignPath --print-experiment-json $frozenArguments.experiment_id
-  if ($LASTEXITCODE -ne 0) {
-    throw 'Campaign experiment identity no longer resolves uniquely.'
-  }
-  $experiments = @($selectedExperimentJson | ConvertFrom-Json)
-  if ($campaign.role -ne 'rf_multipole_oatof_experiment_campaign' -or
-      $campaign.integration_id -ne $plan.integration_id -or
-      $campaign.campaign_id -ne $frozenArguments.campaign_id -or
-      $experiments.Count -ne 1) {
-    throw 'Campaign or experiment identity no longer resolves uniquely.'
-  }
-  if ($SolverAuthorized -and [string]$campaign.status -ne 'exploration') {
-    $lifecycleRegistryPath = Join-Path $integrationRoot `
-      'config\diagnostics\lifecycle_registry.json'
-    $lifecycleRegistry = Get-Content -LiteralPath $lifecycleRegistryPath -Raw -Encoding UTF8 |
-      ConvertFrom-Json
-    $campaignRepoRelative = [IO.Path]::GetRelativePath($repo, $campaignPath).Replace('\', '/')
-    $currentCampaigns = @($lifecycleRegistry.active_campaigns | Where-Object {
-      [string]$_.path -eq $campaignRepoRelative
-    })
-    if ($currentCampaigns.Count -ne 1 -or
-        (Get-RfOatofRepositoryTextSha256 -Path $campaignPath) -ne
-          ([string]$currentCampaigns[0].content_sha256).ToUpperInvariant()) {
-      throw 'Campaign is not a current registered execution authority; SolverAuthorized is forbidden.'
-    }
-  }
-  $experiment = $experiments[0]
+} elseif ($null -ne $experimentLocalAperture) {
+  throw 'Frozen experiment local accelerator aperture is missing from execution arguments.'
 }
 $campaignHasThreeZoneCandidate = (
   $experiment.PSObject.Properties.Name -contains
@@ -908,25 +902,6 @@ if ($experiment.connection_profile_id -ne
       $plan.selection.connection_profile_id) {
   throw 'Campaign row differs from the prepared connection.'
 }
-$rowHashCode = @'
-import hashlib, json, pathlib, sys
-campaign = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8-sig"))
-from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.prepare import expand_flat_experiment_authoring
-campaign = expand_flat_experiment_authoring(campaign)
-rows = [row for row in campaign["experiments"] if row["experiment_id"] == sys.argv[2]]
-if len(rows) != 1:
-    raise SystemExit("campaign experiment identity is not unique")
-payload = json.dumps(rows[0], ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-print(hashlib.sha256(payload.encode("utf-8")).hexdigest().upper())
-'@
-if ($frozenAuthoringArgumentCount -eq 0) {
-  $experimentRowSha256 = (& $PythonExe -c $rowHashCode `
-    $campaignPath $frozenArguments.experiment_id).Trim()
-  if ($LASTEXITCODE -ne 0 -or
-      $experimentRowSha256 -ne $frozenArguments.experiment_row_sha256) {
-    throw 'Campaign experiment row identity changed after preparation.'
-  }
-}
 $registry = Get-Content -LiteralPath $registryPath -Raw -Encoding UTF8 |
   ConvertFrom-Json
 $mappings = @($registry.mappings | Where-Object {
@@ -982,7 +957,7 @@ if ($pulseTimingDiscovery) {
     $Matches.detail + [string]$Matches['retry']
   )
 }
-if ($expectedRunId -ne $RunId) {
+if (-not $PrepareOnly -and $expectedRunId -ne $RunId) {
   $recoveryRunsRoot = Join-Path $workspaceRoot (
     'artifacts\projects\' + $plan.integration_id + '\runs'
   )
@@ -1478,6 +1453,12 @@ $runnerArguments = @{
     'exploration'
   } else { 'strict' }
 }
+if ($hasLocalApertureArguments) {
+  $runnerArguments.AcceleratorEntranceLocalApertureWidthMm =
+    [double]$frozenArguments.accelerator_entrance_local_aperture_width_mm
+  $runnerArguments.AcceleratorEntranceLocalApertureHeightMm =
+    [double]$frozenArguments.accelerator_entrance_local_aperture_height_mm
+}
 if ($singleFlightExecutionMode -eq 'program_axis_field_export') {
   # The export remains a run-local SIMION build, but must be configured only
   # after the common runner request exists under StrictMode.
@@ -1529,12 +1510,6 @@ if ($executionStrategy -eq 'simion_single_flight') {
     $runnerArguments.LayoutProfileId = [string]$frozenArguments.layout_profile_id
     $runnerArguments.ArchitectureGenerationId =
       [string]$frozenArguments.architecture_generation_id
-    $runnerArguments.ExpectedBoreRadiusMm =
-      [double]$frozenArguments.resolved_oatof_bore_radius_mm
-    $runnerArguments.ExpectedRingOuterRadiusMm =
-      [double]$frozenArguments.resolved_oatof_ring_outer_radius_mm
-    $runnerArguments.ExpectedShieldInnerRadiusMm =
-      [double]$frozenArguments.resolved_oatof_shield_inner_radius_mm
     if ($campaignHasThreeZoneCandidate) {
       $runnerArguments.ThreeZoneCandidate = $threeZoneCandidatePath
       $runnerArguments.ThreeZoneCandidateSha256 =
@@ -1632,6 +1607,13 @@ if ($executionStrategy -eq 'simion_single_flight') {
   } else { $null }
   if ($null -ne $preparedPrefixPath -and
       $frozenArguments.source_release_mode -ne 'continuous_frontend_handoff') {
+    # The pre-pulse prefix is an explicit frozen subset, not the complete
+    # materialized source described by its receipt.  Passing that receipt
+    # alongside the subset creates contradictory source identities in the
+    # runner.  The prefix's own byte identity and screening contract remain
+    # the authority for this detector-blind execution.
+    $runnerArguments.Remove('MotherParticleSourceReceipt')
+    $runnerArguments.Remove('MotherParticleSourceReceiptSha256')
     $runnerArguments.MotherParticleSource = $preparedPrefixPath
     $runnerArguments.MotherParticleSourceRunRoot = $runDirectory
     if ($preparedPrefixPath.StartsWith(
@@ -1752,7 +1734,7 @@ $receipt = [ordered]@{
   role = 'integration_family_source_closure_execution_receipt'
   integration_run_id = $RunId
   campaign_path = $frozenArguments.campaign_path
-  campaign_sha256 = $frozenArguments.campaign_sha256
+  frozen_campaign_experiment_sha256 = $frozenArguments.frozen_campaign_experiment_sha256
   campaign_id = $frozenArguments.campaign_id
   experiment_id = $frozenArguments.experiment_id
   experiment_row_sha256 = $frozenArguments.experiment_row_sha256

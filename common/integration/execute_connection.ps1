@@ -88,8 +88,8 @@ $adapterArguments = @{
     ResolvedConnection = [IO.Path]::GetFullPath($ResolvedConnection)
     PythonExe = $PythonExe
     RepoRoot = [IO.Path]::GetFullPath($RepoRoot)
-    RunId = $RunId
 }
+if (-not [string]::IsNullOrWhiteSpace($RunId)) { $adapterArguments.RunId = $RunId }
 if ($PrepareOnly) { $adapterArguments.PrepareOnly = $true }
 if ($SolverAuthorized) { $adapterArguments.SolverAuthorized = $true }
 if ($FinalizeOnly) { $adapterArguments.FinalizeOnly = $true }

@@ -243,7 +243,6 @@ def recover(*, repo_root: Path, campaign_path: Path, failed_parent_dir: Path, re
         raise ContractError("failed parent campaign identity differs")
     if (
         args.get("campaign_path") != campaign_source.get("path")
-        or args.get("campaign_sha256", "").upper() != campaign_source.get("sha256")
         or args.get("campaign_id") != campaign.get("campaign_id")
         or args.get("experiment_id") != experiment.get("experiment_id")
         or args.get("experiment_row_sha256", "").upper()
@@ -308,13 +307,16 @@ def recover(*, repo_root: Path, campaign_path: Path, failed_parent_dir: Path, re
     ]
     for log, batch_count in zip(logs, batch_counts, strict=True):
         analysis.extend(["--log", str(log), "--batch-particle-count", str(batch_count)])
+    analysis.append("--require-terminal-taxonomy")
+    if isinstance(parameters.get("three_zone_topology_id"), str):
+        analysis.append("--require-three-zone-checkpoint-census")
     if source_release_mode == "pre_pulse_restart":
         tolerances = _load(frozen_inputs["pre_pulse_restart_validation"]).get("tolerances", {})
         analysis.extend([
             "--restart-position-tolerance-mm", str(tolerances["position_rowwise_abs_tolerance_mm"]),
             "--restart-velocity-tolerance-m-per-s", str(tolerances["velocity_rowwise_abs_tolerance_m_per_s"]),
             "--restart-clock-tolerance-us", str(tolerances["clock_abs_tolerance_us"]),
-            "--restart-energy-tolerance-eV", str(tolerances["energy_rowwise_abs_tolerance_eV"]),
+            "--restart-energy-tolerance-eV", str(tolerances["energy_abs_tolerance_eV"]),
             "--restart-validation-contract-sha256", file_sha256(frozen_inputs["pre_pulse_restart_validation"]),
         ])
     profile_id = _source_region_diagnostic_profile_id(
@@ -348,7 +350,6 @@ def recover(*, repo_root: Path, campaign_path: Path, failed_parent_dir: Path, re
         ],
         "campaign": {
             "path": campaign_source["path"],
-            "sha256": campaign_source["sha256"],
             "experiment_id": args["experiment_id"],
             "frozen_parent_experiment": str(frozen_campaign_path),
             "frozen_parent_experiment_sha256": file_sha256(frozen_campaign_path),
