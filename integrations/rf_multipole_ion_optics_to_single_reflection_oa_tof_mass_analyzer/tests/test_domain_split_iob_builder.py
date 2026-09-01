@@ -16,6 +16,20 @@ RUNTIME = (
 class DomainSplitIobBuilderTests(unittest.TestCase):
     """Static topology checks for current split-domain IOB builders."""
 
+    def test_each_builder_binds_the_instance_filename_before_loading(self) -> None:
+        """A multi-slot seed shares its placeholder PA until its instances bind files."""
+        for name in (
+            "build_single_flight_pre_pulse_iob.lua",
+            "build_single_flight_post_pulse_iob.lua",
+            "build_single_flight_domain_split_main_only_iob.lua",
+            "build_single_flight_full_iob.lua",
+            "build_single_flight_overlay_iob.lua",
+            "build_single_flight_two_overlay_iob.lua",
+        ):
+            source = RUNTIME.joinpath(name).read_text(encoding="utf-8")
+            self.assertIn("item.filename=pa_paths[index]\n  item.pa:load()", source)
+            self.assertNotIn("item.pa:load(pa_paths[index])", source)
+
     def test_continuous_full_flight_has_seven_consecutive_physical_slots(self) -> None:
         source = RUNTIME.joinpath("build_single_flight_full_iob.lua").read_text(
             encoding="utf-8"

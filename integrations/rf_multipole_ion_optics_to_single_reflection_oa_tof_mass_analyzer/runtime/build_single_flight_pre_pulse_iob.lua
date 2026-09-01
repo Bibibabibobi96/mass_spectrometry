@@ -26,8 +26,8 @@ simion.command('"'..container..'"')
 assert(#simion.wb.instances==3, 'pre-pulse container must contain exactly three instances')
 for index=1,3 do
   local item=simion.wb.instances[index]
-  item.pa:load(pa_paths[index])
-  item.pa.filename=pa_paths[index]
+  item.filename=pa_paths[index]
+  item.pa:load()
   item:_debug_update_size()
   item.x,item.y,item.z=origins[index][1],origins[index][2],origins[index][3]
   item.az,item.el,item.rt,item.scale=0,0,0,1
