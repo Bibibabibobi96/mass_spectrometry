@@ -3517,12 +3517,11 @@ try {
       $domainUpstream = @($domainSplitFineBuilds | Where-Object { $_.name -eq 'upstream_bridge' })
       if ($domainMain.Count -ne 1 -or $domainUpstream.Count -ne 1) { throw 'Domain-split main-PA-only field gate PA family is incomplete.' }
       Copy-RfPaFamilyAliasInRuntime -SourcePrefix 'frontend' -DestinationPrefix 'coarse_frontend' -SourceDirectory $frontendWorkingDir
-      Copy-RfPaFamilyAliasInRuntime -SourcePrefix 'accelerator_main' -DestinationPrefix 'accelerator'
       # SIMION loads a PA+ family through its ordinary .pa0 geometry file; the
       # adjacent .pa+ map then selects the numbered mode arrays for
       # `fast_adjust`.  Passing the text map itself to `pa:load` makes SIMION
       # attempt an obsolete PA conversion and abort.
-      $acceleratorMainRuntimePa0 = Join-Path $runtimeDir 'accelerator.pa0'
+      $acceleratorMainRuntimePa0 = Join-Path $runtimeDir 'accelerator_main.pa0'
       $coarseFrontendRuntimePa0 = Join-Path $runtimeDir 'coarse_frontend.pa0'
       $container = $postPulseFiveInstanceSeed
       if (-not (Test-Path -LiteralPath $container -PathType Leaf)) { throw 'Versioned five-instance post-pulse IOB seed is missing.' }
@@ -3551,7 +3550,6 @@ try {
       }
       Copy-RfPaFamilyAliasInRuntime -SourcePrefix 'frontend' -DestinationPrefix 'coarse_frontend' `
         -SourceDirectory $frontendWorkingDir
-      Copy-RfPaFamilyAliasInRuntime -SourcePrefix 'accelerator_main' -DestinationPrefix 'accelerator'
       # SIMION 2020 does not expose a supported Lua API for deleting arbitrary
       # Workbench instances.  Load the GUI-authored three-instance seed, then
       # replace every consecutive slot with the real PA families.
@@ -3567,7 +3565,7 @@ try {
       $prePulseRuntimeContainer = Join-Path $runtimeDir 'three_instance_seed.iob'
       $prePulseIobArguments = @('--nogui','--noprompt','lua',$prePulseIobBuilder,
         $prePulseRuntimeContainer,(Join-Path $runtimeDir 'oatof_ideal_grounded.iob'),
-        (Join-Path $runtimeDir 'coarse_frontend.pa0'),$domainUpstream[0].pa0,(Join-Path $runtimeDir 'accelerator.pa0'),
+        (Join-Path $runtimeDir 'coarse_frontend.pa0'),$domainUpstream[0].pa0,(Join-Path $runtimeDir 'accelerator_main.pa0'),
         ([string]$frontendGeometry.instance_origin_mm.x),([string]$frontendGeometry.instance_origin_mm.y),([string]$frontendGeometry.instance_origin_mm.z),
         ([string]$domainUpstream[0].geometry.instance_origin_mm.x),([string]$domainUpstream[0].geometry.instance_origin_mm.y),([string]$domainUpstream[0].geometry.instance_origin_mm.z),
         ([string]$domainMain[0].geometry.instance_origin_mm.x),([string]$domainMain[0].geometry.instance_origin_mm.y),([string]$domainMain[0].geometry.instance_origin_mm.z))
@@ -3579,7 +3577,6 @@ try {
       $domainMain = @($domainSplitFineBuilds | Where-Object { $_.name -eq 'accelerator_main' })
       $entranceLocalBuild = @($domainSplitFineBuilds | Where-Object { $_.name -eq 'accelerator_entrance_local' })
       if ($domainMain.Count -ne 1 -or $entranceLocalBuild.Count -ne 1) { throw 'Local axis-field IOB requires exactly one main and one entrance-local PA.' }
-      Copy-RfPaFamilyAliasInRuntime -SourcePrefix 'accelerator_main' -DestinationPrefix 'accelerator'
       $container = $postPulseFiveInstanceSeed
       if (-not (Test-Path -LiteralPath $container -PathType Leaf)) { throw 'Versioned five-instance post-pulse IOB seed is missing.' }
       $runtimeContainer = Join-Path $runtimeDir 'five_instance_seed.iob'
@@ -3589,7 +3586,7 @@ try {
       $localAxisIobArguments = @('--nogui','--noprompt','lua',$postPulseIobBuilder,
         (Join-Path $runtimeDir 'oatof_ideal_grounded.iob'),$runtimeContainer,$totalAxisFieldIob,
         (Join-Path $runtimeDir 'flight_tube_ground.pa0'),(Join-Path $runtimeDir 'reflectron.pa0'),
-        (Join-Path $runtimeDir 'accelerator.pa0'),(Join-Path $runtimeDir 'detector_ground.pa0'),(Join-Path $runtimeDir 'accelerator_entrance_local.pa0'),
+        (Join-Path $runtimeDir 'accelerator_main.pa0'),(Join-Path $runtimeDir 'detector_ground.pa0'),(Join-Path $runtimeDir 'accelerator_entrance_local.pa0'),
         ([string]$domainMain[0].geometry.instance_origin_mm.x),([string]$domainMain[0].geometry.instance_origin_mm.y),([string]$domainMain[0].geometry.instance_origin_mm.z),
         ([string]$entranceLocalBuild[0].geometry.instance_origin_mm.x),([string]$entranceLocalBuild[0].geometry.instance_origin_mm.y),([string]$entranceLocalBuild[0].geometry.instance_origin_mm.z))
       $built = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir -UsagePath (Join-Path $package.log_dir 'local_axis_field_iob_build_resource_usage.json') -FilePath $SimionExe -WorkingDirectory $runtimeDir -RedirectStandardOutput (Join-Path $package.log_dir 'local_axis_field_iob_build.stdout.log') -RedirectStandardError (Join-Path $package.log_dir 'local_axis_field_iob_build.stderr.log') -ArgumentList $localAxisIobArguments
@@ -3617,7 +3614,6 @@ try {
       $domainMain = @($domainSplitFineBuilds | Where-Object { $_.name -eq 'accelerator_main' })
       $entranceLocalBuild = @($domainSplitFineBuilds | Where-Object { $_.name -eq 'accelerator_entrance_local' })
       if ($domainMain.Count -ne 1 -or $entranceLocalBuild.Count -ne 1) { throw 'Post-pulse handoff PA family requires exactly one main and one entrance-local PA.' }
-      Copy-RfPaFamilyAliasInRuntime -SourcePrefix 'accelerator_main' -DestinationPrefix 'accelerator'
       $container = $postPulseFiveInstanceSeed
       if (-not (Test-Path -LiteralPath $container -PathType Leaf)) { throw 'Versioned five-instance post-pulse IOB seed is missing.' }
       $runtimeContainer = Join-Path $runtimeDir 'five_instance_seed.iob'
@@ -3626,7 +3622,7 @@ try {
       $postPulseIobArguments = @('--nogui','--noprompt','lua',$postPulseIobBuilder,
         (Join-Path $runtimeDir 'oatof_ideal_grounded.iob'),$runtimeContainer,(Join-Path $runtimeDir 'oatof_ideal_grounded.iob'),
         (Join-Path $runtimeDir 'flight_tube_ground.pa0'),(Join-Path $runtimeDir 'reflectron.pa0'),
-        (Join-Path $runtimeDir 'accelerator.pa0'),(Join-Path $runtimeDir 'detector_ground.pa0'),(Join-Path $runtimeDir 'accelerator_entrance_local.pa0'),
+        (Join-Path $runtimeDir 'accelerator_main.pa0'),(Join-Path $runtimeDir 'detector_ground.pa0'),(Join-Path $runtimeDir 'accelerator_entrance_local.pa0'),
         ([string]$domainMain[0].geometry.instance_origin_mm.x),([string]$domainMain[0].geometry.instance_origin_mm.y),([string]$domainMain[0].geometry.instance_origin_mm.z),
         ([string]$entranceLocalBuild[0].geometry.instance_origin_mm.x),([string]$entranceLocalBuild[0].geometry.instance_origin_mm.y),([string]$entranceLocalBuild[0].geometry.instance_origin_mm.z))
       $postPulseIobStdout = Join-Path $package.log_dir 'post_pulse_handoff_iob_build.stdout.log'
@@ -3646,11 +3642,12 @@ try {
         $domainUpstream.Count -ne 1 -or $entranceLocalBuild.Count -ne 1) {
       throw 'Continuous full flight requires exactly one coarse, upstream, main, and entrance-local PA family.'
     }
-    # Materialize aliases without mutating immutable PA cache generations.
+    # Materialize the coarse frontend alias without mutating immutable PA cache
+    # generations.  Keep accelerator-main under its own name so opening the
+    # formal IOB cannot resolve it in place of the formal accelerator PA.
     Copy-RfPaFamilyAliasInRuntime -SourcePrefix 'frontend' -DestinationPrefix 'coarse_frontend' `
       -SourceDirectory $frontendWorkingDir
-    Copy-RfPaFamilyAliasInRuntime -SourcePrefix 'accelerator_main' -DestinationPrefix 'accelerator'
-    $acceleratorMainRuntimePa0 = Join-Path $runtimeDir 'accelerator.pa0'
+    $acceleratorMainRuntimePa0 = Join-Path $runtimeDir 'accelerator_main.pa0'
     $coarseFrontendRuntimePa0 = Join-Path $runtimeDir 'coarse_frontend.pa0'
     Get-ChildItem -LiteralPath $fullFlightSeedDir -File | Copy-Item -Destination $runtimeDir
     $runtimeContainer = Join-Path $runtimeDir 'seven_instance_seed.iob'

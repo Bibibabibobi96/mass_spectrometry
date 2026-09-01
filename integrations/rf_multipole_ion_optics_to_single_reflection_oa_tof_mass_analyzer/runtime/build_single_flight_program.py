@@ -899,7 +899,7 @@ def build_successor_program(
             },
             "instance_filenames": {
                 "coarse_frontend": "coarse_frontend.pa0",
-                "accelerator": "accelerator.pa0",
+                "accelerator": "accelerator_main.pa0",
                 "upstream_bridge": "upstream_bridge.pa0",
             },
             "pre_pulse_active_roles": domain_active_roles,
@@ -928,7 +928,11 @@ def build_successor_program(
                 }
             ),
             "reflectron": "reflectron.pa0",
-            "accelerator": "accelerator.pa0",
+            "accelerator": (
+                "accelerator_main.pa0"
+                if domain_split is not None
+                else "accelerator.pa0"
+            ),
             "detector": "detector_ground.pa0",
             **overlay_filenames,
         },
