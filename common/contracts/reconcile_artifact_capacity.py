@@ -156,22 +156,89 @@ def _compact_candidates(root: Path, protected_paths: Iterable[Path]) -> list[dic
 def plan(root: Path, *, target_bytes: int, required_headroom_bytes: int = 0,
          minimum_free_bytes: int = 0,
          staging_grace_seconds: int = 900, protected_paths: Iterable[Path] = (),
-         protected_cache_keys: Iterable[str] = ()) -> dict[str, Any]:
-    root = root.resolve()
+         protected_cache_keys: Iterable[str] = (),
+         known_measured_bytes: int | None = None,
+         maximum_new_artifact_bytes: int | None = None) -> dict[str, Any]:
+    # Keep the caller's absolute spelling.  On Windows, resolve() can rewrite
+    # an 8.3 temporary-root path to its long form, making the receipt disagree
+    # with the paths accepted by the caller despite denoting the same cache.
+    root = root.absolute()
     if not root.is_dir():
         raise ValueError("artifact root must exist")
-    protected = tuple(path.resolve() for path in protected_paths)
-    now = time.time()
-    active_keys = _active_cache_keys(root)
-    active_keys.update(key.lower() for key in protected_cache_keys if CACHE_KEY.fullmatch(key))
+    if (known_measured_bytes is None) != (maximum_new_artifact_bytes is None):
+        raise ValueError("known capacity fast path requires both byte values")
+    if known_measured_bytes is not None and (
+        known_measured_bytes < 0 or maximum_new_artifact_bytes is None
+        or maximum_new_artifact_bytes < 0
+    ):
+        raise ValueError("known capacity fast-path bytes must be nonnegative")
+    protected = tuple(path.absolute() for path in protected_paths)
+    # A launch receipt plus its governed maximum transient footprint supplies
+    # a conservative upper bound while the shared solver lease excludes a
+    # second concurrent SIMION publication.  Avoid a full artifact walk when
+    # that upper bound is already safely below the watermark and the physical
+    # disk floor is met.  This is an optimization only: uncertainty falls back
+    # to the existing exhaustive, level-then-age planner.
+    free_bytes = shutil.disk_usage(root).free
+    if (
+        known_measured_bytes is not None
+        and known_measured_bytes + maximum_new_artifact_bytes + required_headroom_bytes
+        <= target_bytes
+        and free_bytes >= minimum_free_bytes
+    ):
+        upper_bound = known_measured_bytes + maximum_new_artifact_bytes
+        return {
+            "schema_version": 1, "role": "artifact_capacity_gate",
+            "artifact_root": str(root), "target_bytes": target_bytes,
+            "required_headroom_bytes": required_headroom_bytes,
+            "minimum_free_bytes": minimum_free_bytes,
+            "free_bytes_before": free_bytes, "staging_grace_seconds": staging_grace_seconds,
+            "protected_paths": [str(path) for path in protected],
+            "protected_cache_keys": sorted(str(key).lower() for key in protected_cache_keys),
+            "measurement_mode": "SAFE_NO_RECONCILIATION",
+            "known_measured_bytes": known_measured_bytes,
+            "maximum_new_artifact_bytes": maximum_new_artifact_bytes,
+            "estimated_upper_bound_bytes": upper_bound,
+            "free_deficit_bytes": 0, "measured_bytes": known_measured_bytes,
+            "limit_bytes": target_bytes - required_headroom_bytes,
+            "active_cache_key_count": None, "candidate_count": 0,
+            "planned": [], "projected_bytes": upper_bound, "satisfied": True,
+        }
     directory_bytes = _directory_bytes(root)
-    candidates = _cache_candidates(root, active_keys, now, staging_grace_seconds, protected, directory_bytes)
-    candidates.extend(_compact_candidates(root, protected))
-    candidates.sort(key=lambda item: ({"L1": 1, "L2": 2, "L3": 3}[item["level"]], item["timestamp"], item["path"]))
     measured = directory_bytes[root]
     if minimum_free_bytes < 0:
         raise ValueError("minimum free bytes must be nonnegative")
     free_bytes = shutil.disk_usage(root).free
+    # A current full measurement can close the ordinary no-cleanup case without
+    # enumerating cache manifests or interrupted runs.  apply() repeats this
+    # measurement immediately before publication; if the state changed, it
+    # falls through to the established L1/L2/L3 planner below.
+    if (
+        measured + required_headroom_bytes <= target_bytes
+        and free_bytes >= minimum_free_bytes
+    ):
+        return {
+            "schema_version": 1, "role": "artifact_capacity_gate",
+            "artifact_root": str(root), "target_bytes": target_bytes,
+            "required_headroom_bytes": required_headroom_bytes,
+            "minimum_free_bytes": minimum_free_bytes,
+            "free_bytes_before": free_bytes, "staging_grace_seconds": staging_grace_seconds,
+            "protected_paths": [str(path) for path in protected],
+            "protected_cache_keys": sorted(
+                str(key).lower() for key in protected_cache_keys
+            ),
+            "measurement_mode": "FULL_NO_RECONCILIATION",
+            "free_deficit_bytes": 0, "measured_bytes": measured,
+            "limit_bytes": target_bytes - required_headroom_bytes,
+            "active_cache_key_count": None, "candidate_count": 0,
+            "planned": [], "projected_bytes": measured, "satisfied": True,
+        }
+    now = time.time()
+    active_keys = _active_cache_keys(root)
+    active_keys.update(key.lower() for key in protected_cache_keys if CACHE_KEY.fullmatch(key))
+    candidates = _cache_candidates(root, active_keys, now, staging_grace_seconds, protected, directory_bytes)
+    candidates.extend(_compact_candidates(root, protected))
+    candidates.sort(key=lambda item: ({"L1": 1, "L2": 2, "L3": 3}[item["level"]], item["timestamp"], item["path"]))
     free_deficit = max(0, minimum_free_bytes - free_bytes)
     # Every byte removed from this artifact root returns one byte to the same
     # volume.  Intersect the repository watermark with the physical-free-space
@@ -210,6 +277,33 @@ def apply(receipt: dict[str, Any]) -> dict[str, Any]:
     # close the interval between a capacity decision and deletion.  This keeps
     # the disk floor enforceable while another independent channel is solving.
     root = Path(receipt["artifact_root"])
+    if receipt.get("measurement_mode") == "FULL_NO_RECONCILIATION":
+        sizes = _directory_bytes(root)
+        measured_after = sizes[root]
+        free_after = shutil.disk_usage(root).free
+        if (
+            measured_after + int(receipt["required_headroom_bytes"])
+            <= int(receipt["target_bytes"])
+            and free_after >= int(receipt["minimum_free_bytes"])
+        ):
+            outcome = dict(receipt)
+            outcome.update(
+                applied=True, removed=[], removed_bytes=0,
+                measured_after_bytes=measured_after,
+                free_bytes_after=free_after,
+                satisfied_after_apply=True,
+            )
+            return outcome
+    if receipt.get("measurement_mode") == "SAFE_NO_RECONCILIATION":
+        outcome = dict(receipt)
+        outcome.update(
+            applied=True, removed=[], removed_bytes=0,
+            measured_after_bytes=receipt["known_measured_bytes"],
+            estimated_upper_bound_after_bytes=receipt["estimated_upper_bound_bytes"],
+            free_bytes_after=shutil.disk_usage(root).free,
+            satisfied_after_apply=True,
+        )
+        return outcome
     receipt = plan(
         root,
         target_bytes=int(receipt["target_bytes"]),
@@ -254,6 +348,8 @@ def main() -> None:
     parser.add_argument("--staging-grace-seconds", type=int, default=900)
     parser.add_argument("--protect-path", action="append", type=Path, default=[])
     parser.add_argument("--protect-cache-key", action="append", default=[])
+    parser.add_argument("--known-measured-bytes", type=int)
+    parser.add_argument("--maximum-new-artifact-bytes", type=int)
     parser.add_argument("--apply", action="store_true")
     args = parser.parse_args()
     if (args.target_gib <= 0 or args.required_headroom_bytes < 0 or
@@ -263,7 +359,9 @@ def main() -> None:
                    required_headroom_bytes=args.required_headroom_bytes,
                    minimum_free_bytes=int(args.minimum_free_gib * GIB),
                    staging_grace_seconds=args.staging_grace_seconds, protected_paths=args.protect_path,
-                   protected_cache_keys=args.protect_cache_key)
+                   protected_cache_keys=args.protect_cache_key,
+                   known_measured_bytes=args.known_measured_bytes,
+                   maximum_new_artifact_bytes=args.maximum_new_artifact_bytes)
     if args.apply:
         receipt = apply(receipt)
         satisfied = receipt["satisfied_after_apply"]

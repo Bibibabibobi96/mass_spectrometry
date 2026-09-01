@@ -59,6 +59,18 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
             self.assertFalse(receipt["satisfied"])
             self.assertEqual(receipt["planned"][0]["path"], str(candidate))
 
+    def test_trajectory_csv_is_inclusive_in_capacity_measurement(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            states = (
+                root / "projects" / "p" / "runs" / "completed" / "results"
+                / "pre_pulse_time_series_states.csv"
+            )
+            states.parent.mkdir(parents=True)
+            states.write_bytes(b"trajectory-state\n" * 64)
+            receipt = plan(root, target_bytes=10_000_000)
+            self.assertEqual(receipt["measured_bytes"], states.stat().st_size)
+
     def test_minimum_free_space_tightens_the_same_ordered_plan(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -88,6 +100,62 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
             applied = apply(receipt)
             self.assertTrue(candidate.exists())
             self.assertEqual(applied["removed"], [])
+
+    def test_safe_launch_receipt_avoids_the_exhaustive_walk(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with patch(
+                "common.contracts.reconcile_artifact_capacity._directory_bytes",
+                side_effect=AssertionError("full walk must not run"),
+            ), patch(
+                "common.contracts.reconcile_artifact_capacity._active_cache_keys",
+                side_effect=AssertionError("manifest scan must not run"),
+            ), patch(
+                "common.contracts.reconcile_artifact_capacity.shutil.disk_usage",
+                return_value=shutil._ntuple_diskusage(10_000, 9_000, 9_000),
+            ):
+                receipt = plan(
+                    root, target_bytes=1_000, minimum_free_bytes=500,
+                    known_measured_bytes=700, maximum_new_artifact_bytes=200,
+                )
+                applied = apply(receipt)
+            self.assertEqual(receipt["measurement_mode"], "SAFE_NO_RECONCILIATION")
+            self.assertEqual(applied["removed"], [])
+            self.assertTrue(applied["satisfied_after_apply"])
+
+    def test_current_measurement_skips_reconciliation_then_rechecks_on_apply(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with patch(
+                "common.contracts.reconcile_artifact_capacity._active_cache_keys",
+                side_effect=AssertionError("manifest scan must not run"),
+            ), patch(
+                "common.contracts.reconcile_artifact_capacity._cache_candidates",
+                side_effect=AssertionError("cache scan must not run"),
+            ), patch(
+                "common.contracts.reconcile_artifact_capacity._compact_candidates",
+                side_effect=AssertionError("compact scan must not run"),
+            ), patch(
+                "common.contracts.reconcile_artifact_capacity.shutil.disk_usage",
+                return_value=shutil._ntuple_diskusage(10_000, 9_000, 9_000),
+            ):
+                receipt = plan(root, target_bytes=1_000, minimum_free_bytes=500)
+                applied = apply(receipt)
+            self.assertEqual(receipt["measurement_mode"], "FULL_NO_RECONCILIATION")
+            self.assertEqual(applied["removed"], [])
+            self.assertTrue(applied["satisfied_after_apply"])
+            self.assertEqual(applied["measured_after_bytes"], 0)
+
+    def test_apply_falls_back_to_ordered_planner_when_measurement_grows(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            receipt = plan(root, target_bytes=1_000)
+            self.assertEqual(receipt["measurement_mode"], "FULL_NO_RECONCILIATION")
+            (root / "new_payload.bin").write_bytes(b"x" * 2_000)
+            applied = apply(receipt)
+            self.assertTrue(applied["applied"])
+            self.assertFalse(applied["satisfied_after_apply"])
+            self.assertIn("candidate_count", applied)
 
 
 if __name__ == "__main__":

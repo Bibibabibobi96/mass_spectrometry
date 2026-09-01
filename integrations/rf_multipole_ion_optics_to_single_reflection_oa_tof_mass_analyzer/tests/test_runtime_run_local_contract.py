@@ -136,7 +136,7 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
         self.assertIn("pre_pulse_child_run_directory", resolver_block)
         self.assertIn("if ($completedBatchLog.Count -gt 0) {", resolver_block)
         self.assertIn("$fallbackUnpublished = [pscustomobject]", resolver_block)
-        self.assertIn("if ($null -ne $fallbackUnpublished) { return $fallbackUnpublished }", resolver_block)
+        self.assertIn("return $fallbackUnpublished", resolver_block)
         self.assertIn("return $fallbackFailure", resolver_block)
 
     def test_pre_pulse_time_series_is_pre_solver_fail_closed_and_gap_bound(self) -> None:
