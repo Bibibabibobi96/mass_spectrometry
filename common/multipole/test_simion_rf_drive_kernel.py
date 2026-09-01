@@ -24,6 +24,7 @@ class SimionRfDriveKernelTests(unittest.TestCase):
             self.assertNotIn(forbidden, source)
         self.assertIn("function kernel.new(config)", source)
         self.assertIn("local function apply_at(instrument_time_us, setter)", source)
+        self.assertIn("local function apply_differential_at(instrument_time_us, setter)", source)
 
     @unittest.skipUnless(SIMION_EXE.is_file(), "official SIMION Lua CLI unavailable")
     def test_official_simion_lua_cli_executes_numerical_contract(self) -> None:

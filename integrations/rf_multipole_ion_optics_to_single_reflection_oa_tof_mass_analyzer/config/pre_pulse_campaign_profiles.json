@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "role": "rf_multipole_oatof_pre_pulse_campaign_profile_registry",
+  "profiles": [
+    {
+      "profile_id": "real_pa_rf_pre_pulse_v1",
+      "revision": 1,
+      "defaults": {
+        "campaign": {
+          "execution_policy": {
+            "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/execution_policy.json",
+            "sha256": "6FDB04133C0AB5F48BE51127296469802E8E31E04DF6FFB539DD96E0F54F4B35"
+          },
+          "pre_pulse_time_series_screening": {
+            "mode": "real_pa_rf_pre_pulse_time_series",
+            "active_scope": "pre_pulse_frontend_accelerator",
+            "relative_start_index": 0,
+            "relative_end_index": 0,
+            "rf_steps_per_period": 40,
+            "time_grid_profile_id": "ballistic_seed_rf40_single_snapshot_v1",
+            "expected_upstream_frequency_hz": 1100000.0,
+            "sample_count": 1,
+            "spatial_window_profile_id": "layout_resolved_axial_provisional_xy2_v1",
+            "selection_order": [
+              "maximize_pulse_eligible_count",
+              "maximize_transverse_bore_count",
+              "minimize_normalized_xyz_centroid_distance",
+              "minimize_normalized_xyz_spread_norm",
+              "minimize_absolute_distance_to_ballistic_seed",
+              "select_earlier_time"
+            ],
+            "pulse_disabled": true,
+            "terminate_at_window_end": true,
+            "resolution_claim_allowed": false,
+            "prohibited_outputs": ["detector_crossing", "resolution_metrics", "single_flight_spatial_six_panel"]
+          }
+        },
+        "experiment_shared": {
+          "execution_strategy": "simion_single_flight",
+          "single_flight_pa_cache_policy": "build_and_publish_if_missing",
+          "single_flight_frontend_grid_profile_id": "frontend_acceleration_xy025_z010_coarse100_shared_main_local_aperture",
+          "single_flight_oatof_numerical_profile_id": "oatof_formal_mesh",
+          "single_flight_trajectory_quality_profile_id": "tqual_8",
+          "single_flight_time_integration_profile_id": "dt40",
+          "single_flight_accelerator_field_profile_id": "accelerator_real_three_zone_dynamic_electrodes_pa_real_reflectron",
+          "single_flight_source_materialization_profile_id": "independent_ion_source_volume_n5000",
+          "architecture_generation_id": "three_zone_ideal_acceptance_300mm_kinematic_envelope_v1",
+          "source_profile_id": "independent_ion_source_volume_n5000",
+          "field_overlay_id": "accelerator_entrance_local_aperture",
+          "source_release_mode": "continuous_frontend",
+          "single_flight_pulse_schedule_policy": {
+            "policy_id": "multipole_handoff_ballistic_centroid_v1",
+            "offset_rf_periods": 0.0,
+            "pulse_width_us": 1.0
+          },
+          "single_flight_population": {
+            "population_id": "ideal_acceptance_300mm_aperture_height_complete_ordered_entrance_n5000",
+            "population_mode": "independent_spatial_velocity_ion_source_snapshot",
+            "source_authority": {
+              "input_role": "single_flight_materialized_ion_source_volume",
+              "table_binding": "prepared_materialized_ion_source_volume",
+              "ordered_particle_id_encoding": "canonical_compact_json_integer_array_v1"
+            },
+            "execution_population": {
+              "particle_count": 5000,
+              "ordered_particle_id_sha256": "37DC4C2E241AB6B87C39D1AD1CE5CD4CC3E92B05F539AB8ECBB999F88DC98C33",
+              "selection_algorithm": "all_rows_in_frozen_file_order",
+              "selection_seed": 0
+            },
+            "denominators": {"population_count": 5000, "eligible_population_count": 5000},
+            "analysis_randomness": {"bootstrap_resample_count": 1000, "bootstrap_seed": 20260827},
+            "postselection_policy": "prohibited"
+          }
+        }
+      }
+    },
+    {
+      "profile_id": "real_pa_rf_pre_pulse_smoke_n1_v1",
+      "revision": 1,
+      "extends": "real_pa_rf_pre_pulse_v1",
+      "overrides": {
+        "experiment_shared": {
+          "single_flight_population": {
+            "population_id": "ideal_acceptance_300mm_continuous_frontend_smoke_n1",
+            "population_mode": "first_n_rows_in_frozen_file_order",
+            "source_authority": {
+              "input_role": "single_flight_materialized_ion_source_volume",
+              "table_binding": "prepared_deterministic_prefix",
+              "ordered_particle_id_encoding": "canonical_compact_json_integer_array_v1"
+            },
+            "execution_population": {
+              "particle_count": 1,
+              "ordered_particle_id_sha256": "5C441CCCE965FB3DA22F42AA850DA25C6C9C85FE3FF43A24AEED2CACFDA4926B",
+              "selection_algorithm": "first_n_rows_in_frozen_file_order",
+              "selection_seed": 0
+            },
+            "denominators": {"population_count": 1, "eligible_population_count": 1},
+            "analysis_randomness": {"bootstrap_resample_count": 1, "bootstrap_seed": 20260831},
+            "postselection_policy": "prohibited"
+          }
+        }
+      }
+    }
+  ]
+}

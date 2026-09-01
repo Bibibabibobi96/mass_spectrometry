@@ -36,6 +36,46 @@ RUNNERS = (
 
 
 class RuntimeRunLocalContractTests(unittest.TestCase):
+    def test_spatial_diagnostic_always_uses_frozen_release_coordinates(self) -> None:
+        runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        spatial_plot = runner.index("plot_single_flight_spatial_six_panel")
+        self.assertIn(
+            "'--initial',$globalSource",
+            runner[spatial_plot:spatial_plot + 1400],
+        )
+        self.assertNotIn("physical_source_release_contract", runner)
+
+    def test_axis_field_export_publishes_resolved_theory_comparison(self) -> None:
+        runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        export = runner.index("Top-level total-axis field export failed.")
+        retention = runner.index("Apply-RunArtifactRetention", export)
+        self.assertIn("analyze_total_axis_field", runner[export:retention])
+        self.assertIn("'--oatof-geometry',$oatofGeometry", runner[export:retention])
+        self.assertIn("total_axis_field_theory_comparison", runner[retention:retention + 2500])
+
+    def test_terminal_capacity_gate_reuses_the_conservative_launch_measurement(self) -> None:
+        runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        terminal = runner.index("$terminalCapacityArguments = @(")
+        terminal_block = runner[terminal:runner.index("$terminalCapacity =", terminal)]
+        self.assertIn("--known-measured-bytes", terminal_block)
+        self.assertIn("$artifactCapacityState.known_measured_bytes", terminal_block)
+        self.assertIn("--maximum-new-artifact-bytes", terminal_block)
+        self.assertIn("$stageBudgetDocument.limits.transient_run_directory_bytes", terminal_block)
+
+    def test_domain_split_freezes_the_accelerator_main_domain_policy(self) -> None:
+        runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        declaration = runner.index("$acceleratorMainDomainPolicy")
+        compilation = runner.index("'--accelerator-main-domain-policy'", declaration)
+        self.assertIn("accelerator_main_domain_policy.json", runner[declaration:compilation])
+        self.assertIn(
+            "$executionProfile.accelerator_main_domain",
+            runner[declaration:compilation],
+        )
+        self.assertIn(
+            "pre_pulse_entrance_zone_collision_v1",
+            runner[declaration:compilation],
+        )
+
     def test_adapter_accepts_one_manifest_bound_pre_pulse_restart_authority(self) -> None:
         adapter = FAMILY_ADAPTER.read_text(encoding="utf-8")
         gate = adapter.index("$restartAuthorityCount = @(")
@@ -96,8 +136,7 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
         self.assertIn("pre_pulse_child_run_directory", resolver_block)
         self.assertIn("if ($completedBatchLog.Count -gt 0) {", resolver_block)
         self.assertIn("$fallbackUnpublished = [pscustomobject]", resolver_block)
-        self.assertIn("if ($null -ne $fallbackFailure) { return $fallbackFailure }", resolver_block)
-        self.assertIn("return $fallbackUnpublished", resolver_block)
+        self.assertIn("if ($null -ne $fallbackUnpublished) { return $fallbackUnpublished }", resolver_block)
         self.assertIn("return $fallbackFailure", resolver_block)
 
     def test_pre_pulse_time_series_is_pre_solver_fail_closed_and_gap_bound(self) -> None:
@@ -234,7 +273,7 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
         ]
         self.assertNotIn("Invoke-ResourceBudgetedProcess `", batch_launch_block)
 
-    def test_startup_capacity_headroom_derives_from_frozen_stage_budget(self) -> None:
+    def test_startup_capacity_preserves_reusable_pa_before_cache_consumers_resolve(self) -> None:
         runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
         budget = runner.index("$budget = Initialize-RfIntegrationStageBudget")
         capacity = runner.index("$artifactCapacityStartup = Invoke-SingleFlightPython")
@@ -245,9 +284,35 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
             "    [int64](500GB) + [int64]$stageBudgetDocument.limits.transient_run_directory_bytes",
             runner,
         )
+        self.assertNotIn("'--required-headroom-bytes'", gate)
         self.assertIn("$artifactCapacityLaunchMinimumFreeGiB", gate)
         self.assertIn("'--protect-path',$package.run_dir", gate)
         self.assertNotIn("'--minimum-free-gib','550'", gate)
+
+    def test_cache_publication_does_not_double_count_launch_headroom(self) -> None:
+        runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        artifacts = (INTEGRATION_ROOT / "runtime" / "run_artifacts.ps1").read_text(
+            encoding="utf-8"
+        )
+        startup = runner.index("$artifactCapacityStartup = Invoke-SingleFlightPython")
+        publication_state = runner.index(
+            "$cachePublicationAdditionalArtifactBytes = 0", startup
+        )
+        self.assertIn(
+            "-MaximumNewArtifactBytes $cachePublicationAdditionalArtifactBytes",
+            runner[publication_state:],
+        )
+        self.assertNotIn(
+            "-MaximumNewArtifactBytes $stageBudgetDocument.limits.transient_run_directory_bytes",
+            runner[publication_state:],
+        )
+        publication_gate = artifacts[
+            artifacts.index("function Assert-RfArtifactCapacityBeforeCachePublication"):
+            artifacts.index("function Wait-RfCacheStagingWriterExit")
+        ]
+        self.assertNotIn("'--required-headroom-bytes'", publication_gate)
+        self.assertIn("Publication is a same-volume Move-Item", publication_gate)
+        self.assertIn("$maximumNewForPublication = [int64]$MaximumNewArtifactBytes + $stagingBytes", publication_gate)
 
     def test_solver_stage_runners_use_short_lived_execution_aliases(self) -> None:
         for runner_path in RUNNERS[1:]:
@@ -647,6 +712,10 @@ try {{
         ):
             self.assertIn(f"role='{family}'", runner)
         self.assertIn("disposition='pending_cache_decision'", runner)
+        self.assertIn(
+            "$paCacheDispositions.accelerator_entrance_local.disposition = 'not_applicable'",
+            runner,
+        )
         self.assertIn("single_flight_pa_cache_policy=$PaCachePolicy", runner)
         self.assertIn(
             "single_flight_pa_cache_policy_provenance=$PaCachePolicyProvenance",
@@ -753,6 +822,7 @@ try {{
 $root = 'integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/'
 $cases = @(
   @('simion_rf_drive_kernel','common/multipole/simion_rf_drive.lua',$true),
+  @('shared_simion_resource_scheduler','common/multipole/resource_budget_support.ps1',$true),
   @('shared_simion_batch_continuation','common/simion/batch_continuation.py',$true),
   @('oatof_analyzer_component','projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/candidates/oatof_analyzer_component.lua',$true),
   @('single_flight_runner',$root + 'runtime/run_single_flight.ps1',$true),
@@ -767,7 +837,7 @@ foreach ($case in $cases) {{
     throw "implementation path case differs: $($case[0]) $($case[1])"
   }}
 }}
-'RUNTIME_IMPLEMENTATION_PATH_CASES=PASS COUNT=7'
+'RUNTIME_IMPLEMENTATION_PATH_CASES=PASS COUNT=8'
 """
         completed = subprocess.run(
             [pwsh, "-NoProfile", "-Command", script],
@@ -778,7 +848,7 @@ foreach ($case in $cases) {{
         )
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
         self.assertIn(
-            "RUNTIME_IMPLEMENTATION_PATH_CASES=PASS COUNT=7", completed.stdout
+            "RUNTIME_IMPLEMENTATION_PATH_CASES=PASS COUNT=8", completed.stdout
         )
 
     def test_all_runtime_boundaries_require_four_run_local_identities(self) -> None:
@@ -1074,6 +1144,43 @@ foreach ($entry in $commands) {{
         ):
             self.assertIn(input_name, runner)
 
+    def test_cache_publication_protects_planned_consumer_keys(self) -> None:
+        runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        artifacts = (INTEGRATION_ROOT / "runtime" / "run_artifacts.ps1").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("$artifactCapacityProtectedCacheKeys", runner)
+        self.assertIn("Add-RfArtifactCapacityProtectedCacheKey -CacheKey $fineKey", runner)
+        self.assertIn("Add-RfArtifactCapacityProtectedCacheKey -CacheKey $localKey", runner)
+        self.assertGreaterEqual(
+            runner.count("-ProtectedCacheKeys $artifactCapacityProtectedCacheKeys"), 8
+        )
+        self.assertIn("[string[]]$ProtectedCacheKeys = @()", artifacts)
+        self.assertIn("'--protect-cache-key',$key", artifacts)
+        self.assertIn("-ProtectedCacheKeys $ProtectedCacheKeys", artifacts)
+
+    def test_interrupted_fine_cache_staging_resumes_only_with_its_identity_marker(self) -> None:
+        runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        artifacts = (INTEGRATION_ROOT / "runtime" / "run_artifacts.ps1").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("[string]$RecoveryCacheKey", artifacts)
+        self.assertIn(".rf_cache_staging.json", artifacts)
+        self.assertIn("-RecoveryCacheKey $fineKey -RecoveryRole $fineDefinition.role", runner)
+        self.assertIn("Multiple interrupted cache staging directories match key=$RecoveryCacheKey", artifacts)
+        self.assertIn("Retain the identity marker until all fallible publication gates", artifacts)
+        self.assertIn("$recoverableFineStaging", runner)
+
+    def test_interrupted_fine_cache_staging_does_not_repeat_completed_basis_transfer(self) -> None:
+        runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        self.assertIn("$fineBasisComplete = (Test-Path -LiteralPath $fineBasisReport", runner)
+        self.assertIn("if (-not $fineBasisComplete)", runner)
+        self.assertIn("$fineBasisFiles = @($fineSolutionIds", runner)
+        self.assertLess(
+            runner.index("if (-not $fineBasisComplete)"),
+            runner.index("$fineRefineDispatchRequest"),
+        )
+
     def test_dz0025_profile_keeps_coarse_grid_isotropic_and_refines_only_z(self) -> None:
         import json
 
@@ -1304,50 +1411,43 @@ foreach ($entry in $commands) {{
         self.assertNotIn("$SamplingMode", runner)
         self.assertNotIn("steady_candidate_pool", runner)
 
-    def test_two_local_accelerator_overlays_use_distinct_cache_and_six_slot_iob_paths(self) -> None:
+    def test_full_flight_seed_is_checked_before_pa_cache_generation(self) -> None:
         runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
-        for required in (
-            "accelerator_entrance_overlay",
-            "accelerator_intermediate_overlay",
-            "simion_accelerator_entrance_overlay_pa_cache",
-            "simion_accelerator_intermediate_overlay_pa_cache",
-            "build_single_flight_two_overlay_iob.lua",
-            "simion_six_instance_container",
-            "current_sphere_3dp.iob",
-            "current_sphere_3dp-Ax.gem",
-            "current_sphere_3dp-Ay.gem",
-            "current_sphere_3dp-Az.gem",
-            "current_sphere_3dp-jx.gem",
-            "current_sphere_3dp-jy.gem",
-            "current_sphere_3dp-jz.gem",
-            "six-instance IOB companion GEM is missing:",
-            "--intermediate-accelerator-overlay-contract",
-            "Invoke-ResourceBudgetedProcesses",
-            "Two-local overlay build set is incomplete.",
-        ):
-            self.assertIn(required, runner)
-        self.assertIn("$overlayLayout -eq 'whole_accelerator_v1'", runner)
-        self.assertIn("$overlayLayout -eq 'two_local_v1'", runner)
-        # The seed IOB serializes the paths of its six placeholder PAs.  It
-        # must be built in the retained runtime directory, not scratch that is
-        # removed before SIMION later reopens the final full-flight IOB.
-        self.assertIn("$runtimeContainer = Join-Path $runtimeDir 'current_sphere_3dp.iob'", runner)
-        self.assertIn("Copy-Item -LiteralPath $container -Destination $runtimeContainer", runner)
-        self.assertIn("$runtimeContainer,(Join-Path $runtimeDir 'oatof_ideal_grounded.iob')", runner)
-        self.assertNotIn("-Destination $stage", runner)
-        self.assertIn(
-            "$prePulseTimeSeries.schema_version -in @(2, 3, 4)", runner
+        preflight = runner.index("$requiresFullFlightSevenInstanceSeed = [bool](")
+        first_pa_build = runner.index("$domainSplitFineBuilds = @()")
+        self.assertLess(preflight, first_pa_build)
+        block = runner[preflight:first_pa_build]
+        self.assertIn("$fullFlightSeedDir", block)
+        self.assertIn("Versioned seven-instance continuous full-flight IOB seed is missing.", block)
+        self.assertIn("-not $prePulseEntranceZoneCollision", block)
+        self.assertIn("-not $postPulseHandoffMinimal", block)
+
+    def test_current_shared_main_and_local_profile_uses_the_seven_slot_chain(self) -> None:
+        settings = json.loads(
+            (INTEGRATION_ROOT / "config" / "simion_single_flight.json").read_text(
+                encoding="utf-8"
+            )
         )
-        self.assertNotIn("$flightTubeCacheRole", runner)
-        self.assertNotIn("$reflectronCacheRole", runner)
-        # The resolved profile deliberately exposes physical region names rather
-        # than runner-internal cache IDs.  Keep that boundary explicit: a
-        # two-local run must map both regions before it derives file paths.
-        self.assertIn("'entrance' { 'accelerator_entrance_overlay' }", runner)
-        self.assertIn(
-            "'intermediate2' { 'accelerator_intermediate_overlay' }", runner
+        resolved = resolve_execution_profile(
+            settings,
+            frontend_grid_profile_id=(
+                "frontend_acceleration_xy025_z010_coarse100_shared_main_local_aperture"
+            ),
         )
-        self.assertIn("intermediate_half_span_mm", runner)
+        self.assertFalse(resolved["accelerator_overlay_enabled"])
+        self.assertEqual(
+            resolved["accelerator_main_reference_aperture_mm"],
+            {"width": 1.0, "height": 1.0},
+        )
+        self.assertEqual(
+            resolved["accelerator_entrance_local"]["iob_mode"],
+            "highest_priority_entrance_local_v1",
+        )
+        runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        self.assertIn("build_single_flight_full_iob.lua", runner)
+        self.assertIn("assets\\iob_instance_seeds", runner)
+        self.assertIn("seven_instance_seed.iob", runner)
+        self.assertIn("accelerator_entrance_local", runner)
 
     def test_r03_baseline_population_is_strictmode_safe_without_paired_cohort(self) -> None:
         population = (

@@ -37,4 +37,5 @@
 - [20260821__gap102p4_manifest-bound-handoff-n116](history/20260821__gap102p4_manifest-bound-handoff-n116.md)
 - [20260821__compact-auto-gap-field-replay](history/20260821__compact-auto-gap-field-replay.md)
 - [20260822__post-pulse-no-rf-per-gap-theory-field-matrix](history/20260822__post-pulse-no-rf-per-gap-theory-field-matrix.md)
+- [20260831__five-ring-prepulse-and-field-diagnostics](history/20260831__five-ring-prepulse-and-field-diagnostics.md)
 - [retired_campaigns](history/retired_campaigns.md)

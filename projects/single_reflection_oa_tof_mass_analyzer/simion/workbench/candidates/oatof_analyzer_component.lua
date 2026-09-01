@@ -91,7 +91,11 @@ function component.new(config)
     accelerator=true, detector=true}, 'instance_roles')
   exact_keys(config.instance_filenames, {flight_tube=true, reflectron=true,
     accelerator=true, detector=true}, 'instance_filenames')
-  local three_zone = config.accelerator_topology_id == 'three_zone_frontend_v1'
+  -- The frontend compiler publishes the electrode-topology identity derived
+  -- from the resolved three-zone accelerator contract; do not translate it
+  -- into a private workbench-only alias here.
+  local three_zone = config.accelerator_topology_id == 'three_zone_frontend_v1' or
+    config.accelerator_topology_id == 'three_zone_frontend_contract_derived_v1'
   assert(three_zone or config.accelerator_topology_id == 'two_zone_frontend_v1',
     'accelerator_topology_id is not published')
   local geometry_keys = {accelerator_axis_x_mm=true,

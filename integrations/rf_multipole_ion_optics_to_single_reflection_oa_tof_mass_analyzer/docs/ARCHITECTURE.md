@@ -11,7 +11,7 @@
 | 下游 field、mesh/grid、trajectory quality、dt | campaign 的 `single_flight_*_profile_id` | Python prepare → runner arguments → SIMION | 仅消费者数值结果、数值资格和对应 cache | 已冻结的 upstream handoff 状态 |
 | 分析与 qualification | campaign preregistration / analysis contract | Python 分析器和 result receipt | analysis result、资格声明 | solver 输入、几何和 particle handoff |
 | batch、CPU、内存、timeout、retention | 公共执行策略（不由 campaign 覆盖） | Python resource scheduler → `resolved_engineering_budget.json` → runner | dispatch、运行 receipt 和资源使用证据；只有 manifest-verified 单批画像可估算并发，无画像时为单批 bootstrap；画像身份包含已解析的 grid、reflectron cell、overlay cell、trajectory quality 和 RF 步数 | campaign/PA/物理 handoff identity |
-| 活动 campaign 授权 | `config/diagnostics/lifecycle_registry.json` | `execute.ps1`、prepare、adapter | 正式启动与发布的 campaign SHA 绑定；探索的非正式执行 | 历史 JSON 原始字节、历史结果；探索不能正式发布 |
+| 活动 campaign 授权 | `config/diagnostics/lifecycle_registry.json` | `execute.ps1`、prepare | 注册路径和状态决定正式启动资格；prepare 冻结完整 resolved row、来源身份与 execution receipt | 历史 JSON 原始字节、历史结果；探索不能正式发布 |
 
 单飞行分辨率分析从冻结的 `single_flight_initial_global_state.csv` 读取唯一的正 `mass_amu`，不由
 PowerShell 或恢复路径另行默认。混合质量需要显式的目标物种分析合同；在该合同存在前，分析会拒绝而不以任意质量计算。
@@ -56,10 +56,10 @@ registered campaign + lifecycle authority, or explicit exploration campaign
   -> Python analysis, manifest and qualification receipts
 ```
 
-对于正式 campaign，生命周期 registry 在三个不同边界复核：`execute.ps1` 保护公开请求入口，
-`prepare.py` 保护直接 Python 制备入口且先于源 artifact 读取，`adapter.ps1` 在已冻结 plan 到求解器
-启动的时间间隔重新确认 SHA。三者不是可互换的重复校验；后两者分别防止绕过公开入口和制备后
-campaign 被退役或变更仍启动求解器。探索 campaign 不进入正式发布路径。
+对于正式 campaign，生命周期 registry 在两个 authoring 边界复核：`execute.ps1` 保护公开请求入口，
+`prepare.py` 保护直接 Python 制备入口且先于源 artifact 读取。adapter、发布与恢复只消费 run-local immutable
+frozen experiment、resolved inputs 和 execution receipt，不重新读取作者文件。作者文件的格式化或后续编辑不会
+改变已准备运行；冻结来源、candidate、人口及执行输入仍以 SHA 绑定。探索 campaign 不进入正式发布路径。
 
 PowerShell 不定义几何、粒子分布、统计公式或正式阈值；它只读取已解析合同、执行外部进程、保留日志并传递
 失败状态。Lua/GEM 只实现已解析的 SIMION 几何与 callback，不拥有实验选择政策。

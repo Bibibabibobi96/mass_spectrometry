@@ -387,6 +387,7 @@
             "staged_three_stage",
             "continuous_injection_full_population",
             "resolved_layout_pulse_ideal_linear_z_vz",
+            "independent_spatial_velocity_ion_source_snapshot",
             "pre_pulse_restart", "terminal_handoff_continuation",
             "pulse_eligible_conditional",
             "first_100_rows_in_frozen_file_order",
@@ -405,6 +406,7 @@
                 "experiment_single_flight_particle_source",
                 "experiment_pre_pulse_source_state",
                 "prepared_materialized_particle_source",
+                "prepared_materialized_ion_source_volume",
                 "prepared_deterministic_prefix",
                 "staged_upstream_source", "terminal_handoff_continuation_global_state"
               ]
@@ -642,6 +644,19 @@
               },
               {
                 "properties": {
+                  "execution_strategy": {"const": "simion_single_flight"},
+                  "source_release_mode": {"const": "continuous_frontend"},
+                  "single_flight_population": {"properties": {
+                    "population_mode": {"const": "independent_spatial_velocity_ion_source_snapshot"},
+                    "source_authority": {"properties": {"table_binding": {"const": "prepared_materialized_ion_source_volume"}}},
+                    "execution_population": {"properties": {"selection_algorithm": {"const": "all_rows_in_frozen_file_order"}}},
+                    "postselection_policy": {"const": "prohibited"}
+                  }}
+                },
+                "required": ["execution_strategy", "source_release_mode"]
+              },
+              {
+                "properties": {
                   "execution_strategy": {"const": "staged_three_stage"},
                   "single_flight_population": {"properties": {
                     "population_mode": {"const": "staged_three_stage"},
@@ -743,6 +758,15 @@
           "enum": ["particle_flight", "program_axis_field_export"]
         },
         "single_flight_layout_profile_id": {"$ref": "#/$defs/id"},
+        "accelerator_entrance_local_aperture_mm": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["width", "height"],
+          "properties": {
+            "width": {"type": "number", "exclusiveMinimum": 0},
+            "height": {"type": "number", "exclusiveMinimum": 0}
+          }
+        },
         "single_flight_batch_count": {"type": "integer", "minimum": 1},
         "single_flight_batch_memory_policy": {
           "type": "object",

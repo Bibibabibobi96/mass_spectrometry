@@ -165,6 +165,8 @@ def _validate_screening_receipt(
             "accelerator_entrance_overlay",
             "accelerator_intermediate_overlay",
         )
+    elif schema_version == 5:
+        required = ("fine_upstream", "accelerator_entrance_zone_collision")
     else:
         required = ()
     if required and (
@@ -323,7 +325,7 @@ def select_and_write(
     verified_reuse_basis = None
     verified_reuse_key = None
     reuse_pa_keys = screening_receipt.get("pa_cache_keys")
-    if contract.get("schema_version") in (2, 3) and isinstance(reuse_pa_keys, dict):
+    if contract.get("schema_version") in (2, 3, 4, 5) and isinstance(reuse_pa_keys, dict):
         verified_reuse_basis, verified_reuse_key = (
             build_verified_pulse_reuse_projection(
                 screening_contract=contract,
@@ -395,8 +397,13 @@ def select_and_write(
                 ],
             })
 
+    contract_schema_version = int(contract.get("schema_version") or 2)
     receipt: dict[str, Any] = {
-        "schema_version": 3 if contract.get("schema_version") == 3 else 2,
+        "schema_version": 5 if contract_schema_version >= 5 else (
+            4 if contract_schema_version == 4 else (
+            3 if contract_schema_version == 3 else 2
+            )
+        ),
         "role": "rf_oatof_detector_blind_real_field_pulse_timing_selection_receipt",
         "status": "success",
         "qualification": "candidate_selection",
@@ -452,7 +459,7 @@ def select_and_write(
     if verified_reuse_key is not None:
         receipt["verified_reuse_content_key"] = verified_reuse_key
         receipt["verified_reuse_content_key_basis"] = verified_reuse_basis
-    if contract.get("schema_version") in (2, 3):
+    if contract.get("schema_version") in (2, 3, 4, 5):
         receipt["pa_cache_keys"] = copy.deepcopy(screening_receipt["pa_cache_keys"])
     receipt["authorities"]["selector_source"] = _binding(
         selector_source_path, repository_text=True

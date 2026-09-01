@@ -322,6 +322,7 @@ class RealFieldPulseAnalysisTests(unittest.TestCase):
     def _write_inputs(
         self, root: Path, *, detector_column: bool = False,
         physical_loss: bool = False, two_local_overlay: bool = False,
+        domain_split: bool = False, pre_pulse_reachable: bool = False,
     ) -> dict[str, Path]:
         paths = {name: root / filename for name, filename in (
             ("states", "states.csv"), ("geometry", "geometry.json"),
@@ -366,7 +367,11 @@ class RealFieldPulseAnalysisTests(unittest.TestCase):
             "pulse_effective_time_us": 11.5,
         }), encoding="utf-8")
         contract = {
-            **({"schema_version": 3} if two_local_overlay else {}),
+            **({"schema_version": 5} if pre_pulse_reachable else (
+                {"schema_version": 4} if domain_split else (
+                {"schema_version": 3} if two_local_overlay else {}
+                )
+            )),
             "role": "rf_oatof_pre_pulse_time_series_screening_contract",
             "mode": "real_pa_rf_pre_pulse_time_series",
             "pulse_disabled": True,
@@ -455,7 +460,23 @@ class RealFieldPulseAnalysisTests(unittest.TestCase):
                     "flight_tube": None,
                     "reflectron": None,
                 }
-            } if two_local_overlay else {}),
+            } if two_local_overlay else ({
+                "pa_cache_keys": {
+                    "full_coarse_bridge": "A" * 64,
+                    "fine_upstream": "B" * 64,
+                    "accelerator_main": "C" * 64,
+                    "accelerator_intermediate2_overlay": "D" * 64,
+                    "flight_tube": None,
+                    "reflectron": None,
+                }
+            } if domain_split else ({
+                "pa_cache_keys": {
+                    "fine_upstream": "A" * 64,
+                    "accelerator_entrance_zone_collision": "B" * 64,
+                    "flight_tube": None,
+                    "reflectron": None,
+                }
+            } if pre_pulse_reachable else {}))),
         }), encoding="utf-8")
         paths["manifest"].write_text(json.dumps({
             "role": "simulation_run_manifest", "status": "success",
@@ -600,6 +621,34 @@ class RealFieldPulseAnalysisTests(unittest.TestCase):
                 "frontend": "A" * 64,
                 "accelerator_entrance_overlay": "B" * 64,
                 "accelerator_intermediate_overlay": "C" * 64,
+                "flight_tube": None,
+                "reflectron": None,
+            })
+            self.assertIn("verified_reuse_content_key", receipt)
+
+    def test_domain_split_receipt_retains_all_prepulse_pa_identities(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            paths = self._write_inputs(Path(directory), domain_split=True)
+            receipt = self._select(paths)
+            self.assertEqual(receipt["schema_version"], 4)
+            self.assertEqual(receipt["pa_cache_keys"], {
+                "full_coarse_bridge": "A" * 64,
+                "fine_upstream": "B" * 64,
+                "accelerator_main": "C" * 64,
+                "accelerator_intermediate2_overlay": "D" * 64,
+                "flight_tube": None,
+                "reflectron": None,
+            })
+            self.assertIn("verified_reuse_content_key", receipt)
+
+    def test_reachable_prepulse_receipt_retains_minimum_pa_identities(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            paths = self._write_inputs(Path(directory), pre_pulse_reachable=True)
+            receipt = self._select(paths)
+            self.assertEqual(receipt["schema_version"], 5)
+            self.assertEqual(receipt["pa_cache_keys"], {
+                "fine_upstream": "A" * 64,
+                "accelerator_entrance_zone_collision": "B" * 64,
                 "flight_tube": None,
                 "reflectron": None,
             })

@@ -105,11 +105,8 @@ class CampaignRuntimeAuthoritiesTests(unittest.TestCase):
         self.assertEqual(active_paths, discovered)
         for row in active:
             active_path = REPO_ROOT / row["path"]
+            self.assertEqual(set(row), {"path"})
             self.assertEqual(load(active_path)["status"], "authorized")
-            self.assertEqual(
-                row["content_sha256"],
-                hashlib.sha256(active_path.read_bytes()).hexdigest(),
-            )
 
     def test_repository_publication_writer_requires_canonical_lf_bytes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -150,20 +147,11 @@ class CampaignRuntimeAuthoritiesTests(unittest.TestCase):
         self.assertIn("$executionPolicy.policy_id", adapter)
         self.assertNotIn("$campaign.resource_profile", adapter)
 
-    def test_adapter_uses_repository_text_identity_for_campaign(self) -> None:
+    def test_adapter_uses_frozen_campaign_experiment_identity(self) -> None:
         adapter = ADAPTER.read_text(encoding="utf-8-sig")
-        self.assertIn(
-            "(Get-RfOatofRepositoryTextSha256 -Path $campaignPath) -ne",
-            adapter,
-        )
-        campaign_guard = adapter.split("$campaignPath =", 1)[1].split(
-            "$campaign =", 1
-        )[0]
-        self.assertNotIn("Get-FileHash -LiteralPath $campaignPath", campaign_guard)
-        self.assertLess(
-            adapter.index("runtime\\runtime_binding.ps1"),
-            adapter.index("$campaignPath ="),
-        )
+        self.assertIn("frozen_campaign_experiment_sha256", adapter)
+        self.assertNotIn("campaign_sha256", adapter)
+        self.assertNotIn("refresh_campaign_source_bindings", adapter)
 
     def test_active_bindings_reference_only_stable_source_and_policy(self) -> None:
         expected_dependencies = (

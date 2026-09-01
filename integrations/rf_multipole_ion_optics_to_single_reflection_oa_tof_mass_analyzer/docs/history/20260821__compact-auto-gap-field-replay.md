@@ -27,7 +27,7 @@ SIMION child summary 的 `census.detector_crossing` 与
 
 ## 证据
 
-- 合同：[`connector_gap_field_matrix_compact_auto_replay_v2.json`](../../config/diagnostics/connector_gap_field_matrix_compact_auto_replay_v2.json)
+- 合同：[`connector_gap_field_matrix_compact_auto_replay_v2.json`](retired_campaigns/connector_gap_field_matrix_compact_auto_replay_v2.json)
 - 新运行：`artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20260822_210000__sim__cross__gap-field-replay-01__n482` 至 `...210022__sim__cross__gap-field-replay-23__n116`
 - 首行资源 receipt：`.../20260822_210000__sim__simion__rf-oatof-single-flight-gap12p8__n482/logs/resource_usage.json`
 

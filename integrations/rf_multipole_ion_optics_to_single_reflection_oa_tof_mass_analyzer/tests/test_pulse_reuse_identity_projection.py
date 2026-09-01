@@ -243,6 +243,35 @@ class PulseReuseIdentityProjectionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "layout is ambiguous"):
             build_verified_pulse_reuse_projection(**fixture)
 
+    def test_domain_split_uses_its_prepulse_pa_keys_and_ignores_downstream(self) -> None:
+        fixture = _fixture()
+        fixture["pa_cache_keys"] = {
+            "full_coarse_bridge": "coarse-key",
+            "fine_upstream": "upstream-key",
+            "accelerator_main": "main-key",
+            "accelerator_intermediate2_overlay": "intermediate2-key",
+            # These are loaded by the IOB but cannot affect the pulse-before
+            # screen.  They therefore must not prevent reuse of its evidence.
+            "flight_tube": "downstream-key",
+            "reflectron": "reflectron-key",
+        }
+        basis, baseline_key = build_verified_pulse_reuse_projection(**fixture)
+        self.assertEqual(
+            basis["pa_cache_keys"],
+            {
+                "full_coarse_bridge": "coarse-key",
+                "fine_upstream": "upstream-key",
+                "accelerator_main": "main-key",
+                "accelerator_intermediate2_overlay": "intermediate2-key",
+            },
+        )
+        varied = copy.deepcopy(fixture)
+        varied["pa_cache_keys"]["accelerator_main"] = "other-main-key"
+        self.assertNotEqual(
+            baseline_key,
+            build_verified_pulse_reuse_projection(**varied)[1],
+        )
+
     def test_consumer_numerics_do_not_enter_post_pulse_handoff_identity(self) -> None:
         experiment = {
             "connection_profile_id": "gap_51p2",

@@ -91,6 +91,87 @@ class SingleFlightExecutionProfileTests(unittest.TestCase):
                 frontend_grid_profile_id=profile["profile_id"],
             )
 
+    def test_directed_accelerator_corridor_is_a_registered_numerical_policy(self) -> None:
+        configuration = copy.deepcopy(self.configuration)
+        profile = next(
+            item
+            for item in configuration["frontend_grid_profiles"]
+            if item["profile_id"] == (
+                "frontend_acceleration_xy025_z010_accelerator_two_local_xy025_z005_"
+                "directed_corridor"
+            )
+        )
+        resolved = resolve_execution_profile(
+            configuration, frontend_grid_profile_id=profile["profile_id"]
+        )
+        self.assertEqual(
+            resolved["accelerator_main_domain"],
+            profile["accelerator_main_domain"],
+        )
+
+    def test_main_only_axis_field_profile_uses_one_mm_coarse_boundary(self) -> None:
+        resolved = resolve_execution_profile(
+            self.configuration,
+            frontend_grid_profile_id=(
+                "frontend_acceleration_xy025_z010_coarse100_directed_corridor_"
+                "main_only"
+            ),
+        )
+        self.assertEqual(
+            resolved["coarse_bridge_cell_mm_xyz"],
+            {"x": 1.0, "y": 1.0, "z": 1.0},
+        )
+        self.assertEqual(
+            resolved["frontend_cell_mm_xyz"],
+            {"x": 0.25, "y": 0.25, "z": 0.1},
+        )
+        self.assertFalse(resolved["accelerator_overlay_enabled"])
+        self.assertEqual(
+            resolved["accelerator_main_domain"]["policy_id"],
+            "directed_kinematic_corridor_v1",
+        )
+
+    def test_shared_main_local_aperture_profile_has_no_convergence_overlay(self) -> None:
+        resolved = resolve_execution_profile(
+            self.configuration,
+            frontend_grid_profile_id=(
+                "frontend_acceleration_xy025_z010_coarse100_shared_main_local_aperture"
+            ),
+        )
+        self.assertEqual(
+            resolved["coarse_bridge_cell_mm_xyz"],
+            {"x": 1.0, "y": 1.0, "z": 1.0},
+        )
+        self.assertFalse(resolved["accelerator_overlay_enabled"])
+        self.assertEqual(
+            resolved["accelerator_main_reference_aperture_mm"],
+            {"width": 1.0, "height": 1.0},
+        )
+        local = resolved["accelerator_entrance_local"]
+        self.assertTrue(local["enabled"])
+        self.assertEqual(local["iob_mode"], "highest_priority_entrance_local_v1")
+        self.assertEqual(
+            local["boundary_mode"],
+            "accelerator_main_electrode_basis_dirichlet_v1",
+        )
+
+    def test_directed_accelerator_corridor_rejects_unknown_or_nonpositive_extent(self) -> None:
+        configuration = copy.deepcopy(self.configuration)
+        profile = next(
+            item
+            for item in configuration["frontend_grid_profiles"]
+            if item["profile_id"] == "frontend_acceleration_xy025_z010_accelerator_two_local_xy025_z005"
+        )
+        profile["accelerator_main_domain"] = {
+            "policy_id": "directed_kinematic_corridor_v1",
+            "exit_axis_positive_extent_mm": 0.0,
+            "transverse_half_span_mm": 10.0,
+        }
+        with self.assertRaisesRegex(ValueError, ERROR):
+            resolve_execution_profile(
+                configuration, frontend_grid_profile_id=profile["profile_id"]
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

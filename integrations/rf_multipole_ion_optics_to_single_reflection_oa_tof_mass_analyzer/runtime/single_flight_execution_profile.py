@@ -122,6 +122,96 @@ def _resolve_accelerator_overlays(
     return True, layout, cell, specs
 
 
+def _resolve_accelerator_main_domain(value: Any) -> dict[str, Any]:
+    """Resolve the numerical extent of the fine accelerator PA.
+
+    A full fine PA remains the default.  A directed corridor is deliberately a
+    numerical-domain declaration, rather than a change to the physical
+    accelerator: omitted distant electrode surfaces are represented by the
+    common coarse-electrode Dirichlet boundary family.
+    """
+
+    if value is None:
+        return {"policy_id": "full_accelerator_v1"}
+    if not isinstance(value, dict) or not isinstance(value.get("policy_id"), str):
+        raise ValueError(ERROR)
+    policy_id = value["policy_id"]
+    if policy_id == "full_accelerator_v1":
+        if set(value) != {"policy_id"}:
+            raise ValueError(ERROR)
+        return {"policy_id": policy_id}
+    if policy_id == "directed_kinematic_corridor_v1":
+        if set(value) != {
+            "policy_id", "exit_axis_positive_extent_mm", "transverse_half_span_mm"
+        }:
+            raise ValueError(ERROR)
+        return {
+            "policy_id": policy_id,
+            "exit_axis_positive_extent_mm": _positive_number(
+                value["exit_axis_positive_extent_mm"]
+            ),
+            "transverse_half_span_mm": _positive_number(
+                value["transverse_half_span_mm"]
+            ),
+        }
+    raise ValueError(ERROR)
+
+
+def _resolve_accelerator_entrance_local(
+    value: Any, main_cell_mm_xyz: dict[str, float]
+) -> dict[str, Any] | None:
+    """Resolve the small PA that owns the scanned accelerator-side aperture."""
+
+    if value is None:
+        return None
+    if not isinstance(value, dict) or set(value) != {
+        "enabled",
+        "cell_mm_xyz",
+        "boundary_mode",
+        "iob_mode",
+        "domain_policy",
+    } or value.get("enabled") is not True:
+        raise ValueError(ERROR)
+    cell = _numeric_cell(value["cell_mm_xyz"])
+    if any(
+        not math.isclose(cell[axis], main_cell_mm_xyz[axis], abs_tol=1e-12)
+        for axis in ("x", "y", "z")
+    ):
+        raise ValueError(ERROR)
+    if (
+        value.get("boundary_mode")
+        != "accelerator_main_electrode_basis_dirichlet_v1"
+        or value.get("iob_mode") != "highest_priority_entrance_local_v1"
+    ):
+        raise ValueError(ERROR)
+    policy = value.get("domain_policy")
+    if not isinstance(policy, dict) or set(policy) != {
+        "policy_id",
+        "accelerator_side_extent_mm",
+        "transverse_half_span_mm",
+        "grid1_downstream_guard_mm",
+    } or policy.get("policy_id") != "aperture_perturbation_local_v1":
+        raise ValueError(ERROR)
+    return {
+        "enabled": True,
+        "cell_mm_xyz": cell,
+        "boundary_mode": value["boundary_mode"],
+        "iob_mode": value["iob_mode"],
+        "domain_policy": {
+            "policy_id": policy["policy_id"],
+            "accelerator_side_extent_mm": _positive_number(
+                policy["accelerator_side_extent_mm"]
+            ),
+            "transverse_half_span_mm": _positive_number(
+                policy["transverse_half_span_mm"]
+            ),
+            "grid1_downstream_guard_mm": _positive_number(
+                policy["grid1_downstream_guard_mm"]
+            ),
+        },
+    }
+
+
 def resolve_execution_profile(
     configuration: dict[str, Any],
     *,
@@ -165,6 +255,29 @@ def resolve_execution_profile(
                 grid.get("accelerator_overlay"), frontend_cell_mm_xyz
             )
         )
+        accelerator_main_domain = _resolve_accelerator_main_domain(
+            grid.get("accelerator_main_domain")
+        )
+        reference_aperture = grid.get("accelerator_main_reference_aperture_mm")
+        if reference_aperture is not None:
+            if not isinstance(reference_aperture, dict) or set(reference_aperture) != {
+                "width", "height"
+            }:
+                raise ValueError(ERROR)
+            reference_aperture = {
+                "width": _positive_number(reference_aperture["width"]),
+                "height": _positive_number(reference_aperture["height"]),
+            }
+        entrance_local = _resolve_accelerator_entrance_local(
+            grid.get("accelerator_entrance_local"), frontend_cell_mm_xyz
+        )
+        if entrance_local is not None and (
+            reference_aperture is None or overlay_enabled
+        ):
+            # The ordinary six-slot topology gives slot 6 to the entrance
+            # replacement.  A simultaneous intermediate2 convergence overlay
+            # requires the separately governed seven-slot profile.
+            raise ValueError(ERROR)
 
         selected_oatof_id = oatof_numerical_profile_id or configuration[
             "default_oatof_numerical_profile_id"
@@ -269,6 +382,9 @@ def resolve_execution_profile(
         "accelerator_overlay_layout": overlay_layout,
         "accelerator_overlay_cell_mm_xyz": overlay_cell_mm_xyz,
         "accelerator_overlay_specs": overlay_specs,
+        "accelerator_main_domain": accelerator_main_domain,
+        "accelerator_main_reference_aperture_mm": reference_aperture,
+        "accelerator_entrance_local": entrance_local,
         "accelerator_overlay_boundary_mode": (
             "coarse_electrode_basis_dirichlet_v1" if overlay_enabled else None
         ),

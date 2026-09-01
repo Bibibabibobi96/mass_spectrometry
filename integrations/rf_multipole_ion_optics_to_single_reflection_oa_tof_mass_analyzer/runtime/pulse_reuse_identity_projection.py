@@ -117,25 +117,51 @@ def build_verified_pulse_reuse_projection(
     overlay_key = pa_cache_keys.get("accelerator_overlay")
     entrance_overlay_key = pa_cache_keys.get("accelerator_entrance_overlay")
     intermediate_overlay_key = pa_cache_keys.get("accelerator_intermediate_overlay")
+    connector_collision_key = pa_cache_keys.get("connector_collision")
     coarse_bridge_key = pa_cache_keys.get("full_coarse_bridge")
     fine_upstream_key = pa_cache_keys.get("fine_upstream")
     accelerator_main_key = pa_cache_keys.get("accelerator_main")
     intermediate2_key = pa_cache_keys.get("accelerator_intermediate2_overlay")
+    entrance_zone_collision_key = pa_cache_keys.get(
+        "accelerator_entrance_zone_collision"
+    )
     has_legacy_overlay = overlay_key is not None
     has_two_local_overlays = (
         entrance_overlay_key is not None or intermediate_overlay_key is not None
     )
     has_domain_split = any(
+        value is not None for value in (accelerator_main_key, intermediate2_key)
+    )
+    has_entrance_zone_collision = any(
         value is not None
-        for value in (coarse_bridge_key, fine_upstream_key, accelerator_main_key, intermediate2_key)
+        for value in (connector_collision_key, entrance_zone_collision_key)
+    ) and (
+        fine_upstream_key is None
+        and accelerator_main_key is None
+        and intermediate2_key is None
+    )
+    has_reachable_minimum = (
+        isinstance(fine_upstream_key, str)
+        and fine_upstream_key
+        and isinstance(entrance_zone_collision_key, str)
+        and entrance_zone_collision_key
+        and connector_collision_key is None
+        and accelerator_main_key is None
+        and intermediate2_key is None
     )
     if (
-        (not has_domain_split and (not isinstance(frontend_key, str) or not frontend_key))
-        or pa_cache_keys.get("flight_tube") is not None
-        or pa_cache_keys.get("reflectron") is not None
+        not has_domain_split
+        and not has_entrance_zone_collision
+        and not has_reachable_minimum
+        and (
+            not isinstance(frontend_key, str)
+            or not frontend_key
+            or pa_cache_keys.get("flight_tube") is not None
+            or pa_cache_keys.get("reflectron") is not None
+        )
     ):
         raise ValueError("pulse reuse requires frontend and accelerator-overlay PA keys only")
-    if sum((has_legacy_overlay, has_two_local_overlays, has_domain_split)) != 1:
+    if sum((has_legacy_overlay, has_two_local_overlays, has_domain_split, has_entrance_zone_collision, has_reachable_minimum)) != 1:
         raise ValueError("pulse reuse accelerator-overlay layout is ambiguous")
     if has_legacy_overlay:
         if not isinstance(overlay_key, str) or not overlay_key:
@@ -157,7 +183,7 @@ def build_verified_pulse_reuse_projection(
             "accelerator_entrance_overlay": entrance_overlay_key,
             "accelerator_intermediate_overlay": intermediate_overlay_key,
         }
-    else:
+    elif has_domain_split:
         if not all(
             isinstance(value, str) and value
             for value in (coarse_bridge_key, fine_upstream_key, accelerator_main_key, intermediate2_key)
@@ -168,6 +194,26 @@ def build_verified_pulse_reuse_projection(
             "fine_upstream": fine_upstream_key,
             "accelerator_main": accelerator_main_key,
             "accelerator_intermediate2_overlay": intermediate2_key,
+        }
+    elif has_reachable_minimum:
+        cache_key_projection = {
+            "fine_upstream": fine_upstream_key,
+            "accelerator_entrance_zone_collision": entrance_zone_collision_key,
+        }
+    else:
+        if not all(
+            isinstance(value, str) and value
+            for value in (
+                connector_collision_key,
+                entrance_zone_collision_key,
+            )
+        ):
+            raise ValueError(
+                "pulse reuse requires connector and entrance-zone collision PA keys"
+            )
+        cache_key_projection = {
+            "connector_collision": connector_collision_key,
+            "accelerator_entrance_zone_collision": entrance_zone_collision_key,
         }
     time_grid = copy.deepcopy(
         _require_mapping(screening_contract.get("rf_time_grid"), "RF time grid")

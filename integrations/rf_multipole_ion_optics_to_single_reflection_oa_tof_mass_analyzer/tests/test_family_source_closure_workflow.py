@@ -21,6 +21,8 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.prepare import (
     _automatic_pulse_population_binding,
     expand_flat_experiment_authoring,
+    require_minimal_flat_experiment_authoring,
+    validate_active_post_pulse_restart_working_point,
     _resolve_single_flight_profiles,
     semantic_diff_experiments,
     _repo_byte_record,
@@ -55,6 +57,9 @@ CONFIG_ROOT = INTEGRATION_ROOT / "config"
 SCHEMA_ROOT = CONFIG_ROOT / "schemas"
 ACTIVE_CAMPAIGN_SCHEMA = CONFIG_ROOT / "schemas" / (
     "rf_multipole_oatof_experiment_campaign.schema.json"
+)
+RESOLVED_CAMPAIGN_SCHEMA = CONFIG_ROOT / "schemas" / (
+    "rf_multipole_oatof_resolved_experiment_campaign.schema.json"
 )
 ARCHIVAL_CAMPAIGN_SCHEMA = CONFIG_ROOT / "schemas" / "archive" / (
     "rf_multipole_oatof_experiment_campaign_v1_to_v6.schema.json"
@@ -101,7 +106,11 @@ AUTO_N1000_CONNECTOR_CAMPAIGN = (
     "connector_gap_three_zone_real_pa_full_n1000_campaign_v11.json"
 )
 COMPACT_GAP_FIELD_CAMPAIGN = (
-    CONFIG_ROOT / "diagnostics" / "connector_gap_field_matrix_compact_auto_replay_v2.json"
+    CONFIG_ROOT / "diagnostics" / "connector_gap_field_matrix_compact_auto_replay_v3.json"
+)
+CURRENT_PRE_PULSE_EXPLORATION_CAMPAIGN = (
+    CONFIG_ROOT / "explorations"
+    / "ideal_acceptance_300mm_terminal_aperture_height_axialgrid010_pre_pulse_n5000.json"
 )
 
 
@@ -141,6 +150,12 @@ def migrate_v3_campaign(campaign: dict[str, object]) -> dict[str, object]:
     grid_profiles = {
         item["profile_id"]: item
         for item in single_flight_configuration["frontend_grid_profiles"]
+    }
+    independent_ion_source_profiles = {
+        item["profile_id"]
+        for item in single_flight_configuration["source_materialization_profiles"]
+        if item.get("materialization_mode")
+        == "independent_spatial_velocity_ion_source_snapshot"
     }
     for row in campaign["experiments"]:
         if row.get("execution_strategy") != "simion_single_flight":
@@ -182,7 +197,7 @@ def migrate_v3_campaign(campaign: dict[str, object]) -> dict[str, object]:
                 ), "single_flight_particle_source",
                 "experiment_single_flight_particle_source",
             )
-        elif materialization == "independent_ion_source_volume_n5000":
+        elif materialization in independent_ion_source_profiles:
             mode, role, binding = (
                 "independent_spatial_velocity_ion_source_snapshot",
                 "single_flight_materialized_ion_source_volume",
@@ -370,15 +385,15 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                 "shared": {"execution_strategy": "simion_single_flight", "source_profile_id": "n100"},
                 "variation_axes": ["connection_profile_id", "connector_gap_evidence_role"],
                 "rows": [
-                    {"sequence": 1, "experiment_id": "gap0", "run_id": "run_gap0", "overrides": {"connection_profile_id": "gap0", "connector_gap_evidence_role": "primary"}},
-                    {"sequence": 2, "experiment_id": "gap3", "run_id": "run_gap3", "overrides": {"connection_profile_id": "gap3", "connector_gap_evidence_role": "primary"}},
+                    {"experiment_id": "gap0", "values": {"connection_profile_id": "gap0", "connector_gap_evidence_role": "primary"}},
+                    {"experiment_id": "gap3", "values": {"connection_profile_id": "gap3", "connector_gap_evidence_role": "primary"}},
                 ],
             }
         }
         expanded = expand_flat_experiment_authoring(authored)
         self.assertEqual([row["connection_profile_id"] for row in expanded["experiments"]], ["gap0", "gap3"])
         self.assertEqual(expanded["experiments"][0]["source_profile_id"], "n100")
-        self.assertEqual(authored["experiments"]["rows"][0]["overrides"], {"connection_profile_id": "gap0", "connector_gap_evidence_role": "primary"})
+        self.assertEqual(authored["experiments"]["rows"][0]["values"], {"connection_profile_id": "gap0", "connector_gap_evidence_role": "primary"})
 
     def test_minimal_flat_authoring_derives_sequence_and_freezes_execution_id(self) -> None:
         authored = {
@@ -395,6 +410,50 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
         self.assertEqual(listed["experiments"][0]["sequence"], 1)
         self.assertEqual(listed["experiments"][0]["run_id"], "execution_pending")
         self.assertEqual(frozen["experiments"][0]["run_id"], "20260830_120000__sim__cross__gap0__n1")
+
+    def test_executable_campaign_rejects_legacy_authoring(self) -> None:
+        minimal = {
+            "experiments": {
+                "shared": {"execution_strategy": "simion_single_flight"},
+                "variation_axes": ["connection_profile_id"],
+                "rows": [{"experiment_id": "gap0", "values": {"connection_profile_id": "gap0"}}],
+            }
+        }
+        legacy = {
+            "experiments": {
+                "shared": {"execution_strategy": "simion_single_flight"},
+                "variation_axes": ["connection_profile_id"],
+                "rows": [{"sequence": 1, "experiment_id": "gap0", "run_id": "old-run", "overrides": {"connection_profile_id": "gap0"}}],
+            }
+        }
+        require_minimal_flat_experiment_authoring(minimal)
+        validate_schema(
+            {
+                "schema_version": 7,
+                "role": "rf_multipole_oatof_experiment_campaign",
+                "integration_id": INTEGRATION_ID,
+                "campaign_id": "minimal_authoring",
+                "status": "exploration",
+                "claim_limit": "test only",
+                "experiments": minimal["experiments"],
+            },
+            ACTIVE_CAMPAIGN_SCHEMA,
+        )
+        with self.assertRaisesRegex(ContractError, "only experiment_id and values"):
+            require_minimal_flat_experiment_authoring(legacy)
+        with self.assertRaises(ContractError):
+            validate_schema(
+                {
+                    "schema_version": 7,
+                    "role": "rf_multipole_oatof_experiment_campaign",
+                    "integration_id": INTEGRATION_ID,
+                    "campaign_id": "legacy_authoring",
+                    "status": "exploration",
+                    "claim_limit": "test only",
+                    "experiments": legacy["experiments"],
+                },
+                ACTIVE_CAMPAIGN_SCHEMA,
+            )
 
     def test_flat_authoring_preserves_fifty_six_gap_field_rows(self) -> None:
         """A large matrix must remain ordered and must not share mutable row state."""
@@ -416,10 +475,8 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                 ],
                 "rows": [
                     {
-                        "sequence": sequence,
                         "experiment_id": f"gap_field_{sequence:02d}",
-                        "run_id": f"matrix_run_{sequence:02d}",
-                        "overrides": {
+                        "values": {
                             "connection_profile_id": mode[0],
                             "field_realization": mode[1],
                             "execution_particle_count": mode[2],
@@ -463,7 +520,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             expand_flat_experiment_authoring({"experiments": {
                 "shared": {"execution_strategy": "simion_single_flight"},
                 "variation_axes": ["connection_profile_id"],
-                "rows": [{"sequence": 1, "experiment_id": "gap", "run_id": "run_gap", "overrides": {"source_profile_id": "other"}}],
+                "rows": [{"experiment_id": "gap", "values": {"source_profile_id": "other"}}],
             }})
 
     def test_flat_authoring_rejects_malformed_shapes_and_identity_overrides(self) -> None:
@@ -471,8 +528,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             "shared": {"execution_strategy": "simion_single_flight"},
             "variation_axes": ["connection_profile_id"],
             "rows": [{
-                "sequence": 1, "experiment_id": "one", "run_id": "run_one",
-                "overrides": {"connection_profile_id": "gap0"},
+                "experiment_id": "one", "values": {"connection_profile_id": "gap0"},
             }],
         }
         invalid = (
@@ -480,13 +536,26 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             {"shared": {}, "variation_axes": ["gap", "gap"], "rows": valid["rows"]},
             {"shared": {}, "variation_axes": ["run_id"], "rows": valid["rows"]},
             {"shared": {"run_id": "forbidden"}, "variation_axes": ["gap"], "rows": valid["rows"]},
-            {"shared": {}, "variation_axes": ["gap"], "rows": [{"sequence": 1, "experiment_id": "one", "run_id": "run_one", "overrides": []}]},
-            {"shared": {}, "variation_axes": ["gap"], "rows": [{"sequence": 1, "experiment_id": "one", "run_id": "run_one", "overrides": {}, "extra": True}]},
+            {"shared": {}, "variation_axes": ["gap"], "rows": [{"experiment_id": "one", "values": []}]},
+            {"shared": {}, "variation_axes": ["gap"], "rows": [{"experiment_id": "one", "values": {}, "extra": True}]},
             {"shared": {}, "variation_axes": ["gap"], "rows": [] , "extra": True},
         )
         for authoring in invalid:
             with self.subTest(authoring=authoring), self.assertRaises(ContractError):
                 expand_flat_experiment_authoring({"experiments": authoring})
+
+    def test_flat_authoring_accepts_fixed_experiment_without_variation_axes(self) -> None:
+        expanded = expand_flat_experiment_authoring({"experiments": {
+            "shared": {"execution_strategy": "simion_single_flight"},
+            "variation_axes": [],
+            "rows": [{"experiment_id": "fixed", "values": {}}],
+        }})
+        self.assertEqual(expanded["experiments"], [{
+            "execution_strategy": "simion_single_flight",
+            "sequence": 1,
+            "experiment_id": "fixed",
+            "run_id": "execution_pending",
+        }])
 
     def test_semantic_diff_reports_materialized_field_changes_without_policy_effect(self) -> None:
         before = {
@@ -512,28 +581,8 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
         self.assertEqual(categories["source.sha256"], "evidence_or_provenance")
 
     def test_flat_cli_lists_sorted_ids_and_prints_the_materialized_row(self) -> None:
-        campaign = load(CAMPAIGN_PATH)
-        rows = campaign["experiments"]
-        shared = {
-            key: rows[0][key] for key in rows[0]
-            if all(key in row and row[key] == rows[0][key] for row in rows)
-            and key not in {"sequence", "experiment_id", "run_id"}
-        }
-        axes = sorted(
-            set().union(*(row.keys() for row in rows)) - set(shared)
-            - {"sequence", "experiment_id", "run_id"}
-        )
-        compact_rows = [
-            {
-                "sequence": row["sequence"], "experiment_id": row["experiment_id"],
-                "run_id": row["run_id"],
-                "overrides": {key: row[key] for key in axes if key in row},
-            }
-            for row in reversed(rows)
-        ]
-        campaign["experiments"] = {
-            "shared": shared, "variation_axes": axes, "rows": compact_rows,
-        }
+        campaign = load(COMPACT_GAP_FIELD_CAMPAIGN)
+        campaign["experiments"]["rows"].reverse()
         expected = expand_flat_experiment_authoring(campaign)
         module = (
             "integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer."
@@ -1343,12 +1392,12 @@ if ($null -eq $functionAst) { throw 'missing recovery ancestor resolver' }
 . ([scriptblock]::Create($functionAst.Extent.Text))
 
 function Write-RecoveryEvidence {
-  param([string]$RunId, [string]$Status, [string]$CampaignId)
+  param([string]$RunId, [string]$Status, [string]$CampaignId, [string]$ExperimentId)
   $dir = Join-Path $env:RF_RECOVERY_ROOT $RunId
   New-Item -ItemType Directory -Path $dir -Force | Out-Null
   @{ run_id = $RunId; status = $Status } |
     ConvertTo-Json | Set-Content -LiteralPath (Join-Path $dir 'run_manifest.json')
-  @{ campaign_id = $CampaignId } |
+  @{ campaign_id = $CampaignId; experiment_id = $ExperimentId } |
     ConvertTo-Json | Set-Content -LiteralPath (Join-Path $dir 'run_config.json')
 }
 
@@ -1357,37 +1406,37 @@ $requested = $expected + '__r03'
 $partial = Join-Path $env:RF_RECOVERY_ROOT ($expected + '__r02')
 New-Item -ItemType Directory -Path $partial -Force | Out-Null
 
-Write-RecoveryEvidence -RunId ($expected + '__r01') -Status 'failed' -CampaignId 'campaign_a'
+Write-RecoveryEvidence -RunId ($expected + '__r01') -Status 'failed' -CampaignId 'campaign_a' -ExperimentId 'experiment_a'
 $accepted = Resolve-RfRecoveryFailureAncestor -RequestedRunId $requested `
-  -ExpectedRunId $expected -RunsRoot $env:RF_RECOVERY_ROOT -CampaignId 'campaign_a'
+  -ExpectedRunId $expected -RunsRoot $env:RF_RECOVERY_ROOT -CampaignId 'campaign_a' -ExperimentId 'experiment_a'
 if ($null -eq $accepted -or $accepted.run_id -ne ($expected + '__r01') -or $accepted.status -ne 'failed') {
   throw 'partial suffix did not recover prior same-campaign failure'
 }
 
-Write-RecoveryEvidence -RunId ($expected + '__r01') -Status 'failed' -CampaignId 'campaign_b'
+Write-RecoveryEvidence -RunId ($expected + '__r01') -Status 'failed' -CampaignId 'campaign_b' -ExperimentId 'experiment_a'
 if ($null -ne (Resolve-RfRecoveryFailureAncestor -RequestedRunId $requested `
-    -ExpectedRunId $expected -RunsRoot $env:RF_RECOVERY_ROOT -CampaignId 'campaign_a')) {
+    -ExpectedRunId $expected -RunsRoot $env:RF_RECOVERY_ROOT -CampaignId 'campaign_a' -ExperimentId 'experiment_a')) {
   throw 'wrong campaign was accepted'
 }
 
-Write-RecoveryEvidence -RunId ($expected + '__r01') -Status 'success' -CampaignId 'campaign_a'
+Write-RecoveryEvidence -RunId ($expected + '__r01') -Status 'success' -CampaignId 'campaign_a' -ExperimentId 'experiment_a'
 if ($null -ne (Resolve-RfRecoveryFailureAncestor -RequestedRunId $requested `
-    -ExpectedRunId $expected -RunsRoot $env:RF_RECOVERY_ROOT -CampaignId 'campaign_a')) {
+    -ExpectedRunId $expected -RunsRoot $env:RF_RECOVERY_ROOT -CampaignId 'campaign_a' -ExperimentId 'experiment_a')) {
   throw 'successful ancestor was accepted'
 }
 
-Write-RecoveryEvidence -RunId ($expected + '__r01') -Status 'created' -CampaignId 'campaign_a'
+Write-RecoveryEvidence -RunId ($expected + '__r01') -Status 'created' -CampaignId 'campaign_a' -ExperimentId 'experiment_a'
 if ($null -ne (Resolve-RfRecoveryFailureAncestor -RequestedRunId $requested `
-    -ExpectedRunId $expected -RunsRoot $env:RF_RECOVERY_ROOT -CampaignId 'campaign_a')) {
+    -ExpectedRunId $expected -RunsRoot $env:RF_RECOVERY_ROOT -CampaignId 'campaign_a' -ExperimentId 'experiment_a')) {
   throw 'nonterminal ancestor was accepted'
 }
 
 $sameCampaignPartial = Join-Path $env:RF_RECOVERY_ROOT ($expected + '__r02')
 New-Item -ItemType Directory -Path (Join-Path $sameCampaignPartial 'inputs') -Force | Out-Null
-@{ campaign = @{ campaign_id = 'campaign_a' }; experiment = @{ run_id = $expected } } |
+@{ campaign = @{ campaign_id = 'campaign_a' }; experiment = @{ experiment_id = 'experiment_a'; run_id = $expected } } |
   ConvertTo-Json | Set-Content -LiteralPath (Join-Path $sameCampaignPartial 'inputs\frozen_campaign_experiment.json')
 $accepted = Resolve-RfRecoveryFailureAncestor -RequestedRunId $requested `
-  -ExpectedRunId $expected -RunsRoot $env:RF_RECOVERY_ROOT -CampaignId 'campaign_a'
+  -ExpectedRunId $expected -RunsRoot $env:RF_RECOVERY_ROOT -CampaignId 'campaign_a' -ExperimentId 'experiment_a'
 if ($null -eq $accepted -or $accepted.run_id -ne ($expected + '__r02') -or
     $accepted.status -ne 'unpublished') {
   throw 'same-campaign unpublished suffix was not accepted'
@@ -1441,21 +1490,23 @@ Write-Output 'RECOVERY_CHAIN=PASS'
         )
         self.assertNotIn("CAMPAIGN_SOURCE_BINDINGS=STALE", completed.stdout)
 
-    def test_active_schema_is_v6_only_while_archive_reader_preserves_v1(self) -> None:
-        active = expand_flat_experiment_authoring(load(COMPACT_GAP_FIELD_CAMPAIGN))
+    def test_active_schema_is_v7_only_while_archive_reader_preserves_v1(self) -> None:
+        authored = load(COMPACT_GAP_FIELD_CAMPAIGN)
+        active = expand_flat_experiment_authoring(authored)
         archived = load(CAMPAIGN_PATH)
-        validate_schema(active, ACTIVE_CAMPAIGN_SCHEMA)
+        validate_schema(authored, ACTIVE_CAMPAIGN_SCHEMA)
+        validate_schema(active, RESOLVED_CAMPAIGN_SCHEMA)
         validate_schema(archived, ARCHIVAL_CAMPAIGN_SCHEMA)
         with self.assertRaises(ContractError):
             validate_schema(archived, ACTIVE_CAMPAIGN_SCHEMA)
 
-    def test_active_v6_single_flight_requires_pa_cache_policy(self) -> None:
+    def test_generated_v7_single_flight_requires_pa_cache_policy(self) -> None:
         active = expand_flat_experiment_authoring(load(COMPACT_GAP_FIELD_CAMPAIGN))
         del active["experiments"][0]["single_flight_pa_cache_policy"]
         with self.assertRaises(ContractError):
-            validate_schema(active, ACTIVE_CAMPAIGN_SCHEMA)
+            validate_schema(active, RESOLVED_CAMPAIGN_SCHEMA)
 
-    def test_active_v6_rejects_retired_fixed_batch_controls(self) -> None:
+    def test_generated_v7_rejects_retired_fixed_batch_controls(self) -> None:
         active = expand_flat_experiment_authoring(load(COMPACT_GAP_FIELD_CAMPAIGN))
         for path in (
             ("single_flight_batch_count",),
@@ -1468,7 +1519,7 @@ Write-Output 'RECOVERY_CHAIN=PASS'
                     "reserve_available_memory_bytes": 1
                 }
                 with self.assertRaises(ContractError):
-                    validate_schema(candidate, ACTIVE_CAMPAIGN_SCHEMA)
+                    validate_schema(candidate, RESOLVED_CAMPAIGN_SCHEMA)
 
     def test_registry_is_the_only_active_campaign_authority(self) -> None:
         campaigns = []
@@ -1490,7 +1541,7 @@ Write-Output 'RECOVERY_CHAIN=PASS'
         self.assertTrue(registered.issubset({path.resolve() for path, _ in authorized}))
         self.assertEqual(
             {path.name for path in registered},
-            {"connector_gap_field_matrix_compact_auto_replay_v2.json"},
+            {"connector_gap_field_matrix_compact_auto_replay_v3.json"},
         )
 
     def test_adapter_uses_only_frozen_canonical_region_field_profile(self) -> None:
@@ -1520,6 +1571,21 @@ Write-Output 'RECOVERY_CHAIN=PASS'
         adapter_call = common_execute.index("& $AdapterEntrypoint @adapterArguments")
         self.assertLess(validate_exit, adapter_call)
         self.assertIn("exit 0", common_execute[validate_exit:adapter_call])
+        self.assertIn(
+            "if (-not [string]::IsNullOrWhiteSpace($RunId)) { $adapterArguments.RunId = $RunId }",
+            common_execute,
+        )
+        self.assertIn(
+            "if (-not $PrepareOnly -and $expectedRunId -ne $RunId)",
+            adapter,
+        )
+        public_entry = (
+            INTEGRATION_ROOT / "workflows" / "family_source_closure" / "execute.ps1"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "PrepareOnly OutputDirectory must be under the managed artifacts/projects tree",
+            public_entry,
+        )
 
     def test_affine_source_profile_resolves_only_from_phase_space_authority(self) -> None:
         registry = load(CONFIG_ROOT / "simion_single_flight.json")
@@ -2047,13 +2113,16 @@ Write-Output 'RECOVERY_CHAIN=PASS'
     def test_exploration_preparation_freezes_inputs_accepted_by_runtime_resolver(
         self,
     ) -> None:
-        campaign = load(COMPACT_GAP_FIELD_CAMPAIGN)
+        campaign = load(CURRENT_PRE_PULSE_EXPLORATION_CAMPAIGN)
         campaign["status"] = "exploration"
         campaign["experiments"]["shared"]["single_flight_numerical_overrides"] = {
             "trajectory_quality": 17,
             "rf_steps_per_period": 73,
         }
         row = expand_flat_experiment_authoring(campaign)["experiments"][0]
+        execution_run_id = (
+            "20260830_220000__sim__cross__exploration-contract-check__n5000"
+        )
         with temporary_config_directory() as directory:
             root = Path(directory)
             artifact_root = REPO_ROOT.parent / "artifacts" / "projects" / INTEGRATION_ID
@@ -2071,6 +2140,7 @@ Write-Output 'RECOVERY_CHAIN=PASS'
                     resolved_output=output / "resolved.json",
                     plan_output=output / "plan.json",
                     exploration=True,
+                    execution_run_id=execution_run_id,
                 )
                 self.assertTrue(resolved.is_file())
                 self.assertTrue(plan.is_file())
@@ -2108,7 +2178,13 @@ Write-Output 'RECOVERY_CHAIN=PASS'
                     campaign["campaign_id"],
                 )
                 self.assertEqual(
-                    frozen_authoring["experiment"], row,
+                    set(frozen_authoring["campaign_source"]), {"path"}
+                )
+                self.assertNotIn("campaign_sha256", frozen)
+                expected_resolved_row = dict(row)
+                expected_resolved_row["run_id"] = execution_run_id
+                self.assertEqual(
+                    frozen_authoring["experiment"], expected_resolved_row,
                 )
                 self.assertEqual(
                     hashlib.sha256(
@@ -2187,6 +2263,7 @@ if ($runtime.contracts.resolved_source_contract -ne '{resolved_source}') {{
                         "-ResolvedConnection", str(resolved),
                         "-PythonExe", sys.executable,
                         "-RepoRoot", str(REPO_ROOT),
+                        "-RunId", execution_run_id,
                         "-PrepareOnly",
                     ],
                     cwd=REPO_ROOT,
@@ -2231,31 +2308,17 @@ if ($runtime.contracts.resolved_source_contract -ne '{resolved_source}') {{
             "single_flight_source_zvz_theory_working_point"
         )
         for row in campaign["experiments"]["rows"]:
-            overrides = row["overrides"]
-            overrides.pop("single_flight_source_zvz_theory_working_point")
-            overrides["post_pulse_restart_reuse_authority"][
+            values = row["values"]
+            values.pop("single_flight_source_zvz_theory_working_point")
+            values["post_pulse_restart_reuse_authority"][
                 "post_pulse_variation_axis"
             ] = "accelerator_field_profile_id"
-        experiment_id = campaign["experiments"]["rows"][0]["experiment_id"]
-        with temporary_config_directory() as directory:
-            root = Path(directory)
-            artifact_root = REPO_ROOT.parent / "artifacts" / "projects" / INTEGRATION_ID
-            artifact_root.mkdir(parents=True, exist_ok=True)
-            campaign_path = root / "exploration_post_pulse_restart.json"
-            write_json(campaign_path, campaign)
-            with tempfile.TemporaryDirectory(dir=artifact_root) as output_directory:
-                resolved, plan = prepare_family_source_closure(
-                    repo_root=REPO_ROOT,
-                    profile_registry_path=PROFILE_REGISTRY,
-                    adapter_registry_path=ADAPTER_REGISTRY,
-                    campaign_path=campaign_path,
-                    experiment_id=experiment_id,
-                    resolved_output=Path(output_directory) / "resolved.json",
-                    plan_output=Path(output_directory) / "plan.json",
-                    exploration=True,
-                )
-                self.assertTrue(resolved.is_file())
-                self.assertTrue(plan.is_file())
+        experiment = expand_flat_experiment_authoring(campaign)["experiments"][0]
+        validate_active_post_pulse_restart_working_point(
+            experiment, require_theory_working_point=False
+        )
+        with self.assertRaisesRegex(ContractError, "theory working point"):
+            validate_active_post_pulse_restart_working_point(experiment)
 
     def test_public_exploration_validate_only_accepts_unregistered_campaign(self) -> None:
         campaign = load(COMPACT_GAP_FIELD_CAMPAIGN)

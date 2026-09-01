@@ -14,6 +14,13 @@
 - 两个加速模式的SIMION空间档已执行；COMSOL空间档均触发预登记资源帽，保持
   `INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED`，不事后抬帽。
 - 家族工程六指标可用于下游推进，不授予数值收敛、求解器等价、Candidate或Formal。
+- N=1000 平面冻结源与独立轴向体积快照的 SIMION 成对传输已完成，并由 recovery analysis run
+  `20260830_212610__analysis__python__oct-source-model-comparison-recovery__n1000` 发布；恢复只重做 Python
+  分析与绘图，未重跑求解器。两臂均为 1000/1000 传输。体积快照在源端为同刻释放、z RMS 0.6251 mm、
+  vz RMS 49.2820 m/s、动能 RMS 0.1005 eV，且 z--vz Pearson r=-0.01154；平面源的 z 宽度为零、连续
+  birth-time 跨度非零。体积源出口空间 RMS 为 0.4169 mm（平面 0.5381 mm）、角 RMS 为 1.3490°
+  （平面 3.2660°），实际墙钟 120.9 s（平面 128.8 s）。这是 source-model 的描述性对比，不构成
+  数值收敛、探测器、Candidate 或 Formal 结论。
 - 当前oaTOF连续SIMION单流程选择了八极杆末端加速方案，并确认高传输与10 eV目标注入；角度和z方向
   空间展宽仍未闭合。具体census、能量、2.2 mm源宽候选和PA重构结果只查integration。
 
@@ -90,7 +97,9 @@ integration中的1.5 mm入口参考套筒和10 eV连续单流程使用真实八�
    幸存者分析和相邻数值档。
 2. 若推进连续量资格，为资源受限的加速模式建立有依据的新预算或替代离散策略，不得事后抬帽。
 3. 新统计实验必须先冻结bootstrap设置，再运行N=1000；不能回填到既有证据。
-4. 已预登记平面冻结源与独立轴向体积快照的 N=1000 SIMION 配对传输实验；两行固定八极杆、下游端口和数值合同，仅源模型不同。关闭条件是两条真实运行均成功，并从相同 canonical 输出报告全源传输、损失分类和实际 wall-clock 耗时；不把该比较解释为数值收敛或 Candidate 证据。
+4. 若修改该来源模型比较，须保持八极杆、下游端口、数值合同和完整粒子 ID 母队列固定，仅改变 receipt-bound
+   source model；新运行仍须从 canonical 输出报告全源传输、损失分类和实际 wall-clock，且不得解释为数值收敛或
+   Candidate 证据。
 5. Candidate/Formal前建立制造基线、GUI/CAD同步、机械装配和完整统计证据。
 6. 碰撞冷却保持独立workflow，不由无碰撞或oaTOF结果代替。
 

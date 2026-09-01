@@ -488,15 +488,47 @@ function Resolve-RfCurrentCacheGeneration {
 
 function New-RfCacheStagingDirectory {
   [CmdletBinding()]
-  param([Parameter(Mandatory)][string]$CacheRoot)
+  param(
+    [Parameter(Mandatory)][string]$CacheRoot,
+    [ValidatePattern('^[a-f0-9]{64}$')][string]$RecoveryCacheKey,
+    [string]$RecoveryRole
+  )
   $root = [IO.Path]::GetFullPath($CacheRoot)
   New-Item -ItemType Directory -Path $root -Force | Out-Null
+  if (-not [string]::IsNullOrWhiteSpace($RecoveryCacheKey)) {
+    if ([string]::IsNullOrWhiteSpace($RecoveryRole)) {
+      throw 'A cache staging recovery key requires its registered role.'
+    }
+    $matches = @(
+      Get-ChildItem -LiteralPath $root -Directory -Filter 'b-*' -ErrorAction SilentlyContinue |
+        Where-Object {
+          $marker = Join-Path $_.FullName '.rf_cache_staging.json'
+          if (-not (Test-Path -LiteralPath $marker -PathType Leaf)) { return $false }
+          try {
+            $state = Get-Content -LiteralPath $marker -Raw -Encoding UTF8 | ConvertFrom-Json
+            return ([string]$state.cache_key -ceq $RecoveryCacheKey -and
+              [string]$state.role -ceq $RecoveryRole)
+          } catch {
+            return $false
+          }
+        }
+    )
+    if ($matches.Count -gt 1) {
+      throw "Multiple interrupted cache staging directories match key=$RecoveryCacheKey."
+    }
+    if ($matches.Count -eq 1) { return $matches[0].FullName }
+  }
   $staging = Join-Path $root ('b-' + [guid]::NewGuid().ToString('N').Substring(0,12))
   New-Item -ItemType Directory -Path $staging | Out-Null
   if (-not (Split-Path -Parent ([IO.Path]::GetFullPath($staging))).Equals(
       $root.TrimEnd([IO.Path]::DirectorySeparatorChar),
       [StringComparison]::OrdinalIgnoreCase)) {
     throw 'Cache staging directory escaped its registered root.'
+  }
+  if (-not [string]::IsNullOrWhiteSpace($RecoveryCacheKey)) {
+    Write-RunJson -Path (Join-Path $staging '.rf_cache_staging.json') -Depth 4 -Value ([ordered]@{
+      schema_version=1; role=$RecoveryRole; cache_key=$RecoveryCacheKey
+    })
   }
   return $staging
 }
@@ -556,11 +588,16 @@ function Assert-RfArtifactCapacityBeforeCachePublication {
     [Parameter(Mandatory)][string]$Python,
     [Parameter(Mandatory)][string]$RepoRoot,
     [Parameter(Mandatory)][string]$WorkspaceRoot,
-    [Parameter(Mandatory)][string]$StagingDirectory
+    [Parameter(Mandatory)][string]$StagingDirectory,
+    [string[]]$ProtectedCacheKeys = @(),
+    [long]$KnownMeasuredBytes = -1,
+    [long]$MaximumNewArtifactBytes = -1
   )
-  # The live staging directory is protected from the cleanup scan.  This
-  # checks capacity before Move-Item can make a newly-built PA visible as a
-  # cache generation, so the repository cannot cross its 500 GiB watermark.
+  # The live staging directory is protected from the cleanup scan.  It is
+  # already below artifact-root, so its bytes are present in the gate's
+  # current measurement.  Publication is a same-volume Move-Item and adds no
+  # second payload; reserving stagingBytes as headroom here would count the
+  # same PA family twice and can reject a valid publication near 500 GiB.
   $stagingBytes = [int64]((Get-ChildItem -LiteralPath $StagingDirectory -File -Recurse |
     Measure-Object -Property Length -Sum).Sum)
   $savedPythonPath = $env:PYTHONPATH
@@ -569,14 +606,41 @@ function Assert-RfArtifactCapacityBeforeCachePublication {
     $env:PYTHONPATH = $RepoRoot; $env:PYTHONNOUSERSITE = '1'
     Push-Location -LiteralPath $RepoRoot
     try {
-      $output = & $Python -m common.contracts.reconcile_artifact_capacity `
-        --artifact-root (Join-Path $WorkspaceRoot 'artifacts') --target-gib 500 `
-        --required-headroom-bytes $stagingBytes --protect-path $StagingDirectory --apply
+      $capacityArguments = @(
+        '-m','common.contracts.reconcile_artifact_capacity',
+        '--artifact-root',(Join-Path $WorkspaceRoot 'artifacts'),'--target-gib','500',
+        '--protect-path',$StagingDirectory,'--apply'
+      )
+      if (($KnownMeasuredBytes -ge 0) -xor ($MaximumNewArtifactBytes -ge 0)) {
+        throw 'Known measured artifact bytes and maximum new artifact bytes must be supplied together.'
+      }
+      if ($KnownMeasuredBytes -ge 0) {
+        # The launch receipt predates this staging directory.  Include the
+        # measured staging payload in its fast-path upper bound; this is not
+        # headroom because it is already inside artifact-root when a full
+        # reconciliation is required.
+        $maximumNewForPublication = [int64]$MaximumNewArtifactBytes + $stagingBytes
+        $capacityArguments += @(
+          '--known-measured-bytes',$KnownMeasuredBytes,
+          '--maximum-new-artifact-bytes',$maximumNewForPublication
+        )
+      }
+      foreach ($key in @($ProtectedCacheKeys | Select-Object -Unique)) {
+        if ($key -notmatch '^[0-9a-f]{64}$') {
+          throw 'Protected cache key must be one SHA-256 key.'
+        }
+        $capacityArguments += @('--protect-cache-key',$key)
+      }
+      $output = & $Python @capacityArguments
       if ($LASTEXITCODE -ne 0) { throw "artifact capacity gate exit_code=$LASTEXITCODE" }
       $receipt = @($output) -join "`n" | ConvertFrom-Json
       if (-not [bool]$receipt.satisfied_after_apply) {
         throw 'artifact capacity gate could not satisfy the 500 GiB watermark'
       }
+      # The caller needs this exact current staging size to advance its
+      # in-run measurement after a successful Move-Item.  A startup receipt
+      # alone becomes stale as successive cache generations are published.
+      $receipt | Add-Member -NotePropertyName staging_bytes -NotePropertyValue $stagingBytes -Force
       return $receipt
     } finally { Pop-Location }
   } finally {
@@ -626,7 +690,11 @@ function Publish-RfVerifiedCacheEntry {
     [Parameter(Mandatory)][string]$Role,
     [Parameter(Mandatory)]$Identity,
     [Parameter(Mandatory)][string]$StagingDirectory,
-    [Parameter(Mandatory)][string]$ProviderRunId
+    [Parameter(Mandatory)][string]$ProviderRunId,
+    [string[]]$ProtectedCacheKeys = @(),
+    [hashtable]$ArtifactCapacityState = $null,
+    [long]$KnownMeasuredBytes = -1,
+    [long]$MaximumNewArtifactBytes = -1
   )
   $root = [IO.Path]::GetFullPath($CacheRoot).TrimEnd([IO.Path]::DirectorySeparatorChar)
   $staging = [IO.Path]::GetFullPath($StagingDirectory)
@@ -635,8 +703,9 @@ function Publish-RfVerifiedCacheEntry {
   }
   $keyDirectory = Join-Path $root $CacheKey
   Assert-RfCacheEntryPath -CacheRoot $root -CacheKey $CacheKey -CacheEntry $keyDirectory
+  $recoveryMarker = Join-Path $staging '.rf_cache_staging.json'
   $files = @(Get-ChildItem -LiteralPath $staging -File | Where-Object {
-    $_.Name -ne 'cache_manifest.json'
+    $_.Name -notin @('cache_manifest.json','.rf_cache_staging.json')
   } | Sort-Object Name)
   if ($files.Count -eq 0) { throw 'Cache publication has no files.' }
   $records = @($files | ForEach-Object {
@@ -666,13 +735,35 @@ function Publish-RfVerifiedCacheEntry {
     generation_sha256=$generationSha256; generation_input=$generationInput; files=$records
   })
   Wait-RfCacheStagingWriterExit -StagingDirectory $staging
-  $null = Assert-RfArtifactCapacityBeforeCachePublication -Python $Python `
-    -RepoRoot $RepoRoot -WorkspaceRoot $WorkspaceRoot -StagingDirectory $staging
+  $knownMeasuredForPublication = $KnownMeasuredBytes
+  if ($null -ne $ArtifactCapacityState) {
+    if (-not $ArtifactCapacityState.ContainsKey('known_measured_bytes')) {
+      throw 'Artifact capacity state is missing known_measured_bytes.'
+    }
+    $knownMeasuredForPublication = [int64]$ArtifactCapacityState.known_measured_bytes
+  }
+  $capacityReceipt = Assert-RfArtifactCapacityBeforeCachePublication -Python $Python `
+    -RepoRoot $RepoRoot -WorkspaceRoot $WorkspaceRoot -StagingDirectory $staging `
+    -ProtectedCacheKeys $ProtectedCacheKeys `
+    -KnownMeasuredBytes $knownMeasuredForPublication -MaximumNewArtifactBytes $MaximumNewArtifactBytes
+  # Retain the identity marker until all fallible publication gates have
+  # completed.  A capacity warning/failure then leaves a complete, reusable
+  # staging family rather than forcing its field solve to be repeated.
+  if (Test-Path -LiteralPath $recoveryMarker -PathType Leaf) {
+    Remove-Item -LiteralPath $recoveryMarker -Force
+  }
   New-Item -ItemType Directory -Path $generationRoot -Force | Out-Null
+  $published = $false
   if (Test-Path -LiteralPath $target) {
     Remove-Item -LiteralPath $staging -Recurse -Force
   } else {
     Move-Item -LiteralPath $staging -Destination $target
+    $published = $true
+  }
+  if ($published -and $null -ne $ArtifactCapacityState) {
+    $ArtifactCapacityState.known_measured_bytes = [int64](
+      [int64]$ArtifactCapacityState.known_measured_bytes + [int64]$capacityReceipt.staging_bytes
+    )
   }
   $pointerStage = Join-Path $keyDirectory ('current_generation.' + [guid]::NewGuid().ToString('N') + '.json')
   Write-RunJson -Path $pointerStage -Depth 8 -Value ([ordered]@{

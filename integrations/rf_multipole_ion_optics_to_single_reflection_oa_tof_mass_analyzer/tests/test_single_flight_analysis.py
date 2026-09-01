@@ -135,6 +135,66 @@ class SingleFlightAnalysisTests(unittest.TestCase):
             self.assertEqual(
                 metadata["source_region_diagnostic"]["status"], "NOT_APPLICABLE"
             )
+            self.assertEqual(
+                figure.axes[1].get_title(),
+                "B  Ion release in grounded multipole enclosure\n"
+                "multipole axial full width: 0 mm",
+            )
+        finally:
+            plt.close(figure)
+
+    def test_spatial_figure_marks_release_axial_width_without_source_type_branch(self) -> None:
+        initial = pd.DataFrame({
+            "particle_id": [1, 2, 3],
+            "position_x_mm": [-1.1, 0.0, 1.1],
+            "position_y_mm": [0.0, 0.1, -0.1],
+            "position_z_mm": [0.0, 0.0, 0.0],
+        })
+        checkpoints = pd.DataFrame({
+            "particle_id": [1],
+            "event": ["multipole_handoff"],
+            "instrument_time_us": [1.0],
+            "x_mm": [1.0], "y_mm": [0.0], "z_mm": [0.0],
+        })
+        frontend = {
+            "source_exit_center_mm": {"z": 0.0},
+            "aperture": {"width_mm": 1.0, "height_mm": 1.0},
+        }
+        oatof = {
+            "coordinate_convention": {"detector_x": 0.0},
+            "geometry_mm": {"detector_radius": 1.0},
+        }
+        with (
+            mock.patch(
+                "integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.plot_single_flight_spatial_six_panel._rod_cross_section"
+            ),
+            mock.patch(
+                "integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.plot_single_flight_spatial_six_panel._multipole_longitudinal"
+            ),
+            mock.patch(
+                "integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.plot_single_flight_spatial_six_panel._accelerator"
+            ),
+            mock.patch(
+                "integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.plot_single_flight_spatial_six_panel._accelerator_cross_section"
+            ),
+            mock.patch(
+                "integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.plot_single_flight_spatial_six_panel._apply_shared_nice_ticks",
+                return_value=1.0,
+            ),
+        ):
+            figure, metadata = build_figure(
+                initial, checkpoints, {}, frontend, oatof, None
+            )
+        try:
+            self.assertEqual(
+                figure.axes[1].get_title(),
+                "B  Ion release in grounded multipole enclosure\n"
+                "multipole axial full width: 2.2 mm",
+            )
+            release = metadata["release_coordinates"]
+            self.assertEqual(release["particle_count"], 3)
+            self.assertAlmostEqual(release["multipole_axial_full_width_mm"], 2.2)
+            self.assertEqual(release["multipole_axial_axis"], "global_x")
         finally:
             plt.close(figure)
 
@@ -1239,6 +1299,51 @@ class SingleFlightAnalysisTests(unittest.TestCase):
         self.assertEqual(validation["status"], "PASS")
         self.assertEqual(validation["validation_contract_sha256"], "A" * 64)
         self.assertLessEqual(validation["maximum_velocity_rowwise_abs_error_m_per_s"], 1e-9)
+
+    def test_prepulse_restart_projects_local_initial_rows_to_source_ids(self) -> None:
+        """Initial-state rows are local; analysis results retain mother IDs."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            log = root / "log.txt"
+            initial = root / "initial.csv"
+            row_map = root / "row_map.csv"
+            log.write_text(
+                "TRACE: source_release ion=1 particle_id=46 instrument_time_us=45.5 "
+                "x_mm=-69 y_mm=0 z_mm=-66 vx_mm_per_us=0 "
+                "vy_mm_per_us=0 vz_mm_per_us=0\n",
+                encoding="utf-8",
+            )
+            initial.write_text(
+                "particle_id,instrument_time_us,mass_amu,charge_state,"
+                "position_x_mm,position_y_mm,position_z_mm,velocity_x_m_s,"
+                "velocity_y_m_s,velocity_z_m_s,kinetic_energy_eV\n"
+                "1,45.5,100,1,-69,0,-66,0,0,0,0\n",
+                encoding="utf-8",
+            )
+            row_map.write_text(
+                "simulation_particle_id,source_particle_id\n1,46\n",
+                encoding="utf-8",
+            )
+            digest = hashlib.sha256(initial.read_bytes()).hexdigest()
+            rows, summary = analyze(
+                log,
+                1,
+                100.0,
+                pulse_time_us=45.5,
+                initial_global_state_path=initial,
+                source_release_mode="pre_pulse_restart",
+                initial_global_state_sha256=digest,
+                restart_position_tolerance_mm=1e-9,
+                restart_velocity_tolerance_m_per_s=1e-9,
+                restart_clock_tolerance_us=1e-9,
+                restart_energy_tolerance_eV=1e-9,
+                restart_validation_contract_sha256="A" * 64,
+                particle_row_map_path=row_map,
+            )
+        self.assertEqual({row["particle_id"] for row in rows}, {46})
+        self.assertEqual(
+            summary["pre_pulse_restart_source_release_validation"]["status"], "PASS"
+        )
 
     def test_prepulse_restart_uses_one_verified_logged_checkpoint(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

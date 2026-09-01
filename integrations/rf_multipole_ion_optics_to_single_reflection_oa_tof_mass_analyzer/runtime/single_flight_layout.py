@@ -62,8 +62,18 @@ def select_profile(registry: dict[str, Any], profile_id: str) -> dict[str, Any]:
     if not isinstance(overrides, list):
         raise ContractError("single-flight design overrides must be a list")
     if profile["method"] == "t5_frozen_three_zone_candidate_v1":
+        allowed_realization_overrides = {
+            "accelerator_ring_count", "accelerator_bore_half_width",
+            "accelerator_ring_width", "accelerator_insulation_gap",
+            "accelerator_shield_wall_thickness",
+            "accelerator_exit_grid_half_width", "accelerator_ring_thickness",
+        }
         if (
-            overrides
+            any(
+                not isinstance(item, dict)
+                or item.get("variable") not in allowed_realization_overrides
+                for item in overrides
+            )
             or profile.get("finite_interval_accelerator_profile") is not None
             or any(
                 not isinstance(profile.get(key), str) or not profile[key]
@@ -85,10 +95,16 @@ def select_profile(registry: dict[str, Any], profile_id: str) -> dict[str, Any]:
                 "zone3_ring_count",
                 "minimum_grid_to_ring_edge_clearance_mm",
             }
-            or ring_policy.get("policy_id")
-            != "three_zone_zonewise_equal_subdivision_1p4_v1"
-            or ring_policy.get("zone2_ring_count") != 1
-            or ring_policy.get("zone3_ring_count") != 4
+            or ring_policy.get("policy_id") not in {
+                "three_zone_zonewise_equal_subdivision_1p4_v1",
+                "three_zone_zonewise_equal_subdivision_v1",
+            }
+            or any(
+                isinstance(ring_policy.get(key), bool)
+                or not isinstance(ring_policy.get(key), int)
+                or int(ring_policy[key]) < 1
+                for key in ("zone2_ring_count", "zone3_ring_count")
+            )
             or not math.isfinite(
                 float(ring_policy.get("minimum_grid_to_ring_edge_clearance_mm", math.nan))
             )
@@ -310,6 +326,24 @@ def _compile_three_zone_candidate(
         "geometry_derivation.accelerator.source_center_from_repeller_mm"
     )
     geometry["particle_source"]["size_z_mm"] = source_width
+    # The catalog invariant uses d2/ring_count only as a non-overlap guard.
+    # In the three-zone realization its physical span is zone2+zone3.
+    accelerator["d1_mm"] = d1
+    accelerator["d2_mm"] = total_l23
+    if profile.get("design_overrides"):
+        try:
+            geometry, _ = compile_design_overrides(
+                geometry, profile["design_overrides"]
+            )
+        except (KeyError, TypeError, ValueError) as error:
+            raise ContractError(
+                f"three-zone realization compilation failed: {error}"
+            ) from error
+        # The design compiler returns a fresh resolved object.  Rebind these
+        # handles before restoring the Candidate-owned longitudinal topology;
+        # otherwise the restoration mutates the discarded pre-override map.
+        geom = geometry["geometry_mm"]
+        accelerator = geometry["geometry_derivation"]["accelerator"]
     ring_placement = _derive_three_zone_ring_placement(
         profile,
         plane_values,
@@ -557,6 +591,19 @@ def compile_geometry_and_port(
             "profile_path": finite_profile_path,
             "phase_space_input": copy.deepcopy(frozen),
         }
+    # The grounded connector owns a fixed mating plane.  Anchor the
+    # accelerator by its negative-x shield face, not by a historical centre
+    # coordinate.  This preserves the legacy placement at its legacy width
+    # while keeping any controlled transverse realization connected.
+    accelerator_outer_half_width = (
+        float(geometry["geometry_mm"]["accelerator_bore_half"])
+        + float(geometry["geometry_mm"]["accelerator_ring_width"])
+        + float(geometry["geometry_mm"]["accelerator_insulation_gap"])
+        + float(geometry["geometry_mm"]["accelerator_shield_wall"])
+    )
+    if not math.isfinite(accelerator_outer_half_width) or accelerator_outer_half_width <= 0.0:
+        raise ContractError("accelerator transverse enclosure width is invalid")
+    axis_x = port_x + accelerator_outer_half_width
     geometry["coordinate_convention"]["accelerator_axis_x"] = axis_x
     geometry["coordinate_convention"]["detector_x"] = detector_x
     geometry["coordinate_convention"]["origin"] = (
@@ -572,6 +619,7 @@ def compile_geometry_and_port(
         "speed_scale": scale,
         "base_accelerator_axis_x_mm": base_axis,
         "accelerator_axis_x_mm": axis_x,
+        "accelerator_negative_x_face_mm": port_x,
         "detector_x_mm": detector_x,
         "entry_port_x_mm": port_x,
         "claim_status": profile["claim_status"],
@@ -594,6 +642,13 @@ def compile_geometry_and_port(
     )
     port["mating_surface"]["center_mm"][2] = float(
         geometry["particle_source"]["center_z_mm"]
+    )
+    # The entry port is part of the controlled accelerator realization.  Its
+    # clear radius must track the derived physical bore, otherwise a widened
+    # shell can be placed at the correct plane while retaining an obsolete
+    # nominal 5 mm mating aperture in the connection contract.
+    port["mating_surface"]["aperture_radius_mm"] = float(
+        geometry["geometry_mm"]["accelerator_bore_half"]
     )
     return geometry, port, {
         "accelerator_axis_x_mm": axis_x,

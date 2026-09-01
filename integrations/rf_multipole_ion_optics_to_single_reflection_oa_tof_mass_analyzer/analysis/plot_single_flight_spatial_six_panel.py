@@ -900,10 +900,25 @@ def build_figure(
     ax_a.set(title="A  Ion release and octupole cross-section", xlabel="global y (mm)", ylabel="global z (mm)")
 
     _multipole_longitudinal(ax_b, upstream, initial, center_z)
-    _cloud(ax_b, initial, "position_x_mm", "position_z_mm", size=size, label="released ions", color="#2b8cbe")
-    ax_b.set(
-        title="B  Release plane inside grounded multipole enclosure", xlabel="global x (mm)", ylabel="global z (mm)"
+    _cloud(
+        ax_b,
+        initial,
+        "position_x_mm",
+        "position_z_mm",
+        size=size,
+        label="released ions",
+        color="#2b8cbe",
     )
+    axial_positions = pd.to_numeric(
+        initial["position_x_mm"], errors="raise"
+    ).to_numpy(dtype=float)
+    if not np.isfinite(axial_positions).all():
+        raise ValueError("release axial coordinates are non-finite")
+    ax_b.set_title(
+        "B  Ion release in grounded multipole enclosure\n"
+        f"multipole axial full width: {np.ptp(axial_positions):.4g} mm"
+    )
+    ax_b.set(xlabel="global x (mm)", ylabel="global z (mm)")
 
     aperture = frontend["aperture"]
     _cloud(ax_c, handoff, "y_mm", "z_mm", size=size, label="multipole handoff", color="#1b9e77")
@@ -980,6 +995,14 @@ def build_figure(
             "selected_count": source_region_diagnostic["selected_count"],
             "occupancy_fraction": source_region_diagnostic["occupancy_fraction"],
         }
+    release_metadata = {
+        "coordinate_frame": "oatof_global_cartesian",
+        "multipole_axial_axis": "global_x",
+        "particle_count": int(len(initial)),
+        "multipole_axial_min_mm": float(np.min(axial_positions)),
+        "multipole_axial_max_mm": float(np.max(axial_positions)),
+        "multipole_axial_full_width_mm": float(np.ptp(axial_positions)),
+    }
     return figure, {
         "released": len(initial),
         "handoff": len(handoff),
@@ -988,6 +1011,7 @@ def build_figure(
         "detector": len(detector),
         "particle_marker_area_pt2": size,
         "source_region_diagnostic": source_metadata,
+        "release_coordinates": release_metadata,
         "accelerator_shared_tick_step_mm": shared_tick_step,
     }
 

@@ -152,6 +152,13 @@ PULSE_PATTERN = re.compile(
     r"TRACE: handoff_pulse_on(?: ion=(?P<ion>\d+))? "
     r"instrument_time_us=(?P<t>[-+0-9.eE]+)"
 )
+PULSE_STATE_PATTERN = re.compile(
+    r"TRACE: handoff_pulse_on ion=(?P<ion>\d+) "
+    r"instrument_time_us=(?P<t>[-+0-9.eE]+) "
+    r"x_mm=(?P<x>[-+0-9.eE]+) y_mm=(?P<y>[-+0-9.eE]+) "
+    r"z_mm=(?P<z>[-+0-9.eE]+) vx_mm_per_us=(?P<vx>[-+0-9.eE]+) "
+    r"vy_mm_per_us=(?P<vy>[-+0-9.eE]+) vz_mm_per_us=(?P<vz>[-+0-9.eE]+)"
+)
 COLUMNS = [
     "particle_id", "event", "instrument_time_us", "x_mm", "y_mm", "z_mm",
     "vx_mm_per_us", "vy_mm_per_us", "vz_mm_per_us", "kinetic_energy_eV",
@@ -487,6 +494,7 @@ def analyze(
     }:
         raise ValueError("unknown single-flight source release mode")
     if particle_row_map_path is None:
+        simulation_particle_ids = list(range(1, launched + 1))
         ordered_particle_ids = list(range(1, launched + 1))
     else:
         with particle_row_map_path.open(encoding="utf-8-sig", newline="") as handle:
@@ -496,7 +504,10 @@ def analyze(
             ]:
                 raise ValueError("single-flight particle row-map columns differ")
             row_map_rows = list(row_map_reader)
-        if [int(row["simulation_particle_id"]) for row in row_map_rows] != list(
+        simulation_particle_ids = [
+            int(row["simulation_particle_id"]) for row in row_map_rows
+        ]
+        if simulation_particle_ids != list(
             range(1, launched + 1)
         ):
             raise ValueError("single-flight simulation particle row map is not exact")
@@ -696,8 +707,17 @@ def analyze(
             initial_rows = list(reader)
         if len(initial_rows) != launched:
             raise ValueError("initial global state row count differs from launched particles")
-        if [int(row["particle_id"]) for row in initial_rows] != ordered_particle_ids:
-            raise ValueError("initial global state differs from the frozen particle row map")
+        if [int(row["particle_id"]) for row in initial_rows] != simulation_particle_ids:
+            raise ValueError(
+                "initial global state simulation IDs differ from the frozen particle row map"
+            )
+        # The initial table is indexed by local SIMION rows; all analyzer
+        # outputs use immutable mother-cohort source IDs.  The row map is the
+        # sole projection between these namespaces.
+        initial_rows = [
+            {**row, "particle_id": str(source_id)}
+            for row, source_id in zip(initial_rows, ordered_particle_ids, strict=True)
+        ]
         traced_release_ids = {
             int(row["particle_id"])
             for row in rows

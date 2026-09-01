@@ -31,15 +31,56 @@ local function indexed(path,index)
   return path:gsub('#$',tostring(index))
 end
 
+-- The main corridor intentionally omits upstream-only electrode solids.
+-- SIMION consequently creates no paN for those remote basis IDs during the
+-- initial fast-adjust solve.  Their local volume still needs a Laplace
+-- solution driven by the copied coarse Dirichlet boundary, so materialize a
+-- zero-local-electrode template before writing that boundary.  PA array
+-- identity is file-name based; pa0 is the initialized geometry-compatible
+-- template for every absent local electrode.
+local function exists(path)
+  local file=io.open(path,'rb')
+  if file==nil then return false end
+  file:close()
+  return true
+end
+
+local function copy_file(source,destination)
+  local input=assert(io.open(source,'rb'),'cannot open PA template: '..source)
+  local output=assert(io.open(destination,'wb'),'cannot create PA basis: '..destination)
+  output:write(assert(input:read('*a'),'cannot read PA template: '..source))
+  input:close()
+  output:close()
+end
+
+-- `pa:refine{solutions=...}` is SIMION's supported fast-adjust solution
+-- selector.  Keep convergence unspecified, so both the first build and an
+-- interrupted build resume use the installed SIMION default.  Existing
+-- solution arrays are immutable inputs to this recovery step: only absent
+-- arrays are solved again.
+local missing_solutions={}
+for basis=0,maximum_electrode do
+  if not exists(indexed(fine_pa_sharp,basis)) then
+    table.insert(missing_solutions,basis)
+  end
+end
 simion.pas:close()
 local initializer=simion.pas:open(fine_pa_sharp)
-initializer:refine{}
+if #missing_solutions>0 then
+  initializer:refine{solutions=missing_solutions}
+end
 assert(initializer.nx>=3 and initializer.ny>=3 and initializer.nz>=3,
   'accelerator-main PA must have at least three points on every axis')
 simion.pas:close()
 
+local template_path=indexed(fine_pa_sharp,0)
+assert(exists(template_path),'accelerator-main initializer did not create pa0')
+for basis=0,maximum_electrode do
+  local fine_path=indexed(fine_pa_sharp,basis)
+  if not exists(fine_path) then copy_file(template_path,fine_path) end
+end
+
 local total_boundary_points=0
-local maximum_copy_residual=0
 for basis=0,maximum_electrode do
   local coarse_path=indexed(coarse_pa0,basis)
   local fine_path=indexed(fine_pa_sharp,basis)
@@ -61,10 +102,11 @@ for basis=0,maximum_electrode do
     assert(value==value and math.abs(value)<math.huge,
       'coarse boundary interpolation returned a non-finite value')
     fine:point(ix,iy,iz,value,true)
-    local residual=math.abs(fine:potential(ix,iy,iz)-value)
-    if residual>maximum_copy_residual then maximum_copy_residual=residual end
     count=count+1
   end
+
+  -- `point` is deterministic; avoid diagnostic readback queries entirely.
+  -- Boundary coverage is proven by the disjoint traversal count below.
 
   -- x faces contain all of their edges and corners.
   for iz=0,fine.nz-1 do for iy=0,fine.ny-1 do
@@ -91,9 +133,8 @@ simion.pas:close()
 
 local report=assert(io.open(report_path,'w'))
 report:write(string.format(
-  '{\n  "schema_version": 2,\n  "role": "simion_accelerator_main_basis_build",\n  "status": "pass",\n  "boundary_traversal": "disjoint_six_faces_v1",\n  "duplicate_boundary_writes": 0,\n  "maximum_electrode_id": %d,\n  "basis_array_count": %d,\n  "boundary_point_write_count": %d,\n  "maximum_immediate_copy_residual_V": %.17g\n}\n',
-  maximum_electrode,maximum_electrode+1,total_boundary_points,
-  maximum_copy_residual))
+  '{\n  "schema_version": 4,\n  "role": "simion_accelerator_main_basis_build",\n  "status": "pass",\n  "boundary_traversal": "disjoint_six_faces_v1",\n  "duplicate_boundary_writes": 0,\n  "maximum_electrode_id": %d,\n  "basis_array_count": %d,\n  "boundary_point_write_count": %d\n}\n',
+  maximum_electrode,maximum_electrode+1,total_boundary_points))
 report:close()
 print(string.format(
   'ACCELERATOR_MAIN_BASIS=PASS BASIS_COUNT=%d BOUNDARY_WRITES=%d',

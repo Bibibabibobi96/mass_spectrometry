@@ -28,6 +28,11 @@ run_comsol_mcp.cmd
 *.pa#
 *.pa[0-9]*
 *.iob
+# Version-controlled, GUI-created Workbench containers.  These seeds encode
+# only the required instance count; builders replace every placeholder PA.
+!integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/assets/iob_instance_seeds/
+!integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/assets/iob_instance_seeds/*.iob
+!integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/assets/iob_instance_seeds/iob_seed_placeholder.pa0
 trj*.tmp
 
 # CAD binaries are generated into artifacts/cad.

@@ -1325,6 +1325,64 @@ class ResourceBudgetTests(unittest.TestCase):
             self.assertGreaterEqual(measured["wall_clock_seconds"], 1.5)
             self.assertGreater(measured["peak_process_tree_working_set_bytes"], 0)
 
+    def test_parallel_wave_finishes_after_direct_simion_root_exits(self) -> None:
+        """A stale helper sample cannot strand a completed direct SIMION batch."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dispatch = root / "dispatch.json"
+            usage = root / "usage.json"
+            dispatch.write_text(json.dumps({
+                "role": "simion_repository_dispatch_plan",
+                "particle_count": 1,
+                "estimation": {"kind": "exact_resource_profile"},
+                "limits": {
+                    "maximum_concurrency": 1, "launch_stagger_seconds": 5,
+                    "memory_critical_seconds": 15,
+                    "memory_recovery_stable_seconds": 45,
+                    "maximum_memory_recovery_attempts": 2,
+                    "maximum_memory_danger_termination_attempts": 2,
+                    "memory_admission_reserve_bytes": 1024**3,
+                    "memory_critical_reserve_bytes": 512 * 1024**2,
+                    "cpu_admission_percent": 95.0,
+                },
+            }), encoding="utf-8")
+            support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
+            command = (
+                f". '{support}';"
+                "function Start-RepositoryScheduledProcess {param($Specification);"
+                "$p=Start-Process -FilePath (Get-Process -Id $PID).Path "
+                "-ArgumentList @('-NoProfile','-Command','Start-Sleep -Seconds 1') -PassThru;"
+                "[pscustomobject]@{name='direct_simion';specification=$Specification;process=$p;"
+                "root_process_id=$p.Id;root_process_started_at_utc_ticks=[int64]$p.StartTime.ToUniversalTime().Ticks;"
+                "started_at=(Get-RepositoryUtcNow);tracked_process_ids=@($p.Id);"
+                "tracked_process_started_at_utc_ticks=@{([string]$p.Id)=[int64]$p.StartTime.ToUniversalTime().Ticks};"
+                "active=$true;completed=$false;exit_code=$null;peak_working_set_bytes=[int64]0;"
+                "peak_managed_memory_bytes=[int64]0;pressure_terminated=$false};"
+                "};"
+                "function Get-ManagedSolverProcessSample {param([int[]]$RootProcessIds);"
+                "[pscustomobject]@{tracked_process_ids=@($RootProcessIds);active_process_ids=@($RootProcessIds);"
+                "tracked_process_started_at_utc_ticks=@{};working_set_bytes=0;private_bytes=0;"
+                "managed_memory_bytes=0;total_processor_time_ticks=0};"
+                "};"
+                "$spec=[pscustomobject]@{name='direct_simion';file_path='C:\\SIMION\\simion.exe';"
+                "argument_list=@();stdout='';stderr='';environment=@{};working_directory=''};"
+                f"$r=Invoke-ResourceBudgetedProcesses -DispatchPlanPath '{dispatch}' -RunDir '{root}' "
+                f"-UsagePath '{usage}' -ProcessSpecifications @($spec);"
+                "if($r.resource_budget_exceeded-or$r.processes.Count-ne1-or$r.processes[0].exit_code-ne0){exit 3}"
+            )
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                cwd=REPO_ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=15,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            self.assertIn("SIMION_RESOURCE_EVENT=BATCH_WAVE_COMPLETED", completed.stdout)
+
     def test_watchdog_samples_run_directory_on_frozen_cadence_and_at_exit(
         self,
     ) -> None:
@@ -1378,6 +1436,9 @@ class ResourceBudgetTests(unittest.TestCase):
             self.assertEqual(measured["status"], "running")
             self.assertIsNone(measured["limit_name"])
             self.assertEqual(measured["peak_run_directory_bytes"], 2048)
+            self.assertEqual(
+                measured["warning_names"], ["transient_run_directory_bytes"]
+            )
 
     def test_common_runners_reject_free_numerics_before_run_package(self) -> None:
         project = REPO_ROOT / "projects" / QUAD

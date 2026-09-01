@@ -193,6 +193,21 @@ if ([string]::Join("`n", @($inventory.dependencies.id)) -ne [string]::Join("`n",
             "run_input:resolved_source_contract:/selector/status",
         )
 
+    def test_handoff_policy_uses_reusable_trajectory_archive(self) -> None:
+        policy = load(CONFIG_ROOT / "family_handoff.json")["execution_architecture"]
+        self.assertEqual(
+            policy["default_workflow"],
+            "archive_verified_prepulse_upstream_trajectory_then_run_downstream_only",
+        )
+        authority = policy["upstream_authority"]
+        self.assertEqual(authority["artifact"], "pulse_disabled_trajectory_archive")
+        self.assertIn("particle_id", authority["required_state"])
+        self.assertIn("terminal_reason", authority["required_terminal_event"])
+        self.assertEqual(
+            authority["derived_handoff"],
+            "a pulse-time handoff CSV is a materialized view of one archive time slice, never the sole upstream authority",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

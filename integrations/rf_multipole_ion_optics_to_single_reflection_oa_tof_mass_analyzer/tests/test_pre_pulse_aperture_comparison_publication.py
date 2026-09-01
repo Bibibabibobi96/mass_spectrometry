@@ -32,7 +32,10 @@ def _source_run(root: Path, name: str, z_values: list[float]) -> Path:
         encoding="utf-8",
     )
     (run / "run_config.json").write_text(
-        json.dumps({"parameters": {"execution_mode": "real_pa_rf_pre_pulse_time_series"}}),
+        json.dumps({"parameters": {
+            "execution_mode": "real_pa_rf_pre_pulse_time_series",
+            "source_release_full_width_mm": 4.0,
+        }}),
         encoding="utf-8",
     )
     pd.DataFrame({"particle_id": [1, 2, 3, 4]}).to_csv(

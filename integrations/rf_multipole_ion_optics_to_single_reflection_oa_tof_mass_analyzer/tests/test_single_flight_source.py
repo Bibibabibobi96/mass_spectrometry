@@ -79,7 +79,7 @@ class SingleFlightSourceTests(unittest.TestCase):
                 source, connection, mass_amu=100.0, charge_state=1,
                 smoke_source_particle_id=3,
             )
-        self.assertEqual([row["particle_id"] for row in states], ["1"])
+        self.assertEqual([row["particle_id"] for row in states], ["3"])
         self.assertEqual(row_map, [{"simulation_particle_id": "1", "source_particle_id": "3"}])
         self.assertEqual(receipt["continued_particle_ids"], [3])
         self.assertEqual(receipt["smoke_source_particle_id"], 3)
@@ -441,7 +441,9 @@ class SingleFlightSourceTests(unittest.TestCase):
                 "1,7,ideal,45.5585544411,100,1,-69,0,-66,4392.842636759329,0,0,10\n",
                 encoding="utf-8",
             )
-            fly2, rows = materialize_pre_pulse_restart(source, 45.5585544411)
+            fly2, rows, row_map = materialize_pre_pulse_restart(
+                source, 45.5585544411, return_row_map=True
+            )
         self.assertEqual(fly2.count("standard_beam"), 1)
         self.assertEqual(rows[0]["particle_id"], "1")
         self.assertEqual(list(rows[0]), ["particle_id", "instrument_time_us", "mass_amu", "charge_state", "position_x_mm", "position_y_mm", "position_z_mm", "velocity_x_m_s", "velocity_y_m_s", "velocity_z_m_s", "kinetic_energy_eV"])
@@ -450,6 +452,25 @@ class SingleFlightSourceTests(unittest.TestCase):
         self.assertNotIn("ke =", fly2)
         self.assertNotIn("direction =", fly2)
         self.assertEqual(rows[0]["instrument_time_us"], "45.5585544411")
+        self.assertEqual(row_map, [{
+            "simulation_particle_id": "1", "source_particle_id": "7",
+        }])
+
+    def test_plain_prepulse_state_reindexes_single_selected_source_id(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "state.csv"
+            source.write_text(
+                "particle_id,instrument_time_us,mass_amu,charge_state,position_x_mm,position_y_mm,position_z_mm,velocity_x_m_s,velocity_y_m_s,velocity_z_m_s,kinetic_energy_eV\n"
+                "46,45.5585544411,100,1,-69,0,-66,4392.842636759329,0,0,10\n",
+                encoding="utf-8",
+            )
+            _, rows, row_map = materialize_pre_pulse_restart(
+                source, 45.5585544411, return_row_map=True
+            )
+        self.assertEqual(rows[0]["particle_id"], "1")
+        self.assertEqual(row_map, [{
+            "simulation_particle_id": "1", "source_particle_id": "46",
+        }])
 
     def test_real_n835_attribution_source_writes_both_outputs(self) -> None:
         source = REPO.parent / "artifacts/projects/rf_octupole_ion_optics/runs/20260812_210000__sim__simion__rf-oatof-terminal-analytic-ideal-boundary-step__n1000__r01/inputs/counterfactual_arms/current_layout_ideal_1mm_linear_z_vz__source_state.csv"
@@ -501,7 +522,7 @@ class SingleFlightSourceTests(unittest.TestCase):
         self.assertAlmostEqual(float(first["velocity_z_m_s"]), -91.67991313892833)
         self.assertEqual(len(ion[0]), 11)
 
-    def test_rejects_noncontiguous_particle_ids(self) -> None:
+    def test_preserves_noncontiguous_frozen_subset_particle_ids(self) -> None:
         connection = {
             "spatial_registration": {
                 "rotation_upstream_to_downstream": [[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
@@ -514,8 +535,9 @@ class SingleFlightSourceTests(unittest.TestCase):
                 writer = csv.writer(handle, lineterminator="\n")
                 writer.writerow(["particle_id", "birth_time_s", "x_mm", "y_mm", "z_mm", "vx_m_s", "vy_m_s", "vz_m_s", "mass_amu", "charge_state"])
                 writer.writerow([2, 0, 0, 0, 0, 0, 0, 1, 100, 1])
-            with self.assertRaisesRegex(ValueError, "contiguous"):
-                materialize(path, connection)
+            ion, states = materialize(path, connection)
+            self.assertEqual(len(ion), 1)
+            self.assertEqual(states[0]["particle_id"], "2")
 
 
 if __name__ == "__main__":

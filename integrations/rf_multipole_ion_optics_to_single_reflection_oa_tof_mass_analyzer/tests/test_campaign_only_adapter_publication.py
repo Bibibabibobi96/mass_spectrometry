@@ -205,6 +205,27 @@ def make_single_flight_publication_fixture(workspace: Path) -> dict[str, object]
         "policy_id": "compact_serial_commercial_solvers",
         "retention_class": "compact",
     }
+    frozen_campaign = run_dir / "inputs" / "frozen_campaign_experiment.json"
+    frozen_campaign.parent.mkdir(parents=True)
+    write_json(
+        frozen_campaign,
+        {
+            "schema_version": 1,
+            "role": "rf_oatof_frozen_campaign_experiment",
+            "campaign_source": {
+                "path": campaign.relative_to(fixture_repo).as_posix()
+            },
+            "campaign": {
+                "role": "rf_multipole_oatof_experiment_campaign",
+                "integration_id": INTEGRATION_ID,
+                "campaign_id": campaign_identity["campaign_id"],
+            },
+            "experiment_row_sha256": campaign_identity["experiment_row_sha256"],
+            "experiment": {
+                "experiment_id": campaign_identity["experiment_id"]
+            },
+        },
+    )
     write_json(
         budget,
         {
@@ -256,8 +277,7 @@ def make_single_flight_publication_fixture(workspace: Path) -> dict[str, object]
         "execution_status": "completed_pending_paired_analysis",
         "execution_strategy": "simion_single_flight",
         "connection_profile_id": profile_id,
-        "campaign_path": campaign.relative_to(fixture_repo).as_posix(),
-        "campaign_sha256": repository_text_sha256(campaign),
+        "frozen_campaign_experiment_sha256": file_sha256(frozen_campaign),
         "resolved_source_contract_filename": source_contract.name,
         "resolved_source_contract_sha256": file_sha256(source_contract),
         "upstream_resolved_design_filename": design.name,
@@ -340,14 +360,18 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
                 f". '{RUN_ARTIFACTS_PATH}'; "
                 f"$identity=Get-Content -Raw -LiteralPath '{identity_path}' | ConvertFrom-Json; "
                 f"$key=Get-RfContentIdentitySha256 -Identity $identity; "
+                "$capacity=@{known_measured_bytes=[int64]0}; "
                 f"$staging=New-RfCacheStagingDirectory -CacheRoot '{cache_root}'; "
                 "'frontend.gem','frontend.pa#','frontend.pa0' | ForEach-Object { "
                 "[IO.File]::WriteAllText((Join-Path $staging $_),$_) }; "
-                f"Publish-RfVerifiedCacheEntry -Python '{Path(sys.executable)}' "
+                f"$published=Publish-RfVerifiedCacheEntry -Python '{Path(sys.executable)}' "
                 f"-RepoRoot '{REPO_ROOT}' -WorkspaceRoot '{workspace}' "
                 f"-ProjectId '{INTEGRATION_ID}' -CacheRoot '{cache_root}' "
                 "-CacheKey $key -Role $identity.role -Identity $identity "
-                "-StagingDirectory $staging -ProviderRunId fixture"
+                "-StagingDirectory $staging -ProviderRunId fixture "
+                "-ArtifactCapacityState $capacity -MaximumNewArtifactBytes 1048576; "
+                "if($capacity.known_measured_bytes-le 0){throw 'capacity state was not advanced'}; "
+                "Write-Output $published"
             )
             result = subprocess.run(
                 ["pwsh", "-NoProfile", "-Command", command],
@@ -1059,6 +1083,32 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
                 "policy_id": "compact_serial_commercial_solvers",
                 "retention_class": "compact",
             }
+            frozen_campaign = run_dir / "inputs" / "frozen_campaign_experiment.json"
+            frozen_campaign.parent.mkdir(parents=True)
+            write_json(
+                frozen_campaign,
+                {
+                    "schema_version": 1,
+                    "role": "rf_oatof_frozen_campaign_experiment",
+                    "campaign_source": {
+                        "path": (
+                            "integrations/" + INTEGRATION_ID
+                            + "/config/experiment_campaign.json"
+                        )
+                    },
+                    "campaign": {
+                        "role": "rf_multipole_oatof_experiment_campaign",
+                        "integration_id": INTEGRATION_ID,
+                        "campaign_id": campaign_identity["campaign_id"],
+                    },
+                    "experiment_row_sha256": campaign_identity[
+                        "experiment_row_sha256"
+                    ],
+                    "experiment": {
+                        "experiment_id": campaign_identity["experiment_id"]
+                    },
+                },
+            )
             write_json(
                 budget,
                 {
@@ -1086,13 +1136,8 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
                     "execution_status": "completed_pending_paired_analysis",
                     "execution_strategy": "staged_three_stage",
                     "connection_profile_id": profile_id,
-                    "campaign_path": (
-                        "integrations/"
-                        + INTEGRATION_ID
-                        + "/config/experiment_campaign.json"
-                    ),
-                    "campaign_sha256": repository_text_sha256(
-                        fixture_campaign
+                    "frozen_campaign_experiment_sha256": file_sha256(
+                        frozen_campaign
                     ),
                     "resolved_source_contract_filename": (
                         resolved_source_contract.name

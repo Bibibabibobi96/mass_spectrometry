@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import subprocess
 import unittest
+import warnings
 
 from common.contracts.machine_contracts import ContractError, validate_schema
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.tests.fixtures.campaign_fixture import (
@@ -206,6 +207,15 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
                 rf_steps_per_period=160,
             )
 
+    def test_missing_conventional_claim_marker_warns_but_does_not_block(self) -> None:
+        campaign = copy.deepcopy(self.campaign)
+        campaign["claim_limit"] = "pre-pulse exploratory screen"
+        with warnings.catch_warnings(record=True) as observed:
+            warnings.simplefilter("always")
+            validate_pre_pulse_time_series_campaign(campaign)
+        self.assertEqual(len(observed), 1)
+        self.assertIn("conventional", str(observed[0].message))
+
     def test_campaign_accepts_full_prepared_mother_population(self) -> None:
         campaign = current_campaign_fixture(self.campaign)
         campaign["schema_version"] = 6
@@ -222,7 +232,7 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
             "eligible_population_count": 1000,
         }
         validate_pre_pulse_time_series_campaign(campaign)
-        validate_schema(campaign, ACTIVE_CAMPAIGN_SCHEMA)
+        validate_schema(campaign, ARCHIVAL_CAMPAIGN_SCHEMA)
 
     def test_single_frozen_pulse_snapshot_allows_gap_triplet_full_cohort(self) -> None:
         campaign = current_campaign_fixture(self.campaign)
@@ -255,7 +265,7 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
             rows.append(row)
         campaign["experiments"] = rows
         validate_pre_pulse_time_series_campaign(campaign)
-        validate_schema(campaign, ACTIVE_CAMPAIGN_SCHEMA)
+        validate_schema(campaign, ARCHIVAL_CAMPAIGN_SCHEMA)
 
     def test_auto_policy_uses_ballistic_seed_minus56_plus264_without_pa_keys(self) -> None:
         row = self.campaign["experiments"][0]
@@ -365,7 +375,7 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
             SCHEMA_DIR / "rf_oatof_pre_pulse_time_series_screening_contract.schema.json",
         )
 
-    def test_long_gap_selects_schema_v4_domain_split_pa_roles(self) -> None:
+    def test_long_gap_selects_schema_v5_zero_field_collision_pa_roles(self) -> None:
         row = self.campaign["experiments"][0]
         contract = compile_pre_pulse_time_series_contract(
             campaign=self.campaign, experiment=row, experiment_row_sha256="A" * 64,
@@ -382,10 +392,9 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
             execution_profile={"accelerator_overlay_layout": "two_local_v1"},
             resolved_connection={"connector": {"length_mm": 102.4}},
         )
-        self.assertEqual(contract["schema_version"], 4)
+        self.assertEqual(contract["schema_version"], 5)
         self.assertEqual(contract["pa_cache_roles"]["required"], [
-            "full_coarse_bridge", "fine_upstream", "accelerator_main",
-            "accelerator_intermediate2_overlay",
+            "fine_upstream", "accelerator_entrance_zone_collision",
         ])
         validate_schema(contract, SCHEMA_DIR / "rf_oatof_pre_pulse_time_series_screening_contract.schema.json")
 

@@ -13,12 +13,40 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     SOURCE_RELEASE_MODES,
     build_successor_program,
     load_initial_state,
+    load_row_map,
     reflectron_fast_adjust_assignments,
     resolve_domain_split_program_contract,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.resolved_region_field import (
     build_resolved_region_field_contract,
 )
+
+
+def _pa_plus_model() -> dict:
+    physical_ids = [*range(1, 9), 10, 11, 20, 17, 18, 19]
+    modes = [
+        {
+            "mode_id": 36 + index,
+            "name": f"mode_{36 + index}",
+            "source_physical_electrode_id": physical_id,
+            "physical_electrode_coefficients": {str(physical_id): 1.0},
+        }
+        for index, physical_id in enumerate(physical_ids)
+    ]
+    return {
+        "schema_version": 1,
+        "model_id": "three_zone_linear_ring_pa_plus_v1",
+        "voltage_control_policy": {
+            "policy_id": "three_zone_linear_ring_interpolation_v1",
+            "independent_accelerator_electrode_ids": [10, 11, 20, 17],
+            "derived_accelerator_ring_ids": [12, 13, 14, 15, 16],
+            "per_ring_independent_adjustment_supported": False,
+        },
+        "mode_ids": list(range(36, 50)),
+        "mode_count": 14,
+        "modes": modes,
+        "grounded_physical_electrode_ids": [9],
+    }
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_electrode_contract import (
     FRONTEND_ELECTRODES,
     THREE_ZONE_FRONTEND_ELECTRODES,
@@ -146,6 +174,12 @@ def _minimal_program_contracts() -> tuple[dict[str, object], dict[str, object]]:
 
 
 class SingleFlightProgramTests(unittest.TestCase):
+    def test_analyzer_component_accepts_the_published_three_zone_topology(self) -> None:
+        self.assertIn(
+            "config.accelerator_topology_id == 'three_zone_frontend_v1'",
+            ANALYZER_COMPONENT_SOURCE,
+        )
+
     def test_long_connector_contract_requires_disjoint_fine_pa_endpoints(self) -> None:
         split = {
             "connector_length_mm": 98.4,
@@ -170,6 +204,7 @@ class SingleFlightProgramTests(unittest.TestCase):
             "domain_split": split,
             "instance_bounds_mm": {"x_min": 90.0, "x_max": 125.0},
             "instance_origin_mm": {"x": 90.0, "y": -10.0, "z": -350.0},
+            "pa_plus_solution_model": _pa_plus_model(),
         }
         resolved = resolve_domain_split_program_contract(upstream, accelerator)
         self.assertEqual(resolved["upstream_end_x_mm"], 11.6)
@@ -208,12 +243,14 @@ class SingleFlightProgramTests(unittest.TestCase):
             "accelerator_ideal_three_zone_real_reflectron", accelerator_topology=topology,
         )
         domain = {
-            "upstream_instance_index": 5, "accelerator_instance_index": 3,
+            "upstream_instance_index": 2, "accelerator_instance_index": 3,
             "upstream_end_x_mm": 11.6, "accelerator_start_x_mm": 90.0,
             "upstream_bounds_mm": {"x_min": -100.0, "x_max": 11.6},
             "accelerator_bounds_mm": {"x_min": 90.0, "x_max": 125.0},
             "upstream_origin_mm": {"x": -100.0, "y": -10.0, "z": -10.0},
             "accelerator_origin_mm": {"x": 90.0, "y": -10.0, "z": -20.0},
+            "pa_plus_solution_model": _pa_plus_model(),
+            "accelerator_zero_field": True,
         }
         intermediate = {
             "role": "rf_oatof_simion_accelerator_overlay_contract",
@@ -223,7 +260,7 @@ class SingleFlightProgramTests(unittest.TestCase):
             "active_bounds_mm": {"x_min": 89.9, "x_max": 91.0, "y_min": -1.0, "y_max": 1.0, "z_min": -13.5, "z_max": -9.5},
         }
         screening = {
-            "schema_version": 3,
+            "schema_version": 5,
             "role": "rf_oatof_pre_pulse_time_series_screening_contract",
             "mode": "real_pa_rf_pre_pulse_time_series",
             "active_scope": "pre_pulse_frontend_accelerator",
@@ -242,9 +279,17 @@ class SingleFlightProgramTests(unittest.TestCase):
             intermediate_overlay=intermediate, domain_split=domain,
         )
         self.assertIn("coarse_frontend=1", program)
-        self.assertIn("upstream_bridge=5", program)
-        self.assertIn("accelerator_intermediate_overlay=6", program)
-        self.assertIn("single_flight_active_field_instances={1,3,5,6}", program)
+        self.assertIn("upstream_bridge=2", program)
+        self.assertIn("accelerator=3", program)
+        self.assertIn("single_flight_accelerator_instance_index=3", program)
+        self.assertNotIn("accelerator_intermediate_overlay=6", program)
+        self.assertIn("single_flight_pre_pulse_collision_only=0", program)
+        self.assertIn("single_flight_pre_pulse_accelerator_zero_field=1", program)
+        self.assertIn("single_flight_active_field_instances={1,2}", program)
+        self.assertIn("single_flight_pre_pulse_scope_instances={1,2,3}", program)
+        self.assertIn('pre_pulse_active_roles={"coarse_frontend","upstream_bridge","accelerator"}', program)
+        self.assertIn('upstream_bridge="upstream_bridge.pa0"', program)
+        self.assertIn("single_flight_pre_pulse_accelerator_zero_field==0 and #single_flight_pa_plus_modes==0", program)
         full_flight_program = build_successor_program(
             upstream, frontend, oatof, region, birth_times_us=[0.25],
             analyzer_component_source=ANALYZER_COMPONENT_SOURCE,
@@ -254,18 +299,182 @@ class SingleFlightProgramTests(unittest.TestCase):
             intermediate_overlay=intermediate, domain_split=domain,
         )
         self.assertIn("coarse_frontend=1", full_flight_program)
-        self.assertIn('flight_tube="coarse_frontend.pa0"', full_flight_program)
-        self.assertIn("reflectron=2", full_flight_program)
-        self.assertIn("detector=4", full_flight_program)
-        self.assertIn("upstream_bridge=5", full_flight_program)
+        self.assertIn('flight_tube="flight_tube_ground.pa0"', full_flight_program)
+        self.assertIn("flight_tube=4", full_flight_program)
+        self.assertIn("reflectron=5", full_flight_program)
+        self.assertIn("detector=7", full_flight_program)
+        self.assertIn("upstream_bridge=2", full_flight_program)
         self.assertIn("accelerator_intermediate_overlay=6", full_flight_program)
         self.assertIn(
-            "single_flight_active_field_instances={1,3,5,6}",
+            "single_flight_active_field_instances={1,2,3,6}",
             full_flight_program,
         )
         self.assertIn("active_scope=='pre_pulse_frontend_accelerator'", full_flight_program)
         self.assertIn("or 'full_flight'", full_flight_program)
         self.assertIn("TRACE: detector_crossing", full_flight_program)
+
+    def test_domain_split_entrance_local_reuses_slot6_and_main_electrode_plan(self) -> None:
+        topology = {
+            "topology_id": "three_zone_accelerator_ideal_v1",
+            "planes_global_z_mm": {
+                "repeller": -19.9, "intermediate1": -16.9,
+                "intermediate2": -11.6, "exit": -0.1,
+            },
+            "potentials_v": {
+                "repeller": 2000.0, "intermediate1": 1750.0,
+                "intermediate2": 1450.0, "exit": 0.0,
+            },
+        }
+        geometry_path = REPO / "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json"
+        oatof = json.loads(geometry_path.read_text(encoding="utf-8"))
+        oatof["accelerator_topology"] = topology
+        upstream, frontend = _minimal_program_contracts()
+        frontend["accelerator_topology_id"] = topology["topology_id"]
+        frontend["electrodes"] = copy.deepcopy(THREE_ZONE_FRONTEND_ELECTRODES)
+        frontend["accelerator_local_region"] = {
+            "intermediate2_grid_provider": "accelerator_overlay",
+            "ring_z_mm": [-14.2, -9.3, -7.0, -4.7, -2.4],
+        }
+        domain = {
+            "upstream_instance_index": 2, "accelerator_instance_index": 3,
+            "upstream_end_x_mm": 11.6, "accelerator_start_x_mm": 90.0,
+            "upstream_bounds_mm": {"x_min": -100.0, "x_max": 11.6},
+            "accelerator_bounds_mm": {"x_min": 90.0, "x_max": 125.0},
+            "upstream_origin_mm": {"x": -100.0, "y": -10.0, "z": -10.0},
+            "accelerator_origin_mm": {"x": 90.0, "y": -10.0, "z": -20.0},
+            "pa_plus_solution_model": _pa_plus_model(),
+        }
+        local = {
+            "schema_version": 1,
+            "role": "rf_oatof_simion_accelerator_entrance_aperture_local_contract",
+            "cell_mm_xyz": {"x": 0.25, "y": 0.25, "z": 0.1},
+            "instance_origin_mm": {"x": 90.0, "y": -8.0, "z": -20.0},
+            "active_bounds_mm": {
+                "x_min": 90.25, "x_max": 101.75,
+                "y_min": -7.75, "y_max": 7.75,
+                "z_min": -19.9, "z_max": -15.9,
+            },
+            "electrodes": copy.deepcopy(THREE_ZONE_FRONTEND_ELECTRODES),
+            "pa_plus_solution_model": _pa_plus_model(),
+            "boundary_condition": {
+                "mode": "accelerator_main_electrode_basis_dirichlet_v1",
+                "source_role": "rf_oatof_simion_accelerator_main_contract",
+                "basis_electrode_ids": list(range(21)),
+                "pa_plus_mode_ids": list(range(36, 50)),
+            },
+            "replacement_semantics": {
+                "mode": "highest_priority_complete_local_replacement_v1",
+                "field_superposition_prohibited": True,
+                "parent_role": "rf_oatof_simion_accelerator_main_contract",
+            },
+        }
+        intermediate = {
+            "role": "rf_oatof_simion_accelerator_overlay_contract",
+            "region_id": "intermediate2",
+            "cell_mm_xyz": {"x": 0.2, "y": 0.2, "z": 0.05},
+            "instance_origin_mm": {"x": 90.0, "y": -1.0, "z": -13.6},
+            "active_bounds_mm": {
+                "x_min": 89.9, "x_max": 91.0,
+                "y_min": -1.0, "y_max": 1.0,
+                "z_min": -13.5, "z_max": -9.5,
+            },
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            region = build_resolved_region_field_contract(
+                geometry_path, Path(directory) / "entrance_local_region.json",
+                "accelerator_ideal_three_zone_real_reflectron",
+                accelerator_topology=topology,
+            )
+            program, exporter = build_successor_program(
+                upstream, frontend, oatof, region, birth_times_us=[0.25],
+                analyzer_component_source=ANALYZER_COMPONENT_SOURCE,
+                pulse_hook_source=PULSE_HOOK_SOURCE,
+                frontend_hook_source=FRONTEND_HOOK_SOURCE,
+                rf_drive_kernel_source=RF_DRIVE_KERNEL_SOURCE,
+                accelerator_entrance_local=local,
+                domain_split=domain,
+                include_total_axis_field_exporter=True,
+            )
+        self.assertIn("accelerator_entrance_aperture_local=6", program)
+        self.assertIn(
+            'accelerator_entrance_aperture_local="accelerator_entrance_local.pa+"',
+            program,
+        )
+        self.assertNotIn("accelerator_intermediate_overlay=6", program)
+        self.assertIn("detector=7", program)
+        self.assertIn("single_flight_active_field_instances={1,2,3,6}", program)
+        self.assertIn("adjustable V_intermediate2=1450", program)
+        self.assertIn(
+            "single_flight_frontend.apply_at(single_flight_instrument_time_us(),single_flight_set_electrode)",
+            program,
+        )
+        self.assertIn("if overlay.instance_index==instance_index then return overlay end", program)
+        self.assertIn("ion_pz_mm<=b.z_min or ion_pz_mm>=b.z_max then ion_instance=0 end", program)
+        self.assertIn("assert(#simion.wb.instances==6", exporter)
+        self.assertIn("local instance_number=3", exporter)
+        self.assertIn("instance_number=overlay.instance_index", exporter)
+        post_pulse = build_successor_program(
+            upstream, frontend, oatof, region, birth_times_us=[0.25],
+            analyzer_component_source=ANALYZER_COMPONENT_SOURCE,
+            pulse_hook_source=PULSE_HOOK_SOURCE,
+            frontend_hook_source=FRONTEND_HOOK_SOURCE,
+            rf_drive_kernel_source=RF_DRIVE_KERNEL_SOURCE,
+            source_release_mode="pre_pulse_restart",
+            accelerator_entrance_local=local,
+            domain_split=domain,
+        )
+        self.assertIn("flight_tube=1", post_pulse)
+        self.assertIn("accelerator_entrance_aperture_local=5", post_pulse)
+        self.assertNotIn("coarse_frontend=1", post_pulse)
+        self.assertNotIn("upstream_bridge=2", post_pulse)
+        self.assertIn("single_flight_active_field_instances={3,5}", post_pulse)
+        self.assertIn("single_flight_post_pulse_handoff_minimal=1", post_pulse)
+        local_axis_program, local_axis_exporter = build_successor_program(
+            upstream, frontend, oatof, region, birth_times_us=[0.25],
+            analyzer_component_source=ANALYZER_COMPONENT_SOURCE,
+            pulse_hook_source=PULSE_HOOK_SOURCE,
+            frontend_hook_source=FRONTEND_HOOK_SOURCE,
+            rf_drive_kernel_source=RF_DRIVE_KERNEL_SOURCE,
+            accelerator_entrance_local=local,
+            domain_split=domain,
+            domain_split_local_axis_field=True,
+            include_total_axis_field_exporter=True,
+        )
+        self.assertIn("accelerator_entrance_aperture_local=5", local_axis_program)
+        self.assertIn("single_flight_active_field_instances={3,5}", local_axis_program)
+        self.assertIn("single_flight_post_pulse_handoff_minimal=1", local_axis_program)
+        self.assertIn("assert(#simion.wb.instances==5", local_axis_exporter)
+        with self.assertRaisesRegex(ValueError, "only for entrance-local axis-field export"):
+            build_successor_program(
+                upstream, frontend, oatof, region, birth_times_us=[0.25],
+                analyzer_component_source=ANALYZER_COMPONENT_SOURCE,
+                pulse_hook_source=PULSE_HOOK_SOURCE,
+                frontend_hook_source=FRONTEND_HOOK_SOURCE,
+                rf_drive_kernel_source=RF_DRIVE_KERNEL_SOURCE,
+                accelerator_entrance_local=local,
+                domain_split=domain,
+                domain_split_local_axis_field=True,
+            )
+        with self.assertRaisesRegex(ValueError, "mutually exclusive"):
+            build_successor_program(
+                upstream, frontend, oatof, region, birth_times_us=[0.25],
+                analyzer_component_source=ANALYZER_COMPONENT_SOURCE,
+                pulse_hook_source=PULSE_HOOK_SOURCE,
+                frontend_hook_source=FRONTEND_HOOK_SOURCE,
+                rf_drive_kernel_source=RF_DRIVE_KERNEL_SOURCE,
+                accelerator_entrance_local=local,
+                intermediate_overlay=intermediate,
+                domain_split=domain,
+            )
+        with self.assertRaisesRegex(ValueError, "ordinary domain-split full flight"):
+            build_successor_program(
+                upstream, frontend, oatof, region, birth_times_us=[0.25],
+                analyzer_component_source=ANALYZER_COMPONENT_SOURCE,
+                pulse_hook_source=PULSE_HOOK_SOURCE,
+                frontend_hook_source=FRONTEND_HOOK_SOURCE,
+                rf_drive_kernel_source=RF_DRIVE_KERNEL_SOURCE,
+                accelerator_entrance_local=local,
+            )
 
     def test_pre_pulse_screening_accepts_identity_bearing_schema_v4(self) -> None:
         screening = {
@@ -391,6 +600,16 @@ class SingleFlightProgramTests(unittest.TestCase):
         self.assertIn("TRACE: pre_pulse_screening_terminal", program)
         self.assertIn("terminal_reason=", program)
         self.assertIn("adjustable trajectory_log_enable=1", program)
+        self.assertIn(
+            "if single_flight_pre_pulse_time_series~=0 then\n"
+            "      if rf then rf.apply_at(single_flight_instrument_time_us(),single_flight_set_electrode) end",
+            program,
+        )
+        self.assertIn(
+            "else\n"
+            "      single_flight_frontend.apply_at(single_flight_instrument_time_us(),single_flight_set_electrode)",
+            program,
+        )
         invalid = dict(contract, pulse_disabled=False)
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaisesRegex(ValueError, "contract mode differs"):
@@ -431,7 +650,7 @@ class SingleFlightProgramTests(unittest.TestCase):
         ]
         for electrodes in invalid:
             with self.subTest(electrodes=electrodes):
-                with self.assertRaisesRegex(ValueError, "published topology"):
+                with self.assertRaisesRegex(ValueError, "derived topology"):
                     resolve_frontend_electrode_topology(electrodes)
 
     def test_three_zone_program_requires_overlay_and_publishes_intermediate2(self) -> None:
@@ -581,7 +800,7 @@ class SingleFlightProgramTests(unittest.TestCase):
                 frontend_hook_source=FRONTEND_HOOK_SOURCE, rf_drive_kernel_source=RF_DRIVE_KERNEL_SOURCE,
                 intermediate_overlay=overlay("intermediate2", -13.5, -9.5),
                 domain_split={
-                    "upstream_instance_index": 5, "accelerator_instance_index": 3,
+                    "upstream_instance_index": 2, "accelerator_instance_index": 3,
                     "upstream_end_x_mm": -20.0, "accelerator_start_x_mm": -10.0,
                     "upstream_bounds_mm": {"x_min": -30.0, "x_max": -20.0},
                     "accelerator_bounds_mm": {"x_min": -10.0, "x_max": 1.0},
@@ -596,6 +815,39 @@ class SingleFlightProgramTests(unittest.TestCase):
         self.assertIn("active_scope='pre_pulse_frontend_accelerator'", exporter)
         self.assertNotIn("OATOF_ACCELERATOR_PA_OVERRIDE", exporter)
         self.assertIn("math.floor((z_end-z_start)/z_step+0.5)+1", exporter)
+
+        with tempfile.TemporaryDirectory() as directory:
+            region = build_resolved_region_field_contract(geometry_path, Path(directory) / "main_only_region.json", "accelerator_ideal_three_zone_real_reflectron", accelerator_topology=topology)
+            main_only_program, main_only_exporter = build_successor_program(
+                upstream, frontend, oatof, region, birth_times_us=[0.25],
+                analyzer_component_source=ANALYZER_COMPONENT_SOURCE, pulse_hook_source=PULSE_HOOK_SOURCE,
+                frontend_hook_source=FRONTEND_HOOK_SOURCE, rf_drive_kernel_source=RF_DRIVE_KERNEL_SOURCE,
+                domain_split={
+                    "upstream_instance_index": 2, "accelerator_instance_index": 3,
+                    "upstream_end_x_mm": -20.0, "accelerator_start_x_mm": -10.0,
+                    "upstream_bounds_mm": {"x_min": -30.0, "x_max": -20.0},
+                    "accelerator_bounds_mm": {"x_min": -10.0, "x_max": 1.0},
+                    "upstream_origin_mm": {"x": -30.0, "y": -1.0, "z": -1.0},
+                    "accelerator_origin_mm": {"x": -10.0, "y": -1.0, "z": -1.0},
+                },
+                domain_split_main_pa_only_axis_field=True,
+                include_total_axis_field_exporter=True,
+            )
+        self.assertNotIn("accelerator_intermediate_overlay=6", main_only_program)
+        self.assertIn("assert(#simion.wb.instances==5", main_only_exporter)
+        self.assertIn("local overlay_specs={}", main_only_exporter)
+        self.assertIn(
+            "local ai_values=pa_adjustments({1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20})",
+            main_only_exporter,
+        )
+        self.assertNotIn("missing electrode 21", main_only_exporter)
+        with self.assertRaisesRegex(ValueError, "only for overlay-free axis-field export"):
+            build_successor_program(
+                upstream, frontend, oatof, region, birth_times_us=[0.25],
+                analyzer_component_source=ANALYZER_COMPONENT_SOURCE, pulse_hook_source=PULSE_HOOK_SOURCE,
+                frontend_hook_source=FRONTEND_HOOK_SOURCE, rf_drive_kernel_source=RF_DRIVE_KERNEL_SOURCE,
+                domain_split_main_pa_only_axis_field=True,
+            )
 
     def test_three_zone_axis_exporter_replays_frozen_dynamic_pa_values(self) -> None:
         topology = {
@@ -648,6 +900,8 @@ class SingleFlightProgramTests(unittest.TestCase):
         self.assertIn("local inside_overlay=not detector:inside_wc(x,y,z)", exporter)
         self.assertIn("instance:field_wc(x,y,z,values)", exporter)
         self.assertIn("instance:potential_wc(x,y,z,values)", exporter)
+        self.assertNotIn("ai.pa:fast_adjust(ai_values)", exporter)
+        self.assertNotIn("pa:fast_adjust(oi_values)", exporter)
         self.assertNotIn("simion.wb:efield", exporter)
         self.assertNotIn("simion.wb:epotential", exporter)
         self.assertIn("Program suppresses overlay points outside its active bounds", exporter)
@@ -776,6 +1030,25 @@ class SingleFlightProgramTests(unittest.TestCase):
                 encoding="utf-8",
             )
             self.assertEqual(load_initial_state(path), ([31.8, 31.8], [1, 2]))
+
+    def test_row_map_keeps_reindexed_restart_rows_linked_to_mother_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "row_map.csv"
+            path.write_text(
+                "simulation_particle_id,source_particle_id\n1,46\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(load_row_map(path, 1), [46])
+
+    def test_row_map_requires_the_initial_state_row_count(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "row_map.csv"
+            path.write_text(
+                "simulation_particle_id,source_particle_id\n1,46\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "count differs"):
+                load_row_map(path, 2)
 
     @unittest.skipUnless(SIMION.is_file(), "official SIMION Lua CLI unavailable")
     def test_official_simion_cli_successor_callback_vectors(self) -> None:

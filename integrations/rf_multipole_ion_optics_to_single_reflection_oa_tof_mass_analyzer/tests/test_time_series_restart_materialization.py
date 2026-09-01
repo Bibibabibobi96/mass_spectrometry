@@ -115,7 +115,10 @@ class TimeSeriesRestartMaterializationTest(unittest.TestCase):
 
         self.assertEqual(receipt["role"], TIME_SERIES_RESTART_RECEIPT_ROLE)
         self.assertEqual(validation["status"], "PASS")
-        self.assertEqual(rows[0]["particle_id"], "1")
+        # A restart has a contiguous SIMION row ID while retaining the
+        # producer particle identity separately for mother-cohort accounting.
+        self.assertEqual(rows[0]["simulation_particle_id"], "1")
+        self.assertEqual(rows[0]["source_particle_id"], "2")
         self.assertEqual(receipt["selection"]["producer_population_denominator_count"], 2)
         self.assertEqual(receipt["selection"]["restart_to_producer_particle_id"], [{"restart_particle_id": 1, "producer_particle_id": 2}])
 

@@ -300,8 +300,10 @@ def render_pre_pulse_fly2(rows: list[dict[str, str]]) -> str:
 
 
 def materialize_pre_pulse_restart(
-    source_path: Path, pulse_time_us: float,
-) -> tuple[str, list[dict[str, str]]]:
+    source_path: Path, pulse_time_us: float, *, return_row_map: bool = False,
+) -> tuple[str, list[dict[str, str]]] | tuple[
+    str, list[dict[str, str]], list[dict[str, str]]
+]:
     """Materialize an oaTOF-global pre-pulse state without upstream remapping."""
     if pulse_time_us < 0:
         raise ValueError("pre-pulse restart clock is invalid")
@@ -312,12 +314,20 @@ def materialize_pre_pulse_restart(
         rows = list(reader)
     attribution = reader.fieldnames == ATTRIBUTION_COLUMNS
     id_key = "simulation_particle_id" if attribution else "particle_id"
-    if not rows or [int(row[id_key]) for row in rows] != list(
-        range(1, len(rows) + 1)
-    ):
-        raise ValueError("pre-pulse source-state IDs must be contiguous and ordered")
+    try:
+        simulation_ids = [int(row[id_key]) for row in rows]
+        source_ids = [int(
+            row["source_particle_id"] if attribution else row[id_key]
+        ) for row in rows]
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("pre-pulse source-state particle IDs are invalid") from exc
+    if not rows or any(value < 1 for value in source_ids) or len(set(source_ids)) != len(source_ids):
+        raise ValueError("pre-pulse source-state source particle IDs must be positive and unique")
+    if attribution and simulation_ids != list(range(1, len(rows) + 1)):
+        raise ValueError("pre-pulse source-state simulation IDs must be contiguous and ordered")
     global_rows: list[dict[str, str]] = []
-    for row in rows:
+    row_map: list[dict[str, str]] = []
+    for simulation_id, (row, source_id) in enumerate(zip(rows, source_ids), start=1):
         if abs(float(row["instrument_time_us"]) - pulse_time_us) > 1e-9:
             raise ValueError("pre-pulse source-state clock differs from the pulse time")
         velocity = tuple(float(row[f"v{axis}_m_s"] if attribution else row[f"velocity_{axis}_m_s"]) for axis in "xyz")
@@ -326,7 +336,7 @@ def materialize_pre_pulse_restart(
         if abs(energy - float(row["kinetic_energy_eV"])) > 1e-9:
             raise ValueError("pre-pulse source-state kinetic energy differs")
         global_row = {
-            "particle_id": str(int(row[id_key])),
+            "particle_id": str(simulation_id),
             "instrument_time_us": format(pulse_time_us, ".17g"),
             "mass_amu": format(mass, ".17g"),
             "charge_state": str(int(row["charge_state"])),
@@ -335,7 +345,12 @@ def materialize_pre_pulse_restart(
             "kinetic_energy_eV": format(energy, ".17g"),
         }
         global_rows.append(global_row)
-    return render_pre_pulse_fly2(global_rows), global_rows
+        row_map.append({
+            "simulation_particle_id": str(simulation_id),
+            "source_particle_id": str(source_id),
+        })
+    result = render_pre_pulse_fly2(global_rows), global_rows
+    return (*result, row_map) if return_row_map else result
 
 
 def materialize_terminal_handoff_continuation(
@@ -436,11 +451,12 @@ def materialize_terminal_handoff_continuation(
         energy = kinetic_energy_ev(mass_amu, vx, vy, vz)
         azimuth, elevation = encode_simion_accelerator_velocity((vx, vy, vz))
         ion_rows.append(["0", format(mass_amu, ".17g"), str(charge_state), format(x, ".17g"), format(y, ".17g"), format(z, ".17g"), format(azimuth, ".17g"), format(elevation, ".17g"), format(energy, ".17g"), "1", "3"])
-        simulation_particle_id = (
-            len(global_rows) + 1 if smoke_source_particle_id is not None else particle_id
-        )
         global_rows.append({
-            "particle_id": str(simulation_particle_id), "instrument_time_us": format(time_us, ".17g"),
+            # SIMION assigns its own contiguous ion_number from the ION row.
+            # The frozen state table is instead the canonical source-state
+            # authority, so it must retain the upstream particle identity even
+            # for a one-particle smoke selection (where the two IDs differ).
+            "particle_id": str(particle_id), "instrument_time_us": format(time_us, ".17g"),
             "mass_amu": format(mass_amu, ".17g"), "charge_state": str(charge_state),
             "position_x_mm": format(x, ".17g"), "position_y_mm": format(y, ".17g"), "position_z_mm": format(z, ".17g"),
             "velocity_x_m_s": format(vx, ".17g"), "velocity_y_m_s": format(vy, ".17g"), "velocity_z_m_s": format(vz, ".17g"),
@@ -486,10 +502,9 @@ def materialize(
     tx, ty, tz = map(float, translation)
     ion_rows: list[list[str]] = []
     global_rows: list[dict[str, str]] = []
-    expected_ids = list(range(1, len(source_rows) + 1))
     actual_ids = [int(row["particle_id"]) for row in source_rows]
-    if actual_ids != expected_ids:
-        raise ValueError("mother-sample particle IDs must be contiguous and ordered")
+    if any(particle_id < 1 for particle_id in actual_ids) or len(set(actual_ids)) != len(actual_ids):
+        raise ValueError("mother-sample particle IDs must be positive and unique")
     for row in source_rows:
         particle_id = int(row["particle_id"])
         local_x, local_y, local_z = (float(row[f"{axis}_mm"]) for axis in "xyz")
@@ -561,10 +576,9 @@ def main() -> int:
     if args.source_release_mode == "pre_pulse_restart":
         if args.pulse_time_us is None:
             raise ValueError("pre-pulse restart requires the pulse time")
-        particle_input, global_rows = materialize_pre_pulse_restart(
-            args.source, args.pulse_time_us
+        particle_input, global_rows, row_map = materialize_pre_pulse_restart(
+            args.source, args.pulse_time_us, return_row_map=True
         )
-        row_map = None
     elif args.source_release_mode == "continuous_frontend_handoff":
         if (
             args.handoff_mass_amu is None

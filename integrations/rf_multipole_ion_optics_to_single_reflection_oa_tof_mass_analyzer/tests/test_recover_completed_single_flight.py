@@ -17,6 +17,34 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 
 
 class CompletedSingleFlightRecoveryTests(unittest.TestCase):
+    def test_recovery_validation_contract_uses_canonical_energy_tolerance_name(self) -> None:
+        """Recovery consumes the current restart-validation contract vocabulary."""
+        source = (
+            Path(__file__).resolve().parents[1]
+            / "workflows" / "family_source_closure"
+            / "recover_completed_single_flight.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn('tolerances["energy_abs_tolerance_eV"]', source)
+        self.assertNotIn('tolerances["energy_rowwise_abs_tolerance_eV"]', source)
+
+    def test_recovery_binds_the_frozen_experiment_not_a_mutable_campaign_hash(self) -> None:
+        """Exploration recovery records its immutable parent input as authority."""
+        source = (
+            Path(__file__).resolve().parents[1]
+            / "workflows" / "family_source_closure"
+            / "recover_completed_single_flight.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn('"frozen_parent_experiment_sha256"', source)
+        self.assertNotIn('campaign_source["sha256"]', source)
+
+    def test_recovery_replays_required_terminal_taxonomy(self) -> None:
+        source = (
+            Path(__file__).resolve().parents[1]
+            / "workflows" / "family_source_closure"
+            / "recover_completed_single_flight.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn('analysis.append("--require-terminal-taxonomy")', source)
+
     def test_accepts_interrupted_manifest_only_when_explicitly_allowed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             manifest = Path(directory) / "run_manifest.json"

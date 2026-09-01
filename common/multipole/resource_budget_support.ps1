@@ -237,6 +237,21 @@ function Test-ManagedRootProcessIsLive {
   }
 }
 
+function Test-RepositorySimionProcessSpecification {
+  <# A scheduled SIMION executable is the solver itself, not a launcher.
+     Once that exact root process has exited, a lingering console/helper is
+     not permitted to keep the batch alive.  Other executable types retain
+     descendant tracking for short-lived launcher workflows. #>
+  [CmdletBinding()]
+  param([Parameter(Mandatory)]$Specification)
+  if (-not ($Specification.PSObject.Properties.Name -contains 'file_path')) {
+    return $false
+  }
+  return [IO.Path]::GetFileName([string]$Specification.file_path).Equals(
+    'simion.exe', [StringComparison]::OrdinalIgnoreCase
+  )
+}
+
 function Stop-ManagedSolverProcesses {
   param([Parameter(Mandatory)][int[]]$ProcessIds)
   foreach($processId in $ProcessIds){
@@ -363,6 +378,14 @@ function Invoke-ResourceBudgetedProcess {
       $lastDirectorySampleAt=$now
       $usage.peak_run_directory_bytes=[math]::Max(
         [int64]$usage.peak_run_directory_bytes,$directoryBytes)
+      if($directoryBytes -gt [int64]$limits.transient_run_directory_bytes -and
+          @($usage.warning_names) -notcontains 'transient_run_directory_bytes'){
+        $usage.warning_names=@($usage.warning_names)+'transient_run_directory_bytes'
+        Write-Warning (
+          "RESOURCE_BUDGET_WARNING=transient_run_directory_bytes " +
+          "MEASURED_BYTES=$directoryBytes LIMIT_BYTES=$($limits.transient_run_directory_bytes)"
+        )
+      }
     }
     $usage.wall_clock_seconds=[math]::Round($elapsed,3)
     $usage.peak_process_tree_working_set_bytes=[math]::Max(
@@ -388,6 +411,14 @@ function Invoke-ResourceBudgetedProcess {
   $directoryBytes=Get-RunDirectoryBytes -RunDir $RunDir
   $usage.peak_run_directory_bytes=[math]::Max(
     [int64]$usage.peak_run_directory_bytes,$directoryBytes)
+  if($directoryBytes -gt [int64]$limits.transient_run_directory_bytes -and
+      @($usage.warning_names) -notcontains 'transient_run_directory_bytes'){
+    $usage.warning_names=@($usage.warning_names)+'transient_run_directory_bytes'
+    Write-Warning (
+      "RESOURCE_BUDGET_WARNING=transient_run_directory_bytes " +
+      "MEASURED_BYTES=$directoryBytes LIMIT_BYTES=$($limits.transient_run_directory_bytes)"
+    )
+  }
   $usage.status=$(if($process.ExitCode-eq 0){'running'}else{'process_failed'})
   Write-ResourceUsage -Usage $usage -Path $UsagePath
   return [pscustomobject]@{exit_code=$process.ExitCode;resource_budget_exceeded=$false;limit_name=$null;
@@ -720,6 +751,17 @@ function Invoke-ResourceBudgetedProcesses {
         $record.tracked_process_started_at_utc_ticks=$sample.tracked_process_started_at_utc_ticks
       }
       $record.active=@($sample.active_process_ids).Count-gt 0
+      # SIMION is launched directly by every repository worker.  Its root
+      # process is therefore the writer and authoritative completion fact.
+      # Do not let a leftover console/helper process (observed after SIMION
+      # exits on Windows) make a completed PA wave wait forever.  A different
+      # executable can be a short-lived launcher, so it keeps the existing
+      # descendant-based completion behavior.
+      if ((Test-RepositorySimionProcessSpecification -Specification $record.specification) -and
+          -not (Test-ManagedRootProcessIsLive -ProcessId ([int]$record.root_process_id) `
+            -ExpectedStartedAtUtcTicks ([int64]$record.root_process_started_at_utc_ticks))) {
+        $record.active=$false
+      }
       $record.peak_working_set_bytes=[math]::Max(
         [int64]$record.peak_working_set_bytes,[int64]$sample.working_set_bytes)
       $record.peak_managed_memory_bytes=[math]::Max(

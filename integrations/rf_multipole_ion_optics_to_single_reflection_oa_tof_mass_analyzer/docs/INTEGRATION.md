@@ -61,30 +61,45 @@ SIMION 运行可调用共享批处理；批内结果必须恢复全局粒子 ID 
   连接器内延伸 10 mm。因此最短合格连接器留下 30 mm 的粗网格接地套筒，而不是细域重叠区。该数值是
   带 1.5 mm 孔接地端板的屏蔽初始约定，不是“场为零”的宣称；
   小于 50 mm 的正 gap 不得伪造分域结果，仍走整体路径。
-- 上游 PA 只含多极杆、接地连接器端板/套筒和加速器入口的局部接地屏蔽；独立主 PA 含三区加速器主体，
-  仅中间零厚度栅可由 0.05 mm 小型 overlay 精化。四个矩形孔高由主加速器 PA 的 0.1 mm 轴向网格离散；
+- 上游 PA 只含多极杆、接地连接器端板/套筒和加速器入口的局部接地屏蔽；独立主 PA 含完整三区加速器主体，
+  第二栅直接由主 PA 的 0.1 mm 轴向网格表达，不再建立 intermediate2 精细 overlay。四个实际孔径由入口局部
+  替换 PA 表达；
   粗全局 PA 的孔光栅化不具有权威性，不因主体 PA 分离而改变。
 - 两段细域不在连接器中重叠、不“拼接”、不把场值相加；中段由同一个粗 bridge PA 覆盖。粗 PA 可采用更
   粗的网格（当前注册 `0.5 × 0.5 × 0.5 mm`），仅为细 PA 提供远端 electrode-basis Dirichlet 边界；每个
   细 PA 在 refine 前获得其全部电极基底的边界值。SIMION 的优先级只用于让细 PA 替换背景粗 PA，绝不允许
   两个实例的 field 或 potential 相加为总场。
+- 20 环、300 mm 的孔径扫描固定主 PA 与其粗 Dirichlet 边界为同一 `1.0 mm × 1.0 mm` 参考孔；所有
+  1.0/1.5/2.0/2.5 mm 的实际开口一律由入口局部替换 PA 完整表达。因缺少局部 PA 会把参考孔误作物理孔，
+  所以带电场的完整飞行与 handoff 后飞行对此失败关闭；零场的 pre-pulse 碰撞几何例外，直接渲染实际孔而
+  不加载或 refine 主加速器 PA。
+- 连续全程 IOB 因而连续排布七个真实实例：`1=粗 bridge`、`2=上游细 PA`、`3=主加速器细 PA`、
+  `4=飞行管`、`5=反射器`、`6=入口局部替换 PA`、`7=探测器`。前四个是连接与加速器链，后三个是
+  oaTOF 下游硬件；slot 6 位于主 PA 之后，使其按 SIMION 优先级完整替换参考孔局部。不得保留空槽或
+  以 intermediate2 overlay 占用该位置。
+- handoff 后的 post-pulse IOB 只连续保留五个真实实例：主加速器、飞行管、反射器、入口局部替换 PA、
+  探测器。运行器连上游细 PA、粗 bridge PA 的缓存构建与运行目录 materialization 都跳过；它只从冻结
+  frontend identity 派生主 PA cache key。若所需主 PA 缓存尚不存在，必须先走上游/pre-pulse 链构建，
+  而不能在 post-pulse 中用零边界或重建替代。
 - 分域实现只有在验收后才能替换整体路径：在每个交接面报告电势连续性和法向电场跳变，并用相同的冻结
   电压、粒子 ID、脉冲时刻和完整母 cohort 做整体 PA 与分域 PA 的配对粒子比较。验收至少覆盖到达时间、
   命中/损失分类和入口附近轨迹；仅有 PA refine 成功、边界电势相等或峰宽单值改善均不足以证明可替代。
 
-`gap > 0`的分域拓扑现已由同一冻结 bridge contract 驱动 IOB、Program、cache 和 manifest，并已完成
-真实 SIMION N=1 贯通；该 smoke 仅证明执行链可用。主加速器细 PA 的 basis 边界复制使用六个互不重叠的
-外表面循环，逐点读取同一粗 bridge basis 后以 SIMION 官方默认 refine 收敛；它替代旧的逐点字符串去重，
-但不以“接地面”为捷径，因为每个 electrode basis 的远端 Dirichlet 值都可能非零。对相同 0.9 mm 几何，
-优化前后 PA/GEM 的逐文件 SHA-256 一致，main-basis 阶段由 1043.390 s 降为 587.634 s。
+`gap > 0`的分域拓扑现已由同一冻结 bridge contract 驱动 IOB、Program、cache 和 manifest；真实 SIMION
+N=1 的最终贯通仍待最小 post-pulse IOB 运行完成。主加速器细 PA 与入口局部替换 PA 使用同一个 PA+ 解空间：
+现有三区 Program 已将 20 个环的电压定义为四个区端平面电压之间的线性插值，因此只构建 14 个独立 mode
+（八极杆、四个三区端点及两个入口电极），而不是为每个已从属的环重复构建 physical-electrode basis。每个
+mode 的 Dirichlet 边界由六个互不重叠的外表面循环从其源 basis 线性投影写入，且不再逐点读回校验；随后
+完全采用 SIMION 官方默认 refine 收敛。不以“接地面”为捷径，因为任一独立 mode 的远端 Dirichlet 值都可能非零。
+该压缩不支持逐环任意调压；若研究逐环补偿或非线性梯度，必须声明新 voltage-control policy 并重新构建其
+独立 mode family，不能复用当前 `three_zone_linear_ring_pa_plus_v1` cache。
 
-对于 detector-blind 的 pre-pulse，运行器构建 `pre_pulse_reachable_v1` IOB：只加载粗前端、上游细域、
-主加速器和中间 overlay。反射器、下游飞行管和探测器 PA 不物化到 runtime，也不绑定到 IOB；SIMION 必需的
-六槽容器仅在槽 2/4 保留小型占位结构。Program 的 pre-pulse contract 只验证四个可达角色，且该轻量模式不能
-用于全程飞行或总轴场导出；run manifest 明确记录该模式及省略角色。
-六槽 seed container 与其临时占位 PA 在 Lua 替换实例前写入保留的 run-local runtime 目录。SIMION 在加载
-container 时会把这些 seed PA 路径序列化到最终 IOB，故它们不能来自随后删除的 staging；此规则同时适用于
-pre-pulse 与 full-flight，且不改变 pre-pulse 的四个实际可达 PA 角色。
+对于 detector-blind 的 pre-pulse，运行器构建连续三实例 IOB：`1=粗前端`、`2=上游细域`、
+`3=实际孔径的零场入口碰撞区`。它不加载主加速器、反射器、下游飞行管或探测器 PA，也不保留任何空实例。
+SIMION 2020 没有可用的公开 Lua 实例删除接口，因此运行器冻结一个仅含三个实例的版本受控二进制种子；加载时
+先用同名临时 PA 满足种子，再立即替换为上述三个真实角色。该种子只表达 Workbench 实例数，不表达电场、几何
+或科学输入；最终 IOB 只序列化真实角色 PA。此轻量模式不能用于全程飞行或总轴场导出；run manifest 明确记录
+模式及省略角色。
 N=5000 预脉冲筛选及跨整体 PA 的配对验收仍是物理/性能结论的必要前提。
 
 仓库级 [`common/simion/resource_scheduler.py`](../../../common/simion/resource_scheduler.py) 仅为已授权请求
@@ -93,8 +108,8 @@ N=5000 预脉冲筛选及跨整体 PA 的配对验收仍是物理/性能结论�
 并必须自然完成，以记录穿过全部 PA 家族后的完整内存峰值；其结果直接保留。随后只对尚未执行的粒子重新
 分批，并由公共调度器错峰启动、持续监控；不再生成
 `RESOURCE_CALIBRATION_ONLY`探针或重复首批。
-同一机制也调度已证明相互独立的静电 PA 工作项：例如完整边界 basis 写入后，各电极的 overlay refine
-以一个正式电极作45秒首批观测，余下电极只按公共CPU/内存准入错峰启动；basis 写入本身仍串行，
+同一机制也调度已证明相互独立的静电 PA 工作项：完整边界 basis 写入后，主细域、入口局部替换 PA 和
+legacy overlay 的各电极 refine 都以一个正式电极作45秒首批观测，余下电极只按公共CPU/内存准入错峰启动；basis 写入本身仍串行，
 不得把它与后续 refine 混为可并发工作。
 该策略属于公共调度器而非 campaign、功能或科学合同；这些合同只能提供资源身份，不得覆盖CPU、内存、
 安全系数、并发或危险处置。CPU满载只暂停新启动；普通内存暂缓也只是不满足“1 GiB系统保留量加下一
@@ -177,12 +192,14 @@ exploration 仅允许实现内容与注册表漂移，并把期望与实际 SHA 
 [`common/contracts/`](../../../common/contracts/README.md)。修改活动运行器、合同、资源策略或 campaign 后，应运行
 项目门禁及仓库级集成门禁。历史文档中的数字、状态和链接均不构成活动授权。
 
-活动 campaign 只由 v6
+活动 campaign 只由 v7
 [`rf_multipole_oatof_experiment_campaign.schema.json`](../config/schemas/rf_multipole_oatof_experiment_campaign.schema.json)
-校验。v1–v6 的旧结构只由同目录 `archive/` 下的归档读取 schema 校验，供历史证据审阅与回归使用；
+校验；它只接受最小 authored 合同。prepare 随后展开并以
+[`rf_multipole_oatof_resolved_experiment_campaign.schema.json`](../config/schemas/rf_multipole_oatof_resolved_experiment_campaign.schema.json)
+校验仅存在于本次冻结输出的完整行。v1–v6 的旧结构只由同目录 `archive/` 下的归档读取 schema 校验，供历史证据审阅与回归使用；
 它不被执行入口、活动发现或 resolved-plan 编译器接受。
 
-当前唯一活动 campaign 是 `connector_gap_field_matrix_compact_auto_replay_v2.json`。此前 23 个已发布的逐 gap/field
+当前唯一活动 campaign 是 `connector_gap_field_matrix_compact_auto_replay_v3.json`。此前 23 个已发布的逐 gap/field
 合同保留原始字节和 receipt，但已退出 lifecycle registry：它们由该 compact replay 完整替代，且不应因后续运行
 policy（内存、并发、超时或保留）更新而重新成为可执行 authority。
 
@@ -199,6 +216,24 @@ immutable analysis run。它冻结各 arm 的 manifest、resolved config、初�
 census，报告完整母群分母下的传输、损失、`z--vz` 拟合/残差和加速方向 full-width。300 mm 孔径筛选将
 full-width 的 4.0 mm 阈值、实测值和 pass/fail 一并写出；该 artifact 始终是
 `DETECTOR_BLIND_SOURCE_ONLY`，不输出 detector peak、分辨率或 Formal 结论。
+
+五环 300 mm 几何的 detector-blind 筛选、连续全程失败和轴场误差均已冻结为
+[`五环诊断快照`](history/20260831__five-ring-prepulse-and-field-diagnostics.md)。它们解释为何旧结构不能进入正式
+全程扫描，但不构成当前方/圆、孔径或 20 环候选的结论。
+
+当前 20 环、300 mm 三区候选仍是 `CANDIDATE_ONLY`：必须先以冻结理论合同完成总轴场导出和逐区比较，再以 N=1
+贯通验证；只有两者通过，才能重启 N=5000 全程。这不是孔高扫描的负物理结论。
+
+为使这一物理包络可计算，长 gap 分域中的 `accelerator_main` 可选择
+`directed_kinematic_corridor_v1` 数值域：它保留入口端板、小孔、repeller 和 grid1 的细网格，覆盖从连接器入口至
+出口方向可达包络；远离该走廊的整形环、侧壁和出口栅不被删改，而是由同一完整粗 PA 的逐电极 Dirichlet basis
+作为细域边界提供。该策略的 extent 必须由冻结数值 profile 声明、位于物理 bore 内且落在粗网格节点上。它是可扩展
+的数值分区，不是场等价的预先声明；每个新几何仍须以总轴场导出和 N=1 轨迹验证。
+
+带入口局部替换 PA 的总轴场导出不需要也不得等待连续全程的七槽 seed：它使用五个连续实例
+`飞行管、反射器、主加速器、探测器、入口局部 PA`，并重放 Program 的局部优先级与电压表；分域导出不传入
+旧单块 `OATOF_ACCELERATOR_PA_OVERRIDE`，因此不会覆盖已装载的主 PA。它只导出静态场，
+不启动粒子；连续七槽 seed 仍专用于完整母 cohort 飞行。
 
 八个完整 full-flight arm 成功后，
 [`publish_full_flight_aperture_comparison.py`](../analysis/publish_full_flight_aperture_comparison.py) 才可发布方形/圆形
@@ -218,17 +253,16 @@ detector-hit 人口；其唯一允许的 cache-miss 时间格是当前已登记�
 活动 resolved source contract 仅接受 family v2：它显式按 `comsol` 或 `simion` 记录来源 branch，且运行时只
 消费所选 branch。早期 v1 source contract 与其 adapter 仅是历史证据格式，不在活动 schema 或重放入口中保留兼容分支。
 
-实验 campaign 默认使用最小扁平 authoring：`experiments.shared` 声明共同控制，
+实验 campaign 使用最小扁平 authoring：`experiments.shared` 声明共同控制，
 `variation_axes` 列出允许变化的原生字段，`rows` 的每行只写稳定的 `experiment_id` 与 `values`。
 作者文件不写顺序、派生量或 run ID：准备阶段按行顺序派生 `sequence`，实际执行时生成 run ID，随后冻结完整
-resolved row、来源身份和 execution receipt。旧的完整行及含 `overrides` 的扁平行仅为已发布证据的兼容读取；
-新 campaign 不应再采用它们。任何未声明的字段变化仍失败关闭。这样同一合同可顺序执行多个 gap 或
+resolved row、来源身份和 execution receipt。活动入口不接受 array、`sequence`、`run_id` 或 `overrides`；旧格式仅由 archive
+读取。任何未声明的字段变化仍失败关闭。这样同一合同可顺序执行多个 gap 或
 其他已授权参数点，而不会复制共享输入。
 
-已发布 campaign 如仅改变 authoring 布局，可用 `published_authoring_identity` 保留旧 receipt 的 raw 文件 SHA；
-它同时冻结完整的、已展开 campaign 科学语义 SHA。只有二者严格匹配时才接受该旧 SHA；物理、数值、资格或
-已注册 campaign 的任一展开行变化都会使 source-binding 检查失败。执行策略另由 runtime binding 和每次 run receipt 冻结，
-不属于 campaign 科学身份。这不是通用兼容或结果复用 fallback。
+已发布 campaign 保持为只读历史证据；不再以旧 raw campaign SHA 或 `published_authoring_identity` 使其成为新运行的
+可执行输入。对相同科学矩阵的后续运行建立新的、最小 authoring campaign 身份；prepare 为该新身份冻结 resolved row、
+来源身份和 execution receipt。这样历史证据仍可审阅，而旧 run ID、行顺序和作者文件字节不再成为未来执行的参数权威。
 
 对已注册 campaign，`execute.ps1 -AllExperiments` 按展开后的 `sequence` 逐行调用同一单实验入口；它不在
 campaign 层并行商业求解器，任一行失败即停止。`PrepareOnly` 仍要求逐行显式审阅目录，避免覆盖审阅产物。

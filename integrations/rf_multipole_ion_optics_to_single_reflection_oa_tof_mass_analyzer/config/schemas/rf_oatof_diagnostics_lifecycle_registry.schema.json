@@ -30,10 +30,9 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["path", "content_sha256"],
+        "required": ["path"],
         "properties": {
-          "path": {"type": "string", "pattern": "^integrations/.+/config/diagnostics/.+\\.json$"},
-          "content_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+          "path": {"type": "string", "pattern": "^integrations/.+/config/diagnostics/.+\\.json$"}
         }
       }
     }

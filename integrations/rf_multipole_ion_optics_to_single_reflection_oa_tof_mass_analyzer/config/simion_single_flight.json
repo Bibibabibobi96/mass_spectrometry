@@ -215,6 +215,106 @@
       "role": "accelerator_two_local_refinement_exact_terminal_aperture_xy025_z010"
     },
     {
+      "profile_id": "frontend_acceleration_xy025_z010_accelerator_two_local_xy025_z005_directed_corridor",
+      "field_overlay_id": "accelerator_two_local_z005",
+      "cell_mm_xyz": {
+        "x": 0.25,
+        "y": 0.25,
+        "z": 0.1
+      },
+      "coarse_bridge_cell_mm_xyz": {
+        "x": 0.5,
+        "y": 0.5,
+        "z": 0.5
+      },
+      "accelerator_main_domain": {
+        "policy_id": "directed_kinematic_corridor_v1",
+        "exit_axis_positive_extent_mm": 40.0,
+        "transverse_half_span_mm": 8.0
+      },
+      "accelerator_overlay": {
+        "enabled": true,
+        "layout": "two_local_v1",
+        "boundary_mode": "coarse_electrode_basis_dirichlet_v1",
+        "entrance": {
+          "cell_mm_xyz": {
+            "x": 0.25,
+            "y": 0.25,
+            "z": 0.05
+          }
+        },
+        "intermediate2": {
+          "cell_mm_xyz": {
+            "x": 0.25,
+            "y": 0.25,
+            "z": 0.05
+          },
+          "half_span_mm": 2.0
+        }
+      },
+      "role": "accelerator_two_local_refinement_directed_kinematic_corridor_xy025_z010"
+    },
+    {
+      "profile_id": "frontend_acceleration_xy025_z010_coarse100_directed_corridor_main_only",
+      "field_overlay_id": "none",
+      "cell_mm_xyz": {
+        "x": 0.25,
+        "y": 0.25,
+        "z": 0.1
+      },
+      "coarse_bridge_cell_mm_xyz": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "accelerator_main_domain": {
+        "policy_id": "directed_kinematic_corridor_v1",
+        "exit_axis_positive_extent_mm": 40.0,
+        "transverse_half_span_mm": 8.0
+      },
+      "role": "accelerator_main_only_axis_field_gate_coarse_boundary_convergence"
+    },
+    {
+      "profile_id": "frontend_acceleration_xy025_z010_coarse100_shared_main_local_aperture",
+      "field_overlay_id": "accelerator_entrance_local_aperture",
+      "cell_mm_xyz": {
+        "x": 0.25,
+        "y": 0.25,
+        "z": 0.1
+      },
+      "coarse_bridge_cell_mm_xyz": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "accelerator_main_domain": {
+        "policy_id": "directed_kinematic_corridor_v1",
+        "exit_axis_positive_extent_mm": 40.0,
+        "transverse_half_span_mm": 8.0
+      },
+      "accelerator_main_reference_aperture_mm": {
+        "width": 1.0,
+        "height": 1.0
+      },
+      "accelerator_entrance_local": {
+        "enabled": true,
+        "cell_mm_xyz": {
+          "x": 0.25,
+          "y": 0.25,
+          "z": 0.1
+        },
+        "boundary_mode": "accelerator_main_electrode_basis_dirichlet_v1",
+        "iob_mode": "highest_priority_entrance_local_v1",
+        "domain_policy": {
+          "policy_id": "aperture_perturbation_local_v1",
+          "accelerator_side_extent_mm": 10.0,
+          "transverse_half_span_mm": 8.0,
+          "grid1_downstream_guard_mm": 1.0
+        }
+      },
+      "role": "physical_chain_shared_main_local_aperture_initial_domain"
+    },
+    {
       "profile_id": "frontend_isotropic_020_accelerator_two_local_z005",
       "field_overlay_id": "accelerator_two_local_z005",
       "cell_mm_xyz": {
@@ -465,6 +565,19 @@
       "role": "three_zone_t5_candidate_real_pa_field"
     },
     {
+      "profile_id": "accelerator_real_three_zone_dynamic_electrodes_pa_real_reflectron",
+      "accelerator_zone1": "real_pa_field",
+      "accelerator_zone2": "real_pa_field",
+      "accelerator_zone3": "real_pa_field",
+      "field_evaluation_mode": "native_pa_only",
+      "topology_id": "three_zone_accelerator_ideal_v1",
+      "geometry_id": "three_zone_focus_origin_planes_v1",
+      "frontend_electrode_topology_id": "three_zone_frontend_contract_derived_v1",
+      "field_id": "three_zone_refined_pa_field_v1",
+      "field_configuration_id": "REAL_THREE_ZONE_DYNAMIC_ELECTRODES_REAL_REFLECTOR_FIELD",
+      "role": "three_zone_dynamic_electrode_real_pa_field"
+    },
+    {
       "profile_id": "accelerator_real_pa",
       "field_configuration_id": "REAL_ACCELERATOR_REAL_REFLECTOR_FIELD",
       "accelerator_stage1": "real_pa_field",
@@ -511,7 +624,17 @@
       "materialization_mode": "independent_spatial_velocity_ion_source_snapshot",
       "particle_count": 5000,
       "source_spec": "config/ion_sources/continuous_axial_volume_source_n5000.json",
+      "functional_smoke_particle_id": 46,
       "role": "frozen_independent_ion_source_volume_snapshot"
+    },
+    {
+      "profile_id": "independent_ion_source_volume_n1_smoke",
+      "source_profile_id": "independent_ion_source_volume_n1_smoke",
+      "materialization_mode": "independent_spatial_velocity_ion_source_snapshot",
+      "particle_count": 1,
+      "source_spec": "config/ion_sources/continuous_axial_volume_source_n1_smoke.json",
+      "functional_smoke_particle_id": 1,
+      "role": "independent_ion_source_volume_functional_smoke"
     },
     {
       "profile_id": "canonical_ideal_linear_z_vz_1mm_center_n1_smoke",

@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "role": "continuous_axial_volume_ion_beam_source",
+  "method": "independent_spatial_velocity_ion_source_snapshot_v1",
+  "source_region_model": "ion_source_volume_cylinder_v1",
+  "source_frame_id": "multipole_cartesian_z_axis_v1",
+  "particle_count": 1,
+  "seed": 2026082802,
+  "snapshot_time_s": 0.0,
+  "geometry_mm": {
+    "center_x_mm": 0.0,
+    "center_y_mm": 0.0,
+    "center_z_mm": -1.5,
+    "radius_mm": 0.5,
+    "axial_length_mm": 2.2
+  },
+  "velocity_distribution": {
+    "mean_vx_m_s": 0.0,
+    "mean_vy_m_s": 0.0,
+    "mean_vz_m_s": 1964.668,
+    "sigma_vx_m_s": 35.0,
+    "sigma_vy_m_s": 35.0,
+    "sigma_vz_m_s": 50.0,
+    "minimum_vz_m_s": 1500.0
+  },
+  "ion": {
+    "mass_amu": 100.0,
+    "charge_state": 1
+  }
+}

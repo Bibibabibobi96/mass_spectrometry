@@ -8,7 +8,7 @@ import unittest
 from common.contracts.file_identity import file_sha256
 from common.contracts.machine_contracts import ContractError
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.pre_pulse_batch_continuation import (
-    build_continuation_plan,
+    _particle_ids_from_row_map, build_continuation_plan,
 )
 
 
@@ -83,6 +83,15 @@ def _predecessor(root: Path, batches: list[list[int]], logs: list[list[str]]) ->
 
 
 class PrePulseBatchContinuationTests(unittest.TestCase):
+    def test_accepts_noncontiguous_unique_frozen_source_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            row_map = Path(directory) / "row_map.csv"
+            row_map.write_text(
+                "simulation_particle_id,source_particle_id\n1,46\n2,91\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(_particle_ids_from_row_map(row_map), [46, 91])
+
     @staticmethod
     def _build(predecessor: Path, contract_sha: str, output: Path, ids: list[int]) -> dict:
         inputs = predecessor / "inputs"

@@ -223,6 +223,60 @@ class SingleFlightLayoutTests(unittest.TestCase):
             56.15,
         )
 
+    def test_kinematic_envelope_profile_anchors_its_enlarged_enclosure_at_the_port(self) -> None:
+        registry = json.loads((INTEGRATION / "config/single_flight_layout_profiles.json").read_text())
+        geometry = json.loads((REPO / "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json").read_text())
+        port = json.loads((REPO / "projects/single_reflection_oa_tof_mass_analyzer/config/interfaces/required/oatof_accelerator_entry.json").read_text())
+        candidate = self._three_zone_candidate()
+        candidate.update({
+            "compiler_mode": "IDEAL_ACCEPTANCE_300MM_GRID_REALIZED_V1",
+            "ideal_acceptance_evidence": {
+                "selected_design_id": "theory_002255_r01",
+                "full_width_mm": 4.0,
+                "total_acceleration_length_mm": 300.0,
+            },
+            "numerical_grid_realization": {
+                "axial_grid_z_mm": 0.05,
+                "zone_lengths_mm": {"d1": 7.0, "d2": 56.15, "d3": 236.85},
+                "scaled_focus_equation_residual_ns": [0.0],
+                "method": "three_zone_a1_a2_a3_root_on_grid_realized_lengths_v1",
+            },
+        })
+        candidate["source_identity"]["frozen_source"]["center_x_mm"] = 3.5
+        candidate["accelerator_topology"]["planes_global_z_mm"] = {
+            "repeller": -342.7426154615485, "intermediate1": -335.7426154615485,
+            "intermediate2": -279.5926154615485, "exit": -42.742615461548496,
+        }
+        candidate["accelerator_physics"] = {
+            "lengths_mm": {"d1": 7.0, "d2": 56.15, "d3": 236.85},
+            "focus_drift_after_exit_mm": 42.742615461548496,
+        }
+        resolved, resolved_port, layout = compile_geometry_and_port(
+            geometry, port,
+            select_profile(registry, "three_zone_ideal_acceptance_300mm_square_kinematic_envelope_v1"),
+            three_zone_candidate=candidate,
+            three_zone_candidate_binding={"path": "candidate.json", "sha256": "B" * 64},
+        )
+        dimensions = resolved["geometry_mm"]
+        self.assertEqual(resolved["rings"]["accelerator_count"], 20)
+        self.assertEqual(dimensions["accelerator_bore_half"], 60.0)
+        outer_half_width = (
+            dimensions["accelerator_bore_half"] + dimensions["accelerator_ring_width"]
+            + dimensions["accelerator_insulation_gap"] + dimensions["accelerator_shield_wall"]
+        )
+        self.assertAlmostEqual(
+            resolved["coordinate_convention"]["accelerator_axis_x"] - outer_half_width,
+            resolved_port["mating_surface"]["center_mm"][0],
+        )
+        self.assertAlmostEqual(
+            layout["accelerator_axis_x_mm"] - outer_half_width,
+            layout["entry_port_x_mm"],
+        )
+        self.assertEqual(
+            resolved_port["mating_surface"]["aperture_radius_mm"],
+            dimensions["accelerator_bore_half"],
+        )
+
     def test_grid_realized_250mm_candidate_rebases_both_cross_sections(self) -> None:
         registry = json.loads((INTEGRATION / "config/single_flight_layout_profiles.json").read_text())
         geometry = json.loads((REPO / "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json").read_text())
@@ -334,8 +388,13 @@ class SingleFlightLayoutTests(unittest.TestCase):
 
         invalid = copy.deepcopy(profile)
         invalid["accelerator_ring_placement_policy"]["zone2_ring_count"] = 2
-        with self.assertRaisesRegex(ContractError, "placement policy is invalid"):
-            select_profile({**registry, "profiles": [invalid]}, invalid["layout_profile_id"])
+        with self.assertRaisesRegex(ContractError, "count differs from accelerator_count"):
+            compile_geometry_and_port(
+                geometry, port,
+                select_profile({**registry, "profiles": [invalid]}, invalid["layout_profile_id"]),
+                three_zone_candidate=candidate,
+                three_zone_candidate_binding={"path": "candidate.json", "sha256": "B" * 64},
+            )
         invalid = copy.deepcopy(profile)
         invalid["accelerator_ring_placement_policy"][
             "minimum_grid_to_ring_edge_clearance_mm"

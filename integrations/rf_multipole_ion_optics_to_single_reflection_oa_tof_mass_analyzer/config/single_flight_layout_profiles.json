@@ -83,6 +83,84 @@
       "claim_status": "CANDIDATE_ONLY"
     },
     {
+      "layout_profile_id": "three_zone_ideal_acceptance_300mm_square_kinematic_envelope_v1",
+      "architecture_generation_id": "three_zone_ideal_acceptance_300mm_kinematic_envelope_v1",
+      "method": "t5_frozen_three_zone_candidate_v1",
+      "reference_injection_energy_eV": 5.0,
+      "target_injection_energy_eV": 10.0,
+      "pulse_timing_method": "multipole_handoff_ballistic_centroid_v1",
+      "topology_id": "three_zone_accelerator_ideal_v1",
+      "geometry_id": "three_zone_focus_origin_planes_v1",
+      "frontend_electrode_topology_id": "three_zone_frontend_contract_derived_v1",
+      "candidate_field_id": "three_zone_piecewise_uniform_ideal_field_v1",
+      "accelerator_realization_id": "square_3d",
+      "accelerator_ring_placement_policy": {
+        "policy_id": "three_zone_zonewise_equal_subdivision_v1",
+        "zone2_ring_count": 4,
+        "zone3_ring_count": 16,
+        "minimum_grid_to_ring_edge_clearance_mm": 1.0
+      },
+      "design_overrides": [
+        {
+          "variable": "accelerator_ring_count",
+          "value": 20,
+          "unit": "count"
+        },
+        {
+          "variable": "accelerator_bore_half_width",
+          "value": 60.0,
+          "unit": "mm"
+        },
+        {
+          "variable": "accelerator_exit_grid_half_width",
+          "value": 60.0,
+          "unit": "mm"
+        }
+      ],
+      "source_release_full_width_mm": 4.0,
+      "focus_to_reflectron_mm": 600.0,
+      "claim_status": "CANDIDATE_ONLY"
+    },
+    {
+      "layout_profile_id": "three_zone_ideal_acceptance_300mm_cylindrical_kinematic_envelope_v1",
+      "architecture_generation_id": "three_zone_ideal_acceptance_300mm_kinematic_envelope_v1",
+      "method": "t5_frozen_three_zone_candidate_v1",
+      "reference_injection_energy_eV": 5.0,
+      "target_injection_energy_eV": 10.0,
+      "pulse_timing_method": "multipole_handoff_ballistic_centroid_v1",
+      "topology_id": "three_zone_accelerator_ideal_v1",
+      "geometry_id": "three_zone_focus_origin_planes_v1",
+      "frontend_electrode_topology_id": "three_zone_frontend_contract_derived_v1",
+      "candidate_field_id": "three_zone_piecewise_uniform_ideal_field_v1",
+      "accelerator_realization_id": "cylindrical_3d",
+      "accelerator_ring_placement_policy": {
+        "policy_id": "three_zone_zonewise_equal_subdivision_v1",
+        "zone2_ring_count": 4,
+        "zone3_ring_count": 16,
+        "minimum_grid_to_ring_edge_clearance_mm": 1.0
+      },
+      "design_overrides": [
+        {
+          "variable": "accelerator_ring_count",
+          "value": 20,
+          "unit": "count"
+        },
+        {
+          "variable": "accelerator_bore_half_width",
+          "value": 60.0,
+          "unit": "mm"
+        },
+        {
+          "variable": "accelerator_exit_grid_half_width",
+          "value": 60.0,
+          "unit": "mm"
+        }
+      ],
+      "source_release_full_width_mm": 4.0,
+      "focus_to_reflectron_mm": 600.0,
+      "claim_status": "CANDIDATE_ONLY"
+    },
+    {
       "layout_profile_id": "three_zone_ideal_acceptance_250mm_square_v1",
       "architecture_generation_id": "three_zone_ideal_acceptance_250mm_v1",
       "method": "t5_frozen_three_zone_candidate_v1",

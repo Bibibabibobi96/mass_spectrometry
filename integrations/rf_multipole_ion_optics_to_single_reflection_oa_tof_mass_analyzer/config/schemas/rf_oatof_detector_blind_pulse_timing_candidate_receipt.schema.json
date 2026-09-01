@@ -15,7 +15,7 @@
     "candidates_ranked", "sample_census", "candidate_table"
   ],
   "properties": {
-    "schema_version": {"enum": [2, 3]},
+    "schema_version": {"enum": [2, 3, 4, 5]},
     "role": {"const": "rf_oatof_detector_blind_real_field_pulse_timing_selection_receipt"},
     "status": {"const": "success"},
     "qualification": {"const": "candidate_selection"},
@@ -33,7 +33,9 @@
     "pa_cache_keys": {
       "oneOf": [
         {"$ref": "#/$defs/legacy_pa_cache_keys"},
-        {"$ref": "#/$defs/two_local_pa_cache_keys"}
+        {"$ref": "#/$defs/two_local_pa_cache_keys"},
+        {"$ref": "#/$defs/domain_split_pa_cache_keys"},
+        {"$ref": "#/$defs/pre_pulse_reachable_pa_cache_keys"}
       ]
     },
     "authorities": {
@@ -107,6 +109,20 @@
             "schema_version": {"const": 3},
             "pa_cache_keys": {"$ref": "#/$defs/two_local_pa_cache_keys"}
           }
+        },
+        {
+          "required": ["pa_cache_keys"],
+          "properties": {
+            "schema_version": {"const": 4},
+            "pa_cache_keys": {"$ref": "#/$defs/domain_split_pa_cache_keys"}
+          }
+        },
+        {
+          "required": ["pa_cache_keys"],
+          "properties": {
+            "schema_version": {"const": 5},
+            "pa_cache_keys": {"$ref": "#/$defs/pre_pulse_reachable_pa_cache_keys"}
+          }
         }
       ]
     }
@@ -129,6 +145,28 @@
         "frontend": {"$ref": "#/$defs/sha"},
         "accelerator_entrance_overlay": {"$ref": "#/$defs/sha"},
         "accelerator_intermediate_overlay": {"$ref": "#/$defs/sha"},
+        "flight_tube": {"type": "null"},
+        "reflectron": {"type": "null"}
+      }
+    },
+    "domain_split_pa_cache_keys": {
+      "type": "object", "additionalProperties": false,
+      "required": ["full_coarse_bridge", "fine_upstream", "accelerator_main", "accelerator_intermediate2_overlay", "flight_tube", "reflectron"],
+      "properties": {
+        "full_coarse_bridge": {"$ref": "#/$defs/sha"},
+        "fine_upstream": {"$ref": "#/$defs/sha"},
+        "accelerator_main": {"$ref": "#/$defs/sha"},
+        "accelerator_intermediate2_overlay": {"$ref": "#/$defs/sha"},
+        "flight_tube": {"type": "null"},
+        "reflectron": {"type": "null"}
+      }
+    },
+    "pre_pulse_reachable_pa_cache_keys": {
+      "type": "object", "additionalProperties": false,
+      "required": ["fine_upstream", "accelerator_entrance_zone_collision", "flight_tube", "reflectron"],
+      "properties": {
+        "fine_upstream": {"$ref": "#/$defs/sha"},
+        "accelerator_entrance_zone_collision": {"$ref": "#/$defs/sha"},
         "flight_tube": {"type": "null"},
         "reflectron": {"type": "null"}
       }

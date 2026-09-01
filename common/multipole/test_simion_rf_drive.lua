@@ -69,6 +69,13 @@ end)
 near(static[11], 23, 'static group 1 DC/common voltage')
 near(static[12], -17, 'static group 2 DC/common voltage')
 
+local differential = {}
+cosine.apply_differential_at(0, function(electrode_id, voltage)
+  differential[electrode_id] = voltage
+end)
+near(differential[11], 50, 'differential group 1 voltage')
+near(differential[12], -50, 'differential group 2 voltage')
+
 local function rejects(mutator, expected_message)
   local candidate = config('cosine', 0, 160)
   mutator(candidate)

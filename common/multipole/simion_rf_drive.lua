@@ -109,11 +109,23 @@ function kernel.new(config)
     end
   end
 
+  -- Apply only the alternating component.  This is for a PA whose static
+  -- common-mode and DC contribution was materialized natively before Fly'm;
+  -- callers must not combine it with an absolute-voltage update.
+  local function apply_differential_at(instrument_time_us, setter)
+    assert(type(setter) == 'function', 'RF drive setter must be one function')
+    local differential = differential_at(instrument_time_us)
+    for index = 1, #ids do
+      setter(ids[index], polarities[index] * differential)
+    end
+  end
+
   return {
     phase_at=phase_at,
     differential_at=differential_at,
     apply_static=apply_static,
     apply_at=apply_at,
+    apply_differential_at=apply_differential_at,
     timestep_cap_us=timestep_cap_us,
   }
 end

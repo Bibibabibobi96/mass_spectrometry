@@ -69,8 +69,8 @@ def _particle_ids_from_row_map(path: Path) -> list[int]:
             values = [int(row["source_particle_id"]) for row in csv.DictReader(handle)]
     except (OSError, UnicodeError, csv.Error, KeyError, TypeError, ValueError) as exc:
         raise ContractError("pre-pulse continuation particle row map is invalid") from exc
-    if not values or values != list(range(1, len(values) + 1)):
-        raise ContractError("pre-pulse continuation particle row map is not canonical")
+    if not values or any(value < 1 for value in values) or len(set(values)) != len(values):
+        raise ContractError("pre-pulse continuation particle row map source IDs are invalid")
     return values
 
 

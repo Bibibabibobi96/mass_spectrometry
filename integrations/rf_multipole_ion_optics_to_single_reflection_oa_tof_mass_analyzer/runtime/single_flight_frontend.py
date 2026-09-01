@@ -19,12 +19,11 @@ from common.multipole.simion_geometry import (
 )
 from common.simion.aperture import resolve_rectangular_aperture_discretization
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_electrode_contract import (
-    ACCELERATOR_RING_COUNT,
-    FRONTEND_ELECTRODES,
     ROD_ELECTRODE_IDS,
-    THREE_ZONE_FRONTEND_ELECTRODES,
+    frontend_electrodes,
     require_published_frontend_electrodes,
     resolve_frontend_electrode_topology,
+    resolve_three_zone_pa_plus_solution_model,
 )
 
 
@@ -116,14 +115,7 @@ def _electrode_namespace(
         raise ValueError(
             "single-flight runtime requires the published rod PA basis IDs 1..8"
         )
-    if ring_count != ACCELERATOR_RING_COUNT:
-        raise ValueError("single-flight runtime requires exactly five accelerator rings")
-    result = {
-        key: list(value) if isinstance(value, list) else value
-        for key, value in (
-            THREE_ZONE_FRONTEND_ELECTRODES if three_zone else FRONTEND_ELECTRODES
-        ).items()
-    }
+    result = frontend_electrodes(ring_count=ring_count, three_zone=three_zone)
     require_published_frontend_electrodes(result)
     return result
 
@@ -153,9 +145,9 @@ def _render_accelerator_local_geometry(
     cross_section = str(geometry.get("cross_section", "square"))
     if cross_section not in {"square", "cylindrical"}:
         raise ValueError("accelerator cross section is unsupported")
-    if render_region not in {"whole_accelerator", "entrance", "intermediate2"}:
+    if render_region not in {"whole_accelerator", "entrance", "intermediate2", "directed_corridor"}:
         raise ValueError("accelerator local geometry region is unsupported")
-    include_entrance = render_region in {"whole_accelerator", "entrance"}
+    include_entrance = render_region in {"whole_accelerator", "entrance", "directed_corridor"}
     include_downstream = render_region == "whole_accelerator"
     if cross_section == "square":
         entrance_lines = [
@@ -312,7 +304,10 @@ def compile_accelerator_overlay(
         # zero-thickness electrode itself.
         z_max = float(geometry["grid1_z_mm"]) + 2 * coarse["z"]
     else:
-        if topology["topology_id"] != "three_zone_frontend_v1":
+        if topology["topology_id"] not in {
+            "three_zone_frontend_v1",
+            "three_zone_frontend_contract_derived_v1",
+        }:
             raise ValueError("intermediate2 overlay requires the three-zone frontend")
         intermediate2_z = float(geometry["intermediate2_z_mm"])
         z_min = intermediate2_z - intermediate_half_span_mm
@@ -344,7 +339,10 @@ def compile_accelerator_overlay(
             raise ValueError(f"accelerator overlay {axis} span is not aligned to the fine grid")
         dimensions[f"n{axis}"] = int(nearest) + 1
     if (
-        topology["topology_id"] == "three_zone_frontend_v1"
+        topology["topology_id"] in {
+            "three_zone_frontend_v1",
+            "three_zone_frontend_contract_derived_v1",
+        }
         and region_id in {"whole_accelerator", "intermediate2"}
     ):
         _aligned_index(
@@ -427,6 +425,8 @@ def compile_accelerator_main(
     *,
     cell_mm_xyz: dict[str, float],
     connection: dict[str, Any] | None = None,
+    domain_policy: dict[str, Any] | None = None,
+    reference_aperture_mm: dict[str, float] | None = None,
 ) -> tuple[str, dict[str, Any]]:
     """Compile the local physical geometry for a standalone three-zone PA.
 
@@ -475,7 +475,10 @@ def compile_accelerator_main(
     geometry = dict(frontend.get("accelerator_local_region", {}))
     electrodes = dict(frontend.get("electrodes", {}))
     electrode_topology = resolve_frontend_electrode_topology(electrodes)
-    if electrode_topology["topology_id"] != "three_zone_frontend_v1":
+    if electrode_topology["topology_id"] not in {
+        "three_zone_frontend_v1",
+        "three_zone_frontend_contract_derived_v1",
+    }:
         raise ValueError("accelerator main requires the published three-zone electrode topology")
     for role, field in (
         ("repeller", "repeller_front_z_mm"),
@@ -491,7 +494,10 @@ def compile_accelerator_main(
     ring_z_mm = geometry.get("ring_z_mm")
     if (
         not isinstance(placement, dict)
-        or placement.get("policy_id") != "three_zone_zonewise_equal_subdivision_1p4_v1"
+        or placement.get("policy_id") not in {
+            "three_zone_zonewise_equal_subdivision_1p4_v1",
+            "three_zone_zonewise_equal_subdivision_v1",
+        }
         or not isinstance(placement.get("zone_ring_counts"), dict)
         or not isinstance(ring_z_mm, list)
     ):
@@ -506,11 +512,14 @@ def compile_accelerator_main(
     zone3_ring_count = zone_ring_counts["zone3"]
     if len(ring_z_mm) != zone2_ring_count + zone3_ring_count:
         raise ValueError("accelerator main ring placement count differs")
+    # The layout compiler leaves one equal empty interval at both grids in
+    # each zone.  Its first ring therefore lies at 1/(count+1), not at the
+    # centre of one of ``count`` bins.
     expected_ring_z = [
-        plane_values["intermediate1"] + (index + .5) * (
+        plane_values["intermediate1"] + index * (
             plane_values["intermediate2"] - plane_values["intermediate1"]
-        ) / zone2_ring_count
-        for index in range(zone2_ring_count)
+        ) / (zone2_ring_count + 1)
+        for index in range(1, zone2_ring_count + 1)
     ] + [
         *[
             plane_values["intermediate2"]
@@ -524,6 +533,11 @@ def compile_accelerator_main(
         for actual, expected in zip(resolved_ring_z, expected_ring_z)
     ):
         raise ValueError("accelerator main ring placement differs from the declared policy")
+    pa_plus_solution_model = resolve_three_zone_pa_plus_solution_model(
+        electrodes,
+        planes_global_z_mm=plane_values,
+        ring_z_mm=resolved_ring_z,
+    )
 
     requested_realization = (
         oatof.get("geometry_derivation", {})
@@ -545,12 +559,57 @@ def compile_accelerator_main(
     elif cylindrical_sideport is not None:
         raise ValueError("square accelerator main must not receive a cylindrical side-port collar")
 
+    if reference_aperture_mm is not None:
+        if set(reference_aperture_mm) != {"width", "height"}:
+            raise ValueError("accelerator main reference aperture must contain width and height")
+        try:
+            reference_width_mm = float(reference_aperture_mm["width"])
+            reference_height_mm = float(reference_aperture_mm["height"])
+        except (TypeError, ValueError) as error:
+            raise ValueError("accelerator main reference aperture is invalid") from error
+        if not all(
+            math.isfinite(value) and value > 0
+            for value in (reference_width_mm, reference_height_mm)
+        ):
+            raise ValueError("accelerator main reference aperture is invalid")
+    else:
+        reference_width_mm = float(geometry["numerical_port_width_mm"])
+        reference_height_mm = float(geometry["numerical_port_height_mm"])
+
     split = (
         resolve_positive_gap_domain_split(frontend, connection)
         if connection is not None
         else None
     )
     half_width = float(geometry["shield_outer_width_mm"]) / 2.0
+    bore_half_width = float(geometry["bore_width_mm"]) / 2.0
+    if domain_policy is None:
+        domain_policy = {"policy_id": "full_accelerator_v1"}
+    if not isinstance(domain_policy, dict):
+        raise ValueError("accelerator main domain policy is invalid")
+    policy_id = domain_policy.get("policy_id")
+    if policy_id == "full_accelerator_v1":
+        if set(domain_policy) != {"policy_id"}:
+            raise ValueError("accelerator main full-domain policy is invalid")
+    elif policy_id == "directed_kinematic_corridor_v1":
+        if set(domain_policy) != {
+            "policy_id", "exit_axis_positive_extent_mm", "transverse_half_span_mm"
+        }:
+            raise ValueError("accelerator main corridor policy is invalid")
+        try:
+            exit_extent = float(domain_policy["exit_axis_positive_extent_mm"])
+            transverse_half_span = float(domain_policy["transverse_half_span_mm"])
+        except (TypeError, ValueError) as error:
+            raise ValueError("accelerator main corridor policy is invalid") from error
+        if not all(math.isfinite(value) and value > 0 for value in (exit_extent, transverse_half_span)):
+            raise ValueError("accelerator main corridor policy is invalid")
+        if exit_extent >= bore_half_width or transverse_half_span >= bore_half_width:
+            raise ValueError("accelerator main corridor must remain inside the physical bore")
+    elif policy_id == "pre_pulse_entrance_zone_collision_v1":
+        if set(domain_policy) != {"policy_id"}:
+            raise ValueError("accelerator main pre-pulse entrance-zone policy is invalid")
+    else:
+        raise ValueError("accelerator main domain policy is unsupported")
     bridge_cells = frontend.get("cell_mm_xyz")
     if not isinstance(bridge_cells, dict) or set(bridge_cells) != {"x", "y", "z"}:
         raise ValueError("accelerator main requires the governed bridge cell declaration")
@@ -576,11 +635,50 @@ def compile_accelerator_main(
     # Preserve the physical aperture-minus-10 mm start.  The far exterior
     # padding can safely grow by less than one cell to close the PA lattice.
     x_max = x_min + math.ceil((raw_x_max - x_min) / cells["x"]) * cells["x"]
+    y_min = float(geometry["axis_y_mm"]) - half_width - bridge_y_margin
+    y_max = float(geometry["axis_y_mm"]) + half_width + bridge_y_margin
+    render_region = "whole_accelerator"
+    if policy_id == "directed_kinematic_corridor_v1":
+        # Boundaries are coarse-grid nodes so every copied Dirichlet value is
+        # sampled exactly from the common coarse PA.  The entrance side stays
+        # at the governed split boundary to retain the actual fine aperture.
+        origin = frontend["instance_origin_mm"]
+        raw_x_max = float(geometry["axis_x_mm"]) + exit_extent
+        x_max = _outward_aligned_boundary(
+            raw_x_max, float(origin["x"]), bridge_x_margin, side="max"
+        )
+        y_min = _outward_aligned_boundary(
+            float(geometry["axis_y_mm"]) - transverse_half_span,
+            float(origin["y"]), bridge_y_margin, side="min"
+        )
+        y_max = _outward_aligned_boundary(
+            float(geometry["axis_y_mm"]) + transverse_half_span,
+            float(origin["y"]), bridge_y_margin, side="max"
+        )
+        if x_max >= float(geometry["axis_x_mm"]) + bore_half_width:
+            raise ValueError("accelerator main corridor reaches the physical bore wall")
+        render_region = "directed_corridor"
+    elif policy_id == "pre_pulse_entrance_zone_collision_v1":
+        # This carrier represents precisely the connector-side first
+        # acceleration zone: the perforated repeller and the first ideal grid.
+        # It has no electrostatic solution and deliberately excludes zones 2/3.
+        # These bounds come only from the published mechanical geometry and
+        # three-zone planes, never from an unknown future handoff state.
+        x_min = float(geometry["negative_x_face_mm"])
+        x_max = x_min + math.ceil(
+            (float(geometry["axis_x_mm"]) + half_width + cells["x"] - x_min) / cells["x"]
+        ) * cells["x"]
+        y_min = float(geometry["axis_y_mm"]) - half_width - cells["y"]
+        y_max = float(geometry["axis_y_mm"]) + half_width + cells["y"]
+        z_min = float(geometry["shield_back_z_mm"]) - cells["z"]
+        requested_z_max = plane_values["intermediate1"] + 2.0 * cells["z"]
+        z_max = z_min + math.ceil((requested_z_max - z_min) / cells["z"]) * cells["z"]
+        render_region = "entrance"
     bounds = {
         "x_min": x_min,
         "x_max": x_max,
-        "y_min": float(geometry["axis_y_mm"]) - half_width - bridge_y_margin,
-        "y_max": float(geometry["axis_y_mm"]) + half_width + bridge_y_margin,
+        "y_min": y_min,
+        "y_max": y_max,
         "z_min": z_min,
         "z_max": z_max,
     }
@@ -591,8 +689,9 @@ def compile_accelerator_main(
         if not math.isclose(span / cells[axis], count, abs_tol=1e-8):
             raise ValueError(f"accelerator main {axis} span is not aligned to its grid")
         dimensions[f"n{axis}"] = int(count) + 1
-    for role in ("intermediate1", "intermediate2", "exit"):
-        _aligned_index(plane_values[role], z_min, cells["z"], f"{role}_z_mm")
+    if policy_id != "pre_pulse_entrance_zone_collision_v1":
+        for role in ("intermediate1", "intermediate2", "exit"):
+            _aligned_index(plane_values[role], z_min, cells["z"], f"{role}_z_mm")
 
     # The bridge PA is deliberately only a remote Dirichlet-boundary source.
     # Its coarse rasterization of the side opening has no authority over the
@@ -600,13 +699,12 @@ def compile_accelerator_main(
     # accelerator grid, where the entrance face and its edge field are made.
     fine_aperture_discretization: dict[str, Any] | None = None
     if connection is not None:
-        aperture = connection.get("transition_aperture")
         source_exit = frontend.get("source_exit_center_mm")
-        if not isinstance(aperture, dict) or not isinstance(source_exit, dict):
+        if not isinstance(source_exit, dict):
             raise ValueError("accelerator main aperture geometry is missing")
         fine_aperture_discretization = resolve_rectangular_aperture_discretization(
-            mechanical_width_mm=float(aperture["full_width_mm"]),
-            mechanical_height_mm=float(aperture["full_height_mm"]),
+            mechanical_width_mm=reference_width_mm,
+            mechanical_height_mm=reference_height_mm,
             cell_mm_xyz=cells,
             flange_x_min_mm=float(geometry["negative_x_face_mm"]),
             flange_x_max_mm=float(geometry["negative_x_face_mm"])
@@ -623,18 +721,16 @@ def compile_accelerator_main(
             fine_aperture_discretization["numerical_carve_height_mm"]
         )
 
-    missing_basis_ids = [
-        electrode_id
-        for electrode_id in electrode_topology["basis_electrode_ids"]
-        if electrode_id not in {
-            int(electrodes["grounded_shield_id"]),
-            int(electrodes["accelerator_repeller_id"]),
-            int(electrodes["accelerator_grid1_id"]),
-            int(electrodes["accelerator_intermediate2_id"]),
-            int(electrodes["accelerator_grid2_id"]),
-            *[int(value) for value in electrodes["accelerator_ring_ids"]],
-        }
-    ]
+    # A directed corridor can intentionally omit the rasterized material of a
+    # distant ring while the global post-pulse plan still assigns that ring a
+    # voltage.  Reserve every basis ID on the outer Dirichlet face so PA0 has
+    # the complete adjustment namespace; the copied coarse boundary values,
+    # not these zero-volume boundary sentinels, determine the remote field.
+    missing_basis_ids = (
+        []
+        if policy_id == "pre_pulse_entrance_zone_collision_v1"
+        else list(electrode_topology["basis_electrode_ids"])
+    )
     sentinels = [
         f"  e({electrode_id}) {{ fill {{ within {{ {_box(bounds['x_min'], bounds['y_min'] + offset * cells['y'], bounds['z_min'], cells['x']/2, cells['y']/2, cells['z']/2)} }} }} }}"
         for offset, electrode_id in enumerate(missing_basis_ids, start=1)
@@ -654,20 +750,30 @@ def compile_accelerator_main(
                 inner_radius_mm=float(junction["inner_radius_mm"]), cell_mm_xyz=cells,
             )
         else:
+            sideport_for_main = {
+                **cylindrical_sideport,
+                "mechanical_aperture_mm": {
+                    "width": reference_width_mm,
+                    "height": reference_height_mm,
+                },
+            }
             sideport_lines, rendered_sideport = render_grounded_circular_to_rectangular_connection(
                 electrode_id=int(electrodes["grounded_shield_id"]),
                 sleeve_x_min_mm=float(split["accelerator_start_x_mm"]),
                 sleeve_x_max_mm=float(source_exit["x"]),
-                flange_thickness_mm=float(cylindrical_sideport["positive_volume_overlap_mm"]),
+                flange_thickness_mm=float(sideport_for_main["positive_volume_overlap_mm"]),
                 center_y_mm=float(source_exit["y"]), center_z_mm=float(source_exit["z"]),
-                outer_radius_mm=float(cylindrical_sideport["outer_radius_mm"]),
-                inner_radius_mm=float(cylindrical_sideport["connector_inner_radius_mm"]),
-                aperture_width_mm=float(cylindrical_sideport["mechanical_aperture_mm"]["width"]),
-                aperture_height_mm=float(cylindrical_sideport["mechanical_aperture_mm"]["height"]),
+                outer_radius_mm=float(sideport_for_main["outer_radius_mm"]),
+                inner_radius_mm=float(sideport_for_main["connector_inner_radius_mm"]),
+                aperture_width_mm=float(sideport_for_main["mechanical_aperture_mm"]["width"]),
+                aperture_height_mm=float(sideport_for_main["mechanical_aperture_mm"]["height"]),
                 cell_mm_xyz=cells, pa_origin_y_mm=bounds["y_min"], pa_origin_z_mm=bounds["z_min"],
             )
             connector_lines = ["  ; Grounded cylindrical side-port collar/end plate.", *sideport_lines]
-            cylindrical_sideport = {**cylindrical_sideport, "fine_aperture_discretization": rendered_sideport["aperture_discretization"]}
+            cylindrical_sideport = {
+                **sideport_for_main,
+                "fine_aperture_discretization": rendered_sideport["aperture_discretization"],
+            }
     gem_lines = [
         "; Generated standalone three-zone accelerator main PA; do not edit.",
         "; It requires bridge-electrode-basis Dirichlet initialization before Refine.",
@@ -679,7 +785,8 @@ def compile_accelerator_main(
             cell_x_mm=cells["x"],
             cell_z_mm=cells["z"],
             electrodes=electrodes,
-            render_intermediate2_sheet=True,
+            render_intermediate2_sheet=policy_id != "pre_pulse_entrance_zone_collision_v1",
+            render_region=render_region,
         ),
         "  ; Boundary-only sentinels initialize absent upstream-electrode bases.",
         *sentinels,
@@ -697,11 +804,28 @@ def compile_accelerator_main(
             axis: bounds[f"{axis}_min"] for axis in ("x", "y", "z")
         },
         "instance_bounds_mm": bounds,
+        "domain_policy": dict(domain_policy),
+        "local_geometry_coverage": (
+            "complete_accelerator_geometry_v1"
+            if policy_id == "full_accelerator_v1"
+            else "pre_pulse_connector_side_first_zone_collision_v1"
+            if policy_id == "pre_pulse_entrance_zone_collision_v1"
+            else "entrance_and_trajectory_corridor_v1; distant_ring_and_exit_surfaces_are_coarse_basis_boundary_sources"
+        ),
         "cross_section": expected_cross_section,
         "cylindrical_sideport": cylindrical_sideport,
         "accelerator_port_aperture": {
-            "authority": "fine_accelerator_main_pa_v1",
+            "authority": (
+                "shared_accelerator_main_reference_aperture_v1"
+                if reference_aperture_mm is not None
+                else "fine_accelerator_main_pa_v1"
+            ),
             "discretization": fine_aperture_discretization,
+            "reference_aperture_mm": {
+                "width": reference_width_mm,
+                "height": reference_height_mm,
+            },
+            "scanned_aperture_owned_by_local_pa": reference_aperture_mm is not None,
             "grid_alignment_policy": "warn_only_use_fine_realization_v1",
             "coarse_frontend_discretization_is_non_authoritative": connection
             is not None,
@@ -715,10 +839,17 @@ def compile_accelerator_main(
             "ring_z_mm": resolved_ring_z,
         },
         "electrodes": electrodes,
+        "pa_plus_solution_model": pa_plus_solution_model,
         "boundary_condition": {
-            "mode": "bridge_electrode_basis_dirichlet_required_v1",
+            "mode": (
+                "geometry_collision_zero_field_v1"
+                if policy_id == "pre_pulse_entrance_zone_collision_v1"
+                else "bridge_electrode_basis_dirichlet_required_v1"
+            ),
+            "refinement_required": policy_id != "pre_pulse_entrance_zone_collision_v1",
             "direct_refinement_prohibited": True,
             "basis_electrode_ids": list(electrode_topology["basis_electrode_ids"]),
+            "pa_plus_mode_ids": list(pa_plus_solution_model["mode_ids"]),
             "missing_basis_sentinel_electrode_ids": missing_basis_ids,
         },
         "domain_split": (
@@ -733,12 +864,271 @@ def compile_accelerator_main(
     return "\n".join(gem_lines), contract
 
 
+def compile_accelerator_entrance_aperture_local(
+    frontend: dict[str, Any],
+    oatof: dict[str, Any],
+    connection: dict[str, Any],
+    accelerator_main: dict[str, Any],
+    *,
+    cell_mm_xyz: dict[str, float],
+    domain_policy: dict[str, Any],
+    aperture_mm: dict[str, float] | None = None,
+) -> tuple[str, dict[str, Any]]:
+    """Compile the scanned entrance aperture as a small nested main-PA domain.
+
+    The local PA owns the complete geometry and field inside its active bounds;
+    it is not a field-difference array.  Every outer-face basis value must be
+    copied from the matching shared accelerator-main basis before the official
+    default Refine is run.
+    """
+
+    if frontend.get("role") != "rf_oatof_simion_single_flight_frontend_contract":
+        raise ValueError("accelerator entrance local requires a compiled frontend")
+    if accelerator_main.get("role") != "rf_oatof_simion_accelerator_main_contract":
+        raise ValueError("accelerator entrance local requires an accelerator-main contract")
+    if accelerator_main.get("accelerator_port_aperture", {}).get(
+        "scanned_aperture_owned_by_local_pa"
+    ) is not True:
+        raise ValueError("accelerator main has not delegated the scanned aperture")
+    if set(cell_mm_xyz) != {"x", "y", "z"}:
+        raise ValueError("accelerator entrance local cells must contain x, y and z")
+    cells = {axis: float(cell_mm_xyz[axis]) for axis in ("x", "y", "z")}
+    if not all(math.isfinite(value) and value > 0 for value in cells.values()):
+        raise ValueError("accelerator entrance local cells must be finite and positive")
+    main_cells = accelerator_main.get("cell_mm_xyz")
+    if not isinstance(main_cells, dict) or any(
+        not math.isclose(cells[axis], float(main_cells[axis]), abs_tol=1e-12)
+        for axis in ("x", "y", "z")
+    ):
+        raise ValueError("accelerator entrance local must use the main PA grid")
+    if not isinstance(domain_policy, dict) or set(domain_policy) != {
+        "policy_id",
+        "accelerator_side_extent_mm",
+        "transverse_half_span_mm",
+        "grid1_downstream_guard_mm",
+    } or domain_policy.get("policy_id") != "aperture_perturbation_local_v1":
+        raise ValueError("accelerator entrance local domain policy is invalid")
+    try:
+        accelerator_side_extent = float(domain_policy["accelerator_side_extent_mm"])
+        transverse_half_span = float(domain_policy["transverse_half_span_mm"])
+        grid1_guard = float(domain_policy["grid1_downstream_guard_mm"])
+    except (TypeError, ValueError) as error:
+        raise ValueError("accelerator entrance local domain policy is invalid") from error
+    if not all(
+        math.isfinite(value) and value > 0
+        for value in (accelerator_side_extent, transverse_half_span, grid1_guard)
+    ):
+        raise ValueError("accelerator entrance local domain extents must be positive")
+
+    geometry = dict(frontend.get("accelerator_local_region", {}))
+    electrodes = dict(frontend.get("electrodes", {}))
+    topology = resolve_frontend_electrode_topology(electrodes)
+    if topology["topology_id"] not in {
+        "three_zone_frontend_v1",
+        "three_zone_frontend_contract_derived_v1",
+    }:
+        raise ValueError("accelerator entrance local requires the three-zone topology")
+    if accelerator_main.get("cross_section") != geometry.get("cross_section"):
+        raise ValueError("accelerator entrance local and main cross sections differ")
+    if accelerator_main.get("electrodes") != electrodes:
+        raise ValueError("accelerator entrance local and main electrode namespaces differ")
+    pa_plus_solution_model = accelerator_main.get("pa_plus_solution_model")
+    if not isinstance(pa_plus_solution_model, dict) or pa_plus_solution_model.get("model_id") != (
+        "three_zone_linear_ring_pa_plus_v1"
+    ):
+        raise ValueError("accelerator entrance local requires the main PA+ solution model")
+    main_bounds = accelerator_main.get("instance_bounds_mm")
+    main_origin = accelerator_main.get("instance_origin_mm")
+    if not isinstance(main_bounds, dict) or not isinstance(main_origin, dict):
+        raise ValueError("accelerator main bounds are missing")
+
+    connector_aperture = connection.get("transition_aperture")
+    source_exit = frontend.get("source_exit_center_mm")
+    if not isinstance(connector_aperture, dict) or connector_aperture.get("shape") != "rectangle" or not isinstance(
+        source_exit, dict
+    ):
+        raise ValueError("accelerator entrance local requires one rectangular aperture")
+    if aperture_mm is None:
+        aperture_width_mm = float(connector_aperture["full_width_mm"])
+        aperture_height_mm = float(connector_aperture["full_height_mm"])
+    else:
+        if set(aperture_mm) != {"width", "height"}:
+            raise ValueError("accelerator entrance local aperture must contain width and height")
+        try:
+            aperture_width_mm = float(aperture_mm["width"])
+            aperture_height_mm = float(aperture_mm["height"])
+        except (TypeError, ValueError) as error:
+            raise ValueError("accelerator entrance local aperture is invalid") from error
+        if not all(math.isfinite(value) and value > 0 for value in (aperture_width_mm, aperture_height_mm)):
+            raise ValueError("accelerator entrance local aperture is invalid")
+    discretization = resolve_rectangular_aperture_discretization(
+        mechanical_width_mm=aperture_width_mm,
+        mechanical_height_mm=aperture_height_mm,
+        cell_mm_xyz=cells,
+        flange_x_min_mm=float(geometry["negative_x_face_mm"]),
+        flange_x_max_mm=float(geometry["negative_x_face_mm"])
+        + float(geometry["shield_wall_mm"]),
+        center_y_mm=float(source_exit["y"]),
+        center_z_mm=float(source_exit["z"]),
+        pa_origin_y_mm=float(main_origin["y"]),
+        pa_origin_z_mm=float(main_origin["z"]),
+    )
+    geometry["numerical_port_width_mm"] = float(
+        discretization["numerical_carve_width_mm"]
+    )
+    geometry["numerical_port_height_mm"] = float(
+        discretization["numerical_carve_height_mm"]
+    )
+
+    raw_bounds = {
+        "x_min": float(main_bounds["x_min"]),
+        "x_max": float(geometry["negative_x_face_mm"])
+        + float(geometry["shield_wall_mm"])
+        + accelerator_side_extent,
+        "y_min": float(source_exit["y"]) - transverse_half_span,
+        "y_max": float(source_exit["y"]) + transverse_half_span,
+        "z_min": float(main_bounds["z_min"]),
+        "z_max": float(geometry["grid1_z_mm"]) + grid1_guard,
+    }
+    bounds: dict[str, float] = {}
+    for axis in ("x", "y", "z"):
+        bounds[f"{axis}_min"] = _outward_aligned_boundary(
+            raw_bounds[f"{axis}_min"], float(main_origin[axis]), cells[axis], side="min"
+        )
+        bounds[f"{axis}_max"] = _outward_aligned_boundary(
+            raw_bounds[f"{axis}_max"], float(main_origin[axis]), cells[axis], side="max"
+        )
+        if (
+            bounds[f"{axis}_min"] < float(main_bounds[f"{axis}_min"]) - 1e-9
+            or bounds[f"{axis}_max"] > float(main_bounds[f"{axis}_max"]) + 1e-9
+        ):
+            raise ValueError("accelerator entrance local extends outside accelerator main")
+    dimensions = {
+        f"n{axis}": int(
+            round((bounds[f"{axis}_max"] - bounds[f"{axis}_min"]) / cells[axis])
+        )
+        + 1
+        for axis in ("x", "y", "z")
+    }
+    if any(value < 3 for value in dimensions.values()):
+        raise ValueError("accelerator entrance local domain is too small")
+
+    split = resolve_positive_gap_domain_split(frontend, connection)
+    connector_lines: list[str] = []
+    cylindrical_sideport = frontend.get("cylindrical_sideport")
+    if split is not None:
+        junction = frontend.get("junction_enclosure")
+        if not isinstance(junction, dict):
+            raise ValueError("accelerator entrance local connector geometry is missing")
+        if cylindrical_sideport is None:
+            connector_lines, _ = render_fixed_upstream_shield_connector(
+                electrode_id=int(electrodes["grounded_shield_id"]),
+                sleeve_x_min_mm=float(split["accelerator_start_x_mm"]),
+                sleeve_x_max_mm=float(source_exit["x"]),
+                center_y_mm=float(source_exit["y"]),
+                center_z_mm=float(source_exit["z"]),
+                outer_radius_mm=float(junction["outer_radius_mm"]),
+                inner_radius_mm=float(junction["inner_radius_mm"]),
+                cell_mm_xyz=cells,
+            )
+        else:
+            connector_lines, rendered_sideport = render_grounded_circular_to_rectangular_connection(
+                electrode_id=int(electrodes["grounded_shield_id"]),
+                sleeve_x_min_mm=float(split["accelerator_start_x_mm"]),
+                sleeve_x_max_mm=float(source_exit["x"]),
+                flange_thickness_mm=float(cylindrical_sideport["positive_volume_overlap_mm"]),
+                center_y_mm=float(source_exit["y"]),
+                center_z_mm=float(source_exit["z"]),
+                outer_radius_mm=float(cylindrical_sideport["outer_radius_mm"]),
+                inner_radius_mm=float(cylindrical_sideport["connector_inner_radius_mm"]),
+                aperture_width_mm=aperture_width_mm,
+                aperture_height_mm=aperture_height_mm,
+                cell_mm_xyz=cells,
+                pa_origin_y_mm=bounds["y_min"],
+                pa_origin_z_mm=bounds["z_min"],
+            )
+            cylindrical_sideport = {
+                **cylindrical_sideport,
+                "fine_aperture_discretization": rendered_sideport["aperture_discretization"],
+            }
+
+    basis_ids = list(topology["basis_electrode_ids"])
+    pa_plus_mode_ids = [int(value) for value in pa_plus_solution_model["mode_ids"]]
+    sentinels = [
+        f"  e({electrode_id}) {{ fill {{ within {{ {_box(bounds['x_min'], bounds['y_min'] + offset*cells['y'], bounds['z_min'], cells['x']/2, cells['y']/2, cells['z']/2)} }} }} }}"
+        for offset, electrode_id in enumerate(basis_ids, start=1)
+    ]
+    gem_lines = [
+        "; Generated scanned accelerator-entrance local PA; do not edit.",
+        "; It replaces, rather than adds to, the shared accelerator-main field.",
+        f"pa_define({dimensions['nx']},{dimensions['ny']},{dimensions['nz']},planar,none,electrostatic,,{_fmt(cells['x'])},{_fmt(cells['y'])},{_fmt(cells['z'])},surface=none)",
+        f"locate({_fmt(-bounds['x_min'])},{_fmt(-bounds['y_min'])},{_fmt(-bounds['z_min'])}) {{",
+        *connector_lines,
+        *_render_accelerator_local_geometry(
+            geometry,
+            cell_x_mm=cells["x"],
+            cell_z_mm=cells["z"],
+            electrodes=electrodes,
+            render_region="entrance",
+        ),
+        "  ; Boundary sentinels reserve the physical coarse-boundary namespace.",
+        *sentinels,
+        "}",
+        "",
+    ]
+    active_bounds = {
+        f"{axis}_{side}": bounds[f"{axis}_{side}"]
+        + (cells[axis] if side == "min" else -cells[axis])
+        for axis in ("x", "y", "z")
+        for side in ("min", "max")
+    }
+    return "\n".join(gem_lines), {
+        "schema_version": 1,
+        "role": "rf_oatof_simion_accelerator_entrance_aperture_local_contract",
+        "frame_id": frontend["frame_id"],
+        "cell_mm_xyz": cells,
+        "dimensions": dimensions,
+        "instance_origin_mm": {axis: bounds[f"{axis}_min"] for axis in ("x", "y", "z")},
+        "instance_bounds_mm": bounds,
+        "active_bounds_mm": active_bounds,
+        "domain_policy": dict(domain_policy),
+        "cross_section": geometry["cross_section"],
+        "cylindrical_sideport": cylindrical_sideport,
+        "accelerator_port_aperture": {
+            "authority": "accelerator_entrance_aperture_local_pa_v1",
+            "mechanical_aperture_mm": {
+                "width": aperture_width_mm,
+                "height": aperture_height_mm,
+            },
+            "discretization": discretization,
+            "connector_terminal_aperture_is_replaced": aperture_mm is not None,
+        },
+        "electrodes": electrodes,
+        "pa_plus_solution_model": pa_plus_solution_model,
+        "boundary_condition": {
+            "mode": "accelerator_main_electrode_basis_dirichlet_v1",
+            "source_role": accelerator_main["role"],
+            "faces": ["x_min", "x_max", "y_min", "y_max", "z_min", "z_max"],
+            "basis_electrode_ids": basis_ids,
+            "pa_plus_mode_ids": pa_plus_mode_ids,
+            "refinement_convergence": "simion_official_default",
+        },
+        "replacement_semantics": {
+            "mode": "highest_priority_complete_local_replacement_v1",
+            "field_superposition_prohibited": True,
+            "parent_role": accelerator_main["role"],
+        },
+    }
+
+
 def compile_upstream_bridge(
     upstream: dict[str, Any],
     oatof: dict[str, Any],
     connection: dict[str, Any],
     *,
     cell_mm_xyz: dict[str, float],
+    include_connector_coarse_sleeve: bool = False,
+    accelerator_port_aperture_mm: dict[str, float] | None = None,
 ) -> tuple[str, dict[str, Any]]:
     """Compile the upstream-plus-port PA used by a future bridge coupling.
 
@@ -760,7 +1150,11 @@ def compile_upstream_bridge(
     # Reuse the established input and topology validation without changing the
     # historical full-frontend output or its runtime semantics.
     _, frontend = compile_frontend(
-        upstream, oatof, connection, cell_mm_xyz=cells
+        upstream,
+        oatof,
+        connection,
+        cell_mm_xyz=cells,
+        accelerator_port_aperture_mm=accelerator_port_aperture_mm,
     )
     local = dict(frontend["accelerator_local_region"])
     electrodes = dict(frontend["electrodes"])
@@ -780,7 +1174,9 @@ def compile_upstream_bridge(
     shield_x_max = source_zero_x + float(source_mating_center[2])
     shield_wall = float(local["shield_wall_mm"])
     x_max = (
-        float(split["upstream_end_x_mm"])
+        float(split["accelerator_start_x_mm"])
+        if include_connector_coarse_sleeve and split is not None
+        else float(split["upstream_end_x_mm"])
         if split is not None
         else exit_x + shield_wall + cells["x"]
     )
@@ -812,9 +1208,19 @@ def compile_upstream_bridge(
             raise ValueError(f"upstream bridge {axis} span is not aligned to its grid")
 
     aperture = connection["transition_aperture"]
+    aperture_width_mm = float(
+        accelerator_port_aperture_mm["width"]
+        if accelerator_port_aperture_mm is not None
+        else aperture["full_width_mm"]
+    )
+    aperture_height_mm = float(
+        accelerator_port_aperture_mm["height"]
+        if accelerator_port_aperture_mm is not None
+        else aperture["full_height_mm"]
+    )
     aperture_discretization = resolve_rectangular_aperture_discretization(
-        mechanical_width_mm=float(aperture["full_width_mm"]),
-        mechanical_height_mm=float(aperture["full_height_mm"]),
+        mechanical_width_mm=aperture_width_mm,
+        mechanical_height_mm=aperture_height_mm,
         cell_mm_xyz=cells,
         flange_x_min_mm=exit_x,
         flange_x_max_mm=exit_x + shield_wall,
@@ -889,7 +1295,7 @@ def compile_upstream_bridge(
     connector_lines, connector_contract = render_fixed_upstream_shield_connector(
         electrode_id=grounded_shield_id,
         sleeve_x_min_mm=terminal_end_x,
-        sleeve_x_max_mm=(float(split["upstream_end_x_mm"]) if split is not None else exit_x),
+        sleeve_x_max_mm=x_max if split is not None else exit_x,
         center_y_mm=center_y,
         center_z_mm=center_z,
         outer_radius_mm=outer_radius,
@@ -930,7 +1336,11 @@ def compile_upstream_bridge(
     )
     contract = {
         "schema_version": 1,
-        "role": "rf_oatof_simion_upstream_bridge_contract",
+        "role": (
+            "rf_oatof_simion_connector_coarse_contract"
+            if include_connector_coarse_sleeve
+            else "rf_oatof_simion_upstream_bridge_contract"
+        ),
         "frame_id": frontend["frame_id"],
         "status": "bridge_coupling_required",
         "cell_mm_xyz": cells,
@@ -955,6 +1365,7 @@ def compile_upstream_bridge(
             if split is not None
             else None
         ),
+        "connector_coarse_sleeve_included": include_connector_coarse_sleeve,
         "electrodes": electrodes,
         "boundary_condition": {
             "mode": "bridge_electrode_basis_dirichlet_required_v1",
@@ -966,12 +1377,106 @@ def compile_upstream_bridge(
     return "\n".join(lines), contract
 
 
+def compile_pre_pulse_connector_collision(
+    upstream: dict[str, Any],
+    oatof: dict[str, Any],
+    connection: dict[str, Any],
+    *,
+    cell_mm_xyz: dict[str, float],
+) -> tuple[str, dict[str, Any]]:
+    """Compile only the zero-field mechanical connector traversed after handoff.
+
+    Terminal-handoff particles already start on the downstream multipole port.
+    Their pre-pulse continuation therefore needs collision surfaces in the
+    grounded connector, but neither multipole rods nor RF/Dirichlet fields.
+    """
+    if set(cell_mm_xyz) != {"x", "y", "z"}:
+        raise ValueError("pre-pulse connector cell_mm_xyz must contain x, y and z")
+    cells = {axis: float(cell_mm_xyz[axis]) for axis in ("x", "y", "z")}
+    if not all(math.isfinite(value) and value > 0 for value in cells.values()):
+        raise ValueError("pre-pulse connector cells must be finite and positive")
+    if not math.isclose(cells["x"], cells["y"], abs_tol=1e-12):
+        raise ValueError("pre-pulse connector requires transverse x-y grid symmetry")
+    _, frontend = compile_frontend(upstream, oatof, connection, cell_mm_xyz=cells)
+    split = resolve_positive_gap_domain_split(frontend, connection)
+    if split is None:
+        raise ValueError("pre-pulse connector collision requires a positive gap")
+    source_exit = frontend["source_exit_center_mm"]
+    junction = frontend["junction_enclosure"]
+    # The handoff plane is the downstream face of the terminal plate; the
+    # frontend source-exit centre can lie on its opposite face.
+    physical_x_min = float(split["terminal_end_x_mm"])
+    x_max = float(split["accelerator_start_x_mm"])
+    if x_max <= physical_x_min:
+        raise ValueError("pre-pulse connector collision has no positive physical span")
+    cylindrical_sideport = frontend.get("cylindrical_sideport")
+    if cylindrical_sideport is None:
+        outer_radius = float(junction["outer_radius_mm"])
+        inner_radius = float(junction["inner_radius_mm"])
+    else:
+        if not isinstance(cylindrical_sideport, dict):
+            raise ValueError("pre-pulse cylindrical side-port contract is invalid")
+        outer_radius = float(cylindrical_sideport["outer_radius_mm"])
+        inner_radius = float(cylindrical_sideport["connector_inner_radius_mm"])
+    center_y = float(source_exit["y"])
+    center_z = float(source_exit["z"])
+    y_min = center_y - math.ceil((outer_radius + cells["y"]) / cells["y"]) * cells["y"]
+    y_max = 2.0 * center_y - y_min
+    z_min = center_z - math.ceil((outer_radius + cells["z"]) / cells["z"]) * cells["z"]
+    z_max = 2.0 * center_z - z_min
+    # SIMION rejects an ION row placed exactly on a PA outer boundary before
+    # callbacks can select the connector instance.  The handoff state is
+    # defined on the physical terminal plane, so give that plane one raw-cell
+    # of zero-field vacuum *outside* the physical sleeve.  Geometry, field,
+    # clock and handoff coordinates are unchanged.
+    x_min = physical_x_min - cells["x"]
+    x_max = physical_x_min + math.ceil((x_max - physical_x_min) / cells["x"]) * cells["x"]
+    bounds = {"x_min": x_min, "x_max": x_max, "y_min": y_min, "y_max": y_max, "z_min": z_min, "z_max": z_max}
+    dimensions = {f"n{axis}": int(round((bounds[f"{axis}_max"] - bounds[f"{axis}_min"]) / cells[axis])) + 1 for axis in ("x", "y", "z")}
+    grounded_shield_id = int(frontend["electrodes"]["grounded_shield_id"])
+    connector_lines, connector_contract = render_fixed_upstream_shield_connector(
+        electrode_id=grounded_shield_id,
+        sleeve_x_min_mm=physical_x_min,
+        sleeve_x_max_mm=float(split["accelerator_start_x_mm"]),
+        center_y_mm=center_y,
+        center_z_mm=center_z,
+        outer_radius_mm=outer_radius,
+        inner_radius_mm=inner_radius,
+        cell_mm_xyz=cells,
+    )
+    gem_lines = [
+        "; Generated terminal-handoff connector collision PA; do not edit.",
+        "; Raw geometry only: this PA is never refined or voltage-adjusted.",
+        f"pa_define({dimensions['nx']},{dimensions['ny']},{dimensions['nz']},planar,none,electrostatic,,{_fmt(cells['x'])},{_fmt(cells['y'])},{_fmt(cells['z'])},surface=none)",
+        f"locate({_fmt(-x_min)},{_fmt(-y_min)},{_fmt(-z_min)}) {{",
+        *connector_lines,
+        "}",
+        "",
+    ]
+    return "\n".join(gem_lines), {
+        "schema_version": 1,
+        "role": "rf_oatof_simion_pre_pulse_connector_collision_contract",
+        "frame_id": frontend["frame_id"],
+        "cell_mm_xyz": cells,
+        "dimensions": dimensions,
+        "instance_origin_mm": {axis: bounds[f"{axis}_min"] for axis in ("x", "y", "z")},
+        "instance_bounds_mm": bounds,
+        "handoff_outer_vacuum_guard_mm": cells["x"],
+        "physical_connector_x_min_mm": physical_x_min,
+        "source_exit_center_mm": dict(source_exit),
+        "junction_enclosure": connector_contract,
+        "domain_split": dict(split),
+        "boundary_condition": {"mode": "geometry_collision_zero_field_v1", "refinement_required": False},
+    }
+
+
 def compile_frontend(
     upstream: dict[str, Any],
     oatof: dict[str, Any],
     connection: dict[str, Any],
     *,
     cell_mm_xyz: dict[str, float] | None = None,
+    accelerator_port_aperture_mm: dict[str, float] | None = None,
 ) -> tuple[str, dict[str, Any]]:
     """Return a composite GEM and its placement/electrode contract."""
     cells = {"x": 0.2, "y": 0.2, "z": 0.2} if cell_mm_xyz is None else cell_mm_xyz
@@ -1159,8 +1664,12 @@ def compile_frontend(
     cylindrical_sideport: dict[str, Any] | None = None
     if realization == "cylindrical_3d":
         accelerator_outer_radius = shield_outer_width / 2
-        if outer_radius < accelerator_outer_radius or shield_wall <= 0:
-            raise ValueError("cylindrical side-port collar cannot enclose the accelerator shell")
+        # This is a local side-port collar, not a full-diameter end plate.
+        # Its radial envelope remains the upstream connector shield; its
+        # axial thickness is the accelerator shell wall so the two grounded
+        # solids overlap at the curved shell without a seam.
+        if shield_wall <= 0 or outer_radius <= inner_radius:
+            raise ValueError("cylindrical side-port collar geometry is invalid")
         cylindrical_sideport = {
             "profile_id": "grounded_circular_to_cylindrical_sideport_v1",
             "topology": "grounded_circular_sideport_collar_end_plate_v1",
@@ -1183,7 +1692,11 @@ def compile_frontend(
         (exit_x - source_x_min + cell_x_mm) / cell_x_mm
     ) * cell_x_mm
     x_max = axis_x + shield_outer_width / 2 + cell_x_mm
-    y_min = -math.ceil((outer_radius + cell_y_mm) / cell_y_mm) * cell_y_mm
+    # The accelerator shell can be wider than the upstream circular enclosure.
+    # Size the coarse bridge PA to the larger physical transverse envelope so
+    # no shield or Dirichlet boundary is silently clipped at a PA face.
+    required_transverse_halfspan = max(outer_radius, shield_outer_width / 2.0)
+    y_min = -math.ceil((required_transverse_halfspan + cell_y_mm) / cell_y_mm) * cell_y_mm
     y_max = -y_min
     physical_z_min = min(center_z - outer_radius, shield_back_z) - cell_z_mm
     z_min = grid2_z - math.ceil(
@@ -1262,8 +1775,23 @@ def compile_frontend(
 
     shield_center_z = (shield_back_z + grid2_z) / 2
     shield_span_z = grid2_z - shield_back_z
-    port_width = float(aperture["full_width_mm"])
-    port_height = float(aperture["full_height_mm"])
+    if accelerator_port_aperture_mm is None:
+        port_width = float(aperture["full_width_mm"])
+        port_height = float(aperture["full_height_mm"])
+        accelerator_port_aperture_authority = "connection_aperture_v1"
+    else:
+        if set(accelerator_port_aperture_mm) != {"width", "height"}:
+            raise ValueError(
+                "coarse accelerator reference aperture must contain width and height"
+            )
+        try:
+            port_width = float(accelerator_port_aperture_mm["width"])
+            port_height = float(accelerator_port_aperture_mm["height"])
+        except (TypeError, ValueError) as error:
+            raise ValueError("coarse accelerator reference aperture is invalid") from error
+        if not all(math.isfinite(value) and value > 0 for value in (port_width, port_height)):
+            raise ValueError("coarse accelerator reference aperture is invalid")
+        accelerator_port_aperture_authority = "shared_accelerator_main_reference_aperture_v1"
     rod_end_x = source_zero_x + max(float(item["z_max_mm"]) for item in rods)
     terminal_surface_x = shield_x_max
     if shield_x_max + 1e-12 < rod_end_x:
@@ -1355,7 +1883,10 @@ def compile_frontend(
             "minimum_grid_to_ring_edge_clearance_mm",
             "minimum_observed_grid_to_ring_edge_clearance_mm",
             "ring_z_mm",
-        } or placement["policy_id"] != "three_zone_zonewise_equal_subdivision_1p4_v1":
+        } or placement["policy_id"] not in {
+            "three_zone_zonewise_equal_subdivision_1p4_v1",
+            "three_zone_zonewise_equal_subdivision_v1",
+        }:
             raise ValueError("accelerator ring placement policy identity differs")
         counts = placement["zone_ring_counts"]
         if set(counts) != {"zone2", "zone3"} or any(
@@ -1369,8 +1900,8 @@ def compile_frontend(
             accelerator_topology["planes_global_z_mm"]["intermediate2"]
         )
         expected_ring_z = [
-            grid1_z + (index + .5) * (intermediate2_z - grid1_z) / zone2_ring_count
-            for index in range(zone2_ring_count)
+            grid1_z + index * (intermediate2_z - grid1_z) / (zone2_ring_count + 1)
+            for index in range(1, zone2_ring_count + 1)
         ]
         expected_ring_z.extend(
             intermediate2_z + index * (grid2_z - intermediate2_z) / (zone3_ring_count + 1)
@@ -1449,7 +1980,7 @@ def compile_frontend(
                     accelerator_topology["planes_global_z_mm"]["intermediate2"]
                 ),
                 "ring_z_mm": ring_z_mm,
-                "intermediate2_grid_provider": "accelerator_overlay",
+                "intermediate2_grid_provider": "accelerator_main",
             }
         )
     lines.extend(
@@ -1463,7 +1994,7 @@ def compile_frontend(
     if three_zone:
         lines.extend(
             [
-                f"  ; ID {electrodes['accelerator_intermediate2_id']} is a coarse boundary sentinel; the exact sheet is owned by the accelerator overlay.",
+                f"  ; ID {electrodes['accelerator_intermediate2_id']} is discretized by the governed main-PA grid.",
                 f"  e({electrodes['accelerator_intermediate2_id']}) {{ fill {{ within {{ {_box(x_min,y_min,z_min,0.0,0.0,0.0)} }} }} }}",
             ]
         )
@@ -1486,7 +2017,7 @@ def compile_frontend(
         "aperture": {"shape": "rectangular", "width_mm": port_width, "height_mm": port_height},
         "accelerator_port_aperture_authority": {
             "mode": "coarse_bridge_boundary_only_v1",
-            "authoritative_provider": "rf_oatof_simion_accelerator_main_contract",
+            "authoritative_provider": accelerator_port_aperture_authority,
             "rule": (
                 "The global coarse PA does not define the scanned accelerator "
                 "opening; the fine accelerator PA recomputes it on its own grid."
@@ -1530,6 +2061,8 @@ def main() -> int:
     parser.add_argument("--cell-mm-x", type=float, default=0.2)
     parser.add_argument("--cell-mm-y", type=float, default=0.2)
     parser.add_argument("--cell-mm-z", type=float, default=0.2)
+    parser.add_argument("--coarse-bridge-reference-aperture-width-mm", type=float)
+    parser.add_argument("--coarse-bridge-reference-aperture-height-mm", type=float)
     parser.add_argument("--overlay-gem", type=Path)
     parser.add_argument("--overlay-contract", type=Path)
     parser.add_argument("--overlay-cell-mm-x", type=float)
@@ -1543,17 +2076,45 @@ def main() -> int:
     parser.add_argument("--overlay-intermediate-half-span-mm", type=float, default=2.0)
     parser.add_argument("--upstream-bridge-gem", type=Path)
     parser.add_argument("--upstream-bridge-contract", type=Path)
+    parser.add_argument("--pre-pulse-connector-collision-gem", type=Path)
+    parser.add_argument("--pre-pulse-connector-collision-contract", type=Path)
     parser.add_argument("--accelerator-main-gem", type=Path)
     parser.add_argument("--accelerator-main-contract", type=Path)
+    parser.add_argument("--accelerator-main-reference-aperture-width-mm", type=float)
+    parser.add_argument("--accelerator-main-reference-aperture-height-mm", type=float)
+    parser.add_argument("--accelerator-entrance-local-gem", type=Path)
+    parser.add_argument("--accelerator-entrance-local-contract", type=Path)
+    parser.add_argument("--accelerator-entrance-local-domain-policy", type=Path)
+    parser.add_argument("--accelerator-entrance-local-aperture-width-mm", type=float)
+    parser.add_argument("--accelerator-entrance-local-aperture-height-mm", type=float)
     parser.add_argument("--partition-cell-mm-x", type=float)
     parser.add_argument("--partition-cell-mm-y", type=float)
     parser.add_argument("--partition-cell-mm-z", type=float)
+    parser.add_argument("--accelerator-main-domain-policy", type=Path)
     args = parser.parse_args()
+    coarse_reference_aperture_values = (
+        args.coarse_bridge_reference_aperture_width_mm,
+        args.coarse_bridge_reference_aperture_height_mm,
+    )
+    if (coarse_reference_aperture_values[0] is None) != (
+        coarse_reference_aperture_values[1] is None
+    ):
+        raise ValueError(
+            "coarse bridge reference aperture requires width and height"
+        )
     gem, contract = compile_frontend(
         _load(args.upstream),
         _load(args.oatof),
         _load(args.connection),
         cell_mm_xyz={"x": args.cell_mm_x, "y": args.cell_mm_y, "z": args.cell_mm_z},
+        accelerator_port_aperture_mm=(
+            {
+                "width": float(coarse_reference_aperture_values[0]),
+                "height": float(coarse_reference_aperture_values[1]),
+            }
+            if coarse_reference_aperture_values[0] is not None
+            else None
+        ),
     )
     args.gem.parent.mkdir(parents=True, exist_ok=True)
     args.contract.parent.mkdir(parents=True, exist_ok=True)
@@ -1584,17 +2145,42 @@ def main() -> int:
             "y": args.partition_cell_mm_y,
             "z": args.partition_cell_mm_z,
         }
+        reference_aperture_values = (
+            args.accelerator_main_reference_aperture_width_mm,
+            args.accelerator_main_reference_aperture_height_mm,
+        )
+        if (reference_aperture_values[0] is None) != (
+            reference_aperture_values[1] is None
+        ):
+            raise ValueError(
+                "accelerator main reference aperture requires width and height"
+            )
+        reference_aperture = (
+            {
+                "width": float(reference_aperture_values[0]),
+                "height": float(reference_aperture_values[1]),
+            }
+            if reference_aperture_values[0] is not None
+            else None
+        )
         upstream_bridge_gem, upstream_bridge_contract = compile_upstream_bridge(
             _load(args.upstream),
             _load(args.oatof),
             _load(args.connection),
             cell_mm_xyz=partition_cells,
+            accelerator_port_aperture_mm=reference_aperture,
         )
         accelerator_main_gem, accelerator_main_contract = compile_accelerator_main(
             contract,
             _load(args.oatof),
             cell_mm_xyz=partition_cells,
             connection=_load(args.connection),
+            domain_policy=(
+                _load(args.accelerator_main_domain_policy)
+                if args.accelerator_main_domain_policy is not None
+                else None
+            ),
+            reference_aperture_mm=reference_aperture,
         )
         for output_path, output in (
             (args.upstream_bridge_gem, upstream_bridge_gem),
@@ -1604,6 +2190,69 @@ def main() -> int:
         ):
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_text(output, encoding="utf-8", newline="\n")
+        local_outputs = (
+            args.accelerator_entrance_local_gem,
+            args.accelerator_entrance_local_contract,
+            args.accelerator_entrance_local_domain_policy,
+        )
+        if any(value is not None for value in local_outputs):
+            if any(value is None for value in local_outputs):
+                raise ValueError(
+                    "accelerator entrance local requires GEM, contract and domain policy"
+                )
+            local_aperture_values = (
+                args.accelerator_entrance_local_aperture_width_mm,
+                args.accelerator_entrance_local_aperture_height_mm,
+            )
+            if (local_aperture_values[0] is None) != (local_aperture_values[1] is None):
+                raise ValueError(
+                    "accelerator entrance local aperture requires width and height"
+                )
+            local_gem, local_contract = compile_accelerator_entrance_aperture_local(
+                contract,
+                _load(args.oatof),
+                _load(args.connection),
+                accelerator_main_contract,
+                cell_mm_xyz=partition_cells,
+                domain_policy=_load(args.accelerator_entrance_local_domain_policy),
+                aperture_mm=(
+                    {"width": float(local_aperture_values[0]), "height": float(local_aperture_values[1])}
+                    if local_aperture_values[0] is not None
+                    else None
+                ),
+            )
+            args.accelerator_entrance_local_gem.parent.mkdir(
+                parents=True, exist_ok=True
+            )
+            args.accelerator_entrance_local_contract.parent.mkdir(
+                parents=True, exist_ok=True
+            )
+            args.accelerator_entrance_local_gem.write_text(
+                local_gem, encoding="utf-8", newline="\n"
+            )
+            args.accelerator_entrance_local_contract.write_text(
+                json.dumps(local_contract, indent=2) + "\n",
+                encoding="utf-8",
+                newline="\n",
+            )
+    connector_collision_requested = (
+        args.pre_pulse_connector_collision_gem is not None
+        or args.pre_pulse_connector_collision_contract is not None
+    )
+    if connector_collision_requested:
+        if (args.pre_pulse_connector_collision_gem is None
+                or args.pre_pulse_connector_collision_contract is None):
+            raise ValueError("pre-pulse connector collision requires GEM and contract outputs")
+        connector_gem, connector_contract = compile_pre_pulse_connector_collision(
+            _load(args.upstream), _load(args.oatof), _load(args.connection),
+            cell_mm_xyz={"x": args.cell_mm_x, "y": args.cell_mm_y, "z": args.cell_mm_z},
+        )
+        args.pre_pulse_connector_collision_gem.parent.mkdir(parents=True, exist_ok=True)
+        args.pre_pulse_connector_collision_contract.parent.mkdir(parents=True, exist_ok=True)
+        args.pre_pulse_connector_collision_gem.write_text(connector_gem, encoding="utf-8", newline="\n")
+        args.pre_pulse_connector_collision_contract.write_text(
+            json.dumps(connector_contract, indent=2) + "\n", encoding="utf-8", newline="\n"
+        )
     overlay_requested = args.overlay_gem is not None or args.overlay_contract is not None
     if overlay_requested:
         if args.overlay_gem is None or args.overlay_contract is None or any(

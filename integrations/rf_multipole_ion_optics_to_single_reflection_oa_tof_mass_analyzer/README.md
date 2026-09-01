@@ -14,7 +14,7 @@
 ## 入口
 
 - 连接profile：[`config/connection_profiles.json`](config/connection_profiles.json)
-- 当前活动 campaign 发现与 SHA 权威：[`config/diagnostics/lifecycle_registry.json`](config/diagnostics/lifecycle_registry.json)
+- 当前活动 campaign 发现权威：[`config/diagnostics/lifecycle_registry.json`](config/diagnostics/lifecycle_registry.json)
 - 历史根目录 campaign 的旧路径、SHA 与归档位置：[归档索引](docs/history/retired_campaigns/root_campaigns/INDEX.md)；它们不参与当前活动发现或执行
 - 单流程布局：[`config/single_flight_layout_profiles.json`](config/single_flight_layout_profiles.json)
 - 唯一公开执行入口：

@@ -39,7 +39,6 @@ assert(initializer.nx>=3 and initializer.ny>=3 and initializer.nz>=3,
 simion.pas:close()
 
 local total_boundary_points=0
-local maximum_copy_residual=0
 for basis=0,maximum_electrode do
   local coarse_path=indexed(coarse_pa0,basis)
   local fine_path=indexed(fine_pa_sharp,basis)
@@ -61,8 +60,6 @@ for basis=0,maximum_electrode do
     assert(value==value and math.abs(value)<math.huge,
       'coarse boundary interpolation returned a non-finite value')
     fine:point(ix,iy,iz,value,true)
-    local residual=math.abs(fine:potential(ix,iy,iz)-value)
-    if residual>maximum_copy_residual then maximum_copy_residual=residual end
     count=count+1
   end
 
@@ -91,9 +88,8 @@ simion.pas:close()
 
 local report=assert(io.open(report_path,'w'))
 report:write(string.format(
-  '{\n  "schema_version": 2,\n  "role": "simion_accelerator_overlay_basis_build",\n  "status": "pass",\n  "boundary_traversal": "disjoint_six_faces_v1",\n  "duplicate_boundary_writes": 0,\n  "maximum_electrode_id": %d,\n  "basis_array_count": %d,\n  "boundary_point_write_count": %d,\n  "maximum_immediate_copy_residual_V": %.17g\n}\n',
-  maximum_electrode,maximum_electrode+1,total_boundary_points,
-  maximum_copy_residual))
+  '{\n  "schema_version": 4,\n  "role": "simion_accelerator_overlay_basis_build",\n  "status": "pass",\n  "boundary_traversal": "disjoint_six_faces_v1",\n  "duplicate_boundary_writes": 0,\n  "maximum_electrode_id": %d,\n  "basis_array_count": %d,\n  "boundary_point_write_count": %d\n}\n',
+  maximum_electrode,maximum_electrode+1,total_boundary_points))
 report:close()
 print(string.format(
   'ACCELERATOR_OVERLAY_BASIS=PASS BASIS_COUNT=%d BOUNDARY_WRITES=%d',

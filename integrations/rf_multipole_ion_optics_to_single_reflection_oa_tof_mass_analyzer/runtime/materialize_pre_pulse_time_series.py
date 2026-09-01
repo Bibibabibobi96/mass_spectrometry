@@ -22,6 +22,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     portable_path,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_source import (
+    ATTRIBUTION_COLUMNS,
     GLOBAL_COLUMNS,
     materialize_pre_pulse_restart,
 )
@@ -317,12 +318,14 @@ def materialize_manifest_bound_restart(
         ):
             raise ContractError("time-series restart state energy or species differs")
         output_rows.append({
-            "particle_id": restart_id,
+            "simulation_particle_id": restart_id,
+            "source_particle_id": source_id,
+            "arm_id": "pre_pulse_restart",
             "instrument_time_us": format(pulse_time_us, ".17g"),
             "mass_amu": format(mass, ".17g"),
             "charge_state": charge,
-            **{f"position_{axis}_mm": format(values[f"{axis}_mm"], ".17g") for axis in "xyz"},
-            **{f"velocity_{axis}_m_s": format(value, ".17g") for axis, value in zip("xyz", velocity, strict=True)},
+            **{f"{axis}_mm": format(values[f"{axis}_mm"], ".17g") for axis in "xyz"},
+            **{f"v{axis}_m_s": format(value, ".17g") for axis, value in zip("xyz", velocity, strict=True)},
             "kinetic_energy_eV": format(energy, ".17g"),
         })
         identity_map.append({"restart_particle_id": restart_id, "producer_particle_id": source_id})
@@ -334,7 +337,7 @@ def materialize_manifest_bound_restart(
         raise ContractError("time-series restart output paths must differ")
     state_output_path.parent.mkdir(parents=True, exist_ok=True)
     with state_output_path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=GLOBAL_COLUMNS, lineterminator="\n")
+        writer = csv.DictWriter(handle, fieldnames=ATTRIBUTION_COLUMNS, lineterminator="\n")
         writer.writeheader()
         writer.writerows(output_rows)
     materialize_pre_pulse_restart(state_output_path, pulse_time_us)
@@ -386,7 +389,10 @@ def materialize_manifest_bound_restart(
             "clock_basis": "canonical_instrument_time_us",
             "clock_authority": "resolved_single_flight_pulse_schedule",
             "pulse_effective_time_us": pulse_time_us,
-            "ordered_particle_id_sha256": _restart_id_sha256(list(range(1, len(output_rows) + 1))),
+            # restart_particle_id is only a contiguous SIMION row number.  The
+            # frozen population identity remains the source-particle ordering,
+            # including for sparse smoke selections such as source ID 46.
+            "ordered_particle_id_sha256": _restart_id_sha256(source_ids),
         },
         "reuse_scope": {
             "role": "conditional_post_pulse_transport_initial_state",
@@ -523,6 +529,14 @@ def _cache_keys(
     expected: dict[str, str | None] = {}
     schema_version = contract.get("schema_version")
     active_roles = (
+        {
+            "fine_upstream": "simion_single_flight_upstream_bridge_pa_cache",
+            "accelerator_entrance_zone_collision": (
+                "simion_single_flight_accelerator_entrance_zone_collision_pa_cache"
+            ),
+        }
+        if schema_version == 5
+        else
         {
             "full_coarse_bridge": "simion_single_flight_frontend_pa_cache",
             "fine_upstream": "simion_single_flight_upstream_bridge_pa_cache",

@@ -7,9 +7,11 @@ import unittest
 from pathlib import Path
 
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_frontend import (
+    compile_accelerator_entrance_aperture_local,
     compile_accelerator_main,
     compile_accelerator_overlay,
     compile_frontend,
+    compile_pre_pulse_connector_collision,
     compile_upstream_bridge,
     resolve_positive_gap_domain_split,
 )
@@ -171,6 +173,256 @@ class SingleFlightFrontendTests(unittest.TestCase):
         }
         return oatof
 
+    def _grid010_twenty_ring_oatof(self, realization_id: str) -> dict:
+        oatof = copy.deepcopy(self.oatof)
+        oatof["accelerator_topology"] = copy.deepcopy(
+            self.GRID_010_THREE_ZONE_TOPOLOGY
+        )
+        oatof["geometry_derivation"]["accelerator"]["realization_id"] = (
+            realization_id
+        )
+        planes = oatof["accelerator_topology"]["planes_global_z_mm"]
+        zone2 = [
+            planes["intermediate1"]
+            + index * (planes["intermediate2"] - planes["intermediate1"]) / 5
+            for index in range(1, 5)
+        ]
+        zone3 = [
+            planes["intermediate2"]
+            + index * (planes["exit"] - planes["intermediate2"]) / 17
+            for index in range(1, 17)
+        ]
+        oatof["rings"]["accelerator_count"] = 20
+        oatof["rings"]["accelerator_placement"] = {
+            "policy_id": "three_zone_zonewise_equal_subdivision_v1",
+            "zone_ring_counts": {"zone2": 4, "zone3": 16},
+            "minimum_grid_to_ring_edge_clearance_mm": 1.0,
+            "minimum_observed_grid_to_ring_edge_clearance_mm": min(
+                zone2[0] - planes["intermediate1"] - 0.5,
+                planes["intermediate2"] - zone2[-1] - 0.5,
+                zone3[0] - planes["intermediate2"] - 0.5,
+                planes["exit"] - zone3[-1] - 0.5,
+            ),
+            "ring_z_mm": [*zone2, *zone3],
+        }
+        return oatof
+
+    def test_300mm_main_and_upstream_are_scan_neutral_while_local_owns_aperture(
+        self,
+    ) -> None:
+        cells = {"x": 0.25, "y": 0.25, "z": 0.1}
+        coarse_cells = {"x": 0.5, "y": 0.5, "z": 0.5}
+        local_policy = {
+            "policy_id": "aperture_perturbation_local_v1",
+            "accelerator_side_extent_mm": 4.0,
+            "transverse_half_span_mm": 5.0,
+            "grid1_downstream_guard_mm": 0.2,
+        }
+        main_hashes: dict[str, set[str]] = {
+            "square_3d": set(),
+            "cylindrical_3d": set(),
+        }
+        coarse_hashes: dict[str, set[str]] = {
+            "square_3d": set(),
+            "cylindrical_3d": set(),
+        }
+        local_hashes: dict[str, dict[float, str]] = {
+            "square_3d": {},
+            "cylindrical_3d": {},
+        }
+        upstream_hashes: set[str] = set()
+
+        for realization_id in ("square_3d", "cylindrical_3d"):
+            for height_mm in (1.0, 1.5, 2.0, 2.5):
+                with self.subTest(
+                    realization_id=realization_id, height_mm=height_mm
+                ):
+                    oatof = self._grid010_twenty_ring_oatof(realization_id)
+                    connection = self._positive_gap_connection(102.4)
+                    if realization_id == "cylindrical_3d":
+                        connection["connector"]["shield_connection_profile_id"] = (
+                            "grounded_circular_to_cylindrical_sideport_v1"
+                        )
+                    coarse_gem, frontend = compile_frontend(
+                        self.upstream,
+                        oatof,
+                        connection,
+                        cell_mm_xyz=coarse_cells,
+                        accelerator_port_aperture_mm={"width": 1.0, "height": 1.0},
+                    )
+                    bridge_gem, _ = compile_upstream_bridge(
+                        self.upstream,
+                        oatof,
+                        connection,
+                        cell_mm_xyz=coarse_cells,
+                    )
+                    main_gem, main = compile_accelerator_main(
+                        frontend,
+                        oatof,
+                        connection=connection,
+                        cell_mm_xyz=cells,
+                        reference_aperture_mm={"width": 1.0, "height": 1.0},
+                    )
+                    local_gem, local = compile_accelerator_entrance_aperture_local(
+                        frontend,
+                        oatof,
+                        connection,
+                        main,
+                        cell_mm_xyz=cells,
+                        domain_policy=local_policy,
+                        aperture_mm={"width": 1.0, "height": height_mm},
+                    )
+
+                    upstream_hashes.add(hashlib.sha256(bridge_gem.encode()).hexdigest())
+                    coarse_hashes[realization_id].add(
+                        hashlib.sha256(coarse_gem.encode()).hexdigest()
+                    )
+                    main_hashes[realization_id].add(
+                        hashlib.sha256(main_gem.encode()).hexdigest()
+                    )
+                    local_hashes[realization_id][height_mm] = hashlib.sha256(
+                        local_gem.encode()
+                    ).hexdigest()
+
+                    main_bounds = main["instance_bounds_mm"]
+                    local_bounds = local["instance_bounds_mm"]
+                    for axis in ("x", "y", "z"):
+                        self.assertGreaterEqual(
+                            local_bounds[f"{axis}_min"],
+                            main_bounds[f"{axis}_min"],
+                        )
+                        self.assertLessEqual(
+                            local_bounds[f"{axis}_max"],
+                            main_bounds[f"{axis}_max"],
+                        )
+                    geometry = frontend["accelerator_local_region"]
+                    shield_inner_face = geometry["negative_x_face_mm"]
+                    shield_outer_face = shield_inner_face + geometry["shield_wall_mm"]
+                    self.assertLessEqual(local_bounds["x_min"], shield_inner_face)
+                    self.assertGreaterEqual(local_bounds["x_max"], shield_outer_face)
+                    self.assertLessEqual(
+                        local_bounds["z_min"], geometry["repeller_front_z_mm"]
+                    )
+                    self.assertGreaterEqual(
+                        local_bounds["z_max"], geometry["grid1_z_mm"]
+                    )
+                    local_points = (
+                        local["dimensions"]["nx"]
+                        * local["dimensions"]["ny"]
+                        * local["dimensions"]["nz"]
+                    )
+                    main_points = (
+                        main["dimensions"]["nx"]
+                        * main["dimensions"]["ny"]
+                        * main["dimensions"]["nz"]
+                    )
+                    self.assertLess(local_points * 4, main_points)
+
+                    boundary = local["boundary_condition"]
+                    self.assertEqual(
+                        boundary["mode"],
+                        "accelerator_main_electrode_basis_dirichlet_v1",
+                    )
+                    self.assertEqual(boundary["source_role"], main["role"])
+                    self.assertEqual(
+                        boundary["basis_electrode_ids"],
+                        main["boundary_condition"]["basis_electrode_ids"],
+                    )
+                    self.assertEqual(
+                        boundary["basis_electrode_ids"],
+                        list(range(max(boundary["basis_electrode_ids"]) + 1)),
+                    )
+                    model = main["pa_plus_solution_model"]
+                    self.assertEqual(model["model_id"], "three_zone_linear_ring_pa_plus_v1")
+                    self.assertEqual(model["mode_count"], 14)
+                    self.assertEqual(model["mode_ids"], list(range(36, 50)))
+                    self.assertEqual(
+                        model["voltage_control_policy"]["policy_id"],
+                        "three_zone_linear_ring_interpolation_v1",
+                    )
+                    self.assertFalse(
+                        model["voltage_control_policy"]["per_ring_independent_adjustment_supported"]
+                    )
+                    self.assertEqual(
+                        model["voltage_control_policy"]["derived_accelerator_ring_ids"],
+                        main["electrodes"]["accelerator_ring_ids"],
+                    )
+                    self.assertEqual(local["pa_plus_solution_model"], model)
+                    self.assertEqual(boundary["pa_plus_mode_ids"], model["mode_ids"])
+                    coefficients = {
+                        int(electrode_id): sum(
+                            float(mode["physical_electrode_coefficients"].get(str(electrode_id), 0.0))
+                            for mode in model["modes"]
+                        )
+                        for electrode_id in main["electrodes"]["accelerator_ring_ids"]
+                    }
+                    self.assertTrue(
+                        all(abs(value - 1.0) < 1e-12 for value in coefficients.values())
+                    )
+                    self.assertEqual(
+                        local["accelerator_port_aperture"]["mechanical_aperture_mm"],
+                        {"width": 1.0, "height": height_mm},
+                    )
+                    self.assertTrue(
+                        local["accelerator_port_aperture"]["connector_terminal_aperture_is_replaced"]
+                    )
+
+        self.assertEqual(len(upstream_hashes), 1)
+        self.assertEqual(len(coarse_hashes["square_3d"]), 1)
+        self.assertEqual(len(coarse_hashes["cylindrical_3d"]), 1)
+        self.assertNotEqual(
+            next(iter(coarse_hashes["square_3d"])),
+            next(iter(coarse_hashes["cylindrical_3d"])),
+        )
+        self.assertEqual(len(main_hashes["square_3d"]), 1)
+        self.assertEqual(len(main_hashes["cylindrical_3d"]), 1)
+        self.assertNotEqual(
+            next(iter(main_hashes["square_3d"])),
+            next(iter(main_hashes["cylindrical_3d"])),
+        )
+        for realization_id in ("square_3d", "cylindrical_3d"):
+            self.assertEqual(len(set(local_hashes[realization_id].values())), 4)
+        for height_mm in (1.0, 1.5, 2.0, 2.5):
+            self.assertNotEqual(
+                local_hashes["square_3d"][height_mm],
+                local_hashes["cylindrical_3d"][height_mm],
+            )
+
+    def test_public_connector_coarse_covers_the_middle_sleeve_and_is_cross_section_neutral(
+        self,
+    ) -> None:
+        hashes: set[str] = set()
+        for realization_id in ("square_3d", "cylindrical_3d"):
+            oatof = self._grid010_twenty_ring_oatof(realization_id)
+            connection = self._positive_gap_connection(102.4)
+            if realization_id == "cylindrical_3d":
+                connection["connector"]["shield_connection_profile_id"] = (
+                    "grounded_circular_to_cylindrical_sideport_v1"
+                )
+            gem, contract = compile_upstream_bridge(
+                self.upstream,
+                oatof,
+                connection,
+                cell_mm_xyz={"x": 1.0, "y": 1.0, "z": 1.0},
+                include_connector_coarse_sleeve=True,
+                accelerator_port_aperture_mm={"width": 1.0, "height": 1.0},
+            )
+            hashes.add(hashlib.sha256(gem.encode()).hexdigest())
+            split = contract["domain_split"]
+            self.assertEqual(
+                contract["role"], "rf_oatof_simion_connector_coarse_contract"
+            )
+            self.assertTrue(contract["connector_coarse_sleeve_included"])
+            self.assertGreaterEqual(
+                contract["instance_bounds_mm"]["x_max"],
+                split["accelerator_start_x_mm"],
+            )
+            self.assertLessEqual(
+                contract["instance_bounds_mm"]["x_min"],
+                split["terminal_end_x_mm"],
+            )
+        self.assertEqual(len(hashes), 1)
+
     def test_standalone_three_zone_accelerator_main_preserves_shared_axial_design(self) -> None:
         results: dict[str, tuple[str, dict]] = {}
         for realization_id in ("square_3d", "cylindrical_3d"):
@@ -200,6 +452,150 @@ class SingleFlightFrontendTests(unittest.TestCase):
         self.assertIn("centered_box3D", square_gem)
         self.assertIn("cylinder(0,0,0", cylindrical_gem)
         self.assertNotEqual(square_gem, cylindrical_gem)
+
+    def test_twenty_ring_zonewise_placement_uses_grid_to_grid_subdivision(self) -> None:
+        """Both shell shapes accept the layout compiler's 4+16 ring centres."""
+        oatof_template = copy.deepcopy(self.oatof)
+        oatof_template["accelerator_topology"] = copy.deepcopy(self.GRID_010_THREE_ZONE_TOPOLOGY)
+        planes = oatof_template["accelerator_topology"]["planes_global_z_mm"]
+        oatof_template["rings"]["accelerator_count"] = 20
+        zone2 = [
+            planes["intermediate1"] + index * (planes["intermediate2"] - planes["intermediate1"]) / 5
+            for index in range(1, 5)
+        ]
+        zone3 = [
+            planes["intermediate2"] + index * (planes["exit"] - planes["intermediate2"]) / 17
+            for index in range(1, 17)
+        ]
+        oatof_template["rings"]["accelerator_placement"] = {
+            "policy_id": "three_zone_zonewise_equal_subdivision_v1",
+            "zone_ring_counts": {"zone2": 4, "zone3": 16},
+            "minimum_grid_to_ring_edge_clearance_mm": 1.0,
+            "minimum_observed_grid_to_ring_edge_clearance_mm": min(
+                zone2[0] - planes["intermediate1"] - 0.5,
+                planes["intermediate2"] - zone2[-1] - 0.5,
+                zone3[0] - planes["intermediate2"] - 0.5,
+                planes["exit"] - zone3[-1] - 0.5,
+            ),
+            "ring_z_mm": [*zone2, *zone3],
+        }
+        for realization_id in ("square_3d", "cylindrical_3d"):
+            with self.subTest(realization_id=realization_id):
+                oatof = copy.deepcopy(oatof_template)
+                oatof["geometry_derivation"]["accelerator"]["realization_id"] = realization_id
+                connection = copy.deepcopy(self.connection)
+                if realization_id == "cylindrical_3d":
+                    connection["connector"]["shield_connection_profile_id"] = (
+                        "grounded_circular_to_cylindrical_sideport_v1"
+                    )
+                _, frontend = compile_frontend(
+                    self.upstream, oatof, connection,
+                    cell_mm_xyz={"x": 0.5, "y": 0.5, "z": 0.5},
+                )
+                _, main = compile_accelerator_main(
+                    frontend, oatof, connection=connection,
+                    cell_mm_xyz={"x": 0.25, "y": 0.25, "z": 0.1},
+                )
+                self.assertEqual(main["ring_placement"]["zone_ring_counts"], {"zone2": 4, "zone3": 16})
+                self.assertEqual(main["ring_placement"]["ring_z_mm"], [*zone2, *zone3])
+
+    def test_directed_corridor_keeps_the_fine_entrance_and_uses_coarse_boundaries_elsewhere(self) -> None:
+        oatof = self._three_zone_main_oatof("square_3d")
+        connection = copy.deepcopy(self.connection)
+        _, frontend = compile_frontend(
+            self.upstream, oatof, connection,
+            cell_mm_xyz={"x": 0.2, "y": 0.2, "z": 0.2},
+        )
+        _, full = compile_accelerator_main(
+            frontend, oatof,
+            cell_mm_xyz={"x": 0.2, "y": 0.2, "z": 0.05},
+        )
+        gem, corridor = compile_accelerator_main(
+            frontend, oatof,
+            cell_mm_xyz={"x": 0.2, "y": 0.2, "z": 0.05},
+            domain_policy={
+                "policy_id": "directed_kinematic_corridor_v1",
+                "exit_axis_positive_extent_mm": 4.0,
+                "transverse_half_span_mm": 4.0,
+            },
+        )
+        self.assertLess(corridor["dimensions"]["nx"], full["dimensions"]["nx"])
+        self.assertLess(corridor["dimensions"]["ny"], full["dimensions"]["ny"])
+        self.assertEqual(
+            corridor["domain_policy"]["policy_id"], "directed_kinematic_corridor_v1"
+        )
+        self.assertIn("distant_ring_and_exit_surfaces", corridor["local_geometry_coverage"])
+        self.assertIn(f"e({corridor['electrodes']['accelerator_repeller_id']})", gem)
+        self.assertIn(
+            f"e({corridor['electrodes']['accelerator_ring_ids'][0]})", gem
+        )
+        self.assertEqual(
+            corridor["boundary_condition"]["missing_basis_sentinel_electrode_ids"],
+            corridor["boundary_condition"]["basis_electrode_ids"],
+        )
+
+    def test_pre_pulse_entrance_zone_is_zero_field_and_excludes_remote_accelerator(self) -> None:
+        oatof = self._three_zone_main_oatof("square_3d")
+        _, frontend = compile_frontend(
+            self.upstream, oatof, self.connection,
+            cell_mm_xyz={"x": 0.5, "y": 0.5, "z": 0.5},
+        )
+        geometry = frontend["accelerator_local_region"]
+        gem, main = compile_accelerator_main(
+            frontend,
+            oatof,
+            connection=self.connection,
+            cell_mm_xyz={"x": 0.25, "y": 0.25, "z": 0.1},
+            domain_policy={"policy_id": "pre_pulse_entrance_zone_collision_v1"},
+        )
+        self.assertEqual(
+            main["boundary_condition"]["mode"], "geometry_collision_zero_field_v1"
+        )
+        self.assertFalse(main["boundary_condition"]["refinement_required"])
+        self.assertTrue(main["boundary_condition"]["direct_refinement_prohibited"])
+        self.assertEqual(main["local_geometry_coverage"], "pre_pulse_connector_side_first_zone_collision_v1")
+        self.assertGreaterEqual(main["instance_bounds_mm"]["z_max"], geometry["grid1_z_mm"] + 0.2)
+        self.assertLess(main["instance_bounds_mm"]["z_max"], geometry["grid1_z_mm"] + 0.3)
+        self.assertIn(f"e({main['electrodes']['accelerator_repeller_id']})", gem)
+        self.assertIn(f"e({main['electrodes']['accelerator_grid1_id']})", gem)
+        self.assertNotIn(f"e({main['electrodes']['accelerator_ring_ids'][0]})", gem)
+
+    def test_terminal_handoff_connector_collision_excludes_multipole_rods(self) -> None:
+        oatof = self._three_zone_main_oatof("square_3d")
+        connection = self._positive_gap_connection(102.4)
+        gem, connector = compile_pre_pulse_connector_collision(
+            self.upstream, oatof, connection,
+            cell_mm_xyz={"x": 0.5, "y": 0.5, "z": 0.5},
+        )
+        self.assertEqual(
+            connector["boundary_condition"]["mode"], "geometry_collision_zero_field_v1"
+        )
+        self.assertFalse(connector["boundary_condition"]["refinement_required"])
+        self.assertLess(connector["dimensions"]["nx"], 300)
+        self.assertAlmostEqual(
+            connector["instance_bounds_mm"]["x_min"],
+            connector["physical_connector_x_min_mm"] - 0.5,
+        )
+        self.assertEqual(connector["handoff_outer_vacuum_guard_mm"], 0.5)
+        self.assertNotIn("segmented rod", gem.lower())
+
+    def test_directed_corridor_rejects_extent_reaching_the_bore_wall(self) -> None:
+        oatof = self._three_zone_main_oatof("square_3d")
+        connection = copy.deepcopy(self.connection)
+        _, frontend = compile_frontend(
+            self.upstream, oatof, connection,
+            cell_mm_xyz={"x": 0.2, "y": 0.2, "z": 0.2},
+        )
+        with self.assertRaisesRegex(ValueError, "physical bore"):
+            compile_accelerator_main(
+                frontend, oatof,
+                cell_mm_xyz={"x": 0.2, "y": 0.2, "z": 0.05},
+                domain_policy={
+                    "policy_id": "directed_kinematic_corridor_v1",
+                    "exit_axis_positive_extent_mm": 5.0,
+                    "transverse_half_span_mm": 4.0,
+                },
+            )
 
     def test_cylindrical_sideport_rejects_the_square_connector_profile(self) -> None:
         oatof = self._three_zone_main_oatof("cylindrical_3d")
@@ -253,6 +649,37 @@ class SingleFlightFrontendTests(unittest.TestCase):
         self.assertEqual(bridge["cylindrical_sideport"]["profile_id"], sideport["profile_id"])
         self.assertEqual(main["cylindrical_sideport"]["profile_id"], sideport["profile_id"])
         self.assertIn("Grounded cylindrical side-port collar/end plate", main_gem)
+        _, collision = compile_pre_pulse_connector_collision(
+            self.upstream, oatof, connection, cell_mm_xyz={"x": 0.5, "y": 0.5, "z": 0.5}
+        )
+        self.assertEqual(collision["junction_enclosure"]["outer_radius_mm"], 21.0)
+        self.assertEqual(collision["junction_enclosure"]["inner_radius_mm"], 20.0)
+
+    def test_cylindrical_sideport_keeps_connector_radius_for_a_wide_shell(self) -> None:
+        """A local collar joins the curved shell; it is not a full shell end plate."""
+        oatof = self._three_zone_main_oatof("cylindrical_3d")
+        geometry = oatof["geometry_mm"]
+        original_bore_half = geometry["accelerator_bore_half"]
+        geometry["accelerator_bore_half"] = 60.0
+        # Preserve the registered negative-x accelerator face while widening
+        # the cylindrical shell around that side-port.
+        oatof["coordinate_convention"]["accelerator_axis_x"] += (
+            geometry["accelerator_bore_half"] - original_bore_half
+        )
+        connection = self._positive_gap_connection(102.4)
+        connection["connector"]["shield_connection_profile_id"] = (
+            "grounded_circular_to_cylindrical_sideport_v1"
+        )
+        _, frontend = compile_frontend(self.upstream, oatof, connection)
+        sideport = frontend["cylindrical_sideport"]
+        self.assertLess(
+            sideport["outer_radius_mm"], sideport["accelerator_shell_outer_radius_mm"]
+        )
+        self.assertEqual(sideport["outer_radius_mm"], 21.0)
+        self.assertEqual(
+            sideport["collar_x_max_mm"] - sideport["collar_x_min_mm"],
+            sideport["accelerator_shell_wall_mm"],
+        )
 
     def test_cylindrical_sideport_collar_tracks_changed_accelerator_wall(self) -> None:
         """The collar overlap is derived from, rather than independently set from, wall thickness."""
@@ -444,11 +871,12 @@ class SingleFlightFrontendTests(unittest.TestCase):
                     contract["electrodes"]["multipole_rod_ids"], list(range(1, 9))
                 )
 
-    def test_frontend_fails_closed_outside_published_electrode_basis(self) -> None:
+    def test_frontend_derives_the_electrode_basis_from_ring_count(self) -> None:
         oatof = copy.deepcopy(self.oatof)
-        oatof["rings"]["accelerator_count"] = 4
-        with self.assertRaisesRegex(ValueError, "exactly five accelerator rings"):
-            compile_frontend(self.upstream, oatof, self.connection)
+        oatof["rings"]["accelerator_count"] = 7
+        _, contract = compile_frontend(self.upstream, oatof, self.connection)
+        self.assertEqual(contract["electrodes"]["accelerator_ring_ids"], list(range(12, 19)))
+        self.assertEqual(contract["electrodes"]["accelerator_grid2_id"], 19)
         upstream = copy.deepcopy(self.upstream)
         upstream["segmentation"]["segmented_rod_array"]["electrodes"][0][
             "electrode_id"
@@ -633,9 +1061,8 @@ class SingleFlightFrontendTests(unittest.TestCase):
             self.assertGreaterEqual(overlay["instance_bounds_mm"][f"{axis}_min"], coarse_min)
             self.assertLessEqual(overlay["instance_bounds_mm"][f"{axis}_max"], coarse_max + 1e-9)
 
-    def test_three_zone_publishes_id20_but_overlay_owns_exact_sheet(self) -> None:
-        oatof = copy.deepcopy(self.oatof)
-        oatof["accelerator_topology"] = copy.deepcopy(self.THREE_ZONE_TOPOLOGY)
+    def test_three_zone_publishes_id20_and_main_owns_exact_sheet(self) -> None:
+        oatof = self._three_zone_main_oatof("square_3d")
         coarse_gem, frontend = compile_frontend(
             self.upstream, oatof, self.connection
         )
@@ -645,24 +1072,19 @@ class SingleFlightFrontendTests(unittest.TestCase):
         )
         self.assertEqual(frontend["electrodes"]["accelerator_intermediate2_id"], 20)
         local = frontend["accelerator_local_region"]
-        self.assertEqual(local["intermediate2_grid_provider"], "accelerator_overlay")
+        self.assertEqual(local["intermediate2_grid_provider"], "accelerator_main")
         self.assertEqual(len(local["ring_z_mm"]), 5)
         self.assertEqual(coarse_gem.count("e(20)"), 1)
-        overlay_gem, overlay = compile_accelerator_overlay(
-            frontend, cell_mm_xyz={"x": 0.2, "y": 0.2, "z": 0.05}
+        main_gem, main = compile_accelerator_main(
+            frontend,
+            oatof,
+            cell_mm_xyz={"x": 0.2, "y": 0.2, "z": 0.05},
         )
         self.assertEqual(
-            overlay["boundary_condition"]["basis_electrode_ids"], list(range(21))
+            main["boundary_condition"]["basis_electrode_ids"], list(range(21))
         )
-        self.assertEqual(overlay_gem.count("e(20)"), 1)
-        self.assertIn(f",{local['intermediate2_z_mm']:.12g},", overlay_gem)
-
-        misaligned = copy.deepcopy(frontend)
-        misaligned["accelerator_local_region"]["intermediate2_z_mm"] += 0.01
-        with self.assertRaisesRegex(ValueError, "intermediate2_z_mm is not aligned"):
-            compile_accelerator_overlay(
-                misaligned, cell_mm_xyz={"x": 0.2, "y": 0.2, "z": 0.05}
-            )
+        self.assertGreaterEqual(main_gem.count("e(20)"), 2)
+        self.assertIn(f",{local['intermediate2_z_mm']:.12g},", main_gem)
 
     def test_three_zone_local_overlay_regions_keep_only_the_required_fine_span(self) -> None:
         oatof = copy.deepcopy(self.oatof)
