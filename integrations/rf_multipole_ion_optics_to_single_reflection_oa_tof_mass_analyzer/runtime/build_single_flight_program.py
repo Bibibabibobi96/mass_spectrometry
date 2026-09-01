@@ -822,7 +822,7 @@ def build_successor_program(
                 {
                     "role": "accelerator_entrance_aperture_local",
                     "instance_index": 5 if reduced_post_accelerator_iob else 6,
-                    "filename": "accelerator_entrance_local.pa0",
+                    "filename": "accelerator_entrance_local.pa#",
                     "origin_mm": accelerator_entrance_local["instance_origin_mm"],
                     "bounds_mm": accelerator_entrance_local["active_bounds_mm"],
                 }
@@ -890,6 +890,13 @@ def build_successor_program(
         if domain_split is not None
         else ["accelerator", *overlay_roles]
     )
+    domain_accelerator_filename = (
+        "accelerator_main.pa#"
+        if domain_split is not None and accelerator_entrance_local is not None
+        else "accelerator_main.pa0"
+        if domain_split is not None
+        else "accelerator.pa0"
+    )
     formal_iob_config = (
         {
             "instance_roles": {
@@ -899,7 +906,7 @@ def build_successor_program(
             },
             "instance_filenames": {
                 "coarse_frontend": "coarse_frontend.pa0",
-                "accelerator": "accelerator_main.pa0",
+                "accelerator": domain_accelerator_filename,
                 "upstream_bridge": "upstream_bridge.pa0",
             },
             "pre_pulse_active_roles": domain_active_roles,
@@ -928,11 +935,7 @@ def build_successor_program(
                 }
             ),
             "reflectron": "reflectron.pa0",
-            "accelerator": (
-                "accelerator_main.pa0"
-                if domain_split is not None
-                else "accelerator.pa0"
-            ),
+            "accelerator": domain_accelerator_filename,
             "detector": "detector_ground.pa0",
             **overlay_filenames,
         },

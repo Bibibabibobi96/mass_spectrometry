@@ -3521,7 +3521,7 @@ try {
       # adjacent .pa+ map then selects the numbered mode arrays for
       # `fast_adjust`.  Passing the text map itself to `pa:load` makes SIMION
       # attempt an obsolete PA conversion and abort.
-      $acceleratorMainRuntimePa0 = Join-Path $runtimeDir 'accelerator_main.pa0'
+      $acceleratorMainRuntimePa0 = Join-Path $runtimeDir 'accelerator_main.pa#'
       $coarseFrontendRuntimePa0 = Join-Path $runtimeDir 'coarse_frontend.pa0'
       $container = $postPulseFiveInstanceSeed
       if (-not (Test-Path -LiteralPath $container -PathType Leaf)) { throw 'Versioned five-instance post-pulse IOB seed is missing.' }
@@ -3586,7 +3586,7 @@ try {
       $localAxisIobArguments = @('--nogui','--noprompt','lua',$postPulseIobBuilder,
         (Join-Path $runtimeDir 'oatof_ideal_grounded.iob'),$runtimeContainer,$totalAxisFieldIob,
         (Join-Path $runtimeDir 'flight_tube_ground.pa0'),(Join-Path $runtimeDir 'reflectron.pa0'),
-        (Join-Path $runtimeDir 'accelerator_main.pa0'),(Join-Path $runtimeDir 'detector_ground.pa0'),(Join-Path $runtimeDir 'accelerator_entrance_local.pa0'),
+        (Join-Path $runtimeDir 'accelerator_main.pa#'),(Join-Path $runtimeDir 'detector_ground.pa0'),(Join-Path $runtimeDir 'accelerator_entrance_local.pa#'),
         ([string]$domainMain[0].geometry.instance_origin_mm.x),([string]$domainMain[0].geometry.instance_origin_mm.y),([string]$domainMain[0].geometry.instance_origin_mm.z),
         ([string]$entranceLocalBuild[0].geometry.instance_origin_mm.x),([string]$entranceLocalBuild[0].geometry.instance_origin_mm.y),([string]$entranceLocalBuild[0].geometry.instance_origin_mm.z))
       $built = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir -UsagePath (Join-Path $package.log_dir 'local_axis_field_iob_build_resource_usage.json') -FilePath $SimionExe -WorkingDirectory $runtimeDir -RedirectStandardOutput (Join-Path $package.log_dir 'local_axis_field_iob_build.stdout.log') -RedirectStandardError (Join-Path $package.log_dir 'local_axis_field_iob_build.stderr.log') -ArgumentList $localAxisIobArguments
@@ -3622,7 +3622,7 @@ try {
       $postPulseIobArguments = @('--nogui','--noprompt','lua',$postPulseIobBuilder,
         (Join-Path $runtimeDir 'oatof_ideal_grounded.iob'),$runtimeContainer,(Join-Path $runtimeDir 'oatof_ideal_grounded.iob'),
         (Join-Path $runtimeDir 'flight_tube_ground.pa0'),(Join-Path $runtimeDir 'reflectron.pa0'),
-        (Join-Path $runtimeDir 'accelerator_main.pa0'),(Join-Path $runtimeDir 'detector_ground.pa0'),(Join-Path $runtimeDir 'accelerator_entrance_local.pa0'),
+        (Join-Path $runtimeDir 'accelerator_main.pa#'),(Join-Path $runtimeDir 'detector_ground.pa0'),(Join-Path $runtimeDir 'accelerator_entrance_local.pa#'),
         ([string]$domainMain[0].geometry.instance_origin_mm.x),([string]$domainMain[0].geometry.instance_origin_mm.y),([string]$domainMain[0].geometry.instance_origin_mm.z),
         ([string]$entranceLocalBuild[0].geometry.instance_origin_mm.x),([string]$entranceLocalBuild[0].geometry.instance_origin_mm.y),([string]$entranceLocalBuild[0].geometry.instance_origin_mm.z))
       $postPulseIobStdout = Join-Path $package.log_dir 'post_pulse_handoff_iob_build.stdout.log'
@@ -3647,7 +3647,7 @@ try {
     # formal IOB cannot resolve it in place of the formal accelerator PA.
     Copy-RfPaFamilyAliasInRuntime -SourcePrefix 'frontend' -DestinationPrefix 'coarse_frontend' `
       -SourceDirectory $frontendWorkingDir
-    $acceleratorMainRuntimePa0 = Join-Path $runtimeDir 'accelerator_main.pa0'
+    $acceleratorMainRuntimePa0 = Join-Path $runtimeDir 'accelerator_main.pa#'
     $coarseFrontendRuntimePa0 = Join-Path $runtimeDir 'coarse_frontend.pa0'
     Get-ChildItem -LiteralPath $fullFlightSeedDir -File | Copy-Item -Destination $runtimeDir
     $runtimeContainer = Join-Path $runtimeDir 'seven_instance_seed.iob'
@@ -3656,7 +3656,7 @@ try {
       (Join-Path $runtimeDir 'oatof_ideal_grounded.iob'),$coarseFrontendRuntimePa0,
       $domainUpstream[0].pa0,$acceleratorMainRuntimePa0,
       (Join-Path $runtimeDir 'flight_tube_ground.pa0'),(Join-Path $runtimeDir 'reflectron.pa0'),
-      (Join-Path $runtimeDir 'accelerator_entrance_local.pa0'),(Join-Path $runtimeDir 'detector_ground.pa0'),
+      (Join-Path $runtimeDir 'accelerator_entrance_local.pa#'),(Join-Path $runtimeDir 'detector_ground.pa0'),
       ([string]$frontendGeometry.instance_origin_mm.x),([string]$frontendGeometry.instance_origin_mm.y),([string]$frontendGeometry.instance_origin_mm.z),
       ([string]$domainUpstream[0].geometry.instance_origin_mm.x),([string]$domainUpstream[0].geometry.instance_origin_mm.y),([string]$domainUpstream[0].geometry.instance_origin_mm.z),
       ([string]$domainMain[0].geometry.instance_origin_mm.x),([string]$domainMain[0].geometry.instance_origin_mm.y),([string]$domainMain[0].geometry.instance_origin_mm.z),
