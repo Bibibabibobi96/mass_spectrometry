@@ -41,8 +41,9 @@ def _run_record(path: Path, run_dir: Path) -> dict[str, object]:
 class AuthorFullFlightCampaignFromPrePulseTests(unittest.TestCase):
     def _source_campaign(self, root: Path, *, continuous: bool = True) -> Path:
         campaign = json.loads(SOURCE_CAMPAIGN.read_text(encoding="utf-8"))
-        if not continuous:
-            campaign["experiments"]["shared"]["source_release_mode"] = "pre_pulse_restart"
+        campaign["experiments"]["shared"]["source_release_mode"] = (
+            "continuous_frontend" if continuous else "pre_pulse_restart"
+        )
         path = root / "source.json"
         path.write_text(json.dumps(campaign), encoding="utf-8")
         return path
