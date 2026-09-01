@@ -15,6 +15,7 @@ from unittest.mock import patch
 
 from common.contracts.machine_contracts import ContractError, validate_schema
 from common.integration.resolve_connection import derive_mating_translation_with_gap
+from common.multipole.compile_design_request import resolved_design_sha256
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.tests.fixtures.campaign_fixture import (
     current_campaign_fixture,
 )
@@ -128,6 +129,177 @@ def temporary_config_directory() -> tempfile.TemporaryDirectory[str]:
     root = CONFIG_ROOT / ".tmp"
     root.mkdir(exist_ok=True)
     return tempfile.TemporaryDirectory(dir=root)
+
+
+def materialize_exploration_source_fixture(
+    campaign: dict[str, object], artifact_root: Path
+) -> None:
+    """Bind an exploration copy to self-contained, manifest-frozen evidence.
+
+    Public exploration tests must exercise the same source-evidence resolver as
+    a real campaign, but CI deliberately does not carry the large external run
+    artifacts referenced by the registered campaign.  This fixture supplies a
+    minimal, internally consistent upstream run under the managed artifacts
+    workspace instead of weakening that resolver boundary.
+    """
+    source = campaign["experiments"]["shared"]["source"]
+    run_id = "20260901_000000__sim__simion__source-fixture__n5000"
+    run = artifact_root / "projects" / "rf_octupole_ion_optics" / "runs" / run_id
+    inputs = run / "inputs"
+    results = run / "results"
+    inputs.mkdir(parents=True)
+    results.mkdir(parents=True)
+
+    particle_source = inputs / "particle_source.csv"
+    particle_source.write_text(
+        "particle_id\n" + "".join(f"{particle_id}\n" for particle_id in range(1, 5001)),
+        encoding="utf-8",
+    )
+    metadata = inputs / "particle_source_metadata.json"
+    write_json(metadata, {"role": "fixture_particle_source_metadata"})
+    state = results / "particle_states__handoff.csv"
+    state.write_text(
+        "particle_id,event,status,axial_z_mm,transverse_x_mm,transverse_y_mm,"
+        "velocity_axial_m_s,velocity_x_m_s,velocity_y_m_s,time_us,kinetic_energy_eV\n"
+        + "".join(
+            f"{particle_id},handoff,transmitted,80.6,0,0,4308,0,0,41,10\n"
+            for particle_id in range(1, 5001)
+        ),
+        encoding="utf-8",
+    )
+
+    design = load(
+        REPO_ROOT / "projects" / "rf_octupole_ion_optics" / "config"
+        / "resolved_design_no_acceleration_full_length.json"
+    )
+    design.update({
+        "terminal_composition": {
+            "composer": "common.multipole.downstream_terminal.compose_downstream_terminal",
+            "base_resolved_sha256": "A" * 64,
+            "terminal_profile_sha256": "B" * 64,
+        },
+        "downstream_terminal": {
+            "terminal_profile_id": "oatof_shield_terminal",
+            "owner": "downstream",
+            "surface_role": "aperture_outer_tangent_plane",
+            "surface_plane_z_mm": 80.6,
+            "rod_end_clearance_mm": 1.0,
+            "upstream_enclosure_end_plane_z_mm": 82.1,
+            "upstream_enclosure_to_terminal_clearance_mm": 0.0,
+            "electrode_thickness_mm": 0.5,
+            "electrode_outer_shape": "rectangular",
+            "electrode_outer_width_mm": 40.0,
+            "electrode_outer_height_mm": 40.0,
+            "aperture": {
+                "shape": "rectangular", "width_mm": 1.0, "height_mm": 1.0,
+                "width_axis": "multipole_x", "height_axis": "multipole_y",
+            },
+            "terminal_potential_V": 0.0,
+            "upstream_terminal_electrode_present": False,
+        },
+        "axial_dc": {
+            "rod_electrodes": [{"electrode_id": 1, "potential_V": 0.0}],
+            "upstream_shield_potential_V": 0.0,
+            "entrance_plate_potential_V": 0.0,
+            "entrance_reference_sleeve": {
+                "profile_id": "source_reference_sleeve_v1",
+                "role": "functional_source_reference_not_shield",
+                "potential_V": 0.0,
+                "inner_radius_mm": 1.0,
+                "outer_radius_mm": 1.5,
+                "upstream_face_z_mm": -2.0,
+                "downstream_face_z_mm": -1.0,
+                "minimum_insulation_gap_mm": 0.1,
+            },
+            "terminal_electrode_potential_V": 0.0,
+        },
+    })
+    design["resolved_sha256"] = resolved_design_sha256(design)
+    resolved_design = inputs / "multipole_resolved_design.json"
+    write_json(resolved_design, design)
+    run_config = inputs / "run_config.json"
+    write_json(run_config, {"parameters": {"design_profile_id": "fixture"}})
+    candidate = inputs / "three_zone_candidate.json"
+    candidate_file = {"path": "fixture.json", "bytes": 1, "sha256": "D" * 64}
+    write_json(candidate, {
+        "schema_version": 1, "role": "oatof_three_zone_simion_candidate_resolved",
+        "project_id": "single_reflection_oa_tof_mass_analyzer",
+        "qualification": "CANDIDATE_ONLY",
+        "compiler_mode": "IDEAL_ACCEPTANCE_300MM_GRID_REALIZED_V1",
+        "campaign": {"campaign_id": "fixture", "file": candidate_file},
+        "ideal_acceptance_evidence": {
+            "configuration": candidate_file, "run_manifest": candidate_file,
+            "selected_result": candidate_file, "selected_design_id": "fixture",
+            "full_width_mm": 4.0, "total_acceleration_length_mm": 300.0,
+        },
+        "source_identity": {
+            "authority": "ideal_acceptance.selected_point", "campaign_id": "fixture",
+            "campaign_sha256": "D" * 64,
+            "frozen_source": {
+                "mass_to_charge_th": 100.0, "charge_sign": 1,
+                "center_x_mm": 3.5, "center_velocity_m_per_s": 0.0,
+                "velocity_slope_m_per_s_per_mm": 1.0,
+                "nominal_energy_per_charge_v": 2000.0,
+            },
+        },
+        "identities": {
+            "topology_id": "three_zone_accelerator_ideal_v1",
+            "geometry_id": "three_zone_focus_origin_planes_v1",
+            "field_id": "three_zone_piecewise_uniform_ideal_field_v1",
+        },
+        "accelerator_topology": {
+            "topology_id": "three_zone_accelerator_ideal_v1",
+            "planes_global_z_mm": {
+                "repeller": -342.74261546154855, "intermediate1": -335.74261546154855,
+                "intermediate2": -279.64261546154853, "exit": -42.742615461548496,
+            },
+            "potentials_v": {"repeller": 2140.0, "intermediate1": 1860.0, "intermediate2": 372.96685170832035, "exit": 0.0},
+        },
+        "accelerator_physics": {
+            "lengths_mm": {"d1": 7.0, "d2": 56.1, "d3": 236.9},
+            "fields_v_per_mm": {"e1": 40.0, "e2": 26.5068297378196, "e3": 1.5743640848810483},
+            "focus_drift_after_exit_mm": 42.742615461548496,
+        },
+        "reflectron": {"u_r1_v": 1714.19374978549, "f_r2_v_per_mm": 8.713805465160904},
+        "claim_limit": "self-contained test fixture",
+        "numerical_grid_realization": {
+            "axial_grid_z_mm": 0.1, "zone_lengths_mm": {"d1": 7.0, "d2": 56.1, "d3": 236.9},
+            "scaled_focus_equation_residual_ns": [0.0, 0.0, 0.0],
+            "method": "three_zone_a1_a2_a3_root_on_grid_realized_lengths_v1",
+        },
+    })
+
+    def record(path: Path) -> dict[str, str]:
+        return {
+            "path": path.relative_to(REPO_ROOT.parent).as_posix(),
+            "sha256": hashlib.sha256(path.read_bytes()).hexdigest().upper(),
+        }
+
+    def manifest_record(path: Path) -> dict[str, str]:
+        return {"path": str(path.resolve()), "sha256": record(path)["sha256"]}
+
+    manifest = {
+        "role": "simulation_run_manifest", "status": "success", "run_id": run_id,
+        "project": "rf_octupole_ion_optics", "software": ["SIMION 2020"],
+        "inputs": {
+            "particle_source": {**manifest_record(particle_source), "exists": True},
+            "particle_source_metadata": {**manifest_record(metadata), "exists": True},
+            "multipole_resolved_design": {**manifest_record(resolved_design), "exists": True},
+        },
+        "outputs": [{**manifest_record(state), "exists": True}],
+        "run_config": {**manifest_record(run_config), "exists": True},
+    }
+    manifest_path = run / "run_manifest.json"
+    write_json(manifest_path, manifest)
+    source.update({
+        "run_id": run_id,
+        "launched_particle_count": 5000,
+        "manifest": record(manifest_path),
+        "state": record(state),
+        "particle_source": record(particle_source),
+        "metadata": record(metadata),
+    })
+    campaign["experiments"]["shared"]["single_flight_three_zone_candidate"] = record(candidate)
 
 
 def use_current_time_grid_profile(campaign: dict[str, object]) -> None:
@@ -2119,17 +2291,22 @@ Write-Output 'RECOVERY_CHAIN=PASS'
             "trajectory_quality": 17,
             "rf_steps_per_period": 73,
         }
-        row = expand_flat_experiment_authoring(campaign)["experiments"][0]
         execution_run_id = (
             "20260830_220000__sim__cross__exploration-contract-check__n5000"
         )
         with temporary_config_directory() as directory:
             root = Path(directory)
-            artifact_root = REPO_ROOT.parent / "artifacts" / "projects" / INTEGRATION_ID
-            artifact_root.mkdir(parents=True, exist_ok=True)
             campaign_path = root / "exploration_campaign.json"
+            artifact_workspace = REPO_ROOT.parent / "artifacts"
+            artifact_workspace.mkdir(parents=True, exist_ok=True)
+            output_workspace = artifact_workspace / "projects" / INTEGRATION_ID
+            output_workspace.mkdir(parents=True, exist_ok=True)
+            fixture_directory = tempfile.TemporaryDirectory(dir=artifact_workspace)
+            self.addCleanup(fixture_directory.cleanup)
+            materialize_exploration_source_fixture(campaign, Path(fixture_directory.name))
+            row = expand_flat_experiment_authoring(campaign)["experiments"][0]
             write_json(campaign_path, campaign)
-            with tempfile.TemporaryDirectory(dir=artifact_root) as output_directory:
+            with tempfile.TemporaryDirectory(dir=output_workspace) as output_directory:
                 output = Path(output_directory)
                 resolved, plan = prepare_family_source_closure(
                     repo_root=REPO_ROOT,
@@ -2321,11 +2498,16 @@ if ($runtime.contracts.resolved_source_contract -ne '{resolved_source}') {{
             validate_active_post_pulse_restart_working_point(experiment)
 
     def test_public_exploration_validate_only_accepts_unregistered_campaign(self) -> None:
-        campaign = load(COMPACT_GAP_FIELD_CAMPAIGN)
+        campaign = load(CURRENT_PRE_PULSE_EXPLORATION_CAMPAIGN)
         campaign["status"] = "exploration"
         experiment_id = campaign["experiments"]["rows"][0]["experiment_id"]
         with temporary_config_directory() as directory:
             campaign_path = Path(directory) / "exploration_campaign.json"
+            artifact_workspace = REPO_ROOT.parent / "artifacts"
+            artifact_workspace.mkdir(parents=True, exist_ok=True)
+            fixture_directory = tempfile.TemporaryDirectory(dir=artifact_workspace)
+            self.addCleanup(fixture_directory.cleanup)
+            materialize_exploration_source_fixture(campaign, Path(fixture_directory.name))
             write_json(campaign_path, campaign)
             result = subprocess.run(
                 [

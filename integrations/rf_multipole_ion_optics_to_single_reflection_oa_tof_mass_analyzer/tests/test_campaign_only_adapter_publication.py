@@ -722,7 +722,13 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
                 ["pwsh", "-NoProfile", "-Command", command], cwd=REPO_ROOT,
                 check=True, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120,
             )
-            self.assertIn(str(first_entry), recovered.stdout)
+            # PowerShell can emit an 8.3 spelling (for example RUNNER~1) for
+            # a path that Python created with its canonical long component.
+            # The recovery contract is the selected generation, not a lexical
+            # Windows path representation.
+            self.assertEqual(
+                Path(recovered.stdout.strip()).resolve(), first_entry.resolve()
+            )
             self.assertTrue(second_entry.is_dir())
 
     def test_materialized_cache_copy_is_writable_without_mutating_source(self) -> None:
