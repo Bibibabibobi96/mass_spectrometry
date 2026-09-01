@@ -1354,6 +1354,14 @@ function segment.initialize_run()
       electrode_plan=single_flight_project_electrode_plan(),planes_z_mm={accelerator_planes_lua}}}
     local initial={{}}
 {rf_static_apply}
+    -- PA+ projection runs before SIMION creates the first ion.  Preserve RF's
+    -- static source values above, and seed any remaining physical electrodes
+    -- so every compact PA+ mode receives a complete source vector.  The first
+    -- normal fast-adjust callback replaces this neutral seed with the frozen
+    -- pulse/RF state for the ion's actual instrument time.
+    for _,physical_id in ipairs({_lua_value(dynamic_basis_electrode_ids)}) do
+      if initial[physical_id]==nil then initial[physical_id]=0 end
+    end
     initial[{int(electrodes['grounded_shield_id'])}]=0
     for _,item in ipairs(single_flight_analyzer.accelerator_electrode_write_plan('off',
         {initial_voltage_lua})) do initial[item.electrode_id]=item.voltage_v end

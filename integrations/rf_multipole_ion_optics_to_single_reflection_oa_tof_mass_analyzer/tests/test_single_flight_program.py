@@ -419,6 +419,10 @@ class SingleFlightProgramTests(unittest.TestCase):
             "for _,physical_id in ipairs({1,2,3,4,5,6,7,8,10,11,12,13,14,15,16,17,18,19,20}) do",
             program,
         )
+        self.assertIn(
+            "if initial[physical_id]==nil then initial[physical_id]=0 end",
+            program,
+        )
         self.assertNotIn("ipairs({1,2,3,4,5,6,7,8,9,10", program)
         self.assertIn("adjustable V_intermediate2=1450", program)
         self.assertIn(
