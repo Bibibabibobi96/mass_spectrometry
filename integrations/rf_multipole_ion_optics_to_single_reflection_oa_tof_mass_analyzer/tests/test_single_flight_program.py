@@ -302,6 +302,18 @@ class SingleFlightProgramTests(unittest.TestCase):
         self.assertIn('pre_pulse_active_roles={"coarse_frontend","upstream_bridge","accelerator"}', program)
         self.assertIn('upstream_bridge="upstream_bridge.pa0"', program)
         self.assertIn("single_flight_pre_pulse_accelerator_zero_field==0 and #single_flight_pa_plus_modes==0", program)
+        domain["pa_plus_solution_model"] = None
+        zero_field_without_pa_plus_metadata = build_successor_program(
+            upstream, frontend, oatof, region, birth_times_us=[0.25],
+            analyzer_component_source=ANALYZER_COMPONENT_SOURCE,
+            pulse_hook_source=PULSE_HOOK_SOURCE,
+            frontend_hook_source=FRONTEND_HOOK_SOURCE,
+            rf_drive_kernel_source=RF_DRIVE_KERNEL_SOURCE,
+            pre_pulse_time_series_contract=screening,
+            intermediate_overlay=intermediate, domain_split=domain,
+        )
+        self.assertIn("single_flight_pa_plus_modes={}", zero_field_without_pa_plus_metadata)
+        domain["pa_plus_solution_model"] = _pa_plus_model()
         full_flight_program = build_successor_program(
             upstream, frontend, oatof, region, birth_times_us=[0.25],
             analyzer_component_source=ANALYZER_COMPONENT_SOURCE,

@@ -775,6 +775,17 @@ def build_successor_program(
         )["basis_electrode_ids"]
         if int(electrode_id) not in {0, grounded_shield_id}
     ]
+    # The pre-pulse entrance zone is intentionally geometry-only: its
+    # accelerator-main contract retains the reusable PA+ model as metadata,
+    # but sets it to null because no accelerator field is loaded.  Do not
+    # dereference or wire PA+ modes in this legitimate zero-field phase.
+    pa_plus_model = (
+        None
+        if pre_pulse_accelerator_zero_field
+        else domain_split.get("pa_plus_solution_model")
+        if domain_split is not None
+        else None
+    )
     pa_plus_modes = [
         {
             "mode_id": int(mode["mode_id"]),
@@ -783,11 +794,7 @@ def build_successor_program(
                 for electrode_id, coefficient in mode["physical_electrode_coefficients"].items()
             ],
         }
-        for mode in (
-            domain_split.get("pa_plus_solution_model", {}).get("modes", [])
-            if domain_split is not None
-            else []
-        )
+        for mode in (pa_plus_model or {}).get("modes", [])
     ]
     pa_plus_modes_lua = _lua_value(pa_plus_modes)
     pre_pulse_compact_iob = pre_pulse_entry_geometry

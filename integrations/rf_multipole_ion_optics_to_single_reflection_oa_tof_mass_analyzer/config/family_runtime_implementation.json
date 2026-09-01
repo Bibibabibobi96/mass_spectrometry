@@ -81,7 +81,7 @@
     },
     "single_flight_program_builder": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/build_single_flight_program.py",
-      "sha256": "6F269BED0C6630A62F0A3F6647A56B30326910ACF3D3906C294D6985975B87B5"
+      "sha256": "DDC6573407E5E929096A3904E6FCC34CFFD1E5C3CFACDE00D67AD246A8AFF223"
     },
     "single_flight_pre_pulse_time_series_materializer": {
       "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/materialize_pre_pulse_time_series.py",
