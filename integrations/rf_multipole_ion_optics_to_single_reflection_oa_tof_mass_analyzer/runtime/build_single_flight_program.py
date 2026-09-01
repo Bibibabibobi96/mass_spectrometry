@@ -829,7 +829,7 @@ def build_successor_program(
                 {
                     "role": "accelerator_entrance_aperture_local",
                     "instance_index": 5 if reduced_post_accelerator_iob else 6,
-                    "filename": "accelerator_entrance_local.pa#",
+                    "filename": "accelerator_entrance_local.pa0",
                     "origin_mm": accelerator_entrance_local["instance_origin_mm"],
                     "bounds_mm": accelerator_entrance_local["active_bounds_mm"],
                 }
@@ -898,9 +898,7 @@ def build_successor_program(
         else ["accelerator", *overlay_roles]
     )
     domain_accelerator_filename = (
-        "accelerator_main.pa#"
-        if domain_split is not None and accelerator_entrance_local is not None
-        else "accelerator_main.pa0"
+        "accelerator_main.pa0"
         if domain_split is not None
         else "accelerator.pa0"
     )
