@@ -551,6 +551,28 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             execution_profile["frontend_cell_mm_xyz"],
         )
 
+    def test_dispatch_plan_scopes_profile_to_requested_workbench_topology(self) -> None:
+        profile = {
+            "resource_identity": {
+                "solver": "SIMION", "field_kind": "rf",
+                "rf_steps_per_period": 64,
+                "time_integration_profile_id": "dt64",
+                "workload_topology_id": "full_flight_7_instance_iob_v1",
+            },
+            "per_batch_peak_working_set_bytes": 10,
+        }
+        plan = resolve_single_flight_dispatch_plan(
+            {"single_flight_time_integration_profile_id": "dt64"},
+            execution_particle_count=8, rf_steps_per_period=64,
+            resource_profiles=[profile],
+            workload_topology_id="pre_pulse_minimal_3_instance_iob_v1",
+        )
+        self.assertEqual(plan["estimation"]["kind"], "formal_first_batch_observation")
+        self.assertEqual(
+            plan["resource_identity"]["workload_topology_id"],
+            "pre_pulse_minimal_3_instance_iob_v1",
+        )
+
     def test_flat_authoring_expands_shared_controls_and_gap_rows(self) -> None:
         authored = {
             "experiments": {

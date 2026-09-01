@@ -243,6 +243,14 @@ class ResourceSchedulerTests(unittest.TestCase):
         )
         self.assertEqual(plan["estimation"]["kind"], "formal_first_batch_observation")
 
+    def test_profile_requires_exact_workbench_topology(self) -> None:
+        plan = plan_simion_dispatch(
+            self.request(workload_topology_id="pre_pulse_minimal_3_instance_iob_v1"),
+            [self.profile()], available_memory_bytes=10_000,
+            total_physical_memory_bytes=20_000,
+        )
+        self.assertEqual(plan["estimation"]["kind"], "formal_first_batch_observation")
+
     def test_project_resource_controls_are_rejected(self) -> None:
         for key in (
             "maximum_parallel_batches", "reserve_available_memory_bytes",

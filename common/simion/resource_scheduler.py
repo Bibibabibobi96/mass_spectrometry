@@ -58,6 +58,10 @@ RESOURCE_IDENTITY_KEYS = (
     "trajectory_quality", "rf_steps_per_period", "accelerator_field_profile_id",
     "frontend_pa0_sha256", "accelerator_overlay_pa0_sha256",
     "reflectron_pa0_sha256", "case_input_sha256",
+    # An identical numerical mesh can load radically different PA sets. Keep
+    # observations scoped to the actual Workbench topology so a seven-instance
+    # full-flight peak never limits a minimal pre-pulse IOB.
+    "workload_topology_id",
 )
 
 RETIRED_PROJECT_RESOURCE_KEYS = frozenset({

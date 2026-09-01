@@ -383,6 +383,7 @@ def resolve_single_flight_dispatch_plan(
     rf_steps_per_period: int | None = None,
     execution_profile: dict[str, Any] | None = None,
     resource_profiles: list[dict[str, Any]] | None = None,
+    workload_topology_id: str | None = None,
 ) -> dict[str, Any]:
     """Resolve execution-only dispatch without deriving the governed population.
 
@@ -422,6 +423,7 @@ def resolve_single_flight_dispatch_plan(
             "accelerator_field_profile_id": experiment.get(
                 "single_flight_accelerator_field_profile_id"
             ),
+            "workload_topology_id": workload_topology_id,
         }
         if execution_profile is not None:
             request.update({
@@ -3382,6 +3384,18 @@ def prepare_family_source_closure(
         else evidence["particle_count"]
     )
     if execution_strategy == "simion_single_flight":
+        # A PA topology is a resource property, not a scientific control. The
+        # shared scheduler must not reuse a full-flight peak for the minimal
+        # three-instance detector-blind pre-pulse IOB (or vice versa).
+        workload_topology_id = (
+            "pre_pulse_minimal_3_instance_iob_v1"
+            if pre_pulse_time_series_specification is not None
+            else "post_pulse_5_instance_iob_v1"
+            if source_release_mode == "pre_pulse_restart"
+            else "axis_field_export_5_instance_iob_v1"
+            if single_flight_execution_mode == "program_axis_field_export"
+            else "full_flight_7_instance_iob_v1"
+        )
         resource_profiles = discover_resource_profiles(
             workspace / "artifacts" / "projects" / INTEGRATION_ID / "runs"
         )
@@ -3393,6 +3407,7 @@ def prepare_family_source_closure(
             ),
             execution_profile=execution_profile,
             resource_profiles=resource_profiles,
+            workload_topology_id=workload_topology_id,
         )
     else:
         single_flight_dispatch_plan = None
