@@ -762,12 +762,19 @@ def build_successor_program(
             }
         )
     analyzer_config = _successor_analyzer_config(oatof, frontend, region_field_contract)
-    # The PA basis namespace is derived from the frozen frontend contract.  It
-    # is shared by accelerator_main and its entrance-local replacement; zero
-    # is the grounded default and therefore has no dynamic fast-adjust entry.
-    dynamic_basis_electrode_ids = resolve_frontend_electrode_topology(
-        frontend["electrodes"]
-    )["basis_electrode_ids"][1:]
+    # The PA basis namespace is derived from the frozen frontend contract and
+    # shared by accelerator_main and its entrance-local replacement.  Basis
+    # zero is SIMION's non-electrode background and the grounded shield is a
+    # fixed zero-volt boundary; every *other* physical electrode, including
+    # RF rod 1, must remain present for the PA+ projection source table.
+    grounded_shield_id = int(frontend["electrodes"]["grounded_shield_id"])
+    dynamic_basis_electrode_ids = [
+        int(electrode_id)
+        for electrode_id in resolve_frontend_electrode_topology(
+            frontend["electrodes"]
+        )["basis_electrode_ids"]
+        if int(electrode_id) not in {0, grounded_shield_id}
+    ]
     pa_plus_modes = [
         {
             "mode_id": int(mode["mode_id"]),

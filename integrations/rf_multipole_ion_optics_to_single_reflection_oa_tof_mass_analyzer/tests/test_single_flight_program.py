@@ -415,6 +415,11 @@ class SingleFlightProgramTests(unittest.TestCase):
         self.assertNotIn("accelerator_intermediate_overlay=6", program)
         self.assertIn("detector=7", program)
         self.assertIn("single_flight_active_field_instances={1,2,3,6}", program)
+        self.assertIn(
+            "for _,physical_id in ipairs({1,2,3,4,5,6,7,8,10,11,12,13,14,15,16,17,18,19,20}) do",
+            program,
+        )
+        self.assertNotIn("ipairs({1,2,3,4,5,6,7,8,9,10", program)
         self.assertIn("adjustable V_intermediate2=1450", program)
         self.assertIn(
             "single_flight_frontend.apply_at(single_flight_instrument_time_us(),single_flight_set_electrode)",
@@ -849,7 +854,7 @@ class SingleFlightProgramTests(unittest.TestCase):
         self.assertIn("assert(#simion.wb.instances==5", main_only_exporter)
         self.assertIn("local overlay_specs={}", main_only_exporter)
         self.assertIn(
-            "local ai_values=pa_adjustments({1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20})",
+            "local ai_values=pa_adjustments({1,2,3,4,5,6,7,8,10,11,12,13,14,15,16,17,18,19,20})",
             main_only_exporter,
         )
         self.assertNotIn("missing electrode 21", main_only_exporter)
