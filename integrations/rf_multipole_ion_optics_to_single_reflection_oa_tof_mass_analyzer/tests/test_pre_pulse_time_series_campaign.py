@@ -387,7 +387,7 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
             layout_profile={"topology_id": "three_zone_accelerator_ideal_v1", "geometry_id": "three_zone_focus_origin_planes_v1", "frontend_electrode_topology_id": "three_zone_frontend_v1"},
             selected_field_profile={"field_id": "three_zone_refined_pa_field_v1"},
             region_field_semantic_sha256="E" * 64, rf_steps_per_period=160,
-            specification={"mode": "real_pa_rf_pre_pulse_time_series", "active_scope": "pre_pulse_frontend_accelerator", "time_grid_profile_id": "ballistic_seed_rf160_single_snapshot_v1", "relative_start_index": 0, "relative_end_index": 0, "rf_steps_per_period": 160, "sample_count": 1, "spatial_window_profile_id": "layout_resolved_axial_provisional_xy2_v1", "pulse_disabled": True, "terminate_at_window_end": True, "resolution_claim_allowed": False, "prohibited_outputs": ["detector_crossing", "resolution_metrics", "single_flight_spatial_six_panel"]},
+            specification={"mode": "real_pa_rf_pre_pulse_time_series", "active_scope": "pre_pulse_frontend_accelerator", "time_grid_profile_id": "ballistic_seed_rf160_forward_period_v1", "relative_start_index": 0, "relative_end_index": 240, "rf_steps_per_period": 160, "sample_stride_rf_steps": 40, "sample_count": 7, "spatial_window_profile_id": "layout_resolved_axial_provisional_xy2_v1", "pulse_disabled": True, "terminate_at_window_end": True, "resolution_claim_allowed": False, "prohibited_outputs": ["detector_crossing", "resolution_metrics", "single_flight_spatial_six_panel"]},
             base_schedule={"pulse_effective_time_us": 45.4167939656417},
             execution_profile={"accelerator_overlay_layout": "two_local_v1"},
             resolved_connection={"connector": {"length_mm": 102.4}},
@@ -396,6 +396,8 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
         self.assertEqual(contract["pa_cache_roles"]["required"], [
             "fine_upstream", "accelerator_entrance_zone_collision",
         ])
+        self.assertEqual(contract["rf_time_grid"]["sample_stride_rf_steps"], 40)
+        self.assertEqual(contract["rf_time_grid"]["sample_count"], 7)
         validate_schema(contract, SCHEMA_DIR / "rf_oatof_pre_pulse_time_series_screening_contract.schema.json")
 
     def test_screening_schema_closes_version_to_pa_authority_and_grid(self) -> None:

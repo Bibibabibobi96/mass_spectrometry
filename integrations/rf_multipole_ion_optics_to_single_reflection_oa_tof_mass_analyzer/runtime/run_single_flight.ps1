@@ -3027,6 +3027,11 @@ try {
       throw 'Pre-pulse time-series RF step count must be positive.'
     }
     $stepUs = $periodUs / [double]$gridRfStepsPerPeriod
+    $sampleStrideRfSteps = if ($null -eq $rfGrid.sample_stride_rf_steps) {
+      1
+    } else {
+      [int]$rfGrid.sample_stride_rf_steps
+    }
     $startIndex = [int]$rfGrid.start_index
     $endIndex = [int]$rfGrid.end_index
     if ([string]$rfGrid.waveform -ne [string]$upstreamDocument.drive.waveform -or
@@ -3035,13 +3040,14 @@ try {
         $rfStepsPerPeriod -ne $gridRfStepsPerPeriod -or
         [Math]::Abs([double]$rfGrid.period_us - $periodUs) -gt 1e-12 -or
         [Math]::Abs([double]$rfGrid.step_us - $stepUs) -gt 1e-12 -or
+        $sampleStrideRfSteps -lt 1 -or
         $startIndex -lt 0 -or $endIndex -lt $startIndex -or
         $sampleTimes.Count -ne ($endIndex - $startIndex + 1)) {
       throw 'Pre-pulse time-series native solver time-grid identity differs.'
     }
     for ($index = 0; $index -lt $sampleTimes.Count; $index++) {
       $expectedTime = [double]$rfGrid.grid_origin_us +
-        ($startIndex + $index) * $stepUs
+        ($startIndex + $index * $sampleStrideRfSteps) * $stepUs
       if ([Math]::Abs($sampleTimes[$index] - $expectedTime) -gt
           (1e-12 * [Math]::Max(1.0,[Math]::Abs($expectedTime)))) {
         throw 'Pre-pulse time-series sample time differs from the frozen native solver grid.'

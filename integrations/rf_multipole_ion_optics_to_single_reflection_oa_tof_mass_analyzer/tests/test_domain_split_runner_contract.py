@@ -83,6 +83,10 @@ class DomainSplitRunnerContractTests(unittest.TestCase):
         self.assertIn("field_mode='zero'; refine=$false", self.source)
         self.assertIn("pre_pulse_iob_omitted_roles", self.source)
 
+    def test_pre_pulse_native_grid_honors_the_frozen_sampling_stride(self) -> None:
+        self.assertIn("$sampleStrideRfSteps = if ($null -eq $rfGrid.sample_stride_rf_steps)", self.source)
+        self.assertIn("$index * $sampleStrideRfSteps", self.source)
+
     def test_zero_field_entrance_contract_requires_refinement_to_be_prohibited(self) -> None:
         self.assertIn(
             "-not [bool]$entranceZoneGeometry.boundary_condition.direct_refinement_prohibited",

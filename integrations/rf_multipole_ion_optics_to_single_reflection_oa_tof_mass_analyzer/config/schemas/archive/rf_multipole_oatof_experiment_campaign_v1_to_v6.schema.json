@@ -465,6 +465,7 @@
         "relative_start_index": {"type": "integer"},
         "relative_end_index": {"type": "integer"},
         "rf_steps_per_period": {"type": "integer", "minimum": 1},
+        "sample_stride_rf_steps": {"type": "integer", "minimum": 1},
         "expected_upstream_frequency_hz": {"type": "number", "exclusiveMinimum": 0},
         "sample_count": {"type": "integer", "minimum": 1},
         "spatial_window_profile_id": {"$ref": "#/$defs/id"},

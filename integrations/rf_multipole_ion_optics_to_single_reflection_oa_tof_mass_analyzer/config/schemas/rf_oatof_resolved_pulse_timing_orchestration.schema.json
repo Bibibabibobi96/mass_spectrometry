@@ -26,7 +26,8 @@
     "time_grid_profile_id": {
       "enum": [
         "ballistic_seed_native_dt_minus0p35_plus1p65_v1",
-        "ballistic_seed_rf40_single_snapshot_v1"
+        "ballistic_seed_rf40_single_snapshot_v1",
+        "ballistic_seed_rf40_forward_60_periods_v1"
       ]
     },
     "spatial_window_profile_id": {"$ref": "#/$defs/id"},

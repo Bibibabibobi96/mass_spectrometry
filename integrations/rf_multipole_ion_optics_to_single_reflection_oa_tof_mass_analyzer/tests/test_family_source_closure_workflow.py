@@ -1544,6 +1544,13 @@ $result = Get-PulseTimingOrchestration `
         )
         source = entry.read_text(encoding="utf-8")
         self.assertIn("Preserve that negative result for audit and", source)
+        self.assertNotIn(
+            "Remove-Item -LiteralPath $unpublishedDiscoveryRoot", source
+        )
+        self.assertIn(
+            "if ($cleanupOutput -and (Test-Path -LiteralPath $outputRoot))",
+            source,
+        )
 
     def test_finalize_only_accepts_an_explicit_dynamic_parent_run_id(self) -> None:
         entry = (
@@ -1561,13 +1568,6 @@ $result = Get-PulseTimingOrchestration `
         self.assertIn("pre-pulse-selection-replay-source-parent-manifest", adapter)
         self.assertIn("pre_pulse_time_series_contract_filename", adapter)
         self.assertIn("__analysis__python__pre-pulse-selection-replay__n", adapter)
-        self.assertNotIn(
-            "Remove-Item -LiteralPath $unpublishedDiscoveryRoot", source
-        )
-        self.assertIn(
-            "if ($cleanupOutput -and (Test-Path -LiteralPath $outputRoot))",
-            source,
-        )
 
     def test_terminal_interruption_can_create_a_distinct_recovery_identity(self) -> None:
         """An external stop is terminal evidence, not an immutable retry dead end."""

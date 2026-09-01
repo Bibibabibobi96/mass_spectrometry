@@ -464,7 +464,7 @@ def validate_pre_pulse_time_series_campaign(campaign: dict[str, Any]) -> None:
     required_claim = (
         "DETECTOR_BLIND_SOURCE_ONLY" if is_single_snapshot else "FUNCTIONAL_ONLY"
     )
-    if not rows or (not is_single_snapshot and len(rows) != 1):
+    if not rows:
         raise ContractError("pre-pulse time-series campaign scope differs")
     if required_claim not in campaign["claim_limit"]:
         warnings.warn(
@@ -547,7 +547,11 @@ def validate_pre_pulse_time_series_campaign(campaign: dict[str, Any]) -> None:
             != (source.get("launched_particle_count") if is_terminal_handoff_population
                 else execution.get("particle_count"))
             or contract["sample_count"]
-            != contract["relative_end_index"] - contract["relative_start_index"] + 1
+            != (
+                (contract["relative_end_index"] - contract["relative_start_index"])
+                // int(contract.get("sample_stride_rf_steps", 1))
+                + 1
+            )
         ):
             raise ContractError("pre-pulse time-series source, population, or grid differs")
 
@@ -582,6 +586,13 @@ def compile_pre_pulse_time_series_contract(
     step_us = period_us / rf_steps_per_period
     relative_start = int(specification["relative_start_index"])
     relative_end = int(specification["relative_end_index"])
+    sample_stride = int(specification.get("sample_stride_rf_steps", 1))
+    if (
+        sample_stride < 1
+        or relative_end < relative_start
+        or (relative_end - relative_start) % sample_stride != 0
+    ):
+        raise ContractError("pre-pulse time-series RF sampling stride differs")
     automatic = base_schedule is not None
     seed_time_us = float(
         base_schedule["pulse_effective_time_us"]
@@ -589,8 +600,11 @@ def compile_pre_pulse_time_series_contract(
         else specification["anchor_time_us"]
     )
     grid_origin_us = seed_time_us + relative_start * step_us
-    sample_count = relative_end - relative_start + 1
-    sample_times_us = [grid_origin_us + index * step_us for index in range(sample_count)]
+    sample_count = (relative_end - relative_start) // sample_stride + 1
+    sample_times_us = [
+        grid_origin_us + index * sample_stride * step_us
+        for index in range(sample_count)
+    ]
     if (
         sample_count != specification["sample_count"]
         or not math.isclose(sample_times_us[-1], seed_time_us + relative_end * step_us,
@@ -679,6 +693,7 @@ def compile_pre_pulse_time_series_contract(
             "phase_rad": float(drive["phase_rad"]),
             "rf_steps_per_period": rf_steps_per_period,
             "period_us": period_us, "step_us": step_us,
+            "sample_stride_rf_steps": sample_stride,
             **(
                 {
                     "time_grid_profile_id": specification["time_grid_profile_id"],
