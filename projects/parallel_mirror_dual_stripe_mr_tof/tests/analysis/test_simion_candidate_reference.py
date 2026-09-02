@@ -88,7 +88,7 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         self.assertIn("e(22) { box3D(-30,-310,-41.6,30,-250,-39.6) }", gem)
         self.assertIn("notin { box3D(-8,-310,-20,8,-250,20) }", gem)
         self.assertIn("Preserve a 16 mm centred x-channel", gem)
-        self.assertIn("Five CAD-envelope mirror stages with an aligned 50 mm injection slot", gem)
+        self.assertIn("Five CAD-envelope mirror stages with an aligned 90 mm Candidate beam slot", gem)
         self.assertIn("focus_phase_z = 0.12918680341102168", gem)
         self.assertIn("extrude_yz(-12,12)", gem)
         self.assertIn("Foil-3 is shifted by 50 mm and Foil-1 by 90 mm", gem)
