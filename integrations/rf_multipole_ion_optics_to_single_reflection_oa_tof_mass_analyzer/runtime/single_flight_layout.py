@@ -7,6 +7,7 @@ import csv
 import json
 import math
 import statistics
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -1025,6 +1026,200 @@ def select_detector_blind_real_field_pulse_time(
         "selection_uses_detector_outcome": False,
         "detector_results_used": False,
         "ballistic_seed_time_us": seed,
+        "source_region_bounds": bounds,
+        "population_denominator_count": len(expected_ids),
+        "selected_time_us": float(candidates[0]["candidate_time_us"]),
+        "candidates_ranked": candidates,
+    }
+
+
+def _natural_archive_ids(mask: int, particle_ids: list[int]) -> list[int]:
+    """Expand a compact frozen-cohort membership mask in source-ID order."""
+    return [
+        particle_id
+        for offset, particle_id in enumerate(particle_ids)
+        if mask & (1 << offset)
+    ]
+
+
+def select_detector_blind_natural_archive_pulse_time(
+    rows: Iterable[dict[str, str]],
+    geometry: dict[str, Any],
+    source_region_profile: dict[str, Any],
+    *,
+    frozen_particle_ids: list[int],
+    ballistic_seed_time_us: float,
+    grid_origin_us: float,
+    grid_step_us: float,
+) -> dict[str, Any]:
+    """Rank a natural trajectory archive without retaining every CSV row.
+
+    The archive is emitted particle-major, whereas pulse ranking is sample-major.
+    Retaining row dictionaries therefore scales with every RF time step.  This
+    path keeps only per-sample moments and compact membership masks; raw states
+    remain immutable in the archive and are reread later for the selected
+    handoff state.
+    """
+    bounds = resolve_source_region_bounds(geometry, source_region_profile)
+    expected_ids = [int(value) for value in frozen_particle_ids]
+    if (
+        not expected_ids
+        or expected_ids != sorted(expected_ids)
+        or len(set(expected_ids)) != len(expected_ids)
+        or any(value <= 0 for value in expected_ids)
+    ):
+        raise ContractError("real-field pulse frozen particle IDs are invalid")
+    if not all(math.isfinite(value) for value in (
+        float(ballistic_seed_time_us), float(grid_origin_us), float(grid_step_us)
+    )) or grid_step_us <= 0.0:
+        raise ContractError("real-field pulse natural archive grid is invalid")
+
+    dimensions = geometry.get("geometry_mm", {})
+    coordinate = geometry.get("coordinate_convention", {})
+    repeller_z = float(dimensions["accelerator_repeller_z"])
+    grid1_z = float(dimensions["accelerator_grid1_z"])
+    bore_half = float(dimensions["accelerator_bore_half"])
+    axis_x = float(coordinate["accelerator_axis_x"])
+    axis_y = float(coordinate.get("accelerator_axis_y", 0.0))
+    if not (
+        all(math.isfinite(value) for value in (repeller_z, grid1_z, bore_half, axis_x, axis_y))
+        and repeller_z < grid1_z and bore_half > 0.0
+    ):
+        raise ContractError("real-field pulse accelerator acceptance geometry is invalid")
+
+    by_id_offset = {particle_id: offset for offset, particle_id in enumerate(expected_ids)}
+    full_mask = (1 << len(expected_ids)) - 1
+    # index -> [alive, bore, eligible, source, count, sums, sumsquares,
+    #             actual_min, actual_max, maximum_error]
+    samples: dict[int, dict[str, Any]] = {}
+    last_index_by_id: dict[int, int] = {}
+    row_count = 0
+    for row in rows:
+        try:
+            sample_value = float(row["sample_index"])
+            particle_value = float(row["particle_id"])
+            instrument_time = float(row["instrument_time_us"])
+            actual_time = float(row["actual_instrument_time_us"])
+            x, y, z = (float(row[f"{axis}_mm"]) for axis in "xyz")
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ContractError("real-field pulse natural archive row is invalid") from exc
+        if (
+            not math.isfinite(sample_value) or not sample_value.is_integer()
+            or sample_value < 1 or not math.isfinite(particle_value)
+            or not particle_value.is_integer() or particle_value <= 0
+        ):
+            raise ContractError("real-field pulse state sample or particle ID is invalid")
+        sample_index, particle_id = int(sample_value), int(particle_value)
+        offset = by_id_offset.get(particle_id)
+        if offset is None:
+            raise ContractError("real-field pulse state particle is outside frozen IDs")
+        candidate_time = grid_origin_us + (sample_index - 1) * grid_step_us
+        tolerance = 1e-12 * max(1.0, abs(candidate_time))
+        if (
+            row.get("event") != "pre_pulse_time_series_state"
+            or row.get("survival_status") != "alive"
+            or not all(math.isfinite(value) for value in (instrument_time, actual_time, x, y, z))
+            or abs(instrument_time - candidate_time) > tolerance
+            or abs(actual_time - candidate_time) > tolerance
+        ):
+            raise ContractError("real-field pulse state event/time landing differs")
+        previous = last_index_by_id.get(particle_id)
+        if previous is not None and sample_index != previous + 1:
+            raise ContractError("real-field pulse particle samples are not an alive prefix")
+        last_index_by_id[particle_id] = sample_index
+        state = samples.setdefault(sample_index, {
+            "alive": 0, "bore": 0, "eligible": 0, "source": 0,
+            "count": 0, "sum": [0.0, 0.0, 0.0], "sum_sq": [0.0, 0.0, 0.0],
+            "actual_min": actual_time, "actual_max": actual_time, "actual_error": 0.0,
+        })
+        bit = 1 << offset
+        if state["alive"] & bit:
+            raise ContractError("real-field pulse state duplicates a time/particle pair")
+        state["alive"] |= bit
+        state["count"] += 1
+        for axis_index, value in enumerate((x, y, z)):
+            state["sum"][axis_index] += value
+            state["sum_sq"][axis_index] += value * value
+        state["actual_min"] = min(state["actual_min"], actual_time)
+        state["actual_max"] = max(state["actual_max"], actual_time)
+        state["actual_error"] = max(state["actual_error"], abs(actual_time - candidate_time))
+        in_bore = abs(x - axis_x) < bore_half and abs(y - axis_y) < bore_half
+        if in_bore:
+            state["bore"] |= bit
+            if repeller_z < z < grid1_z:
+                state["eligible"] |= bit
+        if all(
+            bounds[axis]["minimum_mm"] <= value <= bounds[axis]["maximum_mm"]
+            for axis, value in zip("xyz", (x, y, z), strict=True)
+        ):
+            state["source"] |= bit
+        row_count += 1
+    if row_count == 0:
+        raise ContractError("real-field pulse state table is empty")
+
+    candidates: list[dict[str, Any]] = []
+    for sample_index in sorted(samples):
+        state = samples[sample_index]
+        alive_count = int(state["count"])
+        if alive_count == 0:
+            continue
+        time_us = grid_origin_us + (sample_index - 1) * grid_step_us
+        normalized_centroid: dict[str, float] = {}
+        normalized_spread: dict[str, float] = {}
+        for axis_index, axis in enumerate("xyz"):
+            mean = state["sum"][axis_index] / alive_count
+            variance = max(0.0, state["sum_sq"][axis_index] / alive_count - mean * mean)
+            half_width = bounds[axis]["full_width_mm"] / 2.0
+            normalized_centroid[axis] = (mean - bounds[axis]["center_mm"]) / half_width
+            normalized_spread[axis] = math.sqrt(variance) / half_width
+        candidates.append({
+            "sample_index": sample_index,
+            "candidate_time_us": time_us,
+            "offset_from_ballistic_seed_us": time_us - ballistic_seed_time_us,
+            "population_count": len(expected_ids),
+            "alive_count": alive_count,
+            "missing_count": len(expected_ids) - alive_count,
+            "pulse_eligible_count": state["eligible"].bit_count(),
+            "pulse_noneligible_count": len(expected_ids) - state["eligible"].bit_count(),
+            "transverse_bore_count": state["bore"].bit_count(),
+            "transverse_nonbore_count": len(expected_ids) - state["bore"].bit_count(),
+            "source_region_count": state["source"].bit_count(),
+            "normalized_xyz_centroid": normalized_centroid,
+            "normalized_xyz_centroid_distance": math.sqrt(sum(value * value for value in normalized_centroid.values())),
+            "normalized_xyz_spread": normalized_spread,
+            "normalized_xyz_spread_norm": math.sqrt(sum(value * value for value in normalized_spread.values())),
+            "actual_instrument_time_us": {
+                "minimum": state["actual_min"], "maximum": state["actual_max"],
+                "maximum_absolute_candidate_error_us": state["actual_error"],
+                "tolerance_us": 1e-12 * max(1.0, abs(time_us)),
+            },
+            "_natural_id_masks": {
+                "frozen_particle_ids": full_mask,
+                "alive_particle_ids": state["alive"],
+                "missing_particle_ids": full_mask ^ state["alive"],
+                "pulse_eligible_ids": state["eligible"],
+                "pulse_noneligible_ids": full_mask ^ state["eligible"],
+                "transverse_bore_ids": state["bore"],
+                "transverse_nonbore_ids": full_mask ^ state["bore"],
+                "source_region_ids": state["source"],
+            },
+        })
+    if not candidates or not any(candidate["pulse_eligible_count"] > 0 for candidate in candidates):
+        raise ContractError("real-field pulse screen has no pulse-eligible states")
+    candidates.sort(key=lambda item: (
+        -int(item["pulse_eligible_count"]), -int(item["transverse_bore_count"]),
+        float(item["normalized_xyz_centroid_distance"]), float(item["normalized_xyz_spread_norm"]),
+        abs(float(item["offset_from_ballistic_seed_us"])), float(item["candidate_time_us"]),
+    ))
+    return {
+        "selection_order": [
+            "maximize_pulse_eligible_count", "maximize_transverse_bore_count",
+            "minimize_normalized_xyz_centroid_distance", "minimize_normalized_xyz_spread_norm",
+            "minimize_absolute_distance_to_ballistic_seed", "select_earlier_time",
+        ],
+        "selection_uses_detector_outcome": False,
+        "detector_results_used": False,
+        "ballistic_seed_time_us": float(ballistic_seed_time_us),
         "source_region_bounds": bounds,
         "population_denominator_count": len(expected_ids),
         "selected_time_us": float(candidates[0]["candidate_time_us"]),

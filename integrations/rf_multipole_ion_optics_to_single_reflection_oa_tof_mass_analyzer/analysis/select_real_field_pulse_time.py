@@ -24,7 +24,9 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     open_pre_pulse_state_table,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_layout import (
+    _natural_archive_ids,
     select_detector_blind_real_field_pulse_time,
+    select_detector_blind_natural_archive_pulse_time,
 )
 
 
@@ -55,6 +57,14 @@ def _load_object(path: Path) -> dict[str, Any]:
 
 
 def _load_state_rows(path: Path) -> list[dict[str, str]]:
+    rows = list(_iter_state_rows(path))
+    if not rows:
+        raise ContractError("real-field pulse state table is empty")
+    return rows
+
+
+def _iter_state_rows(path: Path):
+    """Yield validated detector-blind rows without materializing the archive."""
     with open_pre_pulse_state_table(path) as handle:
         reader = csv.DictReader(handle)
         columns = set(reader.fieldnames or ())
@@ -62,17 +72,19 @@ def _load_state_rows(path: Path) -> list[dict[str, str]]:
             raise ContractError("real-field pulse state table is missing required columns")
         if columns - ALLOWED_STATE_COLUMNS:
             raise ContractError("real-field pulse state table contains forbidden columns")
-        rows = list(reader)
-    if not rows:
+        for row in reader:
+            if any(
+                "detector" in str(value).casefold()
+                for value in row.values() if value is not None
+            ):
+                raise ContractError("real-field pulse state table contains detector outcomes")
+            yield row
+
+
+def _validate_detector_blind_state_table(path: Path) -> None:
+    """Fail before authority processing if a state archive contains detector data."""
+    if not any(True for _ in _iter_state_rows(path)):
         raise ContractError("real-field pulse state table is empty")
-    if any(
-        "detector" in str(value).casefold()
-        for row in rows
-        for value in row.values()
-        if value is not None
-    ):
-        raise ContractError("real-field pulse state table contains detector outcomes")
-    return rows
 
 
 def _binding(path: Path, *, repository_text: bool = False) -> dict[str, str]:
@@ -275,7 +287,7 @@ def select_and_write(
 ) -> dict[str, Any]:
     """Validate frozen authorities, select one time, and write JSON/CSV evidence."""
 
-    rows = _load_state_rows(state_table_path)
+    _validate_detector_blind_state_table(state_table_path)
     contract = _load_object(screening_contract_path)
     selection_preregistered = _validate_screening_contract(contract)
     screening_receipt = _load_object(screening_receipt_path)
@@ -314,28 +326,25 @@ def select_and_write(
         if contract.get("schema_version") == 6
         else float(schedule["pulse_effective_time_us"])
     )
-    natural_indexed_times: dict[int, float] | None = None
     if natural_archive:
         try:
             grid_origin_us = float(grid["grid_origin_us"])
             grid_step_us = float(grid["step_us"])
-            natural_indexed_times = {
-                int(row["sample_index"]): grid_origin_us
-                + (int(row["sample_index"]) - 1) * grid_step_us
-                for row in rows
-            }
         except (KeyError, TypeError, ValueError) as exc:
             raise ContractError("natural pre-pulse state grid is invalid") from exc
-    result = select_detector_blind_real_field_pulse_time(
-        rows,
-        geometry,
-        profile,
-        candidate_times_us=([] if natural_archive else list(contract["sample_times_us"])),
-        candidate_times_by_sample_index=natural_indexed_times,
-        natural_trajectory_archive=natural_archive,
-        frozen_particle_ids=frozen_particle_ids,
-        ballistic_seed_time_us=ballistic_seed_time_us,
-    )
+        result = select_detector_blind_natural_archive_pulse_time(
+            _iter_state_rows(state_table_path), geometry, profile,
+            frozen_particle_ids=frozen_particle_ids,
+            ballistic_seed_time_us=ballistic_seed_time_us,
+            grid_origin_us=grid_origin_us, grid_step_us=grid_step_us,
+        )
+    else:
+        result = select_detector_blind_real_field_pulse_time(
+            _load_state_rows(state_table_path), geometry, profile,
+            candidate_times_us=list(contract["sample_times_us"]),
+            frozen_particle_ids=frozen_particle_ids,
+            ballistic_seed_time_us=ballistic_seed_time_us,
+        )
     frozen_selection_order = contract.get("selection_order", SELECTION_ORDER)
     if result["selection_order"] != frozen_selection_order:
         raise ContractError("real-field pulse selection order differs from preregistration")
@@ -364,6 +373,7 @@ def select_and_write(
     candidate_rows: list[dict[str, Any]] = []
     for rank, candidate in enumerate(result["candidates_ranked"], start=1):
         candidate["rank"] = rank
+        masks = candidate.pop("_natural_id_masks", None)
         for prefix, key in (
             ("population", "frozen_particle_ids"),
             ("alive", "alive_particle_ids"),
@@ -374,7 +384,15 @@ def select_and_write(
             ("transverse_nonbore", "transverse_nonbore_ids"),
             ("source_region", "source_region_ids"),
         ):
-            candidate[f"{prefix}_identity"] = _observed_id_set(candidate[key])
+            ids = (
+                _natural_archive_ids(masks[key], frozen_particle_ids)
+                if isinstance(masks, dict) else candidate[key]
+            )
+            candidate[f"{prefix}_identity"] = _observed_id_set(ids)
+            # The compact natural receipt needs raw IDs only for its selected
+            # handoff candidate.  Other candidate rows retain compact hashes.
+            if masks is None or rank == 1:
+                candidate[key] = ids
         candidate_rows.append(candidate)
 
     candidate_table_path.parent.mkdir(parents=True, exist_ok=True)

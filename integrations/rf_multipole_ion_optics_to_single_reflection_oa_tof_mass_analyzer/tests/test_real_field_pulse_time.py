@@ -17,7 +17,9 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     verified_pulse_reuse_content_identity,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_layout import (
+    _natural_archive_ids,
     select_detector_blind_real_field_pulse_time,
+    select_detector_blind_natural_archive_pulse_time,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.publish_run import (
     INTEGRATION_ID,
@@ -232,6 +234,29 @@ class RealFieldPulseCoreTests(unittest.TestCase):
         )
         self.assertEqual(result["candidates_ranked"][0]["pulse_eligible_ids"], [1, 2, 3])
         self.assertFalse(result["detector_results_used"])
+
+    def test_natural_archive_streaming_matches_small_reference_screen(self) -> None:
+        reference = select_detector_blind_real_field_pulse_time(
+            _rows(), _geometry(), _profile(),
+            candidate_times_us=[10.0, 11.0, 12.0],
+            frozen_particle_ids=[1, 2, 3], ballistic_seed_time_us=11.5,
+        )
+        streamed = select_detector_blind_natural_archive_pulse_time(
+            iter(_rows()), _geometry(), _profile(),
+            frozen_particle_ids=[1, 2, 3], ballistic_seed_time_us=11.5,
+            grid_origin_us=10.0, grid_step_us=1.0,
+        )
+        self.assertEqual(streamed["selected_time_us"], reference["selected_time_us"])
+        selected = streamed["candidates_ranked"][0]
+        masks = selected["_natural_id_masks"]
+        for key in (
+            "alive_particle_ids", "pulse_eligible_ids", "transverse_bore_ids",
+            "source_region_ids",
+        ):
+            self.assertEqual(
+                _natural_archive_ids(masks[key], [1, 2, 3]),
+                reference["candidates_ranked"][0][key],
+            )
 
     def test_source_box_boundaries_are_inclusive(self) -> None:
         rows = [
