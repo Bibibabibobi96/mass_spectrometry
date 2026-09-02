@@ -1,0 +1,19 @@
+particles {
+  coordinates = 0,
+  standard_beam {
+    n = 25,
+    tob = 0,
+    mass = 100,
+    charge = 1,
+    ke = 0,
+    cwf = 1,
+    color = 0,
+    direction = vector(0, 0, 1),
+    position = circle_distribution {
+      center = vector(0, -280, -36.6),
+      normal = vector(0, 0, 1),
+      radius = 0.1,
+      fill = true
+    }
+  }
+}

@@ -7,6 +7,10 @@ from tempfile import TemporaryDirectory
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
     CandidateContractError, build_simion_gem, derive_two_zone_focus, load_contract, write_gem,
 )
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.full_candidate_geometry import (
+    ELECTRODE_IDS,
+    build_full_candidate_gem,
+)
 
 
 PROJECT = Path(__file__).resolve().parents[2]
@@ -36,6 +40,20 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         contract["coordinate_system"]["frame_id"] = "wrong"
         with self.assertRaises(CandidateContractError):
             derive_two_zone_focus(contract)
+
+    def test_full_candidate_has_all_stable_electrodes_and_native_grids(self) -> None:
+        gem = build_full_candidate_gem(PROJECT / "config" / "simion_candidate_two_zone.json")
+        self.assertIn("surface=none", gem)
+        for group in ELECTRODE_IDS.values():
+            identifiers = (group,) if isinstance(group, int) else group
+            for identifier in identifiers:
+                self.assertIn(f"e({identifier})", gem)
+        self.assertIn("e(23) { box3D", gem)
+        self.assertIn("e(24) { box3D", gem)
+        self.assertIn("box3D(-30,-310,-33.6,30,-250,-33.6)", gem)
+        self.assertIn("box3D(-30,-310,0,30,-250,0)", gem)
+        self.assertIn("focus_phase_z = 0.12918680341102168", gem)
+        self.assertIn("polyline(-55,-230,-30,-230,-42,-180)", gem)
 
 
 if __name__ == "__main__":
