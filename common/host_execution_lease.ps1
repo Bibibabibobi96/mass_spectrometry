@@ -146,7 +146,11 @@ function Invoke-HostExecutionCompletionNotification {
   }
   try {
     if ($Outcome -eq 'success') {
-      [System.Media.SystemSounds]::Asterisk.Play()
+      # A short major-triad ascent is deliberately reserved for one successful
+      # top-level solver completion; it is distinct from Windows' warning cue.
+      foreach ($tone in @(@(523, 120), @(659, 120), @(784, 120))) {
+        [Console]::Beep([int]$tone[0], [int]$tone[1])
+      }
     } else {
       [System.Media.SystemSounds]::Hand.Play()
     }

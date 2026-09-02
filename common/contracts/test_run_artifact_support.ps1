@@ -116,6 +116,26 @@ try {
     ([int64](Get-Item -LiteralPath $v2Summary).Length) `
     'Failed summary manifest bytes differ from final summary.'
 
+  $preservedDir = Join-Path (Join-Path $testRoot 'runs') '20260723_170005__test__cross__natural-trace-failure__n1'
+  New-Item -ItemType Directory -Path (Join-Path $preservedDir 'logs') -Force | Out-Null
+  $preservedConfig = Join-Path $preservedDir 'run_config.json'
+  $preservedSummary = Join-Path $preservedDir 'summary.json'
+  $preservedTrace = Join-Path $preservedDir 'logs\simion__batch01.trace.log'
+  Write-RunJson -Path $preservedConfig -Value ([ordered]@{
+    schema_version=2;run_id=(Split-Path -Leaf $preservedDir);project='single_reflection_oa_tof_mass_analyzer'
+    mode='natural_trace_fixture';project_root=$repoRoot;inputs=[ordered]@{}
+    artifact_retention=[ordered]@{policy_version=1;class='compact';reason=$null}
+  })
+  'native RF trace fixture' | Set-Content -LiteralPath $preservedTrace -Encoding UTF8
+  Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $preservedConfig -Summary $preservedSummary `
+    -SummaryRole 'natural_trace_fixture_summary' -Reason 'materializer fixture failure' `
+    -Software @('contract test') -AdditionalOutputs @($preservedTrace) -PreserveRawOutputs
+  Assert-Equal (Test-Path -LiteralPath $preservedTrace -PathType Leaf) $true `
+    'Failed natural-trajectory materialization must preserve its raw trace for recovery.'
+  $preservedManifest = Get-Content -LiteralPath (Join-Path $preservedDir 'run_manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+  Assert-Equal @($preservedManifest.outputs | Where-Object { $_.path -eq $preservedTrace }).Count 1 `
+    'Failed natural-trajectory manifest must retain the recoverable trace.'
+
   $successDir = Join-Path $testRoot '20260723_170002__test__cross__lifecycle-success__n100'
   New-Item -ItemType Directory -Path $successDir -Force | Out-Null
   $successConfig = Join-Path $successDir 'run_config.json'

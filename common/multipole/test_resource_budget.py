@@ -397,6 +397,66 @@ class ResourceBudgetTests(unittest.TestCase):
             )
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
+    def test_shared_runtime_key_serializes_only_conflicting_workers(self) -> None:
+        """A shared SIMION PA family waits without becoming a global lane cap."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dispatch, usage = root / "dispatch.json", root / "usage.json"
+            dispatch.write_text(
+                json.dumps(
+                    {
+                        "role": "simion_repository_dispatch_plan",
+                        "estimation": {
+                            "kind": "exact_resource_profile",
+                            "per_process_memory_budget_bytes": 1024**2,
+                            "memory_safety_factor": 1.10,
+                        },
+                        "limits": {
+                            "maximum_concurrency": 2,
+                            "launch_stagger_seconds": 5,
+                            "memory_critical_seconds": 15,
+                            "memory_recovery_stable_seconds": 45,
+                            "maximum_memory_recovery_attempts": 2,
+                            "maximum_memory_danger_termination_attempts": 2,
+                            "memory_admission_reserve_bytes": 1024**3,
+                            "memory_critical_reserve_bytes": 512 * 1024**2,
+                            "cpu_admission_percent": 95.0,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            support = REPO_ROOT / "common/multipole/resource_budget_support.ps1"
+            command = (
+                f". '{support}';"
+                "function Get-SystemCpuPercent {[double]0};"
+                "function Get-RepositoryAvailableMemoryBytes {[int64](32GB)};"
+                "$exe=(Get-Process -Id $PID).Path;"
+                "$specs=@('first','second'|ForEach-Object {[pscustomobject]@{name=$_;file_path=$exe;"
+                "argument_list=@('-NoProfile','-Command','Start-Sleep -Seconds 7');"
+                f"stdout='{root}\\$_.out';stderr='{root}\\$_.err';environment=@{{}};working_directory='{root}';"
+                "exclusive_resource_key='shared-pa-family'}});"
+                f"$r=Invoke-ResourceBudgetedProcesses -DispatchPlanPath '{dispatch}' -RunDir '{root}' "
+                f"-UsagePath '{usage}' -ProcessSpecifications $specs;"
+                "if($r.resource_budget_exceeded-or$r.processes.Count-ne2-or"
+                "@($r.processes|Where-Object {$_.exit_code-ne0}).Count-ne0){exit 3};"
+                f"$receipt=Get-Content -Raw '{usage}'|ConvertFrom-Json;"
+                "if($receipt.scheduler_receipt.peak_concurrency-ne1){exit 4};"
+                "$waits=@($receipt.scheduler_receipt.launch_pause_events|Where-Object {$_.reason-eq'exclusive_resource_in_use'});"
+                "if($waits.Count-lt1){exit 5}"
+            )
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
+                cwd=REPO_ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=30,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
     def test_dynamic_admission_pause_records_memory_reason_with_two_gib_free(self) -> None:
         """The 1 GiB reserve alone is insufficient when the next worker is larger."""
         with tempfile.TemporaryDirectory() as directory:
@@ -1313,13 +1373,16 @@ class ResourceBudgetTests(unittest.TestCase):
                 ["pwsh", "-NoProfile", "-NonInteractive", "-Command", command],
                 cwd=REPO_ROOT,
                 check=False,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                errors="replace",
+                # The test deliberately launches a descendant which outlives
+                # its PowerShell launcher.  Captured anonymous pipes would be
+                # inherited by that descendant and make ``communicate`` wait
+                # for a handle that is unrelated to the tested scheduler
+                # completion condition.
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
                 timeout=15,
             )
-            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(completed.returncode, 0)
             measured = json.loads(usage.read_text(encoding="utf-8-sig"))
             self.assertEqual(measured["status"], "running")
             self.assertGreaterEqual(measured["wall_clock_seconds"], 1.5)

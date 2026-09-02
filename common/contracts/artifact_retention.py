@@ -91,7 +91,10 @@ def classify_file(
     # the detector-blind selector in its governed parent.  It may be large,
     # but removing it at the child's terminal boundary makes that parent
     # impossible to execute or reproduce.
-    if name == "pre_pulse_time_series_states.csv":
+    if name in {
+        "pre_pulse_time_series_states.csv",
+        "pre_pulse_time_series_states.csv.gz",
+    }:
         return "required_evidence"
     size = path.stat().st_size if bytes_count is None and path.is_file() else bytes_count
     # Small candidate receipts have historically been lightweight optional

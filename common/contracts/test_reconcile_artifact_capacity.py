@@ -13,7 +13,8 @@ from common.contracts.reconcile_artifact_capacity import apply, plan
 
 
 class ArtifactCapacityPlanTest(unittest.TestCase):
-    def _cache(self, root: Path, role: str, key: str, *, age: float, published: bool = True) -> Path:
+    def _cache(self, root: Path, role: str, key: str, *, age: float, published: bool = True,
+               manifest_role: str | None = None) -> Path:
         entry = root / "projects" / "p" / "cache" / role / key
         entry.mkdir(parents=True)
         (entry / "payload.pa0").write_bytes(b"x" * 1024)
@@ -21,10 +22,14 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
             generation = entry / "generations" / "g"
             generation.mkdir(parents=True)
             (generation / "cache_manifest.json").write_text(
-                json.dumps({"schema_version": 3, "cache_key": key, "generation_sha256": "g"}),
+                json.dumps({"schema_version": 3, "cache_key": key, "generation_sha256": "g",
+                            "role": manifest_role or role}),
                 encoding="utf-8",
             )
             (entry / "current_generation.json").write_text(json.dumps({"generation_relative_path": "generations/g"}), encoding="utf-8")
+            # Publication time is the eviction-age authority for a selected
+            # generation, rather than the cache directory's incidental mtime.
+            os.utime(generation / "cache_manifest.json", (age, age))
         os.utime(entry, (age, age))
         return entry
 
@@ -40,6 +45,28 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
             self.assertEqual([item["path"] for item in receipt["planned"]], [str(l1), str(old_l2), str(new_l2)])
             self.assertNotIn(str(formal), [item["path"] for item in receipt["planned"]])
 
+    def test_policy_priority_precedes_age_and_same_priority_is_oldest_first(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            now = time.time()
+            older_important = self._cache(
+                root, "main", "1" * 64, age=now - 900,
+                manifest_role="simion_single_flight_accelerator_main_pa_cache",
+            )
+            newer_disposable = self._cache(
+                root, "collision", "2" * 64, age=now - 100,
+                manifest_role="simion_single_flight_accelerator_entrance_zone_collision_pa_cache",
+            )
+            old_unknown = self._cache(root, "unknown", "3" * 64, age=now - 500)
+            new_unknown = self._cache(root, "unknown", "4" * 64, age=now - 200)
+            receipt = plan(root, target_bytes=0, staging_grace_seconds=0)
+            planned = receipt["planned"]
+            self.assertEqual(
+                [item["path"] for item in planned],
+                [str(newer_disposable), str(older_important), str(old_unknown), str(new_unknown)],
+            )
+            self.assertEqual([item["deletion_priority"] for item in planned], [30, 90, 100, 100])
+
     def test_nonterminal_manifest_protects_referenced_key(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -50,6 +77,19 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
             (run / "run_manifest.json").write_text(json.dumps({"status": "running", "cache_key": key}), encoding="utf-8")
             receipt = plan(root, target_bytes=0)
             self.assertNotIn(str(protected), [item["path"] for item in receipt["planned"]])
+
+    def test_success_manifest_does_not_protect_reconstructible_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            key = "e" * 64
+            candidate = self._cache(root, "role", key, age=time.time() - 100)
+            run = root / "projects" / "p" / "runs" / "finished"
+            run.mkdir(parents=True)
+            (run / "run_manifest.json").write_text(
+                json.dumps({"status": "success", "cache_key": key}), encoding="utf-8"
+            )
+            receipt = plan(root, target_bytes=0)
+            self.assertIn(str(candidate), [item["path"] for item in receipt["planned"]])
 
     def test_headroom_is_counted_before_publication(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -70,6 +110,25 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
             states.write_bytes(b"trajectory-state\n" * 64)
             receipt = plan(root, target_bytes=10_000_000)
             self.assertEqual(receipt["measured_bytes"], states.stat().st_size)
+
+    def test_directory_measurement_ignores_file_and_directory_symlinks(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            payload = root / "payload.bin"
+            payload.write_bytes(b"x" * 128)
+            external = root.parent / f"capacity_external_{time.time_ns()}"
+            external.mkdir()
+            try:
+                (external / "outside.bin").write_bytes(b"y" * 256)
+                try:
+                    (root / "payload-link.bin").symlink_to(payload)
+                    (root / "external-link").symlink_to(external, target_is_directory=True)
+                except OSError:
+                    self.skipTest("symlink creation is unavailable on this host")
+                receipt = plan(root, target_bytes=10_000_000)
+                self.assertEqual(receipt["measured_bytes"], payload.stat().st_size)
+            finally:
+                shutil.rmtree(external, ignore_errors=True)
 
     def test_minimum_free_space_tightens_the_same_ordered_plan(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

@@ -432,11 +432,28 @@ function Assert-RepositoryProcessSpecification {
       throw "Scheduled process specification is missing $required."
     }
   }
+  if($Specification.PSObject.Properties.Name-contains'exclusive_resource_key'){
+    $key=$Specification.exclusive_resource_key
+    if($null-ne$key-and(-not($key -is [string])-or[string]::IsNullOrWhiteSpace([string]$key))){
+      throw 'Scheduled process exclusive_resource_key must be a non-empty string when supplied.'
+    }
+  }
+  if($Specification.PSObject.Properties.Name-contains'prepare' -and
+      $null-ne$Specification.prepare -and -not ($Specification.prepare -is [scriptblock])){
+    throw 'Scheduled process prepare must be a script block when supplied.'
+  }
 }
 
 function Start-RepositoryScheduledProcess {
   param([Parameter(Mandatory)]$Specification)
   Assert-RepositoryProcessSpecification -Specification $Specification
+  # A prepared batch may need small Workbench-local assets immediately before
+  # launch.  Do not materialize those while an earlier SIMION process still
+  # scans the same runtime directory after its 45-second observation window.
+  if($Specification.PSObject.Properties.Name-contains'prepare'-and
+      $null-ne$Specification.prepare){
+    $null=& $Specification.prepare $Specification
+  }
   $arguments=@{
     FilePath=[string]$Specification.file_path;ArgumentList=@($Specification.argument_list)
     PassThru=$true;WindowStyle='Hidden';RedirectStandardOutput=[string]$Specification.stdout
@@ -518,7 +535,8 @@ function Start-ObservedFormalProcess {
   [CmdletBinding()]
   param(
     [Parameter(Mandatory)][string]$DispatchPlanPath,
-    [Parameter(Mandatory)]$ProcessSpecification
+    [Parameter(Mandatory)]$ProcessSpecification,
+    [switch]$WaitForNaturalCompletionAfterObservation
   )
   $plan=Get-Content -LiteralPath $DispatchPlanPath -Raw -Encoding UTF8|ConvertFrom-Json
   if([string]$plan.estimation.kind-ne'formal_first_batch_observation'){
@@ -537,6 +555,7 @@ function Start-ObservedFormalProcess {
     throw 'Repository first-formal memory-danger policy differs from the public invariant.'
   }
   $criticalSince=$null;$resourceBudgetExceeded=$false
+  $observationComplete=$false;$completedDuringObservation=$false
   # The formal first batch remains alive after the fixed 45 s observation.  Its
   # measured peak determines the initial lane count; subsequent live admission
   # and the existing memory-danger state machine protect against later growth.
@@ -592,11 +611,17 @@ function Start-ObservedFormalProcess {
     if($record.pressure_terminated){
       $record.process.WaitForExit();$record.active=$false;break
     }
-    if(-not$record.active){break}
-    if(($now-$record.started_at).TotalSeconds-ge$seconds){
-      Write-RepositorySchedulerEvent -Event 'FORMAL_OBSERVATION_COMPLETE' -Record $record -ActiveCount 1 `
-        -Details @{OBSERVATION_SECONDS=$seconds;MEASUREMENT='FIRST_FORMAL_BATCH';PROCESS_CONTINUES='true'}
+    if(-not$record.active){
+      $completedDuringObservation=-not$observationComplete
       break
+    }
+    if(($now-$record.started_at).TotalSeconds-ge$seconds){
+      if(-not$observationComplete){
+        Write-RepositorySchedulerEvent -Event 'FORMAL_OBSERVATION_COMPLETE' -Record $record -ActiveCount 1 `
+          -Details @{OBSERVATION_SECONDS=$seconds;MEASUREMENT='FIRST_FORMAL_BATCH';PROCESS_CONTINUES='true'}
+        $observationComplete=$true
+      }
+      if(-not$WaitForNaturalCompletionAfterObservation){break}
     }
     Start-Sleep -Milliseconds 500
   }
@@ -616,7 +641,7 @@ function Start-ObservedFormalProcess {
     $record.process.Dispose()
   }
   $record|Add-Member -NotePropertyName completed_during_observation `
-    -NotePropertyValue ([bool]$record.completed) -Force
+    -NotePropertyValue ([bool]$completedDuringObservation) -Force
   $record|Add-Member -NotePropertyName observed_process_cpu_percent `
     -NotePropertyValue ([math]::Round($peakCpu,3)) -Force
   $record|Add-Member -NotePropertyName observed_background_cpu_percent `
@@ -914,6 +939,26 @@ function Invoke-ResourceBudgetedProcesses {
     $canLaunch=$pending.Count-gt 0-and$running.Count-lt$maximumConcurrency-and
       -not$dangerRecoveryPending-and$now-ge$nextLaunch-and$available-ge($warningBytes+$launchAdmissionBytes)-and
       ($systemCpu+$estimatedProcessCpu-lt[double]$limits.cpu_admission_percent)
+    $exclusiveResourceBlocked=$false;$nextSpecification=$null
+    if($canLaunch){
+      $activeExclusiveResourceKeys=@{}
+      foreach($activeRecord in @($running)){
+        $activeSpecification=$activeRecord.specification
+        if($activeSpecification.PSObject.Properties.Name-contains'exclusive_resource_key'-and
+            -not[string]::IsNullOrWhiteSpace([string]$activeSpecification.exclusive_resource_key)){
+          $activeExclusiveResourceKeys[[string]$activeSpecification.exclusive_resource_key]=$true
+        }
+      }
+      foreach($candidate in @($pending)){
+        $candidateKey=$(if($candidate.PSObject.Properties.Name-contains'exclusive_resource_key'){
+          [string]$candidate.exclusive_resource_key
+        }else{''})
+        if([string]::IsNullOrWhiteSpace($candidateKey) -or -not $activeExclusiveResourceKeys.ContainsKey($candidateKey)){
+          $nextSpecification=$candidate;break
+        }
+      }
+      if($null-eq$nextSpecification){$canLaunch=$false;$exclusiveResourceBlocked=$true}
+    }
     if($canLaunch){
       if($resourcePauseActive){
         Write-RepositorySchedulerEvent -Event 'RESOURCE_ADMISSION_RESUMED' `
@@ -921,7 +966,7 @@ function Invoke-ResourceBudgetedProcesses {
           -Details @{AVAILABLE_MEMORY_BYTES=$available;PREVIOUS_REASON=$resourcePauseReason;REQUIRED_AVAILABLE_MEMORY_BYTES=($warningBytes+$dynamicAdmissionBytes)}
         $resourcePauseActive=$false;$resourcePauseReason=$null
       }
-      $spec=$pending[0];$pending.RemoveAt(0)
+      $spec=$nextSpecification;$null=$pending.Remove($spec)
       $launched=Start-RepositoryScheduledProcess -Specification $spec
       $null=$running.Add($launched)
       $peakConcurrency=[math]::Max($peakConcurrency,$running.Count)
@@ -931,7 +976,7 @@ function Invoke-ResourceBudgetedProcesses {
       $nextLaunch=(Get-RepositoryUtcNow).AddSeconds(5)
     }elseif($pending.Count-gt 0-and$running.Count-lt$maximumConcurrency){
       if($pauseEvents.Count-eq 0-or($now-[datetimeoffset]$pauseEvents[$pauseEvents.Count-1].at_utc).TotalSeconds-ge 5){
-        $reason=$(if($dangerRecoveryPending){'post_danger_recovery_observation'}elseif(
+        $reason=$(if($exclusiveResourceBlocked){'exclusive_resource_in_use'}elseif($dangerRecoveryPending){'post_danger_recovery_observation'}elseif(
           $available-lt($warningBytes+$launchAdmissionBytes)){'available_memory_below_dynamic_admission'}elseif(
           ($systemCpu+$estimatedProcessCpu)-ge[double]$limits.cpu_admission_percent){'cpu_admission_exceeded'}else{'launch_stagger_pending'})
         $null=$pauseEvents.Add([ordered]@{

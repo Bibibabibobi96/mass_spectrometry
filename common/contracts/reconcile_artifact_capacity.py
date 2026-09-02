@@ -1,11 +1,10 @@
 """Keep an artifact scope below a governed capacity watermark.
 
-The gate is deliberately conservative.  It only ever removes three classes
-of reconstructible material, in this exact order: (L1) old unpublished cache
-staging, (L2) inactive published non-Formal cache keys, and (L3) forbidden
-payload in verified interrupted compact runs.  Within each class candidates
-are ordered oldest first.  Formal evidence, active runs, and explicitly
-protected paths are never candidates.
+The gate is deliberately conservative.  It only ever removes reconstructible
+material.  Candidates receive a deletion priority from the checked-in policy:
+lower-priority material is evicted first, then the oldest item within that
+same priority.  Formal evidence, active runs, and explicitly protected paths
+are never candidates.
 """
 
 from __future__ import annotations
@@ -25,8 +24,41 @@ from common.contracts import reconcile_interrupted_compact_runs as compact
 from common.contracts.artifact_retention import apply_retention
 
 GIB = 1024**3
-TERMINAL = {"completed", "failed", "interrupted", "cancelled", "aborted"}
+# Run manifests in this repository publish successful solver work as
+# ``success``. Terminal runs cannot keep a reconstructible cache active.
+TERMINAL = {"success", "completed", "failed", "interrupted", "cancelled", "aborted"}
 CACHE_KEY = re.compile(r"\b[a-f0-9]{64}\b", re.IGNORECASE)
+POLICY_PATH = Path(__file__).with_name("artifact_capacity_policy.json")
+
+
+def _capacity_policy() -> dict[str, Any]:
+    """Load and minimally validate the versioned repository eviction policy."""
+
+    policy = _load_object(POLICY_PATH)
+    if policy is None or int(policy.get("schema_version", 0)) != 1:
+        raise RuntimeError(f"invalid artifact-capacity policy: {POLICY_PATH}")
+    roles = policy.get("l2_role_deletion_priorities")
+    if not isinstance(roles, dict):
+        raise RuntimeError(f"invalid L2 role priorities in {POLICY_PATH}")
+    for field in ("default_l2_deletion_priority", "l1_deletion_priority", "l3_deletion_priority"):
+        if not isinstance(policy.get(field), int) or int(policy[field]) < 0:
+            raise RuntimeError(f"invalid {field} in {POLICY_PATH}")
+    if any(not isinstance(value, int) or value < 0 for value in roles.values()):
+        raise RuntimeError(f"invalid L2 role priority in {POLICY_PATH}")
+    return policy
+
+
+def _deletion_priority(*, level: str, cache_role: str | None, policy: dict[str, Any]) -> int:
+    """Return a policy-owned priority; unknown published roles stay conservative."""
+
+    if level == "L1":
+        return int(policy["l1_deletion_priority"])
+    if level == "L3":
+        return int(policy["l3_deletion_priority"])
+    if level != "L2":
+        raise ValueError(f"unknown artifact cleanup level: {level}")
+    role_priorities = policy["l2_role_deletion_priorities"]
+    return int(role_priorities.get(cache_role, policy["default_l2_deletion_priority"]))
 
 
 def _directory_bytes(root: Path) -> dict[Path, int]:
@@ -38,15 +70,30 @@ def _directory_bytes(root: Path) -> dict[Path, int]:
     symlink rules while sharing that I/O across all candidates.
     """
     sizes: dict[Path, int] = {}
-    for directory, child_dirs, files in os.walk(root, topdown=False):
-        path = Path(directory)
-        total = sum(
-            (path / filename).stat().st_size
-            for filename in files
-            if not (path / filename).is_symlink()
-        )
-        total += sum(sizes.get(path / child, 0) for child in child_dirs)
-        sizes[path] = total
+
+    def measure(directory: Path) -> int:
+        """Measure once with DirEntry's cached type/stat information.
+
+        This is the bounded slow path: no valid conservative upper bound is
+        available, so the gate must inspect the artifact tree before it may
+        remove anything.  ``os.walk`` reconstructs paths and performs fresh
+        metadata lookups for every file; on the large PA cache that makes an
+        otherwise single walk unnecessarily slow.  ``scandir`` retains the
+        same no-symlink accounting rule while avoiding those extra lookups.
+        """
+        total = 0
+        with os.scandir(directory) as entries:
+            for entry in entries:
+                if entry.is_symlink():
+                    continue
+                if entry.is_dir(follow_symlinks=False):
+                    total += measure(Path(entry.path))
+                elif entry.is_file(follow_symlinks=False):
+                    total += entry.stat(follow_symlinks=False).st_size
+        sizes[directory] = total
+        return total
+
+    measure(root)
     return sizes
 
 
@@ -82,7 +129,8 @@ def _protected(path: Path, protected_paths: Iterable[Path]) -> bool:
 
 
 def _cache_candidate(cache_key_dir: Path, protected_keys: set[str], now: float, staging_grace_seconds: int,
-                     protected_paths: Iterable[Path], directory_bytes: dict[Path, int]) -> dict[str, Any] | None:
+                     protected_paths: Iterable[Path], directory_bytes: dict[Path, int],
+                     policy: dict[str, Any]) -> dict[str, Any] | None:
     if _is_formal(cache_key_dir) or _protected(cache_key_dir, protected_paths):
         return None
     name = cache_key_dir.name.lower()
@@ -90,7 +138,8 @@ def _cache_candidate(cache_key_dir: Path, protected_keys: set[str], now: float, 
     payload = {"path": str(cache_key_dir), "bytes": directory_bytes.get(cache_key_dir, 0), "timestamp": mtime}
     if name.startswith("b-") and not (cache_key_dir / "cache_manifest.json").exists():
         if now - mtime >= staging_grace_seconds:
-            payload.update(level="L1", reason="old_unpublished_cache_staging")
+            payload.update(level="L1", reason="old_unpublished_cache_staging",
+                           deletion_priority=_deletion_priority(level="L1", cache_role=None, policy=policy))
             return payload
         return None
     if not CACHE_KEY.fullmatch(name) or name in protected_keys:
@@ -110,15 +159,19 @@ def _cache_candidate(cache_key_dir: Path, protected_keys: set[str], now: float, 
         # A malformed pointer or selected generation is an incomplete cache,
         # not a published L2 object.  It is only eligible as L1 and never if
         # a caller explicitly pins the key.
-        payload.update(level="L1", reason="damaged_or_incomplete_cache_generation")
+        payload.update(level="L1", reason="damaged_or_incomplete_cache_generation",
+                       deletion_priority=_deletion_priority(level="L1", cache_role=None, policy=policy))
         return payload
     payload["timestamp"] = published.stat().st_mtime  # legacy publication-time fallback
-    payload.update(level="L2", reason="inactive_reconstructible_published_cache")
+    cache_role = str(manifest.get("role", cache_key_dir.parent.name))
+    payload.update(level="L2", reason="inactive_reconstructible_published_cache", cache_role=cache_role,
+                   deletion_priority=_deletion_priority(level="L2", cache_role=cache_role, policy=policy))
     return payload
 
 
 def _cache_candidates(root: Path, protected_keys: set[str], now: float, staging_grace_seconds: int,
-                      protected_paths: Iterable[Path], directory_bytes: dict[Path, int]) -> list[dict[str, Any]]:
+                      protected_paths: Iterable[Path], directory_bytes: dict[Path, int],
+                      policy: dict[str, Any]) -> list[dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
     for cache_root in root.rglob("cache"):
         if not cache_root.is_dir() or _is_formal(cache_root):
@@ -128,13 +181,13 @@ def _cache_candidates(root: Path, protected_keys: set[str], now: float, staging_
                 continue
             for child in role_dir.iterdir():
                 if child.is_dir():
-                    candidate = _cache_candidate(child, protected_keys, now, staging_grace_seconds, protected_paths, directory_bytes)
+                    candidate = _cache_candidate(child, protected_keys, now, staging_grace_seconds, protected_paths, directory_bytes, policy)
                     if candidate:
                         candidates.append(candidate)
     return candidates
 
 
-def _compact_candidates(root: Path, protected_paths: Iterable[Path]) -> list[dict[str, Any]]:
+def _compact_candidates(root: Path, protected_paths: Iterable[Path], policy: dict[str, Any]) -> list[dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
     for run_root in root.rglob("runs"):
         if not run_root.is_dir() or _is_formal(run_root):
@@ -149,7 +202,8 @@ def _compact_candidates(root: Path, protected_paths: Iterable[Path]) -> list[dic
             if report["removable_bytes"]:
                 candidates.append({"level": "L3", "reason": "verified_interrupted_compact_payload",
                                    "path": str(run_dir), "bytes": int(report["removable_bytes"]),
-                                   "timestamp": run_dir.stat().st_mtime, "compact_report": report})
+                                   "timestamp": run_dir.stat().st_mtime, "compact_report": report,
+                                   "deletion_priority": _deletion_priority(level="L3", cache_role=None, policy=policy)})
     return candidates
 
 
@@ -234,11 +288,12 @@ def plan(root: Path, *, target_bytes: int, required_headroom_bytes: int = 0,
             "planned": [], "projected_bytes": measured, "satisfied": True,
         }
     now = time.time()
+    policy = _capacity_policy()
     active_keys = _active_cache_keys(root)
     active_keys.update(key.lower() for key in protected_cache_keys if CACHE_KEY.fullmatch(key))
-    candidates = _cache_candidates(root, active_keys, now, staging_grace_seconds, protected, directory_bytes)
-    candidates.extend(_compact_candidates(root, protected))
-    candidates.sort(key=lambda item: ({"L1": 1, "L2": 2, "L3": 3}[item["level"]], item["timestamp"], item["path"]))
+    candidates = _cache_candidates(root, active_keys, now, staging_grace_seconds, protected, directory_bytes, policy)
+    candidates.extend(_compact_candidates(root, protected, policy))
+    candidates.sort(key=lambda item: (item["deletion_priority"], item["timestamp"], item["path"]))
     free_deficit = max(0, minimum_free_bytes - free_bytes)
     # Every byte removed from this artifact root returns one byte to the same
     # volume.  Intersect the repository watermark with the physical-free-space

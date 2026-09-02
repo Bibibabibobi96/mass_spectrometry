@@ -551,7 +551,7 @@ push的73秒中45秒用于完整依赖安装。该次push包含项目注册表�
 度或SIMION内部的资源调度；正常结束显式释放，宿主崩溃时由Windows自动释放。
 
 真实求解器入口在发布终态 manifest 后，向共享租约报告 `success`、`failed` 或 `interrupted`；仅持有
-`SIMION`或`COMSOL`租约的顶层运行因此播放一次本机系统提示音（成功为 Asterisk，其余为 Hand）。提示不属于科学
+`SIMION`或`COMSOL`租约的顶层运行因此播放一次本机系统提示音（成功为三音上行完成提示，其余为 Hand）。提示不属于科学
 输入、run identity 或证据，声卡不可用不能改变终态；设置进程环境变量 `SIMULATION_COMPLETION_SOUND=off`
 可静默。批次、45 秒资源观测、重试、门禁和继承租约不得单独提示。
 

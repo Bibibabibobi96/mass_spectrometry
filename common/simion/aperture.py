@@ -51,7 +51,16 @@ def resolve_rectangular_aperture_discretization(
         raise ValueError("SIMION aperture dimensions and cell size must be positive")
     if flange_x_max_mm < flange_x_min_mm:
         raise ValueError("SIMION aperture flange bounds are reversed")
-    if mechanical_width_mm < cell_y_mm or mechanical_height_mm < cell_z_mm:
+    # Equal-sized physical apertures are valid.  Accept equality robustly
+    # across JSON-to-float roundoff (for example 1.0 mm on a 1.0 mm grid).
+    dimension_tolerance_mm = 16 * max(
+        math.ulp(max(abs(mechanical_width_mm), abs(cell_y_mm), 1.0)),
+        math.ulp(max(abs(mechanical_height_mm), abs(cell_z_mm), 1.0)),
+    )
+    if (
+        mechanical_width_mm + dimension_tolerance_mm < cell_y_mm
+        or mechanical_height_mm + dimension_tolerance_mm < cell_z_mm
+    ):
         raise ValueError(
             "SIMION aperture width and height must each be at least one SIMION cell"
         )

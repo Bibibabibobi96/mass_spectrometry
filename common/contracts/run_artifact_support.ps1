@@ -477,7 +477,8 @@ function Complete-FailedRun {
     [Nullable[bool]]$ThresholdResultEligible=$null,
     [hashtable]$AdditionalSummaryProperties=@{},
     [string[]]$AdditionalOutputs=@(),
-    [string]$ResourceUsagePath=''
+    [string]$ResourceUsagePath='',
+    [switch]$PreserveRawOutputs
   )
   Invoke-RunToolRootContext -RepoRoot $RepoRoot -Operation {
   $document=Get-Content -LiteralPath $RunConfig -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
@@ -509,7 +510,10 @@ function Complete-FailedRun {
   }
   Write-RunJson -Path $Summary -Value $summaryDocument
   $retentionActions=$null
-  if([int]$document.schema_version-eq 2){
+  # A failed natural-trajectory materialization has one recoverable input: the
+  # raw native-grid trace.  Do not erase it before the caller can repair and
+  # retry materialization.  Ordinary failed runs retain the compact policy.
+  if([int]$document.schema_version-eq 2 -and -not $PreserveRawOutputs){
     $retentionActions=Apply-RunArtifactRetention -Python $Python -RepoRoot $RepoRoot -RunConfig $RunConfig
   }
   if(-not[string]::IsNullOrWhiteSpace($ResourceUsagePath)-and
