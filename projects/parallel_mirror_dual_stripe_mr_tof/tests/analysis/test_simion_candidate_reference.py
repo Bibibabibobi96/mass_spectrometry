@@ -15,12 +15,24 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis 
     parse_events,
     summarize_events,
 )
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.cad_pose_contract import (
+    load_cad_pose_contract,
+    project_to_source,
+    source_to_project,
+)
 
 
 PROJECT = Path(__file__).resolve().parents[2]
 
 
 class SimionCandidateReferenceTest(unittest.TestCase):
+    def test_cad_pose_contract_round_trips_and_places_mechanical_midplane_at_x_zero(self) -> None:
+        contract = load_cad_pose_contract(PROJECT / "config" / "cad_to_theory_frame.json")
+        point = (123.25, 30.0, -64.416726)
+        mapped = source_to_project(point, contract)
+        self.assertEqual(mapped, (0.0, 123.25, -64.416726))
+        self.assertEqual(project_to_source(mapped, contract), point)
+
     def test_candidate_places_two_zone_focus_at_central_plane(self) -> None:
         focus = derive_two_zone_focus(load_contract(PROJECT / "config" / "simion_candidate_two_zone.json"))
         self.assertGreater(focus.focus_after_exit_mm, 0.0)
