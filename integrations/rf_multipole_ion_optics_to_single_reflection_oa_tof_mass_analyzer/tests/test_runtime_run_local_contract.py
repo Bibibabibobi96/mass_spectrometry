@@ -133,8 +133,11 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
         resolver_block = adapter[resolver:adapter.index("$plan = Get-Content", resolver)]
         self.assertIn("$fallbackFailure = $null", resolver_block)
         self.assertIn("$fallbackUnpublished = $null", resolver_block)
-        self.assertIn("-Filter 'simion__batch*.stdout.log'", resolver_block)
-        self.assertIn("'status,Fly completed.'", resolver_block)
+        self.assertIn("function Get-RfCompletedPrePulseBatchTrace", adapter)
+        self.assertIn("-Filter 'simion__batch*.trace.log'", adapter)
+        self.assertIn("-Filter 'simion__batch*.stdout.log'", adapter)
+        self.assertIn("Get-RfCompletedPrePulseBatchTrace", resolver_block)
+        self.assertIn("'status,Fly completed.'", adapter)
         self.assertIn("__sim__simion__.+__n\\d+", resolver_block)
         self.assertIn("inputs\\pre_pulse_time_series_screening_contract.json", resolver_block)
         self.assertIn("$screening.identities.experiment_id", resolver_block)

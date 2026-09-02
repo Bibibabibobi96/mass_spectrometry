@@ -5,7 +5,7 @@
   "adapter_implementations": {
     "family_source_closure": {
       "adapter_entrypoint": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/workflows/family_source_closure/adapter.ps1",
-      "adapter_sha256": "B7759C267B98BD583E2490D7C5C996B7E7A8D49FDED59F80CBF48B3B1D7FFF1D"
+      "adapter_sha256": "22945278B08AFB8D28E0BD37A0A2B95DE1C49D9BD900C01CB4E07E0C9C364148"
     }
   },
   "mappings": [

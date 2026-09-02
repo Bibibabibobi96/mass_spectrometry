@@ -1599,13 +1599,17 @@ $ast = [System.Management.Automation.Language.Parser]::ParseFile(
   $env:RF_ADAPTER_PATH, [ref]$null, [ref]$parseErrors
 )
 if ($parseErrors) { throw $parseErrors[0] }
-$functionAst = $ast.Find({
-  param($node)
-  $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
-  $node.Name -eq 'Resolve-RfRecoveryFailureAncestor'
-}, $true)
-if ($null -eq $functionAst) { throw 'missing recovery ancestor resolver' }
-. ([scriptblock]::Create($functionAst.Extent.Text))
+foreach ($name in @(
+    'Get-RfCompletedPrePulseBatchTrace', 'Resolve-RfRecoveryFailureAncestor'
+  )) {
+  $functionAst = $ast.Find({
+    param($node)
+    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+    $node.Name -eq $name
+  }, $true)
+  if ($null -eq $functionAst) { throw "missing recovery helper: $name" }
+  . ([scriptblock]::Create($functionAst.Extent.Text))
+}
 
 function Write-RecoveryEvidence {
   param([string]$RunId, [string]$Status, [string]$CampaignId, [string]$ExperimentId)
@@ -1623,9 +1627,18 @@ $partial = Join-Path $env:RF_RECOVERY_ROOT ($expected + '__r02')
 New-Item -ItemType Directory -Path $partial -Force | Out-Null
 
 Write-RecoveryEvidence -RunId ($expected + '__r01') -Status 'failed' -CampaignId 'campaign_a' -ExperimentId 'experiment_a'
+$child = Join-Path $env:RF_RECOVERY_ROOT (
+  '20260826_160000__sim__simion__rf-oatof-single-flight-gap102p4__n100__r01'
+)
+New-Item -ItemType Directory -Path (Join-Path $child 'inputs') -Force | Out-Null
+New-Item -ItemType Directory -Path (Join-Path $child 'logs') -Force | Out-Null
+@{ identities = @{ campaign_id = 'campaign_a'; experiment_id = 'experiment_a' } } |
+  ConvertTo-Json | Set-Content -LiteralPath (Join-Path $child 'inputs\pre_pulse_time_series_screening_contract.json')
+'status,Fly completed.' | Set-Content -LiteralPath (Join-Path $child 'logs\simion__batch01.trace.log')
 $accepted = Resolve-RfRecoveryFailureAncestor -RequestedRunId $requested `
   -ExpectedRunId $expected -RunsRoot $env:RF_RECOVERY_ROOT -CampaignId 'campaign_a' -ExperimentId 'experiment_a'
-if ($null -eq $accepted -or $accepted.run_id -ne ($expected + '__r01') -or $accepted.status -ne 'failed') {
+if ($null -eq $accepted -or $accepted.run_id -ne ($expected + '__r01') -or $accepted.status -ne 'failed' -or
+    $accepted.pre_pulse_child_run_directory -ne $child) {
   throw 'partial suffix did not recover prior same-campaign failure'
 }
 

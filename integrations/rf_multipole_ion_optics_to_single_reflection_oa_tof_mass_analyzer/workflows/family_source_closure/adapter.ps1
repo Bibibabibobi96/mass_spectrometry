@@ -85,6 +85,26 @@ function Resolve-RfPulseTimingOrchestrationArguments {
   return $names
 }
 
+function Get-RfCompletedPrePulseBatchTrace {
+  param([Parameter(Mandatory)][string]$RunDirectory)
+
+  $logsRoot = Join-Path $RunDirectory 'logs'
+  # TRACE is the current governed output.  Keep legacy stdout as a fallback
+  # only when this predecessor has no TRACE files; never mix two encodings.
+  $traceLogs = @(Get-ChildItem -LiteralPath $logsRoot -Filter 'simion__batch*.trace.log' `
+    -File -ErrorAction SilentlyContinue)
+  $candidates = if ($traceLogs.Count -gt 0) {
+    $traceLogs
+  } else {
+    @(Get-ChildItem -LiteralPath $logsRoot -Filter 'simion__batch*.stdout.log' `
+      -File -ErrorAction SilentlyContinue)
+  }
+  return @($candidates | Where-Object {
+    Select-String -LiteralPath $_.FullName -SimpleMatch -Quiet `
+      -Pattern 'status,Fly completed.'
+  })
+}
+
 function Resolve-RfRecoveryFailureAncestor {
   param(
     [Parameter(Mandatory)][string]$RequestedRunId,
@@ -169,10 +189,8 @@ function Resolve-RfRecoveryFailureAncestor {
       # completed SIMION batch.  A later retry can fail before launching any
       # batch (for example in continuation planning); resuming from it would
       # discard the earlier checkpoint and force needless replay.
-      $completedBatchLog = @(Get-ChildItem -LiteralPath (Join-Path $candidateDirectory 'logs') `
-        -Filter 'simion__batch*.stdout.log' -File -ErrorAction SilentlyContinue |
-        Where-Object { Select-String -LiteralPath $_.FullName -SimpleMatch `
-          -Quiet -Pattern 'status,Fly completed.' })
+      $completedBatchLog = @(Get-RfCompletedPrePulseBatchTrace `
+        -RunDirectory $candidateDirectory)
       # The governed integration parent does not own the SIMION stdout.  A
       # single-flight child does, so recover its completion evidence only when
       # the child's frozen screening contract proves that it belongs to this
@@ -195,10 +213,7 @@ function Resolve-RfRecoveryFailureAncestor {
                 ConvertFrom-Json
               if ([string]$screening.identities.campaign_id -ne $CampaignId -or
                   [string]$screening.identities.experiment_id -ne $ExperimentId) { return }
-              Get-ChildItem -LiteralPath (Join-Path $_.FullName 'logs') `
-                -Filter 'simion__batch*.stdout.log' -File -ErrorAction SilentlyContinue |
-                Where-Object { Select-String -LiteralPath $_.FullName -SimpleMatch `
-                  -Quiet -Pattern 'status,Fly completed.' }
+              Get-RfCompletedPrePulseBatchTrace -RunDirectory $_.FullName
             } catch { return }
           }
         )
@@ -1212,10 +1227,7 @@ if ($null -ne $recoveryAncestor) {
           $screening = Get-Content -LiteralPath $screeningPath -Raw -Encoding UTF8 | ConvertFrom-Json
           [string]$screening.identities.campaign_id -eq [string]$campaign.campaign_id -and
             [string]$screening.identities.experiment_id -eq [string]$experiment.experiment_id -and
-            @(Get-ChildItem -LiteralPath (Join-Path $_.FullName 'logs') `
-              -Filter 'simion__batch*.stdout.log' -File -ErrorAction SilentlyContinue |
-              Where-Object { Select-String -LiteralPath $_.FullName -SimpleMatch `
-                -Quiet -Pattern 'status,Fly completed.' }).Count -gt 0
+            @(Get-RfCompletedPrePulseBatchTrace -RunDirectory $_.FullName).Count -gt 0
         } catch { return $false }
       }
     )
