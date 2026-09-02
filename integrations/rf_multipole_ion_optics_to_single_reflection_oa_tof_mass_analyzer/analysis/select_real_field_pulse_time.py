@@ -20,6 +20,9 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.pulse_reuse_identity_projection import (
     build_verified_pulse_reuse_projection,
 )
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.materialize_pre_pulse_time_series import (
+    open_pre_pulse_state_table,
+)
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_layout import (
     select_detector_blind_real_field_pulse_time,
 )
@@ -52,7 +55,7 @@ def _load_object(path: Path) -> dict[str, Any]:
 
 
 def _load_state_rows(path: Path) -> list[dict[str, str]]:
-    with path.open(encoding="utf-8-sig", newline="") as handle:
+    with open_pre_pulse_state_table(path) as handle:
         reader = csv.DictReader(handle)
         columns = set(reader.fieldnames or ())
         if not REQUIRED_STATE_COLUMNS.issubset(columns):
@@ -165,7 +168,7 @@ def _validate_screening_receipt(
             "accelerator_entrance_overlay",
             "accelerator_intermediate_overlay",
         )
-    elif schema_version == 5:
+    elif schema_version in {5, 6, 7}:
         required = ("fine_upstream", "accelerator_entrance_zone_collision")
     else:
         required = ()
@@ -304,13 +307,34 @@ def select_and_write(
         configuration,
         str(contract["identities"]["spatial_window_profile_id"]),
     )
+    grid = contract.get("rf_time_grid", {})
+    natural_archive = contract.get("schema_version") == 7
+    ballistic_seed_time_us = (
+        float(grid["source_ballistic_seed_time_us"])
+        if contract.get("schema_version") == 6
+        else float(schedule["pulse_effective_time_us"])
+    )
+    natural_indexed_times: dict[int, float] | None = None
+    if natural_archive:
+        try:
+            grid_origin_us = float(grid["grid_origin_us"])
+            grid_step_us = float(grid["step_us"])
+            natural_indexed_times = {
+                int(row["sample_index"]): grid_origin_us
+                + (int(row["sample_index"]) - 1) * grid_step_us
+                for row in rows
+            }
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ContractError("natural pre-pulse state grid is invalid") from exc
     result = select_detector_blind_real_field_pulse_time(
         rows,
         geometry,
         profile,
-        candidate_times_us=list(contract["sample_times_us"]),
+        candidate_times_us=([] if natural_archive else list(contract["sample_times_us"])),
+        candidate_times_by_sample_index=natural_indexed_times,
+        natural_trajectory_archive=natural_archive,
         frozen_particle_ids=frozen_particle_ids,
-        ballistic_seed_time_us=float(schedule["pulse_effective_time_us"]),
+        ballistic_seed_time_us=ballistic_seed_time_us,
     )
     frozen_selection_order = contract.get("selection_order", SELECTION_ORDER)
     if result["selection_order"] != frozen_selection_order:
@@ -398,6 +422,41 @@ def select_and_write(
             })
 
     contract_schema_version = int(contract.get("schema_version") or 2)
+    # A natural archive can contain tens of thousands of RF-grid samples for
+    # every member of a 5,000-particle mother cohort.  The CSV below preserves
+    # the complete detector-blind candidate census as counts and identities;
+    # duplicating every per-particle candidate list inside the JSON receipt is
+    # not evidence required to reproduce a later policy.  Keep the selected
+    # candidate in the receipt (the handoff authority) and rederive any other
+    # ranking from the immutable raw archive when a new pulse policy is used.
+    compact_natural_receipt = contract_schema_version >= 7
+    receipt_candidates = (
+        [candidate_rows[0]] if compact_natural_receipt else candidate_rows
+    )
+    receipt_sample_census = (
+        [
+            {
+                "sample_index": candidate_rows[0]["sample_index"],
+                "candidate_time_us": candidate_rows[0]["candidate_time_us"],
+                "population_count": candidate_rows[0]["population_count"],
+                "alive": candidate_rows[0]["alive_identity"],
+                "missing": candidate_rows[0]["missing_identity"],
+            }
+        ]
+        if compact_natural_receipt
+        else [
+            {
+                "sample_index": candidate["sample_index"],
+                "candidate_time_us": candidate["candidate_time_us"],
+                "population_count": candidate["population_count"],
+                "alive": candidate["alive_identity"],
+                "missing": candidate["missing_identity"],
+            }
+            for candidate in sorted(
+                candidate_rows, key=lambda item: int(item["sample_index"])
+            )
+        ]
+    )
     receipt: dict[str, Any] = {
         "schema_version": 5 if contract_schema_version >= 5 else (
             4 if contract_schema_version == 4 else (
@@ -437,19 +496,8 @@ def select_and_write(
         "selected_time_us": result["selected_time_us"],
         "population_denominator_count": result["population_denominator_count"],
         "source_region_bounds": result["source_region_bounds"],
-        "candidates_ranked": candidate_rows,
-        "sample_census": [
-            {
-                "sample_index": candidate["sample_index"],
-                "candidate_time_us": candidate["candidate_time_us"],
-                "population_count": candidate["population_count"],
-                "alive": candidate["alive_identity"],
-                "missing": candidate["missing_identity"],
-            }
-            for candidate in sorted(
-                candidate_rows, key=lambda item: int(item["sample_index"])
-            )
-        ],
+        "candidates_ranked": receipt_candidates,
+        "sample_census": receipt_sample_census,
         "candidate_table": {
             "path": str(candidate_table_path.resolve()),
             "sha256": file_sha256(candidate_table_path),
@@ -459,7 +507,7 @@ def select_and_write(
     if verified_reuse_key is not None:
         receipt["verified_reuse_content_key"] = verified_reuse_key
         receipt["verified_reuse_content_key_basis"] = verified_reuse_basis
-    if contract.get("schema_version") in (2, 3, 4, 5):
+    if contract.get("schema_version") in (2, 3, 4, 5, 6, 7):
         receipt["pa_cache_keys"] = copy.deepcopy(screening_receipt["pa_cache_keys"])
     receipt["authorities"]["selector_source"] = _binding(
         selector_source_path, repository_text=True

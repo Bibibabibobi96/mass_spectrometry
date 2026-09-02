@@ -35,9 +35,33 @@ def _load(path: Path, label: str) -> dict[str, Any]:
     return value
 
 
+def _resolve_sample_index(
+    sample_index: int | None, selection_receipt_path: Path | None,
+) -> int:
+    """Use the detector-blind selected sample unless a caller pins one."""
+
+    if sample_index is not None:
+        if isinstance(sample_index, bool) or sample_index < 1:
+            raise ContractError("time-series restart sample index is invalid")
+        return sample_index
+    if selection_receipt_path is None:
+        return 1
+    receipt = _load(selection_receipt_path, "detector-blind pulse selection receipt")
+    matches = [
+        item for item in receipt.get("candidates_ranked", [])
+        if isinstance(item, dict) and item.get("rank") == 1
+    ]
+    if len(matches) != 1:
+        raise ContractError("detector-blind pulse selection does not name one best sample")
+    selected = matches[0].get("sample_index")
+    if isinstance(selected, bool) or not isinstance(selected, int) or selected < 1:
+        raise ContractError("detector-blind pulse selection sample index is invalid")
+    return selected
+
+
 def materialize_run(
     *, repo_root: Path, producer_manifest_path: Path, run_dir: Path,
-    sample_index: int = 1,
+    sample_index: int | None = None, selection_receipt_path: Path | None = None,
 ) -> Path:
     """Create one analysis run without mutating its successful producer."""
 
@@ -45,6 +69,7 @@ def materialize_run(
     workspace_root = repo_root.parent
     producer_manifest_path = producer_manifest_path.resolve()
     run_dir = run_dir.resolve()
+    sample_index = _resolve_sample_index(sample_index, selection_receipt_path)
     validate_run_id(run_dir.name)
     if run_dir.exists():
         raise ContractError("time-series restart run directory already exists")
@@ -108,6 +133,7 @@ def materialize_run(
             state_output_path=state_path,
             receipt_output_path=receipt_path,
             sample_index=sample_index,
+            selection_receipt_path=selection_receipt_path,
         )
         validate_schema(receipt, SCHEMA)
     except Exception:
@@ -154,11 +180,13 @@ def main() -> int:
     parser.add_argument("--repo-root", required=True, type=Path)
     parser.add_argument("--producer-manifest", required=True, type=Path)
     parser.add_argument("--run-dir", required=True, type=Path)
-    parser.add_argument("--sample-index", type=int, default=1)
+    parser.add_argument("--sample-index", type=int)
+    parser.add_argument("--selection-receipt", type=Path)
     arguments = parser.parse_args()
     manifest = materialize_run(
         repo_root=arguments.repo_root, producer_manifest_path=arguments.producer_manifest,
         run_dir=arguments.run_dir, sample_index=arguments.sample_index,
+        selection_receipt_path=arguments.selection_receipt,
     )
     print(f"TIME_SERIES_RESTART_MATERIALIZATION=PASS MANIFEST={manifest}")
     return 0

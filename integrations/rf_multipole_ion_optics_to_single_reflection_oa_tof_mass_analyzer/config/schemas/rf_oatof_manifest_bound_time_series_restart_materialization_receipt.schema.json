@@ -17,7 +17,7 @@
     "authorities": {
       "type": "object", "additionalProperties": false,
       "required": ["initial_global_state", "pulse_schedule", "resolved_population_contract", "resolved_geometry"],
-      "properties": {"initial_global_state": {"$ref": "#/$defs/file"}, "pulse_schedule": {"$ref": "#/$defs/file"}, "resolved_population_contract": {"$ref": "#/$defs/file"}, "resolved_geometry": {"$ref": "#/$defs/file"}}
+      "properties": {"initial_global_state": {"$ref": "#/$defs/file"}, "pulse_schedule": {"$ref": "#/$defs/file"}, "resolved_population_contract": {"$ref": "#/$defs/file"}, "resolved_geometry": {"$ref": "#/$defs/file"}, "detector_blind_selection_receipt": {"$ref": "#/$defs/file"}}
     },
     "selection": {
       "type": "object", "additionalProperties": false,
@@ -29,7 +29,7 @@
     "pulse_target_state": {
       "type": "object", "additionalProperties": false,
       "required": ["path", "bytes", "sha256", "particle_count", "source_state_epoch", "source_state_locus", "coordinate_frame", "clock_basis", "clock_authority", "pulse_effective_time_us", "ordered_particle_id_sha256"],
-      "properties": {"path": {"type": "string", "minLength": 1}, "bytes": {"type": "integer", "minimum": 1}, "sha256": {"$ref": "#/$defs/sha"}, "particle_count": {"type": "integer", "minimum": 1}, "source_state_epoch": {"const": "pulse_effective_time"}, "source_state_locus": {"type": "object", "additionalProperties": false, "required": ["kind"], "properties": {"kind": {"const": "accelerator_stage1_interior_finite_observed_3d_cloud"}}}, "coordinate_frame": {"const": "oatof_global_cartesian"}, "clock_basis": {"const": "canonical_instrument_time_us"}, "clock_authority": {"const": "resolved_single_flight_pulse_schedule"}, "pulse_effective_time_us": {"type": "number", "exclusiveMinimum": 0}, "ordered_particle_id_sha256": {"$ref": "#/$defs/sha"}}
+      "properties": {"path": {"type": "string", "minLength": 1}, "bytes": {"type": "integer", "minimum": 1}, "sha256": {"$ref": "#/$defs/sha"}, "particle_count": {"type": "integer", "minimum": 1}, "source_state_epoch": {"const": "pulse_effective_time"}, "source_state_locus": {"type": "object", "additionalProperties": false, "required": ["kind"], "properties": {"kind": {"const": "accelerator_stage1_interior_finite_observed_3d_cloud"}}}, "coordinate_frame": {"const": "oatof_global_cartesian"}, "clock_basis": {"const": "canonical_instrument_time_us"}, "clock_authority": {"enum": ["resolved_single_flight_pulse_schedule", "detector_blind_pulse_selection_receipt"]}, "pulse_effective_time_us": {"type": "number", "exclusiveMinimum": 0}, "ordered_particle_id_sha256": {"$ref": "#/$defs/sha"}}
     },
     "reuse_scope": {
       "type": "object", "additionalProperties": false,

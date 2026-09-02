@@ -301,6 +301,7 @@ class SingleFlightProgramTests(unittest.TestCase):
         self.assertIn("single_flight_pre_pulse_scope_instances={1,2,3}", program)
         self.assertIn('pre_pulse_active_roles={"coarse_frontend","upstream_bridge","accelerator"}', program)
         self.assertIn('upstream_bridge="upstream_bridge.pa0"', program)
+        self.assertIn('accelerator="accelerator_entrance_zero_field.pa0"', program)
         self.assertIn("single_flight_pre_pulse_accelerator_zero_field==0 and #single_flight_pa_plus_modes==0", program)
         domain["pa_plus_solution_model"] = None
         zero_field_without_pa_plus_metadata = build_successor_program(
@@ -436,11 +437,29 @@ class SingleFlightProgramTests(unittest.TestCase):
             program,
         )
         self.assertIn("local function single_flight_project_pa_plus(source)\n  local values={}", program)
+        self.assertIn(
+            "values[mode.mode_id]=assert(source[mode.source_electrode_id]", program
+        )
+        self.assertNotIn("total=total+term.coefficient", program)
         self.assertNotIn("for id,value in pairs(source) do values[id]=value end", program)
         self.assertIn("local single_flight_pa_plus_source={}", program)
         self.assertIn("single_flight_pa_plus_source[id]=value", program)
         self.assertIn("single_flight_pa_plus_source=initial", program)
-        self.assertNotIn("adj_elect[id]=value\n  if #single_flight_pa_plus_modes>0", program)
+        self.assertIn(
+            "if not single_flight_is_pa_plus_instance(ion_instance) then\n"
+            "    adj_elect[id]=value\n"
+            "    return\n"
+            "  end\n"
+            "  single_flight_pa_plus_source[id]=value",
+            program,
+        )
+        self.assertIn(
+            "Never write a physical ID into a PA+ array: SIMION\n"
+            "  -- treats that as an absent electrode, not as a harmless no-op.",
+            program,
+        )
+        self.assertIn("single_flight_is_pa_plus_instance(index) and initial_pa_plus or initial", program)
+        self.assertIn("single_flight_pa_plus_instance_indices={3,6}", program)
         self.assertNotIn("ipairs({1,2,3,4,5,6,7,8,9,10", program)
         self.assertIn("adjustable V_intermediate2=1450", program)
         self.assertIn(

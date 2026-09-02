@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import gzip
 import hashlib
 import json
 from pathlib import Path
@@ -283,7 +284,7 @@ def _write_fixture(
         "run_config": run_config_path,
         "contract_sha256": file_sha256(contract_path),
         "stdout_paths": stdout_paths,
-        "states": results / "pre_pulse_time_series_states.csv",
+        "states": results / "pre_pulse_time_series_states.csv.gz",
         "receipt": results / "pre_pulse_time_series_screening_receipt.json",
         "summary": run_dir / "summary.json",
     }
@@ -497,7 +498,7 @@ class PrePulseTimeSeriesMaterializationTests(unittest.TestCase):
                         for name in ("states", "receipt", "summary")
                     },
                 )
-                states_bytes = paths["states"].read_bytes()
+                states_bytes = gzip.decompress(paths["states"].read_bytes())
                 self.assertFalse(states_bytes.startswith(b"\xef\xbb\xbf"))
                 self.assertNotIn(b"\n", states_bytes.replace(b"\r\n", b""))
                 self.assertIn(b'"1E-12","-1","0"', states_bytes)
@@ -546,7 +547,7 @@ class PrePulseTimeSeriesMaterializationTests(unittest.TestCase):
             )
             result = _materialize(paths)
             receipt = json.loads(paths["receipt"].read_bytes())
-            with paths["states"].open("r", encoding="utf-8", newline="") as handle:
+            with gzip.open(paths["states"], "rt", encoding="utf-8", newline="") as handle:
                 rows = list(csv.DictReader(handle))
         self.assertEqual(result.state_row_count, 2600)
         self.assertEqual(

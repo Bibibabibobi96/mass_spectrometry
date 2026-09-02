@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import gzip
 import hashlib
 import json
 from pathlib import Path
@@ -12,6 +13,7 @@ from common.contracts.particle_physics import kinetic_energy_ev
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.materialize_pre_pulse_time_series import (
     CSV_COLUMNS,
     TIME_SERIES_RESTART_RECEIPT_ROLE,
+    _validate_selected_time,
     materialize_manifest_bound_restart,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_source import (
@@ -19,6 +21,9 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.prepare import (
     _validate_time_series_restart_state,
+)
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.materialize_time_series_restart import (
+    _resolve_sample_index,
 )
 
 
@@ -35,6 +40,18 @@ def _record(path: Path) -> dict[str, object]:
 
 
 class TimeSeriesRestartMaterializationTest(unittest.TestCase):
+    def test_selection_receipt_derives_the_natural_archive_sample_index(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            receipt = Path(temporary) / "selection.json"
+            receipt.write_text(json.dumps({
+                "candidates_ranked": [
+                    {"rank": 2, "sample_index": 99},
+                    {"rank": 1, "sample_index": 3579},
+                ],
+            }), encoding="utf-8")
+            self.assertEqual(_resolve_sample_index(None, receipt), 3579)
+            self.assertEqual(_resolve_sample_index(4, receipt), 4)
+
     def test_materializes_detector_blind_pulse_disabled_state(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -60,8 +77,8 @@ class TimeSeriesRestartMaterializationTest(unittest.TestCase):
             population.write_text(json.dumps({"execution_population": {"particle_count": 2}, "denominators": {"population_count": 2}}), encoding="utf-8")
             geometry = inputs / "geometry.json"
             geometry.write_text("{}\n", encoding="utf-8")
-            states = results / "pre_pulse_time_series_states.csv"
-            with states.open("w", encoding="utf-8", newline="") as handle:
+            states = results / "pre_pulse_time_series_states.csv.gz"
+            with gzip.open(states, "wt", encoding="utf-8", newline="") as handle:
                 writer = csv.DictWriter(handle, fieldnames=CSV_COLUMNS, lineterminator="\n")
                 writer.writeheader()
                 writer.writerow({
@@ -121,6 +138,42 @@ class TimeSeriesRestartMaterializationTest(unittest.TestCase):
         self.assertEqual(rows[0]["source_particle_id"], "2")
         self.assertEqual(receipt["selection"]["producer_population_denominator_count"], 2)
         self.assertEqual(receipt["selection"]["restart_to_producer_particle_id"], [{"restart_particle_id": 1, "producer_particle_id": 2}])
+        self.assertEqual(
+            receipt["pulse_target_state"]["clock_authority"],
+            "resolved_single_flight_pulse_schedule",
+        )
+
+    def test_requires_detector_blind_receipt_for_off_seed_sample(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            states = root / "states.csv"
+            screening = root / "screening.json"
+            states.write_text("state\n", encoding="utf-8")
+            screening.write_text("{}\n", encoding="utf-8")
+            receipt_path = root / "selection.json"
+            receipt_path.write_text(json.dumps({
+                "role": "rf_oatof_detector_blind_real_field_pulse_timing_selection_receipt",
+                "status": "success", "selection_uses_detector_outcome": False,
+                "detector_results_used": False,
+                "authorities": {
+                    "real_field_state_table": {"sha256": _record(states)["sha256"]},
+                    "pre_pulse_time_series_receipt": {"sha256": _record(screening)["sha256"]},
+                },
+                "selected_time_us": 60.0,
+                "candidates_ranked": [{"sample_index": 2, "candidate_time_us": 60.0}],
+            }))
+            record = _validate_selected_time(
+                selection_receipt_path=receipt_path, states_path=states,
+                screening_receipt_path=screening, sample_index=2,
+                sample_time_us=60.0, workspace_root=root,
+            )
+            self.assertEqual(record["sha256"], _record(receipt_path)["sha256"])
+            with self.assertRaisesRegex(Exception, "does not bind restart sample"):
+                _validate_selected_time(
+                    selection_receipt_path=receipt_path, states_path=states,
+                    screening_receipt_path=screening, sample_index=1,
+                    sample_time_us=50.0, workspace_root=root,
+                )
 
 
 if __name__ == "__main__":

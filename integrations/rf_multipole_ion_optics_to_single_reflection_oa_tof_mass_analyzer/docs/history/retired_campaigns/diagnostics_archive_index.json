@@ -458,6 +458,12 @@
       "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/staged_grid2_n34_simion_fly2_loader_authorization_budget.json",
       "status": "retired",
       "sha256": "b8beb73eb1f6b1650a6ab4fa5e50784169cdb7fcce0a3bb044a765ed10e72b32"
+    },
+    {
+      "source_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_field_matrix_compact_auto_replay_v3.json",
+      "archived_path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/history/retired_campaigns/connector_gap_field_matrix_compact_auto_replay_v3.json",
+      "status": "retired",
+      "sha256": "23768b97f59e5a0e7c426763e39afa6438ffd7775793217731f6f87303d65e21"
     }
   ]
 }

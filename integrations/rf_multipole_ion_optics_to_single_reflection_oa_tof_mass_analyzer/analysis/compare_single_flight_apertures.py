@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import math
 import os
 from pathlib import Path
 from typing import Any, Iterable
@@ -44,6 +45,9 @@ EVENTS = (
     "detector_crossing",
 )
 COLORS = {"wide": "#0072B2", "small": "#D55E00", "common": "#009E73"}
+PRE_PULSE_APERTURE_HEIGHTS_MM = frozenset((1.0, 1.5, 2.0, 2.5))
+PRE_PULSE_ACCELERATOR_SHAPES = frozenset(("square", "cylindrical"))
+PRE_PULSE_GAP_MM = 102.4
 
 
 def _pre_pulse_axial_full_width_acceptance_mm(
@@ -101,14 +105,105 @@ def _polynomial_fit_diagnostics(
     return result
 
 
+def _selected_detector_blind_sample(
+    receipt: dict[str, Any], *, case_id: str
+) -> tuple[int, float]:
+    """Return the detector-blind winner's native state-table sample.
+
+    The natural archive deliberately continues after the selected pulse time so
+    that another pulse policy can be evaluated without re-running SIMION.  Its
+    final sample therefore has no special comparison meaning.
+    """
+
+    if (
+        receipt.get("role")
+        != "rf_oatof_detector_blind_real_field_pulse_timing_selection_receipt"
+        or receipt.get("status") != "success"
+        or receipt.get("qualification") != "candidate_selection"
+        or receipt.get("selection_uses_detector_outcome") is not False
+        or receipt.get("detector_results_used") is not False
+    ):
+        raise ContractError(f"{case_id} detector-blind pulse timing receipt is invalid")
+    candidates = receipt.get("candidates_ranked")
+    if not isinstance(candidates, list) or not candidates or not isinstance(candidates[0], dict):
+        raise ContractError(f"{case_id} detector-blind pulse timing winner is missing")
+    winner = candidates[0]
+    sample_index = winner.get("sample_index")
+    candidate_time_us = winner.get("candidate_time_us")
+    selected_time_us = receipt.get("selected_time_us")
+    if (
+        isinstance(sample_index, bool)
+        or not isinstance(sample_index, int)
+        or sample_index < 1
+        or isinstance(candidate_time_us, bool)
+        or not isinstance(candidate_time_us, (int, float))
+        or isinstance(selected_time_us, bool)
+        or not isinstance(selected_time_us, (int, float))
+        or not math.isfinite(float(candidate_time_us))
+        or not math.isfinite(float(selected_time_us))
+        or not math.isclose(float(candidate_time_us), float(selected_time_us), rel_tol=0.0, abs_tol=1e-9)
+    ):
+        raise ContractError(f"{case_id} detector-blind pulse timing winner differs")
+    return sample_index, float(selected_time_us)
+
+
+def _pre_pulse_matrix_arm(
+    configuration: dict[str, Any], connection: dict[str, Any], *, case_id: str
+) -> tuple[str, float]:
+    """Return the resolved realization and aperture height for one screening arm."""
+
+    parameters = configuration.get("parameters")
+    if not isinstance(parameters, dict):
+        raise ContractError(f"{case_id} resolved run parameters are missing")
+    layout_profile_id = parameters.get("layout_profile_id")
+    if not isinstance(layout_profile_id, str):
+        raise ContractError(f"{case_id} layout profile is missing")
+    matching_shapes = [
+        shape for shape in PRE_PULSE_ACCELERATOR_SHAPES
+        if f"_{shape}_" in layout_profile_id
+    ]
+    if len(matching_shapes) != 1:
+        raise ContractError(f"{case_id} accelerator realization is not square or cylindrical")
+    aperture = parameters.get("accelerator_entrance_local_aperture_mm")
+    if not isinstance(aperture, dict):
+        raise ContractError(f"{case_id} accelerator local aperture is missing")
+    width, height = aperture.get("width"), aperture.get("height")
+    if (
+        isinstance(width, bool)
+        or isinstance(height, bool)
+        or not isinstance(width, (int, float))
+        or not isinstance(height, (int, float))
+        or not math.isclose(float(width), 1.0, rel_tol=0.0, abs_tol=1e-12)
+        or float(height) not in PRE_PULSE_APERTURE_HEIGHTS_MM
+    ):
+        raise ContractError(f"{case_id} is outside the 1.0 mm wide aperture scan")
+    registration = connection.get("spatial_registration")
+    connector = connection.get("connector")
+    if not isinstance(registration, dict) or not isinstance(connector, dict):
+        raise ContractError(f"{case_id} resolved connection is missing")
+    expected_gap_mm = registration.get("expected_gap_mm")
+    connector_length_mm = connector.get("length_mm")
+    if (
+        isinstance(expected_gap_mm, bool)
+        or isinstance(connector_length_mm, bool)
+        or not isinstance(expected_gap_mm, (int, float))
+        or not isinstance(connector_length_mm, (int, float))
+        or not math.isclose(float(expected_gap_mm), PRE_PULSE_GAP_MM, rel_tol=0.0, abs_tol=1e-9)
+        or not math.isclose(float(connector_length_mm), PRE_PULSE_GAP_MM, rel_tol=0.0, abs_tol=1e-9)
+    ):
+        raise ContractError(f"{case_id} does not use the 102.4 mm connector gap")
+    return matching_shapes[0], float(height)
+
+
 def analyze_pre_pulse_source_only_apertures(
     cases: dict[str, Path],
 ) -> dict[str, Any]:
     """Compare frozen pre-pulse source-only runs without downstream observables."""
 
-    if len(cases) < 2:
-        raise ContractError("pre-pulse aperture comparison requires at least two cases")
-    mother_ids: set[int] | None = None
+    if len(cases) != len(PRE_PULSE_ACCELERATOR_SHAPES) * len(PRE_PULSE_APERTURE_HEIGHTS_MM):
+        raise ContractError("pre-pulse aperture comparison requires the complete eight-arm matrix")
+    mother_initial: pd.DataFrame | None = None
+    matrix_arms: set[tuple[str, float]] = set()
     metrics: dict[str, Any] = {}
     for case_id, run in sorted(cases.items()):
         _validate_source_run(run)
@@ -118,24 +213,45 @@ def analyze_pre_pulse_source_only_apertures(
         full_width_acceptance_mm = _pre_pulse_axial_full_width_acceptance_mm(
             config, case_id=case_id
         )
-        states = pd.read_csv(run / "results" / "pre_pulse_time_series_states.csv")
+        archive = run / "results" / "pre_pulse_time_series_states.csv.gz"
+        states = pd.read_csv(
+            archive if archive.is_file() else run / "results" / "pre_pulse_time_series_states.csv"
+        )
         required = {"particle_id", "sample_index", "z_mm", "vz_mm_per_us"}
         if missing := sorted(required - set(states.columns)):
             raise ContractError(f"{case_id} states are missing: {', '.join(missing)}")
+        selection_receipt = _load_json(
+            run / "results" / "detector_blind_pulse_timing_candidate_receipt.json"
+        )
+        selected_sample_index, selected_time_us = _selected_detector_blind_sample(
+            selection_receipt, case_id=case_id
+        )
+        shape, aperture_height_mm = _pre_pulse_matrix_arm(
+            config,
+            _load_json(run / "inputs" / "resolved_connection.json"),
+            case_id=case_id,
+        )
+        if (shape, aperture_height_mm) in matrix_arms:
+            raise ContractError("pre-pulse aperture comparison contains a duplicate matrix arm")
+        matrix_arms.add((shape, aperture_height_mm))
         initial = pd.read_csv(run / "inputs" / "single_flight_initial_global_state.csv")
         if "particle_id" not in initial or initial["particle_id"].duplicated().any():
             raise ContractError(f"{case_id} mother cohort is invalid")
+        if len(initial) != 5000:
+            raise ContractError(f"{case_id} does not use the common N=5000 mother cohort")
+        if mother_initial is None:
+            mother_initial = initial
+        elif not initial.equals(mother_initial):
+            raise ContractError("pre-pulse cases must share the same frozen N=5000 mother cohort")
         ids = {int(value) for value in initial["particle_id"]}
-        if mother_ids is None:
-            mother_ids = ids
-        elif ids != mother_ids:
-            raise ContractError("pre-pulse cases must share identical mother particle IDs")
-        final = states.loc[states["sample_index"].eq(states["sample_index"].max())].copy()
-        if final["particle_id"].duplicated().any() or not set(final["particle_id"]).issubset(ids):
-            raise ContractError(f"{case_id} final pre-pulse state identities are invalid")
-        z, vz = final["z_mm"].to_numpy(float), final["vz_mm_per_us"].to_numpy(float)
+        selected = states.loc[states["sample_index"].eq(selected_sample_index)].copy()
+        if selected.empty:
+            raise ContractError(f"{case_id} selected detector-blind sample is absent")
+        if selected["particle_id"].duplicated().any() or not set(selected["particle_id"]).issubset(ids):
+            raise ContractError(f"{case_id} selected pre-pulse state identities are invalid")
+        z, vz = selected["z_mm"].to_numpy(float), selected["vz_mm_per_us"].to_numpy(float)
         if len(z) < 2 or not (np.isfinite(z).all() and np.isfinite(vz).all()):
-            raise ContractError(f"{case_id} needs two finite final pre-pulse states")
+            raise ContractError(f"{case_id} needs two finite selected pre-pulse states")
         linear = _polynomial_fit_diagnostics(z, vz, degree=1)
         quadratic = _polynomial_fit_diagnostics(z, vz, degree=2) if len(z) >= 3 else None
         cubic = _polynomial_fit_diagnostics(z, vz, degree=3) if len(z) >= 4 else None
@@ -146,9 +262,16 @@ def analyze_pre_pulse_source_only_apertures(
             raise ContractError(f"{case_id} terminal loss census is missing")
         full_width_mm = float(np.max(z) - np.min(z))
         metrics[case_id] = {
+            "matrix_arm": {"accelerator_shape": shape, "aperture_height_mm": aperture_height_mm, "connector_gap_mm": PRE_PULSE_GAP_MM},
+            "detector_blind_pulse_timing": {
+                "selected_sample_index": selected_sample_index,
+                "selected_time_us": selected_time_us,
+                "selection_uses_detector_outcome": False,
+                "detector_results_used": False,
+            },
             "mother_cohort_count": len(ids),
-            "accelerator_entry_count": len(final),
-            "transmission_fraction_of_mother": len(final) / len(ids),
+            "accelerator_entry_count": len(selected),
+            "transmission_fraction_of_mother": len(selected) / len(ids),
             "accelerator_entry_axial_width_mm": {
                 "full_width": full_width_mm,
                 "quantile_width_05_to_95": float(np.quantile(z, .95) - np.quantile(z, .05)),
@@ -198,7 +321,14 @@ def analyze_pre_pulse_source_only_apertures(
             },
             "loss_classification": census,
         }
-    return {"schema_version": 1, "role": "rf_oatof_pre_pulse_aperture_comparison", "status": "DETECTOR_BLIND_SOURCE_ONLY", "controlled_variables": {"mother_particle_ids_identical": True, "comparison_denominator": "full_mother_cohort"}, "cases": metrics}
+    expected_matrix = {
+        (shape, height)
+        for shape in PRE_PULSE_ACCELERATOR_SHAPES
+        for height in PRE_PULSE_APERTURE_HEIGHTS_MM
+    }
+    if matrix_arms != expected_matrix:
+        raise ContractError("pre-pulse aperture comparison matrix differs from the current eight-arm scan")
+    return {"schema_version": 1, "role": "rf_oatof_pre_pulse_aperture_comparison", "status": "DETECTOR_BLIND_SOURCE_ONLY", "controlled_variables": {"mother_cohort_identical": True, "mother_cohort_count": 5000, "connector_gap_mm": PRE_PULSE_GAP_MM, "comparison_denominator": "full_mother_cohort", "detector_blind_pulse_timing_receipt_bound_per_arm": True}, "cases": metrics}
 
 
 def _load_json(path: Path) -> dict[str, Any]:

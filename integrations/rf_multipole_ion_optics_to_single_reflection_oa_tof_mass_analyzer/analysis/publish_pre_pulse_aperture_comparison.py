@@ -37,9 +37,17 @@ SOURCE_FILES = (
     "run_manifest.json",
     "run_config.json",
     "inputs/single_flight_initial_global_state.csv",
-    "results/pre_pulse_time_series_states.csv",
+    "inputs/resolved_connection.json",
     "results/pre_pulse_time_series_screening_receipt.json",
+    "results/detector_blind_pulse_timing_candidate_receipt.json",
 )
+
+
+def _state_archive_relative_path(run: Path) -> str:
+    """Return the current compressed state archive, or immutable legacy evidence."""
+
+    current = "results/pre_pulse_time_series_states.csv.gz"
+    return current if (run / current).is_file() else "results/pre_pulse_time_series_states.csv"
 
 
 def _validated_cases(
@@ -56,7 +64,8 @@ def _validated_cases(
         run = Path(path).resolve()
         if not run.is_dir() or not run.is_relative_to(workspace_root):
             raise ContractError(f"{case_id} source run is missing or outside workspace")
-        missing = [name for name in SOURCE_FILES if not (run / name).is_file()]
+        source_files = (*SOURCE_FILES, _state_archive_relative_path(run))
+        missing = [name for name in source_files if not (run / name).is_file()]
         if missing:
             raise ContractError(f"{case_id} source run is missing required input: {missing[0]}")
         normalized[case_id] = run
@@ -64,12 +73,13 @@ def _validated_cases(
 
 
 def _source_reference(case_id: str, run: Path) -> dict[str, Any]:
+    source_files = (*SOURCE_FILES, _state_archive_relative_path(run))
     return {
         "case_id": case_id,
         "run_path": str(run),
         "files": {
             name: {"path": str(run / name), "sha256": file_sha256(run / name)}
-            for name in SOURCE_FILES
+            for name in source_files
         },
     }
 
@@ -119,7 +129,7 @@ def publish_pre_pulse_aperture_comparison(
         "comparison_implementation": comparison_implementation,
     }
     for index, (_, run) in enumerate(sorted(normalized_cases.items()), start=1):
-        for name in SOURCE_FILES:
+        for name in (*SOURCE_FILES, _state_archive_relative_path(run)):
             input_paths[f"case_{index}_{name.replace('/', '_').replace('.', '_')}"] = run / name
     frozen = freeze_repository_inputs(input_paths, repo_root=repo_root, run_dir=run_dir)
     run_config = {

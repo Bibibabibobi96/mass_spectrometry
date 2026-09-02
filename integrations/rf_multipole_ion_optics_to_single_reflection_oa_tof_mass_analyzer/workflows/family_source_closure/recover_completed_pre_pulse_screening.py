@@ -224,7 +224,7 @@ def recover(*, repo_root: Path, failed_run_dir: Path, recovery_dir: Path) -> Pat
         stdout_paths=logs,
         run_config_path=recovery_config_path,
         expected_contract_sha256=expected_sha,
-        states_path=results / "pre_pulse_time_series_states.csv",
+        states_path=results / "pre_pulse_time_series_states.csv.gz",
         receipt_path=results / "pre_pulse_time_series_screening_receipt.json",
         summary_path=recovery_dir / "summary.json",
     )
@@ -256,7 +256,7 @@ def recover(*, repo_root: Path, failed_run_dir: Path, recovery_dir: Path) -> Pat
         "--manifest", str(recovery_dir / "run_manifest.json"),
         "--status", "success", "--software", f"Python {sys.version_info.major}.{sys.version_info.minor}",
         "--output", str(recovery_dir / "summary.json"),
-        "--output", str(results / "pre_pulse_time_series_states.csv"),
+        "--output", str(results / "pre_pulse_time_series_states.csv.gz"),
         "--output", str(results / "pre_pulse_time_series_screening_receipt.json"),
         "--output", str(receipt_path),
     ]

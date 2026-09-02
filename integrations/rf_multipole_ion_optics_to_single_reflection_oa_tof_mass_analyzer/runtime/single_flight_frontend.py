@@ -591,20 +591,23 @@ def compile_accelerator_main(
     if policy_id == "full_accelerator_v1":
         if set(domain_policy) != {"policy_id"}:
             raise ValueError("accelerator main full-domain policy is invalid")
-    elif policy_id == "directed_kinematic_corridor_v1":
+    elif policy_id in {
+        "directed_kinematic_corridor_v1",
+        "coarse_boundary_supported_full_axial_core_v1",
+    }:
         if set(domain_policy) != {
             "policy_id", "exit_axis_positive_extent_mm", "transverse_half_span_mm"
         }:
-            raise ValueError("accelerator main corridor policy is invalid")
+            raise ValueError("accelerator main core-domain policy is invalid")
         try:
             exit_extent = float(domain_policy["exit_axis_positive_extent_mm"])
             transverse_half_span = float(domain_policy["transverse_half_span_mm"])
         except (TypeError, ValueError) as error:
-            raise ValueError("accelerator main corridor policy is invalid") from error
+            raise ValueError("accelerator main core-domain policy is invalid") from error
         if not all(math.isfinite(value) and value > 0 for value in (exit_extent, transverse_half_span)):
-            raise ValueError("accelerator main corridor policy is invalid")
+            raise ValueError("accelerator main core-domain policy is invalid")
         if exit_extent >= bore_half_width or transverse_half_span >= bore_half_width:
-            raise ValueError("accelerator main corridor must remain inside the physical bore")
+            raise ValueError("accelerator main core must remain inside the physical bore")
     elif policy_id == "pre_pulse_entrance_zone_collision_v1":
         if set(domain_policy) != {"policy_id"}:
             raise ValueError("accelerator main pre-pulse entrance-zone policy is invalid")
@@ -638,7 +641,10 @@ def compile_accelerator_main(
     y_min = float(geometry["axis_y_mm"]) - half_width - bridge_y_margin
     y_max = float(geometry["axis_y_mm"]) + half_width + bridge_y_margin
     render_region = "whole_accelerator"
-    if policy_id == "directed_kinematic_corridor_v1":
+    if policy_id in {
+        "directed_kinematic_corridor_v1",
+        "coarse_boundary_supported_full_axial_core_v1",
+    }:
         # Boundaries are coarse-grid nodes so every copied Dirichlet value is
         # sampled exactly from the common coarse PA.  The entrance side stays
         # at the governed split boundary to retain the actual fine aperture.
@@ -656,8 +662,17 @@ def compile_accelerator_main(
             float(origin["y"]), bridge_y_margin, side="max"
         )
         if x_max >= float(geometry["axis_x_mm"]) + bore_half_width:
-            raise ValueError("accelerator main corridor reaches the physical bore wall")
-        render_region = "directed_corridor"
+            raise ValueError("accelerator main core reaches the physical bore wall")
+        # The new physical-chain core remains fine across the complete
+        # 300-mm axial accelerator, including all 20 declared rings.  Only
+        # the far transverse bore is represented by the common 1-mm PA's
+        # electrode-by-electrode Dirichlet boundary.  The retired directed
+        # corridor remains entrance-only for its separate diagnostic role.
+        render_region = (
+            "whole_accelerator"
+            if policy_id == "coarse_boundary_supported_full_axial_core_v1"
+            else "directed_corridor"
+        )
     elif policy_id == "pre_pulse_entrance_zone_collision_v1":
         # This carrier represents precisely the connector-side first
         # acceleration zone: the perforated repeller and the first ideal grid.
@@ -810,6 +825,8 @@ def compile_accelerator_main(
             if policy_id == "full_accelerator_v1"
             else "pre_pulse_connector_side_first_zone_collision_v1"
             if policy_id == "pre_pulse_entrance_zone_collision_v1"
+            else "full_axial_accelerator_core_v1; distant_transverse_electrodes_are_coarse_basis_boundary_sources"
+            if policy_id == "coarse_boundary_supported_full_axial_core_v1"
             else "entrance_and_trajectory_corridor_v1; distant_ring_and_exit_surfaces_are_coarse_basis_boundary_sources"
         ),
         "cross_section": expected_cross_section,

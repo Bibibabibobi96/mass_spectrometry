@@ -4,7 +4,7 @@
   "profiles": [
     {
       "profile_id": "real_pa_rf_pre_pulse_v1",
-      "revision": 1,
+      "revision": 2,
       "defaults": {
         "campaign": {
           "execution_policy": {
@@ -18,7 +18,7 @@
             "relative_end_index": 2400,
             "rf_steps_per_period": 40,
             "sample_stride_rf_steps": 40,
-            "time_grid_profile_id": "ballistic_seed_rf40_forward_60_periods_v1",
+            "time_grid_profile_id": "ballistic_seed_native_dt_minus0p35_plus1p65_v1",
             "expected_upstream_frequency_hz": 1100000.0,
             "sample_count": 61,
             "spatial_window_profile_id": "layout_resolved_axial_provisional_xy2_v1",

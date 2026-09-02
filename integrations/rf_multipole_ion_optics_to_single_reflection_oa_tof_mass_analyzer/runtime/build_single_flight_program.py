@@ -494,6 +494,11 @@ def build_successor_program(
     if isinstance(rf_steps_per_period, bool) or not isinstance(rf_steps_per_period, int) or rf_steps_per_period <= 0:
         raise ValueError("RF steps per period must be one positive integer")
     screening = pre_pulse_time_series_contract is not None
+    natural_pre_pulse_archive = (
+        screening
+        and pre_pulse_time_series_contract is not None
+        and pre_pulse_time_series_contract.get("schema_version") == 7
+    )
     pre_pulse_collision_only = (
         screening
         and domain_split is not None
@@ -520,6 +525,10 @@ def build_successor_program(
         post_pulse_handoff_minimal or domain_split_local_axis_field
     )
     sample_times_us: list[float] = []
+    # Kept defined for non-screening Programs; the generated Lua only reads
+    # them for the v7 natural archive branch.
+    grid_origin_us = 0.0
+    grid_step_us = 1.0
     if screening:
         contract = pre_pulse_time_series_contract
         assert contract is not None
@@ -528,11 +537,10 @@ def build_successor_program(
             "mode": "real_pa_rf_pre_pulse_time_series",
             "active_scope": "pre_pulse_frontend_accelerator",
             "pulse_disabled": True,
-            "terminate_at_window_end": True,
             "resolution_claim_allowed": False,
         }
         if (
-            contract.get("schema_version") not in {1, 2, 3, 4, 5}
+            contract.get("schema_version") not in {1, 2, 3, 4, 5, 6, 7}
             or any(contract.get(key) != value for key, value in required.items())
         ):
             raise ValueError("pre-pulse time-series screening contract mode differs")
@@ -542,21 +550,51 @@ def build_successor_program(
             "single_flight_spatial_six_panel",
         ]:
             raise ValueError("pre-pulse time-series prohibited outputs differ")
-        raw_times = contract.get("sample_times_us")
-        if not isinstance(raw_times, list) or not raw_times:
-            raise ValueError("pre-pulse time-series requires sample times")
-        if any(
-            isinstance(value, bool)
-            or not isinstance(value, (int, float))
-            or not math.isfinite(float(value))
-            for value in raw_times
-        ):
-            raise ValueError("pre-pulse time-series sample times must be finite")
-        sample_times_us = [float(value) for value in raw_times]
-        if any(right <= left for left, right in zip(sample_times_us, sample_times_us[1:])):
-            raise ValueError("pre-pulse time-series sample times must be strictly increasing")
-        if sample_times_us[0] < max(birth_times_us):
-            raise ValueError("pre-pulse time-series starts before the last source birth")
+        if natural_pre_pulse_archive:
+            trace_policy = contract.get("trace_policy")
+            grid = contract.get("rf_time_grid")
+            if (
+                contract.get("terminate_at_window_end") is not False
+                or trace_policy != {
+                    "mode": "natural_trajectory_native_rf_grid_v1",
+                    "terminal_event": "geometry_collision_v1",
+                    "retention_class": "rebuildable_trajectory_payload",
+                }
+                or not isinstance(grid, dict)
+                or grid.get("time_grid_profile_id")
+                != "natural_pre_pulse_native_rf_grid_v1"
+            ):
+                raise ValueError("natural pre-pulse archive contract differs")
+            try:
+                grid_origin_us = float(grid["grid_origin_us"])
+                grid_step_us = float(grid["step_us"])
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ValueError("natural pre-pulse archive grid is invalid") from exc
+            if not (
+                math.isfinite(grid_origin_us)
+                and grid_origin_us >= 0.0
+                and math.isfinite(grid_step_us)
+                and grid_step_us > 0.0
+            ):
+                raise ValueError("natural pre-pulse archive grid is invalid")
+        else:
+            raw_times = contract.get("sample_times_us")
+            if not isinstance(raw_times, list) or not raw_times:
+                raise ValueError("pre-pulse time-series requires sample times")
+            if any(
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(float(value))
+                for value in raw_times
+            ):
+                raise ValueError("pre-pulse time-series sample times must be finite")
+            sample_times_us = [float(value) for value in raw_times]
+            if any(right <= left for left, right in zip(sample_times_us, sample_times_us[1:])):
+                raise ValueError("pre-pulse time-series sample times must be strictly increasing")
+            if sample_times_us[0] < max(birth_times_us):
+                raise ValueError("pre-pulse time-series starts before the last source birth")
+            grid_origin_us = 0.0
+            grid_step_us = 0.0
         if terminate_after_pulse:
             raise ValueError("pre-pulse time-series requires non-restart execution")
     for label, candidate in (
@@ -789,6 +827,11 @@ def build_successor_program(
     pa_plus_modes = [
         {
             "mode_id": int(mode["mode_id"]),
+            # A PA+ solution is already the weighted electrode shape.  Its
+            # adjustable value is the independent source electrode voltage;
+            # the ring weights belong to the PA+ geometry, not to runtime
+            # voltage accumulation.
+            "source_electrode_id": int(mode["source_physical_electrode_id"]),
             "terms": [
                 {"electrode_id": int(electrode_id), "coefficient": float(coefficient)}
                 for electrode_id, coefficient in mode["physical_electrode_coefficients"].items()
@@ -905,7 +948,9 @@ def build_successor_program(
         else ["accelerator", *overlay_roles]
     )
     domain_accelerator_filename = (
-        "accelerator_main.pa0"
+        "accelerator_entrance_zero_field.pa0"
+        if pre_pulse_accelerator_zero_field
+        else "accelerator_main.pa0"
         if domain_split is not None
         else "accelerator.pa0"
     )
@@ -1028,6 +1073,16 @@ def build_successor_program(
         if domain_split is not None
         else [3, *[int(item["instance_index"]) for item in overlay_specs]]
     )
+    # The coarse and upstream domains retain physical electrode solutions,
+    # whereas accelerator_main and its complete entrance replacement consume
+    # PA+ modes.  SIMION harmlessly ignores an adjustment number absent from a
+    # particular instance, so one fast-adjust callback can drive both families
+    # without coupling their geometry or duplicating a voltage schedule.
+    pa_plus_instance_indices = (
+        [accelerator_instance_index, *[int(item["instance_index"]) for item in overlay_specs]]
+        if pa_plus_modes
+        else []
+    )
     pre_pulse_scope_instance_indices = (
         [1, 2, 3] if pre_pulse_entry_geometry else active_field_instance_indices
     )
@@ -1119,8 +1174,11 @@ local single_flight_source_particle_id={particle_id_table}
 local single_flight_particle_id_offset=assert(tonumber(os.getenv('OATOF_SINGLE_FLIGHT_PARTICLE_ID_OFFSET') or '0'),'invalid single-flight particle ID offset')
 local single_flight_terminate_after_pulse={1 if terminate_after_pulse else 0}
 local single_flight_pre_pulse_time_series={1 if screening else 0}
+local single_flight_pre_pulse_natural_archive={1 if natural_pre_pulse_archive else 0}
 local single_flight_pre_pulse_sample_times_us={screening_sample_table}
 local single_flight_pre_pulse_next_sample={{}}
+local single_flight_pre_pulse_grid_origin_us={_lua_number(grid_origin_us)}
+local single_flight_pre_pulse_grid_step_us={_lua_number(grid_step_us)}
   local single_flight_overlay_enabled={1 if overlay_specs else 0}
   local single_flight_overlays={overlay_specs_lua}
 local single_flight_active_field_instances={active_field_instance_indices_lua}
@@ -1157,22 +1215,28 @@ local function single_flight_instrument_time_us()
 end
 handoff_instrument_time_us=single_flight_instrument_time_us
 local single_flight_pa_plus_modes={pa_plus_modes_lua}
+local single_flight_pa_plus_instance_indices={_lua_value(pa_plus_instance_indices)}
 local single_flight_pa_plus_source={{}}
+local function single_flight_is_pa_plus_instance(index)
+  for _,pa_plus_index in ipairs(single_flight_pa_plus_instance_indices) do
+    if index==pa_plus_index then return true end
+  end
+  return false
+end
 local function single_flight_project_pa_plus(source)
   local values={{}}
   for _,mode in ipairs(single_flight_pa_plus_modes) do
-    local total=0
-    for _,term in ipairs(mode.terms) do
-      local id=term.electrode_id
-      total=total+term.coefficient*assert(source[id],
-        'PA+ source voltage is missing physical electrode '..id)
-    end
-    values[mode.mode_id]=total
+    values[mode.mode_id]=assert(source[mode.source_electrode_id],
+      'PA+ source voltage is missing independent electrode '..mode.source_electrode_id)
   end
   return values
 end
 local function single_flight_set_electrode(id,value)
-  if #single_flight_pa_plus_modes==0 then
+  -- ``adj_elect`` is scoped to the PA currently traversed by the ion.  The
+  -- coarse/upstream families expose physical IDs, whereas PA+ exposes only
+  -- compact mode IDs.  Never write a physical ID into a PA+ array: SIMION
+  -- treats that as an absent electrode, not as a harmless no-op.
+  if not single_flight_is_pa_plus_instance(ion_instance) then
     adj_elect[id]=value
     return
   end
@@ -1181,11 +1245,23 @@ local function single_flight_set_electrode(id,value)
     adj_elect[mode_id]=mode_value
   end
 end
+local single_flight_trace_path=os.getenv('OATOF_PRE_PULSE_RAW_TRACE_PATH')
+local single_flight_trace_stream=nil
+if single_flight_trace_path~=nil and single_flight_trace_path~='' then
+  single_flight_trace_stream=assert(io.open(single_flight_trace_path,'w'))
+end
+local function single_flight_write_trace(record)
+  if single_flight_trace_stream~=nil then
+    single_flight_trace_stream:write(record,'\\n')
+  else
+    print(record)
+  end
+end
 local function single_flight_trace_checkpoint(event,t,x,y,z,vx,vy,vz)
   if trajectory_log_enable==0 then return end
   local particle_id=single_flight_canonical_particle_id()
   local energy=0.0051821348263402529*ion_mass*(vx*vx+vy*vy+vz*vz)
-  print(string.format('TRACE: %s ion=%d particle_id=%d instrument_time_us=%.12g tof_since_pulse_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_per_us=%.12g vy_mm_per_us=%.12g vz_mm_per_us=%.12g kinetic_energy_eV=%.12g survival_status=alive',
+  single_flight_write_trace(string.format('TRACE: %s ion=%d particle_id=%d instrument_time_us=%.12g tof_since_pulse_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_per_us=%.12g vy_mm_per_us=%.12g vz_mm_per_us=%.12g kinetic_energy_eV=%.12g survival_status=alive',
     event,ion_number,particle_id,t,t-handoff_pulse_time_us,x,y,z,vx,vy,vz,energy))
 end
 local function single_flight_require_analyzer_particle(elapsed)
@@ -1371,10 +1447,15 @@ function segment.initialize_run()
     initial[{int(electrodes['entrance_reference_sleeve_id'])}]={_lua_number(entrance_reference_v)}
     initial[{int(electrodes['entrance_plate_id'])}]={_lua_number(entrance_plate_v)}
     single_flight_pa_plus_source=initial
+    local initial_pa_plus=single_flight_project_pa_plus(initial)
+    -- ``adj_elect`` exists only inside SIMION's fast-adjust callback.  Seed
+    -- the already loaded PA families explicitly here, choosing their native
+    -- basis namespace; the later dynamic callback writes both namespaces.
     for _,index in ipairs(single_flight_active_field_instances) do
       local active_instance=assert(simion.wb.instances[index],
         'active domain field instance is missing')
-      active_instance.pa:fast_adjust(single_flight_project_pa_plus(initial))
+      active_instance.pa:fast_adjust(
+        single_flight_is_pa_plus_instance(index) and initial_pa_plus or initial)
     end
     for _,overlay in ipairs(single_flight_overlays) do
       local oi=assert(simion.wb.instances[overlay.instance_index],
@@ -1454,7 +1535,7 @@ function segment.initialize()
     vx=ion_vx_mm,vy=ion_vy_mm,vz=ion_vz_mm}}
   single_flight_reported[ion_number]={{}}
   single_flight_pre_pulse_next_sample[ion_number]=1
-  print(string.format('TRACE: source_release ion=%d particle_id=%d instrument_time_us=%.17g x_mm=%.17g y_mm=%.17g z_mm=%.17g vx_mm_per_us=%.17g vy_mm_per_us=%.17g vz_mm_per_us=%.17g simion_native_kinetic_energy_eV=%.17g',ion_number,single_flight_canonical_particle_id(),time,ion_px_mm,ion_py_mm,ion_pz_mm,ion_vx_mm,ion_vy_mm,ion_vz_mm,ion_ke))
+  single_flight_write_trace(string.format('TRACE: source_release ion=%d particle_id=%d instrument_time_us=%.17g x_mm=%.17g y_mm=%.17g z_mm=%.17g vx_mm_per_us=%.17g vy_mm_per_us=%.17g vz_mm_per_us=%.17g simion_native_kinetic_energy_eV=%.17g',ion_number,single_flight_canonical_particle_id(),time,ion_px_mm,ion_py_mm,ion_pz_mm,ion_vx_mm,ion_vy_mm,ion_vz_mm,ion_ke))
 end
 function segment.tstep_adjust()
   local analyzer_dt=nil
@@ -1467,7 +1548,17 @@ function segment.tstep_adjust()
   local time=single_flight_instrument_time_us()
   if single_flight_pre_pulse_time_series~=0 then
     local next_index=single_flight_pre_pulse_next_sample[ion_number] or 1
-    local next_time=single_flight_pre_pulse_sample_times_us[next_index]
+    local next_time=nil
+    if single_flight_pre_pulse_natural_archive~=0 then
+      -- The release position is recorded separately by initialize().  Start
+      -- grid states at the next RF tick, then advance only from the persisted
+      -- discrete index below.  Re-deriving this from a binary float on every
+      -- SIMION step can skip a tick after accumulated roundoff.
+      if next_index==1 then next_index=2 end
+      next_time=single_flight_pre_pulse_grid_origin_us+(next_index-1)*single_flight_pre_pulse_grid_step_us
+    else
+      next_time=single_flight_pre_pulse_sample_times_us[next_index]
+    end
     if next_time and time<next_time and ion_time_step>next_time-time then
       ion_time_step=next_time-time
     end
@@ -1492,23 +1583,49 @@ function segment.other_actions()
   local p=single_flight_previous[ion_number]
   if single_flight_pre_pulse_time_series~=0 then
     local next_index=single_flight_pre_pulse_next_sample[ion_number] or 1
-    while single_flight_pre_pulse_sample_times_us[next_index] and
-        time>=single_flight_pre_pulse_sample_times_us[next_index] do
-      local sample_time=single_flight_pre_pulse_sample_times_us[next_index]
+    local sample_time=nil
+    if single_flight_pre_pulse_natural_archive~=0 then
+      local raw_index=(time-single_flight_pre_pulse_grid_origin_us)/single_flight_pre_pulse_grid_step_us
+      local native_index=math.floor(raw_index+0.5)+1
+      sample_time=single_flight_pre_pulse_grid_origin_us+(native_index-1)*single_flight_pre_pulse_grid_step_us
+      if native_index>=next_index then next_index=native_index end
+    else
+      sample_time=single_flight_pre_pulse_sample_times_us[next_index]
+    end
+    while sample_time and time>=sample_time do
       local x,y,z,vx,vy,vz=ion_px_mm,ion_py_mm,ion_pz_mm,ion_vx_mm,ion_vy_mm,ion_vz_mm
-      assert(math.abs(time-sample_time)<=1e-12*math.max(1,math.abs(sample_time)),
+      -- SIMION may shorten a final step to resolve a geometry collision.  That
+      -- endpoint is a terminal observation, not a state on the native RF grid:
+      -- retain it through segment.terminate and do not relabel it as a grid
+      -- sample.  All emitted time-series rows therefore remain native-grid
+      -- states; no interpolated state is ever manufactured here.  Keep the
+      -- historic finite-window contract strict, since its scheduled samples
+      -- are required landings rather than a natural trajectory archive.
+      if single_flight_pre_pulse_natural_archive~=0 and
+          math.abs(time-sample_time)>1e-9*math.max(1,math.abs(sample_time)) then break end
+      -- Lua doubles and SIMION's time accumulator can differ by a few ULP at
+      -- a requested RF landing.  This is still the same native grid event;
+      -- keep the stored canonical grid time and retain the actual clock in
+      -- its separate column.  The tolerance matches the preceding guard so
+      -- a genuine shortened collision endpoint is never relabelled.
+      assert(math.abs(time-sample_time)<=1e-9*math.max(1,math.abs(sample_time)),
         'pre-pulse time-series sample did not land on its native SIMION timestep')
       local energy=0.0051821348263402529*ion_mass*(vx*vx+vy*vy+vz*vz)
       if trajectory_log_enable~=0 then
-        print(string.format('TRACE: pre_pulse_time_series_state ion=%d particle_id=%d sample_index=%d instrument_time_us=%.17g actual_instrument_time_us=%.17g x_mm=%.17g y_mm=%.17g z_mm=%.17g vx_mm_per_us=%.17g vy_mm_per_us=%.17g vz_mm_per_us=%.17g kinetic_energy_eV=%.17g survival_status=alive',
+        single_flight_write_trace(string.format('TRACE: pre_pulse_time_series_state ion=%d particle_id=%d sample_index=%d instrument_time_us=%.17g actual_instrument_time_us=%.17g x_mm=%.17g y_mm=%.17g z_mm=%.17g vx_mm_per_us=%.17g vy_mm_per_us=%.17g vz_mm_per_us=%.17g kinetic_energy_eV=%.17g survival_status=alive',
           ion_number,single_flight_canonical_particle_id(),next_index,sample_time,time,x,y,z,vx,vy,vz,energy))
       end
       next_index=next_index+1
       single_flight_pre_pulse_next_sample[ion_number]=next_index
+      if single_flight_pre_pulse_natural_archive~=0 then
+        sample_time=nil
+      else
+        sample_time=single_flight_pre_pulse_sample_times_us[next_index]
+      end
     end
     single_flight_previous[ion_number]={{t=time,x=ion_px_mm,y=ion_py_mm,z=ion_pz_mm,
       vx=ion_vx_mm,vy=ion_vy_mm,vz=ion_vz_mm}}
-    if next_index>#{screening_sample_table} then ion_splat=1 end
+    if single_flight_pre_pulse_natural_archive==0 and next_index>#{screening_sample_table} then ion_splat=1 end
     return
   end
   local reported=single_flight_reported[ion_number] or {{}}
@@ -1597,8 +1714,9 @@ function segment.terminate()
   if single_flight_pre_pulse_time_series~=0 then
     if trajectory_log_enable~=0 then
       local next_index=single_flight_pre_pulse_next_sample[ion_number] or 1
-      local terminal_reason=next_index>#{screening_sample_table} and 'window_complete' or 'splat'
-      print(string.format('TRACE: pre_pulse_screening_terminal ion=%d particle_id=%d instrument_time_us=%.17g x_mm=%.17g y_mm=%.17g z_mm=%.17g vx_mm_per_us=%.17g vy_mm_per_us=%.17g vz_mm_per_us=%.17g terminal_reason=%s',
+      local terminal_reason=single_flight_pre_pulse_natural_archive~=0 and 'geometry_collision' or
+        (next_index>#{screening_sample_table} and 'window_complete' or 'splat')
+      single_flight_write_trace(string.format('TRACE: pre_pulse_screening_terminal ion=%d particle_id=%d instrument_time_us=%.17g x_mm=%.17g y_mm=%.17g z_mm=%.17g vx_mm_per_us=%.17g vy_mm_per_us=%.17g vz_mm_per_us=%.17g terminal_reason=%s',
         ion_number,single_flight_canonical_particle_id(),time,ion_px_mm,ion_py_mm,ion_pz_mm,
         ion_vx_mm,ion_vy_mm,ion_vz_mm,terminal_reason))
     end
@@ -1772,12 +1890,8 @@ local function pa_adjustments(ids)
     values[id]=active[id]
   end
   for _,mode in ipairs(pa_plus_modes) do
-    local total=0
-    for _,term in ipairs(mode.terms) do
-      total=total+term.coefficient*assert(active[term.electrode_id],
-        'frozen PA+ adjustment is missing physical electrode '..term.electrode_id)
-    end
-    values[mode.mode_id]=total
+    values[mode.mode_id]=assert(active[mode.source_electrode_id],
+      'frozen PA+ adjustment is missing independent electrode '..mode.source_electrode_id)
   end
   return values
 end

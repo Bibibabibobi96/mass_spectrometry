@@ -144,6 +144,14 @@ class SingleFlightExecutionProfileTests(unittest.TestCase):
         )
         self.assertFalse(resolved["accelerator_overlay_enabled"])
         self.assertEqual(
+            resolved["accelerator_main_domain"],
+            {
+                "policy_id": "coarse_boundary_supported_full_axial_core_v1",
+                "exit_axis_positive_extent_mm": 40.0,
+                "transverse_half_span_mm": 8.0,
+            },
+        )
+        self.assertEqual(
             resolved["accelerator_main_reference_aperture_mm"],
             {"width": 1.0, "height": 1.0},
         )

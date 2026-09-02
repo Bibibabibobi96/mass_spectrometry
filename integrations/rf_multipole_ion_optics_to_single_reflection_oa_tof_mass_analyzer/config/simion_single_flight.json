@@ -288,7 +288,7 @@
         "z": 1.0
       },
       "accelerator_main_domain": {
-        "policy_id": "directed_kinematic_corridor_v1",
+        "policy_id": "coarse_boundary_supported_full_axial_core_v1",
         "exit_axis_positive_extent_mm": 40.0,
         "transverse_half_span_mm": 8.0
       },
@@ -312,7 +312,7 @@
           "grid1_downstream_guard_mm": 1.0
         }
       },
-      "role": "physical_chain_shared_main_local_aperture_initial_domain"
+      "role": "physical_chain_shared_main_local_aperture_full_axial_core"
     },
     {
       "profile_id": "frontend_isotropic_020_accelerator_two_local_z005",

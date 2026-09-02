@@ -53,14 +53,19 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
         self.assertIn("'--oatof-geometry',$oatofGeometry", runner[export:retention])
         self.assertIn("total_axis_field_theory_comparison", runner[retention:retention + 2500])
 
-    def test_terminal_capacity_gate_reuses_the_conservative_launch_measurement(self) -> None:
+    def test_terminal_capacity_gate_uses_actual_protected_run_upper_bound(self) -> None:
         runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
         terminal = runner.index("$terminalCapacityArguments = @(")
         terminal_block = runner[terminal:runner.index("$terminalCapacity =", terminal)]
         self.assertIn("--known-measured-bytes", terminal_block)
         self.assertIn("$artifactCapacityState.known_measured_bytes", terminal_block)
         self.assertIn("--maximum-new-artifact-bytes", terminal_block)
-        self.assertIn("$stageBudgetDocument.limits.transient_run_directory_bytes", terminal_block)
+        self.assertIn("$terminalCapacityMaximumNewArtifactBytes", terminal_block)
+        self.assertNotIn("$stageBudgetDocument.limits.transient_run_directory_bytes", terminal_block)
+        self.assertIn(
+            "Get-ChildItem -LiteralPath $package.run_dir -File -Recurse",
+            runner[terminal - 1200:terminal],
+        )
 
     def test_domain_split_freezes_the_accelerator_main_domain_policy(self) -> None:
         runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
@@ -240,6 +245,28 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
         self.assertIn("simion_single_wave_batch_plan_sha256", runner)
         self.assertIn("Invoke-ResourceBudgetedProcesses", runner)
 
+    def test_parallel_fly_batches_use_isolated_workbench_copies(self) -> None:
+        """A retained 45-second observer must never race a later Fly lane."""
+        runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
+        records_start = runner.index("function New-SingleFlightBatchRecords")
+        records_end = runner.index("$batchRecords = @(New-SingleFlightBatchRecords", records_start)
+        records = runner[records_start:records_end]
+        self.assertIn("oatof_ideal_grounded__batch{0:D2}", records)
+        self.assertIn("runtime_dir = $runtimeDir; workbench = $batchWorkbench", records)
+        self.assertIn("runtime_asset_source_stem = Join-Path $runtimeDir 'oatof_ideal_grounded'", records)
+        specifications_start = runner.index("function New-SingleFlightProcessSpecifications")
+        specifications_end = runner.index("$processSpecifications = @(New-SingleFlightProcessSpecifications", specifications_start)
+        specifications = runner[specifications_start:specifications_end]
+        self.assertIn("working_directory = $batch.runtime_dir", specifications)
+        self.assertIn("workbench = $batch.workbench", specifications)
+        self.assertIn("runtime_asset_source_stem = $batch.runtime_asset_source_stem", specifications)
+        self.assertIn("runtime_asset_stem = $batch.runtime_asset_stem", specifications)
+        self.assertIn("$batch.workbench", specifications)
+        self.assertIn("prepare = {", specifications)
+        self.assertIn("@('.iob','.lua','.fly2')", specifications)
+        self.assertIn("Copy-Item -LiteralPath $sourceAsset", specifications)
+        self.assertIn("exclusive_resource_key = ('simion_pa_runtime:' + [IO.Path]::GetFullPath($runtimeDir))", specifications)
+
     def test_terminal_capacity_reconciliation_protects_the_just_published_run_and_cache_keys(self) -> None:
         runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
         terminal_gate = runner.index("$terminalCapacityArguments = @(")
@@ -312,7 +339,9 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
         ]
         self.assertNotIn("'--required-headroom-bytes'", publication_gate)
         self.assertIn("Publication is a same-volume Move-Item", publication_gate)
-        self.assertIn("$maximumNewForPublication = [int64]$MaximumNewArtifactBytes + $stagingBytes", publication_gate)
+        self.assertNotIn("--known-measured-bytes", publication_gate)
+        self.assertNotIn("--maximum-new-artifact-bytes", publication_gate)
+        self.assertIn("Always use that\n  # current measurement", publication_gate)
 
     def test_solver_stage_runners_use_short_lived_execution_aliases(self) -> None:
         for runner_path in RUNNERS[1:]:

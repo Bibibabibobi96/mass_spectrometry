@@ -2,13 +2,13 @@
   "schema_version": 7,
   "role": "rf_multipole_oatof_experiment_campaign",
   "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
-  "campaign_id": "ideal_acceptance_300mm_square_handoff_post_pulse_smoke_n1_v2",
+  "campaign_id": "ideal_acceptance_300mm_square_h100_pulse_eligible_restart_n5000",
   "status": "exploration",
   "execution_policy": {
     "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/execution_policy.json",
     "sha256": "6FDB04133C0AB5F48BE51127296469802E8E31E04DF6FFB539DD96E0F54F4B35"
   },
-  "claim_limit": "DEVELOPMENT_ONLY conditional restart transport. Detector timing metrics condition on the 1 detector-blind pre-pulse states; all transmission and loss rates retain the frozen 1-ion mother denominator.",
+  "claim_limit": "DEVELOPMENT_ONLY conditional restart transport. Detector timing metrics condition on the 50 detector-blind pulse-eligible pre-pulse states; all transmission and loss rates retain the frozen 5000-ion mother denominator.",
   "experiments": {
     "shared": {
       "execution_strategy": "simion_single_flight",
@@ -29,7 +29,7 @@
         "pulse_width_us": 1.0
       },
       "single_flight_population": {
-        "population_id": "ideal_acceptance_300mm_square_handoff_post_pulse_smoke_n1_v2_conditional_restart",
+        "population_id": "ideal_acceptance_300mm_square_accelerator_port_h100_pulse_eligible_restart_n50_conditional_restart",
         "population_mode": "pre_pulse_restart",
         "source_authority": {
           "input_role": "pre_pulse_source_state",
@@ -37,14 +37,14 @@
           "ordered_particle_id_encoding": "canonical_compact_json_integer_array_v1"
         },
         "execution_population": {
-          "particle_count": 1,
-          "ordered_particle_id_sha256": "5C441CCCE965FB3DA22F42AA850DA25C6C9C85FE3FF43A24AEED2CACFDA4926B",
+          "particle_count": 50,
+          "ordered_particle_id_sha256": "35496DE5A7ED3478E0912EAD984962B2AC2B75789DDB08521562D0362BA278B7",
           "selection_algorithm": "all_rows_in_frozen_file_order",
           "selection_seed": 0
         },
         "denominators": {
-          "population_count": 1,
-          "eligible_population_count": 1
+          "population_count": 5000,
+          "eligible_population_count": 50
         },
         "analysis_randomness": {
           "bootstrap_resample_count": 1000,
@@ -90,14 +90,14 @@
         }
       },
       "pre_pulse_source_state": {
-        "path": "artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20260902_001000__analysis__python__natural-pre-pulse-restart__n1/results/canonical_pre_pulse_restart_state.csv",
-        "sha256": "3CE1104BC6552A96C9FE9D86F41BCE57958E5D9DFEF66893D0FCE416792A146A",
-        "particle_count": 1,
+        "path": "artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20260902_071500__analysis__python__ideal-accept-square-h100-pulse-eligible-restart__n50/results/canonical_pre_pulse_restart_state.csv",
+        "sha256": "0C1C107BA42A26306D25A67E78171EF2B7B5AC04496902D26BA066221FDBD36A",
+        "particle_count": 50,
         "coordinate_frame": "oatof_global_cartesian",
         "release_event": "pre_pulse_state",
         "materialization_receipt": {
-          "path": "artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20260902_001000__analysis__python__natural-pre-pulse-restart__n1/results/time_series_restart_materialization_receipt.json",
-          "sha256": "8BAD2F4B82122C12B7CB93F3E02E527070195600B4219CF30D916256C4F245FB"
+          "path": "artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20260902_071500__analysis__python__ideal-accept-square-h100-pulse-eligible-restart__n50/results/time_series_restart_materialization_receipt.json",
+          "sha256": "811DD5764848A7CBDFBB078629DB3BB5F68995D9C5F978FB6A432AAD84077A8E"
         },
         "source_state_epoch": "pulse_effective_time",
         "source_state_locus": "accelerator_stage1_interior_finite_observed_3d_cloud",
@@ -115,7 +115,7 @@
     ],
     "rows": [
       {
-        "experiment_id": "ideal_acceptance_300mm_square_handoff_post_pulse_smoke_n1_v2",
+        "experiment_id": "ideal_acceptance_300mm_square_accelerator_port_h100_pulse_eligible_restart_n50",
         "values": {
           "single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_square_kinematic_envelope_v1",
           "connection_profile_id": "rf_octupole_to_single_reflection_oatof_direct_mating_gap_102p4mm",

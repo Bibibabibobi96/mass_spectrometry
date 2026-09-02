@@ -15,6 +15,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.prepare import (
     _automatic_pulse_population_binding,
     compile_pre_pulse_time_series_contract,
+    derive_continuous_source_pulse_window,
     validate_pre_pulse_time_series_campaign,
 )
 
@@ -101,6 +102,33 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
         self.assertEqual(grid["start_index"], 0)
         self.assertEqual(grid["end_index"], 320)
         self.assertFalse(contract["resolution_claim_allowed"])
+
+    def test_continuous_source_window_uses_registered_global_bore_crossings(self) -> None:
+        window = derive_continuous_source_pulse_window(
+            [
+                {
+                    "instrument_time_us": "2", "position_x_mm": "-20",
+                    "velocity_x_m_s": "2000",
+                },
+                {
+                    "instrument_time_us": "3", "position_x_mm": "-10",
+                    "velocity_x_m_s": "1000",
+                },
+            ],
+            "A" * 64,
+            {
+                "geometry_mm": {"accelerator_bore_half": 5.0},
+                "coordinate_convention": {"accelerator_axis_x": 0.0},
+            },
+            rf_step_us=0.5,
+        )
+        self.assertEqual(
+            window["derivation"],
+            "source_population_forward_bore_crossing_bounds_v1",
+        )
+        self.assertEqual(window["source_forward_particle_count"], 2)
+        self.assertEqual(window["requested_relative_start_index"], -6)
+        self.assertEqual(window["requested_relative_end_index"], 4)
 
     def test_screening_solver_profile_is_independent_of_full_flight_profile(self) -> None:
         contract = self._compile(time_integration_profile_id="dt160")
@@ -499,6 +527,22 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
             ContractError, "automatic pulse timing population differs"
         ):
             _automatic_pulse_population_binding(legacy)
+
+    def test_auto_policy_accepts_complete_materialized_volume_source(self) -> None:
+        population = {
+            "population_mode": "independent_spatial_velocity_ion_source_snapshot",
+            "source_authority": {
+                "table_binding": "prepared_materialized_ion_source_volume",
+            },
+            "execution_population": {
+                "particle_count": 5000,
+                "selection_algorithm": "all_rows_in_frozen_file_order",
+            },
+        }
+        self.assertEqual(
+            _automatic_pulse_population_binding(population),
+            ("prepared_materialized_ion_source_volume", 5000),
+        )
 
     def test_schema_and_auto_policy_accept_generic_deterministic_prefix(self) -> None:
         campaign = json.loads(CURRENT_AUTO_CAMPAIGN_PATH.read_text(encoding="utf-8"))

@@ -8,7 +8,7 @@
   },
   "active_campaigns": [
     {
-      "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/connector_gap_field_matrix_compact_auto_replay_v3.json"
+      "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/ideal_acceptance_300mm_continuous_frontend_n1.json"
     }
   ]
 }

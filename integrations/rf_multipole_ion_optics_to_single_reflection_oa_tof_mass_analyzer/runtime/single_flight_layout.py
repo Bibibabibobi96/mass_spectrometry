@@ -788,6 +788,8 @@ def select_detector_blind_real_field_pulse_time(
     source_region_profile: dict[str, Any],
     *,
     candidate_times_us: list[float],
+    candidate_times_by_sample_index: dict[int, float] | None = None,
+    natural_trajectory_archive: bool = False,
     frozen_particle_ids: list[int],
     ballistic_seed_time_us: float,
 ) -> dict[str, Any]:
@@ -800,7 +802,7 @@ def select_detector_blind_real_field_pulse_time(
 
     bounds = resolve_source_region_bounds(geometry, source_region_profile)
     times = [float(value) for value in candidate_times_us]
-    if (
+    if candidate_times_by_sample_index is None and (
         not times
         or any(not math.isfinite(value) for value in times)
         or any(right <= left for left, right in zip(times, times[1:]))
@@ -833,19 +835,32 @@ def select_detector_blind_real_field_pulse_time(
     ):
         raise ContractError("real-field pulse accelerator acceptance geometry is invalid")
 
+    if candidate_times_by_sample_index is None:
+        indexed_times = {index: value for index, value in enumerate(times, start=1)}
+    else:
+        indexed_times = {
+            int(index): float(value)
+            for index, value in candidate_times_by_sample_index.items()
+        }
+        if (
+            not indexed_times
+            or any(index < 1 or not math.isfinite(value) for index, value in indexed_times.items())
+            or [indexed_times[index] for index in sorted(indexed_times)] != sorted(indexed_times.values())
+        ):
+            raise ContractError("real-field pulse natural archive grid is invalid")
     grouped: dict[int, dict[int, dict[str, float | int]]] = {
-        index: {} for index in range(1, len(times) + 1)
+        index: {} for index in indexed_times
     }
     for row in rows:
         sample_index_value = float(row["sample_index"])
         if (
             not math.isfinite(sample_index_value)
             or not sample_index_value.is_integer()
-            or not 1 <= sample_index_value <= len(times)
+            or int(sample_index_value) not in indexed_times
         ):
             raise ContractError("real-field pulse state sample index is invalid")
         sample_index = int(sample_index_value)
-        candidate_time_us = times[sample_index - 1]
+        candidate_time_us = indexed_times[sample_index]
         instrument_time_us = float(row["instrument_time_us"])
         actual_time_us = float(row["actual_instrument_time_us"])
         tolerance_us = 1e-12 * max(1.0, abs(candidate_time_us))
@@ -883,23 +898,24 @@ def select_detector_blind_real_field_pulse_time(
 
     observed_indices_by_id = {
         particle_id: [
-            sample_index for sample_index in range(1, len(times) + 1)
+            sample_index for sample_index in sorted(indexed_times)
             if particle_id in grouped[sample_index]
         ]
         for particle_id in expected_ids
     }
     if any(
-        indices != list(range(1, len(indices) + 1))
+        indices != list(range(indices[0], indices[0] + len(indices))) if indices else False
         for indices in observed_indices_by_id.values()
     ):
         raise ContractError("real-field pulse particle samples are not an alive prefix")
 
     candidates: list[dict[str, Any]] = []
     prior_alive_ids = set(expected_ids)
-    for sample_index, time_us in enumerate(times, start=1):
+    for sample_index in sorted(indexed_times):
+        time_us = indexed_times[sample_index]
         states_by_id = grouped[sample_index]
         alive_ids = sorted(states_by_id)
-        if not set(alive_ids).issubset(prior_alive_ids):
+        if not natural_trajectory_archive and not set(alive_ids).issubset(prior_alive_ids):
             raise ContractError("real-field pulse particle reappears after physical loss")
         prior_alive_ids = set(alive_ids)
         missing_ids = sorted(expected_id_set - set(alive_ids))

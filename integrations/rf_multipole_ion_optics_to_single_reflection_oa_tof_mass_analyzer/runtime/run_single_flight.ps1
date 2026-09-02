@@ -531,21 +531,23 @@ if ($isPrePulseTimeSeriesScreening) {
   }
   $prePulseTimeSeries = Get-Content -LiteralPath $prePulseTimeSeriesContractFrozen `
     -Raw -Encoding UTF8 | ConvertFrom-Json
-  # The family workflow materializes the immutable, identity-bearing screening
-  # receipt as schema v3/v4.  Its execution semantics are unchanged from v1/v2;
-  # the added identity fields must not make a valid screen unreachable.
-  if ([int]$prePulseTimeSeries.schema_version -notin @(1, 2, 3, 4, 5) -or
+  $naturalPrePulseArchive = [int]$prePulseTimeSeries.schema_version -eq 7
+  if ([int]$prePulseTimeSeries.schema_version -notin @(1, 2, 3, 4, 5, 6, 7) -or
       [string]$prePulseTimeSeries.role -ne
         'rf_oatof_pre_pulse_time_series_screening_contract' -or
       [string]$prePulseTimeSeries.mode -ne 'real_pa_rf_pre_pulse_time_series' -or
       [string]$prePulseTimeSeries.active_scope -ne
         'pre_pulse_frontend_accelerator' -or
       -not [bool]$prePulseTimeSeries.pulse_disabled -or
-      -not [bool]$prePulseTimeSeries.terminate_at_window_end -or
+      ($naturalPrePulseArchive -and ([bool]$prePulseTimeSeries.terminate_at_window_end -or
+        [string]$prePulseTimeSeries.trace_policy.mode -ne 'natural_trajectory_native_rf_grid_v1' -or
+        [string]$prePulseTimeSeries.trace_policy.terminal_event -ne 'geometry_collision_v1' -or
+        [string]$prePulseTimeSeries.trace_policy.retention_class -ne 'rebuildable_trajectory_payload')) -or
+      (-not $naturalPrePulseArchive -and -not [bool]$prePulseTimeSeries.terminate_at_window_end) -or
       [bool]$prePulseTimeSeries.resolution_claim_allowed -or
       (@($prePulseTimeSeries.prohibited_outputs) -join ',') -ne
         'detector_crossing,resolution_metrics,single_flight_spatial_six_panel' -or
-      @($prePulseTimeSeries.sample_times_us).Count -lt 1) {
+      (-not $naturalPrePulseArchive -and @($prePulseTimeSeries.sample_times_us).Count -lt 1)) {
     throw 'Pre-pulse time-series screening contract mode/output policy differs.'
   }
 }
@@ -614,6 +616,14 @@ $hostExecutionOutcome = 'failed'
 # failure publication informative if that earliest gate cannot complete.
 $PaCachePolicy = ''
 $PaCachePolicyProvenance = ''
+# These outputs are populated only after batch planning/materialization.  Keep
+# their empty defaults in the outer failure scope so an early launch failure is
+# reported faithfully instead of being masked by StrictMode while publishing
+# the failed-run receipt.
+$stdoutFiles = @()
+$stderrFiles = @()
+$materializerStdout = $null
+$materializerStderr = $null
 try {
   # Freeze the stage budget before making the capacity decision: its transient
   # footprint is the only run-specific launch headroom authority.
@@ -1261,11 +1271,10 @@ try {
     )
   }
   if ($domainSplitEnabled) {
-    # Every field-bearing long-gap run uses the fixed main reference aperture
-    # in its coarse boundary PA.  Actual scan apertures exist only in the
-    # highest-priority entrance-local PA, so they cannot contaminate the
-    # reusable upstream/main Dirichlet families.  The collision-only pre-pulse
-    # carrier is geometry rather than a field PA and keeps its real aperture.
+    # The coarse bridge is always the per-shape, fixed reference-aperture PA.
+    # A pre-pulse collision carrier is separate zero-field geometry, so it may
+    # use the scanned aperture without multiplying that shared coarse cache.
+    $coarseBridgeReferenceAperture = $executionProfile.accelerator_main_reference_aperture_mm
     $acceleratorMainCompileAperture = if ($prePulseEntranceZoneCollision -and
         $hasExplicitLocalAperture) {
       [ordered]@{
@@ -1275,10 +1284,10 @@ try {
     } else {
       $executionProfile.accelerator_main_reference_aperture_mm
     }
-    if ($null -ne $acceleratorMainCompileAperture) {
+    if ($null -ne $coarseBridgeReferenceAperture) {
       $frontendCompileArguments += @(
-        '--coarse-bridge-reference-aperture-width-mm',([string]$acceleratorMainCompileAperture.width),
-        '--coarse-bridge-reference-aperture-height-mm',([string]$acceleratorMainCompileAperture.height)
+        '--coarse-bridge-reference-aperture-width-mm',([string]$coarseBridgeReferenceAperture.width),
+        '--coarse-bridge-reference-aperture-height-mm',([string]$coarseBridgeReferenceAperture.height)
       )
     }
     $frontendCompileArguments += @(
@@ -2221,13 +2230,14 @@ try {
         throw 'Pre-pulse accelerator entrance-zone collision contract is invalid.'
       }
       $entranceZoneRole = 'simion_single_flight_accelerator_entrance_zone_collision_pa_cache'
+      $entranceZoneAssetName = 'accelerator_entrance_zero_field'
       $entranceZoneIdentity = [ordered]@{
         schema_version=1; role=$entranceZoneRole; project_id=$runProjectId; solver=$simionSolverCacheIdentity
         inputs=[ordered]@{fine_gem_sha256=(Get-FileHash -LiteralPath $acceleratorMainGem -Algorithm SHA256).Hash}
         critical_options=[ordered]@{
           geometry_role='connector_side_repeller_to_first_grid_v1'
           field_mode='zero'; refine=$false
-          gem2pa=@('--nogui','--noprompt','gem2pa','accelerator_main.gem','accelerator_main.pa0')
+          gem2pa=@('--nogui','--noprompt','gem2pa',"$entranceZoneAssetName.gem","$entranceZoneAssetName.pa0")
         }
       }
       $entranceZoneKey = Get-RfContentIdentitySha256 -Identity $entranceZoneIdentity
@@ -2247,8 +2257,8 @@ try {
         $paCacheDispositions.accelerator_entrance_zone_collision.disposition = 'cache_miss_build_authorized'
         $entranceZoneBuildDir = New-RfCacheStagingDirectory -CacheRoot $entranceZoneCacheRoot
         try {
-          $entranceZoneBuildGem = Join-Path $entranceZoneBuildDir 'accelerator_main.gem'
-          $entranceZoneBuildPa0 = Join-Path $entranceZoneBuildDir 'accelerator_main.pa0'
+          $entranceZoneBuildGem = Join-Path $entranceZoneBuildDir ($entranceZoneAssetName + '.gem')
+          $entranceZoneBuildPa0 = Join-Path $entranceZoneBuildDir ($entranceZoneAssetName + '.pa0')
           Copy-Item -LiteralPath $acceleratorMainGem -Destination $entranceZoneBuildGem
           $entranceZoneGem2Pa = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget `
             -RunDir $package.run_dir -UsagePath (Join-Path $package.log_dir 'accelerator_entrance_zone_collision_gem2pa_resource_usage.json') `
@@ -2275,8 +2285,9 @@ try {
         $paCacheDispositions.accelerator_entrance_zone_collision.disposition = 'cache_hit'
       }
       $domainSplitFineBuilds += [pscustomobject]@{
-        name='accelerator_main'; gem=$acceleratorMainGem; contract=$acceleratorMainContract; geometry=$entranceZoneGeometry
+        name=$entranceZoneAssetName; gem=$acceleratorMainGem; contract=$acceleratorMainContract; geometry=$entranceZoneGeometry
         cache_role=$entranceZoneRole; disposition_key='accelerator_entrance_zone_collision'; cache_key=$entranceZoneKey; cache_dir=$entranceZoneCacheDir; pa0=$null
+        topology_pa=(Join-Path $entranceZoneCacheDir ($entranceZoneAssetName + '.pa0'))
         basis_builder=$null; refiner=$null; basis_report=$null
       }
     }
@@ -2908,9 +2919,9 @@ try {
     $identity = $prePulseTimeSeries.identities
     # v2 introduced runtime-verified cache identities; v3 adds two local
     # overlays and v4 records the four disjoint long-gap PA roles.
-    $cacheKeys = if ([int]$prePulseTimeSeries.schema_version -in @(2, 3, 4, 5)) {
+    $cacheKeys = if ([int]$prePulseTimeSeries.schema_version -in @(2, 3, 4, 5, 6, 7)) {
       $roles = $prePulseTimeSeries.pa_cache_roles
-      $expectedPrePulseRoles = if ([int]$prePulseTimeSeries.schema_version -eq 5) {
+      $expectedPrePulseRoles = if ([int]$prePulseTimeSeries.schema_version -in @(5, 6, 7)) {
         'fine_upstream,accelerator_entrance_zone_collision'
       } elseif ($domainSplitEnabled) {
         'full_coarse_bridge,fine_upstream,accelerator_main,accelerator_intermediate2_overlay'
@@ -2924,7 +2935,7 @@ try {
         throw 'Pre-pulse time-series PA cache role policy differs.'
       }
       $resolvedCacheKeys = [ordered]@{flight_tube=$null;reflectron=$null}
-      if ([int]$prePulseTimeSeries.schema_version -eq 5) {
+      if ([int]$prePulseTimeSeries.schema_version -in @(5, 6, 7)) {
         $domainFineUpstream = @($domainSplitFineBuilds | Where-Object { $_.name -eq 'upstream_bridge' })
         $domainEntranceZone = @($domainSplitFineBuilds | Where-Object { $_.disposition_key -eq 'accelerator_entrance_zone_collision' })
         if ($domainFineUpstream.Count -ne 1 -or $domainEntranceZone.Count -ne 1) {
@@ -2989,7 +3000,7 @@ try {
     if ($null -ne $cacheKeys.flight_tube -or $null -ne $cacheKeys.reflectron) {
       $prePulseCacheIdentityMatches = $false
     }
-    if ([int]$prePulseTimeSeries.schema_version -eq 5) {
+    if ([int]$prePulseTimeSeries.schema_version -in @(5, 6, 7)) {
       $domainFineUpstream = @($domainSplitFineBuilds | Where-Object { $_.name -eq 'upstream_bridge' })
       $domainEntranceZone = @($domainSplitFineBuilds | Where-Object { $_.disposition_key -eq 'accelerator_entrance_zone_collision' })
       $prePulseCacheIdentityMatches = $prePulseCacheIdentityMatches -and
@@ -3017,9 +3028,10 @@ try {
     if (@($identityChecks | Where-Object { $_[0] -ne $_[1] }).Count -ne 0 -or -not $prePulseCacheIdentityMatches) {
       throw 'Pre-pulse time-series source/layout/field/PA identity differs.'
     }
-    $sampleTimes = @($prePulseTimeSeries.sample_times_us | ForEach-Object {
-      [double]$_
-    })
+    $sampleTimes = @()
+    if (-not $naturalPrePulseArchive) {
+      $sampleTimes = @($prePulseTimeSeries.sample_times_us | ForEach-Object { [double]$_ })
+    }
     $frequencyHz = [double]$upstreamDocument.drive.frequency_Hz
     $periodUs = 1000000.0 / $frequencyHz
     $gridRfStepsPerPeriod = [int]$rfGrid.rf_steps_per_period
@@ -3032,8 +3044,8 @@ try {
     } else {
       [int]$rfGrid.sample_stride_rf_steps
     }
-    $startIndex = [int]$rfGrid.start_index
-    $endIndex = [int]$rfGrid.end_index
+    $startIndex = if ($naturalPrePulseArchive) { 0 } else { [int]$rfGrid.start_index }
+    $endIndex = if ($naturalPrePulseArchive) { 0 } else { [int]$rfGrid.end_index }
     if ([string]$rfGrid.waveform -ne [string]$upstreamDocument.drive.waveform -or
         [double]$rfGrid.frequency_hz -ne $frequencyHz -or
         [double]$rfGrid.phase_rad -ne [double]$upstreamDocument.drive.phase_rad -or
@@ -3041,19 +3053,27 @@ try {
         [Math]::Abs([double]$rfGrid.period_us - $periodUs) -gt 1e-12 -or
         [Math]::Abs([double]$rfGrid.step_us - $stepUs) -gt 1e-12 -or
         $sampleStrideRfSteps -lt 1 -or
-        $startIndex -lt 0 -or $endIndex -lt $startIndex -or
-        $sampleTimes.Count -ne ($endIndex - $startIndex + 1)) {
+        ($naturalPrePulseArchive -and (
+          [string]$rfGrid.time_grid_profile_id -ne 'natural_pre_pulse_native_rf_grid_v1' -or
+          [string]$rfGrid.derivation -ne 'native_rf_grid_from_instrument_clock_origin_v1' -or
+          [double]$rfGrid.grid_origin_us -ne 0.0 -or
+          $sampleStrideRfSteps -ne 1 -or $sampleTimes.Count -ne 0)) -or
+        (-not $naturalPrePulseArchive -and (
+          $startIndex -lt 0 -or $endIndex -lt $startIndex -or
+          $sampleTimes.Count -ne ($endIndex - $startIndex + 1)))) {
       throw 'Pre-pulse time-series native solver time-grid identity differs.'
     }
-    for ($index = 0; $index -lt $sampleTimes.Count; $index++) {
-      $expectedTime = [double]$rfGrid.grid_origin_us +
-        ($startIndex + $index * $sampleStrideRfSteps) * $stepUs
-      if ([Math]::Abs($sampleTimes[$index] - $expectedTime) -gt
-          (1e-12 * [Math]::Max(1.0,[Math]::Abs($expectedTime)))) {
-        throw 'Pre-pulse time-series sample time differs from the frozen native solver grid.'
-      }
-      if ($index -gt 0 -and $sampleTimes[$index] -le $sampleTimes[$index - 1]) {
-        throw 'Pre-pulse time-series sample times are not strictly increasing.'
+    if (-not $naturalPrePulseArchive) {
+      for ($index = 0; $index -lt $sampleTimes.Count; $index++) {
+        $expectedTime = [double]$rfGrid.grid_origin_us +
+          ($startIndex + $index * $sampleStrideRfSteps) * $stepUs
+        if ([Math]::Abs($sampleTimes[$index] - $expectedTime) -gt
+            (1e-12 * [Math]::Max(1.0,[Math]::Abs($expectedTime)))) {
+          throw 'Pre-pulse time-series sample time differs from the frozen native solver grid.'
+        }
+        if ($index -gt 0 -and $sampleTimes[$index] -le $sampleTimes[$index - 1]) {
+          throw 'Pre-pulse time-series sample times are not strictly increasing.'
+        }
       }
     }
   }
@@ -3230,14 +3250,15 @@ try {
     Assert-RfExactPaCacheGenerationBinding -ActiveCaches $activePaCaches
   }
   # In a long-gap domain split the coarse frontend aperture is expressly
-  # non-authoritative.  The mechanical aperture and its local edge field are
-  # realized only by accelerator_main, so inspect that materialized fine PA.
+  # non-authoritative.  Inspect the PA that actually realizes the aperture in
+  # this phase: the zero-field first-zone collision PA during pre-pulse, the
+  # entrance-local PA when enabled, otherwise the shared main accelerator PA.
   $apertureTopologyPa = $frontendWorkingPa0
   $apertureTopologyGeometry = $frontendGeometry
   $apertureTopologyDiscretization = $apertureDiscretization
   if ($domainSplitEnabled) {
     $domainApertureProvider = @($domainSplitFineBuilds | Where-Object {
-      $_.name -eq $(if ($acceleratorEntranceLocalEnabled) {'accelerator_entrance_local'} else {'accelerator_main'})
+      $_.name -eq $(if ($prePulseEntranceZoneCollision) {'accelerator_entrance_zero_field'} elseif ($acceleratorEntranceLocalEnabled) {'accelerator_entrance_local'} else {'accelerator_main'})
     })
     if ($domainApertureProvider.Count -ne 1 -or [string]::IsNullOrWhiteSpace($domainApertureProvider[0].topology_pa)) {
       throw 'Domain-split aperture topology check requires exactly one authoritative aperture PA.'
@@ -3249,6 +3270,16 @@ try {
     if ($null -eq $apertureTopologyDiscretization) {
       throw 'Domain-split accelerator-main aperture discretization is missing.'
     }
+  }
+  # The coarse frontend deliberately keeps the fixed reference opening.  Once
+  # a domain-specific PA is authoritative, all physical aperture diagnostics
+  # and run metadata must instead come from that PA's own discretization.
+  $apertureWidthMm = [double]$apertureTopologyDiscretization.mechanical_width_mm
+  $apertureHeightMm = [double]$apertureTopologyDiscretization.mechanical_height_mm
+  $apertureDiscretization = $apertureTopologyDiscretization
+  $apertureGridWarnings = @($apertureDiscretization.grid_alignment.warnings)
+  foreach ($warningCode in $apertureGridWarnings) {
+    Write-Warning "SIMION authoritative aperture discretization warning: $warningCode"
   }
   $topologyResult = Invoke-SimionCompiledApertureTopologyCheck `
     -PaPath $apertureTopologyPa -ReportPath $apertureTopologyReport -VerifierPath $apertureVerifier `
@@ -3586,9 +3617,11 @@ try {
       Copy-RfStableFile -SourceRunRoot $repoRoot `
         -SourcePath (Join-Path $PSScriptRoot 'build_single_flight_pre_pulse_iob.lua') `
         -Destination $prePulseIobBuilder -Role 'compact three-instance pre-pulse IOB builder' | Out-Null
-      $domainMain = @($domainSplitFineBuilds | Where-Object { $_.name -eq 'accelerator_main' })
+      $domainEntranceZone = @($domainSplitFineBuilds | Where-Object {
+        $_.name -eq 'accelerator_entrance_zero_field'
+      })
       $domainUpstream = @($domainSplitFineBuilds | Where-Object { $_.name -eq 'upstream_bridge' })
-      if ($domainMain.Count -ne 1 -or $domainUpstream.Count -ne 1) {
+      if ($domainEntranceZone.Count -ne 1 -or $domainUpstream.Count -ne 1) {
         throw 'Continuous pre-pulse requires one zero-field entrance PA and one upstream RF PA.'
       }
       Copy-RfPaFamilyAliasInRuntime -SourcePrefix 'frontend' -DestinationPrefix 'coarse_frontend' `
@@ -3608,10 +3641,10 @@ try {
       $prePulseRuntimeContainer = Join-Path $runtimeDir '3_instance_seed.iob'
       $prePulseIobArguments = @('--nogui','--noprompt','lua',$prePulseIobBuilder,
         $prePulseRuntimeContainer,(Join-Path $runtimeDir 'oatof_ideal_grounded.iob'),
-        (Join-Path $runtimeDir 'coarse_frontend.pa0'),$domainUpstream[0].pa0,(Join-Path $runtimeDir 'accelerator_main.pa0'),
+        (Join-Path $runtimeDir 'coarse_frontend.pa0'),$domainUpstream[0].pa0,$domainEntranceZone[0].pa0,
         ([string]$frontendGeometry.instance_origin_mm.x),([string]$frontendGeometry.instance_origin_mm.y),([string]$frontendGeometry.instance_origin_mm.z),
         ([string]$domainUpstream[0].geometry.instance_origin_mm.x),([string]$domainUpstream[0].geometry.instance_origin_mm.y),([string]$domainUpstream[0].geometry.instance_origin_mm.z),
-        ([string]$domainMain[0].geometry.instance_origin_mm.x),([string]$domainMain[0].geometry.instance_origin_mm.y),([string]$domainMain[0].geometry.instance_origin_mm.z))
+        ([string]$domainEntranceZone[0].geometry.instance_origin_mm.x),([string]$domainEntranceZone[0].geometry.instance_origin_mm.y),([string]$domainEntranceZone[0].geometry.instance_origin_mm.z))
       $built = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir -UsagePath (Join-Path $package.log_dir 'pre_pulse_compact_iob_build_resource_usage.json') -FilePath $SimionExe -WorkingDirectory $runtimeDir -RedirectStandardOutput (Join-Path $package.log_dir 'pre_pulse_compact_iob_build.stdout.log') -RedirectStandardError (Join-Path $package.log_dir 'pre_pulse_compact_iob_build.stderr.log') -ArgumentList $prePulseIobArguments
       if ($built.resource_budget_exceeded -or $built.exit_code -ne 0) { throw 'Compact pre-pulse IOB build failed.' }
     } elseif ($domainSplitLocalAxisField) {
@@ -3985,7 +4018,7 @@ try {
     $runConfiguration.parameters.resolution_claim_allowed = $false
     $runConfiguration.parameters.pre_pulse_reachable_iob = $prePulseReachableIob
     $runConfiguration.parameters.pre_pulse_iob_omitted_roles = $(if ($prePulseReachableIob) {
-      @('flight_tube','reflectron','detector')
+      @('accelerator_main','accelerator_entrance_local','flight_tube','reflectron','detector')
     } else {
       @()
     })
@@ -4180,6 +4213,14 @@ try {
       $batchIndex = [int]$plannedBatch.index
       $count = [int]$plannedBatch.count
       $offset = [int]$plannedBatch.simion_particle_id_offset
+      # SIMION Fly mutates Workbench-local state.  Batches retain the assembled
+      # PA family in its original runtime directory (the IOB stores PA names
+      # relative to that directory), but receive their own same-basename IOB,
+      # Program, and Fly2 files.  In particular, the 45-second formal observer
+      # remains alive while the adaptive scheduler admits later lanes, so a
+      # shared workbench would make two processes race on one IOB.
+      $batchAssetStem = 'oatof_ideal_grounded__batch{0:D2}' -f $batchIndex
+      $batchWorkbench = Join-Path $runtimeDir ($batchAssetStem + '.iob')
       $batchParticleInput = Join-Path $package.input_dir (
         'single_flight_mother_sample__batch{0:D2}.{1}' -f $batchIndex,$(if ($isRestartFly2) {'fly2'} else {'ion'})
       )
@@ -4196,9 +4237,13 @@ try {
       }
       $records += [pscustomobject]@{
         index = $batchIndex; count = $count; offset = $offset
+        runtime_dir = $runtimeDir; workbench = $batchWorkbench
+        runtime_asset_source_stem = Join-Path $runtimeDir 'oatof_ideal_grounded'
+        runtime_asset_stem = Join-Path $runtimeDir $batchAssetStem
         particle_input = $batchParticleInput
         stdout = Join-Path $package.log_dir ('simion__batch{0:D2}.stdout.log' -f $batchIndex)
         stderr = Join-Path $package.log_dir ('simion__batch{0:D2}.stderr.log' -f $batchIndex)
+        trace = Join-Path $package.log_dir ('simion__batch{0:D2}.trace.log' -f $batchIndex)
       }
     }
     return @($records)
@@ -4223,14 +4268,21 @@ try {
       [IO.File]::WriteAllLines($batchParticleInput,$batchParticleLines,[Text.UTF8Encoding]::new($false))
       $replayRecords += [pscustomobject]@{
         index=$batchIndex;count=$replayCount;offset=$replayOffset
+        runtime_dir=$runtimeDir
+        workbench=(Join-Path $runtimeDir ('oatof_ideal_grounded__batch{0:D2}.iob' -f $batchIndex))
+        runtime_asset_source_stem=(Join-Path $runtimeDir 'oatof_ideal_grounded')
+        runtime_asset_stem=(Join-Path $runtimeDir ('oatof_ideal_grounded__batch{0:D2}' -f $batchIndex))
         particle_input=$batchParticleInput
         stdout=Join-Path $package.log_dir ('simion__batch{0:D2}__continuation.stdout.log' -f $batchIndex)
         stderr=Join-Path $package.log_dir ('simion__batch{0:D2}__continuation.stderr.log' -f $batchIndex)
+        trace=Join-Path $package.log_dir ('simion__batch{0:D2}__continuation.trace.log' -f $batchIndex)
       }
     }
     $batchRecords = @($replayRecords)
   }
-  $stdoutFiles = @($batchRecords | ForEach-Object { $_.stdout })
+  $stdoutFiles = @($batchRecords | ForEach-Object {
+    if ($isPrePulseTimeSeriesScreening) { $_.trace } else { $_.stdout }
+  })
   $stdoutFiles += $importedCompletedTraceFiles
   $stderrFiles = @($batchRecords | ForEach-Object { $_.stderr })
   # The whole batch set is one dispatch wave.  The shared aggregate helper owns
@@ -4266,14 +4318,46 @@ try {
       name = 'simion_batch_{0:D2}' -f [int]$batch.index
       simion_ion_list_capacity = $ionListCapacity
       file_path = $SimionExe
-      working_directory = $runtimeDir
+      working_directory = $batch.runtime_dir
+      workbench = $batch.workbench
+      runtime_asset_source_stem = $batch.runtime_asset_source_stem
+      runtime_asset_stem = $batch.runtime_asset_stem
       stdout = $batch.stdout
       stderr = $batch.stderr
-      environment = $(if ($domainSplitEnabled) {
-        @{ OATOF_SINGLE_FLIGHT_PARTICLE_ID_OFFSET = [string]$batch.offset }
-      } else {
-        @{ OATOF_ACCELERATOR_PA_OVERRIDE = $frontendWorkingPa0; OATOF_SINGLE_FLIGHT_PARTICLE_ID_OFFSET = [string]$batch.offset }
-      })
+      trace = $batch.trace
+      prepare = {
+        param($Specification)
+        $sourceStem = [string]$Specification.runtime_asset_source_stem
+        $targetStem = [string]$Specification.runtime_asset_stem
+        $workbench = [string]$Specification.workbench
+        if (-not (Test-Path -LiteralPath $workbench -PathType Leaf)) {
+          foreach ($extension in @('.iob','.lua','.fly2')) {
+            $sourceAsset = $sourceStem + $extension
+            if (-not (Test-Path -LiteralPath $sourceAsset -PathType Leaf)) {
+              throw "Single-flight batch runtime asset is missing: $sourceAsset"
+            }
+            Copy-Item -LiteralPath $sourceAsset -Destination ($targetStem + $extension)
+          }
+        }
+      }
+      # SIMION 2020 has demonstrated that concurrent Fly processes loading
+      # this one materialized PA directory can terminate a sibling without a
+      # diagnostic.  The key is derived from the actual PA directory, and is
+      # interpreted by the shared scheduler only within this dispatch wave;
+      # unrelated work or separately materialized PA families remain eligible
+      # for normal adaptive concurrency.
+      exclusive_resource_key = ('simion_pa_runtime:' + [IO.Path]::GetFullPath($runtimeDir))
+      environment = $(
+        $values = if ($domainSplitEnabled) {
+          @{ OATOF_SINGLE_FLIGHT_PARTICLE_ID_OFFSET = [string]$batch.offset }
+        } else {
+          @{ OATOF_ACCELERATOR_PA_OVERRIDE = $frontendWorkingPa0; OATOF_SINGLE_FLIGHT_PARTICLE_ID_OFFSET = [string]$batch.offset }
+        }
+        if ($isPrePulseTimeSeriesScreening) {
+          $values.OATOF_PRE_PULSE_RAW_TRACE_PATH = [string]$batch.trace
+        }
+        $values
+      )
       argument_list = [string[]](@(
         '--default-num-particles',([string]$ionListCapacity),'--nogui','--noprompt','fly',
         '--trajectory-quality',([string]$trajectoryQuality),
@@ -4291,7 +4375,7 @@ try {
         $(if (-not $isPrePulseRestart) {
           @('--adjustable',("single_flight_rf_steps={0}" -f $rfStepsPerPeriod))
         } else { @() }),
-        (Join-Path $runtimeDir 'oatof_ideal_grounded.iob')
+        $batch.workbench
       ))
       }
     }
@@ -4305,9 +4389,23 @@ try {
     if ($null -eq $prePulseContinuationPlan -and $processSpecifications.Count -ne 1) {
       throw 'Unknown resource identity must start from one formal first batch.'
     }
+    $formalExclusiveResourceKeys = @($processSpecifications |
+      Where-Object {
+        $_.PSObject.Properties.Name -contains 'exclusive_resource_key' -and
+        -not [string]::IsNullOrWhiteSpace([string]$_.exclusive_resource_key)
+      } |
+      ForEach-Object { [string]$_.exclusive_resource_key } |
+      Select-Object -Unique)
+    # A shared PA family cannot safely admit another Fly process until the
+    # observed process exits.  Preserve the fixed 45-second measurement, then
+    # let that same observer finish naturally rather than hand an active
+    # SIMION process to the wave loop (whose run-directory sampling is a
+    # separate concurrent filesystem traversal).
+    $waitForFormalNaturalCompletion = $formalExclusiveResourceKeys.Count -eq 1
     $formalObservation = Start-ObservedFormalProcess `
       -DispatchPlanPath $runtimeDispatchPlanPath `
-      -ProcessSpecification $processSpecifications[0]
+      -ProcessSpecification $processSpecifications[0] `
+      -WaitForNaturalCompletionAfterObservation:$waitForFormalNaturalCompletion
     if ($formalObservation.resource_budget_exceeded) {
       $resourceBudgetExceeded = $true
       throw 'The first formal SIMION batch exceeded the repository memory-danger policy.'
@@ -4349,7 +4447,9 @@ try {
       ) -Failure 'Single-flight formal-first batch planning failed.'
       $batchPlan = Get-Content -Raw -LiteralPath $batchPlanPath | ConvertFrom-Json
       $batchRecords = @(New-SingleFlightBatchRecords $batchPlan)
-      $stdoutFiles = @($batchRecords | ForEach-Object { $_.stdout })
+      $stdoutFiles = @($batchRecords | ForEach-Object {
+        if ($isPrePulseTimeSeriesScreening) { $_.trace } else { $_.stdout }
+      })
       $stderrFiles = @($batchRecords | ForEach-Object { $_.stderr })
       $processSpecifications = @(New-SingleFlightProcessSpecifications $batchRecords)
     }
@@ -4372,7 +4472,17 @@ try {
     # and every completed raw log before another batch may fail or be stopped.
     $prePulseCheckpointAction = {
       param($completedRecord)
+      $tracePath = [string]$completedRecord.specification.trace
+      if (-not (Test-Path -LiteralPath $tracePath -PathType Leaf)) {
+        throw "Completed pre-pulse batch trace is missing: $tracePath"
+      }
+      # The direct trace stream carries the complete native RF grid.  SIMION's
+      # own completion sentinel is emitted on stdout, so append the equivalent
+      # terminal marker only after the process has exited naturally; this
+      # makes a checkpointed trace self-contained for continuation planning.
+      Add-Content -LiteralPath $tracePath -Value 'status,Fly completed.' -Encoding utf8
       foreach ($path in @(
+          $tracePath,
           [string]$completedRecord.specification.stdout,
           [string]$completedRecord.specification.stderr
       )) {
@@ -4408,7 +4518,7 @@ try {
   }
 
   if ($isPrePulseTimeSeriesScreening) {
-    $statesCsv = Join-Path $package.result_dir 'pre_pulse_time_series_states.csv'
+    $statesCsv = Join-Path $package.result_dir 'pre_pulse_time_series_states.csv.gz'
     $screeningReceipt = Join-Path $package.result_dir `
       'pre_pulse_time_series_screening_receipt.json'
     $materializerArguments = @(
@@ -4423,8 +4533,16 @@ try {
     foreach ($stdoutFile in $stdoutFiles) {
       $materializerArguments += @('--stdout-log',$stdoutFile)
     }
-    Invoke-SingleFlightPython -Arguments $materializerArguments `
-      -Failure 'Pre-pulse time-series materialization failed.'
+    $materializerStdout = Join-Path $package.log_dir 'pre_pulse_time_series_materialize.stdout.log'
+    $materializerStderr = Join-Path $package.log_dir 'pre_pulse_time_series_materialize.stderr.log'
+    try {
+      Invoke-SingleFlightPython -Arguments $materializerArguments `
+        -Failure 'Pre-pulse time-series materialization failed.' `
+        -StdoutPath $materializerStdout -StderrPath $materializerStderr
+    } catch {
+      throw ("{0} Materializer stderr: {1}" -f $_.Exception.Message,
+        (Get-RfProcessDiagnosticTail -Path $materializerStderr))
+    }
     $materializedSummary = Get-Content -Raw -LiteralPath $package.summary `
       -Encoding UTF8 | ConvertFrom-Json
     $stateRowCount = [int]$materializedSummary.census.observed_state_rows
@@ -4604,6 +4722,8 @@ try {
       failure_exception_type=$_.Exception.GetType().FullName
       failure_script_stack_trace=[string]$_.ScriptStackTrace
     }) `
+    -AdditionalOutputs $(if ($isPrePulseTimeSeriesScreening) {@($stdoutFiles,$stderrFiles,$materializerStdout,$materializerStderr)} else {@()}) `
+    -PreserveRawOutputs:$isPrePulseTimeSeriesScreening `
     -ResourceUsagePath $(if ($resourceBudgetExceeded) {$resourceUsage} else {''})
   try { Remove-RunPackageExecutionAlias -Package $package } catch {
     Write-Warning "Could not remove short execution alias after failed run: $($_.Exception.Message)"
@@ -4617,20 +4737,26 @@ try {
   # terminal manifests are deliberately not treated as "active" by the
   # reconciler, but they remain required evidence for this invocation.
   try {
+    # The startup measurement already contains this run's initial package,
+    # and every cache publication has advanced artifactCapacityState by its
+    # actual staging payload.  At terminal time the complete run directory is
+    # a fast, conservative upper bound for the remaining change: adding it
+    # double-counts the small pre-launch package, but never understates a
+    # result written below this protected path.  Do not reserve the frozen
+    # 40 GiB transient *budget* again here; it is a launch disk-floor budget,
+    # not evidence that this compact run created 40 GiB of artifacts.
+    $terminalCapacityMaximumNewArtifactBytes = [int64]((Get-ChildItem -LiteralPath $package.run_dir -File -Recurse |
+      Measure-Object -Property Length -Sum).Sum)
     $terminalCapacityArguments = @(
       '-m','common.contracts.reconcile_artifact_capacity',
       '--artifact-root',(Join-Path $workspaceRoot 'artifacts'),
       '--target-gib','500','--minimum-free-gib','500',
       '--protect-path',$package.run_dir,'--apply',
-      # The startup receipt is a full-tree measurement.  Every cache
-      # publication advances this state by its measured staging bytes, while
-      # the frozen stage budget bounds all run-local transient output.  This
-      # lets the reconciler skip another multi-hundred-GiB walk when that
-      # conservative upper bound and the physical free-space floor are safe.
-      # If either condition is uncertain it deliberately falls back to the
-      # normal L1/L2/L3, level-then-age reconciliation.
+      # If this conservative actual upper bound or the physical free-space
+      # floor is uncertain, the reconciler deliberately falls back to normal
+      # L1/L2/L3 level-then-age reconciliation.
       '--known-measured-bytes',([string][int64]$artifactCapacityState.known_measured_bytes),
-      '--maximum-new-artifact-bytes',([string][int64]$stageBudgetDocument.limits.transient_run_directory_bytes)
+      '--maximum-new-artifact-bytes',([string]$terminalCapacityMaximumNewArtifactBytes)
     )
     foreach ($cacheDisposition in $paCacheDispositions.Values) {
       $cacheKey = [string]$cacheDisposition.key

@@ -201,12 +201,22 @@ def _publish_detector_blind_pulse_selection(
             "pre_pulse_time_series_contract",
         )
     }
-    state_table = _verified_stage_record(
-        output_manifest,
-        collection="outputs",
-        name="pre_pulse_time_series_states.csv",
-        run_dir=output_dir,
-    )
+    try:
+        state_table = _verified_stage_record(
+            output_manifest,
+            collection="outputs",
+            name="pre_pulse_time_series_states.csv.gz",
+            run_dir=output_dir,
+        )
+    except ContractError:
+        # Immutable pre-gzip evidence is still a valid source for a new
+        # detector-blind analysis.  New producer runs always publish .csv.gz.
+        state_table = _verified_stage_record(
+            output_manifest,
+            collection="outputs",
+            name="pre_pulse_time_series_states.csv",
+            run_dir=output_dir,
+        )
     screening_receipt = _verified_stage_record(
         output_manifest,
         collection="outputs",
@@ -358,10 +368,14 @@ def _publish_verified_pulse_receipt(
     if isinstance(authority, dict) and isinstance(reuse_authority, dict):
         raise ContractError("pulse schedule publication authority is ambiguous")
     direct_reuse = isinstance(reuse_authority, dict)
+    # A post-pulse handoff has an already selected, materialized source state.
+    # It is not a new continuous-flight confirmation of pulse timing, so it
+    # must publish its ordinary parent result without manufacturing a reusable
+    # pulse-confirmation receipt.
     if not direct_reuse and authority.get("mode") != (
         "detector_blind_candidate_confirmation_v1"
     ):
-        raise ContractError("pulse confirmation schedule authority mode differs")
+        return None
     if direct_reuse and reuse_authority.get("mode") != (
         "verified_pulse_timing_reuse_v1"
     ):

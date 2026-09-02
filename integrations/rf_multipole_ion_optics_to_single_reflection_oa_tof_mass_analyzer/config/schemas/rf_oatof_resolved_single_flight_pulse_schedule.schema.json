@@ -82,6 +82,14 @@
             "content_key": {"$ref": "#/$defs/sha"},
             "verified_receipt": {"$ref": "#/$defs/file"}
           }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["mode", "materialization_receipt"],
+          "properties": {
+            "mode": {"const": "manifest_bound_time_series_restart_v1"},
+            "materialization_receipt": {"$ref": "#/$defs/file"}
+          }
         }
       ]
     },

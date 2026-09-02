@@ -534,6 +534,35 @@ class SingleFlightFrontendTests(unittest.TestCase):
             corridor["boundary_condition"]["basis_electrode_ids"],
         )
 
+    def test_full_axial_core_keeps_all_rings_without_the_outer_shell_volume(self) -> None:
+        oatof = self._three_zone_main_oatof("square_3d")
+        connection = copy.deepcopy(self.connection)
+        _, frontend = compile_frontend(
+            self.upstream, oatof, connection,
+            cell_mm_xyz={"x": 0.5, "y": 0.5, "z": 0.5},
+        )
+        _, full = compile_accelerator_main(
+            frontend, oatof, connection=connection,
+            cell_mm_xyz={"x": 0.2, "y": 0.2, "z": 0.05},
+        )
+        gem, core = compile_accelerator_main(
+            frontend, oatof, connection=connection,
+            cell_mm_xyz={"x": 0.2, "y": 0.2, "z": 0.05},
+            domain_policy={
+                "policy_id": "coarse_boundary_supported_full_axial_core_v1",
+                "exit_axis_positive_extent_mm": 4.0,
+                "transverse_half_span_mm": 4.0,
+            },
+        )
+        self.assertLess(core["dimensions"]["nx"], full["dimensions"]["nx"])
+        self.assertLess(core["dimensions"]["ny"], full["dimensions"]["ny"])
+        self.assertEqual(core["dimensions"]["nz"], full["dimensions"]["nz"])
+        self.assertIn("full_axial_accelerator_core_v1", core["local_geometry_coverage"])
+        self.assertIn(
+            f"e({core['electrodes']['accelerator_ring_ids'][-1]})", gem
+        )
+        self.assertIn(f"e({core['electrodes']['accelerator_grid2_id']})", gem)
+
     def test_pre_pulse_entrance_zone_is_zero_field_and_excludes_remote_accelerator(self) -> None:
         oatof = self._three_zone_main_oatof("square_3d")
         _, frontend = compile_frontend(

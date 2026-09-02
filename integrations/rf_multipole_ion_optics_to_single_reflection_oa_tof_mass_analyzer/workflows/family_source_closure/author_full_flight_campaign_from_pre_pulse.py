@@ -23,6 +23,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     RESOLVED_CAMPAIGN_SCHEMA_PATH,
     _resolve_pulse_transition,
     _workspace_relative,
+    expand_pre_pulse_campaign_profile,
     expand_flat_experiment_authoring,
 )
 
@@ -288,7 +289,13 @@ def author_campaign(
         raise ContractError("full-flight campaign output already exists")
     if not campaign_id:
         raise ContractError("full-flight campaign_id is required")
-    campaign = _load_object(source_campaign_path, "pre-pulse campaign")
+    # The public pre-pulse authoring file may intentionally be compact and
+    # inherit its stable execution controls from a registered profile.  Expand
+    # it at this boundary before inspecting source/cohort identity so callers
+    # never have to create an ungoverned, hand-expanded copy.
+    campaign = expand_pre_pulse_campaign_profile(
+        _load_object(source_campaign_path, "pre-pulse campaign")
+    )
     if campaign.get("role") != "rf_multipole_oatof_experiment_campaign" or (
         campaign.get("integration_id") != INTEGRATION_ID
     ):

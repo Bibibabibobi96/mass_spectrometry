@@ -11,6 +11,7 @@ import json
 import math
 from pathlib import Path
 import shutil
+import statistics
 from typing import Any
 import warnings
 
@@ -375,7 +376,113 @@ def _automatic_pulse_population_binding(
         "all_rows_in_frozen_file_order",
     ) and isinstance(count, int) and not isinstance(count, bool) and count > 0:
         return "source_contract_particle_source", count
+    if identity == (
+        "independent_spatial_velocity_ion_source_snapshot",
+        "prepared_materialized_ion_source_volume",
+        "all_rows_in_frozen_file_order",
+    ) and isinstance(count, int) and not isinstance(count, bool) and count > 0:
+        return "prepared_materialized_ion_source_volume", count
     raise ContractError("automatic pulse timing population differs")
+
+
+def derive_continuous_source_pulse_window(
+    global_rows: list[dict[str, str]],
+    source_table_sha256: str,
+    geometry: dict[str, Any],
+    *,
+    rf_step_us: float,
+) -> dict[str, float | int | str]:
+    """Derive the first detector-blind grid from the frozen source cloud.
+
+    The independent volume source has no inherited multipole-handoff timing
+    authority.  This spans every forward ballistic crossing of the physical
+    Stage-1 bore using actual frozen oaTOF-global positions, births, and axial
+    velocities.  SIMION's real-field screen still selects the pulse; this only
+    decides which times must be sampled.
+    """
+
+    if not math.isfinite(rf_step_us) or rf_step_us <= 0.0:
+        raise ContractError("continuous-source pulse grid step is invalid")
+    dimensions = geometry.get("geometry_mm", {})
+    coordinate = geometry.get("coordinate_convention", {})
+    try:
+        axis_x = float(coordinate["accelerator_axis_x"])
+        bore_half = float(dimensions["accelerator_bore_half"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ContractError("continuous-source pulse geometry is incomplete") from exc
+    if not math.isfinite(axis_x) or not math.isfinite(bore_half) or bore_half <= 0.0:
+        raise ContractError("continuous-source pulse bore is invalid")
+    if not global_rows:
+        raise ContractError("continuous-source pulse table is empty")
+
+    entry_times_us: list[float] = []
+    exit_times_us: list[float] = []
+    center_times_us: list[float] = []
+    for row in global_rows:
+        try:
+            birth_us = float(row["instrument_time_us"])
+            x_mm = float(row["position_x_mm"])
+            vx_mm_per_us = float(row["velocity_x_m_s"]) / 1_000.0
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ContractError("continuous-source pulse state is invalid") from exc
+        if not all(math.isfinite(value) for value in (birth_us, x_mm, vx_mm_per_us)):
+            raise ContractError("continuous-source pulse state is non-finite")
+        if vx_mm_per_us <= 0.0:
+            continue
+        entry_times_us.append(birth_us + (axis_x - bore_half - x_mm) / vx_mm_per_us)
+        exit_times_us.append(birth_us + (axis_x + bore_half - x_mm) / vx_mm_per_us)
+        center_times_us.append(birth_us + (axis_x - x_mm) / vx_mm_per_us)
+    if (
+        not entry_times_us
+        or not all(math.isfinite(value) for value in entry_times_us + exit_times_us)
+        or min(exit_times_us) <= 0.0
+    ):
+        raise ContractError("continuous source has no forward bore crossing")
+
+    # The source-cloud envelope can have rare Gaussian tails far from the
+    # cohort's useful overlap.  Keep the interval(s) with the greatest
+    # predicted simultaneous bore occupancy rather than widening the real PA
+    # trace merely to follow one tail.  This is a deterministic sweep over the
+    # same full mother cohort; it does not discard IDs or preselect a result.
+    events = sorted(
+        [(time_us, 1) for time_us in entry_times_us]
+        + [(time_us, -1) for time_us in exit_times_us],
+        key=lambda item: (item[0], -item[1]),
+    )
+    active_count = 0
+    maximum_count = 0
+    maximum_segments: list[tuple[float, float]] = []
+    for index, (time_us, delta) in enumerate(events):
+        active_count += delta
+        if index + 1 == len(events):
+            continue
+        next_time_us = events[index + 1][0]
+        if next_time_us <= time_us:
+            continue
+        if active_count > maximum_count:
+            maximum_count = active_count
+            maximum_segments = [(time_us, next_time_us)]
+        elif active_count == maximum_count:
+            maximum_segments.append((time_us, next_time_us))
+    if maximum_count < 1 or not maximum_segments:
+        raise ContractError("continuous-source pulse overlap is empty")
+    lower_us = max(0.0, min(minimum for minimum, _ in maximum_segments))
+    upper_us = max(maximum for _, maximum in maximum_segments)
+    seed_us = statistics.median(center_times_us)
+    start_index = math.floor((lower_us - seed_us) / rf_step_us)
+    end_index = math.ceil((upper_us - seed_us) / rf_step_us)
+    if end_index < start_index:
+        raise ContractError("continuous-source pulse window is inverted")
+    return {
+        "derivation": "source_population_forward_bore_crossing_bounds_v1",
+        "source_state_table_sha256": source_table_sha256,
+        "source_forward_particle_count": len(center_times_us),
+        "source_ballistic_seed_time_us": seed_us,
+        "source_bore_entry_window_start_us": lower_us,
+        "source_bore_exit_window_end_us": upper_us,
+        "requested_relative_start_index": start_index,
+        "requested_relative_end_index": end_index,
+    }
 
 
 def resolve_single_flight_dispatch_plan(
@@ -567,6 +674,7 @@ def compile_pre_pulse_time_series_contract(
     time_integration_profile_id: str | None = None,
     execution_profile: dict[str, Any] | None = None,
     resolved_connection: dict[str, Any] | None = None,
+    continuous_source_pulse_window: dict[str, float | int | str] | None = None,
 ) -> dict[str, Any]:
     """Compile exact RF-grid sample times and all runner-checked identities."""
 
@@ -584,18 +692,32 @@ def compile_pre_pulse_time_series_contract(
         raise ContractError("pre-pulse time-series upstream RF grid differs")
     period_us = 1_000_000.0 / frequency_hz
     step_us = period_us / rf_steps_per_period
-    relative_start = int(specification["relative_start_index"])
-    relative_end = int(specification["relative_end_index"])
+    source_window = continuous_source_pulse_window
+    relative_start = int(
+        specification["relative_start_index"] if source_window is None
+        else source_window["requested_relative_start_index"]
+    )
+    relative_end = int(
+        specification["relative_end_index"] if source_window is None
+        else source_window["requested_relative_end_index"]
+    )
     sample_stride = int(specification.get("sample_stride_rf_steps", 1))
-    if (
+    natural_trace_requested = (
+        specification.get("trace_policy", {}).get("mode")
+        == "natural_trajectory_native_rf_grid_v1"
+    )
+    if not natural_trace_requested and (
         sample_stride < 1
         or relative_end < relative_start
         or (relative_end - relative_start) % sample_stride != 0
     ):
         raise ContractError("pre-pulse time-series RF sampling stride differs")
-    automatic = base_schedule is not None
+    automatic = base_schedule is not None or natural_trace_requested
     seed_time_us = float(
-        base_schedule["pulse_effective_time_us"]
+        0.0 if natural_trace_requested else
+        source_window["source_ballistic_seed_time_us"]
+        if source_window is not None
+        else base_schedule["pulse_effective_time_us"]
         if automatic
         else specification["anchor_time_us"]
     )
@@ -605,8 +727,8 @@ def compile_pre_pulse_time_series_contract(
         grid_origin_us + index * sample_stride * step_us
         for index in range(sample_count)
     ]
-    if (
-        sample_count != specification["sample_count"]
+    if not natural_trace_requested and (
+        (source_window is None and sample_count != specification["sample_count"])
         or not math.isclose(sample_times_us[-1], seed_time_us + relative_end * step_us,
                             rel_tol=1e-15, abs_tol=1e-15)
         or not all(right > left for left, right in zip(
@@ -638,8 +760,17 @@ def compile_pre_pulse_time_series_contract(
         ]
     else:
         raise ContractError("pre-pulse accelerator-overlay layout is unsupported")
+    natural_trajectory_archive = natural_trace_requested and connector_length_mm >= 50.0
+    if natural_trajectory_archive:
+        # The archive clock is independent of a proposed pulse.  It is the
+        # native RF grid from the instrument-clock origin, and every ion is
+        # propagated until the actual zero-field entrance geometry terminates
+        # it.  This makes later pulse policies pure post-processing.
+        grid_origin_us = 0.0
+        sample_times_us = []
+        sample_count = 0
     contract = {
-        "schema_version": 5 if automatic and connector_length_mm >= 50.0 else 3 if automatic and overlay_layout == "two_local_v1" else 2 if automatic else 1,
+        "schema_version": 7 if natural_trajectory_archive else 6 if source_window is not None else 5 if automatic and connector_length_mm >= 50.0 else 3 if automatic and overlay_layout == "two_local_v1" else 2 if automatic else 1,
         "role": "rf_oatof_pre_pulse_time_series_screening_contract",
         "mode": specification["mode"],
         "active_scope": specification["active_scope"],
@@ -683,11 +814,20 @@ def compile_pre_pulse_time_series_contract(
             if automatic
             else {"pa_cache_keys": copy.deepcopy(specification["pa_cache_keys"])}
         ),
-        "rf_time_grid": {
+        "rf_time_grid": ({
+            "time_grid_profile_id": "natural_pre_pulse_native_rf_grid_v1",
+            "derivation": "native_rf_grid_from_instrument_clock_origin_v1",
+            "waveform": drive["waveform"], "frequency_hz": frequency_hz,
+            "phase_rad": float(drive["phase_rad"]),
+            "rf_steps_per_period": rf_steps_per_period,
+            "period_us": period_us, "step_us": step_us,
+            "sample_stride_rf_steps": 1,
+            "grid_origin_us": grid_origin_us,
+        } if natural_trajectory_archive else {
             "derivation": (
+                source_window["derivation"] if source_window is not None else
                 "ballistic_seed_time_us + relative_index*period_us/rf_steps_per_period"
-                if automatic
-                else "grid_origin_us + sample_index*period_us/rf_steps_per_period"
+                if automatic else "grid_origin_us + sample_index*period_us/rf_steps_per_period"
             ),
             "waveform": drive["waveform"], "frequency_hz": frequency_hz,
             "phase_rad": float(drive["phase_rad"]),
@@ -696,9 +836,23 @@ def compile_pre_pulse_time_series_contract(
             "sample_stride_rf_steps": sample_stride,
             **(
                 {
-                    "time_grid_profile_id": specification["time_grid_profile_id"],
-                    "ballistic_seed_time_us": seed_time_us,
-                    "ballistic_seed_sample_index": -relative_start,
+                    "time_grid_profile_id": (
+                        "continuous_source_bore_crossing_native_rf_grid_v1"
+                        if source_window is not None else specification["time_grid_profile_id"]
+                    ),
+                    **(
+                        {
+                            "source_state_table_sha256": source_window["source_state_table_sha256"],
+                            "source_forward_particle_count": source_window["source_forward_particle_count"],
+                            "source_ballistic_seed_time_us": seed_time_us,
+                            "source_bore_entry_window_start_us": source_window["source_bore_entry_window_start_us"],
+                            "source_bore_exit_window_end_us": source_window["source_bore_exit_window_end_us"],
+                        }
+                        if source_window is not None else {
+                            "ballistic_seed_time_us": seed_time_us,
+                            "ballistic_seed_sample_index": -relative_start,
+                        }
+                    ),
                 }
                 if automatic
                 else {
@@ -711,15 +865,16 @@ def compile_pre_pulse_time_series_contract(
             "requested_relative_end_index": relative_end,
             "start_index": 0, "end_index": sample_count - 1,
             "sample_count": sample_count,
-        },
-        "sample_times_us": sample_times_us,
+        }),
+        **({} if natural_trajectory_archive else {"sample_times_us": sample_times_us}),
         **(
             {"selection_order": copy.deepcopy(specification["selection_order"])}
             if "selection_order" in specification
             else {}
         ),
         "pulse_disabled": specification["pulse_disabled"],
-        "terminate_at_window_end": specification["terminate_at_window_end"],
+        "terminate_at_window_end": False if natural_trajectory_archive else specification["terminate_at_window_end"],
+        **({"trace_policy": copy.deepcopy(specification["trace_policy"])} if natural_trajectory_archive else {}),
         "resolution_claim_allowed": specification["resolution_claim_allowed"],
         "prohibited_outputs": copy.deepcopy(specification["prohibited_outputs"]),
     }
@@ -1206,8 +1361,13 @@ def _resolve_candidate_confirmation_schedule(
         or not math.isfinite(selected_time_us)
         or selected_time_us <= 0
         or not math.isclose(
-            float(base_schedule["pulse_effective_time_us"]),
             float(receipt["ballistic_seed_time_us"]),
+            float(
+                screening_contract["rf_time_grid"].get(
+                    "source_ballistic_seed_time_us",
+                    screening_contract["rf_time_grid"].get("ballistic_seed_time_us"),
+                )
+            ),
             rel_tol=0.0, abs_tol=1e-12,
         )
     ):
@@ -2062,6 +2222,7 @@ def _validate_time_series_restart_state(
     selection = receipt["selection"]
     pulse_time_us = float(schedule["pulse_effective_time_us"])
     expected_locus = "accelerator_stage1_interior_finite_observed_3d_cloud"
+    clock_authority = target.get("clock_authority")
     if (
         receipt["role"] != TIME_SERIES_RESTART_RECEIPT_ROLE
         or target["sha256"] != source_record["sha256"]
@@ -2070,7 +2231,14 @@ def _validate_time_series_restart_state(
         or target["source_state_locus"]["kind"] != expected_locus
         or target["coordinate_frame"] != "oatof_global_cartesian"
         or target["clock_basis"] != "canonical_instrument_time_us"
-        or target["clock_authority"] != "resolved_single_flight_pulse_schedule"
+        or clock_authority not in {
+            "resolved_single_flight_pulse_schedule",
+            "detector_blind_pulse_selection_receipt",
+        }
+        or (
+            clock_authority == "detector_blind_pulse_selection_receipt"
+            and "detector_blind_selection_receipt" not in receipt["authorities"]
+        )
         or not math.isclose(
             float(target["pulse_effective_time_us"]),
             pulse_time_us,
@@ -2141,7 +2309,7 @@ def _validate_time_series_restart_state(
         "source_state_locus": expected_locus,
         "coordinate_frame": "oatof_global_cartesian",
         "clock_basis": "canonical_instrument_time_us",
-        "clock_authority": "resolved_single_flight_pulse_schedule",
+        "clock_authority": clock_authority,
         "ordered_particle_id_sha256": ordered_id_sha256,
         "particle_count": count,
         "tolerances": tolerances,
@@ -3650,6 +3818,36 @@ def prepare_family_source_closure(
                 pulse_timing_state = (
                     "ready_verified" if cache_miss_policy is not None else None
                 )
+            elif (
+                source_release_mode == "pre_pulse_restart"
+                and pre_pulse_source_state is not None
+                and pre_pulse_receipt_path is not None
+                and _load(pre_pulse_receipt_path).get("role")
+                == TIME_SERIES_RESTART_RECEIPT_ROLE
+            ):
+                restart_receipt = _load(pre_pulse_receipt_path)
+                restart_time_us = float(
+                    restart_receipt["pulse_target_state"]["pulse_effective_time_us"]
+                )
+                if not math.isfinite(restart_time_us) or restart_time_us <= 0.0:
+                    raise ContractError("time-series restart pulse time is invalid")
+                schedule = copy.deepcopy(base_schedule)
+                schedule.update({
+                    "method": "manifest_bound_time_series_restart_v1",
+                    "pulse_base_time_us": restart_time_us,
+                    "pulse_offset_us": 0.0,
+                    "pulse_effective_time_us": restart_time_us,
+                    "source_state_path": pre_pulse_source_state["path"],
+                    "source_state_sha256": pre_pulse_source_state["sha256"],
+                    "claim_status": "DEVELOPMENT_ONLY",
+                    "execution_authority": {
+                        "mode": "manifest_bound_time_series_restart_v1",
+                        "materialization_receipt": {
+                            "path": _workspace_relative(pre_pulse_receipt_path, workspace),
+                            "sha256": file_sha256(pre_pulse_receipt_path),
+                        },
+                    },
+                })
             elif transition_authority is not None:
                 if pulse_prefix_sha256 is None:
                     raise ContractError(
@@ -4201,7 +4399,12 @@ def prepare_family_source_closure(
                     "spatial_window_profile_id"
                 ],
                 "pulse_disabled": True,
-                "terminate_at_window_end": True,
+                "terminate_at_window_end": False,
+                "trace_policy": {
+                    "mode": "natural_trajectory_native_rf_grid_v1",
+                    "terminal_event": "geometry_collision_v1",
+                    "retention_class": "rebuildable_trajectory_payload",
+                },
                 "resolution_claim_allowed": False,
                 "prohibited_outputs": [
                     "detector_crossing",
@@ -4209,6 +4412,45 @@ def prepare_family_source_closure(
                     "single_flight_spatial_six_panel",
                 ],
             }
+        # Long-gap continuous-source screening has one future-facing physical
+        # policy: archive each ion on the native RF grid until its actual
+        # entrance-geometry collision.  It must not inherit an old fixed
+        # pulse window merely because the campaign predates this policy.
+        if (
+            source_release_mode == "continuous_frontend"
+            and float(_load(resolved_path)["connector"]["length_mm"]) >= 50.0
+        ):
+            screening_specification = copy.deepcopy(screening_specification)
+            screening_specification["terminate_at_window_end"] = False
+            screening_specification["trace_policy"] = {
+                "mode": "natural_trajectory_native_rf_grid_v1",
+                "terminal_event": "geometry_collision_v1",
+                "retention_class": "rebuildable_trajectory_payload",
+            }
+        continuous_source_pulse_window = None
+        if (
+            source_release_mode == "continuous_frontend"
+            and screening_specification.get("trace_policy", {}).get("mode")
+            != "natural_trajectory_native_rf_grid_v1"
+        ):
+            try:
+                _, source_global_rows = materialize_single_flight_source(
+                    population_path, _load(resolved_path)
+                )
+            except (OSError, UnicodeError, ValueError, csv.Error) as exc:
+                raise ContractError(
+                    "continuous-source pulse global registration failed"
+                ) from exc
+            continuous_source_pulse_window = derive_continuous_source_pulse_window(
+                source_global_rows,
+                file_sha256(population_path),
+                geometry,
+                rf_step_us=(
+                    1_000_000.0
+                    / float(design_evidence["resolved_design"]["drive"]["frequency_Hz"])
+                    / int(screening_specification["rf_steps_per_period"])
+                ),
+            )
         pre_pulse_time_series_contract = compile_pre_pulse_time_series_contract(
             campaign=campaign,
             experiment=experiment,
@@ -4233,6 +4475,7 @@ def prepare_family_source_closure(
             ),
             base_schedule=resolved_pulse_schedule,
             execution_profile=execution_profile,
+            continuous_source_pulse_window=continuous_source_pulse_window,
         )
         pre_pulse_time_series_contract_path = plan_output.parent / "inputs" / (
             "pre_pulse_time_series_screening_contract.json"

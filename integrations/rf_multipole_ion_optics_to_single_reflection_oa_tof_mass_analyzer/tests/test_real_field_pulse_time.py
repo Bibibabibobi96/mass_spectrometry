@@ -853,6 +853,25 @@ class RealFieldPulseAnalysisTests(unittest.TestCase):
                     self.assertEqual(receipt["census"]["detector_crossing"], 69)
                     self.assertTrue(receipt["reusable_verified_pulse"])
 
+    def test_restart_child_is_not_misclassified_as_pulse_confirmation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            paths, _child, parent, stage = self._write_publisher_child(workspace)
+            schedule = json.loads(paths["schedule"].read_text(encoding="utf-8"))
+            schedule["execution_authority"] = {
+                "mode": "manifest_bound_time_series_restart_v1",
+                "materialization_receipt": {"path": "restart.json", "sha256": "A" * 64},
+            }
+            paths["schedule"].write_text(json.dumps(schedule), encoding="utf-8")
+            manifest = json.loads(paths["manifest"].read_text(encoding="utf-8"))
+            manifest["inputs"]["pulse_schedule"] = _record(paths["schedule"])
+            paths["manifest"].write_text(json.dumps(manifest), encoding="utf-8")
+            stage["manifest_sha256"] = file_sha256(paths["manifest"])
+
+            self.assertIsNone(_publish_verified_pulse_receipt(
+                workspace_root=workspace, parent_run_dir=parent, stage=stage,
+            ))
+
     def test_confirmation_census_keeps_snapshot_and_crossing_chains_distinct(self) -> None:
         census = {
             "launched": 1000,

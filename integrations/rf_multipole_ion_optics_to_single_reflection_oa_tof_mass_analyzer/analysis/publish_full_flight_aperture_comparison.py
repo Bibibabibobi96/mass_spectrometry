@@ -11,6 +11,7 @@ import argparse
 import csv
 import math
 import os
+import re
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -25,6 +26,9 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     publish_manifest,
     record_for_path,
     write_pending_json,
+)
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.plot_single_flight_spatial_six_panel import (
+    _phase_space_fit_diagnostics,
 )
 
 
@@ -41,8 +45,16 @@ SOURCE_FILES = (
     "run_config.json",
     "summary.json",
     "inputs/single_flight_initial_global_state.csv",
+    "inputs/resolved_connection.json",
     "results/single_flight_particle_checkpoints.csv",
     "results/single_flight_accelerator_checkpoint_evolution.csv",
+)
+EXPECTED_MOTHER_COHORT_COUNT = 5000
+EXPECTED_CONNECTOR_GAP_MM = 102.4
+CASE_ID_PATTERN = re.compile(
+    r"^ideal_acceptance_300mm_"
+    r"(?P<shape>square|cylindrical)_accelerator_port_"
+    r"h(?P<height_code>100|150|200|250)_full_flight_n5000$"
 )
 
 
@@ -123,23 +135,36 @@ def _checkpoint_entry_arrays(path: Path, mother_ids: set[int], case_id: str) -> 
     return np.asarray(z_values), np.asarray(vz_values), seen
 
 
-def _polynomial_diagnostics(z_mm: np.ndarray, vz_mm_per_us: np.ndarray, degree: int) -> dict[str, Any]:
-    coefficients = np.polyfit(z_mm, vz_mm_per_us, degree)
-    residual = vz_mm_per_us - np.polyval(coefficients, z_mm)
-    result: dict[str, Any] = {
-        "degree": degree,
-        "coefficients_descending_power": [float(value) for value in coefficients],
-        "residual_sample_sigma_mm_per_us": float(np.std(residual, ddof=1)),
-        "residual_rms_mm_per_us": float(np.sqrt(np.mean(np.square(residual)))),
-        "residual_abs_p95_mm_per_us": float(np.quantile(np.abs(residual), 0.95)),
-    }
-    if degree == 1:
-        result.update(k_per_us=float(coefficients[0]), intercept_mm_per_us=float(coefficients[1]))
-    elif degree == 2:
-        result["quadratic_coefficient_per_mm_us"] = float(coefficients[0])
-    else:
-        result["cubic_coefficient_per_mm2_us"] = float(coefficients[0])
-    return result
+def _validate_case_matrix(
+    *, case_id: str, config: Mapping[str, Any], connection: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Bind one published arm to the fixed 102.4 mm aperture-scan matrix."""
+
+    match = CASE_ID_PATTERN.fullmatch(case_id)
+    if match is None:
+        raise ContractError(f"{case_id} is outside the required full-flight aperture matrix")
+    parameters = config.get("parameters")
+    if not isinstance(parameters, Mapping):
+        raise ContractError(f"{case_id} resolved run parameters are missing")
+    aperture = parameters.get("accelerator_entrance_local_aperture_mm")
+    if not isinstance(aperture, Mapping):
+        raise ContractError(f"{case_id} local aperture parameters are missing")
+    expected_height_mm = int(match["height_code"]) / 100.0
+    if aperture.get("width") != 1.0 or aperture.get("height") != expected_height_mm:
+        raise ContractError(f"{case_id} local aperture differs from its matrix arm")
+    registration = connection.get("spatial_registration")
+    connector = connection.get("connector")
+    if not isinstance(registration, Mapping) or not isinstance(connector, Mapping):
+        raise ContractError(f"{case_id} resolved connector geometry is missing")
+    for field, value in (
+        ("spatial registration gap", registration.get("expected_gap_mm")),
+        ("connector length", connector.get("length_mm")),
+    ):
+        if not isinstance(value, (int, float)) or not math.isclose(
+            float(value), EXPECTED_CONNECTOR_GAP_MM, rel_tol=0.0, abs_tol=1e-9,
+        ):
+            raise ContractError(f"{case_id} {field} differs from 102.4 mm")
+    return {"shape": match["shape"], "aperture_height_mm": expected_height_mm}
 
 
 def _published_higher_order_reference(path: Path, case_id: str) -> dict[str, Any]:
@@ -213,6 +238,7 @@ def _verify_manifest_bound_source_files(manifest: Mapping[str, Any], run: Path, 
         for name in (
             "summary.json",
             "inputs/single_flight_initial_global_state.csv",
+            "inputs/resolved_connection.json",
             "results/single_flight_particle_checkpoints.csv",
             "results/single_flight_accelerator_checkpoint_evolution.csv",
         ):
@@ -231,6 +257,7 @@ def _analyze_case(case_id: str, run: Path) -> tuple[dict[str, Any], str]:
         raise ContractError(f"{case_id} source run is missing required input: {missing[0]}")
     manifest = _load_json(run / "run_manifest.json", f"{case_id} manifest")
     config = _load_json(run / "run_config.json", f"{case_id} config")
+    connection = _load_json(run / "inputs" / "resolved_connection.json", f"{case_id} resolved connection")
     summary = _load_json(run / "summary.json", f"{case_id} summary")
     if manifest.get("status") != "success" or manifest.get("run_id") != run.name or summary.get("status") != "success":
         raise ContractError(f"{case_id} is not a successful full-flight run")
@@ -254,6 +281,9 @@ def _analyze_case(case_id: str, run: Path) -> tuple[dict[str, Any], str]:
     )
     if candidate_count != len(mother_ids) or simulated_count != len(mother_ids):
         raise ContractError(f"{case_id} does not simulate its complete frozen mother cohort")
+    if len(mother_ids) != EXPECTED_MOTHER_COHORT_COUNT:
+        raise ContractError(f"{case_id} mother cohort count differs from 5000")
+    matrix = _validate_case_matrix(case_id=case_id, config=config, connection=connection)
     full_width_acceptance_mm = _source_release_width_acceptance_mm(config, case_id=case_id)
     z_mm, vz_mm_per_us, entry_ids = _checkpoint_entry_arrays(
         run / "results" / "single_flight_particle_checkpoints.csv", mother_ids, case_id
@@ -263,11 +293,10 @@ def _analyze_case(case_id: str, run: Path) -> tuple[dict[str, Any], str]:
     )
     terminal_taxonomy = _terminal_loss_taxonomy(summary, mother_ids, case_id)
     peak, bootstrap = _required_peak_metrics(summary, case_id)
-    linear = _polynomial_diagnostics(z_mm, vz_mm_per_us, 1)
-    quadratic = _polynomial_diagnostics(z_mm, vz_mm_per_us, 2)
-    cubic = _polynomial_diagnostics(z_mm, vz_mm_per_us, 3)
+    z_vz = _phase_space_fit_diagnostics(z_mm, vz_mm_per_us * 1000.0)
     return {
         "source_run_id": run.name,
+        "matrix_arm": matrix,
         "mother_cohort_count": len(mother_ids),
         "accelerator_entry_count": len(entry_ids),
         "accelerator_entry_fraction_of_mother": len(entry_ids) / len(mother_ids),
@@ -279,15 +308,7 @@ def _analyze_case(case_id: str, run: Path) -> tuple[dict[str, Any], str]:
             "population_basis": "all_observed_pre_pulse_state_particles_without_detector_filter",
         },
         "z_vz": {
-            "linear": linear,
-            "quadratic": quadratic,
-            "cubic": cubic,
-            "random_residual_model_degree": 3,
-            "random_residual_sample_sigma_mm_per_us": cubic["residual_sample_sigma_mm_per_us"],
-            "higher_order_residual_sigma_reduction_vs_linear_mm_per_us": {
-                "quadratic": linear["residual_sample_sigma_mm_per_us"] - quadratic["residual_sample_sigma_mm_per_us"],
-                "cubic": linear["residual_sample_sigma_mm_per_us"] - cubic["residual_sample_sigma_mm_per_us"],
-            },
+            **z_vz,
             "published_checkpoint_evolution_reference": published_higher_order,
         },
         "transmission_and_terminal_losses": {
@@ -331,6 +352,17 @@ def publish_full_flight_aperture_comparison(*, repo_root: Path, run_id: str, cas
             raise ContractError(f"{case_id} source run is missing or outside workspace")
         normalized[case_id] = path
     analyzed = {case_id: _analyze_case(case_id, path) for case_id, path in sorted(normalized.items())}
+    matrix_arms = {
+        (value[0]["matrix_arm"]["shape"], value[0]["matrix_arm"]["aperture_height_mm"])
+        for value in analyzed.values()
+    }
+    expected_matrix_arms = {
+        (shape, height_mm)
+        for shape in ("square", "cylindrical")
+        for height_mm in (1.0, 1.5, 2.0, 2.5)
+    }
+    if matrix_arms != expected_matrix_arms:
+        raise ContractError("full-flight aperture cases do not cover the required eight-arm matrix")
     source_shas = {value[1] for value in analyzed.values()}
     if len(source_shas) != 1:
         raise ContractError("full-flight arms do not use the same frozen mother cohort")
@@ -344,6 +376,7 @@ def publish_full_flight_aperture_comparison(*, repo_root: Path, run_id: str, cas
         "status": "REAL_FIELD_EXPLORATORY_ONLY",
         "controlled_variables": {
             "case_count": 8,
+            "connector_gap_mm": EXPECTED_CONNECTOR_GAP_MM,
             "mother_cohort_count": mother_cohort_count,
             "mother_cohort_initial_state_sha256_identical": True,
             "comparison_denominator": "full_mother_cohort",

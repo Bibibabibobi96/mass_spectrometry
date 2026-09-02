@@ -2,7 +2,7 @@
   "schema_version": 7,
   "role": "rf_multipole_oatof_experiment_campaign",
   "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
-  "campaign_id": "ideal_acceptance_300mm_square_handoff_post_pulse_smoke_n1_v2",
+  "campaign_id": "ideal_acceptance_300mm_square_paired_handoff_post_pulse_n1",
   "status": "exploration",
   "execution_policy": {
     "path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/execution_policy.json",
@@ -29,7 +29,7 @@
         "pulse_width_us": 1.0
       },
       "single_flight_population": {
-        "population_id": "ideal_acceptance_300mm_square_handoff_post_pulse_smoke_n1_v2_conditional_restart",
+        "population_id": "ideal_acceptance_300mm_square_paired_handoff_post_pulse_n1_conditional_restart",
         "population_mode": "pre_pulse_restart",
         "source_authority": {
           "input_role": "pre_pulse_source_state",
@@ -47,8 +47,8 @@
           "eligible_population_count": 1
         },
         "analysis_randomness": {
-          "bootstrap_resample_count": 1000,
-          "bootstrap_seed": 20260827
+          "bootstrap_resample_count": 1,
+          "bootstrap_seed": 20260831
         },
         "postselection_policy": "prohibited"
       },
@@ -90,14 +90,14 @@
         }
       },
       "pre_pulse_source_state": {
-        "path": "artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20260902_001000__analysis__python__natural-pre-pulse-restart__n1/results/canonical_pre_pulse_restart_state.csv",
-        "sha256": "3CE1104BC6552A96C9FE9D86F41BCE57958E5D9DFEF66893D0FCE416792A146A",
+        "path": "artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20260902_094500__analysis__python__square-pre-pulse-handoff__n1/results/canonical_pre_pulse_restart_state.csv",
+        "sha256": "3D3BBB3CC9D21FFC7A1D91A97C672D15A223D4958978E3FE7F17F77F3FA87102",
         "particle_count": 1,
         "coordinate_frame": "oatof_global_cartesian",
         "release_event": "pre_pulse_state",
         "materialization_receipt": {
-          "path": "artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20260902_001000__analysis__python__natural-pre-pulse-restart__n1/results/time_series_restart_materialization_receipt.json",
-          "sha256": "8BAD2F4B82122C12B7CB93F3E02E527070195600B4219CF30D916256C4F245FB"
+          "path": "artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20260902_094500__analysis__python__square-pre-pulse-handoff__n1/results/time_series_restart_materialization_receipt.json",
+          "sha256": "6325CB5C57A96BA664303242EAC217239FDAEE562E0AE648F0487FE3953D819C"
         },
         "source_state_epoch": "pulse_effective_time",
         "source_state_locus": "accelerator_stage1_interior_finite_observed_3d_cloud",
@@ -115,7 +115,7 @@
     ],
     "rows": [
       {
-        "experiment_id": "ideal_acceptance_300mm_square_handoff_post_pulse_smoke_n1_v2",
+        "experiment_id": "ideal_acceptance_300mm_square_paired_handoff_post_pulse_n1",
         "values": {
           "single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_square_kinematic_envelope_v1",
           "connection_profile_id": "rf_octupole_to_single_reflection_oatof_direct_mating_gap_102p4mm",

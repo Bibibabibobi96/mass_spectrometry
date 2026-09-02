@@ -590,17 +590,14 @@ function Assert-RfArtifactCapacityBeforeCachePublication {
     [Parameter(Mandatory)][string]$WorkspaceRoot,
     [Parameter(Mandatory)][string]$StagingDirectory,
     [string[]]$ProtectedCacheKeys = @(),
-    [long]$KnownMeasuredBytes = -1,
-    [long]$MaximumNewArtifactBytes = -1,
     [double]$MinimumFreeGiB = 500.0
   )
-  # The live staging directory is protected from the cleanup scan.  It is
-  # already below artifact-root, so its bytes are present in the gate's
-  # current measurement.  Publication is a same-volume Move-Item and adds no
-  # second payload; reserving stagingBytes as headroom here would count the
-  # same PA family twice and can reject a valid publication near 500 GiB.
-  $stagingBytes = [int64]((Get-ChildItem -LiteralPath $StagingDirectory -File -Recurse |
-    Measure-Object -Property Length -Sum).Sum)
+  # The live staging directory is protected from the cleanup scan and is
+  # already below artifact-root.  Publication is a same-volume Move-Item, so
+  # it adds no bytes to the current artifact measurement.  Always use that
+  # current measurement: a startup snapshot may already include a recovered
+  # staging family, and adding it again falsely rejects a valid publication
+  # near the 500 GiB watermark.
   $savedPythonPath = $env:PYTHONPATH
   $savedNoUserSite = $env:PYTHONNOUSERSITE
   try {
@@ -613,20 +610,6 @@ function Assert-RfArtifactCapacityBeforeCachePublication {
         '--minimum-free-gib',([string]$MinimumFreeGiB),
         '--protect-path',$StagingDirectory,'--apply'
       )
-      if (($KnownMeasuredBytes -ge 0) -xor ($MaximumNewArtifactBytes -ge 0)) {
-        throw 'Known measured artifact bytes and maximum new artifact bytes must be supplied together.'
-      }
-      if ($KnownMeasuredBytes -ge 0) {
-        # The launch receipt predates this staging directory.  Include the
-        # measured staging payload in its fast-path upper bound; this is not
-        # headroom because it is already inside artifact-root when a full
-        # reconciliation is required.
-        $maximumNewForPublication = [int64]$MaximumNewArtifactBytes + $stagingBytes
-        $capacityArguments += @(
-          '--known-measured-bytes',$KnownMeasuredBytes,
-          '--maximum-new-artifact-bytes',$maximumNewForPublication
-        )
-      }
       foreach ($key in @($ProtectedCacheKeys | Select-Object -Unique)) {
         if ($key -notmatch '^[0-9a-f]{64}$') {
           throw 'Protected cache key must be one SHA-256 key.'
@@ -639,10 +622,6 @@ function Assert-RfArtifactCapacityBeforeCachePublication {
       if (-not [bool]$receipt.satisfied_after_apply) {
         throw 'artifact capacity gate could not satisfy the 500 GiB watermark'
       }
-      # The caller needs this exact current staging size to advance its
-      # in-run measurement after a successful Move-Item.  A startup receipt
-      # alone becomes stale as successive cache generations are published.
-      $receipt | Add-Member -NotePropertyName staging_bytes -NotePropertyValue $stagingBytes -Force
       return $receipt
     } finally { Pop-Location }
   } finally {
@@ -695,7 +674,8 @@ function Publish-RfVerifiedCacheEntry {
     [Parameter(Mandatory)][string]$ProviderRunId,
     [string[]]$ProtectedCacheKeys = @(),
     [hashtable]$ArtifactCapacityState = $null,
-    [long]$KnownMeasuredBytes = -1,
+    # Retained for call-site compatibility while live staging publication
+    # measures the artifact tree directly; see the capacity helper below.
     [long]$MaximumNewArtifactBytes = -1,
     [double]$MinimumFreeGiB = 500.0
   )
@@ -738,17 +718,9 @@ function Publish-RfVerifiedCacheEntry {
     generation_sha256=$generationSha256; generation_input=$generationInput; files=$records
   })
   Wait-RfCacheStagingWriterExit -StagingDirectory $staging
-  $knownMeasuredForPublication = $KnownMeasuredBytes
-  if ($null -ne $ArtifactCapacityState) {
-    if (-not $ArtifactCapacityState.ContainsKey('known_measured_bytes')) {
-      throw 'Artifact capacity state is missing known_measured_bytes.'
-    }
-    $knownMeasuredForPublication = [int64]$ArtifactCapacityState.known_measured_bytes
-  }
   $capacityReceipt = Assert-RfArtifactCapacityBeforeCachePublication -Python $Python `
     -RepoRoot $RepoRoot -WorkspaceRoot $WorkspaceRoot -StagingDirectory $staging `
     -ProtectedCacheKeys $ProtectedCacheKeys `
-    -KnownMeasuredBytes $knownMeasuredForPublication -MaximumNewArtifactBytes $MaximumNewArtifactBytes `
     -MinimumFreeGiB $MinimumFreeGiB
   # Retain the identity marker until all fallible publication gates have
   # completed.  A capacity warning/failure then leaves a complete, reusable
@@ -765,9 +737,10 @@ function Publish-RfVerifiedCacheEntry {
     $published = $true
   }
   if ($published -and $null -ne $ArtifactCapacityState) {
-    $ArtifactCapacityState.known_measured_bytes = [int64](
-      [int64]$ArtifactCapacityState.known_measured_bytes + [int64]$capacityReceipt.staging_bytes
-    )
+    # The full capacity receipt already includes staging and the publication
+    # move does not change the total.  Carry that measured value forward
+    # rather than adding the same PA family a second time.
+    $ArtifactCapacityState.known_measured_bytes = [int64]$capacityReceipt.measured_after_bytes
   }
   $pointerStage = Join-Path $keyDirectory ('current_generation.' + [guid]::NewGuid().ToString('N') + '.json')
   Write-RunJson -Path $pointerStage -Depth 8 -Value ([ordered]@{

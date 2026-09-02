@@ -214,11 +214,33 @@ class DomainSplitRunnerContractTests(unittest.TestCase):
         self.assertIn("-NotePropertyName topology_pa", self.source)
         self.assertIn("$apertureTopologyPa = [string]$domainApertureProvider[0].topology_pa", self.source)
         self.assertIn("$apertureTopologyGeometry.accelerator_port_aperture.discretization", self.source)
+        self.assertIn(
+            "$apertureWidthMm = [double]$apertureTopologyDiscretization.mechanical_width_mm",
+            self.source,
+        )
+        self.assertIn(
+            "$apertureHeightMm = [double]$apertureTopologyDiscretization.mechanical_height_mm",
+            self.source,
+        )
         self.assertIn("-PaPath $apertureTopologyPa", self.source)
 
     def test_pre_pulse_collision_aperture_gate_uses_its_materialized_raw_pa0(self) -> None:
         self.assertIn("geometry_collision_zero_field_v1", self.source)
         self.assertIn("not infer", self.source)
+        self.assertIn("$entranceZoneAssetName = 'accelerator_entrance_zero_field'", self.source)
+        self.assertIn("$domainEntranceZone[0].pa0", self.source)
+        self.assertIn("topology_pa=(Join-Path $entranceZoneCacheDir ($entranceZoneAssetName + '.pa0'))", self.source)
+        self.assertIn("if ($prePulseEntranceZoneCollision) {'accelerator_entrance_zero_field'}", self.source)
+        self.assertNotIn(
+            "$domainUpstream[0].pa0,(Join-Path $runtimeDir 'accelerator_main.pa0')",
+            self.source,
+        )
+
+    def test_early_failure_receipt_cannot_mask_the_original_launch_error(self) -> None:
+        self.assertIn("$stdoutFiles = @()", self.source)
+        self.assertIn("$stderrFiles = @()", self.source)
+        self.assertIn("$materializerStdout = $null", self.source)
+        self.assertIn("$materializerStderr = $null", self.source)
         topology_block = self.source[
             self.source.index("$topologyPa = if ("):
             self.source.index("$domainSplitFineBuild | Add-Member", self.source.index("$topologyPa = if ("))
@@ -254,6 +276,23 @@ class DomainSplitRunnerContractTests(unittest.TestCase):
         )
         self.assertIn(
             "requires an explicit local replacement aperture", self.source
+        )
+
+    def test_pre_pulse_scans_do_not_multiply_the_shared_coarse_bridge_cache(self) -> None:
+        start = self.source.index("$coarseBridgeReferenceAperture =")
+        end = self.source.index("$frontendCompileArguments += @(\n      '--upstream-bridge-gem'", start)
+        aperture_block = self.source[start:end]
+        self.assertIn(
+            "$coarseBridgeReferenceAperture = $executionProfile.accelerator_main_reference_aperture_mm",
+            aperture_block,
+        )
+        self.assertIn(
+            "--coarse-bridge-reference-aperture-width-mm',([string]$coarseBridgeReferenceAperture.width)",
+            aperture_block,
+        )
+        self.assertIn(
+            "--accelerator-main-reference-aperture-width-mm',([string]$acceleratorMainCompileAperture.width)",
+            self.source,
         )
 
     def test_domain_split_iob_aliases_coarse_frontend_from_its_materialized_family(self) -> None:

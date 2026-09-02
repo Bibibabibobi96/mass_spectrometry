@@ -60,6 +60,7 @@ def build_continuation_plan(
         policy=PRE_PULSE_POLICY,
         output_dir=output_dir,
         continuation_dir_name="pre_pulse_batch_continuation",
+        log_glob="logs/simion__batch{index:02d}*.trace.log",
     )
 
 

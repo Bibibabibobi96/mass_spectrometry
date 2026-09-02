@@ -6,7 +6,7 @@
 
 ## 所有权与入口
 
-- 多极杆项目拥有杆内几何、RF 驱动、源粒子与 `handoff` 状态；oaTOF 项目拥有下游几何、脉冲和分析。
+- 多极杆项目拥有杆内几何、RF 驱动与经过其作用后的 `handoff` 状态；离子源只发布冻结的粒子相空间快照，oaTOF 项目拥有下游几何、脉冲和分析。后续运行器只消费该统一粒子表，不依赖其是体积源、平面源还是历史外部表的生成方式。
 - 本集成只拥有跨组件状态绑定、活动 campaign 的生命周期、单飞适配与运行证据链。
 - [`workflows/family_source_closure/prepare.py`](../workflows/family_source_closure/prepare.py) 只准备并验证已授权输入；
   [`execute.ps1`](../workflows/family_source_closure/execute.ps1) 只执行生命周期注册表明确允许的 campaign。
@@ -65,8 +65,8 @@ SIMION 运行可调用共享批处理；批内结果必须恢复全局粒子 ID 
   第二栅直接由主 PA 的 0.1 mm 轴向网格表达，不再建立 intermediate2 精细 overlay。四个实际孔径由入口局部
   替换 PA 表达；
   粗全局 PA 的孔光栅化不具有权威性，不因主体 PA 分离而改变。
-- 两段细域不在连接器中重叠、不“拼接”、不把场值相加；中段由同一个粗 bridge PA 覆盖。粗 PA 可采用更
-  粗的网格（当前注册 `0.5 × 0.5 × 0.5 mm`），仅为细 PA 提供远端 electrode-basis Dirichlet 边界；每个
+- 两段细域不在连接器中重叠、不“拼接”、不把场值相加；中段由同一个粗 bridge PA 覆盖。粗 PA 采用
+  `1.0 × 1.0 × 1.0 mm` 网格，仅为细 PA 提供远端 electrode-basis Dirichlet 边界；每个
   细 PA 在 refine 前获得其全部电极基底的边界值。SIMION 的优先级只用于让细 PA 替换背景粗 PA，绝不允许
   两个实例的 field 或 potential 相加为总场。
 - 20 环、300 mm 的孔径扫描固定主 PA 与其粗 Dirichlet 边界为同一 `1.0 mm × 1.0 mm` 参考孔；所有
@@ -85,8 +85,9 @@ SIMION 运行可调用共享批处理；批内结果必须恢复全局粒子 ID 
   电压、粒子 ID、脉冲时刻和完整母 cohort 做整体 PA 与分域 PA 的配对粒子比较。验收至少覆盖到达时间、
   命中/损失分类和入口附近轨迹；仅有 PA refine 成功、边界电势相等或峰宽单值改善均不足以证明可替代。
 
-`gap > 0`的分域拓扑现已由同一冻结 bridge contract 驱动 IOB、Program、cache 和 manifest；真实 SIMION
-N=1 的最终贯通仍待最小 post-pulse IOB 运行完成。主加速器细 PA 与入口局部替换 PA 使用同一个 PA+ 解空间：
+`gap > 0`的分域拓扑现已由同一冻结 bridge contract 驱动 IOB、Program、cache 和 manifest；最小五实例
+post-pulse IOB 已在真实 SIMION N=1 贯通（`20260901_215536__sim__cross__ideal-acceptance-300mm-sq-post-pulse-smoke-n1__n1`，
+单粒子到达探测器），但该结果仅关闭链路功能，不构成统计或场精度结论。主加速器细 PA 与入口局部替换 PA 使用同一个 PA+ 解空间：
 现有三区 Program 已将 20 个环的电压定义为四个区端平面电压之间的线性插值，因此只构建 14 个独立 mode
 （八极杆、四个三区端点及两个入口电极），而不是为每个已从属的环重复构建 physical-electrode basis。每个
 mode 的 Dirichlet 边界由六个互不重叠的外表面循环从其源 basis 线性投影写入，且不再逐点读回校验；随后
@@ -96,10 +97,20 @@ mode 的 Dirichlet 边界由六个互不重叠的外表面循环从其源 basis 
 
 对于 detector-blind 的 pre-pulse，运行器构建连续三实例 IOB：`1=粗前端`、`2=上游细域`、
 `3=实际孔径的零场入口碰撞区`。它不加载主加速器、反射器、下游飞行管或探测器 PA，也不保留任何空实例。
+长 gap 的连续体积源使用 `natural_trajectory_native_rf_grid_v1`：每个离子在原生 RF 栅格上记录位置、
+速度和能量，直到实际入口碰撞几何自然终止；不再以候选 pulse 时间窗主动 splat。pulse selector 仅对这份
+可重建轨迹载荷作 detector-blind 反推，因此未来替换 pulse 排名机制无需重跑上游传播。当前载荷为直接流式
+写出的无损 `pre_pulse_time_series_states.csv.gz`：解压后是标准 CSV，逐粒子、逐原生 RF 时间格的状态与未压缩
+表示逐字节一致；它不裁剪时间窗、不降精度。receipt/summary 只保留逐时刻计数与完整身份摘要，避免重复保存
+长粒子 ID 表。该压缩 CSV 与 PA cache 一样是受容量治理的可重建重载荷，不属于 Formal 或唯一来源输入。
 SIMION 2020 没有可用的公开 Lua 实例删除接口，因此运行器冻结一个仅含三个实例的版本受控二进制种子；加载时
 先用同名临时 PA 满足种子，再立即替换为上述三个真实角色。该种子只表达 Workbench 实例数，不表达电场、几何
 或科学输入；最终 IOB 只序列化真实角色 PA。此轻量模式不能用于全程飞行或总轴场导出；run manifest 明确记录
 模式及省略角色。
+独立体积源没有可继承的多极杆 handoff pulse 时刻：其首个筛选网格由冻结母群在注册后的全局`x`位置、
+出生时刻、`v_x`与实际 bore 两侧边界计算，以全母群同时位于 bore 内人数最大的交叠区作为采样范围，
+并量化到该 run 的原生 RF 步。历史 handoff 的平均速度不得作为这种源的 seed。此计算只确定真实 SIMION
+detector-blind screen 的采样范围；最终 pulse 仍按真实 PA 轨迹的完整母群 bore eligibility 排名，不由该弹道预测直接指定。
 N=5000 预脉冲筛选及跨整体 PA 的配对验收仍是物理/性能结论的必要前提。
 
 仓库级 [`common/simion/resource_scheduler.py`](../../../common/simion/resource_scheduler.py) 仅为已授权请求
@@ -218,6 +229,8 @@ immutable analysis run。它冻结各 arm 的 manifest、resolved config、初�
 census，报告完整母群分母下的传输、损失、`z--vz` 拟合/残差和加速方向 full-width。300 mm 孔径筛选将
 full-width 的 4.0 mm 阈值、实测值和 pass/fail 一并写出；该 artifact 始终是
 `DETECTOR_BLIND_SOURCE_ONLY`，不输出 detector peak、分辨率或 Formal 结论。
+每个 arm 还必须绑定其 detector-blind pulse-timing candidate receipt，并使用该 receipt 的胜出
+`sample_index` 读取 natural time-series state；自然轨迹的最后一个 sample 仅是归档终点，不能作为比较时刻。
 
 五环 300 mm 几何的 detector-blind 筛选、连续全程失败和轴场误差均已冻结为
 [`五环诊断快照`](history/20260831__five-ring-prepulse-and-field-diagnostics.md)。它们解释为何旧结构不能进入正式
@@ -226,11 +239,12 @@ full-width 的 4.0 mm 阈值、实测值和 pass/fail 一并写出；该 artifac
 当前 20 环、300 mm 三区候选仍是 `CANDIDATE_ONLY`：必须先以冻结理论合同完成总轴场导出和逐区比较，再以 N=1
 贯通验证；只有两者通过，才能重启 N=5000 全程。这不是孔高扫描的负物理结论。
 
-为使这一物理包络可计算，长 gap 分域中的 `accelerator_main` 可选择
-`directed_kinematic_corridor_v1` 数值域：它保留入口端板、小孔、repeller 和 grid1 的细网格，覆盖从连接器入口至
-出口方向可达包络；远离该走廊的整形环、侧壁和出口栅不被删改，而是由同一完整粗 PA 的逐电极 Dirichlet basis
-作为细域边界提供。该策略的 extent 必须由冻结数值 profile 声明、位于物理 bore 内且落在粗网格节点上。它是可扩展
-的数值分区，不是场等价的预先声明；每个新几何仍须以总轴场导出和 N=1 轨迹验证。
+为避免完整细网格外壳使每个 PA mode 达到 8.86 GiB，活动物理链使用
+`coarse_boundary_supported_full_axial_core_v1`：它沿完整 300 mm、20 环三区加速器轴向保留细网格，横向只保留
+位于 bore 内的核心。远端环、侧壁和出口栅没有被删除，而是通过同一形状专属 1 mm 粗 PA 的逐电极 Dirichlet basis
+施加在核心的六个外表面。核心 extent 由冻结数值 profile 声明，必须位于物理 bore 内并落在粗网格节点上。旧
+`directed_kinematic_corridor_v1`只保留给入口诊断，不是该物理链的主 PA。这个分区不是场等价的预先声明；每个
+新几何仍须以总轴场导出和 N=1 轨迹验证。
 
 带入口局部替换 PA 的总轴场导出不需要也不得等待连续全程的七槽 seed：它使用五个连续实例
 `飞行管、反射器、主加速器、探测器、入口局部 PA`，并重放 Program 的局部优先级与电压表；分域导出不传入

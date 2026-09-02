@@ -63,11 +63,11 @@ def _predecessor(root: Path, batches: list[list[int]], logs: list[list[str]]) ->
         "initial_global_state": str(state.resolve()), "particle_row_map": str(row_map.resolve()),
     }}), encoding="utf-8")
     for index, lines in enumerate(logs, start=1):
-        (run / "logs" / f"simion__batch{index:02d}.stdout.log").write_text(
+        (run / "logs" / f"simion__batch{index:02d}.trace.log").write_text(
             "\n".join(lines) + "\n", encoding="utf-8"
         )
     manifest_outputs = []
-    for path in (run / "logs").glob("*.stdout.log"):
+    for path in (run / "logs").glob("*.trace.log"):
         manifest_outputs.append({"path": str(path), "sha256": file_sha256(path)})
     manifest_inputs = {key: {"path": str(path.resolve()), "exists": True, "sha256": file_sha256(path)} for key, path in {
         "pre_pulse_time_series_contract": contract,

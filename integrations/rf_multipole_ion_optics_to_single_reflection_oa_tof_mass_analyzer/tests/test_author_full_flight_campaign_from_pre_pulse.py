@@ -189,6 +189,25 @@ class AuthorFullFlightCampaignFromPrePulseTests(unittest.TestCase):
                 "auto_detector_blind_discovery_and_confirmation_v1",
             )
 
+    def test_authors_directly_from_compact_profiled_campaign(self) -> None:
+        """The public compact campaign is the authoring API, not a template."""
+
+        experiment_id = "ideal_acceptance_300mm_square_accelerator_port_h150_pre_pulse_n5000"
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            workspace = root / "workspace"
+            parent = self._parent(workspace, experiment_id=experiment_id, run_id="producer-a")
+            producers = self._producer_map(root, experiment_id, parent)
+            result = author_campaign(
+                source_campaign_path=SOURCE_CAMPAIGN, producer_mapping_path=producers,
+                output_path=root / "full.json", campaign_id="full_flight_test",
+                workspace=workspace,
+            )
+            self.assertEqual(
+                result["experiments"]["shared"]["source_release_mode"],
+                "continuous_frontend",
+            )
+
     def test_accepts_workspace_relative_producer_path(self) -> None:
         experiment_id = "ideal_acceptance_300mm_square_accelerator_port_h150_pre_pulse_n5000"
         with tempfile.TemporaryDirectory() as temporary:

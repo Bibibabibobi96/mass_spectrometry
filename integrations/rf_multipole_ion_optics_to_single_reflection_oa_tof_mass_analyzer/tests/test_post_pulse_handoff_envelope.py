@@ -52,3 +52,20 @@ class PostPulseHandoffEnvelopeTests(unittest.TestCase):
             local.write_text(json.dumps(self._contract(bounds)), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "would omit restart states"):
                 validate_handoff_envelope(source, main, local)
+
+    def test_accepts_runnable_materialized_state_coordinate_columns(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "initial_state.csv"
+            source.write_text(
+                "particle_id,position_x_mm,position_y_mm,position_z_mm\n"
+                "46,1,0,0\n",
+                encoding="utf-8",
+            )
+            main = root / "main.json"
+            local = root / "local.json"
+            bounds = {"x_min": 0, "x_max": 10, "y_min": -1, "y_max": 1, "z_min": -1, "z_max": 1}
+            main.write_text(json.dumps(self._contract(bounds)), encoding="utf-8")
+            local.write_text(json.dumps(self._contract(bounds)), encoding="utf-8")
+            receipt = validate_handoff_envelope(source, main, local)
+        self.assertEqual(receipt["source_row_count"], 1)

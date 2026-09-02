@@ -31,6 +31,25 @@ def _contains(bounds: dict[str, float], point: dict[str, float]) -> bool:
     return all(bounds[f"{axis}_min"] <= point[axis] <= bounds[f"{axis}_max"] for axis in ("x", "y", "z"))
 
 
+def _position_columns(fieldnames: list[str] | None) -> dict[str, str]:
+    """Resolve the coordinate vocabulary used by a frozen restart table.
+
+    The persisted pre-pulse state uses ``x_mm`` while the runnable SIMION
+    initial-state materialization uses ``position_x_mm``.  Both identify the
+    same OATOF-global coordinates; the caller already binds the frozen source,
+    so this topology check must consume either representation rather than
+    rejecting an otherwise valid run package before coverage is evaluated.
+    """
+    if fieldnames is None:
+        raise ValueError("restart source lacks a header")
+    fields = set(fieldnames)
+    for prefix in ("", "position_"):
+        columns = {axis: f"{prefix}{axis}_mm" for axis in ("x", "y", "z")}
+        if set(columns.values()).issubset(fields):
+            return columns
+    raise ValueError("restart source lacks canonical position columns")
+
+
 def validate_handoff_envelope(
     source_path: Path, main_contract_path: Path, local_contract_path: Path
 ) -> dict[str, Any]:
@@ -41,13 +60,18 @@ def validate_handoff_envelope(
     uncovered: list[dict[str, Any]] = []
     with source_path.open(newline="", encoding="utf-8-sig") as handle:
         reader = csv.DictReader(handle)
-        required = {"simulation_particle_id", "x_mm", "y_mm", "z_mm"}
-        if reader.fieldnames is None or not required.issubset(reader.fieldnames):
-            raise ValueError("restart source lacks canonical position columns")
+        columns = _position_columns(reader.fieldnames)
+        particle_id_column = (
+            "simulation_particle_id"
+            if "simulation_particle_id" in (reader.fieldnames or [])
+            else "particle_id"
+        )
+        if particle_id_column not in (reader.fieldnames or []):
+            raise ValueError("restart source lacks a particle identity column")
         for row in reader:
             total += 1
             try:
-                point = {axis: float(row[f"{axis}_mm"]) for axis in ("x", "y", "z")}
+                point = {axis: float(row[columns[axis]]) for axis in ("x", "y", "z")}
             except (TypeError, ValueError) as error:
                 raise ValueError("restart source has an invalid position") from error
             if not all(math.isfinite(value) for value in point.values()):
@@ -55,7 +79,7 @@ def validate_handoff_envelope(
             if not (_contains(main_bounds, point) or _contains(local_bounds, point)):
                 if len(uncovered) < 8:
                     uncovered.append(
-                        {"simulation_particle_id": row["simulation_particle_id"], **point}
+                        {"particle_id": row[particle_id_column], **point}
                     )
     if total == 0:
         raise ValueError("restart source is empty")

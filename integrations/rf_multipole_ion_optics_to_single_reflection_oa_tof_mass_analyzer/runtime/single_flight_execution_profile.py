@@ -125,10 +125,11 @@ def _resolve_accelerator_overlays(
 def _resolve_accelerator_main_domain(value: Any) -> dict[str, Any]:
     """Resolve the numerical extent of the fine accelerator PA.
 
-    A full fine PA remains the default.  A directed corridor is deliberately a
-    numerical-domain declaration, rather than a change to the physical
-    accelerator: omitted distant electrode surfaces are represented by the
-    common coarse-electrode Dirichlet boundary family.
+    A full fine PA remains available for convergence reference.  The active
+    full-axial core and the legacy directed corridor are numerical-domain
+    declarations, not changes to the physical accelerator: omitted distant
+    transverse electrode surfaces are represented by the common coarse
+    electrode-basis Dirichlet family.
     """
 
     if value is None:
@@ -140,7 +141,10 @@ def _resolve_accelerator_main_domain(value: Any) -> dict[str, Any]:
         if set(value) != {"policy_id"}:
             raise ValueError(ERROR)
         return {"policy_id": policy_id}
-    if policy_id == "directed_kinematic_corridor_v1":
+    if policy_id in {
+        "directed_kinematic_corridor_v1",
+        "coarse_boundary_supported_full_axial_core_v1",
+    }:
         if set(value) != {
             "policy_id", "exit_axis_positive_extent_mm", "transverse_half_span_mm"
         }:

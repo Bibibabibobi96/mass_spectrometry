@@ -20,7 +20,9 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 WORKSPACE_ROOT = REPO_ROOT.parent
 
 
-def _source_run(root: Path, name: str, z_values: list[float]) -> Path:
+def _source_run(
+    root: Path, name: str, z_values: list[float], *, shape: str = "square", height_mm: float = 1.0
+) -> Path:
     run = root / name
     (run / "inputs").mkdir(parents=True)
     (run / "results").mkdir()
@@ -35,31 +37,55 @@ def _source_run(root: Path, name: str, z_values: list[float]) -> Path:
         json.dumps({"parameters": {
             "execution_mode": "real_pa_rf_pre_pulse_time_series",
             "source_release_full_width_mm": 4.0,
+            "layout_profile_id": f"three_zone_ideal_acceptance_300mm_{shape}_kinematic_envelope_v1",
+            "accelerator_entrance_local_aperture_mm": {"width": 1.0, "height": height_mm},
         }}),
         encoding="utf-8",
     )
-    pd.DataFrame({"particle_id": [1, 2, 3, 4]}).to_csv(
+    (run / "inputs" / "resolved_connection.json").write_text(
+        json.dumps({"spatial_registration": {"expected_gap_mm": 102.4}, "connector": {"length_mm": 102.4}}),
+        encoding="utf-8",
+    )
+    pd.DataFrame({"particle_id": range(1, 5001)}).to_csv(
         run / "inputs" / "single_flight_initial_global_state.csv", index=False
     )
     pd.DataFrame({
-        "particle_id": [1, 2, 3], "sample_index": [1, 1, 1],
-        "z_mm": z_values, "vz_mm_per_us": [1.0, 1.5, 2.0],
+        "particle_id": [1, 2, 3, 1, 2, 3], "sample_index": [2, 2, 2, 3, 3, 3],
+        "z_mm": z_values + [20.0, 21.0, 22.0], "vz_mm_per_us": [1.0, 1.5, 2.0, 1.0, 1.5, 2.0],
     }).to_csv(run / "results" / "pre_pulse_time_series_states.csv", index=False)
     (run / "results" / "pre_pulse_time_series_screening_receipt.json").write_text(
         json.dumps({"terminal_census": {"window_complete": {"count": 3}, "splat": {"count": 1}}}),
         encoding="utf-8",
     )
+    (run / "results" / "detector_blind_pulse_timing_candidate_receipt.json").write_text(
+        json.dumps({
+            "role": "rf_oatof_detector_blind_real_field_pulse_timing_selection_receipt",
+            "status": "success", "qualification": "candidate_selection",
+            "selection_uses_detector_outcome": False, "detector_results_used": False,
+            "selected_time_us": 2.0,
+            "candidates_ranked": [{"sample_index": 2, "candidate_time_us": 2.0}],
+        }),
+        encoding="utf-8",
+    )
     return run
+
+
+def _source_matrix(root: Path) -> dict[str, Path]:
+    return {
+        f"{shape}_h{int(height * 100):03d}": _source_run(
+            root, f"{shape}_h{int(height * 100):03d}", [0.0, 1.0, 2.0],
+            shape=shape, height_mm=height,
+        )
+        for shape in ("square", "cylindrical")
+        for height in (1.0, 1.5, 2.0, 2.5)
+    }
 
 
 class PrePulseApertureComparisonPublicationTests(unittest.TestCase):
     def test_publishes_detector_blind_result_and_freezes_source_inputs(self) -> None:
         with tempfile.TemporaryDirectory(dir=WORKSPACE_ROOT) as temporary:
             source_root = Path(temporary)
-            cases = {
-                "square_h150": _source_run(source_root, "square", [0.0, 1.0, 2.0]),
-                "cylindrical_h250": _source_run(source_root, "cylindrical", [0.0, 2.5, 5.0]),
-            }
+            cases = _source_matrix(source_root)
             run_id = "20260829_120001__analysis__python__pre-pulse-aperture-comparison__n5000"
             output = WORKSPACE_ROOT / "artifacts" / "projects" / INTEGRATION_ID / "runs" / run_id
             self.assertFalse(output.exists())
@@ -71,13 +97,14 @@ class PrePulseApertureComparisonPublicationTests(unittest.TestCase):
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
                 config = json.loads((output / "run_config.json").read_text(encoding="utf-8"))
                 self.assertEqual(result["status"], "DETECTOR_BLIND_SOURCE_ONLY")
-                self.assertTrue(result["cases"]["square_h150"]["accelerator_entry_axial_full_width_acceptance"]["passed"])
-                self.assertFalse(result["cases"]["cylindrical_h250"]["accelerator_entry_axial_full_width_acceptance"]["passed"])
+                self.assertTrue(result["cases"]["square_h100"]["accelerator_entry_axial_full_width_acceptance"]["passed"])
+                self.assertEqual(result["cases"]["cylindrical_h250"]["detector_blind_pulse_timing"]["selected_sample_index"], 2)
                 self.assertEqual(manifest["status"], "success")
                 self.assertFalse(manifest["formal_eligible"])
                 self.assertEqual(config["parameters"]["analysis_scope"], "DETECTOR_BLIND_SOURCE_ONLY")
                 self.assertIn("case_1_run_manifest_json", config["inputs"])
                 self.assertIn("case_2_results_pre_pulse_time_series_states_csv", config["inputs"])
+                self.assertIn("case_8_results_detector_blind_pulse_timing_candidate_receipt_json", config["inputs"])
                 self.assertIn("repository_snapshot", config["inputs"]["publication_implementation"])
             finally:
                 if output.exists():
@@ -112,7 +139,7 @@ class PrePulseApertureComparisonPublicationTests(unittest.TestCase):
             try:
                 with self.assertRaisesRegex(ContractError, "output already exists"):
                     publish_pre_pulse_aperture_comparison(
-                        repo_root=REPO_ROOT, run_id=output_id, cases={"one": valid, "two": valid}
+                        repo_root=REPO_ROOT, run_id=output_id, cases=_source_matrix(source_root)
                     )
             finally:
                 duplicate_output.rmdir()

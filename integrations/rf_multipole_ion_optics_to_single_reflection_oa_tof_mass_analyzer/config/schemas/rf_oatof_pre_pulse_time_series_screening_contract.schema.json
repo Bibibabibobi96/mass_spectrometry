@@ -5,11 +5,11 @@
   "additionalProperties": false,
   "required": [
     "schema_version", "role", "mode", "active_scope", "claim_limit",
-    "identities", "rf_time_grid", "sample_times_us", "pulse_disabled",
-    "terminate_at_window_end", "resolution_claim_allowed", "prohibited_outputs"
+    "identities", "rf_time_grid", "pulse_disabled", "resolution_claim_allowed",
+    "prohibited_outputs"
   ],
   "properties": {
-    "schema_version": {"enum": [1, 2, 3, 4, 5]},
+    "schema_version": {"enum": [1, 2, 3, 4, 5, 6, 7]},
     "role": {"const": "rf_oatof_pre_pulse_time_series_screening_contract"},
     "mode": {"const": "real_pa_rf_pre_pulse_time_series"},
     "active_scope": {"const": "pre_pulse_frontend_accelerator"},
@@ -87,7 +87,9 @@
     "rf_time_grid": {
       "oneOf": [
         {"$ref": "#/$defs/rf_time_grid_v1"},
-        {"$ref": "#/$defs/rf_time_grid_v2"}
+        {"$ref": "#/$defs/rf_time_grid_v2"},
+        {"$ref": "#/$defs/rf_time_grid_v3"},
+        {"$ref": "#/$defs/rf_time_grid_v4"}
       ]
     },
     "sample_times_us": {
@@ -95,7 +97,16 @@
     },
     "selection_order": {"const": ["maximize_pulse_eligible_count", "maximize_transverse_bore_count", "minimize_normalized_xyz_centroid_distance", "minimize_normalized_xyz_spread_norm", "minimize_absolute_distance_to_ballistic_seed", "select_earlier_time"]},
     "pulse_disabled": {"const": true},
-    "terminate_at_window_end": {"const": true},
+    "terminate_at_window_end": {"type": "boolean"},
+    "trace_policy": {
+      "type": "object", "additionalProperties": false,
+      "required": ["mode", "terminal_event", "retention_class"],
+      "properties": {
+        "mode": {"const": "natural_trajectory_native_rf_grid_v1"},
+        "terminal_event": {"const": "geometry_collision_v1"},
+        "retention_class": {"const": "rebuildable_trajectory_payload"}
+      }
+    },
     "resolution_claim_allowed": {"const": false},
     "prohibited_outputs": {"const": ["detector_crossing", "resolution_metrics", "single_flight_spatial_six_panel"]}
   },
@@ -176,6 +187,26 @@
       },
       "required": ["pa_cache_roles"],
       "not": {"required": ["pa_cache_keys"]}
+    },
+    {
+      "properties": {
+        "schema_version": {"const": 6},
+        "rf_time_grid": {"$ref": "#/$defs/rf_time_grid_v3"},
+        "identities": {"properties": {"spatial_window_profile_id": {"const": "layout_resolved_axial_provisional_xy2_v1"}}},
+        "pa_cache_roles": {"properties": {"required": {"const": ["fine_upstream", "accelerator_entrance_zone_collision"]}}}
+      },
+      "required": ["pa_cache_roles"],
+      "not": {"required": ["pa_cache_keys"]}
+    },
+    {
+      "properties": {
+        "schema_version": {"const": 7},
+        "rf_time_grid": {"$ref": "#/$defs/rf_time_grid_v4"},
+        "pa_cache_roles": {"properties": {"required": {"const": ["fine_upstream", "accelerator_entrance_zone_collision"]}}},
+        "terminate_at_window_end": {"const": false}
+      },
+      "required": ["pa_cache_roles", "trace_policy", "terminate_at_window_end"],
+      "not": {"required": ["pa_cache_keys", "sample_times_us"]}
     }
   ],
   "$defs": {
@@ -224,6 +255,48 @@
         "start_index": {"const": 0},
         "end_index": {"type": "integer", "minimum": 0},
         "sample_count": {"type": "integer", "minimum": 1}
+      }
+    },
+    "rf_time_grid_v3": {
+      "type": "object", "additionalProperties": false,
+      "required": ["time_grid_profile_id", "derivation", "waveform", "frequency_hz", "phase_rad", "rf_steps_per_period", "period_us", "step_us", "sample_stride_rf_steps", "source_state_table_sha256", "source_forward_particle_count", "source_ballistic_seed_time_us", "source_bore_entry_window_start_us", "source_bore_exit_window_end_us", "grid_origin_us", "requested_relative_start_index", "requested_relative_end_index", "start_index", "end_index", "sample_count"],
+      "properties": {
+        "time_grid_profile_id": {"const": "continuous_source_bore_crossing_native_rf_grid_v1"},
+        "derivation": {"const": "source_population_forward_bore_crossing_bounds_v1"},
+        "waveform": {"enum": ["sine", "cosine"]},
+        "frequency_hz": {"type": "number", "exclusiveMinimum": 0},
+        "phase_rad": {"type": "number"},
+        "rf_steps_per_period": {"type": "integer", "minimum": 1},
+        "period_us": {"type": "number", "exclusiveMinimum": 0},
+        "step_us": {"type": "number", "exclusiveMinimum": 0},
+        "sample_stride_rf_steps": {"const": 1},
+        "source_state_table_sha256": {"$ref": "#/$defs/sha"},
+        "source_forward_particle_count": {"type": "integer", "minimum": 1},
+        "source_ballistic_seed_time_us": {"type": "number", "minimum": 0},
+        "source_bore_entry_window_start_us": {"type": "number", "minimum": 0},
+        "source_bore_exit_window_end_us": {"type": "number", "exclusiveMinimum": 0},
+        "grid_origin_us": {"type": "number", "minimum": 0},
+        "requested_relative_start_index": {"type": "integer"},
+        "requested_relative_end_index": {"type": "integer"},
+        "start_index": {"const": 0},
+        "end_index": {"type": "integer", "minimum": 0},
+        "sample_count": {"type": "integer", "minimum": 1}
+      }
+    },
+    "rf_time_grid_v4": {
+      "type": "object", "additionalProperties": false,
+      "required": ["time_grid_profile_id", "derivation", "waveform", "frequency_hz", "phase_rad", "rf_steps_per_period", "period_us", "step_us", "sample_stride_rf_steps", "grid_origin_us"],
+      "properties": {
+        "time_grid_profile_id": {"const": "natural_pre_pulse_native_rf_grid_v1"},
+        "derivation": {"const": "native_rf_grid_from_instrument_clock_origin_v1"},
+        "waveform": {"enum": ["sine", "cosine"]},
+        "frequency_hz": {"type": "number", "exclusiveMinimum": 0},
+        "phase_rad": {"type": "number"},
+        "rf_steps_per_period": {"type": "integer", "minimum": 1},
+        "period_us": {"type": "number", "exclusiveMinimum": 0},
+        "step_us": {"type": "number", "exclusiveMinimum": 0},
+        "sample_stride_rf_steps": {"const": 1},
+        "grid_origin_us": {"type": "number", "minimum": 0}
       }
     }
   }

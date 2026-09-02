@@ -6,7 +6,9 @@ import argparse
 import copy
 import csv
 from dataclasses import dataclass
+import gzip
 import hashlib
+import io
 import json
 import math
 import os
@@ -53,7 +55,7 @@ TERMINAL_PATTERN = re.compile(
     r"vx_mm_per_us=(?P<vx>[-+0-9.eE]+) "
     r"vy_mm_per_us=(?P<vy>[-+0-9.eE]+) "
     r"vz_mm_per_us=(?P<vz>[-+0-9.eE]+) "
-    r"terminal_reason=(?P<reason>window_complete|splat)$"
+    r"terminal_reason=(?P<reason>window_complete|splat|geometry_collision)$"
 )
 PROHIBITED_DOWNSTREAM_PATTERN = re.compile(
     r"^TRACE: (?:detector_crossing|diagnostic_return_plane)"
@@ -73,6 +75,7 @@ CSV_COLUMNS = (
     "kinetic_energy_eV",
     "survival_status",
 )
+STATE_ARCHIVE_FILENAME = "pre_pulse_time_series_states.csv.gz"
 SHA_PATTERN = re.compile(r"^[A-Fa-f0-9]{64}$")
 INTEGRATION_SCHEMA_DIR = Path(__file__).resolve().parents[1] / "config" / "schemas"
 TIME_SERIES_RESTART_RECEIPT_ROLE = (
@@ -100,6 +103,14 @@ class MaterializationResult:
     state_row_count: int
     states_record: dict[str, object]
     receipt_record: dict[str, object]
+
+
+def open_pre_pulse_state_table(path: Path):
+    """Open current compressed and historical uncompressed state CSV files."""
+
+    if path.suffix == ".gz":
+        return gzip.open(path, "rt", encoding="utf-8-sig", newline="")
+    return path.open(encoding="utf-8-sig", newline="")
 
 
 def _manifest_local_record(
@@ -175,6 +186,102 @@ def _load_global_state_by_id(path: Path) -> dict[int, dict[str, str]]:
     return result
 
 
+def _validate_selected_time(
+    *,
+    selection_receipt_path: Path | None,
+    states_path: Path,
+    screening_receipt_path: Path,
+    sample_index: int,
+    sample_time_us: float,
+    workspace_root: Path,
+) -> dict[str, object] | None:
+    """Bind an off-seed restart to its detector-blind selection receipt.
+
+    The ballistic schedule is only a seed for a time-series search.  A later
+    sample may become the physical pulse time, but only when the published
+    detector-blind receipt names that exact sample and the same raw TRACE.
+    """
+
+    if selection_receipt_path is None:
+        return None
+    selection_receipt_path = selection_receipt_path.resolve()
+    portable_path(selection_receipt_path, workspace_root)
+    receipt = _load_object(
+        selection_receipt_path, role="detector-blind pulse selection receipt"
+    )
+    authorities = receipt.get("authorities")
+    ranked = receipt.get("candidates_ranked")
+    if (
+        receipt.get("role")
+        != "rf_oatof_detector_blind_real_field_pulse_timing_selection_receipt"
+        or receipt.get("status") != "success"
+        or receipt.get("selection_uses_detector_outcome") is not False
+        or receipt.get("detector_results_used") is not False
+        or not isinstance(authorities, dict)
+        or not isinstance(ranked, list)
+        or not ranked
+    ):
+        raise ContractError("detector-blind pulse selection receipt differs")
+    states_record = authorities.get("real_field_state_table")
+    screening_record = authorities.get("pre_pulse_time_series_receipt")
+    winner = ranked[0] if isinstance(ranked[0], dict) else None
+    if (
+        not isinstance(states_record, dict)
+        or not isinstance(screening_record, dict)
+        or not isinstance(winner, dict)
+        or states_record.get("sha256") != file_sha256(states_path)
+        or screening_record.get("sha256") != file_sha256(screening_receipt_path)
+        or winner.get("sample_index") != sample_index
+        or not math.isclose(
+            float(receipt.get("selected_time_us", math.nan)), sample_time_us,
+            rel_tol=0.0, abs_tol=1e-9,
+        )
+        or not math.isclose(
+            float(winner.get("candidate_time_us", math.nan)), sample_time_us,
+            rel_tol=0.0, abs_tol=1e-9,
+        )
+    ):
+        raise ContractError("detector-blind pulse selection does not bind restart sample")
+    return _restart_file_binding(selection_receipt_path, workspace_root)
+
+
+def _selected_pulse_eligible_ids(
+    selection_receipt_path: Path | None, *, sample_index: int
+) -> list[int] | None:
+    """Return the detector-blind geometry-qualified IDs for a selected sample.
+
+    A natural archive's alive rows include ions still upstream of, or already
+    outside, the accelerator bore.  The timing selector has already classified
+    that full mother cohort at the selected native RF tick.  Reuse its frozen
+    ``pulse_eligible_ids`` here so a reduced post-pulse IOB receives exactly
+    the physically covered cohort without detector-based postselection.
+    """
+    if selection_receipt_path is None:
+        return None
+    selection = _load_object(
+        selection_receipt_path.resolve(), role="detector-blind pulse selection receipt"
+    )
+    matches = [
+        item for item in selection.get("candidates_ranked", [])
+        if isinstance(item, dict) and item.get("sample_index") == sample_index
+    ]
+    if len(matches) != 1:
+        raise ContractError("detector-blind pulse selection does not name one sample")
+    candidate = matches[0]
+    ids = candidate.get("pulse_eligible_ids")
+    identity = candidate.get("pulse_eligible_identity")
+    if (
+        not isinstance(ids, list) or not ids
+        or any(isinstance(value, bool) or not isinstance(value, int) or value < 1 for value in ids)
+        or ids != sorted(set(ids))
+        or not isinstance(identity, dict)
+        or identity.get("count") != len(ids)
+        or identity.get("ordered_particle_id_sha256") != _restart_id_sha256(ids)
+    ):
+        raise ContractError("detector-blind pulse-eligible cohort identity differs")
+    return ids
+
+
 def materialize_manifest_bound_restart(
     *,
     child_manifest_path: Path,
@@ -182,6 +289,7 @@ def materialize_manifest_bound_restart(
     state_output_path: Path,
     receipt_output_path: Path,
     sample_index: int = 1,
+    selection_receipt_path: Path | None = None,
 ) -> dict[str, Any]:
     """Convert one pulse-disabled screening sample into a canonical restart.
 
@@ -222,7 +330,7 @@ def materialize_manifest_bound_restart(
     ):
         raise ContractError("time-series child mode differs")
     states_path = _manifest_local_record(
-        manifest, collection="outputs", name="pre_pulse_time_series_states.csv",
+        manifest, collection="outputs", name=STATE_ARCHIVE_FILENAME,
         run_dir=run_dir,
     )
     screening_receipt_path = _manifest_local_record(
@@ -257,18 +365,47 @@ def materialize_manifest_bound_restart(
     ):
         raise ContractError("time-series receipt or summary identity differs")
     sample_times = screening.get("sample_times_us")
-    if not isinstance(sample_times, list) or sample_index > len(sample_times):
-        raise ContractError("time-series restart sample is absent")
-    pulse_time_us = float(sample_times[sample_index - 1])
+    if isinstance(sample_times, list):
+        if sample_index > len(sample_times):
+            raise ContractError("time-series restart sample is absent")
+        pulse_time_us = float(sample_times[sample_index - 1])
+    else:
+        # v7 is intentionally not a finite predeclared window.  The selected
+        # native-grid state is named by the detector-blind receipt, so later
+        # pulse policies can consume the same natural trajectory archive.
+        if selection_receipt_path is None:
+            raise ContractError("natural archive restart requires a pulse selection receipt")
+        selected = _load_object(
+            selection_receipt_path.resolve(), role="detector-blind pulse selection receipt"
+        )
+        matches = [
+            item for item in selected.get("candidates_ranked", [])
+            if isinstance(item, dict) and item.get("sample_index") == sample_index
+        ]
+        if len(matches) != 1:
+            raise ContractError("natural archive restart sample is absent")
+        try:
+            pulse_time_us = float(matches[0]["candidate_time_us"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ContractError("natural archive restart clock is invalid") from exc
     scheduled_time_us = float(schedule.get("pulse_effective_time_us", math.nan))
     if (
         not math.isfinite(pulse_time_us)
         or not math.isfinite(scheduled_time_us)
-        or abs(pulse_time_us - scheduled_time_us) > 1e-9
     ):
         raise ContractError("time-series restart clock differs from pulse schedule")
+    selection_record = _validate_selected_time(
+        selection_receipt_path=selection_receipt_path,
+        states_path=states_path,
+        screening_receipt_path=screening_receipt_path,
+        sample_index=sample_index,
+        sample_time_us=pulse_time_us,
+        workspace_root=workspace_root,
+    )
+    if selection_record is None and abs(pulse_time_us - scheduled_time_us) > 1e-9:
+        raise ContractError("time-series restart clock differs from pulse schedule")
     try:
-        with states_path.open(encoding="utf-8-sig", newline="") as handle:
+        with open_pre_pulse_state_table(states_path) as handle:
             reader = csv.DictReader(handle)
             if tuple(reader.fieldnames or ()) != CSV_COLUMNS:
                 raise ContractError("time-series state columns differ")
@@ -282,6 +419,14 @@ def materialize_manifest_bound_restart(
     if not state_rows:
         raise ContractError("time-series restart sample has no surviving particles")
     state_rows.sort(key=lambda row: int(row["particle_id"]))
+    pulse_eligible_ids = _selected_pulse_eligible_ids(
+        selection_receipt_path, sample_index=sample_index
+    )
+    if pulse_eligible_ids is not None:
+        by_particle_id = {int(row["particle_id"]): row for row in state_rows}
+        if len(by_particle_id) != len(state_rows) or not set(pulse_eligible_ids).issubset(by_particle_id):
+            raise ContractError("detector-blind pulse-eligible cohort is absent from selected state rows")
+        state_rows = [by_particle_id[particle_id] for particle_id in pulse_eligible_ids]
     source_ids = [int(row["particle_id"]) for row in state_rows]
     if len(source_ids) != len(set(source_ids)) or any(value < 1 for value in source_ids):
         raise ContractError("time-series restart state IDs differ")
@@ -365,6 +510,10 @@ def materialize_manifest_bound_restart(
             "pulse_schedule": _restart_file_binding(schedule_path, workspace_root),
             "resolved_population_contract": _restart_file_binding(population_path, workspace_root),
             "resolved_geometry": _restart_file_binding(geometry_path, workspace_root),
+            **(
+                {"detector_blind_selection_receipt": selection_record}
+                if selection_record is not None else {}
+            ),
         },
         "selection": {
             "event": "pre_pulse_time_series_state",
@@ -387,7 +536,11 @@ def materialize_manifest_bound_restart(
             "source_state_locus": {"kind": "accelerator_stage1_interior_finite_observed_3d_cloud"},
             "coordinate_frame": "oatof_global_cartesian",
             "clock_basis": "canonical_instrument_time_us",
-            "clock_authority": "resolved_single_flight_pulse_schedule",
+            "clock_authority": (
+                "detector_blind_pulse_selection_receipt"
+                if selection_record is not None
+                else "resolved_single_flight_pulse_schedule"
+            ),
             "pulse_effective_time_us": pulse_time_us,
             # restart_particle_id is only a contiguous SIMION row number.  The
             # frozen population identity remains the source-particle ordering,
@@ -535,7 +688,7 @@ def _cache_keys(
                 "simion_single_flight_accelerator_entrance_zone_collision_pa_cache"
             ),
         }
-        if schema_version == 5
+        if schema_version in {5, 6, 7}
         else
         {
             "full_coarse_bridge": "simion_single_flight_frontend_pa_cache",
@@ -616,6 +769,7 @@ def _parse_logs(
     *,
     frozen_particle_ids: Sequence[int],
     sample_times_us: Sequence[float],
+    natural_archive_grid: tuple[float, float] | None = None,
 ) -> tuple[dict[int, list[StateRow]], list[list[int]], int, dict[str, list[int]]]:
     if not stdout_paths:
         raise ContractError("at least one SIMION stdout log is required")
@@ -629,7 +783,9 @@ def _parse_logs(
     # an idempotent duplicate, not a second physical outcome.  Keep its full
     # parsed identity so that any conflicting repeat remains a hard failure.
     terminal_records: dict[int, tuple[float, float, float, float, float, float, float, str]] = {}
-    terminal_by_reason: dict[str, list[int]] = {"window_complete": [], "splat": []}
+    terminal_by_reason: dict[str, list[int]] = {
+        "window_complete": [], "splat": [], "geometry_collision": []
+    }
     row_count = 0
     for stdout_path in stdout_paths:
         if not stdout_path.is_file():
@@ -696,7 +852,9 @@ def _parse_logs(
                         raise ContractError(
                             "pre-pulse TRACE particle identity differs"
                         )
-                    if sample_index < 1 or sample_index > len(sample_times_us):
+                    if sample_index < 1 or (
+                        natural_archive_grid is None and sample_index > len(sample_times_us)
+                    ):
                         raise ContractError(
                             "pre-pulse TRACE sample index is outside the frozen grid"
                         )
@@ -709,7 +867,14 @@ def _parse_logs(
                         raise ContractError(
                             "pre-pulse TRACE contains a non-finite number"
                         )
-                    expected_time = float(sample_times_us[sample_index - 1])
+                    if natural_archive_grid is not None:
+                        expected_time = natural_archive_grid[0] + (
+                            sample_index - 1
+                        ) * natural_archive_grid[1]
+                        while len(alive_by_sample) < sample_index:
+                            alive_by_sample.append([])
+                    else:
+                        expected_time = float(sample_times_us[sample_index - 1])
                     tolerance = 1e-12 * max(1.0, abs(expected_time))
                     if (
                         abs(numeric["instrument_time"] - expected_time) > tolerance
@@ -741,8 +906,9 @@ def _parse_logs(
 
     for particle_id, particle_rows in rows_by_particle.items():
         particle_rows.sort(key=lambda row: row.sample_index)
+        first_index = particle_rows[0].sample_index if particle_rows else 1
         if [row.sample_index for row in particle_rows] != list(
-            range(1, len(particle_rows) + 1)
+            range(first_index, first_index + len(particle_rows))
         ):
             raise ContractError(
                 "pre-pulse particle state is not one continuous alive prefix"
@@ -757,33 +923,44 @@ def _parse_logs(
 
 
 def _write_states_csv(path: Path, rows_by_particle: dict[int, list[StateRow]]) -> None:
+    def write_rows(handle: Any) -> None:
+        writer = csv.writer(handle, quoting=csv.QUOTE_ALL, lineterminator="\r\n")
+        writer.writerow(CSV_COLUMNS)
+        for particle_id in sorted(rows_by_particle):
+            for row in rows_by_particle[particle_id]:
+                writer.writerow(
+                    (
+                        row.particle_id,
+                        "pre_pulse_time_series_state",
+                        row.sample_index,
+                        _dotnet_roundtrip(row.instrument_time_us),
+                        _dotnet_roundtrip(row.actual_instrument_time_us),
+                        _dotnet_roundtrip(row.x_mm),
+                        _dotnet_roundtrip(row.y_mm),
+                        _dotnet_roundtrip(row.z_mm),
+                        _dotnet_roundtrip(row.vx_mm_per_us),
+                        _dotnet_roundtrip(row.vy_mm_per_us),
+                        _dotnet_roundtrip(row.vz_mm_per_us),
+                        _dotnet_roundtrip(row.kinetic_energy_eV),
+                        "alive",
+                    )
+                )
+
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + ".tmp")
     try:
-        with temporary.open("w", encoding="utf-8", newline="") as handle:
-            writer = csv.writer(
-                handle, quoting=csv.QUOTE_ALL, lineterminator="\r\n"
-            )
-            writer.writerow(CSV_COLUMNS)
-            for particle_id in sorted(rows_by_particle):
-                for row in rows_by_particle[particle_id]:
-                    writer.writerow(
-                        (
-                            row.particle_id,
-                            "pre_pulse_time_series_state",
-                            row.sample_index,
-                            _dotnet_roundtrip(row.instrument_time_us),
-                            _dotnet_roundtrip(row.actual_instrument_time_us),
-                            _dotnet_roundtrip(row.x_mm),
-                            _dotnet_roundtrip(row.y_mm),
-                            _dotnet_roundtrip(row.z_mm),
-                            _dotnet_roundtrip(row.vx_mm_per_us),
-                            _dotnet_roundtrip(row.vy_mm_per_us),
-                            _dotnet_roundtrip(row.vz_mm_per_us),
-                            _dotnet_roundtrip(row.kinetic_energy_eV),
-                            "alive",
-                        )
-                    )
+        if path.suffix == ".gz":
+            with temporary.open("wb") as raw_handle:
+                with gzip.GzipFile(
+                    filename="", mode="wb", fileobj=raw_handle, mtime=0
+                ) as compressed_handle:
+                    with io.TextIOWrapper(
+                        compressed_handle, encoding="utf-8", newline=""
+                    ) as text_handle:
+                        write_rows(text_handle)
+        else:
+            with temporary.open("w", encoding="utf-8", newline="") as handle:
+                write_rows(handle)
         os.replace(temporary, path)
     finally:
         temporary.unlink(missing_ok=True)
@@ -813,7 +990,7 @@ def materialize(
 
     run_dir = run_config_path.parent.resolve()
     expected_outputs = {
-        "states": run_dir / "results" / "pre_pulse_time_series_states.csv",
+        "states": run_dir / "results" / STATE_ARCHIVE_FILENAME,
         "receipt": run_dir
         / "results"
         / "pre_pulse_time_series_screening_receipt.json",
@@ -842,19 +1019,40 @@ def materialize(
         INTEGRATION_SCHEMA_DIR / "rf_oatof_pre_pulse_time_series_screening_contract.schema.json",
     )
 
+    natural_archive = contract.get("schema_version") == 7
+    natural_archive_grid: tuple[float, float] | None = None
     raw_sample_times = contract.get("sample_times_us")
-    if not isinstance(raw_sample_times, list) or not raw_sample_times:
-        raise ContractError("pre-pulse sample-time grid is empty")
-    try:
-        sample_times = [float(value) for value in raw_sample_times]
-    except (TypeError, ValueError) as exc:
-        raise ContractError("pre-pulse sample-time grid is invalid") from exc
-    if (
-        not all(math.isfinite(value) and value >= 0 for value in sample_times)
-        or contract.get("rf_time_grid", {}).get("sample_count")
-        != len(sample_times)
-    ):
-        raise ContractError("pre-pulse sample-time grid identity differs")
+    if natural_archive:
+        grid = contract.get("rf_time_grid")
+        if (
+            contract.get("terminate_at_window_end") is not False
+            or not isinstance(grid, dict)
+            or grid.get("time_grid_profile_id") != "natural_pre_pulse_native_rf_grid_v1"
+        ):
+            raise ContractError("natural pre-pulse archive contract differs")
+        try:
+            natural_archive_grid = (float(grid["grid_origin_us"]), float(grid["step_us"]))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ContractError("natural pre-pulse archive grid is invalid") from exc
+        if not (
+            math.isfinite(natural_archive_grid[0]) and natural_archive_grid[0] >= 0
+            and math.isfinite(natural_archive_grid[1]) and natural_archive_grid[1] > 0
+        ):
+            raise ContractError("natural pre-pulse archive grid is invalid")
+        raw_sample_times = []
+        sample_times: list[float] = []
+    else:
+        if not isinstance(raw_sample_times, list) or not raw_sample_times:
+            raise ContractError("pre-pulse sample-time grid is empty")
+        try:
+            sample_times = [float(value) for value in raw_sample_times]
+        except (TypeError, ValueError) as exc:
+            raise ContractError("pre-pulse sample-time grid is invalid") from exc
+        if (
+            not all(math.isfinite(value) and value >= 0 for value in sample_times)
+            or contract.get("rf_time_grid", {}).get("sample_count") != len(sample_times)
+        ):
+            raise ContractError("pre-pulse sample-time grid identity differs")
 
     particle_row_map = _resolve_frozen_particle_row_map(
         inputs.get("particle_row_map"), run_dir=run_dir
@@ -881,26 +1079,33 @@ def materialize(
         [path.resolve() for path in stdout_paths],
         frozen_particle_ids=frozen_ids,
         sample_times_us=sample_times,
+        natural_archive_grid=natural_archive_grid,
     )
     frozen_set = set(frozen_ids)
     sample_census: list[dict[str, object]] = []
     for zero_index, alive_ids in enumerate(alive_by_sample):
+        if natural_archive and not alive_ids:
+            continue
         missing_ids = sorted(frozen_set.difference(alive_ids))
         sample_census.append(
             {
                 "sample_index": zero_index + 1,
-                "instrument_time_us": raw_sample_times[zero_index],
+                "instrument_time_us": (
+                    natural_archive_grid[0] + zero_index * natural_archive_grid[1]
+                    if natural_archive and natural_archive_grid is not None
+                    else raw_sample_times[zero_index]
+                ),
                 "alive_count": len(alive_ids),
                 "alive_particle_ids_sha256": _census_id_sha256(alive_ids),
                 "missing_count": len(missing_ids),
-                "missing_particle_ids": missing_ids,
+                **({} if natural_archive else {"missing_particle_ids": missing_ids}),
                 "missing_particle_ids_sha256": _census_id_sha256(missing_ids),
             }
         )
 
     _write_states_csv(states_path, rows_by_particle)
     states_record: dict[str, object] = {
-        "path": "results/pre_pulse_time_series_states.csv",
+        "path": f"results/{STATE_ARCHIVE_FILENAME}",
         "sha256": file_sha256(states_path),
         "bytes": states_path.stat().st_size,
         "row_count": row_count,
@@ -917,7 +1122,8 @@ def materialize(
         "identities": copy.deepcopy(identities),
         "pa_cache_keys": cache_keys,
         "rf_time_grid": copy.deepcopy(contract["rf_time_grid"]),
-        "sample_times_us": copy.deepcopy(raw_sample_times),
+        **({} if natural_archive else {"sample_times_us": copy.deepcopy(raw_sample_times)}),
+        **({"trace_grid": copy.deepcopy(contract["rf_time_grid"])} if natural_archive else {}),
         "particle_count": particle_count,
         "state_row_count": row_count,
         "terminal_census": {
@@ -945,11 +1151,12 @@ def materialize(
         "qualification": "FUNCTIONAL_ONLY",
         "resolution_claim_allowed": False,
         "pulse_disabled": True,
-        "sample_times_us": copy.deepcopy(raw_sample_times),
+        **({} if natural_archive else {"sample_times_us": copy.deepcopy(raw_sample_times)}),
+        **({"trace_grid": copy.deepcopy(contract["rf_time_grid"])} if natural_archive else {}),
         "census": {
             "source_release": particle_count,
             "particle_count": particle_count,
-            "sample_count": len(sample_times),
+            "sample_count": len(sample_census),
             "observed_state_rows": row_count,
             "sample_census": sample_census,
             "terminal_census": {

@@ -106,8 +106,11 @@ AUTO_N1000_CONNECTOR_CAMPAIGN = (
     RETIRED_CAMPAIGNS /
     "connector_gap_three_zone_real_pa_full_n1000_campaign_v11.json"
 )
-COMPACT_GAP_FIELD_CAMPAIGN = (
-    CONFIG_ROOT / "diagnostics" / "connector_gap_field_matrix_compact_auto_replay_v3.json"
+ACTIVE_N1_FRONTEND_CAMPAIGN = (
+    CONFIG_ROOT / "diagnostics" / "ideal_acceptance_300mm_continuous_frontend_n1.json"
+)
+HISTORICAL_COMPACT_GAP_FIELD_CAMPAIGN = (
+    RETIRED_CAMPAIGNS / "connector_gap_field_matrix_compact_auto_replay_v3.json"
 )
 CURRENT_PRE_PULSE_EXPLORATION_CAMPAIGN = (
     CONFIG_ROOT / "explorations"
@@ -775,7 +778,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
         self.assertEqual(categories["source.sha256"], "evidence_or_provenance")
 
     def test_flat_cli_lists_sorted_ids_and_prints_the_materialized_row(self) -> None:
-        campaign = load(COMPACT_GAP_FIELD_CAMPAIGN)
+        campaign = load(HISTORICAL_COMPACT_GAP_FIELD_CAMPAIGN)
         campaign["experiments"]["rows"].reverse()
         expected = expand_flat_experiment_authoring(campaign)
         module = (
@@ -835,7 +838,9 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
         pwsh = shutil.which("pwsh")
         if pwsh is None:
             self.skipTest("PowerShell 7 is unavailable")
-        campaign = expand_flat_experiment_authoring(load(COMPACT_GAP_FIELD_CAMPAIGN))
+        campaign = expand_flat_experiment_authoring(
+            load(HISTORICAL_COMPACT_GAP_FIELD_CAMPAIGN)
+        )
         before, after = campaign["experiments"][:2]
         command = [
             pwsh,
@@ -843,7 +848,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
             "-File",
             str(INTEGRATION_ROOT / "workflows" / "family_source_closure" / "execute.ps1"),
             "-Campaign",
-            str(COMPACT_GAP_FIELD_CAMPAIGN),
+            str(HISTORICAL_COMPACT_GAP_FIELD_CAMPAIGN),
             "-ExperimentId",
             before["experiment_id"],
             "-SemanticDiffAgainst",
@@ -1702,7 +1707,7 @@ Write-Output 'RECOVERY_CHAIN=PASS'
         self.assertNotIn("CAMPAIGN_SOURCE_BINDINGS=STALE", completed.stdout)
 
     def test_active_schema_is_v7_only_while_archive_reader_preserves_v1(self) -> None:
-        authored = load(COMPACT_GAP_FIELD_CAMPAIGN)
+        authored = load(ACTIVE_N1_FRONTEND_CAMPAIGN)
         active = expand_flat_experiment_authoring(authored)
         archived = load(CAMPAIGN_PATH)
         validate_schema(authored, ACTIVE_CAMPAIGN_SCHEMA)
@@ -1712,13 +1717,13 @@ Write-Output 'RECOVERY_CHAIN=PASS'
             validate_schema(archived, ACTIVE_CAMPAIGN_SCHEMA)
 
     def test_generated_v7_single_flight_requires_pa_cache_policy(self) -> None:
-        active = expand_flat_experiment_authoring(load(COMPACT_GAP_FIELD_CAMPAIGN))
+        active = expand_flat_experiment_authoring(load(ACTIVE_N1_FRONTEND_CAMPAIGN))
         del active["experiments"][0]["single_flight_pa_cache_policy"]
         with self.assertRaises(ContractError):
             validate_schema(active, RESOLVED_CAMPAIGN_SCHEMA)
 
     def test_generated_v7_rejects_retired_fixed_batch_controls(self) -> None:
-        active = expand_flat_experiment_authoring(load(COMPACT_GAP_FIELD_CAMPAIGN))
+        active = expand_flat_experiment_authoring(load(ACTIVE_N1_FRONTEND_CAMPAIGN))
         for path in (
             ("single_flight_batch_count",),
             ("single_flight_batch_memory_policy",),
@@ -1752,7 +1757,7 @@ Write-Output 'RECOVERY_CHAIN=PASS'
         self.assertTrue(registered.issubset({path.resolve() for path, _ in authorized}))
         self.assertEqual(
             {path.name for path in registered},
-            {"connector_gap_field_matrix_compact_auto_replay_v3.json"},
+            {"ideal_acceptance_300mm_continuous_frontend_n1.json"},
         )
 
     def test_adapter_uses_only_frozen_canonical_region_field_profile(self) -> None:
@@ -2302,7 +2307,7 @@ Write-Output 'RECOVERY_CHAIN=PASS'
         direct module/CLI use, where no source manifest or solver input may be
         read before lifecycle authorization is established.
         """
-        campaign = load(COMPACT_GAP_FIELD_CAMPAIGN)
+        campaign = load(HISTORICAL_COMPACT_GAP_FIELD_CAMPAIGN)
         row = expand_flat_experiment_authoring(campaign)["experiments"][0]
         with temporary_config_directory() as directory:
             root = Path(directory)
@@ -2495,7 +2500,7 @@ if ($runtime.contracts.resolved_source_contract -ne '{resolved_source}') {{
                 self.assertIn("FAMILY_SOURCE_CLOSURE_ADAPTER=PREPARED", prepared.stdout)
 
     def test_exploration_preparation_requires_explicit_status(self) -> None:
-        campaign = load(COMPACT_GAP_FIELD_CAMPAIGN)
+        campaign = load(HISTORICAL_COMPACT_GAP_FIELD_CAMPAIGN)
         row = expand_flat_experiment_authoring(campaign)["experiments"][0]
         with temporary_config_directory() as directory:
             root = Path(directory)
@@ -2518,7 +2523,7 @@ if ($runtime.contracts.resolved_source_contract -ne '{resolved_source}') {{
     def test_exploration_post_pulse_restart_does_not_require_theory_working_point(
         self,
     ) -> None:
-        campaign = load(COMPACT_GAP_FIELD_CAMPAIGN)
+        campaign = load(HISTORICAL_COMPACT_GAP_FIELD_CAMPAIGN)
         campaign["status"] = "exploration"
         campaign["experiments"]["variation_axes"].remove(
             "single_flight_source_zvz_theory_working_point"

@@ -28,7 +28,10 @@ def _record(path: Path) -> dict:
     return {"path": str(path), "exists": True, "bytes": path.stat().st_size, "sha256": hashlib.sha256(path.read_bytes()).hexdigest().upper()}
 
 
-def _source_run(root: Path, name: str, *, altered_mother: bool = False) -> Path:
+def _source_run(
+    root: Path, name: str, *, aperture_height_mm: float,
+    altered_mother: bool = False,
+) -> Path:
     run = root / "artifacts" / "projects" / INTEGRATION_ID / "runs" / name
     initial = run / "inputs" / "single_flight_initial_global_state.csv"
     initial.parent.mkdir(parents=True)
@@ -46,6 +49,11 @@ def _source_run(root: Path, name: str, *, altered_mother: bool = False) -> Path:
             source_particle_id = particle_id if not altered_mother or particle_id != 5000 else 6000
             z_mm = (particle_id % 101) / 100.0 - .5
             writer.writerow({"particle_id": source_particle_id, "event": "pre_pulse_state", "z_mm": z_mm, "vz_mm_per_us": .04 * z_mm + .001 * z_mm**3})
+    connection_path = run / "inputs" / "resolved_connection.json"
+    _write_json(connection_path, {
+        "spatial_registration": {"expected_gap_mm": 102.4},
+        "connector": {"length_mm": 102.4},
+    })
     evolution = run / "results" / "single_flight_accelerator_checkpoint_evolution.csv"
     with evolution.open("w", newline="", encoding="utf-8") as handle:
         fields = [
@@ -79,21 +87,40 @@ def _source_run(root: Path, name: str, *, altered_mother: bool = False) -> Path:
     config_path = run / "run_config.json"
     _write_json(config_path, {"mode": "rf_to_oatof_simion_single_flight", "parameters": {
         "source_release_full_width_mm": 4.0,
+        "accelerator_entrance_local_aperture_mm": {
+            "width": 1.0, "height": aperture_height_mm,
+        },
     }})
     _write_json(run / "run_manifest.json", {
         "role": "simulation_run_manifest", "status": "success", "run_id": name,
         "run_config": _record(config_path),
-        "inputs": {"initial": _record(initial)},
+        "inputs": {"initial": _record(initial), "connection": _record(connection_path)},
         "outputs": [_record(summary_path), _record(checkpoints), _record(evolution)],
     })
     return run
+
+
+def _matrix_cases(root: Path, *, altered_mother: bool = False) -> dict[str, Path]:
+    return {
+        (
+            f"ideal_acceptance_300mm_{shape}_accelerator_port_"
+            f"h{int(height_mm * 100):03d}_full_flight_n5000"
+        ): _source_run(
+            root,
+            f"source-{shape}-{int(height_mm * 100):03d}",
+            aperture_height_mm=height_mm,
+            altered_mother=altered_mother and shape == "cylindrical" and height_mm == 2.5,
+        )
+        for shape in ("square", "cylindrical")
+        for height_mm in (1.0, 1.5, 2.0, 2.5)
+    }
 
 
 class FullFlightApertureComparisonPublicationTest(unittest.TestCase):
     def test_publishes_eight_full_mother_cohort_arms_without_common_hit_selection(self) -> None:
         with tempfile.TemporaryDirectory(dir=WORKSPACE_ROOT) as temporary:
             root = Path(temporary)
-            cases = {f"arm_{index}": _source_run(root, f"source-{index}") for index in range(8)}
+            cases = _matrix_cases(root)
             run_id = "20260829_120001__analysis__python__full-flight-aperture-comparison__n5000"
             output = WORKSPACE_ROOT / "artifacts" / "projects" / INTEGRATION_ID / "runs" / run_id
             try:
@@ -102,10 +129,18 @@ class FullFlightApertureComparisonPublicationTest(unittest.TestCase):
                 published = json.loads(manifest.read_text(encoding="utf-8"))
                 self.assertEqual(result["controlled_variables"]["comparison_denominator"], "full_mother_cohort")
                 self.assertFalse(result["controlled_variables"]["common_hit_selection_used"])
+                self.assertEqual(result["controlled_variables"]["connector_gap_mm"], 102.4)
                 self.assertEqual(len(result["cases"]), 8)
-                self.assertEqual(result["cases"]["arm_0"]["mother_cohort_count"], 5000)
-                self.assertAlmostEqual(result["cases"]["arm_0"]["z_vz"]["linear"]["k_per_us"], .04, places=3)
-                self.assertEqual(result["cases"]["arm_0"]["z_vz"]["published_checkpoint_evolution_reference"]["z_vz_cubic_coefficient_m_per_s_per_mm3"], "1")
+                square_h100 = result["cases"][
+                    "ideal_acceptance_300mm_square_accelerator_port_h100_full_flight_n5000"
+                ]
+                self.assertEqual(square_h100["mother_cohort_count"], 5000)
+                self.assertEqual(square_h100["matrix_arm"], {"shape": "square", "aperture_height_mm": 1.0})
+                self.assertEqual(square_h100["z_vz"]["position_unit"], "mm")
+                self.assertEqual(square_h100["z_vz"]["velocity_unit"], "m_per_s")
+                self.assertAlmostEqual(square_h100["z_vz"]["slope_m_per_s_per_mm"], 40.1529, places=3)
+                self.assertAlmostEqual(square_h100["z_vz"]["cubic_fit"]["coefficients_m_per_s"]["cubic_per_mm3"], 1.0, places=3)
+                self.assertEqual(square_h100["z_vz"]["published_checkpoint_evolution_reference"]["z_vz_cubic_coefficient_m_per_s_per_mm3"], "1")
                 self.assertEqual(published["status"], "success")
             finally:
                 if output.exists():
@@ -114,7 +149,7 @@ class FullFlightApertureComparisonPublicationTest(unittest.TestCase):
     def test_rejects_mother_cohort_identity_drift_before_creating_result(self) -> None:
         with tempfile.TemporaryDirectory(dir=WORKSPACE_ROOT) as temporary:
             root = Path(temporary)
-            cases = {f"arm_{index}": _source_run(root, f"source-{index}", altered_mother=index == 7) for index in range(8)}
+            cases = _matrix_cases(root, altered_mother=True)
             run_id = "20260829_120002__analysis__python__full-flight-aperture-comparison__n5000"
             output = WORKSPACE_ROOT / "artifacts" / "projects" / INTEGRATION_ID / "runs" / run_id
             with self.assertRaisesRegex(ContractError, "same frozen mother cohort"):
@@ -124,18 +159,36 @@ class FullFlightApertureComparisonPublicationTest(unittest.TestCase):
     def test_rejects_incomplete_bootstrap_interval_before_creating_result(self) -> None:
         with tempfile.TemporaryDirectory(dir=WORKSPACE_ROOT) as temporary:
             root = Path(temporary)
-            cases = {f"arm_{index}": _source_run(root, f"source-{index}") for index in range(8)}
-            summary_path = cases["arm_7"] / "summary.json"
+            cases = _matrix_cases(root)
+            summary_path = cases[
+                "ideal_acceptance_300mm_cylindrical_accelerator_port_h250_full_flight_n5000"
+            ] / "summary.json"
             summary = json.loads(summary_path.read_text(encoding="utf-8"))
             del summary["full_pulse_eligible_bootstrap"]["resolution_p97p5"]
             _write_json(summary_path, summary)
-            manifest_path = cases["arm_7"] / "run_manifest.json"
+            manifest_path = cases[
+                "ideal_acceptance_300mm_cylindrical_accelerator_port_h250_full_flight_n5000"
+            ] / "run_manifest.json"
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             manifest["outputs"][0] = _record(summary_path)
             _write_json(manifest_path, manifest)
             run_id = "20260829_120003__analysis__python__full-flight-aperture-comparison__n5000"
             output = WORKSPACE_ROOT / "artifacts" / "projects" / INTEGRATION_ID / "runs" / run_id
             with self.assertRaisesRegex(ContractError, "bootstrap resolution interval is incomplete"):
+                publish_full_flight_aperture_comparison(repo_root=REPO_ROOT, run_id=run_id, cases=cases)
+            self.assertFalse(output.exists())
+
+    def test_rejects_arm_outside_the_required_matrix_before_creating_result(self) -> None:
+        with tempfile.TemporaryDirectory(dir=WORKSPACE_ROOT) as temporary:
+            root = Path(temporary)
+            cases = _matrix_cases(root)
+            moved = cases.pop(
+                "ideal_acceptance_300mm_square_accelerator_port_h100_full_flight_n5000"
+            )
+            cases["ideal_acceptance_300mm_square_accelerator_port_h090_full_flight_n5000"] = moved
+            run_id = "20260829_120004__analysis__python__full-flight-aperture-comparison__n5000"
+            output = WORKSPACE_ROOT / "artifacts" / "projects" / INTEGRATION_ID / "runs" / run_id
+            with self.assertRaisesRegex(ContractError, "outside the required full-flight aperture matrix"):
                 publish_full_flight_aperture_comparison(repo_root=REPO_ROOT, run_id=run_id, cases=cases)
             self.assertFalse(output.exists())
 
