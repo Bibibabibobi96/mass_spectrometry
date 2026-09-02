@@ -3,7 +3,7 @@
 local template, pa_path, output, program, fly2, z_shift =
   assert(arg[1], 'template iob required'), assert(arg[2], 'pa0 required'),
   assert(arg[3], 'output iob required'), assert(arg[4], 'program required'),
-  assert(arg[5], 'fly2 required'), tonumber(assert(arg[6], 'z shift required'))
+  assert(arg[5], 'fly2 required'), tonumber((assert(arg[6], 'z shift required')))
 simion.command('"'..template..'"')
 local wb = simion.wb
 assert(#wb.instances == 1, 'official template must contain one PA instance')
