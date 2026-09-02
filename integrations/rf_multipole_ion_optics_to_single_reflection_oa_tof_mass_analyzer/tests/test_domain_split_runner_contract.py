@@ -136,6 +136,12 @@ class DomainSplitRunnerContractTests(unittest.TestCase):
         self.assertIn("Invoke-ResourceBudgetedProcesses", self.source)
         self.assertIn("$fineRefineWave", self.source)
 
+    def test_completed_fine_refinement_is_receipted_for_cache_publication_recovery(self) -> None:
+        self.assertIn("$fineRefinementReceipt", self.source)
+        self.assertIn("simion_single_flight_fine_pa_refinement", self.source)
+        self.assertIn("basis_build_sha256", self.source)
+        self.assertIn("if (-not $fineRefinementComplete)", self.source)
+
     def test_local_pa_basis_refinement_uses_the_shared_independent_work_scheduler(self) -> None:
         self.assertIn("$localRefineDispatchRequest", self.source)
         self.assertIn("$localRefineDispatchPlan", self.source)

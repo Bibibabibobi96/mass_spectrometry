@@ -1886,10 +1886,29 @@ try {
                 $(if($fineUsesPaPlus){$finePaPlusModeSpec}else{[string]$maximumFrontendElectrodeId}),$fineBasisReport)
             if ($basis.resource_budget_exceeded -or $basis.exit_code -ne 0) { throw "$($fineDefinition.name) basis transfer failed." }
           }
+          # A cache publication gate can fail after every PA+ member has
+          # already been refined.  Persist that completed solver boundary in
+          # the identity-bound staging directory so a retry publishes it
+          # directly instead of repeating an official-default Refine wave.
+          $fineRefinementReceipt = Join-Path $fineBuildDir 'refinement_complete.json'
+          $fineRefinementComplete = $false
+          if (Test-Path -LiteralPath $fineRefinementReceipt -PathType Leaf) {
+            try {
+              $refinement = Get-Content -LiteralPath $fineRefinementReceipt -Raw -Encoding UTF8 | ConvertFrom-Json
+              $receiptIds = @($refinement.solution_ids | ForEach-Object { [int]$_ })
+              $fineRefinementComplete = [int]$refinement.schema_version -eq 1 -and
+                [string]$refinement.role -eq 'simion_single_flight_fine_pa_refinement' -and
+                [string]$refinement.cache_key -eq $fineKey -and
+                [string]$refinement.pa_prefix -eq $fineDefinition.name -and
+                [string]$refinement.basis_build_sha256 -eq (Get-FileHash -LiteralPath $fineBasisReport -Algorithm SHA256).Hash -and
+                ($receiptIds -join ',') -eq ($fineSolutionIds -join ',')
+            } catch { $fineRefinementComplete = $false }
+          }
           # The basis transfer has completed; each electrode PA can now be
           # refined independently.  Preserve SIMION's official default
           # convergence (the refiner remains `pa:refine{}`), while delegating
           # only process concurrency to the repository scheduler.
+          if (-not $fineRefinementComplete) {
           $fineRefineDispatchRequest = Join-Path $package.input_dir (
             "$($fineDefinition.name)_refine_dispatch_request.json")
           $fineRefineDispatchPlan = Join-Path $package.input_dir (
@@ -1967,6 +1986,12 @@ try {
           if ($fineRefineWave.resource_budget_exceeded -or
               @($fineRefineWave.processes | Where-Object { [int]$_.exit_code -ne 0 }).Count -ne 0) {
             throw "$($fineDefinition.name) PA refinement failed."
+          }
+          Write-RunJson -Path $fineRefinementReceipt -Depth 6 -Value ([ordered]@{
+            schema_version=1; role='simion_single_flight_fine_pa_refinement'
+            cache_key=$fineKey; pa_prefix=$fineDefinition.name; solution_ids=@($fineSolutionIds)
+            basis_build_sha256=(Get-FileHash -LiteralPath $fineBasisReport -Algorithm SHA256).Hash
+          })
           }
           $fineCacheDir = Publish-RfVerifiedCacheEntry -Python $python -RepoRoot $repoRoot `
             -WorkspaceRoot $workspaceRoot -ProjectId $runProjectId -CacheRoot $fineCacheRoot `
