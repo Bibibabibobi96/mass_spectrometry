@@ -1,0 +1,60 @@
+{
+  "schema_version": 7,
+  "role": "rf_multipole_oatof_experiment_campaign",
+  "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+  "campaign_id": "ideal_acceptance_300mm_terminal_aperture_height_axis_field_export_n5000",
+  "status": "exploration",
+  "execution_policy": {"path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/execution_policy.json", "sha256": "6FDB04133C0AB5F48BE51127296469802E8E31E04DF6FFB539DD96E0F54F4B35"},
+  "claim_limit": "AXIS_FIELD_IDENTITY_REFERENCE_ONLY. Export only the frozen post-pulse total axial field of each current 300 mm, 20-ring, gap102.4mm PA realization. The five-instance export loads the main accelerator, entrance-local replacement, flight tube, reflectron and detector, but launches no particles and makes no transport, peak, resolution, Candidate or Formal claim.",
+  "experiments": {
+    "shared": {
+      "execution_strategy": "simion_single_flight",
+      "single_flight_execution_mode": "program_axis_field_export",
+      "single_flight_pa_cache_policy": "build_and_publish_if_missing",
+      "single_flight_frontend_grid_profile_id": "frontend_acceleration_xy025_z010_coarse100_shared_main_local_aperture",
+      "single_flight_oatof_numerical_profile_id": "oatof_formal_mesh",
+      "single_flight_trajectory_quality_profile_id": "tqual_8",
+      "single_flight_time_integration_profile_id": "dt40",
+      "single_flight_accelerator_field_profile_id": "accelerator_real_three_zone_dynamic_electrodes_pa_real_reflectron",
+      "single_flight_source_materialization_profile_id": "independent_ion_source_volume_n5000",
+      "single_flight_three_zone_candidate": {"path": "artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20260828_220500__build__python__ideal-acceptance-300mm-grid010-candidate/results/ideal_acceptance_300mm_simion_candidate_resolved.json", "sha256": "B25EEF7E5F37403BC9AC1CE5CAD8F3C80036C0E606912EC11BC7C9076BC7B77F"},
+      "architecture_generation_id": "three_zone_ideal_acceptance_300mm_kinematic_envelope_v1",
+      "source_profile_id": "independent_ion_source_volume_n5000",
+      "field_overlay_id": "accelerator_entrance_local_aperture",
+      "source_release_mode": "continuous_frontend",
+      "source": {
+        "authority_scope": "source_population",
+        "run_id": "20260820_215000__sim__simion__oct-terminal-10ev-h15-finalize-recovery-downstream__n5000",
+        "launched_particle_count": 5000,
+        "particle_count_binding": {"mode": "derive_from_frozen_source_state_v1", "selector": {"event": "handoff", "status": "transmitted"}},
+        "particle_source_manifest_input_role": "particle_source",
+        "manifest": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260820_215000__sim__simion__oct-terminal-10ev-h15-finalize-recovery-downstream__n5000/run_manifest.json", "sha256": "7CF69AA9A1D10FC4E8CE8859C83A4A5354FEE72ED5DC87C62F2D25E271CD424B"},
+        "state": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260820_215000__sim__simion__oct-terminal-10ev-h15-finalize-recovery-downstream__n5000/results/particle_states__exit_aperture_plate_acceleration_rf_on.csv", "sha256": "08E910AF9ABAB79C033256047A5F32E46D521B57589234414B6A618AD34067EB"},
+        "particle_source": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260820_215000__sim__simion__oct-terminal-10ev-h15-finalize-recovery-downstream__n5000/inputs/particle_source.csv", "sha256": "91E7EA09A9C06680001E18E6DA19C1EBC70142E8EC635210439B68A9A84B0FBE"},
+        "metadata": {"path": "artifacts/projects/rf_octupole_ion_optics/runs/20260820_215000__sim__simion__oct-terminal-10ev-h15-finalize-recovery-downstream__n5000/inputs/particle_source_metadata.json", "sha256": "578D73970F5CC45BA6A9C1A8CF5217ECB0F9C44DC2E109F75DD1743B5B732B05"},
+        "handoff_publication_contract": {"path": "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/diagnostics/octupole_handoff_publication_n5000.json", "sha256": "2F0554287B0A236ABD5DE4CE0140F05E056D281060093D1AC8A4FD8729B7C237"}
+      },
+      "single_flight_pulse_schedule_policy": {"policy_id": "multipole_handoff_ballistic_centroid_v1", "offset_rf_periods": 0.0, "pulse_width_us": 1.0},
+      "single_flight_population": {
+        "population_id": "ideal_acceptance_300mm_aperture_height_complete_ordered_entrance_n5000",
+        "population_mode": "continuous_injection_full_population",
+        "source_authority": {"input_role": "particle_source", "table_binding": "source_contract_particle_source", "ordered_particle_id_encoding": "canonical_compact_json_integer_array_v1"},
+        "execution_population": {"particle_count": 5000, "ordered_particle_id_sha256": "37DC4C2E241AB6B87C39D1AD1CE5CD4CC3E92B05F539AB8ECBB999F88DC98C33", "selection_algorithm": "all_rows_in_frozen_file_order", "selection_seed": 0},
+        "denominators": {"population_count": 5000, "eligible_population_count": 5000},
+        "analysis_randomness": {"bootstrap_resample_count": 1000, "bootstrap_seed": 20260902},
+        "postselection_policy": "prohibited"
+      }
+    },
+    "variation_axes": ["single_flight_layout_profile_id", "connection_profile_id", "accelerator_entrance_local_aperture_mm"],
+    "rows": [
+      {"experiment_id": "ideal_acceptance_300mm_square_accelerator_port_h100_axis_field_export_n5000", "values": {"single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_square_kinematic_envelope_v1", "connection_profile_id": "rf_octupole_to_single_reflection_oatof_direct_mating_gap_102p4mm", "accelerator_entrance_local_aperture_mm": {"width": 1.0, "height": 1.0}}},
+      {"experiment_id": "ideal_acceptance_300mm_square_accelerator_port_h150_axis_field_export_n5000", "values": {"single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_square_kinematic_envelope_v1", "connection_profile_id": "rf_octupole_to_single_reflection_oatof_direct_mating_gap_102p4mm", "accelerator_entrance_local_aperture_mm": {"width": 1.0, "height": 1.5}}},
+      {"experiment_id": "ideal_acceptance_300mm_square_accelerator_port_h200_axis_field_export_n5000", "values": {"single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_square_kinematic_envelope_v1", "connection_profile_id": "rf_octupole_to_single_reflection_oatof_direct_mating_gap_102p4mm", "accelerator_entrance_local_aperture_mm": {"width": 1.0, "height": 2.0}}},
+      {"experiment_id": "ideal_acceptance_300mm_square_accelerator_port_h250_axis_field_export_n5000", "values": {"single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_square_kinematic_envelope_v1", "connection_profile_id": "rf_octupole_to_single_reflection_oatof_direct_mating_gap_102p4mm", "accelerator_entrance_local_aperture_mm": {"width": 1.0, "height": 2.5}}},
+      {"experiment_id": "ideal_acceptance_300mm_cylindrical_accelerator_port_h100_axis_field_export_n5000", "values": {"single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_cylindrical_kinematic_envelope_v1", "connection_profile_id": "rf_octupole_oatof_cylindrical_sideport_100x090_gap_102p4mm", "accelerator_entrance_local_aperture_mm": {"width": 1.0, "height": 1.0}}},
+      {"experiment_id": "ideal_acceptance_300mm_cylindrical_accelerator_port_h150_axis_field_export_n5000", "values": {"single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_cylindrical_kinematic_envelope_v1", "connection_profile_id": "rf_octupole_oatof_cylindrical_sideport_100x090_gap_102p4mm", "accelerator_entrance_local_aperture_mm": {"width": 1.0, "height": 1.5}}},
+      {"experiment_id": "ideal_acceptance_300mm_cylindrical_accelerator_port_h200_axis_field_export_n5000", "values": {"single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_cylindrical_kinematic_envelope_v1", "connection_profile_id": "rf_octupole_oatof_cylindrical_sideport_100x090_gap_102p4mm", "accelerator_entrance_local_aperture_mm": {"width": 1.0, "height": 2.0}}},
+      {"experiment_id": "ideal_acceptance_300mm_cylindrical_accelerator_port_h250_axis_field_export_n5000", "values": {"single_flight_layout_profile_id": "three_zone_ideal_acceptance_300mm_cylindrical_kinematic_envelope_v1", "connection_profile_id": "rf_octupole_oatof_cylindrical_sideport_100x090_gap_102p4mm", "accelerator_entrance_local_aperture_mm": {"width": 1.0, "height": 2.5}}}
+    ]
+  }
+}
