@@ -245,8 +245,8 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
         self.assertIn("simion_single_wave_batch_plan_sha256", runner)
         self.assertIn("Invoke-ResourceBudgetedProcesses", runner)
 
-    def test_parallel_fly_batches_use_isolated_workbench_copies(self) -> None:
-        """A retained 45-second observer must never race a later Fly lane."""
+    def test_parallel_fly_batches_use_distinct_workbench_copies(self) -> None:
+        """Each scheduled Fly batch receives its own mutable IOB/Program assets."""
         runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")
         records_start = runner.index("function New-SingleFlightBatchRecords")
         records_end = runner.index("$batchRecords = @(New-SingleFlightBatchRecords", records_start)
@@ -265,7 +265,7 @@ class RuntimeRunLocalContractTests(unittest.TestCase):
         self.assertIn("prepare = {", specifications)
         self.assertIn("@('.iob','.lua','.fly2')", specifications)
         self.assertIn("Copy-Item -LiteralPath $sourceAsset", specifications)
-        self.assertIn("exclusive_resource_key = ('simion_pa_runtime:' + [IO.Path]::GetFullPath($runtimeDir))", specifications)
+        self.assertNotIn("exclusive_resource_key", specifications)
 
     def test_terminal_capacity_reconciliation_protects_the_just_published_run_and_cache_keys(self) -> None:
         runner = SINGLE_FLIGHT_RUNNER.read_text(encoding="utf-8")

@@ -4391,13 +4391,6 @@ try {
           }
         }
       }
-      # SIMION 2020 has demonstrated that concurrent Fly processes loading
-      # this one materialized PA directory can terminate a sibling without a
-      # diagnostic.  The key is derived from the actual PA directory, and is
-      # interpreted by the shared scheduler only within this dispatch wave;
-      # unrelated work or separately materialized PA families remain eligible
-      # for normal adaptive concurrency.
-      exclusive_resource_key = ('simion_pa_runtime:' + [IO.Path]::GetFullPath($runtimeDir))
       environment = $(
         $values = if ($domainSplitEnabled) {
           @{ OATOF_SINGLE_FLIGHT_PARTICLE_ID_OFFSET = [string]$batch.offset }
