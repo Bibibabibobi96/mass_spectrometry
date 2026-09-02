@@ -20,6 +20,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.cad_pose_contract impo
     project_to_source,
     source_to_project,
 )
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolve_cad_geometry import resolve
 
 
 PROJECT = Path(__file__).resolve().parents[2]
@@ -32,6 +33,22 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         mapped = source_to_project(point, contract)
         self.assertEqual(mapped, (0.0, 123.25, -64.416726))
         self.assertEqual(project_to_source(mapped, contract), point)
+
+    def test_resolved_cad_envelope_applies_component_and_project_transforms(self) -> None:
+        frame = load_cad_pose_contract(PROJECT / "config" / "cad_to_theory_frame.json")
+        identities = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]
+        names = ["ion foil 1-3", "ion foil 1-4", "ion foil 3-3", "ion foil 3-4"]
+        evidence = {
+            "assembly_path": "synthetic.SLDASM",
+            "components": [
+                {"instance_name": name, "part_path": f"{name}.SLDPRT", "suppressed": False,
+                 "local_part_box_m": [0.0, 0.03, 0.0, 0.1, 0.04, 0.02],
+                 "solidworks_transform_array": identities}
+                for name in names
+            ],
+        }
+        manifest = resolve(evidence, frame)
+        self.assertEqual(manifest["components"][0]["project_box_mm"], [0.0, 0.0, 0.0, 10.0, 100.0, 20.0])
 
     def test_candidate_places_two_zone_focus_at_central_plane(self) -> None:
         focus = derive_two_zone_focus(load_contract(PROJECT / "config" / "simion_candidate_two_zone.json"))
