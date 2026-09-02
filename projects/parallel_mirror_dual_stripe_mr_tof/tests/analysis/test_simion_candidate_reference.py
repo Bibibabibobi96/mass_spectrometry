@@ -11,6 +11,10 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.full_candidate_geometr
     ELECTRODE_IDS,
     build_full_candidate_gem,
 )
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import (
+    parse_events,
+    summarize_events,
+)
 
 
 PROJECT = Path(__file__).resolve().parents[2]
@@ -54,6 +58,19 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         self.assertIn("box3D(-30,-310,0,30,-250,0)", gem)
         self.assertIn("focus_phase_z = 0.12918680341102168", gem)
         self.assertIn("polyline(-55,-230,-30,-230,-42,-180)", gem)
+
+    def test_event_analysis_retains_losses_and_refuses_small_sample_fwhm(self) -> None:
+        events = parse_events(
+            "MRTOF_EVENT central_plane ion=1 n=1 t_us=1 x_mm=0 y_mm=0\n"
+            "MRTOF_EVENT terminal ion=1 t_us=5 x_mm=0 y_mm=285 z_mm=0 turns=50 central_crossings=2\n"
+            "MRTOF_EVENT terminal ion=2 t_us=5.1 x_mm=0 y_mm=3 z_mm=0 turns=48 central_crossings=1\n"
+        )
+        summary = summarize_events(events)
+        self.assertEqual(summary["particle_terminal_count"], 2)
+        self.assertEqual(summary["detector_hit_count"], 1)
+        self.assertEqual(summary["target_k_count"], 1)
+        self.assertTrue(summary["all_losses_retained"])
+        self.assertIsNone(summary["detector_tof_fwhm_us"])
 
 
 if __name__ == "__main__":
