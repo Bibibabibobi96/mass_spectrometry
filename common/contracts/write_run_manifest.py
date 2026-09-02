@@ -56,7 +56,11 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-config", required=True, type=Path)
     parser.add_argument("--manifest", type=Path)
-    parser.add_argument("--status", required=True, choices=("success", "failed", "interrupted", "superseded"))
+    parser.add_argument(
+        "--status",
+        required=True,
+        choices=("success", "failed", "interrupted", "checkpoint", "superseded"),
+    )
     parser.add_argument("--software", action="append", default=[])
     parser.add_argument("--output", action="append", default=[])
     args = parser.parse_args()
@@ -84,7 +88,9 @@ def main() -> None:
         if isinstance(value, str)
     }
     output_paths = [resolve_path(value, base, project_root) for value in args.output]
-    if retention is not None and args.status != "interrupted":
+    # A checkpoint is an intentionally incomplete, resumable package.  It is
+    # not a terminal interrupted run and must retain its completed raw work.
+    if retention is not None and args.status not in {"interrupted", "checkpoint"}:
         run_files = [
             path
             for path in base.rglob("*")

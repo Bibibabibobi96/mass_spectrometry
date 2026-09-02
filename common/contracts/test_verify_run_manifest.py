@@ -115,6 +115,24 @@ class VerifyRunManifestIntegrationTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("expected 'success'", result.stderr)
 
+    def test_checkpoint_manifest_is_verifiable_when_explicitly_requested(self) -> None:
+        self._write_manifest("checkpoint")
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(VERIFIER),
+                str(self.manifest),
+                "--require-status",
+                "checkpoint",
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+            cwd=REPO_ROOT,
+            timeout=30,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_reference_constraints_fail_closed_on_identity_mismatch(self) -> None:
         document = json.loads(self.config.read_text(encoding="utf-8"))
         document["provenance"]["particle_source_sha256"] = "C" * 64

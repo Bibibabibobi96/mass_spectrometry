@@ -145,7 +145,7 @@ def main() -> None:
                 raise AssertionError(
                     f"output {index} retention_role differs: {record.get('retention_role')!r}"
                 )
-    if retention is not None and manifest.get("status") != "interrupted":
+    if retention is not None and manifest.get("status") not in {"interrupted", "checkpoint"}:
         run_files = [
             path
             for path in manifest_dir.rglob("*")

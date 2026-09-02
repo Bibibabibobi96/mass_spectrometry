@@ -33,7 +33,7 @@ function Write-RunManifest {
     [Parameter(Mandatory)][string]$Python,
     [Parameter(Mandatory)][string]$RepoRoot,
     [Parameter(Mandatory)][string]$RunConfig,
-    [Parameter(Mandatory)][ValidateSet('success','failed','interrupted','superseded')][string]$Status,
+    [Parameter(Mandatory)][ValidateSet('success','failed','interrupted','checkpoint','superseded')][string]$Status,
     [string[]]$Software=@(),
     [string]$Manifest='',
     [string[]]$Outputs=@(),
@@ -56,7 +56,7 @@ function Write-VerifiedRunManifest {
     [Parameter(Mandatory)][string]$Python,
     [Parameter(Mandatory)][string]$RepoRoot,
     [Parameter(Mandatory)][string]$RunConfig,
-    [Parameter(Mandatory)][ValidateSet('success','failed','interrupted','superseded')][string]$Status,
+    [Parameter(Mandatory)][ValidateSet('success','failed','interrupted','checkpoint','superseded')][string]$Status,
     [string[]]$Software=@(),
     [string]$Manifest='',
     [string[]]$Outputs=@()
@@ -125,12 +125,13 @@ function Initialize-RunRecord {
     project_root=$ProjectRoot;formal_gate_passed=$false;inputs=[ordered]@{}
   })
   Write-RunJson -Path $summary -Depth 4 -Value ([ordered]@{
-    schema_version=1;role=$ProvisionalSummaryRole;status='interrupted'
-    reason='Run package initialized; terminal status was not recorded.'
+    schema_version=1;role=$ProvisionalSummaryRole;status='checkpoint'
+    reason='Run package initialized; task-specific inputs are not frozen yet.'
   })
-  Write-TerminalRunRecord -RunDir $RunDir -Status interrupted `
-    -Reason 'Run package initialized.' -RepoRoot $RepoRoot -Python $Python `
-    -SummaryRole $TerminalSummaryRole -Software $Software
+  # Initialization is an incomplete, resumable checkpoint, not a solver
+  # interruption.  Reserve `interrupted` for a run that actually stopped.
+  Write-VerifiedRunManifest -Python $Python -RepoRoot $RepoRoot -RunConfig $config `
+    -Status checkpoint -Software $Software -Outputs @($summary)
 }
 
 function Get-RunPackagePathCapacity {
@@ -343,11 +344,11 @@ function New-RunPackage {
   }
   Write-RunJson -Path $package.run_config -Value $initialConfig
   Write-RunJson -Path $package.summary -Value ([ordered]@{
-    schema_version=1;role='run_package_initialization_summary';status='interrupted';
+    schema_version=1;role='run_package_initialization_summary';status='checkpoint';
     reason='Run package initialized; task-specific inputs are not frozen yet.'
   })
   $null=Write-VerifiedRunManifest -Python $python -RepoRoot $RepoRoot -RunConfig $package.run_config `
-    -Status interrupted -Software $Software -Outputs @($package.summary)
+    -Status checkpoint -Software $Software -Outputs @($package.summary)
   return [pscustomobject]$package
 }
 

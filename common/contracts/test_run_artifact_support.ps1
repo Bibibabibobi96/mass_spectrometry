@@ -59,10 +59,10 @@ try {
   $manifest = Get-Content -LiteralPath (Join-Path $interruptedDir 'run_manifest.json') `
     -Raw -Encoding UTF8 | ConvertFrom-Json
   Assert-Equal $config.project_root $projectRoot 'Initialize-RunRecord changed project_root.'
-  Assert-Equal $summary.role 'oa_tof_terminal_run_summary' 'Initialization summary role changed.'
-  Assert-Equal $summary.status 'interrupted' 'Initialization summary status changed.'
-  Assert-Equal $summary.reason 'Run package initialized.' 'Initialization reason changed.'
-  Assert-Equal $manifest.status 'interrupted' 'Initialization manifest status changed.'
+  Assert-Equal $summary.role 'oa_tof_provisional_run_summary' 'Initialization summary role changed.'
+  Assert-Equal $summary.status 'checkpoint' 'Initialization summary status changed.'
+  Assert-Equal $summary.reason 'Run package initialized; task-specific inputs are not frozen yet.' 'Initialization reason changed.'
+  Assert-Equal $manifest.status 'checkpoint' 'Initialization manifest status changed.'
   Assert-Equal @($manifest.outputs).Count 1 'Initialization manifest must record summary.json.'
   Assert-Equal (Split-Path -Leaf $manifest.outputs[0].path) 'summary.json' `
     'Initialization manifest output path changed.'
