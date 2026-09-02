@@ -315,6 +315,45 @@
       "role": "physical_chain_shared_main_local_aperture_full_axial_core"
     },
     {
+      "profile_id": "frontend_acceleration_xy025_z010_coarse100_shared_full_bore_main_local_aperture",
+      "field_overlay_id": "accelerator_entrance_local_aperture",
+      "cell_mm_xyz": {
+        "x": 0.25,
+        "y": 0.25,
+        "z": 0.1
+      },
+      "coarse_bridge_cell_mm_xyz": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "accelerator_main_domain": {
+        "policy_id": "full_accelerator_v1"
+      },
+      "accelerator_main_reference_aperture_mm": {
+        "width": 1.0,
+        "height": 1.0
+      },
+      "accelerator_entrance_local": {
+        "enabled": true,
+        "cell_mm_xyz": {
+          "x": 0.25,
+          "y": 0.25,
+          "z": 0.1
+        },
+        "boundary_mode": "accelerator_main_electrode_basis_dirichlet_v1",
+        "iob_mode": "highest_priority_entrance_local_v1",
+        "domain_policy": {
+          "policy_id": "aperture_perturbation_local_v1",
+          "accelerator_side_extent_mm": 10.0,
+          "transverse_half_span_mm": 8.0,
+          "grid1_downstream_guard_mm": 1.0
+        }
+      },
+      "post_pulse_topology_id": "full_bore_main_with_entrance_local_v1",
+      "role": "physical_chain_shared_full_bore_main_local_aperture"
+    },
+    {
       "profile_id": "frontend_isotropic_020_accelerator_two_local_z005",
       "field_overlay_id": "accelerator_two_local_z005",
       "cell_mm_xyz": {

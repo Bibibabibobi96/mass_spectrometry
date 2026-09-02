@@ -44,3 +44,7 @@ trj*.tmp
 
 # Runtime logs belong under artifacts/runs.
 *.log
+
+# Manifest-derived one-shot exploration campaigns are generated locally from
+# immutable run evidence and must not become hand-authored source files.
+integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/explorations/generated/

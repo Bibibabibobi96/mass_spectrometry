@@ -163,6 +163,28 @@ class SingleFlightExecutionProfileTests(unittest.TestCase):
             "accelerator_main_electrode_basis_dirichlet_v1",
         )
 
+    def test_shared_full_bore_main_profile_preserves_small_entrance_replacement(self) -> None:
+        resolved = resolve_execution_profile(
+            self.configuration,
+            frontend_grid_profile_id=(
+                "frontend_acceleration_xy025_z010_coarse100_shared_full_bore_"
+                "main_local_aperture"
+            ),
+        )
+        self.assertEqual(
+            resolved["accelerator_main_domain"], {"policy_id": "full_accelerator_v1"}
+        )
+        self.assertFalse(resolved["accelerator_overlay_enabled"])
+        self.assertEqual(
+            resolved["accelerator_entrance_local"]["domain_policy"],
+            {
+                "policy_id": "aperture_perturbation_local_v1",
+                "accelerator_side_extent_mm": 10.0,
+                "transverse_half_span_mm": 8.0,
+                "grid1_downstream_guard_mm": 1.0,
+            },
+        )
+
     def test_directed_accelerator_corridor_rejects_unknown_or_nonpositive_extent(self) -> None:
         configuration = copy.deepcopy(self.configuration)
         profile = next(
