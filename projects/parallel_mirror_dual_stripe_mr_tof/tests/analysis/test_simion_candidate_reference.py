@@ -86,7 +86,9 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         self.assertIn("box3D(-30,-310,-33.6,30,-250,-33.6)", gem)
         self.assertIn("box3D(-30,-310,0,30,-250,0)", gem)
         self.assertIn("focus_phase_z = 0.12918680341102168", gem)
-        self.assertIn("polyline(-55,-230,-30,-230,-42,-180)", gem)
+        self.assertIn("extrude_yz(-12,12)", gem)
+        self.assertIn("Foil-1 is shifted outwards by 35 mm", gem)
+        self.assertIn("polyline(42.828,-90,67.828,-90,67.828,-40)", gem)
 
     def test_event_analysis_retains_losses_and_refuses_small_sample_fwhm(self) -> None:
         events = parse_events(

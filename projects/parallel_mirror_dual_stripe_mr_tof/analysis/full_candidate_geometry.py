@@ -40,8 +40,9 @@ def build_full_candidate_gem(contract_path: Path) -> str:
         raise CandidateContractError("full geometry requires the MR-TOF two-zone accelerator")
     return """; Full MR-TOF 3D SIMION Candidate (not Formal).
 ; Project coordinates are native GEM coordinates: x focus, y drift, z reflection.
-; CAD audit: mirror/prism envelopes are CAD evidence; Stripe curves/transforms are
-; theory-derived pending recovery of unreadable archived ion-foil parts.
+; CAD audit: mirror/prism envelopes and physical Stripe B-spline edge profiles
+; are resolved from read-only SolidWorks evidence.  The raw Foil-1/Foil-3
+; overlap is moved to a serial, non-overlapping dual-Stripe Candidate layout.
 ; IDs: 1..5 right mirror; 6..10 left mirror; 11..14 four physical Stripes;
 ; 15 central ground; 16..17 triangular prisms; 18..21 grounded shields;
 ; 22 repeller; 23 ideal grid-1; 24 ideal grid-2; 25 numerical detector.
@@ -69,19 +70,22 @@ locate($(x_span/2),$(y_span/2),$(z_span/2)) {
   e(8) { box3D(-62.5,-300,-231,62.5,300,-204) }
   e(9) { box3D(-62.5,-300,-262,62.5,300,-237) }
   e(10) { box3D(-62.5,-300,-297,62.5,300,-268) }
-  ; Theory-derived, tapered face-to-face dual Stripe pairs. Each lies on a distinct z slab.
-  e(11) { intersect { extrude_xy() { polyline(-62,-160,-38,-140,-34,0,-38,140,-62,160) } box3D(-90,-340,-4,90,340,-2) } }
-  e(12) { intersect { extrude_xy() { polyline(62,-160,38,-140,34,0,38,140,62,160) } box3D(-90,-340,-4,90,340,-2) } }
-  e(13) { intersect { extrude_xy() { polyline(-62,-160,-42,-140,-38,0,-42,140,-62,160) } box3D(-90,-340,2,90,340,4) } }
-  e(14) { intersect { extrude_xy() { polyline(62,-160,42,-140,38,0,42,140,62,160) } box3D(-90,-340,2,90,340,4) } }
-  e(15) { box3D(-9,-300,-1,9,300,1) }
-  ; Triangular prism faces retain the audited 20--25 mm transverse envelope.
-  e(16) { intersect { extrude_xy() { polyline(-55,-230,-30,-230,-42,-180) } box3D(-90,-340,-5,90,340,5) } }
-  e(17) { intersect { extrude_xy() { polyline(55,230,30,230,42,180) } box3D(-90,-340,-5,90,340,5) } }
-  e(18) { fill { within { box3D(-72,-245,-12,-20,-165,12) } notin { box3D(-65,-238,-8,-27,-172,8) } } }
-  e(19) { fill { within { box3D(20,165,-12,72,245,12) } notin { box3D(27,172,-8,65,238,8) } } }
-  e(20) { box3D(-72,-245,-12,-20,-240,12) }
-  e(21) { box3D(20,240,-12,72,245,12) }
+  ; CAD Foil-1/3 long B-spline edges are represented as project y-z profiles.
+  ; Raw CAD zones overlap; Foil-1 is shifted outwards by 35 mm so the two
+  ; independent voltage regions are serial with a positive axial gap.
+  e(11) { extrude_yz(-12,12) { polyline(-390,121.3,-326,104.9,-263,90.8,-214,84.5,-181,83.7,-131,86.6,-90,92.6,-41,99.4,0,99.1,0,132,-390,132) } }
+  e(12) { extrude_yz(-12,12) { polyline(-390,-121.3,-326,-104.9,-263,-90.8,-214,-84.5,-181,-83.7,-131,-86.6,-90,-92.6,-41,-99.4,0,-99.1,0,-132,-390,-132) } }
+  e(13) { extrude_yz(-12,12) { polyline(-390,38.9,-326,26.8,-261,17.3,-212,14.7,-179,16.3,-130,23.0,-90,31.8,-41,42.0,0,44.6,0,59.5,-41,59.8,-90,53.0,-131,47.0,-181,44.0,-230,46.4,-279,54.2,-326,65.3,-390,81.7) } }
+  e(14) { extrude_yz(-12,12) { polyline(-390,-38.9,-326,-26.8,-261,-17.3,-212,-14.7,-179,-16.3,-130,-23.0,-90,-31.8,-41,-42.0,0,-44.6,0,-59.5,-41,-59.8,-90,-53.0,-131,-47.0,-181,-44.0,-230,-46.4,-279,-54.2,-326,-65.3,-390,-81.7) } }
+  ; Centred CAD Ion-Foil-2 envelope, reserved as the grounded prism corridor.
+  e(15) { box3D(-12,-390,-12,12,2,12) }
+  ; Two CAD-placed triangular prism groups, split into their measured x halves.
+  e(16) { extrude_yz(-12,-2) { polyline(42.828,-90,67.828,-90,67.828,-40) } extrude_yz(2,12) { polyline(42.828,-90,42.828,-40,67.828,-40) } }
+  e(17) { extrude_yz(-12,-2) { polyline(3.536,-20,23.536,-20,23.536,20) } extrude_yz(2,12) { polyline(3.536,-20,3.536,20,23.536,20) } }
+  e(18) { box3D(-24,38,-96,-12,72,-34) }
+  e(19) { box3D(12,38,-96,24,72,-34) }
+  e(20) { box3D(-24,-2,-26,-12,28,26) }
+  e(21) { box3D(12,-2,-26,24,28,26) }
   e(25) { box3D(-25,285,-5,25,285,5) }
   }
   ; Independent two-zone accelerator; z=0 focus is established by workbench placement.
