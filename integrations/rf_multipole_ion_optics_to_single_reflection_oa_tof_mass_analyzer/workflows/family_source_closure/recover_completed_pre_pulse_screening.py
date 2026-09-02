@@ -70,6 +70,23 @@ def _is_recoverable_stale_config(
     )
 
 
+def _completed_trace_logs(run_dir: Path) -> list[Path]:
+    """Return the authoritative batch streams for pre-pulse materialization.
+
+    Current SIMION programs write governed TRACE records to their dedicated
+    ``.trace.log`` files.  Older failed runs kept the same records in stdout,
+    so retain that format only as a backward-compatible fallback.  Do not mix
+    the two: a partial current trace set must fail the terminal census rather
+    than silently combine unrelated streams.
+    """
+
+    logs_dir = run_dir / "logs"
+    trace_logs = sorted(logs_dir.glob("simion__batch*.trace.log"))
+    if trace_logs:
+        return trace_logs
+    return sorted(logs_dir.glob("simion__batch*.stdout.log"))
+
+
 def _verify_failed_run(run_dir: Path) -> tuple[Path, dict[str, Any], list[Path]]:
     manifest_path = run_dir / "run_manifest.json"
     manifest = _load(manifest_path, "failed screening manifest")
@@ -112,7 +129,7 @@ def _verify_failed_run(run_dir: Path) -> tuple[Path, dict[str, Any], list[Path]]
     # only the unfinished suffix under logs/.  Recover both automatically from
     # the manifest-bound continuation plan; never ask callers to concatenate
     # logs or state tables by hand.
-    logs = sorted((run_dir / "logs").glob("simion__batch*.stdout.log"))
+    logs = _completed_trace_logs(run_dir)
     continuation_plan = (
         run_dir / "inputs" / "pre_pulse_batch_continuation"
         / "simion_batch_continuation_plan.json"

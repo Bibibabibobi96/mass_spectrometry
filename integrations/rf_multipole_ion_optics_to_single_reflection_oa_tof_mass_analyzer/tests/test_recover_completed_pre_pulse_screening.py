@@ -9,12 +9,28 @@ from pathlib import Path
 
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.recover_completed_pre_pulse_screening import (
     RECOVERY_MODE,
+    _completed_trace_logs,
     _is_recoverable_stale_config,
     build_recovery_config,
 )
 
 
 class RecoveryConfigurationTests(unittest.TestCase):
+    def test_prefers_current_trace_streams_over_legacy_stdout(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            run_dir = Path(directory)
+            logs = run_dir / "logs"
+            logs.mkdir()
+            legacy = logs / "simion__batch01.stdout.log"
+            trace1 = logs / "simion__batch01.trace.log"
+            trace2 = logs / "simion__batch02.trace.log"
+            for path in (legacy, trace1, trace2):
+                path.write_text("status,Fly completed.\n", encoding="utf-8")
+            self.assertEqual(_completed_trace_logs(run_dir), [trace1, trace2])
+            trace1.unlink()
+            trace2.unlink()
+            self.assertEqual(_completed_trace_logs(run_dir), [legacy])
+
     def test_allows_only_manifest_bound_stale_input_index_config(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             run_dir = Path(directory) / "20260830_150004__sim__simion__fixture__n1"
