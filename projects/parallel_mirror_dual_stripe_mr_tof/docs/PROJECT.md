@@ -23,6 +23,8 @@ baseline、参数化几何、独立求解器验证到 SolidWorks CAD 和性能�
 
 2026-09-02新增一个独立的`candidate_provisional_not_cad_audited` SIMION拓扑合同：它冻结理论坐标（中央镜面/注入参考面为`z=0`，`z/y/x`依次为反射/漂移/横向聚焦）、五电极镜的镜像ID、四个物理Stripe到两个理论响应的映射，以及新二区加速器的第一时间焦点刚体平移规则。该合同不使用或修改单反射oa-TOF资产，也不从未审计CAD推断已验证尺寸。它尚未包含可执行PA/IOB、CAD审计、粒子源、数值合同或真实SIMION结果，因而保持prototype/Candidate-only边界。
 
+同日的只读 SolidWorks 2022 审计已取得镜组和棱镜的局部包络，但确认顶层/离子箔装配的旧绝对引用损坏，且三块 ion-foil 零件不能直接打开；完整证据、可用尺寸与关闭条件见[`CAD_AUDIT_20260902.md`](CAD_AUDIT_20260902.md)。在该门关闭前，不会以方盒替代 Stripe 曲线或报告 CAD-faithful 的离子飞行/分辨率。
+
 本机证据入口为
 `artifacts/projects/parallel_mirror_dual_stripe_mr_tof/archive/`
 `20260801_130002__migration-snapshot__repo__mr-tof/legacy-project-root/archive/`
