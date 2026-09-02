@@ -121,6 +121,12 @@ class DomainSplitRunnerContractTests(unittest.TestCase):
         self.assertIn("SIMION refines every member of a fast-adjust .pa# family", self.source)
         self.assertNotIn("frontend_refine_pa{0}_resource_usage.json", self.source)
 
+    def test_frontend_staging_is_recoverable_and_reserves_its_measured_family_size(self) -> None:
+        self.assertIn("-RecoveryCacheKey $frontendCacheKey", self.source)
+        self.assertIn("simion_single_flight_frontend_pa_refinement", self.source)
+        self.assertIn("$frontendProjectedFamilyBytes", self.source)
+        self.assertIn("-RequiredHeadroomBytes $frontendProjectedFamilyBytes", self.source)
+
     def test_pa_refinement_uses_simion_official_default_convergence(self) -> None:
         self.assertIn("refinement_convergence='simion_official_default'", self.source)
         self.assertNotIn("'5e-7'", self.source)

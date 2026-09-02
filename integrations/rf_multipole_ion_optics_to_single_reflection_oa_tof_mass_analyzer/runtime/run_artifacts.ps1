@@ -590,6 +590,7 @@ function Assert-RfArtifactCapacityBeforeCachePublication {
     [Parameter(Mandatory)][string]$WorkspaceRoot,
     [Parameter(Mandatory)][string]$StagingDirectory,
     [string[]]$ProtectedCacheKeys = @(),
+    [long]$RequiredHeadroomBytes = 0,
     [double]$MinimumFreeGiB = 500.0
   )
   # The live staging directory is protected from the cleanup scan and is
@@ -608,6 +609,7 @@ function Assert-RfArtifactCapacityBeforeCachePublication {
         '-m','common.contracts.reconcile_artifact_capacity',
         '--artifact-root',(Join-Path $WorkspaceRoot 'artifacts'),'--target-gib','500',
         '--minimum-free-gib',([string]$MinimumFreeGiB),
+        '--required-headroom-bytes',([string]$RequiredHeadroomBytes),
         '--protect-path',$StagingDirectory,'--apply'
       )
       foreach ($key in @($ProtectedCacheKeys | Select-Object -Unique)) {

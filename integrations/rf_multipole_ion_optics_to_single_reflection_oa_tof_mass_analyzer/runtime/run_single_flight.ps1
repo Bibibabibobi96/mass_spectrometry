@@ -1608,13 +1608,26 @@ try {
   if ($frontendRefineRequired) {
     $paCacheDispositions.frontend.disposition = 'cache_miss_build_authorized'
     Write-RfPreCacheRunConfiguration -LifecycleStage 'frontend_pa_cache_build_authorized'
-    $frontendBuildDir = New-RfCacheStagingDirectory -CacheRoot $cacheRoot
+    $frontendBuildDir = New-RfCacheStagingDirectory -CacheRoot $cacheRoot `
+      -RecoveryCacheKey $frontendCacheKey -RecoveryRole $frontendCacheRole
     try {
     $cacheGem = Join-Path $frontendBuildDir 'frontend.gem'
     $cachePaSharp = Join-Path $frontendBuildDir 'frontend.pa#'
     $cacheBasisInitializer = Join-Path $frontendBuildDir 'initialize_fast_adjust_pa_basis.lua'
-    Copy-Item -LiteralPath $frontendGem -Destination $cacheGem
-    Copy-Item -LiteralPath $frontendBasisInitializerFrozen -Destination $cacheBasisInitializer
+    $frontendCompletionReceipt = Join-Path $frontendBuildDir 'refinement_complete.json'
+    $frontendComplete = $false
+    if (Test-Path -LiteralPath $frontendCompletionReceipt -PathType Leaf) {
+      try {
+        $receipt = Get-Content -LiteralPath $frontendCompletionReceipt -Raw -Encoding UTF8 | ConvertFrom-Json
+        $frontendComplete = [int]$receipt.schema_version -eq 1 -and
+          [string]$receipt.role -eq 'simion_single_flight_frontend_pa_refinement' -and
+          [string]$receipt.cache_key -eq $frontendCacheKey -and
+          [int]$receipt.maximum_electrode_id -eq $maximumFrontendElectrodeId
+      } catch { $frontendComplete = $false }
+    }
+    if (-not $frontendComplete) {
+    Copy-Item -LiteralPath $frontendGem -Destination $cacheGem -Force
+    Copy-Item -LiteralPath $frontendBasisInitializerFrozen -Destination $cacheBasisInitializer -Force
     $gem2pa = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
       -UsagePath (Join-Path $package.log_dir 'frontend_gem2pa_resource_usage.json') -FilePath $SimionExe `
       -WorkingDirectory $frontendBuildDir -RedirectStandardOutput (Join-Path $package.log_dir 'frontend_gem2pa.stdout.log') `
@@ -1622,6 +1635,12 @@ try {
       -ArgumentList @('--nogui','--noprompt','gem2pa',$cacheGem,$cachePaSharp)
     if ($gem2pa.resource_budget_exceeded) { $resourceBudgetExceeded=$true; throw 'Frontend GEM conversion exceeded its resource budget.' }
     if ($gem2pa.exit_code -ne 0) { throw 'Frontend GEM conversion failed.' }
+    $frontendProjectedFamilyBytes = [int64]((Get-Item -LiteralPath $cachePaSharp).Length) *
+      [int64]($maximumFrontendElectrodeId + 1)
+    Assert-RfArtifactCapacityBeforeCachePublication -Python $python -RepoRoot $repoRoot `
+      -WorkspaceRoot $workspaceRoot -StagingDirectory $frontendBuildDir `
+      -ProtectedCacheKeys $artifactCapacityProtectedCacheKeys `
+      -RequiredHeadroomBytes $frontendProjectedFamilyBytes | Out-Null
     $basisInitialization = Invoke-ResourceBudgetedProcess -ResolvedBudgetPath $budget.stage_budget -RunDir $package.run_dir `
       -UsagePath (Join-Path $package.log_dir 'frontend_basis_initialization_resource_usage.json') -FilePath $SimionExe `
       -WorkingDirectory $frontendBuildDir -RedirectStandardOutput (Join-Path $package.log_dir 'frontend_basis_initialization.stdout.log') `
@@ -1639,6 +1658,11 @@ try {
     if ($missingFrontendBasisFiles.Count -gt 0) {
       throw ('Frontend PA refinement produced an incomplete basis family: ' +
         ($missingFrontendBasisFiles -join ','))
+    }
+    Write-RunJson -Path $frontendCompletionReceipt -Depth 5 -Value ([ordered]@{
+      schema_version=1; role='simion_single_flight_frontend_pa_refinement'
+      cache_key=$frontendCacheKey; maximum_electrode_id=$maximumFrontendElectrodeId
+    })
     }
     $cacheDir = Publish-RfVerifiedCacheEntry -Python $python -RepoRoot $repoRoot `
       -WorkspaceRoot $workspaceRoot -ProjectId $runProjectId -CacheRoot $cacheRoot `
@@ -1666,9 +1690,11 @@ try {
         try { Wait-RfCacheStagingWriterExit -StagingDirectory $frontendBuildDir -TimeoutSeconds 15 } catch {
           Write-Warning "Could not confirm frontend staging writer exit: $($_.Exception.Message)"
         }
-        try { Remove-Item -LiteralPath $frontendBuildDir -Recurse -Force -ErrorAction Stop } catch {
+        $recoverableFrontendStaging = (Test-Path -LiteralPath (Join-Path $frontendBuildDir '.rf_cache_staging.json') -PathType Leaf) -and
+          (Test-Path -LiteralPath (Join-Path $frontendBuildDir 'refinement_complete.json') -PathType Leaf)
+        if (-not $recoverableFrontendStaging) { try { Remove-Item -LiteralPath $frontendBuildDir -Recurse -Force -ErrorAction Stop } catch {
           Write-Warning "Could not remove failed frontend staging: $($_.Exception.Message)"
-        }
+        }}
       }
       throw $frontendBuildFailure
     }
