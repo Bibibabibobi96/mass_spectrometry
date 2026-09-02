@@ -1809,7 +1809,7 @@ local function apply_placement(instance,placement)
     placement.rt_deg,placement.scale
 end
 local initialized=analyzer.initialize_workbench({active_scope='pre_pulse_frontend_accelerator',
-  instances={[ACCELERATOR_INSTANCE_INDEX]=instance_state(ai)})
+  instances={[ACCELERATOR_INSTANCE_INDEX]=instance_state(ai)}})
 apply_placement(ai,initialized.placements.accelerator)""".replace(
             "ACCELERATOR_INSTANCE_INDEX", str(accelerator_instance_index)
         )
@@ -1885,9 +1885,19 @@ local pa_plus_modes={pa_plus_modes_lua}
 frontend.apply_at(pulse_time_us,function(id,value) active[id]=value end)
 local function pa_adjustments(ids)
   local values={{}}
+  -- A PA+ family exposes its mode IDs, not the physical electrode IDs used
+  -- to construct those modes.  Passing both makes SIMION reject otherwise
+  -- valid field queries (for example, physical electrode 1 is represented by
+  -- PA+ mode 36).  Keep the physical path only for an ordinary PA family.
+  local pa_plus_physical_ids={{}}
+  for _,mode in ipairs(pa_plus_modes) do
+    for _,term in ipairs(mode.terms) do
+      pa_plus_physical_ids[term.electrode_id]=true
+    end
+  end
   for _,id in ipairs(ids) do
     assert(active[id]~=nil,'frozen post-pulse adjustment is missing electrode '..id)
-    values[id]=active[id]
+    if not pa_plus_physical_ids[id] then values[id]=active[id] end
   end
   for _,mode in ipairs(pa_plus_modes) do
     values[mode.mode_id]=assert(active[mode.source_electrode_id],

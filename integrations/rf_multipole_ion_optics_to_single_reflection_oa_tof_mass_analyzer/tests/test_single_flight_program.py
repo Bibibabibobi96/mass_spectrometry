@@ -871,6 +871,9 @@ class SingleFlightProgramTests(unittest.TestCase):
         self.assertIn("assert(#simion.wb.instances==6", exporter)
         self.assertIn("accelerator_main in slot 3", exporter)
         self.assertIn("active_scope='pre_pulse_frontend_accelerator'", exporter)
+        self.assertIn("instances={[3]=instance_state(ai)}})", exporter)
+        self.assertIn("local pa_plus_physical_ids={}", exporter)
+        self.assertIn("if not pa_plus_physical_ids[id] then values[id]=active[id] end", exporter)
         self.assertNotIn("OATOF_ACCELERATOR_PA_OVERRIDE", exporter)
         self.assertIn("math.floor((z_end-z_start)/z_step+0.5)+1", exporter)
 
