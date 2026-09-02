@@ -12,8 +12,8 @@
   "nominal": {"energy_per_charge_v": 4000.0, "target_oscillation_count": 25},
   "mirror": {
     "model": "planar_five_electrode_gridless_candidate",
-    "half_separation_mm": 50.0,
-    "electrode_z_edges_mm": [50.0, 58.0, 70.0, 88.0, 112.0],
+    "half_separation_mm": 180.0,
+    "electrode_z_edges_mm": [190.0, 251.0, 314.0, 347.0, 378.0],
     "voltages_v": [0.0, -600.0, 1200.0, 3000.0, 5200.0]
   },
   "dual_stripe": {
@@ -21,7 +21,7 @@
     "theoretical_response_count": 2,
     "set_1_bias_v": -40.0,
     "set_2_bias_v": 60.0,
-    "central_grounded_corridor_mm": 18.0,
+    "central_grounded_corridor_mm": 100.0,
     "minimum_width_mm": 4.0,
     "maximum_width_mm": 24.0
   },
