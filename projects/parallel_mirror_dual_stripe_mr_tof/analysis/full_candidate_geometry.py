@@ -89,7 +89,9 @@ locate($(x_span/2),$(y_span/2),$(z_span/2)) {
   e(25) { box3D(-25,285,-5,25,285,5) }
   }
   ; Independent two-zone accelerator; z=0 focus is established by workbench placement.
-  e(22) { fill { within { box3D(-30,-310,-41.6,30,-250,-39.6) } notin { box3D(-10,-305,-42.6,10,-255,-38.6) } } }
+  ; A full repeller plane establishes the first uniform extraction field. The
+  ; source lies downstream in gap 1; only the two downstream grids are ideal.
+  e(22) { box3D(-30,-310,-41.6,30,-250,-39.6) }
   e(23) { box3D(-30,-310,-33.6,30,-250,-33.6) }
   e(24) { box3D(-30,-310,0,30,-250,0) }
 }

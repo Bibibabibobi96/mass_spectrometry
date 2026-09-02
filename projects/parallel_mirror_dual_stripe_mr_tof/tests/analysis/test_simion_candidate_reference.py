@@ -85,6 +85,7 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         self.assertIn("e(24) { box3D", gem)
         self.assertIn("box3D(-30,-310,-33.6,30,-250,-33.6)", gem)
         self.assertIn("box3D(-30,-310,0,30,-250,0)", gem)
+        self.assertIn("e(22) { box3D(-30,-310,-41.6,30,-250,-39.6) }", gem)
         self.assertIn("focus_phase_z = 0.12918680341102168", gem)
         self.assertIn("extrude_yz(-12,12)", gem)
         self.assertIn("Foil-3 is shifted by 50 mm and Foil-1 by 90 mm", gem)
