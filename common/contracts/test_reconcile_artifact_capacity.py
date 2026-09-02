@@ -13,6 +13,18 @@ from common.contracts.reconcile_artifact_capacity import apply, plan
 
 
 class ArtifactCapacityPlanTest(unittest.TestCase):
+    def _run(self, root: Path, name: str, *, status: str, age: float,
+             manifest: bool = True, formal_eligible: bool = False) -> Path:
+        run = root / "projects" / "p" / "runs" / name
+        run.mkdir(parents=True)
+        (run / "payload.bin").write_bytes(b"x" * 1024)
+        summary = {"status": status, "formal_eligible": formal_eligible}
+        (run / "summary.json").write_text(json.dumps(summary), encoding="utf-8")
+        if manifest:
+            (run / "run_manifest.json").write_text(json.dumps(summary), encoding="utf-8")
+        os.utime(run, (age, age))
+        return run
+
     def _cache(self, root: Path, role: str, key: str, *, age: float, published: bool = True,
                manifest_role: str | None = None) -> Path:
         entry = root / "projects" / "p" / "cache" / role / key
@@ -66,6 +78,41 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
                 [str(newer_disposable), str(older_important), str(old_unknown), str(new_unknown)],
             )
             self.assertEqual([item["deletion_priority"] for item in planned], [30, 90, 100, 100])
+
+    def test_failed_and_interrupted_runs_are_first_and_ordered_oldest_first(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            now = time.time()
+            older = self._run(root, "older", status="interrupted", age=now - 900)
+            newer = self._run(root, "newer", status="failed", age=now - 100, manifest=False)
+            successful = self._run(root, "successful", status="success", age=now - 1200)
+            formal = self._run(root, "formal", status="failed", age=now - 1300, formal_eligible=True)
+            cache = self._cache(root, "role", "a" * 64, age=now - 200)
+            receipt = plan(root, target_bytes=0, staging_grace_seconds=0)
+            planned = [Path(item["path"]) for item in receipt["planned"]]
+            self.assertEqual(planned[:2], [older, newer])
+            self.assertNotIn(successful, planned)
+            self.assertNotIn(formal, planned)
+            self.assertLess(receipt["planned"][0]["deletion_priority"], receipt["planned"][2]["deletion_priority"])
+            self.assertIn(cache, planned)
+
+    def test_archived_terminal_run_is_never_a_candidate(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            archived = self._run(
+                root / "projects" / "p" / "archive" / "migration",
+                "failed", status="interrupted", age=time.time() - 1000,
+            )
+            receipt = plan(root, target_bytes=0)
+            self.assertNotIn(str(archived), [item["path"] for item in receipt["planned"]])
+
+    def test_any_live_status_keeps_a_run_out_of_cleanup(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run = self._run(root, "inconsistent-live", status="failed", age=time.time() - 1000)
+            (run / "run_manifest.json").write_text(json.dumps({"status": "running"}), encoding="utf-8")
+            receipt = plan(root, target_bytes=0)
+            self.assertNotIn(str(run), [item["path"] for item in receipt["planned"]])
 
     def test_nonterminal_manifest_protects_referenced_key(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

@@ -27,6 +27,7 @@ GIB = 1024**3
 # Run manifests in this repository publish successful solver work as
 # ``success``. Terminal runs cannot keep a reconstructible cache active.
 TERMINAL = {"success", "completed", "failed", "interrupted", "cancelled", "aborted"}
+DISPOSABLE_TERMINAL_RUNS = {"failed", "interrupted", "cancelled", "aborted"}
 CACHE_KEY = re.compile(r"\b[a-f0-9]{64}\b", re.IGNORECASE)
 POLICY_PATH = Path(__file__).with_name("artifact_capacity_policy.json")
 
@@ -40,7 +41,12 @@ def _capacity_policy() -> dict[str, Any]:
     roles = policy.get("l2_role_deletion_priorities")
     if not isinstance(roles, dict):
         raise RuntimeError(f"invalid L2 role priorities in {POLICY_PATH}")
-    for field in ("default_l2_deletion_priority", "l1_deletion_priority", "l3_deletion_priority"):
+    for field in (
+        "terminal_nonformal_run_deletion_priority",
+        "default_l2_deletion_priority",
+        "l1_deletion_priority",
+        "l3_deletion_priority",
+    ):
         if not isinstance(policy.get(field), int) or int(policy[field]) < 0:
             raise RuntimeError(f"invalid {field} in {POLICY_PATH}")
     if any(not isinstance(value, int) or value < 0 for value in roles.values()):
@@ -51,6 +57,8 @@ def _capacity_policy() -> dict[str, Any]:
 def _deletion_priority(*, level: str, cache_role: str | None, policy: dict[str, Any]) -> int:
     """Return a policy-owned priority; unknown published roles stay conservative."""
 
+    if level == "RUN":
+        return int(policy["terminal_nonformal_run_deletion_priority"])
     if level == "L1":
         return int(policy["l1_deletion_priority"])
     if level == "L3":
@@ -120,8 +128,10 @@ def _active_cache_keys(root: Path) -> set[str]:
     return {key.lower() for key in protected}
 
 
-def _is_formal(path: Path) -> bool:
-    return any(part.lower() == "formal" for part in path.parts)
+def _is_immutable_lifecycle_path(path: Path) -> bool:
+    """Formal releases and archived evidence are never cleanup candidates."""
+
+    return any(part.lower() in {"formal", "archive"} for part in path.parts)
 
 
 def _protected(path: Path, protected_paths: Iterable[Path]) -> bool:
@@ -131,7 +141,7 @@ def _protected(path: Path, protected_paths: Iterable[Path]) -> bool:
 def _cache_candidate(cache_key_dir: Path, protected_keys: set[str], now: float, staging_grace_seconds: int,
                      protected_paths: Iterable[Path], directory_bytes: dict[Path, int],
                      policy: dict[str, Any]) -> dict[str, Any] | None:
-    if _is_formal(cache_key_dir) or _protected(cache_key_dir, protected_paths):
+    if _is_immutable_lifecycle_path(cache_key_dir) or _protected(cache_key_dir, protected_paths):
         return None
     name = cache_key_dir.name.lower()
     mtime = cache_key_dir.stat().st_mtime
@@ -174,10 +184,10 @@ def _cache_candidates(root: Path, protected_keys: set[str], now: float, staging_
                       policy: dict[str, Any]) -> list[dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
     for cache_root in root.rglob("cache"):
-        if not cache_root.is_dir() or _is_formal(cache_root):
+        if not cache_root.is_dir() or _is_immutable_lifecycle_path(cache_root):
             continue
         for role_dir in cache_root.iterdir():
-            if not role_dir.is_dir() or _is_formal(role_dir):
+            if not role_dir.is_dir() or _is_immutable_lifecycle_path(role_dir):
                 continue
             for child in role_dir.iterdir():
                 if child.is_dir():
@@ -190,7 +200,7 @@ def _cache_candidates(root: Path, protected_keys: set[str], now: float, staging_
 def _compact_candidates(root: Path, protected_paths: Iterable[Path], policy: dict[str, Any]) -> list[dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
     for run_root in root.rglob("runs"):
-        if not run_root.is_dir() or _is_formal(run_root):
+        if not run_root.is_dir() or _is_immutable_lifecycle_path(run_root):
             continue
         for run_dir in run_root.iterdir():
             if not run_dir.is_dir() or _protected(run_dir, protected_paths):
@@ -204,6 +214,54 @@ def _compact_candidates(root: Path, protected_paths: Iterable[Path], policy: dic
                                    "path": str(run_dir), "bytes": int(report["removable_bytes"]),
                                    "timestamp": run_dir.stat().st_mtime, "compact_report": report,
                                    "deletion_priority": _deletion_priority(level="L3", cache_role=None, policy=policy)})
+    return candidates
+
+
+def _terminal_run_candidate(run_dir: Path, protected_paths: Iterable[Path],
+                            directory_bytes: dict[Path, int], policy: dict[str, Any]) -> dict[str, Any] | None:
+    """Return a whole-run eviction candidate only for failed, non-formal work.
+
+    A completed run can still be useful evidence, so it is never removed here.
+    Historical interrupted runs sometimes predate a manifest; in that case a
+    terminal ``summary.json`` is sufficient.  When both records exist, any
+    success/completed or formal marker wins conservatively.
+    """
+
+    if _is_immutable_lifecycle_path(run_dir) or _protected(run_dir, protected_paths):
+        return None
+    manifest = _load_object(run_dir / "run_manifest.json")
+    summary = _load_object(run_dir / "summary.json")
+    documents = tuple(document for document in (manifest, summary) if document is not None)
+    if not documents:
+        return None
+    if any(bool(document.get("formal_eligible")) for document in documents):
+        return None
+    statuses = {str(document.get("status", "")).lower() for document in documents}
+    if statuses - TERMINAL or statuses & {"success", "completed"} or not (statuses & DISPOSABLE_TERMINAL_RUNS):
+        return None
+    return {
+        "level": "RUN",
+        "operation": "remove_tree",
+        "reason": "terminal_nonformal_failed_or_interrupted_run",
+        "path": str(run_dir),
+        "bytes": directory_bytes.get(run_dir, 0),
+        "timestamp": run_dir.stat().st_mtime,
+        "run_statuses": sorted(statuses),
+        "deletion_priority": _deletion_priority(level="RUN", cache_role=None, policy=policy),
+    }
+
+
+def _terminal_run_candidates(root: Path, protected_paths: Iterable[Path],
+                             directory_bytes: dict[Path, int], policy: dict[str, Any]) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    for run_root in root.rglob("runs"):
+        if not run_root.is_dir() or _is_immutable_lifecycle_path(run_root):
+            continue
+        for run_dir in run_root.iterdir():
+            if run_dir.is_dir():
+                candidate = _terminal_run_candidate(run_dir, protected_paths, directory_bytes, policy)
+                if candidate:
+                    candidates.append(candidate)
     return candidates
 
 
@@ -291,13 +349,14 @@ def plan(root: Path, *, target_bytes: int, required_headroom_bytes: int = 0,
     policy = _capacity_policy()
     active_keys = _active_cache_keys(root)
     active_keys.update(key.lower() for key in protected_cache_keys if CACHE_KEY.fullmatch(key))
-    candidates = _cache_candidates(root, active_keys, now, staging_grace_seconds, protected, directory_bytes, policy)
+    candidates = _terminal_run_candidates(root, protected, directory_bytes, policy)
+    candidates.extend(_cache_candidates(root, active_keys, now, staging_grace_seconds, protected, directory_bytes, policy))
     candidates.extend(_compact_candidates(root, protected, policy))
     candidates.sort(key=lambda item: (item["deletion_priority"], item["timestamp"], item["path"]))
     free_deficit = max(0, minimum_free_bytes - free_bytes)
     # Every byte removed from this artifact root returns one byte to the same
     # volume.  Intersect the repository watermark with the physical-free-space
-    # requirement so the existing L1/L2/L3 ordering remains the sole deletion
+    # requirement so the repository policy's priority-then-age ordering remains the sole deletion
     # policy.
     limit = min(target_bytes - required_headroom_bytes, measured - free_deficit)
     planned: list[dict[str, Any]] = []
@@ -371,7 +430,7 @@ def apply(receipt: dict[str, Any]) -> dict[str, Any]:
     removed: list[dict[str, Any]] = []
     for item in receipt["planned"]:
         path = Path(item["path"])
-        if item["level"] in {"L1", "L2"}:
+        if item.get("operation") == "remove_tree" or item["level"] in {"L1", "L2"}:
             _remove_tree(path)
         else:
             actions = apply_retention(path / "run_config.json")
