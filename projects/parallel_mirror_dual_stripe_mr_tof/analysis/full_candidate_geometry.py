@@ -60,16 +60,17 @@ locate($(x_span/2),$(y_span/2),$(z_span/2)) {
   ; remain at local rows -33.6 and 0 mm, preserving native-grid alignment.
   locate(0,0,$(focus_phase_z)) {
   ; Five CAD-envelope mirrors: local slow length 600 mm and transverse width 125 mm.
-  e(1) { box3D(-62.5,-300,190,62.5,300,245) }
-  e(2) { box3D(-62.5,-300,251,62.5,300,308) }
-  e(3) { box3D(-62.5,-300,314,62.5,300,341) }
-  e(4) { box3D(-62.5,-300,347,62.5,300,372) }
-  e(5) { box3D(-62.5,-300,378,62.5,300,407) }
-  e(6) { box3D(-62.5,-300,-245,62.5,300,-190) }
-  e(7) { box3D(-62.5,-300,-308,62.5,300,-251) }
-  e(8) { box3D(-62.5,-300,-341,62.5,300,-314) }
-  e(9) { box3D(-62.5,-300,-372,62.5,300,-347) }
-  e(10) { box3D(-62.5,-300,-407,62.5,300,-378) }
+  ; Five CAD-envelope mirror stages with an aligned 50 mm injection slot.
+  e(1) { fill { within { box3D(-62.5,-300,190,62.5,300,245) } notin { box3D(-25,-300,175,25,10,422) } } }
+  e(2) { fill { within { box3D(-62.5,-300,251,62.5,300,308) } notin { box3D(-25,-300,175,25,10,422) } } }
+  e(3) { fill { within { box3D(-62.5,-300,314,62.5,300,341) } notin { box3D(-25,-300,175,25,10,422) } } }
+  e(4) { fill { within { box3D(-62.5,-300,347,62.5,300,372) } notin { box3D(-25,-300,175,25,10,422) } } }
+  e(5) { fill { within { box3D(-62.5,-300,378,62.5,300,407) } notin { box3D(-25,-300,175,25,10,422) } } }
+  e(6) { fill { within { box3D(-62.5,-300,-245,62.5,300,-190) } notin { box3D(-25,-300,-422,25,10,-175) } } }
+  e(7) { fill { within { box3D(-62.5,-300,-308,62.5,300,-251) } notin { box3D(-25,-300,-422,25,10,-175) } } }
+  e(8) { fill { within { box3D(-62.5,-300,-341,62.5,300,-314) } notin { box3D(-25,-300,-422,25,10,-175) } } }
+  e(9) { fill { within { box3D(-62.5,-300,-372,62.5,300,-347) } notin { box3D(-25,-300,-422,25,10,-175) } } }
+  e(10) { fill { within { box3D(-62.5,-300,-407,62.5,300,-378) } notin { box3D(-25,-300,-422,25,10,-175) } } }
   ; CAD Foil-1/3 long B-spline edges are represented as project y-z profiles.
   ; Raw CAD zones overlap; Foil-3 is shifted by 50 mm and Foil-1 by 90 mm so
   ; independent voltage regions are serial with a positive axial gap.
