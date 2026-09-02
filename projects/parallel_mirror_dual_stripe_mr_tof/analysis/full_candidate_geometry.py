@@ -77,8 +77,9 @@ locate($(x_span/2),$(y_span/2),$(z_span/2)) {
   e(12) { extrude_yz(-12,12) { polyline(-390,-176.3,-326,-159.9,-263,-145.8,-214,-139.5,-181,-138.7,-131,-141.6,-90,-147.6,-41,-154.4,0,-154.1,0,-187,-390,-187) } }
   e(13) { extrude_yz(-12,12) { polyline(-390,88.9,-326,76.8,-261,67.3,-212,64.7,-179,66.3,-130,73.0,-90,81.8,-41,92.0,0,94.6,0,109.5,-41,109.8,-90,103.0,-131,97.0,-181,94.0,-230,96.4,-279,104.2,-326,115.3,-390,131.7) } }
   e(14) { extrude_yz(-12,12) { polyline(-390,-88.9,-326,-76.8,-261,-67.3,-212,-64.7,-179,-66.3,-130,-73.0,-90,-81.8,-41,-92.0,0,-94.6,0,-109.5,-41,-109.8,-90,-103.0,-131,-97.0,-181,-94.0,-230,-96.4,-279,-104.2,-326,-115.3,-390,-131.7) } }
-  ; Centred CAD Ion-Foil-2 envelope, reserved as the grounded prism corridor.
-  e(15) { box3D(-12,-390,-12,12,2,12) }
+  ; Centred CAD Ion-Foil-2 envelope, grounded except for the explicitly
+  ; aligned injection aperture linking the two-zone accelerator to z=0.
+  e(15) { fill { within { box3D(-12,-390,-12,12,2,12) } notin { box3D(-8,-310,-20,8,-250,20) } } }
   ; Two CAD-placed triangular prism groups, split into their measured x halves.
   e(16) { extrude_yz(-12,-2) { polyline(42.828,-90,67.828,-90,67.828,-40) } extrude_yz(2,12) { polyline(42.828,-90,42.828,-40,67.828,-40) } }
   e(17) { extrude_yz(-12,-2) { polyline(3.536,-20,23.536,-20,23.536,20) } extrude_yz(2,12) { polyline(3.536,-20,3.536,20,23.536,20) } }

@@ -12,7 +12,11 @@ instance.pa:load(pa_path)
 instance:_debug_update_size()
 -- PA coordinates are shifted to the documented project origin.  This keeps
 -- local z=+0.129186803411 mm (the two-zone first focus) at project z=0.
-instance.x, instance.y, instance.z = -90, -340, -350 + z_shift
+-- The CAD-resolved Candidate PA spans 180 x 680 x 900 mm.  This placement
+-- maps its geometric centre to the project origin before applying the
+-- accelerator focus correction; the prior 700-mm value incorrectly translated
+-- every z coordinate by +100 mm.
+instance.x, instance.y, instance.z = -90, -340, -450 + z_shift
 instance.az, instance.el, instance.rt, instance.scale = 0, 0, 0, 1
 wb:save(output)
 local function copy(source, target)
@@ -21,4 +25,4 @@ local function copy(source, target)
 end
 copy(program, output:gsub('%.iob$', '.lua'))
 copy(fly2, output:gsub('%.iob$', '.fly2'))
-print(string.format('IOB_BUILD: PASS instance=1 origin_mm=(-90,-340,%.12g)', -350 + z_shift))
+print(string.format('IOB_BUILD: PASS instance=1 origin_mm=(-90,-340,%.12g)', -450 + z_shift))
