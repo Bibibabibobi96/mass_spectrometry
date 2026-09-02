@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "project_id": "parallel_mirror_dual_stripe_mr_tof",
+  "status": "candidate_provisional_not_cad_audited",
+  "coordinate_system": {
+    "frame_id": "astral.xyz.reflection_z.drift_y.transverse_x.v1",
+    "origin": "intersection of central mirror plane and nominal injection reference plane",
+    "x_positive": "transverse mirror-focusing direction",
+    "y_positive": "slow drift direction",
+    "z_positive": "fast reflection direction; central mirror plane is z=0"
+  },
+  "nominal": {"energy_per_charge_v": 4000.0, "target_oscillation_count": 25},
+  "mirror": {
+    "model": "planar_five_electrode_gridless_candidate",
+    "half_separation_mm": 50.0,
+    "electrode_z_edges_mm": [50.0, 58.0, 70.0, 88.0, 112.0],
+    "voltages_v": [0.0, -600.0, 1200.0, 3000.0, 5200.0]
+  },
+  "dual_stripe": {
+    "physical_electrode_count": 4,
+    "theoretical_response_count": 2,
+    "set_1_bias_v": -40.0,
+    "set_2_bias_v": 60.0,
+    "central_grounded_corridor_mm": 18.0,
+    "minimum_width_mm": 4.0,
+    "maximum_width_mm": 24.0
+  },
+  "accelerator": {
+    "topology": "two_zone_orthogonal_pulsed",
+    "axis": "z",
+    "repeller_v": 4480.0,
+    "intermediate_grid_v": 3520.0,
+    "exit_grid_v": 0.0,
+    "gap_1_mm": 6.0,
+    "gap_2_mm": 33.6,
+    "release_position_in_gap_1_mm": 3.0,
+    "focus_plane": "central_z_0_injection_reference_plane"
+  },
+  "simion": {"version": "2020", "surface": "none", "ideal_grid": "one_raw_pa_row"}
+}

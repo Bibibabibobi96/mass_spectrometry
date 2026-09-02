@@ -21,6 +21,8 @@ baseline、参数化几何、独立求解器验证到 SolidWorks CAD 和性能�
 - 尚未建立baseline/resolved参数合同、求解器模型、粒子源、分析合同、验收指标或正式资产。
 - 不得把该快照放入 `formal/`，也不得据此声明仓库已经具备 MR-TOF 模拟或自动优化能力。
 
+2026-09-02新增一个独立的`candidate_provisional_not_cad_audited` SIMION拓扑合同：它冻结理论坐标（中央镜面/注入参考面为`z=0`，`z/y/x`依次为反射/漂移/横向聚焦）、五电极镜的镜像ID、四个物理Stripe到两个理论响应的映射，以及新二区加速器的第一时间焦点刚体平移规则。该合同不使用或修改单反射oa-TOF资产，也不从未审计CAD推断已验证尺寸。它尚未包含可执行PA/IOB、CAD审计、粒子源、数值合同或真实SIMION结果，因而保持prototype/Candidate-only边界。
+
 本机证据入口为
 `artifacts/projects/parallel_mirror_dual_stripe_mr_tof/archive/`
 `20260801_130002__migration-snapshot__repo__mr-tof/legacy-project-root/archive/`
