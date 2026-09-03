@@ -4,6 +4,10 @@
 上游适配器转换到工作台语义的beam或逐粒子状态并生成FLY2/Lua文本；多极杆的ION11和canonical字段映射
 仍由`common/multipole/simion_particle_source.py`负责。
 
+[`gem_primitives.py`](gem_primitives.py)只序列化明确传入的有限坐标与尺寸，提供
+`centered_box3D`和沿`z`轴的`cylinder`文本，不选择电极、器件尺寸、孔径、网格或坐标变换。
+独立正交加速器和连接装配共用这一层；器件CSG、侧孔与两／三区电极组合由加速器项目拥有。
+
 项目间连接的矩形开孔统一调用[`aperture.py`](aperture.py)：机械宽、高任一小于一个cell时失败关闭；
 非整数cell倍数或孔边缘未落在网格节点时保留机械尺寸并输出机器可读离散警告；GEM减材固定使用
 `exclude_shape_inside_or_on_v1`，不得用隐藏epsilon扩大机械孔。编译或缓存PA后，所有生产消费者还必须
@@ -18,6 +22,18 @@ oaTOF、single-flight或具体电极编号。
 所有新建SIMION Workbench必须从[`assets/iob_instance_seeds/`](assets/iob_instance_seeds/README.md)
 中与实际PA实例数一致的干净GUI种子派生。该公共目录提供1--10槽连续容器和唯一占位PA；派生器必须替换每一个槽，
 不得创建空槽或保留占位实例。种子只用于生成运行目录或正式交付目录中的派生IOB，绝不原地修改。
+
+[`pa_family_cache.py`](pa_family_cache.py)提供完整静电PA-family的内容寻址复用：调用方必须给出完整的
+数值身份（resolved geometry、GEM、basis namespace、xyz网格、网格相位、surface、SIMION可执行文件身份、
+Refine策略和构建器身份）以及精确文件清单。它只缓存并逐字节核验`.pa#`、`.pa0`和basis数组；同一身份命中时
+以原子复制物化到新的run-local目录，任一缺失、额外、哈希不同或损坏generation均失败关闭。IOB、Fast Adjust
+工作点、程序和Fly2从不作为缓存几何真值：每个run必须重新装配、重新保存并在本次manifest中绑定。该层不理解
+器件、坐标或电极含义，项目仍拥有其ID和几何合同。发布过程按cache key持有短生命周期目录锁；并发发布同一
+key只允许一个写者，遗留锁失败关闭并需按artifact保留规则审计后处置，绝不由缓存代码猜测为可删除。
+非Python消费者使用唯一命令行桥接：`python -m common.simion.pa_family_cache --action
+probe|publish|materialize --cache-root <root> --identity <identity.json> --filenames <name,...>`；发布另给
+`--source-directory`，物化另给`--destination-directory`。identity JSON和文件清单由器件适配层派生，
+该CLI不接受或推断物理参数，命中／缺失的建场决定也仍属于调用方。
 
 [`resource_scheduler.py`](resource_scheduler.py)是独立粒子批次与相互独立完整case的唯一SIMION并发决策实现。
 项目只提交总粒子数、独立性和网格、RF步数、trajectory quality、PA哈希等客观数值身份；CPU、内存、并发、
