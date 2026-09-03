@@ -44,6 +44,18 @@ try {
   Assert-Equal ([Environment]::GetEnvironmentVariable('PYTHONNOUSERSITE')) 'run-artifact-test-nousersite' `
     'Tool context did not restore PYTHONNOUSERSITE.'
 
+  $capacityRoot=Join-Path $testRoot 'capacity_artifacts'
+  New-Item -ItemType Directory -Path $capacityRoot -Force|Out-Null
+  $capacityReceipt=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot `
+    -ArtifactRoot $capacityRoot -TargetGiB 1 -MinimumFreeGiB 0
+  Assert-Equal $capacityReceipt.role 'artifact_capacity_gate' 'Capacity gate role changed.'
+  Assert-Equal $capacityReceipt.satisfied_after_apply $true 'Capacity gate did not publish a satisfied receipt.'
+  $capacityFastReceipt=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot `
+    -ArtifactRoot $capacityRoot -TargetGiB 1 -MinimumFreeGiB 0 `
+    -KnownMeasuredBytes 0 -MaximumNewArtifactBytes 0
+  Assert-Equal $capacityFastReceipt.measurement_mode 'SAFE_NO_RECONCILIATION' `
+    'Capacity gate fast path did not preserve its receipt mode.'
+
   $interruptedDir = Join-Path $testRoot '20260723_170001__test__cross__lifecycle-interrupted__n100'
   New-Item -ItemType Directory -Path $interruptedDir -Force | Out-Null
   Initialize-RunRecord -RunDir $interruptedDir `

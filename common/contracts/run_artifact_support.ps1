@@ -21,6 +21,66 @@ function Invoke-RunToolRootContext {
   }
 }
 
+function Invoke-ArtifactCapacityGate {
+  <# Invoke the repository-owned artifact reconciler and require an applied
+     receipt.  This is deliberately a lifecycle adapter: projects supply their
+     own protected paths, cache identities, and measured transient envelope. #>
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$Python,
+    [Parameter(Mandatory)][string]$RepoRoot,
+    [Parameter(Mandatory)][string]$ArtifactRoot,
+    [double]$TargetGiB=500.0,
+    [double]$MinimumFreeGiB=500.0,
+    [long]$RequiredHeadroomBytes=0,
+    [string[]]$ProtectedPaths=@(),
+    [string[]]$ProtectedCacheKeys=@(),
+    [Nullable[long]]$KnownMeasuredBytes=$null,
+    [Nullable[long]]$MaximumNewArtifactBytes=$null
+  )
+  if($TargetGiB-le 0 -or $MinimumFreeGiB-lt 0 -or $RequiredHeadroomBytes-lt 0){
+    throw 'Artifact capacity gate requires nonnegative watermarks and headroom.'
+  }
+  if(($null-eq$KnownMeasuredBytes)-ne($null-eq$MaximumNewArtifactBytes)){
+    throw 'Artifact capacity gate requires both known measurement and maximum new bytes.'
+  }
+  $arguments=@(
+    '-m','common.contracts.reconcile_artifact_capacity',
+    '--artifact-root',$ArtifactRoot,
+    '--target-gib',([string]$TargetGiB),
+    '--minimum-free-gib',([string]$MinimumFreeGiB),
+    '--required-headroom-bytes',([string]$RequiredHeadroomBytes),
+    '--apply'
+  )
+  foreach($path in @($ProtectedPaths|Where-Object{ -not [string]::IsNullOrWhiteSpace($_) }|Select-Object -Unique)){
+    $arguments+=@('--protect-path',$path)
+  }
+  foreach($key in @($ProtectedCacheKeys|Select-Object -Unique)){
+    if($key-notmatch '^[0-9a-fA-F]{64}$'){throw 'Protected cache key must be one SHA-256 key.'}
+    $arguments+=@('--protect-cache-key',$key)
+  }
+  if($null-ne$KnownMeasuredBytes){
+    [int64]$knownMeasuredBytesValue=$KnownMeasuredBytes
+    [int64]$maximumNewArtifactBytesValue=$MaximumNewArtifactBytes
+    if($knownMeasuredBytesValue-lt 0 -or $maximumNewArtifactBytesValue-lt 0){
+      throw 'Artifact capacity fast-path bytes must be nonnegative.'
+    }
+    $arguments+=@(
+      '--known-measured-bytes',([string]$knownMeasuredBytesValue),
+      '--maximum-new-artifact-bytes',([string]$maximumNewArtifactBytesValue)
+    )
+  }
+  $output=@(Invoke-RunToolRootContext -RepoRoot $RepoRoot -Operation {
+    & $Python @arguments
+    if($LASTEXITCODE-ne 0){throw "Artifact capacity gate exit_code=$LASTEXITCODE"}
+  })
+  $receipt=((@($output)-join "`n")|ConvertFrom-Json)
+  if($receipt.satisfied_after_apply -ne $true){
+    throw 'Artifact capacity gate could not satisfy its watermark.'
+  }
+  Write-Output -NoEnumerate $receipt
+}
+
 function Write-RunJson {
   [CmdletBinding()]
   param([Parameter(Mandatory)][object]$Value,[Parameter(Mandatory)][string]$Path,[int]$Depth=8)
