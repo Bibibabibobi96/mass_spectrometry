@@ -82,6 +82,26 @@ class DualStripeL0MathTest(unittest.TestCase):
             places=5,
         )
 
+    def test_paper_printed_coefficients_regress_kappa_and_the_time_platform_operator(self) -> None:
+        # These rounded published values are an operator regression only.  They
+        # are not active-instance coefficients or acceptance tolerances.
+        coefficients = (0.83999, 0.75160, -7.52535, 14.0242, -9.17661, 2.08613)
+
+        def psi(eta: float) -> float:
+            return coefficients[0] * eta + sum(
+                coefficients[power] * eta**power for power in range(1, 6)
+            )
+
+        def g(eta: float) -> float:
+            return sum(coefficients[power] * eta**power for power in range(1, 6)) - coefficients[0] * eta
+
+        self.assertAlmostEqual(endpoint_regularized_kappa_at_turn(psi, 1.0), 1.48923, places=5)
+        self.assertLess(abs(kappa_derivative_at_turn(psi, 1.0, step=1e-3)), 1e-4)
+        self.assertTrue(all(
+            abs(tau_g_derivative_at_turn(psi, g, node, step=1e-3)) < 3e-4
+            for node in (0.9, 0.95, 1.05, 1.1)
+        ))
+
     def test_compiled_native_width_matches_the_reference_accessor(self) -> None:
         contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
         for set_name in ("set_1", "set_2"):
