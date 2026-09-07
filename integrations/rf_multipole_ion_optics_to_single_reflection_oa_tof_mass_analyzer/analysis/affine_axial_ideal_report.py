@@ -17,7 +17,7 @@ from common.multipole.compile_design_request import canonical_sha256
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_source import (
     resolve_source_materialization_profile,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.accelerator_time_focus import (
+from projects.orthogonal_accelerator.analysis.accelerator_time_focus import (
     PhysicsContractError,
     accelerator_state,
     time_to_fixed_plane_s,

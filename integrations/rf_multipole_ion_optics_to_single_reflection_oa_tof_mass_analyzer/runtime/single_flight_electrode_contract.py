@@ -11,6 +11,183 @@ from common.contracts.file_identity import file_sha256
 
 
 ROD_ELECTRODE_IDS = tuple(range(1, 9))
+POST_PULSE_FIELD_LOADING_POLICY_ID = "pre_pulse_restart_zero_rod_modes_v1"
+THREE_ZONE_PA_PLUS_MODEL_ID = "three_zone_linear_ring_octupole_symmetry_pa_plus_v2"
+PA_PLUS_FIELD_LOADING_POLICY_ID = "octupole_common_differential_pa_plus_v2"
+
+
+def project_pa_plus_mode_voltages(
+    model: Mapping[str, Any], physical_voltages_v: Mapping[int, float]
+) -> dict[int, float]:
+    """Project a complete physical electrode table onto a PA+ mode family.
+
+    The v2 octupole model has two rod shapes: the all-rod common mode and the
+    alternating-polarity differential mode.  Projecting and reconstructing
+    the physical table here makes that reduction an explicit contract rather
+    than a Program-only assumption.
+    """
+    if model.get("model_id") != THREE_ZONE_PA_PLUS_MODEL_ID:
+        raise ValueError("PA+ voltage projection model is unsupported")
+    modes = model.get("modes")
+    mode_ids = model.get("mode_ids")
+    if (
+        not isinstance(modes, list)
+        or not isinstance(mode_ids, list)
+        or model.get("mode_count") != len(modes)
+        or len(modes) != len(mode_ids)
+    ):
+        raise ValueError("PA+ voltage projection modes are invalid")
+    try:
+        physical = {int(key): float(value) for key, value in physical_voltages_v.items()}
+    except (TypeError, ValueError) as error:
+        raise ValueError("PA+ physical voltages are invalid") from error
+    if any(not (value == value and abs(value) < float("inf")) for value in physical.values()):
+        raise ValueError("PA+ physical voltages are non-finite")
+
+    projected: dict[int, float] = {}
+    reconstructed: dict[int, float] = {}
+    for raw_mode in modes:
+        if not isinstance(raw_mode, Mapping):
+            raise ValueError("PA+ voltage projection mode is invalid")
+        try:
+            mode_id = int(raw_mode["mode_id"])
+            shape = {
+                int(key): float(value)
+                for key, value in raw_mode["physical_electrode_coefficients"].items()
+            }
+            projection = {
+                int(key): float(value)
+                for key, value in raw_mode["voltage_projection_coefficients"].items()
+            }
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValueError("PA+ voltage projection mode is invalid") from error
+        if not shape or not projection or not set(projection).issubset(physical):
+            raise ValueError("PA+ voltage projection inputs are incomplete")
+        value = sum(weight * physical[electrode_id] for electrode_id, weight in projection.items())
+        projected[mode_id] = value
+        for electrode_id, weight in shape.items():
+            reconstructed[electrode_id] = reconstructed.get(electrode_id, 0.0) + weight * value
+    if [int(value) for value in mode_ids] != list(projected):
+        raise ValueError("PA+ voltage projection mode order is invalid")
+    for electrode_id, actual in reconstructed.items():
+        expected = physical.get(electrode_id)
+        if expected is None or not abs(actual - expected) <= 1e-9:
+            raise ValueError(
+                "physical electrode voltages are outside the PA+ model subspace"
+            )
+    return projected
+
+
+def resolve_post_pulse_pa_plus_solution_projection(
+    model: Mapping[str, Any],
+    *,
+    rod_physical_electrode_ids: list[Any],
+    upstream_rod_electrodes: list[Any],
+    source_release_mode: str,
+) -> dict[str, Any]:
+    """Project a full PA+ model to the zero-rod post-pulse solution family.
+
+    This is deliberately a runtime projection, not a new cache model.  The
+    full PA+ family remains the authority for continuous flight.  A restart
+    consumer may omit only modes whose physical electrodes are proved to stay
+    at zero for its whole lifetime.  The upstream contract records the held
+    pre-pulse DC common mode, whereas this restart has no upstream PA or RF
+    kernel at all.  Keep both facts in the receipt: the former proves the
+    physical rod namespace; ``pre_pulse_restart`` is the explicit runtime
+    policy that makes the latter's effective values zero.
+    """
+    if source_release_mode != "pre_pulse_restart":
+        raise ValueError("post-pulse PA+ projection requires a pre-pulse restart")
+    if model.get("model_id") != THREE_ZONE_PA_PLUS_MODEL_ID:
+        raise ValueError("post-pulse PA+ projection model is unsupported")
+    modes = model.get("modes")
+    mode_ids = model.get("mode_ids")
+    if (
+        not isinstance(modes, list)
+        or not isinstance(mode_ids, list)
+        or model.get("mode_count") != 8
+        or len(modes) != 8
+        or len(mode_ids) != 8
+    ):
+        raise ValueError("post-pulse PA+ projection modes are invalid")
+    try:
+        rod_ids = {int(value) for value in rod_physical_electrode_ids}
+        dc_by_id = {
+            int(item["electrode_id"]): float(item["potential_V"])
+            for item in upstream_rod_electrodes
+        }
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError("post-pulse rod-voltage proof is invalid") from error
+    if not rod_ids or set(dc_by_id) != rod_ids:
+        raise ValueError("post-pulse rod-voltage proof does not cover every rod")
+    effective_dc_by_id = {electrode_id: 0.0 for electrode_id in rod_ids}
+
+    normalized_modes: list[dict[str, Any]] = []
+    rod_mode_ids: list[int] = []
+    for raw_mode in modes:
+        if not isinstance(raw_mode, Mapping):
+            raise ValueError("post-pulse PA+ projection mode is invalid")
+        raw_coefficients = raw_mode.get("physical_electrode_coefficients")
+        if not isinstance(raw_coefficients, Mapping):
+            raise ValueError("post-pulse PA+ projection coefficients are invalid")
+        try:
+            mode_id = int(raw_mode["mode_id"])
+            name = str(raw_mode["name"])
+            coefficients = {
+                int(electrode_id): float(weight)
+                for electrode_id, weight in raw_coefficients.items()
+            }
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValueError("post-pulse PA+ projection mode is invalid") from error
+        if (
+            len(coefficients) != len(raw_coefficients)
+        ):
+            raise ValueError("post-pulse PA+ projection coefficients are invalid")
+        has_rod = any(electrode_id in rod_ids for electrode_id in coefficients)
+        if has_rod:
+            if name not in {"rod_common", "rod_differential"}:
+                raise ValueError("post-pulse PA+ rod mode role is invalid")
+            if set(coefficients) != rod_ids:
+                raise ValueError("post-pulse PA+ rod mode basis is invalid")
+            rod_mode_ids.append(mode_id)
+        normalized_modes.append(dict(raw_mode))
+    if len(rod_mode_ids) != 2:
+        raise ValueError("post-pulse PA+ model does not contain both rod modes")
+    if [int(value) for value in mode_ids] != [
+        int(mode["mode_id"]) for mode in normalized_modes
+    ]:
+        raise ValueError("post-pulse PA+ source mode order is invalid")
+    retained_modes = [
+        mode for mode in normalized_modes
+        if int(mode["mode_id"]) not in rod_mode_ids
+    ]
+    if len(retained_modes) != 6:
+        raise ValueError("post-pulse PA+ projection must retain six non-rod modes")
+    projected_model = {
+        **dict(model),
+        "mode_ids": [int(mode["mode_id"]) for mode in retained_modes],
+        "mode_count": len(retained_modes),
+        "modes": retained_modes,
+    }
+    return {
+        "schema_version": 1,
+        "role": "rf_oatof_post_pulse_pa_plus_projection",
+        "projection_id": POST_PULSE_FIELD_LOADING_POLICY_ID,
+        "source_release_mode": source_release_mode,
+        "rod_voltage_proof": {
+            "policy_id": "pre_pulse_restart_rf_and_rod_dc_disabled_v1",
+            "physical_electrode_ids": sorted(rod_ids),
+            "upstream_static_voltages_v": {
+                str(key): dc_by_id[key] for key in sorted(dc_by_id)
+            },
+            "effective_post_pulse_voltages_v": {
+                str(key): effective_dc_by_id[key]
+                for key in sorted(effective_dc_by_id)
+            },
+        },
+        "omitted_mode_ids": rod_mode_ids,
+        "projected_pa_plus_solution_model": projected_model,
+    }
 
 
 def resolve_three_zone_pa_plus_solution_model(
@@ -44,24 +221,54 @@ def resolve_three_zone_pa_plus_solution_model(
     if len(ring_z_mm) != len(ring_ids):
         raise ValueError("PA+ solution model ring positions do not match electrode IDs")
 
-    mode_specs: list[tuple[str, int]] = [
-        *( (f"rod_{electrode_id}", electrode_id) for electrode_id in ROD_ELECTRODE_IDS ),
-        ("repeller", int(electrodes["accelerator_repeller_id"])),
-        ("grid1", int(electrodes["accelerator_grid1_id"])),
-        ("intermediate2", int(electrodes["accelerator_intermediate2_id"])),
-        ("grid2", int(electrodes["accelerator_grid2_id"])),
-        ("entrance_reference_sleeve", int(electrodes["entrance_reference_sleeve_id"])),
-        ("entrance_plate", int(electrodes["entrance_plate_id"])),
-    ]
+    alternating_polarity = {
+        electrode_id: 1.0 if electrode_id % 2 else -1.0
+        for electrode_id in ROD_ELECTRODE_IDS
+    }
     modes = [
         {
-            "mode_id": 36 + index,
-            "name": name,
-            "source_physical_electrode_id": electrode_id,
-            "physical_electrode_coefficients": {str(electrode_id): 1.0},
-        }
-        for index, (name, electrode_id) in enumerate(mode_specs)
+            "mode_id": 36,
+            "name": "rod_common",
+            "physical_electrode_coefficients": {
+                str(electrode_id): 1.0 for electrode_id in ROD_ELECTRODE_IDS
+            },
+            "voltage_projection_coefficients": {
+                str(electrode_id): 1.0 / len(ROD_ELECTRODE_IDS)
+                for electrode_id in ROD_ELECTRODE_IDS
+            },
+        },
+        {
+            "mode_id": 37,
+            "name": "rod_differential",
+            "physical_electrode_coefficients": {
+                str(electrode_id): polarity
+                for electrode_id, polarity in alternating_polarity.items()
+            },
+            "voltage_projection_coefficients": {
+                str(electrode_id): polarity / len(ROD_ELECTRODE_IDS)
+                for electrode_id, polarity in alternating_polarity.items()
+            },
+        },
     ]
+    for index, (name, electrode_id) in enumerate(
+        (
+            ("repeller", int(electrodes["accelerator_repeller_id"])),
+            ("grid1", int(electrodes["accelerator_grid1_id"])),
+            ("intermediate2", int(electrodes["accelerator_intermediate2_id"])),
+            ("grid2", int(electrodes["accelerator_grid2_id"])),
+            ("entrance_reference_sleeve", int(electrodes["entrance_reference_sleeve_id"])),
+            ("entrance_plate", int(electrodes["entrance_plate_id"])),
+        ),
+        start=38,
+    ):
+        modes.append(
+            {
+                "mode_id": index,
+                "name": name,
+                "physical_electrode_coefficients": {str(electrode_id): 1.0},
+                "voltage_projection_coefficients": {str(electrode_id): 1.0},
+            }
+        )
     by_name = {mode["name"]: mode for mode in modes}
     for ring_id, raw_z in zip(ring_ids, ring_z_mm):
         z = float(raw_z)
@@ -81,7 +288,8 @@ def resolve_three_zone_pa_plus_solution_model(
         by_name[right]["physical_electrode_coefficients"][str(ring_id)] = right_weight
     return {
         "schema_version": 1,
-        "model_id": "three_zone_linear_ring_pa_plus_v1",
+        "model_id": THREE_ZONE_PA_PLUS_MODEL_ID,
+        "field_loading_policy_id": PA_PLUS_FIELD_LOADING_POLICY_ID,
         # This is deliberately part of the frozen model, rather than an
         # incidental implementation detail.  The existing three-zone Program
         # computes every ring from these four plane voltages; PA+ removes only
@@ -99,6 +307,12 @@ def resolve_three_zone_pa_plus_solution_model(
             "derived_accelerator_ring_ids": ring_ids,
             "per_ring_independent_adjustment_supported": False,
         },
+        "rod_voltage_control_policy": {
+            "policy_id": "octupole_common_plus_alternating_differential_v1",
+            "physical_electrode_ids": list(ROD_ELECTRODE_IDS),
+            "common_mode_name": "rod_common",
+            "differential_mode_name": "rod_differential",
+        },
         "mode_ids": [mode["mode_id"] for mode in modes],
         "mode_count": len(modes),
         "modes": modes,
@@ -108,11 +322,17 @@ def resolve_three_zone_pa_plus_solution_model(
 
 def render_pa_plus_solution_model(model: Mapping[str, Any]) -> str:
     """Render the official SIMION PA+ electrode-to-solution projection."""
-    if model.get("model_id") != "three_zone_linear_ring_pa_plus_v1":
+    if model.get("model_id") != THREE_ZONE_PA_PLUS_MODEL_ID:
         raise ValueError("unsupported PA+ solution model")
     modes = model.get("modes")
     mode_ids = model.get("mode_ids")
-    if not isinstance(modes, list) or not isinstance(mode_ids, list) or len(modes) != 14:
+    if (
+        not isinstance(modes, list)
+        or not isinstance(mode_ids, list)
+        or not modes
+        or len(modes) != len(mode_ids)
+        or model.get("mode_count") != len(modes)
+    ):
         raise ValueError("PA+ solution model modes are invalid")
     lines = ["potential_array {", "  scalable_electrodes = {"]
     observed_mode_ids: list[int] = []
@@ -235,7 +455,10 @@ def _write_resolved_topology(frontend_contract: Path, output: Path) -> None:
 
 def _write_pa_plus(contract: Path, output: Path) -> None:
     document = json.loads(contract.read_text(encoding="utf-8"))
-    model = document.get("pa_plus_solution_model", document)
+    model = document.get(
+        "projected_pa_plus_solution_model",
+        document.get("pa_plus_solution_model", document),
+    )
     if not isinstance(model, dict):
         raise ValueError("PA+ solution model contract is invalid")
     output.write_text(render_pa_plus_solution_model(model), encoding="utf-8", newline="\n")
@@ -248,10 +471,48 @@ def main() -> int:
     parser.add_argument("--output", type=Path)
     parser.add_argument("--pa-plus-contract", type=Path)
     parser.add_argument("--pa-plus-output", type=Path)
+    parser.add_argument("--post-pulse-pa-plus-contract", type=Path)
+    parser.add_argument("--post-pulse-upstream-contract", type=Path)
+    parser.add_argument("--post-pulse-output", type=Path)
+    parser.add_argument("--post-pulse-source-release-mode")
     args = parser.parse_args()
     if (args.pa_plus_contract is None) != (args.pa_plus_output is None):
         raise ValueError("PA+ contract and output must be provided together")
-    if args.pa_plus_contract is not None:
+    post_pulse_args = (
+        args.post_pulse_pa_plus_contract,
+        args.post_pulse_upstream_contract,
+        args.post_pulse_output,
+        args.post_pulse_source_release_mode,
+    )
+    if any(item is not None for item in post_pulse_args):
+        if any(item is None for item in post_pulse_args) or any(
+            item is not None
+            for item in (args.frontend_contract, args.output, args.pa_plus_contract, args.pa_plus_output)
+        ):
+            raise ValueError("post-pulse PA+ projection arguments are incomplete")
+        accelerator = json.loads(
+            args.post_pulse_pa_plus_contract.read_text(encoding="utf-8")
+        )
+        upstream = json.loads(
+            args.post_pulse_upstream_contract.read_text(encoding="utf-8")
+        )
+        projection = resolve_post_pulse_pa_plus_solution_projection(
+            accelerator.get("pa_plus_solution_model", {}),
+            rod_physical_electrode_ids=accelerator.get("electrodes", {}).get(
+                "multipole_rod_ids", []
+            ),
+            upstream_rod_electrodes=upstream.get("axial_dc", {}).get(
+                "rod_electrodes", []
+            ),
+            source_release_mode=args.post_pulse_source_release_mode,
+        )
+        args.post_pulse_output.parent.mkdir(parents=True, exist_ok=True)
+        args.post_pulse_output.write_text(
+            json.dumps(projection, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+    elif args.pa_plus_contract is not None:
         if args.frontend_contract is not None or args.output is not None:
             raise ValueError("PA+ rendering does not accept frontend topology arguments")
         _write_pa_plus(args.pa_plus_contract, args.pa_plus_output)

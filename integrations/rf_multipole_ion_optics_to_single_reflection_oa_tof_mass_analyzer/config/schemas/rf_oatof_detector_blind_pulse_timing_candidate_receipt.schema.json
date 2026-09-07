@@ -65,13 +65,21 @@
       }
     },
     "selection_order": {
-      "const": [
-        "maximize_pulse_eligible_count",
-        "maximize_transverse_bore_count",
-        "minimize_normalized_xyz_centroid_distance",
-        "minimize_normalized_xyz_spread_norm",
-        "minimize_absolute_distance_to_ballistic_seed",
-        "select_earlier_time"
+      "oneOf": [
+        {"const": [
+          "maximize_pulse_eligible_count",
+          "maximize_transverse_bore_count",
+          "minimize_normalized_xyz_centroid_distance",
+          "minimize_normalized_xyz_spread_norm",
+          "minimize_absolute_distance_to_ballistic_seed",
+          "select_earlier_time"
+        ]},
+        {"const": [
+          "maximize_pulse_eligible_count",
+          "minimize_normalized_xyz_spread_norm",
+          "minimize_normalized_xyz_centroid_distance",
+          "select_earlier_time"
+        ]}
       ]
     },
     "ballistic_seed_time_us": {"type": "number"},
@@ -163,10 +171,12 @@
     },
     "pre_pulse_reachable_pa_cache_keys": {
       "type": "object", "additionalProperties": false,
-      "required": ["fine_upstream", "accelerator_entrance_zone_collision", "flight_tube", "reflectron"],
+      "required": ["fine_upstream", "accelerator_main", "accelerator_entrance_zone_collision", "accelerator_entrance_local", "flight_tube", "reflectron"],
       "properties": {
         "fine_upstream": {"$ref": "#/$defs/sha"},
+        "accelerator_main": {"$ref": "#/$defs/sha"},
         "accelerator_entrance_zone_collision": {"$ref": "#/$defs/sha"},
+        "accelerator_entrance_local": {"$ref": "#/$defs/sha"},
         "flight_tube": {"type": "null"},
         "reflectron": {"type": "null"}
       }

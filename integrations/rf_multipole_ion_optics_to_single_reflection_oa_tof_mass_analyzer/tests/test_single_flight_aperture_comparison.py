@@ -8,10 +8,12 @@ from pathlib import Path
 
 import pandas as pd
 
+from common.contracts.file_identity import file_sha256
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.compare_single_flight_apertures import (
     _pair_event,
     analyze_multi_arm_runs,
     analyze_pre_pulse_source_only_apertures,
+    load_compact_pre_pulse_handoff_evidence,
 )
 
 
@@ -79,6 +81,57 @@ def _pre_pulse_matrix(root: Path, *, selected_z_mm: list[float]) -> dict[str, Pa
     }
 
 
+def _compact_pre_pulse_run(root: Path, name: str) -> Path:
+    run = _pre_pulse_run(root, name, shape="square", height_mm=1.0, selected_z_mm=[0.0, 1.0, 2.0])
+    (run / "inputs" / "resolved_population_contract.json").write_text(json.dumps({
+        "role": "rf_oatof_resolved_population_contract",
+        "source_release_mode": "continuous_frontend",
+        "source_authority": {"particle_count": 5000, "table": {"sha256": "A" * 64}},
+    }), encoding="utf-8")
+    for path in (
+        run / "results" / "pre_pulse_time_series_states.csv",
+        run / "results" / "pre_pulse_time_series_screening_receipt.json",
+        run / "results" / "detector_blind_pulse_timing_candidate_receipt.json",
+    ):
+        path.unlink()
+    handoff = run / "results" / "pre_pulse_compact_handoff.csv"
+    pd.DataFrame({
+        "particle_id": [1, 2, 3], "instrument_time_us": [2.0, 2.0, 2.0],
+        "position_z_mm": [0.0, 1.0, 2.0], "velocity_z_m_s": [1000.0, 1500.0, 2000.0],
+    }).to_csv(handoff, index=False)
+    terminal = run / "results" / "pre_pulse_particle_terminal_states.csv"
+    pd.DataFrame({
+        "particle_id": range(1, 5001), "terminal_reason": ["geometry_collision"] * 5000,
+    }).to_csv(terminal, index=False)
+    receipt = {
+        "role": "rf_oatof_compact_pre_pulse_trace_handoff_receipt", "status": "success",
+        "selection_uses_detector_outcome": False, "detector_results_used": False,
+        "pulse_disabled": True,
+        "selection": {
+            "sample_index": 2, "pulse_effective_time_us": 2.0,
+            "mother_population_count": 5000, "pulse_eligible_count": 3,
+            "pulse_eligible_particle_ids": [1, 2, 3], "postselection_prohibited": True,
+        },
+        "pulse_target_state": {
+            "bytes": handoff.stat().st_size, "sha256": file_sha256(handoff),
+            "particle_count": 3, "pulse_effective_time_us": 2.0,
+        },
+        "natural_terminal_census": {
+            "complete": True, "mother_population_count": 5000,
+            "terminal_particle_count": 5000, "accounted_particle_count": 5000,
+            "unknown_terminal_count": 0, "by_reason": {"geometry_collision": 5000},
+            "terminal_state": {
+                "path": str(terminal), "bytes": terminal.stat().st_size,
+                "sha256": file_sha256(terminal),
+            },
+        },
+    }
+    (run / "results" / "pre_pulse_compact_handoff_receipt.json").write_text(
+        json.dumps(receipt), encoding="utf-8"
+    )
+    return run
+
+
 class SingleFlightApertureComparisonTests(unittest.TestCase):
     def test_multi_arm_comparison_keeps_complete_detector_peaks_and_pairs_ids(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -141,6 +194,41 @@ class SingleFlightApertureComparisonTests(unittest.TestCase):
         self.assertNotIn("fwhm", json.dumps(result).lower())
         self.assertNotIn("resolution", json.dumps(result).lower())
 
+    def test_pre_pulse_compact_handoff_uses_receipt_selection_and_complete_terminal_census(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            result = analyze_pre_pulse_source_only_apertures(
+                {"square_h100": _compact_pre_pulse_run(Path(temporary), "compact")}
+            )
+        case = result["cases"]["square_h100"]
+        self.assertEqual(case["source_format"], "compact_handoff_with_complete_natural_terminal_census")
+        self.assertEqual(case["mother_cohort_count"], 5000)
+        self.assertEqual(case["accelerator_entry_count"], 3)
+        self.assertEqual(case["transmission_fraction_of_mother"], 3 / 5000)
+        self.assertEqual(case["detector_blind_pulse_timing"]["selected_time_us"], 2.0)
+        self.assertAlmostEqual(case["z_vz_linear_fit"]["k_per_us"], .5)
+        self.assertFalse(result["controlled_variables"]["matrix_complete"])
+
+    def test_compact_handoff_evidence_keeps_natural_terminal_states_separate_from_selection(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            evidence = load_compact_pre_pulse_handoff_evidence(
+                _compact_pre_pulse_run(Path(temporary), "compact"), case_id="square_h100"
+            )
+        self.assertEqual(evidence["mother_particle_ids"], set(range(1, 5001)))
+        self.assertEqual(evidence["selected_states"]["particle_id"].tolist(), [1, 2, 3])
+        self.assertEqual(evidence["selected_time_us"], 2.0)
+        self.assertEqual(evidence["terminal_census"]["terminal_particle_count"], 5000)
+        self.assertEqual(len(evidence["terminal_states"]), 5000)
+
+    def test_pre_pulse_compact_handoff_rejects_incomplete_terminal_closure(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            run = _compact_pre_pulse_run(Path(temporary), "compact")
+            receipt_path = run / "results" / "pre_pulse_compact_handoff_receipt.json"
+            receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+            receipt["natural_terminal_census"]["complete"] = False
+            receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+            with self.assertRaisesRegex(Exception, "terminal census is incomplete"):
+                analyze_pre_pulse_source_only_apertures({"square_h100": run})
+
     def test_pre_pulse_source_only_comparison_rejects_empty_or_nonfinite_selected_state(self) -> None:
         for bad_state in (
             pd.DataFrame(columns=["particle_id", "sample_index", "z_mm", "vz_mm_per_us"]),
@@ -168,12 +256,12 @@ class SingleFlightApertureComparisonTests(unittest.TestCase):
             with self.assertRaisesRegex(Exception, "selected detector-blind sample is absent"):
                 analyze_pre_pulse_source_only_apertures(cases)
 
-    def test_pre_pulse_source_only_comparison_requires_complete_matrix(self) -> None:
+    def test_pre_pulse_source_only_comparison_reports_incomplete_matrix_without_rejecting_case(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             cases = _pre_pulse_matrix(Path(temporary), selected_z_mm=[0.0, 1.0, 2.0])
             cases.pop("cylindrical_h250")
-            with self.assertRaisesRegex(Exception, "complete eight-arm matrix"):
-                analyze_pre_pulse_source_only_apertures(cases)
+            result = analyze_pre_pulse_source_only_apertures(cases)
+        self.assertFalse(result["controlled_variables"]["matrix_complete"])
 
     def test_pair_event_preserves_common_and_unique_identities(self) -> None:
         metrics, rows = _pair_event(

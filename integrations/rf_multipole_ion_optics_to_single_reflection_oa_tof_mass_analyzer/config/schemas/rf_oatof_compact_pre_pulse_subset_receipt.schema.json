@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "rf_oatof_compact_pre_pulse_subset_receipt.schema.json",
+  "type": "object",
+  "required": ["schema_version", "role", "status", "method", "selection", "pulse_target_state"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "role": {"const": "rf_oatof_compact_pre_pulse_subset_receipt"},
+    "status": {"const": "success"},
+    "method": {"const": "explicit_ordered_subset_from_compact_trace_handoff_v1"},
+    "selection": {
+      "type": "object",
+      "required": ["mother_population_count", "ordered_source_particle_ids", "ordered_source_particle_id_sha256", "simulation_to_source_particle_id", "postselection_prohibited"]
+    },
+    "pulse_target_state": {
+      "type": "object",
+      "required": ["path", "sha256", "particle_count", "ordered_particle_id_sha256", "source_state_epoch", "coordinate_frame", "clock_basis", "clock_authority", "pulse_effective_time_us"]
+    }
+  },
+  "additionalProperties": true
+}

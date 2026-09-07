@@ -315,11 +315,16 @@
       "role": "physical_chain_shared_main_local_aperture_full_axial_core"
     },
     {
-      "profile_id": "frontend_acceleration_xy025_z010_coarse100_shared_full_bore_main_local_aperture",
+      "profile_id": "frontend_xy025_z010_coarse100_full_bore_main_local_xy050_z010",
       "field_overlay_id": "accelerator_entrance_local_aperture",
       "cell_mm_xyz": {
         "x": 0.25,
         "y": 0.25,
+        "z": 0.1
+      },
+      "accelerator_main_cell_mm_xyz": {
+        "x": 0.5,
+        "y": 0.5,
         "z": 0.1
       },
       "coarse_bridge_cell_mm_xyz": {
@@ -337,8 +342,8 @@
       "accelerator_entrance_local": {
         "enabled": true,
         "cell_mm_xyz": {
-          "x": 0.25,
-          "y": 0.25,
+          "x": 0.5,
+          "y": 0.5,
           "z": 0.1
         },
         "boundary_mode": "accelerator_main_electrode_basis_dirichlet_v1",
@@ -351,7 +356,7 @@
         }
       },
       "post_pulse_topology_id": "full_bore_main_with_entrance_local_v1",
-      "role": "physical_chain_shared_full_bore_main_local_aperture"
+      "role": "physical_chain_shared_full_bore_main_local_xy050_z010"
     },
     {
       "profile_id": "frontend_isotropic_020_accelerator_two_local_z005",
@@ -658,6 +663,15 @@
   ],
   "source_materialization_profiles": [
     {
+      "profile_id": "independent_ion_source_volume_n5000_member61_regression",
+      "source_profile_id": "independent_ion_source_volume_n5000",
+      "materialization_mode": "independent_spatial_velocity_ion_source_snapshot",
+      "particle_count": 5000,
+      "source_spec": "config/ion_sources/continuous_axial_volume_source_n5000.json",
+      "functional_smoke_particle_id": 61,
+      "role": "zero_field_geometry_natural_trajectory_regression"
+    },
+    {
       "profile_id": "independent_ion_source_volume_n5000",
       "source_profile_id": "independent_ion_source_volume_n5000",
       "materialization_mode": "independent_spatial_velocity_ion_source_snapshot",
@@ -782,6 +796,6 @@
   ],
   "pulse_time_us": 39.58788438081105,
   "pulse_width_us": 1.0,
-  "maximum_time_of_flight_us": 90.0,
+  "post_pulse_observation_window_us": 90.0,
   "retention_class": "compact"
 }

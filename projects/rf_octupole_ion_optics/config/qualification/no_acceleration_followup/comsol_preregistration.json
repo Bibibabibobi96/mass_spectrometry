@@ -20,7 +20,7 @@
   "frozen_authorities": {
     "runtime_profiles": {
       "path": "projects/rf_octupole_ion_optics/config/runtime_profiles.json",
-      "sha256": "45E2C1D9385F201AF7AE0700B8A99B7E9F2DAD8414674252C2B2575DA0D6CC89"
+      "sha256": "62E76D14B2BD50ED5C9D3C7F2C08BB1875D63EAFC0D8765A213B894EEE9CADDB"
     },
     "comsol_solver_numerics": {
       "path": "projects/rf_octupole_ion_optics/config/comsol_solver_numerics.json",

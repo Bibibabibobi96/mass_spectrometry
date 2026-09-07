@@ -509,6 +509,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                 "time_integration_profile_id": "dt64",
             },
             "per_batch_peak_working_set_bytes": 10,
+            "observed_batch_work_units": 8,
         }
         with patch(
             "common.simion.resource_scheduler.available_physical_memory_bytes",
@@ -530,6 +531,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                 "time_integration_profile_id": "dt64",
             },
             "per_batch_peak_working_set_bytes": 10,
+            "observed_batch_work_units": 8,
         }
         execution_profile = {
             "frontend_cell_mm_xyz": {"x": 0.02, "y": 0.02, "z": 0.02},
@@ -560,21 +562,51 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                 "solver": "SIMION", "field_kind": "rf",
                 "rf_steps_per_period": 64,
                 "time_integration_profile_id": "dt64",
-                "workload_topology_id": "full_flight_7_instance_iob_v1",
+                "workload_topology_id": "full_flight_7_instance_iob_v2",
             },
             "per_batch_peak_working_set_bytes": 10,
+            "observed_batch_work_units": 8,
         }
         plan = resolve_single_flight_dispatch_plan(
             {"single_flight_time_integration_profile_id": "dt64"},
             execution_particle_count=8, rf_steps_per_period=64,
             resource_profiles=[profile],
-            workload_topology_id="pre_pulse_minimal_3_instance_iob_v1",
+            workload_topology_id="pre_pulse_minimal_4_instance_iob_v2",
         )
         self.assertEqual(plan["estimation"]["kind"], "formal_first_batch_observation")
         self.assertEqual(
             plan["resource_identity"]["workload_topology_id"],
-            "pre_pulse_minimal_3_instance_iob_v1",
+            "pre_pulse_minimal_4_instance_iob_v2",
         )
+
+    def test_dispatch_plan_distinguishes_post_pulse_dynamic_mode_projection(self) -> None:
+        from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_electrode_contract import (
+            POST_PULSE_FIELD_LOADING_POLICY_ID,
+        )
+
+        profile = {
+            "resource_identity": {
+                "solver": "SIMION", "field_kind": "rf",
+                "rf_steps_per_period": 40,
+                "time_integration_profile_id": "dt40",
+                "workload_topology_id": "post_pulse_5_instance_iob_v1",
+            },
+            "per_batch_peak_working_set_bytes": 36_420_456_448,
+            "observed_batch_work_units": 1,
+        }
+        arguments = {
+            "execution_particle_count": 1, "rf_steps_per_period": 40,
+            "resource_profiles": [profile],
+            "workload_topology_id": "post_pulse_5_instance_iob_v1",
+            "field_loading_policy_id": POST_PULSE_FIELD_LOADING_POLICY_ID,
+        }
+        experiment = {"single_flight_time_integration_profile_id": "dt40"}
+        plan = resolve_single_flight_dispatch_plan(experiment, **arguments)
+        self.assertEqual(plan["estimation"]["kind"], "formal_first_batch_observation")
+        self.assertEqual(plan["waves"][0]["batches"][0]["count"], 1)
+        profile["resource_identity"]["field_loading_policy_id"] = POST_PULSE_FIELD_LOADING_POLICY_ID
+        matched = resolve_single_flight_dispatch_plan(experiment, **arguments)
+        self.assertEqual(matched["estimation"]["kind"], "exact_resource_profile")
 
     def test_flat_authoring_expands_shared_controls_and_gap_rows(self) -> None:
         authored = {
@@ -880,6 +912,31 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
         )
         self.assertNotEqual(incompatible.returncode, 0)
         self.assertIn("cannot be combined", incompatible.stderr)
+        execution = subprocess.run(
+            [
+                pwsh,
+                "-NoProfile",
+                "-File",
+                str(
+                    INTEGRATION_ROOT / "workflows" /
+                    "family_source_closure" / "execute.ps1"
+                ),
+                "-Campaign",
+                str(HISTORICAL_COMPACT_GAP_FIELD_CAMPAIGN),
+                "-ExperimentId",
+                before["experiment_id"],
+                "-ValidateOnly",
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30,
+            check=False,
+        )
+        self.assertNotEqual(execution.returncode, 0)
+        self.assertIn("not an active lifecycle authority", execution.stderr)
 
     def test_resource_policy_falls_back_to_one_lane_when_memory_is_tight(self) -> None:
         policy = {
@@ -892,6 +949,7 @@ class FamilySourceClosureWorkflowTests(unittest.TestCase):
                 "time_integration_profile_id": "dt40",
             },
             "per_batch_peak_working_set_bytes": 12 * 1024**3,
+            "observed_batch_work_units": 5000,
         }
         with patch(
             "common.simion.resource_scheduler.physical_memory_bytes",
@@ -1254,6 +1312,91 @@ try {
             self.assertIn("STATE=REJECTED", completed.stdout)
             self.assertIn("SHA=REJECTED", completed.stdout)
 
+    def test_adapter_ready_functional_smoke_uses_resolved_id1_prefix(self) -> None:
+        adapter = (
+            INTEGRATION_ROOT / "workflows" / "family_source_closure" / "adapter.ps1"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            run_directory = workspace / "artifacts" / "run"
+            prefix = run_directory / "inputs" / "automatic_pulse_timing_prefix_n1.csv"
+            prefix.parent.mkdir(parents=True)
+            prefix.write_text("particle_id\n1\n", encoding="utf-8")
+            relative_prefix = prefix.relative_to(workspace).as_posix()
+            script = r"""
+$parseErrors = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile(
+  $env:RF_ADAPTER_PATH, [ref]$null, [ref]$parseErrors
+)
+if ($parseErrors) { throw $parseErrors[0] }
+$functionAst = $ast.Find({
+  param($node)
+  $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+    $node.Name -eq 'Resolve-RfContinuousFunctionalSmokeSource'
+}, $true)
+if ($null -eq $functionAst) { throw 'functional-smoke resolver is missing' }
+. ([scriptblock]::Create($functionAst.Extent.Text))
+$experiment = [pscustomobject]@{
+  continuous_functional_smoke_authority = [pscustomobject]@{}
+}
+$frozen = @{ pulse_timing_orchestration_state = 'ready_verified' }
+$resolvedPopulation = [pscustomobject]@{
+  source_authority = [pscustomobject]@{
+    table_binding = 'prepared_deterministic_prefix'
+    particle_count = 1
+    table = [pscustomobject]@{
+      path = $env:RF_PREFIX_RELATIVE_PATH
+      sha256 = $env:RF_PREFIX_SHA256
+    }
+  }
+  execution_population = [pscustomobject]@{ particle_count = 1 }
+}
+$source = Resolve-RfContinuousFunctionalSmokeSource -Experiment $experiment `
+  -FrozenArguments $frozen -ResolvedPopulation $resolvedPopulation `
+  -WorkspaceRoot $env:RF_WORKSPACE -RunDirectory $env:RF_RUN_DIRECTORY
+if ($source.path -ne [IO.Path]::GetFullPath($env:RF_PREFIX_PATH) -or
+    $source.sha256 -ne $env:RF_PREFIX_SHA256 -or $source.particle_count -ne 1) {
+  throw 'resolved ID1 prefix source differs'
+}
+'READY_PREFIX=PASS'
+$frozen.pulse_timing_orchestration_state = 'discovery_required'
+try {
+  $null = Resolve-RfContinuousFunctionalSmokeSource -Experiment $experiment `
+    -FrozenArguments $frozen -ResolvedPopulation $resolvedPopulation `
+    -WorkspaceRoot $env:RF_WORKSPACE -RunDirectory $env:RF_RUN_DIRECTORY
+  throw 'non-ready functional smoke was accepted'
+} catch {
+  if ($_.Exception.Message -notmatch 'ready-verified') { throw }
+}
+'NOT_READY=REJECTED'
+"""
+            environment = os.environ.copy()
+            environment.update({
+                "RF_ADAPTER_PATH": str(adapter),
+                "RF_WORKSPACE": str(workspace),
+                "RF_RUN_DIRECTORY": str(run_directory),
+                "RF_PREFIX_PATH": str(prefix),
+                "RF_PREFIX_RELATIVE_PATH": relative_prefix,
+                "RF_PREFIX_SHA256": hashlib.sha256(prefix.read_bytes()).hexdigest().upper(),
+            })
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", script], cwd=REPO_ROOT,
+                env=environment, text=True, encoding="utf-8", errors="replace",
+                capture_output=True, check=False, timeout=300,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            self.assertIn("READY_PREFIX=PASS", completed.stdout)
+            self.assertIn("NOT_READY=REJECTED", completed.stdout)
+        source = adapter.read_text(encoding="utf-8")
+        self.assertIn(
+            "$runnerArguments.MotherParticleSource = $continuousFunctionalSmokeSource.path",
+            source,
+        )
+        self.assertIn(
+            "$runnerArguments.MotherParticleSourceSha256 =\n      $continuousFunctionalSmokeSource.sha256",
+            source,
+        )
+
     def test_adapter_authorizes_base_prepare_only_discovery_arguments(self) -> None:
         adapter = (
             INTEGRATION_ROOT / "workflows" / "family_source_closure" / "adapter.ps1"
@@ -1565,6 +1708,14 @@ $result = Get-PulseTimingOrchestration `
         self.assertIn("[string]$RecoveryRunId = ''", source)
         self.assertIn("RecoveryRunId is accepted only for FinalizeOnly.", source)
         self.assertIn("$campaignRunId = $RecoveryRunId", source)
+        self.assertIn("foreach ($retryNumber in 1..99)", source)
+        self.assertIn("Invoke-FamilyExecutionBoundary -RunId $executionRunId", source)
+
+        adapter = (
+            INTEGRATION_ROOT / "workflows" / "family_source_closure" / "adapter.ps1"
+        ).read_text(encoding="utf-8")
+        self.assertIn("__r\\d{2}$", adapter)
+        self.assertIn("$campaignPath = Join-Path $workspaceRoot", adapter)
 
     def test_finalize_only_replays_pre_pulse_without_full_flight_reanalysis(self) -> None:
         adapter = (

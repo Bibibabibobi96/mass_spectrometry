@@ -24,20 +24,13 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     open_pre_pulse_state_table,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_layout import (
+    SELECTION_ORDER,
     _natural_archive_ids,
     select_detector_blind_real_field_pulse_time,
     select_detector_blind_natural_archive_pulse_time,
 )
 
 
-SELECTION_ORDER = [
-    "maximize_pulse_eligible_count",
-    "maximize_transverse_bore_count",
-    "minimize_normalized_xyz_centroid_distance",
-    "minimize_normalized_xyz_spread_norm",
-    "minimize_absolute_distance_to_ballistic_seed",
-    "select_earlier_time",
-]
 REQUIRED_STATE_COLUMNS = {
     "particle_id", "event", "sample_index", "instrument_time_us",
     "actual_instrument_time_us", "x_mm", "y_mm", "z_mm", "survival_status",
@@ -107,9 +100,9 @@ def _validate_screening_contract(contract: dict[str, Any]) -> bool:
     ):
         raise ContractError("pre-pulse screening selection contract is invalid")
     selection_order = contract.get("selection_order")
-    if selection_order is not None and selection_order != SELECTION_ORDER:
+    if selection_order != SELECTION_ORDER:
         raise ContractError("pre-pulse screening selection order differs")
-    return selection_order is not None
+    return True
 
 
 def _load_population_ids(
@@ -181,7 +174,12 @@ def _validate_screening_receipt(
             "accelerator_intermediate_overlay",
         )
     elif schema_version in {5, 6, 7}:
-        required = ("fine_upstream", "accelerator_entrance_zone_collision")
+        required = (
+            "fine_upstream",
+            "accelerator_main",
+            "accelerator_entrance_zone_collision",
+            "accelerator_entrance_local",
+        )
     else:
         required = ()
     if required and (
@@ -191,6 +189,29 @@ def _validate_screening_receipt(
         or keys.get("reflectron") is not None
     ):
         raise ContractError("pre-pulse screening PA cache roles differ")
+
+
+def _native_checkpoint_omission_pairs(receipt: dict[str, Any]) -> set[tuple[int, int]]:
+    """Extract the exact sparse native observations accepted by the materializer."""
+
+    omissions = receipt.get("native_checkpoint_omissions", [])
+    if not isinstance(omissions, list):
+        raise ContractError("pre-pulse native checkpoint omission audit differs")
+    pairs: set[tuple[int, int]] = set()
+    for omission in omissions:
+        if not isinstance(omission, dict):
+            raise ContractError("pre-pulse native checkpoint omission audit differs")
+        particle_id = omission.get("particle_id")
+        sample_index = omission.get("sample_index")
+        if (
+            isinstance(particle_id, bool) or not isinstance(particle_id, int)
+            or particle_id < 1 or isinstance(sample_index, bool)
+            or not isinstance(sample_index, int) or sample_index < 1
+            or (particle_id, sample_index) in pairs
+        ):
+            raise ContractError("pre-pulse native checkpoint omission audit differs")
+        pairs.add((particle_id, sample_index))
+    return pairs
 
 
 def pulse_selection_content_identity(
@@ -337,6 +358,14 @@ def select_and_write(
             frozen_particle_ids=frozen_particle_ids,
             ballistic_seed_time_us=ballistic_seed_time_us,
             grid_origin_us=grid_origin_us, grid_step_us=grid_step_us,
+            permitted_observation_gaps=_native_checkpoint_omission_pairs(
+                screening_receipt
+            ),
+            # The immutable natural archive is the complete candidate source.
+            # Keeping a full per-sample mask for every ranked row duplicates
+            # gigabytes of membership data; retain the selected candidate and
+            # re-evaluate the archive when a future pulse policy changes.
+            retain_all_candidates=False,
         )
     else:
         result = select_detector_blind_real_field_pulse_time(

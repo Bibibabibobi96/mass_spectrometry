@@ -19,6 +19,7 @@ import numpy as np
 import pandas as pd
 
 from common.contracts.artifact_naming import validate_run_id
+from common.contracts.file_identity import file_sha256
 from common.contracts.machine_contracts import ContractError
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.plot_single_flight_spatial_six_panel import (
     build_figure as build_spatial_figure,
@@ -48,6 +49,8 @@ COLORS = {"wide": "#0072B2", "small": "#D55E00", "common": "#009E73"}
 PRE_PULSE_APERTURE_HEIGHTS_MM = frozenset((1.0, 1.5, 2.0, 2.5))
 PRE_PULSE_ACCELERATOR_SHAPES = frozenset(("square", "cylindrical"))
 PRE_PULSE_GAP_MM = 102.4
+COMPACT_HANDOFF_PATH = "results/pre_pulse_compact_handoff.csv"
+COMPACT_HANDOFF_RECEIPT_PATH = "results/pre_pulse_compact_handoff_receipt.json"
 
 
 def _pre_pulse_axial_full_width_acceptance_mm(
@@ -195,13 +198,198 @@ def _pre_pulse_matrix_arm(
     return matching_shapes[0], float(height)
 
 
+def pre_pulse_aperture_source_files(run: Path) -> tuple[str, ...]:
+    """Return the immutable source evidence required by one supported format."""
+
+    common = (
+        "run_manifest.json",
+        "run_config.json",
+        "inputs/single_flight_initial_global_state.csv",
+        "inputs/resolved_connection.json",
+    )
+    compact_present = any(
+        (run / path).exists() for path in (COMPACT_HANDOFF_PATH, COMPACT_HANDOFF_RECEIPT_PATH)
+    )
+    if not compact_present:
+        archive = "results/pre_pulse_time_series_states.csv.gz"
+        return (*common, "results/pre_pulse_time_series_screening_receipt.json",
+                "results/detector_blind_pulse_timing_candidate_receipt.json",
+                archive if (run / archive).is_file() else "results/pre_pulse_time_series_states.csv")
+    receipt_path = run / COMPACT_HANDOFF_RECEIPT_PATH
+    if not receipt_path.is_file():
+        return (*common, COMPACT_HANDOFF_PATH, COMPACT_HANDOFF_RECEIPT_PATH)
+    receipt = _load_json(receipt_path)
+    census = receipt.get("natural_terminal_census")
+    terminal = census.get("terminal_state") if isinstance(census, dict) else None
+    path = terminal.get("path") if isinstance(terminal, dict) else None
+    if not isinstance(path, str):
+        raise ContractError("compact handoff terminal-state binding is missing")
+    resolved = Path(path).resolve()
+    try:
+        relative = resolved.relative_to(run.resolve()).as_posix()
+    except ValueError as error:
+        raise ContractError("compact handoff terminal-state binding is outside its source run") from error
+    return (*common, COMPACT_HANDOFF_PATH, COMPACT_HANDOFF_RECEIPT_PATH, relative)
+
+
+def _compact_handoff_states(
+    run: Path, *, case_id: str, ids: set[int]
+) -> tuple[pd.DataFrame, float, dict[str, Any]]:
+    """Read a receipt-bound compact handoff without reselecting its pulse time."""
+
+    receipt = _load_json(run / COMPACT_HANDOFF_RECEIPT_PATH)
+    selection, target = receipt.get("selection"), receipt.get("pulse_target_state")
+    if (
+        receipt.get("role") != "rf_oatof_compact_pre_pulse_trace_handoff_receipt"
+        or receipt.get("status") != "success"
+        or receipt.get("selection_uses_detector_outcome") is not False
+        or receipt.get("detector_results_used") is not False
+        or receipt.get("pulse_disabled") is not True
+        or not isinstance(selection, dict)
+        or not isinstance(target, dict)
+    ):
+        raise ContractError(f"{case_id} compact handoff receipt is invalid")
+    selected_time = selection.get("pulse_effective_time_us")
+    selected_ids = selection.get("pulse_eligible_particle_ids")
+    if (
+        isinstance(selected_time, bool)
+        or not isinstance(selected_time, (int, float))
+        or not math.isfinite(float(selected_time))
+        or not isinstance(selected_ids, list)
+        or any(isinstance(value, bool) or not isinstance(value, int) for value in selected_ids)
+        or len(selected_ids) != len(set(selected_ids))
+        or set(selected_ids) - ids
+        or selection.get("mother_population_count") != len(ids)
+        or selection.get("pulse_eligible_count") != len(selected_ids)
+        or selection.get("postselection_prohibited") is not True
+    ):
+        raise ContractError(f"{case_id} compact handoff selection is invalid")
+    handoff = run / COMPACT_HANDOFF_PATH
+    if (
+        target.get("bytes") != handoff.stat().st_size
+        or target.get("sha256") != file_sha256(handoff)
+        or target.get("particle_count") != len(selected_ids)
+        or target.get("pulse_effective_time_us") != selected_time
+    ):
+        raise ContractError(f"{case_id} compact handoff target binding differs")
+    states = pd.read_csv(handoff)
+    required = {"particle_id", "instrument_time_us", "position_z_mm", "velocity_z_m_s"}
+    if missing := sorted(required - set(states.columns)):
+        raise ContractError(f"{case_id} compact handoff is missing: {', '.join(missing)}")
+    if states["particle_id"].duplicated().any() or states["particle_id"].tolist() != selected_ids:
+        raise ContractError(f"{case_id} compact handoff identities differ from its selection")
+    times = states["instrument_time_us"].to_numpy(float)
+    z = states["position_z_mm"].to_numpy(float)
+    vz_m_s = states["velocity_z_m_s"].to_numpy(float)
+    if not (np.isfinite(times).all() and np.isfinite(z).all() and np.isfinite(vz_m_s).all()):
+        raise ContractError(f"{case_id} compact handoff has nonfinite state values")
+    if not np.allclose(times, float(selected_time), rtol=0.0, atol=1e-9):
+        raise ContractError(f"{case_id} compact handoff clock differs from its selection")
+    return pd.DataFrame({"particle_id": states["particle_id"], "z_mm": z, "vz_mm_per_us": vz_m_s / 1000.0}), float(selected_time), receipt
+
+
+def _compact_terminal_census(
+    run: Path, receipt: dict[str, Any], *, case_id: str, ids: set[int]
+) -> dict[str, Any]:
+    """Validate that the natural terminal file closes the full mother cohort."""
+
+    census = receipt.get("natural_terminal_census")
+    if not isinstance(census, dict) or census.get("complete") is not True:
+        raise ContractError(f"{case_id} compact natural terminal census is incomplete")
+    terminal = census.get("terminal_state")
+    if (
+        not isinstance(terminal, dict)
+        or census.get("mother_population_count") != len(ids)
+        or census.get("terminal_particle_count") != len(ids)
+        or census.get("accounted_particle_count") != len(ids)
+        or census.get("unknown_terminal_count") != 0
+    ):
+        raise ContractError(f"{case_id} compact natural terminal census does not close the mother cohort")
+    terminal_path = Path(terminal.get("path", "")).resolve()
+    try:
+        terminal_path.relative_to(run.resolve())
+    except ValueError as error:
+        raise ContractError(f"{case_id} compact terminal file is outside its source run") from error
+    if (
+        not terminal_path.is_file()
+        or terminal.get("bytes") != terminal_path.stat().st_size
+        or terminal.get("sha256") != file_sha256(terminal_path)
+    ):
+        raise ContractError(f"{case_id} compact terminal file binding differs")
+    states = pd.read_csv(terminal_path)
+    if {"particle_id", "terminal_reason"} - set(states.columns) or states["particle_id"].duplicated().any():
+        raise ContractError(f"{case_id} compact terminal states are invalid")
+    if set(states["particle_id"]) != ids or states["terminal_reason"].isna().any():
+        raise ContractError(f"{case_id} compact terminal states do not close the mother cohort")
+    observed = {str(key): int(value) for key, value in states["terminal_reason"].value_counts().items()}
+    reported_reasons = census.get("by_reason")
+    if (
+        not isinstance(reported_reasons, dict)
+        or any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in reported_reasons.values())
+        or {str(key): int(value) for key, value in reported_reasons.items() if value} != observed
+    ):
+        raise ContractError(f"{case_id} compact terminal reason census differs")
+    return census
+
+
+def load_compact_pre_pulse_handoff_evidence(
+    run: Path, *, case_id: str
+) -> dict[str, Any]:
+    """Return one fully bound compact pre-pulse source without reselecting it.
+
+    This is intentionally evidence-only: consumers that need aperture metrics
+    must call :func:`analyze_pre_pulse_source_only_apertures`, keeping the
+    polynomial and width definitions in their existing single implementation.
+    """
+
+    _validate_source_run(run)
+    config = _load_json(run / "run_config.json")
+    if config.get("parameters", {}).get("execution_mode") != "real_pa_rf_pre_pulse_time_series":
+        raise ContractError(f"{case_id} is not a pre-pulse source-only run")
+    initial_path = run / "inputs" / "single_flight_initial_global_state.csv"
+    initial = pd.read_csv(initial_path)
+    if "particle_id" not in initial or initial["particle_id"].duplicated().any():
+        raise ContractError(f"{case_id} mother cohort is invalid")
+    if len(initial) != 5000:
+        raise ContractError(f"{case_id} does not use the common N=5000 mother cohort")
+    ids = {int(value) for value in initial["particle_id"]}
+    selected, selected_time_us, receipt = _compact_handoff_states(
+        run, case_id=case_id, ids=ids
+    )
+    census = _compact_terminal_census(run, receipt, case_id=case_id, ids=ids)
+    terminal = census["terminal_state"]
+    terminal_states = pd.read_csv(Path(terminal["path"]).resolve())
+    population_contract = _load_json(run / "inputs" / "resolved_population_contract.json")
+    source = population_contract.get("source_authority")
+    if (
+        population_contract.get("role") != "rf_oatof_resolved_population_contract"
+        or population_contract.get("source_release_mode") != "continuous_frontend"
+        or not isinstance(source, dict)
+        or not isinstance(source.get("table"), dict)
+        or not isinstance(source["table"].get("sha256"), str)
+        or source.get("particle_count") != 5000
+    ):
+        raise ContractError(f"{case_id} compact source population authority is invalid")
+    return {
+        "mother_particle_ids": ids,
+        "mother_initial_state_sha256": file_sha256(initial_path),
+        "mother_source_table_sha256": source["table"]["sha256"],
+        "selected_states": selected,
+        "selected_time_us": selected_time_us,
+        "receipt": receipt,
+        "terminal_census": census,
+        "terminal_states": terminal_states,
+        "source_files": pre_pulse_aperture_source_files(run),
+    }
+
+
 def analyze_pre_pulse_source_only_apertures(
     cases: dict[str, Path],
 ) -> dict[str, Any]:
     """Compare frozen pre-pulse source-only runs without downstream observables."""
 
-    if len(cases) != len(PRE_PULSE_ACCELERATOR_SHAPES) * len(PRE_PULSE_APERTURE_HEIGHTS_MM):
-        raise ContractError("pre-pulse aperture comparison requires the complete eight-arm matrix")
+    if not cases:
+        raise ContractError("pre-pulse aperture comparison requires at least one case")
     mother_initial: pd.DataFrame | None = None
     matrix_arms: set[tuple[str, float]] = set()
     metrics: dict[str, Any] = {}
@@ -212,19 +400,6 @@ def analyze_pre_pulse_source_only_apertures(
             raise ContractError(f"{case_id} is not a pre-pulse source-only run")
         full_width_acceptance_mm = _pre_pulse_axial_full_width_acceptance_mm(
             config, case_id=case_id
-        )
-        archive = run / "results" / "pre_pulse_time_series_states.csv.gz"
-        states = pd.read_csv(
-            archive if archive.is_file() else run / "results" / "pre_pulse_time_series_states.csv"
-        )
-        required = {"particle_id", "sample_index", "z_mm", "vz_mm_per_us"}
-        if missing := sorted(required - set(states.columns)):
-            raise ContractError(f"{case_id} states are missing: {', '.join(missing)}")
-        selection_receipt = _load_json(
-            run / "results" / "detector_blind_pulse_timing_candidate_receipt.json"
-        )
-        selected_sample_index, selected_time_us = _selected_detector_blind_sample(
-            selection_receipt, case_id=case_id
         )
         shape, aperture_height_mm = _pre_pulse_matrix_arm(
             config,
@@ -244,11 +419,31 @@ def analyze_pre_pulse_source_only_apertures(
         elif not initial.equals(mother_initial):
             raise ContractError("pre-pulse cases must share the same frozen N=5000 mother cohort")
         ids = {int(value) for value in initial["particle_id"]}
-        selected = states.loc[states["sample_index"].eq(selected_sample_index)].copy()
-        if selected.empty:
-            raise ContractError(f"{case_id} selected detector-blind sample is absent")
-        if selected["particle_id"].duplicated().any() or not set(selected["particle_id"]).issubset(ids):
-            raise ContractError(f"{case_id} selected pre-pulse state identities are invalid")
+        if (run / COMPACT_HANDOFF_PATH).is_file() or (run / COMPACT_HANDOFF_RECEIPT_PATH).is_file():
+            selected, selected_time_us, compact_receipt = _compact_handoff_states(
+                run, case_id=case_id, ids=ids
+            )
+            selected_sample_index = compact_receipt["selection"].get("sample_index")
+            census = _compact_terminal_census(run, compact_receipt, case_id=case_id, ids=ids)
+            source_format = "compact_handoff_with_complete_natural_terminal_census"
+        else:
+            archive = run / "results" / "pre_pulse_time_series_states.csv.gz"
+            states = pd.read_csv(archive if archive.is_file() else run / "results" / "pre_pulse_time_series_states.csv")
+            required = {"particle_id", "sample_index", "z_mm", "vz_mm_per_us"}
+            if missing := sorted(required - set(states.columns)):
+                raise ContractError(f"{case_id} states are missing: {', '.join(missing)}")
+            selected_sample_index, selected_time_us = _selected_detector_blind_sample(
+                _load_json(run / "results" / "detector_blind_pulse_timing_candidate_receipt.json"), case_id=case_id
+            )
+            selected = states.loc[states["sample_index"].eq(selected_sample_index)].copy()
+            if selected.empty:
+                raise ContractError(f"{case_id} selected detector-blind sample is absent")
+            if selected["particle_id"].duplicated().any() or not set(selected["particle_id"]).issubset(ids):
+                raise ContractError(f"{case_id} selected pre-pulse state identities are invalid")
+            census = _load_json(run / "results" / "pre_pulse_time_series_screening_receipt.json").get("terminal_census")
+            if not isinstance(census, dict):
+                raise ContractError(f"{case_id} terminal loss census is missing")
+            source_format = "legacy_time_series"
         z, vz = selected["z_mm"].to_numpy(float), selected["vz_mm_per_us"].to_numpy(float)
         if len(z) < 2 or not (np.isfinite(z).all() and np.isfinite(vz).all()):
             raise ContractError(f"{case_id} needs two finite selected pre-pulse states")
@@ -256,10 +451,6 @@ def analyze_pre_pulse_source_only_apertures(
         quadratic = _polynomial_fit_diagnostics(z, vz, degree=2) if len(z) >= 3 else None
         cubic = _polynomial_fit_diagnostics(z, vz, degree=3) if len(z) >= 4 else None
         random_residual_model = cubic or quadratic or linear
-        receipt = _load_json(run / "results" / "pre_pulse_time_series_screening_receipt.json")
-        census = receipt.get("terminal_census")
-        if not isinstance(census, dict):
-            raise ContractError(f"{case_id} terminal loss census is missing")
         full_width_mm = float(np.max(z) - np.min(z))
         metrics[case_id] = {
             "matrix_arm": {"accelerator_shape": shape, "aperture_height_mm": aperture_height_mm, "connector_gap_mm": PRE_PULSE_GAP_MM},
@@ -269,6 +460,7 @@ def analyze_pre_pulse_source_only_apertures(
                 "selection_uses_detector_outcome": False,
                 "detector_results_used": False,
             },
+            "source_format": source_format,
             "mother_cohort_count": len(ids),
             "accelerator_entry_count": len(selected),
             "transmission_fraction_of_mother": len(selected) / len(ids),
@@ -326,9 +518,9 @@ def analyze_pre_pulse_source_only_apertures(
         for shape in PRE_PULSE_ACCELERATOR_SHAPES
         for height in PRE_PULSE_APERTURE_HEIGHTS_MM
     }
-    if matrix_arms != expected_matrix:
-        raise ContractError("pre-pulse aperture comparison matrix differs from the current eight-arm scan")
-    return {"schema_version": 1, "role": "rf_oatof_pre_pulse_aperture_comparison", "status": "DETECTOR_BLIND_SOURCE_ONLY", "controlled_variables": {"mother_cohort_identical": True, "mother_cohort_count": 5000, "connector_gap_mm": PRE_PULSE_GAP_MM, "comparison_denominator": "full_mother_cohort", "detector_blind_pulse_timing_receipt_bound_per_arm": True}, "cases": metrics}
+    if not matrix_arms.issubset(expected_matrix):
+        raise ContractError("pre-pulse aperture comparison matrix is outside the current eight-arm scan")
+    return {"schema_version": 1, "role": "rf_oatof_pre_pulse_aperture_comparison", "status": "DETECTOR_BLIND_SOURCE_ONLY", "controlled_variables": {"mother_cohort_identical": True, "mother_cohort_count": 5000, "connector_gap_mm": PRE_PULSE_GAP_MM, "comparison_denominator": "full_mother_cohort", "detector_blind_pulse_timing_receipt_bound_per_arm": True, "matrix_complete": matrix_arms == expected_matrix}, "cases": metrics}
 
 
 def _load_json(path: Path) -> dict[str, Any]:

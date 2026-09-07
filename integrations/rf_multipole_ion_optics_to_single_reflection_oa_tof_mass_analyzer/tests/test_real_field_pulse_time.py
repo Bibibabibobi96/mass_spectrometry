@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 from pathlib import Path
 import tempfile
@@ -23,6 +24,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.publish_run import (
     INTEGRATION_ID,
+    _verify_compact_recovery_authority,
     _pulse_confirmation_census_is_physical,
     _publish_detector_blind_pulse_selection,
     _publish_pulse_timing_transition,
@@ -110,6 +112,86 @@ def _rows() -> list[dict[str, str]]:
 
 
 class RealFieldPulseCoreTests(unittest.TestCase):
+    def test_natural_archive_rejects_off_grid_canonical_clock(self):
+        rows = _rows()
+        rows[0]["instrument_time_us"] = "10.00000001"
+        with self.assertRaisesRegex(ContractError, "event/time landing differs"):
+            select_detector_blind_natural_archive_pulse_time(
+                rows, _geometry(), _profile(), frozen_particle_ids=[1, 2, 3],
+                ballistic_seed_time_us=11.5, grid_origin_us=10., grid_step_us=1.,
+            )
+
+    def test_natural_archive_accepts_native_clock_offset_as_diagnostic(self):
+        rows = _rows()
+        for row in rows:
+            row["actual_instrument_time_us"] = str(float(row["instrument_time_us"]) + 1e-8)
+        result = select_detector_blind_natural_archive_pulse_time(
+            rows, _geometry(), _profile(), frozen_particle_ids=[1, 2, 3],
+            ballistic_seed_time_us=11.5, grid_origin_us=10., grid_step_us=1.,
+        )
+        self.assertEqual(result["selected_time_us"], 11.)
+        diagnostic = result["candidates_ranked"][0]["actual_instrument_time_us"]
+        self.assertGreater(diagnostic["maximum_absolute_candidate_error_us"], diagnostic["tolerance_us"])
+        self.assertAlmostEqual(diagnostic["maximum_absolute_candidate_error_us"], 1e-8, places=14)
+
+    def _both_selectors(self, coordinates, geometry=None, profile=None, seed=12.0):
+        rows = []
+        for index, positions in enumerate(coordinates, 1):
+            for particle, xyz in enumerate(positions, 1):
+                rows.append({
+                    "particle_id": str(particle), "sample_index": str(index),
+                    "event": "pre_pulse_time_series_state", "survival_status": "alive",
+                    "instrument_time_us": str(9 + index),
+                    "actual_instrument_time_us": str(9 + index),
+                    **{f"{axis}_mm": str(value) for axis, value in zip("xyz", xyz)},
+                })
+        kwargs = dict(frozen_particle_ids=list(range(1, len(coordinates[0]) + 1)),
+                      ballistic_seed_time_us=seed)
+        return [
+            select_detector_blind_real_field_pulse_time(
+                rows, geometry or _geometry(), profile or _profile(),
+                candidate_times_us=list(range(10, 10 + len(coordinates))), **kwargs),
+            select_detector_blind_natural_archive_pulse_time(
+                iter(rows), geometry or _geometry(), profile or _profile(),
+                grid_origin_us=10., grid_step_us=1., **kwargs),
+        ]
+
+    def test_concentration_precedes_centroid_and_ignores_ineligible(self):
+        points = [
+            [(-.5, 0, 0), (.5, 0, 0), (0, 0, 2)],
+            [( .7, 0, 0), (.8, 0, 0), (10000, 10000, 10000)],
+        ]
+        for result in self._both_selectors(points):
+            self.assertEqual(result["selected_time_us"], 11.)
+            self.assertEqual(result["metric_population_basis"], "pulse_eligible")
+            self.assertAlmostEqual(result["candidates_ranked"][0]["normalized_xyz_spread_norm"], .05)
+            self.assertEqual(result["population_denominator_count"], 3)
+
+    def test_equal_concentration_uses_centroid_then_earlier_not_seed(self):
+        points = [[(.7, 0, 0)], [(0, 0, 0)], [(0, 0, 0)]]
+        for result in self._both_selectors(points, seed=12.):
+            self.assertEqual(result["selected_time_us"], 11.)
+
+    def test_normalization_uses_stage1_not_provisional_source_box(self):
+        geometry = _geometry()
+        geometry["geometry_mm"]["accelerator_bore_half"] = 10.
+        profile = _profile()
+        profile["axes"]["x"]["full_width_mm"] = .001
+        points = [[(-1., 0, 0), (1., 0, 0)], [(0, 0, -.2), (0, 0, .2)]]
+        for result in self._both_selectors(points, geometry, profile):
+            self.assertEqual(result["selected_time_us"], 10.)
+            self.assertEqual(result["normalization_bounds"]["x"]["full_width_mm"], 20.)
+            self.assertEqual(result["normalization_bounds"]["z"]["full_width_mm"], 2.)
+
+    def test_cylindrical_bore_excludes_square_corners(self):
+        points = [[(.8, .8, 0), (0, 0, 0)]]
+        geometry = _geometry()
+        geometry["geometry_derivation"] = {"accelerator": {"realization_id": "cylindrical_3d"}}
+        for result in self._both_selectors(points, geometry):
+            self.assertEqual(result["candidates_ranked"][0]["pulse_eligible_count"], 1)
+        for result in self._both_selectors(points):
+            self.assertEqual(result["candidates_ranked"][0]["pulse_eligible_count"], 2)
+
     def test_source_region_bounds_use_profile_role_not_instance_name(self) -> None:
         profile = _profile()
         profile["profile_id"] = "renamed_registered_source_region_v1"
@@ -257,6 +339,25 @@ class RealFieldPulseCoreTests(unittest.TestCase):
                 _natural_archive_ids(masks[key], [1, 2, 3]),
                 reference["candidates_ranked"][0][key],
             )
+
+    def test_natural_archive_accepts_only_receipted_single_checkpoint_gap(self) -> None:
+        rows = [
+            row for row in _rows()
+            if not (row["particle_id"] == "1" and row["sample_index"] == "2")
+        ]
+        with self.assertRaisesRegex(ContractError, "alive prefix"):
+            select_detector_blind_natural_archive_pulse_time(
+                rows, _geometry(), _profile(), frozen_particle_ids=[1, 2, 3],
+                ballistic_seed_time_us=11.5, grid_origin_us=10.0, grid_step_us=1.0,
+            )
+        result = select_detector_blind_natural_archive_pulse_time(
+            rows, _geometry(), _profile(), frozen_particle_ids=[1, 2, 3],
+            ballistic_seed_time_us=11.5, grid_origin_us=10.0, grid_step_us=1.0,
+            permitted_observation_gaps={(1, 2)},
+        )
+        by_sample = {item["sample_index"]: item for item in result["candidates_ranked"]}
+        self.assertEqual(by_sample[2]["alive_count"], 2)
+        self.assertEqual(by_sample[3]["alive_count"], 3)
 
     def test_source_box_boundaries_are_inclusive(self) -> None:
         rows = [
@@ -497,7 +598,9 @@ class RealFieldPulseAnalysisTests(unittest.TestCase):
             } if domain_split else ({
                 "pa_cache_keys": {
                     "fine_upstream": "A" * 64,
-                    "accelerator_entrance_zone_collision": "B" * 64,
+                    "accelerator_main": "B" * 64,
+                    "accelerator_entrance_zone_collision": "C" * 64,
+                    "accelerator_entrance_local": "D" * 64,
                     "flight_tube": None,
                     "reflectron": None,
                 }
@@ -673,7 +776,9 @@ class RealFieldPulseAnalysisTests(unittest.TestCase):
             self.assertEqual(receipt["schema_version"], 5)
             self.assertEqual(receipt["pa_cache_keys"], {
                 "fine_upstream": "A" * 64,
-                "accelerator_entrance_zone_collision": "B" * 64,
+                "accelerator_main": "B" * 64,
+                "accelerator_entrance_zone_collision": "C" * 64,
+                "accelerator_entrance_local": "D" * 64,
                 "flight_tube": None,
                 "reflectron": None,
             })
@@ -691,6 +796,27 @@ class RealFieldPulseAnalysisTests(unittest.TestCase):
                 sample_two["missing"]["ordered_particle_id_sha256"],
                 r"^[0-9A-F]{64}$",
             )
+
+    def test_rejects_legacy_frozen_order_instead_of_reinterpreting_it(self) -> None:
+        """An old ranking must not silently run through the new selector."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            paths = self._write_inputs(Path(directory))
+            contract = json.loads(paths["contract"].read_text(encoding="utf-8"))
+            contract["selection_order"] = [
+                "maximize_pulse_eligible_count",
+                "maximize_transverse_bore_count",
+                "minimize_normalized_xyz_centroid_distance",
+                "minimize_normalized_xyz_spread_norm",
+                "minimize_absolute_distance_to_ballistic_seed",
+                "select_earlier_time",
+            ]
+            paths["contract"].write_text(json.dumps(contract), encoding="utf-8")
+            receipt = json.loads(paths["screening_receipt"].read_text(encoding="utf-8"))
+            receipt["contract_sha256"] = file_sha256(paths["contract"])
+            paths["screening_receipt"].write_text(json.dumps(receipt), encoding="utf-8")
+            with self.assertRaisesRegex(ContractError, "selection order differs"):
+                self._select(paths)
 
     def test_rejects_any_detector_column(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -726,6 +852,209 @@ class RealFieldPulseAnalysisTests(unittest.TestCase):
             self.assertTrue(receipt_path.is_file())
             self.assertEqual(receipt["selected_time_us"], 11.0)
             self.assertFalse(receipt["reusable_verified_pulse"])
+
+    def test_parent_publisher_reuses_manifest_bound_compact_handoff_without_reselection(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            paths, child, parent, stage = self._write_publisher_child(workspace)
+            handoff = child / "pre_pulse_compact_handoff.csv"
+            with handoff.open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=["particle_id"], lineterminator="\n")
+                writer.writeheader()
+                writer.writerows({"particle_id": value} for value in (1, 2))
+            selected_ids = [1, 2]
+            compact_receipt = child / "pre_pulse_compact_handoff_receipt.json"
+            compact_receipt.write_text(json.dumps({
+                "schema_version": 1,
+                "role": "rf_oatof_compact_pre_pulse_trace_handoff_receipt",
+                "status": "success",
+                "method": "native_trace_detector_blind_pulse_selection_v1",
+                "selection_uses_detector_outcome": False,
+                "detector_results_used": False,
+                "pulse_disabled": True,
+                "producer": {"screening_contract": {
+                    "path": str(paths["contract"].resolve()),
+                    "bytes": paths["contract"].stat().st_size,
+                    "sha256": file_sha256(paths["contract"]),
+                }},
+                "selection": {
+                    "sample_index": 4,
+                    "pulse_effective_time_us": 12.5,
+                    "mother_population_count": 3,
+                    "alive_count": 2,
+                    "pulse_eligible_count": 2,
+                    "pulse_eligible_particle_ids": selected_ids,
+                    "postselection_prohibited": True,
+                },
+                "pulse_target_state": {
+                    "path": str(handoff.resolve()), "bytes": handoff.stat().st_size,
+                    "sha256": file_sha256(handoff), "particle_count": 2,
+                    "ordered_particle_id_sha256": hashlib.sha256(
+                        json.dumps(selected_ids, separators=(",", ":")).encode("utf-8")
+                    ).hexdigest().upper(),
+                    "source_state_epoch": "pulse_effective_time",
+                    "coordinate_frame": "oatof_global_cartesian",
+                    "clock_basis": "canonical_instrument_time_us",
+                    "clock_authority": "detector_blind_native_trace_selection",
+                    "pulse_effective_time_us": 12.5,
+                },
+            }), encoding="utf-8")
+            manifest = json.loads(paths["manifest"].read_text(encoding="utf-8"))
+            manifest["outputs"] = [_record(handoff), _record(compact_receipt)]
+            paths["states"].unlink()
+            paths["screening_receipt"].unlink()
+            paths["manifest"].write_text(json.dumps(manifest), encoding="utf-8")
+            stage["manifest_sha256"] = file_sha256(paths["manifest"])
+
+            with patch(
+                "integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer."
+                "analysis.select_real_field_pulse_time.select_and_write",
+                side_effect=AssertionError("compact handoff must not reselect pulse"),
+            ):
+                table, receipt_path, receipt = _publish_detector_blind_pulse_selection(
+                    repo_root=REPO_ROOT, workspace_root=workspace, parent_run_dir=parent,
+                    stage=stage, resolved_connection_path=paths["connection"],
+                    resolved_source_path=paths["source"],
+                    resolved_population_path=paths["population"],
+                )
+            self.assertIsNone(table)
+            self.assertEqual(receipt_path, compact_receipt)
+            self.assertEqual(receipt["selected_time_us"], 12.5)
+            self.assertIs(receipt["publication_evidence"]["pulse_reselection_performed"], False)
+
+    def test_compact_recovery_requires_frozen_source_bytes_match_success_child(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            child = root / "child"
+            recovery = root / "recovery"
+            child.mkdir()
+            (recovery / "inputs").mkdir(parents=True)
+            (recovery / "results").mkdir()
+            child_receipt = child / "pre_pulse_compact_handoff_receipt.json"
+            child_receipt.write_text(json.dumps({
+                "schema_version": 1,
+                "role": "rf_oatof_compact_pre_pulse_trace_handoff_receipt",
+                "status": "success",
+                "method": "native_trace_detector_blind_pulse_selection_v1",
+                "selection": {
+                    "pulse_effective_time_us": 12.5, "alive_count": 2,
+                    "mother_population_count": 2, "pulse_eligible_count": 1,
+                    "pulse_eligible_particle_ids": [1], "postselection_prohibited": True,
+                },
+                "pulse_target_state": {
+                    "path": "source-handoff.csv", "sha256": "A" * 64,
+                    "particle_count": 1, "ordered_particle_id_sha256": "B" * 64,
+                    "source_state_epoch": "pulse_effective_time",
+                    "coordinate_frame": "oatof_global_cartesian",
+                    "clock_basis": "canonical_instrument_time_us",
+                    "clock_authority": "detector_blind_native_trace_selection",
+                    "pulse_effective_time_us": 12.5,
+                },
+            }), encoding="utf-8")
+            child_manifest_path = child / "run_manifest.json"
+            child_manifest = {
+                "role": "simulation_run_manifest",
+                "project": INTEGRATION_ID,
+                "mode": "rf_to_oatof_simion_single_flight",
+                "status": "success",
+                "outputs": [_record(child_receipt)],
+            }
+            child_manifest_path.write_text(json.dumps(child_manifest), encoding="utf-8")
+            frozen_manifest = recovery / "inputs" / "source_run_manifest.json"
+            frozen_receipt = recovery / "inputs" / "source_receipt.json"
+            frozen_manifest.write_bytes(child_manifest_path.read_bytes())
+            frozen_receipt.write_bytes(child_receipt.read_bytes())
+            recovery_receipt = recovery / "results" / "pre_pulse_compact_handoff_receipt.json"
+            recovery_receipt.write_text(json.dumps({
+                "schema_version": 1,
+                "role": "rf_oatof_compact_pre_pulse_trace_handoff_receipt",
+                "status": "success",
+                "method": "native_trace_detector_blind_pulse_selection_v1",
+                "producer": {
+                    "source_manifest": _record(frozen_manifest),
+                    "source_receipt": _record(frozen_receipt),
+                },
+                "selection": {
+                    "pulse_effective_time_us": 12.5, "alive_count": 2,
+                    "mother_population_count": 2, "pulse_eligible_count": 1,
+                    "pulse_eligible_particle_ids": [1], "postselection_prohibited": True,
+                },
+                "pulse_target_state": {
+                    "path": "recovery-handoff.csv", "sha256": "A" * 64,
+                    "particle_count": 1, "ordered_particle_id_sha256": "B" * 64,
+                    "source_state_epoch": "pulse_effective_time",
+                    "coordinate_frame": "oatof_global_cartesian",
+                    "clock_basis": "canonical_instrument_time_us",
+                    "clock_authority": "detector_blind_native_trace_selection",
+                    "pulse_effective_time_us": 12.5,
+                },
+            }), encoding="utf-8")
+            recovery_manifest = {
+                "role": "simulation_run_manifest",
+                "project": INTEGRATION_ID,
+                "mode": "rf_oatof_compact_pre_pulse_handoff_recovery",
+                "status": "success",
+                "outputs": [_record(recovery_receipt)],
+            }
+            recovery_config = {
+                "inputs": {
+                    "source_manifest": str(frozen_manifest),
+                    "source_receipt": str(frozen_receipt),
+                },
+            }
+            _verify_compact_recovery_authority(
+                child_dir=child,
+                child_manifest=child_manifest,
+                recovery_dir=recovery,
+                recovery_manifest=recovery_manifest,
+                recovery_config=recovery_config,
+            )
+            changed_receipt = json.loads(recovery_receipt.read_text(encoding="utf-8"))
+            changed_receipt["selection"]["pulse_effective_time_us"] = 13.0
+            recovery_receipt.write_text(json.dumps(changed_receipt), encoding="utf-8")
+            recovery_manifest["outputs"] = [_record(recovery_receipt)]
+            with self.assertRaisesRegex(ContractError, "selection or target differs"):
+                _verify_compact_recovery_authority(
+                    child_dir=child,
+                    child_manifest=child_manifest,
+                    recovery_dir=recovery,
+                    recovery_manifest=recovery_manifest,
+                    recovery_config=recovery_config,
+                )
+            recovery_receipt.write_text(json.dumps({
+                "schema_version": 1,
+                "role": "rf_oatof_compact_pre_pulse_trace_handoff_receipt",
+                "status": "success",
+                "method": "native_trace_detector_blind_pulse_selection_v1",
+                "producer": {
+                    "source_manifest": _record(frozen_manifest),
+                    "source_receipt": _record(frozen_receipt),
+                },
+                "selection": {
+                    "pulse_effective_time_us": 12.5, "alive_count": 2,
+                    "mother_population_count": 2, "pulse_eligible_count": 1,
+                    "pulse_eligible_particle_ids": [1], "postselection_prohibited": True,
+                },
+                "pulse_target_state": {
+                    "path": "recovery-handoff.csv", "sha256": "A" * 64,
+                    "particle_count": 1, "ordered_particle_id_sha256": "B" * 64,
+                    "source_state_epoch": "pulse_effective_time",
+                    "coordinate_frame": "oatof_global_cartesian",
+                    "clock_basis": "canonical_instrument_time_us",
+                    "clock_authority": "detector_blind_native_trace_selection",
+                    "pulse_effective_time_us": 12.5,
+                },
+            }), encoding="utf-8")
+            recovery_manifest["outputs"] = [_record(recovery_receipt)]
+            frozen_receipt.write_text("changed\n", encoding="utf-8")
+            with self.assertRaisesRegex(ContractError, "source binding differs"):
+                _verify_compact_recovery_authority(
+                    child_dir=child,
+                    child_manifest=child_manifest,
+                    recovery_dir=recovery,
+                    recovery_manifest=recovery_manifest,
+                    recovery_config=recovery_config,
+                )
 
     def test_parent_publisher_can_read_verified_recovery_outputs(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

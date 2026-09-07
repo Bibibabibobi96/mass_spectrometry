@@ -11,7 +11,7 @@ from types import SimpleNamespace
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.affine_axial_ideal_report import (
     compute_analytic_report,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.accelerator_time_focus import (
+from projects.orthogonal_accelerator.analysis.accelerator_time_focus import (
     PhysicsContractError,
     accelerator_state,
 )

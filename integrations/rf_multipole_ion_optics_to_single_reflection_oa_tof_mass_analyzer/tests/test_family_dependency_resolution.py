@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -24,6 +26,93 @@ def load(path: Path) -> dict[str, object]:
 
 
 class FamilyDependencyResolutionTests(unittest.TestCase):
+    def test_accelerator_dependencies_freeze_and_import_without_repository(self) -> None:
+        """The declared component closure must work from its real frozen paths."""
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("PowerShell 7 is unavailable")
+        dependencies = load(INVENTORY)["dependencies"]
+        selected = [
+            item for item in dependencies
+            if item["provider_project"] == "orthogonal_accelerator"
+            or item["id"] in {
+                "oatof_accelerator_geometry_builder", "common_simion_gem_primitives"
+            }
+        ]
+        expected_component_sources = {
+            "analysis/accelerator_time_focus.py",
+            "analysis/three_zone_ideal_theory.py",
+            "analysis/two_zone_geometry.py",
+            "config/component_contract.json",
+            "comsol/build_two_zone_geometry.m",
+            "simion/build_two_zone_pa.lua",
+            "simion/sectioned_accelerator.py",
+            "simion/two_zone_accelerator.gem",
+        }
+        self.assertEqual(
+            {item["source_repo_path"].removeprefix("projects/orthogonal_accelerator/")
+             for item in selected if item["provider_project"] == "orthogonal_accelerator"},
+            expected_component_sources,
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            script = f"""
+. '{INTEGRATION_ROOT / 'runtime/run_artifacts.ps1'}'
+$contract = Get-Content -LiteralPath '{INVENTORY}' -Raw | ConvertFrom-Json
+$selected = @($contract.dependencies | Where-Object {{
+  $_.provider_project -eq 'orthogonal_accelerator' -or
+  $_.id -in @('oatof_accelerator_geometry_builder', 'common_simion_gem_primitives')
+}})
+foreach ($dependency in $selected) {{
+  $identity = Copy-RfFrozenDependency -RepoRoot '{REPO_ROOT}' -InputDir '{output}' -Dependency $dependency
+  if ((Get-FileHash -LiteralPath $identity.snapshot_path).Hash -ne $identity.sha256) {{
+    throw 'Accelerator frozen source SHA differs'
+  }}
+}}
+"""
+            result = subprocess.run(
+                [pwsh, "-NoProfile", "-Command", script], cwd=REPO_ROOT,
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                check=False, timeout=60,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            for dependency in selected:
+                self.assertEqual(
+                    (output / dependency["frozen_filename"]).read_bytes(),
+                    (REPO_ROOT / dependency["source_repo_path"]).read_bytes(),
+                )
+            snapshot = output / "runtime_snapshot"
+            environment = dict(os.environ)
+            environment.pop("PYTHONPATH", None)
+            result = subprocess.run(
+                [sys.executable, "-s", "-c", "from pathlib import Path; "
+                 "from projects.orthogonal_accelerator.analysis import accelerator_time_focus as two; "
+                 "from projects.orthogonal_accelerator.analysis import three_zone_ideal_theory as three; "
+                 "from projects.orthogonal_accelerator.simion import sectioned_accelerator as geometry; "
+                 "from common.simion import gem_primitives; "
+                 "assert Path(two.__file__).is_relative_to(Path.cwd()); "
+                 "assert Path(three.__file__).is_relative_to(Path.cwd()); "
+                 "assert Path(geometry.__file__).is_relative_to(Path.cwd()); "
+                 "assert Path(gem_primitives.__file__).is_relative_to(Path.cwd()); "
+                 "assert two.accelerator_state(2240, 1760, 3, 16.8); "
+                 "assert three.AffineSource; print('FROZEN_ACCELERATOR_IMPORT=PASS')"],
+                cwd=snapshot, env=environment, capture_output=True, text=True,
+                encoding="utf-8", errors="replace", check=False, timeout=60,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("FROZEN_ACCELERATOR_IMPORT=PASS", result.stdout)
+
+    def test_single_flight_records_accelerator_provider_snapshot(self) -> None:
+        runner = (INTEGRATION_ROOT / "runtime/run_single_flight.ps1").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("$acceleratorDependencyPublication = Publish-RfOatofDependencyInventory", runner)
+        self.assertIn("$acceleratorDependencyIdentities = @($acceleratorDependencies", runner)
+        self.assertIn("$_.id -eq 'common_simion_gem_primitives'", runner)
+        self.assertIn("$runConfiguration.inputs[$identity.frozen_input_name] = $identity.snapshot_path", runner)
+        self.assertIn("$runConfiguration.parameters.accelerator_provider_source_identity", runner)
+        self.assertIn("Accelerator provider source changed while preparing the run", runner)
+
     def test_powershell_resolver_and_publisher_use_manifest_authority(self) -> None:
         pwsh = shutil.which("pwsh")
         if pwsh is None:

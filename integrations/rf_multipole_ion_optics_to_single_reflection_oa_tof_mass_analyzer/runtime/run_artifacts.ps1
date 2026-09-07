@@ -232,17 +232,31 @@ function Test-RfReusableCacheGeneration {
   )
   $verificationExitCode = 0
   try {
-    $arguments = @(
-      (Join-Path $RepoRoot 'common\contracts\verify_artifact_layout.py'),
-      (Join-Path $WorkspaceRoot 'artifacts\projects'), '--cache-entry',$CacheEntry,
-      '--expected-cache-role',$Role,'--expected-cache-key',$CacheKey,
-      '--expected-cache-project',$ProjectId
-    )
-    if ($AllowNoncurrentGeneration) {
-      $arguments += '--allow-noncurrent-generation'
+    $savedPythonPath = $env:PYTHONPATH
+    $savedNoUserSite = $env:PYTHONNOUSERSITE
+    try {
+      # This verifier imports repository packages.  The resolver is a shared
+      # helper and can be called from a run directory, so make its module
+      # import root explicit rather than relying on the caller's location.
+      $env:PYTHONPATH = $RepoRoot; $env:PYTHONNOUSERSITE = '1'
+      Push-Location -LiteralPath $RepoRoot
+      try {
+        $arguments = @(
+          '-m','common.contracts.verify_artifact_layout',
+          (Join-Path $WorkspaceRoot 'artifacts\projects'), '--cache-entry',$CacheEntry,
+          '--expected-cache-role',$Role,'--expected-cache-key',$CacheKey,
+          '--expected-cache-project',$ProjectId
+        )
+        if ($AllowNoncurrentGeneration) {
+          $arguments += '--allow-noncurrent-generation'
+        }
+        & $Python @arguments *> $null
+        $verificationExitCode = $LASTEXITCODE
+      } finally { Pop-Location }
+    } finally {
+      $env:PYTHONPATH = $savedPythonPath
+      $env:PYTHONNOUSERSITE = $savedNoUserSite
     }
-    & $Python @arguments *> $null
-    $verificationExitCode = $LASTEXITCODE
   } catch {
     $verificationExitCode = if ($LASTEXITCODE) { $LASTEXITCODE } else { 1 }
   }
@@ -589,6 +603,7 @@ function Assert-RfArtifactCapacityBeforeCachePublication {
     [Parameter(Mandatory)][string]$RepoRoot,
     [Parameter(Mandatory)][string]$WorkspaceRoot,
     [Parameter(Mandatory)][string]$StagingDirectory,
+    [string[]]$ProtectedPaths = @(),
     [string[]]$ProtectedCacheKeys = @(),
     [long]$RequiredHeadroomBytes = 0,
     [double]$MinimumFreeGiB = 500.0
@@ -612,6 +627,9 @@ function Assert-RfArtifactCapacityBeforeCachePublication {
         '--required-headroom-bytes',([string]$RequiredHeadroomBytes),
         '--protect-path',$StagingDirectory,'--apply'
       )
+      foreach ($path in @($ProtectedPaths | Select-Object -Unique)) {
+        $capacityArguments += @('--protect-path',$path)
+      }
       foreach ($key in @($ProtectedCacheKeys | Select-Object -Unique)) {
         if ($key -notmatch '^[0-9a-f]{64}$') {
           throw 'Protected cache key must be one SHA-256 key.'
@@ -674,6 +692,7 @@ function Publish-RfVerifiedCacheEntry {
     [Parameter(Mandatory)]$Identity,
     [Parameter(Mandatory)][string]$StagingDirectory,
     [Parameter(Mandatory)][string]$ProviderRunId,
+    [string[]]$ProtectedPaths = @(),
     [string[]]$ProtectedCacheKeys = @(),
     [hashtable]$ArtifactCapacityState = $null,
     # Retained for call-site compatibility while live staging publication
@@ -689,29 +708,35 @@ function Publish-RfVerifiedCacheEntry {
   $keyDirectory = Join-Path $root $CacheKey
   Assert-RfCacheEntryPath -CacheRoot $root -CacheKey $CacheKey -CacheEntry $keyDirectory
   $recoveryMarker = Join-Path $staging '.rf_cache_staging.json'
-  $files = @(Get-ChildItem -LiteralPath $staging -File | Where-Object {
-    $_.Name -notin @('cache_manifest.json','.rf_cache_staging.json')
-  } | Sort-Object Name)
-  if ($files.Count -eq 0) { throw 'Cache publication has no files.' }
-  $records = @($files | ForEach-Object {
-    [ordered]@{name=$_.Name;bytes=$_.Length;sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash}
-  })
+  # The device-neutral inventory/payload/generation calculation has one shared
+  # implementation.  This adapter retains the integration-owned cache schema,
+  # capacity admission, recovery marker and SIMION writer lifecycle.
+  $savedPythonPath = $env:PYTHONPATH
+  $savedNoUserSite = $env:PYTHONNOUSERSITE
+  try {
+    $env:PYTHONPATH = $RepoRoot; $env:PYTHONNOUSERSITE = '1'
+    Push-Location -LiteralPath $RepoRoot
+    try {
+      $descriptionOutput = @(& $Python -m common.simion.cache_generation `
+        --directory $staging --cache-key $CacheKey --provider-run-id $ProviderRunId `
+        --exclude 'cache_manifest.json' --exclude '.rf_cache_staging.json')
+      $descriptionExitCode = $LASTEXITCODE
+      if ($descriptionExitCode -ne 0) { throw "Shared PA cache generation calculation failed: exit_code=$descriptionExitCode" }
+      $description = ($descriptionOutput -join "`n") | ConvertFrom-Json -AsHashtable
+    } finally { Pop-Location }
+  } finally {
+    $env:PYTHONPATH = $savedPythonPath; $env:PYTHONNOUSERSITE = $savedNoUserSite
+  }
+  $records = @($description['files'])
+  if ($records.Count -eq 0) { throw 'Cache publication has no files.' }
   $cacheKeyInput = $Identity | ConvertTo-Json -Depth 12 -Compress
   $derivedKey = [Convert]::ToHexString(
     [Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($cacheKeyInput))
   ).ToLowerInvariant()
   if ($derivedKey -ne $CacheKey) { throw 'Cache identity changed before publication.' }
-  $payloadInput = $records | ConvertTo-Json -Depth 8 -Compress
-  $payloadSha256 = [Convert]::ToHexString(
-    [Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($payloadInput))
-  ).ToLowerInvariant()
-  $generationInput = [ordered]@{
-    schema_version=1; cache_key=$CacheKey; payload_sha256=$payloadSha256
-    provider_run_id=$ProviderRunId
-  } | ConvertTo-Json -Depth 8 -Compress
-  $generationSha256 = [Convert]::ToHexString(
-    [Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($generationInput))
-  ).ToLowerInvariant()
+  $payloadSha256 = [string]$description['payload_sha256']
+  $generationInput = [string]$description['generation_input']
+  $generationSha256 = [string]$description['generation_sha256']
   $generationRoot = Join-Path $keyDirectory 'generations'
   $target = Join-Path $generationRoot $generationSha256
   Write-RunJson -Path (Join-Path $staging 'cache_manifest.json') -Depth 14 -Value ([ordered]@{
@@ -722,6 +747,7 @@ function Publish-RfVerifiedCacheEntry {
   Wait-RfCacheStagingWriterExit -StagingDirectory $staging
   $capacityReceipt = Assert-RfArtifactCapacityBeforeCachePublication -Python $Python `
     -RepoRoot $RepoRoot -WorkspaceRoot $WorkspaceRoot -StagingDirectory $staging `
+    -ProtectedPaths $ProtectedPaths `
     -ProtectedCacheKeys $ProtectedCacheKeys `
     -MinimumFreeGiB $MinimumFreeGiB
   # Retain the identity marker until all fallible publication gates have

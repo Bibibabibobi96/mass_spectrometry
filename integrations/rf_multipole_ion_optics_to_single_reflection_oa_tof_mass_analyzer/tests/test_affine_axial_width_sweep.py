@@ -14,7 +14,7 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     resolve_bound_input_path,
     select_bound_source_profile,
 )
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.accelerator_time_focus import (
+from projects.orthogonal_accelerator.analysis.accelerator_time_focus import (
     PhysicsContractError,
 )
 

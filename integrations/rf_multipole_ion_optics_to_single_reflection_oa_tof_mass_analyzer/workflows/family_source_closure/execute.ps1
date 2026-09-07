@@ -78,14 +78,57 @@ $campaignCandidate = if ([IO.Path]::IsPathRooted($Campaign)) {
   Join-Path $repoRoot $Campaign
 }
 $campaignPath = [IO.Path]::GetFullPath($campaignCandidate)
-if (-not $campaignPath.StartsWith(
-      $repoRoot + [IO.Path]::DirectorySeparatorChar,
-      [StringComparison]::OrdinalIgnoreCase
-    ) -or
+$isRepositoryCampaign = $campaignPath.StartsWith(
+  $repoRoot + [IO.Path]::DirectorySeparatorChar,
+  [StringComparison]::OrdinalIgnoreCase
+)
+$workspaceRoot = Split-Path -Parent $repoRoot
+$derivedCampaignRoot = [IO.Path]::GetFullPath((Join-Path $workspaceRoot (
+  'artifacts\projects\rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer\runs'
+))) + [IO.Path]::DirectorySeparatorChar
+$isDerivedExplorationCampaign = $Exploration -and $campaignPath.StartsWith(
+  $derivedCampaignRoot, [StringComparison]::OrdinalIgnoreCase
+)
+if ((-not $isRepositoryCampaign -and -not $isDerivedExplorationCampaign) -or
     -not (Test-Path -LiteralPath $campaignPath -PathType Leaf)) {
-  throw 'Campaign must be one repository-managed file.'
+  throw 'Campaign must be repository-managed or an immutable derived exploration under its integration runs root.'
 }
-$campaignRepoRelative = [IO.Path]::GetRelativePath($repoRoot, $campaignPath).Replace('\', '/')
+function Invoke-RepositoryPython {
+  param([Parameter(Mandatory)][string[]]$Arguments)
+
+  # All repository modules are imported from the repository root.  Callers may
+  # invoke this public workflow from elsewhere in the workspace, so relying on
+  # their current directory makes preparation nondeterministic.
+  Push-Location $repoRoot
+  try {
+    & $PythonExe @Arguments
+  } finally {
+    Pop-Location
+  }
+}
+$prepareModule = (
+  'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.' +
+  'workflows.family_source_closure.prepare'
+)
+$profileRegistry = Join-Path $integrationRoot 'config\connection_profiles.json'
+$adapterRegistry = Join-Path $integrationRoot 'config\execution_adapter_profiles.json'
+if (-not [string]::IsNullOrWhiteSpace($SemanticDiffAgainst)) {
+  if (-not $isRepositoryCampaign) {
+    throw 'SemanticDiffAgainst requires a repository-managed campaign.'
+  }
+  Invoke-RepositoryPython -Arguments @(
+    '-m',$prepareModule,'--repo-root',$repoRoot,
+    '--profile-registry',$profileRegistry,'--adapter-registry',$adapterRegistry,
+    '--campaign',$campaignPath,'--semantic-diff-experiment-json',$ExperimentId,$SemanticDiffAgainst
+  )
+  if ($LASTEXITCODE -ne 0) {
+    throw 'Campaign semantic diff must resolve exactly two experiments.'
+  }
+  return
+}
+$campaignRepoRelative = if ($isRepositoryCampaign) {
+  [IO.Path]::GetRelativePath($repoRoot, $campaignPath).Replace('\', '/')
+} else { '' }
 $campaignDocument = Get-Content -LiteralPath $campaignPath -Raw -Encoding UTF8 |
   ConvertFrom-Json
 if ($Exploration) {
@@ -130,15 +173,11 @@ if ($SolverAuthorized -and [string]$campaignDocument.status -ne 'authorized' -an
   throw 'SolverAuthorized execution requires an authorized campaign or explicit exploration status.'
 }
 if ($AllExperiments) {
-  $prepareModule = (
-    'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.' +
-    'workflows.family_source_closure.prepare'
-  )
-  $profileRegistry = Join-Path $integrationRoot 'config\connection_profiles.json'
-  $adapterRegistry = Join-Path $integrationRoot 'config\execution_adapter_profiles.json'
-  $experimentIds = @(& $PythonExe -m $prepareModule --repo-root $repoRoot `
-    --profile-registry $profileRegistry --adapter-registry $adapterRegistry `
-    --campaign $campaignPath --list-experiment-ids)
+  $experimentIds = @(Invoke-RepositoryPython -Arguments @(
+    '-m',$prepareModule,'--repo-root',$repoRoot,
+    '--profile-registry',$profileRegistry,'--adapter-registry',$adapterRegistry,
+    '--campaign',$campaignPath,'--list-experiment-ids'
+  ))
   if ($LASTEXITCODE -ne 0 -or $experimentIds.Count -lt 1) {
     throw 'Could not resolve ordered experiment IDs from the campaign.'
   }
@@ -156,24 +195,11 @@ if ($AllExperiments) {
   }
   return
 }
-$prepareModule = (
-  'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.' +
-  'workflows.family_source_closure.prepare'
+$selectedExperimentJson = Invoke-RepositoryPython -Arguments @(
+  '-m',$prepareModule,'--repo-root',$repoRoot,
+  '--profile-registry',$profileRegistry,'--adapter-registry',$adapterRegistry,
+  '--campaign',$campaignPath,'--print-experiment-json',$ExperimentId
 )
-$profileRegistry = Join-Path $integrationRoot 'config\connection_profiles.json'
-$adapterRegistry = Join-Path $integrationRoot 'config\execution_adapter_profiles.json'
-if (-not [string]::IsNullOrWhiteSpace($SemanticDiffAgainst)) {
-  & $PythonExe -m $prepareModule --repo-root $repoRoot `
-    --profile-registry $profileRegistry --adapter-registry $adapterRegistry `
-    --campaign $campaignPath --semantic-diff-experiment-json $ExperimentId $SemanticDiffAgainst
-  if ($LASTEXITCODE -ne 0) {
-    throw 'Campaign semantic diff must resolve exactly two experiments.'
-  }
-  return
-}
-$selectedExperimentJson = & $PythonExe -m $prepareModule --repo-root $repoRoot `
-  --profile-registry $profileRegistry --adapter-registry $adapterRegistry `
-  --campaign $campaignPath --print-experiment-json $ExperimentId
 if ($LASTEXITCODE -ne 0) {
   throw 'Campaign experiment must resolve exactly once.'
 }
@@ -212,11 +238,10 @@ if ($FinalizeOnly -and -not [string]::IsNullOrWhiteSpace($RecoveryRunId)) {
   # rather than synthesizing a new timestamp and missing its evidence.
   $campaignRunId = $RecoveryRunId
 }
-& $PythonExe -m common.contracts.artifact_naming run $campaignRunId
+Invoke-RepositoryPython -Arguments @('-m','common.contracts.artifact_naming','run',$campaignRunId)
 if ($LASTEXITCODE -ne 0) {
   throw 'Campaign row run_id fails the repository artifact naming contract.'
 }
-$workspaceRoot = Split-Path -Parent $repoRoot
 $executionRunId = $campaignRunId
 $cleanupOutput = $ValidateOnly
 if ($ValidateOnly) {
@@ -252,9 +277,18 @@ if ($ValidateOnly) {
   if (-not (Test-Path -LiteralPath (Join-Path $sourceParentRoot 'run_manifest.json') -PathType Leaf)) {
     throw 'FinalizeOnly requires the exact failed campaign parent run.'
   }
-  $outputRoot = [IO.Path]::GetFullPath((Join-Path $runsRoot ($campaignRunId + '__r01')))
-  if (Test-Path -LiteralPath $outputRoot) {
-    throw 'FinalizeOnly recovery target already exists; never overwrite a recovery run.'
+  $executionRunId = ''
+  foreach ($retryNumber in 1..99) {
+    $candidateRunId = $campaignRunId + ('__r{0:D2}' -f $retryNumber)
+    $candidateRoot = [IO.Path]::GetFullPath((Join-Path $runsRoot $candidateRunId))
+    if (-not (Test-Path -LiteralPath $candidateRoot)) {
+      $executionRunId = $candidateRunId
+      $outputRoot = $candidateRoot
+      break
+    }
+  }
+  if ([string]::IsNullOrWhiteSpace($executionRunId)) {
+    throw 'FinalizeOnly exhausted immutable recovery identities __r01 through __r99.'
   }
 } else {
   $runsRoot = Join-Path $workspaceRoot (
@@ -390,14 +424,9 @@ function Invoke-FamilyPreparation {
   if ($Exploration) {
     $prepareArguments += '--exploration'
   }
-  Push-Location $repoRoot
-  try {
-    & $PythonExe @prepareArguments
-    if ($LASTEXITCODE -ne 0) {
-      throw 'Family source-closure preparation failed.'
-    }
-  } finally {
-    Pop-Location
+  Invoke-RepositoryPython -Arguments $prepareArguments
+  if ($LASTEXITCODE -ne 0) {
+    throw 'Family source-closure preparation failed.'
   }
 }
 
@@ -579,16 +608,18 @@ function Invoke-FamilyExecutionBoundary {
         (Test-Path -LiteralPath $ResolvedPath -PathType Leaf) -and
         (Test-Path -LiteralPath $PlanPath -PathType Leaf) -and
         (Test-Path -LiteralPath $budgetPath -PathType Leaf)) {
-      & $PythonExe -m (
-        'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.' +
-        'workflows.family_source_closure.publish_run'
-      ) --repo-root $repoRoot `
-        --integration-run-dir $ExecutionRoot `
-        --resolved-connection $ResolvedPath `
-        --composition-plan $PlanPath `
-        --resolved-engineering-budget $budgetPath `
-        --terminal-status failed `
-        --failure-reason $executionError.Exception.Message
+      Invoke-RepositoryPython -Arguments @(
+        '-m',(
+          'integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.' +
+          'workflows.family_source_closure.publish_run'
+        ),'--repo-root',$repoRoot,
+        '--integration-run-dir',$ExecutionRoot,
+        '--resolved-connection',$ResolvedPath,
+        '--composition-plan',$PlanPath,
+        '--resolved-engineering-budget',$budgetPath,
+        '--terminal-status','failed',
+        '--failure-reason',$executionError.Exception.Message
+      )
       if ($LASTEXITCODE -ne 0) {
         Write-Warning 'Failed to terminalize the parent integration run after child failure.'
       }
@@ -625,7 +656,7 @@ try {
     Invoke-FamilyExecutionBoundary -RunId '' -ExecutionRoot $outputRoot `
       -ResolvedPath $resolvedPath -PlanPath $planPath -Mode PrepareOnly
   } elseif ($FinalizeOnly) {
-    Invoke-FamilyExecutionBoundary -RunId ($campaignRunId + '__r01') `
+    Invoke-FamilyExecutionBoundary -RunId $executionRunId `
       -ExecutionRoot $outputRoot -ResolvedPath $resolvedPath `
       -PlanPath $planPath -Mode FinalizeOnly
     $removeUnpublishedTargetOnExit = $false

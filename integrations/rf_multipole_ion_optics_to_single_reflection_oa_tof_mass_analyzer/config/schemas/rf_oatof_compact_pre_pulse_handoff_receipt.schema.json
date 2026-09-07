@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "rf_oatof_compact_pre_pulse_handoff_receipt.schema.json",
+  "type": "object",
+  "required": ["schema_version", "role", "status", "method", "selection", "pulse_target_state"],
+  "properties": {
+    "natural_terminal_census": {
+      "type": "object",
+      "required": ["mother_population_count", "terminal_particle_count", "unknown_terminal_count", "accounted_particle_count", "complete", "by_reason", "terminal_state"],
+      "properties": {
+        "mother_population_count": {"type": "integer", "minimum": 1},
+        "terminal_particle_count": {"type": "integer", "minimum": 0},
+        "unknown_terminal_count": {"type": "integer", "minimum": 0},
+        "accounted_particle_count": {"type": "integer", "minimum": 1},
+        "complete": {"type": "boolean"},
+        "by_reason": {
+          "type": "object", "required": ["geometry_collision", "splat"],
+          "properties": {
+            "geometry_collision": {"type": "integer", "minimum": 0},
+            "outside_pa_termination": {"type": "integer", "minimum": 0},
+            "splat": {"type": "integer", "minimum": 0}
+          },
+          "additionalProperties": false
+        },
+        "terminal_state": {
+          "type": "object", "required": ["path", "bytes", "sha256"],
+          "properties": {
+            "path": {"type": "string", "minLength": 1},
+            "bytes": {"type": "integer", "minimum": 1},
+            "sha256": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"}
+          }
+        }
+      }
+    },
+    "schema_version": {"const": 1},
+    "role": {"const": "rf_oatof_compact_pre_pulse_trace_handoff_receipt"},
+    "status": {"const": "success"},
+    "method": {"enum": ["native_trace_detector_blind_pulse_selection_v1", "native_trace_detector_blind_pulse_selection_v2"]},
+    "selection": {
+      "type": "object",
+      "required": ["mother_population_count", "pulse_eligible_count", "pulse_eligible_particle_ids", "postselection_prohibited"],
+      "properties": {
+        "pulse_population_partition": {
+          "type": "object", "required": ["not_observed_alive", "alive_not_eligible", "eligible"],
+          "properties": {
+            "not_observed_alive": {"type": "integer", "minimum": 0},
+            "alive_not_eligible": {"type": "integer", "minimum": 0},
+            "eligible": {"type": "integer", "minimum": 1}
+          },
+          "additionalProperties": false
+        },
+        "ranking": {
+          "type": "object", "additionalProperties": false,
+          "required": [
+            "selection_order", "metric_population_basis",
+            "normalization_bounds", "normalized_xyz_spread",
+            "normalized_xyz_spread_norm", "normalized_xyz_centroid",
+            "normalized_xyz_centroid_distance"
+          ],
+          "properties": {
+            "selection_order": {"const": ["maximize_pulse_eligible_count", "minimize_normalized_xyz_spread_norm", "minimize_normalized_xyz_centroid_distance", "select_earlier_time"]},
+            "metric_population_basis": {"const": "pulse_eligible"},
+            "normalization_bounds": {"$ref": "#/$defs/normalization_bounds"},
+            "normalized_xyz_spread": {"$ref": "#/$defs/xyz_metric"},
+            "normalized_xyz_spread_norm": {"type": "number", "minimum": 0},
+            "normalized_xyz_centroid": {"$ref": "#/$defs/xyz_metric"},
+            "normalized_xyz_centroid_distance": {"type": "number", "minimum": 0}
+          }
+        },
+        "mother_population_count": {"type": "integer", "minimum": 1},
+        "pulse_eligible_count": {"type": "integer", "minimum": 1},
+        "pulse_eligible_particle_ids": {"type": "array", "minItems": 1, "items": {"type": "integer", "minimum": 1}, "uniqueItems": true},
+        "postselection_prohibited": {"const": true}
+      }
+    },
+    "pulse_target_state": {
+      "type": "object",
+      "required": ["path", "sha256", "particle_count", "ordered_particle_id_sha256", "source_state_epoch", "coordinate_frame", "clock_basis", "clock_authority", "pulse_effective_time_us"]
+    }
+  },
+  "allOf": [
+    {
+      "if": {"required": ["natural_terminal_census"]},
+      "then": {"properties": {"selection": {"required": ["pulse_population_partition"]}}}
+    },
+    {
+      "if": {"properties": {"selection": {"required": ["pulse_population_partition"]}}},
+      "then": {"required": ["natural_terminal_census"]}
+    },
+    {
+      "if": {"properties": {"method": {"const": "native_trace_detector_blind_pulse_selection_v2"}}},
+      "then": {"properties": {"selection": {"required": ["ranking"]}}}
+    }
+  ],
+  "additionalProperties": true,
+  "$defs": {
+    "xyz_metric": {
+      "type": "object", "additionalProperties": false,
+      "required": ["x", "y", "z"],
+      "properties": {
+        "x": {"type": "number"}, "y": {"type": "number"}, "z": {"type": "number"}
+      }
+    },
+    "normalization_bounds": {
+      "type": "object", "additionalProperties": false,
+      "required": ["x", "y", "z"],
+      "properties": {
+        "x": {"$ref": "#/$defs/normalization_axis"},
+        "y": {"$ref": "#/$defs/normalization_axis"},
+        "z": {"$ref": "#/$defs/normalization_axis"}
+      }
+    },
+    "normalization_axis": {
+      "type": "object", "additionalProperties": false,
+      "required": ["center_mm", "full_width_mm", "minimum_mm", "maximum_mm"],
+      "properties": {
+        "center_mm": {"type": "number"},
+        "full_width_mm": {"type": "number", "exclusiveMinimum": 0},
+        "minimum_mm": {"type": "number"}, "maximum_mm": {"type": "number"}
+      }
+    }
+  }
+}

@@ -13,7 +13,7 @@
     "pre_pulse_campaign_profile_id": {"type": "string", "minLength": 1},
     "execution_policy": {"$ref": "https://mass-spectrometry.local/schemas/rf_multipole_oatof_experiment_campaign_v1_to_v6.schema.json#/$defs/file"},
     "claim_limit": {"type": "string", "minLength": 1},
-    "pre_pulse_time_series_screening": {"$ref": "https://mass-spectrometry.local/schemas/rf_multipole_oatof_experiment_campaign_v1_to_v6.schema.json#/$defs/pre_pulse_time_series_screening"},
+    "pre_pulse_time_series_screening": {"$ref": "https://mass-spectrometry.local/schemas/rf_oatof_pre_pulse_time_series_screening_contract.schema.json#/$defs/pre_pulse_time_series_screening_authoring"},
     "experiments": {
       "type": "object",
       "additionalProperties": false,

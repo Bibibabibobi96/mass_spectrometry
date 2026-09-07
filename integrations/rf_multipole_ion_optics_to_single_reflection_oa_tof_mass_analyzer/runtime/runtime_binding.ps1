@@ -5,6 +5,25 @@ $script:RfOatofIntegrationId = (
   'rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer'
 )
 
+function Invoke-RfOatofRepositoryPython {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$RepoRoot,
+    [Parameter(Mandatory)][string]$PythonExe,
+    [Parameter(Mandatory)][string[]]$ArgumentList
+  )
+
+  # Runtime binding is called from public workflows as well as tests.  Python
+  # namespace imports must be rooted in the repository rather than the
+  # caller's working directory.
+  Push-Location $RepoRoot
+  try {
+    & $PythonExe @ArgumentList
+  } finally {
+    Pop-Location
+  }
+}
+
 function Test-RfOatofImplementationPath {
   [CmdletBinding()]
   param(
@@ -423,8 +442,9 @@ function Resolve-RfOatofRuntimeBinding {
     'single_flight_runner','pre_pulse_runner','pulse_capture_runner',
     'analyzer_transport_runner','three_zone_runtime_identity',
     'single_flight_execution_profile','resolved_population',
-    'pre_pulse_batch_continuation','shared_simion_batch_continuation',
-    'shared_simion_resource_scheduler'
+    'pre_pulse_batch_continuation','full_flight_batch_continuation',
+    'shared_simion_batch_continuation',
+    'shared_simion_resource_scheduler','single_flight_compact_pre_pulse_trace_scanner'
   )
   $availableImplementationRoles = @(
     $implementationRecords | ForEach-Object { [string]$_.Name }
@@ -642,8 +662,9 @@ function Resolve-RfOatofRuntimeBinding {
   }
   $countReceipt = Join-Path ([IO.Path]::GetTempPath()) ('rf_oatof_csv_count_{0}.json' -f [guid]::NewGuid())
   try {
-    & $pythonExe -m common.simion.particle_batching `
-      --count-csv $sourceParticleSource --output $countReceipt | Out-Null
+    Invoke-RfOatofRepositoryPython -RepoRoot $repo -PythonExe $pythonExe `
+      -ArgumentList @('-m','common.simion.particle_batching',
+        '--count-csv',$sourceParticleSource,'--output',$countReceipt) | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Python particle-source CSV count failed.' }
     $particleSourceRowCount = [int]((Get-Content -Raw -LiteralPath $countReceipt | ConvertFrom-Json).rows)
   } finally { Remove-Item -LiteralPath $countReceipt -Force -ErrorAction SilentlyContinue }
@@ -715,11 +736,12 @@ function Resolve-RfOatofRuntimeBinding {
   }
   $countReceipt = Join-Path ([IO.Path]::GetTempPath()) ('rf_oatof_csv_count_{0}.json' -f [guid]::NewGuid())
   try {
-    & $pythonExe -m common.simion.particle_batching `
-      --count-csv $sourceState `
-      --event ([string]$sourcePopulationReceipt.selector.event) `
-      --status ([string]$sourcePopulationReceipt.selector.status) `
-      --output $countReceipt | Out-Null
+    Invoke-RfOatofRepositoryPython -RepoRoot $repo -PythonExe $pythonExe `
+      -ArgumentList @('-m','common.simion.particle_batching',
+        '--count-csv',$sourceState,
+        '--event',([string]$sourcePopulationReceipt.selector.event),
+        '--status',([string]$sourcePopulationReceipt.selector.status),
+        '--output',$countReceipt) | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Python selected-state CSV count failed.' }
     $selectedStateRowCount = [int]((Get-Content -Raw -LiteralPath $countReceipt | ConvertFrom-Json).rows)
   } finally { Remove-Item -LiteralPath $countReceipt -Force -ErrorAction SilentlyContinue }

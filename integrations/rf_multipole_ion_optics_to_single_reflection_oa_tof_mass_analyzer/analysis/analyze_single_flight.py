@@ -14,10 +14,18 @@ from pathlib import Path
 import numpy as np
 
 from common.contracts.file_identity import file_sha256
+from common.contracts.artifact_naming import validate_run_id
+from common.contracts.machine_contracts import ContractError
+from common.contracts.verify_run_manifest import record_path, verify_record
 from common.contracts.particle_physics import kinetic_energy_ev
 from common.analysis.peak_metrics import (
     bootstrap_resolution_distribution,
     compute_peak_metrics,
+)
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.run_publication import (
+    freeze_repository_inputs,
+    publish_manifest,
+    write_pending_json,
 )
 
 
@@ -38,6 +46,12 @@ NON_DETECTOR_SPLAT_PATTERN = re.compile(
     r"t=(?P<t>[-+0-9.eE]+) x=(?P<x>[-+0-9.eE]+) "
     r"y=(?P<y>[-+0-9.eE]+) z=(?P<z>[-+0-9.eE]+) "
     r"zmax=(?P<zmax>[-+0-9.eE]+)"
+)
+TIMEOUT_SPLAT_PATTERN = re.compile(
+    r"TRACE: timeout_splat ion=(?P<ion>\d+) instance=(?P<instance>\d+) "
+    r"instrument_time_us=(?P<t>[-+0-9.eE]+) x_mm=(?P<x>[-+0-9.eE]+) "
+    r"y_mm=(?P<y>[-+0-9.eE]+) z_mm=(?P<z>[-+0-9.eE]+) "
+    r"zmax_mm=(?P<zmax>[-+0-9.eE]+)"
 )
 
 def resolve_analysis_mass_amu(initial_global_state_path: Path) -> float:
@@ -648,7 +662,7 @@ def analyze(
                 "category": "detector_crossing",
                 "terminal_event": "detector_crossing",
                 "instance_id": 4,
-                "terminal_elapsed_us": float(match["t"]),
+                "terminal_instrument_time_us": None,
                 "x_mm": float(match["x"]),
                 "y_mm": float(match["y"]),
                 "z_mm": float(match["z"]),
@@ -681,7 +695,28 @@ def analyze(
                 "category": f"non_detector_splat_instance_{instance_id}",
                 "terminal_event": "non_detector_splat",
                 "instance_id": instance_id,
-                "terminal_elapsed_us": float(match["t"]),
+                "terminal_instrument_time_us": float(match["t"]),
+                "x_mm": float(match["x"]),
+                "y_mm": float(match["y"]),
+                "z_mm": float(match["z"]),
+                "zmax_mm": float(match["zmax"]),
+            }
+            continue
+        match = TIMEOUT_SPLAT_PATTERN.search(line)
+        if match:
+            local_id = int(match["ion"])
+            if not 1 <= local_id <= batch_count:
+                raise ValueError("logged particle identity is outside its batch")
+            source_row = local_id + particle_offset
+            particle_id = ordered_particle_ids[source_row - 1]
+            if particle_id in terminal_outcomes:
+                raise ValueError(f"duplicate terminal outcome: particle={particle_id}")
+            terminal_outcomes[particle_id] = {
+                "particle_id": particle_id,
+                "category": "timeout_splat",
+                "terminal_event": "timeout_splat",
+                "instance_id": int(match["instance"]),
+                "terminal_instrument_time_us": float(match["t"]),
                 "x_mm": float(match["x"]),
                 "y_mm": float(match["y"]),
                 "z_mm": float(match["z"]),
@@ -901,15 +936,6 @@ def analyze(
                         "checkpoint_provenance": "pre_pulse_restart_initial_global_state",
                     })
                 pre_pulse_state_provenance = "pre_pulse_restart_initial_global_state"
-    terminal_taxonomy = (
-        _terminal_taxonomy(expected_particle_ids, terminal_outcomes)
-        if require_terminal_taxonomy
-        else {
-            "role": "rf_oatof_full_flight_terminal_taxonomy",
-            "classification_is_mutually_exclusive_and_exhaustive": False,
-            "status": "not_applicable_detector_blind_pre_pulse_or_unqualified_analysis",
-        }
-    )
     rows.sort(key=lambda row: (int(row["particle_id"]), str(row["event"])))
     _validate_reflectron_event_order(rows)
     counts = {event: sum(row["event"] == event for row in rows) for event in (
@@ -934,6 +960,24 @@ def analyze(
         row["instrument_time_us"] = (
             birth_times[particle_id] + float(row.pop("solver_local_elapsed_us"))
         )
+        terminal_outcomes[particle_id]["terminal_instrument_time_us"] = row["instrument_time_us"]
+    # Detector logs carry solver-local elapsed time; splat logs already carry
+    # canonical instrument time. Reuse the canonical detector conversion above
+    # and never add the source epoch to an already canonical splat timestamp.
+    for terminal in terminal_outcomes.values():
+        terminal["terminal_pulse_effective_elapsed_us"] = (
+            float(terminal["terminal_instrument_time_us"]) - effective_pulse_time_us
+            if effective_pulse_time_us is not None else None
+        )
+    terminal_taxonomy = (
+        _terminal_taxonomy(expected_particle_ids, terminal_outcomes)
+        if require_terminal_taxonomy
+        else {
+            "role": "rf_oatof_full_flight_terminal_taxonomy",
+            "classification_is_mutually_exclusive_and_exhaustive": False,
+            "status": "not_applicable_detector_blind_pre_pulse_or_unqualified_analysis",
+        }
+    )
     for row in rows:
         if effective_pulse_time_us is not None:
             computed = float(row["instrument_time_us"]) - effective_pulse_time_us
@@ -1455,6 +1499,7 @@ def analyze(
                 if (
                     full_candidate_population_simulated
                     or source_release_mode == "continuous_frontend_handoff"
+                    or eligible_population_count == 0
                 )
                 else launched / eligible_population_count
             ),
@@ -1509,6 +1554,251 @@ def analyze(
     return rows, summary
 
 
+PUBLISHED_REANALYSIS_MODE = "rf_to_oatof_single_flight_analysis_reanalysis"
+PUBLISHED_REANALYSIS_PROJECT = (
+    "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
+)
+
+
+def _verified_source_record(manifest: dict[str, object], name: str, path: Path) -> None:
+    """Require an analysis input to be the immutable source-run input."""
+
+    records = manifest.get("inputs")
+    record = records.get(name) if isinstance(records, dict) else None
+    if not isinstance(record, dict):
+        raise ContractError(f"published reanalysis source input is missing: {name}")
+    try:
+        verify_record(f"published reanalysis source input {name}", record)
+        bound = record_path(record).resolve()
+    except (AssertionError, KeyError, TypeError) as exc:
+        raise ContractError(
+            f"published reanalysis source input identity differs: {name}"
+        ) from exc
+    if bound != path.resolve():
+        raise ContractError(f"published reanalysis input is not source-frozen: {name}")
+
+
+def _prepare_published_reanalysis(args: argparse.Namespace) -> dict[str, object]:
+    """Create one new analysis run, binding every physical input to its source.
+
+    This intentionally does not copy a solver result into the source run or
+    manufacture a parent run.  Its only new physical outputs are a re-parsed
+    checkpoint table and summary from source-manifest-bound raw logs.
+    """
+
+    if args.repo_root is None or args.source_run_manifest is None:
+        raise ContractError(
+            "published reanalysis requires repo-root and source-run-manifest"
+        )
+    run_dir = args.published_analysis_run_dir.resolve()
+    identity = validate_run_id(run_dir.name)
+    if identity["activity"] != "analysis" or identity["scope"] != "python":
+        raise ContractError("published reanalysis requires an analysis/python run ID")
+    if run_dir.exists():
+        raise ContractError("published reanalysis run directory already exists")
+    repo_root = args.repo_root.resolve()
+    manifest_path = args.source_run_manifest.resolve()
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+    if (
+        manifest.get("role") != "simulation_run_manifest"
+        or manifest.get("status") != "success"
+        or manifest.get("project") != PUBLISHED_REANALYSIS_PROJECT
+        or manifest.get("mode") != "rf_to_oatof_simion_single_flight"
+    ):
+        raise ContractError("published reanalysis source manifest identity differs")
+    try:
+        verify_record("published reanalysis source run_config", manifest["run_config"])
+        for name, record in manifest.get("inputs", {}).items():
+            verify_record(f"published reanalysis source input {name}", record)
+        for index, record in enumerate(manifest.get("outputs", []), start=1):
+            verify_record(f"published reanalysis source output {index}", record)
+    except (AssertionError, KeyError, TypeError) as exc:
+        raise ContractError("published reanalysis source manifest record differs") from exc
+    for name, path in (
+        ("resolved_population_contract", args.resolved_population_contract),
+        ("oatof_resolved_geometry", args.geometry),
+        ("initial_global_state", args.initial_global_state),
+        ("particle_row_map", args.particle_row_map),
+    ):
+        if path is None:
+            raise ContractError(f"published reanalysis input is required: {name}")
+        _verified_source_record(manifest, name, path)
+    if args.configuration is not None:
+        _verified_source_record(manifest, "configuration", args.configuration)
+    source_config_path = record_path(manifest["run_config"]).resolve()
+    source_config = json.loads(source_config_path.read_text(encoding="utf-8-sig"))
+    parameters = source_config.get("parameters")
+    try:
+        pulse_matches = math.isclose(
+            float(parameters.get("pulse_time_us")), float(args.pulse_time_us),
+            rel_tol=0.0, abs_tol=0.0,
+        )
+    except (AttributeError, TypeError, ValueError):
+        pulse_matches = False
+    if (
+        not isinstance(parameters, dict)
+        or not pulse_matches
+        or parameters.get("clock_basis") != args.clock_basis
+    ):
+        raise ContractError("published reanalysis pulse clock differs from source run")
+    for argument, parameter in (
+        ("spatial_window_profile_id", "spatial_window_profile_id"),
+        ("source_region_diagnostic_profile_id", "source_region_diagnostic_profile_id"),
+    ):
+        if getattr(args, argument) != parameters.get(parameter):
+            raise ContractError(
+                f"published reanalysis {argument} differs from source run"
+            )
+    restart_record = None
+    restart_validation_sha256 = getattr(
+        args, "restart_validation_contract_sha256", None
+    )
+    population_mode = json.loads(
+        args.resolved_population_contract.read_text(encoding="utf-8-sig")
+    ).get("source_release_mode")
+    if population_mode == "pre_pulse_restart" and restart_validation_sha256 is None:
+        raise ContractError("published reanalysis requires frozen restart validation")
+    if restart_validation_sha256 is not None:
+        records = manifest.get("inputs")
+        restart_record = (
+            records.get("pre_pulse_restart_validation")
+            if isinstance(records, dict) else None
+        )
+        if not isinstance(restart_record, dict):
+            raise ContractError("published reanalysis restart validation is missing")
+        try:
+            verify_record("published reanalysis restart validation", restart_record)
+        except (AssertionError, KeyError, TypeError) as exc:
+            raise ContractError("published reanalysis restart validation differs") from exc
+        if str(restart_record.get("sha256", "")).upper() != (
+            restart_validation_sha256.upper()
+        ):
+            raise ContractError("published reanalysis restart validation SHA differs")
+        summary_records = [
+            record for record in manifest.get("outputs", [])
+            if isinstance(record, dict)
+            and Path(str(record.get("path", ""))).name == "summary.json"
+        ]
+        if len(summary_records) != 1:
+            raise ContractError("published reanalysis source summary is missing")
+        source_summary = json.loads(
+            record_path(summary_records[0]).read_text(encoding="utf-8-sig")
+        )
+        validation = source_summary.get("pre_pulse_restart_source_release_validation")
+        expected_tolerances = {
+            "restart_position_tolerance_mm": "position_rowwise_abs_tolerance_mm",
+            "restart_velocity_tolerance_m_per_s": "velocity_rowwise_abs_tolerance_m_per_s",
+            "restart_clock_tolerance_us": "clock_abs_tolerance_us",
+            "restart_energy_tolerance_eV": "energy_abs_tolerance_eV",
+        }
+        if not isinstance(validation, dict) or any(
+            getattr(args, argument) is None
+            or float(getattr(args, argument)) != float(validation.get(field))
+            for argument, field in expected_tolerances.items()
+        ):
+            raise ContractError("published reanalysis restart tolerances differ")
+    outputs = {
+        str(Path(record["path"]).resolve()): str(record["sha256"]).upper()
+        for record in manifest.get("outputs", [])
+        if isinstance(record, dict) and record.get("exists") is True
+    }
+    for log in args.log:
+        if outputs.get(str(log.resolve())) != file_sha256(log):
+            raise ContractError("published reanalysis log is not source-manifest-bound")
+    run_dir.mkdir(parents=True)
+    frozen = freeze_repository_inputs(
+        {"single_flight_analyzer": Path(__file__)}, repo_root=repo_root, run_dir=run_dir
+    )
+    checkpoints = run_dir / "results" / "single_flight_particle_checkpoints.csv"
+    summary = run_dir / "summary.json"
+    source_inputs: dict[str, str] = {
+        "source_run_manifest": str(manifest_path),
+        "resolved_population_contract": str(args.resolved_population_contract.resolve()),
+        "oatof_resolved_geometry": str(args.geometry.resolve()),
+        "initial_global_state": str(args.initial_global_state.resolve()),
+        "particle_row_map": str(args.particle_row_map.resolve()),
+        "single_flight_analyzer": str(frozen["single_flight_analyzer"]),
+    }
+    for index, log in enumerate(args.log, start=1):
+        source_inputs[f"raw_log_{index:02d}"] = str(log.resolve())
+    if args.configuration is not None:
+        source_inputs["configuration"] = str(args.configuration.resolve())
+    if restart_record is not None:
+        source_inputs["pre_pulse_restart_validation"] = str(
+            record_path(restart_record).resolve()
+        )
+    run_config = {
+        "schema_version": 2,
+        "run_id": run_dir.name,
+        "project": PUBLISHED_REANALYSIS_PROJECT,
+        "mode": PUBLISHED_REANALYSIS_MODE,
+        "project_root": str(repo_root.parent),
+        "inputs": source_inputs,
+        "parameters": {
+            "source_run_id": manifest["run_id"],
+            "source_run_manifest_sha256": file_sha256(manifest_path),
+            "solver_rerun": False,
+            "clock_basis": args.clock_basis,
+            "pulse_time_us": args.pulse_time_us,
+            "mass_amu": args.mass_amu,
+            "resolved_population_contract_sha256": args.resolved_population_contract_sha256,
+            "batch_particle_counts": args.batch_particle_count,
+            "post_selection_detector_metrics": args.post_selection_detector_metrics,
+            "spatial_window_profile_id": args.spatial_window_profile_id,
+            "source_region_diagnostic_profile_id": args.source_region_diagnostic_profile_id,
+            "restart_position_tolerance_mm": args.restart_position_tolerance_mm,
+            "restart_velocity_tolerance_m_per_s": args.restart_velocity_tolerance_m_per_s,
+            "restart_clock_tolerance_us": args.restart_clock_tolerance_us,
+            "restart_energy_tolerance_eV": args.restart_energy_tolerance_eV,
+            "restart_validation_contract_sha256": restart_validation_sha256,
+            "require_resolution_qualification": args.require_resolution_qualification,
+            "require_three_zone_checkpoint_census": args.require_three_zone_checkpoint_census,
+            "require_terminal_taxonomy": args.require_terminal_taxonomy,
+        },
+        "artifact_retention": {"policy_version": 1, "class": "compact", "reason": None},
+        "formal_gate_passed": False,
+    }
+    config_path = run_dir / "run_config.json"
+    write_pending_json(config_path, run_config)
+    return {
+        "run_dir": run_dir, "repo_root": repo_root, "checkpoints": checkpoints,
+        "summary": summary, "config": config_path, "manifest": run_dir / "run_manifest.json",
+        "source_run_id": manifest["run_id"],
+    }
+
+
+def _publish_published_reanalysis(
+    publication: dict[str, object], summary: dict[str, object]
+) -> None:
+    """Publish a functional analysis result without changing physical claims."""
+
+    run_dir = publication["run_dir"]
+    assert isinstance(run_dir, Path)
+    summary_path = publication["summary"]
+    assert isinstance(summary_path, Path)
+    summary["reanalysis_publication"] = {
+        "role": "rf_oatof_single_flight_terminal_clock_reanalysis",
+        "source_run_id": publication["source_run_id"],
+        "solver_rerun": False,
+        "claim_status": "FUNCTIONAL_SCREEN_ONLY",
+        "selection_uses_detector_outcome": summary.get("pulse_capture", {}).get(
+            "selection_uses_detector_outcome"
+        ),
+    }
+    summary["formal_gate_passed"] = False
+    summary_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8", newline="\n")
+    checkpoints = publication["checkpoints"]
+    config = publication["config"]
+    manifest = publication["manifest"]
+    repo_root = publication["repo_root"]
+    assert all(isinstance(value, Path) for value in (checkpoints, config, manifest, repo_root))
+    publish_manifest(
+        repo_root=repo_root, run_config=config, manifest_path=manifest, status="success",
+        outputs=(checkpoints, summary_path), project=PUBLISHED_REANALYSIS_PROJECT,
+        mode=PUBLISHED_REANALYSIS_MODE, label="single-flight analysis reanalysis",
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--log", required=True, action="append", type=Path)
@@ -1527,6 +1817,8 @@ def main() -> int:
     parser.add_argument("--restart-energy-tolerance-eV", type=float)
     parser.add_argument("--restart-validation-contract-sha256")
     parser.add_argument("--source-run-manifest", type=Path)
+    parser.add_argument("--published-analysis-run-dir", type=Path)
+    parser.add_argument("--repo-root", type=Path)
     parser.add_argument("--post-selection-detector-metrics", action="store_true")
     parser.add_argument("--configuration", type=Path)
     parser.add_argument("--spatial-window-profile-id")
@@ -1536,12 +1828,24 @@ def main() -> int:
         default="canonical_instrument_time_us",
         choices=("canonical_instrument_time_us",),
     )
-    parser.add_argument("--checkpoints", required=True, type=Path)
-    parser.add_argument("--summary", required=True, type=Path)
+    parser.add_argument("--checkpoints", type=Path)
+    parser.add_argument("--summary", type=Path)
     parser.add_argument("--require-resolution-qualification", action="store_true")
     parser.add_argument("--require-three-zone-checkpoint-census", action="store_true")
     parser.add_argument("--require-terminal-taxonomy", action="store_true")
     args = parser.parse_args()
+    publication = None
+    publication_requested = args.published_analysis_run_dir is not None
+    if args.published_analysis_run_dir is None:
+        if args.checkpoints is None or args.summary is None:
+            parser.error("checkpoints and summary are required without published-analysis-run-dir")
+        if args.repo_root is not None:
+            parser.error("repo-root requires published-analysis-run-dir")
+    else:
+        if args.checkpoints is not None or args.summary is not None:
+            parser.error("published-analysis-run-dir owns checkpoints and summary paths")
+        if args.repo_root is None or args.source_run_manifest is None:
+            parser.error("published analysis requires repo-root and source-run-manifest")
     if file_sha256(args.resolved_population_contract) != \
             args.resolved_population_contract_sha256:
         parser.error("resolved population contract SHA differs")
@@ -1596,41 +1900,82 @@ def main() -> int:
                 "source-region diagnostic profile must resolve exactly once"
             )
         source_region_diagnostic_profile = matches[0]
-    rows, summary = analyze(
-        args.log,
-        args.mass_amu,
-        population_contract,
-        args.geometry,
-        args.pulse_time_us,
-        args.clock_basis,
-        args.batch_particle_count,
-        args.initial_global_state,
-        spatial_window_profile,
-        args.initial_global_state_sha256,
-        args.source_run_manifest,
-        args.post_selection_detector_metrics,
-        args.restart_position_tolerance_mm,
-        args.restart_velocity_tolerance_m_per_s,
-        args.restart_clock_tolerance_us,
-        args.restart_energy_tolerance_eV,
-        args.restart_validation_contract_sha256,
-        args.particle_row_map,
-        source_region_diagnostic_profile,
-        args.require_terminal_taxonomy,
-    )
-    args.checkpoints.parent.mkdir(parents=True, exist_ok=True)
-    with args.checkpoints.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=COLUMNS, lineterminator="\n")
-        writer.writeheader(); writer.writerows(rows)
-    args.summary.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8", newline="\n")
-    if args.require_resolution_qualification:
-        assert configuration is not None
-        policy = configuration.get("resolution_qualification_policy")
-        if not isinstance(policy, dict):
-            parser.error("resolution qualification requires a valid configuration policy")
-        validate_resolution_qualification(summary, policy)
-    if args.require_three_zone_checkpoint_census:
-        validate_three_zone_checkpoint_census(summary)
+    if publication_requested:
+        try:
+            publication = _prepare_published_reanalysis(args)
+        except ContractError as exc:
+            parser.error(str(exc))
+        args.checkpoints = publication["checkpoints"]
+        args.summary = publication["summary"]
+    try:
+        rows, summary = analyze(
+            args.log,
+            args.mass_amu,
+            population_contract,
+            args.geometry,
+            args.pulse_time_us,
+            args.clock_basis,
+            args.batch_particle_count,
+            args.initial_global_state,
+            spatial_window_profile,
+            args.initial_global_state_sha256,
+            args.source_run_manifest,
+            args.post_selection_detector_metrics,
+            args.restart_position_tolerance_mm,
+            args.restart_velocity_tolerance_m_per_s,
+            args.restart_clock_tolerance_us,
+            args.restart_energy_tolerance_eV,
+            args.restart_validation_contract_sha256,
+            args.particle_row_map,
+            source_region_diagnostic_profile,
+            args.require_terminal_taxonomy,
+        )
+        args.checkpoints.parent.mkdir(parents=True, exist_ok=True)
+        with args.checkpoints.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=COLUMNS, lineterminator="\n")
+            writer.writeheader(); writer.writerows(rows)
+        args.summary.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8", newline="\n")
+        if args.require_resolution_qualification:
+            assert configuration is not None
+            policy = configuration.get("resolution_qualification_policy")
+            if not isinstance(policy, dict):
+                raise ValueError(
+                    "resolution qualification requires a valid configuration policy"
+                )
+            validate_resolution_qualification(summary, policy)
+        if args.require_three_zone_checkpoint_census:
+            validate_three_zone_checkpoint_census(summary)
+        if publication is not None:
+            _publish_published_reanalysis(publication, summary)
+    except Exception as exc:
+        if publication is not None:
+            failure = {
+                "schema_version": 1,
+                "role": "rf_oatof_single_flight_terminal_clock_reanalysis_summary",
+                "status": "failed",
+                "source_run_id": publication["source_run_id"],
+                "solver_rerun": False,
+                "claim_status": "FUNCTIONAL_SCREEN_ONLY",
+                "failure_reason": str(exc),
+                "formal_gate_passed": False,
+            }
+            args.summary.write_text(json.dumps(failure, indent=2) + "\n", encoding="utf-8", newline="\n")
+            try:
+                _config = publication["config"]; _manifest = publication["manifest"]
+                _repo = publication["repo_root"]
+                assert isinstance(_config, Path) and isinstance(_manifest, Path) and isinstance(_repo, Path)
+                publish_manifest(
+                    repo_root=_repo, run_config=_config, manifest_path=_manifest,
+                    status="failed", outputs=(args.summary,),
+                    project=PUBLISHED_REANALYSIS_PROJECT, mode=PUBLISHED_REANALYSIS_MODE,
+                    label="single-flight analysis reanalysis",
+                )
+            except Exception as publication_error:
+                raise RuntimeError(
+                    "single-flight analysis failed and failure-manifest publication "
+                    f"also failed: analysis={exc}; publication={publication_error}"
+                ) from publication_error
+        raise
     print(f"SINGLE_FLIGHT_ANALYSIS=PASS HANDOFF={summary['census']['multipole_handoff']} DETECTOR={summary['census']['detector_crossing']}")
     return 0
 

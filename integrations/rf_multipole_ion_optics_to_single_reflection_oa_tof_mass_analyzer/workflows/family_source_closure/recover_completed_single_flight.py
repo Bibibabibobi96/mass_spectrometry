@@ -79,7 +79,23 @@ def _verify_manifest(
     if mode is not None and manifest.get("mode") != mode:
         raise ContractError(f"recovery source manifest mode differs: {path}")
     try:
-        verify_record("recovery source run_config", manifest["run_config"], base_dir=path.parent)
+        if manifest.get("status") == "checkpoint":
+            # Batch completion callbacks bind immutable inputs and raw stdout
+            # before downstream analysis.  The runner may then append
+            # nonphysical bookkeeping to run_config before analysis fails;
+            # accept that narrow checkpoint drift while retaining strict
+            # byte verification for every physical input and completed log.
+            current_config = _load(path.parent / "run_config.json")
+            if (
+                current_config.get("run_id") != manifest.get("run_id")
+                or current_config.get("mode") != manifest.get("mode")
+            ):
+                raise ContractError("checkpoint run configuration identity differs")
+        else:
+            verify_record(
+                "recovery source run_config", manifest["run_config"],
+                base_dir=path.parent,
+            )
         for name, record in manifest.get("inputs", {}).items():
             verify_record(f"recovery source input {name}", record, base_dir=path.parent)
         for index, record in enumerate(manifest.get("outputs", []), start=1):
@@ -134,9 +150,6 @@ def _frozen_input_path(
 ) -> Path:
     """Resolve a frozen input after a temporary short execution path is removed."""
 
-    value = inputs.get(name)
-    if isinstance(value, str) and Path(value).is_file():
-        return Path(value)
     filenames = {
         "resolved_population_contract": "resolved_population_contract.json",
         "oatof_resolved_geometry": "oatof_resolved_geometry.json",
@@ -150,9 +163,93 @@ def _frozen_input_path(
         "simion_execution_batch_plan": "simion_execution_batch_plan.json",
     }
     retained = child_dir / "inputs" / filenames.get(name, "")
-    if not retained.is_file():
-        raise ContractError(f"failed child frozen analysis input is missing: {name}")
-    return retained
+    value = inputs.get(name)
+    transient = Path(value) if isinstance(value, str) else None
+    if retained.is_file():
+        if transient is not None and transient.is_file() and (
+            file_sha256(transient) != file_sha256(retained)
+        ):
+            raise ContractError(f"failed child frozen analysis input identity differs: {name}")
+        return retained
+    if transient is not None and transient.is_file():
+        return transient
+    raise ContractError(f"failed child frozen analysis input is missing: {name}")
+
+
+def _campaign_source_path(
+    *, repo_root: Path, requested_path: Path, recorded_path: Any,
+) -> Path:
+    """Resolve the author campaign using its frozen workspace-relative identity."""
+
+    if not isinstance(recorded_path, str) or not recorded_path:
+        raise ContractError("failed parent campaign source path is invalid")
+    recorded = Path(recorded_path)
+    if recorded.is_absolute():
+        raise ContractError("failed parent campaign source path must be workspace-relative")
+    workspace_root = repo_root.parent.resolve()
+    resolved = (workspace_root / recorded).resolve()
+    try:
+        resolved.relative_to(workspace_root)
+    except ValueError as exc:
+        raise ContractError("failed parent campaign source escapes the workspace") from exc
+    if not resolved.is_file():
+        raise ContractError("failed parent campaign source is missing")
+    if requested_path.is_file() and requested_path.resolve() != resolved:
+        raise ContractError("requested recovery campaign differs from frozen campaign source")
+    return resolved
+
+
+def _recovery_parent_config(
+    *, failed_config: dict[str, Any], run_id: str, repo_root: Path,
+    campaign_path: Path, frozen_campaign_path: Path,
+    failed_parent_manifest_path: Path, child_manifest_path: Path,
+    receipt_path: Path, campaign_id: str, experiment_id: str,
+    experiment_row_sha256: str, child_parameters: dict[str, Any],
+) -> dict[str, Any]:
+    """Build a recovery parent with the same identity surface as normal publication."""
+
+    original_inputs = failed_config.get("inputs")
+    if not isinstance(original_inputs, dict):
+        raise ContractError("failed parent run configuration inputs are invalid")
+    inputs = {
+        name: value
+        for name, value in original_inputs.items()
+        if isinstance(name, str) and isinstance(value, str)
+    }
+    inputs.update({
+        "campaign": str(campaign_path),
+        "frozen_campaign_experiment": str(frozen_campaign_path),
+        "failed_parent_manifest": str(failed_parent_manifest_path),
+        "recovered_child_manifest": str(child_manifest_path),
+        "recovery_receipt": str(receipt_path),
+    })
+    config: dict[str, Any] = {
+        "schema_version": 2,
+        "run_id": run_id,
+        "project": INTEGRATION_ID,
+        "mode": PARENT_MODE,
+        "project_root": str(repo_root.parent),
+        "inputs": inputs,
+        "connection_profile_id": child_parameters["connection_profile_id"],
+        "campaign_id": campaign_id,
+        "experiment_id": experiment_id,
+        "experiment_row_sha256": experiment_row_sha256,
+        "source_branch_id": child_parameters["source_branch_id"],
+        "execution_strategy": "simion_single_flight",
+        "launched_particle_count": child_parameters["launched_particle_count"],
+        "particle_count": child_parameters["launched_particle_count"],
+        "artifact_retention": {
+            "policy_version": 1, "class": "compact", "reason": None,
+        },
+        "formal_gate_passed": False,
+    }
+    for name in (
+        "frozen_campaign_experiment_sha256", "policy_id",
+        "source_particle_identity", "stage_runtime_binding_sha256s",
+    ):
+        if name in failed_config:
+            config[name] = failed_config[name]
+    return config
 
 
 def _completed_batch_logs(
@@ -229,6 +326,7 @@ def recover(*, repo_root: Path, campaign_path: Path, failed_parent_dir: Path, re
         failed_parent_manifest_path, status=("failed", "interrupted"),
         mode="multipole_family_source_closure"
     )
+    failed_parent_config = _load(failed_parent_dir / "run_config.json")
     parent_summary = _load(failed_parent_dir / "summary.json")
     plan = _load(failed_parent_dir / "composition_plan.json")
     resolved = _load(failed_parent_dir / "resolved_connection.json")
@@ -242,6 +340,11 @@ def recover(*, repo_root: Path, campaign_path: Path, failed_parent_dir: Path, re
     campaign_source = frozen_campaign.get("campaign_source")
     if not isinstance(campaign, dict) or not isinstance(experiment, dict) or not isinstance(campaign_source, dict):
         raise ContractError("failed parent frozen campaign experiment is incomplete")
+    campaign_path = _campaign_source_path(
+        repo_root=repo_root,
+        requested_path=campaign_path,
+        recorded_path=campaign_source.get("path"),
+    )
     if parent_summary.get("campaign_id") != campaign.get("campaign_id"):
         raise ContractError("failed parent campaign identity differs")
     if (
@@ -260,7 +363,7 @@ def recover(*, repo_root: Path, campaign_path: Path, failed_parent_dir: Path, re
     )
     child_manifest_path = child_dir / "run_manifest.json"
     child_manifest = _verify_manifest(
-        child_manifest_path, status=("failed", "interrupted", "success"),
+        child_manifest_path, status=("failed", "interrupted", "checkpoint", "success"),
         mode="rf_to_oatof_simion_single_flight"
     )
     config_path = record_path(child_manifest["run_config"], base_dir=child_dir)
@@ -364,18 +467,53 @@ def recover(*, repo_root: Path, campaign_path: Path, failed_parent_dir: Path, re
     }
     receipt = results / "completed_single_flight_analysis_recovery_receipt.json"
     receipt.write_text(json.dumps(recovery_receipt, indent=2) + "\n", encoding="utf-8")
+    child_inputs = {
+        "failed_child_manifest": str(child_manifest_path),
+        "failed_parent_manifest": str(failed_parent_manifest_path),
+        **{f"raw_log_{index:03d}": str(log) for index, log in enumerate(logs, 1)},
+        **{name: str(path) for name, path in frozen_inputs.items()},
+    }
     child_config = {
         "schema_version": 2, "run_id": recovery_child_dir.name, "project": INTEGRATION_ID, "mode": CHILD_MODE,
-        "project_root": str(repo_root.parent), "inputs": {"failed_child_manifest": str(child_manifest_path), "failed_parent_manifest": str(failed_parent_manifest_path), "raw_logs": [str(log) for log in logs], "initial_global_state": str(frozen_inputs["initial_global_state"]), "resolved_population_contract": str(frozen_inputs["resolved_population_contract"]), "oatof_resolved_geometry": str(frozen_inputs["oatof_resolved_geometry"])},
+        "project_root": str(repo_root.parent), "inputs": child_inputs,
         "parameters": {"recovery_source_run_id": child_dir.name, "connection_profile_id": parameters["connection_profile_id"], "source_branch_id": parameters["source_branch_id"], "source_release_mode": source_release_mode, "launched_particle_count": parameters["launched_particle_count"]},
         "artifact_retention": {"policy_version": 1, "class": "compact", "reason": None}, "formal_gate_passed": False,
     }
     (recovery_child_dir / "run_config.json").write_text(json.dumps(child_config, indent=2) + "\n", encoding="utf-8")
     child_manifest_out = _write_manifest(repo_root=repo_root, run_dir=recovery_child_dir, outputs=[checkpoints, summary, spatial, spatial_meta, phase, phase_meta, phase_data, evolution, evolution_meta, evolution_data, receipt])
     recovery_parent_dir.mkdir(parents=True)
-    parent_summary = {"schema_version": 1, "role": "integration_family_source_closure_summary", "status": "success", "execution_strategy": "simion_single_flight", "campaign_id": campaign["campaign_id"], "experiment_id": args["experiment_id"], "census": _load(summary).get("census"), "claim_status": "FUNCTIONAL_SCREEN_ONLY", "recovery": recovery_receipt, "formal_gate_passed": False}
+    parent_summary = {
+        "schema_version": 1,
+        "role": "integration_family_source_closure_summary",
+        "status": "success",
+        "connection_profile_id": parameters["connection_profile_id"],
+        "campaign_id": campaign["campaign_id"],
+        "experiment_id": args["experiment_id"],
+        "experiment_row_sha256": frozen_campaign["experiment_row_sha256"],
+        "source_branch_id": parameters["source_branch_id"],
+        "execution_strategy": "simion_single_flight",
+        "launched_particle_count": parameters["launched_particle_count"],
+        "particle_count": parameters["launched_particle_count"],
+        "census": _load(summary).get("census"),
+        "claim_status": "FUNCTIONAL_SCREEN_ONLY",
+        "recovery": recovery_receipt,
+        "formal_gate_passed": False,
+    }
     (recovery_parent_dir / "summary.json").write_text(json.dumps(parent_summary, indent=2) + "\n", encoding="utf-8")
-    parent_config = {"schema_version": 2, "run_id": recovery_parent_dir.name, "project": INTEGRATION_ID, "mode": PARENT_MODE, "project_root": str(repo_root.parent), "inputs": {"campaign": str(campaign_path), "failed_parent_manifest": str(failed_parent_manifest_path), "recovered_child_manifest": str(child_manifest_out), "recovery_receipt": str(receipt)}, "artifact_retention": {"policy_version": 1, "class": "compact", "reason": None}, "formal_gate_passed": False}
+    parent_config = _recovery_parent_config(
+        failed_config=failed_parent_config,
+        run_id=recovery_parent_dir.name,
+        repo_root=repo_root,
+        campaign_path=campaign_path,
+        frozen_campaign_path=frozen_campaign_path,
+        failed_parent_manifest_path=failed_parent_manifest_path,
+        child_manifest_path=child_manifest_out,
+        receipt_path=receipt,
+        campaign_id=campaign["campaign_id"],
+        experiment_id=args["experiment_id"],
+        experiment_row_sha256=frozen_campaign["experiment_row_sha256"],
+        child_parameters=parameters,
+    )
     (recovery_parent_dir / "run_config.json").write_text(json.dumps(parent_config, indent=2) + "\n", encoding="utf-8")
     parent_manifest_out = _write_manifest(repo_root=repo_root, run_dir=recovery_parent_dir, outputs=[recovery_parent_dir / "summary.json"])
     return child_manifest_out, parent_manifest_out

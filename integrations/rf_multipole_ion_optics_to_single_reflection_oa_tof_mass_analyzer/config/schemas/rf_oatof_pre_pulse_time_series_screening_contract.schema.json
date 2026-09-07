@@ -78,7 +78,7 @@
             {"const": ["frontend", "accelerator_overlay"]},
             {"const": ["frontend", "accelerator_entrance_overlay", "accelerator_intermediate_overlay"]},
             {"const": ["full_coarse_bridge", "fine_upstream", "accelerator_main", "accelerator_intermediate2_overlay"]},
-            {"const": ["fine_upstream", "accelerator_entrance_zone_collision"]}
+            {"const": ["fine_upstream", "accelerator_main", "accelerator_entrance_zone_collision", "accelerator_entrance_local"]}
           ]
         },
         "prohibited": {"const": ["flight_tube", "reflectron"]}
@@ -95,16 +95,21 @@
     "sample_times_us": {
       "type": "array", "minItems": 1, "items": {"type": "number", "minimum": 0}
     },
-    "selection_order": {"const": ["maximize_pulse_eligible_count", "maximize_transverse_bore_count", "minimize_normalized_xyz_centroid_distance", "minimize_normalized_xyz_spread_norm", "minimize_absolute_distance_to_ballistic_seed", "select_earlier_time"]},
+    "selection_order": {
+      "oneOf": [
+        {"const": ["maximize_pulse_eligible_count", "maximize_transverse_bore_count", "minimize_normalized_xyz_centroid_distance", "minimize_normalized_xyz_spread_norm", "minimize_absolute_distance_to_ballistic_seed", "select_earlier_time"]},
+        {"const": ["maximize_pulse_eligible_count", "minimize_normalized_xyz_spread_norm", "minimize_normalized_xyz_centroid_distance", "select_earlier_time"]}
+      ]
+    },
     "pulse_disabled": {"const": true},
     "terminate_at_window_end": {"type": "boolean"},
     "trace_policy": {
       "type": "object", "additionalProperties": false,
       "required": ["mode", "terminal_event", "retention_class"],
       "properties": {
-        "mode": {"const": "natural_trajectory_native_rf_grid_v1"},
+        "mode": {"enum": ["natural_trajectory_compact_handoff_v1", "natural_trajectory_native_rf_grid_v1"]},
         "terminal_event": {"const": "geometry_collision_v1"},
-        "retention_class": {"const": "rebuildable_trajectory_payload"}
+        "retention_class": {"enum": ["transient_scan_input", "rebuildable_trajectory_payload"]}
       }
     },
     "resolution_claim_allowed": {"const": false},
@@ -183,7 +188,7 @@
         "schema_version": {"const": 5},
         "rf_time_grid": {"$ref": "#/$defs/rf_time_grid_v2"},
         "identities": {"properties": {"spatial_window_profile_id": {"const": "layout_resolved_axial_provisional_xy2_v1"}}},
-        "pa_cache_roles": {"properties": {"required": {"const": ["fine_upstream", "accelerator_entrance_zone_collision"]}}}
+        "pa_cache_roles": {"properties": {"required": {"const": ["fine_upstream", "accelerator_main", "accelerator_entrance_zone_collision", "accelerator_entrance_local"]}}}
       },
       "required": ["pa_cache_roles"],
       "not": {"required": ["pa_cache_keys"]}
@@ -193,7 +198,7 @@
         "schema_version": {"const": 6},
         "rf_time_grid": {"$ref": "#/$defs/rf_time_grid_v3"},
         "identities": {"properties": {"spatial_window_profile_id": {"const": "layout_resolved_axial_provisional_xy2_v1"}}},
-        "pa_cache_roles": {"properties": {"required": {"const": ["fine_upstream", "accelerator_entrance_zone_collision"]}}}
+        "pa_cache_roles": {"properties": {"required": {"const": ["fine_upstream", "accelerator_main", "accelerator_entrance_zone_collision", "accelerator_entrance_local"]}}}
       },
       "required": ["pa_cache_roles"],
       "not": {"required": ["pa_cache_keys"]}
@@ -202,14 +207,148 @@
       "properties": {
         "schema_version": {"const": 7},
         "rf_time_grid": {"$ref": "#/$defs/rf_time_grid_v4"},
-        "pa_cache_roles": {"properties": {"required": {"const": ["fine_upstream", "accelerator_entrance_zone_collision"]}}},
+        "pa_cache_roles": {"properties": {"required": {"const": ["fine_upstream", "accelerator_main", "accelerator_entrance_zone_collision", "accelerator_entrance_local"]}}},
         "terminate_at_window_end": {"const": false}
       },
-      "required": ["pa_cache_roles", "trace_policy", "terminate_at_window_end"],
+      "required": ["pa_cache_roles", "trace_policy", "terminate_at_window_end", "selection_order"],
       "not": {"required": ["pa_cache_keys", "sample_times_us"]}
     }
   ],
   "$defs": {
+    "pre_pulse_time_series_screening_authoring": {
+      "description": "Campaign authoring form. Natural collision-terminated traces are the sole authorized false-window exception.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode", "relative_start_index", "relative_end_index",
+        "rf_steps_per_period", "expected_upstream_frequency_hz", "sample_count",
+        "spatial_window_profile_id", "pulse_disabled", "terminate_at_window_end",
+        "resolution_claim_allowed", "prohibited_outputs"
+      ],
+      "properties": {
+        "mode": {"const": "real_pa_rf_pre_pulse_time_series"},
+        "active_scope": {"const": "pre_pulse_frontend_accelerator"},
+        "anchor_time_us": {"type": "number"},
+        "time_grid_profile_id": {"$ref": "#/$defs/id"},
+        "relative_start_index": {"type": "integer"},
+        "relative_end_index": {"type": "integer"},
+        "rf_steps_per_period": {"type": "integer", "minimum": 1},
+        "sample_stride_rf_steps": {"type": "integer", "minimum": 1},
+        "expected_upstream_frequency_hz": {"type": "number", "exclusiveMinimum": 0},
+        "sample_count": {"type": "integer", "minimum": 1},
+        "spatial_window_profile_id": {"$ref": "#/$defs/id"},
+        "selection_order": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": {"enum": [
+            "maximize_pulse_eligible_count",
+            "maximize_transverse_bore_count",
+            "minimize_normalized_xyz_centroid_distance",
+            "minimize_normalized_xyz_spread_norm",
+            "minimize_absolute_distance_to_ballistic_seed",
+            "select_earlier_time"
+          ]}
+        },
+        "pa_cache_keys": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["frontend", "accelerator_overlay", "flight_tube", "reflectron"],
+          "properties": {
+            "frontend": {"$ref": "#/$defs/sha"},
+            "accelerator_overlay": {"$ref": "#/$defs/sha"},
+            "flight_tube": {"type": ["string", "null"], "pattern": "^[A-Fa-f0-9]{64}$"},
+            "reflectron": {"type": ["string", "null"], "pattern": "^[A-Fa-f0-9]{64}$"}
+          }
+        },
+        "pulse_disabled": {"const": true},
+        "terminate_at_window_end": {"type": "boolean"},
+        "trace_policy": {"$ref": "#/$defs/natural_pre_pulse_trace_policy"},
+        "resolution_claim_allowed": {"const": false},
+        "prohibited_outputs": {"const": [
+          "detector_crossing", "resolution_metrics", "single_flight_spatial_six_panel"
+        ]}
+      },
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "required": ["anchor_time_us", "pa_cache_keys"],
+              "not": {"required": ["time_grid_profile_id"]}
+            },
+            {
+              "required": ["time_grid_profile_id"],
+              "not": {"anyOf": [
+                {"required": ["anchor_time_us"]},
+                {"required": ["pa_cache_keys"]}
+              ]}
+            }
+          ]
+        },
+        {
+          "oneOf": [
+            {
+              "required": ["active_scope"],
+              "properties": {
+                "pa_cache_keys": {
+                  "properties": {
+                    "flight_tube": {"type": "null"},
+                    "reflectron": {"type": "null"}
+                  }
+                }
+              }
+            },
+            {
+              "not": {"required": ["active_scope"]},
+              "properties": {
+                "pa_cache_keys": {
+                  "properties": {
+                    "flight_tube": {"$ref": "#/$defs/sha"},
+                    "reflectron": {"$ref": "#/$defs/sha"}
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "if": {
+            "required": ["terminate_at_window_end"],
+            "properties": {"terminate_at_window_end": {"const": false}}
+          },
+          "then": {"required": ["trace_policy"]},
+          "else": {"not": {"required": ["trace_policy"]}}
+        }
+      ]
+    },
+    "natural_pre_pulse_trace_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "terminal_event", "retention_class"],
+      "properties": {
+        "mode": {"enum": [
+          "natural_trajectory_compact_handoff_v1",
+          "natural_trajectory_native_rf_grid_v1"
+        ]},
+        "terminal_event": {"const": "geometry_collision_v1"},
+        "retention_class": {"enum": [
+          "transient_scan_input",
+          "rebuildable_trajectory_payload"
+        ]}
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "mode": {"const": "natural_trajectory_compact_handoff_v1"},
+            "retention_class": {"const": "transient_scan_input"}
+          }
+        },
+        {
+          "properties": {
+            "mode": {"const": "natural_trajectory_native_rf_grid_v1"},
+            "retention_class": {"const": "rebuildable_trajectory_payload"}
+          }
+        }
+      ]
+    },
     "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"},
     "sha": {"type": "string", "pattern": "^[A-Fa-f0-9]{64}$"},
     "rf_time_grid_v1": {

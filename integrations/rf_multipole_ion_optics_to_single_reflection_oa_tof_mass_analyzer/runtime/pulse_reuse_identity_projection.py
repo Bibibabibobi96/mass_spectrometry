@@ -125,27 +125,34 @@ def build_verified_pulse_reuse_projection(
     entrance_zone_collision_key = pa_cache_keys.get(
         "accelerator_entrance_zone_collision"
     )
+    entrance_local_key = pa_cache_keys.get("accelerator_entrance_local")
     has_legacy_overlay = overlay_key is not None
     has_two_local_overlays = (
         entrance_overlay_key is not None or intermediate_overlay_key is not None
     )
-    has_domain_split = any(
-        value is not None for value in (accelerator_main_key, intermediate2_key)
+    has_reachable_minimum = (
+        all(
+            isinstance(value, str) and value
+            for value in (
+                fine_upstream_key,
+                accelerator_main_key,
+                entrance_zone_collision_key,
+                entrance_local_key,
+            )
+        )
+        and connector_collision_key is None
+        and coarse_bridge_key is None
+        and intermediate2_key is None
+    )
+    has_domain_split = not has_reachable_minimum and any(
+        value is not None
+        for value in (coarse_bridge_key, accelerator_main_key, intermediate2_key)
     )
     has_entrance_zone_collision = any(
         value is not None
         for value in (connector_collision_key, entrance_zone_collision_key)
     ) and (
         fine_upstream_key is None
-        and accelerator_main_key is None
-        and intermediate2_key is None
-    )
-    has_reachable_minimum = (
-        isinstance(fine_upstream_key, str)
-        and fine_upstream_key
-        and isinstance(entrance_zone_collision_key, str)
-        and entrance_zone_collision_key
-        and connector_collision_key is None
         and accelerator_main_key is None
         and intermediate2_key is None
     )
@@ -198,7 +205,9 @@ def build_verified_pulse_reuse_projection(
     elif has_reachable_minimum:
         cache_key_projection = {
             "fine_upstream": fine_upstream_key,
+            "accelerator_main": accelerator_main_key,
             "accelerator_entrance_zone_collision": entrance_zone_collision_key,
+            "accelerator_entrance_local": entrance_local_key,
         }
     else:
         if not all(

@@ -2,10 +2,10 @@
   "schema_version": 7,
   "role": "rf_multipole_oatof_experiment_campaign",
   "integration_id": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
-  "campaign_id": "ideal_acceptance_300mm_accelerator_port_height_gap102p4_pre_pulse_n5000",
+  "campaign_id": "ideal_acceptance_300mm_accelerator_port_height_gap102p4_native_grid_v3_pre_pulse_n5000",
   "status": "exploration",
   "pre_pulse_campaign_profile_id": "real_pa_rf_pre_pulse_v1",
-  "claim_limit": "DETECTOR_BLIND_SOURCE_ONLY. The same ordered N=5000 octupole source is propagated through one 300 mm, three-zone Candidate with either a square or cylindrical accelerator realization. Every arm uses the same 102.4 mm grounded connector, whose entrance plate is common and independent from the downstream accelerator local-replacement PA. For each realization the only changed physical variable is the accelerator shield rectangular opening downstream-z height: 1.0, 1.5, 2.0, or 2.5 mm; downstream-y width remains 1.0 mm. The Candidate's ideal 4 mm source-width result is not treated as proof of real-field acceptance. This screen reports only mother-cohort transmission, loss census, and detector-blind pre-pulse longitudinal phase space; detector, peak-width, resolution, optimization, field-equivalence, and Formal claims are prohibited.",
+  "claim_limit": "FUNCTIONAL_ONLY; DETECTOR_BLIND_SOURCE_ONLY. The same ordered N=5000 octupole source is propagated through one 300 mm, three-zone Candidate with either a square or cylindrical accelerator realization. Every arm uses the same 102.4 mm grounded connector, whose entrance plate is common and independent from the downstream accelerator local-replacement PA. For each realization the only changed physical variable is the accelerator shield rectangular opening downstream-z height: 1.0, 1.5, 2.0, or 2.5 mm; downstream-y width remains 1.0 mm. The Candidate's ideal 4 mm source-width result is not treated as proof of real-field acceptance. This screen reports only mother-cohort transmission, loss census, and detector-blind pre-pulse longitudinal phase space; detector, peak-width, resolution, optimization, field-equivalence, and Formal claims are prohibited.",
   "experiments": {
     "shared": {
       "single_flight_three_zone_candidate": {"path": "artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20260828_220500__build__python__ideal-acceptance-300mm-grid010-candidate/results/ideal_acceptance_300mm_simion_candidate_resolved.json", "sha256": "B25EEF7E5F37403BC9AC1CE5CAD8F3C80036C0E606912EC11BC7C9076BC7B77F"},

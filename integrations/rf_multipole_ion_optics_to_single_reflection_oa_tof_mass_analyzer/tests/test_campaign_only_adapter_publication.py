@@ -694,7 +694,7 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
                     "-CacheKey $key -Role $identity.role -Identity $identity "
                     f"-StagingDirectory $staging -ProviderRunId '{provider}' -MinimumFreeGiB 0 | Out-Null"
                 )
-                subprocess.run(["pwsh", "-NoProfile", "-Command", command], cwd=REPO_ROOT,
+                subprocess.run(["pwsh", "-NoProfile", "-Command", command], cwd=workspace,
                                check=True, capture_output=True, text=True, timeout=120)
 
             publish("first")
@@ -719,7 +719,7 @@ class CampaignOnlyAdapterPublicationTests(unittest.TestCase):
                 "-CacheKey $key -Role $identity.role -Identity $identity -InvalidEntryAction preserve"
             )
             recovered = subprocess.run(
-                ["pwsh", "-NoProfile", "-Command", command], cwd=REPO_ROOT,
+                ["pwsh", "-NoProfile", "-Command", command], cwd=workspace,
                 check=True, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120,
             )
             # PowerShell can emit an 8.3 spelling (for example RUNNER~1) for

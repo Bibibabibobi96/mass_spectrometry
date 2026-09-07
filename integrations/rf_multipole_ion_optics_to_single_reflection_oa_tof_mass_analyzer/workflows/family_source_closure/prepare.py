@@ -77,10 +77,25 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.materialize_pre_pulse_time_series import (
     TIME_SERIES_RESTART_RECEIPT_ROLE,
 )
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.materialize_compact_pre_pulse_subset import (
+    COMPACT_RECEIPT_ROLE,
+    SUBSET_RECEIPT_ROLE,
+)
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.scan_pre_pulse_trace_pulse_time import (
+    HANDOFF_RECEIPT_SCHEMA_PATH,
+)
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.compact_pre_pulse_producer import (
+    resolve_compact_pre_pulse_producer,
+)
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_layout import (
+    SELECTION_ORDER,
     compile_geometry_and_port,
     derive_pulse_schedule,
     select_profile,
+)
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_pulse_duration import (
+    DURATION_POLICY_ID,
+    derive_pulse_duration,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_source import (
     materialize as materialize_single_flight_source,
@@ -94,6 +109,12 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     resolve_execution_profile,
     unique_named_profile,
 )
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_electrode_contract import (
+    POST_PULSE_FIELD_LOADING_POLICY_ID,
+)
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.pre_pulse_campaign_profile import (
+    expand_pre_pulse_campaign_profile,
+)
 
 
 INTEGRATION_ID = (
@@ -105,9 +126,6 @@ CAMPAIGN_SCHEMA_PATH = Path(__file__).resolve().parents[2] / "config" / "schemas
 RESOLVED_CAMPAIGN_SCHEMA_PATH = CAMPAIGN_SCHEMA_PATH.parent / (
     "rf_multipole_oatof_resolved_experiment_campaign.schema.json"
 )
-PRE_PULSE_CAMPAIGN_PROFILE_REGISTRY_PATH = CAMPAIGN_SCHEMA_PATH.parent.parent / (
-    "pre_pulse_campaign_profiles.json"
-)
 INTEGRATION_SCHEMA_DIR = CAMPAIGN_SCHEMA_PATH.parent
 UPSTREAM_PROJECTS = {
     "rf_quadrupole_ion_optics",
@@ -115,6 +133,7 @@ UPSTREAM_PROJECTS = {
     "rf_octupole_ion_optics",
 }
 PULSE_TRANSITION_RELATIVE_PATH = "results/pulse_timing_transition.json"
+COMPACT_RESTART_RECEIPT_ROLES = {COMPACT_RECEIPT_ROLE, SUBSET_RECEIPT_ROLE}
 
 
 def _three_zone_field_profile(profile_id: str) -> dict[str, Any]:
@@ -491,6 +510,7 @@ def resolve_single_flight_dispatch_plan(
     execution_profile: dict[str, Any] | None = None,
     resource_profiles: list[dict[str, Any]] | None = None,
     workload_topology_id: str | None = None,
+    field_loading_policy_id: str | None = None,
 ) -> dict[str, Any]:
     """Resolve execution-only dispatch without deriving the governed population.
 
@@ -531,6 +551,7 @@ def resolve_single_flight_dispatch_plan(
                 "single_flight_accelerator_field_profile_id"
             ),
             "workload_topology_id": workload_topology_id,
+            "field_loading_policy_id": field_loading_policy_id,
         }
         if execution_profile is not None:
             request.update({
@@ -702,10 +723,10 @@ def compile_pre_pulse_time_series_contract(
         else source_window["requested_relative_end_index"]
     )
     sample_stride = int(specification.get("sample_stride_rf_steps", 1))
-    natural_trace_requested = (
-        specification.get("trace_policy", {}).get("mode")
-        == "natural_trajectory_native_rf_grid_v1"
-    )
+    natural_trace_requested = specification.get("trace_policy", {}).get("mode") in {
+        "natural_trajectory_compact_handoff_v1",
+        "natural_trajectory_native_rf_grid_v1",
+    }
     if not natural_trace_requested and (
         sample_stride < 1
         or relative_end < relative_start
@@ -748,7 +769,9 @@ def compile_pre_pulse_time_series_contract(
     if connector_length_mm >= 50.0:
         active_pa_cache_roles = [
             "fine_upstream",
+            "accelerator_main",
             "accelerator_entrance_zone_collision",
+            "accelerator_entrance_local",
         ]
     elif overlay_layout == "whole_accelerator_v1":
         active_pa_cache_roles = ["frontend", "accelerator_overlay"]
@@ -761,11 +784,17 @@ def compile_pre_pulse_time_series_contract(
     else:
         raise ContractError("pre-pulse accelerator-overlay layout is unsupported")
     natural_trajectory_archive = natural_trace_requested and connector_length_mm >= 50.0
+    if natural_trajectory_archive and specification.get("selection_order") != SELECTION_ORDER:
+        raise ContractError(
+            "natural pre-pulse screening must freeze the current selection order"
+        )
     if natural_trajectory_archive:
         # The archive clock is independent of a proposed pulse.  It is the
         # native RF grid from the instrument-clock origin, and every ion is
-        # propagated until the actual zero-field entrance geometry terminates
-        # it.  This makes later pulse policies pure post-processing.
+        # propagated through the same field-bearing entrance-local PA used by
+        # full flight, with a zero-field first-zone carrier underneath it.
+        # This makes later pulse policies pure post-processing without changing
+        # the pre-pulse entrance trajectory.
         grid_origin_us = 0.0
         sample_times_us = []
         sample_count = 0
@@ -869,7 +898,7 @@ def compile_pre_pulse_time_series_contract(
         **({} if natural_trajectory_archive else {"sample_times_us": sample_times_us}),
         **(
             {"selection_order": copy.deepcopy(specification["selection_order"])}
-            if "selection_order" in specification
+            if natural_trajectory_archive or "selection_order" in specification
             else {}
         ),
         "pulse_disabled": specification["pulse_disabled"],
@@ -936,85 +965,6 @@ def _write_json(
         json.dumps(document, indent=2, sort_keys=sort_keys) + "\n",
         encoding="utf-8",
     )
-
-
-def expand_pre_pulse_campaign_profile(campaign: dict[str, Any]) -> dict[str, Any]:
-    """Inject one versioned execution profile before materializing v7 rows.
-
-    The profile is authoring convenience only.  Its complete values are copied
-    into the resolved campaign, while candidate/source/cohort evidence remains
-    explicit in the authored campaign and cannot be hidden in a mutable preset.
-    """
-    profile_id = campaign.get("pre_pulse_campaign_profile_id")
-    if profile_id is None:
-        return copy.deepcopy(campaign)
-    if not isinstance(profile_id, str) or not profile_id:
-        raise ContractError("pre-pulse campaign profile ID is invalid")
-    registry = _load(PRE_PULSE_CAMPAIGN_PROFILE_REGISTRY_PATH)
-    if registry.get("role") != "rf_multipole_oatof_pre_pulse_campaign_profile_registry":
-        raise ContractError("pre-pulse campaign profile registry role differs")
-    profiles = {
-        item.get("profile_id"): item for item in registry.get("profiles", [])
-        if isinstance(item, dict) and isinstance(item.get("profile_id"), str)
-    }
-    if profile_id not in profiles:
-        raise ContractError(f"pre-pulse campaign profile is not unique: {profile_id}")
-    profile = profiles[profile_id]
-    parent_id = profile.get("extends")
-    if parent_id is not None:
-        if not isinstance(parent_id, str) or parent_id not in profiles:
-            raise ContractError("pre-pulse campaign profile parent is invalid")
-        parent = profiles[parent_id]
-        if parent.get("extends") is not None:
-            raise ContractError("pre-pulse campaign profiles permit one inheritance level")
-        overrides = profile.get("overrides")
-        if set(profile) != {"profile_id", "revision", "extends", "overrides"} or not isinstance(overrides, dict):
-            raise ContractError("pre-pulse campaign profile inheritance shape differs")
-        parent_defaults = parent.get("defaults")
-        if not isinstance(parent_defaults, dict) or set(overrides) - {"campaign", "experiment_shared"}:
-            raise ContractError("pre-pulse campaign profile inheritance defaults differ")
-        profile = {
-            "profile_id": profile_id,
-            "defaults": {
-                "campaign": {
-                    **copy.deepcopy(parent_defaults.get("campaign", {})),
-                    **copy.deepcopy(overrides.get("campaign", {})),
-                },
-                "experiment_shared": {
-                    **copy.deepcopy(parent_defaults.get("experiment_shared", {})),
-                    **copy.deepcopy(overrides.get("experiment_shared", {})),
-                },
-            },
-        }
-    defaults = profile.get("defaults")
-    if not isinstance(defaults, dict) or set(defaults) != {
-        "campaign", "experiment_shared"
-    }:
-        raise ContractError("pre-pulse campaign profile defaults differ")
-    campaign_defaults = defaults["campaign"]
-    shared_defaults = defaults["experiment_shared"]
-    if not isinstance(campaign_defaults, dict) or not isinstance(shared_defaults, dict):
-        raise ContractError("pre-pulse campaign profile defaults must be objects")
-    result = copy.deepcopy(campaign)
-    result.pop("pre_pulse_campaign_profile_id")
-    for key, value in campaign_defaults.items():
-        if key in result:
-            raise ContractError(f"pre-pulse campaign profile duplicates authored field: {key}")
-        result[key] = copy.deepcopy(value)
-    experiments = result.get("experiments")
-    if not isinstance(experiments, dict) or not isinstance(experiments.get("shared"), dict):
-        raise ContractError("pre-pulse campaign profile requires flat experiment authoring")
-    authored_shared = experiments["shared"]
-    overlap = set(authored_shared).intersection(shared_defaults)
-    if overlap:
-        raise ContractError(
-            "pre-pulse campaign profile duplicates authored shared field: " +
-            ", ".join(sorted(overlap))
-        )
-    experiments["shared"] = {
-        **copy.deepcopy(shared_defaults), **copy.deepcopy(authored_shared)
-    }
-    return result
 
 
 def expand_flat_experiment_authoring(
@@ -1601,6 +1551,67 @@ def _workspace_relative(path: Path, workspace: Path) -> str:
         raise ContractError(f"path escapes the workspace: {path}") from exc
 
 
+def _validate_continuous_functional_smoke_authority(
+    *, root: Path, workspace: Path, experiment: dict[str, Any],
+) -> None:
+    """Fail closed on the sole supported N=5000→first-row continuous smoke."""
+
+    authority = experiment.get("continuous_functional_smoke_authority")
+    if authority is None:
+        return
+    if not isinstance(authority, dict):
+        raise ContractError("continuous functional-smoke authority is invalid")
+    source_record = authority.get("source_campaign")
+    mother = authority.get("mother_population")
+    selection = authority.get("execution_selection")
+    pulse_authority = experiment.get("continuous_functional_smoke_pulse_authority")
+    current = experiment.get("single_flight_population")
+    if not all(isinstance(value, dict) for value in (
+        source_record, mother, selection, current, pulse_authority,
+    )):
+        raise ContractError("continuous functional-smoke authority is incomplete")
+    raw_path = source_record.get("path")
+    source_path = (workspace / raw_path).resolve() if isinstance(raw_path, str) else None
+    if (
+        source_path is None or not source_path.is_relative_to(root.resolve())
+        or not source_path.is_file() or file_sha256(source_path) != source_record.get("sha256")
+    ):
+        raise ContractError("continuous functional-smoke source campaign is missing or stale")
+    source_campaign = _load(source_path)
+    validate_schema(source_campaign, INTEGRATION_SCHEMA_DIR / "rf_multipole_oatof_experiment_campaign.schema.json")
+    source_experiments = source_campaign.get("experiments")
+    source_shared = source_experiments.get("shared") if isinstance(source_experiments, dict) else None
+    source_rows = source_experiments.get("rows") if isinstance(source_experiments, dict) else None
+    source_experiment_id = selection.get("source_experiment_id")
+    matches = [row for row in source_rows or [] if isinstance(row, dict) and row.get("experiment_id") == source_experiment_id]
+    source_values = matches[0].get("values") if len(matches) == 1 else None
+    comparator = pulse_authority.get("continuous_full_flight_comparator_authority")
+    expected_sha = _canonical_sha256([1])
+    if (
+        not isinstance(source_shared, dict) or len(matches) != 1
+        or not isinstance(source_values, dict) or not isinstance(comparator, dict)
+        or source_shared.get("source_release_mode") != "continuous_frontend"
+        or source_shared.get("single_flight_population") != mother
+        or pulse_authority.get("mother_population") != mother
+        or source_values.get("continuous_full_flight_comparator_authority") != comparator
+        or experiment.get("continuous_full_flight_comparator_authority") is not None
+        or mother.get("execution_population", {}).get("particle_count") != 5000
+        or mother.get("execution_population", {}).get("ordered_particle_id_sha256") != _canonical_sha256(list(range(1, 5001)))
+        or mother.get("denominators", {}).get("population_count") != 5000
+        or selection.get("source_particle_id") != 1
+        or selection.get("selection_algorithm") != "first_n_rows_in_frozen_file_order"
+        or selection.get("ordered_particle_id_sha256") != expected_sha
+        or experiment.get("source_release_mode") != "continuous_frontend"
+        or current.get("population_mode") != "first_n_rows_in_frozen_file_order"
+        or current.get("source_authority", {}).get("table_binding") != "prepared_deterministic_prefix"
+        or current.get("execution_population", {}).get("particle_count") != 1
+        or current.get("execution_population", {}).get("selection_algorithm") != "first_n_rows_in_frozen_file_order"
+        or current.get("execution_population", {}).get("ordered_particle_id_sha256") != expected_sha
+        or current.get("denominators") != mother.get("denominators")
+    ):
+        raise ContractError("continuous functional-smoke population authority differs")
+
+
 def _resolve_pa_cache_generation_binding(
     experiment: dict[str, Any],
 ) -> dict[str, Any] | None:
@@ -2004,6 +2015,261 @@ def _resolve_post_pulse_restart_reuse(
     }
 
 
+_ANALYTIC_COHORT_SCHEDULE_FIELDS = {
+    "population_counts",
+    "selected_particle_ids",
+    "pulse_eligible_count",
+    "mean_entry_time_us",
+    "mean_velocity_x_m_s",
+    "mean_kinetic_energy_eV",
+    "target_centroid_x_mm",
+    "entry_surface_x_mm",
+    "base_predicted_centroid_error_x_mm",
+    "predicted_centroid_error_x_mm",
+}
+
+
+def _compact_receipt_population(receipt: dict[str, Any]) -> tuple[int, list[int]]:
+    """Return the detector-blind receipt's exact ordered pulse cohort."""
+
+    selection = receipt.get("selection")
+    target = receipt.get("pulse_target_state")
+    if not isinstance(selection, dict) or not isinstance(target, dict):
+        raise ContractError("compact restart receipt structure is invalid")
+    count = selection.get("pulse_eligible_count")
+    particle_ids = selection.get("pulse_eligible_particle_ids")
+    if (
+        isinstance(count, bool)
+        or not isinstance(count, int)
+        or count < 1
+        or not isinstance(particle_ids, list)
+        or len(particle_ids) != count
+        or any(
+            isinstance(particle_id, bool)
+            or not isinstance(particle_id, int)
+            or particle_id < 1
+            for particle_id in particle_ids
+        )
+        or len(set(particle_ids)) != count
+        or target.get("particle_count") != count
+    ):
+        raise ContractError("compact restart pulse-eligible population differs")
+    return count, particle_ids
+
+
+def _replace_schedule_cohort_with_compact_receipt(
+    schedule: dict[str, Any], receipt: dict[str, Any]
+) -> None:
+    """Replace analytic cohort hints with the observed compact receipt identity."""
+
+    count, particle_ids = _compact_receipt_population(receipt)
+    for field in _ANALYTIC_COHORT_SCHEDULE_FIELDS:
+        schedule.pop(field, None)
+    schedule["pulse_eligible_count"] = count
+    schedule["selected_particle_ids"] = list(particle_ids)
+
+
+def _copy_observed_schedule_cohort(
+    schedule: dict[str, Any], producer_schedule: dict[str, Any]
+) -> None:
+    """Copy only a previously receipt-validated observed cohort identity."""
+
+    count = producer_schedule["pulse_eligible_count"]
+    particle_ids = producer_schedule["selected_particle_ids"]
+    for field in _ANALYTIC_COHORT_SCHEDULE_FIELDS:
+        schedule.pop(field, None)
+    schedule["pulse_eligible_count"] = count
+    schedule["selected_particle_ids"] = list(particle_ids)
+
+
+def _resolve_continuous_full_flight_comparator(
+    *, root: Path, authority: dict[str, Any],
+    population_declaration: dict[str, Any],
+    resolved_region_field_contract_path: Path,
+) -> dict[str, Any]:
+    """Validate a compact-selected pulse for a complete continuous replay."""
+
+    workspace = root.parent
+
+    def bound(name: str, label: str) -> Path:
+        return _workspace_record(workspace, authority[name], label)
+
+    pre_manifest_path = bound("pre_pulse_producer_manifest", "continuous comparator pre-pulse manifest")
+    mother_source_path = bound(
+        "pre_pulse_mother_particle_source",
+        "continuous comparator mother particle source",
+    )
+    compact_path = bound("compact_receipt", "continuous comparator compact receipt")
+    post_manifest_path = bound("producer_manifest", "continuous comparator post-pulse manifest")
+    frozen_experiment_path = bound(
+        "producer_frozen_experiment", "continuous comparator frozen post-pulse experiment"
+    )
+    schedule_path = bound("producer_pulse_schedule", "continuous comparator schedule")
+    configuration_path = bound("producer_configuration", "continuous comparator configuration")
+    field_path = bound("producer_region_field_contract", "continuous comparator field contract")
+    post_manifest = _load(post_manifest_path)
+    if (
+        post_manifest.get("role") != "simulation_run_manifest"
+        or post_manifest.get("status") != "success"
+        or post_manifest.get("project") != INTEGRATION_ID
+        or post_manifest.get("mode") != "multipole_family_source_closure"
+    ):
+        raise ContractError("continuous comparator producer manifest identity differs")
+
+    def verified_input(manifest: dict[str, Any], manifest_path: Path, name: str) -> Path:
+        record = manifest.get("inputs", {}).get(name)
+        try:
+            verify_record(name, record, base_dir=manifest_path.parent)
+        except (AssertionError, KeyError, TypeError) as exc:
+            raise ContractError(f"continuous comparator producer input differs: {name}") from exc
+        return record_path(record, base_dir=manifest_path.parent).resolve()
+
+    pre_pulse = resolve_compact_pre_pulse_producer(pre_manifest_path)
+    if pre_pulse.compact_receipt_path != compact_path:
+        raise ContractError(
+            "continuous comparator compact receipt is not the producer output"
+        )
+    pre_population_path = pre_pulse.population_path
+    child_mother_source_path = pre_pulse.mother_source_path
+    post_child_manifest_path = verified_input(
+        post_manifest, post_manifest_path, "single_flight_transport_manifest"
+    )
+    post_child_manifest = _load(post_child_manifest_path)
+    if (
+        post_child_manifest.get("role") != "simulation_run_manifest"
+        or post_child_manifest.get("status") != "success"
+        or post_child_manifest.get("project") != INTEGRATION_ID
+        or post_child_manifest.get("mode") != "rf_to_oatof_simion_single_flight"
+        or post_child_manifest.get("formal_eligible") is not False
+    ):
+        raise ContractError("continuous comparator post-pulse child identity differs")
+    bound_frozen_experiment = verified_input(
+        post_manifest, post_manifest_path, "frozen_campaign_experiment"
+    )
+    if bound_frozen_experiment != frozen_experiment_path:
+        raise ContractError("continuous comparator frozen experiment identity differs")
+    frozen_experiment = _load(frozen_experiment_path)
+    producer_experiment = frozen_experiment.get("experiment")
+    if (
+        not isinstance(producer_experiment, dict)
+        or producer_experiment.get("single_flight_frontend_grid_profile_id")
+        != authority["producer_frontend_grid_profile_id"]
+    ):
+        raise ContractError("continuous comparator frontend grid profile differs")
+    post_schedule_path = verified_input(
+        post_child_manifest, post_child_manifest_path, "pulse_schedule"
+    )
+    post_configuration_path = verified_input(
+        post_child_manifest, post_child_manifest_path, "configuration"
+    )
+    post_field_path = verified_input(
+        post_child_manifest, post_child_manifest_path, "resolved_region_field_contract"
+    )
+    current_configuration_path = root / "integrations" / INTEGRATION_ID / "config" / "simion_single_flight.json"
+    if (
+        post_schedule_path != schedule_path
+        or post_configuration_path != configuration_path
+        or post_field_path != field_path
+        or file_sha256(current_configuration_path) != file_sha256(configuration_path)
+    ):
+        raise ContractError("continuous comparator configuration identity differs")
+    compact = _load(compact_path)
+    validate_schema(compact, HANDOFF_RECEIPT_SCHEMA_PATH)
+    population = _load(pre_population_path)
+    expected_execution = population_declaration.get("execution_population")
+    expected_source = population_declaration.get("source_authority")
+    actual_execution = population.get("execution_population")
+    actual_source = population.get("source_authority")
+    selection = compact.get("selection")
+    target = compact.get("pulse_target_state")
+    if not all(isinstance(value, dict) for value in (
+        expected_execution, expected_source, actual_execution, actual_source,
+        selection, target,
+    )) or not isinstance(actual_source.get("table"), dict):
+        raise ContractError("continuous comparator population is incomplete")
+    mother_count = expected_execution.get("particle_count")
+    selected_time = selection.get("pulse_effective_time_us")
+    if (
+        compact.get("method") != "native_trace_detector_blind_pulse_selection_v2"
+        or compact.get("status") != "success"
+        or compact.get("pulse_disabled") is not True
+        or compact.get("selection_uses_detector_outcome") is not False
+        or compact.get("detector_results_used") is not False
+        or selection.get("mother_population_count") != mother_count
+        or selection.get("postselection_prohibited") is not True
+        or actual_execution.get("particle_count") != mother_count
+        or actual_execution.get("ordered_particle_id_sha256")
+        != expected_execution.get("ordered_particle_id_sha256")
+        or actual_source.get("table_binding") != expected_source.get("table_binding")
+        or actual_source.get("particle_count") != mother_count
+        or child_mother_source_path != mother_source_path
+        or file_sha256(child_mother_source_path) != file_sha256(mother_source_path)
+        or not isinstance(selected_time, (int, float))
+        or not math.isfinite(float(selected_time)) or float(selected_time) <= 0
+        or target.get("pulse_effective_time_us") != selected_time
+    ):
+        raise ContractError("continuous comparator compact identity differs")
+    schedule = _load(schedule_path)
+    validate_schema(
+        schedule,
+        INTEGRATION_SCHEMA_DIR / "rf_oatof_resolved_single_flight_pulse_schedule.schema.json",
+    )
+    compact_count, compact_particle_ids = _compact_receipt_population(compact)
+    execution_authority = schedule.get("execution_authority")
+    materialization = execution_authority.get("materialization_receipt") if isinstance(execution_authority, dict) else None
+    if (
+        schedule.get("method") != "compact_detector_blind_trace_restart_v1"
+        or not isinstance(materialization, dict)
+        or materialization.get("sha256") != file_sha256(compact_path)
+        or schedule.get("pulse_eligible_count") != compact_count
+        or schedule.get("selected_particle_ids") != compact_particle_ids
+        or not math.isclose(float(schedule["pulse_effective_time_us"]), float(selected_time), rel_tol=0.0, abs_tol=1e-12)
+        or not isinstance(schedule.get("pulse_width_us"), (int, float))
+        or not math.isfinite(float(schedule["pulse_width_us"]))
+        or float(schedule["pulse_width_us"]) <= 0
+    ):
+        raise ContractError("continuous comparator pulse schedule differs")
+    if _load(field_path).get("semantic_sha256") != _load(resolved_region_field_contract_path).get("semantic_sha256"):
+        raise ContractError("continuous comparator voltage field identity differs")
+    return {
+        "schedule": schedule,
+        "execution_authority": {
+            "mode": "manifest_bound_continuous_full_flight_comparator_v1",
+            **{name: authority[name] for name in (
+                "pre_pulse_producer_manifest", "pre_pulse_mother_particle_source",
+                "compact_receipt", "producer_manifest", "producer_frozen_experiment",
+                "producer_pulse_schedule", "producer_configuration",
+                "producer_region_field_contract", "producer_frontend_grid_profile_id",
+            )},
+        },
+    }
+
+
+def _resolve_functional_smoke_pulse_schedule(
+    *, base_schedule: dict[str, Any], comparator: dict[str, Any],
+) -> tuple[dict[str, Any], str]:
+    """Project a verified full-mother pulse onto an ID-1 plumbing smoke."""
+
+    producer_schedule = comparator["schedule"]
+    if not math.isclose(
+        float(base_schedule["rf_period_us"]),
+        float(producer_schedule["rf_period_us"]),
+        rel_tol=0.0, abs_tol=1e-15,
+    ):
+        raise ContractError("continuous functional-smoke producer RF period differs")
+    schedule = copy.deepcopy(base_schedule)
+    schedule.update({
+        "method": "manifest_bound_full_mother_pulse_for_functional_smoke_v1",
+        "pulse_base_time_us": float(producer_schedule["pulse_effective_time_us"]),
+        "pulse_offset_us": 0.0,
+        "pulse_effective_time_us": float(producer_schedule["pulse_effective_time_us"]),
+        "pulse_width_us": float(producer_schedule["pulse_width_us"]),
+        "claim_status": "FUNCTIONAL_SMOKE_ONLY",
+        "execution_authority": comparator["execution_authority"],
+    })
+    return schedule, "ready_verified"
+
+
 def _population_source_table(
     path: Path,
     *,
@@ -2319,6 +2585,75 @@ def _validate_time_series_restart_state(
             "clock_abs_us": maximum_clock_error,
             "energy_abs_eV": maximum_energy_error,
         },
+    }
+
+
+def _validate_compact_restart_state(
+    source_path: Path,
+    receipt_path: Path,
+    source_record: dict[str, Any],
+    schedule: dict[str, Any],
+) -> dict[str, Any]:
+    """Validate a detector-blind compact TRACE restart without ideal-source assumptions."""
+
+    receipt = _load(receipt_path)
+    target = receipt.get("pulse_target_state")
+    selection = receipt.get("selection")
+    if not isinstance(target, dict) or not isinstance(selection, dict):
+        raise ContractError("compact restart receipt structure is invalid")
+    eligible_count, eligible_particle_ids = _compact_receipt_population(receipt)
+    pulse_time_us = float(schedule["pulse_effective_time_us"])
+    if (
+        receipt.get("role") not in COMPACT_RESTART_RECEIPT_ROLES
+        or receipt.get("status") != "success"
+        or receipt.get("detector_results_used") is not False
+        or receipt.get("selection_uses_detector_outcome") is not False
+        or receipt.get("pulse_disabled") is not True
+        or target.get("sha256") != source_record["sha256"]
+        or target.get("particle_count") != source_record["particle_count"]
+        or target.get("source_state_epoch") != "pulse_effective_time"
+        or target.get("coordinate_frame") != "oatof_global_cartesian"
+        or target.get("clock_basis") != "canonical_instrument_time_us"
+        or target.get("clock_authority") != "detector_blind_native_trace_selection"
+        or not math.isclose(float(target.get("pulse_effective_time_us", math.nan)), pulse_time_us, rel_tol=0.0, abs_tol=1e-9)
+    ):
+        raise ContractError("compact restart receipt identity differs")
+    _, rows, row_map = materialize_pre_pulse_restart(
+        source_path, pulse_time_us, return_row_map=True
+    )
+    ordered_source_ids = [int(row["source_particle_id"]) for row in row_map]
+    ordered_id_sha256 = _canonical_sha256(ordered_source_ids)
+    if (
+        len(rows) != source_record["particle_count"]
+        or len(rows) != eligible_count
+        or ordered_source_ids != eligible_particle_ids
+        or schedule.get("pulse_eligible_count") != eligible_count
+        or schedule.get("selected_particle_ids") != eligible_particle_ids
+        or target.get("ordered_particle_id_sha256") != ordered_id_sha256
+        or selection.get("postselection_prohibited") is not True
+    ):
+        raise ContractError("compact restart population differs")
+    for row in rows:
+        energy = kinetic_energy_ev(
+            float(row["mass_amu"]),
+            *(float(row[f"velocity_{axis}_m_s"]) for axis in "xyz"),
+        )
+        if abs(energy - float(row["kinetic_energy_eV"])) > float(source_record["energy_abs_tolerance_eV"]):
+            raise ContractError("compact restart state kinetic energy differs")
+    return {
+        "schema_version": 1,
+        "role": "canonical_pulse_restart_target_state_validation",
+        "status": "PASS",
+        "target_pulse_state_sha256": source_record["sha256"],
+        "materialization_receipt_sha256": source_record["materialization_receipt"]["sha256"],
+        "source_state_epoch": "pulse_effective_time",
+        "source_state_locus": source_record["source_state_locus"],
+        "coordinate_frame": "oatof_global_cartesian",
+        "clock_basis": "canonical_instrument_time_us",
+        "clock_authority": "detector_blind_native_trace_selection",
+        "ordered_particle_id_sha256": ordered_id_sha256,
+        "particle_count": len(rows),
+        "selection": {"detector_results_used": False, "postselection_prohibited": True},
     }
 
 
@@ -2669,6 +3004,16 @@ def _resolve_single_flight_profiles(
         raise ContractError("inline single-flight numerics require exploration status")
     execution_profile = None
     if execution_strategy == "simion_single_flight":
+        observation_window_us = experiment.get(
+            "single_flight_post_pulse_observation_window_us"
+        )
+        legacy_maximum_tof_us = experiment.get(
+            "single_flight_maximum_time_of_flight_us"
+        )
+        if observation_window_us is not None and legacy_maximum_tof_us is not None:
+            raise ContractError(
+                "single-flight post-pulse observation window has duplicate authority"
+            )
         try:
             execution_profile = resolve_execution_profile(
                 configuration,
@@ -2676,8 +3021,10 @@ def _resolve_single_flight_profiles(
                 oatof_numerical_profile_id=oatof_numerical_profile_id,
                 trajectory_quality_profile_id=trajectory_quality_profile_id,
                 time_integration_profile_id=time_integration_profile_id,
-                maximum_time_of_flight_us=experiment.get(
-                    "single_flight_maximum_time_of_flight_us"
+                post_pulse_observation_window_us=(
+                    observation_window_us
+                    if observation_window_us is not None
+                    else legacy_maximum_tof_us
                 ),
                 spatial_window_profile_id=spatial_window_profile_id,
                 numerical_overrides=numerical_overrides,
@@ -2858,11 +3205,18 @@ def _select_preparation_experiment(
     experiment_id: str,
     exploration: bool,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Load one repository-managed campaign and select its unique experiment."""
+    """Load one registered or immutable derived exploration campaign."""
 
     campaign_path = campaign_path.resolve()
-    if not campaign_path.is_relative_to(root):
-        raise ContractError("integration campaign must be repository-managed")
+    derived_root = (
+        root.parent / "artifacts" / "projects" / INTEGRATION_ID / "runs"
+    ).resolve()
+    if not campaign_path.is_relative_to(root) and not (
+        exploration and campaign_path.is_relative_to(derived_root)
+    ):
+        raise ContractError(
+            "integration campaign must be repository-managed or an immutable derived exploration"
+        )
     if exploration:
         authored_campaign = _load(campaign_path)
         validate_schema(authored_campaign, CAMPAIGN_SCHEMA_PATH)
@@ -2946,6 +3300,9 @@ def prepare_family_source_closure(
         validate_run_id(execution_run_id)
         experiment = copy.deepcopy(experiment)
         experiment["run_id"] = execution_run_id
+    _validate_continuous_functional_smoke_authority(
+        root=root, workspace=workspace, experiment=experiment,
+    )
     source = experiment["source"]
     execution_strategy = experiment.get("execution_strategy", "staged_three_stage")
     single_flight_execution_mode = experiment.get(
@@ -3049,6 +3406,12 @@ def prepare_family_source_closure(
     pre_pulse_source_state = experiment.get("pre_pulse_source_state")
     post_pulse_restart_authority = experiment.get(
         "post_pulse_restart_reuse_authority"
+    )
+    continuous_comparator_authority = experiment.get(
+        "continuous_full_flight_comparator_authority"
+    )
+    functional_smoke_pulse_authority = experiment.get(
+        "continuous_functional_smoke_pulse_authority"
     )
     generated_pre_pulse_ordered_subset = experiment.get(
         "generated_pre_pulse_ordered_subset"
@@ -3569,15 +3932,15 @@ def prepare_family_source_closure(
     if execution_strategy == "simion_single_flight":
         # A PA topology is a resource property, not a scientific control. The
         # shared scheduler must not reuse a full-flight peak for the minimal
-        # three-instance detector-blind pre-pulse IOB (or vice versa).
+        # four-instance detector-blind pre-pulse IOB (or vice versa).
         workload_topology_id = (
-            "pre_pulse_minimal_3_instance_iob_v1"
+            "pre_pulse_minimal_4_instance_iob_v2"
             if pre_pulse_time_series_specification is not None
             else "post_pulse_5_instance_iob_v1"
             if source_release_mode == "pre_pulse_restart"
             else "axis_field_export_5_instance_iob_v1"
             if single_flight_execution_mode == "program_axis_field_export"
-            else "full_flight_7_instance_iob_v1"
+            else "full_flight_7_instance_iob_v2"
         )
         resource_profiles = discover_resource_profiles(
             workspace / "artifacts" / "projects" / INTEGRATION_ID / "runs"
@@ -3591,6 +3954,12 @@ def prepare_family_source_closure(
             execution_profile=execution_profile,
             resource_profiles=resource_profiles,
             workload_topology_id=workload_topology_id,
+            field_loading_policy_id=(
+                POST_PULSE_FIELD_LOADING_POLICY_ID
+                if source_release_mode == "pre_pulse_restart"
+                and pre_pulse_time_series_specification is None
+                else None
+            ),
         )
     else:
         single_flight_dispatch_plan = None
@@ -3818,6 +4187,56 @@ def prepare_family_source_closure(
                 pulse_timing_state = (
                     "ready_verified" if cache_miss_policy is not None else None
                 )
+            elif functional_smoke_pulse_authority is not None:
+                if source_release_mode != "continuous_frontend":
+                    raise ContractError("continuous functional smoke requires continuous_frontend")
+                if resolved_region_field_contract_path is None:
+                    raise ContractError("continuous functional-smoke field contract is missing")
+                smoke_mother = functional_smoke_pulse_authority.get("mother_population")
+                smoke_comparator = functional_smoke_pulse_authority.get(
+                    "continuous_full_flight_comparator_authority"
+                )
+                if not isinstance(smoke_mother, dict) or not isinstance(smoke_comparator, dict):
+                    raise ContractError("continuous functional-smoke pulse authority is incomplete")
+                comparator = _resolve_continuous_full_flight_comparator(
+                    root=root,
+                    authority=smoke_comparator,
+                    population_declaration=smoke_mother,
+                    resolved_region_field_contract_path=resolved_region_field_contract_path,
+                )
+                schedule, pulse_timing_state = _resolve_functional_smoke_pulse_schedule(
+                    base_schedule=base_schedule, comparator=comparator,
+                )
+            elif continuous_comparator_authority is not None:
+                if source_release_mode != "continuous_frontend":
+                    raise ContractError("continuous comparator requires continuous_frontend")
+                if resolved_region_field_contract_path is None:
+                    raise ContractError("continuous comparator field contract is missing")
+                comparator = _resolve_continuous_full_flight_comparator(
+                    root=root,
+                    authority=continuous_comparator_authority,
+                    population_declaration=population_declaration,
+                    resolved_region_field_contract_path=resolved_region_field_contract_path,
+                )
+                producer_schedule = comparator["schedule"]
+                if not math.isclose(
+                    float(base_schedule["rf_period_us"]),
+                    float(producer_schedule["rf_period_us"]),
+                    rel_tol=0.0, abs_tol=1e-15,
+                ):
+                    raise ContractError("continuous comparator producer RF period differs")
+                schedule = copy.deepcopy(base_schedule)
+                schedule.update({
+                    "method": "manifest_bound_continuous_full_flight_comparator_v1",
+                    "pulse_base_time_us": float(producer_schedule["pulse_effective_time_us"]),
+                    "pulse_offset_us": 0.0,
+                    "pulse_effective_time_us": float(producer_schedule["pulse_effective_time_us"]),
+                    "pulse_width_us": float(producer_schedule["pulse_width_us"]),
+                    "claim_status": "DEVELOPMENT_ONLY",
+                    "execution_authority": comparator["execution_authority"],
+                })
+                _copy_observed_schedule_cohort(schedule, producer_schedule)
+                pulse_timing_state = "ready_verified"
             elif (
                 source_release_mode == "pre_pulse_restart"
                 and pre_pulse_source_state is not None
@@ -3848,6 +4267,39 @@ def prepare_family_source_closure(
                         },
                     },
                 })
+            elif (
+                source_release_mode == "pre_pulse_restart"
+                and pre_pulse_source_state is not None
+                and pre_pulse_receipt_path is not None
+                and _load(pre_pulse_receipt_path).get("role")
+                in COMPACT_RESTART_RECEIPT_ROLES
+            ):
+                restart_receipt = _load(pre_pulse_receipt_path)
+                restart_time_us = float(
+                    restart_receipt["pulse_target_state"]["pulse_effective_time_us"]
+                )
+                if not math.isfinite(restart_time_us) or restart_time_us <= 0.0:
+                    raise ContractError("compact restart pulse time is invalid")
+                schedule = copy.deepcopy(base_schedule)
+                schedule.update({
+                    "method": "compact_detector_blind_trace_restart_v1",
+                    "pulse_base_time_us": restart_time_us,
+                    "pulse_offset_us": 0.0,
+                    "pulse_effective_time_us": restart_time_us,
+                    "source_state_path": pre_pulse_source_state["path"],
+                    "source_state_sha256": pre_pulse_source_state["sha256"],
+                    "claim_status": "DEVELOPMENT_ONLY",
+                    "execution_authority": {
+                        "mode": "compact_detector_blind_trace_restart_v1",
+                        "materialization_receipt": {
+                            "path": _workspace_relative(pre_pulse_receipt_path, workspace),
+                            "sha256": file_sha256(pre_pulse_receipt_path),
+                        },
+                    },
+                })
+                _replace_schedule_cohort_with_compact_receipt(
+                    schedule, restart_receipt
+                )
             elif transition_authority is not None:
                 if pulse_prefix_sha256 is None:
                     raise ContractError(
@@ -3892,6 +4344,27 @@ def prepare_family_source_closure(
                         pulse_timing_state = "discovery_required"
                 elif cache_miss_policy is not None:
                     pulse_timing_state = "ready_verified"
+            if (
+                pulse_schedule_policy.get("duration_policy_id") == DURATION_POLICY_ID
+                and functional_smoke_pulse_authority is None
+            ):
+                if continuous_comparator_authority is not None:
+                    raise ContractError("continuous comparator reuses the producer pulse duration")
+                if pre_pulse_source_path is None:
+                    raise ContractError("derived pulse duration requires frozen restart states")
+                _, duration_rows, duration_row_map = materialize_pre_pulse_restart(
+                    pre_pulse_source_path, schedule["pulse_effective_time_us"], return_row_map=True,
+                )
+                for duration_row, duration_mapping in zip(duration_rows, duration_row_map):
+                    duration_row["particle_id"] = duration_mapping["source_particle_id"]
+                duration = derive_pulse_duration(
+                    duration_rows, _load(layout_files["geometry"]),
+                    minimum_width_us=float(pulse_schedule_policy["pulse_width_us"]),
+                )
+                schedule["pulse_duration_derivation"] = duration
+                schedule["pulse_width_us"] = duration["pulse_width_us"]
+                schedule["policy"]["pulse_width_us"] = duration["pulse_width_us"]
+                schedule["policy"]["duration_policy_id"] = DURATION_POLICY_ID
             validate_schema(
                 schedule,
                 INTEGRATION_SCHEMA_DIR / "rf_oatof_resolved_single_flight_pulse_schedule.schema.json",
@@ -3913,6 +4386,24 @@ def prepare_family_source_closure(
             == TIME_SERIES_RESTART_RECEIPT_ROLE
         ):
             pulse_restart_validation = _validate_time_series_restart_state(
+                pre_pulse_source_path,
+                pre_pulse_receipt_path,
+                pre_pulse_source_state,
+                schedule,
+            )
+            pulse_restart_validation_path = plan_output.with_name(
+                "canonical_pulse_restart_target_state_validation.json"
+            )
+            _write_json(pulse_restart_validation_path, pulse_restart_validation)
+        elif (
+            pre_pulse_source_path is not None
+            and pre_pulse_source_state is not None
+            and pre_pulse_receipt_path is not None
+            and post_pulse_restart_authority is None
+            and _load(pre_pulse_receipt_path).get("role")
+            in COMPACT_RESTART_RECEIPT_ROLES
+        ):
+            pulse_restart_validation = _validate_compact_restart_state(
                 pre_pulse_source_path,
                 pre_pulse_receipt_path,
                 pre_pulse_source_state,
@@ -4333,6 +4824,14 @@ def prepare_family_source_closure(
             population_input_role = source["particle_source_manifest_input_role"]
         else:
             raise ContractError("population source table binding is unsupported")
+        if continuous_comparator_authority is not None:
+            expected_mother_source = continuous_comparator_authority[
+                "pre_pulse_mother_particle_source"
+            ]
+            if file_sha256(population_path) != expected_mother_source["sha256"]:
+                raise ContractError(
+                    "continuous comparator mother source bytes differ"
+                )
         resolved_population = compile_resolved_population_contract(
             campaign_id=campaign["campaign_id"],
             experiment_id=experiment_id,
@@ -4401,10 +4900,11 @@ def prepare_family_source_closure(
                 "pulse_disabled": True,
                 "terminate_at_window_end": False,
                 "trace_policy": {
-                    "mode": "natural_trajectory_native_rf_grid_v1",
+                    "mode": "natural_trajectory_compact_handoff_v1",
                     "terminal_event": "geometry_collision_v1",
-                    "retention_class": "rebuildable_trajectory_payload",
+                    "retention_class": "transient_scan_input",
                 },
+                "selection_order": copy.deepcopy(SELECTION_ORDER),
                 "resolution_claim_allowed": False,
                 "prohibited_outputs": [
                     "detector_crossing",
@@ -4412,26 +4912,30 @@ def prepare_family_source_closure(
                     "single_flight_spatial_six_panel",
                 ],
             }
-        # Long-gap continuous-source screening has one future-facing physical
-        # policy: archive each ion on the native RF grid until its actual
-        # entrance-geometry collision.  It must not inherit an old fixed
-        # pulse window merely because the campaign predates this policy.
+        # A long-gap continuous source defaults to a compact natural
+        # propagation.  An explicit trace policy remains authoritative: only
+        # an author who names the full-archive mode can request retention of
+        # the trajectory payload.
         if (
             source_release_mode == "continuous_frontend"
             and float(_load(resolved_path)["connector"]["length_mm"]) >= 50.0
+            and "trace_policy" not in screening_specification
         ):
             screening_specification = copy.deepcopy(screening_specification)
             screening_specification["terminate_at_window_end"] = False
             screening_specification["trace_policy"] = {
-                "mode": "natural_trajectory_native_rf_grid_v1",
+                "mode": "natural_trajectory_compact_handoff_v1",
                 "terminal_event": "geometry_collision_v1",
-                "retention_class": "rebuildable_trajectory_payload",
+                "retention_class": "transient_scan_input",
             }
         continuous_source_pulse_window = None
         if (
             source_release_mode == "continuous_frontend"
             and screening_specification.get("trace_policy", {}).get("mode")
-            != "natural_trajectory_native_rf_grid_v1"
+            not in {
+                "natural_trajectory_compact_handoff_v1",
+                "natural_trajectory_native_rf_grid_v1",
+            }
         ):
             try:
                 _, source_global_rows = materialize_single_flight_source(
@@ -4512,7 +5016,7 @@ def prepare_family_source_closure(
         "schema_version": 1,
         "role": "rf_oatof_frozen_campaign_experiment",
         "campaign_source": {
-            "path": campaign_path.relative_to(root).as_posix(),
+            "path": _workspace_relative(campaign_path, workspace),
         },
         "campaign": frozen_campaign,
         "experiment_row_sha256": row_sha256,
@@ -4526,7 +5030,7 @@ def prepare_family_source_closure(
             "entrypoint": mapping["adapter_entrypoint"],
             "arguments": [
                 f"adapter_sha256={mapping['adapter_sha256']}",
-                f"campaign_path={campaign_path.relative_to(root).as_posix()}",
+                "campaign_path=" + _workspace_relative(campaign_path, workspace),
                 "frozen_campaign_experiment_filename=inputs/"
                 + frozen_authoring_path.name,
                 "frozen_campaign_experiment_sha256="

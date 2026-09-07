@@ -4,6 +4,24 @@
 `INTEGRATION.md` 和已授权 campaign 是当前执行权威。
 
 ## 归档条目
+
+- [20260904__campaign-readonly-authority-gate](history/20260904__campaign-readonly-authority-gate.md)
+- [20260904__handoff-comparator-diagnostic-coverage](history/20260904__handoff-comparator-diagnostic-coverage.md)
+- [20260904__restore-upstream-terminal-extension](history/20260904__restore-upstream-terminal-extension.md)
+- [20260904__square-h150-postpulse](history/20260904__square-h150-postpulse.md)
+- [20260904__square-h150-capture-and-terminal-clock](history/20260904__square-h150-capture-and-terminal-clock.md)
+- [20260904__eligible-pulse-concentration](history/20260904__eligible-pulse-concentration.md)
+- [20260904__compact-prepulse-terminal-publication](history/20260904__compact-prepulse-terminal-publication.md)
+- [20260904__zero-field-collision-grounding](history/20260904__zero-field-collision-grounding.md)
+- [20260904__square-four-aperture-flight-audit](history/20260904__square-four-aperture-flight-audit.md)
+- [20260904__square-h150-handoff-comparison](history/20260904__square-h150-handoff-comparison.md)
+- [20260904__current-square-h100-handoff-flight](history/20260904__current-square-h100-handoff-flight.md)
+- [20260904__return-detector-marker-validation](history/20260904__return-detector-marker-validation.md)
+- [20260904__restart-velocity-n50-validation](history/20260904__restart-velocity-n50-validation.md)
+- [20260904__frozen-handoff-n50-reuse](history/20260904__frozen-handoff-n50-reuse.md)
+- [20260904__pa-plus-boundary-mask-recovery](history/20260904__pa-plus-boundary-mask-recovery.md)
+- [20260904__exit-field-export-regression](history/20260904__exit-field-export-regression.md)
+- [20260904__post-pulse-duration-n1](history/20260904__post-pulse-duration-n1.md)
 - [20260731__multipole-oatof-shield-terminal-h15-n100](history/20260731__multipole-oatof-shield-terminal-h15-n100.md)
 - [20260805__octupole-10ev-single-flight](history/20260805__octupole-10ev-single-flight.md)
 - [20260805__octupole-15mm-sleeve-accelerator-energy](history/20260805__octupole-15mm-sleeve-accelerator-energy.md)

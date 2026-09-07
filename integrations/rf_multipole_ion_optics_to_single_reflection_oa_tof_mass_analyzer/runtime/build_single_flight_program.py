@@ -15,8 +15,11 @@ from common.multipole.grounded_shield import require_grounded_potential
 from common.multipole.simion_geometry import segmented_rod_electrode_ids
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_electrode_contract import (
     ROD_ELECTRODE_IDS,
+    PA_PLUS_FIELD_LOADING_POLICY_ID,
+    THREE_ZONE_PA_PLUS_MODEL_ID,
     require_published_frontend_electrodes,
     resolve_frontend_electrode_topology,
+    resolve_post_pulse_pa_plus_solution_projection,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.resolved_region_field import (
     resolved_region_field_hook_lua,
@@ -45,6 +48,74 @@ def _lua_number(value: float) -> str:
     if not math.isfinite(result):
         raise ValueError("Lua numeric value must be finite")
     return format(result, ".17g")
+
+
+def _entrance_aperture_overlap_identity(contract: dict[str, Any]) -> dict[str, Any]:
+    """Return only geometry that must agree where carrier and local PA overlap."""
+
+    aperture = contract.get("accelerator_port_aperture")
+    discretization = (
+        aperture.get("discretization") if isinstance(aperture, dict) else None
+    )
+    alignment = (
+        discretization.get("grid_alignment")
+        if isinstance(discretization, dict)
+        else None
+    )
+    if not isinstance(discretization, dict) or not isinstance(alignment, dict):
+        raise ValueError("accelerator entrance aperture discretization is incomplete")
+    scalar_keys = (
+        "mechanical_width_mm",
+        "mechanical_height_mm",
+        "numerical_carve_width_mm",
+        "numerical_carve_height_mm",
+        "flange_x_min_mm",
+        "flange_x_max_mm",
+    )
+    try:
+        scalars = {key: float(discretization[key]) for key in scalar_keys}
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError(
+            "accelerator entrance aperture discretization is incomplete"
+        ) from error
+    if any(not math.isfinite(value) for value in scalars.values()):
+        raise ValueError("accelerator entrance aperture discretization is incomplete")
+    cell = discretization.get("cell_mm_xyz")
+    edges = alignment.get("edges_on_grid_nodes")
+    if (
+        not isinstance(cell, dict)
+        or not isinstance(edges, dict)
+        or set(edges) != {"y_min", "y_max", "z_min", "z_max"}
+        or any(value is not True for value in edges.values())
+    ):
+        raise ValueError("accelerator entrance aperture grid alignment is incomplete")
+    return {
+        "frame_id": contract.get("frame_id"),
+        "cross_section": contract.get("cross_section"),
+        "cell_mm_xyz": contract.get("cell_mm_xyz"),
+        "electrodes": contract.get("electrodes"),
+        "cylindrical_sideport": contract.get("cylindrical_sideport"),
+        "discretization": {
+            **scalars,
+            "cell_mm_xyz": cell,
+            "boolean_boundary_policy": discretization.get(
+                "boolean_boundary_policy"
+            ),
+            "compiled_pa_open_column_check_required": discretization.get(
+                "compiled_pa_open_column_check_required"
+            ),
+            "width_cells": alignment.get("width_cells"),
+            "height_cells": alignment.get("height_cells"),
+            "width_is_integer_cell_multiple": alignment.get(
+                "width_is_integer_cell_multiple"
+            ),
+            "height_is_integer_cell_multiple": alignment.get(
+                "height_is_integer_cell_multiple"
+            ),
+            "edges_on_grid_nodes": edges,
+            "warnings": alignment.get("warnings"),
+        },
+    }
 
 
 def reflectron_fast_adjust_assignments(oatof: dict[str, Any]) -> list[str]:
@@ -112,8 +183,8 @@ def _lua_value(value: object) -> str:
     raise ValueError(f"unsupported Lua contract value: {type(value).__name__}")
 
 
-def load_initial_state(path: Path) -> tuple[list[float], list[int]]:
-    """Load canonical clocks and retained state-row identities.
+def load_initial_state(path: Path) -> tuple[list[float], list[int], list[list[float]]]:
+    """Load canonical clocks, retained row IDs and velocities in mm/us.
 
     A restart can reindex its SIMION rows while preserving the mother-cohort
     identity in the separate row map.  The state-file ID is therefore only
@@ -130,9 +201,15 @@ def load_initial_state(path: Path) -> tuple[list[float], list[int]]:
     if any(value <= 0 for value in actual_ids) or len(set(actual_ids)) != len(actual_ids):
         raise ValueError("single-flight initial-state particle IDs must be unique and positive")
     values = [float(row["instrument_time_us"]) for row in rows]
-    if any(value < 0 for value in values):
+    if any(not math.isfinite(value) or value < 0 for value in values):
         raise ValueError("single-flight birth times must be non-negative")
-    return values, actual_ids
+    velocities = [
+        [float(row[f"velocity_{axis}_m_s"]) / 1000.0 for axis in "xyz"]
+        for row in rows
+    ]
+    if any(not math.isfinite(value) for velocity in velocities for value in velocity):
+        raise ValueError("single-flight initial velocities must be finite")
+    return values, actual_ids, velocities
 
 
 def load_row_map(path: Path, expected_row_count: int) -> list[int]:
@@ -234,10 +311,12 @@ def resolve_domain_split_program_contract(
         candidate = accelerator.get("pa_plus_solution_model")
         if (
             not isinstance(candidate, dict)
-            or candidate.get("model_id") != "three_zone_linear_ring_pa_plus_v1"
-            or candidate.get("mode_count") != 14
+            or candidate.get("model_id") != THREE_ZONE_PA_PLUS_MODEL_ID
+            or candidate.get("mode_count") != 8
+            or candidate.get("field_loading_policy_id")
+            != PA_PLUS_FIELD_LOADING_POLICY_ID
             or not isinstance(candidate.get("modes"), list)
-            or len(candidate["modes"]) != 14
+            or len(candidate["modes"]) != 8
             or candidate.get("voltage_control_policy", {}).get("policy_id")
             != "three_zone_linear_ring_interpolation_v1"
             or candidate["voltage_control_policy"].get(
@@ -249,8 +328,6 @@ def resolve_domain_split_program_contract(
         if not all(math.isfinite(float(origin[axis])) for axis in ("x", "y", "z")):
             raise ValueError(f"domain split {label} PA origin is invalid")
     return {
-        "upstream_instance_index": 2,
-        "accelerator_instance_index": 3,
         "upstream_end_x_mm": normalized["upstream"]["upstream_end_x_mm"],
         "accelerator_start_x_mm": normalized["upstream"]["accelerator_start_x_mm"],
         "upstream_bounds_mm": normalized["upstream"]["instance_bounds_mm"],
@@ -434,7 +511,10 @@ def _successor_analyzer_config(
             "capture_depth_mm": float(marker["capture_depth_mm"]),
             "marker_absorber_thickness_mm": float(marker["absorber_thickness_mm"]),
         },
-        "diagnostics": {"max_tof_us": 90.0, "log_stride": 1000},
+        "diagnostics": {
+            "post_pulse_observation_window_us": 90.0,
+            "log_stride": 1000,
+        },
     }
 
 
@@ -446,6 +526,7 @@ def build_successor_program(
     *,
     birth_times_us: list[float],
     particle_ids: list[int] | None = None,
+    initial_velocities_mm_per_us: list[list[float]] | None = None,
     analyzer_component_source: str,
     pulse_hook_source: str,
     frontend_hook_source: str,
@@ -456,12 +537,14 @@ def build_successor_program(
     overlay: dict[str, Any] | None = None,
     intermediate_overlay: dict[str, Any] | None = None,
     accelerator_entrance_local: dict[str, Any] | None = None,
+    pre_pulse_entrance_collision: dict[str, Any] | None = None,
     domain_split: dict[str, Any] | None = None,
     domain_split_main_pa_only_axis_field: bool = False,
     domain_split_local_axis_field: bool = False,
     rf_steps_per_period: int = 160,
     global_segments: bool = False,
     include_total_axis_field_exporter: bool = False,
+    build_metadata: dict[str, Any] | None = None,
 ) -> str | tuple[str, str]:
     """Assemble the callback-neutral components behind one SIMION callback set."""
     if upstream.get("role") != "multipole_resolved_design_do_not_edit":
@@ -490,6 +573,14 @@ def build_successor_program(
         source_release_mode = "continuous_frontend"
     if source_release_mode not in SOURCE_RELEASE_MODES:
         raise ValueError("single-flight source release mode is unsupported")
+    if source_release_mode == "pre_pulse_restart":
+        if (
+            initial_velocities_mm_per_us is None
+            or len(initial_velocities_mm_per_us) != len(birth_times_us)
+            or any(len(vector) != 3 or any(not math.isfinite(v) for v in vector)
+                   for vector in initial_velocities_mm_per_us)
+        ):
+            raise ValueError("pre-pulse restart requires one finite initial velocity vector per row")
     rf_enabled = source_release_mode != "pre_pulse_restart"
     if isinstance(rf_steps_per_period, bool) or not isinstance(rf_steps_per_period, int) or rf_steps_per_period <= 0:
         raise ValueError("RF steps per period must be one positive integer")
@@ -498,6 +589,16 @@ def build_successor_program(
         screening
         and pre_pulse_time_series_contract is not None
         and pre_pulse_time_series_contract.get("schema_version") == 7
+    )
+    # A domain-split workbench places one Program across several PA instances.
+    # SIMION otherwise invokes its field callbacks only for the instance that
+    # owns the Program, which silently leaves upstream slots at their initial
+    # no-field state.  Global segments are therefore structural for every
+    # domain-split Program, not a campaign option.  Natural archives also need
+    # them after an ion leaves every finite PA.  Keep the explicit flag only
+    # for legacy monolithic callers.
+    effective_global_segments = (
+        global_segments or natural_pre_pulse_archive or domain_split is not None
     )
     pre_pulse_collision_only = (
         screening
@@ -510,10 +611,11 @@ def build_successor_program(
         screening
         and domain_split is not None
         and source_release_mode == "continuous_frontend"
-        and bool(domain_split.get("accelerator_zero_field"))
+        and pre_pulse_entrance_collision is not None
+        and accelerator_entrance_local is not None
     )
     pre_pulse_accelerator_zero_field = (
-        pre_pulse_collision_only or pre_pulse_entry_geometry
+        pre_pulse_collision_only
     )
     post_pulse_handoff_minimal = (
         source_release_mode == "pre_pulse_restart"
@@ -555,11 +657,18 @@ def build_successor_program(
             grid = contract.get("rf_time_grid")
             if (
                 contract.get("terminate_at_window_end") is not False
-                or trace_policy != {
-                    "mode": "natural_trajectory_native_rf_grid_v1",
-                    "terminal_event": "geometry_collision_v1",
-                    "retention_class": "rebuildable_trajectory_payload",
-                }
+                or trace_policy not in [
+                    {
+                        "mode": "natural_trajectory_compact_handoff_v1",
+                        "terminal_event": "geometry_collision_v1",
+                        "retention_class": "transient_scan_input",
+                    },
+                    {
+                        "mode": "natural_trajectory_native_rf_grid_v1",
+                        "terminal_event": "geometry_collision_v1",
+                        "retention_class": "rebuildable_trajectory_payload",
+                    },
+                ]
                 or not isinstance(grid, dict)
                 or grid.get("time_grid_profile_id")
                 != "natural_pre_pulse_native_rf_grid_v1"
@@ -668,6 +777,29 @@ def build_successor_program(
             raise ValueError(
                 "accelerator entrance local and legacy intermediate2 overlay are mutually exclusive"
             )
+    if pre_pulse_entrance_collision is not None:
+        collision = pre_pulse_entrance_collision
+        if (
+            not pre_pulse_entry_geometry
+            or collision.get("role") != "rf_oatof_simion_accelerator_main_contract"
+            or collision.get("domain_policy", {}).get("policy_id")
+            != "pre_pulse_entrance_zone_collision_v1"
+            or collision.get("local_geometry_coverage")
+            != "pre_pulse_connector_side_first_zone_collision_v1"
+            or collision.get("boundary_condition", {}).get("mode")
+            != "geometry_collision_zero_field_v1"
+            or collision.get("boundary_condition", {}).get("refinement_required")
+            is not False
+            or collision.get("boundary_condition", {}).get("uniform_potential_v")
+            != 0.0
+        ):
+            raise ValueError("pre-pulse entrance-zone collision contract is invalid")
+        if (
+            accelerator_entrance_local is None
+            or _entrance_aperture_overlap_identity(collision)
+            != _entrance_aperture_overlap_identity(accelerator_entrance_local)
+        ):
+            raise ValueError("pre-pulse entrance-zone collision geometry differs from entrance local")
     if intermediate_overlay is not None and domain_split is None:
         if overlay is None:
             raise ValueError("intermediate accelerator overlay requires an entrance overlay")
@@ -719,11 +851,11 @@ def build_successor_program(
     if (
         domain_split is not None
         and not pre_pulse_accelerator_zero_field
+        and not pre_pulse_entry_geometry
         and not domain_split_main_pa_only_axis_field
         and not reduced_post_accelerator_iob
     ):
         required_domain_keys = {
-            "upstream_instance_index", "accelerator_instance_index",
             "upstream_end_x_mm", "accelerator_start_x_mm",
             "upstream_bounds_mm", "accelerator_bounds_mm",
             "upstream_origin_mm", "accelerator_origin_mm",
@@ -738,8 +870,6 @@ def build_successor_program(
                     frozenset(required_domain_keys | {"accelerator_zero_field", "pa_plus_solution_model"}),
                 }
             )
-            or domain_split["upstream_instance_index"] != 2
-            or domain_split["accelerator_instance_index"] != 3
             or overlay is not None
             or (
                 not pre_pulse_accelerator_zero_field
@@ -750,10 +880,12 @@ def build_successor_program(
         ):
             raise ValueError("domain-split Program contract is incomplete")
     if accelerator_entrance_local is not None and (
-        domain_split is None or screening or domain_split_main_pa_only_axis_field
+        domain_split is None
+        or (screening and not pre_pulse_entry_geometry)
+        or domain_split_main_pa_only_axis_field
     ):
         raise ValueError(
-            "accelerator entrance local is permitted only in ordinary domain-split full flight"
+            "accelerator entrance local is permitted only in field-bearing domain-split flight"
         )
     validate_resolved_region_field_contract(region_field_contract)
     sources = {
@@ -824,27 +956,41 @@ def build_successor_program(
         if domain_split is not None
         else None
     )
+    post_pulse_pa_plus_projection = None
+    if post_pulse_handoff_minimal:
+        if pa_plus_model is None:
+            raise ValueError("post-pulse handoff requires an accelerator PA+ model")
+        post_pulse_pa_plus_projection = (
+            resolve_post_pulse_pa_plus_solution_projection(
+                pa_plus_model,
+                rod_physical_electrode_ids=frontend["electrodes"]["multipole_rod_ids"],
+                upstream_rod_electrodes=upstream["axial_dc"]["rod_electrodes"],
+                source_release_mode=source_release_mode,
+            )
+        )
+        pa_plus_model = post_pulse_pa_plus_projection[
+            "projected_pa_plus_solution_model"
+        ]
     pa_plus_modes = [
         {
             "mode_id": int(mode["mode_id"]),
-            # A PA+ solution is already the weighted electrode shape.  Its
-            # adjustable value is the independent source electrode voltage;
-            # the ring weights belong to the PA+ geometry, not to runtime
-            # voltage accumulation.
-            "source_electrode_id": int(mode["source_physical_electrode_id"]),
             "terms": [
                 {"electrode_id": int(electrode_id), "coefficient": float(coefficient)}
                 for electrode_id, coefficient in mode["physical_electrode_coefficients"].items()
+            ],
+            "projection_terms": [
+                {"electrode_id": int(electrode_id), "coefficient": float(coefficient)}
+                for electrode_id, coefficient in mode["voltage_projection_coefficients"].items()
             ],
         }
         for mode in (pa_plus_model or {}).get("modes", [])
     ]
     pa_plus_modes_lua = _lua_value(pa_plus_modes)
-    pre_pulse_compact_iob = pre_pulse_entry_geometry
-    if pre_pulse_compact_iob:
+    if pre_pulse_entry_geometry:
         # In the pre-pulse-only IOB there is no downstream flight hardware.
-        # Keep the three loaded PA instances contiguous in physical order:
-        # coarse frontend, upstream RF fine PA, then zero-field entrance.
+        # Keep the four loaded PA instances contiguous in priority order:
+        # coarse frontend, upstream RF fine PA, zero-field entrance carrier,
+        # then the field-bearing entrance-local replacement.
         analyzer_config["instance_roles"] = {
             "flight_tube": 1,
             "reflectron": 2,
@@ -857,13 +1003,12 @@ def build_successor_program(
         and not domain_split_main_pa_only_axis_field
         and not reduced_post_accelerator_iob
     ):
-        # The continuous seven-instance IOB uses slots 1--3 for the coarse,
-        # upstream, and main accelerator domains.  The downstream formal
-        # hardware follows in slots 4, 5, and 7; the local aperture replacement
-        # deliberately keeps slot 6 for highest-priority overlap semantics.
+        # SIMION resolves overlapping electric PAs by instance priority.  Keep
+        # the broad flight tube below every frontend field, the coarse bridge
+        # below both fine domains, and the aperture-local PA above main.
         analyzer_config["instance_roles"] = {
             "accelerator": 3,
-            "flight_tube": 4,
+            "flight_tube": 1,
             "reflectron": 5,
             "detector": 7,
         }
@@ -878,7 +1023,7 @@ def build_successor_program(
             overlay_specs.append(
                 {
                     "role": "accelerator_entrance_aperture_local",
-                    "instance_index": 5 if reduced_post_accelerator_iob else 6,
+                    "instance_index": 4 if pre_pulse_entry_geometry else 5 if reduced_post_accelerator_iob else 6,
                     "filename": "accelerator_entrance_local.pa0",
                     "origin_mm": accelerator_entrance_local["instance_origin_mm"],
                     "bounds_mm": accelerator_entrance_local["active_bounds_mm"],
@@ -934,12 +1079,14 @@ def build_successor_program(
     }
     domain_active_roles = (
         # A continuous source retains the coarse and upstream RF domains and
-        # reaches only the raw, zero-field entrance geometry.  A terminal
+        # reaches the field-bearing entrance-local PA over the raw zero-field
+        # first-zone collision carrier.  A terminal
         # handoff has already left the multipole, so it uses just the two raw
-        # geometry domains.  Neither mode loads a refined accelerator field.
+        # geometry domains.  The continuous source loads the refined local
+        # field; only terminal-handoff collision mode remains geometry-only.
         ["accelerator", "upstream_bridge"]
         if pre_pulse_collision_only
-        else ["coarse_frontend", "upstream_bridge", "accelerator"]
+        else ["coarse_frontend", "upstream_bridge", "accelerator", *overlay_roles]
         if pre_pulse_entry_geometry
         else ["accelerator", *overlay_roles]
         if reduced_post_accelerator_iob
@@ -949,7 +1096,7 @@ def build_successor_program(
     )
     domain_accelerator_filename = (
         "accelerator_entrance_zero_field.pa0"
-        if pre_pulse_accelerator_zero_field
+        if pre_pulse_accelerator_zero_field or pre_pulse_entry_geometry
         else "accelerator_main.pa0"
         if domain_split is not None
         else "accelerator.pa0"
@@ -966,22 +1113,34 @@ def build_successor_program(
                 "coarse_frontend": 1,
                 "upstream_bridge": 2,
                 "accelerator": 3,
+                "accelerator_entrance_aperture_local": 4,
             },
             "instance_filenames": {
                 "coarse_frontend": "coarse_frontend.pa0",
                 "accelerator": domain_accelerator_filename,
                 "upstream_bridge": "upstream_bridge.pa0",
+                "accelerator_entrance_aperture_local": "accelerator_entrance_local.pa0",
             },
             "pre_pulse_active_roles": domain_active_roles,
-            "accelerator_overlays": [],
+            "accelerator_overlays": [
+                {
+                    "role": "accelerator_entrance_aperture_local",
+                    "instance_index": 4,
+                    "filename": "accelerator_entrance_local.pa0",
+                }
+            ],
         }
-        if pre_pulse_compact_iob
+        if pre_pulse_entry_geometry
         else {
         "instance_roles": {
             **(
                 {"flight_tube": 1}
                 if reduced_post_accelerator_iob or domain_split is None
-                else {"coarse_frontend": 1, "upstream_bridge": 2}
+                else {
+                    "flight_tube": 1,
+                    "coarse_frontend": 2,
+                    "upstream_bridge": 4,
+                }
             ),
             "reflectron": 2 if reduced_post_accelerator_iob or domain_split is None else 5,
             "accelerator": 3,
@@ -995,6 +1154,7 @@ def build_successor_program(
                 else {
                     "coarse_frontend": "coarse_frontend.pa0",
                     "upstream_bridge": "upstream_bridge.pa0",
+                    "flight_tube": "flight_tube_ground.pa0",
                 }
             ),
             "reflectron": "reflectron.pa0",
@@ -1014,10 +1174,13 @@ def build_successor_program(
         }
     )
     formal_iob_config_lua = _lua_value(formal_iob_config)
+    if build_metadata is not None:
+        build_metadata["instance_roles"] = dict(formal_iob_config["instance_roles"])
     analyzer_config_static = dict(analyzer_config)
     analyzer_config_static.pop("diagnostics")
     analyzer_config_lua = _lua_value(analyzer_config_static)[:-1] + (
-        ",diagnostics={max_tof_us=diagnostic_max_tof_us,"
+        ",diagnostics={post_pulse_observation_window_us="
+        "diagnostic_post_pulse_window_us,"
         "log_stride=trajectory_log_stride}}"
     )
     geometry = analyzer_config["geometry"]
@@ -1066,10 +1229,10 @@ def build_successor_program(
     )
     active_field_instance_indices = (
         ([] if pre_pulse_collision_only else
-        [1, 2] if pre_pulse_entry_geometry else
+        [1, 2, 4] if pre_pulse_entry_geometry else
          [accelerator_instance_index, *[int(item["instance_index"]) for item in overlay_specs]]
          if reduced_post_accelerator_iob else
-         [1, 2, 3, *[int(item["instance_index"]) for item in overlay_specs]])
+         [2, 4, 3, *[int(item["instance_index"]) for item in overlay_specs]])
         if domain_split is not None
         else [3, *[int(item["instance_index"]) for item in overlay_specs]]
     )
@@ -1079,12 +1242,14 @@ def build_successor_program(
     # particular instance, so one fast-adjust callback can drive both families
     # without coupling their geometry or duplicating a voltage schedule.
     pa_plus_instance_indices = (
-        [accelerator_instance_index, *[int(item["instance_index"]) for item in overlay_specs]]
+        ([int(item["instance_index"]) for item in overlay_specs]
+         if pre_pulse_entry_geometry else
+         [accelerator_instance_index, *[int(item["instance_index"]) for item in overlay_specs]])
         if pa_plus_modes
         else []
     )
     pre_pulse_scope_instance_indices = (
-        [1, 2, 3] if pre_pulse_entry_geometry else active_field_instance_indices
+        [1, 2, 3, 4] if pre_pulse_entry_geometry else active_field_instance_indices
     )
     overlay_specs_lua = _lua_value(overlay_specs)
     active_field_instance_indices_lua = _lua_value(active_field_instance_indices)
@@ -1100,6 +1265,9 @@ def build_successor_program(
     particle_id_table = "{" + ",".join(
         f"[{index}]={value}" for index, value in enumerate(particle_ids, start=1)
     ) + "}"
+    restart_velocity_table = _lua_value(
+        initial_velocities_mm_per_us if source_release_mode == "pre_pulse_restart" else None
+    )
     screening_sample_table = "{" + ",".join(
         f"[{index}]={_lua_number(value)}"
         for index, value in enumerate(sample_times_us, start=1)
@@ -1140,7 +1308,11 @@ def build_successor_program(
         if rf_enabled else ""
     )
     rf_config = "rf" if rf_enabled else "false"
-    global_setup = "\nsimion.early_access(8.2)\nsim_segment_global=1" if global_segments else ""
+    global_setup = (
+        "\nsimion.early_access(8.2)\nsim_segment_global=1"
+        if effective_global_segments
+        else ""
+    )
     program = f"""simion.workbench_program(){global_setup}
 {embedded}
 adjustable V_repeller={_lua_number(analyzer_config['voltages']['repeller_v'])}
@@ -1150,7 +1322,7 @@ adjustable V_backplate={_lua_number(oatof['electrodes_V']['backplate'])}
 adjustable trajectory_quality=8
 adjustable trajectory_log_enable={1 if screening else 0}
 adjustable trajectory_log_stride=1000
-adjustable diagnostic_max_tof_us=90
+adjustable diagnostic_post_pulse_window_us=90
 adjustable handoff_pulse_mode={2 if screening else 1}
 adjustable handoff_pulse_time_us=0
 adjustable handoff_pulse_width_us=1
@@ -1170,6 +1342,7 @@ local reflectron_entgrid_z_mm={_lua_number(geometry['reflectron_entgrid_z_mm'])}
 local reflectron_midgrid_z_mm={_lua_number(geometry['reflectron_midgrid_z_mm'])}
 local reflectron_backplate_z_mm={_lua_number(geometry['reflectron_backplate_z_mm'])}
 local single_flight_birth_time_us={birth_table}
+local single_flight_restart_velocity_mm_per_us={restart_velocity_table}
 local single_flight_source_particle_id={particle_id_table}
 local single_flight_particle_id_offset=assert(tonumber(os.getenv('OATOF_SINGLE_FLIGHT_PARTICLE_ID_OFFSET') or '0'),'invalid single-flight particle ID offset')
 local single_flight_terminate_after_pulse={1 if terminate_after_pulse else 0}
@@ -1179,6 +1352,8 @@ local single_flight_pre_pulse_sample_times_us={screening_sample_table}
 local single_flight_pre_pulse_next_sample={{}}
 local single_flight_pre_pulse_grid_origin_us={_lua_number(grid_origin_us)}
 local single_flight_pre_pulse_grid_step_us={_lua_number(grid_step_us)}
+local single_flight_continuous_rf_next_sample={{}}
+local single_flight_continuous_rf_grid_step_us={_lua_number(1.0e6 / float(drive['frequency_Hz']) / rf_steps_per_period)}
   local single_flight_overlay_enabled={1 if overlay_specs else 0}
   local single_flight_overlays={overlay_specs_lua}
 local single_flight_active_field_instances={active_field_instance_indices_lua}
@@ -1186,7 +1361,7 @@ local single_flight_pre_pulse_scope_instances={pre_pulse_scope_instance_indices_
 local single_flight_domain_split_enabled={1 if domain_split is not None else 0}
 local single_flight_pre_pulse_collision_only={1 if pre_pulse_collision_only else 0}
 local single_flight_pre_pulse_accelerator_zero_field={1 if pre_pulse_accelerator_zero_field else 0}
-local single_flight_accelerator_instance_index={3 if pre_pulse_compact_iob else 3}
+local single_flight_accelerator_instance_index=3
 local single_flight_flight_tube_instance_index={int(analyzer_config['instance_roles']['flight_tube'])}
 local single_flight_reflectron_instance_index={int(analyzer_config['instance_roles']['reflectron'])}
 local single_flight_detector_instance_index={int(analyzer_config['instance_roles']['detector'])}
@@ -1226,14 +1401,18 @@ end
 local function single_flight_project_pa_plus(source)
   local values={{}}
   for _,mode in ipairs(single_flight_pa_plus_modes) do
-    values[mode.mode_id]=assert(source[mode.source_electrode_id],
-      'PA+ source voltage is missing independent electrode '..mode.source_electrode_id)
+    local value=0
+    for _,term in ipairs(mode.projection_terms) do
+      value=value+term.coefficient*assert(source[term.electrode_id],
+        'PA+ source voltage is missing physical electrode '..term.electrode_id)
+    end
+    values[mode.mode_id]=value
   end
   return values
 end
 local function single_flight_set_electrode(id,value)
   -- ``adj_elect`` is scoped to the PA currently traversed by the ion.  The
-  -- coarse/upstream families expose physical IDs, whereas PA+ exposes only
+  -- shared coarse/upstream families expose physical IDs, whereas PA+ exposes
   -- compact mode IDs.  Never write a physical ID into a PA+ array: SIMION
   -- treats that as an absent electrode, not as a harmless no-op.
   if not single_flight_is_pa_plus_instance(ion_instance) then
@@ -1449,8 +1628,8 @@ function segment.initialize_run()
     single_flight_pa_plus_source=initial
     local initial_pa_plus=single_flight_project_pa_plus(initial)
     -- ``adj_elect`` exists only inside SIMION's fast-adjust callback.  Seed
-    -- the already loaded PA families explicitly here, choosing their native
-    -- basis namespace; the later dynamic callback writes both namespaces.
+    -- the already loaded PA families explicitly here, choosing the physical
+    -- or PA+ namespace; the later dynamic callback writes both namespaces.
     for _,index in ipairs(single_flight_active_field_instances) do
       local active_instance=assert(simion.wb.instances[index],
         'active domain field instance is missing')
@@ -1472,14 +1651,15 @@ function segment.initialize_run()
   single_flight_reported={{}}
 end
 function segment.efield_adjust()
+  -- Global segments intentionally continue a natural pre-pulse trajectory
+  -- through vacuum outside every finite PA.  There is no local field or
+  -- active-scope instance to validate in that native SIMION state.
+  local instance=simion.wb.instances[ion_instance]
+  if instance==nil then return end
   if single_flight_pre_pulse_time_series~=0 and single_flight_pre_pulse_collision_only==0 then
     assert(single_flight_is_pre_pulse_scope_instance(ion_instance),
       'pre-pulse screening particle escaped its frontend/accelerator active scope')
   end
-  -- SIMION invokes this callback while an ion traverses the vacuum gap between
-  -- non-overlapping PA instances.  There is no PA field to adjust in that gap.
-  local instance=simion.wb.instances[ion_instance]
-  if instance==nil then return end
   local state={{z_mm=ion_pz_mm,instance_id=ion_instance,instance_dx_mm=instance.pa.dx_mm,
     instance_dz_mm=instance.pa.dz_mm,instance_scale=instance.scale}}
   local base=single_flight_analyzer.efield_adjust(state)
@@ -1499,16 +1679,27 @@ function segment.fast_adjust()
     -- materialized once in initialize_run.  Updating those same static
     -- electrodes at every RF step makes SIMION retain every accelerator basis
     -- array, although only the eight rod bases vary.  Preserve the identical
-    -- static table and update just the RF rods while screening.  Full flight
-    -- continues to apply the complete pulse-dependent electrode plan.
-    if single_flight_pre_pulse_time_series~=0 then
-      if rf then rf.apply_at(single_flight_instrument_time_us(),single_flight_set_electrode) end
+    -- static table and update just the RF rods before extraction, for both a
+    -- screening run and a continuous full-flight run.  At the pulse boundary
+    -- full flight switches to the complete pulse-dependent electrode plan.
+    local time=single_flight_instrument_time_us()
+    if single_flight_pre_pulse_time_series~=0 or time<handoff_pulse_time_us then
+      if rf then rf.apply_at(time,single_flight_set_electrode) end
     else
-      single_flight_frontend.apply_at(single_flight_instrument_time_us(),single_flight_set_electrode)
+      single_flight_frontend.apply_at(time,single_flight_set_electrode)
     end
   end
 end
 function segment.instance_adjust()
+  -- Suppress only the numerical detector marker before reflectron entry.
+  -- Official instance_adjust uses ion_instance=0 to select the next PA;
+  -- do not move the ion or assume velocity is available in this callback.
+  if single_flight_pre_pulse_time_series==0 and
+      ion_instance==single_flight_detector_instance_index and
+      not single_flight_analyzer.detector_marker_active(single_flight_canonical_particle_id()) then
+    ion_instance=0
+    return
+  end
   local overlay=single_flight_overlay_for_instance(ion_instance)
   if overlay==nil then return end
   local b=overlay.bounds_mm
@@ -1519,12 +1710,21 @@ function segment.instance_adjust()
     return
   end
   local detector=simion.wb.instances[single_flight_detector_instance_index]
-  if detector:inside_wc(ion_px_mm,ion_py_mm,ion_pz_mm) or
+  if (single_flight_analyzer.detector_marker_active(single_flight_canonical_particle_id()) and
+      detector:inside_wc(ion_px_mm,ion_py_mm,ion_pz_mm)) or
       ion_px_mm<=b.x_min or ion_px_mm>=b.x_max or
       ion_py_mm<=b.y_min or ion_py_mm>=b.y_max or
       ion_pz_mm<=b.z_min or ion_pz_mm>=b.z_max then ion_instance=0 end
 end
 function segment.initialize()
+  -- Official SIMION2020 initialize permits direct velocity assignment (see
+  -- examples/random/random.lua). Avoid the tiny FLY2 velocity round-trip
+  -- change at a strict restart boundary. Never assign ion_ke afterwards.
+  if single_flight_restart_velocity_mm_per_us and single_flight_particle_state[ion_number]==nil then
+    local velocity=assert(single_flight_restart_velocity_mm_per_us[single_flight_source_row_index()],
+      'frozen restart velocity row is missing')
+    ion_vx_mm,ion_vy_mm,ion_vz_mm=velocity[1],velocity[2],velocity[3]
+  end
   local time=single_flight_instrument_time_us()
   if single_flight_pre_pulse_time_series==0 then
     single_flight_require_analyzer_particle(ion_time_of_flight)
@@ -1535,7 +1735,8 @@ function segment.initialize()
     vx=ion_vx_mm,vy=ion_vy_mm,vz=ion_vz_mm}}
   single_flight_reported[ion_number]={{}}
   single_flight_pre_pulse_next_sample[ion_number]=1
-  single_flight_write_trace(string.format('TRACE: source_release ion=%d particle_id=%d instrument_time_us=%.17g x_mm=%.17g y_mm=%.17g z_mm=%.17g vx_mm_per_us=%.17g vy_mm_per_us=%.17g vz_mm_per_us=%.17g simion_native_kinetic_energy_eV=%.17g',ion_number,single_flight_canonical_particle_id(),time,ion_px_mm,ion_py_mm,ion_pz_mm,ion_vx_mm,ion_vy_mm,ion_vz_mm,ion_ke))
+  single_flight_continuous_rf_next_sample[ion_number]=1
+  single_flight_write_trace(string.format('TRACE: source_release ion=%d particle_id=%d instrument_time_us=%.17g x_mm=%.17g y_mm=%.17g z_mm=%.17g vx_mm_per_us=%.17g vy_mm_per_us=%.17g vz_mm_per_us=%.17g simion_native_kinetic_energy_eV=%.17g source_instance=%d',ion_number,single_flight_canonical_particle_id(),time,ion_px_mm,ion_py_mm,ion_pz_mm,ion_vx_mm,ion_vy_mm,ion_vz_mm,ion_ke,ion_instance))
 end
 function segment.tstep_adjust()
   local analyzer_dt=nil
@@ -1546,6 +1747,13 @@ function segment.tstep_adjust()
   end
   if analyzer_dt and ion_time_step>analyzer_dt then ion_time_step=analyzer_dt end
   local time=single_flight_instrument_time_us()
+  if single_flight_pre_pulse_time_series==0 then
+    local observation_remaining=handoff_pulse_time_us+
+      diagnostic_post_pulse_window_us-time
+    if observation_remaining>0 and ion_time_step>observation_remaining then
+      ion_time_step=observation_remaining
+    end
+  end
   if single_flight_pre_pulse_time_series~=0 then
     local next_index=single_flight_pre_pulse_next_sample[ion_number] or 1
     local next_time=nil
@@ -1562,6 +1770,26 @@ function segment.tstep_adjust()
     if next_time and time<next_time and ion_time_step>next_time-time then
       ion_time_step=next_time-time
     end
+  end
+  -- A continuous comparator must integrate the same pre-pulse RF waveform on
+  -- the same absolute native grid as its handoff producer.  Merely capping the
+  -- maximum step permits SIMION's adaptive trajectory step to drift between
+  -- RF nodes and changes which ions reach the aperture.  Persist the next
+  -- discrete index per ion; derive it from floating point time only once at
+  -- release, then advance monotonically at exact landings.
+  if rf and single_flight_pre_pulse_time_series==0 and time<handoff_pulse_time_us then
+    local next_index=single_flight_continuous_rf_next_sample[ion_number] or 1
+    if next_index==1 then
+      next_index=math.floor(time/single_flight_continuous_rf_grid_step_us)+2
+    end
+    local next_time=(next_index-1)*single_flight_continuous_rf_grid_step_us
+    local tolerance=1e-9*math.max(1,math.abs(next_time))
+    while next_time<=time+tolerance do
+      next_index=next_index+1
+      next_time=(next_index-1)*single_flight_continuous_rf_grid_step_us
+    end
+    single_flight_continuous_rf_next_sample[ion_number]=next_index
+    if ion_time_step>next_time-time then ion_time_step=next_time-time end
   end
   local pulse_capped=single_flight_pulse.cap_timestep_at(time,ion_time_step)
   if ion_time_step>pulse_capped then ion_time_step=pulse_capped end
@@ -1581,14 +1809,18 @@ function segment.other_actions()
   single_flight_frontend.observe_step(state.previous,current,state.frontend)
   state.previous=current
   local p=single_flight_previous[ion_number]
-  if single_flight_pre_pulse_time_series~=0 then
-    local next_index=single_flight_pre_pulse_next_sample[ion_number] or 1
-    local sample_time=nil
-    if single_flight_pre_pulse_natural_archive~=0 then
-      local raw_index=(time-single_flight_pre_pulse_grid_origin_us)/single_flight_pre_pulse_grid_step_us
-      local native_index=math.floor(raw_index+0.5)+1
-      sample_time=single_flight_pre_pulse_grid_origin_us+(native_index-1)*single_flight_pre_pulse_grid_step_us
-      if native_index>=next_index then next_index=native_index end
+    if single_flight_pre_pulse_time_series~=0 then
+      local next_index=single_flight_pre_pulse_next_sample[ion_number] or 1
+      local sample_time=nil
+      if single_flight_pre_pulse_natural_archive~=0 then
+      -- The persisted index, rather than the nearest current clock node, is
+      -- authoritative.  Re-rounding a stalled SIMION clock to its previous
+      -- node lets this callback emit an unlimited sequence of fictitious
+      -- later samples while physical time has not advanced.  The t=0 source
+      -- release is stored by initialize(), so the first native grid state is
+      -- index 2.
+      if next_index==1 then next_index=2 end
+      sample_time=single_flight_pre_pulse_grid_origin_us+(next_index-1)*single_flight_pre_pulse_grid_step_us
     else
       sample_time=single_flight_pre_pulse_sample_times_us[next_index]
     end
@@ -1698,7 +1930,7 @@ function segment.other_actions()
   end
   single_flight_previous[ion_number]={{t=time,x=ion_px_mm,y=ion_py_mm,z=ion_pz_mm,
     vx=ion_vx_mm,vy=ion_vy_mm,vz=ion_vz_mm}}
-  local result=single_flight_analyzer.other_actions{{particle_id=single_flight_canonical_particle_id(),elapsed_us=ion_time_of_flight,x_mm=ion_px_mm,y_mm=ion_py_mm,z_mm=ion_pz_mm,vz_mm_per_us=ion_vz_mm}}
+  local result=single_flight_analyzer.other_actions{{particle_id=single_flight_canonical_particle_id(),elapsed_us=ion_time_of_flight,pulse_elapsed_us=time-handoff_pulse_time_us,x_mm=ion_px_mm,y_mm=ion_py_mm,z_mm=ion_pz_mm,vz_mm_per_us=ion_vz_mm}}
   if trajectory_log_enable~=0 then
     for _,event in ipairs(result.events) do
       if event.kind=='diagnostic_return_plane' then
@@ -1714,7 +1946,8 @@ function segment.terminate()
   if single_flight_pre_pulse_time_series~=0 then
     if trajectory_log_enable~=0 then
       local next_index=single_flight_pre_pulse_next_sample[ion_number] or 1
-      local terminal_reason=single_flight_pre_pulse_natural_archive~=0 and 'geometry_collision' or
+      local terminal_reason=(single_flight_pre_pulse_natural_archive~=0 and
+        (ion_instance==0 and 'outside_pa_termination' or 'geometry_collision')) or
         (next_index>#{screening_sample_table} and 'window_complete' or 'splat')
       single_flight_write_trace(string.format('TRACE: pre_pulse_screening_terminal ion=%d particle_id=%d instrument_time_us=%.17g x_mm=%.17g y_mm=%.17g z_mm=%.17g vx_mm_per_us=%.17g vy_mm_per_us=%.17g vz_mm_per_us=%.17g terminal_reason=%s',
         ion_number,single_flight_canonical_particle_id(),time,ion_px_mm,ion_py_mm,ion_pz_mm,
@@ -1735,7 +1968,11 @@ function segment.terminate()
     if result.kind=='detector_crossing' then
       print(string.format('TRACE: detector_crossing ion=%d t=%.12g x=%.12g y=%.12g z=%.12g r=%.12g zmax=%.12g',
         ion_number,result.elapsed_us,result.x_mm,result.y_mm,result.z_mm,result.radius_mm,result.max_z_mm))
-      print(string.format('TRACE: detector_hit_entity ion=%d instance=4',ion_number))
+      print(string.format('TRACE: detector_hit_entity ion=%d instance=%d',
+        ion_number,single_flight_detector_instance_index))
+    elseif result.kind=='timeout_splat' then
+      print(string.format('TRACE: timeout_splat ion=%d instance=%d instrument_time_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g zmax_mm=%.12g',
+        ion_number,ion_instance,time,ion_px_mm,ion_py_mm,ion_pz_mm,result.max_z_mm))
     elseif result.kind=='non_detector_splat' then
       print(string.format('TRACE: non_detector_splat ion=%d instance=%d t=%.12g x=%.12g y=%.12g z=%.12g zmax=%.12g',
         ion_number,ion_instance,time,ion_px_mm,ion_py_mm,ion_pz_mm,result.max_z_mm))
@@ -1889,19 +2126,18 @@ local function pa_adjustments(ids)
   -- to construct those modes.  Passing both makes SIMION reject otherwise
   -- valid field queries (for example, physical electrode 1 is represented by
   -- PA+ mode 36).  Keep the physical path only for an ordinary PA family.
-  local pa_plus_physical_ids={{}}
-  for _,mode in ipairs(pa_plus_modes) do
-    for _,term in ipairs(mode.terms) do
-      pa_plus_physical_ids[term.electrode_id]=true
+  if #pa_plus_modes==0 then
+    for _,id in ipairs(ids) do
+      values[id]=assert(active[id],'frozen post-pulse adjustment is missing electrode '..id)
     end
   end
-  for _,id in ipairs(ids) do
-    assert(active[id]~=nil,'frozen post-pulse adjustment is missing electrode '..id)
-    if not pa_plus_physical_ids[id] then values[id]=active[id] end
-  end
   for _,mode in ipairs(pa_plus_modes) do
-    values[mode.mode_id]=assert(active[mode.source_electrode_id],
-      'frozen PA+ adjustment is missing independent electrode '..mode.source_electrode_id)
+    local value=0
+    for _,term in ipairs(mode.projection_terms) do
+      value=value+term.coefficient*assert(active[term.electrode_id],
+        'frozen PA+ adjustment is missing physical electrode '..term.electrode_id)
+    end
+    values[mode.mode_id]=value
   end
   return values
 end
@@ -1998,6 +2234,20 @@ for index=1,count do
   print(string.format('TOTAL_AXIS_FIELD_SAMPLE index=%d active_instance=%d',index,instance_number))
 end
 output:close()
+-- Preserve the theory CSV interval; separately expose the downstream PA
+-- boundary layer, where synthetic Dirichlet flags can affect fast adjustment.
+-- Sample strictly inside the PA: the world-coordinate query may exclude
+-- the outermost node. Do not turn that API boundary into a physics failure.
+local boundary_z=ai.z+(ai.pa.nz-1)*ai.pa.dz_mm*ai.scale
+local boundary_steps=math.floor((boundary_z-z_end)/z_step+0.5)
+for index=0,boundary_steps-1 do
+  local z=z_end+index*z_step
+  local potential=ai:potential_wc(
+    {_lua_number(geometry['accelerator_axis_x_mm'])},{_lua_number(geometry['accelerator_axis_y_mm'])},z,ai_values)
+  assert(potential,'undefined accelerator downstream boundary potential')
+  print(string.format('TOTAL_AXIS_FIELD_EXIT_BOUNDARY index=%d z_mm=%.12g potential_V=%.15g',
+    index,z,potential))
+end
 print(string.format('TOTAL_AXIS_FIELD=PASS INSTANCES=%d POINTS=%d PULSE_TIME_US=%.12g',
   #simion.wb.instances,count,pulse_time_us))
 """
@@ -2043,6 +2293,7 @@ def main() -> int:
     parser.add_argument("--accelerator-overlay-contract", type=Path)
     parser.add_argument("--intermediate-accelerator-overlay-contract", type=Path)
     parser.add_argument("--accelerator-entrance-local-contract", type=Path)
+    parser.add_argument("--pre-pulse-entrance-zone-collision-contract", type=Path)
     parser.add_argument("--upstream-bridge-contract", type=Path)
     parser.add_argument("--accelerator-main-contract", type=Path)
     parser.add_argument("--domain-split-main-pa-only-axis-field", action="store_true")
@@ -2068,7 +2319,7 @@ def main() -> int:
     oatof = _load(args.oatof)
     region_field_contract = _load(args.resolved_region_field_contract)
     validate_resolved_region_field_contract(region_field_contract)
-    birth_times, state_row_ids = load_initial_state(args.initial_global_state)
+    birth_times, state_row_ids, initial_velocities = load_initial_state(args.initial_global_state)
     row_map_ids = load_row_map(args.particle_row_map, len(state_row_ids))
     split_paths = (args.upstream_bridge_contract, args.accelerator_main_contract)
     if any(path is not None for path in split_paths) and any(path is None for path in split_paths):
@@ -2082,6 +2333,20 @@ def main() -> int:
         if args.upstream_bridge_contract is not None
         else None
     )
+    pre_pulse_time_series_contract = (
+        _load(args.pre_pulse_time_series_contract)
+        if args.pre_pulse_time_series_contract is not None
+        else None
+    )
+    effective_global_segments = (
+        args.global_segments
+        or domain_split is not None
+        or bool(
+            pre_pulse_time_series_contract is not None
+            and pre_pulse_time_series_contract.get("schema_version") == 7
+        )
+    )
+    build_metadata: dict[str, Any] = {}
     built = build_successor_program(
         _load(args.upstream),
         _load(args.frontend_contract),
@@ -2089,17 +2354,14 @@ def main() -> int:
         region_field_contract,
         birth_times_us=birth_times,
         particle_ids=row_map_ids,
+        initial_velocities_mm_per_us=initial_velocities,
         analyzer_component_source=args.analyzer_component.read_text(encoding="utf-8-sig"),
         pulse_hook_source=args.pulse_hook.read_text(encoding="utf-8-sig"),
         frontend_hook_source=args.frontend_hook.read_text(encoding="utf-8-sig"),
         rf_drive_kernel_source=args.rf_drive_kernel.read_text(encoding="utf-8-sig"),
         source_release_mode=args.source_release_mode,
         terminate_after_pulse=args.terminate_after_pulse,
-        pre_pulse_time_series_contract=(
-            _load(args.pre_pulse_time_series_contract)
-            if args.pre_pulse_time_series_contract is not None
-            else None
-        ),
+        pre_pulse_time_series_contract=pre_pulse_time_series_contract,
         overlay=(
             _load(args.accelerator_overlay_contract)
             if args.accelerator_overlay_contract is not None
@@ -2115,6 +2377,11 @@ def main() -> int:
             if args.accelerator_entrance_local_contract is not None
             else None
         ),
+        pre_pulse_entrance_collision=(
+            _load(args.pre_pulse_entrance_zone_collision_contract)
+            if args.pre_pulse_entrance_zone_collision_contract is not None
+            else None
+        ),
         domain_split=domain_split,
         domain_split_main_pa_only_axis_field=args.domain_split_main_pa_only_axis_field,
         domain_split_local_axis_field=args.domain_split_local_axis_field,
@@ -2123,6 +2390,7 @@ def main() -> int:
         include_total_axis_field_exporter=(
             args.total_axis_field_exporter_output is not None
         ),
+        build_metadata=build_metadata,
     )
     if args.total_axis_field_exporter_output is None:
         output = built
@@ -2140,6 +2408,7 @@ def main() -> int:
     metadata = {
         "schema_version": 1,
         "role": "rf_oatof_simion_single_flight_program_build",
+        "instance_roles": build_metadata["instance_roles"],
         "analyzer_component_sha256": file_sha256(args.analyzer_component),
         "pulse_hook_sha256": file_sha256(args.pulse_hook),
         "frontend_hook_sha256": file_sha256(args.frontend_hook),
@@ -2158,6 +2427,11 @@ def main() -> int:
         "accelerator_entrance_local_contract_sha256": (
             file_sha256(args.accelerator_entrance_local_contract)
             if args.accelerator_entrance_local_contract is not None
+            else None
+        ),
+        "pre_pulse_entrance_zone_collision_contract_sha256": (
+            file_sha256(args.pre_pulse_entrance_zone_collision_contract)
+            if args.pre_pulse_entrance_zone_collision_contract is not None
             else None
         ),
         "upstream_bridge_contract_sha256": (
@@ -2192,6 +2466,10 @@ def main() -> int:
         "rf_drive_kernel_sha256": file_sha256(args.rf_drive_kernel),
         "rf_steps_per_period": args.rf_steps_per_period,
         "source_release_mode": args.source_release_mode or "continuous_frontend",
+        "restart_velocity_initialization": (
+            "canonical_components_in_initialize_v1"
+            if args.source_release_mode == "pre_pulse_restart" else None
+        ),
         "clock_basis": "canonical_instrument_time_us",
         "terminate_after_pulse": args.terminate_after_pulse,
         "pre_pulse_time_series_contract_sha256": (
@@ -2199,7 +2477,7 @@ def main() -> int:
             if args.pre_pulse_time_series_contract is not None
             else None
         ),
-        "global_segments": args.global_segments,
+        "global_segments": effective_global_segments,
         "total_axis_field_exporter_sha256": (
             file_sha256(args.total_axis_field_exporter_output)
             if args.total_axis_field_exporter_output is not None

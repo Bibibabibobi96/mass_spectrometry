@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import csv
+import hashlib
 import json
 import math
 import re
@@ -21,6 +23,9 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     portable_path as _portable,
     publish_manifest,
     write_pending_json,
+)
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.scan_pre_pulse_trace_pulse_time import (
+    HANDOFF_RECEIPT_SCHEMA_PATH,
 )
 
 
@@ -82,6 +87,10 @@ def _single_flight_run_stem(
 VERIFIED_PULSE_RECEIPT_NAME = "verified_pulse_timing_receipt.json"
 PULSE_TRANSITION_NAME = "pulse_timing_transition.json"
 PULSE_PUBLICATION_REPLAY_MODE = "verified_pulse_timing_publication_replay"
+COMPACT_SELECTION_METHODS = {
+    "native_trace_detector_blind_pulse_selection_v1",
+    "native_trace_detector_blind_pulse_selection_v2",
+}
 def _retry_suffix(run_id: str) -> str:
     match = re.search(r"(__r\d{2})$", run_id)
     return match.group(1) if match else ""
@@ -154,6 +163,227 @@ def _verified_stage_record(
     return path
 
 
+def _compact_handoff_receipt(
+    *,
+    output_manifest: dict[str, Any],
+    output_dir: Path,
+    screening_contract_path: Path,
+    expected_mother_count: int,
+) -> tuple[Path, Path, dict[str, Any]] | None:
+    """Return verified compact handoff evidence, without reselecting its pulse.
+
+    A compact natural pre-pulse producer deliberately discards its native TRACE
+    after materializing one detector-blind handoff.  Its receipt, rather than a
+    reconstructed candidate table, is consequently the only authority for the
+    selected time and eligible cohort.
+    """
+
+    if (
+        isinstance(expected_mother_count, bool)
+        or not isinstance(expected_mother_count, int)
+        or expected_mother_count < 1
+    ):
+        raise ContractError("compact pulse handoff population authority is invalid")
+
+    try:
+        handoff_path = _verified_stage_record(
+            output_manifest,
+            collection="outputs",
+            name="pre_pulse_compact_handoff.csv",
+            run_dir=output_dir,
+        )
+    except ContractError:
+        return None
+    receipt_path = _verified_stage_record(
+        output_manifest,
+        collection="outputs",
+        name="pre_pulse_compact_handoff_receipt.json",
+        run_dir=output_dir,
+    )
+    receipt = _load(receipt_path)
+    selection = receipt.get("selection")
+    target = receipt.get("pulse_target_state")
+    producer = receipt.get("producer")
+    if (
+        receipt.get("role") != "rf_oatof_compact_pre_pulse_trace_handoff_receipt"
+        or receipt.get("status") != "success"
+        or receipt.get("method") not in COMPACT_SELECTION_METHODS
+        or receipt.get("selection_uses_detector_outcome") is not False
+        or receipt.get("detector_results_used") is not False
+        or receipt.get("pulse_disabled") is not True
+        or not isinstance(selection, dict)
+        or not isinstance(target, dict)
+        or not isinstance(producer, dict)
+    ):
+        raise ContractError("compact pulse handoff receipt differs")
+    validate_schema(receipt, HANDOFF_RECEIPT_SCHEMA_PATH)
+    contract = producer.get("screening_contract")
+    if (
+        not isinstance(contract, dict)
+        or contract.get("sha256") != file_sha256(screening_contract_path)
+        or contract.get("bytes") != screening_contract_path.stat().st_size
+    ):
+        raise ContractError("compact pulse handoff screening contract differs")
+    selected_ids = selection.get("pulse_eligible_particle_ids")
+    if (
+        not isinstance(selected_ids, list)
+        or not selected_ids
+        or any(isinstance(value, bool) or not isinstance(value, int) or value < 1 for value in selected_ids)
+        or selected_ids != sorted(set(selected_ids))
+        or selection.get("pulse_eligible_count") != len(selected_ids)
+        or selection.get("mother_population_count") != expected_mother_count
+        or selection.get("postselection_prohibited") is not True
+    ):
+        raise ContractError("compact pulse handoff selection differs")
+    try:
+        selected_time_us = float(selection["pulse_effective_time_us"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ContractError("compact pulse handoff selected time is invalid") from exc
+    if not math.isfinite(selected_time_us) or selected_time_us <= 0:
+        raise ContractError("compact pulse handoff selected time is invalid")
+    try:
+        target_time_us = float(target["pulse_effective_time_us"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ContractError("compact pulse handoff target time is invalid") from exc
+    ordered_sha256 = hashlib.sha256(
+        json.dumps(selected_ids, separators=(",", ":")).encode("utf-8")
+    ).hexdigest().upper()
+    if (
+        Path(str(target.get("path", ""))).resolve() != handoff_path
+        or target.get("bytes") != handoff_path.stat().st_size
+        or target.get("sha256") != file_sha256(handoff_path)
+        or target.get("particle_count") != len(selected_ids)
+        or target.get("ordered_particle_id_sha256") != ordered_sha256
+        or target.get("source_state_epoch") != "pulse_effective_time"
+        or target.get("coordinate_frame") != "oatof_global_cartesian"
+        or target.get("clock_basis") != "canonical_instrument_time_us"
+        or target.get("clock_authority") != "detector_blind_native_trace_selection"
+        or not math.isclose(target_time_us, selected_time_us, rel_tol=0.0, abs_tol=1e-12)
+    ):
+        raise ContractError("compact pulse handoff target state differs")
+    try:
+        with handoff_path.open(encoding="utf-8-sig", newline="") as handle:
+            handoff_ids = [int(row["particle_id"]) for row in csv.DictReader(handle)]
+    except (OSError, KeyError, TypeError, ValueError) as exc:
+        raise ContractError("compact pulse handoff state is unreadable") from exc
+    if handoff_ids != selected_ids:
+        raise ContractError("compact pulse handoff state cohort differs")
+    return handoff_path, receipt_path, receipt
+
+
+def _verify_compact_recovery_authority(
+    *,
+    child_dir: Path,
+    child_manifest: dict[str, Any],
+    recovery_dir: Path,
+    recovery_manifest: dict[str, Any],
+    recovery_config: dict[str, Any],
+) -> None:
+    """Bind a compact recovery's frozen source copies to its successful child.
+
+    The recovery intentionally copies the source manifest and compact receipt so
+    the original child can be retained independently.  Therefore paths differ,
+    but both copied files must retain the exact authoritative bytes and the
+    recovery receipt must name those same copies.
+    """
+
+    if (
+        child_manifest.get("role") != "simulation_run_manifest"
+        or child_manifest.get("project") != INTEGRATION_ID
+        or child_manifest.get("mode")
+        != SINGLE_FLIGHT_STAGES["single_flight_transport"]["mode"]
+        or child_manifest.get("status") != "success"
+        or recovery_manifest.get("role") != "simulation_run_manifest"
+        or recovery_manifest.get("project") != INTEGRATION_ID
+        or recovery_manifest.get("mode") != "rf_oatof_compact_pre_pulse_handoff_recovery"
+        or recovery_manifest.get("status") != "success"
+    ):
+        raise ContractError("compact recovered pulse screening authority differs")
+    config_inputs = recovery_config.get("inputs")
+    if not isinstance(config_inputs, dict):
+        raise ContractError("compact recovery source bindings are missing")
+    copied_paths: dict[str, Path] = {}
+    for name in ("source_manifest", "source_receipt"):
+        value = config_inputs.get(name)
+        if not isinstance(value, str) or not value:
+            raise ContractError("compact recovery source bindings are missing")
+        path = Path(value).resolve()
+        if not path.is_file() or not path.is_relative_to(recovery_dir.resolve()):
+            raise ContractError("compact recovery source binding is nonlocal")
+        copied_paths[name] = path
+    source_receipt_path = _verified_stage_record(
+        child_manifest,
+        collection="outputs",
+        name="pre_pulse_compact_handoff_receipt.json",
+        run_dir=child_dir,
+    )
+    source_receipt = _load(source_receipt_path)
+    validate_schema(source_receipt, HANDOFF_RECEIPT_SCHEMA_PATH)
+    authorities = {
+        "source_manifest": child_dir / "run_manifest.json",
+        "source_receipt": source_receipt_path,
+    }
+    for name, authority in authorities.items():
+        copied = copied_paths[name]
+        if (
+            copied.stat().st_size != authority.stat().st_size
+            or file_sha256(copied) != file_sha256(authority)
+        ):
+            raise ContractError("compact recovery source binding differs")
+    recovery_receipt_path = _verified_stage_record(
+        recovery_manifest,
+        collection="outputs",
+        name="pre_pulse_compact_handoff_receipt.json",
+        run_dir=recovery_dir,
+    )
+    recovery_receipt = _load(recovery_receipt_path)
+    validate_schema(recovery_receipt, HANDOFF_RECEIPT_SCHEMA_PATH)
+    producer = recovery_receipt.get("producer")
+    if not isinstance(producer, dict):
+        raise ContractError("compact recovery receipt producer differs")
+    for name, copied in copied_paths.items():
+        binding = producer.get(name)
+        if (
+            not isinstance(binding, dict)
+            or Path(str(binding.get("path", ""))).resolve() != copied
+            or binding.get("bytes") != copied.stat().st_size
+            or binding.get("sha256") != file_sha256(copied)
+        ):
+            raise ContractError("compact recovery receipt source binding differs")
+    source_selection = source_receipt.get("selection")
+    recovery_selection = recovery_receipt.get("selection")
+    source_target = source_receipt.get("pulse_target_state")
+    recovery_target = recovery_receipt.get("pulse_target_state")
+    if (
+        not isinstance(source_selection, dict)
+        or not isinstance(recovery_selection, dict)
+        or not isinstance(source_target, dict)
+        or not isinstance(recovery_target, dict)
+        or any(
+            recovery_selection.get(name) != value
+            for name, value in source_selection.items()
+        )
+        or any(
+            recovery_target.get(name) != value
+            for name, value in source_target.items()
+            if name != "path"
+        )
+        or (
+            source_receipt.get("method") is not None
+            and source_receipt.get("method") not in COMPACT_SELECTION_METHODS
+        )
+        or (
+            source_receipt.get("method") in COMPACT_SELECTION_METHODS
+            and recovery_receipt.get("method") != source_receipt.get("method")
+        )
+        or (
+            source_receipt.get("method") == "native_trace_detector_blind_pulse_selection_v2"
+            and recovery_selection.get("ranking") != source_selection.get("ranking")
+        )
+    ):
+        raise ContractError("compact recovery selection or target differs")
+
+
 def _publish_detector_blind_pulse_selection(
     *,
     repo_root: Path,
@@ -164,9 +394,7 @@ def _publish_detector_blind_pulse_selection(
     resolved_connection_path: Path,
     resolved_source_path: Path,
     resolved_population_path: Path,
-) -> tuple[Path, Path, dict[str, Any]]:
-    from ...analysis.select_real_field_pulse_time import select_and_write
-
+) -> tuple[Path | None, Path, dict[str, Any]]:
     child_dir = (workspace_root / stage["path"]).resolve()
     child_manifest_path = child_dir / "run_manifest.json"
     if file_sha256(child_manifest_path) != stage.get("manifest_sha256"):
@@ -201,6 +429,26 @@ def _publish_detector_blind_pulse_selection(
             "pre_pulse_time_series_contract",
         )
     }
+    compact = _compact_handoff_receipt(
+        output_manifest=output_manifest,
+        output_dir=output_dir,
+        screening_contract_path=inputs["pre_pulse_time_series_contract"],
+        expected_mother_count=population.get("execution_population", {}).get("particle_count"),
+    )
+    if compact is not None:
+        handoff_path, compact_receipt_path, compact_receipt = compact
+        compact_receipt = {
+            **compact_receipt,
+            "selected_time_us": compact_receipt["selection"]["pulse_effective_time_us"],
+            "publication_evidence": {
+                "handoff": _file_binding(handoff_path, workspace_root),
+                "receipt": _file_binding(compact_receipt_path, workspace_root),
+                "pulse_reselection_performed": False,
+            },
+        }
+        return None, compact_receipt_path, compact_receipt
+    from ...analysis.select_real_field_pulse_time import select_and_write
+
     try:
         state_table = _verified_stage_record(
             output_manifest,
@@ -805,13 +1053,6 @@ def publish_pre_pulse_selection_publication_replay(
         recovered_output_stage = None
     else:
         child_manifest = _load(child_dir / "run_manifest.json")
-        if (
-            child_manifest.get("role") != "simulation_run_manifest"
-            or child_manifest.get("project") != INTEGRATION_ID
-            or child_manifest.get("mode") != SINGLE_FLIGHT_STAGES["single_flight_transport"]["mode"]
-            or child_manifest.get("status") != "failed"
-        ):
-            raise ContractError("recovered pulse screening source child differs")
         stage = {
             "phase": "single_flight_transport",
             "run_id": child_id,
@@ -822,14 +1063,30 @@ def publish_pre_pulse_selection_publication_replay(
         recovery_dir = recovery_manifest_path.parent
         recovery_manifest = _load(recovery_manifest_path)
         recovery_config = _load(recovery_dir / "run_config.json")
-        if (
-            recovery_manifest.get("role") != "simulation_run_manifest"
-            or recovery_manifest.get("project") != INTEGRATION_ID
-            or recovery_manifest.get("mode") != "rf_oatof_pre_pulse_time_series_analysis_recovery"
-            or recovery_manifest.get("status") != "success"
-            or Path(str(recovery_config.get("inputs", {}).get("failed_child_manifest", ""))).resolve()
-            != (child_dir / "run_manifest.json").resolve()
-        ):
+        recovery_mode = recovery_manifest.get("mode")
+        if recovery_mode == "rf_oatof_pre_pulse_time_series_analysis_recovery":
+            if (
+                child_manifest.get("role") != "simulation_run_manifest"
+                or child_manifest.get("project") != INTEGRATION_ID
+                or child_manifest.get("mode")
+                != SINGLE_FLIGHT_STAGES["single_flight_transport"]["mode"]
+                or child_manifest.get("status") != "failed"
+                or recovery_manifest.get("role") != "simulation_run_manifest"
+                or recovery_manifest.get("project") != INTEGRATION_ID
+                or recovery_manifest.get("status") != "success"
+                or Path(str(recovery_config.get("inputs", {}).get("failed_child_manifest", ""))).resolve()
+                != (child_dir / "run_manifest.json").resolve()
+            ):
+                raise ContractError("recovered pulse screening authority differs")
+        elif recovery_mode == "rf_oatof_compact_pre_pulse_handoff_recovery":
+            _verify_compact_recovery_authority(
+                child_dir=child_dir,
+                child_manifest=child_manifest,
+                recovery_dir=recovery_dir,
+                recovery_manifest=recovery_manifest,
+                recovery_config=recovery_config,
+            )
+        else:
             raise ContractError("recovered pulse screening authority differs")
         recovered_output_stage = {
             "path": _portable(recovery_dir, workspace_root),
@@ -859,7 +1116,11 @@ def publish_pre_pulse_selection_publication_replay(
                        _portable(recovered_screening_manifest_path, workspace_root)
                        if recovered_screening_manifest_path is not None else None
                    ),
-                   "publisher_source": _portable(Path(__file__), workspace_root)},
+                   "publisher_source": _portable(Path(__file__), workspace_root),
+                   **({
+                       "compact_handoff_receipt": candidate_receipt["publication_evidence"]["receipt"]["path"],
+                       "compact_handoff": candidate_receipt["publication_evidence"]["handoff"]["path"],
+                   } if table is None else {})},
         "parameters": {"failed_parent_run_id": failed_manifest["run_id"], "screening_child_run_id": child_id,
                        "selected_time_us": candidate_receipt["selected_time_us"], "solver_rerun": False},
         "formal_gate_passed": False,
@@ -867,13 +1128,19 @@ def publish_pre_pulse_selection_publication_replay(
     summary = {"schema_version": 1, "role": "rf_oatof_pre_pulse_selection_publication_replay_summary",
                "status": "success", "claim_status": "FUNCTIONAL_SCREEN_ONLY", "solver_rerun": False,
                "selected_time_us": candidate_receipt["selected_time_us"], "screening_child_run_id": child_id,
-               "claims_prohibited": ["detector", "resolution", "optimization", "Candidate", "Formal"]}
+               "claims_prohibited": ["detector", "resolution", "optimization", "Candidate", "Formal"],
+               **({"pulse_reselection_performed": False} if table is None else {})}
     config_path, summary_path = replay_run_dir / "run_config.json", replay_run_dir / "summary.json"
     write_pending_json(config_path, run_config)
     write_pending_json(summary_path, summary)
     manifest_path = replay_run_dir / "run_manifest.json"
+    replay_outputs = (
+        (summary_path,)
+        if table is None
+        else (table, candidate_receipt_path, summary_path)
+    )
     publish_manifest(repo_root=repo_root, run_config=config_path, manifest_path=manifest_path, status="success",
-                     outputs=(table, candidate_receipt_path, summary_path), project=INTEGRATION_ID,
+                     outputs=replay_outputs, project=INTEGRATION_ID,
                      mode="rf_oatof_pre_pulse_selection_publication_replay", label="pre-pulse selection publication replay")
     return manifest_path
 
@@ -1177,6 +1444,10 @@ def publish_family_source_closure_run(
             resolved_population_path=resolved_population_contract_path,
         )
         if pulse_timing_internal_stage == "pulse_timing_discovery":
+            if pulse_candidate_table_path is None:
+                raise ContractError(
+                    "compact pulse handoff cannot create a timing-discovery transition"
+                )
             pulse_transition_path = _publish_pulse_timing_transition(
                 workspace_root=workspace_root,
                 parent_run_dir=run_dir,
@@ -1226,7 +1497,17 @@ def publish_family_source_closure_run(
                         workspace_root,
                     )
                 }
-                if pulse_candidate_receipt is not None
+                if pulse_candidate_table_path is not None
+                else {}
+            ),
+            **(
+                {
+                    "compact_pre_pulse_handoff_receipt": pulse_candidate_receipt[
+                        "publication_evidence"]["receipt"]["path"] ,
+                    "compact_pre_pulse_handoff": pulse_candidate_receipt[
+                        "publication_evidence"]["handoff"]["path"],
+                }
+                if pulse_candidate_receipt is not None and pulse_candidate_table_path is None
                 else {}
             ),
         },
@@ -1298,7 +1579,29 @@ def publish_family_source_closure_run(
                     "reusable_verified_pulse": False,
                 }
             }
-            if pulse_candidate_receipt is not None
+            if pulse_candidate_table_path is not None
+            else {}
+        ),
+        **(
+            {
+                "detector_blind_compact_handoff": {
+                    "qualification": "detector_blind_selected_handoff",
+                    "selected_time_us": pulse_candidate_receipt["selected_time_us"],
+                    "sample_index": pulse_candidate_receipt["selection"]["sample_index"],
+                    "population_denominator_count": pulse_candidate_receipt[
+                        "selection"]["mother_population_count"],
+                    "alive_count": pulse_candidate_receipt["selection"]["alive_count"],
+                    "pulse_eligible_count": pulse_candidate_receipt[
+                        "selection"]["pulse_eligible_count"],
+                    "receipt": pulse_candidate_receipt["publication_evidence"]["receipt"]["path"],
+                    "receipt_sha256": pulse_candidate_receipt["publication_evidence"]["receipt"]["sha256"],
+                    "handoff": pulse_candidate_receipt["publication_evidence"]["handoff"]["path"],
+                    "handoff_sha256": pulse_candidate_receipt["publication_evidence"]["handoff"]["sha256"],
+                    "postselection_prohibited": True,
+                    "pulse_reselection_performed": False,
+                }
+            }
+            if pulse_candidate_receipt is not None and pulse_candidate_table_path is None
             else {}
         ),
         **(
@@ -1355,7 +1658,7 @@ def publish_family_source_closure_run(
                     "--output",
                     str(pulse_candidate_receipt_path),
                 ]
-                if pulse_candidate_receipt is not None
+                if pulse_candidate_table_path is not None
                 else []
             ),
             *(

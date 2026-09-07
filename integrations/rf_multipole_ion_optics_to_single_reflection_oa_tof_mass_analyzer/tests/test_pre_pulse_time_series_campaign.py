@@ -16,7 +16,14 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
     _automatic_pulse_population_binding,
     compile_pre_pulse_time_series_contract,
     derive_continuous_source_pulse_window,
+    expand_flat_experiment_authoring,
     validate_pre_pulse_time_series_campaign,
+)
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.pre_pulse_campaign_profile import (
+    expand_pre_pulse_campaign_profile,
+)
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_layout import (
+    SELECTION_ORDER,
 )
 
 
@@ -28,6 +35,9 @@ SCHEMA_DIR = Path(__file__).resolve().parents[1] / "config" / "schemas"
 
 ACTIVE_CAMPAIGN_SCHEMA = INTEGRATION_ROOT / "config" / "schemas" / (
     "rf_multipole_oatof_experiment_campaign.schema.json"
+)
+RESOLVED_CAMPAIGN_SCHEMA = INTEGRATION_ROOT / "config" / "schemas" / (
+    "rf_multipole_oatof_resolved_experiment_campaign.schema.json"
 )
 ARCHIVAL_CAMPAIGN_SCHEMA = ACTIVE_CAMPAIGN_SCHEMA.parent / "archive" / (
     "rf_multipole_oatof_experiment_campaign_v1_to_v6.schema.json"
@@ -52,6 +62,9 @@ CURRENT_AUTO_CAMPAIGN_PATH = INTEGRATION_ROOT / (
     "docs/history/retired_campaigns/connector_gap_102p4_real_pa_full_n5000_v1.json"
 )
 ADAPTER_PATH = INTEGRATION_ROOT / "workflows/family_source_closure/adapter.ps1"
+NATURAL_MEMBER61_CAMPAIGN_PATH = INTEGRATION_ROOT / "config" / "diagnostics" / (
+    "zero_field_geometry_member61_natural_regression.json"
+)
 
 
 class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
@@ -86,6 +99,48 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
             rf_steps_per_period=160,
             time_integration_profile_id=time_integration_profile_id,
         )
+
+    def test_current_campaign_schemas_allow_only_valid_natural_trace_exception(self) -> None:
+        """The active and resolved v7 readers share the natural-trace rule."""
+
+        authored = expand_pre_pulse_campaign_profile(
+            json.loads(NATURAL_MEMBER61_CAMPAIGN_PATH.read_text(encoding="utf-8"))
+        )
+        validate_schema(authored, ACTIVE_CAMPAIGN_SCHEMA)
+        validate_schema(
+            expand_flat_experiment_authoring(authored), RESOLVED_CAMPAIGN_SCHEMA
+        )
+        self.assertEqual(
+            authored["pre_pulse_time_series_screening"]["selection_order"],
+            SELECTION_ORDER,
+        )
+
+        compact = copy.deepcopy(authored)
+        compact["pre_pulse_time_series_screening"]["trace_policy"] = {
+            "mode": "natural_trajectory_compact_handoff_v1",
+            "terminal_event": "geometry_collision_v1",
+            "retention_class": "transient_scan_input",
+        }
+        validate_schema(compact, ACTIVE_CAMPAIGN_SCHEMA)
+
+        missing_trace = copy.deepcopy(authored)
+        del missing_trace["pre_pulse_time_series_screening"]["trace_policy"]
+        with self.assertRaises(ContractError):
+            validate_schema(missing_trace, ACTIVE_CAMPAIGN_SCHEMA)
+
+        mismatched_retention = copy.deepcopy(authored)
+        mismatched_retention["pre_pulse_time_series_screening"]["trace_policy"][
+            "retention_class"
+        ] = "transient_scan_input"
+        with self.assertRaises(ContractError):
+            validate_schema(mismatched_retention, ACTIVE_CAMPAIGN_SCHEMA)
+
+        conventional = copy.deepcopy(authored)
+        conventional["pre_pulse_time_series_screening"][
+            "terminate_at_window_end"
+        ] = True
+        with self.assertRaises(ContractError):
+            validate_schema(conventional, ACTIVE_CAMPAIGN_SCHEMA)
 
     def test_campaign_and_compiled_runner_contract_close_rf160_grid(self) -> None:
         validate_pre_pulse_time_series_campaign(self.campaign)
@@ -422,7 +477,8 @@ class PrePulseTimeSeriesCampaignTests(unittest.TestCase):
         )
         self.assertEqual(contract["schema_version"], 5)
         self.assertEqual(contract["pa_cache_roles"]["required"], [
-            "fine_upstream", "accelerator_entrance_zone_collision",
+            "fine_upstream", "accelerator_main",
+            "accelerator_entrance_zone_collision", "accelerator_entrance_local",
         ])
         self.assertEqual(contract["rf_time_grid"]["sample_stride_rf_steps"], 40)
         self.assertEqual(contract["rf_time_grid"]["sample_count"], 7)

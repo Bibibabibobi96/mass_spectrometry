@@ -10,12 +10,14 @@ from typing import Any
 
 from common.contracts.file_identity import file_sha256
 from common.contracts.machine_contracts import ContractError, validate_schema
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.pre_pulse_campaign_profile import (
+    expand_pre_pulse_campaign_profile,
+)
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.prepare import (
     INTEGRATION_SCHEMA_DIR,
     RESOLVED_CAMPAIGN_SCHEMA_PATH,
     _workspace_relative,
     expand_flat_experiment_authoring,
-    expand_pre_pulse_campaign_profile,
 )
 
 

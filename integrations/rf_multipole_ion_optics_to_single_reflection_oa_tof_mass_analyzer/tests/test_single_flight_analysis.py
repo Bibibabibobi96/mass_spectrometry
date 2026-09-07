@@ -5,6 +5,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from matplotlib import pyplot as plt
@@ -12,7 +13,10 @@ from matplotlib.patches import PathPatch
 import pandas as pd
 
 from common.contracts.particle_physics import kinetic_energy_ev
+from common.contracts.machine_contracts import ContractError
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.analyze_single_flight import (
+    _prepare_published_reanalysis,
+    _publish_published_reanalysis,
     analyze as analyze_with_population_contract,
     resolve_analysis_mass_amu,
     validate_resolution_qualification,
@@ -75,6 +79,114 @@ def analyze(log_path, launched, mass_amu, *args, **kwargs):
 
 
 class SingleFlightAnalysisTests(unittest.TestCase):
+    def test_published_reanalysis_prepares_a_new_manifest_bound_analysis_run(self) -> None:
+        """A successful solver child remains immutable during clock reanalysis."""
+
+        def record(path: Path) -> dict[str, object]:
+            return {
+                "path": str(path), "exists": True, "bytes": path.stat().st_size,
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest().upper(),
+            }
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"; source_inputs = source / "inputs"
+            source_inputs.mkdir(parents=True)
+            paths = {}
+            for name, filename in (
+                ("resolved_population_contract", "population.json"),
+                ("oatof_resolved_geometry", "geometry.json"),
+                ("initial_global_state", "state.csv"),
+                ("particle_row_map", "map.csv"),
+                ("configuration", "configuration.json"),
+            ):
+                path = source_inputs / filename; path.write_text("{}", encoding="utf-8")
+                paths[name] = path
+            log = source / "solver.log"; log.write_text("status,Fly completed.", encoding="utf-8")
+            source_config = source / "run_config.json"
+            source_config.write_text(json.dumps({"parameters": {
+                "pulse_time_us": 10.0, "clock_basis": "canonical_instrument_time_us",
+            }}), encoding="utf-8")
+            manifest = source / "run_manifest.json"
+            manifest.write_text(json.dumps({
+                "role": "simulation_run_manifest", "status": "success",
+                "project": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer",
+                "mode": "rf_to_oatof_simion_single_flight", "run_id": "source",
+                "run_config": record(source_config),
+                "inputs": {name: record(path) for name, path in paths.items()},
+                "outputs": [record(log)],
+            }), encoding="utf-8")
+            target = root / "20260904_160000__analysis__python__terminal-clock-reanalysis__n1"
+            args = SimpleNamespace(
+                repo_root=Path(__file__).resolve().parents[3],
+                source_run_manifest=manifest, published_analysis_run_dir=target,
+                resolved_population_contract=paths["resolved_population_contract"],
+                geometry=paths["oatof_resolved_geometry"], initial_global_state=paths["initial_global_state"],
+                particle_row_map=paths["particle_row_map"], configuration=paths["configuration"],
+                pulse_time_us=10.0, clock_basis="canonical_instrument_time_us",
+                log=[log], mass_amu=100.0, resolved_population_contract_sha256="A" * 64,
+                batch_particle_count=[1], post_selection_detector_metrics=False,
+                spatial_window_profile_id=None, source_region_diagnostic_profile_id=None,
+                restart_position_tolerance_mm=None, restart_velocity_tolerance_m_per_s=None,
+                restart_clock_tolerance_us=None, restart_energy_tolerance_eV=None,
+                restart_validation_contract_sha256=None,
+                require_resolution_qualification=False,
+                require_three_zone_checkpoint_census=True,
+                require_terminal_taxonomy=True,
+            )
+            publication = _prepare_published_reanalysis(args)
+            self.assertEqual(publication["checkpoints"], target / "results" / "single_flight_particle_checkpoints.csv")
+            config = json.loads((target / "run_config.json").read_text(encoding="utf-8"))
+            self.assertEqual(config["parameters"]["source_run_id"], "source")
+            self.assertFalse(config["parameters"]["solver_rerun"])
+            self.assertEqual(config["parameters"]["batch_particle_counts"], [1])
+            self.assertIsNone(config["parameters"]["spatial_window_profile_id"])
+            self.assertTrue(config["parameters"]["require_terminal_taxonomy"])
+            self.assertEqual(config["inputs"]["raw_log_01"], str(log.resolve()))
+            with mock.patch(
+                "integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.analyze_single_flight.publish_manifest"
+            ) as publish:
+                checkpoints = publication["checkpoints"]
+                assert isinstance(checkpoints, Path)
+                checkpoints.parent.mkdir(parents=True, exist_ok=True)
+                checkpoints.write_text("particle_id\n1\n", encoding="utf-8")
+                _publish_published_reanalysis(publication, {
+                    "pulse_capture": {"selection_uses_detector_outcome": False},
+                    "formal_gate_passed": True,
+                })
+            published_summary = json.loads((target / "summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(published_summary["reanalysis_publication"]["claim_status"], "FUNCTIONAL_SCREEN_ONLY")
+            self.assertFalse(published_summary["formal_gate_passed"])
+            self.assertFalse(published_summary["reanalysis_publication"]["selection_uses_detector_outcome"])
+            self.assertEqual(publish.call_args.kwargs["status"], "success")
+
+            changed_profile = SimpleNamespace(**vars(args))
+            changed_profile.published_analysis_run_dir = (
+                root / "20260904_160001__analysis__python__terminal-clock-reanalysis__n1"
+            )
+            changed_profile.spatial_window_profile_id = "not-source-frozen"
+            with self.assertRaisesRegex(ContractError, "spatial_window_profile_id differs"):
+                _prepare_published_reanalysis(changed_profile)
+
+    def test_published_reanalysis_rejects_nonfrozen_input(self) -> None:
+        """The new run cannot silently substitute a physical source input."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); source = root / "source"; inputs = source / "inputs"
+            inputs.mkdir(parents=True)
+            def write(name: str) -> Path:
+                path = inputs / name; path.write_text("{}", encoding="utf-8"); return path
+            population, geometry, state, row_map = (write(name) for name in ("population", "geometry", "state", "map"))
+            config = write("configuration")
+            log = source / "solver.log"; log.write_text("complete", encoding="utf-8")
+            source_config = source / "run_config.json"; source_config.write_text(json.dumps({"parameters": {"pulse_time_us": 1.0, "clock_basis": "canonical_instrument_time_us"}}), encoding="utf-8")
+            def record(path: Path) -> dict[str, object]: return {"path": str(path), "exists": True, "bytes": path.stat().st_size, "sha256": hashlib.sha256(path.read_bytes()).hexdigest().upper()}
+            manifest = source / "run_manifest.json"; manifest.write_text(json.dumps({"role": "simulation_run_manifest", "status": "success", "project": "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer", "mode": "rf_to_oatof_simion_single_flight", "run_id": "source", "run_config": record(source_config), "inputs": {"resolved_population_contract": record(population), "oatof_resolved_geometry": record(geometry), "initial_global_state": record(state), "particle_row_map": record(row_map), "configuration": record(config)}, "outputs": [record(log)]}), encoding="utf-8")
+            substituted = root / "other-population.json"; substituted.write_text("{}", encoding="utf-8")
+            args = SimpleNamespace(repo_root=Path(__file__).resolve().parents[3], source_run_manifest=manifest, published_analysis_run_dir=root / "20260904_160100__analysis__python__terminal-clock-reanalysis__n1", resolved_population_contract=substituted, geometry=geometry, initial_global_state=state, particle_row_map=row_map, configuration=config, pulse_time_us=1.0, clock_basis="canonical_instrument_time_us", log=[log], post_selection_detector_metrics=False)
+            with self.assertRaisesRegex(ContractError, "not source-frozen"):
+                _prepare_published_reanalysis(args)
+
     def test_spatial_figure_marks_terminal_handoff_source_region_not_applicable(self) -> None:
         initial = pd.DataFrame({
             "particle_id": [1], "position_x_mm": [0.0],
@@ -1147,34 +1259,83 @@ class SingleFlightAnalysisTests(unittest.TestCase):
             log.write_text(
                 "TRACE: source_release ion=1 instrument_time_us=0 x_mm=0 y_mm=0 z_mm=0 vx_mm_per_us=1 vy_mm_per_us=0 vz_mm_per_us=0\n"
                 "TRACE: source_release ion=2 instrument_time_us=0 x_mm=0 y_mm=0 z_mm=0 vx_mm_per_us=1 vy_mm_per_us=0 vz_mm_per_us=0\n"
+                "TRACE: source_release ion=3 instrument_time_us=0 x_mm=0 y_mm=0 z_mm=0 vx_mm_per_us=1 vy_mm_per_us=0 vz_mm_per_us=0\n"
                 "TRACE: detector_crossing ion=1 t=70 x=0 y=0 z=0\n"
-                "TRACE: non_detector_splat ion=2 instance=3 t=1 x=0 y=0 z=0 zmax=0\n",
+                "TRACE: non_detector_splat ion=2 instance=3 t=1 x=0 y=0 z=0 zmax=0\n"
+                "TRACE: timeout_splat ion=3 instance=4 instrument_time_us=90 x_mm=1 y_mm=2 z_mm=3 zmax_mm=600\n",
                 encoding="utf-8",
             )
             initial.write_text(
                 "particle_id,instrument_time_us,mass_amu,charge_state,position_x_mm,position_y_mm,position_z_mm,velocity_x_m_s,velocity_y_m_s,velocity_z_m_s,kinetic_energy_eV\n"
                 "1,0,100,1,0,0,0,1000,0,0,0.5182137\n"
-                "2,0,100,1,0,0,0,1000,0,0,0.5182137\n",
+                "2,0,100,1,0,0,0,1000,0,0,0.5182137\n"
+                "3,0,100,1,0,0,0,1000,0,0,0.5182137\n",
                 encoding="utf-8",
             )
             _, summary = analyze(
-                log, 2, 100.0, initial_global_state_path=initial,
+                log, 3, 100.0, initial_global_state_path=initial,
                 require_terminal_taxonomy=True,
+                population_denominator_count=5000,
+                eligible_population_count=0,
             )
         taxonomy = summary["terminal_taxonomy"]
         self.assertTrue(taxonomy["classification_is_mutually_exclusive_and_exhaustive"])
-        self.assertEqual(taxonomy["mother_cohort_count"], 2)
-        self.assertEqual(taxonomy["terminal_outcome_count"], 2)
+        self.assertEqual(taxonomy["mother_cohort_count"], 3)
+        self.assertEqual(taxonomy["terminal_outcome_count"], 3)
         self.assertEqual(taxonomy["category_counts"], {
-            "detector_crossing": 1, "non_detector_splat_instance_3": 1,
+            "detector_crossing": 1,
+            "non_detector_splat_instance_3": 1,
+            "timeout_splat": 1,
         })
         self.assertEqual(
             taxonomy["particle_outcomes"],
             [
-                {"particle_id": 1, "category": "detector_crossing", "terminal_event": "detector_crossing", "instance_id": 4, "terminal_elapsed_us": 70.0, "x_mm": 0.0, "y_mm": 0.0, "z_mm": 0.0, "zmax_mm": None},
-                {"particle_id": 2, "category": "non_detector_splat_instance_3", "terminal_event": "non_detector_splat", "instance_id": 3, "terminal_elapsed_us": 1.0, "x_mm": 0.0, "y_mm": 0.0, "z_mm": 0.0, "zmax_mm": 0.0},
+                {"particle_id": 1, "category": "detector_crossing", "terminal_event": "detector_crossing", "instance_id": 4, "terminal_instrument_time_us": 70.0, "terminal_pulse_effective_elapsed_us": None, "x_mm": 0.0, "y_mm": 0.0, "z_mm": 0.0, "zmax_mm": None},
+                {"particle_id": 2, "category": "non_detector_splat_instance_3", "terminal_event": "non_detector_splat", "instance_id": 3, "terminal_instrument_time_us": 1.0, "terminal_pulse_effective_elapsed_us": None, "x_mm": 0.0, "y_mm": 0.0, "z_mm": 0.0, "zmax_mm": 0.0},
+                {"particle_id": 3, "category": "timeout_splat", "terminal_event": "timeout_splat", "instance_id": 4, "terminal_instrument_time_us": 90.0, "terminal_pulse_effective_elapsed_us": None, "x_mm": 1.0, "y_mm": 2.0, "z_mm": 3.0, "zmax_mm": 600.0},
             ],
         )
+        self.assertEqual(summary["source_population"]["raw_pulse_capture_fraction"], 0.0)
+        self.assertIsNone(
+            summary["source_population"][
+                "simulated_fraction_of_pulse_eligible_population"
+            ]
+        )
+
+    def test_terminal_clocks_share_canonical_basis_for_restart_and_continuous(self) -> None:
+        for mode, birth, pulse in (
+            ("pre_pulse_restart", 72.5, 72.5),
+            ("continuous_frontend", 2.5, 10.0),
+        ):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                initial = root / "initial.csv"
+                initial.write_text(
+                    "particle_id,instrument_time_us,mass_amu,charge_state,position_x_mm,position_y_mm,position_z_mm,velocity_x_m_s,velocity_y_m_s,velocity_z_m_s,kinetic_energy_eV\n"
+                    + "".join(f"{ion},{birth},100,1,0,0,0,1000,0,0,0.5182137\n" for ion in (1, 2)),
+                    encoding="utf-8",
+                )
+                log = root / "log.txt"
+                log.write_text(
+                    "".join(f"TRACE: source_release ion={ion} instrument_time_us={birth} x_mm=0 y_mm=0 z_mm=0 vx_mm_per_us=1 vy_mm_per_us=0 vz_mm_per_us=0\n" for ion in (1, 2))
+                    + "TRACE: detector_crossing ion=1 t=26 x=0 y=0 z=0\n"
+                    + f"TRACE: non_detector_splat ion=2 instance=3 t={birth + 32} x=0 y=0 z=0 zmax=0\n",
+                    encoding="utf-8",
+                )
+                kwargs = dict(initial_global_state_path=initial, pulse_time_us=pulse,
+                              source_release_mode=mode,
+                              initial_global_state_sha256=hashlib.sha256(initial.read_bytes()).hexdigest())
+                rows, summary = analyze(log, 2, 100., require_terminal_taxonomy=True, **kwargs)
+                _, baseline = analyze(log, 2, 100., require_terminal_taxonomy=False, **kwargs)
+                outcomes = summary["terminal_taxonomy"]["particle_outcomes"]
+                self.assertEqual([x["terminal_instrument_time_us"] for x in outcomes], [birth + 26, birth + 32])
+                self.assertEqual([x["terminal_pulse_effective_elapsed_us"] for x in outcomes], [birth + 26 - pulse, birth + 32 - pulse])
+                self.assertTrue(all("terminal_elapsed_us" not in x for x in outcomes))
+                detector = next(x for x in rows if x["event"] == "detector_crossing")
+                self.assertEqual(detector["instrument_time_us"], outcomes[0]["terminal_instrument_time_us"])
+                self.assertEqual(summary["census"]["detector_crossing"], 1)
+                self.assertEqual(summary["census"], baseline["census"])
+                self.assertEqual(summary["pulse_effective_peak"], baseline["pulse_effective_peak"])
 
     def test_full_flight_terminal_taxonomy_rejects_missing_or_duplicate_terminal(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

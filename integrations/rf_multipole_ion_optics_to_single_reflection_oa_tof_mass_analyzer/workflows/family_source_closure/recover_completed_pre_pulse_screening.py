@@ -16,16 +16,35 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from common.contracts.artifact_naming import validate_run_id
 from common.contracts.file_identity import file_sha256
 from common.contracts.machine_contracts import ContractError
 from common.contracts.verify_run_manifest import verify_record
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.materialize_pre_pulse_time_series import (
     materialize,
 )
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.scan_pre_pulse_trace_pulse_time import (
+    _trace_completed,
+    scan,
+)
 
 
 INTEGRATION_ID = "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
 RECOVERY_MODE = "rf_oatof_pre_pulse_time_series_analysis_recovery"
+RECOVERABLE_SOURCE_STATUSES = frozenset({"failed", "interrupted", "checkpoint"})
+PRE_PULSE_INAPPLICABLE_PA_ROLES = (
+    "frontend",
+    "full_coarse_bridge",
+    "connector_collision",
+    "accelerator_main",
+    "accelerator_entrance_local",
+    "accelerator_overlay",
+    "accelerator_entrance_overlay",
+    "accelerator_intermediate_overlay",
+    "accelerator_intermediate2_overlay",
+    "flight_tube",
+    "reflectron",
+)
 
 
 def _load(path: Path, label: str) -> dict[str, Any]:
@@ -87,12 +106,32 @@ def _completed_trace_logs(run_dir: Path) -> list[Path]:
     return sorted(logs_dir.glob("simion__batch*.stdout.log"))
 
 
+def _recoverable_source_status(status: object) -> bool:
+    """Return whether a source terminal record can enter log-based recovery.
+
+    A ``checkpoint`` is admissible only after the caller verifies every native
+    TRACE stream completed.  This is the normal durable state when SIMION
+    batches finish but post-processing stops before the terminal manifest.
+    """
+
+    return isinstance(status, str) and status in RECOVERABLE_SOURCE_STATUSES
+
+
+def _validate_recovery_run_id(recovery_dir: Path) -> None:
+    """Reject an invalid recovery identifier before materializing large logs."""
+
+    try:
+        validate_run_id(recovery_dir.name)
+    except ValueError as exc:
+        raise ContractError("recovery run_id is invalid") from exc
+
+
 def _verify_failed_run(run_dir: Path) -> tuple[Path, dict[str, Any], list[Path]]:
     manifest_path = run_dir / "run_manifest.json"
     manifest = _load(manifest_path, "failed screening manifest")
     if (
         manifest.get("role") != "simulation_run_manifest"
-        or manifest.get("status") not in {"failed", "interrupted"}
+        or not _recoverable_source_status(manifest.get("status"))
         or manifest.get("mode") != "rf_to_oatof_simion_single_flight"
     ):
         raise ContractError("failed screening manifest identity differs")
@@ -151,7 +190,7 @@ def _verify_failed_run(run_dir: Path) -> tuple[Path, dict[str, Any], list[Path]]
                 raise ContractError("pre-pulse continuation imported trace identity differs")
             imported.append(path)
         logs = imported + logs
-    if not logs or any("Fly completed." not in path.read_text(encoding="utf-8", errors="replace") for path in logs):
+    if not logs or any(not _trace_completed(path) for path in logs):
         raise ContractError("failed screening has incomplete SIMION batch logs")
     return config_path, config, logs
 
@@ -172,9 +211,10 @@ def build_recovery_config(
     source_contract = failed_run_dir / "inputs" / "resolved_source_contract.json"
     pulse_schedule = failed_run_dir / "inputs" / "resolved_single_flight_pulse_schedule.json"
     geometry = failed_run_dir / "inputs" / "oatof_resolved_geometry.json"
+    simion_configuration = failed_run_dir / "inputs" / "simion_single_flight.json"
     if not all(path.is_file() for path in (
         contract, row_map, initial_state, population, mother_source,
-        source_contract, pulse_schedule, geometry,
+        source_contract, pulse_schedule, geometry, simion_configuration,
     )):
         raise ContractError("failed screening run-local frozen inputs are missing")
     population_value = _load(population, "failed screening population contract")
@@ -185,16 +225,36 @@ def build_recovery_config(
     recovery_inputs.mkdir(parents=True, exist_ok=True)
     recovered_paths: dict[str, Path] = {}
     for key, source_path in {
+        "pre_pulse_time_series_contract": contract,
+        "particle_row_map": row_map,
         "initial_global_state": initial_state,
         "resolved_population_contract": population,
         "mother_particle_source": mother_source,
         "resolved_source_contract": source_contract,
         "pulse_schedule": pulse_schedule,
         "oatof_resolved_geometry": geometry,
+        "simion_single_flight": simion_configuration,
     }.items():
         destination = recovery_inputs / source_path.name
         shutil.copy2(source_path, destination)
         recovered_paths[key] = destination
+    recovery_parameters = copy.deepcopy(parameters)
+    dispositions = recovery_parameters.get("pa_cache_dispositions")
+    if isinstance(dispositions, dict):
+        # A recovery runs only Python materialization.  Carrying historical
+        # ``formal`` labels for omitted PA roles falsely asserts a dependency
+        # and conflicts with the current four-instance pre-pulse contract.
+        for role in PRE_PULSE_INAPPLICABLE_PA_ROLES:
+            disposition = dispositions.get(role)
+            if isinstance(disposition, dict):
+                disposition["key"] = None
+                disposition["disposition"] = "not_applicable"
+    contract_value = _load(contract, "failed screening contract")
+    trace_policy = contract_value.get("trace_policy")
+    compact_handoff = (
+        isinstance(trace_policy, dict)
+        and trace_policy.get("mode") == "natural_trajectory_compact_handoff_v1"
+    )
     return {
         "schema_version": 2,
         "run_id": recovery_dir.name,
@@ -205,15 +265,22 @@ def build_recovery_config(
         "inputs": {
             "failed_child_manifest": str(failed_run_dir / "run_manifest.json"),
             "failed_run_config": str(failed_run_dir / "run_config.json"),
-            "pre_pulse_time_series_contract": str(contract),
-            "particle_row_map": str(row_map),
             **{key: str(path) for key, path in recovered_paths.items()},
         },
-        "parameters": copy.deepcopy(parameters),
+        "parameters": recovery_parameters,
         "artifact_retention": {
             "policy_version": 1,
-            "class": "compact",
-            "reason": None,
+            # A natural TRACE recovery retains its complete per-sample census
+            # both in the materializer receipt and in the summary.  Those
+            # auditable records can exceed the compact policy's 100 MiB
+            # optional-file limit, even though the state table itself is
+            # mandatory evidence for the detector-blind selector.
+            "class": "compact" if compact_handoff else "qualification",
+            "reason": (
+                None
+                if compact_handoff
+                else "materialized natural pre-pulse trace required for detector-blind pulse selection"
+            ),
         },
         "formal_gate_passed": False,
     }
@@ -222,6 +289,7 @@ def build_recovery_config(
 def recover(*, repo_root: Path, failed_run_dir: Path, recovery_dir: Path) -> Path:
     failed_run_dir = failed_run_dir.resolve()
     recovery_dir = recovery_dir.resolve()
+    _validate_recovery_run_id(recovery_dir)
     if recovery_dir.exists():
         raise ContractError("recovery directory already exists and may not be overwritten")
     config_path, failed_config, logs = _verify_failed_run(failed_run_dir)
@@ -237,14 +305,77 @@ def recover(*, repo_root: Path, failed_run_dir: Path, recovery_dir: Path) -> Pat
     expected_sha = parameters.get("pre_pulse_time_series_contract_sha256")
     if not isinstance(expected_sha, str):
         raise ContractError("failed screening contract hash is missing")
-    result = materialize(
-        stdout_paths=logs,
-        run_config_path=recovery_config_path,
-        expected_contract_sha256=expected_sha,
-        states_path=results / "pre_pulse_time_series_states.csv.gz",
-        receipt_path=results / "pre_pulse_time_series_screening_receipt.json",
-        summary_path=recovery_dir / "summary.json",
+    contract = _load(
+        recovery_dir / "inputs" / "pre_pulse_time_series_screening_contract.json",
+        "recovery screening contract",
     )
+    trace_policy = contract.get("trace_policy")
+    compact_handoff = (
+        isinstance(trace_policy, dict)
+        and trace_policy.get("mode") == "natural_trajectory_compact_handoff_v1"
+    )
+    output_paths: list[Path]
+    materialized_outputs: dict[str, Any]
+    if compact_handoff:
+        handoff_path = results / "pre_pulse_compact_handoff.csv"
+        handoff_receipt_path = results / "pre_pulse_compact_handoff_receipt.json"
+        selection_path = results / "pre_pulse_compact_handoff_selection.json"
+        result = scan(
+            recovery_dir,
+            handoff_output=handoff_path,
+            receipt_output=handoff_receipt_path,
+            trace_paths=logs,
+        )
+        _write(selection_path, result)
+        _write(recovery_dir / "summary.json", {
+            "schema_version": 1,
+            "role": "rf_oatof_pre_pulse_time_series_analysis_recovery_summary",
+            "status": "success",
+            "execution_mode": "compact_detector_blind_handoff_recovery",
+            "solver_reexecuted": False,
+            "selected_time_us": result["selected_time_us"],
+            "pulse_eligible_particle_count": result["pulse_eligible_count"],
+        })
+        output_paths = [
+            recovery_dir / "summary.json",
+            handoff_path,
+            handoff_receipt_path,
+            selection_path,
+            results / "pre_pulse_particle_terminal_states.csv",
+        ]
+        materialized_outputs = {
+            "mode": "selected_pulse_handoff_only_v1",
+            "selected_time_us": result["selected_time_us"],
+            "pulse_eligible_particle_count": result["pulse_eligible_count"],
+            "handoff": {
+                "path": str(handoff_path),
+                "sha256": file_sha256(handoff_path),
+            },
+            "handoff_receipt": {
+                "path": str(handoff_receipt_path),
+                "sha256": file_sha256(handoff_receipt_path),
+            },
+        }
+    else:
+        result = materialize(
+            stdout_paths=logs,
+            run_config_path=recovery_config_path,
+            expected_contract_sha256=expected_sha,
+            states_path=results / "pre_pulse_time_series_states.csv.gz",
+            receipt_path=results / "pre_pulse_time_series_screening_receipt.json",
+            summary_path=recovery_dir / "summary.json",
+        )
+        output_paths = [
+            recovery_dir / "summary.json",
+            results / "pre_pulse_time_series_states.csv.gz",
+            results / "pre_pulse_time_series_screening_receipt.json",
+        ]
+        materialized_outputs = {
+            "mode": "complete_time_series_archive_v1",
+            "state_row_count": result.state_row_count,
+            "states": result.states_record,
+            "screening_receipt": result.receipt_record,
+        }
     receipt = {
         "schema_version": 1,
         "role": "rf_oatof_pre_pulse_time_series_analysis_recovery_receipt",
@@ -259,11 +390,7 @@ def recover(*, repo_root: Path, failed_run_dir: Path, recovery_dir: Path) -> Pat
         "raw_stdout_logs": [
             {"path": str(path), "sha256": file_sha256(path)} for path in logs
         ],
-        "materialized_outputs": {
-            "state_row_count": result.state_row_count,
-            "states": result.states_record,
-            "screening_receipt": result.receipt_record,
-        },
+        "materialized_outputs": materialized_outputs,
     }
     receipt_path = results / "pre_pulse_time_series_analysis_recovery_receipt.json"
     _write(receipt_path, receipt)
@@ -272,10 +399,11 @@ def recover(*, repo_root: Path, failed_run_dir: Path, recovery_dir: Path) -> Pat
         "--run-config", str(recovery_config_path),
         "--manifest", str(recovery_dir / "run_manifest.json"),
         "--status", "success", "--software", f"Python {sys.version_info.major}.{sys.version_info.minor}",
-        "--output", str(recovery_dir / "summary.json"),
-        "--output", str(results / "pre_pulse_time_series_states.csv.gz"),
-        "--output", str(results / "pre_pulse_time_series_screening_receipt.json"),
-        "--output", str(receipt_path),
+        *[
+            argument
+            for path in (*output_paths, receipt_path)
+            for argument in ("--output", str(path))
+        ],
     ]
     completed = subprocess.run(command, cwd=repo_root, capture_output=True, text=True, timeout=300)
     if completed.returncode:

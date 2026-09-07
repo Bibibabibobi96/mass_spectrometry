@@ -13,7 +13,7 @@
     "shared": {
       "execution_strategy": "simion_single_flight",
       "single_flight_pa_cache_policy": "build_and_publish_if_missing",
-      "single_flight_frontend_grid_profile_id": "frontend_acceleration_xy025_z010_coarse100_shared_main_local_aperture",
+      "single_flight_frontend_grid_profile_id": "frontend_xy025_z010_coarse100_full_bore_main_local_xy050_z010",
       "single_flight_oatof_numerical_profile_id": "oatof_formal_mesh",
       "single_flight_trajectory_quality_profile_id": "tqual_8",
       "single_flight_time_integration_profile_id": "dt40",

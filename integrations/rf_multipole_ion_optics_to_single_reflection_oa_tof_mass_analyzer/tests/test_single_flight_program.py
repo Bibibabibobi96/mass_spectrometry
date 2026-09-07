@@ -23,34 +23,23 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 
 
 def _pa_plus_model() -> dict:
-    physical_ids = [*range(1, 9), 10, 11, 20, 17, 18, 19]
-    modes = [
-        {
-            "mode_id": 36 + index,
-            "name": f"mode_{36 + index}",
-            "source_physical_electrode_id": physical_id,
-            "physical_electrode_coefficients": {str(physical_id): 1.0},
-        }
-        for index, physical_id in enumerate(physical_ids)
-    ]
-    return {
-        "schema_version": 1,
-        "model_id": "three_zone_linear_ring_pa_plus_v1",
-        "voltage_control_policy": {
-            "policy_id": "three_zone_linear_ring_interpolation_v1",
-            "independent_accelerator_electrode_ids": [10, 11, 20, 17],
-            "derived_accelerator_ring_ids": [12, 13, 14, 15, 16],
-            "per_ring_independent_adjustment_supported": False,
+    return resolve_three_zone_pa_plus_solution_model(
+        THREE_ZONE_FRONTEND_ELECTRODES,
+        planes_global_z_mm={
+            "repeller": -20.0,
+            "intermediate1": -17.0,
+            "intermediate2": -12.0,
+            "exit": 0.0,
         },
-        "mode_ids": list(range(36, 50)),
-        "mode_count": 14,
-        "modes": modes,
-        "grounded_physical_electrode_ids": [9],
-    }
+        ring_z_mm=[-16.0, -15.0, -10.0, -7.0, -4.0],
+    )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_electrode_contract import (
     FRONTEND_ELECTRODES,
     THREE_ZONE_FRONTEND_ELECTRODES,
+    project_pa_plus_mode_voltages,
     resolve_frontend_electrode_topology,
+    resolve_post_pulse_pa_plus_solution_projection,
+    resolve_three_zone_pa_plus_solution_model,
 )
 
 
@@ -87,6 +76,7 @@ segment.__successor_test_get_value=function(name)
   elseif name=='accelerator_grid1_z_mm' then return accelerator_grid1_z_mm
   elseif name=='accelerator_grid2_z_mm' then return accelerator_grid2_z_mm
   elseif name=='accelerator_repeller_front_z_mm' then return accelerator_repeller_front_z_mm
+  elseif name=='reflectron_entgrid_z_mm' then return reflectron_entgrid_z_mm
   else error('test value name is not authorized: '..tostring(name)) end
 end
 """
@@ -99,6 +89,8 @@ def _successor_callback_program(
     pre_pulse_time_series_contract: dict[str, object] | None = None,
     rf_steps_per_period: int = 160,
     source_release_mode: str | None = None,
+    particle_ids: list[int] | None = None,
+    build_metadata: dict[str, object] | None = None,
 ) -> str:
     geometry_path = REPO / (
         "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json"
@@ -114,11 +106,18 @@ def _successor_callback_program(
         oatof,
         region,
         birth_times_us=[0.25, 1.0],
+        particle_ids=particle_ids,
+        build_metadata=build_metadata,
         analyzer_component_source=ANALYZER_COMPONENT_SOURCE,
         pulse_hook_source=PULSE_HOOK_SOURCE,
         frontend_hook_source=FRONTEND_HOOK_SOURCE,
         rf_drive_kernel_source=RF_DRIVE_KERNEL_SOURCE,
         source_release_mode=source_release_mode,
+        initial_velocities_mm_per_us=(
+            [[1.25, -2.5, 3.75], [-4.0, 5.0, -6.0]]
+            if source_release_mode == "pre_pulse_restart"
+            else None
+        ),
         rf_steps_per_period=rf_steps_per_period,
         overlay=overlay,
         pre_pulse_time_series_contract=pre_pulse_time_series_contract,
@@ -174,6 +173,15 @@ def _minimal_program_contracts() -> tuple[dict[str, object], dict[str, object]]:
 
 
 class SingleFlightProgramTests(unittest.TestCase):
+    def test_build_receipt_roles_are_the_same_map_used_by_generated_iob_check(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            metadata: dict[str, object] = {}
+            program = _successor_callback_program(Path(directory), build_metadata=metadata)
+        self.assertEqual(metadata["instance_roles"], {"flight_tube": 1, "reflectron": 2, "accelerator": 3, "detector": 4})
+        self.assertIn("instance_roles={flight_tube=1,reflectron=2,accelerator=3,detector=4}", program)
+        source = (REPO / "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runtime/build_single_flight_program.py").read_text(encoding="utf-8")
+        self.assertIn('"instance_roles": build_metadata["instance_roles"]', source)
+
     def test_domain_accelerator_filename_drives_analyzer_and_iob_contracts(self) -> None:
         source = (
             REPO
@@ -200,7 +208,8 @@ class SingleFlightProgramTests(unittest.TestCase):
             "accelerator_start_x_mm": 90.0,
             "coarse_sleeve_x_min_mm": 11.6,
             "coarse_sleeve_x_max_mm": 90.0,
-            "endpoint_guard_mm": 10.0,
+            "upstream_fine_extent_mm": 10.0,
+            "accelerator_fine_extent_mm": 10.0,
             "partition_policy_id": "grounded_sleeve_disjoint_fine_domains_v1",
         }
         upstream = {
@@ -244,6 +253,8 @@ class SingleFlightProgramTests(unittest.TestCase):
         oatof = json.loads(geometry_path.read_text(encoding="utf-8"))
         oatof["accelerator_topology"] = topology
         upstream, frontend = _minimal_program_contracts()
+        upstream["axial_dc"]["entrance_reference_sleeve"]["potential_V"] = -12.5
+        upstream["axial_dc"]["entrance_plate_potential_V"] = 37.25
         frontend["accelerator_topology_id"] = topology["topology_id"]
         frontend["electrodes"] = copy.deepcopy(THREE_ZONE_FRONTEND_ELECTRODES)
         frontend["accelerator_local_region"] = {
@@ -255,21 +266,105 @@ class SingleFlightProgramTests(unittest.TestCase):
             "accelerator_ideal_three_zone_real_reflectron", accelerator_topology=topology,
         )
         domain = {
-            "upstream_instance_index": 2, "accelerator_instance_index": 3,
             "upstream_end_x_mm": 11.6, "accelerator_start_x_mm": 90.0,
             "upstream_bounds_mm": {"x_min": -100.0, "x_max": 11.6},
             "accelerator_bounds_mm": {"x_min": 90.0, "x_max": 125.0},
             "upstream_origin_mm": {"x": -100.0, "y": -10.0, "z": -10.0},
             "accelerator_origin_mm": {"x": 90.0, "y": -10.0, "z": -20.0},
             "pa_plus_solution_model": _pa_plus_model(),
-            "accelerator_zero_field": True,
         }
-        intermediate = {
-            "role": "rf_oatof_simion_accelerator_overlay_contract",
-            "region_id": "intermediate2",
-            "cell_mm_xyz": {"x": 0.2, "y": 0.2, "z": 0.05},
-            "instance_origin_mm": {"x": 90.0, "y": -1.0, "z": -13.6},
-            "active_bounds_mm": {"x_min": 89.9, "x_max": 91.0, "y_min": -1.0, "y_max": 1.0, "z_min": -13.5, "z_max": -9.5},
+        aperture = {
+            "mechanical_width_mm": 1.0,
+            "mechanical_height_mm": 1.0,
+            "cell_mm_xyz": {"x": 0.5, "y": 0.5, "z": 0.1},
+            "boolean_boundary_policy": "exclude_shape_inside_or_on_v1",
+            "numerical_carve_width_mm": 1.0,
+            "numerical_carve_height_mm": 1.0,
+            "compiled_pa_open_column_check_required": True,
+            "flange_x_min_mm": -88.013621843807,
+            "flange_x_max_mm": -84.013621843807,
+            "grid_alignment": {
+                "width_cells": 2.0,
+                "height_cells": 10.0,
+                "width_is_integer_cell_multiple": True,
+                "height_is_integer_cell_multiple": True,
+                "edge_grid_coordinates": {
+                    "y_min": 149.0, "y_max": 151.0,
+                    "z_min": 132.0, "z_max": 142.0,
+                },
+                "edges_on_grid_nodes": {
+                    "y_min": True, "y_max": True,
+                    "z_min": True, "z_max": True,
+                },
+                "warnings": [],
+            },
+        }
+        basis_ids = list(
+            resolve_frontend_electrode_topology(frontend["electrodes"])[
+                "basis_electrode_ids"
+            ]
+        )
+        local = {
+            "schema_version": 1,
+            "role": "rf_oatof_simion_accelerator_entrance_aperture_local_contract",
+            "frame_id": "oatof_global_mm_v1",
+            "cross_section": "square",
+            "cylindrical_sideport": None,
+            "cell_mm_xyz": {"x": 0.5, "y": 0.5, "z": 0.1},
+            "instance_origin_mm": {"x": 90.0, "y": -8.0, "z": -20.0},
+            "active_bounds_mm": {
+                "x_min": 90.5, "x_max": 101.5,
+                "y_min": -7.5, "y_max": 7.5,
+                "z_min": -19.9, "z_max": -15.9,
+            },
+            "accelerator_port_aperture": {"discretization": copy.deepcopy(aperture)},
+            "electrodes": copy.deepcopy(THREE_ZONE_FRONTEND_ELECTRODES),
+            "pa_plus_solution_model": _pa_plus_model(),
+            "boundary_condition": {
+                "mode": "accelerator_main_electrode_basis_dirichlet_v1",
+                "source_role": "rf_oatof_simion_accelerator_main_contract",
+                "basis_electrode_ids": basis_ids,
+                "pa_plus_mode_ids": list(range(36, 44)),
+            },
+            "replacement_semantics": {
+                "mode": "highest_priority_complete_local_replacement_v1",
+                "field_superposition_prohibited": True,
+                "parent_role": "rf_oatof_simion_accelerator_main_contract",
+            },
+        }
+        collision = {
+            "role": "rf_oatof_simion_accelerator_main_contract",
+            "frame_id": "oatof_global_mm_v1",
+            "cross_section": "square",
+            "cylindrical_sideport": None,
+            "domain_policy": {"policy_id": "pre_pulse_entrance_zone_collision_v1"},
+            "local_geometry_coverage": "pre_pulse_connector_side_first_zone_collision_v1",
+            "cell_mm_xyz": dict(local["cell_mm_xyz"]),
+            "accelerator_port_aperture": {"discretization": copy.deepcopy(aperture)},
+            "electrodes": copy.deepcopy(THREE_ZONE_FRONTEND_ELECTRODES),
+            "boundary_condition": {
+                "mode": "geometry_collision_zero_field_v1",
+                "refinement_required": False,
+                "uniform_potential_v": 0.0,
+            },
+        }
+        # Frozen run 20260905_200021 uses a wide carrier extending through the
+        # first zone and a small local PA with a one-cell inactive rim.  Their
+        # instance extents and PA-local grid-coordinate labels intentionally
+        # differ even though the global flange, aperture and cell geometry agree.
+        local["dimensions"] = {"nx": 49, "ny": 33, "nz": 183}
+        local["instance_origin_mm"] = {
+            "x": -98.01362184380704, "y": -8.0, "z": -32.12918680341102,
+        }
+        collision["dimensions"] = {"nx": 318, "ny": 299, "nz": 174}
+        collision["instance_origin_mm"] = {
+            "x": -98.01362184380704, "y": -74.5, "z": -32.02918680341103,
+        }
+        collision["accelerator_port_aperture"]["discretization"][
+            "grid_alignment"
+        ]["edge_grid_coordinates"] = {
+            "y_min": 148.0, "y_max": 150.0,
+            "z_min": 131.0, "z_max": 141.0,
         }
         screening = {
             "schema_version": 5,
@@ -288,7 +383,9 @@ class SingleFlightProgramTests(unittest.TestCase):
             frontend_hook_source=FRONTEND_HOOK_SOURCE,
             rf_drive_kernel_source=RF_DRIVE_KERNEL_SOURCE,
             pre_pulse_time_series_contract=screening,
-            intermediate_overlay=intermediate, domain_split=domain,
+            accelerator_entrance_local=local,
+            pre_pulse_entrance_collision=collision,
+            domain_split=domain,
         )
         self.assertIn("coarse_frontend=1", program)
         self.assertIn("upstream_bridge=2", program)
@@ -296,24 +393,50 @@ class SingleFlightProgramTests(unittest.TestCase):
         self.assertIn("single_flight_accelerator_instance_index=3", program)
         self.assertNotIn("accelerator_intermediate_overlay=6", program)
         self.assertIn("single_flight_pre_pulse_collision_only=0", program)
-        self.assertIn("single_flight_pre_pulse_accelerator_zero_field=1", program)
-        self.assertIn("single_flight_active_field_instances={1,2}", program)
-        self.assertIn("single_flight_pre_pulse_scope_instances={1,2,3}", program)
-        self.assertIn('pre_pulse_active_roles={"coarse_frontend","upstream_bridge","accelerator"}', program)
+        self.assertIn("accelerator_entrance_aperture_local=4", program)
+        self.assertIn("single_flight_pre_pulse_accelerator_zero_field=0", program)
+        self.assertIn("single_flight_active_field_instances={1,2,4}", program)
+        self.assertIn("single_flight_pre_pulse_scope_instances={1,2,3,4}", program)
+        self.assertIn('pre_pulse_active_roles={"coarse_frontend","upstream_bridge","accelerator","accelerator_entrance_aperture_local"}', program)
         self.assertIn('upstream_bridge="upstream_bridge.pa0"', program)
         self.assertIn('accelerator="accelerator_entrance_zero_field.pa0"', program)
+        self.assertIn('accelerator_entrance_aperture_local="accelerator_entrance_local.pa0"', program)
         self.assertIn("single_flight_pre_pulse_accelerator_zero_field==0 and #single_flight_pa_plus_modes==0", program)
-        domain["pa_plus_solution_model"] = None
-        zero_field_without_pa_plus_metadata = build_successor_program(
-            upstream, frontend, oatof, region, birth_times_us=[0.25],
-            analyzer_component_source=ANALYZER_COMPONENT_SOURCE,
-            pulse_hook_source=PULSE_HOOK_SOURCE,
-            frontend_hook_source=FRONTEND_HOOK_SOURCE,
-            rf_drive_kernel_source=RF_DRIVE_KERNEL_SOURCE,
-            pre_pulse_time_series_contract=screening,
-            intermediate_overlay=intermediate, domain_split=domain,
-        )
-        self.assertIn("single_flight_pa_plus_modes={}", zero_field_without_pa_plus_metadata)
+        collision["cell_mm_xyz"] = {"x": 0.25, "y": 0.25, "z": 0.1}
+        with self.assertRaisesRegex(ValueError, "geometry differs from entrance local"):
+            build_successor_program(
+                upstream, frontend, oatof, region, birth_times_us=[0.25],
+                analyzer_component_source=ANALYZER_COMPONENT_SOURCE,
+                pulse_hook_source=PULSE_HOOK_SOURCE,
+                frontend_hook_source=FRONTEND_HOOK_SOURCE,
+                rf_drive_kernel_source=RF_DRIVE_KERNEL_SOURCE,
+                pre_pulse_time_series_contract=screening,
+                accelerator_entrance_local=local,
+                pre_pulse_entrance_collision=collision,
+                domain_split=domain,
+            )
+        collision["cell_mm_xyz"] = dict(local["cell_mm_xyz"])
+        entrance_reference_id = THREE_ZONE_FRONTEND_ELECTRODES[
+            "entrance_reference_sleeve_id"
+        ]
+        entrance_plate_id = THREE_ZONE_FRONTEND_ELECTRODES["entrance_plate_id"]
+        self.assertNotIn("single_flight_pre_pulse_compact_basis", program)
+        self.assertNotIn("single_flight_compact_logical_to_local", program)
+        self.assertIn(f"setter({entrance_reference_id},-12.5)", program)
+        self.assertIn(f"setter({entrance_plate_id},37.25)", program)
+        self.assertIn(f"initial[{entrance_reference_id}]=-12.5", program)
+        self.assertIn(f"initial[{entrance_plate_id}]=37.25", program)
+        # The RF callback receives only the physical rods.  The two axial DC
+        # entries are written by the separate physical-electrode plan above,
+        # so sharing the ordinary PA namespace cannot make them RF-driven.
+        self.assertIn("rf.apply_at(time,single_flight_set_electrode)", program)
+        rf_start = program.index("    rf=single_flight_rf_kernel.new{")
+        rf_end = program.index("    single_flight_pulse=", rf_start)
+        rf_initializer = program[rf_start:rf_end]
+        self.assertIn("electrode_id=1", rf_initializer)
+        self.assertIn("electrode_id=8", rf_initializer)
+        self.assertNotIn(f"electrode_id={entrance_reference_id}", rf_initializer)
+        self.assertNotIn(f"electrode_id={entrance_plate_id}", rf_initializer)
         domain["pa_plus_solution_model"] = _pa_plus_model()
         full_flight_program = build_successor_program(
             upstream, frontend, oatof, region, birth_times_us=[0.25],
@@ -321,22 +444,36 @@ class SingleFlightProgramTests(unittest.TestCase):
             pulse_hook_source=PULSE_HOOK_SOURCE,
             frontend_hook_source=FRONTEND_HOOK_SOURCE,
             rf_drive_kernel_source=RF_DRIVE_KERNEL_SOURCE,
-            intermediate_overlay=intermediate, domain_split=domain,
+            accelerator_entrance_local=local, domain_split=domain,
         )
-        self.assertIn("coarse_frontend=1", full_flight_program)
+        self.assertIn("coarse_frontend=2", full_flight_program)
         self.assertIn('flight_tube="flight_tube_ground.pa0"', full_flight_program)
-        self.assertIn("flight_tube=4", full_flight_program)
+        self.assertIn("flight_tube=1", full_flight_program)
         self.assertIn("reflectron=5", full_flight_program)
         self.assertIn("detector=7", full_flight_program)
-        self.assertIn("upstream_bridge=2", full_flight_program)
-        self.assertIn("accelerator_intermediate_overlay=6", full_flight_program)
+        self.assertIn("upstream_bridge=4", full_flight_program)
+        self.assertIn("accelerator_entrance_aperture_local=6", full_flight_program)
         self.assertIn(
-            "single_flight_active_field_instances={1,2,3,6}",
+            "single_flight_active_field_instances={2,4,3,6}",
+            full_flight_program,
+        )
+        self.assertIn(
+            "simion.workbench_program()\nsimion.early_access(8.2)\nsim_segment_global=1",
+            full_flight_program,
+        )
+        self.assertIn("local single_flight_continuous_rf_next_sample={}", full_flight_program)
+        self.assertIn(
+            "if rf and single_flight_pre_pulse_time_series==0 and time<handoff_pulse_time_us then",
+            full_flight_program,
+        )
+        self.assertIn(
+            "single_flight_continuous_rf_next_sample[ion_number]=next_index",
             full_flight_program,
         )
         self.assertIn("active_scope=='pre_pulse_frontend_accelerator'", full_flight_program)
         self.assertIn("or 'full_flight'", full_flight_program)
         self.assertIn("TRACE: detector_crossing", full_flight_program)
+        self.assertIn("TRACE: timeout_splat", full_flight_program)
 
     def test_domain_split_entrance_local_reuses_slot6_and_main_electrode_plan(self) -> None:
         topology = {
@@ -361,7 +498,6 @@ class SingleFlightProgramTests(unittest.TestCase):
             "ring_z_mm": [-14.2, -9.3, -7.0, -4.7, -2.4],
         }
         domain = {
-            "upstream_instance_index": 2, "accelerator_instance_index": 3,
             "upstream_end_x_mm": 11.6, "accelerator_start_x_mm": 90.0,
             "upstream_bounds_mm": {"x_min": -100.0, "x_max": 11.6},
             "accelerator_bounds_mm": {"x_min": 90.0, "x_max": 125.0},
@@ -385,7 +521,7 @@ class SingleFlightProgramTests(unittest.TestCase):
                 "mode": "accelerator_main_electrode_basis_dirichlet_v1",
                 "source_role": "rf_oatof_simion_accelerator_main_contract",
                 "basis_electrode_ids": list(range(21)),
-                "pa_plus_mode_ids": list(range(36, 50)),
+                "pa_plus_mode_ids": list(range(36, 44)),
             },
             "replacement_semantics": {
                 "mode": "highest_priority_complete_local_replacement_v1",
@@ -404,6 +540,7 @@ class SingleFlightProgramTests(unittest.TestCase):
                 "z_min": -13.5, "z_max": -9.5,
             },
         }
+        build_metadata = {}
         with tempfile.TemporaryDirectory() as directory:
             region = build_resolved_region_field_contract(
                 geometry_path, Path(directory) / "entrance_local_region.json",
@@ -419,7 +556,23 @@ class SingleFlightProgramTests(unittest.TestCase):
                 accelerator_entrance_local=local,
                 domain_split=domain,
                 include_total_axis_field_exporter=True,
+                build_metadata=build_metadata,
             )
+        self.assertEqual(
+            build_metadata["instance_roles"],
+            {
+                "flight_tube": 1,
+                "coarse_frontend": 2,
+                "upstream_bridge": 4,
+                "reflectron": 5,
+                "accelerator": 3,
+                "detector": 7,
+                "accelerator_entrance_aperture_local": 6,
+            },
+        )
+        formal_config = program[program.index("local formal_iob_config=") :]
+        self.assertIn("flight_tube=1", formal_config)
+        self.assertIn('flight_tube="flight_tube_ground.pa0"', formal_config)
         self.assertIn("accelerator_entrance_aperture_local=6", program)
         self.assertIn(
             'accelerator_entrance_aperture_local="accelerator_entrance_local.pa0"',
@@ -427,7 +580,7 @@ class SingleFlightProgramTests(unittest.TestCase):
         )
         self.assertNotIn("accelerator_intermediate_overlay=6", program)
         self.assertIn("detector=7", program)
-        self.assertIn("single_flight_active_field_instances={1,2,3,6}", program)
+        self.assertIn("single_flight_active_field_instances={2,4,3,6}", program)
         self.assertIn(
             "for _,physical_id in ipairs({1,2,3,4,5,6,7,8,10,11,12,13,14,15,16,17,18,19,20}) do",
             program,
@@ -438,9 +591,9 @@ class SingleFlightProgramTests(unittest.TestCase):
         )
         self.assertIn("local function single_flight_project_pa_plus(source)\n  local values={}", program)
         self.assertIn(
-            "values[mode.mode_id]=assert(source[mode.source_electrode_id]", program
+            "for _,term in ipairs(mode.projection_terms) do", program
         )
-        self.assertNotIn("total=total+term.coefficient", program)
+        self.assertIn("value=value+term.coefficient*assert(source[term.electrode_id]", program)
         self.assertNotIn("for id,value in pairs(source) do values[id]=value end", program)
         self.assertIn("local single_flight_pa_plus_source={}", program)
         self.assertIn("single_flight_pa_plus_source[id]=value", program)
@@ -463,7 +616,7 @@ class SingleFlightProgramTests(unittest.TestCase):
         self.assertNotIn("ipairs({1,2,3,4,5,6,7,8,9,10", program)
         self.assertIn("adjustable V_intermediate2=1450", program)
         self.assertIn(
-            "single_flight_frontend.apply_at(single_flight_instrument_time_us(),single_flight_set_electrode)",
+            "single_flight_frontend.apply_at(time,single_flight_set_electrode)",
             program,
         )
         self.assertIn("if overlay.instance_index==instance_index then return overlay end", program)
@@ -471,6 +624,14 @@ class SingleFlightProgramTests(unittest.TestCase):
         self.assertIn("assert(#simion.wb.instances==6", exporter)
         self.assertIn("local instance_number=3", exporter)
         self.assertIn("instance_number=overlay.instance_index", exporter)
+        self.assertNotIn("source_electrode_id", exporter)
+        self.assertIn("for _,term in ipairs(mode.projection_terms) do", exporter)
+        self.assertIn(
+            "value=value+term.coefficient*assert(active[term.electrode_id]",
+            exporter,
+        )
+        self.assertIn("{electrode_id=1,coefficient=0.125}", exporter)
+        self.assertIn("{electrode_id=2,coefficient=-0.125}", exporter)
         post_pulse = build_successor_program(
             upstream, frontend, oatof, region, birth_times_us=[0.25],
             analyzer_component_source=ANALYZER_COMPONENT_SOURCE,
@@ -478,6 +639,7 @@ class SingleFlightProgramTests(unittest.TestCase):
             frontend_hook_source=FRONTEND_HOOK_SOURCE,
             rf_drive_kernel_source=RF_DRIVE_KERNEL_SOURCE,
             source_release_mode="pre_pulse_restart",
+            initial_velocities_mm_per_us=[[1.25, -2.5, 3.75]],
             accelerator_entrance_local=local,
             domain_split=domain,
         )
@@ -487,6 +649,8 @@ class SingleFlightProgramTests(unittest.TestCase):
         self.assertNotIn("upstream_bridge=2", post_pulse)
         self.assertIn("single_flight_active_field_instances={3,5}", post_pulse)
         self.assertIn("single_flight_post_pulse_handoff_minimal=1", post_pulse)
+        self.assertIn("local single_flight_pa_plus_modes={{mode_id=38", post_pulse)
+        self.assertNotIn("{mode_id=36", post_pulse)
         local_axis_program, local_axis_exporter = build_successor_program(
             upstream, frontend, oatof, region, birth_times_us=[0.25],
             analyzer_component_source=ANALYZER_COMPONENT_SOURCE,
@@ -524,7 +688,7 @@ class SingleFlightProgramTests(unittest.TestCase):
                 intermediate_overlay=intermediate,
                 domain_split=domain,
             )
-        with self.assertRaisesRegex(ValueError, "ordinary domain-split full flight"):
+        with self.assertRaisesRegex(ValueError, "field-bearing domain-split flight"):
             build_successor_program(
                 upstream, frontend, oatof, region, birth_times_us=[0.25],
                 analyzer_component_source=ANALYZER_COMPONENT_SOURCE,
@@ -603,6 +767,229 @@ class SingleFlightProgramTests(unittest.TestCase):
         self.assertIn("local single_flight_rf_enabled=0", program)
         self.assertIn("rf_drive=false", program)
 
+    def test_detector_marker_requires_reflectron_entry_before_overlay_selection(self) -> None:
+        screening = {
+            "schema_version": 1,
+            "role": "rf_oatof_pre_pulse_time_series_screening_contract",
+            "mode": "real_pa_rf_pre_pulse_time_series",
+            "active_scope": "pre_pulse_frontend_accelerator",
+            "pulse_disabled": True,
+            "terminate_at_window_end": True,
+            "resolution_claim_allowed": False,
+            "prohibited_outputs": [
+                "detector_crossing", "resolution_metrics",
+                "single_flight_spatial_six_panel",
+            ],
+            "sample_times_us": [1.0],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            full_flight = _successor_callback_program(
+                Path(directory), particle_ids=[46, 99],
+            )
+            pre_pulse = _successor_callback_program(
+                Path(directory), pre_pulse_time_series_contract=screening,
+            )
+        callback = full_flight[
+            full_flight.index("function segment.instance_adjust()"):full_flight.index(
+                "function segment.initialize()"
+            )
+        ]
+        marker_guard = (
+            "if single_flight_pre_pulse_time_series==0 and\n"
+            "      ion_instance==single_flight_detector_instance_index and\n"
+            "      not single_flight_analyzer.detector_marker_active(single_flight_canonical_particle_id()) then\n"
+            "    ion_instance=0\n"
+            "    return"
+        )
+        self.assertIn(marker_guard, callback)
+        self.assertLess(
+            callback.index(marker_guard),
+            callback.index("local overlay=single_flight_overlay_for_instance(ion_instance)"),
+        )
+        self.assertIn(
+            "(single_flight_analyzer.detector_marker_active(single_flight_canonical_particle_id()) and\n"
+            "      detector:inside_wc(ion_px_mm,ion_py_mm,ion_pz_mm))",
+            callback,
+        )
+        self.assertIn(
+            "local single_flight_source_particle_id={[1]=46,[2]=99}",
+            full_flight,
+        )
+        self.assertIn(
+            "return ion_number+single_flight_particle_id_offset", full_flight
+        )
+        self.assertIn("simion_native_kinetic_energy_eV=%.17g source_instance=%d", full_flight)
+        self.assertIn(
+            "TRACE: detector_hit_entity ion=%d instance=%d", full_flight
+        )
+        self.assertIn(
+            "ion_number,single_flight_detector_instance_index", full_flight
+        )
+        pre_pulse_callback = pre_pulse[
+            pre_pulse.index("function segment.instance_adjust()"):pre_pulse.index(
+                "function segment.initialize()"
+            )
+        ]
+        pre_pulse_return = "if single_flight_pre_pulse_time_series~=0 then"
+        self.assertIn(pre_pulse_return, pre_pulse_callback)
+        self.assertLess(
+            pre_pulse_callback.index(pre_pulse_return),
+            pre_pulse_callback.index("local detector=simion.wb.instances"),
+        )
+
+    def test_pre_pulse_restart_injects_canonical_velocity_before_particle_state(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            program = _successor_callback_program(
+                Path(directory), source_release_mode="pre_pulse_restart",
+            )
+        velocity_assignment = (
+            "if single_flight_restart_velocity_mm_per_us and "
+            "single_flight_particle_state[ion_number]==nil then"
+        )
+        self.assertIn(
+            "local single_flight_restart_velocity_mm_per_us={{1.25,-2.5,3.75},{-4,5,-6}}",
+            program,
+        )
+        self.assertIn(velocity_assignment, program)
+        self.assertIn(
+            "single_flight_restart_velocity_mm_per_us[single_flight_source_row_index()]",
+            program,
+        )
+        self.assertIn("ion_vx_mm,ion_vy_mm,ion_vz_mm=velocity[1],velocity[2],velocity[3]", program)
+        initialize = program[program.index("function segment.initialize()"):program.index("function segment.tstep_adjust()")]
+        self.assertLess(initialize.index(velocity_assignment), initialize.index("local time=single_flight_instrument_time_us()"))
+        self.assertLess(initialize.index(velocity_assignment), initialize.index("single_flight_require_analyzer_particle"))
+        self.assertLess(initialize.index(velocity_assignment), initialize.index("single_flight_frontend.initialize_particle"))
+        self.assertLess(initialize.index(velocity_assignment), initialize.index("TRACE: source_release"))
+        self.assertNotIn("ion_ke=", initialize)
+
+    def test_pre_pulse_restart_requires_complete_finite_velocity_rows(self) -> None:
+        upstream, frontend = _minimal_program_contracts()
+        geometry_path = REPO / "projects/single_reflection_oa_tof_mass_analyzer/config/resolved_geometry.json"
+        oatof = json.loads(geometry_path.read_text(encoding="utf-8"))
+        with tempfile.TemporaryDirectory() as directory:
+            region = build_resolved_region_field_contract(
+                geometry_path, Path(directory) / "region.json", "accelerator_real_pa"
+            )
+            common = {
+                "birth_times_us": [0.25, 1.0],
+                "analyzer_component_source": ANALYZER_COMPONENT_SOURCE,
+                "pulse_hook_source": PULSE_HOOK_SOURCE,
+                "frontend_hook_source": FRONTEND_HOOK_SOURCE,
+                "rf_drive_kernel_source": RF_DRIVE_KERNEL_SOURCE,
+                "source_release_mode": "pre_pulse_restart",
+            }
+            for velocities in (None, [[1.0, 2.0, 3.0]], [[1.0, 2.0], [3.0, 4.0, 5.0]], [[float("nan"), 0.0, 0.0], [0.0, 0.0, 0.0]]):
+                with self.subTest(velocities=velocities):
+                    with self.assertRaisesRegex(ValueError, "finite initial velocity vector"):
+                        build_successor_program(
+                            upstream, frontend, oatof, region,
+                            initial_velocities_mm_per_us=velocities,
+                            **common,
+                        )
+
+    def test_post_pulse_projection_omits_rods_under_explicit_restart_zero_policy(self) -> None:
+        model = _pa_plus_model()
+        rods = [
+            {"electrode_id": electrode_id, "potential_V": 0.0}
+            for electrode_id in range(1, 9)
+        ]
+        projection = resolve_post_pulse_pa_plus_solution_projection(
+            model,
+            rod_physical_electrode_ids=list(range(1, 9)),
+            upstream_rod_electrodes=rods,
+            source_release_mode="pre_pulse_restart",
+        )
+        projected = projection["projected_pa_plus_solution_model"]
+        self.assertEqual(projected["mode_count"], 6)
+        self.assertEqual(projection["omitted_mode_ids"], [36, 37])
+        self.assertEqual(
+            [mode["name"] for mode in projected["modes"]],
+            ["repeller", "grid1", "intermediate2", "grid2", "entrance_reference_sleeve", "entrance_plate"],
+        )
+        # The frozen upstream design correctly records its pre-pulse 8 V DC
+        # common mode.  A post-pulse restart loads neither that PA nor RF, so
+        # its separate runtime policy makes every rod mode exactly zero.
+        rods[0]["potential_V"] = 8.0
+        restarted = resolve_post_pulse_pa_plus_solution_projection(
+            model,
+            rod_physical_electrode_ids=list(range(1, 9)),
+            upstream_rod_electrodes=rods,
+            source_release_mode="pre_pulse_restart",
+        )
+        proof = restarted["rod_voltage_proof"]
+        self.assertEqual(proof["upstream_static_voltages_v"]["1"], 8.0)
+        self.assertEqual(
+            set(proof["effective_post_pulse_voltages_v"].values()), {0.0}
+        )
+        with self.assertRaisesRegex(ValueError, "does not cover every rod"):
+            resolve_post_pulse_pa_plus_solution_projection(
+                model,
+                rod_physical_electrode_ids=list(range(1, 9)),
+                upstream_rod_electrodes=rods[:-1],
+                source_release_mode="pre_pulse_restart",
+            )
+
+    def test_post_pulse_projection_rejects_modes_with_hidden_rod_basis_terms(self) -> None:
+        rods = [
+            {"electrode_id": electrode_id, "potential_V": 0.0}
+            for electrode_id in range(1, 9)
+        ]
+        retained_with_rod = _pa_plus_model()
+        retained_with_rod["modes"][-1]["physical_electrode_coefficients"]["1"] = 0.25
+        with self.assertRaisesRegex(ValueError, "rod mode role is invalid"):
+            resolve_post_pulse_pa_plus_solution_projection(
+                retained_with_rod,
+                rod_physical_electrode_ids=list(range(1, 9)),
+                upstream_rod_electrodes=rods,
+                source_release_mode="pre_pulse_restart",
+            )
+
+        non_independent_rod = _pa_plus_model()
+        non_independent_rod["modes"][0]["physical_electrode_coefficients"] = {
+            "1": 0.5, "10": 0.5,
+        }
+        with self.assertRaisesRegex(ValueError, "rod mode basis is invalid"):
+            resolve_post_pulse_pa_plus_solution_projection(
+                non_independent_rod,
+                rod_physical_electrode_ids=list(range(1, 9)),
+                upstream_rod_electrodes=rods,
+                source_release_mode="pre_pulse_restart",
+            )
+
+    def test_pa_plus_octupole_projection_reconstructs_common_and_differential_drive(self) -> None:
+        model = _pa_plus_model()
+        common_v = 13.25
+        differential_v = -41.5
+        mode_voltages = {
+            36: common_v,
+            37: differential_v,
+            38: 2100.0,
+            39: 1810.0,
+            40: 430.0,
+            41: 0.0,
+            42: 0.0,
+            43: 11.0,
+        }
+        physical = {
+            electrode_id: common_v + (differential_v if electrode_id % 2 else -differential_v)
+            for electrode_id in range(1, 9)
+        }
+        for mode in model["modes"]:
+            for raw_id, coefficient in mode["physical_electrode_coefficients"].items():
+                electrode_id = int(raw_id)
+                if electrode_id not in range(1, 9):
+                    physical[electrode_id] = physical.get(electrode_id, 0.0) + (
+                        float(coefficient) * mode_voltages[int(mode["mode_id"])]
+                    )
+        projected = project_pa_plus_mode_voltages(model, physical)
+        self.assertEqual(projected[36], common_v)
+        self.assertEqual(projected[37], differential_v)
+        self.assertEqual(projected, mode_voltages)
+        physical[1] += 0.25
+        with self.assertRaisesRegex(ValueError, "outside the PA\+ model subspace"):
+            project_pa_plus_mode_voltages(model, physical)
+
     def test_terminal_handoff_continuation_keeps_rf_enabled(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             program = _successor_callback_program(
@@ -657,15 +1044,74 @@ class SingleFlightProgramTests(unittest.TestCase):
         self.assertNotIn("fraction=(sample_time-p.t)", program)
         self.assertIn("TRACE: pre_pulse_screening_terminal", program)
         self.assertIn("terminal_reason=", program)
+        self.assertNotIn("sim_segment_global=1", program)
         self.assertIn("adjustable trajectory_log_enable=1", program)
         self.assertIn(
-            "if single_flight_pre_pulse_time_series~=0 then\n"
-            "      if rf then rf.apply_at(single_flight_instrument_time_us(),single_flight_set_electrode) end",
+            "if single_flight_pre_pulse_time_series~=0 or time<handoff_pulse_time_us then\n"
+            "      if rf then rf.apply_at(time,single_flight_set_electrode) end",
+            program,
+        )
+
+    def test_compact_natural_handoff_waits_for_its_persisted_next_grid_index(self) -> None:
+        contract = {
+            "schema_version": 7,
+            "role": "rf_oatof_pre_pulse_time_series_screening_contract",
+            "mode": "real_pa_rf_pre_pulse_time_series",
+            "active_scope": "pre_pulse_frontend_accelerator",
+            "pulse_disabled": True,
+            "terminate_at_window_end": False,
+            "resolution_claim_allowed": False,
+            "prohibited_outputs": [
+                "detector_crossing", "resolution_metrics",
+                "single_flight_spatial_six_panel",
+            ],
+            "trace_policy": {
+                "mode": "natural_trajectory_compact_handoff_v1",
+                "terminal_event": "geometry_collision_v1",
+                "retention_class": "transient_scan_input",
+            },
+            "rf_time_grid": {
+                "time_grid_profile_id": "natural_pre_pulse_native_rf_grid_v1",
+                "grid_origin_us": 0.0,
+                "step_us": 0.025,
+            },
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            program = _successor_callback_program(
+                Path(directory), pre_pulse_time_series_contract=contract,
+                rf_steps_per_period=40,
+            )
+        self.assertIn(
+            "simion.workbench_program()\nsimion.early_access(8.2)\nsim_segment_global=1",
+            program,
+        )
+        efield_adjust = program[
+            program.index("function segment.efield_adjust()"):program.index(
+                "function segment.fast_adjust()"
+            )
+        ]
+        no_pa_return = "local instance=simion.wb.instances[ion_instance]\n  if instance==nil then return end"
+        scope_assert = "assert(single_flight_is_pre_pulse_scope_instance(ion_instance)"
+        self.assertIn(no_pa_return, efield_adjust)
+        self.assertLess(efield_adjust.index(no_pa_return), efield_adjust.index(scope_assert))
+        self.assertIn(
+            "ion_instance==0 and 'outside_pa_termination' or 'geometry_collision'",
+            program,
+        )
+        self.assertNotIn(
+            "single_flight_pre_pulse_natural_archive~=0 then ion_splat=1",
             program,
         )
         self.assertIn(
+            "if next_index==1 then next_index=2 end\n"
+            "      sample_time=single_flight_pre_pulse_grid_origin_us+(next_index-1)*single_flight_pre_pulse_grid_step_us",
+            program,
+        )
+        self.assertNotIn("local raw_index=(time-", program)
+        self.assertNotIn("local native_index=math.floor", program)
+        self.assertIn(
             "else\n"
-            "      single_flight_frontend.apply_at(single_flight_instrument_time_us(),single_flight_set_electrode)",
+            "      single_flight_frontend.apply_at(time,single_flight_set_electrode)",
             program,
         )
         invalid = dict(contract, pulse_disabled=False)
@@ -674,6 +1120,18 @@ class SingleFlightProgramTests(unittest.TestCase):
                 _successor_callback_program(
                     Path(directory), pre_pulse_time_series_contract=invalid
                 )
+
+    def test_continuous_full_flight_uses_rf_only_before_pulse(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            program = _successor_callback_program(Path(directory))
+        self.assertIn("local time=single_flight_instrument_time_us()", program)
+        self.assertIn(
+            "if single_flight_pre_pulse_time_series~=0 or time<handoff_pulse_time_us then\n"
+            "      if rf then rf.apply_at(time,single_flight_set_electrode) end\n"
+            "    else\n"
+            "      single_flight_frontend.apply_at(time,single_flight_set_electrode)",
+            program,
+        )
 
     def test_electrode_topology_registry_preserves_two_zone_and_adds_only_id_20(self) -> None:
         two_zone = resolve_frontend_electrode_topology(FRONTEND_ELECTRODES)
@@ -858,7 +1316,6 @@ class SingleFlightProgramTests(unittest.TestCase):
                 frontend_hook_source=FRONTEND_HOOK_SOURCE, rf_drive_kernel_source=RF_DRIVE_KERNEL_SOURCE,
                 intermediate_overlay=overlay("intermediate2", -13.5, -9.5),
                 domain_split={
-                    "upstream_instance_index": 2, "accelerator_instance_index": 3,
                     "upstream_end_x_mm": -20.0, "accelerator_start_x_mm": -10.0,
                     "upstream_bounds_mm": {"x_min": -30.0, "x_max": -20.0},
                     "accelerator_bounds_mm": {"x_min": -10.0, "x_max": 1.0},
@@ -872,10 +1329,14 @@ class SingleFlightProgramTests(unittest.TestCase):
         self.assertIn("accelerator_main in slot 3", exporter)
         self.assertIn("active_scope='pre_pulse_frontend_accelerator'", exporter)
         self.assertIn("instances={[3]=instance_state(ai)}})", exporter)
-        self.assertIn("local pa_plus_physical_ids={}", exporter)
-        self.assertIn("if not pa_plus_physical_ids[id] then values[id]=active[id] end", exporter)
+        self.assertIn("if #pa_plus_modes==0 then", exporter)
+        self.assertNotIn("if not pa_plus_physical_ids[id]", exporter)
         self.assertNotIn("OATOF_ACCELERATOR_PA_OVERRIDE", exporter)
         self.assertIn("math.floor((z_end-z_start)/z_step+0.5)+1", exporter)
+        self.assertIn("local boundary_z=ai.z+(ai.pa.nz-1)*ai.pa.dz_mm*ai.scale", exporter)
+        self.assertIn("TOTAL_AXIS_FIELD_EXIT_BOUNDARY", exporter)
+        self.assertIn("for index=0,boundary_steps-1 do", exporter)
+        self.assertLess(exporter.index("output:close()"), exporter.index("TOTAL_AXIS_FIELD_EXIT_BOUNDARY"))
 
         with tempfile.TemporaryDirectory() as directory:
             region = build_resolved_region_field_contract(geometry_path, Path(directory) / "main_only_region.json", "accelerator_ideal_three_zone_real_reflectron", accelerator_topology=topology)
@@ -884,7 +1345,6 @@ class SingleFlightProgramTests(unittest.TestCase):
                 analyzer_component_source=ANALYZER_COMPONENT_SOURCE, pulse_hook_source=PULSE_HOOK_SOURCE,
                 frontend_hook_source=FRONTEND_HOOK_SOURCE, rf_drive_kernel_source=RF_DRIVE_KERNEL_SOURCE,
                 domain_split={
-                    "upstream_instance_index": 2, "accelerator_instance_index": 3,
                     "upstream_end_x_mm": -20.0, "accelerator_start_x_mm": -10.0,
                     "upstream_bounds_mm": {"x_min": -30.0, "x_max": -20.0},
                     "accelerator_bounds_mm": {"x_min": -10.0, "x_max": 1.0},
@@ -1032,10 +1492,16 @@ class SingleFlightProgramTests(unittest.TestCase):
             "TRACE: detector_crossing ion=%d t=%.12g x=%.12g y=%.12g z=%.12g",
             program,
         )
-        self.assertIn("adjustable diagnostic_max_tof_us=90", program)
         self.assertIn(
-            "diagnostics={max_tof_us=diagnostic_max_tof_us,log_stride=trajectory_log_stride}",
+            "adjustable diagnostic_post_pulse_window_us=90", program
+        )
+        self.assertIn(
+            "diagnostics={post_pulse_observation_window_us=diagnostic_post_pulse_window_us,log_stride=trajectory_log_stride}",
             program,
+        )
+        self.assertIn("pulse_elapsed_us=time-handoff_pulse_time_us", program)
+        self.assertIn(
+            "diagnostic_post_pulse_window_us-time", program
         )
         self.assertIn("TRACE: diagnostic_return_plane", program)
 
@@ -1076,10 +1542,14 @@ class SingleFlightProgramTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "state.csv"
             path.write_text(
-                "particle_id,instrument_time_us\n1,0.25\n2,1.5\n",
+                "particle_id,instrument_time_us,velocity_x_m_s,velocity_y_m_s,velocity_z_m_s\n"
+                "1,0.25,1250,-2500,3750\n2,1.5,-4000,5000,-6000\n",
                 encoding="utf-8",
             )
-            self.assertEqual(load_initial_state(path), ([0.25, 1.5], [1, 2]))
+            self.assertEqual(
+                load_initial_state(path),
+                ([0.25, 1.5], [1, 2], [[1.25, -2.5, 3.75], [-4.0, 5.0, -6.0]]),
+            )
 
     def test_replay_birth_times_use_contiguous_simulation_particle_ids(self) -> None:
         import tempfile
@@ -1087,10 +1557,14 @@ class SingleFlightProgramTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "replay_state.csv"
             path.write_text(
-                "simulation_particle_id,instrument_time_us\n1,31.8\n2,31.8\n",
+                "simulation_particle_id,instrument_time_us,velocity_x_m_s,velocity_y_m_s,velocity_z_m_s\n"
+                "1,31.8,1000,0,-1000\n2,31.8,2000,0,-2000\n",
                 encoding="utf-8",
             )
-            self.assertEqual(load_initial_state(path), ([31.8, 31.8], [1, 2]))
+            self.assertEqual(
+                load_initial_state(path),
+                ([31.8, 31.8], [1, 2], [[1.0, 0.0, -1.0], [2.0, 0.0, -2.0]]),
+            )
 
     def test_row_map_keeps_reindexed_restart_rows_linked_to_mother_ids(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -3,17 +3,23 @@ from __future__ import annotations
 import json
 import copy
 import hashlib
+import re
 import unittest
 from pathlib import Path
 
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_frontend import (
+    _zero_field_collision_gem,
     compile_accelerator_entrance_aperture_local,
     compile_accelerator_main,
     compile_accelerator_overlay,
     compile_frontend,
+    compile_pre_pulse_bridge,
     compile_pre_pulse_connector_collision,
     compile_upstream_bridge,
     resolve_positive_gap_domain_split,
+)
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.single_flight_electrode_contract import (
+    THREE_ZONE_PA_PLUS_MODEL_ID,
 )
 
 
@@ -93,6 +99,8 @@ class SingleFlightFrontendTests(unittest.TestCase):
                 "shield_connection_profile_id": "grounded_circular_to_rectangular_shield_v1",
                 "shield_potential_V": 0.0,
                 "cross_section_binding": "upstream_grounded_shield_v1",
+                "upstream_fine_extent_mm": 10.0,
+                "accelerator_fine_extent_mm": 10.0,
             }
         )
 
@@ -230,141 +238,209 @@ class SingleFlightFrontendTests(unittest.TestCase):
             "square_3d": {},
             "cylindrical_3d": {},
         }
+        local_cache_identity_inputs: dict[str, dict[float, tuple[str, str, tuple[int, ...]]]] = {
+            "square_3d": {},
+            "cylindrical_3d": {},
+        }
         upstream_hashes: set[str] = set()
 
-        for realization_id in ("square_3d", "cylindrical_3d"):
-            for height_mm in (1.0, 1.5, 2.0, 2.5):
-                with self.subTest(
-                    realization_id=realization_id, height_mm=height_mm
-                ):
-                    oatof = self._grid010_twenty_ring_oatof(realization_id)
-                    connection = self._positive_gap_connection(102.4)
-                    if realization_id == "cylindrical_3d":
-                        connection["connector"]["shield_connection_profile_id"] = (
-                            "grounded_circular_to_cylindrical_sideport_v1"
-                        )
-                    coarse_gem, frontend = compile_frontend(
-                        self.upstream,
-                        oatof,
-                        connection,
-                        cell_mm_xyz=coarse_cells,
-                        accelerator_port_aperture_mm={"width": 1.0, "height": 1.0},
+        campaign = json.loads(
+            (
+                INTEGRATION
+                / "config/explorations/"
+                "ideal_acceptance_300mm_terminal_aperture_height_axialgrid010_pre_pulse_n5000.json"
+            ).read_text(encoding="utf-8")
+        )
+        rows = campaign["experiments"]["rows"]
+        layout_to_realization = {
+            "three_zone_ideal_acceptance_300mm_square_kinematic_envelope_v1": "square_3d",
+            "three_zone_ideal_acceptance_300mm_cylindrical_kinematic_envelope_v1": "cylindrical_3d",
+        }
+        self.assertEqual(len(rows), 8)
+        for row in rows:
+            values = row["values"]
+            realization_id = layout_to_realization[
+                values["single_flight_layout_profile_id"]
+            ]
+            aperture = values["accelerator_entrance_local_aperture_mm"]
+            self.assertEqual(aperture["width"], 1.0)
+            height_mm = aperture["height"]
+            with self.subTest(
+                realization_id=realization_id, height_mm=height_mm
+            ):
+                oatof = self._grid010_twenty_ring_oatof(realization_id)
+                connection = self._positive_gap_connection(102.4)
+                if realization_id == "cylindrical_3d":
+                    connection["connector"]["shield_connection_profile_id"] = (
+                        "grounded_circular_to_cylindrical_sideport_v1"
                     )
-                    bridge_gem, _ = compile_upstream_bridge(
-                        self.upstream,
-                        oatof,
-                        connection,
-                        cell_mm_xyz=coarse_cells,
-                    )
-                    main_gem, main = compile_accelerator_main(
-                        frontend,
-                        oatof,
-                        connection=connection,
-                        cell_mm_xyz=cells,
-                        reference_aperture_mm={"width": 1.0, "height": 1.0},
-                    )
-                    local_gem, local = compile_accelerator_entrance_aperture_local(
-                        frontend,
-                        oatof,
-                        connection,
-                        main,
-                        cell_mm_xyz=cells,
-                        domain_policy=local_policy,
-                        aperture_mm={"width": 1.0, "height": height_mm},
-                    )
+                coarse_gem, frontend = compile_frontend(
+                    self.upstream,
+                    oatof,
+                    connection,
+                    cell_mm_xyz=coarse_cells,
+                    accelerator_port_aperture_mm={"width": 1.0, "height": 1.0},
+                )
+                bridge_gem, _ = compile_upstream_bridge(
+                    self.upstream,
+                    oatof,
+                    connection,
+                    cell_mm_xyz=coarse_cells,
+                )
+                main_gem, main = compile_accelerator_main(
+                    frontend,
+                    oatof,
+                    connection=connection,
+                    cell_mm_xyz=cells,
+                    reference_aperture_mm={"width": 1.0, "height": 1.0},
+                )
+                local_gem, local = compile_accelerator_entrance_aperture_local(
+                    frontend,
+                    oatof,
+                    connection,
+                    main,
+                    cell_mm_xyz=cells,
+                    domain_policy=local_policy,
+                    aperture_mm={"width": 1.0, "height": height_mm},
+                )
 
-                    upstream_hashes.add(hashlib.sha256(bridge_gem.encode()).hexdigest())
-                    coarse_hashes[realization_id].add(
-                        hashlib.sha256(coarse_gem.encode()).hexdigest()
-                    )
-                    main_hashes[realization_id].add(
-                        hashlib.sha256(main_gem.encode()).hexdigest()
-                    )
-                    local_hashes[realization_id][height_mm] = hashlib.sha256(
-                        local_gem.encode()
-                    ).hexdigest()
+                upstream_hashes.add(hashlib.sha256(bridge_gem.encode()).hexdigest())
+                coarse_hashes[realization_id].add(
+                    hashlib.sha256(coarse_gem.encode()).hexdigest()
+                )
+                main_gem_sha256 = hashlib.sha256(main_gem.encode()).hexdigest()
+                main_hashes[realization_id].add(main_gem_sha256)
+                local_gem_sha256 = hashlib.sha256(local_gem.encode()).hexdigest()
+                local_hashes[realization_id][height_mm] = local_gem_sha256
+                # The runtime cache identity additionally binds solver and
+                # builder versions; those inputs are shared across a frozen
+                # shape scan.  These are the variable identity inputs that
+                # must separate every active aperture row.
+                local_cache_identity_inputs[realization_id][height_mm] = (
+                    local_gem_sha256,
+                    main_gem_sha256,
+                    tuple(local["pa_plus_solution_model"]["mode_ids"]),
+                )
 
-                    main_bounds = main["instance_bounds_mm"]
-                    local_bounds = local["instance_bounds_mm"]
-                    for axis in ("x", "y", "z"):
-                        self.assertGreaterEqual(
-                            local_bounds[f"{axis}_min"],
-                            main_bounds[f"{axis}_min"],
-                        )
-                        self.assertLessEqual(
-                            local_bounds[f"{axis}_max"],
-                            main_bounds[f"{axis}_max"],
-                        )
-                    geometry = frontend["accelerator_local_region"]
-                    shield_inner_face = geometry["negative_x_face_mm"]
-                    shield_outer_face = shield_inner_face + geometry["shield_wall_mm"]
-                    self.assertLessEqual(local_bounds["x_min"], shield_inner_face)
-                    self.assertGreaterEqual(local_bounds["x_max"], shield_outer_face)
-                    self.assertLessEqual(
-                        local_bounds["z_min"], geometry["repeller_front_z_mm"]
-                    )
+                main_bounds = main["instance_bounds_mm"]
+                local_bounds = local["instance_bounds_mm"]
+                for axis in ("x", "y", "z"):
                     self.assertGreaterEqual(
-                        local_bounds["z_max"], geometry["grid1_z_mm"]
+                        local_bounds[f"{axis}_min"], main_bounds[f"{axis}_min"]
                     )
-                    local_points = (
-                        local["dimensions"]["nx"]
-                        * local["dimensions"]["ny"]
-                        * local["dimensions"]["nz"]
+                    self.assertLessEqual(
+                        local_bounds[f"{axis}_max"], main_bounds[f"{axis}_max"]
                     )
-                    main_points = (
-                        main["dimensions"]["nx"]
-                        * main["dimensions"]["ny"]
-                        * main["dimensions"]["nz"]
-                    )
-                    self.assertLess(local_points * 4, main_points)
+                geometry = frontend["accelerator_local_region"]
+                shield_inner_face = geometry["negative_x_face_mm"]
+                shield_outer_face = shield_inner_face + geometry["shield_wall_mm"]
+                self.assertLessEqual(local_bounds["x_min"], shield_inner_face)
+                self.assertGreaterEqual(local_bounds["x_max"], shield_outer_face)
+                self.assertLessEqual(
+                    local_bounds["z_min"], geometry["repeller_front_z_mm"]
+                )
+                self.assertGreaterEqual(
+                    local_bounds["z_max"], geometry["grid1_z_mm"]
+                )
+                local_points = (
+                    local["dimensions"]["nx"]
+                    * local["dimensions"]["ny"]
+                    * local["dimensions"]["nz"]
+                )
+                main_points = (
+                    main["dimensions"]["nx"]
+                    * main["dimensions"]["ny"]
+                    * main["dimensions"]["nz"]
+                )
+                self.assertLess(local_points * 4, main_points)
 
-                    boundary = local["boundary_condition"]
-                    self.assertEqual(
-                        boundary["mode"],
-                        "accelerator_main_electrode_basis_dirichlet_v1",
-                    )
-                    self.assertEqual(boundary["source_role"], main["role"])
-                    self.assertEqual(
-                        boundary["basis_electrode_ids"],
-                        main["boundary_condition"]["basis_electrode_ids"],
-                    )
-                    self.assertEqual(
-                        boundary["basis_electrode_ids"],
-                        list(range(max(boundary["basis_electrode_ids"]) + 1)),
-                    )
-                    model = main["pa_plus_solution_model"]
-                    self.assertEqual(model["model_id"], "three_zone_linear_ring_pa_plus_v1")
-                    self.assertEqual(model["mode_count"], 14)
-                    self.assertEqual(model["mode_ids"], list(range(36, 50)))
-                    self.assertEqual(
-                        model["voltage_control_policy"]["policy_id"],
-                        "three_zone_linear_ring_interpolation_v1",
-                    )
-                    self.assertFalse(
-                        model["voltage_control_policy"]["per_ring_independent_adjustment_supported"]
-                    )
-                    self.assertEqual(
-                        model["voltage_control_policy"]["derived_accelerator_ring_ids"],
-                        main["electrodes"]["accelerator_ring_ids"],
-                    )
-                    self.assertEqual(local["pa_plus_solution_model"], model)
-                    self.assertEqual(boundary["pa_plus_mode_ids"], model["mode_ids"])
-                    coefficients = {
-                        int(electrode_id): sum(
-                            float(mode["physical_electrode_coefficients"].get(str(electrode_id), 0.0))
-                            for mode in model["modes"]
+                boundary = local["boundary_condition"]
+                self.assertEqual(
+                    boundary["mode"], "accelerator_main_electrode_basis_dirichlet_v1"
+                )
+                self.assertEqual(boundary["source_role"], main["role"])
+                self.assertEqual(
+                    boundary["basis_electrode_ids"],
+                    main["boundary_condition"]["basis_electrode_ids"],
+                )
+                self.assertEqual(
+                    boundary["basis_electrode_ids"],
+                    list(range(max(boundary["basis_electrode_ids"]) + 1)),
+                )
+                sentinel_layout = local["pa_plus_sentinel_layout"]
+                self.assertEqual(sentinel_layout["boundary_face"], "x_min")
+                self.assertEqual(sentinel_layout["axis"], "z")
+                self.assertEqual(
+                    sentinel_layout["electrode_count"],
+                    len(boundary["basis_electrode_ids"]),
+                )
+                self.assertGreaterEqual(
+                    sentinel_layout["interior_node_capacity"],
+                    sentinel_layout["electrode_count"],
+                )
+                model = main["pa_plus_solution_model"]
+                self.assertEqual(model["model_id"], THREE_ZONE_PA_PLUS_MODEL_ID)
+                self.assertEqual(
+                    model["field_loading_policy_id"],
+                    "octupole_common_differential_pa_plus_v2",
+                )
+                self.assertEqual(model["mode_count"], 8)
+                self.assertEqual(model["mode_ids"], list(range(36, 44)))
+                self.assertEqual(
+                    [mode["name"] for mode in model["modes"][:2]],
+                    ["rod_common", "rod_differential"],
+                )
+                self.assertEqual(
+                    model["rod_voltage_control_policy"]["policy_id"],
+                    "octupole_common_plus_alternating_differential_v1",
+                )
+                self.assertEqual(
+                    model["voltage_control_policy"]["policy_id"],
+                    "three_zone_linear_ring_interpolation_v1",
+                )
+                self.assertFalse(
+                    model["voltage_control_policy"]["per_ring_independent_adjustment_supported"]
+                )
+                self.assertEqual(
+                    model["voltage_control_policy"]["derived_accelerator_ring_ids"],
+                    main["electrodes"]["accelerator_ring_ids"],
+                )
+                self.assertEqual(local["pa_plus_solution_model"], model)
+                self.assertEqual(boundary["pa_plus_mode_ids"], model["mode_ids"])
+                coefficients = {
+                    int(electrode_id): sum(
+                        float(
+                            mode["physical_electrode_coefficients"].get(
+                                str(electrode_id), 0.0
+                            )
                         )
-                        for electrode_id in main["electrodes"]["accelerator_ring_ids"]
-                    }
-                    self.assertTrue(
-                        all(abs(value - 1.0) < 1e-12 for value in coefficients.values())
+                        for mode in model["modes"]
+                    )
+                    for electrode_id in main["electrodes"]["accelerator_ring_ids"]
+                }
+                self.assertTrue(
+                    all(abs(value - 1.0) < 1e-12 for value in coefficients.values())
+                )
+                self.assertEqual(
+                    local["accelerator_port_aperture"]["mechanical_aperture_mm"],
+                    {"width": 1.0, "height": height_mm},
+                )
+                self.assertTrue(
+                    local["accelerator_port_aperture"]["connector_terminal_aperture_is_replaced"]
+                )
+                if realization_id == "cylindrical_3d":
+                    sideport = local["cylindrical_sideport"]
+                    self.assertEqual(
+                        sideport["positive_volume_overlap_mm"],
+                        frontend["accelerator_local_region"]["shield_wall_mm"],
                     )
                     self.assertEqual(
-                        local["accelerator_port_aperture"]["mechanical_aperture_mm"],
-                        {"width": 1.0, "height": height_mm},
+                        sideport["accelerator_shell_wall_mm"],
+                        frontend["accelerator_local_region"]["shield_wall_mm"],
                     )
-                    self.assertTrue(
-                        local["accelerator_port_aperture"]["connector_terminal_aperture_is_replaced"]
+                    self.assertEqual(
+                        sideport["topology"],
+                        "grounded_circular_sideport_collar_end_plate_v1",
                     )
 
         self.assertEqual(len(upstream_hashes), 1)
@@ -382,6 +458,9 @@ class SingleFlightFrontendTests(unittest.TestCase):
         )
         for realization_id in ("square_3d", "cylindrical_3d"):
             self.assertEqual(len(set(local_hashes[realization_id].values())), 4)
+            self.assertEqual(
+                len(set(local_cache_identity_inputs[realization_id].values())), 4
+            )
         for height_mm in (1.0, 1.5, 2.0, 2.5):
             self.assertNotEqual(
                 local_hashes["square_3d"][height_mm],
@@ -392,6 +471,7 @@ class SingleFlightFrontendTests(unittest.TestCase):
         self,
     ) -> None:
         hashes: set[str] = set()
+        fine_hashes: set[str] = set()
         for realization_id in ("square_3d", "cylindrical_3d"):
             oatof = self._grid010_twenty_ring_oatof(realization_id)
             connection = self._positive_gap_connection(102.4)
@@ -421,7 +501,82 @@ class SingleFlightFrontendTests(unittest.TestCase):
                 contract["instance_bounds_mm"]["x_min"],
                 split["terminal_end_x_mm"],
             )
+            fine_gem, fine_contract = compile_upstream_bridge(
+                self.upstream,
+                oatof,
+                connection,
+                cell_mm_xyz={"x": 1.0, "y": 1.0, "z": 1.0},
+                accelerator_port_aperture_mm={"width": 1.0, "height": 1.0},
+            )
+            fine_hashes.add(hashlib.sha256(fine_gem.encode()).hexdigest())
+            self.assertAlmostEqual(
+                fine_contract["junction_enclosure"]["length_mm"],
+                split["upstream_fine_extent_mm"],
+            )
         self.assertEqual(len(hashes), 1)
+        self.assertEqual(len(fine_hashes), 1)
+
+    def test_pre_pulse_bridge_compacts_inert_accelerator_basis_ids(self) -> None:
+        """Pre-pulse retains rods and upstream DC, never inert ring bases."""
+        oatof = self._grid010_twenty_ring_oatof("cylindrical_3d")
+        connection = self._positive_gap_connection(102.4)
+        connection["connector"]["shield_connection_profile_id"] = (
+            "grounded_circular_to_cylindrical_sideport_v1"
+        )
+        gem, contract = compile_pre_pulse_bridge(
+            self.upstream,
+            oatof,
+            connection,
+            cell_mm_xyz={"x": 1.0, "y": 1.0, "z": 1.0},
+            include_connector_coarse_sleeve=True,
+            accelerator_port_aperture_mm={"width": 1.0, "height": 1.0},
+        )
+        compact = contract["pre_pulse_compact_basis"]
+        self.assertEqual(
+            contract["boundary_condition"]["basis_electrode_ids"], list(range(12))
+        )
+        self.assertEqual(compact["logical_to_local_electrode_ids"]["33"], 10)
+        self.assertEqual(compact["logical_to_local_electrode_ids"]["34"], 11)
+        self.assertEqual(compact["boundary_sentinel_local_electrode_ids"], list(range(1, 12)))
+        self.assertNotIn("e(12)", gem)
+        self.assertNotIn("e(29)", gem)
+        self.assertIn("e(10)", gem)
+        self.assertIn("e(11)", gem)
+
+    def test_fine_upstream_bridge_covers_source_through_terminal_plus_connector_extent(self) -> None:
+        oatof = self._grid010_twenty_ring_oatof("square_3d")
+        connection = self._positive_gap_connection(102.4)
+        _, contract = compile_upstream_bridge(
+            self.upstream,
+            oatof,
+            connection,
+            cell_mm_xyz={"x": 1.0, "y": 1.0, "z": 1.0},
+            accelerator_port_aperture_mm={"width": 1.0, "height": 1.0},
+        )
+        split = contract["domain_split"]
+        bounds = contract["instance_bounds_mm"]
+        source_x_min = (
+            float(connection["spatial_registration"]["translation_mm"][0])
+            + float(self.upstream["geometry_mm"]["enclosure"]["vacuum_z_min_mm"])
+        )
+        self.assertLessEqual(bounds["x_min"], source_x_min)
+        self.assertAlmostEqual(
+            split["terminal_end_x_mm"],
+            split["connector_entrance_x_mm"]
+            + contract["connector_terminal"]["thickness_mm"],
+        )
+        self.assertAlmostEqual(
+            split["upstream_end_x_mm"] - split["terminal_end_x_mm"],
+            split["upstream_fine_extent_mm"],
+        )
+        self.assertAlmostEqual(bounds["x_max"], split["upstream_end_x_mm"])
+        self.assertLess(
+            split["upstream_end_x_mm"], split["accelerator_start_x_mm"]
+        )
+        self.assertAlmostEqual(
+            contract["junction_enclosure"]["length_mm"],
+            split["upstream_fine_extent_mm"],
+        )
 
     def test_standalone_three_zone_accelerator_main_preserves_shared_axial_design(self) -> None:
         results: dict[str, tuple[str, dict]] = {}
@@ -565,16 +720,17 @@ class SingleFlightFrontendTests(unittest.TestCase):
 
     def test_pre_pulse_entrance_zone_is_zero_field_and_excludes_remote_accelerator(self) -> None:
         oatof = self._three_zone_main_oatof("square_3d")
+        connection = self._positive_gap_connection(102.4)
         _, frontend = compile_frontend(
-            self.upstream, oatof, self.connection,
+            self.upstream, oatof, connection,
             cell_mm_xyz={"x": 0.5, "y": 0.5, "z": 0.5},
         )
         geometry = frontend["accelerator_local_region"]
         gem, main = compile_accelerator_main(
             frontend,
             oatof,
-            connection=self.connection,
-            cell_mm_xyz={"x": 0.25, "y": 0.25, "z": 0.1},
+            connection=connection,
+            cell_mm_xyz={"x": 0.5, "y": 0.5, "z": 0.1},
             domain_policy={"policy_id": "pre_pulse_entrance_zone_collision_v1"},
         )
         self.assertEqual(
@@ -583,10 +739,18 @@ class SingleFlightFrontendTests(unittest.TestCase):
         self.assertFalse(main["boundary_condition"]["refinement_required"])
         self.assertTrue(main["boundary_condition"]["direct_refinement_prohibited"])
         self.assertEqual(main["local_geometry_coverage"], "pre_pulse_connector_side_first_zone_collision_v1")
+        split = resolve_positive_gap_domain_split(frontend, connection)
+        expected_x_min = (
+            split["accelerator_start_x_mm"]
+            if split is not None
+            else geometry["negative_x_face_mm"]
+        )
+        self.assertAlmostEqual(main["instance_bounds_mm"]["x_min"], expected_x_min)
         self.assertGreaterEqual(main["instance_bounds_mm"]["z_max"], geometry["grid1_z_mm"] + 0.2)
         self.assertLess(main["instance_bounds_mm"]["z_max"], geometry["grid1_z_mm"] + 0.3)
-        self.assertIn(f"e({main['electrodes']['accelerator_repeller_id']})", gem)
-        self.assertIn(f"e({main['electrodes']['accelerator_grid1_id']})", gem)
+        self.assertEqual(main["boundary_condition"]["uniform_potential_v"], 0.0)
+        self.assertEqual(set(re.findall(r"\be\((\d+)\)", gem)), {"0"})
+        self.assertGreaterEqual(gem.count("e(0)"), 3)
         self.assertNotIn(f"e({main['electrodes']['accelerator_ring_ids'][0]})", gem)
 
     def test_terminal_handoff_connector_collision_excludes_multipole_rods(self) -> None:
@@ -607,6 +771,33 @@ class SingleFlightFrontendTests(unittest.TestCase):
         )
         self.assertEqual(connector["handoff_outer_vacuum_guard_mm"], 0.5)
         self.assertNotIn("segmented rod", gem.lower())
+        self.assertEqual(connector["boundary_condition"]["uniform_potential_v"], 0.0)
+        self.assertEqual(set(re.findall(r"\be\((\d+)\)", gem)), {"0"})
+
+    def test_cylindrical_collision_solids_are_grounded_without_changing_field_main(self) -> None:
+        oatof = self._three_zone_main_oatof("cylindrical_3d")
+        connection = self._positive_gap_connection(102.4)
+        connection["connector"]["shield_connection_profile_id"] = (
+            "grounded_circular_to_cylindrical_sideport_v1"
+        )
+        cells = {"x": 0.25, "y": 0.25, "z": 0.05}
+        _, frontend = compile_frontend(self.upstream, oatof, connection, cell_mm_xyz=cells)
+        collision, _ = compile_accelerator_main(
+            frontend, oatof, connection=connection, cell_mm_xyz=cells,
+            domain_policy={"policy_id": "pre_pulse_entrance_zone_collision_v1"},
+        )
+        connector, _ = compile_pre_pulse_connector_collision(
+            self.upstream, oatof, connection, cell_mm_xyz=cells,
+        )
+        for gem in (collision, connector):
+            self.assertEqual(set(re.findall(r"\be\((\d+)\)", gem)), {"0"})
+        self.assertIn("cylinder(", collision)
+        field_main, _ = compile_accelerator_main(
+            frontend, oatof, connection=connection, cell_mm_xyz=cells,
+        )
+        self.assertIn("e(9)", field_main)
+        self.assertIn("e(10)", field_main)
+        self.assertIn("e(11)", field_main)
 
     def test_directed_corridor_rejects_extent_reaching_the_bore_wall(self) -> None:
         oatof = self._three_zone_main_oatof("square_3d")
@@ -818,13 +1009,17 @@ class SingleFlightFrontendTests(unittest.TestCase):
 
     def test_long_connector_split_leaves_the_middle_sleeve_to_the_coarse_pa(self) -> None:
         frontend = {"source_exit_center_mm": {"x": 100.0}}
+        extents = {
+            "upstream_fine_extent_mm": 10.0,
+            "accelerator_fine_extent_mm": 10.0,
+        }
         self.assertIsNone(
             resolve_positive_gap_domain_split(
-                frontend, {"connector": {"length_mm": 49.9}}
+                frontend, {"connector": {"length_mm": 10.0, **extents}}
             )
         )
         split = resolve_positive_gap_domain_split(
-            frontend, {"connector": {"length_mm": 98.4}}
+            frontend, {"connector": {"length_mm": 98.4, **extents}}
         )
         self.assertIsNotNone(split)
         assert split is not None
@@ -833,6 +1028,8 @@ class SingleFlightFrontendTests(unittest.TestCase):
         self.assertAlmostEqual(split["accelerator_start_x_mm"], 90.0)
         self.assertAlmostEqual(split["coarse_sleeve_x_min_mm"], 11.6)
         self.assertAlmostEqual(split["coarse_sleeve_x_max_mm"], 90.0)
+        self.assertEqual(split["upstream_fine_extent_mm"], 10.0)
+        self.assertEqual(split["accelerator_fine_extent_mm"], 10.0)
 
     def test_standalone_accelerator_main_fails_closed_without_exact_three_zone_contract(self) -> None:
         oatof = self._three_zone_main_oatof("square_3d")
@@ -1304,6 +1501,14 @@ class SingleFlightFrontendTests(unittest.TestCase):
         upstream["axial_dc"]["upstream_shield_potential_V"] = 3.0
         with self.assertRaisesRegex(ValueError, "exactly 0 V"):
             compile_frontend(upstream, self.oatof, self.connection)
+
+
+class ZeroFieldCollisionGemTests(unittest.TestCase):
+    def test_grounding_keeps_geometry_and_electrode_commands(self) -> None:
+        source = "e(9) { box(0,0,0,1,1,1) }\ne(10) {}\ne(11) {}\nn(0) {}\n"
+        expected = "e(0) { box(0,0,0,1,1,1) }\ne(0) {}\ne(0) {}\nn(0) {}\n"
+        self.assertEqual(_zero_field_collision_gem(source), expected)
+        self.assertEqual(_zero_field_collision_gem(expected), expected)
 
 
 if __name__ == "__main__":

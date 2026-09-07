@@ -3,8 +3,65 @@
   "role": "rf_multipole_oatof_pre_pulse_campaign_profile_registry",
   "profiles": [
     {
+      "profile_id": "zero_field_geometry_member61_natural_regression_v1",
+      "revision": 1,
+      "extends": "real_pa_rf_pre_pulse_v1",
+      "overrides": {
+        "campaign": {
+          "pre_pulse_time_series_screening": {
+            "mode": "real_pa_rf_pre_pulse_time_series",
+            "active_scope": "pre_pulse_frontend_accelerator",
+            "relative_start_index": 0,
+            "relative_end_index": 2400,
+            "rf_steps_per_period": 40,
+            "sample_stride_rf_steps": 1,
+            "time_grid_profile_id": "ballistic_seed_native_dt_minus0p35_plus1p65_v1",
+            "expected_upstream_frequency_hz": 1100000.0,
+            "sample_count": 2401,
+            "spatial_window_profile_id": "layout_resolved_axial_provisional_xy2_v1",
+            "pulse_disabled": true,
+            "terminate_at_window_end": false,
+            "trace_policy": {
+              "mode": "natural_trajectory_native_rf_grid_v1",
+              "terminal_event": "geometry_collision_v1",
+              "retention_class": "rebuildable_trajectory_payload"
+            },
+            "selection_order": [
+              "maximize_pulse_eligible_count",
+              "minimize_normalized_xyz_spread_norm",
+              "minimize_normalized_xyz_centroid_distance",
+              "select_earlier_time"
+            ],
+            "resolution_claim_allowed": false,
+            "prohibited_outputs": ["detector_crossing", "resolution_metrics", "single_flight_spatial_six_panel"]
+          }
+        },
+        "experiment_shared": {
+          "single_flight_source_materialization_profile_id": "independent_ion_source_volume_n5000_member61_regression",
+          "single_flight_population": {
+            "population_id": "zero_field_geometry_member61_natural_regression",
+            "population_mode": "first_n_rows_in_frozen_file_order",
+            "source_authority": {
+              "input_role": "single_flight_materialized_ion_source_volume",
+              "table_binding": "prepared_deterministic_prefix",
+              "ordered_particle_id_encoding": "canonical_compact_json_integer_array_v1"
+            },
+            "execution_population": {
+              "particle_count": 1,
+              "ordered_particle_id_sha256": "9ADB1464D8E0A4FC5BE50834F82B5EAA4EE75DD784E012043086AD995BBC0B21",
+              "selection_algorithm": "first_n_rows_in_frozen_file_order",
+              "selection_seed": 0
+            },
+            "denominators": {"population_count": 1, "eligible_population_count": 1},
+            "analysis_randomness": {"bootstrap_resample_count": 1, "bootstrap_seed": 20260831},
+            "postselection_policy": "prohibited"
+          }
+        }
+      }
+    },
+    {
       "profile_id": "real_pa_rf_pre_pulse_v1",
-      "revision": 2,
+      "revision": 3,
       "defaults": {
         "campaign": {
           "execution_policy": {
@@ -24,10 +81,8 @@
             "spatial_window_profile_id": "layout_resolved_axial_provisional_xy2_v1",
             "selection_order": [
               "maximize_pulse_eligible_count",
-              "maximize_transverse_bore_count",
-              "minimize_normalized_xyz_centroid_distance",
               "minimize_normalized_xyz_spread_norm",
-              "minimize_absolute_distance_to_ballistic_seed",
+              "minimize_normalized_xyz_centroid_distance",
               "select_earlier_time"
             ],
             "pulse_disabled": true,
@@ -39,7 +94,7 @@
         "experiment_shared": {
           "execution_strategy": "simion_single_flight",
           "single_flight_pa_cache_policy": "build_and_publish_if_missing",
-          "single_flight_frontend_grid_profile_id": "frontend_acceleration_xy025_z010_coarse100_shared_main_local_aperture",
+          "single_flight_frontend_grid_profile_id": "frontend_xy025_z010_coarse100_full_bore_main_local_xy050_z010",
           "single_flight_oatof_numerical_profile_id": "oatof_formal_mesh",
           "single_flight_trajectory_quality_profile_id": "tqual_8",
           "single_flight_time_integration_profile_id": "dt40",
@@ -77,7 +132,7 @@
     },
     {
       "profile_id": "real_pa_rf_pre_pulse_smoke_n1_v1",
-      "revision": 1,
+      "revision": 3,
       "extends": "real_pa_rf_pre_pulse_v1",
       "overrides": {
         "experiment_shared": {

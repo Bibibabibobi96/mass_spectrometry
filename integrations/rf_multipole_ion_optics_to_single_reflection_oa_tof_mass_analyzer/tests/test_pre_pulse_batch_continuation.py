@@ -27,6 +27,17 @@ def _release(particle_id: int, ion: int | None = None) -> str:
     return f"TRACE: source_release ion={ion} particle_id={particle_id} fixture=1"
 
 
+def _state(particle_id: int, sample_index: int = 1, ion: int | None = None) -> str:
+    ion = particle_id if ion is None else ion
+    return (
+        "TRACE: pre_pulse_time_series_state "
+        f"ion={ion} particle_id={particle_id} sample_index={sample_index} "
+        "instrument_time_us=1 actual_instrument_time_us=1 "
+        "x_mm=0 y_mm=0 z_mm=0 vx_mm_per_us=1 vy_mm_per_us=0 vz_mm_per_us=0 "
+        "kinetic_energy_eV=1 survival_status=alive"
+    )
+
+
 def _predecessor(root: Path, batches: list[list[int]], logs: list[list[str]]) -> tuple[Path, str]:
     run = root / "predecessor"
     (run / "inputs").mkdir(parents=True)
@@ -115,6 +126,7 @@ class PrePulseBatchContinuationTests(unittest.TestCase):
         self.assertIn("$stdoutFiles += $importedCompletedTraceFiles", runner)
         self.assertIn("if ($prePulseTimeSeriesScreening)", adapter)
         self.assertIn("$runnerArguments.ResumePrePulseFromRun", adapter)
+        self.assertIn("PRE_PULSE_CONTINUATION=SKIP REASON=resolved_connection_changed", adapter)
 
     def test_preserves_only_contiguous_complete_batch_prefix(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -131,12 +143,13 @@ class PrePulseBatchContinuationTests(unittest.TestCase):
             [item["replay_particle_count"] for item in result["batches"]], [0, 2, 2]
         )
 
-    def test_rejects_noncontiguous_terminal_prefix(self) -> None:
+    def test_incomplete_unordered_terminal_set_replays_whole_batch(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             predecessor, contract_sha = _predecessor(root, [[1, 2]], [[_release(1), _terminal(2, 2)]])
-            with self.assertRaisesRegex(ContractError, "contiguous prefix"):
-                self._build(predecessor, contract_sha, root / "continuation", [1, 2])
+            result = self._build(predecessor, contract_sha, root / "continuation", [1, 2])
+        self.assertEqual(result["completed_particle_count"], 0)
+        self.assertEqual(result["replay_particle_count"], 2)
 
     def test_second_recovery_reuses_prior_imported_trace_binding(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -182,6 +195,17 @@ class PrePulseBatchContinuationTests(unittest.TestCase):
             ]])
             with self.assertRaisesRegex(ContractError, "completion sentinel"):
                 self._build(predecessor, contract_sha, root / "continuation", [1, 2])
+
+    def test_accepts_completed_natural_archive_with_alive_final_state(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            predecessor, contract_sha = _predecessor(root, [[1, 2]], [[
+                _release(1), _terminal(1), _release(2), _state(2),
+                "status,Fly completed. 1 splats, 1 seconds",
+            ]])
+            result = self._build(predecessor, contract_sha, root / "continuation", [1, 2])
+        self.assertEqual(result["completed_particle_count"], 2)
+        self.assertEqual(result["replay_particle_count"], 0)
 
     def test_rejects_missing_or_wrong_source_release(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

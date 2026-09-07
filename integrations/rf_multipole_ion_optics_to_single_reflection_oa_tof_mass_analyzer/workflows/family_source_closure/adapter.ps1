@@ -85,24 +85,163 @@ function Resolve-RfPulseTimingOrchestrationArguments {
   return $names
 }
 
+function Resolve-RfContinuousFunctionalSmokeSource {
+  param(
+    [Parameter(Mandatory)]$Experiment,
+    [Parameter(Mandatory)][hashtable]$FrozenArguments,
+    [Parameter(Mandatory)]$ResolvedPopulation,
+    [Parameter(Mandatory)][string]$WorkspaceRoot,
+    [Parameter(Mandatory)][string]$RunDirectory
+  )
+
+  if ($Experiment.PSObject.Properties.Name -notcontains
+        'continuous_functional_smoke_authority') {
+    return $null
+  }
+  if (-not $FrozenArguments.ContainsKey('pulse_timing_orchestration_state') -or
+      [string]$FrozenArguments.pulse_timing_orchestration_state -ne
+        'ready_verified') {
+    throw 'Continuous functional smoke requires a ready-verified pulse authority.'
+  }
+  $sourceAuthority = $ResolvedPopulation.source_authority
+  $sourceTable = if ($null -ne $sourceAuthority) { $sourceAuthority.table } else { $null }
+  $expectedCount = if ($null -ne $ResolvedPopulation.execution_population) {
+    [int]$ResolvedPopulation.execution_population.particle_count
+  } else { 0 }
+  if ($null -eq $sourceAuthority -or $null -eq $sourceTable -or
+      [string]$sourceAuthority.table_binding -ne 'prepared_deterministic_prefix' -or
+      $expectedCount -ne 1 -or [int]$sourceAuthority.particle_count -ne 1 -or
+      [string]::IsNullOrWhiteSpace([string]$sourceTable.path) -or
+      [string]::IsNullOrWhiteSpace([string]$sourceTable.sha256) -or
+      [IO.Path]::IsPathRooted([string]$sourceTable.path)) {
+    throw 'Continuous functional-smoke resolved prefix authority is invalid.'
+  }
+  $path = [IO.Path]::GetFullPath((Join-Path $WorkspaceRoot $sourceTable.path))
+  $inputsRoot = (Join-Path ([IO.Path]::GetFullPath($RunDirectory)) 'inputs') +
+    [IO.Path]::DirectorySeparatorChar
+  if (-not $path.StartsWith($inputsRoot,[StringComparison]::OrdinalIgnoreCase) -or
+      -not (Test-Path -LiteralPath $path -PathType Leaf) -or
+      (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ne
+        [string]$sourceTable.sha256 -or
+      @(Import-Csv -LiteralPath $path).Count -ne $expectedCount) {
+    throw 'Continuous functional-smoke resolved prefix is missing or stale.'
+  }
+  return [pscustomobject]@{
+    path = $path
+    sha256 = [string]$sourceTable.sha256
+    particle_count = $expectedCount
+  }
+}
+
 function Get-RfCompletedPrePulseBatchTrace {
   param([Parameter(Mandatory)][string]$RunDirectory)
 
   $logsRoot = Join-Path $RunDirectory 'logs'
-  # TRACE is the current governed output.  Keep legacy stdout as a fallback
-  # only when this predecessor has no TRACE files; never mix two encodings.
-  $traceLogs = @(Get-ChildItem -LiteralPath $logsRoot -Filter 'simion__batch*.trace.log' `
-    -File -ErrorAction SilentlyContinue)
-  $candidates = if ($traceLogs.Count -gt 0) {
-    $traceLogs
-  } else {
-    @(Get-ChildItem -LiteralPath $logsRoot -Filter 'simion__batch*.stdout.log' `
-      -File -ErrorAction SilentlyContinue)
-  }
+  # TRACE is the sole current governed recovery evidence.  Provider-side
+  # -Filter does not reliably recognize the two-suffix trace name, so select
+  # it after enumerating this one run-local directory.
+  $candidates = @(Get-ChildItem -LiteralPath $logsRoot -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -like 'simion__batch*.trace.log' })
+  # The runtime appends the completion sentinel as the last TRACE row.  Keeping
+  # recovery discovery to that one row prevents multi-GiB natural archives from
+  # being loaded into a PowerShell text search.
   return @($candidates | Where-Object {
-    Select-String -LiteralPath $_.FullName -SimpleMatch -Quiet `
-      -Pattern 'status,Fly completed.'
+    (Get-Content -LiteralPath $_.FullName -Tail 1 -Encoding UTF8) -eq
+      'status,Fly completed.'
   })
+}
+
+function Get-RfCompletedFullFlightBatchStdout {
+  param([Parameter(Mandatory)][string]$RunDirectory)
+
+  return @(
+    Get-ChildItem -LiteralPath (Join-Path $RunDirectory 'logs') -File `
+      -ErrorAction SilentlyContinue |
+      Where-Object { $_.Name -like 'simion__batch*.stdout.log' } |
+      Where-Object {
+        (Get-Content -LiteralPath $_.FullName -Tail 1 -Encoding UTF8) -like
+          'status,Fly completed.*'
+      }
+  )
+}
+
+function Resolve-RfFullFlightContinuationChild {
+  param(
+    [Parameter(Mandatory)][string]$CurrentParentRunId,
+    [Parameter(Mandatory)][string]$RunsRoot,
+    [Parameter(Mandatory)][string]$CampaignId,
+    [Parameter(Mandatory)][string]$ExperimentId,
+    [Parameter(Mandatory)][string]$ExperimentRowSha256,
+    [Parameter(Mandatory)][string]$ConnectorGapLabel,
+    [Parameter(Mandatory)][int]$ParticleCount
+  )
+
+  $currentBaseRunId = $CurrentParentRunId -replace '__r\d{2}$',''
+  if ($currentBaseRunId -notmatch '^[0-9]{8}_[0-9]{6}(?<tail>__.+)$') {
+    return ''
+  }
+  $parentNamePattern = '^[0-9]{8}_[0-9]{6}' +
+    [regex]::Escape([string]$Matches.tail) + '(__r\d{2})?$'
+  $candidates = @()
+  foreach ($parentDirectory in @(Get-ChildItem -LiteralPath $RunsRoot -Directory `
+      -ErrorAction SilentlyContinue | Where-Object {
+        $_.Name -match $parentNamePattern
+      })) {
+    $parentRunId = [string]$parentDirectory.Name
+    if ($parentRunId -eq $CurrentParentRunId -or $parentRunId.Length -lt 15 -or
+        $parentRunId -notmatch '^[0-9]{8}_[0-9]{6}__') { continue }
+    $parentManifestPath = Join-Path $parentDirectory.FullName 'run_manifest.json'
+    $parentConfigPath = Join-Path $parentDirectory.FullName 'run_config.json'
+    if (-not (Test-Path -LiteralPath $parentManifestPath -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $parentConfigPath -PathType Leaf)) { continue }
+    try {
+      $parentManifest = Get-Content -LiteralPath $parentManifestPath -Raw `
+        -Encoding UTF8 | ConvertFrom-Json
+      $parentConfig = Get-Content -LiteralPath $parentConfigPath -Raw `
+        -Encoding UTF8 | ConvertFrom-Json
+    } catch { continue }
+    if ([string]$parentManifest.run_id -ne $parentRunId -or
+        [string]$parentManifest.status -notin @(
+          'failed','interrupted','checkpoint'
+        ) -or [string]$parentConfig.campaign_id -ne $CampaignId -or
+        [string]$parentConfig.experiment_id -ne $ExperimentId -or
+        [string]$parentConfig.experiment_row_sha256 -ne $ExperimentRowSha256) {
+      continue
+    }
+    $suffix = if ($parentRunId -match '(__r\d{2})$') { $Matches[1] } else { '' }
+    $childRunId = "$($parentRunId.Substring(0, 15))__sim__simion__rf-oatof-single-flight-gap$ConnectorGapLabel`__n$ParticleCount$suffix"
+    $child = Join-Path $RunsRoot $childRunId
+    $manifestPath = Join-Path $child 'run_manifest.json'
+    $configPath = Join-Path $child 'run_config.json'
+    if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $configPath -PathType Leaf)) { continue }
+    try {
+      $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 |
+        ConvertFrom-Json
+      $config = Get-Content -LiteralPath $configPath -Raw -Encoding UTF8 |
+        ConvertFrom-Json
+    } catch { continue }
+    if ([string]$manifest.run_id -ne $childRunId -or
+        [string]$manifest.status -notin @('failed','interrupted','checkpoint')) {
+      continue
+    }
+    $hasCompletedStdout = @(Get-RfCompletedFullFlightBatchStdout `
+      -RunDirectory $child).Count -gt 0
+    $hasPriorPlan = $config.PSObject.Properties.Name -contains 'inputs' -and
+      $config.inputs.PSObject.Properties.Name -contains
+        'simion_batch_continuation_plan'
+    if ($hasCompletedStdout -or $hasPriorPlan) {
+      $candidates += [pscustomobject]@{
+        parent_run_id = $parentRunId
+        child_run_directory = $child
+      }
+    }
+  }
+  $selected = @($candidates | Sort-Object -Property parent_run_id -Descending |
+    Select-Object -First 1)
+  return $(if ($selected.Count -eq 1) {
+    [string]$selected[0].child_run_directory
+  } else { '' })
 }
 
 function Resolve-RfRecoveryFailureAncestor {
@@ -267,9 +406,10 @@ if ($FinalizeOnly) {
     throw 'FinalizeOnly is mutually exclusive with preparation and solver execution and requires a recovery run ID.'
   }
   $sourceParentRoot = (Split-Path -Parent ([IO.Path]::GetFullPath($CompositionPlan)))
-  $expectedRecoveryRunId = (Split-Path -Leaf $sourceParentRoot) + '__r01'
-  if ($RunId -ne $expectedRecoveryRunId) {
-    throw 'FinalizeOnly recovery run ID must be the exact failed parent run ID plus __r01.'
+  $sourceParentRunId = Split-Path -Leaf $sourceParentRoot
+  $recoveryRunPattern = '^' + [regex]::Escape($sourceParentRunId) + '__r\d{2}$'
+  if ($RunId -notmatch $recoveryRunPattern) {
+    throw 'FinalizeOnly recovery run ID must be the exact failed parent run ID plus an immutable __rNN suffix.'
   }
   $workspaceRoot = Split-Path -Parent $RepoRoot
   $recoveryParentRoot = Join-Path $workspaceRoot (
@@ -284,7 +424,7 @@ if ($FinalizeOnly) {
   if ($campaignArgument.Count -ne 1) {
     throw 'FinalizeOnly source plan does not bind exactly one campaign path.'
   }
-  $campaignPath = Join-Path $RepoRoot (([string]$campaignArgument[0]).Substring('campaign_path='.Length))
+  $campaignPath = Join-Path $workspaceRoot (([string]$campaignArgument[0]).Substring('campaign_path='.Length))
   Push-Location -LiteralPath $RepoRoot
   try {
     $hasPrePulseTimeSeries = @($plan.execution_steps[0].arguments | Where-Object {
@@ -1208,34 +1348,40 @@ if ($pulseCandidateConfirmation) {
 $resolvedSourceContractPath = [IO.Path]::GetFullPath(
   (Join-Path $runDirectory $frozenArguments.resolved_source_contract_filename)
 )
-if ($null -ne $recoveryAncestor) {
-  $recoveryChildRunDirectory = [string]$recoveryAncestor.pre_pulse_child_run_directory
-  if ([string]::IsNullOrWhiteSpace($recoveryChildRunDirectory)) {
-    $ancestorRetrySuffix = if ([string]$recoveryAncestor.run_id -match '(__r\d{2})$') {
-      $Matches[1]
-    } else { '' }
-    $childPattern = '^' + [regex]::Escape(
-      ([string]$recoveryAncestor.run_id).Substring(0, 15)
-    ) + '__sim__simion__.+__n\d+' + [regex]::Escape($ancestorRetrySuffix) + '$'
-    $recoveryChildren = @(
-      Get-ChildItem -LiteralPath $recoveryRunsRoot -Directory -ErrorAction SilentlyContinue |
-      Where-Object { $_.Name -match $childPattern } |
-      Where-Object {
-        $screeningPath = Join-Path $_.FullName 'inputs\pre_pulse_time_series_screening_contract.json'
-        if (-not (Test-Path -LiteralPath $screeningPath -PathType Leaf)) { return $false }
-        try {
-          $screening = Get-Content -LiteralPath $screeningPath -Raw -Encoding UTF8 | ConvertFrom-Json
-          [string]$screening.identities.campaign_id -eq [string]$campaign.campaign_id -and
-            [string]$screening.identities.experiment_id -eq [string]$experiment.experiment_id -and
-            @(Get-RfCompletedPrePulseBatchTrace -RunDirectory $_.FullName).Count -gt 0
-        } catch { return $false }
-      }
-    )
-    if ($recoveryChildren.Count -ne 1) {
-      throw 'Pre-pulse continuation cannot resolve exactly one completed child run.'
+$recoveryChildRunDirectory = if ($null -eq $recoveryAncestor -or
+    $recoveryAncestor.PSObject.Properties.Name -notcontains
+      'pre_pulse_child_run_directory') {
+  ''
+} else {
+  [string]$recoveryAncestor.pre_pulse_child_run_directory
+}
+$isPrePulseContinuation = -not [string]::IsNullOrWhiteSpace(
+  $recoveryChildRunDirectory
+)
+# A completed trace is reusable only for the same physical connection.  The
+# campaign/source identities can remain unchanged while a PA-domain contract
+# changes (for example, shrinking the terminal fine PA).  In that case retain
+# the old checkpoint as audit evidence but restart the new N=1/N=5000 chain
+# from its frozen source rather than combining trajectories from two fields.
+if ($isPrePulseContinuation) {
+  $predecessorResolvedConnection = Join-Path $recoveryChildRunDirectory `
+    'inputs\resolved_connection.json'
+  if (-not (Test-Path -LiteralPath $predecessorResolvedConnection -PathType Leaf)) {
+    Write-Warning 'PRE_PULSE_CONTINUATION=SKIP REASON=predecessor_resolved_connection_missing'
+    $recoveryChildRunDirectory = ''
+    $isPrePulseContinuation = $false
+  } else {
+    $predecessorConnection = Get-Content -LiteralPath $predecessorResolvedConnection `
+      -Raw -Encoding UTF8 | ConvertFrom-Json
+    if (($predecessorConnection | ConvertTo-Json -Depth 100 -Compress) -cne
+        ($resolved | ConvertTo-Json -Depth 100 -Compress)) {
+      Write-Warning 'PRE_PULSE_CONTINUATION=SKIP REASON=resolved_connection_changed'
+      $recoveryChildRunDirectory = ''
+      $isPrePulseContinuation = $false
     }
-    $recoveryChildRunDirectory = $recoveryChildren[0].FullName
   }
+}
+if ($isPrePulseContinuation) {
   $predecessorSourceContract = Join-Path `
     $recoveryChildRunDirectory `
     'inputs\resolved_source_contract.json'
@@ -1278,6 +1424,7 @@ $resolvedOatofGeometryPath = $null
 $resolvedPulseSchedulePath = $null
 $resolvedPopulationContractPath = $null
 $resolvedExecutionProfilePath = $null
+$continuousFunctionalSmokeSource = $null
 if ([int]$campaign.schema_version -ge 3) {
   $resolvedOatofGeometryPath = [IO.Path]::GetFullPath(
     (Join-Path $runDirectory $frozenArguments.resolved_oatof_geometry_filename)
@@ -1351,6 +1498,10 @@ if ([int]$campaign.schema_version -ge 3) {
         [string]$frozenArguments.source_release_mode) {
     throw 'Prepared resolved population contract identity differs.'
   }
+  $continuousFunctionalSmokeSource = Resolve-RfContinuousFunctionalSmokeSource `
+    -Experiment $experiment -FrozenArguments $frozenArguments `
+    -ResolvedPopulation $resolvedPopulation -WorkspaceRoot $workspaceRoot `
+    -RunDirectory $runDirectory
 }
 if ($executionStrategy -eq 'simion_single_flight') {
   $resolvedExecutionProfilePath = [IO.Path]::GetFullPath((Join-Path $runDirectory `
@@ -1532,6 +1683,19 @@ if ($executionStrategy -eq 'simion_single_flight') {
   }
   $singleFlightRunId = "$($RunId.Substring(0, 15))__sim__simion__$singleFlightRole-gap$connectorGapLabel`__n$expectedExecutionParticleCount$retrySuffix"
   $runnerArguments.RunId = $singleFlightRunId
+  if (-not $PrepareOnly -and -not $prePulseTimeSeriesScreening -and
+      $singleFlightExecutionMode -ne 'program_axis_field_export') {
+    $continuationChild = Resolve-RfFullFlightContinuationChild `
+      -CurrentParentRunId $RunId -RunsRoot $runsRoot `
+      -CampaignId ([string]$campaign.campaign_id) `
+      -ExperimentId ([string]$experiment.experiment_id) `
+      -ExperimentRowSha256 ([string]$frozenArguments.experiment_row_sha256) `
+      -ConnectorGapLabel $connectorGapLabel `
+      -ParticleCount $expectedExecutionParticleCount
+    if (-not [string]::IsNullOrWhiteSpace($continuationChild)) {
+      $runnerArguments.ResumeFullFlightFromRun = $continuationChild
+    }
+  }
   if ($null -ne $paCacheGenerationBindingPath) {
     $runnerArguments.RequiredPaCacheGenerationBinding = $paCacheGenerationBindingPath
     $runnerArguments.RequiredPaCacheGenerationBindingSha256 =
@@ -1597,6 +1761,16 @@ if ($executionStrategy -eq 'simion_single_flight') {
       $runnerArguments.MotherParticleSourceReceiptSha256 =
         $frozenArguments.single_flight_materialization_receipt_sha256
     }
+  }
+  if ($null -ne $continuousFunctionalSmokeSource) {
+    $runnerArguments.Remove('MotherParticleSourceReceipt')
+    $runnerArguments.Remove('MotherParticleSourceReceiptSha256')
+    $runnerArguments.MotherParticleSource = $continuousFunctionalSmokeSource.path
+    $runnerArguments.MotherParticleSourceRunRoot = $workspaceRoot
+    $runnerArguments.MotherParticleSourceSha256 =
+      $continuousFunctionalSmokeSource.sha256
+    $runnerArguments.MotherParticleCount =
+      [int]$continuousFunctionalSmokeSource.particle_count
   }
   if ($frozenArguments.source_release_mode -eq 'continuous_frontend_handoff') {
     $terminalHandoffStatePath = [IO.Path]::GetFullPath(
@@ -1687,7 +1861,7 @@ if ($executionStrategy -eq 'simion_single_flight') {
       $prePulseTimeSeriesContractPath
     $runnerArguments.PrePulseTimeSeriesContractSha256 =
       $frozenArguments.pre_pulse_time_series_contract_sha256
-    if ($null -ne $recoveryAncestor) {
+    if ($isPrePulseContinuation) {
       $ancestorRunId = [string]$recoveryAncestor.run_id
       $ancestorRetrySuffix = if ($ancestorRunId -match '(__r\d{2})$') {
         $Matches[1]

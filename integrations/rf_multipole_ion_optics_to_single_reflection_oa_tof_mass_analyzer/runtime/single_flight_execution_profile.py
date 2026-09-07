@@ -223,7 +223,7 @@ def resolve_execution_profile(
     oatof_numerical_profile_id: str | None = None,
     trajectory_quality_profile_id: str | None = None,
     time_integration_profile_id: str | None = None,
-    maximum_time_of_flight_us: float | None = None,
+    post_pulse_observation_window_us: float | None = None,
     spatial_window_profile_id: str | None = None,
     include_source_region_diagnostic: bool = False,
     numerical_overrides: dict[str, Any] | None = None,
@@ -242,6 +242,16 @@ def resolve_execution_profile(
         ]
         grid = unique_named_profile(configuration, "frontend_grid_profiles", selected_grid_id)
         frontend_cell_mm_xyz = _numeric_cell(grid.get("cell_mm_xyz"))
+        # The upstream bridge remains on the frontend grid.  A registered
+        # accelerator-main grid may be coarser without degrading that shared
+        # upstream PA; the entrance replacement is validated against this
+        # main grid below.
+        raw_accelerator_main_cell = grid.get("accelerator_main_cell_mm_xyz")
+        accelerator_main_cell_mm_xyz = (
+            frontend_cell_mm_xyz
+            if raw_accelerator_main_cell is None
+            else _numeric_cell(raw_accelerator_main_cell)
+        )
         raw_coarse_bridge_cell = grid.get("coarse_bridge_cell_mm_xyz")
         coarse_bridge_cell_mm_xyz = (
             frontend_cell_mm_xyz
@@ -273,7 +283,7 @@ def resolve_execution_profile(
                 "height": _positive_number(reference_aperture["height"]),
             }
         entrance_local = _resolve_accelerator_entrance_local(
-            grid.get("accelerator_entrance_local"), frontend_cell_mm_xyz
+            grid.get("accelerator_entrance_local"), accelerator_main_cell_mm_xyz
         )
         if entrance_local is not None and (
             reference_aperture is None or overlay_enabled
@@ -351,10 +361,10 @@ def resolve_execution_profile(
             ):
                 raise ValueError(ERROR)
 
-        maximum_tof = _positive_number(
-            configuration["maximum_time_of_flight_us"]
-            if maximum_time_of_flight_us is None
-            else maximum_time_of_flight_us
+        post_pulse_observation_window = _positive_number(
+            configuration["post_pulse_observation_window_us"]
+            if post_pulse_observation_window_us is None
+            else post_pulse_observation_window_us
         )
         spatial_window = (
             None
@@ -380,6 +390,7 @@ def resolve_execution_profile(
     return {
         "frontend_grid_profile_id": selected_grid_id,
         "frontend_cell_mm_xyz": frontend_cell_mm_xyz,
+        "accelerator_main_cell_mm_xyz": accelerator_main_cell_mm_xyz,
         "coarse_bridge_cell_mm_xyz": coarse_bridge_cell_mm_xyz,
         "field_overlay_id": grid.get("field_overlay_id"),
         "accelerator_overlay_enabled": overlay_enabled,
@@ -398,7 +409,7 @@ def resolve_execution_profile(
         "trajectory_quality": trajectory_quality,
         "time_integration_profile_id": selected_time_id,
         "rf_steps_per_period": rf_steps_per_period,
-        "maximum_time_of_flight_us": maximum_tof,
+        "post_pulse_observation_window_us": post_pulse_observation_window,
         "spatial_window_profile_id": (
             spatial_window["profile_id"] if spatial_window is not None else None
         ),
@@ -428,7 +439,7 @@ def main() -> None:
     parser.add_argument("--oatof-numerical-profile-id")
     parser.add_argument("--trajectory-quality-profile-id")
     parser.add_argument("--time-integration-profile-id")
-    parser.add_argument("--maximum-time-of-flight-us", type=float)
+    parser.add_argument("--post-pulse-observation-window-us", type=float)
     parser.add_argument("--spatial-window-profile-id")
     parser.add_argument("--include-source-region-diagnostic", action="store_true")
     parser.add_argument("--numerical-overrides", type=Path)
@@ -441,7 +452,7 @@ def main() -> None:
                 oatof_numerical_profile_id=args.oatof_numerical_profile_id,
                 trajectory_quality_profile_id=args.trajectory_quality_profile_id,
                 time_integration_profile_id=args.time_integration_profile_id,
-                maximum_time_of_flight_us=args.maximum_time_of_flight_us,
+                post_pulse_observation_window_us=args.post_pulse_observation_window_us,
                 spatial_window_profile_id=args.spatial_window_profile_id,
                 include_source_region_diagnostic=args.include_source_region_diagnostic,
                 numerical_overrides=(

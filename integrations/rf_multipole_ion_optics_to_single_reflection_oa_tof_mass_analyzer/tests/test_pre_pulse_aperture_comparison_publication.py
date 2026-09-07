@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from common.contracts.file_identity import file_sha256
 from common.contracts.machine_contracts import ContractError
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.publish_pre_pulse_aperture_comparison import (
     INTEGRATION_ID,
@@ -81,6 +82,43 @@ def _source_matrix(root: Path) -> dict[str, Path]:
     }
 
 
+def _compact_source_run(root: Path, name: str) -> Path:
+    run = _source_run(root, name, [0.0, 1.0, 2.0])
+    for path in (
+        run / "results" / "pre_pulse_time_series_states.csv",
+        run / "results" / "pre_pulse_time_series_screening_receipt.json",
+        run / "results" / "detector_blind_pulse_timing_candidate_receipt.json",
+    ):
+        path.unlink()
+    handoff = run / "results" / "pre_pulse_compact_handoff.csv"
+    pd.DataFrame({
+        "particle_id": [1, 2, 3], "instrument_time_us": [2.0, 2.0, 2.0],
+        "position_z_mm": [0.0, 1.0, 2.0], "velocity_z_m_s": [1000.0, 1500.0, 2000.0],
+    }).to_csv(handoff, index=False)
+    terminal = run / "results" / "pre_pulse_particle_terminal_states.csv"
+    pd.DataFrame({"particle_id": range(1, 5001), "terminal_reason": ["splat"] * 5000}).to_csv(
+        terminal, index=False
+    )
+    (run / "results" / "pre_pulse_compact_handoff_receipt.json").write_text(json.dumps({
+        "role": "rf_oatof_compact_pre_pulse_trace_handoff_receipt", "status": "success",
+        "selection_uses_detector_outcome": False, "detector_results_used": False,
+        "pulse_disabled": True,
+        "selection": {"sample_index": 2, "pulse_effective_time_us": 2.0,
+                      "mother_population_count": 5000, "pulse_eligible_count": 3,
+                      "pulse_eligible_particle_ids": [1, 2, 3], "postselection_prohibited": True},
+        "pulse_target_state": {"bytes": handoff.stat().st_size, "sha256": file_sha256(handoff),
+                               "particle_count": 3, "pulse_effective_time_us": 2.0},
+        "natural_terminal_census": {
+            "complete": True, "mother_population_count": 5000, "terminal_particle_count": 5000,
+            "accounted_particle_count": 5000, "unknown_terminal_count": 0,
+            "by_reason": {"splat": 5000},
+            "terminal_state": {"path": str(terminal), "bytes": terminal.stat().st_size,
+                               "sha256": file_sha256(terminal)},
+        },
+    }), encoding="utf-8")
+    return run
+
+
 class PrePulseApertureComparisonPublicationTests(unittest.TestCase):
     def test_publishes_detector_blind_result_and_freezes_source_inputs(self) -> None:
         with tempfile.TemporaryDirectory(dir=WORKSPACE_ROOT) as temporary:
@@ -116,9 +154,9 @@ class PrePulseApertureComparisonPublicationTests(unittest.TestCase):
             valid = _source_run(source_root, "valid", [0.0, 1.0, 2.0])
             output_id = "20260829_120002__analysis__python__pre-pulse-aperture-comparison__n5000"
             output = WORKSPACE_ROOT / "artifacts" / "projects" / INTEGRATION_ID / "runs" / output_id
-            with self.assertRaisesRegex(ContractError, "at least two cases"):
+            with self.assertRaisesRegex(ContractError, "at least one case"):
                 publish_pre_pulse_aperture_comparison(
-                    repo_root=REPO_ROOT, run_id=output_id, cases={"one": valid}
+                    repo_root=REPO_ROOT, run_id=output_id, cases={}
                 )
             self.assertFalse(output.exists())
             with self.assertRaisesRegex(ContractError, "case IDs must be unique"):
@@ -143,6 +181,25 @@ class PrePulseApertureComparisonPublicationTests(unittest.TestCase):
                     )
             finally:
                 duplicate_output.rmdir()
+
+    def test_publishes_one_compact_case_and_freezes_terminal_closure_evidence(self) -> None:
+        with tempfile.TemporaryDirectory(dir=WORKSPACE_ROOT) as temporary:
+            source = _compact_source_run(Path(temporary), "compact")
+            run_id = "20260904_150001__analysis__python__pre-pulse-aperture-comparison__n5000"
+            output = WORKSPACE_ROOT / "artifacts" / "projects" / INTEGRATION_ID / "runs" / run_id
+            try:
+                publish_pre_pulse_aperture_comparison(
+                    repo_root=REPO_ROOT, run_id=run_id, cases={"square_h100": source}
+                )
+                config = json.loads((output / "run_config.json").read_text(encoding="utf-8"))
+                result = json.loads((output / "results" / "pre_pulse_aperture_comparison.json").read_text(encoding="utf-8"))
+                self.assertEqual(config["parameters"]["case_count"], 1)
+                self.assertIn("case_1_results_pre_pulse_compact_handoff_csv", config["inputs"])
+                self.assertIn("case_1_results_pre_pulse_particle_terminal_states_csv", config["inputs"])
+                self.assertEqual(result["cases"]["square_h100"]["mother_cohort_count"], 5000)
+            finally:
+                if output.exists():
+                    shutil.rmtree(output)
 
 
 if __name__ == "__main__":

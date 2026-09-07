@@ -23,7 +23,8 @@
       "properties": {
         "policy_id": {"const": "multipole_handoff_ballistic_centroid_v1"},
         "offset_rf_periods": {"type": "number", "minimum": -0.5, "maximum": 0.5},
-        "pulse_width_us": {"type": "number", "exclusiveMinimum": 0}
+        "pulse_width_us": {"type": "number", "exclusiveMinimum": 0},
+        "duration_policy_id": {"const": "frozen_restart_ideal_focus_envelope_v1"}
       }
     },
     "rf_period_us": {"type": "number", "exclusiveMinimum": 0},
@@ -31,6 +32,21 @@
     "pulse_offset_us": {"type": "number"},
     "pulse_effective_time_us": {"type": "number", "minimum": 0},
     "pulse_width_us": {"type": "number", "exclusiveMinimum": 0},
+    "pulse_duration_derivation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["policy_id", "particle_count", "limiting_particle_id", "minimum_width_us", "ideal_max_exit_time_us", "ideal_max_focus_time_us", "focus_drift_mm", "pulse_width_us", "claim_limit"],
+      "properties": {
+        "policy_id": {"const": "frozen_restart_ideal_focus_envelope_v1"},
+        "particle_count": {"type": "integer", "minimum": 1},
+        "limiting_particle_id": {"type": "integer", "minimum": 1},
+        "minimum_width_us": {"type": "number", "exclusiveMinimum": 0},
+        "ideal_max_exit_time_us": {"type": "number", "exclusiveMinimum": 0},
+        "ideal_max_focus_time_us": {"type": "number", "exclusiveMinimum": 0},
+        "focus_drift_mm": {"type": "number", "minimum": 0},
+        "pulse_width_us": {"type": "number", "exclusiveMinimum": 0},
+        "claim_limit": {"const": "IDEAL_FIELD_DURATION_ESTIMATE_NOT_REAL_FIELD_EXIT_GUARANTEE"}
+      }
+    },
     "layout_profile_id": {"$ref": "#/$defs/id"},
     "method": {"type": "string", "minLength": 1},
     "source_state_path": {"type": "string", "minLength": 1},
@@ -43,6 +59,7 @@
         "predicted_finite_wall_survivors": {"type": "integer", "minimum": 1}
       }
     },
+    "pulse_eligible_count": {"type": "integer", "minimum": 1},
     "selected_particle_ids": {"type": "array", "minItems": 1, "items": {"type": "integer", "minimum": 1}},
     "mean_entry_time_us": {"type": "number"},
     "mean_velocity_x_m_s": {"type": "number", "exclusiveMinimum": 0},
@@ -89,6 +106,36 @@
           "properties": {
             "mode": {"const": "manifest_bound_time_series_restart_v1"},
             "materialization_receipt": {"$ref": "#/$defs/file"}
+          }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["mode", "materialization_receipt"],
+          "properties": {
+            "mode": {"const": "compact_detector_blind_trace_restart_v1"},
+            "materialization_receipt": {"$ref": "#/$defs/file"}
+          }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": [
+            "mode", "pre_pulse_producer_manifest",
+            "pre_pulse_mother_particle_source", "compact_receipt",
+            "producer_manifest", "producer_frozen_experiment",
+            "producer_pulse_schedule", "producer_configuration",
+            "producer_region_field_contract", "producer_frontend_grid_profile_id"
+          ],
+          "properties": {
+            "mode": {"const": "manifest_bound_continuous_full_flight_comparator_v1"},
+            "pre_pulse_producer_manifest": {"$ref": "#/$defs/file"},
+            "pre_pulse_mother_particle_source": {"$ref": "#/$defs/file"},
+            "compact_receipt": {"$ref": "#/$defs/file"},
+            "producer_manifest": {"$ref": "#/$defs/file"},
+            "producer_frozen_experiment": {"$ref": "#/$defs/file"},
+            "producer_pulse_schedule": {"$ref": "#/$defs/file"},
+            "producer_configuration": {"$ref": "#/$defs/file"},
+            "producer_region_field_contract": {"$ref": "#/$defs/file"},
+            "producer_frontend_grid_profile_id": {"$ref": "#/$defs/id"}
           }
         }
       ]

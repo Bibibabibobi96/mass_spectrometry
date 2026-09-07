@@ -17,12 +17,14 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any
 
+from common.contracts.file_identity import file_sha256
 from common.contracts.particle_physics import kinetic_energy_ev
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.analyze_single_flight import (
     DETECTOR_PATTERN,
     NON_DETECTOR_SPLAT_PATTERN,
     PULSE_STATE_PATTERN,
     STATE_PATTERN,
+    TIMEOUT_SPLAT_PATTERN,
 )
 
 
@@ -50,12 +52,14 @@ def _read_csv(path: Path, expected_columns: Sequence[str]) -> list[dict[str, str
 def _read_row_map(path: Path) -> dict[int, int]:
     rows = _read_csv(path, ROW_MAP_COLUMNS)
     mapping: dict[int, int] = {}
+    source_ids: set[int] = set()
     for row in rows:
         simulation_id = int(row["simulation_particle_id"])
         source_id = int(row["source_particle_id"])
-        if simulation_id < 1 or source_id < 1 or simulation_id in mapping:
+        if simulation_id < 1 or source_id < 1 or simulation_id in mapping or source_id in source_ids:
             raise ValueError(f"particle row map is invalid: {path}")
         mapping[simulation_id] = source_id
+        source_ids.add(source_id)
     if not mapping:
         raise ValueError(f"particle row map is empty: {path}")
     if sorted(mapping) != list(range(1, len(mapping) + 1)):
@@ -77,11 +81,24 @@ def _read_restart_state(path: Path) -> dict[int, dict[str, float]]:
     return state
 
 
-def _read_tolerances(path: Path) -> dict[str, float]:
+def _read_tolerances(path: Path, summary_path: Path | None = None) -> dict[str, float]:
     data = json.loads(path.read_text(encoding="utf-8"))
     if data.get("role") != "canonical_pulse_restart_target_state_validation":
         raise ValueError("restart validation role differs")
     source = data.get("tolerances")
+    if source is None:
+        if summary_path is None:
+            raise ValueError("restart validation tolerances are missing")
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        source = summary.get("pre_pulse_restart_source_release_validation")
+        if (
+            summary.get("role") != "rf_oatof_simion_single_flight_summary"
+            or summary.get("status") != "success"
+            or not isinstance(source, dict)
+            or source.get("status") != "PASS"
+            or source.get("validation_contract_sha256") != file_sha256(path)
+        ):
+            raise ValueError("restart summary does not bind authoritative validation tolerances")
     if not isinstance(source, dict):
         raise ValueError("restart validation tolerances are missing")
     tolerances = {key: float(source[key]) for key in TOLERANCE_KEYS}
@@ -140,10 +157,15 @@ def _parse_one_batch(path: Path) -> tuple[dict[int, float], dict[int, dict[str, 
             category = "detector_crossing"
         else:
             splat = NON_DETECTOR_SPLAT_PATTERN.search(line)
-            if not splat:
-                continue
-            ion = int(splat.group("ion"))
-            category = f"non_detector_splat_instance_{int(splat.group('instance'))}"
+            if splat:
+                ion = int(splat.group("ion"))
+                category = f"non_detector_splat_instance_{int(splat.group('instance'))}"
+            else:
+                timeout = TIMEOUT_SPLAT_PATTERN.search(line)
+                if not timeout:
+                    continue
+                ion = int(timeout.group("ion"))
+                category = "timeout_splat"
         if ion in terminal_by_ion:
             raise ValueError(f"duplicate terminal TRACE for SIMION ion {ion} in {path}")
         terminal_by_ion[ion] = category
@@ -153,6 +175,7 @@ def _parse_one_batch(path: Path) -> tuple[dict[int, float], dict[int, dict[str, 
 def _parse_traces(
     paths: Iterable[Path], simulation_to_producer: dict[int, int],
     batch_plan: dict[int, dict[str, int]], *, clock_tolerance_us: float,
+    instance_roles: dict[int, str],
 ) -> tuple[dict[int, dict[str, float]], dict[int, str]]:
     """Map each batch-local SIMION ion number through its ordered row-map slice."""
     pulse_by_producer: dict[int, dict[str, float]] = {}
@@ -182,7 +205,7 @@ def _parse_traces(
             if not isinstance(state, dict):
                 raise ValueError(f"batch lacks a pulse-epoch state TRACE for SIMION ion {ion}: {path}")
             logged_particle_id = records.get("particle_id")
-            if logged_particle_id is not None and logged_particle_id != simulation_id:
+            if logged_particle_id is not None and logged_particle_id != simulation_to_producer[simulation_id]:
                 raise ValueError(f"source-release particle ID differs from batch plan: {path}")
             if abs(state["t"] - pulse_time_by_ion[ion]) > clock_tolerance_us:
                 raise ValueError(f"pulse-epoch state clock differs from handoff pulse TRACE: {path}")
@@ -190,7 +213,17 @@ def _parse_traces(
             if producer_id in pulse_by_producer:
                 raise ValueError("producer particle ID appears in multiple batches")
             pulse_by_producer[producer_id] = state
-            terminal_by_producer[producer_id] = terminal_by_ion[ion]
+            category = terminal_by_ion[ion]
+            if category.startswith("non_detector_splat_instance_"):
+                instance = int(category.rsplit("_", 1)[1])
+                if instance == 0:
+                    role = "outside_pa"
+                elif instance in instance_roles:
+                    role = instance_roles[instance]
+                else:
+                    raise ValueError("terminal instance is absent from build receipt")
+                category = f"non_detector_splat_role_{role}"
+            terminal_by_producer[producer_id] = category
     if seen_batch_indices != set(batch_plan):
         raise ValueError("batch TRACE rows do not cover frozen particle row map")
     return pulse_by_producer, terminal_by_producer
@@ -198,6 +231,66 @@ def _parse_traces(
 
 def _failure(reason: str, **details: Any) -> dict[str, Any]:
     return {"schema_version": 1, "role": "rf_oatof_handoff_replay_comparison", "status": "FAIL", "reason": reason, **details}
+
+
+def _read_instance_roles(path: Path) -> dict[int, str]:
+    data = json.loads(path.read_text(encoding="utf-8-sig"))
+    roles = data.get("instance_roles")
+    if data.get("role") != "rf_oatof_simion_single_flight_program_build" or not isinstance(roles, dict) or not roles:
+        raise ValueError("build receipt lacks authoritative instance_roles; comparison is unverified")
+    if any(not isinstance(role, str) or not role or type(index) is not int or index < 1 for role, index in roles.items()):
+        raise ValueError("build receipt instance_roles are invalid")
+    if len(set(roles.values())) != len(roles) or sorted(roles.values()) != list(range(1, len(roles) + 1)):
+        raise ValueError("build receipt instances must be unique and contiguous")
+    return {index: role for role, index in roles.items()}
+
+
+def _read_detector_checkpoints(path: Path, source_ids: set[int]) -> dict[int, dict[str, float]]:
+    """Consume analyzer-owned canonical clocks, never reconstruct solver epochs."""
+    columns = ("instrument_time_us", "pulse_effective_elapsed_us", "x_mm", "y_mm", "z_mm")
+    result: dict[int, dict[str, float]] = {}
+    seen: set[tuple[int, str]] = set()
+    with path.open(encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle)
+        if not {"particle_id", "event", *columns}.issubset(reader.fieldnames or []):
+            raise ValueError("canonical checkpoints lack required columns")
+        for row in reader:
+            particle_id = int(row["particle_id"])
+            key = (particle_id, row["event"])
+            if particle_id not in source_ids or key in seen or not row["event"]:
+                raise ValueError("canonical checkpoint identity is invalid or duplicated")
+            seen.add(key)
+            if row["event"] != "detector_crossing":
+                continue
+            values = {column: float(row[column]) for column in columns}
+            if not all(math.isfinite(value) for value in values.values()):
+                raise ValueError("detector canonical checkpoint is nonfinite")
+            result[particle_id] = values
+    if not seen:
+        raise ValueError("canonical checkpoints are empty")
+    return result
+
+
+def _detector_comparison(continuous: dict[int, dict[str, float]], restart: dict[int, dict[str, float]]) -> dict[str, Any]:
+    paired = sorted(continuous.keys() & restart.keys())
+    differences = [{"particle_id": particle_id, **{
+        key: abs(continuous[particle_id][key] - restart[particle_id][key])
+        for key in continuous[particle_id]
+    }} for particle_id in paired]
+    return {
+        "continuous_detector_particle_ids": sorted(continuous),
+        "restart_detector_particle_ids": sorted(restart),
+        "continuous_only_particle_ids": sorted(continuous.keys() - restart.keys()),
+        "restart_only_particle_ids": sorted(restart.keys() - continuous.keys()),
+        "paired_absolute_errors": differences,
+        "paired_values_exactly_equal": (
+            all(all(value == 0 for key, value in row.items() if key != "particle_id") for row in differences)
+            if paired else None
+        ),
+        "trajectory_equivalence_qualification": "not_assessed_no_trajectory_tolerance_contract",
+        "time_basis": "canonical_instrument_and_pulse_effective_elapsed_us",
+        "landing_unit": "mm",
+    }
 
 
 def _state_errors(actual: dict[str, float], expected: dict[str, float]) -> dict[str, float]:
@@ -236,19 +329,30 @@ def compare(
     restart_row_map_path: Path,
     restart_batch_plan_path: Path,
     restart_validation_path: Path,
+    *,
+    restart_summary_path: Path | None = None,
+    continuous_checkpoints_path: Path,
+    restart_checkpoints_path: Path,
+    continuous_program_build_path: Path,
+    restart_program_build_path: Path,
 ) -> dict[str, Any]:
     """Return a PASS/FAIL replay comparison without altering either source run."""
     try:
         continuous_map = _read_row_map(continuous_row_map_path)
         restart_map = _read_row_map(restart_row_map_path)
         restart_state = _read_restart_state(restart_state_path)
-        tolerances = _read_tolerances(restart_validation_path)
+        tolerances = _read_tolerances(restart_validation_path, restart_summary_path)
+        continuous_roles = _read_instance_roles(continuous_program_build_path)
+        restart_roles = _read_instance_roles(restart_program_build_path)
+        continuous_detectors = _read_detector_checkpoints(continuous_checkpoints_path, set(continuous_map.values()))
+        restart_detectors = _read_detector_checkpoints(restart_checkpoints_path, set(restart_map.values()))
+        detector_comparison = _detector_comparison(continuous_detectors, restart_detectors)
         continuous_batch_plan = _read_batch_plan(continuous_batch_plan_path)
         restart_batch_plan = _read_batch_plan(restart_batch_plan_path)
         if set(restart_map) != set(restart_state):
             return _failure("restart_state_and_row_map_particle_sets_differ")
-        continuous_pulse, continuous_terminal = _parse_traces(continuous_trace_paths, continuous_map, continuous_batch_plan, clock_tolerance_us=tolerances["clock_abs_tolerance_us"])
-        restart_pulse, restart_terminal = _parse_traces(restart_trace_paths, restart_map, restart_batch_plan, clock_tolerance_us=tolerances["clock_abs_tolerance_us"])
+        continuous_pulse, continuous_terminal = _parse_traces(continuous_trace_paths, continuous_map, continuous_batch_plan, clock_tolerance_us=tolerances["clock_abs_tolerance_us"], instance_roles=continuous_roles)
+        restart_pulse, restart_terminal = _parse_traces(restart_trace_paths, restart_map, restart_batch_plan, clock_tolerance_us=tolerances["clock_abs_tolerance_us"], instance_roles=restart_roles)
         expected_producer_ids = {restart_map[particle_id] for particle_id in restart_state}
         if set(restart_pulse) != expected_producer_ids:
             return _failure("restart_pulse_trace_particle_set_differs_from_restart_state")
@@ -266,6 +370,15 @@ def compare(
         restart_time = next(iter(restart_clock))
         if abs(continuous_time - restart_time) > tolerances["clock_abs_tolerance_us"]:
             return _failure("continuous_and_restart_pulse_clocks_differ", continuous_pulse_time_us=continuous_time, restart_pulse_time_us=restart_time)
+        for detectors, terminals, pulse_time in (
+            (continuous_detectors, continuous_terminal, continuous_time),
+            (restart_detectors, restart_terminal, restart_time),
+        ):
+            for particle_id in expected_producer_ids:
+                if (particle_id in detectors) != (terminals.get(particle_id) == "detector_crossing"):
+                    raise ValueError("canonical detector checkpoints differ from paired raw terminal events")
+            if any(abs(row["instrument_time_us"] - row["pulse_effective_elapsed_us"] - pulse_time) > tolerances["clock_abs_tolerance_us"] for row in detectors.values()):
+                raise ValueError("canonical detector clocks are inconsistent with the pulse epoch")
 
         restart_terminal_by_producer = restart_terminal
         continuous_terminal_by_producer = {producer_id: category for producer_id, category in continuous_terminal.items() if producer_id in expected_producer_ids}
@@ -287,7 +400,9 @@ def compare(
         return {
             "schema_version": 1,
             "role": "rf_oatof_handoff_replay_comparison",
-            "status": "PASS" if state_pass and not terminal_mismatches else "FAIL",
+            "status": "PASS" if state_pass and not terminal_mismatches and not detector_comparison["continuous_only_particle_ids"] and not detector_comparison["restart_only_particle_ids"] else "FAIL",
+            "status_scope": "pulse_state_restoration_and_discrete_outcomes_only_not_trajectory_equivalence",
+            "detector_comparison": detector_comparison,
             "paired_identity": "producer_particle_id",
             "paired_producer_particle_count": len(expected_producer_ids),
             "pulse_time_us": continuous_time,
@@ -303,7 +418,7 @@ def compare(
             "terminal_category_match": not terminal_mismatches,
             "limitations": ["This diagnostic compares only the restart-selected producer IDs; it does not turn a conditional restart into a complete-mother-cohort result."],
         }
-    except (OSError, ValueError, json.JSONDecodeError) as exc:
+    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
         return _failure("invalid_comparison_input", detail=str(exc))
 
 
@@ -317,9 +432,17 @@ def main() -> int:
     parser.add_argument("--restart-particle-row-map", required=True, type=Path)
     parser.add_argument("--restart-batch-plan", required=True, type=Path)
     parser.add_argument("--restart-validation", required=True, type=Path)
+    parser.add_argument("--restart-summary", type=Path)
+    parser.add_argument("--continuous-checkpoints", required=True, type=Path)
+    parser.add_argument("--restart-checkpoints", required=True, type=Path)
+    parser.add_argument("--continuous-program-build", required=True, type=Path)
+    parser.add_argument("--restart-program-build", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
-    result = compare(args.continuous_trace, args.continuous_particle_row_map, args.continuous_batch_plan, args.restart_trace, args.restart_state, args.restart_particle_row_map, args.restart_batch_plan, args.restart_validation)
+    result = compare(args.continuous_trace, args.continuous_particle_row_map, args.continuous_batch_plan, args.restart_trace, args.restart_state, args.restart_particle_row_map, args.restart_batch_plan, args.restart_validation,
+        restart_summary_path=args.restart_summary,
+        continuous_checkpoints_path=args.continuous_checkpoints, restart_checkpoints_path=args.restart_checkpoints,
+        continuous_program_build_path=args.continuous_program_build, restart_program_build_path=args.restart_program_build)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print(f"HANDOFF_REPLAY_COMPARISON={result['status']} OUTPUT={args.output}")

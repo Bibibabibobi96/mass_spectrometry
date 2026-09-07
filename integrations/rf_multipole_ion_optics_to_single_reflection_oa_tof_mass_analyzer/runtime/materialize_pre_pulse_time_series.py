@@ -34,7 +34,7 @@ TRACE_PREFIX = "TRACE: pre_pulse_time_series_state"
 TRACE_PATTERN = re.compile(
     r"^TRACE: pre_pulse_time_series_state "
     r"ion=(?P<ion>\d+) particle_id=(?P<particle_id>\d+) "
-    r"sample_index=(?P<sample_index>\d+) "
+    r"sample_index=(?P<sample_index>\S+) "
     r"instrument_time_us=(?P<instrument_time>[-+0-9.eE]+) "
     r"actual_instrument_time_us=(?P<actual_time>[-+0-9.eE]+) "
     r"x_mm=(?P<x>[-+0-9.eE]+) y_mm=(?P<y>[-+0-9.eE]+) "
@@ -44,6 +44,19 @@ TRACE_PATTERN = re.compile(
     r"vz_mm_per_us=(?P<vz>[-+0-9.eE]+) "
     r"kinetic_energy_eV=(?P<energy>[-+0-9.eE]+) "
     r"survival_status=(?P<status>\S+)$"
+)
+SOURCE_RELEASE_PREFIX = "TRACE: source_release"
+SOURCE_RELEASE_PATTERN = re.compile(
+    r"^TRACE: source_release "
+    r"ion=(?P<ion>\d+) particle_id=(?P<particle_id>\d+) "
+    r"instrument_time_us=(?P<instrument_time>[-+0-9.eE]+) "
+    r"x_mm=(?P<x>[-+0-9.eE]+) y_mm=(?P<y>[-+0-9.eE]+) "
+    r"z_mm=(?P<z>[-+0-9.eE]+) "
+    r"vx_mm_per_us=(?P<vx>[-+0-9.eE]+) "
+    r"vy_mm_per_us=(?P<vy>[-+0-9.eE]+) "
+    r"vz_mm_per_us=(?P<vz>[-+0-9.eE]+) "
+    r"simion_native_kinetic_energy_eV=(?P<energy>[-+0-9.eE]+) "
+    r"source_instance=(?P<source_instance>\d+)$"
 )
 TERMINAL_PREFIX = "TRACE: pre_pulse_screening_terminal"
 TERMINAL_PATTERN = re.compile(
@@ -55,7 +68,7 @@ TERMINAL_PATTERN = re.compile(
     r"vx_mm_per_us=(?P<vx>[-+0-9.eE]+) "
     r"vy_mm_per_us=(?P<vy>[-+0-9.eE]+) "
     r"vz_mm_per_us=(?P<vz>[-+0-9.eE]+) "
-    r"terminal_reason=(?P<reason>window_complete|splat|geometry_collision)$"
+    r"terminal_reason=(?P<reason>window_complete|splat|geometry_collision|outside_pa_termination)$"
 )
 PROHIBITED_DOWNSTREAM_PATTERN = re.compile(
     r"^TRACE: (?:detector_crossing|diagnostic_return_plane)"
@@ -596,6 +609,98 @@ def _dotnet_roundtrip(value: float) -> str:
     return text.replace("e", "E")
 
 
+def _native_checkpoint_omission(
+    *,
+    sample_index: int,
+    prior_sample_index: int,
+    instrument_time_us: float,
+    actual_time_us: float,
+    grid_origin_us: float,
+    grid_step_us: float,
+) -> bool:
+    """Identify SIMION's extra checkpoint at the preceding native RF tick.
+
+    The program's monotonically increasing ``sample_index`` is normally the
+    canonical time identity.  In the observed SIMION 2020 trace anomaly, an
+    extra callback consumes the next index but its requested time remains the
+    preceding grid node.  The true next observation then has the following
+    index, leaving one explicitly unobserved grid point.  Accept only that
+    narrow, ordered pattern; an arbitrary clock mismatch remains fatal.
+    """
+
+    if sample_index != prior_sample_index + 1 or prior_sample_index < 1:
+        return False
+    prior_time_us = grid_origin_us + (prior_sample_index - 1) * grid_step_us
+    expected_time_us = prior_time_us + grid_step_us
+    tolerance_us = 1e-12 * max(1.0, abs(prior_time_us))
+    return (
+        abs(instrument_time_us - prior_time_us) <= tolerance_us
+        and prior_time_us - tolerance_us <= actual_time_us
+        and abs(actual_time_us - prior_time_us)
+        <= abs(actual_time_us - expected_time_us)
+    )
+
+
+def resolve_natural_archive_sample_index(
+    *,
+    reported_token: str,
+    instrument_time_us: float,
+    grid_origin_us: float,
+    grid_step_us: float,
+) -> tuple[int, dict[str, object] | None]:
+    """Resolve one native-grid index and narrowly repair formatter damage.
+
+    SIMION 2020 can replace one decimal digit in a ``%d`` rendering even
+    though the separately emitted instrument clock remains correct.  The
+    frozen RF grid is therefore the numeric authority.  A decimal token must
+    agree with it exactly; a damaged token is accepted only when it has the
+    same width, differs at exactly one position, and that position contains a
+    non-digit.  Every other malformed token or off-grid clock remains fatal.
+    """
+
+    if (
+        not isinstance(reported_token, str)
+        or not reported_token
+        or not reported_token.isascii()
+        or not all(
+            math.isfinite(value)
+            for value in (instrument_time_us, grid_origin_us, grid_step_us)
+        )
+        or grid_step_us <= 0.0
+    ):
+        raise ContractError("pre-pulse natural sample identity is invalid")
+    raw_index = (instrument_time_us - grid_origin_us) / grid_step_us
+    canonical_index = math.floor(raw_index + 0.5) + 1
+    expected_time_us = grid_origin_us + (canonical_index - 1) * grid_step_us
+    tolerance_us = 1e-12 * max(1.0, abs(expected_time_us))
+    if canonical_index < 1 or abs(instrument_time_us - expected_time_us) > tolerance_us:
+        raise ContractError("pre-pulse TRACE sample does not land on the native grid")
+    if reported_token.isdecimal():
+        if int(reported_token) != canonical_index:
+            raise ContractError("pre-pulse TRACE sample index differs from its native-grid clock")
+        return canonical_index, None
+
+    canonical_token = str(canonical_index)
+    differing = [
+        offset
+        for offset, (reported, expected) in enumerate(
+            zip(reported_token, canonical_token, strict=False)
+        )
+        if reported != expected
+    ]
+    if (
+        len(reported_token) != len(canonical_token)
+        or len(differing) != 1
+        or reported_token[differing[0]].isdigit()
+    ):
+        raise ContractError("pre-pulse TRACE sample-index formatter token is invalid")
+    return canonical_index, {
+        "reported_sample_index": reported_token,
+        "canonical_sample_index": canonical_index,
+        "instrument_time_us": instrument_time_us,
+    }
+
+
 def _write_json_crlf(path: Path, value: dict[str, Any]) -> None:
     payload = (json.dumps(value, indent=2, ensure_ascii=False) + "\n").replace(
         "\n", "\r\n"
@@ -684,8 +789,12 @@ def _cache_keys(
     active_roles = (
         {
             "fine_upstream": "simion_single_flight_upstream_bridge_pa_cache",
+            "accelerator_main": "simion_single_flight_accelerator_main_pa_cache",
             "accelerator_entrance_zone_collision": (
                 "simion_single_flight_accelerator_entrance_zone_collision_pa_cache"
+            ),
+            "accelerator_entrance_local": (
+                "simion_single_flight_accelerator_entrance_local_pa_cache"
             ),
         }
         if schema_version in {5, 6, 7}
@@ -736,14 +845,23 @@ def _cache_keys(
         # display strings.  Contracts emitted by the governed PowerShell path
         # use uppercase hashes whereas the live cache receipt uses lowercase.
         expected[role] = key.upper()
+    # The current reachable pre-pulse topology has exactly three instances,
+    # so downstream hardware is omitted rather than retained as a formal PA
+    # dependency.  Older screening contracts used the historical `formal`
+    # receipt spelling and remain readable only for their explicit versions.
+    downstream_disposition = (
+        "not_applicable" if schema_version in {5, 6, 7} else "formal"
+    )
     for role in ("flight_tube", "reflectron"):
         disposition = dispositions.get(role)
         if (
             not isinstance(disposition, dict)
             or disposition.get("key") is not None
-            or disposition.get("disposition") != "formal"
+            or disposition.get("disposition") != downstream_disposition
         ):
-            raise ContractError("pre-pulse downstream PA cache must be formal")
+            raise ContractError(
+                "pre-pulse downstream PA cache disposition differs"
+            )
         expected[role] = None
 
     if schema_version == 1:
@@ -784,7 +902,8 @@ def _parse_logs(
     # parsed identity so that any conflicting repeat remains a hard failure.
     terminal_records: dict[int, tuple[float, float, float, float, float, float, float, str]] = {}
     terminal_by_reason: dict[str, list[int]] = {
-        "window_complete": [], "splat": [], "geometry_collision": []
+        "window_complete": [], "splat": [], "geometry_collision": [],
+        "outside_pa_termination": [],
     }
     row_count = 0
     for stdout_path in stdout_paths:
@@ -876,9 +995,19 @@ def _parse_logs(
                     else:
                         expected_time = float(sample_times_us[sample_index - 1])
                     tolerance = 1e-12 * max(1.0, abs(expected_time))
+                    # A natural archive labels each sample by the canonical RF
+                    # grid time.  SIMION's accumulated clock is intentionally
+                    # retained in ``actual_time`` and can differ by a few ULP;
+                    # it is an observation, not a second requested landing.
+                    # Finite-window samples retain the historical stricter
+                    # contract because both fields denote one scheduled event.
+                    actual_time_mismatch = (
+                        natural_archive_grid is None
+                        and abs(numeric["actual_time"] - expected_time) > tolerance
+                    )
                     if (
                         abs(numeric["instrument_time"] - expected_time) > tolerance
-                        or abs(numeric["actual_time"] - expected_time) > tolerance
+                        or actual_time_mismatch
                         or match["status"] != "alive"
                     ):
                         raise ContractError(
@@ -964,6 +1093,596 @@ def _write_states_csv(path: Path, rows_by_particle: dict[int, list[StateRow]]) -
         os.replace(temporary, path)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def _stream_logs_to_states_csv(
+    stdout_paths: Sequence[Path],
+    *,
+    frozen_particle_ids: Sequence[int],
+    sample_times_us: Sequence[float],
+    natural_archive_grid: tuple[float, float] | None,
+    states_path: Path,
+    natural_sample_count_out: list[int] | None = None,
+    trace_token_repairs_out: list[dict[str, object]] | None = None,
+) -> tuple[
+    int,
+    dict[str, list[int]],
+    list[dict[str, object]],
+    list[dict[str, object]],
+]:
+    """Validate ordered SIMION TRACE output while writing its compact archive.
+
+    The governed batch program emits one particle's native-RF states in order,
+    and batches are ordered by their frozen global particle IDs.  Keeping every
+    row plus a duplicate ``(particle_id, sample_index)`` set made a large
+    natural archive require substantially more RAM than the raw logs.  This
+    path retains only O(samples + particles) validation state and atomically
+    publishes the same gzip CSV after the complete trace is accepted.
+    """
+    if not stdout_paths:
+        raise ContractError("at least one SIMION stdout log is required")
+    frozen_ids = list(frozen_particle_ids)
+    frozen_set = set(frozen_ids)
+    if len(frozen_set) != len(frozen_ids) or frozen_ids != sorted(frozen_ids):
+        raise ContractError("pre-pulse frozen particle identity differs")
+    rank_by_id = {particle_id: rank for rank, particle_id in enumerate(frozen_ids)}
+    # Natural archives declare their native grid rather than materialising a
+    # finite ``sample_times_us`` list.  The source-release callback is its
+    # authoritative first (t=0) sample, so allocate that census slot before
+    # streaming the first TRACE line.
+    initial_sample_count = max(
+        len(sample_times_us),
+        1 if natural_archive_grid is not None else 0,
+    )
+    alive_counts = [0] * initial_sample_count
+    # A finite window publishes every sample, so it needs its complete
+    # identity census while streaming.  A natural archive publishes only
+    # population-change points; defer their small identity census until the
+    # complete gzip state table exists rather than allocating two SHA objects
+    # and updating missing-ID ranges for every RF tick.
+    alive_hashers = (
+        None if natural_archive_grid is not None
+        else [hashlib.sha256() for _ in range(initial_sample_count)]
+    )
+    missing_hashers = (
+        None if natural_archive_grid is not None
+        else [hashlib.sha256() for _ in range(initial_sample_count)]
+    )
+    last_rank_by_sample = [-1] * initial_sample_count
+    alive_started = [False] * initial_sample_count
+    missing_started = [False] * initial_sample_count
+    missing_ids = None if natural_archive_grid is not None else [[] for _ in sample_times_us]
+
+    def ensure_sample(sample_index: int) -> None:
+        while len(alive_counts) < sample_index:
+            alive_counts.append(0)
+            if alive_hashers is not None:
+                alive_hashers.append(hashlib.sha256())
+            if missing_hashers is not None:
+                missing_hashers.append(hashlib.sha256())
+            last_rank_by_sample.append(-1)
+            alive_started.append(False)
+            missing_started.append(False)
+
+    def append_id(hasher: Any, started: list[bool], index: int, particle_id: int) -> None:
+        if started[index]:
+            hasher.update(b",")
+        else:
+            hasher.update(b'{"ordered_particle_ids":[')
+            started[index] = True
+        hasher.update(str(particle_id).encode("ascii"))
+
+    def append_missing_before(sample_zero_index: int, rank: int) -> None:
+        if missing_hashers is None:
+            return
+        for missing_rank in range(last_rank_by_sample[sample_zero_index] + 1, rank):
+            particle_id = frozen_ids[missing_rank]
+            append_id(
+                missing_hashers[sample_zero_index], missing_started,
+                sample_zero_index, particle_id,
+            )
+            if missing_ids is not None:
+                missing_ids[sample_zero_index].append(particle_id)
+
+    terminal_ids: set[int] = set()
+    terminal_records: dict[int, tuple[float, float, float, float, float, float, float, str]] = {}
+    terminal_by_reason: dict[str, list[int]] = {
+        "window_complete": [], "splat": [], "geometry_collision": [],
+        "outside_pa_termination": [],
+    }
+    row_count = 0
+    last_particle_rank = -1
+    current_particle_id: int | None = None
+    current_sample_index = 0
+    omitted_checkpoint_index: int | None = None
+    checkpoint_omissions: list[dict[str, object]] = []
+    source_release_ids: set[int] = set()
+    states_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = states_path.with_name(states_path.name + ".tmp")
+
+    class _SegmentedGzipCsvWriter:
+        """Write independently closed gzip members into one valid gzip CSV.
+
+        Python's gzip reader (and standard gzip tooling) transparently reads
+        concatenated members.  Closing the member after each SIMION batch
+        bounds the native compressor lifetime without changing the archive
+        bytes seen by a CSV reader: the header is still emitted exactly once.
+        """
+
+        def __init__(self, path: Path) -> None:
+            self._raw = path.open("wb")
+            self._compressed: gzip.GzipFile | None = None
+            self._text: io.TextIOWrapper | None = None
+            self._writer: Any = None
+
+        def start_batch(self) -> None:
+            if self._text is not None:
+                raise RuntimeError("gzip CSV batch is already open")
+            self._compressed = gzip.GzipFile(
+                filename="", mode="wb", fileobj=self._raw, mtime=0
+            )
+            self._text = io.TextIOWrapper(
+                self._compressed, encoding="utf-8", newline=""
+            )
+            self._writer = csv.writer(
+                self._text, quoting=csv.QUOTE_ALL, lineterminator="\r\n"
+            )
+
+        def writerow(self, row: Sequence[object]) -> None:
+            if self._writer is None:
+                raise RuntimeError("gzip CSV batch is not open")
+            self._writer.writerow(row)
+
+        def finish_batch(self) -> None:
+            if self._text is None:
+                return
+            self._text.close()
+            self._text = None
+            self._compressed = None
+            self._writer = None
+            self._raw.flush()
+
+        def close(self) -> None:
+            self.finish_batch()
+            self._raw.close()
+
+        def __enter__(self) -> "_SegmentedGzipCsvWriter":
+            return self
+
+        def __exit__(self, *_: object) -> None:
+            self.close()
+
+    try:
+        with _SegmentedGzipCsvWriter(temporary) as writer:
+                    writer.start_batch()
+                    writer.writerow(CSV_COLUMNS)
+                    for batch_index, stdout_path in enumerate(stdout_paths):
+                        if batch_index:
+                            writer.start_batch()
+                        if not stdout_path.is_file():
+                            raise ContractError(f"SIMION stdout log is missing: {stdout_path}")
+                        try:
+                            with stdout_path.open("r", encoding="utf-8", errors="strict") as handle:
+                                for raw_line in handle:
+                                    line = raw_line.rstrip("\r\n")
+                                    if PROHIBITED_DOWNSTREAM_PATTERN.match(line):
+                                        raise ContractError(
+                                            "pre-pulse screening emitted a prohibited downstream event"
+                                        )
+                                    # SIMION reports the initial state from
+                                    # segment.initialize separately.  For the
+                                    # natural archive it is the native grid's
+                                    # t=0 sample, not a diagnostic-only line:
+                                    # retain it so particles that collide
+                                    # before the first RF tick still have a
+                                    # complete alive prefix.
+                                    if (
+                                        natural_archive_grid is not None
+                                        and line.startswith(SOURCE_RELEASE_PREFIX)
+                                    ):
+                                        match = SOURCE_RELEASE_PATTERN.fullmatch(line)
+                                        if match is None:
+                                            raise ContractError(
+                                                "pre-pulse source-release TRACE line is malformed"
+                                            )
+                                        particle_id = int(match["particle_id"])
+                                        numeric = {
+                                            name: float(match[name]) for name in (
+                                                "instrument_time", "x", "y", "z",
+                                                "vx", "vy", "vz", "energy",
+                                            )
+                                        }
+                                        if (
+                                            particle_id not in frozen_set
+                                            or particle_id in source_release_ids
+                                            or not all(math.isfinite(value) for value in numeric.values())
+                                        ):
+                                            raise ContractError(
+                                                "pre-pulse source-release identity differs"
+                                            )
+                                        expected_time = natural_archive_grid[0]
+                                        tolerance = 1e-12 * max(1.0, abs(expected_time))
+                                        if abs(numeric["instrument_time"] - expected_time) > tolerance:
+                                            raise ContractError(
+                                                "pre-pulse source-release time landing differs"
+                                            )
+                                        sample_zero_index = 0
+                                        particle_rank = rank_by_id[particle_id]
+                                        if particle_rank <= last_rank_by_sample[sample_zero_index]:
+                                            raise ContractError(
+                                                "pre-pulse source-release order differs from frozen batches"
+                                            )
+                                        if alive_hashers is not None:
+                                            append_missing_before(sample_zero_index, particle_rank)
+                                            append_id(
+                                                alive_hashers[sample_zero_index], alive_started,
+                                                sample_zero_index, particle_id,
+                                            )
+                                        alive_counts[sample_zero_index] += 1
+                                        last_rank_by_sample[sample_zero_index] = particle_rank
+                                        source_release_ids.add(particle_id)
+                                        writer.writerow((
+                                            particle_id, "pre_pulse_time_series_state", 1,
+                                            _dotnet_roundtrip(expected_time),
+                                            _dotnet_roundtrip(numeric["instrument_time"]),
+                                            *(
+                                                _dotnet_roundtrip(numeric[name])
+                                                for name in ("x", "y", "z", "vx", "vy", "vz", "energy")
+                                            ),
+                                            "alive",
+                                        ))
+                                        row_count += 1
+                                        continue
+                                    if line.startswith(TERMINAL_PREFIX):
+                                        match = TERMINAL_PATTERN.fullmatch(line)
+                                        if match is None:
+                                            raise ContractError("pre-pulse terminal TRACE line is malformed")
+                                        particle_id = int(match["particle_id"])
+                                        if particle_id not in frozen_set:
+                                            raise ContractError("pre-pulse terminal particle identity differs")
+                                        numeric = [float(match[name]) for name in (
+                                            "instrument_time", "x", "y", "z", "vx", "vy", "vz"
+                                        )]
+                                        if not all(math.isfinite(value) for value in numeric):
+                                            raise ContractError("pre-pulse terminal TRACE contains a non-finite number")
+                                        terminal_record = (*numeric, match["reason"])
+                                        previous_terminal = terminal_records.get(particle_id)
+                                        if previous_terminal is not None:
+                                            if previous_terminal != terminal_record:
+                                                raise ContractError(
+                                                    "pre-pulse terminal particle has conflicting duplicates"
+                                                )
+                                            continue
+                                        terminal_records[particle_id] = terminal_record
+                                        terminal_ids.add(particle_id)
+                                        terminal_by_reason[match["reason"]].append(particle_id)
+                                        continue
+                                    if not line.startswith(TRACE_PREFIX):
+                                        continue
+                                    match = TRACE_PATTERN.fullmatch(line)
+                                    if match is None:
+                                        raise ContractError("pre-pulse state TRACE line is malformed")
+                                    try:
+                                        particle_id = int(match["particle_id"])
+                                        numeric = {
+                                            name: float(match[name]) for name in (
+                                                "instrument_time", "actual_time", "x", "y", "z",
+                                                "vx", "vy", "vz", "energy",
+                                            )
+                                        }
+                                    except ValueError as exc:
+                                        raise ContractError(
+                                            "pre-pulse state TRACE numeric field is invalid"
+                                        ) from exc
+                                    sample_index_token = match["sample_index"]
+                                    if (
+                                        natural_archive_grid is not None
+                                        and sample_index_token.isdecimal()
+                                        and particle_id == current_particle_id
+                                        and _native_checkpoint_omission(
+                                            sample_index=int(sample_index_token),
+                                            prior_sample_index=current_sample_index,
+                                            instrument_time_us=numeric["instrument_time"],
+                                            actual_time_us=numeric["actual_time"],
+                                            grid_origin_us=natural_archive_grid[0],
+                                            grid_step_us=natural_archive_grid[1],
+                                        )
+                                    ):
+                                        if omitted_checkpoint_index is not None:
+                                            raise ContractError(
+                                                "pre-pulse native checkpoint omission differs"
+                                            )
+                                        omitted_checkpoint_index = int(sample_index_token)
+                                        checkpoint_omissions.append({
+                                            "particle_id": particle_id,
+                                            "sample_index": omitted_checkpoint_index,
+                                            "canonical_instrument_time_us": (
+                                                natural_archive_grid[0]
+                                                + (omitted_checkpoint_index - 1)
+                                                * natural_archive_grid[1]
+                                            ),
+                                            "reported_instrument_time_us": numeric[
+                                                "instrument_time"
+                                            ],
+                                            "actual_instrument_time_us": numeric[
+                                                "actual_time"
+                                            ],
+                                        })
+                                        continue
+                                    if natural_archive_grid is not None:
+                                        sample_index, token_repair = (
+                                            resolve_natural_archive_sample_index(
+                                                reported_token=sample_index_token,
+                                                instrument_time_us=numeric["instrument_time"],
+                                                grid_origin_us=natural_archive_grid[0],
+                                                grid_step_us=natural_archive_grid[1],
+                                            )
+                                        )
+                                        if (
+                                            token_repair is not None
+                                            and trace_token_repairs_out is not None
+                                        ):
+                                            trace_token_repairs_out.append(token_repair)
+                                    elif sample_index_token.isdecimal():
+                                        sample_index = int(sample_index_token)
+                                    else:
+                                        raise ContractError(
+                                            "pre-pulse TRACE sample index is malformed"
+                                        )
+                                    if particle_id not in frozen_set:
+                                        raise ContractError("pre-pulse TRACE particle identity differs")
+                                    if sample_index < 1 or (
+                                        natural_archive_grid is None
+                                        and sample_index > len(sample_times_us)
+                                    ):
+                                        raise ContractError(
+                                            "pre-pulse TRACE sample index is outside the frozen grid"
+                                        )
+                                    if not all(math.isfinite(value) for value in numeric.values()):
+                                        raise ContractError("pre-pulse TRACE contains a non-finite number")
+                                    if natural_archive_grid is not None:
+                                        ensure_sample(sample_index)
+                                        expected_time = natural_archive_grid[0] + (
+                                            sample_index - 1
+                                        ) * natural_archive_grid[1]
+                                    else:
+                                        expected_time = float(sample_times_us[sample_index - 1])
+                                    tolerance = 1e-12 * max(1.0, abs(expected_time))
+                                    particle_rank = rank_by_id[particle_id]
+                                    if particle_rank < last_particle_rank:
+                                        raise ContractError(
+                                            "pre-pulse TRACE particle order differs from frozen batches"
+                                        )
+                                    if (
+                                        abs(numeric["instrument_time"] - expected_time) > tolerance
+                                        or (
+                                            natural_archive_grid is None
+                                            and abs(numeric["actual_time"] - expected_time) > tolerance
+                                        )
+                                        or match["status"] != "alive"
+                                    ):
+                                        raise ContractError(
+                                            "pre-pulse TRACE identity/time landing differs: "
+                                            f"particle_id={particle_id} sample_index={sample_index} "
+                                            f"expected_time_us={expected_time:.17g} "
+                                            f"instrument_time_us={numeric['instrument_time']:.17g} "
+                                            f"actual_time_us={numeric['actual_time']:.17g} "
+                                            f"status={match['status']}"
+                                        )
+                                    if particle_id == current_particle_id:
+                                        expected_next_index = current_sample_index + 1
+                                        if omitted_checkpoint_index is not None:
+                                            expected_next_index += 1
+                                        if sample_index != expected_next_index:
+                                            raise ContractError(
+                                                "pre-pulse particle state is not one continuous alive prefix"
+                                            )
+                                    else:
+                                        if particle_rank == last_particle_rank:
+                                            raise ContractError("pre-pulse TRACE particle/sample is duplicated")
+                                        current_particle_id = particle_id
+                                        current_sample_index = 0
+                                        omitted_checkpoint_index = None
+                                        last_particle_rank = particle_rank
+                                    current_sample_index = sample_index
+                                    omitted_checkpoint_index = None
+                                    sample_zero_index = sample_index - 1
+                                    if alive_hashers is not None:
+                                        append_missing_before(sample_zero_index, particle_rank)
+                                        append_id(
+                                            alive_hashers[sample_zero_index], alive_started,
+                                            sample_zero_index, particle_id,
+                                        )
+                                    alive_counts[sample_zero_index] += 1
+                                    last_rank_by_sample[sample_zero_index] = particle_rank
+                                    writer.writerow((
+                                        particle_id, "pre_pulse_time_series_state", sample_index,
+                                        _dotnet_roundtrip(numeric["instrument_time"]),
+                                        _dotnet_roundtrip(numeric["actual_time"]),
+                                        _dotnet_roundtrip(numeric["x"]),
+                                        _dotnet_roundtrip(numeric["y"]),
+                                        _dotnet_roundtrip(numeric["z"]),
+                                        _dotnet_roundtrip(numeric["vx"]),
+                                        _dotnet_roundtrip(numeric["vy"]),
+                                        _dotnet_roundtrip(numeric["vz"]),
+                                        _dotnet_roundtrip(numeric["energy"]), "alive",
+                                    ))
+                                    row_count += 1
+                        except (OSError, UnicodeError) as exc:
+                            raise ContractError(
+                                f"SIMION stdout log is unreadable: {stdout_path}"
+                            ) from exc
+                        # End each compressed member at the SIMION batch
+                        # boundary.  The next member is still part of the
+                        # same standards-compliant gzip CSV stream.
+                        writer.finish_batch()
+        for ids in terminal_by_reason.values():
+            ids.sort()
+        # A finite screening window terminates every particle explicitly.
+        # Natural global callbacks distinguish collisions from native outside-PA
+        # termination. Older local-callback archives may contain only the last
+        # alive state for outside-PA ions; never invent a collision for them.
+        if (
+            natural_archive_grid is None
+            and terminal_ids
+            and terminal_ids != frozen_set
+        ):
+            raise ContractError("pre-pulse terminal census differs from the frozen cohort")
+        if natural_archive_grid is not None:
+            observed_count = sum(alive_count > 0 for alive_count in alive_counts)
+            if natural_sample_count_out is not None:
+                natural_sample_count_out.append(observed_count)
+            sample_census = _natural_receipt_sample_census_from_states(
+                states_path=temporary,
+                frozen_particle_ids=frozen_ids,
+                alive_counts=alive_counts,
+                grid_origin_us=natural_archive_grid[0],
+                grid_step_us=natural_archive_grid[1],
+            )
+        else:
+            assert alive_hashers is not None and missing_hashers is not None
+            for sample_zero_index in range(len(alive_counts)):
+                append_missing_before(sample_zero_index, len(frozen_ids))
+                if not alive_started[sample_zero_index]:
+                    alive_hashers[sample_zero_index].update(b'{"ordered_particle_ids":[')
+                alive_hashers[sample_zero_index].update(b"]}")
+                if not missing_started[sample_zero_index]:
+                    missing_hashers[sample_zero_index].update(b'{"ordered_particle_ids":[')
+                missing_hashers[sample_zero_index].update(b"]}")
+            sample_census = []
+            for sample_zero_index, alive_count in enumerate(alive_counts):
+                sample_census.append({
+                    "sample_index": sample_zero_index + 1,
+                    "instrument_time_us": sample_times_us[sample_zero_index],
+                    "alive_count": alive_count,
+                    "alive_particle_ids_sha256": alive_hashers[sample_zero_index].hexdigest(),
+                    "missing_count": len(frozen_ids) - alive_count,
+                    "missing_particle_ids": missing_ids[sample_zero_index],
+                    "missing_particle_ids_sha256": missing_hashers[sample_zero_index].hexdigest(),
+                })
+        os.replace(temporary, states_path)
+        return row_count, terminal_by_reason, sample_census, checkpoint_omissions
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _receipt_sample_census(
+    sample_census: Sequence[dict[str, object]], *, natural_archive: bool
+) -> list[dict[str, object]]:
+    """Keep a bounded natural-archive census without duplicating trajectory data.
+
+    The gzip state table is the authoritative, complete native-grid trajectory
+    payload.  Copying one JSON object for every native tick into both receipt
+    and summary turns a compact screening receipt into a larger, fragile
+    duplicate of that payload.  For a natural archive, retain its initial
+    state, every population-change boundary and its last observed state.
+    Finite scheduled windows retain their complete small census.
+    """
+    if not natural_archive or len(sample_census) <= 1:
+        return list(sample_census)
+    result = [sample_census[0]]
+    previous_alive = sample_census[0].get("alive_count")
+    for item in sample_census[1:-1]:
+        alive = item.get("alive_count")
+        if alive != previous_alive:
+            result.append(item)
+        previous_alive = alive
+    if result[-1] is not sample_census[-1]:
+        result.append(sample_census[-1])
+    return result
+
+
+def _natural_receipt_sample_census_from_states(
+    *,
+    states_path: Path,
+    frozen_particle_ids: Sequence[int],
+    alive_counts: Sequence[int],
+    grid_origin_us: float,
+    grid_step_us: float,
+) -> list[dict[str, object]]:
+    """Build only retained natural-census identities from the gzip state table.
+
+    The state table is the complete native-grid evidence.  A natural receipt
+    deliberately retains only its first state, survival-population changes and
+    final state.  Replaying just those memberships avoids retaining a SHA
+    accumulator and missing-ID range for every unreported RF tick.
+    """
+    observed = [index for index, count in enumerate(alive_counts) if count > 0]
+    if not observed:
+        return []
+    retained = [observed[0]]
+    previous_count = alive_counts[observed[0]]
+    for index in observed[1:-1]:
+        if alive_counts[index] != previous_count:
+            retained.append(index)
+        previous_count = alive_counts[index]
+    if retained[-1] != observed[-1]:
+        retained.append(observed[-1])
+
+    frozen_ids = list(frozen_particle_ids)
+    rank_by_id = {particle_id: rank for rank, particle_id in enumerate(frozen_ids)}
+    records = {
+        index: {
+            "alive_hasher": hashlib.sha256(),
+            "missing_hasher": hashlib.sha256(),
+            "alive_started": False,
+            "missing_started": False,
+            "last_rank": -1,
+            "alive_seen": 0,
+        }
+        for index in retained
+    }
+
+    def append_id(record: dict[str, object], *, kind: str, particle_id: int) -> None:
+        hasher = record[f"{kind}_hasher"]
+        started_key = f"{kind}_started"
+        if record[started_key]:
+            hasher.update(b",")
+        else:
+            hasher.update(b'{"ordered_particle_ids":[')
+            record[started_key] = True
+        hasher.update(str(particle_id).encode("ascii"))
+
+    def append_missing_before(record: dict[str, object], rank: int) -> None:
+        for missing_rank in range(int(record["last_rank"]) + 1, rank):
+            append_id(record, kind="missing", particle_id=frozen_ids[missing_rank])
+
+    with gzip.open(states_path, "rt", encoding="utf-8", newline="") as handle:
+        for row in csv.DictReader(handle):
+            index = int(row["sample_index"]) - 1
+            record = records.get(index)
+            if record is None:
+                continue
+            particle_id = int(row["particle_id"])
+            rank = rank_by_id.get(particle_id)
+            if rank is None or rank <= int(record["last_rank"]):
+                raise ContractError("natural state archive identity order differs")
+            append_missing_before(record, rank)
+            append_id(record, kind="alive", particle_id=particle_id)
+            record["last_rank"] = rank
+            record["alive_seen"] = int(record["alive_seen"]) + 1
+
+    result: list[dict[str, object]] = []
+    for index in retained:
+        record = records[index]
+        append_missing_before(record, len(frozen_ids))
+        for kind in ("alive", "missing"):
+            hasher = record[f"{kind}_hasher"]
+            if not record[f"{kind}_started"]:
+                hasher.update(b'{"ordered_particle_ids":[')
+            hasher.update(b"]}")
+        alive_count = int(alive_counts[index])
+        if int(record["alive_seen"]) != alive_count:
+            raise ContractError("natural state archive census differs from TRACE")
+        result.append({
+            "sample_index": index + 1,
+            "instrument_time_us": grid_origin_us + index * grid_step_us,
+            "alive_count": alive_count,
+            "alive_particle_ids_sha256": record["alive_hasher"].hexdigest(),
+            "missing_count": len(frozen_ids) - alive_count,
+            "missing_particle_ids_sha256": record["missing_hasher"].hexdigest(),
+        })
+    return result
 
 
 def materialize(
@@ -1075,35 +1794,25 @@ def materialize(
         raise ContractError("pre-pulse frozen particle identity differs")
     cache_keys = _cache_keys(contract, run_config)
 
-    rows_by_particle, alive_by_sample, row_count, terminal_by_reason = _parse_logs(
+    natural_sample_count: list[int] = []
+    trace_token_repairs: list[dict[str, object]] = []
+    (
+        row_count,
+        terminal_by_reason,
+        sample_census,
+        checkpoint_omissions,
+    ) = _stream_logs_to_states_csv(
         [path.resolve() for path in stdout_paths],
         frozen_particle_ids=frozen_ids,
         sample_times_us=sample_times,
         natural_archive_grid=natural_archive_grid,
+        states_path=states_path,
+        natural_sample_count_out=natural_sample_count,
+        trace_token_repairs_out=trace_token_repairs,
     )
-    frozen_set = set(frozen_ids)
-    sample_census: list[dict[str, object]] = []
-    for zero_index, alive_ids in enumerate(alive_by_sample):
-        if natural_archive and not alive_ids:
-            continue
-        missing_ids = sorted(frozen_set.difference(alive_ids))
-        sample_census.append(
-            {
-                "sample_index": zero_index + 1,
-                "instrument_time_us": (
-                    natural_archive_grid[0] + zero_index * natural_archive_grid[1]
-                    if natural_archive and natural_archive_grid is not None
-                    else raw_sample_times[zero_index]
-                ),
-                "alive_count": len(alive_ids),
-                "alive_particle_ids_sha256": _census_id_sha256(alive_ids),
-                "missing_count": len(missing_ids),
-                **({} if natural_archive else {"missing_particle_ids": missing_ids}),
-                "missing_particle_ids_sha256": _census_id_sha256(missing_ids),
-            }
-        )
-
-    _write_states_csv(states_path, rows_by_particle)
+    receipt_sample_census = _receipt_sample_census(
+        sample_census, natural_archive=natural_archive
+    )
     states_record: dict[str, object] = {
         "path": f"results/{STATE_ARCHIVE_FILENAME}",
         "sha256": file_sha256(states_path),
@@ -1126,6 +1835,8 @@ def materialize(
         **({"trace_grid": copy.deepcopy(contract["rf_time_grid"])} if natural_archive else {}),
         "particle_count": particle_count,
         "state_row_count": row_count,
+        "native_checkpoint_omissions": checkpoint_omissions,
+        "native_trace_token_repairs": trace_token_repairs,
         "terminal_census": {
             reason: {
                 "count": len(ids),
@@ -1133,7 +1844,12 @@ def materialize(
             }
             for reason, ids in terminal_by_reason.items()
         },
-        "sample_census": sample_census,
+        "sample_census": receipt_sample_census,
+        "sample_census_policy": (
+            "natural_grid_population_change_points_v1"
+            if natural_archive
+            else "all_scheduled_samples_v1"
+        ),
         "outputs": {"states": states_record},
         "prohibited_outputs": copy.deepcopy(contract["prohibited_outputs"]),
     }
@@ -1156,9 +1872,14 @@ def materialize(
         "census": {
             "source_release": particle_count,
             "particle_count": particle_count,
-            "sample_count": len(sample_census),
+            "sample_count": (
+                natural_sample_count[0] if natural_archive else len(sample_census)
+            ),
+            "receipt_sample_census_count": len(receipt_sample_census),
             "observed_state_rows": row_count,
-            "sample_census": sample_census,
+            "native_checkpoint_omission_count": len(checkpoint_omissions),
+            "native_trace_token_repair_count": len(trace_token_repairs),
+            "sample_census": receipt_sample_census,
             "terminal_census": {
                 reason: {"count": len(ids)}
                 for reason, ids in terminal_by_reason.items()

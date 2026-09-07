@@ -167,9 +167,11 @@ local function run_fast(instance_id, elapsed_us, mode)
 end
 
 local pre,pre_order=run_fast(3,0,1)
-assert(#pre_order==19 and pre_order[1]==1 and pre_order[19]==19,
-  'frontend electrode write order changed before pulse')
-for electrode=1,19 do near(pre[electrode],0,'pre-pulse electrode '..electrode,1e-8) end
+-- This callback fixture has no RF source.  The static off-state was seeded in
+-- initialize_run, so a continuous callback before the pulse must do no work.
+assert(#pre_order==0,'pre-pulse callback rewrote initialized static electrodes')
+for electrode=1,19 do assert(pre[electrode]==nil,
+  'pre-pulse callback rewrote electrode '..electrode) end
 
 local active,active_order=run_fast(3,0.75,1)
 assert(#active_order==19 and active_order[1]==1 and active_order[19]==19,
@@ -219,6 +221,10 @@ near(ion_time_step,0.00625,'RF 160-step cap',1e-12)
 set_particle(1,1,0.75,100,1,1)
 callbacks.tstep_adjust()
 near(ion_time_step,1,'non-frontend timestep must not receive RF cap',1e-12)
+set_callback_value('handoff_pulse_mode',1)
+set_particle(1,1,90.7,100,1,1)
+callbacks.tstep_adjust()
+near(ion_time_step,0.05,'post-pulse observation deadline timestep',1e-12)
 
 set_callback_value('handoff_pulse_mode',1)
 local expected_grid1_z=get_program_value('accelerator_grid1_z_mm')
@@ -271,18 +277,24 @@ end
 
 if successor then
   set_callback_value('trajectory_log_enable',0)
-  set_particle(1,1,89.9,100,1,1)
+  set_particle(1,1,90.749,100,1,1)
   callbacks.initialize()
   callbacks.other_actions()
-  assert(ion_splat==0,'nonzero birth incorrectly advanced analyzer timeout')
-  set_particle(1,1,90,100,1,1)
+  assert(ion_splat==0,'particle stopped before the post-pulse deadline')
+  set_particle(1,1,90.75,100,1,1)
   callbacks.other_actions()
-  assert(ion_splat==1,'solver-local analyzer timeout was not enforced')
+  assert(ion_splat==1,'pulse-relative analyzer timeout was not enforced')
 
   local captured={}
   local native_print=print
   print=function(line) captured[#captured+1]=line end
   set_callback_value('trajectory_log_enable',1)
+  -- A numerical detector is armed only after this canonical particle has
+  -- reached the reflectron entrance; a direct outward detector splat is not
+  -- a return-flight hit.
+  local reflectron_entry_z=get_program_value('reflectron_entgrid_z_mm')
+  set_particle(2,2,1.8,reflectron_entry_z+0.01,1,1)
+  callbacks.other_actions()
   set_particle(2,4,2,0.01,-1,1)
   ion_px_mm=48.8
   callbacks.terminate()

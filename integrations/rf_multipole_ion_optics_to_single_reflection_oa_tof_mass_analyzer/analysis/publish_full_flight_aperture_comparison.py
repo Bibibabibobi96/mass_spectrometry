@@ -30,6 +30,10 @@ from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analy
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.plot_single_flight_spatial_six_panel import (
     _phase_space_fit_diagnostics,
 )
+from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.compare_single_flight_apertures import (
+    analyze_pre_pulse_source_only_apertures,
+    load_compact_pre_pulse_handoff_evidence,
+)
 
 
 INTEGRATION_ID = "rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer"
@@ -54,7 +58,22 @@ EXPECTED_CONNECTOR_GAP_MM = 102.4
 CASE_ID_PATTERN = re.compile(
     r"^ideal_acceptance_300mm_"
     r"(?P<shape>square|cylindrical)_accelerator_port_"
-    r"h(?P<height_code>100|150|200|250)_full_flight_n5000$"
+    r"h(?P<height_code>100|150|200|250)_"
+    r"(?P<workflow>full_flight_n5000|pre_pulse_n5000_post_pulse)$"
+)
+
+POST_PULSE_RESTART_SOURCE_FILES = (
+    "run_manifest.json",
+    "run_config.json",
+    "summary.json",
+    "inputs/canonical_pulse_restart_target_state_validation.json",
+    "inputs/mother_particle_source.csv",
+    "inputs/resolved_connection.json",
+    "inputs/resolved_population_contract.json",
+    "inputs/resolved_single_flight_population.json",
+    "inputs/single_flight_initial_global_state.csv",
+    "inputs/single_flight_particle_row_map.csv",
+    "results/single_flight_particle_checkpoints.csv",
 )
 
 
@@ -230,18 +249,16 @@ def _required_peak_metrics(summary: Mapping[str, Any], case_id: str) -> tuple[di
     return peak, bootstrap
 
 
-def _verify_manifest_bound_source_files(manifest: Mapping[str, Any], run: Path, case_id: str) -> None:
+def _verify_manifest_bound_source_files(
+    manifest: Mapping[str, Any], run: Path, case_id: str, names: Sequence[str]
+) -> None:
     """Require the consumed source evidence to be bound by its success manifest."""
 
     try:
         record_for_path([manifest.get("run_config")], run / "run_config.json", f"{case_id} run config")
-        for name in (
-            "summary.json",
-            "inputs/single_flight_initial_global_state.csv",
-            "inputs/resolved_connection.json",
-            "results/single_flight_particle_checkpoints.csv",
-            "results/single_flight_accelerator_checkpoint_evolution.csv",
-        ):
+        for name in names:
+            if name in {"run_manifest.json", "run_config.json"}:
+                continue
             record_for_path(
                 [*manifest.get("inputs", {}).values(), *manifest.get("outputs", [])],
                 run / name,
@@ -251,7 +268,7 @@ def _verify_manifest_bound_source_files(manifest: Mapping[str, Any], run: Path, 
         raise ContractError(f"{case_id} success manifest records are invalid") from error
 
 
-def _analyze_case(case_id: str, run: Path) -> tuple[dict[str, Any], str]:
+def _analyze_continuous_case(case_id: str, run: Path) -> tuple[dict[str, Any], str, tuple[Path, ...]]:
     missing = [name for name in SOURCE_FILES if not (run / name).is_file()]
     if missing:
         raise ContractError(f"{case_id} source run is missing required input: {missing[0]}")
@@ -261,7 +278,7 @@ def _analyze_case(case_id: str, run: Path) -> tuple[dict[str, Any], str]:
     summary = _load_json(run / "summary.json", f"{case_id} summary")
     if manifest.get("status") != "success" or manifest.get("run_id") != run.name or summary.get("status") != "success":
         raise ContractError(f"{case_id} is not a successful full-flight run")
-    _verify_manifest_bound_source_files(manifest, run, case_id)
+    _verify_manifest_bound_source_files(manifest, run, case_id, SOURCE_FILES)
     if summary.get("role") != "rf_oatof_simion_single_flight_summary" or summary.get("analysis_scope") != "full_single_flight_with_pulse_eligibility":
         raise ContractError(f"{case_id} is not a pulse-on full-flight analysis")
     source = summary.get("source_population")
@@ -329,11 +346,229 @@ def _analyze_case(case_id: str, run: Path) -> tuple[dict[str, Any], str]:
             "source_initial_state_sha256": mother_sha,
             "run_config_mode": config.get("mode"),
         },
-    }, mother_sha
+    }, mother_sha, tuple(run / name for name in SOURCE_FILES)
+
+
+def _workspace_relative_path(value: Any, *, workspace_root: Path, label: str) -> Path:
+    if not isinstance(value, str) or not value:
+        raise ContractError(f"{label} path is invalid")
+    path = Path(value)
+    if path.is_absolute():
+        raise ContractError(f"{label} path must be workspace-relative")
+    resolved = (workspace_root / path).resolve()
+    if not resolved.is_relative_to(workspace_root):
+        raise ContractError(f"{label} path is outside workspace")
+    return resolved
+
+
+def _restart_row_map(path: Path, *, case_id: str, selected_ids: list[int]) -> None:
+    try:
+        with path.open(encoding="utf-8-sig", newline="") as handle:
+            reader = csv.DictReader(handle)
+            if reader.fieldnames != ["simulation_particle_id", "source_particle_id"]:
+                raise ContractError(f"{case_id} restart row-map columns differ")
+            rows = list(reader)
+    except OSError as error:
+        raise ContractError(f"cannot read {case_id} restart row map") from error
+    try:
+        simulation_ids = [int(row["simulation_particle_id"]) for row in rows]
+        source_ids = [int(row["source_particle_id"]) for row in rows]
+    except (KeyError, TypeError, ValueError) as error:
+        raise ContractError(f"{case_id} restart row map is invalid") from error
+    if simulation_ids != list(range(1, len(selected_ids) + 1)) or source_ids != selected_ids:
+        raise ContractError(f"{case_id} restart row map differs from compact handoff selection")
+
+
+def _restart_terminal_partition(
+    *, case_id: str, receipt: Mapping[str, Any], terminal_taxonomy: Mapping[str, Any], mother_count: int
+) -> dict[str, Any]:
+    """Describe what this handoff experiment actually observed per mother ion.
+
+    Natural no-pulse endpoints of ions not selected at the pulse time are a
+    useful detector-blind diagnostic, but are counterfactual after pulse-on and
+    must not be recast as their full-flight loss mechanism.
+    """
+
+    selection = receipt.get("selection")
+    if not isinstance(selection, Mapping):
+        raise ContractError(f"{case_id} compact handoff selection is missing")
+    selected_ids = selection.get("pulse_eligible_particle_ids")
+    if not isinstance(selected_ids, list):
+        raise ContractError(f"{case_id} compact handoff selected identities are invalid")
+    selected_count = len(selected_ids)
+    counts = terminal_taxonomy["category_counts"]
+    detector_count = counts.get("detector_crossing", 0)
+    if isinstance(detector_count, bool) or not isinstance(detector_count, int) or detector_count < 0:
+        raise ContractError(f"{case_id} post-pulse detector terminal count is invalid")
+    if detector_count > selected_count:
+        raise ContractError(f"{case_id} post-pulse detector terminal count exceeds handoff population")
+    post_losses = {
+        str(category): int(count)
+        for category, count in counts.items()
+        if category != "detector_crossing"
+    }
+    if any(count < 0 for count in post_losses.values()) or sum(post_losses.values()) + detector_count != selected_count:
+        raise ContractError(f"{case_id} post-pulse terminal taxonomy does not close the handoff population")
+    not_eligible = mother_count - selected_count
+    if not_eligible < 0:
+        raise ContractError(f"{case_id} handoff population exceeds the mother denominator")
+    return {
+        "classification_is_mutually_exclusive_and_exhaustive": True,
+        "mother_cohort_count": mother_count,
+        "categories": {
+            "not_pulse_eligible_at_selected_time": not_eligible,
+            "selected_post_pulse_detector": detector_count,
+            "selected_post_pulse_loss": {
+                "count": sum(post_losses.values()),
+                "by_terminal_category": post_losses,
+            },
+        },
+        "interpretation": (
+            "The first category was not propagated under pulse-on after the selected "
+            "time. Natural no-pulse terminal reasons are retained separately as a "
+            "detector-blind diagnostic and are not asserted as pulse-on losses."
+        ),
+    }
+
+
+def _analyze_restart_case(
+    case_id: str, run: Path, *, workspace_root: Path
+) -> tuple[dict[str, Any], str, tuple[Path, ...]]:
+    missing = [name for name in POST_PULSE_RESTART_SOURCE_FILES if not (run / name).is_file()]
+    if missing:
+        raise ContractError(f"{case_id} post-pulse restart run is missing required input: {missing[0]}")
+    manifest = _load_json(run / "run_manifest.json", f"{case_id} manifest")
+    config = _load_json(run / "run_config.json", f"{case_id} config")
+    connection = _load_json(run / "inputs" / "resolved_connection.json", f"{case_id} resolved connection")
+    summary = _load_json(run / "summary.json", f"{case_id} summary")
+    if manifest.get("status") != "success" or manifest.get("run_id") != run.name or summary.get("status") != "success":
+        raise ContractError(f"{case_id} is not a successful post-pulse restart run")
+    _verify_manifest_bound_source_files(manifest, run, case_id, POST_PULSE_RESTART_SOURCE_FILES)
+    if summary.get("role") != "rf_oatof_simion_single_flight_summary" or summary.get("analysis_scope") != "full_single_flight_with_pulse_eligibility":
+        raise ContractError(f"{case_id} is not a pulse-on post-pulse analysis")
+    matrix = _validate_case_matrix(case_id=case_id, config=config, connection=connection)
+    population = _load_json(run / "inputs" / "resolved_population_contract.json", f"{case_id} population contract")
+    authority = population.get("source_authority")
+    source = summary.get("source_population")
+    if (
+        population.get("source_release_mode") != "pre_pulse_restart"
+        or not isinstance(authority, Mapping)
+        or not isinstance(authority.get("table"), Mapping)
+        or not isinstance(authority.get("particle_count"), int)
+        or not isinstance(source, Mapping)
+        or source.get("simulation_population_basis") != "pulse_eligible_conditional_population"
+        or population.get("denominators", {}).get("population_count") != EXPECTED_MOTHER_COHORT_COUNT
+    ):
+        raise ContractError(f"{case_id} does not declare a standard compact pre-pulse restart")
+    compact_path = _workspace_relative_path(
+        authority["table"].get("path"), workspace_root=workspace_root,
+        label=f"{case_id} compact source table",
+    )
+    if not compact_path.is_file() or authority["table"].get("sha256") != file_sha256(compact_path):
+        raise ContractError(f"{case_id} compact source table binding differs")
+    pre_run = compact_path.parent.parent
+    if compact_path != pre_run / "results" / "pre_pulse_compact_handoff.csv":
+        raise ContractError(f"{case_id} compact source table is not a canonical pre-pulse handoff")
+    evidence = load_compact_pre_pulse_handoff_evidence(pre_run, case_id=case_id)
+    pre_manifest = _load_json(pre_run / "run_manifest.json", f"{case_id} pre-pulse manifest")
+    if pre_manifest.get("status") != "success" or pre_manifest.get("run_id") != pre_run.name:
+        raise ContractError(f"{case_id} compact pre-pulse source is not successful")
+    _verify_manifest_bound_source_files(
+        pre_manifest, pre_run, case_id, evidence["source_files"]
+    )
+    selected = evidence["selected_states"]
+    selected_ids = [int(value) for value in selected["particle_id"].tolist()]
+    if compact_path != pre_run / "results" / "pre_pulse_compact_handoff.csv":
+        raise ContractError(f"{case_id} compact source path differs from its source run")
+    if file_sha256(run / "inputs" / "mother_particle_source.csv") != file_sha256(compact_path):
+        raise ContractError(f"{case_id} post-pulse source differs from compact handoff")
+    _restart_row_map(run / "inputs" / "single_flight_particle_row_map.csv", case_id=case_id, selected_ids=selected_ids)
+    validation = _load_json(
+        run / "inputs" / "canonical_pulse_restart_target_state_validation.json",
+        f"{case_id} restart validation",
+    )
+    target = evidence["receipt"]["pulse_target_state"]
+    if (
+        validation.get("role") != "canonical_pulse_restart_target_state_validation"
+        or validation.get("status") != "PASS"
+        or validation.get("target_pulse_state_sha256") != target.get("sha256")
+        or validation.get("ordered_particle_id_sha256") != target.get("ordered_particle_id_sha256")
+        or validation.get("particle_count") != len(selected_ids)
+    ):
+        raise ContractError(f"{case_id} restart validation differs from compact handoff")
+    if authority.get("particle_count") != len(selected_ids):
+        raise ContractError(f"{case_id} restart authority count differs from compact handoff")
+    terminal_taxonomy = _terminal_loss_taxonomy(summary, set(selected_ids), case_id)
+    if (
+        source.get("candidate_population_count") != EXPECTED_MOTHER_COHORT_COUNT
+        or source.get("pulse_eligible_population_count") != len(selected_ids)
+        or source.get("simulated_population_count") != len(selected_ids)
+        or source.get("complete_pulse_eligible_population_simulated") is not True
+    ):
+        raise ContractError(f"{case_id} post-pulse source population does not close the compact handoff")
+    source_analysis = analyze_pre_pulse_source_only_apertures({case_id: pre_run})["cases"][case_id]
+    if source_analysis["matrix_arm"]["accelerator_shape"] != matrix["shape"] or source_analysis["matrix_arm"]["aperture_height_mm"] != matrix["aperture_height_mm"]:
+        raise ContractError(f"{case_id} post-pulse aperture differs from its pre-pulse source")
+    peak, bootstrap = _required_peak_metrics(summary, case_id)
+    partition = _restart_terminal_partition(
+        case_id=case_id,
+        receipt=evidence["receipt"],
+        terminal_taxonomy=terminal_taxonomy,
+        mother_count=EXPECTED_MOTHER_COHORT_COUNT,
+    )
+    pre_files = tuple(pre_run / name for name in evidence["source_files"])
+    post_files = tuple(run / name for name in POST_PULSE_RESTART_SOURCE_FILES)
+    return {
+        "source_run_id": run.name,
+        "pre_pulse_source_run_id": pre_run.name,
+        "matrix_arm": matrix,
+        "mother_cohort_count": EXPECTED_MOTHER_COHORT_COUNT,
+        "accelerator_entry_count": len(selected_ids),
+        "accelerator_entry_fraction_of_mother": len(selected_ids) / EXPECTED_MOTHER_COHORT_COUNT,
+        "accelerator_entry_axial_width_mm": source_analysis["accelerator_entry_axial_width_mm"],
+        "accelerator_entry_axial_full_width_acceptance": source_analysis["accelerator_entry_axial_full_width_acceptance"],
+        "z_vz_linear_fit": source_analysis["z_vz_linear_fit"],
+        "z_vz_polynomial_diagnostics": source_analysis["z_vz_polynomial_diagnostics"],
+        "transmission_and_terminal_losses": {
+            "detector_count": terminal_taxonomy["category_counts"].get("detector_crossing", 0),
+            "detector_fraction_of_mother": terminal_taxonomy["category_counts"].get("detector_crossing", 0) / EXPECTED_MOTHER_COHORT_COUNT,
+            "full_mother_cohort_partition": partition,
+            "detector_blind_natural_terminal_census": evidence["terminal_census"],
+        },
+        "detector_peak": {
+            "population_basis": "this_arm_detector_hits_only; never a cross-arm common-hit cohort",
+            "direct_fwhm_tof_ns": peak["direct_fwhm_tof_ns"],
+            "direct_fwhm_mass_Da": peak["direct_fwhm_mass_Da"],
+            "mass_resolution": peak["mass_resolution"],
+            "tail_fraction_outside_3sigma": peak["tail_fraction_outside_3sigma"],
+            "peak_metrics": peak,
+            "bootstrap_resolution": bootstrap,
+        },
+        "provenance": {
+            "source_files": {
+                **{f"post_pulse/{name}": {"path": str(run / name), "sha256": file_sha256(run / name)} for name in POST_PULSE_RESTART_SOURCE_FILES},
+                **{f"pre_pulse/{name}": {"path": str(pre_run / name), "sha256": file_sha256(pre_run / name)} for name in evidence["source_files"]},
+            },
+            "mother_source_table_sha256": evidence["mother_source_table_sha256"],
+            "compact_handoff_sha256": target["sha256"],
+            "run_config_mode": config.get("mode"),
+        },
+    }, evidence["mother_source_table_sha256"], (*post_files, *pre_files)
+
+
+def _analyze_case(
+    case_id: str, run: Path, *, workspace_root: Path
+) -> tuple[dict[str, Any], str, tuple[Path, ...]]:
+    population_path = run / "inputs" / "resolved_population_contract.json"
+    if population_path.is_file():
+        population = _load_json(population_path, f"{case_id} population contract")
+        if population.get("source_release_mode") == "pre_pulse_restart":
+            return _analyze_restart_case(case_id, run, workspace_root=workspace_root)
+    return _analyze_continuous_case(case_id, run)
 
 
 def publish_full_flight_aperture_comparison(*, repo_root: Path, run_id: str, cases: Mapping[str, Path]) -> Path:
-    """Publish the full eight-arm comparison after verifying every source arm."""
+    """Publish verified continuous or standard handoff aperture arms."""
 
     repo_root = repo_root.resolve()
     workspace_root = repo_root.parent.resolve()
@@ -341,8 +576,8 @@ def publish_full_flight_aperture_comparison(*, repo_root: Path, run_id: str, cas
         validate_run_id(run_id)
     except ValueError as error:
         raise ContractError("full-flight aperture comparison run_id is invalid") from error
-    if len(cases) != 8 or len(set(cases)) != 8:
-        raise ContractError("full-flight aperture comparison requires exactly eight unique arms")
+    if not cases or len(set(cases)) != len(cases):
+        raise ContractError("full-flight aperture comparison requires unique nonempty arms")
     normalized: dict[str, Path] = {}
     for case_id, raw_path in cases.items():
         if not isinstance(case_id, str) or not case_id.strip() or case_id != case_id.strip():
@@ -351,7 +586,10 @@ def publish_full_flight_aperture_comparison(*, repo_root: Path, run_id: str, cas
         if not path.is_dir() or not path.is_relative_to(workspace_root):
             raise ContractError(f"{case_id} source run is missing or outside workspace")
         normalized[case_id] = path
-    analyzed = {case_id: _analyze_case(case_id, path) for case_id, path in sorted(normalized.items())}
+    analyzed = {
+        case_id: _analyze_case(case_id, path, workspace_root=workspace_root)
+        for case_id, path in sorted(normalized.items())
+    }
     matrix_arms = {
         (value[0]["matrix_arm"]["shape"], value[0]["matrix_arm"]["aperture_height_mm"])
         for value in analyzed.values()
@@ -361,8 +599,8 @@ def publish_full_flight_aperture_comparison(*, repo_root: Path, run_id: str, cas
         for shape in ("square", "cylindrical")
         for height_mm in (1.0, 1.5, 2.0, 2.5)
     }
-    if matrix_arms != expected_matrix_arms:
-        raise ContractError("full-flight aperture cases do not cover the required eight-arm matrix")
+    if not matrix_arms.issubset(expected_matrix_arms) or len(matrix_arms) != len(analyzed):
+        raise ContractError("full-flight aperture cases are outside or duplicate the required matrix")
     source_shas = {value[1] for value in analyzed.values()}
     if len(source_shas) != 1:
         raise ContractError("full-flight arms do not use the same frozen mother cohort")
@@ -375,17 +613,19 @@ def publish_full_flight_aperture_comparison(*, repo_root: Path, run_id: str, cas
         "role": RESULT_ROLE,
         "status": "REAL_FIELD_EXPLORATORY_ONLY",
         "controlled_variables": {
-            "case_count": 8,
+            "case_count": len(analyzed),
             "connector_gap_mm": EXPECTED_CONNECTOR_GAP_MM,
             "mother_cohort_count": mother_cohort_count,
             "mother_cohort_initial_state_sha256_identical": True,
             "comparison_denominator": "full_mother_cohort",
             "common_hit_selection_used": False,
             "detector_peak_population_rule": "each arm uses its own detector hits only",
+            "matrix_complete": matrix_arms == expected_matrix_arms,
         },
         "cases": {case_id: value[0] for case_id, value in analyzed.items()},
         "limits": [
-            "Each direct FWHM/resolution describes detector hits in that arm, with full-mother-cohort transmission and losses reported separately.",
+            "Each direct FWHM/resolution describes detector hits in that arm, with full-mother-cohort transmission and terminal partition reported separately.",
+            "For handoff arms, ions not selected at the detector-blind pulse time were not propagated under pulse-on; their natural no-pulse endpoints are diagnostic only, not post-pulse losses.",
             "This comparison is exploratory and does not grant Candidate or Formal qualification.",
         ],
     }
@@ -404,18 +644,18 @@ def publish_full_flight_aperture_comparison(*, repo_root: Path, run_id: str, cas
     manifest_path = run_dir / "run_manifest.json"
     write_pending_json(request_path, {"schema_version": 1, "role": "rf_oatof_full_flight_aperture_comparison_request", "cases": [{"case_id": case_id, "run_path": str(path)} for case_id, path in sorted(normalized.items())]})
     input_paths: dict[str, Path] = {"comparison_request": request_path, "publication_implementation": implementation}
-    for index, (_, path) in enumerate(sorted(normalized.items()), start=1):
-        for name in SOURCE_FILES:
-            input_paths[f"case_{index}_{name.replace('/', '_').replace('.', '_')}"] = path / name
+    for index, (_, (_, _, paths)) in enumerate(sorted(analyzed.items()), start=1):
+        for source_index, path in enumerate(paths, start=1):
+            input_paths[f"case_{index}_source_{source_index}"] = path
     frozen = freeze_repository_inputs(input_paths, repo_root=repo_root, run_dir=run_dir)
-    run_config = {"schema_version": 2, "run_id": run_id, "project": INTEGRATION_ID, "mode": MODE, "project_root": str(workspace_root), "inputs": {name: portable_path(path, workspace_root) for name, path in sorted(frozen.items())}, "parameters": {"case_count": 8, "mother_cohort_count": mother_cohort_count, "axial_width_threshold_mm_by_case": {case_id: value[0]["accelerator_entry_axial_width_mm"]["threshold_full_width_mm"] for case_id, value in analyzed.items()}, "common_hit_selection_allowed": False, "formal_gate_passed": False}, "artifact_retention": {"policy_version": 1, "class": "compact", "reason": None}, "formal_gate_passed": False}
+    run_config = {"schema_version": 2, "run_id": run_id, "project": INTEGRATION_ID, "mode": MODE, "project_root": str(workspace_root), "inputs": {name: portable_path(path, workspace_root) for name, path in sorted(frozen.items())}, "parameters": {"case_count": len(analyzed), "mother_cohort_count": mother_cohort_count, "matrix_complete": matrix_arms == expected_matrix_arms, "axial_width_threshold_mm_by_case": {case_id: value[0]["accelerator_entry_axial_full_width_acceptance"]["threshold_full_width_mm"] if "accelerator_entry_axial_full_width_acceptance" in value[0] else value[0]["accelerator_entry_axial_width_mm"]["threshold_full_width_mm"] for case_id, value in analyzed.items()}, "common_hit_selection_allowed": False, "formal_gate_passed": False}, "artifact_retention": {"policy_version": 1, "class": "compact", "reason": None}, "formal_gate_passed": False}
     write_pending_json(run_config_path, run_config)
     write_pending_json(summary_path, {"schema_version": 1, "role": SUMMARY_ROLE, "status": "interrupted", "analysis_status": "NOT_RUN", "formal_gate_passed": False})
     pending_manifest = manifest_path.with_name(".run_manifest.json.pending")
     publish_manifest(repo_root=repo_root, run_config=run_config_path, manifest_path=pending_manifest, status="interrupted", outputs=(summary_path,), project=INTEGRATION_ID, mode=MODE, label="full-flight-aperture-comparison")
     os.replace(pending_manifest, manifest_path)
     write_pending_json(result_path, result)
-    write_pending_json(summary_path, {"schema_version": 1, "role": SUMMARY_ROLE, "status": "success", "analysis_status": "REAL_FIELD_EXPLORATORY_ONLY", "case_count": 8, "result": "results/full_flight_aperture_comparison.json", "formal_gate_passed": False})
+    write_pending_json(summary_path, {"schema_version": 1, "role": SUMMARY_ROLE, "status": "success", "analysis_status": "REAL_FIELD_EXPLORATORY_ONLY", "case_count": len(analyzed), "matrix_complete": matrix_arms == expected_matrix_arms, "result": "results/full_flight_aperture_comparison.json", "formal_gate_passed": False})
     publish_manifest(repo_root=repo_root, run_config=run_config_path, manifest_path=pending_manifest, status="success", outputs=(result_path, summary_path), project=INTEGRATION_ID, mode=MODE, label="full-flight-aperture-comparison")
     os.replace(pending_manifest, manifest_path)
     return manifest_path

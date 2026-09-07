@@ -37,23 +37,23 @@ class DomainSplitIobBuilderTests(unittest.TestCase):
         self.assertIn("seven-instance container IOB is required", source)
         self.assertIn("full-flight container must contain exactly seven instances", source)
         self.assertIn("for index=1,7 do", source)
-        self.assertIn("[1]=coarse_origin,[2]=upstream_origin,[3]=main_origin,[6]=local_origin", source)
-        self.assertIn("for formal_index,slot in pairs({[1]=4,[2]=5,[4]=7})", source)
+        self.assertIn("[2]=coarse_origin,[3]=main_origin,[4]=upstream_origin,[6]=local_origin", source)
+        self.assertIn("for formal_index,slot in pairs({[1]=1,[2]=5,[4]=7})", source)
         self.assertIn(
-            "ROLES=coarse_frontend,upstream_bridge,accelerator_main,flight_tube,reflectron,accelerator_entrance_aperture_local,detector",
+            "ROLES=flight_tube,coarse_frontend,accelerator_main,upstream_bridge,reflectron,accelerator_entrance_aperture_local,detector",
             source,
         )
         self.assertNotIn("intermediate2 overlay", source)
         self.assertNotIn("for index=1,6 do", source)
 
-    def test_pre_pulse_has_only_three_reachable_consecutive_roles(self) -> None:
+    def test_pre_pulse_has_only_four_reachable_consecutive_roles(self) -> None:
         source = RUNTIME.joinpath("build_single_flight_pre_pulse_iob.lua").read_text(
             encoding="utf-8"
         )
-        self.assertIn("pre-pulse container must contain exactly three instances", source)
-        self.assertIn("for index=1,3 do", source)
+        self.assertIn("pre-pulse container must contain exactly four instances", source)
+        self.assertIn("for index=1,4 do", source)
         self.assertIn(
-            "ROLES=coarse_frontend,upstream_bridge,accelerator_entrance_zero_field",
+            "ROLES=coarse_frontend,upstream_bridge,accelerator_entrance_zero_field,accelerator_entrance_aperture_local",
             source,
         )
         self.assertNotIn("reflectron PA0", source)

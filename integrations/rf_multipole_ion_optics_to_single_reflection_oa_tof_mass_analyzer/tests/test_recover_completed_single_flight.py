@@ -8,15 +8,108 @@ import json
 from common.contracts.file_identity import file_sha256
 
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.workflows.family_source_closure.recover_completed_single_flight import (
+    _campaign_source_path,
     _completed_batch_logs,
     _find_failed_child,
+    _frozen_input_path,
+    _recovery_parent_config,
     _recovery_child_dir,
     _source_region_diagnostic_profile_id,
     _verify_manifest,
+    _write_manifest,
 )
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 class CompletedSingleFlightRecoveryTests(unittest.TestCase):
+    def test_campaign_source_resolves_from_frozen_workspace_relative_path(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            repo = workspace / "simulation_repo"
+            campaign = repo / "config" / "campaign.json"
+            campaign.parent.mkdir(parents=True)
+            campaign.write_text("{}\n", encoding="utf-8")
+            resolved = _campaign_source_path(
+                repo_root=repo,
+                requested_path=repo / "simulation_repo" / "config" / "campaign.json",
+                recorded_path="simulation_repo/config/campaign.json",
+            )
+            self.assertEqual(resolved, campaign)
+
+    def test_recovery_prefers_run_local_frozen_input_over_transient_copy(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            retained = root / "inputs" / "resolved_population_contract.json"
+            retained.parent.mkdir()
+            retained.write_text('{"frozen": true}\n', encoding="utf-8")
+            transient = root / "short" / "resolved_population_contract.json"
+            transient.parent.mkdir()
+            transient.write_text(retained.read_text(encoding="utf-8"), encoding="utf-8")
+            self.assertEqual(_frozen_input_path(
+                {"resolved_population_contract": str(transient)},
+                "resolved_population_contract", child_dir=root,
+            ), retained)
+            transient.write_text('{"frozen": false}\n', encoding="utf-8")
+            with self.assertRaisesRegex(Exception, "identity differs"):
+                _frozen_input_path(
+                    {"resolved_population_contract": str(transient)},
+                    "resolved_population_contract", child_dir=root,
+                )
+
+    def test_recovery_parent_config_publishes_all_standard_identity_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            repo = workspace / "simulation_repo"
+            repo.mkdir()
+            runs = workspace / "artifacts" / "projects" / "fixture" / "runs"
+            source = runs / "source"
+            source.mkdir(parents=True)
+            files = {}
+            for name in (
+                "composition_plan", "campaign", "frozen_campaign_experiment",
+                "failed_parent_manifest", "recovered_child_manifest", "recovery_receipt",
+            ):
+                path = source / f"{name}.json"
+                path.write_text("{}\n", encoding="utf-8")
+                files[name] = path
+            run_dir = runs / "20260905_184202__analysis__cross__recovery-fixture__n5__r02"
+            run_dir.mkdir()
+            output = run_dir / "summary.json"
+            output.write_text('{"status": "success"}\n', encoding="utf-8")
+            config = _recovery_parent_config(
+                failed_config={
+                    "inputs": {"composition_plan": str(files["composition_plan"])},
+                    "policy_id": "fixture_policy",
+                },
+                run_id=run_dir.name,
+                repo_root=repo,
+                campaign_path=files["campaign"],
+                frozen_campaign_path=files["frozen_campaign_experiment"],
+                failed_parent_manifest_path=files["failed_parent_manifest"],
+                child_manifest_path=files["recovered_child_manifest"],
+                receipt_path=files["recovery_receipt"],
+                campaign_id="campaign_a",
+                experiment_id="experiment_a",
+                experiment_row_sha256="A" * 64,
+                child_parameters={
+                    "connection_profile_id": "connection_a",
+                    "source_branch_id": "simion",
+                    "launched_particle_count": 5,
+                },
+            )
+            (run_dir / "run_config.json").write_text(
+                json.dumps(config), encoding="utf-8",
+            )
+            manifest = _write_manifest(
+                repo_root=REPO_ROOT, run_dir=run_dir, outputs=[output],
+            )
+            published = json.loads(manifest.read_text(encoding="utf-8"))
+            self.assertEqual(published["status"], "success")
+            self.assertTrue(all(record["exists"] for record in published["inputs"].values()))
+            self.assertEqual(config["campaign_id"], "campaign_a")
+            self.assertEqual(config["particle_count"], 5)
+
     def test_recovery_validation_contract_uses_canonical_energy_tolerance_name(self) -> None:
         """Recovery consumes the current restart-validation contract vocabulary."""
         source = (
@@ -80,6 +173,38 @@ class CompletedSingleFlightRecoveryTests(unittest.TestCase):
             (child / "run_manifest.json").write_text("{}\n", encoding="utf-8")
             resolved = {"connector": {"length_mm": 0}}
             self.assertEqual(_find_failed_child(parent, resolved, 900), child)
+
+    def test_checkpoint_accepts_only_nonphysical_run_config_bookkeeping_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = root / "run_manifest.json"
+            run_config = root / "run_config.json"
+            identity = {
+                "run_id": "20260905_184202__sim__simion__fixture__n1",
+                "mode": "rf_to_oatof_simion_single_flight",
+            }
+            run_config.write_text(json.dumps(identity), encoding="utf-8")
+            bound = {
+                "path": str(run_config), "exists": True,
+                "bytes": run_config.stat().st_size, "sha256": file_sha256(run_config),
+            }
+            manifest.write_text(json.dumps({
+                "role": "simulation_run_manifest", "status": "checkpoint",
+                **identity, "run_config": bound, "inputs": {}, "outputs": [],
+            }), encoding="utf-8")
+            run_config.write_text(json.dumps({
+                **identity, "parameters": {"execution_batch_count": 2},
+            }), encoding="utf-8")
+            self.assertEqual(_verify_manifest(
+                manifest, status=("failed", "checkpoint"), mode=identity["mode"],
+            )["status"], "checkpoint")
+            run_config.write_text(json.dumps({
+                **identity, "mode": "different_mode",
+            }), encoding="utf-8")
+            with self.assertRaisesRegex(Exception, "checkpoint run configuration identity"):
+                _verify_manifest(
+                    manifest, status=("failed", "checkpoint"), mode=identity["mode"],
+                )
 
     def test_recovery_child_has_a_valid_distinct_retry_identity(self) -> None:
         parent = Path(

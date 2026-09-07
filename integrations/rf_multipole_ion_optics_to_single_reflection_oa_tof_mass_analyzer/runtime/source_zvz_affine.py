@@ -16,14 +16,16 @@ from typing import Any
 import numpy as np
 
 from common.contracts.file_identity import file_sha256
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_ideal_theory import (
+from projects.orthogonal_accelerator.analysis.three_zone_ideal_theory import (
     AffineSource,
-    InnerSolution,
     OuterGeometry,
-    ReflectronGeometry,
-    compute_time_derivatives,
     derive_first_order_focus_drift,
     derive_three_zone_state,
+)
+from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_ideal_theory import (
+    InnerSolution,
+    ReflectronGeometry,
+    compute_time_derivatives,
 )
 
 

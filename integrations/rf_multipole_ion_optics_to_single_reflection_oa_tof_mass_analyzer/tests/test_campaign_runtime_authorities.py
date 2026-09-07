@@ -89,20 +89,29 @@ class CampaignRuntimeAuthoritiesTests(unittest.TestCase):
         active = registry["active_campaigns"]
         self.assertGreaterEqual(len(active), 1)
         active_paths = {row["path"] for row in active}
-        discovered = set()
+        authorized_paths = set()
+        exploration_paths = set()
         diagnostics_root = INTEGRATION_ROOT / "config" / "diagnostics"
         for path in diagnostics_root.glob("*.json"):
             document = load(path)
             if document.get("role") != registry["campaign_selector"]["role"]:
                 continue
             relative = path.relative_to(REPO_ROOT).as_posix()
-            self.assertEqual(document.get("status"), "authorized")
             if document.get("status") == "authorized":
-                discovered.add(relative)
+                authorized_paths.add(relative)
+            elif document.get("status") == "exploration":
+                exploration_paths.add(relative)
         # The registry is default-deny: an immutable historical campaign may
         # retain `authorized` in order not to mutate a run-manifest input, yet
         # it is no longer executable once absent from this registry.
-        self.assertEqual(active_paths, discovered)
+        self.assertEqual(active_paths, authorized_paths)
+        self.assertIn(
+            "integrations/rf_multipole_ion_optics_to_single_reflection_"
+            "oa_tof_mass_analyzer/config/diagnostics/"
+            "zero_field_geometry_member61_natural_regression.json",
+            exploration_paths,
+        )
+        self.assertTrue(active_paths.isdisjoint(exploration_paths))
         for row in active:
             active_path = REPO_ROOT / row["path"]
             self.assertEqual(set(row), {"path"})

@@ -167,14 +167,24 @@ class SingleFlightExecutionProfileTests(unittest.TestCase):
         resolved = resolve_execution_profile(
             self.configuration,
             frontend_grid_profile_id=(
-                "frontend_acceleration_xy025_z010_coarse100_shared_full_bore_"
-                "main_local_aperture"
+                "frontend_xy025_z010_coarse100_full_bore_main_local_xy050_z010"
             ),
         )
         self.assertEqual(
             resolved["accelerator_main_domain"], {"policy_id": "full_accelerator_v1"}
         )
         self.assertFalse(resolved["accelerator_overlay_enabled"])
+        self.assertEqual(
+            resolved["frontend_cell_mm_xyz"], {"x": 0.25, "y": 0.25, "z": 0.1}
+        )
+        self.assertEqual(
+            resolved["accelerator_main_cell_mm_xyz"],
+            {"x": 0.5, "y": 0.5, "z": 0.1},
+        )
+        self.assertEqual(
+            resolved["accelerator_entrance_local"]["cell_mm_xyz"],
+            {"x": 0.5, "y": 0.5, "z": 0.1},
+        )
         self.assertEqual(
             resolved["accelerator_entrance_local"]["domain_policy"],
             {

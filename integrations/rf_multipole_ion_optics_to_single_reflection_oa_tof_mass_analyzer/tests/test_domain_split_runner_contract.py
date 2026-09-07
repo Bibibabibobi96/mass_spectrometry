@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import shutil
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -40,23 +43,50 @@ class DomainSplitRunnerContractTests(unittest.TestCase):
             self.assertNotIn(parameter, self.source)
             self.assertNotIn(parameter, self.adapter_source)
 
-    def test_long_gap_has_only_the_registered_buffers_and_coarse_middle_sleeve(self) -> None:
+    def test_long_gap_derives_its_endpoint_extent_from_the_connection_contract(self) -> None:
         self.assertIn("function Resolve-RfPositiveGapDomainSplit", self.source)
-        self.assertIn("$bufferMm = 10.0", self.source)
-        self.assertIn("$minimumSplitGapMm = 50.0", self.source)
-        self.assertIn("coarse_sleeve_length_mm=($gapMm - 2.0*$bufferMm)", self.source)
+        self.assertIn("upstream_fine_extent_mm", self.source)
+        self.assertIn("accelerator_fine_extent_mm", self.source)
+        self.assertNotIn("$upstreamExtentMm = 10.0", self.source)
+        self.assertNotIn("$minimumSplitGapMm = 50.0", self.source)
+        self.assertIn("coarse_sleeve_length_mm=($gapMm - $terminalThicknessMm - $upstreamExtentMm - $acceleratorExtentMm)", self.source)
+        self.assertIn("if ($gapMm -le ($terminalThicknessMm + $upstreamExtentMm + $acceleratorExtentMm))", self.source)
         self.assertIn("fine_domain_overlap_prohibited=$true", self.source)
-        self.assertIn("minimum_split_gap_mm=$minimumSplitGapMm", self.source)
+        self.assertIn("upstream_fine_extent_mm=$upstreamExtentMm", self.source)
 
     def test_zero_and_short_positive_gaps_remain_on_integrated_path(self) -> None:
         self.assertIn("mode='integrated_frontend'; reason='direct_mating_gap_zero'", self.source)
         self.assertIn(
-            "mode='integrated_frontend'; reason='positive_gap_below_split_threshold'",
+            "mode='integrated_frontend'; reason='connection_domain_split_not_declared'",
             self.source,
         )
 
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required for runner behavior")
+    def test_runner_reserves_both_connector_end_extents(self) -> None:
+        start = self.source.index("function Resolve-RfPositiveGapDomainSplit {")
+        end = self.source.index("$hasThreeZoneCandidate =", start)
+        function = self.source[start:end]
+        cases = [
+            {"connector": {"length_mm": gap, "upstream_fine_extent_mm": 10.0,
+                           "accelerator_fine_extent_mm": 10.0}}
+            for gap in (0.0, 10.0, 24.0, 24.1, 102.4)
+        ]
+        script = function + "\n$cases = '" + json.dumps(cases) + "' | ConvertFrom-Json\n"
+        script += "$upstream = [pscustomobject]@{downstream_terminal=[pscustomobject]@{electrode_thickness_mm=4.0}}\n"
+        script += "@($cases | ForEach-Object { Resolve-RfPositiveGapDomainSplit -ResolvedConnection $_ -ResolvedUpstream $upstream }) | ConvertTo-Json -Depth 8"
+        completed = subprocess.run(
+            [shutil.which("pwsh"), "-NoProfile", "-NonInteractive", "-Command", script],
+            capture_output=True, text=True, check=True, timeout=30, cwd=REPO,
+        )
+        resolved = json.loads(completed.stdout)
+        self.assertEqual([row["mode"] for row in resolved[:3]], ["integrated_frontend"] * 3)
+        self.assertEqual(resolved[3]["mode"], "domain_split")
+        self.assertAlmostEqual(resolved[3]["coarse_sleeve_length_mm"], 0.1)
+        self.assertEqual(resolved[4]["mode"], "domain_split")
+        self.assertAlmostEqual(resolved[4]["coarse_sleeve_length_mm"], 78.4)
+
     def test_long_gap_builds_governed_split_pa_and_iob_path(self) -> None:
-        self.assertIn("mode='domain_split'; reason='positive_gap_meets_split_threshold'", self.source)
+        self.assertIn("mode='domain_split'; reason='connector_fits_disjoint_fine_domains'", self.source)
         self.assertIn("field_superposition_prohibited=$true", self.source)
         self.assertIn("domain_split_runtime_contract.json", self.source)
         self.assertIn("--upstream-bridge-contract", self.source)
@@ -72,16 +102,40 @@ class DomainSplitRunnerContractTests(unittest.TestCase):
         self.assertIn("if (-not $prePulseReachableIob) {", self.source)
         self.assertIn("build_single_flight_pre_pulse_iob.lua", self.source)
         self.assertIn("common\\simion\\assets\\iob_instance_seeds", self.source)
-        self.assertIn("3_instance_seed.iob", self.source)
-        self.assertIn("$prePulseThreeInstanceSeed", self.source)
+        self.assertIn("4_instance_seed.iob", self.source)
+        self.assertIn("$prePulseFourInstanceSeed", self.source)
         self.assertNotIn("examples\\sims", self.source)
-        self.assertIn("Versioned three-instance pre-pulse IOB seed", self.source)
+        self.assertIn("Versioned four-instance pre-pulse IOB seed", self.source)
         self.assertIn("Compact pre-pulse IOB build failed.", self.source)
         self.assertIn("accelerator_entrance_zone_collision", self.source)
-        self.assertIn("'fine_upstream,accelerator_entrance_zone_collision'", self.source)
+        self.assertIn("'fine_upstream,accelerator_main,accelerator_entrance_zone_collision,accelerator_entrance_local'", self.source)
         self.assertIn("geometry_role='connector_side_repeller_to_first_grid_v1'", self.source)
         self.assertIn("field_mode='zero'; refine=$false", self.source)
         self.assertIn("pre_pulse_iob_omitted_roles", self.source)
+        self.assertIn(
+            "$paCacheDispositions.accelerator_entrance_local.disposition = 'pending_cache_decision'",
+            self.source,
+        )
+        self.assertIn(
+            "$paCacheDispositions.flight_tube.disposition = 'not_applicable'",
+            self.source,
+        )
+        self.assertIn(
+            "$paCacheDispositions.reflectron.disposition = 'not_applicable'",
+            self.source,
+        )
+
+    def test_detector_blind_pre_pulse_reuses_full_flight_coarse_and_upstream_families(self) -> None:
+        self.assertNotIn("pre_pulse_coarse_bridge", self.source)
+        self.assertNotIn("pre_pulse_upstream_bridge", self.source)
+        self.assertNotIn("--pre-pulse-compact-basis-contract", self.source)
+        self.assertIn("$frontendCacheGem = $frontendGem", self.source)
+        self.assertIn("gem=$upstreamBridgeGem", self.source)
+        self.assertIn("contract=$upstreamBridgeContract", self.source)
+        self.assertIn(
+            "Only the downstream entrance is replaced by an independent zero-field",
+            self.source,
+        )
 
     def test_pre_pulse_native_grid_honors_the_frozen_sampling_stride(self) -> None:
         self.assertIn("$sampleStrideRfSteps = if ($null -eq $rfGrid.sample_stride_rf_steps)", self.source)
@@ -115,6 +169,26 @@ class DomainSplitRunnerContractTests(unittest.TestCase):
         self.assertIn("--domain-split-main-pa-only-axis-field", self.source)
         self.assertIn("-not $domainSplitMainPaOnlyAxisField -and $domainProgramOverlay.Count", self.source)
 
+    def test_local_axis_field_skips_upstream_but_keeps_the_coarse_dirichlet_source(self) -> None:
+        self.assertIn("if (-not $postPulseHandoffMinimal -and -not $domainSplitLocalAxisField)", self.source)
+        self.assertIn(
+            "'full_coarse_bridge','accelerator_main','accelerator_entrance_local'",
+            self.source,
+        )
+        self.assertIn("$paCacheDispositions.fine_upstream", self.source)
+        local_axis = self.source[
+            self.source.index("} elseif ($domainSplitLocalAxisField) {"):
+            self.source.index("} elseif ($postPulseHandoffMinimal) {", self.source.index("} elseif ($domainSplitLocalAxisField) {"))
+        ]
+        self.assertIn("$domainMain.Count -ne 1 -or $entranceLocalBuild.Count -ne 1", local_axis)
+        self.assertNotIn("upstream_bridge", local_axis)
+        self.assertIn("$domainSplitLocalAxisField -or $postPulseHandoffMinimal) { 5 }", self.source)
+        omitted = self.source[
+            self.source.index("$runConfiguration.parameters.domain_split_iob_omitted_roles"):
+            self.source.index("$runConfiguration.parameters.post_pulse_handoff_minimal_iob", self.source.index("$runConfiguration.parameters.domain_split_iob_omitted_roles"))
+        ]
+        self.assertIn("@('coarse_frontend','upstream_bridge')", omitted)
+
     def test_coarse_frontend_refines_fast_adjust_template_once_for_fine_boundaries(self) -> None:
         self.assertIn("refine_mode='fast_adjust_template_single_refine_v1'", self.source)
         self.assertIn("initialize_fast_adjust_pa_basis.lua", self.source)
@@ -132,6 +206,13 @@ class DomainSplitRunnerContractTests(unittest.TestCase):
         self.assertNotIn("'5e-7'", self.source)
         self.assertNotIn("'initialize_fast_adjust_pa_basis.lua','frontend.pa#','1e6'", self.source)
         self.assertNotIn("$cacheBasisInitializer,$cachePaSharp,'1e6'", self.source)
+
+    def test_new_pa_plus_generation_requires_the_eight_mode_field_loading_identity(self) -> None:
+        self.assertIn(
+            "three_zone_linear_ring_octupole_symmetry_pa_plus_v2", self.source
+        )
+        self.assertIn("octupole_common_differential_pa_plus_v2", self.source)
+        self.assertIn("$localSolutionIds.Count -ne 8", self.source)
 
     def test_fine_pa_basis_refinement_uses_the_shared_independent_work_scheduler(self) -> None:
         self.assertIn("$fineRefineDispatchRequest", self.source)
@@ -155,6 +236,24 @@ class DomainSplitRunnerContractTests(unittest.TestCase):
         self.assertIn("$localRefineWave", self.source)
         self.assertIn("Accelerator entrance-local refinement dispatch plan is invalid.", self.source)
 
+    def test_interrupted_local_pa_staging_is_identity_bound_and_recoverable(self) -> None:
+        self.assertIn(
+            "-RecoveryCacheKey $localKey -RecoveryRole $localRole", self.source
+        )
+        self.assertIn("$localBasisComplete", self.source)
+        self.assertIn("$localRefinementReceipt", self.source)
+        self.assertIn(
+            "simion_single_flight_accelerator_entrance_local_pa_refinement",
+            self.source,
+        )
+        self.assertIn("$recoverableLocalStaging", self.source)
+        local_catch = self.source[
+            self.source.index("$recoverableLocalStaging"):
+            self.source.index("throw", self.source.index("$recoverableLocalStaging"))
+        ]
+        self.assertIn("basis_build.json.basis_*.complete", local_catch)
+        self.assertIn("-not $recoverableLocalStaging", local_catch)
+
     def test_local_pa_plus_family_materializes_its_controller_before_basis_transfer(self) -> None:
         self.assertIn("pa_plus_initializer_sha256=(Get-FileHash -LiteralPath $paPlusInitializerSource", self.source)
         self.assertIn("$localPa0 = Join-Path $localBuildDir 'accelerator_entrance_local.pa0'", self.source)
@@ -169,7 +268,10 @@ class DomainSplitRunnerContractTests(unittest.TestCase):
         self.assertIn("Remove-Item -LiteralPath $mainSourceJunction -Force", self.source)
 
     def test_post_pulse_materializes_only_the_main_and_local_accelerator_families(self) -> None:
-        self.assertIn("if (-not $postPulseHandoffMinimal) {", self.source)
+        self.assertIn(
+            "if (-not $postPulseHandoffMinimal -and -not $domainSplitLocalAxisField)",
+            self.source,
+        )
         self.assertIn("$domainSplitRuntimeBuilds = if ($postPulseHandoffMinimal)", self.source)
         self.assertIn("@('accelerator_main','accelerator_entrance_local')", self.source)
         self.assertIn("foreach ($domainSplitFineBuild in $domainSplitRuntimeBuilds)", self.source)
@@ -217,6 +319,21 @@ class DomainSplitRunnerContractTests(unittest.TestCase):
         self.assertIn("catch {", reconciliation_block)
         self.assertIn("Artifact capacity gate failed at SIMION startup.", self.source)
 
+    def test_early_capacity_failure_does_not_supply_an_unknown_measurement(self) -> None:
+        self.assertLess(
+            self.source.index("$artifactCapacityState = $null"),
+            self.source.index("$artifactCapacityStartup = Invoke-SingleFlightPython"),
+        )
+        terminal = self.source[self.source.index("$terminalCapacityArguments = @("):]
+        guard = terminal.index("if ($null -ne $artifactCapacityState)")
+        hint = terminal.index("'--known-measured-bytes'")
+        maximum = terminal.index("'--maximum-new-artifact-bytes'")
+        self.assertLess(guard, hint)
+        self.assertLess(guard, maximum)
+        self.assertNotIn("known_measured_bytes", terminal[:guard])
+        self.assertNotIn("'--maximum-new-artifact-bytes'", terminal[:guard])
+        self.assertIn("'--apply'", terminal[:guard])
+
     def test_domain_split_aperture_check_uses_the_authoritative_local_or_main_pa(self) -> None:
         self.assertIn("Domain-split aperture topology check requires exactly one authoritative aperture PA.", self.source)
         self.assertIn("{'accelerator_entrance_local'} else {'accelerator_main'}", self.source)
@@ -242,7 +359,7 @@ class DomainSplitRunnerContractTests(unittest.TestCase):
         self.assertIn("$entranceZoneAssetName = 'accelerator_entrance_zero_field'", self.source)
         self.assertIn("$domainEntranceZone[0].pa0", self.source)
         self.assertIn("topology_pa=(Join-Path $entranceZoneCacheDir ($entranceZoneAssetName + '.pa0'))", self.source)
-        self.assertIn("if ($prePulseEntranceZoneCollision) {'accelerator_entrance_zero_field'}", self.source)
+        self.assertIn("if ($acceleratorEntranceLocalEnabled) {'accelerator_entrance_local'}", self.source)
         self.assertNotIn(
             "$domainUpstream[0].pa0,(Join-Path $runtimeDir 'accelerator_main.pa0')",
             self.source,

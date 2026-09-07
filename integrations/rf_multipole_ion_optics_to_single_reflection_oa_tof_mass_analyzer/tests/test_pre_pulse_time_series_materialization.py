@@ -11,7 +11,12 @@ import unittest
 from common.contracts.file_identity import file_sha256
 from common.contracts.machine_contracts import ContractError
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.runtime.materialize_pre_pulse_time_series import (
+    _cache_keys,
+    _parse_logs,
+    _receipt_sample_census,
+    _stream_logs_to_states_csv,
     materialize,
+    resolve_natural_archive_sample_index,
 )
 
 
@@ -41,6 +46,11 @@ def _cache_dispositions() -> dict[str, object]:
             "role": "simion_single_flight_accelerator_main_pa_cache",
             "key": "6" * 64,
             "disposition": "built_and_published",
+        },
+        "accelerator_entrance_local": {
+            "role": "simion_single_flight_accelerator_entrance_local_pa_cache",
+            "key": "8" * 64,
+            "disposition": "cache_hit",
         },
         "accelerator_overlay": {
             "role": "simion_accelerator_overlay_pa_cache",
@@ -214,6 +224,15 @@ def _trace(
     )
 
 
+def _source_release(*, ion: int, particle_id: int) -> str:
+    return (
+        "TRACE: source_release "
+        f"ion={ion} particle_id={particle_id} instrument_time_us=0 "
+        "x_mm=0 y_mm=-1 z_mm=0 vx_mm_per_us=4 vy_mm_per_us=0 "
+        "vz_mm_per_us=0 simion_native_kinetic_energy_eV=10 source_instance=2"
+    )
+
+
 def _terminal(*, ion: int, particle_id: int, reason: str = "window_complete") -> str:
     return (
         "TRACE: pre_pulse_screening_terminal "
@@ -302,6 +321,50 @@ def _materialize(paths: dict[str, object]):
 
 
 class PrePulseTimeSeriesMaterializationTests(unittest.TestCase):
+    def test_natural_receipt_keeps_population_change_points_not_grid_duplicates(self) -> None:
+        census = [
+            {"sample_index": 1, "alive_count": 3},
+            {"sample_index": 2, "alive_count": 3},
+            {"sample_index": 3, "alive_count": 2},
+            {"sample_index": 4, "alive_count": 2},
+        ]
+        self.assertEqual(
+            _receipt_sample_census(census, natural_archive=True),
+            [census[0], census[2], census[3]],
+        )
+        self.assertEqual(
+            _receipt_sample_census(census, natural_archive=False), census
+        )
+
+    def test_current_reachable_pre_pulse_omits_downstream_pa_dependencies(self) -> None:
+        contract = _contract([1], [1.0], schema_version=5)
+        contract["pa_cache_roles"] = {
+            "identity_source": "runner_materialized_verified_pa_cache_receipt",
+            "required": [
+                "fine_upstream", "accelerator_main",
+                "accelerator_entrance_zone_collision", "accelerator_entrance_local",
+            ],
+            "prohibited": ["flight_tube", "reflectron"],
+        }
+        dispositions = _cache_dispositions()
+        dispositions["accelerator_entrance_zone_collision"] = {
+            "role": "simion_single_flight_accelerator_entrance_zone_collision_pa_cache",
+            "key": "7" * 64,
+            "disposition": "cache_hit",
+        }
+        for role in ("flight_tube", "reflectron"):
+            dispositions[role]["disposition"] = "not_applicable"
+
+        self.assertEqual(
+            _cache_keys({"schema_version": 5, **contract}, {
+                "parameters": {"pa_cache_dispositions": dispositions}
+            }),
+            {"fine_upstream": "5" * 64, "accelerator_main": "6" * 64,
+             "accelerator_entrance_zone_collision": "7" * 64,
+             "accelerator_entrance_local": "8" * 64,
+             "flight_tube": None, "reflectron": None},
+        )
+
     def test_terminal_census_retains_physical_loss_without_postselection(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             paths = _write_fixture(
@@ -637,6 +700,238 @@ class PrePulseTimeSeriesMaterializationTests(unittest.TestCase):
             paths["contract_sha256"] = "0" * 64
             with self.assertRaisesRegex(ContractError, "SHA-256"):
                 _materialize(paths)
+
+    def test_natural_archive_accepts_simion_actual_clock_ulp_drift(self) -> None:
+        """The canonical native-RF label is exact; SIMION's clock is evidence."""
+        with tempfile.TemporaryDirectory() as directory:
+            trace = Path(directory) / "natural.trace.log"
+            trace.write_text(
+                _trace(
+                    ion=1, particle_id=1, sample_index=2, time_us=0.5
+                ).replace(
+                    "actual_instrument_time_us=0.5 ",
+                    "actual_instrument_time_us=0.5000000002 ",
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            rows, alive, count, _ = _parse_logs(
+                [trace],
+                frozen_particle_ids=[1],
+                sample_times_us=[],
+                natural_archive_grid=(0.0, 0.5),
+            )
+            self.assertEqual(count, 1)
+            self.assertEqual(alive, [[], [1]])
+            self.assertAlmostEqual(
+                rows[1][0].actual_instrument_time_us, 0.5000000002
+            )
+
+            trace.write_text(
+                _trace(
+                    ion=1, particle_id=1, sample_index=2, time_us=0.6
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ContractError, "identity/time landing"):
+                _parse_logs(
+                    [trace],
+                    frozen_particle_ids=[1],
+                    sample_times_us=[],
+                    natural_archive_grid=(0.0, 0.5),
+                )
+
+    def test_natural_archive_promotes_source_release_to_its_zero_time_sample(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            trace = root / "natural.trace.log"
+            trace.write_text(
+                "\n".join((
+                    _source_release(ion=1, particle_id=1),
+                    _source_release(ion=2, particle_id=2),
+                    _trace(ion=1, particle_id=1, sample_index=2, time_us=1.0),
+                    _trace(ion=2, particle_id=2, sample_index=2, time_us=1.0),
+                )) + "\n",
+                encoding="utf-8",
+            )
+            states = root / "states.csv.gz"
+            row_count, _, census, _ = _stream_logs_to_states_csv(
+                [trace], frozen_particle_ids=[1, 2], sample_times_us=[],
+                natural_archive_grid=(0.0, 1.0), states_path=states,
+            )
+            self.assertEqual(row_count, 4)
+            self.assertEqual(
+                [(entry["sample_index"], entry["alive_count"]) for entry in census],
+                [(1, 2), (2, 2)],
+            )
+            with gzip.open(states, "rt", encoding="utf-8", newline="") as handle:
+                rows = list(csv.DictReader(handle))
+            self.assertEqual(
+                [(row["particle_id"], row["sample_index"]) for row in rows],
+                [("1", "1"), ("2", "1"), ("1", "2"), ("2", "2")],
+            )
+
+    def test_natural_archive_rebuilds_hashes_only_at_retained_population_points(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            trace = root / "natural.trace.log"
+            trace.write_text(
+                "\n".join((
+                    _source_release(ion=1, particle_id=1),
+                    _trace(ion=1, particle_id=1, sample_index=2, time_us=1.0),
+                    _source_release(ion=2, particle_id=2),
+                    _trace(ion=2, particle_id=2, sample_index=2, time_us=1.0),
+                    _trace(ion=2, particle_id=2, sample_index=3, time_us=2.0),
+                )) + "\n",
+                encoding="utf-8",
+            )
+            _, _, census, _ = _stream_logs_to_states_csv(
+                [trace], frozen_particle_ids=[1, 2], sample_times_us=[],
+                natural_archive_grid=(0.0, 1.0), states_path=root / "states.csv.gz",
+            )
+        self.assertEqual(
+            [(entry["sample_index"], entry["alive_count"]) for entry in census],
+            [(1, 2), (3, 1)],
+        )
+        self.assertEqual(
+            census[0]["alive_particle_ids_sha256"],
+            hashlib.sha256(b'{"ordered_particle_ids":[1,2]}').hexdigest(),
+        )
+        self.assertEqual(
+            census[1]["missing_particle_ids_sha256"],
+            hashlib.sha256(b'{"ordered_particle_ids":[1]}').hexdigest(),
+        )
+
+    def test_natural_archive_records_one_stale_checkpoint_as_sparse_observation(self) -> None:
+        """Never relabel a stale callback as a fabricated later RF state."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            trace = root / "natural.trace.log"
+            trace.write_text(
+                "\n".join((
+                    _trace(ion=1, particle_id=1, sample_index=1, time_us=0.0),
+                    _trace(ion=1, particle_id=1, sample_index=2, time_us=0.0).replace(
+                        "actual_instrument_time_us=0 ",
+                        "actual_instrument_time_us=0.00001 ",
+                    ),
+                    _trace(ion=1, particle_id=1, sample_index=3, time_us=2.0),
+                )) + "\n",
+                encoding="utf-8",
+            )
+            states = root / "states.csv.gz"
+            rows, _, census, omissions = _stream_logs_to_states_csv(
+                [trace], frozen_particle_ids=[1], sample_times_us=[],
+                natural_archive_grid=(0.0, 1.0), states_path=states,
+            )
+            self.assertEqual(rows, 2)
+            self.assertEqual([entry["sample_index"] for entry in census], [1, 3])
+            self.assertEqual(omissions, [{
+                "particle_id": 1,
+                "sample_index": 2,
+                "canonical_instrument_time_us": 1.0,
+                "reported_instrument_time_us": 0.0,
+                "actual_instrument_time_us": 0.00001,
+            }])
+            with gzip.open(states, "rt", encoding="utf-8", newline="") as handle:
+                self.assertEqual(
+                    [row["sample_index"] for row in csv.DictReader(handle)], ["1", "3"]
+                )
+
+    def test_natural_archive_repairs_a_validated_simion_index_overflow_token(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            canonical_index = 146305
+            trace = root / "natural.trace.log"
+            trace.write_text(
+                _trace(
+                    ion=1,
+                    particle_id=1,
+                    sample_index=canonical_index,
+                    time_us=float(canonical_index - 1),
+                ).replace("sample_index=146305", "sample_index=14>305") + "\n",
+                encoding="utf-8",
+            )
+            repairs: list[dict[str, object]] = []
+            _, _, census, _ = _stream_logs_to_states_csv(
+                [trace], frozen_particle_ids=[1], sample_times_us=[],
+                natural_archive_grid=(0.0, 1.0), states_path=root / "states.csv.gz",
+                trace_token_repairs_out=repairs,
+            )
+        self.assertEqual(census[0]["sample_index"], canonical_index)
+        self.assertEqual(repairs, [{
+            "reported_sample_index": "14>305",
+            "canonical_sample_index": canonical_index,
+            "instrument_time_us": float(canonical_index - 1),
+        }])
+
+    def test_natural_archive_repairs_one_formatter_character_from_grid_time(self) -> None:
+        index, repair = resolve_natural_archive_sample_index(
+            reported_token="173=",
+            instrument_time_us=39.409090909090914,
+            grid_origin_us=0.0,
+            grid_step_us=0.022727272727272728,
+        )
+        self.assertEqual(index, 1735)
+        self.assertEqual(repair, {
+            "reported_sample_index": "173=",
+            "canonical_sample_index": 1735,
+            "instrument_time_us": 39.409090909090914,
+        })
+
+    def test_natural_archive_rejects_ambiguous_or_off_grid_sample_tokens(self) -> None:
+        cases = (
+            {"reported_token": "17==", "instrument_time_us": 39.409090909090914},
+            {"reported_token": "174=", "instrument_time_us": 39.409090909090914},
+            {"reported_token": "1735", "instrument_time_us": 39.4},
+            {"reported_token": "1734", "instrument_time_us": 39.409090909090914},
+        )
+        for case in cases:
+            with self.subTest(case=case), self.assertRaises(ContractError):
+                resolve_natural_archive_sample_index(
+                    **case,
+                    grid_origin_us=0.0,
+                    grid_step_us=0.022727272727272728,
+                )
+
+    def test_natural_archive_distinguishes_native_outside_pa_termination(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            trace = root / "natural.trace.log"
+            trace.write_text("\n".join((
+                _trace(ion=1, particle_id=1, sample_index=1, time_us=0.0),
+                _terminal(ion=1, particle_id=1, reason="outside_pa_termination"),
+            )) + "\n", encoding="utf-8")
+            _, _, _, parsed = _parse_logs(
+                [trace], frozen_particle_ids=[1], sample_times_us=[],
+                natural_archive_grid=(0.0, 1.0),
+            )
+            _, streamed, _, _ = _stream_logs_to_states_csv(
+                [trace], frozen_particle_ids=[1], sample_times_us=[],
+                natural_archive_grid=(0.0, 1.0), states_path=root / "states.csv.gz",
+            )
+            for census in (parsed, streamed):
+                self.assertEqual(census["outside_pa_termination"], [1])
+                self.assertEqual(census["geometry_collision"], [])
+                self.assertEqual(census["splat"], [])
+
+    def test_natural_archive_keeps_collision_terminal_with_alive_final_states(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            trace = root / "natural.trace.log"
+            trace.write_text(
+                "\n".join((
+                    _trace(ion=1, particle_id=1, sample_index=1, time_us=0.0),
+                    _terminal(ion=1, particle_id=1, reason="geometry_collision"),
+                    _trace(ion=2, particle_id=2, sample_index=1, time_us=0.0),
+                )) + "\n",
+                encoding="utf-8",
+            )
+            _, terminals, _, _ = _stream_logs_to_states_csv(
+                [trace], frozen_particle_ids=[1, 2], sample_times_us=[],
+                natural_archive_grid=(0.0, 1.0), states_path=root / "states.csv.gz",
+            )
+            self.assertEqual(terminals["geometry_collision"], [1])
 
 
 if __name__ == "__main__":

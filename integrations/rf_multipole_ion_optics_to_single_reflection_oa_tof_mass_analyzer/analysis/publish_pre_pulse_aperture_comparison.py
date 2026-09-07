@@ -12,6 +12,7 @@ from common.contracts.file_identity import file_sha256
 from common.contracts.machine_contracts import ContractError
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.compare_single_flight_apertures import (
     analyze_pre_pulse_source_only_apertures,
+    pre_pulse_aperture_source_files,
 )
 from integrations.rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer.analysis.run_publication import (
     freeze_repository_inputs,
@@ -33,28 +34,11 @@ COMPARISON_IMPLEMENTATION_RELATIVE_PATH = (
     "integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/"
     "analysis/compare_single_flight_apertures.py"
 )
-SOURCE_FILES = (
-    "run_manifest.json",
-    "run_config.json",
-    "inputs/single_flight_initial_global_state.csv",
-    "inputs/resolved_connection.json",
-    "results/pre_pulse_time_series_screening_receipt.json",
-    "results/detector_blind_pulse_timing_candidate_receipt.json",
-)
-
-
-def _state_archive_relative_path(run: Path) -> str:
-    """Return the current compressed state archive, or immutable legacy evidence."""
-
-    current = "results/pre_pulse_time_series_states.csv.gz"
-    return current if (run / current).is_file() else "results/pre_pulse_time_series_states.csv"
-
-
 def _validated_cases(
     cases: Mapping[str, Path], *, workspace_root: Path
 ) -> dict[str, Path]:
-    if len(cases) < 2:
-        raise ContractError("pre-pulse aperture publication requires at least two cases")
+    if not cases:
+        raise ContractError("pre-pulse aperture publication requires at least one case")
     normalized: dict[str, Path] = {}
     for case_id, path in cases.items():
         if not isinstance(case_id, str) or not case_id.strip() or case_id != case_id.strip():
@@ -64,7 +48,7 @@ def _validated_cases(
         run = Path(path).resolve()
         if not run.is_dir() or not run.is_relative_to(workspace_root):
             raise ContractError(f"{case_id} source run is missing or outside workspace")
-        source_files = (*SOURCE_FILES, _state_archive_relative_path(run))
+        source_files = pre_pulse_aperture_source_files(run)
         missing = [name for name in source_files if not (run / name).is_file()]
         if missing:
             raise ContractError(f"{case_id} source run is missing required input: {missing[0]}")
@@ -73,7 +57,7 @@ def _validated_cases(
 
 
 def _source_reference(case_id: str, run: Path) -> dict[str, Any]:
-    source_files = (*SOURCE_FILES, _state_archive_relative_path(run))
+    source_files = pre_pulse_aperture_source_files(run)
     return {
         "case_id": case_id,
         "run_path": str(run),
@@ -129,7 +113,7 @@ def publish_pre_pulse_aperture_comparison(
         "comparison_implementation": comparison_implementation,
     }
     for index, (_, run) in enumerate(sorted(normalized_cases.items()), start=1):
-        for name in (*SOURCE_FILES, _state_archive_relative_path(run)):
+        for name in pre_pulse_aperture_source_files(run):
             input_paths[f"case_{index}_{name.replace('/', '_').replace('.', '_')}"] = run / name
     frozen = freeze_repository_inputs(input_paths, repo_root=repo_root, run_dir=run_dir)
     run_config = {
