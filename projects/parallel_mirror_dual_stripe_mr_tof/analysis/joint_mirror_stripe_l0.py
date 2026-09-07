@@ -364,6 +364,7 @@ def finite_difference_joint_jacobian(
     *,
     parameter_scales: Sequence[float] | None = None,
     residual_scales: Sequence[float] | None = None,
+    selected_residual_names: Sequence[str] | None = None,
     relative_rank_tolerance: float = 1e-10,
     compatibility_tolerance: float = 1e-8,
 ) -> tuple[JointL0ResidualReport, ConstraintClassification]:
@@ -379,7 +380,20 @@ def finite_difference_joint_jacobian(
     if len(names) != len(values) or len(steps) != len(values) or any(step <= 0.0 for step in steps):
         raise CandidateContractError("joint Jacobian needs matched named values and positive central-difference steps")
     center = evaluate_joint_l0_trial(trial_from_parameters(values))
-    rows = [[] for _ in center.residuals]
+    available_names = center.residual_names()
+    selected_names = (
+        tuple(selected_residual_names)
+        if selected_residual_names is not None else available_names
+    )
+    if not selected_names or len(set(selected_names)) != len(selected_names):
+        raise CandidateContractError("joint Jacobian residual selection must be nonempty and unique")
+    missing = [name for name in selected_names if name not in available_names]
+    if missing:
+        raise CandidateContractError(
+            f"joint Jacobian selected unknown residuals: {', '.join(missing)}"
+        )
+    selected_indices = tuple(available_names.index(name) for name in selected_names)
+    rows = [[] for _ in selected_names]
     for index, step in enumerate(steps):
         lower = list(values)
         upper = list(values)
@@ -387,15 +401,18 @@ def finite_difference_joint_jacobian(
         upper[index] += step
         lower_result = evaluate_joint_l0_trial(trial_from_parameters(tuple(lower)))
         upper_result = evaluate_joint_l0_trial(trial_from_parameters(tuple(upper)))
-        if lower_result.residual_names() != center.residual_names() or upper_result.residual_names() != center.residual_names():
+        if lower_result.residual_names() != available_names or upper_result.residual_names() != available_names:
             raise CandidateContractError("joint residual identity changed across a Jacobian perturbation")
-        for row, low, high in zip(rows, lower_result.residual_vector(), upper_result.residual_vector()):
-            row.append((high - low) / (2.0 * step))
+        lower_values = lower_result.residual_vector()
+        upper_values = upper_result.residual_vector()
+        for row, index in zip(rows, selected_indices):
+            row.append((upper_values[index] - lower_values[index]) / (2.0 * step))
+    center_values = center.residual_vector()
     return center, classify_constraint_system(
         names,
-        center.residual_names(),
+        selected_names,
         jacobian_rows=rows,
-        residuals=center.residual_vector(),
+        residuals=tuple(center_values[index] for index in selected_indices),
         parameter_scales=parameter_scales,
         residual_scales=residual_scales,
         relative_rank_tolerance=relative_rank_tolerance,

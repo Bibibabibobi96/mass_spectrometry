@@ -1325,7 +1325,7 @@
     "complete_consistency_residual_acceptance": {
       "status": "pending_user_authority",
       "absolute_tolerances_by_residual": {},
-      "semantics": "The nine complete fixed-hardware equalities require separately authorized physical or numerical acceptance tolerances before an operating state can be published. Optimizer scaling and the SVD compatibility tolerance are not substitutes. When activated, this mapping must contain exactly one positive absolute tolerance for every residual name; missing or extra names fail closed."
+      "semantics": "The six fixed-hardware drift equalities require separately authorized physical or numerical acceptance tolerances before a Stripe operating state can be published. Optimizer scaling and the SVD compatibility tolerance are not substitutes. When activated, this mapping must contain exactly one positive absolute tolerance for K, kappa-prime, and the four time-platform residual names; missing or extra names fail closed. The three full-analyser energy slopes belong to downstream TE1/TE2 calibration and are not Stripe acceptance residuals."
     },
     "current_fixed_hardware_l0_l1_problem": {
       "status": "independent_mirror_l0_l1_required_before_downstream_stripe_prism_transport",
@@ -1406,16 +1406,18 @@
         ],
         "tie_semantics": "If candidates remain indistinguishable at the declared numerical resolution, retain all of them as a mirror-family receipt rather than fabricating a unique voltage vector."
       },
-      "stripe_fixed_hardware_named_residual_blocks": [
-        "full_analyser_period_slope_at_3900V",
-        "full_analyser_period_slope_at_4000V",
-        "full_analyser_period_slope_at_4100V",
+      "stripe_fixed_hardware_operating_residual_blocks": [
         "target_oscillation_count",
         "spatial_return_kappa_prime",
         "time_platform_tau_g_prime_eta_0.9",
         "time_platform_tau_g_prime_eta_0.95",
         "time_platform_tau_g_prime_eta_1.05",
         "time_platform_tau_g_prime_eta_1.1"
+      ],
+      "global_energy_calibration_diagnostic_residual_blocks": [
+        "full_analyser_period_slope_at_3900V",
+        "full_analyser_period_slope_at_4000V",
+        "full_analyser_period_slope_at_4100V"
       ],
       "prism_transport_named_residual_blocks": [
         "P1_P2_to_Stripe_position_x_mm",
@@ -1424,7 +1426,7 @@
         "P1_P2_to_Stripe_direction_y",
         "P1_P2_to_Stripe_direction_z"
       ],
-      "determination_semantics": "The frozen mirror geometry and the three axial energy conditions define a four-voltage mirror-only L0 family. Its three-row Jacobian and feasibility checks must be published with that family; an L1 mirror-only selection receipt identifies any representative member and its transverse diagnostics without inventing a fourth axial residual. Each qualified mirror root is then tested against the fixed-hardware Stripe problem with the two Stripe biases and physical drift length L as three solve coordinates. L is bounded by the frozen active curve and is not an externally prescribed operating value. Normalizing the pseudopotential at that solved physical turn makes psi(1)=1 an identity; target K, kappa-prime, four time-platform, and three full-analyser energy-slope residuals form the overdetermined consistency test. The injection angle and drift/fast energy partition are derived from the same physical turn. Complete-search L starts are independently gridded and do not consume the historical 5-eV prism diagnostic; that value remains only in the separate legacy two-equation diagnostic path and is not an active equality. P1/P2 voltages belong to the subsequent finite-field transport problem and are not allowed to make the Stripe paper conditions appear solvable. Mirror gamma remains an upstream receipt gate and is never repeated downstream. P1/P2 transport expands into three position and two tangent-direction components, never a norm or arbitrary scalar count. Each owning problem separately uses its contract-scaled Jacobian SVD and left-null residual to distinguish underdetermined, square_exact, overdetermined_consistent, and locally_incompatible states."
+      "determination_semantics": "The frozen mirror geometry and the three axial energy conditions define a four-voltage mirror-only L0 family. Its three-row Jacobian and feasibility checks must be published with that family; an L1 mirror-only selection receipt identifies any representative member and its transverse diagnostics without inventing a fourth axial residual. Each qualified mirror root is then tested against the fixed-hardware Stripe drift problem with the two Stripe biases and physical drift length L as three solve coordinates. L is bounded by the frozen active curve and is not an externally prescribed operating value. Normalizing the pseudopotential at that solved physical turn makes psi(1)=1 an identity; target K, kappa-prime, and four time-platform residuals form the six-condition overdetermined drift-consistency test. The three full-analyser local energy slopes are still evaluated with the Stripe baseline action retained, but they are downstream global-calibration diagnostics owned by a newly derived mirror TE1/TE2 Jacobian, not extra equations assigned to v1, v2, or L. The injection angle and drift/fast energy partition are derived from the same physical turn. Complete-search L starts are independently gridded and do not consume the historical 5-eV prism diagnostic; that value remains only in the separate legacy two-equation diagnostic path and is not an active equality. P1/P2 voltages belong to the subsequent finite-field transport problem and are not allowed to make the Stripe drift conditions appear solvable. Mirror gamma remains an upstream receipt gate and is never repeated downstream. P1/P2 transport expands into three position and two tangent-direction components, never a norm or arbitrary scalar count. Each owning problem separately uses its contract-scaled Jacobian SVD and left-null residual to distinguish underdetermined, square_exact, overdetermined_consistent, and locally_incompatible states."
     },
     "derived_fields_only_after_owning_problem_candidate": {
       "drift_length_L_mm": "fixed-hardware solve coordinate bounded by the frozen Stripe active span; published only after the owning rank and residual gate",

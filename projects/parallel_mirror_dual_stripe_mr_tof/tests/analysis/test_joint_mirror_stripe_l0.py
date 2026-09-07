@@ -123,6 +123,16 @@ class JointMirrorStripeL0Test(unittest.TestCase):
         self.assertEqual(len(report.residuals), 9)
         self.assertEqual(classification.status, "locally_incompatible")
 
+        selected_report, selected = finite_difference_joint_jacobian(
+            ("mirror_voltage_b",),
+            (-2000.0,),
+            (1.0,),
+            lambda values: self._trial(values[0]),
+            selected_residual_names=("target_oscillation_count", "spatial_return_kappa_prime"),
+        )
+        self.assertEqual(len(selected_report.residuals), 9)
+        self.assertEqual(selected.declared_constraint_count, 2)
+
     def test_solver_refuses_missing_user_scales_and_tolerances(self) -> None:
         with self.assertRaises(CandidateContractError):
             solve_exactly_determined_joint_l0(
@@ -196,13 +206,14 @@ class JointMirrorStripeL0Test(unittest.TestCase):
             "prism_1_voltage_v", "prism_2_voltage_v",
         ])
         self.assertEqual(len(problem["downstream_independent_unknown_inventory"]), 5)
-        self.assertEqual(problem["stripe_fixed_hardware_named_residual_blocks"][:3], [
+        self.assertEqual(problem["global_energy_calibration_diagnostic_residual_blocks"], [
             "full_analyser_period_slope_at_3900V",
             "full_analyser_period_slope_at_4000V",
             "full_analyser_period_slope_at_4100V",
         ])
-        self.assertNotIn("mirror_gamma_90_m11", problem["stripe_fixed_hardware_named_residual_blocks"])
-        self.assertEqual(len(problem["stripe_fixed_hardware_named_residual_blocks"]), 9)
+        drift_residuals = problem["stripe_fixed_hardware_operating_residual_blocks"]
+        self.assertNotIn("mirror_gamma_90_m11", drift_residuals)
+        self.assertEqual(len(drift_residuals), 6)
         self.assertEqual(len(problem["prism_transport_named_residual_blocks"]), 5)
         self.assertIn("stripe_entrance_project_position_mm", problem["derived_not_independent_unknowns"])
         self.assertNotIn("drift_length_L_mm", problem["derived_not_independent_unknowns"])

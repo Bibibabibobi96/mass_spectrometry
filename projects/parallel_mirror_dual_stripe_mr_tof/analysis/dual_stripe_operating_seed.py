@@ -2,9 +2,10 @@
 
 The two seed equations are the nominal oscillation count and spatial-return
 condition.  A polynomial/linear fit is used only to find starting roots; every
-published number is re-evaluated and Newton-refined against the native frozen
-B-spline geometry.  Energy and time-platform residuals remain reported raw and
-therefore this module cannot publish a complete downstream operating point.
+published number is re-evaluated against the native frozen B-spline geometry.
+The drift solve owns K, spatial return, and the time-platform residuals.  The
+Stripe baseline contribution to global energy focusing remains reported, but
+is owned by subsequent instrument TE1/TE2 calibration rather than v1/v2/L.
 """
 
 from __future__ import annotations
@@ -185,7 +186,8 @@ def attach_fixed_geometry_parameter_authority(
         residual_acceptance = best.get("residual_acceptance") if isinstance(best, dict) else None
         if residual_acceptance is None and isinstance(best, dict) and contract is not None:
             residual_acceptance = _complete_residual_acceptance_receipt(
-                contract, best.get("raw_residuals"),
+                contract,
+                best.get("drift_core_raw_residuals", best.get("raw_residuals")),
             )
             best["residual_acceptance"] = residual_acceptance
         residual_acceptance_passed = (
@@ -859,6 +861,26 @@ def _complete_residual_scales(
     )
 
 
+def _drift_core_residual_names(report) -> tuple[str, ...]:
+    """Select the paper drift/return conditions owned by the Stripe solve."""
+    names = tuple(
+        name for name in report.residual_names()
+        if not name.startswith("full_analyser_period_slope_at_")
+    )
+    if len(names) != 6:
+        raise CandidateContractError(
+            "fixed-hardware Stripe solve requires K, kappa-prime, and four time-platform residuals"
+        )
+    return names
+
+
+def _named_residual_vector(report, names: Sequence[str]) -> tuple[float, ...]:
+    values = dict(report.residuals)
+    if any(name not in values for name in names):
+        raise CandidateContractError("selected Stripe residual identity is incomplete")
+    return tuple(values[name] for name in names)
+
+
 def _dimensionless_profile_fit(
     mirror: ManagedMirrorCandidate,
     stripes: Sequence[StripeHardBoundary],
@@ -890,11 +912,12 @@ def _dimensionless_profile_fit(
 
 
 def _search_complete_fixed_hardware_consistency(mirror: ManagedMirrorCandidate) -> dict[str, Any]:
-    """Run a bounded multi-start search over every remaining paper residual.
+    """Search the six paper drift residuals on the fixed physical curves.
 
     The residual scales only condition this diagnostic search.  They are not
     physical acceptance tolerances, so the best iterate is never promoted by
-    optimizer success alone.
+    optimizer success alone.  Three full-analyser energy slopes are evaluated
+    at the same point but reserved for downstream mirror-owned calibration.
     """
     contract = mirror.contract
     profile = _seed_profile(contract)
@@ -952,10 +975,12 @@ def _search_complete_fixed_hardware_consistency(mirror: ManagedMirrorCandidate) 
             continue
         feasible_starts += 1
         if residual_names is None:
-            residual_names = initial.residual_names()
+            residual_names = _drift_core_residual_names(initial)
             residual_scales = _complete_residual_scales(contract, residual_names, mirror.energy_points_v)
         assert residual_scales is not None
-        initial_scaled = np.asarray(initial.residual_vector()) / np.asarray(residual_scales)
+        initial_scaled = np.asarray(
+            _named_residual_vector(initial, residual_names)
+        ) / np.asarray(residual_scales)
         screened_starts.append((float(np.linalg.norm(initial_scaled)), start))
 
     screened_starts.sort(key=lambda item: item[0])
@@ -966,9 +991,11 @@ def _search_complete_fixed_hardware_consistency(mirror: ManagedMirrorCandidate) 
         def objective(values: np.ndarray) -> np.ndarray:
             try:
                 report = report_at(values)
-                if report.residual_names() != residual_names:
+                if _drift_core_residual_names(report) != residual_names:
                     raise CandidateContractError("complete residual identity changed during search")
-                return np.asarray(report.residual_vector()) / np.asarray(residual_scales)
+                return np.asarray(
+                    _named_residual_vector(report, residual_names)
+                ) / np.asarray(residual_scales)
             except CandidateContractError:
                 distance = float(np.linalg.norm(
                     (values - start) / np.asarray([energy, energy, usable_length])
@@ -1014,7 +1041,9 @@ def _search_complete_fixed_hardware_consistency(mirror: ManagedMirrorCandidate) 
             final_report = report_at(result.x)
         except CandidateContractError:
             continue
-        scaled = np.asarray(final_report.residual_vector()) / np.asarray(residual_scales)
+        scaled = np.asarray(
+            _named_residual_vector(final_report, residual_names)
+        ) / np.asarray(residual_scales)
         candidates.append({
             "biases_v": [float(value) for value in result.x[:2]],
             "drift_length_solve_coordinate_mm": float(result.x[2]),
@@ -1052,6 +1081,7 @@ def _search_complete_fixed_hardware_consistency(mirror: ManagedMirrorCandidate) 
         trial_from_values,
         parameter_scales=(energy, energy, usable_length),
         residual_scales=residual_scales,
+        selected_residual_names=residual_names,
         relative_rank_tolerance=_finite(
             numerics["relative_singular_value_rank_tolerance"], "rank tolerance"
         ),
@@ -1059,9 +1089,23 @@ def _search_complete_fixed_hardware_consistency(mirror: ManagedMirrorCandidate) 
             numerics["scaled_irreducible_residual_norm_tolerance"], "compatibility tolerance"
         ),
     )
+    all_residuals = dict(report.residuals)
+    drift_residuals = {
+        name: all_residuals[name] for name in residual_names
+    }
+    energy_diagnostics = {
+        name: value for name, value in all_residuals.items()
+        if name.startswith("full_analyser_period_slope_at_")
+    }
     best.update({
-        "raw_residuals": dict(report.residuals),
-        "residual_scales": dict(zip(report.residual_names(), residual_scales)),
+        "raw_residuals": all_residuals,
+        "drift_core_raw_residuals": drift_residuals,
+        "global_energy_calibration_diagnostics": {
+            "status": "pending_downstream_TE1_TE2_calibration",
+            "residuals": energy_diagnostics,
+            "semantics": "Stripe baseline action is retained, but these three slopes do not determine v1, v2, or L; mirror-owned TE1/TE2 system calibration must close them after the drift core and P1/P2 handoff exist.",
+        },
+        "residual_scales": dict(zip(residual_names, residual_scales)),
         "determination": asdict(classification),
         "drift_length_L_mm": report.drift_state.drift_length_l_mm,
         "derived_drift_kinetic_energy_per_charge_v": report.drift_state.turning_pseudopotential_v,
@@ -1091,6 +1135,7 @@ def _search_complete_fixed_hardware_consistency(mirror: ManagedMirrorCandidate) 
         "limitations": [
             "Optimizer convergence is a search diagnostic, not an acceptance condition.",
             "The bounded deterministic start grid is not a mathematical proof of global existence or nonexistence.",
+            "Global energy-slope diagnostics remain pending a separately derived TE1/TE2 calibration Jacobian.",
         ],
     }
 
