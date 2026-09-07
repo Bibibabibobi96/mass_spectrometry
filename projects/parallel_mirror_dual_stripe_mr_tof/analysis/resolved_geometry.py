@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -181,6 +183,95 @@ def dual_stripe_width_at_y_mm(contract: dict[str, Any], set_name: str, y_mm: flo
     if width <= 0.0:
         raise CandidateContractError("dual Stripe B-spline geometry has non-positive physical width")
     return width
+
+
+def compile_dual_stripe_width_evaluator(
+    contract: dict[str, Any], set_name: str,
+) -> Callable[[float], float]:
+    """Compile the frozen native B-spline width into an exact fast evaluator.
+
+    The returned callable consumes the same knots and control points as
+    :func:`dual_stripe_width_at_y_mm`.  It does not interpolate a sampled
+    polygon or create another geometry authority; SciPy merely evaluates the
+    native spline basis and inverts its monotone ``y(parameter)`` relation in
+    compiled numerical code.  This is suitable for optimizer inner loops,
+    where repeatedly reparsing the contract and recursively evaluating every
+    basis function is needlessly expensive.
+    """
+    if set_name not in {"set_1", "set_2"}:
+        raise CandidateContractError("dual Stripe set name must be set_1 or set_2")
+    stripe = contract.get("dual_stripe")
+    if not isinstance(stripe, dict):
+        raise CandidateContractError("dual Stripe contract is required")
+    theory = stripe.get("theory_profile")
+    if not isinstance(theory, dict) or theory.get("generator") != "theory_bspline_parameterization":
+        raise CandidateContractError("dual Stripe width needs the theory B-spline parameter contract")
+    y_span = tuple(
+        _number(value, "dual_stripe.theory_profile.active_y_span_mm")
+        for value in theory.get("active_y_span_mm", [])
+    )
+    if len(y_span) != 2 or not y_span[0] < y_span[1]:
+        raise CandidateContractError("dual Stripe active theory y span must be ordered")
+    definition = theory.get(set_name)
+    if not isinstance(definition, dict):
+        raise CandidateContractError(f"dual Stripe theory profile {set_name} is required")
+
+    # Lazy imports preserve the lightweight geometry-only import path while
+    # allowing the analysis environment's pinned SciPy to accelerate the exact
+    # native-spline evaluation.
+    from scipy.interpolate import BSpline
+    from scipy.optimize import brentq
+
+    def compile_edge(value: Any, name: str) -> Callable[[float], float]:
+        if not isinstance(value, dict):
+            raise CandidateContractError(f"{name} must be an edge definition")
+        if value.get("basis") == "constant_z":
+            constant = _number(value.get("z_mm"), f"{name}.z_mm")
+            return lambda _y: constant
+        knots, controls, order = _bspline_edge(value, name)
+        degree = order - 1
+        lower_parameter, upper_parameter = knots[degree], knots[-order]
+        y_spline = BSpline(knots, tuple(point[0] for point in controls), degree, extrapolate=False)
+        z_spline = BSpline(knots, tuple(point[1] for point in controls), degree, extrapolate=False)
+        start_y = float(y_spline(lower_parameter))
+        end_y = float(y_spline(upper_parameter))
+        if start_y == end_y:
+            raise CandidateContractError(f"{name} must vary monotonically in y")
+        minimum_y, maximum_y = sorted((start_y, end_y))
+
+        def z_at_y(y_mm: float) -> float:
+            y_value = _number(y_mm, f"{name}.physical_y")
+            if not minimum_y - 1e-6 <= y_value <= maximum_y + 1e-6:
+                raise CandidateContractError(f"{name} does not cover the frozen Stripe y span")
+            if y_value <= minimum_y:
+                parameter = lower_parameter if start_y < end_y else upper_parameter
+            elif y_value >= maximum_y:
+                parameter = upper_parameter if start_y < end_y else lower_parameter
+            else:
+                parameter = brentq(
+                    lambda candidate: float(y_spline(candidate)) - y_value,
+                    lower_parameter,
+                    upper_parameter,
+                    xtol=1e-13,
+                    rtol=4.0 * math.ulp(1.0),
+                )
+            return float(z_spline(parameter))
+
+        return z_at_y
+
+    lower_z = compile_edge(definition.get("lower_edge"), f"dual Stripe {set_name}.lower_edge")
+    upper_z = compile_edge(definition.get("upper_edge"), f"dual Stripe {set_name}.upper_edge")
+
+    def width_at_y(y_mm: float) -> float:
+        y_value = _number(y_mm, "dual Stripe physical y")
+        if not y_span[0] <= y_value <= y_span[1]:
+            raise CandidateContractError("dual Stripe physical y lies outside its frozen span")
+        width = upper_z(y_value) - lower_z(y_value)
+        if width <= 0.0:
+            raise CandidateContractError("dual Stripe B-spline geometry has non-positive physical width")
+        return width
+
+    return width_at_y
 
 
 def _central_ground_polygons(stripe: dict[str, Any]) -> tuple[list[dict[str, Any]], float]:

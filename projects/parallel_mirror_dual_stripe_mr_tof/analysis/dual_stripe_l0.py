@@ -12,7 +12,12 @@ import math
 from collections.abc import Callable
 from typing import Any
 
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import resolve_geometry
+import numpy as np
+
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import (
+    compile_dual_stripe_width_evaluator,
+    resolve_geometry,
+)
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
     CandidateContractError,
 )
@@ -185,6 +190,143 @@ def tau_g_derivative_at_turn(
     upper = endpoint_regularized_tau_g(psi_at_eta, g_at_eta, turn + increment)
     lower = endpoint_regularized_tau_g(psi_at_eta, g_at_eta, turn - increment)
     return (upper - lower) / (2.0 * increment)
+
+
+def identify_fixed_cad_component_shapes(contract: dict[str, Any]) -> dict[str, Any]:
+    """Fit the declared polynomial/linear structure of the frozen CAD curves.
+
+    Width baselines are removed at the theory entrance ``y=0`` and the two
+    variations are fitted in physical distance from that plane.  This proves
+    structural agreement without assuming the current coefficients equal the
+    paper's printed values.  It deliberately does not infer ``L``: rescaling
+    ``L`` and the dimensionless polynomial coefficients describes the same
+    physical curve, so shape structure alone is rank-deficient in that scale.
+    """
+    l0 = contract.get("dual_stripe_l0")
+    stripe = contract.get("dual_stripe")
+    if not isinstance(l0, dict) or not isinstance(stripe, dict):
+        raise CandidateContractError("fixed CAD Stripe identification requires dual_stripe and dual_stripe_l0")
+    settings = l0.get("fixed_cad_shape_identification")
+    theory = stripe.get("theory_profile")
+    if not isinstance(settings, dict) or not isinstance(theory, dict):
+        raise CandidateContractError("fixed CAD Stripe identification contract is required")
+    polynomial_degree = settings.get("set_1_polynomial_degree")
+    linear_degree = settings.get("set_2_polynomial_degree")
+    if polynomial_degree != 5 or linear_degree != 1:
+        raise CandidateContractError("current fixed CAD structure requires set-1 degree five and set-2 degree one")
+    multipliers = tuple(settings.get("sampling_multipliers", []))
+    if not multipliers or any(not isinstance(value, int) or isinstance(value, bool) or value <= 0 for value in multipliers):
+        raise CandidateContractError("Stripe shape sampling multipliers must be positive integers")
+    if tuple(sorted(set(multipliers))) != multipliers:
+        raise CandidateContractError("Stripe shape sampling multipliers must be unique and increasing")
+    y_span = tuple(_finite(value, "Stripe active y span") for value in theory.get("active_y_span_mm", []))
+    entry = _finite(l0.get("theory_stripe_entrance", {}).get("project_y_mm"), "Stripe theory entrance y")
+    if len(y_span) != 2 or not y_span[0] < entry <= y_span[1] or entry != y_span[1]:
+        raise CandidateContractError("fixed CAD Stripe identification requires the y=0 entrance at the active-span endpoint")
+    samples_per_span = theory.get("sampling_per_nonzero_knot_span")
+    if not isinstance(samples_per_span, int) or isinstance(samples_per_span, bool) or samples_per_span < 2:
+        raise CandidateContractError("native Stripe sampling density must be an integer of at least two")
+    nonzero_spans = []
+    for set_name in ("set_1", "set_2"):
+        definition = theory.get(set_name)
+        if not isinstance(definition, dict):
+            raise CandidateContractError(f"Stripe shape definition {set_name} is required")
+        counts = []
+        for edge_name in ("lower_edge", "upper_edge"):
+            edge = definition.get(edge_name)
+            if isinstance(edge, dict) and edge.get("basis") == "cubic_bspline":
+                knots = tuple(_finite(value, f"{set_name} knot") for value in edge.get("knots", []))
+                counts.append(sum(right > left for left, right in zip(knots, knots[1:])))
+        nonzero_spans.append(max(counts, default=1))
+    base_intervals = max(nonzero_spans) * samples_per_span
+    first_width = compile_dual_stripe_width_evaluator(contract, "set_1")
+    second_width = compile_dual_stripe_width_evaluator(contract, "set_2")
+    first_baseline = first_width(entry)
+    second_baseline = second_width(entry)
+    active_length = entry - y_span[0]
+
+    def fit_at_multiplier(multiplier: int) -> dict[str, Any]:
+        interval_count = base_intervals * multiplier
+        distances = np.linspace(0.0, active_length, interval_count + 1)
+        physical_y = entry - distances
+        high_values = np.asarray([first_width(float(value)) - first_baseline for value in physical_y])
+        linear_values = np.asarray([second_width(float(value)) - second_baseline for value in physical_y])
+        scaled_distance = distances / active_length
+        polynomial_matrix = np.column_stack([
+            scaled_distance ** power for power in range(1, polynomial_degree + 1)
+        ])
+        normalized_coefficients = np.linalg.lstsq(polynomial_matrix, high_values, rcond=None)[0]
+        linear_matrix = scaled_distance.reshape((-1, 1))
+        normalized_linear = float(np.linalg.lstsq(linear_matrix, linear_values, rcond=None)[0][0])
+        high_residual = polynomial_matrix @ normalized_coefficients - high_values
+        linear_residual = normalized_linear * scaled_distance - linear_values
+        return {
+            "sampling_multiplier": multiplier,
+            "sample_count": interval_count + 1,
+            "set_1_coefficients_for_normalized_active_distance_mm": [
+                float(value) for value in normalized_coefficients
+            ],
+            "set_1_coefficients_per_physical_mm_power": [
+                float(value / active_length ** power)
+                for power, value in enumerate(normalized_coefficients, start=1)
+            ],
+            "set_2_coefficient_for_normalized_active_distance_mm": normalized_linear,
+            "set_2_coefficient_per_physical_mm": normalized_linear / active_length,
+            "set_1_rms_residual_mm": float(np.sqrt(np.mean(high_residual * high_residual))),
+            "set_1_max_abs_residual_mm": float(np.max(np.abs(high_residual))),
+            "set_2_rms_residual_mm": float(np.sqrt(np.mean(linear_residual * linear_residual))),
+            "set_2_max_abs_residual_mm": float(np.max(np.abs(linear_residual))),
+        }
+
+    fits = [fit_at_multiplier(value) for value in multipliers]
+    selected = fits[-1]
+    nodes = tuple(_finite(value, "time-platform eta node") for value in l0["time_platform_constraint"]["eta_turn_nodes"])
+    return {
+        "schema_version": 1,
+        "role": "fixed_cad_dual_stripe_component_shape_identification",
+        "status": "diagnostic_structure_fitted__L_and_voltage_solution_pending",
+        "source_geometry": "native frozen theory B-spline knot/control contract",
+        "component_basis": settings.get("basis"),
+        "width_baselines_at_entry_mm": {"set_1": first_baseline, "set_2": second_baseline},
+        "active_distance_mm": active_length,
+        "sampling_convergence": fits,
+        "selected_fit": selected,
+        "drift_length_identifiability": {
+            "status": "underdetermined_from_shape_structure_alone",
+            "reason": "For any positive L, coefficients can be transformed so the same polynomial in physical distance is written in eta=distance/L. Geometry structure therefore supplies no independent L equation.",
+            "coefficient_transform": "If b_k multiplies physical distance^k, the eta coefficient is b_k*L^k; a separate normalization may move one further common scale.",
+            "required_closure": "Derive L/turning from the coupled mirror receipt, Stripe action/normalization, target K, and path-ordered P1/P2 entrance state, then evaluate whether every requested eta node lies inside the frozen active span.",
+        },
+        "time_platform_node_span": {
+            "eta_turn_nodes": list(nodes),
+            "available_active_distance_mm": active_length,
+            "status": "pending_independently_closed_L",
+        },
+        "original_target_exact_response_compatibility": {
+            "status": "analytically_incompatible_with_two_separable_constant_bias_stripes",
+            "fixed_component_assignment": {
+                "set_1": "psi_s_high_order",
+                "set_2": "psi_m_linear",
+            },
+            "target": {
+                "psi": "psi_s + psi_m",
+                "g": "psi_s - psi_m",
+            },
+            "required_h_factors": {
+                "set_1_high_order": 1.0,
+                "set_2_linear": -1.0,
+            },
+            "physical_h_domain": "h_i=sqrt(w0/(w0-v_i)) is strictly positive for every transmitting real constant bias",
+            "proof": "Matching psi fixes both separable component amplitudes to one. Matching g then requires h_high=+1 and h_linear=-1; h_linear is impossible, while h_high=1 implies v_high=0 and therefore no independent Stripe action response.",
+            "consequence": "Do not claim exact recovery of the original tilted-mirror psi/g target from these two pure CAD component curves. A mixed-component redesign or an explicitly approximate/full-3D optimization objective is required.",
+        },
+        "limitations": [
+            "This verifies the current polynomial/linear component structure; it neither assumes nor identifies the paper's printed coefficients.",
+            "L is scale-degenerate in a free polynomial coefficient fit and is not published from geometry alone.",
+            "No CAD-fit acceptance tolerance is declared, so raw residuals and sampling convergence are reported without promotion to Candidate.",
+            "The physical dual-Stripe psi/g response, exact determination rank, P1/P2 transport, and finite three-dimensional fields remain unevaluated.",
+        ],
+    }
 
 
 def analyze_dual_stripe_l0(contract: dict[str, Any]) -> dict[str, Any]:

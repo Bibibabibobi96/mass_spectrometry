@@ -52,9 +52,10 @@ class JointMirrorStripeL0Test(unittest.TestCase):
             eta_derivative_step=1e-3,
         )
 
-    def test_joint_trial_keeps_all_nine_declared_residuals_together(self) -> None:
+    def test_joint_trial_keeps_all_eight_downstream_analytic_residuals_together(self) -> None:
         report = evaluate_joint_l0_trial(self._trial(-2000.0))
-        self.assertEqual(len(report.residuals), 9)
+        self.assertEqual(len(report.residuals), 8)
+        self.assertNotIn("mirror_gamma_90_m11", report.residual_names())
         self.assertTrue(all(math.isfinite(value) for _name, value in report.residuals))
 
     def test_joint_trial_appends_all_five_three_dimensional_prism_components(self) -> None:
@@ -67,7 +68,7 @@ class JointMirrorStripeL0Test(unittest.TestCase):
                "two_prism_transport_observation": TwoPrismTransportObservation(state, state, state, state, True)}
         )
         report = evaluate_joint_l0_trial(trial)
-        self.assertEqual(len(report.residuals), 14)
+        self.assertEqual(len(report.residuals), 13)
         self.assertEqual(dict(report.residuals)["P1_P2_to_Stripe_position_x_mm"], 0.0)
 
     def test_partial_prism_transport_input_fails_closed(self) -> None:
@@ -79,7 +80,7 @@ class JointMirrorStripeL0Test(unittest.TestCase):
         report, classification = finite_difference_joint_jacobian(
             ("mirror_voltage_b",), (-2000.0,), (1.0,), lambda values: self._trial(values[0]),
         )
-        self.assertEqual(len(report.residuals), 9)
+        self.assertEqual(len(report.residuals), 8)
         self.assertEqual(classification.status, "overdetermined_incompatible")
 
     def test_solver_refuses_missing_user_scales_and_tolerances(self) -> None:
@@ -139,6 +140,11 @@ class JointMirrorStripeL0Test(unittest.TestCase):
         ])
         self.assertEqual(len(problem["downstream_independent_unknowns"]), 4)
         self.assertIn("prism_1_voltage_v", problem["downstream_independent_unknowns"])
+        self.assertEqual(problem["downstream_named_residual_blocks"][:2], [
+            "three_point_low_relative", "three_point_high_relative",
+        ])
+        self.assertNotIn("mirror_gamma_90_m11", problem["downstream_named_residual_blocks"])
+        self.assertEqual(len(problem["downstream_named_residual_blocks"]), 13)
         self.assertIn("stripe_entrance_project_position_mm", problem["derived_not_independent_unknowns"])
         initialization = problem["voltage_initialization"]
         self.assertEqual(initialization["authority"], "theory_derived_only")

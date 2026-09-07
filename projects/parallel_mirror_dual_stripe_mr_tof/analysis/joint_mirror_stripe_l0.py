@@ -20,13 +20,12 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import 
     tau_g_derivative_at_turn,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import (
-    dual_stripe_width_at_y_mm,
+    compile_dual_stripe_width_evaluator,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import (
     MirrorL0Design,
     reduced_period,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l1 import map_at_energy
 from scipy.optimize import brentq, least_squares
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
     CandidateContractError,
@@ -69,12 +68,8 @@ def stripes_from_contract(contract: dict[str, object]) -> tuple[StripeHardBounda
     except KeyError as error:
         raise CandidateContractError("dual Stripe voltage groups are required") from error
 
-    def first_width(y_mm: float) -> float:
-        return dual_stripe_width_at_y_mm(contract, "set_1", y_mm)
-
-    def second_width(y_mm: float) -> float:
-        return dual_stripe_width_at_y_mm(contract, "set_2", y_mm)
-
+    first_width = compile_dual_stripe_width_evaluator(contract, "set_1")
+    second_width = compile_dual_stripe_width_evaluator(contract, "set_2")
     return StripeHardBoundary(first_bias, first_width), StripeHardBoundary(second_bias, second_width)
 
 
@@ -256,7 +251,6 @@ def evaluate_joint_l0_trial(trial: JointL0Trial) -> JointL0ResidualReport:
         stripes=trial.stripes, entry_y_mm=trial.stripe_entry_y_mm,
         turning_y_mm=trial.stripe_entry_y_mm + direction * length * (1.0 + step),
     )
-    mapping = map_at_energy(energies[1], trial.mirror_design)
     time_residuals = time_platform_derivative_residuals(
         mirror_reduced_period_mm_per_sqrt_v=reduced_period(energies[1], trial.mirror_design),
         energy_per_charge_v=energies[1], stripes=trial.stripes,
@@ -266,9 +260,6 @@ def evaluate_joint_l0_trial(trial: JointL0Trial) -> JointL0ResidualReport:
     residuals = [
         ("three_point_low_relative", (periods[0] - central_period) / central_period),
         ("three_point_high_relative", (periods[2] - central_period) / central_period),
-        # Same-direction Poincare sections make m11=0 the gamma=90-degree
-        # target used by the existing analytic mirror L1 screen.
-        ("mirror_gamma_90_m11", mapping.matrix[0][0]),
         ("target_oscillation_count", state.target_oscillation_count_residual),
         ("spatial_return_kappa_prime", (upper_state.nominal_kappa_1 - lower_state.nominal_kappa_1) / (2.0 * step)),
     ]

@@ -1218,6 +1218,15 @@
   "dual_stripe_l0": {
     "status": "joint_inputs_pending",
     "solve_semantics": "independent_mirror_l0_l1_then_downstream_stripe_and_prism",
+    "fixed_cad_shape_identification": {
+      "status": "diagnostic_structure_fit__L_and_voltage_solution_pending",
+      "basis": "set_1_zero_at_entry_polynomial_plus_set_2_zero_at_entry_linear",
+      "set_1_polynomial_degree": 5,
+      "set_2_polynomial_degree": 1,
+      "coefficient_semantics": "Fit the current manufactured curves in physical distance from y=0. The polynomial coefficients are outputs of the current CAD and are not assumed equal to the paper's printed c0..c5 values. Converting them to dimensionless eta coefficients requires an independently closed L and normalization.",
+      "sampling_multipliers": [1, 2, 4],
+      "fit_semantics": "Use the native frozen B-splines over their complete active span, subtract each y=0 baseline, and fit the declared physical-coordinate structures by linear least squares. Report raw coefficients, residuals and sampling convergence without inventing an unapproved CAD-fit tolerance. Shape structure alone leaves L scale-degenerate and must never publish an L value."
+    },
     "coordinate_definition": "eta=(y-y_stripe_entrance)/signed_drift_length_L; eta_turning=1. For this frozen CAD/theory contract y_stripe_entrance=0 mm is the common endpoint of both theory Stripe functions S_i(y), not a bounding-box edge. The nominal slow drift proceeds toward negative project y; signed L carries that direction while reported |L| is positive.",
     "theory_stripe_entrance": {
       "project_y_mm": 0.0,
@@ -1314,16 +1323,21 @@
         "tie_semantics": "If candidates remain indistinguishable at the declared numerical resolution, retain all of them as a mirror-family receipt rather than fabricating a unique voltage vector."
       },
       "downstream_named_residual_blocks": [
+        "three_point_low_relative",
+        "three_point_high_relative",
         "target_oscillation_count",
         "spatial_return_kappa_prime",
         "time_platform_tau_g_prime_eta_0.9",
         "time_platform_tau_g_prime_eta_0.95",
         "time_platform_tau_g_prime_eta_1.05",
         "time_platform_tau_g_prime_eta_1.1",
-        "P1_P2_to_Stripe_entrance_position_match",
-        "P1_P2_to_Stripe_entrance_direction_match"
+        "P1_P2_to_Stripe_position_x_mm",
+        "P1_P2_to_Stripe_position_y_mm",
+        "P1_P2_to_Stripe_position_z_mm",
+        "P1_P2_to_Stripe_direction_y",
+        "P1_P2_to_Stripe_direction_z"
       ],
-      "determination_semantics": "The frozen mirror geometry and the three axial energy conditions define a four-voltage mirror-only L0 family. Its three-row Jacobian and feasibility checks must be published with that family; an L1 mirror-only selection receipt identifies any representative member and its transverse diagnostics without inventing a fourth axial residual. The selected mirror receipt and source state are then inputs, not fit coordinates, to the four-voltage Stripe/P1/P2 problem. Its P1/P2-to-Stripe blocks expand into explicitly declared position and direction components, never a norm or arbitrary scalar count. Each owning problem separately uses its actual Jacobian and augmented residual rank to distinguish underdetermined, exactly-determined and incompatible-overdetermined states."
+      "determination_semantics": "The frozen mirror geometry and the three axial energy conditions define a four-voltage mirror-only L0 family. Its three-row Jacobian and feasibility checks must be published with that family; an L1 mirror-only selection receipt identifies any representative member and its transverse diagnostics without inventing a fourth axial residual. The selected mirror receipt and source state are then inputs, not fit coordinates, to the four-voltage Stripe/P1/P2 problem. Mirror gamma remains an upstream receipt gate and is never repeated as a downstream residual. The full-analyser low/high period residuals include both Stripe baseline actions. P1/P2 transport expands into three position and two tangent-direction components, never a norm or arbitrary scalar count. Each owning problem separately uses its actual Jacobian and augmented residual rank to distinguish underdetermined, exactly-determined and incompatible-overdetermined states."
     },
     "derived_fields_only_after_owning_problem_candidate": {
       "drift_length_L_mm": "abs(turning_point_y_mm-y_stripe_entrance_mm)",
