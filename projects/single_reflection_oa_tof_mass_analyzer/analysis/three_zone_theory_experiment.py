@@ -11,6 +11,7 @@ from __future__ import annotations
 import itertools
 import json
 import math
+import re
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,7 +19,7 @@ from typing import Any, Mapping, Sequence
 
 import numpy as np
 
-from common.contracts.file_identity import file_sha256
+from common.contracts.file_identity import file_sha256, repository_text_sha256
 from common.contracts.machine_contracts import load_json, validate_schema
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.experiment_campaign import (
     _canonical_sha as canonical_sha256,
@@ -43,6 +44,11 @@ PLAN_SCHEMA = "oatof_three_zone_resolved_plan.schema.json"
 REPORT_SCHEMA = "oatof_three_zone_stage_report.schema.json"
 RECEIPT_SCHEMA = "oatof_three_zone_stage_receipt.schema.json"
 STAGE_ORDER = ("T0", "T1", "T2", "G1", "T3", "T4a", "T4b", "T4c", "G2", "T5")
+ACCELERATOR_AUTHORITY_PATHS = {
+    "accelerator_two_zone_theory": "projects/orthogonal_accelerator/analysis/accelerator_time_focus.py",
+    "accelerator_three_zone_theory": "projects/orthogonal_accelerator/analysis/three_zone_ideal_theory.py",
+    "accelerator_geometry": "projects/orthogonal_accelerator/analysis/two_zone_geometry.py",
+}
 
 
 def _content_sha256(document: Mapping[str, Any], identity_field: str) -> str:
@@ -50,15 +56,58 @@ def _content_sha256(document: Mapping[str, Any], identity_field: str) -> str:
     return canonical_sha256(payload)
 
 
-def _bound_file(root: Path, record: Mapping[str, Any], label: str) -> Path:
-    path = (root / str(record["path"])).resolve()
+def _repository_authority_path(root: Path, relative_path: str, label: str) -> Path:
+    relative = Path(relative_path)
+    path = (root / relative).resolve()
+    if relative.is_absolute() or ".." in relative.parts or root.resolve() not in path.parents:
+        raise ValueError(f"{label} authority must be a repository-relative source")
     if not path.is_file():
         raise ValueError(f"{label} authority is missing: {path}")
-    if path.stat().st_size != int(record["bytes"]):
+    return path
+
+
+def _bound_file(root: Path, record: Mapping[str, Any], label: str) -> Path:
+    path = _repository_authority_path(root, str(record["path"]), label)
+    canonical = path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    if len(canonical) != int(record["bytes"]):
         raise ValueError(f"{label} authority byte count differs")
-    if file_sha256(path) != str(record["sha256"]).upper():
+    if repository_text_sha256(path) != str(record["sha256"]).upper():
         raise ValueError(f"{label} authority SHA-256 differs")
     return path
+
+
+def render_campaign_authorities(
+    campaign_path: Path, *, repository_root: Path = REPOSITORY_ROOT,
+) -> str:
+    """Refresh repository-source identities without changing scientific fields.
+
+    This explicit authoring operation does not execute stages or update run
+    evidence. Repository UTF-8 text identities use canonical LF bytes; artifact
+    receipts elsewhere keep their exact-byte SHA semantics.
+    """
+    source = campaign_path.read_text(encoding="utf-8")
+    campaign = json.loads(source)
+    validate_schema(campaign, CAMPAIGN_SCHEMA)
+    if campaign["status"] != "authorized":
+        raise ValueError("authority refresh requires an authorized authoring campaign")
+    authorities = campaign["authorities"]
+    for label, path in ACCELERATOR_AUTHORITY_PATHS.items():
+        if label in authorities and authorities[label]["path"] != path:
+            raise ValueError(f"{label} provider authority path differs")
+        authorities[label] = {"path": path}
+    for label, record in authorities.items():
+        path = _repository_authority_path(repository_root, record["path"], label)
+        canonical = path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+        record.update(bytes=len(canonical), sha256=repository_text_sha256(path))
+    # Replace only the authority object; preserve the author's scientific
+    # numbers and layout exactly, including short inline arrays and objects.
+    marker = re.search(r'"authorities"\s*:\s*', source)
+    if marker is None:
+        raise ValueError("campaign has no authority object")
+    _, length = json.JSONDecoder().raw_decode(source[marker.end():])
+    rendered = json.dumps(authorities, indent=2, ensure_ascii=False)
+    rendered = rendered.replace("\n", "\n  ")
+    return source[:marker.end()] + rendered + source[marker.end()+length:]
 
 
 def load_campaign(
@@ -74,6 +123,10 @@ def load_campaign(
         raise ValueError("three-zone theory campaign must remain single-stage-only")
     if campaign["solver_execution_allowed"]:
         raise ValueError("solver execution cannot be enabled in this workflow")
+    for label, expected_path in ACCELERATOR_AUTHORITY_PATHS.items():
+        record = campaign["authorities"].get(label)
+        if record is None or record.get("path") != expected_path:
+            raise ValueError(f"missing or invalid accelerator provider authority: {label}")
     for label, record in campaign["authorities"].items():
         _bound_file(repository_root, record, label)
     return campaign

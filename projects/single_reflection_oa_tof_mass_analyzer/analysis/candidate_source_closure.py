@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from common.contracts.machine_contracts import sha256
+from projects.orthogonal_accelerator.analysis.component_contract import load_accelerator_dependency
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -31,7 +32,17 @@ RELATIVE_PATHS = (
     "common/solidworks/import_step_to_solidworks.m",
     "common/solidworks/import_step_to_solidworks.py",
     "common/solidworks/installation.py",
+    "projects/orthogonal_accelerator/analysis/accelerator_time_focus.py",
+    "projects/orthogonal_accelerator/analysis/component_contract.py",
+    "projects/orthogonal_accelerator/analysis/three_zone_ideal_theory.py",
+    "projects/orthogonal_accelerator/analysis/two_zone_geometry.py",
+    "projects/orthogonal_accelerator/comsol/build_two_zone_geometry.m",
+    "projects/orthogonal_accelerator/config/component_contract.json",
+    "projects/orthogonal_accelerator/comsol/build_two_zone_grids.m",
+    "projects/orthogonal_accelerator/simion/build_two_zone_pa.lua",
+    "projects/orthogonal_accelerator/simion/two_zone_accelerator.gem",
     "projects/single_reflection_oa_tof_mass_analyzer/analysis/generate_ion_source.py",
+    "projects/single_reflection_oa_tof_mass_analyzer/config/accelerator_dependency.json",
     "projects/single_reflection_oa_tof_mass_analyzer/analysis/candidate_run_lifecycle.py",
     "projects/single_reflection_oa_tof_mass_analyzer/analysis/analyze_comsol_detector_events.py",
     "projects/single_reflection_oa_tof_mass_analyzer/analysis/prepare_candidate_run.py",
@@ -60,8 +71,6 @@ RELATIVE_PATHS = (
     "projects/single_reflection_oa_tof_mass_analyzer/oatof_lifecycle_preflight.ps1",
     "projects/single_reflection_oa_tof_mass_analyzer/oatof_assert_formal_write_authorized.m",
     "projects/single_reflection_oa_tof_mass_analyzer/oatof_paths.m",
-    "projects/single_reflection_oa_tof_mass_analyzer/simion/accelerator/build_accelerator_variant.lua",
-    "projects/single_reflection_oa_tof_mass_analyzer/simion/accelerator/oatof_accelerator_3d.gem",
     "projects/single_reflection_oa_tof_mass_analyzer/simion/reflectron/build_reflectron_variant.lua",
     "projects/single_reflection_oa_tof_mass_analyzer/simion/reflectron/oatof_reflectron_ideal_10_5.gem",
     "projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/build_detector_variant.lua",
@@ -121,6 +130,10 @@ def freeze_candidate_source_closure(
     if not python_path.is_file():
         raise ValueError(f"candidate Python runtime is unavailable: {python_path}")
     artifact_path = artifact_root.resolve()
+    load_accelerator_dependency(
+        REPO_ROOT, PROJECT_ROOT / "config/accelerator_dependency.json",
+        consumer_project_id=PROJECT_ROOT.name, required_variant="two_zone",
+    )
 
     records: list[dict[str, Any]] = []
     seen: set[str] = set()

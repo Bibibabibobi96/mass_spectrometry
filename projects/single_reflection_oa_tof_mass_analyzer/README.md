@@ -3,6 +3,10 @@
 本项目维护正交加速、双级环栈反射镜oa-TOF分析器。项目当前状态、资格与开放任务只以
 [`docs/PROJECT.md`](docs/PROJECT.md)为准；本页只负责导航。
 
+二区／三区加速器的局部理论与复用实现由独立
+[`orthogonal_accelerator`](../orthogonal_accelerator/README.md)项目维护；本项目仍负责反射器、整机
+布局、加速器—反射器联合聚焦与检测分析。既有 Formal 和历史运行按原身份保留，不随代码迁移转移资格。
+
 ## 固定阅读顺序
 
 1. 先读仓库根[`README.md`](../../README.md)。

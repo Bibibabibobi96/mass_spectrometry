@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "role": "orthogonal_accelerator_component_api",
+  "project_id": "orthogonal_accelerator",
+  "api_version": 1,
+  "structural_variants": [
+    {"variant_id": "two_zone", "field_region_count": 2, "primary_electrode_roles": ["repeller", "grid1", "exit_grid"]},
+    {"variant_id": "three_zone", "field_region_count": 3, "primary_electrode_roles": ["repeller", "grid1", "grid2", "exit_grid"]}
+  ],
+  "units": {"length": "mm", "voltage": "V", "mass": "Da", "time": "us"},
+  "coordinate_policy": "Each API declares its local axial convention; consumers must map positions with rotation and translation and velocities with rotation only. No instrument origin or focus plane is implicit.",
+  "qualification_policy": "Independent component evidence only; no inheritance of instrument Formal qualification or sharing of evidence between structural variants.",
+  "implementation_modules": [
+    "analysis/component_contract.py",
+    "analysis/accelerator_time_focus.py",
+    "analysis/two_zone_theory.py",
+    "analysis/three_zone_ideal_theory.py",
+    "analysis/two_zone_geometry.py",
+    "simion/rectangular_accelerator.py"
+  ]
+}

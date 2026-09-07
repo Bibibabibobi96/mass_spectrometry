@@ -21,8 +21,8 @@ $runDir = Join-Path $artifactRoot "runs\$RunId"
 $modelScratch = Join-Path $runDir 'runtime'
 $resultDir = Join-Path $runDir 'results'
 $workbenchDir = Join-Path $modelScratch 'workbench'
-$builder = Join-Path $projectRoot 'simion\accelerator\build_accelerator_variant.lua'
-$gem = Join-Path $projectRoot 'simion\accelerator\oatof_accelerator_3d.gem'
+$builder = Join-Path $repoRoot 'projects\orthogonal_accelerator\simion\build_two_zone_pa.lua'
+$gem = Join-Path $repoRoot 'projects\orthogonal_accelerator\simion\two_zone_accelerator.gem'
 $program = Join-Path $projectRoot 'simion\workbench\formal\oatof_ideal_grounded.lua'
 $fieldExporter = Join-Path $PSScriptRoot 'test_support\export_accelerator_grid_phase_field.lua'
 $logAnalyzer = Join-Path $projectRoot 'simion\workbench\analyze_ideal_field_log.ps1'
@@ -87,7 +87,7 @@ foreach ($case in $cases) {
         ([string]$accelerator.d1_mm),([string]$accelerator.d2_mm),([string]$contract.rings.accelerator_count),
         ([string]$geometry.accelerator_repeller_thickness),([string]$geometry.accelerator_ring_thickness),
         ([string]$geometry.accelerator_front_vacuum_margin),([string]$contract.electrodes_V.repeller),
-        ([string]$contract.electrodes_V.grid1)) $caseModelDir `
+        ([string]$contract.electrodes_V.grid1),'0','0','0','0') $caseModelDir `
         (Join-Path $caseRunDir 'build.log') (Join-Path $caseRunDir 'build.stderr.log')
     }
   }

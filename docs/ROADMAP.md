@@ -139,6 +139,11 @@ source 解析、layout/profile、pulse/source materialization、resolved 产物�
 
 ### TOF质量分析器族
 
+- `orthogonal_accelerator`独立拥有二区／三区正交脉冲加速器的领域实现；结构变体在同一项目中保留
+  独立输入与验收身份。单反射oa-TOF和MR-TOF消费其接口，仍各自拥有系统装配、联合聚焦与整机证据。
+  原`common/accelerator/`不再作为第二领域实现；迁移状态与物理资格只查加速器项目PROJECT。
+  新项目成立不迁移既有Formal资格或历史run身份。
+
 - 当前`single_reflection_oa_tof_mass_analyzer`继续作为现有正交加速、单次折返设计线；双级环栈
   反射器表示两个场区，不等于两次反射。
 - 环厚、环宽、间距、孔径、屏蔽、漂移长度和电压的优化属于当前设计的候选run。

@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "role": "accelerator_component_dependency",
+  "consumer_project_id": "single_reflection_oa_tof_mass_analyzer",
+  "provider_project_id": "orthogonal_accelerator",
+  "api_version": 1,
+  "provider_contract": "projects/orthogonal_accelerator/config/component_contract.json",
+  "structural_variants": ["two_zone", "three_zone"],
+  "ownership": "Provider owns accelerator physics and device geometry; consumer owns instrument parameters, placement, reflectron coupling and qualification. Run builders freeze the actually consumed source closure."
+}

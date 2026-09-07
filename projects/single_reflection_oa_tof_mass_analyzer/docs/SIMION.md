@@ -42,6 +42,15 @@ Program不通过动态实例调整补救错误排序。正式trajectory quality�
 本项目文档中的“SIMION detector marker”统一译为**数值终止标记**：它帮助GUI显示并产生终止事件，
 不是机械探测器实体；有效探测面、数值标记和terminal事件三者不得互称。
 
+Candidate analyzer组件将数值标记限制为反射后的回程检测：已接受轨迹的最大z必须到达冻结
+reflectron入口，终止时还须vz<0。integration assembler通过官方instance_adjust在到达反射器前
+抑制该标记实例，仍复用原PA、有效面与口径，不移动粒子或修改TOF。此处抑制是数值标记的
+阶段选择，不是修补IOB排序或移除机械实体；Formal冻结Program与资产保持只读。
+官方依据为[Workbench Program Extensions的instance_adjust](https://simion.com/info/workbench_program_extensions.html#segment-instance-adjust)，
+查阅2026-09-04，接口自8.2EA-20170214提供，适用于SIMION2020。官方列出的此回调粒子变量不含速度，
+所以启用条件读取组件保存的canonical粒子轨迹历史；ion_instance=0让引擎选择下一个覆盖PA。
+这是基于官方接口的项目检测实现，不是供应商推荐的TOF算法。
+
 日常加速器网格为`xy=0.25 mm,z=0.05 mm`，`z=0.025 mm`只作轴向收敛参考。当前生成链把
 grid1、grid2、entgrid与midgrid统一声明为SIMION官方理想透明栅：**零grid-unit厚度的一行电极点**；
 目标语义是参与Refine的Dirichlet边界且由SIMION原生穿过，Program不得用固定距离搬运粒子或补偿TOF。

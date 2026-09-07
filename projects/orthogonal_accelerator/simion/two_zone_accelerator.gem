@@ -1,4 +1,4 @@
-; oa-TOF 3D accelerator potential array (SIMION 8.2 / 2020).
+; Orthogonal two-zone 3D accelerator potential array (SIMION 8.2 / 2020).
 ; Coordinates are local to the accelerator: z=0 is the repeller/grid-1 gap
 ; reference used by the COMSOL model. Lateral dimensions are derived from
 ; the clear bore, fixed ring width, fixed insulation gap and shield wall.
@@ -8,20 +8,20 @@
 ;   1 repeller; 2 grid 1 (ideal transparent sheet); 3..7 extraction rings
 ;   8 grid 2 (ideal transparent sheet); 9 grounded square shield.
 
-# local var = _G.var or {}
-# local mmgu_xy = var.mmgu_xy or 0.25
-# local mmgu_z = var.mmgu_z or mmgu_xy
-# local bore_half = var.bore_half or 5
-# local ring_width = var.ring_width or 5
-# local insulation_gap = var.insulation_gap or 5
-# local shield_wall = var.shield_wall or 4
-# local rear_gap = var.rear_gap or 5
-# local stage1_length = var.stage1_length or 3
-# local stage2_length = var.stage2_length or 16.8
-# local ring_count = var.ring_count or 5
-# local repeller_thickness = var.repeller_thickness or 1
-# local ring_thickness = var.ring_thickness or 1
-# local front_vacuum_margin = var.front_vacuum_margin or 0.2
+# local var = assert(_G.var, 'explicit accelerator GEM parameters are required')
+# local mmgu_xy = assert(var.mmgu_xy, 'mmgu_xy is required')
+# local mmgu_z = assert(var.mmgu_z, 'mmgu_z is required')
+# local bore_half = assert(var.bore_half, 'bore_half is required')
+# local ring_width = assert(var.ring_width, 'ring_width is required')
+# local insulation_gap = assert(var.insulation_gap, 'insulation_gap is required')
+# local shield_wall = assert(var.shield_wall, 'shield_wall is required')
+# local rear_gap = assert(var.rear_gap, 'rear_gap is required')
+# local stage1_length = assert(var.stage1_length, 'stage1_length is required')
+# local stage2_length = assert(var.stage2_length, 'stage2_length is required')
+# local ring_count = assert(var.ring_count, 'ring_count is required')
+# local repeller_thickness = assert(var.repeller_thickness, 'repeller_thickness is required')
+# local ring_thickness = assert(var.ring_thickness, 'ring_thickness is required')
+# local front_vacuum_margin = assert(var.front_vacuum_margin, 'front_vacuum_margin is required')
 # local ring_pitch = stage2_length/(ring_count+1)
 # local bore_width = 2*bore_half
 # local electrode_width = 2*(bore_half+ring_width)
@@ -33,14 +33,14 @@
 # local shield_z_span = shield_front_z-shield_back_z
 # local shield_z_center = (shield_front_z+shield_back_z)/2
 # local rear_cap_center_z = shield_back_z+shield_wall/2
-# local xy_span = var.xy_span or shield_outer_width
-# local z_min = var.z_min or shield_back_z
-# local z_span = var.z_span or (stage1_length+stage2_length+front_vacuum_margin-z_min)
-# local grid_phase_z = var.grid_phase_z or 0
-# local interface_port_enable = var.interface_port_enable or 0
-# local interface_port_width_y = var.interface_port_width_y or 0
-# local interface_port_height_z = var.interface_port_height_z or 0
-# local interface_port_center_z = var.interface_port_center_z or stage1_length/2
+# local xy_span = assert(var.xy_span, 'xy_span is required')
+# local z_min = assert(var.z_min, 'z_min is required')
+# local z_span = assert(var.z_span, 'z_span is required')
+# local grid_phase_z = assert(var.grid_phase_z, 'grid_phase_z is required')
+# local interface_port_enable = assert(var.interface_port_enable, 'interface_port_enable is required')
+# local interface_port_width_y = assert(var.interface_port_width_y, 'interface_port_width_y is required')
+# local interface_port_height_z = assert(var.interface_port_height_z, 'interface_port_height_z is required')
+# local interface_port_center_z = assert(var.interface_port_center_z, 'interface_port_center_z is required')
 # local cx = xy_span/2
 # local cy = xy_span/2
 # local cz = -z_min+grid_phase_z

@@ -82,22 +82,23 @@ class ExportedAxisFieldIntegratorTests(unittest.TestCase):
         self.assertIn("--total-axis-field-exporter-output", source)
         self.assertIn("simion.command('", source)
         self.assertIn("frontend.apply_at(pulse_time_us", source)
-        self.assertIn("ai.pa:fast_adjust(ai_values)", source)
-        self.assertIn(
+        self.assertIn("Do not also call PA ``fast_adjust`` here", source)
+        self.assertNotIn("ai.pa:fast_adjust(ai_values)", source)
+        self.assertNotIn(
             "simion.wb.instances[overlay.instance_index].pa:fast_adjust(oi_values)",
             source,
         )
         self.assertIn("ai.pa:load(frontend_pa)", source)
-        self.assertIn("{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19}", source)
-        self.assertIn("1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20", source)
+        self.assertIn("local ai_values=pa_adjustments(", source)
+        self.assertIn("local oi_values=pa_adjustments(", source)
+        self.assertIn("values=(instance_number==3) and ai_values or oi_values", source)
         self.assertIn("instance:potential_wc(x,y,z,values)", source)
         self.assertIn("instance:field_wc(x,y,z,values)", source)
-        self.assertIn("TOTAL_AXIS_FIELD_INSTANCE", source)
-        self.assertIn("for index=1,#simion.wb.instances do", source)
+        self.assertIn("TOTAL_AXIS_FIELD_SAMPLE", source)
+        self.assertIn("for _,overlay in ipairs(overlay_specs) do", source)
         exporter_source = source[source.index('exporter = f"""'):]
         self.assertNotIn("simion.workbench_program()", exporter_source)
         self.assertIn("analyzer.initialize_workbench", source)
-        self.assertIn("apply_placement(ai,initialized.placements.accelerator)", source)
         self.assertIn("ai.x,ai.y,ai.z={_lua_number(origin['x'])}", exporter_source)
         self.assertIn("oi.x,oi.y,oi.z=overlay.origin_mm.x", exporter_source)
         self.assertIn("oi.az,oi.el,oi.rt,oi.scale=0,0,0,1", exporter_source)

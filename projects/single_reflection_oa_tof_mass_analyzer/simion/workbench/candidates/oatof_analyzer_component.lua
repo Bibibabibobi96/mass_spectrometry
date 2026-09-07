@@ -127,7 +127,8 @@ function component.new(config)
   exact_keys(config.detector, {tstep_enabled=true,
     capture_arm_distance_mm=true, capture_depth_mm=true,
     marker_absorber_thickness_mm=true}, 'detector')
-  exact_keys(config.diagnostics, {max_tof_us=true, log_stride=true},
+  exact_keys(config.diagnostics,
+    {post_pulse_observation_window_us=true, log_stride=true},
     'diagnostics')
 
   local roles = config.instance_roles
@@ -179,7 +180,8 @@ function component.new(config)
     'detector.marker_absorber_thickness_mm')
   assert(detector.capture_depth_mm < detector.marker_absorber_thickness_mm,
     'detector capture depth must lie inside the numerical absorber')
-  positive(config.diagnostics.max_tof_us, 'diagnostics.max_tof_us')
+  positive(config.diagnostics.post_pulse_observation_window_us,
+    'diagnostics.post_pulse_observation_window_us')
   local log_stride = integer(config.diagnostics.log_stride,
     'diagnostics.log_stride')
   assert(log_stride > 0, 'diagnostics.log_stride must be positive')
@@ -485,8 +487,8 @@ function component.new(config)
   end
 
   local function other_actions(state)
-    exact_keys(state, {particle_id=true, elapsed_us=true, x_mm=true, y_mm=true,
-      z_mm=true, vz_mm_per_us=true}, 'action_state')
+    exact_keys(state, {particle_id=true, elapsed_us=true, pulse_elapsed_us=true,
+      x_mm=true, y_mm=true, z_mm=true, vz_mm_per_us=true}, 'action_state')
     local record = assert(particles[state.particle_id], 'particle was not initialized')
     record.step_count = record.step_count + 1
     record.max_z_mm = math.max(record.max_z_mm, state.z_mm)
@@ -498,9 +500,20 @@ function component.new(config)
     end
     record.last_elapsed_us, record.last_x_mm, record.last_y_mm, record.last_z_mm =
       state.elapsed_us, state.x_mm, state.y_mm, state.z_mm
-    local splat = state.elapsed_us >= config.diagnostics.max_tof_us
+    local pulse_elapsed_us = finite(state.pulse_elapsed_us,
+      'action_state.pulse_elapsed_us')
+    local splat = pulse_elapsed_us >=
+      config.diagnostics.post_pulse_observation_window_us
     if splat then record.timed_out = true end
     return {splat=splat, events=events}
+  end
+
+  -- This PA is a numerical return detector, not a mechanical obstruction.
+  -- instance_adjust cannot read velocity on SIMION2020: arm it from the
+  -- accepted trajectory history only after the ion reaches the reflectron.
+  local function detector_marker_active(particle_id)
+    local record = particles[particle_id]
+    return record ~= nil and record.max_z_mm >= g.reflectron_entgrid_z_mm
   end
 
   local function terminate(state)
@@ -509,8 +522,12 @@ function component.new(config)
       vy_mm_per_us=true, vz_mm_per_us=true, detector_cell_dx_mm=true},
       'terminate_state')
     local record = assert(particles[state.particle_id], 'particle was not initialized')
-    if record.timed_out or record.detector_crossed then return nil end
-    if state.instance_id ~= roles.detector then
+    if record.timed_out then
+      return {kind='timeout_splat', max_z_mm=record.max_z_mm}
+    end
+    if record.detector_crossed then return nil end
+    if state.instance_id ~= roles.detector or state.vz_mm_per_us >= 0 or
+        not detector_marker_active(state.particle_id) then
       return {kind='non_detector_splat', max_z_mm=record.max_z_mm}
     end
     record.detector_crossed = true
@@ -535,7 +552,7 @@ function component.new(config)
     accelerator_electrode_write_plan=accelerator_plan,
     efield_adjust=efield_adjust, initialize_particle=initialize_particle,
     tstep_adjust=tstep_adjust, other_actions=other_actions,
-    terminate=terminate}
+    terminate=terminate, detector_marker_active=detector_marker_active}
 end
 
 return component

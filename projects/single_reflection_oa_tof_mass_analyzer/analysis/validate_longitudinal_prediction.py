@@ -24,7 +24,7 @@ from common.contracts.file_identity import file_sha256 as _sha256
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = PROJECT_ROOT.parents[1]
 
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.accelerator_time_focus import accelerator_state
+from projects.orthogonal_accelerator.analysis.accelerator_time_focus import accelerator_state
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.oatof_oaaccelerator_coupling import (
     ATOMIC_MASS_CONSTANT_KG,
     ELEMENTARY_CHARGE_C,

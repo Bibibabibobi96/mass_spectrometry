@@ -17,7 +17,7 @@ from typing import Any, Mapping
 
 import numpy as np
 
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.accelerator_time_focus import (
+from projects.orthogonal_accelerator.analysis.accelerator_time_focus import (
     ATOMIC_MASS_CONSTANT_KG,
     ELEMENTARY_CHARGE_C,
     AcceleratorState,

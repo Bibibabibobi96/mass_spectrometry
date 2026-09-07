@@ -1,7 +1,9 @@
 # oa-TOF 理论入口
 
-本目录只维护一套项目物理真相：上层统一框架定义共同状态、时钟、观测量和证据边界，下层组件文档
-保存精确特例和可执行oracle。项目参数、状态和正式结果仍以`../../config/`、[`PROJECT.md`](../PROJECT.md)
+本目录维护单次反射整机物理：上层统一框架定义共同状态、时钟、观测量和证据边界，下层文档维护
+反射器及其与加速器的联合模型。独立加速器局部公式只由
+[`orthogonal_accelerator 理论入口`](../../../orthogonal_accelerator/docs/theory/README.md)维护。
+项目参数、状态和正式结果仍以`../../config/`、[`PROJECT.md`](../PROJECT.md)
 和受manifest管理的运行证据为准。
 
 ## 阅读顺序
@@ -16,13 +18,15 @@
 
 ### 组件精确模型
 
-- [`oaaccelerator_time_focus.md`](oaaccelerator_time_focus.md)：静止释放、N=2双区正交加速器和一阶焦面；
+- [独立双区加速器理论](../../../orthogonal_accelerator/docs/theory/oaaccelerator_time_focus.md)：静止释放、N=2精确模型和一阶焦面；
+- [独立 affine 加速器理论](../../../orthogonal_accelerator/docs/theory/affine_phase_space_time_focus.md)：有符号初速、能量与局部时间导数；
+- [独立三区加速器理论](../../../orthogonal_accelerator/docs/theory/three_zone_accelerator_ideal_theory.md)：N=3精确时间、`A1–A4`与局部退化；
 - [`z_vz_linear_phase_space_coupling.md`](z_vz_linear_phase_space_coupling.md)：detector-blind affine
-  `z-v_z`特例及随机残差入口；
+  `z-v_z`源与本项目反射器的连接及残差验收；
 - [`dual_stage_reflectron.md`](dual_stage_reflectron.md)：二级反射镜局部一、二阶能量聚焦；
 - [`oatof_oaaccelerator_coupling.md`](oatof_oaaccelerator_coupling.md)：从释放到探测面的整机一维纵向耦合；
-- [`three_zone_accelerator_ideal_theory.md`](three_zone_accelerator_ideal_theory.md)：N=3分段均匀场、
-  `A1–A4`、`Γ3`与隔离阶段漏斗。
+- [`three_zone_accelerator_ideal_theory.md`](three_zone_accelerator_ideal_theory.md)：三区加速器与反射器的
+  `Γ3`联合闭合、阶段漏斗和整机有限束宽设计。
 
 统一框架不复制组件的完整公式；组件文档也不单独定义论文新颖性。局部反射镜闭式解不包含加速器在
 一阶焦面处仍存在的二阶时间曲率，不能直接作为整机二阶聚焦结论。`D1/D2/D3=0`和`Γ3`只描述指定

@@ -11,7 +11,7 @@ from scipy.optimize import brentq
 
 
 PROJECT_DIR = Path(__file__).resolve().parents[2]
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.accelerator_time_focus import (
+from projects.orthogonal_accelerator.analysis.accelerator_time_focus import (
     accelerator_state,
     normalized_time_to_plane_mm_sqrt_v,
 )

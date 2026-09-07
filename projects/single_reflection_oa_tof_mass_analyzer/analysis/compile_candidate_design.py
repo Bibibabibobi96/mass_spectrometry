@@ -15,7 +15,7 @@ REPO_ROOT = PROJECT_ROOT.parents[1]
 from common.contracts.machine_contracts import load_json, sha256, validate_schema
 from common.contracts.validate_design_request import validate_request
 from common.multipole.grounded_shield import require_grounded_potential
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.accelerator_time_focus import accelerator_state, focus_drift_mm
+from projects.orthogonal_accelerator.analysis.accelerator_time_focus import accelerator_state, focus_drift_mm
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.geometry_contract import BASELINE_PATH, MODE_PATH, NUMERICS_PATH, resolve_contract, serialized
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.oatof_oaaccelerator_coupling import solve_coupled_reflectron_fields
 

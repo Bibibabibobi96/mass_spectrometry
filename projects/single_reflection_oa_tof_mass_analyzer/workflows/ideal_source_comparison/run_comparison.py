@@ -74,11 +74,15 @@ def _command(arguments: list[str]) -> str:
 
 def _inputs(config_path: Path) -> dict[str, Path]:
     local = ["ideal_source_comparison.py", "ideal_source_experiment.py", "ideal_source_comparison_plot.py", "three_zone_ideal_theory.py",
-             "accelerator_time_focus.py", "oatof_oaaccelerator_coupling.py", "reflectron_dual_stage_solver.py"]
+             "oatof_oaaccelerator_coupling.py", "reflectron_dual_stage_solver.py"]
+    accelerator = REPO_ROOT / "projects/orthogonal_accelerator/analysis"
     return {"experiment": config_path, "entrypoint": Path(__file__),
             "analysis_contract": PROJECT_ROOT / "config/analysis_contract.json",
             "particle_policy": REPO_ROOT / "common/contracts/particle_count_policy.json",
             "peak_metrics": REPO_ROOT / "common/analysis/peak_metrics.py",
+            "accelerator_time_focus": accelerator / "accelerator_time_focus.py",
+            "accelerator_three_zone_theory": accelerator / "three_zone_ideal_theory.py",
+            "accelerator_two_zone_geometry": accelerator / "two_zone_geometry.py",
             **{Path(name).stem: PROJECT_ROOT / "analysis" / name for name in local}}
 
 

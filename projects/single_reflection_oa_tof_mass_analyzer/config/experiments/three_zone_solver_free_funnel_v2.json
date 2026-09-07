@@ -32,8 +32,8 @@
     },
     "two_zone_theory": {
       "path": "projects/single_reflection_oa_tof_mass_analyzer/analysis/oatof_oaaccelerator_coupling.py",
-      "bytes": 33360,
-      "sha256": "7A350A0747176A74CEBE75012D4C546F750236434BBFB317737E48D0AF8E19C0"
+      "bytes": 33344,
+      "sha256": "BADDC9B660C7EB01EBB7F4D60E30ECEF96A19A34989611790B38A106B359B0E5"
     },
     "reflectron_theory": {
       "path": "projects/single_reflection_oa_tof_mass_analyzer/analysis/reflectron_dual_stage_solver.py",
@@ -42,8 +42,8 @@
     },
     "three_zone_theory": {
       "path": "projects/single_reflection_oa_tof_mass_analyzer/analysis/three_zone_ideal_theory.py",
-      "bytes": 32212,
-      "sha256": "72B7DE29A9C3939F618C9420947C410A2A4DEB3AB1D45389CE16A56106E15E08"
+      "bytes": 21619,
+      "sha256": "E1EFA051AAE3381C128B3B3822F9E571562368F5852459BDBC89855D331F11C9"
     },
     "three_zone_root_solver": {
       "path": "projects/single_reflection_oa_tof_mass_analyzer/analysis/three_zone_ideal_root_solver.py",
@@ -77,13 +77,28 @@
     },
     "three_zone_experiment": {
       "path": "projects/single_reflection_oa_tof_mass_analyzer/analysis/three_zone_theory_experiment.py",
-      "bytes": 28866,
-      "sha256": "59E50D95CDACE0ECADC5EB25E5D32F6B6D039438670009EFD525154437232AEA"
+      "bytes": 31802,
+      "sha256": "A6D92CFA2633D4A55F303FEAD0EF9E2A758E52C2BB19B08DE0A3E16E4DD90772"
     },
     "three_zone_cli": {
       "path": "projects/single_reflection_oa_tof_mass_analyzer/workflows/three_zone_ideal_theory/run_theory.py",
-      "bytes": 4810,
-      "sha256": "9D6CE0C76F113F220A8C23EDF9FEEC9485239040728B9C9E9C2A385425B647B4"
+      "bytes": 5746,
+      "sha256": "E3A0F8F1693BDBD77C2F00EBD30BDBE11BDE0C871277F0EFE6F5A7A940C96D25"
+    },
+    "accelerator_two_zone_theory": {
+      "path": "projects/orthogonal_accelerator/analysis/accelerator_time_focus.py",
+      "bytes": 44673,
+      "sha256": "6C064F10373EBB86BB278B8042E6D69BE56D1464E0815BABD9CF56FF55152468"
+    },
+    "accelerator_three_zone_theory": {
+      "path": "projects/orthogonal_accelerator/analysis/three_zone_ideal_theory.py",
+      "bytes": 13032,
+      "sha256": "9EFA90C15A89CBC0FB37CAEDAC280F281EE20D2F7D798FE031CAECE0680C0A0E"
+    },
+    "accelerator_geometry": {
+      "path": "projects/orthogonal_accelerator/analysis/two_zone_geometry.py",
+      "bytes": 5245,
+      "sha256": "D924777CF92C4BBB161D031028EBD6D8090C02EEF2AFC3D3D3BCBF861A8FF432"
     }
   },
   "identity": {

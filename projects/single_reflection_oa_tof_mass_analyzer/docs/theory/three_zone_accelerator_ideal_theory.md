@@ -1,4 +1,4 @@
-# oa-TOF 三区加速器理想理论与隔离验证漏斗
+# oa-TOF 三区加速器—反射器联合理论与验证漏斗
 
 > `ASSESSMENT_STATUS: POST_PILOT`
 >
@@ -12,7 +12,9 @@
 
 ## 1. 职责和资格边界
 
-本文是三区分段均匀场加速器的当前理论权威，并定义其隔离、阶段化、求解器无关验证漏斗。机器精确的
+三区局部加速器公式已归属独立项目的
+[`three_zone_accelerator_ideal_theory.md`](../../../orthogonal_accelerator/docs/theory/three_zone_accelerator_ideal_theory.md)。
+本文只维护它与单次反射 oa-TOF 的反射器联合闭合、阶段化验证及整机有限束宽设计。机器精确的
 campaign、阈值、seed、前驱关系和输出结构由
 [`three_zone_solver_free_funnel_v2.json`](../../config/experiments/three_zone_solver_free_funnel_v2.json)
 管理；公式参考实现为
@@ -27,142 +29,23 @@ SIMION或CAD Candidate，不构成三维真实场、栅透过、传输、制造�
 Formal验证全部不变。此次理论评估冻结的是100 Th集成问题身份；该身份及2.2 mm先导观察不得外推为
 项目Formal事实，也不得反写Formal资产。
 
-## 2. 坐标、单位和不冲突符号
+## 2. 局部坐标、单位和源接口
 
-设源点坐标 $x$ 从排斥极沿提取方向增加，第一场区为 $0<x<\ell_1$。三个场区长度只记为
-$\ell_1,\ell_2,\ell_3$，并定义
+局部提取坐标、$\chi$、$\beta$、$p$、$w_2$ 和SI换算由独立项目
+[三区局部理论第2节](../../../orthogonal_accelerator/docs/theory/three_zone_accelerator_ideal_theory.md#2-坐标单位和不冲突符号)
+统一定义。本项目T0另外冻结质量电荷、cohort、源与时钟，不在这里另定义局部轴或能量公式。
 
-```math
-\ell_{23}=\ell_2+\ell_3,
-\qquad
-\lambda=\frac{\ell_2}{\ell_{23}},
-\qquad 0<\lambda<1.
-```
+## 3. 精确局部时间与二区退化
 
-电荷量级记为 $q_e>0$；离子电荷符号是T0独立冻结的身份字段。沿冻结 affine 相空间主线：
-
-```math
-\chi(x)=\chi_c+\beta(x-x_c),
-```
-
-```math
-\chi_c=v_c\sqrt{\frac{m/q_e}{2}},
-\qquad
-\beta=\kappa\sqrt{\frac{m/q_e}{2}}.
-```
-
-$\chi$ 保留 $v_z$ 的符号，不能用 $\sqrt{\chi^2}$ 替换。最终单位电荷能量为
-
-```math
-\mathcal W(x)=V_R-E_1x+\chi(x)^2.
-```
-
-中心导数记为
-
-```math
-p=\mathcal W'_c=-E_1+2\chi_c\beta,
-\qquad
-w_2=\mathcal W''_c=2\beta^2.
-```
-
-这里用 $w_2$ 避免把电荷 $q_e$ 再用作二阶系数；时间导数只记为 $A_n,B_n,D_n$，不把
-$d_1,d_2,d_3$ 同时用作长度和导数系数。
-
-当长度使用mm、场强使用V/mm、$m/q_e$ 使用kg/C时，归一化时间 $\tau$ 的SI换算必须是
-
-```math
-t_{\rm s}=10^{-3}\sqrt{\frac{m}{2q_e}}\,\tau.
-```
-
-因而省略 $10^{-3}$ 会把绝对时间放大 $10^3$；任何秒、微秒或纳秒结果都必须经过该换算。
-
-## 3. 精确三区时间和退化恒等式
-
-边界电势按提取方向依次为 $V_R,V_{G1},V_{G2},0$，且
-
-```math
-E_1=\frac{V_R-V_{G1}}{\ell_1},
-\qquad
-E_2=\frac{V_{G1}-V_{G2}}{\ell_2},
-\qquad
-E_3=\frac{V_{G2}}{\ell_3}.
-```
-
-定义 $K_0=\chi^2$、$K_1=\mathcal W-V_{G1}$、$K_2=\mathcal W-V_{G2}$、
-$K_3=\mathcal W$。从源点经过三区并漂移到加速器一阶时间焦面的精确归一化时间为
-
-```math
-\begin{aligned}
-\tau_A^{(3)}(\mathcal W,\chi)={}&
-\frac{2}{E_1}\left[\sqrt{\mathcal W-V_{G1}}-\chi\right]\\
-&+\frac{2}{E_2}\left[\sqrt{\mathcal W-V_{G2}}-
-\sqrt{\mathcal W-V_{G1}}\right]\\
-&+\frac{2}{E_3}\left[\sqrt{\mathcal W}-
-\sqrt{\mathcal W-V_{G2}}\right]
-+\frac{D_A}{\sqrt{\mathcal W}}.
-\end{aligned}
-```
-
-物理域至少要求 $V_R>V_{G1}>V_{G2}>0$、$E_i>0$，并对完整cohort满足后述能量、折返和
-单调性门禁。
-
-固定 $\chi$ 时令 $B_n^{(3)}=\partial^n\tau_A^{(3)}/\partial\mathcal W^n$。取
-
-```math
-(c_1,c_2,c_3,c_4)=\left(1,-\frac12,\frac34,-\frac{15}{8}\right),
-```
-
-```math
-(k_1,k_2,k_3,k_4)=\left(-\frac12,\frac34,-\frac{15}{8},\frac{105}{16}\right),
-```
-
-则四阶以内可统一写为
-
-```math
-\begin{aligned}
-B_n^{(3)}={}&c_n\Bigg[
-\left(\frac1{E_1}-\frac1{E_2}\right)(\mathcal W-V_{G1})^{1/2-n}\\
-&+\left(\frac1{E_2}-\frac1{E_3}\right)(\mathcal W-V_{G2})^{1/2-n}
-+\frac1{E_3}\mathcal W^{1/2-n}\Bigg]\\
-&+k_nD_A\mathcal W^{-n-1/2},\qquad n=1,2,3,4.
-\end{aligned}
-```
-
-其量纲为 $[B_n]=L\,V^{-n-1/2}$。若 $E_2=E_3$，含 $V_{G2}$ 的两个时间项严格望远镜
-相消，三区退化为二区；新增边界没有新的时间聚焦能力。
-
-令
-
-```math
-\gamma=\frac{V_{G2}}{V_{G1}},
-\qquad
-\gamma_0=1-\lambda,
-\qquad
-g=\gamma-\gamma_0.
-```
-
-$g=0$ 与 $E_2=E_3$ 都必须精确回归二区oracle。实现内部也可使用
-$\eta=\ln(E_2/E_3)$ 保证场强为正；$\eta=0$ 是同一退化点。
+精确三区时间、$B_1$—$B_4$、$E_2=E_3$ 与 $g=0$ 恒等退化由独立项目
+[三区局部理论第3节](../../../orthogonal_accelerator/docs/theory/three_zone_accelerator_ideal_theory.md#3-精确三区时间和退化恒等式)
+维护。本项目调用其局部 oracle，再叠加且只叠加一次后续无场路径和反射器时间。
 
 ## 4. affine 源链和整机导数
 
-沿 $\chi(\mathcal W)$ 主分支，三区加速器导数为
-
-```math
-A_1^{(3)}=B_1^{(3)}-\frac{2\beta}{E_1p},
-```
-
-```math
-A_2^{(3)}=B_2^{(3)}+\frac{4\beta^3}{E_1p^3},
-```
-
-```math
-A_3^{(3)}=B_3^{(3)}-\frac{24\beta^5}{E_1p^5},
-```
-
-```math
-A_4^{(3)}=B_4^{(3)}+\frac{240\beta^7}{E_1p^7}.
-```
+$A_1^{(3)}$—$A_4^{(3)}$ 由独立项目
+[局部源链导数](../../../orthogonal_accelerator/docs/theory/three_zone_accelerator_ideal_theory.md#4-affine-源链的局部导数)
+计算，不再在本文件维护另一份局部公式。
 
 多项式展开系数等于相应原始导数除以阶乘；两者不得混用。整机时间包含加速器、焦面到反射器入口的
 上行漂移、双级反射器和下行漂移。令其余部分的原始能量导数为 $R_n$，则
@@ -187,33 +70,10 @@ $D_3=0$，仍必须报告 $D_4$、精确有限宽度时间、峰模态和混合�
 
 ## 5. 精确全宽和失效关闭
 
-令 $y=x-x_c\in[-h,h]$，则
-
-```math
-\mathcal W(y)=\mathcal W_c+py+\frac12w_2y^2,
-\qquad
-\mathcal W_x(y)=p+w_2y.
-```
-
-能量包络必须取 $y=-h,+h$，并在 $w_2>0$ 且
-$y_*=-p/w_2\in[-h,h]$ 时再取内部驻点；三者的精确极值才是cohort门禁输入。不能用中心线性斜率乘
-半宽替代。若 $\mathcal W_x$ 在区间内穿零，局部能量反演和导数资格必须fail closed。
-
-还必须逐粒子检查：
-
-```math
-\min\mathcal W>V_{G1}+\Delta V_{\rm margin}.
-```
-
-当 $\chi<0$ 时粒子先朝排斥极运动；仅有上述能量条件不能排除撞击排斥极。一维均匀第一场区内的
-后向折返点为
-
-```math
-x_{\rm turn}=x-\frac{\chi^2}{E_1}.
-```
-
-完整cohort必须满足 $\min x_{\rm turn}$ 大于预声明的排斥极间隙余量。所有场强、焦后漂移、反射器二级
-折返深度和有限值检查同样由调用方阈值fail closed；它们不能在看到结果后放宽。
+能量包络、内部驻点、源到能量反演与后向折返点使用独立项目
+[完整源可达性条件](../../../orthogonal_accelerator/docs/theory/three_zone_accelerator_ideal_theory.md#5-精确全宽和失效关闭)。
+本项目另外检查后续漂移长度、目标反射器级的进入和折返深度、总时间有限性及冻结的全宽指标。
+加速器穿越通过不能替代这些下游判据；所有阈值必须在运行前冻结。
 
 ## 6. 全局焦面与长度策略
 

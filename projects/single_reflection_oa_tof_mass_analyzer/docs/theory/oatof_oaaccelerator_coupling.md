@@ -7,7 +7,8 @@
 ## 1. 文档职责
 
 实测线性 $z-v_z$ 束的实际能量及替代导数 $A_1/A_2$ 由
-`z_vz_linear_phase_space_coupling.md` 唯一维护；本文的静止源导数仍保留为基准和退化检查。
+[独立加速器局部理论](../../../orthogonal_accelerator/docs/theory/affine_phase_space_time_focus.md)维护；
+本项目的[`z_vz_linear_phase_space_coupling.md`](z_vz_linear_phase_space_coupling.md)只定义下游连接。
 
 本文定义 oa-TOF 中双区正交加速器与二级反射镜的求解器无关、一维纵向耦合参考模型。核心目标是避免以下错误：
 
@@ -23,7 +24,8 @@
 analysis/oatof_oaaccelerator_coupling.py
 ```
 
-文件名和模型 ID 中的 `oaaccelerator` 指 oa-TOF 的 orthogonal-acceleration accelerator，不表示新的独立项目。
+文件名和模型 ID 中的 `oaaccelerator` 保留既有整机耦合模型身份；独立加速器实现已由
+[`orthogonal_accelerator`](../../../orthogonal_accelerator/README.md)项目所有，本文件仍归单反射整机所有。
 
 ## 2. 权威边界
 
@@ -123,114 +125,35 @@ L=L_{\mathrm{up}}+L_{\mathrm{down}}.
 
 ## 5. 加速器到焦面的归一化时间
 
-加速器相对末级出口的电位为：
-
-- 排斥极 $V_R$；
-- 中间栅 $V_G$；
-- 出口 $0$。
-
-场强：
+作为整机耦合所消费的首区场强参考，保持：
 
 ```math
 E_{A1}=\frac{V_R-V_G}{g_1},
-\qquad
-E_{A2}=\frac{V_G}{g_2}.
 ```
 
-对由释放位置决定的出口能量每电荷 $W$：
+由独立加速器项目的[二区精确时间](../../../orthogonal_accelerator/docs/theory/oaaccelerator_time_focus.md#6-分段飞行时间)
+计算释放至第一时间焦面的 $\tau_A(W)$。长度用 mm、场强用 V/mm 时，
+$T_A=10^{-3}\sqrt{m/(2q)}\,\tau_A$。加速器至焦面的漂移 $D_A$ 已包含其中，
+不能再加入下游 $L_{\mathrm{up}}$。
+
+在标称能量 $W_0$ 处，$D_A$ 按加速器一阶焦点公式确定，因此
 
 ```math
-W>V_G.
+\tau_A'(W_0)=0,\qquad \tau_A''(W_0)\ne0\quad\text{（一般情形）}.
 ```
 
-从释放到加速器一阶焦面的时间写成归一化形式。若长度用 mm、场强用 V/mm，则：
-
-```math
-T_A(W)=10^{-3}\sqrt{\frac{m}{2q}}\,\tau_A(W),
-```
-
-其中：
-
-```math
-\tau_A(W)=
-\frac{2\sqrt{W-V_G}}{E_{A1}}
-+
-\frac{2\left(\sqrt W-\sqrt{W-V_G}\right)}{E_{A2}}
-+
-\frac{D_A}{\sqrt W}.
-```
-
-在标称能量 $W_0$ 处，$D_A$ 按加速器一阶焦点公式确定，因此：
-
-```math
-\tau_A'(W_0)=0.
-```
-
-但通常：
-
-```math
-\tau_A''(W_0)\ne0.
-```
-
-这正是必须进行整机二阶耦合求解的原因。
+这正是必须进行整机二阶耦合求解的原因，不能用加速器局部一阶聚焦代替整机二阶结论。
 
 ## 6. 加速器时间导数
 
-令：
-
-```math
-R_A=W-V_G.
-```
-
-一阶导数：
-
-```math
-\tau_A'(W)=
-\frac{1}{E_{A1}\sqrt{R_A}}
-+
-\frac{1}{E_{A2}}
-\left(
-\frac{1}{\sqrt W}-\frac{1}{\sqrt{R_A}}
-\right)
--
-\frac{D_A}{2W^{3/2}}.
-```
-
-二阶导数：
-
-```math
-\tau_A''(W)=
--
-\frac{1}{2E_{A1}R_A^{3/2}}
-+
-\frac{1}{E_{A2}}
-\left(
--
-\frac{1}{2W^{3/2}}
-+
-\frac{1}{2R_A^{3/2}}
-\right)
-+
-\frac{3D_A}{4W^{5/2}}.
-```
-
-三阶导数：
-
-```math
-\tau_A'''(W)=
-\frac{3}{4E_{A1}R_A^{5/2}}
-+
-\frac{1}{E_{A2}}
-\left(
-\frac{3}{4W^{5/2}}
--
-\frac{3}{4R_A^{5/2}}
-\right)
--
-\frac{15D_A}{8W^{7/2}}.
-```
+本模型使用独立加速器发布的原始能量导数，不重复维护局部公式。
+静止源一、二阶导数是
+[affine 模型](../../../orthogonal_accelerator/docs/theory/affine_phase_space_time_focus.md#3-含初速度的加速器时间)
+在零初速、零斜率下的特例；更高阶及二区退化统一见
+[局部多区导数](../../../orthogonal_accelerator/docs/theory/three_zone_accelerator_ideal_theory.md#3-精确三区时间和退化恒等式)。
 
 参考程序使用解析导数，避免以极小步长有限差分制造“浮点噪声即精确聚焦”的错误结论。
+多项式展开系数与原始导数的阶乘关系必须保持一致。
 
 ## 7. 反射镜段归一化时间
 

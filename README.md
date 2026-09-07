@@ -126,6 +126,7 @@ simulation_repo/
 │  └─ multipoles/              # 多极杆设计族通用理论与可复现图示
 ├─ projects/                 # 平级项目；不再按软件或器件类别嵌套
 │  ├─ single_reflection_oa_tof_mass_analyzer/
+│  ├─ orthogonal_accelerator/
 │  ├─ parallel_mirror_dual_stripe_mr_tof/
 │  ├─ apertured_tube_electron_impact_ion_source/
 │  ├─ rf_quadrupole_ion_optics/
@@ -152,17 +153,21 @@ simulation_repo/
 目录按知识对象和生命周期划分，不按“主软件/辅助软件”划分。选择结果以物理问题和统一契约
 为准，不以某个求解器先完成为准。
 
-项目ID对应一条可以独立维护baseline、验收状态和正式资产的具体硬件设计线，不对应宽泛设计族。
-设计族通过机器元数据和Roadmap关联，不在`projects/`或artifacts中增加包住多个formal的深层容器。
+项目ID对应一个边界明确、可独立设计、验证和交付的硬件设计概念，不对应没有明确接口的宽泛设计族。
+共享主要物理功能、接口语义和设计目标的结构变体可以在同一项目维护，例如正交脉冲加速器的二区与三区。
+各变体必须显式区分参数合同、resolved几何、验证状态和资产身份；结构变体不是仅改变工况的mode，
+也不能以一个变体的通过代替另一个变体的证据。设计族仍通过机器元数据和Roadmap关联。
 同一硬件只改变电压、频率、气体、粒子源或运行目的时使用mode；参数扫描和优化候选使用run。
-电极拓扑、主要功能、正式资产或验收合同需要独立长期维护时，建立新的平级项目。共享代码只有在
-第二个项目实际复用并验证后才提升到`common/`。
+当主要功能、接口或验收与发布生命周期需要独立演进时，建立新的平级项目；不只按电极数量拆分项目。
+独立器件项目可通过显式版本化接口向多个仪器项目提供领域实现，不要求再复制到`common/`。
+`common/`保留经不同项目实际复用验证的公共机制或没有独立器件项目归属的领域核心，不建立双份权威。
 
 当前项目ID与显示名：
 
 | `project_id` / 目录 | `display_name` |
 |---|---|
 | `single_reflection_oa_tof_mass_analyzer` | 单次反射正交加速飞行时间质量分析器 |
+| `orthogonal_accelerator` | 正交脉冲加速器（二区／三区结构变体） |
 | `parallel_mirror_dual_stripe_mr_tof` | 开放路径平行镜双条带多次反射飞行时间质量分析器 |
 | `apertured_tube_electron_impact_ion_source` | 开孔长管电子轰击离子源 |
 | `rf_quadrupole_ion_optics` | RF四极杆离子光学 |
@@ -183,12 +188,20 @@ simulation_repo/
 
 所有项目必须遵循同一条不可逆的数据流：
 
-`物理输入参数 + 公式 + 明确精度规则 → 项目config中的baseline工程参数 → COMSOL / SIMION / CAD`
+`物理输入参数 + 公式 + 明确精度规则 → 项目config中的baseline工程参数 → resolved参数化简化 CAD 几何 → COMSOL / SIMION / GPT / CAD交付`
 
 - `baseline`不是任一软件当前文件的抄录，而是物理输入经公式计算后的唯一工程参数契约。
 - 公式、输入量、单位和工程舍入位数必须机器可读并接受门禁；不得只把最终尺寸散写在代码或文档中。
-- COMSOL、SIMION、CAD及SolidWorks只能读取、生成或验证baseline，不得因网格、格式化、GUI显示、
-  旧模型或某个求解器的现有数值而反向改写baseline。
+- `resolved`参数化简化 CAD 是跨求解器的唯一几何中间表示：它必须保留决定电场、束路和接口语义的
+  电极、孔槽、曲线、间隙、屏蔽和检测面；螺钉、倒角、支撑等不改变该语义的工程细节可省略。它应由
+  同一合同生成或驱动 CAD、COMSOL、SIMION 和 GPT 的各自输入，禁止在不同软件中手工重画近似几何。
+- 原始/遗留 CAD 只能作为经审计的机械尺寸、曲线尺度、包络和制造约束证据。它不能反向定义物理拓扑、
+  坐标、焦面、电压或 `baseline`；若与理论合同冲突，保留证据并以理论生成新的 `resolved` 几何。
+- COMSOL、SIMION、GPT、CAD及SolidWorks只能读取、生成或验证baseline/resolved，不得因网格、格式化、
+  GUI显示、旧模型或某个求解器的现有数值而反向改写它们。
+- 求解器文件中的几何仅是一次性离散副本：PA/IOB、MPH、场图、网格、STEP或求解器私有对象可以为运行
+  而保存，但必须能够从同一冻结`resolved`完整重建，且不得保存独有的可调几何参数、成为下次生成的
+  输入，或接受人工 GUI 几何编辑。求解器只读地接受冻结输入，输出只记录实际消费的派生身份与结果。
 - 扫描参数也必须先形成候选契约，再联动生成各实现；禁止分别手改多个软件后凭肉眼判断一致。
 - 序列化精度不得低于baseline精度。`%g`、Excel显示位数或GUI四舍五入不能充当工程参数定义。
 - 若实现与baseline冲突，实现一律判为失效候选；在重新生成、跨软件门禁和正式CAD同步全部通过前，
@@ -197,6 +210,8 @@ simulation_repo/
 ### 跨项目几何参数化标准
 
 - 人工只维护`baseline`物理设计；项目解析器单向生成`resolved`，各软件不得重复推导或反写。
+- `resolved`必须能导出可检查的简化 CAD，而不是只产生某一个求解器的私有脚本；各求解器的离散、
+  网格和格式适配留在各自实现层，不得改变机械/物理几何语义。
 - 数值模式与物理设计分层；候选运行参数不得反写物理baseline。
 - 开发入口读取统一契约；SIMION等正式交付包可由该契约生成自包含文件，并接受过期门禁。
 - 正式入口不得以缺失配置时回退到旧物理硬数字；候选覆盖不得反写baseline。
@@ -271,7 +286,8 @@ artifacts/projects/<project>/
 
 | cache根 | 注册角色 |
 |---|---|
-| `cache/simion_pa_basis/<SHA-256>/` | `multipole_simion_pa_basis_cache` |
+| `artifacts/common/simion/pa_family_cache/<cache-key>/generations/<generation-sha256>/` | `simion_pa_family_cache`；唯一允许的非项目公共 artifact，键与当前代均由 manifest 和完整 payload 校验 |
+| `cache/simion_pa_basis/<cache-key>/generations/<generation-sha256>/` | `simion_pa_family_cache`（multipole PA-basis 适配器） |
 | `cache/simion_single_flight_frontend/<SHA-256>/` | `simion_single_flight_frontend_pa_cache` |
 | `cache/simion_single_flight_upstream_bridge/<SHA-256>/` | `simion_single_flight_upstream_bridge_pa_cache` |
 | `cache/simion_single_flight_accelerator_main/<SHA-256>/` | `simion_single_flight_accelerator_main_pa_cache` |
@@ -442,8 +458,10 @@ run生成阶段的自动保留行为只按上文预注册的run产物保留合�
 ### 工作区容量水位线
 
 工作区`artifacts/`的目标上限为 **500 GiB**。当该树的实占用即将达到或超过此水位线时，运行器不得继续
-发布会使其越线的重型载荷；必须先按本节的必要性顺序执行可审计处置。**同一必要性等级内严格按时间从旧到新**
-（以受管 run 的终态时间、cache generation 发布时刻或 scratch 创建时刻为准）处置，不得因文件更大而跳过较旧对象：
+发布会使其越线的重型载荷；必须先按本节的必要性顺序执行可审计处置。**同一必要性等级内严格按时间从旧到新**：
+可重建 cache 优先采用其在成功/完成 run manifest 中记录的最后一次实际消费时刻，缺失该可信记录才回退到
+cache generation 发布时刻；run 采用终态记录时刻，scratch 采用创建时刻。不得用易受索引或备份影响的文件访问时间，
+也不得因文件更大而跳过较旧对象：
 
 1. 无 manifest 的 scratch、临时 staging 与损坏/不完整 cache generation；
 2. 未被活动实验引用、可由冻结输入重建的非 Formal cache；
@@ -457,7 +475,9 @@ run生成阶段的自动保留行为只按上文预注册的run产物保留合�
 或删除权限的例外。
 
 模型生成代码不能自动替代正式二进制：代码描述构建过程，`.mph`、SolidWorks装配体和SIMION交付包
-还承载已验收的节点、选择、网格、解或外部引用状态。每个项目只保留一套通过门禁的当前正式二进制；
+还承载已验收的节点、选择、网格、解或外部引用状态。每个项目只保留一套通过门禁的当前正式发布；
+若该发布包含多个结构变体，asset manifest必须分别绑定各变体的输入、资产、来源和资格，不得覆盖同名
+二进制或共享未经验证的资格。尚未具备变体级发布合同的项目不得发布多变体Formal。
 运行中的模型副本仅在它是该次实验的必要输入、结果或根因证据时保留。已被正式资产取代且可由代码
 重建的重复二进制可从迁移快照清理，但必须保留数值结果、报告和清理manifest。
 
@@ -564,11 +584,12 @@ push的73秒中45秒用于完整依赖安装。该次push包含项目注册表�
 本机存在artifacts时运行：
 
 ```powershell
-python common/contracts/verify_artifact_layout.py ..\artifacts\projects
+python -m common.contracts.verify_artifact_layout ..\artifacts\projects
 ```
 
-它只检查目录合同、`run_id/archive_id`、三件套和manifest身份，不读取大二进制内容；因此适合每次
-产物整理后运行，但不放进不具备本机artifacts的GitHub Workflow。命名合同单元测试仍属于轻量门禁。
+它检查目录合同、`run_id/archive_id`、三件套和manifest身份；项目 artifact 默认不读取大二进制，
+但已注册的公共 SIMION PA-family cache 会对其当前 generation 的完整 payload 做字节级验证。因此它适合
+每次产物整理后运行，但不放进不具备本机artifacts的GitHub Workflow。命名合同单元测试仍属于轻量门禁。
 
 ### COMSOL R2025b 执行入口
 

@@ -46,6 +46,9 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_WORKSPACE_ROOT = REPOSITORY_ROOT.parent
 COMPILER_SOURCE = Path(__file__).resolve()
 THEORY_CORE_SOURCE = Path(__file__).with_name("three_zone_ideal_theory.py").resolve()
+ACCELERATOR_THEORY_SOURCE = REPOSITORY_ROOT / "projects/orthogonal_accelerator/analysis/three_zone_ideal_theory.py"
+ACCELERATOR_TWO_ZONE_SOURCE = REPOSITORY_ROOT / "projects/orthogonal_accelerator/analysis/accelerator_time_focus.py"
+ACCELERATOR_GEOMETRY_SOURCE = REPOSITORY_ROOT / "projects/orthogonal_accelerator/analysis/two_zone_geometry.py"
 EXPERIMENT_CORE_SOURCE = Path(__file__).with_name(
     "three_zone_theory_experiment.py"
 ).resolve()
@@ -522,6 +525,9 @@ def publish_t5_simion_candidate(
     code_inputs = {
         "candidate_compiler_source": COMPILER_SOURCE,
         "three_zone_ideal_theory_source": THEORY_CORE_SOURCE,
+        "accelerator_three_zone_theory_source": ACCELERATOR_THEORY_SOURCE,
+        "accelerator_two_zone_theory_source": ACCELERATOR_TWO_ZONE_SOURCE,
+        "accelerator_geometry_source": ACCELERATOR_GEOMETRY_SOURCE,
         "three_zone_theory_experiment_source": EXPERIMENT_CORE_SOURCE,
         "candidate_output_schema": OUTPUT_SCHEMA_SOURCE,
     }

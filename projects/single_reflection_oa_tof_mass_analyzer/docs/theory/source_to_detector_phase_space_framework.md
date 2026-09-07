@@ -324,8 +324,8 @@ $$
 $$
 
 `N=2`和`N=3`分别由现有
-[`双区文档`](oaaccelerator_time_focus.md)与
-[`三区文档`](three_zone_accelerator_ideal_theory.md)及其代码测试维护。一般`N`式目前是解析统一接口，
+[独立加速器双区文档](../../../orthogonal_accelerator/docs/theory/oaaccelerator_time_focus.md)与
+[独立加速器三区文档](../../../orthogonal_accelerator/docs/theory/three_zone_accelerator_ideal_theory.md)及其代码测试维护。一般`N`式目前是解析统一接口，
 不是已实现任意拓扑的工程能力。
 
 二级反射镜精确时间、能量包络和整机`D_n=A_n+R_n`分别只由
@@ -436,11 +436,13 @@ $$
 
 | 文档 | 唯一职责 |
 |---|---|
-| [`oaaccelerator_time_focus.md`](oaaccelerator_time_focus.md) | 静止源、N=2双区精确模型与焦面oracle |
-| [`z_vz_linear_phase_space_coupling.md`](z_vz_linear_phase_space_coupling.md) | affine `z-v_z`特例与随机残差入口 |
+| [独立双区加速器](../../../orthogonal_accelerator/docs/theory/oaaccelerator_time_focus.md) | 静止源、N=2双区精确模型与焦面oracle |
+| [独立 affine 加速器](../../../orthogonal_accelerator/docs/theory/affine_phase_space_time_focus.md) | affine局部时间、焦距、能量和残差投影 |
+| [`z_vz_linear_phase_space_coupling.md`](z_vz_linear_phase_space_coupling.md) | affine `z-v_z`源与下游反射器的连接及验收 |
 | [`dual_stage_reflectron.md`](dual_stage_reflectron.md) | 二级反射镜局部精确时间和包络oracle |
 | [`oatof_oaaccelerator_coupling.md`](oatof_oaaccelerator_coupling.md) | 一维加速器—反射镜整机耦合 |
-| [`three_zone_accelerator_ideal_theory.md`](three_zone_accelerator_ideal_theory.md) | N=3精确特例、`A1–A4`、`Γ3`和隔离漏斗 |
+| [独立三区加速器](../../../orthogonal_accelerator/docs/theory/three_zone_accelerator_ideal_theory.md) | N=3局部精确时间与`A1–A4` |
+| [`three_zone_accelerator_ideal_theory.md`](three_zone_accelerator_ideal_theory.md) | 三区—反射器的`Γ3`联合闭合和隔离漏斗 |
 | [`conditional_phase_space_focusability.md`](conditional_phase_space_focusability.md) | 条件厚度的受约束可聚焦性判据 |
 
 ## 13. 禁止性结论

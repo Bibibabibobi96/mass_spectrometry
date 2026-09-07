@@ -1,8 +1,8 @@
 """Solver-independent reference for a two-region orthogonal space-focusing accelerator.
 
-This module models the ideal one-dimensional Wiley--McLaren-type accelerator used by
-``projects/single_reflection_oa_tof_mass_analyzer``.  Geometry lengths are in millimetres and electrode potentials
-are in volts.  The default release position is the centre of the first gap.
+This module owns the ideal one-dimensional Wiley--McLaren-type accelerator
+reference used by instrument consumers. Lengths are millimetres and electrode
+potentials are volts. The default release position is the centre of gap 1.
 
 The reference quantity is the first-order time-focus plane.  Its distance ``D`` is
 measured from the grounded accelerator exit plane; it is not required to coincide
@@ -21,6 +21,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from projects.orthogonal_accelerator.analysis.two_zone_geometry import (
+    TwoZoneGeometryError,
+    derive_uniform_ring_planes,
+)
 ELEMENTARY_CHARGE_C = 1.602176634e-19
 ATOMIC_MASS_CONSTANT_KG = 1.66053906892e-27
 
@@ -920,13 +924,17 @@ def derive(contract: Mapping[str, Any]) -> dict[str, Any]:
         ring_pitch = float(ring_pitch_raw)
         ring_count = _as_nonnegative_int(ring_count_raw, "ring_count")
         _require_positive(ring_pitch, "ring_pitch")
+        try:
+            layout = derive_uniform_ring_planes(0.0, gap2, ring_count)
+        except TwoZoneGeometryError as error:
+            raise PhysicsContractError(str(error)) from error
         expected_gap2 = (ring_count + 1) * ring_pitch
         tolerance = max(1.0e-12, abs(gap2) * 1.0e-12)
         if not math.isclose(gap2, expected_gap2, rel_tol=0.0, abs_tol=tolerance):
             raise PhysicsContractError(
                 "gap2/d2 must equal (ring_count + 1) * ring_pitch"
             )
-        local_centers = [gap1 + k * ring_pitch for k in range(1, ring_count + 1)]
+        local_centers = [gap1 + center for center in layout.centers_mm]
 
     local_exit = gap1 + gap2
     local_focus = local_exit + state.first_order_focus_drift_mm

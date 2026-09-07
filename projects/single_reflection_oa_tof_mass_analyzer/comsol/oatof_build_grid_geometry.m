@@ -1,4 +1,5 @@
 function oatof_build_grid_geometry(geom1,z_mid_expr)
+% REPOSITORY_CONTRACT: MATLAB_BUILD_ONLY
 %% Idealized mesh grids: FULL 800x800mm interior boundaries (no aperture
 % needed at all -- the ion passes through anywhere), embedded via
 % Union+intbnd into the vacuum. Four grids now: grid1 (accelerator,
@@ -104,9 +105,18 @@ function oatof_build_grid_geometry(geom1,z_mid_expr)
 % has carried it back to ~0, matching the reflectron's own true-axis
 % centering -- the symmetric design is self-consistent at this crossing
 % point.
+% Accelerator sheets belong to the independent component project; this
+% instrument still owns their embedding with its vacuum and reflectron grids.
+projectsRoot = fileparts(fileparts(fileparts(mfilename('fullpath'))));
+previousPath = path;
+restorePath = onCleanup(@() path(previousPath)); %#ok<NASGU>
+addpath(fullfile(projectsRoot,'orthogonal_accelerator','comsol'));
+build_two_zone_grids(geom1,struct( ...
+    'grid1_z','z_accel_grid1','grid2_z','z_accel_grid2', ...
+    'grid1_width','2*(accel_shield_half-accel_ring_gap)', ...
+    'grid2_width','2*accel_shield_half', ...
+    'x_center','x_accel_center','y_center','0'));
 gridspecs = {
-    'wp_grid1',     'z_accel_grid1' 'square'  '2*(accel_shield_half-accel_ring_gap)'  'x_accel_center'
-    'wp_grid2',     'z_accel_grid2' 'square'  '2*accel_shield_half'  'x_accel_center'
     'wp_entgrid',   'L_flight'      'circle'  'flight_tube_r'         '0'
     'wp_midgrid',   z_mid_expr      'circle'  'ring_outer_r'          'x_refl_center'
 };

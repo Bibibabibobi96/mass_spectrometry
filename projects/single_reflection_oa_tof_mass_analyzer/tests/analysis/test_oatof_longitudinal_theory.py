@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 PROJECT_DIR = Path(__file__).resolve().parents[2]
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.accelerator_time_focus import (
+from projects.orthogonal_accelerator.analysis.accelerator_time_focus import (
     accelerator_state,
     linear_phase_space_timing_coefficients,
 )
@@ -95,15 +95,18 @@ class OatofLongitudinalTheoryTest(unittest.TestCase):
 
     def test_theory_markdown_uses_github_safe_math_fences(self) -> None:
         theory_dir = PROJECT_DIR / "docs" / "theory"
+        accelerator_theory_dir = PROJECT_DIR.parent / "orthogonal_accelerator/docs/theory"
         expected_block_counts = {
-            "oaaccelerator_time_focus.md": 40,
-            "dual_stage_reflectron.md": 40,
-            "oatof_oaaccelerator_coupling.md": 41,
-            "z_vz_linear_phase_space_coupling.md": 15,
+            accelerator_theory_dir / "oaaccelerator_time_focus.md": 40,
+            accelerator_theory_dir / "affine_phase_space_time_focus.md": 14,
+            theory_dir / "dual_stage_reflectron.md": 40,
+            theory_dir / "oatof_oaaccelerator_coupling.md": 33,
+            theory_dir / "z_vz_linear_phase_space_coupling.md": 2,
         }
         all_blocks: dict[str, list[str]] = {}
-        for name, expected_count in expected_block_counts.items():
-            lines = (theory_dir / name).read_text(encoding="utf-8").splitlines()
+        for path, expected_count in expected_block_counts.items():
+            name = path.name
+            lines = path.read_text(encoding="utf-8").splitlines()
             self.assertFalse(
                 any("$$" in line for line in lines),
                 msg=f"{name} still uses dollar-delimited display math",
@@ -128,16 +131,11 @@ class OatofLongitudinalTheoryTest(unittest.TestCase):
             msg="rho optimum formula is not enclosed by one complete math fence",
         )
 
-        coupling_blocks = all_blocks["oatof_oaaccelerator_coupling.md"]
-        first_derivative = next(
-            block for block in coupling_blocks if block.startswith("\\tau_A'(W)=")
-        )
-        second_derivative = next(
-            block for block in coupling_blocks if block.startswith("\\tau_A''(W)=")
-        )
-        self.assertIn("\\frac{D_A}{2W^{3/2}}.", first_derivative)
-        self.assertIn("\\tau_A''(W)=\n-\n\\frac{1}{2E_{A1}R_A^{3/2}}", second_derivative)
-        self.assertIn("\\frac{3D_A}{4W^{5/2}}.", second_derivative)
+        affine_blocks = all_blocks["affine_phase_space_time_focus.md"]
+        derivatives = next(block for block in affine_blocks if block.startswith("B_1="))
+        self.assertIn("-\\frac{D_A}{2S_3^3}", derivatives)
+        self.assertIn("B_2=\n-\\frac{1}{2E_1S_2^3}", derivatives)
+        self.assertIn("+\\frac{3D_A}{4S_3^5}.", derivatives)
 
     def test_current_baseline_reproduces_uncoupled_reflectron(self) -> None:
         solution = solve_reflectron_fields(

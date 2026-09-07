@@ -47,7 +47,7 @@ local function config()
       grid2=17},
     detector={tstep_enabled=true, capture_arm_distance_mm=100,
       capture_depth_mm=0.02, marker_absorber_thickness_mm=0.1},
-    diagnostics={max_tof_us=90, log_stride=1000},
+    diagnostics={post_pulse_observation_window_us=90, log_stride=1000},
   }
 end
 
@@ -196,17 +196,22 @@ assert(field.replace_all == true, 'ideal accelerator must replace all derivative
 near(field.dvoltsz_gu, -(2240-1760)/3*0.05,
   'ideal accelerator stage-one derivative')
 
--- Canonical birth epoch belongs to the assembler.  Changing it must not alter
--- this component's solver-local timeout or detector interpolation.
+-- Canonical birth epoch belongs to the assembler.  Timeout authority is the
+-- pulse-relative instrument clock; detector interpolation remains local.
 local birth_epoch_a_us = 0.25
 local birth_epoch_b_us = 1000.25
 assert(birth_epoch_a_us ~= birth_epoch_b_us)
 analyzer.initialize_particle({particle_id=1,elapsed_us=0,x_mm=48.8,y_mm=0,z_mm=1})
+assert(not analyzer.detector_marker_active(1), 'outbound marker must be suppressed')
+assert(not analyzer.detector_marker_active(999), 'uninitialized ion must not arm marker')
+analyzer.other_actions({particle_id=1,elapsed_us=0.1,pulse_elapsed_us=0.1,
+  x_mm=48.8,y_mm=0,z_mm=600,vz_mm_per_us=2})
+assert(analyzer.detector_marker_active(1), 'reflectron entry must arm marker')
 local cap = analyzer.tstep_adjust({x_mm=48.8,y_mm=0,z_mm=1,
   vx_mm_per_us=0,vy_mm_per_us=0,vz_mm_per_us=-2,
   detector_cell_dx_mm=1})
 near(cap, 0.51, 'detector capture timestep')
-local action = analyzer.other_actions({particle_id=1,elapsed_us=0.5,
+local action = analyzer.other_actions({particle_id=1,elapsed_us=0.5,pulse_elapsed_us=0.5,
   x_mm=48.8,y_mm=0,z_mm=0.01,vz_mm_per_us=-2})
 assert(action.splat == false, 'valid particle was timed out')
 local hit = analyzer.terminate({particle_id=1,instance_id=4,elapsed_us=0.5,
@@ -215,15 +220,35 @@ local hit = analyzer.terminate({particle_id=1,instance_id=4,elapsed_us=0.5,
 assert(hit.kind == 'detector_crossing', 'detector termination role changed')
 near(hit.elapsed_us, 0.495, 'detector local-elapsed crossing interpolation')
 
+-- A detector-instance splat alone is insufficient: reject the outbound side,
+-- a stationary ion, and a negative-vz ion that never reached the reflectron.
+for index, velocity in ipairs({2, 0, -2}) do
+  local id=10+index
+  analyzer.initialize_particle({particle_id=id,elapsed_us=0,x_mm=48.8,y_mm=0,z_mm=1})
+  if velocity >= 0 then
+    analyzer.other_actions({particle_id=id,elapsed_us=0.1,pulse_elapsed_us=0.1,
+      x_mm=48.8,y_mm=0,z_mm=600,vz_mm_per_us=2})
+  end
+  local invalid=analyzer.terminate({particle_id=id,instance_id=4,elapsed_us=0.5,
+    x_mm=48.8,y_mm=0,z_mm=-0.01,vx_mm_per_us=0,vy_mm_per_us=0,
+    vz_mm_per_us=velocity,detector_cell_dx_mm=1})
+  assert(invalid.kind=='non_detector_splat', 'non-return splat was counted as a hit')
+end
+
 local epoch_independent = component.new(config())
 epoch_independent.initialize_particle({particle_id=1,elapsed_us=0,
   x_mm=48.8,y_mm=0,z_mm=1})
 local before_timeout = epoch_independent.other_actions({particle_id=1,
-  elapsed_us=89.999,x_mm=48.8,y_mm=0,z_mm=1,vz_mm_per_us=-2})
+  elapsed_us=1089.999,pulse_elapsed_us=89.999,
+  x_mm=48.8,y_mm=0,z_mm=1,vz_mm_per_us=-2})
 local at_timeout = epoch_independent.other_actions({particle_id=1,
-  elapsed_us=90,x_mm=48.8,y_mm=0,z_mm=1,vz_mm_per_us=-2})
+  elapsed_us=90,pulse_elapsed_us=90,x_mm=48.8,y_mm=0,z_mm=1,vz_mm_per_us=-2})
 assert(before_timeout.splat == false and at_timeout.splat == true,
-  'birth epoch changed the solver-local timeout boundary')
+  'post-pulse observation window did not govern the timeout boundary')
+local timeout = epoch_independent.terminate({particle_id=1,instance_id=1,
+  elapsed_us=90,x_mm=48.8,y_mm=0,z_mm=1,vx_mm_per_us=0,vy_mm_per_us=0,
+  vz_mm_per_us=-2,detector_cell_dx_mm=1})
+assert(timeout.kind == 'timeout_splat', 'timeout terminal was not classified')
 
 local function rejects(mutator, expected)
   local value = config()

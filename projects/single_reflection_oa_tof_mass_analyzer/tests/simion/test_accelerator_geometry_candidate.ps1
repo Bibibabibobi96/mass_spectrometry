@@ -24,9 +24,8 @@ $logDir = Join-Path $runDir 'logs'
 $contractPath = Join-Path $projectRoot 'config\candidates\accelerator_grid_aligned_strict_focus.json'
 $baselinePath = Join-Path $projectRoot 'config\resolved_geometry.json'
 $derivedPath = Join-Path $resultDir 'derived_geometry.json'
-$theory = Join-Path $projectRoot 'analysis\accelerator_time_focus.py'
-$builder = Join-Path $projectRoot 'simion\accelerator\build_accelerator_variant.lua'
-$gem = Join-Path $projectRoot 'simion\accelerator\oatof_accelerator_3d.gem'
+$builder = Join-Path $repoRoot 'projects\orthogonal_accelerator\simion\build_two_zone_pa.lua'
+$gem = Join-Path $repoRoot 'projects\orthogonal_accelerator\simion\two_zone_accelerator.gem'
 $program = Join-Path $projectRoot 'simion\workbench\formal\oatof_ideal_grounded.lua'
 $fly2 = Join-Path $projectRoot 'simion\workbench\formal\oatof_ideal_grounded.fly2'
 $iobBuilder = Join-Path $projectRoot 'simion\workbench\build_formal_iob.lua'
@@ -34,8 +33,12 @@ $ionGenerator = Join-Path $projectRoot 'simion\workbench\generate_comsol_consist
 $logAnalyzer = Join-Path $projectRoot 'simion\workbench\analyze_ideal_field_log.ps1'
 
 New-Item -ItemType Directory -Force -Path $scratchDir,$runDir,$resultDir,$logDir | Out-Null
-& $python $theory $contractPath --write-derived $derivedPath | Out-Null
-if ($LASTEXITCODE -ne 0) { throw 'Accelerator focus derivation failed.' }
+Push-Location $repoRoot
+try {
+  & $python -m projects.orthogonal_accelerator.analysis.accelerator_time_focus $contractPath --write-derived $derivedPath | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw 'Accelerator focus derivation failed.' }
+}
+finally { Pop-Location }
 $derived = Get-Content -LiteralPath $derivedPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $candidateContract = Get-Content -LiteralPath $contractPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $baseline = Get-Content -LiteralPath $baselinePath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -90,7 +93,7 @@ if (-not $ReuseExisting -or -not (Test-Path -LiteralPath $candidatePa0 -PathType
     ([string]$d1),([string]$d2),([string]$baseline.rings.accelerator_count),
     ([string]$g.accelerator_repeller_thickness),([string]$g.accelerator_ring_thickness),
     ([string]$g.accelerator_front_vacuum_margin),([string]$baseline.electrodes_V.repeller),
-    ([string]$baseline.electrodes_V.grid1)) (Join-Path $runDir 'build.log') (Join-Path $runDir 'build.stderr.log')
+    ([string]$baseline.electrodes_V.grid1),'0','0','0','0') (Join-Path $runDir 'build.log') (Join-Path $runDir 'build.stderr.log')
 }
 if (-not (Test-Path -LiteralPath $candidatePa0 -PathType Leaf)) { throw 'Candidate accelerator PA0 is absent.' }
 

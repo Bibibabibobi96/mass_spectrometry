@@ -11,11 +11,11 @@ claim的完整投稿要求；目前没有主claim达到`SUPPORTED`。
 
 | 能力 | 当前证据 | 状态 | 投稿用途与限制 |
 |---|---|---|---|
-| N=2双区精确时间和焦面 | [`oaaccelerator_time_focus.md`](../../theory/oaaccelerator_time_focus.md)及测试 | `PROJECT_ORACLE` | 经典基础，不是创新 |
-| affine `z-v_z`耦合 | [`z_vz_linear_phase_space_coupling.md`](../../theory/z_vz_linear_phase_space_coupling.md)及测试 | `PROJECT_ORACLE` | 已知相关聚焦特例 |
+| N=2双区精确时间和焦面 | [独立加速器理论](../../../../orthogonal_accelerator/docs/theory/oaaccelerator_time_focus.md)及测试 | `PROJECT_ORACLE` | 经典基础，不是创新 |
+| affine `z-v_z`耦合 | [局部加速器理论](../../../../orthogonal_accelerator/docs/theory/affine_phase_space_time_focus.md)、[下游连接](../../theory/z_vz_linear_phase_space_coupling.md)及测试 | `PROJECT_ORACLE` | 已知相关聚焦特例 |
 | 二级reflectron精确时间 | [`dual_stage_reflectron.md`](../../theory/dual_stage_reflectron.md)及测试 | `PROJECT_ORACLE` | 经典基础，不是创新 |
 | 一维整机耦合 | [`oatof_oaaccelerator_coupling.md`](../../theory/oatof_oaaccelerator_coupling.md)及测试 | `PROJECT_ORACLE` | 参考面和低阶闭合基础 |
-| N=3、`A1–A4`、`Γ3` | [`three_zone_accelerator_ideal_theory.md`](../../theory/three_zone_accelerator_ideal_theory.md)及测试 | `PROJECT_ORACLE / PROVISIONAL` | 三区不是创新；100 Th理论身份 |
+| N=3、`A1–A4`、`Γ3` | [局部三区公式](../../../../orthogonal_accelerator/docs/theory/three_zone_accelerator_ideal_theory.md)、[整机联合理论](../../theory/three_zone_accelerator_ideal_theory.md)及测试 | `PROJECT_ORACLE / PROVISIONAL` | 三区不是创新；100 Th理论身份 |
 | 524 Da N=1000双求解器Formal | [`PROJECT.md`](../../PROJECT.md)与机器合同 | `FORMAL_REFERENCE` | 理想项目基线；不是RF observed source的Paper 1闭环 |
 | C0理论与声明闭合 | [`stage_c0_theory_closure.md`](stage_c0_theory_closure.md) | `PASS_CONTINUE / THEORY_ONLY` | 不含source cohort、直接粒子或性能证据 |
 

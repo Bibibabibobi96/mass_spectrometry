@@ -96,15 +96,16 @@ function Invoke-Builder([string]$Script, [object[]]$Arguments, [string]$LogStem)
 
 try {
 $failureStage = 'accelerator_build'
-Invoke-Builder (Join-Path $projectRoot 'simion\accelerator\build_accelerator_variant.lua') @(
-  (Join-Path $projectRoot 'simion\accelerator\oatof_accelerator_3d.gem'),
+Invoke-Builder (Join-Path $repoRoot 'projects\orthogonal_accelerator\simion\build_two_zone_pa.lua') @(
+  (Join-Path $repoRoot 'projects\orthogonal_accelerator\simion\two_zone_accelerator.gem'),
   (Join-Path $outputFull 'accelerator.pa#'),
   $acceleratorBuild.cell_xy_mm, $acceleratorBuild.cell_z_mm, $geometry.accelerator_bore_half, $geometry.accelerator_ring_width,
   $geometry.accelerator_insulation_gap, $geometry.accelerator_rear_clearance,
   $geometry.accelerator_shield_wall, 0, $acceleratorBuild.max_gib, 0, 0, 0,
   $accelerator.d1_mm, $accelerator.d2_mm, $contract.rings.accelerator_count,
   $geometry.accelerator_repeller_thickness, $geometry.accelerator_ring_thickness,
-  $geometry.accelerator_front_vacuum_margin, $voltage.repeller, $voltage.grid1
+  $geometry.accelerator_front_vacuum_margin, $voltage.repeller, $voltage.grid1,
+  0, 0, 0, 0 # Closed-shield topology; no side-port dimensions.
 ) 'accelerator_builder'
 
 $failureStage = 'reflectron_build'

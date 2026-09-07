@@ -20,6 +20,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_theory_
     canonical_sha256,
     execute_stage,
     load_campaign,
+    render_campaign_authorities,
     resolve_stage_plan,
     verify_resolved_plan,
 )
@@ -225,6 +226,9 @@ class ThreeZoneCampaignContractTests(unittest.TestCase):
             "three_zone_numeric_execution",
             "three_zone_experiment",
             "three_zone_cli",
+            "accelerator_two_zone_theory",
+            "accelerator_three_zone_theory",
+            "accelerator_geometry",
         }
         validated = load_campaign(CAMPAIGN_PATH)
         self.assertLessEqual(required, set(validated["authorities"]))
@@ -242,6 +246,33 @@ class ThreeZoneCampaignContractTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(ValueError, "authority SHA-256 differs"):
                 load_campaign(campaign_path, repository_root=PROJECT_ROOT.parents[1])
+
+    def test_live_campaign_refresh_preserves_science_and_is_idempotent(self) -> None:
+        for version in ("v1", "v2"):
+            path = CAMPAIGN_PATH.with_name(f"three_zone_solver_free_funnel_{version}.json")
+            original = load_campaign(path)
+            rendered = render_campaign_authorities(path)
+            refreshed = json.loads(rendered)
+            self.assertEqual(refreshed, original)
+            self.assertEqual(rendered, path.read_text(encoding="utf-8"))
+
+    def test_missing_and_stale_provider_authorities_are_rejected(self) -> None:
+        for action in ("missing", "stale"):
+            with self.subTest(action=action), tempfile.TemporaryDirectory() as directory:
+                candidate = copy.deepcopy(self.campaign)
+                if action == "missing":
+                    del candidate["authorities"]["accelerator_three_zone_theory"]
+                else:
+                    candidate["authorities"]["accelerator_three_zone_theory"]["sha256"] = "0"*64
+                path = Path(directory) / "candidate.json"
+                path.write_text(json.dumps(candidate), encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "provider authority|SHA-256 differs"):
+                    load_campaign(path)
+                refreshed = json.loads(render_campaign_authorities(path))
+                self.assertEqual(
+                    {key: value for key, value in candidate.items() if key != "authorities"},
+                    {key: value for key, value in refreshed.items() if key != "authorities"},
+                )
 
     def test_plan_and_individual_row_hash_tampering_fail_closed(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

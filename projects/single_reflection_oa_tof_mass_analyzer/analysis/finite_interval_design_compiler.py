@@ -13,7 +13,7 @@ import copy
 import math
 from typing import Any, Mapping
 
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.accelerator_time_focus import (
+from projects.orthogonal_accelerator.analysis.accelerator_time_focus import (
     accelerator_state,
     linear_phase_space_timing_coefficients,
     match_finite_phase_space_interval,

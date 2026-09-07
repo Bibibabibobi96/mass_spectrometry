@@ -1,6 +1,7 @@
--- Build a size-guarded accelerator PA variant from the formal parameterized GEM.
+-- Build a size-guarded two-zone accelerator PA from the parameterized GEM.
+-- All arguments below are required; callers serialize their frozen contract.
 -- Usage:
---   simion.exe --nogui lua build_accelerator_variant.lua source.gem output.pa#
+--   simion.exe --nogui lua build_two_zone_pa.lua source.gem output.pa#
 --     [xy_mm] [z_mm] [bore_half_mm] [ring_width_mm] [gap_mm]
 --     [rear_gap_mm] [wall_mm] [vacuum_margin_mm] [max_GiB]
 --     [back_domain_margin_mm] [front_domain_margin_mm] [grid_phase_z_mm]
@@ -10,32 +11,33 @@
 --     [interface_port_enable] [interface_port_width_y_mm]
 --     [interface_port_height_z_mm] [interface_port_center_z_mm]
 
+assert(#arg == 26, 'all 26 accelerator builder arguments are required')
 local source = assert(arg[1], 'missing source GEM')
 local output = assert(arg[2], 'missing output PA#')
-local mmgu_xy = tonumber(arg[3] or '0.25')
-local mmgu_z = tonumber(arg[4] or tostring(mmgu_xy))
-local bore_half = tonumber(arg[5] or '5')
-local ring_width = tonumber(arg[6] or '5')
-local insulation_gap = tonumber(arg[7] or '5')
-local rear_gap = tonumber(arg[8] or '5')
-local shield_wall = tonumber(arg[9] or '4')
-local vacuum_margin = tonumber(arg[10] or '0')
-local max_gib = tonumber(arg[11] or '3.5')
-local back_domain_margin = tonumber(arg[12] or '0')
-local front_domain_margin = tonumber(arg[13] or '0')
-local grid_phase_z = tonumber(arg[14] or '0')
-local stage1_length = tonumber(arg[15] or '3')
-local stage2_length = tonumber(arg[16] or '16.8')
-local ring_count = tonumber(arg[17] or '5')
-local repeller_thickness = tonumber(arg[18] or '1')
-local ring_thickness = tonumber(arg[19] or '1')
-local front_vacuum_margin = tonumber(arg[20] or '0.2')
-local repeller_voltage = tonumber(arg[21] or '2240')
-local grid1_voltage = tonumber(arg[22] or '1760')
-local interface_port_enable = tonumber(arg[23] or '0')
-local interface_port_width_y = tonumber(arg[24] or '0')
-local interface_port_height_z = tonumber(arg[25] or '0')
-local interface_port_center_z = tonumber(arg[26] or tostring(stage1_length/2))
+local mmgu_xy = assert(tonumber(arg[3]), 'mmgu_xy is required')
+local mmgu_z = assert(tonumber(arg[4]), 'mmgu_z is required')
+local bore_half = assert(tonumber(arg[5]), 'bore_half is required')
+local ring_width = assert(tonumber(arg[6]), 'ring_width is required')
+local insulation_gap = assert(tonumber(arg[7]), 'insulation_gap is required')
+local rear_gap = assert(tonumber(arg[8]), 'rear_gap is required')
+local shield_wall = assert(tonumber(arg[9]), 'shield_wall is required')
+local vacuum_margin = assert(tonumber(arg[10]), 'vacuum_margin is required')
+local max_gib = assert(tonumber(arg[11]), 'max_gib is required')
+local back_domain_margin = assert(tonumber(arg[12]), 'back_domain_margin is required')
+local front_domain_margin = assert(tonumber(arg[13]), 'front_domain_margin is required')
+local grid_phase_z = assert(tonumber(arg[14]), 'grid_phase_z is required')
+local stage1_length = assert(tonumber(arg[15]), 'stage1_length is required')
+local stage2_length = assert(tonumber(arg[16]), 'stage2_length is required')
+local ring_count = assert(tonumber(arg[17]), 'ring_count is required')
+local repeller_thickness = assert(tonumber(arg[18]), 'repeller_thickness is required')
+local ring_thickness = assert(tonumber(arg[19]), 'ring_thickness is required')
+local front_vacuum_margin = assert(tonumber(arg[20]), 'front_vacuum_margin is required')
+local repeller_voltage = assert(tonumber(arg[21]), 'repeller_voltage is required')
+local grid1_voltage = assert(tonumber(arg[22]), 'grid1_voltage is required')
+local interface_port_enable = assert(tonumber(arg[23]), 'interface_port_enable is required')
+local interface_port_width_y = assert(tonumber(arg[24]), 'interface_port_width_y is required')
+local interface_port_height_z = assert(tonumber(arg[25]), 'interface_port_height_z is required')
+local interface_port_center_z = assert(tonumber(arg[26]), 'interface_port_center_z is required')
 local function timed_stage(name,action)
   local started=os.time()
   print(string.format('BUILD_TIMING: stage=%s event=start utc=%s',name,os.date('!%Y-%m-%dT%H:%M:%SZ',started)))

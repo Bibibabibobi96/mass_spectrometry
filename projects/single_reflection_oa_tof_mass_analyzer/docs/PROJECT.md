@@ -7,6 +7,11 @@ resolved、分析和资产合同管理；实现细节见[`COMSOL.md`](COMSOL.md)
 
 ## 当前状态
 
+- 正交加速器领域实现已拆到独立`orthogonal_accelerator`项目：纯二区／三区计算和器件构建从该项目
+  调用，当前接口由`../config/accelerator_dependency.json`声明。本项目保留具体仪器参数、装配坐标、
+  反射器耦合、整机CAD和整机验收。源码迁移不改既有Formal二进制、原始证据或资格；新的构建与运行
+  必须冻结加速器提供项目的源码依赖，不能只冻结旧OA薄适配器。
+
 - 当前批准设计为524 Da、+1正交加速TOF，双级环栈反射镜，一级10环、二级5环；粒子初始能量
   `5±0.4 eV`。
 - 统一坐标以检测器有效面中心和精确一阶时间焦点为`z=0`，`+z`从加速器指向反射器。SIMION局部PA
@@ -29,6 +34,8 @@ resolved、分析和资产合同管理；实现细节见[`COMSOL.md`](COMSOL.md)
   纯hooks；组件不声明Workbench/callback、电极setter、pulse时序或SIMION原生时钟。历史Formal Program
   字节未修改，仍只服务项目Formal与staged analyzer transport；该组件及唯一integration assembler的
   直接Lua验证不改变本项目Formal资格。
+  Candidate组件的探测器数值标记只用于反射回程：到达反射器入口前不参与粒子终止，
+  检测事件还要求负z速度；它不是允许遮挡出射束的机械探测器模型。具体实现与复验边界见SIMION文档。
 - RF母样本到oaTOF粒子状态和SIMION方向角的连接专用adapter现由integration唯一拥有；本项目不再保存
   `analysis/rf_handoff_adapter.py`副本。required port、resolved几何和项目分析器组件仍是本项目对外边界，
   该所有权整理不改变粒子状态、时钟、Formal资产或资格。

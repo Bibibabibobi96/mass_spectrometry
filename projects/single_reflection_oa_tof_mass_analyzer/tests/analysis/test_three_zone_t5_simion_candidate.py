@@ -270,6 +270,9 @@ class ThreeZoneT5SimionCandidateTests(unittest.TestCase):
         code_inputs = {
             "COMPILER_SOURCE": candidate_compiler.COMPILER_SOURCE,
             "THEORY_CORE_SOURCE": candidate_compiler.THEORY_CORE_SOURCE,
+            "ACCELERATOR_THEORY_SOURCE": candidate_compiler.ACCELERATOR_THEORY_SOURCE,
+            "ACCELERATOR_TWO_ZONE_SOURCE": candidate_compiler.ACCELERATOR_TWO_ZONE_SOURCE,
+            "ACCELERATOR_GEOMETRY_SOURCE": candidate_compiler.ACCELERATOR_GEOMETRY_SOURCE,
             "EXPERIMENT_CORE_SOURCE": candidate_compiler.EXPERIMENT_CORE_SOURCE,
             "OUTPUT_SCHEMA_SOURCE": candidate_compiler.OUTPUT_SCHEMA_SOURCE,
         }
@@ -317,6 +320,9 @@ class ThreeZoneT5SimionCandidateTests(unittest.TestCase):
         expected_code_inputs = {
             "candidate_compiler_source": relocated_code["COMPILER_SOURCE"],
             "three_zone_ideal_theory_source": relocated_code["THEORY_CORE_SOURCE"],
+            "accelerator_three_zone_theory_source": relocated_code["ACCELERATOR_THEORY_SOURCE"],
+            "accelerator_two_zone_theory_source": relocated_code["ACCELERATOR_TWO_ZONE_SOURCE"],
+            "accelerator_geometry_source": relocated_code["ACCELERATOR_GEOMETRY_SOURCE"],
             "three_zone_theory_experiment_source": relocated_code[
                 "EXPERIMENT_CORE_SOURCE"
             ],

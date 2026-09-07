@@ -13,6 +13,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_theory_
     REPOSITORY_ROOT,
     execute_stage,
     load_campaign,
+    render_campaign_authorities,
     resolve_stage_plan,
 )
 
@@ -90,7 +91,7 @@ def _publish_run_artifacts(
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("campaign", type=Path)
-    parser.add_argument("--stage", required=True)
+    parser.add_argument("--stage")
     parser.add_argument("--predecessor-receipt", type=Path)
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--manual-conclusion")
@@ -98,9 +99,20 @@ def main() -> int:
     actions.add_argument("--validate", action="store_true")
     actions.add_argument("--plan", action="store_true")
     actions.add_argument("--execute", action="store_true")
+    actions.add_argument("--refresh-authorities", action="store_true")
     arguments = parser.parse_args()
 
     campaign_path = arguments.campaign.resolve()
+    if arguments.refresh_authorities:
+        if arguments.stage or arguments.predecessor_receipt or arguments.output_dir or arguments.manual_conclusion:
+            parser.error("--refresh-authorities accepts no stage, predecessor, output, or conclusion")
+        if campaign_path.parent != (PROJECT_ROOT / "config/experiments").resolve():
+            parser.error("--refresh-authorities only updates project config/experiments authoring contracts")
+        rendered = render_campaign_authorities(campaign_path)
+        campaign_path.write_text(rendered, encoding="utf-8", newline="\n")
+        campaign = load_campaign(campaign_path)
+        print(f"THREE_ZONE_AUTHORITIES=REFRESHED ID={campaign['campaign_id']} STAGE_EXECUTED=false")
+        return 0
     if arguments.validate:
         campaign = load_campaign(campaign_path)
         if arguments.predecessor_receipt or arguments.output_dir or arguments.manual_conclusion:
@@ -108,6 +120,8 @@ def main() -> int:
         print(f"THREE_ZONE_CAMPAIGN=PASS ID={campaign['campaign_id']}")
         return 0
 
+    if arguments.stage is None:
+        parser.error("--plan and --execute require --stage")
     plan = resolve_stage_plan(
         campaign_path,
         arguments.stage,

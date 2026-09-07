@@ -33,13 +33,13 @@ if ($projectContract.lifecycle_status -ne 'formal_revalidation_pending') {
   & $python -m projects.single_reflection_oa_tof_mass_analyzer.analysis.sync_geometry_contract --check
   if ($LASTEXITCODE -ne 0) { throw 'Generated-input freshness gate failed.' }
 }
-& $python (Join-Path $projectRoot 'analysis\accelerator_time_focus.py') --self-test
+& $python -m projects.orthogonal_accelerator.analysis.accelerator_time_focus --self-test
 if ($LASTEXITCODE -ne 0) { throw 'Accelerator theory self-test failed.' }
 & $python (Join-Path $projectRoot 'analysis\reflectron_dual_stage_solver.py') --self-test
 if ($LASTEXITCODE -ne 0) { throw 'Reflectron theory self-test failed.' }
 & $python -m projects.single_reflection_oa_tof_mass_analyzer.analysis.oatof_oaaccelerator_coupling --self-test
 if ($LASTEXITCODE -ne 0) { throw 'Coupled longitudinal theory self-test failed.' }
-& $python (Join-Path $projectRoot 'analysis\accelerator_time_focus.py') `
+& $python -m projects.orthogonal_accelerator.analysis.accelerator_time_focus `
   (Join-Path $projectRoot 'config\candidates\accelerator_grid_aligned_strict_focus.json') | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Accelerator theory contract gate failed.' }
 & $python -m projects.single_reflection_oa_tof_mass_analyzer.analysis.oatof_oaaccelerator_coupling `

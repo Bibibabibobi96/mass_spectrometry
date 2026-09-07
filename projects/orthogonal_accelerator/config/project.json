@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "project_id": "orthogonal_accelerator",
+  "family_id": "orthogonal_pulsed_accelerators",
+  "display_name": "正交脉冲加速器（二区／三区结构变体）",
+  "purpose": "独立维护正交脉冲加速器的理论、参数化器件几何和验证；向不同TOF仪器提供唯一领域实现",
+  "lifecycle_status": "prototype",
+  "toolchains": ["python", "simion", "matlab", "comsol"],
+  "contracts": {
+    "baseline": null,
+    "resolved": null,
+    "analysis": null,
+    "interface": "config/component_contract.json",
+    "execution": null,
+    "design_variables": null,
+    "optimization_envelope": null
+  },
+  "capabilities": [
+    {
+      "capability_id": "two_zone_orthogonal_acceleration",
+      "function": "orthogonal_acceleration",
+      "status": "prototype",
+      "modes": [],
+      "metrics": ["first_time_focus_distance", "first_time_focus_derivative"],
+      "design_variables": []
+    },
+    {
+      "capability_id": "three_zone_orthogonal_acceleration",
+      "function": "orthogonal_acceleration",
+      "status": "prototype",
+      "modes": [],
+      "metrics": ["axial_flight_time", "time_focus_derivatives"],
+      "design_variables": []
+    }
+  ],
+  "formal_assets": {"status": "none", "types": [], "identity_contract": null},
+  "known_gaps": [
+    "Migrated mechanisms do not transfer OA instrument Formal qualification to this component",
+    "No standalone hardware baseline or independent component CAD/field/trajectory qualification has been published",
+    "Two-zone and three-zone structural variants require separate geometry and validation identities",
+    "Instrument transforms and accelerator-reflectron or MR-TOF coupling remain consumer responsibilities"
+  ]
+}

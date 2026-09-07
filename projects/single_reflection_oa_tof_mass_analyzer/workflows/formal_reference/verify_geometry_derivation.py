@@ -10,7 +10,7 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-from projects.single_reflection_oa_tof_mass_analyzer.analysis.accelerator_time_focus import accelerator_state
+from projects.orthogonal_accelerator.analysis.accelerator_time_focus import accelerator_state
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.oatof_oaaccelerator_coupling import solve_coupled_reflectron_fields
 
 

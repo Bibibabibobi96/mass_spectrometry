@@ -19,6 +19,7 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_run_life
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.candidate_source_closure import (
     PYTHON_BOUND_SOURCES,
     RELATIVE_PATHS,
+    freeze_candidate_source_closure,
     verify_candidate_source_closure,
 )
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.compile_candidate_design import EnvelopeReviewRequired, compile_proposal, write_candidate
@@ -45,6 +46,27 @@ from projects.single_reflection_oa_tof_mass_analyzer.workflows.design_candidate.
 
 
 class CandidateDesignTests(unittest.TestCase):
+    def test_candidate_freeze_rejects_provider_api_version_before_copy(self):
+        from projects.single_reflection_oa_tof_mass_analyzer.analysis import candidate_source_closure as closure
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for relative in (
+                "projects/orthogonal_accelerator/config/component_contract.json",
+                "projects/single_reflection_oa_tof_mass_analyzer/config/accelerator_dependency.json",
+            ):
+                path = root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes((REPO_ROOT / relative).read_bytes())
+            provider_path = root / "projects/orthogonal_accelerator/config/component_contract.json"
+            provider = json.loads(provider_path.read_text(encoding="utf-8"))
+            provider["api_version"] = 2
+            provider_path.write_text(json.dumps(provider), encoding="utf-8")
+            with mock.patch.multiple(closure, REPO_ROOT=root,
+                                     PROJECT_ROOT=root / "projects/single_reflection_oa_tof_mass_analyzer"):
+                with self.assertRaisesRegex(ValueError, "api_version"):
+                    freeze_candidate_source_closure(root / "frozen", root / "artifacts")
+            self.assertFalse((root / "frozen").exists())
+
     def registered_template_run(self, artifact_root: Path, run_id: str = "20260726_120000__build__simion__candidate-layout-template") -> Path:
         run_root = artifact_root / "runs" / run_id
         source = artifact_root.parent / "user_created_layout"
@@ -590,6 +612,18 @@ class CandidateDesignTests(unittest.TestCase):
             verify_candidate_source_closure(closure)
             source_ids = {item["source_id"] for item in closure["sources"]}
             self.assertEqual(source_ids, set(RELATIVE_PATHS))
+            self.assertTrue({
+                "projects/orthogonal_accelerator/analysis/accelerator_time_focus.py",
+                "projects/orthogonal_accelerator/analysis/component_contract.py",
+                "projects/orthogonal_accelerator/config/component_contract.json",
+                "projects/single_reflection_oa_tof_mass_analyzer/config/accelerator_dependency.json",
+                "projects/orthogonal_accelerator/analysis/three_zone_ideal_theory.py",
+                "projects/orthogonal_accelerator/analysis/two_zone_geometry.py",
+                "projects/orthogonal_accelerator/comsol/build_two_zone_geometry.m",
+                "projects/orthogonal_accelerator/comsol/build_two_zone_grids.m",
+                "projects/orthogonal_accelerator/simion/build_two_zone_pa.lua",
+                "projects/orthogonal_accelerator/simion/two_zone_accelerator.gem",
+            }.issubset(source_ids))
             self.assertIn("common/require_powershell7.ps1", source_ids)
             self.assertIn("projects/single_reflection_oa_tof_mass_analyzer/oatof_lifecycle_preflight.ps1", source_ids)
             self.assertIn("projects/single_reflection_oa_tof_mass_analyzer/simion/workbench/build_formal_iob.lua", source_ids)

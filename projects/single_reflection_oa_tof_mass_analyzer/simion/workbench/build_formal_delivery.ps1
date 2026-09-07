@@ -178,8 +178,8 @@ if ($reuseComponentNames -contains 'accelerator') {
   Copy-ReusablePaSet 'accelerator'
 }
 else {
-  Invoke-SimionLua (Join-Path $projectRoot 'simion\accelerator\build_accelerator_variant.lua') @(
-  (Join-Path $projectRoot 'simion\accelerator\oatof_accelerator_3d.gem'), $acceleratorStem,
+  Invoke-SimionLua (Join-Path $repoRoot 'projects\orthogonal_accelerator\simion\build_two_zone_pa.lua') @(
+  (Join-Path $repoRoot 'projects\orthogonal_accelerator\simion\two_zone_accelerator.gem'), $acceleratorStem,
   $build.accelerator.cell_xy_mm, $build.accelerator.cell_z_mm,
   $geometry.accelerator_bore_half, $geometry.accelerator_ring_width,
   $geometry.accelerator_insulation_gap, $geometry.accelerator_rear_clearance,
@@ -188,7 +188,8 @@ else {
   $build.accelerator.front_domain_margin_mm, $build.accelerator.grid_phase_z_mm,
   $accelerator.d1_mm, $accelerator.d2_mm, $contract.rings.accelerator_count,
   $geometry.accelerator_repeller_thickness, $geometry.accelerator_ring_thickness,
-  $geometry.accelerator_front_vacuum_margin, $voltage.repeller, $voltage.grid1
+  $geometry.accelerator_front_vacuum_margin, $voltage.repeller, $voltage.grid1,
+  0, 0, 0, 0 # This instrument workflow builds the declared closed shield; no side-port dimensions.
   )
 }
 

@@ -23,7 +23,8 @@ run ID、seed、冻结路径和候选override只属于run instance，不能写�
 
 | 职责 | 实现 | 理论来源 |
 |---|---|---|
-| 三栅加速器一阶时间聚焦 | `accelerator_time_focus.py` | `../docs/theory/oaaccelerator_time_focus.md` |
+| 两区加速器时间聚焦与相空间匹配 | [`独立加速器实现`](../../orthogonal_accelerator/analysis/accelerator_time_focus.py) | [`独立加速器理论`](../../orthogonal_accelerator/docs/theory/oaaccelerator_time_focus.md) |
+| 三区加速器局部状态、精确时间与导数 | [`独立三区实现`](../../orthogonal_accelerator/analysis/three_zone_ideal_theory.py) | [`独立三区理论`](../../orthogonal_accelerator/docs/theory/three_zone_accelerator_ideal_theory.md) |
 | 双级反射器闭式解 | `reflectron_dual_stage_solver.py` | `../docs/theory/dual_stage_reflectron.md` |
 | 加速器—反射器纵向耦合 | `oatof_oaaccelerator_coupling.py` | `../docs/theory/oatof_oaaccelerator_coupling.md` |
 | finite-interval整机设计原子编译 | `finite_interval_design_compiler.py` | 复用上述三层理论，原子发布几何/电压/反射器耦合/rebuild plan |
@@ -33,6 +34,16 @@ run ID、seed、冻结路径和候选override只属于run instance，不能写�
 候选只允许修改变量目录登记的连续量或整数离散量。理论派生量由编译器重算，拓扑变量使用专用编译
 路径；范围只代表编译安全边界，不代表可行或最优。编译器输出candidate baseline、resolved、diff和
 PA/COMSOL/SIMION/CAD重建影响，不能直接晋升Formal。
+
+`three_zone_ideal_theory.py`仅保留本分析器的反射器、整机总时间和验收组合；局部加速器实现由独立项目
+拥有，OA 与 integration 消费同一公共 API，不复制公式。来源冻结包含所调用的独立项目源码；原有
+Formal 参数、源、资产和历史运行均不因源码归属迁移而重写。
+
+三区理想漏斗的两个获准作者合同在加速器独立化后仍由 OA 拥有；其 `authorities` 必须冻结独立提供方
+的二区、三区和几何源码。显式使用既有 `workflows.three_zone_ideal_theory.run_theory` 模块的
+`<campaign> --refresh-authorities` 更新源路径、LF 规范字节数与 SHA，再用 `--validate` 复核。
+刷新动作拒绝科学阶段参数，只更新项目 `config/experiments/` 内的作者合同，不修改科学字段或历史
+run/receipt；已有阶段证据不能在新 campaign 身份下直接续跑。缺提供方依赖或内容漂移继续失败关闭。
 
 T5三区理论结果沿用`three_zone_t5_simion_candidate.py`唯一CLI进入后续Candidate。canonical发布使用
 `--run-dir artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/<candidate-run>`，并同时传入
