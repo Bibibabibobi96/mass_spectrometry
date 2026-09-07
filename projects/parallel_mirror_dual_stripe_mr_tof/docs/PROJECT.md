@@ -433,6 +433,24 @@ Stripe 无法精确仿真这个原始分量分工。这是优化器无关的参�
 参考分量审计 `gates_active_fixed_hardware_operating_state=false`，以及由两个实际 Jacobian 分支决定的
 `failed_no_compatible_full_rank_branch`。它不重跑搜索，也不发布 Stripe、棱镜或 SIMION 工作电压。
 
+受管独立长度搜索 `20260908_054500__analysis__python__dual-stripe-independent-l-search-v2` 从提交
+`7125b413` 的干净工作树启动，每个镜根对两个 Stripe 电压与七个独立 `L` 比例执行 210 个笛卡尔起点，
+其中 65 个通过物理筛选并精修最优 6 个。`W=585.813936 mm` 分支仍回到
+`v=[-78.1890025,+213.156237] V`、`L=140.651265 mm`、尺度化范数 `2.00041704`；
+`W=540.449946 mm` 分支找到先前 5-eV 起点未覆盖的较低残差盆地：
+`v=[-75.0498356,+198.578641] V`、`L=167.424399 mm`、尺度化范数 `1.80553067`。两分支均为三未知量、
+Jacobian 秩 3、增广秩 4，且不可消除残差分别为 `2.00040110` 和 `1.80552986`，所以仍是
+`locally_incompatible`，不是 operating point。对应的 `theta/w_y/w_z` 仍仅为诊断量，不写入 SIMION。
+该 run 的终态 manifest 已验证；它证明独立 `L` 搜索改善了覆盖范围，但不是固定曲线全局无解证明。
+
+完整九残差的优化尺度、SVD 相容性容差与物理/数值逐项验收容差现在严格分离。论文未指定且尚未由用户
+授权的逐项容差以 `complete_consistency_residual_acceptance.status=pending_user_authority` 记录；不得把
+`residual_scales` 或 `scaled_irreducible_residual_norm_tolerance` 偷换成验收门。只有九个残差名均获得显式正
+容差、逐项通过、且分支相容满秩时，权威层才允许发布 Stripe 电压、入口角和能量分配。
+轻量受管回放 `20260908_062200__analysis__python__fixed-stripe-parameter-authority-v4` 已验证源搜索 manifest
+及 summary 哈希，并在两个镜分支上明确记录
+`residual_acceptance_status=pending_user_authority`、`operating_state_publishable=false`；该回放不重复数值搜索。
+
 六条件的目标函数也已从当前硬件反演中独立出来。实现只从合同的四个用户节点、`psi(1)=1`、
 `kappa-prime(1)=0` 和四个 `tau_g-prime=0` 方程重新求 `c0..c5`；论文印刷值仅用于选择与公开分支连续的
 根，不成为活动系数。当前受管 run 从24个确定性起点得到一个数值根：

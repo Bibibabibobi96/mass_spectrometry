@@ -183,8 +183,17 @@ def attach_fixed_geometry_parameter_authority(
         determination = best.get("determination") if isinstance(best, dict) else None
         status = determination.get("status") if isinstance(determination, dict) else "no_physical_iterate"
         residual_acceptance = best.get("residual_acceptance") if isinstance(best, dict) else None
+        if residual_acceptance is None and isinstance(best, dict) and contract is not None:
+            residual_acceptance = _complete_residual_acceptance_receipt(
+                contract, best.get("raw_residuals"),
+            )
+            best["residual_acceptance"] = residual_acceptance
         residual_acceptance_passed = (
             isinstance(residual_acceptance, dict) and residual_acceptance.get("passed") is True
+        )
+        residual_acceptance_status = (
+            residual_acceptance.get("status")
+            if isinstance(residual_acceptance, dict) else "unavailable"
         )
         publishable = (
             status in _PUBLISHABLE_DETERMINATION_STATES and residual_acceptance_passed
@@ -194,6 +203,7 @@ def attach_fixed_geometry_parameter_authority(
         branch_states.append({
             "mirror_root_index": index,
             "determination_status": status,
+            "residual_acceptance_status": residual_acceptance_status,
             "residual_acceptance_passed": residual_acceptance_passed,
             "operating_state_publishable": publishable,
             "diagnostic_only_outputs": [] if publishable else [
@@ -253,6 +263,54 @@ def attach_fixed_geometry_parameter_authority(
         },
     }
     return report
+
+
+def _complete_residual_acceptance_receipt(
+    contract: dict[str, Any], raw_residuals: object,
+) -> dict[str, Any]:
+    """Evaluate only explicitly authorized per-residual physical tolerances."""
+    if not isinstance(raw_residuals, dict) or not raw_residuals:
+        return {
+            "status": "unavailable_no_complete_residual_vector",
+            "passed": False,
+            "residuals": {},
+        }
+    values = {
+        str(name): _finite(value, f"complete residual {name}")
+        for name, value in raw_residuals.items()
+    }
+    authority = contract.get("dual_stripe_l0", {}).get(
+        "complete_consistency_residual_acceptance", {},
+    )
+    if not isinstance(authority, dict) or authority.get("status") != "active":
+        return {
+            "status": "pending_user_authority",
+            "passed": False,
+            "residuals": {
+                name: {"value": value, "absolute_tolerance": None, "passed": False}
+                for name, value in values.items()
+            },
+        }
+    tolerances = authority.get("absolute_tolerances_by_residual")
+    if not isinstance(tolerances, dict) or set(tolerances) != set(values):
+        raise CandidateContractError(
+            "active complete residual acceptance requires exactly one named tolerance per residual"
+        )
+    checks: dict[str, dict[str, Any]] = {}
+    for name, value in values.items():
+        tolerance = _finite(tolerances[name], f"complete residual tolerance {name}")
+        if tolerance <= 0.0:
+            raise CandidateContractError("complete residual acceptance tolerances must be positive")
+        checks[name] = {
+            "value": value,
+            "absolute_tolerance": tolerance,
+            "passed": abs(value) <= tolerance,
+        }
+    return {
+        "status": "passed" if all(item["passed"] for item in checks.values()) else "failed",
+        "passed": all(item["passed"] for item in checks.values()),
+        "residuals": checks,
+    }
 
 
 def _manifest_record_named(records: object, filename: str) -> dict[str, Any]:

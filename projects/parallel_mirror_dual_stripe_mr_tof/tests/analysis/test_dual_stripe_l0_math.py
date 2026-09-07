@@ -26,6 +26,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_operating_
     _bias_pair_is_nondegenerate,
     _compare_fixed_profile_to_dimensionless_target,
     _complete_consistency_start_grid,
+    _complete_residual_acceptance_receipt,
     _seed_profile,
     _solve_dimensionless_paper_target,
     _stripe_search_domain,
@@ -41,6 +42,27 @@ CONTRACT = PROJECT / "config" / "simion_candidate_two_zone.json"
 
 
 class DualStripeL0MathTest(unittest.TestCase):
+    def test_complete_residual_acceptance_waits_for_user_authority(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        receipt = _complete_residual_acceptance_receipt(contract, {"r1": 0.0, "r2": 1.0})
+        self.assertEqual(receipt["status"], "pending_user_authority")
+        self.assertFalse(receipt["passed"])
+        self.assertIsNone(receipt["residuals"]["r1"]["absolute_tolerance"])
+
+    def test_active_complete_residual_acceptance_requires_exact_named_mapping(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        authority = contract["dual_stripe_l0"]["complete_consistency_residual_acceptance"]
+        authority["status"] = "active"
+        authority["absolute_tolerances_by_residual"] = {"r1": 0.1, "r2": 0.2}
+        receipt = _complete_residual_acceptance_receipt(contract, {"r1": 0.05, "r2": 0.3})
+        self.assertEqual(receipt["status"], "failed")
+        self.assertFalse(receipt["passed"])
+        self.assertTrue(receipt["residuals"]["r1"]["passed"])
+        self.assertFalse(receipt["residuals"]["r2"]["passed"])
+        authority["absolute_tolerances_by_residual"] = {"r1": 0.1}
+        with self.assertRaises(CandidateContractError):
+            _complete_residual_acceptance_receipt(contract, {"r1": 0.05, "r2": 0.0})
+
     def test_complete_consistency_starts_vary_L_independently_of_voltage(self) -> None:
         profile = {
             "normalized_start_fractions": [-0.5, 0.25, 0.5],
@@ -270,6 +292,27 @@ class DualStripeL0MathTest(unittest.TestCase):
             "failed_no_residual_accepted_full_rank_branch",
         )
         self.assertFalse(authority["branch_states"][0]["residual_acceptance_passed"])
+        self.assertEqual(
+            authority["branch_states"][0]["residual_acceptance_status"], "unavailable",
+        )
+
+    def test_parameter_authority_reports_pending_user_residual_tolerances(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        report = {"complete_fixed_hardware_root_family": [{
+            "mirror_root_index": 1,
+            "complete_fixed_hardware_search": {"best_iterate": {
+                "determination": {"status": "overdetermined_consistent"},
+                "raw_residuals": {"target_oscillation_count": 0.0},
+            }},
+        }]}
+        authority = attach_fixed_geometry_parameter_authority(report, contract)[
+            "fixed_geometry_parameter_authority"
+        ]
+        self.assertEqual(
+            authority["branch_states"][0]["residual_acceptance_status"],
+            "pending_user_authority",
+        )
+        self.assertFalse(authority["operating_state_publication_gate"]["passed"])
 
     def test_managed_seed_authority_verifies_and_derives_without_rerunning_search(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
