@@ -198,8 +198,9 @@ python -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_anal
 
 - 第50次任意`vz`变号会主动截停，`K=25`目前是镜内存活诊断，不是完整引出／探测；
   `target_k_handoff_tof`记录点实际为转折点，不能称为中央面或检测器TOF。
-- 棱镜16现在接收由冻结`prism_transport` L0硬边界关系派生的**静态初值**，棱镜17仍为
-  `after_k25_return_pending`的`0 V`。该初值尚未经有限三维单位场/轨迹射击，也没有双程棱镜事件；
+- 棱镜16（路径 P1）现在接收由冻结`prism_transport` L0硬边界关系派生的**静态初值**；棱镜17
+  （路径 P2）为 `pre_stripe_injection_pending` 的审查用`0 V`。两者均在 Stripe 前；该初值尚未经
+  有限三维单位场/轨迹射击，也没有双程棱镜事件；
   加速器同样未实现脉冲时序与源时钟闭合。
 - Lua已按合同改在探测器`+z`外表面接收沿`-z`入射，保留初始步并对中央面采用半开区间和插值；
   纯Lua回归通过，但实际平板终止与检测事件的对应仍待全装配飞行复核。

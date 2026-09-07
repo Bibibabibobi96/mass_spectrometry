@@ -9,6 +9,7 @@ nominal-point response factors from the dual-Stripe theory.
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from typing import Any
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import resolve_geometry
@@ -73,6 +74,66 @@ def _linear_width_report(samples: tuple[tuple[float, float], ...]) -> dict[str, 
         "slope_mm_per_mm": slope,
         "maximum_residual_mm": maximum_residual,
     }
+
+
+def invert_nominal_psi_g_response(
+    psi: float, g: float, h_1: float, h_2: float,
+) -> tuple[float, float]:
+    """Invert the dual-Stripe nominal response basis at one ``eta``.
+
+    The hard-boundary response matrix is ``[[1, 1], [h1, h2]]``.  The
+    returned normalized contributions are the unique solution for
+    ``(psi, g)``; physical widths and their action normalization remain a
+    separate, explicitly supplied inverse problem.
+    """
+    psi_value = _finite(psi, "psi")
+    g_value = _finite(g, "g")
+    first = _finite(h_1, "h_1")
+    second = _finite(h_2, "h_2")
+    determinant = first - second
+    if determinant == 0.0:
+        raise CandidateContractError("dual Stripe response basis is singular")
+    return (
+        (g_value - second * psi_value) / determinant,
+        (first * psi_value - g_value) / determinant,
+    )
+
+
+def endpoint_regularized_kappa(
+    psi_at_eta: Callable[[float], float], *, initial_panels: int = 32,
+    max_refinements: int = 12, relative_tolerance: float = 1e-8,
+) -> float:
+    """Integrate ``kappa(1)`` with the theory's endpoint substitution.
+
+    For ``eta = 1-u²``, the integrand becomes
+    ``2u / sqrt(psi(1)-psi(1-u²))``.  Midpoint quadrature avoids evaluating
+    the removable endpoint directly and convergence under panel doubling is
+    an explicit validity condition.
+    """
+    if not callable(psi_at_eta):
+        raise CandidateContractError("psi_at_eta must be callable")
+    if not isinstance(initial_panels, int) or initial_panels < 2:
+        raise CandidateContractError("endpoint regularization needs at least two initial panels")
+    if not isinstance(max_refinements, int) or max_refinements < 1:
+        raise CandidateContractError("endpoint regularization needs a positive refinement count")
+    if not isinstance(relative_tolerance, (int, float)) or not 0.0 < float(relative_tolerance) < 1.0:
+        raise CandidateContractError("endpoint regularization tolerance must lie between zero and one")
+    endpoint = _finite(psi_at_eta(1.0), "psi(1)")
+    previous: float | None = None
+    for refinement in range(max_refinements):
+        panels = initial_panels * (2 ** refinement)
+        total = 0.0
+        for index in range(panels):
+            u = (index + 0.5) / panels
+            difference = endpoint - _finite(psi_at_eta(1.0 - u * u), "psi(eta)")
+            if difference <= 0.0:
+                raise CandidateContractError("psi(eta) must remain strictly below psi(1) on the turning interval")
+            total += 2.0 * u / math.sqrt(difference)
+        current = total / panels
+        if previous is not None and abs(current - previous) <= float(relative_tolerance) * max(1.0, abs(current)):
+            return current
+        previous = current
+    raise CandidateContractError("endpoint-regularized kappa integral did not converge")
 
 
 def analyze_dual_stripe_l0(contract: dict[str, Any]) -> dict[str, Any]:
