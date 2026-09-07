@@ -224,12 +224,17 @@ python -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_anal
 `prototype_first_prism_interface_only`，不代表加速器提取、第二棱镜、K=25、传输、时间焦点或分辨率。
 该入口向`run_iob_flight.lua`直接传入 IOB 路径（没有多余的`--`），因为后者的唯一参数就是 IOB。
 
-[run_accelerator_focus_flight.ps1](run_accelerator_focus_flight.ps1)复用同一已审查三实例IOB和已保存电压的
-`mrtof_accelerator.pa0`，不会重新refine任何PA。它只把run-local同名Program换成
+[run_accelerator_focus_flight.ps1](run_accelerator_focus_flight.ps1)复用同一已审查三实例IOB和只读
+加速器PA-family，不会重新refine任何PA。可选`-FirstGapDropV`只建立run-local候选合同：中心提取能量和
+释放位置固定时，它自动派生repeller/intermediate及五个第二级环电压；机械坐标始终来自已审查合同，
+不会随解析焦距重新布置。随后[voltageize_accelerator_pa0.lua](voltageize_accelerator_pa0.lua)从只读family
+执行SIMION原生`pa:fast_adjust()`并另存一个run-local PA0，receipt验证源PA0前后哈希不变且没有refine。
+入口再把run-local同名Program换成
 [mrtof_accelerator_focus.lua](mrtof_accelerator_focus.lua)，选择中心或轴向束团Fly2，并在离子首次穿过
 项目`z=0`时插值记录时间和速度后停止。随后
 [accelerator_focus_simion_analysis.py](../analysis/accelerator_focus_simion_analysis.py)将数值时间与独立
-`orthogonal_accelerator`一维解析参考逐粒子比较，报告有限区间时间极差、线性斜率、二次系数和最大解析误差。
+`orthogonal_accelerator`一维解析参考逐粒子比较；解析传播距离使用已审查的真实exit-to-`z=0`距离，
+而非随候选电压移动的理想焦距。结果报告有限区间时间极差、线性斜率、二次系数和最大解析误差。
 该receipt只验证二区加速器的静态首时间焦点，不授予棱镜、Stripe、K=25、探测或分辨率资格。
 
 ## 数值执行边界

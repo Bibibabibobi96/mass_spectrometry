@@ -3,6 +3,7 @@ param(
   [Parameter(Mandatory)][string]$GeometryReviewRunPath,
   [ValidateSet('accelerator_focus_center_fly2','accelerator_focus_bunch_fly2')][string]$SourceKey='accelerator_focus_center_fly2',
   [string]$BaselineContractPath='',
+  [Nullable[double]]$FirstGapDropV=$null,
   [string]$RunId='',
   [string]$SimionExe='',
   [string]$PythonExe=''
@@ -32,6 +33,9 @@ $simion=if($SimionExe){[IO.Path]::GetFullPath($SimionExe)}else{Join-Path $env:Pr
 if(-not(Test-Path -LiteralPath $simion -PathType Leaf)){throw "SIMION executable is missing: $simion"}
 $baselinePath=if($BaselineContractPath){(Resolve-Path -LiteralPath $BaselineContractPath).Path}else{Join-Path $repoRoot 'projects\parallel_mirror_dual_stripe_mr_tof\config\simion_candidate_two_zone.json'}
 $baseline=Get-Content -LiteralPath $baselinePath -Raw -Encoding UTF8|ConvertFrom-Json
+$firstGapDrop=if($null -ne $FirstGapDropV){[double]$FirstGapDropV}else{[double]$baseline.accelerator.repeller_v-[double]$baseline.accelerator.intermediate_grid_v}
+if(-not([double]::IsFinite($firstGapDrop)) -or $firstGapDrop -le 0){throw 'first-gap voltage drop must be finite and positive'}
+$firstGapDropText=$firstGapDrop.ToString('R',[Globalization.CultureInfo]::InvariantCulture)
 $countKey=if($SourceKey-eq'accelerator_focus_center_fly2'){'center_particle_count'}else{'candidate_bunch_particle_count'}
 $expectedCount=[int]$baseline.particle_source.$countKey
 if($expectedCount -le 0){throw 'accelerator focus source has invalid particle count'}
@@ -51,19 +55,28 @@ $runDir=$package.run_dir;$resultDir=$package.result_dir;$logDir=$package.log_dir
 $runConfig=$package.run_config;$summary=$package.summary;$artifactRoot=Join-Path $workspaceRoot 'artifacts'
 $terminalized=$false;$failureStage='preflight';$hostExecutionOutcome='failed';$lease=$null
 try{
-  $names=@('mrtof_three_component_candidate.iob','mrtof_analyzer.pa0','mrtof_accelerator.pa0','mrtof_detector.pa#',
+  $names=@('mrtof_three_component_candidate.iob','mrtof_analyzer.pa0','mrtof_detector.pa#',
     'mrtof_three_component_candidate.operating_point.lua','mrtof_three_component_candidate.voltage_map.lua','simion_prototype_contract.json')
   $geometryReview=Join-Path $geometrySimion 'three_component_geometry_review.json'
   $structureReport=Join-Path $geometryResults 'iob_structure_report.txt'
   $sourceBuilderPath=Join-Path $repoRoot 'projects\parallel_mirror_dual_stripe_mr_tof\analysis\materialize_accelerator_focus_source.py'
+  $trialBuilderPath=Join-Path $repoRoot 'projects\parallel_mirror_dual_stripe_mr_tof\analysis\accelerator_focus_voltage_trial.py'
+  $voltageizerPath=Join-Path $repoRoot 'projects\parallel_mirror_dual_stripe_mr_tof\simion\voltageize_accelerator_pa0.lua'
+  $sourceAcceleratorPa0=Join-Path $geometrySimion 'mrtof_accelerator.pa0'
+  $sourceFamilyMembers=@('#','0','1','2','3','4','5','6','7','8','9')|ForEach-Object{Join-Path $geometrySimion "mrtof_accelerator.pa$_"}
+  foreach($familyMember in $sourceFamilyMembers){
+    if(-not(Test-Path -LiteralPath $familyMember -PathType Leaf)){throw "reviewed accelerator PA family is incomplete: $familyMember"}
+  }
   $sources=@($sourceManifestPath,$baselinePath,$geometryReview,$structureReport,$sourceBuilderPath,
+    $trialBuilderPath,$voltageizerPath,
     (Join-Path $repoRoot 'projects\parallel_mirror_dual_stripe_mr_tof\simion\mrtof_accelerator_focus.lua'),
     (Join-Path $repoRoot 'projects\parallel_mirror_dual_stripe_mr_tof\simion\run_iob_flight.lua'),
     (Join-Path $repoRoot 'projects\parallel_mirror_dual_stripe_mr_tof\analysis\accelerator_focus_simion_analysis.py'))
   foreach($name in $names){$sources+=(Join-Path $geometrySimion $name)}
-  [int64]$copyBytes=0;foreach($path in $sources){if(-not(Test-Path -LiteralPath $path -PathType Leaf)){throw "focus input is missing: $path"};$copyBytes+=(Get-Item -LiteralPath $path).Length}
+  [int64]$copyBytes=(Get-Item -LiteralPath $sourceAcceleratorPa0).Length
+  foreach($path in $sources){if(-not(Test-Path -LiteralPath $path -PathType Leaf)){throw "focus input is missing: $path"};$copyBytes+=(Get-Item -LiteralPath $path).Length}
   $failureStage='capacity_preflight'
-  $startup=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -RequiredHeadroomBytes $copyBytes -ProtectedPaths @($package.artifact_run_dir)
+  $startup=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -RequiredHeadroomBytes $copyBytes -ProtectedPaths @($package.artifact_run_dir,$geometryRun)
   $startupPath=Join-Path $resultDir 'artifact_capacity_gate_startup.json';Write-RunJson -Path $startupPath -Depth 14 -Value $startup
   $failureStage='freeze_reviewed_pa_iob'
   foreach($name in $names){Copy-RequiredInput (Join-Path $geometrySimion $name) (Join-Path $solverDir $name) "reviewed $name"|Out-Null}
@@ -72,28 +85,50 @@ try{
   Copy-RequiredInput $structureReport (Join-Path $solverDir 'iob_structure_report.txt') 'IOB structure report'|Out-Null
   $frozenBaseline=Copy-RequiredInput $baselinePath (Join-Path $solverDir 'simion_candidate_two_zone.json') 'current baseline contract'
   $sourceBuilder=Copy-RequiredInput $sourceBuilderPath (Join-Path $solverDir 'materialize_accelerator_focus_source.py') 'focus source builder'
+  $trialBuilder=Copy-RequiredInput $trialBuilderPath (Join-Path $solverDir 'accelerator_focus_voltage_trial.py') 'voltage-trial builder'
+  $reviewedContract=Join-Path $solverDir 'simion_prototype_contract.json'
+  $trialContract=Join-Path $solverDir 'accelerator_focus_voltage_trial.json'
+  $trialReceipt=Join-Path $resultDir 'accelerator_focus_voltage_trial_receipt.json'
+  $failureStage='derive_voltage_trial';Invoke-ProjectPython -Arguments @($trialBuilder,'--current',$frozenBaseline,'--reviewed',$reviewedContract,'--first-gap-drop-v',$firstGapDropText,'--output',$trialContract,'--receipt',$trialReceipt)
   $focusFly2=Join-Path $solverDir 'mrtof_three_component_candidate.fly2';$sourceReceipt=Join-Path $resultDir 'accelerator_focus_source_receipt.json'
-  $failureStage='materialize_axial_source';Invoke-ProjectPython -Arguments @($sourceBuilder,'--contract',$frozenBaseline,'--reviewed-contract',(Join-Path $solverDir 'simion_prototype_contract.json'),'--source-key',$SourceKey,'--output',$focusFly2,'--receipt',$sourceReceipt)
+  $failureStage='materialize_axial_source';Invoke-ProjectPython -Arguments @($sourceBuilder,'--contract',$trialContract,'--reviewed-contract',$reviewedContract,'--source-key',$SourceKey,'--output',$focusFly2,'--receipt',$sourceReceipt)
   Copy-RequiredInput (Join-Path $repoRoot 'projects\parallel_mirror_dual_stripe_mr_tof\simion\mrtof_accelerator_focus.lua') (Join-Path $solverDir 'mrtof_three_component_candidate.lua') 'focus program'|Out-Null
   $launcher=Copy-RequiredInput (Join-Path $repoRoot 'projects\parallel_mirror_dual_stripe_mr_tof\simion\run_iob_flight.lua') (Join-Path $solverDir 'run_iob_flight.lua') 'flight launcher'
   $analyzer=Copy-RequiredInput (Join-Path $repoRoot 'projects\parallel_mirror_dual_stripe_mr_tof\analysis\accelerator_focus_simion_analysis.py') (Join-Path $solverDir 'accelerator_focus_simion_analysis.py') 'focus analyzer'
+  $voltageizer=Copy-RequiredInput $voltageizerPath (Join-Path $solverDir 'voltageize_accelerator_pa0.lua') 'accelerator PA0 voltageizer'
+  $trialValue=Get-Content -LiteralPath $trialReceipt -Raw -Encoding UTF8|ConvertFrom-Json
+  $acceleratorPa0=Join-Path $solverDir 'mrtof_accelerator.pa0'
+  $sourceFamilyBefore=@($sourceFamilyMembers|ForEach-Object{[ordered]@{path=$_;bytes=(Get-Item -LiteralPath $_).Length;sha256=(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash}})
+  $voltageText={param($Value)([double]$Value).ToString('R',[Globalization.CultureInfo]::InvariantCulture)}
+  $voltageArguments=@($sourceAcceleratorPa0,$acceleratorPa0,'0')+@($trialValue.endpoint_voltages_v|ForEach-Object{& $voltageText $_})+@($trialValue.ring_voltages_v|ForEach-Object{& $voltageText $_})
+  $failureStage='voltageize_accelerator_pa0';$lease=Enter-HostExecutionLease -Role SIMION -RunId $RunId
+  & $simion '--nogui' '--noprompt' 'lua' $voltageizer @voltageArguments
+  if($LASTEXITCODE -ne 0){throw 'SIMION accelerator PA0 voltageization failed'}
+  foreach($identity in $sourceFamilyBefore){
+    $currentIdentity=Get-Item -LiteralPath $identity.path
+    $currentHash=(Get-FileHash -LiteralPath $identity.path -Algorithm SHA256).Hash
+    if($currentIdentity.Length -ne $identity.bytes -or $currentHash -ne $identity.sha256){throw "read-only reviewed accelerator PA family changed during voltageization: $($identity.path)"}
+  }
+  if(-not(Test-Path -LiteralPath $acceleratorPa0 -PathType Leaf)){throw 'voltageized accelerator PA0 was not created'}
+  $voltageizationReceipt=Join-Path $resultDir 'accelerator_pa0_voltageization_receipt.json'
+  Write-RunJson -Path $voltageizationReceipt -Depth 14 -Value ([ordered]@{schema_version=1;role='mrtof_accelerator_pa0_voltageization';status='success';method='SIMION_PA_object_fast_adjust_save_as';source_family=$sourceFamilyBefore;source_family_post_save_hashes_verified=$true;output_pa0=$acceleratorPa0;output_sha256=(Get-FileHash -LiteralPath $acceleratorPa0 -Algorithm SHA256).Hash;electrode_voltages_v=@(0)+@($trialValue.endpoint_voltages_v)+@($trialValue.ring_voltages_v);source_family_read_only=$true;refine_performed=$false})
   $config=Get-Content -LiteralPath $runConfig -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
   $sourceIdentity=Get-Content -LiteralPath $sourceReceipt -Raw -Encoding UTF8|ConvertFrom-Json
-  $config.inputs=[ordered]@{reviewed_iob=(Join-Path $solverDir 'mrtof_three_component_candidate.iob');reviewed_accelerator_pa0=(Join-Path $solverDir 'mrtof_accelerator.pa0');geometry_review_receipt=(Join-Path $solverDir 'three_component_geometry_review.json');iob_structure_report=(Join-Path $solverDir 'iob_structure_report.txt');geometry_source_manifest=(Join-Path $solverDir 'prototype_input_manifest.json');consumed_fly2=$focusFly2;baseline_contract=$frozenBaseline;reviewed_contract=(Join-Path $solverDir 'simion_prototype_contract.json');source_receipt=$sourceReceipt}
-  $config.parameters.source_key=$SourceKey;$config.parameters.particle_count=$expectedCount;$config.parameters.source_sha256=$sourceIdentity.fly2_sha256
+  $config.inputs=[ordered]@{reviewed_iob=(Join-Path $solverDir 'mrtof_three_component_candidate.iob');voltageized_accelerator_pa0=$acceleratorPa0;reviewed_accelerator_pa_family=$sourceAcceleratorPa0;geometry_review_receipt=(Join-Path $solverDir 'three_component_geometry_review.json');iob_structure_report=(Join-Path $solverDir 'iob_structure_report.txt');geometry_source_manifest=(Join-Path $solverDir 'prototype_input_manifest.json');consumed_fly2=$focusFly2;baseline_contract=$frozenBaseline;trial_contract=$trialContract;reviewed_contract=$reviewedContract;trial_receipt=$trialReceipt;voltageization_receipt=$voltageizationReceipt;source_receipt=$sourceReceipt}
+  $config.parameters.source_key=$SourceKey;$config.parameters.particle_count=$expectedCount;$config.parameters.source_sha256=$sourceIdentity.fly2_sha256;$config.parameters.first_gap_drop_v=$firstGapDrop
   Write-RunJson -Path $runConfig -Value $config
-  $failureStage='native_accelerator_focus';$lease=Enter-HostExecutionLease -Role SIMION -RunId $RunId
+  $failureStage='native_accelerator_focus'
   Push-Location -LiteralPath $solverDir
   try{& $simion '--nogui' '--noprompt' 'lua' $launcher (Join-Path $solverDir 'mrtof_three_component_candidate.iob') 2>&1|Tee-Object -FilePath (Join-Path $logDir 'native_accelerator_focus.log');if($LASTEXITCODE -ne 0){throw 'SIMION accelerator focus flight failed'}}finally{Pop-Location}
   $rawLog=Join-Path $logDir 'native_accelerator_focus.log';$analysis=Join-Path $resultDir 'accelerator_focus_analysis.json'
-  $failureStage='focus_analysis';Invoke-ProjectPython -Arguments @($analyzer,$rawLog,$frozenBaseline,$analysis,'--expected-count',"$expectedCount")
+  $failureStage='focus_analysis';Invoke-ProjectPython -Arguments @($analyzer,$rawLog,$trialContract,$analysis,'--expected-count',"$expectedCount",'--reviewed-contract',$reviewedContract)
   $analysisValue=Get-Content -LiteralPath $analysis -Raw -Encoding UTF8|ConvertFrom-Json
-  Write-RunJson -Path $summary -Value ([ordered]@{schema_version=1;role='mrtof_two_zone_accelerator_first_time_focus';status='success';qualification='candidate_prototype_numeric_focus_only';particle_count=$expectedCount;focus_particle_count=$analysisValue.focus_particle_count;timing=$analysisValue.timing})
+  Write-RunJson -Path $summary -Value ([ordered]@{schema_version=1;role='mrtof_two_zone_accelerator_first_time_focus';status='success';qualification='candidate_prototype_numeric_focus_only';particle_count=$expectedCount;focus_particle_count=$analysisValue.focus_particle_count;first_gap_drop_v=$firstGapDrop;analytic_trial_focus_plane_residual_z_mm=$analysisValue.analytic_trial_focus_plane_residual_z_mm;timing=$analysisValue.timing})
   $retention=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $runConfig
   $failureStage='capacity_terminal';$maximum=[int64](Get-ChildItem -LiteralPath $package.artifact_run_dir -Recurse -File|Measure-Object Length -Sum).Sum
-  $terminal=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -ProtectedPaths @($package.artifact_run_dir) -KnownMeasuredBytes ([int64]$startup.measured_after_bytes) -MaximumNewArtifactBytes $maximum
+  $terminal=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -ProtectedPaths @($package.artifact_run_dir,$geometryRun) -KnownMeasuredBytes ([int64]$startup.measured_after_bytes) -MaximumNewArtifactBytes $maximum
   $terminalPath=Join-Path $resultDir 'artifact_capacity_gate_terminal.json';Write-RunJson -Path $terminalPath -Depth 14 -Value $terminal
-  Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Status success -Software @('SIMION 2020','Python 3.11') -Outputs @($summary,$rawLog,$analysis,$sourceReceipt,$startupPath,$terminalPath,$retention)
+  Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Status success -Software @('SIMION 2020','Python 3.11') -Outputs @($summary,$rawLog,$analysis,$trialReceipt,$voltageizationReceipt,$sourceReceipt,$startupPath,$terminalPath,$retention)
   $terminalized=$true;$hostExecutionOutcome='success';Write-Host "MRTOF_ACCELERATOR_FOCUS_FLIGHT=PASS RUN_ID=$RunId"
 }catch{
   if(-not $terminalized){Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Summary $summary -SummaryRole 'mrtof_two_zone_accelerator_first_time_focus' -Reason $_.Exception.Message -Software @('SIMION 2020','Python 3.11') -Status failed -FailureStage $failureStage;$terminalized=$true}

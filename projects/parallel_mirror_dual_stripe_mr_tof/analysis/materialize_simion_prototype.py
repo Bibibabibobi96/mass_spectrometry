@@ -168,6 +168,8 @@ def accelerator_focus_fly2(
     particle_source: dict[str, Any],
     particle_count_key: str,
     axial_full_width_mm: float,
+    *,
+    placement_contract: dict[str, Any] | None = None,
 ) -> str:
     """Render a zero-KE release inside zone 1 for the separate focus diagnostic.
 
@@ -179,7 +181,7 @@ def accelerator_focus_fly2(
     accelerator = contract.get("accelerator")
     if not isinstance(accelerator, dict):
         raise CandidateContractError("accelerator-focus Fly2 requires an accelerator contract")
-    placement = derive_two_zone_placement(contract)
+    placement = derive_two_zone_placement(contract if placement_contract is None else placement_contract)
     release = _finite_number(
         accelerator.get("release_position_in_gap_1_mm"),
         "accelerator.release_position_in_gap_1_mm",

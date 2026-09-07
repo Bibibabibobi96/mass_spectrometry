@@ -8,6 +8,9 @@ import json
 from pathlib import Path
 from typing import Any
 
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.accelerator_focus_voltage_trial import (
+    require_reviewed_geometry,
+)
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.materialize_simion_prototype import (
     accelerator_focus_fly2,
 )
@@ -16,11 +19,6 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_refer
 
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
-def _require_same(current: dict[str, Any], reviewed: dict[str, Any], key: str) -> None:
-    if current.get(key) != reviewed.get(key):
-        raise ValueError(f"current baseline {key} differs from the reviewed PA/IOB contract")
 
 
 def materialize(
@@ -32,8 +30,7 @@ def materialize(
 ) -> dict[str, Any]:
     current = load_contract(contract_path)
     reviewed = load_contract(reviewed_contract_path)
-    for key in ("coordinate_system", "accelerator", "prisms"):
-        _require_same(current, reviewed, key)
+    require_reviewed_geometry(current, reviewed)
     current_species = current.get("particle_source", {}).get("species")
     reviewed_species = reviewed.get("particle_source", {}).get("species")
     if current_species != reviewed_species:
@@ -47,7 +44,9 @@ def materialize(
     source = current["particle_source"]
     count_key = count_keys[source_key]
     width = 0.0 if count_key == "center_particle_count" else float(source["accelerator_focus_axial_full_width_mm"])
-    text = accelerator_focus_fly2(current, source, count_key, width)
+    text = accelerator_focus_fly2(
+        current, source, count_key, width, placement_contract=reviewed,
+    )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(text, encoding="utf-8", newline="\n")
     count = int(source[count_key])
@@ -62,7 +61,7 @@ def materialize(
         "baseline_contract_sha256": _sha256(contract_path),
         "reviewed_geometry_contract_sha256": _sha256(reviewed_contract_path),
         "fly2_sha256": _sha256(output_path),
-        "semantics": "deterministic axial zero-KE release family; no PA or IOB geometry was regenerated",
+        "semantics": "deterministic axial zero-KE release family on reviewed fixed placement; no PA or IOB geometry was regenerated",
     }
     receipt_path.parent.mkdir(parents=True, exist_ok=True)
     receipt_path.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")

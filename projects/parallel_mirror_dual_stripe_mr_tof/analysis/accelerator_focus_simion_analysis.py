@@ -11,6 +11,9 @@ from typing import Any
 import numpy as np
 
 from projects.orthogonal_accelerator.analysis.accelerator_time_focus import time_to_fixed_plane_s
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.accelerator_focus_voltage_trial import (
+    require_reviewed_geometry,
+)
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
     derive_two_zone_focus,
     derive_two_zone_placement,
@@ -36,10 +39,15 @@ def _events(path: Path) -> dict[int, dict[str, dict[str, float]]]:
     return result
 
 
-def analyze(log_path: Path, contract_path: Path, expected_count: int) -> dict[str, Any]:
+def analyze(
+    log_path: Path, contract_path: Path, expected_count: int,
+    reviewed_contract_path: Path | None = None,
+) -> dict[str, Any]:
     if expected_count <= 0:
         raise ValueError("expected particle count must be positive")
     contract = load_contract(contract_path)
+    reviewed = contract if reviewed_contract_path is None else load_contract(reviewed_contract_path)
+    require_reviewed_geometry(contract, reviewed)
     records = _events(log_path)
     expected_ids = list(range(1, expected_count + 1))
     if sorted(records) != expected_ids:
@@ -47,8 +55,8 @@ def analyze(log_path: Path, contract_path: Path, expected_count: int) -> dict[st
     if any("source" not in records[ion] or "terminal" not in records[ion] for ion in expected_ids):
         raise ValueError("every accelerator-focus particle needs source and terminal events")
     reached = [ion for ion in expected_ids if "focus" in records[ion]]
-    placement = derive_two_zone_placement(contract)
-    focus = derive_two_zone_focus(contract)
+    placement = derive_two_zone_placement(reviewed)
+    trial_focus = derive_two_zone_focus(contract)
     accelerator = contract["accelerator"]
     species = contract["particle_source"]["species"]
     z0 = np.asarray([records[ion]["source"]["z_mm"] for ion in reached], dtype=float)
@@ -65,7 +73,7 @@ def analyze(log_path: Path, contract_path: Path, expected_count: int) -> dict[st
             float(accelerator["gap_2_mm"]),
             float(value),
             0.0,
-            focus.focus_after_exit_mm,
+            placement.exit_grid_z_mm - placement.focus_z_mm,
             float(species["mass_th"]),
             exit_v=float(accelerator["exit_grid_v"]),
         )
@@ -93,6 +101,7 @@ def analyze(log_path: Path, contract_path: Path, expected_count: int) -> dict[st
         }
     else:
         timing = None
+    analytic_focus_project_z_mm = placement.exit_grid_z_mm - trial_focus.focus_after_exit_mm
     return {
         "schema_version": 1,
         "role": "mrtof_two_zone_accelerator_first_time_focus_simion",
@@ -103,6 +112,8 @@ def analyze(log_path: Path, contract_path: Path, expected_count: int) -> dict[st
         "detection_fraction": len(reached) / expected_count,
         "source_release_interval_mm": [float(np.min(release)), float(np.max(release))] if reached else None,
         "target_plane_project_z_mm": placement.focus_z_mm,
+        "analytic_trial_focus_project_z_mm": analytic_focus_project_z_mm,
+        "analytic_trial_focus_plane_residual_z_mm": analytic_focus_project_z_mm - placement.focus_z_mm,
         "timing": timing,
         "limitations": [
             "This isolates the static two-zone accelerator and stops particles at z=0.",
@@ -117,8 +128,9 @@ def main() -> int:
     parser.add_argument("contract", type=Path)
     parser.add_argument("output", type=Path)
     parser.add_argument("--expected-count", type=int, required=True)
+    parser.add_argument("--reviewed-contract", type=Path)
     args = parser.parse_args()
-    result = analyze(args.log, args.contract, args.expected_count)
+    result = analyze(args.log, args.contract, args.expected_count, args.reviewed_contract)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     if result["status"] != "complete":
