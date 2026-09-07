@@ -1877,10 +1877,19 @@
       ],
       "derived_per_joint_trial": [
         "dual_stripe_L_W_kappa_theta_target_from_same_Mirror_Stripe_trial",
-        "Stripe_entrance_project_position_and_direction_target",
+        "Stripe_entrance_project_y_event_and_yz_direction_target",
         "P1_P2_voltage_pair_and_actual_Stripe_entrance_phase_space"
       ],
-      "semantics": "CAD triangles and shields constrain mechanical clearance only. The accelerator-focus ray is frozen input. The joint Mirror-Stripe trial derives the required Stripe entrance phase-space, then finite three-dimensional P1/P2 shooting derives the actual phase-space and both prism voltages by recording the physical y=0 Stripe crossing. P1/P2 effective planes are required only when forming an auxiliary hard-boundary seed, not for the final three-dimensional residual. The component-level difference is retained in the complete Jacobian; it is not an external target coordinate, a voltage scan, or a hard-boundary final claim."
+      "stripe_entrance_fast_phase_authority": {
+        "status": "missing",
+        "required": "a named design authority for the fast-reflection phase, normally target_project_z_mm at the physical y=0 Stripe crossing",
+        "forbidden_substitutions": [
+          "prism_triangle_centroid",
+          "grounded_shield_aperture_centroid",
+          "CAD_bounding_box_center"
+        ]
+      },
+      "semantics": "CAD triangles and shields constrain mechanical clearance only. The accelerator-focus ray is frozen input. The joint Mirror-Stripe trial derives the y=0 Stripe crossing event and required yz incidence direction, but not the fast-reflection phase or target z at that event. Those provide only one independent voltage-sensitive target for two prism voltages, so the voltage pair remains structurally underdetermined until a separate fast-phase design authority is declared. Finite three-dimensional P1/P2 shooting then derives the actual phase-space and must demonstrate a compatible full-column-rank scaled Jacobian. P1/P2 effective planes are required only when forming an auxiliary hard-boundary seed, not for the final three-dimensional residual; no triangle, aperture, or CAD bounding-box centroid may substitute for the missing phase."
     }
   },
   "accelerator": {

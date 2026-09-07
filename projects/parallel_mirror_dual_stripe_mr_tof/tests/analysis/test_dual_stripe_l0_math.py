@@ -232,7 +232,9 @@ class DualStripeL0MathTest(unittest.TestCase):
             root = Path(temporary)
             run_config = root / "run_config.json"
             summary = root / "summary.json"
+            contract = root / "simion_candidate_two_zone.json"
             run_config.write_text("{}\n", encoding="utf-8")
+            contract.write_text(CONTRACT.read_text(encoding="utf-8"), encoding="utf-8")
             summary.write_text(json.dumps({
                 "role": "mrtof_dual_stripe_paper_theory_instance_specific_operating_seed_family",
                 "dimensionless_paper_target": {"selected_root": {
@@ -264,7 +266,7 @@ class DualStripeL0MathTest(unittest.TestCase):
                 "mode": "dual_stripe_paper_theory_instance_seed",
                 "status": "success",
                 "run_config": record(run_config),
-                "inputs": {},
+                "inputs": {"downstream_contract": record(contract)},
                 "outputs": [record(summary)],
             }) + "\n", encoding="utf-8")
             result = build_parameter_authority_from_managed_seed(manifest)
@@ -277,6 +279,10 @@ class DualStripeL0MathTest(unittest.TestCase):
                 result["fixed_geometry_parameter_authority"]
                 ["operating_state_publication_gate"]["status"],
                 "failed_static_response_structure",
+            )
+            self.assertEqual(
+                result["two_prism_voltage_definition"]["status"],
+                "structurally_underdetermined_missing_fast_phase",
             )
             summary.write_text("{}\n", encoding="utf-8")
             with self.assertRaisesRegex(CandidateContractError, "integrity failed"):

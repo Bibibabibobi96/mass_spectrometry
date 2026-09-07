@@ -56,6 +56,9 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry impo
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
     CandidateContractError,
 )
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_handoff import (
+    audit_two_prism_voltage_definition,
+)
 
 
 WidthFunction = Callable[[float], float]
@@ -240,11 +243,17 @@ def build_parameter_authority_from_managed_seed(manifest_path: Path) -> dict[str
     except (AssertionError, KeyError, TypeError, ValueError) as error:
         raise CandidateContractError(f"managed Stripe manifest integrity failed: {error}") from error
     summary_record = _manifest_record_named(manifest.get("outputs"), "summary.json")
+    contract_record = _manifest_record_named(manifest.get("inputs"), "simion_candidate_two_zone.json")
     summary_path = record_path(summary_record, base_dir=path.parent)
+    contract_path = record_path(contract_record, base_dir=path.parent)
     try:
         source_summary = json.loads(summary_path.read_text(encoding="utf-8-sig"))
     except (OSError, json.JSONDecodeError) as error:
         raise CandidateContractError("managed Stripe summary is not readable JSON") from error
+    try:
+        source_contract = json.loads(contract_path.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise CandidateContractError("managed Stripe input contract is not readable JSON") from error
     if (
         not isinstance(source_summary, dict)
         or source_summary.get("role") != "mrtof_dual_stripe_paper_theory_instance_specific_operating_seed_family"
@@ -267,6 +276,7 @@ def build_parameter_authority_from_managed_seed(manifest_path: Path) -> dict[str
         "source_operating_seed_manifest_sha256": file_sha256(path),
         "source_operating_seed_summary_sha256": str(summary_record.get("sha256", "")).upper(),
         "fixed_geometry_parameter_authority": updated["fixed_geometry_parameter_authority"],
+        "two_prism_voltage_definition": audit_two_prism_voltage_definition(source_contract),
         "limitations": [
             "This report classifies parameter authority only; it does not rerun or improve the bounded search.",
             "A failed publication gate withholds Stripe, prism, SIMION-flight, and performance operating values.",
@@ -1249,6 +1259,7 @@ def build_operating_seed_report(mirror_manifest: Path, downstream_contract: Path
     mirror = load_managed_mirror_candidate(mirror_manifest, downstream_contract)
     dimensionless_target = _solve_dimensionless_paper_target(mirror.contract)
     structural_audit = audit_static_dual_stripe_paper_target_structure(dimensionless_target)
+    prism_definition = audit_two_prism_voltage_definition(mirror.contract)
     reports: list[dict[str, Any]] = []
     rejected: list[dict[str, Any]] = []
     consistency_family: list[dict[str, Any]] = []
@@ -1304,6 +1315,7 @@ def build_operating_seed_report(mirror_manifest: Path, downstream_contract: Path
             "paper_relation_identity": "same equations and dimensionless structure; instance coefficients, L, W, and voltages may differ",
             "dimensionless_paper_target": dimensionless_target,
             "static_dual_stripe_paper_target_structure": structural_audit,
+            "two_prism_voltage_definition": prism_definition,
             "mirror_root_count": len(mirror.root_family),
             "complete_consistency_actual_parallel_workers": actual_workers,
             "successful_mirror_root_count": 0,
@@ -1326,6 +1338,7 @@ def build_operating_seed_report(mirror_manifest: Path, downstream_contract: Path
         "role": "mrtof_dual_stripe_paper_theory_instance_specific_operating_seed_family",
         "dimensionless_paper_target": dimensionless_target,
         "static_dual_stripe_paper_target_structure": structural_audit,
+        "two_prism_voltage_definition": prism_definition,
         "mirror_root_count": len(mirror.root_family),
         "complete_consistency_actual_parallel_workers": actual_workers,
         "successful_mirror_root_count": len(reports),

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import copy
+import json
+from pathlib import Path
 import unittest
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
@@ -8,6 +11,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_refer
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_handoff import (
     ProjectPhaseSpaceState,
     TwoPrismTransportObservation,
+    audit_two_prism_voltage_definition,
     observation_from_simion_events,
     stripe_handoff_residuals,
 )
@@ -18,6 +22,43 @@ def _state(position, velocity) -> ProjectPhaseSpaceState:
 
 
 class TwoPrismHandoffTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        project = Path(__file__).resolve().parents[2]
+        cls.contract = json.loads(
+            (project / "config" / "simion_candidate_two_zone.json").read_text(encoding="utf-8")
+        )
+
+    def test_current_contract_is_underdetermined_without_fast_phase(self) -> None:
+        audit = audit_two_prism_voltage_definition(self.contract)
+        self.assertEqual(audit["status"], "structurally_underdetermined_missing_fast_phase")
+        self.assertEqual(audit["unknown_count"], 2)
+        self.assertEqual(audit["independent_voltage_constraint_rank_before_finite_3d_jacobian"], 1)
+        self.assertEqual(audit["nullity_before_finite_3d_jacobian"], 1)
+        self.assertEqual(audit["publication_gate"], "closed")
+
+    def test_explicit_fast_phase_still_requires_finite_3d_rank(self) -> None:
+        contract = copy.deepcopy(self.contract)
+        contract["prism_transport"]["two_prism_injection_l0"]["stripe_entrance_fast_phase_authority"] = {
+            "status": "design_authority",
+            "target_project_z_mm": 0.0,
+            "source": "user_selected_central_mirror_phase",
+        }
+        audit = audit_two_prism_voltage_definition(contract)
+        self.assertEqual(audit["status"], "two_target_coordinates_declared__finite_3d_jacobian_pending")
+        self.assertIsNone(audit["independent_voltage_constraint_rank_before_finite_3d_jacobian"])
+        self.assertIn("full_column_rank", audit["publication_gate"])
+
+    def test_cad_centroid_cannot_supply_fast_phase(self) -> None:
+        contract = copy.deepcopy(self.contract)
+        contract["prism_transport"]["two_prism_injection_l0"]["stripe_entrance_fast_phase_authority"] = {
+            "status": "design_authority",
+            "target_project_z_mm": 0.0,
+            "source": "CAD_bounding_box_center",
+        }
+        with self.assertRaises(CandidateContractError):
+            audit_two_prism_voltage_definition(contract)
+
     def test_exact_state_has_five_zero_independent_components(self) -> None:
         state = _state((0.0, -20.0, -40.0), (0.0, -2.0, -10.0))
         observation = TwoPrismTransportObservation(state, state, state, state, True)
