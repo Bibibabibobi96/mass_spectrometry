@@ -1203,6 +1203,7 @@
       "endpoint_regularized_kappa_spatial_return_condition",
       "target_oscillation_count_relation"
     ],
+    "determination_gate": "Before publishing any solved voltage, L, W, kappa, theta, or prism entrance state, evaluate the named joint residual Jacobian at the solution. Independent rank below the declared physical unknown count is underdetermined; an incompatible augmented residual rank is overdetermined; only equal independent rank permits publication of the remaining derived quantities.",
     "derived_fields_only_after_joint_candidate": {
       "drift_length_L_mm": "abs(turning_point_y_mm-y_stripe_entrance_mm)",
       "axial_width_W_mm": "full_two_mirror_period_including_dual_stripe_action*sqrt(nominal_energy_per_charge_V/(2*ion_mass))",
