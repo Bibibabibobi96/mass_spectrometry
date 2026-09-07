@@ -19,6 +19,9 @@ from dataclasses import dataclass
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import (
     endpoint_regularized_kappa,
 )
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import (
+    dual_stripe_width_at_y_mm,
+)
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
     CandidateContractError,
 )
@@ -43,6 +46,26 @@ class StripeHardBoundary:
         if width <= 0.0:
             raise CandidateContractError("physical Stripe width must be positive")
         return width
+
+
+def stripes_from_contract(contract: dict[str, object]) -> tuple[StripeHardBoundary, StripeHardBoundary]:
+    """Bind the two voltage groups to their unique frozen B-spline widths."""
+    stripe = contract.get("dual_stripe")
+    if not isinstance(stripe, dict):
+        raise CandidateContractError("dual Stripe contract is required")
+    try:
+        first_bias = _finite(stripe["set_1_bias_v"], "dual_stripe.set_1_bias_v")
+        second_bias = _finite(stripe["set_2_bias_v"], "dual_stripe.set_2_bias_v")
+    except KeyError as error:
+        raise CandidateContractError("dual Stripe voltage groups are required") from error
+
+    def first_width(y_mm: float) -> float:
+        return dual_stripe_width_at_y_mm(contract, "set_1", y_mm)
+
+    def second_width(y_mm: float) -> float:
+        return dual_stripe_width_at_y_mm(contract, "set_2", y_mm)
+
+    return StripeHardBoundary(first_bias, first_width), StripeHardBoundary(second_bias, second_width)
 
 
 @dataclass(frozen=True)

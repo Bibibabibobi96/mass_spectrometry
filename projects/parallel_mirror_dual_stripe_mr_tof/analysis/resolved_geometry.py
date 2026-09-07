@@ -150,6 +150,39 @@ def _theory_profiles(stripe: dict[str, Any], y_span: tuple[float, float]) -> tup
     return tuple(profiles)
 
 
+def dual_stripe_width_at_y_mm(contract: dict[str, Any], set_name: str, y_mm: float) -> float:
+    """Evaluate one frozen theory B-spline Stripe width at physical project ``y``.
+
+    This is the sole analytic-width accessor for the resolved CAD-constrained
+    Stripe geometry.  It deliberately evaluates the original B-spline edges,
+    rather than interpolating a solver sampling polygon into a second shape
+    contract.
+    """
+    if set_name not in {"set_1", "set_2"}:
+        raise CandidateContractError("dual Stripe set name must be set_1 or set_2")
+    stripe = contract.get("dual_stripe")
+    if not isinstance(stripe, dict):
+        raise CandidateContractError("dual Stripe contract is required")
+    theory = stripe.get("theory_profile")
+    if not isinstance(theory, dict) or theory.get("generator") != "theory_bspline_parameterization":
+        raise CandidateContractError("dual Stripe width needs the theory B-spline parameter contract")
+    y_span = tuple(_number(value, "dual_stripe.theory_profile.active_y_span_mm") for value in theory.get("active_y_span_mm", []))
+    if len(y_span) != 2 or not y_span[0] < y_span[1]:
+        raise CandidateContractError("dual Stripe active theory y span must be ordered")
+    y_value = _number(y_mm, "dual Stripe physical y")
+    if not y_span[0] <= y_value <= y_span[1]:
+        raise CandidateContractError("dual Stripe physical y lies outside its frozen span")
+    definition = theory.get(set_name)
+    if not isinstance(definition, dict):
+        raise CandidateContractError(f"dual Stripe theory profile {set_name} is required")
+    lower = _edge_z_at_y(definition.get("lower_edge"), f"dual Stripe {set_name}.lower_edge", y_value)
+    upper = _edge_z_at_y(definition.get("upper_edge"), f"dual Stripe {set_name}.upper_edge", y_value)
+    width = upper - lower
+    if width <= 0.0:
+        raise CandidateContractError("dual Stripe B-spline geometry has non-positive physical width")
+    return width
+
+
 def _central_ground_polygons(stripe: dict[str, Any]) -> tuple[list[dict[str, Any]], float]:
     """Resolve the complete Ion-Foil-2 body before its rectangular cuts.
 

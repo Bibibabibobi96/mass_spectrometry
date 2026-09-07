@@ -1203,6 +1203,13 @@
       "endpoint_regularized_kappa_spatial_return_condition",
       "target_oscillation_count_relation"
     ],
+    "time_platform_constraint": {
+      "status": "project_selected_pending_physical_span_check",
+      "quantity": "d_tau_g_d_eta_turn",
+      "target": 0.0,
+      "eta_turn_nodes": [0.9, 0.95, 1.05, 1.1],
+      "semantics": "Four project-selected time-platform derivative nodes symmetric around the nominal turning point. They are not claimed to be the unpublished original-paper nodes. Before activation, each physical y=entry_y+eta_turn*L must lie within both frozen Stripe active spans and the joint Jacobian rank gate must classify the full system."
+    },
     "determination_gate": "Before publishing any solved voltage, L, W, kappa, theta, or prism entrance state, evaluate the named joint residual Jacobian at the solution. Independent rank below the declared physical unknown count is underdetermined; an incompatible augmented residual rank is overdetermined; only equal independent rank permits publication of the remaining derived quantities.",
     "derived_fields_only_after_joint_candidate": {
       "drift_length_L_mm": "abs(turning_point_y_mm-y_stripe_entrance_mm)",

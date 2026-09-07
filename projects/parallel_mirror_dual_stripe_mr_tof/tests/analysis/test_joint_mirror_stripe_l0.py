@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import math
 import unittest
+from pathlib import Path
+import json
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_mirror_stripe_l0 import (
     StripeHardBoundary,
@@ -10,11 +12,22 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_mirror_stripe_l0
     derive_coupled_drift_state,
     require_exactly_determined,
     reduced_action_delta_mm_sqrt_v,
+    stripes_from_contract,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import CandidateContractError
 
 
 class JointMirrorStripeL0Test(unittest.TestCase):
+    def test_contract_adapter_evaluates_the_frozen_bspline_not_a_resampled_shape(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        contract = json.loads((root / "config" / "simion_candidate_two_zone.json").read_text(encoding="utf-8"))
+        first, second = stripes_from_contract(contract)
+        y0, y1 = contract["dual_stripe"]["theory_profile"]["active_y_span_mm"]
+        self.assertGreater(first.width_mm(y0), 0.0)
+        self.assertGreater(second.width_mm(y1), 0.0)
+        with self.assertRaises(CandidateContractError):
+            first.width_mm(y1 + 1.0)
+
     def test_rank_gate_distinguishes_under_exact_and_incompatible_systems(self) -> None:
         under = classify_constraint_system(("mirror_voltage", "stripe_bias"), ("target_K",), jacobian_rows=((1.0, 0.0),))
         self.assertEqual(under.status, "underdetermined")

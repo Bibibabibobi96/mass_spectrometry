@@ -5,7 +5,9 @@ import unittest
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import (
     CandidateContractError,
     endpoint_regularized_kappa,
+    endpoint_regularized_tau_g,
     invert_nominal_psi_g_response,
+    tau_g_derivative_at_turn,
 )
 
 
@@ -25,6 +27,14 @@ class DualStripeL0MathTest(unittest.TestCase):
     def test_endpoint_regularization_rejects_non_turning_profile(self) -> None:
         with self.assertRaises(CandidateContractError):
             endpoint_regularized_kappa(lambda eta: 1.0)
+
+    def test_tau_g_regularization_and_derivative_preserve_the_turning_endpoint(self) -> None:
+        self.assertAlmostEqual(endpoint_regularized_tau_g(lambda eta: eta, lambda _eta: 1.0, 1.0), 2.0, places=8)
+        self.assertAlmostEqual(
+            tau_g_derivative_at_turn(lambda eta: eta, lambda _eta: 1.0, 1.0, step=1e-3),
+            1.0,
+            places=5,
+        )
 
 
 if __name__ == "__main__":

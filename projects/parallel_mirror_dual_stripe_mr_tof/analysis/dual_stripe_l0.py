@@ -136,6 +136,57 @@ def endpoint_regularized_kappa(
     raise CandidateContractError("endpoint-regularized kappa integral did not converge")
 
 
+def endpoint_regularized_tau_g(
+    psi_at_eta: Callable[[float], float], g_at_eta: Callable[[float], float], eta_turn: float,
+    *, initial_panels: int = 32, max_refinements: int = 12, relative_tolerance: float = 1e-8,
+) -> float:
+    """Integrate the generalized time response using ``eta=eta_turn-u²``.
+
+    This is the same endpoint regularization required for ``kappa`` but for
+    the dual-Stripe ``tau_g`` numerator.  It refuses an invalid return branch
+    instead of silently truncating before the turning singularity.
+    """
+    if not callable(psi_at_eta) or not callable(g_at_eta):
+        raise CandidateContractError("tau_g requires callable psi and g profiles")
+    turn = _finite(eta_turn, "eta_turn")
+    if turn <= 0.0 or not isinstance(initial_panels, int) or initial_panels < 2:
+        raise CandidateContractError("tau_g needs a positive turn and at least two initial panels")
+    if not isinstance(max_refinements, int) or max_refinements < 1 or not 0.0 < float(relative_tolerance) < 1.0:
+        raise CandidateContractError("tau_g refinement controls are invalid")
+    endpoint = _finite(psi_at_eta(turn), "psi(eta_turn)")
+    previous: float | None = None
+    upper_u = math.sqrt(turn)
+    for refinement in range(max_refinements):
+        panels = initial_panels * (2 ** refinement)
+        total = 0.0
+        for index in range(panels):
+            u = upper_u * (index + 0.5) / panels
+            eta = turn - u * u
+            difference = endpoint - _finite(psi_at_eta(eta), "psi(eta)")
+            if difference <= 0.0:
+                raise CandidateContractError("psi(eta) must remain strictly below psi(eta_turn) on the tau_g interval")
+            total += 2.0 * u * _finite(g_at_eta(eta), "g(eta)") / math.sqrt(difference)
+        current = upper_u * total / panels
+        if previous is not None and abs(current - previous) <= float(relative_tolerance) * max(1.0, abs(current)):
+            return current
+        previous = current
+    raise CandidateContractError("endpoint-regularized tau_g integral did not converge")
+
+
+def tau_g_derivative_at_turn(
+    psi_at_eta: Callable[[float], float], g_at_eta: Callable[[float], float], eta_turn: float,
+    *, step: float,
+) -> float:
+    """Return a centered, regularized derivative of ``tau_g(eta_turn)``."""
+    turn = _finite(eta_turn, "eta_turn")
+    increment = _finite(step, "tau_g derivative step")
+    if increment <= 0.0 or turn - increment <= 0.0:
+        raise CandidateContractError("tau_g derivative step must remain inside the physical positive turn domain")
+    upper = endpoint_regularized_tau_g(psi_at_eta, g_at_eta, turn + increment)
+    lower = endpoint_regularized_tau_g(psi_at_eta, g_at_eta, turn - increment)
+    return (upper - lower) / (2.0 * increment)
+
+
 def analyze_dual_stripe_l0(contract: dict[str, Any]) -> dict[str, Any]:
     """Check nominal dual-Stripe response independence and resolved widths.
 
