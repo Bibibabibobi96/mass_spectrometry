@@ -10,7 +10,6 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import Any
 
 from common.contracts.file_identity import file_sha256
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import (
@@ -24,6 +23,7 @@ GEOMETRY_REVIEW_STATUS = "prototype_geometry_review_only"
 REQUIRED_WORKBENCH_ARTIFACTS = (
     "iob",
     "program",
+    "mirror_cycle_counter",
     "operating_point",
     "voltage_map",
     "structure_report",

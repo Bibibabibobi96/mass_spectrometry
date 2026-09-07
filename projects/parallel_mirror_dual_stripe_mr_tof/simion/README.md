@@ -200,8 +200,11 @@ python -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_anal
 
 当前[mrtof_candidate.lua](mrtof_candidate.lua)仍有以下物理限制，事件完整性PASS并不消除它们：
 
-- 第50次任意`vz`变号会主动截停，`K=25`目前是镜内存活诊断，不是完整引出／探测；
-  `target_k_handoff_tof`记录点实际为转折点，不能称为中央面或检测器TOF。
+- 主程序现已绑定[mirror_cycle_counter.lua](mirror_cycle_counter.lua)：首次沿`-y`穿过理论Stripe入口
+  `y=0`显式打开主漂移区间，返回沿`+y`穿过该面时关闭；只有依次完成正、负两镜反射并以同方向
+  返回`z=0` Poincaré截面才增加一个完整周期。第50次镜转折不会再主动截停；`K=25`只在返回
+  交接面记录，真正成功终止由探测器命中负责。该状态机已有SIMION 2020 Lua合成轨迹回归，但尚无
+  合格Stripe/P2工作点，因而不构成真实三维完整引出或探测证据。
 - 棱镜16（路径 P1）现在接收由冻结`prism_transport` L0硬边界关系派生的**静态初值**；棱镜17
   （路径 P2）为 `pre_stripe_injection_pending` 的审查用`0 V`。两者均在 Stripe 前；该初值尚未经
   有限三维单位场/轨迹射击，也没有双程棱镜事件；
@@ -210,7 +213,8 @@ python -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_anal
   纯Lua回归通过，但实际平板终止与检测事件的对应仍待全装配飞行复核。
 - `sim_segment_global=1`已启用。SIMION 2020（8.2.0.11）同一N=2原生生命周期回归确认：关闭时仅记录PA内
   粒子终止，开启后PA内与PA外各一个粒子均有终态；不需`early_access`。这不代替旧漏记录束团的重新飞行。
-- [run_iob_flight.lua](run_iob_flight.lua)要求IOB同名的Lua、Fly2和operating-point sidecar。
+- [run_iob_flight.lua](run_iob_flight.lua)要求IOB同名的Lua、Fly2、operating-point、voltage-map和
+  mirror-cycle-counter sidecar。
   [run_three_component_center_flight.ps1](run_three_component_center_flight.ps1)是唯一的N=1中心粒子入口：
   它从一个已完成的三组件几何审查run逐字节冻结IOB、三份已加载PA、结构报告、source manifest及
   `center_fly2`，并拒绝IOB重命名的Fly2与该选定源字节不一致。它只发布全终态事件链的

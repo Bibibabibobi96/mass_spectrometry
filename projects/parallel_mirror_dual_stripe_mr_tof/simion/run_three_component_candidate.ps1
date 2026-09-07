@@ -250,6 +250,7 @@ try {
   $iobCompanions = @(
     $iob,
     ($iob -replace '\.iob$', '.lua'),
+    ($iob -replace '\.iob$', '.mirror_cycle_counter.lua'),
     ($iob -replace '\.iob$', '.fly2'),
     ($iob -replace '\.iob$', '.operating_point.lua'),
     ($iob -replace '\.iob$', '.voltage_map.lua'),

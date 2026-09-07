@@ -26,6 +26,7 @@ assert(paths[3]:match('%.pa#$'), 'detector must be a raw zero-voltage geometry P
 assert(program:match('%.lua$') and output:match('%.iob$'), 'program/output suffixes must be .lua/.iob')
 local operating_point_path=program:gsub('%.lua$','.operating_point.lua')
 local voltage_map_path=program:gsub('%.lua$','.voltage_map.lua')
+local cycle_counter_path=program:gsub('%.lua$','.mirror_cycle_counter.lua')
 local operating_point=assert(loadfile(operating_point_path),'run-local operating point required')()
 local voltage_map=assert(loadfile(voltage_map_path),'run-local voltage mapper required')()
 local voltages=voltage_map(operating_point.mirror_voltages_v,operating_point.stripe_biases_v,
@@ -64,6 +65,7 @@ local function copy(source,target)
   local o=assert(io.open(target,'wb')); o:write(text); o:close()
 end
 copy(program,output:gsub('%.iob$','.lua'))
+copy(cycle_counter_path,output:gsub('%.iob$','.mirror_cycle_counter.lua'))
 -- The Fly2 is a Workbench companion, not an IOB instance table.  Copy it only
 -- after wb:save(), so a freshly assembled IOB can be launched by the one
 -- official flight entry without changing its GUI-visible PA instances.

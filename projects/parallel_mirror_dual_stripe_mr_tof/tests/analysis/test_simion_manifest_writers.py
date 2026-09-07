@@ -33,7 +33,7 @@ def write_assembly_artifacts(root: Path) -> tuple[Path, Path]:
     (root / "mrtof_detector.pa#").write_bytes(b"detector")
     iob = root / "geometry.iob"
     iob.write_bytes(b"iob")
-    for suffix in (".lua", ".operating_point.lua", ".voltage_map.lua"):
+    for suffix in (".lua", ".operating_point.lua", ".voltage_map.lua", ".mirror_cycle_counter.lua"):
         iob.with_suffix(suffix).write_text("-- frozen\n", encoding="utf-8")
     report = root / "iob_structure_report.txt"
     report.write_text("STATUS=PASS\nPARTICLE_FLY_EXECUTED=false\n", encoding="utf-8")

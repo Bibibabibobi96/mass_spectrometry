@@ -7,6 +7,8 @@ local point={mirror_voltages_v={0,-10,20,30,50},stripe_biases_v={-4,6},
   prism_voltages_v={141.3329402510257,0},
   accelerator_voltages_v={40,30,0},accelerator_ring_voltages_v={25,20,15,10,5},
   nonaccelerator_scale=0.5,detector_box_mm={0,0,0,1,1,1},detector_normal_project='+z',
+  first_prism_l0={target_plane_z_mm=-101},
+  mirror_regions_project={negative={z_min_mm=-20,z_max_mm=-10},positive={z_min_mm=10,z_max_mm=20}},
   target_oscillation_count=25,trajectory_quality=8,maximum_step_us=0.002,
   full_path_timeout_us=5}
 local function build(value)
@@ -60,6 +62,9 @@ end
 loadfile=function(path)
   if path=='virtual/source.operating_point.lua' then return function() return point end end
   if path=='virtual/source.voltage_map.lua' then return function() return map end end
+  if path=='virtual/source.mirror_cycle_counter.lua' then
+    return assert(original_loadfile(directory..'mirror_cycle_counter.lua'))
+  end
   return original_loadfile(path)
 end
 local written={}
@@ -80,6 +85,7 @@ assert(simion.wb.instances[1].pa.values[16]==point.prism_voltages_v[1]
   and simion.wb.instances[1].pa.values[17]==point.prism_voltages_v[2],
   'IOB persistence did not apply run-local prism voltages')
 assert(written['virtual/review.voltage_map.lua']==mapper_text,'mapper sidecar not copied')
+assert(written['virtual/review.mirror_cycle_counter.lua']=='fixture','cycle-counter companion not copied')
 assert(written['virtual/review.operating_point.lua']=='fixture','operating point not copied')
 assert(written['virtual/review.fly2']=='fixture','Fly2 companion not copied')
 for id,value in pairs(expected.analyser) do assert(simion.wb.instances[1].pa.values[id]==value) end

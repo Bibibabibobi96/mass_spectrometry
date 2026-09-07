@@ -6,7 +6,7 @@
 local M = {}
 local Counter = {}
 Counter.__index = Counter
-local fields = {'x_mm', 'y_mm', 'z_mm', 'vz_mm_us', 't_us'}
+local fields = {'x_mm', 'y_mm', 'z_mm', 'vx_mm_us', 'vy_mm_us', 'vz_mm_us', 't_us'}
 
 local function finite(value)
   return type(value) == 'number' and value == value and math.abs(value) < math.huge

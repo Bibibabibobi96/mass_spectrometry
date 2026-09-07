@@ -69,6 +69,7 @@ try {
     (Join-Path $geometrySimion 'mrtof_analyzer.pa0'),(Join-Path $geometrySimion 'mrtof_accelerator.pa0'),(Join-Path $geometrySimion 'mrtof_detector.pa#'),
     (Join-Path $geometrySimion 'mrtof_three_component_candidate.lua'),(Join-Path $geometrySimion 'mrtof_three_component_candidate.fly2'),
     (Join-Path $geometrySimion 'mrtof_three_component_candidate.operating_point.lua'),(Join-Path $geometrySimion 'mrtof_three_component_candidate.voltage_map.lua'),
+    (Join-Path $geometrySimion 'mrtof_three_component_candidate.mirror_cycle_counter.lua'),
     (Join-Path $repoRoot 'projects\parallel_mirror_dual_stripe_mr_tof\simion\run_iob_flight.lua'),
     (Join-Path $repoRoot 'projects\parallel_mirror_dual_stripe_mr_tof\analysis\simion_event_analysis.py'),
     (Join-Path $repoRoot 'projects\parallel_mirror_dual_stripe_mr_tof\analysis\three_component_simion_flight_manifest.py'))
@@ -76,7 +77,7 @@ try {
   $startup=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -RequiredHeadroomBytes $copyBytes -ProtectedPaths @($package.artifact_run_dir)
   $startupPath=Join-Path $resultDir 'artifact_capacity_gate_startup.json';Write-RunJson -Path $startupPath -Depth 14 -Value $startup
   $failureStage='freeze_reviewed_iob'
-  foreach($name in @('mrtof_three_component_candidate.iob','mrtof_three_component_candidate.lua','mrtof_three_component_candidate.fly2','mrtof_three_component_candidate.operating_point.lua','mrtof_three_component_candidate.voltage_map.lua','mrtof_analyzer.pa0','mrtof_accelerator.pa0','mrtof_detector.pa#','three_component_geometry_review.json','prototype_input_manifest.json','simion_prototype_contract.json','mrtof_candidate_center.fly2')){
+  foreach($name in @('mrtof_three_component_candidate.iob','mrtof_three_component_candidate.lua','mrtof_three_component_candidate.fly2','mrtof_three_component_candidate.operating_point.lua','mrtof_three_component_candidate.voltage_map.lua','mrtof_three_component_candidate.mirror_cycle_counter.lua','mrtof_analyzer.pa0','mrtof_accelerator.pa0','mrtof_detector.pa#','three_component_geometry_review.json','prototype_input_manifest.json','simion_prototype_contract.json','mrtof_candidate_center.fly2')){
     Copy-RequiredRunInput -Source (Join-Path $geometrySimion $name) -Destination (Join-Path $solverDir $name) -Label "reviewed $name" | Out-Null
   }
   $frozenReport=Copy-RequiredRunInput -Source $geometryReport -Destination (Join-Path $solverDir 'iob_structure_report.txt') -Label 'reviewed IOB structure report'
@@ -87,7 +88,7 @@ try {
   $config=Get-Content -LiteralPath $runConfig -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
   $config.inputs=[ordered]@{geometry_review_run=$geometryRun;reviewed_iob=(Join-Path $package.artifact_run_dir 'simion\mrtof_three_component_candidate.iob');geometry_review=(Join-Path $package.artifact_run_dir 'simion\three_component_geometry_review.json');source_manifest=(Join-Path $package.artifact_run_dir 'simion\prototype_input_manifest.json');source_key='center_fly2';consumed_fly2=(Join-Path $package.artifact_run_dir 'simion\mrtof_three_component_candidate.fly2')};Write-RunJson -Path $runConfig -Value $config
   $failureStage='native_center_flight';$hostExecutionLease=Enter-HostExecutionLease -Role SIMION -RunId $RunId
-  Invoke-MrtofSimionStep -Stage 'native_center_flight' -Arguments @('--nogui','--noprompt','lua',$flightLauncher,'--',(Join-Path $solverDir 'mrtof_three_component_candidate.iob'))
+  Invoke-MrtofSimionStep -Stage 'native_center_flight' -Arguments @('--nogui','--noprompt','lua',$flightLauncher,(Join-Path $solverDir 'mrtof_three_component_candidate.iob'))
   $rawLog=Join-Path $logDir 'native_center_flight.log';$eventAnalysis=Join-Path $resultDir 'center_event_analysis.json'
   $failureStage='event_analysis';Invoke-MrtofPython -Arguments @($eventAnalyzer,$rawLog,$eventAnalysis,'--input-manifest',(Join-Path $solverDir 'prototype_input_manifest.json'),'--source-key','center_fly2')
   $receipt=Join-Path $resultDir 'three_component_center_flight_receipt.json';$failureStage='flight_receipt'

@@ -15,6 +15,7 @@ class ThreeComponentCenterFlightRunnerTest(unittest.TestCase):
             "GeometryReviewRunPath", "mrtof_three_component_candidate.iob",
             "three_component_geometry_review.json", "prototype_input_manifest.json",
             "simion_prototype_contract.json", "mrtof_candidate_center.fly2", "Test-RunFilesIdentical",
+            "mrtof_three_component_candidate.mirror_cycle_counter.lua",
             "run_iob_flight.lua", "simion_event_analysis.py",
             "three_component_simion_flight_manifest.py", "center_fly2",
             "joint_downstream_operating_point__center_flight_allowed",
@@ -29,6 +30,7 @@ class ThreeComponentCenterFlightRunnerTest(unittest.TestCase):
         self.assertLess(source.index("capacity_preflight"), source.index("native_center_flight"))
         self.assertIn("candidate_prototype_event_chain_only", source)
         self.assertNotIn("mass_resolution", source)
+        self.assertNotIn("$flightLauncher,'--'", source)
 
 
 if __name__ == "__main__":

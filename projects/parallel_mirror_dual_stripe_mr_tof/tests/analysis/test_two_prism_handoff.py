@@ -36,6 +36,11 @@ class TwoPrismHandoffTest(unittest.TestCase):
         self.assertEqual(audit["independent_voltage_constraint_rank_before_finite_3d_jacobian"], 1)
         self.assertEqual(audit["nullity_before_finite_3d_jacobian"], 1)
         self.assertEqual(audit["publication_gate"], "closed")
+        self.assertEqual(
+            audit["mechanical_fast_phase_acceptance"]["project_z_open_interval_mm"],
+            [-40.0, 40.0],
+        )
+        self.assertIn("does not select", audit["mechanical_fast_phase_acceptance"]["semantics"])
 
     def test_explicit_fast_phase_still_requires_finite_3d_rank(self) -> None:
         contract = copy.deepcopy(self.contract)

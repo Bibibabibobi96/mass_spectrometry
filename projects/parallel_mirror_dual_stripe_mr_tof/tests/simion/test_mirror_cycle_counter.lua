@@ -17,7 +17,7 @@ local function driver()
   local c, t, all = counter.new(regions), 0, {}
   local function step(z, vz, method)
     t = t + 1
-    local events = c[method or 'sample'](c, {x_mm=t/10,y_mm=t/5,z_mm=z,vz_mm_us=vz,t_us=t})
+    local events = c[method or 'sample'](c, {x_mm=t/10,y_mm=t/5,z_mm=z,vx_mm_us=0,vy_mm_us=0,vz_mm_us=vz,t_us=t})
     for _, event in ipairs(events) do all[#all + 1] = event end
     return events
   end
@@ -124,15 +124,15 @@ end)
 
 test('linear brackets report interpolated coordinates and time', function()
   local c = counter.new(regions)
-  c:enter_main_drift({x_mm=0,y_mm=0,z_mm=0,vz_mm_us=2,t_us=0})
-  c:sample({x_mm=1,y_mm=2,z_mm=11,vz_mm_us=2,t_us=1})
-  local events = c:sample({x_mm=3,y_mm=6,z_mm=13,vz_mm_us=-2,t_us=3})
+  c:enter_main_drift({x_mm=0,y_mm=0,z_mm=0,vx_mm_us=0,vy_mm_us=0,vz_mm_us=2,t_us=0})
+  c:sample({x_mm=1,y_mm=2,z_mm=11,vx_mm_us=0,vy_mm_us=0,vz_mm_us=2,t_us=1})
+  local events = c:sample({x_mm=3,y_mm=6,z_mm=13,vx_mm_us=0,vy_mm_us=0,vz_mm_us=-2,t_us=3})
   assert(#events == 1 and events[1].kind == 'mirror_turn')
   assert(events[1].t_us == 2 and events[1].x_mm == 2 and events[1].y_mm == 4)
   assert(events[1].z_mm == 12 and events[1].vz_mm_us == 0)
   assert(events[1].bracket_start_us == 1 and events[1].bracket_end_us == 3)
-  c:sample({x_mm=5,y_mm=10,z_mm=1,vz_mm_us=-2,t_us=4})
-  events = c:sample({x_mm=7,y_mm=14,z_mm=-1,vz_mm_us=-2,t_us=6})
+  c:sample({x_mm=5,y_mm=10,z_mm=1,vx_mm_us=0,vy_mm_us=0,vz_mm_us=-2,t_us=4})
+  events = c:sample({x_mm=7,y_mm=14,z_mm=-1,vx_mm_us=0,vy_mm_us=0,vz_mm_us=-2,t_us=6})
   assert(events[1].kind == 'central_plane' and events[1].t_us == 5)
   assert(events[1].z_mm == 0 and events[1].x_mm == 6 and events[1].y_mm == 12)
 end)
@@ -169,8 +169,8 @@ end)
 
 test('entry on an already sampled crossing owns one physical crossing only', function()
   local c = counter.new(regions)
-  c:sample({x_mm=0,y_mm=0,z_mm=-1,vz_mm_us=1,t_us=0})
-  local sample = {x_mm=0,y_mm=0,z_mm=0,vz_mm_us=1,t_us=1}
+  c:sample({x_mm=0,y_mm=0,z_mm=-1,vx_mm_us=0,vy_mm_us=0,vz_mm_us=1,t_us=0})
+  local sample = {x_mm=0,y_mm=0,z_mm=0,vx_mm_us=0,vy_mm_us=0,vz_mm_us=1,t_us=1}
   local crossing = c:sample(sample)
   assert(count(crossing, 'central_plane') == 1)
   local entry = c:enter_main_drift(sample)
@@ -198,11 +198,11 @@ test('missing regions, sample fields, backward time, and implicit re-entry fail 
   local c, step = driver()
   assert(not pcall(c.sample, c, {z_mm=0,vz_mm_us=1,t_us=0}))
   step(0, 1, 'enter_main_drift')
-  assert(not pcall(c.sample, c, {x_mm=0,y_mm=0,z_mm=0,vz_mm_us=1,t_us=0}))
-  assert(not pcall(c.enter_main_drift, c, {x_mm=0,y_mm=0,z_mm=0,vz_mm_us=1,t_us=2}))
-  assert(not pcall(c.sample, c, {x_mm=0,y_mm=0,z_mm=0,vz_mm_us=1,t_us=1}))
+  assert(not pcall(c.sample, c, {x_mm=0,y_mm=0,z_mm=0,vx_mm_us=0,vy_mm_us=0,vz_mm_us=1,t_us=0}))
+  assert(not pcall(c.enter_main_drift, c, {x_mm=0,y_mm=0,z_mm=0,vx_mm_us=0,vy_mm_us=0,vz_mm_us=1,t_us=2}))
+  assert(not pcall(c.sample, c, {x_mm=0,y_mm=0,z_mm=0,vx_mm_us=0,vy_mm_us=0,vz_mm_us=1,t_us=1}))
   step(1, 1, 'end_main_drift')
-  assert(not pcall(c.enter_main_drift, c, {x_mm=0,y_mm=0,z_mm=0,vz_mm_us=1,t_us=3}))
+  assert(not pcall(c.enter_main_drift, c, {x_mm=0,y_mm=0,z_mm=0,vx_mm_us=0,vy_mm_us=0,vz_mm_us=1,t_us=3}))
 end)
 
 print(string.format('PASS mirror_cycle_counter: %d synthetic event-logic tests; no solver flight', passed))

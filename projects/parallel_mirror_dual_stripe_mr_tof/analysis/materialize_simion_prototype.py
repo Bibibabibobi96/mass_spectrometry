@@ -335,11 +335,27 @@ def materialize(contract_path: Path, mirror_receipt_path: Path, output_directory
         accelerator_focus_width,
     )
     first_prism_entry_center_fly2 = _first_prism_entry_fly2(prism_l0, particle_source)
-    detector = resolve_geometry(contract)["detector"]
+    resolved_geometry = resolve_geometry(contract)
+    detector = resolved_geometry["detector"]
     detector_box = detector["box"]
     if detector.get("normal_project") != "+z":
         raise CandidateContractError("prototype requires the resolved +z-facing detector")
     output_directory.mkdir(parents=True, exist_ok=True)
+    mirror_boxes = [
+        item["box"]
+        for key in ("mirror_ground_shields", "mirror_electrodes", "mirror_e_closures")
+        for item in resolved_geometry[key]
+    ]
+    mirror_regions = {
+        "negative": [
+            min(box[2] for box in mirror_boxes if box[5] < 0.0),
+            max(box[5] for box in mirror_boxes if box[5] < 0.0),
+        ],
+        "positive": [
+            min(box[2] for box in mirror_boxes if box[2] > 0.0),
+            max(box[5] for box in mirror_boxes if box[2] > 0.0),
+        ],
+    }
     accelerator_dependency = _freeze_accelerator_dependency(output_directory)
     derived = json.loads(json.dumps(contract))
     mirror = derived["mirror"]
@@ -370,6 +386,10 @@ def materialize(contract_path: Path, mirror_receipt_path: Path, output_directory
         + ", target_plane_y_acceptance_mm = { " + ", ".join(
             f"{value:.17g}" for value in prism_l0.target_plane_y_acceptance_mm
         ) + " }"
+        + " }, mirror_regions_project = { negative = { z_min_mm = "
+        + f"{mirror_regions['negative'][0]:.17g}, z_max_mm = {mirror_regions['negative'][1]:.17g}"
+        + " }, positive = { z_min_mm = "
+        + f"{mirror_regions['positive'][0]:.17g}, z_max_mm = {mirror_regions['positive'][1]:.17g} }}"
         + " }, detector_box_mm = { " + ", ".join(f"{float(value):.17g}" for value in detector_box)
         + f" }}, detector_normal_project = '+z', trajectory_quality = {trajectory_quality:.17g}, maximum_step_us = {maximum_step_us:.17g}, full_path_timeout_us = {full_path_timeout_us:.17g}, nonaccelerator_scale = {nonaccelerator_scale:.17g}, target_oscillation_count = {target_oscillation_count} }}\n",
         encoding="utf-8",
@@ -378,6 +398,9 @@ def materialize(contract_path: Path, mirror_receipt_path: Path, output_directory
     program_template = Path(__file__).resolve().parents[1] / "simion" / "mrtof_candidate.lua"
     program_output = output_directory / "mrtof_candidate.lua"
     program_output.write_bytes(program_template.read_bytes())
+    cycle_counter_template = program_template.with_name("mirror_cycle_counter.lua")
+    cycle_counter_output = output_directory / "mrtof_candidate.mirror_cycle_counter.lua"
+    cycle_counter_output.write_bytes(cycle_counter_template.read_bytes())
     voltage_map_template = program_template.with_name("candidate_voltage_map.lua")
     voltage_map_output = output_directory / "mrtof_candidate.voltage_map.lua"
     voltage_map_output.write_bytes(voltage_map_template.read_bytes())
@@ -412,6 +435,7 @@ def materialize(contract_path: Path, mirror_receipt_path: Path, output_directory
         "derived_contract": {"filename": contract_output.name, "sha256": _sha256(contract_output)},
         "operating_point": {"filename": sidecar_output.name, "sha256": _sha256(sidecar_output)},
         "program": {"filename": program_output.name, "sha256": _sha256(program_output)},
+        "mirror_cycle_counter": {"filename": cycle_counter_output.name, "sha256": _sha256(cycle_counter_output)},
         "voltage_map": {"filename": voltage_map_output.name, "sha256": _sha256(voltage_map_output)},
         "first_prism_program": {"filename": first_prism_program_output.name, "sha256": _sha256(first_prism_program_output)},
         "first_prism_operating_point": {"filename": first_prism_operating_point_output.name, "sha256": _sha256(first_prism_operating_point_output)},
@@ -429,6 +453,7 @@ def materialize(contract_path: Path, mirror_receipt_path: Path, output_directory
         "first_prism_l0_receipt": prism_receipt_output,
         "operating_point": sidecar_output,
         "program": program_output,
+        "mirror_cycle_counter": cycle_counter_output,
         "voltage_map": voltage_map_output,
         "first_prism_program": first_prism_program_output,
         "first_prism_operating_point": first_prism_operating_point_output,

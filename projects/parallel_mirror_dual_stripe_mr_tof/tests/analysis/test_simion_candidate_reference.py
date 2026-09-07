@@ -251,6 +251,22 @@ class SimionCandidateReferenceTest(unittest.TestCase):
             self.assertEqual(input_manifest["voltage_map"]["filename"], voltage_map.name)
             self.assertEqual(input_manifest["voltage_map"]["sha256"], hashlib.sha256(voltage_map.read_bytes()).hexdigest())
             self.assertEqual(voltage_map.read_bytes(), (PROJECT / "simion" / "candidate_voltage_map.lua").read_bytes())
+            cycle_counter = outputs["mirror_cycle_counter"]
+            self.assertEqual(input_manifest["mirror_cycle_counter"]["filename"], cycle_counter.name)
+            self.assertEqual(
+                input_manifest["mirror_cycle_counter"]["sha256"],
+                hashlib.sha256(cycle_counter.read_bytes()).hexdigest(),
+            )
+            self.assertEqual(
+                cycle_counter.read_bytes(),
+                (PROJECT / "simion" / "mirror_cycle_counter.lua").read_bytes(),
+            )
+            operating_point = outputs["operating_point"].read_text(encoding="utf-8")
+            self.assertIn(
+                "mirror_regions_project = { negative = { z_min_mm = -325, z_max_mm = -102 }, "
+                "positive = { z_min_mm = 102, z_max_mm = 325 } }, detector_box_mm = {",
+                operating_point,
+            )
             self.assertIn("source_receipt_sha256", outputs["operating_point"].read_text(encoding="utf-8"))
             self.assertIn(
                 "qualification = 'geometry_review_only__unsolved_stripe_and_p2'",
@@ -261,6 +277,10 @@ class SimionCandidateReferenceTest(unittest.TestCase):
                 "geometry_review_only__unsolved_stripe_and_p2__flight_forbidden",
             )
             self.assertEqual(outputs["program"].name, "mrtof_candidate.lua")
+            program = outputs["program"].read_text(encoding="utf-8")
+            self.assertIn("mirror_cycle_counter.new(mirror_regions)", program)
+            self.assertNotIn("target_turns", program)
+            self.assertNotIn("turns[ion_number] ==", program)
             self.assertTrue(outputs["first_prism_l0_receipt"].exists())
             self.assertIn("first_prism_l0_receipt", input_manifest)
             self.assertIn("first_prism_l0", outputs["operating_point"].read_text(encoding="utf-8"))

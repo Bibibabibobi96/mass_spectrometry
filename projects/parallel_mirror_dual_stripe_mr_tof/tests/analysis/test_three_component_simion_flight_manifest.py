@@ -31,6 +31,7 @@ def write_fixture(root: Path) -> dict[str, Path]:
         ("program", "three_component.lua"),
         ("operating_point", "three_component.operating_point.lua"),
         ("voltage_map", "three_component.voltage_map.lua"),
+        ("mirror_cycle_counter", "three_component.mirror_cycle_counter.lua"),
     ):
         path = geometry / name
         path.write_text(f"{key}\n", encoding="utf-8")

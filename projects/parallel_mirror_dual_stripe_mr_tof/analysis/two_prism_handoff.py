@@ -47,6 +47,25 @@ def audit_two_prism_voltage_definition(contract: dict[str, Any]) -> dict[str, An
         raise CandidateContractError("two-prism definition audit lacks prism identities or Stripe entry y") from error
     if prism_ids[0] == prism_ids[1] or not math.isfinite(entry_y):
         raise CandidateContractError("two-prism identities must be distinct and the Stripe entry y finite")
+    geometry = contract.get("prisms")
+    electrodes = geometry.get("electrodes") if isinstance(geometry, dict) else None
+    shields = geometry.get("ground_shields") if isinstance(geometry, dict) else None
+    if not isinstance(electrodes, list) or not isinstance(shields, list):
+        raise CandidateContractError("two-prism definition audit needs prism and grounded-shield geometry")
+    second_electrodes = [item for item in electrodes if isinstance(item, dict) and item.get("id") == prism_ids[1]]
+    if len(second_electrodes) != 1:
+        raise CandidateContractError("two-prism definition audit needs exactly one P2 geometry")
+    p2_station = second_electrodes[0].get("station")
+    matching_shields = [item for item in shields if isinstance(item, dict) and item.get("station") == p2_station]
+    if len(matching_shields) != 1:
+        raise CandidateContractError("two-prism definition audit needs exactly one grounded shield at the P2 station")
+    aperture = matching_shields[0].get("cross_aperture")
+    try:
+        mechanical_z = tuple(float(value) for value in aperture["z_mm"])
+    except (KeyError, TypeError, ValueError) as error:
+        raise CandidateContractError("P2 shield must declare its cross-aperture z bounds") from error
+    if len(mechanical_z) != 2 or not all(math.isfinite(value) for value in mechanical_z) or not mechanical_z[0] < mechanical_z[1]:
+        raise CandidateContractError("P2 shield cross-aperture z bounds must be finite and ordered")
 
     common = {
         "unknowns": [
@@ -66,6 +85,11 @@ def audit_two_prism_voltage_definition(contract: dict[str, Any]) -> dict[str, An
             "grounded_shield_aperture_centroid",
             "CAD_bounding_box_center",
         ],
+        "mechanical_fast_phase_acceptance": {
+            "project_z_open_interval_mm": [mechanical_z[0], mechanical_z[1]],
+            "source": f"P2_station_grounded_shield_id_{matching_shields[0].get('id')}_cross_aperture",
+            "semantics": "a collision-free mechanical bound only; it does not select the theoretical fast phase",
+        },
     }
     phase = model.get("stripe_entrance_fast_phase_authority")
     if phase is None or (isinstance(phase, dict) and phase.get("status") == "missing"):
