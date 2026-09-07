@@ -114,6 +114,22 @@ def reduced_period(energy_per_charge_v: float, design: MirrorL0Design) -> float:
     return 2.0 * quad(integrand, 0.0, math.pi / 2.0, epsabs=1e-8, limit=200)[0]
 
 
+def effective_axial_width_mm(energy_per_charge_v: float, reduced_period_mm_per_sqrt_v: float) -> float:
+    """Convert a full-two-mirror reduced period into the theory's ``W``.
+
+    With this module's period convention, physical time is
+    ``T0 = R*sqrt(2m/q)`` and the adiabatic-drift definition is
+    ``W=T0*sqrt(q*E/(2m))``.  Therefore all ion properties cancel and
+    ``W=R*sqrt(E)`` in millimetres.  It is an analytic mirror result, not a
+    mechanical terminal-plane separation.
+    """
+    energy = _finite(energy_per_charge_v, "energy_per_charge_v")
+    period = _finite(reduced_period_mm_per_sqrt_v, "reduced_period_mm_per_sqrt_v")
+    if energy <= 0.0 or period <= 0.0:
+        raise CandidateContractError("energy and reduced period must be positive when deriving W")
+    return period * math.sqrt(energy)
+
+
 def three_point_report(design: MirrorL0Design, energies_v: Iterable[float]) -> dict[str, object]:
     energies = tuple(_finite(value, "three_point_energy_v") for value in energies_v)
     if len(energies) != 3 or energies != tuple(sorted(energies)):
@@ -124,6 +140,7 @@ def three_point_report(design: MirrorL0Design, energies_v: Iterable[float]) -> d
         "energies_v": list(energies),
         "reduced_periods": list(periods),
         "turning_points_mm": [turning_point_mm(value, design) for value in energies],
+        "effective_axial_widths_mm": [effective_axial_width_mm(energy, period) for energy, period in zip(energies, periods)],
         "relative_period_residual_ppm": [1e6 * (value - central) / central for value in periods],
         "central_slope_per_v": (periods[2] - periods[0]) / (central * (energies[2] - energies[0])),
     }

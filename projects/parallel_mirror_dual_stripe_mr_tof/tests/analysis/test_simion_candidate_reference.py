@@ -42,6 +42,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import (
     MirrorL0Design,
     axial_potential_v,
+    effective_axial_width_mm,
     optimize_fixed_geometry_voltages,
     three_point_report,
 )
@@ -462,7 +463,13 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         report = three_point_report(design, (3900.0, 4000.0, 4100.0))
         self.assertEqual(report["energies_v"], [3900.0, 4000.0, 4100.0])
         self.assertEqual(len(report["turning_points_mm"]), 3)
+        self.assertEqual(len(report["effective_axial_widths_mm"]), 3)
         self.assertTrue(all(value > 0.0 for value in report["turning_points_mm"]))
+
+    def test_mirror_effective_width_is_derived_from_period_not_terminal_spacing(self) -> None:
+        self.assertAlmostEqual(effective_axial_width_mm(4000.0, 641.0 / 4000.0 ** 0.5), 641.0)
+        with self.assertRaises(CandidateContractError):
+            effective_axial_width_mm(4000.0, 0.0)
 
     def test_mirror_l0_does_not_add_an_unsupported_grounded_outer_transition(self) -> None:
         design = MirrorL0Design(
