@@ -21,14 +21,14 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.cad_pose_contract impo
 
 
 def _source_transform(point_m: tuple[float, float, float], values: list[float]) -> tuple[float, float, float]:
-    """Apply SolidWorks' row-major rotation and metre translation."""
+    """Apply SolidWorks MathTransform ``p_parent=p_local R+t`` in metres."""
     if len(values) != 16:
         raise ValueError("SolidWorks transform must contain sixteen values")
     rotation = values[:9]
     translation = values[9:12]
     return tuple(
-        sum(rotation[row * 3 + column] * point_m[column] for column in range(3)) + translation[row]
-        for row in range(3)
+        sum(point_m[row] * rotation[row * 3 + column] for row in range(3)) + translation[column]
+        for column in range(3)
     )
 
 

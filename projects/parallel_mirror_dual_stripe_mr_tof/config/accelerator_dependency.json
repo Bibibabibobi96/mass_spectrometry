@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "role": "accelerator_component_dependency",
+  "consumer_project_id": "parallel_mirror_dual_stripe_mr_tof",
+  "provider_project_id": "orthogonal_accelerator",
+  "api_version": 1,
+  "provider_contract": "projects/orthogonal_accelerator/config/component_contract.json",
+  "structural_variants": ["two_zone"],
+  "ownership": "Provider owns accelerator physics and device geometry; MR owns hardware constraints, prism matching, rigid placement and the system z=0 first-focus requirement. Three-zone MR integration remains a later independent comparison."
+}

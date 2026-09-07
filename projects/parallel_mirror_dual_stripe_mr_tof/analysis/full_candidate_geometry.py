@@ -1,19 +1,23 @@
-"""Generate the monolithic three-dimensional MR-TOF Candidate GEM.
-
-This generator never imports oa-TOF assets.  It keeps the project coordinate
-frame directly in GEM local coordinates: x is transverse focusing, y is the
-slow-drift direction, z is the fast mirror-reflection direction, and z=0 is
-the centre/injection handoff plane.  CAD provides the mirror and prism local
-envelopes; the Stripe contour and global transforms are theory-derived until
-the broken archived ion-foil parts are recovered.
-"""
+"""Generate the full MR-TOF Candidate GEM from resolved physical geometry."""
 from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from typing import Iterable
 
+from projects.orthogonal_accelerator.analysis.two_zone_geometry import derive_shielded_rectangular_enclosure
+from projects.orthogonal_accelerator.simion.rectangular_accelerator import (
+    emit_grounded_enclosure, emit_ideal_grid, emit_open_rectangular_frame,
+    emit_solid_rectangular_plate,
+)
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import (
+    geometry_fingerprint,
+    resolve_geometry,
+    write_geometry_receipt,
+)
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
     CandidateContractError,
+    derive_two_zone_placement,
     load_contract,
 )
 
@@ -25,85 +29,266 @@ ELECTRODE_IDS = {
     "drift_stripe_set_2": (13, 14),
     "central_ground": 15,
     "prisms": (16, 17),
-    "prism_ground_shields": (18, 19, 20, 21),
+    "prism_ground_shields": (18, 20),
     "accelerator": (22, 23, 24),
-    "detector": 25,
+    "accelerator_stage_2_rings": (26, 27, 28, 29, 30),
 }
+
+
+def _number(value: float) -> str:
+    return f"{value:.12g}"
+
+
+def _box(values: Iterable[float]) -> str:
+    return "box3D(" + ",".join(_number(value) for value in values) + ")"
+
+
+def _polyline(points: list[list[float]]) -> str:
+    # SIMION's legacy ``polyline`` fill is not implicitly closed for a
+    # three-vertex region.  Closing every region is harmless for the Stripe
+    # quadrilaterals and is essential for the triangular prism faces.
+    closed = points if points and points[0] == points[-1] else [*points, points[0]]
+    return "polyline(" + ",".join(_number(value) for point in closed for value in point) + ")"
+
+
+def _polygon_bands(points: list[list[float]]) -> list[list[list[float]]]:
+    """Split a sampled two-edge polygon into GEM-simple shared-edge strips.
+
+    SIMION 2020 legacy GEM rejects a single expression with hundreds of
+    polyline vertices.  Resolved Stripe/Ion-Foil shapes are ordered as one
+    lower edge followed by the reversed upper edge, so adjacent quadrilaterals
+    are an exactly equivalent union at the frozen sampling nodes.
+    """
+    if len(points) < 4 or len(points) % 2:
+        return [points]
+    half = len(points) // 2
+    lower, upper = points[:half], list(reversed(points[half:]))
+    if any(lower[index][0] >= lower[index + 1][0] or upper[index][0] >= upper[index + 1][0] for index in range(half - 1)):
+        return [points]
+    return [[lower[index], lower[index + 1], upper[index + 1], upper[index]] for index in range(half - 1)]
+
+
+def _extrude_polygon_bands(x: list[float], polygon: list[list[float]]) -> list[str]:
+    """Return one native ``extrude_yz`` term per simple polygon band."""
+    return [
+        f"extrude_yz({_number(x[0])},{_number(x[1])}) {{ {_polyline(band)} }}"
+        for band in _polygon_bands(polygon)
+    ]
+
+
+def resolve_simion_iob_origin(contract: dict[str, object]) -> tuple[float, float, float]:
+    """Map the resolved physical origin to the PA instance origin in mm."""
+    span = contract["simion"]["pa_span_mm"]
+    if not isinstance(span, list) or len(span) != 3 or any(float(value) <= 0.0 for value in span):
+        raise CandidateContractError("simion.pa_span_mm must contain three positive physical spans")
+    placement = derive_two_zone_placement(contract)
+    grid_phase_z = -placement.exit_grid_z_mm
+    return (-float(span[0]) / 2.0, -float(span[1]) / 2.0, -float(span[2]) / 2.0 - grid_phase_z)
+
+
+def _mirror_lines(resolved: dict[str, object]) -> list[str]:
+    lines = [
+        "  ; Each active mirror electrode has its own CAD 580 x 30-mm bounded aperture.",
+        "  ; The aperture terminates before both y ends and does not pass through end plates in z.",
+    ]
+    for electrode in resolved["mirror_electrodes"]:
+        lines.extend((
+            f"  e({electrode['id']}) {{",
+            f"    {_box(electrode['box'])}",
+            f"    notin_inside {{ {_box(electrode['beam_slot'])} }}",
+            "  }",
+        ))
+    return lines
+
+
+def _mirror_ground_shield_lines(resolved: dict[str, object]) -> list[str]:
+    """Emit the CAD-derived inner grounded mirror end plates as shared 0-V ID 15."""
+    inner_slot = _box(resolved["mirror_inner_shield_slot"])
+    lines = [
+        "  ; CAD inner end plates: Stripe-facing 5-mm shields have 4-mm slots.",
+        "  e(15) {",
+    ]
+    for shield in resolved["mirror_ground_shields"]:
+        lines.append(f"    {_box(shield['box'])}")
+        if shield["role"] == "inner_stripe_facing_4mm_slot":
+            lines.append(f"    notin_inside {{ {inner_slot} }}")
+    lines.append("  }")
+    for closure in resolved["mirror_e_closures"]:
+        lines.extend((f"  e({closure['id']}) {{", f"    {_box(closure['box'])}", "  }"))
+    return lines
+
+
+def _stripe_lines(resolved: dict[str, object]) -> list[str]:
+    slot = _box(resolved["stripe_slot"])
+    lines = ["  ; Four physical curved Stripe conductors; pairs (11,12) and (13,14) share biases."]
+    for electrode in resolved["stripe_electrodes"]:
+        lower, upper = electrode["x"]
+        lines.extend((
+            f"  e({electrode['id']}) {{",
+            *(f"    {term}" for term in _extrude_polygon_bands([lower, upper], electrode["polygon_yz_mm"])),
+            *(f"    {term}" for term in _extrude_polygon_bands([lower, upper], electrode["terminal_polygon_yz_mm"])),
+            # SIMION's official ``notin_inside`` preserves CAD-face nodes.
+            # Thus a 4-mm channel retains metal at x=±2 mm, not ±3 mm.
+            f"    notin_inside {{ {slot} }}",
+            "  }",
+        ))
+    return lines
+
+
+def _central_ground_lines(resolved: dict[str, object]) -> list[str]:
+    """Emit one whole native Foil-2 body minus its two rectangular windows."""
+    lines = ["  ; Whole Ion-Foil-2 with native short cubic and planar end features; no added bridges.",
+             "  e(15) {"]
+    for body in resolved["central_ground_electrodes"]:
+        lines.extend(f"    {term}" for term in _extrude_polygon_bands(body["x"], body["polygon_yz_mm"]))
+    lines.extend(f"    notin_inside {{ {_box(slot)} }}" for slot in resolved["central_ground_slots"])
+    lines.append("  }")
+    return lines
+
+
+def _prism_ground_shield_lines(resolved: dict[str, object]) -> list[str]:
+    """Emit finite-y grounded frames with CAD-audited apertures."""
+    lines = [
+        "  ; Grounded prism frames retain their CAD finite-y bodies and nested triangular apertures.",
+    ]
+    for shield in resolved["prism_ground_shields"]:
+        outer = [term for section in shield["body_sections"]
+                 for term in _extrude_polygon_bands(section["x"], section["polygon_yz_mm"])]
+        aperture = _extrude_polygon_bands(shield["x"], shield["prism_clearance_polygon_yz_mm"])
+        lines.append(f"  e({shield['id']}) {{")
+        lines.extend(f"    {term}" for term in outer)
+        lines.append("    notin_inside_or_on {")
+        lines.extend(f"      {term}" for term in aperture)
+        lines.append("    }")
+        for slot in shield.get("rectangular_slots_mm", []):
+            lines.append("    ; CAD slot subtraction leaves the finite end lands as one continuous grounded body.")
+            lines.append(f"    notin_inside {{ {_box(slot)} }}")
+        lines.append("  }")
+    return lines
 
 
 def build_full_candidate_gem(contract_path: Path) -> str:
-    """Return a SIMION 2020 legacy-GEM source for the complete Candidate."""
+    """Return a SIMION-2020 legacy GEM with all Candidate physical electrodes."""
     contract = load_contract(contract_path)
-    if contract["status"] != "candidate_provisional_not_cad_audited":
-        raise CandidateContractError("full geometry must retain the qualified Candidate status")
+    if contract["status"] not in {
+        "candidate_theory_derived_cad_constrained",
+        "candidate_hardware_geometry__theory_operating_point_pending",
+    }:
+        raise CandidateContractError("full geometry needs a qualified Candidate contract status")
     if contract["accelerator"]["topology"] != "two_zone_orthogonal_pulsed":
         raise CandidateContractError("full geometry requires the MR-TOF two-zone accelerator")
-    return """; Full MR-TOF 3D SIMION Candidate (not Formal).
-; Project coordinates are native GEM coordinates: x focus, y drift, z reflection.
-; CAD audit: mirror/prism envelopes and physical Stripe B-spline edge profiles
-; are resolved from read-only SolidWorks evidence.  The raw Foil-1/Foil-3
-; overlap is moved to a serial, non-overlapping dual-Stripe Candidate layout.
-; IDs: 1..5 right mirror; 6..10 left mirror; 11..14 four physical Stripes;
-; 15 central ground; 16..17 triangular prisms; 18..21 grounded shields;
-; 22 repeller; 23 ideal grid-1; 24 ideal grid-2; 25 numerical detector.
-# local mmgu_xy = _G.var and _G.var.mmgu_xy or 4.0
-# local mmgu_z = _G.var and _G.var.mmgu_z or 0.4
-# local focus_phase_z = 0.12918680341102168
-# local x_span, y_span, z_span = 180, 680, 900
-# local nx = math.floor(x_span/mmgu_xy + 0.5) + 1
-# local ny = math.floor(y_span/mmgu_xy + 0.5) + 1
-# local nz = math.floor(z_span/mmgu_z + 0.5) + 1
-pa_define($(nx),$(ny),$(nz),planar,none,electrostatic,, $(mmgu_xy),$(mmgu_xy),$(mmgu_z),surface=none)
-locate($(x_span/2),$(y_span/2),$(z_span/2)) {
-  ; Non-accelerator hardware is phase-shifted so the PA-instance translation
-  ; maps its physical central plane to project z=0. The raw accelerator grids
-  ; remain at local rows -33.6 and 0 mm, preserving native-grid alignment.
-  locate(0,0,$(focus_phase_z)) {
-  ; Five CAD-envelope mirrors: local slow length 600 mm and transverse width 125 mm.
-  ; Five CAD-envelope mirror stages with an aligned 90 mm Candidate beam slot.
-  e(1) { fill { within { box3D(-62.5,-300,190,62.5,300,245) } notin { box3D(-45,-300,175,45,10,422) } } }
-  e(2) { fill { within { box3D(-62.5,-300,251,62.5,300,308) } notin { box3D(-45,-300,175,45,10,422) } } }
-  e(3) { fill { within { box3D(-62.5,-300,314,62.5,300,341) } notin { box3D(-45,-300,175,45,10,422) } } }
-  e(4) { fill { within { box3D(-62.5,-300,347,62.5,300,372) } notin { box3D(-45,-300,175,45,10,422) } } }
-  e(5) { fill { within { box3D(-62.5,-300,378,62.5,300,407) } notin { box3D(-45,-300,175,45,10,422) } } }
-  e(6) { fill { within { box3D(-62.5,-300,-245,62.5,300,-190) } notin { box3D(-45,-300,-422,45,10,-175) } } }
-  e(7) { fill { within { box3D(-62.5,-300,-308,62.5,300,-251) } notin { box3D(-45,-300,-422,45,10,-175) } } }
-  e(8) { fill { within { box3D(-62.5,-300,-341,62.5,300,-314) } notin { box3D(-45,-300,-422,45,10,-175) } } }
-  e(9) { fill { within { box3D(-62.5,-300,-372,62.5,300,-347) } notin { box3D(-45,-300,-422,45,10,-175) } } }
-  e(10) { fill { within { box3D(-62.5,-300,-407,62.5,300,-378) } notin { box3D(-45,-300,-422,45,10,-175) } } }
-  ; CAD Foil-1/3 long B-spline edges are represented as project y-z profiles.
-  ; Raw CAD zones overlap; Foil-3 is shifted by 50 mm and Foil-1 by 90 mm so
-  ; independent voltage regions are serial with a positive axial gap.
-  ; Preserve a 16 mm centred x-channel: the four physical CAD contours are
-  ; resolved as opposing rails rather than solid beam blocks.
-  e(11) { fill { within { extrude_yz(-12,12) { polyline(-390,176.3,-326,159.9,-263,145.8,-214,139.5,-181,138.7,-131,141.6,-90,147.6,-41,154.4,0,154.1,0,187,-390,187) } } notin { box3D(-8,-400,-250,8,10,250) } } }
-  e(12) { fill { within { extrude_yz(-12,12) { polyline(-390,-176.3,-326,-159.9,-263,-145.8,-214,-139.5,-181,-138.7,-131,-141.6,-90,-147.6,-41,-154.4,0,-154.1,0,-187,-390,-187) } } notin { box3D(-8,-400,-250,8,10,250) } } }
-  e(13) { fill { within { extrude_yz(-12,12) { polyline(-390,88.9,-326,76.8,-261,67.3,-212,64.7,-179,66.3,-130,73.0,-90,81.8,-41,92.0,0,94.6,0,109.5,-41,109.8,-90,103.0,-131,97.0,-181,94.0,-230,96.4,-279,104.2,-326,115.3,-390,131.7) } } notin { box3D(-8,-400,-250,8,10,250) } } }
-  e(14) { fill { within { extrude_yz(-12,12) { polyline(-390,-88.9,-326,-76.8,-261,-67.3,-212,-64.7,-179,-66.3,-130,-73.0,-90,-81.8,-41,-92.0,0,-94.6,0,-109.5,-41,-109.8,-90,-103.0,-131,-97.0,-181,-94.0,-230,-96.4,-279,-104.2,-326,-115.3,-390,-131.7) } } notin { box3D(-8,-400,-250,8,10,250) } } }
-  ; Centred CAD Ion-Foil-2 envelope, grounded except for the explicitly
-  ; aligned injection aperture linking the two-zone accelerator to z=0.
-  e(15) { fill { within { box3D(-12,-390,-12,12,2,12) } notin { box3D(-8,-310,-20,8,-250,20) } } }
-  ; Two CAD-placed triangular prism groups, split into their measured x halves.
-  e(16) { extrude_yz(-12,-2) { polyline(42.828,-90,67.828,-90,67.828,-40) } extrude_yz(2,12) { polyline(42.828,-90,42.828,-40,67.828,-40) } }
-  e(17) { extrude_yz(-12,-2) { polyline(3.536,-20,23.536,-20,23.536,20) } extrude_yz(2,12) { polyline(3.536,-20,3.536,20,23.536,20) } }
-  e(18) { box3D(-24,38,-96,-12,72,-34) }
-  e(19) { box3D(12,38,-96,24,72,-34) }
-  e(20) { box3D(-24,-2,-26,-12,28,26) }
-  e(21) { box3D(12,-2,-26,24,28,26) }
-  e(25) { box3D(-25,285,-5,25,285,5) }
-  }
-  ; Independent two-zone accelerator; z=0 focus is established by workbench placement.
-  ; A full repeller plane establishes the first uniform extraction field. The
-  ; source lies downstream in gap 1; only the two downstream grids are ideal.
-  e(22) { box3D(-30,-310,-41.6,30,-250,-39.6) }
-  e(23) { box3D(-30,-310,-33.6,30,-250,-33.6) }
-  e(24) { box3D(-30,-310,0,30,-250,0) }
-}
-"""
+    if contract.get("simion_geometry_release_status") != "cad_topology_and_top_level_pose_qualified":
+        raise CandidateContractError(
+            "SIMION PA generation is blocked until prism and accelerator top-level pose pass CAD/GUI qualification"
+        )
+    resolved = resolve_geometry(contract)
+    if contract["mirror"].get("design_status") not in {
+        "theory_l0_validated",
+        "analytic_l0_l1_candidate__3d_unvalidated__pa_build_allowed",
+    }:
+        raise CandidateContractError("mirror theory L0/L1 candidate has not qualified a prototype PA build")
+    if contract["dual_stripe"].get("central_ground_outline_status") != "cad_outline_verified_for_candidate":
+        raise CandidateContractError("central ground is only an envelope; its CAD opening outline must be verified before PA geometry")
+    if not resolved["metadata"]["mirror_stripe_clearance_pass"]:
+        raise CandidateContractError("mirror and Stripe envelopes violate the required clearance")
+    fingerprint = geometry_fingerprint(resolved)
+    accelerator = contract["accelerator"]
+    placement = derive_two_zone_placement(contract)
+    repeller_thickness = float(accelerator["repeller_thickness_z_mm"])
+    aperture_x = float(accelerator["aperture_width_x_mm"]) / 2.0
+    aperture_y = float(accelerator["aperture_height_y_mm"]) / 2.0
+    enclosure = derive_shielded_rectangular_enclosure(
+        electrode_outer_width_x_mm=float(accelerator["electrode_outer_width_x_mm"]),
+        electrode_outer_height_y_mm=float(accelerator["electrode_outer_height_y_mm"]),
+        guard_outer_width_x_mm=float(accelerator["grounded_guard_outer_width_x_mm"]),
+        guard_outer_height_y_mm=float(accelerator["grounded_guard_outer_height_y_mm"]),
+        guard_wall_thickness_mm=float(accelerator["grounded_guard_wall_thickness_mm"]),
+        lateral_clearance_mm=float(accelerator["repeller_to_guard_clearance_mm"]),
+        repeller_z_mm=placement.repeller_z_mm,
+        repeller_thickness_z_mm=repeller_thickness,
+        rear_gap_mm=float(accelerator["repeller_to_rear_cap_gap_mm"]),
+    )
+    electrode_x, electrode_y = enclosure.electrode_half_x_mm, enclosure.electrode_half_y_mm
+    grid_phase_z = -placement.exit_grid_z_mm
+    span_x, span_y, span_z = (float(value) for value in contract["simion"]["pa_span_mm"])
+    lines = [
+        "; Full MR-TOF 3D SIMION Candidate (not Formal).",
+        "; Native project frame: x transverse focus, y slow drift, z fast reflection; z=0 is the injection/focus handoff.",
+        "; Geometry origin: theory-derived resolved primitives, constrained by audited CAD dimensions and curves.",
+        f"; mirror_design_status={contract['mirror'].get('design_status', 'missing')}",
+        f"; resolved_geometry_sha256={fingerprint}",
+        "; Physical IDs: mirrors 1..10; Stripes 11..14; central ground 15; prisms 16..17; shields 18..20; accelerator 22..24 and stage-2 rings 26..30.",
+        "# local mmgu_x = _G.var and _G.var.mmgu_x or 4.0",
+        "# local mmgu_y = _G.var and _G.var.mmgu_y or 4.0",
+        "# local mmgu_z = _G.var and _G.var.mmgu_z or 0.4",
+        f"# local grid_phase_z = {_number(grid_phase_z)}",
+        f"# local x_span, y_span, z_span = {_number(span_x)}, {_number(span_y)}, {_number(span_z)}",
+        "# local nx = math.floor(x_span/mmgu_x + 0.5) + 1",
+        "# local ny = math.floor(y_span/mmgu_y + 0.5) + 1",
+        "# local nz = math.floor(z_span/mmgu_z + 0.5) + 1",
+        "pa_define($(nx),$(ny),$(nz),planar,none,electrostatic,, $(mmgu_x),$(mmgu_y),$(mmgu_z),surface=none)",
+        "locate($(x_span/2),$(y_span/2),$(z_span/2 + grid_phase_z)) {",
+    ]
+    lines.extend(_mirror_lines(resolved))
+    lines.extend(_mirror_ground_shield_lines(resolved))
+    lines.extend(_stripe_lines(resolved))
+    lines.extend(_central_ground_lines(resolved))
+    lines.extend((
+        "  e(15) {",
+        "    ; Hollow grounded guard: exit grid meets its inner wall; repeller has a rear acceleration gap before the rear cap.",
+        "    " + emit_grounded_enclosure(enclosure, exit_z_mm=placement.exit_grid_z_mm),
+        "  }",
+        f"  ; Numerical detector event slab (not a PA electrode): {_box(resolved['detector']['box'])}.",
+        "  ; Theory-derived -z two-zone accelerator: closed repeller -> one-row grid1 -> one-row exit grid.",
+        emit_solid_rectangular_plate(
+            22, half_x_mm=electrode_x, half_y_mm=electrode_y,
+            front_z_mm=placement.repeller_z_mm,
+            back_z_mm=placement.repeller_z_mm+repeller_thickness,
+        ),
+    ))
+    for support in resolved["accelerator_grid_support_frames"]:
+        lines.extend((
+            "  ; Finite grid support frame; only its aperture contains the zero-thickness ideal grid.",
+            emit_open_rectangular_frame(
+                support["id"], outer_half_x_mm=support["outer_half_x_mm"],
+                outer_half_y_mm=support["outer_half_y_mm"],
+                aperture_half_x_mm=support["aperture_half_x_mm"],
+                aperture_half_y_mm=support["aperture_half_y_mm"],
+                front_z_mm=support["front_z_mm"], back_z_mm=support["back_z_mm"],
+                cut_padding_mm=support["thickness_z_mm"],
+            ),
+            emit_ideal_grid(
+                support["id"], half_x_mm=support["aperture_half_x_mm"],
+                half_y_mm=support["aperture_half_y_mm"], z_mm=support["grid_z_mm"],
+            ),
+        ))
+    lines.append("  ; Five physical open acceleration rings uniformly fill the long second field region.")
+    for ring in resolved["accelerator_stage_2_rings"]:
+        half_t = float(ring["thickness_z_mm"]) / 2.0
+        center = float(ring["center_z_mm"])
+        lines.append(
+            emit_open_rectangular_frame(
+                int(ring['id']), outer_half_x_mm=electrode_x, outer_half_y_mm=electrode_y,
+                aperture_half_x_mm=aperture_x, aperture_half_y_mm=aperture_y,
+                front_z_mm=center-half_t, back_z_mm=center+half_t, cut_padding_mm=1.0,
+            )
+        )
+    # Emit the CAD prism solids after the broad grounded bodies.  GEM applies
+    # overlapping fills in source order; this keeps the explicitly placed
+    # prism electrodes/shields from being erased by a later grounded outline.
+    lines.append("  ; Two triangular deflection prisms from the resolved CAD-constrained contract.")
+    for prism in resolved["prism_electrodes"]:
+        parts = " ".join(
+            term for part in prism["parts"] for term in _extrude_polygon_bands(part["x"], part["polygon_yz_mm"])
+        )
+        lines.append(f"  e({prism['id']}) {{ {parts} }}")
+    lines.extend(_prism_ground_shield_lines(resolved))
+    lines.extend(("}", ""))
+    return "\n".join(lines)
 
 
 def write_full_candidate_gem(contract_path: Path, output_path: Path) -> None:
-    """Write line-feed GEM source suitable for SIMION's ``gem2pa`` command."""
+    """Write a line-feed GEM source suitable for SIMION's ``gem2pa`` command."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(build_full_candidate_gem(contract_path), encoding="utf-8", newline="\n")
 
@@ -112,8 +297,11 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--contract", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    args = parser.parse_args()
-    write_full_candidate_gem(args.contract, args.output)
+    parser.add_argument("--receipt", type=Path)
+    arguments = parser.parse_args()
+    write_full_candidate_gem(arguments.contract, arguments.output)
+    if arguments.receipt:
+        write_geometry_receipt(load_contract(arguments.contract), arguments.receipt)
     return 0
 
 

@@ -1,7 +1,7 @@
 particles {
   coordinates = 0,
   standard_beam {
-    n = 25,
+    n = 100,
     tob = 0,
     mass = 100,
     charge = 1,

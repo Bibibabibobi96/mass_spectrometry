@@ -15,6 +15,14 @@
 当前活动设计目标；原 Astral 的收敛镜加单 Stripe/Ion Foil 方案只用于理论对照和解析回归，不启动
 另一条单 Stripe 项目，也不自动成为本项目baseline。
 
+新区二区／三区正交加速器的局部理论、环／屏蔽几何派生和复用实现见独立
+[`orthogonal_accelerator`](../orthogonal_accelerator/README.md)项目。本项目只提供 MR 专属合同与
+装配变换，并负责棱镜、镜组、中央 `z=0` 交接及整机飞行；不读取 oa-TOF Formal 或 integration 运行产物。
+
+本项目落实仓库的单向几何链：理论/参数合同生成`resolved`的简化三维 CAD 几何，再分别生成
+SIMION、COMSOL、GPT 和机械 CAD 交付。冻结的原始 SolidWorks 图只提供审计过的机械约束与曲线尺度；
+它不定义本项目的电场拓扑、坐标或聚焦条件。
+
 仓库结构、产物生命周期、正式化和 Git 规则统一继承根[`README.md`](../../README.md)。原始 CAD
 二进制已以迁移前`mr_tof`身份逐文件验证并只读迁入当前项目具名archive，不进入 Git；新运行只能使用当前
 `parallel_mirror_dual_stripe_mr_tof`身份和同名artifact根。

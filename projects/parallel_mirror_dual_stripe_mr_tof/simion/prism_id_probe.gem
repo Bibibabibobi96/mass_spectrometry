@@ -1,0 +1,12 @@
+; SIMION 2020 regression probe: physical prism and shield IDs above 15.
+; This is a compiler probe, not a Candidate geometry source.
+# local mmgu = _G.var and _G.var.mmgu or 2
+pa_define(101,101,101,planar,none,electrostatic,, $(mmgu),$(mmgu),$(mmgu),surface=none)
+locate(100,100,100) {
+  e(16) { extrude_yz(-12,-2) { polyline(42,-90,68,-90,68,-40) } }
+  e(17) { extrude_yz(2,12) { polyline(4,-20,24,-20,24,20) } }
+  e(18) { box3D(-24,38,-97,-12,72,-34) }
+  e(19) { box3D(12,38,-97,24,72,-34) }
+  e(20) { box3D(-24,-3,-26,-12,32,26) }
+  e(21) { box3D(12,-3,-26,24,32,26) }
+}
