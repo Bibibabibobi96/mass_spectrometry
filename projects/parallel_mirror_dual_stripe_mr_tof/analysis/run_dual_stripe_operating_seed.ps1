@@ -37,12 +37,24 @@ function Invoke-ProjectPython {
   param([Parameter(Mandatory)][string[]]$Arguments, [Parameter(Mandatory)][string]$LogPath)
   Push-Location -LiteralPath $repoRoot
   $savedPythonPath = $env:PYTHONPATH
+  $savedOpenBlasThreads = $env:OPENBLAS_NUM_THREADS
+  $savedOmpThreads = $env:OMP_NUM_THREADS
+  $savedMklThreads = $env:MKL_NUM_THREADS
+  $savedNumExprThreads = $env:NUMEXPR_NUM_THREADS
   try {
     $env:PYTHONPATH = $repoRoot
+    $env:OPENBLAS_NUM_THREADS = '1'
+    $env:OMP_NUM_THREADS = '1'
+    $env:MKL_NUM_THREADS = '1'
+    $env:NUMEXPR_NUM_THREADS = '1'
     & $python @Arguments 2>&1 | Tee-Object -FilePath $LogPath
     if ($LASTEXITCODE -ne 0) { throw "MR-TOF Python stage failed: $($Arguments -join ' ')" }
   } finally {
     $env:PYTHONPATH = $savedPythonPath
+    $env:OPENBLAS_NUM_THREADS = $savedOpenBlasThreads
+    $env:OMP_NUM_THREADS = $savedOmpThreads
+    $env:MKL_NUM_THREADS = $savedMklThreads
+    $env:NUMEXPR_NUM_THREADS = $savedNumExprThreads
     Pop-Location
   }
 }
@@ -71,6 +83,7 @@ try {
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_l0.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\resolved_geometry.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\simion_candidate_reference.py',
+    'projects\parallel_mirror_dual_stripe_mr_tof\analysis\two_prism_handoff.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\run_dual_stripe_operating_seed.ps1'
   )
   $sourceInputs = [ordered]@{}
@@ -90,7 +103,7 @@ try {
   $configuration.parameters = [ordered]@{
     lifecycle_stage = 'dual_stripe_paper_theory_instance_specific_seed'
     solver_execution = 'none'
-    qualification = 'analytic_seed_only__time_platform_energy_and_P1_P2_pending'
+    qualification = 'analytic_seed_family__complete_fixed_hardware_consistency_diagnostic__P1_P2_pending'
   }
   Write-RunJson -Path $runConfig -Value $configuration
   foreach ($pair in $sourceChecks) {

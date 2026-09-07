@@ -274,6 +274,30 @@ def compile_dual_stripe_width_evaluator(
     return width_at_y
 
 
+def compile_dual_stripe_path_length_evaluator(
+    contract: dict[str, Any], set_name: str,
+) -> Callable[[float], float]:
+    """Compile the theory ``S_i(y)`` represented by one frozen profile.
+
+    Geometry width and action path length are deliberately separate concepts.
+    The instance contract must state their multiplier explicitly so a mirrored
+    physical electrode pair cannot silently add or remove a factor of two.
+    """
+    width_at_y = compile_dual_stripe_width_evaluator(contract, set_name)
+    try:
+        mapping = contract["dual_stripe"]["theory_profile"]["path_length_mapping"]
+        multiplier = _number(mapping["profile_width_to_total_S_multiplier"], "Stripe path-length multiplier")
+    except (KeyError, TypeError) as error:
+        raise CandidateContractError("dual Stripe theory path-length mapping is incomplete") from error
+    if multiplier <= 0.0:
+        raise CandidateContractError("dual Stripe theory path-length multiplier must be positive")
+
+    def path_length_at_y(y_mm: float) -> float:
+        return multiplier * width_at_y(y_mm)
+
+    return path_length_at_y
+
+
 def _central_ground_polygons(stripe: dict[str, Any]) -> tuple[list[dict[str, Any]], float]:
     """Resolve the complete Ion-Foil-2 body before its rectangular cuts.
 

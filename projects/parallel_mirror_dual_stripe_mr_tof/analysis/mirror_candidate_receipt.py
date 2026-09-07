@@ -30,6 +30,17 @@ MIRROR_QUALIFICATION = "analytic_2d_candidate__peak_field_and_3d_validation_pend
 
 
 @dataclass(frozen=True)
+class ManagedMirrorRoot:
+    """One independently qualified gamma-target mirror root."""
+
+    design: MirrorL0Design
+    nominal_reduced_period_mm_per_sqrt_v: float
+    nominal_axial_width_w_mm: float
+    source_l0_restart_index: int | None
+    gamma_degrees: float
+
+
+@dataclass(frozen=True)
 class ManagedMirrorCandidate:
     """Verified mirror design and derived period consumed by later stages."""
 
@@ -45,6 +56,7 @@ class ManagedMirrorCandidate:
     downstream_contract_sha256: str
     l0_receipt_sha256: str
     l1_receipt_sha256: str
+    root_family: tuple[ManagedMirrorRoot, ...]
 
 
 def _load_json(path: Path, label: str) -> dict[str, Any]:
@@ -141,7 +153,9 @@ def load_managed_mirror_candidate(
     l1_record = _record_named(manifest.get("outputs"), "mirror_l0_l1_candidate_receipt.json", "L1 receipt")
     contract_path = record_path(contract_record, base_dir=manifest_dir)
     summary_path = record_path(summary_record, base_dir=manifest_dir)
+    l1_path = record_path(l1_record, base_dir=manifest_dir)
     summary = _load_json(summary_path, "managed mirror summary")
+    l1_receipt = _load_json(l1_path, "managed mirror L1 receipt")
     if (
         summary.get("role") != "mrtof_mirror_l0_l1_candidate_summary"
         or summary.get("status") != "success"
@@ -180,22 +194,64 @@ def load_managed_mirror_candidate(
     energies = tuple(_finite(value, "mirror energy node") for value in mirror["theory_requirements"]["energies_v"])
     if len(energies) != 3 or tuple(sorted(energies)) != energies or voltages[-1] <= max(energies):
         raise CandidateContractError("managed mirror Candidate has invalid energy nodes or terminal retention")
-    design = MirrorL0Design(
-        transverse_half_gap_mm=_finite(
-            mirror["theory_requirements"]["berdnikov_transverse_half_gap_mm"],
-            "Berdnikov transverse half gap",
-        ),
-        transition_z_mm=tuple(
-            _finite(value, "mirror transition") for value in boundaries["analytic_transition_z_mm"]
-        ),
-        electrode_voltages_v=voltages,
-        terminal_electrode_plane_z_mm=_finite(
-            boundaries["terminal_electrode_plane_z_mm"], "mirror terminal plane"
-        ),
-        terminal_electrode_voltage_v=voltages[-1],
+    transverse_half_gap = _finite(
+        mirror["theory_requirements"]["berdnikov_transverse_half_gap_mm"],
+        "Berdnikov transverse half gap",
     )
+    transitions = tuple(
+        _finite(value, "mirror transition") for value in boundaries["analytic_transition_z_mm"]
+    )
+    terminal_plane = _finite(boundaries["terminal_electrode_plane_z_mm"], "mirror terminal plane")
+
+    def design_from_voltages(values: tuple[float, ...]) -> MirrorL0Design:
+        return MirrorL0Design(
+            transverse_half_gap_mm=transverse_half_gap,
+            transition_z_mm=transitions,
+            electrode_voltages_v=values,
+            terminal_electrode_plane_z_mm=terminal_plane,
+            terminal_electrode_voltage_v=values[-1],
+        )
+
+    design = design_from_voltages(voltages)
     nominal_energy = _finite(parent_contract["nominal"]["energy_per_charge_v"], "nominal energy")
     period = reduced_period(nominal_energy, design)
+    family_record = l1_receipt.get("gamma_target_root_family")
+    family_items = family_record.get("roots") if isinstance(family_record, dict) else None
+    roots: list[ManagedMirrorRoot] = []
+    if isinstance(family_items, list):
+        for index, item in enumerate(family_items):
+            convergence = item.get("probe_convergence") if isinstance(item, dict) else None
+            if not isinstance(convergence, dict) or convergence.get("status") != "pass":
+                raise CandidateContractError(f"managed mirror root family member {index} lacks probe convergence")
+            root_l0 = item.get("l0_receipt")
+            root_l1 = item.get("l1_screen")
+            root_values = root_l0.get("electrode_voltages_v") if isinstance(root_l0, dict) else None
+            mapping = root_l1.get("nominal_mapping") if isinstance(root_l1, dict) else None
+            if not isinstance(root_values, list) or len(root_values) != 5 or not isinstance(mapping, dict):
+                raise CandidateContractError(f"managed mirror root family member {index} is incomplete")
+            root_voltages = tuple(_finite(value, "mirror root voltage") for value in root_values)
+            if root_voltages[0] != 0.0 or root_voltages[-1] <= max(energies):
+                raise CandidateContractError(f"managed mirror root family member {index} violates mirror retention")
+            root_design = design_from_voltages(root_voltages)
+            root_period = reduced_period(nominal_energy, root_design)
+            source_index = item.get("source_l0_restart_index")
+            if source_index is not None and (not isinstance(source_index, int) or isinstance(source_index, bool) or source_index < 0):
+                raise CandidateContractError(f"managed mirror root family member {index} has an invalid source index")
+            roots.append(ManagedMirrorRoot(
+                design=root_design,
+                nominal_reduced_period_mm_per_sqrt_v=root_period,
+                nominal_axial_width_w_mm=effective_axial_width_mm(nominal_energy, root_period),
+                source_l0_restart_index=source_index,
+                gamma_degrees=_finite(mapping.get("gamma_degrees"), "mirror root gamma"),
+            ))
+    if not roots:
+        roots.append(ManagedMirrorRoot(
+            design=design,
+            nominal_reduced_period_mm_per_sqrt_v=period,
+            nominal_axial_width_w_mm=effective_axial_width_mm(nominal_energy, period),
+            source_l0_restart_index=None,
+            gamma_degrees=_finite(summary.get("gamma_degrees", 90.0), "selected mirror gamma"),
+        ))
     return ManagedMirrorCandidate(
         design=design,
         energy_points_v=energies,
@@ -213,4 +269,5 @@ def load_managed_mirror_candidate(
         ),
         l0_receipt_sha256=expected_identity["l0_receipt_sha256"],
         l1_receipt_sha256=expected_identity["l1_receipt_sha256"],
+        root_family=tuple(roots),
     )

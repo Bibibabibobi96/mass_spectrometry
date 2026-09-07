@@ -9,9 +9,11 @@ import numpy as np
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import (
     CandidateContractError,
     endpoint_regularized_kappa,
+    endpoint_regularized_kappa_at_turn,
     endpoint_regularized_tau_g,
     identify_fixed_cad_component_shapes,
     invert_nominal_psi_g_response,
+    kappa_derivative_at_turn,
     tau_g_derivative_at_turn,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import (
@@ -59,6 +61,14 @@ class DualStripeL0MathTest(unittest.TestCase):
 
     def test_endpoint_regularization_recovers_linear_reference_integral(self) -> None:
         self.assertAlmostEqual(endpoint_regularized_kappa(lambda eta: eta), 2.0, places=8)
+
+    def test_kappa_derivative_keeps_one_fixed_profile_normalization(self) -> None:
+        self.assertAlmostEqual(endpoint_regularized_kappa_at_turn(lambda eta: eta, 1.21), 2.2, places=8)
+        self.assertAlmostEqual(
+            kappa_derivative_at_turn(lambda eta: eta, 1.0, step=1e-3),
+            1.0,
+            places=5,
+        )
 
     def test_endpoint_regularization_rejects_non_turning_profile(self) -> None:
         with self.assertRaises(CandidateContractError):

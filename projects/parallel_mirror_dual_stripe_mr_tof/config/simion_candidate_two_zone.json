@@ -80,8 +80,9 @@
         "e_voltage_root_tolerance_v": 0.001,
         "maximum_root_iterations": 60,
         "maximum_local_function_evaluations": 3000,
+        "root_family_deduplication_voltage_tolerance_v": 0.5,
         "status": "three_scale_probe_convergence_required_before_selection",
-        "semantics": "Numerical L1 screening profile for the complete L0-accepted family. These are finite-difference probes, not physical beam widths. The 0.001-mm/10-urad exploratory probes were rejected for quadratic-time cancellation noise; the active base and two larger scales must satisfy the declared adjacent gamma and Tbar convergence gates. Peak-field and three-dimensional validation remain separate."
+        "semantics": "Numerical L1 screening profile for the complete L0-accepted family. Every stable seed is independently refined against the three mirror-only L0 slopes plus the L1 gamma selector, and distinct converged roots are retained rather than collapsing to the closest initial bracket. The deduplication tolerance is only a numerical root-identity threshold. The finite-difference probes are not physical beam widths; the active base and two larger scales must satisfy the declared adjacent gamma and Tbar convergence gates. Peak-field and three-dimensional validation remain separate."
       },
       "targets": [
         "three_point_isochrony",
@@ -800,6 +801,10 @@
       "parameter_provenance": "read-only SolidWorks native B-spline knot/control parameters from 20260902__ion-foil-recovery/stripe_long_bspline_profiles.json; the solver geometry evaluates these parameters and never interpolates the former sampled CAD boundary table",
       "sampling_per_nonzero_knot_span": 8,
       "component_interpretation": "set_1 total width is the high-order response; set_2 total width is the linear response. Their action-normalization and voltage solution remain an L0 inverse problem, not CAD data.",
+      "path_length_mapping": {
+        "profile_width_to_total_S_multiplier": 1.0,
+        "semantics": "For this manufactured instance the frozen upper-minus-lower profile is the theoretical total path length S_i(y), not an independently additive per-solid width. The two mirrored physical electrodes share one theoretical response. This explicit factor prevents a hidden factor-of-two convention and remains subject to direct three-dimensional centre-ion action/path verification before performance claims."
+      },
       "set_1": {
         "lower_edge": {
           "basis": "cubic_bspline",
@@ -1283,6 +1288,10 @@
       "native_newton_voltage_step_v": 0.1,
       "maximum_native_newton_iterations": 6,
       "maximum_surrogate_function_evaluations": 300,
+      "complete_consistency_refinement_start_count": 6,
+      "complete_consistency_maximum_parallel_workers": 2,
+      "complete_consistency_refinement_start_semantics": "Evaluate the complete native residual vector once at every Cartesian voltage start, rank by the contract-scaled norm, and locally refine the six best distinct starts. The count equals the number of declared one-dimensional start fractions; it is a frozen resource-control choice, not a physical condition or a paper value.",
+      "complete_consistency_parallel_semantics": "Qualified mirror roots are independent search units. Use at most two single-thread numerical workers, currently matching the two-root family, rather than hidden multithreaded BLAS inside one root search.",
       "residual_tolerances": [1e-8, 1e-7],
       "residual_tolerance_semantics": "The first tolerance closes the dimensionless K relation. The second is a numerical root tolerance for the central-difference kappa-prime residual, selected above the observed native B-spline/integral differencing floor; neither value changes the governing paper equation or acts as a physical performance threshold.",
       "minimum_abs_bias_fraction_of_nominal_energy": 1e-6,
@@ -1291,7 +1300,13 @@
       "selection_rule": "After native-B-spline refinement, reject zero/singular and effectively single-Stripe roots. Both bias magnitudes must exceed the absolute numerical floor and their scale-free minimum/maximum magnitude ratio must meet minimum_bias_magnitude_ratio. Choose the surviving root with minimum maximum absolute bias, then minimum response-matrix condition number.",
       "qualification_limit": "This closes only a two-equation analytic seed. Time-platform, full-energy, P1/P2, and three-dimensional residuals are reported or left pending and cannot be promoted without their own user-authorized tolerances and rank gate."
     },
-    "determination_gate": "Before publishing any solved voltage, L, W, kappa, theta, or prism entrance state, evaluate the actual Jacobian for its owning mirror-only or downstream Stripe/P1/P2 problem. Independent rank below the declared physical unknown count is underdetermined; an incompatible augmented residual rank is overdetermined; only equal independent rank permits publication of that problem's derived quantities.",
+    "determination_gate": "Before publishing any solved voltage, L, W, kappa, theta, or prism entrance state, scale the actual Jacobian for its owning mirror-only or downstream Stripe/P1/P2 problem with contract-owned parameter and residual scales and evaluate its SVD. Report rank, nullity, redundant-constraint count, condition number, and the scaled residual component in the left null space. Rank below the physical unknown count is underdetermined; a square full-rank compatible system is square_exact; a full-column-rank redundant system is overdetermined_consistent only when its irreducible residual meets the declared tolerance; otherwise it is locally_incompatible.",
+    "determination_numerics": {
+      "relative_singular_value_rank_tolerance": 1e-10,
+      "scaled_irreducible_residual_norm_tolerance": 1e-8,
+      "full_analyser_period_slope_derivative_step_source": "mirror.theory_requirements.global_l0_search_profile.period_slope_derivative_step_v",
+      "scale_authority": "Every production solve must list one positive physical parameter scale and one positive residual scale for each named coordinate. These two dimensionless SVD tolerances are numerical classification controls, not physical acceptance tolerances and not paper values."
+    },
     "current_fixed_hardware_l0_l1_problem": {
       "status": "independent_mirror_l0_l1_required_before_downstream_stripe_prism_transport",
       "voltage_initialization": {
@@ -1324,7 +1339,15 @@
         "mirror_voltage_D_v",
         "mirror_voltage_E_v"
       ],
-      "downstream_independent_unknowns": [
+      "stripe_fixed_hardware_independent_unknowns": [
+        "stripe_set_1_bias_v",
+        "stripe_set_2_bias_v"
+      ],
+      "prism_transport_independent_unknowns": [
+        "prism_1_voltage_v",
+        "prism_2_voltage_v"
+      ],
+      "downstream_independent_unknown_inventory": [
         "stripe_set_1_bias_v",
         "stripe_set_2_bias_v",
         "prism_1_voltage_v",
@@ -1360,22 +1383,25 @@
         ],
         "tie_semantics": "If candidates remain indistinguishable at the declared numerical resolution, retain all of them as a mirror-family receipt rather than fabricating a unique voltage vector."
       },
-      "downstream_named_residual_blocks": [
-        "three_point_low_relative",
-        "three_point_high_relative",
+      "stripe_fixed_hardware_named_residual_blocks": [
+        "full_analyser_period_slope_at_3900V",
+        "full_analyser_period_slope_at_4000V",
+        "full_analyser_period_slope_at_4100V",
         "target_oscillation_count",
         "spatial_return_kappa_prime",
         "time_platform_tau_g_prime_eta_0.9",
         "time_platform_tau_g_prime_eta_0.95",
         "time_platform_tau_g_prime_eta_1.05",
-        "time_platform_tau_g_prime_eta_1.1",
+        "time_platform_tau_g_prime_eta_1.1"
+      ],
+      "prism_transport_named_residual_blocks": [
         "P1_P2_to_Stripe_position_x_mm",
         "P1_P2_to_Stripe_position_y_mm",
         "P1_P2_to_Stripe_position_z_mm",
         "P1_P2_to_Stripe_direction_y",
         "P1_P2_to_Stripe_direction_z"
       ],
-      "determination_semantics": "The frozen mirror geometry and the three axial energy conditions define a four-voltage mirror-only L0 family. Its three-row Jacobian and feasibility checks must be published with that family; an L1 mirror-only selection receipt identifies any representative member and its transverse diagnostics without inventing a fourth axial residual. The selected mirror receipt and source state are then inputs, not fit coordinates, to the four-voltage Stripe/P1/P2 problem. Mirror gamma remains an upstream receipt gate and is never repeated as a downstream residual. The full-analyser low/high period residuals include both Stripe baseline actions. P1/P2 transport expands into three position and two tangent-direction components, never a norm or arbitrary scalar count. Each owning problem separately uses its actual Jacobian and augmented residual rank to distinguish underdetermined, exactly-determined and incompatible-overdetermined states."
+      "determination_semantics": "The frozen mirror geometry and the three axial energy conditions define a four-voltage mirror-only L0 family. Its three-row Jacobian and feasibility checks must be published with that family; an L1 mirror-only selection receipt identifies any representative member and its transverse diagnostics without inventing a fourth axial residual. Each qualified mirror root is then tested against the fixed-hardware Stripe problem with only the two Stripe biases as continuous unknowns. The first physical 5-eV turn eliminates psi(1)-1=0 by deriving L; the remaining K, kappa-prime, four time-platform, and three full-analyser energy-slope residuals form an overdetermined consistency test. P1/P2 voltages belong to the subsequent finite-field transport problem and are not allowed to make the Stripe paper conditions appear solvable. Mirror gamma remains an upstream receipt gate and is never repeated downstream. P1/P2 transport expands into three position and two tangent-direction components, never a norm or arbitrary scalar count. Each owning problem separately uses its contract-scaled Jacobian SVD and left-null residual to distinguish underdetermined, square_exact, overdetermined_consistent, and locally_incompatible states."
     },
     "derived_fields_only_after_owning_problem_candidate": {
       "drift_length_L_mm": "abs(turning_point_y_mm-y_stripe_entrance_mm)",

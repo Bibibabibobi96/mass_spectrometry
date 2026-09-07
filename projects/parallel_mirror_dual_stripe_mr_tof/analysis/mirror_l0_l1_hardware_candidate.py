@@ -17,6 +17,7 @@ from common.contracts.file_identity import file_sha256
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import MirrorL0Design
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l1 import (
     continue_fixed_e_l0_family_to_gamma,
+    refine_l0_gamma_intersection,
     screen_l1_fixed_geometry,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
@@ -44,6 +45,45 @@ def _screen_family_member(arguments: tuple[object, ...]) -> dict[str, object]:
         result = {"status": "l1_screen_failed", "failure_reason": str(exc)}
     result["l0_restart_index"] = int(index)
     result["l0_normalized_period_slopes_per_v"] = receipt.get("normalized_period_slopes_per_v")
+    return result
+
+
+def _refine_gamma_family_seed(arguments: tuple[object, ...]) -> dict[str, object]:
+    (
+        screen,
+        lower_bounds,
+        upper_bounds,
+        energies,
+        target_gamma,
+        period_step,
+        slope_tolerance,
+        position_probe,
+        angle_probe,
+        gamma_tolerance,
+        maximum_evaluations,
+    ) = arguments
+    restart_index = int(screen["l0_restart_index"])
+    try:
+        result = refine_l0_gamma_intersection(
+            _design_from_screen(screen),
+            tuple(float(value) for value in lower_bounds),
+            tuple(float(value) for value in upper_bounds),
+            tuple(float(value) for value in energies),
+            float(target_gamma),
+            float(period_step),
+            float(slope_tolerance),
+            float(position_probe),
+            float(angle_probe),
+            float(gamma_tolerance),
+            int(maximum_evaluations),
+        )
+    except (CandidateContractError, OverflowError, ValueError) as exc:
+        return {
+            "status": "gamma_target_intersection_seed_rejected",
+            "source_l0_restart_index": restart_index,
+            "reason": str(exc),
+        }
+    result["source_l0_restart_index"] = restart_index
     return result
 
 
@@ -153,6 +193,49 @@ def select_gamma_continuation_pair(
     return tuple(sorted((first, second), key=lambda item: float(item["electrode_voltages_v"][-1])))
 
 
+def _probe_convergence(
+    root: dict[str, object],
+    energies: tuple[float, float, float],
+    profile: dict[str, object],
+) -> dict[str, object]:
+    root_design = _design_from_screen({
+        **root["l0_receipt"],
+        "family_screens_transverse_half_gap_mm": root["l0_receipt"]["transverse_half_gap_mm"],
+    })
+    convergence_screens = [
+        screen_l1_fixed_geometry(
+            root_design,
+            energies,
+            float(profile["position_probe_mm"]) * float(scale),
+            float(profile["angle_probe_rad"]) * float(scale),
+        )
+        for scale in profile["probe_convergence_scale_factors"]
+    ]
+    nominal_key = str(float(energies[1]))
+    records = [
+        {
+            "scale_factor": float(scale),
+            "gamma_degrees": screen["maps_by_energy_v"][nominal_key]["gamma_degrees"],
+            "Tbar_xx": screen["phase_averaged_time_aberration_by_energy_v"][nominal_key]["Tbar_xx"],
+        }
+        for scale, screen in zip(profile["probe_convergence_scale_factors"], convergence_screens)
+    ]
+    last, previous = records[-1], records[-2]
+    gamma_change = abs(float(last["gamma_degrees"]) - float(previous["gamma_degrees"]))
+    tbar_scale = max(abs(float(last["Tbar_xx"])), abs(float(previous["Tbar_xx"])))
+    relative_tbar_change = abs(float(last["Tbar_xx"]) - float(previous["Tbar_xx"])) / tbar_scale
+    passed = (
+        gamma_change <= float(profile["maximum_adjacent_gamma_change_degrees"])
+        and relative_tbar_change <= float(profile["maximum_adjacent_relative_Tbar_change"])
+    )
+    return {
+        "status": "pass" if passed else "fail",
+        "records": records,
+        "last_adjacent_gamma_change_degrees": gamma_change,
+        "last_adjacent_relative_Tbar_change": relative_tbar_change,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--l0-receipt", required=True, type=Path)
@@ -191,12 +274,16 @@ def main() -> int:
     )
     upper_bounds = tuple(float(envelope[key]["maximum_inclusive_v"]) for key in keys)
     spans = tuple(high - low for low, high in zip(lower_bounds, upper_bounds))
+    stable_screens = [
+        screen for screen in result["family_screens"]
+        if screen["status"] == "l1_screened_stable_not_3d_validated"
+    ]
+    for screen in stable_screens:
+        screen["family_screens_transverse_half_gap_mm"] = float(receipt["transverse_half_gap_mm"])
     lower_screen, upper_screen = select_gamma_continuation_pair(
         result["family_screens"], float(profile["target_gamma_degrees"]), spans,
     )
-    for screen in (lower_screen, upper_screen):
-        screen["family_screens_transverse_half_gap_mm"] = float(receipt["transverse_half_gap_mm"])
-    result["gamma_target_continuation"] = continue_fixed_e_l0_family_to_gamma(
+    bracket_root = continue_fixed_e_l0_family_to_gamma(
         _design_from_screen(lower_screen), _design_from_screen(upper_screen),
         lower_bounds, upper_bounds, energies, float(profile["target_gamma_degrees"]),
         float(receipt["period_slope_derivative_step_v"]),
@@ -206,58 +293,78 @@ def main() -> int:
         float(profile["maximum_gamma_target_residual_degrees"]),
         int(profile["maximum_root_iterations"]), int(profile["maximum_local_function_evaluations"]),
     )
-    root_l0 = result["gamma_target_continuation"]["l0_receipt"]
-    root_design = MirrorL0Design(
-        float(root_l0["transverse_half_gap_mm"]),
-        tuple(float(value) for value in root_l0["transition_z_mm"]),
-        tuple(float(value) for value in root_l0["electrode_voltages_v"]),
-        root_l0.get("terminal_electrode_plane_z_mm"),
-        float(root_l0["electrode_voltages_v"][-1]),
-    )
-    convergence_screens = [
-        screen_l1_fixed_geometry(
-            root_design, energies,
-            float(profile["position_probe_mm"]) * float(scale),
-            float(profile["angle_probe_rad"]) * float(scale),
+    bracket_root["source_l0_restart_indices"] = [
+        int(lower_screen["l0_restart_index"]), int(upper_screen["l0_restart_index"]),
+    ]
+    jobs = [
+        (
+            screen, lower_bounds, upper_bounds, energies,
+            profile["target_gamma_degrees"], receipt["period_slope_derivative_step_v"],
+            receipt["maximum_abs_normalized_period_slope_per_v"], profile["position_probe_mm"],
+            profile["angle_probe_rad"], profile["maximum_gamma_target_residual_degrees"],
+            profile["maximum_local_function_evaluations"],
         )
-        for scale in profile["probe_convergence_scale_factors"]
+        for screen in stable_screens
     ]
+    worker_count = min(len(jobs), int(profile["maximum_parallel_workers"]), os.cpu_count() or 1)
+    with ProcessPoolExecutor(max_workers=worker_count) as executor:
+        seed_results = list(executor.map(_refine_gamma_family_seed, jobs))
+    direct_roots = [
+        item for item in seed_results
+        if item["status"] == "gamma_target_intersection_found__probe_and_3d_validation_pending"
+    ]
+    raw_roots = [bracket_root, *direct_roots]
+    deduplication_tolerance = float(profile["root_family_deduplication_voltage_tolerance_v"])
+    roots: list[dict[str, object]] = []
+    for candidate in sorted(
+        raw_roots,
+        key=lambda item: tuple(float(value) for value in item["l0_receipt"]["electrode_voltages_v"]),
+    ):
+        voltages = candidate["l0_receipt"]["electrode_voltages_v"]
+        if any(
+            max(abs(float(first) - float(second)) for first, second in zip(voltages, known["l0_receipt"]["electrode_voltages_v"]))
+            <= deduplication_tolerance
+            for known in roots
+        ):
+            continue
+        candidate["probe_convergence"] = _probe_convergence(candidate, energies, profile)
+        roots.append(candidate)
+    qualified = [item for item in roots if item["probe_convergence"]["status"] == "pass"]
+    if not qualified:
+        raise CandidateContractError("no distinct gamma-target root passed the declared probe convergence")
+
     nominal_key = str(float(energies[1]))
-    convergence_records = [
-        {
-            "scale_factor": float(scale),
-            "gamma_degrees": screen["maps_by_energy_v"][nominal_key]["gamma_degrees"],
-            "Tbar_xx": screen["phase_averaged_time_aberration_by_energy_v"][nominal_key]["Tbar_xx"],
-        }
-        for scale, screen in zip(profile["probe_convergence_scale_factors"], convergence_screens)
-    ]
-    last, previous = convergence_records[-1], convergence_records[-2]
-    gamma_change = abs(float(last["gamma_degrees"]) - float(previous["gamma_degrees"]))
-    tbar_scale = max(abs(float(last["Tbar_xx"])), abs(float(previous["Tbar_xx"])))
-    relative_tbar_change = abs(float(last["Tbar_xx"]) - float(previous["Tbar_xx"])) / tbar_scale
-    convergence_pass = (
-        gamma_change <= float(profile["maximum_adjacent_gamma_change_degrees"])
-        and relative_tbar_change <= float(profile["maximum_adjacent_relative_Tbar_change"])
-    )
-    result["gamma_target_probe_convergence"] = {
-        "status": "pass" if convergence_pass else "fail",
-        "records": convergence_records,
-        "last_adjacent_gamma_change_degrees": gamma_change,
-        "last_adjacent_relative_Tbar_change": relative_tbar_change,
+
+    def selection_metrics(root: dict[str, object]) -> tuple[float, float, tuple[float, ...]]:
+        aberration = root["l1_screen"]["phase_averaged_time_aberration_by_energy_v"][nominal_key]["Tbar_xx"]
+        voltages = tuple(float(value) for value in root["l0_receipt"]["electrode_voltages_v"])
+        return abs(float(aberration)), max(abs(value) for value in voltages), voltages
+
+    selected = min(qualified, key=selection_metrics)
+    result["gamma_target_root_family"] = {
+        "status": "complete_stable_seed_intersection_family__downstream_selection_pending",
+        "stable_seed_count": len(stable_screens),
+        "actual_parallel_workers": worker_count,
+        "bracket_continuation_root_count": 1,
+        "direct_converged_seed_count": len(direct_roots),
+        "raw_converged_seed_count": len(raw_roots),
+        "distinct_root_count": len(roots),
+        "probe_converged_root_count": len(qualified),
+        "deduplication_voltage_tolerance_v": deduplication_tolerance,
+        "seed_audit": seed_results,
+        "roots": roots,
+        "selection_semantics": "The selected mirror-only representative minimizes absolute nominal Tbar_xx and then maximum absolute voltage. Every probe-converged root remains available for downstream Stripe compatibility selection without changing the mirror equations.",
     }
-    result["gamma_target_continuation"]["status"] = (
-        "gamma_target_selected_with_probe_convergence__peak_field_and_3d_validation_pending"
-        if convergence_pass
-        else "gamma_target_selection_probe_convergence_failed"
-    )
-    result["status"] = (
-        "l1_family_continued_to_gamma_target__peak_field_and_3d_validation_pending"
-        if convergence_pass
-        else "l1_family_gamma_target_probe_convergence_failed"
-    )
+    result["gamma_target_continuation"] = {
+        **selected,
+        "status": "gamma_target_selected_with_probe_convergence__peak_field_and_3d_validation_pending",
+    }
+    result["gamma_target_probe_convergence"] = selected["probe_convergence"]
+    result["status"] = "l1_family_continued_to_gamma_target__peak_field_and_3d_validation_pending"
     result["limitations"] = [
         "Analytic infinite-y 2-D screening only; it includes the ideal Berdnikov terminal-electrode plane but excludes real slots, electrode thickness, sidewalls, and three-dimensional hardware.",
-        "The initial transverse screen does not alter any accepted L0 restart. The subsequent fixed-E continuation and four-variable intersection refinement select B--E on the same three-equation L0 family by the declared L1 gamma condition.",
+        "The initial transverse screen does not alter any accepted L0 restart. Every stable seed independently refines the four-variable intersection; the first three residuals remain the mirror-only L0 equations and gamma is only the L1 family-member selector.",
+        "The mirror-only representative does not erase the distinct probe-converged root family. Downstream Stripe compatibility may select among those roots but may not change the mirror equations or accept a nonconverged mirror root.",
         "Finite-difference probe convergence is reported explicitly; the representative remains provisional until the analytic peak-field ranking stage is evaluated.",
         "PA, IOB, SIMION flight, grid convergence, and hardware feasibility remain unevaluated.",
     ]

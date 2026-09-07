@@ -111,6 +111,22 @@ def validate_and_summarize(contract_path: Path, l0_path: Path, l1_path: Path) ->
     stable_count = int(l1.get("l1_stable_count", -1))
     if int(l1.get("l0_accepted_count", -1)) != len(accepted_indices) or stable_count <= 0:
         raise CandidateContractError("L1 family counts are inconsistent or contain no stable member")
+    root_family = l1.get("gamma_target_root_family")
+    if root_family is None:
+        gamma_root_count = 1
+    else:
+        if not isinstance(root_family, dict):
+            raise CandidateContractError("L1 gamma-target root family must be an object")
+        roots = root_family.get("roots")
+        if (
+            root_family.get("status") != "complete_stable_seed_intersection_family__downstream_selection_pending"
+            or not isinstance(roots, list)
+            or len(roots) != int(root_family.get("distinct_root_count", -1))
+            or len(roots) != int(root_family.get("probe_converged_root_count", -1))
+            or not roots
+        ):
+            raise CandidateContractError("L1 gamma-target root family is incomplete or internally inconsistent")
+        gamma_root_count = len(roots)
     return {
         "schema_version": 1,
         "role": "mrtof_mirror_l0_l1_candidate_summary",
@@ -125,6 +141,7 @@ def validate_and_summarize(contract_path: Path, l0_path: Path, l1_path: Path) ->
             "restart_count": restart_count,
             "accepted_l0_count": len(accepted_indices),
             "l1_stable_count": stable_count,
+            "gamma_target_root_count": gamma_root_count,
             "actual_parallel_workers": int(l0["input"]["actual_parallel_workers"]),
         },
         "selected_mirror_voltages_v": dict(zip(("A", "B", "C", "D", "E"), voltages_v)),

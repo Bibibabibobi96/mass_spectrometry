@@ -161,6 +161,34 @@ def endpoint_regularized_kappa(
     raise CandidateContractError("endpoint-regularized kappa integral did not converge")
 
 
+def endpoint_regularized_kappa_at_turn(
+    psi_at_eta: Callable[[float], float], eta_turn: float,
+) -> float:
+    """Evaluate the paper's fixed-profile ``kappa(eta_turn)``.
+
+    ``endpoint_regularized_kappa`` integrates a unit interval.  Rescaling only
+    the integration coordinate gives the required physical integral while
+    preserving one fixed ``psi(eta)`` and its nominal normalization.
+    """
+    turn = _finite(eta_turn, "kappa eta_turn")
+    if turn <= 0.0:
+        raise CandidateContractError("kappa eta_turn must be positive")
+    return turn * endpoint_regularized_kappa(lambda unit_eta: psi_at_eta(turn * unit_eta))
+
+
+def kappa_derivative_at_turn(
+    psi_at_eta: Callable[[float], float], eta_turn: float, *, step: float,
+) -> float:
+    """Differentiate ``kappa(eta_turn)`` on one fixed normalized profile."""
+    turn = _finite(eta_turn, "kappa derivative eta_turn")
+    increment = _finite(step, "kappa derivative step")
+    if increment <= 0.0 or turn - increment <= 0.0:
+        raise CandidateContractError("kappa derivative step must stay inside the positive turn domain")
+    upper = endpoint_regularized_kappa_at_turn(psi_at_eta, turn + increment)
+    lower = endpoint_regularized_kappa_at_turn(psi_at_eta, turn - increment)
+    return (upper - lower) / (2.0 * increment)
+
+
 def endpoint_regularized_tau_g(
     psi_at_eta: Callable[[float], float], g_at_eta: Callable[[float], float], eta_turn: float,
     *, initial_panels: int = 32, max_refinements: int = 12, relative_tolerance: float = 1e-8,

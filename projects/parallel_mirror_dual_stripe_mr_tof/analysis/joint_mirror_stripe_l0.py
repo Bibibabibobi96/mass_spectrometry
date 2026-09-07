@@ -15,12 +15,14 @@ import math
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
+import numpy as np
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import (
     endpoint_regularized_kappa,
+    kappa_derivative_at_turn,
     tau_g_derivative_at_turn,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import (
-    compile_dual_stripe_width_evaluator,
+    compile_dual_stripe_path_length_evaluator,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import (
     MirrorL0Design,
@@ -77,8 +79,8 @@ def stripes_from_contract(
         _finite(biases_v[1], "Stripe trial set-2 bias"),
     )
 
-    first_width = compile_dual_stripe_width_evaluator(contract, "set_1")
-    second_width = compile_dual_stripe_width_evaluator(contract, "set_2")
+    first_width = compile_dual_stripe_path_length_evaluator(contract, "set_1")
+    second_width = compile_dual_stripe_path_length_evaluator(contract, "set_2")
     return StripeHardBoundary(first_bias, first_width), StripeHardBoundary(second_bias, second_width)
 
 
@@ -106,6 +108,12 @@ class ConstraintClassification:
     declared_constraint_count: int
     independent_constraint_rank: int | None
     augmented_rank: int | None
+    nullity: int | None
+    redundant_constraint_count: int | None
+    singular_values: tuple[float, ...] | None
+    condition_number_2: float | None
+    scaled_irreducible_residual_norm_2: float | None
+    scaled_residual_norm_2: float | None
     status: str
     reason: str
 
@@ -121,7 +129,9 @@ class JointL0Trial:
     nominal_turning_y_mm: float
     target_oscillation_count: int
     time_platform_eta_nodes: tuple[float, ...]
-    eta_derivative_step: float
+    kappa_derivative_step: float
+    time_platform_derivative_step: float
+    energy_derivative_step_v: float
     stripe_target_position_mm: tuple[float, float, float] | None = None
     stripe_target_unit_direction_project: tuple[float, float, float] | None = None
     two_prism_transport_observation: TwoPrismTransportObservation | None = None
@@ -142,45 +152,25 @@ class JointL0ResidualReport:
         return tuple(name for name, _value in self.residuals)
 
 
-def _matrix_rank(rows: Sequence[Sequence[float]], columns: int, tolerance: float = 1e-10) -> int:
-    """Compute a small dense matrix rank without adding a second numeric stack."""
-    if columns <= 0 or not rows:
-        return 0
-    matrix = [[_finite(value, "Jacobian element") for value in row] for row in rows]
-    if any(len(row) != columns for row in matrix):
-        raise CandidateContractError("each Jacobian row must have one element per declared unknown")
-    scale = max(1.0, *(abs(value) for row in matrix for value in row))
-    threshold = tolerance * scale
-    rank = 0
-    for column in range(columns):
-        pivot = max(range(rank, len(matrix)), key=lambda index: abs(matrix[index][column]))
-        if abs(matrix[pivot][column]) <= threshold:
-            continue
-        matrix[rank], matrix[pivot] = matrix[pivot], matrix[rank]
-        pivot_value = matrix[rank][column]
-        for row in range(rank + 1, len(matrix)):
-            factor = matrix[row][column] / pivot_value
-            for trailing in range(column, columns):
-                matrix[row][trailing] -= factor * matrix[rank][trailing]
-        rank += 1
-        if rank == len(matrix):
-            break
-    return rank
-
-
 def classify_constraint_system(
     unknown_names: Sequence[str],
     constraint_names: Sequence[str],
     *,
     jacobian_rows: Sequence[Sequence[float]] | None = None,
     residuals: Sequence[float] | None = None,
+    parameter_scales: Sequence[float] | None = None,
+    residual_scales: Sequence[float] | None = None,
+    relative_rank_tolerance: float = 1e-10,
+    compatibility_tolerance: float = 1e-8,
 ) -> ConstraintClassification:
-    """Classify a solve by independent rank, not merely equation counting.
+    """Classify a locally linearized solve with a scaled SVD.
 
     Without a numerical Jacobian, the result is deliberately ``rank_unverified``.
-    When residuals are supplied, the augmented rank detects an incompatible
-    linearized system; redundant, compatible residuals do not falsely make an
-    exactly determined system over-defined.
+    The SVD is applied to ``diag(1/r_scale) J diag(p_scale)``.  When a residual
+    is supplied, its projection on the Jacobian's left null space is the part
+    that no local parameter correction can remove.  This distinguishes a
+    square determined system from an overdetermined but consistent system and
+    from a locally incompatible one.
     """
     unknowns = tuple(unknown_names)
     constraints = tuple(constraint_names)
@@ -189,28 +179,75 @@ def classify_constraint_system(
     if len(set(unknowns)) != len(unknowns) or len(set(constraints)) != len(constraints):
         raise CandidateContractError("constraint classification names must be unique")
     if jacobian_rows is None:
-        return ConstraintClassification(len(unknowns), len(constraints), None, None, "rank_unverified", "a numerical Jacobian is required before determination can be claimed")
+        return ConstraintClassification(
+            len(unknowns), len(constraints), None, None, None, None, None, None,
+            None, None, "rank_unverified",
+            "a numerical Jacobian is required before determination can be claimed",
+        )
     if len(jacobian_rows) != len(constraints):
         raise CandidateContractError("Jacobian must have one row per declared constraint")
-    rank = _matrix_rank(jacobian_rows, len(unknowns))
+    matrix = np.asarray(jacobian_rows, dtype=float)
+    if matrix.shape != (len(constraints), len(unknowns)) or not np.all(np.isfinite(matrix)):
+        raise CandidateContractError("each finite Jacobian row must have one element per declared unknown")
+    p_scales = np.ones(len(unknowns)) if parameter_scales is None else np.asarray(parameter_scales, dtype=float)
+    r_scales = np.ones(len(constraints)) if residual_scales is None else np.asarray(residual_scales, dtype=float)
+    if p_scales.shape != (len(unknowns),) or r_scales.shape != (len(constraints),):
+        raise CandidateContractError("classification scales must match the named parameters and constraints")
+    if not np.all(np.isfinite(p_scales)) or not np.all(np.isfinite(r_scales)) or np.any(p_scales <= 0.0) or np.any(r_scales <= 0.0):
+        raise CandidateContractError("classification scales must be finite and positive")
+    rank_tolerance = _finite(relative_rank_tolerance, "relative rank tolerance")
+    consistency_tolerance = _finite(compatibility_tolerance, "compatibility tolerance")
+    if not 0.0 < rank_tolerance < 1.0 or consistency_tolerance < 0.0:
+        raise CandidateContractError("rank and compatibility tolerances are invalid")
+    scaled_matrix = matrix * p_scales[np.newaxis, :] / r_scales[:, np.newaxis]
+    left_vectors, singular_values, _right_vectors = np.linalg.svd(scaled_matrix, full_matrices=True)
+    threshold = rank_tolerance * (float(singular_values[0]) if singular_values.size else 1.0)
+    rank = int(np.count_nonzero(singular_values > threshold))
+    nullity = len(unknowns) - rank
+    redundancy = len(constraints) - rank
+    finite_singular_values = singular_values[singular_values > threshold]
+    condition = (
+        float(finite_singular_values[0] / finite_singular_values[-1])
+        if rank == len(unknowns) and finite_singular_values.size
+        else math.inf
+    )
     augmented_rank: int | None = None
+    irreducible_norm: float | None = None
+    scaled_residual_norm: float | None = None
     if residuals is not None:
         if len(residuals) != len(constraints):
             raise CandidateContractError("residual vector must have one value per declared constraint")
-        augmented_rank = _matrix_rank(
-            [tuple(row) + (-_finite(value, "residual"),) for row, value in zip(jacobian_rows, residuals)],
-            len(unknowns) + 1,
-        )
-        if augmented_rank > rank:
-            return ConstraintClassification(len(unknowns), len(constraints), rank, augmented_rank, "overdetermined_incompatible", "the linearized residual equations are incompatible")
+        scaled_residual = np.asarray([_finite(value, "residual") for value in residuals]) / r_scales
+        scaled_residual_norm = float(np.linalg.norm(scaled_residual))
+        left_null = left_vectors[:, rank:]
+        irreducible_norm = float(np.linalg.norm(left_null.T @ scaled_residual))
+        augmented_rank = rank + int(irreducible_norm > consistency_tolerance)
+        if irreducible_norm > consistency_tolerance:
+            return ConstraintClassification(
+                len(unknowns), len(constraints), rank, augmented_rank, nullity, redundancy,
+                tuple(float(value) for value in singular_values), condition,
+                irreducible_norm, scaled_residual_norm, "locally_incompatible",
+                "the scaled residual has a component outside the local Jacobian column space",
+            )
     if rank < len(unknowns):
-        return ConstraintClassification(len(unknowns), len(constraints), rank, augmented_rank, "underdetermined", "independent constraints leave one or more physical degrees of freedom")
-    return ConstraintClassification(len(unknowns), len(constraints), rank, augmented_rank, "exactly_determined", "independent constraint rank equals the declared physical degrees of freedom")
+        status = "underdetermined"
+        reason = "independent constraints leave one or more local physical degrees of freedom"
+    elif len(constraints) == len(unknowns):
+        status = "square_exact"
+        reason = "a square full-rank local system determines every declared physical degree of freedom"
+    else:
+        status = "overdetermined_consistent"
+        reason = "the full-column-rank overdetermined system is locally consistent within the declared scaled tolerance"
+    return ConstraintClassification(
+        len(unknowns), len(constraints), rank, augmented_rank, nullity, redundancy,
+        tuple(float(value) for value in singular_values), condition,
+        irreducible_norm, scaled_residual_norm, status, reason,
+    )
 
 
 def require_exactly_determined(classification: ConstraintClassification) -> None:
     """Refuse publication of a solved parameter set unless its rank closes."""
-    if classification.status != "exactly_determined":
+    if classification.status not in {"square_exact", "overdetermined_consistent"}:
         raise CandidateContractError(f"joint solve cannot publish remaining parameters: {classification.status}: {classification.reason}")
 
 
@@ -234,7 +271,6 @@ def evaluate_joint_l0_trial(trial: JointL0Trial) -> JointL0ResidualReport:
         periods.append(coupled_reduced_period_mm_per_sqrt_v(
             mirror_period, energy, baseline_widths, tuple(stripe.bias_v for stripe in trial.stripes),
         ))
-    central_period = periods[1]
     state = derive_coupled_drift_state(
         mirror_reduced_period_mm_per_sqrt_v=reduced_period(energies[1], trial.mirror_design),
         energy_per_charge_v=energies[1],
@@ -243,35 +279,47 @@ def evaluate_joint_l0_trial(trial: JointL0Trial) -> JointL0ResidualReport:
         entry_y_mm=trial.stripe_entry_y_mm,
         turning_y_mm=trial.nominal_turning_y_mm,
     )
-    length = state.drift_length_l_mm
-    direction = 1.0 if trial.nominal_turning_y_mm > trial.stripe_entry_y_mm else -1.0
-    step = _finite(trial.eta_derivative_step, "eta derivative step")
-    if step <= 0.0 or 1.0 - step <= 0.0:
-        raise CandidateContractError("eta derivative step must bracket the nominal turning point")
-    lower_state = derive_coupled_drift_state(
+    kappa_step = _finite(trial.kappa_derivative_step, "kappa derivative step")
+    time_step = _finite(trial.time_platform_derivative_step, "time-platform derivative step")
+    if min(kappa_step, time_step) <= 0.0 or 1.0 - max(kappa_step, time_step) <= 0.0:
+        raise CandidateContractError("dimensionless derivative steps must bracket the nominal turning point")
+    kappa_prime = spatial_return_kappa_derivative_residual(
         mirror_reduced_period_mm_per_sqrt_v=reduced_period(energies[1], trial.mirror_design),
-        energy_per_charge_v=energies[1], target_oscillation_count=trial.target_oscillation_count,
-        stripes=trial.stripes, entry_y_mm=trial.stripe_entry_y_mm,
-        turning_y_mm=trial.stripe_entry_y_mm + direction * length * (1.0 - step),
-    )
-    upper_state = derive_coupled_drift_state(
-        mirror_reduced_period_mm_per_sqrt_v=reduced_period(energies[1], trial.mirror_design),
-        energy_per_charge_v=energies[1], target_oscillation_count=trial.target_oscillation_count,
-        stripes=trial.stripes, entry_y_mm=trial.stripe_entry_y_mm,
-        turning_y_mm=trial.stripe_entry_y_mm + direction * length * (1.0 + step),
+        energy_per_charge_v=energies[1],
+        stripes=trial.stripes,
+        entry_y_mm=trial.stripe_entry_y_mm,
+        nominal_turning_y_mm=trial.nominal_turning_y_mm,
+        derivative_step=kappa_step,
     )
     time_residuals = time_platform_derivative_residuals(
         mirror_reduced_period_mm_per_sqrt_v=reduced_period(energies[1], trial.mirror_design),
         energy_per_charge_v=energies[1], stripes=trial.stripes,
         entry_y_mm=trial.stripe_entry_y_mm, nominal_turning_y_mm=trial.nominal_turning_y_mm,
-        eta_turn_nodes=trial.time_platform_eta_nodes, derivative_step=step,
+        eta_turn_nodes=trial.time_platform_eta_nodes, derivative_step=time_step,
+    )
+    energy_step = _finite(trial.energy_derivative_step_v, "energy derivative step")
+    if energy_step <= 0.0 or energies[0] - energy_step <= 0.0:
+        raise CandidateContractError("energy derivative step must be positive and remain inside the physical energy domain")
+    baseline_widths = tuple(stripe.width_mm(trial.stripe_entry_y_mm) for stripe in trial.stripes)
+    biases = tuple(stripe.bias_v for stripe in trial.stripes)
+    energy_slopes = tuple(
+        coupled_normalized_period_slope_at_energy(
+            trial.mirror_design,
+            energy,
+            baseline_widths,
+            biases,
+            energy_step,
+        )
+        for energy in energies
     )
     residuals = [
-        ("three_point_low_relative", (periods[0] - central_period) / central_period),
-        ("three_point_high_relative", (periods[2] - central_period) / central_period),
-        ("target_oscillation_count", state.target_oscillation_count_residual),
-        ("spatial_return_kappa_prime", (upper_state.nominal_kappa_1 - lower_state.nominal_kappa_1) / (2.0 * step)),
+        (f"full_analyser_period_slope_at_{energy:.12g}V", slope)
+        for energy, slope in zip(energies, energy_slopes)
     ]
+    residuals.extend([
+        ("target_oscillation_count", state.target_oscillation_count_residual),
+        ("spatial_return_kappa_prime", kappa_prime),
+    ])
     residuals.extend((f"time_platform_tau_g_prime_eta_{node:.12g}", value) for node, value in zip(trial.time_platform_eta_nodes, time_residuals))
     transport_values = (
         trial.stripe_target_position_mm,
@@ -294,6 +342,11 @@ def finite_difference_joint_jacobian(
     parameter_values: Sequence[float],
     parameter_steps: Sequence[float],
     trial_from_parameters: Callable[[tuple[float, ...]], JointL0Trial],
+    *,
+    parameter_scales: Sequence[float] | None = None,
+    residual_scales: Sequence[float] | None = None,
+    relative_rank_tolerance: float = 1e-10,
+    compatibility_tolerance: float = 1e-8,
 ) -> tuple[JointL0ResidualReport, ConstraintClassification]:
     """Differentiate the actual joint residual vector and classify its rank.
 
@@ -319,7 +372,16 @@ def finite_difference_joint_jacobian(
             raise CandidateContractError("joint residual identity changed across a Jacobian perturbation")
         for row, low, high in zip(rows, lower_result.residual_vector(), upper_result.residual_vector()):
             row.append((high - low) / (2.0 * step))
-    return center, classify_constraint_system(names, center.residual_names(), jacobian_rows=rows, residuals=center.residual_vector())
+    return center, classify_constraint_system(
+        names,
+        center.residual_names(),
+        jacobian_rows=rows,
+        residuals=center.residual_vector(),
+        parameter_scales=parameter_scales,
+        residual_scales=residual_scales,
+        relative_rank_tolerance=relative_rank_tolerance,
+        compatibility_tolerance=compatibility_tolerance,
+    )
 
 
 def solve_exactly_determined_joint_l0(
@@ -375,7 +437,14 @@ def solve_exactly_determined_joint_l0(
         max_nfev=maximum_function_evaluations,
     )
     solved = tuple(float(value) for value in result.x)
-    report, classification = finite_difference_joint_jacobian(names, solved, steps, trial_from_parameters)
+    report, classification = finite_difference_joint_jacobian(
+        names,
+        solved,
+        steps,
+        trial_from_parameters,
+        parameter_scales=tuple(high - low for low, high in zip(lower, upper)),
+        residual_scales=scales,
+    )
     require_exactly_determined(classification)
     failures = [
         (name, value, tolerance)
@@ -433,6 +502,37 @@ def coupled_reduced_period_mm_per_sqrt_v(
     if period <= 0.0:
         raise CandidateContractError("Stripe baseline action makes the coupled period non-positive")
     return period
+
+
+def coupled_normalized_period_slope_at_energy(
+    mirror_design: MirrorL0Design,
+    energy_per_charge_v: float,
+    baseline_widths_mm: Sequence[float],
+    biases_v: Sequence[float],
+    derivative_step_v: float,
+) -> float:
+    """Return the local normalized full-analyser period slope at one energy.
+
+    The same fixed hardware widths and Stripe biases are used at the lower,
+    centre, and upper energy.  This is a local derivative at each declared
+    energy node, not a replacement by two endpoint-to-centre period
+    differences.
+    """
+    energy = _finite(energy_per_charge_v, "energy_per_charge_v")
+    step = _finite(derivative_step_v, "full-analyser period derivative step")
+    if step <= 0.0 or energy - step <= 0.0:
+        raise CandidateContractError("full-analyser period derivative step leaves the positive energy domain")
+
+    def period(node: float) -> float:
+        return coupled_reduced_period_mm_per_sqrt_v(
+            reduced_period(node, mirror_design),
+            node,
+            baseline_widths_mm,
+            biases_v,
+        )
+
+    center = period(energy)
+    return (period(energy + step) - period(energy - step)) / (2.0 * step * center)
 
 
 def _pseudopotential_difference_v(
@@ -603,6 +703,42 @@ def time_platform_derivative_residuals(
         tau_g_derivative_at_turn(psi_at_eta, g_at_eta, node, step=derivative_step)
         for node in nodes
     )
+
+
+def spatial_return_kappa_derivative_residual(
+    *,
+    mirror_reduced_period_mm_per_sqrt_v: float,
+    energy_per_charge_v: float,
+    stripes: Sequence[StripeHardBoundary],
+    entry_y_mm: float,
+    nominal_turning_y_mm: float,
+    derivative_step: float,
+) -> float:
+    """Evaluate the paper's ``kappa'(1)`` on one fixed nominal profile."""
+    mirror_period = _finite(mirror_reduced_period_mm_per_sqrt_v, "mirror reduced period")
+    energy = _finite(energy_per_charge_v, "energy_per_charge_v")
+    entry = _finite(entry_y_mm, "entry_y_mm")
+    nominal_turn = _finite(nominal_turning_y_mm, "nominal_turning_y_mm")
+    length = abs(nominal_turn - entry)
+    if mirror_period <= 0.0 or energy <= 0.0 or length <= 0.0:
+        raise CandidateContractError("kappa derivative needs a positive mirror period, energy, and nominal length")
+    direction = 1.0 if nominal_turn > entry else -1.0
+    turning_phi = _pseudopotential_difference_v(
+        energy, mirror_period, stripes, entry, nominal_turn,
+    )
+    if turning_phi <= 0.0:
+        raise CandidateContractError("kappa derivative nominal turn must have positive pseudopotential")
+
+    def psi_at_eta(eta: float) -> float:
+        return _pseudopotential_difference_v(
+            energy,
+            mirror_period,
+            stripes,
+            entry,
+            entry + direction * length * _finite(eta, "eta"),
+        ) / turning_phi
+
+    return kappa_derivative_at_turn(psi_at_eta, 1.0, step=derivative_step)
 
 
 def derive_coupled_drift_state(

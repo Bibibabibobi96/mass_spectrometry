@@ -256,6 +256,136 @@ def screen_l1_fixed_geometry(
     }
 
 
+def refine_l0_gamma_intersection(
+    initial_design: MirrorL0Design,
+    voltage_lower_bounds_v: tuple[float, float, float, float],
+    voltage_upper_bounds_v: tuple[float, float, float, float],
+    energy_points_v: tuple[float, float, float],
+    target_gamma_degrees: float,
+    period_slope_derivative_step_v: float,
+    maximum_abs_normalized_period_slope_per_v: float,
+    position_probe_mm: float,
+    angle_probe_rad: float,
+    maximum_gamma_residual_degrees: float,
+    maximum_local_function_evaluations: int,
+) -> dict[str, object]:
+    """Refine one L0-family seed to the four-equation gamma intersection.
+
+    The first three equations remain the mirror-only local period slopes.  The
+    fourth equation selects ``gamma`` on that feasible family; it is never
+    reclassified as an L0 equation.  Calling this from every stable seed makes
+    distinct voltage-family branches observable instead of silently selecting
+    the nearest bracket only.
+    """
+    target_gamma = float(target_gamma_degrees)
+    gamma_tolerance = float(maximum_gamma_residual_degrees)
+    slope_tolerance = float(maximum_abs_normalized_period_slope_per_v)
+    if (
+        len(voltage_lower_bounds_v) != 4
+        or len(voltage_upper_bounds_v) != 4
+        or slope_tolerance <= 0.0
+        or gamma_tolerance <= 0.0
+        or maximum_local_function_evaluations <= 0
+    ):
+        raise CandidateContractError("gamma-intersection refinement controls are incomplete")
+    initial = tuple(float(value) for value in initial_design.electrode_voltages_v[1:])
+
+    def residual(non_ground_voltages_v) -> list[float]:
+        values = tuple(float(value) for value in non_ground_voltages_v)
+        design = MirrorL0Design(
+            initial_design.transverse_half_gap_mm,
+            initial_design.transition_z_mm,
+            (0.0, *values),
+            initial_design.terminal_electrode_plane_z_mm,
+            values[-1],
+        )
+        try:
+            slopes = three_point_normalized_period_slopes_per_v(
+                design, energy_points_v, period_slope_derivative_step_v,
+            )
+            mapping = map_at_energy(energy_points_v[1], design, position_probe_mm, angle_probe_rad)
+        except CandidateContractError:
+            return [1e9, 1e9, 1e9, 1e9]
+        if not mapping.stable or mapping.gamma_degrees is None:
+            return [1e9, 1e9, 1e9, 1e9]
+        return [
+            *(float(value) / slope_tolerance for value in slopes),
+            (mapping.gamma_degrees - target_gamma) / gamma_tolerance,
+        ]
+
+    intersection = least_squares(
+        residual,
+        initial,
+        bounds=(voltage_lower_bounds_v, voltage_upper_bounds_v),
+        max_nfev=maximum_local_function_evaluations,
+        x_scale="jac",
+        ftol=1e-13,
+        xtol=1e-13,
+        gtol=1e-13,
+    )
+    root_voltages = tuple(float(value) for value in intersection.x)
+    root_design = MirrorL0Design(
+        initial_design.transverse_half_gap_mm,
+        initial_design.transition_z_mm,
+        (0.0, *root_voltages),
+        initial_design.terminal_electrode_plane_z_mm,
+        root_voltages[-1],
+    )
+    root_slopes = three_point_normalized_period_slopes_per_v(
+        root_design, energy_points_v, period_slope_derivative_step_v,
+    )
+    root_screen = screen_l1_fixed_geometry(
+        root_design, energy_points_v, position_probe_mm, angle_probe_rad,
+    )
+    root_mapping = root_screen["nominal_mapping"]
+    gamma_value = root_mapping["gamma_degrees"]
+    if not root_mapping["stable"] or gamma_value is None:
+        raise CandidateContractError("gamma-target intersection refinement produced an unstable map")
+    gamma_residual = float(gamma_value) - target_gamma
+    if (
+        not intersection.success
+        or any(abs(value) > slope_tolerance for value in root_slopes)
+        or abs(gamma_residual) > gamma_tolerance
+    ):
+        raise CandidateContractError(
+            "gamma-target intersection refinement did not satisfy the declared L0 and L1 residual gates"
+        )
+    root_l0 = {
+        "status": "l0_voltage_slice_member_not_l1_validated",
+        "geometry_fixed": True,
+        "transition_z_mm": list(root_design.transition_z_mm),
+        "transverse_half_gap_mm": root_design.transverse_half_gap_mm,
+        "terminal_electrode_plane_z_mm": root_design.terminal_electrode_plane_z_mm,
+        "electrode_voltages_v": list(root_design.electrode_voltages_v),
+        "terminal_e_voltage_v": root_design.electrode_voltages_v[-1],
+        "fixed_terminal_e_voltage_v": root_design.electrode_voltages_v[-1],
+        "terminal_e_retention_constraint_v": {
+            "strictly_greater_than_energy_per_charge_v": max(energy_points_v),
+        },
+        "optimizer": {
+            "success": bool(intersection.success),
+            "message": str(intersection.message),
+            "cost": float(intersection.cost),
+            "function_evaluations": int(intersection.nfev),
+            "maximum_function_evaluations": maximum_local_function_evaluations,
+            "selection_stage": "L1 gamma intersection on the three-equation L0 family",
+        },
+        "three_point": three_point_report(root_design, energy_points_v),
+        "normalized_period_slopes_per_v": list(root_slopes),
+        "period_slope_derivative_step_v": period_slope_derivative_step_v,
+        "maximum_abs_normalized_period_slope_per_v": slope_tolerance,
+        "residual": residual(root_voltages)[:3],
+        "not_evaluated": ["three_dimensional_fields", "simion_pa"],
+    }
+    return {
+        "status": "gamma_target_intersection_found__probe_and_3d_validation_pending",
+        "target_gamma_degrees": target_gamma,
+        "gamma_residual_degrees": gamma_residual,
+        "l0_receipt": root_l0,
+        "l1_screen": root_screen,
+    }
+
+
 def continue_fixed_e_l0_family_to_gamma(
     lower_design: MirrorL0Design,
     upper_design: MirrorL0Design,
@@ -357,101 +487,30 @@ def continue_fixed_e_l0_family_to_gamma(
     evaluate(root_e)
     brent_root = cache[root_e]
 
-    # The three fixed-E L0 equations can possess nearby numerical branches.
-    # A scalar Brent solve may therefore stop at a small E interval even when
-    # independently re-solving B--D leaves a non-negligible gamma residual.
-    # Refine the four-dimensional intersection here: the first three residuals
-    # remain the declared L0 equations and gamma is solely the L1 family-member
-    # selector.  This does not promote gamma to a fourth L0 equation.
-    initial_intersection = tuple(float(value) for value in brent_root["l0"]["electrode_voltages_v"][1:])
-
-    def intersection_residual(non_ground_voltages_v: tuple[float, ...]) -> list[float]:
-        design = MirrorL0Design(
-            lower_design.transverse_half_gap_mm,
-            lower_design.transition_z_mm,
-            (0.0, *tuple(float(value) for value in non_ground_voltages_v)),
-            lower_design.terminal_electrode_plane_z_mm,
-            float(non_ground_voltages_v[-1]),
-        )
-        try:
-            slopes = three_point_normalized_period_slopes_per_v(
-                design, energy_points_v, period_slope_derivative_step_v,
-            )
-            mapping = map_at_energy(energy_points_v[1], design, position_probe_mm, angle_probe_rad)
-        except CandidateContractError:
-            return [1e9, 1e9, 1e9, 1e9]
-        if not mapping.stable or mapping.gamma_degrees is None:
-            return [1e9, 1e9, 1e9, 1e9]
-        return [
-            *(float(value) / maximum_abs_normalized_period_slope_per_v for value in slopes),
-            (mapping.gamma_degrees - target_gamma) / gamma_tolerance,
-        ]
-
-    intersection = least_squares(
-        intersection_residual,
-        initial_intersection,
-        bounds=(voltage_lower_bounds_v, voltage_upper_bounds_v),
-        max_nfev=maximum_local_function_evaluations,
-        x_scale="jac",
-    )
-    root_voltages = tuple(float(value) for value in intersection.x)
-    root_design = MirrorL0Design(
+    brent_design = MirrorL0Design(
         lower_design.transverse_half_gap_mm,
         lower_design.transition_z_mm,
-        (0.0, *root_voltages),
+        tuple(float(value) for value in brent_root["l0"]["electrode_voltages_v"]),
         lower_design.terminal_electrode_plane_z_mm,
-        root_voltages[-1],
+        float(brent_root["l0"]["electrode_voltages_v"][-1]),
     )
-    root_slopes = three_point_normalized_period_slopes_per_v(
-        root_design, energy_points_v, period_slope_derivative_step_v,
+    refined = refine_l0_gamma_intersection(
+        brent_design,
+        voltage_lower_bounds_v,
+        voltage_upper_bounds_v,
+        energy_points_v,
+        target_gamma,
+        period_slope_derivative_step_v,
+        maximum_abs_normalized_period_slope_per_v,
+        position_probe_mm,
+        angle_probe_rad,
+        gamma_tolerance,
+        maximum_local_function_evaluations,
     )
-    root_mapping = map_at_energy(energy_points_v[1], root_design, position_probe_mm, angle_probe_rad)
-    if not root_mapping.stable or root_mapping.gamma_degrees is None:
-        raise CandidateContractError("gamma-target intersection refinement produced an unstable map")
-    gamma_residual = root_mapping.gamma_degrees - target_gamma
-    if (
-        not intersection.success
-        or any(abs(value) > maximum_abs_normalized_period_slope_per_v for value in root_slopes)
-        or abs(gamma_residual) > gamma_tolerance
-    ):
-        raise CandidateContractError(
-            "gamma-target intersection refinement did not satisfy the declared L0 and L1 residual gates"
-        )
-    root_l0 = {
-        "status": "l0_voltage_slice_member_not_l1_validated",
-        "geometry_fixed": True,
-        "transition_z_mm": list(root_design.transition_z_mm),
-        "transverse_half_gap_mm": root_design.transverse_half_gap_mm,
-        "terminal_electrode_plane_z_mm": root_design.terminal_electrode_plane_z_mm,
-        "electrode_voltages_v": list(root_design.electrode_voltages_v),
-        "terminal_e_voltage_v": root_design.electrode_voltages_v[-1],
-        "fixed_terminal_e_voltage_v": root_design.electrode_voltages_v[-1],
-        "terminal_e_retention_constraint_v": {
-            "strictly_greater_than_energy_per_charge_v": max(energy_points_v),
-        },
-        "optimizer": {
-            "success": bool(intersection.success),
-            "message": str(intersection.message),
-            "cost": float(intersection.cost),
-            "maximum_function_evaluations": maximum_local_function_evaluations,
-            "selection_stage": "L1 gamma intersection on the three-equation L0 family",
-        },
-        "three_point": three_point_report(root_design, energy_points_v),
-        "normalized_period_slopes_per_v": list(root_slopes),
-        "period_slope_derivative_step_v": period_slope_derivative_step_v,
-        "maximum_abs_normalized_period_slope_per_v": maximum_abs_normalized_period_slope_per_v,
-        "residual": intersection_residual(root_voltages)[:3],
-        "not_evaluated": ["three_dimensional_fields", "simion_pa"],
-    }
     return {
+        **refined,
         "status": "gamma_target_continuation_found__probe_and_3d_validation_pending",
-        "target_gamma_degrees": target_gamma,
-        "root_e_voltage_v": root_design.electrode_voltages_v[-1],
-        "gamma_residual_degrees": gamma_residual,
-        "l0_receipt": root_l0,
-        "l1_screen": screen_l1_fixed_geometry(
-            root_design, energy_points_v, position_probe_mm, angle_probe_rad,
-        ),
+        "root_e_voltage_v": refined["l0_receipt"]["electrode_voltages_v"][-1],
         "initial_e_voltage_bracket_v": [lower_e, upper_e],
         "selected_node_bracket_v": list(bracket),
         "continuation_nodes": [cache[node] for node in nodes],

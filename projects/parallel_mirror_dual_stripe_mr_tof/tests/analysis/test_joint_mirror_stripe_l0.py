@@ -9,6 +9,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_mirror_stripe_l0
     JointL0Trial,
     StripeHardBoundary,
     classify_constraint_system,
+    coupled_normalized_period_slope_at_energy,
     coupled_reduced_period_mm_per_sqrt_v,
     derive_coupled_drift_state,
     derive_coupled_drift_state_from_entry_direction,
@@ -18,6 +19,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_mirror_stripe_l0
     require_exactly_determined,
     reduced_action_delta_mm_sqrt_v,
     solve_exactly_determined_joint_l0,
+    spatial_return_kappa_derivative_residual,
     stripes_from_contract,
     time_platform_derivative_residuals,
 )
@@ -30,6 +32,17 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_handoff impo
 
 
 class JointMirrorStripeL0Test(unittest.TestCase):
+    def test_spatial_return_derivative_does_not_renormalize_each_perturbed_turn(self) -> None:
+        residual = spatial_return_kappa_derivative_residual(
+            mirror_reduced_period_mm_per_sqrt_v=10.0,
+            energy_per_charge_v=4000.0,
+            stripes=(StripeHardBoundary(100.0, lambda y: 10.0 - 0.1 * y),),
+            entry_y_mm=0.0,
+            nominal_turning_y_mm=-100.0,
+            derivative_step=1e-3,
+        )
+        self.assertAlmostEqual(residual, 1.0, places=5)
+
     @staticmethod
     def _trial(mirror_voltage_b: float) -> JointL0Trial:
         return JointL0Trial(
@@ -49,12 +62,19 @@ class JointMirrorStripeL0Test(unittest.TestCase):
             nominal_turning_y_mm=100.0,
             target_oscillation_count=25,
             time_platform_eta_nodes=(0.9, 0.95, 1.05, 1.1),
-            eta_derivative_step=1e-3,
+            kappa_derivative_step=2e-3,
+            time_platform_derivative_step=1e-3,
+            energy_derivative_step_v=1.0,
         )
 
-    def test_joint_trial_keeps_all_eight_downstream_analytic_residuals_together(self) -> None:
+    def test_joint_trial_keeps_all_nine_downstream_analytic_residuals_together(self) -> None:
         report = evaluate_joint_l0_trial(self._trial(-2000.0))
-        self.assertEqual(len(report.residuals), 8)
+        self.assertEqual(len(report.residuals), 9)
+        self.assertEqual(report.residual_names()[:3], (
+            "full_analyser_period_slope_at_3900V",
+            "full_analyser_period_slope_at_4000V",
+            "full_analyser_period_slope_at_4100V",
+        ))
         self.assertNotIn("mirror_gamma_90_m11", report.residual_names())
         self.assertTrue(all(math.isfinite(value) for _name, value in report.residuals))
 
@@ -68,7 +88,7 @@ class JointMirrorStripeL0Test(unittest.TestCase):
                "two_prism_transport_observation": TwoPrismTransportObservation(state, state, state, state, True)}
         )
         report = evaluate_joint_l0_trial(trial)
-        self.assertEqual(len(report.residuals), 13)
+        self.assertEqual(len(report.residuals), 14)
         self.assertEqual(dict(report.residuals)["P1_P2_to_Stripe_position_x_mm"], 0.0)
 
     def test_partial_prism_transport_input_fails_closed(self) -> None:
@@ -80,8 +100,8 @@ class JointMirrorStripeL0Test(unittest.TestCase):
         report, classification = finite_difference_joint_jacobian(
             ("mirror_voltage_b",), (-2000.0,), (1.0,), lambda values: self._trial(values[0]),
         )
-        self.assertEqual(len(report.residuals), 8)
-        self.assertEqual(classification.status, "overdetermined_incompatible")
+        self.assertEqual(len(report.residuals), 9)
+        self.assertEqual(classification.status, "locally_incompatible")
 
     def test_solver_refuses_missing_user_scales_and_tolerances(self) -> None:
         with self.assertRaises(CandidateContractError):
@@ -103,8 +123,8 @@ class JointMirrorStripeL0Test(unittest.TestCase):
             builder,
         )
         self.assertEqual(classification.independent_constraint_rank, 1)
-        self.assertEqual(classification.status, "overdetermined_incompatible")
-        with self.assertRaisesRegex(CandidateContractError, "overdetermined_incompatible"):
+        self.assertEqual(classification.status, "locally_incompatible")
+        with self.assertRaisesRegex(CandidateContractError, "locally_incompatible"):
             solve_exactly_determined_joint_l0(
                 ("mirror_voltage_b_component_1", "mirror_voltage_b_component_2"),
                 (-1000.0, -1000.0),
@@ -127,6 +147,17 @@ class JointMirrorStripeL0Test(unittest.TestCase):
         with self.assertRaises(CandidateContractError):
             first.width_mm(y1 + 1.0)
 
+    def test_contract_adapter_applies_the_explicit_geometry_to_path_length_mapping(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        contract = json.loads((root / "config" / "simion_candidate_two_zone.json").read_text(encoding="utf-8"))
+        nominal_first, _nominal_second = stripes_from_contract(contract, (-40.0, 60.0))
+        doubled = json.loads(json.dumps(contract))
+        doubled["dual_stripe"]["theory_profile"]["path_length_mapping"][
+            "profile_width_to_total_S_multiplier"
+        ] = 2.0
+        doubled_first, _doubled_second = stripes_from_contract(doubled, (-40.0, 60.0))
+        self.assertAlmostEqual(doubled_first.width_mm(0.0), 2.0 * nominal_first.width_mm(0.0))
+
     def test_current_hardware_problem_declares_derived_quantities_separately(self) -> None:
         root = Path(__file__).resolve().parents[2]
         contract = json.loads((root / "config" / "simion_candidate_two_zone.json").read_text(encoding="utf-8"))
@@ -138,13 +169,21 @@ class JointMirrorStripeL0Test(unittest.TestCase):
             "mirror_period_slope_at_3900V", "mirror_period_slope_at_4000V",
             "mirror_period_slope_at_4100V",
         ])
-        self.assertEqual(len(problem["downstream_independent_unknowns"]), 4)
-        self.assertIn("prism_1_voltage_v", problem["downstream_independent_unknowns"])
-        self.assertEqual(problem["downstream_named_residual_blocks"][:2], [
-            "three_point_low_relative", "three_point_high_relative",
+        self.assertEqual(problem["stripe_fixed_hardware_independent_unknowns"], [
+            "stripe_set_1_bias_v", "stripe_set_2_bias_v",
         ])
-        self.assertNotIn("mirror_gamma_90_m11", problem["downstream_named_residual_blocks"])
-        self.assertEqual(len(problem["downstream_named_residual_blocks"]), 13)
+        self.assertEqual(problem["prism_transport_independent_unknowns"], [
+            "prism_1_voltage_v", "prism_2_voltage_v",
+        ])
+        self.assertEqual(len(problem["downstream_independent_unknown_inventory"]), 4)
+        self.assertEqual(problem["stripe_fixed_hardware_named_residual_blocks"][:3], [
+            "full_analyser_period_slope_at_3900V",
+            "full_analyser_period_slope_at_4000V",
+            "full_analyser_period_slope_at_4100V",
+        ])
+        self.assertNotIn("mirror_gamma_90_m11", problem["stripe_fixed_hardware_named_residual_blocks"])
+        self.assertEqual(len(problem["stripe_fixed_hardware_named_residual_blocks"]), 9)
+        self.assertEqual(len(problem["prism_transport_named_residual_blocks"]), 5)
         self.assertIn("stripe_entrance_project_position_mm", problem["derived_not_independent_unknowns"])
         initialization = problem["voltage_initialization"]
         self.assertEqual(initialization["authority"], "theory_derived_only")
@@ -175,10 +214,36 @@ class JointMirrorStripeL0Test(unittest.TestCase):
         with self.assertRaises(CandidateContractError):
             require_exactly_determined(under)
         exact = classify_constraint_system(("mirror_voltage", "stripe_bias"), ("target_K", "time_platform"), jacobian_rows=((1.0, 0.0), (0.0, 1.0)), residuals=(0.0, 0.0))
-        self.assertEqual(exact.status, "exactly_determined")
+        self.assertEqual(exact.status, "square_exact")
         require_exactly_determined(exact)
         incompatible = classify_constraint_system(("mirror_voltage",), ("first", "second"), jacobian_rows=((1.0,), (1.0,)), residuals=(0.0, 1.0))
-        self.assertEqual(incompatible.status, "overdetermined_incompatible")
+        self.assertEqual(incompatible.status, "locally_incompatible")
+
+    def test_scaled_svd_distinguishes_consistent_redundancy_from_incompatibility(self) -> None:
+        consistent = classify_constraint_system(
+            ("stripe_bias_v",),
+            ("condition_1", "condition_2"),
+            jacobian_rows=((1.0e-3,), (2.0e-3,)),
+            residuals=(2.0e-6, 4.0e-6),
+            parameter_scales=(1000.0,),
+            residual_scales=(1.0e-3, 2.0e-3),
+        )
+        self.assertEqual(consistent.status, "overdetermined_consistent")
+        self.assertEqual(consistent.nullity, 0)
+        self.assertEqual(consistent.redundant_constraint_count, 1)
+        self.assertAlmostEqual(consistent.scaled_irreducible_residual_norm_2, 0.0, places=12)
+        require_exactly_determined(consistent)
+        incompatible = classify_constraint_system(
+            ("stripe_bias_v",),
+            ("condition_1", "condition_2"),
+            jacobian_rows=((1.0e-3,), (2.0e-3,)),
+            residuals=(2.0e-6, 5.0e-6),
+            parameter_scales=(1000.0,),
+            residual_scales=(1.0e-3, 2.0e-3),
+            compatibility_tolerance=1.0e-6,
+        )
+        self.assertEqual(incompatible.status, "locally_incompatible")
+        self.assertGreater(incompatible.scaled_irreducible_residual_norm_2, 1.0e-6)
 
     def test_count_without_jacobian_never_claims_exact_determination(self) -> None:
         result = classify_constraint_system(("mirror_voltage",), ("target_K",))
@@ -189,6 +254,20 @@ class JointMirrorStripeL0Test(unittest.TestCase):
         corrected = coupled_reduced_period_mm_per_sqrt_v(mirror_period, 4000.0, (20.0, 30.0), (-40.0, 60.0))
         self.assertNotEqual(corrected, mirror_period)
         self.assertGreater(corrected, 0.0)
+
+    def test_full_analyser_uses_three_local_energy_slopes(self) -> None:
+        trial = self._trial(-2000.0)
+        widths = tuple(stripe.width_mm(trial.stripe_entry_y_mm) for stripe in trial.stripes)
+        biases = tuple(stripe.bias_v for stripe in trial.stripes)
+        slope = coupled_normalized_period_slope_at_energy(
+            trial.mirror_design,
+            4000.0,
+            widths,
+            biases,
+            1.0,
+        )
+        report = dict(evaluate_joint_l0_trial(trial).residuals)
+        self.assertAlmostEqual(report["full_analyser_period_slope_at_4000V"], slope, places=15)
 
     def test_nominal_state_derives_l_w_theta_and_k_without_external_w(self) -> None:
         stripes = (

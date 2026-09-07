@@ -90,6 +90,7 @@ class MirrorL0L1RunnerTests(unittest.TestCase):
             result = validate_and_summarize(CONTRACT, l0, l1)
         self.assertEqual(result["status"], "success")
         self.assertEqual(result["search"]["restart_count"], 36)
+        self.assertEqual(result["search"]["gamma_target_root_count"], 1)
         self.assertEqual(result["selected_mirror_voltages_v"]["D"], 5400.0)
         self.assertEqual(result["selected_mirror_voltages_v"]["E"], 7500.0)
 
@@ -174,7 +175,23 @@ class MirrorL0L1RunnerTests(unittest.TestCase):
         l0 = results / "mirror_l0_family_receipt.json"
         l1 = results / "mirror_l0_l1_candidate_receipt.json"
         l0.write_text("{}\n", encoding="utf-8")
-        l1.write_text("{}\n", encoding="utf-8")
+        l1.write_text(
+            json.dumps({
+                "gamma_target_root_family": {
+                    "roots": [{
+                        "l0_receipt": {
+                            "electrode_voltages_v": [
+                                0.0, -5064.599670746161, 3843.4955853153892,
+                                5439.680593141368, 7532.989971925157,
+                            ],
+                        },
+                        "l1_screen": {"nominal_mapping": {"gamma_degrees": 90.00000002}},
+                        "probe_convergence": {"status": "pass"},
+                    }],
+                },
+            }) + "\n",
+            encoding="utf-8",
+        )
         summary = root / "summary.json"
         summary.write_text(
             json.dumps(
@@ -237,6 +254,8 @@ class MirrorL0L1RunnerTests(unittest.TestCase):
         self.assertGreater(candidate.nominal_reduced_period_mm_per_sqrt_v, 0.0)
         self.assertGreater(candidate.nominal_axial_width_w_mm, 0.0)
         self.assertAlmostEqual(candidate.nominal_axial_width_w_mm, 540.4499458081797)
+        self.assertEqual(len(candidate.root_family), 1)
+        self.assertAlmostEqual(candidate.root_family[0].nominal_axial_width_w_mm, 540.4499458081797)
         self.assertNotEqual(candidate.contract_sha256, "")
         self.assertEqual(candidate.downstream_contract_sha256, downstream_contract_sha256)
 
