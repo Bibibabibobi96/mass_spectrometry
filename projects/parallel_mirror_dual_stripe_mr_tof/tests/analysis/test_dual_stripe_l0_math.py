@@ -28,7 +28,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_operating_
     _seed_profile,
     _solve_dimensionless_paper_target,
     attach_fixed_geometry_parameter_authority,
-    audit_static_dual_stripe_paper_target_structure,
+    audit_exact_paper_component_emulation_by_static_stripes,
     build_parameter_authority_from_managed_seed,
 )
 from common.contracts.file_identity import file_sha256
@@ -165,14 +165,18 @@ class DualStripeL0MathTest(unittest.TestCase):
         self.assertAlmostEqual(comparison["target_c0"], 0.8)
         self.assertGreater(comparison["scaled_psi_g_coefficient_difference_norm_2"], 1.0)
 
-    def test_static_two_stripe_structure_rejects_the_paper_linear_time_sign(self) -> None:
+    def test_static_two_stripes_cannot_exactly_emulate_paper_component_signs(self) -> None:
         contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
         target = _solve_dimensionless_paper_target(contract)
-        audit = audit_static_dual_stripe_paper_target_structure(target)
+        audit = audit_exact_paper_component_emulation_by_static_stripes(target)
         self.assertTrue(audit["optimizer_independent"])
         self.assertEqual(audit["required_response_factors"]["set_1_high_order_h"], 1.0)
         self.assertEqual(audit["required_response_factors"]["set_2_linear_h"], -1.0)
-        self.assertTrue(audit["status"].startswith("incompatible_"))
+        self.assertEqual(
+            audit["status"],
+            "not_equivalent_to_exact_original_paper_component_decomposition",
+        )
+        self.assertFalse(audit["gates_active_fixed_hardware_operating_state"])
 
     def test_fixed_geometry_authority_withholds_incompatible_angle_and_energies(self) -> None:
         report = {"complete_fixed_hardware_root_family": [{
@@ -209,10 +213,11 @@ class DualStripeL0MathTest(unittest.TestCase):
         self.assertEqual(authority["operating_state_publication_gate"]["publishable_mirror_root_indices"], [1])
         self.assertEqual(authority["branch_states"][0]["diagnostic_only_outputs"], [])
 
-    def test_structural_impossibility_overrides_a_numerical_full_rank_branch(self) -> None:
+    def test_reference_component_non_equivalence_does_not_override_active_hardware(self) -> None:
         report = {
-            "static_dual_stripe_paper_target_structure": {
-                "status": "incompatible_exact_static_two_stripe_realization_of_paper_target",
+            "exact_paper_component_emulation_audit": {
+                "status": "not_equivalent_to_exact_original_paper_component_decomposition",
+                "gates_active_fixed_hardware_operating_state": False,
             },
             "complete_fixed_hardware_root_family": [{
                 "mirror_root_index": 1,
@@ -224,8 +229,8 @@ class DualStripeL0MathTest(unittest.TestCase):
         gate = attach_fixed_geometry_parameter_authority(report)[
             "fixed_geometry_parameter_authority"
         ]["operating_state_publication_gate"]
-        self.assertFalse(gate["passed"])
-        self.assertEqual(gate["status"], "failed_static_response_structure")
+        self.assertTrue(gate["passed"])
+        self.assertEqual(gate["status"], "passed")
 
     def test_managed_seed_authority_verifies_and_derives_without_rerunning_search(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -278,12 +283,17 @@ class DualStripeL0MathTest(unittest.TestCase):
             self.assertEqual(
                 result["fixed_geometry_parameter_authority"]
                 ["operating_state_publication_gate"]["status"],
-                "failed_static_response_structure",
+                "failed_no_compatible_full_rank_branch",
             )
             self.assertEqual(
                 result["two_prism_voltage_definition"]["status"],
                 "structurally_underdetermined_missing_fast_phase",
             )
+            bound = result["fixed_geometry_parameter_authority"]["geometry_alone"][
+                "derived_feasibility_bound"
+            ]
+            self.assertAlmostEqual(bound["maximum_abs_drift_length_L_mm"], 390.0 / 1.1)
+            self.assertEqual(bound["derivation"], "|L| <= active_length/max(eta_turn_nodes)")
             summary.write_text("{}\n", encoding="utf-8")
             with self.assertRaisesRegex(CandidateContractError, "integrity failed"):
                 build_parameter_authority_from_managed_seed(manifest)

@@ -800,7 +800,7 @@
       "generator": "theory_bspline_parameterization",
       "parameter_provenance": "read-only SolidWorks native B-spline knot/control parameters from 20260902__ion-foil-recovery/stripe_long_bspline_profiles.json; the solver geometry evaluates these parameters and never interpolates the former sampled CAD boundary table",
       "sampling_per_nonzero_knot_span": 8,
-      "component_interpretation": "set_1 total width is the high-order response; set_2 total width is the linear response. Their action-normalization and voltage solution remain an L0 inverse problem, not CAD data.",
+      "component_interpretation": "set_1 total width has the manufactured high-order geometry basis and set_2 total width has the manufactured linear geometry basis. They are not identified term-by-term with the original paper p_s and p_m response components: the active psi/g responses follow from both static-Stripe voltages and are classified by the complete integral residual Jacobian. Their action normalization and voltage solution remain an L0 inverse problem, not CAD data.",
       "path_length_mapping": {
         "profile_width_to_total_S_multiplier": 1.0,
         "semantics": "For this manufactured instance the frozen upper-minus-lower profile is the theoretical total path length S_i(y), not an independently additive per-solid width. The two mirrored physical electrodes share one theoretical response. This explicit factor prevents a hidden factor-of-two convention and remains subject to direct three-dimensional centre-ion action/path verification before performance claims."

@@ -410,15 +410,25 @@ receipt 确定 `W`，总能量和目标 `K` 属于外部设计条件；只有这
 哈希，并在不重跑搜索的情况下确认两个镜分支均为 `locally_incompatible`，因此关闭该门禁。该回放由现有
 `run_dual_stripe_operating_seed.ps1 -ExistingOperatingSeedManifest` 模式生成，不建立重复 runner。
 
-进一步的解析拆分已把该数值冲突提升为优化器无关的结构门禁。对任一可穿越的静电 Stripe，精确关系为
-`g_i=h_i*p_i` 且 `h_i=sqrt(w0/(w0-v_i))>0`；当前合同却把 set-1 固定为原论文高次响应、set-2 固定为
-原论文线性响应，而论文目标 `psi=p_s+p_m, g=p_s-p_m` 分别要求 `h_high=+1`、`h_linear=-1`。
-负的线性响应因子不可能由静电 Stripe 产生；同时 `h_high=1` 意味着 `v_high=0`，相应有限宽度作用量也为
-零。新的受管回放 `20260908_160000__analysis__python__fixed-stripe-static-response-authority` 因此将门禁状态
-明确发布为 `failed_static_response_structure`。这解释了有界多起点为何只能得到近似点，而不是搜索强度
-不足。若保持双静电 Stripe，理论上必须选两个不同的正 `h_i` 后用闭式反演重新生成两条通常都含高次项的
-曲线；若保持当前一高次/一线性加工件，则必须定义并验证新的可实现 `psi/g`，不能继续声称精确复现原论文
-目标。在用户选定这两个物理方向之一前，现有 IOB 几何保持不变，且不发布 Stripe/P1/P2 工作电压。
+进一步的解析拆分只否定了一项更窄的声明，不能取代活动硬件的完整残差门禁。对任一可穿越的静电 Stripe，
+精确关系为 `g_i=h_i*p_i` 且 `h_i=sqrt(w0/(w0-v_i))>0`；若把 set-1、set-2 **逐项等同**于原论文的
+`p_s`、`p_m`，则论文分解 `psi=p_s+p_m, g=p_s-p_m` 会分别要求 `h_high=+1`、`h_linear=-1`，静态双
+Stripe 无法精确仿真这个原始分量分工。这是优化器无关的参考等价性结论，但不是“当前固定曲线不可能满足
+论文的积分条件”的证明：活动模型必须让两条真实曲线和两个偏压共同生成自己的 `psi/g`，再以空间返回、
+时间平台、完整周期和实际 Jacobian 判定。机器字段因此改为
+`exact_paper_component_emulation_audit`，明确标注 `gates_active_fixed_hardware_operating_state=false`；当前 operating
+门禁仍由两个实际分支的 `locally_incompatible` 关闭，状态为 `failed_no_compatible_full_rank_branch`。旧受管回放
+`20260908_160000__analysis__python__fixed-stripe-static-response-authority` 的
+`failed_static_response_structure` 结论范围过宽，不得作为活动硬件无解证据消费。
+
+固定 390-mm 活动曲线也只给出 `L` 的可行上界，不直接令 `L=390 mm`。当前最高平台节点为
+`eta_turn=1.1`，所有节点必须仍落在 `y=[-390,0] mm`，因此自然得到 `|L| <= 390/1.1 = 354.545... mm`。
+名义转折点为 `y=-|L|`；只有联合求得 `(v1,v2,L)` 后，才能由 `K` 与镜 receipt 的 `W` 派生入口角及慢/快
+能量。若人为令名义转折在曲线末端而取 `L=390 mm`，则 `eta=1.1` 节点越出实体曲线，违反现合同。
+受管轻量回放 `20260908_044759__analysis__python__fixed-stripe-parameter-authority-v2` 已冻结本次实现并验证
+父 operating-seed manifest 的全部哈希；机器报告自然给出 `maximum_abs_drift_length_L_mm=354.5454545454545`、
+参考分量审计 `gates_active_fixed_hardware_operating_state=false`，以及由两个实际 Jacobian 分支决定的
+`failed_no_compatible_full_rank_branch`。它不重跑搜索，也不发布 Stripe、棱镜或 SIMION 工作电压。
 
 六条件的目标函数也已从当前硬件反演中独立出来。实现只从合同的四个用户节点、`psi(1)=1`、
 `kappa-prime(1)=0` 和四个 `tau_g-prime=0` 方程重新求 `c0..c5`；论文印刷值仅用于选择与公开分支连续的

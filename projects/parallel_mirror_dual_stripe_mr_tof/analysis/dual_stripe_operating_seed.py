@@ -68,15 +68,20 @@ _PROJECT_ID = "parallel_mirror_dual_stripe_mr_tof"
 _OPERATING_SEED_MODE = "dual_stripe_paper_theory_instance_seed"
 
 
-def audit_static_dual_stripe_paper_target_structure(dimensionless_target: dict[str, Any]) -> dict[str, Any]:
-    """Test the declared high-order/linear basis against static-Stripe response signs.
+def audit_exact_paper_component_emulation_by_static_stripes(
+    dimensionless_target: dict[str, Any],
+) -> dict[str, Any]:
+    """Test exact emulation of the paper's original two component responses.
 
     The paper target decomposes ``psi=p_s+p_m`` and ``g=p_s-p_m``.  If the
     fixed hardware roles are exactly one high-order component and one linear
     component, their required response ratios are therefore +1 and -1.  A
     transmitted hard-boundary electrostatic Stripe instead has
     ``h=sqrt(w0/(w0-v)) > 0``.  This is an algebraic realizability check, not a
-    bounded optimizer result.
+    bounded optimizer result.  It is deliberately *not* a realizability test
+    for the active fixed curves against the governing integral conditions:
+    those curves generate their own ``psi`` and ``g`` and must be classified
+    by the complete residual Jacobian instead.
     """
     selected = dimensionless_target.get("selected_root")
     if not isinstance(selected, dict):
@@ -100,9 +105,10 @@ def audit_static_dual_stripe_paper_target_structure(dimensionless_target: dict[s
     if abs(coefficients[0]) <= tolerance or max(abs(value) for value in coefficients[2:]) <= tolerance:
         raise CandidateContractError("paper target must retain nonzero linear and high-order components")
     return {
-        "status": "incompatible_exact_static_two_stripe_realization_of_paper_target",
-        "scope": "declared_set_1_high_order_plus_set_2_linear_theory_basis",
+        "status": "not_equivalent_to_exact_original_paper_component_decomposition",
+        "scope": "reference_component_emulation_only__not_active_fixed_hardware_realizability",
         "optimizer_independent": True,
+        "gates_active_fixed_hardware_operating_state": False,
         "static_stripe_response_relation": "g_i=h_i*p_i; h_i=sqrt(w0/(w0-v_i))>0 for w0-v_i>0",
         "paper_target_component_relations": ["psi=p_s+p_m", "g=p_s-p_m"],
         "required_response_factors": {"set_1_high_order_h": 1.0, "set_2_linear_h": -1.0},
@@ -118,7 +124,43 @@ def audit_static_dual_stripe_paper_target_structure(dimensionless_target: dict[s
     }
 
 
-def attach_fixed_geometry_parameter_authority(report: dict[str, Any]) -> dict[str, Any]:
+def _fixed_geometry_drift_length_bound(contract: dict[str, Any]) -> dict[str, Any]:
+    """Derive the largest admissible nominal ``|L|`` from the active span."""
+    stripe_l0 = contract.get("dual_stripe_l0")
+    dual_stripe = contract.get("dual_stripe")
+    if not isinstance(stripe_l0, dict) or not isinstance(dual_stripe, dict):
+        raise CandidateContractError("Stripe contract blocks are incomplete")
+    entry = _finite(
+        stripe_l0.get("theory_stripe_entrance", {}).get("project_y_mm"),
+        "Stripe entry y",
+    )
+    y_span = tuple(
+        _finite(value, "Stripe active span")
+        for value in dual_stripe.get("theory_profile", {}).get("active_y_span_mm", [])
+    )
+    nodes = tuple(
+        _finite(value, "time-platform node")
+        for value in stripe_l0.get("time_platform_constraint", {}).get("eta_turn_nodes", [])
+    )
+    if len(y_span) != 2 or y_span[0] >= y_span[1] or entry != y_span[1]:
+        raise CandidateContractError("Stripe active span must end at the theory entrance")
+    if not nodes or min(nodes) <= 0.0:
+        raise CandidateContractError("Stripe time-platform nodes must be positive")
+    usable_length = entry - y_span[0]
+    maximum_node = max(nodes)
+    return {
+        "active_span_y_mm": list(y_span),
+        "active_length_mm": usable_length,
+        "maximum_eta_turn_node": maximum_node,
+        "maximum_abs_drift_length_L_mm": usable_length / maximum_node,
+        "nominal_turn_y_relation": "y_turn=y_entry-|L|",
+        "derivation": "|L| <= active_length/max(eta_turn_nodes)",
+    }
+
+
+def attach_fixed_geometry_parameter_authority(
+    report: dict[str, Any], contract: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """State what fixed Stripe geometry can and cannot determine.
 
     Angle and energy-partition values at an incompatible least-squares iterate
@@ -129,10 +171,7 @@ def attach_fixed_geometry_parameter_authority(report: dict[str, Any]) -> dict[st
     family = report.get("complete_fixed_hardware_root_family")
     if not isinstance(family, list):
         raise CandidateContractError("Stripe report lacks the fixed-hardware mirror-root family")
-    structural = report.get("static_dual_stripe_paper_target_structure")
-    structurally_compatible = not isinstance(structural, dict) or not str(
-        structural.get("status", "")
-    ).startswith("incompatible_")
+    reference_emulation = report.get("exact_paper_component_emulation_audit")
     branch_states: list[dict[str, Any]] = []
     publishable_indices: list[int] = []
     for branch in family:
@@ -143,7 +182,7 @@ def attach_fixed_geometry_parameter_authority(report: dict[str, Any]) -> dict[st
         best = search.get("best_iterate") if isinstance(search, dict) else None
         determination = best.get("determination") if isinstance(best, dict) else None
         status = determination.get("status") if isinstance(determination, dict) else "no_physical_iterate"
-        publishable = status in _PUBLISHABLE_DETERMINATION_STATES and structurally_compatible
+        publishable = status in _PUBLISHABLE_DETERMINATION_STATES
         if publishable:
             publishable_indices.append(index)
         branch_states.append({
@@ -173,6 +212,9 @@ def attach_fixed_geometry_parameter_authority(report: dict[str, Any]) -> dict[st
                 "fast_reflection_energy_per_charge_wz",
             ],
             "reason": "the physical turn depends on the voltage response and energy partition, not on curve coordinates alone",
+            "derived_feasibility_bound": (
+                _fixed_geometry_drift_length_bound(contract) if contract is not None else None
+            ),
         },
         "coupled_problem": {
             "external_or_upstream_authorities": [
@@ -192,15 +234,13 @@ def attach_fixed_geometry_parameter_authority(report: dict[str, Any]) -> dict[st
             ],
             "publication_condition": "at least one branch must be locally compatible and full-column-rank",
         },
-        "structural_realizability": structural,
+        "reference_component_emulation": reference_emulation,
         "branch_states": branch_states,
         "operating_state_publication_gate": {
             "passed": gate_passed,
             "publishable_mirror_root_indices": publishable_indices,
             "status": (
-                "passed" if gate_passed
-                else "failed_static_response_structure" if not structurally_compatible
-                else "failed_no_compatible_full_rank_branch"
+                "passed" if gate_passed else "failed_no_compatible_full_rank_branch"
             ),
             "published_operating_state": "available_in_publishable_branch" if gate_passed else None,
         },
@@ -263,10 +303,10 @@ def build_parameter_authority_from_managed_seed(manifest_path: Path) -> dict[str
     target = updated.get("dimensionless_paper_target")
     if not isinstance(target, dict):
         raise CandidateContractError("managed Stripe summary omits its dimensionless paper target")
-    updated["static_dual_stripe_paper_target_structure"] = (
-        audit_static_dual_stripe_paper_target_structure(target)
+    updated["exact_paper_component_emulation_audit"] = (
+        audit_exact_paper_component_emulation_by_static_stripes(target)
     )
-    attach_fixed_geometry_parameter_authority(updated)
+    attach_fixed_geometry_parameter_authority(updated, source_contract)
     return {
         "schema_version": 1,
         "role": "mrtof_fixed_stripe_geometry_parameter_authority",
@@ -1258,7 +1298,9 @@ def build_operating_seed_report(mirror_manifest: Path, downstream_contract: Path
     """Search every managed gamma-target mirror root before downstream selection."""
     mirror = load_managed_mirror_candidate(mirror_manifest, downstream_contract)
     dimensionless_target = _solve_dimensionless_paper_target(mirror.contract)
-    structural_audit = audit_static_dual_stripe_paper_target_structure(dimensionless_target)
+    reference_emulation_audit = audit_exact_paper_component_emulation_by_static_stripes(
+        dimensionless_target
+    )
     prism_definition = audit_two_prism_voltage_definition(mirror.contract)
     reports: list[dict[str, Any]] = []
     rejected: list[dict[str, Any]] = []
@@ -1314,7 +1356,7 @@ def build_operating_seed_report(mirror_manifest: Path, downstream_contract: Path
             "managed_mirror_manifest_sha256": mirror.manifest_sha256,
             "paper_relation_identity": "same equations and dimensionless structure; instance coefficients, L, W, and voltages may differ",
             "dimensionless_paper_target": dimensionless_target,
-            "static_dual_stripe_paper_target_structure": structural_audit,
+            "exact_paper_component_emulation_audit": reference_emulation_audit,
             "two_prism_voltage_definition": prism_definition,
             "mirror_root_count": len(mirror.root_family),
             "complete_consistency_actual_parallel_workers": actual_workers,
@@ -1326,7 +1368,7 @@ def build_operating_seed_report(mirror_manifest: Path, downstream_contract: Path
                 "This is a bounded numerical diagnostic, not a proof that no mathematical root exists outside that envelope.",
                 "No Stripe voltage, L, prism voltage, SIMION flight, or performance value is published.",
             ],
-        })
+        }, mirror.contract)
     reports.sort(key=lambda item: (
         max(abs(value) for value in item["selected_seed"]["stripe_biases_v"]),
         item["selected_seed"]["response_matrix_condition_number_2"],
@@ -1337,7 +1379,7 @@ def build_operating_seed_report(mirror_manifest: Path, downstream_contract: Path
         "schema_version": 2,
         "role": "mrtof_dual_stripe_paper_theory_instance_specific_operating_seed_family",
         "dimensionless_paper_target": dimensionless_target,
-        "static_dual_stripe_paper_target_structure": structural_audit,
+        "exact_paper_component_emulation_audit": reference_emulation_audit,
         "two_prism_voltage_definition": prism_definition,
         "mirror_root_count": len(mirror.root_family),
         "complete_consistency_actual_parallel_workers": actual_workers,
@@ -1346,7 +1388,7 @@ def build_operating_seed_report(mirror_manifest: Path, downstream_contract: Path
         "per_mirror_root_reports": reports,
         "complete_fixed_hardware_root_family": consistency_family,
         "rejected_mirror_roots": rejected,
-    })
+    }, mirror.contract)
 
 
 def main() -> int:
