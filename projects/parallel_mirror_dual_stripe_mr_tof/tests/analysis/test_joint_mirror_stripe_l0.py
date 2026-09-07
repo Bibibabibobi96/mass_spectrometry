@@ -16,6 +16,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_mirror_stripe_l0
     derive_turning_y_from_entry_direction,
     evaluate_joint_l0_trial,
     finite_difference_joint_jacobian,
+    fit_dimensionless_psi_g_profiles,
     require_exactly_determined,
     reduced_action_delta_mm_sqrt_v,
     solve_exactly_determined_joint_l0,
@@ -23,7 +24,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_mirror_stripe_l0
     stripes_from_contract,
     time_platform_derivative_residuals,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import MirrorL0Design
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import MirrorL0Design, reduced_period
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import CandidateContractError
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_handoff import (
     ProjectPhaseSpaceState,
@@ -77,6 +78,25 @@ class JointMirrorStripeL0Test(unittest.TestCase):
         ))
         self.assertNotIn("mirror_gamma_90_m11", report.residual_names())
         self.assertTrue(all(math.isfinite(value) for _name, value in report.residuals))
+
+    def test_dimensionless_profile_fit_derives_normalization_from_the_physical_turn(self) -> None:
+        trial = self._trial(-2000.0)
+        result = fit_dimensionless_psi_g_profiles(
+            mirror_reduced_period_mm_per_sqrt_v=reduced_period(4000.0, trial.mirror_design),
+            energy_per_charge_v=4000.0,
+            stripes=trial.stripes,
+            entry_y_mm=trial.stripe_entry_y_mm,
+            nominal_turning_y_mm=trial.nominal_turning_y_mm,
+            eta_max=max(trial.time_platform_eta_nodes),
+            polynomial_degree=5,
+            sample_count=32,
+        )
+        self.assertEqual(len(result.psi_coefficients_by_power), 5)
+        self.assertAlmostEqual(result.psi_at_nominal_turn, 1.0)
+        self.assertAlmostEqual(result.psi_fit_at_nominal_turn, 1.0, places=10)
+        self.assertLess(result.psi_max_abs_fit_residual, 1e-10)
+        self.assertLess(result.g_max_abs_fit_residual, 1e-10)
+        self.assertTrue(all(abs(value) < 1e-10 for value in result.psi_coefficients_by_power[1:]))
 
     def test_joint_trial_appends_all_five_three_dimensional_prism_components(self) -> None:
         state = ProjectPhaseSpaceState((0.0, -40.0, -10.0), (0.0, -1.0, -2.0))
@@ -170,12 +190,12 @@ class JointMirrorStripeL0Test(unittest.TestCase):
             "mirror_period_slope_at_4100V",
         ])
         self.assertEqual(problem["stripe_fixed_hardware_independent_unknowns"], [
-            "stripe_set_1_bias_v", "stripe_set_2_bias_v",
+            "stripe_set_1_bias_v", "stripe_set_2_bias_v", "drift_length_L_mm",
         ])
         self.assertEqual(problem["prism_transport_independent_unknowns"], [
             "prism_1_voltage_v", "prism_2_voltage_v",
         ])
-        self.assertEqual(len(problem["downstream_independent_unknown_inventory"]), 4)
+        self.assertEqual(len(problem["downstream_independent_unknown_inventory"]), 5)
         self.assertEqual(problem["stripe_fixed_hardware_named_residual_blocks"][:3], [
             "full_analyser_period_slope_at_3900V",
             "full_analyser_period_slope_at_4000V",
@@ -185,6 +205,14 @@ class JointMirrorStripeL0Test(unittest.TestCase):
         self.assertEqual(len(problem["stripe_fixed_hardware_named_residual_blocks"]), 9)
         self.assertEqual(len(problem["prism_transport_named_residual_blocks"]), 5)
         self.assertIn("stripe_entrance_project_position_mm", problem["derived_not_independent_unknowns"])
+        self.assertNotIn("drift_length_L_mm", problem["derived_not_independent_unknowns"])
+        self.assertIn(
+            "nominal_drift_kinetic_energy_per_charge_v",
+            problem["derived_not_independent_unknowns"],
+        )
+        partition = contract["prism_transport"]["energy_partition"]
+        self.assertIn("initialization_only", partition["qualification"])
+        self.assertIn("derived", partition["candidate_operating_partition"])
         initialization = problem["voltage_initialization"]
         self.assertEqual(initialization["authority"], "theory_derived_only")
         envelope = contract["mirror"]["theory_requirements"]["voltage_envelope_v"]

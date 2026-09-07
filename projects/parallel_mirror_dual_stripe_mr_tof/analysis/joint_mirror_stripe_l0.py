@@ -101,6 +101,25 @@ class CoupledDriftState:
 
 
 @dataclass(frozen=True)
+class DimensionlessPsiGPolynomialFit:
+    """Instance-specific polynomial identification on one derived drift length."""
+
+    eta_max: float
+    sample_count: int
+    polynomial_degree: int
+    psi_coefficients_by_power: tuple[float, ...]
+    g_coefficients_by_power: tuple[float, ...]
+    psi_at_nominal_turn: float
+    g_at_nominal_turn: float
+    psi_fit_at_nominal_turn: float
+    g_fit_at_nominal_turn: float
+    psi_rms_fit_residual: float
+    psi_max_abs_fit_residual: float
+    g_rms_fit_residual: float
+    g_max_abs_fit_residual: float
+
+
+@dataclass(frozen=True)
 class ConstraintClassification:
     """Rank-based determination state for a declared nonlinear solve at one trial."""
 
@@ -650,6 +669,84 @@ def _time_response_g(
     )
     return 2.0 * energy_per_charge_v * derivative_change / (
         mirror_period_mm_per_sqrt_v * turning_pseudopotential_v
+    )
+
+
+def fit_dimensionless_psi_g_profiles(
+    *,
+    mirror_reduced_period_mm_per_sqrt_v: float,
+    energy_per_charge_v: float,
+    stripes: Sequence[StripeHardBoundary],
+    entry_y_mm: float,
+    nominal_turning_y_mm: float,
+    eta_max: float,
+    polynomial_degree: int,
+    sample_count: int,
+) -> DimensionlessPsiGPolynomialFit:
+    """Identify the active instance's dimensionless ``psi`` and ``g`` coefficients.
+
+    The fit is constrained to have zero constant term because both responses
+    are physical differences from the Stripe entrance.  ``L`` and the
+    normalization are derived from the supplied nominal physical turn; no
+    paper coefficient or independent drift-length value enters this report.
+    """
+    mirror_period = _finite(mirror_reduced_period_mm_per_sqrt_v, "mirror reduced period")
+    energy = _finite(energy_per_charge_v, "energy_per_charge_v")
+    entry = _finite(entry_y_mm, "entry_y_mm")
+    nominal_turn = _finite(nominal_turning_y_mm, "nominal_turning_y_mm")
+    maximum_eta = _finite(eta_max, "dimensionless profile eta maximum")
+    if mirror_period <= 0.0 or energy <= 0.0 or maximum_eta < 1.0:
+        raise CandidateContractError("dimensionless profile fit needs positive physics and eta_max at least one")
+    if not isinstance(polynomial_degree, int) or isinstance(polynomial_degree, bool) or polynomial_degree < 1:
+        raise CandidateContractError("dimensionless profile polynomial degree must be a positive integer")
+    if not isinstance(sample_count, int) or isinstance(sample_count, bool) or sample_count <= polynomial_degree:
+        raise CandidateContractError("dimensionless profile fit needs more samples than coefficients")
+    length = abs(nominal_turn - entry)
+    if length <= 0.0 or len(stripes) != 2:
+        raise CandidateContractError("dimensionless profile fit needs a nonzero turn and two Stripe responses")
+    direction = 1.0 if nominal_turn > entry else -1.0
+    turning_phi = _pseudopotential_difference_v(energy, mirror_period, stripes, entry, nominal_turn)
+    if turning_phi <= 0.0:
+        raise CandidateContractError("dimensionless profile nominal turn must have positive pseudopotential")
+    eta_values = np.linspace(0.0, maximum_eta, sample_count)
+    matrix = np.column_stack([eta_values**power for power in range(1, polynomial_degree + 1)])
+    psi_values = np.asarray([
+        _pseudopotential_difference_v(
+            energy, mirror_period, stripes, entry, entry + direction * length * float(eta),
+        ) / turning_phi
+        for eta in eta_values
+    ])
+    g_values = np.asarray([
+        _time_response_g(
+            energy, mirror_period, turning_phi, stripes, entry,
+            entry + direction * length * float(eta),
+        )
+        for eta in eta_values
+    ])
+    psi_coefficients = np.linalg.lstsq(matrix, psi_values, rcond=None)[0]
+    g_coefficients = np.linalg.lstsq(matrix, g_values, rcond=None)[0]
+    psi_residual = matrix @ psi_coefficients - psi_values
+    g_residual = matrix @ g_coefficients - g_values
+
+    def polynomial_at_one(coefficients: np.ndarray) -> float:
+        return float(np.sum(coefficients))
+
+    return DimensionlessPsiGPolynomialFit(
+        eta_max=maximum_eta,
+        sample_count=sample_count,
+        polynomial_degree=polynomial_degree,
+        psi_coefficients_by_power=tuple(float(value) for value in psi_coefficients),
+        g_coefficients_by_power=tuple(float(value) for value in g_coefficients),
+        psi_at_nominal_turn=1.0,
+        g_at_nominal_turn=_time_response_g(
+            energy, mirror_period, turning_phi, stripes, entry, nominal_turn,
+        ),
+        psi_fit_at_nominal_turn=polynomial_at_one(psi_coefficients),
+        g_fit_at_nominal_turn=polynomial_at_one(g_coefficients),
+        psi_rms_fit_residual=float(np.sqrt(np.mean(psi_residual * psi_residual))),
+        psi_max_abs_fit_residual=float(np.max(np.abs(psi_residual))),
+        g_rms_fit_residual=float(np.sqrt(np.mean(g_residual * g_residual))),
+        g_max_abs_fit_residual=float(np.max(np.abs(g_residual))),
     )
 
 

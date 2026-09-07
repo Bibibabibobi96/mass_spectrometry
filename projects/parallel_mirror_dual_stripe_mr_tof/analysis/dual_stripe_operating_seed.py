@@ -33,6 +33,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_mirror_stripe_l0
     derive_turning_y_from_entry_direction,
     evaluate_joint_l0_trial,
     finite_difference_joint_jacobian,
+    fit_dimensionless_psi_g_profiles,
     spatial_return_kappa_derivative_residual,
     time_platform_derivative_residuals,
 )
@@ -266,12 +267,41 @@ def _fixed_hardware_joint_trial(
         search_end_y_mm=search_end_y_mm,
         sample_count=sample_count,
     )
+    return _fixed_hardware_joint_trial_at_turn(
+        mirror,
+        widths,
+        biases_v,
+        turn,
+        kappa_derivative_step,
+        time_platform_derivative_step,
+        energy_derivative_step_v,
+    )
+
+
+def _fixed_hardware_joint_trial_at_turn(
+    mirror: ManagedMirrorCandidate,
+    widths: Sequence[WidthFunction],
+    biases_v: Sequence[float],
+    turning_y_mm: float,
+    kappa_derivative_step: float,
+    time_platform_derivative_step: float,
+    energy_derivative_step_v: float,
+) -> JointL0Trial:
+    """Construct a fixed-geometry trial with ``L`` as a solve coordinate."""
+    contract = mirror.contract
+    entry = _finite(contract["dual_stripe_l0"]["theory_stripe_entrance"]["project_y_mm"], "Stripe entry")
+    stripes = tuple(
+        StripeHardBoundary(_finite(bias, "Stripe consistency bias"), width)
+        for bias, width in zip(biases_v, widths)
+    )
+    if len(stripes) != 2:
+        raise CandidateContractError("fixed-hardware consistency trial requires two Stripe biases")
     return JointL0Trial(
         mirror_design=mirror.design,
         energy_points_v=mirror.energy_points_v,
         stripes=stripes,
         stripe_entry_y_mm=entry,
-        nominal_turning_y_mm=turn,
+        nominal_turning_y_mm=_finite(turning_y_mm, "Stripe physical turning y"),
         target_oscillation_count=_positive_integer(
             contract["nominal"]["target_oscillation_count"], "target K"
         ),
@@ -298,6 +328,36 @@ def _complete_residual_scales(
         period_scale if name.startswith("full_analyser_period_slope_at_") else 1.0
         for name in names
     )
+
+
+def _dimensionless_profile_fit(
+    mirror: ManagedMirrorCandidate,
+    stripes: Sequence[StripeHardBoundary],
+    turning_y_mm: float,
+    sample_count: int,
+) -> dict[str, Any]:
+    contract = mirror.contract
+    nodes = tuple(
+        _finite(value, "time-platform node")
+        for value in contract["dual_stripe_l0"]["time_platform_constraint"]["eta_turn_nodes"]
+    )
+    degree = _positive_integer(
+        contract["dual_stripe_l0"]["fixed_cad_shape_identification"]["set_1_polynomial_degree"],
+        "dimensionless profile polynomial degree",
+    )
+    return asdict(fit_dimensionless_psi_g_profiles(
+        mirror_reduced_period_mm_per_sqrt_v=mirror.nominal_reduced_period_mm_per_sqrt_v,
+        energy_per_charge_v=mirror.nominal_energy_per_charge_v,
+        stripes=stripes,
+        entry_y_mm=_finite(
+            contract["dual_stripe_l0"]["theory_stripe_entrance"]["project_y_mm"],
+            "Stripe entry",
+        ),
+        nominal_turning_y_mm=turning_y_mm,
+        eta_max=max(1.0, *nodes),
+        polynomial_degree=degree,
+        sample_count=sample_count,
+    ))
 
 
 def _search_complete_fixed_hardware_consistency(mirror: ManagedMirrorCandidate) -> dict[str, Any]:
@@ -329,12 +389,30 @@ def _search_complete_fixed_hardware_consistency(mirror: ManagedMirrorCandidate) 
     energy = mirror.nominal_energy_per_charge_v
     lower = -energy
     upper = math.nextafter(min(mirror.energy_points_v), -math.inf)
-    starts = [
+    bias_starts = [
         energy * np.asarray((first, second), dtype=float)
         for first in fractions
         for second in fractions
         if first != second
     ]
+    entry = _finite(contract["dual_stripe_l0"]["theory_stripe_entrance"]["project_y_mm"], "Stripe entry")
+    drift_sign = 1.0 if search_end > entry else -1.0
+    usable_length = abs(search_end - entry)
+    length_step = usable_length / sample_count
+    starts: list[np.ndarray] = []
+    for biases in bias_starts:
+        try:
+            initialization_trial = _fixed_hardware_joint_trial(
+                mirror, widths, biases, direction, search_end, sample_count,
+                eta_step, time_step, energy_step,
+            )
+        except CandidateContractError:
+            continue
+        starts.append(np.asarray([
+            float(biases[0]),
+            float(biases[1]),
+            abs(initialization_trial.nominal_turning_y_mm - entry),
+        ]))
     feasible_starts = 0
     candidates: list[dict[str, Any]] = []
     screened_starts: list[tuple[float, np.ndarray]] = []
@@ -342,8 +420,19 @@ def _search_complete_fixed_hardware_consistency(mirror: ManagedMirrorCandidate) 
     residual_scales: tuple[float, ...] | None = None
 
     def report_at(values: Sequence[float]):
-        trial = _fixed_hardware_joint_trial(
-            mirror, widths, values, direction, search_end, sample_count, eta_step, time_step, energy_step,
+        if len(values) != 3:
+            raise CandidateContractError("complete fixed-hardware search needs v1, v2, and L")
+        length = _finite(values[2], "Stripe drift length solve coordinate")
+        if not 0.0 < length < usable_length:
+            raise CandidateContractError("Stripe drift length solve coordinate left the active profile")
+        trial = _fixed_hardware_joint_trial_at_turn(
+            mirror,
+            widths,
+            values[:2],
+            entry + drift_sign * length,
+            eta_step,
+            time_step,
+            energy_step,
         )
         return evaluate_joint_l0_trial(trial)
 
@@ -372,7 +461,9 @@ def _search_complete_fixed_hardware_consistency(mirror: ManagedMirrorCandidate) 
                     raise CandidateContractError("complete residual identity changed during search")
                 return np.asarray(report.residual_vector()) / np.asarray(residual_scales)
             except CandidateContractError:
-                distance = float(np.linalg.norm((values - start) / energy))
+                distance = float(np.linalg.norm(
+                    (values - start) / np.asarray([energy, energy, usable_length])
+                ))
                 return np.full(len(residual_scales), 1.0e3 + distance)
 
         def objective_jacobian(values: np.ndarray) -> np.ndarray:
@@ -388,8 +479,11 @@ def _search_complete_fixed_hardware_consistency(mirror: ManagedMirrorCandidate) 
             for index in range(len(values)):
                 low = values.copy()
                 high = values.copy()
-                low[index] = max(lower, float(values[index]) - voltage_step)
-                high[index] = min(upper, float(values[index]) + voltage_step)
+                coordinate_step = voltage_step if index < 2 else length_step
+                coordinate_lower = lower if index < 2 else math.nextafter(0.0, math.inf)
+                coordinate_upper = upper if index < 2 else math.nextafter(usable_length, -math.inf)
+                low[index] = max(coordinate_lower, float(values[index]) - coordinate_step)
+                high[index] = min(coordinate_upper, float(values[index]) + coordinate_step)
                 denominator = high[index] - low[index]
                 if denominator <= 0.0:
                     raise CandidateContractError("Stripe voltage Jacobian step collapsed at its bound")
@@ -399,9 +493,12 @@ def _search_complete_fixed_hardware_consistency(mirror: ManagedMirrorCandidate) 
         result = least_squares(
             objective,
             start,
-            bounds=([lower, lower], [upper, upper]),
+            bounds=(
+                [lower, lower, math.nextafter(0.0, math.inf)],
+                [upper, upper, math.nextafter(usable_length, -math.inf)],
+            ),
             jac=objective_jacobian,
-            x_scale=np.full(2, energy),
+            x_scale=np.asarray([energy, energy, usable_length]),
             max_nfev=maximum_evaluations,
         )
         try:
@@ -410,7 +507,8 @@ def _search_complete_fixed_hardware_consistency(mirror: ManagedMirrorCandidate) 
             continue
         scaled = np.asarray(final_report.residual_vector()) / np.asarray(residual_scales)
         candidates.append({
-            "biases_v": [float(value) for value in result.x],
+            "biases_v": [float(value) for value in result.x[:2]],
+            "drift_length_solve_coordinate_mm": float(result.x[2]),
             "scaled_residual_norm_2": float(np.linalg.norm(scaled)),
             "optimizer_success": bool(result.success),
             "optimizer_message": str(result.message),
@@ -419,7 +517,8 @@ def _search_complete_fixed_hardware_consistency(mirror: ManagedMirrorCandidate) 
     if not candidates or residual_names is None or residual_scales is None:
         return {
             "status": "no_feasible_complete_consistency_iterate",
-            "attempted_start_count": len(starts),
+            "attempted_start_count": len(bias_starts),
+            "legacy_5eV_initializable_start_count": len(starts),
             "feasible_start_count": feasible_starts,
             "refined_start_count": 0,
             "limitations": ["No physical first-turn trial survived the declared bounded multi-start search."],
@@ -428,17 +527,21 @@ def _search_complete_fixed_hardware_consistency(mirror: ManagedMirrorCandidate) 
     best = candidates[0]
 
     def trial_from_values(values: tuple[float, ...]) -> JointL0Trial:
-        return _fixed_hardware_joint_trial(
-            mirror, widths, values, direction, search_end, sample_count, eta_step, time_step, energy_step,
+        length = _finite(values[2], "Stripe drift length solve coordinate")
+        return _fixed_hardware_joint_trial_at_turn(
+            mirror, widths, values[:2], entry + drift_sign * length,
+            eta_step, time_step, energy_step,
         )
 
+    best_parameters = (*best["biases_v"], best["drift_length_solve_coordinate_mm"])
+    best_trial = trial_from_values(tuple(best_parameters))
     numerics = contract["dual_stripe_l0"]["determination_numerics"]
     report, classification = finite_difference_joint_jacobian(
-        ("stripe_set_1_bias_v", "stripe_set_2_bias_v"),
-        tuple(best["biases_v"]),
-        (voltage_step, voltage_step),
+        ("stripe_set_1_bias_v", "stripe_set_2_bias_v", "drift_length_L_mm"),
+        tuple(best_parameters),
+        (voltage_step, voltage_step, length_step),
         trial_from_values,
-        parameter_scales=(energy, energy),
+        parameter_scales=(energy, energy, usable_length),
         residual_scales=residual_scales,
         relative_rank_tolerance=_finite(
             numerics["relative_singular_value_rank_tolerance"], "rank tolerance"
@@ -452,21 +555,30 @@ def _search_complete_fixed_hardware_consistency(mirror: ManagedMirrorCandidate) 
         "residual_scales": dict(zip(report.residual_names(), residual_scales)),
         "determination": asdict(classification),
         "drift_length_L_mm": report.drift_state.drift_length_l_mm,
+        "derived_drift_kinetic_energy_per_charge_v": report.drift_state.turning_pseudopotential_v,
+        "derived_fast_reflection_energy_per_charge_v": (
+            mirror.nominal_energy_per_charge_v - report.drift_state.turning_pseudopotential_v
+        ),
         "mirror_owned_axial_width_W_mm": report.drift_state.axial_width_w_mm,
         "nominal_kappa_1": report.drift_state.nominal_kappa_1,
         "nominal_injection_angle_degrees": math.degrees(report.drift_state.nominal_injection_angle_rad),
+        "dimensionless_psi_g_polynomial_fit": _dimensionless_profile_fit(
+            mirror, best_trial.stripes, best_trial.nominal_turning_y_mm, sample_count,
+        ),
     })
     return {
         "status": "bounded_multistart_complete__not_a_global_proof",
-        "attempted_start_count": len(starts),
+        "attempted_start_count": len(bias_starts),
+        "legacy_5eV_initializable_start_count": len(starts),
         "feasible_start_count": feasible_starts,
         "refined_start_count": len(refined_starts),
         "distinct_final_iterate_count": len(candidates),
         "best_iterate": best,
         "paper_turning_normalization": {
             "constraint": "psi(1)-1=0",
-            "status": "eliminated_by_deriving_L_from_the_first_physical_5eV_turn",
+            "status": "identically_satisfied_by_normalizing_at_the_solved_physical_turn",
         },
+        "energy_partition_semantics": "theta0, drift energy, and fast reflection energy are derived from the solved L and turning pseudopotential; 5 eV initializes starts only",
         "limitations": [
             "Optimizer convergence is a search diagnostic, not an acceptance condition.",
             "The bounded deterministic start grid is not a mathematical proof of global existence or nonexistence.",
@@ -649,7 +761,8 @@ def _build_operating_seed_report_for_mirror(mirror: ManagedMirrorCandidate) -> d
                 energy_derivative_step_v=energy_step,
             )
 
-        initial_full_report = evaluate_joint_l0_trial(trial_from_biases(tuple(float(value) for value in values)))
+        seed_trial = trial_from_biases(tuple(float(value) for value in values))
+        initial_full_report = evaluate_joint_l0_trial(seed_trial)
         l0_budget = contract["mirror"]["theory_requirements"]["l0_acceptance_budget"]
         period_slope_scale = derive_mirror_l0_slope_tolerance_per_v(
             float(l0_budget["minimum_mass_resolution"]),
@@ -685,6 +798,10 @@ def _build_operating_seed_report_for_mirror(mirror: ManagedMirrorCandidate) -> d
             "jacobian_rank": history[-1]["jacobian_rank"],
             "native_newton_history": history,
             "drift_length_L_mm": state.drift_length_l_mm,
+            "initialization_drift_kinetic_energy_per_charge_v": state.turning_pseudopotential_v,
+            "initialization_fast_reflection_energy_per_charge_v": (
+                energy - state.turning_pseudopotential_v
+            ),
             "mirror_owned_axial_width_W_mm": state.axial_width_w_mm,
             "nominal_kappa_1": state.nominal_kappa_1,
             "nominal_injection_angle_degrees": math.degrees(state.nominal_injection_angle_rad),
@@ -709,6 +826,9 @@ def _build_operating_seed_report_for_mirror(mirror: ManagedMirrorCandidate) -> d
                 zip(full_report.residual_names(), full_residual_scales)
             ),
             "complete_fixed_hardware_determination": asdict(full_classification),
+            "dimensionless_psi_g_polynomial_fit": _dimensionless_profile_fit(
+                mirror, seed_trial.stripes, seed_trial.nominal_turning_y_mm, sample_count,
+            ),
         }
         if not any(
             np.linalg.norm(values - np.asarray(known["stripe_biases_v"]), ord=np.inf) <= voltage_step

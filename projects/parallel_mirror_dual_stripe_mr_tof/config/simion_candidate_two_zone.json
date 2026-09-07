@@ -1341,7 +1341,8 @@
       ],
       "stripe_fixed_hardware_independent_unknowns": [
         "stripe_set_1_bias_v",
-        "stripe_set_2_bias_v"
+        "stripe_set_2_bias_v",
+        "drift_length_L_mm"
       ],
       "prism_transport_independent_unknowns": [
         "prism_1_voltage_v",
@@ -1350,6 +1351,7 @@
       "downstream_independent_unknown_inventory": [
         "stripe_set_1_bias_v",
         "stripe_set_2_bias_v",
+        "drift_length_L_mm",
         "prism_1_voltage_v",
         "prism_2_voltage_v"
       ],
@@ -1357,10 +1359,11 @@
         "stripe_entrance_project_position_mm",
         "stripe_entrance_project_direction",
         "nominal_turning_point_y_mm",
-        "drift_length_L_mm",
         "coupled_axial_width_W_mm",
         "nominal_kappa_1",
-        "nominal_injection_angle_theta0_rad"
+        "nominal_injection_angle_theta0_rad",
+        "nominal_drift_kinetic_energy_per_charge_v",
+        "nominal_fast_reflection_energy_per_charge_v"
       ],
       "mirror_named_residual_blocks": [
         "mirror_period_slope_at_3900V",
@@ -1401,14 +1404,16 @@
         "P1_P2_to_Stripe_direction_y",
         "P1_P2_to_Stripe_direction_z"
       ],
-      "determination_semantics": "The frozen mirror geometry and the three axial energy conditions define a four-voltage mirror-only L0 family. Its three-row Jacobian and feasibility checks must be published with that family; an L1 mirror-only selection receipt identifies any representative member and its transverse diagnostics without inventing a fourth axial residual. Each qualified mirror root is then tested against the fixed-hardware Stripe problem with only the two Stripe biases as continuous unknowns. The first physical 5-eV turn eliminates psi(1)-1=0 by deriving L; the remaining K, kappa-prime, four time-platform, and three full-analyser energy-slope residuals form an overdetermined consistency test. P1/P2 voltages belong to the subsequent finite-field transport problem and are not allowed to make the Stripe paper conditions appear solvable. Mirror gamma remains an upstream receipt gate and is never repeated downstream. P1/P2 transport expands into three position and two tangent-direction components, never a norm or arbitrary scalar count. Each owning problem separately uses its contract-scaled Jacobian SVD and left-null residual to distinguish underdetermined, square_exact, overdetermined_consistent, and locally_incompatible states."
+      "determination_semantics": "The frozen mirror geometry and the three axial energy conditions define a four-voltage mirror-only L0 family. Its three-row Jacobian and feasibility checks must be published with that family; an L1 mirror-only selection receipt identifies any representative member and its transverse diagnostics without inventing a fourth axial residual. Each qualified mirror root is then tested against the fixed-hardware Stripe problem with the two Stripe biases and physical drift length L as three solve coordinates. L is bounded by the frozen active curve and is not an externally prescribed operating value. Normalizing the pseudopotential at that solved physical turn makes psi(1)=1 an identity; target K, kappa-prime, four time-platform, and three full-analyser energy-slope residuals form the overdetermined consistency test. The injection angle and drift/fast energy partition are derived from the same physical turn. The historical 5-eV partition initializes the bounded search only and is not an active equality. P1/P2 voltages belong to the subsequent finite-field transport problem and are not allowed to make the Stripe paper conditions appear solvable. Mirror gamma remains an upstream receipt gate and is never repeated downstream. P1/P2 transport expands into three position and two tangent-direction components, never a norm or arbitrary scalar count. Each owning problem separately uses its contract-scaled Jacobian SVD and left-null residual to distinguish underdetermined, square_exact, overdetermined_consistent, and locally_incompatible states."
     },
     "derived_fields_only_after_owning_problem_candidate": {
-      "drift_length_L_mm": "abs(turning_point_y_mm-y_stripe_entrance_mm)",
+      "drift_length_L_mm": "fixed-hardware solve coordinate bounded by the frozen Stripe active span; published only after the owning rank and residual gate",
       "mirror_axial_width_W_mm": "accepted_mirror_only_full_two_mirror_period*sqrt(nominal_energy_per_charge_V/(2*ion_mass))",
       "full_analyser_period": "accepted_mirror_period_plus_dual_stripe_action_response",
       "nominal_kappa_1": "endpoint_regularized_integral_of_the_project_psi_eta_model",
-      "nominal_injection_angle_theta0_rad": "asin(nominal_kappa_1*drift_length_L_mm/(nominal.target_oscillation_count*axial_width_W_mm))"
+      "nominal_injection_angle_theta0_rad": "asin(sqrt(turning_pseudopotential_v/nominal.energy_per_charge_v)); target K independently checks drift_length_L_mm*nominal_kappa_1/(axial_width_W_mm*sin(theta0))",
+      "nominal_drift_kinetic_energy_per_charge_v": "turning_pseudopotential_v",
+      "nominal_fast_reflection_energy_per_charge_v": "nominal.energy_per_charge_v-nominal_drift_kinetic_energy_per_charge_v"
     },
     "cad_constraints_only": [
       "dual_stripe.active_y_span_mm",
@@ -1811,7 +1816,9 @@
       "semantics": "total_kinetic_energy_at_first_prism_ev",
       "total_kinetic_energy_ev": 4000,
       "drift_kinetic_energy_ev": 5,
-      "fast_kinetic_energy_ev": "derived_total_minus_drift"
+      "fast_kinetic_energy_ev": "derived_total_minus_drift",
+      "qualification": "geometry_review_and_complete_stripe_search_initialization_only__not_an_operating_constraint",
+      "candidate_operating_partition": "derived_from_the_fixed_hardware_Stripe_solution_turning_pseudopotential_and_never_frozen_here"
     },
     "first_prism": {
       "electrode_id": 16,
