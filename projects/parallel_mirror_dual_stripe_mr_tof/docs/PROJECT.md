@@ -394,6 +394,16 @@ receipt 确定 `W`，总能量和目标 `K` 属于外部设计条件；只有这
 哈希，并在不重跑搜索的情况下确认两个镜分支均为 `locally_incompatible`，因此关闭该门禁。该回放由现有
 `run_dual_stripe_operating_seed.ps1 -ExistingOperatingSeedManifest` 模式生成，不建立重复 runner。
 
+进一步的解析拆分已把该数值冲突提升为优化器无关的结构门禁。对任一可穿越的静电 Stripe，精确关系为
+`g_i=h_i*p_i` 且 `h_i=sqrt(w0/(w0-v_i))>0`；当前合同却把 set-1 固定为原论文高次响应、set-2 固定为
+原论文线性响应，而论文目标 `psi=p_s+p_m, g=p_s-p_m` 分别要求 `h_high=+1`、`h_linear=-1`。
+负的线性响应因子不可能由静电 Stripe 产生；同时 `h_high=1` 意味着 `v_high=0`，相应有限宽度作用量也为
+零。新的受管回放 `20260908_160000__analysis__python__fixed-stripe-static-response-authority` 因此将门禁状态
+明确发布为 `failed_static_response_structure`。这解释了有界多起点为何只能得到近似点，而不是搜索强度
+不足。若保持双静电 Stripe，理论上必须选两个不同的正 `h_i` 后用闭式反演重新生成两条通常都含高次项的
+曲线；若保持当前一高次/一线性加工件，则必须定义并验证新的可实现 `psi/g`，不能继续声称精确复现原论文
+目标。在用户选定这两个物理方向之一前，现有 IOB 几何保持不变，且不发布 Stripe/P1/P2 工作电压。
+
 六条件的目标函数也已从当前硬件反演中独立出来。实现只从合同的四个用户节点、`psi(1)=1`、
 `kappa-prime(1)=0` 和四个 `tau_g-prime=0` 方程重新求 `c0..c5`；论文印刷值仅用于选择与公开分支连续的
 根，不成为活动系数。当前受管 run 从24个确定性起点得到一个数值根：

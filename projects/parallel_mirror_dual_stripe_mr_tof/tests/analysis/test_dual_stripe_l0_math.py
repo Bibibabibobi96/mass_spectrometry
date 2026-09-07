@@ -28,6 +28,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_operating_
     _seed_profile,
     _solve_dimensionless_paper_target,
     attach_fixed_geometry_parameter_authority,
+    audit_static_dual_stripe_paper_target_structure,
     build_parameter_authority_from_managed_seed,
 )
 from common.contracts.file_identity import file_sha256
@@ -164,6 +165,15 @@ class DualStripeL0MathTest(unittest.TestCase):
         self.assertAlmostEqual(comparison["target_c0"], 0.8)
         self.assertGreater(comparison["scaled_psi_g_coefficient_difference_norm_2"], 1.0)
 
+    def test_static_two_stripe_structure_rejects_the_paper_linear_time_sign(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        target = _solve_dimensionless_paper_target(contract)
+        audit = audit_static_dual_stripe_paper_target_structure(target)
+        self.assertTrue(audit["optimizer_independent"])
+        self.assertEqual(audit["required_response_factors"]["set_1_high_order_h"], 1.0)
+        self.assertEqual(audit["required_response_factors"]["set_2_linear_h"], -1.0)
+        self.assertTrue(audit["status"].startswith("incompatible_"))
+
     def test_fixed_geometry_authority_withholds_incompatible_angle_and_energies(self) -> None:
         report = {"complete_fixed_hardware_root_family": [{
             "mirror_root_index": 0,
@@ -199,6 +209,24 @@ class DualStripeL0MathTest(unittest.TestCase):
         self.assertEqual(authority["operating_state_publication_gate"]["publishable_mirror_root_indices"], [1])
         self.assertEqual(authority["branch_states"][0]["diagnostic_only_outputs"], [])
 
+    def test_structural_impossibility_overrides_a_numerical_full_rank_branch(self) -> None:
+        report = {
+            "static_dual_stripe_paper_target_structure": {
+                "status": "incompatible_exact_static_two_stripe_realization_of_paper_target",
+            },
+            "complete_fixed_hardware_root_family": [{
+                "mirror_root_index": 1,
+                "complete_fixed_hardware_search": {"best_iterate": {
+                    "determination": {"status": "overdetermined_consistent"},
+                }},
+            }],
+        }
+        gate = attach_fixed_geometry_parameter_authority(report)[
+            "fixed_geometry_parameter_authority"
+        ]["operating_state_publication_gate"]
+        self.assertFalse(gate["passed"])
+        self.assertEqual(gate["status"], "failed_static_response_structure")
+
     def test_managed_seed_authority_verifies_and_derives_without_rerunning_search(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -207,6 +235,11 @@ class DualStripeL0MathTest(unittest.TestCase):
             run_config.write_text("{}\n", encoding="utf-8")
             summary.write_text(json.dumps({
                 "role": "mrtof_dual_stripe_paper_theory_instance_specific_operating_seed_family",
+                "dimensionless_paper_target": {"selected_root": {
+                    "coefficients_c0_to_c5": [0.8, 0.7, -7.0, 14.0, -9.0, 2.0],
+                    "psi_coefficients_by_power": [1.5, -7.0, 14.0, -9.0, 2.0],
+                    "g_coefficients_by_power": [-0.1, -7.0, 14.0, -9.0, 2.0],
+                }},
                 "complete_fixed_hardware_root_family": [{
                     "mirror_root_index": 0,
                     "complete_fixed_hardware_search": {"best_iterate": {
@@ -239,6 +272,11 @@ class DualStripeL0MathTest(unittest.TestCase):
             self.assertFalse(
                 result["fixed_geometry_parameter_authority"]
                 ["operating_state_publication_gate"]["passed"]
+            )
+            self.assertEqual(
+                result["fixed_geometry_parameter_authority"]
+                ["operating_state_publication_gate"]["status"],
+                "failed_static_response_structure",
             )
             summary.write_text("{}\n", encoding="utf-8")
             with self.assertRaisesRegex(CandidateContractError, "integrity failed"):

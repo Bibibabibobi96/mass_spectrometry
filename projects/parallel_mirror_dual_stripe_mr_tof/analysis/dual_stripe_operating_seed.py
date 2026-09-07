@@ -65,6 +65,56 @@ _PROJECT_ID = "parallel_mirror_dual_stripe_mr_tof"
 _OPERATING_SEED_MODE = "dual_stripe_paper_theory_instance_seed"
 
 
+def audit_static_dual_stripe_paper_target_structure(dimensionless_target: dict[str, Any]) -> dict[str, Any]:
+    """Test the declared high-order/linear basis against static-Stripe response signs.
+
+    The paper target decomposes ``psi=p_s+p_m`` and ``g=p_s-p_m``.  If the
+    fixed hardware roles are exactly one high-order component and one linear
+    component, their required response ratios are therefore +1 and -1.  A
+    transmitted hard-boundary electrostatic Stripe instead has
+    ``h=sqrt(w0/(w0-v)) > 0``.  This is an algebraic realizability check, not a
+    bounded optimizer result.
+    """
+    selected = dimensionless_target.get("selected_root")
+    if not isinstance(selected, dict):
+        raise CandidateContractError("dimensionless target lacks its selected root")
+    try:
+        coefficients = tuple(float(value) for value in selected["coefficients_c0_to_c5"])
+        psi = tuple(float(value) for value in selected["psi_coefficients_by_power"])
+        g = tuple(float(value) for value in selected["g_coefficients_by_power"])
+    except (KeyError, TypeError, ValueError) as error:
+        raise CandidateContractError("dimensionless target coefficients are incomplete") from error
+    if len(coefficients) != 6 or len(psi) != 5 or len(g) != 5:
+        raise CandidateContractError("dimensionless paper target must retain c0..c5 and powers one through five")
+    scale = max(1.0, *(abs(value) for value in coefficients + psi + g))
+    tolerance = 64.0 * np.finfo(float).eps * scale
+    expected_psi = (coefficients[0] + coefficients[1], *coefficients[2:])
+    expected_g = (coefficients[1] - coefficients[0], *coefficients[2:])
+    if max(abs(left - right) for left, right in zip(psi, expected_psi)) > tolerance:
+        raise CandidateContractError("paper target psi coefficients violate the declared component decomposition")
+    if max(abs(left - right) for left, right in zip(g, expected_g)) > tolerance:
+        raise CandidateContractError("paper target g coefficients violate the declared component decomposition")
+    if abs(coefficients[0]) <= tolerance or max(abs(value) for value in coefficients[2:]) <= tolerance:
+        raise CandidateContractError("paper target must retain nonzero linear and high-order components")
+    return {
+        "status": "incompatible_exact_static_two_stripe_realization_of_paper_target",
+        "scope": "declared_set_1_high_order_plus_set_2_linear_theory_basis",
+        "optimizer_independent": True,
+        "static_stripe_response_relation": "g_i=h_i*p_i; h_i=sqrt(w0/(w0-v_i))>0 for w0-v_i>0",
+        "paper_target_component_relations": ["psi=p_s+p_m", "g=p_s-p_m"],
+        "required_response_factors": {"set_1_high_order_h": 1.0, "set_2_linear_h": -1.0},
+        "contradictions": [
+            "set_2 requires h=-1 but every transmitted static electrostatic Stripe has h>0",
+            "set_1 requires h=1, which implies v=0 and therefore zero finite-width hard-boundary action perturbation",
+        ],
+        "resolution_options": [
+            "redesign both fixed curves from the exact dual-Stripe inverse for a chosen positive distinct h1,h2",
+            "retain the paper high-order-plus-linear shapes but restore a non-static or geometric source of the negative linear time response",
+            "define and qualify a new achievable psi/g target rather than claiming the original paper target",
+        ],
+    }
+
+
 def attach_fixed_geometry_parameter_authority(report: dict[str, Any]) -> dict[str, Any]:
     """State what fixed Stripe geometry can and cannot determine.
 
@@ -76,6 +126,10 @@ def attach_fixed_geometry_parameter_authority(report: dict[str, Any]) -> dict[st
     family = report.get("complete_fixed_hardware_root_family")
     if not isinstance(family, list):
         raise CandidateContractError("Stripe report lacks the fixed-hardware mirror-root family")
+    structural = report.get("static_dual_stripe_paper_target_structure")
+    structurally_compatible = not isinstance(structural, dict) or not str(
+        structural.get("status", "")
+    ).startswith("incompatible_")
     branch_states: list[dict[str, Any]] = []
     publishable_indices: list[int] = []
     for branch in family:
@@ -86,7 +140,7 @@ def attach_fixed_geometry_parameter_authority(report: dict[str, Any]) -> dict[st
         best = search.get("best_iterate") if isinstance(search, dict) else None
         determination = best.get("determination") if isinstance(best, dict) else None
         status = determination.get("status") if isinstance(determination, dict) else "no_physical_iterate"
-        publishable = status in _PUBLISHABLE_DETERMINATION_STATES
+        publishable = status in _PUBLISHABLE_DETERMINATION_STATES and structurally_compatible
         if publishable:
             publishable_indices.append(index)
         branch_states.append({
@@ -135,11 +189,16 @@ def attach_fixed_geometry_parameter_authority(report: dict[str, Any]) -> dict[st
             ],
             "publication_condition": "at least one branch must be locally compatible and full-column-rank",
         },
+        "structural_realizability": structural,
         "branch_states": branch_states,
         "operating_state_publication_gate": {
             "passed": gate_passed,
             "publishable_mirror_root_indices": publishable_indices,
-            "status": "passed" if gate_passed else "failed_no_compatible_full_rank_branch",
+            "status": (
+                "passed" if gate_passed
+                else "failed_static_response_structure" if not structurally_compatible
+                else "failed_no_compatible_full_rank_branch"
+            ),
             "published_operating_state": "available_in_publishable_branch" if gate_passed else None,
         },
     }
@@ -191,7 +250,14 @@ def build_parameter_authority_from_managed_seed(manifest_path: Path) -> dict[str
         or source_summary.get("role") != "mrtof_dual_stripe_paper_theory_instance_specific_operating_seed_family"
     ):
         raise CandidateContractError("managed Stripe summary has the wrong role")
-    updated = attach_fixed_geometry_parameter_authority(copy.deepcopy(source_summary))
+    updated = copy.deepcopy(source_summary)
+    target = updated.get("dimensionless_paper_target")
+    if not isinstance(target, dict):
+        raise CandidateContractError("managed Stripe summary omits its dimensionless paper target")
+    updated["static_dual_stripe_paper_target_structure"] = (
+        audit_static_dual_stripe_paper_target_structure(target)
+    )
+    attach_fixed_geometry_parameter_authority(updated)
     return {
         "schema_version": 1,
         "role": "mrtof_fixed_stripe_geometry_parameter_authority",
@@ -1182,6 +1248,7 @@ def build_operating_seed_report(mirror_manifest: Path, downstream_contract: Path
     """Search every managed gamma-target mirror root before downstream selection."""
     mirror = load_managed_mirror_candidate(mirror_manifest, downstream_contract)
     dimensionless_target = _solve_dimensionless_paper_target(mirror.contract)
+    structural_audit = audit_static_dual_stripe_paper_target_structure(dimensionless_target)
     reports: list[dict[str, Any]] = []
     rejected: list[dict[str, Any]] = []
     consistency_family: list[dict[str, Any]] = []
@@ -1236,6 +1303,7 @@ def build_operating_seed_report(mirror_manifest: Path, downstream_contract: Path
             "managed_mirror_manifest_sha256": mirror.manifest_sha256,
             "paper_relation_identity": "same equations and dimensionless structure; instance coefficients, L, W, and voltages may differ",
             "dimensionless_paper_target": dimensionless_target,
+            "static_dual_stripe_paper_target_structure": structural_audit,
             "mirror_root_count": len(mirror.root_family),
             "complete_consistency_actual_parallel_workers": actual_workers,
             "successful_mirror_root_count": 0,
@@ -1257,6 +1325,7 @@ def build_operating_seed_report(mirror_manifest: Path, downstream_contract: Path
         "schema_version": 2,
         "role": "mrtof_dual_stripe_paper_theory_instance_specific_operating_seed_family",
         "dimensionless_paper_target": dimensionless_target,
+        "static_dual_stripe_paper_target_structure": structural_audit,
         "mirror_root_count": len(mirror.root_family),
         "complete_consistency_actual_parallel_workers": actual_workers,
         "successful_mirror_root_count": len(reports),
