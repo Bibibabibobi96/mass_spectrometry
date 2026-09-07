@@ -18,6 +18,7 @@ from dataclasses import dataclass
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import (
     endpoint_regularized_kappa,
+    tau_g_derivative_at_turn,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import (
     dual_stripe_width_at_y_mm,
@@ -227,6 +228,79 @@ def _pseudopotential_difference_v(
         for stripe in stripes
     )
     return -action_change / coupled_period_mm_per_sqrt_v
+
+
+def _time_response_g(
+    energy_per_charge_v: float,
+    coupled_period_mm_per_sqrt_v: float,
+    turning_pseudopotential_v: float,
+    stripes: Sequence[StripeHardBoundary],
+    entry_y_mm: float,
+    y_mm: float,
+) -> float:
+    """Return the theory's normalized exact hard-boundary ``g`` response."""
+    derivative_change = sum(
+        reduced_action_energy_derivative_mm_per_sqrt_v(energy_per_charge_v, stripe.bias_v, stripe.width_mm(y_mm))
+        - reduced_action_energy_derivative_mm_per_sqrt_v(energy_per_charge_v, stripe.bias_v, stripe.width_mm(entry_y_mm))
+        for stripe in stripes
+    )
+    return 2.0 * energy_per_charge_v * derivative_change / (
+        coupled_period_mm_per_sqrt_v * turning_pseudopotential_v
+    )
+
+
+def time_platform_derivative_residuals(
+    *,
+    mirror_reduced_period_mm_per_sqrt_v: float,
+    energy_per_charge_v: float,
+    stripes: Sequence[StripeHardBoundary],
+    entry_y_mm: float,
+    nominal_turning_y_mm: float,
+    eta_turn_nodes: Sequence[float],
+    derivative_step: float,
+) -> tuple[float, ...]:
+    """Evaluate the four-node ``d(tau_g)/d(eta_turn)`` residual family.
+
+    The nominal physical turning section defines ``eta=1``.  Every requested
+    node is mapped to the same physical direction and must remain inside both
+    frozen Stripe profiles.  This function is only an L0 residual evaluator;
+    rank closure decides whether those residuals determine a solution.
+    """
+    entry = _finite(entry_y_mm, "entry_y_mm")
+    nominal_turn = _finite(nominal_turning_y_mm, "nominal_turning_y_mm")
+    length = abs(nominal_turn - entry)
+    if length <= 0.0 or not eta_turn_nodes:
+        raise CandidateContractError("time platform needs a nonzero nominal drift length and named nodes")
+    nodes = tuple(_finite(node, "time-platform eta node") for node in eta_turn_nodes)
+    if any(node <= 0.0 for node in nodes):
+        raise CandidateContractError("time-platform eta nodes must be positive")
+    direction = 1.0 if nominal_turn > entry else -1.0
+    baselines = tuple(stripe.width_mm(entry) for stripe in stripes)
+    biases = tuple(stripe.bias_v for stripe in stripes)
+    period = coupled_reduced_period_mm_per_sqrt_v(
+        mirror_reduced_period_mm_per_sqrt_v, energy_per_charge_v, baselines, biases,
+    )
+    turning_phi = _pseudopotential_difference_v(energy_per_charge_v, period, stripes, entry, nominal_turn)
+    if turning_phi <= 0.0:
+        raise CandidateContractError("nominal time-platform turn must have positive pseudopotential")
+
+    def physical_y(eta: float) -> float:
+        return entry + direction * length * _finite(eta, "eta")
+
+    def psi_at_eta(eta: float) -> float:
+        return _pseudopotential_difference_v(
+            energy_per_charge_v, period, stripes, entry, physical_y(eta),
+        ) / turning_phi
+
+    def g_at_eta(eta: float) -> float:
+        return _time_response_g(
+            energy_per_charge_v, period, turning_phi, stripes, entry, physical_y(eta),
+        )
+
+    return tuple(
+        tau_g_derivative_at_turn(psi_at_eta, g_at_eta, node, step=derivative_step)
+        for node in nodes
+    )
 
 
 def derive_coupled_drift_state(

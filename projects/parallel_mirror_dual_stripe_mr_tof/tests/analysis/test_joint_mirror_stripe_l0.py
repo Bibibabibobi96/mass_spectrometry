@@ -13,6 +13,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_mirror_stripe_l0
     require_exactly_determined,
     reduced_action_delta_mm_sqrt_v,
     stripes_from_contract,
+    time_platform_derivative_residuals,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import CandidateContractError
 
@@ -79,6 +80,23 @@ class JointMirrorStripeL0Test(unittest.TestCase):
                 entry_y_mm=0.0,
                 turning_y_mm=100.0,
             )
+
+    def test_time_platform_nodes_use_the_same_trial_action_response(self) -> None:
+        stripes = (
+            StripeHardBoundary(-40.0, lambda y: 30.0 - 0.02 * y),
+            StripeHardBoundary(60.0, lambda y: 20.0 + 0.04 * y),
+        )
+        residuals = time_platform_derivative_residuals(
+            mirror_reduced_period_mm_per_sqrt_v=10.0,
+            energy_per_charge_v=4000.0,
+            stripes=stripes,
+            entry_y_mm=0.0,
+            nominal_turning_y_mm=100.0,
+            eta_turn_nodes=(0.9, 0.95, 1.05, 1.1),
+            derivative_step=1e-3,
+        )
+        self.assertEqual(len(residuals), 4)
+        self.assertTrue(all(math.isfinite(value) for value in residuals))
 
 
 if __name__ == "__main__":
