@@ -1273,6 +1273,20 @@
       "eta_turn_nodes": [0.9, 0.95, 1.05, 1.1],
       "semantics": "Four user-specified time-platform derivative nodes symmetric around the nominal turning point. The paper does not publish its four node locations; this project value is user authority, not an attribution to the original paper. Before activation, each physical y=entry_y+eta_turn*L must lie within both frozen Stripe active spans and the downstream-problem Jacobian rank gate must classify that problem."
     },
+    "dimensionless_paper_target": {
+      "status": "solve_from_six_paper_conditions",
+      "qualification": "dimensionless_reference_branch_only__not_active_hardware_coefficients",
+      "published_printed_reference_c0_to_c5": [0.83999, 0.75160, -7.52535, 14.0242, -9.17661, 2.08613],
+      "published_reference_semantics": "Rounded values from the cited Astral paper are a continuation seed and branch-selection reference only. The active target coefficients are regenerated from psi(1)=1, kappa-prime(1)=0, and the four project-owned tau-g derivative nodes; no printed coefficient is copied into hardware geometry or voltage.",
+      "deterministic_multistart_count": 24,
+      "relative_reference_perturbation": 0.1,
+      "relative_finite_difference_step": 1e-5,
+      "maximum_function_evaluations": 600,
+      "residual_norm_tolerance": 1e-7,
+      "distinct_root_scaled_distance": 0.001,
+      "random_seed_semantics": "Derive the reproducible generator seed from SHA-256 of the printed branch reference and the project eta nodes; do not store an arbitrary mutable seed.",
+      "selection_rule": "Among roots passing the six-condition residual gate, choose minimum coefficient-scaled distance from the published rounded branch, then minimum residual norm. Preserve other distinct roots as diagnostics."
+    },
     "operating_seed_search": {
       "status": "paper_theory__instance_specific_K_and_spatial_return_seed",
       "seed_equations": [
@@ -1950,6 +1964,7 @@
     "center_particle_count": 1,
     "candidate_bunch_particle_count": 100,
     "candidate_bunch_radius_mm": 0.1,
+    "accelerator_focus_axial_full_width_mm": 0.2,
     "initial_spread_status": "ideal_post_two_zone_accelerator_injection__4keV_nominal__zero_energy_and_angle_spread__not_a_resolution_source_model"
   },
   "simion": {

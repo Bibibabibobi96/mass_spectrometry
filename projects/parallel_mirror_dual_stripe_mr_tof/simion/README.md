@@ -168,13 +168,17 @@ materializer在schema2的`prototype_input_manifest.json`中为五份Fly2分别�
 |`center_fly2`|`mrtof_candidate_center.fly2`|分析器内直接释放的4-keV中心粒子|
 |`candidate_bunch_fly2`|`mrtof_candidate.fly2`|同一注入态的固定合同小束团|
 |`accelerator_focus_center_fly2`|`mrtof_accelerator_focus_center.fly2`|第一区release平面的零KE中心粒子|
-|`accelerator_focus_bunch_fly2`|`mrtof_accelerator_focus.fly2`|同一release平面的零KE横向小束团|
+|`accelerator_focus_bunch_fly2`|`mrtof_accelerator_focus.fly2`|第一区内零KE轴向释放位置表；用于检验第一时间焦点|
 |`first_prism_entry_center_fly2`|`mrtof_first_prism_entry_center.fly2`|两区焦面处的4-keV中心粒子；仅首棱镜有限三维射击诊断|
 
-当前首轮物种为524 Th／+1，中心源N=1、小束团N=100、半径0.1 mm；数值只来自`particle_source`合同。
+当前首轮物种为524 Th／+1，中心源N=1、小束团N=100。全分析器小束团半径为0.1 mm；
+加速器焦点束团则把合同的`accelerator_focus_axial_full_width_mm=0.2 mm`均匀离散成100个
+确定的第一区轴向释放位置，每个位置各用一个`n=1` standard beam，避免SIMION随机圆盘分布掩盖轴向导数。
+这些数值只来自`particle_source`合同。
 此前100 Th输入仍属独立回归/历史证据，不与新首轮束团混合统计。
-前两种是加速器后的理想注入假设，不是从repeller开始的提取证据。后两种可用于加速器穿越诊断，
-但仍是静态电压下的释放，且圆盘不扰动提取方向的初始位置，不能单独证明第一焦点导数。
+前两种是加速器后的理想注入假设，不是从repeller开始的提取证据。加速器焦点两种源是静态电压下
+从第一区由静止释放的独立诊断；轴向N=100源可测量有限宽度的一阶斜率、二阶曲率和时间极差，
+但不代表真实脉冲源分布。
 五种源不能合并统计或彼此替代。
 
 有实际飞行日志后，从仓库根使用[simion_event_analysis.py](../analysis/simion_event_analysis.py)：
@@ -219,6 +223,14 @@ python -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_anal
 `mrtof_first_prism_entry_center.fly2`。结果只可由`first_prism_l0_result.py`发布
 `prototype_first_prism_interface_only`，不代表加速器提取、第二棱镜、K=25、传输、时间焦点或分辨率。
 该入口向`run_iob_flight.lua`直接传入 IOB 路径（没有多余的`--`），因为后者的唯一参数就是 IOB。
+
+[run_accelerator_focus_flight.ps1](run_accelerator_focus_flight.ps1)复用同一已审查三实例IOB和已保存电压的
+`mrtof_accelerator.pa0`，不会重新refine任何PA。它只把run-local同名Program换成
+[mrtof_accelerator_focus.lua](mrtof_accelerator_focus.lua)，选择中心或轴向束团Fly2，并在离子首次穿过
+项目`z=0`时插值记录时间和速度后停止。随后
+[accelerator_focus_simion_analysis.py](../analysis/accelerator_focus_simion_analysis.py)将数值时间与独立
+`orthogonal_accelerator`一维解析参考逐粒子比较，报告有限区间时间极差、线性斜率、二次系数和最大解析误差。
+该receipt只验证二区加速器的静态首时间焦点，不授予棱镜、Stripe、K=25、探测或分辨率资格。
 
 ## 数值执行边界
 

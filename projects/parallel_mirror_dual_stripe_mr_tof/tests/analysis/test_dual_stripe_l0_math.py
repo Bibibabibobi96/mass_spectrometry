@@ -14,6 +14,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import 
     identify_fixed_cad_component_shapes,
     invert_nominal_psi_g_response,
     kappa_derivative_at_turn,
+    paper_dimensionless_condition_residuals,
     tau_g_derivative_at_turn,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import (
@@ -22,7 +23,9 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry impo
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_operating_seed import (
     _bias_pair_is_nondegenerate,
+    _compare_fixed_profile_to_dimensionless_target,
     _seed_profile,
+    _solve_dimensionless_paper_target,
 )
 
 
@@ -101,6 +104,61 @@ class DualStripeL0MathTest(unittest.TestCase):
             abs(tau_g_derivative_at_turn(psi, g, node, step=1e-3)) < 3e-4
             for node in (0.9, 0.95, 1.05, 1.1)
         ))
+
+    def test_six_condition_evaluator_uses_named_project_nodes(self) -> None:
+        residuals = paper_dimensionless_condition_residuals(
+            (0.83999, 0.75160, -7.52535, 14.0242, -9.17661, 2.08613),
+            eta_turn_nodes=(0.9, 0.95, 1.05, 1.1),
+            kappa_derivative_step=0.002,
+            tau_derivative_step=0.001,
+        )
+        self.assertEqual(
+            [name for name, _value in residuals],
+            [
+                "nominal_turn_normalization",
+                "spatial_return_kappa_prime",
+                "time_platform_tau_g_prime_eta_0.9",
+                "time_platform_tau_g_prime_eta_0.95",
+                "time_platform_tau_g_prime_eta_1.05",
+                "time_platform_tau_g_prime_eta_1.1",
+            ],
+        )
+        self.assertLess(np.linalg.norm([value for _name, value in residuals]), 4e-4)
+
+    def test_dimensionless_target_is_solved_not_copied_from_printed_coefficients(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        result = _solve_dimensionless_paper_target(contract)
+        selected = result["selected_root"]
+        reference = contract["dual_stripe_l0"]["dimensionless_paper_target"][
+            "published_printed_reference_c0_to_c5"
+        ]
+        self.assertEqual(result["status"], "six_paper_conditions_solved_for_project_nodes")
+        self.assertLess(selected["residual_norm_2"], 1e-7)
+        self.assertNotEqual(selected["coefficients_c0_to_c5"], reference)
+        self.assertEqual(len(result["reproducible_seed_sha256"]), 64)
+        coefficients = selected["coefficients_c0_to_c5"]
+        self.assertAlmostEqual(
+            selected["psi_coefficients_by_power"][0], coefficients[0] + coefficients[1]
+        )
+        self.assertAlmostEqual(
+            selected["g_coefficients_by_power"][0], coefficients[1] - coefficients[0]
+        )
+
+    def test_fixed_profile_comparison_exposes_the_linear_response_shortfall(self) -> None:
+        consistency = {"best_iterate": {"dimensionless_psi_g_polynomial_fit": {
+            "psi_coefficients_by_power": [3.0, -5.0, 4.0, -1.0, 0.1],
+            "g_coefficients_by_power": [3.1, -4.9, 3.9, -0.9, 0.09],
+        }}}
+        target = {"selected_root": {
+            "coefficients_c0_to_c5": [0.8, 0.7, -7.0, 14.0, -9.0, 2.0],
+            "psi_coefficients_by_power": [1.5, -7.0, 14.0, -9.0, 2.0],
+            "g_coefficients_by_power": [-0.1, -7.0, 14.0, -9.0, 2.0],
+        }}
+        _compare_fixed_profile_to_dimensionless_target(consistency, target)
+        comparison = consistency["best_iterate"]["dimensionless_target_comparison"]
+        self.assertAlmostEqual(comparison["actual_equivalent_c0_from_linear_psi_g"], -0.05)
+        self.assertAlmostEqual(comparison["target_c0"], 0.8)
+        self.assertGreater(comparison["scaled_psi_g_coefficient_difference_norm_2"], 1.0)
 
     def test_compiled_native_width_matches_the_reference_accessor(self) -> None:
         contract = json.loads(CONTRACT.read_text(encoding="utf-8"))

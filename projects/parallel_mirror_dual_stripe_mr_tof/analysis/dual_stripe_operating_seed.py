@@ -10,6 +10,7 @@ therefore this module cannot publish a complete downstream operating point.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 from concurrent.futures import ProcessPoolExecutor
@@ -23,6 +24,7 @@ from scipy.optimize import least_squares
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import (
     analyze_dual_stripe_l0,
     identify_fixed_cad_component_shapes,
+    paper_dimensionless_condition_residuals,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_mirror_stripe_l0 import (
     JointL0Trial,
@@ -70,6 +72,160 @@ def _positive_integer(value: object, label: str) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
         raise CandidateContractError(f"{label} must be a positive integer")
     return value
+
+
+def _solve_dimensionless_paper_target(contract: dict[str, Any]) -> dict[str, Any]:
+    """Solve the six paper conditions for the project-selected four nodes."""
+    l0 = contract.get("dual_stripe_l0")
+    settings = l0.get("dimensionless_paper_target") if isinstance(l0, dict) else None
+    if not isinstance(settings, dict) or settings.get("status") != "solve_from_six_paper_conditions":
+        raise CandidateContractError("dimensionless paper-target solver contract is incomplete")
+    reference = np.asarray([
+        _finite(value, "published target reference coefficient")
+        for value in settings.get("published_printed_reference_c0_to_c5", [])
+    ])
+    if reference.shape != (6,):
+        raise CandidateContractError("dimensionless paper-target reference must contain c0..c5")
+    nodes = tuple(
+        _finite(value, "time-platform node")
+        for value in l0["time_platform_constraint"]["eta_turn_nodes"]
+    )
+    profile = _seed_profile(contract)
+    kappa_step = _finite(profile["kappa_derivative_step"], "target kappa derivative step")
+    tau_step = _finite(profile["time_platform_derivative_step"], "target tau derivative step")
+    start_count = _positive_integer(settings["deterministic_multistart_count"], "target multistart count")
+    maximum_evaluations = _positive_integer(settings["maximum_function_evaluations"], "target evaluation count")
+    perturbation = _finite(settings["relative_reference_perturbation"], "target perturbation")
+    difference_step = _finite(settings["relative_finite_difference_step"], "target finite-difference step")
+    root_tolerance = _finite(settings["residual_norm_tolerance"], "target residual tolerance")
+    distinct_tolerance = _finite(settings["distinct_root_scaled_distance"], "target distinct-root tolerance")
+    if not 0.0 < perturbation < 1.0 or not 0.0 < difference_step < 1.0:
+        raise CandidateContractError("dimensionless paper-target perturbation and difference step must lie in (0,1)")
+    if root_tolerance <= 0.0 or distinct_tolerance <= 0.0:
+        raise CandidateContractError("dimensionless paper-target root tolerances must be positive")
+    scales = np.maximum(np.abs(reference), 1.0)
+    seed_material = json.dumps(
+        {"reference": reference.tolist(), "nodes": nodes},
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    random_seed = int.from_bytes(hashlib.sha256(seed_material).digest()[:8], "big")
+    generator = np.random.default_rng(random_seed)
+    starts = [reference]
+    starts.extend(
+        reference + generator.normal(size=6) * scales * perturbation
+        for _ in range(start_count - 1)
+    )
+
+    def residual_vector(coefficients: np.ndarray) -> np.ndarray:
+        try:
+            return np.asarray([
+                value for _name, value in paper_dimensionless_condition_residuals(
+                    coefficients,
+                    eta_turn_nodes=nodes,
+                    kappa_derivative_step=kappa_step,
+                    tau_derivative_step=tau_step,
+                )
+            ])
+        except CandidateContractError:
+            distance = float(np.linalg.norm((coefficients - reference) / scales))
+            return np.full(6, 1.0e3 + distance)
+
+    roots: list[dict[str, Any]] = []
+    for start in starts:
+        result = least_squares(
+            residual_vector,
+            start,
+            diff_step=difference_step,
+            max_nfev=maximum_evaluations,
+            xtol=1.0e-12,
+            ftol=1.0e-12,
+            gtol=1.0e-12,
+        )
+        residual = residual_vector(result.x)
+        norm = float(np.linalg.norm(residual))
+        if norm > root_tolerance:
+            continue
+        scaled_distance = float(np.linalg.norm((result.x - reference) / scales))
+        duplicate = next((
+            root for root in roots
+            if np.linalg.norm((result.x - np.asarray(root["coefficients_c0_to_c5"])) / scales)
+            <= distinct_tolerance
+        ), None)
+        candidate = {
+            "coefficients_c0_to_c5": [float(value) for value in result.x],
+            "residual_norm_2": norm,
+            "scaled_distance_from_published_reference": scaled_distance,
+            "function_evaluations": int(result.nfev),
+        }
+        if duplicate is not None:
+            if norm < duplicate["residual_norm_2"]:
+                duplicate.clear()
+                duplicate.update(candidate)
+            continue
+        roots.append(candidate)
+    if not roots:
+        raise CandidateContractError("no dimensionless coefficient root passed the declared six-condition gate")
+    roots.sort(key=lambda root: (
+        root["scaled_distance_from_published_reference"], root["residual_norm_2"]
+    ))
+    selected = roots[0]
+    coefficients = np.asarray(selected["coefficients_c0_to_c5"])
+    residuals = paper_dimensionless_condition_residuals(
+        coefficients,
+        eta_turn_nodes=nodes,
+        kappa_derivative_step=kappa_step,
+        tau_derivative_step=tau_step,
+    )
+    selected.update({
+        "residuals": dict(residuals),
+        "psi_coefficients_by_power": [
+            float(coefficients[0] + coefficients[1]),
+            *(float(value) for value in coefficients[2:]),
+        ],
+        "g_coefficients_by_power": [
+            float(coefficients[1] - coefficients[0]),
+            *(float(value) for value in coefficients[2:]),
+        ],
+    })
+    return {
+        "status": "six_paper_conditions_solved_for_project_nodes",
+        "qualification": "dimensionless_target_branch_only__not_active_hardware_coefficients",
+        "eta_turn_nodes": list(nodes),
+        "start_count": len(starts),
+        "distinct_root_count": len(roots),
+        "reproducible_seed_sha256": hashlib.sha256(seed_material).hexdigest(),
+        "selection_rule": "minimum scaled distance from the published rounded branch, then residual norm",
+        "selected_root": selected,
+        "other_root_summaries": roots[1:],
+    }
+
+
+def _compare_fixed_profile_to_dimensionless_target(
+    consistency: dict[str, Any], target: dict[str, Any],
+) -> None:
+    best = consistency.get("best_iterate")
+    if not isinstance(best, dict):
+        return
+    fitted = best.get("dimensionless_psi_g_polynomial_fit")
+    selected = target["selected_root"]
+    if not isinstance(fitted, dict):
+        return
+    psi = np.asarray(fitted["psi_coefficients_by_power"], dtype=float)
+    g = np.asarray(fitted["g_coefficients_by_power"], dtype=float)
+    target_psi = np.asarray(selected["psi_coefficients_by_power"], dtype=float)
+    target_g = np.asarray(selected["g_coefficients_by_power"], dtype=float)
+    coefficient_scales = np.maximum(np.maximum(np.abs(target_psi), np.abs(target_g)), 1.0)
+    difference = np.concatenate(((psi - target_psi) / coefficient_scales, (g - target_g) / coefficient_scales))
+    best["dimensionless_target_comparison"] = {
+        "qualification": "diagnostic_polynomial_projection__integral_residuals_remain_authoritative",
+        "actual_equivalent_c0_from_linear_psi_g": float((psi[0] - g[0]) / 2.0),
+        "actual_equivalent_c1_from_linear_psi_g": float((psi[0] + g[0]) / 2.0),
+        "target_c0": float(selected["coefficients_c0_to_c5"][0]),
+        "target_c1": float(selected["coefficients_c0_to_c5"][1]),
+        "maximum_abs_high_order_psi_minus_g": float(np.max(np.abs(psi[1:] - g[1:]))),
+        "scaled_psi_g_coefficient_difference_norm_2": float(np.linalg.norm(difference)),
+    }
 
 
 def _seed_profile(contract: dict[str, Any]) -> dict[str, Any]:
@@ -875,6 +1031,7 @@ def _build_operating_seed_report_for_mirror(mirror: ManagedMirrorCandidate) -> d
 def build_operating_seed_report(mirror_manifest: Path, downstream_contract: Path) -> dict[str, Any]:
     """Search every managed gamma-target mirror root before downstream selection."""
     mirror = load_managed_mirror_candidate(mirror_manifest, downstream_contract)
+    dimensionless_target = _solve_dimensionless_paper_target(mirror.contract)
     reports: list[dict[str, Any]] = []
     rejected: list[dict[str, Any]] = []
     consistency_family: list[dict[str, Any]] = []
@@ -894,6 +1051,8 @@ def build_operating_seed_report(mirror_manifest: Path, downstream_contract: Path
     actual_workers = min(maximum_workers, len(branches))
     with ProcessPoolExecutor(max_workers=actual_workers) as executor:
         consistency_results = list(executor.map(_search_complete_fixed_hardware_consistency, branches))
+    for consistency in consistency_results:
+        _compare_fixed_profile_to_dimensionless_target(consistency, dimensionless_target)
     for index, (root, branch, consistency) in enumerate(
         zip(mirror.root_family, branches, consistency_results)
     ):
@@ -926,6 +1085,7 @@ def build_operating_seed_report(mirror_manifest: Path, downstream_contract: Path
             "managed_mirror_run_id": mirror.run_id,
             "managed_mirror_manifest_sha256": mirror.manifest_sha256,
             "paper_relation_identity": "same equations and dimensionless structure; instance coefficients, L, W, and voltages may differ",
+            "dimensionless_paper_target": dimensionless_target,
             "mirror_root_count": len(mirror.root_family),
             "complete_consistency_actual_parallel_workers": actual_workers,
             "successful_mirror_root_count": 0,
@@ -946,6 +1106,7 @@ def build_operating_seed_report(mirror_manifest: Path, downstream_contract: Path
         **selected,
         "schema_version": 2,
         "role": "mrtof_dual_stripe_paper_theory_instance_specific_operating_seed_family",
+        "dimensionless_paper_target": dimensionless_target,
         "mirror_root_count": len(mirror.root_family),
         "complete_consistency_actual_parallel_workers": actual_workers,
         "successful_mirror_root_count": len(reports),

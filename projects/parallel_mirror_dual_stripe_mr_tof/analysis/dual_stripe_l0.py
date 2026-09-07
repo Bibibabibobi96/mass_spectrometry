@@ -240,6 +240,57 @@ def tau_g_derivative_at_turn(
     return (upper - lower) / (2.0 * increment)
 
 
+def paper_dimensionless_condition_residuals(
+    coefficients: Sequence[float],
+    *,
+    eta_turn_nodes: Sequence[float],
+    kappa_derivative_step: float,
+    tau_derivative_step: float,
+) -> tuple[tuple[str, float], ...]:
+    """Evaluate the paper's six coefficient conditions without printed values.
+
+    ``coefficients`` are ordered ``c0..c5``.  The first response is
+    ``psi_m=c0*eta`` and the remaining polynomial is ``psi_s``; consequently
+    ``psi=psi_s+psi_m`` and ``g=psi_s-psi_m``.  This evaluator owns no
+    coefficient seed or active-instance geometry and can therefore be used to
+    solve the project-selected time-platform nodes without promoting the
+    rounded coefficients printed in the paper.
+    """
+    values = tuple(_finite(value, "dimensionless target coefficient") for value in coefficients)
+    nodes = tuple(_finite(value, "dimensionless target eta node") for value in eta_turn_nodes)
+    kappa_step = _finite(kappa_derivative_step, "dimensionless target kappa step")
+    tau_step = _finite(tau_derivative_step, "dimensionless target tau step")
+    if len(values) != 6 or len(nodes) != 4:
+        raise CandidateContractError("paper dimensionless target requires c0..c5 and four eta nodes")
+    if len(set(nodes)) != len(nodes) or min(nodes) <= 0.0 or min(kappa_step, tau_step) <= 0.0:
+        raise CandidateContractError("paper dimensionless target nodes and derivative steps are invalid")
+    if any(node - tau_step <= 0.0 for node in nodes) or 1.0 - kappa_step <= 0.0:
+        raise CandidateContractError("paper dimensionless derivative stencil left the positive turn domain")
+
+    def psi(eta: float) -> float:
+        coordinate = _finite(eta, "dimensionless target eta")
+        return values[0] * coordinate + sum(
+            values[power] * coordinate**power for power in range(1, 6)
+        )
+
+    def g(eta: float) -> float:
+        coordinate = _finite(eta, "dimensionless target eta")
+        return sum(values[power] * coordinate**power for power in range(1, 6)) - values[0] * coordinate
+
+    residuals = [
+        ("nominal_turn_normalization", psi(1.0) - 1.0),
+        ("spatial_return_kappa_prime", kappa_derivative_at_turn(psi, 1.0, step=kappa_step)),
+    ]
+    residuals.extend(
+        (
+            f"time_platform_tau_g_prime_eta_{node:.12g}",
+            tau_g_derivative_at_turn(psi, g, node, step=tau_step),
+        )
+        for node in nodes
+    )
+    return tuple(residuals)
+
+
 def identify_fixed_cad_component_shapes(contract: dict[str, Any]) -> dict[str, Any]:
     """Fit the declared polynomial/linear structure of the frozen CAD curves.
 

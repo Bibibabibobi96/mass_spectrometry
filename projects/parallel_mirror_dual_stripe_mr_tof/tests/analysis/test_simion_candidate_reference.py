@@ -228,9 +228,14 @@ class SimionCandidateReferenceTest(unittest.TestCase):
             focus_bunch = outputs["accelerator_focus_bunch_fly2"].read_text(encoding="utf-8")
             placement = derive_two_zone_placement(derived)
             self.assertIn("ke = 0", focus_center)
-            self.assertIn("direction = vector(0, 0, -1)", focus_center)
+            self.assertIn("el = -90", focus_center)
             self.assertIn(f"{placement.focus_y_mm:.17g}", focus_center)
-            self.assertIn("n = 100", focus_bunch)
+            self.assertEqual(focus_bunch.count("standard_beam {"), 100)
+            self.assertEqual(focus_bunch.count("n = 1"), 100)
+            release_center_z = placement.repeller_z_mm - derived["accelerator"]["release_position_in_gap_1_mm"]
+            self.assertIn(f"z = {release_center_z + 0.1:.17g}", focus_bunch)
+            self.assertIn(f"z = {release_center_z - 0.1:.17g}", focus_bunch)
+            self.assertNotIn("circle_distribution", focus_bunch)
             species = derived["particle_source"]["species"]
             first_prism_entry = outputs["first_prism_entry_center_fly2"].read_text(encoding="utf-8")
             self.assertIn("ke = 4000", first_prism_entry)

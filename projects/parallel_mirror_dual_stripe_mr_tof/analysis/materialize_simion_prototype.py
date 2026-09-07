@@ -15,6 +15,8 @@ from pathlib import Path
 import shutil
 from typing import Any
 
+from common.simion.particle_source import render_standard_beams
+
 from common.contracts.file_identity import file_sha256, repository_text_sha256
 from projects.orthogonal_accelerator.analysis.component_contract import load_accelerator_dependency
 
@@ -161,7 +163,12 @@ def _particle_fly2(
     )
 
 
-def _accelerator_focus_fly2(contract: dict[str, Any], particle_source: dict[str, Any], particle_count_key: str, radius_mm: float) -> str:
+def accelerator_focus_fly2(
+    contract: dict[str, Any],
+    particle_source: dict[str, Any],
+    particle_count_key: str,
+    axial_full_width_mm: float,
+) -> str:
     """Render a zero-KE release inside zone 1 for the separate focus diagnostic.
 
     This is deliberately distinct from the 4-keV post-accelerator MR injection
@@ -179,14 +186,42 @@ def _accelerator_focus_fly2(contract: dict[str, Any], particle_source: dict[str,
     )
     if not 0.0 < release < placement.repeller_z_mm - placement.grid_1_z_mm:
         raise CandidateContractError("accelerator release must remain strictly between repeller and grid1")
-    return _particle_fly2(
-        particle_source,
-        particle_count_key,
-        radius_mm,
-        position_override_mm=[0.0, placement.focus_y_mm, placement.repeller_z_mm - release],
-        direction_override_project=[0.0, 0.0, -1.0],
-        kinetic_energy_override_ev=0.0,
-    )
+    count = particle_source.get(particle_count_key)
+    species = particle_source.get("species")
+    width = _finite_number(axial_full_width_mm, "accelerator focus axial full width")
+    if not isinstance(count, int) or isinstance(count, bool) or count <= 0:
+        raise CandidateContractError("accelerator focus particle count must be a positive integer")
+    if not isinstance(species, dict):
+        raise CandidateContractError("accelerator focus source requires a species contract")
+    mass = _finite_number(species.get("mass_th"), "particle_source.species.mass_th")
+    charge = _finite_number(species.get("charge_e"), "particle_source.species.charge_e")
+    if mass <= 0.0 or charge == 0.0 or width < 0.0:
+        raise CandidateContractError("accelerator focus species and axial width are invalid")
+    if count == 1:
+        offsets = [0.0]
+    else:
+        if width <= 0.0:
+            raise CandidateContractError("multi-particle accelerator focus source needs positive axial width")
+        offsets = [-width / 2.0 + width * index / (count - 1) for index in range(count)]
+    if release - width / 2.0 <= 0.0 or release + width / 2.0 >= placement.repeller_z_mm - placement.grid_1_z_mm:
+        raise CandidateContractError("accelerator focus axial interval must stay strictly inside gap 1")
+    beams = [
+        {
+            "tob": 0,
+            "mass": f"{mass:.17g}",
+            "charge": f"{charge:.17g}",
+            "x": "0",
+            "y": f"{placement.focus_y_mm:.17g}",
+            "z": f"{placement.repeller_z_mm - release - offset:.17g}",
+            "ke": "0",
+            "az": "0",
+            "el": "-90",
+            "cwf": "1",
+            "color": "0",
+        }
+        for offset in offsets
+    ]
+    return render_standard_beams(beams)
 
 
 def _first_prism_entry_fly2(prism_l0: Any, particle_source: dict[str, Any]) -> str:
@@ -284,11 +319,18 @@ def materialize(contract_path: Path, mirror_receipt_path: Path, output_directory
     bunch_radius = _finite_number(particle_source.get("candidate_bunch_radius_mm"), "particle_source.candidate_bunch_radius_mm")
     center_fly2 = _particle_fly2(particle_source, "center_particle_count", 0.0)
     bunch_fly2 = _particle_fly2(particle_source, "candidate_bunch_particle_count", bunch_radius)
-    accelerator_focus_center_fly2 = _accelerator_focus_fly2(
+    accelerator_focus_width = _finite_number(
+        particle_source.get("accelerator_focus_axial_full_width_mm"),
+        "particle_source.accelerator_focus_axial_full_width_mm",
+    )
+    accelerator_focus_center_fly2 = accelerator_focus_fly2(
         contract, particle_source, "center_particle_count", 0.0,
     )
-    accelerator_focus_bunch_fly2 = _accelerator_focus_fly2(
-        contract, particle_source, "candidate_bunch_particle_count", bunch_radius,
+    accelerator_focus_bunch_fly2 = accelerator_focus_fly2(
+        contract,
+        particle_source,
+        "candidate_bunch_particle_count",
+        accelerator_focus_width,
     )
     first_prism_entry_center_fly2 = _first_prism_entry_fly2(prism_l0, particle_source)
     detector = resolve_geometry(contract)["detector"]
