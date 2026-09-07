@@ -31,6 +31,7 @@ PROJECT = Path(__file__).resolve().parents[2]
 CONTRACT = PROJECT / "config" / "simion_candidate_two_zone.json"
 RUNNER = PROJECT / "analysis" / "run_mirror_l0_l1_candidate.ps1"
 SHAPE_DIAGNOSTIC_RUNNER = PROJECT / "analysis" / "run_dual_stripe_shape_diagnostic.ps1"
+OPERATING_SEED_RUNNER = PROJECT / "analysis" / "run_dual_stripe_operating_seed.ps1"
 
 
 class MirrorL0L1RunnerTests(unittest.TestCase):
@@ -139,6 +140,24 @@ class MirrorL0L1RunnerTests(unittest.TestCase):
             "parent_mirror_run_manifest.json",
             "dual_stripe_shape_diagnostic",
             "Test-RunFilesIdentical",
+        ):
+            self.assertIn(token, source)
+        self.assertEqual(source.count("Complete-FailedRun"), 2)
+        self.assertNotIn("SIMION", source)
+        self.assertNotIn("Refine", source)
+
+    def test_operating_seed_runner_freezes_theory_and_uses_common_run_lifecycle(self) -> None:
+        source = OPERATING_SEED_RUNNER.read_text(encoding="utf-8-sig")
+        for token in (
+            "New-RunPackage",
+            "Copy-VerifiedRunInput",
+            "Invoke-ArtifactCapacityGate",
+            "Apply-RunArtifactRetention",
+            "Write-VerifiedRunManifest",
+            "parent_mirror_run_manifest.json",
+            "dual_stripe_operating_seed",
+            "Test-RunFilesIdentical",
+            "paper_theory_instance_specific",
         ):
             self.assertIn(token, source)
         self.assertEqual(source.count("Complete-FailedRun"), 2)

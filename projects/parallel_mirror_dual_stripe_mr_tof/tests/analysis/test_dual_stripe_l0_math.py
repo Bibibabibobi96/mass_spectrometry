@@ -4,6 +4,8 @@ import json
 import unittest
 from pathlib import Path
 
+import numpy as np
+
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import (
     CandidateContractError,
     endpoint_regularized_kappa,
@@ -16,6 +18,10 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry impo
     compile_dual_stripe_width_evaluator,
     dual_stripe_width_at_y_mm,
 )
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_operating_seed import (
+    _bias_pair_is_nondegenerate,
+    _seed_profile,
+)
 
 
 PROJECT = Path(__file__).resolve().parents[2]
@@ -23,6 +29,25 @@ CONTRACT = PROJECT / "config" / "simion_candidate_two_zone.json"
 
 
 class DualStripeL0MathTest(unittest.TestCase):
+    def test_contract_separates_paper_relations_from_instance_values(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        authority = contract["theory_parameter_authority"]
+        self.assertEqual(authority["governing_relations"], "identical_to_the_paper_model")
+        self.assertIn("drift_length_L", authority["instance_specific_values"])
+        self.assertIn("mirror_owned_axial_width_W", authority["instance_specific_values"])
+        self.assertIn("polynomial_and_linear_coefficients", authority["instance_specific_values"])
+        profile = _seed_profile(contract)
+        self.assertEqual(
+            profile["status"],
+            "paper_theory__instance_specific_K_and_spatial_return_seed",
+        )
+
+    def test_seed_rejects_effectively_single_stripe_root_without_setting_voltage_scale(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        profile = _seed_profile(contract)
+        self.assertFalse(_bias_pair_is_nondegenerate(np.asarray([-0.253, 156.09]), profile, 4000.0))
+        self.assertTrue(_bias_pair_is_nondegenerate(np.asarray([-44.25, 120.11]), profile, 4000.0))
+
     def test_response_inverse_reconstructs_psi_and_g(self) -> None:
         first, second = invert_nominal_psi_g_response(0.8, -0.1, 1.2, 0.9)
         self.assertAlmostEqual(first + second, 0.8)

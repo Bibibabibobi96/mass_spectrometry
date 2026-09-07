@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Sequence
+from functools import lru_cache
 from typing import Any
 
 import numpy as np
@@ -104,6 +105,24 @@ def invert_nominal_psi_g_response(
     )
 
 
+@lru_cache(maxsize=None)
+def _legendre_rule(order: int) -> tuple[np.ndarray, np.ndarray]:
+    """Return a cached Gauss--Legendre rule for repeated endpoint integrals."""
+    nodes, weights = np.polynomial.legendre.leggauss(order)
+    nodes.setflags(write=False)
+    weights.setflags(write=False)
+    return nodes, weights
+
+
+def _gauss_legendre_integral(function: Callable[[float], float], upper: float, order: int) -> float:
+    nodes, weights = _legendre_rule(order)
+    half = upper / 2.0
+    return half * sum(
+        float(weight) * _finite(function(half * (float(node) + 1.0)), "quadrature integrand")
+        for node, weight in zip(nodes, weights)
+    )
+
+
 def endpoint_regularized_kappa(
     psi_at_eta: Callable[[float], float], *, initial_panels: int = 32,
     max_refinements: int = 12, relative_tolerance: float = 1e-8,
@@ -111,9 +130,10 @@ def endpoint_regularized_kappa(
     """Integrate ``kappa(1)`` with the theory's endpoint substitution.
 
     For ``eta = 1-u²``, the integrand becomes
-    ``2u / sqrt(psi(1)-psi(1-u²))``.  Midpoint quadrature avoids evaluating
-    the removable endpoint directly and convergence under panel doubling is
-    an explicit validity condition.
+    ``2u / sqrt(psi(1)-psi(1-u²))``.  Gauss--Legendre nodes avoid evaluating
+    the removable endpoint directly and convergence under order doubling is
+    an explicit validity condition.  This preserves the native profile while
+    avoiding thousands of repeated samples per voltage trial.
     """
     if not callable(psi_at_eta):
         raise CandidateContractError("psi_at_eta must be callable")
@@ -126,15 +146,15 @@ def endpoint_regularized_kappa(
     endpoint = _finite(psi_at_eta(1.0), "psi(1)")
     previous: float | None = None
     for refinement in range(max_refinements):
-        panels = initial_panels * (2 ** refinement)
-        total = 0.0
-        for index in range(panels):
-            u = (index + 0.5) / panels
+        order = initial_panels * (2 ** refinement)
+
+        def integrand(u: float) -> float:
             difference = endpoint - _finite(psi_at_eta(1.0 - u * u), "psi(eta)")
             if difference <= 0.0:
                 raise CandidateContractError("psi(eta) must remain strictly below psi(1) on the turning interval")
-            total += 2.0 * u / math.sqrt(difference)
-        current = total / panels
+            return 2.0 * u / math.sqrt(difference)
+
+        current = _gauss_legendre_integral(integrand, 1.0, order)
         if previous is not None and abs(current - previous) <= float(relative_tolerance) * max(1.0, abs(current)):
             return current
         previous = current
@@ -162,16 +182,16 @@ def endpoint_regularized_tau_g(
     previous: float | None = None
     upper_u = math.sqrt(turn)
     for refinement in range(max_refinements):
-        panels = initial_panels * (2 ** refinement)
-        total = 0.0
-        for index in range(panels):
-            u = upper_u * (index + 0.5) / panels
+        order = initial_panels * (2 ** refinement)
+
+        def integrand(u: float) -> float:
             eta = turn - u * u
             difference = endpoint - _finite(psi_at_eta(eta), "psi(eta)")
             if difference <= 0.0:
                 raise CandidateContractError("psi(eta) must remain strictly below psi(eta_turn) on the tau_g interval")
-            total += 2.0 * u * _finite(g_at_eta(eta), "g(eta)") / math.sqrt(difference)
-        current = upper_u * total / panels
+            return 2.0 * u * _finite(g_at_eta(eta), "g(eta)") / math.sqrt(difference)
+
+        current = _gauss_legendre_integral(integrand, upper_u, order)
         if previous is not None and abs(current - previous) <= float(relative_tolerance) * max(1.0, abs(current)):
             return current
         previous = current

@@ -204,9 +204,41 @@ class JointMirrorStripeL0Test(unittest.TestCase):
             turning_y_mm=-100.0,
         )
         self.assertAlmostEqual(state.drift_length_l_mm, 100.0)
-        self.assertAlmostEqual(state.axial_width_w_mm, state.coupled_reduced_period_mm_per_sqrt_v * math.sqrt(4000.0))
+        self.assertAlmostEqual(state.axial_width_w_mm, 10.0 * math.sqrt(4000.0))
+        self.assertNotAlmostEqual(
+            state.axial_width_w_mm,
+            state.coupled_reduced_period_mm_per_sqrt_v * math.sqrt(4000.0),
+        )
         self.assertGreater(state.nominal_kappa_1, 0.0)
         self.assertGreater(state.nominal_injection_angle_rad, 0.0)
+
+    def test_width_baselines_change_full_period_but_not_mirror_owned_drift_normalization(self) -> None:
+        first = (
+            StripeHardBoundary(40.0, lambda y: 30.0 - 0.02 * y),
+            StripeHardBoundary(-60.0, lambda y: 20.0 + 0.04 * y),
+        )
+        shifted = (
+            StripeHardBoundary(40.0, lambda y: 130.0 - 0.02 * y),
+            StripeHardBoundary(-60.0, lambda y: 220.0 + 0.04 * y),
+        )
+        states = [
+            derive_coupled_drift_state(
+                mirror_reduced_period_mm_per_sqrt_v=10.0,
+                energy_per_charge_v=4000.0,
+                target_oscillation_count=25,
+                stripes=stripes,
+                entry_y_mm=0.0,
+                turning_y_mm=-100.0,
+            )
+            for stripes in (first, shifted)
+        ]
+        self.assertNotEqual(
+            states[0].coupled_reduced_period_mm_per_sqrt_v,
+            states[1].coupled_reduced_period_mm_per_sqrt_v,
+        )
+        self.assertEqual(states[0].axial_width_w_mm, states[1].axial_width_w_mm)
+        self.assertAlmostEqual(states[0].turning_pseudopotential_v, states[1].turning_pseudopotential_v)
+        self.assertAlmostEqual(states[0].nominal_kappa_1, states[1].nominal_kappa_1)
 
     def test_entry_direction_derives_first_physical_turn_without_free_l(self) -> None:
         stripes = (

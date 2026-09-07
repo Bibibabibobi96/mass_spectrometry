@@ -437,7 +437,7 @@ def coupled_reduced_period_mm_per_sqrt_v(
 
 def _pseudopotential_difference_v(
     energy_per_charge_v: float,
-    coupled_period_mm_per_sqrt_v: float,
+    mirror_period_mm_per_sqrt_v: float,
     stripes: Sequence[StripeHardBoundary],
     entry_y_mm: float,
     y_mm: float,
@@ -448,7 +448,7 @@ def _pseudopotential_difference_v(
         - reduced_action_delta_mm_sqrt_v(energy_per_charge_v, stripe.bias_v, stripe.width_mm(entry_y_mm))
         for stripe in stripes
     )
-    return -action_change / coupled_period_mm_per_sqrt_v
+    return -action_change / mirror_period_mm_per_sqrt_v
 
 
 def derive_turning_y_from_entry_direction(
@@ -484,15 +484,12 @@ def derive_turning_y_from_entry_direction(
         raise CandidateContractError("turning search interval must follow the injected y direction")
     if not isinstance(sample_count, int) or isinstance(sample_count, bool) or sample_count < 2:
         raise CandidateContractError("turning-point derivation needs an explicit integer sample count of at least two")
-    baselines = tuple(stripe.width_mm(entry) for stripe in stripes)
-    biases = tuple(_finite(stripe.bias_v, "Stripe bias_v") for stripe in stripes)
-    period = coupled_reduced_period_mm_per_sqrt_v(mirror_period, energy, baselines, biases)
     slow_energy = energy * (direction[1] / norm) ** 2
     if not 0.0 < slow_energy < energy:
         raise CandidateContractError("entry ray must have a nonzero, non-total slow y energy")
 
     def residual(y_mm: float) -> float:
-        return _pseudopotential_difference_v(energy, period, stripes, entry, y_mm) - slow_energy
+        return _pseudopotential_difference_v(energy, mirror_period, stripes, entry, y_mm) - slow_energy
 
     previous_y, previous_value = entry, residual(entry)
     for index in range(1, sample_count + 1):
@@ -539,7 +536,7 @@ def derive_coupled_drift_state_from_entry_direction(
 
 def _time_response_g(
     energy_per_charge_v: float,
-    coupled_period_mm_per_sqrt_v: float,
+    mirror_period_mm_per_sqrt_v: float,
     turning_pseudopotential_v: float,
     stripes: Sequence[StripeHardBoundary],
     entry_y_mm: float,
@@ -552,7 +549,7 @@ def _time_response_g(
         for stripe in stripes
     )
     return 2.0 * energy_per_charge_v * derivative_change / (
-        coupled_period_mm_per_sqrt_v * turning_pseudopotential_v
+        mirror_period_mm_per_sqrt_v * turning_pseudopotential_v
     )
 
 
@@ -582,12 +579,10 @@ def time_platform_derivative_residuals(
     if any(node <= 0.0 for node in nodes):
         raise CandidateContractError("time-platform eta nodes must be positive")
     direction = 1.0 if nominal_turn > entry else -1.0
-    baselines = tuple(stripe.width_mm(entry) for stripe in stripes)
-    biases = tuple(stripe.bias_v for stripe in stripes)
-    period = coupled_reduced_period_mm_per_sqrt_v(
-        mirror_reduced_period_mm_per_sqrt_v, energy_per_charge_v, baselines, biases,
+    mirror_period = _finite(mirror_reduced_period_mm_per_sqrt_v, "mirror reduced period")
+    turning_phi = _pseudopotential_difference_v(
+        energy_per_charge_v, mirror_period, stripes, entry, nominal_turn,
     )
-    turning_phi = _pseudopotential_difference_v(energy_per_charge_v, period, stripes, entry, nominal_turn)
     if turning_phi <= 0.0:
         raise CandidateContractError("nominal time-platform turn must have positive pseudopotential")
 
@@ -596,12 +591,12 @@ def time_platform_derivative_residuals(
 
     def psi_at_eta(eta: float) -> float:
         return _pseudopotential_difference_v(
-            energy_per_charge_v, period, stripes, entry, physical_y(eta),
+            energy_per_charge_v, mirror_period, stripes, entry, physical_y(eta),
         ) / turning_phi
 
     def g_at_eta(eta: float) -> float:
         return _time_response_g(
-            energy_per_charge_v, period, turning_phi, stripes, entry, physical_y(eta),
+            energy_per_charge_v, mirror_period, turning_phi, stripes, entry, physical_y(eta),
         )
 
     return tuple(
@@ -644,12 +639,12 @@ def derive_coupled_drift_state(
     baselines = tuple(stripe.width_mm(entry) for stripe in stripes)
     biases = tuple(_finite(stripe.bias_v, "Stripe bias_v") for stripe in stripes)
     period = coupled_reduced_period_mm_per_sqrt_v(mirror_period, energy, baselines, biases)
-    turning_phi = _pseudopotential_difference_v(energy, period, stripes, entry, turning)
+    turning_phi = _pseudopotential_difference_v(energy, mirror_period, stripes, entry, turning)
     if not 0.0 < turning_phi < energy:
         raise CandidateContractError("chosen physical turning section must have pseudopotential strictly between zero and nominal energy")
     sine_theta = math.sqrt(turning_phi / energy)
     length = abs(turning - entry)
-    width = period * math.sqrt(energy)
+    width = mirror_period * math.sqrt(energy)
     direction = 1.0 if turning > entry else -1.0
 
     def psi_at_eta(eta: float) -> float:
@@ -657,7 +652,7 @@ def derive_coupled_drift_state(
         if not 0.0 <= eta_value <= 1.0:
             raise CandidateContractError("eta must lie on the physical entry-to-turning interval")
         return _pseudopotential_difference_v(
-            energy, period, stripes, entry, entry + direction * length * eta_value,
+            energy, mirror_period, stripes, entry, entry + direction * length * eta_value,
         ) / turning_phi
 
     kappa = endpoint_regularized_kappa(psi_at_eta)

@@ -16,6 +16,19 @@
       "accelerator_baseline": "Astral accelerator is retained only as a nonfocusing mechanical evidence record; the Candidate accelerator is theory-derived"
     }
   },
+  "theory_parameter_authority": {
+    "governing_relations": "identical_to_the_paper_model",
+    "invariant_structure": "The governing equations, variable dependencies, polynomial orders, and linear-versus-higher-order Stripe decomposition are fixed by the paper theory.",
+    "instance_specific_values": [
+      "polynomial_and_linear_coefficients",
+      "drift_length_L",
+      "mirror_owned_axial_width_W",
+      "mirror_voltages",
+      "dual_stripe_voltages",
+      "prism_voltages"
+    ],
+    "rule": "Paper numerical examples are regression references only. Every active numerical value must be an explicit baseline input or a derived output of the current geometry and declared constraints; equality to a printed paper value is never an implicit acceptance condition."
+  },
   "coordinate_system": {
     "frame_id": "astral.xyz.reflection_z.drift_y.transverse_x.v1",
     "origin": "intersection of central mirror plane and nominal injection reference plane",
@@ -1254,6 +1267,29 @@
       "target": 0.0,
       "eta_turn_nodes": [0.9, 0.95, 1.05, 1.1],
       "semantics": "Four user-specified time-platform derivative nodes symmetric around the nominal turning point. The paper does not publish its four node locations; this project value is user authority, not an attribution to the original paper. Before activation, each physical y=entry_y+eta_turn*L must lie within both frozen Stripe active spans and the downstream-problem Jacobian rank gate must classify that problem."
+    },
+    "operating_seed_search": {
+      "status": "paper_theory__instance_specific_K_and_spatial_return_seed",
+      "seed_equations": [
+        "target_oscillation_count",
+        "spatial_return_kappa_prime"
+      ],
+      "normalized_start_fractions": [-0.5, -0.25, -0.1, 0.1, 0.25, 0.5],
+      "voltage_envelope_semantics": "The diagnostic search interval is derived as [-nominal_energy, nextafter(minimum_mirror_energy,-infinity)] V. It is a finite numerical audit envelope, not a hardware rating or proof that no roots exist outside it.",
+      "turning_search_sampling_multiplier": 2,
+      "turning_search_sampling_semantics": "The search sample count is derived as the maximum native nonzero B-spline span count times dual_stripe.theory_profile.sampling_per_nonzero_knot_span times this multiplier; no absolute count is stored independently.",
+      "kappa_derivative_step": 0.002,
+      "time_platform_derivative_step": 0.001,
+      "native_newton_voltage_step_v": 0.1,
+      "maximum_native_newton_iterations": 6,
+      "maximum_surrogate_function_evaluations": 300,
+      "residual_tolerances": [1e-8, 1e-7],
+      "residual_tolerance_semantics": "The first tolerance closes the dimensionless K relation. The second is a numerical root tolerance for the central-difference kappa-prime residual, selected above the observed native B-spline/integral differencing floor; neither value changes the governing paper equation or acts as a physical performance threshold.",
+      "minimum_abs_bias_fraction_of_nominal_energy": 1e-6,
+      "minimum_bias_magnitude_ratio": 0.01,
+      "minimum_bias_separation_fraction_of_nominal_energy": 1e-6,
+      "selection_rule": "After native-B-spline refinement, reject zero/singular and effectively single-Stripe roots. Both bias magnitudes must exceed the absolute numerical floor and their scale-free minimum/maximum magnitude ratio must meet minimum_bias_magnitude_ratio. Choose the surviving root with minimum maximum absolute bias, then minimum response-matrix condition number.",
+      "qualification_limit": "This closes only a two-equation analytic seed. Time-platform, full-energy, P1/P2, and three-dimensional residuals are reported or left pending and cannot be promoted without their own user-authorized tolerances and rank gate."
     },
     "determination_gate": "Before publishing any solved voltage, L, W, kappa, theta, or prism entrance state, evaluate the actual Jacobian for its owning mirror-only or downstream Stripe/P1/P2 problem. Independent rank below the declared physical unknown count is underdetermined; an incompatible augmented residual rank is overdetermined; only equal independent rank permits publication of that problem's derived quantities.",
     "current_fixed_hardware_l0_l1_problem": {
