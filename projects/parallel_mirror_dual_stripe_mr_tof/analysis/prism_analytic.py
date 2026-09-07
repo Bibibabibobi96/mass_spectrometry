@@ -82,13 +82,13 @@ def contract_nominal_stripe_injection_angle_deg(contract: dict[str, Any]) -> flo
     or an Astral-reference number is deliberately not a fallback.
     """
     model = contract.get("dual_stripe_l0")
-    if not isinstance(model, dict) or model.get("status") != "l0_candidate":
-        raise PrismAnalyticError("dual_stripe_l0 must be a completed l0_candidate before deriving the Stripe entrance angle")
+    if not isinstance(model, dict) or model.get("status") != "joint_l0_l1_candidate":
+        raise PrismAnalyticError("dual_stripe_l0 must be a completed coupled mirror-Stripe L0/L1 candidate before deriving the Stripe entrance angle")
     receipts = model.get("source_receipts")
     if not isinstance(receipts, dict) or not all(isinstance(receipts.get(key), str) and receipts[key] for key in (
-        "stripe_action_l0_sha256", "mirror_period_l0_l1_sha256", "psi_kappa_integral_sha256",
+        "joint_action_period_l1_sha256", "psi_kappa_integral_sha256", "joint_residual_report_sha256",
     )):
-        raise PrismAnalyticError("dual_stripe_l0 requires nonempty action, mirror-period, and kappa receipt identities")
+        raise PrismAnalyticError("dual_stripe_l0 requires nonempty joint-period, kappa, and residual receipt identities")
     nominal = contract.get("nominal")
     if not isinstance(nominal, dict):
         raise PrismAnalyticError("nominal contract is required")

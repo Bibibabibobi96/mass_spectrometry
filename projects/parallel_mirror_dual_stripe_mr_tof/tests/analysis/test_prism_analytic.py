@@ -31,18 +31,18 @@ class PrismAnalyticTest(unittest.TestCase):
             nominal_stripe_injection_angle_deg(100.0, 335.0, 641.0, 25)
 
     def test_contract_angle_requires_completed_project_l0_receipts(self) -> None:
-        pending = {"nominal": {"target_oscillation_count": 25}, "dual_stripe_l0": {"status": "inputs_pending"}}
+        pending = {"nominal": {"target_oscillation_count": 25}, "dual_stripe_l0": {"status": "joint_inputs_pending"}}
         with self.assertRaises(PrismAnalyticError):
             contract_nominal_stripe_injection_angle_deg(pending)
         complete = {
             "nominal": {"target_oscillation_count": 25},
             "dual_stripe_l0": {
-                "status": "l0_candidate",
+                "status": "joint_l0_l1_candidate",
                 "nominal_kappa_1": 1.48923,
                 "drift_length_L_mm": 335.0,
                 "axial_width_W_mm": 641.0,
                 "source_receipts": {
-                    "stripe_action_l0_sha256": "a", "mirror_period_l0_l1_sha256": "b", "psi_kappa_integral_sha256": "c",
+                    "joint_action_period_l1_sha256": "a", "psi_kappa_integral_sha256": "b", "joint_residual_report_sha256": "c",
                 },
             },
         }

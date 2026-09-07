@@ -1186,18 +1186,26 @@
     }
   },
   "dual_stripe_l0": {
-    "status": "inputs_pending",
+    "status": "joint_inputs_pending",
+    "solve_semantics": "coupled_mirror_stripe_l0_l1",
     "coordinate_definition": "eta=(y-y_stripe_entrance)/signed_drift_length_L; eta_turning=1. The named Stripe entrance section, rather than a CAD bounding-box end, defines y_stripe_entrance.",
-    "required_before_l0_candidate": [
-      "stripe_action_target_solve",
+    "joint_independent_variables": [
+      "mirror_non_ground_electrode_voltages",
+      "dual_stripe_set_1_and_set_2_biases",
       "stripe_entrance_reference_point_and_ray",
-      "turning_point_y_mm",
-      "mirror_l0_l1_complete_two_mirror_period_receipt",
-      "psi_eta_model_and_endpoint_regularized_kappa_integral"
+      "stripe_turning_point_and_full_period_state"
     ],
-    "derived_fields_when_l0_candidate": {
+    "axial_width_W_parameterization": "For this fixed-mirror hardware, W is a free coordinate of the adjustable mirror-voltage solution family and is always recomputed from that trial's full coupled period. A solver may use W to parameterize the voltage family, but must enforce the computed-W equality in the same residual; W is never a second independently fixed number.",
+    "joint_residuals": [
+      "full_two_mirror_period_three_point_residual_including_dual_stripe_baseline_action",
+      "mirror_poincare_stability_and_gamma",
+      "dual_stripe_psi_g_response_and_nominal_turn_normalization",
+      "endpoint_regularized_kappa_spatial_return_condition",
+      "target_oscillation_count_relation"
+    ],
+    "derived_fields_only_after_joint_candidate": {
       "drift_length_L_mm": "abs(turning_point_y_mm-y_stripe_entrance_mm)",
-      "axial_width_W_mm": "mirror_period_T0_s*sqrt(nominal_energy_per_charge_V/(2*ion_mass))",
+      "axial_width_W_mm": "full_two_mirror_period_including_dual_stripe_action*sqrt(nominal_energy_per_charge_V/(2*ion_mass))",
       "nominal_kappa_1": "endpoint_regularized_integral_of_the_project_psi_eta_model",
       "nominal_injection_angle_theta0_rad": "asin(nominal_kappa_1*drift_length_L_mm/(nominal.target_oscillation_count*axial_width_W_mm))"
     },
@@ -1208,7 +1216,10 @@
     ],
     "forbidden_substitutions": [
       "CAD_terminal_plane_separation_as_axial_width_W_mm",
-      "published_Astral_335mm_641mm_kappa_or_theta_values"
+      "published_Astral_335mm_641mm_kappa_or_theta_values",
+      "isolated_mirror_period_or_W_receipt_as_a_fixed_dual_stripe_input",
+      "treating_a_voltage_derived_W_and_an_externally_fixed_W_as_two_independent_equations",
+      "sequentially_solving_L_W_kappa_or_theta_and_feeding_them_back_as_independent_constraints"
     ]
   },
   "prisms": {
