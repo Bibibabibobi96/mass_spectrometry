@@ -384,6 +384,16 @@ receipt 确定 `W`，总能量和目标 `K` 属于外部设计条件；只有这
 系统后，才由解出的 `(v1,v2,L)` 唯一派生 `theta`、`w_y` 与 `w_z`。当前实例尚未通过相容性门，所以不能
 把上述最佳近似派生量称为已由几何确定的物理工作点。
 
+这一边界现在也由 `fixed_geometry_parameter_authority` 机器字段失败关闭。它把固定曲线、入口和可用区间
+列为几何权威，把镜 receipt 的 `W`、总能量 `w0` 和目标 `K` 列为上游/外部权威，并只允许
+`(v1,v2,L)` 作为当前固定硬件的求解坐标。`theta0`、`w_y=w0 sin^2(theta0)` 与 `w_z=w0-w_y`
+仅在至少一个镜分支达到 `square_exact` 或 `overdetermined_consistent` 后才能发布；对于
+`locally_incompatible`、`underdetermined` 或无物理迭代点的分支，这三项即使有最小二乘数值也必须标为
+`diagnostic_only_outputs`。受管的轻量回放
+`20260908_151500__analysis__python__fixed-stripe-parameter-authority` 已验证原终态 manifest 的全部输入/输出
+哈希，并在不重跑搜索的情况下确认两个镜分支均为 `locally_incompatible`，因此关闭该门禁。该回放由现有
+`run_dual_stripe_operating_seed.ps1 -ExistingOperatingSeedManifest` 模式生成，不建立重复 runner。
+
 六条件的目标函数也已从当前硬件反演中独立出来。实现只从合同的四个用户节点、`psi(1)=1`、
 `kappa-prime(1)=0` 和四个 `tau_g-prime=0` 方程重新求 `c0..c5`；论文印刷值仅用于选择与公开分支连续的
 根，不成为活动系数。当前受管 run 从24个确定性起点得到一个数值根：

@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-  [Parameter(Mandatory)][string]$MirrorRunManifest,
+  [string]$MirrorRunManifest = '',
+  [string]$ExistingOperatingSeedManifest = '',
   [string]$ContractPath = '',
   [string]$RunId = '',
   [string]$PythonExe = ''
@@ -10,20 +11,35 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $projectId = 'parallel_mirror_dual_stripe_mr_tof'
+$authorityOnly = -not [string]::IsNullOrWhiteSpace($ExistingOperatingSeedManifest)
+if ($authorityOnly -eq (-not [string]::IsNullOrWhiteSpace($MirrorRunManifest))) {
+  throw 'Specify exactly one of -MirrorRunManifest or -ExistingOperatingSeedManifest.'
+}
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $workspaceRoot = Split-Path -Parent $repoRoot
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Python 3.11 environment is missing: $python" }
 $contract = if ($ContractPath) { (Resolve-Path -LiteralPath $ContractPath).Path } else { Join-Path $PSScriptRoot '..\config\simion_candidate_two_zone.json' }
-$parentManifest = (Resolve-Path -LiteralPath $MirrorRunManifest).Path
+$parentManifest = if ($authorityOnly) {
+  (Resolve-Path -LiteralPath $ExistingOperatingSeedManifest).Path
+} else {
+  (Resolve-Path -LiteralPath $MirrorRunManifest).Path
+}
 if ([string]::IsNullOrWhiteSpace($RunId)) {
-  $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__analysis__python__dual-stripe-operating-seed'
+  $suffix = if ($authorityOnly) { 'fixed-stripe-parameter-authority' } else { 'dual-stripe-operating-seed' }
+  $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__analysis__python__' + $suffix
+}
+$runMode = if ($authorityOnly) { 'fixed_stripe_parameter_authority' } else { 'dual_stripe_paper_theory_instance_seed' }
+$qualification = if ($authorityOnly) {
+  'solver_neutral_parameter_authority__not_an_operating_point'
+} else {
+  'analytic_seed_family__complete_fixed_hardware_consistency_diagnostic__P1_P2_pending'
 }
 
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
 $package = New-RunPackage -Python $python -RepoRoot $repoRoot `
   -ArtifactRoot (Join-Path $workspaceRoot "artifacts\projects\$projectId") `
-  -RunId $RunId -Project $projectId -Mode 'dual_stripe_paper_theory_instance_seed' `
+  -RunId $RunId -Project $projectId -Mode $runMode `
   -Software @('Python 3.11', 'SciPy') -RetentionContractEnabled -RetentionClass compact
 $inputDir = $package.input_dir
 $resultDir = $package.result_dir
@@ -68,8 +84,13 @@ try {
   Write-RunJson -Path $startupPath -Depth 14 -Value $startup
 
   $failureStage = 'freeze_inputs'
-  $frozenContract = Copy-VerifiedRunInput -Source $contract -Destination (Join-Path $inputDir 'simion_candidate_two_zone.json')
-  $frozenParentManifest = Copy-VerifiedRunInput -Source $parentManifest -Destination (Join-Path $inputDir 'parent_mirror_run_manifest.json')
+  if ($authorityOnly) {
+    $frozenParentManifest = Copy-VerifiedRunInput -Source $parentManifest -Destination (Join-Path $inputDir 'parent_operating_seed_run_manifest.json')
+    $frozenContract = $null
+  } else {
+    $frozenContract = Copy-VerifiedRunInput -Source $contract -Destination (Join-Path $inputDir 'simion_candidate_two_zone.json')
+    $frozenParentManifest = Copy-VerifiedRunInput -Source $parentManifest -Destination (Join-Path $inputDir 'parent_mirror_run_manifest.json')
+  }
   $sourceDir = Join-Path $inputDir 'source'
   New-Item -ItemType Directory -Path $sourceDir -Force | Out-Null
   $sourcePaths = @(
@@ -95,29 +116,41 @@ try {
     $sourceChecks += [pscustomobject]@{ source = $source; frozen = $destination }
   }
   $configuration = Get-Content -LiteralPath $runConfig -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
-  $configuration.inputs = [ordered]@{
-    downstream_contract = $frozenContract
-    parent_mirror_run_manifest = $frozenParentManifest
+  $configuration.inputs = [ordered]@{}
+  if ($authorityOnly) {
+    $configuration.inputs.parent_operating_seed_run_manifest = $frozenParentManifest
+  } else {
+    $configuration.inputs.downstream_contract = $frozenContract
+    $configuration.inputs.parent_mirror_run_manifest = $frozenParentManifest
   }
   foreach ($entry in $sourceInputs.GetEnumerator()) { $configuration.inputs[$entry.Key] = $entry.Value }
   $configuration.parameters = [ordered]@{
-    lifecycle_stage = 'dual_stripe_paper_theory_instance_specific_seed'
+    lifecycle_stage = $runMode
     solver_execution = 'none'
-    qualification = 'analytic_seed_family__complete_fixed_hardware_consistency_diagnostic__P1_P2_pending'
+    qualification = $qualification
   }
   Write-RunJson -Path $runConfig -Value $configuration
   foreach ($pair in $sourceChecks) {
     if (-not (Test-RunFilesIdentical -Left $pair.source -Right $pair.frozen)) { throw "Frozen analytic source differs before execution: $($pair.source)" }
   }
 
-  $failureStage = 'operating_seed_search'
+  $failureStage = if ($authorityOnly) { 'parameter_authority_derivation' } else { 'operating_seed_search' }
   $logPath = Join-Path $logDir 'dual_stripe_operating_seed.log'
-  Invoke-ProjectPython -LogPath $logPath -Arguments @(
-    '-m', 'projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_operating_seed',
-    '--mirror-manifest', $frozenParentManifest,
-    '--downstream-contract', $frozenContract,
-    '--output', $summary
-  )
+  $pythonArguments = if ($authorityOnly) {
+    @(
+      '-m', 'projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_operating_seed',
+      '--source-operating-seed-manifest', $frozenParentManifest,
+      '--output', $summary
+    )
+  } else {
+    @(
+      '-m', 'projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_operating_seed',
+      '--mirror-manifest', $frozenParentManifest,
+      '--downstream-contract', $frozenContract,
+      '--output', $summary
+    )
+  }
+  Invoke-ProjectPython -LogPath $logPath -Arguments $pythonArguments
   foreach ($pair in $sourceChecks) {
     if (-not (Test-RunFilesIdentical -Left $pair.source -Right $pair.frozen)) { throw "Analytic source changed during execution: $($pair.source)" }
   }
@@ -134,11 +167,12 @@ try {
   Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Status success `
     -Software @('Python 3.11', 'SciPy') -Outputs @($summary, $startupPath, $terminalPath, $retention, $logPath)
   $terminalized = $true
-  Write-Host "MRTOF_DUAL_STRIPE_OPERATING_SEED=PASS RUN_ID=$RunId SUMMARY=$summary"
+  $marker = if ($authorityOnly) { 'MRTOF_FIXED_STRIPE_PARAMETER_AUTHORITY' } else { 'MRTOF_DUAL_STRIPE_OPERATING_SEED' }
+  Write-Host "$marker=PASS RUN_ID=$RunId SUMMARY=$summary"
 } catch {
   if (-not $terminalized) {
     Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Summary $summary `
-      -SummaryRole 'mrtof_dual_stripe_paper_theory_instance_specific_operating_seed' `
+      -SummaryRole $(if ($authorityOnly) { 'mrtof_fixed_stripe_geometry_parameter_authority' } else { 'mrtof_dual_stripe_paper_theory_instance_specific_operating_seed' }) `
       -Reason $_.Exception.Message -Software @('Python 3.11', 'SciPy') -Status failed -FailureStage $failureStage
     $terminalized = $true
   }
@@ -146,7 +180,7 @@ try {
 } finally {
   if (-not $terminalized -and (Test-Path -LiteralPath $runConfig -PathType Leaf)) {
     Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Summary $summary `
-      -SummaryRole 'mrtof_dual_stripe_paper_theory_instance_specific_operating_seed' `
+      -SummaryRole $(if ($authorityOnly) { 'mrtof_fixed_stripe_geometry_parameter_authority' } else { 'mrtof_dual_stripe_paper_theory_instance_specific_operating_seed' }) `
       -Reason 'Runner stopped before terminal seed publication.' `
       -Software @('Python 3.11', 'SciPy') -Status interrupted -FailureStage $failureStage
   }

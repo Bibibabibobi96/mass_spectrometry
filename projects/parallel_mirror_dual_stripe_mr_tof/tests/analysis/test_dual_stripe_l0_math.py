@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -26,7 +27,10 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_operating_
     _compare_fixed_profile_to_dimensionless_target,
     _seed_profile,
     _solve_dimensionless_paper_target,
+    attach_fixed_geometry_parameter_authority,
+    build_parameter_authority_from_managed_seed,
 )
+from common.contracts.file_identity import file_sha256
 
 
 PROJECT = Path(__file__).resolve().parents[2]
@@ -159,6 +163,86 @@ class DualStripeL0MathTest(unittest.TestCase):
         self.assertAlmostEqual(comparison["actual_equivalent_c0_from_linear_psi_g"], -0.05)
         self.assertAlmostEqual(comparison["target_c0"], 0.8)
         self.assertGreater(comparison["scaled_psi_g_coefficient_difference_norm_2"], 1.0)
+
+    def test_fixed_geometry_authority_withholds_incompatible_angle_and_energies(self) -> None:
+        report = {"complete_fixed_hardware_root_family": [{
+            "mirror_root_index": 0,
+            "complete_fixed_hardware_search": {"best_iterate": {
+                "determination": {"status": "locally_incompatible"},
+                "nominal_injection_angle_degrees": 1.2,
+                "derived_drift_kinetic_energy_per_charge_v": 2.0,
+                "derived_fast_reflection_energy_per_charge_v": 3998.0,
+            }},
+        }]}
+        authority = attach_fixed_geometry_parameter_authority(report)[
+            "fixed_geometry_parameter_authority"
+        ]
+        self.assertEqual(authority["geometry_alone"]["status"], "underdetermined")
+        self.assertFalse(authority["operating_state_publication_gate"]["passed"])
+        self.assertIsNone(authority["operating_state_publication_gate"]["published_operating_state"])
+        self.assertIn(
+            "nominal_injection_angle_degrees",
+            authority["branch_states"][0]["diagnostic_only_outputs"],
+        )
+
+    def test_fixed_geometry_authority_opens_only_for_compatible_full_rank_branch(self) -> None:
+        report = {"complete_fixed_hardware_root_family": [{
+            "mirror_root_index": 1,
+            "complete_fixed_hardware_search": {"best_iterate": {
+                "determination": {"status": "overdetermined_consistent"},
+            }},
+        }]}
+        authority = attach_fixed_geometry_parameter_authority(report)[
+            "fixed_geometry_parameter_authority"
+        ]
+        self.assertTrue(authority["operating_state_publication_gate"]["passed"])
+        self.assertEqual(authority["operating_state_publication_gate"]["publishable_mirror_root_indices"], [1])
+        self.assertEqual(authority["branch_states"][0]["diagnostic_only_outputs"], [])
+
+    def test_managed_seed_authority_verifies_and_derives_without_rerunning_search(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run_config = root / "run_config.json"
+            summary = root / "summary.json"
+            run_config.write_text("{}\n", encoding="utf-8")
+            summary.write_text(json.dumps({
+                "role": "mrtof_dual_stripe_paper_theory_instance_specific_operating_seed_family",
+                "complete_fixed_hardware_root_family": [{
+                    "mirror_root_index": 0,
+                    "complete_fixed_hardware_search": {"best_iterate": {
+                        "determination": {"status": "locally_incompatible"},
+                    }},
+                }],
+            }) + "\n", encoding="utf-8")
+
+            def record(path: Path) -> dict[str, object]:
+                return {
+                    "path": str(path),
+                    "exists": True,
+                    "bytes": path.stat().st_size,
+                    "sha256": file_sha256(path),
+                }
+
+            manifest = root / "run_manifest.json"
+            manifest.write_text(json.dumps({
+                "schema_version": 2,
+                "run_id": "managed-seed",
+                "project": "parallel_mirror_dual_stripe_mr_tof",
+                "mode": "dual_stripe_paper_theory_instance_seed",
+                "status": "success",
+                "run_config": record(run_config),
+                "inputs": {},
+                "outputs": [record(summary)],
+            }) + "\n", encoding="utf-8")
+            result = build_parameter_authority_from_managed_seed(manifest)
+            self.assertEqual(result["source_operating_seed_run_id"], "managed-seed")
+            self.assertFalse(
+                result["fixed_geometry_parameter_authority"]
+                ["operating_state_publication_gate"]["passed"]
+            )
+            summary.write_text("{}\n", encoding="utf-8")
+            with self.assertRaisesRegex(CandidateContractError, "integrity failed"):
+                build_parameter_authority_from_managed_seed(manifest)
 
     def test_compiled_native_width_matches_the_reference_accessor(self) -> None:
         contract = json.loads(CONTRACT.read_text(encoding="utf-8"))

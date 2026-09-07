@@ -10,6 +10,7 @@ therefore this module cannot publish a complete downstream operating point.
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
 import math
@@ -21,6 +22,8 @@ from typing import Any, Callable, Sequence
 import numpy as np
 from scipy.optimize import least_squares
 
+from common.contracts.file_identity import file_sha256
+from common.contracts.verify_run_manifest import record_path, verify_record
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import (
     analyze_dual_stripe_l0,
     identify_fixed_cad_component_shapes,
@@ -56,6 +59,153 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_refer
 
 
 WidthFunction = Callable[[float], float]
+
+_PUBLISHABLE_DETERMINATION_STATES = {"square_exact", "overdetermined_consistent"}
+_PROJECT_ID = "parallel_mirror_dual_stripe_mr_tof"
+_OPERATING_SEED_MODE = "dual_stripe_paper_theory_instance_seed"
+
+
+def attach_fixed_geometry_parameter_authority(report: dict[str, Any]) -> dict[str, Any]:
+    """State what fixed Stripe geometry can and cannot determine.
+
+    Angle and energy-partition values at an incompatible least-squares iterate
+    are useful diagnostics, but they are not an operating point.  Keep that
+    distinction machine-readable so a later prism or SIMION stage cannot
+    silently consume them.
+    """
+    family = report.get("complete_fixed_hardware_root_family")
+    if not isinstance(family, list):
+        raise CandidateContractError("Stripe report lacks the fixed-hardware mirror-root family")
+    branch_states: list[dict[str, Any]] = []
+    publishable_indices: list[int] = []
+    for branch in family:
+        if not isinstance(branch, dict):
+            raise CandidateContractError("fixed-hardware branch must be an object")
+        index = branch.get("mirror_root_index")
+        search = branch.get("complete_fixed_hardware_search")
+        best = search.get("best_iterate") if isinstance(search, dict) else None
+        determination = best.get("determination") if isinstance(best, dict) else None
+        status = determination.get("status") if isinstance(determination, dict) else "no_physical_iterate"
+        publishable = status in _PUBLISHABLE_DETERMINATION_STATES
+        if publishable:
+            publishable_indices.append(index)
+        branch_states.append({
+            "mirror_root_index": index,
+            "determination_status": status,
+            "operating_state_publishable": publishable,
+            "diagnostic_only_outputs": [] if publishable else [
+                "nominal_injection_angle_degrees",
+                "derived_drift_kinetic_energy_per_charge_v",
+                "derived_fast_reflection_energy_per_charge_v",
+            ],
+        })
+    gate_passed = bool(publishable_indices)
+    report["fixed_geometry_parameter_authority"] = {
+        "geometry_alone": {
+            "status": "underdetermined",
+            "fixed_quantities": [
+                "physical_width_functions_S1_y_and_S2_y",
+                "Stripe_entry_coordinate_and_usable_interval",
+                "two_response_function_space",
+            ],
+            "not_fixed_quantities": [
+                "drift_length_L",
+                "Stripe_biases_v1_and_v2",
+                "nominal_injection_angle_theta0",
+                "drift_energy_per_charge_wy",
+                "fast_reflection_energy_per_charge_wz",
+            ],
+            "reason": "the physical turn depends on the voltage response and energy partition, not on curve coordinates alone",
+        },
+        "coupled_problem": {
+            "external_or_upstream_authorities": [
+                "mirror_receipt_axial_width_W",
+                "nominal_total_energy_per_charge_w0",
+                "target_oscillation_count_K",
+            ],
+            "solve_coordinates": [
+                "stripe_set_1_bias_v",
+                "stripe_set_2_bias_v",
+                "drift_length_L_mm",
+            ],
+            "conditionally_derived_outputs": [
+                "theta0_from_sin_theta0_equals_kappa_1_L_over_K_W",
+                "wy_equals_w0_sin_squared_theta0",
+                "wz_equals_w0_minus_wy",
+            ],
+            "publication_condition": "at least one branch must be locally compatible and full-column-rank",
+        },
+        "branch_states": branch_states,
+        "operating_state_publication_gate": {
+            "passed": gate_passed,
+            "publishable_mirror_root_indices": publishable_indices,
+            "status": "passed" if gate_passed else "failed_no_compatible_full_rank_branch",
+            "published_operating_state": "available_in_publishable_branch" if gate_passed else None,
+        },
+    }
+    return report
+
+
+def _manifest_record_named(records: object, filename: str) -> dict[str, Any]:
+    candidates = records.values() if isinstance(records, dict) else records if isinstance(records, list) else []
+    matches = [
+        record for record in candidates
+        if isinstance(record, dict) and Path(str(record.get("path", ""))).name == filename
+    ]
+    if len(matches) != 1:
+        raise CandidateContractError(f"managed Stripe manifest must contain exactly one {filename} record")
+    return matches[0]
+
+
+def build_parameter_authority_from_managed_seed(manifest_path: Path) -> dict[str, Any]:
+    """Derive parameter authority from an integrity-checked managed seed run."""
+    path = manifest_path.resolve()
+    try:
+        manifest = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise CandidateContractError(f"managed Stripe manifest is not readable JSON: {path}") from error
+    if not isinstance(manifest, dict) or manifest.get("schema_version") != 2:
+        raise CandidateContractError("managed Stripe authority input requires a schema-v2 manifest")
+    if (
+        manifest.get("status") != "success"
+        or manifest.get("project") != _PROJECT_ID
+        or manifest.get("mode") != _OPERATING_SEED_MODE
+    ):
+        raise CandidateContractError("managed Stripe manifest has the wrong terminal status, project, or mode")
+    try:
+        verify_record("run_config", manifest["run_config"], base_dir=path.parent)
+        for name, record in manifest.get("inputs", {}).items():
+            verify_record(f"input {name}", record, base_dir=path.parent)
+        for index, record in enumerate(manifest.get("outputs", []), start=1):
+            verify_record(f"output {index}", record, base_dir=path.parent)
+    except (AssertionError, KeyError, TypeError, ValueError) as error:
+        raise CandidateContractError(f"managed Stripe manifest integrity failed: {error}") from error
+    summary_record = _manifest_record_named(manifest.get("outputs"), "summary.json")
+    summary_path = record_path(summary_record, base_dir=path.parent)
+    try:
+        source_summary = json.loads(summary_path.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise CandidateContractError("managed Stripe summary is not readable JSON") from error
+    if (
+        not isinstance(source_summary, dict)
+        or source_summary.get("role") != "mrtof_dual_stripe_paper_theory_instance_specific_operating_seed_family"
+    ):
+        raise CandidateContractError("managed Stripe summary has the wrong role")
+    updated = attach_fixed_geometry_parameter_authority(copy.deepcopy(source_summary))
+    return {
+        "schema_version": 1,
+        "role": "mrtof_fixed_stripe_geometry_parameter_authority",
+        "status": "success",
+        "qualification": "solver_neutral_parameter_authority__not_an_operating_point",
+        "source_operating_seed_run_id": manifest.get("run_id"),
+        "source_operating_seed_manifest_sha256": file_sha256(path),
+        "source_operating_seed_summary_sha256": str(summary_record.get("sha256", "")).upper(),
+        "fixed_geometry_parameter_authority": updated["fixed_geometry_parameter_authority"],
+        "limitations": [
+            "This report classifies parameter authority only; it does not rerun or improve the bounded search.",
+            "A failed publication gate withholds Stripe, prism, SIMION-flight, and performance operating values.",
+        ],
+    }
 
 
 def _finite(value: object, label: str) -> float:
@@ -1077,7 +1227,7 @@ def build_operating_seed_report(mirror_manifest: Path, downstream_contract: Path
         report["mirror_root_gamma_degrees"] = root.gamma_degrees
         reports.append(report)
     if not reports:
-        return {
+        return attach_fixed_geometry_parameter_authority({
             "schema_version": 2,
             "role": "mrtof_dual_stripe_paper_theory_instance_specific_operating_seed_family",
             "status": "no_two_equation_seed_found",
@@ -1096,13 +1246,13 @@ def build_operating_seed_report(mirror_manifest: Path, downstream_contract: Path
                 "This is a bounded numerical diagnostic, not a proof that no mathematical root exists outside that envelope.",
                 "No Stripe voltage, L, prism voltage, SIMION flight, or performance value is published.",
             ],
-        }
+        })
     reports.sort(key=lambda item: (
         max(abs(value) for value in item["selected_seed"]["stripe_biases_v"]),
         item["selected_seed"]["response_matrix_condition_number_2"],
     ))
     selected = reports[0]
-    return {
+    return attach_fixed_geometry_parameter_authority({
         **selected,
         "schema_version": 2,
         "role": "mrtof_dual_stripe_paper_theory_instance_specific_operating_seed_family",
@@ -1114,19 +1264,29 @@ def build_operating_seed_report(mirror_manifest: Path, downstream_contract: Path
         "per_mirror_root_reports": reports,
         "complete_fixed_hardware_root_family": consistency_family,
         "rejected_mirror_roots": rejected,
-    }
+    })
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mirror-manifest", required=True, type=Path)
-    parser.add_argument("--downstream-contract", required=True, type=Path)
+    parser.add_argument("--mirror-manifest", type=Path)
+    parser.add_argument("--downstream-contract", type=Path)
+    parser.add_argument("--source-operating-seed-manifest", type=Path)
     parser.add_argument("--output", required=True, type=Path)
     arguments = parser.parse_args()
-    report = build_operating_seed_report(arguments.mirror_manifest, arguments.downstream_contract)
+    if arguments.source_operating_seed_manifest is not None:
+        if arguments.mirror_manifest is not None or arguments.downstream_contract is not None:
+            parser.error("authority-only mode cannot also accept mirror or downstream inputs")
+        report = build_parameter_authority_from_managed_seed(arguments.source_operating_seed_manifest)
+        marker = "MRTOF_FIXED_STRIPE_PARAMETER_AUTHORITY"
+    else:
+        if arguments.mirror_manifest is None or arguments.downstream_contract is None:
+            parser.error("search mode requires --mirror-manifest and --downstream-contract")
+        report = build_operating_seed_report(arguments.mirror_manifest, arguments.downstream_contract)
+        marker = "MRTOF_DUAL_STRIPE_OPERATING_SEED"
     arguments.output.parent.mkdir(parents=True, exist_ok=True)
     arguments.output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
-    print(f"MRTOF_DUAL_STRIPE_OPERATING_SEED=PASS OUTPUT={arguments.output}")
+    print(f"{marker}=PASS OUTPUT={arguments.output}")
     return 0
 
 
