@@ -9,7 +9,7 @@ nominal-point response factors from the dual-Stripe theory.
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any
 
 import numpy as np
@@ -302,23 +302,20 @@ def identify_fixed_cad_component_shapes(contract: dict[str, Any]) -> dict[str, A
             "available_active_distance_mm": active_length,
             "status": "pending_independently_closed_L",
         },
-        "original_target_exact_response_compatibility": {
-            "status": "analytically_incompatible_with_two_separable_constant_bias_stripes",
-            "fixed_component_assignment": {
-                "set_1": "psi_s_high_order",
-                "set_2": "psi_m_linear",
-            },
-            "target": {
-                "psi": "psi_s + psi_m",
-                "g": "psi_s - psi_m",
-            },
-            "required_h_factors": {
-                "set_1_high_order": 1.0,
-                "set_2_linear": -1.0,
-            },
-            "physical_h_domain": "h_i=sqrt(w0/(w0-v_i)) is strictly positive for every transmitting real constant bias",
-            "proof": "Matching psi fixes both separable component amplitudes to one. Matching g then requires h_high=+1 and h_linear=-1; h_linear is impossible, while h_high=1 implies v_high=0 and therefore no independent Stripe action response.",
-            "consequence": "Do not claim exact recovery of the original tilted-mirror psi/g target from these two pure CAD component curves. A mixed-component redesign or an explicitly approximate/full-3D optimization objective is required.",
+        "theory_identity": {
+            "status": "paper_relations_preserved__instance_values_pending",
+            "invariants": [
+                "the same dimensionless polynomial-plus-linear function structure",
+                "the same action, pseudopotential, kappa, tau_g, K, L, W, and injection-angle relations",
+                "the same nominal normalization and turning-point semantics",
+            ],
+            "instance_specific_outputs": [
+                "polynomial and linear coefficients",
+                "drift length L",
+                "axial width W",
+                "Stripe and prism voltages",
+            ],
+            "interpretation_guard": "A geometric polynomial component and a geometric linear component must not be equated term-by-term to psi_s and psi_m before the current instance normalization and voltage response have been solved. Shape structure alone cannot prove compatibility or incompatibility of the complete paper-equivalent equations.",
         },
         "limitations": [
             "This verifies the current polynomial/linear component structure; it neither assumes nor identifies the paper's printed coefficients.",
@@ -329,7 +326,10 @@ def identify_fixed_cad_component_shapes(contract: dict[str, Any]) -> dict[str, A
     }
 
 
-def analyze_dual_stripe_l0(contract: dict[str, Any]) -> dict[str, Any]:
+def analyze_dual_stripe_l0(
+    contract: dict[str, Any],
+    biases_v: Sequence[float],
+) -> dict[str, Any]:
     """Check nominal dual-Stripe response independence and resolved widths.
 
     ``h_i=sqrt(w0/(w0-v_i))`` follows the project theory.  The matrix
@@ -338,8 +338,10 @@ def analyze_dual_stripe_l0(contract: dict[str, Any]) -> dict[str, Any]:
     """
     nominal_energy = _finite(contract["nominal"]["energy_per_charge_v"], "nominal.energy_per_charge_v")
     stripe = contract["dual_stripe"]
-    v1 = _finite(stripe["set_1_bias_v"], "dual_stripe.set_1_bias_v")
-    v2 = _finite(stripe["set_2_bias_v"], "dual_stripe.set_2_bias_v")
+    if len(biases_v) != 2:
+        raise CandidateContractError("dual Stripe L0 requires exactly two explicit trial biases")
+    v1 = _finite(biases_v[0], "Stripe trial set-1 bias")
+    v2 = _finite(biases_v[1], "Stripe trial set-2 bias")
     if nominal_energy <= 0.0 or v1 == 0.0 or v2 == 0.0 or v1 == v2:
         raise CandidateContractError("dual Stripe biases must be distinct non-zero values")
     if nominal_energy <= v1 or nominal_energy <= v2:

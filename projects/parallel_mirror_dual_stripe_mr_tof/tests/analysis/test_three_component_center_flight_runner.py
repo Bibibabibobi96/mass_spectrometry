@@ -17,6 +17,8 @@ class ThreeComponentCenterFlightRunnerTest(unittest.TestCase):
             "simion_prototype_contract.json", "mrtof_candidate_center.fly2", "Test-RunFilesIdentical",
             "run_iob_flight.lua", "simion_event_analysis.py",
             "three_component_simion_flight_manifest.py", "center_fly2",
+            "joint_downstream_operating_point__center_flight_allowed",
+            "geometry-review visualization voltages are forbidden",
         ):
             self.assertIn(token, source)
 

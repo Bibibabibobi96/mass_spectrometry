@@ -57,16 +57,25 @@ class StripeHardBoundary:
         return width
 
 
-def stripes_from_contract(contract: dict[str, object]) -> tuple[StripeHardBoundary, StripeHardBoundary]:
-    """Bind the two voltage groups to their unique frozen B-spline widths."""
+def stripes_from_contract(
+    contract: dict[str, object],
+    biases_v: Sequence[float],
+) -> tuple[StripeHardBoundary, StripeHardBoundary]:
+    """Bind an explicit voltage trial to the two frozen B-spline widths.
+
+    Geometry contracts do not own an operating point.  In particular, this
+    adapter must never fall back to the voltages used only to make a geometry
+    review IOB visually distinguishable.
+    """
     stripe = contract.get("dual_stripe")
     if not isinstance(stripe, dict):
         raise CandidateContractError("dual Stripe contract is required")
-    try:
-        first_bias = _finite(stripe["set_1_bias_v"], "dual_stripe.set_1_bias_v")
-        second_bias = _finite(stripe["set_2_bias_v"], "dual_stripe.set_2_bias_v")
-    except KeyError as error:
-        raise CandidateContractError("dual Stripe voltage groups are required") from error
+    if len(biases_v) != 2:
+        raise CandidateContractError("dual Stripe trial requires exactly two explicit biases")
+    first_bias, second_bias = (
+        _finite(biases_v[0], "Stripe trial set-1 bias"),
+        _finite(biases_v[1], "Stripe trial set-2 bias"),
+    )
 
     first_width = compile_dual_stripe_width_evaluator(contract, "set_1")
     second_width = compile_dual_stripe_width_evaluator(contract, "set_2")

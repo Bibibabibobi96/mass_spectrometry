@@ -72,9 +72,10 @@ class DualStripeL0MathTest(unittest.TestCase):
         self.assertLess(fits[-1]["set_2_rms_residual_mm"], 0.0004)
         self.assertEqual(result["time_platform_node_span"]["status"], "pending_independently_closed_L")
         self.assertIn("voltage_solution", result["status"])
-        compatibility = result["original_target_exact_response_compatibility"]
-        self.assertIn("incompatible", compatibility["status"])
-        self.assertEqual(compatibility["required_h_factors"]["set_2_linear"], -1.0)
+        identity = result["theory_identity"]
+        self.assertEqual(identity["status"], "paper_relations_preserved__instance_values_pending")
+        self.assertIn("drift length L", identity["instance_specific_outputs"])
+        self.assertNotIn("original_target_exact_response_compatibility", result)
 
 
 if __name__ == "__main__":

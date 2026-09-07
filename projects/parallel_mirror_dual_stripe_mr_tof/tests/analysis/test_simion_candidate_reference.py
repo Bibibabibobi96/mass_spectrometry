@@ -247,6 +247,14 @@ class SimionCandidateReferenceTest(unittest.TestCase):
             self.assertEqual(input_manifest["voltage_map"]["sha256"], hashlib.sha256(voltage_map.read_bytes()).hexdigest())
             self.assertEqual(voltage_map.read_bytes(), (PROJECT / "simion" / "candidate_voltage_map.lua").read_bytes())
             self.assertIn("source_receipt_sha256", outputs["operating_point"].read_text(encoding="utf-8"))
+            self.assertIn(
+                "qualification = 'geometry_review_only__unsolved_stripe_and_p2'",
+                outputs["operating_point"].read_text(encoding="utf-8"),
+            )
+            self.assertEqual(
+                input_manifest["status"],
+                "geometry_review_only__unsolved_stripe_and_p2__flight_forbidden",
+            )
             self.assertEqual(outputs["program"].name, "mrtof_candidate.lua")
             self.assertTrue(outputs["first_prism_l0_receipt"].exists())
             self.assertIn("first_prism_l0_receipt", input_manifest)
@@ -455,7 +463,10 @@ class SimionCandidateReferenceTest(unittest.TestCase):
             resolve_geometry(contract)
 
     def test_dual_stripe_l0_has_independent_responses_and_positive_widths(self) -> None:
-        result = analyze_dual_stripe_l0(load_contract(PROJECT / "config" / "simion_candidate_two_zone.json"))
+        result = analyze_dual_stripe_l0(
+            load_contract(PROJECT / "config" / "simion_candidate_two_zone.json"),
+            (-40.0, 60.0),
+        )
         self.assertNotEqual(result["response_matrix_determinant"], 0.0)
         self.assertTrue(math.isfinite(result["response_matrix_condition_number_2"]))
         self.assertGreater(result["physical_width_bounds_mm"]["set_1"][0], 0.0)

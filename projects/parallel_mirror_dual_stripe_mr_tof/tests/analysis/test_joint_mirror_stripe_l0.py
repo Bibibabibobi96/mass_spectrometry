@@ -120,7 +120,7 @@ class JointMirrorStripeL0Test(unittest.TestCase):
     def test_contract_adapter_evaluates_the_frozen_bspline_not_a_resampled_shape(self) -> None:
         root = Path(__file__).resolve().parents[2]
         contract = json.loads((root / "config" / "simion_candidate_two_zone.json").read_text(encoding="utf-8"))
-        first, second = stripes_from_contract(contract)
+        first, second = stripes_from_contract(contract, (-40.0, 60.0))
         y0, y1 = contract["dual_stripe"]["theory_profile"]["active_y_span_mm"]
         self.assertGreater(first.width_mm(y0), 0.0)
         self.assertGreater(second.width_mm(y1), 0.0)
@@ -158,10 +158,10 @@ class JointMirrorStripeL0Test(unittest.TestCase):
         selection = problem["mirror_family_selection"]
         self.assertEqual(selection["selection_order"][0], "minimize_absolute_phase_averaged_transverse_time_aberration_Tbar_xx")
         self.assertIn("exactly three energy-local normalized period-slope equalities", selection["semantics"])
-        self.assertEqual(
-            contract["dual_stripe"]["voltage_status"],
-            "geometry_review_prototype_only__not_a_joint_solver_initial_value_or_candidate_operating_point",
-        )
+        review_point = contract["dual_stripe"]["geometry_review_visualization"]
+        self.assertEqual(review_point["status"], "geometry_review_only__not_a_solver_seed")
+        self.assertNotIn("set_1_bias_v", contract["dual_stripe"])
+        self.assertNotIn("set_2_bias_v", contract["dual_stripe"])
         entrance = contract["dual_stripe_l0"]["theory_stripe_entrance"]
         self.assertEqual(entrance["project_y_mm"], 0.0)
         self.assertEqual(entrance["excluded_mechanical_extension_y_mm"], [0.0, 2.0])

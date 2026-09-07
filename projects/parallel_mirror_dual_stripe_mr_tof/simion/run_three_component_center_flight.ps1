@@ -47,6 +47,10 @@ foreach($path in @($geometryIob,$geometryReview,$geometryReport,$sourceManifest,
   (Join-Path $geometrySimion 'mrtof_analyzer.pa0'),(Join-Path $geometrySimion 'mrtof_accelerator.pa0'),(Join-Path $geometrySimion 'mrtof_detector.pa#'))){
   if(-not(Test-Path -LiteralPath $path -PathType Leaf)){throw "Completed geometry-review input is missing: $path"}
 }
+$sourceIdentity=Get-Content -LiteralPath $sourceManifest -Raw -Encoding UTF8|ConvertFrom-Json
+if($sourceIdentity.status -ne 'joint_downstream_operating_point__center_flight_allowed'){
+  throw "Center flight requires a solved joint Stripe/P1/P2 operating-point package; geometry-review visualization voltages are forbidden."
+}
 if([string]::IsNullOrWhiteSpace($RunId)){$RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__fly__simion__mrtof-three-component-center-n1'}
 
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')

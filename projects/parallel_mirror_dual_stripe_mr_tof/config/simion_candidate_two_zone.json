@@ -150,9 +150,11 @@
   "dual_stripe": {
     "physical_electrode_count": 4,
     "theoretical_response_count": 2,
-    "set_1_bias_v": -40,
-    "set_2_bias_v": 60,
-    "voltage_status": "geometry_review_prototype_only__not_a_joint_solver_initial_value_or_candidate_operating_point",
+    "geometry_review_visualization": {
+      "status": "geometry_review_only__not_a_solver_seed",
+      "stripe_biases_v": [-40, 60],
+      "semantics": "These values only color-separate the two PA basis groups in the already reviewed geometry IOB. Theory, optimization, trajectory, and Candidate materialization must never read them as an initial or operating point."
+    },
     "central_grounded_corridor_mm": 100,
     "central_ground_profile": {
       "generator": "cad_bspline_body_outline",
@@ -1223,7 +1225,7 @@
       "basis": "set_1_zero_at_entry_polynomial_plus_set_2_zero_at_entry_linear",
       "set_1_polynomial_degree": 5,
       "set_2_polynomial_degree": 1,
-      "coefficient_semantics": "Fit the current manufactured curves in physical distance from y=0. The polynomial coefficients are outputs of the current CAD and are not assumed equal to the paper's printed c0..c5 values. Converting them to dimensionless eta coefficients requires an independently closed L and normalization.",
+      "coefficient_semantics": "The governing equations and dimensionless polynomial-plus-linear structure are the same as the paper model. Fit the current manufactured curves in physical distance from y=0; their coefficients are instance-specific outputs and are not assumed equal to the paper's printed c0..c5 values. Converting them to dimensionless eta coefficients requires an independently closed L and normalization.",
       "sampling_multipliers": [1, 2, 4],
       "fit_semantics": "Use the native frozen B-splines over their complete active span, subtract each y=0 baseline, and fit the declared physical-coordinate structures by linear least squares. Report raw coefficients, residuals and sampling convergence without inventing an unapproved CAD-fit tolerance. Shape structure alone leaves L scale-degenerate and must never publish an L value."
     },

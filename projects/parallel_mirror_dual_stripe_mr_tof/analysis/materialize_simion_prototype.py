@@ -249,9 +249,14 @@ def materialize(contract_path: Path, mirror_receipt_path: Path, output_directory
     simion = contract.get("simion")
     if not isinstance(stripe, dict) or not isinstance(accelerator, dict) or not isinstance(simion, dict):
         raise CandidateContractError("prototype requires Stripe, accelerator, and SIMION contracts")
+    review_point = stripe.get("geometry_review_visualization")
+    if not isinstance(review_point, dict) or review_point.get("status") != "geometry_review_only__not_a_solver_seed":
+        raise CandidateContractError("geometry materialization requires an explicitly nonphysical visualization point")
+    raw_review_biases = review_point.get("stripe_biases_v")
+    if not isinstance(raw_review_biases, list) or len(raw_review_biases) != 2:
+        raise CandidateContractError("geometry-review visualization point needs two Stripe biases")
     stripe_biases = [
-        _finite_number(stripe.get("set_1_bias_v"), "dual_stripe.set_1_bias_v"),
-        _finite_number(stripe.get("set_2_bias_v"), "dual_stripe.set_2_bias_v"),
+        _finite_number(value, "geometry-review Stripe bias") for value in raw_review_biases
     ]
     accelerator_voltages = [
         _finite_number(accelerator.get("repeller_v"), "accelerator.repeller_v"),
@@ -309,7 +314,7 @@ def materialize(contract_path: Path, mirror_receipt_path: Path, output_directory
         "-- Generated run-local prototype operating point; do not edit.\n"
         f"-- source_receipt_sha256={_sha256(mirror_receipt_path)}\n"
         f"-- first_prism_l0_receipt_sha256={_sha256(prism_receipt_output)}\n"
-        "return { mirror_voltages_v = { " + ", ".join(f"{value:.17g}" for value in voltages)
+        "return { qualification = 'geometry_review_only__unsolved_stripe_and_p2', mirror_voltages_v = { " + ", ".join(f"{value:.17g}" for value in voltages)
         + " }, stripe_biases_v = { " + ", ".join(f"{value:.17g}" for value in stripe_biases)
         + " }, prism_voltages_v = { " + ", ".join(f"{value:.17g}" for value in (
             prism_l0.hard_boundary_seed_voltage_v, float(contract["prism_transport"]["second_prism"]["voltage_v"])
@@ -373,7 +378,7 @@ def materialize(contract_path: Path, mirror_receipt_path: Path, output_directory
         "accelerator_focus_bunch_fly2": _particle_source_record(accelerator_focus_bunch_output, particle_source, "candidate_bunch_particle_count"),
         "first_prism_entry_center_fly2": _particle_source_record(first_prism_entry_center_output, particle_source, "center_particle_count"),
         "first_prism_iob_fly2": _particle_source_record(first_prism_iob_fly2_output, particle_source, "center_particle_count"),
-        "status": "prototype_only__requires_3d_PA_IOB_and_trajectory_validation",
+        "status": "geometry_review_only__unsolved_stripe_and_p2__flight_forbidden",
     }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return {
         "contract": contract_output,
