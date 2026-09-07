@@ -36,7 +36,7 @@ if ($workspaceManaged) {
   $artifactsRoot = Join-Path $workspaceRoot 'artifacts'
   if (Test-Path -LiteralPath $artifactsRoot -PathType Container) {
     foreach ($entry in Get-ChildItem -Force -LiteralPath $artifactsRoot) {
-      if ($entry.Name -ne 'projects' -or -not $entry.PSIsContainer) {
+      if ($entry.Name -notin @('projects', 'common') -or -not $entry.PSIsContainer) {
         $errors.Add("artifacts root contains unregistered entry: $($entry.Name)")
       }
     }

@@ -125,16 +125,28 @@ class SimionRunnerContractTests(unittest.TestCase):
         )
         self.assertIn("$electrodesById.Values|Sort-Object electrode_id", runner)
 
-    def test_reused_pa_basis_is_copied_and_corruption_is_rebuilt(self) -> None:
+    def test_pa_basis_delegates_to_the_common_content_addressed_cache(self) -> None:
         runner = RUNNER.read_text(encoding="utf-8")
-        self.assertIn("SIMION PA-basis cache is corrupt and will be rebuilt", runner)
-        self.assertIn(
-            "Remove-Item -LiteralPath $paBasisCacheDir -Recurse -Force", runner
-        )
-        self.assertIn(
-            "Copy-Item -LiteralPath $basisFile.path -Destination $destination", runner
-        )
+        for token in (
+            "common.simion.pa_family_cache",
+            "--action',$Operation",
+            "-Operation probe -IdentityPath $paBasisIdentityPath",
+            "-Operation publish -IdentityPath $paBasisIdentityPath",
+            "-Operation materialize -IdentityPath $paBasisIdentityPath",
+            "SIMION PA-basis cache is corrupt:",
+            "Assert-MultipolePaBasisNames",
+            "SIMION GEM must declare exactly one PA surface mode.",
+            "if($paSurface-eq'fractional'){$paBasisNames=@('quad_monolithic.pa-surf')+$paBasisNames}",
+        ):
+            self.assertIn(token, runner)
+        self.assertNotIn("function Get-VerifiedPaBasisFiles", runner)
+        self.assertNotIn("function Get-TextSha256", runner)
+        self.assertNotIn("Remove-Item -LiteralPath $paBasisCacheDir", runner)
         self.assertNotIn("-ItemType HardLink", runner)
+        self.assertLess(
+            runner.index("Invoke-CommonPaFamilyCache -Operation materialize"),
+            runner.index("Invoke-SimionStep 'build_runtime_iob'"),
+        )
 
     def test_volume_source_skips_planar_phase_reserialization(self) -> None:
         runner = RUNNER.read_text(encoding="utf-8")
@@ -360,7 +372,7 @@ class SimionRunnerContractTests(unittest.TestCase):
     def test_pa_grid_budget_accepts_below_cap_and_rejects_over_cap(self) -> None:
         source = RUNNER.read_text(encoding="utf-8")
         start = source.index("function Get-SimionPaGridAudit")
-        end = source.index("\nfunction Get-TextSha256", start)
+        end = source.index("\nfunction Invoke-CommonPaFamilyCache", start)
         audit_function = source[start:end]
         with tempfile.TemporaryDirectory() as directory:
             gem = Path(directory) / "anisotropic.gem"

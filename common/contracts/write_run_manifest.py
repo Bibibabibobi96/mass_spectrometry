@@ -17,22 +17,29 @@ except ModuleNotFoundError:
     from file_identity import file_sha256
 
 
-def retention_api() -> tuple[Any, Any, Any]:
+def retention_api() -> tuple[Any, Any, Any, Any]:
     """Import the v2-only retention API without breaking frozen v1 writers."""
 
     try:
         from common.contracts.artifact_retention import (
             classify_file,
+            load_failed_recovery_exemptions,
             validate_retained_files,
             validate_retention,
         )
     except ModuleNotFoundError:
         from artifact_retention import (
             classify_file,
+            load_failed_recovery_exemptions,
             validate_retained_files,
             validate_retention,
         )
-    return classify_file, validate_retained_files, validate_retention
+    return (
+        classify_file,
+        load_failed_recovery_exemptions,
+        validate_retained_files,
+        validate_retention,
+    )
 
 
 def resolve_path(value: str, base: Path, project_root: Path | None) -> Path:
@@ -79,7 +86,12 @@ def main() -> None:
     base = run_config_path.parent
     retention = None
     if run_config.get("schema_version") == 2:
-        classify_file, validate_retained_files, validate_retention = retention_api()
+        (
+            classify_file,
+            load_failed_recovery_exemptions,
+            validate_retained_files,
+            validate_retention,
+        ) = retention_api()
         retention = validate_retention(run_config.get("artifact_retention"))
 
     inputs = {
@@ -98,7 +110,12 @@ def main() -> None:
             and not path.is_symlink()
             and path.name != "run_manifest.json"
         ]
-        validate_retained_files(retention, run_files)
+        exemptions = (
+            load_failed_recovery_exemptions(base, retention)
+            if args.status == "failed"
+            else set()
+        )
+        validate_retained_files(retention, run_files, exempt_paths=exemptions)
     outputs = [
         file_record(
             path,

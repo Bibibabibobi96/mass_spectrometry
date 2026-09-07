@@ -33,7 +33,11 @@ class ResourceSchedulerTests(unittest.TestCase):
         return value
 
     @staticmethod
-    def profile(peak: int = 1_000, cpu: float = 8.0) -> dict[str, object]:
+    def profile(
+        peak: int = 1_000,
+        cpu: float = 8.0,
+        observed_batch_work_units: int = 5_000,
+    ) -> dict[str, object]:
         identity = {
             key: ResourceSchedulerTests.request().get(key)
             for key in RESOURCE_IDENTITY_KEYS
@@ -42,6 +46,7 @@ class ResourceSchedulerTests(unittest.TestCase):
             "resource_identity": identity,
             "per_batch_peak_working_set_bytes": peak,
             "per_batch_cpu_percent": cpu,
+            "observed_batch_work_units": observed_batch_work_units,
         }
 
     def test_unknown_n5000_starts_one_retained_n500_formal_batch(self) -> None:
@@ -236,6 +241,20 @@ class ResourceSchedulerTests(unittest.TestCase):
         self.assertIn("BATCHES=4", event)
         self.assertIn("PROCESS_MEMORY_BUDGET=1.10GiB", event)
 
+    def test_smaller_observed_batch_profile_cannot_schedule_larger_batches(self) -> None:
+        plan = plan_simion_dispatch(
+            self.request(),
+            # The profile is valid for the retained N=500 probe, but not for
+            # the N=1,250 lanes that its measured peak would otherwise admit.
+            [self.profile(peak=GIB, observed_batch_work_units=500)],
+            available_memory_bytes=6 * GIB,
+            total_physical_memory_bytes=10 * GIB,
+        )
+        self.assertEqual(
+            plan["estimation"]["kind"], "formal_first_batch_observation"
+        )
+        self.assertEqual(plan["waves"][0]["batches"][0]["count"], 500)
+
     def test_profile_requires_exact_numerical_identity(self) -> None:
         plan = plan_simion_dispatch(
             self.request(trajectory_quality=17), [self.profile()],
@@ -250,6 +269,22 @@ class ResourceSchedulerTests(unittest.TestCase):
             total_physical_memory_bytes=20_000,
         )
         self.assertEqual(plan["estimation"]["kind"], "formal_first_batch_observation")
+
+    def test_profile_requires_same_field_loading_policy(self) -> None:
+        request = self.request(field_loading_policy_id="dynamic_subset_v1")
+        profile = self.profile(peak=GIB)
+        unmatched = plan_simion_dispatch(request, [profile])
+        self.assertEqual(
+            unmatched["estimation"]["kind"], "formal_first_batch_observation"
+        )
+        profile["resource_identity"]["field_loading_policy_id"] = "dynamic_subset_v1"
+        matched = plan_simion_dispatch(request, [profile])
+        self.assertEqual(matched["estimation"]["kind"], "exact_resource_profile")
+        runtime = plan_runtime_dispatch(matched)
+        self.assertEqual(runtime["estimation"]["kind"], "exact_resource_profile")
+        self.assertEqual(
+            runtime["resource_identity"]["field_loading_policy_id"], "dynamic_subset_v1"
+        )
 
     def test_project_resource_controls_are_rejected(self) -> None:
         for key in (
@@ -303,6 +338,7 @@ class ResourceSchedulerTests(unittest.TestCase):
             profiles.append({
                 "resource_identity": identity,
                 "per_batch_peak_working_set_bytes": GIB,
+                "observed_batch_work_units": 1,
             })
         plan = plan_simion_case_dispatch(
             cases, {"solver": "SIMION", "field_kind": "electrostatic"}, profiles,

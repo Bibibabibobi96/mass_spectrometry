@@ -369,6 +369,10 @@
       "repository_integration_group": "regression",
       "matches": [
         {
+          "prefix": "projects/orthogonal_accelerator/",
+          "reason": "orthogonal_accelerator_direct_dependency_changed"
+        },
+        {
           "regex": "^projects/rf_quadrupole_ion_optics/analysis/(derive_shared_centroid_pulse_time|plot_shared_pulse_geometry_snapshot|audit_pulse_capture_pulse_chain|build_pulse_capture_local_exit_component_state|analyze_analyzer_transport|validate_oatof_formal_analyzer_release)\\.py$",
           "reason": "integration_analysis_ownership_changed"
         },
@@ -433,6 +437,23 @@
       }
     },
     {
+      "stage": "orthogonal_accelerator_static",
+      "dependency_profile": "locked",
+      "repository_integration_group": "regression",
+      "project_id": "orthogonal_accelerator",
+      "matches": [
+        {"prefix": "projects/orthogonal_accelerator/", "reason": "orthogonal_accelerator_changed"},
+        {"exact": "common/simion/gem_primitives.py", "reason": "accelerator_geometry_dependency_changed"},
+        {"exact": "projects/single_reflection_oa_tof_mass_analyzer/config/accelerator_dependency.json", "reason": "accelerator_consumer_contract_changed"},
+        {"exact": "projects/parallel_mirror_dual_stripe_mr_tof/config/accelerator_dependency.json", "reason": "accelerator_consumer_contract_changed"}
+      ],
+      "command": {
+        "runner": "powershell",
+        "script": "projects/orthogonal_accelerator/verify_project.ps1",
+        "parameters": {"PythonExe": "{python}"}
+      }
+    },
+    {
       "stage": "single_reflection_oa_tof_mass_analyzer_static",
       "dependency_profile": "locked",
       "repository_integration_group": "regression",
@@ -441,6 +462,10 @@
         {
           "prefix": "projects/single_reflection_oa_tof_mass_analyzer/",
           "reason": "single_reflection_oa_tof_mass_analyzer_path_changed"
+        },
+        {
+          "prefix": "projects/orthogonal_accelerator/",
+          "reason": "orthogonal_accelerator_direct_dependency_changed"
         },
         {
           "regex": "^common/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",

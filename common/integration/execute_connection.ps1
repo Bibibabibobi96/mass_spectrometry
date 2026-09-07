@@ -31,6 +31,9 @@ if (-not (Test-Path -LiteralPath $PythonExe -PathType Leaf)) {
     throw "Python 3.11 executable not found: $PythonExe"
 }
 
+# The resolver is repository-owned code.  Keep its module root as the current
+# directory even when the composition itself is validated against a separately
+# materialized repository root (as exercised by the public ValidateOnly API).
 & $PythonExe -m common.integration.resolve_connection `
     --verify-plan $CompositionPlan `
     --resolved $ResolvedConnection `

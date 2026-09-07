@@ -18,6 +18,7 @@ from common.contracts.verify_artifact_layout import (
     verify_integration_cache_entry,
     verify_verified_pulse_cache_entry,
 )
+from common.simion.pa_family_cache import publish_pa_family_cache
 
 
 RUN_ID = "20260721_120000__sim__cross__formal-validation__n100"
@@ -37,6 +38,33 @@ def record(path: Path, root: Path) -> dict[str, object]:
 
 
 class ArtifactLayoutIdentityTests(unittest.TestCase):
+    @staticmethod
+    def _common_pa_family_identity() -> dict[str, object]:
+        return {
+            "geometry": {"resolved_sha256": "A" * 64},
+            "gem": {"source_sha256": "B" * 64},
+            "basis_namespace": "analyzer",
+            "mesh": {"mm_per_grid_unit": [2, 1, 1]},
+            "grid_phase": {"origin_mm": [0, 0, 0]},
+            "surface": "none",
+            "simion_identity": {"product_version": "2020"},
+            "refine_policy": {"mode": "standard"},
+            "builder_identity": {"source_sha256": "C" * 64},
+        }
+
+    def write_common_pa_family_cache(self, artifacts: Path) -> Path:
+        cache_root = artifacts / "common" / "simion" / "pa_family_cache"
+        source = artifacts.parent / "source"
+        source.mkdir(parents=True)
+        (source / "family.pa0").write_text("PA family\n", encoding="utf-8")
+        publication = publish_pa_family_cache(
+            cache_root,
+            self._common_pa_family_identity(),
+            source,
+            ("family.pa0",),
+        )
+        return publication.generation_directory
+
     def write_reusable_cache(
         self, entry: Path, role: str, project_id: str, names: tuple[str, ...]
     ) -> Path:
@@ -114,6 +142,54 @@ class ArtifactLayoutIdentityTests(unittest.TestCase):
             verify_artifacts_root(projects)
             (artifacts / "probe.txt").write_text("stray\n", encoding="utf-8")
             with self.assertRaisesRegex(AssertionError, "unexpected top-level"):
+                verify_artifacts_root(projects)
+
+    def test_artifacts_root_accepts_only_valid_common_pa_family_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            artifacts = Path(directory) / "artifacts"
+            projects = artifacts / "projects"
+            projects.mkdir(parents=True)
+            generation = self.write_common_pa_family_cache(artifacts)
+
+            verify_artifacts_root(projects)
+
+            runtime = generation.parents[2] / ".staging"
+            (runtime / "partial-generation").mkdir()
+            with self.assertRaisesRegex(AssertionError, "runtime directory is not empty"):
+                verify_artifacts_root(projects)
+            (runtime / "partial-generation").rmdir()
+            (generation / "family.pa0").write_text("tampered\n", encoding="utf-8")
+            with self.assertRaisesRegex(AssertionError, "generation differs"):
+                verify_artifacts_root(projects)
+
+    def test_common_pa_family_cache_accepts_lowercase_key_and_generation_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            artifacts = Path(directory) / "artifacts"
+            projects = artifacts / "projects"
+            projects.mkdir(parents=True)
+            generation = self.write_common_pa_family_cache(artifacts)
+            key = generation.parents[1]
+            lower_generation = generation.with_name(generation.name.lower())
+            generation.rename(lower_generation)
+            lower_key = key.with_name(key.name.lower())
+            key.rename(lower_key)
+
+            verify_artifacts_root(projects)
+
+    def test_common_pa_family_cache_rejects_unregistered_common_nodes_and_extra_key_files(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            artifacts = Path(directory) / "artifacts"
+            projects = artifacts / "projects"
+            projects.mkdir(parents=True)
+            generation = self.write_common_pa_family_cache(artifacts)
+            key = generation.parents[1]
+            (key / "unexpected.txt").write_text("no\n", encoding="utf-8")
+            with self.assertRaisesRegex(AssertionError, "key layout differs"):
+                verify_artifacts_root(projects)
+
+            (key / "unexpected.txt").unlink()
+            (artifacts / "common" / "other").mkdir()
+            with self.assertRaisesRegex(AssertionError, "unexpected common artifact entries"):
                 verify_artifacts_root(projects)
 
     def test_content_addressed_pa_cache_is_narrow_and_verified(self) -> None:

@@ -257,8 +257,24 @@ def _copy_payload(source: Path, destination: Path, filenames: Sequence[str]) -> 
         raise PAFamilyCacheError("source PA family is incomplete: " + ", ".join(missing))
     destination.mkdir(parents=True, exist_ok=False)
     for name in names:
-        shutil.copy2(source / name, destination / name)
+        _copy_verified_candidate_file(source / name, destination / name)
     return pa_family_inventory(destination, names)
+
+
+def _copy_verified_candidate_file(source: Path, destination: Path) -> None:
+    """Copy one PA payload through an explicitly flushed file handle.
+
+    ``shutil.copy2`` is normally sufficient, but large SIMION arrays on this
+    Windows host have produced a transient post-copy hash mismatch.  The cache
+    must remain fail-closed, so use a bounded chunk stream and fsync before the
+    ordinary inventory verifier decides whether the bytes are acceptable.
+    """
+    with source.open("rb") as read_handle, destination.open("wb") as write_handle:
+        while chunk := read_handle.read(8 * 1024 * 1024):
+            write_handle.write(chunk)
+        write_handle.flush()
+        os.fsync(write_handle.fileno())
+    shutil.copystat(source, destination)
 
 
 def _publish_pointer(key_root: Path, cache_key: str, generation_sha256: str) -> None:
@@ -395,7 +411,22 @@ def materialize_pa_family_cache(
             shutil.copy2(source / name, stage / name)
         copied = pa_family_inventory(stage, names)
         if copied != manifest["files"]:
-            raise PAFamilyCacheError("run-local PA materialization hash verification failed")
+            # Large PA arrays can be scanned while an endpoint protection
+            # filter is still completing its write path on Windows.  Never
+            # accept those bytes: re-copy only the divergent direct files
+            # once, then require the same complete manifest again.
+            expected = {record["name"]: record for record in manifest["files"]}
+            actual = {record["name"]: record for record in copied}
+            divergent = [name for name in names if actual.get(name) != expected[name]]
+            for name in divergent:
+                _copy_verified_candidate_file(source / name, stage / name)
+            copied = pa_family_inventory(stage, names)
+            if copied != manifest["files"]:
+                actual = {record["name"]: record for record in copied}
+                divergent = [name for name in names if actual.get(name) != expected[name]]
+                raise PAFamilyCacheError(
+                    "run-local PA materialization hash verification failed: " + ", ".join(divergent)
+                )
         destination.mkdir(exist_ok=True)
         for name in names:
             os.replace(stage / name, destination / name)

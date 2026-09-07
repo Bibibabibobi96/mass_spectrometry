@@ -6,13 +6,101 @@ import shutil
 import tempfile
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, Mock, patch
 from pathlib import Path
 
-from common.contracts.reconcile_artifact_capacity import apply, plan
+from common.contracts.reconcile_artifact_capacity import (
+    _current_generation_pointers,
+    _directory_bytes,
+    apply,
+    plan,
+    snapshot_published_pa_cache_keys,
+)
 
 
 class ArtifactCapacityPlanTest(unittest.TestCase):
+    def test_pa_snapshot_skips_child_removed_before_recursive_scandir(self) -> None:
+        root = Path("capacity-root").absolute()
+        child = Mock(path=str(root / "temporary"), name="temporary")
+        child.is_symlink.return_value = False
+        child.is_dir.return_value = True
+        entries = MagicMock()
+        entries.__enter__.return_value = iter([child])
+        with patch(
+            "common.contracts.reconcile_artifact_capacity.os.scandir",
+            side_effect=[entries, FileNotFoundError("temporary child removed")],
+        ):
+            self.assertEqual(_current_generation_pointers(root), [])
+
+    def test_pa_snapshot_does_not_hide_permission_or_other_io_errors(self) -> None:
+        root = Path("capacity-root").absolute()
+        for error_type in (PermissionError, OSError):
+            with self.subTest(error=error_type), patch(
+                "common.contracts.reconcile_artifact_capacity.os.scandir",
+                side_effect=error_type("unreadable directory"),
+            ), self.assertRaises(error_type):
+                _current_generation_pointers(root)
+
+    def test_measurement_skips_child_removed_before_recursive_scandir(self) -> None:
+        root = Path("capacity-root").absolute()
+        child = Mock(path=str(root / "temporary"))
+        child.is_symlink.return_value = False
+        child.is_dir.return_value = True
+        survivor = Mock()
+        survivor.is_symlink.return_value = False
+        survivor.is_dir.return_value = False
+        survivor.is_file.return_value = True
+        survivor.stat.return_value.st_size = 123
+        entries = MagicMock()
+        entries.__enter__.return_value = iter([child, survivor])
+        with patch(
+            "common.contracts.reconcile_artifact_capacity.os.scandir",
+            side_effect=[entries, FileNotFoundError("temporary child removed")],
+        ):
+            self.assertEqual(_directory_bytes(root), {root: 123})
+
+    def test_measurement_skips_file_removed_during_metadata_lookup(self) -> None:
+        root = Path("capacity-root").absolute()
+        for method in ("is_symlink", "is_dir", "is_file", "stat"):
+            with self.subTest(method=method):
+                child = Mock()
+                child.is_symlink.return_value = False
+                child.is_dir.return_value = False
+                child.is_file.return_value = True
+                getattr(child, method).side_effect = FileNotFoundError("file removed")
+                entries = MagicMock()
+                entries.__enter__.return_value = iter([child])
+                with patch(
+                    "common.contracts.reconcile_artifact_capacity.os.scandir",
+                    return_value=entries,
+                ):
+                    self.assertEqual(_directory_bytes(root), {root: 0})
+
+    def test_measurement_does_not_hide_permission_or_other_io_errors(self) -> None:
+        root = Path("capacity-root").absolute()
+        for error_type in (PermissionError, OSError):
+            for operation in ("scandir", "stat"):
+                with self.subTest(error=error_type, operation=operation):
+                    child = Mock(path=str(root / "child"))
+                    child.is_symlink.return_value = False
+                    child.is_dir.return_value = operation == "scandir"
+                    child.is_file.return_value = True
+                    child.stat.side_effect = error_type("unreadable child")
+                    entries = MagicMock()
+                    entries.__enter__.return_value = iter([child])
+                    with patch(
+                        "common.contracts.reconcile_artifact_capacity.os.scandir",
+                        side_effect=[entries, error_type("unreadable directory")],
+                    ), self.assertRaises(error_type):
+                        _directory_bytes(root)
+
+    def test_measurement_does_not_hide_missing_root(self) -> None:
+        with patch(
+            "common.contracts.reconcile_artifact_capacity.os.scandir",
+            side_effect=FileNotFoundError("artifact root missing"),
+        ), self.assertRaises(FileNotFoundError):
+            _directory_bytes(Path("capacity-root").absolute())
+
     def _run(self, root: Path, name: str, *, status: str, age: float,
              manifest: bool = True, formal_eligible: bool = False) -> Path:
         run = root / "projects" / "p" / "runs" / name
@@ -125,6 +213,55 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
             receipt = plan(root, target_bytes=0)
             self.assertNotIn(str(protected), [item["path"] for item in receipt["planned"]])
 
+    def test_startup_snapshot_protects_only_valid_published_pa_families(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            now = time.time()
+            integration_key = "1" * 64
+            integration_cache = self._cache(
+                root, "integration-pa", integration_key, age=now - 300,
+                manifest_role="simion_test_pa_cache",
+            )
+            common_key = "2" * 64
+            common_entry = root / "projects" / "p" / "cache" / "common-pa" / common_key
+            common_generation = common_entry / "generations" / ("a" * 64)
+            common_generation.mkdir(parents=True)
+            (common_generation / "cache_manifest.json").write_text(json.dumps({
+                "schema_version": 1,
+                "role": "simion_pa_family_cache",
+                "cache_key": common_key,
+                "generation_sha256": "a" * 64,
+            }), encoding="utf-8")
+            (common_entry / "current_generation.json").write_text(json.dumps({
+                "cache_key": common_key,
+                "generation_sha256": "a" * 64,
+            }), encoding="utf-8")
+            self._cache(
+                root, "not-pa", "3" * 64, age=now - 200,
+                manifest_role="rebuildable_trajectory_cache",
+            )
+            self._cache(root, "staging", "b-unpublished", age=now - 500, published=False)
+            damaged = self._cache(
+                root, "damaged-pa", "4" * 64, age=now - 100,
+                manifest_role="simion_damaged_pa_cache",
+            )
+            (damaged / "current_generation.json").write_text(
+                json.dumps({"generation_relative_path": "generations/missing"}),
+                encoding="utf-8",
+            )
+
+            snapshot = snapshot_published_pa_cache_keys(root)
+            self.assertEqual(
+                snapshot["protected_cache_keys"], [integration_key, common_key]
+            )
+            receipt = plan(
+                root, target_bytes=0, staging_grace_seconds=0,
+                protected_cache_keys=snapshot["protected_cache_keys"],
+            )
+            self.assertNotIn(
+                str(integration_cache), [item["path"] for item in receipt["planned"]]
+            )
+
     def test_success_manifest_does_not_protect_reconstructible_cache(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -137,6 +274,32 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
             )
             receipt = plan(root, target_bytes=0)
             self.assertIn(str(candidate), [item["path"] for item in receipt["planned"]])
+
+    def test_l2_cache_eviction_uses_last_successful_consumption(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            now = time.time()
+            recently_consumed_old_cache = self._cache(root, "role", "a" * 64, age=now - 900)
+            unused_newer_cache = self._cache(root, "role", "b" * 64, age=now - 100)
+            run = root / "projects" / "p" / "runs" / "successful-consumer"
+            run.mkdir(parents=True)
+            (run / "run_manifest.json").write_text(
+                json.dumps({
+                    "status": "success",
+                    "recorded_at_utc": "2099-09-03T12:00:00Z",
+                    "cache_key": "a" * 64,
+                }),
+                encoding="utf-8",
+            )
+            receipt = plan(root, target_bytes=0, staging_grace_seconds=0)
+            planned = receipt["planned"]
+            self.assertEqual(
+                [item["path"] for item in planned[:2]],
+                [str(unused_newer_cache), str(recently_consumed_old_cache)],
+            )
+            self.assertEqual(planned[0]["eviction_time_basis"], "generation_publication_time")
+            self.assertEqual(planned[1]["eviction_time_basis"], "last_successful_cache_consumption")
+            self.assertEqual(planned[1]["last_successful_use_at_utc"], "2099-09-03T12:00:00Z")
 
     def test_headroom_is_counted_before_publication(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

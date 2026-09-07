@@ -199,6 +199,15 @@ class LightweightGateIntegrationTests(unittest.TestCase):
         self.assertIn("10_instance_seed.iob", hygiene)
         self.assertIn("-not $isSharedIobSeed", hygiene)
 
+    def test_hygiene_allows_only_registered_artifact_root_directories(self):
+        hygiene = (
+            self.repo_root / "common" / "verify_repository_hygiene.ps1"
+        ).read_text(encoding="utf-8")
+        self.assertIn("@('projects', 'common')", hygiene)
+        self.assertIn("artifacts root contains unregistered entry", hygiene)
+        self.assertNotIn("verify_artifact_layout $artifactProjectsRoot", hygiene)
+        self.assertNotIn("verify_artifact_layout.py $artifactProjectsRoot", hygiene)
+
     def test_hygiene_accepts_a_standalone_ci_checkout(self):
         hygiene = (
             self.repo_root / "common" / "verify_repository_hygiene.ps1"

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "role": "artifact_capacity_policy",
-  "description": "Reconstructible artifact eviction policy. Lower deletion_priority is evicted first; equal priorities are ordered by oldest publication time.",
+  "description": "Reconstructible artifact eviction policy. Lower deletion_priority is evicted first; equal priorities are ordered by oldest successful cache consumption when recorded, otherwise oldest generation publication time.",
   "terminal_nonformal_run_deletion_priority": 0,
   "default_l2_deletion_priority": 100,
   "l1_deletion_priority": 10,

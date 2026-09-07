@@ -84,6 +84,18 @@ class ChangedGateContractTests(unittest.TestCase):
             completed.stdout,
         )
 
+    def test_accelerator_provider_and_shared_geometry_route_to_consumers(self) -> None:
+        provider = self.routed_stages("projects/orthogonal_accelerator/analysis/accelerator_time_focus.py")
+        self.assertTrue({
+            "orthogonal_accelerator_static", "single_reflection_oa_tof_mass_analyzer_static",
+            "rf_multipole_to_single_reflection_oatof_integration",
+        } <= provider.keys())
+        primitives = self.routed_stages("common/simion/gem_primitives.py")
+        self.assertTrue({
+            "simion_common", "orthogonal_accelerator_static",
+            "rf_multipole_to_single_reflection_oatof_integration",
+        } <= primitives.keys())
+
     def test_integration_test_module_change_runs_only_that_module(self) -> None:
         pwsh = shutil.which("pwsh")
         if pwsh is None:

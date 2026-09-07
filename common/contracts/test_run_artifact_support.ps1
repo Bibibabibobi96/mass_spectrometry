@@ -46,6 +46,29 @@ try {
 
   $capacityRoot=Join-Path $testRoot 'capacity_artifacts'
   New-Item -ItemType Directory -Path $capacityRoot -Force|Out-Null
+  $publishedKey='1111111111111111111111111111111111111111111111111111111111111111'
+  $publishedGeneration='generation-one'
+  $publishedKeyRoot=Join-Path $capacityRoot "projects\p\cache\pa\$publishedKey"
+  $publishedGenerationRoot=Join-Path $publishedKeyRoot "generations\$publishedGeneration"
+  New-Item -ItemType Directory -Path $publishedGenerationRoot -Force|Out-Null
+  Write-RunJson -Path (Join-Path $publishedGenerationRoot 'cache_manifest.json') -Value ([ordered]@{
+    schema_version=3;role='simion_test_pa_cache';cache_key=$publishedKey
+    generation_sha256=$publishedGeneration
+  })
+  Write-RunJson -Path (Join-Path $publishedKeyRoot 'current_generation.json') -Value ([ordered]@{
+    generation_relative_path="generations/$publishedGeneration"
+  })
+  $publishedSnapshotPath=Join-Path $testRoot 'published_pa_cache_protection_snapshot.json'
+  $publishedSnapshot=New-PublishedPaCacheProtectionSnapshot -Python $python `
+    -RepoRoot $repoRoot -ArtifactRoot $capacityRoot -OutputPath $publishedSnapshotPath
+  Assert-Equal $publishedSnapshot.protected_cache_key_count 1 `
+    'Published PA cache snapshot count changed.'
+  $publishedSnapshotKeys=@($publishedSnapshot.protected_cache_keys)
+  Assert-Equal $publishedSnapshotKeys[0] $publishedKey `
+    'Published PA cache snapshot key changed.'
+  if(-not(Test-Path -LiteralPath $publishedSnapshotPath -PathType Leaf)){
+    throw 'Published PA cache snapshot was not frozen to its requested path.'
+  }
   $capacityReceipt=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot `
     -ArtifactRoot $capacityRoot -TargetGiB 1 -MinimumFreeGiB 0
   Assert-Equal $capacityReceipt.role 'artifact_capacity_gate' 'Capacity gate role changed.'
@@ -133,20 +156,61 @@ try {
   $preservedConfig = Join-Path $preservedDir 'run_config.json'
   $preservedSummary = Join-Path $preservedDir 'summary.json'
   $preservedTrace = Join-Path $preservedDir 'logs\simion__batch01.trace.log'
+  $incompleteTrace = Join-Path $preservedDir 'logs\simion__batch02.trace.log'
+  New-Item -ItemType Directory -Path (Join-Path $preservedDir 'simion') -Force | Out-Null
   Write-RunJson -Path $preservedConfig -Value ([ordered]@{
     schema_version=2;run_id=(Split-Path -Leaf $preservedDir);project='single_reflection_oa_tof_mass_analyzer'
     mode='natural_trace_fixture';project_root=$repoRoot;inputs=[ordered]@{}
     artifact_retention=[ordered]@{policy_version=1;class='compact';reason=$null}
   })
-  'native RF trace fixture' | Set-Content -LiteralPath $preservedTrace -Encoding UTF8
+  @('native RF trace fixture','status,Fly completed.') | Set-Content -LiteralPath $preservedTrace -Encoding UTF8
+  'incomplete native RF trace fixture' | Set-Content -LiteralPath $incompleteTrace -Encoding UTF8
+  'solver-native PA fixture' | Set-Content -LiteralPath (Join-Path $preservedDir 'simion\frontend.pa0') -Encoding UTF8
   Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $preservedConfig -Summary $preservedSummary `
     -SummaryRole 'natural_trace_fixture_summary' -Reason 'materializer fixture failure' `
-    -Software @('contract test') -AdditionalOutputs @($preservedTrace) -PreserveRawOutputs
+    -Software @('contract test') -AdditionalOutputs @($preservedTrace) -PreserveRawOutputs `
+    -PreserveRawOutputPaths @($preservedTrace)
   Assert-Equal (Test-Path -LiteralPath $preservedTrace -PathType Leaf) $true `
     'Failed natural-trajectory materialization must preserve its raw trace for recovery.'
+  Assert-Equal (Test-Path -LiteralPath $incompleteTrace -PathType Leaf) $false `
+    'Failed natural-trajectory retention must remove an incomplete raw trace.'
   $preservedManifest = Get-Content -LiteralPath (Join-Path $preservedDir 'run_manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
   Assert-Equal @($preservedManifest.outputs | Where-Object { $_.path -eq $preservedTrace }).Count 1 `
     'Failed natural-trajectory manifest must retain the recoverable trace.'
+  Assert-Equal (Test-Path -LiteralPath (Join-Path $preservedDir 'simion\frontend.pa0')) $false `
+    'Failed natural-trajectory retention must remove solver-native PA files.'
+  Assert-Equal (Test-Path -LiteralPath (Join-Path $preservedDir 'retention_actions.json')) $true `
+    'Failed natural-trajectory retention must record its removal action.'
+
+  $fullFlightDir = Join-Path (Join-Path $testRoot 'runs') `
+    '20260723_170006__test__cross__full-flight-stdout-failure__n1'
+  New-Item -ItemType Directory -Path (Join-Path $fullFlightDir 'logs') -Force | Out-Null
+  $fullFlightConfig = Join-Path $fullFlightDir 'run_config.json'
+  $fullFlightSummary = Join-Path $fullFlightDir 'summary.json'
+  $fullFlightStdout = Join-Path $fullFlightDir 'logs\simion__batch01.stdout.log'
+  Write-RunJson -Path $fullFlightConfig -Value ([ordered]@{
+    schema_version=2;run_id=(Split-Path -Leaf $fullFlightDir);project='single_reflection_oa_tof_mass_analyzer'
+    mode='full_flight_stdout_fixture';project_root=$repoRoot;inputs=[ordered]@{}
+    artifact_retention=[ordered]@{policy_version=1;class='compact';reason=$null}
+  })
+  @('TRACE: source_release ion=1 particle_id=1 fixture=1',
+    'TRACE: handoff_terminal_raw ion=1 fixture=1',
+    'status,Fly completed. 1 splats, 1 seconds') |
+    Set-Content -LiteralPath $fullFlightStdout -Encoding UTF8
+  Complete-FailedRun -Python $python -RepoRoot $repoRoot `
+    -RunConfig $fullFlightConfig -Summary $fullFlightSummary `
+    -SummaryRole 'full_flight_stdout_fixture_summary' -Reason 'analysis fixture failure' `
+    -Software @('contract test') -AdditionalOutputs @($fullFlightStdout) `
+    -PreserveRawOutputs -PreserveRawOutputPaths @($fullFlightStdout)
+  Assert-Equal (Test-Path -LiteralPath $fullFlightStdout -PathType Leaf) $true `
+    'Failed full-flight analysis must preserve completed native stdout.'
+  $fullFlightManifest = Get-Content -LiteralPath (Join-Path $fullFlightDir 'run_manifest.json') `
+    -Raw -Encoding UTF8 | ConvertFrom-Json
+  Assert-Equal $fullFlightManifest.status 'failed' `
+    'Completed full-flight stdout failed publication status differs.'
+  Assert-Equal @($fullFlightManifest.outputs | Where-Object {
+    $_.path -eq $fullFlightStdout
+  }).Count 1 'Failed full-flight manifest must retain completed stdout.'
 
   $successDir = Join-Path $testRoot '20260723_170002__test__cross__lifecycle-success__n100'
   New-Item -ItemType Directory -Path $successDir -Force | Out-Null
@@ -190,6 +254,28 @@ try {
   Assert-Equal $budgetUsage.status 'interrupted' 'Resource usage must leave running state on failure.'
   Assert-Equal $budgetUsage.failure_class 'resource_budget_exceeded' `
     'Resource usage failure class changed.'
+
+  $schedulerPackage=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $testRoot `
+    -RunId '20260723_170004__test__cross__scheduler-usage__n100' `
+    -Project 'single_reflection_oa_tof_mass_analyzer' -Mode 'contract_test' `
+    -Software @('contract test') -RetentionContractEnabled -RetentionClass compact
+  $schedulerUsagePath=Join-Path $schedulerPackage.result_dir 'resource_usage.json'
+  Write-RunJson -Path $schedulerUsagePath -Value ([ordered]@{
+    schema_version=2;role='multipole_resource_usage';status='running'
+    failure_class='memory_danger_recovery_attempts_exhausted';limit_name='system_available_memory'
+    peak_run_directory_bytes=0;final_retained_bytes=$null
+    limits=[ordered]@{maximum_concurrency=2;memory_critical_reserve_bytes=536870912}
+  })
+  Complete-FailedRun -Python $python -RepoRoot $repoRoot `
+    -RunConfig $schedulerPackage.run_config -Summary $schedulerPackage.summary `
+    -SummaryRole 'scheduler_usage_test_summary' -Reason 'memory pressure' `
+    -Software @('contract test') -Status interrupted `
+    -FailureClass resource_budget_exceeded -ResourceUsagePath $schedulerUsagePath
+  $schedulerUsage=Get-Content -LiteralPath $schedulerUsagePath -Raw|ConvertFrom-Json
+  Assert-Equal $schedulerUsage.status 'interrupted' `
+    'Scheduler-only usage without a compact byte limit must still publish.'
+  Assert-Equal ($schedulerUsage.final_retained_bytes -ge 0) $true `
+    'Scheduler-only usage must record final retained bytes.'
 
   $shortPackage=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot $testRoot `
     -RunId '20260723_170005__test__cross__short-execution-path__n1' `

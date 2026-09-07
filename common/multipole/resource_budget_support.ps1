@@ -714,7 +714,6 @@ function Invoke-ResourceBudgetedProcesses {
   $started=Get-RepositoryUtcNow;$nextLaunch=$started
   $warningBytes=[int64]$limits.memory_admission_reserve_bytes
   $criticalBytes=[int64]$limits.memory_critical_reserve_bytes
-  $plannedMaximumConcurrency=$maximumConcurrency
   $recoveryStableSeconds=[int]$limits.memory_recovery_stable_seconds
   $maximumRecoveryAttempts=[int]$limits.maximum_memory_recovery_attempts
   $maximumDangerTerminations=[int]$limits.maximum_memory_danger_termination_attempts
@@ -740,6 +739,11 @@ function Invoke-ResourceBudgetedProcesses {
   $criticalSince=$null;$recoverySafeSince=$null;$dangerRecoveryPending=$false
   $lastCpuAt=$null;$systemCpu=[double]0
   $peakWorkingSetAggregate=[int64]0;$peakManagedMemoryAggregate=[int64]0
+  # Retain the largest per-process footprint observed for the whole wave.
+  # When all live workers finish after a pressure intervention, recomputing
+  # admission from the now-empty live set would otherwise fall back to a
+  # stale profile and immediately over-admit the requeued work.
+  $observedPerProcessManagedPeak=[int64]0
   $minimumAvailable=$null;$peakConcurrency=$running.Count
   $pauseEvents=[Collections.ArrayList]::new();$terminationEvents=[Collections.ArrayList]::new()
   $recoveryEvents=[Collections.ArrayList]::new();$requeueCounts=@{};$recoveryAttempts=0
@@ -791,6 +795,8 @@ function Invoke-ResourceBudgetedProcesses {
         [int64]$record.peak_working_set_bytes,[int64]$sample.working_set_bytes)
       $record.peak_managed_memory_bytes=[math]::Max(
         [int64]$record.peak_managed_memory_bytes,[int64]$sample.managed_memory_bytes)
+      $observedPerProcessManagedPeak=[math]::Max(
+        $observedPerProcessManagedPeak,[int64]$record.peak_managed_memory_bytes)
       $aggregateWorkingSet+=[int64]$sample.working_set_bytes
       $aggregateManagedMemory+=[int64]$sample.managed_memory_bytes
       if($record.active){$null=$nextRunning.Add($record);continue}
@@ -857,7 +863,8 @@ function Invoke-ResourceBudgetedProcesses {
       $livePeak=[math]::Max($livePeak,[int64]$record.peak_managed_memory_bytes)
     }
     $dynamicAdmissionBytes=[int64][math]::Max(
-      $plannedMemoryBudget,[math]::Ceiling($livePeak*$memorySafetyFactor))
+      $plannedMemoryBudget,[math]::Ceiling(
+        [math]::Max($livePeak,$observedPerProcessManagedPeak)*$memorySafetyFactor))
     # A one-lane plan has no additional worker to protect.  Its next batch may
     # start only after the retained formal batch exits, so admit it against the
     # measured single-process peak plus the repository reserve.  Keep the
@@ -921,18 +928,17 @@ function Invoke-ResourceBudgetedProcesses {
       if($recoveryAdmissionSafe){
         if($null-eq$recoverySafeSince){$recoverySafeSince=$now}
         elseif(($now-$recoverySafeSince).TotalSeconds-ge$recoveryStableSeconds){
-          if($maximumConcurrency-lt$plannedMaximumConcurrency){$maximumConcurrency+=1}
           $recoveryAttempts+=1
           $null=$recoveryEvents.Add([ordered]@{
             at_utc=$now.ToString('o');attempt=$recoveryAttempts
-            restored_maximum_concurrency=$maximumConcurrency
+            effective_maximum_concurrency=$maximumConcurrency
             available_memory_bytes=$available;dynamic_admission_bytes=$dynamicAdmissionBytes
             system_cpu_percent=$systemCpu
           })
           $recoverySafeSince=$null;$dangerRecoveryPending=$false;$nextLaunch=$now
           Write-RepositorySchedulerEvent -Event 'MEMORY_RECOVERY_RELAUNCH_ALLOWED' `
             -ActiveCount $running.Count -PendingCount $pending.Count `
-            -Details @{ATTEMPT=$recoveryAttempts;AVAILABLE_MEMORY_BYTES=$available;DYNAMIC_ADMISSION_BYTES=$dynamicAdmissionBytes;RESTORED_MAXIMUM_CONCURRENCY=$maximumConcurrency}
+            -Details @{ATTEMPT=$recoveryAttempts;AVAILABLE_MEMORY_BYTES=$available;DYNAMIC_ADMISSION_BYTES=$dynamicAdmissionBytes;MAXIMUM_CONCURRENCY=$maximumConcurrency}
         }
       }else{$recoverySafeSince=$null}
     }else{$recoverySafeSince=$null}

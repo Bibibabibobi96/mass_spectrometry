@@ -135,6 +135,12 @@ segment callback、PA实例或时钟；调用者必须显式传入唯一instrume
 `simion.exe --nogui --noprompt lua`入口执行[`test_simion_rf_drive.lua`](test_simion_rf_drive.lua)，不加载
 Workbench/PA，不refine、不Fly。
 
+SIMION 完整 PA basis 的内容寻址、完整字节库存、损坏判定、原子发布及 run-local 物化统一委托
+[`common/simion/pa_family_cache.py`](../simion/pa_family_cache.py)。本目录只声明多极杆的 PA 命名、已冻结
+数值身份和 runtime-profile 的复用授权；缓存 generation 不携带 GEM、IOB、Lua 等 run-local sidecar。
+损坏 generation 必须失败关闭，不能由运行器删除或覆盖；按保留/容量治理决定后续精确清理。该缓存仍是
+可重建性能层，不能替代 run 输入或证据。
+
 运行器统一发布canonical状态、metrics、轻量诊断图、summary和manifest。SIMION与COMSOL的传输率、出口
 RMS、输出能量统计、成对差和指标JSON均由Python分析器从canonical状态/事件生成；MATLAB仅输出原始
 求解器元数据、状态和事件。PowerShell只编排已冻结的输入与外部进程。跨run图必须共享坐标与分箱；

@@ -34,6 +34,16 @@ try:
 except ModuleNotFoundError:
     from file_identity import file_sha256
 
+from common.simion.pa_family_cache import (
+    PAFamilyCacheError,
+    validate_pa_family_cache_generation,
+)
+from common.simion.cache_generation import (
+    generation_input as cache_generation_input,
+    generation_sha256,
+    payload_sha256,
+)
+
 try:
     from common.contracts.artifact_identity_archive import (
         legacy_artifact_location,
@@ -60,7 +70,7 @@ ALLOWED_PROJECT_ENTRIES = {
     "scratch",
     "cache",
 }
-ALLOWED_ARTIFACT_ROOT_ENTRIES = {"projects"}
+ALLOWED_ARTIFACT_ROOT_ENTRIES = {"common", "projects"}
 REQUIRED_RUN_FILES = {"run_config.json", "summary.json", "run_manifest.json"}
 LEGACY_POLICY = {
     "migration_kind": "administrative_rename_only",
@@ -88,6 +98,8 @@ INTEGRATION_CACHE_ROOT_BY_ROLE = {
     for role in roles
 }
 CACHE_SHA256 = re.compile(r"[A-Fa-f0-9]{64}")
+PA_FAMILY_CACHE_NODE_SHA256 = re.compile(r"^[A-Fa-f0-9]{64}$")
+PA_FAMILY_CACHE_RUNTIME_DIRECTORIES = {".locks", ".staging"}
 
 
 def verify_record(root: Path, record: dict, verify_hashes: bool) -> Path:
@@ -171,9 +183,8 @@ def verify_integration_cache_entry(
     if actual != expected:
         raise AssertionError(f"{entry}: reusable cache inventory differs")
     payload = actual - {"cache_manifest.json"}
-    payload_input = json.dumps(records, separators=(",", ":"))
-    payload_sha256 = hashlib.sha256(payload_input.encode("utf-8")).hexdigest()
-    if payload_sha256 != manifest["payload_sha256"].lower():
+    payload_digest = payload_sha256(records)
+    if payload_digest != manifest["payload_sha256"].lower():
         raise AssertionError(f"{entry}: cache payload identity differs")
     try:
         generation_input = json.loads(manifest["generation_input"])
@@ -182,14 +193,19 @@ def verify_integration_cache_entry(
     if generation_input != {
         "schema_version": 1,
         "cache_key": expected_key,
-        "payload_sha256": payload_sha256,
+        "payload_sha256": payload_digest,
         "provider_run_id": manifest.get("provider_run_id"),
     }:
         raise AssertionError(f"{entry}: generation input differs")
-    generation_sha256 = hashlib.sha256(
-        manifest["generation_input"].encode("utf-8")
-    ).hexdigest()
-    if generation_sha256 != manifest["generation_sha256"].lower() or entry.name != generation_sha256:
+    expected_generation_input = cache_generation_input(
+        expected_key, payload_digest, manifest.get("provider_run_id")
+    )
+    actual_generation_sha256 = generation_sha256(manifest["generation_input"])
+    if (
+        manifest["generation_input"] != expected_generation_input
+        or actual_generation_sha256 != manifest["generation_sha256"].lower()
+        or entry.name != actual_generation_sha256
+    ):
         raise AssertionError(f"{entry}: generation path differs from immutable identity")
     required_by_role = {
         "simion_single_flight_frontend_pa_cache": {
@@ -680,6 +696,100 @@ def verify_project(
     return run_count, archive_count
 
 
+def _load_pa_family_cache_pointer(pointer_path: Path, cache_key: str) -> str:
+    """Return one exact current-generation pointer without accepting sidecar fields."""
+
+    try:
+        pointer = json.loads(pointer_path.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise AssertionError(f"{pointer_path}: PA-family cache pointer is unreadable") from exc
+    generation = pointer.get("generation_sha256") if isinstance(pointer, dict) else None
+    if (
+        not isinstance(pointer, dict)
+        or set(pointer) != {"cache_key", "generation_sha256"}
+        or not isinstance(pointer.get("cache_key"), str)
+        or pointer["cache_key"].casefold() != cache_key.casefold()
+        or not isinstance(generation, str)
+        or PA_FAMILY_CACHE_NODE_SHA256.fullmatch(generation) is None
+    ):
+        raise AssertionError(f"{pointer_path}: PA-family cache pointer differs")
+    return generation
+
+
+def verify_common_pa_family_cache(cache_root: Path) -> None:
+    """Validate the single registered common SIMION PA-family cache root.
+
+    The common cache is a disposable performance layer, but its active payload
+    is still a possible run input.  Its layout is therefore intentionally
+    narrower than a project artifact root: only content-addressed keys and
+    empty publisher runtime directories are admitted.
+    """
+
+    if not cache_root.exists():
+        return
+    if not cache_root.is_dir():
+        raise AssertionError(f"{cache_root}: common PA-family cache is not a directory")
+    key_names: set[str] = set()
+    for node in cache_root.iterdir():
+        if node.name in PA_FAMILY_CACHE_RUNTIME_DIRECTORIES:
+            if not node.is_dir() or any(node.iterdir()):
+                raise AssertionError(f"{node}: PA-family cache runtime directory is not empty")
+            continue
+        if not node.is_dir() or PA_FAMILY_CACHE_NODE_SHA256.fullmatch(node.name) is None:
+            raise AssertionError(f"{node}: invalid common PA-family cache node")
+        normalized_key = node.name.casefold()
+        if normalized_key in key_names:
+            raise AssertionError(f"{node}: duplicate case-insensitive PA-family cache key")
+        key_names.add(normalized_key)
+        expected_entries = {"current_generation.json", "generations"}
+        actual_entries = {item.name for item in node.iterdir()}
+        if actual_entries != expected_entries:
+            raise AssertionError(f"{node}: PA-family cache key layout differs")
+        generations = node / "generations"
+        if not generations.is_dir():
+            raise AssertionError(f"{node}: PA-family cache generations are missing")
+        generation_nodes = list(generations.iterdir())
+        if not generation_nodes:
+            raise AssertionError(f"{node}: PA-family cache generations are empty")
+        seen_generations: set[str] = set()
+        for generation_node in generation_nodes:
+            if (
+                not generation_node.is_dir()
+                or PA_FAMILY_CACHE_NODE_SHA256.fullmatch(generation_node.name) is None
+            ):
+                raise AssertionError(f"{generation_node}: invalid PA-family cache generation node")
+            normalized_generation = generation_node.name.casefold()
+            if normalized_generation in seen_generations:
+                raise AssertionError(
+                    f"{generation_node}: duplicate case-insensitive PA-family cache generation"
+                )
+            seen_generations.add(normalized_generation)
+        current_generation = _load_pa_family_cache_pointer(
+            node / "current_generation.json", node.name
+        )
+        selected = generations / current_generation
+        if not selected.is_dir():
+            selected = next(
+                (
+                    item
+                    for item in generation_nodes
+                    if item.name.casefold() == current_generation.casefold()
+                ),
+                None,
+            )
+        if selected is None or not selected.is_dir():
+            raise AssertionError(f"{node}: PA-family cache current generation is missing")
+        try:
+            manifest = validate_pa_family_cache_generation(selected)
+        except PAFamilyCacheError as exc:
+            raise AssertionError(f"{selected}: PA-family cache generation differs") from exc
+        if (
+            manifest["cache_key"].casefold() != node.name.casefold()
+            or manifest["generation_sha256"].casefold() != current_generation.casefold()
+        ):
+            raise AssertionError(f"{selected}: PA-family cache pointer differs from manifest")
+
+
 def verify_artifacts_root(projects: Path) -> None:
     """Reject unregistered files or sibling trees beside artifacts/projects."""
     if projects.name != "projects" or not projects.is_dir():
@@ -690,6 +800,14 @@ def verify_artifacts_root(projects: Path) -> None:
         raise AssertionError(
             f"artifacts: unexpected top-level entries: {sorted(unexpected)}"
         )
+    common = artifacts / "common"
+    if common.exists():
+        if not common.is_dir() or {item.name for item in common.iterdir()} != {"simion"}:
+            raise AssertionError("artifacts/common: unexpected common artifact entries")
+        simion = common / "simion"
+        if not simion.is_dir() or {item.name for item in simion.iterdir()} != {"pa_family_cache"}:
+            raise AssertionError("artifacts/common/simion: unexpected common SIMION artifact entries")
+        verify_common_pa_family_cache(simion / "pa_family_cache")
 
 
 def main() -> None:

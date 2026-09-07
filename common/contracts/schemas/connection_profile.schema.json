@@ -45,6 +45,16 @@
           "const": "upstream_grounded_shield_v1"
         },
         "wall_thickness_mm": {"type": "number", "minimum": 0},
+        "upstream_fine_extent_mm": {
+          "type": "number",
+          "description": "Downstream extension of the full upstream fine domain into the connector, measured from the perforated terminal downstream face.",
+          "exclusiveMinimum": 0
+        },
+        "accelerator_fine_extent_mm": {
+          "type": "number",
+          "description": "Upstream extension of the accelerator fine domain into the connector, measured from the accelerator entrance.",
+          "exclusiveMinimum": 0
+        },
         "shield_connection_profile_id": {
           "enum": [
             "grounded_circular_to_rectangular_shield_v1",

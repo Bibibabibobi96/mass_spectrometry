@@ -84,6 +84,44 @@ class BatchContinuationTests(unittest.TestCase):
         self.assertEqual([entry["replay_particle_count"] for entry in plan["batches"]], [0, 2, 2])
         self.assertEqual(plan["completed_particle_count"], 2)
 
+    def test_can_validate_local_ion_terminals_and_retain_complete_stdout(self) -> None:
+        policy = TraceContinuationPolicy(
+            terminal_prefix="TRACE: terminal ",
+            terminal_pattern=re.compile(r"TRACE: terminal ion=(?P<ion>\d+)$"),
+            state_prefix="TRACE: never ", state_pattern=re.compile(r"(?!)"),
+            completion_prefix="COMPLETE",
+            release_prefix="TRACE: release ",
+            release_pattern=re.compile(
+                r"TRACE: release ion=(?P<ion>\d+) particle_id=(?P<particle_id>\d+)$"
+            ),
+            allow_auxiliary_trace=True, retain_entire_log=True,
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run, contract = _parent(root, [[3, 4]], [[
+                "solver header", "TRACE: release ion=1 particle_id=3",
+                "TRACE: auxiliary ion=1", "TRACE: terminal ion=1",
+                "TRACE: release ion=2 particle_id=4", "TRACE: terminal ion=2",
+                "COMPLETE",
+            ]])
+            plan = build_batch_continuation_plan(
+                predecessor_run_dir=run, particle_ids=[3, 4],
+                expected_execution_mode=None,
+                contract_input_role="screening_contract",
+                expected_contract_sha256=contract,
+                cohort_input_paths={"cohort": run / "inputs" / "cohort.csv"},
+                policy=policy, output_dir=root / "child",
+            )
+            imported = Path(plan["batches"][0]["imported_completed_trace"]["path"])
+            retained = imported.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(plan["completed_particle_count"], 2)
+        self.assertEqual(retained, [
+            "solver header", "TRACE: release ion=1 particle_id=3",
+            "TRACE: auxiliary ion=1", "TRACE: terminal ion=1",
+            "TRACE: release ion=2 particle_id=4", "TRACE: terminal ion=2",
+            "COMPLETE",
+        ])
+
     def test_rejects_partial_or_appended_completed_batch(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -112,12 +150,12 @@ class BatchContinuationTests(unittest.TestCase):
             [entry["replay_particle_count"] for entry in plan["batches"]], [0, 1]
         )
 
-    def test_rejects_noncontiguous_prefix_and_manifest_hash_drift(self) -> None:
+    def test_replays_incomplete_unordered_batch_and_rejects_manifest_hash_drift(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             run, contract = _parent(root, [[1, 2]], [["TERMINAL 2"]])
-            with self.assertRaisesRegex(ContractError, "contiguous"):
-                self._build(run, contract, root / "child", [1, 2])
+            result = self._build(run, contract, root / "child", [1, 2])
+            self.assertEqual(result["replay_particle_count"], 2)
             run, contract = _parent(root / "other", [[1]], [["TERMINAL 1", "COMPLETE"]])
             (run / "logs" / "simion__batch01.stdout.log").write_text("TERMINAL 1\nCOMPLETE\nchanged\n", encoding="utf-8")
             with self.assertRaisesRegex(ContractError, "hash"):
@@ -158,6 +196,26 @@ class BatchContinuationTests(unittest.TestCase):
             manifest["run_config"]["sha256"] = file_sha256(config_path)
             manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
             plan = self._build(run, contract, root / "child", [1])
+        self.assertEqual(plan["completed_particle_count"], 1)
+
+    def test_checkpoint_accepts_completion_metadata_after_config_binding(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run, contract = _parent(root, [[1]], [["TERMINAL 1", "COMPLETE"]])
+            config_path = run / "run_config.json"
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            config.update({"run_id": "parent", "mode": "fixture"})
+            config["parameters"]["completion_metadata"] = {"batch": 1}
+            config_path.write_text(json.dumps(config), encoding="utf-8")
+            manifest_path = run / "run_manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest.update({"status": "checkpoint", "mode": "fixture"})
+            # Keep the old run-config digest: this models a native batch that
+            # completed after the checkpoint was published.
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+            plan = self._build(run, contract, root / "child", [1])
+
         self.assertEqual(plan["completed_particle_count"], 1)
 
     def test_rejects_overwriting_a_continuation_target(self) -> None:

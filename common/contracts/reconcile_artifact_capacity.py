@@ -3,7 +3,9 @@
 The gate is deliberately conservative.  It only ever removes reconstructible
 material.  Candidates receive a deletion priority from the checked-in policy:
 lower-priority material is evicted first, then the oldest item within that
-same priority.  Formal evidence, active runs, and explicitly protected paths
+same priority. Reusable cache age means its last recorded successful
+consumption, falling back to its generation publication time when no such
+record exists. Formal evidence, active runs, and explicitly protected paths
 are never candidates.
 """
 
@@ -17,6 +19,7 @@ import shutil
 import stat
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -30,6 +33,111 @@ TERMINAL = {"success", "completed", "failed", "interrupted", "cancelled", "abort
 DISPOSABLE_TERMINAL_RUNS = {"failed", "interrupted", "cancelled", "aborted"}
 CACHE_KEY = re.compile(r"\b[a-f0-9]{64}\b", re.IGNORECASE)
 POLICY_PATH = Path(__file__).with_name("artifact_capacity_policy.json")
+
+
+def _published_pa_cache_key(pointer_path: Path) -> str | None:
+    """Return one valid current PA-family key without hashing its large payload.
+
+    The repository has two published PA-family pointer schemas: the shared
+    device-neutral cache and the older integration adapter.  Both publish the
+    pointer last.  A key is therefore protected only when that pointer selects
+    an existing generation manifest with matching key and generation identity.
+    Unpublished staging directories and damaged/failed publications have no
+    such closed chain and are deliberately excluded.
+    """
+
+    key = pointer_path.parent.name.lower()
+    if not CACHE_KEY.fullmatch(key):
+        return None
+    pointer = _load_object(pointer_path)
+    if pointer is None:
+        return None
+    declared_key = pointer.get("cache_key")
+    if declared_key is not None and str(declared_key).lower() != key:
+        return None
+    relative = pointer.get("generation_relative_path")
+    if isinstance(relative, str):
+        relative_path = Path(relative)
+        generation = relative_path.name
+        manifest_path = pointer_path.parent / relative_path / "cache_manifest.json"
+    else:
+        generation = pointer.get("generation_sha256")
+        if not isinstance(generation, str):
+            return None
+        manifest_path = (
+            pointer_path.parent / "generations" / generation / "cache_manifest.json"
+        )
+    manifest = _load_object(manifest_path)
+    if manifest is None:
+        return None
+    role = str(manifest.get("role", ""))
+    schema_version = manifest.get("schema_version")
+    if (
+        isinstance(schema_version, bool)
+        or not isinstance(schema_version, int)
+        or schema_version < 1
+        or (role != "simion_pa_family_cache" and not role.endswith("_pa_cache"))
+    ):
+        return None
+    if (
+        str(manifest.get("cache_key", "")).lower() != key
+        or str(manifest.get("generation_sha256", "")) != generation
+    ):
+        return None
+    return key
+
+
+def _current_generation_pointers(root: Path) -> list[Path]:
+    """Enumerate pointer files while tolerating concurrently removed children."""
+
+    pointers: list[Path] = []
+
+    def visit(directory: Path) -> None:
+        try:
+            entries = os.scandir(directory)
+        except FileNotFoundError:
+            return
+        with entries:
+            for entry in entries:
+                try:
+                    if entry.is_symlink():
+                        continue
+                    if entry.is_dir(follow_symlinks=False):
+                        visit(Path(entry.path))
+                    elif (
+                        entry.is_file(follow_symlinks=False)
+                        and entry.name == "current_generation.json"
+                    ):
+                        pointers.append(Path(entry.path))
+                except FileNotFoundError:
+                    # Capacity preflights and failed-run cleanup may remove a
+                    # temporary sibling after its directory entry was read.
+                    # A disappeared node cannot be a retained publication.
+                    continue
+
+    visit(root)
+    return pointers
+
+
+def snapshot_published_pa_cache_keys(root: Path) -> dict[str, Any]:
+    """Freeze all valid PA-family publications visible at run startup."""
+
+    root = root.absolute()
+    if not root.is_dir():
+        raise ValueError("artifact root must exist")
+    keys = sorted({
+        key
+        for pointer in _current_generation_pointers(root)
+        if (key := _published_pa_cache_key(pointer)) is not None
+    })
+    return {
+        "schema_version": 1,
+        "role": "artifact_capacity_published_pa_cache_protection_snapshot",
+        "artifact_root": str(root),
+        "captured_at_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "protected_cache_keys": keys,
+        "protected_cache_key_count": len(keys),
+    }
 
 
 def _capacity_policy() -> dict[str, Any]:
@@ -92,12 +200,18 @@ def _directory_bytes(root: Path) -> dict[Path, int]:
         total = 0
         with os.scandir(directory) as entries:
             for entry in entries:
-                if entry.is_symlink():
+                try:
+                    if entry.is_symlink():
+                        continue
+                    if entry.is_dir(follow_symlinks=False):
+                        total += measure(Path(entry.path))
+                    elif entry.is_file(follow_symlinks=False):
+                        total += entry.stat(follow_symlinks=False).st_size
+                except FileNotFoundError:
+                    # A concurrent preflight may remove its temporary child
+                    # after enumeration. Missing children consume no bytes;
+                    # permission and other I/O failures must still propagate.
                     continue
-                if entry.is_dir(follow_symlinks=False):
-                    total += measure(Path(entry.path))
-                elif entry.is_file(follow_symlinks=False):
-                    total += entry.stat(follow_symlinks=False).st_size
         sizes[directory] = total
         return total
 
@@ -128,6 +242,49 @@ def _active_cache_keys(root: Path) -> set[str]:
     return {key.lower() for key in protected}
 
 
+def _utc_timestamp(value: object) -> tuple[float, str] | None:
+    """Parse a manifest UTC time without accepting an ambiguous local time."""
+
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    normalized = parsed.astimezone(timezone.utc)
+    return normalized.timestamp(), normalized.isoformat().replace("+00:00", "Z")
+
+
+def _last_successful_cache_uses(root: Path) -> dict[str, tuple[float, str]]:
+    """Return each cache key's latest successful, manifest-recorded consumer.
+
+    Filesystem atime is frequently disabled or changed by backup/indexing, so
+    it is not evidence that a simulation consumed a cache. A terminal
+    ``success``/``completed`` run manifest is durable, auditable evidence.
+    The scan runs only after the fast capacity paths establish that cleanup is
+    necessary.
+    """
+
+    latest: dict[str, tuple[float, str]] = {}
+    for manifest in root.rglob("run_manifest.json"):
+        document = _load_object(manifest)
+        if document is None or str(document.get("status", "")).lower() not in {"success", "completed"}:
+            continue
+        observed = _utc_timestamp(document.get("recorded_at_utc"))
+        if observed is None:
+            continue
+        try:
+            keys = {key.lower() for key in CACHE_KEY.findall(manifest.read_text(encoding="utf-8-sig"))}
+        except (OSError, UnicodeDecodeError):
+            continue
+        for key in keys:
+            if key not in latest or observed[0] > latest[key][0]:
+                latest[key] = observed
+    return latest
+
+
 def _is_immutable_lifecycle_path(path: Path) -> bool:
     """Formal releases and archived evidence are never cleanup candidates."""
 
@@ -138,7 +295,8 @@ def _protected(path: Path, protected_paths: Iterable[Path]) -> bool:
     return any(path == item or item in path.parents or path in item.parents for item in protected_paths)
 
 
-def _cache_candidate(cache_key_dir: Path, protected_keys: set[str], now: float, staging_grace_seconds: int,
+def _cache_candidate(cache_key_dir: Path, protected_keys: set[str], last_successful_uses: dict[str, tuple[float, str]],
+                     now: float, staging_grace_seconds: int,
                      protected_paths: Iterable[Path], directory_bytes: dict[Path, int],
                      policy: dict[str, Any]) -> dict[str, Any] | None:
     if _is_immutable_lifecycle_path(cache_key_dir) or _protected(cache_key_dir, protected_paths):
@@ -172,14 +330,26 @@ def _cache_candidate(cache_key_dir: Path, protected_keys: set[str], now: float, 
         payload.update(level="L1", reason="damaged_or_incomplete_cache_generation",
                        deletion_priority=_deletion_priority(level="L1", cache_role=None, policy=policy))
         return payload
-    payload["timestamp"] = published.stat().st_mtime  # legacy publication-time fallback
+    last_use = last_successful_uses.get(name)
+    if last_use is None:
+        payload.update(
+            timestamp=published.stat().st_mtime,
+            eviction_time_basis="generation_publication_time",
+        )
+    else:
+        payload.update(
+            timestamp=last_use[0],
+            last_successful_use_at_utc=last_use[1],
+            eviction_time_basis="last_successful_cache_consumption",
+        )
     cache_role = str(manifest.get("role", cache_key_dir.parent.name))
     payload.update(level="L2", reason="inactive_reconstructible_published_cache", cache_role=cache_role,
                    deletion_priority=_deletion_priority(level="L2", cache_role=cache_role, policy=policy))
     return payload
 
 
-def _cache_candidates(root: Path, protected_keys: set[str], now: float, staging_grace_seconds: int,
+def _cache_candidates(root: Path, protected_keys: set[str], last_successful_uses: dict[str, tuple[float, str]],
+                      now: float, staging_grace_seconds: int,
                       protected_paths: Iterable[Path], directory_bytes: dict[Path, int],
                       policy: dict[str, Any]) -> list[dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
@@ -191,7 +361,7 @@ def _cache_candidates(root: Path, protected_keys: set[str], now: float, staging_
                 continue
             for child in role_dir.iterdir():
                 if child.is_dir():
-                    candidate = _cache_candidate(child, protected_keys, now, staging_grace_seconds, protected_paths, directory_bytes, policy)
+                    candidate = _cache_candidate(child, protected_keys, last_successful_uses, now, staging_grace_seconds, protected_paths, directory_bytes, policy)
                     if candidate:
                         candidates.append(candidate)
     return candidates
@@ -348,9 +518,10 @@ def plan(root: Path, *, target_bytes: int, required_headroom_bytes: int = 0,
     now = time.time()
     policy = _capacity_policy()
     active_keys = _active_cache_keys(root)
+    last_successful_uses = _last_successful_cache_uses(root)
     active_keys.update(key.lower() for key in protected_cache_keys if CACHE_KEY.fullmatch(key))
     candidates = _terminal_run_candidates(root, protected, directory_bytes, policy)
-    candidates.extend(_cache_candidates(root, active_keys, now, staging_grace_seconds, protected, directory_bytes, policy))
+    candidates.extend(_cache_candidates(root, active_keys, last_successful_uses, now, staging_grace_seconds, protected, directory_bytes, policy))
     candidates.extend(_compact_candidates(root, protected, policy))
     candidates.sort(key=lambda item: (item["deletion_priority"], item["timestamp"], item["path"]))
     free_deficit = max(0, minimum_free_bytes - free_bytes)
@@ -456,6 +627,7 @@ def apply(receipt: dict[str, Any]) -> dict[str, Any]:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--artifact-root", required=True, type=Path)
+    parser.add_argument("--snapshot-published-pa-cache-keys", action="store_true")
     parser.add_argument("--target-gib", type=float, default=500.0)
     parser.add_argument("--required-headroom-bytes", type=int, default=0)
     parser.add_argument("--minimum-free-gib", type=float, default=500.0)
@@ -466,6 +638,11 @@ def main() -> None:
     parser.add_argument("--maximum-new-artifact-bytes", type=int)
     parser.add_argument("--apply", action="store_true")
     args = parser.parse_args()
+    if args.snapshot_published_pa_cache_keys:
+        if args.apply:
+            parser.error("published PA cache protection snapshot is read-only")
+        print(json.dumps(snapshot_published_pa_cache_keys(args.artifact_root), indent=2))
+        return
     if (args.target_gib <= 0 or args.required_headroom_bytes < 0 or
             args.minimum_free_gib < 0 or args.staging_grace_seconds < 0):
         parser.error("capacity values must be nonnegative and target positive")

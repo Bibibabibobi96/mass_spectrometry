@@ -21,7 +21,7 @@ class ResourceProfileTests(unittest.TestCase):
         plan = {
             "role": "simion_repository_dispatch_plan",
             "resource_identity": {"solver": "SIMION", "field_kind": "rf", "rf_steps_per_period": 40},
-            "waves": [{"kind": "bootstrap", "batch_count": 1}],
+            "waves": [{"kind": "bootstrap", "batch_count": 1, "batches": [{"count": 1}]}],
         }
         usage = {
             "role": "multipole_resource_usage", "status": "completed",
@@ -47,7 +47,27 @@ class ResourceProfileTests(unittest.TestCase):
             profiles = discover_resource_profiles(root)
         self.assertEqual(len(profiles), 1)
         self.assertEqual(profiles[0]["per_batch_peak_working_set_bytes"], 123)
+        self.assertEqual(profiles[0]["observed_batch_work_units"], 1)
         self.assertEqual(profiles[0]["resource_identity"]["field_kind"], "rf")
+
+    def test_historical_missing_loading_policy_remains_unspecified(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run = self.write_bootstrap_run(root)
+            profile_path = run / "results" / "simion_resource_profile.json"
+            profile = json.loads(profile_path.read_text(encoding="utf-8"))
+            profile["resource_identity"].pop("field_loading_policy_id")
+            profile_path.write_text(json.dumps(profile), encoding="utf-8")
+            manifest_path = run / "run_manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["outputs"][0]["sha256"] = file_sha256(profile_path)
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            self.assertEqual(discover_resource_profiles(root), [profile])
+            profile["resource_identity"]["unrecognized_loading_claim"] = "changed"
+            profile_path.write_text(json.dumps(profile), encoding="utf-8")
+            manifest["outputs"][0]["sha256"] = file_sha256(profile_path)
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            self.assertEqual(discover_resource_profiles(root), [])
 
     def test_publish_rejects_parallel_or_noncompleted_measurements(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

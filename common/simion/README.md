@@ -35,12 +35,20 @@ probe|publish|materialize --cache-root <root> --identity <identity.json> --filen
 `--source-directory`，物化另给`--destination-directory`。identity JSON和文件清单由器件适配层派生，
 该CLI不接受或推断物理参数，命中／缺失的建场决定也仍属于调用方。
 
+[`cache_generation.py`](cache_generation.py)只抽取不同 PA-family 缓存协议共有的直接文件清单、payload
+摘要和 immutable generation 摘要计算；它不定义 identity 字段、role、锁、缓存目录、容量治理或命中时的
+哈希频率。集成项目的 v3 cache 通过它生成与其 artifact verifier 一致的 payload/generation 值，同时保留
+自身的 provider-run、断点恢复和 SIMION 写者安全策略。
+
 [`resource_scheduler.py`](resource_scheduler.py)是独立粒子批次与相互独立完整case的唯一SIMION并发决策实现。
 项目只提交总粒子数、独立性和网格、RF步数、trajectory quality、PA哈希等客观数值身份；CPU、内存、并发、
 安全系数、观察时长和危险处置均由公共层固定，项目参数会被拒绝。粒子数只改变运行时间，不用来假定单进程
 瞬时资源占用。资源允许的并发数决定同时活跃的进程数与同一数值身份的工作通道数；粒子数不构成
 单进程资源上限。调度器在每个通道只安排完成其份额所需的批次，并使各通道的总粒子数尽可能相等，
 避免没有物理或实测依据的单批粒子数上限及由此造成的额外分波。
+
+资源身份还包含调用方派生的 `field_loading_policy_id`：相同 PA 文件和 IOB 拓扑若采用不同的动态调整
+解集合，不能复用同一内存画像。该字段只区分实际加载行为，不改变 PA 缓存身份或资源预算公式。
 
 完全相同的历史数值身份可直接复用单进程保守峰值并跳过观察。没有历史时，首个正式批次取
 `ceil(N/min(N,10))`个粒子；它最多观察45秒但始终继续运行，若提前自然完成也直接保留结果。实测后按CPU
@@ -62,12 +70,17 @@ probe|publish|materialize --cache-root <root> --identity <identity.json> --filen
 普通逐次降并发。
 
 跨运行中断续算由[`batch_continuation.py`](batch_continuation.py)提供统一的不可变协议，有两种互斥策略：
-`build_batch_continuation_plan`验证失败/中断父run的manifest、冻结run-config、批区间、合同、母cohort输入和原始输出SHA-256，
-再把每个逻辑通道中无洞的已终态粒子前缀物化到新run，并只计划缺失后缀；
+`build_batch_continuation_plan`验证失败/中断/checkpoint父run的manifest、冻结run-config、批区间、合同、母cohort输入和原始输出SHA-256，
+再把全局有序前缀中已经完整终态的整批物化到新run，并从第一个未完成批开始重放；它不拼接中断批的粒子片段。
+consumer可选择只保留受治理事件，或在仍严格校验释放、终态和完成哨兵的同时原样保留整份stdout及辅助TRACE；
 `build_whole_unit_replay_plan`则只复用每个独立工作单元的全部manifest绑定终态产物，未完整的单元整体重放。
 前者的consumer必须提供本机TRACE语法、可复用终态定义和新run输入投影；后者的consumer只提供独立单元键及
 run相对的终态产物清单。两者都不解析项目物理或替代结果物化。该协议与运行中的45秒观测、内存准入/重排互补，
 均为全仓库SIMION运行器可接入的公共能力。
+失败发布的紧凑保留例外同时支持两种 run-local 完成日志：末行为精确 `status,Fly completed.` 的预脉冲
+`simion__batch*.trace.log`，以及末行为原生 `status,Fly completed.*` 的全流程
+`simion__batch*.stdout.log`。两者都必须由 retention action 和失败/checkpoint manifest 绑定；普通日志或
+不完整批不能借此绕过容量策略。
 
 成功运行只保留紧凑调度收据，不保留逐秒探测文件。 [`resource_profile.py`](resource_profile.py)发布首个正式
 批次的独立峰值并用run manifest及输入收据SHA-256复核；并行聚合峰值不得按进程数拆分。PA/IOB构建及没有独立粒子/可合并结果

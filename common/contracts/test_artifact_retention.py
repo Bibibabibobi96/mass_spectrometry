@@ -89,6 +89,116 @@ class ArtifactRetentionTests(unittest.TestCase):
             {"solver_native_binary", "dense_trajectory"},
         )
 
+    def test_failed_compact_can_retain_only_explicit_completed_native_trace(self) -> None:
+        self.write_config("compact", None)
+        logs = self.run / "logs"
+        logs.mkdir()
+        trace = logs / "simion__batch01.trace.log"
+        with trace.open("wb") as stream:
+            stream.seek(101 * 1024 * 1024)
+            stream.write(b"\nstatus,Fly completed.\n")
+        pa = self.run / "simion" / "frontend.pa0"
+        pa.parent.mkdir()
+        pa.write_bytes(b"pa")
+        summary = self.run / "summary.json"
+        summary.write_text("{}\n", encoding="utf-8")
+
+        action_path = apply_retention(self.config, preserve_paths=[trace])
+
+        self.assertTrue(trace.exists())
+        self.assertFalse(pa.exists())
+        action = json.loads(action_path.read_text(encoding="utf-8"))
+        self.assertEqual(action["preserved"][0]["path"], "logs/simion__batch01.trace.log")
+        self.assertEqual(classify_file(trace), "large_optional")
+        writer = subprocess.run(
+            [
+                sys.executable, str(WRITER), "--run-config", str(self.config),
+                "--status", "failed", "--output", str(summary),
+            ], cwd=REPO_ROOT, text=True, capture_output=True, check=False, timeout=30,
+        )
+        self.assertEqual(writer.returncode, 0, writer.stderr)
+        verifier = subprocess.run(
+            [sys.executable, str(VERIFIER), str(self.run / "run_manifest.json"),
+             "--require-status", "failed"],
+            cwd=REPO_ROOT, text=True, capture_output=True, check=False, timeout=30,
+        )
+        self.assertEqual(verifier.returncode, 0, verifier.stderr)
+
+    def test_success_manifest_does_not_accept_failed_recovery_exemption(self) -> None:
+        self.write_config("compact", None)
+        trace = self.run / "logs" / "simion__batch01.trace.log"
+        trace.parent.mkdir()
+        with trace.open("wb") as stream:
+            stream.seek(101 * 1024 * 1024)
+            stream.write(b"\nstatus,Fly completed.\n")
+        apply_retention(self.config, preserve_paths=[trace])
+        writer = subprocess.run(
+            [
+                sys.executable, str(WRITER), "--run-config", str(self.config),
+                "--status", "success",
+            ], cwd=REPO_ROOT, text=True, capture_output=True, check=False, timeout=30,
+        )
+        self.assertNotEqual(writer.returncode, 0)
+        self.assertIn("large_optional", writer.stderr)
+
+    def test_failed_compact_can_retain_completed_full_flight_stdout(self) -> None:
+        self.write_config("compact", None)
+        stdout = self.run / "logs" / "simion__batch01.stdout.log"
+        stdout.parent.mkdir()
+        with stdout.open("wb") as stream:
+            stream.seek(101 * 1024 * 1024)
+            stream.write(b"\nstatus,Fly completed. 500 splats, 10 seconds\n")
+        summary = self.run / "summary.json"
+        summary.write_text("{}\n", encoding="utf-8")
+        action_path = apply_retention(self.config, preserve_paths=[stdout])
+        action = json.loads(action_path.read_text(encoding="utf-8"))
+        self.assertTrue(stdout.exists())
+        self.assertEqual(
+            action["preserved"][0]["action"],
+            "retained_completed_simion_batch_log_for_recovery",
+        )
+        writer = subprocess.run(
+            [sys.executable, str(WRITER), "--run-config", str(self.config),
+             "--status", "failed", "--output", str(summary)],
+            cwd=REPO_ROOT, text=True, capture_output=True, check=False, timeout=30,
+        )
+        self.assertEqual(writer.returncode, 0, writer.stderr)
+        verifier = subprocess.run(
+            [sys.executable, str(VERIFIER), str(self.run / "run_manifest.json"),
+             "--require-status", "failed"],
+            cwd=REPO_ROOT, text=True, capture_output=True, check=False, timeout=30,
+        )
+        self.assertEqual(verifier.returncode, 0, verifier.stderr)
+
+    def test_failed_recovery_exemption_does_not_admit_other_large_file(self) -> None:
+        self.write_config("compact", None)
+        trace = self.run / "logs" / "simion__batch01.trace.log"
+        trace.parent.mkdir()
+        with trace.open("wb") as stream:
+            stream.seek(101 * 1024 * 1024)
+            stream.write(b"\nstatus,Fly completed.\n")
+        apply_retention(self.config, preserve_paths=[trace])
+        unrelated = self.run / "unrelated.bin"
+        with unrelated.open("wb") as stream:
+            stream.seek(101 * 1024 * 1024)
+            stream.write(b"x")
+        writer = subprocess.run(
+            [
+                sys.executable, str(WRITER), "--run-config", str(self.config),
+                "--status", "failed",
+            ], cwd=REPO_ROOT, text=True, capture_output=True, check=False, timeout=30,
+        )
+        self.assertNotEqual(writer.returncode, 0)
+        self.assertIn("unrelated.bin (large_optional)", writer.stderr)
+
+    def test_compact_rejects_unlisted_or_non_native_trace_preservation(self) -> None:
+        self.write_config("compact", None)
+        trace = self.run / "logs" / "trace.log"
+        trace.parent.mkdir()
+        trace.write_text("status,Fly completed.\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "native TRACE"):
+            apply_retention(self.config, preserve_paths=[trace])
+
     def test_qualification_retains_heavy_outputs(self) -> None:
         self.write_config("qualification", "Frozen convergence review evidence.")
         model = self.run / "model.mph"
@@ -244,6 +354,9 @@ class ArtifactRetentionTests(unittest.TestCase):
             "common/multipole/run_finite_3d_transport.ps1",
             "common/multipole/run_simion_finite_3d_transport.ps1",
             "common/multipole/run_simion_transport_campaign.ps1",
+            "projects/parallel_mirror_dual_stripe_mr_tof/simion/run_three_component_candidate.ps1",
+            "projects/parallel_mirror_dual_stripe_mr_tof/simion/run_three_component_center_flight.ps1",
+            "projects/parallel_mirror_dual_stripe_mr_tof/simion/run_three_component_first_prism_flight.ps1",
         }
         legacy = {
             "projects/single_reflection_oa_tof_mass_analyzer/tests/comsol/run_n100_candidate_functional.ps1",

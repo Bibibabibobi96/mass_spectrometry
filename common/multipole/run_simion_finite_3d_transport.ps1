@@ -70,40 +70,54 @@ function Get-SimionPaGridAudit {
   }
 }
 
-function Get-TextSha256 {
-  param([Parameter(Mandatory=$true)][string]$Text)
-  $bytes=[Text.Encoding]::UTF8.GetBytes($Text)
-  return [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes))
+function Invoke-CommonPaFamilyCache {
+  param(
+    [Parameter(Mandatory=$true)][ValidateSet('probe','publish','materialize')][string]$Operation,
+    [Parameter(Mandatory=$true)][string]$IdentityPath,
+    [Parameter(Mandatory=$true)][string]$CacheRoot,
+    [Parameter(Mandatory=$true)][string[]]$Filenames,
+    [Parameter(Mandatory=$true)][string]$ModuleRoot,
+    [Parameter(Mandatory=$true)][string]$Python,
+    [string]$SourceDirectory='',
+    [string]$DestinationDirectory=''
+  )
+  $arguments=@('-m','common.simion.pa_family_cache','--action',$Operation,
+    '--cache-root',$CacheRoot,'--identity',$IdentityPath,
+    '--filenames',($Filenames-join ','))
+  if($Operation-eq'publish'){
+    if([string]::IsNullOrWhiteSpace($SourceDirectory)){throw 'PA-family cache publish requires a source directory.'}
+    $arguments+=@('--source-directory',$SourceDirectory)
+  }elseif($Operation-eq'materialize'){
+    if([string]::IsNullOrWhiteSpace($DestinationDirectory)){throw 'PA-family cache materialize requires a destination directory.'}
+    $arguments+=@('--destination-directory',$DestinationDirectory)
+  }
+  Push-Location $ModuleRoot
+  try{
+    $env:PYTHONPATH=$ModuleRoot
+    $output=& $Python @arguments
+    if($LASTEXITCODE-ne 0){throw "SIMION PA-family cache $Operation failed."}
+  }finally{
+    Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue
+    Pop-Location
+  }
+  try{return ($output -join "`n"|ConvertFrom-Json)}catch{
+    throw "SIMION PA-family cache $Operation returned invalid JSON."
+  }
 }
 
-function Get-VerifiedPaBasisFiles {
-  param(
-    [Parameter(Mandatory=$true)][string]$ManifestPath,
-    [Parameter(Mandatory=$true)][string]$ExpectedFingerprint
-  )
-  $manifest=Get-Content -LiteralPath $ManifestPath -Raw -Encoding UTF8|ConvertFrom-Json
-  if([int]$manifest.schema_version-ne 1-or
-    [string]$manifest.role-ne'multipole_simion_pa_basis_cache'-or
-    [string]$manifest.fingerprint_sha256-ne$ExpectedFingerprint-or
-    $null-eq$manifest.files
-  ){throw 'SIMION PA-basis cache manifest identity differs.'}
-  $root=Split-Path -Parent ([IO.Path]::GetFullPath($ManifestPath))
-  $verified=@()
-  foreach($record in @($manifest.files)){
-    $name=[string]$record.name
+function Assert-MultipolePaBasisNames {
+  param([Parameter(Mandatory=$true)]$Files)
+  $names=@($Files|ForEach-Object{[string]$_.name})
+  if($names.Count-lt 3-or
+    $names-notcontains'quad_monolithic.pa#'-or
+    $names-notcontains'quad_monolithic.pa0'
+  ){throw 'SIMION PA-basis cache is incomplete.'}
+  foreach($name in $names){
     if($name-notmatch'^quad_monolithic\.pa(?:#|-surf|\d+)$'){
       throw "SIMION PA-basis cache filename is invalid: $name"
     }
-    $path=[IO.Path]::GetFullPath((Join-Path $root $name))
-    if(-not $path.StartsWith($root+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)-or
-      -not(Test-Path -LiteralPath $path -PathType Leaf)-or
-      (Get-Item -LiteralPath $path).Length-ne[int64]$record.bytes-or
-      (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash-ne[string]$record.sha256
-    ){throw "SIMION PA-basis cache file identity differs: $name"}
-    $verified+=[pscustomobject]@{name=$name;path=$path}
   }
-  if($verified.Count-lt 3){throw 'SIMION PA-basis cache is incomplete.'}
-  return $verified
+  return @($names|Sort-Object -Unique)
 }
 
 $repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
@@ -662,53 +676,6 @@ try{
   if($gridAuditDocument.status-eq'FAIL'){
     throw "SIMION PA grid point budget exceeded: $($gridAuditDocument.grid_points) > $maximumPaGridPoints"
   }
-  $normalizedGem=(Get-Content -LiteralPath $gem -Encoding ASCII|Where-Object{
-    $_-notmatch'^; parent_resolved_sha256='
-  })-join"`n"
-  $paBasisIdentity=[ordered]@{
-    schema_version=1
-    role='multipole_simion_pa_basis_identity'
-    project_id=$ProjectId
-    normalized_gem_sha256=(Get-TextSha256 $normalizedGem)
-    simion_executable_sha256=(Get-FileHash -LiteralPath $simion -Algorithm SHA256).Hash
-    refine_arguments=@('--nogui','--noprompt','refine','quad_monolithic.pa#')
-  }
-  $paBasisFingerprint=Get-TextSha256 ($paBasisIdentity|ConvertTo-Json -Depth 5 -Compress)
-  $paBasisCacheRoot=[IO.Path]::GetFullPath((
-    Join-Path $workspaceRoot "artifacts\projects\$ProjectId\cache\simion_pa_basis"
-  ))
-  $paBasisCacheDir=Join-Path $paBasisCacheRoot $paBasisFingerprint
-  $paBasisCacheManifest=Join-Path $paBasisCacheDir 'manifest.json'
-  $paBasisCacheManifestInput=$null
-  $paBasisReuseAuthorized=($resolvedRuntimeDocument-and
-    $resolvedRuntimeDocument.PSObject.Properties.Name-contains'simion_pa_basis_policy'-and
-    [string]$resolvedRuntimeDocument.simion_pa_basis_policy.kind-eq'content_addressed_geometry_basis'-and
-    [string]$resolvedRuntimeDocument.simion_pa_basis_policy.reuse_scope-eq'same_project_same_fingerprint')
-  $paBasisRequireExisting=($paBasisReuseAuthorized-and
-    $resolvedRuntimeDocument.simion_pa_basis_policy.PSObject.Properties.Name-contains'require_existing'-and
-    $resolvedRuntimeDocument.simion_pa_basis_policy.require_existing-eq$true)
-  $paBasisReuse=$false
-  $paBasisFiles=@()
-  if($paBasisReuseAuthorized-and(Test-Path -LiteralPath $paBasisCacheManifest -PathType Leaf)){
-    try{
-      $paBasisFiles=@(Get-VerifiedPaBasisFiles -ManifestPath $paBasisCacheManifest `
-        -ExpectedFingerprint $paBasisFingerprint)
-      $paBasisCacheManifestInput=Copy-VerifiedRunInput -Source $paBasisCacheManifest `
-        -Destination (Join-Path $inputDir 'simion_pa_basis_cache_manifest.json')
-      $paBasisReuse=$true
-    }catch{
-      if($paBasisRequireExisting){throw}
-      # A verified cache is disposable only after its own file-integrity gate
-      # fails.  Remove this exact content-addressed key, never its cache root.
-      Write-Warning "SIMION PA-basis cache is corrupt and will be rebuilt: $paBasisFingerprint"
-      Remove-Item -LiteralPath $paBasisCacheDir -Recurse -Force
-      $paBasisFiles=@();$paBasisCacheManifestInput=$null;$paBasisReuse=$false
-    }
-  }
-  if($paBasisRequireExisting -and -not $paBasisReuse){
-    throw "SIMION_PA_BASIS_CACHE_REQUIRED: source-model comparison requires an existing verified PA basis for fingerprint $paBasisFingerprint."
-  }
-  $publishedPaBasisManifest=$null
   Copy-Item -LiteralPath $templateIob -Destination (Join-Path $solverDir 'quad_monolithic.iob')
   Copy-Item -LiteralPath $templateCon -Destination (Join-Path $solverDir 'quad_monolithic.con')
   Copy-VerifiedRunInput `
@@ -817,6 +784,75 @@ try{
     $groundElectrodeId=2*[int]$segments.segment_count+1;$outputElectrodeId=$groundElectrodeId+1
     $physicalDetectorElectrodeId=$outputElectrodeId+1
   }
+  $paBasisElectrodeIds=if($hasDownstreamTerminal){
+    @($axialDc.rod_electrodes|ForEach-Object{[int]$_.electrode_id})
+  }elseif($segmentedRodGeometry){
+    @($electrodesById.Keys|ForEach-Object{[int]$_})
+  }else{@(1,2)}
+  $paBasisElectrodeIds+=@($groundElectrodeId,$outputElectrodeId,$physicalDetectorElectrodeId,
+    $entranceReferenceElectrodeId,$entrancePlateElectrodeId)|Where-Object{[int]$_-gt 0}
+  $paBasisNames=@('quad_monolithic.pa#','quad_monolithic.pa0')+@(
+    $paBasisElectrodeIds|Sort-Object -Unique|ForEach-Object{"quad_monolithic.pa$_"}
+  )
+  $normalizedGem=(Get-Content -LiteralPath $gem -Encoding ASCII|Where-Object{
+    $_-notmatch'^; parent_resolved_sha256='
+  })-join"`n"
+  $paSurfaceMatches=[regex]::Matches($normalizedGem,'\bsurface=(fractional|none)\b')
+  if($paSurfaceMatches.Count-ne 1){throw 'SIMION GEM must declare exactly one PA surface mode.'}
+  $paSurface=[string]$paSurfaceMatches[0].Groups[1].Value
+  if($paSurface-eq'fractional'){$paBasisNames=@('quad_monolithic.pa-surf')+$paBasisNames}
+  $normalizedGemPath=Join-Path $inputDir 'quad_monolithic.normalized_for_pa_cache.gem'
+  Set-Content -LiteralPath $normalizedGemPath -Value $normalizedGem -Encoding ASCII -NoNewline
+  $normalizedGemSha=(Get-FileHash -LiteralPath $normalizedGemPath -Algorithm SHA256).Hash
+  $paBasisIdentity=[ordered]@{
+    geometry=[ordered]@{project_id=$ProjectId;resolved_design_sha256=$resolvedHash}
+    gem=[ordered]@{normalized_sha256=$normalizedGemSha}
+    basis_namespace=[ordered]@{name='multipole_quad_monolithic_pa_basis';project_id=$ProjectId}
+    mesh=[ordered]@{cell_mm_xyz=@($resolvedCellMmX,$resolvedCellMmY,$resolvedCellMmZ);
+      pa_grid_xyz=@($gridAuditDocument.nx,$gridAuditDocument.ny,$gridAuditDocument.nz)}
+    grid_phase=[ordered]@{normalized_gem_sha256=$normalizedGemSha}
+    surface=$paSurface
+    simion_identity=[ordered]@{executable_sha256=(Get-FileHash -LiteralPath $simion -Algorithm SHA256).Hash}
+    refine_policy=[ordered]@{arguments=@('--nogui','--noprompt','refine','quad_monolithic.pa#')}
+    builder_identity=[ordered]@{runner_sha256=(Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash}
+  }
+  $paBasisCacheRoot=[IO.Path]::GetFullPath((
+    Join-Path $workspaceRoot "artifacts\projects\$ProjectId\cache\simion_pa_basis"
+  ))
+  $paBasisIdentityPath=Join-Path $inputDir 'simion_pa_basis_cache_identity.json'
+  $paBasisIdentity|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $paBasisIdentityPath -Encoding UTF8
+  $paBasisCacheManifestInput=$null
+  $paBasisReuseAuthorized=($resolvedRuntimeDocument-and
+    $resolvedRuntimeDocument.PSObject.Properties.Name-contains'simion_pa_basis_policy'-and
+    [string]$resolvedRuntimeDocument.simion_pa_basis_policy.kind-eq'content_addressed_geometry_basis'-and
+    [string]$resolvedRuntimeDocument.simion_pa_basis_policy.reuse_scope-eq'same_project_same_fingerprint')
+  $paBasisRequireExisting=($paBasisReuseAuthorized-and
+    $resolvedRuntimeDocument.simion_pa_basis_policy.PSObject.Properties.Name-contains'require_existing'-and
+    $resolvedRuntimeDocument.simion_pa_basis_policy.require_existing-eq$true)
+  $paBasisReuse=$false
+  $paBasisCacheKey=$null
+  $paBasisGenerationDirectory=$null
+  if($paBasisReuseAuthorized){
+    $paBasisProbe=Invoke-CommonPaFamilyCache -Operation probe -IdentityPath $paBasisIdentityPath `
+      -CacheRoot $paBasisCacheRoot -Filenames $paBasisNames -ModuleRoot $codeRoot -Python $python
+    $paBasisCacheKey=[string]$paBasisProbe.cache_key
+    if([string]$paBasisProbe.disposition-eq'corrupt'){
+      # A corrupt content-addressed entry is never deleted or overwritten by a
+      # runner.  It requires an explicit governed cache-cleanup decision.
+      throw "SIMION PA-basis cache is corrupt: $paBasisCacheKey ($($paBasisProbe.detail))"
+    }
+    if([string]$paBasisProbe.disposition-eq'hit'){
+      $paBasisGenerationDirectory=[string]$paBasisProbe.generation_directory
+      $paBasisCacheManifestInput=Copy-VerifiedRunInput `
+        -Source (Join-Path $paBasisGenerationDirectory 'cache_manifest.json') `
+        -Destination (Join-Path $inputDir 'simion_pa_basis_cache_manifest.json')
+      $paBasisReuse=$true
+    }
+  }
+  if($paBasisRequireExisting -and -not $paBasisReuse){
+    throw "SIMION_PA_BASIS_CACHE_REQUIRED: source-model comparison requires an existing verified PA basis for cache key $paBasisCacheKey."
+  }
+  $publishedPaBasisManifest=$null
   $provenance=[ordered]@{parent_resolved_design_sha256=$resolvedHash;particle_source_sha256=$sourceMeta.source_sha256;
     source_family_sha256=$sourceFamilySha;operating_point_id=$(if($sourceFamily){$OperatingPointId}else{$null});
     particle_source_operating_point_binding=$sourceMeta.operating_point_binding;
@@ -830,7 +866,7 @@ try{
       con_sha256=[string]$templateProfile.bundle.con.sha256
     }
     simion_pa_basis=[ordered]@{
-      fingerprint_sha256=$paBasisFingerprint
+      cache_key_sha256=$paBasisCacheKey
       authorized=$paBasisReuseAuthorized
       action=$(if(-not$paBasisReuseAuthorized){'independent_refine'}elseif($paBasisReuse){'reuse'}elseif($paBasisRequireExisting){'required_reuse'}else{'publish'})
     }}
@@ -918,54 +954,30 @@ try{
     if($step.exit_code-ne 0){throw "SIMION $name failed with exit code $($step.exit_code)."}
   }
   if($paBasisReuse){
-    foreach($basisFile in $paBasisFiles){
-      $destination=Join-Path $solverDir $basisFile.name
-      # SIMION's --remove-pas can mutate or remove the solver copy.  A hard
-      # link would therefore corrupt the content-addressed cache itself.
-      Copy-Item -LiteralPath $basisFile.path -Destination $destination
-    }
-    Write-Output "MULTIPOLE_SIMION_PA_BASIS=REUSE FINGERPRINT=$paBasisFingerprint"
+    Invoke-CommonPaFamilyCache -Operation materialize -IdentityPath $paBasisIdentityPath `
+      -CacheRoot $paBasisCacheRoot -Filenames $paBasisNames -DestinationDirectory $solverDir `
+      -ModuleRoot $codeRoot -Python $python|Out-Null
+    Write-Output "MULTIPOLE_SIMION_PA_BASIS=REUSE CACHE_KEY=$paBasisCacheKey"
   }else{
     Invoke-SimionStep 'gem2pa' @('--nogui','--noprompt','gem2pa','quad_monolithic.gem','quad_monolithic.pa#')
     Invoke-SimionStep 'refine' @('--nogui','--noprompt','refine','quad_monolithic.pa#')
     if($paBasisReuseAuthorized){
-    New-Item -ItemType Directory -Force -Path $paBasisCacheRoot|Out-Null
-    $staging=Join-Path $paBasisCacheRoot ('.staging_'+$paBasisFingerprint+'_'+[guid]::NewGuid())
-    New-Item -ItemType Directory -Path $staging|Out-Null
-    try{
-      $records=@()
-      foreach($source in @(Get-ChildItem -LiteralPath $solverDir -File|Where-Object{
-        $_.Name-match'^quad_monolithic\.pa(?:#|-surf|\d+)$'
-      }|Sort-Object Name)){
-        $destination=Join-Path $staging $source.Name
-        # The cache must be physically independent before fly is allowed to
-        # apply --remove-pas to its solver-local PA family.
-        Copy-Item -LiteralPath $source.FullName -Destination $destination
-        $records+=[ordered]@{name=$source.Name;bytes=$source.Length;
-          sha256=(Get-FileHash -LiteralPath $source.FullName -Algorithm SHA256).Hash}
+      $refinedPaBasisNames=Assert-MultipolePaBasisNames -Files @(
+        Get-ChildItem -LiteralPath $solverDir -File|Where-Object{
+          $_.Name-match'^quad_monolithic\.pa(?:#|-surf|\d+)$'
+        }|Sort-Object Name|ForEach-Object{[pscustomobject]@{name=$_.Name}}
+      )
+      if(@(Compare-Object -ReferenceObject $paBasisNames -DifferenceObject $refinedPaBasisNames).Count-ne 0){
+        throw 'Refined SIMION PA basis filenames differ from the resolved electrode namespace.'
       }
-      if($records.Count-lt 3){throw 'Refined SIMION PA basis is incomplete.'}
-      $stagingManifest=Join-Path $staging 'manifest.json'
-      [ordered]@{schema_version=1;role='multipole_simion_pa_basis_cache';
-        fingerprint_sha256=$paBasisFingerprint;provider_run_id=$RunId;
-        identity=$paBasisIdentity;files=$records}|ConvertTo-Json -Depth 8|
-        Set-Content -LiteralPath $stagingManifest -Encoding UTF8
-      if(Test-Path -LiteralPath $paBasisCacheDir){
-        throw "SIMION PA-basis cache destination appeared during publication: $paBasisCacheDir"
+      $paBasisPublication=Invoke-CommonPaFamilyCache -Operation publish -IdentityPath $paBasisIdentityPath `
+        -CacheRoot $paBasisCacheRoot -Filenames $paBasisNames -SourceDirectory $solverDir `
+        -ModuleRoot $codeRoot -Python $python
+      $paBasisCacheKey=[string]$paBasisPublication.cache_key
+      if([string]$paBasisPublication.disposition-eq'published'){
+        $publishedPaBasisManifest=Join-Path ([string]$paBasisPublication.generation_directory) 'cache_manifest.json'
       }
-      Move-Item -LiteralPath $staging -Destination $paBasisCacheDir
-      $publishedPaBasisManifest=$paBasisCacheManifest
-      Get-VerifiedPaBasisFiles -ManifestPath $publishedPaBasisManifest `
-        -ExpectedFingerprint $paBasisFingerprint|Out-Null
-      Write-Output "MULTIPOLE_SIMION_PA_BASIS=PUBLISH FINGERPRINT=$paBasisFingerprint"
-    }catch{
-      $resolvedStaging=[IO.Path]::GetFullPath($staging)
-      if($resolvedStaging.StartsWith(
-        $paBasisCacheRoot+[IO.Path]::DirectorySeparatorChar,
-        [StringComparison]::OrdinalIgnoreCase
-      )){Remove-Item -LiteralPath $resolvedStaging -Recurse -Force -ErrorAction SilentlyContinue}
-      throw
-    }
+      Write-Output "MULTIPOLE_SIMION_PA_BASIS=PUBLISH CACHE_KEY=$paBasisCacheKey"
     }
   }
   Copy-VerifiedRunInput `

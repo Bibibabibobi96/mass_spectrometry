@@ -42,6 +42,8 @@ class TraceContinuationPolicy:
     prohibited_patterns: tuple[re.Pattern[str], ...] = ()
     release_prefix: str | None = None
     release_pattern: re.Pattern[str] | None = None
+    allow_auxiliary_trace: bool = False
+    retain_entire_log: bool = False
 
 
 @dataclass(frozen=True)
@@ -67,14 +69,62 @@ def _load_object(path: Path, label: str) -> dict[str, Any]:
     return value
 
 
+def _checkpoint_has_intact_immutable_inputs(
+    *, manifest: dict[str, Any], config: dict[str, Any]
+) -> bool:
+    """Recognize a checkpoint whose mutable run config gained only metadata.
+
+    A SIMION batch can complete after the checkpoint manifest is written and
+    before the runner appends completion bookkeeping to ``run_config.json``.
+    Its raw TRACE remains reusable only when the immutable input records in
+    that checkpoint still verify byte-for-byte.  This is deliberately narrower
+    than accepting general manifest drift.
+    """
+
+    if (
+        manifest.get("status") != "checkpoint"
+        or config.get("run_id") != manifest.get("run_id")
+        or config.get("mode") != manifest.get("mode")
+    ):
+        return False
+    records = manifest.get("inputs")
+    if not isinstance(records, dict) or not records:
+        return False
+    for record in records.values():
+        if not isinstance(record, dict):
+            return False
+        path_value, digest = record.get("path"), record.get("sha256")
+        if (
+            not record.get("exists")
+            or not isinstance(path_value, str)
+            or not isinstance(digest, str)
+            or len(digest) != 64
+        ):
+            return False
+        path = Path(path_value)
+        if not path.is_file() or file_sha256(path).upper() != digest.upper():
+            return False
+    return True
+
+
 def _manifest_hashes(run_dir: Path) -> tuple[dict[Path, str], dict[str, Any]]:
     manifest_path = run_dir / "run_manifest.json"
     manifest = _load_object(manifest_path, "continuation predecessor manifest")
-    if manifest.get("role") != "simulation_run_manifest" or manifest.get("status") not in {"failed", "interrupted"}:
+    # A checkpoint is a resumable, manifest-bound predecessor.  It is the
+    # normal state after a native batch completes and before its downstream
+    # materialization succeeds; treating it as failed would discard valid work.
+    if manifest.get("role") != "simulation_run_manifest" or manifest.get("status") not in {"failed", "interrupted", "checkpoint"}:
         raise ContractError("continuation predecessor manifest status differs")
     config_path = run_dir / "run_config.json"
+    config = _load_object(config_path, "continuation predecessor run configuration")
     config_record = manifest.get("run_config")
-    if not isinstance(config_record, dict) or config_record.get("sha256") != file_sha256(config_path):
+    config_is_bound = (
+        isinstance(config_record, dict)
+        and config_record.get("sha256") == file_sha256(config_path)
+    )
+    if not config_is_bound and not _checkpoint_has_intact_immutable_inputs(
+        manifest=manifest, config=config
+    ):
         raise ContractError("continuation predecessor run config is unbound")
     result: dict[Path, str] = {}
     for record in manifest.get("outputs", []):
@@ -209,8 +259,8 @@ def _completed_prefix(
         # a newly launched worker stores one raw log.  Two candidates for the
         # same global batch indicate an ambiguous/old partial-replay lineage.
         raise ContractError("continuation batch has multiple source logs")
-    expected = first
     terminal_ids: set[int] = set()
+    state_particle_ids: set[int] = set()
     release_ids: set[int] = set()
     expected_release = first
     state_keys: set[tuple[int, int]] = set()
@@ -230,6 +280,8 @@ def _completed_prefix(
         for line_index, line in enumerate(lines):
             if line:
                 nonempty_line_index = line_index
+            if policy.retain_entire_log:
+                retained.append((first, line))
             if any(pattern.match(line) for pattern in policy.prohibited_patterns):
                 raise ContractError("continuation source emitted prohibited TRACE")
             if policy.release_prefix is not None and line.startswith(policy.release_prefix):
@@ -245,20 +297,33 @@ def _completed_prefix(
                     raise ContractError("continuation source-release identity differs")
                 release_ids.add(particle_id)
                 expected_release += 1
-                retained.append((particle_id, line))
+                if not policy.retain_entire_log:
+                    retained.append((particle_id, line))
             elif line.startswith(policy.terminal_prefix):
                 match = policy.terminal_pattern.fullmatch(line)
                 if match is None:
                     raise ContractError("continuation terminal TRACE is malformed")
-                particle_id = int(match["particle_id"])
-                if particle_id != expected or particle_id in terminal_ids:
-                    raise ContractError("continuation terminal IDs are not a contiguous prefix within their batch")
+                groups = match.groupdict()
+                particle_id = (
+                    int(groups["particle_id"])
+                    if groups.get("particle_id") is not None
+                    else first + int(groups["ion"]) - 1
+                )
+                # Natural collision times are not ordered by source-particle
+                # ID.  A completed batch proves a unique in-range membership;
+                # complete coverage is checked against ``count`` below.
+                if (
+                    particle_id < first
+                    or particle_id >= first + count
+                    or particle_id in terminal_ids
+                ):
+                    raise ContractError("continuation terminal particle identity differs")
                 ion = match.groupdict().get("ion")
                 if ion is not None and int(ion) != particle_id - first + 1:
                     raise ContractError("continuation terminal local ion identity differs")
                 terminal_ids.add(particle_id)
-                retained.append((particle_id, line))
-                expected += 1
+                if not policy.retain_entire_log:
+                    retained.append((particle_id, line))
             elif line.startswith(policy.state_prefix):
                 match = policy.state_pattern.fullmatch(line)
                 if match is None:
@@ -270,13 +335,16 @@ def _completed_prefix(
                 if ion is not None and int(ion) != particle_id - first + 1:
                     raise ContractError("continuation state local ion identity differs")
                 state_keys.add((particle_id, sample_index))
-                retained.append((particle_id, line))
+                state_particle_ids.add(particle_id)
+                if not policy.retain_entire_log:
+                    retained.append((particle_id, line))
             elif line.startswith(policy.completion_prefix):
                 if completion_line_index is not None:
                     raise ContractError("continuation completion sentinel is duplicated")
                 completion_line_index = line_index
-                retained.append((first, line))
-            elif line.startswith("TRACE:"):
+                if not policy.retain_entire_log:
+                    retained.append((first, line))
+            elif line.startswith("TRACE:") and not policy.allow_auxiliary_trace:
                 raise ContractError("continuation source emitted unrecognized TRACE")
     completed = len(terminal_ids)
     if completed > count:
@@ -286,7 +354,14 @@ def _completed_prefix(
     # followed by a crash or another execution appended to the same file.
     if completion_line_index is None:
         return 0, [], sources
-    if completion_line_index != nonempty_line_index or completed != count:
+    # A governed natural archive can reach its configured end time with an ion
+    # still alive.  Its final native state is then its terminal observation for
+    # checkpoint purposes; requiring a collision TRACE would re-fly an already
+    # completed physical batch.  A completion sentinel alone is insufficient:
+    # every released particle must still have either a collision terminal or a
+    # validated state observation.
+    observed_particle_ids = terminal_ids | state_particle_ids
+    if completion_line_index != nonempty_line_index or len(observed_particle_ids) != count:
         raise ContractError("continuation completion sentinel differs")
     if policy.release_prefix is not None and len(release_ids) != count:
         raise ContractError("continuation source-release census differs")
@@ -294,7 +369,7 @@ def _completed_prefix(
 
 
 def build_batch_continuation_plan(
-    *, predecessor_run_dir: Path, particle_ids: Sequence[int], expected_execution_mode: str,
+    *, predecessor_run_dir: Path, particle_ids: Sequence[int], expected_execution_mode: str | None,
     contract_input_role: str, expected_contract_sha256: str, cohort_input_paths: Mapping[str, Path],
     policy: TraceContinuationPolicy, output_dir: Path, batch_plan_input_role: str = "simion_execution_batch_plan",
     imported_dir_name: str = "imported_completed_batches", continuation_dir_name: str = "simion_batch_continuation",
@@ -315,7 +390,10 @@ def build_batch_continuation_plan(
     config_path = predecessor_run_dir / "run_config.json"
     config = _load_object(config_path, "continuation predecessor run configuration")
     parameters = config.get("parameters")
-    if not isinstance(parameters, dict) or parameters.get("execution_mode") != expected_execution_mode:
+    if not isinstance(parameters, dict) or (
+        expected_execution_mode is not None
+        and parameters.get("execution_mode") != expected_execution_mode
+    ):
         raise ContractError("continuation predecessor execution mode differs")
     if parameters.get("particle_count") != len(particle_ids) or parameters.get("launched_particle_count") != len(particle_ids):
         raise ContractError("continuation predecessor population differs")

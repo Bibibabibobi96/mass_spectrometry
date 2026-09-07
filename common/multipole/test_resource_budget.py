@@ -103,6 +103,10 @@ class ResourceBudgetTests(unittest.TestCase):
         self.assertIn("$pending.Insert(0,$victim.specification)", source)
         self.assertIn("requeue_priority='front'", source)
         self.assertIn("$maximumConcurrency-1", source)
+        self.assertIn("$observedPerProcessManagedPeak", source)
+        self.assertIn("[math]::Max($livePeak,$observedPerProcessManagedPeak)", source)
+        self.assertNotIn("$maximumConcurrency+=1", source)
+        self.assertIn("effective_maximum_concurrency=$maximumConcurrency", source)
         self.assertNotIn("CalibrationDurationSeconds", source)
 
     def test_scheduler_suppresses_checkpoint_callback_pipeline_output(self) -> None:

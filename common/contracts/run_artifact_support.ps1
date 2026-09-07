@@ -81,6 +81,31 @@ function Invoke-ArtifactCapacityGate {
   Write-Output -NoEnumerate $receipt
 }
 
+function New-PublishedPaCacheProtectionSnapshot {
+  <# Freeze the valid PA-family generations visible before a run's startup
+     capacity gate.  Callers retain this receipt and pass its keys to every
+     later gate in the same run; publications created afterwards are not
+     retroactively classified as startup cache. #>
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$Python,
+    [Parameter(Mandatory)][string]$RepoRoot,
+    [Parameter(Mandatory)][string]$ArtifactRoot,
+    [Parameter(Mandatory)][string]$OutputPath
+  )
+  $output=@(Invoke-RunToolRootContext -RepoRoot $RepoRoot -Operation {
+    & $Python -m common.contracts.reconcile_artifact_capacity `
+      --artifact-root $ArtifactRoot --snapshot-published-pa-cache-keys
+    if($LASTEXITCODE-ne 0){throw "Published PA cache protection snapshot exit_code=$LASTEXITCODE"}
+  })
+  $snapshot=((@($output)-join "`n")|ConvertFrom-Json)
+  if($snapshot.role-ne'artifact_capacity_published_pa_cache_protection_snapshot'){
+    throw 'Published PA cache protection snapshot role differs.'
+  }
+  Write-RunJson -Path $OutputPath -Depth 8 -Value $snapshot
+  Write-Output -NoEnumerate $snapshot
+}
+
 function Write-RunJson {
   [CmdletBinding()]
   param([Parameter(Mandatory)][object]$Value,[Parameter(Mandatory)][string]$Path,[int]$Depth=8)
@@ -425,10 +450,22 @@ function Apply-RunArtifactRetention {
   param(
     [Parameter(Mandatory)][string]$Python,
     [Parameter(Mandatory)][string]$RepoRoot,
-    [Parameter(Mandatory)][string]$RunConfig
+    [Parameter(Mandatory)][string]$RunConfig,
+    [string[]]$PreservePaths=@(),
+    [string[]]$RemovePaths=@()
   )
-  $output=& $Python (Join-Path $RepoRoot 'common\contracts\artifact_retention.py') `
-    apply --run-config $RunConfig
+  $arguments=@('apply','--run-config',$RunConfig)
+  foreach($path in $PreservePaths){
+    if(-not[string]::IsNullOrWhiteSpace($path)){
+      $arguments+=@('--preserve-path',$path)
+    }
+  }
+  foreach($path in $RemovePaths){
+    if(-not[string]::IsNullOrWhiteSpace($path)){
+      $arguments+=@('--remove-path',$path)
+    }
+  }
+  $output=& $Python (Join-Path $RepoRoot 'common\contracts\artifact_retention.py') @arguments
   if($LASTEXITCODE-ne 0){throw 'Run artifact retention failed.'}
   Write-Verbose ($output -join [Environment]::NewLine)
   return Join-Path (Split-Path -Parent $RunConfig) 'retention_actions.json'
@@ -539,7 +576,8 @@ function Complete-FailedRun {
     [hashtable]$AdditionalSummaryProperties=@{},
     [string[]]$AdditionalOutputs=@(),
     [string]$ResourceUsagePath='',
-    [switch]$PreserveRawOutputs
+    [switch]$PreserveRawOutputs,
+    [string[]]$PreserveRawOutputPaths=@()
   )
   Invoke-RunToolRootContext -RepoRoot $RepoRoot -Operation {
   $document=Get-Content -LiteralPath $RunConfig -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
@@ -571,11 +609,49 @@ function Complete-FailedRun {
   }
   Write-RunJson -Path $Summary -Value $summaryDocument
   $retentionActions=$null
-  # A failed natural-trajectory materialization has one recoverable input: the
-  # raw native-grid trace.  Do not erase it before the caller can repair and
-  # retry materialization.  Ordinary failed runs retain the compact policy.
-  if([int]$document.schema_version-eq 2 -and -not $PreserveRawOutputs){
-    $retentionActions=Apply-RunArtifactRetention -Python $Python -RepoRoot $RepoRoot -RunConfig $RunConfig
+  if(-not $PreserveRawOutputs -and $PreserveRawOutputPaths.Count-ne 0){
+    throw 'Recoverable raw output paths require PreserveRawOutputs.'
+  }
+  $preservedRawTracePaths=@()
+  if($PreserveRawOutputs){
+    if($PreserveRawOutputPaths.Count-eq 0){
+      throw 'PreserveRawOutputs requires at least one completed SIMION batch log.'
+    }
+    foreach($trace in $PreserveRawOutputPaths){
+      $tracePath=[IO.Path]::GetFullPath($trace)
+      $traceName=[IO.Path]::GetFileName($tracePath)
+      $isPrePulseTrace=$traceName-like'simion__batch*.trace.log'
+      $isFullFlightStdout=$traceName-like'simion__batch*.stdout.log'
+      $completionLine=if(Test-Path -LiteralPath $tracePath -PathType Leaf){
+        Get-Content -LiteralPath $tracePath -Tail 1 -Encoding UTF8
+      }else{''}
+      if(-not $tracePath.StartsWith(([IO.Path]::GetFullPath($runDir)+[IO.Path]::DirectorySeparatorChar),[StringComparison]::OrdinalIgnoreCase) -or
+         -not(Test-Path -LiteralPath $tracePath -PathType Leaf) -or
+         (-not$isPrePulseTrace-and-not$isFullFlightStdout) -or
+         ($isPrePulseTrace-and$completionLine-ne'status,Fly completed.') -or
+         ($isFullFlightStdout-and$completionLine-notlike'status,Fly completed.*')){
+        throw 'Recoverable raw output must be a completed run-local SIMION batch TRACE/stdout.'
+      }
+      $preservedRawTracePaths+=$tracePath
+    }
+  }
+  $recoverableTraceDirectory=Join-Path $runDir 'logs'
+  $discardedRawTracePaths=if(Test-Path -LiteralPath $recoverableTraceDirectory -PathType Container){
+    @(
+      Get-ChildItem -LiteralPath $recoverableTraceDirectory -File | Where-Object {
+        ($_.Name -like 'simion__batch*.trace.log' -or
+          $_.Name -like 'simion__batch*.stdout.log') -and
+        $preservedRawTracePaths -notcontains $_.FullName
+      } | Select-Object -ExpandProperty FullName
+    )
+  }else{@()}
+  # Completed raw TRACE is an explicit, auditable recovery exception.  All
+  # other compact-forbidden payload, including solver-native PA/IOB/Fly files,
+  # is still removed before the terminal manifest is published.
+  if([int]$document.schema_version-eq 2){
+    $retentionActions=Apply-RunArtifactRetention -Python $Python -RepoRoot $RepoRoot `
+      -RunConfig $RunConfig -PreservePaths $preservedRawTracePaths `
+      -RemovePaths $discardedRawTracePaths
   }
   if(-not[string]::IsNullOrWhiteSpace($ResourceUsagePath)-and
     (Test-Path -LiteralPath $ResourceUsagePath -PathType Leaf)){
@@ -592,7 +668,15 @@ function Complete-FailedRun {
     if([int64]$usage.peak_run_directory_bytes-lt$finalBytes){
       $usage.peak_run_directory_bytes=$finalBytes
     }
-    if($finalBytes-gt[int64]$usage.limits.compact_final_retained_bytes){
+    # Scheduler-only usage receipts govern CPU/memory admission and do not
+    # necessarily carry the campaign retention-byte limit.  Failed-run
+    # publication must still finalize such a receipt instead of treating an
+    # intentionally absent optional limit as a malformed object.
+    $hasCompactFinalLimit = $usage.Contains('limits') -and
+      $usage.limits -is [System.Collections.IDictionary] -and
+      $usage.limits.Contains('compact_final_retained_bytes')
+    if($hasCompactFinalLimit -and
+        $finalBytes-gt[int64]$usage.limits.compact_final_retained_bytes){
       $usage.status='resource_budget_exceeded'
       $usage.failure_class='resource_budget_exceeded'
       $usage.limit_name='compact_final_retained_bytes'

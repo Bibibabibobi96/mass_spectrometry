@@ -77,6 +77,12 @@ def publish_resource_profile(
         first_observation.get("peak_working_set_bytes")
         if is_new else usage.get("peak_process_tree_working_set_bytes")
     )
+    batches = waves[0].get("batches")
+    if not isinstance(batches, list) or not batches or not isinstance(batches[0], dict):
+        raise ValueError("dispatch plan has no observed batch work-unit count")
+    observed_batch_work_units = _positive_int(
+        batches[0].get("count"), "observed batch work-unit count"
+    )
     result = {
         "schema_version": 1,
         "role": PROFILE_ROLE,
@@ -85,6 +91,7 @@ def publish_resource_profile(
             peak,
             "peak_process_tree_working_set_bytes",
         ),
+        "observed_batch_work_units": observed_batch_work_units,
         "source": {
             "run_id": run_id,
             "resource_usage": {
@@ -147,7 +154,12 @@ def _profile_from_verified_run(run_dir: Path) -> dict[str, Any] | None:
             resource_usage_relative_path=source["resource_usage"]["path"],
             dispatch_plan_relative_path=source["dispatch_plan"]["path"],
         )
-        return profile if rebuilt == profile else None
+        # Historical evidence predates the loading-policy dimension. Missing
+        # means unspecified, never the new consumer's named projection policy.
+        comparable = dict(profile)
+        comparable["resource_identity"] = dict(profile.get("resource_identity", {}))
+        comparable["resource_identity"].setdefault("field_loading_policy_id", None)
+        return profile if rebuilt == comparable else None
     except (KeyError, TypeError, ValueError):
         return None
 
@@ -209,6 +221,7 @@ def _profiles_from_manifest_summary(run_dir: Path) -> list[dict[str, Any]]:
                 profiles.append({
                     "resource_identity": identity,
                     "per_batch_peak_working_set_bytes": peak,
+                    "observed_batch_work_units": 1,
                     "source": {"run_id": manifest.get("run_id"), "summary": str(summary_path)},
                 })
         return profiles

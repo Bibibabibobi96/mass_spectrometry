@@ -13,22 +13,29 @@ except ModuleNotFoundError:
     from file_identity import file_sha256
 
 
-def retention_api() -> tuple[Any, Any, Any]:
+def retention_api() -> tuple[Any, Any, Any, Any]:
     """Import the v2-only retention API without breaking frozen v1 verifiers."""
 
     try:
         from common.contracts.artifact_retention import (
             classify_file,
+            load_failed_recovery_exemptions,
             validate_retained_files,
             validate_retention,
         )
     except ModuleNotFoundError:
         from artifact_retention import (
             classify_file,
+            load_failed_recovery_exemptions,
             validate_retained_files,
             validate_retention,
         )
-    return classify_file, validate_retained_files, validate_retention
+    return (
+        classify_file,
+        load_failed_recovery_exemptions,
+        validate_retained_files,
+        validate_retention,
+    )
 
 
 def record_path(record: dict, *, base_dir: Path | None = None) -> Path:
@@ -92,7 +99,12 @@ def main() -> None:
     run_config = json.loads(run_config_path.read_text(encoding="utf-8-sig"))
     retention = None
     if schema_version == 2:
-        classify_file, validate_retained_files, validate_retention = retention_api()
+        (
+            classify_file,
+            load_failed_recovery_exemptions,
+            validate_retained_files,
+            validate_retention,
+        ) = retention_api()
         if run_config.get("schema_version") != 2:
             raise AssertionError("v2 manifest requires v2 run_config")
         retention = validate_retention(run_config.get("artifact_retention"))
@@ -153,7 +165,12 @@ def main() -> None:
             and not path.is_symlink()
             and path.resolve() != manifest_path
         ]
-        validate_retained_files(retention, run_files)
+        exemptions = (
+            load_failed_recovery_exemptions(manifest_dir, retention)
+            if manifest.get("status") == "failed"
+            else set()
+        )
+        validate_retained_files(retention, run_files, exempt_paths=exemptions)
     print(
         f"RUN_MANIFEST_VERIFY=PASS PROJECT={manifest.get('project')} "
         f"RUN_ID={manifest.get('run_id')} OUTPUTS={len(manifest.get('outputs', []))}"

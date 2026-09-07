@@ -45,7 +45,9 @@ foreach ($file in $markdownFiles) {
     $relative = $file.FullName.Substring($repoRoot.Length + 1)
     $relativeGit = $relative -replace '\\', '/'
     $requiresGithubMathFence = $relativeGit -in @(
-        'projects/single_reflection_oa_tof_mass_analyzer/docs/theory/oaaccelerator_time_focus.md',
+        'projects/orthogonal_accelerator/docs/theory/oaaccelerator_time_focus.md',
+        'projects/orthogonal_accelerator/docs/theory/affine_phase_space_time_focus.md',
+        'projects/orthogonal_accelerator/docs/theory/three_zone_accelerator_ideal_theory.md',
         'projects/single_reflection_oa_tof_mass_analyzer/docs/theory/dual_stage_reflectron.md',
         'projects/single_reflection_oa_tof_mass_analyzer/docs/theory/oatof_oaaccelerator_coupling.md',
         'projects/single_reflection_oa_tof_mass_analyzer/docs/theory/z_vz_linear_phase_space_coupling.md'
@@ -147,11 +149,11 @@ foreach ($file in $markdownFiles) {
     }
 
     $raw = [System.IO.File]::ReadAllText($file.FullName, $utf8)
-    if ($relativeGit -eq 'projects/single_reflection_oa_tof_mass_analyzer/docs/theory/oaaccelerator_time_focus.md' -and
+    if ($relativeGit -eq 'projects/orthogonal_accelerator/docs/theory/oaaccelerator_time_focus.md' -and
         $raw -notmatch '(?m)^```math\r?\nW_\{2\}\(x\)=W\(x\)-V_G=E_\{A1\}\(g_1-x\)\.\r?\n```$') {
         Add-DocError "$relative`: the W_2(x) reference equation must remain in a rendered display-math block"
     }
-    if ($relativeGit -eq 'projects/single_reflection_oa_tof_mass_analyzer/docs/theory/oaaccelerator_time_focus.md' -and
+    if ($relativeGit -eq 'projects/orthogonal_accelerator/docs/theory/oaaccelerator_time_focus.md' -and
         $raw -notmatch '(?s)```math\r?\n\\widetilde V_R = V_R-V_X,.*?\r?\n```') {
         Add-DocError "$relative`: the widetilde voltage reference equations must remain in rendered display math"
     }

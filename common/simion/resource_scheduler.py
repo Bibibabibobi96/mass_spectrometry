@@ -62,6 +62,9 @@ RESOURCE_IDENTITY_KEYS = (
     # observations scoped to the actual Workbench topology so a seven-instance
     # full-flight peak never limits a minimal pre-pulse IOB.
     "workload_topology_id",
+    # The same PA files can keep different fast-adjust solutions resident.
+    # Scope measured peaks to the consumer's declared loading/adjustment policy.
+    "field_loading_policy_id",
 )
 
 RETIRED_PROJECT_RESOURCE_KEYS = frozenset({
@@ -152,15 +155,24 @@ def _validate_request(request: dict[str, Any]) -> tuple[int, str, str]:
 
 
 def select_memory_profile(
-    resource_identity: dict[str, Any], profiles: list[dict[str, Any]]
+    resource_identity: dict[str, Any], profiles: list[dict[str, Any]], *,
+    required_work_units_per_process: int = 1,
 ) -> dict[str, Any] | None:
     """Return the safest profile with the exact complete numerical identity."""
+    required = _positive_int(
+        required_work_units_per_process, "required_work_units_per_process"
+    )
     expected = {key: resource_identity.get(key) for key in RESOURCE_IDENTITY_KEYS}
     matches = []
     for profile in profiles:
         identity = profile.get("resource_identity")
         peak = profile.get("per_batch_peak_working_set_bytes")
-        if not isinstance(identity, dict) or isinstance(peak, bool) or not isinstance(peak, int) or peak < 1:
+        observed_work_units = profile.get("observed_batch_work_units")
+        if (not isinstance(identity, dict) or isinstance(peak, bool)
+                or not isinstance(peak, int) or peak < 1
+                or isinstance(observed_work_units, bool)
+                or not isinstance(observed_work_units, int)
+                or observed_work_units < required):
             continue
         actual = {key: identity.get(key) for key in RESOURCE_IDENTITY_KEYS}
         if actual == expected:
@@ -352,7 +364,11 @@ def plan_simion_dispatch(
             available_memory_bytes = observed[0] if available_memory_bytes is None else available_memory_bytes
             total_physical_memory_bytes = observed[1] if total_physical_memory_bytes is None else total_physical_memory_bytes
     identity = {key: request.get(key) for key in RESOURCE_IDENTITY_KEYS}
-    profile = select_memory_profile(identity, profiles)
+    required_work_units = _initial_formal_batch(work_count, unit)["count"]
+    profile = select_memory_profile(
+        identity, profiles,
+        required_work_units_per_process=required_work_units,
+    )
     host = {
         "available_memory_bytes": available_memory_bytes,
         "total_physical_memory_bytes": total_physical_memory_bytes,
@@ -380,18 +396,48 @@ def plan_simion_dispatch(
                 "batches": [first],
             }],
         }
-    peak = _positive_int(profile["per_batch_peak_working_set_bytes"], "profile peak")
-    memory_budget = math.ceil(peak * KNOWN_MEMORY_SAFETY_FACTOR)
-    process_cpu = _nonnegative_number(profile.get("per_batch_cpu_percent", 0.0), "profile CPU")
-    concurrency, cpu_capacity, memory_capacity = _capacity(
-        particle_count=work_count, available_memory_bytes=available_memory_bytes,
-        total_physical_memory_bytes=total_physical_memory_bytes,
-        per_process_memory_bytes=memory_budget, process_cpu_percent=process_cpu,
-        background_cpu_percent=0.0,
-    )
-    batches = _batches_from_counts(
-        _balanced_lane_loads(work_count, concurrency), unit=unit
-    )
+    while profile is not None:
+        peak = _positive_int(profile["per_batch_peak_working_set_bytes"], "profile peak")
+        memory_budget = math.ceil(peak * KNOWN_MEMORY_SAFETY_FACTOR)
+        process_cpu = _nonnegative_number(profile.get("per_batch_cpu_percent", 0.0), "profile CPU")
+        concurrency, cpu_capacity, memory_capacity = _capacity(
+            particle_count=work_count, available_memory_bytes=available_memory_bytes,
+            total_physical_memory_bytes=total_physical_memory_bytes,
+            per_process_memory_bytes=memory_budget, process_cpu_percent=process_cpu,
+            background_cpu_percent=0.0,
+        )
+        batches = _batches_from_counts(
+            _balanced_lane_loads(work_count, concurrency), unit=unit
+        )
+        required_work_units = max(batch["count"] for batch in batches)
+        if required_work_units <= profile["observed_batch_work_units"]:
+            break
+        profile = select_memory_profile(
+            identity, profiles,
+            required_work_units_per_process=required_work_units,
+        )
+    if profile is None:
+        first = _initial_formal_batch(work_count, unit)
+        count_field = "particle_count" if unit == "particles" else "work_item_count"
+        return {
+            "schema_version": 2, "role": "simion_repository_dispatch_plan",
+            "solver": "SIMION", "field_kind": field_kind,
+            "dispatch_unit": unit, count_field: work_count,
+            "resource_identity": identity,
+            "estimation": {
+                "kind": "formal_first_batch_observation",
+                "requires_observation_before_remaining_launches": work_count > first["count"],
+                "observation_seconds": FORMAL_OBSERVATION_SECONDS,
+                "first_batch_result_retained": True,
+                "terminal_action": "observe_first_formal_batch_for_45_seconds_then_replan_remaining_particles",
+            },
+            "host": host, "limits": _public_limits(1, 1, 1),
+            "waves": [{
+                "index": 1, "kind": "formal_observation", "batch_count": 1,
+                count_field: work_count, "coverage": "initial_formal_batch_only",
+                "batches": [first],
+            }],
+        }
     count_field = "particle_count" if unit == "particles" else "work_item_count"
     return {
         "schema_version": 2, "role": "simion_repository_dispatch_plan",
@@ -402,6 +448,7 @@ def plan_simion_dispatch(
             "kind": "exact_resource_profile", "observed_peak_bytes": peak,
             "per_process_memory_budget_bytes": memory_budget,
             "per_process_cpu_percent": max(MINIMUM_PROCESS_CPU_PERCENT, process_cpu),
+            "observed_batch_work_units": profile["observed_batch_work_units"],
             "memory_safety_factor": KNOWN_MEMORY_SAFETY_FACTOR,
             "observation_wait_skipped": True,
         },
@@ -526,6 +573,7 @@ def plan_runtime_dispatch(
             "resource_identity": prepared_plan["resource_identity"],
             "per_batch_peak_working_set_bytes": estimation["observed_peak_bytes"],
             "per_batch_cpu_percent": estimation.get("per_process_cpu_percent", 0.0),
+            "observed_batch_work_units": estimation.get("observed_batch_work_units"),
         })
     return plan_simion_dispatch(
         _request_from_dispatch_plan(prepared_plan), profiles,
