@@ -5,9 +5,11 @@ import unittest
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prism_analytic import (
     PrismAnalyticError,
+    contract_nominal_stripe_injection_angle_deg,
     derive_two_prism_hard_boundary_seed,
     hard_boundary_bias_v,
     hard_boundary_exit_angle_deg,
+    nominal_stripe_injection_angle_deg,
 )
 
 
@@ -16,6 +18,35 @@ class PrismAnalyticTest(unittest.TestCase):
         bias = hard_boundary_bias_v(4000, 4.0, 1.8)
         self.assertAlmostEqual(bias, -152.76516286150414)
         self.assertAlmostEqual(hard_boundary_exit_angle_deg(4000, 4.0, bias), 1.8)
+
+    def test_nominal_stripe_angle_uses_declared_l0_values_not_a_project_default(self) -> None:
+        self.assertAlmostEqual(
+            nominal_stripe_injection_angle_deg(1.48923, 335.0, 641.0, 25),
+            1.784,
+            places=3,
+        )
+        with self.assertRaises(PrismAnalyticError):
+            nominal_stripe_injection_angle_deg(1.0, 335.0, 641.0, 0)
+        with self.assertRaises(PrismAnalyticError):
+            nominal_stripe_injection_angle_deg(100.0, 335.0, 641.0, 25)
+
+    def test_contract_angle_requires_completed_project_l0_receipts(self) -> None:
+        pending = {"nominal": {"target_oscillation_count": 25}, "dual_stripe_l0": {"status": "inputs_pending"}}
+        with self.assertRaises(PrismAnalyticError):
+            contract_nominal_stripe_injection_angle_deg(pending)
+        complete = {
+            "nominal": {"target_oscillation_count": 25},
+            "dual_stripe_l0": {
+                "status": "l0_candidate",
+                "nominal_kappa_1": 1.48923,
+                "drift_length_L_mm": 335.0,
+                "axial_width_W_mm": 641.0,
+                "source_receipts": {
+                    "stripe_action_l0_sha256": "a", "mirror_period_l0_l1_sha256": "b", "psi_kappa_integral_sha256": "c",
+                },
+            },
+        }
+        self.assertAlmostEqual(contract_nominal_stripe_injection_angle_deg(complete), 1.784, places=3)
 
     def test_two_prism_seed_uses_ordered_geometric_handoffs(self) -> None:
         contract = {"prism_transport": {"two_prism_injection_l0": {

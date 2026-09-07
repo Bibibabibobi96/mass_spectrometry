@@ -48,6 +48,58 @@ def hard_boundary_bias_v(total_energy_ev: float, alpha_deg: float, beta_deg: flo
     return energy * math.cos(alpha + beta) * math.sin(beta - alpha)
 
 
+def nominal_stripe_injection_angle_deg(
+    kappa_at_nominal_turn: float,
+    drift_length_l_mm: float,
+    axial_width_w_mm: float,
+    oscillation_count: int,
+) -> float:
+    """Return the L0 nominal Stripe entrance angle in degrees.
+
+    The dual-Stripe/adiabatic-drift theory gives
+    ``sin(theta0) = kappa(1) L / (K W)``.  ``L`` is the named slow-drift
+    length and ``W`` is the named axial width of the particular Candidate;
+    neither may silently inherit a published Astral reference value.
+    """
+    kappa = _number(kappa_at_nominal_turn, "kappa(1)")
+    length = _number(drift_length_l_mm, "slow-drift length L")
+    width = _number(axial_width_w_mm, "axial width W")
+    if not isinstance(oscillation_count, int) or isinstance(oscillation_count, bool) or oscillation_count <= 0:
+        raise PrismAnalyticError("oscillation count K must be a positive integer")
+    if kappa <= 0.0 or length <= 0.0 or width <= 0.0:
+        raise PrismAnalyticError("kappa(1), L, and W must be positive")
+    sine = kappa * length / (oscillation_count * width)
+    if not 0.0 < sine < 1.0:
+        raise PrismAnalyticError("kappa(1) L / (K W) must lie strictly between zero and one")
+    return math.degrees(math.asin(sine))
+
+
+def contract_nominal_stripe_injection_angle_deg(contract: dict[str, Any]) -> float:
+    """Resolve a completed project L0 Stripe target, otherwise fail closed.
+
+    The analytic prism seed may consume this result only after the dual-Stripe
+    inverse solve has published its own values and provenance.  A CAD length
+    or an Astral-reference number is deliberately not a fallback.
+    """
+    model = contract.get("dual_stripe_l0")
+    if not isinstance(model, dict) or model.get("status") != "l0_candidate":
+        raise PrismAnalyticError("dual_stripe_l0 must be a completed l0_candidate before deriving the Stripe entrance angle")
+    receipts = model.get("source_receipts")
+    if not isinstance(receipts, dict) or not all(isinstance(receipts.get(key), str) and receipts[key] for key in (
+        "stripe_action_l0_sha256", "mirror_period_l0_l1_sha256", "psi_kappa_integral_sha256",
+    )):
+        raise PrismAnalyticError("dual_stripe_l0 requires nonempty action, mirror-period, and kappa receipt identities")
+    nominal = contract.get("nominal")
+    if not isinstance(nominal, dict):
+        raise PrismAnalyticError("nominal contract is required")
+    return nominal_stripe_injection_angle_deg(
+        _number(model.get("nominal_kappa_1"), "dual_stripe_l0.nominal_kappa_1"),
+        _number(model.get("drift_length_L_mm"), "dual_stripe_l0.drift_length_L_mm"),
+        _number(model.get("axial_width_W_mm"), "dual_stripe_l0.axial_width_W_mm"),
+        nominal.get("target_oscillation_count"),
+    )
+
+
 def hard_boundary_exit_angle_deg(total_energy_ev: float, alpha_deg: float, bias_v: float) -> float:
     """Invert the exact hard-boundary law on the continuous small-angle branch."""
     energy = _number(total_energy_ev, "total prism kinetic energy")

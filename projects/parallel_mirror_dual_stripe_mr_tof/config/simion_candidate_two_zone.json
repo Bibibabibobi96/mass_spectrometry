@@ -1185,6 +1185,32 @@
       "simplification": "Long B-splines retain their existing native parameter contracts; selected end planes use the composed CAD frame. Fasteners/holes not defining the beam channel remain outside the field-critical reconstruction."
     }
   },
+  "dual_stripe_l0": {
+    "status": "inputs_pending",
+    "coordinate_definition": "eta=(y-y_stripe_entrance)/signed_drift_length_L; eta_turning=1. The named Stripe entrance section, rather than a CAD bounding-box end, defines y_stripe_entrance.",
+    "required_before_l0_candidate": [
+      "stripe_action_target_solve",
+      "stripe_entrance_reference_point_and_ray",
+      "turning_point_y_mm",
+      "mirror_l0_l1_complete_two_mirror_period_receipt",
+      "psi_eta_model_and_endpoint_regularized_kappa_integral"
+    ],
+    "derived_fields_when_l0_candidate": {
+      "drift_length_L_mm": "abs(turning_point_y_mm-y_stripe_entrance_mm)",
+      "axial_width_W_mm": "mirror_period_T0_s*sqrt(nominal_energy_per_charge_V/(2*ion_mass))",
+      "nominal_kappa_1": "endpoint_regularized_integral_of_the_project_psi_eta_model",
+      "nominal_injection_angle_theta0_rad": "asin(nominal_kappa_1*drift_length_L_mm/(nominal.target_oscillation_count*axial_width_W_mm))"
+    },
+    "cad_constraints_only": [
+      "dual_stripe.active_y_span_mm",
+      "central_ground_terminal_window",
+      "prism_ground_shield_clearances"
+    ],
+    "forbidden_substitutions": [
+      "CAD_terminal_plane_separation_as_axial_width_W_mm",
+      "published_Astral_335mm_641mm_kappa_or_theta_values"
+    ]
+  },
   "prisms": {
     "geometry_status": "cad_triangle_and_nested_ground_aperture_audited__candidate_pose",
     "parameter_provenance": "20260903 read-only Ion-Foil/prism/grounded STL section audit. Coordinates are project-frame Candidate inputs derived from the qualified top-level rigid-transform chain, never GEM literals.",
