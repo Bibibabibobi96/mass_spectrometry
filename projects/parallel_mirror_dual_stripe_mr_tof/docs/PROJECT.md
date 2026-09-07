@@ -405,7 +405,10 @@ receipt 确定 `W`，总能量和目标 `K` 属于外部设计条件；只有这
 `(v1,v2,L)` 作为当前固定硬件的求解坐标。`theta0`、`w_y=w0 sin^2(theta0)` 与 `w_z=w0-w_y`
 仅在至少一个镜分支达到 `square_exact` 或 `overdetermined_consistent` 后才能发布；对于
 `locally_incompatible`、`underdetermined` 或无物理迭代点的分支，这三项即使有最小二乘数值也必须标为
-`diagnostic_only_outputs`。受管的轻量回放
+`diagnostic_only_outputs`。满列秩只回答“未知量是否被局部定义”，不证明当前点已经满足方程；因此权威层
+还要求独立的逐项残差验收回执 `residual_acceptance.passed=true`。没有这份回执时，即使 Jacobian 状态为
+`square_exact` 或 `overdetermined_consistent`，也必须失败关闭为
+`failed_no_residual_accepted_full_rank_branch`。受管的轻量回放
 `20260908_151500__analysis__python__fixed-stripe-parameter-authority` 已验证原终态 manifest 的全部输入/输出
 哈希，并在不重跑搜索的情况下确认两个镜分支均为 `locally_incompatible`，因此关闭该门禁。该回放由现有
 `run_dual_stripe_operating_seed.ps1 -ExistingOperatingSeedManifest` 模式生成，不建立重复 runner。

@@ -25,8 +25,10 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry impo
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_operating_seed import (
     _bias_pair_is_nondegenerate,
     _compare_fixed_profile_to_dimensionless_target,
+    _complete_consistency_start_grid,
     _seed_profile,
     _solve_dimensionless_paper_target,
+    _stripe_search_domain,
     attach_fixed_geometry_parameter_authority,
     audit_exact_paper_component_emulation_by_static_stripes,
     build_parameter_authority_from_managed_seed,
@@ -39,6 +41,24 @@ CONTRACT = PROJECT / "config" / "simion_candidate_two_zone.json"
 
 
 class DualStripeL0MathTest(unittest.TestCase):
+    def test_complete_consistency_starts_vary_L_independently_of_voltage(self) -> None:
+        profile = {
+            "normalized_start_fractions": [-0.5, 0.25, 0.5],
+            "complete_consistency_length_start_fractions": [0.1, 0.4, 0.9],
+        }
+        starts = _complete_consistency_start_grid(profile, 4000.0, 390.0 / 1.1)
+        self.assertEqual(len(starts), 18)
+        same_voltages = [start for start in starts if tuple(start[:2]) == (-2000.0, 1000.0)]
+        self.assertEqual([start[2] for start in same_voltages], [390.0 / 11.0, 1560.0 / 11.0, 3510.0 / 11.0])
+        self.assertTrue(all(0.0 < start[2] < 390.0 / 1.1 for start in starts))
+
+    def test_complete_search_domain_does_not_consume_historical_prism_energy(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        del contract["prism_transport"]["energy_partition"]
+        search_end, sample_count = _stripe_search_domain(contract, _seed_profile(contract))
+        self.assertAlmostEqual(search_end, -390.0 / 1.1)
+        self.assertGreater(sample_count, 0)
+
     def test_contract_separates_paper_relations_from_instance_values(self) -> None:
         contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
         authority = contract["theory_parameter_authority"]
@@ -204,6 +224,7 @@ class DualStripeL0MathTest(unittest.TestCase):
             "mirror_root_index": 1,
             "complete_fixed_hardware_search": {"best_iterate": {
                 "determination": {"status": "overdetermined_consistent"},
+                "residual_acceptance": {"passed": True},
             }},
         }]}
         authority = attach_fixed_geometry_parameter_authority(report)[
@@ -223,6 +244,7 @@ class DualStripeL0MathTest(unittest.TestCase):
                 "mirror_root_index": 1,
                 "complete_fixed_hardware_search": {"best_iterate": {
                     "determination": {"status": "overdetermined_consistent"},
+                    "residual_acceptance": {"passed": True},
                 }},
             }],
         }
@@ -231,6 +253,23 @@ class DualStripeL0MathTest(unittest.TestCase):
         ]["operating_state_publication_gate"]
         self.assertTrue(gate["passed"])
         self.assertEqual(gate["status"], "passed")
+
+    def test_full_rank_without_residual_acceptance_cannot_publish(self) -> None:
+        report = {"complete_fixed_hardware_root_family": [{
+            "mirror_root_index": 1,
+            "complete_fixed_hardware_search": {"best_iterate": {
+                "determination": {"status": "overdetermined_consistent"},
+            }},
+        }]}
+        authority = attach_fixed_geometry_parameter_authority(report)[
+            "fixed_geometry_parameter_authority"
+        ]
+        self.assertFalse(authority["operating_state_publication_gate"]["passed"])
+        self.assertEqual(
+            authority["operating_state_publication_gate"]["status"],
+            "failed_no_residual_accepted_full_rank_branch",
+        )
+        self.assertFalse(authority["branch_states"][0]["residual_acceptance_passed"])
 
     def test_managed_seed_authority_verifies_and_derives_without_rerunning_search(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -283,7 +322,7 @@ class DualStripeL0MathTest(unittest.TestCase):
             self.assertEqual(
                 result["fixed_geometry_parameter_authority"]
                 ["operating_state_publication_gate"]["status"],
-                "failed_no_compatible_full_rank_branch",
+                "failed_no_residual_accepted_full_rank_branch",
             )
             self.assertEqual(
                 result["two_prism_voltage_definition"]["status"],

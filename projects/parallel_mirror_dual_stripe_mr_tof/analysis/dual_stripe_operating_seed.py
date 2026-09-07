@@ -182,12 +182,19 @@ def attach_fixed_geometry_parameter_authority(
         best = search.get("best_iterate") if isinstance(search, dict) else None
         determination = best.get("determination") if isinstance(best, dict) else None
         status = determination.get("status") if isinstance(determination, dict) else "no_physical_iterate"
-        publishable = status in _PUBLISHABLE_DETERMINATION_STATES
+        residual_acceptance = best.get("residual_acceptance") if isinstance(best, dict) else None
+        residual_acceptance_passed = (
+            isinstance(residual_acceptance, dict) and residual_acceptance.get("passed") is True
+        )
+        publishable = (
+            status in _PUBLISHABLE_DETERMINATION_STATES and residual_acceptance_passed
+        )
         if publishable:
             publishable_indices.append(index)
         branch_states.append({
             "mirror_root_index": index,
             "determination_status": status,
+            "residual_acceptance_passed": residual_acceptance_passed,
             "operating_state_publishable": publishable,
             "diagnostic_only_outputs": [] if publishable else [
                 "nominal_injection_angle_degrees",
@@ -232,7 +239,7 @@ def attach_fixed_geometry_parameter_authority(
                 "wy_equals_w0_sin_squared_theta0",
                 "wz_equals_w0_minus_wy",
             ],
-            "publication_condition": "at least one branch must be locally compatible and full-column-rank",
+            "publication_condition": "at least one branch must be locally compatible, full-column-rank, and carry a passed per-residual acceptance receipt",
         },
         "reference_component_emulation": reference_emulation,
         "branch_states": branch_states,
@@ -240,7 +247,7 @@ def attach_fixed_geometry_parameter_authority(
             "passed": gate_passed,
             "publishable_mirror_root_indices": publishable_indices,
             "status": (
-                "passed" if gate_passed else "failed_no_compatible_full_rank_branch"
+                "passed" if gate_passed else "failed_no_residual_accepted_full_rank_branch"
             ),
             "published_operating_state": "available_in_publishable_branch" if gate_passed else None,
         },
@@ -504,18 +511,10 @@ def _seed_profile(contract: dict[str, Any]) -> dict[str, Any]:
     return profile
 
 
-def _entry_direction_and_search_end(
+def _stripe_search_domain(
     contract: dict[str, Any], profile: dict[str, Any],
-) -> tuple[tuple[float, float, float], float, int]:
-    energy = contract.get("prism_transport", {}).get("energy_partition", {})
-    if energy.get("semantics") != "total_kinetic_energy_at_first_prism_ev":
-        raise CandidateContractError("Stripe seed requires the declared prism energy partition")
-    total = _finite(energy.get("total_kinetic_energy_ev"), "total kinetic energy")
-    drift = _finite(energy.get("drift_kinetic_energy_ev"), "drift kinetic energy")
-    nominal = _finite(contract.get("nominal", {}).get("energy_per_charge_v"), "nominal energy")
-    if total != nominal or not 0.0 < drift < total:
-        raise CandidateContractError("Stripe seed energy partition must match the positive nominal energy")
-    direction = (0.0, -math.sqrt(drift / total), -math.sqrt(1.0 - drift / total))
+) -> tuple[float, int]:
+    """Derive the physical turn-search interval from Stripe geometry only."""
     stripe_l0 = contract["dual_stripe_l0"]
     entry = _finite(stripe_l0["theory_stripe_entrance"]["project_y_mm"], "Stripe entry y")
     y_span = tuple(_finite(value, "Stripe active span") for value in contract["dual_stripe"]["theory_profile"]["active_y_span_mm"])
@@ -548,6 +547,23 @@ def _entry_direction_and_search_end(
         "turning-search sampling multiplier",
     )
     sample_count = max(span_counts) * samples_per_span * multiplier
+    return search_end, sample_count
+
+
+def _entry_direction_and_search_end(
+    contract: dict[str, Any], profile: dict[str, Any],
+) -> tuple[tuple[float, float, float], float, int]:
+    """Add the historical prism diagnostic direction to the geometry domain."""
+    energy = contract.get("prism_transport", {}).get("energy_partition", {})
+    if energy.get("semantics") != "total_kinetic_energy_at_first_prism_ev":
+        raise CandidateContractError("Stripe seed requires the declared prism energy partition")
+    total = _finite(energy.get("total_kinetic_energy_ev"), "total kinetic energy")
+    drift = _finite(energy.get("drift_kinetic_energy_ev"), "drift kinetic energy")
+    nominal = _finite(contract.get("nominal", {}).get("energy_per_charge_v"), "nominal energy")
+    if total != nominal or not 0.0 < drift < total:
+        raise CandidateContractError("Stripe seed energy partition must match the positive nominal energy")
+    direction = (0.0, -math.sqrt(drift / total), -math.sqrt(1.0 - drift / total))
+    search_end, sample_count = _stripe_search_domain(contract, profile)
     return direction, search_end, sample_count
 
 
@@ -737,6 +753,39 @@ def _fixed_hardware_joint_trial_at_turn(
     )
 
 
+def _complete_consistency_start_grid(
+    profile: dict[str, Any], energy_per_charge_v: float, usable_length_mm: float,
+) -> tuple[np.ndarray, ...]:
+    """Build deterministic, independently varied ``(v1,v2,|L|)`` starts."""
+    energy = _finite(energy_per_charge_v, "complete consistency nominal energy")
+    usable_length = _finite(usable_length_mm, "complete consistency usable length")
+    voltage_fractions = tuple(
+        _finite(value, "complete consistency voltage start fraction")
+        for value in profile.get("normalized_start_fractions", [])
+    )
+    length_fractions = tuple(
+        _finite(value, "complete consistency length start fraction")
+        for value in profile.get("complete_consistency_length_start_fractions", [])
+    )
+    if energy <= 0.0 or usable_length <= 0.0:
+        raise CandidateContractError("complete consistency start scales must be positive")
+    if len(voltage_fractions) < 2 or any(
+        value == 0.0 or not -1.0 < value < 1.0 for value in voltage_fractions
+    ):
+        raise CandidateContractError("complete consistency voltage starts must be nonzero and inside (-1,1)")
+    if not length_fractions or any(not 0.0 < value < 1.0 for value in length_fractions):
+        raise CandidateContractError("complete consistency length starts must lie inside (0,1)")
+    if len(set(length_fractions)) != len(length_fractions):
+        raise CandidateContractError("complete consistency length starts must be distinct")
+    return tuple(
+        np.asarray((energy * first, energy * second, usable_length * length), dtype=float)
+        for first in voltage_fractions
+        for second in voltage_fractions
+        if first != second
+        for length in length_fractions
+    )
+
+
 def _complete_residual_scales(
     contract: dict[str, Any], names: Sequence[str], energies_v: Sequence[float],
 ) -> tuple[float, ...]:
@@ -791,7 +840,7 @@ def _search_complete_fixed_hardware_consistency(mirror: ManagedMirrorCandidate) 
     """
     contract = mirror.contract
     profile = _seed_profile(contract)
-    direction, search_end, sample_count = _entry_direction_and_search_end(contract, profile)
+    search_end, sample_count = _stripe_search_domain(contract, profile)
     widths = tuple(compile_dual_stripe_path_length_evaluator(contract, name) for name in ("set_1", "set_2"))
     eta_step = _finite(profile["kappa_derivative_step"], "kappa derivative step")
     time_step = _finite(profile["time_platform_derivative_step"], "time-platform derivative step")
@@ -807,34 +856,14 @@ def _search_complete_fixed_hardware_consistency(mirror: ManagedMirrorCandidate) 
         profile["complete_consistency_refinement_start_count"],
         "complete consistency refinement start count",
     )
-    fractions = tuple(_finite(value, "complete consistency start fraction") for value in profile["normalized_start_fractions"])
     energy = mirror.nominal_energy_per_charge_v
     lower = -energy
     upper = math.nextafter(min(mirror.energy_points_v), -math.inf)
-    bias_starts = [
-        energy * np.asarray((first, second), dtype=float)
-        for first in fractions
-        for second in fractions
-        if first != second
-    ]
     entry = _finite(contract["dual_stripe_l0"]["theory_stripe_entrance"]["project_y_mm"], "Stripe entry")
     drift_sign = 1.0 if search_end > entry else -1.0
     usable_length = abs(search_end - entry)
     length_step = usable_length / sample_count
-    starts: list[np.ndarray] = []
-    for biases in bias_starts:
-        try:
-            initialization_trial = _fixed_hardware_joint_trial(
-                mirror, widths, biases, direction, search_end, sample_count,
-                eta_step, time_step, energy_step,
-            )
-        except CandidateContractError:
-            continue
-        starts.append(np.asarray([
-            float(biases[0]),
-            float(biases[1]),
-            abs(initialization_trial.nominal_turning_y_mm - entry),
-        ]))
+    starts = _complete_consistency_start_grid(profile, energy, usable_length)
     feasible_starts = 0
     candidates: list[dict[str, Any]] = []
     screened_starts: list[tuple[float, np.ndarray]] = []
@@ -939,8 +968,8 @@ def _search_complete_fixed_hardware_consistency(mirror: ManagedMirrorCandidate) 
     if not candidates or residual_names is None or residual_scales is None:
         return {
             "status": "no_feasible_complete_consistency_iterate",
-            "attempted_start_count": len(bias_starts),
-            "legacy_5eV_initializable_start_count": len(starts),
+            "attempted_start_count": len(starts),
+            "independent_cartesian_start_count": len(starts),
             "feasible_start_count": feasible_starts,
             "refined_start_count": 0,
             "limitations": ["No physical first-turn trial survived the declared bounded multi-start search."],
@@ -990,8 +1019,8 @@ def _search_complete_fixed_hardware_consistency(mirror: ManagedMirrorCandidate) 
     })
     return {
         "status": "bounded_multistart_complete__not_a_global_proof",
-        "attempted_start_count": len(bias_starts),
-        "legacy_5eV_initializable_start_count": len(starts),
+        "attempted_start_count": len(starts),
+        "independent_cartesian_start_count": len(starts),
         "feasible_start_count": feasible_starts,
         "refined_start_count": len(refined_starts),
         "distinct_final_iterate_count": len(candidates),
@@ -1000,7 +1029,7 @@ def _search_complete_fixed_hardware_consistency(mirror: ManagedMirrorCandidate) 
             "constraint": "psi(1)-1=0",
             "status": "identically_satisfied_by_normalizing_at_the_solved_physical_turn",
         },
-        "energy_partition_semantics": "theta0, drift energy, and fast reflection energy are derived from the solved L and turning pseudopotential; 5 eV initializes starts only",
+        "energy_partition_semantics": "theta0, drift energy, and fast reflection energy are derived from the solved L and turning pseudopotential; complete-search L starts are independently gridded and do not inherit the historical 5 eV prism diagnostic",
         "limitations": [
             "Optimizer convergence is a search diagnostic, not an acceptance condition.",
             "The bounded deterministic start grid is not a mathematical proof of global existence or nonexistence.",
