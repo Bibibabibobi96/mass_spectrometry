@@ -22,9 +22,15 @@ SOURCE_COUNT_KEYS = {
     "accelerator_focus_bunch_fly2": "candidate_bunch_particle_count",
     "first_prism_entry_center_fly2": "center_particle_count",
 }
+ELEMENTARY_CHARGE_C = 1.602176634e-19
+ATOMIC_MASS_KG = 1.66053906660e-27
 REQUIRED_FIELDS = {
     "turn": {"ion", "n", "t_us", "z_mm"},
+    "fast_turn": {"ion", "n", "t_us", "x_mm", "y_mm", "z_mm"},
+    "slow_turn": {"ion", "n", "t_us", "x_mm", "y_mm", "z_mm"},
+    "stripe_plane": {"ion", "n", "direction_y", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
     "central_plane": {"ion", "n", "t_us", "x_mm", "y_mm"},
+    "central_plane_directional": {"ion", "n", "direction_z", "t_us", "x_mm", "y_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
     "detector": {"ion", "t_us", "x_mm", "y_mm", "z_mm"},
     "target_k": {"ion", "k", "t_us", "x_mm", "y_mm", "z_mm"},
     "splat": {"ion", "code", "t_us", "turns"},
@@ -59,6 +65,9 @@ def _event_error(event: dict[str, Any]) -> str | None:
     for key in ("splat", "code"):
         if key in event and not _integer(event[key]):
             return "invalid_splat_code"
+    for key in ("direction_y", "direction_z"):
+        if key in event and event[key] not in (-1, 1):
+            return "invalid_direction_sign"
     return None
 
 
@@ -104,10 +113,34 @@ def _fwhm(times_us: list[float]) -> float | None:
     return width * (occupied[-1] - occupied[0] + 1) if occupied else None
 
 
+def _same_direction_periods_us(events: list[dict[str, Any]]) -> list[float]:
+    """Extract complete same-direction central-plane periods, retaining all values."""
+    grouped: dict[tuple[int, int], list[float]] = {}
+    for event in events:
+        if event["kind"] == "central_plane_directional":
+            grouped.setdefault((int(event["ion"]), int(event["direction_z"])), []).append(float(event["t_us"]))
+    periods: list[float] = []
+    for times in grouped.values():
+        ordered = sorted(times)
+        periods.extend(later - earlier for earlier, later in zip(ordered, ordered[1:]))
+    return periods
+
+
+def _effective_axial_width_mm(period_us: float, kinetic_energy_ev: float, mass_th: float) -> float:
+    """Apply $W=T_0\sqrt{E/(2m)}$ to one full same-direction period."""
+    if not all(math.isfinite(value) and value > 0.0 for value in (period_us, kinetic_energy_ev, mass_th)):
+        raise ValueError("period, kinetic energy, and mass must be finite positive values")
+    return period_us * 1.0e-6 * math.sqrt(
+        kinetic_energy_ev * ELEMENTARY_CHARGE_C / (2.0 * mass_th * ATOMIC_MASS_KG)
+    ) * 1.0e3
+
+
 def summarize_events(
     events: list[dict[str, Any]], target_k: int, reported_splat_count: int | None = None,
     *, expected_particle_ids: tuple[int, ...] | None = None,
     completion_count: int | None = None,
+    kinetic_energy_ev: float | None = None,
+    mass_th: float | None = None,
 ) -> dict[str, Any]:
     """Validate exact source identities; absent source/completion is diagnostic only.
 
@@ -177,6 +210,12 @@ def summarize_events(
     oscillations = [value // 2 for value in turns]
     detected_times = [float(event["t_us"]) for event in detector]
     target_k_times = [float(event["t_us"]) for event in target_k_events]
+    directional_periods = _same_direction_periods_us(events)
+    slow_turn_y_mm = [float(event["y_mm"]) for event in events if event["kind"] == "slow_turn"]
+    widths = (
+        [_effective_axial_width_mm(period, kinetic_energy_ev, mass_th) for period in directional_periods]
+        if kinetic_energy_ev is not None and mass_th is not None else []
+    )
     fwhm = _fwhm(detected_times) if valid else None
     target_k_fwhm = _fwhm(target_k_times) if valid else None
     center_time = median(detected_times) if valid and detected_times else None
@@ -228,6 +267,21 @@ def summarize_events(
         "central_plane_crossing_count": sum(
             event["kind"] == "central_plane" for event in events
         ),
+        "fast_z_turn_count": sum(event["kind"] == "fast_turn" for event in events),
+        "slow_y_turn_count": sum(event["kind"] == "slow_turn" for event in events),
+        "slow_y_turning_positions_mm": slow_turn_y_mm,
+        "slow_drift_abs_lengths_from_y0_mm": [abs(value) for value in slow_turn_y_mm],
+        "stripe_y0_crossing_count": sum(event["kind"] == "stripe_plane" for event in events),
+        "stripe_y0_inbound_crossing_count": sum(
+            event["kind"] == "stripe_plane" and event["direction_y"] < 0 for event in events
+        ),
+        "stripe_y0_outbound_crossing_count": sum(
+            event["kind"] == "stripe_plane" and event["direction_y"] > 0 for event in events
+        ),
+        "same_direction_central_plane_periods_us": directional_periods,
+        "same_direction_central_plane_period_median_us": median(directional_periods) if directional_periods else None,
+        "effective_axial_width_W_mm": widths if kinetic_energy_ev is not None and mass_th is not None else None,
+        "effective_axial_width_W_median_mm": median(widths) if widths else None,
         "detector_tof_us": detected_times,
         "detector_tof_fwhm_us": fwhm,
         "detector_tof_median_us": center_time,
@@ -275,7 +329,13 @@ def load_particle_source(input_manifest: Path, source_key: str) -> dict[str, Any
     target_k = contract["nominal"]["target_oscillation_count"]
     if not _integer(target_k, minimum=1):
         raise ValueError("source contract has invalid target oscillation count")
-    return {"expected_particle_ids": tuple(particle_ids), "target_k": int(target_k),
+    species = contract.get("particle_source", {}).get("species")
+    if not isinstance(species, dict):
+        species = None
+    elif not all(type(species.get(key)) in (int, float) and math.isfinite(float(species[key])) and float(species[key]) > 0.0
+                 for key in ("mass_th", "kinetic_energy_ev")):
+        raise ValueError("source contract species mass and kinetic energy must be finite positive values")
+    return {"expected_particle_ids": tuple(particle_ids), "target_k": int(target_k), "species": species,
             "provenance": {"input_manifest_sha256": hashlib.sha256(input_manifest.read_bytes()).hexdigest(),
                            "source_key": source_key, "fly2_filename": source_path.name,
                            "fly2_sha256": record["sha256"],
@@ -290,7 +350,9 @@ def analyze_log(log_path: Path, output_path: Path, *, input_manifest: Path, sour
     matches = list(FLY_COMPLETED.finditer(text))
     reported_splat_count = int(matches[0].group("splats")) if len(matches) == 1 else None
     summary = summarize_events(parse_events(text), source["target_k"], reported_splat_count,
-                               expected_particle_ids=source["expected_particle_ids"], completion_count=len(matches))
+                               expected_particle_ids=source["expected_particle_ids"], completion_count=len(matches),
+                               kinetic_energy_ev=(float(source["species"]["kinetic_energy_ev"]) if source["species"] else None),
+                               mass_th=(float(source["species"]["mass_th"]) if source["species"] else None))
     summary["source"] = source["provenance"]
     summary["log_sha256"] = hashlib.sha256(log_path.read_bytes()).hexdigest()
     output_path.parent.mkdir(parents=True, exist_ok=True)

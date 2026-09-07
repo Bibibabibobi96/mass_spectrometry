@@ -56,13 +56,13 @@ assert(full_path_timeout_us > 0, 'full-path timeout must be positive')
 -- state in scalar arrays rather than allocating a five-field table per step:
 -- the latter turns a long, otherwise identical trajectory into hundreds of
 -- thousands of Lua allocations and GC cycles.
-local previous_x, previous_y, previous_z, previous_vz, previous_t = {}, {}, {}, {}, {}
-local turns, crossings, detected, splat_codes, splat_event_emitted = {}, {}, {}, {}, {}
+local previous_x, previous_y, previous_z, previous_vx, previous_vy, previous_vz, previous_t = {}, {}, {}, {}, {}, {}, {}
+local turns, slow_turns, crossings, stripe_crossings, detected, splat_codes, splat_event_emitted = {}, {}, {}, {}, {}, {}, {}
 
 function segment.initialize_run()
   sim_trajectory_quality = trajectory_quality
-  previous_x, previous_y, previous_z, previous_vz, previous_t = {}, {}, {}, {}, {}
-  turns, crossings, detected, splat_codes, splat_event_emitted = {}, {}, {}, {}, {}
+  previous_x, previous_y, previous_z, previous_vx, previous_vy, previous_vz, previous_t = {}, {}, {}, {}, {}, {}, {}
+  turns, slow_turns, crossings, stripe_crossings, detected, splat_codes, splat_event_emitted = {}, {}, {}, {}, {}, {}, {}
   assert(simion.wb and #simion.wb.instances == 3,
     'MR-TOF Candidate flight requires analyser, accelerator, and detector instances')
   assert(simion.wb.instances[1].filename:match('mrtof_analyzer%.pa0$'), 'instance 1 must be analyser PA0')
@@ -89,7 +89,7 @@ function segment.initialize()
   -- Retain the release state so a first-step plane crossing is not omitted.
   if previous_z[ion_number] == nil then
     previous_x[ion_number], previous_y[ion_number], previous_z[ion_number] = ion_px_mm, ion_py_mm, ion_pz_mm
-    previous_vz[ion_number], previous_t[ion_number] = ion_vz_mm, ion_time_of_flight
+    previous_vx[ion_number], previous_vy[ion_number], previous_vz[ion_number], previous_t[ion_number] = ion_vx_mm, ion_vy_mm, ion_vz_mm, ion_time_of_flight
   end
 end
 
@@ -115,11 +115,18 @@ function segment.other_actions()
     end
   end
   local px, py, pz = previous_x[ion_number], previous_y[ion_number], previous_z[ion_number]
-  local pvz, pt = previous_vz[ion_number], previous_t[ion_number]
+  local pvx, pvy, pvz, pt = previous_vx[ion_number], previous_vy[ion_number], previous_vz[ion_number], previous_t[ion_number]
   if pz ~= nil then
     if pvz * ion_vz_mm < 0 then
+      local fraction = -pvz / (ion_vz_mm - pvz)
+      local tx = px + fraction * (ion_px_mm - px)
+      local ty = py + fraction * (ion_py_mm - py)
+      local tz = pz + fraction * (ion_pz_mm - pz)
+      local tt = pt + fraction * (ion_time_of_flight - pt)
       turns[ion_number] = (turns[ion_number] or 0) + 1
       print(string.format('MRTOF_EVENT turn ion=%d n=%d t_us=%.12g z_mm=%.12g', ion_number, turns[ion_number], ion_time_of_flight, ion_pz_mm))
+      print(string.format('MRTOF_EVENT fast_turn ion=%d n=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g',
+        ion_number, turns[ion_number], tt, tx, ty, tz))
       if turns[ion_number] == target_turns then
         splat_codes[ion_number] = 1
         print(string.format('MRTOF_EVENT target_k ion=%d k=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g',
@@ -133,6 +140,23 @@ function segment.other_actions()
         end
       end
     end
+    if pvy * ion_vy_mm < 0 then
+      local fraction = -pvy / (ion_vy_mm - pvy)
+      slow_turns[ion_number] = (slow_turns[ion_number] or 0) + 1
+      print(string.format('MRTOF_EVENT slow_turn ion=%d n=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g',
+        ion_number, slow_turns[ion_number], pt + fraction*(ion_time_of_flight-pt),
+        px + fraction*(ion_px_mm-px), py + fraction*(ion_py_mm-py), pz + fraction*(ion_pz_mm-pz)))
+    end
+    local dy = ion_py_mm - py
+    if (py < 0 and ion_py_mm >= 0) or (py > 0 and ion_py_mm <= 0) then
+      local fraction = -py / dy
+      stripe_crossings[ion_number] = (stripe_crossings[ion_number] or 0) + 1
+      local vy = pvy + fraction*(ion_vy_mm-pvy)
+      print(string.format('MRTOF_EVENT stripe_plane ion=%d n=%d direction_y=%d t_us=%.12g x_mm=%.12g y_mm=0 z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
+        ion_number, stripe_crossings[ion_number], vy < 0 and -1 or 1,
+        pt + fraction*(ion_time_of_flight-pt), px + fraction*(ion_px_mm-px), pz + fraction*(ion_pz_mm-pz),
+        pvx + fraction*(ion_vx_mm-pvx), vy, pvz + fraction*(ion_vz_mm-pvz)))
+    end
     local dz = ion_pz_mm - pz
     -- Half-open ownership counts arrival at z=0 once, but not departure.
     if (pz < 0 and ion_pz_mm >= 0) or (pz > 0 and ion_pz_mm <= 0) then
@@ -141,6 +165,11 @@ function segment.other_actions()
       print(string.format('MRTOF_EVENT central_plane ion=%d n=%d t_us=%.12g x_mm=%.12g y_mm=%.12g',
         ion_number, crossings[ion_number], pt + fraction*(ion_time_of_flight-pt),
         px + fraction*(ion_px_mm-px), py + fraction*(ion_py_mm-py)))
+      local vz = pvz + fraction*(ion_vz_mm-pvz)
+      print(string.format('MRTOF_EVENT central_plane_directional ion=%d n=%d direction_z=%d t_us=%.12g x_mm=%.12g y_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
+        ion_number, crossings[ion_number], vz < 0 and -1 or 1,
+        pt + fraction*(ion_time_of_flight-pt), px + fraction*(ion_px_mm-px), py + fraction*(ion_py_mm-py),
+        pvx + fraction*(ion_vx_mm-pvx), pvy + fraction*(ion_vy_mm-pvy), vz))
     end
     if not detected[ion_number] and dz < 0 and pz > detector_z and ion_pz_mm <= detector_z then
       local fraction = (detector_z - pz) / dz
@@ -157,7 +186,7 @@ function segment.other_actions()
     end
   end
   previous_x[ion_number], previous_y[ion_number], previous_z[ion_number] = ion_px_mm, ion_py_mm, ion_pz_mm
-  previous_vz[ion_number], previous_t[ion_number] = ion_vz_mm, ion_time_of_flight
+  previous_vx[ion_number], previous_vy[ion_number], previous_vz[ion_number], previous_t[ion_number] = ion_vx_mm, ion_vy_mm, ion_vz_mm, ion_time_of_flight
 end
 
 function segment.terminate()

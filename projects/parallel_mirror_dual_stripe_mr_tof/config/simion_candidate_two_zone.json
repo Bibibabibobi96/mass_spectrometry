@@ -1188,12 +1188,17 @@
   "dual_stripe_l0": {
     "status": "joint_inputs_pending",
     "solve_semantics": "coupled_mirror_stripe_l0_l1",
-    "coordinate_definition": "eta=(y-y_stripe_entrance)/signed_drift_length_L; eta_turning=1. The named Stripe entrance section, rather than a CAD bounding-box end, defines y_stripe_entrance.",
+    "coordinate_definition": "eta=(y-y_stripe_entrance)/signed_drift_length_L; eta_turning=1. For this frozen CAD/theory contract y_stripe_entrance=0 mm is the common endpoint of both theory Stripe functions S_i(y), not a bounding-box edge. The nominal slow drift proceeds toward negative project y; signed L carries that direction while reported |L| is positive.",
+    "theory_stripe_entrance": {
+      "project_y_mm": 0.0,
+      "definition": "The P2-to-Stripe hand-off plane is the y=0 endpoint of both active S_i(y) functions. S_i(0) is the baseline action term in the joint mirror period.",
+      "excluded_mechanical_extension_y_mm": [0.0, 2.0],
+      "exclusion_semantics": "The CAD planar terminal extension provides mechanical continuity only. It is not a theory-profile extrapolation, a separate drift coordinate origin, or a mirror z-turning point."
+    },
     "joint_independent_variables": [
       "mirror_non_ground_electrode_voltages",
       "dual_stripe_set_1_and_set_2_biases",
-      "stripe_entrance_reference_point_and_ray",
-      "stripe_turning_point_and_full_period_state"
+      "path_ordered_prism_1_and_prism_2_voltages"
     ],
     "axial_width_W_parameterization": "For this fixed-mirror hardware, W is a free coordinate of the adjustable mirror-voltage solution family and is always recomputed from that trial's full coupled period. A solver may use W to parameterize the voltage family, but must enforce the computed-W equality in the same residual; W is never a second independently fixed number.",
     "joint_residuals": [
@@ -1204,13 +1209,56 @@
       "target_oscillation_count_relation"
     ],
     "time_platform_constraint": {
-      "status": "project_selected_pending_physical_span_check",
+      "status": "user_specified_pending_physical_span_check",
       "quantity": "d_tau_g_d_eta_turn",
       "target": 0.0,
       "eta_turn_nodes": [0.9, 0.95, 1.05, 1.1],
-      "semantics": "Four project-selected time-platform derivative nodes symmetric around the nominal turning point. They are not claimed to be the unpublished original-paper nodes. Before activation, each physical y=entry_y+eta_turn*L must lie within both frozen Stripe active spans and the joint Jacobian rank gate must classify the full system."
+      "semantics": "Four user-specified time-platform derivative nodes symmetric around the nominal turning point. The paper does not publish its four node locations; this project value is user authority, not an attribution to the original paper. Before activation, each physical y=entry_y+eta_turn*L must lie within both frozen Stripe active spans and the joint Jacobian rank gate must classify the full system."
     },
     "determination_gate": "Before publishing any solved voltage, L, W, kappa, theta, or prism entrance state, evaluate the named joint residual Jacobian at the solution. Independent rank below the declared physical unknown count is underdetermined; an incompatible augmented residual rank is overdetermined; only equal independent rank permits publication of the remaining derived quantities.",
+    "current_fixed_hardware_l0_l1_problem": {
+      "status": "source_to_stripe_closed_transport_required",
+      "frozen_inputs_required_before_solve": [
+        "source_reference_position_and_direction_in_project_frame",
+        "source_total_kinetic_energy_at_each_prism",
+        "fixed_CAD_geometry_and_project_to_SIMION_transform",
+        "three_dimensional_unit_field_transport_for_P1_and_P2",
+        "target_oscillation_count"
+      ],
+      "independent_unknowns": [
+        "mirror_voltage_B_v",
+        "mirror_voltage_C_v",
+        "mirror_voltage_D_v",
+        "mirror_voltage_E_v",
+        "stripe_set_1_bias_v",
+        "stripe_set_2_bias_v",
+        "prism_1_voltage_v",
+        "prism_2_voltage_v"
+      ],
+      "derived_not_independent_unknowns": [
+        "stripe_entrance_project_position_mm",
+        "stripe_entrance_project_direction",
+        "nominal_turning_point_y_mm",
+        "drift_length_L_mm",
+        "coupled_axial_width_W_mm",
+        "nominal_kappa_1",
+        "nominal_injection_angle_theta0_rad"
+      ],
+      "named_residual_blocks": [
+        "three_point_low_relative",
+        "three_point_high_relative",
+        "mirror_gamma_90_m11",
+        "target_oscillation_count",
+        "spatial_return_kappa_prime",
+        "time_platform_tau_g_prime_eta_0.9",
+        "time_platform_tau_g_prime_eta_0.95",
+        "time_platform_tau_g_prime_eta_1.05",
+        "time_platform_tau_g_prime_eta_1.1",
+        "P1_P2_to_Stripe_entrance_position_match",
+        "P1_P2_to_Stripe_entrance_direction_match"
+      ],
+      "determination_semantics": "The source state and fixed geometry are inputs, not fit coordinates. There are eight declared voltage unknowns. The first nine blocks are scalar analytic conditions; the two P1/P2-to-Stripe blocks expand into the explicitly declared position and direction components of the frozen theory hand-off interface, never into a norm or an arbitrary scalar count. The actual component-level complete Jacobian and augmented residual rank decide underdetermined, exactly-determined, or incompatible-overdetermined status. No voltage candidate may be emitted before that calculation."
+    },
     "derived_fields_only_after_joint_candidate": {
       "drift_length_L_mm": "abs(turning_point_y_mm-y_stripe_entrance_mm)",
       "axial_width_W_mm": "full_two_mirror_period_including_dual_stripe_action*sqrt(nominal_energy_per_charge_V/(2*ion_mass))",
@@ -1645,23 +1693,25 @@
       "required_input": "geometry-constrained source/focus -> P1 -> P2 -> Stripe entrance phase-space contract; P2 is not a K=25-return device"
     },
     "two_prism_injection_l0": {
-      "status": "required_input_pending",
+      "status": "source_to_stripe_joint_transport_pending",
       "path_order": [
         "accelerator_focus",
         "prism_1_id_16",
         "prism_2_id_17",
         "stripe_entrance"
       ],
-      "required_before_hard_boundary_seed": [
-        "dual_stripe_l0.nominal_kappa_1",
-        "dual_stripe_l0.drift_length_L_mm",
-        "dual_stripe_l0.axial_width_W_mm",
-        "dual_stripe_l0.nominal_injection_angle_theta0",
-        "prism_1_effective_plane_and_face_order",
-        "prism_2_effective_plane_and_face_order",
-        "stripe_entrance_reference_point_and_ray"
+      "frozen_inputs_before_three_dimensional_shooting": [
+        "accelerator_focus_source_reference_position_direction_and_energy",
+        "prism_1_and_prism_2_effective_plane_face_order_from_CAD",
+        "SIMION_project_frame_transform",
+        "finite_three_dimensional_P1_P2_unit_field_transport"
       ],
-      "semantics": "CAD triangles and shields constrain mechanical clearance only. This block becomes geometry_constrained_hard_boundary_l0 only after the named L0 physical hand-offs are resolved; the analytic solver otherwise fails closed."
+      "derived_per_joint_trial": [
+        "dual_stripe_L_W_kappa_theta_target_from_same_Mirror_Stripe_trial",
+        "Stripe_entrance_project_position_and_direction_target",
+        "P1_P2_voltage_pair_and_actual_Stripe_entrance_phase_space"
+      ],
+      "semantics": "CAD triangles and shields constrain mechanical clearance only. The accelerator-focus ray is frozen input. The joint Mirror-Stripe trial derives the required Stripe entrance phase-space, then finite three-dimensional P1/P2 shooting derives the actual phase-space and both prism voltages. The component-level difference is retained in the complete Jacobian; it is not an external target coordinate, a voltage scan, or a hard-boundary final claim."
     }
   },
   "accelerator": {

@@ -17,6 +17,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis 
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
+PROGRAM = REPOSITORY_ROOT / "projects" / "parallel_mirror_dual_stripe_mr_tof" / "simion" / "mrtof_candidate.lua"
 
 
 def terminal(ion: int, **changes: object) -> dict[str, object]:
@@ -47,6 +48,14 @@ def fixture_manifest(root: Path) -> Path:
 
 
 class SimionEventAnalysisTest(unittest.TestCase):
+    def test_single_particle_program_emits_the_required_topology_events(self):
+        source = PROGRAM.read_text(encoding="utf-8-sig")
+        for token in (
+            "MRTOF_EVENT fast_turn", "MRTOF_EVENT slow_turn", "MRTOF_EVENT stripe_plane",
+            "MRTOF_EVENT central_plane_directional", "direction_y=", "direction_z=",
+        ):
+            self.assertIn(token, source)
+
     def assert_invalid(self, events, expected, splats, error):
         result = summarize_events(events, 25, splats, expected_particle_ids=expected)
         self.assertFalse(result["event_integrity_passed"])
@@ -63,6 +72,28 @@ class SimionEventAnalysisTest(unittest.TestCase):
         self.assertEqual(result["electrode_collision_count"], 9)
         self.assertEqual(result["detection_rate"], 8 / 9)
         self.assertGreater(result["mass_resolution_t_over_2fwhm"], 0)
+
+    def test_single_particle_topology_events_preserve_y0_and_full_period(self):
+        events = [
+            {"kind": "fast_turn", "ion": 1, "n": 1, "t_us": 1, "x_mm": 0, "y_mm": -1, "z_mm": -10},
+            {"kind": "slow_turn", "ion": 1, "n": 1, "t_us": 2, "x_mm": 0, "y_mm": -100, "z_mm": 0},
+            {"kind": "stripe_plane", "ion": 1, "n": 1, "direction_y": -1, "t_us": 3, "x_mm": 0, "y_mm": 0, "z_mm": 0, "vx_mm_us": 0, "vy_mm_us": -1, "vz_mm_us": -2},
+            {"kind": "stripe_plane", "ion": 1, "n": 2, "direction_y": 1, "t_us": 7, "x_mm": 0, "y_mm": 0, "z_mm": 0, "vx_mm_us": 0, "vy_mm_us": 1, "vz_mm_us": 2},
+            {"kind": "central_plane_directional", "ion": 1, "n": 1, "direction_z": -1, "t_us": 4, "x_mm": 0, "y_mm": -2, "vx_mm_us": 0, "vy_mm_us": -1, "vz_mm_us": -2},
+            {"kind": "central_plane_directional", "ion": 1, "n": 3, "direction_z": -1, "t_us": 6, "x_mm": 0, "y_mm": -2, "vx_mm_us": 0, "vy_mm_us": -1, "vz_mm_us": -2},
+            terminal(1),
+        ]
+        result = summarize_events(
+            events, 25, 1, expected_particle_ids=(1,), kinetic_energy_ev=4000.0, mass_th=524.0,
+        )
+        self.assertEqual(result["fast_z_turn_count"], 1)
+        self.assertEqual(result["slow_y_turn_count"], 1)
+        self.assertEqual(result["stripe_y0_inbound_crossing_count"], 1)
+        self.assertEqual(result["stripe_y0_outbound_crossing_count"], 1)
+        self.assertEqual(result["same_direction_central_plane_periods_us"], [2.0])
+        self.assertEqual(result["slow_drift_abs_lengths_from_y0_mm"], [100.0])
+        self.assertEqual(len(result["effective_axial_width_W_mm"]), 1)
+        self.assertGreater(result["effective_axial_width_W_median_mm"], 0.0)
 
     def test_no_completion_or_source_never_infers_population_from_events(self):
         result = self.assert_invalid([terminal(1)], (1,), None, "missing_or_multiple_fly_completion")

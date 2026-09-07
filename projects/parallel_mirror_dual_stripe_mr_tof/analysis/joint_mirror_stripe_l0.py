@@ -23,8 +23,18 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import (
     dual_stripe_width_at_y_mm,
 )
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import (
+    MirrorL0Design,
+    reduced_period,
+)
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l1 import map_at_energy
+from scipy.optimize import least_squares
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
     CandidateContractError,
+)
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_handoff import (
+    TwoPrismTransportObservation,
+    stripe_handoff_residuals,
 )
 
 
@@ -97,6 +107,38 @@ class ConstraintClassification:
     reason: str
 
 
+@dataclass(frozen=True)
+class JointL0Trial:
+    """One complete analytic mirror--Stripe trial prior to P1/P2 shooting."""
+
+    mirror_design: MirrorL0Design
+    energy_points_v: tuple[float, float, float]
+    stripes: tuple[StripeHardBoundary, ...]
+    stripe_entry_y_mm: float
+    nominal_turning_y_mm: float
+    target_oscillation_count: int
+    time_platform_eta_nodes: tuple[float, ...]
+    eta_derivative_step: float
+    stripe_target_position_mm: tuple[float, float, float] | None = None
+    stripe_target_unit_direction_project: tuple[float, float, float] | None = None
+    two_prism_transport_observation: TwoPrismTransportObservation | None = None
+
+
+@dataclass(frozen=True)
+class JointL0ResidualReport:
+    """Named residuals and derived state for one complete L0/L1 trial."""
+
+    residuals: tuple[tuple[str, float], ...]
+    drift_state: CoupledDriftState
+    coupled_reduced_periods_mm_per_sqrt_v: tuple[float, float, float]
+
+    def residual_vector(self) -> tuple[float, ...]:
+        return tuple(value for _name, value in self.residuals)
+
+    def residual_names(self) -> tuple[str, ...]:
+        return tuple(name for name, _value in self.residuals)
+
+
 def _matrix_rank(rows: Sequence[Sequence[float]], columns: int, tolerance: float = 1e-10) -> int:
     """Compute a small dense matrix rank without adding a second numeric stack."""
     if columns <= 0 or not rows:
@@ -167,6 +209,186 @@ def require_exactly_determined(classification: ConstraintClassification) -> None
     """Refuse publication of a solved parameter set unless its rank closes."""
     if classification.status != "exactly_determined":
         raise CandidateContractError(f"joint solve cannot publish remaining parameters: {classification.status}: {classification.reason}")
+
+
+def evaluate_joint_l0_trial(trial: JointL0Trial) -> JointL0ResidualReport:
+    """Evaluate all declared analytic L0/L1 residuals at one physical trial.
+
+    This calculation deliberately has no optimizer or fallback values.  The
+    caller supplies the physical Stripe entry and nominal turning sections;
+    P1/P2 shooting owns their eventual determination.  The three-point
+    residual includes the two Stripe baseline actions at *each* energy point.
+    """
+    energies = tuple(_finite(value, "joint energy point") for value in trial.energy_points_v)
+    if len(energies) != 3 or tuple(sorted(energies)) != energies:
+        raise CandidateContractError("joint L0 trial needs three ordered energy points")
+    if len(trial.stripes) != 2:
+        raise CandidateContractError("joint L0 trial needs exactly the two theoretical Stripe responses")
+    periods = []
+    for energy in energies:
+        mirror_period = reduced_period(energy, trial.mirror_design)
+        baseline_widths = tuple(stripe.width_mm(trial.stripe_entry_y_mm) for stripe in trial.stripes)
+        periods.append(coupled_reduced_period_mm_per_sqrt_v(
+            mirror_period, energy, baseline_widths, tuple(stripe.bias_v for stripe in trial.stripes),
+        ))
+    central_period = periods[1]
+    state = derive_coupled_drift_state(
+        mirror_reduced_period_mm_per_sqrt_v=reduced_period(energies[1], trial.mirror_design),
+        energy_per_charge_v=energies[1],
+        target_oscillation_count=trial.target_oscillation_count,
+        stripes=trial.stripes,
+        entry_y_mm=trial.stripe_entry_y_mm,
+        turning_y_mm=trial.nominal_turning_y_mm,
+    )
+    length = state.drift_length_l_mm
+    direction = 1.0 if trial.nominal_turning_y_mm > trial.stripe_entry_y_mm else -1.0
+    step = _finite(trial.eta_derivative_step, "eta derivative step")
+    if step <= 0.0 or 1.0 - step <= 0.0:
+        raise CandidateContractError("eta derivative step must bracket the nominal turning point")
+    lower_state = derive_coupled_drift_state(
+        mirror_reduced_period_mm_per_sqrt_v=reduced_period(energies[1], trial.mirror_design),
+        energy_per_charge_v=energies[1], target_oscillation_count=trial.target_oscillation_count,
+        stripes=trial.stripes, entry_y_mm=trial.stripe_entry_y_mm,
+        turning_y_mm=trial.stripe_entry_y_mm + direction * length * (1.0 - step),
+    )
+    upper_state = derive_coupled_drift_state(
+        mirror_reduced_period_mm_per_sqrt_v=reduced_period(energies[1], trial.mirror_design),
+        energy_per_charge_v=energies[1], target_oscillation_count=trial.target_oscillation_count,
+        stripes=trial.stripes, entry_y_mm=trial.stripe_entry_y_mm,
+        turning_y_mm=trial.stripe_entry_y_mm + direction * length * (1.0 + step),
+    )
+    mapping = map_at_energy(energies[1], trial.mirror_design)
+    time_residuals = time_platform_derivative_residuals(
+        mirror_reduced_period_mm_per_sqrt_v=reduced_period(energies[1], trial.mirror_design),
+        energy_per_charge_v=energies[1], stripes=trial.stripes,
+        entry_y_mm=trial.stripe_entry_y_mm, nominal_turning_y_mm=trial.nominal_turning_y_mm,
+        eta_turn_nodes=trial.time_platform_eta_nodes, derivative_step=step,
+    )
+    residuals = [
+        ("three_point_low_relative", (periods[0] - central_period) / central_period),
+        ("three_point_high_relative", (periods[2] - central_period) / central_period),
+        # Same-direction Poincare sections make m11=0 the gamma=90-degree
+        # target used by the existing analytic mirror L1 screen.
+        ("mirror_gamma_90_m11", mapping.matrix[0][0]),
+        ("target_oscillation_count", state.target_oscillation_count_residual),
+        ("spatial_return_kappa_prime", (upper_state.nominal_kappa_1 - lower_state.nominal_kappa_1) / (2.0 * step)),
+    ]
+    residuals.extend((f"time_platform_tau_g_prime_eta_{node:.12g}", value) for node, value in zip(trial.time_platform_eta_nodes, time_residuals))
+    transport_values = (
+        trial.stripe_target_position_mm,
+        trial.stripe_target_unit_direction_project,
+        trial.two_prism_transport_observation,
+    )
+    if any(value is not None for value in transport_values):
+        if any(value is None for value in transport_values):
+            raise CandidateContractError("joint P1/P2 trial needs target position, target direction, and observed transport together")
+        residuals.extend(stripe_handoff_residuals(
+            trial.two_prism_transport_observation,
+            trial.stripe_target_position_mm,
+            trial.stripe_target_unit_direction_project,
+        ))
+    return JointL0ResidualReport(tuple(residuals), state, tuple(periods))
+
+
+def finite_difference_joint_jacobian(
+    variable_names: Sequence[str],
+    parameter_values: Sequence[float],
+    parameter_steps: Sequence[float],
+    trial_from_parameters: Callable[[tuple[float, ...]], JointL0Trial],
+) -> tuple[JointL0ResidualReport, ConstraintClassification]:
+    """Differentiate the actual joint residual vector and classify its rank.
+
+    Infeasible perturbations are intentionally errors: replacing them by an
+    arbitrary penalty would make a rank statement depend on optimizer policy
+    rather than on the declared physics.
+    """
+    names = tuple(variable_names)
+    values = tuple(_finite(value, "joint parameter") for value in parameter_values)
+    steps = tuple(_finite(value, "joint parameter step") for value in parameter_steps)
+    if len(names) != len(values) or len(steps) != len(values) or any(step <= 0.0 for step in steps):
+        raise CandidateContractError("joint Jacobian needs matched named values and positive central-difference steps")
+    center = evaluate_joint_l0_trial(trial_from_parameters(values))
+    rows = [[] for _ in center.residuals]
+    for index, step in enumerate(steps):
+        lower = list(values)
+        upper = list(values)
+        lower[index] -= step
+        upper[index] += step
+        lower_result = evaluate_joint_l0_trial(trial_from_parameters(tuple(lower)))
+        upper_result = evaluate_joint_l0_trial(trial_from_parameters(tuple(upper)))
+        if lower_result.residual_names() != center.residual_names() or upper_result.residual_names() != center.residual_names():
+            raise CandidateContractError("joint residual identity changed across a Jacobian perturbation")
+        for row, low, high in zip(rows, lower_result.residual_vector(), upper_result.residual_vector()):
+            row.append((high - low) / (2.0 * step))
+    return center, classify_constraint_system(names, center.residual_names(), jacobian_rows=rows, residuals=center.residual_vector())
+
+
+def solve_exactly_determined_joint_l0(
+    variable_names: Sequence[str],
+    initial_values: Sequence[float],
+    lower_bounds: Sequence[float],
+    upper_bounds: Sequence[float],
+    jacobian_steps: Sequence[float],
+    residual_scales: dict[str, float],
+    residual_tolerances: dict[str, float],
+    maximum_function_evaluations: int,
+    trial_from_parameters: Callable[[tuple[float, ...]], JointL0Trial],
+) -> tuple[JointL0ResidualReport, ConstraintClassification, tuple[float, ...]]:
+    """Solve only an explicitly bounded, scaled, and exactly determined problem.
+
+    There are intentionally no default bounds, weights, tolerances, iteration
+    budget, or acceptance thresholds.  A least-squares iterate is merely a search aid;
+    it is rejected unless the physical Jacobian is exactly determined and each
+    unscaled named residual satisfies the caller's frozen tolerance.
+    """
+    names = tuple(variable_names)
+    initial = tuple(_finite(value, "joint initial parameter") for value in initial_values)
+    lower = tuple(_finite(value, "joint lower bound") for value in lower_bounds)
+    upper = tuple(_finite(value, "joint upper bound") for value in upper_bounds)
+    steps = tuple(_finite(value, "joint Jacobian step") for value in jacobian_steps)
+    if not names or len(set(names)) != len(names) or len(initial) != len(names) or len(lower) != len(names) or len(upper) != len(names):
+        raise CandidateContractError("joint solve needs unique named variables and matched initial/bound vectors")
+    if any(not low < value < high for low, value, high in zip(lower, initial, upper)):
+        raise CandidateContractError("each joint initial value must lie strictly inside its explicit bounds")
+    if any(step <= 0.0 for step in steps) or len(steps) != len(names):
+        raise CandidateContractError("joint solve needs a positive Jacobian step for every variable")
+    if not isinstance(maximum_function_evaluations, int) or isinstance(maximum_function_evaluations, bool) or maximum_function_evaluations <= 0:
+        raise CandidateContractError("joint solve needs an explicit positive maximum function-evaluation count")
+    initial_report = evaluate_joint_l0_trial(trial_from_parameters(initial))
+    residual_names = initial_report.residual_names()
+    if set(residual_scales) != set(residual_names) or set(residual_tolerances) != set(residual_names):
+        raise CandidateContractError("joint solve needs one explicit scale and tolerance for every named residual")
+    scales = tuple(_finite(residual_scales[name], f"residual scale {name}") for name in residual_names)
+    tolerances = tuple(_finite(residual_tolerances[name], f"residual tolerance {name}") for name in residual_names)
+    if any(value <= 0.0 for value in scales) or any(value < 0.0 for value in tolerances):
+        raise CandidateContractError("joint residual scales must be positive and tolerances non-negative")
+
+    def scaled_residual(values) -> tuple[float, ...]:
+        report = evaluate_joint_l0_trial(trial_from_parameters(tuple(float(value) for value in values)))
+        if report.residual_names() != residual_names:
+            raise CandidateContractError("joint residual identity changed during optimization")
+        return tuple(value / scale for value, scale in zip(report.residual_vector(), scales))
+
+    result = least_squares(
+        scaled_residual,
+        initial,
+        bounds=(lower, upper),
+        max_nfev=maximum_function_evaluations,
+    )
+    solved = tuple(float(value) for value in result.x)
+    report, classification = finite_difference_joint_jacobian(names, solved, steps, trial_from_parameters)
+    require_exactly_determined(classification)
+    failures = [
+        (name, value, tolerance)
+        for name, value, tolerance in zip(report.residual_names(), report.residual_vector(), tolerances)
+        if abs(value) > tolerance
+    ]
+    if failures:
+        details = ", ".join(f"{name}={value:.6g} exceeds {tolerance:.6g}" for name, value, tolerance in failures)
+        raise CandidateContractError(f"joint solve did not meet its explicit residual tolerances: {details}")
+    if not result.success:
+        raise CandidateContractError(f"joint optimizer did not converge: {result.message}")
+    return report, classification, solved
 
 
 def reduced_action_delta_mm_sqrt_v(energy_per_charge_v: float, bias_v: float, width_mm: float) -> float:
