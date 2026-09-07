@@ -11,6 +11,8 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_mirror_stripe_l0
     classify_constraint_system,
     coupled_reduced_period_mm_per_sqrt_v,
     derive_coupled_drift_state,
+    derive_coupled_drift_state_from_entry_direction,
+    derive_turning_y_from_entry_direction,
     evaluate_joint_l0_trial,
     finite_difference_joint_jacobian,
     require_exactly_determined,
@@ -128,15 +130,38 @@ class JointMirrorStripeL0Test(unittest.TestCase):
         root = Path(__file__).resolve().parents[2]
         contract = json.loads((root / "config" / "simion_candidate_two_zone.json").read_text(encoding="utf-8"))
         problem = contract["dual_stripe_l0"]["current_fixed_hardware_l0_l1_problem"]
-        self.assertEqual(len(problem["independent_unknowns"]), 8)
-        self.assertEqual(len(problem["named_residual_blocks"]), 11)
-        self.assertIn("coupled_axial_width_W_mm", problem["derived_not_independent_unknowns"])
-        self.assertNotIn("coupled_axial_width_W_mm", problem["independent_unknowns"])
-        self.assertIn("prism_1_voltage_v", problem["independent_unknowns"])
+        self.assertEqual(problem["mirror_independent_unknowns"], [
+            "mirror_voltage_B_v", "mirror_voltage_C_v", "mirror_voltage_D_v", "mirror_voltage_E_v",
+        ])
+        self.assertEqual(problem["mirror_named_residual_blocks"], [
+            "mirror_period_slope_at_3900V", "mirror_period_slope_at_4000V",
+            "mirror_period_slope_at_4100V",
+        ])
+        self.assertEqual(len(problem["downstream_independent_unknowns"]), 4)
+        self.assertIn("prism_1_voltage_v", problem["downstream_independent_unknowns"])
         self.assertIn("stripe_entrance_project_position_mm", problem["derived_not_independent_unknowns"])
+        initialization = problem["voltage_initialization"]
+        self.assertEqual(initialization["authority"], "theory_derived_only")
+        envelope = contract["mirror"]["theory_requirements"]["voltage_envelope_v"]
+        self.assertEqual(envelope["B"]["minimum_inclusive_v"], -10000.0)
+        self.assertEqual(envelope["D"]["maximum_inclusive_v"], 10000.0)
+        self.assertEqual(envelope["E"]["maximum_inclusive_v"], 10000.0)
+        self.assertIn("mirror.theory_requirements.voltage_envelope_v", initialization["semantics"])
+        self.assertIn("historical_mirror_voltage_vector", initialization["forbidden_seed_sources"])
+        self.assertIn("independently constructs and ranks", initialization["derivation_chain"][0])
+        selection = problem["mirror_family_selection"]
+        self.assertEqual(selection["selection_order"][0], "minimize_absolute_phase_averaged_transverse_time_aberration_Tbar_xx")
+        self.assertIn("exactly three energy-local normalized period-slope equalities", selection["semantics"])
+        self.assertEqual(
+            contract["dual_stripe"]["voltage_status"],
+            "geometry_review_prototype_only__not_a_joint_solver_initial_value_or_candidate_operating_point",
+        )
         entrance = contract["dual_stripe_l0"]["theory_stripe_entrance"]
         self.assertEqual(entrance["project_y_mm"], 0.0)
         self.assertEqual(entrance["excluded_mechanical_extension_y_mm"], [0.0, 2.0])
+        shooting = contract["prism_transport"]["two_prism_injection_l0"]
+        self.assertNotIn("prism_2_effective_plane_and_face_order_from_CAD", shooting["frozen_inputs_before_three_dimensional_shooting"])
+        self.assertIn("prism_2_effective_plane_and_face_order_from_CAD", shooting["hard_boundary_seed_only_inputs"])
 
     def test_rank_gate_distinguishes_under_exact_and_incompatible_systems(self) -> None:
         under = classify_constraint_system(("mirror_voltage", "stripe_bias"), ("target_K",), jacobian_rows=((1.0, 0.0),))
@@ -161,8 +186,8 @@ class JointMirrorStripeL0Test(unittest.TestCase):
 
     def test_nominal_state_derives_l_w_theta_and_k_without_external_w(self) -> None:
         stripes = (
-            StripeHardBoundary(-40.0, lambda y: 30.0 - 0.02 * y),
-            StripeHardBoundary(60.0, lambda y: 20.0 + 0.04 * y),
+            StripeHardBoundary(40.0, lambda y: 30.0 - 0.02 * y),
+            StripeHardBoundary(-60.0, lambda y: 20.0 + 0.04 * y),
         )
         state = derive_coupled_drift_state(
             mirror_reduced_period_mm_per_sqrt_v=10.0,
@@ -170,12 +195,39 @@ class JointMirrorStripeL0Test(unittest.TestCase):
             target_oscillation_count=25,
             stripes=stripes,
             entry_y_mm=0.0,
-            turning_y_mm=100.0,
+            turning_y_mm=-100.0,
         )
         self.assertAlmostEqual(state.drift_length_l_mm, 100.0)
         self.assertAlmostEqual(state.axial_width_w_mm, state.coupled_reduced_period_mm_per_sqrt_v * math.sqrt(4000.0))
         self.assertGreater(state.nominal_kappa_1, 0.0)
         self.assertGreater(state.nominal_injection_angle_rad, 0.0)
+
+    def test_entry_direction_derives_first_physical_turn_without_free_l(self) -> None:
+        stripes = (
+            StripeHardBoundary(40.0, lambda y: 30.0 - 0.02 * y),
+            StripeHardBoundary(-60.0, lambda y: 20.0 + 0.04 * y),
+        )
+        turning = derive_turning_y_from_entry_direction(
+            mirror_reduced_period_mm_per_sqrt_v=10.0,
+            energy_per_charge_v=4000.0,
+            stripes=stripes,
+            entry_y_mm=0.0,
+            entry_unit_direction_project=(0.0, -0.01, -1.0),
+            search_end_y_mm=-300.0,
+            sample_count=300,
+        )
+        self.assertLess(turning, 0.0)
+        state = derive_coupled_drift_state_from_entry_direction(
+            mirror_reduced_period_mm_per_sqrt_v=10.0,
+            energy_per_charge_v=4000.0,
+            target_oscillation_count=25,
+            stripes=stripes,
+            entry_y_mm=0.0,
+            entry_unit_direction_project=(0.0, -0.01, -1.0),
+            search_end_y_mm=-300.0,
+            sample_count=300,
+        )
+        self.assertAlmostEqual(state.drift_length_l_mm, abs(turning))
 
     def test_nontransmitting_or_nonturning_trials_fail_closed(self) -> None:
         with self.assertRaises(CandidateContractError):

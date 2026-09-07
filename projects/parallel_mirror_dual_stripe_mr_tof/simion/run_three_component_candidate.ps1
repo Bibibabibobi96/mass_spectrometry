@@ -278,8 +278,7 @@ try {
   if (-not $terminalized) {
     Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Summary $summary `
       -SummaryRole 'mrtof_three_component_candidate_iob_assembly' -Reason $reason `
-      -Software @('SIMION 2020', 'Python 3.11') -Status failed -FailureStage $failureStage `
-      -PreserveRawOutputs
+      -Software @('SIMION 2020', 'Python 3.11') -Status failed -FailureStage $failureStage
     $terminalized = $true
   }
   throw
@@ -290,8 +289,7 @@ try {
     Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Summary $summary `
       -SummaryRole 'mrtof_three_component_candidate_iob_assembly' `
       -Reason 'Runner stopped before a terminal IOB assembly record was published.' `
-      -Software @('SIMION 2020', 'Python 3.11') -Status interrupted -FailureStage $failureStage `
-      -PreserveRawOutputs
+      -Software @('SIMION 2020', 'Python 3.11') -Status interrupted -FailureStage $failureStage
     $hostExecutionOutcome = 'interrupted'
   }
   if ($null -ne $hostExecutionLease) {

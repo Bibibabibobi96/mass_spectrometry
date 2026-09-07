@@ -12,6 +12,7 @@ local mirror_voltages = assert(operating_point.mirror_voltages_v, 'operating poi
 assert(#mirror_voltages == 5 and mirror_voltages[1] == 0,
   'operating point must contain five mirror voltages with grounded A')
 local detector_box = assert(operating_point.detector_box_mm, 'operating point has no numerical detector box')
+local first_prism_l0 = assert(operating_point.first_prism_l0, 'operating point has no frozen P1 interface')
 assert(operating_point.detector_normal_project == '+z', 'detector must face project +z')
 local target_oscillation_count = assert(operating_point.target_oscillation_count, 'operating point has no target oscillation count')
 local stripe_biases = assert(operating_point.stripe_biases_v, 'operating point has no Stripe-bias table')
@@ -21,6 +22,7 @@ local accelerator_ring_voltages = assert(operating_point.accelerator_ring_voltag
 assert(#detector_box == 6 and detector_box[1] < detector_box[4]
   and detector_box[2] < detector_box[5] and detector_box[3] < detector_box[6],
   'numerical detector box must be positive')
+assert(type(first_prism_l0.target_plane_z_mm) == 'number', 'P1 interface needs a z plane')
 assert(#stripe_biases == 2 and #prism_voltages == 2 and #accelerator_voltages == 3 and #accelerator_ring_voltages == 5,
   'operating point requires two Stripe, two prism, three endpoint, and five stage-2 ring voltages')
 for index,value in ipairs(prism_voltages) do
@@ -57,12 +59,12 @@ assert(full_path_timeout_us > 0, 'full-path timeout must be positive')
 -- the latter turns a long, otherwise identical trajectory into hundreds of
 -- thousands of Lua allocations and GC cycles.
 local previous_x, previous_y, previous_z, previous_vx, previous_vy, previous_vz, previous_t = {}, {}, {}, {}, {}, {}, {}
-local turns, slow_turns, crossings, stripe_crossings, detected, splat_codes, splat_event_emitted = {}, {}, {}, {}, {}, {}, {}
+local turns, slow_turns, crossings, stripe_crossings, p1_crossings, detected, splat_codes, splat_event_emitted = {}, {}, {}, {}, {}, {}, {}, {}
 
 function segment.initialize_run()
   sim_trajectory_quality = trajectory_quality
   previous_x, previous_y, previous_z, previous_vx, previous_vy, previous_vz, previous_t = {}, {}, {}, {}, {}, {}, {}
-  turns, slow_turns, crossings, stripe_crossings, detected, splat_codes, splat_event_emitted = {}, {}, {}, {}, {}, {}, {}
+  turns, slow_turns, crossings, stripe_crossings, p1_crossings, detected, splat_codes, splat_event_emitted = {}, {}, {}, {}, {}, {}, {}, {}
   assert(simion.wb and #simion.wb.instances == 3,
     'MR-TOF Candidate flight requires analyser, accelerator, and detector instances')
   assert(simion.wb.instances[1].filename:match('mrtof_analyzer%.pa0$'), 'instance 1 must be analyser PA0')
@@ -156,8 +158,24 @@ function segment.other_actions()
         ion_number, stripe_crossings[ion_number], vy < 0 and -1 or 1,
         pt + fraction*(ion_time_of_flight-pt), px + fraction*(ion_px_mm-px), pz + fraction*(ion_pz_mm-pz),
         pvx + fraction*(ion_vx_mm-pvx), vy, pvz + fraction*(ion_vz_mm-pvz)))
+      if stripe_crossings[ion_number] == 1 and vy < 0 then
+        print(string.format('MRTOF_EVENT p2_to_stripe ion=%d t_us=%.12g x_mm=%.12g y_mm=0 z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
+          ion_number, pt + fraction*(ion_time_of_flight-pt), px + fraction*(ion_px_mm-px), pz + fraction*(ion_pz_mm-pz),
+          pvx + fraction*(ion_vx_mm-pvx), vy, pvz + fraction*(ion_vz_mm-pvz)))
+      end
     end
     local dz = ion_pz_mm - pz
+    if pz > first_prism_l0.target_plane_z_mm and ion_pz_mm <= first_prism_l0.target_plane_z_mm then
+      local fraction = (first_prism_l0.target_plane_z_mm-pz) / dz
+      local vz = pvz + fraction*(ion_vz_mm-pvz)
+      if vz < 0 then
+        p1_crossings[ion_number] = (p1_crossings[ion_number] or 0) + 1
+        print(string.format('MRTOF_EVENT p1_plane ion=%d n=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
+          ion_number, p1_crossings[ion_number], pt + fraction*(ion_time_of_flight-pt),
+          px + fraction*(ion_px_mm-px), py + fraction*(ion_py_mm-py), first_prism_l0.target_plane_z_mm,
+          pvx + fraction*(ion_vx_mm-pvx), pvy + fraction*(ion_vy_mm-pvy), vz))
+      end
+    end
     -- Half-open ownership counts arrival at z=0 once, but not departure.
     if (pz < 0 and ion_pz_mm >= 0) or (pz > 0 and ion_pz_mm <= 0) then
       local fraction = -pz / dz

@@ -52,7 +52,8 @@ class SimionEventAnalysisTest(unittest.TestCase):
         source = PROGRAM.read_text(encoding="utf-8-sig")
         for token in (
             "MRTOF_EVENT fast_turn", "MRTOF_EVENT slow_turn", "MRTOF_EVENT stripe_plane",
-            "MRTOF_EVENT central_plane_directional", "direction_y=", "direction_z=",
+            "MRTOF_EVENT central_plane_directional", "MRTOF_EVENT p1_plane", "MRTOF_EVENT p2_to_stripe",
+            "direction_y=", "direction_z=",
         ):
             self.assertIn(token, source)
 
@@ -77,7 +78,9 @@ class SimionEventAnalysisTest(unittest.TestCase):
         events = [
             {"kind": "fast_turn", "ion": 1, "n": 1, "t_us": 1, "x_mm": 0, "y_mm": -1, "z_mm": -10},
             {"kind": "slow_turn", "ion": 1, "n": 1, "t_us": 2, "x_mm": 0, "y_mm": -100, "z_mm": 0},
+            {"kind": "p1_plane", "ion": 1, "n": 1, "t_us": 2.5, "x_mm": 0, "y_mm": 10, "z_mm": -101, "vx_mm_us": 0, "vy_mm_us": -1, "vz_mm_us": -2},
             {"kind": "stripe_plane", "ion": 1, "n": 1, "direction_y": -1, "t_us": 3, "x_mm": 0, "y_mm": 0, "z_mm": 0, "vx_mm_us": 0, "vy_mm_us": -1, "vz_mm_us": -2},
+            {"kind": "p2_to_stripe", "ion": 1, "t_us": 3, "x_mm": 0, "y_mm": 0, "z_mm": 0, "vx_mm_us": 0, "vy_mm_us": -1, "vz_mm_us": -2},
             {"kind": "stripe_plane", "ion": 1, "n": 2, "direction_y": 1, "t_us": 7, "x_mm": 0, "y_mm": 0, "z_mm": 0, "vx_mm_us": 0, "vy_mm_us": 1, "vz_mm_us": 2},
             {"kind": "central_plane_directional", "ion": 1, "n": 1, "direction_z": -1, "t_us": 4, "x_mm": 0, "y_mm": -2, "vx_mm_us": 0, "vy_mm_us": -1, "vz_mm_us": -2},
             {"kind": "central_plane_directional", "ion": 1, "n": 3, "direction_z": -1, "t_us": 6, "x_mm": 0, "y_mm": -2, "vx_mm_us": 0, "vy_mm_us": -1, "vz_mm_us": -2},
@@ -90,6 +93,8 @@ class SimionEventAnalysisTest(unittest.TestCase):
         self.assertEqual(result["slow_y_turn_count"], 1)
         self.assertEqual(result["stripe_y0_inbound_crossing_count"], 1)
         self.assertEqual(result["stripe_y0_outbound_crossing_count"], 1)
+        self.assertEqual(result["P1_plane_crossing_count"], 1)
+        self.assertEqual(result["P2_to_Stripe_first_inbound_event_count"], 1)
         self.assertEqual(result["same_direction_central_plane_periods_us"], [2.0])
         self.assertEqual(result["slow_drift_abs_lengths_from_y0_mm"], [100.0])
         self.assertEqual(len(result["effective_axial_width_W_mm"]), 1)

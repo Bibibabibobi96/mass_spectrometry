@@ -8,6 +8,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_refer
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_handoff import (
     ProjectPhaseSpaceState,
     TwoPrismTransportObservation,
+    observation_from_simion_events,
     stripe_handoff_residuals,
 )
 
@@ -44,6 +45,22 @@ class TwoPrismHandoffTest(unittest.TestCase):
             TwoPrismTransportObservation(state, state, state, state, False)
         with self.assertRaises(CandidateContractError):
             _state((0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
+
+    def test_simion_event_receipt_uses_p2_y0_exit_without_an_internal_plane(self) -> None:
+        source = _state((0.0, 55.0, 0.0), (0.0, 0.0, -1.0))
+        events = [
+            {"kind": "p1_plane", "ion": 1, "x_mm": 0.0, "y_mm": 50.0, "z_mm": -101.0,
+             "vx_mm_us": 0.0, "vy_mm_us": -1.0, "vz_mm_us": -2.0},
+            {"kind": "p2_to_stripe", "ion": 1, "x_mm": 0.0, "y_mm": 0.0, "z_mm": -10.0,
+             "vx_mm_us": 0.0, "vy_mm_us": -1.0, "vz_mm_us": -2.0},
+            {"kind": "terminal", "ion": 1, "splat": 1},
+        ]
+        observation = observation_from_simion_events(events, source)
+        self.assertEqual(observation.prism_2, observation.stripe_entrance)
+        self.assertEqual(observation.stripe_entrance.position_mm[1], 0.0)
+        collision = [*events[:-1], {"kind": "terminal", "ion": 1, "splat": -1}]
+        with self.assertRaises(CandidateContractError):
+            observation_from_simion_events(collision, source)
 
 
 if __name__ == "__main__":

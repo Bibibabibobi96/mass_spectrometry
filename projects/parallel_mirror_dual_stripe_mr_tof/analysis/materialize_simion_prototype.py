@@ -63,10 +63,36 @@ def _freeze_accelerator_dependency(output_directory: Path) -> dict[str, Any]:
 
 def _candidate_voltages(receipt_path: Path) -> list[float]:
     receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
-    if receipt.get("status") != "l0_l1_voltage_candidate_not_3d_validated":
+    if receipt.get("status") == "l0_l1_voltage_candidate_not_3d_validated":
+        mapping = receipt.get("mapping")
+        voltages = receipt.get("electrode_voltages_v")
+    elif receipt.get("status") == "l1_family_continued_to_gamma_target__peak_field_and_3d_validation_pending":
+        continuation = receipt.get("gamma_target_continuation")
+        convergence = receipt.get("gamma_target_probe_convergence")
+        if not isinstance(continuation, dict) or not isinstance(convergence, dict):
+            raise CandidateContractError("mirror family receipt omits gamma continuation or probe convergence")
+        if continuation.get("status") != "gamma_target_selected_with_probe_convergence__peak_field_and_3d_validation_pending":
+            raise CandidateContractError("mirror family receipt has not closed the gamma-selection stage")
+        if convergence.get("status") != "pass":
+            raise CandidateContractError("mirror family receipt has not passed finite-difference probe convergence")
+        l0 = continuation.get("l0_receipt")
+        screen = continuation.get("l1_screen")
+        if not isinstance(l0, dict) or not isinstance(screen, dict):
+            raise CandidateContractError("mirror family receipt omits its selected L0/L1 records")
+        mapping = screen.get("nominal_mapping")
+        voltages = l0.get("electrode_voltages_v")
+        gamma_residual = continuation.get("gamma_residual_degrees")
+        gamma_tolerance = continuation.get("maximum_gamma_residual_degrees")
+        if (
+            not isinstance(gamma_residual, (int, float))
+            or not isinstance(gamma_tolerance, (int, float))
+            or not math.isfinite(float(gamma_residual))
+            or not math.isfinite(float(gamma_tolerance))
+            or abs(float(gamma_residual)) > float(gamma_tolerance)
+        ):
+            raise CandidateContractError("mirror family receipt violates its gamma-target residual gate")
+    else:
         raise CandidateContractError("mirror receipt is not an analytic L0/L1 Candidate")
-    mapping = receipt.get("mapping")
-    voltages = receipt.get("electrode_voltages_v")
     if not isinstance(mapping, dict) or mapping.get("stable") is not True or mapping.get("gamma_degrees") is None:
         raise CandidateContractError("mirror receipt has not passed the analytic L1 stability/gamma screen")
     if not isinstance(voltages, list) or len(voltages) != 5 or any(not isinstance(value, (int, float)) for value in voltages):

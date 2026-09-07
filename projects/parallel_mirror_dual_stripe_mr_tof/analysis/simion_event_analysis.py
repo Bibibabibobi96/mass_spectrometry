@@ -28,6 +28,8 @@ REQUIRED_FIELDS = {
     "turn": {"ion", "n", "t_us", "z_mm"},
     "fast_turn": {"ion", "n", "t_us", "x_mm", "y_mm", "z_mm"},
     "slow_turn": {"ion", "n", "t_us", "x_mm", "y_mm", "z_mm"},
+    "p1_plane": {"ion", "n", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
+    "p2_to_stripe": {"ion", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
     "stripe_plane": {"ion", "n", "direction_y", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
     "central_plane": {"ion", "n", "t_us", "x_mm", "y_mm"},
     "central_plane_directional": {"ion", "n", "direction_z", "t_us", "x_mm", "y_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
@@ -278,6 +280,8 @@ def summarize_events(
         "stripe_y0_outbound_crossing_count": sum(
             event["kind"] == "stripe_plane" and event["direction_y"] > 0 for event in events
         ),
+        "P1_plane_crossing_count": sum(event["kind"] == "p1_plane" for event in events),
+        "P2_to_Stripe_first_inbound_event_count": sum(event["kind"] == "p2_to_stripe" for event in events),
         "same_direction_central_plane_periods_us": directional_periods,
         "same_direction_central_plane_period_median_us": median(directional_periods) if directional_periods else None,
         "effective_axial_width_W_mm": widths if kinetic_energy_ev is not None and mass_th is not None else None,

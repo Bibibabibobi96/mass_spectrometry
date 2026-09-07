@@ -38,6 +38,38 @@
         4000,
         4100
       ],
+      "l0_acceptance_budget": {
+        "minimum_mass_resolution": 50000,
+        "mirror_time_width_fraction": 1.0,
+        "semantics": "User-selected preliminary allocation: the mirror receives the full relative time-width budget for R>=50000. The L0 local slope tolerance is derived as mirror_time_width_fraction/(2*minimum_mass_resolution*half_energy_window_v), where half_energy_window_v is derived from energies_v about its nominal middle point. This is a preliminary mirror-only gate; later full-analyser budgeting must allocate nonzero error to source, Stripe, prism and numerical terms."
+      },
+      "global_l0_search_profile": {
+        "base_random_seed": 20260907,
+        "restart_count": 36,
+        "maximum_parallel_workers": 12,
+        "population_size_per_restart": 12,
+        "maximum_iterations_per_restart": 80,
+        "maximum_local_function_evaluations": 2000,
+        "relative_convergence_tolerance": 1e-07,
+        "period_slope_derivative_step_v": 1.0,
+        "semantics": "First full-envelope L0 campaign. The runner uses min(available logical processors, maximum_parallel_workers, restart_count) independent processes; each restart samples the complete declared B--E envelope, then applies local least-squares refinement. Each worker inherits one-thread numerical-library limits to prevent process/thread oversubscription. All numerical controls are frozen in this profile and echoed in every receipt. A candidate still requires derivative-step convergence and separate L1 selection."
+      },
+      "l1_screen_profile": {
+        "maximum_parallel_workers": 12,
+        "position_probe_mm": 0.004,
+        "angle_probe_rad": 4e-05,
+        "probe_convergence_scale_factors": [1.0, 2.0, 4.0],
+        "maximum_adjacent_gamma_change_degrees": 0.001,
+        "maximum_adjacent_relative_Tbar_change": 0.01,
+        "target_gamma_degrees": 90.0,
+        "maximum_gamma_target_residual_degrees": 0.001,
+        "continuation_node_count": 9,
+        "e_voltage_root_tolerance_v": 0.001,
+        "maximum_root_iterations": 60,
+        "maximum_local_function_evaluations": 3000,
+        "status": "three_scale_probe_convergence_required_before_selection",
+        "semantics": "Numerical L1 screening profile for the complete L0-accepted family. These are finite-difference probes, not physical beam widths. The 0.001-mm/10-urad exploratory probes were rejected for quadratic-time cancellation noise; the active base and two larger scales must satisfy the declared adjacent gamma and Tbar convergence gates. Peak-field and three-dimensional validation remain separate."
+      },
       "targets": [
         "three_point_isochrony",
         "turning_point_margin",
@@ -48,28 +80,25 @@
       "optimization_scope": "mirror voltages and operating point only; a future redesign may separately optimize axial geometry",
       "analytic_model_status": "Berdnikov ideal-boundary assumption selected by user: H=15 mm from the 30-mm beam channel.  The inner 4-mm-slot end plate is grounded; the closed outer E cover is not a grounded boundary.  B--E voltages are independent theory variables with no imposed monotonic order.  Real 3-D field validation remains required before accepting an L0/L1 voltage result",
       "berdnikov_transverse_half_gap_mm": 15,
-      "voltage_search_dimensionless": {
-        "reference": "all quantities multiply nominal energy-per-charge; these are exploratory mathematical domains, not supply limits",
+      "voltage_envelope_v": {
         "B": {
-          "lower": -5,
-          "initial": -1,
-          "upper": -0.00025
+          "minimum_inclusive_v": -10000.0,
+          "maximum_inclusive_v": 10000.0
         },
         "C": {
-          "lower": 0.00025,
-          "initial": 1,
-          "upper": 7.5
+          "minimum_inclusive_v": -10000.0,
+          "maximum_inclusive_v": 10000.0
         },
         "D": {
-          "lower": 0.0005,
-          "initial": 1.5,
-          "upper": 10
+          "minimum_inclusive_v": -10000.0,
+          "maximum_inclusive_v": 10000.0
         },
         "E": {
-          "lower": 1.05,
-          "initial": 2,
-          "upper": 12.5
-        }
+          "minimum_exclusive_v": "maximum_mirror_energy_per_charge_v",
+          "maximum_inclusive_v": 10000.0,
+          "retention_semantics": "The shared closed E cover is at U_E.  Its lower numerical bound is derived at runtime as the next representable value above the maximum declared mirror energy; no sign or monotonic order is imposed on B--E."
+        },
+        "initialization_semantics": "The numerical start vector is derived from this envelope and the declared energy window only.  No historical or manually supplied voltage vector is an active input."
       }
     },
     "half_separation_mm": 104.5,
@@ -123,6 +152,7 @@
     "theoretical_response_count": 2,
     "set_1_bias_v": -40,
     "set_2_bias_v": 60,
+    "voltage_status": "geometry_review_prototype_only__not_a_joint_solver_initial_value_or_candidate_operating_point",
     "central_grounded_corridor_mm": 100,
     "central_ground_profile": {
       "generator": "cad_bspline_body_outline",
@@ -1187,23 +1217,22 @@
   },
   "dual_stripe_l0": {
     "status": "joint_inputs_pending",
-    "solve_semantics": "coupled_mirror_stripe_l0_l1",
+    "solve_semantics": "independent_mirror_l0_l1_then_downstream_stripe_and_prism",
     "coordinate_definition": "eta=(y-y_stripe_entrance)/signed_drift_length_L; eta_turning=1. For this frozen CAD/theory contract y_stripe_entrance=0 mm is the common endpoint of both theory Stripe functions S_i(y), not a bounding-box edge. The nominal slow drift proceeds toward negative project y; signed L carries that direction while reported |L| is positive.",
     "theory_stripe_entrance": {
       "project_y_mm": 0.0,
-      "definition": "The P2-to-Stripe hand-off plane is the y=0 endpoint of both active S_i(y) functions. S_i(0) is the baseline action term in the joint mirror period.",
+      "definition": "The P2-to-Stripe hand-off plane is the y=0 endpoint of both active S_i(y) functions. S_i(0) is the baseline action term in the downstream full-analyser period; it is not an input to the independent mirror-voltage solve.",
       "excluded_mechanical_extension_y_mm": [0.0, 2.0],
       "exclusion_semantics": "The CAD planar terminal extension provides mechanical continuity only. It is not a theory-profile extrapolation, a separate drift coordinate origin, or a mirror z-turning point."
     },
-    "joint_independent_variables": [
-      "mirror_non_ground_electrode_voltages",
+    "theory_problem_order": [
+      "independent_mirror_non_ground_electrode_voltages",
       "dual_stripe_set_1_and_set_2_biases",
       "path_ordered_prism_1_and_prism_2_voltages"
     ],
-    "axial_width_W_parameterization": "For this fixed-mirror hardware, W is a free coordinate of the adjustable mirror-voltage solution family and is always recomputed from that trial's full coupled period. A solver may use W to parameterize the voltage family, but must enforce the computed-W equality in the same residual; W is never a second independently fixed number.",
-    "joint_residuals": [
-      "full_two_mirror_period_three_point_residual_including_dual_stripe_baseline_action",
-      "mirror_poincare_stability_and_gamma",
+    "axial_width_W_parameterization": "The mirror-only L0/L1 solution independently determines its axial period and the corresponding mirror W from fixed mirror geometry and mirror theory. Stripe theory consumes that receipt as an input; it does not feed a Stripe action, K target, or Stripe voltage back into the mirror-voltage solve. The complete analyser time is evaluated downstream, but mirror W is never a second independently fitted number.",
+    "downstream_stripe_residuals": [
+      "full_analyser_period_response_including_dual_stripe_baseline_action",
       "dual_stripe_psi_g_response_and_nominal_turn_normalization",
       "endpoint_regularized_kappa_spatial_return_condition",
       "target_oscillation_count_relation"
@@ -1213,23 +1242,42 @@
       "quantity": "d_tau_g_d_eta_turn",
       "target": 0.0,
       "eta_turn_nodes": [0.9, 0.95, 1.05, 1.1],
-      "semantics": "Four user-specified time-platform derivative nodes symmetric around the nominal turning point. The paper does not publish its four node locations; this project value is user authority, not an attribution to the original paper. Before activation, each physical y=entry_y+eta_turn*L must lie within both frozen Stripe active spans and the joint Jacobian rank gate must classify the full system."
+      "semantics": "Four user-specified time-platform derivative nodes symmetric around the nominal turning point. The paper does not publish its four node locations; this project value is user authority, not an attribution to the original paper. Before activation, each physical y=entry_y+eta_turn*L must lie within both frozen Stripe active spans and the downstream-problem Jacobian rank gate must classify that problem."
     },
-    "determination_gate": "Before publishing any solved voltage, L, W, kappa, theta, or prism entrance state, evaluate the named joint residual Jacobian at the solution. Independent rank below the declared physical unknown count is underdetermined; an incompatible augmented residual rank is overdetermined; only equal independent rank permits publication of the remaining derived quantities.",
+    "determination_gate": "Before publishing any solved voltage, L, W, kappa, theta, or prism entrance state, evaluate the actual Jacobian for its owning mirror-only or downstream Stripe/P1/P2 problem. Independent rank below the declared physical unknown count is underdetermined; an incompatible augmented residual rank is overdetermined; only equal independent rank permits publication of that problem's derived quantities.",
     "current_fixed_hardware_l0_l1_problem": {
-      "status": "source_to_stripe_closed_transport_required",
+      "status": "independent_mirror_l0_l1_required_before_downstream_stripe_prism_transport",
+      "voltage_initialization": {
+        "authority": "theory_derived_only",
+        "semantics": "Every numerical start value is derived anew from this frozen geometry and its owning theory; a human-entered or historical voltage vector is not an admissible initial vector. Mirror B--E are obtained from an independent mirror-theory feasible family and a declared mirror-only selection order. The sole mirror-voltage envelope authority is mirror.theory_requirements.voltage_envelope_v. The downstream Stripe/P1/P2 initializer consumes the selected mirror receipt. A staged seed is not itself a candidate operating point: each owning problem must pass its own residual and feasibility gate.",
+        "derivation_chain": [
+          "Berdnikov fixed-geometry mirror L0/L1 continuation independently constructs and ranks the B--E feasible family using only mirror geometry and mirror-theory conditions",
+          "the exact two-Stripe action/response equations consume the accepted mirror period/W receipt and derive the two Stripe-bias seed coordinates and the y=0 entrance state",
+          "the path-ordered hard-boundary P1/P2 construction derives the two prism seed voltages from source/focus, physical prism hand-off geometry, and that derived Stripe entrance state",
+          "finite three-dimensional shooting independently validates/corrects the downstream Stripe/P1/P2 transport without retroactively fitting mirror voltage to Stripe theory"
+        ],
+        "forbidden_seed_sources": [
+          "historical_mirror_voltage_vector",
+          "geometry_review_dual_stripe_biases",
+          "P2_equals_zero_review_voltage",
+          "manual_user_voltage_guess"
+        ]
+      },
       "frozen_inputs_required_before_solve": [
+        "fixed_mirror_geometry_and_energy_window_for_independent_mirror_L0_L1",
         "source_reference_position_and_direction_in_project_frame",
         "source_total_kinetic_energy_at_each_prism",
         "fixed_CAD_geometry_and_project_to_SIMION_transform",
         "three_dimensional_unit_field_transport_for_P1_and_P2",
         "target_oscillation_count"
       ],
-      "independent_unknowns": [
+      "mirror_independent_unknowns": [
         "mirror_voltage_B_v",
         "mirror_voltage_C_v",
         "mirror_voltage_D_v",
-        "mirror_voltage_E_v",
+        "mirror_voltage_E_v"
+      ],
+      "downstream_independent_unknowns": [
         "stripe_set_1_bias_v",
         "stripe_set_2_bias_v",
         "prism_1_voltage_v",
@@ -1244,10 +1292,28 @@
         "nominal_kappa_1",
         "nominal_injection_angle_theta0_rad"
       ],
-      "named_residual_blocks": [
-        "three_point_low_relative",
-        "three_point_high_relative",
-        "mirror_gamma_90_m11",
+      "mirror_named_residual_blocks": [
+        "mirror_period_slope_at_3900V",
+        "mirror_period_slope_at_4000V",
+        "mirror_period_slope_at_4100V"
+      ],
+      "mirror_family_selection": {
+        "semantics": "The fixed-geometry axial mirror theory declares exactly three energy-local normalized period-slope equalities for four B--E voltages. Its three-row Jacobian therefore identifies an L0 family rather than a falsely unique vector. gamma=90 degrees, transverse stability, and phase-averaged transverse time aberration are L1 mirror-theory screening/selection criteria; they are not silently promoted into an axial fourth equality, and no Stripe quantity is introduced solely to force uniqueness.",
+        "mirror_only_feasibility_conditions": [
+          "reflecting_E_voltage_above_highest_mirror_energy",
+          "B_through_E_within_declared_high_voltage_envelope",
+          "stable_Poincare_map_across_the_declared_mirror_energy_window",
+          "mechanically_safe_turning_branch"
+        ],
+        "selection_order": [
+          "minimize_absolute_phase_averaged_transverse_time_aberration_Tbar_xx",
+          "maximize_minimum_transverse_stability_margin_across_the_mirror_energy_window",
+          "minimize_peak_mirror_field_from_the_mirror_model",
+          "minimize_maximum_absolute_mirror_voltage"
+        ],
+        "tie_semantics": "If candidates remain indistinguishable at the declared numerical resolution, retain all of them as a mirror-family receipt rather than fabricating a unique voltage vector."
+      },
+      "downstream_named_residual_blocks": [
         "target_oscillation_count",
         "spatial_return_kappa_prime",
         "time_platform_tau_g_prime_eta_0.9",
@@ -1257,11 +1323,12 @@
         "P1_P2_to_Stripe_entrance_position_match",
         "P1_P2_to_Stripe_entrance_direction_match"
       ],
-      "determination_semantics": "The source state and fixed geometry are inputs, not fit coordinates. There are eight declared voltage unknowns. The first nine blocks are scalar analytic conditions; the two P1/P2-to-Stripe blocks expand into the explicitly declared position and direction components of the frozen theory hand-off interface, never into a norm or an arbitrary scalar count. The actual component-level complete Jacobian and augmented residual rank decide underdetermined, exactly-determined, or incompatible-overdetermined status. No voltage candidate may be emitted before that calculation."
+      "determination_semantics": "The frozen mirror geometry and the three axial energy conditions define a four-voltage mirror-only L0 family. Its three-row Jacobian and feasibility checks must be published with that family; an L1 mirror-only selection receipt identifies any representative member and its transverse diagnostics without inventing a fourth axial residual. The selected mirror receipt and source state are then inputs, not fit coordinates, to the four-voltage Stripe/P1/P2 problem. Its P1/P2-to-Stripe blocks expand into explicitly declared position and direction components, never a norm or arbitrary scalar count. Each owning problem separately uses its actual Jacobian and augmented residual rank to distinguish underdetermined, exactly-determined and incompatible-overdetermined states."
     },
-    "derived_fields_only_after_joint_candidate": {
+    "derived_fields_only_after_owning_problem_candidate": {
       "drift_length_L_mm": "abs(turning_point_y_mm-y_stripe_entrance_mm)",
-      "axial_width_W_mm": "full_two_mirror_period_including_dual_stripe_action*sqrt(nominal_energy_per_charge_V/(2*ion_mass))",
+      "mirror_axial_width_W_mm": "accepted_mirror_only_full_two_mirror_period*sqrt(nominal_energy_per_charge_V/(2*ion_mass))",
+      "full_analyser_period": "accepted_mirror_period_plus_dual_stripe_action_response",
       "nominal_kappa_1": "endpoint_regularized_integral_of_the_project_psi_eta_model",
       "nominal_injection_angle_theta0_rad": "asin(nominal_kappa_1*drift_length_L_mm/(nominal.target_oscillation_count*axial_width_W_mm))"
     },
@@ -1273,8 +1340,8 @@
     "forbidden_substitutions": [
       "CAD_terminal_plane_separation_as_axial_width_W_mm",
       "published_Astral_335mm_641mm_kappa_or_theta_values",
-      "isolated_mirror_period_or_W_receipt_as_a_fixed_dual_stripe_input",
-      "treating_a_voltage_derived_W_and_an_externally_fixed_W_as_two_independent_equations",
+      "re_fitting_mirror_voltage_from_stripe_response_or_target_K",
+      "treating_the_mirror_W_receipt_as_a_downstream_stripe_fit_coordinate",
       "sequentially_solving_L_W_kappa_or_theta_and_feeding_them_back_as_independent_constraints"
     ]
   },
@@ -1702,16 +1769,19 @@
       ],
       "frozen_inputs_before_three_dimensional_shooting": [
         "accelerator_focus_source_reference_position_direction_and_energy",
-        "prism_1_and_prism_2_effective_plane_face_order_from_CAD",
         "SIMION_project_frame_transform",
         "finite_three_dimensional_P1_P2_unit_field_transport"
+      ],
+      "hard_boundary_seed_only_inputs": [
+        "prism_1_effective_plane_and_face_order_from_CAD",
+        "prism_2_effective_plane_and_face_order_from_CAD"
       ],
       "derived_per_joint_trial": [
         "dual_stripe_L_W_kappa_theta_target_from_same_Mirror_Stripe_trial",
         "Stripe_entrance_project_position_and_direction_target",
         "P1_P2_voltage_pair_and_actual_Stripe_entrance_phase_space"
       ],
-      "semantics": "CAD triangles and shields constrain mechanical clearance only. The accelerator-focus ray is frozen input. The joint Mirror-Stripe trial derives the required Stripe entrance phase-space, then finite three-dimensional P1/P2 shooting derives the actual phase-space and both prism voltages. The component-level difference is retained in the complete Jacobian; it is not an external target coordinate, a voltage scan, or a hard-boundary final claim."
+      "semantics": "CAD triangles and shields constrain mechanical clearance only. The accelerator-focus ray is frozen input. The joint Mirror-Stripe trial derives the required Stripe entrance phase-space, then finite three-dimensional P1/P2 shooting derives the actual phase-space and both prism voltages by recording the physical y=0 Stripe crossing. P1/P2 effective planes are required only when forming an auxiliary hard-boundary seed, not for the final three-dimensional residual. The component-level difference is retained in the complete Jacobian; it is not an external target coordinate, a voltage scan, or a hard-boundary final claim."
     }
   },
   "accelerator": {

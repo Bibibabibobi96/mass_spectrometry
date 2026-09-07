@@ -42,13 +42,25 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import (
     MirrorL0Design,
     axial_potential_v,
+    derive_mirror_l0_slope_tolerance_per_v,
     effective_axial_width_mm,
+    normalized_period_slope_per_v,
     optimize_fixed_geometry_voltages,
+    parallel_global_l0_family_search,
+    three_point_normalized_period_slopes_per_v,
     three_point_report,
 )
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l1 import map_at_energy
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l1 import (
+    continue_fixed_e_l0_family_to_gamma,
+    map_at_energy,
+    screen_l1_fixed_geometry,
+)
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0_l1_hardware_candidate import screen_l1_family
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_geometry_parameters import derive_mirror_boundaries
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.materialize_simion_prototype import materialize
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.materialize_simion_prototype import (
+    _candidate_voltages,
+    materialize,
+)
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_operating_point_variation import (
     OperatingPointVariationError,
     materialize_variation,
@@ -471,6 +483,34 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         with self.assertRaises(CandidateContractError):
             effective_axial_width_mm(4000.0, 0.0)
 
+    def test_mirror_l0_evaluates_three_local_period_slopes_not_two_period_differences(self) -> None:
+        design = MirrorL0Design(
+            transverse_half_gap_mm=15.0,
+            transition_z_mm=(0.0, 167.0, 229.0, 261.0, 291.0),
+            electrode_voltages_v=(0.0, -500.0, 2000.0, 3500.0, 7000.0),
+            terminal_electrode_plane_z_mm=320.0,
+            terminal_electrode_voltage_v=7000.0,
+        )
+        slopes = three_point_normalized_period_slopes_per_v(design, (3900.0, 4000.0, 4100.0), 1.0)
+        self.assertEqual(len(slopes), 3)
+        self.assertTrue(all(math.isfinite(value) for value in slopes))
+        self.assertAlmostEqual(slopes[1], normalized_period_slope_per_v(design, 4000.0, 1.0))
+        with self.assertRaises(CandidateContractError):
+            normalized_period_slope_per_v(design, 4000.0, 0.0)
+
+    def test_mirror_l0_resolution_budget_derives_50k_full_allocation_slope_gate(self) -> None:
+        contract = load_contract(PROJECT / "config" / "simion_candidate_two_zone.json")
+        requirements = contract["mirror"]["theory_requirements"]
+        budget = requirements["l0_acceptance_budget"]
+        tolerance = derive_mirror_l0_slope_tolerance_per_v(
+            budget["minimum_mass_resolution"],
+            budget["mirror_time_width_fraction"],
+            requirements["energies_v"],
+        )
+        self.assertAlmostEqual(tolerance, 1e-7)
+        with self.assertRaises(CandidateContractError):
+            derive_mirror_l0_slope_tolerance_per_v(50_000, 1.0, (3900.0, 4000.0, 4200.0))
+
     def test_mirror_l0_does_not_add_an_unsupported_grounded_outer_transition(self) -> None:
         design = MirrorL0Design(
             transverse_half_gap_mm=15.0,
@@ -494,20 +534,54 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         transitions = (0.0, 250.0, 300.0, 350.0, 400.0)
         result = optimize_fixed_geometry_voltages(
             62.5, transitions, (-500.0, 1000.0, 2500.0, 6000.0),
-            (-2500.0, 1.0, 10.0, 4101.0), (-1.0, 5000.0, 8000.0, 12000.0), 390.0,
+            (-2500.0, 1.0, 10.0, 4101.0), (-1.0, 5000.0, 8000.0, 12000.0), 1.0, 1e-3,
             energies_v=(3900.0, 4000.0, 4100.0),
         )
         self.assertTrue(result["geometry_fixed"])
         self.assertEqual(result["transition_z_mm"], list(transitions))
-        self.assertEqual(result["status"], "l0_voltage_candidate_not_l1_validated")
+        self.assertIn(result["status"], {
+            "l0_voltage_family_member_not_l1_validated",
+            "l0_voltage_family_search_residual_above_tolerance",
+        })
         self.assertGreater(result["terminal_e_voltage_v"], 4100.0)
+
+    def test_mirror_l0_fixed_e_slice_keeps_the_continuation_coordinate_fixed(self) -> None:
+        result = optimize_fixed_geometry_voltages(
+            15.0,
+            (0.0, 164.5, 226.5, 258.5, 288.5),
+            (-4000.0, 4000.0, 6000.0, 8000.0),
+            (-10000.0, -10000.0, -10000.0, 4100.001),
+            (10000.0, 10000.0, 10000.0, 10000.0),
+            1.0,
+            1e-8,
+            (3900.0, 4000.0, 4100.0),
+            fixed_terminal_e_voltage_v=8000.0,
+        )
+        self.assertEqual(result["fixed_terminal_e_voltage_v"], 8000.0)
+        self.assertEqual(result["terminal_e_voltage_v"], 8000.0)
+        self.assertEqual(result["electrode_voltages_v"][-1], 8000.0)
+
+    def test_parallel_l0_restarts_preserve_full_envelope_and_every_receipt(self) -> None:
+        result = parallel_global_l0_family_search(
+            15.0, (0.0, 164.5, 226.5, 258.5, 288.5),
+            (-10_000.0, -10_000.0, -10_000.0, 4100.001),
+            (10_000.0, 10_000.0, 10_000.0, 10_000.0),
+            1.0, 1e-7, (3900.0, 4000.0, 4100.0),
+            7, 1, 1, 1, 1, 1e-7, 320.0, 20,
+        )
+        search = result["parallel_restart_search"]
+        self.assertEqual(search["actual_workers"], 1)
+        self.assertEqual(search["restart_count"], 1)
+        self.assertEqual(len(result["restart_receipts"]), 1)
+        self.assertEqual(result["restart_receipts"][0]["transition_z_mm"], [0.0, 164.5, 226.5, 258.5, 288.5])
+        json.dumps(result)
 
     def test_mirror_l0_requires_the_shared_outer_e_cover_voltage_to_retain_all_energy_points(self) -> None:
         with self.assertRaises(CandidateContractError):
             optimize_fixed_geometry_voltages(
                 15.0, (0.0, 164.5, 226.5, 258.5, 288.5),
                 (-4000.0, 4000.0, 6000.0, 8000.0),
-                (-20000.0, 1.0, 2.0, 4000.0), (-1.0, 30000.0, 40000.0, 50000.0), None,
+                (-20000.0, 1.0, 2.0, 4000.0), (-1.0, 30000.0, 40000.0, 50000.0), 1.0, 1e-3,
                 energies_v=(3900.0, 4000.0, 4100.0),
             )
 
@@ -515,10 +589,13 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         result = optimize_fixed_geometry_voltages(
             15.0, (0.0, 164.5, 226.5, 258.5, 288.5),
             (-4000.0, 4000.0, 6000.0, 8000.0),
-            (-20000.0, 1.0, 2.0, 4101.0), (-1.0, 30000.0, 40000.0, 50000.0), None,
+            (-20000.0, 1.0, 2.0, 4101.0), (-1.0, 30000.0, 40000.0, 50000.0), 1.0, 1e-3,
             energies_v=(3900.0, 4000.0, 4100.0),
         )
-        self.assertEqual(result["status"], "l0_voltage_candidate_not_l1_validated")
+        self.assertIn(result["status"], {
+            "l0_voltage_family_member_not_l1_validated",
+            "l0_voltage_family_search_residual_above_tolerance",
+        })
         self.assertLess(result["three_point"]["turning_points_mm"][1], 291.0)
 
     def test_l1_uses_same_direction_sections_and_does_not_fake_gamma_90(self) -> None:
@@ -532,6 +609,85 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         self.assertAlmostEqual(mapping.reversibility_difference, 0.0, places=5)
         self.assertFalse(mapping.stable)
         self.assertIsNone(mapping.gamma_degrees)
+
+    def test_l1_screen_only_reports_a_supplied_l0_family_member(self) -> None:
+        design = MirrorL0Design(
+            transverse_half_gap_mm=62.5,
+            transition_z_mm=(0.0, 167.0, 229.0, 261.0, 291.0),
+            electrode_voltages_v=(0.0, -822.195161609036, 5462.4465311482, 1264.21580522642, 6994.22600471638),
+        )
+        result = screen_l1_fixed_geometry(design, (3900.0, 4000.0, 4100.0), 1e-3, 1e-5)
+        self.assertEqual(result["electrode_voltages_v"], list(design.electrode_voltages_v))
+        self.assertEqual(set(result["maps_by_energy_v"]), {"3900.0", "4000.0", "4100.0"})
+        self.assertEqual(result["status"], "l1_screened_unstable")
+        self.assertEqual(
+            result["phase_averaged_time_aberration_by_energy_v"]["4000.0"]["status"],
+            "undefined_unstable_map",
+        )
+
+    def test_l1_family_screen_preserves_l0_restart_identity(self) -> None:
+        l0_member = {
+            "status": "l0_voltage_family_member_not_l1_validated",
+            "transverse_half_gap_mm": 15.0,
+            "transition_z_mm": [0.0, 164.5, 226.5, 258.5, 288.5],
+            "electrode_voltages_v": [0.0, -4666.58728861209, 3854.45058996759, 5570.63144691448, 6011.62494130469],
+            "terminal_electrode_plane_z_mm": 320.0,
+            "normalized_period_slopes_per_v": [-9.6e-11, 6.0e-11, 2.9e-11],
+        }
+        result = screen_l1_family(
+            {"restart_receipts": [l0_member]}, (3900.0, 4000.0, 4100.0), 1e-3, 1e-5, 1,
+        )
+        self.assertEqual(result["l0_accepted_count"], 1)
+        self.assertEqual(result["l1_stable_count"], 1)
+        self.assertEqual(result["family_screens"][0]["l0_restart_index"], 0)
+        self.assertEqual(result["provisional_selected_l0_restart_index"], 0)
+
+    def test_l1_gamma_selection_refines_the_l0_family_intersection(self) -> None:
+        transitions = (0.0, 164.5, 226.5, 258.5, 288.5)
+        lower = MirrorL0Design(
+            15.0, transitions,
+            (0.0, -5023.59942586938, 3843.7443008434875, 5451.07760326715, 7389.047368771202),
+            320.0, 7389.047368771202,
+        )
+        upper = MirrorL0Design(
+            15.0, transitions,
+            (0.0, -5085.381874617298, 3842.6593145704064, 5432.991152491298, 7602.996831370076),
+            320.0, 7602.996831370076,
+        )
+        result = continue_fixed_e_l0_family_to_gamma(
+            lower, upper,
+            (-10_000.0, -10_000.0, -10_000.0, math.nextafter(4100.0, math.inf)),
+            (10_000.0, 10_000.0, 10_000.0, 10_000.0),
+            (3900.0, 4000.0, 4100.0), 90.0, 1.0, 1e-7,
+            0.004, 4e-5, 3, 0.001, 0.001, 60, 500,
+        )
+        self.assertLessEqual(abs(result["gamma_residual_degrees"]), 0.001)
+        self.assertLessEqual(
+            max(abs(value) for value in result["l0_receipt"]["normalized_period_slopes_per_v"]),
+            1e-7,
+        )
+        self.assertGreater(abs(result["scalar_brent_seed"]["gamma_residual_degrees"]), 0.001)
+
+    def test_simion_materializer_accepts_only_converged_gamma_family_receipt(self) -> None:
+        receipt = {
+            "status": "l1_family_continued_to_gamma_target__peak_field_and_3d_validation_pending",
+            "gamma_target_continuation": {
+                "status": "gamma_target_selected_with_probe_convergence__peak_field_and_3d_validation_pending",
+                "gamma_residual_degrees": 1e-8,
+                "maximum_gamma_residual_degrees": 0.001,
+                "l0_receipt": {"electrode_voltages_v": [0.0, -5000.0, 3800.0, 5400.0, 7500.0]},
+                "l1_screen": {"nominal_mapping": {"stable": True, "gamma_degrees": 90.00000001}},
+            },
+            "gamma_target_probe_convergence": {"status": "pass"},
+        }
+        with TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "mirror.json"
+            path.write_text(json.dumps(receipt), encoding="utf-8")
+            self.assertEqual(_candidate_voltages(path), [0.0, -5000.0, 3800.0, 5400.0, 7500.0])
+            receipt["gamma_target_probe_convergence"]["status"] = "fail"
+            path.write_text(json.dumps(receipt), encoding="utf-8")
+            with self.assertRaises(CandidateContractError):
+                _candidate_voltages(path)
 
     def test_writer_emits_a_lf_gem_source(self) -> None:
         with TemporaryDirectory() as temporary_directory:

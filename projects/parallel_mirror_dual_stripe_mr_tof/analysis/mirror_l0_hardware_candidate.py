@@ -10,10 +10,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
+import os
+import platform
 from pathlib import Path
 
+import scipy
+
+from common.contracts.file_identity import file_sha256
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import (
-    optimize_fixed_geometry_voltages,
+    derive_mirror_l0_slope_tolerance_per_v,
+    parallel_global_l0_family_search,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_geometry_parameters import (
     derive_mirror_boundaries,
@@ -23,38 +30,60 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_refer
 )
 
 
-def run(contract_path: Path, target_turning_point_mm: float | None, transverse_half_gap_mm: float) -> dict[str, object]:
+def run(
+    contract_path: Path,
+) -> dict[str, object]:
     contract = load_contract(contract_path)
     mirror = contract["mirror"]
     boundaries = derive_mirror_boundaries(mirror)
     transitions = tuple(float(value) for value in boundaries["analytic_transition_z_mm"])
-    nominal = float(contract["nominal"]["energy_per_charge_v"])
-    search = mirror["theory_requirements"]["voltage_search_dimensionless"]
+    envelope = mirror["theory_requirements"]["voltage_envelope_v"]
+    l0_budget = mirror["theory_requirements"]["l0_acceptance_budget"]
+    profile = mirror["theory_requirements"]["global_l0_search_profile"]
     keys = ("B", "C", "D", "E")
-    initial = tuple(nominal * float(search[key]["initial"]) for key in keys)
-    lower = tuple(nominal * float(search[key]["lower"]) for key in keys)
-    upper = tuple(nominal * float(search[key]["upper"]) for key in keys)
-    result = optimize_fixed_geometry_voltages(
-        transverse_half_gap_mm=transverse_half_gap_mm,
-        transition_z_mm=transitions,
-        initial_nonzero_voltages_v=initial,
-        voltage_lower_bounds_v=lower,
-        voltage_upper_bounds_v=upper,
-        target_turning_point_mm=target_turning_point_mm,
-        terminal_electrode_plane_z_mm=float(boundaries["terminal_electrode_plane_z_mm"]),
-        energies_v=tuple(float(value) for value in mirror["theory_requirements"]["energies_v"]),
+    energies = tuple(float(value) for value in mirror["theory_requirements"]["energies_v"])
+    lower = tuple(
+        math.nextafter(max(energies), math.inf) if key == "E" else float(envelope[key]["minimum_inclusive_v"])
+        for key in keys
+    )
+    upper = tuple(float(envelope[key]["maximum_inclusive_v"]) for key in keys)
+    slope_tolerance = derive_mirror_l0_slope_tolerance_per_v(
+        float(l0_budget["minimum_mass_resolution"]),
+        float(l0_budget["mirror_time_width_fraction"]),
+        energies,
+    )
+    logical_processors = os.cpu_count() or 1
+    requested_workers = int(profile["maximum_parallel_workers"])
+    maximum_workers = min(logical_processors, requested_workers)
+    result = parallel_global_l0_family_search(
+        float(mirror["theory_requirements"]["berdnikov_transverse_half_gap_mm"]), transitions, lower, upper,
+        float(profile["period_slope_derivative_step_v"]), slope_tolerance,
+        energies, int(profile["base_random_seed"]), int(profile["restart_count"]), maximum_workers,
+        int(profile["population_size_per_restart"]), int(profile["maximum_iterations_per_restart"]),
+        float(profile["relative_convergence_tolerance"]), float(boundaries["terminal_electrode_plane_z_mm"]),
+        int(profile["maximum_local_function_evaluations"]),
     )
     result["input"] = {
         "contract": str(contract_path),
+        "contract_sha256": file_sha256(contract_path),
         "mirror_design_status_at_run": mirror["design_status"],
         "fixed_axial_boundaries_mm": list(transitions),
-        "analytic_transverse_half_gap_mm": transverse_half_gap_mm,
+        "analytic_transverse_half_gap_mm": float(mirror["theory_requirements"]["berdnikov_transverse_half_gap_mm"]),
         "physical_E_active_end_z_mm": float(boundaries["physical_E_active_end_z_mm"]),
         "terminal_electrode_plane_z_mm": float(boundaries["terminal_electrode_plane_z_mm"]),
         "active_start_z_mm": boundaries["active_start_z_mm"],
-        "target_turning_point_mm": None if target_turning_point_mm is None else float(target_turning_point_mm),
+        "period_slope_derivative_step_v": float(profile["period_slope_derivative_step_v"]),
+        "l0_acceptance_budget": l0_budget,
+        "maximum_abs_normalized_period_slope_per_v": slope_tolerance,
         "E_midpoint_reference_mm": boundaries["E_midpoint_z_mm"],
-        "analytic_search_dimensionless": search,
+        "voltage_envelope_v": envelope,
+        "global_search_profile": profile,
+        "available_logical_processors": logical_processors,
+        "actual_parallel_workers": maximum_workers,
+    }
+    result["runtime"] = {
+        "python_version": platform.python_version(),
+        "scipy_version": scipy.__version__,
     }
     result["limitations"] = [
         "The ideal Berdnikov model has no physical slot or finite end-plate thickness; its grounded A segment begins at z=0.  It uses the documented terminal-electrode image construction at the derived plane, with terminal voltage equal to E.  H=15 mm is the currently selected ideal boundary parameter.",
@@ -68,15 +97,9 @@ def run(contract_path: Path, target_turning_point_mm: float | None, transverse_h
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--contract", required=True, type=Path)
-    parser.add_argument("--target-turning-point-mm", type=float)
-    parser.add_argument("--transverse-half-gap-mm", type=float)
     parser.add_argument("--output", required=True, type=Path)
     arguments = parser.parse_args()
-    contract = load_contract(arguments.contract)
-    selected_h = arguments.transverse_half_gap_mm
-    if selected_h is None:
-        selected_h = float(contract["mirror"]["theory_requirements"]["berdnikov_transverse_half_gap_mm"])
-    result = run(arguments.contract, arguments.target_turning_point_mm, selected_h)
+    result = run(arguments.contract)
     arguments.output.parent.mkdir(parents=True, exist_ok=True)
     arguments.output.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"MIRROR_L0_HARDWARE_CANDIDATE: status={result['status']} output={arguments.output}")

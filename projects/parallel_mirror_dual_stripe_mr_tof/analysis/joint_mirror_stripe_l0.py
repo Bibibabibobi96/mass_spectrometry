@@ -1,11 +1,10 @@
 """Coupled hard-boundary L0 primitives for the fixed-geometry MR-TOF.
 
 The manufactured mirror geometry is fixed while its voltages are adjustable.
-Consequently the effective axial width ``W`` is a *derived free coordinate* of
-the mirror-voltage family, not a mechanical distance and not a second input.
-This module keeps the Stripe baseline action in the same period evaluation so
-that a sequential ``mirror W -> Stripe`` calculation cannot accidentally
-over-define the physical state.
+The mirror voltage is solved first by the independent mirror L0/L1 workflow.
+Its verified period and corresponding ``W`` are downstream inputs here, never
+Stripe-dependent mirror-fit coordinates.  This module then keeps the Stripe
+baseline action in the complete analyser-period evaluation.
 
 It is deliberately solver-neutral and one-dimensional.  Finite 3-D fields,
 the transverse Poincare map, and the prism hand-offs remain separate gates.
@@ -28,7 +27,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import (
     reduced_period,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l1 import map_at_energy
-from scipy.optimize import least_squares
+from scipy.optimize import brentq, least_squares
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
     CandidateContractError,
 )
@@ -109,7 +108,7 @@ class ConstraintClassification:
 
 @dataclass(frozen=True)
 class JointL0Trial:
-    """One complete analytic mirror--Stripe trial prior to P1/P2 shooting."""
+    """One downstream Stripe trial consuming a fixed mirror-theory design."""
 
     mirror_design: MirrorL0Design
     energy_points_v: tuple[float, float, float]
@@ -452,6 +451,92 @@ def _pseudopotential_difference_v(
     return -action_change / coupled_period_mm_per_sqrt_v
 
 
+def derive_turning_y_from_entry_direction(
+    *,
+    mirror_reduced_period_mm_per_sqrt_v: float,
+    energy_per_charge_v: float,
+    stripes: Sequence[StripeHardBoundary],
+    entry_y_mm: float,
+    entry_unit_direction_project: Sequence[float],
+    search_end_y_mm: float,
+    sample_count: int,
+) -> float:
+    """Find the first slow-drift turning section implied by the injected ray.
+
+    The fast/slow theory supplies the slow energy as
+    ``E*(v_y/|v|)^2``.  A physical turning point is the first section reached
+    along the signed y direction where the exact coupled Stripe
+    pseudopotential difference equals that energy.  Search limits and sample
+    count are explicit caller-owned numerical contract fields; neither a CAD
+    box nor a published reference length is substituted here.
+    """
+    mirror_period = _finite(mirror_reduced_period_mm_per_sqrt_v, "mirror reduced period")
+    energy = _finite(energy_per_charge_v, "energy_per_charge_v")
+    entry = _finite(entry_y_mm, "entry_y_mm")
+    search_end = _finite(search_end_y_mm, "turning search end_y_mm")
+    direction = tuple(_finite(value, "entry direction") for value in entry_unit_direction_project)
+    if len(direction) != 3 or mirror_period <= 0.0 or energy <= 0.0 or search_end == entry:
+        raise CandidateContractError("turning-point derivation needs a nonzero three-component ray, positive energy/period, and nonzero search interval")
+    norm = math.sqrt(sum(value * value for value in direction))
+    if norm <= 0.0 or direction[1] == 0.0:
+        raise CandidateContractError("turning-point derivation needs a nonzero y-directed entry ray")
+    if (search_end - entry) * direction[1] <= 0.0:
+        raise CandidateContractError("turning search interval must follow the injected y direction")
+    if not isinstance(sample_count, int) or isinstance(sample_count, bool) or sample_count < 2:
+        raise CandidateContractError("turning-point derivation needs an explicit integer sample count of at least two")
+    baselines = tuple(stripe.width_mm(entry) for stripe in stripes)
+    biases = tuple(_finite(stripe.bias_v, "Stripe bias_v") for stripe in stripes)
+    period = coupled_reduced_period_mm_per_sqrt_v(mirror_period, energy, baselines, biases)
+    slow_energy = energy * (direction[1] / norm) ** 2
+    if not 0.0 < slow_energy < energy:
+        raise CandidateContractError("entry ray must have a nonzero, non-total slow y energy")
+
+    def residual(y_mm: float) -> float:
+        return _pseudopotential_difference_v(energy, period, stripes, entry, y_mm) - slow_energy
+
+    previous_y, previous_value = entry, residual(entry)
+    for index in range(1, sample_count + 1):
+        current_y = entry + (search_end - entry) * index / sample_count
+        current_value = residual(current_y)
+        if current_value == 0.0:
+            return current_y
+        if previous_value * current_value < 0.0:
+            return brentq(residual, previous_y, current_y)
+        previous_y, previous_value = current_y, current_value
+    raise CandidateContractError("no physical slow-drift turning point lies in the explicit search interval")
+
+
+def derive_coupled_drift_state_from_entry_direction(
+    *,
+    mirror_reduced_period_mm_per_sqrt_v: float,
+    energy_per_charge_v: float,
+    target_oscillation_count: int,
+    stripes: Sequence[StripeHardBoundary],
+    entry_y_mm: float,
+    entry_unit_direction_project: Sequence[float],
+    search_end_y_mm: float,
+    sample_count: int,
+) -> CoupledDriftState:
+    """Derive the turning section from one injected ray, then evaluate L/W/K."""
+    turning = derive_turning_y_from_entry_direction(
+        mirror_reduced_period_mm_per_sqrt_v=mirror_reduced_period_mm_per_sqrt_v,
+        energy_per_charge_v=energy_per_charge_v,
+        stripes=stripes,
+        entry_y_mm=entry_y_mm,
+        entry_unit_direction_project=entry_unit_direction_project,
+        search_end_y_mm=search_end_y_mm,
+        sample_count=sample_count,
+    )
+    return derive_coupled_drift_state(
+        mirror_reduced_period_mm_per_sqrt_v=mirror_reduced_period_mm_per_sqrt_v,
+        energy_per_charge_v=energy_per_charge_v,
+        target_oscillation_count=target_oscillation_count,
+        stripes=stripes,
+        entry_y_mm=entry_y_mm,
+        turning_y_mm=turning,
+    )
+
+
 def _time_response_g(
     energy_per_charge_v: float,
     coupled_period_mm_per_sqrt_v: float,
@@ -536,14 +621,15 @@ def derive_coupled_drift_state(
 ) -> CoupledDriftState:
     """Evaluate ``L, W, kappa, theta`` for one fully specified physical trial.
 
-    ``turning_y_mm`` is a physical section selected by the coupled shooting
+    ``turning_y_mm`` is a physical section selected by the downstream Stripe
     problem, not a second definition of ``L``.  This routine derives the
     injection angle from the turning energy and reports the resulting K
-    residual.  A global optimizer may vary mirror voltages, two Stripe biases,
-    and the turning section; it must not inject a separately prescribed W.
-    It is an evaluator, not a parameter solver: callers must classify their
-    full unknown/constraint system with :func:`classify_constraint_system`
-    and call :func:`require_exactly_determined` before publishing a solution.
+    residual.  The mirror period is a verified input; downstream optimizers
+    may vary only their own Stripe/prism coordinates and must not re-fit mirror
+    voltage. It is an evaluator, not a parameter solver: callers must classify
+    their physical unknown/constraint system with
+    :func:`classify_constraint_system` and call
+    :func:`require_exactly_determined` before publishing a solution.
     """
     mirror_period = _finite(mirror_reduced_period_mm_per_sqrt_v, "mirror reduced period")
     energy = _finite(energy_per_charge_v, "energy_per_charge_v")

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
-from typing import Sequence
+from typing import Any, Sequence
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
     CandidateContractError,
@@ -76,6 +76,44 @@ class TwoPrismTransportObservation:
     def __post_init__(self) -> None:
         if self.completed_without_electrode_collision is not True:
             raise CandidateContractError("P1/P2 hand-off must reject an electrode-collision trajectory")
+
+
+def _state_from_event(event: dict[str, Any], label: str) -> ProjectPhaseSpaceState:
+    try:
+        position = tuple(float(event[key]) for key in ("x_mm", "y_mm", "z_mm"))
+        velocity = tuple(float(event[key]) for key in ("vx_mm_us", "vy_mm_us", "vz_mm_us"))
+    except (KeyError, TypeError, ValueError) as error:
+        raise CandidateContractError(f"{label} event has no complete finite phase-space state") from error
+    return ProjectPhaseSpaceState(position, velocity)
+
+
+def observation_from_simion_events(
+    events: Sequence[dict[str, Any]],
+    source: ProjectPhaseSpaceState,
+    *, ion_number: int = 1,
+) -> TwoPrismTransportObservation:
+    """Extract one collision-free source -> P1 -> P2/Stripe hand-off receipt.
+
+    The first negative-y crossing of the frozen $y=0$ Stripe plane is both
+    the physically observed P2 exit and the Stripe entrance.  It avoids an
+    invented internal P2 effective plane while retaining separate event names
+    in the SIMION log for provenance.
+    """
+    if not isinstance(ion_number, int) or isinstance(ion_number, bool) or ion_number <= 0:
+        raise CandidateContractError("P1/P2 event receipt needs one positive ion identity")
+    ion_events = [event for event in events if event.get("ion") == ion_number]
+    if any(event.get("kind") in {"terminal", "splat"} and event.get("splat", event.get("code")) == -1
+           for event in ion_events):
+        raise CandidateContractError("P1/P2 hand-off cannot consume an electrode-collision event")
+    p1 = [event for event in ion_events if event.get("kind") == "p1_plane"]
+    p2_to_stripe = [event for event in ion_events if event.get("kind") == "p2_to_stripe"]
+    if len(p1) != 1 or len(p2_to_stripe) != 1:
+        raise CandidateContractError("P1/P2 hand-off needs exactly one forward P1 and P2-to-Stripe event")
+    p1_state = _state_from_event(p1[0], "P1")
+    stripe_state = _state_from_event(p2_to_stripe[0], "P2-to-Stripe")
+    if abs(stripe_state.position_mm[1]) > 1e-9 or stripe_state.velocity_mm_per_us[1] >= 0.0:
+        raise CandidateContractError("P2-to-Stripe event must be the inbound frozen y=0 crossing")
+    return TwoPrismTransportObservation(source, p1_state, stripe_state, stripe_state, True)
 
 
 def _target_tangent_basis(target_direction: Sequence[float]) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
