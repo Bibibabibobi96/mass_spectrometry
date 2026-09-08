@@ -604,6 +604,41 @@
       }
     },
     {
+      "stage": "dual_cone_tandem_quadrupole_ion_interface_static",
+      "dependency_profile": "locked",
+      "repository_integration_group": "regression",
+      "project_id": "dual_cone_tandem_quadrupole_ion_interface",
+      "matches": [
+        {
+          "prefix": "projects/dual_cone_tandem_quadrupole_ion_interface/",
+          "reason": "dual_cone_tandem_quadrupole_ion_interface_changed"
+        },
+        {
+          "regex": "^common/contracts/(?!README\\.md$|test_[^/]+\\.(?:py|ps1)$)",
+          "reason": "common_contracts_direct_dependency_changed"
+        },
+        {
+          "exact": "common/multipole/family_contract.py",
+          "reason": "shared_rf_voltage_dependency_changed"
+        },
+        {
+          "exact": "common/multipole/ideal_transport.py",
+          "reason": "shared_ideal_field_dependency_changed"
+        },
+        {
+          "exact": "common/multipole/round_rod_geometry.py",
+          "reason": "shared_rod_cross_section_dependency_changed"
+        }
+      ],
+      "command": {
+        "runner": "powershell",
+        "script": "projects/dual_cone_tandem_quadrupole_ion_interface/verify_project.ps1",
+        "parameters": {
+          "PythonExe": "{python}"
+        }
+      }
+    },
+    {
       "stage": "transverse_helical_filament_wehnelt_electron_gun_static",
       "dependency_profile": "locked",
       "repository_integration_group": "regression",

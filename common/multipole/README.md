@@ -23,6 +23,12 @@
 阵列、接口、屏蔽、RF/DC、分段、电位和来源SHA。solver runner不得接受任意resolved文件或物理标量，
 COMSOL/SIMION也不得反向改写设计。
 
+求解器无关杆阵列由[`round_rod_geometry.py`](round_rod_geometry.py)统一生成和判定。`build_rod_array`
+省略`cross_section`时保持既有圆杆输出；椭圆杆必须显式声明长短半轴及长轴为径向或切向，
+`points_inside_rods`对两种截面提供同一批量点内判定。既有`build_round_rod_array`仍是圆杆兼容入口。
+[`ideal_transport.py`](ideal_transport.py)同时提供与标量参考公式一致的NumPy批量RF波形和理想多极场适配，
+项目不得另存同义批量公式。
+
 typed operating-mode registry只声明同一机械base上的电气差异。当前三个规范模式为：
 `no_acceleration_full_length`、`segmented_rod_axial_acceleration`和
 `exit_aperture_plate_acceleration`。模式名不能用来偷偷改变几何、源或数值设置。

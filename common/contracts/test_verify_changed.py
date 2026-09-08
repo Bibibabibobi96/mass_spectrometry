@@ -337,6 +337,7 @@ class ChangedGateContractTests(unittest.TestCase):
             "rf_quadrupole_ion_optics",
             "rf_hexapole_ion_optics",
             "rf_octupole_ion_optics",
+            "dual_cone_tandem_quadrupole_ion_interface",
             "transverse_helical_filament_wehnelt_electron_gun",
             "apertured_tube_electron_impact_ion_source",
         ):

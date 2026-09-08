@@ -171,6 +171,8 @@ source 解析、layout/profile、pulse/source materialization、resolved 产物�
 
 - `apertured_tube_electron_impact_ion_source`和
   `transverse_helical_filament_wehnelt_electron_gun`先补齐机器可读参数链与独立部件验收。
+- `dual_cone_tandem_quadrupole_ion_interface`独立维护双锥差分抽气、椭圆杆与圆杆两级RF导引拓扑；
+  当前只建立确定性压力阻尼筛选，待机械、电气和抽气边界确认后再进入可压缩流、碰撞与求解器资格。
 - 新离子源或电子枪只有在拓扑和正式资产可独立维护时才建立项目；仅工作点变化保留为mode。
 - 部件集成不以文件拼接为完成条件，必须冻结坐标、电位、孔径、压力、相空间、时间和机械接口合同。
 

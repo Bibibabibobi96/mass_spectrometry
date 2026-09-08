@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "role": "dual_cone_tandem_quadrupole_geometry_baseline",
+  "project_id": "dual_cone_tandem_quadrupole_ion_interface",
+  "coordinate_frame": {
+    "frame_id": "dual_cone_interface_local",
+    "axis": "+z downstream",
+    "origin": "first_cone_virtual_apex_and_aperture_reference_plane"
+  },
+  "geometry_mm": {
+    "first_cone": {
+      "included_angle_deg": 70.5,
+      "aperture_diameter_mm": 2.0,
+      "aperture_reference_z_mm": 0.0,
+      "angle_interpretation": "provisional_full_included_angle"
+    },
+    "second_cone": {
+      "included_angle_deg": 65.0,
+      "aperture_diameter_mm": 0.78,
+      "virtual_apex_separation_mm": 3.0,
+      "angle_interpretation": "provisional_full_included_angle"
+    },
+    "low_pressure_enclosure": {
+      "cylinder_radius_mm": 23.5,
+      "axial_length_from_second_aperture_mm": 105.0,
+      "length_origin_interpretation": "provisional_second_cone_aperture_reference"
+    },
+    "elliptical_quadrupole": {
+      "major_axis_diameter_mm": 8.6,
+      "minor_axis_diameter_mm": 3.76,
+      "opposed_inner_surface_gap_mm": 7.48,
+      "adjacent_orientation_increment_deg": 90.0,
+      "minor_axis_orientation": "radial",
+      "upstream_cone_axial_offset_mm": 1.6,
+      "upstream_end_model": "provisional_axial_offset_from_second_cone_surface",
+      "downstream_end": "flat"
+    },
+    "round_quadrupole": {
+      "rod_radius_mm": 2.39,
+      "adjacent_rod_center_distance_mm": 5.64,
+      "effective_length_mm": 52.2,
+      "center_distance_interpretation": "provisional_adjacent_centers",
+      "downstream_alignment": "provisional_flush_with_low_pressure_end"
+    },
+    "interstage_flat_face_gap_mm": 2.0
+  },
+  "missing_mechanical_inputs": [
+    "cone_body_thickness_and_outer_diameter",
+    "physical_aperture_plane_offsets_from_virtual_apices",
+    "elliptical_rod_measured_effective_length",
+    "interstage_lens_or_differential_aperture",
+    "downstream_exit_lens_and_clearance",
+    "pump_port_geometry"
+  ]
+}

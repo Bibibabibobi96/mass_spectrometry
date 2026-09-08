@@ -1,0 +1,177 @@
+{
+  "schema_version": 1,
+  "role": "dual_cone_tandem_quadrupole_resolved_geometry",
+  "status": "generated_from_provisional_geometry_interpretations",
+  "project_id": "dual_cone_tandem_quadrupole_ion_interface",
+  "coordinate_frame": {
+    "frame_id": "dual_cone_interface_local",
+    "axis": "+z downstream",
+    "origin": "first_cone_virtual_apex_and_aperture_reference_plane"
+  },
+  "geometry_mm": {
+    "first_cone": {
+      "included_angle_deg": 70.5,
+      "half_angle_deg": 35.25,
+      "aperture_radius_mm": 1.0,
+      "aperture_reference_z_mm": 0.0
+    },
+    "second_cone": {
+      "included_angle_deg": 65.0,
+      "half_angle_deg": 32.5,
+      "aperture_radius_mm": 0.39,
+      "aperture_reference_z_mm": 3.0,
+      "theoretical_base_z_at_enclosure_radius_mm": 39.88761106226102
+    },
+    "low_pressure_enclosure": {
+      "radius_mm": 23.5,
+      "start_z_mm": 3.0,
+      "end_z_mm": 108.0
+    },
+    "stage_1_elliptical_quadrupole": {
+      "ideal_field_radius_r0_mm": 3.74,
+      "axis_upstream_start_z_mm": 4.6,
+      "downstream_flat_end_z_mm": 53.8,
+      "rod_array": {
+        "inscribed_radius_r0": 3.74,
+        "cross_section": {
+          "shape": "ellipse",
+          "semi_major_axis_mm": 4.3,
+          "semi_minor_axis_mm": 1.88,
+          "major_axis_orientation": "tangential"
+        },
+        "rod_center_radius": 5.62,
+        "rod_length": 49.199999999999996,
+        "rods": [
+          {
+            "rod_id": 1,
+            "electrode_group": 1,
+            "angle_rad": 0.0,
+            "center_x_mm": 5.62,
+            "center_y_mm": 0.0,
+            "semi_major_axis_mm": 4.3,
+            "semi_minor_axis_mm": 1.88,
+            "major_axis_angle_rad": 1.5707963267948966,
+            "z_min_mm": 4.6,
+            "z_max_mm": 53.8
+          },
+          {
+            "rod_id": 2,
+            "electrode_group": 2,
+            "angle_rad": 1.5707963267948966,
+            "center_x_mm": 3.4412575056040625e-16,
+            "center_y_mm": 5.62,
+            "semi_major_axis_mm": 4.3,
+            "semi_minor_axis_mm": 1.88,
+            "major_axis_angle_rad": 3.141592653589793,
+            "z_min_mm": 4.6,
+            "z_max_mm": 53.8
+          },
+          {
+            "rod_id": 3,
+            "electrode_group": 1,
+            "angle_rad": 3.141592653589793,
+            "center_x_mm": -5.62,
+            "center_y_mm": 6.882515011208125e-16,
+            "semi_major_axis_mm": 4.3,
+            "semi_minor_axis_mm": 1.88,
+            "major_axis_angle_rad": 4.71238898038469,
+            "z_min_mm": 4.6,
+            "z_max_mm": 53.8
+          },
+          {
+            "rod_id": 4,
+            "electrode_group": 2,
+            "angle_rad": 4.71238898038469,
+            "center_x_mm": -1.0323772516812187e-15,
+            "center_y_mm": -5.62,
+            "semi_major_axis_mm": 4.3,
+            "semi_minor_axis_mm": 1.88,
+            "major_axis_angle_rad": 6.283185307179586,
+            "z_min_mm": 4.6,
+            "z_max_mm": 53.8
+          }
+        ]
+      },
+      "upstream_end_surface": {
+        "model": "second_cone_surface_plus_axial_offset",
+        "axial_offset_mm": 1.6,
+        "formula": "z_start_mm = second_aperture_z_mm + axial_offset_mm + radial_position_mm / tan(second_half_angle_rad)"
+      }
+    },
+    "interstage": {
+      "upstream_face_z_mm": 53.8,
+      "downstream_face_z_mm": 55.8,
+      "clear_gap_mm": 2.0
+    },
+    "stage_2_round_quadrupole": {
+      "adjacent_rod_center_distance_mm": 5.64,
+      "ideal_field_radius_r0_mm": 1.5980822458921273,
+      "upstream_flat_start_z_mm": 55.8,
+      "downstream_flat_end_z_mm": 108.0,
+      "rod_array": {
+        "inscribed_radius_r0": 1.5980822458921273,
+        "rod_radius": 2.39,
+        "rod_center_radius": 3.9880822458921275,
+        "rod_length": 52.2,
+        "rods": [
+          {
+            "rod_id": 1,
+            "electrode_group": 1,
+            "angle_rad": 0.0,
+            "center_x_mm": 3.9880822458921275,
+            "center_y_mm": 0.0,
+            "radius_mm": 2.39,
+            "z_min_mm": 55.8,
+            "z_max_mm": 108.0
+          },
+          {
+            "rod_id": 2,
+            "electrode_group": 2,
+            "angle_rad": 1.5707963267948966,
+            "center_x_mm": 2.4419960785840907e-16,
+            "center_y_mm": 3.9880822458921275,
+            "radius_mm": 2.39,
+            "z_min_mm": 55.8,
+            "z_max_mm": 108.0
+          },
+          {
+            "rod_id": 3,
+            "electrode_group": 1,
+            "angle_rad": 3.141592653589793,
+            "center_x_mm": -3.9880822458921275,
+            "center_y_mm": 4.883992157168181e-16,
+            "radius_mm": 2.39,
+            "z_min_mm": 55.8,
+            "z_max_mm": 108.0
+          },
+          {
+            "rod_id": 4,
+            "electrode_group": 2,
+            "angle_rad": 4.71238898038469,
+            "center_x_mm": -7.325988235752272e-16,
+            "center_y_mm": -3.9880822458921275,
+            "radius_mm": 2.39,
+            "z_min_mm": 55.8,
+            "z_max_mm": 108.0
+          }
+        ]
+      }
+    }
+  },
+  "provisional_interpretations": [
+    "provisional_full_included_angle",
+    "provisional_full_included_angle",
+    "provisional_second_cone_aperture_reference",
+    "provisional_axial_offset_from_second_cone_surface",
+    "provisional_adjacent_centers",
+    "provisional_flush_with_low_pressure_end"
+  ],
+  "omitted_geometry": [
+    "cone_body_thickness_and_outer_diameter",
+    "physical_aperture_plane_offsets_from_virtual_apices",
+    "elliptical_rod_measured_effective_length",
+    "interstage_lens_or_differential_aperture",
+    "downstream_exit_lens_and_clearance",
+    "pump_port_geometry"
+  ]
+}

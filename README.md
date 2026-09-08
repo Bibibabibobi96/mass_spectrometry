@@ -132,6 +132,7 @@ simulation_repo/
 │  ├─ rf_quadrupole_ion_optics/
 │  ├─ rf_hexapole_ion_optics/
 │  ├─ rf_octupole_ion_optics/
+│  ├─ dual_cone_tandem_quadrupole_ion_interface/
 │  └─ transverse_helical_filament_wehnelt_electron_gun/
 ├─ common/
 │  ├─ comsol/                # LiveLink启动器、可复用COMSOL测试及就近README
@@ -173,6 +174,7 @@ simulation_repo/
 | `rf_quadrupole_ion_optics` | RF四极杆离子光学 |
 | `rf_hexapole_ion_optics` | RF六极杆离子光学 |
 | `rf_octupole_ion_optics` | RF八极杆离子光学 |
+| `dual_cone_tandem_quadrupole_ion_interface` | 双锥串联四极杆离子传输接口 |
 | `transverse_helical_filament_wehnelt_electron_gun` | 横置螺旋灯丝Wehnelt电子枪 |
 
 每个项目用`config/project.json`声明稳定项目身份、设计族、可选择能力及其真实成熟度；

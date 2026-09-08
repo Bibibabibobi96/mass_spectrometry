@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "role": "project_execution_profiles",
+  "project_id": "dual_cone_tandem_quadrupole_ion_interface",
+  "profiles": [
+    {
+      "profile_id": "dual_cone_pressure_drag_screening",
+      "capability_id": "dual_cone_two_stage_quadrupole_transport",
+      "mode": "pressure_drag_screening",
+      "evidence_levels": ["plan"],
+      "supported_objectives": ["geometry_screening", "transport_trend_screening"],
+      "supported_operating_points": [
+        {
+          "mass": {"value": 500.0, "unit": "Da"},
+          "charge_state": 1
+        }
+      ],
+      "supported_design_variables": [],
+      "supported_constraints": ["positive_clearance", "nonoverlapping_axial_sections"],
+      "deliverable_outputs": ["simulation_results", "interface_state"],
+      "required_bindings": ["geometry_baseline", "science_contract", "solver_numerics", "particle_count_policy"],
+      "steps": [
+        {
+          "step_id": "static_gate",
+          "kind": "gate",
+          "shell": "powershell",
+          "entrypoint": "verify_project.ps1",
+          "run_id_template": null,
+          "arguments": ["-PythonExe", "{python_exe}"]
+        },
+        {
+          "step_id": "run_reduced_order_transport",
+          "kind": "run",
+          "shell": "python",
+          "entrypoint": "analysis/run_reduced_order_transport.py",
+          "run_id_template": "YYYYMMDD_HHMMSS__sim__python__dual-cone-screening",
+          "arguments": ["--particle-count", "100", "--seed", "20260908", "--output-dir", "{run_dir}"]
+        }
+      ],
+      "limitations": [
+        "The profile is plan-level prototype screening and cannot produce Candidate or Formal evidence.",
+        "All electrical, gas-flow, mobility and ion operating-point values remain provisional.",
+        "COMSOL, SIMION, CFD, discrete collision cross sections and CAD are outside this profile."
+      ]
+    }
+  ]
+}

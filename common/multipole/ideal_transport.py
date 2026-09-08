@@ -9,9 +9,11 @@ import random
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from common.contracts.particle_count_policy import validate_positive_particle_count
 from common.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
-from common.multipole.family_contract import from_high_order_baseline
+from common.multipole.family_contract import VoltageDrive, from_high_order_baseline
 
 
 def validate_contract(contract: dict[str, Any]) -> None:
@@ -50,6 +52,43 @@ def electric_field_xy(
     """Return the instantaneous ideal transverse electric field in V/m."""
     power = complex(x_m, y_m) ** (order - 1)
     scale = order * voltage_v / (r0_m ** order)
+    return -scale * power.real, scale * power.imag
+
+
+def rf_waveform_voltage_array(drive: VoltageDrive, times_s: np.ndarray) -> np.ndarray:
+    """Return the shared signed RF waveform at a finite NumPy array of times."""
+    times = np.asarray(times_s, dtype=float)
+    if not np.all(np.isfinite(times)):
+        raise ValueError("times_s must contain only finite values")
+    argument = 2.0 * math.pi * drive.frequency_hz * times + drive.phase_rad
+    if drive.waveform == "sine":
+        return drive.rf_amplitude_v_per_group * np.sin(argument)
+    if drive.waveform == "cosine":
+        return drive.rf_amplitude_v_per_group * np.cos(argument)
+    raise ValueError(f"unsupported RF waveform: {drive.waveform}")
+
+
+def electric_field_xy_array(
+    order: int,
+    r0_m: float,
+    voltage_v: np.ndarray,
+    x_m: np.ndarray,
+    y_m: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Vectorize :func:`electric_field_xy` over broadcast-compatible arrays."""
+    if isinstance(order, bool) or not isinstance(order, int) or order < 1:
+        raise ValueError("order must be a positive integer")
+    if not math.isfinite(float(r0_m)) or r0_m <= 0:
+        raise ValueError("r0_m must be finite and positive")
+    voltage, x_position, y_position = np.broadcast_arrays(
+        np.asarray(voltage_v, dtype=float),
+        np.asarray(x_m, dtype=float),
+        np.asarray(y_m, dtype=float),
+    )
+    if not all(np.all(np.isfinite(values)) for values in (voltage, x_position, y_position)):
+        raise ValueError("voltage_v, x_m and y_m must contain only finite values")
+    power = (x_position + 1j * y_position) ** (order - 1)
+    scale = order * voltage / (r0_m**order)
     return -scale * power.real, scale * power.imag
 
 

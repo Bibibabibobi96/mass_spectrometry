@@ -5,12 +5,18 @@ import unittest
 from unittest.mock import patch
 from pathlib import Path
 
+import numpy as np
+
 from common.multipole.compile_design_request import (
     MultipoleDesignCompileError,
     compile_design_request,
 )
 from common.multipole.interface_geometry import build_axial_interface_layout
-from common.multipole.round_rod_geometry import build_round_rod_array
+from common.multipole.round_rod_geometry import (
+    build_rod_array,
+    build_round_rod_array,
+    points_inside_rods,
+)
 from common.multipole.simion_geometry import (
     render_axis_mapped_segmented_rod_array_gem,
     render_gem,
@@ -22,6 +28,103 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class RoundRodGeometryTest(unittest.TestCase):
+    def test_round_default_preserves_legacy_document_bytes_and_values(self):
+        inputs = {
+            "radial_order_n": 2,
+            "electrode_count": 4,
+            "inscribed_radius_r0_mm": 4.0,
+            "rod_radius_mm": 4.592,
+            "rod_z_min_mm": 5.8,
+            "rod_z_max_mm": 85.4,
+            "orientation_rad": 0.17,
+        }
+        center_radius = inputs["inscribed_radius_r0_mm"] + inputs["rod_radius_mm"]
+        rods = []
+        for index in range(inputs["electrode_count"]):
+            angle = inputs["orientation_rad"] + 2 * math.pi * index / inputs["electrode_count"]
+            rods.append(
+                {
+                    "rod_id": index + 1,
+                    "electrode_group": 1 if index % 2 == 0 else 2,
+                    "angle_rad": angle,
+                    "center_x_mm": center_radius * math.cos(angle),
+                    "center_y_mm": center_radius * math.sin(angle),
+                    "radius_mm": inputs["rod_radius_mm"],
+                    "z_min_mm": inputs["rod_z_min_mm"],
+                    "z_max_mm": inputs["rod_z_max_mm"],
+                }
+            )
+        legacy = {
+            "inscribed_radius_r0": inputs["inscribed_radius_r0_mm"],
+            "rod_radius": inputs["rod_radius_mm"],
+            "rod_center_radius": center_radius,
+            "rod_length": inputs["rod_z_max_mm"] - inputs["rod_z_min_mm"],
+            "rods": rods,
+        }
+        default = build_rod_array(**inputs)
+        wrapper = build_round_rod_array(**inputs)
+        self.assertEqual(default, legacy)
+        self.assertEqual(wrapper, legacy)
+        self.assertEqual(
+            json.dumps(default, separators=(",", ":")),
+            json.dumps(legacy, separators=(",", ":")),
+        )
+
+    def test_ellipse_centers_orientation_and_point_membership(self):
+        array = build_rod_array(
+            radial_order_n=2,
+            electrode_count=4,
+            inscribed_radius_r0_mm=3.74,
+            rod_z_min_mm=0.0,
+            rod_z_max_mm=20.0,
+            cross_section={
+                "shape": "ellipse",
+                "semi_major_axis_mm": 4.3,
+                "semi_minor_axis_mm": 1.88,
+                "major_axis_orientation": "tangential",
+            },
+        )
+        self.assertAlmostEqual(array["rod_center_radius"], 5.62)
+        first, opposite = array["rods"][0], array["rods"][2]
+        self.assertAlmostEqual(first["center_x_mm"], 5.62)
+        self.assertAlmostEqual(first["center_y_mm"], 0.0)
+        self.assertAlmostEqual(first["major_axis_angle_rad"], math.pi / 2)
+        self.assertAlmostEqual(
+            (first["center_x_mm"] - first["semi_minor_axis_mm"])
+            - (opposite["center_x_mm"] + opposite["semi_minor_axis_mm"]),
+            7.48,
+        )
+        for rod in array["rods"]:
+            relative_angle = (rod["major_axis_angle_rad"] - rod["angle_rad"]) % math.pi
+            self.assertAlmostEqual(relative_angle, math.pi / 2)
+        points = np.array(
+            [
+                [first["center_x_mm"], first["center_y_mm"]],
+                [first["center_x_mm"], first["center_y_mm"] + 4.3],
+                [first["center_x_mm"], first["center_y_mm"] + 4.31],
+                [0.0, 0.0],
+            ]
+        )
+        np.testing.assert_array_equal(
+            points_inside_rods(points, array),
+            np.array([True, True, False, False]),
+        )
+        radial = build_rod_array(
+            radial_order_n=2,
+            electrode_count=4,
+            inscribed_radius_r0_mm=3.74,
+            rod_z_min_mm=0.0,
+            rod_z_max_mm=20.0,
+            cross_section={
+                "shape": "ellipse",
+                "semi_major_axis_mm": 4.3,
+                "semi_minor_axis_mm": 1.88,
+                "major_axis_orientation": "radial",
+            },
+        )
+        self.assertAlmostEqual(radial["rod_center_radius"], 8.04)
+        self.assertAlmostEqual(radial["rods"][0]["major_axis_angle_rad"], 0.0)
+
     def test_segmented_renderer_canonical_family_geometry_and_hashes(self):
         expected = {
             "quadrupole": (16, 4, "427647f0200eda36fad92c40a0c36739ca6d316bcbf7e7e8fc7d5f67dff960f7", "c811a0ff39044a3caee40dc3b058cfd7bc77c53edb1045340a304481e15a2b7d"),

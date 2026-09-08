@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "project_id": "dual_cone_tandem_quadrupole_ion_interface",
+  "family_id": "atmospheric_pressure_ion_interfaces",
+  "display_name": "双锥串联四极杆离子传输接口",
+  "purpose": "双锥差分抽气接口及椭圆杆、圆杆两级RF四极导引的离子传输筛选与后续多物理场验证",
+  "lifecycle_status": "prototype",
+  "toolchains": ["python"],
+  "contracts": {
+    "baseline": "config/baseline.json",
+    "science": "config/science.json",
+    "solver_numerics": "config/solver_numerics.json",
+    "resolved": "config/resolved_geometry.json",
+    "analysis": "config/science.json",
+    "interface": null,
+    "execution": "config/execution_profiles.json",
+    "design_variables": null,
+    "optimization_envelope": null
+  },
+  "capabilities": [
+    {
+      "capability_id": "dual_cone_two_stage_quadrupole_transport",
+      "function": "ion_transport_screening",
+      "status": "prototype",
+      "modes": ["pressure_drag_screening"],
+      "metrics": [
+        "transmission_fraction",
+        "loss_reason_counts",
+        "mean_exit_radius",
+        "mean_exit_kinetic_energy",
+        "mean_residence_time"
+      ],
+      "design_variables": []
+    }
+  ],
+  "formal_assets": {
+    "status": "none",
+    "types": [],
+    "identity_contract": null
+  },
+  "known_gaps": [
+    "Component vendor and exact product identity are unconfirmed",
+    "Cone truncation, thickness, orientation, pump geometry and intermediate pressures are missing",
+    "Quadrupole RF/DC operating points, gas flow and effective ion mobility are provisional",
+    "Reduced-order prescribed-flow model is not a quantitative high-pressure interface model",
+    "COMSOL, SIMION, CAD, Candidate and Formal evidence do not exist"
+  ]
+}
