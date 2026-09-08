@@ -64,8 +64,8 @@ $\gamma$ 条件求 B--E，并发布镜周期/W receipt。系统层再用 K 关�
 
 2026-09-08 的粒子源合同已将三个诊断截面和完整整机中心源分离：`mirror_internal_diagnostic`仅允许
 从分析器内部直接释放粒子以隔离mirror/Stripe，`accelerator_focus_diagnostic`仅检查二区静态第一时间
-焦点，`first_prism_entry_diagnostic`仅检查P1接口。`full_mrtof_center`在镜工作点满足精确中心等式
-$T_D(\vartheta_0)/T_0=K$、P1/P2有限三维快速相位和`y=0` Stripe入口态共同闭合前保持未发布。
+焦点，`first_prism_entry_diagnostic`仅检查P1接口。`full_mrtof_center`的镜工作点现已满足精确中心等式
+$T_D(\vartheta_0)/T_0=K$；该源仍在 P1/P2 有限三维快速相位和`y=0` Stripe入口态共同闭合前保持未发布。
 SIMION完整中心飞行入口只接受这个具名完整源；旧镜内4-keV粒子不得替代它来发布整机传输、探测TOF、
 分辨率或Candidate性能。
 

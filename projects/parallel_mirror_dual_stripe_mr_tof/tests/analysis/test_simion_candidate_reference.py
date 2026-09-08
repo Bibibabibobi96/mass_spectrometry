@@ -298,7 +298,7 @@ class SimionCandidateReferenceTest(unittest.TestCase):
             self.assertEqual(
                 input_manifest["full_mrtof_center_source"],
                 {
-                    "status": "blocked_pending_exact_K_and_two_prism_fast_phase",
+                    "status": "blocked_pending_two_prism_fast_phase",
                     "publishable": False,
                     "fly2": None,
                 },

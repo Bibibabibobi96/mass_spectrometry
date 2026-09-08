@@ -2007,7 +2007,7 @@
       "state_authority": "prism_transport.energy_partition and first_prism.entry_reference"
     },
     "full_mrtof_center": {
-      "status": "blocked_pending_exact_K_and_two_prism_fast_phase",
+      "status": "blocked_pending_two_prism_fast_phase",
       "publishable": false,
       "required_inputs": [
         "a mirror-theory-qualified root satisfying T_D(theta_0)/T_0=target_K",
