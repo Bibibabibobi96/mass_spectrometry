@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import os
 import platform
 from pathlib import Path
@@ -26,6 +25,8 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_geometry_parame
     derive_mirror_boundaries,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
+    derive_mirror_voltage_bounds,
+    derive_operating_energy_envelope,
     load_contract,
 )
 
@@ -37,16 +38,11 @@ def run(
     mirror = contract["mirror"]
     boundaries = derive_mirror_boundaries(mirror)
     transitions = tuple(float(value) for value in boundaries["analytic_transition_z_mm"])
-    envelope = mirror["theory_requirements"]["voltage_envelope_v"]
     l0_budget = mirror["theory_requirements"]["l0_acceptance_budget"]
     profile = mirror["theory_requirements"]["global_l0_search_profile"]
-    keys = ("B", "C", "D", "E")
-    energies = tuple(float(value) for value in mirror["theory_requirements"]["energies_v"])
-    lower = tuple(
-        math.nextafter(max(energies), math.inf) if key == "E" else float(envelope[key]["minimum_inclusive_v"])
-        for key in keys
-    )
-    upper = tuple(float(envelope[key]["maximum_inclusive_v"]) for key in keys)
+    energy = derive_operating_energy_envelope(contract)
+    energies = energy.mirror_energy_nodes_v
+    lower, upper = derive_mirror_voltage_bounds(contract)
     slope_tolerance = derive_mirror_l0_slope_tolerance_per_v(
         float(l0_budget["minimum_mass_resolution"]),
         float(l0_budget["mirror_time_width_fraction"]),
@@ -76,7 +72,10 @@ def run(
         "l0_acceptance_budget": l0_budget,
         "maximum_abs_normalized_period_slope_per_v": slope_tolerance,
         "E_midpoint_reference_mm": boundaries["E_midpoint_z_mm"],
-        "voltage_envelope_v": envelope,
+        "voltage_envelope_v": mirror["theory_requirements"]["voltage_envelope_v"],
+        "resolved_voltage_lower_bounds_v": list(lower),
+        "resolved_voltage_upper_bounds_v": list(upper),
+        "operating_energy_envelope": energy.__dict__,
         "global_search_profile": profile,
         "available_logical_processors": logical_processors,
         "actual_parallel_workers": maximum_workers,

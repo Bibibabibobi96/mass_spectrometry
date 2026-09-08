@@ -40,21 +40,24 @@
     "energy_per_charge_v": 4000,
     "target_oscillation_count": 25
   },
+  "accelerator_energy_contract": {
+    "pre_acceleration_kinetic_energy_per_charge_v": 5,
+    "net_gain_reference_center_per_charge_v": 4000,
+    "net_gain_center_search_half_range_per_charge_v": 500,
+    "maximum_particle_net_gain_deviation_per_charge_v": 100,
+    "mirror_and_stripe_energy_basis": "net_acceleration_gain_reference_center",
+    "semantics": "The accelerator operating-point centre may be selected within 4000 +/- 500 eV/q; 4000 eV/q is the current reference centre, not an exact global solution constraint. Within one selected operating point, the first design envelope limits particle net-gain deviation to +/-100 eV/q; the actual finite-source interval must later be calculated and may be asymmetric. Mirror and Stripe axial theory use the net gain only, so their current w0 is 4000 eV/q. The separately reported post-acceleration total-energy centre is pre-acceleration kinetic energy plus net gain, currently 4005 eV/q."
+  },
   "mirror": {
     "model": "planar_five_electrode_gridless_candidate",
     "design_authority": "existing_hardware_geometry__theory_voltage_optimization",
     "design_status": "hardware_pose_cad_verified__theory_l0_voltage_pending__no_pa_or_iob",
     "manufacturing_constraint": "The existing five-electrode mirror geometry is already manufactured and is fixed for this Candidate.  Theory may optimize only mirror voltages and the operating point.  Axial geometry optimization is reserved for a separately identified future redesign.",
     "theory_requirements": {
-      "energies_v": [
-        3900,
-        4000,
-        4100
-      ],
       "l0_acceptance_budget": {
         "minimum_mass_resolution": 50000,
         "mirror_time_width_fraction": 1.0,
-        "semantics": "User-selected preliminary allocation: the mirror receives the full relative time-width budget for R>=50000. The L0 local slope tolerance is derived as mirror_time_width_fraction/(2*minimum_mass_resolution*half_energy_window_v), where half_energy_window_v is derived from energies_v about its nominal middle point. This is a preliminary mirror-only gate; later full-analyser budgeting must allocate nonzero error to source, Stripe, prism and numerical terms."
+        "semantics": "User-selected preliminary allocation: the mirror receives the full relative time-width budget for R>=50000. The L0 local slope tolerance is derived as mirror_time_width_fraction/(2*minimum_mass_resolution*half_energy_window_v), where the three mirror nodes are derived from the net-gain reference centre and maximum particle net-gain deviation. This is a preliminary mirror-only gate; later full-analyser budgeting must allocate nonzero error to source, Stripe, prism and numerical terms."
       },
       "global_l0_search_profile": {
         "base_random_seed": 20260907,
@@ -97,22 +100,22 @@
       "voltage_envelope_v": {
         "B": {
           "minimum_inclusive_v": -10000.0,
-          "maximum_inclusive_v": 10000.0
+          "maximum_inclusive_v": "minimum_particle_net_acceleration_gain_per_charge_v"
         },
         "C": {
           "minimum_inclusive_v": -10000.0,
-          "maximum_inclusive_v": 10000.0
+          "maximum_inclusive_v": "minimum_particle_net_acceleration_gain_per_charge_v"
         },
         "D": {
           "minimum_inclusive_v": -10000.0,
-          "maximum_inclusive_v": 10000.0
+          "maximum_inclusive_v": "minimum_particle_net_acceleration_gain_per_charge_v"
         },
         "E": {
           "minimum_exclusive_v": "maximum_mirror_energy_per_charge_v",
           "maximum_inclusive_v": 10000.0,
           "retention_semantics": "The shared closed E cover is at U_E.  Its lower numerical bound is derived at runtime as the next representable value above the maximum declared mirror energy; no sign or monotonic order is imposed on B--E."
         },
-        "initialization_semantics": "The numerical start vector is derived from this envelope and the declared energy window only.  No historical or manually supplied voltage vector is an active input."
+        "initialization_semantics": "The numerical start vector is derived from this envelope and the energy contract only. B--D may not exceed the derived minimum particle net acceleration gain; E alone may exceed it and must remain above the highest derived mirror energy node. No historical or manually supplied voltage vector is an active input."
       }
     },
     "half_separation_mm": 104.5,
@@ -800,7 +803,14 @@
       "generator": "theory_bspline_parameterization",
       "parameter_provenance": "read-only SolidWorks native B-spline knot/control parameters from 20260902__ion-foil-recovery/stripe_long_bspline_profiles.json; the solver geometry evaluates these parameters and never interpolates the former sampled CAD boundary table",
       "sampling_per_nonzero_knot_span": 8,
-      "component_interpretation": "set_1 total width has the manufactured high-order geometry basis and set_2 total width has the manufactured linear geometry basis. They are not identified term-by-term with the original paper p_s and p_m response components: the active psi/g responses follow from both static-Stripe voltages and are classified by the complete integral residual Jacobian. Their action normalization and voltage solution remain an L0 inverse problem, not CAD data.",
+      "component_interpretation": "The user-confirmed manufactured design used L=340 mm and the two original theory geometry bases: set_1 is a scaled high-order psi_s curve and set_2 is a scaled linear psi_m curve. Their fitted CAD coefficients recover the two geometry scales; the exact finite-bias hard-boundary action relation then gives the nominal v1/v2 pair analytically. Those values initialize, but do not freeze, later finite-three-dimensional voltage calibration.",
+      "component_basis_assignment": {
+        "set_1": "user_confirmed_scaled_original_psi_s_high_order_basis",
+        "set_2": "user_confirmed_scaled_original_psi_m_linear_basis",
+        "termwise_original_paper_geometry_basis_identification": true,
+        "basis_coefficient_authority": "dual_stripe_l0.dimensionless_paper_target.published_printed_reference_c0_to_c5",
+        "active_response_authority": "analytic_geometry_scale_inverse_then_finite_3d_voltage_calibration"
+      },
       "path_length_mapping": {
         "profile_width_to_total_S_multiplier": 1.0,
         "semantics": "For this manufactured instance the frozen upper-minus-lower profile is the theoretical total path length S_i(y), not an independently additive per-solid width. The two mirrored physical electrodes share one theoretical response. This explicit factor prevents a hidden factor-of-two convention and remains subject to direct three-dimensional centre-ion action/path verification before performance claims."
@@ -1238,14 +1248,16 @@
   "dual_stripe_l0": {
     "status": "joint_inputs_pending",
     "solve_semantics": "independent_mirror_l0_l1_then_downstream_stripe_and_prism",
+    "manufactured_design_abs_drift_length_L_mm": 340,
+    "manufactured_design_drift_length_semantics": "Frozen input for the current already-designed and manufactured geometry only. It is not a universal dual-Stripe theory constant and remains free or derived in a future newly designed hardware line. The value must fit the active Stripe span at every declared eta node.",
     "fixed_cad_shape_identification": {
-      "status": "diagnostic_structure_fit__L_and_voltage_solution_pending",
+      "status": "user_confirmed_manufactured_theory_basis__analytic_voltage_inverse_required",
       "basis": "set_1_zero_at_entry_polynomial_plus_set_2_zero_at_entry_linear",
       "set_1_polynomial_degree": 5,
       "set_2_polynomial_degree": 1,
-      "coefficient_semantics": "The governing equations and dimensionless polynomial-plus-linear structure are the same as the paper model. Fit the current manufactured curves in physical distance from y=0; their coefficients are instance-specific outputs and are not assumed equal to the paper's printed c0..c5 values. Converting them to dimensionless eta coefficients requires an independently closed L and normalization.",
+      "coefficient_semantics": "Fit the current manufactured curves in physical distance from y=0 and transform them with the frozen manufactured L=340 mm. The user confirms that these curves were generated as scaled copies of the original high-order psi_s and linear psi_m theory bases. Project the fitted coefficients onto those two declared bases to recover both geometry scales; do not treat the CAD millimetre coefficients themselves as voltages.",
       "sampling_multipliers": [1, 2, 4],
-      "fit_semantics": "Use the native frozen B-splines over their complete active span, subtract each y=0 baseline, and fit the declared physical-coordinate structures by linear least squares. Report raw coefficients, residuals and sampling convergence without inventing an unapproved CAD-fit tolerance. Shape structure alone leaves L scale-degenerate and must never publish an L value."
+      "fit_semantics": "Use the native frozen B-splines over their complete active span, subtract each y=0 baseline, and fit the declared physical-coordinate structures by linear least squares. Report raw coefficients, residuals and sampling convergence without inventing an unapproved CAD-fit tolerance. L is supplied by the manufactured-design contract, not inferred from the fit."
     },
     "coordinate_definition": "eta=(y-y_stripe_entrance)/signed_drift_length_L; eta_turning=1. For this frozen CAD/theory contract y_stripe_entrance=0 mm is the common endpoint of both theory Stripe functions S_i(y), not a bounding-box edge. The nominal slow drift proceeds toward negative project y; signed L carries that direction while reported |L| is positive.",
     "theory_stripe_entrance": {
@@ -1303,9 +1315,9 @@
       "maximum_native_newton_iterations": 6,
       "maximum_surrogate_function_evaluations": 300,
       "complete_consistency_refinement_start_count": 6,
-      "complete_consistency_length_start_fractions": [0.1, 0.25, 0.4, 0.55, 0.7, 0.85, 0.95],
+      "complete_consistency_diversity_pool_multiplier": 5,
       "complete_consistency_maximum_parallel_workers": 2,
-      "complete_consistency_refinement_start_semantics": "Evaluate the complete native residual vector on the Cartesian product of both voltage fractions and the independent |L| fractions, rank by the contract-scaled norm, and locally refine the six best starts. No complete-search L start is inferred from the historical 5 eV prism diagnostic. The refinement count is a frozen resource-control choice, not a physical condition or a paper value.",
+      "complete_consistency_refinement_start_semantics": "At the frozen manufactured-design L, evaluate the complete native residual vector on the Cartesian product of both voltage fractions. Retain the minimum-norm point as an anchor, then choose the remaining refinement starts by deterministic farthest-point sampling in normalized (v1,v2) coordinates from the top-ranked pool whose size is refinement_start_count times complete_consistency_diversity_pool_multiplier. L is never a numerical start or fit coordinate. The refinement count and pool multiplier are frozen resource-control choices, not physical conditions or paper values.",
       "complete_consistency_parallel_semantics": "Qualified mirror roots are independent search units. Use at most two single-thread numerical workers, currently matching the two-root family, rather than hidden multithreaded BLAS inside one root search.",
       "residual_tolerances": [1e-8, 1e-7],
       "residual_tolerance_semantics": "The first tolerance closes the dimensionless K relation. The second is a numerical root tolerance for the central-difference kappa-prime residual, selected above the observed native B-spline/integral differencing floor; neither value changes the governing paper equation or acts as a physical performance threshold.",
@@ -1330,11 +1342,11 @@
     "current_fixed_hardware_l0_l1_problem": {
       "status": "independent_mirror_l0_l1_required_before_downstream_stripe_prism_transport",
       "voltage_initialization": {
-        "authority": "theory_derived_only",
-        "semantics": "Every numerical start value is derived anew from this frozen geometry and its owning theory; a human-entered or historical voltage vector is not an admissible initial vector. Mirror B--E are obtained from an independent mirror-theory feasible family and a declared mirror-only selection order. The sole mirror-voltage envelope authority is mirror.theory_requirements.voltage_envelope_v. The downstream Stripe/P1/P2 initializer consumes the selected mirror receipt. A staged seed is not itself a candidate operating point: each owning problem must pass its own residual and feasibility gate.",
+        "authority": "analytic_inverse_from_user_confirmed_manufactured_theory_basis",
+        "semantics": "Every nominal voltage is derived anew from this frozen geometry and its owning theory; a human-entered or historical voltage vector is not an admissible initial vector. Mirror B--E come from the independent mirror-theory feasible family and mirror.theory_requirements.voltage_envelope_v is their sole voltage envelope. For each accepted mirror W, the fitted set-1/set-2 CAD coefficients, user-confirmed original psi_s/psi_m basis identity, L=340 mm, K and w0 give v1/v2 through the exact finite-bias geometry-scale inverse. Both Stripe voltages remain adjustable in the subsequent finite-three-dimensional calibration. P1/P2 then consume the derived Stripe entrance state.",
         "derivation_chain": [
           "Berdnikov fixed-geometry mirror L0/L1 continuation independently constructs and ranks the B--E feasible family using only mirror geometry and mirror-theory conditions",
-          "the exact two-Stripe action/response equations consume the accepted mirror period/W receipt and derive the two Stripe-bias seed coordinates and the y=0 entrance state",
+          "the exact two-Stripe action/response equations consume the accepted mirror period/W receipt and analytically invert the two manufactured theory-basis geometry scales into the nominal v1/v2 pair and y=0 entrance state",
           "the path-ordered hard-boundary P1/P2 construction derives the two prism seed voltages from source/focus, physical prism hand-off geometry, and that derived Stripe entrance state",
           "finite three-dimensional shooting independently validates/corrects the downstream Stripe/P1/P2 transport without retroactively fitting mirror voltage to Stripe theory"
         ],
@@ -1361,8 +1373,10 @@
       ],
       "stripe_fixed_hardware_independent_unknowns": [
         "stripe_set_1_bias_v",
-        "stripe_set_2_bias_v",
-        "drift_length_L_mm"
+        "stripe_set_2_bias_v"
+      ],
+      "stripe_fixed_hardware_inputs": [
+        "manufactured_design_abs_drift_length_L_mm"
       ],
       "prism_transport_independent_unknowns": [
         "prism_1_voltage_v",
@@ -1371,7 +1385,6 @@
       "downstream_independent_unknown_inventory": [
         "stripe_set_1_bias_v",
         "stripe_set_2_bias_v",
-        "drift_length_L_mm",
         "prism_1_voltage_v",
         "prism_2_voltage_v"
       ],
@@ -1381,9 +1394,7 @@
         "nominal_turning_point_y_mm",
         "coupled_axial_width_W_mm",
         "nominal_kappa_1",
-        "nominal_injection_angle_theta0_rad",
-        "nominal_drift_kinetic_energy_per_charge_v",
-        "nominal_fast_reflection_energy_per_charge_v"
+        "nominal_injection_angle_theta0_rad"
       ],
       "mirror_named_residual_blocks": [
         "mirror_period_slope_at_3900V",
@@ -1426,16 +1437,16 @@
         "P1_P2_to_Stripe_direction_y",
         "P1_P2_to_Stripe_direction_z"
       ],
-      "determination_semantics": "The frozen mirror geometry and the three axial energy conditions define a four-voltage mirror-only L0 family. Its three-row Jacobian and feasibility checks must be published with that family; an L1 mirror-only selection receipt identifies any representative member and its transverse diagnostics without inventing a fourth axial residual. Each qualified mirror root is then tested against the fixed-hardware Stripe drift problem with the two Stripe biases and physical drift length L as three solve coordinates. L is bounded by the frozen active curve and is not an externally prescribed operating value. Normalizing the pseudopotential at that solved physical turn makes psi(1)=1 an identity; target K, kappa-prime, and four time-platform residuals form the six-condition overdetermined drift-consistency test. The three full-analyser local energy slopes are still evaluated with the Stripe baseline action retained, but they are downstream global-calibration diagnostics owned by a newly derived mirror TE1/TE2 Jacobian, not extra equations assigned to v1, v2, or L. The injection angle and drift/fast energy partition are derived from the same physical turn. Complete-search L starts are independently gridded and do not consume the historical 5-eV prism diagnostic; that value remains only in the separate legacy two-equation diagnostic path and is not an active equality. P1/P2 voltages belong to the subsequent finite-field transport problem and are not allowed to make the Stripe drift conditions appear solvable. Mirror gamma remains an upstream receipt gate and is never repeated downstream. P1/P2 transport expands into three position and two tangent-direction components, never a norm or arbitrary scalar count. Each owning problem separately uses its contract-scaled Jacobian SVD and left-null residual to distinguish underdetermined, square_exact, overdetermined_consistent, and locally_incompatible states."
+      "determination_semantics": "The frozen mirror geometry and the three axial energy conditions define a four-voltage mirror-only L0 family. Its three-row Jacobian and feasibility checks must be published with that family; an L1 mirror-only selection receipt identifies any representative member and its transverse diagnostics without inventing a fourth axial residual. Each qualified mirror root is then tested against the fixed-hardware Stripe drift problem with only the two Stripe biases as solve coordinates; L=340 mm is a frozen input of this manufactured design. Normalizing the pseudopotential at that physical turn makes psi(1)=1 an identity; target K, kappa-prime, and four time-platform residuals form the six-condition overdetermined drift-consistency test. The three full-analyser local energy slopes are still evaluated with the Stripe baseline action retained, but they are downstream global-calibration diagnostics owned by a newly derived mirror TE1/TE2 Jacobian, not extra equations assigned to v1 or v2. The injection angle and drift/fast energy partition are derived from the same physical turn. P1/P2 voltages belong to the subsequent finite-field transport problem and are not allowed to make the Stripe drift conditions appear solvable. Mirror gamma remains an upstream receipt gate and is never repeated downstream. P1/P2 transport expands into three position and two tangent-direction components, never a norm or arbitrary scalar count. Each owning problem separately uses its contract-scaled Jacobian SVD and left-null residual to distinguish underdetermined, square_exact, overdetermined_consistent, and locally_incompatible states."
     },
     "derived_fields_only_after_owning_problem_candidate": {
-      "drift_length_L_mm": "fixed-hardware solve coordinate bounded by the frozen Stripe active span; published only after the owning rank and residual gate",
+      "drift_length_L_mm": "frozen manufactured-design input, currently 340 mm; future newly designed hardware may instead declare or derive another L",
       "mirror_axial_width_W_mm": "accepted_mirror_only_full_two_mirror_period*sqrt(nominal_energy_per_charge_V/(2*ion_mass))",
       "full_analyser_period": "accepted_mirror_period_plus_dual_stripe_action_response",
       "nominal_kappa_1": "endpoint_regularized_integral_of_the_project_psi_eta_model",
       "nominal_injection_angle_theta0_rad": "asin(sqrt(turning_pseudopotential_v/nominal.energy_per_charge_v)); target K independently checks drift_length_L_mm*nominal_kappa_1/(axial_width_W_mm*sin(theta0))",
-      "nominal_drift_kinetic_energy_per_charge_v": "turning_pseudopotential_v",
-      "nominal_fast_reflection_energy_per_charge_v": "nominal.energy_per_charge_v-nominal_drift_kinetic_energy_per_charge_v"
+      "nominal_drift_kinetic_energy_per_charge_v": "fixed by prism_transport.energy_partition.drift_kinetic_energy_ev for the nominal source centre",
+      "nominal_fast_reflection_energy_per_charge_v": "fixed by prism_transport.energy_partition.fast_reflection_kinetic_energy_ev and equal to nominal.energy_per_charge_v"
     },
     "cad_constraints_only": [
       "dual_stripe.active_y_span_mm",
@@ -1835,12 +1846,13 @@
     "reference_ground_voltage_v": 0.0,
     "scope": "The first prism diagnostic receives a static hard-boundary seed only. It is not the two-prism injection solution. Both physical prisms precede Stripe entry in path order P1=16 then P2=17; finite 3-D shooting must replace the diagnostic before a transport or resolution claim.",
     "energy_partition": {
-      "semantics": "total_kinetic_energy_at_first_prism_ev",
-      "total_kinetic_energy_ev": 4000,
+      "semantics": "post_acceleration_total_and_orthogonal_components_per_charge_ev",
+      "total_kinetic_energy_ev": 4005,
       "drift_kinetic_energy_ev": 5,
-      "fast_kinetic_energy_ev": "derived_total_minus_drift",
-      "qualification": "geometry_review_and_complete_stripe_search_initialization_only__not_an_operating_constraint",
-      "candidate_operating_partition": "derived_from_the_fixed_hardware_Stripe_solution_turning_pseudopotential_and_never_frozen_here"
+      "fast_reflection_kinetic_energy_ev": 4000,
+      "derivation": "The source starts with 5 eV in the drift direction and the orthogonal accelerator adds a nominal 4000 eV in the fast reflection direction. The mirror and finite-bias Stripe axial action use 4000 eV; the direction vector is normalized with the 4005 eV total.",
+      "qualification": "user_confirmed_nominal_source_and_acceleration_partition__analytic_initialization_only__finite_3d_verification_pending",
+      "candidate_operating_partition": "fixed nominal input for analytic initialization; measured or simulated source spread is added later without replacing this centre"
     },
     "first_prism": {
       "electrode_id": 16,

@@ -32,6 +32,13 @@ CONTRACT = PROJECT / "config" / "simion_candidate_two_zone.json"
 RUNNER = PROJECT / "analysis" / "run_mirror_l0_l1_candidate.ps1"
 SHAPE_DIAGNOSTIC_RUNNER = PROJECT / "analysis" / "run_dual_stripe_shape_diagnostic.ps1"
 OPERATING_SEED_RUNNER = PROJECT / "analysis" / "run_dual_stripe_operating_seed.ps1"
+VALID_ENERGY_ENVELOPE_MIRROR_VOLTAGES = (
+    0.0,
+    -5303.6360420719,
+    -2679.2330778768383,
+    3867.1398578575227,
+    5532.572279301402,
+)
 
 
 class MirrorL0L1RunnerTests(unittest.TestCase):
@@ -67,7 +74,7 @@ class MirrorL0L1RunnerTests(unittest.TestCase):
                         "gamma_residual_degrees": 2e-8,
                         "maximum_gamma_residual_degrees": 0.001,
                         "l0_receipt": {
-                            "electrode_voltages_v": [0.0, -5000.0, 3800.0, 5400.0, 7500.0],
+                            "electrode_voltages_v": list(VALID_ENERGY_ENVELOPE_MIRROR_VOLTAGES),
                             "normalized_period_slopes_per_v": [2e-9, -4e-9, 3e-9],
                             "maximum_abs_normalized_period_slope_per_v": 1e-7,
                         },
@@ -91,8 +98,14 @@ class MirrorL0L1RunnerTests(unittest.TestCase):
         self.assertEqual(result["status"], "success")
         self.assertEqual(result["search"]["restart_count"], 36)
         self.assertEqual(result["search"]["gamma_target_root_count"], 1)
-        self.assertEqual(result["selected_mirror_voltages_v"]["D"], 5400.0)
-        self.assertEqual(result["selected_mirror_voltages_v"]["E"], 7500.0)
+        self.assertEqual(
+            result["selected_mirror_voltages_v"]["D"],
+            VALID_ENERGY_ENVELOPE_MIRROR_VOLTAGES[3],
+        )
+        self.assertEqual(
+            result["selected_mirror_voltages_v"]["E"],
+            VALID_ENERGY_ENVELOPE_MIRROR_VOLTAGES[4],
+        )
 
     def test_summary_rejects_a_receipt_that_does_not_bind_l0(self) -> None:
         with TemporaryDirectory() as temporary:
@@ -180,10 +193,9 @@ class MirrorL0L1RunnerTests(unittest.TestCase):
                 "gamma_target_root_family": {
                     "roots": [{
                         "l0_receipt": {
-                            "electrode_voltages_v": [
-                                0.0, -5064.599670746161, 3843.4955853153892,
-                                5439.680593141368, 7532.989971925157,
-                            ],
+                            "electrode_voltages_v": list(
+                                VALID_ENERGY_ENVELOPE_MIRROR_VOLTAGES
+                            ),
                         },
                         "l1_screen": {"nominal_mapping": {"gamma_degrees": 90.00000002}},
                         "probe_convergence": {"status": "pass"},
@@ -205,11 +217,12 @@ class MirrorL0L1RunnerTests(unittest.TestCase):
                         "l1_receipt_sha256": file_sha256(l1),
                     },
                     "selected_mirror_voltages_v": {
-                        "A": 0.0,
-                        "B": -5064.599670746161,
-                        "C": 3843.4955853153892,
-                        "D": 5439.680593141368,
-                        "E": 7532.989971925157,
+                        name: voltage
+                        for name, voltage in zip(
+                            ("A", "B", "C", "D", "E"),
+                            VALID_ENERGY_ENVELOPE_MIRROR_VOLTAGES,
+                            strict=True,
+                        )
                     },
                 }
             ) + "\n",
@@ -253,9 +266,9 @@ class MirrorL0L1RunnerTests(unittest.TestCase):
         self.assertEqual(candidate.design.electrode_voltages_v[0], 0.0)
         self.assertGreater(candidate.nominal_reduced_period_mm_per_sqrt_v, 0.0)
         self.assertGreater(candidate.nominal_axial_width_w_mm, 0.0)
-        self.assertAlmostEqual(candidate.nominal_axial_width_w_mm, 540.4499458081797)
+        self.assertAlmostEqual(candidate.nominal_axial_width_w_mm, 586.9393396818346)
         self.assertEqual(len(candidate.root_family), 1)
-        self.assertAlmostEqual(candidate.root_family[0].nominal_axial_width_w_mm, 540.4499458081797)
+        self.assertAlmostEqual(candidate.root_family[0].nominal_axial_width_w_mm, 586.9393396818346)
         self.assertNotEqual(candidate.contract_sha256, "")
         self.assertEqual(candidate.downstream_contract_sha256, downstream_contract_sha256)
 
@@ -289,7 +302,7 @@ class MirrorL0L1RunnerTests(unittest.TestCase):
         self.assertTrue(result["managed_mirror_input"]["projection_match"])
         self.assertEqual(
             result["shape_structure"]["drift_length_identifiability"]["status"],
-            "underdetermined_from_shape_structure_alone",
+            "fixed_by_manufactured_design_contract",
         )
 
 

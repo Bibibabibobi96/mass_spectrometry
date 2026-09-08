@@ -200,12 +200,15 @@ class JointMirrorStripeL0Test(unittest.TestCase):
             "mirror_period_slope_at_4100V",
         ])
         self.assertEqual(problem["stripe_fixed_hardware_independent_unknowns"], [
-            "stripe_set_1_bias_v", "stripe_set_2_bias_v", "drift_length_L_mm",
+            "stripe_set_1_bias_v", "stripe_set_2_bias_v",
+        ])
+        self.assertEqual(problem["stripe_fixed_hardware_inputs"], [
+            "manufactured_design_abs_drift_length_L_mm",
         ])
         self.assertEqual(problem["prism_transport_independent_unknowns"], [
             "prism_1_voltage_v", "prism_2_voltage_v",
         ])
-        self.assertEqual(len(problem["downstream_independent_unknown_inventory"]), 5)
+        self.assertEqual(len(problem["downstream_independent_unknown_inventory"]), 4)
         self.assertEqual(problem["global_energy_calibration_diagnostic_residual_blocks"], [
             "full_analyser_period_slope_at_3900V",
             "full_analyser_period_slope_at_4000V",
@@ -217,18 +220,26 @@ class JointMirrorStripeL0Test(unittest.TestCase):
         self.assertEqual(len(problem["prism_transport_named_residual_blocks"]), 5)
         self.assertIn("stripe_entrance_project_position_mm", problem["derived_not_independent_unknowns"])
         self.assertNotIn("drift_length_L_mm", problem["derived_not_independent_unknowns"])
-        self.assertIn(
+        self.assertNotIn(
             "nominal_drift_kinetic_energy_per_charge_v",
             problem["derived_not_independent_unknowns"],
         )
         partition = contract["prism_transport"]["energy_partition"]
         self.assertIn("initialization_only", partition["qualification"])
-        self.assertIn("derived", partition["candidate_operating_partition"])
+        self.assertIn("fixed nominal input", partition["candidate_operating_partition"])
+        self.assertEqual(partition["total_kinetic_energy_ev"], 4005)
+        self.assertEqual(partition["fast_reflection_kinetic_energy_ev"], 4000)
         initialization = problem["voltage_initialization"]
-        self.assertEqual(initialization["authority"], "theory_derived_only")
+        self.assertEqual(
+            initialization["authority"],
+            "analytic_inverse_from_user_confirmed_manufactured_theory_basis",
+        )
         envelope = contract["mirror"]["theory_requirements"]["voltage_envelope_v"]
         self.assertEqual(envelope["B"]["minimum_inclusive_v"], -10000.0)
-        self.assertEqual(envelope["D"]["maximum_inclusive_v"], 10000.0)
+        self.assertEqual(
+            envelope["D"]["maximum_inclusive_v"],
+            "minimum_particle_net_acceleration_gain_per_charge_v",
+        )
         self.assertEqual(envelope["E"]["maximum_inclusive_v"], 10000.0)
         self.assertIn("mirror.theory_requirements.voltage_envelope_v", initialization["semantics"])
         self.assertIn("historical_mirror_voltage_vector", initialization["forbidden_seed_sources"])

@@ -2,7 +2,8 @@
 
 This module deliberately models only the reference static first-prism
 diagnostic.  It
-turns the explicitly declared 4-keV total energy and 5-eV drift partition into
+turns the explicitly declared 4005-eV post-acceleration total energy,
+4000-eV fast component, and 5-eV drift component into
 an analyser-entry direction, verifies that the CAD triangle is actually on
 the declared ray, and records the ideal hard-boundary voltage seed.  It does
 not approximate the finite three-dimensional field or invent the second
@@ -120,16 +121,18 @@ def derive_first_prism_l0(contract: dict[str, Any]) -> FirstPrismL0:
     if not isinstance(energy, dict) or not isinstance(first, dict) or not isinstance(second, dict):
         raise PrismL0Error("prism_transport requires energy_partition, first_prism, and second_prism")
     reference_ground = _number(block.get("reference_ground_voltage_v"), "prism reference ground voltage")
-    if energy.get("semantics") != "total_kinetic_energy_at_first_prism_ev":
-        raise PrismL0Error("first-prism energy semantics must explicitly mean total kinetic energy")
+    if energy.get("semantics") != "post_acceleration_total_and_orthogonal_components_per_charge_ev":
+        raise PrismL0Error("first-prism energy semantics must declare total and orthogonal components")
     total = _number(energy.get("total_kinetic_energy_ev"), "prism total kinetic energy")
     drift = _number(energy.get("drift_kinetic_energy_ev"), "prism drift kinetic energy")
+    fast = _number(
+        energy.get("fast_reflection_kinetic_energy_ev"), "prism fast-reflection kinetic energy"
+    )
     if not 0.0 < drift < total:
         raise PrismL0Error("first-prism drift energy must be positive and smaller than total energy")
-    fast = total - drift
     expected_nominal = _number(contract.get("nominal", {}).get("energy_per_charge_v"), "nominal energy")
-    if expected_nominal != total:
-        raise PrismL0Error("prism total kinetic energy must equal nominal energy-per-charge for +1 reference")
+    if expected_nominal != fast or total != drift + fast:
+        raise PrismL0Error("first-prism energy must close as total=drift+nominal axial energy")
     if first.get("electrode_id") != 16 or first.get("station") != "accelerator_exit":
         raise PrismL0Error("first-prism L0 contract must bind CAD electrode id 16 at accelerator_exit")
     if first.get("local_angle_convention") != "positive_beta_is_negative_project_y_about_negative_project_z":

@@ -20,6 +20,8 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import (
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
     CandidateContractError,
+    derive_mirror_voltage_bounds,
+    derive_operating_energy_envelope,
     load_contract,
 )
 
@@ -100,6 +102,7 @@ def mirror_stage_contract_projection(contract: dict[str, Any]) -> dict[str, Any]
             "geometry_authority_model": contract["geometry_authority"]["model"],
             "coordinate_frame_id": contract["coordinate_system"]["frame_id"],
             "nominal_energy_per_charge_v": contract["nominal"]["energy_per_charge_v"],
+            "accelerator_energy_contract": contract["accelerator_energy_contract"],
             "mirror": contract["mirror"],
             "load_contract_stripe_validation": {
                 "physical_electrode_count": stripe["physical_electrode_count"],
@@ -191,9 +194,12 @@ def load_managed_mirror_candidate(
     voltages = tuple(_finite(voltage_record[name], f"mirror voltage {name}") for name in ("A", "B", "C", "D", "E"))
     if voltages[0] != 0.0:
         raise CandidateContractError("managed mirror Candidate must keep electrode A grounded")
-    energies = tuple(_finite(value, "mirror energy node") for value in mirror["theory_requirements"]["energies_v"])
+    energies = derive_operating_energy_envelope(parent_contract).mirror_energy_nodes_v
     if len(energies) != 3 or tuple(sorted(energies)) != energies or voltages[-1] <= max(energies):
         raise CandidateContractError("managed mirror Candidate has invalid energy nodes or terminal retention")
+    lower_bounds, upper_bounds = derive_mirror_voltage_bounds(parent_contract)
+    if any(not low <= value <= high for value, low, high in zip(voltages[1:], lower_bounds, upper_bounds, strict=True)):
+        raise CandidateContractError("managed mirror Candidate violates the derived voltage envelope")
     transverse_half_gap = _finite(
         mirror["theory_requirements"]["berdnikov_transverse_half_gap_mm"],
         "Berdnikov transverse half gap",

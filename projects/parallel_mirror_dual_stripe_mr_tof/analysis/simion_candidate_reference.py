@@ -38,11 +38,106 @@ class TwoZonePlacement:
     focus_z_mm: float
 
 
+@dataclass(frozen=True)
+class OperatingEnergyEnvelope:
+    """Derived per-charge energy quantities for the coupled accelerator/analyser."""
+
+    pre_acceleration_kinetic_energy_v: float
+    net_gain_reference_center_v: float
+    net_gain_center_minimum_v: float
+    net_gain_center_maximum_v: float
+    particle_net_gain_half_range_v: float
+    mirror_energy_nodes_v: tuple[float, float, float]
+    mirror_b_through_d_maximum_v: float
+    post_acceleration_total_energy_reference_v: float
+
+
 def _number(value: Any, name: str) -> float:
     result = float(value)
     if not math.isfinite(result):
         raise CandidateContractError(f"{name} must be finite")
     return result
+
+
+def derive_operating_energy_envelope(contract: dict[str, Any]) -> OperatingEnergyEnvelope:
+    """Derive accelerator search and mirror-window energies from native inputs.
+
+    The current mirror and Stripe theory deliberately use the selected net-gain
+    reference centre as ``w0``.  The incoming 5 eV/q remains separately visible
+    in total-energy bookkeeping and is not silently added to that theory axis.
+    """
+    energy = contract.get("accelerator_energy_contract")
+    if not isinstance(energy, dict):
+        raise CandidateContractError("accelerator_energy_contract is required")
+    pre_energy = _number(
+        energy.get("pre_acceleration_kinetic_energy_per_charge_v"),
+        "pre_acceleration_kinetic_energy_per_charge_v",
+    )
+    reference = _number(
+        energy.get("net_gain_reference_center_per_charge_v"),
+        "net_gain_reference_center_per_charge_v",
+    )
+    center_half_range = _number(
+        energy.get("net_gain_center_search_half_range_per_charge_v"),
+        "net_gain_center_search_half_range_per_charge_v",
+    )
+    particle_half_range = _number(
+        energy.get("maximum_particle_net_gain_deviation_per_charge_v"),
+        "maximum_particle_net_gain_deviation_per_charge_v",
+    )
+    if pre_energy < 0.0 or reference <= 0.0:
+        raise CandidateContractError("accelerator energies require pre-energy >= 0 and gain > 0")
+    if not 0.0 < center_half_range < reference:
+        raise CandidateContractError("net-gain centre search half-range must be in (0, reference)")
+    if not 0.0 < particle_half_range < reference - center_half_range:
+        raise CandidateContractError(
+            "particle net-gain deviation must be positive and below the lowest centre"
+        )
+    if energy.get("mirror_and_stripe_energy_basis") != "net_acceleration_gain_reference_center":
+        raise CandidateContractError(
+            "mirror and Stripe energy basis must be the net-gain reference centre"
+        )
+    nominal = _number(contract.get("nominal", {}).get("energy_per_charge_v"), "nominal energy")
+    if nominal != reference:
+        raise CandidateContractError(
+            "nominal mirror/Stripe energy must equal the net-gain reference centre"
+        )
+    nodes = (reference - particle_half_range, reference, reference + particle_half_range)
+    return OperatingEnergyEnvelope(
+        pre_acceleration_kinetic_energy_v=pre_energy,
+        net_gain_reference_center_v=reference,
+        net_gain_center_minimum_v=reference - center_half_range,
+        net_gain_center_maximum_v=reference + center_half_range,
+        particle_net_gain_half_range_v=particle_half_range,
+        mirror_energy_nodes_v=nodes,
+        mirror_b_through_d_maximum_v=nodes[0],
+        post_acceleration_total_energy_reference_v=pre_energy + reference,
+    )
+
+
+def derive_mirror_voltage_bounds(
+    contract: dict[str, Any],
+) -> tuple[tuple[float, ...], tuple[float, ...]]:
+    """Resolve B--E search bounds, including the energy-derived B--D cap."""
+    energy = derive_operating_energy_envelope(contract)
+    envelope = contract["mirror"]["theory_requirements"]["voltage_envelope_v"]
+    keys = ("B", "C", "D", "E")
+    expected_cap = "minimum_particle_net_acceleration_gain_per_charge_v"
+    if any(envelope[key].get("maximum_inclusive_v") != expected_cap for key in keys[:3]):
+        raise CandidateContractError("mirror B--D maxima must reference the minimum particle net gain")
+    lower = tuple(
+        math.nextafter(max(energy.mirror_energy_nodes_v), math.inf)
+        if key == "E" else _number(envelope[key]["minimum_inclusive_v"], f"mirror {key} minimum")
+        for key in keys
+    )
+    upper = tuple(
+        energy.mirror_b_through_d_maximum_v
+        if key != "E" else _number(envelope[key]["maximum_inclusive_v"], "mirror E maximum")
+        for key in keys
+    )
+    if any(low >= high for low, high in zip(lower, upper, strict=True)):
+        raise CandidateContractError("resolved mirror voltage envelope is empty")
+    return lower, upper
 
 
 def load_contract(path: Path) -> dict[str, Any]:
@@ -74,6 +169,8 @@ def load_contract(path: Path) -> dict[str, Any]:
         raise CandidateContractError("stripe widths must remain positive")
     if _number(stripe["maximum_width_mm"], "maximum_width_mm") < _number(stripe["minimum_width_mm"], "minimum_width_mm"):
         raise CandidateContractError("maximum stripe width must be >= minimum width")
+    derive_operating_energy_envelope(data)
+    derive_mirror_voltage_bounds(data)
     return data
 
 
@@ -96,10 +193,16 @@ def derive_two_zone_focus(contract: dict[str, Any]) -> TwoZoneFocus:
         )
     except TwoZoneTheoryError as error:
         raise CandidateContractError(str(error)) from error
-    return TwoZoneFocus(
+    result = TwoZoneFocus(
         focus.field_1_v_per_mm, focus.field_2_v_per_mm,
         focus.energy_per_charge_v, focus.focus_after_exit_mm,
     )
+    expected_gain = derive_operating_energy_envelope(contract).net_gain_reference_center_v
+    if not math.isclose(result.energy_per_charge_v, expected_gain, rel_tol=0.0, abs_tol=1e-9):
+        raise CandidateContractError(
+            "two-zone reference voltages must produce the declared net-gain reference centre"
+        )
+    return result
 
 
 def derive_two_zone_placement(contract: dict[str, Any]) -> TwoZonePlacement:

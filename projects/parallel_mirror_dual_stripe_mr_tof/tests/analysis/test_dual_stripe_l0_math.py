@@ -9,6 +9,8 @@ import numpy as np
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import (
     CandidateContractError,
+    analyze_dual_stripe_l0,
+    derive_manufactured_basis_voltage_seed,
     endpoint_regularized_kappa,
     endpoint_regularized_kappa_at_turn,
     endpoint_regularized_tau_g,
@@ -27,6 +29,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_operating_
     _compare_fixed_profile_to_dimensionless_target,
     _complete_consistency_start_grid,
     _complete_residual_acceptance_receipt,
+    _select_diverse_refinement_starts,
     _seed_profile,
     _solve_dimensionless_paper_target,
     _stripe_search_domain,
@@ -63,16 +66,14 @@ class DualStripeL0MathTest(unittest.TestCase):
         with self.assertRaises(CandidateContractError):
             _complete_residual_acceptance_receipt(contract, {"r1": 0.05, "r2": 0.0})
 
-    def test_complete_consistency_starts_vary_L_independently_of_voltage(self) -> None:
+    def test_complete_consistency_starts_vary_only_the_two_biases(self) -> None:
         profile = {
             "normalized_start_fractions": [-0.5, 0.25, 0.5],
-            "complete_consistency_length_start_fractions": [0.1, 0.4, 0.9],
         }
-        starts = _complete_consistency_start_grid(profile, 4000.0, 390.0 / 1.1)
-        self.assertEqual(len(starts), 18)
-        same_voltages = [start for start in starts if tuple(start[:2]) == (-2000.0, 1000.0)]
-        self.assertEqual([start[2] for start in same_voltages], [390.0 / 11.0, 1560.0 / 11.0, 3510.0 / 11.0])
-        self.assertTrue(all(0.0 < start[2] < 390.0 / 1.1 for start in starts))
+        starts = _complete_consistency_start_grid(profile, 4000.0)
+        self.assertEqual(len(starts), 6)
+        self.assertTrue(all(start.shape == (2,) for start in starts))
+        self.assertIn((-2000.0, 1000.0), [tuple(start) for start in starts])
 
     def test_complete_search_domain_does_not_consume_historical_prism_energy(self) -> None:
         contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
@@ -80,6 +81,21 @@ class DualStripeL0MathTest(unittest.TestCase):
         search_end, sample_count = _stripe_search_domain(contract, _seed_profile(contract))
         self.assertAlmostEqual(search_end, -390.0 / 1.1)
         self.assertGreater(sample_count, 0)
+
+    def test_complete_refinement_selection_keeps_anchor_and_spreads_coordinates(self) -> None:
+        screened = [
+            (1.0, np.asarray([0.0, 0.0, 0.0])),
+            (1.1, np.asarray([0.1, 0.0, 0.0])),
+            (1.2, np.asarray([0.0, 0.1, 0.0])),
+            (1.3, np.asarray([1.0, 1.0, 1.0])),
+            (1.4, np.asarray([-1.0, -1.0, -1.0])),
+            (1.5, np.asarray([0.5, -0.5, 0.5])),
+            (9.0, np.asarray([100.0, 100.0, 100.0])),
+        ]
+        selected = _select_diverse_refinement_starts(screened, 3, (1.0, 1.0, 1.0), 2)
+        self.assertEqual(selected[0][0], 1.0)
+        self.assertEqual({item[0] for item in selected}, {1.0, 1.3, 1.4})
+        self.assertTrue(all(item[0] < 9.0 for item in selected))
 
     def test_contract_separates_paper_relations_from_instance_values(self) -> None:
         contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
@@ -108,6 +124,20 @@ class DualStripeL0MathTest(unittest.TestCase):
     def test_response_inverse_rejects_singular_basis(self) -> None:
         with self.assertRaises(CandidateContractError):
             invert_nominal_psi_g_response(1.0, 1.0, 1.0, 1.0)
+
+    def test_component_basis_assignment_is_structured_and_fails_closed(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        assignment = contract["dual_stripe"]["theory_profile"]["component_basis_assignment"]
+        self.assertEqual(assignment["set_1"], "user_confirmed_scaled_original_psi_s_high_order_basis")
+        self.assertEqual(assignment["set_2"], "user_confirmed_scaled_original_psi_m_linear_basis")
+        self.assertTrue(assignment["termwise_original_paper_geometry_basis_identification"])
+        self.assertEqual(
+            analyze_dual_stripe_l0(contract, (-40.0, 60.0))["model"],
+            "dual_stripe_nominal_response_l0",
+        )
+        assignment["set_2"] = "unqualified"
+        with self.assertRaisesRegex(CandidateContractError, "qualified theory-CAD mapping"):
+            analyze_dual_stripe_l0(contract, (-40.0, 60.0))
 
     def test_endpoint_regularization_recovers_linear_reference_integral(self) -> None:
         self.assertAlmostEqual(endpoint_regularized_kappa(lambda eta: eta), 2.0, places=8)
@@ -375,7 +405,11 @@ class DualStripeL0MathTest(unittest.TestCase):
                 "derived_feasibility_bound"
             ]
             self.assertAlmostEqual(bound["maximum_abs_drift_length_L_mm"], 390.0 / 1.1)
-            self.assertEqual(bound["derivation"], "|L| <= active_length/max(eta_turn_nodes)")
+            self.assertEqual(
+                bound["derivation"],
+                "manufactured-design |L| <= active_length/max(eta_turn_nodes)",
+            )
+            self.assertEqual(bound["manufactured_design_abs_drift_length_L_mm"], 340.0)
             summary.write_text("{}\n", encoding="utf-8")
             with self.assertRaisesRegex(CandidateContractError, "integrity failed"):
                 build_parameter_authority_from_managed_seed(manifest)
@@ -391,7 +425,7 @@ class DualStripeL0MathTest(unittest.TestCase):
                     places=11,
                 )
 
-    def test_fixed_cad_shapes_fit_structure_without_inventing_L(self) -> None:
+    def test_fixed_cad_shapes_fit_structure_and_consume_manufactured_L(self) -> None:
         contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
         result = identify_fixed_cad_component_shapes(contract)
         fits = result["sampling_convergence"]
@@ -399,16 +433,60 @@ class DualStripeL0MathTest(unittest.TestCase):
         self.assertNotIn("drift_length_L_mm", fits[-1])
         self.assertEqual(
             result["drift_length_identifiability"]["status"],
-            "underdetermined_from_shape_structure_alone",
+            "fixed_by_manufactured_design_contract",
         )
         self.assertLess(fits[-1]["set_1_rms_residual_mm"], 0.002)
         self.assertLess(fits[-1]["set_2_rms_residual_mm"], 0.0004)
-        self.assertEqual(result["time_platform_node_span"]["status"], "pending_independently_closed_L")
-        self.assertIn("voltage_solution", result["status"])
+        self.assertEqual(result["time_platform_node_span"]["status"], "covered_by_manufactured_L_span_check")
+        self.assertIn("voltage_inverse_ready", result["status"])
         identity = result["theory_identity"]
-        self.assertEqual(identity["status"], "paper_relations_preserved__instance_values_pending")
+        self.assertEqual(identity["status"], "user_confirmed_original_geometry_bases__voltage_inverse_ready")
         self.assertIn("drift length L", identity["instance_specific_outputs"])
         self.assertNotIn("original_target_exact_response_compatibility", result)
+
+    def test_manufactured_basis_inverse_derives_nominal_biases_and_reports_K_residual(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        coefficients = contract["dual_stripe_l0"]["dimensionless_paper_target"][
+            "published_printed_reference_c0_to_c5"
+        ]
+        result = derive_manufactured_basis_voltage_seed(
+            contract,
+            mirror_axial_width_w_mm=586.9393396818346,
+            basis_coefficients_c0_to_c5=coefficients,
+        )
+        self.assertAlmostEqual(result["nominal_kappa_1"], 1.4892272348, places=9)
+        self.assertAlmostEqual(result["derived_drift_kinetic_energy_per_charge_v"], 5.0)
+        self.assertAlmostEqual(result["derived_fast_reflection_energy_per_charge_v"], 4000.0)
+        self.assertAlmostEqual(result["stripe_biases_v"][0], -50.68774291, places=6)
+        self.assertAlmostEqual(result["stripe_biases_v"][1], 100.39148140, places=6)
+        self.assertAlmostEqual(result["predicted_continuous_oscillation_count"], 24.41534840, places=7)
+        exact_k = result["nominal_center_exact_K_design_equation"]
+        self.assertEqual(exact_k["equation"], "T_D(theta_0)/T_0=K")
+        self.assertEqual(exact_k["target_K"], 25)
+        self.assertAlmostEqual(exact_k["residual"], -0.58465160, places=7)
+        self.assertEqual(exact_k["status"], "unsatisfied_by_current_analytic_inputs")
+        topology = result["nominal_center_oscillation_topology"]
+        self.assertEqual(topology["nearest_integer_K"], 24)
+        self.assertEqual(topology["target_K_interval_lower_exclusive"], 24.5)
+        self.assertEqual(topology["target_K_interval_upper_exclusive"], 25.5)
+        self.assertAlmostEqual(topology["signed_minimum_boundary_margin"], -0.08465160, places=7)
+        self.assertFalse(topology["target_K_interval_passed"])
+        self.assertAlmostEqual(result["mirror_axial_width_required_for_exact_K_mm"], 573.21313868, places=7)
+        self.assertEqual(
+            result["definition_classification"]["status"],
+            "current_mirror_root_fails_center_exact_K_and_target_topology",
+        )
+        self.assertLess(max(abs(value) for value in result["shape_scale_reconstruction_residual_mm"]), 1e-10)
+
+    def test_manufactured_basis_inverse_fails_closed_on_energy_partition_mismatch(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        contract["prism_transport"]["energy_partition"]["total_kinetic_energy_ev"] = 4000
+        with self.assertRaisesRegex(CandidateContractError, "equal drift energy plus"):
+            derive_manufactured_basis_voltage_seed(
+                contract,
+                mirror_axial_width_w_mm=586.9393396818346,
+                basis_coefficients_c0_to_c5=(0.83999, 0.75160, -7.52535, 14.0242, -9.17661, 2.08613),
+            )
 
 
 if __name__ == "__main__":

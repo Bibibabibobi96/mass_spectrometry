@@ -105,6 +105,245 @@ def invert_nominal_psi_g_response(
     )
 
 
+def _polynomial_inner_product(
+    first: Sequence[float], second: Sequence[float], upper: float,
+) -> float:
+    """Integrate two zero-constant polynomials over ``[0, upper]``."""
+    limit = _finite(upper, "polynomial projection upper bound")
+    if limit <= 0.0:
+        raise CandidateContractError("polynomial projection upper bound must be positive")
+    return sum(
+        _finite(left, "first polynomial coefficient")
+        * _finite(right, "second polynomial coefficient")
+        * limit ** (left_power + right_power + 1)
+        / (left_power + right_power + 1)
+        for left_power, left in enumerate(first, start=1)
+        for right_power, right in enumerate(second, start=1)
+    )
+
+
+def derive_manufactured_basis_voltage_seed(
+    contract: dict[str, Any],
+    *,
+    mirror_axial_width_w_mm: float,
+    basis_coefficients_c0_to_c5: Sequence[float],
+) -> dict[str, Any]:
+    """Reverse the manufactured theory-basis scales into nominal biases.
+
+    The current hardware curves were generated as a scaled high-order basis
+    ``psi_s`` and a scaled linear basis ``psi_m`` at the manufactured
+    ``L``.  After removing the entry baselines, the exact hard-boundary shape
+    relation is
+
+    ``S_i = lambda_i p_i`` and
+    ``lambda_i = W*w_y/v_i * (1 + sqrt(1-v_i/w0))/2``.
+
+    Therefore each voltage follows algebraically from its fitted geometry
+    scale.  The result is the nominal solver-neutral design point; it does
+    not remove either voltage from the later finite-field tuning coordinates.
+    """
+    coefficients = tuple(
+        _finite(value, "manufactured basis coefficient")
+        for value in basis_coefficients_c0_to_c5
+    )
+    if len(coefficients) != 6:
+        raise CandidateContractError("manufactured basis inverse requires c0..c5")
+    linear_basis = coefficients[0]
+    high_basis = coefficients[1:]
+    if linear_basis == 0.0 or _polynomial_inner_product(high_basis, high_basis, 1.0) == 0.0:
+        raise CandidateContractError("manufactured theory bases must both be nonzero")
+
+    l0 = contract.get("dual_stripe_l0")
+    nominal = contract.get("nominal")
+    if not isinstance(l0, dict) or not isinstance(nominal, dict):
+        raise CandidateContractError("manufactured basis inverse requires Stripe and nominal contracts")
+    length = _finite(
+        l0.get("manufactured_design_abs_drift_length_L_mm"),
+        "manufactured-design drift length",
+    )
+    width = _finite(mirror_axial_width_w_mm, "mirror-owned axial width W")
+    energy = _finite(nominal.get("energy_per_charge_v"), "nominal axial energy per charge")
+    oscillations = nominal.get("target_oscillation_count")
+    if (
+        length <= 0.0
+        or width <= 0.0
+        or energy <= 0.0
+        or not isinstance(oscillations, int)
+        or isinstance(oscillations, bool)
+        or oscillations <= 0
+    ):
+        raise CandidateContractError("manufactured basis inverse inputs must be positive")
+
+    shape = identify_fixed_cad_component_shapes(contract)
+    selected = shape["selected_fit"]
+    physical_high = tuple(
+        _finite(value, "fitted high-order physical coefficient")
+        for value in selected["set_1_coefficients_per_physical_mm_power"]
+    )
+    if len(physical_high) != 5:
+        raise CandidateContractError("manufactured high-order fit must contain five coefficients")
+    geometry_high = tuple(
+        value * length**power for power, value in enumerate(physical_high, start=1)
+    )
+    geometry_linear = (
+        _finite(selected["set_2_coefficient_per_physical_mm"], "fitted linear coefficient")
+        * length
+    )
+    active_eta = _finite(shape["active_distance_mm"], "Stripe active distance") / length
+    high_denominator = _polynomial_inner_product(high_basis, high_basis, active_eta)
+    high_scale = _polynomial_inner_product(geometry_high, high_basis, active_eta) / high_denominator
+    linear_scale = geometry_linear / linear_basis
+    if high_scale == 0.0 or linear_scale == 0.0:
+        raise CandidateContractError("manufactured basis geometry scales must be nonzero")
+
+    def psi(eta: float) -> float:
+        coordinate = _finite(eta, "basis eta")
+        return linear_basis * coordinate + sum(
+            value * coordinate**power for power, value in enumerate(high_basis, start=1)
+        )
+
+    kappa = endpoint_regularized_kappa(psi)
+    partition = contract.get("prism_transport", {}).get("energy_partition", {})
+    if not isinstance(partition, dict) or partition.get("semantics") != (
+        "post_acceleration_total_and_orthogonal_components_per_charge_ev"
+    ):
+        raise CandidateContractError("manufactured basis inverse requires the post-acceleration energy partition")
+    total_energy = _finite(partition.get("total_kinetic_energy_ev"), "post-acceleration total energy")
+    drift_energy = _finite(partition.get("drift_kinetic_energy_ev"), "drift-direction energy")
+    fast_energy = _finite(partition.get("fast_reflection_kinetic_energy_ev"), "fast-reflection energy")
+    if drift_energy <= 0.0 or fast_energy != energy or total_energy != drift_energy + fast_energy:
+        raise CandidateContractError(
+            "post-acceleration energy must equal drift energy plus the nominal axial energy"
+        )
+    sin_theta = math.sqrt(drift_energy / total_energy)
+    predicted_oscillations = kappa * length / (width * sin_theta)
+    required_width = kappa * length / (oscillations * sin_theta)
+    target_band_lower = oscillations - 0.5
+    target_band_upper = oscillations + 0.5
+    target_band_margin = min(
+        predicted_oscillations - target_band_lower,
+        target_band_upper - predicted_oscillations,
+    )
+    assigned_oscillations = math.floor(predicted_oscillations + 0.5)
+
+    def invert_scale(scale: float) -> tuple[float, float, float]:
+        # From lambda = W*sin(theta)^2 / [2*(1-r)] with
+        # r=sqrt(1-v/w0).  This is algebraically equivalent to the exact
+        # finite-bias action relation and remains well behaved for v<0.
+        root = 1.0 - width * drift_energy / (2.0 * energy * scale)
+        if root <= 0.0:
+            raise CandidateContractError("manufactured basis scale removes Stripe transmission")
+        voltage = energy * (1.0 - root * root)
+        if voltage == 0.0 or voltage >= energy:
+            raise CandidateContractError("manufactured basis inverse produced an invalid Stripe bias")
+        response = 1.0 / root
+        reconstructed_scale = width * drift_energy / (2.0 * energy * (1.0 - root))
+        return voltage, response, reconstructed_scale
+
+    first_voltage, first_h, first_reconstructed = invert_scale(high_scale)
+    second_voltage, second_h, second_reconstructed = invert_scale(linear_scale)
+    condition = _condition_number_2x2(1.0, 1.0, first_h, second_h)
+
+    high_residual = tuple(
+        actual - high_scale * target for actual, target in zip(geometry_high, high_basis)
+    )
+    high_rms = math.sqrt(
+        _polynomial_inner_product(high_residual, high_residual, active_eta) / active_eta
+    )
+    realized_g = (
+        first_h * high_basis[0] + second_h * linear_basis,
+        *(first_h * value for value in high_basis[1:]),
+    )
+    paper_g = (high_basis[0] - linear_basis, *high_basis[1:])
+    return {
+        "status": "analytic_nominal_voltage_seed",
+        "qualification": "solver_neutral_hard_boundary_initialization__finite_3d_tuning_pending",
+        "manufactured_design_drift_length_L_mm": length,
+        "mirror_owned_axial_width_W_mm": width,
+        "target_oscillation_count_K": oscillations,
+        "predicted_continuous_oscillation_count": predicted_oscillations,
+        "oscillation_count_residual": predicted_oscillations - oscillations,
+        "nominal_center_exact_K_design_equation": {
+            "equation": "T_D(theta_0)/T_0=K",
+            "target_K": oscillations,
+            "calculated_T_D_over_T_0": predicted_oscillations,
+            "residual": predicted_oscillations - oscillations,
+            "status": (
+                "satisfied_by_current_analytic_inputs"
+                if predicted_oscillations == oscillations
+                else "unsatisfied_by_current_analytic_inputs"
+            ),
+            "semantics": (
+                "The nominal design centre must solve this equality. A later numerical solver "
+                "must use a separately declared numerical residual tolerance; the half-integer "
+                "interval is not a substitute for this equation."
+            ),
+        },
+        "nominal_center_oscillation_topology": {
+            "nearest_integer_K": assigned_oscillations,
+            "target_K_interval_lower_exclusive": target_band_lower,
+            "target_K_interval_upper_exclusive": target_band_upper,
+            "signed_minimum_boundary_margin": target_band_margin,
+            "target_K_interval_passed": target_band_margin > 0.0,
+            "semantics": (
+                "This classifies only the nominal center trajectory. The same strict interval must "
+                "later hold over the complete accepted bundle in the native three-dimensional field."
+            ),
+        },
+        "nominal_axial_energy_per_charge_v": energy,
+        "post_acceleration_total_energy_per_charge_v": total_energy,
+        "nominal_kappa_1": kappa,
+        "nominal_injection_angle_degrees": math.degrees(math.asin(sin_theta)),
+        "derived_drift_kinetic_energy_per_charge_v": drift_energy,
+        "derived_fast_reflection_energy_per_charge_v": fast_energy,
+        "mirror_axial_width_required_for_exact_K_mm": required_width,
+        "mirror_axial_width_residual_mm": width - required_width,
+        "geometry_basis_scales_mm": {
+            "set_1_high_order": high_scale,
+            "set_2_linear": linear_scale,
+        },
+        "geometry_basis_fit": {
+            "active_eta_max": active_eta,
+            "set_1_integral_projection_rms_residual_mm": high_rms,
+            "set_1_eta_coefficients_mm": list(geometry_high),
+            "set_2_eta_linear_coefficient_mm": geometry_linear,
+        },
+        "stripe_biases_v": [first_voltage, second_voltage],
+        "h_factors": [first_h, second_h],
+        "response_matrix": [[1.0, 1.0], [first_h, second_h]],
+        "response_matrix_condition_number_2": condition,
+        "shape_scale_reconstruction_residual_mm": [
+            first_reconstructed - high_scale,
+            second_reconstructed - linear_scale,
+        ],
+        "nominal_spatial_response": "psi=psi_s+psi_m by analytic shape-scale inversion",
+        "nominal_time_response_coefficients_by_power": list(realized_g),
+        "original_paper_time_response_coefficients_by_power": list(paper_g),
+        "voltage_authority": (
+            "The two values are theory-derived nominal initial voltages for the fixed manufactured "
+            "geometry. Both remain adjustable coordinates in finite three-dimensional calibration."
+        ),
+        "definition_classification": {
+            "status": (
+                "current_mirror_root_fails_center_exact_K_and_target_topology"
+                if target_band_margin <= 0.0
+                else "center_exact_K_unsolved__nominal_topology_only_passes"
+            ),
+            "independent_fixed_inputs": [
+                "manufactured L",
+                "target K",
+                "source-preserved 5 eV drift energy",
+                "4000 eV axial energy",
+                "two user-confirmed manufactured theory-basis geometry scales",
+            ],
+            "adjustable_coordinate_implication": (
+                "Mirror voltages remain adjustable and must select a mirror-theory-qualified W that "
+                "closes the reported K/W residual; v1/v2 then update analytically from that W."
+            ),
+        },
+    }
+
+
 @lru_cache(maxsize=None)
 def _legendre_rule(order: int) -> tuple[np.ndarray, np.ndarray]:
     """Return a cached Gauss--Legendre rule for repeated endpoint integrals."""
@@ -383,7 +622,7 @@ def identify_fixed_cad_component_shapes(contract: dict[str, Any]) -> dict[str, A
     return {
         "schema_version": 1,
         "role": "fixed_cad_dual_stripe_component_shape_identification",
-        "status": "diagnostic_structure_fitted__L_and_voltage_solution_pending",
+        "status": "manufactured_theory_basis_fitted__analytic_voltage_inverse_ready",
         "source_geometry": "native frozen theory B-spline knot/control contract",
         "component_basis": settings.get("basis"),
         "width_baselines_at_entry_mm": {"set_1": first_baseline, "set_2": second_baseline},
@@ -391,18 +630,18 @@ def identify_fixed_cad_component_shapes(contract: dict[str, Any]) -> dict[str, A
         "sampling_convergence": fits,
         "selected_fit": selected,
         "drift_length_identifiability": {
-            "status": "underdetermined_from_shape_structure_alone",
-            "reason": "For any positive L, coefficients can be transformed so the same polynomial in physical distance is written in eta=distance/L. Geometry structure therefore supplies no independent L equation.",
+            "status": "fixed_by_manufactured_design_contract",
+            "reason": "Shape structure alone is scale-degenerate, but the current manufactured design independently fixes L=340 mm. The fitted physical coefficients are transformed with that contract value rather than used to infer L.",
             "coefficient_transform": "If b_k multiplies physical distance^k, the eta coefficient is b_k*L^k; a separate normalization may move one further common scale.",
-            "required_closure": "Derive L/turning from the coupled mirror receipt, Stripe action/normalization, target K, and path-ordered P1/P2 entrance state, then evaluate whether every requested eta node lies inside the frozen active span.",
+            "required_closure": "Consume the manufactured L, mirror W, target K and axial energy to invert the two theory-basis geometry scales into nominal Stripe voltages.",
         },
         "time_platform_node_span": {
             "eta_turn_nodes": list(nodes),
             "available_active_distance_mm": active_length,
-            "status": "pending_independently_closed_L",
+            "status": "covered_by_manufactured_L_span_check",
         },
         "theory_identity": {
-            "status": "paper_relations_preserved__instance_values_pending",
+            "status": "user_confirmed_original_geometry_bases__voltage_inverse_ready",
             "invariants": [
                 "the same dimensionless polynomial-plus-linear function structure",
                 "the same action, pseudopotential, kappa, tau_g, K, L, W, and injection-angle relations",
@@ -414,13 +653,13 @@ def identify_fixed_cad_component_shapes(contract: dict[str, Any]) -> dict[str, A
                 "axial width W",
                 "Stripe and prism voltages",
             ],
-            "interpretation_guard": "A geometric polynomial component and a geometric linear component must not be equated term-by-term to psi_s and psi_m before the current instance normalization and voltage response have been solved. Shape structure alone cannot prove compatibility or incompatibility of the complete paper-equivalent equations.",
+            "interpretation_guard": "The user confirms the current curves are scaled psi_s and psi_m geometry bases at L=340 mm. Their scales determine nominal spatial-response voltages, while the resulting finite-bias time response must still be reported independently and checked in the full model.",
         },
         "limitations": [
-            "This verifies the current polynomial/linear component structure; it neither assumes nor identifies the paper's printed coefficients.",
-            "L is scale-degenerate in a free polynomial coefficient fit and is not published from geometry alone.",
+            "This verifies the current polynomial/linear component fit and consumes the separately declared user authority for its original psi_s/psi_m basis identity.",
+            "L remains scale-degenerate in a free shape fit; the current value is supplied only by the manufactured-design contract.",
             "No CAD-fit acceptance tolerance is declared, so raw residuals and sampling convergence are reported without promotion to Candidate.",
-            "The physical dual-Stripe psi/g response, exact determination rank, P1/P2 transport, and finite three-dimensional fields remain unevaluated.",
+            "The nominal voltage inverse is evaluated separately; complete time response, P1/P2 transport, and finite three-dimensional fields remain independent validation stages.",
         ],
     }
 
@@ -454,11 +693,18 @@ def analyze_dual_stripe_l0(
     resolved = resolve_geometry(contract)
     width_1 = _width_bounds(resolved["stripe_electrodes"][0])
     width_2 = _width_bounds(resolved["stripe_electrodes"][2])
-    component_interpretation = stripe["theory_profile"].get("component_interpretation")
-    if component_interpretation != (
-        "set_1 total width is the high-order response; set_2 total width is the linear response. "
-        "Their action-normalization and voltage solution remain an L0 inverse problem, not CAD data."
-    ):
+    component_assignment = stripe["theory_profile"].get("component_basis_assignment")
+    if component_assignment != {
+        "set_1": "user_confirmed_scaled_original_psi_s_high_order_basis",
+        "set_2": "user_confirmed_scaled_original_psi_m_linear_basis",
+        "termwise_original_paper_geometry_basis_identification": True,
+        "basis_coefficient_authority": (
+            "dual_stripe_l0.dimensionless_paper_target.published_printed_reference_c0_to_c5"
+        ),
+        "active_response_authority": (
+            "analytic_geometry_scale_inverse_then_finite_3d_voltage_calibration"
+        ),
+    }:
         raise CandidateContractError("dual Stripe component interpretation is not the qualified theory-CAD mapping")
     linear_report = _linear_width_report(_width_samples(resolved["stripe_electrodes"][2]))
     return {

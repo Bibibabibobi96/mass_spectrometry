@@ -9,7 +9,9 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
-    CandidateContractError, build_simion_gem, derive_two_zone_focus, derive_two_zone_placement, load_contract, write_gem,
+    CandidateContractError, build_simion_gem, derive_mirror_voltage_bounds,
+    derive_operating_energy_envelope, derive_two_zone_focus, derive_two_zone_placement,
+    load_contract, write_gem,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.full_candidate_geometry import (
     ELECTRODE_IDS,
@@ -220,7 +222,7 @@ class SimionCandidateReferenceTest(unittest.TestCase):
             self.assertIn("mirror_voltages_v = { 0, -10, 20, 30, 50 }", outputs["operating_point"].read_text(encoding="utf-8"))
             self.assertIn("detector_box_mm", outputs["operating_point"].read_text(encoding="utf-8"))
             self.assertIn("stripe_biases_v", outputs["operating_point"].read_text(encoding="utf-8"))
-            self.assertIn("prism_voltages_v = { 141.33294025102569, 0 }", outputs["operating_point"].read_text(encoding="utf-8"))
+            self.assertIn("prism_voltages_v = { 141.42135623730948, 0 }", outputs["operating_point"].read_text(encoding="utf-8"))
             self.assertIn("accelerator_voltages_v", outputs["operating_point"].read_text(encoding="utf-8"))
             self.assertIn("n = 1", outputs["center_fly2"].read_text(encoding="utf-8"))
             self.assertIn("n = 100", outputs["candidate_bunch_fly2"].read_text(encoding="utf-8"))
@@ -238,7 +240,7 @@ class SimionCandidateReferenceTest(unittest.TestCase):
             self.assertNotIn("circle_distribution", focus_bunch)
             species = derived["particle_source"]["species"]
             first_prism_entry = outputs["first_prism_entry_center_fly2"].read_text(encoding="utf-8")
-            self.assertIn("ke = 4000", first_prism_entry)
+            self.assertIn("ke = 4005", first_prism_entry)
             self.assertIn("position = circle_distribution", first_prism_entry)
             self.assertIn("direction = vector(0, 0, -1)", first_prism_entry)
             self.assertEqual(outputs["first_prism_iob_fly2"].read_bytes(), first_prism_entry.encode("utf-8"))
@@ -336,6 +338,7 @@ class SimionCandidateReferenceTest(unittest.TestCase):
 
     def test_candidate_places_two_zone_focus_at_central_plane(self) -> None:
         contract = load_contract(PROJECT / "config" / "simion_candidate_two_zone.json")
+        energy = derive_operating_energy_envelope(contract)
         focus = derive_two_zone_focus(contract)
         placement = derive_two_zone_placement(contract)
         self.assertGreater(focus.focus_after_exit_mm, 0.0)
@@ -344,6 +347,32 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         self.assertAlmostEqual(placement.focus_y_mm, 55.328)
         self.assertGreater(placement.repeller_z_mm, placement.grid_1_z_mm)
         self.assertGreater(placement.grid_1_z_mm, placement.exit_grid_z_mm)
+        self.assertEqual(energy.net_gain_center_minimum_v, 3500.0)
+        self.assertEqual(energy.net_gain_center_maximum_v, 4500.0)
+        self.assertEqual(energy.mirror_energy_nodes_v, (3900.0, 4000.0, 4100.0))
+        self.assertEqual(energy.mirror_b_through_d_maximum_v, 3900.0)
+        self.assertEqual(energy.post_acceleration_total_energy_reference_v, 4005.0)
+        self.assertEqual(focus.energy_per_charge_v, energy.net_gain_reference_center_v)
+        lower, upper = derive_mirror_voltage_bounds(contract)
+        self.assertEqual(upper, (3900.0, 3900.0, 3900.0, 10000.0))
+        self.assertGreater(lower[-1], 4100.0)
+
+    def test_operating_energy_changes_rederive_mirror_nodes_and_voltage_cap(self) -> None:
+        contract = load_contract(PROJECT / "config" / "simion_candidate_two_zone.json")
+        contract["accelerator_energy_contract"]["net_gain_reference_center_per_charge_v"] = 4200.0
+        contract["nominal"]["energy_per_charge_v"] = 4200.0
+        energy = derive_operating_energy_envelope(contract)
+        self.assertEqual(energy.mirror_energy_nodes_v, (4100.0, 4200.0, 4300.0))
+        _lower, upper = derive_mirror_voltage_bounds(contract)
+        self.assertEqual(upper[:3], (4100.0, 4100.0, 4100.0))
+
+    def test_mirror_voltage_cap_rejects_independent_numeric_duplicate(self) -> None:
+        contract = load_contract(PROJECT / "config" / "simion_candidate_two_zone.json")
+        contract["mirror"]["theory_requirements"]["voltage_envelope_v"]["D"][
+            "maximum_inclusive_v"
+        ] = 3900.0
+        with self.assertRaisesRegex(CandidateContractError, "B--D maxima"):
+            derive_mirror_voltage_bounds(contract)
 
     def test_split_accelerator_faces_negative_z_and_is_centered_on_declared_y_line(self) -> None:
         contract = load_contract(PROJECT / "config" / "simion_candidate_two_zone.json")
@@ -541,7 +570,7 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         tolerance = derive_mirror_l0_slope_tolerance_per_v(
             budget["minimum_mass_resolution"],
             budget["mirror_time_width_fraction"],
-            requirements["energies_v"],
+            derive_operating_energy_envelope(contract).mirror_energy_nodes_v,
         )
         self.assertAlmostEqual(tolerance, 1e-7)
         with self.assertRaises(CandidateContractError):

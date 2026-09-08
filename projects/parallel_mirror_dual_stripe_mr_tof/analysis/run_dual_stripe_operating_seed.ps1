@@ -33,7 +33,7 @@ $runMode = if ($authorityOnly) { 'fixed_stripe_parameter_authority' } else { 'du
 $qualification = if ($authorityOnly) {
   'solver_neutral_parameter_authority__not_an_operating_point'
 } else {
-  'analytic_seed_family__complete_fixed_hardware_consistency_diagnostic__P1_P2_pending'
+  'analytic_manufactured_basis_voltage_inverse__finite_3d_tuning_pending'
 }
 
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
@@ -134,7 +134,7 @@ try {
     if (-not (Test-RunFilesIdentical -Left $pair.source -Right $pair.frozen)) { throw "Frozen analytic source differs before execution: $($pair.source)" }
   }
 
-  $failureStage = if ($authorityOnly) { 'parameter_authority_derivation' } else { 'operating_seed_search' }
+  $failureStage = if ($authorityOnly) { 'parameter_authority_derivation' } else { 'analytic_basis_voltage_inverse' }
   $logPath = Join-Path $logDir 'dual_stripe_operating_seed.log'
   $pythonArguments = if ($authorityOnly) {
     @(

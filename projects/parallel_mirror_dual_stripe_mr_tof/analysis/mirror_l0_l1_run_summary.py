@@ -11,6 +11,8 @@ from typing import Any
 from common.contracts.file_identity import file_sha256
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
     CandidateContractError,
+    derive_mirror_voltage_bounds,
+    derive_operating_energy_envelope,
     load_contract,
 )
 
@@ -100,9 +102,12 @@ def validate_and_summarize(contract_path: Path, l0_path: Path, l1_path: Path) ->
     slopes_per_v = [_finite_float(value, "normalized period slope") for value in slopes]
     if voltages_v[0] != 0.0:
         raise CandidateContractError("mirror electrode A must remain grounded")
-    energies_v = [float(value) for value in contract["mirror"]["theory_requirements"]["energies_v"]]
+    energies_v = list(derive_operating_energy_envelope(contract).mirror_energy_nodes_v)
     if voltages_v[-1] <= max(energies_v):
         raise CandidateContractError("mirror electrode E must remain above the maximum energy node")
+    lower_bounds, upper_bounds = derive_mirror_voltage_bounds(contract)
+    if any(not low <= value <= high for value, low, high in zip(voltages_v[1:], lower_bounds, upper_bounds, strict=True)):
+        raise CandidateContractError("selected mirror member violates the derived voltage envelope")
     slope_limit = _finite_float(selected.get("maximum_abs_normalized_period_slope_per_v"), "slope limit")
     maximum_abs_slope = max(abs(value) for value in slopes_per_v)
     if maximum_abs_slope > slope_limit:

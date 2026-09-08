@@ -27,6 +27,7 @@ from common.contracts.file_identity import file_sha256
 from common.contracts.verify_run_manifest import record_path, verify_record
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import (
     analyze_dual_stripe_l0,
+    derive_manufactured_basis_voltage_seed,
     identify_fixed_cad_component_shapes,
     paper_dimensionless_condition_residuals,
 )
@@ -126,7 +127,7 @@ def audit_exact_paper_component_emulation_by_static_stripes(
 
 
 def _fixed_geometry_drift_length_bound(contract: dict[str, Any]) -> dict[str, Any]:
-    """Derive the largest admissible nominal ``|L|`` from the active span."""
+    """Validate the manufactured-design ``|L|`` against the active span."""
     stripe_l0 = contract.get("dual_stripe_l0")
     dual_stripe = contract.get("dual_stripe")
     if not isinstance(stripe_l0, dict) or not isinstance(dual_stripe, dict):
@@ -149,13 +150,23 @@ def _fixed_geometry_drift_length_bound(contract: dict[str, Any]) -> dict[str, An
         raise CandidateContractError("Stripe time-platform nodes must be positive")
     usable_length = entry - y_span[0]
     maximum_node = max(nodes)
+    maximum_length = usable_length / maximum_node
+    designed_length = _finite(
+        stripe_l0.get("manufactured_design_abs_drift_length_L_mm"),
+        "manufactured-design Stripe drift length",
+    )
+    if designed_length <= 0.0 or designed_length > maximum_length:
+        raise CandidateContractError(
+            "manufactured-design Stripe drift length exceeds its geometry-limited interval"
+        )
     return {
         "active_span_y_mm": list(y_span),
         "active_length_mm": usable_length,
         "maximum_eta_turn_node": maximum_node,
-        "maximum_abs_drift_length_L_mm": usable_length / maximum_node,
+        "manufactured_design_abs_drift_length_L_mm": designed_length,
+        "maximum_abs_drift_length_L_mm": maximum_length,
         "nominal_turn_y_relation": "y_turn=y_entry-|L|",
-        "derivation": "|L| <= active_length/max(eta_turn_nodes)",
+        "derivation": "manufactured-design |L| <= active_length/max(eta_turn_nodes)",
     }
 
 
@@ -222,15 +233,15 @@ def attach_fixed_geometry_parameter_authority(
                 "physical_width_functions_S1_y_and_S2_y",
                 "Stripe_entry_coordinate_and_usable_interval",
                 "two_response_function_space",
+                "manufactured_design_drift_length_L_mm",
             ],
             "not_fixed_quantities": [
-                "drift_length_L",
                 "Stripe_biases_v1_and_v2",
                 "nominal_injection_angle_theta0",
                 "drift_energy_per_charge_wy",
                 "fast_reflection_energy_per_charge_wz",
             ],
-            "reason": "the physical turn depends on the voltage response and energy partition, not on curve coordinates alone",
+            "reason": "the current manufactured design fixes L, but voltage response and the resulting energy partition remain unsolved",
             "derived_feasibility_bound": (
                 _fixed_geometry_drift_length_bound(contract) if contract is not None else None
             ),
@@ -238,14 +249,14 @@ def attach_fixed_geometry_parameter_authority(
         "coupled_problem": {
             "external_or_upstream_authorities": [
                 "mirror_receipt_axial_width_W",
-                "nominal_total_energy_per_charge_w0",
+                "nominal_axial_net_acceleration_gain_per_charge_w0",
                 "target_oscillation_count_K",
             ],
             "solve_coordinates": [
                 "stripe_set_1_bias_v",
                 "stripe_set_2_bias_v",
-                "drift_length_L_mm",
             ],
+            "fixed_hardware_inputs": ["manufactured_design_drift_length_L_mm"],
             "conditionally_derived_outputs": [
                 "theta0_from_sin_theta0_equals_kappa_1_L_over_K_W",
                 "wy_equals_w0_sin_squared_theta0",
@@ -366,6 +377,30 @@ def build_parameter_authority_from_managed_seed(manifest_path: Path) -> dict[str
         or source_summary.get("role") != "mrtof_dual_stripe_paper_theory_instance_specific_operating_seed_family"
     ):
         raise CandidateContractError("managed Stripe summary has the wrong role")
+    analytic_family = source_summary.get("analytic_basis_inverse_root_family")
+    if isinstance(analytic_family, list) and analytic_family:
+        selected = source_summary.get("selected_seed")
+        if not isinstance(selected, dict) or selected.get("status") != "analytic_nominal_voltage_seed":
+            raise CandidateContractError("managed analytic Stripe summary lacks its selected seed")
+        return {
+            "schema_version": 2,
+            "role": "mrtof_fixed_stripe_geometry_parameter_authority",
+            "status": "success",
+            "qualification": "solver_neutral_analytic_initialization__finite_3d_tuning_pending",
+            "source_operating_seed_run_id": manifest.get("run_id"),
+            "source_operating_seed_manifest_sha256": file_sha256(path),
+            "source_operating_seed_summary_sha256": str(summary_record.get("sha256", "")).upper(),
+            "manufactured_basis_authority": source_summary.get("basis_authority"),
+            "selected_analytic_seed": selected,
+            "voltage_adjustability": source_summary.get("voltage_adjustability"),
+            "two_prism_voltage_definition": audit_two_prism_voltage_definition(source_contract),
+            "publication_gate": {
+                "status": "pending_finite_3d_and_K_closure",
+                "passed": False,
+                "reason": "The analytic nominal voltages initialize calibration but do not yet prove the target-K three-dimensional flight.",
+            },
+            "limitations": list(source_summary.get("limitations", [])),
+        }
     updated = copy.deepcopy(source_summary)
     target = updated.get("dimensionless_paper_target")
     if not isinstance(target, dict):
@@ -615,14 +650,15 @@ def _entry_direction_and_search_end(
 ) -> tuple[tuple[float, float, float], float, int]:
     """Add the historical prism diagnostic direction to the geometry domain."""
     energy = contract.get("prism_transport", {}).get("energy_partition", {})
-    if energy.get("semantics") != "total_kinetic_energy_at_first_prism_ev":
+    if energy.get("semantics") != "post_acceleration_total_and_orthogonal_components_per_charge_ev":
         raise CandidateContractError("Stripe seed requires the declared prism energy partition")
     total = _finite(energy.get("total_kinetic_energy_ev"), "total kinetic energy")
     drift = _finite(energy.get("drift_kinetic_energy_ev"), "drift kinetic energy")
+    fast = _finite(energy.get("fast_reflection_kinetic_energy_ev"), "fast-reflection energy")
     nominal = _finite(contract.get("nominal", {}).get("energy_per_charge_v"), "nominal energy")
-    if total != nominal or not 0.0 < drift < total:
-        raise CandidateContractError("Stripe seed energy partition must match the positive nominal energy")
-    direction = (0.0, -math.sqrt(drift / total), -math.sqrt(1.0 - drift / total))
+    if fast != nominal or total != drift + fast or not 0.0 < drift < total:
+        raise CandidateContractError("Stripe seed energy partition must close as total=drift+axial")
+    direction = (0.0, -math.sqrt(drift / total), -math.sqrt(fast / total))
     search_end, sample_count = _stripe_search_domain(contract, profile)
     return direction, search_end, sample_count
 
@@ -814,36 +850,65 @@ def _fixed_hardware_joint_trial_at_turn(
 
 
 def _complete_consistency_start_grid(
-    profile: dict[str, Any], energy_per_charge_v: float, usable_length_mm: float,
+    profile: dict[str, Any], energy_per_charge_v: float,
 ) -> tuple[np.ndarray, ...]:
-    """Build deterministic, independently varied ``(v1,v2,|L|)`` starts."""
+    """Build deterministic ``(v1,v2)`` starts for the fixed-L hardware."""
     energy = _finite(energy_per_charge_v, "complete consistency nominal energy")
-    usable_length = _finite(usable_length_mm, "complete consistency usable length")
     voltage_fractions = tuple(
         _finite(value, "complete consistency voltage start fraction")
         for value in profile.get("normalized_start_fractions", [])
     )
-    length_fractions = tuple(
-        _finite(value, "complete consistency length start fraction")
-        for value in profile.get("complete_consistency_length_start_fractions", [])
-    )
-    if energy <= 0.0 or usable_length <= 0.0:
-        raise CandidateContractError("complete consistency start scales must be positive")
+    if energy <= 0.0:
+        raise CandidateContractError("complete consistency energy scale must be positive")
     if len(voltage_fractions) < 2 or any(
         value == 0.0 or not -1.0 < value < 1.0 for value in voltage_fractions
     ):
         raise CandidateContractError("complete consistency voltage starts must be nonzero and inside (-1,1)")
-    if not length_fractions or any(not 0.0 < value < 1.0 for value in length_fractions):
-        raise CandidateContractError("complete consistency length starts must lie inside (0,1)")
-    if len(set(length_fractions)) != len(length_fractions):
-        raise CandidateContractError("complete consistency length starts must be distinct")
     return tuple(
-        np.asarray((energy * first, energy * second, usable_length * length), dtype=float)
+        np.asarray((energy * first, energy * second), dtype=float)
         for first in voltage_fractions
         for second in voltage_fractions
         if first != second
-        for length in length_fractions
     )
+
+
+def _select_diverse_refinement_starts(
+    screened_starts: Sequence[tuple[float, np.ndarray]],
+    refinement_start_count: int,
+    parameter_scales: Sequence[float],
+    pool_multiplier: int,
+) -> list[tuple[float, np.ndarray]]:
+    """Keep the minimum-residual anchor, then spread starts deterministically."""
+    count = _positive_integer(refinement_start_count, "complete consistency refinement start count")
+    multiplier = _positive_integer(pool_multiplier, "complete consistency diversity pool multiplier")
+    scales = np.asarray([
+        _finite(value, "complete consistency parameter scale") for value in parameter_scales
+    ])
+    if len(scales) == 0 or np.any(scales <= 0.0):
+        raise CandidateContractError("complete consistency parameter scales must be positive")
+    ranked = sorted(
+        screened_starts,
+        key=lambda item: (float(item[0]), tuple(float(value) for value in item[1])),
+    )
+    pool = ranked[:min(len(ranked), count * multiplier)]
+    if not pool:
+        return []
+    selected = [pool[0]]
+    remaining = pool[1:]
+    while remaining and len(selected) < count:
+        selected_coordinates = [np.asarray(item[1], dtype=float) / scales for item in selected]
+
+        def selection_key(item: tuple[float, np.ndarray]) -> tuple[float, float, tuple[float, ...]]:
+            coordinates = np.asarray(item[1], dtype=float) / scales
+            minimum_distance = min(
+                float(np.linalg.norm(coordinates - known)) for known in selected_coordinates
+            )
+            return (minimum_distance, -float(item[0]), tuple(-float(value) for value in item[1]))
+
+        chosen = max(remaining, key=selection_key)
+        selected.append(chosen)
+        remaining.remove(chosen)
+    return selected
 
 
 def _complete_residual_scales(
@@ -937,14 +1002,19 @@ def _search_complete_fixed_hardware_consistency(mirror: ManagedMirrorCandidate) 
         profile["complete_consistency_refinement_start_count"],
         "complete consistency refinement start count",
     )
+    diversity_pool_multiplier = _positive_integer(
+        profile["complete_consistency_diversity_pool_multiplier"],
+        "complete consistency diversity pool multiplier",
+    )
     energy = mirror.nominal_energy_per_charge_v
     lower = -energy
     upper = math.nextafter(min(mirror.energy_points_v), -math.inf)
     entry = _finite(contract["dual_stripe_l0"]["theory_stripe_entrance"]["project_y_mm"], "Stripe entry")
     drift_sign = 1.0 if search_end > entry else -1.0
-    usable_length = abs(search_end - entry)
-    length_step = usable_length / sample_count
-    starts = _complete_consistency_start_grid(profile, energy, usable_length)
+    length = _fixed_geometry_drift_length_bound(contract)[
+        "manufactured_design_abs_drift_length_L_mm"
+    ]
+    starts = _complete_consistency_start_grid(profile, energy)
     feasible_starts = 0
     candidates: list[dict[str, Any]] = []
     screened_starts: list[tuple[float, np.ndarray]] = []
@@ -952,15 +1022,12 @@ def _search_complete_fixed_hardware_consistency(mirror: ManagedMirrorCandidate) 
     residual_scales: tuple[float, ...] | None = None
 
     def report_at(values: Sequence[float]):
-        if len(values) != 3:
-            raise CandidateContractError("complete fixed-hardware search needs v1, v2, and L")
-        length = _finite(values[2], "Stripe drift length solve coordinate")
-        if not 0.0 < length < usable_length:
-            raise CandidateContractError("Stripe drift length solve coordinate left the active profile")
+        if len(values) != 2:
+            raise CandidateContractError("complete fixed-hardware search needs v1 and v2")
         trial = _fixed_hardware_joint_trial_at_turn(
             mirror,
             widths,
-            values[:2],
+            values,
             entry + drift_sign * length,
             eta_step,
             time_step,
@@ -983,8 +1050,12 @@ def _search_complete_fixed_hardware_consistency(mirror: ManagedMirrorCandidate) 
         ) / np.asarray(residual_scales)
         screened_starts.append((float(np.linalg.norm(initial_scaled)), start))
 
-    screened_starts.sort(key=lambda item: item[0])
-    refined_starts = screened_starts[:min(refinement_start_count, len(screened_starts))]
+    refined_starts = _select_diverse_refinement_starts(
+        screened_starts,
+        refinement_start_count,
+        (energy, energy),
+        diversity_pool_multiplier,
+    )
     for _initial_norm, start in refined_starts:
         assert residual_scales is not None
 
@@ -998,7 +1069,7 @@ def _search_complete_fixed_hardware_consistency(mirror: ManagedMirrorCandidate) 
                 ) / np.asarray(residual_scales)
             except CandidateContractError:
                 distance = float(np.linalg.norm(
-                    (values - start) / np.asarray([energy, energy, usable_length])
+                    (values - start) / np.asarray([energy, energy])
                 ))
                 return np.full(len(residual_scales), 1.0e3 + distance)
 
@@ -1015,9 +1086,9 @@ def _search_complete_fixed_hardware_consistency(mirror: ManagedMirrorCandidate) 
             for index in range(len(values)):
                 low = values.copy()
                 high = values.copy()
-                coordinate_step = voltage_step if index < 2 else length_step
-                coordinate_lower = lower if index < 2 else math.nextafter(0.0, math.inf)
-                coordinate_upper = upper if index < 2 else math.nextafter(usable_length, -math.inf)
+                coordinate_step = voltage_step
+                coordinate_lower = lower
+                coordinate_upper = upper
                 low[index] = max(coordinate_lower, float(values[index]) - coordinate_step)
                 high[index] = min(coordinate_upper, float(values[index]) + coordinate_step)
                 denominator = high[index] - low[index]
@@ -1030,11 +1101,11 @@ def _search_complete_fixed_hardware_consistency(mirror: ManagedMirrorCandidate) 
             objective,
             start,
             bounds=(
-                [lower, lower, math.nextafter(0.0, math.inf)],
-                [upper, upper, math.nextafter(usable_length, -math.inf)],
+                [lower, lower],
+                [upper, upper],
             ),
             jac=objective_jacobian,
-            x_scale=np.asarray([energy, energy, usable_length]),
+            x_scale=np.asarray([energy, energy]),
             max_nfev=maximum_evaluations,
         )
         try:
@@ -1045,8 +1116,10 @@ def _search_complete_fixed_hardware_consistency(mirror: ManagedMirrorCandidate) 
             _named_residual_vector(final_report, residual_names)
         ) / np.asarray(residual_scales)
         candidates.append({
-            "biases_v": [float(value) for value in result.x[:2]],
-            "drift_length_solve_coordinate_mm": float(result.x[2]),
+            "initial_parameters": [float(value) for value in start],
+            "initial_scaled_residual_norm_2": float(_initial_norm),
+            "biases_v": [float(value) for value in result.x],
+            "manufactured_design_drift_length_L_mm": float(length),
             "scaled_residual_norm_2": float(np.linalg.norm(scaled)),
             "optimizer_success": bool(result.success),
             "optimizer_message": str(result.message),
@@ -1062,24 +1135,24 @@ def _search_complete_fixed_hardware_consistency(mirror: ManagedMirrorCandidate) 
             "limitations": ["No physical first-turn trial survived the declared bounded multi-start search."],
         }
     candidates.sort(key=lambda item: (item["scaled_residual_norm_2"], max(abs(v) for v in item["biases_v"])))
+    final_iterate_family = [dict(candidate) for candidate in candidates]
     best = candidates[0]
 
     def trial_from_values(values: tuple[float, ...]) -> JointL0Trial:
-        length = _finite(values[2], "Stripe drift length solve coordinate")
         return _fixed_hardware_joint_trial_at_turn(
-            mirror, widths, values[:2], entry + drift_sign * length,
+            mirror, widths, values, entry + drift_sign * length,
             eta_step, time_step, energy_step,
         )
 
-    best_parameters = (*best["biases_v"], best["drift_length_solve_coordinate_mm"])
+    best_parameters = tuple(best["biases_v"])
     best_trial = trial_from_values(tuple(best_parameters))
     numerics = contract["dual_stripe_l0"]["determination_numerics"]
     report, classification = finite_difference_joint_jacobian(
-        ("stripe_set_1_bias_v", "stripe_set_2_bias_v", "drift_length_L_mm"),
+        ("stripe_set_1_bias_v", "stripe_set_2_bias_v"),
         tuple(best_parameters),
-        (voltage_step, voltage_step, length_step),
+        (voltage_step, voltage_step),
         trial_from_values,
-        parameter_scales=(energy, energy, usable_length),
+        parameter_scales=(energy, energy),
         residual_scales=residual_scales,
         selected_residual_names=residual_names,
         relative_rank_tolerance=_finite(
@@ -1103,7 +1176,7 @@ def _search_complete_fixed_hardware_consistency(mirror: ManagedMirrorCandidate) 
         "global_energy_calibration_diagnostics": {
             "status": "pending_downstream_TE1_TE2_calibration",
             "residuals": energy_diagnostics,
-            "semantics": "Stripe baseline action is retained, but these three slopes do not determine v1, v2, or L; mirror-owned TE1/TE2 system calibration must close them after the drift core and P1/P2 handoff exist.",
+            "semantics": "Stripe baseline action is retained, but these three slopes do not determine v1 or v2; manufactured-design L is fixed, and mirror-owned TE1/TE2 system calibration must close the slopes after the drift core and P1/P2 handoff exist.",
         },
         "residual_scales": dict(zip(residual_names, residual_scales)),
         "determination": asdict(classification),
@@ -1125,7 +1198,13 @@ def _search_complete_fixed_hardware_consistency(mirror: ManagedMirrorCandidate) 
         "independent_cartesian_start_count": len(starts),
         "feasible_start_count": feasible_starts,
         "refined_start_count": len(refined_starts),
+        "refinement_start_selection": {
+            "method": "minimum_norm_anchor_then_farthest_point_in_top_ranked_pool",
+            "pool_multiplier": diversity_pool_multiplier,
+            "parameter_scales": [energy, energy],
+        },
         "distinct_final_iterate_count": len(candidates),
+        "final_iterate_family": final_iterate_family,
         "best_iterate": best,
         "paper_turning_normalization": {
             "constraint": "psi(1)-1=0",
@@ -1434,6 +1513,75 @@ def build_operating_seed_report(mirror_manifest: Path, downstream_contract: Path
         dimensionless_target
     )
     prism_definition = audit_two_prism_voltage_definition(mirror.contract)
+    initialization = mirror.contract["dual_stripe_l0"]["current_fixed_hardware_l0_l1_problem"][
+        "voltage_initialization"
+    ]
+    if initialization.get("authority") == (
+        "analytic_inverse_from_user_confirmed_manufactured_theory_basis"
+    ):
+        basis_coefficients = mirror.contract["dual_stripe_l0"]["dimensionless_paper_target"][
+            "published_printed_reference_c0_to_c5"
+        ]
+        analytic_family = []
+        for index, root in enumerate(mirror.root_family):
+            branch = derive_manufactured_basis_voltage_seed(
+                mirror.contract,
+                mirror_axial_width_w_mm=root.nominal_axial_width_w_mm,
+                basis_coefficients_c0_to_c5=basis_coefficients,
+            )
+            branch.update({
+                "mirror_root_index": index,
+                "source_l0_restart_index": root.source_l0_restart_index,
+                "mirror_root_gamma_degrees": root.gamma_degrees,
+                "dual_stripe_l0_response": analyze_dual_stripe_l0(
+                    mirror.contract, branch["stripe_biases_v"]
+                ),
+            })
+            analytic_family.append(branch)
+        analytic_family.sort(key=lambda item: (
+            abs(item["oscillation_count_residual"]),
+            item["response_matrix_condition_number_2"],
+            max(abs(value) for value in item["stripe_biases_v"]),
+        ))
+        selected = analytic_family[0]
+        return {
+            "schema_version": 3,
+            "role": "mrtof_dual_stripe_paper_theory_instance_specific_operating_seed_family",
+            "status": "analytic_manufactured_basis_voltage_inverse_complete",
+            "qualification": "solver_neutral_nominal_initialization__finite_3d_tuning_pending",
+            "managed_mirror_run_id": mirror.run_id,
+            "managed_mirror_manifest_sha256": mirror.manifest_sha256,
+            "basis_authority": {
+                "status": "user_confirmed_current_curves_generated_from_two_theory_bases_at_L340",
+                "coefficients_c0_to_c5": list(basis_coefficients),
+                "kappa_1_recomputed_from_printed_coefficients": selected["nominal_kappa_1"],
+                "remembered_unverified_kappa_values_are_not_contract_inputs": True,
+            },
+            "project_custom_node_solution": dimensionless_target,
+            "exact_original_time_component_emulation_audit": reference_emulation_audit,
+            "two_prism_voltage_definition": prism_definition,
+            "mirror_root_count": len(mirror.root_family),
+            "selected_mirror_root_index": selected["mirror_root_index"],
+            "selected_seed": selected,
+            "analytic_basis_inverse_root_family": analytic_family,
+            "voltage_adjustability": {
+                "mirror_B_through_E": "adjustable within the mirror theory and voltage constraints",
+                "stripe_v1_v2": "analytic nominal values; adjustable in finite-3D calibration",
+                "prism_P1_P2": "analytic transport initialization then finite-3D calibration",
+                "accelerator": "adjustable under its independent gain and first-focus contract",
+                "grounded_electrodes": "fixed at zero unless the hardware concept is explicitly changed",
+            },
+            "next_gate": (
+                "Select or solve a mirror-theory-qualified voltage root whose derived W closes the "
+                "reported K residual, then run the native 3-D Stripe/P1/P2 single-ion chain."
+            ),
+            "limitations": [
+                "The fitted CAD curves approximate their generating theory bases; raw projection residuals are reported without an invented acceptance threshold.",
+                "The voltage pair is an exact hard-boundary nominal inverse for the fitted basis scales, not a finite-field SIMION optimum.",
+                "The original-paper time-component target and the realized two-static-Stripe time response are reported separately.",
+                "P1/P2 finite-field transport, target K flight closure, and resolution remain pending.",
+            ],
+        }
     reports: list[dict[str, Any]] = []
     rejected: list[dict[str, Any]] = []
     consistency_family: list[dict[str, Any]] = []
@@ -1482,8 +1630,8 @@ def build_operating_seed_report(mirror_manifest: Path, downstream_contract: Path
         return attach_fixed_geometry_parameter_authority({
             "schema_version": 2,
             "role": "mrtof_dual_stripe_paper_theory_instance_specific_operating_seed_family",
-            "status": "no_two_equation_seed_found",
-            "qualification": "negative_analytic_seed_diagnostic__not_an_operating_point",
+            "status": "complete_fixed_hardware_consistency_evaluated__no_legacy_two_equation_seed",
+            "qualification": "complete_fixed_hardware_consistency_diagnostic__not_an_operating_point__P1_P2_pending",
             "managed_mirror_run_id": mirror.run_id,
             "managed_mirror_manifest_sha256": mirror.manifest_sha256,
             "paper_relation_identity": "same equations and dimensionless structure; instance coefficients, L, W, and voltages may differ",
@@ -1496,8 +1644,8 @@ def build_operating_seed_report(mirror_manifest: Path, downstream_contract: Path
             "complete_fixed_hardware_root_family": consistency_family,
             "rejected_mirror_roots": rejected,
             "limitations": [
-                "No qualified mirror root produced a native fixed-geometry K/spatial-return seed inside the declared search envelope.",
-                "This is a bounded numerical diagnostic, not a proof that no mathematical root exists outside that envelope.",
+                "The complete six-residual fixed-hardware searches are authoritative for their bounded diagnostics even though no qualified mirror root produced the separate legacy K/spatial-return-only seed.",
+                "Each complete search is a bounded numerical diagnostic, not a proof that no mathematical root exists outside its envelope.",
                 "No Stripe voltage, L, prism voltage, SIMION flight, or performance value is published.",
             ],
         }, mirror.contract)

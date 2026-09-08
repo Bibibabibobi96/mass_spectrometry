@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 from concurrent.futures import ProcessPoolExecutor
 import json
-import math
 import os
 import platform
 from pathlib import Path
@@ -22,6 +21,8 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l1 import (
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
     CandidateContractError,
+    derive_mirror_voltage_bounds,
+    derive_operating_energy_envelope,
     load_contract,
 )
 
@@ -244,7 +245,7 @@ def main() -> int:
     arguments = parser.parse_args()
     receipt = json.loads(arguments.l0_receipt.read_text(encoding="utf-8"))
     contract = load_contract(arguments.contract)
-    energies = tuple(float(value) for value in contract["mirror"]["theory_requirements"]["energies_v"])
+    energies = derive_operating_energy_envelope(contract).mirror_energy_nodes_v
     profile = contract["mirror"]["theory_requirements"]["l1_screen_profile"]
     result = screen_l1_family(
         receipt, energies, float(profile["position_probe_mm"]), float(profile["angle_probe_rad"]),
@@ -265,14 +266,7 @@ def main() -> int:
         "scipy_version": scipy.__version__,
     }
     result["l1_screen_profile"] = profile
-    envelope = contract["mirror"]["theory_requirements"]["voltage_envelope_v"]
-    keys = ("B", "C", "D", "E")
-    lower_bounds = tuple(
-        math.nextafter(max(energies), math.inf)
-        if key == "E" else float(envelope[key]["minimum_inclusive_v"])
-        for key in keys
-    )
-    upper_bounds = tuple(float(envelope[key]["maximum_inclusive_v"]) for key in keys)
+    lower_bounds, upper_bounds = derive_mirror_voltage_bounds(contract)
     spans = tuple(high - low for low, high in zip(lower_bounds, upper_bounds))
     stable_screens = [
         screen for screen in result["family_screens"]
