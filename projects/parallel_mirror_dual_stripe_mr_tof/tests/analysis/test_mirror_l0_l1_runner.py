@@ -180,6 +180,17 @@ class MirrorL0L1RunnerTests(unittest.TestCase):
         self.assertNotIn("SIMION", source)
         self.assertNotIn("Refine", source)
 
+    def test_operating_seed_runner_has_a_distinct_exact_k_input_mode(self) -> None:
+        source = OPERATING_SEED_RUNNER.read_text(encoding="utf-8-sig")
+        for token in (
+            "ExactKRunManifest",
+            "parent_exact_k_run_manifest.json",
+            "dual_stripe_exact_k_downstream_seed",
+            "--exact-k-manifest",
+            "MRTOF_DUAL_STRIPE_EXACT_K_OPERATING_SEED",
+        ):
+            self.assertIn(token, source)
+
     def test_exact_k_runner_is_managed_and_does_not_modify_solver_geometry(self) -> None:
         source = EXACT_K_RUNNER.read_text(encoding="utf-8-sig")
         for token in (

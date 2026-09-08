@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
   [string]$MirrorRunManifest = '',
+  [string]$ExactKRunManifest = '',
   [string]$ExistingOperatingSeedManifest = '',
   [string]$ContractPath = '',
   [string]$RunId = '',
@@ -12,9 +13,11 @@ $ErrorActionPreference = 'Stop'
 
 $projectId = 'parallel_mirror_dual_stripe_mr_tof'
 $authorityOnly = -not [string]::IsNullOrWhiteSpace($ExistingOperatingSeedManifest)
-if ($authorityOnly -eq (-not [string]::IsNullOrWhiteSpace($MirrorRunManifest))) {
-  throw 'Specify exactly one of -MirrorRunManifest or -ExistingOperatingSeedManifest.'
-}
+$exactKMode = -not [string]::IsNullOrWhiteSpace($ExactKRunManifest)
+$inputModeCount = [int]$authorityOnly +
+  [int](-not [string]::IsNullOrWhiteSpace($MirrorRunManifest)) +
+  [int]$exactKMode
+if ($inputModeCount -ne 1) { throw 'Specify exactly one input: -MirrorRunManifest, -ExactKRunManifest, or -ExistingOperatingSeedManifest.' }
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $workspaceRoot = Split-Path -Parent $repoRoot
 $python = if ($PythonExe) { [IO.Path]::GetFullPath($PythonExe) } else { Join-Path $repoRoot '.venv\Scripts\python.exe' }
@@ -22,16 +25,20 @@ if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Python 3.11 e
 $contract = if ($ContractPath) { (Resolve-Path -LiteralPath $ContractPath).Path } else { Join-Path $PSScriptRoot '..\config\simion_candidate_two_zone.json' }
 $parentManifest = if ($authorityOnly) {
   (Resolve-Path -LiteralPath $ExistingOperatingSeedManifest).Path
+} elseif ($exactKMode) {
+  (Resolve-Path -LiteralPath $ExactKRunManifest).Path
 } else {
   (Resolve-Path -LiteralPath $MirrorRunManifest).Path
 }
 if ([string]::IsNullOrWhiteSpace($RunId)) {
-  $suffix = if ($authorityOnly) { 'fixed-stripe-parameter-authority' } else { 'dual-stripe-operating-seed' }
+  $suffix = if ($authorityOnly) { 'fixed-stripe-parameter-authority' } elseif ($exactKMode) { 'dual-stripe-exact-k-operating-seed' } else { 'dual-stripe-operating-seed' }
   $RunId = (Get-Date -Format 'yyyyMMdd_HHmmss') + '__analysis__python__' + $suffix
 }
-$runMode = if ($authorityOnly) { 'fixed_stripe_parameter_authority' } else { 'dual_stripe_paper_theory_instance_seed' }
+$runMode = if ($authorityOnly) { 'fixed_stripe_parameter_authority' } elseif ($exactKMode) { 'dual_stripe_exact_k_downstream_seed' } else { 'dual_stripe_paper_theory_instance_seed' }
 $qualification = if ($authorityOnly) {
   'solver_neutral_parameter_authority__not_an_operating_point'
+} elseif ($exactKMode) {
+  'solver_neutral_nominal_initialization__P1_P2_and_finite_3d_pending'
 } else {
   'analytic_manufactured_basis_voltage_inverse__finite_3d_tuning_pending'
 }
@@ -87,6 +94,9 @@ try {
   if ($authorityOnly) {
     $frozenParentManifest = Copy-VerifiedRunInput -Source $parentManifest -Destination (Join-Path $inputDir 'parent_operating_seed_run_manifest.json')
     $frozenContract = $null
+  } elseif ($exactKMode) {
+    $frozenContract = Copy-VerifiedRunInput -Source $contract -Destination (Join-Path $inputDir 'simion_candidate_two_zone.json')
+    $frozenParentManifest = Copy-VerifiedRunInput -Source $parentManifest -Destination (Join-Path $inputDir 'parent_exact_k_run_manifest.json')
   } else {
     $frozenContract = Copy-VerifiedRunInput -Source $contract -Destination (Join-Path $inputDir 'simion_candidate_two_zone.json')
     $frozenParentManifest = Copy-VerifiedRunInput -Source $parentManifest -Destination (Join-Path $inputDir 'parent_mirror_run_manifest.json')
@@ -100,8 +110,10 @@ try {
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\dual_stripe_operating_seed.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\joint_mirror_stripe_l0.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_candidate_receipt.py',
+    'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_exact_k_operating_point.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_geometry_parameters.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_l0.py',
+    'projects\parallel_mirror_dual_stripe_mr_tof\analysis\mirror_l1.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\resolved_geometry.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\simion_candidate_reference.py',
     'projects\parallel_mirror_dual_stripe_mr_tof\analysis\two_prism_handoff.py',
@@ -119,6 +131,9 @@ try {
   $configuration.inputs = [ordered]@{}
   if ($authorityOnly) {
     $configuration.inputs.parent_operating_seed_run_manifest = $frozenParentManifest
+  } elseif ($exactKMode) {
+    $configuration.inputs.downstream_contract = $frozenContract
+    $configuration.inputs.parent_exact_k_run_manifest = $frozenParentManifest
   } else {
     $configuration.inputs.downstream_contract = $frozenContract
     $configuration.inputs.parent_mirror_run_manifest = $frozenParentManifest
@@ -134,12 +149,19 @@ try {
     if (-not (Test-RunFilesIdentical -Left $pair.source -Right $pair.frozen)) { throw "Frozen analytic source differs before execution: $($pair.source)" }
   }
 
-  $failureStage = if ($authorityOnly) { 'parameter_authority_derivation' } else { 'analytic_basis_voltage_inverse' }
+  $failureStage = if ($authorityOnly) { 'parameter_authority_derivation' } elseif ($exactKMode) { 'exact_k_analytic_basis_voltage_inverse' } else { 'analytic_basis_voltage_inverse' }
   $logPath = Join-Path $logDir 'dual_stripe_operating_seed.log'
   $pythonArguments = if ($authorityOnly) {
     @(
       '-m', 'projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_operating_seed',
       '--source-operating-seed-manifest', $frozenParentManifest,
+      '--output', $summary
+    )
+  } elseif ($exactKMode) {
+    @(
+      '-m', 'projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_operating_seed',
+      '--exact-k-manifest', $frozenParentManifest,
+      '--downstream-contract', $frozenContract,
       '--output', $summary
     )
   } else {
@@ -167,7 +189,7 @@ try {
   Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Status success `
     -Software @('Python 3.11', 'SciPy') -Outputs @($summary, $startupPath, $terminalPath, $retention, $logPath)
   $terminalized = $true
-  $marker = if ($authorityOnly) { 'MRTOF_FIXED_STRIPE_PARAMETER_AUTHORITY' } else { 'MRTOF_DUAL_STRIPE_OPERATING_SEED' }
+  $marker = if ($authorityOnly) { 'MRTOF_FIXED_STRIPE_PARAMETER_AUTHORITY' } elseif ($exactKMode) { 'MRTOF_DUAL_STRIPE_EXACT_K_OPERATING_SEED' } else { 'MRTOF_DUAL_STRIPE_OPERATING_SEED' }
   Write-Host "$marker=PASS RUN_ID=$RunId SUMMARY=$summary"
 } catch {
   if (-not $terminalized) {

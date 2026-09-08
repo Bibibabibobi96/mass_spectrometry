@@ -48,6 +48,9 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_candidate_recei
     ManagedMirrorCandidate,
     load_managed_mirror_candidate,
 )
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_exact_k_operating_point import (
+    load_managed_exact_k_operating_point,
+)
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import (
     derive_mirror_l0_slope_tolerance_per_v,
     reduced_period,
@@ -1676,23 +1679,94 @@ def build_operating_seed_report(mirror_manifest: Path, downstream_contract: Path
     }, mirror.contract)
 
 
+def build_operating_seed_report_from_exact_k(
+    exact_k_manifest: Path, downstream_contract: Path,
+) -> dict[str, Any]:
+    """Derive the two-Stripe nominal inverse at a verified exact-K mirror point."""
+    exact_k = load_managed_exact_k_operating_point(exact_k_manifest, downstream_contract)
+    target = solve_dimensionless_paper_target(exact_k.contract)
+    coefficients = target["selected_root"]["coefficients_c0_to_c5"]
+    seed = derive_manufactured_basis_voltage_seed(
+        exact_k.contract,
+        mirror_axial_width_w_mm=exact_k.axial_width_w_mm,
+        basis_coefficients_c0_to_c5=coefficients,
+        axial_energy_per_charge_v=exact_k.axial_energy_per_charge_v,
+    )
+    if not math.isclose(
+        _finite(seed["nominal_kappa_1"], "derived Stripe kappa"),
+        exact_k.kappa_1,
+        rel_tol=0.0,
+        abs_tol=1e-10,
+    ):
+        raise CandidateContractError("exact-K and downstream Stripe kappa identities differ")
+    seed["dual_stripe_l0_response"] = analyze_dual_stripe_l0(
+        exact_k.contract, seed["stripe_biases_v"]
+    )
+    return {
+        "schema_version": 4,
+        "role": "mrtof_dual_stripe_exact_k_downstream_operating_seed",
+        "status": "analytic_manufactured_basis_inverse_at_exact_k_complete",
+        "qualification": "solver_neutral_nominal_initialization__P1_P2_and_finite_3d_pending",
+        "exact_k_run_id": exact_k.run_id,
+        "exact_k_manifest_sha256": exact_k.manifest_sha256,
+        "parent_mirror_manifest_sha256": exact_k.parent_mirror_manifest_sha256,
+        "selected_exact_k_operating_point": {
+            "axial_energy_per_charge_v": exact_k.axial_energy_per_charge_v,
+            "mirror_axial_width_W_mm": exact_k.axial_width_w_mm,
+            "mirror_voltages_v": list(exact_k.design.electrode_voltages_v),
+            "kappa_1": exact_k.kappa_1,
+        },
+        "dimensionless_target": target,
+        "selected_seed": seed,
+        "voltage_adjustability": {
+            "mirror_B_through_E": "frozen by the referenced exact-K receipt for this downstream seed",
+            "stripe_v1_v2": "analytic nominal values; adjustable in finite-3D calibration",
+            "prism_P1_P2": "analytic transport initialization then finite-3D calibration",
+            "accelerator": "adjustable under its independent gain and first-focus contract",
+            "grounded_electrodes": "fixed at zero unless the hardware concept is explicitly changed",
+        },
+        "next_gate": (
+            "Use this exact-K-consistent Stripe seed only for the native 3-D P1/P2 and Stripe "
+            "single-ion chain; it does not yet validate finite fields, spatial return, or resolution."
+        ),
+        "limitations": [
+            "The Stripe biases remain hard-boundary analytic initial values, not finite-field SIMION optima.",
+            "P1/P2 transport, finite three-dimensional fields, bundle K distribution, and resolution remain pending.",
+            "No baseline voltage or solver file is modified by this receipt.",
+        ],
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mirror-manifest", type=Path)
+    parser.add_argument("--exact-k-manifest", type=Path)
     parser.add_argument("--downstream-contract", type=Path)
     parser.add_argument("--source-operating-seed-manifest", type=Path)
     parser.add_argument("--output", required=True, type=Path)
     arguments = parser.parse_args()
     if arguments.source_operating_seed_manifest is not None:
-        if arguments.mirror_manifest is not None or arguments.downstream_contract is not None:
+        if (
+            arguments.mirror_manifest is not None
+            or arguments.exact_k_manifest is not None
+            or arguments.downstream_contract is not None
+        ):
             parser.error("authority-only mode cannot also accept mirror or downstream inputs")
         report = build_parameter_authority_from_managed_seed(arguments.source_operating_seed_manifest)
         marker = "MRTOF_FIXED_STRIPE_PARAMETER_AUTHORITY"
     else:
-        if arguments.mirror_manifest is None or arguments.downstream_contract is None:
-            parser.error("search mode requires --mirror-manifest and --downstream-contract")
-        report = build_operating_seed_report(arguments.mirror_manifest, arguments.downstream_contract)
-        marker = "MRTOF_DUAL_STRIPE_OPERATING_SEED"
+        if arguments.downstream_contract is None:
+            parser.error("seed modes require --downstream-contract")
+        if (arguments.mirror_manifest is None) == (arguments.exact_k_manifest is None):
+            parser.error("specify exactly one of --mirror-manifest or --exact-k-manifest")
+        if arguments.exact_k_manifest is not None:
+            report = build_operating_seed_report_from_exact_k(
+                arguments.exact_k_manifest, arguments.downstream_contract,
+            )
+            marker = "MRTOF_DUAL_STRIPE_EXACT_K_OPERATING_SEED"
+        else:
+            report = build_operating_seed_report(arguments.mirror_manifest, arguments.downstream_contract)
+            marker = "MRTOF_DUAL_STRIPE_OPERATING_SEED"
     arguments.output.parent.mkdir(parents=True, exist_ok=True)
     arguments.output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
     print(f"{marker}=PASS OUTPUT={arguments.output}")

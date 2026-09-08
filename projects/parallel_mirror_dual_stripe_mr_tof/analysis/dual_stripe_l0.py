@@ -127,6 +127,7 @@ def derive_manufactured_basis_voltage_seed(
     *,
     mirror_axial_width_w_mm: float,
     basis_coefficients_c0_to_c5: Sequence[float],
+    axial_energy_per_charge_v: float | None = None,
 ) -> dict[str, Any]:
     """Reverse the manufactured theory-basis scales into nominal biases.
 
@@ -162,7 +163,11 @@ def derive_manufactured_basis_voltage_seed(
         "manufactured-design drift length",
     )
     width = _finite(mirror_axial_width_w_mm, "mirror-owned axial width W")
-    energy = _finite(nominal.get("energy_per_charge_v"), "nominal axial energy per charge")
+    energy = (
+        _finite(axial_energy_per_charge_v, "selected axial energy per charge")
+        if axial_energy_per_charge_v is not None
+        else _finite(nominal.get("energy_per_charge_v"), "nominal axial energy per charge")
+    )
     oscillations = nominal.get("target_oscillation_count")
     if (
         length <= 0.0
@@ -211,11 +216,16 @@ def derive_manufactured_basis_voltage_seed(
     total_energy = _finite(partition.get("total_kinetic_energy_ev"), "post-acceleration total energy")
     drift_energy = _finite(partition.get("drift_kinetic_energy_ev"), "drift-direction energy")
     fast_energy = _finite(partition.get("fast_reflection_kinetic_energy_ev"), "fast-reflection energy")
-    if drift_energy <= 0.0 or fast_energy != energy or total_energy != drift_energy + fast_energy:
+    if drift_energy <= 0.0:
+        raise CandidateContractError("post-acceleration drift energy must be positive")
+    if axial_energy_per_charge_v is None and (
+        fast_energy != energy or total_energy != drift_energy + fast_energy
+    ):
         raise CandidateContractError(
             "post-acceleration energy must equal drift energy plus the nominal axial energy"
         )
-    sin_theta = math.sqrt(drift_energy / total_energy)
+    selected_total_energy = drift_energy + energy
+    sin_theta = math.sqrt(drift_energy / selected_total_energy)
     predicted_oscillations = kappa * length / (width * sin_theta)
     required_width = kappa * length / (oscillations * sin_theta)
     target_band_lower = oscillations - 0.5
@@ -260,6 +270,8 @@ def derive_manufactured_basis_voltage_seed(
         "qualification": "solver_neutral_hard_boundary_initialization__finite_3d_tuning_pending",
         "manufactured_design_drift_length_L_mm": length,
         "mirror_owned_axial_width_W_mm": width,
+        "selected_axial_energy_per_charge_v": energy,
+        "selected_total_kinetic_energy_ev": selected_total_energy,
         "target_oscillation_count_K": oscillations,
         "predicted_continuous_oscillation_count": predicted_oscillations,
         "oscillation_count_residual": predicted_oscillations - oscillations,

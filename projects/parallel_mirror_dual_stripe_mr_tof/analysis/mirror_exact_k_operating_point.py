@@ -19,12 +19,10 @@ from typing import Any
 import numpy as np
 from scipy.optimize import brentq, least_squares
 
-from common.contracts.file_identity import file_sha256
+from common.contracts.file_identity import canonical_json_sha256, file_sha256
+from common.contracts.verify_run_manifest import record_path, verify_record
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import (
     endpoint_regularized_kappa,
-)
-from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_operating_seed import (
-    solve_dimensionless_paper_target,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_mirror_stripe_l0 import (
     classify_constraint_system,
@@ -32,6 +30,9 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_mirror_stripe_l0
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_candidate_receipt import (
     ManagedMirrorRoot,
     load_managed_mirror_candidate,
+)
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_geometry_parameters import (
+    derive_mirror_boundaries,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_l0 import (
     MirrorL0Design,
@@ -70,6 +71,20 @@ class ExactKPoint:
     normalized_period_slopes_per_v: tuple[float, ...]
 
 
+@dataclass(frozen=True)
+class ManagedExactKOperatingPoint:
+    """A verified system-level mirror point for downstream analytic seeding."""
+
+    design: MirrorL0Design
+    axial_energy_per_charge_v: float
+    axial_width_w_mm: float
+    kappa_1: float
+    contract: dict[str, Any]
+    run_id: str
+    manifest_sha256: str
+    parent_mirror_manifest_sha256: str
+
+
 def _finite(value: object, label: str) -> float:
     try:
         result = float(value)
@@ -80,6 +95,163 @@ def _finite(value: object, label: str) -> float:
     return result
 
 
+def _load_json(path: Path, label: str) -> dict[str, Any]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise CandidateContractError(f"{label} is not readable JSON: {path}") from error
+    if not isinstance(value, dict):
+        raise CandidateContractError(f"{label} must be a JSON object")
+    return value
+
+
+def _record_named(records: object, filename: str, label: str) -> dict[str, Any]:
+    if isinstance(records, dict):
+        candidates = records.values()
+    elif isinstance(records, list):
+        candidates = records
+    else:
+        raise CandidateContractError(f"exact-K manifest lacks {label} records")
+    matches = [
+        record for record in candidates
+        if isinstance(record, dict) and Path(str(record.get("path", ""))).name == filename
+    ]
+    if len(matches) != 1:
+        raise CandidateContractError(f"exact-K manifest must contain exactly one {label} record")
+    return matches[0]
+
+
+def load_managed_exact_k_operating_point(
+    manifest_path: Path,
+    downstream_contract_path: Path | None = None,
+) -> ManagedExactKOperatingPoint:
+    """Verify an exact-K run before using it as a downstream analytic input."""
+    path = manifest_path.resolve()
+    manifest_dir = path.parent
+    manifest = _load_json(path, "exact-K run manifest")
+    if (
+        manifest.get("schema_version") != 2
+        or manifest.get("project") != "parallel_mirror_dual_stripe_mr_tof"
+        or manifest.get("mode") != "analytic_mirror_exact_k_operating_point"
+        or manifest.get("status") != "success"
+    ):
+        raise CandidateContractError("exact-K manifest has the wrong identity or terminal status")
+    try:
+        verify_record("run_config", manifest["run_config"], base_dir=manifest_dir)
+        for name, record in manifest.get("inputs", {}).items():
+            verify_record(f"input {name}", record, base_dir=manifest_dir)
+        for index, record in enumerate(manifest.get("outputs", []), start=1):
+            verify_record(f"output {index}", record, base_dir=manifest_dir)
+    except (AssertionError, KeyError, TypeError, ValueError) as error:
+        raise CandidateContractError(f"exact-K manifest integrity failed: {error}") from error
+    contract_record = _record_named(
+        manifest.get("inputs"), "simion_candidate_two_zone.json", "frozen contract"
+    )
+    parent_record = _record_named(
+        manifest.get("inputs"), "parent_mirror_run_manifest.json", "parent mirror manifest"
+    )
+    summary_record = _record_named(manifest.get("outputs"), "summary.json", "summary")
+    contract = load_contract(record_path(contract_record, base_dir=manifest_dir))
+    downstream = (
+        load_contract(downstream_contract_path.resolve())
+        if downstream_contract_path is not None
+        else contract
+    )
+    if canonical_json_sha256(contract) != canonical_json_sha256(downstream):
+        raise CandidateContractError("downstream contract differs from the frozen exact-K contract")
+    summary = _load_json(record_path(summary_record, base_dir=manifest_dir), "exact-K summary")
+    if (
+        summary.get("role") != "mrtof_exact_k_mirror_energy_operating_point"
+        or summary.get("status") != "exact_k_system_point_found__peak_field_and_3d_validation_pending"
+        or summary.get("qualification") != "solver_neutral_2d_system_selection__not_simion_voltage_authority"
+    ):
+        raise CandidateContractError("exact-K summary is not an accepted solver-neutral Candidate")
+    identity = summary.get("input")
+    if not isinstance(identity, dict):
+        raise CandidateContractError("exact-K summary lacks input identity")
+    summary_contract = identity.get("contract")
+    summary_parent = identity.get("mirror_manifest")
+    if not isinstance(summary_contract, dict) or not isinstance(summary_parent, dict):
+        raise CandidateContractError("exact-K summary input identity is incomplete")
+    if (
+        str(summary_contract.get("sha256", "")).upper()
+        != str(contract_record.get("sha256", "")).upper()
+        or str(summary_parent.get("sha256", "")).upper()
+        != str(parent_record.get("sha256", "")).upper()
+    ):
+        raise CandidateContractError("exact-K summary hash chain differs from its manifest")
+    root_index = summary.get("selected_root_index")
+    roots = summary.get("roots")
+    if not isinstance(root_index, int) or isinstance(root_index, bool) or not isinstance(roots, list):
+        raise CandidateContractError("exact-K summary lacks a selected root")
+    try:
+        selected_root = roots[root_index]
+    except IndexError as error:
+        raise CandidateContractError("exact-K selected root index is out of range") from error
+    if (
+        not isinstance(selected_root, dict)
+        or selected_root.get("probe_convergence", {}).get("status") != "pass"
+        or selected_root.get("definition", {}).get("classification", {}).get("status") != "square_exact"
+    ):
+        raise CandidateContractError("exact-K selected root lacks convergence or square determination")
+    point = summary.get("selected_operating_point")
+    if not isinstance(point, dict):
+        raise CandidateContractError("exact-K summary lacks selected operating point")
+    energy = _finite(point.get("energy_per_charge_v"), "exact-K axial energy")
+    voltage_values = point.get("mirror_voltages_v")
+    if not isinstance(voltage_values, list) or len(voltage_values) != 5:
+        raise CandidateContractError("exact-K point lacks five mirror voltages")
+    voltages = tuple(_finite(value, "exact-K mirror voltage") for value in voltage_values)
+    if voltages[0] != 0.0:
+        raise CandidateContractError("exact-K point must keep A grounded")
+    lower, upper = derive_mirror_voltage_bounds(contract, selected_center_v=energy)
+    if any(
+        not low <= value <= high
+        for value, low, high in zip(voltages[1:], lower, upper, strict=True)
+    ):
+        raise CandidateContractError("exact-K point violates the selected energy voltage envelope")
+    target_k = _positive_integer(contract["nominal"]["target_oscillation_count"], "target K")
+    k_residual = _finite(point.get("exact_k_residual"), "exact-K residual")
+    tolerance = _finite(
+        contract["mirror"]["theory_requirements"]["exact_k_operating_point_selection"]
+        ["maximum_abs_numerical_k_residual"],
+        "exact-K residual tolerance",
+    )
+    if abs(k_residual) > tolerance or abs(
+        _finite(point.get("calculated_td_over_t0"), "exact-K ratio") - target_k
+    ) > tolerance:
+        raise CandidateContractError("exact-K point fails its numerical K residual gate")
+    boundaries = derive_mirror_boundaries(contract["mirror"])
+    design = MirrorL0Design(
+        transverse_half_gap_mm=_finite(
+            contract["mirror"]["theory_requirements"]["berdnikov_transverse_half_gap_mm"],
+            "Berdnikov transverse half gap",
+        ),
+        transition_z_mm=tuple(
+            _finite(value, "mirror transition")
+            for value in boundaries["analytic_transition_z_mm"]
+        ),
+        electrode_voltages_v=voltages,
+        terminal_electrode_plane_z_mm=_finite(
+            boundaries["terminal_electrode_plane_z_mm"], "mirror terminal plane"
+        ),
+        terminal_electrode_voltage_v=voltages[-1],
+    )
+    width = _finite(point.get("mirror_axial_width_w_mm"), "exact-K axial width")
+    if width <= 0.0:
+        raise CandidateContractError("exact-K axial width must be positive")
+    return ManagedExactKOperatingPoint(
+        design=design,
+        axial_energy_per_charge_v=energy,
+        axial_width_w_mm=width,
+        kappa_1=_finite(summary.get("nominal_kappa_1"), "exact-K kappa"),
+        contract=downstream,
+        run_id=str(manifest["run_id"]),
+        manifest_sha256=file_sha256(path),
+        parent_mirror_manifest_sha256=str(parent_record.get("sha256", "")).upper(),
+    )
+
+
 def _positive_integer(value: object, label: str) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
         raise CandidateContractError(f"{label} must be a positive integer")
@@ -87,6 +259,10 @@ def _positive_integer(value: object, label: str) -> int:
 
 
 def _paper_kappa(contract: dict[str, Any]) -> tuple[float, dict[str, Any]]:
+    from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_operating_seed import (
+        solve_dimensionless_paper_target,
+    )
+
     target = solve_dimensionless_paper_target(contract)
     selected = target["selected_root"]
     coefficients = tuple(

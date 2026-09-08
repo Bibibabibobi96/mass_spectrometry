@@ -32,6 +32,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_operating_
     _select_diverse_refinement_starts,
     _seed_profile,
     _solve_dimensionless_paper_target,
+    solve_dimensionless_paper_target,
     _stripe_search_domain,
     attach_fixed_geometry_parameter_authority,
     audit_exact_paper_component_emulation_by_static_stripes,
@@ -487,6 +488,20 @@ class DualStripeL0MathTest(unittest.TestCase):
                 mirror_axial_width_w_mm=586.9393396818346,
                 basis_coefficients_c0_to_c5=(0.83999, 0.75160, -7.52535, 14.0242, -9.17661, 2.08613),
             )
+
+    def test_manufactured_basis_inverse_accepts_a_verified_selected_axial_energy(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        target = solve_dimensionless_paper_target(contract)
+        result = derive_manufactured_basis_voltage_seed(
+            contract,
+            mirror_axial_width_w_mm=586.8617288702586,
+            basis_coefficients_c0_to_c5=target["selected_root"]["coefficients_c0_to_c5"],
+            axial_energy_per_charge_v=4165.847974123505,
+        )
+        self.assertAlmostEqual(result["selected_axial_energy_per_charge_v"], 4165.847974123505)
+        self.assertAlmostEqual(result["selected_total_kinetic_energy_ev"], 4170.847974123505)
+        self.assertAlmostEqual(result["predicted_continuous_oscillation_count"], 25.0, places=8)
+        self.assertAlmostEqual(result["oscillation_count_residual"], 0.0, places=8)
 
 
 if __name__ == "__main__":
