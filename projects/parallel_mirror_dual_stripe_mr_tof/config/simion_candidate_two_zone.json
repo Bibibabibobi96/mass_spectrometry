@@ -87,6 +87,16 @@
         "status": "three_scale_probe_convergence_required_before_selection",
         "semantics": "Numerical L1 screening profile for the complete L0-accepted family. Every stable seed is independently refined against the three mirror-only L0 slopes plus the L1 gamma selector, and distinct converged roots are retained rather than collapsing to the closest initial bracket. The deduplication tolerance is only a numerical root-identity threshold. The finite-difference probes are not physical beam widths; the active base and two larger scales must satisfy the declared adjacent gamma and Tbar convergence gates. Peak-field and three-dimensional validation remain separate."
       },
+      "exact_k_operating_point_selection": {
+        "status": "system_level_selection_over_mirror_qualified_energy_family",
+        "energy_bracket_node_count": 9,
+        "energy_root_absolute_tolerance_v": 1e-06,
+        "maximum_root_iterations": 60,
+        "maximum_abs_numerical_k_residual": 1e-06,
+        "finite_difference_voltage_step_v": 1.0,
+        "finite_difference_energy_step_v": 0.1,
+        "semantics": "For every trial accelerator net-gain centre, solve the three mirror-only L0 slope equations and select gamma=90 degrees on that mirror family. Then use T_D(theta_0)/T_0-K=0 only as a system-level selector over the resulting energy family. The K residual is not a fourth axial mirror equation and Stripe voltages never enter this solve. Root and finite-difference tolerances are float64 numerical controls, not physical performance thresholds."
+      },
       "targets": [
         "three_point_isochrony",
         "turning_point_margin",

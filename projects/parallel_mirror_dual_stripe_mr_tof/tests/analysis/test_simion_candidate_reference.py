@@ -374,6 +374,7 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         self.assertGreater(placement.grid_1_z_mm, placement.exit_grid_z_mm)
         self.assertEqual(energy.net_gain_center_minimum_v, 3500.0)
         self.assertEqual(energy.net_gain_center_maximum_v, 4500.0)
+        self.assertEqual(energy.selected_net_gain_center_v, 4000.0)
         self.assertEqual(energy.mirror_energy_nodes_v, (3900.0, 4000.0, 4100.0))
         self.assertEqual(energy.mirror_b_through_d_maximum_v, 3900.0)
         self.assertEqual(energy.post_acceleration_total_energy_reference_v, 4005.0)
@@ -381,6 +382,18 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         lower, upper = derive_mirror_voltage_bounds(contract)
         self.assertEqual(upper, (3900.0, 3900.0, 3900.0, 10000.0))
         self.assertGreater(lower[-1], 4100.0)
+
+    def test_selected_operating_energy_rederives_local_nodes_without_moving_search_bounds(self) -> None:
+        contract = load_contract(PROJECT / "config" / "simion_candidate_two_zone.json")
+        energy = derive_operating_energy_envelope(contract, selected_center_v=4200.0)
+        self.assertEqual(energy.net_gain_reference_center_v, 4000.0)
+        self.assertEqual(energy.selected_net_gain_center_v, 4200.0)
+        self.assertEqual((energy.net_gain_center_minimum_v, energy.net_gain_center_maximum_v), (3500.0, 4500.0))
+        self.assertEqual(energy.mirror_energy_nodes_v, (4100.0, 4200.0, 4300.0))
+        _lower, upper = derive_mirror_voltage_bounds(contract, selected_center_v=4200.0)
+        self.assertEqual(upper[:3], (4100.0, 4100.0, 4100.0))
+        with self.assertRaisesRegex(CandidateContractError, "outside the declared search range"):
+            derive_operating_energy_envelope(contract, selected_center_v=4500.1)
 
     def test_operating_energy_changes_rederive_mirror_nodes_and_voltage_cap(self) -> None:
         contract = load_contract(PROJECT / "config" / "simion_candidate_two_zone.json")

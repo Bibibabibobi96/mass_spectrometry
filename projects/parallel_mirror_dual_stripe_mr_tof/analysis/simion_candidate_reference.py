@@ -44,6 +44,7 @@ class OperatingEnergyEnvelope:
 
     pre_acceleration_kinetic_energy_v: float
     net_gain_reference_center_v: float
+    selected_net_gain_center_v: float
     net_gain_center_minimum_v: float
     net_gain_center_maximum_v: float
     particle_net_gain_half_range_v: float
@@ -59,7 +60,9 @@ def _number(value: Any, name: str) -> float:
     return result
 
 
-def derive_operating_energy_envelope(contract: dict[str, Any]) -> OperatingEnergyEnvelope:
+def derive_operating_energy_envelope(
+    contract: dict[str, Any], *, selected_center_v: float | None = None,
+) -> OperatingEnergyEnvelope:
     """Derive accelerator search and mirror-window energies from native inputs.
 
     The current mirror and Stripe theory deliberately use the selected net-gain
@@ -102,24 +105,32 @@ def derive_operating_energy_envelope(contract: dict[str, Any]) -> OperatingEnerg
         raise CandidateContractError(
             "nominal mirror/Stripe energy must equal the net-gain reference centre"
         )
-    nodes = (reference - particle_half_range, reference, reference + particle_half_range)
+    selected = reference if selected_center_v is None else _number(
+        selected_center_v, "selected net-gain center"
+    )
+    center_minimum = reference - center_half_range
+    center_maximum = reference + center_half_range
+    if not center_minimum <= selected <= center_maximum:
+        raise CandidateContractError("selected net-gain center lies outside the declared search range")
+    nodes = (selected - particle_half_range, selected, selected + particle_half_range)
     return OperatingEnergyEnvelope(
         pre_acceleration_kinetic_energy_v=pre_energy,
         net_gain_reference_center_v=reference,
-        net_gain_center_minimum_v=reference - center_half_range,
-        net_gain_center_maximum_v=reference + center_half_range,
+        selected_net_gain_center_v=selected,
+        net_gain_center_minimum_v=center_minimum,
+        net_gain_center_maximum_v=center_maximum,
         particle_net_gain_half_range_v=particle_half_range,
         mirror_energy_nodes_v=nodes,
         mirror_b_through_d_maximum_v=nodes[0],
-        post_acceleration_total_energy_reference_v=pre_energy + reference,
+        post_acceleration_total_energy_reference_v=pre_energy + selected,
     )
 
 
 def derive_mirror_voltage_bounds(
-    contract: dict[str, Any],
+    contract: dict[str, Any], *, selected_center_v: float | None = None,
 ) -> tuple[tuple[float, ...], tuple[float, ...]]:
     """Resolve B--E search bounds, including the energy-derived B--D cap."""
-    energy = derive_operating_energy_envelope(contract)
+    energy = derive_operating_energy_envelope(contract, selected_center_v=selected_center_v)
     envelope = contract["mirror"]["theory_requirements"]["voltage_envelope_v"]
     keys = ("B", "C", "D", "E")
     expected_cap = "minimum_particle_net_acceleration_gain_per_charge_v"

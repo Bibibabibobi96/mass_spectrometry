@@ -20,6 +20,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.mirror_candidate_recei
     MIRROR_QUALIFICATION,
     PROJECT_ID,
     load_managed_mirror_candidate,
+    mirror_stage_contract_projection,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_shape_diagnostic import (
     build_diagnostic,
@@ -32,6 +33,7 @@ CONTRACT = PROJECT / "config" / "simion_candidate_two_zone.json"
 RUNNER = PROJECT / "analysis" / "run_mirror_l0_l1_candidate.ps1"
 SHAPE_DIAGNOSTIC_RUNNER = PROJECT / "analysis" / "run_dual_stripe_shape_diagnostic.ps1"
 OPERATING_SEED_RUNNER = PROJECT / "analysis" / "run_dual_stripe_operating_seed.ps1"
+EXACT_K_RUNNER = PROJECT / "analysis" / "run_mirror_exact_k_operating_point.ps1"
 VALID_ENERGY_ENVELOPE_MIRROR_VOLTAGES = (
     0.0,
     -5303.6360420719,
@@ -178,6 +180,24 @@ class MirrorL0L1RunnerTests(unittest.TestCase):
         self.assertNotIn("SIMION", source)
         self.assertNotIn("Refine", source)
 
+    def test_exact_k_runner_is_managed_and_does_not_modify_solver_geometry(self) -> None:
+        source = EXACT_K_RUNNER.read_text(encoding="utf-8-sig")
+        for token in (
+            "New-RunPackage",
+            "Copy-VerifiedRunInput",
+            "Invoke-ArtifactCapacityGate",
+            "Apply-RunArtifactRetention",
+            "Write-VerifiedRunManifest",
+            "parent_mirror_run_manifest.json",
+            "mirror_exact_k_operating_point",
+            "T_D(theta_0)/T_0=K",
+            "geometry_change = 'none'",
+        ):
+            self.assertIn(token, source)
+        self.assertEqual(source.count("Complete-FailedRun"), 2)
+        self.assertNotIn("SIMION", source)
+        self.assertNotIn("Refine", source)
+
     def _managed_manifest(self, root: Path) -> Path:
         inputs = root / "inputs"
         results = root / "results"
@@ -290,6 +310,14 @@ class MirrorL0L1RunnerTests(unittest.TestCase):
             downstream_contract.write_text(json.dumps(document) + "\n", encoding="utf-8")
             with self.assertRaisesRegex(CandidateContractError, "mirror-stage inputs"):
                 load_managed_mirror_candidate(manifest, downstream_contract)
+
+    def test_downstream_exact_k_selection_controls_are_not_parent_mirror_inputs(self) -> None:
+        first = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        second = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        second["mirror"]["theory_requirements"]["exact_k_operating_point_selection"][
+            "energy_bracket_node_count"
+        ] += 2
+        self.assertEqual(mirror_stage_contract_projection(first), mirror_stage_contract_projection(second))
 
     def test_shape_diagnostic_consumes_current_contract_without_reusing_a_stale_whole_file(self) -> None:
         with TemporaryDirectory() as temporary:

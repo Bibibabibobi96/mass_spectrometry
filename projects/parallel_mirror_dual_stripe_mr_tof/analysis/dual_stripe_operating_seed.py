@@ -442,7 +442,7 @@ def _positive_integer(value: object, label: str) -> int:
     return value
 
 
-def _solve_dimensionless_paper_target(contract: dict[str, Any]) -> dict[str, Any]:
+def solve_dimensionless_paper_target(contract: dict[str, Any]) -> dict[str, Any]:
     """Solve the six paper conditions for the project-selected four nodes."""
     l0 = contract.get("dual_stripe_l0")
     settings = l0.get("dimensionless_paper_target") if isinstance(l0, dict) else None
@@ -567,6 +567,11 @@ def _solve_dimensionless_paper_target(contract: dict[str, Any]) -> dict[str, Any
         "selected_root": selected,
         "other_root_summaries": roots[1:],
     }
+
+
+# Retain the former private spelling for existing read-only callers and tests;
+# new cross-stage consumers use the public physics operation above.
+_solve_dimensionless_paper_target = solve_dimensionless_paper_target
 
 
 def _compare_fixed_profile_to_dimensionless_target(
@@ -1508,7 +1513,7 @@ def _build_operating_seed_report_for_mirror(mirror: ManagedMirrorCandidate) -> d
 def build_operating_seed_report(mirror_manifest: Path, downstream_contract: Path) -> dict[str, Any]:
     """Search every managed gamma-target mirror root before downstream selection."""
     mirror = load_managed_mirror_candidate(mirror_manifest, downstream_contract)
-    dimensionless_target = _solve_dimensionless_paper_target(mirror.contract)
+    dimensionless_target = solve_dimensionless_paper_target(mirror.contract)
     reference_emulation_audit = audit_exact_paper_component_emulation_by_static_stripes(
         dimensionless_target
     )

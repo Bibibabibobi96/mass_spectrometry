@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import math
 from dataclasses import dataclass
@@ -97,13 +98,15 @@ def mirror_stage_contract_projection(contract: dict[str, Any]) -> dict[str, Any]
     """Return exactly the contract fields owned or read by the mirror stage."""
     try:
         stripe = contract["dual_stripe"]
+        mirror = copy.deepcopy(contract["mirror"])
+        mirror["theory_requirements"].pop("exact_k_operating_point_selection", None)
         return {
             "project_id": contract["project_id"],
             "geometry_authority_model": contract["geometry_authority"]["model"],
             "coordinate_frame_id": contract["coordinate_system"]["frame_id"],
             "nominal_energy_per_charge_v": contract["nominal"]["energy_per_charge_v"],
             "accelerator_energy_contract": contract["accelerator_energy_contract"],
-            "mirror": contract["mirror"],
+            "mirror": mirror,
             "load_contract_stripe_validation": {
                 "physical_electrode_count": stripe["physical_electrode_count"],
                 "theoretical_response_count": stripe["theoretical_response_count"],
