@@ -88,14 +88,14 @@
         "semantics": "Numerical L1 screening profile for the complete L0-accepted family. Every stable seed is independently refined against the three mirror-only L0 slopes plus the L1 gamma selector, and distinct converged roots are retained rather than collapsing to the closest initial bracket. The deduplication tolerance is only a numerical root-identity threshold. The finite-difference probes are not physical beam widths; the active base and two larger scales must satisfy the declared adjacent gamma and Tbar convergence gates. Peak-field and three-dimensional validation remain separate."
       },
       "exact_k_operating_point_selection": {
-        "status": "system_level_selection_over_mirror_qualified_energy_family",
+        "status": "paper_normalized_adiabatic_selection_over_mirror_qualified_energy_family",
         "energy_bracket_node_count": 9,
         "energy_root_absolute_tolerance_v": 1e-06,
         "maximum_root_iterations": 60,
         "maximum_abs_numerical_k_residual": 1e-06,
         "finite_difference_voltage_step_v": 1.0,
         "finite_difference_energy_step_v": 0.1,
-        "semantics": "For every trial accelerator net-gain centre, solve the three mirror-only L0 slope equations and select gamma=90 degrees on that mirror family. Then use T_D(theta_0)/T_0-K=0 only as a system-level selector over the resulting energy family. The K residual is not a fourth axial mirror equation and Stripe voltages never enter this solve. Root and finite-difference tolerances are float64 numerical controls, not physical performance thresholds."
+        "semantics": "For every trial accelerator net-gain centre, solve the three mirror-only L0 slope equations and select gamma=90 degrees on that mirror family. T_0 and W are strictly the bare-mirror quantities with both Stripe biases zero. T_D(theta_0)/T_0-K=0 is only the paper-normalized adiabatic selector over that family: it is not a fourth axial mirror equation and is not the actual fast-phase count after the finite Stripe biases are enabled. The complete analyser must separately integrate the y-dependent local period T_z(E,y)=T_0(E)+partial_E DeltaJ_stripe(E,y), require the same mirror-turn phase on return, and verify the discrete turn sequence in SIMION. Root and finite-difference tolerances are float64 numerical controls, not physical performance thresholds."
       },
       "targets": [
         "three_point_isochrony",
@@ -1269,10 +1269,10 @@
       "sampling_multipliers": [1, 2, 4],
       "fit_semantics": "Use the native frozen B-splines over their complete active span, subtract each y=0 baseline, and fit the declared physical-coordinate structures by linear least squares. Report raw coefficients, residuals and sampling convergence without inventing an unapproved CAD-fit tolerance. L is supplied by the manufactured-design contract, not inferred from the fit."
     },
-    "coordinate_definition": "eta=(y-y_stripe_entrance)/signed_drift_length_L; eta_turning=1. For this frozen CAD/theory contract y_stripe_entrance=0 mm is the common endpoint of both theory Stripe functions S_i(y), not a bounding-box edge. The nominal slow drift proceeds toward negative project y; signed L carries that direction while reported |L| is positive.",
+    "coordinate_definition": "eta=(y-y_drift_phase_origin)/signed_drift_length_L; eta_turning=1. For this frozen CAD/theory contract y_drift_phase_origin=0 mm is both the common endpoint of the two theory Stripe functions S_i(y) and the selected slow-drift phase origin at the first negative-z mirror turn after P2 and the mandatory pre-origin Stripe traversal. It is not the P2 exit or a bounding-box edge. The nominal slow drift proceeds toward negative project y; signed L carries that direction while reported |L| is positive.",
     "theory_stripe_entrance": {
       "project_y_mm": 0.0,
-      "definition": "The P2-to-Stripe hand-off plane is the y=0 endpoint of both active S_i(y) functions. S_i(0) is the baseline action term in the downstream full-analyser period; it is not an input to the independent mirror-voltage solve.",
+      "definition": "The y=0 endpoint of both active S_i(y) functions is the selected slow-drift phase origin at the first negative-z mirror turn after P2 and after the ion has already traversed the intervening physical Stripe bands. It is not the P2 exit. S_i(0) is the baseline action term in the downstream full-analyser period; it is not an input to the independent mirror-voltage solve.",
       "excluded_mechanical_extension_y_mm": [0.0, 2.0],
       "exclusion_semantics": "The CAD planar terminal extension provides mechanical continuity only. It is not a theory-profile extrapolation, a separate drift coordinate origin, or a mirror z-turning point."
     },
@@ -1441,13 +1441,10 @@
         "full_analyser_period_slope_at_4100V"
       ],
       "prism_transport_named_residual_blocks": [
-        "P1_P2_to_Stripe_position_x_mm",
-        "P1_P2_to_Stripe_position_y_mm",
-        "P1_P2_to_Stripe_position_z_mm",
-        "P1_P2_to_Stripe_direction_y",
-        "P1_P2_to_Stripe_direction_z"
+        "P1_P2_first_negative_turn_y_mm",
+        "P1_P2_slow_kinetic_energy_per_charge_v"
       ],
-      "determination_semantics": "The frozen mirror geometry and the three axial energy conditions define a four-voltage mirror-only L0 family. Its three-row Jacobian and feasibility checks must be published with that family; an L1 mirror-only selection receipt identifies any representative member and its transverse diagnostics without inventing a fourth axial residual. Each qualified mirror root is then tested against the fixed-hardware Stripe drift problem with only the two Stripe biases as solve coordinates; L=340 mm is a frozen input of this manufactured design. Normalizing the pseudopotential at that physical turn makes psi(1)=1 an identity; target K, kappa-prime, and four time-platform residuals form the six-condition overdetermined drift-consistency test. The three full-analyser local energy slopes are still evaluated with the Stripe baseline action retained, but they are downstream global-calibration diagnostics owned by a newly derived mirror TE1/TE2 Jacobian, not extra equations assigned to v1 or v2. The injection angle and drift/fast energy partition are derived from the same physical turn. P1/P2 voltages belong to the subsequent finite-field transport problem and are not allowed to make the Stripe drift conditions appear solvable. Mirror gamma remains an upstream receipt gate and is never repeated downstream. P1/P2 transport expands into three position and two tangent-direction components, never a norm or arbitrary scalar count. Each owning problem separately uses its contract-scaled Jacobian SVD and left-null residual to distinguish underdetermined, square_exact, overdetermined_consistent, and locally_incompatible states."
+      "determination_semantics": "The frozen mirror geometry and the three axial energy conditions define a four-voltage mirror-only L0 family. Its three-row Jacobian and feasibility checks must be published with that family; an L1 mirror-only selection receipt identifies any representative member and its transverse diagnostics without inventing a fourth axial residual. Each qualified mirror root is then tested against the fixed-hardware Stripe drift problem with only the two Stripe biases as solve coordinates; L=340 mm is a frozen input of this manufactured design. Normalizing the pseudopotential at that physical turn makes psi(1)=1 an identity; target K, kappa-prime, and four time-platform residuals form the six-condition overdetermined drift-consistency test. The three full-analyser local energy slopes are still evaluated with the Stripe baseline action retained, but they are downstream global-calibration diagnostics owned by a newly derived mirror TE1/TE2 Jacobian, not extra equations assigned to v1 or v2. The injection angle and drift/fast energy partition are derived from the same physical turn. P1/P2 voltages belong to the subsequent finite-field transport problem and are not allowed to make the Stripe drift conditions appear solvable. Mirror gamma remains an upstream receipt gate and is never repeated downstream. The two P1/P2 voltage residuals are the first negative mirror-turn y coordinate and the slow kinetic energy; x symmetry, event-localized v_z=0, and the observed turn z are diagnostics rather than additional voltage equations. Each owning problem separately uses its contract-scaled Jacobian SVD and left-null residual to distinguish underdetermined, square_exact, overdetermined_consistent, and locally_incompatible states."
     },
     "derived_fields_only_after_owning_problem_candidate": {
       "drift_length_L_mm": "frozen manufactured-design input, currently 340 mm; future newly designed hardware may instead declare or derive another L",
@@ -1886,15 +1883,16 @@
       "electrode_id": 17,
       "status": "pre_stripe_injection_pending",
       "voltage_v": 0.0,
-      "required_input": "geometry-constrained source/focus -> P1 -> P2 -> Stripe entrance phase-space contract; P2 is not a K=25-return device"
+      "required_input": "geometry-constrained source/focus -> P1 -> P2 -> mandatory pre-origin Stripe traversal -> negative-mirror-turn drift-origin contract; P2 is not a K=25-return device"
     },
     "two_prism_injection_l0": {
-      "status": "source_to_stripe_joint_transport_pending",
+      "status": "source_to_negative_turn_joint_transport_pending",
       "path_order": [
         "accelerator_focus",
         "prism_1_id_16",
         "prism_2_id_17",
-        "stripe_entrance"
+        "pre_origin_stripe_traversal",
+        "negative_z_mirror_turn_drift_origin"
       ],
       "frozen_inputs_before_three_dimensional_shooting": [
         "accelerator_focus_source_reference_position_direction_and_energy",
@@ -1907,19 +1905,27 @@
       ],
       "derived_per_joint_trial": [
         "dual_stripe_L_W_kappa_theta_target_from_same_Mirror_Stripe_trial",
-        "Stripe_entrance_project_y_event_and_yz_direction_target",
-        "P1_P2_voltage_pair_and_actual_Stripe_entrance_phase_space"
+        "first_negative_z_mirror_turn_project_y_target_and_slow_energy_target",
+        "P1_P2_voltage_pair_and_actual_negative_turn_phase_space"
       ],
-      "stripe_entrance_fast_phase_authority": {
-        "status": "missing",
-        "required": "a named design authority for the fast-reflection phase, normally target_project_z_mm at the physical y=0 Stripe crossing",
+      "drift_phase_origin_authority": {
+        "status": "derived_design_authority",
+        "event": "first_negative_z_mirror_turn_after_P2_and_after_pre_origin_Stripe_traversal",
+        "target_project_y_mm": 0.0,
+        "target_project_x_mm": 0.0,
+        "target_project_z_rule": "not_an_independent_target__observe_the_Stripe_on_full_field_turn__bare_mirror_turn_is_seed_only",
+        "fast_velocity_condition": "v_z=0 with outward negative-z motion reversing toward positive z",
+        "slow_velocity_condition": "v_y<0 with drift kinetic energy derived from the compatible Mirror-Stripe solution",
+        "return_phase_condition": "after the complete slow-drift excursion, return to the same negative-z mirror-turn phase at y=0 with v_y>0",
+        "source": "user_selected_turning_phase_boundary_2026-09-08",
         "forbidden_substitutions": [
+          "fixed_CAD_z_coordinate",
           "prism_triangle_centroid",
           "grounded_shield_aperture_centroid",
           "CAD_bounding_box_center"
         ]
       },
-      "semantics": "CAD triangles and shields constrain mechanical clearance only. The accelerator-focus ray is frozen input. The joint Mirror-Stripe trial derives the y=0 Stripe crossing event and required yz incidence direction, but not the fast-reflection phase or target z at that event. Those provide only one independent voltage-sensitive target for two prism voltages, so the voltage pair remains structurally underdetermined until a separate fast-phase design authority is declared. Finite three-dimensional P1/P2 shooting then derives the actual phase-space and must demonstrate a compatible full-column-rank scaled Jacobian. P1/P2 effective planes are required only when forming an auxiliary hard-boundary seed, not for the final three-dimensional residual; no triangle, aperture, or CAD bounding-box centroid may substitute for the missing phase."
+      "semantics": "CAD triangles and shields constrain mechanical clearance only. The accelerator-focus ray is frozen input. In the fixed manufactured topology the P2 ray must traverse the physical negative-z Stripe bands before the slow-drift phase origin; therefore a y=0 P2-exit event is forbidden. The two voltage-sensitive targets are the first negative-z mirror-turn y coordinate and the slow kinetic energy supplied by the compatible Mirror-Stripe solution. At that actual Stripe-on turn, v_z=0 follows from event localization and z is a full-field trajectory result; the bare-mirror turning coordinate is only an analytic seed/diagnostic and is never imposed as a third target. Finite three-dimensional P1/P2 shooting must still demonstrate a compatible full-column-rank scaled Jacobian. P1/P2 effective planes are required only when forming an auxiliary hard-boundary seed."
     }
   },
   "accelerator": {
@@ -2007,12 +2013,13 @@
       "state_authority": "prism_transport.energy_partition and first_prism.entry_reference"
     },
     "full_mrtof_center": {
-      "status": "blocked_pending_two_prism_fast_phase",
+      "status": "blocked_pending_coupled_stripe_phase_and_two_prism_finite_3d",
       "publishable": false,
       "required_inputs": [
-        "a mirror-theory-qualified root satisfying T_D(theta_0)/T_0=target_K",
+        "a mirror-theory-qualified root satisfying the paper-normalized adiabatic T_D(theta_0)/T_0 target",
+        "a complete-analyser fast-phase integral using the y-dependent Stripe-on local period and returning to the same negative mirror-turn phase",
         "a full-rank compatible P1/P2 finite-three-dimensional transport solution",
-        "the resulting y=0 Stripe-entry position and velocity"
+        "the resulting first-negative-mirror-turn state at y=0 after the mandatory pre-origin Stripe traversal"
       ],
       "forbidden_substitution": "mirror_internal_diagnostic"
     },

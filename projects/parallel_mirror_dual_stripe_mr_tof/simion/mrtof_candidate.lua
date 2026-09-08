@@ -71,11 +71,25 @@ end
 local function emit_cycle_events(events)
   for _,event in ipairs(events) do
     if event.kind == 'mirror_turn' and event.accepted then
-      local n = event.half_cycles + 1
+      local n = event.is_phase_origin and 0 or event.half_cycles + 1
       print(string.format('MRTOF_EVENT turn ion=%d n=%d t_us=%.12g z_mm=%.12g',
         ion_number, n, event.t_us, event.z_mm))
-      print(string.format('MRTOF_EVENT fast_turn ion=%d n=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g',
-        ion_number, n, event.t_us, event.x_mm, event.y_mm, event.z_mm))
+      print(string.format('MRTOF_EVENT fast_turn ion=%d n=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
+        ion_number, n, event.t_us, event.x_mm, event.y_mm, event.z_mm,
+        event.vx_mm_us, event.vy_mm_us, event.vz_mm_us))
+    elseif event.kind == 'drift_phase_origin' then
+      print(string.format('MRTOF_EVENT drift_phase_origin ion=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
+        ion_number, event.t_us, event.x_mm, event.y_mm, event.z_mm,
+        event.vx_mm_us, event.vy_mm_us, event.vz_mm_us))
+    elseif event.kind == 'drift_phase_return' then
+      print(string.format('MRTOF_EVENT drift_phase_return ion=%d k=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
+        ion_number, event.k, event.t_us, event.x_mm, event.y_mm, event.z_mm,
+        event.vx_mm_us, event.vy_mm_us, event.vz_mm_us))
+      if event.k == target_oscillation_count and not target_k_emitted[ion_number] then
+        target_k_emitted[ion_number] = true
+        print(string.format('MRTOF_EVENT target_k ion=%d k=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g',
+          ion_number, event.k, event.t_us, event.x_mm, event.y_mm, event.z_mm))
+      end
     elseif event.kind == 'central_plane' and event.stage == 'main_drift' then
       crossings[ion_number] = (crossings[ion_number] or 0) + 1
       local n = crossings[ion_number]
@@ -160,23 +174,22 @@ function segment.other_actions()
     end
     local counter = cycle_counters[ion_number]
     local state = counter:state()
-    if stripe_fraction then
-      local crossing = cycle_sample(
-        px + stripe_fraction*(ion_px_mm-px), 0,
-        pz + stripe_fraction*(ion_pz_mm-pz),
-        pvx + stripe_fraction*(ion_vx_mm-pvx),
-        pvy + stripe_fraction*(ion_vy_mm-pvy),
-        pvz + stripe_fraction*(ion_vz_mm-pvz),
-        pt + stripe_fraction*(ion_time_of_flight-pt))
-      local vy = pvy + stripe_fraction*(ion_vy_mm-pvy)
-      if state.stage == 'before_main_drift' and vy < 0 then
-        emit_cycle_events(counter:enter_main_drift(crossing))
-      elseif state.stage == 'main_drift' and vy > 0 then
-        state = emit_cycle_events(counter:end_main_drift(crossing))
-        if state.sequence_valid and state.cycles == target_oscillation_count and not target_k_emitted[ion_number] then
-          target_k_emitted[ion_number] = true
-          print(string.format('MRTOF_EVENT target_k ion=%d k=%d t_us=%.12g x_mm=%.12g y_mm=0 z_mm=%.12g',
-            ion_number, target_oscillation_count, crossing.t_us, crossing.x_mm, crossing.z_mm))
+    local dz = ion_pz_mm - pz
+    if pz > first_prism_l0.target_plane_z_mm and ion_pz_mm <= first_prism_l0.target_plane_z_mm then
+      local fraction = (first_prism_l0.target_plane_z_mm-pz) / dz
+      local vz = pvz + fraction*(ion_vz_mm-pvz)
+      if vz < 0 then
+        p1_crossings[ion_number] = (p1_crossings[ion_number] or 0) + 1
+        local p1_crossing = cycle_sample(
+          px + fraction*(ion_px_mm-px), py + fraction*(ion_py_mm-py), first_prism_l0.target_plane_z_mm,
+          pvx + fraction*(ion_vx_mm-pvx), pvy + fraction*(ion_vy_mm-pvy), vz,
+          pt + fraction*(ion_time_of_flight-pt))
+        print(string.format('MRTOF_EVENT p1_plane ion=%d n=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
+          ion_number, p1_crossings[ion_number], p1_crossing.t_us,
+          p1_crossing.x_mm, p1_crossing.y_mm, p1_crossing.z_mm,
+          p1_crossing.vx_mm_us, p1_crossing.vy_mm_us, p1_crossing.vz_mm_us))
+        if state.stage == 'before_main_drift' then
+          state = emit_cycle_events(counter:arm_main_drift(p1_crossing))
         end
       end
     end
@@ -207,21 +220,9 @@ function segment.other_actions()
         pt + fraction*(ion_time_of_flight-pt), px + fraction*(ion_px_mm-px), pz + fraction*(ion_pz_mm-pz),
         pvx + fraction*(ion_vx_mm-pvx), vy, pvz + fraction*(ion_vz_mm-pvz)))
       if stripe_crossings[ion_number] == 1 and vy < 0 then
-        print(string.format('MRTOF_EVENT p2_to_stripe ion=%d t_us=%.12g x_mm=%.12g y_mm=0 z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
+        print(string.format('MRTOF_EVENT pre_origin_y0_crossing ion=%d t_us=%.12g x_mm=%.12g y_mm=0 z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
           ion_number, pt + fraction*(ion_time_of_flight-pt), px + fraction*(ion_px_mm-px), pz + fraction*(ion_pz_mm-pz),
           pvx + fraction*(ion_vx_mm-pvx), vy, pvz + fraction*(ion_vz_mm-pvz)))
-      end
-    end
-    local dz = ion_pz_mm - pz
-    if pz > first_prism_l0.target_plane_z_mm and ion_pz_mm <= first_prism_l0.target_plane_z_mm then
-      local fraction = (first_prism_l0.target_plane_z_mm-pz) / dz
-      local vz = pvz + fraction*(ion_vz_mm-pvz)
-      if vz < 0 then
-        p1_crossings[ion_number] = (p1_crossings[ion_number] or 0) + 1
-        print(string.format('MRTOF_EVENT p1_plane ion=%d n=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-          ion_number, p1_crossings[ion_number], pt + fraction*(ion_time_of_flight-pt),
-          px + fraction*(ion_px_mm-px), py + fraction*(ion_py_mm-py), first_prism_l0.target_plane_z_mm,
-          pvx + fraction*(ion_vx_mm-pvx), pvy + fraction*(ion_vy_mm-pvy), vz))
       end
     end
     if not detected[ion_number] and dz < 0 and pz > detector_z and ion_pz_mm <= detector_z then

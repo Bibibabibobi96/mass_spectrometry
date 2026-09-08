@@ -13,7 +13,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_handoff impo
     TwoPrismTransportObservation,
     audit_two_prism_voltage_definition,
     observation_from_simion_events,
-    stripe_handoff_residuals,
+    prism_turn_handoff_residuals,
 )
 
 
@@ -29,81 +29,80 @@ class TwoPrismHandoffTest(unittest.TestCase):
             (project / "config" / "simion_candidate_two_zone.json").read_text(encoding="utf-8")
         )
 
-    def test_current_contract_is_underdetermined_without_fast_phase(self) -> None:
+    def test_current_contract_uses_derived_negative_turn_phase(self) -> None:
         audit = audit_two_prism_voltage_definition(self.contract)
-        self.assertEqual(audit["status"], "structurally_underdetermined_missing_fast_phase")
+        self.assertEqual(audit["status"], "two_physical_targets_declared__finite_3d_jacobian_pending")
         self.assertEqual(audit["unknown_count"], 2)
-        self.assertEqual(audit["independent_voltage_constraint_rank_before_finite_3d_jacobian"], 1)
-        self.assertEqual(audit["nullity_before_finite_3d_jacobian"], 1)
-        self.assertEqual(audit["publication_gate"], "closed")
+        self.assertEqual(len(audit["independent_target_conditions_before_finite_3d_jacobian"]), 2)
+        self.assertIsNone(audit["independent_voltage_constraint_rank_before_finite_3d_jacobian"])
+        self.assertIsNone(audit["nullity_before_finite_3d_jacobian"])
+        self.assertIn("full_column_rank", audit["publication_gate"])
         self.assertEqual(
-            audit["mechanical_fast_phase_acceptance"]["project_z_open_interval_mm"],
+            audit["p2_exit_mechanical_acceptance"]["project_z_open_interval_mm"],
             [-40.0, 40.0],
         )
-        self.assertIn("does not select", audit["mechanical_fast_phase_acceptance"]["semantics"])
+        self.assertIn("later drift-origin turn", audit["p2_exit_mechanical_acceptance"]["semantics"])
 
-    def test_explicit_fast_phase_still_requires_finite_3d_rank(self) -> None:
+    def test_missing_derived_phase_authority_fails_closed(self) -> None:
         contract = copy.deepcopy(self.contract)
-        contract["prism_transport"]["two_prism_injection_l0"]["stripe_entrance_fast_phase_authority"] = {
-            "status": "design_authority",
-            "target_project_z_mm": 0.0,
-            "source": "user_selected_central_mirror_phase",
-        }
-        audit = audit_two_prism_voltage_definition(contract)
-        self.assertEqual(audit["status"], "two_target_coordinates_declared__finite_3d_jacobian_pending")
-        self.assertIsNone(audit["independent_voltage_constraint_rank_before_finite_3d_jacobian"])
-        self.assertIn("full_column_rank", audit["publication_gate"])
-
-    def test_cad_centroid_cannot_supply_fast_phase(self) -> None:
-        contract = copy.deepcopy(self.contract)
-        contract["prism_transport"]["two_prism_injection_l0"]["stripe_entrance_fast_phase_authority"] = {
-            "status": "design_authority",
-            "target_project_z_mm": 0.0,
-            "source": "CAD_bounding_box_center",
-        }
+        del contract["prism_transport"]["two_prism_injection_l0"]["drift_phase_origin_authority"]
         with self.assertRaises(CandidateContractError):
             audit_two_prism_voltage_definition(contract)
 
-    def test_exact_state_has_five_zero_independent_components(self) -> None:
-        state = _state((0.0, -20.0, -40.0), (0.0, -2.0, -10.0))
-        observation = TwoPrismTransportObservation(state, state, state, state, True)
-        residuals = stripe_handoff_residuals(observation, state.position_mm, state.unit_direction_project)
-        self.assertEqual(len(residuals), 5)
+    def test_fixed_cad_z_cannot_replace_derived_turn(self) -> None:
+        contract = copy.deepcopy(self.contract)
+        phase = contract["prism_transport"]["two_prism_injection_l0"]["drift_phase_origin_authority"]
+        phase["target_project_z_mm"] = -281.9
+        with self.assertRaises(CandidateContractError):
+            audit_two_prism_voltage_definition(contract)
+
+    def test_exact_state_has_two_zero_independent_components(self) -> None:
+        state = _state((0.0, 0.0, -40.0), (0.0, -2.0, 0.0))
+        observation = TwoPrismTransportObservation(state, state, state, True)
+        slow_energy = 0.5 * 524.0 * 1.66053906660e-27 * (2000.0 ** 2) / 1.602176634e-19
+        residuals = prism_turn_handoff_residuals(
+            observation,
+            target_turn_y_mm=0.0,
+            target_slow_kinetic_energy_per_charge_v=slow_energy,
+            particle_mass_th=524.0,
+            charge_state=1,
+        )
+        self.assertEqual(len(residuals), 2)
         self.assertTrue(all(value == 0.0 for _name, value in residuals))
 
-    def test_position_and_two_direction_components_remain_separate(self) -> None:
+    def test_turn_position_and_slow_energy_components_remain_separate(self) -> None:
         source = _state((0.0, 0.0, 0.0), (0.0, 0.0, -1.0))
-        actual = _state((1.0, 2.0, 3.0), (1.0, 0.0, -1.0))
-        observation = TwoPrismTransportObservation(source, source, source, actual, True)
-        residuals = dict(stripe_handoff_residuals(observation, (0.0, 0.0, 0.0), (0.0, 0.0, -1.0)))
-        self.assertEqual(residuals["P1_P2_to_Stripe_position_x_mm"], 1.0)
-        self.assertEqual(residuals["P1_P2_to_Stripe_position_y_mm"], 2.0)
-        self.assertEqual(residuals["P1_P2_to_Stripe_position_z_mm"], 3.0)
-        self.assertGreater(
-            abs(residuals["P1_P2_to_Stripe_direction_tangent_1"])
-            + abs(residuals["P1_P2_to_Stripe_direction_tangent_2"]),
-            0.0,
-        )
+        actual = _state((0.0, 2.0, -30.0), (0.0, -2.0, 0.0))
+        observation = TwoPrismTransportObservation(source, source, actual, True)
+        residuals = dict(prism_turn_handoff_residuals(
+            observation,
+            target_turn_y_mm=0.0,
+            target_slow_kinetic_energy_per_charge_v=0.0 + 1e-9,
+            particle_mass_th=524.0,
+            charge_state=1,
+        ))
+        self.assertEqual(residuals["P1_P2_first_negative_turn_y_mm"], 2.0)
+        self.assertGreater(residuals["P1_P2_slow_kinetic_energy_per_charge_v"], 0.0)
 
     def test_collision_and_zero_velocity_fail_closed(self) -> None:
         state = _state((0.0, 0.0, 0.0), (0.0, 0.0, -1.0))
         with self.assertRaises(CandidateContractError):
-            TwoPrismTransportObservation(state, state, state, state, False)
+            TwoPrismTransportObservation(state, state, state, False)
         with self.assertRaises(CandidateContractError):
             _state((0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
 
-    def test_simion_event_receipt_uses_p2_y0_exit_without_an_internal_plane(self) -> None:
+    def test_simion_event_receipt_uses_post_stripe_negative_turn(self) -> None:
         source = _state((0.0, 55.0, 0.0), (0.0, 0.0, -1.0))
         events = [
-            {"kind": "p1_plane", "ion": 1, "x_mm": 0.0, "y_mm": 50.0, "z_mm": -101.0,
+            {"kind": "p1_plane", "ion": 1, "n": 1, "x_mm": 0.0, "y_mm": 50.0, "z_mm": -101.0,
              "vx_mm_us": 0.0, "vy_mm_us": -1.0, "vz_mm_us": -2.0},
-            {"kind": "p2_to_stripe", "ion": 1, "x_mm": 0.0, "y_mm": 0.0, "z_mm": -10.0,
-             "vx_mm_us": 0.0, "vy_mm_us": -1.0, "vz_mm_us": -2.0},
+            {"kind": "drift_phase_origin", "ion": 1, "x_mm": 0.0, "y_mm": 0.0, "z_mm": -280.0,
+             "vx_mm_us": 0.0, "vy_mm_us": -1.0, "vz_mm_us": 0.0},
             {"kind": "terminal", "ion": 1, "splat": 1},
         ]
         observation = observation_from_simion_events(events, source)
-        self.assertEqual(observation.prism_2, observation.stripe_entrance)
-        self.assertEqual(observation.stripe_entrance.position_mm[1], 0.0)
+        self.assertEqual(observation.drift_phase_origin.position_mm[1], 0.0)
+        self.assertLess(observation.drift_phase_origin.position_mm[2], 0.0)
         collision = [*events[:-1], {"kind": "terminal", "ion": 1, "splat": -1}]
         with self.assertRaises(CandidateContractError):
             observation_from_simion_events(collision, source)

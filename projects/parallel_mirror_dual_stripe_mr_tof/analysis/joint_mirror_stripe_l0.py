@@ -34,7 +34,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_refer
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_handoff import (
     TwoPrismTransportObservation,
-    stripe_handoff_residuals,
+    prism_turn_handoff_residuals,
 )
 
 
@@ -95,6 +95,7 @@ class CoupledDriftState:
     turning_pseudopotential_v: float
     nominal_injection_angle_rad: float
     nominal_kappa_1: float
+    paper_normalized_oscillation_count: float
     predicted_oscillation_count: float
     target_oscillation_count_residual: float
     response_h_factors: tuple[float, ...]
@@ -151,8 +152,10 @@ class JointL0Trial:
     kappa_derivative_step: float
     time_platform_derivative_step: float
     energy_derivative_step_v: float
-    stripe_target_position_mm: tuple[float, float, float] | None = None
-    stripe_target_unit_direction_project: tuple[float, float, float] | None = None
+    prism_target_turn_y_mm: float | None = None
+    prism_target_slow_kinetic_energy_per_charge_v: float | None = None
+    particle_mass_th: float | None = None
+    charge_state: int | None = None
     two_prism_transport_observation: TwoPrismTransportObservation | None = None
 
 
@@ -341,17 +344,21 @@ def evaluate_joint_l0_trial(trial: JointL0Trial) -> JointL0ResidualReport:
     ])
     residuals.extend((f"time_platform_tau_g_prime_eta_{node:.12g}", value) for node, value in zip(trial.time_platform_eta_nodes, time_residuals))
     transport_values = (
-        trial.stripe_target_position_mm,
-        trial.stripe_target_unit_direction_project,
+        trial.prism_target_turn_y_mm,
+        trial.prism_target_slow_kinetic_energy_per_charge_v,
+        trial.particle_mass_th,
+        trial.charge_state,
         trial.two_prism_transport_observation,
     )
     if any(value is not None for value in transport_values):
         if any(value is None for value in transport_values):
-            raise CandidateContractError("joint P1/P2 trial needs target position, target direction, and observed transport together")
-        residuals.extend(stripe_handoff_residuals(
+            raise CandidateContractError("joint P1/P2 trial needs turn y, slow energy, particle identity, and observed transport together")
+        residuals.extend(prism_turn_handoff_residuals(
             trial.two_prism_transport_observation,
-            trial.stripe_target_position_mm,
-            trial.stripe_target_unit_direction_project,
+            target_turn_y_mm=trial.prism_target_turn_y_mm,
+            target_slow_kinetic_energy_per_charge_v=trial.prism_target_slow_kinetic_energy_per_charge_v,
+            particle_mass_th=trial.particle_mass_th,
+            charge_state=trial.charge_state,
         ))
     return JointL0ResidualReport(tuple(residuals), state, tuple(periods))
 
@@ -538,6 +545,82 @@ def coupled_reduced_period_mm_per_sqrt_v(
     if period <= 0.0:
         raise CandidateContractError("Stripe baseline action makes the coupled period non-positive")
     return period
+
+
+def adiabatic_fast_phase_oscillation_count(
+    *,
+    mirror_reduced_period_mm_per_sqrt_v: float,
+    energy_per_charge_v: float,
+    stripes: Sequence[StripeHardBoundary],
+    entry_y_mm: float,
+    turning_y_mm: float,
+    initial_panels: int = 32,
+    max_refinements: int = 12,
+    relative_tolerance: float = 1e-8,
+) -> float:
+    """Integrate the complete out-and-back fast phase with Stripe biases on.
+
+    T0 remains the bare-mirror period.  The integrand instead uses
+    Tz(E,y)=T0(E)+partial_E DeltaJ_stripe(E,y) at every slow coordinate.
+    Endpoint substitution eta=1-u^2 removes the slow-turn singularity.
+    The resulting dimensionless value counts complete fast oscillations and
+    reduces to the paper's L*kappa/(W*sin(theta)) only when the local period
+    is independent of y.
+    """
+    mirror_period = _finite(mirror_reduced_period_mm_per_sqrt_v, "mirror reduced period")
+    energy = _finite(energy_per_charge_v, "energy_per_charge_v")
+    entry = _finite(entry_y_mm, "entry_y_mm")
+    turning = _finite(turning_y_mm, "turning_y_mm")
+    tolerance = _finite(relative_tolerance, "fast-phase quadrature tolerance")
+    if mirror_period <= 0.0 or energy <= 0.0 or turning == entry:
+        raise CandidateContractError("fast-phase integral needs positive mirror physics and a nonzero drift interval")
+    if not isinstance(initial_panels, int) or isinstance(initial_panels, bool) or initial_panels < 2:
+        raise CandidateContractError("fast-phase integral needs at least two initial panels")
+    if not isinstance(max_refinements, int) or isinstance(max_refinements, bool) or max_refinements < 1:
+        raise CandidateContractError("fast-phase integral needs a positive refinement count")
+    if not 0.0 < tolerance < 1.0:
+        raise CandidateContractError("fast-phase quadrature tolerance must lie between zero and one")
+    direction = 1.0 if turning > entry else -1.0
+    length = abs(turning - entry)
+    turning_phi = _pseudopotential_difference_v(energy, mirror_period, stripes, entry, turning)
+    if not 0.0 < turning_phi < energy:
+        raise CandidateContractError("fast-phase integral needs a physical slow turning branch")
+
+    def physical_y(eta: float) -> float:
+        return entry + direction * length * eta
+
+    def one_way_energy(y_mm: float) -> float:
+        value = turning_phi - _pseudopotential_difference_v(
+            energy, mirror_period, stripes, entry, y_mm,
+        )
+        if value <= 0.0:
+            raise CandidateContractError("fast-phase integral left the physical slow branch")
+        return value
+
+    def local_period(y_mm: float) -> float:
+        return coupled_reduced_period_mm_per_sqrt_v(
+            mirror_period,
+            energy,
+            tuple(stripe.width_mm(y_mm) for stripe in stripes),
+            tuple(stripe.bias_v for stripe in stripes),
+        )
+
+    previous: float | None = None
+    for refinement in range(max_refinements):
+        order = initial_panels * (2 ** refinement)
+        nodes, weights = np.polynomial.legendre.leggauss(order)
+        integral = 0.0
+        for node, weight in zip(nodes, weights):
+            u = 0.5 * (float(node) + 1.0)
+            eta = 1.0 - u * u
+            y_mm = physical_y(eta)
+            integrand = 2.0 * u / (local_period(y_mm) * math.sqrt(one_way_energy(y_mm)))
+            integral += float(weight) * integrand
+        current = length * 0.5 * integral
+        if previous is not None and abs(current - previous) <= tolerance * max(1.0, abs(current)):
+            return current
+        previous = current
+    raise CandidateContractError("endpoint-regularized fast-phase integral did not converge")
 
 
 def coupled_normalized_period_slope_at_energy(
@@ -906,7 +989,14 @@ def derive_coupled_drift_state(
         ) / turning_phi
 
     kappa = endpoint_regularized_kappa(psi_at_eta)
-    predicted_k = length * kappa / (width * sine_theta)
+    paper_normalized_k = length * kappa / (width * sine_theta)
+    predicted_k = adiabatic_fast_phase_oscillation_count(
+        mirror_reduced_period_mm_per_sqrt_v=mirror_period,
+        energy_per_charge_v=energy,
+        stripes=stripes,
+        entry_y_mm=entry,
+        turning_y_mm=turning,
+    )
     h_factors = tuple(math.sqrt(energy / (energy - bias)) for bias in biases)
     return CoupledDriftState(
         mirror_reduced_period_mm_per_sqrt_v=mirror_period,
@@ -916,6 +1006,7 @@ def derive_coupled_drift_state(
         turning_pseudopotential_v=turning_phi,
         nominal_injection_angle_rad=math.asin(sine_theta),
         nominal_kappa_1=kappa,
+        paper_normalized_oscillation_count=paper_normalized_k,
         predicted_oscillation_count=predicted_k,
         target_oscillation_count_residual=predicted_k - target_oscillation_count,
         response_h_factors=h_factors,

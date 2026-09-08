@@ -202,10 +202,11 @@ python -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_anal
 
 当前[mrtof_candidate.lua](mrtof_candidate.lua)仍有以下物理限制，事件完整性PASS并不消除它们：
 
-- 主程序现已绑定[mirror_cycle_counter.lua](mirror_cycle_counter.lua)：首次沿`-y`穿过理论Stripe入口
-  `y=0`显式打开主漂移区间，返回沿`+y`穿过该面时关闭；只有依次完成正、负两镜反射并以同方向
-  返回`z=0` Poincaré截面才增加一个完整周期。第50次镜转折不会再主动截停；`K=25`只在返回
-  交接面记录，真正成功终止由探测器命中负责。该状态机已有SIMION 2020 Lua合成轨迹回归，但尚无
+- 主程序现已绑定[mirror_cycle_counter.lua](mirror_cycle_counter.lua)：P1 正向事件只负责使状态机进入
+  待定相位状态；经过 P2 和必经的 Stripe 区后，首个`v_y<0`负侧镜转折才建立主漂移相位原点。
+  此后每个“负侧转折→正侧转折→负侧转折”增加一个完整周期；首个`v_y>0`负侧转折关闭主漂移并
+  记录实际返回`y`和`K`。`z=0`穿越只保留为 Poincaré/周期诊断，不再拥有周期相位。第50次镜转折
+  不会主动截停；真正成功终止仍由探测器命中负责。该状态机已有SIMION 2020 Lua合成轨迹回归，但尚无
   合格Stripe/P2工作点，因而不构成真实三维完整引出或探测证据。
 - 棱镜16（路径 P1）现在接收由冻结`prism_transport` L0硬边界关系派生的**静态初值**；棱镜17
   （路径 P2）为 `pre_stripe_injection_pending` 的审查用`0 V`。两者均在 Stripe 前；该初值尚未经

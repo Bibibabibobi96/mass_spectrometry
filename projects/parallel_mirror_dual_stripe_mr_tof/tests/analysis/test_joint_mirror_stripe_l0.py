@@ -8,6 +8,7 @@ import json
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_mirror_stripe_l0 import (
     JointL0Trial,
     StripeHardBoundary,
+    adiabatic_fast_phase_oscillation_count,
     classify_constraint_system,
     coupled_normalized_period_slope_at_energy,
     coupled_reduced_period_mm_per_sqrt_v,
@@ -98,21 +99,24 @@ class JointMirrorStripeL0Test(unittest.TestCase):
         self.assertLess(result.g_max_abs_fit_residual, 1e-10)
         self.assertTrue(all(abs(value) < 1e-10 for value in result.psi_coefficients_by_power[1:]))
 
-    def test_joint_trial_appends_all_five_three_dimensional_prism_components(self) -> None:
-        state = ProjectPhaseSpaceState((0.0, -40.0, -10.0), (0.0, -1.0, -2.0))
+    def test_joint_trial_appends_the_two_three_dimensional_prism_targets(self) -> None:
+        state = ProjectPhaseSpaceState((0.0, 0.0, -10.0), (0.0, -1.0, 0.0))
         trial = self._trial(-2000.0)
+        slow_energy = 0.5 * 524.0 * 1.66053906660e-27 * (1000.0 ** 2) / 1.602176634e-19
         trial = JointL0Trial(
             **{**trial.__dict__,
-               "stripe_target_position_mm": state.position_mm,
-               "stripe_target_unit_direction_project": state.unit_direction_project,
-               "two_prism_transport_observation": TwoPrismTransportObservation(state, state, state, state, True)}
+               "prism_target_turn_y_mm": 0.0,
+               "prism_target_slow_kinetic_energy_per_charge_v": slow_energy,
+               "particle_mass_th": 524.0,
+               "charge_state": 1,
+               "two_prism_transport_observation": TwoPrismTransportObservation(state, state, state, True)}
         )
         report = evaluate_joint_l0_trial(trial)
-        self.assertEqual(len(report.residuals), 14)
-        self.assertEqual(dict(report.residuals)["P1_P2_to_Stripe_position_x_mm"], 0.0)
+        self.assertEqual(len(report.residuals), 11)
+        self.assertEqual(dict(report.residuals)["P1_P2_first_negative_turn_y_mm"], 0.0)
 
     def test_partial_prism_transport_input_fails_closed(self) -> None:
-        trial = JointL0Trial(**{**self._trial(-2000.0).__dict__, "stripe_target_position_mm": (0.0, 0.0, 0.0)})
+        trial = JointL0Trial(**{**self._trial(-2000.0).__dict__, "prism_target_turn_y_mm": 0.0})
         with self.assertRaises(CandidateContractError):
             evaluate_joint_l0_trial(trial)
 
@@ -217,7 +221,10 @@ class JointMirrorStripeL0Test(unittest.TestCase):
         drift_residuals = problem["stripe_fixed_hardware_operating_residual_blocks"]
         self.assertNotIn("mirror_gamma_90_m11", drift_residuals)
         self.assertEqual(len(drift_residuals), 6)
-        self.assertEqual(len(problem["prism_transport_named_residual_blocks"]), 5)
+        self.assertEqual(problem["prism_transport_named_residual_blocks"], [
+            "P1_P2_first_negative_turn_y_mm",
+            "P1_P2_slow_kinetic_energy_per_charge_v",
+        ])
         self.assertIn("stripe_entrance_project_position_mm", problem["derived_not_independent_unknowns"])
         self.assertNotIn("drift_length_L_mm", problem["derived_not_independent_unknowns"])
         self.assertNotIn(
@@ -340,6 +347,35 @@ class JointMirrorStripeL0Test(unittest.TestCase):
         )
         self.assertGreater(state.nominal_kappa_1, 0.0)
         self.assertGreater(state.nominal_injection_angle_rad, 0.0)
+        self.assertGreater(state.paper_normalized_oscillation_count, 0.0)
+        self.assertGreater(state.predicted_oscillation_count, 0.0)
+
+    def test_stripe_on_fast_phase_uses_local_period_inside_integral(self) -> None:
+        stripes = (
+            StripeHardBoundary(40.0, lambda y: 30.0 - 0.02 * y),
+            StripeHardBoundary(-60.0, lambda y: 20.0 + 0.04 * y),
+        )
+        state = derive_coupled_drift_state(
+            mirror_reduced_period_mm_per_sqrt_v=10.0,
+            energy_per_charge_v=4000.0,
+            target_oscillation_count=25,
+            stripes=stripes,
+            entry_y_mm=0.0,
+            turning_y_mm=-100.0,
+        )
+        direct = adiabatic_fast_phase_oscillation_count(
+            mirror_reduced_period_mm_per_sqrt_v=10.0,
+            energy_per_charge_v=4000.0,
+            stripes=stripes,
+            entry_y_mm=0.0,
+            turning_y_mm=-100.0,
+        )
+        self.assertAlmostEqual(state.predicted_oscillation_count, direct, places=12)
+        self.assertNotAlmostEqual(
+            state.predicted_oscillation_count,
+            state.paper_normalized_oscillation_count,
+            places=10,
+        )
 
     def test_width_baselines_change_full_period_but_not_mirror_owned_drift_normalization(self) -> None:
         first = (
@@ -368,6 +404,10 @@ class JointMirrorStripeL0Test(unittest.TestCase):
         self.assertEqual(states[0].axial_width_w_mm, states[1].axial_width_w_mm)
         self.assertAlmostEqual(states[0].turning_pseudopotential_v, states[1].turning_pseudopotential_v)
         self.assertAlmostEqual(states[0].nominal_kappa_1, states[1].nominal_kappa_1)
+        self.assertNotEqual(
+            states[0].predicted_oscillation_count,
+            states[1].predicted_oscillation_count,
+        )
 
     def test_entry_direction_derives_first_physical_turn_without_free_l(self) -> None:
         stripes = (

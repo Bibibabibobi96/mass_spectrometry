@@ -1,6 +1,7 @@
 -- Project-frame, per-particle main-drift event counter; no SIMION dependency.
--- A cycle ends at the same-direction z=0 section AFTER both mirror returns
--- (isochronous_mirror_design, section 11). Entry/exit are caller-owned events.
+-- The drift phase begins at the first negative mirror turn after P1/P2 and the
+-- mandatory pre-origin Stripe traversal.  A cycle ends at the next same-side
+-- negative mirror turn; central z=0 crossings are diagnostics, not anchors.
 -- Caller must resolve trajectory sampling near roots: linear interpolation is
 -- event localization between supplied samples, not an integrator/convergence test.
 local M = {}
@@ -65,25 +66,8 @@ local function central_event(self, events, root, direction)
   self.central_crossings = self.central_crossings + 1
   self.last_central_t = root.t_us
   local event = emit(self, events, 'central_plane', root)
-  event.direction, event.accepted = direction, false
-  if self.stage ~= 'main_drift' then return end
-  if not self.sequence_valid then event.reason = 'invalid_sequence'; return end
-  if self.phase == 'awaiting_anchor' then
-    self.anchor_direction, self.phase = direction, 'awaiting_first_turn'
-    event.accepted = true
-    local anchor = emit(self, events, 'poincare_anchor', root)
-    anchor.direction = direction
-  elseif self.phase == 'awaiting_first_return' and direction == -self.anchor_direction then
-    self.half_cycles, self.phase = self.half_cycles + 1, 'awaiting_second_turn'
-    event.accepted = true
-    emit(self, events, 'completed_half_oscillation', root).direction = direction
-  elseif self.phase == 'awaiting_second_return' and direction == self.anchor_direction then
-    self.half_cycles, self.cycles = self.half_cycles + 1, self.cycles + 1
-    self.phase, event.accepted = 'awaiting_first_turn', true
-    emit(self, events, 'completed_oscillation', root).direction = direction
-  else
-    invalidate(self, event, 'unexpected_central_crossing')
-  end
+  event.direction, event.accepted = direction, self.stage == 'main_drift'
+  event.reason = event.accepted and 'diagnostic_inside_main_drift' or 'outside_main_drift'
 end
 
 local function mirror_event(self, events, root, before, after)
@@ -95,23 +79,39 @@ local function mirror_event(self, events, root, before, after)
     local event = emit(self, events, 'nonmirror_reversal', root)
     event.direction_before, event.direction_after = before, after
     event.accepted, event.reason = false, 'outside_mirror_or_not_outward_to_inward'
-    if self.stage == 'main_drift' and self.phase ~= 'awaiting_anchor' then
+    if self.stage == 'armed_main_drift' or self.stage == 'main_drift' then
       invalidate(self, event, 'nonmirror_reversal_in_main_drift')
     end
     return
   end
-  local count_key = self.stage == 'before_main_drift' and 'pre_main_turns'
+  local count_key = (self.stage == 'before_main_drift' or self.stage == 'armed_main_drift') and 'pre_main_turns'
     or self.stage == 'after_main_drift' and 'post_main_turns' or 'observed_main_turns'
   self[count_key] = self[count_key] + 1
   local event = emit(self, events, 'mirror_turn', root)
   event.side, event.accepted = side, false
+  if self.stage == 'armed_main_drift' then
+    if side ~= -1 or root.vy_mm_us >= 0 then
+      invalidate(self, event, 'phase_origin_must_be_outbound_negative_mirror_turn')
+      return
+    end
+    self.stage, self.phase, self.origin_turns = 'main_drift', 'awaiting_positive_turn', 1
+    event.accepted, event.is_phase_origin = true, true
+    emit(self, events, 'drift_phase_origin', root).side = side
+    return
+  end
   if self.stage ~= 'main_drift' then return end
   if not self.sequence_valid then event.reason = 'invalid_sequence'; return end
-  if self.phase == 'awaiting_anchor' then event.reason = 'before_first_anchor'; return end
-  if self.phase == 'awaiting_first_turn' and side == self.anchor_direction then
-    self.phase = 'awaiting_first_return'
-  elseif self.phase == 'awaiting_second_turn' and side == -self.anchor_direction then
-    self.phase = 'awaiting_second_return'
+  if self.phase == 'awaiting_positive_turn' and side == 1 then
+    self.half_cycles, self.phase = self.half_cycles + 1, 'awaiting_negative_turn'
+    emit(self, events, 'completed_half_oscillation', root).side = side
+  elseif self.phase == 'awaiting_negative_turn' and side == -1 then
+    self.half_cycles, self.cycles = self.half_cycles + 1, self.cycles + 1
+    self.phase = 'awaiting_positive_turn'
+    emit(self, events, 'completed_oscillation', root).side = side
+    if root.vy_mm_us > 0 then
+      emit(self, events, 'drift_phase_return', root).side = side
+      self.stage, self.phase = 'after_main_drift', 'returned_same_negative_turn_phase'
+    end
   else
     invalidate(self, event, 'unexpected_mirror_turn')
     return
@@ -140,14 +140,14 @@ local function find_roots(self, sample)
     local direction = sign(sample.vz_mm_us)
     if not self.z_zero_emitted and direction ~= 0 and
       ((z and direction == -sign(z.z_mm)) or
-       (not z and self.stage == 'main_drift' and self.phase == 'awaiting_anchor')) then
+       (not z and self.stage == 'armed_main_drift')) then
       roots[#roots + 1] = {kind='central', root=zero_sample(self.z_zero, sample), direction=direction}
       self.z_zero_emitted = true
     end
   else
     if self.z_zero then
       if not self.z_zero_emitted and ((z and sign(z.z_mm) ~= sign(sample.z_mm)) or
-        (not z and self.stage == 'main_drift' and self.phase == 'awaiting_anchor')) then
+        (not z and self.stage == 'armed_main_drift')) then
         roots[#roots + 1] = {kind='central', root=zero_sample(self.z_zero, sample), direction=sign(sample.z_mm)}
       end
     elseif z and sign(z.z_mm) ~= sign(sample.z_mm) then
@@ -173,8 +173,9 @@ function M.new(regions)
   end
   assert(copy.negative.z_max_mm < 0 and copy.positive.z_min_mm > 0,
     'mirror regions must be on opposite sides of central z=0')
-  copy.stage, copy.phase = 'before_main_drift', 'awaiting_entry'
+  copy.stage, copy.phase = 'before_main_drift', 'awaiting_arm'
   copy.cycles, copy.half_cycles, copy.accepted_main_turns = 0, 0, 0
+  copy.origin_turns = 0
   copy.pre_main_turns, copy.observed_main_turns, copy.post_main_turns = 0, 0, 0
   copy.nonmirror_reversals, copy.central_crossings, copy.sequence_valid = 0, 0, true
   return setmetatable(copy, Counter)
@@ -196,42 +197,23 @@ function Counter:sample(input)
   return events
 end
 
-function Counter:enter_main_drift(input)
-  assert(self.stage == 'before_main_drift', 'main-drift entry must occur exactly once')
+function Counter:arm_main_drift(input)
+  assert(self.stage == 'before_main_drift', 'main drift must be armed exactly once')
   local events = self:sample(input)
-  self.stage, self.phase = 'main_drift', 'awaiting_anchor'
-  -- Do not carry a pre-entry bracket into the main-drift interval.
+  self.stage, self.phase = 'armed_main_drift', 'awaiting_negative_origin'
+  -- Do not carry a pre-P1 bracket into the P1/P2/Stripe-to-turn interval.
   self.v_before, self.v_zero = nil, nil
   self.z_before, self.z_zero, self.z_zero_emitted = nil, nil, false
-  emit(self, events, 'main_drift_entry', zero_sample(self.last, self.last))
-  for _, found in ipairs(find_roots(self, self.last)) do
-    if found.kind == 'central' then
-      if self.last_central_t == found.root.t_us then
-        -- An external entry callback may follow sampling this same crossing.
-        -- Bind its new drift anchor without emitting the physical crossing twice.
-        self.anchor_direction, self.phase = found.direction, 'awaiting_first_turn'
-        emit(self, events, 'poincare_anchor', found.root).direction = found.direction
-      else
-        central_event(self, events, found.root, found.direction)
-      end
-    end
-  end
+  emit(self, events, 'main_drift_armed', zero_sample(self.last, self.last))
   return events
-end
-
-function Counter:end_main_drift(input)
-  assert(self.stage == 'main_drift', 'cannot end an inactive main-drift interval')
-  local events = self:sample(input)
-  emit(self, events, 'main_drift_exit', zero_sample(self.last, self.last))
-  self.stage = 'after_main_drift'
-  return events -- Keep brackets and partial phase for post-exit diagnostics.
 end
 
 function Counter:state()
   return {
     stage=self.stage, phase=self.phase, sequence_valid=self.sequence_valid,
-    sequence_error=self.sequence_error, anchor_direction=self.anchor_direction,
+    sequence_error=self.sequence_error,
     cycles=self.cycles, half_cycles=self.half_cycles, accepted_main_turns=self.accepted_main_turns,
+    origin_turns=self.origin_turns,
     pre_main_turns=self.pre_main_turns, observed_main_turns=self.observed_main_turns,
     post_main_turns=self.post_main_turns, nonmirror_reversals=self.nonmirror_reversals,
     central_crossings=self.central_crossings,

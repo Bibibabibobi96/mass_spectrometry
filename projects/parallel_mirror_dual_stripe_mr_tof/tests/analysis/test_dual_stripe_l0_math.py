@@ -400,7 +400,7 @@ class DualStripeL0MathTest(unittest.TestCase):
             )
             self.assertEqual(
                 result["two_prism_voltage_definition"]["status"],
-                "structurally_underdetermined_missing_fast_phase",
+                "two_physical_targets_declared__finite_3d_jacobian_pending",
             )
             bound = result["fixed_geometry_parameter_authority"]["geometry_alone"][
                 "derived_feasibility_bound"
