@@ -10,17 +10,29 @@
   },
   "geometry_mm": {
     "first_cone": {
+      "orientation": "aperture_upstream_cone_opens_downstream",
       "included_angle_deg": 70.5,
       "half_angle_deg": 35.25,
+      "wall_normal_thickness_mm": 0.25,
       "aperture_radius_mm": 1.0,
-      "aperture_reference_z_mm": 0.0
+      "aperture_reference_z_mm": 0.0,
+      "theoretical_base_z_at_enclosure_radius_mm": 31.83676362260314
     },
     "second_cone": {
+      "orientation": "aperture_upstream_cone_opens_downstream",
       "included_angle_deg": 65.0,
       "half_angle_deg": 32.5,
+      "wall_normal_thickness_mm": 0.5,
       "aperture_radius_mm": 0.39,
       "aperture_reference_z_mm": 3.0,
-      "theoretical_base_z_at_enclosure_radius_mm": 39.88761106226102
+      "theoretical_base_z_at_enclosure_radius_mm": 39.2754336871852
+    },
+    "nested_cone_computational_closure": {
+      "truncation_radius_mm": 23.5,
+      "truncation_rule": "both_cones_intersect_low_pressure_enclosure_radius",
+      "first_inner_surface_radius_at_second_aperture_mm": 3.120190381162897,
+      "second_outer_surface_radius_at_second_aperture_mm": 0.9828445237170803,
+      "radial_clearance_at_second_aperture_mm": 2.1373458574458164
     },
     "low_pressure_enclosure": {
       "radius_mm": 23.5,
@@ -160,7 +172,10 @@
   },
   "provisional_interpretations": [
     "provisional_full_included_angle",
+    "confirmed_both_cones_aperture_upstream_and_open_downstream",
+    "confirmed_value_provisional_wall_normal_direction",
     "provisional_full_included_angle",
+    "confirmed_value_provisional_wall_normal_direction",
     "provisional_second_cone_aperture_reference",
     "provisional_axial_offset_from_second_cone_surface",
     "provisional_adjacent_centers",

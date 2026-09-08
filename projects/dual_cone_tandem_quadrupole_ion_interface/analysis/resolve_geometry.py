@@ -49,6 +49,9 @@ def resolve_geometry(baseline: dict[str, Any]) -> dict[str, Any]:
     second_angle = _positive("second cone included angle", second["included_angle_deg"])
     if first_angle >= 180 or second_angle >= 180:
         raise ValueError("cone included angles must be below 180 degrees")
+    expected_orientation = "aperture_upstream_cone_opens_downstream"
+    if first.get("orientation") != expected_orientation or second.get("orientation") != expected_orientation:
+        raise ValueError("both cones must have the confirmed upstream-aperture orientation")
     first_aperture_z = float(first["aperture_reference_z_mm"])
     second_aperture_z = first_aperture_z + _positive(
         "cone virtual apex separation", second["virtual_apex_separation_mm"]
@@ -85,9 +88,29 @@ def resolve_geometry(baseline: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("derived quadrupole axial sections are not strictly ordered")
 
     second_half_angle_rad = math.radians(second_angle / 2.0)
-    cone_base_z = second_aperture_z + _positive(
-        "enclosure radius", enclosure["cylinder_radius_mm"]
+    first_half_angle_rad = math.radians(first_angle / 2.0)
+    truncation_radius = _positive("enclosure radius", enclosure["cylinder_radius_mm"])
+    first_aperture_radius = 0.5 * _positive(
+        "first cone aperture diameter", first["aperture_diameter_mm"]
+    )
+    second_aperture_radius = 0.5 * _positive(
+        "second cone aperture diameter", second["aperture_diameter_mm"]
+    )
+    first_cone_base_z = first_aperture_z + (
+        truncation_radius - first_aperture_radius
+    ) / math.tan(first_half_angle_rad)
+    cone_base_z = second_aperture_z + (
+        truncation_radius - second_aperture_radius
     ) / math.tan(second_half_angle_rad)
+    first_radius_at_second_aperture = first_aperture_radius + (
+        second_aperture_z - first_aperture_z
+    ) * math.tan(first_half_angle_rad)
+    second_outer_radius_at_aperture = second_aperture_radius + _positive(
+        "second cone wall-normal thickness", second["wall_normal_thickness_mm"]
+    ) / math.cos(second_half_angle_rad)
+    nested_clearance = first_radius_at_second_aperture - second_outer_radius_at_aperture
+    if nested_clearance <= 0:
+        raise ValueError("nested cone shells overlap at the second aperture plane")
     stage_1_rod_array = build_rod_array(
         radial_order_n=2,
         electrode_count=4,
@@ -117,21 +140,37 @@ def resolve_geometry(baseline: dict[str, Any]) -> dict[str, Any]:
         "coordinate_frame": baseline["coordinate_frame"],
         "geometry_mm": {
             "first_cone": {
+                "orientation": expected_orientation,
                 "included_angle_deg": first_angle,
                 "half_angle_deg": first_angle / 2.0,
+                "wall_normal_thickness_mm": _positive(
+                    "first cone wall-normal thickness", first["wall_normal_thickness_mm"]
+                ),
                 "aperture_radius_mm": 0.5 * _positive(
                     "first cone aperture diameter", first["aperture_diameter_mm"]
                 ),
                 "aperture_reference_z_mm": first_aperture_z,
+                "theoretical_base_z_at_enclosure_radius_mm": first_cone_base_z,
             },
             "second_cone": {
+                "orientation": expected_orientation,
                 "included_angle_deg": second_angle,
                 "half_angle_deg": second_angle / 2.0,
+                "wall_normal_thickness_mm": _positive(
+                    "second cone wall-normal thickness", second["wall_normal_thickness_mm"]
+                ),
                 "aperture_radius_mm": 0.5 * _positive(
                     "second cone aperture diameter", second["aperture_diameter_mm"]
                 ),
                 "aperture_reference_z_mm": second_aperture_z,
                 "theoretical_base_z_at_enclosure_radius_mm": cone_base_z,
+            },
+            "nested_cone_computational_closure": {
+                "truncation_radius_mm": truncation_radius,
+                "truncation_rule": "both_cones_intersect_low_pressure_enclosure_radius",
+                "first_inner_surface_radius_at_second_aperture_mm": first_radius_at_second_aperture,
+                "second_outer_surface_radius_at_second_aperture_mm": second_outer_radius_at_aperture,
+                "radial_clearance_at_second_aperture_mm": nested_clearance,
             },
             "low_pressure_enclosure": {
                 "radius_mm": _positive("enclosure radius", enclosure["cylinder_radius_mm"]),
@@ -164,7 +203,10 @@ def resolve_geometry(baseline: dict[str, Any]) -> dict[str, Any]:
         },
         "provisional_interpretations": [
             first["angle_interpretation"],
+            "confirmed_both_cones_aperture_upstream_and_open_downstream",
+            first["thickness_interpretation"],
             second["angle_interpretation"],
+            second["thickness_interpretation"],
             enclosure["length_origin_interpretation"],
             ellipse["upstream_end_model"],
             round_rods["center_distance_interpretation"],

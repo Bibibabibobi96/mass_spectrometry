@@ -11,14 +11,20 @@
     "first_cone": {
       "included_angle_deg": 70.5,
       "aperture_diameter_mm": 2.0,
+      "wall_normal_thickness_mm": 0.25,
       "aperture_reference_z_mm": 0.0,
-      "angle_interpretation": "provisional_full_included_angle"
+      "orientation": "aperture_upstream_cone_opens_downstream",
+      "angle_interpretation": "provisional_full_included_angle",
+      "thickness_interpretation": "confirmed_value_provisional_wall_normal_direction"
     },
     "second_cone": {
       "included_angle_deg": 65.0,
       "aperture_diameter_mm": 0.78,
+      "wall_normal_thickness_mm": 0.5,
       "virtual_apex_separation_mm": 3.0,
-      "angle_interpretation": "provisional_full_included_angle"
+      "orientation": "aperture_upstream_cone_opens_downstream",
+      "angle_interpretation": "provisional_full_included_angle",
+      "thickness_interpretation": "confirmed_value_provisional_wall_normal_direction"
     },
     "low_pressure_enclosure": {
       "cylinder_radius_mm": 23.5,

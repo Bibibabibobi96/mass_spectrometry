@@ -48,6 +48,16 @@ class GeometryContractTests(unittest.TestCase):
         geometry = self.resolved["geometry_mm"]
         stage_1 = geometry["stage_1_elliptical_quadrupole"]
         stage_2 = geometry["stage_2_round_quadrupole"]
+        self.assertAlmostEqual(geometry["first_cone"]["wall_normal_thickness_mm"], 0.25)
+        self.assertAlmostEqual(geometry["second_cone"]["wall_normal_thickness_mm"], 0.5)
+        self.assertEqual(
+            geometry["first_cone"]["orientation"],
+            "aperture_upstream_cone_opens_downstream",
+        )
+        self.assertEqual(geometry["second_cone"]["orientation"], geometry["first_cone"]["orientation"])
+        closure = geometry["nested_cone_computational_closure"]
+        self.assertGreater(closure["radial_clearance_at_second_aperture_mm"], 2.0)
+        self.assertAlmostEqual(closure["truncation_radius_mm"], 23.5)
         self.assertAlmostEqual(stage_1["ideal_field_radius_r0_mm"], 3.74)
         self.assertAlmostEqual(stage_1["rod_array"]["rod_center_radius"], 5.62)
         self.assertEqual(stage_1["rod_array"]["cross_section"]["shape"], "ellipse")
