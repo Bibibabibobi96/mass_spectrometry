@@ -30,11 +30,36 @@
     "rule": "Paper numerical examples are regression references only. Every active numerical value must be an explicit baseline input or a derived output of the current geometry and declared constraints; equality to a printed paper value is never an implicit acceptance condition."
   },
   "coordinate_system": {
-    "frame_id": "astral.xyz.reflection_z.drift_y.transverse_x.v1",
-    "origin": "intersection of central mirror plane and nominal injection reference plane",
+    "frame_id": "astral.xyz.reflection_z.drift_y.transverse_x.v2",
+    "origin": "x=0 transverse symmetry plane, y=0 registered mathematical origin of both manufactured Stripe functions, and z=0 central mirror plane",
     "x_positive": "transverse mirror-focusing direction",
-    "y_positive": "slow drift direction",
-    "z_positive": "fast reflection direction; central mirror plane is z=0"
+    "y_positive": "increasing argument of the manufactured S_i(y) functions toward the slow turning point; identical to the paper's positive slow-drift direction",
+    "z_positive": "fast reflection direction; central mirror plane is z=0",
+    "simion_workbench_from_project": {
+      "rotation": [
+        [
+          1,
+          0,
+          0
+        ],
+        [
+          0,
+          1,
+          0
+        ],
+        [
+          0,
+          0,
+          1
+        ]
+      ],
+      "translation_mm": [
+        0,
+        0,
+        0
+      ],
+      "semantics": "GEM locate(-PA_origin) followed by an unrotated unit-scale IOB instance at PA_origin makes Workbench x/y/z numerically identical to project x/y/z. PA-local grid coordinates are not project coordinates."
+    }
   },
   "nominal": {
     "energy_per_charge_v": 4000,
@@ -74,7 +99,11 @@
         "maximum_parallel_workers": 12,
         "position_probe_mm": 0.004,
         "angle_probe_rad": 4e-05,
-        "probe_convergence_scale_factors": [1.0, 2.0, 4.0],
+        "probe_convergence_scale_factors": [
+          1.0,
+          2.0,
+          4.0
+        ],
         "maximum_adjacent_gamma_change_degrees": 0.001,
         "maximum_adjacent_relative_Tbar_change": 0.01,
         "target_gamma_degrees": 90.0,
@@ -132,8 +161,8 @@
     "beam_slot_width_mm": 30,
     "outer_width_x_mm": 125,
     "length_y_mm": 600,
-    "centre_y_mm": -158,
-    "centre_y_evidence": "cad_to_theory_frame source-to-project translation: project y=-CAD_X-158 mm; the CAD mirror local long-axis centre CAD_X=0 maps to project y=-158 mm.",
+    "centre_y_mm": 158.0,
+    "centre_y_evidence": "cad_to_theory_frame v2 maps project y=CAD_X+158 mm; the CAD mirror local long-axis centre CAD_X=0 maps to project y=158 mm.",
     "inner_face_z_mm": 102,
     "inner_clearance_to_stripe_mm": 5,
     "electrode_thicknesses_mm": [
@@ -179,7 +208,10 @@
     "theoretical_response_count": 2,
     "geometry_review_visualization": {
       "status": "geometry_review_only__not_a_solver_seed",
-      "stripe_biases_v": [-40, 60],
+      "stripe_biases_v": [
+        -40,
+        60
+      ],
       "semantics": "These values only color-separate the two PA basis groups in the already reviewed geometry IOB. Theory, optimization, trajectory, and Candidate materialization must never read them as an initial or operating point."
     },
     "central_grounded_corridor_mm": 100,
@@ -188,8 +220,8 @@
       "parameter_provenance": "20260902__two-mirror-pose-audit/ion_foil_body_bspline_project_frame.json; composed top-level CAD body edges 19/20/21/23 of Ion-Foil-2",
       "sampling_per_nonzero_knot_span": 8,
       "y_span_mm": [
-        -390,
-        -4
+        4.0,
+        390.0
       ],
       "positive_x": {
         "x_mm": [
@@ -231,99 +263,99 @@
           ],
           "control_points_yz_mm": [
             [
-              -4.000000003227967,
+              4.000000003227967,
               -40.16740456378506
             ],
             [
-              -12.230412238507853,
+              12.230412238507853,
               -40.392757117236634
             ],
             [
-              -20.355254083130717,
+              20.355254083130717,
               -39.90621116363022
             ],
             [
-              -36.48224348320697,
+              36.48224348320697,
               -38.105748241299295
             ],
             [
-              -44.4839777268444,
+              44.4839777268444,
               -36.78904416472318
             ],
             [
-              -60.42640337449356,
+              60.42640337449356,
               -33.74400254004799
             ],
             [
-              -68.36687905335353,
+              68.36687905335353,
               -32.014210280902894
             ],
             [
-              -84.23204068449078,
+              84.23204068449078,
               -28.448150048057173
             ],
             [
-              -92.1573307746257,
+              92.1573307746257,
               -26.610930997218443
             ],
             [
-              -115.95296763890988,
+              115.95296763890988,
               -21.280265924195447
             ],
             [
-              -131.8428281050417,
+              131.8428281050417,
               -17.994597375136983
             ],
             [
-              -163.78239122991928,
+              163.78239122991928,
               -13.065053370291215
             ],
             [
-              -179.83149370357995,
+              179.83149370357995,
               -11.41501321098418
             ],
             [
-              -212.1201312363914,
+              212.1201312363914,
               -10.070930232488417
             ],
             [
-              -228.35907269953768,
+              228.35907269953768,
               -10.370790388450388
             ],
             [
-              -252.83921371789774,
+              252.83921371789774,
               -12.070898442969467
             ],
             [
-              -261.0078042519532,
+              261.0078042519532,
               -12.841565022580683
             ],
             [
-              -277.2623765407327,
+              277.2623765407327,
               -14.69968643407811
             ],
             [
-              -285.3642311046267,
+              285.3642311046267,
               -15.787765656432262
             ],
             [
-              -309.6150957317169,
+              309.6150957317169,
               -19.3940254841945
             ],
             [
-              -325.710258559152,
+              325.710258559152,
               -22.248901937328366
             ],
             [
-              -357.8640099566735,
+              357.8640099566735,
               -28.18734625939427
             ],
             [
-              -373.92384172396953,
+              373.92384172396953,
               -31.263140691835048
             ],
             [
-              -390.0000000137202,
+              390.0000000137202,
               -34.236848665954035
             ]
           ]
@@ -361,91 +393,91 @@
           ],
           "control_points_yz_mm": [
             [
-              -390.000000013389,
+              390.000000013389,
               34.23684865339041
             ],
             [
-              -373.96728749134877,
+              373.96728749134877,
               31.27117711636168
             ],
             [
-              -357.9519422284019,
+              357.9519422284019,
               28.2042639354591
             ],
             [
-              -325.8852099208508,
+              325.8852099208508,
               22.28054149411122
             ],
             [
-              -309.8325259789845,
+              309.8325259789845,
               19.431292437034816
             ],
             [
-              -277.57419578741803,
+              277.57419578741803,
               14.62448111193998
             ],
             [
-              -261.3411816879866,
+              261.3411816879866,
               12.677726786221372
             ],
             [
-              -229.0059467492914,
+              229.0059467492914,
               10.399828626181842
             ],
             [
-              -212.87099679327605,
+              212.87099679327605,
               10.071822670254193
             ],
             [
-              -180.67897802923056,
+              180.67897802923056,
               11.349143755390246
             ],
             [
-              -164.62222949482845,
+              164.62222949482845,
               12.96242131579274
             ],
             [
-              -132.57587615024488,
+              132.57587615024488,
               17.855762057191047
             ],
             [
-              -116.57386546013555,
+              116.57386546013555,
               21.146801481893142
             ],
             [
-              -92.66588202896375,
+              92.66588202896375,
               26.494333227737915
             ],
             [
-              -84.70709098214577,
+              84.70709098214577,
               28.33917051870666
             ],
             [
-              -68.77199263933252,
+              68.77199263933252,
               31.925233573434785
             ],
             [
-              -60.79583267237315,
+              60.79583267237315,
               33.66733081294579
             ],
             [
-              -44.77386347517073,
+              44.77386347517073,
               36.73953831548697
             ],
             [
-              -36.72833338397882,
+              36.72833338397882,
               38.07129973243177
             ],
             [
-              -20.495691363143493,
+              20.495691363143493,
               39.89734244380253
             ],
             [
-              -12.309135437630772,
+              12.309135437630772,
               40.39491259513663
             ],
             [
-              -4.000000003226916,
+              4.000000003226916,
               40.16740456379471
             ]
           ]
@@ -489,91 +521,91 @@
           ],
           "control_points_yz_mm": [
             [
-              -390.00000000993623,
+              390.00000000993623,
               -34.23684866525412
             ],
             [
-              -373.97021941503556,
+              373.97021941503556,
               -31.271719464652474
             ],
             [
-              -357.95815301545065,
+              357.95815301545065,
               -28.205458018186885
             ],
             [
-              -325.89727397108175,
+              325.89727397108175,
               -22.282723390417726
             ],
             [
-              -309.84714420968805,
+              309.84714420968805,
               -19.433769769470185
             ],
             [
-              -277.59085296019475,
+              277.59085296019475,
               -14.626664433427448
             ],
             [
-              -261.40390657655024,
+              261.40390657655024,
               -12.68521158500747
             ],
             [
-              -229.13134650699843,
+              229.13134650699843,
               -10.405614353909815
             ],
             [
-              -213.0172441366198,
+              213.0172441366198,
               -10.07211662774236
             ],
             [
-              -180.84216641339603,
+              180.84216641339603,
               -11.33663031540907
             ],
             [
-              -164.78142107850437,
+              164.78142107850437,
               -12.94300436280069
             ],
             [
-              -132.70601005197923,
+              132.70601005197923,
               -17.831044168910026
             ],
             [
-              -116.68024949143754,
+              116.68024949143754,
               -21.123960697006677
             ],
             [
-              -92.75032341492756,
+              92.75032341492756,
               -26.474973072004357
             ],
             [
-              -84.78435308763007,
+              84.78435308763007,
               -28.32144909035656
             ],
             [
-              -68.83491168173265,
+              68.83491168173265,
               -31.911405462122637
             ],
             [
-              -60.851589558704774,
+              60.851589558704774,
               -33.65576245094047
             ],
             [
-              -44.81494879293429,
+              44.81494879293429,
               -36.73253193734844
             ],
             [
-              -36.76191287034422,
+              36.76191287034422,
               -38.066608303511906
             ],
             [
-              -20.513366046542785,
+              20.513366046542785,
               -39.89626531033579
             ],
             [
-              -12.318419414381367,
+              12.318419414381367,
               -40.3951667950557
             ],
             [
-              -4.000000003227967,
+              4.000000003227967,
               -40.16740456378507
             ]
           ]
@@ -613,99 +645,99 @@
           ],
           "control_points_yz_mm": [
             [
-              -4.000000003226916,
+              4.000000003226916,
               40.167404563794705
             ],
             [
-              -12.230412238790677,
+              12.230412238790677,
               40.39275711697281
             ],
             [
-              -20.355254083627074,
+              20.355254083627074,
               39.90621116306232
             ],
             [
-              -36.48224348405074,
+              36.48224348405074,
               38.105748240101924
             ],
             [
-              -44.48397772782222,
+              44.48397772782222,
               36.78904416320284
             ],
             [
-              -60.426403375703345,
+              60.426403375703345,
               33.74400253789554
             ],
             [
-              -68.36687905466077,
+              68.36687905466077,
               32.014210278438505
             ],
             [
-              -84.23204068598606,
+              84.23204068598606,
               28.448150044989234
             ],
             [
-              -92.1573307762152,
+              92.1573307762152,
               26.610930993858062
             ],
             [
-              -115.9529676407574,
+              115.9529676407574,
               21.280265919997934
             ],
             [
-              -131.8428281070081,
+              131.8428281070081,
               17.99459737045017
             ],
             [
-              -163.78239123176922,
+              163.78239123176922,
               13.065053364746577
             ],
             [
-              -179.8314937051952,
+              179.8314937051952,
               11.415013205065158
             ],
             [
-              -212.12013123709215,
+              212.12013123709215,
               10.070930225730788
             ],
             [
-              -228.35907269955953,
+              228.35907269955953,
               10.370790381222305
             ],
             [
-              -252.83921371660492,
+              252.83921371660492,
               12.0708984348582
             ],
             [
-              -261.00780425115715,
+              261.00780425115715,
               12.841565014236506
             ],
             [
-              -277.26237654051613,
+              277.26237654051613,
               14.699686425276571
             ],
             [
-              -285.36423110468695,
+              285.36423110468695,
               15.787765647409133
             ],
             [
-              -309.61509573257945,
+              309.61509573257945,
               19.394025474522465
             ],
             [
-              -325.7102585605152,
+              325.7102585605152,
               22.248901927229213
             ],
             [
-              -357.8640099590239,
+              357.8640099590239,
               28.187346248421186
             ],
             [
-              -373.9238417231415,
+              373.9238417231415,
               31.263140679732523
             ],
             [
-              -390.000000013389,
+              390.000000013389,
               34.2368486533904
             ]
           ]
@@ -713,8 +745,8 @@
       },
       "terminal_profile": {
         "curve_y_span_mm": [
-          -4,
-          0
+          -0.0,
+          4.0
         ],
         "lower_edge": {
           "basis": "cubic_bspline",
@@ -731,19 +763,19 @@
           ],
           "control_points_yz_mm": [
             [
-              0,
+              -0.0,
               -40.00010686042768
             ],
             [
-              -1.3381750719495464,
+              1.3381750719495464,
               -40.07603422903563
             ],
             [
-              -2.6636457926412156,
+              2.6636457926412156,
               -40.13081402467729
             ],
             [
-              -4,
+              4.0,
               -40.16740456378988
             ]
           ]
@@ -763,19 +795,19 @@
           ],
           "control_points_yz_mm": [
             [
-              -4,
+              4.0,
               40.16740456378989
             ],
             [
-              -2.6636457918327356,
+              2.6636457918327356,
               40.13081402466863
             ],
             [
-              -1.3381750705941162,
+              1.3381750705941162,
               40.076034229024096
             ],
             [
-              0,
+              -0.0,
               40.00010686036015
             ]
           ]
@@ -785,29 +817,29 @@
           34.87141353363198
         ],
         "terminal_window_yz_mm": [
-          -4,
+          -2.0,
           -22,
-          2,
+          4.0,
           22
         ],
-        "cad_features": "Ion-Foil-2 native Sketch20 cubic extension y=-4..0, Sketch22 terminal trims at z=+-34.8714135336, y=0..2; x-through terminal window y=-4..2,z=-22..22. No spline extrapolation or full-z bridge."
+        "cad_features": "Ion-Foil-2 native Sketch20 cubic extension maps to project y=0..4, Sketch22 terminal trims at z=+-34.8714135336 map to project y=-2..0; x-through terminal window is project y=-2..4,z=-22..22. No spline extrapolation or full-z bridge."
       }
     },
     "beam_slot_width_mm": 4,
     "beam_slot_y_bridges_mm": {
-      "from_min_y_mm": 5,
-      "from_max_y_mm": 2,
+      "from_min_y_mm": 2,
+      "from_max_y_mm": 5,
       "cad_evidence": "20260903 read-only Ion-Foil STL section: the 4-mm central opening has local-longitudinal endpoints at 5 and 390 mm within the 392-mm foil body. Under cad_to_theory_frame, these become project-y bridges of 5 mm at y_min and 2 mm at y_max; it is not a y-through cut."
     },
     "minimum_width_mm": 4,
     "maximum_width_mm": 50,
     "thickness_x_mm": 24,
     "y_span_mm": [
-      -390,
-      2
+      -2.0,
+      390.0
     ],
     "central_ground_outline_status": "cad_outline_verified_for_candidate",
-    "central_ground_y_end_mm": 2,
+    "central_ground_y_end_mm": -2.0,
     "serial_positive_z_gap_mm": 4,
     "theory_profile": {
       "generator": "theory_bspline_parameterization",
@@ -861,99 +893,99 @@
           ],
           "control_points_yz_mm": [
             [
-              -1.3850812857763017e-10,
+              1.3850812857763017e-10,
               64.12079929549782
             ],
             [
-              -8.2886874435055,
+              8.2886874435055,
               65.18613174156305
             ],
             [
-              -16.544392541715002,
+              16.544392541715002,
               65.47233222442803
             ],
             [
-              -33.01539807397886,
+              33.01539807397886,
               65.09026603036965
             ],
             [
-              -41.23060667088041,
+              41.23060667088041,
               64.41982991216432
             ],
             [
-              -57.639991767312125,
+              57.639991767312125,
               62.58212280130999
             ],
             [
-              -65.83577169843228,
+              65.83577169843228,
               61.413859880657455
             ],
             [
-              -82.21343802490297,
+              82.21343802490297,
               58.93378278786379
             ],
             [
-              -90.39392693422658,
+              90.39392693422658,
               57.62172278906534
             ],
             [
-              -114.95563554426836,
+              114.95563554426836,
               53.860255806141524
             ],
             [
-              -131.360494644453,
+              131.360494644453,
               51.61488670263546
             ],
             [
-              -156.12144183490983,
+              156.12144183490983,
               49.5731003631672
             ],
             [
-              -164.39992263098432,
+              164.39992263098432,
               49.10566847878429
             ],
             [
-              -181.01387556255818,
+              181.01387556255818,
               48.66737804995785
             ],
             [
-              -189.28052885857824,
+              189.28052885857824,
               48.69817639479879
             ],
             [
-              -213.9605328825158,
+              213.9605328825158,
               49.53411901760768
             ],
             [
-              -230.25220281533643,
+              230.25220281533643,
               51.0935028852501
             ],
             [
-              -262.5838922999487,
+              262.5838922999487,
               55.77212795034542
             ],
             [
-              -278.625584613497,
+              278.625584613497,
               58.88100051781135
             ],
             [
-              -310.568914928083,
+              310.568914928083,
               65.96687366847372
             ],
             [
-              -326.4717313174444,
+              326.4717313174444,
               69.93657000020849
             ],
             [
-              -358.2428164519211,
+              358.2428164519211,
               78.09010657192037
             ],
             [
-              -374.1102592403353,
+              374.1102592403353,
               82.2662314109961
             ],
             [
-              -389.99999999922704,
+              389.99999999922704,
               86.34577911534693
             ]
           ]
@@ -1003,99 +1035,99 @@
           ],
           "control_points_yz_mm": [
             [
-              -1.0491191249073495e-9,
+              1.0491191249073495e-09,
               44.62010384248437
             ],
             [
-              -8.329857427961802,
+              8.329857427961802,
               45.09273569326642
             ],
             [
-              -16.57139985481426,
+              16.57139985481426,
               44.7810136219191
             ],
             [
-              -32.949731087153,
+              32.949731087153,
               43.22721887378109
             ],
             [
-              -41.08614156225874,
+              41.08614156225874,
               41.98178612319043
             ],
             [
-              -57.30496156132321,
+              57.30496156132321,
               39.01132080542067
             ],
             [
-              -65.38896228608219,
+              65.38896228608219,
               37.284524286999535
             ],
             [
-              -81.53218756959056,
+              81.53218756959056,
               33.688549980487466
             ],
             [
-              -89.59038141308612,
+              89.59038141308612,
               31.818870403374195
             ],
             [
-              -113.79370608595696,
+              113.79370608595696,
               26.363397252727868
             ],
             [
-              -129.97232903440752,
+              129.97232903440752,
               22.956541550555993
             ],
             [
-              -154.47464918928011,
+              154.47464918928011,
               19.098507336986813
             ],
             [
-              -162.67986378493242,
+              162.67986378493242,
               18.014313455112756
             ],
             [
-              -179.17998913933357,
+              179.17998913933357,
               16.325144114591446
             ],
             [
-              -187.43368632449864,
+              187.43368632449864,
               15.725166589690225
             ],
             [
-              -212.0903257470716,
+              212.0903257470716,
               14.679329659667534
             ],
             [
-              -228.43556785751895,
+              228.43556785751895,
               14.9952086696271
             ],
             [
-              -260.97719835774154,
+              260.97719835774154,
               17.256974388065498
             ],
             [
-              -277.17456253642956,
+              277.17456253642956,
               19.192175818186843
             ],
             [
-              -309.4843859771639,
+              309.4843859771639,
               23.992321429523457
             ],
             [
-              -325.59764054194045,
+              325.59764054194045,
               26.848556728172444
             ],
             [
-              -357.80273046267706,
+              357.80273046267706,
               32.795576217557546
             ],
             [
-              -373.8932235217401,
+              373.8932235217401,
               35.87747661747541
             ],
             [
-              -390.0000000004306,
+              390.0000000004306,
               38.8568482097492
             ]
           ]
@@ -1135,99 +1167,99 @@
           ],
           "control_points_yz_mm": [
             [
-              -1.0491052471195417e-9,
+              1.0491052471195417e-09,
               59.46801050999169
             ],
             [
-              -8.288687444420296,
+              8.288687444420296,
               60.533342956057254
             ],
             [
-              -16.54439254263216,
+              16.54439254263216,
               60.81954343892169
             ],
             [
-              -33.01539807489856,
+              33.01539807489856,
               60.43747724486224
             ],
             [
-              -41.2306066718003,
+              41.2306066718003,
               59.767041126656395
             ],
             [
-              -57.639991768231226,
+              57.639991768231226,
               57.929334015801395
             ],
             [
-              -65.83577169934996,
+              65.83577169934996,
               56.76107109514877
             ],
             [
-              -82.2134380258204,
+              82.2134380258204,
               54.280994002354696
             ],
             [
-              -90.39392693514392,
+              90.39392693514392,
               52.968934003556065
             ],
             [
-              -114.9556355451854,
+              114.9556355451854,
               49.20746702063178
             ],
             [
-              -131.36049464536993,
+              131.36049464536993,
               46.96209791712556
             ],
             [
-              -156.12144183582706,
+              156.12144183582706,
               44.920311577657024
             ],
             [
-              -164.39992263190666,
+              164.39992263190666,
               44.452879693273914
             ],
             [
-              -181.0138755634711,
+              181.0138755634711,
               44.01458926444765
             ],
             [
-              -189.28052885948716,
+              189.28052885948716,
               44.045387609288376
             ],
             [
-              -213.96053288341483,
+              213.96053288341483,
               44.881330232096055
             ],
             [
-              -230.25220281623183,
+              230.25220281623183,
               46.44071409973706
             ],
             [
-              -262.58389230084106,
+              262.58389230084106,
               51.11933916483008
             ],
             [
-              -278.6255846143896,
+              278.6255846143896,
               54.22821173229516
             ],
             [
-              -310.5689149289789,
+              310.5689149289789,
               61.31408488295686
             ],
             [
-              -326.4717313183429,
+              326.4717313183429,
               65.2837812146917
             ],
             [
-              -358.24281645282565,
+              358.24281645282565,
               73.43731778640439
             ],
             [
-              -374.1102592412432,
+              374.1102592412432,
               77.61344262547995
             ],
             [
-              -390.0000000001381,
+              390.0000000001381,
               81.69299032983183
             ]
           ]
@@ -1238,8 +1270,8 @@
         ]
       },
       "active_y_span_mm": [
-        -390,
-        0
+        -0.0,
+        390.0
       ]
     },
     "cad_body_topology_identity": {
@@ -1251,7 +1283,7 @@
         "ion_foil_2": "9dbcccd3e077f416dc8a3c3f88814de4baaf130667b00a8e3e62cdbc87d5ebad",
         "ion_foil_3": "ea0ba01a73a6965ad7f754c60da0bf9e7f6a3010f0edca3e172ca6e8eab3c49a"
       },
-      "features": "Native solid/sketch end topology: all bodies y=-390..2; central x=+-2 cut y=-385..0. Foil-1 Sketch14 and Foil-3 Sketch12 terminal trims; Foil-2 Sketch20/22/25 short cubic and split terminal region.",
+      "features": "Native solid/sketch end topology after the unified v2 transform: all bodies project y=-2..390; central x=+-2 cut project y=0..385. Foil-1 Sketch14 and Foil-3 Sketch12 terminal trims; Foil-2 Sketch20/22/25 short cubic and split terminal region.",
       "simplification": "Long B-splines retain their existing native parameter contracts; selected end planes use the composed CAD frame. Fasteners/holes not defining the beam channel remain outside the field-critical reconstruction."
     }
   },
@@ -1262,19 +1294,54 @@
     "manufactured_design_drift_length_semantics": "Frozen input for the current already-designed and manufactured geometry only. It is not a universal dual-Stripe theory constant and remains free or derived in a future newly designed hardware line. The value must fit the active Stripe span at every declared eta node.",
     "fixed_cad_shape_identification": {
       "status": "user_confirmed_manufactured_theory_basis__analytic_voltage_inverse_required",
-      "basis": "set_1_zero_at_entry_polynomial_plus_set_2_zero_at_entry_linear",
+      "basis": "set_1_zero_at_function_origin_polynomial_plus_set_2_zero_at_function_origin_linear",
       "set_1_polynomial_degree": 5,
       "set_2_polynomial_degree": 1,
       "coefficient_semantics": "Fit the current manufactured curves in physical distance from y=0 and transform them with the frozen manufactured L=340 mm. The user confirms that these curves were generated as scaled copies of the original high-order psi_s and linear psi_m theory bases. Project the fitted coefficients onto those two declared bases to recover both geometry scales; do not treat the CAD millimetre coefficients themselves as voltages.",
-      "sampling_multipliers": [1, 2, 4],
+      "sampling_multipliers": [
+        1,
+        2,
+        4
+      ],
       "fit_semantics": "Use the native frozen B-splines over their complete active span, subtract each y=0 baseline, and fit the declared physical-coordinate structures by linear least squares. Report raw coefficients, residuals and sampling convergence without inventing an unapproved CAD-fit tolerance. L is supplied by the manufactured-design contract, not inferred from the fit."
     },
-    "coordinate_definition": "eta=(y-y_drift_phase_origin)/signed_drift_length_L; eta_turning=1. For this frozen CAD/theory contract y_drift_phase_origin=0 mm is both the common endpoint of the two theory Stripe functions S_i(y) and the selected slow-drift phase origin at the first negative-z mirror turn after P2 and the mandatory pre-origin Stripe traversal. It is not the P2 exit or a bounding-box edge. The nominal slow drift proceeds toward negative project y; signed L carries that direction while reported |L| is positive.",
-    "theory_stripe_entrance": {
-      "project_y_mm": 0.0,
-      "definition": "The y=0 endpoint of both active S_i(y) functions is the selected slow-drift phase origin at the first negative-z mirror turn after P2 and after the ion has already traversed the intervening physical Stripe bands. It is not the P2 exit. S_i(0) is the baseline action term in the downstream full-analyser period; it is not an input to the independent mirror-voltage solve.",
-      "excluded_mechanical_extension_y_mm": [0.0, 2.0],
-      "exclusion_semantics": "The CAD planar terminal extension provides mechanical continuity only. It is not a theory-profile extrapolation, a separate drift coordinate origin, or a mirror z-turning point."
+    "coordinate_mapping": {
+      "theory_coordinate_symbol": "y_theory",
+      "project_coordinate_symbol": "y_project",
+      "origin_project_y_mm": 0.0,
+      "theory_positive_project_y_sign": 1,
+      "mapping": "y_theory_mm = theory_positive_project_y_sign * (y_project_mm - origin_project_y_mm)",
+      "inverse_mapping": "y_project_mm = origin_project_y_mm + theory_positive_project_y_sign * y_theory_mm",
+      "semantics": "The paper function argument and project/SIMION y share both origin and positive direction. The origin is registered from the manufactured theory basis, not inferred from either endpoint of the finite mechanical curve. L is the positive physical design length."
+    },
+    "coordinate_definition": "eta=y/L with positive L and eta_turning=1, where theory y, project y and SIMION Workbench y are numerically identical. Thus y=0,340,390 mm map directly to eta=0,1,390/340. The common zero is the zero argument of both manufactured S_i(y) functions. A finite CAD curve may start or end at a nonzero function argument, so no mechanical endpoint is allowed to define this origin. The adiabatic reduction averages over fast z phase and therefore does not assign a mirror-turn z coordinate to eta=0.",
+    "theory_function_coordinate_registration": {
+      "status": "registered_from_theory_basis",
+      "function_y_zero_project_y_mm": 0.0,
+      "positive_direction": "+project_y",
+      "authority": "native manufactured B-spline geometry registered against the declared no-constant fifth-order psi_s basis and linear psi_m basis at L=340 mm",
+      "method": "Choose the affine y registration that preserves the declared theory-function coefficients; never choose the origin merely because a sampled curve or solid body begins or ends there.",
+      "active_theory_curve_domain_project_y_mm": [
+        0.0,
+        390.0
+      ],
+      "whole_physical_body_domain_project_y_mm": [
+        -2.0,
+        390.0
+      ],
+      "current_mechanical_coincidence": "In the present manufactured assembly the registered function zero is co-located with the low-y boundary of the active long B-spline. The whole solid begins at y=-2 mm, so neither the physical-body endpoint nor a trajectory crossing defines the function origin.",
+      "excluded_mechanical_extension_y_mm": [
+        -2.0,
+        0.0
+      ],
+      "exclusion_semantics": "The complete physical cross-section can be described piecewise on y=[-2,390] mm, but the CAD terminal/trim interval y=[-2,0] mm is not generated by the active polynomial/B-spline response. The theory response S_i(y)-S_i(0) and all eta integrals use the registered active domain beginning at y=0.",
+      "origin_discrimination_evidence": {
+        "status": "derive_on_demand__numeric_result_is_not_a_baseline_parameter",
+        "comparison": "Translate the fitted fifth-order set-1 polynomial to each hypothesized function zero, transform with L=340 mm, and compare its coefficient direction with the published high-order theory basis after optimizing one common scale.",
+        "candidate_origins": "derive the lower bounds from active_theory_curve_domain_project_y_mm and whole_physical_body_domain_project_y_mm",
+        "implementation": "analysis.dual_stripe_l0.audit_theory_function_origin_registration",
+        "interpretation": "Select the lower coefficient-direction residual only as coordinate evidence. The computed residuals are diagnostic outputs, not baseline inputs or solver PASS tolerances."
+      }
     },
     "theory_problem_order": [
       "independent_mirror_non_ground_electrode_voltages",
@@ -1292,19 +1359,31 @@
       "status": "user_specified_pending_physical_span_check",
       "quantity": "d_tau_g_d_eta_turn",
       "target": 0.0,
-      "eta_turn_nodes": [0.9, 0.95, 1.05, 1.1],
+      "eta_turn_nodes": [
+        0.9,
+        0.95,
+        1.05,
+        1.1
+      ],
       "semantics": "Four user-specified time-platform derivative nodes symmetric around the nominal turning point. The paper does not publish its four node locations; this project value is user authority, not an attribution to the original paper. Before activation, each physical y=entry_y+eta_turn*L must lie within both frozen Stripe active spans and the downstream-problem Jacobian rank gate must classify that problem."
     },
     "dimensionless_paper_target": {
       "status": "solve_from_six_paper_conditions",
       "qualification": "dimensionless_reference_branch_only__not_active_hardware_coefficients",
-      "published_printed_reference_c0_to_c5": [0.83999, 0.75160, -7.52535, 14.0242, -9.17661, 2.08613],
+      "published_printed_reference_c0_to_c5": [
+        0.83999,
+        0.7516,
+        -7.52535,
+        14.0242,
+        -9.17661,
+        2.08613
+      ],
       "published_reference_semantics": "Rounded values from the cited Astral paper are a continuation seed and branch-selection reference only. The active target coefficients are regenerated from psi(1)=1, kappa-prime(1)=0, and the four project-owned tau-g derivative nodes; no printed coefficient is copied into hardware geometry or voltage.",
       "deterministic_multistart_count": 24,
       "relative_reference_perturbation": 0.1,
-      "relative_finite_difference_step": 1e-5,
+      "relative_finite_difference_step": 1e-05,
       "maximum_function_evaluations": 600,
-      "residual_norm_tolerance": 1e-7,
+      "residual_norm_tolerance": 1e-07,
       "distinct_root_scaled_distance": 0.001,
       "random_seed_semantics": "Derive the reproducible generator seed from SHA-256 of the printed branch reference and the project eta nodes; do not store an arbitrary mutable seed.",
       "selection_rule": "Among roots passing the six-condition residual gate, choose minimum coefficient-scaled distance from the published rounded branch, then minimum residual norm. Preserve other distinct roots as diagnostics."
@@ -1315,7 +1394,14 @@
         "target_oscillation_count",
         "spatial_return_kappa_prime"
       ],
-      "normalized_start_fractions": [-0.5, -0.25, -0.1, 0.1, 0.25, 0.5],
+      "normalized_start_fractions": [
+        -0.5,
+        -0.25,
+        -0.1,
+        0.1,
+        0.25,
+        0.5
+      ],
       "voltage_envelope_semantics": "The diagnostic search interval is derived as [-nominal_energy, nextafter(minimum_mirror_energy,-infinity)] V. It is a finite numerical audit envelope, not a hardware rating or proof that no roots exist outside it.",
       "turning_search_sampling_multiplier": 2,
       "turning_search_sampling_semantics": "The search sample count is derived as the maximum native nonzero B-spline span count times dual_stripe.theory_profile.sampling_per_nonzero_knot_span times this multiplier; no absolute count is stored independently.",
@@ -1329,18 +1415,21 @@
       "complete_consistency_maximum_parallel_workers": 2,
       "complete_consistency_refinement_start_semantics": "At the frozen manufactured-design L, evaluate the complete native residual vector on the Cartesian product of both voltage fractions. Retain the minimum-norm point as an anchor, then choose the remaining refinement starts by deterministic farthest-point sampling in normalized (v1,v2) coordinates from the top-ranked pool whose size is refinement_start_count times complete_consistency_diversity_pool_multiplier. L is never a numerical start or fit coordinate. The refinement count and pool multiplier are frozen resource-control choices, not physical conditions or paper values.",
       "complete_consistency_parallel_semantics": "Qualified mirror roots are independent search units. Use at most two single-thread numerical workers, currently matching the two-root family, rather than hidden multithreaded BLAS inside one root search.",
-      "residual_tolerances": [1e-8, 1e-7],
+      "residual_tolerances": [
+        1e-08,
+        1e-07
+      ],
       "residual_tolerance_semantics": "The first tolerance closes the dimensionless K relation. The second is a numerical root tolerance for the central-difference kappa-prime residual, selected above the observed native B-spline/integral differencing floor; neither value changes the governing paper equation or acts as a physical performance threshold.",
-      "minimum_abs_bias_fraction_of_nominal_energy": 1e-6,
+      "minimum_abs_bias_fraction_of_nominal_energy": 1e-06,
       "minimum_bias_magnitude_ratio": 0.01,
-      "minimum_bias_separation_fraction_of_nominal_energy": 1e-6,
+      "minimum_bias_separation_fraction_of_nominal_energy": 1e-06,
       "selection_rule": "After native-B-spline refinement, reject zero/singular and effectively single-Stripe roots. Both bias magnitudes must exceed the absolute numerical floor and their scale-free minimum/maximum magnitude ratio must meet minimum_bias_magnitude_ratio. Choose the surviving root with minimum maximum absolute bias, then minimum response-matrix condition number.",
       "qualification_limit": "This closes only a two-equation analytic seed. Time-platform, full-energy, P1/P2, and three-dimensional residuals are reported or left pending and cannot be promoted without their own user-authorized tolerances and rank gate."
     },
     "determination_gate": "Before publishing any solved voltage, L, W, kappa, theta, or prism entrance state, scale the actual Jacobian for its owning mirror-only or downstream Stripe/P1/P2 problem with contract-owned parameter and residual scales and evaluate its SVD. Report rank, nullity, redundant-constraint count, condition number, and the scaled residual component in the left null space. Rank below the physical unknown count is underdetermined; a square full-rank compatible system is square_exact; a full-column-rank redundant system is overdetermined_consistent only when its irreducible residual meets the declared tolerance; otherwise it is locally_incompatible.",
     "determination_numerics": {
       "relative_singular_value_rank_tolerance": 1e-10,
-      "scaled_irreducible_residual_norm_tolerance": 1e-8,
+      "scaled_irreducible_residual_norm_tolerance": 1e-08,
       "full_analyser_period_slope_derivative_step_source": "mirror.theory_requirements.global_l0_search_profile.period_slope_derivative_step_v",
       "scale_authority": "Every production solve must list one positive physical parameter scale and one positive residual scale for each named coordinate. These two dimensionless SVD tolerances are numerical classification controls, not physical acceptance tolerances and not paper values."
     },
@@ -1441,10 +1530,10 @@
         "full_analyser_period_slope_at_4100V"
       ],
       "prism_transport_named_residual_blocks": [
-        "P1_P2_first_negative_turn_y_mm",
+        "P1_P2_phase_origin_turn_y_mm",
         "P1_P2_slow_kinetic_energy_per_charge_v"
       ],
-      "determination_semantics": "The frozen mirror geometry and the three axial energy conditions define a four-voltage mirror-only L0 family. Its three-row Jacobian and feasibility checks must be published with that family; an L1 mirror-only selection receipt identifies any representative member and its transverse diagnostics without inventing a fourth axial residual. Each qualified mirror root is then tested against the fixed-hardware Stripe drift problem with only the two Stripe biases as solve coordinates; L=340 mm is a frozen input of this manufactured design. Normalizing the pseudopotential at that physical turn makes psi(1)=1 an identity; target K, kappa-prime, and four time-platform residuals form the six-condition overdetermined drift-consistency test. The three full-analyser local energy slopes are still evaluated with the Stripe baseline action retained, but they are downstream global-calibration diagnostics owned by a newly derived mirror TE1/TE2 Jacobian, not extra equations assigned to v1 or v2. The injection angle and drift/fast energy partition are derived from the same physical turn. P1/P2 voltages belong to the subsequent finite-field transport problem and are not allowed to make the Stripe drift conditions appear solvable. Mirror gamma remains an upstream receipt gate and is never repeated downstream. The two P1/P2 voltage residuals are the first negative mirror-turn y coordinate and the slow kinetic energy; x symmetry, event-localized v_z=0, and the observed turn z are diagnostics rather than additional voltage equations. Each owning problem separately uses its contract-scaled Jacobian SVD and left-null residual to distinguish underdetermined, square_exact, overdetermined_consistent, and locally_incompatible states."
+      "determination_semantics": "The frozen mirror geometry and the three axial energy conditions define a four-voltage mirror-only L0 family. Its three-row Jacobian and feasibility checks must be published with that family; an L1 mirror-only selection receipt identifies any representative member and its transverse diagnostics without inventing a fourth axial residual. Each qualified mirror root is then tested against the fixed-hardware Stripe drift problem with only the two Stripe biases as solve coordinates; L=340 mm is a frozen input of this manufactured design. Normalizing the pseudopotential at the physical slow turn makes psi(1)=1 an identity; target K, kappa-prime, and four time-platform residuals form the six-condition overdetermined drift-consistency test. The three full-analyser local energy slopes are still evaluated with the Stripe baseline action retained, but they are downstream global-calibration diagnostics owned by a newly derived mirror TE1/TE2 Jacobian, not extra equations assigned to v1 or v2. The injection angle and drift/fast energy partition are derived from the same slow-turn energy balance. P1/P2 voltages belong to the subsequent finite-field transport problem and are not allowed to make the Stripe drift conditions appear solvable. Mirror gamma remains an upstream receipt gate and is never repeated downstream. The two P1/P2 voltage residuals are the first post-P2 positive-z mirror-turn y coordinate and the slow kinetic energy. The preceding negative-mirror pre-reflection, P2 passage, positive-side Stripe traversal, and the turn z coordinate are full-three-dimensional diagnostics, not extra voltage equations supplied by the adiabatic y model. Each owning problem separately uses its contract-scaled Jacobian SVD and left-null residual to distinguish underdetermined, square_exact, overdetermined_consistent, and locally_incompatible states."
     },
     "derived_fields_only_after_owning_problem_candidate": {
       "drift_length_L_mm": "frozen manufactured-design input, currently 340 mm; future newly designed hardware may instead declare or derive another L",
@@ -1487,19 +1576,19 @@
         "station": "accelerator_exit",
         "polygons_yz_mm": [
           [
-            42.828,
+            -42.828,
             -65,
-            67.828,
+            -67.828,
             -90,
-            67.828,
+            -67.828,
             -40
           ],
           [
-            42.828,
+            -42.828,
             -65,
-            67.828,
+            -67.828,
             -90,
-            67.828,
+            -67.828,
             -40
           ]
         ]
@@ -1519,19 +1608,19 @@
         "station": "central_ground_left",
         "polygons_yz_mm": [
           [
-            3.536,
+            -3.536,
             0,
-            23.536,
+            -23.536,
             -20,
-            23.536,
+            -23.536,
             20
           ],
           [
-            3.536,
+            -3.536,
             0,
-            23.536,
+            -23.536,
             -20,
-            23.536,
+            -23.536,
             20
           ]
         ]
@@ -1549,33 +1638,33 @@
         ],
         "outer_polygon_yz_mm": [
           [
-            33,
+            -33.0,
             -100
           ],
           [
-            77,
+            -77.0,
             -100
           ],
           [
-            77,
+            -77.0,
             -30
           ],
           [
-            33,
+            -33.0,
             -30
           ]
         ],
         "prism_clearance_polygon_yz_mm": [
           [
-            40,
+            -40.0,
             -65
           ],
           [
-            70,
+            -70.0,
             -95
           ],
           [
-            70,
+            -70.0,
             -35
           ]
         ],
@@ -1584,17 +1673,17 @@
             "role": "four_mm_beam_channel",
             "box": [
               -2,
-              35,
+              -75.0,
               -100,
               2,
-              75,
+              -35.0,
               -30
             ]
           }
         ],
         "cad_negative_inner_mirror_face_z_mm": -102,
         "cad_required_mirror_clearance_mm": 2,
-        "cad_evidence": "Top-level composed CAD pose: grounded-1 is one continuous body x=[-24,12], y=[33,77], z=[-100,-30] mm. Its local x=[-20,20] channel maps to project y=[35,75] mm, so the two 2-mm end lands at y=[33,35] and [75,77] are retained automatically by subtracting this finite rectangular slot from the one body; no bridge solids are added.",
+        "cad_evidence": "Top-level composed CAD pose under the unified v2 frame: grounded-1 is one continuous body x=[-24,12], y=[-77,-33], z=[-100,-30] mm. Its local x=[-20,20] channel maps to project y=[-75,-35] mm, so the two 2-mm end lands at y=[-77,-75] and [-35,-33] are retained automatically by subtracting this finite rectangular slot from the one body; no bridge solids are added.",
         "body_sections": [
           {
             "x_mm": [
@@ -1603,19 +1692,19 @@
             ],
             "outer_polygon_yz_mm": [
               [
-                33,
+                -33.0,
                 -100
               ],
               [
-                77,
+                -77.0,
                 -100
               ],
               [
-                77,
+                -77.0,
                 -30
               ],
               [
-                33,
+                -33.0,
                 -30
               ]
             ]
@@ -1627,35 +1716,35 @@
             ],
             "outer_polygon_yz_mm": [
               [
-                33,
+                -33.0,
                 -100
               ],
               [
-                70,
+                -70.0,
                 -100
               ],
               [
-                70,
+                -70.0,
                 -30
               ],
               [
-                33,
+                -33.0,
                 -30
               ],
               [
-                33,
+                -33.0,
                 -53
               ],
               [
-                52,
+                -52.0,
                 -53
               ],
               [
-                52,
+                -52.0,
                 -77
               ],
               [
-                33,
+                -33.0,
                 -77
               ]
             ]
@@ -1666,7 +1755,7 @@
           "native_sha256": "b6c0d9d6e08867a82351ab8e9a6ae4c2deecc95111791a3a94ff091f70742cdc",
           "stl_sha256": "29402f7e64f08aa707c195c030b5b2c77c439ed9655068a7e8144c975d3f678d",
           "source_features": "grounded native Sketch3 triangular aperture, Sketch10 rear stepped section, faces 1/5/6/7/8/9 and 10/11 finite-x slot",
-          "part_local_to_project": "x=local_y, y=55-local_x, z=local_z-100; millimetres"
+          "part_local_to_project": "x=local_y, y=local_x-55, z=local_z-100; millimetres"
         }
       },
       {
@@ -1680,49 +1769,49 @@
         ],
         "outer_polygon_yz_mm": [
           [
-            3,
+            -3.0,
             -97
           ],
           [
-            32,
+            -32.0,
             -97
           ],
           [
-            32,
+            -32.0,
             97
           ],
           [
-            3,
+            -3.0,
             97
           ],
           [
-            3,
+            -3.0,
             21
           ],
           [
-            -3,
+            3.0,
             21
           ],
           [
-            -3,
+            3.0,
             -21
           ],
           [
-            3,
+            -3.0,
             -21
           ]
         ],
         "prism_clearance_polygon_yz_mm": [
           [
-            0,
+            -0.0,
             0
           ],
           [
-            26,
+            -26.0,
             -26
           ],
           [
-            26,
+            -26.0,
             26
           ]
         ],
@@ -1732,8 +1821,8 @@
             2
           ],
           "y_mm": [
-            6,
-            28
+            -28.0,
+            -6.0
           ],
           "z_mm": [
             -40,
@@ -1745,7 +1834,7 @@
           ],
           "stripe_side_wall_y_mm": 3,
           "far_stripe_side_wall_y_mm": 4,
-          "cad_measurement": "user measurement 2026-09-03: 4-mm x width, 80-mm z opening with 57-mm end lands, 22-mm y opening; from the far Stripe side y=32, leave 4 mm then open y=6..28, leaving 3 mm to the effective Stripe-side y=3 frame edge.",
+          "cad_measurement": "user measurement 2026-09-03 transformed into the unified v2 frame: 4-mm x width, 80-mm z opening with 57-mm end lands, 22-mm y opening; from the far Stripe side y=-32, leave 4 mm then open y=-28..-6, leaving 3 mm to the effective Stripe-side y=-3 frame edge.",
           "boolean_operation": "union"
         },
         "body_sections": [
@@ -1756,35 +1845,35 @@
             ],
             "outer_polygon_yz_mm": [
               [
-                3,
+                -3.0,
                 -97
               ],
               [
-                32,
+                -32.0,
                 -97
               ],
               [
-                32,
+                -32.0,
                 97
               ],
               [
-                3,
+                -3.0,
                 97
               ],
               [
-                3,
+                -3.0,
                 21
               ],
               [
-                -3,
+                3.0,
                 21
               ],
               [
-                -3,
+                3.0,
                 -21
               ],
               [
-                3,
+                -3.0,
                 -21
               ]
             ]
@@ -1796,19 +1885,19 @@
             ],
             "outer_polygon_yz_mm": [
               [
-                3,
+                -3.0,
                 -97
               ],
               [
-                32,
+                -32.0,
                 -97
               ],
               [
-                32,
+                -32.0,
                 -57
               ],
               [
-                3,
+                -3.0,
                 -57
               ]
             ]
@@ -1820,19 +1909,19 @@
             ],
             "outer_polygon_yz_mm": [
               [
-                3,
+                -3.0,
                 57
               ],
               [
-                32,
+                -32.0,
                 57
               ],
               [
-                32,
+                -32.0,
                 97
               ],
               [
-                3,
+                -3.0,
                 97
               ]
             ]
@@ -1842,8 +1931,8 @@
           "schema_version": 1,
           "native_sha256": "6186aa9d6f5fdbaad2011c32968005bd47706f35c4e057a86d7c4e09fbe25b2f",
           "stl_sha256": "856a2a4b324a63ab826608a04903358fe27486c4b95aaaf0d7cb186bdd844016",
-          "source_features": "grounded 2 native face topology and part sketches: main body y=3..32, local stripe-side extension only |z|<=21, backing only 57<=|z|<=97; orthogonal rectangular slot union and exact triangle",
-          "part_local_to_project": "x=30-local_y, y=14-local_x, z=local_z; millimetres"
+          "source_features": "grounded 2 native face topology and part sketches after the v2 transform: main body y=-32..-3, local stripe-side extension only |z|<=21, backing only 57<=|z|<=97; orthogonal rectangular slot union and exact triangle",
+          "part_local_to_project": "x=30-local_y, y=local_x-14, z=local_z; millimetres"
         }
       }
     ]
@@ -1851,7 +1940,7 @@
   "prism_transport": {
     "status": "reference_static_prism_candidate__first_prism_l0_only",
     "reference_ground_voltage_v": 0.0,
-    "scope": "The first prism diagnostic receives a static hard-boundary seed only. It is not the two-prism injection solution. Both physical prisms precede Stripe entry in path order P1=16 then P2=17; finite 3-D shooting must replace the diagnostic before a transport or resolution claim.",
+    "scope": "The first prism diagnostic receives a static hard-boundary scale seed only. It is not the two-prism injection solution. The manufactured path is P1=16, a negative-mirror pre-reflection, then P2=17 and the positive-side Stripe region; finite 3-D shooting must replace the direct-ray diagnostic before a transport or resolution claim.",
     "energy_partition": {
       "semantics": "post_acceleration_total_and_orthogonal_components_per_charge_ev",
       "total_kinetic_energy_ev": 4005,
@@ -1864,10 +1953,18 @@
     "first_prism": {
       "electrode_id": 16,
       "station": "accelerator_exit",
-      "local_angle_convention": "positive_beta_is_negative_project_y_about_negative_project_z",
+      "local_angle_convention": "positive_beta_is_positive_project_y_about_negative_project_z",
       "entry_reference": {
-        "position_project_mm": [0, 55.328, 0],
-        "direction_project": [0, 0, -1],
+        "position_project_mm": [
+          0,
+          -55.328,
+          0
+        ],
+        "direction_project": [
+          0,
+          0,
+          -1
+        ],
         "semantics": "two-zone first-time-focus plane transported toward the accelerator-exit prism"
       },
       "target_interface": {
@@ -1883,16 +1980,17 @@
       "electrode_id": 17,
       "status": "pre_stripe_injection_pending",
       "voltage_v": 0.0,
-      "required_input": "geometry-constrained source/focus -> P1 -> P2 -> mandatory pre-origin Stripe traversal -> negative-mirror-turn drift-origin contract; P2 is not a K=25-return device"
+      "required_input": "geometry-constrained source/focus -> P1 -> negative-mirror pre-reflection -> P2 -> positive-side Stripe traversal -> positive-mirror-turn drift-origin contract; P2 is not a K=25-return device"
     },
     "two_prism_injection_l0": {
-      "status": "source_to_negative_turn_joint_transport_pending",
+      "status": "source_to_positive_turn_joint_transport_under_finite_3d_calibration",
       "path_order": [
         "accelerator_focus",
         "prism_1_id_16",
+        "negative_z_mirror_pre_reflection",
         "prism_2_id_17",
-        "pre_origin_stripe_traversal",
-        "negative_z_mirror_turn_drift_origin"
+        "positive_z_stripe_traversal",
+        "positive_z_mirror_turn_drift_origin"
       ],
       "frozen_inputs_before_three_dimensional_shooting": [
         "accelerator_focus_source_reference_position_direction_and_energy",
@@ -1905,27 +2003,29 @@
       ],
       "derived_per_joint_trial": [
         "dual_stripe_L_W_kappa_theta_target_from_same_Mirror_Stripe_trial",
-        "first_negative_z_mirror_turn_project_y_target_and_slow_energy_target",
-        "P1_P2_voltage_pair_and_actual_negative_turn_phase_space"
+        "first_post_P2_stripe_on_mirror_turn_project_y_target_and_slow_energy_target",
+        "P1_P2_voltage_pair_and_actual_positive_turn_phase_space"
       ],
       "drift_phase_origin_authority": {
         "status": "derived_design_authority",
-        "event": "first_negative_z_mirror_turn_after_P2_and_after_pre_origin_Stripe_traversal",
+        "event": "first_post_P2_stripe_on_mirror_turn",
+        "mirror_side": "positive_project_z",
         "target_project_y_mm": 0.0,
         "target_project_x_mm": 0.0,
         "target_project_z_rule": "not_an_independent_target__observe_the_Stripe_on_full_field_turn__bare_mirror_turn_is_seed_only",
-        "fast_velocity_condition": "v_z=0 with outward negative-z motion reversing toward positive z",
-        "slow_velocity_condition": "v_y<0 with drift kinetic energy derived from the compatible Mirror-Stripe solution",
-        "return_phase_condition": "after the complete slow-drift excursion, return to the same negative-z mirror-turn phase at y=0 with v_y>0",
-        "source": "user_selected_turning_phase_boundary_2026-09-08",
+        "fast_velocity_condition": "v_z=0 with outward positive-z motion reversing toward negative z",
+        "slow_velocity_condition": "v_y>0 with drift kinetic energy derived from the compatible Mirror-Stripe solution",
+        "return_phase_condition": "after the complete slow-drift excursion, return to the same positive-z mirror-turn phase at y=0 with v_y<0",
+        "source": "user_selected_turning_phase_boundary_2026-09-08_with_v2_positive_y_registration",
         "forbidden_substitutions": [
           "fixed_CAD_z_coordinate",
+          "mechanical_Stripe_endpoint",
           "prism_triangle_centroid",
           "grounded_shield_aperture_centroid",
           "CAD_bounding_box_center"
         ]
       },
-      "semantics": "CAD triangles and shields constrain mechanical clearance only. The accelerator-focus ray is frozen input. In the fixed manufactured topology the P2 ray must traverse the physical negative-z Stripe bands before the slow-drift phase origin; therefore a y=0 P2-exit event is forbidden. The two voltage-sensitive targets are the first negative-z mirror-turn y coordinate and the slow kinetic energy supplied by the compatible Mirror-Stripe solution. At that actual Stripe-on turn, v_z=0 follows from event localization and z is a full-field trajectory result; the bare-mirror turning coordinate is only an analytic seed/diagnostic and is never imposed as a third target. Finite three-dimensional P1/P2 shooting must still demonstrate a compatible full-column-rank scaled Jacobian. P1/P2 effective planes are required only when forming an auxiliary hard-boundary seed."
+      "semantics": "CAD triangles and shields constrain mechanical clearance only. The accelerator-focus ray is frozen input. In the fixed manufactured topology P2 is exited along positive project z and the ray must traverse the positive-z physical Stripe bands before the slow-drift phase origin; therefore a y=0 P2-exit or Stripe-edge event is forbidden as a substitute. The two voltage-sensitive targets are the first post-P2 positive-z mirror-turn y coordinate and the slow kinetic energy supplied by the compatible Mirror-Stripe solution. At that actual Stripe-on turn, v_z=0 follows from event localization and z is a full-field trajectory result; the bare-mirror turning coordinate is only an analytic seed/diagnostic and is never imposed as a third target. Finite three-dimensional P1/P2 shooting must still demonstrate a compatible full-column-rank scaled Jacobian."
     }
   },
   "accelerator": {
@@ -1997,8 +2097,16 @@
     },
     "mirror_internal_diagnostic": {
       "status": "diagnostic_only__not_a_full_instrument_source",
-      "position_project_mm": [0, -280, -36.6],
-      "direction_project": [0, 0, 1],
+      "position_project_mm": [
+        0,
+        280.0,
+        -36.6
+      ],
+      "direction_project": [
+        0,
+        0,
+        1
+      ],
       "axial_kinetic_energy_ev": 4000,
       "semantics": "A direct analyser release retained only to isolate mirror and Stripe dynamics from the accelerator and P1/P2. It must not be consumed by a complete-instrument flight, transmission, detector-TOF, or resolution workflow."
     },
@@ -2006,7 +2114,11 @@
       "status": "diagnostic_only__zero_ke_axial_release",
       "position_authority": "accelerator release_position_in_gap_1_mm and derived reviewed placement",
       "initial_kinetic_energy_ev": 0,
-      "direction_project": [0, 0, -1]
+      "direction_project": [
+        0,
+        0,
+        -1
+      ]
     },
     "first_prism_entry_diagnostic": {
       "status": "diagnostic_only__first_prism_l0",
@@ -2017,9 +2129,9 @@
       "publishable": false,
       "required_inputs": [
         "a mirror-theory-qualified root satisfying the paper-normalized adiabatic T_D(theta_0)/T_0 target",
-        "a complete-analyser fast-phase integral using the y-dependent Stripe-on local period and returning to the same negative mirror-turn phase",
+        "a complete-analyser fast-phase integral using the y-dependent Stripe-on local period and returning to the same positive mirror-turn phase",
         "a full-rank compatible P1/P2 finite-three-dimensional transport solution",
-        "the resulting first-negative-mirror-turn state at y=0 after the mandatory pre-origin Stripe traversal"
+        "the resulting first-negative-mirror-turn state at registered function y=0 after the mandatory pre-origin Stripe traversal"
       ],
       "forbidden_substitution": "mirror_internal_diagnostic"
     },
@@ -2027,13 +2139,25 @@
     "candidate_bunch_particle_count": 100,
     "candidate_bunch_radius_mm": 0.1,
     "accelerator_focus_axial_full_width_mm": 0.2,
-    "initial_spread_status": "source-profile-specific ideal diagnostics; the complete MR-TOF center and its spread remain unpublished"
+    "initial_spread_status": "source-profile-specific ideal diagnostics; the complete MR-TOF center and its spread are not yet published"
   },
   "simion": {
     "component_mesh_mm_per_gu": {
-      "analyzer": [1, 1, 1],
-      "accelerator": [0.25, 0.25, 0.1],
-      "detector": [1, 1, 1]
+      "analyzer": [
+        1,
+        1,
+        1
+      ],
+      "accelerator": [
+        0.25,
+        0.25,
+        0.1
+      ],
+      "detector": [
+        1,
+        1,
+        1
+      ]
     },
     "version": "2020",
     "surface": "none",
@@ -2050,7 +2174,7 @@
     ],
     "analyzer_pa_origin_mm": [
       -90,
-      -478,
+      -162,
       -360
     ],
     "accelerator_pa_span_mm": [

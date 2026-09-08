@@ -40,10 +40,16 @@ REQUIRED_FIELDS = {
     "fast_turn": {"ion", "n", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
     "slow_turn": {"ion", "n", "t_us", "x_mm", "y_mm", "z_mm"},
     "p1_plane": {"ion", "n", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
-    "pre_origin_y0_crossing": {"ion", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
+    "prism_entry": {"ion", "n", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
+    "prism_pass": {"ion", "n", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
+    "pre_injection_mirror_turn": {"ion", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
+    "pre_origin_positive_mirror_turn": {"ion", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
     "drift_phase_origin": {"ion", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
+    "drift_phase_candidate": {"ion", "k", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
     "drift_phase_return": {"ion", "k", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
-    "stripe_plane": {"ion", "n", "direction_y", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
+    "drift_coordinate_return": {"ion", "k_before", "phase_turn_t_us", "phase_turn_y_mm", "phase_time_residual_us", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
+    "target_k_phase_sample": {"ion", "k", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
+    "slow_coordinate_y0": {"ion", "n", "direction_y", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
     "central_plane": {"ion", "n", "t_us", "x_mm", "y_mm"},
     "central_plane_directional": {"ion", "n", "direction_z", "t_us", "x_mm", "y_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
     "detector": {"ion", "t_us", "x_mm", "y_mm", "z_mm"},
@@ -74,7 +80,7 @@ def _event_error(event: dict[str, Any]) -> str | None:
         return "nonfinite_or_nonnumeric_event_field"
     if not _integer(event["ion"], minimum=1) or event["t_us"] < 0:
         return "invalid_particle_id_or_time"
-    for key in ("turns", "central_crossings", "n", "k"):
+    for key in ("turns", "central_crossings", "n", "k", "k_before"):
         if key in event and not _integer(event[key], minimum=0):
             return "invalid_event_counter"
     for key in ("splat", "code"):
@@ -141,6 +147,42 @@ def _same_direction_periods_us(events: list[dict[str, Any]]) -> list[float]:
     return periods
 
 
+def _drift_coordinate_return_diagnostics(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Derive continuous return phase from immutable same-side turn samples."""
+    candidates = {
+        (int(event["ion"]), int(event["k"])): event
+        for event in events if event["kind"] == "drift_phase_candidate"
+    }
+    diagnostics: list[dict[str, Any]] = []
+    for event in events:
+        if event["kind"] != "drift_coordinate_return":
+            continue
+        ion, k_before = int(event["ion"]), int(event["k_before"])
+        current = candidates.get((ion, k_before))
+        previous = candidates.get((ion, k_before - 1))
+        period = event.get("phase_period_us")
+        if period is None and current is not None and previous is not None:
+            period = float(current["t_us"]) - float(previous["t_us"])
+        fractional = event.get("fractional_k")
+        if fractional is None and period is not None and float(period) > 0.0:
+            fractional = k_before + float(event["phase_time_residual_us"]) / float(period)
+        diagnostics.append({
+            "k_before": k_before,
+            "fractional_k": float(fractional) if fractional is not None else None,
+            "phase_turn_y_mm": float(event["phase_turn_y_mm"]),
+            "phase_time_residual_us": float(event["phase_time_residual_us"]),
+            "phase_period_us": float(period) if period is not None else None,
+            "derivation": (
+                "event_reported_same_side_period"
+                if "phase_period_us" in event
+                else "adjacent_drift_phase_candidate_times"
+                if period is not None
+                else "insufficient_phase_samples"
+            ),
+        })
+    return diagnostics
+
+
 def _effective_axial_width_mm(period_us: float, kinetic_energy_ev: float, mass_th: float) -> float:
     """Apply $W=T_0\sqrt{E/(2m)}$ to one full same-direction period."""
     if not all(math.isfinite(value) and value > 0.0 for value in (period_us, kinetic_energy_ev, mass_th)):
@@ -187,7 +229,7 @@ def summarize_events(
     terminal = [event for event in events if event["kind"] == "terminal"]
     splat_events = [event for event in events if event["kind"] == "splat"]
     duplicates = {}
-    for kind in ("terminal", "splat", "detector", "target_k"):
+    for kind in ("terminal", "splat", "detector", "target_k", "target_k_phase_sample"):
         counts = Counter(int(event["ion"]) for event in events if event["kind"] == kind)
         duplicates[kind] = sorted(ion for ion, count in counts.items() if count > 1)
     if any(duplicates.values()):
@@ -217,8 +259,13 @@ def summarize_events(
         errors.append("arrival_without_terminal_event")
     detector = [event for event in events if event["kind"] == "detector"]
     target_k_events = [event for event in events if event["kind"] == "target_k"]
+    target_k_phase_samples = [
+        event for event in events if event["kind"] == "target_k_phase_sample"
+    ]
     if any(event["k"] != target_k for event in target_k_events):
         errors.append("target_k_event_differs_from_source_contract")
+    if any(event["k"] != target_k for event in target_k_phase_samples):
+        errors.append("target_k_phase_sample_differs_from_source_contract")
     turns = [int(event["turns"]) for event in lifecycle]
     splat_codes = [int(event["splat"] if event["kind"] == "terminal" else event["code"]) for event in lifecycle]
     valid = not errors
@@ -241,7 +288,7 @@ def summarize_events(
         else None
     )
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "status": "candidate_not_formal" if valid else "candidate_not_formal__invalid_event_receipt",
         "event_integrity_passed": valid,
         "integrity_errors": sorted(set(errors)),
@@ -270,6 +317,10 @@ def summarize_events(
         "detection_rate": len(detector) / population_count if valid else None,
         "target_k": target_k,
         "target_k_reached_event_count": len(target_k_events),
+        "target_k_phase_sample_count": len(target_k_phase_samples),
+        "target_k_phase_y_residuals_mm": [
+            float(event["y_mm"]) for event in target_k_phase_samples
+        ],
         "target_k_count": sum(value == target_k for value in oscillations),
         "target_k_fraction": (
             sum(value == target_k for value in oscillations) / population_count
@@ -286,17 +337,23 @@ def summarize_events(
         "slow_y_turn_count": sum(event["kind"] == "slow_turn" for event in events),
         "slow_y_turning_positions_mm": slow_turn_y_mm,
         "slow_drift_abs_lengths_from_y0_mm": [abs(value) for value in slow_turn_y_mm],
-        "stripe_y0_crossing_count": sum(event["kind"] == "stripe_plane" for event in events),
-        "stripe_y0_inbound_crossing_count": sum(
-            event["kind"] == "stripe_plane" and event["direction_y"] < 0 for event in events
+        "slow_coordinate_y0_crossing_count": sum(event["kind"] == "slow_coordinate_y0" for event in events),
+        "slow_coordinate_y0_inbound_crossing_count": sum(
+            event["kind"] == "slow_coordinate_y0" and event["direction_y"] < 0 for event in events
         ),
-        "stripe_y0_outbound_crossing_count": sum(
-            event["kind"] == "stripe_plane" and event["direction_y"] > 0 for event in events
+        "slow_coordinate_y0_outbound_crossing_count": sum(
+            event["kind"] == "slow_coordinate_y0" and event["direction_y"] > 0 for event in events
         ),
         "P1_plane_crossing_count": sum(event["kind"] == "p1_plane" for event in events),
-        "pre_origin_y0_crossing_count": sum(event["kind"] == "pre_origin_y0_crossing" for event in events),
         "drift_phase_origin_count": sum(event["kind"] == "drift_phase_origin" for event in events),
         "drift_phase_return_count": sum(event["kind"] == "drift_phase_return" for event in events),
+        "drift_phase_candidate_count": sum(
+            event["kind"] == "drift_phase_candidate" for event in events
+        ),
+        "drift_coordinate_return_count": sum(
+            event["kind"] == "drift_coordinate_return" for event in events
+        ),
+        "drift_coordinate_return_diagnostics": _drift_coordinate_return_diagnostics(events),
         "same_direction_central_plane_periods_us": directional_periods,
         "same_direction_central_plane_period_median_us": median(directional_periods) if directional_periods else None,
         "effective_axial_width_W_mm": widths if kinetic_energy_ev is not None and mass_th is not None else None,

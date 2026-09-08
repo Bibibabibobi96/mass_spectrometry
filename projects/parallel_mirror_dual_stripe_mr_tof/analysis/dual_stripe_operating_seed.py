@@ -30,6 +30,8 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import 
     derive_manufactured_basis_voltage_seed,
     identify_fixed_cad_component_shapes,
     paper_dimensionless_condition_residuals,
+    project_y_from_theory_drift_mm,
+    theory_drift_y_mm,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.joint_mirror_stripe_l0 import (
     JointL0Trial,
@@ -135,10 +137,7 @@ def _fixed_geometry_drift_length_bound(contract: dict[str, Any]) -> dict[str, An
     dual_stripe = contract.get("dual_stripe")
     if not isinstance(stripe_l0, dict) or not isinstance(dual_stripe, dict):
         raise CandidateContractError("Stripe contract blocks are incomplete")
-    entry = _finite(
-        stripe_l0.get("theory_stripe_entrance", {}).get("project_y_mm"),
-        "Stripe entry y",
-    )
+    function_origin = project_y_from_theory_drift_mm(contract, 0.0)
     y_span = tuple(
         _finite(value, "Stripe active span")
         for value in dual_stripe.get("theory_profile", {}).get("active_y_span_mm", [])
@@ -147,11 +146,16 @@ def _fixed_geometry_drift_length_bound(contract: dict[str, Any]) -> dict[str, An
         _finite(value, "time-platform node")
         for value in stripe_l0.get("time_platform_constraint", {}).get("eta_turn_nodes", [])
     )
-    if len(y_span) != 2 or y_span[0] >= y_span[1] or entry != y_span[1]:
-        raise CandidateContractError("Stripe active span must end at the theory entrance")
+    if len(y_span) != 2 or y_span[0] >= y_span[1] or function_origin != y_span[0]:
+        raise CandidateContractError(
+            "Stripe active span must begin at the registered theory-function zero"
+        )
     if not nodes or min(nodes) <= 0.0:
         raise CandidateContractError("Stripe time-platform nodes must be positive")
-    usable_length = entry - y_span[0]
+    theory_span = tuple(theory_drift_y_mm(contract, value) for value in y_span)
+    if min(theory_span) != 0.0 or max(theory_span) <= 0.0:
+        raise CandidateContractError("Stripe span has the wrong orientation in the explicit theory coordinate")
+    usable_length = max(theory_span)
     maximum_node = max(nodes)
     maximum_length = usable_length / maximum_node
     designed_length = _finite(
@@ -168,7 +172,7 @@ def _fixed_geometry_drift_length_bound(contract: dict[str, Any]) -> dict[str, An
         "maximum_eta_turn_node": maximum_node,
         "manufactured_design_abs_drift_length_L_mm": designed_length,
         "maximum_abs_drift_length_L_mm": maximum_length,
-        "nominal_turn_y_relation": "y_turn=y_entry-|L|",
+        "nominal_turn_y_relation": "y_theory_turn=|L|; y_project_turn=project_y_from_theory_drift(|L|)",
         "derivation": "manufactured-design |L| <= active_length/max(eta_turn_nodes)",
     }
 
@@ -619,13 +623,17 @@ def _stripe_search_domain(
 ) -> tuple[float, int]:
     """Derive the physical turn-search interval from Stripe geometry only."""
     stripe_l0 = contract["dual_stripe_l0"]
-    entry = _finite(stripe_l0["theory_stripe_entrance"]["project_y_mm"], "Stripe entry y")
+    function_origin = project_y_from_theory_drift_mm(contract, 0.0)
     y_span = tuple(_finite(value, "Stripe active span") for value in contract["dual_stripe"]["theory_profile"]["active_y_span_mm"])
     nodes = tuple(_finite(value, "time-platform node") for value in stripe_l0["time_platform_constraint"]["eta_turn_nodes"])
-    if len(y_span) != 2 or entry != y_span[1] or not nodes or min(nodes) <= 0.0:
-        raise CandidateContractError("Stripe active span, entry, or time-platform nodes are inconsistent")
-    usable_length = (entry - y_span[0]) / max(nodes)
-    search_end = entry - usable_length
+    if len(y_span) != 2 or not nodes or min(nodes) <= 0.0:
+        raise CandidateContractError("Stripe active span or time-platform nodes are inconsistent")
+    theory_span = tuple(theory_drift_y_mm(contract, value) for value in y_span)
+    theory_active_length = max(theory_span)
+    if min(theory_span) != 0.0 or function_origin not in y_span or theory_active_length <= 0.0:
+        raise CandidateContractError("Stripe span has the wrong orientation in the explicit theory coordinate")
+    usable_length = theory_active_length / max(nodes)
+    search_end = project_y_from_theory_drift_mm(contract, usable_length)
     theory = contract["dual_stripe"]["theory_profile"]
     samples_per_span = _positive_integer(
         theory.get("sampling_per_nonzero_knot_span"),
@@ -666,7 +674,7 @@ def _entry_direction_and_search_end(
     nominal = _finite(contract.get("nominal", {}).get("energy_per_charge_v"), "nominal energy")
     if fast != nominal or total != drift + fast or not 0.0 < drift < total:
         raise CandidateContractError("Stripe seed energy partition must close as total=drift+axial")
-    direction = (0.0, -math.sqrt(drift / total), -math.sqrt(fast / total))
+    direction = (0.0, math.sqrt(drift / total), -math.sqrt(fast / total))
     search_end, sample_count = _stripe_search_domain(contract, profile)
     return direction, search_end, sample_count
 
@@ -674,7 +682,7 @@ def _entry_direction_and_search_end(
 def _surrogate_widths(contract: dict[str, Any]) -> tuple[WidthFunction, WidthFunction]:
     shape = identify_fixed_cad_component_shapes(contract)
     fit = shape["selected_fit"]
-    baselines = shape["width_baselines_at_entry_mm"]
+    baselines = shape["width_baselines_at_function_origin_mm"]
     coefficients = tuple(float(value) for value in fit["set_1_coefficients_per_physical_mm_power"])
     linear = float(fit["set_2_coefficient_per_physical_mm"])
     first_baseline = float(baselines["set_1"])
@@ -713,7 +721,7 @@ def _evaluate_seed_equations(
         StripeHardBoundary(_finite(bias, "Stripe seed bias"), width)
         for bias, width in zip(biases_v, widths)
     )
-    entry = _finite(mirror.contract["dual_stripe_l0"]["theory_stripe_entrance"]["project_y_mm"], "Stripe entry")
+    entry = project_y_from_theory_drift_mm(mirror.contract, 0.0)
     target_k = _positive_integer(mirror.contract["nominal"]["target_oscillation_count"], "target K")
     energy = mirror.nominal_energy_per_charge_v
     turn = derive_turning_y_from_entry_direction(
@@ -793,7 +801,7 @@ def _fixed_hardware_joint_trial(
 ) -> JointL0Trial:
     """Construct one complete fixed-hardware Stripe trial from two biases."""
     contract = mirror.contract
-    entry = _finite(contract["dual_stripe_l0"]["theory_stripe_entrance"]["project_y_mm"], "Stripe entry")
+    entry = project_y_from_theory_drift_mm(contract, 0.0)
     stripes = tuple(
         StripeHardBoundary(_finite(bias, "Stripe consistency bias"), width)
         for bias, width in zip(biases_v, widths)
@@ -831,7 +839,7 @@ def _fixed_hardware_joint_trial_at_turn(
 ) -> JointL0Trial:
     """Construct a fixed-geometry trial with ``L`` as a solve coordinate."""
     contract = mirror.contract
-    entry = _finite(contract["dual_stripe_l0"]["theory_stripe_entrance"]["project_y_mm"], "Stripe entry")
+    entry = project_y_from_theory_drift_mm(contract, 0.0)
     stripes = tuple(
         StripeHardBoundary(_finite(bias, "Stripe consistency bias"), width)
         for bias, width in zip(biases_v, widths)
@@ -973,10 +981,7 @@ def _dimensionless_profile_fit(
         mirror_reduced_period_mm_per_sqrt_v=mirror.nominal_reduced_period_mm_per_sqrt_v,
         energy_per_charge_v=mirror.nominal_energy_per_charge_v,
         stripes=stripes,
-        entry_y_mm=_finite(
-            contract["dual_stripe_l0"]["theory_stripe_entrance"]["project_y_mm"],
-            "Stripe entry",
-        ),
+        entry_y_mm=project_y_from_theory_drift_mm(contract, 0.0),
         nominal_turning_y_mm=turning_y_mm,
         eta_max=max(1.0, *nodes),
         polynomial_degree=degree,
@@ -1017,7 +1022,7 @@ def _search_complete_fixed_hardware_consistency(mirror: ManagedMirrorCandidate) 
     energy = mirror.nominal_energy_per_charge_v
     lower = -energy
     upper = math.nextafter(min(mirror.energy_points_v), -math.inf)
-    entry = _finite(contract["dual_stripe_l0"]["theory_stripe_entrance"]["project_y_mm"], "Stripe entry")
+    entry = project_y_from_theory_drift_mm(contract, 0.0)
     drift_sign = 1.0 if search_end > entry else -1.0
     length = _fixed_geometry_drift_length_bound(contract)[
         "manufactured_design_abs_drift_length_L_mm"
@@ -1334,10 +1339,7 @@ def _build_operating_seed_report_for_mirror(mirror: ManagedMirrorCandidate) -> d
         if not _bias_pair_is_nondegenerate(values, profile, energy):
             continue
         response = analyze_dual_stripe_l0(contract, values)
-        entry_y_mm = _finite(
-            contract["dual_stripe_l0"]["theory_stripe_entrance"]["project_y_mm"],
-            "Stripe entry y",
-        )
+        entry_y_mm = project_y_from_theory_drift_mm(contract, 0.0)
         periods = [
             coupled_reduced_period_mm_per_sqrt_v(
                 reduced_period(node, mirror.design),

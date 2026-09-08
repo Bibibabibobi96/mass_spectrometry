@@ -135,7 +135,7 @@ def derive_first_prism_l0(contract: dict[str, Any]) -> FirstPrismL0:
         raise PrismL0Error("first-prism energy must close as total=drift+nominal axial energy")
     if first.get("electrode_id") != 16 or first.get("station") != "accelerator_exit":
         raise PrismL0Error("first-prism L0 contract must bind CAD electrode id 16 at accelerator_exit")
-    if first.get("local_angle_convention") != "positive_beta_is_negative_project_y_about_negative_project_z":
+    if first.get("local_angle_convention") != "positive_beta_is_positive_project_y_about_negative_project_z":
         raise PrismL0Error("first-prism local angle convention is missing or incompatible")
     entry = first.get("entry_reference")
     target = first.get("target_interface")
@@ -192,7 +192,7 @@ def derive_first_prism_l0(contract: dict[str, Any]) -> FirstPrismL0:
     if target_acceptance != "grounded_shield_18_slot_y_bounds":
         raise PrismL0Error("target y acceptance must be derived from the grounded-1 CAD slot")
     theta = math.atan(math.sqrt(drift / fast))
-    output = (0.0, -math.sin(theta), -math.cos(theta))
+    output = (0.0, math.sin(theta), -math.cos(theta))
     seed = total * math.cos(theta) * math.sin(theta)
     if second.get("electrode_id") != 17 or second.get("status") != "pre_stripe_injection_pending":
         raise PrismL0Error("second prism must remain id-17 and explicitly pending the pre-Stripe injection contract")

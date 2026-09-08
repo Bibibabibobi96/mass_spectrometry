@@ -389,6 +389,16 @@ def materialize(contract_path: Path, mirror_receipt_path: Path, output_directory
             max(box[5] for box in mirror_boxes if box[2] > 0.0),
         ],
     }
+    prism_regions = {}
+    shields_by_station = {
+        item["station"]: item for item in contract["prisms"]["ground_shields"]
+    }
+    for index, electrode in enumerate(contract["prisms"]["electrodes"], 1):
+        points = shields_by_station[electrode["station"]]["outer_polygon_yz_mm"]
+        prism_regions[f"p{index}"] = [
+            min(float(point[0]) for point in points), max(float(point[0]) for point in points),
+            min(float(point[1]) for point in points), max(float(point[1]) for point in points),
+        ]
     accelerator_dependency = _freeze_accelerator_dependency(output_directory)
     derived = json.loads(json.dumps(contract))
     mirror = derived["mirror"]
@@ -423,7 +433,11 @@ def materialize(contract_path: Path, mirror_receipt_path: Path, output_directory
         + f"{mirror_regions['negative'][0]:.17g}, z_max_mm = {mirror_regions['negative'][1]:.17g}"
         + " }, positive = { z_min_mm = "
         + f"{mirror_regions['positive'][0]:.17g}, z_max_mm = {mirror_regions['positive'][1]:.17g} }}"
-        + " }, detector_box_mm = { " + ", ".join(f"{float(value):.17g}" for value in detector_box)
+        + " }, prism_regions_project = { p1 = { y_min_mm = "
+        + f"{prism_regions['p1'][0]:.17g}, y_max_mm = {prism_regions['p1'][1]:.17g}, z_min_mm = {prism_regions['p1'][2]:.17g}, z_max_mm = {prism_regions['p1'][3]:.17g}"
+        + " }, p2 = { y_min_mm = "
+        + f"{prism_regions['p2'][0]:.17g}, y_max_mm = {prism_regions['p2'][1]:.17g}, z_min_mm = {prism_regions['p2'][2]:.17g}, z_max_mm = {prism_regions['p2'][3]:.17g} }}"
+        + " }, phase_origin_mirror_side = 1, detector_box_mm = { " + ", ".join(f"{float(value):.17g}" for value in detector_box)
         + f" }}, detector_normal_project = '+z', trajectory_quality = {trajectory_quality:.17g}, maximum_step_us = {maximum_step_us:.17g}, full_path_timeout_us = {full_path_timeout_us:.17g}, nonaccelerator_scale = {nonaccelerator_scale:.17g}, target_oscillation_count = {target_oscillation_count} }}\n",
         encoding="utf-8",
         newline="\n",

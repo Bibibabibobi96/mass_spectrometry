@@ -9,6 +9,10 @@ local point={mirror_voltages_v={0,-10,20,30,50},stripe_biases_v={-4,6},
   nonaccelerator_scale=0.5,detector_box_mm={0,0,0,1,1,1},detector_normal_project='+z',
   first_prism_l0={target_plane_z_mm=-101},
   mirror_regions_project={negative={z_min_mm=-20,z_max_mm=-10},positive={z_min_mm=10,z_max_mm=20}},
+  prism_regions_project={p1={y_min_mm=-10,y_max_mm=10,z_min_mm=-110,z_max_mm=-90},
+    p2={y_min_mm=-10,y_max_mm=10,z_min_mm=90,z_max_mm=110}},
+  phase_origin_mirror_side=1,
+  runtime_fast_adjust_accelerator_enable=true,
   target_oscillation_count=25,trajectory_quality=8,maximum_step_us=0.002,
   full_path_timeout_us=5}
 local function build(value)
@@ -55,8 +59,13 @@ simion={wb={instances={{pa=pa(1)},{pa=pa(2)},{pa=pa(3)}}}}
 for _,instance in ipairs(simion.wb.instances) do instance._debug_update_size=function() end end
 function simion.wb:load(path) self.filename=path end
 function simion.wb:save(path)
-  assert(self.instances[1].pa.saved and self.instances[2].pa.saved,'IOB saved before PA0 voltages')
-  assert(not self.instances[3].pa.saved,'raw detector PA was mutated')
+  if arg and arg[17]=='read_only_voltageized' then
+    assert(not self.instances[1].pa.saved and not self.instances[2].pa.saved
+      and not self.instances[3].pa.saved,'read-only PA binding mutated a source PA')
+  else
+    assert(self.instances[1].pa.saved and self.instances[2].pa.saved,'IOB saved before PA0 voltages')
+    assert(not self.instances[3].pa.saved,'raw detector PA was mutated')
+  end
   self.filename=path
 end
 loadfile=function(path)
@@ -90,6 +99,13 @@ assert(written['virtual/review.operating_point.lua']=='fixture','operating point
 assert(written['virtual/review.fly2']=='fixture','Fly2 companion not copied')
 for id,value in pairs(expected.analyser) do assert(simion.wb.instances[1].pa.values[id]==value) end
 for id,value in pairs(expected.accelerator) do assert(simion.wb.instances[2].pa.values[id]==value) end
+calls={};simion.wb.instances={{pa=pa(1)},{pa=pa(2)},{pa=pa(3)}}
+for _,instance in ipairs(simion.wb.instances) do instance._debug_update_size=function() end end
+arg={'virtual/3_instance_seed.iob','virtual/mrtof_analyzer.pa0',
+  'virtual/mrtof_accelerator.pa0','virtual/mrtof_detector.pa#','virtual/read_only.iob',
+  'virtual/source.lua','virtual/source.fly2',0,0,0,0,0,0,0,0,0,'read_only_voltageized'}
+assert(original_loadfile(directory..'build_three_component_iob.lua'))()
+assert(#calls==0,'read-only voltageized PA binding performed Fast Adjust or save')
 -- SIMION alone understands `adjustable`; strip only that declaration keyword
 -- to exercise the unchanged callback contract with a stock Lua interpreter.
 function simion.workbench_program() segment={} end

@@ -72,26 +72,31 @@ class NativeGemSlotTest(unittest.TestCase):
 
     def test_short_prism_shield_retains_end_lands_and_open_reflection_channel(self) -> None:
         shield = next(item for item in self.resolved["prism_ground_shields"] if item["id"] == 18)
-        origin = (-26.0, 32.0, -102.0)
+        origin = (-26.0, -79.0, -102.0)
         pa = self.compile_shapes(_prism_ground_shield_lines({"prism_ground_shields": [shield]}),
                                  origin, (21, 25, 39))
-        for y in (34.0, 76.0):
+        # This compact native fixture intentionally samples a 2-mm grid whose
+        # y nodes are odd integers from the -79-mm origin.  Stay one node
+        # inside each finite end land instead of requesting off-grid points.
+        for y in (-35.0, -75.0):
             for z in (-98.0, -80.0, -64.0, -40.0, -32.0):
                 for x in (-4.0, 0.0, 4.0):
                     self.assert_node(pa, origin, (x, y, z), 18)
-        for z in (-100.0, -80.0, -64.0, -40.0, -30.0):
-            self.assert_node(pa, origin, (0.0, 36.0, z), None)
+        # ``surface=none`` retains the solid's coincident outer boundary;
+        # verify the open channel on interior nodes, not at z=-100/-30 faces.
+        for z in (-98.0, -80.0, -64.0, -40.0, -32.0):
+            self.assert_node(pa, origin, (0.0, -37.0, z), None)
 
     def test_curved_stripe_is_one_slotted_body_with_two_finite_end_lands(self) -> None:
         stripe = next(item for item in self.resolved["stripe_electrodes"] if item["id"] == 11)
-        origin = (-14.0, -392.0, 30.0)
+        origin = (-14.0, -4.0, 30.0)
         pa = self.compile_shapes(_stripe_lines({"stripe_electrodes": [stripe],
                                                "stripe_slot": self.resolved["stripe_slot"]}),
                                  origin, (29, 198, 36), (1.0, 2.0, 2.0))
-        for y in (-390.0, -388.0, -386.0, 2.0):
+        for y in (390.0, 388.0, 386.0, -2.0):
             for x in (-4.0, -2.0, 0.0, 2.0, 4.0):
                 self.assert_node(pa, origin, (x, y, 90.0), 11, (1.0, 2.0, 2.0))
-        for y in (-384.0, -4.0, -2.0):
+        for y in (384.0, 4.0, 2.0):
             for x in (-1.0, 0.0, 1.0):
                 self.assert_node(pa, origin, (x, y, 90.0), None, (1.0, 2.0, 2.0))
         # ``y=0`` is the CAD end face of the retained 2-mm bridge, not part
@@ -100,13 +105,13 @@ class NativeGemSlotTest(unittest.TestCase):
 
     def test_central_prism_shield_has_cross_slot_and_local_body_extensions(self) -> None:
         shield = next(item for item in self.resolved["prism_ground_shields"] if item["id"] == 20)
-        origin = (-26.0, -6.0, -100.0)
+        origin = (-26.0, -34.0, -100.0)
         pa = self.compile_shapes(_prism_ground_shield_lines({"prism_ground_shields": [shield]}),
                                  origin, (21, 21, 101))
-        for position in ((4., 0., 60.), (-18., 4., 30.), (0., 4., 30.),
-                         (0., 10., 60.), (4., 24., 24.)):
+        for position in ((4., 0., 60.), (-18., -4., 30.), (0., -4., 30.),
+                         (0., -10., 60.), (4., -24., 24.)):
             self.assert_node(pa, origin, position, None)
-        for position in ((4., 0., 10.), (-18., 4., 60.), (0., 4., 60.)):
+        for position in ((4., 0., 10.), (-18., -4., 60.), (0., -4., 60.)):
             self.assert_node(pa, origin, position, 20)
 
     def test_mirror_30mm_slot_does_not_remove_nodes_outside_cad_aperture(self) -> None:

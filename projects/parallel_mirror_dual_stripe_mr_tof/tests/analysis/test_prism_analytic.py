@@ -51,6 +51,7 @@ class PrismAnalyticTest(unittest.TestCase):
     def test_two_prism_seed_uses_ordered_geometric_handoffs(self) -> None:
         contract = {"prism_transport": {"two_prism_injection_l0": {
             "status": "geometry_constrained_hard_boundary_l0",
+            "path_topology": "direct_p1_to_p2_without_intervening_mirror",
             "prism_1_electrode_id": 16,
             "prism_2_electrode_id": 17,
             "total_kinetic_energy_ev": 4000,
@@ -77,6 +78,7 @@ class PrismAnalyticTest(unittest.TestCase):
             derive_two_prism_hard_boundary_seed(absent)
         contract = {"prism_transport": {"two_prism_injection_l0": {
             "status": "geometry_constrained_hard_boundary_l0",
+            "path_topology": "direct_p1_to_p2_without_intervening_mirror",
             "prism_1_electrode_id": 16,
             "prism_2_electrode_id": 17,
             "total_kinetic_energy_ev": 4000,
@@ -93,6 +95,17 @@ class PrismAnalyticTest(unittest.TestCase):
         bad["prism_transport"]["two_prism_injection_l0"]["prism_2_positive_rotation"] = "unknown"
         with self.assertRaises(PrismAnalyticError):
             derive_two_prism_hard_boundary_seed(bad)
+
+    def test_rejects_manufactured_pre_reflection_path(self) -> None:
+        contract = {"prism_transport": {"two_prism_injection_l0": {
+            "status": "geometry_constrained_hard_boundary_l0",
+            "path_topology": "negative_mirror_pre_reflection_between_p1_and_p2",
+            "prism_1_electrode_id": 16,
+            "prism_2_electrode_id": 17,
+            "total_kinetic_energy_ev": 4005,
+        }}}
+        with self.assertRaisesRegex(PrismAnalyticError, "no-intervening-mirror"):
+            derive_two_prism_hard_boundary_seed(contract)
 
 
 if __name__ == "__main__":

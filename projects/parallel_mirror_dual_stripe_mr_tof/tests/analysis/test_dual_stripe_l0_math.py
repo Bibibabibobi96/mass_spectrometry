@@ -10,6 +10,7 @@ import numpy as np
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import (
     CandidateContractError,
     analyze_dual_stripe_l0,
+    audit_theory_function_origin_registration,
     derive_manufactured_basis_voltage_seed,
     endpoint_regularized_kappa,
     endpoint_regularized_kappa_at_turn,
@@ -18,7 +19,9 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.dual_stripe_l0 import 
     invert_nominal_psi_g_response,
     kappa_derivative_at_turn,
     paper_dimensionless_condition_residuals,
+    project_y_from_theory_drift_mm,
     tau_g_derivative_at_turn,
+    theory_drift_y_mm,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import (
     compile_dual_stripe_width_evaluator,
@@ -46,6 +49,57 @@ CONTRACT = PROJECT / "config" / "simion_candidate_two_zone.json"
 
 
 class DualStripeL0MathTest(unittest.TestCase):
+    def test_theory_project_and_simion_y_share_direction_and_zero(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        self.assertEqual(theory_drift_y_mm(contract, 0.0), 0.0)
+        self.assertEqual(theory_drift_y_mm(contract, 340.0), 340.0)
+        self.assertEqual(theory_drift_y_mm(contract, 390.0), 390.0)
+        self.assertEqual(project_y_from_theory_drift_mm(contract, 340.0), 340.0)
+        self.assertEqual(
+            contract["dual_stripe_l0"]["theory_function_coordinate_registration"][
+                "function_y_zero_project_y_mm"
+            ],
+            contract["dual_stripe_l0"]["coordinate_mapping"]["origin_project_y_mm"],
+        )
+        registration = contract["dual_stripe_l0"]["theory_function_coordinate_registration"]
+        self.assertEqual(registration["active_theory_curve_domain_project_y_mm"], [0.0, 390.0])
+        self.assertEqual(registration["whole_physical_body_domain_project_y_mm"], [-2.0, 390.0])
+
+    def test_theory_coordinate_mapping_fails_closed_on_wrong_origin_or_sign(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        contract["dual_stripe_l0"]["coordinate_mapping"]["origin_project_y_mm"] = 2.0
+        with self.assertRaises(CandidateContractError):
+            theory_drift_y_mm(contract, 0.0)
+        contract["dual_stripe_l0"]["coordinate_mapping"]["origin_project_y_mm"] = 0.0
+        contract["dual_stripe_l0"]["coordinate_mapping"]["theory_positive_project_y_sign"] = 0
+        with self.assertRaises(CandidateContractError):
+            theory_drift_y_mm(contract, 0.0)
+
+    def test_mechanical_body_endpoint_does_not_redefine_theory_function_zero(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        self.assertEqual(theory_drift_y_mm(contract, 0.0), 0.0)
+        contract["dual_stripe_l0"]["theory_function_coordinate_registration"][
+            "whole_physical_body_domain_project_y_mm"
+        ][0] = -3.0
+        self.assertEqual(theory_drift_y_mm(contract, 0.0), 0.0)
+        contract["dual_stripe_l0"]["theory_function_coordinate_registration"][
+            "function_y_zero_project_y_mm"
+        ] = 2.0
+        with self.assertRaises(CandidateContractError):
+            theory_drift_y_mm(contract, 0.0)
+
+    def test_function_origin_is_discriminated_from_the_terminal_trim_by_coefficients(self) -> None:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        audit = audit_theory_function_origin_registration(contract)
+        self.assertEqual(audit["selected_function_zero_project_y_mm"], 0.0)
+        comparisons = {
+            item["hypothesized_function_zero_project_y_mm"]: item["relative_coefficient_direction_residual"]
+            for item in audit["comparisons"]
+        }
+        self.assertEqual(set(comparisons), {0.0, -2.0})
+        self.assertLess(comparisons[0.0], comparisons[-2.0])
+        self.assertGreater(audit["runner_up_to_selected_residual_ratio"], 100.0)
+
     def test_complete_residual_acceptance_waits_for_user_authority(self) -> None:
         contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
         receipt = _complete_residual_acceptance_receipt(contract, {"r1": 0.0, "r2": 1.0})
@@ -80,7 +134,7 @@ class DualStripeL0MathTest(unittest.TestCase):
         contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
         del contract["prism_transport"]["energy_partition"]
         search_end, sample_count = _stripe_search_domain(contract, _seed_profile(contract))
-        self.assertAlmostEqual(search_end, -390.0 / 1.1)
+        self.assertAlmostEqual(search_end, 390.0 / 1.1)
         self.assertGreater(sample_count, 0)
 
     def test_complete_refinement_selection_keeps_anchor_and_spreads_coordinates(self) -> None:
@@ -419,7 +473,7 @@ class DualStripeL0MathTest(unittest.TestCase):
         contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
         for set_name in ("set_1", "set_2"):
             compiled = compile_dual_stripe_width_evaluator(contract, set_name)
-            for y_mm in (-390.0, -350.0, -200.0, -1.0, 0.0):
+            for y_mm in (0.0, 1.0, 200.0, 350.0, 390.0):
                 self.assertAlmostEqual(
                     compiled(y_mm),
                     dual_stripe_width_at_y_mm(contract, set_name, y_mm),
@@ -492,16 +546,42 @@ class DualStripeL0MathTest(unittest.TestCase):
     def test_manufactured_basis_inverse_accepts_a_verified_selected_axial_energy(self) -> None:
         contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
         target = solve_dimensionless_paper_target(contract)
+        coefficients = target["selected_root"]["coefficients_c0_to_c5"]
+        psi = lambda eta: coefficients[0] * eta + sum(
+            coefficients[power] * eta**power for power in range(1, 6)
+        )
+        kappa = endpoint_regularized_kappa(psi)
+        mirror_width = 586.8617288702586
+        drift_energy = contract["prism_transport"]["energy_partition"]["drift_kinetic_energy_ev"]
+        target_k = contract["nominal"]["target_oscillation_count"]
+        length = contract["dual_stripe_l0"]["manufactured_design_abs_drift_length_L_mm"]
+        sin_theta = kappa * length / (mirror_width * target_k)
+        selected_axial_energy = drift_energy / sin_theta**2 - drift_energy
         result = derive_manufactured_basis_voltage_seed(
             contract,
-            mirror_axial_width_w_mm=586.8617288702586,
-            basis_coefficients_c0_to_c5=target["selected_root"]["coefficients_c0_to_c5"],
-            axial_energy_per_charge_v=4165.847974123505,
+            mirror_axial_width_w_mm=mirror_width,
+            basis_coefficients_c0_to_c5=coefficients,
+            axial_energy_per_charge_v=selected_axial_energy,
         )
-        self.assertAlmostEqual(result["selected_axial_energy_per_charge_v"], 4165.847974123505)
-        self.assertAlmostEqual(result["selected_total_kinetic_energy_ev"], 4170.847974123505)
+        self.assertAlmostEqual(result["selected_axial_energy_per_charge_v"], selected_axial_energy)
+        self.assertAlmostEqual(result["selected_total_kinetic_energy_ev"], selected_axial_energy + drift_energy)
+        self.assertAlmostEqual(
+            result["post_acceleration_total_energy_per_charge_v"],
+            selected_axial_energy + drift_energy,
+        )
+        self.assertAlmostEqual(
+            result["derived_fast_reflection_energy_per_charge_v"], selected_axial_energy
+        )
         self.assertAlmostEqual(result["predicted_continuous_oscillation_count"], 25.0, places=8)
         self.assertAlmostEqual(result["oscillation_count_residual"], 0.0, places=8)
+        self.assertEqual(
+            result["nominal_center_exact_K_design_equation"]["status"],
+            "satisfied_by_current_analytic_inputs",
+        )
+        self.assertEqual(
+            result["definition_classification"]["status"],
+            "center_exact_K_satisfied__nominal_topology_passes",
+        )
 
 
 if __name__ == "__main__":

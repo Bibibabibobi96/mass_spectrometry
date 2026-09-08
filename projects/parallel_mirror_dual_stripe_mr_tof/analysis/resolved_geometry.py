@@ -339,15 +339,21 @@ def _central_ground_polygons(stripe: dict[str, Any]) -> tuple[list[dict[str, Any
         raise CandidateContractError("central ground requires its native short-curve and terminal profile")
     short_span = tuple(_number(value, "central ground terminal curve span") for value in terminal.get("curve_y_span_mm", []))
     body_span = stripe["y_span_mm"]
-    if len(short_span) != 2 or short_span[0] != y_span[1] or not short_span[0] < short_span[1] < body_span[1]:
-        raise CandidateContractError("central ground short cubic must join the long profile and precede its terminal trim")
+    if (
+        len(short_span) != 2
+        or not body_span[0] < short_span[0] < short_span[1] == y_span[0]
+        or y_span[1] != body_span[1]
+    ):
+        raise CandidateContractError(
+            "central ground terminal, short cubic, and long profile must be ordered in positive theory y"
+        )
     short_y = tuple(short_span[0] + (short_span[1] - short_span[0]) * index / samples for index in range(samples + 1))
     short_edges = [tuple((y, _edge_z_at_y(terminal.get(edge), f"central_ground.terminal.{edge}", y)) for y in short_y)
                    for edge in ("lower_edge", "upper_edge")]
     body_x = [min(record["x"][0] for record in records), max(record["x"][1] for record in records)]
     records.extend((
         {"x": body_x, "polygon_yz_mm": [list(point) for point in _polygon(*short_edges)]},
-        {"x": body_x, "polygon_yz_mm": _terminal_polygon(short_span[1], body_span[1], terminal.get("terminal_z_mm"))},
+        {"x": body_x, "polygon_yz_mm": _terminal_polygon(body_span[0], short_span[0], terminal.get("terminal_z_mm"))},
     ))
     top = max(point[1] for record in records for point in record["polygon_yz_mm"])
     return records, top
@@ -407,7 +413,7 @@ def resolve_geometry(contract: dict[str, Any]) -> dict[str, Any]:
     }:
         raise CandidateContractError("resolved geometry needs a qualified Candidate authority")
     frame = contract.get("coordinate_system", {})
-    if frame.get("frame_id") != "astral.xyz.reflection_z.drift_y.transverse_x.v1":
+    if frame.get("frame_id") != "astral.xyz.reflection_z.drift_y.transverse_x.v2":
         raise CandidateContractError("resolved geometry requires the MR-TOF project frame")
 
     mirror = contract["mirror"]
@@ -527,8 +533,13 @@ def resolve_geometry(contract: dict[str, Any]) -> dict[str, Any]:
         raise CandidateContractError("finite-y Stripe slot bridges must be positive and leave a nonempty opening")
     curve_span = tuple(_number(value, "dual_stripe.theory_profile.active_y_span_mm")
                        for value in stripe["theory_profile"].get("active_y_span_mm", []))
-    if len(curve_span) != 2 or curve_span[0] != y_span[0] or not curve_span[0] < curve_span[1] < y_span[1]:
-        raise CandidateContractError("Stripe active curves must precede the native finite terminal feature")
+    if (
+        len(curve_span) != 2
+        or not y_span[0] < curve_span[0] < curve_span[1] == y_span[1]
+    ):
+        raise CandidateContractError(
+            "Stripe finite terminal feature must precede the active curves in positive theory y"
+        )
     identity = stripe.get("cad_body_topology_identity", {})
     if identity.get("schema_version") != 1 or set(identity.get("source_native_sha256", {})) != {"ion_foil_1", "ion_foil_2", "ion_foil_3"}:
         raise CandidateContractError("whole Foil bodies require the native CAD topology identities")
@@ -581,7 +592,7 @@ def resolve_geometry(contract: dict[str, Any]) -> dict[str, Any]:
     ]
     for record in stripe_records:
         set_name = "set_1" if record["id"] in (11, 12) else "set_2"
-        terminal = _terminal_polygon(curve_span[1], y_span[1], stripe["theory_profile"][set_name].get("terminal_z_mm"))
+        terminal = _terminal_polygon(y_span[0], curve_span[0], stripe["theory_profile"][set_name].get("terminal_z_mm"))
         record["terminal_polygon_yz_mm"] = (terminal if record["id"] in (11, 13)
                                              else [list(point) for point in _mirrored_polygon(terminal)])
     stripe_z = [point[1] for record in stripe_records
@@ -605,7 +616,7 @@ def resolve_geometry(contract: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(terminal_window, list) or len(terminal_window) != 4:
         raise CandidateContractError("central ground terminal requires its x-through rectangular window")
     window_y0, window_z0, window_y1, window_z1 = (_number(value, "central ground terminal window") for value in terminal_window)
-    if window_y0 != ground_y_span[1] or window_y1 != y_span[1] or not window_z0 < window_z1:
+    if window_y0 != y_span[0] or window_y1 != ground_y_span[0] or not window_z0 < window_z1:
         raise CandidateContractError("central ground terminal window must span the complete short-end feature")
     central_ground_slots = [
         Box(-2.0, stripe_slot.y0, -central_ground_top_z, 2.0, stripe_slot.y1, central_ground_top_z).as_list(),
@@ -674,7 +685,7 @@ def resolve_geometry(contract: dict[str, Any]) -> dict[str, Any]:
             if not isinstance(slot_items, list) or len(slot_items) != 1 or not isinstance(slot_items[0], dict):
                 raise CandidateContractError("grounded-1 requires exactly one CAD rectangular beam-channel slot")
             slot = [float(value) for value in slot_items[0].get("box", [])]
-            if slot_items[0].get("role") != "four_mm_beam_channel" or slot != [-2.0, 35.0, -100.0, 2.0, 75.0, -30.0]:
+            if slot_items[0].get("role") != "four_mm_beam_channel" or slot != [-2.0, -75.0, -100.0, 2.0, -35.0, -30.0]:
                 raise CandidateContractError("grounded-1 must subtract its CAD 4-mm by 40-mm finite rectangular channel")
             rectangular_slots.append(slot)
             channel = [-2.0, 2.0]
@@ -685,7 +696,7 @@ def resolve_geometry(contract: dict[str, Any]) -> dict[str, Any]:
             cross_y = [float(value) for value in cross_aperture.get("y_mm", [])]
             cross_z = [float(value) for value in cross_aperture.get("z_mm", [])]
             lands = [float(value) for value in cross_aperture.get("reflection_axis_end_lands_z_mm", [])]
-            if channel != [-2.0, 2.0] or cross_y != [6.0, 28.0] or cross_z != [-40.0, 40.0] or lands != [57.0, 57.0]:
+            if channel != [-2.0, 2.0] or cross_y != [-28.0, -6.0] or cross_z != [-40.0, 40.0] or lands != [57.0, 57.0]:
                 raise CandidateContractError("grounded-2 cross aperture must retain the CAD-measured 4 x 22 x 80 mm opening")
             if float(cross_aperture.get("stripe_side_wall_y_mm", 0.0)) != 3.0 or float(cross_aperture.get("far_stripe_side_wall_y_mm", 0.0)) != 4.0:
                 raise CandidateContractError("grounded-2 cross aperture requires its measured 3-mm and 4-mm y walls")
@@ -701,7 +712,7 @@ def resolve_geometry(contract: dict[str, Any]) -> dict[str, Any]:
         outer_z = [point[1] for point in outer_polygon]
         if min(outer_y) >= max(outer_y) or min(outer_z) >= max(outer_z):
             raise CandidateContractError("prism shield outer contour must have positive y-z area")
-        if station == "accelerator_exit" and (min(outer_y), max(outer_y), min(outer_z), max(outer_z)) != (33.0, 77.0, -100.0, -30.0):
+        if station == "accelerator_exit" and (min(outer_y), max(outer_y), min(outer_z), max(outer_z)) != (-77.0, -33.0, -100.0, -30.0):
             raise CandidateContractError("accelerator-exit prism shield must retain the CAD grounded-1 project-frame start and extent")
         if any(not (min(outer_y) <= point[0] <= max(outer_y) and min(outer_z) <= point[1] <= max(outer_z)) for point in clearance_polygon):
             raise CandidateContractError("larger prism clearance must remain inside the grounded shield contour")
@@ -745,7 +756,7 @@ def resolve_geometry(contract: dict[str, Any]) -> dict[str, Any]:
     for shield in central_shields:
         outer_z = [point[1] for point in shield["outer_polygon_yz_mm"]]
         outer_y = [point[0] for point in shield["outer_polygon_yz_mm"]]
-        if min(outer_z) > -97.0 or max(outer_z) < 97.0 or min(outer_y) < -3.0 or max(outer_y) > 32.0:
+        if min(outer_z) > -97.0 or max(outer_z) < 97.0 or min(outer_y) < -32.0 or max(outer_y) > 3.0:
             raise CandidateContractError(
                 "central-ground prism shields must retain the audited finite-y, z=[-97,97] coverage"
             )
@@ -788,9 +799,9 @@ def resolve_geometry(contract: dict[str, Any]) -> dict[str, Any]:
         )
     except TwoZoneGeometryError as error:
         raise CandidateContractError(f"accelerator enclosure is invalid: {error}") from error
-    central_shield_y_max = max(point[0] for shield in central_shields for point in shield["outer_polygon_yz_mm"])
-    accelerator_guard_y0 = placement.focus_y_mm - accelerator_enclosure.guard_half_y_mm
-    accelerator_shield_clearance = accelerator_guard_y0 - central_shield_y_max
+    central_shield_y_min = min(point[0] for shield in central_shields for point in shield["outer_polygon_yz_mm"])
+    accelerator_guard_y1 = placement.focus_y_mm + accelerator_enclosure.guard_half_y_mm
+    accelerator_shield_clearance = central_shield_y_min - accelerator_guard_y1
     required_accelerator_shield_clearance = _number(
         accelerator.get("minimum_clearance_to_central_prism_ground_shield_y_mm"),
         "accelerator.minimum_clearance_to_central_prism_ground_shield_y_mm",
@@ -815,13 +826,13 @@ def resolve_geometry(contract: dict[str, Any]) -> dict[str, Any]:
         x_overlap = -width_x / 2.0 < shield_x[1] and width_x / 2.0 > shield_x[0]
         z_overlap = detector_z0 < max(shield_z) and detector_z1 > min(shield_z)
         if x_overlap and z_overlap:
-            detector_y = max(detector_y, max(shield_y) + clearance_y + height_y / 2.0)
+            detector_y = min(detector_y, min(shield_y) - clearance_y - height_y / 2.0)
     detector_box = [-width_x / 2.0, detector_y - height_y / 2.0, detector_z0,
                     width_x / 2.0, detector_y + height_y / 2.0, detector_z1]
     for shield in central_shields:
         shield_y = [point[0] for point in shield["outer_polygon_yz_mm"]]
         shield_z = [point[1] for point in shield["outer_polygon_yz_mm"]]
-        if detector_box[1] < max(shield_y) + clearance_y and detector_box[2] < max(shield_z) and detector_box[5] > min(shield_z):
+        if detector_box[4] > min(shield_y) - clearance_y and detector_box[2] < max(shield_z) and detector_box[5] > min(shield_z):
             raise CandidateContractError("detector must retain its declared y clearance from the central-prism grounded shield")
     ring_layout = derive_stage_2_ring_layout(contract)
     ring_thickness = _number(accelerator["stage_2_rings"]["thickness_z_mm"], "accelerator.stage_2_rings.thickness_z_mm")
@@ -900,7 +911,7 @@ def resolve_geometry(contract: dict[str, Any]) -> dict[str, Any]:
             "stripe_curve_pose_model": "theory_bspline_parameterization__native_knot_control_contract",
             "central_ground_outline_status": central_ground_status,
             "detector_to_positive_grounded_mirror_clearance_mm": positive_inner_faces[0] - detector_z1,
-            "detector_to_central_prism_ground_shield_clearance_y_mm": detector_box[1] - max(point[0] for shield in central_shields for point in shield["outer_polygon_yz_mm"]),
+            "detector_to_central_prism_ground_shield_clearance_y_mm": min(point[0] for shield in central_shields for point in shield["outer_polygon_yz_mm"]) - detector_box[4],
             "accelerator_guard_to_central_prism_ground_shield_clearance_y_mm": accelerator_shield_clearance,
             "required_accelerator_guard_to_central_prism_ground_shield_clearance_y_mm": required_accelerator_shield_clearance,
             "accelerator_stage_2_ring_pitch_mm": ring_layout.pitch_mm,

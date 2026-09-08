@@ -34,14 +34,14 @@ exit、grid1、repeller依次位于更大的`+z`。`y`由出口棱镜站位派�
 |组件|IOB加载文件|当前网格 mm/gu|Fast Adjust／求解范围|
 |---|---|---|---|
 |五镜双组、四Stripe、中央接地、两棱镜及屏蔽|`mrtof_analyzer.pa0`|`1,1,1`|`pa1..pa20`|
-|独立屏蔽二区加速器|`mrtof_accelerator.pa0`|`2,2,2`|局部`pa1..pa9`|
+|独立屏蔽二区加速器|`mrtof_accelerator.pa0`|`0.25,0.25,0.1`|局部`pa1..pa9`|
 |独立数值终止平板|`mrtof_detector.pa#`|`1,1,1`|无Refine、无PA0、无basis|
 
 分析器basis使用从1到最大ID20的完整命名空间；未使用ID19的零响应数组不是新增物理电极。
 SIMION 2020会拒绝对不存在的ID执行Refine。构建器先扫描原始ID；对范围内的编号空缺以官方
 `pa:potential` setter生成严格全零响应、保留材料掩码并保存为对应PA文件，存在的ID仍按默认Refine求解。
 禁止请求高于物理最大ID的数组，不能为补齐编号增加虚构实体。
-主分析器为`x/y/z=1/1/1 mm/gu`：CAD固定的30-mm镜束槽（边界`x=±15 mm`）与4-mm Stripe／接地／棱镜屏蔽槽（边界`x=±2 mm`）在同一个2-mm网格相位中不可同时精确表示，故`x=1 mm`是几何审查的硬约束；`z=1 mm`也使CAD给定的2-mm grounded-1—镜盖板净距包含真空节点。几何包络与孔槽不变。独立加速器当前为`2/2/2 mm/gu`，只服务GUI几何／电压复核；焦点、边缘场、时间与分辨率结论必须使用另一个显式的加密加速器运行包和网格收敛对照。
+主分析器为`x/y/z=1/1/1 mm/gu`：CAD固定的30-mm镜束槽（边界`x=±15 mm`）与4-mm Stripe／接地／棱镜屏蔽槽（边界`x=±2 mm`）在同一个2-mm网格相位中不可同时精确表示，故`x=1 mm`是几何审查的硬约束；`z=1 mm`也使CAD给定的2-mm grounded-1—镜盖板净距包含真空节点。几何包络与孔槽不变。独立加速器当前为`0.25/0.25/0.1 mm/gu`，其中项目`z`是加速方向；该网格解析1-mm环／栅框厚度，但焦点、边缘场、时间与分辨率结论仍须至少三档网格收敛。
 GEM直接编译的默认网格也由同一component mesh合同生成，不能留存旧`y=2`默认值。
 生成PA时检查的物理ID则由geometry receipt给出，不能把不存在的物理电极当作必需实体。
 加速器使用独立的局部ID：
@@ -170,7 +170,7 @@ materializer在schema3的`prototype_input_manifest.json`中为每份具名诊断
 |`accelerator_focus_center_fly2`|`mrtof_accelerator_focus_center.fly2`|第一区release平面的零KE中心粒子|
 |`accelerator_focus_bunch_fly2`|`mrtof_accelerator_focus.fly2`|第一区内零KE轴向释放位置表；用于检验第一时间焦点|
 |`first_prism_entry_center_fly2`|`mrtof_first_prism_entry_center.fly2`|两区焦面处的4-keV中心粒子；仅首棱镜有限三维射击诊断|
-|`full_mrtof_center_fly2`|尚未发布|未来完整源→P1→P2→Stripe中心轨迹；只在精确整数K和双棱镜快速相位闭合后生成|
+|`full_mrtof_center_fly2`|由已审计P1/P2工作点按run局部生成|完整源→P1→负镜预反射→P2→Stripe中心轨迹；当前仅允许N=1事件链诊断，不授予K=25或性能资格|
 
 当前首轮物种为524 Th／+1，中心源N=1、小束团N=100。全分析器小束团半径为0.1 mm；
 加速器焦点束团则把合同的`accelerator_focus_axial_full_width_mm=0.2 mm`均匀离散成100个
@@ -202,15 +202,17 @@ python -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_anal
 
 当前[mrtof_candidate.lua](mrtof_candidate.lua)仍有以下物理限制，事件完整性PASS并不消除它们：
 
-- 主程序现已绑定[mirror_cycle_counter.lua](mirror_cycle_counter.lua)：P1 正向事件只负责使状态机进入
-  待定相位状态；经过 P2 和必经的 Stripe 区后，首个`v_y<0`负侧镜转折才建立主漂移相位原点。
-  此后每个“负侧转折→正侧转折→负侧转折”增加一个完整周期；首个`v_y>0`负侧转折关闭主漂移并
-  记录实际返回`y`和`K`。`z=0`穿越只保留为 Poincaré/周期诊断，不再拥有周期相位。第50次镜转折
+- 主程序现已绑定[mirror_cycle_counter.lua](mirror_cycle_counter.lua)：P1 后先记录负镜预反射，
+  随后通过 P2 和正侧 Stripe 区；首个`v_y>0`正侧镜转折建立主漂移相位原点。
+  此后每个“正侧转折→负侧转折→正侧转折”增加一个完整周期，并在每个同侧转折发布整数K相位样本；
+  只有同侧正镜转折同时满足`y=0,v_y<0`才是严格相位返回。若轨迹在两个相位样本之间穿越`y=0`，
+  只发布坐标返回诊断，并由相邻同侧周期计算连续圈数，绝不把它冒充整数K相位闭合。`z=0`穿越只保留为
+  Poincare/周期诊断，不再拥有周期相位。第50次镜转折
   不会主动截停；真正成功终止仍由探测器命中负责。该状态机已有SIMION 2020 Lua合成轨迹回归，但尚无
-  合格Stripe/P2工作点，因而不构成真实三维完整引出或探测证据。
-- 棱镜16（路径 P1）现在接收由冻结`prism_transport` L0硬边界关系派生的**静态初值**；棱镜17
-  （路径 P2）为 `pre_stripe_injection_pending` 的审查用`0 V`。两者均在 Stripe 前；该初值尚未经
-  有限三维单位场/轨迹射击，也没有双程棱镜事件；
+  合格K=25返回证据，因而不构成真实三维完整引出或探测证据。
+- 棱镜16（路径 P1）和棱镜17（路径 P2）均在主漂移前；二者之间存在真实负镜预反射。棱镜只记录
+  `prism_pass`/`prism_entry`，绝不以`v_z`反号伪装棱镜事件。约4-keV轴向能量不是棱镜电压；活动
+  有限三维射击在百伏量级校正P1/P2。旧P2=`0 V`仅是被取代的几何审查显示值；
   加速器同样未实现脉冲时序与源时钟闭合。
 - Lua已按合同改在探测器`+z`外表面接收沿`-z`入射，保留初始步并对中央面采用半开区间和插值；
   纯Lua回归通过，但实际平板终止与检测事件的对应仍待全装配飞行复核。
@@ -219,11 +221,26 @@ python -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_anal
 - [run_iob_flight.lua](run_iob_flight.lua)要求IOB同名的Lua、Fly2、operating-point、voltage-map和
   mirror-cycle-counter sidecar。
   [run_three_component_center_flight.ps1](run_three_component_center_flight.ps1)是唯一的N=1中心粒子入口：
-  它从一个已完成的三组件几何审查run逐字节冻结IOB、三份已加载PA、结构报告、source manifest及
-  `full_mrtof_center_fly2`，并拒绝IOB重命名的Fly2与该选定源字节不一致。该源只有在中心粒子满足
-  $T_D(\vartheta_0)/T_0=K$、P1/P2快速相位闭合且manifest明确允许整机飞行后才能发布；镜内诊断源
-  不能替代。入口只发布全终态事件链的
-  `candidate_prototype_event_chain_only` receipt；不运行束团、不产生分辨率结论，也不修改源几何审查run。
+  它从已审计P1/P2工作点冻结代码、合同与完整中心源，并把已电压化的分析器/加速器PA及零势探测器PA
+  以只读路径装入run-local IOB；既不复制约1 GiB PA载荷，也不执行PA save，且构建和飞行前后核对三份
+  上游PA哈希。入口拒绝IOB同名Fly2与冻结源字节不一致。入口只发布全终态事件链的
+  `candidate_prototype_event_chain_only` receipt；不运行束团、不产生分辨率结论，也不修改上游PA或P1/P2 run。
+
+受管run `20260909_041000__sim__simion__mrtof-center-n1-readonly-pa-fractional-return`首次越过上述
+只读装配、源身份和事件完整性门禁：P1/P2分别为`+177.661775543/-180.055454662 V`，不是4 kV；
+慢向转折为`258.778899196 mm`，坐标返回为`K=19.014224397`，其后在P2屏蔽附近碰撞，探测数为0。
+因此它确认了完整中心源、只读PA复用和事件链功能，同时否决当前电压点的`L=340 mm、K=25`物理闭合。
+
+[run_two_prism_trial.ps1](run_two_prism_trial.ps1)现同时服务P1/P2交接局部试点和后续四坐标下游试点：
+可选Stripe1/Stripe2电压必须成对给出，`-ContinueMainDrift`要求同时观察相位原点、首个慢向转折和
+连续返回K。入口不再把约1-GB电压化PA0复制进每个run，也不在逐步回调中重复Fast Adjust；它从
+不可变分析器family在系统临时目录只合成一次PA0，建立临时IOB并飞行，逐项核对源PA哈希后删除临时
+PA/IOB。artifact保留冻结小输入、完整日志、四残差、临时PA哈希和重建方法。
+[run_downstream_voltage_definition.ps1](../analysis/run_downstream_voltage_definition.ps1)只读消费一个基点和
+四个有序单轴SIMION run，构造缩放4x4 Jacobian并报告秩、零空间、条件数和未阻尼线性修正；它本身
+不启动求解器，也不授权执行外推步。当前受管审计为
+`20260909_062000__analysis__python__downstream-voltage-definition`：局部满秩但条件数约323，线性修正远超
+0.2-V差分邻域，故仍未产生新的下游工作点。
 
 [run_three_component_first_prism_flight.ps1](run_three_component_first_prism_flight.ps1)是独立的N=1首棱镜
 接口诊断：它用已审查几何run中的同一三份PA0／PA#、同一合同派生原点，复制并重命名已保存电压的 IOB，

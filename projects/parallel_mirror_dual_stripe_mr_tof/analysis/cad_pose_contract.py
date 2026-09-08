@@ -12,7 +12,7 @@ class CadPoseContractError(ValueError):
     """Raised when CAD evidence cannot be used in the project frame."""
 
 
-EXPECTED_FRAME = "astral.xyz.reflection_z.drift_y.transverse_x.v1"
+EXPECTED_FRAME = "astral.xyz.reflection_z.drift_y.transverse_x.v2"
 EXPECTED_ASSIGNMENT = {
     "drift_stripe_set_1": ["ion foil 1-3", "ion foil 1-4"],
     "drift_stripe_set_2": ["ion foil 3-3", "ion foil 3-4"],

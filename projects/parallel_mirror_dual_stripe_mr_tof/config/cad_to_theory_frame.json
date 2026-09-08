@@ -3,13 +3,13 @@
   "project_id": "parallel_mirror_dual_stripe_mr_tof",
   "status": "candidate_cad_pose_resolved",
   "source_frame": "SolidWorks two-mirror top-level assembly coordinates, millimetres",
-  "target_frame": "astral.xyz.reflection_z.drift_y.transverse_x.v1",
+  "target_frame": "astral.xyz.reflection_z.drift_y.transverse_x.v2",
   "target_from_source": {
-    "rotation": [[0, 0, 1], [-1, 0, 0], [0, 1, 0]],
-    "translation_mm": [-86, -158, 0]
+    "rotation": [[0, 0, 1], [1, 0, 0], [0, 1, 0]],
+    "translation_mm": [-86, 158, 0]
   },
   "axis_evidence": {
-    "source_x": "top-level long mechanical direction; mapped (with reversal) to project y slow drift",
+    "source_x": "top-level long mechanical direction; mapped to project/theory-positive y slow drift",
     "source_y": "two A-side mirror shields are at Y=+104.5 and -104.5 mm; their midpoint Y=0 maps to project z=0 reflection midplane",
     "source_z": "mirror transverse centre Z=86 mm; mapped to project x=0"
   },

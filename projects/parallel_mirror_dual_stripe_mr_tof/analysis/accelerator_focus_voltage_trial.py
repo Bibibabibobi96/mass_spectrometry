@@ -45,6 +45,7 @@ def require_reviewed_geometry(current: dict[str, Any], reviewed: dict[str, Any])
 
 def derive_voltage_trial(
     current: dict[str, Any], reviewed: dict[str, Any], first_gap_drop_v: float,
+    selected_net_gain_center_v: float | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Derive endpoint/ring voltages while preserving the reviewed physical placement."""
     require_reviewed_geometry(current, reviewed)
@@ -63,7 +64,17 @@ def derive_voltage_trial(
     exit_v = float(accelerator["exit_grid_v"])
     if not all(math.isfinite(value) for value in (gap_1, release, exit_v)) or not 0.0 < release < gap_1:
         raise CandidateContractError("accelerator release must lie strictly inside finite gap 1")
-    energy_per_charge_v = derive_operating_energy_envelope(current).net_gain_reference_center_v
+    energy_per_charge_v = derive_operating_energy_envelope(
+        current, selected_center_v=selected_net_gain_center_v,
+    ).selected_net_gain_center_v
+    # The voltage-trial document is a run-local operating contract.  Make its
+    # selected energy internally self-consistent so downstream focus and source
+    # materializers never infer the old reference centre from otherwise new
+    # endpoint voltages.  The reviewed geometry contract remains untouched.
+    trial["nominal"]["energy_per_charge_v"] = energy_per_charge_v
+    trial["accelerator_energy_contract"][
+        "net_gain_reference_center_per_charge_v"
+    ] = energy_per_charge_v
     repeller_v = exit_v + energy_per_charge_v + drop * release / gap_1
     intermediate_v = repeller_v - drop
     accelerator["repeller_v"] = repeller_v
@@ -74,6 +85,11 @@ def derive_voltage_trial(
         "role": "fixed_reviewed_geometry_accelerator_voltage_trial",
         "first_gap_drop_v": drop,
         "energy_per_charge_v": energy_per_charge_v,
+        "energy_selection": (
+            "explicit_selected_net_gain_center"
+            if selected_net_gain_center_v is not None
+            else "baseline_reference_center"
+        ),
         "physical_placement_source": "reviewed_contract_not_trial_focus",
     }
     receipt = {
@@ -82,6 +98,7 @@ def derive_voltage_trial(
         "status": "derived",
         "first_gap_drop_v": drop,
         "energy_per_charge_v": energy_per_charge_v,
+        "energy_selection": trial["candidate_derivation"]["energy_selection"],
         "endpoint_voltages_v": [repeller_v, intermediate_v, exit_v],
         "ring_voltages_v": rings,
         "analytic_focus_after_exit_mm": focus.focus_after_exit_mm,
@@ -93,10 +110,13 @@ def derive_voltage_trial(
 def materialize(
     current_path: Path, reviewed_path: Path, first_gap_drop_v: float,
     output_path: Path, receipt_path: Path,
+    selected_net_gain_center_v: float | None = None,
 ) -> dict[str, Any]:
     current = load_contract(current_path)
     reviewed = load_contract(reviewed_path)
-    trial, receipt = derive_voltage_trial(current, reviewed, first_gap_drop_v)
+    trial, receipt = derive_voltage_trial(
+        current, reviewed, first_gap_drop_v, selected_net_gain_center_v,
+    )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(trial, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     receipt.update({
@@ -114,12 +134,13 @@ def main() -> int:
     parser.add_argument("--current", required=True, type=Path)
     parser.add_argument("--reviewed", required=True, type=Path)
     parser.add_argument("--first-gap-drop-v", required=True, type=float)
+    parser.add_argument("--selected-net-gain-center-v", type=float)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--receipt", required=True, type=Path)
     arguments = parser.parse_args()
     receipt = materialize(
         arguments.current, arguments.reviewed, arguments.first_gap_drop_v,
-        arguments.output, arguments.receipt,
+        arguments.output, arguments.receipt, arguments.selected_net_gain_center_v,
     )
     print(f"MRTOF_ACCELERATOR_VOLTAGE_TRIAL=PASS drop_v={receipt['first_gap_drop_v']:.12g}")
     return 0

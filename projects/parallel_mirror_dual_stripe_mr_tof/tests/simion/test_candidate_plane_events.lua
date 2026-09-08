@@ -11,6 +11,9 @@ local point={mirror_voltages_v={0,-10,20,30,50},stripe_biases_v={-4,6},
   nonaccelerator_scale=1,detector_box_mm={-2,-3,8,2,3,10},detector_normal_project='+z',
   first_prism_l0={target_plane_z_mm=-5},
   mirror_regions_project={negative={z_min_mm=-20,z_max_mm=-10},positive={z_min_mm=10,z_max_mm=20}},
+  prism_regions_project={p1={y_min_mm=3,y_max_mm=6,z_min_mm=-4,z_max_mm=1},
+    p2={y_min_mm=1,y_max_mm=3,z_min_mm=-4,z_max_mm=1}},
+  phase_origin_mirror_side=1,
   target_oscillation_count=25,trajectory_quality=8,maximum_step_us=0.002,
   full_path_timeout_us=1000}
 loadfile=function(path)
@@ -57,30 +60,42 @@ assert(#hits==1 and value(hits[1],'z_mm')==10 and value(hits[1],'t_us')==2)
 begin(7,1); step(11,1,4); assert(#events('detector')==0)
 begin(12,-1,3,0); step(8,-1,4,3,0); assert(#events('detector')==0)
 
--- P1 only arms the path.  The first outbound negative mirror turn is the
--- actual drift origin after P2 and the mandatory pre-origin Stripe traversal.
-begin(0,-1,0,5,-1); step(-6,-1,1,0,4,-1)
-assert(#events('p1_plane')==1 and #events('drift_phase_origin')==0)
-step(-11,-1,2,0,1,-1); step(-12,0,3,0,0,-1); step(-12,1,4,0,-1,-1)
+-- The physical injection path is P1 refraction, a true negative-mirror
+-- pre-reflection, P2 refraction, then the selected outbound positive-mirror
+-- phase origin.  Prisms never own v_z reversals.
+begin(0,-1,3,-5,1)
+step(-6,-1,1,3,-4,1)       -- post-P1 interface
+step(-11,-1,2,3,-3,1)
+step(-12,0,3,3,-2,1)
+step(-11,1,4,3,-1,1)       -- negative-mirror pre-reflection
+step(-3,1,5,3,2.5,1)       -- enter P2 shield at z=-4
+step(2,1,6,3,2,1)          -- leave P2 shield at z=+1; arm drift
+assert(#events('p1_plane')==1 and #events('prism_pass')==2)
+assert(#events('pre_injection_mirror_turn')==1 and #events('drift_phase_origin')==0)
+step(11,1,7,3,0,1); step(12,0,8,3,0,1); step(11,-1,9,3,0,1)
 local origins=events('drift_phase_origin')
-assert(#origins==1 and value(origins[1],'y_mm')==0 and value(origins[1],'vz_mm_us')==0)
+assert(#origins==1 and value(origins[1],'y_mm')==0 and value(origins[1],'vz_mm_us')==0,
+  table.concat(records,'\n'))
 
 -- Each negative -> positive -> negative turn is one complete fast cycle.
 -- The final negative turn has positive slow velocity and owns the return.
-local t=4
+local t=9
 for cycle=1,25 do
   local returning=cycle==25
-  local vy=returning and 1 or -1
-  t=t+1; step(11,1,t,0,-50,vy)
-  t=t+1; step(12,0,t,0,-100,vy)
-  t=t+1; step(12,-1,t,0,-99,vy)
-  t=t+1; step(-11,-1,t,0,-2,vy)
-  t=t+1; step(-12,0,t,0,returning and 0 or -1,vy)
-  t=t+1; step(-12,1,t,0,returning and 1 or -2,vy)
+  t=t+1; step(-11,-1,t,3,-50,1)
+  t=t+1; step(-12,0,t,3,-100,1)
+  t=t+1; step(-11,1,t,3,-99,1)
+  local vy=returning and -1 or 1
+  t=t+1; step(11,1,t,3,-2,vy)
+  t=t+1; step(12,0,t,3,returning and 0 or -1,vy)
+  t=t+1; step(11,-1,t,3,returning and 1 or -2,vy)
 end
-assert(#events('drift_phase_return')==1)
-assert(#events('target_k')==1 and value(events('target_k')[1],'k')==25)
+assert(#events('drift_phase_return')==1, table.concat(records,'\n'))
+assert(#events('drift_phase_candidate')==25)
+assert(#events('target_k_phase_sample')==1 and value(events('target_k_phase_sample')[1],'k')==25)
+assert(#events('target_k')==1 and value(events('target_k')[1],'k')==25,
+  table.concat(records,'\n'))
 assert(#events('central_plane')>0)
 
 print=original_print
-print('CANDIDATE_PLANE_EVENTS=PASS active_face interpolation turn_phase same_negative_turn_K25')
+print('CANDIDATE_PLANE_EVENTS=PASS active_face interpolation pre_reflection prism_pass turn_phase same_origin_turn_K25')

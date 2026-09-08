@@ -16,6 +16,11 @@ assert(#mirror_voltages == 5 and mirror_voltages[1] == 0,
 local detector_box = assert(operating_point.detector_box_mm, 'operating point has no numerical detector box')
 local first_prism_l0 = assert(operating_point.first_prism_l0, 'operating point has no frozen P1 interface')
 local mirror_regions = assert(operating_point.mirror_regions_project, 'operating point has no resolved mirror regions')
+local prism_regions = assert(operating_point.prism_regions_project, 'operating point has no resolved prism regions')
+local phase_origin_mirror_side = assert(operating_point.phase_origin_mirror_side,
+  'operating point has no path-derived phase-origin mirror side')
+assert(phase_origin_mirror_side == -1 or phase_origin_mirror_side == 1,
+  'phase-origin mirror side must be -1 or +1')
 assert(operating_point.detector_normal_project == '+z', 'detector must face project +z')
 local target_oscillation_count = assert(operating_point.target_oscillation_count, 'operating point has no target oscillation count')
 local stripe_biases = assert(operating_point.stripe_biases_v, 'operating point has no Stripe-bias table')
@@ -48,39 +53,93 @@ adjustable V_grid2 = accelerator_voltages[3]
 adjustable V_nonaccelerator_scale = operating_point.nonaccelerator_scale
 adjustable trajectory_quality = operating_point.trajectory_quality
 adjustable maximum_step_us = operating_point.maximum_step_us
--- The IOB builder has already applied and saved this frozen point to PA0.
--- Re-running a 20-array analyzer fast-adjust on every integration segment is
--- prohibitively expensive and changes no static-field value.  Leave this off
--- for ordinary Fly; an interactive voltage edit must rebuild/persist PA0.
-adjustable runtime_fast_adjust_enable = 0
+local runtime_fast_adjust_requested = operating_point.runtime_fast_adjust_enable
+assert(runtime_fast_adjust_requested == nil or type(runtime_fast_adjust_requested) == 'boolean',
+  'runtime_fast_adjust_enable must be boolean when present')
+local runtime_fast_adjust_accelerator_requested = operating_point.runtime_fast_adjust_accelerator_enable
+assert(runtime_fast_adjust_accelerator_requested == nil
+  or type(runtime_fast_adjust_accelerator_requested) == 'boolean',
+  'runtime_fast_adjust_accelerator_enable must be boolean when present')
+-- Ordinary reviewed flights consume an already voltageized PA0.  Finite-3-D
+-- downstream Jacobian trials instead bind the immutable PA family read-only
+-- and apply their run-local Stripe/P1/P2 coordinates in memory.
+adjustable runtime_fast_adjust_enable = runtime_fast_adjust_requested and 1 or 0
 local full_path_timeout_us = assert(operating_point.full_path_timeout_us, 'operating point has no full-path timeout')
 assert(full_path_timeout_us > 0, 'full-path timeout must be positive')
+local stop_at_drift_phase_origin = operating_point.stop_at_drift_phase_origin == true
+local constrain_x_symmetry_plane = operating_point.constrain_x_symmetry_plane == true
 
 -- `other_actions` is called for every integration segment.  Keep the prior
 -- state in scalar arrays rather than allocating a five-field table per step:
 -- the latter turns a long, otherwise identical trajectory into hundreds of
 -- thousands of Lua allocations and GC cycles.
 local previous_x, previous_y, previous_z, previous_vx, previous_vy, previous_vz, previous_t = {}, {}, {}, {}, {}, {}, {}
-local turns, slow_turns, crossings, stripe_crossings, p1_crossings, detected, splat_codes, splat_event_emitted = {}, {}, {}, {}, {}, {}, {}, {}
+local turns, slow_turns, crossings, y0_crossings, p1_crossings, detected, splat_codes, splat_event_emitted = {}, {}, {}, {}, {}, {}, {}, {}
 local cycle_counters, target_k_emitted = {}, {}
+local prism_stage = {}
+
+local function inside_region(event, region)
+  return event.y_mm >= region.y_min_mm and event.y_mm <= region.y_max_mm
+    and event.z_mm >= region.z_min_mm and event.z_mm <= region.z_max_mm
+end
 
 local function cycle_sample(x, y, z, vx, vy, vz, t)
   return {x_mm=x, y_mm=y, z_mm=z, vx_mm_us=vx, vy_mm_us=vy, vz_mm_us=vz, t_us=t}
 end
 
+local function interpolated_sample(a, b, fraction)
+  return cycle_sample(
+    a.x_mm + fraction*(b.x_mm-a.x_mm),
+    a.y_mm + fraction*(b.y_mm-a.y_mm),
+    a.z_mm + fraction*(b.z_mm-a.z_mm),
+    a.vx_mm_us + fraction*(b.vx_mm_us-a.vx_mm_us),
+    a.vy_mm_us + fraction*(b.vy_mm_us-a.vy_mm_us),
+    a.vz_mm_us + fraction*(b.vz_mm_us-a.vz_mm_us),
+    a.t_us + fraction*(b.t_us-a.t_us))
+end
+
 local function emit_cycle_events(events)
   for _,event in ipairs(events) do
-    if event.kind == 'mirror_turn' and event.accepted then
-      local n = event.is_phase_origin and 0 or event.half_cycles + 1
-      print(string.format('MRTOF_EVENT turn ion=%d n=%d t_us=%.12g z_mm=%.12g',
-        ion_number, n, event.t_us, event.z_mm))
-      print(string.format('MRTOF_EVENT fast_turn ion=%d n=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-        ion_number, n, event.t_us, event.x_mm, event.y_mm, event.z_mm,
-        event.vx_mm_us, event.vy_mm_us, event.vz_mm_us))
+    if event.kind == 'mirror_turn' then
+      -- The manufactured injection path contains one real negative-mirror
+      -- pre-reflection between P1 and P2.  A prism refracts the ray; it must
+      -- never be identified from a v_z sign reversal.
+      if event.stage == 'before_main_drift' and event.side == -1
+        and prism_stage[ion_number] == 'p1_complete' then
+        prism_stage[ion_number] = 'awaiting_p2_entry'
+        print(string.format('MRTOF_EVENT pre_injection_mirror_turn ion=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
+          ion_number, event.t_us, event.x_mm, event.y_mm, event.z_mm,
+          event.vx_mm_us, event.vy_mm_us, event.vz_mm_us))
+      end
+      if event.accepted then
+        local n = event.is_phase_origin and 0 or event.half_cycles + 1
+        print(string.format('MRTOF_EVENT turn ion=%d n=%d t_us=%.12g z_mm=%.12g',
+          ion_number, n, event.t_us, event.z_mm))
+        print(string.format('MRTOF_EVENT fast_turn ion=%d n=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
+          ion_number, n, event.t_us, event.x_mm, event.y_mm, event.z_mm,
+          event.vx_mm_us, event.vy_mm_us, event.vz_mm_us))
+      end
     elseif event.kind == 'drift_phase_origin' then
       print(string.format('MRTOF_EVENT drift_phase_origin ion=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
         ion_number, event.t_us, event.x_mm, event.y_mm, event.z_mm,
         event.vx_mm_us, event.vy_mm_us, event.vz_mm_us))
+      if stop_at_drift_phase_origin and ion_splat == 0 then
+        splat_codes[ion_number] = 5
+        splat_event_emitted[ion_number] = true
+        print(string.format('MRTOF_EVENT splat ion=%d code=5 t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g turns=%d central_crossings=%d',
+          ion_number, event.t_us, event.x_mm, event.y_mm, event.z_mm,
+          turns[ion_number] or 0, crossings[ion_number] or 0))
+        ion_splat = 5
+      end
+    elseif event.kind == 'drift_phase_candidate' then
+      print(string.format('MRTOF_EVENT drift_phase_candidate ion=%d k=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
+        ion_number, event.k, event.t_us, event.x_mm, event.y_mm, event.z_mm,
+        event.vx_mm_us, event.vy_mm_us, event.vz_mm_us))
+      if event.k == target_oscillation_count then
+        print(string.format('MRTOF_EVENT target_k_phase_sample ion=%d k=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
+          ion_number, event.k, event.t_us, event.x_mm, event.y_mm, event.z_mm,
+          event.vx_mm_us, event.vy_mm_us, event.vz_mm_us))
+      end
     elseif event.kind == 'drift_phase_return' then
       print(string.format('MRTOF_EVENT drift_phase_return ion=%d k=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
         ion_number, event.k, event.t_us, event.x_mm, event.y_mm, event.z_mm,
@@ -90,6 +149,17 @@ local function emit_cycle_events(events)
         print(string.format('MRTOF_EVENT target_k ion=%d k=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g',
           ion_number, event.k, event.t_us, event.x_mm, event.y_mm, event.z_mm))
       end
+    elseif event.kind == 'slow_coordinate' then
+      y0_crossings[ion_number] = (y0_crossings[ion_number] or 0) + 1
+      print(string.format('MRTOF_EVENT slow_coordinate_y0 ion=%d n=%d direction_y=%d t_us=%.12g x_mm=%.12g y_mm=0 z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
+        ion_number, y0_crossings[ion_number], event.direction,
+        event.t_us, event.x_mm, event.z_mm,
+        event.vx_mm_us, event.vy_mm_us, event.vz_mm_us))
+    elseif event.kind == 'drift_coordinate_return' then
+      print(string.format('MRTOF_EVENT drift_coordinate_return ion=%d k_before=%d fractional_k=%.12g phase_turn_t_us=%.12g phase_turn_y_mm=%.12g phase_time_residual_us=%.12g phase_period_us=%.12g t_us=%.12g x_mm=%.12g y_mm=0 z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
+        ion_number, event.k_before, event.fractional_k, event.phase_turn_t_us, event.phase_turn_y_mm,
+        event.phase_time_residual_us, event.phase_period_us, event.t_us, event.x_mm, event.z_mm,
+        event.vx_mm_us, event.vy_mm_us, event.vz_mm_us))
     elseif event.kind == 'central_plane' and event.stage == 'main_drift' then
       crossings[ion_number] = (crossings[ion_number] or 0) + 1
       local n = crossings[ion_number]
@@ -108,8 +178,9 @@ end
 function segment.initialize_run()
   sim_trajectory_quality = trajectory_quality
   previous_x, previous_y, previous_z, previous_vx, previous_vy, previous_vz, previous_t = {}, {}, {}, {}, {}, {}, {}
-  turns, slow_turns, crossings, stripe_crossings, p1_crossings, detected, splat_codes, splat_event_emitted = {}, {}, {}, {}, {}, {}, {}, {}
+  turns, slow_turns, crossings, y0_crossings, p1_crossings, detected, splat_codes, splat_event_emitted = {}, {}, {}, {}, {}, {}, {}, {}
   cycle_counters, target_k_emitted = {}, {}
+  prism_stage = {}
   assert(simion.wb and #simion.wb.instances == 3,
     'MR-TOF Candidate flight requires analyser, accelerator, and detector instances')
   assert(simion.wb.instances[1].filename:match('mrtof_analyzer%.pa0$'), 'instance 1 must be analyser PA0')
@@ -125,11 +196,15 @@ function segment.fast_adjust()
   local values=voltage_map(mirror_voltages,{V_stripe_1,V_stripe_2},{V_prism_1,V_prism_2},
     {V_repeller,V_grid1,V_grid2},accelerator_ring_voltages,V_nonaccelerator_scale)
   analyser:fast_adjust(values.analyser)
-  accelerator:fast_adjust(values.accelerator)
+  if runtime_fast_adjust_accelerator_requested then accelerator:fast_adjust(values.accelerator) end
 end
 
 function segment.tstep_adjust()
   ion_time_step = math.min(ion_time_step, maximum_step_us)
+end
+
+function segment.accel_adjust()
+  if constrain_x_symmetry_plane then ion_ax_mm = 0 end
 end
 
 function segment.initialize()
@@ -137,13 +212,17 @@ function segment.initialize()
   if previous_z[ion_number] == nil then
     previous_x[ion_number], previous_y[ion_number], previous_z[ion_number] = ion_px_mm, ion_py_mm, ion_pz_mm
     previous_vx[ion_number], previous_vy[ion_number], previous_vz[ion_number], previous_t[ion_number] = ion_vx_mm, ion_vy_mm, ion_vz_mm, ion_time_of_flight
-    cycle_counters[ion_number] = mirror_cycle_counter.new(mirror_regions)
+    cycle_counters[ion_number] = mirror_cycle_counter.new(mirror_regions, phase_origin_mirror_side)
+    prism_stage[ion_number] = 'awaiting_p1_exit'
     emit_cycle_events(cycle_counters[ion_number]:sample(cycle_sample(
       ion_px_mm, ion_py_mm, ion_pz_mm, ion_vx_mm, ion_vy_mm, ion_vz_mm, ion_time_of_flight)))
   end
 end
 
 function segment.other_actions()
+  if constrain_x_symmetry_plane then
+    ion_px_mm, ion_vx_mm = 0, 0
+  end
   if ion_time_of_flight >= full_path_timeout_us and ion_splat == 0 then
     splat_codes[ion_number] = 2
     print(string.format('MRTOF_EVENT splat ion=%d code=2 t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g turns=%d central_crossings=%d',
@@ -167,11 +246,6 @@ function segment.other_actions()
   local px, py, pz = previous_x[ion_number], previous_y[ion_number], previous_z[ion_number]
   local pvx, pvy, pvz, pt = previous_vx[ion_number], previous_vy[ion_number], previous_vz[ion_number], previous_t[ion_number]
   if pz ~= nil then
-    local dy = ion_py_mm - py
-    local stripe_fraction = nil
-    if (py < 0 and ion_py_mm >= 0) or (py > 0 and ion_py_mm <= 0) then
-      stripe_fraction = -py / dy
-    end
     local counter = cycle_counters[ion_number]
     local state = counter:state()
     local dz = ion_pz_mm - pz
@@ -188,9 +262,42 @@ function segment.other_actions()
           ion_number, p1_crossings[ion_number], p1_crossing.t_us,
           p1_crossing.x_mm, p1_crossing.y_mm, p1_crossing.z_mm,
           p1_crossing.vx_mm_us, p1_crossing.vy_mm_us, p1_crossing.vz_mm_us))
-        if state.stage == 'before_main_drift' then
-          state = emit_cycle_events(counter:arm_main_drift(p1_crossing))
+        if state.stage == 'before_main_drift' and prism_stage[ion_number] == 'awaiting_p1_exit' then
+          prism_stage[ion_number] = 'p1_complete'
+          print(string.format('MRTOF_EVENT prism_pass ion=%d n=1 t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
+            ion_number, p1_crossing.t_us, p1_crossing.x_mm, p1_crossing.y_mm, p1_crossing.z_mm,
+            p1_crossing.vx_mm_us, p1_crossing.vy_mm_us, p1_crossing.vz_mm_us))
         end
+      end
+    end
+
+    -- P2 is traversed after the physical negative-mirror pre-reflection.
+    -- Its grounded shield is open along z, so collision-free entry/exit of
+    -- that finite CAD envelope provides a solver-observable passage event.
+    local before = cycle_sample(px, py, pz, pvx, pvy, pvz, pt)
+    local after = cycle_sample(ion_px_mm, ion_py_mm, ion_pz_mm,
+      ion_vx_mm, ion_vy_mm, ion_vz_mm, ion_time_of_flight)
+    if dz > 0 and prism_stage[ion_number] == 'awaiting_p2_entry'
+      and pz < prism_regions.p2.z_min_mm and ion_pz_mm >= prism_regions.p2.z_min_mm then
+      local entry = interpolated_sample(before, after,
+        (prism_regions.p2.z_min_mm-pz)/dz)
+      if inside_region(entry, prism_regions.p2) then
+        prism_stage[ion_number] = 'inside_p2_station'
+        print(string.format('MRTOF_EVENT prism_entry ion=%d n=2 t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
+          ion_number, entry.t_us, entry.x_mm, entry.y_mm, entry.z_mm,
+          entry.vx_mm_us, entry.vy_mm_us, entry.vz_mm_us))
+      end
+    end
+    if dz > 0 and prism_stage[ion_number] == 'inside_p2_station'
+      and pz < prism_regions.p2.z_max_mm and ion_pz_mm >= prism_regions.p2.z_max_mm then
+      local exit = interpolated_sample(before, after,
+        (prism_regions.p2.z_max_mm-pz)/dz)
+      if inside_region(exit, prism_regions.p2) then
+        prism_stage[ion_number] = 'p2_complete'
+        print(string.format('MRTOF_EVENT prism_pass ion=%d n=2 t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
+          ion_number, exit.t_us, exit.x_mm, exit.y_mm, exit.z_mm,
+          exit.vx_mm_us, exit.vy_mm_us, exit.vz_mm_us))
+        state = emit_cycle_events(counter:arm_main_drift(exit))
       end
     end
     state = emit_cycle_events(counter:sample(cycle_sample(
@@ -210,20 +317,6 @@ function segment.other_actions()
       print(string.format('MRTOF_EVENT slow_turn ion=%d n=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g',
         ion_number, slow_turns[ion_number], pt + fraction*(ion_time_of_flight-pt),
         px + fraction*(ion_px_mm-px), py + fraction*(ion_py_mm-py), pz + fraction*(ion_pz_mm-pz)))
-    end
-    if stripe_fraction then
-      local fraction = stripe_fraction
-      stripe_crossings[ion_number] = (stripe_crossings[ion_number] or 0) + 1
-      local vy = pvy + fraction*(ion_vy_mm-pvy)
-      print(string.format('MRTOF_EVENT stripe_plane ion=%d n=%d direction_y=%d t_us=%.12g x_mm=%.12g y_mm=0 z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-        ion_number, stripe_crossings[ion_number], vy < 0 and -1 or 1,
-        pt + fraction*(ion_time_of_flight-pt), px + fraction*(ion_px_mm-px), pz + fraction*(ion_pz_mm-pz),
-        pvx + fraction*(ion_vx_mm-pvx), vy, pvz + fraction*(ion_vz_mm-pvz)))
-      if stripe_crossings[ion_number] == 1 and vy < 0 then
-        print(string.format('MRTOF_EVENT pre_origin_y0_crossing ion=%d t_us=%.12g x_mm=%.12g y_mm=0 z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
-          ion_number, pt + fraction*(ion_time_of_flight-pt), px + fraction*(ion_px_mm-px), pz + fraction*(ion_pz_mm-pz),
-          pvx + fraction*(ion_vx_mm-pvx), vy, pvz + fraction*(ion_vz_mm-pvz)))
-      end
     end
     if not detected[ion_number] and dz < 0 and pz > detector_z and ion_pz_mm <= detector_z then
       local fraction = (detector_z - pz) / dz

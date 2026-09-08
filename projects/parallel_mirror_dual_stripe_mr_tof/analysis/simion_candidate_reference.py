@@ -166,7 +166,7 @@ def load_contract(path: Path) -> dict[str, Any]:
             "mirror geometry with a theory-optimized operating point"
         )
     frame = data.get("coordinate_system", {})
-    if frame.get("frame_id") != "astral.xyz.reflection_z.drift_y.transverse_x.v1":
+    if frame.get("frame_id") != "astral.xyz.reflection_z.drift_y.transverse_x.v2":
         raise CandidateContractError("candidate must use the documented Astral coordinate frame")
     mirror = data.get("mirror", {})
     if _number(mirror.get("beam_slot_width_mm"), "beam_slot_width_mm") != 30.0:
@@ -188,7 +188,7 @@ def load_contract(path: Path) -> dict[str, Any]:
 def derive_two_zone_focus(contract: dict[str, Any]) -> TwoZoneFocus:
     """Derive the first-order temporal focus of the two uniform-field regions."""
     frame = contract.get("coordinate_system", {})
-    if frame.get("frame_id") != "astral.xyz.reflection_z.drift_y.transverse_x.v1":
+    if frame.get("frame_id") != "astral.xyz.reflection_z.drift_y.transverse_x.v2":
         raise CandidateContractError("candidate must use the documented Astral coordinate frame")
     accelerator = contract["accelerator"]
     try:

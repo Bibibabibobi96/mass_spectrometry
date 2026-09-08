@@ -234,11 +234,12 @@ def build_full_candidate_gem(contract_path: Path) -> str:
     lines.extend(_stripe_lines(resolved))
     lines.extend(_central_ground_lines(resolved))
     lines.extend((
+        f"  ; Numerical detector event slab (not a PA electrode): {_box(resolved['detector']['box'])}.",
+        f"  locate(0,{_number(placement.focus_y_mm)},0) {{",
         "  e(15) {",
         "    ; Hollow grounded guard: exit grid meets its inner wall; repeller has a rear acceleration gap before the rear cap.",
         "    " + emit_grounded_enclosure(enclosure, exit_z_mm=placement.exit_grid_z_mm),
         "  }",
-        f"  ; Numerical detector event slab (not a PA electrode): {_box(resolved['detector']['box'])}.",
         "  ; Theory-derived -z two-zone accelerator: closed repeller -> one-row grid1 -> one-row exit grid.",
         emit_solid_rectangular_plate(
             22, half_x_mm=electrode_x, half_y_mm=electrode_y,
@@ -273,6 +274,7 @@ def build_full_candidate_gem(contract_path: Path) -> str:
                 front_z_mm=center-half_t, back_z_mm=center+half_t, cut_padding_mm=1.0,
             )
         )
+    lines.append("  }")
     # Emit the CAD prism solids after the broad grounded bodies.  GEM applies
     # overlapping fills in source order; this keeps the explicitly placed
     # prism electrodes/shields from being erased by a later grounded outline.

@@ -1,5 +1,5 @@
 -- Assemble analyser, shielded accelerator, and detector as three independent PAs.
--- Usage: ... SEED ANALYSER_PA0 ACCELERATOR_PA0 DETECTOR_PA0 OUTPUT PROGRAM FLY2 AX AY AZ BX BY BZ CX CY CZ
+-- Usage: ... SEED ANALYSER_PA0 ACCELERATOR_PA0 DETECTOR_PA0 OUTPUT PROGRAM FLY2 AX AY AZ BX BY BZ CX CY CZ [persist_adjusted|read_only_voltageized]
 -- SIMION command-line option parsing requires a `--` separator before a
 -- negative project coordinate.  Keep the separator in place and apply a
 -- stable offset: SIMION's `arg` proxy does not support table.remove().
@@ -20,6 +20,8 @@ end
 local origins={{number(8,'analyser x'),number(9,'analyser y'),number(10,'analyser z')},
                {number(11,'accelerator x'),number(12,'accelerator y'),number(13,'accelerator z')},
                {number(14,'detector x'),number(15,'detector y'),number(16,'detector z')}}
+local pa_mode=arg[17+offset] or 'persist_adjusted'
+assert(pa_mode=='persist_adjusted' or pa_mode=='read_only_voltageized', 'invalid PA binding mode')
 assert(seed:match('3_instance_seed%.iob$'), 'must use the repository three-instance IOB seed')
 assert(paths[1]:match('%.pa0$') and paths[2]:match('%.pa0$'), 'analyser and accelerator must be solved pa0 arrays')
 assert(paths[3]:match('%.pa#$'), 'detector must be a raw zero-voltage geometry PA#')
@@ -34,7 +36,7 @@ local voltages=voltage_map(operating_point.mirror_voltages_v,operating_point.str
   operating_point.nonaccelerator_scale)
 local instance_voltages={voltages.analyser,voltages.accelerator}
 local seed_directory=seed:match('^(.*[\\/])') or ''
-for index=1,10 do
+for index=1,#paths do
   local placeholder=seed_directory..string.format('iob_seed_placeholder_%02d.pa0',index)
   local handle=io.open(placeholder,'rb')
   assert(handle, 'three-instance seed companion is missing: '..placeholder)
@@ -47,7 +49,7 @@ assert(wb.filename and #wb.instances==3, 'three-instance seed must contain exact
 for index,path in ipairs(paths) do
   local instance=wb.instances[index]
   instance.pa:load(path)
-  if instance_voltages[index] then
+  if instance_voltages[index] and pa_mode=='persist_adjusted' then
     -- Official SIMION pa:fast_adjust + pa:save persist the contract settings
     -- in each run-local PA0, so GUI review does not require a particle flight.
     instance.pa:fast_adjust(instance_voltages[index])
@@ -61,6 +63,7 @@ for index,path in ipairs(paths) do
 end
 wb:save(output)
 local function copy(source,target)
+  if source==target then return end
   local i=assert(io.open(source,'rb')); local text=i:read('*a'); i:close()
   local o=assert(io.open(target,'wb')); o:write(text); o:close()
 end

@@ -111,24 +111,24 @@ class SimionCandidateReferenceTest(unittest.TestCase):
             path.write_text(json.dumps(contract), encoding="utf-8")
             gem = build_analyzer_gem(path)
         # Official ``notin_inside`` retains grid nodes on the exact CAD faces.
-        self.assertIn("notin_inside { box3D(-15,-448,106,15,132,163) }", gem)
-        self.assertIn("notin_inside { box3D(-2,-448,-108,2,132,108) }", gem)
-        self.assertIn("notin_inside { box3D(-2,-385,-97.9962772744,2,0,97.9962772744) }", gem)
+        self.assertIn("notin_inside { box3D(-15,-132,106,15,448,163) }", gem)
+        self.assertIn("notin_inside { box3D(-2,-132,-108,2,448,108) }", gem)
+        self.assertIn("notin_inside { box3D(-2,0,-97.9962772744,2,385,97.9962772744) }", gem)
 
     def test_native_shield_sections_are_not_bounding_boxes_and_cross_is_a_union(self) -> None:
         resolved = resolve_geometry(load_contract(PROJECT / "config/simion_candidate_two_zone.json"))
         first, central = resolved["prism_ground_shields"]
-        self.assertEqual(first["prism_clearance_polygon_yz_mm"], [[40, -65], [70, -95], [70, -35]])
-        self.assertEqual(central["prism_clearance_polygon_yz_mm"], [[0, 0], [26, -26], [26, 26]])
+        self.assertEqual(first["prism_clearance_polygon_yz_mm"], [[-40, -65], [-70, -95], [-70, -35]])
+        self.assertEqual(central["prism_clearance_polygon_yz_mm"], [[0, 0], [-26, -26], [-26, 26]])
         self.assertEqual(len(central["body_sections"]), 3)
         # Native face/sketch + STL sections, away from all numerical boundaries.
         for shield, point, material in (
             (central, (4, 0, 60), False), (central, (4, 0, 10), True),
-            (central, (-18, 4, 30), False), (central, (-18, 4, 60), True),
-            (central, (0, 4, 30), False), (central, (0, 10, 60), False),
-            (central, (0, 4, 60), True), (central, (4, 25, 24), False),
-            (first, (-18, 34, -65), False), (first, (-18, 34, -85), True),
-            (first, (-18, 74, -98), False), (first, (4, 42, -68), True),
+            (central, (-18, -4, 30), False), (central, (-18, -4, 60), True),
+            (central, (0, -4, 30), False), (central, (0, -10, 60), False),
+            (central, (0, -4, 60), True), (central, (4, -25, 24), False),
+            (first, (-18, -34, -65), False), (first, (-18, -34, -85), True),
+            (first, (-18, -74, -98), False), (first, (4, -42, -68), True),
         ):
             with self.subTest(point=point, shield=shield["id"]):
                 self.assertEqual(_contains_csg(shield["body_sections"], shield["rectangular_slots_mm"], point,
@@ -137,18 +137,18 @@ class SimionCandidateReferenceTest(unittest.TestCase):
     def test_all_foil_ends_are_native_whole_bodies_minus_rectangular_slots(self) -> None:
         resolved = resolve_geometry(load_contract(PROJECT / "config/simion_candidate_two_zone.json"))
         for record in resolved["stripe_electrodes"]:
-            self.assertEqual(sorted({p[0] for p in record["terminal_polygon_yz_mm"]}), [0, 2])
-            self.assertEqual(min(p[0] for p in record["polygon_yz_mm"]), -390)
+            self.assertEqual(sorted({p[0] for p in record["terminal_polygon_yz_mm"]}), [-2, 0])
+            self.assertEqual(max(p[0] for p in record["polygon_yz_mm"]), 390)
         for record_index, z_inside, z_outside in ((0, 90, 66), (2, 50, 46)):
             record = resolved["stripe_electrodes"][record_index]
             sections = [{"x": record["x"], "polygon_yz_mm": record[key]}
                         for key in ("polygon_yz_mm", "terminal_polygon_yz_mm")]
-            self.assertTrue(_contains_csg(sections, [resolved["stripe_slot"]], (0, 1, z_inside)))
-            self.assertFalse(_contains_csg(sections, [resolved["stripe_slot"]], (0, 1, z_outside)))
+            self.assertTrue(_contains_csg(sections, [resolved["stripe_slot"]], (0, -1, z_inside)))
+            self.assertFalse(_contains_csg(sections, [resolved["stripe_slot"]], (0, -1, z_outside)))
         ground = resolved["central_ground_electrodes"]
         cuts = resolved["central_ground_slots"]
-        for point, material in (((0, 1, 30), True), ((0, 1, 0), False), ((0, 1, 38), False),
-                                ((4, -2, 39), True), ((4, -2, 0), False), ((0, -2, 30), False)):
+        for point, material in (((0, -1, 30), True), ((0, -1, 0), False), ((0, -1, 38), False),
+                                ((4, 2, 39), True), ((4, 2, 0), False), ((0, 2, 30), False)):
             with self.subTest(point=point):
                 self.assertEqual(_contains_csg(ground, cuts, point), material)
 
@@ -278,9 +278,10 @@ class SimionCandidateReferenceTest(unittest.TestCase):
             operating_point = outputs["operating_point"].read_text(encoding="utf-8")
             self.assertIn(
                 "mirror_regions_project = { negative = { z_min_mm = -325, z_max_mm = -102 }, "
-                "positive = { z_min_mm = 102, z_max_mm = 325 } }, detector_box_mm = {",
+                "positive = { z_min_mm = 102, z_max_mm = 325 } }",
                 operating_point,
             )
+            self.assertIn("detector_box_mm = { -25, -87, 95, 25, -37, 97 }", operating_point)
             self.assertIn("source_receipt_sha256", outputs["operating_point"].read_text(encoding="utf-8"))
             self.assertIn(
                 "qualification = 'geometry_review_only__unsolved_stripe_and_p2'",
@@ -305,7 +306,7 @@ class SimionCandidateReferenceTest(unittest.TestCase):
             )
             self.assertEqual(outputs["program"].name, "mrtof_candidate.lua")
             program = outputs["program"].read_text(encoding="utf-8")
-            self.assertIn("mirror_cycle_counter.new(mirror_regions)", program)
+            self.assertIn("mirror_cycle_counter.new(mirror_regions, phase_origin_mirror_side)", program)
             self.assertNotIn("target_turns", program)
             self.assertNotIn("turns[ion_number] ==", program)
             self.assertTrue(outputs["first_prism_l0_receipt"].exists())
@@ -332,7 +333,7 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         # reflection axis and its Z=86 mm transverse centre maps to x=0.
         point = (-281.25, -64.416726, 86.0)
         mapped = source_to_project(point, contract)
-        self.assertEqual(mapped, (0.0, 123.25, -64.416726))
+        self.assertEqual(mapped, (0.0, -123.25, -64.416726))
         self.assertEqual(project_to_source(mapped, contract), point)
 
     def test_resolved_cad_envelope_applies_component_and_project_transforms(self) -> None:
@@ -349,7 +350,7 @@ class SimionCandidateReferenceTest(unittest.TestCase):
             ],
         }
         manifest = resolve(evidence, frame)
-        self.assertEqual(manifest["components"][0]["project_box_mm"], [-86.0, -258.0, 30.0, -66.0, -158.0, 40.0])
+        self.assertEqual(manifest["components"][0]["project_box_mm"], [-86.0, 158.0, 30.0, -66.0, 258.0, 40.0])
 
     def test_ion_foil_profile_composition_keeps_assembly_and_project_frames_distinct(self) -> None:
         frame = load_cad_pose_contract(PROJECT / "config" / "cad_to_theory_frame.json")
@@ -359,7 +360,7 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         profile = {"coordinate_frame": "opened Ion-Foil assembly, millimetres", "stripes": [component], "central_ground": component}
         top_level = {"ion_foil_component_poses": [{"local_instance": "part-1", "solidworks_transform_array": identity}]}
         result = compose(profile, top_level, frame)
-        self.assertEqual(result["stripes"][0]["long_bspline_edges"][0]["control_points_project_mm"][0], [-86.0, -158.0, 0.0])
+        self.assertEqual(result["stripes"][0]["long_bspline_edges"][0]["control_points_project_mm"][0], [-86.0, 158.0, 0.0])
 
     def test_candidate_places_two_zone_focus_at_central_plane(self) -> None:
         contract = load_contract(PROJECT / "config" / "simion_candidate_two_zone.json")
@@ -369,7 +370,7 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         self.assertGreater(focus.focus_after_exit_mm, 0.0)
         self.assertAlmostEqual(placement.exit_grid_z_mm - focus.focus_after_exit_mm, placement.focus_z_mm)
         self.assertEqual(contract["accelerator"]["focus_project_position_mm"], [0.0, None, 0.0])
-        self.assertAlmostEqual(placement.focus_y_mm, 55.328)
+        self.assertAlmostEqual(placement.focus_y_mm, -55.328)
         self.assertGreater(placement.repeller_z_mm, placement.grid_1_z_mm)
         self.assertGreater(placement.grid_1_z_mm, placement.exit_grid_z_mm)
         self.assertEqual(energy.net_gain_center_minimum_v, 3500.0)
@@ -422,19 +423,25 @@ class SimionCandidateReferenceTest(unittest.TestCase):
             detector_gem = build_detector_gem(path)
             origins = resolve_split_iob_origins(path)
         self.assertIn("local +z is project +z", gem)
-        self.assertIn("global focus=(0,55.328,0)", gem)
+        self.assertIn("global focus=(0,-55.328,0)", gem)
         self.assertIn("box3D(-12.5,-12.5,6,12.5,12.5,6)", gem)
         self.assertIn("e(4) { box3D(-22,-20,5.5,22,20,6.5)", gem)
         self.assertIn("e(2) { box3D(-20,-18,45.6,20,18,47.6) }", gem)
         self.assertIn("rear acceleration gaps", gem)
-        self.assertAlmostEqual(origins["accelerator"][1], 23.328)
+        self.assertAlmostEqual(origins["accelerator"][1], -87.328)
         self.assertAlmostEqual(
             origins["accelerator"][2] + float(contract["accelerator"]["pa_local_margin_z_mm"]),
             derive_two_zone_placement(contract).exit_grid_z_mm,
         )
         self.assertIn("detector PA only", detector_gem)
         self.assertIn("e(25)", detector_gem)
-        self.assertEqual(origins["detector"], (-32.0, 30.0, 92.0))
+        detector_box = resolve_geometry(contract)["detector"]["box"]
+        detector_span = contract["simion"]["detector_pa_span_mm"]
+        expected_detector_origin = tuple(
+            (detector_box[index] + detector_box[index + 3] - detector_span[index]) / 2.0
+            for index in range(3)
+        )
+        self.assertEqual(origins["detector"], expected_detector_origin)
 
     def test_grid_supports_inherit_ring_thickness_and_both_gems_consume_resolved_frames(self) -> None:
         contract = load_contract(PROJECT / "config/simion_candidate_two_zone.json")
@@ -830,12 +837,13 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         self.assertIn("e(24) { box3D", gem)
         self.assertIn("Theory-derived -z two-zone accelerator", gem)
         self.assertIn("Four physical curved Stripe conductors", gem)
-        self.assertIn("notin_inside { box3D(-15,-448,224.405553,15,132,281.405553) }", gem)
+        self.assertIn("notin_inside { box3D(-15,-132,224.405553,15,448,281.405553) }", gem)
         self.assertIn("Stripe-facing 5-mm shields have 4-mm slots", gem)
-        self.assertIn("box3D(-62.5,-458,220.405553,62.5,142,225.405553)", gem)
-        self.assertIn("notin_inside { box3D(-2,-448,-226.405553,2,132,226.405553) }", gem)
-        self.assertIn("box3D(-62.5,-458,438.405553,62.5,142,443.405553)", gem)
+        self.assertIn("box3D(-62.5,-142,220.405553,62.5,458,225.405553)", gem)
+        self.assertIn("notin_inside { box3D(-2,-132,-226.405553,2,448,226.405553) }", gem)
+        self.assertIn("box3D(-62.5,-142,438.405553,62.5,458,443.405553)", gem)
         placement = derive_two_zone_placement(contract)
+        self.assertIn(f"locate(0,{placement.focus_y_mm:.12g},0)", gem)
         self.assertIn(f"box3D(-24,-22,{placement.exit_grid_z_mm:.12g}", gem)
         self.assertIn(f"box3D(-20,-18,{placement.repeller_z_mm:.12g}", gem)
         self.assertIn("Whole Ion-Foil-2 with native short cubic", gem)
@@ -843,10 +851,10 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         self.assertIn("extrude_yz(-12,-2)", gem)
         self.assertIn("extrude_yz(2,12)", gem)
         self.assertIn("Two triangular deflection prisms from the resolved CAD-constrained contract", gem)
-        self.assertIn("polyline(3,-97,32,-97,32,97,3,97,3,21,-3,21,-3,-21,3,-21,3,-97)", gem)
-        self.assertIn("polyline(42.828,-65,67.828,-90,67.828,-40,42.828,-65)", gem)
-        self.assertIn("notin_inside { box3D(-2,6,-97,2,28,97) }", gem)
-        self.assertIn("notin_inside { box3D(-2,-3,-40,2,32,40) }", gem)
+        self.assertIn("polyline(-3,-97,-32,-97,-32,97,-3,97,-3,21,3,21,3,-21,-3,-21,-3,-97)", gem)
+        self.assertIn("polyline(-42.828,-65,-67.828,-90,-67.828,-40,-42.828,-65)", gem)
+        self.assertIn("notin_inside { box3D(-2,-28,-97,2,-6,97) }", gem)
+        self.assertIn("notin_inside { box3D(-2,-32,-40,2,3,40) }", gem)
 
     def test_default_hardware_contract_refuses_pa_geometry_until_pose_and_l0_are_closed(self) -> None:
         with self.assertRaises(CandidateContractError):
@@ -857,8 +865,8 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         resolved = resolve_geometry(contract)
         self.assertEqual(resolved["metadata"]["mirror_slot_width_mm"], 30.0)
         self.assertEqual(resolved["metadata"]["ion_foil_slot_width_mm"], 4.0)
-        self.assertEqual(resolved["metadata"]["ion_foil_slot_bridge_from_min_y_mm"], 5.0)
-        self.assertEqual(resolved["metadata"]["ion_foil_slot_bridge_from_max_y_mm"], 2.0)
+        self.assertEqual(resolved["metadata"]["ion_foil_slot_bridge_from_min_y_mm"], 2.0)
+        self.assertEqual(resolved["metadata"]["ion_foil_slot_bridge_from_max_y_mm"], 5.0)
         self.assertGreater(resolved["metadata"]["central_ground_to_stripe_clearance_mm"], 0.0)
         self.assertGreaterEqual(
             resolved["metadata"]["resolved_minimum_interstripe_clearance_mm"],
@@ -868,23 +876,23 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         self.assertEqual(resolved["central_ground_electrodes"][0]["x"], [0.0, 12.0])
         self.assertEqual(resolved["central_ground_electrodes"][1]["x"], [-12.0, 0.0])
         self.assertNotIn("central_ground_bridges", resolved)
-        self.assertEqual(resolved["central_ground_slots"][0][:2], [-2.0, -385.0])
-        self.assertEqual(resolved["central_ground_slots"][0][3:5], [2.0, 0.0])
-        self.assertEqual(resolved["central_ground_slots"][1], [-12.0, -4.0, -22.0, 12.0, 2.0, 22.0])
+        self.assertEqual(resolved["central_ground_slots"][0][:2], [-2.0, 0.0])
+        self.assertEqual(resolved["central_ground_slots"][0][3:5], [2.0, 385.0])
+        self.assertEqual(resolved["central_ground_slots"][1], [-12.0, -2.0, -22.0, 12.0, 4.0, 22.0])
         self.assertEqual([item["id"] for item in resolved["prism_electrodes"]], [16, 17])
         self.assertEqual([item["id"] for item in resolved["prism_ground_shields"]], [18, 20])
         exit_shield = resolved["prism_ground_shields"][0]
         self.assertEqual(exit_shield["topology"], "single_continuous_frame_with_rectangular_slots")
-        self.assertEqual(exit_shield["rectangular_slots_mm"], [[-2.0, 35.0, -100.0, 2.0, 75.0, -30.0]])
+        self.assertEqual(exit_shield["rectangular_slots_mm"], [[-2.0, -75.0, -100.0, 2.0, -35.0, -30.0]])
         grounded_2 = resolved["prism_ground_shields"][-1]
         self.assertEqual(grounded_2["topology"], "single_continuous_frame_with_cross_aperture")
-        self.assertEqual(grounded_2["cross_aperture"], {"x_mm": [-2.0, 2.0], "y_mm": [6.0, 28.0], "z_mm": [-40.0, 40.0], "boolean_operation": "union"})
+        self.assertEqual(grounded_2["cross_aperture"], {"x_mm": [-2.0, 2.0], "y_mm": [-28.0, -6.0], "z_mm": [-40.0, 40.0], "boolean_operation": "union"})
         self.assertEqual(resolved["detector"]["normal_project"], "+z")
-        self.assertEqual(resolved["detector"]["box"], [-25.0, 37.0, 95.0, 25.0, 87.0, 97.0])
+        self.assertEqual(resolved["detector"]["box"], [-25.0, -87.0, 95.0, 25.0, -37.0, 97.0])
         self.assertTrue(resolved["detector"]["separate_pa"])
-        self.assertAlmostEqual(resolved["detector"]["box"][1], 37.0)
+        self.assertAlmostEqual(resolved["detector"]["box"][1], -87.0)
         self.assertAlmostEqual(resolved["detector"]["box"][3], 25.0)
-        self.assertAlmostEqual(resolved["detector"]["box"][4], 87.0)
+        self.assertAlmostEqual(resolved["detector"]["box"][4], -37.0)
         self.assertAlmostEqual(resolved["detector"]["box"][5], 97.0)
         self.assertEqual(resolved["metadata"]["detector_to_positive_grounded_mirror_clearance_mm"], 5.0)
         self.assertEqual(resolved["metadata"]["detector_to_central_prism_ground_shield_clearance_y_mm"], 5.0)
@@ -911,22 +919,22 @@ class SimionCandidateReferenceTest(unittest.TestCase):
         self.assertAlmostEqual(max(point[1] for point in positive_set_2), 81.69299032983183)
         # The CAD Ion-Foil aperture is a finite central cut, not two
         # disconnected x-side conductors: 5 mm and 2 mm bridges remain at
-        # the respective drift-direction ends of the -390..2 mm body.
-        self.assertEqual(resolved["stripe_slot"][1], -385.0)
-        self.assertEqual(resolved["stripe_slot"][4], 0.0)
+        # the respective drift-direction ends of the -2..390 mm body.
+        self.assertEqual(resolved["stripe_slot"][1], 0.0)
+        self.assertEqual(resolved["stripe_slot"][4], 385.0)
         slot = resolved["mirror_slot"]
         # The physical mirror is 600 mm long along project y, while the
         # mechanically measured active aperture is a bounded 580 mm slot.
         self.assertEqual(contract["mirror"]["length_y_mm"], 600.0)
         self.assertEqual(contract["mirror"]["beam_slot"]["length_y_mm"], 580.0)
-        self.assertEqual(slot[:2], [-15.0, -448.0])
-        self.assertEqual(slot[3:5], [15.0, 132.0])
-        self.assertEqual(resolved["mirror_electrodes"][0]["beam_slot"], [-15.0, -448.0, 106.0, 15.0, 132.0, 163.0])
+        self.assertEqual(slot[:2], [-15.0, -132.0])
+        self.assertEqual(slot[3:5], [15.0, 448.0])
+        self.assertEqual(resolved["mirror_electrodes"][0]["beam_slot"], [-15.0, -132.0, 106.0, 15.0, 448.0, 163.0])
         # The 30-mm active-electrode aperture ends at the end plates; only
         # the Stripe-facing grounded plate has the narrower 4-mm slot.
         inner_shield_slot = resolved["mirror_inner_shield_slot"]
-        self.assertEqual(inner_shield_slot, [-2.0, -448.0, -108.0, 2.0, 132.0, 108.0])
-        self.assertEqual(resolved["mirror_electrodes"][0]["box"][2:], [107.0, 62.5, 142.0, 162.0])
+        self.assertEqual(inner_shield_slot, [-2.0, -132.0, -108.0, 2.0, 448.0, 108.0])
+        self.assertEqual(resolved["mirror_electrodes"][0]["box"][2:], [107.0, 62.5, 458.0, 162.0])
         self.assertEqual(len(resolved["mirror_ground_shields"]), 2)
         self.assertEqual(
             [item["role"] for item in resolved["mirror_ground_shields"]],

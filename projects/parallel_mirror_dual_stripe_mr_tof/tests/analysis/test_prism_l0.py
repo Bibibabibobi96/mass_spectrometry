@@ -21,15 +21,15 @@ class FirstPrismL0Test(unittest.TestCase):
         self.assertEqual(result.drift_kinetic_energy_ev, 5.0)
         self.assertEqual(result.fast_kinetic_energy_ev, 4000.0)
         self.assertAlmostEqual(result.drift_angle_degrees, 2.0248682972773406)
-        self.assertEqual(result.entry_position_project_mm, (0.0, 55.328, 0.0))
+        self.assertEqual(result.entry_position_project_mm, (0.0, -55.328, 0.0))
         self.assertEqual(result.entry_unit_direction_project, (0.0, 0.0, -1.0))
-        self.assertAlmostEqual(result.target_unit_direction_project[1], -(5.0 / 4005.0) ** 0.5)
+        self.assertAlmostEqual(result.target_unit_direction_project[1], (5.0 / 4005.0) ** 0.5)
         self.assertAlmostEqual(result.target_unit_direction_project[2], -(4000.0 / 4005.0) ** 0.5)
-        self.assertEqual(result.triangle_entry_project_mm, (0.0, 55.328, -52.5))
-        self.assertEqual(result.triangle_exit_project_mm, (0.0, 55.328, -77.5))
+        self.assertEqual(result.triangle_entry_project_mm, (0.0, -55.328, -52.5))
+        self.assertEqual(result.triangle_exit_project_mm, (0.0, -55.328, -77.5))
         self.assertEqual(result.target_plane_z_mm, -101.0)
         self.assertEqual(result.target_plane_x_mm, 0.0)
-        self.assertEqual(result.target_plane_y_acceptance_mm, (35.0, 75.0))
+        self.assertEqual(result.target_plane_y_acceptance_mm, (-75.0, -35.0))
         self.assertAlmostEqual(result.hard_boundary_seed_voltage_v, 20000.0**0.5)
         self.assertEqual(result.second_prism_status, "pre_stripe_injection_pending")
 
@@ -65,10 +65,10 @@ class FirstPrismL0Test(unittest.TestCase):
     def test_rejects_wrong_station_ray_plane_and_slot_contract(self) -> None:
         for mutate in (
             lambda contract: contract["prism_transport"]["first_prism"]["entry_reference"].__setitem__("direction_project", [0, 1, 0]),
-            lambda contract: contract["prism_transport"]["first_prism"]["entry_reference"]["position_project_mm"].__setitem__(1, 55.0),
+            lambda contract: contract["prism_transport"]["first_prism"]["entry_reference"]["position_project_mm"].__setitem__(1, -55.0),
             lambda contract: contract["prism_transport"]["first_prism"]["target_interface"].__setitem__("coordinate_mm", -100),
             lambda contract: contract["prism_transport"]["first_prism"]["target_interface"].__setitem__("ground_shield_id", 20),
-            lambda contract: contract["prisms"]["ground_shields"][0]["rectangular_slots_mm"][0].__setitem__("box", [3, 35, -100, 4, 75, -30]),
+            lambda contract: contract["prisms"]["ground_shields"][0]["rectangular_slots_mm"][0].__setitem__("box", [3, -75, -100, 4, -35, -30]),
         ):
             with self.subTest(mutate=mutate):
                 contract = copy.deepcopy(self.contract)

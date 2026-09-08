@@ -4,6 +4,7 @@ param(
   [ValidateSet('accelerator_focus_center_fly2','accelerator_focus_bunch_fly2')][string]$SourceKey='accelerator_focus_center_fly2',
   [string]$BaselineContractPath='',
   [Nullable[double]]$FirstGapDropV=$null,
+  [Nullable[double]]$SelectedNetGainCenterV=$null,
   [string]$RunId='',
   [string]$SimionExe='',
   [string]$PythonExe=''
@@ -36,6 +37,10 @@ $baseline=Get-Content -LiteralPath $baselinePath -Raw -Encoding UTF8|ConvertFrom
 $firstGapDrop=if($null -ne $FirstGapDropV){[double]$FirstGapDropV}else{[double]$baseline.accelerator.repeller_v-[double]$baseline.accelerator.intermediate_grid_v}
 if(-not([double]::IsFinite($firstGapDrop)) -or $firstGapDrop -le 0){throw 'first-gap voltage drop must be finite and positive'}
 $firstGapDropText=$firstGapDrop.ToString('R',[Globalization.CultureInfo]::InvariantCulture)
+$selectedEnergyText=if($null -ne $SelectedNetGainCenterV){
+  if(-not([double]::IsFinite([double]$SelectedNetGainCenterV)) -or [double]$SelectedNetGainCenterV -le 0){throw 'selected net-gain centre must be finite and positive'}
+  ([double]$SelectedNetGainCenterV).ToString('R',[Globalization.CultureInfo]::InvariantCulture)
+}else{$null}
 $countKey=if($SourceKey-eq'accelerator_focus_center_fly2'){'center_particle_count'}else{'candidate_bunch_particle_count'}
 $expectedCount=[int]$baseline.particle_source.$countKey
 if($expectedCount -le 0){throw 'accelerator focus source has invalid particle count'}
@@ -89,7 +94,7 @@ try{
   $reviewedContract=Join-Path $solverDir 'simion_prototype_contract.json'
   $trialContract=Join-Path $solverDir 'accelerator_focus_voltage_trial.json'
   $trialReceipt=Join-Path $resultDir 'accelerator_focus_voltage_trial_receipt.json'
-  $failureStage='derive_voltage_trial';Invoke-ProjectPython -Arguments @($trialBuilder,'--current',$frozenBaseline,'--reviewed',$reviewedContract,'--first-gap-drop-v',$firstGapDropText,'--output',$trialContract,'--receipt',$trialReceipt)
+  $failureStage='derive_voltage_trial';$trialArguments=@($trialBuilder,'--current',$frozenBaseline,'--reviewed',$reviewedContract,'--first-gap-drop-v',$firstGapDropText,'--output',$trialContract,'--receipt',$trialReceipt);if($null-ne$selectedEnergyText){$trialArguments+=@('--selected-net-gain-center-v',$selectedEnergyText)};Invoke-ProjectPython -Arguments $trialArguments
   $focusFly2=Join-Path $solverDir 'mrtof_three_component_candidate.fly2';$sourceReceipt=Join-Path $resultDir 'accelerator_focus_source_receipt.json'
   $failureStage='materialize_axial_source';Invoke-ProjectPython -Arguments @($sourceBuilder,'--contract',$trialContract,'--reviewed-contract',$reviewedContract,'--source-key',$SourceKey,'--output',$focusFly2,'--receipt',$sourceReceipt)
   Copy-RequiredInput (Join-Path $repoRoot 'projects\parallel_mirror_dual_stripe_mr_tof\simion\mrtof_accelerator_focus.lua') (Join-Path $solverDir 'mrtof_three_component_candidate.lua') 'focus program'|Out-Null
@@ -115,7 +120,7 @@ try{
   $config=Get-Content -LiteralPath $runConfig -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
   $sourceIdentity=Get-Content -LiteralPath $sourceReceipt -Raw -Encoding UTF8|ConvertFrom-Json
   $config.inputs=[ordered]@{reviewed_iob=(Join-Path $solverDir 'mrtof_three_component_candidate.iob');voltageized_accelerator_pa0=$acceleratorPa0;reviewed_accelerator_pa_family=$sourceAcceleratorPa0;geometry_review_receipt=(Join-Path $solverDir 'three_component_geometry_review.json');iob_structure_report=(Join-Path $solverDir 'iob_structure_report.txt');geometry_source_manifest=(Join-Path $solverDir 'prototype_input_manifest.json');consumed_fly2=$focusFly2;baseline_contract=$frozenBaseline;trial_contract=$trialContract;reviewed_contract=$reviewedContract;trial_receipt=$trialReceipt;voltageization_receipt=$voltageizationReceipt;source_receipt=$sourceReceipt}
-  $config.parameters.source_key=$SourceKey;$config.parameters.particle_count=$expectedCount;$config.parameters.source_sha256=$sourceIdentity.fly2_sha256;$config.parameters.first_gap_drop_v=$firstGapDrop
+  $config.parameters.source_key=$SourceKey;$config.parameters.particle_count=$expectedCount;$config.parameters.source_sha256=$sourceIdentity.fly2_sha256;$config.parameters.first_gap_drop_v=$firstGapDrop;$config.parameters.selected_net_gain_center_v=if($null-ne$SelectedNetGainCenterV){[double]$SelectedNetGainCenterV}else{$null}
   Write-RunJson -Path $runConfig -Value $config
   $failureStage='native_accelerator_focus'
   Push-Location -LiteralPath $solverDir

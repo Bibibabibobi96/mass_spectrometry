@@ -1,0 +1,192 @@
+[CmdletBinding()]
+param(
+  [Parameter(Mandatory)][string]$GeometryReviewRunPath,
+  [Parameter(Mandatory)][string]$MirrorRunPath,
+  [Parameter(Mandatory)][string]$StripeRunPath,
+  [Parameter(Mandatory)][string]$AcceleratorRunPath,
+  [Parameter(Mandatory)][double]$Prism1VoltageV,
+  [Parameter(Mandatory)][double]$Prism2VoltageV,
+  [Nullable[double]]$Stripe1VoltageV=$null,
+  [Nullable[double]]$Stripe2VoltageV=$null,
+  [switch]$ContinueMainDrift,
+  [switch]$ConstrainXSymmetryPlane,
+  [string]$RunId='',
+  [string]$SimionExe='',
+  [string]$PythonExe=''
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+
+function Copy-RequiredInput {
+  param([string]$Source,[string]$Destination,[string]$Label)
+  if(-not(Test-Path -LiteralPath $Source -PathType Leaf)){throw "$Label is missing: $Source"}
+  Copy-VerifiedRunInput -Source $Source -Destination $Destination
+}
+function Invoke-ProjectPython {
+  param([string[]]$Arguments)
+  Push-Location -LiteralPath $repoRoot;$saved=$env:PYTHONPATH
+  try{$env:PYTHONPATH=$repoRoot;& $python @Arguments;if($LASTEXITCODE-ne 0){throw "Python stage failed: $($Arguments -join ' ')"}}
+  finally{$env:PYTHONPATH=$saved;Pop-Location}
+}
+function Invoke-SimionStage {
+  param([string]$Stage,[string[]]$Arguments)
+  Push-Location -LiteralPath $solverDir
+  try{& $simion @Arguments 2>&1|Tee-Object -FilePath (Join-Path $logDir "$Stage.log");if($LASTEXITCODE-ne 0){throw "SIMION stage failed: $Stage"}}
+  finally{Pop-Location}
+}
+function Remove-TemporarySolverDirectory {
+  param([string]$Path)
+  if([string]::IsNullOrWhiteSpace($Path)-or-not(Test-Path -LiteralPath $Path)){return}
+  $resolved=[IO.Path]::GetFullPath($Path)
+  $temporaryRoot=[IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd([IO.Path]::DirectorySeparatorChar)+[IO.Path]::DirectorySeparatorChar
+  if(-not$resolved.StartsWith($temporaryRoot,[StringComparison]::OrdinalIgnoreCase)){throw "Refusing to remove non-temporary solver directory: $resolved"}
+  Remove-Item -LiteralPath $resolved -Recurse -Force
+}
+
+$projectId='parallel_mirror_dual_stripe_mr_tof'
+$repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
+$workspaceRoot=Split-Path -Parent $repoRoot
+$python=if($PythonExe){[IO.Path]::GetFullPath($PythonExe)}else{Join-Path $repoRoot '.venv\Scripts\python.exe'}
+$simion=if($SimionExe){[IO.Path]::GetFullPath($SimionExe)}else{Join-Path $env:ProgramFiles 'SIMION-2020\simion.exe'}
+if(-not(Test-Path -LiteralPath $python -PathType Leaf)){throw "Python executable is missing: $python"}
+if(-not(Test-Path -LiteralPath $simion -PathType Leaf)){throw "SIMION executable is missing: $simion"}
+foreach($value in @($Prism1VoltageV,$Prism2VoltageV)){if([double]::IsNaN($value)-or[double]::IsInfinity($value)){throw 'Prism voltages must be finite'}}
+if (($null -eq $Stripe1VoltageV) -ne ($null -eq $Stripe2VoltageV)) { throw 'Stripe1VoltageV and Stripe2VoltageV must be supplied together.' }
+foreach($value in @($Stripe1VoltageV,$Stripe2VoltageV)){if($null-ne$value-and([double]::IsNaN($value)-or[double]::IsInfinity($value))){throw 'Stripe voltages must be finite'}}
+$geometryRun=(Resolve-Path -LiteralPath $GeometryReviewRunPath).Path
+$mirrorRun=(Resolve-Path -LiteralPath $MirrorRunPath).Path
+$stripeRun=(Resolve-Path -LiteralPath $StripeRunPath).Path
+$acceleratorRun=(Resolve-Path -LiteralPath $AcceleratorRunPath).Path
+$geometrySimion=Join-Path $geometryRun 'simion'
+$acceleratorSimion=Join-Path $acceleratorRun 'simion'
+$geometryManifest=Join-Path $geometryRun 'run_manifest.json'
+$mirrorManifest=Join-Path $mirrorRun 'run_manifest.json'
+$stripeManifest=Join-Path $stripeRun 'run_manifest.json'
+$acceleratorManifest=Join-Path $acceleratorRun 'run_manifest.json'
+foreach($manifest in @($geometryManifest,$mirrorManifest,$stripeManifest,$acceleratorManifest)){
+  & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $manifest --require-status success
+  if($LASTEXITCODE-ne 0){throw "Upstream run manifest is not verified success: $manifest"}
+}
+if([string]::IsNullOrWhiteSpace($RunId)){$RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__sim__simion__two-prism-trial-n1'}
+
+. (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
+. (Join-Path $repoRoot 'common\host_execution_lease.ps1')
+$package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot (Join-Path $workspaceRoot "artifacts\projects\$projectId") `
+  -RunId $RunId -Project $projectId -Mode 'finite_3d_two_prism_voltage_trial' -Software @('SIMION 2020','Python 3.11') `
+  -RetentionContractEnabled -RetentionClass compact `
+  -AdditionalDirectories @('simion') -UseShortExecutionPath
+$runDir=$package.run_dir;$resultDir=$package.result_dir;$logDir=$package.log_dir;$solverDir=Join-Path $runDir 'simion'
+$runConfig=$package.run_config;$summary=$package.summary;$artifactRoot=Join-Path $workspaceRoot 'artifacts'
+$terminalized=$false;$failureStage='preflight';$lease=$null;$hostOutcome='failed';$temporarySolverDir=$null
+try{
+  $sourceAnalyzer=Join-Path $geometrySimion 'mrtof_analyzer.pa0'
+  $sourceAccelerator=Join-Path $acceleratorSimion 'mrtof_accelerator.pa0'
+  $sourceDetector=Join-Path $geometrySimion 'mrtof_detector.pa#'
+  $reviewedContract=Join-Path $geometrySimion 'simion_prototype_contract.json'
+  $selectedContract=Join-Path $acceleratorSimion 'accelerator_focus_voltage_trial.json'
+  $mirrorSummary=Join-Path $mirrorRun 'summary.json'
+  $stripeSummary=Join-Path $stripeRun 'summary.json'
+  $acceleratorReceipt=Join-Path $acceleratorRun 'results\accelerator_focus_voltage_trial_receipt.json'
+  $trialTool=Join-Path $repoRoot 'projects\parallel_mirror_dual_stripe_mr_tof\analysis\two_prism_simion_trial.py'
+  $voltageizerSource=Join-Path $PSScriptRoot 'voltageize_analyzer_pa0.lua'
+  $iobBuilderSource=Join-Path $PSScriptRoot 'build_three_component_iob.lua'
+  $iobSeedSource=Join-Path $repoRoot 'common\simion\assets\iob_instance_seeds\3_instance_seed.iob'
+  $placeholderSources=@(1..3|ForEach-Object{Join-Path $repoRoot ('common\simion\assets\iob_instance_seeds\iob_seed_placeholder_{0:D2}.pa0'-f$_)})
+  $programSource=Join-Path $PSScriptRoot 'mrtof_candidate.lua'
+  $counterSource=Join-Path $PSScriptRoot 'mirror_cycle_counter.lua'
+  $mapSource=Join-Path $PSScriptRoot 'candidate_voltage_map.lua'
+  $launcherSource=Join-Path $PSScriptRoot 'run_iob_flight.lua'
+  foreach($path in @($sourceAnalyzer,$sourceAccelerator,$sourceDetector,$reviewedContract,$selectedContract,$mirrorSummary,$stripeSummary,$acceleratorReceipt,$trialTool,$voltageizerSource,$iobBuilderSource,$iobSeedSource,$placeholderSources,$programSource,$counterSource,$mapSource,$launcherSource)){
+    if(-not(Test-Path -LiteralPath $path -PathType Leaf)){throw "Required P1/P2 trial input is missing: $path"}
+  }
+  $failureStage='capacity_preflight'
+  $requiredBytes=[int64]0
+  foreach($path in @($reviewedContract,$selectedContract,$mirrorSummary,$stripeSummary,$acceleratorReceipt,$trialTool,$voltageizerSource,$iobBuilderSource,$iobSeedSource,$placeholderSources,$programSource,$counterSource,$mapSource,$launcherSource)){$requiredBytes+=[int64](Get-Item -LiteralPath $path).Length}
+  $startup=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -RequiredHeadroomBytes $requiredBytes -ProtectedPaths @($package.artifact_run_dir)
+  $startupPath=Join-Path $resultDir 'artifact_capacity_gate_startup.json';Write-RunJson -Path $startupPath -Depth 14 -Value $startup
+  $failureStage='freeze_small_inputs'
+  $contract=Copy-RequiredInput $selectedContract (Join-Path $solverDir 'accelerator_focus_voltage_trial.json') 'selected-energy contract'
+  $reviewed=Copy-RequiredInput $reviewedContract (Join-Path $solverDir 'simion_prototype_contract.json') 'reviewed geometry contract'
+  $mirrorLocal=Copy-RequiredInput $mirrorSummary (Join-Path $solverDir 'mirror_exact_k_summary.json') 'exact-K mirror summary'
+  $stripeLocal=Copy-RequiredInput $stripeSummary (Join-Path $solverDir 'dual_stripe_exact_k_summary.json') 'exact-K Stripe summary'
+  $acceleratorLocal=Copy-RequiredInput $acceleratorReceipt (Join-Path $solverDir 'accelerator_focus_voltage_trial_receipt.json') 'accelerator voltage receipt'
+  foreach($pair in @(
+    @($programSource,'mrtof_three_component_candidate.lua'),@($counterSource,'mrtof_three_component_candidate.mirror_cycle_counter.lua'),
+    @($mapSource,'mrtof_three_component_candidate.voltage_map.lua'),@($launcherSource,'run_iob_flight.lua'),
+    @($iobBuilderSource,'build_three_component_iob.lua'),@($iobSeedSource,'3_instance_seed.iob'),
+    @($placeholderSources[0],'iob_seed_placeholder_01.pa0'),@($placeholderSources[1],'iob_seed_placeholder_02.pa0'),
+    @($placeholderSources[2],'iob_seed_placeholder_03.pa0'),@($voltageizerSource,'voltageize_analyzer_pa0.lua'),
+    @($trialTool,'two_prism_simion_trial.py'))){
+    Copy-RequiredInput $pair[0] (Join-Path $solverDir $pair[1]) $pair[1]|Out-Null
+  }
+  $fly2Input=Join-Path $solverDir 'downstream_trial_source.input.fly2'
+  $sidecar=Join-Path $solverDir 'mrtof_three_component_candidate.operating_point.lua'
+  $trialReceipt=Join-Path $resultDir 'two_prism_trial_materialization.json'
+  $failureStage='materialize_trial'
+  $materializeArguments=@('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial','materialize',
+    '--contract',$contract,'--reviewed-contract',$reviewed,'--mirror-summary',$mirrorLocal,'--stripe-summary',$stripeLocal,
+    '--accelerator-receipt',$acceleratorLocal,'--prism-1-v',([string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',$Prism1VoltageV)),
+    '--prism-2-v',([string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',$Prism2VoltageV)),
+    '--fly2',$fly2Input,'--sidecar',$sidecar,'--receipt',$trialReceipt)
+  if($null-ne$Stripe1VoltageV){
+    $materializeArguments+=@('--stripe-1-v',([string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',[double]$Stripe1VoltageV)),
+      '--stripe-2-v',([string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',[double]$Stripe2VoltageV)))
+  }
+  if($ContinueMainDrift){$materializeArguments+='--continue-main-drift'}
+  if($ConstrainXSymmetryPlane){$materializeArguments+='--constrain-x-symmetry-plane'}
+  Invoke-ProjectPython -Arguments $materializeArguments
+  $trial=Get-Content -LiteralPath $trialReceipt -Raw -Encoding UTF8|ConvertFrom-Json
+  $temporarySolverDir=Join-Path ([IO.Path]::GetTempPath()) ('mrtof_downstream_'+[guid]::NewGuid().ToString('N'))
+  New-Item -ItemType Directory -Path $temporarySolverDir|Out-Null
+  $temporaryAnalyzer=Join-Path $temporarySolverDir 'mrtof_analyzer.pa0'
+  $temporaryIob=Join-Path $temporarySolverDir 'mrtof_three_component_candidate.iob'
+  $posePath=Join-Path $resultDir 'resolved_iob_pose.json'
+  $poseCode="import json,sys; from pathlib import Path; from projects.parallel_mirror_dual_stripe_mr_tof.analysis.split_candidate_geometry import resolve_split_iob_origins; p=Path(sys.argv[1]); c=json.loads(p.read_text(encoding='utf-8')); Path(sys.argv[2]).write_text(json.dumps({'origins_mm':resolve_split_iob_origins(p),'mesh_mm_per_gu':c['simion']['component_mesh_mm_per_gu']},indent=2)+'\n',encoding='utf-8')"
+  Invoke-ProjectPython -Arguments @('-c',$poseCode,$reviewed,$posePath)
+  $pose=Get-Content -LiteralPath $posePath -Raw -Encoding UTF8|ConvertFrom-Json
+  $originArguments=@()
+  foreach($name in @('analyzer','accelerator','detector')){foreach($value in @($pose.origins_mm.$name)){$originArguments+=[string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',[double]$value)}}
+  $upstreamPaths=@($sourceAnalyzer,$sourceAccelerator,$sourceDetector)
+  $upstreamHashes=@($upstreamPaths|ForEach-Object{(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash})
+  $failureStage='voltageize_temporary_analyzer';$lease=Enter-HostExecutionLease -Role SIMION -RunId $RunId
+  $voltageArguments=@('--nogui','--noprompt','lua',(Join-Path $solverDir 'voltageize_analyzer_pa0.lua'),$sourceAnalyzer,$temporaryAnalyzer)+@($trial.analyzer_electrode_voltages_v|ForEach-Object{[string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',[double]$_)})
+  Invoke-SimionStage -Stage 'voltageize_temporary_analyzer' -Arguments $voltageArguments
+  $temporaryAnalyzerHash=(Get-FileHash -LiteralPath $temporaryAnalyzer -Algorithm SHA256).Hash
+  $voltageReceipt=Join-Path $resultDir 'temporary_analyzer_voltageization_receipt.json'
+  Write-RunJson -Path $voltageReceipt -Depth 14 -Value ([ordered]@{schema_version=1;role='mrtof_temporary_analyzer_voltageization';status='success';method='SIMION_PA_object_fast_adjust_save_as';source_pa0=$sourceAnalyzer;source_sha256=$upstreamHashes[0];temporary_output_sha256=$temporaryAnalyzerHash;electrode_voltages_v=@($trial.analyzer_electrode_voltages_v);source_family_read_only=$true;refine_performed=$false;temporary_output_retained=$false})
+  $failureStage='build_temporary_iob'
+  $buildArguments=@('--nogui','--noprompt','lua',(Join-Path $solverDir 'build_three_component_iob.lua'),'--',
+    (Join-Path $solverDir '3_instance_seed.iob'),$temporaryAnalyzer,$sourceAccelerator,$sourceDetector,$temporaryIob,
+    (Join-Path $solverDir 'mrtof_three_component_candidate.lua'),$fly2Input)+$originArguments+@('read_only_voltageized')
+  Invoke-SimionStage -Stage 'build_temporary_iob' -Arguments $buildArguments
+  $temporaryFly2=[IO.Path]::ChangeExtension($temporaryIob,'.fly2')
+  if(-not(Test-RunFilesIdentical -Left $fly2Input -Right $temporaryFly2)){throw 'IOB companion Fly2 differs from the frozen downstream-trial source'}
+  if(@(Compare-Object $upstreamHashes @($upstreamPaths|ForEach-Object{(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash})).Count-ne 0){throw 'Read-only IOB build changed an upstream PA'}
+  $failureStage='native_two_prism_flight'
+  Invoke-SimionStage -Stage 'native_two_prism_flight' -Arguments @('--nogui','--noprompt','lua',(Join-Path $solverDir 'run_iob_flight.lua'),$temporaryIob)
+  if(@(Compare-Object $upstreamHashes @($upstreamPaths|ForEach-Object{(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash})).Count-ne 0){throw 'Runtime Fast Adjust changed an upstream PA'}
+  $rawLog=Join-Path $logDir 'native_two_prism_flight.log';$observation=Join-Path $resultDir 'two_prism_trial_observation.json'
+  $failureStage='analyze_trial'
+  Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial','analyze','--log',$rawLog,'--trial-receipt',$trialReceipt,'--output',$observation)
+  $observed=Get-Content -LiteralPath $observation -Raw -Encoding UTF8|ConvertFrom-Json
+  $observedResiduals=if($null-ne$observed.PSObject.Properties['residuals']){$observed.residuals}else{$null}
+  $summaryValue=[ordered]@{schema_version=1;role='mrtof_finite_3d_two_prism_voltage_trial';status='success';qualification='single_center_trial__not_an_operating_point';stripe_biases_v=@($trial.stripe_biases_v);prism_voltages_v=@($Prism1VoltageV,$Prism2VoltageV);transport_status=$observed.status;residuals=$observedResiduals;reason='The fixed reviewed geometry was flown once from the physical 5-eV pre-acceleration state; this is one downstream Jacobian sample, not a solved operating point.'}
+  Write-RunJson -Path $summary -Value $summaryValue
+  $config=Get-Content -LiteralPath $runConfig -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
+  Remove-TemporarySolverDirectory -Path $temporarySolverDir;$temporarySolverDir=$null
+  $config.inputs=[ordered]@{geometry_run_manifest=$geometryManifest;mirror_run_manifest=$mirrorManifest;stripe_run_manifest=$stripeManifest;accelerator_run_manifest=$acceleratorManifest;iob_builder=(Join-Path $solverDir 'build_three_component_iob.lua');read_only_analyzer_pa0=$sourceAnalyzer;read_only_accelerator_pa0=$sourceAccelerator;read_only_detector_pa=$sourceDetector;trial_materialization=$trialReceipt;frozen_source_fly2=$fly2Input}
+  $config.parameters.prism_1_voltage_v=$Prism1VoltageV;$config.parameters.prism_2_voltage_v=$Prism2VoltageV;$config.parameters.stripe_biases_v=@($trial.stripe_biases_v);$config.parameters.continue_main_drift=[bool]$ContinueMainDrift;$config.parameters.pa_binding_mode='temporary_voltageized_analyzer__immutable_family';$config.parameters.constrain_x_symmetry_plane=[bool]$ConstrainXSymmetryPlane;Write-RunJson -Path $runConfig -Value $config
+  $retention=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $runConfig
+  $failureStage='capacity_terminal';$maximum=[int64](Get-ChildItem -LiteralPath $package.artifact_run_dir -Recurse -File|Measure-Object Length -Sum).Sum
+  $terminal=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -ProtectedPaths @($package.artifact_run_dir) -KnownMeasuredBytes ([int64]$startup.measured_after_bytes) -MaximumNewArtifactBytes $maximum
+  $terminalPath=Join-Path $resultDir 'artifact_capacity_gate_terminal.json';Write-RunJson -Path $terminalPath -Depth 14 -Value $terminal
+  Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Status success -Software @('SIMION 2020','Python 3.11') -Outputs @($summary,$rawLog,$observation,$trialReceipt,$voltageReceipt,$posePath,$startupPath,$terminalPath,$retention)
+  $terminalized=$true;$hostOutcome='success';Write-Host "MRTOF_TWO_PRISM_TRIAL=PASS RUN_ID=$RunId TRANSPORT=$($observed.status)"
+}catch{
+  if(-not$terminalized){Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Summary $summary -SummaryRole 'mrtof_finite_3d_two_prism_voltage_trial' -Reason $_.Exception.Message -Software @('SIMION 2020','Python 3.11') -Status failed -FailureStage $failureStage;$terminalized=$true};throw
+}finally{
+  if(-not$terminalized-and(Test-Path -LiteralPath $runConfig -PathType Leaf)){Complete-FailedRun -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Summary $summary -SummaryRole 'mrtof_finite_3d_two_prism_voltage_trial' -Reason 'Runner stopped before terminal evidence publication.' -Software @('SIMION 2020','Python 3.11') -Status interrupted -FailureStage $failureStage;$hostOutcome='interrupted'}
+  if($null-ne$lease){Exit-HostExecutionLease -Lease $lease -Outcome $hostOutcome -RunId $RunId};Remove-RunPackageExecutionAlias -Package $package
+  if($null-ne$temporarySolverDir){Remove-TemporarySolverDirectory -Path $temporarySolverDir}
+}

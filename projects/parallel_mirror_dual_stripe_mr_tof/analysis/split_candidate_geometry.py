@@ -52,9 +52,9 @@ def _analyzer_origin(contract: dict[str, object], span: tuple[float, float, floa
     if not isinstance(values, list) or len(values) != 3:
         raise CandidateContractError("simion.analyzer_pa_origin_mm must contain three coordinates")
     origin = tuple(float(value) for value in values)
-    expected = (-span[0] / 2.0, -478.0, -span[2] / 2.0)
+    expected = (-span[0] / 2.0, -162.0, -span[2] / 2.0)
     if origin != expected:
-        raise CandidateContractError("analyzer PA origin must retain the CAD-envelope y=[-478,162] mm review extent")
+        raise CandidateContractError("analyzer PA origin must retain the v2 CAD-envelope y=[-162,478] mm review extent")
     return origin
 
 

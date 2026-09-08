@@ -55,6 +55,11 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_refer
 )
 
 
+EXACT_K_SELECTOR_STATUS = (
+    "paper_normalized_adiabatic_selection_over_mirror_qualified_energy_family"
+)
+
+
 @dataclass(frozen=True)
 class ExactKPoint:
     """One gamma-qualified mirror point evaluated at a selected energy."""
@@ -711,9 +716,7 @@ def solve_exact_k_operating_point(
     kappa_1, dimensionless_target = _paper_kappa(contract)
     envelope = derive_operating_energy_envelope(contract)
     selector = contract["mirror"]["theory_requirements"].get("exact_k_operating_point_selection")
-    if not isinstance(selector, dict) or selector.get("status") != (
-        "system_level_selection_over_mirror_qualified_energy_family"
-    ):
+    if not isinstance(selector, dict) or selector.get("status") != EXACT_K_SELECTOR_STATUS:
         raise CandidateContractError("exact-K operating-point selection contract is incomplete")
     node_count = _positive_integer(selector["energy_bracket_node_count"], "energy bracket nodes")
     if node_count < 2:

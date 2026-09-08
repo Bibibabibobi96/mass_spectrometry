@@ -31,6 +31,45 @@ def _finite(value: Any, name: str) -> float:
     return result
 
 
+def theory_drift_y_mm(contract: dict[str, Any], project_y_mm: float) -> float:
+    """Map project/SIMION ``y`` to the paper's positive slow coordinate."""
+    try:
+        stripe_l0 = contract["dual_stripe_l0"]
+        mapping = stripe_l0["coordinate_mapping"]
+        registration = stripe_l0["theory_function_coordinate_registration"]
+        origin = _finite(mapping["origin_project_y_mm"], "theory drift origin")
+        sign = _finite(
+            mapping["theory_positive_project_y_sign"],
+            "theory drift orientation sign",
+        )
+        function_zero = _finite(
+            registration["function_y_zero_project_y_mm"],
+            "registered Stripe function origin",
+        )
+    except (KeyError, TypeError) as error:
+        raise CandidateContractError("explicit theory/project drift-coordinate mapping is required") from error
+    if registration.get("status") != "registered_from_theory_basis" or origin != function_zero:
+        raise CandidateContractError("project y origin conflicts with the registered Stripe function origin")
+    if sign not in (-1.0, 1.0):
+        raise CandidateContractError("theory drift orientation sign must be +1 or -1")
+    return sign * (_finite(project_y_mm, "project drift y") - origin)
+
+
+def project_y_from_theory_drift_mm(contract: dict[str, Any], theory_y_mm: float) -> float:
+    """Invert :func:`theory_drift_y_mm` without hiding direction in signed ``L``."""
+    mapping = contract.get("dual_stripe_l0", {}).get("coordinate_mapping")
+    if not isinstance(mapping, dict):
+        raise CandidateContractError("explicit theory/project drift-coordinate mapping is required")
+    origin = _finite(mapping.get("origin_project_y_mm"), "theory drift origin")
+    sign = _finite(mapping.get("theory_positive_project_y_sign"), "theory drift orientation sign")
+    if sign not in (-1.0, 1.0):
+        raise CandidateContractError("theory drift orientation sign must be +1 or -1")
+    project_y = origin + sign * _finite(theory_y_mm, "theory drift y")
+    # Reuse the forward validator so function-origin inconsistencies fail closed.
+    theory_drift_y_mm(contract, project_y)
+    return project_y
+
+
 def _condition_number_2x2(a: float, b: float, c: float, d: float) -> float:
     """Return the 2-norm condition number without a numerical-library dependency."""
     trace = a * a + b * b + c * c + d * d
@@ -133,8 +172,8 @@ def derive_manufactured_basis_voltage_seed(
 
     The current hardware curves were generated as a scaled high-order basis
     ``psi_s`` and a scaled linear basis ``psi_m`` at the manufactured
-    ``L``.  After removing the entry baselines, the exact hard-boundary shape
-    relation is
+    ``L``.  After removing the registered function-origin baselines, the exact
+    hard-boundary shape relation is
 
     ``S_i = lambda_i p_i`` and
     ``lambda_i = W*w_y/v_i * (1 + sqrt(1-v_i/w0))/2``.
@@ -228,6 +267,15 @@ def derive_manufactured_basis_voltage_seed(
     sin_theta = math.sqrt(drift_energy / selected_total_energy)
     predicted_oscillations = kappa * length / (width * sin_theta)
     required_width = kappa * length / (oscillations * sin_theta)
+    exact_k_residual = predicted_oscillations - oscillations
+    exact_k_tolerance = _finite(
+        contract["mirror"]["theory_requirements"]["exact_k_operating_point_selection"]
+        ["maximum_abs_numerical_k_residual"],
+        "exact-K numerical residual tolerance",
+    )
+    if exact_k_tolerance <= 0.0:
+        raise CandidateContractError("exact-K numerical residual tolerance must be positive")
+    exact_k_satisfied = abs(exact_k_residual) <= exact_k_tolerance
     target_band_lower = oscillations - 0.5
     target_band_upper = oscillations + 0.5
     target_band_margin = min(
@@ -274,15 +322,16 @@ def derive_manufactured_basis_voltage_seed(
         "selected_total_kinetic_energy_ev": selected_total_energy,
         "target_oscillation_count_K": oscillations,
         "predicted_continuous_oscillation_count": predicted_oscillations,
-        "oscillation_count_residual": predicted_oscillations - oscillations,
+        "oscillation_count_residual": exact_k_residual,
         "nominal_center_exact_K_design_equation": {
             "equation": "T_D(theta_0)/T_0=K",
             "target_K": oscillations,
             "calculated_T_D_over_T_0": predicted_oscillations,
-            "residual": predicted_oscillations - oscillations,
+            "residual": exact_k_residual,
+            "maximum_abs_numerical_residual": exact_k_tolerance,
             "status": (
                 "satisfied_by_current_analytic_inputs"
-                if predicted_oscillations == oscillations
+                if exact_k_satisfied
                 else "unsatisfied_by_current_analytic_inputs"
             ),
             "semantics": (
@@ -303,11 +352,11 @@ def derive_manufactured_basis_voltage_seed(
             ),
         },
         "nominal_axial_energy_per_charge_v": energy,
-        "post_acceleration_total_energy_per_charge_v": total_energy,
+        "post_acceleration_total_energy_per_charge_v": selected_total_energy,
         "nominal_kappa_1": kappa,
         "nominal_injection_angle_degrees": math.degrees(math.asin(sin_theta)),
         "derived_drift_kinetic_energy_per_charge_v": drift_energy,
-        "derived_fast_reflection_energy_per_charge_v": fast_energy,
+        "derived_fast_reflection_energy_per_charge_v": energy,
         "mirror_axial_width_required_for_exact_K_mm": required_width,
         "mirror_axial_width_residual_mm": width - required_width,
         "geometry_basis_scales_mm": {
@@ -339,13 +388,17 @@ def derive_manufactured_basis_voltage_seed(
             "status": (
                 "current_mirror_root_fails_center_exact_K_and_target_topology"
                 if target_band_margin <= 0.0
-                else "center_exact_K_unsolved__nominal_topology_only_passes"
+                else (
+                    "center_exact_K_satisfied__nominal_topology_passes"
+                    if exact_k_satisfied
+                    else "center_exact_K_unsolved__nominal_topology_only_passes"
+                )
             ),
             "independent_fixed_inputs": [
                 "manufactured L",
                 "target K",
                 "source-preserved 5 eV drift energy",
-                "4000 eV axial energy",
+                "selected mirror axial energy",
                 "two user-confirmed manufactured theory-basis geometry scales",
             ],
             "adjustable_coordinate_implication": (
@@ -545,8 +598,9 @@ def paper_dimensionless_condition_residuals(
 def identify_fixed_cad_component_shapes(contract: dict[str, Any]) -> dict[str, Any]:
     """Fit the declared polynomial/linear structure of the frozen CAD curves.
 
-    Width baselines are removed at the theory entrance ``y=0`` and the two
-    variations are fitted in physical distance from that plane.  This proves
+    Width baselines are removed at the registered theory-function origin
+    ``y=0`` and the two variations are fitted in physical distance from that
+    plane.  This proves
     structural agreement without assuming the current coefficients equal the
     paper's printed values.  It deliberately does not infer ``L``: rescaling
     ``L`` and the dimensionless polynomial coefficients describes the same
@@ -570,9 +624,12 @@ def identify_fixed_cad_component_shapes(contract: dict[str, Any]) -> dict[str, A
     if tuple(sorted(set(multipliers))) != multipliers:
         raise CandidateContractError("Stripe shape sampling multipliers must be unique and increasing")
     y_span = tuple(_finite(value, "Stripe active y span") for value in theory.get("active_y_span_mm", []))
-    entry = _finite(l0.get("theory_stripe_entrance", {}).get("project_y_mm"), "Stripe theory entrance y")
-    if len(y_span) != 2 or not y_span[0] < entry <= y_span[1] or entry != y_span[1]:
-        raise CandidateContractError("fixed CAD Stripe identification requires the y=0 entrance at the active-span endpoint")
+    function_origin = project_y_from_theory_drift_mm(contract, 0.0)
+    if len(y_span) != 2 or y_span[0] >= y_span[1] or function_origin != y_span[0]:
+        raise CandidateContractError(
+            "fixed CAD Stripe identification requires the registered function zero "
+            "at the low-y active-profile boundary"
+        )
     samples_per_span = theory.get("sampling_per_nonzero_knot_span")
     if not isinstance(samples_per_span, int) or isinstance(samples_per_span, bool) or samples_per_span < 2:
         raise CandidateContractError("native Stripe sampling density must be an integer of at least two")
@@ -591,14 +648,20 @@ def identify_fixed_cad_component_shapes(contract: dict[str, Any]) -> dict[str, A
     base_intervals = max(nonzero_spans) * samples_per_span
     first_width = compile_dual_stripe_width_evaluator(contract, "set_1")
     second_width = compile_dual_stripe_width_evaluator(contract, "set_2")
-    first_baseline = first_width(entry)
-    second_baseline = second_width(entry)
-    active_length = entry - y_span[0]
+    first_baseline = first_width(function_origin)
+    second_baseline = second_width(function_origin)
+    theory_span = tuple(theory_drift_y_mm(contract, value) for value in y_span)
+    if min(theory_span) != 0.0 or max(theory_span) <= 0.0:
+        raise CandidateContractError("active Stripe span must run from its theory zero to positive y")
+    active_length = max(theory_span)
 
     def fit_at_multiplier(multiplier: int) -> dict[str, Any]:
         interval_count = base_intervals * multiplier
         distances = np.linspace(0.0, active_length, interval_count + 1)
-        physical_y = entry - distances
+        physical_y = np.asarray([
+            project_y_from_theory_drift_mm(contract, float(distance))
+            for distance in distances
+        ])
         high_values = np.asarray([first_width(float(value)) - first_baseline for value in physical_y])
         linear_values = np.asarray([second_width(float(value)) - second_baseline for value in physical_y])
         scaled_distance = distances / active_length
@@ -637,7 +700,7 @@ def identify_fixed_cad_component_shapes(contract: dict[str, Any]) -> dict[str, A
         "status": "manufactured_theory_basis_fitted__analytic_voltage_inverse_ready",
         "source_geometry": "native frozen theory B-spline knot/control contract",
         "component_basis": settings.get("basis"),
-        "width_baselines_at_entry_mm": {"set_1": first_baseline, "set_2": second_baseline},
+        "width_baselines_at_function_origin_mm": {"set_1": first_baseline, "set_2": second_baseline},
         "active_distance_mm": active_length,
         "sampling_convergence": fits,
         "selected_fit": selected,
@@ -673,6 +736,91 @@ def identify_fixed_cad_component_shapes(contract: dict[str, Any]) -> dict[str, A
             "No CAD-fit acceptance tolerance is declared, so raw residuals and sampling convergence are reported without promotion to Candidate.",
             "The nominal voltage inverse is evaluated separately; complete time response, P1/P2 transport, and finite three-dimensional fields remain independent validation stages.",
         ],
+    }
+
+
+def audit_theory_function_origin_registration(contract: dict[str, Any]) -> dict[str, Any]:
+    """Compare origin candidates derived from the active and physical domains.
+
+    Endpoint coincidence alone cannot select the origin because a translated
+    fifth-order polynomial remains fifth order.  This diagnostic translates
+    the fitted set-1 polynomial to each domain's lower bound, transforms it
+    with the frozen manufactured ``L``, and compares coefficient direction
+    with the printed high-order theory basis after eliminating one common
+    scale.
+    """
+    registration = contract.get("dual_stripe_l0", {}).get(
+        "theory_function_coordinate_registration"
+    )
+    if not isinstance(registration, dict):
+        raise CandidateContractError("theory-function coordinate registration is required")
+    try:
+        active_domain = tuple(
+            _finite(value, "active theory-function domain")
+            for value in registration["active_theory_curve_domain_project_y_mm"]
+        )
+        body_domain = tuple(
+            _finite(value, "whole physical-body domain")
+            for value in registration["whole_physical_body_domain_project_y_mm"]
+        )
+        registered_origin = _finite(
+            registration["function_y_zero_project_y_mm"], "registered function origin"
+        )
+        length = _finite(
+            contract["dual_stripe_l0"]["manufactured_design_abs_drift_length_L_mm"],
+            "manufactured-design drift length",
+        )
+        printed = tuple(
+            _finite(value, "printed high-order basis coefficient")
+            for value in contract["dual_stripe_l0"]["dimensionless_paper_target"]
+            ["published_printed_reference_c0_to_c5"][1:]
+        )
+    except (KeyError, TypeError) as error:
+        raise CandidateContractError("function-origin audit inputs are incomplete") from error
+    if len(active_domain) != 2 or len(body_domain) != 2 or len(printed) != 5 or length <= 0.0:
+        raise CandidateContractError("function-origin audit domains or theory basis are invalid")
+    candidates = tuple(dict.fromkeys((active_domain[0], body_domain[0])))
+    physical_coefficients = tuple(
+        _finite(value, "fitted physical polynomial coefficient")
+        for value in identify_fixed_cad_component_shapes(contract)["selected_fit"]
+        ["set_1_coefficients_per_physical_mm_power"]
+    )
+    printed_vector = np.asarray(printed, dtype=float)
+    printed_norm_sq = float(printed_vector @ printed_vector)
+    comparisons = []
+    for origin in candidates:
+        translated = np.zeros(5, dtype=float)
+        for source_power, coefficient in enumerate(physical_coefficients, start=1):
+            for target_power in range(1, source_power + 1):
+                translated[target_power - 1] += (
+                    coefficient
+                    * math.comb(source_power, target_power)
+                    * origin ** (source_power - target_power)
+                    * length ** target_power
+                )
+        scale = float((translated @ printed_vector) / printed_norm_sq)
+        relative_residual = float(
+            np.linalg.norm(translated - scale * printed_vector) / np.linalg.norm(translated)
+        )
+        comparisons.append({
+            "hypothesized_function_zero_project_y_mm": origin,
+            "relative_coefficient_direction_residual": relative_residual,
+            "eliminated_common_scale": scale,
+        })
+    ordered = sorted(comparisons, key=lambda item: item["relative_coefficient_direction_residual"])
+    selected = ordered[0]
+    if selected["hypothesized_function_zero_project_y_mm"] != registered_origin:
+        raise CandidateContractError("registered Stripe function origin conflicts with coefficient evidence")
+    return {
+        "schema_version": 1,
+        "status": "registered_origin_has_minimum_theory_basis_direction_residual",
+        "comparisons": comparisons,
+        "selected_function_zero_project_y_mm": registered_origin,
+        "runner_up_to_selected_residual_ratio": (
+            ordered[1]["relative_coefficient_direction_residual"]
+            / selected["relative_coefficient_direction_residual"]
+        ),
+        "qualification": "coordinate_diagnostic_not_a_solver_acceptance_threshold",
     }
 
 

@@ -1,14 +1,16 @@
 """Solver-neutral hard-boundary seeds for the two pre-Stripe prisms.
 
 The project convention is x transverse, y drift, z reflection.  A positive
-local prism angle is a rotation from -z towards -y, so its unit direction in
-the y-z section is ``(-sin(theta), -cos(theta))``.  This is deliberately an
+local prism angle is a rotation from -z towards +y, so its unit direction in
+the y-z section is ``(+sin(theta), -cos(theta))``.  This is deliberately an
 L0 seed: the finite triangular electrodes and their grounded shields must be
 corrected with a three-dimensional unit-field trajectory calculation.
 
-It intentionally requires an intermediate hand-off point.  A source ray and
-the desired Stripe entrance ray determine only the *sum* of two prism
-deflections, not the two voltages individually.
+The direct P1-to-P2 construction below is retained as a generic component
+regression only.  It is not applicable to the manufactured MR-TOF path,
+which contains a distributed-field negative-mirror pre-reflection between
+P1 and P2.  That path must use finite-three-dimensional trajectory shooting;
+the hard-boundary law remains useful only for a voltage scale/seed.
 """
 from __future__ import annotations
 
@@ -169,7 +171,7 @@ class TwoPrismHardBoundarySeed:
 
 
 def derive_two_prism_hard_boundary_seed(contract: dict[str, Any]) -> TwoPrismHardBoundarySeed:
-    """Derive P1/P2 voltages from a complete geometric phase-space hand-off.
+    """Derive a direct-path P1/P2 hard-boundary component seed.
 
     ``prism_transport.two_prism_injection_l0`` must provide four ordered y-z
     reference points and each prism's local axis/rotation.  The points are
@@ -177,6 +179,8 @@ def derive_two_prism_hard_boundary_seed(contract: dict[str, Any]) -> TwoPrismHar
     free fit coordinates: source/focus, P1 effective plane, P2 effective
     plane, and the theory-derived Stripe entrance section.  Requiring all
     four prevents an underdetermined two-voltage problem from becoming a scan.
+    A hardware path containing a mirror pre-reflection is rejected because a
+    straight P1-to-P2 ray cannot represent its distributed-field dynamics.
     """
     block = contract.get("prism_transport")
     if not isinstance(block, dict):
@@ -186,6 +190,10 @@ def derive_two_prism_hard_boundary_seed(contract: dict[str, Any]) -> TwoPrismHar
         raise PrismAnalyticError("two_prism_injection_l0 is required; two prism voltages are otherwise underdetermined")
     if model.get("status") != "geometry_constrained_hard_boundary_l0":
         raise PrismAnalyticError("two_prism_injection_l0 must declare geometry_constrained_hard_boundary_l0")
+    if model.get("path_topology") != "direct_p1_to_p2_without_intervening_mirror":
+        raise PrismAnalyticError(
+            "direct hard-boundary P1/P2 construction requires an explicit no-intervening-mirror topology"
+        )
     if model.get("prism_1_electrode_id") != 16 or model.get("prism_2_electrode_id") != 17:
         raise PrismAnalyticError("two-prism L0 must bind path-order P1=16 and P2=17")
     energy = _number(model.get("total_kinetic_energy_ev"), "two-prism total kinetic energy")

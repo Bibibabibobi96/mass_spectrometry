@@ -34,7 +34,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_refer
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_handoff import (
     TwoPrismTransportObservation,
-    prism_turn_handoff_residuals,
+    prism_handoff_residuals,
 )
 
 
@@ -353,7 +353,7 @@ def evaluate_joint_l0_trial(trial: JointL0Trial) -> JointL0ResidualReport:
     if any(value is not None for value in transport_values):
         if any(value is None for value in transport_values):
             raise CandidateContractError("joint P1/P2 trial needs turn y, slow energy, particle identity, and observed transport together")
-        residuals.extend(prism_turn_handoff_residuals(
+        residuals.extend(prism_handoff_residuals(
             trial.two_prism_transport_observation,
             target_turn_y_mm=trial.prism_target_turn_y_mm,
             target_slow_kinetic_energy_per_charge_v=trial.prism_target_slow_kinetic_energy_per_charge_v,

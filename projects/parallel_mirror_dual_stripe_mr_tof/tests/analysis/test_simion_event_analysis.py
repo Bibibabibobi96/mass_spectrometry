@@ -88,9 +88,12 @@ class SimionEventAnalysisTest(unittest.TestCase):
     def test_single_particle_program_emits_the_required_topology_events(self):
         source = PROGRAM.read_text(encoding="utf-8-sig")
         for token in (
-            "MRTOF_EVENT fast_turn", "MRTOF_EVENT slow_turn", "MRTOF_EVENT stripe_plane",
+            "MRTOF_EVENT fast_turn", "MRTOF_EVENT slow_turn", "MRTOF_EVENT slow_coordinate_y0",
             "MRTOF_EVENT central_plane_directional", "MRTOF_EVENT p1_plane",
+            "MRTOF_EVENT prism_pass", "MRTOF_EVENT pre_injection_mirror_turn",
             "MRTOF_EVENT drift_phase_origin", "MRTOF_EVENT drift_phase_return",
+            "MRTOF_EVENT drift_phase_candidate", "MRTOF_EVENT drift_coordinate_return",
+            "MRTOF_EVENT target_k_phase_sample",
             "direction_y=", "direction_z=",
         ):
             self.assertIn(token, source)
@@ -117,11 +120,13 @@ class SimionEventAnalysisTest(unittest.TestCase):
             {"kind": "fast_turn", "ion": 1, "n": 1, "t_us": 1, "x_mm": 0, "y_mm": -1, "z_mm": -10, "vx_mm_us": 0, "vy_mm_us": -1, "vz_mm_us": 0},
             {"kind": "slow_turn", "ion": 1, "n": 1, "t_us": 2, "x_mm": 0, "y_mm": -100, "z_mm": 0},
             {"kind": "p1_plane", "ion": 1, "n": 1, "t_us": 2.5, "x_mm": 0, "y_mm": 10, "z_mm": -101, "vx_mm_us": 0, "vy_mm_us": -1, "vz_mm_us": -2},
-            {"kind": "stripe_plane", "ion": 1, "n": 1, "direction_y": -1, "t_us": 3, "x_mm": 0, "y_mm": 0, "z_mm": 0, "vx_mm_us": 0, "vy_mm_us": -1, "vz_mm_us": -2},
-            {"kind": "pre_origin_y0_crossing", "ion": 1, "t_us": 3, "x_mm": 0, "y_mm": 0, "z_mm": 0, "vx_mm_us": 0, "vy_mm_us": -1, "vz_mm_us": -2},
-            {"kind": "drift_phase_origin", "ion": 1, "t_us": 3.5, "x_mm": 0, "y_mm": 0, "z_mm": -10, "vx_mm_us": 0, "vy_mm_us": -1, "vz_mm_us": 0},
-            {"kind": "drift_phase_return", "ion": 1, "k": 25, "t_us": 6.5, "x_mm": 0, "y_mm": 0, "z_mm": -10, "vx_mm_us": 0, "vy_mm_us": 1, "vz_mm_us": 0},
-            {"kind": "stripe_plane", "ion": 1, "n": 2, "direction_y": 1, "t_us": 7, "x_mm": 0, "y_mm": 0, "z_mm": 0, "vx_mm_us": 0, "vy_mm_us": 1, "vz_mm_us": 2},
+            {"kind": "slow_coordinate_y0", "ion": 1, "n": 1, "direction_y": 1, "t_us": 3, "x_mm": 0, "y_mm": 0, "z_mm": 0, "vx_mm_us": 0, "vy_mm_us": 1, "vz_mm_us": -2},
+            {"kind": "drift_phase_origin", "ion": 1, "t_us": 3.5, "x_mm": 0, "y_mm": 0, "z_mm": -10, "vx_mm_us": 0, "vy_mm_us": 1, "vz_mm_us": 0},
+            {"kind": "drift_phase_candidate", "ion": 1, "k": 25, "t_us": 6.5, "x_mm": 0, "y_mm": 0, "z_mm": -10, "vx_mm_us": 0, "vy_mm_us": -1, "vz_mm_us": 0},
+            {"kind": "target_k_phase_sample", "ion": 1, "k": 25, "t_us": 6.5, "x_mm": 0, "y_mm": 0, "z_mm": -10, "vx_mm_us": 0, "vy_mm_us": -1, "vz_mm_us": 0},
+            {"kind": "drift_phase_return", "ion": 1, "k": 25, "t_us": 6.5, "x_mm": 0, "y_mm": 0, "z_mm": -10, "vx_mm_us": 0, "vy_mm_us": -1, "vz_mm_us": 0},
+            {"kind": "slow_coordinate_y0", "ion": 1, "n": 2, "direction_y": -1, "t_us": 7, "x_mm": 0, "y_mm": 0, "z_mm": 0, "vx_mm_us": 0, "vy_mm_us": -1, "vz_mm_us": 2},
+            {"kind": "drift_coordinate_return", "ion": 1, "k_before": 25, "fractional_k": 25.25, "phase_turn_t_us": 6.5, "phase_turn_y_mm": 0, "phase_time_residual_us": 0.5, "phase_period_us": 2.0, "t_us": 7, "x_mm": 0, "y_mm": 0, "z_mm": 0, "vx_mm_us": 0, "vy_mm_us": -1, "vz_mm_us": 2},
             {"kind": "central_plane_directional", "ion": 1, "n": 1, "direction_z": -1, "t_us": 4, "x_mm": 0, "y_mm": -2, "vx_mm_us": 0, "vy_mm_us": -1, "vz_mm_us": -2},
             {"kind": "central_plane_directional", "ion": 1, "n": 3, "direction_z": -1, "t_us": 6, "x_mm": 0, "y_mm": -2, "vx_mm_us": 0, "vy_mm_us": -1, "vz_mm_us": -2},
             terminal(1),
@@ -131,12 +136,17 @@ class SimionEventAnalysisTest(unittest.TestCase):
         )
         self.assertEqual(result["fast_z_turn_count"], 1)
         self.assertEqual(result["slow_y_turn_count"], 1)
-        self.assertEqual(result["stripe_y0_inbound_crossing_count"], 1)
-        self.assertEqual(result["stripe_y0_outbound_crossing_count"], 1)
+        self.assertEqual(result["slow_coordinate_y0_inbound_crossing_count"], 1)
+        self.assertEqual(result["slow_coordinate_y0_outbound_crossing_count"], 1)
         self.assertEqual(result["P1_plane_crossing_count"], 1)
-        self.assertEqual(result["pre_origin_y0_crossing_count"], 1)
         self.assertEqual(result["drift_phase_origin_count"], 1)
         self.assertEqual(result["drift_phase_return_count"], 1)
+        self.assertEqual(result["drift_phase_candidate_count"], 1)
+        self.assertEqual(result["target_k_phase_sample_count"], 1)
+        self.assertEqual(result["target_k_phase_y_residuals_mm"], [0.0])
+        self.assertEqual(result["drift_coordinate_return_count"], 1)
+        self.assertEqual(result["drift_coordinate_return_diagnostics"][0]["k_before"], 25)
+        self.assertEqual(result["drift_coordinate_return_diagnostics"][0]["fractional_k"], 25.25)
         self.assertEqual(result["same_direction_central_plane_periods_us"], [2.0])
         self.assertEqual(result["slow_drift_abs_lengths_from_y0_mm"], [100.0])
         self.assertEqual(len(result["effective_axial_width_W_mm"]), 1)

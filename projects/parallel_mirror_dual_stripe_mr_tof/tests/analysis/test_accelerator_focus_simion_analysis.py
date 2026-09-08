@@ -43,6 +43,26 @@ class AcceleratorFocusSimionAnalysisTest(unittest.TestCase):
             self.assertAlmostEqual(actual, expected)
         self.assertEqual(derive_two_zone_placement(trial).focus_z_mm, 0.0)
 
+    def test_voltage_trial_accepts_selected_exact_k_net_gain(self) -> None:
+        baseline = load_contract(CONTRACT)
+        selected = 4165.847974123505
+        drop = 999.8035284876823
+        trial, receipt = derive_voltage_trial(
+            baseline, baseline, drop, selected_net_gain_center_v=selected,
+        )
+        self.assertAlmostEqual(trial["nominal"]["energy_per_charge_v"], selected)
+        self.assertAlmostEqual(
+            trial["accelerator_energy_contract"]["net_gain_reference_center_per_charge_v"],
+            selected,
+        )
+        self.assertAlmostEqual(receipt["energy_per_charge_v"], selected)
+        self.assertEqual(receipt["energy_selection"], "explicit_selected_net_gain_center")
+        self.assertAlmostEqual(derive_two_zone_focus(trial).energy_per_charge_v, selected)
+        self.assertEqual(
+            accelerator_geometry_contract(trial["accelerator"]),
+            accelerator_geometry_contract(baseline["accelerator"]),
+        )
+
     def test_source_materializer_reuses_reviewed_geometry_but_generates_axial_family(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory)

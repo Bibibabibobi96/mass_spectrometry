@@ -100,7 +100,7 @@ class JointMirrorStripeL0Test(unittest.TestCase):
         self.assertTrue(all(abs(value) < 1e-10 for value in result.psi_coefficients_by_power[1:]))
 
     def test_joint_trial_appends_the_two_three_dimensional_prism_targets(self) -> None:
-        state = ProjectPhaseSpaceState((0.0, 0.0, -10.0), (0.0, -1.0, 0.0))
+        state = ProjectPhaseSpaceState((0.0, 0.0, -10.0), (0.0, 1.0, 0.0))
         trial = self._trial(-2000.0)
         slow_energy = 0.5 * 524.0 * 1.66053906660e-27 * (1000.0 ** 2) / 1.602176634e-19
         trial = JointL0Trial(
@@ -113,7 +113,7 @@ class JointMirrorStripeL0Test(unittest.TestCase):
         )
         report = evaluate_joint_l0_trial(trial)
         self.assertEqual(len(report.residuals), 11)
-        self.assertEqual(dict(report.residuals)["P1_P2_first_negative_turn_y_mm"], 0.0)
+        self.assertEqual(dict(report.residuals)["P1_P2_phase_origin_turn_y_mm"], 0.0)
 
     def test_partial_prism_transport_input_fails_closed(self) -> None:
         trial = JointL0Trial(**{**self._trial(-2000.0).__dict__, "prism_target_turn_y_mm": 0.0})
@@ -222,7 +222,7 @@ class JointMirrorStripeL0Test(unittest.TestCase):
         self.assertNotIn("mirror_gamma_90_m11", drift_residuals)
         self.assertEqual(len(drift_residuals), 6)
         self.assertEqual(problem["prism_transport_named_residual_blocks"], [
-            "P1_P2_first_negative_turn_y_mm",
+            "P1_P2_phase_origin_turn_y_mm",
             "P1_P2_slow_kinetic_energy_per_charge_v",
         ])
         self.assertIn("stripe_entrance_project_position_mm", problem["derived_not_independent_unknowns"])
@@ -258,9 +258,9 @@ class JointMirrorStripeL0Test(unittest.TestCase):
         self.assertEqual(review_point["status"], "geometry_review_only__not_a_solver_seed")
         self.assertNotIn("set_1_bias_v", contract["dual_stripe"])
         self.assertNotIn("set_2_bias_v", contract["dual_stripe"])
-        entrance = contract["dual_stripe_l0"]["theory_stripe_entrance"]
-        self.assertEqual(entrance["project_y_mm"], 0.0)
-        self.assertEqual(entrance["excluded_mechanical_extension_y_mm"], [0.0, 2.0])
+        registration = contract["dual_stripe_l0"]["theory_function_coordinate_registration"]
+        self.assertEqual(registration["function_y_zero_project_y_mm"], 0.0)
+        self.assertEqual(registration["excluded_mechanical_extension_y_mm"], [-2.0, 0.0])
         shooting = contract["prism_transport"]["two_prism_injection_l0"]
         self.assertNotIn("prism_2_effective_plane_and_face_order_from_CAD", shooting["frozen_inputs_before_three_dimensional_shooting"])
         self.assertIn("prism_2_effective_plane_and_face_order_from_CAD", shooting["hard_boundary_seed_only_inputs"])
