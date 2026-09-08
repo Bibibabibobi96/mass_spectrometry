@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "role": "dual_cone_simion_solver_numerics",
+  "project_id": "dual_cone_tandem_quadrupole_ion_interface",
+  "solver": "SIMION 8.1 or newer",
+  "pa": {
+    "cell_mm_xyz": {"x": 0.5, "y": 0.5, "z": 0.5},
+    "surface_enhancement": "fractional",
+    "symmetry": "planar_no_mirror",
+    "basis_namespace": "dual_cone_tandem",
+    "refine_policy": "simion_refine_without_convergence_argument"
+  },
+  "workbench": {
+    "pa_instance_count": 1,
+    "coordinate_mapping": {
+      "device_x": "workbench_x - 25.5 mm",
+      "device_y": "workbench_y - 25.5 mm",
+      "device_z": "workbench_z - 2.0 mm"
+    }
+  },
+  "trajectory": {
+    "rf_steps_per_period": 80,
+    "trajectory_quality": 0,
+    "maximum_time_us": 3000.0,
+    "maximum_step_us": 0.0125,
+    "random_seed": 20260908
+  },
+  "qualification_status": "unqualified_prototype_numerics"
+}

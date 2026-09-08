@@ -16,25 +16,39 @@ from common.multipole.simion_numerics import normalize_cell_mm_xyz
 _GLOBAL_X_ROTATION_AXIS_SELECTOR = 1
 
 
-def render_grouped_rod_array_gem(array: dict[str, Any]) -> str:
-    """Render a shared rod-array contract as alternating SIMION electrodes."""
+def render_grouped_rod_array_gem(
+    array: dict[str, Any],
+    *,
+    electrode_group_ids: dict[int, int] | None = None,
+) -> str:
+    """Render a shared rod array with optionally remapped SIMION electrodes."""
     rods = array["rods"]
     if not rods:
         raise ValueError("rod array must contain at least one rod")
+    group_ids = _validate_electrode_group_ids(electrode_group_ids)
     z_max = float(rods[0]["z_max_mm"])
     lines = [f"locate(0,0,{z_max:.15g}) {{"]
     for group in (1, 2):
-        lines.append(f"  e({group}) {{")
+        lines.append(f"  e({group_ids[group]}) {{")
         for rod in rods:
             if int(rod["electrode_group"]) != group:
                 continue
             x = 0.0 if abs(float(rod["center_x_mm"])) < 1e-12 else float(rod["center_x_mm"])
             y = 0.0 if abs(float(rod["center_y_mm"])) < 1e-12 else float(rod["center_y_mm"])
             length = float(rod["z_max_mm"]) - float(rod["z_min_mm"])
-            lines.append(
-                "    fill { within { cylinder("
-                f"{x:.15g},{y:.15g},0, {float(rod['radius_mm']):.15g},, {length:.15g}) }} }}"
-            )
+            if "radius_mm" in rod:
+                lines.append(
+                    "    fill { within { cylinder("
+                    f"{x:.15g},{y:.15g},0, {float(rod['radius_mm']):.15g},, {length:.15g}) }} }}"
+                )
+            else:
+                semi_major, semi_minor, angle_degrees = _ellipse_rod_values(rod)
+                lines.append(
+                    "    fill { within { locate("
+                    f"{x:.15g},{y:.15g},0) {{ rotate_z({angle_degrees:.15g}) {{ "
+                    f"cylinder(0,0,0,{semi_major:.15g},{semi_minor:.15g},{length:.15g}) "
+                    "} } } }"
+                )
         lines.append("  }")
     lines.extend(["}", ""])
     return "\n".join(lines)
@@ -55,16 +69,17 @@ def _render_located_segmented_rod_array_gem(
     radius_prefix = " " if legacy_spacing else ""
     lines: list[str] = []
     for primitive in primitives:
-        lines.extend(
-            [
-                f"locate(0,0,{fmt(primitive['z_max_mm'])}) {{",
+        lines.append(f"locate(0,0,{fmt(primitive['z_max_mm'])}) {{")
+        if "radius_mm" in primitive:
+            lines.append(
                 f"  e({primitive['electrode_id']}) {{ fill {{ within {{ cylinder("
                 f"{fmt(primitive['center_x_mm'])},{fmt(primitive['center_y_mm'])},0,"
                 f"{radius_prefix}{fmt(primitive['radius_mm'])},,{radius_prefix}"
-                f"{fmt(primitive['length_mm'])}) }} }} }}",
-                "}",
-            ]
-        )
+                f"{fmt(primitive['length_mm'])}) }} }} }}"
+            )
+        else:
+            lines.append(_render_ellipse_primitive(primitive, fmt, indent="  ", z_position=0.0))
+        lines.append("}")
     lines.append("")
     return "\n".join(lines)
 
@@ -80,12 +95,24 @@ def _render_local_segmented_rod_array_gem(
     """Render canonical rod primitives in their native local frame."""
     indent, significant_digits = _validate_render_format(indent, significant_digits)
     fmt = lambda value: format(value, f".{significant_digits}g")
-    return "\n".join(
-        f"{indent}e({item['electrode_id']}) {{ fill {{ within {{ cylinder("
-        f"{fmt(item['center_x_mm'])},{fmt(item['center_y_mm'])},{fmt(item['z_max_mm'])},"
-        f"{fmt(item['radius_mm'])},,{fmt(item['length_mm'])}) }} }} }}"
-        for item in _segmented_rod_primitives(segmented)
-    )
+    lines = []
+    for item in _segmented_rod_primitives(segmented):
+        if "radius_mm" in item:
+            lines.append(
+                f"{indent}e({item['electrode_id']}) {{ fill {{ within {{ cylinder("
+                f"{fmt(item['center_x_mm'])},{fmt(item['center_y_mm'])},{fmt(item['z_max_mm'])},"
+                f"{fmt(item['radius_mm'])},,{fmt(item['length_mm'])}) }} }} }}"
+            )
+        else:
+            lines.append(
+                _render_ellipse_primitive(
+                    item,
+                    fmt,
+                    indent=indent,
+                    z_position=item["z_max_mm"],
+                )
+            )
+    return "\n".join(lines)
 
 
 def render_axis_mapped_segmented_rod_array_gem(
@@ -126,15 +153,94 @@ def render_axis_mapped_segmented_rod_array_gem(
 
     lines = []
     for primitive in primitives:
-        lines.append(
+        prefix = (
             f"{indent}e({primitive['electrode_id']}) {{ fill {{ within {{ locate("
             f"{fmt(axial_origin+primitive['z_max_mm'])},"
             f"{fmt(transverse_x+primitive['center_x_mm'])},"
             f"{fmt(transverse_y+primitive['center_y_mm'])},{rotation_axis},"
-            f"{fmt(rotation)}) {{ cylinder(0,0,0,{fmt(primitive['radius_mm'])},,"
-            f"{fmt(primitive['length_mm'])}) }} }} }} }}"
+            f"{fmt(rotation)}) {{"
         )
+        if "radius_mm" in primitive:
+            lines.append(
+                f"{prefix} cylinder(0,0,0,{fmt(primitive['radius_mm'])},,"
+                f"{fmt(primitive['length_mm'])}) }} }} }} }}"
+            )
+        else:
+            semi_major, semi_minor, angle_degrees = _ellipse_rod_values(primitive)
+            lines.append(
+                f"{prefix} rotate_z({fmt(angle_degrees)}) {{ cylinder(0,0,0,"
+                f"{fmt(semi_major)},{fmt(semi_minor)},{fmt(primitive['length_mm'])}) }} "
+                "} } } }"
+            )
     return "\n".join(lines)
+
+
+def _validate_electrode_group_ids(
+    electrode_group_ids: dict[int, int] | None,
+) -> dict[int, int]:
+    if electrode_group_ids is None:
+        return {1: 1, 2: 2}
+    if set(electrode_group_ids) != {1, 2}:
+        raise ValueError("electrode_group_ids must map source groups 1 and 2")
+    values = tuple(electrode_group_ids[group] for group in (1, 2))
+    if any(
+        isinstance(value, bool)
+        or not isinstance(value, int)
+        or not 1 <= value <= SIMION_MAX_ADJUSTABLE_ELECTRODE_ID
+        for value in values
+    ) or values[0] == values[1]:
+        raise ValueError("electrode_group_ids values must be distinct valid SIMION electrode IDs")
+    return dict(electrode_group_ids)
+
+
+def _ellipse_rod_values(rod: dict[str, Any]) -> tuple[float, float, float]:
+    required = {"semi_major_axis_mm", "semi_minor_axis_mm", "major_axis_angle_rad"}
+    if not required.issubset(rod) or "radius_mm" in rod:
+        raise ValueError("ellipse rod contract is incomplete or mixes round and ellipse fields")
+    semi_major, semi_minor, angle = (
+        _finite_real(rod[key], key)
+        for key in ("semi_major_axis_mm", "semi_minor_axis_mm", "major_axis_angle_rad")
+    )
+    if semi_major <= 0 or semi_minor <= 0 or semi_major < semi_minor:
+        raise ValueError("ellipse rod semi-axes must be positive with major not below minor")
+    return semi_major, semi_minor, math.degrees(angle)
+
+
+def _render_ellipse_primitive(
+    primitive: dict[str, Any],
+    fmt: Any,
+    *,
+    indent: str,
+    z_position: float,
+) -> str:
+    # Official GEM cylinder syntax accepts separate x/y radii; rotate_z is the
+    # supported local-axis transform: https://simion.com/info/gem_geometry_file.html
+    semi_major, semi_minor, angle_degrees = _ellipse_rod_values(primitive)
+    return (
+        f"{indent}e({primitive['electrode_id']}) {{ fill {{ within {{ locate("
+        f"{fmt(primitive['center_x_mm'])},{fmt(primitive['center_y_mm'])},{fmt(z_position)}) {{ "
+        f"rotate_z({fmt(angle_degrees)}) {{ cylinder(0,0,0,{fmt(semi_major)},"
+        f"{fmt(semi_minor)},{fmt(primitive['length_mm'])}) }} }} }} }} }}"
+    )
+
+
+def _render_continuous_rod_gem(rod: dict[str, Any], *, indent: str) -> str:
+    if "radius_mm" in rod:
+        return (
+            f"{indent}e({rod['electrode_group']}) {{ fill {{ within {{ cylinder("
+            f"{rod['center_x_mm']:.12g},{rod['center_y_mm']:.12g},"
+            f"{rod['z_max_mm']:.12g},{rod['radius_mm']:.12g},,"
+            f"{rod['z_max_mm']-rod['z_min_mm']:.12g}) }} }} }}"
+        )
+    semi_major, semi_minor, angle_degrees = _ellipse_rod_values(rod)
+    length = float(rod["z_max_mm"]) - float(rod["z_min_mm"])
+    return (
+        f"{indent}e({rod['electrode_group']}) {{ fill {{ within {{ locate("
+        f"{float(rod['center_x_mm']):.12g},{float(rod['center_y_mm']):.12g},"
+        f"{float(rod['z_max_mm']):.12g}) {{ rotate_z({angle_degrees:.12g}) {{ "
+        f"cylinder(0,0,0,{semi_major:.12g},{semi_minor:.12g},{length:.12g}) "
+        "} } } } }"
+    )
 
 
 def _finite_real(value: Any, label: str) -> float:
@@ -165,9 +271,7 @@ def _segmented_rod_primitives(segmented: dict[str, Any]) -> list[dict[str, Any]]
         raise ValueError("segmented rod contract must declare at least two segments")
     if not isinstance(electrodes, list) or not electrodes:
         raise ValueError("segmented rod contract must contain electrodes")
-    required = {
-        "electrode_id", "center_x_mm", "center_y_mm", "z_min_mm", "z_max_mm", "radius_mm"
-    }
+    required = {"electrode_id", "center_x_mm", "center_y_mm", "z_min_mm", "z_max_mm"}
     primitives = []
     for electrode in electrodes:
         if not isinstance(electrode, dict) or not required.issubset(electrode):
@@ -179,22 +283,37 @@ def _segmented_rod_primitives(segmented: dict[str, Any]) -> list[dict[str, Any]]
             or not 1 <= electrode_id <= SIMION_MAX_ADJUSTABLE_ELECTRODE_ID
         ):
             raise ValueError("segmented rod electrode_id is outside the SIMION namespace")
-        center_x, center_y, z_min, z_max, radius = (
+        center_x, center_y, z_min, z_max = (
             _finite_real(electrode[key], key)
-            for key in ("center_x_mm", "center_y_mm", "z_min_mm", "z_max_mm", "radius_mm")
+            for key in ("center_x_mm", "center_y_mm", "z_min_mm", "z_max_mm")
         )
         if z_max <= z_min:
             raise ValueError("segmented rod electrode length must be positive")
-        if radius <= 0:
-            raise ValueError("segmented rod electrode radius must be positive")
-        primitives.append({
+        primitive = {
             "electrode_id": electrode_id,
             "center_x_mm": center_x,
             "center_y_mm": center_y,
             "z_max_mm": z_max,
-            "radius_mm": radius,
             "length_mm": z_max - z_min,
-        })
+        }
+        if "radius_mm" in electrode:
+            radius = _finite_real(electrode["radius_mm"], "radius_mm")
+            if radius <= 0:
+                raise ValueError("segmented rod electrode radius must be positive")
+            if any(
+                key in electrode
+                for key in ("semi_major_axis_mm", "semi_minor_axis_mm", "major_axis_angle_rad")
+            ):
+                raise ValueError("segmented rod electrode mixes round and ellipse fields")
+            primitive["radius_mm"] = radius
+        else:
+            semi_major, semi_minor, angle_degrees = _ellipse_rod_values(electrode)
+            primitive.update(
+                semi_major_axis_mm=semi_major,
+                semi_minor_axis_mm=semi_minor,
+                major_axis_angle_rad=math.radians(angle_degrees),
+            )
+        primitives.append(primitive)
     expected_ids = set(range(1, 2 * segment_count + 1))
     if {item["electrode_id"] for item in primitives} != expected_ids:
         raise ValueError("segmented rod electrode IDs must be the complete segment-group namespace")
@@ -318,12 +437,7 @@ def render_gem(
         )
     else:
         for rod in rods:
-            lines.append(
-                f"  e({rod['electrode_group']}) {{ fill {{ within {{ cylinder("
-                f"{rod['center_x_mm']:.12g},{rod['center_y_mm']:.12g},"
-                f"{rod['z_max_mm']:.12g},{rod['radius_mm']:.12g},,"
-                f"{rod['z_max_mm']-rod['z_min_mm']:.12g}) }} }} }}"
-            )
+            lines.append(_render_continuous_rod_gem(rod, indent="  "))
     shield_end_z = (
         float(source_terminal["upstream_enclosure_end_plane_z_mm"])
         if source_terminal is not None else z_max
@@ -536,15 +650,22 @@ def _render_rectangular_reference_gem(
         for rod in rods:
             z0 = float(rod["z_min_mm"])
             z1 = float(rod["z_max_mm"])
-            lines.extend(
-                [
-                    f"locate(0,0,{z1:.12g}) {{",
+            lines.append(f"locate(0,0,{z1:.12g}) {{")
+            if "radius_mm" in rod:
+                lines.append(
                     f"  e({int(rod['electrode_group'])}) {{ fill {{ within {{ cylinder("
                     f"{float(rod['center_x_mm']):.12g},{float(rod['center_y_mm']):.12g},"
-                    f"0,{float(rod['radius_mm']):.12g},,{z1-z0:.12g}) }} }} }}",
-                    "}",
-                ]
-            )
+                    f"0,{float(rod['radius_mm']):.12g},,{z1-z0:.12g}) }} }} }}"
+                )
+            else:
+                semi_major, semi_minor, angle_degrees = _ellipse_rod_values(rod)
+                lines.append(
+                    f"  e({int(rod['electrode_group'])}) {{ fill {{ within {{ locate("
+                    f"{float(rod['center_x_mm']):.12g},{float(rod['center_y_mm']):.12g},0) {{ "
+                    f"rotate_z({angle_degrees:.12g}) {{ cylinder(0,0,0,"
+                    f"{semi_major:.12g},{semi_minor:.12g},{z1-z0:.12g}) }} }} }} }} }}"
+                )
+            lines.append("}")
     _append_rectangular_apertured_section(
         lines,
         ground_electrode,

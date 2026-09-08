@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "role": "dual_cone_simion_gas_field_interface",
+  "project_id": "dual_cone_tandem_quadrupole_ion_interface",
+  "status": "implemented_pending_qualified_comsol_export",
+  "producer": {
+    "solver": "COMSOL Multiphysics",
+    "required_physics": "compressible_flow_with_pressure_temperature_and_bulk_velocity",
+    "current_artifact": null
+  },
+  "runtime_artifact_contract": {
+    "manifest_role": "dual_cone_comsol_gas_field_export",
+    "manifest_schema_version": 1,
+    "lua_role": "dual_cone_simion_gas_field_runtime",
+    "required_manifest_keys": [
+      "schema_version",
+      "role",
+      "project_id",
+      "coordinate_frame",
+      "domain",
+      "runtime_lua"
+    ],
+    "runtime_lua_required_functions": [
+      "pressure_pa",
+      "temperature_k",
+      "velocity_m_s"
+    ],
+    "coordinate_frame": {
+      "frame_id": "dual_cone_interface_local",
+      "axis": "+z downstream",
+      "origin": "first_cone_virtual_apex_and_aperture_reference_plane"
+    },
+    "units": {
+      "position": "mm",
+      "pressure": "Pa_absolute",
+      "temperature": "K",
+      "velocity": "m/s"
+    },
+    "domain": {
+      "minimum_z_mm": -1.0,
+      "maximum_z_mm": 108.0,
+      "minimum_radius_mm": 0.0,
+      "maximum_radius_mm": 23.5
+    },
+    "out_of_domain_policy": "error",
+    "interpolation_policy": "producer_owned_no_extrapolation"
+  },
+  "failure_policy": "gas_assisted_prepare_must_fail_before_simion_when_current_artifact_is_null_missing_or_hash_invalid"
+}

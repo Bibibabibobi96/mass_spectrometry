@@ -1,6 +1,6 @@
 # 双锥串联四极杆离子传输接口项目状态
 
-本文件是当前参数解释、模型边界、资格和开放任务的唯一权威。多极杆通用理论见
+本文件是当前参数解释、物理链、资格和开放任务的唯一权威。多极杆通用理论见
 [`docs/multipoles/index.md`](../../../docs/multipoles/index.md)，碰撞模型分级见
 [`docs/multipoles/collisions.md`](../../../docs/multipoles/collisions.md)。
 
@@ -30,9 +30,6 @@
 [`resolved_geometry.json`](../config/resolved_geometry.json)。当前暂定解释为：
 
 - `z = 0 mm` 和 `z = 3 mm` 分别是第一、第二锥的虚拟尖点/孔口基准面；两个角均按全顶角解释。
-  用户已确认两锥同轴、同向，小孔端朝喷雾侧，锥体沿 `+z` 向仪器内部张开。
-- 第一（外侧、大孔）锥厚度为 `0.25 mm`，第二（内侧、小孔）锥厚度为 `0.5 mm`；厚度值由用户
-  确认，方向暂按锥面法向解释，等待机械图确认是否实际指轴向孔筒长度。
 - `8.6 mm` 与 `3.76 mm` 按椭圆全轴长解释；对置杆内表面间距按 `7.48 mm` 解释，短半轴沿径向。
 - `5.64 mm` 按相邻圆杆中心距解释，得到杆中心半径约 `3.988 mm`、理想场半径约 `1.598 mm`。
 - 低压区的 `105 mm` 从第二锥孔口基准面量到下游端；圆杆段与下游端齐平。其上游面反推后，椭圆杆
@@ -41,45 +38,62 @@
 
 这些解释只用于生成一致坐标和发现冲突，不等于机械尺寸已确认。
 
-## 首版物理模型
+## 当前权威物理链
 
-当前入口为 `pressure_drag_screening_v1`：
+当前路线由两个独立 workflow 组成：
 
-- 只追踪已脱溶剂化的单价正离子，不模拟 Taylor cone、液滴蒸发或离子化过程。
-- 气体为 `N2, 300 K`；压力在第一孔前为 `101325 Pa`，两孔之间的末值取两端压力的几何平均，第二孔
-  后再以对数线性方式降到 `400 Pa`。气流速度使用显式暂定轴向锚点。
-- 阻尼由低场约化迁移率 `K0` 和 `K = K0(p0/p)(T/T0)` 给出；积分采用隐式阻尼的确定性牛顿方程。
-  不计算布朗扩散或离散碰撞，输出的 drag exposure integral 不是实际碰撞数。
-- 两段杆区使用公共 RF 电压约定和理想近轴四极场；真实椭圆/圆杆边缘场只通过硬几何碰撞近似。
-- 锥体只实施孔口穿越判据；没有厚度、圆角和外径前，不虚构完整实体碰撞面。
-- 忽略空间电荷、离子化学、非弹性碰撞、壁面反弹、磁场以及真实泵口。
+1. COMSOL 使用 [`gas_flow_science.json`](../config/gas_flow_science.json) 与
+   [`comsol_solver_numerics.json`](../config/comsol_solver_numerics.json) 建立轴对称可压缩气流筛选。
+   当前模型只覆盖无杆、无偏置泵口的空包络轴对称近似；它的声明边界是
+   `prototype_axisymmetric_empty_enclosure_gas_flow`。
+2. SIMION 几何编译器从同一 resolved 几何生成电极表示；后续 Fly runner 只消费由成功 COMSOL run 导出、复制进本次 run 且
+   通过 SHA-256 和 frame/单位检查的 canonical `r-z` 气体场。气体场至少包含压力、温度、径向与轴向
+   气速以及有效域和插值边界语义。
 
-该模型低于高压接口定量结论所需的 C4（可压缩流 + 三维场 + 经验证碰撞/迁移率 + 必要耦合）证据，
-只允许用于坐标、孔径、杆碰撞、RF 聚焦趋势和代码链路筛选。任何传输率或出口能量都不得标成实机预测。
+COMSOL 气流成功只证明上游场计算完成，不证明离子传输。SIMION 消费 COMSOL 场意味着两者是依赖链，
+不得表述为跨求解器轨迹等价。若未来需要独立闭合，必须另建 COMSOL charged-particle workflow，并使
+两个轨迹求解器分别消费同一冻结气体场、源、电极和事件合同。
 
-暂定工况集中在 [`science.json`](../config/science.json)：`500 Da, z=+1`、`K0=1.5 cm²/(V·s)`、
-两段 `1 MHz / 100 V zero-to-peak per group`、轴向 `100 V/m`。这些数值不是用户确认的 baseline。
+当前 execution profile 只登记计划和静态门禁；公开 COMSOL run 生命周期、canonical gas-field 发布和
+SIMION Fly 入口没有全部闭合前，禁止把供应商任务脚本或任意导出 CSV 当作可执行证据入口。
+
+## 已退役模型
+
+项目建立时的 `pressure_drag_screening_v1` 使用规定压力、规定气速、低场迁移率阻尼和理想近轴 RF 场。
+它已退出活动 mode 和 execution profile，相关 Python 积分器不再属于生产主链。其两次历史 run、原
+声明边界和可恢复源码身份冻结在
+[`20260908__superseded-python-pressure-drag-screening.md`](history/20260908__superseded-python-pressure-drag-screening.md)。
+旧 run 继续按原 manifest 保留，但不得作为 COMSOL 气体场或 SIMION 轨迹资格输入。
 
 ## 当前资格
 
 | 层级 | 状态 |
 |---|---|
 | 几何与合同 Static | 可执行 |
-| 低阶 N=100 筛选 | Prototype；不授予 Candidate |
-| 可压缩气流、真实三维边缘场与碰撞 | 未建立 |
-| COMSOL / SIMION | 未建立 |
-| CAD / GUI / Formal | BLOCKED |
+| COMSOL 轴对称空包络气流 | Prototype；模型已在本机进入真实求解，合格场待收敛 |
+| canonical COMSOL→SIMION 气体场 | 校验、Lua编译和manifest已实现；待合格COMSOL场 |
+| SIMION 几何编译 | Prototype；本机 `gem2pa/refine` 已通过 |
+| SIMION 气体辅助轨迹 | Program、官方SDS冻结和失败关闭准备已实现；Fly run待合格气体场 |
+| 独立轨迹跨求解器闭合 | 未建立 |
+| CAD / GUI / Candidate / Formal | BLOCKED |
 
 ## 开放任务
 
-1. 确认两个锥角定义、实体孔口面、外径、孔筒，以及 `3 mm` 的机械测量对象；并确认已给出的
-   `0.25/0.5 mm` 厚度是锥面法向壁厚还是轴向孔筒长度。
+1. 确认两个锥角定义、朝向、实体孔口面、厚度、外径、孔筒和 `3 mm` 的机械测量对象。
 2. 确认椭圆杆有效长度、中心坐标、轴向方向、`7.48 mm` 的杆对定义，以及 `1.6 mm` 是轴向还是法向净距。
 3. 确认 `5.64 mm` 是相邻还是对置中心距、两组杆是否同轴，以及 `2 mm` 间是否存在 IQ0/孔板/绝缘板。
-4. 给出各锥、壳体、两段杆及出口件的 DC；两段 RF 的频率、幅值口径、相位和第二段是否带质量选择 DC。
-5. 给出中间级和两杆区压力测点、气体组成与温度、泵口几何/有效抽速；随后建立轴对称可压缩流筛选和
-   含杆/泵口的三维 CFD 资格路线。
-6. 给出目标离子 `m/z`、电荷、极性、N2 迁移率或 CCS、源空间/速度分布和离子流；再决定迁移率模型、
-   能量相关 Monte Carlo 碰撞与空间电荷等级。
-7. 从同一 resolved 几何建立 COMSOL/SIMION/CAD；完成网格、时间步、随机种子、GUI/CAD 和跨求解器门禁
-   后，才讨论 Candidate 或 Formal。
+4. 给出中间级和两杆区压力测点、气体组成与温度、泵口几何/有效抽速；随后用三维模型评价轴对称空
+   包络筛选的适用误差。
+5. 使现有 COMSOL 高马赫压力延拓收敛到 `400 Pa`，再验证质量守恒、网格和场覆盖并发布 canonical 场。
+6. 给出各锥、壳体、两段杆及出口件的 DC、两段 RF 频率/幅值口径/相位，以及目标离子、源分布、迁移率
+   或 CCS；用已实现的官方 SDS 路径注册并验收 Fly runner。
+7. 用 N≥100 的冻结母样本完成气体场依赖复核、SIMION GUI 可检查性、损失事件和canonical出口状态；
+   在此之前不开放 Candidate。
+8. 建立端部、绝缘、支撑、馈通和泵口机械细节，并完成 COMSOL GUI、SIMION GUI 与 SolidWorks 同步后
+   才开放 Formal。
+
+## 产物边界
+
+活动产物位于 `artifacts/projects/dual_cone_tandem_quadrupole_ion_interface/`。COMSOL 气流和 SIMION
+轨迹各自使用独立 run 三件套；下游 SIMION run 冻结上游 manifest 和气体场副本。旧 Python run 只读
+保留，不因主链退役而删除或改写。

@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "role": "project_mode",
+  "project_id": "dual_cone_tandem_quadrupole_ion_interface",
+  "mode_id": "axisymmetric_gas_flow_screening",
+  "model_id": "axisymmetric_high_mach_n2_screening_v1",
+  "evidence_level": "plan",
+  "formal_eligible": false,
+  "limitations": [
+    "The axisymmetric empty-enclosure model omits rods, asymmetric pump ports and other three-dimensional obstructions",
+    "A successful gas-flow solve is an upstream field result and does not establish ion transmission",
+    "Candidate use requires a versioned canonical gas-field export and verified run manifest"
+  ]
+}

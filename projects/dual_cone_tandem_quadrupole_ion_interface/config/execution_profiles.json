@@ -4,21 +4,18 @@
   "project_id": "dual_cone_tandem_quadrupole_ion_interface",
   "profiles": [
     {
-      "profile_id": "dual_cone_pressure_drag_screening",
-      "capability_id": "dual_cone_two_stage_quadrupole_transport",
-      "mode": "pressure_drag_screening",
+      "profile_id": "axisymmetric_gas_flow_screening_plan",
+      "capability_id": "axisymmetric_gas_flow_field_generation",
+      "mode": "axisymmetric_gas_flow_screening",
       "evidence_levels": ["plan"],
-      "supported_objectives": ["geometry_screening", "transport_trend_screening"],
+      "supported_objectives": ["gas_flow_field_generation"],
       "supported_operating_points": [
-        {
-          "mass": {"value": 500.0, "unit": "Da"},
-          "charge_state": 1
-        }
+        {"mass": {"value": 500.0, "unit": "Da"}, "charge_state": 1}
       ],
       "supported_design_variables": [],
       "supported_constraints": ["positive_clearance", "nonoverlapping_axial_sections"],
-      "deliverable_outputs": ["simulation_results", "interface_state"],
-      "required_bindings": ["geometry_baseline", "science_contract", "solver_numerics", "particle_count_policy"],
+      "deliverable_outputs": ["comsol_model", "simulation_results"],
+      "required_bindings": ["geometry_baseline", "resolved_geometry", "gas_flow_science", "comsol_solver_numerics"],
       "steps": [
         {
           "step_id": "static_gate",
@@ -27,20 +24,41 @@
           "entrypoint": "verify_project.ps1",
           "run_id_template": null,
           "arguments": ["-PythonExe", "{python_exe}"]
-        },
-        {
-          "step_id": "run_reduced_order_transport",
-          "kind": "run",
-          "shell": "python",
-          "entrypoint": "analysis/run_reduced_order_transport.py",
-          "run_id_template": "YYYYMMDD_HHMMSS__sim__python__dual-cone-screening",
-          "arguments": ["--particle-count", "100", "--seed", "20260908", "--output-dir", "{run_dir}"]
         }
       ],
       "limitations": [
-        "The profile is plan-level prototype screening and cannot produce Candidate or Formal evidence.",
-        "All electrical, gas-flow, mobility and ion operating-point values remain provisional.",
-        "COMSOL, SIMION, CFD, discrete collision cross sections and CAD are outside this profile."
+        "This plan-level profile validates contracts and source bindings only; no public COMSOL run lifecycle is registered yet.",
+        "The operating point is a provisional planning identity and does not affect the gas-only solve.",
+        "A gas-flow result alone does not establish ion transmission."
+      ]
+    },
+    {
+      "profile_id": "gas_field_driven_simion_transport_plan",
+      "capability_id": "gas_field_driven_simion_transport",
+      "mode": "gas_field_driven_simion_transport",
+      "evidence_levels": ["plan"],
+      "supported_objectives": ["gas_assisted_ion_transport"],
+      "supported_operating_points": [
+        {"mass": {"value": 500.0, "unit": "Da"}, "charge_state": 1}
+      ],
+      "supported_design_variables": [],
+      "supported_constraints": ["positive_clearance", "nonoverlapping_axial_sections"],
+      "deliverable_outputs": ["simion_model", "simulation_results", "interface_state"],
+      "required_bindings": ["resolved_geometry", "successful_comsol_gas_flow_manifest", "canonical_gas_field", "particle_source", "simion_solver_numerics", "particle_count_policy"],
+      "steps": [
+        {
+          "step_id": "static_gate",
+          "kind": "gate",
+          "shell": "powershell",
+          "entrypoint": "verify_project.ps1",
+          "run_id_template": null,
+          "arguments": ["-PythonExe", "{python_exe}"]
+        }
+      ],
+      "limitations": [
+        "This plan-level profile does not register a SIMION Fly runner.",
+        "SIMION must consume a copied and hash-verified canonical gas field from one successful COMSOL run.",
+        "The dependent COMSOL-to-SIMION chain is not independent cross-solver validation."
       ]
     }
   ]

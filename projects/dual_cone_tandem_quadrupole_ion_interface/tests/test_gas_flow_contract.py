@@ -1,0 +1,212 @@
+from __future__ import annotations
+
+import csv
+import hashlib
+import importlib.util
+import json
+import math
+import tempfile
+import unittest
+from pathlib import Path
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SCIENCE_PATH = PROJECT_ROOT / "config" / "gas_flow_science.json"
+NUMERICS_PATH = PROJECT_ROOT / "config" / "comsol_solver_numerics.json"
+GEOMETRY_PATH = PROJECT_ROOT / "config" / "resolved_geometry.json"
+BUILDER_PATH = PROJECT_ROOT / "comsol" / "build_and_solve_axisymmetric_gas_flow.m"
+RUNNER_PATH = PROJECT_ROOT / "comsol" / "run_axisymmetric_gas_flow.m"
+INTERFACE_PATH = PROJECT_ROOT / "config" / "gas_field_interface.json"
+
+
+def _load_validator():
+    path = PROJECT_ROOT / "analysis" / "validate_gas_field.py"
+    spec = importlib.util.spec_from_file_location("validate_gas_field", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_exporter():
+    path = PROJECT_ROOT / "analysis" / "export_simion_gas_runtime.py"
+    spec = importlib.util.spec_from_file_location("export_simion_gas_runtime", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _contracts() -> tuple[dict, dict]:
+    return (
+        json.loads(SCIENCE_PATH.read_text(encoding="utf-8")),
+        json.loads(NUMERICS_PATH.read_text(encoding="utf-8")),
+    )
+
+
+def _write_fixture(tmp_path: Path) -> tuple[Path, Path]:
+    science, numerics = _contracts()
+    columns = science["export_contract"]["columns"]
+    r_values = [float(index) for index in range(10)]
+    z_values = [float(index) for index in range(10)]
+    gas = science["physics"]["gas_species"]
+    pressure = 500.0
+    temperature = 300.0
+    density = pressure * gas["molar_mass_kg_per_mol"] / (
+        gas["universal_gas_constant_j_per_mol_k"] * temperature
+    )
+    csv_path = tmp_path / numerics["artifact_names"]["field_csv"]
+    with csv_path.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=columns)
+        writer.writeheader()
+        for z_index, z_mm in enumerate(z_values):
+            for r_index, r_mm in enumerate(r_values):
+                writer.writerow(
+                    {
+                        "z_index": z_index,
+                        "r_index": r_index,
+                        "z_mm": z_mm,
+                        "r_mm": r_mm,
+                        "p_pa": pressure,
+                        "temperature_k": temperature,
+                        "u_z_m_per_s": 20.0,
+                        "u_r_m_per_s": 0.0,
+                        "rho_kg_per_m3": f"{density:.17g}",
+                        "mach": 0.06,
+                        "knudsen_aperture": 0.02,
+                        "fluid_mask": 1,
+                    }
+                )
+    metadata = {
+        "schema_version": 1,
+        "role": "dual_cone_axisymmetric_gas_field_metadata",
+        "project_id": science["project_id"],
+        "model_id": science["model_id"],
+        "claim_scope": science["claim_scope"],
+        "field_schema_id": science["export_contract"]["schema_id"],
+        "coordinate_order": science["export_contract"]["coordinate_order"],
+        "row_count": len(r_values) * len(z_values),
+        "grid": {"r_values_mm": r_values, "z_values_mm": z_values},
+        "field_csv_sha256": hashlib.sha256(csv_path.read_bytes()).hexdigest(),
+        "source_contract_sha256": {
+            "gas_flow_science": hashlib.sha256(SCIENCE_PATH.read_bytes()).hexdigest(),
+            "comsol_solver_numerics": hashlib.sha256(
+                NUMERICS_PATH.read_bytes()
+            ).hexdigest(),
+            "resolved_geometry": hashlib.sha256(GEOMETRY_PATH.read_bytes()).hexdigest(),
+        },
+        "solution_summary": {
+            "requested_outlet_static_pressure_pa": science["boundary_conditions"][
+                "outlet"
+            ]["static_pressure_pa"],
+            "mass_balance_relative_error": 0.001,
+        },
+    }
+    metadata_path = tmp_path / numerics["artifact_names"]["field_metadata"]
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+    return csv_path, metadata_path
+
+
+class GasFlowContractTests(unittest.TestCase):
+    def test_contract_declares_choked_flow_risk_and_regular_export(self) -> None:
+        science, numerics = _contracts()
+        self.assertEqual(science["physics"]["comsol_interface"], "HighMachNumberFlow")
+        inlet = science["boundary_conditions"]["inlet"]["total_pressure_pa"]
+        outlet = science["boundary_conditions"]["outlet"]["static_pressure_pa"]
+        gamma = science["physics"]["gas_species"]["specific_heat_ratio"]
+        critical_ratio = (2.0 / (gamma + 1.0)) ** (gamma / (gamma - 1.0))
+        self.assertLess(outlet / inlet, critical_ratio)
+        self.assertTrue(science["geometry_proxy"]["excluded_geometry"])
+        self.assertEqual(
+            science["export_contract"]["coordinate_order"],
+            "z_major_then_r_minor",
+        )
+        self.assertEqual(
+            numerics["study"]["outlet_pressure_continuation_pa"][-1], outlet
+        )
+
+    def test_valid_field_fixture_passes_fail_closed_validator(self) -> None:
+        validator = _load_validator()
+        with tempfile.TemporaryDirectory() as directory:
+            csv_path, metadata_path = _write_fixture(Path(directory))
+            summary = validator.validate_gas_field(
+                csv_path, metadata_path, SCIENCE_PATH, NUMERICS_PATH
+            )
+        self.assertEqual(summary["status"], "PASS")
+        self.assertEqual(summary["row_count"], 100)
+        self.assertTrue(summary["quantitative_continuum_claim_allowed"])
+
+    def test_tampered_field_is_rejected(self) -> None:
+        validator = _load_validator()
+        with tempfile.TemporaryDirectory() as directory:
+            csv_path, metadata_path = _write_fixture(Path(directory))
+            with csv_path.open("a", encoding="utf-8") as stream:
+                stream.write("tampered\n")
+            with self.assertRaisesRegex(ValueError, "SHA-256"):
+                validator.validate_gas_field(
+                    csv_path, metadata_path, SCIENCE_PATH, NUMERICS_PATH
+                )
+
+    def test_valid_field_compiles_to_hashed_self_contained_lua(self) -> None:
+        exporter = _load_exporter()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            csv_path, metadata_path = _write_fixture(root)
+            interface = json.loads(INTERFACE_PATH.read_text(encoding="utf-8"))
+            interface["runtime_artifact_contract"]["domain"] = {
+                "minimum_z_mm": 0.0,
+                "maximum_z_mm": 9.0,
+                "minimum_radius_mm": 0.0,
+                "maximum_radius_mm": 9.0,
+            }
+            interface_path = root / "interface.json"
+            interface_path.write_text(json.dumps(interface), encoding="utf-8")
+            lua_path = root / "gas_field_runtime.lua"
+            manifest_path = root / "gas_field_manifest.json"
+            manifest = exporter.export_runtime(
+                csv_path,
+                metadata_path,
+                lua_path,
+                manifest_path,
+                SCIENCE_PATH,
+                NUMERICS_PATH,
+                GEOMETRY_PATH,
+                interface_path,
+            )
+            self.assertEqual(manifest["role"], "dual_cone_comsol_gas_field_export")
+            self.assertRegex(manifest["runtime_lua"]["sha256"], r"^[0-9a-f]{64}$")
+            source = lua_path.read_text(encoding="utf-8")
+            self.assertIn("field.pressure_pa = function", source)
+            self.assertIn("field.velocity_m_s = function", source)
+
+    def test_matlab_source_has_high_mach_and_fail_closed_contract(self) -> None:
+        builder = BUILDER_PATH.read_text(encoding="utf-8")
+        runner = RUNNER_PATH.read_text(encoding="utf-8")
+        for token in (
+            '"HighMachNumberFlow"',
+            "axisymmetric(true)",
+            '"gas_flow_science.json"',
+            '"comsol_solver_numerics.json"',
+            "outlet_pressure_continuation_pa",
+            "mphinterp",
+            "mass_balance_relative_error",
+        ):
+            self.assertIn(token, builder)
+        self.assertIn("STATUS=PASS", runner)
+        self.assertIn("STATUS=FAIL", runner)
+        self.assertIn("rethrow(exception)", runner)
+        for hidden_physical_value in ("101325", "3.7e-10"):
+            self.assertNotIn(hidden_physical_value, builder)
+
+    def test_declared_mean_free_path_constants_are_positive(self) -> None:
+        science, _ = _contracts()
+        gas = science["physics"]["gas_species"]
+        self.assertTrue(math.isfinite(gas["boltzmann_constant_j_per_k"]))
+        self.assertGreater(gas["boltzmann_constant_j_per_k"], 0.0)
+        self.assertGreater(
+            science["continuum_scope"]["n2_molecular_collision_diameter_m"], 0.0
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()

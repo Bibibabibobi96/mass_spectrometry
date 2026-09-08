@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "role": "dual_cone_axisymmetric_gas_flow_science_contract",
+  "project_id": "dual_cone_tandem_quadrupole_ion_interface",
+  "model_id": "axisymmetric_high_mach_n2_screening_v1",
+  "claim_scope": "prototype_axisymmetric_empty_enclosure_gas_flow",
+  "physics": {
+    "comsol_interface": "HighMachNumberFlow",
+    "space_dimension": "2d_axisymmetric",
+    "flow_regime": "fully_compressible",
+    "energy_equation_enabled": true,
+    "gas_to_ion_coupling": "one_way",
+    "gas_species": {
+      "species_id": "n2",
+      "mole_fraction": 1.0,
+      "equation_of_state": "ideal_gas",
+      "molar_mass_kg_per_mol": 0.0280134,
+      "specific_heat_ratio": 1.4,
+      "specific_heat_capacity_cp_j_per_kg_k": 1039.0,
+      "thermal_conductivity_w_per_m_k": 0.02583,
+      "dynamic_viscosity_model": "sutherland",
+      "dynamic_viscosity_reference_pa_s": 0.0000176,
+      "dynamic_viscosity_reference_temperature_k": 300.0,
+      "sutherland_temperature_k": 111.0,
+      "universal_gas_constant_j_per_mol_k": 8.31446261815324,
+      "boltzmann_constant_j_per_k": 1.380649e-23
+    }
+  },
+  "geometry_proxy": {
+    "model": "axisymmetric_empty_enclosure_without_quadrupole_rods_or_pump_ports",
+    "upstream_feed_length_mm": 2.0,
+    "upstream_feed_radius_rule": "first_cone_aperture_radius",
+    "intercone_outer_wall_rule": "first_cone_inner_theoretical_surface",
+    "downstream_outer_wall_rule": "second_cone_inner_theoretical_surface_then_enclosure_radius",
+    "second_cone_baffle_rule": "impermeable_from_second_aperture_radius_to_first_cone_inner_surface",
+    "excluded_geometry": [
+      "elliptical_quadrupole_rods",
+      "round_quadrupole_rods",
+      "interstage_lens_or_partition",
+      "pump_ports",
+      "unconfirmed_cone_edge_rounding"
+    ]
+  },
+  "boundary_conditions": {
+    "inlet": {
+      "state": "total",
+      "total_pressure_pa": 101325.0,
+      "total_temperature_k": 300.0,
+      "flow_direction": "+z"
+    },
+    "outlet": {
+      "flow_condition": "subsonic_pressure",
+      "state": "static",
+      "static_pressure_pa": 400.0
+    },
+    "walls": {
+      "velocity_condition": "slip_inviscid_screening",
+      "thermal_condition": "adiabatic"
+    },
+    "axis": "automatic_axial_symmetry"
+  },
+  "continuum_scope": {
+    "characteristic_length_for_knudsen_mm": 0.78,
+    "warning_knudsen_number": 0.01,
+    "reject_quantitative_use_knudsen_number": 0.1,
+    "mean_free_path_model": "hard_sphere_from_declared_molecular_diameter",
+    "n2_molecular_collision_diameter_m": 3.7e-10
+  },
+  "export_contract": {
+    "schema_id": "axisymmetric_n2_gas_field_rz.v1",
+    "coordinate_order": "z_major_then_r_minor",
+    "columns": [
+      "z_index",
+      "r_index",
+      "z_mm",
+      "r_mm",
+      "p_pa",
+      "temperature_k",
+      "u_z_m_per_s",
+      "u_r_m_per_s",
+      "rho_kg_per_m3",
+      "mach",
+      "knudsen_aperture",
+      "fluid_mask"
+    ],
+    "outside_domain_values": "nan_with_fluid_mask_zero",
+    "interpolation": "bilinear_in_r_z",
+    "extrapolation": "forbidden",
+    "simion_axisymmetric_mapping": "r=sqrt(x^2+y^2); ux=ur*x/r; uy=ur*y/r; uz=uz; radial_velocity_zero_on_axis"
+  },
+  "disabled_physics": [
+    "viscous_wall_boundary_layers",
+    "quadrupole_rod_feedback_on_gas_flow",
+    "real_pump_port_flow",
+    "rarefied_gas_dsmc",
+    "ion_space_charge",
+    "ion_heating_of_gas",
+    "droplets_and_desolvation",
+    "gas_chemistry"
+  ],
+  "official_support_evidence": [
+    {
+      "vendor": "COMSOL",
+      "version": "6.4",
+      "title": "Compressible Flow for All Mach Numbers",
+      "url": "https://doc.comsol.com/6.4/doc/com.comsol.help.cfd/cfd_ug_fluidflow_high_mach.08.45.html",
+      "accessed_date": "2026-09-08"
+    },
+    {
+      "vendor": "COMSOL",
+      "version": "6.4",
+      "title": "Outlet - High Mach Number Flow",
+      "url": "https://doc.comsol.com/6.4/doc/com.comsol.help.cfd/cfd_ug_fluidflow_high_mach.08.21.html",
+      "accessed_date": "2026-09-08"
+    }
+  ]
+}

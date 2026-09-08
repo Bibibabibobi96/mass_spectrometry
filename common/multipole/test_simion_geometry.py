@@ -8,7 +8,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from common.multipole.simion_geometry import render_gem
+from common.multipole.round_rod_geometry import build_rod_array
+from common.multipole.simion_geometry import (
+    render_axis_mapped_segmented_rod_array_gem,
+    render_gem,
+    render_grouped_rod_array_gem,
+)
 
 
 def resolved_design(
@@ -92,6 +97,104 @@ def resolved_design(
 
 
 class SimionGeometryTests(unittest.TestCase):
+    def test_grouped_ellipse_uses_two_radii_rotation_and_remapped_electrodes(self) -> None:
+        array = build_rod_array(
+            radial_order_n=2,
+            electrode_count=4,
+            inscribed_radius_r0_mm=3.74,
+            rod_z_min_mm=2.0,
+            rod_z_max_mm=15.0,
+            cross_section={
+                "shape": "ellipse",
+                "semi_major_axis_mm": 4.3,
+                "semi_minor_axis_mm": 1.88,
+                "major_axis_orientation": "tangential",
+            },
+        )
+        gem = render_grouped_rod_array_gem(
+            array,
+            electrode_group_ids={1: 3, 2: 4},
+        )
+        self.assertIn("e(3)", gem)
+        self.assertIn("e(4)", gem)
+        self.assertNotIn("e(1)", gem)
+        self.assertNotIn("e(2)", gem)
+        self.assertEqual(gem.count("rotate_z("), 4)
+        self.assertEqual(gem.count("cylinder(0,0,0,4.3,1.88,13)"), 4)
+        self.assertIn("locate(5.62,0,0) { rotate_z(90)", gem)
+
+    def test_grouped_round_default_and_identity_mapping_are_byte_identical(self) -> None:
+        array = build_rod_array(
+            radial_order_n=2,
+            electrode_count=4,
+            inscribed_radius_r0_mm=4.0,
+            rod_radius_mm=1.0,
+            rod_z_min_mm=2.0,
+            rod_z_max_mm=15.0,
+        )
+        self.assertEqual(
+            render_grouped_rod_array_gem(array),
+            render_grouped_rod_array_gem(array, electrode_group_ids={1: 1, 2: 2}),
+        )
+        for mapping in ({1: 3}, {1: 3, 2: 3}, {1: True, 2: 4}):
+            with self.subTest(mapping=mapping), self.assertRaisesRegex(ValueError, "electrode_group_ids"):
+                render_grouped_rod_array_gem(array, electrode_group_ids=mapping)
+
+    def test_full_and_axis_mapped_renderers_accept_ellipse_rods(self) -> None:
+        ellipse = {
+            "rod_id": 1,
+            "electrode_group": 1,
+            "angle_rad": 0.0,
+            "center_x_mm": 4.0,
+            "center_y_mm": 0.0,
+            "z_min_mm": 2.0,
+            "z_max_mm": 15.0,
+            "semi_major_axis_mm": 1.5,
+            "semi_minor_axis_mm": 0.75,
+            "major_axis_angle_rad": 0.5,
+        }
+        for enclosure_model in (
+            "cylindrical_grounded_shield_v1",
+            "rectangular_reference_enclosure_v1",
+        ):
+            with self.subTest(enclosure_model=enclosure_model):
+                source = resolved_design(
+                    "cylindrical_bore",
+                    0.0,
+                    enclosure_model=enclosure_model,
+                )
+                source["geometry_mm"]["rod_array"]["rods"] = [copy.deepcopy(ellipse)]
+                gem = render_gem(source, 0.2)
+                self.assertIn("rotate_z(28.6478897565)", gem)
+                self.assertIn("cylinder(0,0,0,1.5,0.75,13)", gem)
+
+        segmented = {
+            "segment_count": 2,
+            "electrodes": [
+                {**copy.deepcopy(ellipse), "electrode_id": electrode_id}
+                for electrode_id in range(1, 5)
+            ],
+        }
+        mapped = render_axis_mapped_segmented_rod_array_gem(
+            segmented,
+            axial_origin_mm=1.0,
+            transverse_origin_mm=(2.0, 3.0),
+            rotation_axis=1,
+            rotation_degrees=90.0,
+        )
+        self.assertEqual(mapped.count("rotate_z(28.6478897565)"), 4)
+        self.assertIn("locate(16,6,3,1,90)", mapped)
+        mixed = copy.deepcopy(segmented)
+        mixed["electrodes"][0]["radius_mm"] = 1.0
+        with self.assertRaisesRegex(ValueError, "mixes round and ellipse"):
+            render_axis_mapped_segmented_rod_array_gem(
+                mixed,
+                axial_origin_mm=1.0,
+                transverse_origin_mm=(2.0, 3.0),
+                rotation_axis=1,
+                rotation_degrees=90.0,
+            )
+
     def test_connector_owned_terminal_is_not_rendered_by_the_multipole_pa(self) -> None:
         source = resolved_design("cylindrical_bore", 0.0)
         source["downstream_terminal"] = {

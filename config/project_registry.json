@@ -8,7 +8,7 @@
     },
     {
       "descriptor": "projects/dual_cone_tandem_quadrupole_ion_interface/config/project.json",
-      "sha256": "26341C4C8558F45FBD23D6EF799E309193901FCEE97026183273150C4C66DBFF"
+      "sha256": "C4A5438AAA1EA9D8AAA041EE49F79FD37012C33E73E4EB6F139800FADDC68461"
     },
     {
       "descriptor": "projects/orthogonal_accelerator/config/project.json",
@@ -111,29 +111,47 @@
       "project_id": "dual_cone_tandem_quadrupole_ion_interface",
       "family_id": "atmospheric_pressure_ion_interfaces",
       "display_name": "双锥串联四极杆离子传输接口",
-      "purpose": "双锥差分抽气接口及椭圆杆、圆杆两级RF四极导引的离子传输筛选与后续多物理场验证",
+      "purpose": "以COMSOL气流场到SIMION气体辅助轨迹的冻结依赖链验证双锥及两级RF四极导引接口",
       "lifecycle_status": "prototype",
       "toolchains": [
+        "comsol",
+        "matlab",
+        "simion",
         "python"
       ],
       "contracts": {
         "baseline": "config/baseline.json",
-        "science": "config/science.json",
-        "solver_numerics": "config/solver_numerics.json",
+        "science": "config/gas_flow_science.json",
+        "solver_numerics": "config/comsol_solver_numerics.json",
         "resolved": "config/resolved_geometry.json",
-        "analysis": "config/science.json",
-        "interface": null,
+        "analysis": null,
+        "interface": "config/gas_field_interface.json",
         "execution": "config/execution_profiles.json",
         "design_variables": null,
         "optimization_envelope": null
       },
       "capabilities": [
         {
-          "capability_id": "dual_cone_two_stage_quadrupole_transport",
-          "function": "ion_transport_screening",
+          "capability_id": "axisymmetric_gas_flow_field_generation",
+          "function": "gas_flow_field_generation",
           "status": "prototype",
           "modes": [
-            "pressure_drag_screening"
+            "axisymmetric_gas_flow_screening"
+          ],
+          "metrics": [
+            "mass_flow_rate",
+            "mass_conservation_residual",
+            "pressure_range",
+            "maximum_gas_speed"
+          ],
+          "design_variables": []
+        },
+        {
+          "capability_id": "gas_field_driven_simion_transport",
+          "function": "gas_assisted_ion_transport",
+          "status": "prototype",
+          "modes": [
+            "gas_field_driven_simion_transport"
           ],
           "metrics": [
             "transmission_fraction",
@@ -152,10 +170,11 @@
       },
       "known_gaps": [
         "Component vendor and exact product identity are unconfirmed",
-        "Cone truncation, thickness, orientation, pump geometry and intermediate pressures are missing",
-        "Quadrupole RF/DC operating points, gas flow and effective ion mobility are provisional",
-        "Reduced-order prescribed-flow model is not a quantitative high-pressure interface model",
-        "COMSOL, SIMION, CAD, Candidate and Formal evidence do not exist"
+        "Cone truncation and aperture-plane interpretation remain provisional; pump geometry and intermediate pressures are missing",
+        "The current COMSOL gas-flow model is an axisymmetric empty-enclosure screening model",
+        "The canonical COMSOL gas-field handoff is blocked pending a successful exported field artifact",
+        "The SIMION geometry and gas-assisted program exist, but a qualified trajectory run awaits a converged COMSOL field",
+        "Ion source, RF/DC operating points, collision model, CAD, Candidate and Formal evidence are not qualified"
       ]
     },
     {

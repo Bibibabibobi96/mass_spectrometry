@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "role": "dual_cone_simion_ion_transport_science",
+  "project_id": "dual_cone_tandem_quadrupole_ion_interface",
+  "model_id": "simion_sds_gas_assisted_transport_v1",
+  "trajectory_authority": "simion",
+  "claim_scope": "prototype_simion_geometry_and_gas_assisted_transport_only",
+  "ion": {
+    "species_id": "generic_positive_500da",
+    "mass_amu": 500.0,
+    "charge_state": 1,
+    "source_kinetic_energy_ev": 0.001
+  },
+  "gas": {
+    "species_id": "n2",
+    "temperature_k": 300.0,
+    "collision_model": "simion_official_collision_sds",
+    "collision_gas_mass_amu": 28.0134,
+    "collision_gas_diameter_nm": 0.364,
+    "diffusion_enabled": true,
+    "field_authority": "config/gas_field_interface.json"
+  },
+  "electric_field": {
+    "stage_1": {
+      "waveform": "cosine",
+      "rf_amplitude_v_zero_to_peak_per_group": 100.0,
+      "dc_amplitude_v_per_group": 0.0,
+      "common_mode_offset_v": 0.0,
+      "frequency_hz": 1000000.0,
+      "phase_rad": 0.0,
+      "electrode_group_ids": {"1": 11, "2": 12}
+    },
+    "stage_2": {
+      "waveform": "cosine",
+      "rf_amplitude_v_zero_to_peak_per_group": 100.0,
+      "dc_amplitude_v_per_group": 0.0,
+      "common_mode_offset_v": 0.0,
+      "frequency_hz": 1000000.0,
+      "phase_rad": 0.0,
+      "electrode_group_ids": {"1": 21, "2": 22}
+    },
+    "static_electrodes_v": {
+      "first_cone": 0.0,
+      "second_cone": 0.0
+    },
+    "status": "provisional_not_user_confirmed"
+  },
+  "controls": {
+    "c0_collision_free_geometry_smoke": {
+      "collision_model": "none",
+      "qualification": "static_smoke_only",
+      "allowed_claims": ["gem_compiles", "pa_refines", "electrode_namespace_is_present"]
+    }
+  },
+  "disabled_physics": [
+    "droplet_desolvation",
+    "ion_chemistry",
+    "space_charge",
+    "wall_reflection",
+    "magnetic_field"
+  ]
+}

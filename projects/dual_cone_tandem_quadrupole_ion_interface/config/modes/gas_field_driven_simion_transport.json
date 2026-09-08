@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "role": "project_mode",
+  "project_id": "dual_cone_tandem_quadrupole_ion_interface",
+  "mode_id": "gas_field_driven_simion_transport",
+  "model_id": "simion_sds_gas_assisted_transport_v1",
+  "evidence_level": "plan",
+  "formal_eligible": false,
+  "limitations": [
+    "The SIMION trajectory runner and its gas-collision implementation are not yet registered",
+    "Every run must freeze a successful COMSOL gas-flow manifest and canonical field identity before SIMION starts",
+    "This dependent COMSOL-to-SIMION chain is not independent cross-solver validation"
+  ]
+}

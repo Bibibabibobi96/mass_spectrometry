@@ -628,6 +628,22 @@
         {
           "exact": "common/multipole/round_rod_geometry.py",
           "reason": "shared_rod_cross_section_dependency_changed"
+        },
+        {
+          "exact": "common/multipole/simion_geometry.py",
+          "reason": "shared_simion_rod_renderer_dependency_changed"
+        },
+        {
+          "exact": "common/multipole/simion_rf_drive.lua",
+          "reason": "shared_simion_rf_drive_dependency_changed"
+        },
+        {
+          "exact": "common/simion/particle_source.py",
+          "reason": "shared_simion_particle_source_dependency_changed"
+        },
+        {
+          "exact": "common/simion/pa_family_cache.ps1",
+          "reason": "shared_simion_pa_cache_dependency_changed"
         }
       ],
       "command": {
