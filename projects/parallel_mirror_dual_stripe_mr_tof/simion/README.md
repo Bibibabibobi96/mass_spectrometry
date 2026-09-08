@@ -158,28 +158,30 @@ IOB REPORT AX AY AZ BX BY BZ CX CY CZ ADX ADY ADZ BDX BDY BDZ CDX CDY CDZ
 
 ## 粒子来源与事件分析
 
-materializer在schema2的`prototype_input_manifest.json`中为五份Fly2分别冻结
-`particle_count`、`particle_count_contract_key`、`expected_particle_ids`及其SHA-256，
+materializer在schema3的`prototype_input_manifest.json`中为每份具名诊断Fly2分别冻结
+`source_profile_id`、`particle_count`、`particle_count_contract_key`、`expected_particle_ids`及其SHA-256，
 并绑定Fly2和derived合同的SHA-256。ID由单个standard beam的合同粒子数派生为`1..N`；
 分析不能从已记录终态数反推母粒子数。
 
 |manifest source key|生成的Fly2|当前用途|
 |---|---|---|
-|`center_fly2`|`mrtof_candidate_center.fly2`|分析器内直接释放的4-keV中心粒子|
-|`candidate_bunch_fly2`|`mrtof_candidate.fly2`|同一注入态的固定合同小束团|
+|`mirror_internal_diagnostic_center_fly2`|`mrtof_mirror_internal_diagnostic_center.fly2`|分析器内直接释放的4-keV单粒子；只隔离诊断mirror/Stripe|
+|`mirror_internal_diagnostic_bunch_fly2`|`mrtof_mirror_internal_diagnostic.fly2`|同一镜内诊断态的固定合同小束团；不是整机源|
 |`accelerator_focus_center_fly2`|`mrtof_accelerator_focus_center.fly2`|第一区release平面的零KE中心粒子|
 |`accelerator_focus_bunch_fly2`|`mrtof_accelerator_focus.fly2`|第一区内零KE轴向释放位置表；用于检验第一时间焦点|
 |`first_prism_entry_center_fly2`|`mrtof_first_prism_entry_center.fly2`|两区焦面处的4-keV中心粒子；仅首棱镜有限三维射击诊断|
+|`full_mrtof_center_fly2`|尚未发布|未来完整源→P1→P2→Stripe中心轨迹；只在精确整数K和双棱镜快速相位闭合后生成|
 
 当前首轮物种为524 Th／+1，中心源N=1、小束团N=100。全分析器小束团半径为0.1 mm；
 加速器焦点束团则把合同的`accelerator_focus_axial_full_width_mm=0.2 mm`均匀离散成100个
 确定的第一区轴向释放位置，每个位置各用一个`n=1` standard beam，避免SIMION随机圆盘分布掩盖轴向导数。
 这些数值只来自`particle_source`合同。
 此前100 Th输入仍属独立回归/历史证据，不与新首轮束团混合统计。
-前两种是加速器后的理想注入假设，不是从repeller开始的提取证据。加速器焦点两种源是静态电压下
+镜内两种源绕过加速器和P1/P2，仅保留为部件隔离诊断，不能用于整机传输、探测TOF或分辨率。
+加速器焦点两种源是静态电压下
 从第一区由静止释放的独立诊断；轴向N=100源可测量有限宽度的一阶斜率、二阶曲率和时间极差，
 但不代表真实脉冲源分布。
-五种源不能合并统计或彼此替代。
+所有具名源不能合并统计或彼此替代；schema2旧名称仅供既有run只读分析。
 
 有实际飞行日志后，从仓库根使用[simion_event_analysis.py](../analysis/simion_event_analysis.py)：
 
@@ -187,7 +189,7 @@ materializer在schema2的`prototype_input_manifest.json`中为五份Fly2分别�
 python -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis `
   '<run>/stdout.log' '<run>/event_analysis.json' `
   --input-manifest '<run>/simion/prototype_input_manifest.json' `
-  --source-key candidate_bunch_fly2
+  --source-key mirror_internal_diagnostic_bunch_fly2
 ```
 
 路径应指向本次实际冻结文件；`--source-key`必须与实际飞行源相符。目标K只从已校验的derived合同读取，
@@ -217,7 +219,9 @@ python -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_anal
   mirror-cycle-counter sidecar。
   [run_three_component_center_flight.ps1](run_three_component_center_flight.ps1)是唯一的N=1中心粒子入口：
   它从一个已完成的三组件几何审查run逐字节冻结IOB、三份已加载PA、结构报告、source manifest及
-  `center_fly2`，并拒绝IOB重命名的Fly2与该选定源字节不一致。它只发布全终态事件链的
+  `full_mrtof_center_fly2`，并拒绝IOB重命名的Fly2与该选定源字节不一致。该源只有在中心粒子满足
+  $T_D(\vartheta_0)/T_0=K$、P1/P2快速相位闭合且manifest明确允许整机飞行后才能发布；镜内诊断源
+  不能替代。入口只发布全终态事件链的
   `candidate_prototype_event_chain_only` receipt；不运行束团、不产生分辨率结论，也不修改源几何审查run。
 
 [run_three_component_first_prism_flight.ps1](run_three_component_first_prism_flight.ps1)是独立的N=1首棱镜

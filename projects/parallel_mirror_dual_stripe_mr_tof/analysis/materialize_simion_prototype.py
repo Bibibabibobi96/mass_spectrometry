@@ -113,22 +113,26 @@ def _finite_number(value: object, label: str) -> float:
 
 
 def _particle_fly2(
-    particle_source: dict[str, Any], particle_count_key: str, radius_mm: float,
+    particle_source: dict[str, Any], source_profile: dict[str, Any],
+    particle_count_key: str, radius_mm: float,
     *, position_override_mm: list[float] | None = None,
     direction_override_project: list[float] | None = None,
     kinetic_energy_override_ev: float | None = None,
 ) -> str:
     """Render one immutable ideal-source Fly2 from the Candidate contract."""
     species = particle_source.get("species")
-    position = particle_source.get("injection_position_mm")
-    direction = particle_source.get("injection_direction_project")
+    position = source_profile.get("position_project_mm")
+    direction = source_profile.get("direction_project")
     if not isinstance(species, dict) or not isinstance(position, list) or not isinstance(direction, list):
-        raise CandidateContractError("particle source requires species, position, and direction")
+        raise CandidateContractError("particle source profile requires species, position, and direction")
     if len(position) != 3 or len(direction) != 3:
         raise CandidateContractError("particle source position and direction must each have three coordinates")
     mass_th = _finite_number(species.get("mass_th"), "particle_source.species.mass_th")
     charge_e = _finite_number(species.get("charge_e"), "particle_source.species.charge_e")
-    energy_ev = _finite_number(species.get("kinetic_energy_ev"), "particle_source.species.kinetic_energy_ev")
+    energy_ev = _finite_number(
+        source_profile.get("axial_kinetic_energy_ev"),
+        "particle_source source-profile axial_kinetic_energy_ev",
+    )
     if position_override_mm is not None:
         position = position_override_mm
     if direction_override_project is not None:
@@ -236,6 +240,11 @@ def _first_prism_entry_fly2(prism_l0: Any, particle_source: dict[str, Any]) -> s
     """
     return _particle_fly2(
         particle_source,
+        {
+            "position_project_mm": list(prism_l0.entry_position_project_mm),
+            "direction_project": list(prism_l0.entry_unit_direction_project),
+            "axial_kinetic_energy_ev": prism_l0.fast_kinetic_energy_ev,
+        },
         "center_particle_count",
         0.0,
         position_override_mm=list(prism_l0.entry_position_project_mm),
@@ -244,7 +253,10 @@ def _first_prism_entry_fly2(prism_l0: Any, particle_source: dict[str, Any]) -> s
     )
 
 
-def _particle_source_record(path: Path, particle_source: dict[str, Any], count_key: str) -> dict[str, Any]:
+def _particle_source_record(
+    path: Path, particle_source: dict[str, Any], count_key: str,
+    source_profile_id: str | None = None,
+) -> dict[str, Any]:
     """Bind the sole standard-beam source to SIMION's one-based ion identities."""
     count = particle_source[count_key]
     if type(count) is not int or count <= 0:
@@ -253,6 +265,7 @@ def _particle_source_record(path: Path, particle_source: dict[str, Any], count_k
     identity = json.dumps(particle_ids, separators=(",", ":")).encode("utf-8")
     return {"filename": path.name, "sha256": _sha256(path),
             "particle_count_contract_key": count_key, "particle_count": count,
+            "source_profile_id": source_profile_id,
             "expected_particle_ids": particle_ids,
             "expected_particle_ids_sha256": hashlib.sha256(identity).hexdigest()}
 
@@ -269,7 +282,13 @@ def _full_path_timeout_us(contract: dict[str, Any], particle_source: dict[str, A
     species = particle_source["species"]
     mass_th = _finite_number(species.get("mass_th"), "particle_source.species.mass_th")
     charge_e = abs(_finite_number(species.get("charge_e"), "particle_source.species.charge_e"))
-    energy_ev = _finite_number(species.get("kinetic_energy_ev"), "particle_source.species.kinetic_energy_ev")
+    diagnostic = particle_source.get("mirror_internal_diagnostic")
+    if not isinstance(diagnostic, dict):
+        raise CandidateContractError("full-path timeout requires the mirror-internal diagnostic profile")
+    energy_ev = _finite_number(
+        diagnostic.get("axial_kinetic_energy_ev"),
+        "particle_source.mirror_internal_diagnostic.axial_kinetic_energy_ev",
+    )
     if mass_th <= 0.0 or charge_e <= 0.0 or energy_ev <= 0.0:
         raise CandidateContractError("full-path timeout requires positive species mass, charge, and energy")
     terminal = float(derive_mirror_boundaries(contract["mirror"])["terminal_electrode_plane_z_mm"])
@@ -315,12 +334,26 @@ def materialize(contract_path: Path, mirror_receipt_path: Path, output_directory
     particle_source = contract.get("particle_source")
     if not isinstance(particle_source, dict):
         raise CandidateContractError("prototype requires a particle-source contract")
+    mirror_diagnostic = particle_source.get("mirror_internal_diagnostic")
+    full_center = particle_source.get("full_mrtof_center")
+    if (
+        not isinstance(mirror_diagnostic, dict)
+        or mirror_diagnostic.get("status") != "diagnostic_only__not_a_full_instrument_source"
+        or not isinstance(full_center, dict)
+        or full_center.get("publishable") is not False
+        or full_center.get("forbidden_substitution") != "mirror_internal_diagnostic"
+    ):
+        raise CandidateContractError("prototype source roles must isolate the mirror diagnostic from the full center")
     prism_l0 = derive_first_prism_l0(contract)
     full_path_timeout_us = _full_path_timeout_us(contract, particle_source, target_oscillation_count)
     prism_receipt = prism_l0.receipt()
     bunch_radius = _finite_number(particle_source.get("candidate_bunch_radius_mm"), "particle_source.candidate_bunch_radius_mm")
-    center_fly2 = _particle_fly2(particle_source, "center_particle_count", 0.0)
-    bunch_fly2 = _particle_fly2(particle_source, "candidate_bunch_particle_count", bunch_radius)
+    diagnostic_center_fly2 = _particle_fly2(
+        particle_source, mirror_diagnostic, "center_particle_count", 0.0,
+    )
+    diagnostic_bunch_fly2 = _particle_fly2(
+        particle_source, mirror_diagnostic, "candidate_bunch_particle_count", bunch_radius,
+    )
     accelerator_focus_width = _finite_number(
         particle_source.get("accelerator_focus_axial_full_width_mm"),
         "particle_source.accelerator_focus_axial_full_width_mm",
@@ -411,10 +444,10 @@ def materialize(contract_path: Path, mirror_receipt_path: Path, output_directory
     first_prism_operating_point_output.write_bytes(sidecar_output.read_bytes())
     first_prism_voltage_map_output = output_directory / "mrtof_first_prism_l0.voltage_map.lua"
     first_prism_voltage_map_output.write_bytes(voltage_map_output.read_bytes())
-    center_fly2_output = output_directory / "mrtof_candidate_center.fly2"
-    center_fly2_output.write_text(center_fly2, encoding="utf-8", newline="\n")
-    bunch_fly2_output = output_directory / "mrtof_candidate.fly2"
-    bunch_fly2_output.write_text(bunch_fly2, encoding="utf-8", newline="\n")
+    diagnostic_center_output = output_directory / "mrtof_mirror_internal_diagnostic_center.fly2"
+    diagnostic_center_output.write_text(diagnostic_center_fly2, encoding="utf-8", newline="\n")
+    diagnostic_bunch_output = output_directory / "mrtof_mirror_internal_diagnostic.fly2"
+    diagnostic_bunch_output.write_text(diagnostic_bunch_fly2, encoding="utf-8", newline="\n")
     accelerator_focus_center_output = output_directory / "mrtof_accelerator_focus_center.fly2"
     accelerator_focus_center_output.write_text(accelerator_focus_center_fly2, encoding="utf-8", newline="\n")
     accelerator_focus_bunch_output = output_directory / "mrtof_accelerator_focus.fly2"
@@ -427,7 +460,7 @@ def materialize(contract_path: Path, mirror_receipt_path: Path, output_directory
     first_prism_iob_fly2_output.write_bytes(first_prism_entry_center_output.read_bytes())
     manifest_output = output_directory / "prototype_input_manifest.json"
     manifest_output.write_text(json.dumps({
-        "schema_version": 2,
+        "schema_version": 3,
         "accelerator_dependency": accelerator_dependency,
         "baseline_contract": {"filename": contract_path.name, "sha256": _sha256(contract_path)},
         "analytic_mirror_receipt": {"filename": mirror_receipt_path.name, "sha256": _sha256(mirror_receipt_path)},
@@ -440,13 +473,30 @@ def materialize(contract_path: Path, mirror_receipt_path: Path, output_directory
         "first_prism_program": {"filename": first_prism_program_output.name, "sha256": _sha256(first_prism_program_output)},
         "first_prism_operating_point": {"filename": first_prism_operating_point_output.name, "sha256": _sha256(first_prism_operating_point_output)},
         "first_prism_voltage_map": {"filename": first_prism_voltage_map_output.name, "sha256": _sha256(first_prism_voltage_map_output)},
-        "center_fly2": _particle_source_record(center_fly2_output, particle_source, "center_particle_count"),
-        "candidate_bunch_fly2": _particle_source_record(bunch_fly2_output, particle_source, "candidate_bunch_particle_count"),
-        "accelerator_focus_center_fly2": _particle_source_record(accelerator_focus_center_output, particle_source, "center_particle_count"),
-        "accelerator_focus_bunch_fly2": _particle_source_record(accelerator_focus_bunch_output, particle_source, "candidate_bunch_particle_count"),
-        "first_prism_entry_center_fly2": _particle_source_record(first_prism_entry_center_output, particle_source, "center_particle_count"),
-        "first_prism_iob_fly2": _particle_source_record(first_prism_iob_fly2_output, particle_source, "center_particle_count"),
-        "status": "geometry_review_only__unsolved_stripe_and_p2__flight_forbidden",
+        "mirror_internal_diagnostic_center_fly2": _particle_source_record(
+            diagnostic_center_output, particle_source, "center_particle_count", "mirror_internal_diagnostic",
+        ),
+        "mirror_internal_diagnostic_bunch_fly2": _particle_source_record(
+            diagnostic_bunch_output, particle_source, "candidate_bunch_particle_count", "mirror_internal_diagnostic",
+        ),
+        "accelerator_focus_center_fly2": _particle_source_record(
+            accelerator_focus_center_output, particle_source, "center_particle_count", "accelerator_focus_diagnostic",
+        ),
+        "accelerator_focus_bunch_fly2": _particle_source_record(
+            accelerator_focus_bunch_output, particle_source, "candidate_bunch_particle_count", "accelerator_focus_diagnostic",
+        ),
+        "first_prism_entry_center_fly2": _particle_source_record(
+            first_prism_entry_center_output, particle_source, "center_particle_count", "first_prism_entry_diagnostic",
+        ),
+        "first_prism_iob_fly2": _particle_source_record(
+            first_prism_iob_fly2_output, particle_source, "center_particle_count", "first_prism_entry_diagnostic",
+        ),
+        "full_mrtof_center_source": {
+            "status": full_center["status"],
+            "publishable": False,
+            "fly2": None,
+        },
+        "status": "geometry_review_only__named_diagnostics__full_center_unpublished",
     }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return {
         "contract": contract_output,
@@ -458,8 +508,8 @@ def materialize(contract_path: Path, mirror_receipt_path: Path, output_directory
         "first_prism_program": first_prism_program_output,
         "first_prism_operating_point": first_prism_operating_point_output,
         "first_prism_voltage_map": first_prism_voltage_map_output,
-        "center_fly2": center_fly2_output,
-        "candidate_bunch_fly2": bunch_fly2_output,
+        "mirror_internal_diagnostic_center_fly2": diagnostic_center_output,
+        "mirror_internal_diagnostic_bunch_fly2": diagnostic_bunch_output,
         "accelerator_focus_center_fly2": accelerator_focus_center_output,
         "accelerator_focus_bunch_fly2": accelerator_focus_bunch_output,
         "first_prism_entry_center_fly2": first_prism_entry_center_output,

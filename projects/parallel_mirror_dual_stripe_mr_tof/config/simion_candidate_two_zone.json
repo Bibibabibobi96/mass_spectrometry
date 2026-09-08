@@ -1977,24 +1977,40 @@
   "particle_source": {
     "species": {
       "mass_th": 524,
-      "charge_e": 1,
-      "kinetic_energy_ev": 4000
+      "charge_e": 1
     },
-    "injection_position_mm": [
-      0,
-      -280,
-      -36.6
-    ],
-    "injection_direction_project": [
-      0,
-      0,
-      1
-    ],
+    "mirror_internal_diagnostic": {
+      "status": "diagnostic_only__not_a_full_instrument_source",
+      "position_project_mm": [0, -280, -36.6],
+      "direction_project": [0, 0, 1],
+      "axial_kinetic_energy_ev": 4000,
+      "semantics": "A direct analyser release retained only to isolate mirror and Stripe dynamics from the accelerator and P1/P2. It must not be consumed by a complete-instrument flight, transmission, detector-TOF, or resolution workflow."
+    },
+    "accelerator_focus_diagnostic": {
+      "status": "diagnostic_only__zero_ke_axial_release",
+      "position_authority": "accelerator release_position_in_gap_1_mm and derived reviewed placement",
+      "initial_kinetic_energy_ev": 0,
+      "direction_project": [0, 0, -1]
+    },
+    "first_prism_entry_diagnostic": {
+      "status": "diagnostic_only__first_prism_l0",
+      "state_authority": "prism_transport.energy_partition and first_prism.entry_reference"
+    },
+    "full_mrtof_center": {
+      "status": "blocked_pending_exact_K_and_two_prism_fast_phase",
+      "publishable": false,
+      "required_inputs": [
+        "a mirror-theory-qualified root satisfying T_D(theta_0)/T_0=target_K",
+        "a full-rank compatible P1/P2 finite-three-dimensional transport solution",
+        "the resulting y=0 Stripe-entry position and velocity"
+      ],
+      "forbidden_substitution": "mirror_internal_diagnostic"
+    },
     "center_particle_count": 1,
     "candidate_bunch_particle_count": 100,
     "candidate_bunch_radius_mm": 0.1,
     "accelerator_focus_axial_full_width_mm": 0.2,
-    "initial_spread_status": "ideal_post_two_zone_accelerator_injection__4keV_nominal__zero_energy_and_angle_spread__not_a_resolution_source_model"
+    "initial_spread_status": "source-profile-specific ideal diagnostics; the complete MR-TOF center and its spread remain unpublished"
   },
   "simion": {
     "component_mesh_mm_per_gu": {

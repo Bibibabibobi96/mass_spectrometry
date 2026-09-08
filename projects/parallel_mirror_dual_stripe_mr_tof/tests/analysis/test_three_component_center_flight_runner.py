@@ -14,14 +14,16 @@ class ThreeComponentCenterFlightRunnerTest(unittest.TestCase):
         for token in (
             "GeometryReviewRunPath", "mrtof_three_component_candidate.iob",
             "three_component_geometry_review.json", "prototype_input_manifest.json",
-            "simion_prototype_contract.json", "mrtof_candidate_center.fly2", "Test-RunFilesIdentical",
+            "simion_prototype_contract.json", "full_mrtof_center_fly2", "Test-RunFilesIdentical",
             "mrtof_three_component_candidate.mirror_cycle_counter.lua",
             "run_iob_flight.lua", "simion_event_analysis.py",
-            "three_component_simion_flight_manifest.py", "center_fly2",
+            "three_component_simion_flight_manifest.py", "full_mrtof_center",
             "joint_downstream_operating_point__center_flight_allowed",
             "geometry-review visualization voltages are forbidden",
         ):
             self.assertIn(token, source)
+        self.assertNotIn("mrtof_candidate_center.fly2", source)
+        self.assertNotIn("source_key='center_fly2'", source)
 
     def test_runner_is_n1_and_capacity_gated_before_native_flight(self) -> None:
         source = RUNNER.read_text(encoding="utf-8-sig")

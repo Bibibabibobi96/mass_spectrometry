@@ -198,14 +198,14 @@ try {
     '--contract', $frozenContract, '--mirror-receipt', $frozenMirrorReceipt, '--output-directory', $solverDir)
   $resolvedContract = Join-Path $solverDir 'simion_prototype_contract.json'
   $program = Join-Path $solverDir 'mrtof_candidate.lua'
-  $fly2 = Join-Path $solverDir 'mrtof_candidate_center.fly2'
+  $fly2 = Join-Path $solverDir 'mrtof_mirror_internal_diagnostic_center.fly2'
   foreach ($required in @($resolvedContract, $program, $fly2, (Join-Path $solverDir 'prototype_input_manifest.json'))) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "Materializer omitted required run-local input: $required" }
   }
   $runConfigDocument = Get-Content -LiteralPath $runConfig -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
   $runConfigDocument.inputs.prototype_input_manifest = ConvertTo-ArtifactRunPath (Join-Path $solverDir 'prototype_input_manifest.json')
   $runConfigDocument.inputs.resolved_prototype_contract = ConvertTo-ArtifactRunPath $resolvedContract
-  $runConfigDocument.inputs.center_fly2 = ConvertTo-ArtifactRunPath $fly2
+  $runConfigDocument.inputs.mirror_internal_diagnostic_center_fly2 = ConvertTo-ArtifactRunPath $fly2
   Write-RunJson -Path $runConfig -Value $runConfigDocument
 
   $failureStage = 'derive_iob_pose'

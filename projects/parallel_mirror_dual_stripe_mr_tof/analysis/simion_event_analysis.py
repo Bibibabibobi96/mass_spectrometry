@@ -18,9 +18,20 @@ FLY_COMPLETED = re.compile(r"^status,Fly completed\.\s+(?P<splats>\d+) splats", 
 SOURCE_COUNT_KEYS = {
     "center_fly2": "center_particle_count",
     "candidate_bunch_fly2": "candidate_bunch_particle_count",
+    "mirror_internal_diagnostic_center_fly2": "center_particle_count",
+    "mirror_internal_diagnostic_bunch_fly2": "candidate_bunch_particle_count",
     "accelerator_focus_center_fly2": "center_particle_count",
     "accelerator_focus_bunch_fly2": "candidate_bunch_particle_count",
     "first_prism_entry_center_fly2": "center_particle_count",
+    "full_mrtof_center_fly2": "center_particle_count",
+}
+SOURCE_PROFILE_IDS = {
+    "mirror_internal_diagnostic_center_fly2": "mirror_internal_diagnostic",
+    "mirror_internal_diagnostic_bunch_fly2": "mirror_internal_diagnostic",
+    "accelerator_focus_center_fly2": "accelerator_focus_diagnostic",
+    "accelerator_focus_bunch_fly2": "accelerator_focus_diagnostic",
+    "first_prism_entry_center_fly2": "first_prism_entry_diagnostic",
+    "full_mrtof_center_fly2": "full_mrtof_center",
 }
 ELEMENTARY_CHARGE_C = 1.602176634e-19
 ATOMIC_MASS_KG = 1.66053906660e-27
@@ -312,7 +323,8 @@ def _bound_input(root: Path, record: dict[str, Any]) -> Path:
 def load_particle_source(input_manifest: Path, source_key: str) -> dict[str, Any]:
     """Resolve the selected frozen Fly2 and its contract-derived exact cohort."""
     manifest = json.loads(input_manifest.read_text(encoding="utf-8"))
-    if manifest.get("schema_version") != 2 or source_key not in SOURCE_COUNT_KEYS:
+    schema_version = manifest.get("schema_version")
+    if schema_version not in (2, 3) or source_key not in SOURCE_COUNT_KEYS:
         raise ValueError("current prototype source manifest and explicit source key are required")
     contract_path = _bound_input(input_manifest.parent, manifest["derived_contract"])
     contract = json.loads(contract_path.read_text(encoding="utf-8"))
@@ -333,13 +345,47 @@ def load_particle_source(input_manifest: Path, source_key: str) -> dict[str, Any
     target_k = contract["nominal"]["target_oscillation_count"]
     if not _integer(target_k, minimum=1):
         raise ValueError("source contract has invalid target oscillation count")
-    species = contract.get("particle_source", {}).get("species")
+    particle_source = contract.get("particle_source", {})
+    species = particle_source.get("species") if isinstance(particle_source, dict) else None
     if not isinstance(species, dict):
         species = None
-    elif not all(type(species.get(key)) in (int, float) and math.isfinite(float(species[key])) and float(species[key]) > 0.0
-                 for key in ("mass_th", "kinetic_energy_ev")):
-        raise ValueError("source contract species mass and kinetic energy must be finite positive values")
+    elif not type(species.get("mass_th")) in (int, float) or not math.isfinite(
+        float(species["mass_th"])
+    ) or float(species["mass_th"]) <= 0.0:
+        raise ValueError("source contract species mass must be finite and positive")
+    axial_kinetic_energy_ev: float | None = None
+    if schema_version == 2:
+        if species is not None and (
+            type(species.get("kinetic_energy_ev")) not in (int, float)
+            or not math.isfinite(float(species["kinetic_energy_ev"]))
+            or float(species["kinetic_energy_ev"]) <= 0.0
+        ):
+            raise ValueError("legacy source contract kinetic energy must be finite and positive")
+        if species is not None:
+            axial_kinetic_energy_ev = float(species["kinetic_energy_ev"])
+    else:
+        expected_profile = SOURCE_PROFILE_IDS.get(source_key)
+        if expected_profile is None or record.get("source_profile_id") != expected_profile:
+            raise ValueError("current frozen source does not bind its named source profile")
+        profile = particle_source.get(expected_profile) if isinstance(particle_source, dict) else None
+        if not isinstance(profile, dict):
+            raise ValueError("current source contract omits the selected named profile")
+        if expected_profile == "full_mrtof_center" and profile.get("publishable") is not True:
+            raise ValueError("full MR-TOF center remains unpublished")
+        if expected_profile == "mirror_internal_diagnostic":
+            energy = profile.get("axial_kinetic_energy_ev")
+        elif expected_profile in ("first_prism_entry_diagnostic", "full_mrtof_center"):
+            energy = contract.get("prism_transport", {}).get("energy_partition", {}).get(
+                "fast_reflection_kinetic_energy_ev"
+            )
+        else:
+            energy = None
+        if energy is not None:
+            if type(energy) not in (int, float) or not math.isfinite(float(energy)) or float(energy) <= 0.0:
+                raise ValueError("selected source profile axial energy must be finite and positive")
+            axial_kinetic_energy_ev = float(energy)
     return {"expected_particle_ids": tuple(particle_ids), "target_k": int(target_k), "species": species,
+            "axial_kinetic_energy_ev": axial_kinetic_energy_ev,
             "provenance": {"input_manifest_sha256": hashlib.sha256(input_manifest.read_bytes()).hexdigest(),
                            "source_key": source_key, "fly2_filename": source_path.name,
                            "fly2_sha256": record["sha256"],
@@ -355,7 +401,7 @@ def analyze_log(log_path: Path, output_path: Path, *, input_manifest: Path, sour
     reported_splat_count = int(matches[0].group("splats")) if len(matches) == 1 else None
     summary = summarize_events(parse_events(text), source["target_k"], reported_splat_count,
                                expected_particle_ids=source["expected_particle_ids"], completion_count=len(matches),
-                               kinetic_energy_ev=(float(source["species"]["kinetic_energy_ev"]) if source["species"] else None),
+                               kinetic_energy_ev=source["axial_kinetic_energy_ev"],
                                mass_th=(float(source["species"]["mass_th"]) if source["species"] else None))
     summary["source"] = source["provenance"]
     summary["log_sha256"] = hashlib.sha256(log_path.read_bytes()).hexdigest()

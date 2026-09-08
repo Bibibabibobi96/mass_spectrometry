@@ -47,6 +47,43 @@ def fixture_manifest(root: Path) -> Path:
     return path
 
 
+def current_fixture_manifest(root: Path) -> Path:
+    """Create a schema-3 fixture whose diagnostic and full-center roles differ."""
+    particle_source = {
+        "species": {"mass_th": 524, "charge_e": 1},
+        "center_particle_count": 1,
+        "candidate_bunch_particle_count": 8,
+        "mirror_internal_diagnostic": {"axial_kinetic_energy_ev": 4000},
+        "full_mrtof_center": {"publishable": False},
+    }
+    contract = {
+        "particle_source": particle_source,
+        "nominal": {"target_oscillation_count": 25},
+        "prism_transport": {"energy_partition": {"fast_reflection_kinetic_energy_ev": 4000}},
+    }
+    contract_path = root / "simion_prototype_contract.json"
+    contract_path.write_text(json.dumps(contract), encoding="utf-8")
+    manifest = {
+        "schema_version": 3,
+        "derived_contract": {
+            "filename": contract_path.name,
+            "sha256": hashlib.sha256(contract_path.read_bytes()).hexdigest(),
+        },
+    }
+    for source_key, profile_id in (
+        ("mirror_internal_diagnostic_center_fly2", "mirror_internal_diagnostic"),
+        ("full_mrtof_center_fly2", "full_mrtof_center"),
+    ):
+        source = root / f"{source_key}.fly2"
+        source.write_text("particles { standard_beam { n = 1 } }\n", encoding="utf-8")
+        manifest[source_key] = _particle_source_record(
+            source, particle_source, "center_particle_count", profile_id,
+        )
+    path = root / "prototype_input_manifest.json"
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    return path
+
+
 class SimionEventAnalysisTest(unittest.TestCase):
     def test_single_particle_program_emits_the_required_topology_events(self):
         source = PROGRAM.read_text(encoding="utf-8-sig")
@@ -186,6 +223,20 @@ class SimionEventAnalysisTest(unittest.TestCase):
                 with self.subTest(filename=filename), self.assertRaises(ValueError):
                     load_particle_source(path, "center_fly2")
                 target.write_bytes(payload)
+
+    def test_current_manifest_keeps_mirror_diagnostic_out_of_full_center(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = current_fixture_manifest(Path(directory))
+            diagnostic = load_particle_source(path, "mirror_internal_diagnostic_center_fly2")
+            self.assertEqual(diagnostic["axial_kinetic_energy_ev"], 4000.0)
+            self.assertEqual(diagnostic["provenance"]["source_key"], "mirror_internal_diagnostic_center_fly2")
+            with self.assertRaisesRegex(ValueError, "full MR-TOF center remains unpublished"):
+                load_particle_source(path, "full_mrtof_center_fly2")
+            manifest = json.loads(path.read_text(encoding="utf-8"))
+            manifest["mirror_internal_diagnostic_center_fly2"]["source_profile_id"] = "full_mrtof_center"
+            path.write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "does not bind its named source profile"):
+                load_particle_source(path, "mirror_internal_diagnostic_center_fly2")
 
     def test_legacy_manifest_has_no_executable_fallback(self):
         with tempfile.TemporaryDirectory() as directory:

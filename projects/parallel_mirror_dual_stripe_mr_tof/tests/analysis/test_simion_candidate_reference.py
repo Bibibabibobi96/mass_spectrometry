@@ -224,8 +224,14 @@ class SimionCandidateReferenceTest(unittest.TestCase):
             self.assertIn("stripe_biases_v", outputs["operating_point"].read_text(encoding="utf-8"))
             self.assertIn("prism_voltages_v = { 141.42135623730948, 0 }", outputs["operating_point"].read_text(encoding="utf-8"))
             self.assertIn("accelerator_voltages_v", outputs["operating_point"].read_text(encoding="utf-8"))
-            self.assertIn("n = 1", outputs["center_fly2"].read_text(encoding="utf-8"))
-            self.assertIn("n = 100", outputs["candidate_bunch_fly2"].read_text(encoding="utf-8"))
+            self.assertIn(
+                "n = 1",
+                outputs["mirror_internal_diagnostic_center_fly2"].read_text(encoding="utf-8"),
+            )
+            self.assertIn(
+                "n = 100",
+                outputs["mirror_internal_diagnostic_bunch_fly2"].read_text(encoding="utf-8"),
+            )
             focus_center = outputs["accelerator_focus_center_fly2"].read_text(encoding="utf-8")
             focus_bunch = outputs["accelerator_focus_bunch_fly2"].read_text(encoding="utf-8")
             placement = derive_two_zone_placement(derived)
@@ -244,7 +250,13 @@ class SimionCandidateReferenceTest(unittest.TestCase):
             self.assertIn("position = circle_distribution", first_prism_entry)
             self.assertIn("direction = vector(0, 0, -1)", first_prism_entry)
             self.assertEqual(outputs["first_prism_iob_fly2"].read_bytes(), first_prism_entry.encode("utf-8"))
-            for key in ("center_fly2", "candidate_bunch_fly2", "accelerator_focus_center_fly2", "accelerator_focus_bunch_fly2", "first_prism_entry_center_fly2"):
+            for key in (
+                "mirror_internal_diagnostic_center_fly2",
+                "mirror_internal_diagnostic_bunch_fly2",
+                "accelerator_focus_center_fly2",
+                "accelerator_focus_bunch_fly2",
+                "first_prism_entry_center_fly2",
+            ):
                 source_text = outputs[key].read_text(encoding="utf-8")
                 self.assertIn(f"mass = {species['mass_th']:.17g},", source_text)
                 self.assertIn(f"charge = {species['charge_e']:.17g},", source_text)
@@ -276,7 +288,20 @@ class SimionCandidateReferenceTest(unittest.TestCase):
             )
             self.assertEqual(
                 input_manifest["status"],
-                "geometry_review_only__unsolved_stripe_and_p2__flight_forbidden",
+                "geometry_review_only__named_diagnostics__full_center_unpublished",
+            )
+            self.assertEqual(input_manifest["schema_version"], 3)
+            self.assertEqual(
+                input_manifest["mirror_internal_diagnostic_center_fly2"]["source_profile_id"],
+                "mirror_internal_diagnostic",
+            )
+            self.assertEqual(
+                input_manifest["full_mrtof_center_source"],
+                {
+                    "status": "blocked_pending_exact_K_and_two_prism_fast_phase",
+                    "publishable": False,
+                    "fly2": None,
+                },
             )
             self.assertEqual(outputs["program"].name, "mrtof_candidate.lua")
             program = outputs["program"].read_text(encoding="utf-8")

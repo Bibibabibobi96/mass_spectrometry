@@ -89,6 +89,22 @@ class AcceleratorFocusSimionAnalysisTest(unittest.TestCase):
             )
             self.assertEqual(baseline_output.read_text(), trial_output.read_text())
 
+    def test_source_materializer_reuses_legacy_reviewed_species_energy(self) -> None:
+        reviewed = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        reviewed["particle_source"]["species"]["kinetic_energy_ev"] = 4000
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            reviewed_path = root / "reviewed.json"
+            reviewed_path.write_text(json.dumps(reviewed), encoding="utf-8")
+            receipt = materialize_source(
+                CONTRACT,
+                reviewed_path,
+                "accelerator_focus_center_fly2",
+                root / "focus.fly2",
+                root / "source.json",
+            )
+            self.assertEqual(receipt["particle_count"], 1)
+
     def test_complete_axial_family_matches_analytic_reference(self) -> None:
         contract = load_contract(CONTRACT)
         placement = derive_two_zone_placement(contract)

@@ -12,6 +12,7 @@ from typing import Any
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
     CandidateContractError,
+    derive_operating_energy_envelope,
     derive_stage_2_ring_voltages,
     derive_two_zone_focus,
     load_contract,
@@ -53,9 +54,8 @@ def derive_voltage_trial(
     source = current.get("particle_source", {})
     species = source.get("species", {}) if isinstance(source, dict) else {}
     charge = float(species.get("charge_e", 0.0))
-    kinetic_energy = float(species.get("kinetic_energy_ev", 0.0))
-    if not math.isfinite(charge) or charge <= 0.0 or not math.isfinite(kinetic_energy) or kinetic_energy <= 0.0:
-        raise CandidateContractError("accelerator voltage trial requires a positive ion and nominal energy")
+    if not math.isfinite(charge) or charge <= 0.0:
+        raise CandidateContractError("accelerator voltage trial requires a positive ion")
     trial = copy.deepcopy(current)
     accelerator = trial["accelerator"]
     gap_1 = float(accelerator["gap_1_mm"])
@@ -63,7 +63,7 @@ def derive_voltage_trial(
     exit_v = float(accelerator["exit_grid_v"])
     if not all(math.isfinite(value) for value in (gap_1, release, exit_v)) or not 0.0 < release < gap_1:
         raise CandidateContractError("accelerator release must lie strictly inside finite gap 1")
-    energy_per_charge_v = kinetic_energy / charge
+    energy_per_charge_v = derive_operating_energy_envelope(current).net_gain_reference_center_v
     repeller_v = exit_v + energy_per_charge_v + drop * release / gap_1
     intermediate_v = repeller_v - drop
     accelerator["repeller_v"] = repeller_v

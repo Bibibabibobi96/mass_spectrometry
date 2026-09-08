@@ -62,6 +62,13 @@ $\gamma$ 条件求 B--E，并发布镜周期/W receipt。系统层再用 K 关�
 未来新硬件设计可把 W 作为镜设计指标并联立镜几何和镜电压，但仍不应由 Stripe 电压反求已独立定义的
 镜电压。
 
+2026-09-08 的粒子源合同已将三个诊断截面和完整整机中心源分离：`mirror_internal_diagnostic`仅允许
+从分析器内部直接释放粒子以隔离mirror/Stripe，`accelerator_focus_diagnostic`仅检查二区静态第一时间
+焦点，`first_prism_entry_diagnostic`仅检查P1接口。`full_mrtof_center`在镜工作点满足精确中心等式
+$T_D(\vartheta_0)/T_0=K$、P1/P2有限三维快速相位和`y=0` Stripe入口态共同闭合前保持未发布。
+SIMION完整中心飞行入口只接受这个具名完整源；旧镜内4-keV粒子不得替代它来发布整机传输、探测TOF、
+分辨率或Candidate性能。
+
 联合计算在发布任何数值前还必须报告**定义性判据**：列出物理未知量、具名残差，并用合同给定的参数/
 残差尺度对实际 Jacobian 做 SVD。报告独立秩、零空间维数、冗余约束数、条件数，以及缩放残差在
 Jacobian 左零空间中的不可消除分量。秩低于未知量数是欠定义；方阵满秩才是 `square_exact`；约束多于

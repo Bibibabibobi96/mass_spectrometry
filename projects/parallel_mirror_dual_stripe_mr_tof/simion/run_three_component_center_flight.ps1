@@ -41,8 +41,7 @@ $geometryIob=Join-Path $geometrySimion 'mrtof_three_component_candidate.iob'
 $geometryReview=Join-Path $geometrySimion 'three_component_geometry_review.json'
 $geometryReport=Join-Path $geometryResults 'iob_structure_report.txt'
 $sourceManifest=Join-Path $geometrySimion 'prototype_input_manifest.json'
-$sourceFly2=Join-Path $geometrySimion 'mrtof_candidate_center.fly2'
-foreach($path in @($geometryIob,$geometryReview,$geometryReport,$sourceManifest,$sourceFly2,
+foreach($path in @($geometryIob,$geometryReview,$geometryReport,$sourceManifest,
   (Join-Path $geometrySimion 'simion_prototype_contract.json'),
   (Join-Path $geometrySimion 'mrtof_analyzer.pa0'),(Join-Path $geometrySimion 'mrtof_accelerator.pa0'),(Join-Path $geometrySimion 'mrtof_detector.pa#'))){
   if(-not(Test-Path -LiteralPath $path -PathType Leaf)){throw "Completed geometry-review input is missing: $path"}
@@ -51,6 +50,18 @@ $sourceIdentity=Get-Content -LiteralPath $sourceManifest -Raw -Encoding UTF8|Con
 if($sourceIdentity.status -ne 'joint_downstream_operating_point__center_flight_allowed'){
   throw "Center flight requires a solved joint Stripe/P1/P2 operating-point package; geometry-review visualization voltages are forbidden."
 }
+$sourceKey='full_mrtof_center_fly2'
+$sourceRecord=$sourceIdentity.$sourceKey
+if($sourceIdentity.schema_version -ne 3 -or $null -eq $sourceRecord -or
+   $sourceRecord.source_profile_id -ne 'full_mrtof_center'){
+  throw 'Center flight requires a schema-3 source manifest bound to the full_mrtof_center profile.'
+}
+$sourceFilename=[string]$sourceRecord.filename
+if([string]::IsNullOrWhiteSpace($sourceFilename) -or [IO.Path]::GetFileName($sourceFilename) -cne $sourceFilename){
+  throw 'The full MR-TOF center source must be a run-local filename.'
+}
+$sourceFly2=Join-Path $geometrySimion $sourceFilename
+if(-not(Test-Path -LiteralPath $sourceFly2 -PathType Leaf)){throw "Published full center source is missing: $sourceFly2"}
 if([string]::IsNullOrWhiteSpace($RunId)){$RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__fly__simion__mrtof-three-component-center-n1'}
 
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
@@ -77,22 +88,22 @@ try {
   $startup=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -RequiredHeadroomBytes $copyBytes -ProtectedPaths @($package.artifact_run_dir)
   $startupPath=Join-Path $resultDir 'artifact_capacity_gate_startup.json';Write-RunJson -Path $startupPath -Depth 14 -Value $startup
   $failureStage='freeze_reviewed_iob'
-  foreach($name in @('mrtof_three_component_candidate.iob','mrtof_three_component_candidate.lua','mrtof_three_component_candidate.fly2','mrtof_three_component_candidate.operating_point.lua','mrtof_three_component_candidate.voltage_map.lua','mrtof_three_component_candidate.mirror_cycle_counter.lua','mrtof_analyzer.pa0','mrtof_accelerator.pa0','mrtof_detector.pa#','three_component_geometry_review.json','prototype_input_manifest.json','simion_prototype_contract.json','mrtof_candidate_center.fly2')){
+  foreach($name in @('mrtof_three_component_candidate.iob','mrtof_three_component_candidate.lua','mrtof_three_component_candidate.fly2','mrtof_three_component_candidate.operating_point.lua','mrtof_three_component_candidate.voltage_map.lua','mrtof_three_component_candidate.mirror_cycle_counter.lua','mrtof_analyzer.pa0','mrtof_accelerator.pa0','mrtof_detector.pa#','three_component_geometry_review.json','prototype_input_manifest.json','simion_prototype_contract.json',$sourceFilename)){
     Copy-RequiredRunInput -Source (Join-Path $geometrySimion $name) -Destination (Join-Path $solverDir $name) -Label "reviewed $name" | Out-Null
   }
   $frozenReport=Copy-RequiredRunInput -Source $geometryReport -Destination (Join-Path $solverDir 'iob_structure_report.txt') -Label 'reviewed IOB structure report'
   $flightLauncher=Copy-RequiredRunInput -Source (Join-Path $repoRoot 'projects\parallel_mirror_dual_stripe_mr_tof\simion\run_iob_flight.lua') -Destination (Join-Path $solverDir 'run_iob_flight.lua') -Label 'IOB flight launcher'
   $eventAnalyzer=Copy-RequiredRunInput -Source (Join-Path $repoRoot 'projects\parallel_mirror_dual_stripe_mr_tof\analysis\simion_event_analysis.py') -Destination (Join-Path $solverDir 'simion_event_analysis.py') -Label 'event analyzer'
   $receiptWriter=Copy-RequiredRunInput -Source (Join-Path $repoRoot 'projects\parallel_mirror_dual_stripe_mr_tof\analysis\three_component_simion_flight_manifest.py') -Destination (Join-Path $solverDir 'three_component_simion_flight_manifest.py') -Label 'flight receipt writer'
-  if(-not(Test-RunFilesIdentical -Left (Join-Path $solverDir 'mrtof_three_component_candidate.fly2') -Right (Join-Path $solverDir 'mrtof_candidate_center.fly2'))){throw 'IOB companion Fly2 differs from the selected center source.'}
+  if(-not(Test-RunFilesIdentical -Left (Join-Path $solverDir 'mrtof_three_component_candidate.fly2') -Right (Join-Path $solverDir $sourceFilename))){throw 'IOB companion Fly2 differs from the selected full MR-TOF center source.'}
   $config=Get-Content -LiteralPath $runConfig -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
-  $config.inputs=[ordered]@{geometry_review_run=$geometryRun;reviewed_iob=(Join-Path $package.artifact_run_dir 'simion\mrtof_three_component_candidate.iob');geometry_review=(Join-Path $package.artifact_run_dir 'simion\three_component_geometry_review.json');source_manifest=(Join-Path $package.artifact_run_dir 'simion\prototype_input_manifest.json');source_key='center_fly2';consumed_fly2=(Join-Path $package.artifact_run_dir 'simion\mrtof_three_component_candidate.fly2')};Write-RunJson -Path $runConfig -Value $config
+  $config.inputs=[ordered]@{geometry_review_run=$geometryRun;reviewed_iob=(Join-Path $package.artifact_run_dir 'simion\mrtof_three_component_candidate.iob');geometry_review=(Join-Path $package.artifact_run_dir 'simion\three_component_geometry_review.json');source_manifest=(Join-Path $package.artifact_run_dir 'simion\prototype_input_manifest.json');source_key=$sourceKey;consumed_fly2=(Join-Path $package.artifact_run_dir 'simion\mrtof_three_component_candidate.fly2')};Write-RunJson -Path $runConfig -Value $config
   $failureStage='native_center_flight';$hostExecutionLease=Enter-HostExecutionLease -Role SIMION -RunId $RunId
   Invoke-MrtofSimionStep -Stage 'native_center_flight' -Arguments @('--nogui','--noprompt','lua',$flightLauncher,(Join-Path $solverDir 'mrtof_three_component_candidate.iob'))
   $rawLog=Join-Path $logDir 'native_center_flight.log';$eventAnalysis=Join-Path $resultDir 'center_event_analysis.json'
-  $failureStage='event_analysis';Invoke-MrtofPython -Arguments @($eventAnalyzer,$rawLog,$eventAnalysis,'--input-manifest',(Join-Path $solverDir 'prototype_input_manifest.json'),'--source-key','center_fly2')
+  $failureStage='event_analysis';Invoke-MrtofPython -Arguments @($eventAnalyzer,$rawLog,$eventAnalysis,'--input-manifest',(Join-Path $solverDir 'prototype_input_manifest.json'),'--source-key',$sourceKey)
   $receipt=Join-Path $resultDir 'three_component_center_flight_receipt.json';$failureStage='flight_receipt'
-  Invoke-MrtofPython -Arguments @($receiptWriter,'--geometry-review-manifest',(Join-Path $solverDir 'three_component_geometry_review.json'),'--source-input-manifest',(Join-Path $solverDir 'prototype_input_manifest.json'),'--source-key','center_fly2','--raw-log',$rawLog,'--event-analysis',$eventAnalysis,'--consumed-fly2',(Join-Path $solverDir 'mrtof_three_component_candidate.fly2'),'--output',$receipt)
+  Invoke-MrtofPython -Arguments @($receiptWriter,'--geometry-review-manifest',(Join-Path $solverDir 'three_component_geometry_review.json'),'--source-input-manifest',(Join-Path $solverDir 'prototype_input_manifest.json'),'--source-key',$sourceKey,'--raw-log',$rawLog,'--event-analysis',$eventAnalysis,'--consumed-fly2',(Join-Path $solverDir 'mrtof_three_component_candidate.fly2'),'--output',$receipt)
   Write-RunJson -Path $summary -Value ([ordered]@{schema_version=1;role='mrtof_three_component_candidate_center_flight';status='success';qualification='candidate_prototype_event_chain_only';particle_count=1;reason='One reviewed-IOb center source was flown and all terminal events were retained; no resolution claim is made.'})
   $retention=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $runConfig
   $failureStage='capacity_terminal';$maximum=[int64](Get-ChildItem -LiteralPath $package.artifact_run_dir -Recurse -File|Measure-Object Length -Sum).Sum

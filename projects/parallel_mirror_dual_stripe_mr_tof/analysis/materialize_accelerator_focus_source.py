@@ -31,17 +31,31 @@ def materialize(
     current = load_contract(contract_path)
     reviewed = load_contract(reviewed_contract_path)
     require_reviewed_geometry(current, reviewed)
-    current_species = current.get("particle_source", {}).get("species")
-    reviewed_species = reviewed.get("particle_source", {}).get("species")
-    if current_species != reviewed_species:
-        raise ValueError("current source species differs from the reviewed PA/IOB contract")
+    current_source = current.get("particle_source", {})
+    reviewed_source = reviewed.get("particle_source", {})
+    current_species = current_source.get("species") if isinstance(current_source, dict) else None
+    reviewed_species = reviewed_source.get("species") if isinstance(reviewed_source, dict) else None
+    identity_keys = ("mass_th", "charge_e")
+    if (
+        not isinstance(current_species, dict)
+        or not isinstance(reviewed_species, dict)
+        or any(current_species.get(key) != reviewed_species.get(key) for key in identity_keys)
+    ):
+        raise ValueError("current source species identity differs from the reviewed PA/IOB contract")
+    focus_profile = current_source.get("accelerator_focus_diagnostic")
+    if (
+        not isinstance(focus_profile, dict)
+        or focus_profile.get("status") != "diagnostic_only__zero_ke_axial_release"
+        or focus_profile.get("initial_kinetic_energy_ev") != 0
+    ):
+        raise ValueError("current contract omits the named zero-KE accelerator-focus diagnostic")
     count_keys = {
         "accelerator_focus_center_fly2": "center_particle_count",
         "accelerator_focus_bunch_fly2": "candidate_bunch_particle_count",
     }
     if source_key not in count_keys:
         raise ValueError(f"unsupported accelerator focus source key: {source_key}")
-    source = current["particle_source"]
+    source = current_source
     count_key = count_keys[source_key]
     width = 0.0 if count_key == "center_particle_count" else float(source["accelerator_focus_axial_full_width_mm"])
     text = accelerator_focus_fly2(
