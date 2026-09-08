@@ -236,6 +236,30 @@ python -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_anal
 连续返回K。入口不再把约1-GB电压化PA0复制进每个run，也不在逐步回调中重复Fast Adjust；它从
 不可变分析器family在系统临时目录只合成一次PA0，建立临时IOB并飞行，逐项核对源PA哈希后删除临时
 PA/IOB。artifact保留冻结小输入、完整日志、四残差、临时PA哈希和重建方法。
+它现在也可显式给出同一时刻的P1/P2提取态电压。静态PA0仍承载镜、Stripe和注入态棱镜电压；
+SIMION `segment.fast_adjust`只重组发生切换的电极16/17基数组，其他约18张分析器basis不进入逐段计算，
+也不执行refine或保存上游PA。切换时刻、电极ID、注入态和提取态均写入run-local sidecar及manifest；
+全分析器Fast Adjust与该单电极路径互斥。该实现是提取诊断能力，不表示提取电压已经闭合。
+提取试算还必须给出一个已成功主漂移run作为`ReferenceTransportRunPath`：入口验证其manifest，直接继承
+该run的Stripe电压和P1/P2注入态，并从其唯一`drift_coordinate_return`事件自动取得切换时刻。任何回落到
+理论Stripe初值、改变注入棱镜电压或手工给出不一致切换时刻的请求都会失败关闭。
+
+2026-09-10首轮切换诊断把P1/P2注入态固定为`+177.537401235/-179.126593079 V`，在中心离子
+`y=0`坐标返回`773.579816892 us`切换；这里的约`180 V`来自5-eV慢向/约4-keV快向能量的有限三维
+校正，`4 kV`只属于加速器净增益和镜轴向能量，绝不是棱镜电压。P2提取态`0,-30,-65,-70,-75,
+-90,-100,-120,-135,-140,-160,-170 V`及`+140 V`的有界诊断均未命中探测器，但已经区分了P2屏蔽、
+25-mm加速器孔边和加速器环/框等不同终止边界。`P1=0/100/140 V`与`P2=-140 V`也已验证P1是独立的
+回程控制量。当前只能据此建立双变量提取射击问题，不能从任一单点发布工作电压、探测率或分辨率。
+日志新增双向`detector_plane`相空间样本；探测器成功仍只接受其合同规定的`+z`外表面沿`-z`入射。
+受管run `20260910_080000__sim__simion__detector-chain-event-audit-n1`首次完整审计动态链路可达：
+在`K=24.9995073622`的坐标返回面将P1/P2切到`0/-140 V`后，中心离子最终于
+`t=1654.71284613 us`、`(x,y,z)=(0.03616,-43.16221,97) mm`命中独立探测器。切换到命中历时
+`881.133029238 us`且有59个额外镜面转折；日志恰有一个detector和一个`splat=1`事件。该结果只是
+`prototype event chain`证据，不是目标K=25提取解，也不能用于分辨率声明。
+随后受管run `20260910_093000__sim__simion__p1-minus60-p2-minus140-extraction-n1`
+把提取态改为`P1/P2=-60/-140 V`，在切换后`83.327634611 us`、6个额外镜面转折处即命中；
+命中点为`(x,y)=(-0.56926,-64.97622) mm`，位于50x50-mm有效面内并接近`y=-62 mm`中心。
+这是当前最短且三维无碰撞的N=1提取Candidate，但尚未做局部电压中心化、束团或步长/网格对照。
 [run_downstream_voltage_definition.ps1](../analysis/run_downstream_voltage_definition.ps1)只读消费一个基点和
 四个有序单轴SIMION run，构造缩放4x4 Jacobian并报告秩、零空间、条件数和未阻尼线性修正；它本身
 不启动求解器，也不授权执行外推步。当前受管审计为
@@ -294,6 +318,10 @@ PASS推断双Stripe返回、25圈目标比例、探测率、第一时间焦点�
 [simion.pas API](https://simion.com/info/lua_simion.pas.html)和
 [SIMION编程API的命令行入口](https://simion.com/info/api.html#command-line-interface)。
 在线页面目前描述较新版本，完整接口说明应与本机SIMION 2020的Help／Supplemental Documentation交叉核对。
+动态棱镜路径另核对了官方[time-dependent fields](https://simion.com/info/time_dependent_field.html)、
+[PA types](https://simion.com/info/potential_array_types.html)和[FAQ](https://simion.com/info/faq.html)：
+`segment.fast_adjust`是脉冲电压的支持路径，回调只依赖当前保留变量，且数值步长必须解析切换时刻。
+本项目仍以本机SIMION 2020实际N=1运行作为版本适用证据。
 
 本机官方示例相对于SIMION 2020安装目录为：
 `examples/geometry/parallel_plate_capacitor_2d.gem`（节点对齐理想栅）、

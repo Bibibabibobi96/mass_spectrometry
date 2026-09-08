@@ -122,6 +122,31 @@ assert(simion.wb.instances[1].pa.values[16]==99 and simion.wb.instances[1].pa.va
 assert(simion.wb.instances[2].pa.values[2]==44 and simion.wb.instances[2].pa.values[3]==33)
 assert(simion.wb.instances[2].pa.values[4]==1 and simion.wb.instances[2].pa.values[5]==25,
   'runtime endpoint adjustables must not silently rederive frozen ring voltages')
+point.prism_switch={enabled=true,electrode_id=17,time_us=3,
+  injection_voltage_v=point.prism_voltages_v[2],extraction_voltage_v=-12,
+  prism_1_extraction_voltage_v=0}
+assert(loadstring(program_text:gsub('\nadjustable ','\n'),'@virtual/source.lua'))()
+runtime_fast_adjust_enable=0
+ion_instance,ion_time_of_flight=1,2
+segment.fast_adjust()
+assert(adj_elect17==point.prism_switch.injection_voltage_v,
+  'P2 switch did not preserve its injection voltage before the switch')
+assert(adj_elect16==point.prism_voltages_v[1],
+  'P1 switch did not preserve its injection voltage before the switch')
+ion_time_of_flight=3
+segment.fast_adjust()
+assert(adj_elect17==point.prism_switch.extraction_voltage_v,
+  'P2 switch did not apply its extraction voltage at the switch time')
+assert(adj_elect16==point.prism_switch.prism_1_extraction_voltage_v,
+  'P1 switch did not apply its extraction voltage at the switch time')
+ion_instance,ion_time_of_flight=2,4
+adj_elect17=123
+segment.fast_adjust()
+assert(adj_elect17==123,'P2 switch leaked into a non-analyser PA instance')
+runtime_fast_adjust_enable=1
+assert(not pcall(segment.fast_adjust),
+  'prism extraction switching and full analyser Fast Adjust were allowed together')
+point.prism_switch=nil
 print('CANDIDATE_VOLTAGE_MAP=PASS mapping validation persistence sidecars runtime_adjustables')
 
 -- Exercise the real reload inspector with read-only PA getters. A mutating

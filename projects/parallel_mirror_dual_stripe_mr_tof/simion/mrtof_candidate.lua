@@ -42,6 +42,10 @@ assert(target_oscillation_count > 0 and target_oscillation_count == math.floor(t
 -- The contract declares a +z-facing active surface, not the slab midplane.
 -- Only incidence from its +z side is a detector hit; the back remains material.
 local detector_z = detector_box[6]
+local detector_surface_tolerance_mm = math.max(1e-9,
+  1e-9*math.max(math.abs(detector_box[1]),math.abs(detector_box[2]),
+    math.abs(detector_box[3]),math.abs(detector_box[4]),
+    math.abs(detector_box[5]),math.abs(detector_box[6])))
 
 adjustable V_stripe_1 = stripe_biases[1]
 adjustable V_stripe_2 = stripe_biases[2]
@@ -60,6 +64,37 @@ local runtime_fast_adjust_accelerator_requested = operating_point.runtime_fast_a
 assert(runtime_fast_adjust_accelerator_requested == nil
   or type(runtime_fast_adjust_accelerator_requested) == 'boolean',
   'runtime_fast_adjust_accelerator_enable must be boolean when present')
+local prism_switch = operating_point.prism_switch
+local prism_switch_enabled = prism_switch ~= nil and prism_switch.enabled == true
+if prism_switch ~= nil then
+  assert(type(prism_switch) == 'table', 'prism_switch must be a table when present')
+  assert(type(prism_switch.enabled) == 'boolean', 'prism_switch.enabled must be boolean')
+end
+if prism_switch_enabled then
+  assert(prism_switch.electrode_id == 17,
+    'the present extraction prototype may switch only physical P2 electrode 17')
+  assert(type(prism_switch.time_us) == 'number' and prism_switch.time_us > 0
+      and prism_switch.time_us < math.huge,
+    'prism_switch.time_us must be finite and positive')
+  assert(type(prism_switch.injection_voltage_v) == 'number'
+      and prism_switch.injection_voltage_v == prism_switch.injection_voltage_v
+      and math.abs(prism_switch.injection_voltage_v) < math.huge,
+    'prism_switch.injection_voltage_v must be finite')
+  assert(type(prism_switch.extraction_voltage_v) == 'number'
+      and prism_switch.extraction_voltage_v == prism_switch.extraction_voltage_v
+      and math.abs(prism_switch.extraction_voltage_v) < math.huge,
+    'prism_switch.extraction_voltage_v must be finite')
+  if prism_switch.prism_1_extraction_voltage_v ~= nil then
+    assert(type(prism_switch.prism_1_extraction_voltage_v) == 'number'
+        and prism_switch.prism_1_extraction_voltage_v == prism_switch.prism_1_extraction_voltage_v
+        and math.abs(prism_switch.prism_1_extraction_voltage_v) < math.huge,
+      'prism_switch.prism_1_extraction_voltage_v must be finite')
+  end
+  assert(prism_switch.injection_voltage_v == prism_voltages[2],
+    'P2 switch injection voltage must equal the frozen static P2 voltage')
+  assert(not runtime_fast_adjust_requested,
+    'single-electrode P2 switching and full analyser Fast Adjust are mutually exclusive')
+end
 -- Ordinary reviewed flights consume an already voltageized PA0.  Finite-3-D
 -- downstream Jacobian trials instead bind the immutable PA family read-only
 -- and apply their run-local Stripe/P1/P2 coordinates in memory.
@@ -74,8 +109,8 @@ local constrain_x_symmetry_plane = operating_point.constrain_x_symmetry_plane ==
 -- the latter turns a long, otherwise identical trajectory into hundreds of
 -- thousands of Lua allocations and GC cycles.
 local previous_x, previous_y, previous_z, previous_vx, previous_vy, previous_vz, previous_t = {}, {}, {}, {}, {}, {}, {}
-local turns, slow_turns, crossings, y0_crossings, p1_crossings, detected, splat_codes, splat_event_emitted = {}, {}, {}, {}, {}, {}, {}, {}
-local cycle_counters, target_k_emitted = {}, {}
+local turns, slow_turns, crossings, y0_crossings, p1_crossings, post_return_turns, detected, splat_codes, splat_event_emitted = {}, {}, {}, {}, {}, {}, {}, {}, {}
+local cycle_counters, target_k_emitted, prism_switch_emitted = {}, {}, {}
 local prism_stage = {}
 
 local function inside_region(event, region)
@@ -117,6 +152,12 @@ local function emit_cycle_events(events)
           ion_number, n, event.t_us, event.z_mm))
         print(string.format('MRTOF_EVENT fast_turn ion=%d n=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
           ion_number, n, event.t_us, event.x_mm, event.y_mm, event.z_mm,
+          event.vx_mm_us, event.vy_mm_us, event.vz_mm_us))
+      elseif prism_switch_enabled and event.stage == 'after_main_drift' then
+        post_return_turns[ion_number] = (post_return_turns[ion_number] or 0) + 1
+        print(string.format('MRTOF_EVENT post_return_mirror_turn ion=%d n=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
+          ion_number, post_return_turns[ion_number], event.t_us,
+          event.x_mm, event.y_mm, event.z_mm,
           event.vx_mm_us, event.vy_mm_us, event.vz_mm_us))
       end
     elseif event.kind == 'drift_phase_origin' then
@@ -178,8 +219,8 @@ end
 function segment.initialize_run()
   sim_trajectory_quality = trajectory_quality
   previous_x, previous_y, previous_z, previous_vx, previous_vy, previous_vz, previous_t = {}, {}, {}, {}, {}, {}, {}
-  turns, slow_turns, crossings, y0_crossings, p1_crossings, detected, splat_codes, splat_event_emitted = {}, {}, {}, {}, {}, {}, {}, {}
-  cycle_counters, target_k_emitted = {}, {}
+  turns, slow_turns, crossings, y0_crossings, p1_crossings, post_return_turns, detected, splat_codes, splat_event_emitted = {}, {}, {}, {}, {}, {}, {}, {}, {}
+  cycle_counters, target_k_emitted, prism_switch_emitted = {}, {}, {}
   prism_stage = {}
   assert(simion.wb and #simion.wb.instances == 3,
     'MR-TOF Candidate flight requires analyser, accelerator, and detector instances')
@@ -190,6 +231,19 @@ function segment.initialize_run()
 end
 
 function segment.fast_adjust()
+  -- The PA0 already contains every static voltage.  Extraction always changes
+  -- P2 and may also change P1, so only the requested prism basis arrays are
+  -- loaded; the full analyser family is not recombined every segment.
+  if prism_switch_enabled and ion_instance == 1 then
+    if prism_switch.prism_1_extraction_voltage_v ~= nil then
+      adj_elect16 = ion_time_of_flight < prism_switch.time_us
+        and prism_voltages[1] or prism_switch.prism_1_extraction_voltage_v
+    end
+    adj_elect17 = ion_time_of_flight < prism_switch.time_us
+      and prism_switch.injection_voltage_v or prism_switch.extraction_voltage_v
+  end
+  assert(not (prism_switch_enabled and runtime_fast_adjust_enable ~= 0),
+    'prism extraction switching and full analyser Fast Adjust cannot run together')
   if runtime_fast_adjust_enable == 0 then return end
   local analyser=simion.wb.instances[1].pa
   local accelerator=simion.wb.instances[2].pa
@@ -232,20 +286,27 @@ function segment.other_actions()
     ion_splat = 2
     return
   end
-  -- SIMION exposes ion_splat while stepping, but not in terminate.  Cache the
-  -- nonzero termination reason here so every loss remains explicit.
+  -- SIMION exposes ion_splat while stepping, but not in terminate.  Cache it
+  -- now, but defer the generic collision receipt until after detector-contact
+  -- classification so one physical detector hit cannot emit two splat events.
   if ion_splat ~= 0 then
     splat_codes[ion_number] = ion_splat
-    if not splat_event_emitted[ion_number] then
-      splat_event_emitted[ion_number] = true
-      print(string.format('MRTOF_EVENT splat ion=%d code=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g turns=%d central_crossings=%d',
-        ion_number, ion_splat, ion_time_of_flight, ion_px_mm, ion_py_mm, ion_pz_mm,
-        turns[ion_number] or 0, crossings[ion_number] or 0))
-    end
   end
   local px, py, pz = previous_x[ion_number], previous_y[ion_number], previous_z[ion_number]
   local pvx, pvy, pvz, pt = previous_vx[ion_number], previous_vy[ion_number], previous_vz[ion_number], previous_t[ion_number]
   if pz ~= nil then
+    if prism_switch_enabled and not prism_switch_emitted[ion_number]
+      and pt < prism_switch.time_us and ion_time_of_flight >= prism_switch.time_us then
+      prism_switch_emitted[ion_number] = true
+      print(string.format('MRTOF_EVENT prism_voltage_switch ion=%d electrode=17 t_us=%.12g from_v=%.12g to_v=%.12g',
+        ion_number, prism_switch.time_us, prism_switch.injection_voltage_v,
+        prism_switch.extraction_voltage_v))
+      if prism_switch.prism_1_extraction_voltage_v ~= nil then
+        print(string.format('MRTOF_EVENT prism_voltage_switch ion=%d electrode=16 t_us=%.12g from_v=%.12g to_v=%.12g',
+          ion_number, prism_switch.time_us, prism_voltages[1],
+          prism_switch.prism_1_extraction_voltage_v))
+      end
+    end
     local counter = cycle_counters[ion_number]
     local state = counter:state()
     local dz = ion_pz_mm - pz
@@ -318,12 +379,36 @@ function segment.other_actions()
         ion_number, slow_turns[ion_number], pt + fraction*(ion_time_of_flight-pt),
         px + fraction*(ion_px_mm-px), py + fraction*(ion_py_mm-py), pz + fraction*(ion_pz_mm-pz)))
     end
-    if not detected[ion_number] and dz < 0 and pz > detector_z and ion_pz_mm <= detector_z then
-      local fraction = (detector_z - pz) / dz
+    local detector_contact_direction = 0
+    if ion_splat ~= 0 and ion_vz_mm < 0
+      and math.abs(ion_pz_mm-detector_box[6]) <= detector_surface_tolerance_mm then
+      detector_contact_direction = -1
+    elseif ion_splat ~= 0 and ion_vz_mm > 0
+      and math.abs(ion_pz_mm-detector_box[3]) <= detector_surface_tolerance_mm then
+      detector_contact_direction = 1
+    end
+    local detector_contact = detector_contact_direction ~= 0
+      and ion_px_mm >= detector_box[1]-detector_surface_tolerance_mm
+      and ion_px_mm <= detector_box[4]+detector_surface_tolerance_mm
+      and ion_py_mm >= detector_box[2]-detector_surface_tolerance_mm
+      and ion_py_mm <= detector_box[5]+detector_surface_tolerance_mm
+    local detector_plane_crossing = (dz < 0 and pz > detector_z and ion_pz_mm <= detector_z)
+      or (dz > 0 and pz < detector_z and ion_pz_mm >= detector_z)
+    if detector_plane_crossing or detector_contact then
+      local fraction = detector_contact and 1 or (detector_z - pz) / dz
       if fraction >= 0 and fraction <= 1 then
         local x = px + fraction * (ion_px_mm - px)
         local y = py + fraction * (ion_py_mm - py)
-        if x >= detector_box[1] and x <= detector_box[4]
+        local vx = pvx + fraction * (ion_vx_mm - pvx)
+        local vy = pvy + fraction * (ion_vy_mm - pvy)
+        local vz = pvz + fraction * (ion_vz_mm - pvz)
+        local detector_direction = detector_contact and detector_contact_direction or (dz < 0 and -1 or 1)
+        local detector_plane_z = detector_contact and ion_pz_mm or detector_z
+        print(string.format('MRTOF_EVENT detector_plane ion=%d direction_z=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
+          ion_number, detector_direction, pt + fraction * (ion_time_of_flight - pt), x, y,
+          detector_plane_z, vx, vy, vz))
+        if detector_direction == -1 and not detected[ion_number]
+          and x >= detector_box[1] and x <= detector_box[4]
           and y >= detector_box[2] and y <= detector_box[5] then
           detected[ion_number] = true
           print(string.format('MRTOF_EVENT detector ion=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g',
@@ -337,6 +422,13 @@ function segment.other_actions()
         end
       end
     end
+  end
+  if ion_splat ~= 0 and not splat_event_emitted[ion_number] then
+    splat_event_emitted[ion_number] = true
+    print(string.format('MRTOF_EVENT splat ion=%d code=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g turns=%d central_crossings=%d',
+      ion_number, splat_codes[ion_number] or ion_splat, ion_time_of_flight,
+      ion_px_mm, ion_py_mm, ion_pz_mm,
+      turns[ion_number] or 0, crossings[ion_number] or 0))
   end
   previous_x[ion_number], previous_y[ion_number], previous_z[ion_number] = ion_px_mm, ion_py_mm, ion_pz_mm
   previous_vx[ion_number], previous_vy[ion_number], previous_vz[ion_number], previous_t[ion_number] = ion_vx_mm, ion_vy_mm, ion_vz_mm, ion_time_of_flight

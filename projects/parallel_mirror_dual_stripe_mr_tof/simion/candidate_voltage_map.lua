@@ -1,7 +1,8 @@
 -- Pure voltage-to-local-electrode mapping shared by flight and IOB assembly.
 -- All physical values are explicit contract/adjustable inputs, in volts.
--- The zero values below preserve the Candidate's grounded/prism topology;
--- they do not claim that its not-yet-implemented prism switching is solved.
+-- The zero values below preserve the Candidate's grounded topology.  This
+-- mapper defines the static injection state; the flight program applies an
+-- independently contracted P1/P2 extraction switch when one is requested.
 local function finite(value,label)
   assert(type(value)=='number' and value==value and math.abs(value)<math.huge,
     label..' must be a finite number')

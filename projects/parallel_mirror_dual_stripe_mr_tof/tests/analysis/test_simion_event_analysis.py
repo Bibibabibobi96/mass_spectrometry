@@ -94,6 +94,8 @@ class SimionEventAnalysisTest(unittest.TestCase):
             "MRTOF_EVENT drift_phase_origin", "MRTOF_EVENT drift_phase_return",
             "MRTOF_EVENT drift_phase_candidate", "MRTOF_EVENT drift_coordinate_return",
             "MRTOF_EVENT target_k_phase_sample",
+            "MRTOF_EVENT prism_voltage_switch",
+            "MRTOF_EVENT detector_plane",
             "direction_y=", "direction_z=",
         ):
             self.assertIn(token, source)
@@ -151,6 +153,17 @@ class SimionEventAnalysisTest(unittest.TestCase):
         self.assertEqual(result["slow_drift_abs_lengths_from_y0_mm"], [100.0])
         self.assertEqual(len(result["effective_axial_width_W_mm"]), 1)
         self.assertGreater(result["effective_axial_width_W_median_mm"], 0.0)
+
+    def test_prism_voltage_switch_event_is_strict_and_numeric(self):
+        line = (
+            "MRTOF_EVENT prism_voltage_switch ion=1 electrode=17 t_us=773.5 "
+            "from_v=-179.1 to_v=0"
+        )
+        event = parse_events(line)[0]
+        self.assertEqual(event["kind"], "prism_voltage_switch")
+        self.assertEqual(event["electrode"], 17)
+        with self.assertRaisesRegex(ValueError, "invalid_event_counter"):
+            parse_events(line.replace("electrode=17", "electrode=17.5"))
 
     def test_no_completion_or_source_never_infers_population_from_events(self):
         result = self.assert_invalid([terminal(1)], (1,), None, "missing_or_multiple_fly_completion")

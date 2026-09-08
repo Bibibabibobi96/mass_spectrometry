@@ -49,10 +49,13 @@ REQUIRED_FIELDS = {
     "drift_phase_return": {"ion", "k", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
     "drift_coordinate_return": {"ion", "k_before", "phase_turn_t_us", "phase_turn_y_mm", "phase_time_residual_us", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
     "target_k_phase_sample": {"ion", "k", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
+    "prism_voltage_switch": {"ion", "electrode", "t_us", "from_v", "to_v"},
+    "post_return_mirror_turn": {"ion", "n", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
     "slow_coordinate_y0": {"ion", "n", "direction_y", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
     "central_plane": {"ion", "n", "t_us", "x_mm", "y_mm"},
     "central_plane_directional": {"ion", "n", "direction_z", "t_us", "x_mm", "y_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
     "detector": {"ion", "t_us", "x_mm", "y_mm", "z_mm"},
+    "detector_plane": {"ion", "direction_z", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
     "target_k": {"ion", "k", "t_us", "x_mm", "y_mm", "z_mm"},
     "splat": {"ion", "code", "t_us", "turns"},
     "terminal": {"ion", "splat", "t_us", "turns"},
@@ -80,7 +83,7 @@ def _event_error(event: dict[str, Any]) -> str | None:
         return "nonfinite_or_nonnumeric_event_field"
     if not _integer(event["ion"], minimum=1) or event["t_us"] < 0:
         return "invalid_particle_id_or_time"
-    for key in ("turns", "central_crossings", "n", "k", "k_before"):
+    for key in ("turns", "central_crossings", "n", "k", "k_before", "electrode"):
         if key in event and not _integer(event[key], minimum=0):
             return "invalid_event_counter"
     for key in ("splat", "code"):

@@ -8,6 +8,10 @@ param(
   [Parameter(Mandatory)][double]$Prism2VoltageV,
   [Nullable[double]]$Stripe1VoltageV=$null,
   [Nullable[double]]$Stripe2VoltageV=$null,
+  [Nullable[double]]$Prism2ExtractionVoltageV=$null,
+  [Nullable[double]]$Prism1ExtractionVoltageV=$null,
+  [Nullable[double]]$PrismSwitchTimeUs=$null,
+  [string]$ReferenceTransportRunPath='',
   [switch]$ContinueMainDrift,
   [switch]$ConstrainXSymmetryPlane,
   [string]$RunId='',
@@ -53,18 +57,26 @@ if(-not(Test-Path -LiteralPath $python -PathType Leaf)){throw "Python executable
 if(-not(Test-Path -LiteralPath $simion -PathType Leaf)){throw "SIMION executable is missing: $simion"}
 foreach($value in @($Prism1VoltageV,$Prism2VoltageV)){if([double]::IsNaN($value)-or[double]::IsInfinity($value)){throw 'Prism voltages must be finite'}}
 if (($null -eq $Stripe1VoltageV) -ne ($null -eq $Stripe2VoltageV)) { throw 'Stripe1VoltageV and Stripe2VoltageV must be supplied together.' }
+if($null-ne$Prism2ExtractionVoltageV-and[string]::IsNullOrWhiteSpace($ReferenceTransportRunPath)){throw 'Prism extraction requires ReferenceTransportRunPath.'}
+if($null-eq$Prism2ExtractionVoltageV-and-not[string]::IsNullOrWhiteSpace($ReferenceTransportRunPath)){throw 'ReferenceTransportRunPath is only valid for prism extraction.'}
 foreach($value in @($Stripe1VoltageV,$Stripe2VoltageV)){if($null-ne$value-and([double]::IsNaN($value)-or[double]::IsInfinity($value))){throw 'Stripe voltages must be finite'}}
+foreach($value in @($Prism1ExtractionVoltageV,$Prism2ExtractionVoltageV,$PrismSwitchTimeUs)){if($null-ne$value-and([double]::IsNaN($value)-or[double]::IsInfinity($value))){throw 'Prism switching parameters must be finite'}}
+if($null-ne$Prism1ExtractionVoltageV-and$null-eq$Prism2ExtractionVoltageV){throw 'Prism1ExtractionVoltageV requires a P2 extraction switch.'}
+if($null-ne$PrismSwitchTimeUs-and$PrismSwitchTimeUs-le 0){throw 'PrismSwitchTimeUs must be positive.'}
 $geometryRun=(Resolve-Path -LiteralPath $GeometryReviewRunPath).Path
 $mirrorRun=(Resolve-Path -LiteralPath $MirrorRunPath).Path
 $stripeRun=(Resolve-Path -LiteralPath $StripeRunPath).Path
 $acceleratorRun=(Resolve-Path -LiteralPath $AcceleratorRunPath).Path
+$referenceRun=if([string]::IsNullOrWhiteSpace($ReferenceTransportRunPath)){$null}else{(Resolve-Path -LiteralPath $ReferenceTransportRunPath).Path}
 $geometrySimion=Join-Path $geometryRun 'simion'
 $acceleratorSimion=Join-Path $acceleratorRun 'simion'
 $geometryManifest=Join-Path $geometryRun 'run_manifest.json'
 $mirrorManifest=Join-Path $mirrorRun 'run_manifest.json'
 $stripeManifest=Join-Path $stripeRun 'run_manifest.json'
 $acceleratorManifest=Join-Path $acceleratorRun 'run_manifest.json'
-foreach($manifest in @($geometryManifest,$mirrorManifest,$stripeManifest,$acceleratorManifest)){
+$referenceManifest=if($null-eq$referenceRun){$null}else{Join-Path $referenceRun 'run_manifest.json'}
+foreach($manifest in @($geometryManifest,$mirrorManifest,$stripeManifest,$acceleratorManifest,$referenceManifest)){
+  if($null-eq$manifest){continue}
   & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $manifest --require-status success
   if($LASTEXITCODE-ne 0){throw "Upstream run manifest is not verified success: $manifest"}
 }
@@ -88,6 +100,8 @@ try{
   $mirrorSummary=Join-Path $mirrorRun 'summary.json'
   $stripeSummary=Join-Path $stripeRun 'summary.json'
   $acceleratorReceipt=Join-Path $acceleratorRun 'results\accelerator_focus_voltage_trial_receipt.json'
+  $referenceReceiptSource=if($null-eq$referenceRun){$null}else{Join-Path $referenceRun 'results\two_prism_trial_materialization.json'}
+  $referenceLogSource=if($null-eq$referenceRun){$null}else{Join-Path $referenceRun 'logs\native_two_prism_flight.log'}
   $trialTool=Join-Path $repoRoot 'projects\parallel_mirror_dual_stripe_mr_tof\analysis\two_prism_simion_trial.py'
   $voltageizerSource=Join-Path $PSScriptRoot 'voltageize_analyzer_pa0.lua'
   $iobBuilderSource=Join-Path $PSScriptRoot 'build_three_component_iob.lua'
@@ -111,6 +125,11 @@ try{
   $mirrorLocal=Copy-RequiredInput $mirrorSummary (Join-Path $solverDir 'mirror_exact_k_summary.json') 'exact-K mirror summary'
   $stripeLocal=Copy-RequiredInput $stripeSummary (Join-Path $solverDir 'dual_stripe_exact_k_summary.json') 'exact-K Stripe summary'
   $acceleratorLocal=Copy-RequiredInput $acceleratorReceipt (Join-Path $solverDir 'accelerator_focus_voltage_trial_receipt.json') 'accelerator voltage receipt'
+  $referenceLocal=$null;$referenceLogLocal=$null
+  if($null-ne$referenceRun){
+    $referenceLocal=Copy-RequiredInput $referenceReceiptSource (Join-Path $solverDir 'reference_transport_materialization.json') 'reference transport receipt'
+    $referenceLogLocal=Copy-RequiredInput $referenceLogSource (Join-Path $logDir 'reference_transport.log') 'reference transport log'
+  }
   foreach($pair in @(
     @($programSource,'mrtof_three_component_candidate.lua'),@($counterSource,'mrtof_three_component_candidate.mirror_cycle_counter.lua'),
     @($mapSource,'mrtof_three_component_candidate.voltage_map.lua'),@($launcherSource,'run_iob_flight.lua'),
@@ -134,6 +153,12 @@ try{
       '--stripe-2-v',([string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',[double]$Stripe2VoltageV)))
   }
   if($ContinueMainDrift){$materializeArguments+='--continue-main-drift'}
+  if($null-ne$Prism2ExtractionVoltageV){
+    $materializeArguments+=@('--prism-2-extraction-v',([string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',[double]$Prism2ExtractionVoltageV)),
+      '--reference-transport-receipt',$referenceLocal,'--reference-transport-log',$referenceLogLocal)
+    if($null-ne$PrismSwitchTimeUs){$materializeArguments+=@('--prism-switch-time-us',([string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',[double]$PrismSwitchTimeUs)))}
+    if($null-ne$Prism1ExtractionVoltageV){$materializeArguments+=@('--prism-1-extraction-v',([string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',[double]$Prism1ExtractionVoltageV)))}
+  }
   if($ConstrainXSymmetryPlane){$materializeArguments+='--constrain-x-symmetry-plane'}
   Invoke-ProjectPython -Arguments $materializeArguments
   $trial=Get-Content -LiteralPath $trialReceipt -Raw -Encoding UTF8|ConvertFrom-Json
@@ -153,6 +178,16 @@ try{
   $voltageArguments=@('--nogui','--noprompt','lua',(Join-Path $solverDir 'voltageize_analyzer_pa0.lua'),$sourceAnalyzer,$temporaryAnalyzer)+@($trial.analyzer_electrode_voltages_v|ForEach-Object{[string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',[double]$_)})
   Invoke-SimionStage -Stage 'voltageize_temporary_analyzer' -Arguments $voltageArguments
   $temporaryAnalyzerHash=(Get-FileHash -LiteralPath $temporaryAnalyzer -Algorithm SHA256).Hash
+  if($null-ne$Prism2ExtractionVoltageV){
+    $sourceP2Basis=[IO.Path]::ChangeExtension($sourceAnalyzer,'.pa17')
+    $temporaryP2Basis=[IO.Path]::ChangeExtension($temporaryAnalyzer,'.pa17')
+    Copy-RequiredInput $sourceP2Basis $temporaryP2Basis 'P2 electrode-17 basis array'|Out-Null
+    if($null-ne$Prism1ExtractionVoltageV){
+      $sourceP1Basis=[IO.Path]::ChangeExtension($sourceAnalyzer,'.pa16')
+      $temporaryP1Basis=[IO.Path]::ChangeExtension($temporaryAnalyzer,'.pa16')
+      Copy-RequiredInput $sourceP1Basis $temporaryP1Basis 'P1 electrode-16 basis array'|Out-Null
+    }
+  }
   $voltageReceipt=Join-Path $resultDir 'temporary_analyzer_voltageization_receipt.json'
   Write-RunJson -Path $voltageReceipt -Depth 14 -Value ([ordered]@{schema_version=1;role='mrtof_temporary_analyzer_voltageization';status='success';method='SIMION_PA_object_fast_adjust_save_as';source_pa0=$sourceAnalyzer;source_sha256=$upstreamHashes[0];temporary_output_sha256=$temporaryAnalyzerHash;electrode_voltages_v=@($trial.analyzer_electrode_voltages_v);source_family_read_only=$true;refine_performed=$false;temporary_output_retained=$false})
   $failureStage='build_temporary_iob'
@@ -171,12 +206,13 @@ try{
   Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial','analyze','--log',$rawLog,'--trial-receipt',$trialReceipt,'--output',$observation)
   $observed=Get-Content -LiteralPath $observation -Raw -Encoding UTF8|ConvertFrom-Json
   $observedResiduals=if($null-ne$observed.PSObject.Properties['residuals']){$observed.residuals}else{$null}
-  $summaryValue=[ordered]@{schema_version=1;role='mrtof_finite_3d_two_prism_voltage_trial';status='success';qualification='single_center_trial__not_an_operating_point';stripe_biases_v=@($trial.stripe_biases_v);prism_voltages_v=@($Prism1VoltageV,$Prism2VoltageV);transport_status=$observed.status;residuals=$observedResiduals;reason='The fixed reviewed geometry was flown once from the physical 5-eV pre-acceleration state; this is one downstream Jacobian sample, not a solved operating point.'}
+  $observedExtraction=if($null-ne$observed.PSObject.Properties['extraction_diagnostic']){$observed.extraction_diagnostic}else{$null}
+  $summaryValue=[ordered]@{schema_version=1;role='mrtof_finite_3d_two_prism_voltage_trial';status='success';qualification='single_center_trial__not_an_operating_point';stripe_biases_v=@($trial.stripe_biases_v);prism_voltages_v=@($Prism1VoltageV,$Prism2VoltageV);transport_status=$observed.status;extraction_diagnostic=$observedExtraction;residuals=$observedResiduals;reason='The fixed reviewed geometry was flown once from the physical 5-eV pre-acceleration state. A detector hit proves only the prototype event chain; post-switch mirror turns and timing remain explicit and do not qualify a target-K operating point.'}
   Write-RunJson -Path $summary -Value $summaryValue
   $config=Get-Content -LiteralPath $runConfig -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
   Remove-TemporarySolverDirectory -Path $temporarySolverDir;$temporarySolverDir=$null
-  $config.inputs=[ordered]@{geometry_run_manifest=$geometryManifest;mirror_run_manifest=$mirrorManifest;stripe_run_manifest=$stripeManifest;accelerator_run_manifest=$acceleratorManifest;iob_builder=(Join-Path $solverDir 'build_three_component_iob.lua');read_only_analyzer_pa0=$sourceAnalyzer;read_only_accelerator_pa0=$sourceAccelerator;read_only_detector_pa=$sourceDetector;trial_materialization=$trialReceipt;frozen_source_fly2=$fly2Input}
-  $config.parameters.prism_1_voltage_v=$Prism1VoltageV;$config.parameters.prism_2_voltage_v=$Prism2VoltageV;$config.parameters.stripe_biases_v=@($trial.stripe_biases_v);$config.parameters.continue_main_drift=[bool]$ContinueMainDrift;$config.parameters.pa_binding_mode='temporary_voltageized_analyzer__immutable_family';$config.parameters.constrain_x_symmetry_plane=[bool]$ConstrainXSymmetryPlane;Write-RunJson -Path $runConfig -Value $config
+  $config.inputs=[ordered]@{geometry_run_manifest=$geometryManifest;mirror_run_manifest=$mirrorManifest;stripe_run_manifest=$stripeManifest;accelerator_run_manifest=$acceleratorManifest;reference_transport_run_manifest=$referenceManifest;iob_builder=(Join-Path $solverDir 'build_three_component_iob.lua');read_only_analyzer_pa0=$sourceAnalyzer;read_only_accelerator_pa0=$sourceAccelerator;read_only_detector_pa=$sourceDetector;trial_materialization=$trialReceipt;frozen_source_fly2=$fly2Input}
+  $config.parameters.prism_1_voltage_v=$Prism1VoltageV;$config.parameters.prism_2_voltage_v=$Prism2VoltageV;$config.parameters.stripe_biases_v=@($trial.stripe_biases_v);$config.parameters.continue_main_drift=[bool]$ContinueMainDrift;$config.parameters.pa_binding_mode='temporary_voltageized_analyzer__immutable_family';$config.parameters.constrain_x_symmetry_plane=[bool]$ConstrainXSymmetryPlane;$config.parameters.prism_switch=$trial.prism_switch;Write-RunJson -Path $runConfig -Value $config
   $retention=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $runConfig
   $failureStage='capacity_terminal';$maximum=[int64](Get-ChildItem -LiteralPath $package.artifact_run_dir -Recurse -File|Measure-Object Length -Sum).Sum
   $terminal=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -ProtectedPaths @($package.artifact_run_dir) -KnownMeasuredBytes ([int64]$startup.measured_after_bytes) -MaximumNewArtifactBytes $maximum

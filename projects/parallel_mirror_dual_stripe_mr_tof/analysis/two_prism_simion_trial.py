@@ -59,6 +59,130 @@ def _lua_vector(values: list[float]) -> str:
     return "{ " + ", ".join(f"{value:.17g}" for value in values) + " }"
 
 
+def _lua_prism_switch(value: dict[str, Any] | None) -> str:
+    if value is None:
+        return ""
+    fields = [
+        "enabled = true",
+        f"electrode_id = {int(value['electrode_id'])}",
+        f"time_us = {value['time_us']:.17g}",
+        f"injection_voltage_v = {value['injection_voltage_v']:.17g}",
+        f"extraction_voltage_v = {value['extraction_voltage_v']:.17g}",
+    ]
+    if "prism_1_extraction_voltage_v" in value:
+        fields.append(
+            "prism_1_extraction_voltage_v = "
+            f"{value['prism_1_extraction_voltage_v']:.17g}"
+        )
+    return "prism_switch = { " + ", ".join(fields) + " }, "
+
+
+def _distance_to_interval(value: float, lower: float, upper: float) -> float:
+    if value < lower:
+        return value - lower
+    if value > upper:
+        return value - upper
+    return 0.0
+
+
+def _extraction_diagnostic(
+    events: list[dict[str, Any]],
+    switch_contract: dict[str, Any],
+    detector_box_mm: list[float],
+) -> dict[str, Any]:
+    """Reduce a switched center flight to detector-plane residual evidence."""
+    box = _vector(detector_box_mm, 6, "detector box")
+    switch_time = _finite(switch_contract.get("time_us"), "prism switch time")
+    expected = {17: _finite(switch_contract.get("extraction_voltage_v"), "P2 extraction voltage")}
+    if "prism_1_extraction_voltage_v" in switch_contract:
+        expected[16] = _finite(
+            switch_contract["prism_1_extraction_voltage_v"], "P1 extraction voltage"
+        )
+    switch_events = [event for event in events if event["kind"] == "prism_voltage_switch"]
+    observed_ids = [int(event["electrode"]) for event in switch_events]
+    event_contract_ok = sorted(observed_ids) == sorted(expected)
+    if event_contract_ok:
+        for event in switch_events:
+            electrode = int(event["electrode"])
+            if not math.isclose(float(event["t_us"]), switch_time, rel_tol=1e-9, abs_tol=1e-9):
+                event_contract_ok = False
+            if not math.isclose(float(event["to_v"]), expected[electrode], rel_tol=1e-9, abs_tol=1e-9):
+                event_contract_ok = False
+
+    planes = [
+        event for event in events
+        if event["kind"] == "detector_plane" and float(event["t_us"]) >= switch_time
+    ]
+    incoming = [event for event in planes if int(event["direction_z"]) == -1]
+    scored: list[tuple[float, dict[str, Any], float, float]] = []
+    for event in incoming:
+        dx = _distance_to_interval(float(event["x_mm"]), box[0], box[3])
+        dy = _distance_to_interval(float(event["y_mm"]), box[1], box[4])
+        scored.append((math.hypot(dx, dy), event, dx, dy))
+    nearest = min(scored, key=lambda item: (item[0], float(item[1]["t_us"]))) if scored else None
+    detector_events = [
+        event for event in events
+        if event["kind"] == "detector" and float(event["t_us"]) >= switch_time
+    ]
+    terminals = [event for event in events if event["kind"] in {"splat", "terminal"}]
+    post_return_turns = [
+        event for event in events
+        if event["kind"] == "post_return_mirror_turn" and float(event["t_us"]) > switch_time
+    ]
+    earliest_causal: tuple[dict[str, Any], int] | None = None
+    for event in incoming:
+        turns_before = sum(
+            float(turn["t_us"]) <= float(event["t_us"])
+            for turn in post_return_turns
+        )
+        # The first incoming crossing occurs while the returned ion is merely
+        # leaving the positive mirror and precedes either prism.  Require at
+        # least two subsequent mirror turns before treating a detector-plane
+        # sample as causally affected by the extraction fields.
+        if turns_before >= 2:
+            earliest_causal = (event, turns_before)
+            break
+    result: dict[str, Any] = {
+        "status": "detector_hit" if detector_events else "detector_not_observed",
+        "event_contract_ok": event_contract_ok,
+        "expected_switched_electrodes": sorted(expected),
+        "observed_switched_electrodes": observed_ids,
+        "switch_time_us": switch_time,
+        "post_switch_detector_plane_count": len(planes),
+        "post_switch_incoming_detector_plane_count": len(incoming),
+        "post_return_mirror_turn_count": len(post_return_turns),
+        "detector_center_xy_mm": [(box[0] + box[3]) / 2, (box[1] + box[4]) / 2],
+        "detector_active_xy_bounds_mm": [box[0], box[3], box[1], box[4]],
+    }
+    if incoming:
+        result["first_incoming_plane"] = incoming[0]
+    if earliest_causal is not None:
+        event, turns_before = earliest_causal
+        result["earliest_causally_extractable_incoming_plane"] = event
+        result["mirror_turns_before_earliest_causal_plane"] = turns_before
+        result["earliest_causal_center_residual_xy_mm"] = [
+            float(event["x_mm"]) - result["detector_center_xy_mm"][0],
+            float(event["y_mm"]) - result["detector_center_xy_mm"][1],
+        ]
+        result["earliest_causal_rectangle_residual_xy_mm"] = [
+            _distance_to_interval(float(event["x_mm"]), box[0], box[3]),
+            _distance_to_interval(float(event["y_mm"]), box[1], box[4]),
+        ]
+    if nearest is not None:
+        distance, event, dx, dy = nearest
+        result["nearest_incoming_plane"] = event
+        result["nearest_rectangle_residual_xy_mm"] = [dx, dy]
+        result["nearest_rectangle_distance_mm"] = distance
+    if detector_events:
+        result["first_detector_event"] = detector_events[0]
+        result["post_switch_time_to_detector_us"] = (
+            float(detector_events[0]["t_us"]) - switch_time
+        )
+    if terminals:
+        result["terminal_event"] = terminals[-1]
+    return result
+
+
 def _mirror_regions(contract: dict[str, Any]) -> dict[str, list[float]]:
     resolved = resolve_geometry(contract)
     boxes = [
@@ -84,6 +208,11 @@ def materialize_trial(
     stripe_biases_override_v: tuple[float, float] | None,
     continue_main_drift: bool,
     runtime_fast_adjust_enable: bool,
+    prism_2_extraction_v: float | None,
+    prism_1_extraction_v: float | None,
+    prism_switch_time_us: float | None,
+    reference_transport_receipt_path: Path | None,
+    reference_transport_log_path: Path | None,
     constrain_x_symmetry_plane: bool,
     fly2_path: Path,
     sidecar_path: Path,
@@ -120,6 +249,74 @@ def materialize_trial(
     ring_voltages = _vector(accelerator.get("ring_voltages_v"), 5, "accelerator ring voltages")
     p1 = _finite(prism_1_v, "P1 voltage")
     p2 = _finite(prism_2_v, "P2 voltage")
+    prism_switch: dict[str, Any] | None = None
+    if prism_2_extraction_v is not None:
+        if runtime_fast_adjust_enable:
+            raise CandidateContractError(
+                "prism extraction switching cannot be combined with full analyser Fast Adjust"
+            )
+        if reference_transport_receipt_path is None or reference_transport_log_path is None:
+            raise CandidateContractError(
+                "prism extraction requires one verified reference transport receipt and log"
+            )
+        reference = _load(reference_transport_receipt_path)
+        if reference.get("role") != "mrtof_finite_3d_two_prism_voltage_trial":
+            raise CandidateContractError("reference transport receipt has the wrong role")
+        reference_prisms = _vector(reference.get("prism_voltages_v"), 2, "reference prism voltages")
+        reference_stripes = _vector(reference.get("stripe_biases_v"), 2, "reference Stripe biases")
+        if any(not math.isclose(value, reference_value, rel_tol=1e-12, abs_tol=1e-12)
+               for value, reference_value in zip((p1, p2), reference_prisms)):
+            raise CandidateContractError("injection P1/P2 do not match the reference transport")
+        if stripe_biases_override_v is not None and any(
+            not math.isclose(value, reference_value, rel_tol=1e-12, abs_tol=1e-12)
+            for value, reference_value in zip(stripe_biases, reference_stripes)
+        ):
+            raise CandidateContractError("Stripe override does not match the reference transport")
+        stripe_biases = reference_stripes
+        reference_events = parse_events(reference_transport_log_path.read_text(encoding="utf-8"))
+        coordinate_returns = [
+            event for event in reference_events if event["kind"] == "drift_coordinate_return"
+        ]
+        if len(coordinate_returns) != 1:
+            raise CandidateContractError(
+                "reference transport must contain exactly one drift-coordinate return"
+            )
+        derived_switch_time = _finite(
+            coordinate_returns[0].get("t_us"), "reference drift-coordinate return time"
+        )
+        if prism_switch_time_us is not None and not math.isclose(
+            _finite(prism_switch_time_us, "prism switch time"),
+            derived_switch_time,
+            rel_tol=1e-12,
+            abs_tol=1e-9,
+        ):
+            raise CandidateContractError(
+                "supplied prism switch time does not match the reference coordinate return"
+            )
+        switch_time = derived_switch_time
+        if switch_time <= 0:
+            raise CandidateContractError("prism switch time must be positive")
+        prism_switch = {
+            "enabled": True,
+            "electrode_id": 17,
+            "time_us": switch_time,
+            "injection_voltage_v": p2,
+            "extraction_voltage_v": _finite(
+                prism_2_extraction_v, "P2 extraction voltage"
+            ),
+        }
+        if prism_1_extraction_v is not None:
+            prism_switch["prism_1_extraction_voltage_v"] = _finite(
+                prism_1_extraction_v, "P1 extraction voltage"
+            )
+    elif prism_1_extraction_v is not None:
+        raise CandidateContractError(
+            "P1 extraction voltage requires the P2 extraction-switch contract"
+        )
+    elif prism_switch_time_us is not None:
+        raise CandidateContractError("prism switch time requires an extraction voltage")
+    elif reference_transport_receipt_path is not None or reference_transport_log_path is not None:
+        raise CandidateContractError("reference transport inputs are only valid for extraction")
     source_contract = contract["particle_source"]
     species = source_contract["species"]
     mass = _finite(species.get("mass_th"), "particle mass")
@@ -165,6 +362,7 @@ def materialize_trial(
     timeout = _full_path_timeout_us(contract, source_contract, target_k)
     p1_plane = _finite(contract["prism_transport"]["first_prism"]["target_interface"]["coordinate_mm"], "P1 plane")
     p1_acceptance = contract["prisms"]["ground_shields"][0]["rectangular_slots_mm"][0]["box"][1:5:3]
+    prism_switch_lua = _lua_prism_switch(prism_switch)
     sidecar = (
         "-- Generated run-local finite-3D P1/P2 voltage trial; do not edit.\n"
         f"return {{ qualification = 'p1_p2_finite_3d_voltage_trial_only', mirror_voltages_v = {_lua_vector(mirror_voltages)}, "
@@ -180,6 +378,7 @@ def materialize_trial(
         f"target_oscillation_count = {target_k}, stop_at_drift_phase_origin = {'false' if continue_main_drift else 'true'}, "
         f"runtime_fast_adjust_enable = {'true' if runtime_fast_adjust_enable else 'false'}, "
         "runtime_fast_adjust_accelerator_enable = false, "
+        f"{prism_switch_lua}"
         f"constrain_x_symmetry_plane = {'true' if constrain_x_symmetry_plane else 'false'} }}\n"
     )
     fly2_path.parent.mkdir(parents=True, exist_ok=True)
@@ -204,6 +403,7 @@ def materialize_trial(
         "mirror_voltages_v": mirror_voltages,
         "stripe_biases_v": stripe_biases,
         "prism_voltages_v": [p1, p2],
+        "detector_box_mm": [float(v) for v in detector["box"]],
         "accelerator_endpoint_voltages_v": endpoint_voltages,
         "accelerator_ring_voltages_v": ring_voltages,
         "analyzer_electrode_voltages_v": analyzer_values,
@@ -218,6 +418,7 @@ def materialize_trial(
         "target_oscillation_count": target_k,
         "continue_main_drift": bool(continue_main_drift),
         "runtime_fast_adjust_enable": bool(runtime_fast_adjust_enable),
+        "prism_switch": prism_switch,
         "particle_mass_th": mass,
         "charge_state": charge,
         "inputs": {
@@ -226,6 +427,10 @@ def materialize_trial(
             "mirror_summary_sha256": _sha256(mirror_summary_path),
             "stripe_summary_sha256": _sha256(stripe_summary_path),
             "accelerator_receipt_sha256": _sha256(accelerator_receipt_path),
+            **({
+                "reference_transport_receipt_sha256": _sha256(reference_transport_receipt_path),
+                "reference_transport_log_sha256": _sha256(reference_transport_log_path),
+            } if reference_transport_receipt_path is not None else {}),
         },
         "fly2_sha256": _sha256(fly2_path),
         "operating_point_lua_sha256": _sha256(sidecar_path),
@@ -251,6 +456,12 @@ def analyze_trial(*, log_path: Path, trial_receipt_path: Path, output_path: Path
         "log_sha256": _sha256(log_path),
         "trial_receipt_sha256": _sha256(trial_receipt_path),
     }
+    if isinstance(trial.get("prism_switch"), dict):
+        result["extraction_diagnostic"] = _extraction_diagnostic(
+            events,
+            trial["prism_switch"],
+            trial.get("detector_box_mm"),
+        )
     source = ProjectPhaseSpaceState(
         tuple(float(v) for v in trial["source_position_project_mm"]),
         (0.0, 1.0, 0.0),
@@ -346,6 +557,11 @@ def main() -> int:
     materialize.add_argument("--stripe-2-v", type=float)
     materialize.add_argument("--continue-main-drift", action="store_true")
     materialize.add_argument("--runtime-fast-adjust-enable", action="store_true")
+    materialize.add_argument("--prism-2-extraction-v", type=float)
+    materialize.add_argument("--prism-1-extraction-v", type=float)
+    materialize.add_argument("--prism-switch-time-us", type=float)
+    materialize.add_argument("--reference-transport-receipt", type=Path)
+    materialize.add_argument("--reference-transport-log", type=Path)
     materialize.add_argument("--constrain-x-symmetry-plane", action="store_true")
     materialize.add_argument("--fly2", required=True, type=Path)
     materialize.add_argument("--sidecar", required=True, type=Path)
@@ -372,6 +588,11 @@ def main() -> int:
             stripe_biases_override_v=stripe_override,
             continue_main_drift=args.continue_main_drift,
             runtime_fast_adjust_enable=args.runtime_fast_adjust_enable,
+            prism_2_extraction_v=args.prism_2_extraction_v,
+            prism_1_extraction_v=args.prism_1_extraction_v,
+            prism_switch_time_us=args.prism_switch_time_us,
+            reference_transport_receipt_path=args.reference_transport_receipt,
+            reference_transport_log_path=args.reference_transport_log,
             constrain_x_symmetry_plane=args.constrain_x_symmetry_plane,
             fly2_path=args.fly2,
             sidecar_path=args.sidecar,

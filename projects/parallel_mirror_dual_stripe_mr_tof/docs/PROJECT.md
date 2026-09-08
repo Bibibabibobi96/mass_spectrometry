@@ -183,7 +183,8 @@ SIMION 2020原生检查发现普通`notin`移除精确孔壁（790样点中300�
 2026-09-03 用户将首轮粒子改为524 Th、+1、4 kV；该物种只在
 `config/simion_candidate_two_zone.json`的`particle_source.species`维护，四类Fly2由同一输入生成。
 N=100仍表示小束团粒子数，不是质量。此前100 Th输入/结果保留原身份，不能更名或并入524 Th统计。
-该调整不改变机械几何或静电PA；尚未形成524 Th飞行、时间聚焦或分辨率证据。
+该调整不改变机械几何或静电PA；在2026-09-03当时尚未形成524 Th飞行、时间聚焦或分辨率证据，
+后续单中心粒子证据见本节2026-09-09记录，束团时间聚焦和分辨率仍未形成。
 
 主分析器现为`x/y/z=1/1/1 mm/gu`，独立加速器为`0.25/0.25/0.1 mm/gu`，探测器为`1/1/1 mm/gu`。这是固定机械槽宽的必要条件：30-mm镜束槽的边界为`x=±15 mm`，4-mm Stripe、接地和棱镜屏蔽槽的边界为`x=±2 mm`，二者无法在同一个2-mm网格相位中同时精确表示。`x=1 mm`和`z=1 mm`均不改变连续CAD几何，而是使30/4-mm槽及CAD给定的2-mm grounded-1—镜内开槽盖板净距包含正确原生节点；此前`2/1/2`和`2/1/1`审查PA不得作为这些槽宽的GUI证据。加速器的细网格用于解析1-mm加速环/栅框厚度与加速方向场变化；焦点、边缘场、飞行时间及分辨率仍必须由粒子运行和至少三档网格收敛给出。
 数值网格不改变resolved机械几何；GEM默认值和实际PA构建参数都由`component_mesh_mm_per_gu`派生。
@@ -269,6 +270,18 @@ P1(ID 16)=`+177.661775543 V`、P2(ID 17)=`-180.055454662 V`；`4 keV`仍只表�
 `[2142.24,3728.32,11.00,81.33]`倍，远超本次线性化直接验证的邻域。审计因此只发布
 `local_definition_only__iteration_not_authorized`，没有执行或接受该电压。下一步须采用逐步重算
 Jacobian的信赖域/阻尼路径，并同时监视几何碰撞和四残差；不能因满秩就外推数百伏。
+
+2026-09-09随后只在已实测的`0.2 V`单轴差分超矩形内缩放上述Newton方向，得到首个受限试点
+`20260909_070000__sim__simion__downstream-trust-hypercube-step01-n1`；最大坐标变化为`0.2 V`，
+缩放残差范数从`0.338221142`降至`0.338047955`，按标准平方残差目标计算的实际/预测下降比为
+`1.908862878`。在该点重新执行四个单轴SIMION试点和4x4审计
+`20260909_075000__analysis__python__downstream-voltage-definition-step01`，仍为秩4、零空间0，条件数
+`332.649664087`。第二步把最大坐标变化扩为`0.4 V`，得到
+`20260909_080000__sim__simion__downstream-trust-step02-radius0p4-n1`；四残差为
+`[2.621e-5 mm,1.437e-5 eV,-81.115361356 mm,-5.977782677]`，实际/预测下降比
+`1.186466529`。两步分别由受管审计`20260909_081000...`和`20260909_082000...`绑定；它们只证明
+沿局部方向取得真实下降，每一步之后仍强制重算Jacobian。审计器不选择下一半径、不设置物理验收容差，
+也不发布电压工作点；当前距离`L=340 mm`和`K=25`仍很远。
 
 - 生命周期：`prototype`。
 - 2026-09-03 当前合同把数值探测器改为与加速器同 `x/y`站位、位于正侧接地镜内表面前的`5 mm`净距：`detector.z=[95,97] mm`，正侧接地镜内面为`z=102 mm`。它不与加速器屏蔽罩或镜接触。长的第二加速区现有五个`1 mm`厚的开框加速环，中心由`grid1 → exit`的`33.6 mm`区长等距派生为`z=28.129,22.529,16.929,11.329,5.729 mm`，电压由`3520 V → 0 V`线性派生。加速器出口首棱镜的两片接地屏蔽明确冻结为有限`y=[33,77] mm`实体和嵌套三角孔；解析器会拒绝任何`y`向贯通表示。无坐标、无求解器语法的二区环/屏蔽壳派生已移入`common/accelerator/two_zone_geometry.py`，并由 MR-TOF 与 oa-TOF 解析理论共同消费；OA 的 Formal CAD、PA、IOB、数值和电压合同均未修改。该新合同已实际编译为`runs/20260903__detector-clearance-stage2-rings-iob/simion/mrtof_detector_clearance_stage2_rings.iob`：两实例重新加载为分析器`2×2×2 mm/gu`、加速器`1×1×0.4 mm/gu`，并有新的哈希 manifest 和结构报告；它仅用于几何/电压审查，尚无飞行或性能结论。
@@ -753,3 +766,47 @@ run `20260903_194116__sim__simion__first-prism-finite-3d` and its
 interface crossing only: it does **not** validate the second prism, K=25
 circulation, first-order time focus, transmission, detector TOF, FWHM or
 mass resolution.
+
+### 2026-09-09/10 center return and pulsed-extraction diagnosis
+
+The fixed reviewed geometry now has a free-3-D single-center downstream point
+with injection voltages `P1=+177.537401235 V`, `P2=-179.126593079 V`, Stripe
+biases `(-25.0263924474,+50.1767116212) V`, mirror axial energy
+`4165.84797412 eV/q`, and independently calibrated accelerator voltages.  Its
+first slow-turn residual is `-0.000780370 mm` and its continuous return is
+`K-25=-0.000492638`; these are measured residuals, not acceptance thresholds or
+a promoted operating point.  In particular, the approximately 4-kV quantity
+is the fast axial energy/accelerator gain scale.  It is not either prism
+voltage; confusing those quantities would over-deflect the 5-eV slow-motion
+handoff by more than an order of magnitude.
+
+With static prisms the returned ion follows the reversible injection branch
+and collides with grounded structure instead of reaching the detector.  The
+SIMION Candidate therefore now supports a run-local pulsed extraction state:
+only physical prism basis arrays 16 and/or 17 are Fast Adjusted at the declared
+switch time, while the already voltageized analyzer PA0 and all unchanged PA
+bases remain reused without refinement.  Initial bounded extraction samples
+from `P2=0` through roughly `-170 V`, one `+140 V` polarity check, and P1
+samples at `0/100/140 V` did not produce the required immediate K=25 detector
+hit.  Extraction trials now fail closed unless they name a verified reference
+transport run: its exact Stripe/P1/P2 injection state is inherited and its
+unique coordinate-return event supplies the switch time, preventing a silent
+fallback to the analytic Stripe seed.
+
+Run `20260910_080000__sim__simion__detector-chain-event-audit-n1`
+does establish the first complete dynamic event chain.  Switching the return
+state to `P1=0 V`, `P2=-140 V` eventually reaches the separate detector at
+`t=1654.71284613 us` and `(x,y,z)=(0.03616,-43.16221,97) mm`.  The detector
+arrives `881.133029238 us` after switching and has 59 post-return mirror turns;
+the terminal log contains exactly one detector event and one `splat=1` event.
+It is therefore explicitly classified as prototype
+reachability evidence, not a K=25 extraction solution.  The scans also
+establish distinct, reproducible contacts with the P2 shield,
+accelerator aperture, and accelerator rings, and expose both P1 and P2 as
+independent extraction coordinates.  A bounded follow-up at
+`P1=-60 V, P2=-140 V` (`20260910_093000__sim__simion__p1-minus60-p2-minus140-extraction-n1`)
+reaches the detector after `83.327634611 us` and six post-return mirror turns,
+at `(x,y)=(-0.56926,-64.97622) mm`.  This is the current shortest collision-free
+N=1 extraction Candidate and is close to the detector centre, but local voltage
+centring, bunch statistics, and step/grid comparisons remain required before
+any resolution calculation or operating-point claim.
