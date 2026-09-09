@@ -25,6 +25,7 @@ class AnalyzerLocalRefinementPlanTest(unittest.TestCase):
         self.assertEqual(plan["baseline"]["grid_shape"], [181, 641, 721])
         self.assertEqual([item["scale_factor"] for item in plan["profiles"]], [1.0, 0.5, 0.25])
         self.assertEqual(plan["patches"]["mirror_turn_positive"], [-20.0, -147.0, 97.0, 20.0, 463.0, 330.0])
+        self.assertEqual(plan["patches"]["mirror_turn_negative"], [-20.0, -147.0, -330.0, 20.0, 463.0, -97.0])
         self.assertEqual(plan["patches"]["central_transport"], [-29.0, -82.0, -105.0, 29.0, 395.0, 102.0])
         self.assertEqual(
             plan["patches"]["stripe_mirror_bridge_positive"],
@@ -53,7 +54,7 @@ class AnalyzerLocalRefinementPlanTest(unittest.TestCase):
         self.assertEqual(plan["physical_to_local_electrode_id"]["18"], 0)
         for profile in plan["profiles"]:
             for role in (
-                "mirror_turn", "central_transport", "stripe_mirror_bridge",
+                "mirror_turn", "mirror_turn_negative", "central_transport", "stripe_mirror_bridge",
                 "stripe_mirror_bridge_negative",
             ):
                 patch = profile[role]

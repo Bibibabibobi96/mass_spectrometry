@@ -20,7 +20,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.split_candidate_geomet
 
 
 REGIONS = (
-    "mirror_turn_positive", "central_transport",
+    "mirror_turn_positive", "mirror_turn_negative", "central_transport",
     "stripe_mirror_bridge_positive", "stripe_mirror_bridge_negative",
 )
 
@@ -28,6 +28,7 @@ REGIONS = (
 def _profile_key(region: str) -> str:
     return {
         "mirror_turn_positive": "mirror_turn",
+        "mirror_turn_negative": "mirror_turn_negative",
         "central_transport": "central_transport",
         "stripe_mirror_bridge_positive": "stripe_mirror_bridge",
         "stripe_mirror_bridge_negative": "stripe_mirror_bridge_negative",

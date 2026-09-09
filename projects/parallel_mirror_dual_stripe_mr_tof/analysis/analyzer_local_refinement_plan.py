@@ -256,6 +256,10 @@ def derive_local_refinement_plan(contract_path: Path) -> dict[str, Any]:
         mirror_half_x, mirror_physical[4] + margin[1], mirror_physical[5] + margin[2],
     )
     mirror_box = _snap_patch(mirror_raw, global_box, origin, baseline_mesh)
+    mirror_negative_box = (
+        mirror_box[0], mirror_box[1], -mirror_box[5],
+        mirror_box[3], mirror_box[4], -mirror_box[2],
+    )
 
     central_roles = regions["central_transport"]["geometry_roles"]
     central_physical = _role_bounds(resolved, central_roles)
@@ -361,6 +365,10 @@ def derive_local_refinement_plan(contract_path: Path) -> dict[str, Any]:
                 f"mirror_turn_{token}", mirror_box, mesh,
                 response_family_arrays, bytes_per_point,
             ),
+            "mirror_turn_negative": _profile(
+                f"mirror_turn_negative_{token}", mirror_negative_box, mesh,
+                response_family_arrays, bytes_per_point,
+            ),
             "central_transport": _profile(
                 f"central_transport_{token}", central_box, mesh,
                 response_family_arrays, bytes_per_point,
@@ -399,6 +407,7 @@ def derive_local_refinement_plan(contract_path: Path) -> dict[str, Any]:
         },
         "patches": {
             "mirror_turn_positive": list(mirror_box),
+            "mirror_turn_negative": list(mirror_negative_box),
             "central_transport": list(central_box),
             "stripe_mirror_bridge_positive": list(bridge_box),
             "stripe_mirror_bridge_negative": list(bridge_negative_box),

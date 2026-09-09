@@ -2259,7 +2259,7 @@
             "mirror_e_closures"
           ],
           "x_core_rule": "mirror_beam_slot_symmetric_half_width_plus_patch_margin",
-          "reuse_rule": "one positive-z local family is reflected into the negative-z mirror only after exact geometry and voltage-group symmetry checks",
+          "reuse_rule": "build positive-z and negative-z mirror families independently because asymmetric prism boundary responses prohibit whole-field z-reflection reuse",
           "local_geometry_voltage_groups": ["mirror_B", "mirror_C", "mirror_D", "mirror_E"]
         },
         "central_transport": {

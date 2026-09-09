@@ -5,10 +5,12 @@ param(
   [Parameter(Mandatory)][string]$CoarseBridgeRunPath,
   [Parameter(Mandatory)][string]$CoarseNegativeBridgeRunPath,
   [Parameter(Mandatory)][string]$CoarseMirrorRunPath,
+  [Parameter(Mandatory)][string]$CoarseNegativeMirrorRunPath,
   [Parameter(Mandatory)][string]$FineCentralRunPath,
   [Parameter(Mandatory)][string]$FineBridgeRunPath,
   [Parameter(Mandatory)][string]$FineNegativeBridgeRunPath,
   [Parameter(Mandatory)][string]$FineMirrorRunPath,
+  [Parameter(Mandatory)][string]$FineNegativeMirrorRunPath,
   [string]$RunId='',
   [string]$SimionExe='',
   [string]$PythonExe=''
@@ -69,10 +71,12 @@ try {
     Get-VerifiedAnalyzerLocalFamily -SourceRunPath $CoarseBridgeRunPath -ExpectedRegion stripe_mirror_bridge_positive -ExpectedScale 1.0 -Label coarse_bridge -PythonExe $python -RepoRoot $repoRoot
     Get-VerifiedAnalyzerLocalFamily -SourceRunPath $CoarseNegativeBridgeRunPath -ExpectedRegion stripe_mirror_bridge_negative -ExpectedScale 1.0 -Label coarse_negative_bridge -PythonExe $python -RepoRoot $repoRoot
     Get-VerifiedAnalyzerLocalFamily -SourceRunPath $CoarseMirrorRunPath -ExpectedRegion mirror_turn_positive -ExpectedScale 1.0 -Label coarse_mirror -PythonExe $python -RepoRoot $repoRoot
+    Get-VerifiedAnalyzerLocalFamily -SourceRunPath $CoarseNegativeMirrorRunPath -ExpectedRegion mirror_turn_negative -ExpectedScale 1.0 -Label coarse_negative_mirror -PythonExe $python -RepoRoot $repoRoot
     Get-VerifiedAnalyzerLocalFamily -SourceRunPath $FineCentralRunPath -ExpectedRegion central_transport -ExpectedScale 0.5 -Label fine_central -PythonExe $python -RepoRoot $repoRoot
     Get-VerifiedAnalyzerLocalFamily -SourceRunPath $FineBridgeRunPath -ExpectedRegion stripe_mirror_bridge_positive -ExpectedScale 0.5 -Label fine_bridge -PythonExe $python -RepoRoot $repoRoot
     Get-VerifiedAnalyzerLocalFamily -SourceRunPath $FineNegativeBridgeRunPath -ExpectedRegion stripe_mirror_bridge_negative -ExpectedScale 0.5 -Label fine_negative_bridge -PythonExe $python -RepoRoot $repoRoot
     Get-VerifiedAnalyzerLocalFamily -SourceRunPath $FineMirrorRunPath -ExpectedRegion mirror_turn_positive -ExpectedScale 0.5 -Label fine_mirror -PythonExe $python -RepoRoot $repoRoot
+    Get-VerifiedAnalyzerLocalFamily -SourceRunPath $FineNegativeMirrorRunPath -ExpectedRegion mirror_turn_negative -ExpectedScale 0.5 -Label fine_negative_mirror -PythonExe $python -RepoRoot $repoRoot
   )
   $failureStage='freeze_inputs'
   $frozenTraceLog=Copy-VerifiedRunInput -Source $traceLog -Destination (Join-Path $inputDir 'center_portal_trace.log')
@@ -130,7 +134,7 @@ try {
   Write-RunJson -Path $runConfig -Depth 20 -Value $config
   Write-RunJson -Path $summary -Depth 8 -Value ([ordered]@{
     schema_version=1;role='mrtof_analyzer_local_portal_interface_convergence';status='checkpoint'
-    reason='Verified center portal trace and eight local PA-family cache generations; seam sampling is starting.'
+    reason='Verified center portal trace and ten local PA-family cache generations; seam sampling is starting.'
   })
   Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Status checkpoint `
     -Software @('SIMION 2020','Python 3.11') -Outputs @($summary,$capacityStartupPath)|Out-Null
@@ -153,11 +157,12 @@ try {
     $bridge=$families|Where-Object{$_.region-eq'stripe_mirror_bridge_positive' -and [double]$_.scale-eq$scale}
     $negativeBridge=$families|Where-Object{$_.region-eq'stripe_mirror_bridge_negative' -and [double]$_.scale-eq$scale}
     $mirror=$families|Where-Object{$_.region-eq'mirror_turn_positive' -and [double]$_.scale-eq$scale}
-    if($null-eq$central -or $null-eq$bridge -or $null-eq$negativeBridge -or $null-eq$mirror){throw "Local family set is missing at scale $scale"}
+    $negativeMirror=$families|Where-Object{$_.region-eq'mirror_turn_negative' -and [double]$_.scale-eq$scale}
+    if($null-eq$central -or $null-eq$bridge -or $null-eq$negativeBridge -or $null-eq$mirror -or $null-eq$negativeMirror){throw "Local family set is missing at scale $scale"}
     $token=[string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:0.###}',$scale).Replace('.','p')
     $basisValues=@()
-    foreach($family in @($central,$bridge,$negativeBridge,$mirror)){
-      $activeLocalId=if($family.region-eq'mirror_turn_positive'){1}else{5}
+    foreach($family in @($central,$bridge,$negativeBridge,$mirror,$negativeMirror)){
+      $activeLocalId=if($family.region-like'mirror_turn_*'){1}else{5}
       $basisCsv=Join-Path $resultDir "basis_voltage__${token}__$($family.region).csv"
       & $simion --nogui --noprompt lua $basisVoltageScript `
         (Join-Path $family.runtime_directory "$($family.contract.family_prefix).pa$activeLocalId") `

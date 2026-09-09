@@ -31,6 +31,15 @@ class AnalyzerLocalPaFamilyTest(unittest.TestCase):
         self.assertIn("active[identifier] and basis_voltage or 0", source)
         self.assertNotIn("active[identifier] and 1 or 0", source)
 
+    def test_operating_patch_builder_samples_parent_and_refines_once(self) -> None:
+        source = (
+            PROJECT.parents[1] / "common" / "simion" / "build_dirichlet_patch_operating_pa.lua"
+        ).read_text(encoding="utf-8")
+        self.assertIn("source:potential_vc(sx,sy,sz)", source)
+        self.assertIn("identifier==0 and 0 or voltages[identifier]", source)
+        self.assertIn("solved:refine()", source)
+        self.assertNotIn("fast_adjust", source)
+
     def fixture(self, root: Path) -> tuple[Path, Path, Path]:
         gem = root / "central.gem"
         gem.write_text(

@@ -30,6 +30,12 @@ class AnalyzerLocalPatchGeometryTest(unittest.TestCase):
         self.assertIn("locate(20,147,-97)", text)
         self.assertIn("e(5)", text)
 
+    def test_emits_negative_mirror_from_original_geometry(self) -> None:
+        text = build_local_patch_gem(CONTRACT, "mirror_turn_negative", 1.0)
+        self.assertIn("pa_define(41,611,234,planar,none,electrostatic,, 1,1,1,surface=none)", text)
+        self.assertIn("locate(20,147,330)", text)
+        self.assertIn("e(10)", text)
+
     def test_emits_negative_bridge_from_original_geometry(self) -> None:
         text = build_local_patch_gem(CONTRACT, "stripe_mirror_bridge_negative", 1.0)
         self.assertIn("pa_define(41,611,124,planar,none,electrostatic,, 1,1,1,surface=none)", text)

@@ -957,3 +957,34 @@ measured a 0.5-mm operating-point maximum discontinuity of `0.01654 V` and
 `9.30e-7 V/mm`.  This closes only the single-centre numerical interface seed.
 Explicit Workbench instance selection, fixed-bunch containment and flight
 convergence remain required before the local mesh can support resolution.
+
+That Workbench selection is now implemented for the static injection operating
+point.  Managed build
+`20260912_060000__build__simion__mrtof-local-replacement-iob-r05-final`
+keeps the isotropic 1-mm analyser as the lowest-priority far-field instance and
+places five independently solved isotropic 0.5-mm replacements over the
+negative mirror, negative bridge, central Stripe/prism, positive bridge and
+positive mirror regions.  The accelerator remains a separate
+`0.25/0.25/0.1 mm/gu` PA and the zero-potential detector a separate 1-mm PA;
+unchanged component PAs were copied byte-for-byte and not refined again.  The
+four responsibility planes `z=-131,-72,+72,+131 mm` are generated from patch
+overlaps.  SIMION 2020 successfully reopened the final artifact-path IOB and
+verified all eight instances, their physical origins and mesh scales.
+
+Managed centre flight
+`20260912_073000__sim__simion__mrtof-local-center-screening-n1` then exercised
+all five local instances and 208 interface crossings without selecting
+instance zero.  SIMION reported about 7.01 seconds for the one-ion fly, so the
+local-replacement dispatch does not reproduce the earlier abnormal runtime.
+The ion completed 50 mirror turns and emitted one target-K phase sample, but
+that sample was at `y=10.7123479495 mm`; the subsequent `y=0` return gave
+`fractional_k=25.2588505503`, and the ion finally splatted at `z=-22 mm`
+without a target-K return or detector hit.  This closes only the static,
+single-centre local-mesh execution chain.  It does not accept 0.5 mm as
+converged, tune the current voltages, or report a bunch TOF or resolution.
+Pulsed P1/P2 extraction is deliberately disabled because these compact local
+PAs contain one frozen operating-point field rather than a complete response
+family.  The next numerical gate is a same-physics 1/0.5/local-0.25 comparison
+after retuning the centre solution, followed by the frozen small-bunch portal
+and containment test; only the regions that fail that comparison are eligible
+for 0.25-mm replacement.

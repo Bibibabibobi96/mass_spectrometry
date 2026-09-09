@@ -60,6 +60,7 @@ REQUIRED_FIELDS = {
         "ion", "name", "region", "face", "n", "direction", "t_us",
         "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us",
     },
+    "instance_transition": {"ion", "t_us", "instance", "x_mm", "y_mm", "z_mm"},
     "target_k": {"ion", "k", "t_us", "x_mm", "y_mm", "z_mm"},
     "splat": {"ion", "code", "t_us", "turns"},
     "terminal": {"ion", "splat", "t_us", "turns"},
@@ -93,6 +94,8 @@ def _event_error(event: dict[str, Any]) -> str | None:
     for key in ("turns", "central_crossings", "n", "k", "k_before", "electrode"):
         if key in event and not _integer(event[key], minimum=0):
             return "invalid_event_counter"
+    if "instance" in event and not _integer(event["instance"], minimum=0):
+        return "invalid_instance_number"
     for key in ("splat", "code"):
         if key in event and not _integer(event[key]):
             return "invalid_splat_code"

@@ -328,8 +328,9 @@ PA边界自然裁剪；不得复制或另写一套几何常量。设备无关的
 [run_analyzer_local_pa_family.ps1](run_analyzer_local_pa_family.ps1)现已闭合受管构建器：它先证明当前
 baseline生成的全局GEM与已审查源逐字节相同，再派生局域GEM、完整八响应recipe和公共内容寻址identity；
 cache miss才调用SIMION，hit则不Refine。2026-09-10已实际发布中央区与正镜转折区的1-mm及0.5-mm族。
-正镜族后续以合同刚体对称变换复用于负镜，不另建第二份几何参数。当前这些run只证明局域basis构建和
-缓存发布；IOB重叠优先级、中心根和飞行尚未验证。
+镜的机械实体仍由合同刚体对称生成，但负侧有限场不能复用正侧solution：两只离轴棱镜使边界响应不
+对称，因此正、负镜局域PA已分别从全局场直接构建。上述family run证明局域basis构建与缓存发布；
+其后述工作点PA与八实例IOB取代“尚未装配”的历史状态。
 
 [`common/simion/compare_dirichlet_patch_interface.lua`](../../../common/simion/compare_dirichlet_patch_interface.lua)
 现按两种采样检查接缝：`matched_lattice`在1 mm与0.5 mm族上使用相同物理坐标，
@@ -390,9 +391,28 @@ PA或增加一个覆盖接缝的真空portal补丁，不改变resolved机械几�
 `20260911_070000__sim__simion__overlap-handoff-envelope-n1`证明四面均被穿越且未触及x/y边界；
 `20260911_073000__analysis__simion__analyzer-local-overlap-interface-r05`随后完成64个
 basis/scale/seam比较。0.5-mm工作点的最大电势差为`0.01654 V`，最大法向场差为
-`0.003503 V/mm`；中央—桥接两面更低至约`1.52e-6 V / 9.30e-7 V/mm`。这是中心粒子
-Candidate接口证据，不是束团或分辨率验收。下一步用显式`instance_adjust`按这四个面选择局域实例，
-再运行中心粒子和冻结小束团；0.25-mm只在束团接口或飞行收敛仍不够时构建。
+`0.003533 V/mm`；中央—桥接两面更低至约`1.52e-6 V / 9.30e-7 V/mm`。这是中心粒子
+Candidate接口证据，不是束团或分辨率验收。0.5-mm相对1-mm并未在所有接口量上单调收敛；0.25-mm
+只在固定束团接口或飞行收敛证明仍不够时，针对责任区继续构建，不能将全域分析器整体细化。
+
+受管工作台run
+`20260912_060000__build__simion__mrtof-local-replacement-iob-r05-final`已将全局1-mm分析器作为
+最低优先级和远场回退，并依次装入负镜、负桥、中央、正桥、正镜五个`0.5/0.5/0.5 mm/gu`工作点PA；
+独立加速器仍为`0.25/0.25/0.1 mm/gu`，独立探测器仍为`1/1/1 mm/gu`。局域实例只在合同从重叠区
+派生的`z=-131,-72,+72,+131 mm`责任边界内接管；不属于当前责任区时，Program用SIMION官方
+`instance_adjust`语义把当前高优先级实例置零，使其回落到下一适用实例。所有局域PA的六面Dirichlet
+值均从同一已电压化全局PA采样；它们是冻结注入电压的工作点PA，不伪装成可脉冲Fast-Adjust family。
+因此该工作台当前仅支持`static_injection_only`，动态P1/P2引出要另建注入/引出工作点或保持响应族。
+最终产物目录内的八实例IOB已经实际重载，实例、原点和网格报告通过，且复制进入run的加速器和探测器
+与上游缓存逐字节一致，没有因装配而重新Refine。
+
+同一IOB的受管单中心飞行
+`20260912_073000__sim__simion__mrtof-local-center-screening-n1`实际耗时约`7.01 s`，记录208次
+局域接口穿越，五个局域实例均被访问且从未落入实例0。中心离子完成50次镜转折并取得唯一K=25相位
+样本，但转折相位仍为`y=10.7123479495 mm`，回到`y=0`时的`fractional_k=25.2588505503`，随后在
+`z=-22 mm`以`splat=-1`终止；没有目标K返回或探测命中。这证明全局1-mm加局域0.5-mm替代的执行链与
+速度正常，只授予`single_center_static_injection_local_mesh_check__not_resolution`，不授予物理调谐、
+束团、网格收敛、TOF或质量分辨率资格。
 
 修复后的实际中心粒子全装配 Fly 已在约0.06 s终止并完成事件对账；它在 `t=333.722473491 us`、
 `z=-97.0000004 mm`、`y=0.515455 mm` 时以 electrode collision (`splat=-1`) 损失，仅记录24次转折

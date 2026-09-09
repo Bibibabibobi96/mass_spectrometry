@@ -43,7 +43,7 @@ class AnalyzerLocalPortalInterfaceTest(unittest.TestCase):
             )
             self.assertEqual(negative_outer["region_a"], "stripe_mirror_bridge_negative")
             self.assertEqual(negative_outer["transform_a"], "identity")
-            self.assertEqual(negative_outer["transform_b"], "reflect_z")
+            self.assertEqual(negative_outer["transform_b"], "identity")
 
     def test_aggregate_requires_complete_matrix_and_reports_scales(self) -> None:
         with TemporaryDirectory() as directory:

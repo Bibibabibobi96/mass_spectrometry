@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
   [Parameter(Mandatory)][string]$GeometryReviewRunPath,
-  [Parameter(Mandatory)][ValidateSet('mirror_turn_positive','central_transport','stripe_mirror_bridge_positive','stripe_mirror_bridge_negative')][string]$Region,
+  [Parameter(Mandatory)][ValidateSet('mirror_turn_positive','mirror_turn_negative','central_transport','stripe_mirror_bridge_positive','stripe_mirror_bridge_negative')][string]$Region,
   [Parameter(Mandatory)][ValidateSet(1.0,0.5,0.25)][double]$ScaleFactor,
   [string]$ContractPath='',
   [string]$RunId='',
@@ -88,6 +88,7 @@ try {
   if($profile.Count-ne 1){throw 'Requested local mesh scale did not resolve uniquely.'}
   $profileKey=switch($Region){
     'mirror_turn_positive' {'mirror_turn'}
+    'mirror_turn_negative' {'mirror_turn_negative'}
     'central_transport' {'central_transport'}
     'stripe_mirror_bridge_positive' {'stripe_mirror_bridge'}
     'stripe_mirror_bridge_negative' {'stripe_mirror_bridge_negative'}

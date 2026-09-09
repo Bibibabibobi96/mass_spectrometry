@@ -97,6 +97,7 @@ class SimionEventAnalysisTest(unittest.TestCase):
             "MRTOF_EVENT prism_voltage_switch",
             "MRTOF_EVENT detector_plane",
             "MRTOF_EVENT patch_interface",
+            "MRTOF_EVENT instance_transition",
             "direction_y=", "direction_z=",
         ):
             self.assertIn(token, source)
@@ -111,6 +112,17 @@ class SimionEventAnalysisTest(unittest.TestCase):
         self.assertEqual(events[0]["region"], "central_transport")
         self.assertEqual(events[0]["face"], "z_max")
         self.assertEqual(events[0]["direction"], -1)
+
+    def test_instance_transition_event_is_strict_and_numeric(self):
+        line = (
+            "MRTOF_EVENT instance_transition ion=1 t_us=29 instance=4 "
+            "x_mm=0.1 y_mm=6 z_mm=0\n"
+        )
+        event = parse_events(line)[0]
+        self.assertEqual(event["kind"], "instance_transition")
+        self.assertEqual(event["instance"], 4)
+        with self.assertRaisesRegex(ValueError, "invalid_instance_number"):
+            parse_events(line.replace("instance=4", "instance=4.5"))
 
     def assert_invalid(self, events, expected, splats, error):
         result = summarize_events(events, 25, splats, expected_particle_ids=expected)

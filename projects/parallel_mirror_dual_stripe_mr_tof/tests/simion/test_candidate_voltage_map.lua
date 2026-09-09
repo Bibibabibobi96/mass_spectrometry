@@ -11,6 +11,8 @@ local point={mirror_voltages_v={0,-10,20,30,50},stripe_biases_v={-4,6},
   mirror_regions_project={negative={z_min_mm=-20,z_max_mm=-10},positive={z_min_mm=10,z_max_mm=20}},
   prism_regions_project={p1={y_min_mm=-10,y_max_mm=10,z_min_mm=-110,z_max_mm=-90},
     p2={y_min_mm=-10,y_max_mm=10,z_min_mm=90,z_max_mm=110}},
+  patch_interface_planes_project={{name='test',region='central_transport',face='z_test',axis='z',
+    coordinate_mm=0,u_axis='x',u_min_mm=-1,u_max_mm=1,v_axis='y',v_min_mm=-1,v_max_mm=1}},
   phase_origin_mirror_side=1,
   runtime_fast_adjust_accelerator_enable=true,
   target_oscillation_count=25,trajectory_quality=8,maximum_step_us=0.002,
@@ -68,11 +70,15 @@ function simion.wb:save(path)
   end
   self.filename=path
 end
+local active_local_config=nil
 loadfile=function(path)
   if path=='virtual/source.operating_point.lua' then return function() return point end end
   if path=='virtual/source.voltage_map.lua' then return function() return map end end
   if path=='virtual/source.mirror_cycle_counter.lua' then
     return assert(original_loadfile(directory..'mirror_cycle_counter.lua'))
+  end
+  if path=='virtual/source.local_refinement.lua' and active_local_config then
+    return function() return active_local_config end
   end
   return original_loadfile(path)
 end
@@ -109,6 +115,7 @@ assert(#calls==0,'read-only voltageized PA binding performed Fast Adjust or save
 -- SIMION alone understands `adjustable`; strip only that declaration keyword
 -- to exercise the unchanged callback contract with a stock Lua interpreter.
 function simion.workbench_program() segment={} end
+function simion.early_access(version) assert(version==8.2) end
 assert(loadstring(program_text:gsub('\nadjustable ','\n'),'@virtual/source.lua'))()
 V_stripe_1,V_stripe_2,V_prism_1,V_prism_2,V_repeller,V_grid1,V_grid2,V_nonaccelerator_scale=-8,12,99,0,44,33,1,0.25
 calls={}
@@ -147,6 +154,19 @@ runtime_fast_adjust_enable=1
 assert(not pcall(segment.fast_adjust),
   'prism extraction switching and full analyser Fast Adjust were allowed together')
 point.prism_switch=nil
+active_local_config={enabled=true,global_analyzer_instance=1,accelerator_instance=7,detector_instance=8,
+  instances={{instance=2,z_max_mm=-131},{instance=3,z_min_mm=-131,z_max_mm=-72},
+    {instance=4,z_min_mm=-72,z_max_mm=72},{instance=5,z_min_mm=72,z_max_mm=131},
+    {instance=6,z_min_mm=131}}}
+assert(loadstring(program_text:gsub('\nadjustable ','\n'),'@virtual/source.lua'))()
+for _,sample in ipairs({
+  {2,-132,2},{2,-131,0},{3,-131,3},{3,-72,0},{4,-72,4},{4,72,0},
+  {5,72,5},{5,131,0},{6,131,6},{6,130.999,0},{1,500,1},{7,0,7},{8,0,8}
+}) do
+  ion_instance,ion_pz_mm=sample[1],sample[2]
+  segment.instance_adjust()
+  assert(ion_instance==sample[3],string.format('local responsibility mismatch for instance %d at z=%g',sample[1],sample[2]))
+end
 print('CANDIDATE_VOLTAGE_MAP=PASS mapping validation persistence sidecars runtime_adjustables')
 
 -- Exercise the real reload inspector with read-only PA getters. A mutating

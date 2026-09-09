@@ -1,11 +1,18 @@
 -- Full MR-TOF Candidate workbench program.  Candidate/prototype only.
 simion.workbench_program()
+-- Required by SIMION 2020's documented 8.2 instance_adjust overlap path.
+simion.early_access(8.2)
 -- Native SIMION 2020 regression: retain terminal callbacks outside every PA.
 sim_segment_global = 1
 
 local program_path = debug.getinfo(1, 'S').source:sub(2)
 local operating_point_path = assert(program_path:gsub('%.lua$', '.operating_point.lua'))
 local operating_point = assert(loadfile(operating_point_path), 'missing run-local operating-point sidecar: '..operating_point_path)()
+local local_refinement_path = program_path:gsub('%.lua$', '.local_refinement.lua')
+local local_refinement_loader = loadfile(local_refinement_path)
+local local_refinement = local_refinement_loader and local_refinement_loader() or {enabled=false}
+assert(type(local_refinement) == 'table' and type(local_refinement.enabled) == 'boolean',
+  'local-refinement sidecar must return a table with a boolean enabled field')
 local voltage_map_path = program_path:gsub('%.lua$', '.voltage_map.lua')
 local voltage_map = assert(loadfile(voltage_map_path), 'missing run-local voltage mapper: '..voltage_map_path)()
 local cycle_counter_path = program_path:gsub('%.lua$', '.mirror_cycle_counter.lua')
@@ -17,8 +24,10 @@ local detector_box = assert(operating_point.detector_box_mm, 'operating point ha
 local first_prism_l0 = assert(operating_point.first_prism_l0, 'operating point has no frozen P1 interface')
 local mirror_regions = assert(operating_point.mirror_regions_project, 'operating point has no resolved mirror regions')
 local prism_regions = assert(operating_point.prism_regions_project, 'operating point has no resolved prism regions')
-local patch_interface_planes = assert(operating_point.patch_interface_planes_project,
-  'operating point has no contract-derived local-PA interface planes')
+local patch_interface_planes = operating_point.patch_interface_planes_project
+  or local_refinement.patch_interface_planes_project
+assert(patch_interface_planes,
+  'operating point/local refinement has no contract-derived local-PA interface planes')
 local phase_origin_mirror_side = assert(operating_point.phase_origin_mirror_side,
   'operating point has no path-derived phase-origin mirror side')
 assert(phase_origin_mirror_side == -1 or phase_origin_mirror_side == 1,
@@ -67,7 +76,9 @@ assert(runtime_fast_adjust_accelerator_requested == nil
   or type(runtime_fast_adjust_accelerator_requested) == 'boolean',
   'runtime_fast_adjust_accelerator_enable must be boolean when present')
 local prism_switch = operating_point.prism_switch
-local prism_switch_enabled = prism_switch ~= nil and prism_switch.enabled == true
+local prism_switch_requested = prism_switch ~= nil and prism_switch.enabled == true
+local local_static_injection = local_refinement.enabled and local_refinement.static_injection_only == true
+local prism_switch_enabled = prism_switch_requested and not local_static_injection
 if prism_switch ~= nil then
   assert(type(prism_switch) == 'table', 'prism_switch must be a table when present')
   assert(type(prism_switch.enabled) == 'boolean', 'prism_switch.enabled must be boolean')
@@ -97,6 +108,18 @@ if prism_switch_enabled then
   assert(not runtime_fast_adjust_requested,
     'single-electrode P2 switching and full analyser Fast Adjust are mutually exclusive')
 end
+if local_refinement.enabled then
+  assert(not runtime_fast_adjust_requested,
+    'local replacement PAs presently require saved static working points; full analyser Fast Adjust is unsupported')
+  assert(type(local_refinement.instances) == 'table' and #local_refinement.instances == 5,
+    'local refinement requires five ordered replacement instances')
+  assert(local_refinement.global_analyzer_instance == 1
+      and local_refinement.accelerator_instance == 7
+      and local_refinement.detector_instance == 8,
+    'local-refinement instance roles must be global=1, accelerator=7, detector=8')
+  assert(not prism_switch_requested or local_static_injection,
+    'local replacement PAs require an explicit static_injection_only contract when the source point requests switching')
+end
 -- Ordinary reviewed flights consume an already voltageized PA0.  Finite-3-D
 -- downstream Jacobian trials instead bind the immutable PA family read-only
 -- and apply their run-local Stripe/P1/P2 coordinates in memory.
@@ -115,6 +138,28 @@ local turns, slow_turns, crossings, y0_crossings, p1_crossings, post_return_turn
 local cycle_counters, target_k_emitted, prism_switch_emitted = {}, {}, {}
 local prism_stage = {}
 local patch_interface_crossings = {}
+local selected_instances = {}
+
+local function local_instance_definition(instance_number)
+  if not local_refinement.enabled then return nil end
+  for _,definition in ipairs(local_refinement.instances) do
+    if definition.instance == instance_number then return definition end
+  end
+  return nil
+end
+
+function segment.instance_adjust()
+  if not local_refinement.enabled then return end
+  local definition = local_instance_definition(ion_instance)
+  if definition == nil then return end
+  local lower_ok = definition.z_min_mm == nil or ion_pz_mm >= definition.z_min_mm
+  local upper_ok = definition.z_max_mm == nil or ion_pz_mm < definition.z_max_mm
+  if not (lower_ok and upper_ok) then
+    -- Official SIMION overlap semantics: zero suppresses only the currently
+    -- selected higher-priority instance, then selection resumes below it.
+    ion_instance = 0
+  end
+end
 
 local function sample_coordinate(sample, axis)
   if axis == 'x' then return sample.x_mm end
@@ -233,6 +278,7 @@ function segment.initialize_run()
   cycle_counters, target_k_emitted, prism_switch_emitted = {}, {}, {}
   prism_stage = {}
   patch_interface_crossings = {}
+  selected_instances = {}
   assert(#patch_interface_planes > 0, 'at least one local-PA interface plane is required')
   for _,plane in ipairs(patch_interface_planes) do
     assert(type(plane.name) == 'string' and type(plane.region) == 'string'
@@ -246,12 +292,27 @@ function segment.initialize_run()
     assert(plane.u_min_mm < plane.u_max_mm and plane.v_min_mm < plane.v_max_mm,
       'patch-interface in-plane bounds are invalid')
   end
-  assert(simion.wb and #simion.wb.instances == 3,
-    'MR-TOF Candidate flight requires analyser, accelerator, and detector instances')
-  assert(simion.wb.instances[1].filename:match('mrtof_analyzer%.pa0$'), 'instance 1 must be analyser PA0')
-  assert(simion.wb.instances[2].filename:match('mrtof_accelerator%.pa0$'), 'instance 2 must be accelerator PA0')
-  assert(simion.wb.instances[3].filename:match('mrtof_detector%.pa#$'), 'instance 3 must be raw zero-voltage detector PA#')
-  print('MRTOF_CANDIDATE: status=prototype geometry=three_component_3d')
+  if local_refinement.enabled then
+    assert(simion.wb and #simion.wb.instances == 8,
+      'local-refinement flight requires eight contiguous instances')
+    local expected = {
+      'mrtof_analyzer%.pa0$', 'local_negative_mirror%.pa0$', 'local_negative_bridge%.pa0$',
+      'local_central%.pa0$', 'local_positive_bridge%.pa0$', 'local_positive_mirror%.pa0$',
+      'mrtof_accelerator%.pa0$', 'mrtof_detector%.pa#$'
+    }
+    for index,pattern in ipairs(expected) do
+      assert(simion.wb.instances[index].filename:match(pattern),
+        string.format('local-refinement instance %d has the wrong PA role', index))
+    end
+    print('MRTOF_CANDIDATE: status=prototype geometry=three_component_3d local_replacement=enabled')
+  else
+    assert(simion.wb and #simion.wb.instances == 3,
+      'MR-TOF Candidate flight requires analyser, accelerator, and detector instances')
+    assert(simion.wb.instances[1].filename:match('mrtof_analyzer%.pa0$'), 'instance 1 must be analyser PA0')
+    assert(simion.wb.instances[2].filename:match('mrtof_accelerator%.pa0$'), 'instance 2 must be accelerator PA0')
+    assert(simion.wb.instances[3].filename:match('mrtof_detector%.pa#$'), 'instance 3 must be raw zero-voltage detector PA#')
+    print('MRTOF_CANDIDATE: status=prototype geometry=three_component_3d')
+  end
 end
 
 function segment.fast_adjust()
@@ -270,7 +331,7 @@ function segment.fast_adjust()
     'prism extraction switching and full analyser Fast Adjust cannot run together')
   if runtime_fast_adjust_enable == 0 then return end
   local analyser=simion.wb.instances[1].pa
-  local accelerator=simion.wb.instances[2].pa
+  local accelerator=simion.wb.instances[local_refinement.enabled and 7 or 2].pa
   local values=voltage_map(mirror_voltages,{V_stripe_1,V_stripe_2},{V_prism_1,V_prism_2},
     {V_repeller,V_grid1,V_grid2},accelerator_ring_voltages,V_nonaccelerator_scale)
   analyser:fast_adjust(values.analyser)
@@ -298,6 +359,15 @@ function segment.initialize()
 end
 
 function segment.other_actions()
+  if local_refinement.enabled then
+    assert(ion_instance >= 0 and ion_instance <= 8,
+      'SIMION selected an undeclared local-refinement instance')
+    if selected_instances[ion_number] ~= ion_instance then
+      print(string.format('MRTOF_EVENT instance_transition ion=%d t_us=%.12g instance=%d x_mm=%.12g y_mm=%.12g z_mm=%.12g',
+        ion_number, ion_time_of_flight, ion_instance, ion_px_mm, ion_py_mm, ion_pz_mm))
+      selected_instances[ion_number] = ion_instance
+    end
+  end
   if constrain_x_symmetry_plane then
     ion_px_mm, ion_vx_mm = 0, 0
   end

@@ -37,9 +37,9 @@ SEAMS = {
         "event_name": "handoff_negative_bridge_to_mirror__z_plane",
         "coordinate_mm": -131.0,
         "region_a": "stripe_mirror_bridge_negative",
-        "region_b": "mirror_turn_positive",
+        "region_b": "mirror_turn_negative",
         "transform_a": "identity",
-        "transform_b": "reflect_z",
+        "transform_b": "identity",
     },
     "positive_bridge_to_mirror": {
         "event_name": "handoff_positive_bridge_to_mirror__z_plane",
