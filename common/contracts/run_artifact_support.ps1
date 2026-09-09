@@ -507,18 +507,22 @@ function Copy-VerifiedRunInput {
   [CmdletBinding()]
   param(
     [Parameter(Mandatory)][string]$Source,
-    [Parameter(Mandatory)][string]$Destination
+    [Parameter(Mandatory)][string]$Destination,
+    [ValidateRange(1,5)][int]$VerificationAttempts=1
   )
   $sourcePath=[IO.Path]::GetFullPath($Source);$destinationPath=[IO.Path]::GetFullPath($Destination)
   if(-not(Test-Path -LiteralPath $sourcePath -PathType Leaf)){throw "Run input is missing: $sourcePath"}
   $parent=Split-Path -Parent $destinationPath
   if(-not(Test-Path -LiteralPath $parent -PathType Container)){New-Item -ItemType Directory -Path $parent -Force|Out-Null}
-  Copy-Item -LiteralPath $sourcePath -Destination $destinationPath -Force
-  $sourceHash=(Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash
-  if($sourceHash-cne(Get-FileHash -LiteralPath $destinationPath -Algorithm SHA256).Hash){
-    throw "Run input changed while frozen: $sourcePath"
+  foreach($attempt in 1..$VerificationAttempts){
+    $sourceHashBefore=(Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash
+    if(Test-Path -LiteralPath $destinationPath -PathType Leaf){(Get-Item -LiteralPath $destinationPath).IsReadOnly=$false}
+    Copy-Item -LiteralPath $sourcePath -Destination $destinationPath -Force
+    $sourceHashAfter=(Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash
+    $destinationHash=(Get-FileHash -LiteralPath $destinationPath -Algorithm SHA256).Hash
+    if($sourceHashBefore-ceq$sourceHashAfter -and $sourceHashAfter-ceq$destinationHash){return $destinationPath}
   }
-  return $destinationPath
+  throw "Run input changed or copied inconsistently while frozen after $VerificationAttempts attempt(s): $sourcePath"
 }
 
 function Write-RunDirectoryChecksumInventory {

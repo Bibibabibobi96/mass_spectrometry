@@ -63,6 +63,19 @@ class AnalyzerLocalPaFamilyTest(unittest.TestCase):
         self.assertNotIn("reviewed_geometry_contract=$frozenReviewed", config_line)
         self.assertNotIn("operating_point_materialization=$frozenMaterialization", config_line)
 
+    def test_local_workbench_combines_cached_basis_without_refine_or_junction(self) -> None:
+        source = (PROJECT / "simion" / "run_analyzer_local_workbench.ps1").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("adjust_operating_pa_from_basis.lua", source)
+        self.assertIn("measure_pa_basis_voltage.lua", source)
+        self.assertIn("family{0}_response{1}.pa", source)
+        self.assertIn("combine_local_operating_replacements_without_refine", source)
+        self.assertIn("Assert-AnalyzerLocalFamilyCacheReadOnly", source)
+        self.assertIn("-VerificationAttempts 3", source)
+        self.assertNotIn("-ItemType Junction", source)
+        self.assertNotIn("build_dirichlet_patch_operating_pa.lua", source)
+
     def test_two_prism_trial_reuses_local_basis_without_refine(self) -> None:
         source = (PROJECT / "simion" / "run_two_prism_trial.ps1").read_text(
             encoding="utf-8"
@@ -74,15 +87,18 @@ class AnalyzerLocalPaFamilyTest(unittest.TestCase):
         self.assertIn("Resolve-AnalyzerLocalFamilyCacheGeneration", source)
         self.assertIn("build_local_refinement_iob.lua", source)
         self.assertIn("Local replacement trials are static-injection", source)
-        self.assertIn("$privateBasisPaths", source)
-        self.assertIn("family{0}_response{1}.pa{2}", source)
-        self.assertIn("Copy-VerifiedRunInput -Source $basisSource", source)
+        self.assertIn("family{0}_response{1}.pa", source)
+        self.assertNotIn("family{0}_response{1}.pa{2}", source)
+        self.assertIn("private_standalone_basis_copies=$true", source)
+        self.assertIn("$privateOperatingBase", source)
         self.assertNotIn("-ItemType Junction", source)
         self.assertIn("$localCacheSentinelHashes", source)
         self.assertIn("changed immutable local PA-family bookkeeping", source)
         self.assertIn("$localCacheSentinelHashes", source)
         self.assertIn("immutable local PA cache sentinel", source)
         self.assertIn("foreach($responseId in 5..8)", source)
+        self.assertIn("Assert-AnalyzerLocalFamilyCacheReadOnly", source)
+        self.assertIn("-VerificationAttempts 3", source)
 
     def fixture(self, root: Path) -> tuple[Path, Path, Path]:
         gem = root / "central.gem"

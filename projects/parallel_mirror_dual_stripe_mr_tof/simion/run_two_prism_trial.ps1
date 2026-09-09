@@ -121,6 +121,7 @@ try{
       $family=Get-VerifiedAnalyzerLocalFamily -SourceRunPath $familyRun -ExpectedRegion $familySpecs[$familyIndex][0] -ExpectedScale $localScale -Label $familySpecs[$familyIndex][1] -PythonExe $python -RepoRoot $repoRoot
       $family.frozen_identity=$family.identity_source
       Resolve-AnalyzerLocalFamilyCacheGeneration -Family $family -PythonExe $python -RepoRoot $repoRoot -CacheRoot (Join-Path $artifactRoot 'common\simion\pa_family_cache')|Out-Null
+      Assert-AnalyzerLocalFamilyCacheReadOnly -Family $family
       $sentinel=Join-Path $family.generation_directory ("{0}.pa#"-f([string]$family.contract.family_prefix))
       $localCacheSentinelPaths+=$sentinel
       $localFamilies+=$family
@@ -155,13 +156,19 @@ try{
   $requiredBytes=[int64]0
   foreach($path in @($reviewedContract,$selectedContract,$trajectoryContractSource,$mirrorSummary,$stripeSummary,$acceleratorReceipt,$trialTool,$voltageizerSource,$iobBuilderSource,$localIobBuilderSource,$basisAdjusterSource,$basisVoltageSource,$iobSeedSource,$localIobSeedSource,$placeholderSources,$programSource,$counterSource,$mapSource,$launcherSource)){$requiredBytes+=[int64](Get-Item -LiteralPath $path).Length}
   if($null-ne$localWorkbenchRun){
-    # Reserve the worst case for one output PA0 plus four private response
-    # copies in every local region.  The copies isolate SIMION from immutable
-    # cache-family bookkeeping and are removed before terminal capacity audit.
-    foreach($family in $localFamilies){
+    # Reserve one output PA0, one private operating base and at most four
+    # standalone response copies per local region.  The response bytes come
+    # from a complete verified family, but a temporary `.pa` suffix removes
+    # SIMION's `.paN` family association without another Refine.
+    $capacityLocalNames=@('local_negative_mirror.pa0','local_negative_bridge.pa0','local_central.pa0','local_positive_bridge.pa0','local_positive_mirror.pa0')
+    for($familyIndex=0;$familyIndex-lt$localFamilies.Count;$familyIndex++){
+      $family=$localFamilies[$familyIndex]
       $prefix=[string]$family.contract.family_prefix
       $requiredBytes+=[int64](Get-Item -LiteralPath (Join-Path $family.generation_directory "$prefix.pa0")).Length
-      foreach($responseId in 5..8){$requiredBytes+=[int64](Get-Item -LiteralPath (Join-Path $family.generation_directory ("{0}.pa{1}"-f$prefix,$responseId))).Length}
+      foreach($responseId in 5..8){
+        $requiredBytes+=[int64](Get-Item -LiteralPath (Join-Path $family.generation_directory ("{0}.pa{1}"-f$prefix,$responseId))).Length
+      }
+      $requiredBytes+=[int64](Get-Item -LiteralPath (Join-Path $localWorkbenchRun "simion\$($capacityLocalNames[$familyIndex])")).Length
     }
   }
   $protectedPaths=@($package.artifact_run_dir)
@@ -265,26 +272,25 @@ try{
       for($index=0;$index-lt$localFamilies.Count;$index++){
         $family=$localFamilies[$index]
         $prefix=[string]$family.contract.family_prefix
-        # SIMION can treat a directly opened .paN as a member of its adjacent
-        # family and update that family's .pa# bookkeeping.  Cache generations
-        # are immutable, so never expose their directory to SIMION.  Copy each
-        # required response to an isolated temporary basename first, while
-        # retaining its real .paN extension; the
-        # content is still verified by the cache probe above and the response
-        # is read only by the adjustment Lua.
+        # A copied `.paN` can retain SIMION family bookkeeping and write back
+        # after the apparent solver exit.  Copy each verified response as an
+        # ordinary standalone `.pa`; the source generation is also sealed
+        # read-only at filesystem level.
         $privateBasisPaths=@()
         foreach($changedIndex in $changedIndices){
           $responseId=5+$changedIndex
           $basisSource=Join-Path $family.generation_directory ("{0}.pa{1}"-f$prefix,$responseId)
-          $privateBasis=Join-Path $temporarySolverDir ("family{0}_response{1}.pa{2}"-f($index+1),($changedIndex+1),$responseId)
-          Copy-VerifiedRunInput -Source $basisSource -Destination $privateBasis|Out-Null
+          $privateBasis=Join-Path $temporarySolverDir ("family{0}_response{1}.pa"-f($index+1),($changedIndex+1))
+          Copy-VerifiedRunInput -Source $basisSource -Destination $privateBasis -VerificationAttempts 3|Out-Null
           $privateBasisPaths+=$privateBasis
         }
         $basisPaths=($privateBasisPaths-join'|')
+        $privateOperatingBase=Join-Path $temporarySolverDir ("family{0}_operating_base.pa0"-f($index+1))
+        Copy-VerifiedRunInput -Source (Join-Path $localWorkbenchRun "simion\$($localNames[$index])") -Destination $privateOperatingBase -VerificationAttempts 3|Out-Null
         $temporaryLocal=Join-Path $temporarySolverDir $localNames[$index]
-        Invoke-SimionStage -Stage ("adjust_local_{0}"-f$family.label) -Arguments @('--nogui','--noprompt','lua',(Join-Path $solverDir 'adjust_operating_pa_from_basis.lua'),(Join-Path $localWorkbenchRun "simion\$($localNames[$index])"),$temporaryLocal,$basisPaths,$basisText,$deltaText)
+        Invoke-SimionStage -Stage ("adjust_local_{0}"-f$family.label) -Arguments @('--nogui','--noprompt','lua',(Join-Path $solverDir 'adjust_operating_pa_from_basis.lua'),$privateOperatingBase,$temporaryLocal,$basisPaths,$basisText,$deltaText)
         $temporaryLocalPaths+=$temporaryLocal
-        $localAdjustmentReceipts+=[ordered]@{region=$family.region;source_cache_generation=$family.generation_directory;basis_voltage_v=$basisVoltage;downstream_voltage_deltas_v=@($deltaVoltages);temporary_output_sha256=(Get-FileHash -LiteralPath $temporaryLocal -Algorithm SHA256).Hash;refine_performed=$false}
+        $localAdjustmentReceipts+=[ordered]@{region=$family.region;source_cache_generation=$family.generation_directory;private_standalone_basis_copies=$true;basis_voltage_v=$basisVoltage;downstream_voltage_deltas_v=@($deltaVoltages);temporary_output_sha256=(Get-FileHash -LiteralPath $temporaryLocal -Algorithm SHA256).Hash;refine_performed=$false}
       }
     }
   }
@@ -308,11 +314,12 @@ try{
   if(-not(Test-RunFilesIdentical -Left $fly2Input -Right $temporaryFly2)){throw 'IOB companion Fly2 differs from the frozen downstream-trial source'}
   if(@(Compare-Object $upstreamHashes @($upstreamPaths|ForEach-Object{(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash})).Count-ne 0){throw 'Read-only IOB build changed an upstream PA'}
   if($localCacheSentinelPaths.Count-and@(Compare-Object $localCacheSentinelHashes @($localCacheSentinelPaths|ForEach-Object{(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash})).Count-ne 0){throw 'Temporary IOB build changed an immutable local PA cache sentinel'}
+  foreach($family in $localFamilies){Resolve-AnalyzerLocalFamilyCacheGeneration -Family $family -PythonExe $python -RepoRoot $repoRoot -CacheRoot (Join-Path $artifactRoot 'common\simion\pa_family_cache')|Out-Null}
   $failureStage='native_two_prism_flight'
   Invoke-SimionStage -Stage 'native_two_prism_flight' -Arguments @('--nogui','--noprompt','lua',(Join-Path $solverDir 'run_iob_flight.lua'),$temporaryIob)
   if(@(Compare-Object $upstreamHashes @($upstreamPaths|ForEach-Object{(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash})).Count-ne 0){throw 'Runtime Fast Adjust changed an upstream PA'}
   if($localCacheSentinelPaths.Count-and@(Compare-Object $localCacheSentinelHashes @($localCacheSentinelPaths|ForEach-Object{(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash})).Count-ne 0){throw 'SIMION flight changed immutable local PA-family bookkeeping'}
-  if($localCacheSentinelPaths.Count-and@(Compare-Object $localCacheSentinelHashes @($localCacheSentinelPaths|ForEach-Object{(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash})).Count-ne 0){throw 'SIMION flight changed an immutable local PA cache sentinel'}
+  foreach($family in $localFamilies){Resolve-AnalyzerLocalFamilyCacheGeneration -Family $family -PythonExe $python -RepoRoot $repoRoot -CacheRoot (Join-Path $artifactRoot 'common\simion\pa_family_cache')|Out-Null}
   $rawLog=Join-Path $logDir 'native_two_prism_flight.log';$observation=Join-Path $resultDir 'two_prism_trial_observation.json'
   $failureStage='analyze_trial'
   Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial','analyze','--log',$rawLog,'--trial-receipt',$trialReceipt,'--output',$observation)

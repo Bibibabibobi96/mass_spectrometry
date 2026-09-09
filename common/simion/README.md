@@ -25,8 +25,9 @@ oaTOF、single-flight或具体电极编号。
 
 [`pa_family_cache.py`](pa_family_cache.py)提供完整静电PA-family的内容寻址复用：调用方必须给出完整的
 数值身份（resolved geometry、GEM、basis namespace、xyz网格、网格相位、surface、SIMION可执行文件身份、
-Refine策略和构建器身份）以及精确文件清单。它只缓存并逐字节核验`.pa#`、`.pa0`和basis数组；同一身份命中时
-以原子复制物化到新的run-local目录，任一缺失、额外、哈希不同或损坏generation均失败关闭。IOB、Fast Adjust
+Refine策略和构建器身份）以及精确文件清单。它只缓存并逐字节核验`.pa#`、`.pa0`和basis数组；新发布的
+generation payload和manifest同时设为文件系统只读。同一身份命中时以原子复制物化到新的run-local目录，
+并明确把私有副本恢复为可写；任一缺失、额外、哈希不同或损坏generation均失败关闭。IOB、Fast Adjust
 工作点、程序和Fly2从不作为缓存几何真值：每个run必须重新装配、重新保存并在本次manifest中绑定。该层不理解
 器件、坐标或电极含义，项目仍拥有其ID和几何合同。发布过程按cache key持有短生命周期目录锁；并发发布同一
 key只允许一个写者，遗留锁失败关闭并需按artifact保留规则审计后处置，绝不由缓存代码猜测为可删除。
@@ -55,8 +56,10 @@ SIMION原生Fast Adjust会拒绝超出局部实体计数的响应；此时
 [`adjust_operating_pa_from_basis.lua`](adjust_operating_pa_from_basis.lua)从已解基准工作点只叠加调用方列出的
 非零电压增量响应，不Refine，也不假定响应归一化。零增量应直接复用基准PA0。
 调用方不得通过junction/symlink把不可变缓存generation直接暴露给SIMION：直接打开`.paN`时，SIMION
-可能更新同basename的`.pa#` family bookkeeping。应把所需响应复制到临时目录的独立basename，保留真实
-`.paN`扩展，并在IOB构建和飞行前后核对缓存`.pa#`哨兵哈希；临时容量必须在门禁中预留。
+可能在进程退出后延迟更新同family成员；完整复制但保留family语义也不能作为源缓存保护证明。只读源
+generation之外，若消费者仅需若干响应叠加，应把每个已验证响应复制成无`.paN`语义的独立`.pa`文件；若
+消费者确需原生family操作，则调用`materialize`取得完整、可写、run-local副本。两种路径都必须在构建和
+飞行后重新probe完整源family，不能只核对`.pa#`哨兵；临时容量必须在门禁中预留。
 
 [`cache_generation.py`](cache_generation.py)只抽取不同 PA-family 缓存协议共有的直接文件清单、payload
 摘要和 immutable generation 摘要计算；它不定义 identity 字段、role、锁、缓存目录、容量治理或命中时的

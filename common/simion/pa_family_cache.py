@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import tempfile
 import time
 from typing import Any, Mapping, Sequence
@@ -77,6 +78,22 @@ class CachePublication:
 class MaterializedFamily:
     destination_directory: Path
     files: tuple[dict[str, Any], ...]
+
+
+def _set_file_read_only(path: Path) -> None:
+    """Seal one published cache payload against solver-side family writes."""
+    path.chmod(path.stat().st_mode & ~(stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH))
+
+
+def _set_file_writable(path: Path) -> None:
+    """Make one private materialization writable without changing its bytes."""
+    path.chmod(path.stat().st_mode | stat.S_IWUSR)
+
+
+def _seal_generation_files(directory: Path, manifest: Mapping[str, Any]) -> None:
+    for record in manifest["files"]:
+        _set_file_read_only(directory / record["name"])
+    _set_file_read_only(directory / MANIFEST_NAME)
 
 
 def _canonical_identity(identity: Mapping[str, Any]) -> dict[str, Any]:
@@ -368,6 +385,7 @@ def publish_pa_family_cache(
                     raise PAFamilyCacheError("existing PA cache generation identity differs")
                 _publish_pointer(key_root, key, incumbent["generation_sha256"])
                 return CachePublication(CacheDisposition.HIT, key, incumbent["generation_sha256"], destination, incumbent)
+            _seal_generation_files(generation_stage, manifest)
             os.replace(generation_stage, destination)
             _publish_pointer(key_root, key, manifest["generation_sha256"])
             return CachePublication(CacheDisposition.PUBLISHED, key, manifest["generation_sha256"], destination, manifest)
@@ -409,6 +427,7 @@ def materialize_pa_family_cache(
         stage.mkdir()
         for name in names:
             shutil.copy2(source / name, stage / name)
+            _set_file_writable(stage / name)
         copied = pa_family_inventory(stage, names)
         if copied != manifest["files"]:
             # Large PA arrays can be scanned while an endpoint protection
@@ -420,6 +439,7 @@ def materialize_pa_family_cache(
             divergent = [name for name in names if actual.get(name) != expected[name]]
             for name in divergent:
                 _copy_verified_candidate_file(source / name, stage / name)
+                _set_file_writable(stage / name)
             copied = pa_family_inventory(stage, names)
             if copied != manifest["files"]:
                 actual = {record["name"]: record for record in copied}

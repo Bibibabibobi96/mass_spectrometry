@@ -5,6 +5,7 @@ import json
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
+import stat
 import tempfile
 import unittest
 
@@ -64,6 +65,8 @@ class PAFamilyCacheTest(unittest.TestCase):
     def test_publish_hit_validate_and_materialize_with_hashes(self) -> None:
         first = publish_pa_family_cache(self.cache, identity(), self.source, self.names)
         self.assertEqual(first.disposition, CacheDisposition.PUBLISHED)
+        self.assertFalse((first.generation_directory / "field.pa1").stat().st_mode & stat.S_IWUSR)
+        self.assertFalse((first.generation_directory / "cache_manifest.json").stat().st_mode & stat.S_IWUSR)
         self.assertEqual(probe_pa_family_cache(self.cache, identity(), expected_filenames=self.names).disposition, CacheDisposition.HIT)
         manifest = validate_pa_family_cache_generation(first.generation_directory, expected_filenames=self.names)
         self.assertEqual(manifest["files"], pa_family_inventory(self.source, self.names))
@@ -72,10 +75,14 @@ class PAFamilyCacheTest(unittest.TestCase):
         local = materialize_pa_family_cache(first.generation_directory, self.root / "run" / "simion", expected_filenames=self.names)
         self.assertEqual(local.files, tuple(manifest["files"]))
         self.assertEqual(pa_family_inventory(local.destination_directory, self.names), manifest["files"])
+        self.assertTrue((local.destination_directory / "field.pa1").stat().st_mode & stat.S_IWUSR)
 
     def test_missing_or_corrupt_generation_is_never_a_hit_or_overwritten(self) -> None:
         self.assertEqual(probe_pa_family_cache(self.cache, identity()).disposition, CacheDisposition.MISS)
         published = publish_pa_family_cache(self.cache, identity(), self.source, self.names)
+        (published.generation_directory / "field.pa1").chmod(
+            (published.generation_directory / "field.pa1").stat().st_mode | 0o200
+        )
         (published.generation_directory / "field.pa1").write_bytes(b"changed")
         probe = probe_pa_family_cache(self.cache, identity(), expected_filenames=self.names)
         self.assertEqual(probe.disposition, CacheDisposition.CORRUPT)

@@ -64,3 +64,17 @@ function Resolve-AnalyzerLocalFamilyCacheGeneration {
   $Family.generation_directory=[string]$probe.generation_directory
   return $Family.generation_directory
 }
+
+function Assert-AnalyzerLocalFamilyCacheReadOnly {
+  param([Parameter(Mandatory)]$Family)
+  foreach($filename in @($Family.contract.family_filenames)){
+    $path=Join-Path $Family.generation_directory ([string]$filename)
+    if(-not(Get-Item -LiteralPath $path).IsReadOnly){
+      throw "Immutable local PA cache payload is not filesystem read-only: $path"
+    }
+  }
+  $manifest=Join-Path $Family.generation_directory 'cache_manifest.json'
+  if(-not(Get-Item -LiteralPath $manifest).IsReadOnly){
+    throw "Immutable local PA cache manifest is not filesystem read-only: $manifest"
+  }
+}

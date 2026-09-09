@@ -328,6 +328,17 @@ class ArtifactRetentionTests(unittest.TestCase):
         self.assertIn("if($RetentionContractEnabled){2}else{1}", support)
         self.assertIn("Apply-RunArtifactRetention", support)
 
+    def test_verified_input_copy_can_retry_but_requires_three_way_hash_identity(self) -> None:
+        support = (Path(__file__).with_name("run_artifact_support.ps1")).read_text(
+            encoding="utf-8-sig"
+        )
+        self.assertIn("[ValidateRange(1,5)][int]$VerificationAttempts=1", support)
+        self.assertIn("$sourceHashBefore", support)
+        self.assertIn("$sourceHashAfter", support)
+        self.assertIn("$destinationHash", support)
+        self.assertIn("$sourceHashBefore-ceq$sourceHashAfter", support)
+        self.assertIn("$sourceHashAfter-ceq$destinationHash", support)
+
     def test_multipole_solver_runners_apply_frozen_retention_before_manifest(self) -> None:
         for name in (
             "run_finite_3d_transport.ps1",
@@ -357,6 +368,21 @@ class ArtifactRetentionTests(unittest.TestCase):
             "projects/parallel_mirror_dual_stripe_mr_tof/simion/run_three_component_candidate.ps1",
             "projects/parallel_mirror_dual_stripe_mr_tof/simion/run_three_component_center_flight.ps1",
             "projects/parallel_mirror_dual_stripe_mr_tof/simion/run_three_component_first_prism_flight.ps1",
+            "projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_downstream_bounded_step.ps1",
+            "projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_downstream_central_difference.ps1",
+            "projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_downstream_voltage_definition.ps1",
+            "projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_dual_stripe_operating_seed.ps1",
+            "projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_dual_stripe_shape_diagnostic.ps1",
+            "projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_mirror_exact_k_operating_point.ps1",
+            "projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_mirror_l0_l1_candidate.ps1",
+            "projects/parallel_mirror_dual_stripe_mr_tof/analysis/run_two_prism_operating_point.ps1",
+            "projects/parallel_mirror_dual_stripe_mr_tof/simion/run_accelerator_focus_flight.ps1",
+            "projects/parallel_mirror_dual_stripe_mr_tof/simion/run_analyzer_local_center_flight.ps1",
+            "projects/parallel_mirror_dual_stripe_mr_tof/simion/run_analyzer_local_interface_convergence.ps1",
+            "projects/parallel_mirror_dual_stripe_mr_tof/simion/run_analyzer_local_pa_family.ps1",
+            "projects/parallel_mirror_dual_stripe_mr_tof/simion/run_analyzer_local_portal_interface_convergence.ps1",
+            "projects/parallel_mirror_dual_stripe_mr_tof/simion/run_analyzer_local_workbench.ps1",
+            "projects/parallel_mirror_dual_stripe_mr_tof/simion/run_two_prism_trial.ps1",
         }
         legacy = {
             "projects/single_reflection_oa_tof_mass_analyzer/tests/comsol/run_n100_candidate_functional.ps1",

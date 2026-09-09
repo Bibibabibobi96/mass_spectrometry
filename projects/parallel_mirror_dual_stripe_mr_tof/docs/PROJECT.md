@@ -982,6 +982,19 @@ comparison for a combined four-voltage perturbation found maximum discrepancies
 of `9.66e-10 V` in potential and `2.30e-9 V/mm` in field components at 39
 samples.
 
+Managed workbench
+`20260912_221500__build__simion__mrtof-local-accepted-r04/simion/mrtof_local_replacement.iob`
+materializes the later accepted centre-voltage point without refining any
+unchanged field array.  It retains the isotropic 1-mm global analyser, five
+isotropic 0.5-mm local replacements, the separate `0.25/0.25/0.1 mm/gu`
+accelerator and the separate 1-mm detector.  Each local operating PA was
+formed from verified, filesystem-read-only cache responses copied under
+standalone `.pa` names and the measured `10000 V` basis normalization.  Both
+the in-place and relocated eight-instance IOB inspections passed.  Large PA
+copies use an explicit bounded verification retry; every successful attempt
+requires source-before, source-after and destination SHA-256 identity and
+therefore does not weaken the frozen-input contract.
+
 Managed centre flight
 `20260912_073000__sim__simion__mrtof-local-center-screening-n1` then exercised
 all five local instances and 208 interface crossings without selecting
