@@ -1014,3 +1014,26 @@ authorized for another extrapolation.  The next voltage search must use
 two-sided local samples or a bounded derivative-free method and treat transport
 clearance as an explicit inequality.  Fine-time profiles remain deferred until
 that centre topology is closed.
+
+Managed central-difference audit
+`20260912_180000__analysis__python__mrtof-local-central-difference-r01` used
+feasible symmetric steps `[S1,S2,P1,P2]=[0.05,0.2,0.02,0.02] V`.  Its central
+Jacobian retained rank four with condition number `105.952612670`; after locally
+eliminating P1/P2, the effective two-Stripe response had condition number
+`2.275314721`.  Forward/backward Stripe derivatives still disagreed materially,
+so the undamped central Newton correction was not accepted.  A 2% central
+direction trial `20260912_181000__sim__simion__mrtof-local-central-trust-alpha0p02-n1`
+preserved the full return and reduced all four residuals.  Managed audit
+`20260912_182000__analysis__python__mrtof-local-central-step-alpha0p02-audit`
+measured an actual/predicted reduction ratio of `1.161169649` and requires a new
+Jacobian at the accepted trial point.
+
+These trials also exposed a cache-lifecycle defect: opening a cached `.paN`
+through a directory junction allowed SIMION to rewrite its family's `.pa#`
+bookkeeping.  The hash gate rejected the altered positive-mirror family.  Its
+raw grouped PA was deterministically rebuilt from the same frozen GEM and
+electrode map, matched the original manifest hash, and restored the generation
+to a verified hit.  The trial runner now copies required responses to isolated
+temporary basenames while preserving their real `.paN` extensions, reserves
+their worst-case temporary capacity, and compares cache `.pa#` sentinel hashes
+before and after IOB construction and flight.

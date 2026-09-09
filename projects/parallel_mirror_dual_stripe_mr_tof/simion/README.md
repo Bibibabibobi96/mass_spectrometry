@@ -434,6 +434,21 @@ r05因此只在元数据可移植性上被取代。局域工作点调压现在�
 因此单边Jacobian不能继续外推；下一步须在可通行邻域使用双边差分或有界无导数搜索，并把碰撞/通道
 裕量作为显式不等式。上述结果仍只有一个中心离子，不是网格收敛或分辨率结果。
 
+受管中央差分审计 `20260912_180000__analysis__python__mrtof-local-central-difference-r01`
+使用实际可通行的 `[S1,S2,P1,P2]=[0.05,0.2,0.02,0.02] V` 对称步长。中央 Jacobian
+仍为秩4，但条件数降为 `105.952612670`；消去 P1/P2 交接自由度后的两 Stripe 有效响应
+条件数为 `2.275314721`，说明两条制造曲线在该点并不退化。前/后向 Stripe 导数仍明显
+不一致，因此没有授权直接 Newton 外推。中央方向2%试点
+`20260912_181000__sim__simion__mrtof-local-central-trust-alpha0p02-n1` 保持完整返回且四残差
+全部下降；审计 `20260912_182000__analysis__python__mrtof-local-central-step-alpha0p02-audit`
+得到实际/预测下降比 `1.161169649` 和 `descent_observed__new_jacobian_required`。
+
+试点还发现：直接通过目录 junction 打开缓存 `.paN` 会让 SIMION 改写同族 `.pa#` 的
+bookkeeping。哈希门禁正确拒绝了受影响的正镜 family；其 `.pa#` 已从同一冻结 GEM 重新
+编译、重映射并恢复到清单哈希，完整 family 再次 probe 为 hit。现行 runner 会先把所需
+响应复制到临时独立 basename，并保留真实 `.paN` 扩展；同时在构建和飞行前后检查缓存
+`.pa#` 哨兵哈希，SIMION 不再直接接触不可变 cache generation。
+
 修复后的实际中心粒子全装配 Fly 已在约0.06 s终止并完成事件对账；它在 `t=333.722473491 us`、
 `z=-97.0000004 mm`、`y=0.515455 mm` 时以 electrode collision (`splat=-1`) 损失，仅记录24次转折
 （overtone `K=12`），没有探测命中或 K=25。因此性能问题已经解除，但当前静态 Candidate 的几何/注入/

@@ -54,6 +54,9 @@ probe|publish|materialize --cache-root <root> --identity <identity.json> --filen
 SIMION原生Fast Adjust会拒绝超出局部实体计数的响应；此时
 [`adjust_operating_pa_from_basis.lua`](adjust_operating_pa_from_basis.lua)从已解基准工作点只叠加调用方列出的
 非零电压增量响应，不Refine，也不假定响应归一化。零增量应直接复用基准PA0。
+调用方不得通过junction/symlink把不可变缓存generation直接暴露给SIMION：直接打开`.paN`时，SIMION
+可能更新同basename的`.pa#` family bookkeeping。应把所需响应复制到临时目录的独立basename，保留真实
+`.paN`扩展，并在IOB构建和飞行前后核对缓存`.pa#`哨兵哈希；临时容量必须在门禁中预留。
 
 [`cache_generation.py`](cache_generation.py)只抽取不同 PA-family 缓存协议共有的直接文件清单、payload
 摘要和 immutable generation 摘要计算；它不定义 identity 字段、role、锁、缓存目录、容量治理或命中时的

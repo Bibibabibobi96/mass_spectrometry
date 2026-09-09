@@ -74,6 +74,15 @@ class AnalyzerLocalPaFamilyTest(unittest.TestCase):
         self.assertIn("Resolve-AnalyzerLocalFamilyCacheGeneration", source)
         self.assertIn("build_local_refinement_iob.lua", source)
         self.assertIn("Local replacement trials are static-injection", source)
+        self.assertIn("$privateBasisPaths", source)
+        self.assertIn("family{0}_response{1}.pa{2}", source)
+        self.assertIn("Copy-VerifiedRunInput -Source $basisSource", source)
+        self.assertNotIn("-ItemType Junction", source)
+        self.assertIn("$localCacheSentinelHashes", source)
+        self.assertIn("changed immutable local PA-family bookkeeping", source)
+        self.assertIn("$localCacheSentinelHashes", source)
+        self.assertIn("immutable local PA cache sentinel", source)
+        self.assertIn("foreach($responseId in 5..8)", source)
 
     def fixture(self, root: Path) -> tuple[Path, Path, Path]:
         gem = root / "central.gem"

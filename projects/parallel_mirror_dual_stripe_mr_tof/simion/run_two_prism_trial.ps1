@@ -102,6 +102,7 @@ try{
   $sourceAccelerator=Join-Path $acceleratorSimion 'mrtof_accelerator.pa0'
   $sourceDetector=Join-Path $geometrySimion 'mrtof_detector.pa#'
   $localWorkbenchConfig=$null;$localFamilies=@();$localBaseMaterialization=$null
+  $localCacheSentinelPaths=@();$localCacheSentinelHashes=@()
   if($null-ne$localWorkbenchRun){
     $localWorkbenchConfig=Get-Content -Raw -LiteralPath (Join-Path $localWorkbenchRun 'run_config.json')|ConvertFrom-Json -Depth 40
     if($localWorkbenchConfig.mode-ne'analyzer_local_replacement_workbench'){throw 'LocalWorkbenchRunPath is not a local replacement workbench.'}
@@ -120,8 +121,11 @@ try{
       $family=Get-VerifiedAnalyzerLocalFamily -SourceRunPath $familyRun -ExpectedRegion $familySpecs[$familyIndex][0] -ExpectedScale $localScale -Label $familySpecs[$familyIndex][1] -PythonExe $python -RepoRoot $repoRoot
       $family.frozen_identity=$family.identity_source
       Resolve-AnalyzerLocalFamilyCacheGeneration -Family $family -PythonExe $python -RepoRoot $repoRoot -CacheRoot (Join-Path $artifactRoot 'common\simion\pa_family_cache')|Out-Null
+      $sentinel=Join-Path $family.generation_directory ("{0}.pa#"-f([string]$family.contract.family_prefix))
+      $localCacheSentinelPaths+=$sentinel
       $localFamilies+=$family
     }
+    $localCacheSentinelHashes=@($localCacheSentinelPaths|ForEach-Object{(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash})
   }
   $reviewedContract=Join-Path $geometrySimion 'simion_prototype_contract.json'
   $selectedContract=Join-Path $acceleratorSimion 'accelerator_focus_voltage_trial.json'
@@ -150,6 +154,16 @@ try{
   $failureStage='capacity_preflight'
   $requiredBytes=[int64]0
   foreach($path in @($reviewedContract,$selectedContract,$trajectoryContractSource,$mirrorSummary,$stripeSummary,$acceleratorReceipt,$trialTool,$voltageizerSource,$iobBuilderSource,$localIobBuilderSource,$basisAdjusterSource,$basisVoltageSource,$iobSeedSource,$localIobSeedSource,$placeholderSources,$programSource,$counterSource,$mapSource,$launcherSource)){$requiredBytes+=[int64](Get-Item -LiteralPath $path).Length}
+  if($null-ne$localWorkbenchRun){
+    # Reserve the worst case for one output PA0 plus four private response
+    # copies in every local region.  The copies isolate SIMION from immutable
+    # cache-family bookkeeping and are removed before terminal capacity audit.
+    foreach($family in $localFamilies){
+      $prefix=[string]$family.contract.family_prefix
+      $requiredBytes+=[int64](Get-Item -LiteralPath (Join-Path $family.generation_directory "$prefix.pa0")).Length
+      foreach($responseId in 5..8){$requiredBytes+=[int64](Get-Item -LiteralPath (Join-Path $family.generation_directory ("{0}.pa{1}"-f$prefix,$responseId))).Length}
+    }
+  }
   $protectedPaths=@($package.artifact_run_dir)
   if($null-ne$localWorkbenchRun){$protectedPaths+=@($localWorkbenchRun)+@($localFamilies.generation_directory)}
   $startup=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -RequiredHeadroomBytes $requiredBytes -ProtectedPaths $protectedPaths
@@ -250,9 +264,23 @@ try{
       $deltaText=(@($changedIndices|ForEach-Object{[string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',[double]$deltaVoltages[$_])})-join',')
       for($index=0;$index-lt$localFamilies.Count;$index++){
         $family=$localFamilies[$index]
-        $alias=Join-Path $temporarySolverDir ("family{0}"-f($index+1));New-Item -ItemType Junction -Path $alias -Target $family.generation_directory|Out-Null
         $prefix=[string]$family.contract.family_prefix
-        $basisPaths=(@($changedIndices|ForEach-Object{Join-Path $alias ("{0}.pa{1}"-f$prefix,(5+$_))})-join'|')
+        # SIMION can treat a directly opened .paN as a member of its adjacent
+        # family and update that family's .pa# bookkeeping.  Cache generations
+        # are immutable, so never expose their directory to SIMION.  Copy each
+        # required response to an isolated temporary basename first, while
+        # retaining its real .paN extension; the
+        # content is still verified by the cache probe above and the response
+        # is read only by the adjustment Lua.
+        $privateBasisPaths=@()
+        foreach($changedIndex in $changedIndices){
+          $responseId=5+$changedIndex
+          $basisSource=Join-Path $family.generation_directory ("{0}.pa{1}"-f$prefix,$responseId)
+          $privateBasis=Join-Path $temporarySolverDir ("family{0}_response{1}.pa{2}"-f($index+1),($changedIndex+1),$responseId)
+          Copy-VerifiedRunInput -Source $basisSource -Destination $privateBasis|Out-Null
+          $privateBasisPaths+=$privateBasis
+        }
+        $basisPaths=($privateBasisPaths-join'|')
         $temporaryLocal=Join-Path $temporarySolverDir $localNames[$index]
         Invoke-SimionStage -Stage ("adjust_local_{0}"-f$family.label) -Arguments @('--nogui','--noprompt','lua',(Join-Path $solverDir 'adjust_operating_pa_from_basis.lua'),(Join-Path $localWorkbenchRun "simion\$($localNames[$index])"),$temporaryLocal,$basisPaths,$basisText,$deltaText)
         $temporaryLocalPaths+=$temporaryLocal
@@ -279,9 +307,12 @@ try{
   $temporaryFly2=[IO.Path]::ChangeExtension($temporaryIob,'.fly2')
   if(-not(Test-RunFilesIdentical -Left $fly2Input -Right $temporaryFly2)){throw 'IOB companion Fly2 differs from the frozen downstream-trial source'}
   if(@(Compare-Object $upstreamHashes @($upstreamPaths|ForEach-Object{(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash})).Count-ne 0){throw 'Read-only IOB build changed an upstream PA'}
+  if($localCacheSentinelPaths.Count-and@(Compare-Object $localCacheSentinelHashes @($localCacheSentinelPaths|ForEach-Object{(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash})).Count-ne 0){throw 'Temporary IOB build changed an immutable local PA cache sentinel'}
   $failureStage='native_two_prism_flight'
   Invoke-SimionStage -Stage 'native_two_prism_flight' -Arguments @('--nogui','--noprompt','lua',(Join-Path $solverDir 'run_iob_flight.lua'),$temporaryIob)
   if(@(Compare-Object $upstreamHashes @($upstreamPaths|ForEach-Object{(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash})).Count-ne 0){throw 'Runtime Fast Adjust changed an upstream PA'}
+  if($localCacheSentinelPaths.Count-and@(Compare-Object $localCacheSentinelHashes @($localCacheSentinelPaths|ForEach-Object{(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash})).Count-ne 0){throw 'SIMION flight changed immutable local PA-family bookkeeping'}
+  if($localCacheSentinelPaths.Count-and@(Compare-Object $localCacheSentinelHashes @($localCacheSentinelPaths|ForEach-Object{(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash})).Count-ne 0){throw 'SIMION flight changed an immutable local PA cache sentinel'}
   $rawLog=Join-Path $logDir 'native_two_prism_flight.log';$observation=Join-Path $resultDir 'two_prism_trial_observation.json'
   $failureStage='analyze_trial'
   Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial','analyze','--log',$rawLog,'--trial-receipt',$trialReceipt,'--output',$observation)
