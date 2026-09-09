@@ -360,6 +360,25 @@ Dirichlet真空节点的最大电势差为`1.4552e-11 V`。但是法向场最大
 PA或增加一个覆盖接缝的真空portal补丁，不改变resolved机械几何，也不把整个14.72-GB全域缩到
 0.25 mm。
 
+后续局部—局部portal比较还发现并修正了一个先于网格判断的构建缺陷：SIMION全局solution basis的
+实际激励由源PA给出，当前为`10000 V`；旧局部构建器却把局部实体电极写成`1 V`，同时原样复制
+`10000 V`尺度的Dirichlet边界。故先前四个局部族及其`20260910_193000`整面场比较不能再作为空间
+收敛证据。公共构建器现在逐源PA读取并交叉核对非零实体basis电压，不再硬编码归一化；修复后的
+1/0.5-mm中央和镜族分别由受管run
+`20260910_223000__build__simion__analyzer-local-central-1mm-normalized`、
+`20260910_224000__build__simion__analyzer-local-mirror-1mm-normalized`、
+`20260910_225000__build__simion__analyzer-local-central-0p5mm-normalized`和
+`20260910_230000__build__simion__analyzer-local-mirror-0p5mm-normalized`重新生成并以新源码哈希发布缓存。
+
+受管run `20260911_013000__analysis__simion__analyzer-local-portal-interface-weighted-r05`随后在两个实际
+优先级候选切换面、32个basis/scale/seam组合上比较中央局部场与镜局部场。basis归一化由每档raw PA
+的真实活动电极节点测得为`10000 V`，再以冻结注入工作点的8组电压作逐样点线性组合。1-mm档的最大
+工作点电势差／法向场差为`0.1201 V / 0.7203 V/mm`；0.5-mm档为
+`0.3189 V / 0.3430 V/mm`。法向场差下降约一半，但电势差不单调，因此0.5 mm尚不能宣称足够，
+也不能用同盒0.25-mm蛮力构建推断会闭合。下一步优先设计同时包含Stripe端部和镜内侧实体的专用
+接缝PA，把它与中央／镜局部PA的边界移到低梯度真空区；仍须用固定束团扩张portal并执行第三档对照。
+上述工作点组合使用注入态P1/P2；脉冲引出态须在同一basis上另行组合检查。
+
 修复后的实际中心粒子全装配 Fly 已在约0.06 s终止并完成事件对账；它在 `t=333.722473491 us`、
 `z=-97.0000004 mm`、`y=0.515455 mm` 时以 electrode collision (`splat=-1`) 损失，仅记录24次转折
 （overtone `K=12`），没有探测命中或 K=25。因此性能问题已经解除，但当前静态 Candidate 的几何/注入/

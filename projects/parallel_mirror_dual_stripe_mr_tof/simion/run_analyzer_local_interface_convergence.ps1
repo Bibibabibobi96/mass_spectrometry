@@ -25,44 +25,6 @@ function Invoke-ProjectPython {
   } finally {$env:PYTHONPATH=$saved;Pop-Location}
 }
 
-function Get-VerifiedLocalFamily {
-  param(
-    [Parameter(Mandatory)][string]$SourceRunPath,
-    [Parameter(Mandatory)][string]$ExpectedRegion,
-    [Parameter(Mandatory)][double]$ExpectedScale,
-    [Parameter(Mandatory)][string]$Label
-  )
-  $sourceRun=(Resolve-Path -LiteralPath $SourceRunPath).Path
-  $manifest=Join-Path $sourceRun 'run_manifest.json'
-  & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $manifest --require-status success|Out-Null
-  if($LASTEXITCODE-ne 0){throw "Local-family run is not verified success: $sourceRun"}
-  $sourceSummary=Get-Content -Raw -LiteralPath (Join-Path $sourceRun 'summary.json')|ConvertFrom-Json
-  if($sourceSummary.role-ne'mrtof_analyzer_local_dirichlet_pa_family' -or
-     $sourceSummary.region-ne$ExpectedRegion -or
-     [double]$sourceSummary.scale_factor-ne$ExpectedScale){
-    throw "Local-family run identity differs for $Label."
-  }
-  $contractSource=Join-Path $sourceRun 'results\analyzer_local_pa_family_contract.json'
-  $identitySource=Join-Path $sourceRun 'results\pa_family_cache_identity.json'
-  $publicationSource=Join-Path $sourceRun 'results\pa_family_cache_publication.json'
-  foreach($path in @($contractSource,$identitySource,$publicationSource)){
-    if(-not(Test-Path -LiteralPath $path -PathType Leaf)){throw "Local-family evidence is missing: $path"}
-  }
-  $contract=Get-Content -Raw -LiteralPath $contractSource|ConvertFrom-Json -Depth 40
-  $publication=Get-Content -Raw -LiteralPath $publicationSource|ConvertFrom-Json
-  if([string]$publication.cache_key-ne[string]$sourceSummary.cache_key){
-    throw "Local-family publication key differs for $Label."
-  }
-  return [pscustomobject]@{
-    label=$Label;source_run=$sourceRun;manifest=$manifest;contract_source=$contractSource
-    identity_source=$identitySource;publication_source=$publicationSource
-    contract=$contract;cache_key=[string]$publication.cache_key
-    region=$ExpectedRegion;scale=$ExpectedScale
-    frozen_contract=$null;frozen_identity=$null;frozen_publication=$null
-    generation_directory=$null
-  }
-}
-
 $projectId='parallel_mirror_dual_stripe_mr_tof'
 $repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $workspaceRoot=Split-Path -Parent $repoRoot
@@ -81,6 +43,7 @@ if([string]::IsNullOrWhiteSpace($RunId)){
 
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
 . (Join-Path $repoRoot 'common\host_execution_lease.ps1')
+. (Join-Path $PSScriptRoot 'analyzer_local_family_support.ps1')
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot `
   -ArtifactRoot (Join-Path $workspaceRoot "artifacts\projects\$projectId") `
   -RunId $RunId -Project $projectId -Mode 'analyzer_local_interface_convergence' `
@@ -92,10 +55,10 @@ $artifactRoot=Join-Path $workspaceRoot 'artifacts';$cacheRoot=Join-Path $artifac
 $lease=$null;$terminalized=$false;$hostOutcome='failed';$failureStage='preflight'
 try {
   $families=@(
-    Get-VerifiedLocalFamily -SourceRunPath $CoarseCentralRunPath -ExpectedRegion central_transport -ExpectedScale 1.0 -Label coarse_central
-    Get-VerifiedLocalFamily -SourceRunPath $CoarseMirrorRunPath -ExpectedRegion mirror_turn_positive -ExpectedScale 1.0 -Label coarse_mirror
-    Get-VerifiedLocalFamily -SourceRunPath $FineCentralRunPath -ExpectedRegion central_transport -ExpectedScale 0.5 -Label fine_central
-    Get-VerifiedLocalFamily -SourceRunPath $FineMirrorRunPath -ExpectedRegion mirror_turn_positive -ExpectedScale 0.5 -Label fine_mirror
+    Get-VerifiedAnalyzerLocalFamily -SourceRunPath $CoarseCentralRunPath -ExpectedRegion central_transport -ExpectedScale 1.0 -Label coarse_central -PythonExe $python -RepoRoot $repoRoot
+    Get-VerifiedAnalyzerLocalFamily -SourceRunPath $CoarseMirrorRunPath -ExpectedRegion mirror_turn_positive -ExpectedScale 1.0 -Label coarse_mirror -PythonExe $python -RepoRoot $repoRoot
+    Get-VerifiedAnalyzerLocalFamily -SourceRunPath $FineCentralRunPath -ExpectedRegion central_transport -ExpectedScale 0.5 -Label fine_central -PythonExe $python -RepoRoot $repoRoot
+    Get-VerifiedAnalyzerLocalFamily -SourceRunPath $FineMirrorRunPath -ExpectedRegion mirror_turn_positive -ExpectedScale 0.5 -Label fine_mirror -PythonExe $python -RepoRoot $repoRoot
   )
   $failureStage='freeze_inputs'
   $frozenInputs=[ordered]@{geometry_review_manifest=$geometryManifest}
@@ -119,14 +82,7 @@ try {
 
   $failureStage='probe_cache_families'
   foreach($family in $families){
-    $names=@($family.contract.family_filenames|ForEach-Object{[string]$_})
-    $lines=Invoke-ProjectPython -Arguments @('-m','common.simion.pa_family_cache','--action','probe',
-      '--cache-root',$cacheRoot,'--identity',$family.frozen_identity,'--filenames',($names-join ','))
-    $probe=($lines-join "`n")|ConvertFrom-Json
-    if($probe.disposition-ne'hit' -or [string]$probe.cache_key-ne$family.cache_key){
-      throw "Required local PA family is not an intact cache hit: $($family.label)"
-    }
-    $family.generation_directory=[string]$probe.generation_directory
+    Resolve-AnalyzerLocalFamilyCacheGeneration -Family $family -PythonExe $python -RepoRoot $repoRoot -CacheRoot $cacheRoot|Out-Null
     $cacheManifest=Join-Path $family.generation_directory 'cache_manifest.json'
     $frozenInputs["$($family.label)_cache_manifest"]=$cacheManifest
   }

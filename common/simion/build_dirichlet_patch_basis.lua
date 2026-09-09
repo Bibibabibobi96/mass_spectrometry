@@ -50,6 +50,29 @@ for _,path in ipairs(source_paths) do
   assert(pa.dx_mm>0 and pa.dy_mm>0 and pa.dz_mm>0, 'coarse PA scale must be positive')
   sources[#sources+1]=pa
 end
+
+local function source_basis_voltage(pa)
+  -- SIMION solution-array normalization belongs to the source PA.  Read the
+  -- first non-zero physical node instead of assuming a particular voltage.
+  for z=0,pa.nz-1 do for y=0,pa.ny-1 do for x=0,pa.nx-1 do
+    local value,is_physical=pa:point(x,y,z)
+    if is_physical and math.abs(value)>1e-12 then return value end
+  end end end
+  error('coarse response PA has no non-zero physical basis node')
+end
+
+local basis_voltage=nil
+for _,source in ipairs(sources) do
+  local value=source_basis_voltage(source)
+  if basis_voltage==nil then
+    basis_voltage=value
+  else
+    local scale=math.max(1,math.abs(basis_voltage),math.abs(value))
+    assert(math.abs(value-basis_voltage)<=1e-12*scale,
+      'coarse response PA basis voltages differ')
+  end
+end
+if #sources==0 then basis_voltage=0 end
 local target=assert(simion.pas:open(raw_path), 'cannot open raw local geometry PA')
 assert(target.dx_mm>0 and target.dy_mm>0 and target.dz_mm>0, 'local PA scale must be positive')
 
@@ -59,7 +82,7 @@ for z=0,target.nz-1 do for y=0,target.ny-1 do for x=0,target.nx-1 do
   local is_boundary=x==0 or y==0 or z==0 or x==target.nx-1 or y==target.ny-1 or z==target.nz-1
   if is_physical then
     local identifier=math.floor(raw_value+0.5)
-    target:point(x,y,z,active[identifier] and 1 or 0,true)
+    target:point(x,y,z,active[identifier] and basis_voltage or 0,true)
     physical_count=physical_count+1
   elseif is_boundary then
     local px=patch_origin[1]+x*target.dx_mm
@@ -87,5 +110,5 @@ local solved=assert(simion.pas:open(output_path), 'cannot reopen local response 
 if convergence then solved:refine{convergence=convergence} else solved:refine() end
 solved:save(output_path)
 solved:close()
-print(string.format('DIRICHLET_PATCH_BASIS=PASS boundary_points=%d physical_points=%d output=%s',
-  boundary_count,physical_count,output_path))
+print(string.format('DIRICHLET_PATCH_BASIS=PASS boundary_points=%d physical_points=%d basis_voltage=%.15g output=%s',
+  boundary_count,physical_count,basis_voltage,output_path))

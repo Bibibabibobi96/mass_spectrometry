@@ -911,3 +911,34 @@ and prove containment at all unvisited faces. If 0.5 mm remains insufficient,
 the third scale will be applied only to these local high-gradient regions or
 to a dedicated vacuum seam patch; the approximately 58.8-GB unchanged-box
 0.25-mm build and a full-domain 0.25-mm analyser remain deferred.
+
+A normalization defect was then found before accepting any mesh conclusion.
+The global SIMION solution arrays carry a source-PA-defined basis excitation
+of `10000 V`, while the first local builder wrote active local conductors at
+`1 V` and copied the boundary response at the original scale. The original
+four local families and the `20260910_193000` whole-face field comparison are
+therefore superseded as spatial-convergence evidence. The common Dirichlet
+builder now measures and cross-checks the non-zero physical basis voltage from
+the source PA instead of hard-coding it. Corrected 1/0.5-mm central and mirror
+families were published by managed runs
+`20260910_223000__build__simion__analyzer-local-central-1mm-normalized`,
+`20260910_224000__build__simion__analyzer-local-mirror-1mm-normalized`,
+`20260910_225000__build__simion__analyzer-local-central-0p5mm-normalized`, and
+`20260910_230000__build__simion__analyzer-local-mirror-0p5mm-normalized` with
+new source identities.
+
+Managed run
+`20260911_013000__analysis__simion__analyzer-local-portal-interface-weighted-r05`
+compared those corrected central-local and mirror-local fields at the two
+effective priority handoffs. It measured the basis normalization from raw and
+solved PA nodes as `10000 V` at both mesh scales, evaluated 32
+basis/scale/seam cells, and linearly combined them with the frozen injection
+voltages. The maximum operating-point potential/normal-field discontinuities
+were `0.1201 V / 0.7203 V/mm` at 1 mm and
+`0.3189 V / 0.3430 V/mm` at 0.5 mm. The normal-field mismatch approximately
+halved, but potential mismatch was not monotone, so 0.5 mm is not accepted as
+sufficient and the unchanged-box 0.25-mm build remains unjustified. The next
+candidate is a dedicated seam PA containing both the Stripe termination and
+inner mirror structures, with its boundaries moved into lower-gradient vacuum;
+the accepted-bunch portal and a separate pulsed-extraction voltage combination
+remain required.

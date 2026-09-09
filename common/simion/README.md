@@ -35,6 +35,14 @@ probe|publish|materialize --cache-root <root> --identity <identity.json> --filen
 `--source-directory`，物化另给`--destination-directory`。identity JSON和文件清单由器件适配层派生，
 该CLI不接受或推断物理参数，命中／缺失的建场决定也仍属于调用方。
 
+局部Dirichlet PA使用
+[`build_dirichlet_patch_basis.lua`](build_dirichlet_patch_basis.lua)从一个或多个已解父basis复制六面边界响应。
+局部活动实体必须与父basis使用同一激励归一化；构建器从父PA的非零实体节点读取并交叉核对该值，不假定
+`1 V`或`10000 V`。[`measure_pa_basis_voltage.lua`](measure_pa_basis_voltage.lua)则用raw PA的电极ID把真实
+几何实体与同样标为physical的Dirichlet边界节点区分开，供运行证据记录归一化。
+[`compare_pa_fields_at_samples.lua`](compare_pa_fields_at_samples.lua)在调用方提供的项目坐标样点比较两个
+已解PA的电势和三分量场，并支持严格`z`反射；它不选择局部域、轨迹portal、实例优先级或接受阈值。
+
 [`cache_generation.py`](cache_generation.py)只抽取不同 PA-family 缓存协议共有的直接文件清单、payload
 摘要和 immutable generation 摘要计算；它不定义 identity 字段、role、锁、缓存目录、容量治理或命中时的
 哈希频率。集成项目的 v3 cache 通过它生成与其 artifact verifier 一致的 payload/generation 值，同时保留

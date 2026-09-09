@@ -23,6 +23,14 @@ CONTRACT = PROJECT / "config" / "simion_candidate_two_zone.json"
 
 
 class AnalyzerLocalPaFamilyTest(unittest.TestCase):
+    def test_dirichlet_builder_derives_source_basis_voltage(self) -> None:
+        source = (
+            PROJECT.parents[1] / "common" / "simion" / "build_dirichlet_patch_basis.lua"
+        ).read_text(encoding="utf-8")
+        self.assertIn("local function source_basis_voltage(pa)", source)
+        self.assertIn("active[identifier] and basis_voltage or 0", source)
+        self.assertNotIn("active[identifier] and 1 or 0", source)
+
     def fixture(self, root: Path) -> tuple[Path, Path, Path]:
         gem = root / "central.gem"
         gem.write_text(
