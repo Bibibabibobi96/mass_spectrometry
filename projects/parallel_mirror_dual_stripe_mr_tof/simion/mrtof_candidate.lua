@@ -17,6 +17,8 @@ local detector_box = assert(operating_point.detector_box_mm, 'operating point ha
 local first_prism_l0 = assert(operating_point.first_prism_l0, 'operating point has no frozen P1 interface')
 local mirror_regions = assert(operating_point.mirror_regions_project, 'operating point has no resolved mirror regions')
 local prism_regions = assert(operating_point.prism_regions_project, 'operating point has no resolved prism regions')
+local patch_interface_planes = assert(operating_point.patch_interface_planes_project,
+  'operating point has no contract-derived local-PA interface planes')
 local phase_origin_mirror_side = assert(operating_point.phase_origin_mirror_side,
   'operating point has no path-derived phase-origin mirror side')
 assert(phase_origin_mirror_side == -1 or phase_origin_mirror_side == 1,
@@ -112,6 +114,14 @@ local previous_x, previous_y, previous_z, previous_vx, previous_vy, previous_vz,
 local turns, slow_turns, crossings, y0_crossings, p1_crossings, post_return_turns, detected, splat_codes, splat_event_emitted = {}, {}, {}, {}, {}, {}, {}, {}, {}
 local cycle_counters, target_k_emitted, prism_switch_emitted = {}, {}, {}
 local prism_stage = {}
+local patch_interface_crossings = {}
+
+local function sample_coordinate(sample, axis)
+  if axis == 'x' then return sample.x_mm end
+  if axis == 'y' then return sample.y_mm end
+  if axis == 'z' then return sample.z_mm end
+  error('invalid patch-interface axis: '..tostring(axis))
+end
 
 local function inside_region(event, region)
   return event.y_mm >= region.y_min_mm and event.y_mm <= region.y_max_mm
@@ -222,6 +232,20 @@ function segment.initialize_run()
   turns, slow_turns, crossings, y0_crossings, p1_crossings, post_return_turns, detected, splat_codes, splat_event_emitted = {}, {}, {}, {}, {}, {}, {}, {}, {}
   cycle_counters, target_k_emitted, prism_switch_emitted = {}, {}, {}
   prism_stage = {}
+  patch_interface_crossings = {}
+  assert(#patch_interface_planes > 0, 'at least one local-PA interface plane is required')
+  for _,plane in ipairs(patch_interface_planes) do
+    assert(type(plane.name) == 'string' and type(plane.region) == 'string'
+      and type(plane.face) == 'string', 'patch-interface identity is incomplete')
+    assert((plane.axis == 'x' or plane.axis == 'y' or plane.axis == 'z')
+      and type(plane.coordinate_mm) == 'number', 'patch-interface coordinate is invalid')
+    assert((plane.u_axis == 'x' or plane.u_axis == 'y' or plane.u_axis == 'z')
+      and (plane.v_axis == 'x' or plane.v_axis == 'y' or plane.v_axis == 'z')
+      and plane.u_axis ~= plane.axis and plane.v_axis ~= plane.axis
+      and plane.u_axis ~= plane.v_axis, 'patch-interface in-plane axes are invalid')
+    assert(plane.u_min_mm < plane.u_max_mm and plane.v_min_mm < plane.v_max_mm,
+      'patch-interface in-plane bounds are invalid')
+  end
   assert(simion.wb and #simion.wb.instances == 3,
     'MR-TOF Candidate flight requires analyser, accelerator, and detector instances')
   assert(simion.wb.instances[1].filename:match('mrtof_analyzer%.pa0$'), 'instance 1 must be analyser PA0')
@@ -338,6 +362,31 @@ function segment.other_actions()
     local before = cycle_sample(px, py, pz, pvx, pvy, pvz, pt)
     local after = cycle_sample(ion_px_mm, ion_py_mm, ion_pz_mm,
       ion_vx_mm, ion_vy_mm, ion_vz_mm, ion_time_of_flight)
+    for _,plane in ipairs(patch_interface_planes) do
+      local before_coordinate = sample_coordinate(before, plane.axis)
+      local after_coordinate = sample_coordinate(after, plane.axis)
+      local delta = after_coordinate-before_coordinate
+      local crosses = (before_coordinate < plane.coordinate_mm
+          and after_coordinate >= plane.coordinate_mm)
+        or (before_coordinate > plane.coordinate_mm
+          and after_coordinate <= plane.coordinate_mm)
+      if crosses and delta ~= 0 then
+        local crossing = interpolated_sample(before, after,
+          (plane.coordinate_mm-before_coordinate)/delta)
+        local u = sample_coordinate(crossing, plane.u_axis)
+        local v = sample_coordinate(crossing, plane.v_axis)
+        if u >= plane.u_min_mm and u <= plane.u_max_mm
+          and v >= plane.v_min_mm and v <= plane.v_max_mm then
+          local key = tostring(ion_number)..':'..plane.name
+          patch_interface_crossings[key] = (patch_interface_crossings[key] or 0)+1
+          print(string.format('MRTOF_EVENT patch_interface ion=%d name=%s region=%s face=%s n=%d direction=%d t_us=%.12g x_mm=%.12g y_mm=%.12g z_mm=%.12g vx_mm_us=%.12g vy_mm_us=%.12g vz_mm_us=%.12g',
+            ion_number, plane.name, plane.region, plane.face,
+            patch_interface_crossings[key], delta > 0 and 1 or -1,
+            crossing.t_us, crossing.x_mm, crossing.y_mm, crossing.z_mm,
+            crossing.vx_mm_us, crossing.vy_mm_us, crossing.vz_mm_us))
+        end
+      end
+    end
     if dz > 0 and prism_stage[ion_number] == 'awaiting_p2_entry'
       and pz < prism_regions.p2.z_min_mm and ion_pz_mm >= prism_regions.p2.z_min_mm then
       local entry = interpolated_sample(before, after,

@@ -15,6 +15,9 @@ import math
 from pathlib import Path
 from typing import Any
 
+from projects.parallel_mirror_dual_stripe_mr_tof.analysis.analyzer_local_refinement_plan import (
+    derive_local_refinement_plan,
+)
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.materialize_simion_prototype import (
     _full_path_timeout_us,
 )
@@ -42,6 +45,121 @@ def _load(path: Path) -> dict[str, Any]:
 
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _patch_interface_planes(contract_path: Path) -> list[dict[str, Any]]:
+    """Derive every current local-PA face, including the reflected mirror."""
+    patches = derive_local_refinement_plan(contract_path)["patches"]
+    central = [float(value) for value in patches["central_transport"]]
+    positive = [float(value) for value in patches["mirror_turn_positive"]]
+    negative = [
+        positive[0], positive[1], -positive[5],
+        positive[3], positive[4], -positive[2],
+    ]
+    result: list[dict[str, Any]] = []
+    axes = ("x", "y", "z")
+    for region, box in (
+        ("central_transport", central),
+        ("mirror_turn_positive", positive),
+        ("mirror_turn_negative", negative),
+    ):
+        for axis_index, axis in enumerate(axes):
+            others = [index for index in range(3) if index != axis_index]
+            for side, bound_index in (("min", axis_index), ("max", axis_index + 3)):
+                result.append({
+                    "name": f"{region}__{axis}_{side}",
+                    "region": region,
+                    "face": f"{axis}_{side}",
+                    "axis": axis,
+                    "coordinate_mm": box[bound_index],
+                    "u_axis": axes[others[0]],
+                    "u_min_mm": box[others[0]],
+                    "u_max_mm": box[others[0] + 3],
+                    "v_axis": axes[others[1]],
+                    "v_min_mm": box[others[1]],
+                    "v_max_mm": box[others[1] + 3],
+                })
+    return result
+
+
+def _lua_patch_interface_planes(planes: list[dict[str, Any]]) -> str:
+    fields = []
+    for plane in planes:
+        fields.append(
+            "{ name = %s, region = %s, face = %s, axis = %s, coordinate_mm = %.17g, "
+            "u_axis = %s, u_min_mm = %.17g, u_max_mm = %.17g, "
+            "v_axis = %s, v_min_mm = %.17g, v_max_mm = %.17g }"
+            % (
+                repr(plane["name"]), repr(plane["region"]), repr(plane["face"]),
+                repr(plane["axis"]), float(plane["coordinate_mm"]),
+                repr(plane["u_axis"]), float(plane["u_min_mm"]), float(plane["u_max_mm"]),
+                repr(plane["v_axis"]), float(plane["v_min_mm"]), float(plane["v_max_mm"]),
+            )
+        )
+    return "{ " + ", ".join(fields) + " }"
+
+
+def _patch_interface_diagnostics(
+    events: list[dict[str, Any]], declared: object,
+) -> dict[str, Any]:
+    if not isinstance(declared, list) or not declared:
+        return {"status": "not_recorded_by_legacy_trial"}
+    by_name: dict[str, dict[str, Any]] = {}
+    for item in declared:
+        if not isinstance(item, dict) or not isinstance(item.get("name"), str):
+            raise CandidateContractError("declared patch-interface plane is invalid")
+        name = item["name"]
+        if name in by_name:
+            raise CandidateContractError("declared patch-interface plane name is duplicated")
+        by_name[name] = item
+    grouped: dict[str, list[dict[str, Any]]] = {name: [] for name in by_name}
+    for event in events:
+        if event["kind"] != "patch_interface":
+            continue
+        name = str(event["name"])
+        plane = by_name.get(name)
+        if plane is None:
+            raise CandidateContractError(f"observed undeclared patch interface: {name}")
+        if event["region"] != plane["region"] or event["face"] != plane["face"]:
+            raise CandidateContractError(f"patch-interface identity differs: {name}")
+        grouped[name].append(event)
+    observations: list[dict[str, Any]] = []
+    for name, plane in by_name.items():
+        rows = grouped[name]
+        axis = str(plane["axis"])
+        coordinate_key = f"{axis}_mm"
+        coordinate = float(plane["coordinate_mm"])
+        residuals = [abs(float(row[coordinate_key]) - coordinate) for row in rows]
+        observations.append({
+            "name": name,
+            "region": plane["region"],
+            "face": plane["face"],
+            "axis": axis,
+            "coordinate_mm": coordinate,
+            "crossing_count": len(rows),
+            "directions": sorted({int(row["direction"]) for row in rows}),
+            "coordinate_max_abs_residual_mm": max(residuals, default=0.0),
+            "position_envelope_mm": {
+                key: ([min(float(row[key]) for row in rows), max(float(row[key]) for row in rows)]
+                      if rows else None)
+                for key in ("x_mm", "y_mm", "z_mm")
+            },
+            "velocity_envelope_mm_per_us": {
+                key: ([min(float(row[key]) for row in rows), max(float(row[key]) for row in rows)]
+                      if rows else None)
+                for key in ("vx_mm_us", "vy_mm_us", "vz_mm_us")
+            },
+        })
+    crossed = [item["name"] for item in observations if item["crossing_count"] > 0]
+    return {
+        "status": "single_center_trace_observed",
+        "qualification": "portal_seed_only__accepted_bundle_envelope_not_yet_defined",
+        "total_crossing_count": sum(item["crossing_count"] for item in observations),
+        "crossed_faces": crossed,
+        "uncrossed_faces": [item["name"] for item in observations if item["crossing_count"] == 0],
+        "only_z_faces_crossed": bool(crossed) and all("__z_" in name for name in crossed),
+        "observations": observations,
+    }
 
 
 def _finite(value: Any, label: str) -> float:
@@ -369,6 +487,7 @@ def materialize_trial(
     timeout = _full_path_timeout_us(contract, source_contract, target_k)
     p1_plane = _finite(contract["prism_transport"]["first_prism"]["target_interface"]["coordinate_mm"], "P1 plane")
     p1_acceptance = contract["prisms"]["ground_shields"][0]["rectangular_slots_mm"][0]["box"][1:5:3]
+    patch_interface_planes = _patch_interface_planes(trajectory_contract_path)
     prism_switch_lua = _lua_prism_switch(prism_switch)
     sidecar = (
         "-- Generated run-local finite-3D P1/P2 voltage trial; do not edit.\n"
@@ -378,6 +497,7 @@ def materialize_trial(
         f"first_prism_l0 = {{ target_plane_z_mm = {p1_plane:.17g}, target_plane_x_mm = 0, target_plane_y_acceptance_mm = {_lua_vector([float(v) for v in p1_acceptance])} }}, "
         f"mirror_regions_project = {{ negative = {{ z_min_mm = {regions['negative'][0]:.17g}, z_max_mm = {regions['negative'][1]:.17g} }}, positive = {{ z_min_mm = {regions['positive'][0]:.17g}, z_max_mm = {regions['positive'][1]:.17g} }} }}, "
         f"prism_regions_project = {{ p1 = {{ y_min_mm = {prism_regions['p1'][0]:.17g}, y_max_mm = {prism_regions['p1'][1]:.17g}, z_min_mm = {prism_regions['p1'][2]:.17g}, z_max_mm = {prism_regions['p1'][3]:.17g} }}, p2 = {{ y_min_mm = {prism_regions['p2'][0]:.17g}, y_max_mm = {prism_regions['p2'][1]:.17g}, z_min_mm = {prism_regions['p2'][2]:.17g}, z_max_mm = {prism_regions['p2'][3]:.17g} }} }}, "
+        f"patch_interface_planes_project = {_lua_patch_interface_planes(patch_interface_planes)}, "
         "phase_origin_mirror_side = 1, "
         f"detector_box_mm = {_lua_vector([float(v) for v in detector['box']])}, detector_normal_project = '+z', "
         f"trajectory_quality = {float(trajectory_profile['trajectory_quality']):.17g}, maximum_step_us = {float(trajectory_profile['maximum_step_us']):.17g}, "
@@ -416,6 +536,7 @@ def materialize_trial(
         "analyzer_electrode_voltages_v": analyzer_values,
         "target_turn_y_mm": 0.0,
         "phase_origin_mirror_side": 1,
+        "patch_interface_planes_project": patch_interface_planes,
         "phase_origin_side_derivation": "P2 is exited along +project-z; the first post-P2 Stripe-on mirror turn is therefore the positive mirror",
         "target_slow_kinetic_energy_per_charge_v": slow_energy,
         "target_slow_turn_y_mm": _finite(
@@ -464,6 +585,9 @@ def analyze_trial(*, log_path: Path, trial_receipt_path: Path, output_path: Path
         "event_counts": kinds,
         "log_sha256": _sha256(log_path),
         "trial_receipt_sha256": _sha256(trial_receipt_path),
+        "patch_interface_diagnostic": _patch_interface_diagnostics(
+            events, trial.get("patch_interface_planes_project")
+        ),
     }
     if isinstance(trial.get("prism_switch"), dict):
         result["extraction_diagnostic"] = _extraction_diagnostic(

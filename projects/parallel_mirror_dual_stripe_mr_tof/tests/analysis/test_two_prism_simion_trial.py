@@ -7,11 +7,47 @@ import unittest
 
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial import (
     _lua_prism_switch,
+    _patch_interface_diagnostics,
+    _patch_interface_planes,
     analyze_trial,
 )
 
 
 class TwoPrismSimionTrialTest(unittest.TestCase):
+    def test_patch_interface_diagnostic_keeps_crossed_and_uncrossed_faces(self) -> None:
+        declared = [
+            {"name": "central__z_max", "region": "central", "face": "z_max", "axis": "z", "coordinate_mm": 102},
+            {"name": "central__x_min", "region": "central", "face": "x_min", "axis": "x", "coordinate_mm": -29},
+        ]
+        events = [{
+            "kind": "patch_interface", "ion": 1, "name": "central__z_max",
+            "region": "central", "face": "z_max", "n": 1, "direction": 1,
+            "t_us": 2, "x_mm": 0.1, "y_mm": 3, "z_mm": 102,
+            "vx_mm_us": 0, "vy_mm_us": 1, "vz_mm_us": 39,
+        }]
+        result = _patch_interface_diagnostics(events, declared)
+        self.assertEqual(result["total_crossing_count"], 1)
+        self.assertEqual(result["crossed_faces"], ["central__z_max"])
+        self.assertEqual(result["uncrossed_faces"], ["central__x_min"])
+        self.assertTrue(result["only_z_faces_crossed"])
+
+    def test_patch_interfaces_are_derived_for_central_and_both_mirrors(self) -> None:
+        repo = Path(__file__).resolve().parents[4]
+        planes = _patch_interface_planes(
+            repo / "projects" / "parallel_mirror_dual_stripe_mr_tof"
+            / "config" / "simion_candidate_two_zone.json"
+        )
+        self.assertEqual(len(planes), 18)
+        self.assertEqual(
+            {plane["region"] for plane in planes},
+            {"central_transport", "mirror_turn_positive", "mirror_turn_negative"},
+        )
+        by_name = {plane["name"]: plane for plane in planes}
+        self.assertEqual(by_name["mirror_turn_positive__z_min"]["coordinate_mm"], 97.0)
+        self.assertEqual(by_name["mirror_turn_negative__z_max"]["coordinate_mm"], -97.0)
+        self.assertEqual(by_name["central_transport__z_min"]["coordinate_mm"], -105.0)
+        self.assertEqual(by_name["central_transport__z_max"]["coordinate_mm"], 102.0)
+
     def test_lua_switch_serializes_both_physical_prisms(self) -> None:
         text = _lua_prism_switch({
             "enabled": True,

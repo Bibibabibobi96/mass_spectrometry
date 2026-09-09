@@ -96,9 +96,21 @@ class SimionEventAnalysisTest(unittest.TestCase):
             "MRTOF_EVENT target_k_phase_sample",
             "MRTOF_EVENT prism_voltage_switch",
             "MRTOF_EVENT detector_plane",
+            "MRTOF_EVENT patch_interface",
             "direction_y=", "direction_z=",
         ):
             self.assertIn(token, source)
+
+    def test_patch_interface_event_preserves_contract_face_identity(self):
+        events = parse_events(
+            "MRTOF_EVENT patch_interface ion=1 "
+            "name=central_transport__z_max region=central_transport face=z_max "
+            "n=2 direction=-1 t_us=29 x_mm=0.1 y_mm=6 z_mm=102 "
+            "vx_mm_us=0 vy_mm_us=1 vz_mm_us=-39\n"
+        )
+        self.assertEqual(events[0]["region"], "central_transport")
+        self.assertEqual(events[0]["face"], "z_max")
+        self.assertEqual(events[0]["direction"], -1)
 
     def assert_invalid(self, events, expected, splats, error):
         result = summarize_events(events, 25, splats, expected_particle_ids=expected)

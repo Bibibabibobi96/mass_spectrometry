@@ -170,6 +170,7 @@ try{
   New-Item -ItemType Directory -Path $temporarySolverDir|Out-Null
   $temporaryAnalyzer=Join-Path $temporarySolverDir 'mrtof_analyzer.pa0'
   $temporaryIob=Join-Path $temporarySolverDir 'mrtof_three_component_candidate.iob'
+  $temporaryP2Basis=$null;$temporaryP1Basis=$null
   $posePath=Join-Path $resultDir 'resolved_iob_pose.json'
   $poseCode="import json,sys; from pathlib import Path; from projects.parallel_mirror_dual_stripe_mr_tof.analysis.split_candidate_geometry import resolve_split_iob_origins; p=Path(sys.argv[1]); c=json.loads(p.read_text(encoding='utf-8')); Path(sys.argv[2]).write_text(json.dumps({'origins_mm':resolve_split_iob_origins(p),'mesh_mm_per_gu':c['simion']['component_mesh_mm_per_gu']},indent=2)+'\n',encoding='utf-8')"
   Invoke-ProjectPython -Arguments @('-c',$poseCode,$reviewed,$posePath)
@@ -178,10 +179,6 @@ try{
   foreach($name in @('analyzer','accelerator','detector')){foreach($value in @($pose.origins_mm.$name)){$originArguments+=[string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',[double]$value)}}
   $upstreamPaths=@($sourceAnalyzer,$sourceAccelerator,$sourceDetector)
   $upstreamHashes=@($upstreamPaths|ForEach-Object{(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash})
-  $failureStage='voltageize_temporary_analyzer';$lease=Enter-HostExecutionLease -Role SIMION -RunId $RunId
-  $voltageArguments=@('--nogui','--noprompt','lua',(Join-Path $solverDir 'voltageize_analyzer_pa0.lua'),$sourceAnalyzer,$temporaryAnalyzer)+@($trial.analyzer_electrode_voltages_v|ForEach-Object{[string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',[double]$_)})
-  Invoke-SimionStage -Stage 'voltageize_temporary_analyzer' -Arguments $voltageArguments
-  $temporaryAnalyzerHash=(Get-FileHash -LiteralPath $temporaryAnalyzer -Algorithm SHA256).Hash
   if($null-ne$Prism2ExtractionVoltageV){
     $sourceP2Basis=[IO.Path]::ChangeExtension($sourceAnalyzer,'.pa17')
     $temporaryP2Basis=[IO.Path]::ChangeExtension($temporaryAnalyzer,'.pa17')
@@ -192,6 +189,10 @@ try{
       Copy-RequiredInput $sourceP1Basis $temporaryP1Basis 'P1 electrode-16 basis array'|Out-Null
     }
   }
+  $failureStage='voltageize_temporary_analyzer';$lease=Enter-HostExecutionLease -Role SIMION -RunId $RunId
+  $voltageArguments=@('--nogui','--noprompt','lua',(Join-Path $solverDir 'voltageize_analyzer_pa0.lua'),$sourceAnalyzer,$temporaryAnalyzer)+@($trial.analyzer_electrode_voltages_v|ForEach-Object{[string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',[double]$_)})
+  Invoke-SimionStage -Stage 'voltageize_temporary_analyzer' -Arguments $voltageArguments
+  $temporaryAnalyzerHash=(Get-FileHash -LiteralPath $temporaryAnalyzer -Algorithm SHA256).Hash
   $voltageReceipt=Join-Path $resultDir 'temporary_analyzer_voltageization_receipt.json'
   Write-RunJson -Path $voltageReceipt -Depth 14 -Value ([ordered]@{schema_version=1;role='mrtof_temporary_analyzer_voltageization';status='success';method='SIMION_PA_object_fast_adjust_save_as';source_pa0=$sourceAnalyzer;source_sha256=$upstreamHashes[0];temporary_output_sha256=$temporaryAnalyzerHash;electrode_voltages_v=@($trial.analyzer_electrode_voltages_v);source_family_read_only=$true;refine_performed=$false;temporary_output_retained=$false})
   $failureStage='build_temporary_iob'

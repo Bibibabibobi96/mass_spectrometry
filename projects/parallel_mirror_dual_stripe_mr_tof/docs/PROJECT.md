@@ -887,3 +887,27 @@ then compared on every portal node; all other patch faces require a trajectory
 containment proof that no accepted ion crosses them. Only after that interface
 layout is frozen will the third mesh scale, higher-priority IOB instances and
 independent per-mesh centre-voltage roots be built.
+
+The managed centre trace
+`20260910_211000__sim__simion__screening-patch-portal-envelope-n1` now
+narrows that boundary problem. It interpolated every crossing of all 18 faces
+of the central, positive-mirror and reflected negative-mirror boxes. All 221
+crossings occurred on only four `z` faces: central `z=-105/+102 mm` (55/53),
+positive mirror `z=+97 mm` (55), and negative mirror `z=-97 mm` (58). No
+`x/y` face or outer-mirror `z` face was crossed. The combined centre-path
+envelope was about `|x|<=0.602 mm` and `y=-113.21--339.99 mm`. This is a
+single-centre portal seed only; an accepted-bunch envelope has not yet been
+defined.
+
+The analyser therefore retains the global isotropic 1-mm PA as its assembly
+and far-field baseline. Finer meshes are local replacements, not a global
+geometry change or an additive field. Because the central and mirror boxes
+overlap by 5 mm in `z`, their four recorded geometric boundaries are not four
+Workbench field switches. Before local instances are assembled, the selected
+priority order must be tested at the two effective central-to-mirror handoff
+planes by comparing central-local against mirror-local potential and normal
+field over the trajectory portal. A fixed bunch must then enlarge the portal
+and prove containment at all unvisited faces. If 0.5 mm remains insufficient,
+the third scale will be applied only to these local high-gradient regions or
+to a dedicated vacuum seam patch; the approximately 58.8-GB unchanged-box
+0.25-mm build and a full-domain 0.25-mm analyser remain deferred.

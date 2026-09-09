@@ -56,6 +56,10 @@ REQUIRED_FIELDS = {
     "central_plane_directional": {"ion", "n", "direction_z", "t_us", "x_mm", "y_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
     "detector": {"ion", "t_us", "x_mm", "y_mm", "z_mm"},
     "detector_plane": {"ion", "direction_z", "t_us", "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us"},
+    "patch_interface": {
+        "ion", "name", "region", "face", "n", "direction", "t_us",
+        "x_mm", "y_mm", "z_mm", "vx_mm_us", "vy_mm_us", "vz_mm_us",
+    },
     "target_k": {"ion", "k", "t_us", "x_mm", "y_mm", "z_mm"},
     "splat": {"ion", "code", "t_us", "turns"},
     "terminal": {"ion", "splat", "t_us", "turns"},
@@ -79,8 +83,11 @@ def _event_error(event: dict[str, Any]) -> str | None:
     if kind not in REQUIRED_FIELDS or not REQUIRED_FIELDS[kind] <= event.keys():
         return "unknown_event_or_missing_fields"
     if any(type(value) not in (float, int) or not math.isfinite(value)
-           for key, value in event.items() if key != "kind"):
+           for key, value in event.items() if key not in {"kind", "name", "region", "face"}):
         return "nonfinite_or_nonnumeric_event_field"
+    for key in ("name", "region", "face"):
+        if key in event and (not isinstance(event[key], str) or not event[key]):
+            return "invalid_event_identity"
     if not _integer(event["ion"], minimum=1) or event["t_us"] < 0:
         return "invalid_particle_id_or_time"
     for key in ("turns", "central_crossings", "n", "k", "k_before", "electrode"):
@@ -89,7 +96,7 @@ def _event_error(event: dict[str, Any]) -> str | None:
     for key in ("splat", "code"):
         if key in event and not _integer(event[key]):
             return "invalid_splat_code"
-    for key in ("direction_y", "direction_z"):
+    for key in ("direction", "direction_y", "direction_z"):
         if key in event and event[key] not in (-1, 1):
             return "invalid_direction_sign"
     return None
