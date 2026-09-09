@@ -23,6 +23,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_refer
     CandidateContractError,
     derive_two_zone_placement,
     load_contract,
+    resolve_trajectory_profile,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis import parse_events
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_handoff import (
@@ -199,6 +200,7 @@ def _mirror_regions(contract: dict[str, Any]) -> dict[str, list[float]]:
 def materialize_trial(
     *,
     contract_path: Path,
+    trajectory_contract_path: Path,
     reviewed_contract_path: Path,
     mirror_summary_path: Path,
     stripe_summary_path: Path,
@@ -214,11 +216,13 @@ def materialize_trial(
     reference_transport_receipt_path: Path | None,
     reference_transport_log_path: Path | None,
     constrain_x_symmetry_plane: bool,
+    trajectory_profile_id: str | None,
     fly2_path: Path,
     sidecar_path: Path,
     receipt_path: Path,
 ) -> dict[str, Any]:
     contract = load_contract(contract_path)
+    trajectory_contract = load_contract(trajectory_contract_path)
     reviewed_contract = load_contract(reviewed_contract_path)
     mirror = _load(mirror_summary_path)
     stripe = _load(stripe_summary_path)
@@ -358,6 +362,9 @@ def materialize_trial(
             min(point[1] for point in points), max(point[1] for point in points),
         ]
     simion = contract["simion"]
+    trajectory_profile = resolve_trajectory_profile(
+        trajectory_contract, trajectory_profile_id,
+    )
     target_k = int(contract["nominal"]["target_oscillation_count"])
     timeout = _full_path_timeout_us(contract, source_contract, target_k)
     p1_plane = _finite(contract["prism_transport"]["first_prism"]["target_interface"]["coordinate_mm"], "P1 plane")
@@ -373,7 +380,7 @@ def materialize_trial(
         f"prism_regions_project = {{ p1 = {{ y_min_mm = {prism_regions['p1'][0]:.17g}, y_max_mm = {prism_regions['p1'][1]:.17g}, z_min_mm = {prism_regions['p1'][2]:.17g}, z_max_mm = {prism_regions['p1'][3]:.17g} }}, p2 = {{ y_min_mm = {prism_regions['p2'][0]:.17g}, y_max_mm = {prism_regions['p2'][1]:.17g}, z_min_mm = {prism_regions['p2'][2]:.17g}, z_max_mm = {prism_regions['p2'][3]:.17g} }} }}, "
         "phase_origin_mirror_side = 1, "
         f"detector_box_mm = {_lua_vector([float(v) for v in detector['box']])}, detector_normal_project = '+z', "
-        f"trajectory_quality = {_finite(simion['trajectory_quality'], 'trajectory quality'):.17g}, maximum_step_us = {_finite(simion['maximum_step_us'], 'maximum step'):.17g}, "
+        f"trajectory_quality = {float(trajectory_profile['trajectory_quality']):.17g}, maximum_step_us = {float(trajectory_profile['maximum_step_us']):.17g}, "
         f"full_path_timeout_us = {timeout:.17g}, nonaccelerator_scale = {_finite(simion['nonaccelerator_scale'], 'nonaccelerator scale'):.17g}, "
         f"target_oscillation_count = {target_k}, stop_at_drift_phase_origin = {'false' if continue_main_drift else 'true'}, "
         f"runtime_fast_adjust_enable = {'true' if runtime_fast_adjust_enable else 'false'}, "
@@ -421,8 +428,10 @@ def materialize_trial(
         "prism_switch": prism_switch,
         "particle_mass_th": mass,
         "charge_state": charge,
+        "trajectory_profile": trajectory_profile,
         "inputs": {
             "contract_sha256": _sha256(contract_path),
+            "trajectory_contract_sha256": _sha256(trajectory_contract_path),
             "reviewed_contract_sha256": _sha256(reviewed_contract_path),
             "mirror_summary_sha256": _sha256(mirror_summary_path),
             "stripe_summary_sha256": _sha256(stripe_summary_path),
@@ -547,6 +556,7 @@ def main() -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     materialize = sub.add_parser("materialize")
     materialize.add_argument("--contract", required=True, type=Path)
+    materialize.add_argument("--trajectory-contract", required=True, type=Path)
     materialize.add_argument("--reviewed-contract", required=True, type=Path)
     materialize.add_argument("--mirror-summary", required=True, type=Path)
     materialize.add_argument("--stripe-summary", required=True, type=Path)
@@ -563,6 +573,7 @@ def main() -> int:
     materialize.add_argument("--reference-transport-receipt", type=Path)
     materialize.add_argument("--reference-transport-log", type=Path)
     materialize.add_argument("--constrain-x-symmetry-plane", action="store_true")
+    materialize.add_argument("--trajectory-profile-id")
     materialize.add_argument("--fly2", required=True, type=Path)
     materialize.add_argument("--sidecar", required=True, type=Path)
     materialize.add_argument("--receipt", required=True, type=Path)
@@ -579,6 +590,7 @@ def main() -> int:
             stripe_override = (args.stripe_1_v, args.stripe_2_v)
         result = materialize_trial(
             contract_path=args.contract,
+            trajectory_contract_path=args.trajectory_contract,
             reviewed_contract_path=args.reviewed_contract,
             mirror_summary_path=args.mirror_summary,
             stripe_summary_path=args.stripe_summary,
@@ -594,6 +606,7 @@ def main() -> int:
             reference_transport_receipt_path=args.reference_transport_receipt,
             reference_transport_log_path=args.reference_transport_log,
             constrain_x_symmetry_plane=args.constrain_x_symmetry_plane,
+            trajectory_profile_id=args.trajectory_profile_id,
             fly2_path=args.fly2,
             sidecar_path=args.sidecar,
             receipt_path=args.receipt,

@@ -11,7 +11,7 @@ from tempfile import TemporaryDirectory
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_reference import (
     CandidateContractError, build_simion_gem, derive_mirror_voltage_bounds,
     derive_operating_energy_envelope, derive_two_zone_focus, derive_two_zone_placement,
-    load_contract, write_gem,
+    load_contract, resolve_trajectory_profile, write_gem,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.full_candidate_geometry import (
     ELECTRODE_IDS,
@@ -70,6 +70,49 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_operating_point
 
 
 PROJECT = Path(__file__).resolve().parents[2]
+
+
+class TrajectoryProfileTest(unittest.TestCase):
+    def test_resolves_default_and_named_profiles_from_contract(self) -> None:
+        contract = {
+            "simion": {
+                "default_trajectory_profile_id": "screen",
+                "trajectory_profiles": {
+                    "screen": {
+                        "trajectory_quality": 8,
+                        "maximum_step_us": 0.002,
+                        "purpose": "screening",
+                    },
+                    "precision": {
+                        "trajectory_quality": 8,
+                        "maximum_step_us": 0.00002,
+                        "purpose": "precision",
+                    },
+                },
+            },
+        }
+        self.assertEqual(resolve_trajectory_profile(contract)["profile_id"], "screen")
+        selected = resolve_trajectory_profile(contract, "precision")
+        self.assertEqual(selected["maximum_step_us"], 0.00002)
+
+    def test_rejects_unknown_or_malformed_profile(self) -> None:
+        contract = {
+            "simion": {
+                "default_trajectory_profile_id": "screen",
+                "trajectory_profiles": {
+                    "screen": {
+                        "trajectory_quality": 8,
+                        "maximum_step_us": 0.002,
+                        "purpose": "screening",
+                    },
+                },
+            },
+        }
+        with self.assertRaises(CandidateContractError):
+            resolve_trajectory_profile(contract, "missing")
+        contract["simion"]["trajectory_profiles"]["screen"]["maximum_step_us"] = 0
+        with self.assertRaises(CandidateContractError):
+            resolve_trajectory_profile(contract)
 
 
 def _contains_polygon(polygon, y, z):

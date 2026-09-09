@@ -14,6 +14,7 @@ param(
   [string]$ReferenceTransportRunPath='',
   [switch]$ContinueMainDrift,
   [switch]$ConstrainXSymmetryPlane,
+  [string]$TrajectoryProfileId='',
   [string]$RunId='',
   [string]$SimionExe='',
   [string]$PythonExe=''
@@ -97,6 +98,7 @@ try{
   $sourceDetector=Join-Path $geometrySimion 'mrtof_detector.pa#'
   $reviewedContract=Join-Path $geometrySimion 'simion_prototype_contract.json'
   $selectedContract=Join-Path $acceleratorSimion 'accelerator_focus_voltage_trial.json'
+  $trajectoryContractSource=Join-Path $repoRoot 'projects\parallel_mirror_dual_stripe_mr_tof\config\simion_candidate_two_zone.json'
   $mirrorSummary=Join-Path $mirrorRun 'summary.json'
   $stripeSummary=Join-Path $stripeRun 'summary.json'
   $acceleratorReceipt=Join-Path $acceleratorRun 'results\accelerator_focus_voltage_trial_receipt.json'
@@ -111,16 +113,17 @@ try{
   $counterSource=Join-Path $PSScriptRoot 'mirror_cycle_counter.lua'
   $mapSource=Join-Path $PSScriptRoot 'candidate_voltage_map.lua'
   $launcherSource=Join-Path $PSScriptRoot 'run_iob_flight.lua'
-  foreach($path in @($sourceAnalyzer,$sourceAccelerator,$sourceDetector,$reviewedContract,$selectedContract,$mirrorSummary,$stripeSummary,$acceleratorReceipt,$trialTool,$voltageizerSource,$iobBuilderSource,$iobSeedSource,$placeholderSources,$programSource,$counterSource,$mapSource,$launcherSource)){
+  foreach($path in @($sourceAnalyzer,$sourceAccelerator,$sourceDetector,$reviewedContract,$selectedContract,$trajectoryContractSource,$mirrorSummary,$stripeSummary,$acceleratorReceipt,$trialTool,$voltageizerSource,$iobBuilderSource,$iobSeedSource,$placeholderSources,$programSource,$counterSource,$mapSource,$launcherSource)){
     if(-not(Test-Path -LiteralPath $path -PathType Leaf)){throw "Required P1/P2 trial input is missing: $path"}
   }
   $failureStage='capacity_preflight'
   $requiredBytes=[int64]0
-  foreach($path in @($reviewedContract,$selectedContract,$mirrorSummary,$stripeSummary,$acceleratorReceipt,$trialTool,$voltageizerSource,$iobBuilderSource,$iobSeedSource,$placeholderSources,$programSource,$counterSource,$mapSource,$launcherSource)){$requiredBytes+=[int64](Get-Item -LiteralPath $path).Length}
+  foreach($path in @($reviewedContract,$selectedContract,$trajectoryContractSource,$mirrorSummary,$stripeSummary,$acceleratorReceipt,$trialTool,$voltageizerSource,$iobBuilderSource,$iobSeedSource,$placeholderSources,$programSource,$counterSource,$mapSource,$launcherSource)){$requiredBytes+=[int64](Get-Item -LiteralPath $path).Length}
   $startup=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -RequiredHeadroomBytes $requiredBytes -ProtectedPaths @($package.artifact_run_dir)
   $startupPath=Join-Path $resultDir 'artifact_capacity_gate_startup.json';Write-RunJson -Path $startupPath -Depth 14 -Value $startup
   $failureStage='freeze_small_inputs'
   $contract=Copy-RequiredInput $selectedContract (Join-Path $solverDir 'accelerator_focus_voltage_trial.json') 'selected-energy contract'
+  $trajectoryContract=Copy-RequiredInput $trajectoryContractSource (Join-Path $solverDir 'trajectory_numerics_contract.json') 'trajectory numerics contract'
   $reviewed=Copy-RequiredInput $reviewedContract (Join-Path $solverDir 'simion_prototype_contract.json') 'reviewed geometry contract'
   $mirrorLocal=Copy-RequiredInput $mirrorSummary (Join-Path $solverDir 'mirror_exact_k_summary.json') 'exact-K mirror summary'
   $stripeLocal=Copy-RequiredInput $stripeSummary (Join-Path $solverDir 'dual_stripe_exact_k_summary.json') 'exact-K Stripe summary'
@@ -144,7 +147,7 @@ try{
   $trialReceipt=Join-Path $resultDir 'two_prism_trial_materialization.json'
   $failureStage='materialize_trial'
   $materializeArguments=@('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.two_prism_simion_trial','materialize',
-    '--contract',$contract,'--reviewed-contract',$reviewed,'--mirror-summary',$mirrorLocal,'--stripe-summary',$stripeLocal,
+    '--contract',$contract,'--trajectory-contract',$trajectoryContract,'--reviewed-contract',$reviewed,'--mirror-summary',$mirrorLocal,'--stripe-summary',$stripeLocal,
     '--accelerator-receipt',$acceleratorLocal,'--prism-1-v',([string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',$Prism1VoltageV)),
     '--prism-2-v',([string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',$Prism2VoltageV)),
     '--fly2',$fly2Input,'--sidecar',$sidecar,'--receipt',$trialReceipt)
@@ -160,6 +163,7 @@ try{
     if($null-ne$Prism1ExtractionVoltageV){$materializeArguments+=@('--prism-1-extraction-v',([string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',[double]$Prism1ExtractionVoltageV)))}
   }
   if($ConstrainXSymmetryPlane){$materializeArguments+='--constrain-x-symmetry-plane'}
+  if(-not[string]::IsNullOrWhiteSpace($TrajectoryProfileId)){$materializeArguments+=@('--trajectory-profile-id',$TrajectoryProfileId)}
   Invoke-ProjectPython -Arguments $materializeArguments
   $trial=Get-Content -LiteralPath $trialReceipt -Raw -Encoding UTF8|ConvertFrom-Json
   $temporarySolverDir=Join-Path ([IO.Path]::GetTempPath()) ('mrtof_downstream_'+[guid]::NewGuid().ToString('N'))
@@ -211,8 +215,8 @@ try{
   Write-RunJson -Path $summary -Value $summaryValue
   $config=Get-Content -LiteralPath $runConfig -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
   Remove-TemporarySolverDirectory -Path $temporarySolverDir;$temporarySolverDir=$null
-  $config.inputs=[ordered]@{geometry_run_manifest=$geometryManifest;mirror_run_manifest=$mirrorManifest;stripe_run_manifest=$stripeManifest;accelerator_run_manifest=$acceleratorManifest;reference_transport_run_manifest=$referenceManifest;iob_builder=(Join-Path $solverDir 'build_three_component_iob.lua');read_only_analyzer_pa0=$sourceAnalyzer;read_only_accelerator_pa0=$sourceAccelerator;read_only_detector_pa=$sourceDetector;trial_materialization=$trialReceipt;frozen_source_fly2=$fly2Input}
-  $config.parameters.prism_1_voltage_v=$Prism1VoltageV;$config.parameters.prism_2_voltage_v=$Prism2VoltageV;$config.parameters.stripe_biases_v=@($trial.stripe_biases_v);$config.parameters.continue_main_drift=[bool]$ContinueMainDrift;$config.parameters.pa_binding_mode='temporary_voltageized_analyzer__immutable_family';$config.parameters.constrain_x_symmetry_plane=[bool]$ConstrainXSymmetryPlane;$config.parameters.prism_switch=$trial.prism_switch;Write-RunJson -Path $runConfig -Value $config
+  $config.inputs=[ordered]@{geometry_run_manifest=$geometryManifest;mirror_run_manifest=$mirrorManifest;stripe_run_manifest=$stripeManifest;accelerator_run_manifest=$acceleratorManifest;reference_transport_run_manifest=$referenceManifest;trajectory_numerics_contract=$trajectoryContract;iob_builder=(Join-Path $solverDir 'build_three_component_iob.lua');read_only_analyzer_pa0=$sourceAnalyzer;read_only_accelerator_pa0=$sourceAccelerator;read_only_detector_pa=$sourceDetector;trial_materialization=$trialReceipt;frozen_source_fly2=$fly2Input}
+  $config.parameters.prism_1_voltage_v=$Prism1VoltageV;$config.parameters.prism_2_voltage_v=$Prism2VoltageV;$config.parameters.stripe_biases_v=@($trial.stripe_biases_v);$config.parameters.continue_main_drift=[bool]$ContinueMainDrift;$config.parameters.pa_binding_mode='temporary_voltageized_analyzer__immutable_family';$config.parameters.constrain_x_symmetry_plane=[bool]$ConstrainXSymmetryPlane;$config.parameters.trajectory_profile=$trial.trajectory_profile;$config.parameters.prism_switch=$trial.prism_switch;Write-RunJson -Path $runConfig -Value $config
   $retention=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $runConfig
   $failureStage='capacity_terminal';$maximum=[int64](Get-ChildItem -LiteralPath $package.artifact_run_dir -Recurse -File|Measure-Object Length -Sum).Sum
   $terminal=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -ProtectedPaths @($package.artifact_run_dir) -KnownMeasuredBytes ([int64]$startup.measured_after_bytes) -MaximumNewArtifactBytes $maximum

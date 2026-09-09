@@ -2187,8 +2187,24 @@
       64,
       8
     ],
-    "trajectory_quality": 8,
-    "maximum_step_us": 0.002,
+    "default_trajectory_profile_id": "center_screening",
+    "trajectory_profiles": {
+      "center_screening": {
+        "trajectory_quality": 8,
+        "maximum_step_us": 0.002,
+        "purpose": "single-center topology and voltage screening; not a timing-convergence result"
+      },
+      "center_refined": {
+        "trajectory_quality": 8,
+        "maximum_step_us": 0.0002,
+        "purpose": "single-center event-order and fractional-K refinement at fixed mesh"
+      },
+      "center_precision": {
+        "trajectory_quality": 8,
+        "maximum_step_us": 0.00002,
+        "purpose": "single-center fractional-K numerical floor check at fixed mesh"
+      }
+    },
     "full_path_timeout_axial_path_multiplier": 2.0,
     "full_path_timeout_semantics": "derived as this factor times target_K times the 4*terminal-plane axial round-trip path divided by the frozen nominal 4-keV ion speed; it is an explicit loss/diagnostic bound, never a performance threshold",
     "nonaccelerator_scale": 1,
@@ -2201,22 +2217,73 @@
         ],
         "purpose": "SIMION GUI geometry and voltage review only. The 33.6-mm two-zone gap cannot be exactly node-aligned at 2 mm/gu, so each ideal-grid plane is quantized by at most 1 mm and the run manifest records the actual raw-row locations. It must never be used for field convergence, timing, flight, or resolution."
       },
-      "coarse_flow": {
+      "analyzer_global_baseline": {
         "mm_per_gu": [
-          2,
-          0.8,
-          2
+          1,
+          1,
+          1
         ],
-        "purpose": "geometry-review PA/IOB: x=2 mm retains two raw cells across the physical 4-mm central channel; z=2 mm resolves the CAD 5-mm mirror gaps and the positive physical Stripe-to-Stripe separation; y=0.8 mm preserves native ideal-grid alignment. This is a geometry-review mesh, not a resolution or field-convergence result."
-      },
-      "candidate_reference": {
-        "mm_per_gu": [
-          4,
-          0.4,
-          4
-        ],
-        "purpose": "subsequent Candidate numerical-reference grid after coarse functional closure"
+        "purpose": "current full-envelope analyser mesh; it may define a fixed-grid centre reference only and is not a spatial-convergence result"
       }
+    },
+    "analyzer_spatial_convergence": {
+      "status": "two_level_local_dirichlet_pa_required_before_resolution_claim",
+      "baseline_profile_id": "analyzer_global_baseline",
+      "local_mesh_scale_factors": [
+        1,
+        0.5,
+        0.25
+      ],
+      "patch_margin_mm": [
+        5,
+        5,
+        5
+      ],
+      "storage_bytes_per_grid_point_estimate": 8,
+      "response_voltage_groups": {
+        "mirror_B": [2, 7],
+        "mirror_C": [3, 8],
+        "mirror_D": [4, 9],
+        "mirror_E": [5, 10],
+        "drift_stripe_set_1": [11, 12],
+        "drift_stripe_set_2": [13, 14],
+        "prism_1": [16],
+        "prism_2": [17]
+      },
+      "fixed_zero_electrode_ids": [1, 6, 15, 18, 19, 20],
+      "regions": {
+        "mirror_turn": {
+          "geometry_roles": [
+            "mirror_electrodes",
+            "mirror_ground_shields",
+            "mirror_e_closures"
+          ],
+          "x_core_rule": "mirror_beam_slot_symmetric_half_width_plus_patch_margin",
+          "reuse_rule": "one positive-z local family is reflected into the negative-z mirror only after exact geometry and voltage-group symmetry checks",
+          "local_geometry_voltage_groups": ["mirror_B", "mirror_C", "mirror_D", "mirror_E"]
+        },
+        "central_transport": {
+          "geometry_roles": [
+            "stripe_electrodes",
+            "central_ground_electrodes",
+            "prism_electrodes",
+            "prism_ground_shields"
+          ],
+          "x_core_rule": "symmetric_envelope_of_selected_geometry_plus_patch_margin",
+          "reuse_rule": "single central patch",
+          "local_geometry_voltage_groups": ["drift_stripe_set_1", "drift_stripe_set_2", "prism_1", "prism_2"]
+        }
+      },
+      "boundary_rule": "for every independently adjustable voltage basis, interpolate the verified global PA basis onto all six local-patch faces as Dirichlet electrode nodes before local Refine; never add independently solved coarse and fine electrostatic fields",
+      "workbench_rule": "the local patch instance has higher priority than the global analyser only inside the patch; no blending or unrecorded instance jump is allowed",
+      "continuity_gate": "sample every patch-face node before flight and fail closed unless both potential and normal-field mismatch converge across the three declared local mesh scales",
+      "retuning_rule": "re-solve the centre voltage root independently at each accepted spatial mesh; a voltage root from another mesh is only an initial seed",
+      "forbidden_shortcuts": [
+        "global_0p5_mm_family_without_capacity_preflight",
+        "cropping_electrodes_or_the_physical_beam_channel",
+        "adding_coarse_and_fine_electrostatic_fields",
+        "claiming_mesh_convergence_from_trajectory_step_convergence"
+      ]
     }
   }
 }

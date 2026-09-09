@@ -25,6 +25,7 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_candidate_refer
     derive_stage_2_ring_voltages,
     derive_two_zone_placement,
     load_contract,
+    resolve_trajectory_profile,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.resolved_geometry import resolve_geometry
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.prism_l0 import derive_first_prism_l0
@@ -320,8 +321,9 @@ def materialize(contract_path: Path, mirror_receipt_path: Path, output_directory
         _finite_number(accelerator.get("exit_grid_v"), "accelerator.exit_grid_v"),
     ]
     accelerator_ring_voltages = list(derive_stage_2_ring_voltages(contract))
-    trajectory_quality = _finite_number(simion.get("trajectory_quality"), "simion.trajectory_quality")
-    maximum_step_us = _finite_number(simion.get("maximum_step_us"), "simion.maximum_step_us")
+    trajectory_profile = resolve_trajectory_profile(contract)
+    trajectory_quality = float(trajectory_profile["trajectory_quality"])
+    maximum_step_us = float(trajectory_profile["maximum_step_us"])
     nonaccelerator_scale = _finite_number(simion.get("nonaccelerator_scale"), "simion.nonaccelerator_scale")
     if trajectory_quality <= 0.0 or maximum_step_us <= 0.0 or nonaccelerator_scale <= 0.0:
         raise CandidateContractError("SIMION runtime settings must be positive")

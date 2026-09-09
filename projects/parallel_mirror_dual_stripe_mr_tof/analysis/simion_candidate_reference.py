@@ -60,6 +60,45 @@ def _number(value: Any, name: str) -> float:
     return result
 
 
+def resolve_trajectory_profile(
+    contract: dict[str, Any], profile_id: str | None = None,
+) -> dict[str, float | str]:
+    """Resolve one named SIMION integration profile from the numerical contract."""
+    simion = contract.get("simion")
+    if not isinstance(simion, dict):
+        raise CandidateContractError("simion contract is required")
+    profiles = simion.get("trajectory_profiles")
+    selected_id = profile_id or simion.get("default_trajectory_profile_id")
+    if not isinstance(profiles, dict) or not isinstance(selected_id, str) or not selected_id:
+        raise CandidateContractError(
+            "simion trajectory_profiles and default_trajectory_profile_id are required"
+        )
+    profile = profiles.get(selected_id)
+    if not isinstance(profile, dict):
+        raise CandidateContractError(f"unknown SIMION trajectory profile: {selected_id}")
+    if set(profile) != {"trajectory_quality", "maximum_step_us", "purpose"}:
+        raise CandidateContractError(
+            f"SIMION trajectory profile {selected_id} has an invalid field set"
+        )
+    trajectory_quality = _number(
+        profile.get("trajectory_quality"),
+        f"simion.trajectory_profiles.{selected_id}.trajectory_quality",
+    )
+    maximum_step_us = _number(
+        profile.get("maximum_step_us"),
+        f"simion.trajectory_profiles.{selected_id}.maximum_step_us",
+    )
+    purpose = profile.get("purpose")
+    if trajectory_quality <= 0.0 or maximum_step_us <= 0.0 or not isinstance(purpose, str) or not purpose:
+        raise CandidateContractError(f"SIMION trajectory profile {selected_id} is invalid")
+    return {
+        "profile_id": selected_id,
+        "trajectory_quality": trajectory_quality,
+        "maximum_step_us": maximum_step_us,
+        "purpose": purpose,
+    }
+
+
 def derive_operating_energy_envelope(
     contract: dict[str, Any], *, selected_center_v: float | None = None,
 ) -> OperatingEnergyEnvelope:

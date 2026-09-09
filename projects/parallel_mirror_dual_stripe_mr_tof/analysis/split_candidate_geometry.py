@@ -82,6 +82,14 @@ def build_analyzer_gem(contract_path: Path) -> str:
         "pa_define($(nx),$(ny),$(nz),planar,none,electrostatic,, $(mmgu_x),$(mmgu_y),$(mmgu_z),surface=none)",
         f"locate({_number(-origin_x)},{_number(-origin_y)},{_number(-origin_z)}) {{",
     ]
+    lines.extend(_analyzer_geometry_lines(resolved))
+    lines.extend(("}", ""))
+    return "\n".join(lines)
+
+
+def _analyzer_geometry_lines(resolved: dict[str, object]) -> list[str]:
+    """Return the single geometry emitter shared by global and local analyser PAs."""
+    lines: list[str] = []
     lines.extend(_mirror_lines(resolved))
     lines.extend(_mirror_ground_shield_lines(resolved))
     lines.extend(_stripe_lines(resolved))
@@ -93,8 +101,7 @@ def build_analyzer_gem(contract_path: Path) -> str:
         )
         lines.append(f"  e({prism['id']}) {{ {terms} }}")
     lines.extend(_prism_ground_shield_lines(resolved))
-    lines.extend(("}", ""))
-    return "\n".join(lines)
+    return lines
 
 
 def _detector_origin(contract: dict[str, object], span: tuple[float, float, float]) -> tuple[float, float, float]:

@@ -260,6 +260,13 @@ SIMION `segment.fast_adjust`只重组发生切换的电极16/17基数组，其�
 把提取态改为`P1/P2=-60/-140 V`，在切换后`83.327634611 us`、6个额外镜面转折处即命中；
 命中点为`(x,y)=(-0.56926,-64.97622) mm`，位于50x50-mm有效面内并接近`y=-62 mm`中心。
 这是当前最短且三维无碰撞的N=1提取Candidate，但尚未做局部电压中心化、束团或步长/网格对照。
+随后以`center_precision`重新求得的精确中心根
+`20260910_153500__sim__simion__near-target-k-local-root-dt0p00002-n1`为唯一参考，受管run
+`20260910_160000__sim__simion__exact-k-rebound-extraction-dt0p00002-n1`在
+`773.59367622 us`自动切换到`P1/P2=-59.533/-140 V`，并于`856.910310086 us`命中探测器；
+切换后为`83.316633866 us`和5个额外镜面转折，命中`(x,y)=(-0.569330,-60.693342) mm`。
+该run同时报告`K-25=+1.04e-8`和慢向折返`y=340.000250717 mm`，只闭合固定1-mm场网格的
+中心粒子事件链，不授予网格收敛、束团传输或分辨率资格。
 [run_downstream_voltage_definition.ps1](../analysis/run_downstream_voltage_definition.ps1)只读消费一个基点和
 四个有序单轴SIMION run，构造缩放4x4 Jacobian并报告秩、零空间、条件数和未阻尼线性修正；它本身
 不启动求解器，也不授权执行外推步。当前受管审计为
@@ -289,14 +296,35 @@ SIMION `segment.fast_adjust`只重组发生切换的电极16/17基数组，其�
 
 ## 数值执行边界
 
-`trajectory_quality=8`和`maximum_step_us=0.002`是当前冻结工作点的高精度数值设置，而不是首轮
-功能链的合理吞吐设置。更重要的是，已查明一次异常慢飞行的主因不是离子物理 TOF、网格或
+积分设置由候选合同的具名 `trajectory_profiles` 单向解析；运行入口只选择 profile ID，不接受游离的
+时间步数值。默认 `center_screening` 为 `trajectory_quality=8`、`maximum_step_us=0.002`，用于中心粒子
+拓扑和电压筛查；`center_refined` (`0.0002 us`) 与 `center_precision` (`0.00002 us`) 只用于同一固定
+物理点的事件顺序和连续 K 数值收敛。三者共享同一场网格，不能替代后续三档 PA 网格收敛，也不能把
+较细时间步本身当成物理通过证据。更重要的是，已查明一次异常慢飞行的主因不是离子物理 TOF、网格或
 `sim_segment_global`：旧 Program 会在**每个积分段**调用 `analyser:fast_adjust()`，反复合成20张
 约669 MB的分析器 basis PA。IOB 构建器本已按同一 operating point 执行一次 `fast_adjust → save`；GUI
 Fly 正是使用该持久化 PA0。故正式飞行默认 `runtime_fast_adjust_enable=0`，只读取保存的 PA0；若交互式
 改电压，必须先重新 Fast Adjust 并保存 PA0，不能在运行段内隐式重算。1-us 原生 profile 在关闭全局回调
 时仍为43段、约6.16 s，而在已保存 PA0 上为同43段、约0.00 s，确认根因。
 同一规则也适用于独立的`mrtof_first_prism_l0.lua`：其静态单粒子接口诊断不再在每个积分段重合PA family。
+
+分析器空间收敛由
+[`analyzer_local_refinement_plan.py`](../analysis/analyzer_local_refinement_plan.py)
+从resolved几何派生。当前全域`1/1/1 mm/gu`的22文件family约为`14.72 GB`；直接全域
+`0.5/0.5/0.5 mm/gu`估算约`117.28 GB`，不得绕过容量门禁强行生成。局部方案不是两个独立零边界场的
+叠加。每个补丁都必须保存完整的8组独立响应（镜B--E、Stripe 1/2、P1/P2），不能因为某电极实体在
+补丁外就删掉它的边界响应；连同raw geometry与PA0，两补丁在`1/0.5/0.25 mm`三档合计约为
+`0.938/7.405/58.833 GB`。对每个可调电压basis，必须把已验证全局basis插值到局部PA六个面并标为Dirichlet边界，再保留
+子域内同一resolved几何进行Refine。Workbench中局部实例优先级高于全局实例，局部场只作替换；所有
+接缝的电势与法向场连续性、三档网格和逐档重新求中心电压根均通过后，局部PA才可进入粒子飞行。
+局部GEM由
+[`analyzer_local_patch_geometry.py`](../analysis/analyzer_local_patch_geometry.py)从同一resolved实体发射并由
+PA边界自然裁剪；不得复制或另写一套几何常量。设备无关的电极ID重映射和粗场边界插值分别位于
+[`common/simion/remap_pa_electrode_ids.lua`](../../../common/simion/remap_pa_electrode_ids.lua)与
+[`common/simion/build_dirichlet_patch_basis.lua`](../../../common/simion/build_dirichlet_patch_basis.lua)。
+前者把物理1--20命名空间按合同压缩为8个Fast-Adjust响应组并保留零电势实体，后者用SIMION原生
+`potential_vc`在六个面采样粗basis、保留局部实体后执行Refine。二者是构建原语；在受管runner、
+容量预检、接缝验证和IOB优先级装配完成前，不能手工生成PA后直接用于性能结论。
 
 修复后的实际中心粒子全装配 Fly 已在约0.06 s终止并完成事件对账；它在 `t=333.722473491 us`、
 `z=-97.0000004 mm`、`y=0.515455 mm` 时以 electrode collision (`splat=-1`) 损失，仅记录24次转折

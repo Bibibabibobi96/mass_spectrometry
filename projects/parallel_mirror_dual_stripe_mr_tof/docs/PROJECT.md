@@ -810,3 +810,52 @@ at `(x,y)=(-0.56926,-64.97622) mm`.  This is the current shortest collision-free
 N=1 extraction Candidate and is close to the detector centre, but local voltage
 centring, bunch statistics, and step/grid comparisons remain required before
 any resolution calculation or operating-point claim.
+
+The continuous-K root exposed a numerical event-order limit rather than a
+prism-voltage ambiguity. At the fixed `+177.537401235/-179.126593079 V`
+injection prisms, progressively bracketed Stripe points placed the returning
+`y=0` crossing on opposite sides of the twenty-fifth positive-mirror turn,
+while the default `0.002 us` maximum step left a roughly `2.8e-4` gap between
+the two reported fractional-K branches. The numerical contract therefore names
+`center_screening/center_refined/center_precision` profiles with maximum steps
+`0.002/0.0002/0.00002 us`; more voltage digits at the screening step are not
+accepted as a closed root.
+
+The fixed `1/1/1 mm/gu` analyser PA was subsequently bracketed and re-solved
+entirely with `center_precision`. Run
+`20260910_153500__sim__simion__near-target-k-local-root-dt0p00002-n1` uses
+Stripe biases `(-25.027646987454297,+50.17503574808194) V` and reports
+`K=25.0000000103`, `K-25=+1.03e-8`, a `3.0863e-7 us` return-phase residual,
+and `4.2339e-7 mm` at the twenty-fifth same-phase mirror turn. Its verified
+manifest proves a single-centre **fixed-grid** root only. It does not prove PA
+mesh convergence, bunch transmission, extraction, or resolution.
+
+That exact fixed-grid root has also been rebound to the existing bounded
+extraction state in the independently verified run
+`20260910_160000__sim__simion__exact-k-rebound-extraction-dt0p00002-n1`.
+The reference return supplied the switch time `773.59367622 us`; P1/P2 changed
+from `+177.537401235/-179.126593079 V` to `-59.533/-140 V`, and the ion hit the
+separate detector at `856.910310086 us` and
+`(x,y,z)=(-0.569330,-60.693342,97) mm`.  The post-switch interval was
+`83.316633866 us` with five additional mirror turns.  The same run measured
+`K-25=+1.04e-8` and the first slow turn at `y=340.000250717 mm`.  This closes
+the centre-particle K=25-to-detector event chain on the 1-mm field grid; it is
+still neither a mesh-converged operating point nor a bunch/resolution result.
+
+The full analyser PA family occupies about `14.72 GB` at `1 mm`; a naive full
+envelope `0.5 mm` family is estimated at `117.28 GB`. The Candidate therefore
+requires a two-level local-Dirichlet refinement rather than silently exhausting
+the capacity gate. The geometry-derived plan uses one reusable positive-mirror
+turn patch and one central Stripe/prism patch at scale factors `1/0.5/0.25`.
+Each patch carries the complete eight-group response family—mirror B--E,
+Stripe 1/2 and P1/P2—even when a group's physical conductor lies outside that
+patch, because its boundary response is not zero. Including raw geometry and
+PA0, the two patches together are estimated at `0.938/7.405/58.833 GB` for the
+three levels. For every independently adjustable basis, the verified global PA supplies all
+six patch-face potentials; the local PA retains the clipped resolved electrodes
+and is refined with those values as Dirichlet data. A higher-priority local
+instance replaces—not adds to—the coarse field. Potential and normal-field
+interface errors must converge before flight, and every accepted spatial mesh
+must independently re-solve the centre voltage root. The current plan remains
+`planning_only__no_local_pa_built_or_flown` until the boundary sampler, local
+basis builder, IOB priority assembly, and interface verifier are complete.
