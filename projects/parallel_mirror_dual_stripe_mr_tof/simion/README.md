@@ -325,6 +325,11 @@ PA边界自然裁剪；不得复制或另写一套几何常量。设备无关的
 前者把物理1--20命名空间按合同压缩为8个Fast-Adjust响应组并保留零电势实体，后者用SIMION原生
 `potential_vc`在六个面采样粗basis、保留局部实体后执行Refine。二者是构建原语；在受管runner、
 容量预检、接缝验证和IOB优先级装配完成前，不能手工生成PA后直接用于性能结论。
+[run_analyzer_local_pa_family.ps1](run_analyzer_local_pa_family.ps1)现已闭合受管构建器：它先证明当前
+baseline生成的全局GEM与已审查源逐字节相同，再派生局域GEM、完整八响应recipe和公共内容寻址identity；
+cache miss才调用SIMION，hit则不Refine。2026-09-10已实际发布中央区与正镜转折区的1-mm及0.5-mm族。
+正镜族后续以合同刚体对称变换复用于负镜，不另建第二份几何参数。当前这些run只证明局域basis构建和
+缓存发布；接缝电势/法向场、IOB重叠优先级、中心根和飞行尚未验证，0.25-mm档因此未生成。
 
 修复后的实际中心粒子全装配 Fly 已在约0.06 s终止并完成事件对账；它在 `t=333.722473491 us`、
 `z=-97.0000004 mm`、`y=0.515455 mm` 时以 electrode collision (`splat=-1`) 损失，仅记录24次转折

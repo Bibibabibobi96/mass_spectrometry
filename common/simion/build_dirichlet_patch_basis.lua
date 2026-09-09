@@ -13,8 +13,8 @@ local source_text=assert(arg[3], 'coarse response PA path list required')
 local active_text=assert(arg[4], 'active raw electrode IDs required')
 local source_origin_text=assert(arg[5], 'coarse project origin required')
 local patch_origin_text=assert(arg[6], 'patch project origin required')
-local convergence=assert(tonumber(arg[7]), 'positive convergence required')
-assert(convergence>0, 'convergence must be positive')
+local convergence=arg[7] and assert(tonumber(arg[7]), 'convergence must be numeric') or nil
+assert(convergence==nil or convergence>0, 'convergence must be positive')
 
 local function split(text, separator_pattern)
   local values={}
@@ -84,7 +84,7 @@ target:close()
 for _,source in ipairs(sources) do source:close() end
 
 local solved=assert(simion.pas:open(output_path), 'cannot reopen local response PA')
-solved:refine{convergence=convergence}
+if convergence then solved:refine{convergence=convergence} else solved:refine() end
 solved:save(output_path)
 solved:close()
 print(string.format('DIRICHLET_PATCH_BASIS=PASS boundary_points=%d physical_points=%d output=%s',

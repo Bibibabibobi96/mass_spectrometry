@@ -317,12 +317,29 @@ def _cache_candidate(cache_key_dir: Path, protected_keys: set[str], last_success
         return None
     selected = _load_object(pointer)
     relative = selected.get("generation_relative_path") if selected else None
-    published = cache_key_dir / str(relative) / "cache_manifest.json" if isinstance(relative, str) else None
+    if isinstance(relative, str):
+        generation = Path(relative).name
+        published = cache_key_dir / relative / "cache_manifest.json"
+    else:
+        generation_value = selected.get("generation_sha256") if selected else None
+        generation = generation_value if isinstance(generation_value, str) else ""
+        published = (
+            cache_key_dir / "generations" / generation / "cache_manifest.json"
+            if generation
+            else None
+        )
     manifest = _load_object(published) if published and published.is_file() else None
-    generation = Path(relative).name if isinstance(relative, str) else ""
-    verified = bool(manifest and int(manifest.get("schema_version", 0)) >= 3
-                    and str(manifest.get("cache_key", "")).lower() == name
-                    and str(manifest.get("generation_sha256", "")) == generation)
+    role = str(manifest.get("role", "")) if manifest else ""
+    schema_version = int(manifest.get("schema_version", 0)) if manifest else 0
+    verified = bool(
+        manifest
+        and (
+            schema_version >= 3
+            or (schema_version >= 1 and role == "simion_pa_family_cache")
+        )
+        and str(manifest.get("cache_key", "")).lower() == name
+        and str(manifest.get("generation_sha256", "")).lower() == generation.lower()
+    )
     if not verified:
         # A malformed pointer or selected generation is an incomplete cache,
         # not a published L2 object.  It is only eligible as L1 and never if
@@ -364,6 +381,24 @@ def _cache_candidates(root: Path, protected_keys: set[str], last_successful_uses
                     candidate = _cache_candidate(child, protected_keys, last_successful_uses, now, staging_grace_seconds, protected_paths, directory_bytes, policy)
                     if candidate:
                         candidates.append(candidate)
+    common_pa_family_cache = root / "common" / "simion" / "pa_family_cache"
+    if common_pa_family_cache.is_dir() and not _is_immutable_lifecycle_path(
+        common_pa_family_cache
+    ):
+        for child in common_pa_family_cache.iterdir():
+            if child.is_dir() and not child.name.startswith("."):
+                candidate = _cache_candidate(
+                    child,
+                    protected_keys,
+                    last_successful_uses,
+                    now,
+                    staging_grace_seconds,
+                    protected_paths,
+                    directory_bytes,
+                    policy,
+                )
+                if candidate:
+                    candidates.append(candidate)
     return candidates
 
 

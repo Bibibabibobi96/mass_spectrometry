@@ -854,8 +854,16 @@ PA0, the two patches together are estimated at `0.938/7.405/58.833 GB` for the
 three levels. For every independently adjustable basis, the verified global PA supplies all
 six patch-face potentials; the local PA retains the clipped resolved electrodes
 and is refined with those values as Dirichlet data. A higher-priority local
-instance replaces—not adds to—the coarse field. Potential and normal-field
-interface errors must converge before flight, and every accepted spatial mesh
-must independently re-solve the centre voltage root. The current plan remains
-`planning_only__no_local_pa_built_or_flown` until the boundary sampler, local
-basis builder, IOB priority assembly, and interface verifier are complete.
+instance replaces—not adds to—the coarse field. The managed runs
+`20260910_173000__build__simion__analyzer-local-central-1mm`,
+`20260910_174000__build__simion__analyzer-local-mirror-1mm`,
+`20260910_175000__build__simion__analyzer-local-central-0p5mm`, and
+`20260910_180000__build__simion__analyzer-local-mirror-0p5mm` built and
+published raw/PA0/eight-response families for both patches at 1 and 0.5 mm.
+They use the installed SIMION 2020 default Refine convergence and retain the
+full eight-group boundary response. This advances the state to
+`local_basis_families_built__interface_and_flight_not_yet_verified`.
+Potential and normal-field interface errors must still converge before flight;
+the higher-priority IOB replacement instances and per-mesh centre-voltage roots
+remain unbuilt. The 0.25-mm families are deliberately deferred until the
+1→0.5-mm comparison shows that they are needed.

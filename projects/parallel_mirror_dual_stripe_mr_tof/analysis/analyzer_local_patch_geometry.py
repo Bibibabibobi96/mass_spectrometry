@@ -63,7 +63,7 @@ def main() -> int:
     arguments = parser.parse_args()
     text = build_local_patch_gem(arguments.contract, arguments.region, arguments.scale_factor)
     arguments.output.parent.mkdir(parents=True, exist_ok=True)
-    arguments.output.write_text(text, encoding="utf-8")
+    arguments.output.write_text(text, encoding="utf-8", newline="\n")
     return 0
 
 

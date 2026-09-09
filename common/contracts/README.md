@@ -30,7 +30,9 @@ writer/verifier同时扫描未列出的重型文件，防止通过漏报output�
 `reconcile_artifact_capacity.py`与`artifact_capacity_policy.json`是唯一的跨项目容量清理政策；
 `Invoke-ArtifactCapacityGate`是`run_artifact_support.ps1`提供的PowerShell生命周期适配器。运行器必须由
 冻结或实际测得的新增字节、显式受保护run路径和缓存键调用它，并把返回的 applied receipt 作为run输出；
-该适配器不定义项目缓存角色、物理参数或第二套删除优先级。
+该适配器不定义项目缓存角色、物理参数或第二套删除优先级。候选发现同时识别项目`cache/<role>/<key>`
+的`generation_relative_path`指针和已注册公共SIMION PA-family cache的`generation_sha256`指针；二者都必须
+形成pointer→selected generation→manifest的闭合身份链，损坏或未发布节点只能按L1处理。
 
 `artifact_identity_archive.py`只读解析已经完成的行政改名归档：它校验冻结的逐文件身份、归档包装、
 裁剪journal和唯一活动位置，并把旧manifest中的绝对路径按精确前缀映射到归档payload。仓库不再提供

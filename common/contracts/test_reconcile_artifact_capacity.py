@@ -133,6 +133,48 @@ class ArtifactCapacityPlanTest(unittest.TestCase):
         os.utime(entry, (age, age))
         return entry
 
+    def _common_pa_family_cache(
+        self, root: Path, key: str, *, age: float
+    ) -> Path:
+        entry = root / "common" / "simion" / "pa_family_cache" / key
+        generation_name = "f" * 64
+        generation = entry / "generations" / generation_name
+        generation.mkdir(parents=True)
+        (generation / "payload.pa0").write_bytes(b"x" * 1024)
+        (generation / "cache_manifest.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "role": "simion_pa_family_cache",
+                    "cache_key": key,
+                    "generation_sha256": generation_name,
+                }
+            ),
+            encoding="utf-8",
+        )
+        (entry / "current_generation.json").write_text(
+            json.dumps(
+                {"cache_key": key, "generation_sha256": generation_name}
+            ),
+            encoding="utf-8",
+        )
+        os.utime(generation / "cache_manifest.json", (age, age))
+        os.utime(entry, (age, age))
+        return entry
+
+    def test_common_pa_family_cache_is_an_l2_candidate(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            cache = self._common_pa_family_cache(
+                root, "9" * 64, age=time.time() - 100
+            )
+            receipt = plan(root, target_bytes=0)
+            selected = next(
+                item for item in receipt["planned"] if item["path"] == str(cache)
+            )
+            self.assertEqual(selected["level"], "L2")
+            self.assertEqual(selected["cache_role"], "simion_pa_family_cache")
+
     def test_level_then_oldest_order_and_formal_protection(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
