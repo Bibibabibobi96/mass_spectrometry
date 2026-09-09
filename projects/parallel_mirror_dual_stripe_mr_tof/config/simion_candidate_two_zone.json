@@ -2272,6 +2272,13 @@
           "x_core_rule": "symmetric_envelope_of_selected_geometry_plus_patch_margin",
           "reuse_rule": "single central patch",
           "local_geometry_voltage_groups": ["drift_stripe_set_1", "drift_stripe_set_2", "prism_1", "prism_2"]
+        },
+        "stripe_mirror_bridge": {
+          "xy_envelope_rule": "reuse_mirror_turn_xy_box",
+          "lower_z_interface_rule": "nearest_baseline_grid_node_to_midpoint_of_central_ground_and_nearest_positive_stripe_at_project_y_origin",
+          "upper_z_interface_rule": "nearest_baseline_grid_node_to_midpoint_of_inner_grounded_mirror_and_mirror_B",
+          "reuse_rule": "build positive-z and negative-z bridge families independently because off-axis prism geometry breaks whole-analyzer z-reflection reuse",
+          "local_geometry_voltage_groups": ["drift_stripe_set_1", "drift_stripe_set_2"]
         }
       },
       "boundary_rule": "for every independently adjustable voltage basis, interpolate the verified global PA basis onto all six local-patch faces as Dirichlet electrode nodes before local Refine; never add independently solved coarse and fine electrostatic fields",

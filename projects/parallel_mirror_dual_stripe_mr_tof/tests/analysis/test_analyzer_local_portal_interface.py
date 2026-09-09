@@ -14,28 +14,36 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.analyzer_local_portal_
 
 
 class AnalyzerLocalPortalInterfaceTest(unittest.TestCase):
-    def test_prepare_samples_selects_only_effective_central_seams(self) -> None:
+    def test_prepare_samples_selects_bridge_handoffs(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory)
             log = root / "flight.log"
             log.write_text(
-                "MRTOF_EVENT patch_interface ion=1 name=central_transport__z_min "
-                "region=central_transport face=z_min n=1 direction=-1 t_us=1 "
-                "x_mm=0.1 y_mm=2 z_mm=-105 vx_mm_us=0 vy_mm_us=1 vz_mm_us=-39\n"
-                "MRTOF_EVENT patch_interface ion=1 name=central_transport__z_max "
-                "region=central_transport face=z_max n=1 direction=1 t_us=2 "
-                "x_mm=-0.2 y_mm=3 z_mm=102 vx_mm_us=0 vy_mm_us=1 vz_mm_us=39\n"
-                "MRTOF_EVENT patch_interface ion=1 name=mirror_turn_positive__z_min "
-                "region=mirror_turn_positive face=z_min n=1 direction=1 t_us=2 "
-                "x_mm=-0.2 y_mm=3 z_mm=97 vx_mm_us=0 vy_mm_us=1 vz_mm_us=39\n",
+                "MRTOF_EVENT patch_interface ion=1 name=handoff_negative_central_to_bridge__z_plane "
+                "region=local_handoff face=z_plane n=1 direction=-1 t_us=1 "
+                "x_mm=0.1 y_mm=2 z_mm=-72 vx_mm_us=0 vy_mm_us=1 vz_mm_us=-39\n"
+                "MRTOF_EVENT patch_interface ion=1 name=handoff_positive_central_to_bridge__z_plane "
+                "region=local_handoff face=z_plane n=1 direction=1 t_us=2 "
+                "x_mm=-0.2 y_mm=3 z_mm=72 vx_mm_us=0 vy_mm_us=1 vz_mm_us=39\n"
+                "MRTOF_EVENT patch_interface ion=1 name=handoff_negative_bridge_to_mirror__z_plane "
+                "region=local_handoff face=z_plane n=1 direction=-1 t_us=3 "
+                "x_mm=0.2 y_mm=4 z_mm=-131 vx_mm_us=0 vy_mm_us=1 vz_mm_us=-39\n"
+                "MRTOF_EVENT patch_interface ion=1 name=handoff_positive_bridge_to_mirror__z_plane "
+                "region=local_handoff face=z_plane n=1 direction=1 t_us=4 "
+                "x_mm=-0.1 y_mm=5 z_mm=131 vx_mm_us=0 vy_mm_us=1 vz_mm_us=39\n",
                 encoding="utf-8",
             )
             result = prepare_portal_samples(log, root / "samples")
             self.assertEqual(result["qualification"], "single_center_portal_seed_only")
             self.assertEqual({item["seam"] for item in result["seams"]}, set(SEAMS))
             self.assertTrue(all(item["sample_count"] == 1 for item in result["seams"]))
-            negative = next(item for item in result["seams"] if item["seam"].startswith("negative"))
-            self.assertEqual(negative["mirror_transform"], "reflect_z")
+            negative_outer = next(
+                item for item in result["seams"]
+                if item["seam"] == "negative_bridge_to_mirror"
+            )
+            self.assertEqual(negative_outer["region_a"], "stripe_mirror_bridge_negative")
+            self.assertEqual(negative_outer["transform_a"], "identity")
+            self.assertEqual(negative_outer["transform_b"], "reflect_z")
 
     def test_aggregate_requires_complete_matrix_and_reports_scales(self) -> None:
         with TemporaryDirectory() as directory:
@@ -70,7 +78,7 @@ class AnalyzerLocalPortalInterfaceTest(unittest.TestCase):
                 "basis_voltage_V_by_scale": {"1.0": 10.0, "0.5": 10.0},
             }), encoding="utf-8")
             result = analyze_portal_comparisons(request)
-            self.assertEqual(result["comparison_count"], 32)
+            self.assertEqual(result["comparison_count"], 64)
             self.assertEqual(result["maximum_abs_delta_ez_V_per_mm"], {"1.0": 1.0, "0.5": 0.5})
             operating = result["operating_point"]["maximum_abs_delta_ez_V_per_mm"]
             self.assertAlmostEqual(operating["1.0"], 0.8)

@@ -1,20 +1,33 @@
 -- Compare two solved PA fields at caller-supplied project-coordinate samples.
--- The optional z reflection lets one symmetric positive-z PA represent the
--- corresponding negative-z device.  Geometry, sample ownership, voltage
+-- Optional z reflections let symmetric positive-z PAs represent their
+-- corresponding negative-z devices.  Geometry, sample ownership, voltage
 -- grouping, and acceptance criteria remain the caller's responsibility.
 --
 -- Usage:
 -- simion --nogui lua compare_pa_fields_at_samples.lua
 --   PA_A ORIGIN_A_X,Y,Z PA_B ORIGIN_B_X,Y,Z
---   B_TRANSFORM(identity|reflect_z) INPUT_CSV OUTPUT_CSV
+--   A_TRANSFORM(identity|reflect_z) B_TRANSFORM(identity|reflect_z)
+--   INPUT_CSV OUTPUT_CSV
+-- The former seven-argument form remains supported and implies identity for A.
 
 local pa_a_path=assert(arg[1], 'PA A required')
 local origin_a_text=assert(arg[2], 'PA A project origin required')
 local pa_b_path=assert(arg[3], 'PA B required')
 local origin_b_text=assert(arg[4], 'PA B project origin required')
+local transform_a,input_path,output_path
 local transform_b=arg[5] or 'identity'
-local input_path=assert(arg[6], 'sample CSV required')
-local output_path=assert(arg[7], 'output CSV required')
+if arg[8] then
+  transform_a=transform_b
+  transform_b=arg[6]
+  input_path=arg[7]
+  output_path=arg[8]
+else
+  transform_a='identity'
+  input_path=assert(arg[6], 'sample CSV required')
+  output_path=assert(arg[7], 'output CSV required')
+end
+assert(transform_a=='identity' or transform_a=='reflect_z',
+  'A transform must be identity or reflect_z')
 assert(transform_b=='identity' or transform_b=='reflect_z',
   'B transform must be identity or reflect_z')
 
@@ -78,7 +91,7 @@ for line in input:lines() do
       assert(tonumber(fields[3]),'sample y must be numeric'),
       assert(tonumber(fields[4]),'sample z must be numeric'),
     }
-    local potential_a,field_a=sample(pa_a,origin_a,project,false)
+    local potential_a,field_a=sample(pa_a,origin_a,project,transform_a=='reflect_z')
     local potential_b,field_b=sample(pa_b,origin_b,project,transform_b=='reflect_z')
     output:write(string.format(
       '%s,%.15g,%.15g,%.15g,%.15g,%.15g,%.15g,%.15g,%.15g,%.15g,%.15g,%.15g,%.15g,%.15g,%.15g,%.15g\n',
@@ -91,5 +104,5 @@ for line in input:lines() do
 end
 input:close();output:close();pa_a:close();pa_b:close()
 assert(count>0,'sample CSV contains no samples')
-print(string.format('PA_FIELD_SAMPLE_COMPARISON=PASS samples=%d transform_b=%s output=%s',
-  count,transform_b,output_path))
+print(string.format('PA_FIELD_SAMPLE_COMPARISON=PASS samples=%d transform_a=%s transform_b=%s output=%s',
+  count,transform_a,transform_b,output_path))

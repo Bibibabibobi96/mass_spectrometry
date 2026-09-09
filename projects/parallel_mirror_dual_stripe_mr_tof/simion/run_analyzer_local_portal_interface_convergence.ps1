@@ -2,8 +2,12 @@
 param(
   [Parameter(Mandatory)][string]$CenterTraceRunPath,
   [Parameter(Mandatory)][string]$CoarseCentralRunPath,
+  [Parameter(Mandatory)][string]$CoarseBridgeRunPath,
+  [Parameter(Mandatory)][string]$CoarseNegativeBridgeRunPath,
   [Parameter(Mandatory)][string]$CoarseMirrorRunPath,
   [Parameter(Mandatory)][string]$FineCentralRunPath,
+  [Parameter(Mandatory)][string]$FineBridgeRunPath,
+  [Parameter(Mandatory)][string]$FineNegativeBridgeRunPath,
   [Parameter(Mandatory)][string]$FineMirrorRunPath,
   [string]$RunId='',
   [string]$SimionExe='',
@@ -47,7 +51,7 @@ $package=New-RunPackage -Python $python -RepoRoot $repoRoot `
 $runDir=$package.run_dir;$inputDir=$package.input_dir;$resultDir=$package.result_dir
 $logDir=$package.log_dir;$runConfig=$package.run_config;$summary=$package.summary
 $artifactRoot=Join-Path $workspaceRoot 'artifacts';$cacheRoot=Join-Path $artifactRoot 'common\simion\pa_family_cache'
-$lease=$null;$terminalized=$false;$hostOutcome='failed';$failureStage='preflight'
+$lease=$null;$terminalized=$false;$hostOutcome='failed';$failureStage='preflight';$cacheAliases=@()
 try {
   $traceRun=(Resolve-Path -LiteralPath $CenterTraceRunPath).Path
   $traceManifest=Join-Path $traceRun 'run_manifest.json'
@@ -62,8 +66,12 @@ try {
   $traceTrial=Get-Content -Raw -LiteralPath (Join-Path $traceRun 'results\two_prism_trial_materialization.json')|ConvertFrom-Json -Depth 40
   $families=@(
     Get-VerifiedAnalyzerLocalFamily -SourceRunPath $CoarseCentralRunPath -ExpectedRegion central_transport -ExpectedScale 1.0 -Label coarse_central -PythonExe $python -RepoRoot $repoRoot
+    Get-VerifiedAnalyzerLocalFamily -SourceRunPath $CoarseBridgeRunPath -ExpectedRegion stripe_mirror_bridge_positive -ExpectedScale 1.0 -Label coarse_bridge -PythonExe $python -RepoRoot $repoRoot
+    Get-VerifiedAnalyzerLocalFamily -SourceRunPath $CoarseNegativeBridgeRunPath -ExpectedRegion stripe_mirror_bridge_negative -ExpectedScale 1.0 -Label coarse_negative_bridge -PythonExe $python -RepoRoot $repoRoot
     Get-VerifiedAnalyzerLocalFamily -SourceRunPath $CoarseMirrorRunPath -ExpectedRegion mirror_turn_positive -ExpectedScale 1.0 -Label coarse_mirror -PythonExe $python -RepoRoot $repoRoot
     Get-VerifiedAnalyzerLocalFamily -SourceRunPath $FineCentralRunPath -ExpectedRegion central_transport -ExpectedScale 0.5 -Label fine_central -PythonExe $python -RepoRoot $repoRoot
+    Get-VerifiedAnalyzerLocalFamily -SourceRunPath $FineBridgeRunPath -ExpectedRegion stripe_mirror_bridge_positive -ExpectedScale 0.5 -Label fine_bridge -PythonExe $python -RepoRoot $repoRoot
+    Get-VerifiedAnalyzerLocalFamily -SourceRunPath $FineNegativeBridgeRunPath -ExpectedRegion stripe_mirror_bridge_negative -ExpectedScale 0.5 -Label fine_negative_bridge -PythonExe $python -RepoRoot $repoRoot
     Get-VerifiedAnalyzerLocalFamily -SourceRunPath $FineMirrorRunPath -ExpectedRegion mirror_turn_positive -ExpectedScale 0.5 -Label fine_mirror -PythonExe $python -RepoRoot $repoRoot
   )
   $failureStage='freeze_inputs'
@@ -90,6 +98,9 @@ try {
   $failureStage='probe_cache_families'
   foreach($family in $families){
     Resolve-AnalyzerLocalFamilyCacheGeneration -Family $family -PythonExe $python -RepoRoot $repoRoot -CacheRoot $cacheRoot|Out-Null
+    $cacheAlias=New-RunExecutionAlias -TargetDirectory $family.generation_directory
+    $cacheAliases+=$cacheAlias
+    $family|Add-Member -NotePropertyName runtime_directory -NotePropertyValue $cacheAlias.execution_alias
     $frozenInputs["$($family.label)_cache_manifest"]=(Join-Path $family.generation_directory 'cache_manifest.json')
   }
   $groups=@($families[0].contract.response_recipes|ForEach-Object{[string]$_.group})
@@ -110,13 +121,16 @@ try {
   $config=Get-Content -Raw -LiteralPath $runConfig|ConvertFrom-Json -AsHashtable
   $config.inputs=$frozenInputs
   $config.parameters=[ordered]@{
-    scale_factors=@(1.0,0.5);seams=@('negative_central_to_mirror','positive_central_to_mirror')
+    scale_factors=@(1.0,0.5);seams=@(
+      'negative_central_to_bridge','positive_central_to_bridge',
+      'negative_bridge_to_mirror','positive_bridge_to_mirror'
+    )
     response_groups=$groups;cache_keys=@($families.cache_key)
   }
   Write-RunJson -Path $runConfig -Depth 20 -Value $config
   Write-RunJson -Path $summary -Depth 8 -Value ([ordered]@{
     schema_version=1;role='mrtof_analyzer_local_portal_interface_convergence';status='checkpoint'
-    reason='Verified center portal trace and four local PA-family cache generations; seam sampling is starting.'
+    reason='Verified center portal trace and eight local PA-family cache generations; seam sampling is starting.'
   })
   Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Status checkpoint `
     -Software @('SIMION 2020','Python 3.11') -Outputs @($summary,$capacityStartupPath)|Out-Null
@@ -136,41 +150,46 @@ try {
   $lease=Enter-HostExecutionLease -Role SIMION -RunId $RunId
   foreach($scale in @(1.0,0.5)){
     $central=$families|Where-Object{$_.region-eq'central_transport' -and [double]$_.scale-eq$scale}
+    $bridge=$families|Where-Object{$_.region-eq'stripe_mirror_bridge_positive' -and [double]$_.scale-eq$scale}
+    $negativeBridge=$families|Where-Object{$_.region-eq'stripe_mirror_bridge_negative' -and [double]$_.scale-eq$scale}
     $mirror=$families|Where-Object{$_.region-eq'mirror_turn_positive' -and [double]$_.scale-eq$scale}
-    if($null-eq$central -or $null-eq$mirror){throw "Local family pair is missing at scale $scale"}
-    $centralOrigin=(@($central.contract.patch_origin_project_mm|ForEach-Object{
-      [string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',[double]$_)
-    })-join ',')
-    $mirrorOrigin=(@($mirror.contract.patch_origin_project_mm|ForEach-Object{
-      [string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',[double]$_)
-    })-join ',')
+    if($null-eq$central -or $null-eq$bridge -or $null-eq$negativeBridge -or $null-eq$mirror){throw "Local family set is missing at scale $scale"}
     $token=[string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:0.###}',$scale).Replace('.','p')
     $basisValues=@()
-    foreach($family in @($central,$mirror)){
-      $activeLocalId=if($family.region-eq'central_transport'){5}else{1}
+    foreach($family in @($central,$bridge,$negativeBridge,$mirror)){
+      $activeLocalId=if($family.region-eq'mirror_turn_positive'){1}else{5}
       $basisCsv=Join-Path $resultDir "basis_voltage__${token}__$($family.region).csv"
       & $simion --nogui --noprompt lua $basisVoltageScript `
-        (Join-Path $family.generation_directory "$($family.contract.family_prefix).pa$activeLocalId") `
-        (Join-Path $family.generation_directory "$($family.contract.family_prefix).pa#") $activeLocalId $basisCsv `
+        (Join-Path $family.runtime_directory "$($family.contract.family_prefix).pa$activeLocalId") `
+        (Join-Path $family.runtime_directory "$($family.contract.family_prefix).pa#") $activeLocalId $basisCsv `
         2>&1|Tee-Object -FilePath $comparisonLog -Append
       if($LASTEXITCODE-ne 0){throw "SIMION basis-voltage measurement failed: $scale/$($family.region)"}
       $basisValues+=[double](Import-Csv -LiteralPath $basisCsv).basis_voltage_V
       $normalizationOutputs+=$basisCsv
     }
-    if([math]::Abs($basisValues[0]-$basisValues[1])-gt 1e-9){
-      throw "Central and mirror basis voltages differ at scale $scale"
+    if(@($basisValues|Where-Object{[math]::Abs($_-$basisValues[0])-gt 1e-9}).Count-ne 0){
+      throw "Local-family basis voltages differ at scale $scale"
     }
     $basisByScale[[string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',$scale)]=$basisValues[0]
     foreach($seam in @($samples.seams)){
+      $familyA=$families|Where-Object{$_.region-eq([string]$seam.region_a) -and [double]$_.scale-eq$scale}
+      $familyB=$families|Where-Object{$_.region-eq([string]$seam.region_b) -and [double]$_.scale-eq$scale}
+      if($null-eq$familyA -or $null-eq$familyB){throw "Portal family pair is missing: $scale/$($seam.seam)"}
+      $originA=(@($familyA.contract.patch_origin_project_mm|ForEach-Object{
+        [string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',[double]$_)
+      })-join ',')
+      $originB=(@($familyB.contract.patch_origin_project_mm|ForEach-Object{
+        [string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',[double]$_)
+      })-join ',')
       foreach($group in $groups){
-        $centralRecipe=$central.contract.response_recipes|Where-Object{$_.group-eq$group}
-        $mirrorRecipe=$mirror.contract.response_recipes|Where-Object{$_.group-eq$group}
-        if($null-eq$centralRecipe -or $null-eq$mirrorRecipe){throw "Response recipe is missing: $scale/$group"}
+        $recipeA=$familyA.contract.response_recipes|Where-Object{$_.group-eq$group}
+        $recipeB=$familyB.contract.response_recipes|Where-Object{$_.group-eq$group}
+        if($null-eq$recipeA -or $null-eq$recipeB){throw "Response recipe is missing: $scale/$($seam.seam)/$group"}
         $csv=Join-Path $resultDir "portal__${token}__$($seam.seam)__${group}.csv"
         & $simion --nogui --noprompt lua $comparisonScript `
-          (Join-Path $central.generation_directory ([string]$centralRecipe.output_filename)) $centralOrigin `
-          (Join-Path $mirror.generation_directory ([string]$mirrorRecipe.output_filename)) $mirrorOrigin `
-          ([string]$seam.mirror_transform) ([string]$seam.sample_csv) $csv 2>&1|Tee-Object -FilePath $comparisonLog -Append
+          (Join-Path $familyA.runtime_directory ([string]$recipeA.output_filename)) $originA `
+          (Join-Path $familyB.runtime_directory ([string]$recipeB.output_filename)) $originB `
+          ([string]$seam.transform_a) ([string]$seam.transform_b) ([string]$seam.sample_csv) $csv 2>&1|Tee-Object -FilePath $comparisonLog -Append
         if($LASTEXITCODE-ne 0){throw "SIMION portal comparison failed: $scale/$($seam.seam)/$group"}
         $csvOutputs+=$csv
         $comparisonRecords+=[ordered]@{
@@ -184,7 +203,10 @@ try {
   $measurementInput=Join-Path $inputDir 'portal_comparison_input.json'
   Write-RunJson -Path $measurementInput -Depth 12 -Value ([ordered]@{
     schema_version=1;role='mrtof_analyzer_local_portal_comparison_input'
-    scale_factors=@(1.0,0.5);seams=@('negative_central_to_mirror','positive_central_to_mirror')
+    scale_factors=@(1.0,0.5);seams=@(
+      'negative_central_to_bridge','positive_central_to_bridge',
+      'negative_bridge_to_mirror','positive_bridge_to_mirror'
+    )
     response_groups=$groups;comparisons=$comparisonRecords
     operating_group_voltages_V=$groupVoltages;basis_voltage_V_by_scale=$basisByScale
   })
@@ -199,7 +221,7 @@ try {
     maximum_abs_delta_potential_V=$metrics.maximum_abs_delta_potential_V
     maximum_abs_delta_ez_V_per_mm=$metrics.maximum_abs_delta_ez_V_per_mm
     operating_point=$metrics.operating_point
-    reason='Central-local versus mirror-local fields were measured on the two effective center-trajectory handoff seams. No acceptance threshold is inferred.'
+    reason='Central-to-bridge and bridge-to-mirror local fields were measured on four center-trajectory handoff seams. No acceptance threshold is inferred.'
   })
   $config=Get-Content -Raw -LiteralPath $runConfig|ConvertFrom-Json -AsHashtable
   $config.inputs.portal_comparison_input=$measurementInput
@@ -225,5 +247,8 @@ try {
   throw
 } finally {
   if($null-ne$lease){Exit-HostExecutionLease -Lease $lease -Outcome $hostOutcome -RunId $RunId}
+  foreach($cacheAlias in $cacheAliases){
+    Remove-RunExecutionAlias -ExecutionAlias $cacheAlias.execution_alias -TargetDirectory $cacheAlias.target_directory
+  }
   Remove-RunPackageExecutionAlias -Package $package
 }

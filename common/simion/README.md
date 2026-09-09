@@ -41,7 +41,8 @@ probe|publish|materialize --cache-root <root> --identity <identity.json> --filen
 `1 V`或`10000 V`。[`measure_pa_basis_voltage.lua`](measure_pa_basis_voltage.lua)则用raw PA的电极ID把真实
 几何实体与同样标为physical的Dirichlet边界节点区分开，供运行证据记录归一化。
 [`compare_pa_fields_at_samples.lua`](compare_pa_fields_at_samples.lua)在调用方提供的项目坐标样点比较两个
-已解PA的电势和三分量场，并支持严格`z`反射；它不选择局部域、轨迹portal、实例优先级或接受阈值。
+已解PA的电势和三分量场，并允许两个PA分别选择严格`z`反射；旧的仅B侧反射调用仍兼容。它不选择局部域、
+轨迹portal、实例优先级或接受阈值。
 
 [`cache_generation.py`](cache_generation.py)只抽取不同 PA-family 缓存协议共有的直接文件清单、payload
 摘要和 immutable generation 摘要计算；它不定义 identity 字段、role、锁、缓存目录、容量治理或命中时的

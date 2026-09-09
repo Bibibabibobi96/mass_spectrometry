@@ -17,15 +17,37 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_analysis 
 
 
 SEAMS = {
-    "negative_central_to_mirror": {
-        "event_name": "central_transport__z_min",
-        "coordinate_mm": -105.0,
-        "mirror_transform": "reflect_z",
+    "negative_central_to_bridge": {
+        "event_name": "handoff_negative_central_to_bridge__z_plane",
+        "coordinate_mm": -72.0,
+        "region_a": "central_transport",
+        "region_b": "stripe_mirror_bridge_negative",
+        "transform_a": "identity",
+        "transform_b": "identity",
     },
-    "positive_central_to_mirror": {
-        "event_name": "central_transport__z_max",
-        "coordinate_mm": 102.0,
-        "mirror_transform": "identity",
+    "positive_central_to_bridge": {
+        "event_name": "handoff_positive_central_to_bridge__z_plane",
+        "coordinate_mm": 72.0,
+        "region_a": "central_transport",
+        "region_b": "stripe_mirror_bridge_positive",
+        "transform_a": "identity",
+        "transform_b": "identity",
+    },
+    "negative_bridge_to_mirror": {
+        "event_name": "handoff_negative_bridge_to_mirror__z_plane",
+        "coordinate_mm": -131.0,
+        "region_a": "stripe_mirror_bridge_negative",
+        "region_b": "mirror_turn_positive",
+        "transform_a": "identity",
+        "transform_b": "reflect_z",
+    },
+    "positive_bridge_to_mirror": {
+        "event_name": "handoff_positive_bridge_to_mirror__z_plane",
+        "coordinate_mm": 131.0,
+        "region_a": "stripe_mirror_bridge_positive",
+        "region_b": "mirror_turn_positive",
+        "transform_a": "identity",
+        "transform_b": "identity",
     },
 }
 DELTA_FIELDS = (
@@ -67,7 +89,10 @@ def prepare_portal_samples(log_path: Path, output_directory: Path) -> dict[str, 
             "seam": seam,
             "event_name": specification["event_name"],
             "coordinate_mm": coordinate,
-            "mirror_transform": specification["mirror_transform"],
+            "region_a": specification["region_a"],
+            "region_b": specification["region_b"],
+            "transform_a": specification["transform_a"],
+            "transform_b": specification["transform_b"],
             "sample_count": len(rows),
             "sample_csv": str(csv_path.resolve()),
             "x_envelope_mm": [
@@ -115,8 +140,10 @@ def _metrics_from_rows(rows: list[dict[str, Any]], label: str) -> dict[str, Any]
         result[f"max_abs_{stem}"] = max(abs(value) for value in values)
         result[f"rms_{stem}"] = math.sqrt(sum(value * value for value in values) / len(values))
     return result
+
+
 def analyze_portal_comparisons(input_path: Path) -> dict[str, Any]:
-    """Validate a complete two-scale, two-seam, eight-basis comparison matrix."""
+    """Validate a complete two-scale, four-seam, eight-basis comparison matrix."""
     document = json.loads(input_path.read_text(encoding="utf-8-sig"))
     if document.get("role") != "mrtof_analyzer_local_portal_comparison_input":
         raise CandidateContractError("portal comparison input role differs")

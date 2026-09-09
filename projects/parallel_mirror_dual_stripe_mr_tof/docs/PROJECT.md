@@ -942,3 +942,18 @@ candidate is a dedicated seam PA containing both the Stripe termination and
 inner mirror structures, with its boundaries moved into lower-gradient vacuum;
 the accepted-bunch portal and a separate pulsed-extraction voltage combination
 remain required.
+
+The dedicated Stripe-to-mirror bridge is now built independently on positive
+and negative `z`; reflecting the positive bridge was rejected because the two
+off-axis prisms break whole-analyser `z` symmetry.  The global analyser remains
+the isotropic 1-mm baseline.  Contract-derived handoffs lie inside adjacent
+patch overlaps at `z=-72,+72,-131,+131 mm`, rather than on Dirichlet box faces.
+Managed centre run
+`20260911_070000__sim__simion__overlap-handoff-envelope-n1` crossed all four
+handoffs without crossing an `x/y` patch face.  Managed 64-cell comparison
+`20260911_073000__analysis__simion__analyzer-local-overlap-interface-r05`
+measured a 0.5-mm operating-point maximum discontinuity of `0.01654 V` and
+`0.003503 V/mm`; the central-to-bridge seams were below `1.52e-6 V` and
+`9.30e-7 V/mm`.  This closes only the single-centre numerical interface seed.
+Explicit Workbench instance selection, fixed-bunch containment and flight
+convergence remain required before the local mesh can support resolution.

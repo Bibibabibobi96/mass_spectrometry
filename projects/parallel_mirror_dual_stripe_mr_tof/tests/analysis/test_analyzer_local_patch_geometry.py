@@ -30,6 +30,12 @@ class AnalyzerLocalPatchGeometryTest(unittest.TestCase):
         self.assertIn("locate(20,147,-97)", text)
         self.assertIn("e(5)", text)
 
+    def test_emits_negative_bridge_from_original_geometry(self) -> None:
+        text = build_local_patch_gem(CONTRACT, "stripe_mirror_bridge_negative", 1.0)
+        self.assertIn("pa_define(41,611,124,planar,none,electrostatic,, 1,1,1,surface=none)", text)
+        self.assertIn("locate(20,147,165)", text)
+        self.assertIn("e(16)", text)
+
     def test_rejects_undeclared_scale(self) -> None:
         with self.assertRaises(CandidateContractError):
             build_local_patch_gem(CONTRACT, "central_transport", 0.75)

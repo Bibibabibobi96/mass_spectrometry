@@ -10,6 +10,7 @@ from typing import Any
 from common.contracts.file_identity import file_sha256
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.analyzer_local_patch_geometry import (
     REGIONS,
+    _profile_key,
     build_local_patch_gem,
 )
 from projects.parallel_mirror_dual_stripe_mr_tof.analysis.analyzer_local_refinement_plan import (
@@ -46,7 +47,7 @@ def derive_local_pa_family_contract(
     if not simion_release.strip() or not simion_executable.is_file():
         raise CandidateContractError("local PA family requires a SIMION release and executable")
     plan = derive_local_refinement_plan(contract_path)
-    profile_key = "mirror_turn" if region == "mirror_turn_positive" else region
+    profile_key = _profile_key(region)
     selected: dict[str, Any] | None = None
     for profile in plan["profiles"]:
         if float(profile["scale_factor"]) == float(scale_factor):

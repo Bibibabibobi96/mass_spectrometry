@@ -19,7 +19,19 @@ from projects.parallel_mirror_dual_stripe_mr_tof.analysis.split_candidate_geomet
 )
 
 
-REGIONS = ("mirror_turn_positive", "central_transport")
+REGIONS = (
+    "mirror_turn_positive", "central_transport",
+    "stripe_mirror_bridge_positive", "stripe_mirror_bridge_negative",
+)
+
+
+def _profile_key(region: str) -> str:
+    return {
+        "mirror_turn_positive": "mirror_turn",
+        "central_transport": "central_transport",
+        "stripe_mirror_bridge_positive": "stripe_mirror_bridge",
+        "stripe_mirror_bridge_negative": "stripe_mirror_bridge_negative",
+    }[region]
 
 
 def build_local_patch_gem(contract_path: Path, region: str, scale_factor: float) -> str:
@@ -28,7 +40,7 @@ def build_local_patch_gem(contract_path: Path, region: str, scale_factor: float)
     contract = load_contract(contract_path)
     plan = derive_local_refinement_plan(contract_path)
     selected: dict[str, Any] | None = None
-    profile_key = "mirror_turn" if region == "mirror_turn_positive" else region
+    profile_key = _profile_key(region)
     for profile in plan["profiles"]:
         if float(profile["scale_factor"]) == float(scale_factor):
             selected = profile[profile_key]

@@ -4,7 +4,7 @@ $ErrorActionPreference='Stop'
 function Get-VerifiedAnalyzerLocalFamily {
   param(
     [Parameter(Mandatory)][string]$SourceRunPath,
-    [Parameter(Mandatory)][ValidateSet('central_transport','mirror_turn_positive')][string]$ExpectedRegion,
+    [Parameter(Mandatory)][ValidateSet('central_transport','mirror_turn_positive','stripe_mirror_bridge_positive','stripe_mirror_bridge_negative')][string]$ExpectedRegion,
     [Parameter(Mandatory)][double]$ExpectedScale,
     [Parameter(Mandatory)][string]$Label,
     [Parameter(Mandatory)][string]$PythonExe,

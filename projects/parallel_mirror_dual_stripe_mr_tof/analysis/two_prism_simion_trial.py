@@ -49,12 +49,18 @@ def _sha256(path: Path) -> str:
 
 def _patch_interface_planes(contract_path: Path) -> list[dict[str, Any]]:
     """Derive every current local-PA face, including the reflected mirror."""
-    patches = derive_local_refinement_plan(contract_path)["patches"]
+    plan = derive_local_refinement_plan(contract_path)
+    patches = plan["patches"]
     central = [float(value) for value in patches["central_transport"]]
     positive = [float(value) for value in patches["mirror_turn_positive"]]
+    bridge_positive = [float(value) for value in patches["stripe_mirror_bridge_positive"]]
     negative = [
         positive[0], positive[1], -positive[5],
         positive[3], positive[4], -positive[2],
+    ]
+    bridge_negative = [
+        bridge_positive[0], bridge_positive[1], -bridge_positive[5],
+        bridge_positive[3], bridge_positive[4], -bridge_positive[2],
     ]
     result: list[dict[str, Any]] = []
     axes = ("x", "y", "z")
@@ -62,6 +68,8 @@ def _patch_interface_planes(contract_path: Path) -> list[dict[str, Any]]:
         ("central_transport", central),
         ("mirror_turn_positive", positive),
         ("mirror_turn_negative", negative),
+        ("stripe_mirror_bridge_positive", bridge_positive),
+        ("stripe_mirror_bridge_negative", bridge_negative),
     ):
         for axis_index, axis in enumerate(axes):
             others = [index for index in range(3) if index != axis_index]
@@ -79,6 +87,27 @@ def _patch_interface_planes(contract_path: Path) -> list[dict[str, Any]]:
                     "v_min_mm": box[others[1]],
                     "v_max_mm": box[others[1] + 3],
                 })
+    handoff_sources = {
+        "negative_central_to_bridge": (central, bridge_negative),
+        "positive_central_to_bridge": (central, bridge_positive),
+        "negative_bridge_to_mirror": (bridge_negative, negative),
+        "positive_bridge_to_mirror": (bridge_positive, positive),
+    }
+    for name, coordinate in plan["handoff_planes_project_mm"].items():
+        first, second = handoff_sources[name]
+        result.append({
+            "name": f"handoff_{name}__z_plane",
+            "region": "local_handoff",
+            "face": "z_plane",
+            "axis": "z",
+            "coordinate_mm": float(coordinate),
+            "u_axis": "x",
+            "u_min_mm": max(first[0], second[0]),
+            "u_max_mm": min(first[3], second[3]),
+            "v_axis": "y",
+            "v_min_mm": max(first[1], second[1]),
+            "v_max_mm": min(first[4], second[4]),
+        })
     return result
 
 

@@ -37,16 +37,25 @@ class TwoPrismSimionTrialTest(unittest.TestCase):
             repo / "projects" / "parallel_mirror_dual_stripe_mr_tof"
             / "config" / "simion_candidate_two_zone.json"
         )
-        self.assertEqual(len(planes), 18)
+        self.assertEqual(len(planes), 34)
         self.assertEqual(
             {plane["region"] for plane in planes},
-            {"central_transport", "mirror_turn_positive", "mirror_turn_negative"},
+            {
+                "central_transport", "mirror_turn_positive", "mirror_turn_negative",
+                "stripe_mirror_bridge_positive", "stripe_mirror_bridge_negative",
+                "local_handoff",
+            },
         )
         by_name = {plane["name"]: plane for plane in planes}
         self.assertEqual(by_name["mirror_turn_positive__z_min"]["coordinate_mm"], 97.0)
         self.assertEqual(by_name["mirror_turn_negative__z_max"]["coordinate_mm"], -97.0)
         self.assertEqual(by_name["central_transport__z_min"]["coordinate_mm"], -105.0)
         self.assertEqual(by_name["central_transport__z_max"]["coordinate_mm"], 102.0)
+        self.assertEqual(by_name["stripe_mirror_bridge_positive__z_min"]["coordinate_mm"], 42.0)
+        self.assertEqual(by_name["stripe_mirror_bridge_positive__z_max"]["coordinate_mm"], 165.0)
+        self.assertEqual(by_name["stripe_mirror_bridge_negative__z_min"]["coordinate_mm"], -165.0)
+        self.assertEqual(by_name["handoff_positive_central_to_bridge__z_plane"]["coordinate_mm"], 72.0)
+        self.assertEqual(by_name["handoff_negative_bridge_to_mirror__z_plane"]["coordinate_mm"], -131.0)
 
     def test_lua_switch_serializes_both_physical_prisms(self) -> None:
         text = _lua_prism_switch({

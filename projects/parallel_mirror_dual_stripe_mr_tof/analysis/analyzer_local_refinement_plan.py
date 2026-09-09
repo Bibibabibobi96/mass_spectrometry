@@ -93,6 +93,38 @@ def _role_bounds(
                  else max(bound[index] for bound in bounds) for index in range(6))
 
 
+def _polygon_z_interval_at_y(item: dict[str, Any], y_mm: float, label: str) -> tuple[float, float]:
+    """Return the filled polygon's z interval on one project-y section."""
+    polygon = item.get("polygon_yz_mm")
+    if not isinstance(polygon, list) or len(polygon) < 3:
+        raise CandidateContractError(f"{label} is not an extruded yz polygon")
+    intersections: list[float] = []
+    for index, point in enumerate(polygon):
+        following = polygon[(index + 1) % len(polygon)]
+        y0, z0 = float(point[0]), float(point[1])
+        y1, z1 = float(following[0]), float(following[1])
+        if abs(y0 - y_mm) <= 1e-10:
+            intersections.append(z0)
+        if (y0 < y_mm < y1) or (y1 < y_mm < y0):
+            fraction = (y_mm - y0) / (y1 - y0)
+            intersections.append(z0 + fraction * (z1 - z0))
+    if len(intersections) < 2:
+        raise CandidateContractError(f"{label} does not span project y={y_mm:g} mm")
+    return min(intersections), max(intersections)
+
+
+def _polygon_spans_y(item: dict[str, Any], y_mm: float) -> bool:
+    polygon = item.get("polygon_yz_mm")
+    if not isinstance(polygon, list) or len(polygon) < 3:
+        return False
+    values = [float(point[0]) for point in polygon]
+    return min(values) - 1e-10 <= y_mm <= max(values) + 1e-10
+
+
+def _nearest_grid_node(value: float, origin: float, mesh: float) -> float:
+    return origin + math.floor((value - origin) / mesh + 0.5) * mesh
+
+
 def _snap_patch(
     raw: tuple[float, float, float, float, float, float],
     global_box: tuple[float, float, float, float, float, float],
@@ -178,7 +210,9 @@ def derive_local_refinement_plan(contract_path: Path) -> dict[str, Any]:
     if not isinstance(bytes_per_point, int) or isinstance(bytes_per_point, bool) or bytes_per_point <= 0:
         raise CandidateContractError("storage estimate must be a positive integer")
     regions = spec["regions"]
-    if not isinstance(regions, dict) or set(regions) != {"mirror_turn", "central_transport"}:
+    if not isinstance(regions, dict) or set(regions) != {
+        "mirror_turn", "central_transport", "stripe_mirror_bridge",
+    }:
         raise CandidateContractError("local refinement regions differ")
     resolved = resolve_geometry(contract)
 
@@ -232,6 +266,79 @@ def derive_local_refinement_plan(contract_path: Path) -> dict[str, Any]:
     )
     central_box = _snap_patch(central_raw, global_box, origin, baseline_mesh)
 
+    bridge = regions["stripe_mirror_bridge"]
+    expected_bridge = {
+        "xy_envelope_rule", "lower_z_interface_rule", "upper_z_interface_rule",
+        "reuse_rule", "local_geometry_voltage_groups",
+    }
+    if not isinstance(bridge, dict) or set(bridge) != expected_bridge:
+        raise CandidateContractError("stripe-mirror bridge region field set differs")
+    if bridge["xy_envelope_rule"] != "reuse_mirror_turn_xy_box":
+        raise CandidateContractError("stripe-mirror bridge xy-envelope rule differs")
+    if bridge["lower_z_interface_rule"] != (
+        "nearest_baseline_grid_node_to_midpoint_of_central_ground_and_nearest_positive_stripe_at_project_y_origin"
+    ):
+        raise CandidateContractError("stripe-mirror bridge lower-z rule differs")
+    if bridge["upper_z_interface_rule"] != (
+        "nearest_baseline_grid_node_to_midpoint_of_inner_grounded_mirror_and_mirror_B"
+    ):
+        raise CandidateContractError("stripe-mirror bridge upper-z rule differs")
+
+    phase_y_mm = 0.0  # The project frame and the Stripe theory share this exact origin.
+    central_intervals = [
+        _polygon_z_interval_at_y(item, phase_y_mm, f"central_ground_electrodes[{index}]")
+        for index, item in enumerate(resolved["central_ground_electrodes"])
+        if _polygon_spans_y(item, phase_y_mm)
+    ]
+    stripe_intervals = [
+        _polygon_z_interval_at_y(item, phase_y_mm, f"stripe_electrodes[{index}]")
+        for index, item in enumerate(resolved["stripe_electrodes"])
+        if _polygon_spans_y(item, phase_y_mm)
+    ]
+    positive_central_z = max(high for _, high in central_intervals)
+    positive_stripe_z = min(low for low, _ in stripe_intervals if low > positive_central_z)
+    lower_gap = (positive_central_z, positive_stripe_z)
+
+    positive_mirror = [
+        (int(item["id"]), _box_bounds(item["box"], f"mirror_electrodes[{index}].box"))
+        for index, item in enumerate(resolved["mirror_electrodes"])
+        if float(item["box"][2]) > 0.0
+    ]
+    inner_grounded = [bound for identifier, bound in positive_mirror if identifier in fixed_ids]
+    mirror_b_ids = set(response_groups.get("mirror_B", []))
+    mirror_b = [bound for identifier, bound in positive_mirror if identifier in mirror_b_ids]
+    if len(inner_grounded) != 1 or len(mirror_b) != 1:
+        raise CandidateContractError("bridge requires one positive inner ground and one positive mirror-B electrode")
+    upper_gap = (inner_grounded[0][5], mirror_b[0][2])
+    if lower_gap[1] <= lower_gap[0] or upper_gap[1] <= upper_gap[0]:
+        raise CandidateContractError("stripe-mirror bridge interface gap is not positive")
+    bridge_z_min = _nearest_grid_node(sum(lower_gap) / 2.0, origin[2], baseline_mesh[2])
+    bridge_z_max = _nearest_grid_node(sum(upper_gap) / 2.0, origin[2], baseline_mesh[2])
+    if not lower_gap[0] < bridge_z_min < lower_gap[1]:
+        raise CandidateContractError("bridge lower interface does not remain inside its resolved vacuum gap")
+    if not upper_gap[0] < bridge_z_max < upper_gap[1]:
+        raise CandidateContractError("bridge upper interface does not remain inside its resolved vacuum gap")
+    bridge_box = (
+        mirror_box[0], mirror_box[1], bridge_z_min,
+        mirror_box[3], mirror_box[4], bridge_z_max,
+    )
+    bridge_negative_box = (
+        mirror_box[0], mirror_box[1], -bridge_z_max,
+        mirror_box[3], mirror_box[4], -bridge_z_min,
+    )
+    central_bridge_handoff_z = _nearest_grid_node(
+        (max(central_box[2], bridge_box[2]) + min(central_box[5], bridge_box[5])) / 2.0,
+        origin[2], baseline_mesh[2],
+    )
+    bridge_mirror_handoff_z = _nearest_grid_node(
+        (max(bridge_box[2], mirror_box[2]) + min(bridge_box[5], mirror_box[5])) / 2.0,
+        origin[2], baseline_mesh[2],
+    )
+    if not bridge_box[2] < central_bridge_handoff_z < central_box[5]:
+        raise CandidateContractError("central-to-bridge handoff is outside the patch overlap")
+    if not mirror_box[2] < bridge_mirror_handoff_z < bridge_box[5]:
+        raise CandidateContractError("bridge-to-mirror handoff is outside the patch overlap")
+
     def validate_local_groups(name: str) -> None:
         region = regions[name]
         if not isinstance(region, dict):
@@ -242,6 +349,7 @@ def derive_local_refinement_plan(contract_path: Path) -> dict[str, Any]:
 
     validate_local_groups("mirror_turn")
     validate_local_groups("central_transport")
+    validate_local_groups("stripe_mirror_bridge")
 
     profiles: list[dict[str, Any]] = []
     for factor in factors:
@@ -255,6 +363,14 @@ def derive_local_refinement_plan(contract_path: Path) -> dict[str, Any]:
             ),
             "central_transport": _profile(
                 f"central_transport_{token}", central_box, mesh,
+                response_family_arrays, bytes_per_point,
+            ),
+            "stripe_mirror_bridge": _profile(
+                f"stripe_mirror_bridge_{token}", bridge_box, mesh,
+                response_family_arrays, bytes_per_point,
+            ),
+            "stripe_mirror_bridge_negative": _profile(
+                f"stripe_mirror_bridge_negative_{token}", bridge_negative_box, mesh,
                 response_family_arrays, bytes_per_point,
             ),
         })
@@ -281,7 +397,23 @@ def derive_local_refinement_plan(contract_path: Path) -> dict[str, Any]:
             "estimated_family_bytes": math.prod(global_half_shape) * global_arrays * bytes_per_point,
             "reason": "capacity preflight is required before any full-envelope half-mesh family",
         },
-        "patches": {"mirror_turn_positive": list(mirror_box), "central_transport": list(central_box)},
+        "patches": {
+            "mirror_turn_positive": list(mirror_box),
+            "central_transport": list(central_box),
+            "stripe_mirror_bridge_positive": list(bridge_box),
+            "stripe_mirror_bridge_negative": list(bridge_negative_box),
+        },
+        "derived_interface_gaps": {
+            "project_y_origin_mm": phase_y_mm,
+            "central_ground_to_positive_stripe_z_mm": list(lower_gap),
+            "inner_grounded_mirror_to_mirror_B_z_mm": list(upper_gap),
+        },
+        "handoff_planes_project_mm": {
+            "negative_central_to_bridge": -central_bridge_handoff_z,
+            "positive_central_to_bridge": central_bridge_handoff_z,
+            "negative_bridge_to_mirror": -bridge_mirror_handoff_z,
+            "positive_bridge_to_mirror": bridge_mirror_handoff_z,
+        },
         "profiles": profiles,
         "response_voltage_groups": response_groups,
         "fixed_zero_electrode_ids": fixed_ids,

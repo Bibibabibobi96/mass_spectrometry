@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
   [Parameter(Mandatory)][string]$GeometryReviewRunPath,
-  [Parameter(Mandatory)][ValidateSet('mirror_turn_positive','central_transport')][string]$Region,
+  [Parameter(Mandatory)][ValidateSet('mirror_turn_positive','central_transport','stripe_mirror_bridge_positive','stripe_mirror_bridge_negative')][string]$Region,
   [Parameter(Mandatory)][ValidateSet(1.0,0.5,0.25)][double]$ScaleFactor,
   [string]$ContractPath='',
   [string]$RunId='',
@@ -86,7 +86,12 @@ try {
   $plan=Get-Content -Raw -LiteralPath $planPath|ConvertFrom-Json -Depth 30
   $profile=@($plan.profiles|Where-Object {[double]$_.scale_factor-eq$ScaleFactor})
   if($profile.Count-ne 1){throw 'Requested local mesh scale did not resolve uniquely.'}
-  $profileKey=if($Region-eq'mirror_turn_positive'){'mirror_turn'}else{'central_transport'}
+  $profileKey=switch($Region){
+    'mirror_turn_positive' {'mirror_turn'}
+    'central_transport' {'central_transport'}
+    'stripe_mirror_bridge_positive' {'stripe_mirror_bridge'}
+    'stripe_mirror_bridge_negative' {'stripe_mirror_bridge_negative'}
+  }
   $selected=$profile[0].$profileKey
   [int64]$estimatedFamilyBytes=[int64]$selected.estimated_family_bytes
   $failureStage='capacity_preflight'
