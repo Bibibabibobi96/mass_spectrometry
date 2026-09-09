@@ -329,7 +329,21 @@ PA边界自然裁剪；不得复制或另写一套几何常量。设备无关的
 baseline生成的全局GEM与已审查源逐字节相同，再派生局域GEM、完整八响应recipe和公共内容寻址identity；
 cache miss才调用SIMION，hit则不Refine。2026-09-10已实际发布中央区与正镜转折区的1-mm及0.5-mm族。
 正镜族后续以合同刚体对称变换复用于负镜，不另建第二份几何参数。当前这些run只证明局域basis构建和
-缓存发布；接缝电势/法向场、IOB重叠优先级、中心根和飞行尚未验证，0.25-mm档因此未生成。
+缓存发布；IOB重叠优先级、中心根和飞行尚未验证。
+
+[`common/simion/compare_dirichlet_patch_interface.lua`](../../../common/simion/compare_dirichlet_patch_interface.lua)
+现按两种采样检查接缝：`matched_lattice`在1 mm与0.5 mm族上使用相同物理坐标，
+`native_all_nodes`则遍历各自六个面的全部原生节点。Dirichlet电势只在真空面节点比较；实体面节点由
+电极边界条件所有，不能把solution-array的电极/basis编码误当成真空电势。法向场只在面节点及其内侧
+相邻节点均为真空时比较，同时分别记录实体面节点和贴近实体而被排除的真空节点。
+受管run `20260910_193000__analysis__simion__analyzer-local-interface-convergence`实际检查了96个
+region/group/face组合，以及1-mm档`2,531,592`和0.5-mm档`10,206,096`个原生真空面节点；所有
+Dirichlet真空节点的最大电势差为`1.4552e-11 V`。但是法向场最大值只有55/96项随细化下降，RMS只有
+58/96项下降；最差项位于切过实体或电极边缘的整面，而不是已证明的离子穿越窗口。故当前大盒子不
+能通过空间收敛门禁，也不应直接耗费约58.8 GB生成同边界的0.25-mm族。下一步先从冻结中心轨迹与
+后续束团包络派生可穿越真空portal，使局域替代边界避开电极边缘；非portal面须由轨迹包含门禁证明
+不会被离子穿越。完成该边界重构后才构建第三档并逐网格重新求中心电压根。论文没有给出此数值接口
+的接受阈值，因此上述run只作measured Candidate证据，不自行宣布通过。
 
 修复后的实际中心粒子全装配 Fly 已在约0.06 s终止并完成事件对账；它在 `t=333.722473491 us`、
 `z=-97.0000004 mm`、`y=0.515455 mm` 时以 electrode collision (`splat=-1`) 损失，仅记录24次转折

@@ -863,7 +863,27 @@ published raw/PA0/eight-response families for both patches at 1 and 0.5 mm.
 They use the installed SIMION 2020 default Refine convergence and retain the
 full eight-group boundary response. This advances the state to
 `local_basis_families_built__interface_and_flight_not_yet_verified`.
-Potential and normal-field interface errors must still converge before flight;
-the higher-priority IOB replacement instances and per-mesh centre-voltage roots
-remain unbuilt. The 0.25-mm families are deliberately deferred until the
-1→0.5-mm comparison shows that they are needed.
+
+Managed run
+`20260910_193000__analysis__simion__analyzer-local-interface-convergence`
+then compared all 96 region/group/face cells on both a matched 1-mm physical
+lattice and every native face node. It evaluated 2,531,592 native vacuum face
+nodes at 1 mm and 10,206,096 at 0.5 mm. The maximum vacuum-node Dirichlet
+potential mismatch was `1.4552e-11 V`, confirming the boundary sampler. This
+metric explicitly excludes physical face nodes: those nodes are owned by the
+electrode boundary condition, and a solution-array electrode/basis encoding is
+not a vacuum potential. Normal-field convergence is not closed: 55 of 96
+maximum-error cells and 58 of 96 RMS-error cells improved, while the worst
+outliers occur on whole faces that cut conductors or their edges. No acceptance
+threshold is invented because neither the paper nor the current user contract
+specifies one.
+
+Consequently the unchanged large-box 0.25-mm families remain deferred. Simply
+refining the same conductor-cut interface would spend about 58.8 GB without
+removing its dominant discontinuity. The next numerical design step is a
+trajectory-accessible vacuum-portal decomposition derived from the frozen
+centre path and later accepted-bundle envelope. Potential and normal field are
+then compared on every portal node; all other patch faces require a trajectory
+containment proof that no accepted ion crosses them. Only after that interface
+layout is frozen will the third mesh scale, higher-priority IOB instances and
+independent per-mesh centre-voltage roots be built.
