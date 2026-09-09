@@ -47,6 +47,13 @@ probe|publish|materialize --cache-root <root> --identity <identity.json> --filen
 六面Dirichlet边界，把调用方明确给出的局部电极电压写入同源raw局部几何并只Refine一个工作点。它用于局部
 响应文件不能由SIMION原生Fast Adjust电极计数安全表达的情况；不推导电压、区域、原点、网格或Workbench
 优先级，也不把父场与局部场相加。
+[`voltageize_pa0.lua`](voltageize_pa0.lua)使用SIMION原生PA-family Fast Adjust，把调用方明确给出的
+`ID=V`稀疏电压表另存为临时工作点PA0；它不Refine、不覆盖源family，也不拥有电极分组或电压选择。
+这条公共路径适用于全局或局部PA family，可避免逐节点Lua叠加和重复建场；调用方仍须验证family identity、
+几何网格、实例位置和跨局部域接口。若裁剪后的局部域不含某个实体、但仍依赖它的Dirichlet边界响应，
+SIMION原生Fast Adjust会拒绝超出局部实体计数的响应；此时
+[`adjust_operating_pa_from_basis.lua`](adjust_operating_pa_from_basis.lua)从已解基准工作点只叠加调用方列出的
+非零电压增量响应，不Refine，也不假定响应归一化。零增量应直接复用基准PA0。
 
 [`cache_generation.py`](cache_generation.py)只抽取不同 PA-family 缓存协议共有的直接文件清单、payload
 摘要和 immutable generation 摘要计算；它不定义 identity 字段、role、锁、缓存目录、容量治理或命中时的

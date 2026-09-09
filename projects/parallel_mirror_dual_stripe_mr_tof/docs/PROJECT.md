@@ -971,6 +971,17 @@ four responsibility planes `z=-131,-72,+72,+131 mm` are generated from patch
 overlaps.  SIMION 2020 successfully reopened the final artifact-path IOB and
 verified all eight instances, their physical origins and mesh scales.
 
+The current portable revision is
+`20260912_103000__build__simion__mrtof-local-iob-r06-portable/simion/mrtof_local_replacement.iob`.
+It preserves the r05 physics and instance layout but removes temporary short
+execution paths from the permanent run configuration.  Local voltage trials
+now reuse immutable response-family cache generations and synthesize only a
+temporary operating PA0 from the baseline plus non-zero voltage deltas.  This
+performs no Refine and never overwrites a family.  An independent rebuilt-field
+comparison for a combined four-voltage perturbation found maximum discrepancies
+of `9.66e-10 V` in potential and `2.30e-9 V/mm` in field components at 39
+samples.
+
 Managed centre flight
 `20260912_073000__sim__simion__mrtof-local-center-screening-n1` then exercised
 all five local instances and 208 interface crossings without selecting
@@ -988,3 +999,18 @@ family.  The next numerical gate is a same-physics 1/0.5/local-0.25 comparison
 after retuning the centre solution, followed by the frozen small-bunch portal
 and containment test; only the regions that fail that comparison are eligible
 for 0.25-mm replacement.
+
+The r06 baseline was reproduced by managed run
+`20260912_140000__sim__simion__mrtof-local-downstream-baseline-screening-n1`
+with the `0.002 us` screening step.  Four local single-axis trials and managed
+audit `20260912_153000__analysis__python__mrtof-local-downstream-definition-r01`
+gave rank four, nullity zero and condition number `612.445833644`; the undamped
+correction was `[+1.273132415,+2.742710346,-0.250852057,+0.208031202] V`, or
+4.2--13.7 times the measured finite-difference steps.  A 5% coupled step crossed
+the return-aperture collision boundary.  A 2% step retained the complete return
+and improved the phase-origin, slow-energy and `L` residuals, but changed
+`K-25` from `+0.258851` to `+0.268376`.  The one-sided Jacobian is therefore not
+authorized for another extrapolation.  The next voltage search must use
+two-sided local samples or a bounded derivative-free method and treat transport
+clearance as an explicit inequality.  Fine-time profiles remain deferred until
+that centre topology is closed.

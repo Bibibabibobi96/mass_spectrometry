@@ -184,7 +184,11 @@ try {
   Invoke-SimionStage -Stage 'inspect_relocated_local_replacement_iob' -Arguments (@('--nogui','--noprompt','lua',(Join-Path $solverDir 'inspect_local_refinement_iob.lua'),'--',$artifactIob,$relocatedReport)+$meshArguments)
 
   $configuration=Get-Content -Raw -LiteralPath $runConfig|ConvertFrom-Json -AsHashtable
-  $configuration.inputs=[ordered]@{operating_run_manifest=$operatingManifest;reviewed_geometry_contract=$frozenReviewed;operating_point_materialization=$frozenMaterialization;local_family_manifests=@($families.manifest);global_analyzer_pa0=$sourceAnalyzer;accelerator_pa0=$sourceAccelerator;detector_pa=$sourceDetector;operating_iob=Join-Path $package.artifact_run_dir 'simion\mrtof_local_replacement.iob'}
+  # Run config is part of the permanent evidence chain.  Never publish the
+  # short execution alias: it is deliberately removed after terminalization.
+  $artifactReviewed=Join-Path $package.artifact_run_dir 'inputs\simion_prototype_contract.json'
+  $artifactMaterialization=Join-Path $package.artifact_run_dir 'inputs\two_prism_trial_materialization.json'
+  $configuration.inputs=[ordered]@{operating_run_manifest=$operatingManifest;reviewed_geometry_contract=$artifactReviewed;operating_point_materialization=$artifactMaterialization;local_family_manifests=@($families.manifest);global_analyzer_pa0=$sourceAnalyzer;accelerator_pa0=$sourceAccelerator;detector_pa=$sourceDetector;operating_iob=Join-Path $package.artifact_run_dir 'simion\mrtof_local_replacement.iob'}
   $configuration.parameters=[ordered]@{global_analyzer_mesh_mm_per_gu=@($pose.mesh_mm_per_gu.analyzer);local_mesh_mm_per_gu=@($ScaleFactor,$ScaleFactor,$ScaleFactor);handoff_z_mm=@($handoff.negative_bridge_to_mirror,$handoff.negative_central_to_bridge,$handoff.positive_central_to_bridge,$handoff.positive_bridge_to_mirror);instance_priority='higher_instance_wins; local instance_adjust suppression falls back toward global instance 1'}
   Write-RunJson -Path $runConfig -Depth 20 -Value $configuration
   Write-RunJson -Path $summary -Depth 20 -Value ([ordered]@{schema_version=1;role='mrtof_analyzer_local_replacement_workbench';status='success';qualification='gui_reviewable_local_replacement_assembly__flight_pending';instance_count=8;global_analyzer_mesh_mm_per_gu=@(1,1,1);local_mesh_mm_per_gu=@($ScaleFactor,$ScaleFactor,$ScaleFactor);iob_path=Join-Path $package.artifact_run_dir 'simion\mrtof_local_replacement.iob';reason='Global 1-mm analyser remains the fallback. Five higher-priority local PA0s replace only their contract-owned z responsibility intervals.'})

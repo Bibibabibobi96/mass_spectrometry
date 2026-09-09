@@ -40,6 +40,41 @@ class AnalyzerLocalPaFamilyTest(unittest.TestCase):
         self.assertIn("solved:refine()", source)
         self.assertNotIn("fast_adjust", source)
 
+    def test_generic_voltageizer_uses_native_family_without_refine(self) -> None:
+        source = (
+            PROJECT.parents[1] / "common" / "simion" / "voltageize_pa0.lua"
+        ).read_text(encoding="utf-8")
+        self.assertIn("pa:fast_adjust(values)", source)
+        self.assertIn("source~=output", source)
+        self.assertNotIn(":refine", source)
+
+    def test_local_workbench_publishes_final_artifact_input_paths(self) -> None:
+        source = (
+            PROJECT / "simion" / "run_analyzer_local_workbench.ps1"
+        ).read_text(encoding="utf-8")
+        self.assertIn("$artifactReviewed=Join-Path $package.artifact_run_dir", source)
+        self.assertIn("$artifactMaterialization=Join-Path $package.artifact_run_dir", source)
+        config_line = next(
+            line for line in source.splitlines()
+            if "$configuration.inputs=[ordered]" in line
+        )
+        self.assertIn("reviewed_geometry_contract=$artifactReviewed", config_line)
+        self.assertIn("operating_point_materialization=$artifactMaterialization", config_line)
+        self.assertNotIn("reviewed_geometry_contract=$frozenReviewed", config_line)
+        self.assertNotIn("operating_point_materialization=$frozenMaterialization", config_line)
+
+    def test_two_prism_trial_reuses_local_basis_without_refine(self) -> None:
+        source = (PROJECT / "simion" / "run_two_prism_trial.ps1").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("$LocalWorkbenchRunPath", source)
+        self.assertIn("adjust_operating_pa_from_basis.lua", source)
+        self.assertIn("global_fast_adjust_plus_nonzero_local_basis_deltas__no_refine", source)
+        self.assertIn("$changedIndices.Count-eq 0", source)
+        self.assertIn("Resolve-AnalyzerLocalFamilyCacheGeneration", source)
+        self.assertIn("build_local_refinement_iob.lua", source)
+        self.assertIn("Local replacement trials are static-injection", source)
+
     def fixture(self, root: Path) -> tuple[Path, Path, Path]:
         gem = root / "central.gem"
         gem.write_text(

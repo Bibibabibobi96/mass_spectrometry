@@ -12,6 +12,7 @@ param(
   [Nullable[double]]$Prism1ExtractionVoltageV=$null,
   [Nullable[double]]$PrismSwitchTimeUs=$null,
   [string]$ReferenceTransportRunPath='',
+  [string]$LocalWorkbenchRunPath='',
   [switch]$ContinueMainDrift,
   [switch]$ConstrainXSymmetryPlane,
   [string]$TrajectoryProfileId='',
@@ -69,6 +70,7 @@ $mirrorRun=(Resolve-Path -LiteralPath $MirrorRunPath).Path
 $stripeRun=(Resolve-Path -LiteralPath $StripeRunPath).Path
 $acceleratorRun=(Resolve-Path -LiteralPath $AcceleratorRunPath).Path
 $referenceRun=if([string]::IsNullOrWhiteSpace($ReferenceTransportRunPath)){$null}else{(Resolve-Path -LiteralPath $ReferenceTransportRunPath).Path}
+$localWorkbenchRun=if([string]::IsNullOrWhiteSpace($LocalWorkbenchRunPath)){$null}else{(Resolve-Path -LiteralPath $LocalWorkbenchRunPath).Path}
 $geometrySimion=Join-Path $geometryRun 'simion'
 $acceleratorSimion=Join-Path $acceleratorRun 'simion'
 $geometryManifest=Join-Path $geometryRun 'run_manifest.json'
@@ -76,7 +78,9 @@ $mirrorManifest=Join-Path $mirrorRun 'run_manifest.json'
 $stripeManifest=Join-Path $stripeRun 'run_manifest.json'
 $acceleratorManifest=Join-Path $acceleratorRun 'run_manifest.json'
 $referenceManifest=if($null-eq$referenceRun){$null}else{Join-Path $referenceRun 'run_manifest.json'}
-foreach($manifest in @($geometryManifest,$mirrorManifest,$stripeManifest,$acceleratorManifest,$referenceManifest)){
+$localWorkbenchManifest=if($null-eq$localWorkbenchRun){$null}else{Join-Path $localWorkbenchRun 'run_manifest.json'}
+if($null-ne$localWorkbenchRun-and$null-ne$Prism2ExtractionVoltageV){throw 'Local replacement trials are static-injection voltage-definition trials and cannot switch prism voltages.'}
+foreach($manifest in @($geometryManifest,$mirrorManifest,$stripeManifest,$acceleratorManifest,$referenceManifest,$localWorkbenchManifest)){
   if($null-eq$manifest){continue}
   & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $manifest --require-status success
   if($LASTEXITCODE-ne 0){throw "Upstream run manifest is not verified success: $manifest"}
@@ -85,6 +89,7 @@ if([string]::IsNullOrWhiteSpace($RunId)){$RunId=(Get-Date -Format 'yyyyMMdd_HHmm
 
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
 . (Join-Path $repoRoot 'common\host_execution_lease.ps1')
+. (Join-Path $PSScriptRoot 'analyzer_local_family_support.ps1')
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot -ArtifactRoot (Join-Path $workspaceRoot "artifacts\projects\$projectId") `
   -RunId $RunId -Project $projectId -Mode 'finite_3d_two_prism_voltage_trial' -Software @('SIMION 2020','Python 3.11') `
   -RetentionContractEnabled -RetentionClass compact `
@@ -96,6 +101,28 @@ try{
   $sourceAnalyzer=Join-Path $geometrySimion 'mrtof_analyzer.pa0'
   $sourceAccelerator=Join-Path $acceleratorSimion 'mrtof_accelerator.pa0'
   $sourceDetector=Join-Path $geometrySimion 'mrtof_detector.pa#'
+  $localWorkbenchConfig=$null;$localFamilies=@();$localBaseMaterialization=$null
+  if($null-ne$localWorkbenchRun){
+    $localWorkbenchConfig=Get-Content -Raw -LiteralPath (Join-Path $localWorkbenchRun 'run_config.json')|ConvertFrom-Json -Depth 40
+    if($localWorkbenchConfig.mode-ne'analyzer_local_replacement_workbench'){throw 'LocalWorkbenchRunPath is not a local replacement workbench.'}
+    $sourceAnalyzer=[string]$localWorkbenchConfig.inputs.global_analyzer_pa0
+    $sourceAccelerator=Join-Path $localWorkbenchRun 'simion\mrtof_accelerator.pa0'
+    $sourceDetector=Join-Path $localWorkbenchRun 'simion\mrtof_detector.pa#'
+    $localBaseMaterialization=Get-Content -Raw -LiteralPath (Join-Path $localWorkbenchRun 'inputs\two_prism_trial_materialization.json')|ConvertFrom-Json -Depth 30
+    $familySpecs=@(
+      @('mirror_turn_negative','negative_mirror'),@('stripe_mirror_bridge_negative','negative_bridge'),
+      @('central_transport','central'),@('stripe_mirror_bridge_positive','positive_bridge'),
+      @('mirror_turn_positive','positive_mirror')
+    )
+    [double]$localScale=$localWorkbenchConfig.parameters.local_mesh_mm_per_gu[0]
+    for($familyIndex=0;$familyIndex-lt$familySpecs.Count;$familyIndex++){
+      $familyRun=Split-Path -Parent ([string]$localWorkbenchConfig.inputs.local_family_manifests[$familyIndex])
+      $family=Get-VerifiedAnalyzerLocalFamily -SourceRunPath $familyRun -ExpectedRegion $familySpecs[$familyIndex][0] -ExpectedScale $localScale -Label $familySpecs[$familyIndex][1] -PythonExe $python -RepoRoot $repoRoot
+      $family.frozen_identity=$family.identity_source
+      Resolve-AnalyzerLocalFamilyCacheGeneration -Family $family -PythonExe $python -RepoRoot $repoRoot -CacheRoot (Join-Path $artifactRoot 'common\simion\pa_family_cache')|Out-Null
+      $localFamilies+=$family
+    }
+  }
   $reviewedContract=Join-Path $geometrySimion 'simion_prototype_contract.json'
   $selectedContract=Join-Path $acceleratorSimion 'accelerator_focus_voltage_trial.json'
   $trajectoryContractSource=Join-Path $repoRoot 'projects\parallel_mirror_dual_stripe_mr_tof\config\simion_candidate_two_zone.json'
@@ -107,19 +134,25 @@ try{
   $trialTool=Join-Path $repoRoot 'projects\parallel_mirror_dual_stripe_mr_tof\analysis\two_prism_simion_trial.py'
   $voltageizerSource=Join-Path $PSScriptRoot 'voltageize_analyzer_pa0.lua'
   $iobBuilderSource=Join-Path $PSScriptRoot 'build_three_component_iob.lua'
+  $localIobBuilderSource=Join-Path $PSScriptRoot 'build_local_refinement_iob.lua'
+  $basisAdjusterSource=Join-Path $repoRoot 'common\simion\adjust_operating_pa_from_basis.lua'
+  $basisVoltageSource=Join-Path $repoRoot 'common\simion\measure_pa_basis_voltage.lua'
   $iobSeedSource=Join-Path $repoRoot 'common\simion\assets\iob_instance_seeds\3_instance_seed.iob'
-  $placeholderSources=@(1..3|ForEach-Object{Join-Path $repoRoot ('common\simion\assets\iob_instance_seeds\iob_seed_placeholder_{0:D2}.pa0'-f$_)})
+  $localIobSeedSource=Join-Path $repoRoot 'common\simion\assets\iob_instance_seeds\8_instance_seed.iob'
+  $placeholderSources=@(1..8|ForEach-Object{Join-Path $repoRoot ('common\simion\assets\iob_instance_seeds\iob_seed_placeholder_{0:D2}.pa0'-f$_)})
   $programSource=Join-Path $PSScriptRoot 'mrtof_candidate.lua'
   $counterSource=Join-Path $PSScriptRoot 'mirror_cycle_counter.lua'
   $mapSource=Join-Path $PSScriptRoot 'candidate_voltage_map.lua'
   $launcherSource=Join-Path $PSScriptRoot 'run_iob_flight.lua'
-  foreach($path in @($sourceAnalyzer,$sourceAccelerator,$sourceDetector,$reviewedContract,$selectedContract,$trajectoryContractSource,$mirrorSummary,$stripeSummary,$acceleratorReceipt,$trialTool,$voltageizerSource,$iobBuilderSource,$iobSeedSource,$placeholderSources,$programSource,$counterSource,$mapSource,$launcherSource)){
+  foreach($path in @($sourceAnalyzer,$sourceAccelerator,$sourceDetector,$reviewedContract,$selectedContract,$trajectoryContractSource,$mirrorSummary,$stripeSummary,$acceleratorReceipt,$trialTool,$voltageizerSource,$iobBuilderSource,$localIobBuilderSource,$basisAdjusterSource,$basisVoltageSource,$iobSeedSource,$localIobSeedSource,$placeholderSources,$programSource,$counterSource,$mapSource,$launcherSource)){
     if(-not(Test-Path -LiteralPath $path -PathType Leaf)){throw "Required P1/P2 trial input is missing: $path"}
   }
   $failureStage='capacity_preflight'
   $requiredBytes=[int64]0
-  foreach($path in @($reviewedContract,$selectedContract,$trajectoryContractSource,$mirrorSummary,$stripeSummary,$acceleratorReceipt,$trialTool,$voltageizerSource,$iobBuilderSource,$iobSeedSource,$placeholderSources,$programSource,$counterSource,$mapSource,$launcherSource)){$requiredBytes+=[int64](Get-Item -LiteralPath $path).Length}
-  $startup=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -RequiredHeadroomBytes $requiredBytes -ProtectedPaths @($package.artifact_run_dir)
+  foreach($path in @($reviewedContract,$selectedContract,$trajectoryContractSource,$mirrorSummary,$stripeSummary,$acceleratorReceipt,$trialTool,$voltageizerSource,$iobBuilderSource,$localIobBuilderSource,$basisAdjusterSource,$basisVoltageSource,$iobSeedSource,$localIobSeedSource,$placeholderSources,$programSource,$counterSource,$mapSource,$launcherSource)){$requiredBytes+=[int64](Get-Item -LiteralPath $path).Length}
+  $protectedPaths=@($package.artifact_run_dir)
+  if($null-ne$localWorkbenchRun){$protectedPaths+=@($localWorkbenchRun)+@($localFamilies.generation_directory)}
+  $startup=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -RequiredHeadroomBytes $requiredBytes -ProtectedPaths $protectedPaths
   $startupPath=Join-Path $resultDir 'artifact_capacity_gate_startup.json';Write-RunJson -Path $startupPath -Depth 14 -Value $startup
   $failureStage='freeze_small_inputs'
   $contract=Copy-RequiredInput $selectedContract (Join-Path $solverDir 'accelerator_focus_voltage_trial.json') 'selected-energy contract'
@@ -136,9 +169,14 @@ try{
   foreach($pair in @(
     @($programSource,'mrtof_three_component_candidate.lua'),@($counterSource,'mrtof_three_component_candidate.mirror_cycle_counter.lua'),
     @($mapSource,'mrtof_three_component_candidate.voltage_map.lua'),@($launcherSource,'run_iob_flight.lua'),
-    @($iobBuilderSource,'build_three_component_iob.lua'),@($iobSeedSource,'3_instance_seed.iob'),
+    @($iobBuilderSource,'build_three_component_iob.lua'),@($localIobBuilderSource,'build_local_refinement_iob.lua'),
+    @($basisAdjusterSource,'adjust_operating_pa_from_basis.lua'),@($basisVoltageSource,'measure_pa_basis_voltage.lua'),
+    @($iobSeedSource,'3_instance_seed.iob'),@($localIobSeedSource,'8_instance_seed.iob'),
     @($placeholderSources[0],'iob_seed_placeholder_01.pa0'),@($placeholderSources[1],'iob_seed_placeholder_02.pa0'),
-    @($placeholderSources[2],'iob_seed_placeholder_03.pa0'),@($voltageizerSource,'voltageize_analyzer_pa0.lua'),
+    @($placeholderSources[2],'iob_seed_placeholder_03.pa0'),@($placeholderSources[3],'iob_seed_placeholder_04.pa0'),
+    @($placeholderSources[4],'iob_seed_placeholder_05.pa0'),@($placeholderSources[5],'iob_seed_placeholder_06.pa0'),
+    @($placeholderSources[6],'iob_seed_placeholder_07.pa0'),@($placeholderSources[7],'iob_seed_placeholder_08.pa0'),
+    @($voltageizerSource,'voltageize_analyzer_pa0.lua'),
     @($trialTool,'two_prism_simion_trial.py'))){
     Copy-RequiredInput $pair[0] (Join-Path $solverDir $pair[1]) $pair[1]|Out-Null
   }
@@ -194,11 +232,49 @@ try{
   Invoke-SimionStage -Stage 'voltageize_temporary_analyzer' -Arguments $voltageArguments
   $temporaryAnalyzerHash=(Get-FileHash -LiteralPath $temporaryAnalyzer -Algorithm SHA256).Hash
   $voltageReceipt=Join-Path $resultDir 'temporary_analyzer_voltageization_receipt.json'
-  Write-RunJson -Path $voltageReceipt -Depth 14 -Value ([ordered]@{schema_version=1;role='mrtof_temporary_analyzer_voltageization';status='success';method='SIMION_PA_object_fast_adjust_save_as';source_pa0=$sourceAnalyzer;source_sha256=$upstreamHashes[0];temporary_output_sha256=$temporaryAnalyzerHash;electrode_voltages_v=@($trial.analyzer_electrode_voltages_v);source_family_read_only=$true;refine_performed=$false;temporary_output_retained=$false})
+  $localAdjustmentReceipts=@()
+  if($null-ne$localWorkbenchRun){
+    $failureStage='adjust_local_operating_replacements'
+    $baseDownstream=@([double]$localBaseMaterialization.stripe_biases_v[0],[double]$localBaseMaterialization.stripe_biases_v[1],[double]$localBaseMaterialization.prism_voltages_v[0],[double]$localBaseMaterialization.prism_voltages_v[1])
+    $targetDownstream=@([double]$trial.stripe_biases_v[0],[double]$trial.stripe_biases_v[1],[double]$trial.prism_voltages_v[0],[double]$trial.prism_voltages_v[1])
+    $deltaVoltages=@();$changedIndices=@();for($index=0;$index-lt 4;$index++){$delta=[double]$targetDownstream[$index]-[double]$baseDownstream[$index];$deltaVoltages+=$delta;if([math]::Abs($delta)-gt 1e-15){$changedIndices+=$index}}
+    $localNames=@('local_negative_mirror.pa0','local_negative_bridge.pa0','local_central.pa0','local_positive_bridge.pa0','local_positive_mirror.pa0')
+    $temporaryLocalPaths=@()
+    if($changedIndices.Count-eq 0){
+      for($index=0;$index-lt$localFamilies.Count;$index++){$temporaryLocalPaths+=Join-Path $localWorkbenchRun "simion\$($localNames[$index])"}
+    }else{
+      $normalizationCsv=Join-Path $resultDir 'global_basis_voltage.csv'
+      Invoke-SimionStage -Stage 'measure_global_basis_voltage' -Arguments @('--nogui','--noprompt','lua',(Join-Path $solverDir 'measure_pa_basis_voltage.lua'),[IO.Path]::ChangeExtension($sourceAnalyzer,'.pa2'),[IO.Path]::ChangeExtension($sourceAnalyzer,'.pa#'),2,$normalizationCsv)
+      $basisVoltage=[double](Import-Csv -LiteralPath $normalizationCsv).basis_voltage_V
+      $basisText=(@($changedIndices|ForEach-Object{[string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',$basisVoltage)})-join',')
+      $deltaText=(@($changedIndices|ForEach-Object{[string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',[double]$deltaVoltages[$_])})-join',')
+      for($index=0;$index-lt$localFamilies.Count;$index++){
+        $family=$localFamilies[$index]
+        $alias=Join-Path $temporarySolverDir ("family{0}"-f($index+1));New-Item -ItemType Junction -Path $alias -Target $family.generation_directory|Out-Null
+        $prefix=[string]$family.contract.family_prefix
+        $basisPaths=(@($changedIndices|ForEach-Object{Join-Path $alias ("{0}.pa{1}"-f$prefix,(5+$_))})-join'|')
+        $temporaryLocal=Join-Path $temporarySolverDir $localNames[$index]
+        Invoke-SimionStage -Stage ("adjust_local_{0}"-f$family.label) -Arguments @('--nogui','--noprompt','lua',(Join-Path $solverDir 'adjust_operating_pa_from_basis.lua'),(Join-Path $localWorkbenchRun "simion\$($localNames[$index])"),$temporaryLocal,$basisPaths,$basisText,$deltaText)
+        $temporaryLocalPaths+=$temporaryLocal
+        $localAdjustmentReceipts+=[ordered]@{region=$family.region;source_cache_generation=$family.generation_directory;basis_voltage_v=$basisVoltage;downstream_voltage_deltas_v=@($deltaVoltages);temporary_output_sha256=(Get-FileHash -LiteralPath $temporaryLocal -Algorithm SHA256).Hash;refine_performed=$false}
+      }
+    }
+  }
+  Write-RunJson -Path $voltageReceipt -Depth 14 -Value ([ordered]@{schema_version=1;role='mrtof_temporary_analyzer_voltageization';status='success';method=if($null-eq$localWorkbenchRun){'SIMION_PA_object_fast_adjust_save_as'}elseif($localAdjustmentReceipts.Count-eq 0){'global_fast_adjust_plus_reused_local_baseline_pa0'}else{'global_fast_adjust_plus_nonzero_local_basis_deltas'};source_pa0=$sourceAnalyzer;source_sha256=$upstreamHashes[0];temporary_output_sha256=$temporaryAnalyzerHash;electrode_voltages_v=@($trial.analyzer_electrode_voltages_v);local_adjustments=$localAdjustmentReceipts;source_family_read_only=$true;refine_performed=$false;temporary_output_retained=$false})
   $failureStage='build_temporary_iob'
-  $buildArguments=@('--nogui','--noprompt','lua',(Join-Path $solverDir 'build_three_component_iob.lua'),'--',
-    (Join-Path $solverDir '3_instance_seed.iob'),$temporaryAnalyzer,$sourceAccelerator,$sourceDetector,$temporaryIob,
-    (Join-Path $solverDir 'mrtof_three_component_candidate.lua'),$fly2Input)+$originArguments+@('read_only_voltageized')
+  if($null-eq$localWorkbenchRun){
+    $buildArguments=@('--nogui','--noprompt','lua',(Join-Path $solverDir 'build_three_component_iob.lua'),'--',
+      (Join-Path $solverDir '3_instance_seed.iob'),$temporaryAnalyzer,$sourceAccelerator,$sourceDetector,$temporaryIob,
+      (Join-Path $solverDir 'mrtof_three_component_candidate.lua'),$fly2Input)+$originArguments+@('read_only_voltageized')
+  }else{
+    $localConfigSource=Join-Path $localWorkbenchRun 'simion\mrtof_local_replacement.local_refinement.lua'
+    $localConfig=Copy-RequiredInput $localConfigSource (Join-Path $solverDir 'local_trial_refinement.lua') 'local replacement sidecar'
+    $localOrigins=@();$localOrigins+=,@($pose.origins_mm.analyzer)
+    foreach($family in $localFamilies){$localOrigins+=,@($family.contract.patch_origin_project_mm)}
+    $localOrigins+=,@($pose.origins_mm.accelerator);$localOrigins+=,@($pose.origins_mm.detector)
+    $localOriginArguments=@();foreach($origin in $localOrigins){foreach($value in $origin){$localOriginArguments+=[string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',[double]$value)}}
+    $buildArguments=@('--nogui','--noprompt','lua',(Join-Path $solverDir 'build_local_refinement_iob.lua'),'--',(Join-Path $solverDir '8_instance_seed.iob'),$temporaryAnalyzer)+$temporaryLocalPaths+@($sourceAccelerator,$sourceDetector,$temporaryIob,(Join-Path $solverDir 'mrtof_three_component_candidate.lua'),$fly2Input,$localConfig)+$localOriginArguments
+  }
   Invoke-SimionStage -Stage 'build_temporary_iob' -Arguments $buildArguments
   $temporaryFly2=[IO.Path]::ChangeExtension($temporaryIob,'.fly2')
   if(-not(Test-RunFilesIdentical -Left $fly2Input -Right $temporaryFly2)){throw 'IOB companion Fly2 differs from the frozen downstream-trial source'}
@@ -216,8 +292,8 @@ try{
   Write-RunJson -Path $summary -Value $summaryValue
   $config=Get-Content -LiteralPath $runConfig -Raw -Encoding UTF8|ConvertFrom-Json -AsHashtable
   Remove-TemporarySolverDirectory -Path $temporarySolverDir;$temporarySolverDir=$null
-  $config.inputs=[ordered]@{geometry_run_manifest=$geometryManifest;mirror_run_manifest=$mirrorManifest;stripe_run_manifest=$stripeManifest;accelerator_run_manifest=$acceleratorManifest;reference_transport_run_manifest=$referenceManifest;trajectory_numerics_contract=$trajectoryContract;iob_builder=(Join-Path $solverDir 'build_three_component_iob.lua');read_only_analyzer_pa0=$sourceAnalyzer;read_only_accelerator_pa0=$sourceAccelerator;read_only_detector_pa=$sourceDetector;trial_materialization=$trialReceipt;frozen_source_fly2=$fly2Input}
-  $config.parameters.prism_1_voltage_v=$Prism1VoltageV;$config.parameters.prism_2_voltage_v=$Prism2VoltageV;$config.parameters.stripe_biases_v=@($trial.stripe_biases_v);$config.parameters.continue_main_drift=[bool]$ContinueMainDrift;$config.parameters.pa_binding_mode='temporary_voltageized_analyzer__immutable_family';$config.parameters.constrain_x_symmetry_plane=[bool]$ConstrainXSymmetryPlane;$config.parameters.trajectory_profile=$trial.trajectory_profile;$config.parameters.prism_switch=$trial.prism_switch;Write-RunJson -Path $runConfig -Value $config
+  $config.inputs=[ordered]@{geometry_run_manifest=$geometryManifest;mirror_run_manifest=$mirrorManifest;stripe_run_manifest=$stripeManifest;accelerator_run_manifest=$acceleratorManifest;reference_transport_run_manifest=$referenceManifest;local_workbench_run_manifest=$localWorkbenchManifest;trajectory_numerics_contract=$trajectoryContract;iob_builder=if($null-eq$localWorkbenchRun){Join-Path $solverDir 'build_three_component_iob.lua'}else{Join-Path $solverDir 'build_local_refinement_iob.lua'};read_only_analyzer_pa0=$sourceAnalyzer;read_only_accelerator_pa0=$sourceAccelerator;read_only_detector_pa=$sourceDetector;trial_materialization=$trialReceipt;frozen_source_fly2=$fly2Input}
+  $config.parameters.prism_1_voltage_v=$Prism1VoltageV;$config.parameters.prism_2_voltage_v=$Prism2VoltageV;$config.parameters.stripe_biases_v=@($trial.stripe_biases_v);$config.parameters.continue_main_drift=[bool]$ContinueMainDrift;$config.parameters.pa_binding_mode=if($null-eq$localWorkbenchRun){'temporary_voltageized_analyzer__immutable_family'}elseif($localAdjustmentReceipts.Count-eq 0){'global_fast_adjust_plus_reused_local_baseline_pa0'}else{'global_fast_adjust_plus_nonzero_local_basis_deltas__no_refine'};$config.parameters.constrain_x_symmetry_plane=[bool]$ConstrainXSymmetryPlane;$config.parameters.trajectory_profile=$trial.trajectory_profile;$config.parameters.prism_switch=$trial.prism_switch;Write-RunJson -Path $runConfig -Value $config
   $retention=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $runConfig
   $failureStage='capacity_terminal';$maximum=[int64](Get-ChildItem -LiteralPath $package.artifact_run_dir -Recurse -File|Measure-Object Length -Sum).Sum
   $terminal=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -ProtectedPaths @($package.artifact_run_dir) -KnownMeasuredBytes ([int64]$startup.measured_after_bytes) -MaximumNewArtifactBytes $maximum
