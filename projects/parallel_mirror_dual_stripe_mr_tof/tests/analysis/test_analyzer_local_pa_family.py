@@ -73,6 +73,18 @@ class AnalyzerLocalPaFamilyTest(unittest.TestCase):
         self.assertIn("combine_local_operating_replacements_without_refine", source)
         self.assertIn("Assert-AnalyzerLocalFamilyCacheReadOnly", source)
         self.assertIn("-VerificationAttempts 3", source)
+        self.assertIn("verified prior-workbench delta basis superposition", source)
+        self.assertIn("changed_local_voltage_indices", source)
+        self.assertIn("$localVoltageDeltas", source)
+        self.assertIn("base_local_workbench_manifest", source)
+        self.assertIn("$responseId=$changedIndex+1", source)
+        self.assertIn("$changedLocalIndices.Count-eq0", source)
+        basis_copy = source.index(
+            "Copy-VerifiedRunInput -Source ([IO.Path]::ChangeExtension($sourceAnalyzer,'.pa2'))"
+        )
+        voltageize = source.index("$sourceAnalyzer,$globalAnalyzer")
+        self.assertLess(basis_copy, voltageize)
+        self.assertNotIn("$globalSourceStandalone", source)
         self.assertNotIn("-ItemType Junction", source)
         self.assertNotIn("build_dirichlet_patch_operating_pa.lua", source)
 

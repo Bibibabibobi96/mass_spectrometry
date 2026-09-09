@@ -1046,7 +1046,38 @@ through a directory junction allowed SIMION to rewrite its family's `.pa#`
 bookkeeping.  The hash gate rejected the altered positive-mirror family.  Its
 raw grouped PA was deterministically rebuilt from the same frozen GEM and
 electrode map, matched the original manifest hash, and restored the generation
-to a verified hit.  The trial runner now copies required responses to isolated
-temporary basenames while preserving their real `.paN` extensions, reserves
-their worst-case temporary capacity, and compares cache `.pa#` sentinel hashes
-before and after IOB construction and flight.
+to a verified hit.  Cached generations are now filesystem-read-only and the
+trial runner copies each required response as a standalone `.pa`, removing
+SIMION family bookkeeping semantics while preserving the verified response
+values.  It reserves the worst-case temporary capacity and probes the complete
+source generation before and after flight.
+
+The next two accepted local centres were reached with bounded central-difference
+steps.  At the centre used by managed audit
+`20260913_080000__analysis__python__mrtof-local-central-difference-jac03`, all
+eight symmetric trials completed the full drift.  The central 4-by-4 Jacobian
+had rank four and condition number `93.8265341065`; its effective two-Stripe
+response after eliminating the two prism handoff variables had condition
+number `2.89616227082`.  Forward/backward column disagreements were
+`[27.9%,39.3%,5.15%,5.62%]`, so only a 1% Newton-direction step was tested.
+Run `20260913_083000__sim__simion__mrtof-local-central-jac03-alpha0p01-n1`
+reduced all four residuals from
+`[0.030924 mm,0.00100645 eV,7.81442 mm,0.238718]` to
+`[0.030615 mm,0.00099647 eV,7.73389 mm,0.236363]`; managed audit
+`20260913_090000__analysis__python__mrtof-local-jac03-alpha0p01-audit` measured
+an actual/predicted reduction ratio of `1.023970954`.
+
+Managed workbench
+`20260913_103500__build__simion__mrtof-local-accepted-jac03-alpha0p01-r09`
+materializes this accepted centre by adding only the changed response columns
+to the preceding operating PA0s; no local PA was refined again.  The global
+analyser remains isotropic 1 mm, its five local replacements remain isotropic
+0.5 mm, the accelerator remains `0.25/0.25/0.1 mm/gu`, and the detector remains
+1 mm.  Both in-place and relocated eight-instance inspections passed.  Before
+opening the global source PA0 for Fast Adjust, the runner now freezes the
+needed PA2 and raw arrays under standalone `.pa` names; this closes the delayed
+family-bookkeeping/copy race seen in the failed r06--r08 attempts.  The new
+centre is still only a single-ion voltage-search state.  The numerical gate
+remains a same-physics global-1/local-0.5/local-0.25 comparison after the centre
+root closes; 0.25-mm replacements are permitted only for regions that fail
+that sensitivity test, never for the full analyser envelope.

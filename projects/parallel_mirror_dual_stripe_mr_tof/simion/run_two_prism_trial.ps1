@@ -314,7 +314,6 @@ try{
   if(-not(Test-RunFilesIdentical -Left $fly2Input -Right $temporaryFly2)){throw 'IOB companion Fly2 differs from the frozen downstream-trial source'}
   if(@(Compare-Object $upstreamHashes @($upstreamPaths|ForEach-Object{(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash})).Count-ne 0){throw 'Read-only IOB build changed an upstream PA'}
   if($localCacheSentinelPaths.Count-and@(Compare-Object $localCacheSentinelHashes @($localCacheSentinelPaths|ForEach-Object{(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash})).Count-ne 0){throw 'Temporary IOB build changed an immutable local PA cache sentinel'}
-  foreach($family in $localFamilies){Resolve-AnalyzerLocalFamilyCacheGeneration -Family $family -PythonExe $python -RepoRoot $repoRoot -CacheRoot (Join-Path $artifactRoot 'common\simion\pa_family_cache')|Out-Null}
   $failureStage='native_two_prism_flight'
   Invoke-SimionStage -Stage 'native_two_prism_flight' -Arguments @('--nogui','--noprompt','lua',(Join-Path $solverDir 'run_iob_flight.lua'),$temporaryIob)
   if(@(Compare-Object $upstreamHashes @($upstreamPaths|ForEach-Object{(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash})).Count-ne 0){throw 'Runtime Fast Adjust changed an upstream PA'}

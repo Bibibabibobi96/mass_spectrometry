@@ -338,6 +338,8 @@ class ArtifactRetentionTests(unittest.TestCase):
         self.assertIn("$destinationHash", support)
         self.assertIn("$sourceHashBefore-ceq$sourceHashAfter", support)
         self.assertIn("$sourceHashAfter-ceq$destinationHash", support)
+        self.assertIn("[IO.FileOptions]::WriteThrough", support)
+        self.assertIn("$writeStream.Flush($true)", support)
 
     def test_multipole_solver_runners_apply_frozen_retention_before_manifest(self) -> None:
         for name in (

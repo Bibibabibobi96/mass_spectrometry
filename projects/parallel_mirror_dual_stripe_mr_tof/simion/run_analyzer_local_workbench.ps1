@@ -67,6 +67,17 @@ $sourceDetector=[string]$operatingConfig.inputs.read_only_detector_pa
 foreach($path in @($materializationSource,$reviewedContractSource,$sourceProgram,$sourceCounter,$sourceMap,$sourceOperatingPoint,$sourceFly2,$sourceAnalyzer,$sourceAccelerator,$sourceDetector)){
   if(-not(Test-Path -LiteralPath $path -PathType Leaf)){throw "Operating assembly input is missing: $path"}
 }
+$baseLocalWorkbench=$null;$baseLocalWorkbenchManifest=$null;$baseMaterializationSource=$null;$baseMaterialization=$null
+$declaredBaseLocalManifest=[string]$operatingConfig.inputs.local_workbench_run_manifest
+if(-not[string]::IsNullOrWhiteSpace($declaredBaseLocalManifest)-and(Test-Path -LiteralPath $declaredBaseLocalManifest -PathType Leaf)){
+  & $python (Join-Path $repoRoot 'common\contracts\verify_run_manifest.py') $declaredBaseLocalManifest --require-status success --require-project $projectId --require-mode analyzer_local_replacement_workbench
+  if($LASTEXITCODE-ne0){throw 'Declared base local workbench manifest verification failed.'}
+  $baseLocalWorkbenchManifest=(Resolve-Path -LiteralPath $declaredBaseLocalManifest).Path
+  $baseLocalWorkbench=Split-Path -Parent $baseLocalWorkbenchManifest
+  $baseMaterializationSource=Join-Path $baseLocalWorkbench 'inputs\two_prism_trial_materialization.json'
+  if(-not(Test-Path -LiteralPath $baseMaterializationSource -PathType Leaf)){throw 'Base local workbench lacks its frozen operating-point materialization.'}
+  $baseMaterialization=Get-Content -Raw -LiteralPath $baseMaterializationSource|ConvertFrom-Json -Depth 30
+}
 if([string]::IsNullOrWhiteSpace($RunId)){$RunId=(Get-Date -Format 'yyyyMMdd_HHmmss')+'__build__simion__mrtof-local-replacement-iob'}
 
 . (Join-Path $repoRoot 'common\contracts\run_artifact_support.ps1')
@@ -109,6 +120,11 @@ try {
   }
   $frozenReviewed=Copy-VerifiedRunInput -Source $reviewedContractSource -Destination (Join-Path $inputDir 'simion_prototype_contract.json')
   $frozenMaterialization=Copy-VerifiedRunInput -Source $materializationSource -Destination (Join-Path $inputDir 'two_prism_trial_materialization.json')
+  $frozenBaseLocalManifest=$null;$frozenBaseMaterialization=$null
+  if($null-ne$baseLocalWorkbench){
+    $frozenBaseLocalManifest=Copy-VerifiedRunInput -Source $baseLocalWorkbenchManifest -Destination (Join-Path $inputDir 'base_local_workbench_manifest.json')
+    $frozenBaseMaterialization=Copy-VerifiedRunInput -Source $baseMaterializationSource -Destination (Join-Path $inputDir 'base_local_workbench_materialization.json')
+  }
   foreach($copy in @(
     @($sourceProgram,'mrtof_local_replacement.lua'),@($sourceCounter,'mrtof_local_replacement.mirror_cycle_counter.lua'),
     @($sourceMap,'mrtof_local_replacement.voltage_map.lua'),@($sourceOperatingPoint,'mrtof_local_replacement.operating_point.lua'),
@@ -124,18 +140,20 @@ try {
   foreach($index in 1..10){$name=('iob_seed_placeholder_{0:D2}.pa0'-f$index);Copy-Input -Source (Join-Path $seedRoot $name) -Name $name|Out-Null}
 
   $localVoltages=@($materialization.mirror_voltages_v[1..4]) + @($materialization.stripe_biases_v) + @($materialization.prism_voltages_v)
-  $localVoltageText=(@($localVoltages|ForEach-Object{[string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',[double]$_)})-join',')
   $analyzerVoltageArguments=@($materialization.analyzer_electrode_voltages_v|ForEach-Object{[string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',[double]$_)})
   $localNames=@('local_negative_mirror.pa0','local_negative_bridge.pa0','local_central.pa0','local_positive_bridge.pa0','local_positive_mirror.pa0')
+  $baseLocalVoltages=if($null-eq$baseMaterialization){@(1..8|ForEach-Object{0.0})}else{@($baseMaterialization.mirror_voltages_v[1..4])+@($baseMaterialization.stripe_biases_v)+@($baseMaterialization.prism_voltages_v)}
+  $localVoltageDeltas=@(for($index=0;$index-lt 8;$index++){[double]$localVoltages[$index]-[double]$baseLocalVoltages[$index]})
+  $changedLocalIndices=@(for($index=0;$index-lt 8;$index++){if([Math]::Abs([double]$localVoltageDeltas[$index])-gt1e-12){$index}})
   $failureStage='capacity_preflight'
   [int64]$requiredBytes=0
   $requiredBytes=[int64](Get-Item -LiteralPath $sourceAnalyzer).Length+[int64](Get-Item -LiteralPath $sourceAccelerator).Length+[int64](Get-Item -LiteralPath $sourceDetector).Length
   $requiredBytes+=[int64](Get-Item -LiteralPath ([IO.Path]::ChangeExtension($sourceAnalyzer,'.pa2'))).Length+[int64](Get-Item -LiteralPath ([IO.Path]::ChangeExtension($sourceAnalyzer,'.pa#'))).Length
   foreach($family in $families){
     $prefix=[string]$family.contract.family_prefix
-    $requiredBytes+=[int64](Get-Item -LiteralPath (Join-Path $family.generation_directory "$prefix.pa0")).Length
-    $requiredBytes+=[int64](Get-Item -LiteralPath (Join-Path $family.generation_directory "$prefix.pa0")).Length
-    foreach($responseId in 1..8){$requiredBytes+=[int64](Get-Item -LiteralPath (Join-Path $family.generation_directory ("{0}.pa{1}"-f$prefix,$responseId))).Length}
+    $basePaSource=if($null-eq$baseLocalWorkbench){Join-Path $family.generation_directory "$prefix.pa0"}else{Join-Path $baseLocalWorkbench ("simion\{0}"-f$localNames[[array]::IndexOf($families,$family)])}
+    $requiredBytes+=2*[int64](Get-Item -LiteralPath $basePaSource).Length
+    foreach($changedIndex in $changedLocalIndices){$requiredBytes+=[int64](Get-Item -LiteralPath (Join-Path $family.generation_directory ("{0}.pa{1}"-f$prefix,($changedIndex+1)))).Length}
   }
   $startup=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -RequiredHeadroomBytes $requiredBytes -ProtectedPaths @($package.artifact_run_dir,$operatingRun)
   $startupPath=Join-Path $resultDir 'artifact_capacity_gate_startup.json';Write-RunJson -Path $startupPath -Depth 14 -Value $startup
@@ -144,30 +162,40 @@ try {
   $localAccelerator=Copy-VerifiedRunInput -Source $sourceAccelerator -Destination (Join-Path $solverDir 'mrtof_accelerator.pa0')
   $localDetector=Copy-VerifiedRunInput -Source $sourceDetector -Destination (Join-Path $solverDir 'mrtof_detector.pa#')
   $failureStage='voltageize_global_analyzer';$lease=Enter-HostExecutionLease -Role SIMION -RunId $RunId
-  $globalAnalyzer=Join-Path $solverDir 'mrtof_analyzer.pa0'
-  Invoke-SimionStage -Stage 'voltageize_global_analyzer' -Arguments (@('--nogui','--noprompt','lua',(Join-Path $solverDir 'voltageize_analyzer_pa0.lua'),$sourceAnalyzer,$globalAnalyzer)+$analyzerVoltageArguments)
   $temporaryBasisDir=Join-Path ([IO.Path]::GetTempPath()) ('mrtof_local_workbench_basis_'+[guid]::NewGuid().ToString('N'))
   New-Item -ItemType Directory -Path $temporaryBasisDir|Out-Null
+  # Freeze the basis/raw arrays before opening the source `.pa0` family in
+  # SIMION.  Fast Adjust needs its sibling `.paN` files, while a concurrent
+  # family bookkeeping write must never race these frozen-input copies.
   $globalBasisStandalone=Join-Path $temporaryBasisDir 'global_basis.pa'
   $globalRawStandalone=Join-Path $temporaryBasisDir 'global_raw.pa'
   Copy-VerifiedRunInput -Source ([IO.Path]::ChangeExtension($sourceAnalyzer,'.pa2')) -Destination $globalBasisStandalone -VerificationAttempts 3|Out-Null
   Copy-VerifiedRunInput -Source ([IO.Path]::ChangeExtension($sourceAnalyzer,'.pa#')) -Destination $globalRawStandalone -VerificationAttempts 3|Out-Null
+  $globalAnalyzer=Join-Path $solverDir 'mrtof_analyzer.pa0'
+  Invoke-SimionStage -Stage 'voltageize_global_analyzer' -Arguments (@('--nogui','--noprompt','lua',(Join-Path $solverDir 'voltageize_analyzer_pa0.lua'),$sourceAnalyzer,$globalAnalyzer)+$analyzerVoltageArguments)
   $normalizationCsv=Join-Path $resultDir 'global_basis_voltage.csv'
   Invoke-SimionStage -Stage 'measure_global_basis_voltage' -Arguments @('--nogui','--noprompt','lua',(Join-Path $solverDir 'measure_pa_basis_voltage.lua'),$globalBasisStandalone,$globalRawStandalone,2,$normalizationCsv)
   $basisVoltage=[double](Import-Csv -LiteralPath $normalizationCsv).basis_voltage_V
-  $basisText=(@(1..8|ForEach-Object{[string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',$basisVoltage)})-join',')
+  $basisText=(@($changedLocalIndices|ForEach-Object{[string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',$basisVoltage)})-join',')
+  $deltaText=(@($changedLocalIndices|ForEach-Object{[string]::Format([Globalization.CultureInfo]::InvariantCulture,'{0:R}',[double]$localVoltageDeltas[$_])})-join',')
   $failureStage='combine_local_operating_replacements_without_refine'
   for($index=0;$index-lt$families.Count;$index++){
     $prefix=[string]$families[$index].contract.family_prefix
     $privateBase=Join-Path $temporaryBasisDir ("family{0}_base.pa0"-f($index+1))
-    Copy-VerifiedRunInput -Source (Join-Path $families[$index].generation_directory "$prefix.pa0") -Destination $privateBase -VerificationAttempts 3|Out-Null
+    $basePaSource=if($null-eq$baseLocalWorkbench){Join-Path $families[$index].generation_directory "$prefix.pa0"}else{Join-Path $baseLocalWorkbench "simion\$($localNames[$index])"}
+    Copy-VerifiedRunInput -Source $basePaSource -Destination $privateBase -VerificationAttempts 3|Out-Null
     $privateResponses=@()
-    foreach($responseId in 1..8){
+    foreach($changedIndex in $changedLocalIndices){
+      $responseId=$changedIndex+1
       $privateResponse=Join-Path $temporaryBasisDir ("family{0}_response{1}.pa"-f($index+1),$responseId)
       Copy-VerifiedRunInput -Source (Join-Path $families[$index].generation_directory ("{0}.pa{1}"-f$prefix,$responseId)) -Destination $privateResponse -VerificationAttempts 3|Out-Null
       $privateResponses+=$privateResponse
     }
-    Invoke-SimionStage -Stage ("combine_local_operating_{0}"-f$families[$index].label) -Arguments @('--nogui','--noprompt','lua',(Join-Path $solverDir 'adjust_operating_pa_from_basis.lua'),$privateBase,(Join-Path $solverDir $localNames[$index]),($privateResponses-join'|'),$basisText,$localVoltageText)
+    if($changedLocalIndices.Count-eq0){
+      Copy-VerifiedRunInput -Source $privateBase -Destination (Join-Path $solverDir $localNames[$index]) -VerificationAttempts 3|Out-Null
+    }else{
+      Invoke-SimionStage -Stage ("combine_local_operating_{0}"-f$families[$index].label) -Arguments @('--nogui','--noprompt','lua',(Join-Path $solverDir 'adjust_operating_pa_from_basis.lua'),$privateBase,(Join-Path $solverDir $localNames[$index]),($privateResponses-join'|'),$basisText,$deltaText)
+    }
   }
   foreach($family in $families){Resolve-AnalyzerLocalFamilyCacheGeneration -Family $family -PythonExe $python -RepoRoot $repoRoot -CacheRoot $cacheRoot|Out-Null}
   Remove-GateTemporaryDirectory -Path $temporaryBasisDir -ExpectedNamePrefix 'mrtof_local_workbench_basis_';$temporaryBasisDir=$null
@@ -208,14 +236,15 @@ try {
   Invoke-SimionStage -Stage 'inspect_relocated_local_replacement_iob' -Arguments (@('--nogui','--noprompt','lua',(Join-Path $solverDir 'inspect_local_refinement_iob.lua'),'--',$artifactIob,$relocatedReport)+$meshArguments)
 
   $configuration=Get-Content -Raw -LiteralPath $runConfig|ConvertFrom-Json -AsHashtable
+  $localOperatingPaMethod=if($null-eq$baseLocalWorkbench){'verified zero-base standalone basis superposition; no Refine'}else{'verified prior-workbench delta basis superposition; no Refine'}
   # Run config is part of the permanent evidence chain.  Never publish the
   # short execution alias: it is deliberately removed after terminalization.
   $artifactReviewed=Join-Path $package.artifact_run_dir 'inputs\simion_prototype_contract.json'
   $artifactMaterialization=Join-Path $package.artifact_run_dir 'inputs\two_prism_trial_materialization.json'
-  $configuration.inputs=[ordered]@{operating_run_manifest=$operatingManifest;reviewed_geometry_contract=$artifactReviewed;operating_point_materialization=$artifactMaterialization;local_family_manifests=@($families.manifest);global_analyzer_pa0=$sourceAnalyzer;accelerator_pa0=$sourceAccelerator;detector_pa=$sourceDetector;operating_iob=Join-Path $package.artifact_run_dir 'simion\mrtof_local_replacement.iob'}
-  $configuration.parameters=[ordered]@{global_analyzer_mesh_mm_per_gu=@($pose.mesh_mm_per_gu.analyzer);local_mesh_mm_per_gu=@($ScaleFactor,$ScaleFactor,$ScaleFactor);local_operating_pa_method='verified standalone basis superposition; no Refine';basis_voltage_v=$basisVoltage;handoff_z_mm=@($handoff.negative_bridge_to_mirror,$handoff.negative_central_to_bridge,$handoff.positive_central_to_bridge,$handoff.positive_bridge_to_mirror);instance_priority='higher_instance_wins; local instance_adjust suppression falls back toward global instance 1'}
+  $configuration.inputs=[ordered]@{operating_run_manifest=$operatingManifest;reviewed_geometry_contract=$artifactReviewed;operating_point_materialization=$artifactMaterialization;base_local_workbench_manifest=$frozenBaseLocalManifest;base_local_workbench_materialization=$frozenBaseMaterialization;local_family_manifests=@($families.manifest);global_analyzer_pa0=$sourceAnalyzer;accelerator_pa0=$sourceAccelerator;detector_pa=$sourceDetector;operating_iob=Join-Path $package.artifact_run_dir 'simion\mrtof_local_replacement.iob'}
+  $configuration.parameters=[ordered]@{global_analyzer_mesh_mm_per_gu=@($pose.mesh_mm_per_gu.analyzer);local_mesh_mm_per_gu=@($ScaleFactor,$ScaleFactor,$ScaleFactor);local_operating_pa_method=if($null-eq$baseLocalWorkbench){'verified zero-base standalone basis superposition; no Refine'}else{'verified prior-workbench delta basis superposition; no Refine'};changed_local_voltage_indices=@($changedLocalIndices);local_voltage_deltas_v=@($localVoltageDeltas);basis_voltage_v=$basisVoltage;handoff_z_mm=@($handoff.negative_bridge_to_mirror,$handoff.negative_central_to_bridge,$handoff.positive_central_to_bridge,$handoff.positive_bridge_to_mirror);instance_priority='higher_instance_wins; local instance_adjust suppression falls back toward global instance 1'}
   Write-RunJson -Path $runConfig -Depth 20 -Value $configuration
-  Write-RunJson -Path $summary -Depth 20 -Value ([ordered]@{schema_version=1;role='mrtof_analyzer_local_replacement_workbench';status='success';qualification='gui_reviewable_local_replacement_assembly__flight_pending';instance_count=8;global_analyzer_mesh_mm_per_gu=@($pose.mesh_mm_per_gu.analyzer);local_mesh_mm_per_gu=@($ScaleFactor,$ScaleFactor,$ScaleFactor);local_operating_pa_method='verified standalone basis superposition; no Refine';basis_voltage_v=$basisVoltage;iob_path=Join-Path $package.artifact_run_dir 'simion\mrtof_local_replacement.iob';reason='The global analyser remains the fallback at its resolved isotropic mesh. Five higher-priority local PA0s replace only their contract-owned z responsibility intervals.'})
+  Write-RunJson -Path $summary -Depth 20 -Value ([ordered]@{schema_version=1;role='mrtof_analyzer_local_replacement_workbench';status='success';qualification='gui_reviewable_local_replacement_assembly__flight_pending';instance_count=8;global_analyzer_mesh_mm_per_gu=@($pose.mesh_mm_per_gu.analyzer);local_mesh_mm_per_gu=@($ScaleFactor,$ScaleFactor,$ScaleFactor);local_operating_pa_method=$localOperatingPaMethod;changed_local_voltage_indices=@($changedLocalIndices);basis_voltage_v=$basisVoltage;iob_path=Join-Path $package.artifact_run_dir 'simion\mrtof_local_replacement.iob';reason='The global analyser remains the fallback at its resolved isotropic mesh. Five higher-priority local PA0s replace only their contract-owned z responsibility intervals.'})
   $retention=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $runConfig
   $failureStage='capacity_terminal';[int64]$maximum=[int64](Get-ChildItem -LiteralPath $package.artifact_run_dir -Recurse -File|Measure-Object Length -Sum).Sum
   $terminal=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -ProtectedPaths @($package.artifact_run_dir,$operatingRun) -KnownMeasuredBytes ([int64]$startup.measured_after_bytes) -MaximumNewArtifactBytes $maximum

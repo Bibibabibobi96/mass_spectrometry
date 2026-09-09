@@ -517,7 +517,21 @@ function Copy-VerifiedRunInput {
   foreach($attempt in 1..$VerificationAttempts){
     $sourceHashBefore=(Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash
     if(Test-Path -LiteralPath $destinationPath -PathType Leaf){(Get-Item -LiteralPath $destinationPath).IsReadOnly=$false}
-    Copy-Item -LiteralPath $sourcePath -Destination $destinationPath -Force
+    if($attempt-eq1){
+      Copy-Item -LiteralPath $sourcePath -Destination $destinationPath -Force
+    }else{
+      $readStream=$null;$writeStream=$null
+      try{
+        $readStream=[IO.File]::Open($sourcePath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+        $writeStream=[IO.FileStream]::new($destinationPath,[IO.FileMode]::Create,[IO.FileAccess]::Write,[IO.FileShare]::None,8MB,[IO.FileOptions]::WriteThrough)
+        $readStream.CopyTo($writeStream,8MB)
+        $writeStream.Flush($true)
+      }finally{
+        if($null-ne$writeStream){$writeStream.Dispose()}
+        if($null-ne$readStream){$readStream.Dispose()}
+      }
+      [IO.File]::SetLastWriteTimeUtc($destinationPath,[IO.File]::GetLastWriteTimeUtc($sourcePath))
+    }
     $sourceHashAfter=(Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash
     $destinationHash=(Get-FileHash -LiteralPath $destinationPath -Algorithm SHA256).Hash
     if($sourceHashBefore-ceq$sourceHashAfter -and $sourceHashAfter-ceq$destinationHash){return $destinationPath}
