@@ -16,7 +16,7 @@ HELPER = Path(__file__).with_name("short_pa_path_support.ps1")
 
 @unittest.skipUnless(os.name == "nt" and shutil.which("pwsh"), "Windows PowerShell test")
 class ShortPaPathSupportTest(unittest.TestCase):
-    def test_projects_long_read_only_pa_without_copying_or_leaving_links(self) -> None:
+    def test_projects_long_read_only_pa_as_isolated_copy_and_removes_it(self) -> None:
         root = Path(tempfile.mkdtemp(prefix="simion_long_pa_source_"))
         source = root
         while len(str(source / "source.pa0")) <= 270:
@@ -32,13 +32,11 @@ $ErrorActionPreference='Stop'
 . $env:PA_HELPER
 $before=[IO.File]::GetAttributes($env:PA_SOURCE)
 New-Item -ItemType Directory -Path $env:PA_LINK_DIR|Out-Null
-$link=New-ShortPaHardLink -Source $env:PA_SOURCE -Destination (Join-Path $env:PA_LINK_DIR 'p.pa')
-$item=Get-Item -LiteralPath $link -Force
-$linkType=$item.LinkType
-Remove-ShortPaHardLinkDirectory -Path $env:PA_LINK_DIR -ExpectedNamePrefix 'simion_pa_links_test_'
+$copy=New-ShortPaCopy -Source $env:PA_SOURCE -Destination (Join-Path $env:PA_LINK_DIR 'p.pa')
+[IO.File]::WriteAllText($copy,'simulated delayed solver write')
+Remove-ShortPaCopyDirectory -Path $env:PA_LINK_DIR -ExpectedNamePrefix 'simion_pa_links_test_'
 $after=[IO.File]::GetAttributes($env:PA_SOURCE)
 [pscustomobject]@{
-  link_type=$linkType
   source_length=$env:PA_SOURCE.Length
   payload=[IO.File]::ReadAllText($env:PA_SOURCE)
   directory_removed=-not(Test-Path -LiteralPath $env:PA_LINK_DIR)
@@ -62,11 +60,14 @@ $after=[IO.File]::GetAttributes($env:PA_SOURCE)
                 timeout=30,
             )
             result = json.loads(completed.stdout.strip().splitlines()[-1])
-            self.assertEqual(result["link_type"], "HardLink")
             self.assertGreater(result["source_length"], 260)
             self.assertEqual(result["payload"], "verified-pa-payload")
             self.assertTrue(result["directory_removed"])
             self.assertTrue(result["attributes_unchanged"])
+            helper_source = HELPER.read_text(encoding="utf-8")
+            self.assertIn("function New-ShortPaHardLink", helper_source)
+            self.assertIn("New-ShortPaCopy -Source $Source -Destination $Destination", helper_source)
+            self.assertIn("function Remove-ShortPaHardLinkDirectory", helper_source)
         finally:
             if source_pa.exists():
                 source_pa.chmod(stat.S_IWRITE | stat.S_IREAD)

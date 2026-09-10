@@ -1,12 +1,14 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
-$script:ShortPaHardLinks=@{}
+$script:ShortPaCopies=@{}
 
-function New-ShortPaHardLink {
+function New-ShortPaCopy {
   <#
     Expose a verified PA input to legacy SIMION through a short same-volume
-    path without copying its bytes. The caller owns source integrity checks
-    and must remove the link directory before publishing a run.
+    path using a disposable standalone copy.  SIMION may write a PA after the
+    invoking process appears to have finished, so a hard link is not an
+    isolation boundary.  The caller owns full family integrity checks and
+    must remove the copy directory before publishing a run.
   #>
   [CmdletBinding()]
   param(
@@ -21,37 +23,38 @@ function New-ShortPaHardLink {
   if(Test-Path -LiteralPath $destinationPath){
     throw "Short PA destination already exists: $destinationPath"
   }
-  if([IO.Path]::GetPathRoot($sourcePath)-ne[IO.Path]::GetPathRoot($destinationPath)){
-    throw 'Short PA hard links require source and destination on the same volume.'
-  }
   $parent=Split-Path -Parent $destinationPath
   if(-not(Test-Path -LiteralPath $parent -PathType Container)){
     New-Item -ItemType Directory -Path $parent|Out-Null
   }
-  $hardLinkTarget=if($sourcePath.StartsWith('\\?\')){$sourcePath}else{'\\?\'+$sourcePath}
-  $sourceAttributes=[IO.File]::GetAttributes($sourcePath)
+  $sourceItem=Get-Item -LiteralPath $sourcePath -Force
+  $sourceHash=(Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash
   try {
-    $link=New-Item -ItemType HardLink -Path $destinationPath -Target $hardLinkTarget
-    if($link.LinkType-ne'HardLink' -or $link.Length-ne(Get-Item -LiteralPath $sourcePath).Length){
-      throw "Short PA hard-link verification failed: $destinationPath"
+    [IO.File]::Copy($sourcePath,$destinationPath,$false)
+    $destinationAttributes=[IO.File]::GetAttributes($destinationPath)
+    [IO.File]::SetAttributes($destinationPath,$destinationAttributes-band(-bnot[IO.FileAttributes]::ReadOnly))
+    $destinationItem=Get-Item -LiteralPath $destinationPath -Force
+    $destinationHash=(Get-FileHash -LiteralPath $destinationPath -Algorithm SHA256).Hash
+    $sourceHashAfter=(Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash
+    if($destinationItem.Length-ne$sourceItem.Length -or $destinationHash-ne$sourceHash -or $sourceHashAfter-ne$sourceHash){
+      throw "Short PA copy verification failed: $destinationPath"
     }
   } catch {
     if(Test-Path -LiteralPath $destinationPath -PathType Leaf){
       $attributes=[IO.File]::GetAttributes($destinationPath)
       [IO.File]::SetAttributes($destinationPath,$attributes-band(-bnot[IO.FileAttributes]::ReadOnly))
       [IO.File]::Delete($destinationPath)
-      [IO.File]::SetAttributes($sourcePath,$sourceAttributes)
     }
     throw
   }
-  $script:ShortPaHardLinks[$destinationPath]=[pscustomobject]@{
+  $script:ShortPaCopies[$destinationPath]=[pscustomobject]@{
     source=$sourcePath
-    source_attributes=$sourceAttributes
+    source_sha256=$sourceHash
   }
   $destinationPath
 }
 
-function Remove-ShortPaHardLinkDirectory {
+function Remove-ShortPaCopyDirectory {
   [CmdletBinding()]
   param(
     [Parameter(Mandatory)][string]$Path,
@@ -63,9 +66,9 @@ function Remove-ShortPaHardLinkDirectory {
      -not([IO.Path]::GetFileName($directory).StartsWith($ExpectedNamePrefix,[StringComparison]::Ordinal))){
     throw "Refusing to remove unverified short-PA link directory: $directory"
   }
-  foreach($destination in @($script:ShortPaHardLinks.Keys)){
+  foreach($destination in @($script:ShortPaCopies.Keys)){
     if(-not $destination.StartsWith($directory+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){continue}
-    $record=$script:ShortPaHardLinks[$destination]
+    $record=$script:ShortPaCopies[$destination]
     try {
       if(Test-Path -LiteralPath $destination -PathType Leaf){
         $attributes=[IO.File]::GetAttributes($destination)
@@ -74,9 +77,12 @@ function Remove-ShortPaHardLinkDirectory {
       }
     } finally {
       if(Test-Path -LiteralPath $record.source -PathType Leaf){
-        [IO.File]::SetAttributes($record.source,[IO.FileAttributes]$record.source_attributes)
+        $sourceHashAfter=(Get-FileHash -LiteralPath $record.source -Algorithm SHA256).Hash
+        if($sourceHashAfter-ne$record.source_sha256){
+          throw "Short PA source changed while a disposable copy was in use: $($record.source)"
+        }
       }
-      $script:ShortPaHardLinks.Remove($destination)
+      $script:ShortPaCopies.Remove($destination)
     }
   }
   if(Test-Path -LiteralPath $directory -PathType Container){
@@ -85,4 +91,24 @@ function Remove-ShortPaHardLinkDirectory {
     }
     [IO.Directory]::Delete($directory,$false)
   }
+}
+
+# Compatibility names for already-frozen project runners.  Despite the legacy
+# names these delegate to isolated copies; they never create hard links.
+function New-ShortPaHardLink {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$Source,
+    [Parameter(Mandatory)][string]$Destination
+  )
+  New-ShortPaCopy -Source $Source -Destination $Destination
+}
+
+function Remove-ShortPaHardLinkDirectory {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$Path,
+    [string]$ExpectedNamePrefix='simion_pa_links_'
+  )
+  Remove-ShortPaCopyDirectory -Path $Path -ExpectedNamePrefix $ExpectedNamePrefix
 }
