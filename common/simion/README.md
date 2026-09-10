@@ -56,10 +56,36 @@ SIMION原生Fast Adjust会拒绝超出局部实体计数的响应；此时
 [`adjust_operating_pa_from_basis.lua`](adjust_operating_pa_from_basis.lua)从已解基准工作点只叠加调用方列出的
 非零电压增量响应，不Refine，也不假定响应归一化。零增量应直接复用基准PA0。
 调用方不得通过junction/symlink把不可变缓存generation直接暴露给SIMION：直接打开`.paN`时，SIMION
-可能在进程退出后延迟更新同family成员；完整复制但保留family语义也不能作为源缓存保护证明。只读源
-generation之外，若消费者仅需若干响应叠加，应把每个已验证响应复制成无`.paN`语义的独立`.pa`文件；若
-消费者确需原生family操作，则调用`materialize`取得完整、可写、run-local副本。两种路径都必须在构建和
-飞行后重新probe完整源family，不能只核对`.pa#`哨兵；临时容量必须在门禁中预留。
+可能在进程退出后延迟更新同family成员；完整复制但保留family语义也不能作为源缓存保护证明。若消费者
+仅只读若干已验证响应并用项目Lua叠加，可调用
+[`short_pa_path_support.ps1`](short_pa_path_support.ps1)把每个响应以无`.paN`语义的短名`.pa`硬链接投影到
+系统临时目录。该投影只允许同卷、只读源；运行器必须在SIMION退出后复核完整源generation、恢复源属性并
+删除链接目录。它不复制PA字节，临时路径不进入科学身份或manifest。若消费者确需原生family操作，则仍须
+调用`materialize`取得完整、可写、run-local副本。两种路径都必须在构建和飞行后重新probe完整源family，
+不能只核对`.pa#`哨兵。
+
+短路径投影解决的是仍受传统`MAX_PATH`行为影响的供应商进程输入，不改变规范artifact目录。Windows官方
+说明传统路径上限为260字符，`\\?\`扩展路径可用于`CreateHardLinkW`，且硬链接必须位于同一卷；PowerShell
+7的`New-Item -ItemType HardLink`是本实现采用的公开入口。2026-09-10查阅：
+[Maximum Path Length Limitation](https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation)、
+[CreateHardLink](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-createhardlinkw)、
+[New-Item](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.management/new-item)。
+
+**已验证状态（2026-09-11）：SIMION只读长PA输入问题已关闭。** 公共入口固定为
+[`short_pa_path_support.ps1`](short_pa_path_support.ps1)，回归入口为
+[`test_short_pa_path_support.py`](test_short_pa_path_support.py)。真实MR-TOF构建从268字符、
+`195,428,572`字节且只读的PA源建立104字符的同卷短名硬链接，随后成功完成五组局部PA合成、八实例IOB保存
+和迁移后重载；源属性与完整性复核通过，临时链接目录已删除。证据run为
+`20260911_200000__build__simion__mrtof-local-alpha0p255-normalized-projection-r20`。后续项目遇到SIMION长PA
+输入时必须复用该入口，不得复制大PA、建立junction/symlink或另建项目私有短路径脚本。这个关闭结论只覆盖
+“只读独立PA输入投影”；需要SIMION原生`.paN` family写入/调整时仍按上段物化可写run-local family，不能把
+本结论扩大为所有solver的通用短路径发布层。
+
+生产飞行路径的第二层实证为
+`20260915_000000__sim__simion__mrtof-transient-shortpa-smoke-n1`：五个局域响应组全部采用上述短路径投影，
+完成工作点PA0合成、八实例IOB装配和单中心离子飞行，运行报告`full_drift_observed`并通过终态manifest校验。
+一次性工作点未写入公共cache，求解器临时目录及`simion_pa_links_*`均已删除，源generation保持只读且未
+Refine。该粒子在49次镜转折后碰撞，故此run只验证基础设施和完整执行链，不构成自然探测命中或分辨率证据。
 
 [`cache_generation.py`](cache_generation.py)只抽取不同 PA-family 缓存协议共有的直接文件清单、payload
 摘要和 immutable generation 摘要计算；它不定义 identity 字段、role、锁、缓存目录、容量治理或命中时的

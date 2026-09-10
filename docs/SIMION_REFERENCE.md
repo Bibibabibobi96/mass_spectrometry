@@ -35,6 +35,20 @@ IOB 路径写入该项目 `docs/SIMION.md` 或 `docs/PROJECT.md`。
 [Multiple PAs](https://simion.com/info/multiple_pas.html)、
 [Trajectory Programming Techniques](https://simion.com/info/trajectory_programming.html)。
 
+### 长PA输入路径
+
+- 对只读、独立的PA响应输入，统一调用
+  [`common/simion/short_pa_path_support.ps1`](../common/simion/short_pa_path_support.ps1)，在系统临时目录建立
+  同卷短名硬链接；规范artifact路径、文件内容、科学身份和manifest路径保持不变。
+- 禁止为绕过SIMION传统路径限制而复制大PA、把不可变cache generation暴露为junction/symlink，或在项目内
+  再实现一套短路径工具。供应商进程退出后必须复核源文件、恢复源属性并清理临时链接目录。
+- 该公共路径已在2026-09-11用268字符、195,428,572字节的真实只读PA源以及五组局部PA、八实例IOB完整构建
+  验证，并在2026-09-15继续通过五组局域合成、八实例装配和真实单粒子飞行的生产路径实跑。此问题在
+  “SIMION只读长PA输入”范围内视为已关闭；原生`.paN` family调整仍必须物化完整可写副本。
+- 实现、测试、官方依据和真实run身份由
+  [`common/simion/README.md`](../common/simion/README.md)统一记录，其他Agent先复用并运行该回归测试，不再重新
+  调研或创建替代实现。
+
 ## GUI 对等
 
 正式基线应让用户在 GUI 中检查 PA 实例、位置、旋转、缩放、Fast Adjust 电压、Fly2 粒子和
