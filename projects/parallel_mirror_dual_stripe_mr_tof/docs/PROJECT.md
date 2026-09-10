@@ -1117,6 +1117,16 @@ retained the full drift, reduced all four residuals to
 actual/predicted reduction ratio of `0.907905462`.  This remains a single-centre
 voltage-search state; a new Jacobian is required before any further step.
 
+Workbench
+`20260914_093000__build__simion__mrtof-local-accepted-jac06-s1half-alpha0p005-r12-r3`
+is the verified eight-instance materialization of that accepted point.  Its
+manifest and both in-place and published IOB inspections pass.  During the two
+preceding failed materializations the startup capacity gate removed a verified
+local PA-family cache generation after the runner had resolved it.  The
+workbench and flight runners now protect every resolved generation path and
+cache key at both startup and terminal capacity gates; this is a cache-lifetime
+fix only and does not change geometry, fields, voltages, or trajectory results.
+
 The spatial-convergence implementation continues to use the global isotropic
 1-mm analyser only as a far-field fallback and five isotropic 0.5-mm local
 replacements for voltage closure.  A same-size isotropic 0.25-mm family would

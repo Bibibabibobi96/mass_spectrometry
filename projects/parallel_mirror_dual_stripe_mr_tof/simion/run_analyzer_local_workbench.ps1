@@ -155,7 +155,11 @@ try {
     $requiredBytes+=2*[int64](Get-Item -LiteralPath $basePaSource).Length
     foreach($changedIndex in $changedLocalIndices){$requiredBytes+=[int64](Get-Item -LiteralPath (Join-Path $family.generation_directory ("{0}.pa{1}"-f$prefix,($changedIndex+1)))).Length}
   }
-  $startup=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -RequiredHeadroomBytes $requiredBytes -ProtectedPaths @($package.artifact_run_dir,$operatingRun)
+  $capacityProtectedPaths=@($package.artifact_run_dir,$operatingRun)+@($families.generation_directory)
+  if($null-ne$baseLocalWorkbench){$capacityProtectedPaths+=@($baseLocalWorkbench)}
+  $startup=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
+    -RequiredHeadroomBytes $requiredBytes -ProtectedPaths $capacityProtectedPaths `
+    -ProtectedCacheKeys @($families.cache_key)
   $startupPath=Join-Path $resultDir 'artifact_capacity_gate_startup.json';Write-RunJson -Path $startupPath -Depth 14 -Value $startup
 
   $failureStage='materialize_reused_components'
@@ -247,7 +251,9 @@ try {
   Write-RunJson -Path $summary -Depth 20 -Value ([ordered]@{schema_version=1;role='mrtof_analyzer_local_replacement_workbench';status='success';qualification='gui_reviewable_local_replacement_assembly__flight_pending';instance_count=8;global_analyzer_mesh_mm_per_gu=@($pose.mesh_mm_per_gu.analyzer);local_mesh_mm_per_gu=@($ScaleFactor,$ScaleFactor,$ScaleFactor);local_operating_pa_method=$localOperatingPaMethod;changed_local_voltage_indices=@($changedLocalIndices);basis_voltage_v=$basisVoltage;iob_path=Join-Path $package.artifact_run_dir 'simion\mrtof_local_replacement.iob';reason='The global analyser remains the fallback at its resolved isotropic mesh. Five higher-priority local PA0s replace only their contract-owned z responsibility intervals.'})
   $retention=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $runConfig
   $failureStage='capacity_terminal';[int64]$maximum=[int64](Get-ChildItem -LiteralPath $package.artifact_run_dir -Recurse -File|Measure-Object Length -Sum).Sum
-  $terminal=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -ProtectedPaths @($package.artifact_run_dir,$operatingRun) -KnownMeasuredBytes ([int64]$startup.measured_after_bytes) -MaximumNewArtifactBytes $maximum
+  $terminal=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
+    -ProtectedPaths $capacityProtectedPaths -ProtectedCacheKeys @($families.cache_key) `
+    -KnownMeasuredBytes ([int64]$startup.measured_after_bytes) -MaximumNewArtifactBytes $maximum
   $terminalPath=Join-Path $resultDir 'artifact_capacity_gate_terminal.json';Write-RunJson -Path $terminalPath -Depth 14 -Value $terminal
   Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Status success -Software @('SIMION 2020','Python 3.11') -Outputs (@($summary,$report,$relocatedReport,$posePath,$startupPath,$terminalPath,$retention,$iob)+$paths+@((Join-Path $solverDir 'mrtof_local_replacement.lua'),(Join-Path $solverDir 'mrtof_local_replacement.operating_point.lua'),(Join-Path $solverDir 'mrtof_local_replacement.local_refinement.lua'),(Join-Path $solverDir 'mrtof_local_replacement.fly2')))
   $terminalized=$true;$hostOutcome='success';Write-Host "MRTOF_LOCAL_REPLACEMENT_WORKBENCH=PASS RUN_ID=$RunId IOB=$iob"

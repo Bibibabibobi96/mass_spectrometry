@@ -173,7 +173,9 @@ try{
   }
   $protectedPaths=@($package.artifact_run_dir)
   if($null-ne$localWorkbenchRun){$protectedPaths+=@($localWorkbenchRun)+@($localFamilies.generation_directory)}
-  $startup=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -RequiredHeadroomBytes $requiredBytes -ProtectedPaths $protectedPaths
+  $startup=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
+    -RequiredHeadroomBytes $requiredBytes -ProtectedPaths $protectedPaths `
+    -ProtectedCacheKeys @($localFamilies.cache_key)
   $startupPath=Join-Path $resultDir 'artifact_capacity_gate_startup.json';Write-RunJson -Path $startupPath -Depth 14 -Value $startup
   $failureStage='freeze_small_inputs'
   $contract=Copy-RequiredInput $selectedContract (Join-Path $solverDir 'accelerator_focus_voltage_trial.json') 'selected-energy contract'
@@ -333,7 +335,9 @@ try{
   $config.parameters.prism_1_voltage_v=$Prism1VoltageV;$config.parameters.prism_2_voltage_v=$Prism2VoltageV;$config.parameters.stripe_biases_v=@($trial.stripe_biases_v);$config.parameters.continue_main_drift=[bool]$ContinueMainDrift;$config.parameters.pa_binding_mode=if($null-eq$localWorkbenchRun){'temporary_voltageized_analyzer__immutable_family'}elseif($localAdjustmentReceipts.Count-eq 0){'global_fast_adjust_plus_reused_local_baseline_pa0'}else{'global_fast_adjust_plus_nonzero_local_basis_deltas__no_refine'};$config.parameters.constrain_x_symmetry_plane=[bool]$ConstrainXSymmetryPlane;$config.parameters.trajectory_profile=$trial.trajectory_profile;$config.parameters.prism_switch=$trial.prism_switch;Write-RunJson -Path $runConfig -Value $config
   $retention=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $runConfig
   $failureStage='capacity_terminal';$maximum=[int64](Get-ChildItem -LiteralPath $package.artifact_run_dir -Recurse -File|Measure-Object Length -Sum).Sum
-  $terminal=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot -ProtectedPaths @($package.artifact_run_dir) -KnownMeasuredBytes ([int64]$startup.measured_after_bytes) -MaximumNewArtifactBytes $maximum
+  $terminal=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
+    -ProtectedPaths @($package.artifact_run_dir) -ProtectedCacheKeys @($localFamilies.cache_key) `
+    -KnownMeasuredBytes ([int64]$startup.measured_after_bytes) -MaximumNewArtifactBytes $maximum
   $terminalPath=Join-Path $resultDir 'artifact_capacity_gate_terminal.json';Write-RunJson -Path $terminalPath -Depth 14 -Value $terminal
   Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Status success -Software @('SIMION 2020','Python 3.11') -Outputs @($summary,$rawLog,$observation,$trialReceipt,$voltageReceipt,$posePath,$startupPath,$terminalPath,$retention)
   $terminalized=$true;$hostOutcome='success';Write-Host "MRTOF_TWO_PRISM_TRIAL=PASS RUN_ID=$RunId TRANSPORT=$($observed.status)"

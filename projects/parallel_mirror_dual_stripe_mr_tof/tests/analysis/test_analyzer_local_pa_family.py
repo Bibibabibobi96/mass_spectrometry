@@ -79,6 +79,9 @@ class AnalyzerLocalPaFamilyTest(unittest.TestCase):
         self.assertIn("base_local_workbench_manifest", source)
         self.assertIn("$responseId=$changedIndex+1", source)
         self.assertIn("$changedLocalIndices.Count-eq0", source)
+        self.assertIn("$capacityProtectedPaths", source)
+        self.assertIn("@($families.generation_directory)", source)
+        self.assertEqual(source.count("-ProtectedCacheKeys @($families.cache_key)"), 2)
         basis_copy = source.index(
             "Copy-VerifiedRunInput -Source ([IO.Path]::ChangeExtension($sourceAnalyzer,'.pa2'))"
         )
@@ -111,6 +114,7 @@ class AnalyzerLocalPaFamilyTest(unittest.TestCase):
         self.assertIn("foreach($responseId in 5..8)", source)
         self.assertIn("Assert-AnalyzerLocalFamilyCacheReadOnly", source)
         self.assertIn("-VerificationAttempts 3", source)
+        self.assertEqual(source.count("-ProtectedCacheKeys @($localFamilies.cache_key)"), 2)
 
     def fixture(self, root: Path) -> tuple[Path, Path, Path]:
         gem = root / "central.gem"
