@@ -1081,3 +1081,50 @@ centre is still only a single-ion voltage-search state.  The numerical gate
 remains a same-physics global-1/local-0.5/local-0.25 comparison after the centre
 root closes; 0.25-mm replacements are permitted only for regions that fail
 that sensitivity test, never for the full analyser envelope.
+
+The next accepted centres preserve the same frozen geometry and mesh.  Audit
+`20260913_150000__analysis__python__mrtof-local-central-difference-jac04`
+supported a 2% step; run
+`20260913_153000__sim__simion__mrtof-local-central-jac04-alpha0p02-n1`
+reduced the four residuals to
+`[0.0299996 mm,0.000973742 eV,7.57937 mm,0.234473]`.  Audit
+`20260913_160000__analysis__python__mrtof-local-jac04-alpha0p02-audit`
+measured an actual/predicted reduction ratio of `0.911088546`.  Incremental
+workbench `20260913_163000__build__simion__mrtof-local-accepted-jac04-alpha0p02-r10`
+materialized that point without Refine.
+
+At the following centre, audit
+`20260913_210000__analysis__python__mrtof-local-central-difference-jac05`
+remained square and full rank with condition number `98.5017354892`; its 3%
+bounded step retained the full drift and reduced the scaled objective from
+`2.92477384470e-4` to `2.79631153318e-4`, with actual/predicted reduction
+ratio `0.743183333`.  Workbench
+`20260913_223000__build__simion__mrtof-local-accepted-jac05-alpha0p03-r11`
+is the verified eight-instance materialization of that accepted point.
+
+Jacobian campaign 06 then completed eight symmetric SIMION flights at the r11
+centre.  The `S1=+-0.005 V` column had 43.3% forward/backward disagreement, so
+two smaller symmetric pairs were measured rather than extrapolating.  The
+middle `S1=+-0.0025 V` pair reduced the disagreement to 17.5% and changed the
+central derivative by only about 3--4% relative to the larger pair; the
+`+-0.00125 V` pair instead moved the K derivative by about 14%, identifying the
+trajectory/event-interpolation numerical floor.  The middle-step audit
+`20260914_043000__analysis__python__mrtof-local-central-difference-jac06-s1half`
+was therefore selected.  Its 0.5% bounded trial
+`20260914_063000__sim__simion__mrtof-local-central-jac06-s1half-alpha0p005-n1`
+retained the full drift, reduced all four residuals to
+`[0.0289606 mm,0.000946072 eV,7.34175 mm,0.234361]`, and gave an
+actual/predicted reduction ratio of `0.907905462`.  This remains a single-centre
+voltage-search state; a new Jacobian is required before any further step.
+
+The spatial-convergence implementation continues to use the global isotropic
+1-mm analyser only as a far-field fallback and five isotropic 0.5-mm local
+replacements for voltage closure.  A same-size isotropic 0.25-mm family would
+cost about 58.8 GB for the two mirror patches alone.  The next fine-level plan
+must therefore derive per-axis local meshes from the frozen geometry and the
+accepted trajectory envelope: resolve the 4-mm transverse slots and fast
+reflection/edge-field direction first, retain a coarser slow-drift spacing
+where its fixed-particle sensitivity passes, and fail closed on potential,
+normal-field, event-topology and trajectory comparisons.  This anisotropic
+alternative is not yet accepted as convergence evidence and may not be used
+to skip a region whose sensitivity fails.
