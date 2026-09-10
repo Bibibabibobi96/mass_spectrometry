@@ -42,6 +42,12 @@ class GeometryContractTests(unittest.TestCase):
         self.assertAlmostEqual(stage_2["upstream_flat_start_z_mm"], 55.8)
         self.assertAlmostEqual(stage_1["downstream_flat_end_z_mm"], 53.8)
         self.assertAlmostEqual(geometry["interstage"]["clear_gap_mm"], 2.0)
+        plate = geometry["downstream_aperture_plate"]
+        self.assertAlmostEqual(plate["upstream_face_z_mm"], 110.22)
+        self.assertAlmostEqual(plate["downstream_face_z_mm"], 110.72)
+        self.assertAlmostEqual(plate["aperture_radius_mm"], 0.75)
+        self.assertAlmostEqual(plate["downstream_observation_end_z_mm"], 120.0)
+        self.assertAlmostEqual(plate["post_plate_observation_length_mm"], 9.28)
 
     def test_invalid_round_rod_overlap_fails(self) -> None:
         baseline = load_baseline(DEFAULT_BASELINE)

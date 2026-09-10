@@ -42,6 +42,17 @@ def _lua_array(rows: list[dict[str, str]], field: str) -> str:
     return ",".join(_lua_number(row[field]) for row in rows)
 
 
+def _lua_chunked_array(
+    rows: list[dict[str, str]], field: str, *, chunk_size: int
+) -> str:
+    """Keep each Lua 5.1 function prototype below its constant-table limit."""
+    chunks = []
+    for start in range(0, len(rows), chunk_size):
+        values = _lua_array(rows[start : start + chunk_size], field)
+        chunks.append(f"(function() return {{{values}}} end)()")
+    return "{\n  " + ",\n  ".join(chunks) + "\n}"
+
+
 def export_runtime(
     csv_path: Path,
     metadata_path: Path,
@@ -84,15 +95,23 @@ def export_runtime(
 
     # The arrays are embedded deliberately: the manifest has one immutable runtime
     # dependency, so SIMION cannot silently read a different CSV after preparation.
+    # Each field is split across child function prototypes because SIMION's Lua 5.1
+    # compiler has a finite per-prototype constant table.
+    chunk_size = 8192
     lua = f"""-- Generated from a validated COMSOL export.  Do not edit.
 local field = {{role=[[{contract['lua_role']}]]}}
 local nr,nz={len(r_values)},{len(z_values)}
 local r0,z0,dr,dz={r_values[0]:.17g},{z_values[0]:.17g},{dr:.17g},{dz:.17g}
 local rmin,rmax,zmin,zmax={domain['minimum_radius_mm']:.17g},{domain['maximum_radius_mm']:.17g},{domain['minimum_z_mm']:.17g},{domain['maximum_z_mm']:.17g}
-local p={{{_lua_array(rows, 'p_pa')}}}
-local t={{{_lua_array(rows, 'temperature_k')}}}
-local uz={{{_lua_array(rows, 'u_z_m_per_s')}}}
-local ur={{{_lua_array(rows, 'u_r_m_per_s')}}}
+local chunk_size={chunk_size}
+local p={_lua_chunked_array(rows, 'p_pa', chunk_size=chunk_size)}
+local t={_lua_chunked_array(rows, 'temperature_k', chunk_size=chunk_size)}
+local uz={_lua_chunked_array(rows, 'u_z_m_per_s', chunk_size=chunk_size)}
+local ur={_lua_chunked_array(rows, 'u_r_m_per_s', chunk_size=chunk_size)}
+local function value(a,i)
+  local chunk=math.floor((i-1)/chunk_size)+1
+  return a[chunk][i-(chunk-1)*chunk_size]
+end
 local function sample(a,r,z)
   if r < rmin or r > rmax or z < zmin or z > zmax then error('gas-field query outside governed domain') end
   local xr,xz=(r-r0)/dr,(z-z0)/dz
@@ -101,9 +120,15 @@ local function sample(a,r,z)
   if iz >= nz-1 then iz=nz-2; xz=nz-1 end
   local fr,fz=xr-ir,xz-iz
   local i00=iz*nr+ir+1
-  local a00,a10,a01,a11=a[i00],a[i00+1],a[i00+nr],a[i00+nr+1]
-  if a00 == false or a10 == false or a01 == false or a11 == false then error('gas-field query touches a nonfluid cell') end
-  return (1-fz)*((1-fr)*a00+fr*a10)+fz*((1-fr)*a01+fr*a11)
+  local a00,a10,a01,a11=value(a,i00),value(a,i00+1),value(a,i00+nr),value(a,i00+nr+1)
+  local w00,w10,w01,w11=(1-fr)*(1-fz),fr*(1-fz),(1-fr)*fz,fr*fz
+  local weighted,total=0,0
+  if a00 ~= false then weighted,total=weighted+w00*a00,total+w00 end
+  if a10 ~= false then weighted,total=weighted+w10*a10,total+w10 end
+  if a01 ~= false then weighted,total=weighted+w01*a01,total+w01 end
+  if a11 ~= false then weighted,total=weighted+w11*a11,total+w11 end
+  if total <= 0 then error('gas-field query has no fluid support in its interpolation cell') end
+  return weighted/total
 end
 field.pressure_pa = function(x,y,z) return sample(p,math.sqrt(x*x+y*y),z) end
 field.temperature_k = function(x,y,z) return sample(t,math.sqrt(x*x+y*y),z) end
@@ -122,8 +147,21 @@ return field
         "schema_version": contract["manifest_schema_version"],
         "role": contract["manifest_role"],
         "project_id": PROJECT_ID,
+        "source": {
+            "kind": "validated_comsol_axisymmetric_rz",
+            "field_csv": {
+                "path": str(csv_path.resolve()),
+                "sha256": metadata["field_csv_sha256"],
+            },
+            "metadata": {
+                "path": str(metadata_path.resolve()),
+                "sha256": _sha256(metadata_path),
+            },
+            "source_contract_sha256": metadata["source_contract_sha256"],
+        },
         "coordinate_frame": contract["coordinate_frame"],
         "domain": domain,
+        "interpolation_policy": contract["interpolation_policy"],
         "runtime_lua": {
             "path": str(output_lua.resolve()),
             "sha256": _sha256(output_lua),

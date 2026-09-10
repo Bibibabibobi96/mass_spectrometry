@@ -48,6 +48,14 @@
       "center_distance_interpretation": "provisional_adjacent_centers",
       "downstream_alignment": "provisional_flush_with_low_pressure_end"
     },
+    "downstream_aperture_plate": {
+      "upstream_gap_from_round_quadrupole_end_mm": 2.22,
+      "thickness_mm": 0.5,
+      "aperture_diameter_mm": 1.5,
+      "outer_radius_rule": "same_as_low_pressure_enclosure",
+      "downstream_observation_end_z_mm": 120.0,
+      "position_interpretation": "confirmed_from_round_quadrupole_downstream_face"
+    },
     "interstage_flat_face_gap_mm": 2.0
   },
   "missing_mechanical_inputs": [
@@ -55,7 +63,6 @@
     "physical_aperture_plane_offsets_from_virtual_apices",
     "elliptical_rod_measured_effective_length",
     "interstage_lens_or_differential_aperture",
-    "downstream_exit_lens_and_clearance",
     "pump_port_geometry"
   ]
 }

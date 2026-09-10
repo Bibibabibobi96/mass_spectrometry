@@ -46,6 +46,19 @@ def _cone_electrode(cone: dict[str, Any], electrode_id: int, radius: float) -> s
     )
 
 
+def _aperture_plate_electrode(plate: dict[str, Any], electrode_id: int) -> str:
+    z0 = float(plate["upstream_face_z_mm"])
+    thickness = float(plate["thickness_mm"])
+    radius = float(plate["outer_radius_mm"])
+    aperture = float(plate["aperture_radius_mm"])
+    return "\n".join([
+        f"  e({electrode_id}) {{ fill {{",
+        f"    within {{ cylinder(0,0,{_number(z0)},{_number(radius)},{_number(radius)},{_number(thickness)}) }}",
+        f"    notin_inside {{ cylinder(0,0,{_number(z0)},{_number(aperture)},{_number(aperture)},{_number(thickness)}) }}",
+        "  } }",
+    ])
+
+
 def render_gem(resolved: dict[str, Any], numerics: dict[str, Any]) -> str:
     if resolved.get("role") != "dual_cone_tandem_quadrupole_resolved_geometry":
         raise ValueError("resolved geometry role differs")
@@ -59,6 +72,9 @@ def render_gem(resolved: dict[str, Any], numerics: dict[str, Any]) -> str:
         raise ValueError("SIMION cell size must be positive and finite")
     geometry = resolved["geometry_mm"]
     radius = float(geometry["low_pressure_enclosure"]["radius_mm"])
+    observation_end = float(
+        geometry["downstream_aperture_plate"]["downstream_observation_end_z_mm"]
+    )
     transverse_span = 2.0 * (radius + 2.0)
     z_min = -2.0
     center = 0.5 * transverse_span
@@ -69,8 +85,8 @@ def render_gem(resolved: dict[str, Any], numerics: dict[str, Any]) -> str:
         "; C0 limitation: stage-1 upstream faces are flat at the minimum resolved z.",
         "; The cone-following cut remains blocked pending a governed project CSG mask.",
         f"# local mmgu = {_number(mmgu)}",
-        "pa_define($(51/mmgu+1),$(51/mmgu+1),$(112/mmgu+1),planar,non-mirror,"
-        "electric,,$(mmgu),surface=fractional)",
+        f"pa_define($(51/mmgu+1),$(51/mmgu+1),$({_number(observation_end - z_min)}/mmgu+1),"
+        "planar,non-mirror,electric,,$(mmgu),surface=fractional)",
         "",
         f"locate({_number(center)},{_number(center)},{_number(offset)}) {{",
         _cone_electrode(geometry["first_cone"], 1, radius),
@@ -83,6 +99,7 @@ def render_gem(resolved: dict[str, Any], numerics: dict[str, Any]) -> str:
             geometry["stage_2_round_quadrupole"]["rod_array"],
             electrode_group_ids={1: 21, 2: 22},
         ).rstrip(),
+        _aperture_plate_electrode(geometry["downstream_aperture_plate"], 3),
         "}",
         "",
     ]

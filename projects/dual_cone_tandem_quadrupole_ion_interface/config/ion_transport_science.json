@@ -41,7 +41,8 @@
     },
     "static_electrodes_v": {
       "first_cone": 0.0,
-      "second_cone": 0.0
+      "second_cone": 0.0,
+      "downstream_aperture_plate": 0.0
     },
     "status": "provisional_not_user_confirmed"
   },

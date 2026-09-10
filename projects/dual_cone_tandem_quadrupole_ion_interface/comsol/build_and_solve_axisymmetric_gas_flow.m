@@ -35,6 +35,40 @@ bc = science.boundary_conditions;
 proxy = science.geometry_proxy;
 n = numerics;
 
+resumeModelPath = string(getenv("DUAL_CONE_GAS_FLOW_RESUME_MODEL"));
+if strlength(resumeModelPath) > 0
+    assert(isfile(resumeModelPath), "GasFlow:ResumeModel", ...
+        "The requested converged COMSOL model is missing: %s", resumeModelPath);
+    model = mphload(resumeModelPath, "DualConeGasFlowResume");
+    cleanup = onCleanup(@() ModelUtil.remove("DualConeGasFlowResume")); %#ok<NASGU>
+    [storedNames, storedValues] = lastStoredParameterTuple(model);
+    pressureIndex = find(storedNames == "p_out", 1);
+    diffusionIndex = find(storedNames == "iso_diff", 1);
+    assert(~isempty(pressureIndex) && ...
+        abs(storedValues(pressureIndex) - science.boundary_conditions.outlet.static_pressure_pa) <= ...
+        eps(science.boundary_conditions.outlet.static_pressure_pa), ...
+        "GasFlow:ResumeModel", "The resumed solution outlet pressure differs from the contract.");
+    assert(~isempty(diffusionIndex) && ...
+        abs(storedValues(diffusionIndex) - numerics.study.accepted_terminal_isotropic_diffusion) <= ...
+        eps(numerics.study.accepted_terminal_isotropic_diffusion), ...
+        "GasFlow:ResumeModel", "The resumed solution stabilization differs from the contract.");
+    selectionPad = max(numerics.mesh.minimum_element_size_mm, eps);
+    inletBoundaries = mphselectbox(model, "geom1", ...
+        [-selectionPad, science.geometry_proxy.upstream_plenum_radius_mm + selectionPad; ...
+        -science.geometry_proxy.upstream_feed_length_mm - selectionPad, ...
+        -science.geometry_proxy.upstream_feed_length_mm + selectionPad], "boundary");
+    outletBoundaries = mphselectbox(model, "geom1", ...
+        [-selectionPad, geometry.geometry_mm.low_pressure_enclosure.radius_mm + selectionPad; ...
+        geometry.geometry_mm.downstream_aperture_plate.downstream_observation_end_z_mm - selectionPad, ...
+        geometry.geometry_mm.downstream_aperture_plate.downstream_observation_end_z_mm + selectionPad], "boundary");
+    assert(~isempty(inletBoundaries) && ~isempty(outletBoundaries), ...
+        "GasFlow:ResumeModel", "Could not recover inlet or outlet boundary from the resumed model.");
+    result = exportRegularField(model, outputDir, science, numerics, geometry, ...
+        inletBoundaries, outletBoundaries, sciencePath, numericsPath, geometryPath);
+    result.model_path = char(resumeModelPath);
+    return
+end
+
 model = ModelUtil.create("DualConeGasFlow");
 cleanup = onCleanup(@() ModelUtil.remove("DualConeGasFlow")); %#ok<NASGU>
 model.label("Dual-cone axisymmetric nitrogen gas-flow screening model");
@@ -46,6 +80,9 @@ model.component("comp1").geom("geom1").lengthUnit("mm");
 % Every physical and numerical scalar is exposed in the saved model and comes
 % from a versioned JSON contract (geometry, science, or numerics).
 setParameter(model, "feed_L", proxy.upstream_feed_length_mm, "mm");
+setParameter(model, "r_plenum", proxy.upstream_plenum_radius_mm, "mm");
+setParameter(model, "first_bore_L", proxy.first_aperture_axial_channel_length_mm, "mm");
+setParameter(model, "second_bore_L", proxy.second_aperture_axial_channel_length_mm, "mm");
 setParameter(model, "r_ap1", g.first_cone.aperture_radius_mm, "mm");
 setParameter(model, "z_ap1", g.first_cone.aperture_reference_z_mm, "mm");
 setParameter(model, "r_ap2", g.second_cone.aperture_radius_mm, "mm");
@@ -54,10 +91,12 @@ setParameter(model, "r_wall_at_ap2", ...
     g.nested_cone_computational_closure.first_inner_surface_radius_at_second_aperture_mm, "mm");
 setParameter(model, "z_cone2_base", g.second_cone.theoretical_base_z_at_enclosure_radius_mm, "mm");
 setParameter(model, "r_enclosure", g.low_pressure_enclosure.radius_mm, "mm");
-setParameter(model, "z_end", g.low_pressure_enclosure.end_z_mm, "mm");
-setParameter(model, "p_in_total", bc.inlet.total_pressure_pa, "Pa");
-setParameter(model, "T_in_total", bc.inlet.total_temperature_k, "K");
-setParameter(model, "Ma_in", bc.inlet.mach_number, "1");
+setParameter(model, "z_plate_up", g.downstream_aperture_plate.upstream_face_z_mm, "mm");
+setParameter(model, "z_plate_down", g.downstream_aperture_plate.downstream_face_z_mm, "mm");
+setParameter(model, "r_plate_ap", g.downstream_aperture_plate.aperture_radius_mm, "mm");
+setParameter(model, "z_end", g.downstream_aperture_plate.downstream_observation_end_z_mm, "mm");
+setParameter(model, "p_in", bc.inlet.static_pressure_pa, "Pa");
+setParameter(model, "T_in", bc.inlet.temperature_k, "K");
 setParameter(model, "p_out", bc.outlet.static_pressure_pa, "Pa");
 setParameter(model, "M_N2", s.molar_mass_kg_per_mol, "kg/mol");
 setParameter(model, "gamma_N2", s.specific_heat_ratio, "1");
@@ -65,34 +104,32 @@ setParameter(model, "Cp_N2", s.specific_heat_capacity_cp_j_per_kg_k, "J/(kg*K)")
 setParameter(model, "k_num", transport.thermal_conductivity_w_per_m_k, "W/(m*K)");
 setParameter(model, "mu_num", transport.dynamic_viscosity_pa_s, "Pa*s");
 setParameter(model, "R_univ", s.universal_gas_constant_j_per_mol_k, "J/(mol*K)");
-model.param.set("T_in_static", "T_in_total/(1+0.5*(gamma_N2-1)*Ma_in^2)");
-model.param.set("p_in_static", ...
-    "p_in_total/(1+0.5*(gamma_N2-1)*Ma_in^2)^(gamma_N2/(gamma_N2-1))");
-model.param.set("u_in", "Ma_in*sqrt(gamma_N2*(R_univ/M_N2)*T_in_static)");
+setParameter(model, "iso_diff", n.study.isotropic_diffusion_continuation(1), "1");
+setParameter(model, "u_init_cavity", n.study.initial_axial_velocity_m_per_s, "m/s");
 
 geom = model.component("comp1").geom("geom1");
 try
-    upstream = geom.create("poly_upstream", "Polygon");
-    upstream.set("source", "table");
-    upstream.set("table", [0, -proxy.upstream_feed_length_mm; ...
-        g.first_cone.aperture_radius_mm, -proxy.upstream_feed_length_mm; ...
+    % One polygon represents the complete connected passage.  Splitting the
+    % passage at z_ap2 creates two domains that only touch along the aperture
+    % line; the resulting union can leave an isolated boundary vertex in the
+    % thermal equation.  A single contour has identical physical walls and no
+    % artificial internal interface.
+    fluidPolygon = geom.create("poly_fluid", "Polygon");
+    fluidPolygon.set("source", "table");
+    fluidPolygon.set("table", [0, -proxy.upstream_feed_length_mm; ...
+        proxy.upstream_plenum_radius_mm, -proxy.upstream_feed_length_mm; ...
+        proxy.upstream_plenum_radius_mm, -proxy.first_aperture_axial_channel_length_mm; ...
+        g.first_cone.aperture_radius_mm, -proxy.first_aperture_axial_channel_length_mm; ...
         g.first_cone.aperture_radius_mm, g.first_cone.aperture_reference_z_mm; ...
         g.nested_cone_computational_closure.first_inner_surface_radius_at_second_aperture_mm, ...
         g.second_cone.aperture_reference_z_mm; ...
         g.second_cone.aperture_radius_mm, g.second_cone.aperture_reference_z_mm; ...
-        0, g.second_cone.aperture_reference_z_mm]);
-    downstream = geom.create("poly_downstream", "Polygon");
-    downstream.set("source", "table");
-    downstream.set("table", [0, g.second_cone.aperture_reference_z_mm; ...
-        g.second_cone.aperture_radius_mm, g.second_cone.aperture_reference_z_mm; ...
-        g.low_pressure_enclosure.radius_mm, g.second_cone.theoretical_base_z_at_enclosure_radius_mm; ...
-        g.low_pressure_enclosure.radius_mm, g.low_pressure_enclosure.end_z_mm; ...
-        0, g.low_pressure_enclosure.end_z_mm]);
-    unionFeature = geom.create("uni_fluid", "Union");
-    unionFeature.selection("input").set({'poly_upstream', 'poly_downstream'});
-    % Remove the artificial overlap boundary so the two polygons form one
-    % connected fluid passage through the second aperture.
-    unionFeature.set("intbnd", false);
+        g.second_cone.aperture_radius_mm, ...
+        g.second_cone.aperture_reference_z_mm + proxy.second_aperture_axial_channel_length_mm; ...
+        g.low_pressure_enclosure.radius_mm, ...
+        g.second_cone.theoretical_base_z_at_enclosure_radius_mm + proxy.second_aperture_axial_channel_length_mm; ...
+        g.low_pressure_enclosure.radius_mm, g.downstream_aperture_plate.downstream_observation_end_z_mm; ...
+        0, g.downstream_aperture_plate.downstream_observation_end_z_mm]);
     geom.run;
 catch exception
     throwAsCaller(addCause(MException("GasFlow:GeometryAPI", ...
@@ -102,33 +139,40 @@ end
 % Boundary IDs are resolved geometrically, never assumed from creation order.
 selectionPad = max(n.mesh.minimum_element_size_mm, eps);
 inletBoundaries = mphselectbox(model, "geom1", ...
-    [-selectionPad, g.first_cone.aperture_radius_mm + selectionPad; ...
+    [-selectionPad, proxy.upstream_plenum_radius_mm + selectionPad; ...
     -proxy.upstream_feed_length_mm - selectionPad, -proxy.upstream_feed_length_mm + selectionPad], ...
     "boundary");
 outletBoundaries = mphselectbox(model, "geom1", ...
     [-selectionPad, g.low_pressure_enclosure.radius_mm + selectionPad; ...
-    g.low_pressure_enclosure.end_z_mm - selectionPad, g.low_pressure_enclosure.end_z_mm + selectionPad], ...
+    g.downstream_aperture_plate.downstream_observation_end_z_mm - selectionPad, ...
+    g.downstream_aperture_plate.downstream_observation_end_z_mm + selectionPad], ...
     "boundary");
 assert(~isempty(inletBoundaries) && ~isempty(outletBoundaries), ...
     "GasFlow:BoundarySelection", "Could not resolve inlet or outlet boundary.");
 
 try
     hmnf = model.component("comp1").physics.create("hmnf", "HighMachNumberFlow", "geom1");
+    hmnf.prop("InconsistentStabilization").set("IsotropicDiffusion", true);
+    hmnf.prop("InconsistentStabilization").set("delid", "iso_diff");
+    hmnf.prop("InconsistentStabilization").set("HeatIsotropicDiffusion", true);
+    hmnf.prop("InconsistentStabilization").set("delidht", "iso_diff");
     inlet = hmnf.create("hminl1", "HighMachNumberFlowInlet", 1);
     inlet.selection.set(inletBoundaries);
-    inlet.set("FlowCondition", "Supersonic");
-    inlet.set("InputState", "TotalConditions");
-    inlet.set("p0tot", "p_in_total");
-    inlet.set("T0tot", "T_in_total");
-    inlet.set("Ma0", "Ma_in");
+    % Prescribe atmospheric static pressure and temperature at the plenum
+    % boundary while solving the subsonic inlet velocity.  No Mach number or
+    % mass flow is supplied.
+    inlet.set("FlowCondition", "Subsonic");
+    inlet.set("BoundaryCondition", "Pressure");
+    inlet.set("p0", "p_in");
+    inlet.set("TemperatureHeatflux", "Temperature");
+    inlet.set("T0", "T_in");
     outlet = hmnf.create("hmout1", "HighMachNumberFlowOutlet", 1);
     outlet.selection.set(outletBoundaries);
-    outlet.set("FlowCondition", "HybridOutlet");
+    outlet.set("FlowCondition", "Subsonic");
     outlet.set("BoundaryCondition", "Pressure");
-    outlet.set("InputState", "StaticConditions");
-    outlet.set("p0stat", "p_out");
+    outlet.set("p0", "p_out");
     wall = hmnf.feature("wallbc1");
-    wall.set("BoundaryCondition", "Slip");
+    wall.set("BoundaryCondition", "NoSlip");
     fluid = hmnf.feature("fluid1");
     fluid.set("Rs_mat", "userdef");
     fluid.set("Rs", "R_univ/M_N2");
@@ -139,9 +183,9 @@ try
     fluid.set("k", {'k_num', '0', '0', '0', 'k_num', '0', '0', '0', 'k_num'});
     fluid.set("mu_mat", "userdef");
     fluid.set("mu", "mu_num");
-    hmnf.feature("init1").set("u_init", {'0', '0', 'u_in'});
-    hmnf.feature("init1").set("p_init", "p_in_static");
-    hmnf.feature("init1").set("Tinit", "T_in_static");
+    hmnf.feature("init1").set("u_init", {'0', '0', 'u_init_cavity'});
+    hmnf.feature("init1").set("p_init", "p_in");
+    hmnf.feature("init1").set("Tinit", "T_in");
 catch exception
     throwAsCaller(addCause(MException("GasFlow:HighMachAPI", ...
         "The installed COMSOL version does not accept the declared High Mach Number Flow " + ...
@@ -162,11 +206,28 @@ try
     study = model.study.create("std1");
     stationary = study.create("stat", "Stationary");
     continuation = n.study.outlet_pressure_continuation_pa(:).';
+    diffusionContinuation = n.study.isotropic_diffusion_continuation(:).';
+    terminalDiffusion = n.study.accepted_terminal_isotropic_diffusion;
+    if numel(continuation) ~= numel(diffusionContinuation) || ...
+            diffusionContinuation(end) ~= terminalDiffusion
+        error("GasFlow:ContinuationContract", ...
+            "Pressure and artificial-diffusion continuation must be paired and end at the declared stabilization.");
+    end
     model.param.set("p_out", sprintf("%.17g[Pa]", continuation(1)));
+    model.param.set("iso_diff", sprintf("%.17g", diffusionContinuation(1)));
     stationary.set("useparam", true);
     stationary.setIndex("pname", "p_out", 0);
     stationary.setIndex("plistarr", strjoin(string(continuation), " "), 0);
     stationary.setIndex("punit", "Pa", 0);
+    stationary.setIndex("pname", "iso_diff", 1);
+    stationary.setIndex("plistarr", strjoin(string(diffusionContinuation), " "), 1);
+    stationary.setIndex("punit", "1", 1);
+    % COMSOL calls a column-wise list of specified parameter tuples a
+    % "sparse" sweep.  "filled" forms the Cartesian product and therefore
+    % does not preserve the pressure/diffusion continuation path above.
+    stationary.set("sweeptype", "sparse");
+    stationary.set("pcontinuationmode", "no");
+    stationary.set("preusesol", "yes");
     study.createAutoSequences("all");
     stationarySolver = model.sol("sol1").feature("s1");
     stationarySolver.create("se1", "Segregated");
@@ -175,19 +236,47 @@ try
     segregated.create("ss1", "SegregatedStep");
     segregated.feature("ss1").set("segvar", {'comp1_T', 'comp1_p', 'comp1_u'});
     segregated.feature("ss1").set("subdamp", n.solver.segregated_damping);
-    segregated.feature("ss1").set("linsolver", "d1");
+    assert(strcmp(n.solver.linear_solver, "comsol_iterative_multigrid_i1"), ...
+        "GasFlow:SolverContract", "Unsupported declared linear solver.");
+    segregated.feature("ss1").set("linsolver", "i1");
+    segregated.feature("ss1").set("subadapttol", n.solver.adaptive_step_tolerance);
     segregated.set("segstabacc", "segcflcmp");
     segregated.set("segcfltech", "simple");
     segregated.set("subinitcfl", n.solver.initial_cfl);
     segregated.set("submincfl", n.solver.target_cfl);
+    segregated.set("subkppid", 0.65);
+    segregated.set("subkdpid", 0.05);
+    segregated.set("subkipid", 0.05);
+    segregated.set("subcfltol", n.solver.cfl_comparison_tolerance);
+    segregated.set("segcflaa", true);
+    segregated.set("segcflaacfl", 9000);
+    segregated.set("segcflaafact", 1);
     segregated.set("maxsegiter", n.solver.maximum_segregated_iterations);
+    assert(strcmp(n.solver.termination, "tolerance"), ...
+        "GasFlow:SolverContract", "Unsupported declared segregated termination policy.");
+    segregated.set("segterm", "tol");
     segregated.create("ll1", "LowerLimit");
     lowerLimits = sprintf("comp1.T %.17g comp1.p %.17g ", ...
         n.solver.iteration_lower_limits.temperature_k, ...
         n.solver.iteration_lower_limits.pressure_pa);
     segregated.feature("ll1").set("lowerlimit", lowerLimits);
     stationarySolver.feature.remove("fc1");
-    model.sol("sol1").runAll;
+    try
+        model.sol("sol1").runAll;
+    catch solveException
+        diagnostic = storedParameterDiagnostic(model);
+        continuationException = MException("GasFlow:ContinuationFailure", ...
+            "Stationary continuation failed after stored parameter tuple: %s", diagnostic);
+        throwAsCaller(addCause(continuationException, solveException));
+    end
+    [storedNames, storedValues] = lastStoredParameterTuple(model);
+    pressureIndex = find(storedNames == "p_out", 1);
+    diffusionIndex = find(storedNames == "iso_diff", 1);
+    assert(~isempty(pressureIndex) && ~isempty(diffusionIndex) && ...
+        abs(storedValues(pressureIndex) - bc.outlet.static_pressure_pa) <= eps(bc.outlet.static_pressure_pa) && ...
+        abs(storedValues(diffusionIndex) - terminalDiffusion) <= eps(terminalDiffusion), ...
+        "GasFlow:ContinuationTerminalState", ...
+        "The stored terminal solution is not the requested pressure/stabilization state.");
 catch exception
     throwAsCaller(addCause(MException("GasFlow:Solve", ...
         "Meshing or stationary pseudo-time continuation failed; no export was emitted."), exception));
@@ -201,23 +290,46 @@ result = exportRegularField(model, outputDir, science, numerics, geometry, ...
 result.model_path = modelPath;
 end
 
+function diagnostic = storedParameterDiagnostic(model)
+try
+    [names, values] = lastStoredParameterTuple(model);
+    parts = names + "=" + compose("%.17g", values);
+    diagnostic = char(strjoin(parts, ","));
+catch exception
+    diagnostic = char("unavailable (" + string(exception.message) + ")");
+end
+end
+
+function [names, lastValues] = lastStoredParameterTuple(model)
+names = string(cell(model.sol("sol1").getPNames()));
+values = double(model.sol("sol1").getPVals());
+width = numel(names);
+assert(width > 0 && numel(values) >= width && mod(numel(values), width) == 0, ...
+    "GasFlow:StoredParameterIdentity", "Stored continuation parameter tuples are unavailable.");
+lastValues = reshape(values(end - width + 1:end), 1, []);
+names = reshape(names, 1, []);
+end
+
 function result = exportRegularField(model, outputDir, science, numerics, geometry, inletIds, outletIds, sciencePath, numericsPath, geometryPath)
 g = geometry.geometry_mm;
 grid = numerics.export_grid;
 rValues = grid.radial_start_mm:grid.radial_step_mm:g.low_pressure_enclosure.radius_mm;
-zValues = -science.geometry_proxy.upstream_feed_length_mm:grid.axial_step_mm:g.low_pressure_enclosure.end_z_mm;
+zValues = -science.geometry_proxy.upstream_feed_length_mm:grid.axial_step_mm: ...
+    g.downstream_aperture_plate.downstream_observation_end_z_mm;
 [rGrid, zGrid] = meshgrid(rValues, zValues);
 query = [reshape(rGrid.', 1, []); reshape(zGrid.', 1, [])];
 try
-    sampled = mphinterp(model, {"p", "T", "w", "u"}, "coord", query, "ext", 0);
+    [sampledP, sampledTemperature, sampledUZ, sampledUR] = ...
+        mphinterp(model, {"p", "T", "w", "u"}, "coord", query, ...
+        "ext", 0, "solnum", "end");
 catch exception
     throwAsCaller(addCause(MException("GasFlow:ExportAPI", ...
         "COMSOL field interpolation failed; no export is valid."), exception));
 end
-p = reshape(sampled(1, :), size(rGrid.')).';
-temperature = reshape(sampled(2, :), size(rGrid.')).';
-uZ = reshape(sampled(3, :), size(rGrid.')).';
-uR = reshape(sampled(4, :), size(rGrid.')).';
+p = reshape(sampledP, size(rGrid.')).';
+temperature = reshape(sampledTemperature, size(rGrid.')).';
+uZ = reshape(sampledUZ, size(rGrid.')).';
+uR = reshape(sampledUR, size(rGrid.')).';
 fluidMask = isfinite(p) & isfinite(temperature) & isfinite(uZ) & isfinite(uR);
 if any(temperature(fluidMask) <= numerics.solver.iteration_lower_limits.temperature_k) || ...
         any(p(fluidMask) <= numerics.solver.iteration_lower_limits.pressure_pa)
@@ -246,22 +358,29 @@ tableOut = table(zIndex, rIndex, reshape(zGrid.', [], 1), reshape(rGrid.', [], 1
     reshape(p.', [], 1), reshape(temperature.', [], 1), reshape(uZ.', [], 1), ...
     reshape(uR.', [], 1), reshape(rho.', [], 1), reshape(mach.', [], 1), ...
     reshape(knudsen.', [], 1), double(reshape(fluidMask.', [], 1)), ...
-    "VariableNames", string(science.export_contract.columns));
+    VariableNames=cellstr(string(science.export_contract.columns)));
 csvPath = fullfile(outputDir, numerics.artifact_names.field_csv);
 writetable(tableOut, csvPath);
 
 try
-    massIn = mphint2(model, "-2*pi*r*(p*M_N2/(R_univ*T))*w", "line", ...
-        "selection", inletIds);
+    massIn = mphint2(model, "2*pi*r*(p*M_N2/(R_univ*T))*w", "line", ...
+        "selection", inletIds, "solnum", "end");
     massOut = mphint2(model, "2*pi*r*(p*M_N2/(R_univ*T))*w", "line", ...
-        "selection", outletIds);
+        "selection", outletIds, "solnum", "end");
 catch exception
     throwAsCaller(addCause(MException("GasFlow:MassBalanceAPI", ...
         "Boundary mass-flow integration failed; metadata was not emitted."), exception));
 end
+if ~isfinite(massIn) || ~isfinite(massOut) || massIn <= 0 || massOut <= 0
+    error("GasFlow:MassFlowDirection", ...
+        "Expected positive downstream mass flow at both boundaries (in=%.17g, out=%.17g kg/s).", ...
+        massIn, massOut);
+end
 massError = abs(massOut - massIn) / max(abs(massIn), eps);
 if ~isfinite(massError) || massError > numerics.validation.maximum_mass_balance_relative_error
-    error("GasFlow:MassBalance", "Relative mass-balance error exceeds the JSON contract.");
+    error("GasFlow:MassBalance", ...
+        "Relative mass-balance error %.17g exceeds the JSON contract (in=%.17g kg/s, out=%.17g kg/s).", ...
+        massError, massIn, massOut);
 end
 
 metadata.schema_version = 1;
@@ -280,6 +399,7 @@ metadata.source_contract_sha256.comsol_solver_numerics = fileSha256(numericsPath
 metadata.source_contract_sha256.resolved_geometry = fileSha256(geometryPath);
 metadata.coordinate_frame = geometry.coordinate_frame;
 metadata.solution_summary.requested_outlet_static_pressure_pa = science.boundary_conditions.outlet.static_pressure_pa;
+metadata.solution_summary.accepted_isotropic_diffusion = numerics.study.accepted_terminal_isotropic_diffusion;
 metadata.solution_summary.inlet_mass_flow_kg_per_s = massIn;
 metadata.solution_summary.outlet_mass_flow_kg_per_s = massOut;
 metadata.solution_summary.mass_balance_relative_error = massError;
@@ -304,16 +424,16 @@ model.param.set(name, sprintf("%.17g[%s]", value, unit));
 end
 
 function digest = fileSha256(path)
-stream = java.io.FileInputStream(java.io.File(path));
-cleanup = onCleanup(@() stream.close()); %#ok<NASGU>
+stream = fopen(path, "r");
+assert(stream >= 0, "GasFlow:HashRead", "Cannot hash file: %s", path);
+cleanup = onCleanup(@() fclose(stream)); %#ok<NASGU>
 md = java.security.MessageDigest.getInstance("SHA-256");
-buffer = zeros(1, 8192, "int8");
 while true
-    count = stream.read(buffer, 0, numel(buffer));
-    if count < 0
+    bytes = fread(stream, 1024 * 1024, "*uint8");
+    if isempty(bytes)
         break;
     end
-    md.update(buffer(1:count));
+    md.update(typecast(bytes, "int8"));
 end
 digest = lower(reshape(dec2hex(typecast(md.digest(), "uint8"), 2).', 1, []));
 end

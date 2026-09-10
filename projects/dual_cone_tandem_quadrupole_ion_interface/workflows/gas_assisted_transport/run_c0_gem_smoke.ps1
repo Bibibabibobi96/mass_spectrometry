@@ -17,7 +17,7 @@ $output=[IO.Path]::GetFullPath($OutputDir)
 & (Join-Path $PSScriptRoot 'prepare.ps1') -OutputDir $output -Mode c0_gem_smoke -SimionExe $SimionExe -PythonExe $python
 if($LASTEXITCODE-ne 0){throw 'C0 input preparation failed.'}
 $solverDir=Join-Path $output 'solver\simion'
-$required=@('dual_cone_tandem.pa#','dual_cone_tandem.pa0','dual_cone_tandem.pa1','dual_cone_tandem.pa2','dual_cone_tandem.pa11','dual_cone_tandem.pa12','dual_cone_tandem.pa21','dual_cone_tandem.pa22')
+$required=@('dual_cone_tandem.pa#','dual_cone_tandem.pa0','dual_cone_tandem.pa1','dual_cone_tandem.pa2','dual_cone_tandem.pa3','dual_cone_tandem.pa11','dual_cone_tandem.pa12','dual_cone_tandem.pa21','dual_cone_tandem.pa22')
 $inventory=($required+@('dual_cone_tandem.pa-surf')) -join ','
 $identity=Join-Path $output 'input\pa_cache_identity.json'
 Push-Location $repoRoot

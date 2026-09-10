@@ -16,10 +16,21 @@ projects\dual_cone_tandem_quadrupole_ion_interface\workflows\gas_assisted_transp
 ```
 
 一条命令会复用/生成 PA、编译受控 Lua 气体场、冻结官方 SDS、构建单实例 IOB、执行真实 Fly，
-并输出 `prototype_run_report.json`、逐点轨迹和粒子末态。`100 m/s` 是明确可替换的规定参数，
+并输出 `prototype_run_report.json`、逐点轨迹、粒子末态和 `trajectory_rz_projection.png`。`100 m/s` 是明确可替换的规定参数，
 不是 CFD 或实测结果。
 
 ## 当前可执行链
+
+任意已校验气场的唯一 Fly 核心：
+
+```powershell
+projects\dual_cone_tandem_quadrupole_ion_interface\workflows\gas_assisted_transport\run_gas_field_prototype.ps1 `
+  -GasFieldManifest C:\absolute\path\gas_field_manifest.json `
+  -OutputDir ..\artifacts\projects\dual_cone_tandem_quadrupole_ion_interface\runs\<run_id>
+```
+
+COMSOL 成功目录使用 `run_comsol_field_prototype.ps1`，它先调用独立校验/编译器，再委托上述核心。
+均匀 `400 Pa` 对照入口也只负责生成自己的 manifest 后委托同一核心，不复制 PA、IOB、SDS 或 Fly 逻辑。
 
 无碰撞 C0 几何 smoke：
 
@@ -29,7 +40,7 @@ projects\dual_cone_tandem_quadrupole_ion_interface\workflows\gas_assisted_transp
 ```
 
 该入口只生成 GEM、执行 `gem2pa` 和不带 convergence 参数的 `refine`，并检查电极基组
-`0,1,2,11,12,21,22`。它不飞行粒子、不输出传输率，也不构成 Candidate 或 Formal 证据。
+`0,1,2,3,11,12,21,22`，其中 `3` 是末端孔板。它不飞行粒子、不输出传输率，也不构成 Candidate 或 Formal 证据。
 
 COMSOL 气体场升级路径的输入准备：
 
@@ -50,7 +61,7 @@ COMSOL 场；它不影响每次运行即时生成并冻结的均匀 `400 Pa` 原
 
 ## 几何范围
 
-单体 PA 使用电极 `1/2` 表示两锥，`11/12` 表示椭圆杆两相，`21/22` 表示圆杆两相。设备坐标到
+单体 PA 使用电极 `1/2` 表示两锥，`3` 表示末端孔板，`11/12` 表示椭圆杆两相，`21/22` 表示圆杆两相。设备坐标到
 Workbench 的平移记录在 `simion_solver_numerics.json`。杆几何由
 `common.multipole.simion_geometry.render_grouped_rod_array_gem` 生成，项目不复制圆杆或椭圆杆公式。
 
@@ -68,5 +79,9 @@ COMSOL CSV 先由 `analysis/export_simion_gas_runtime.py`（或 `build_gas_runti
 - `temperature_k(x_mm,y_mm,z_mm)`：K；
 - `velocity_m_s(x_mm,y_mm,z_mm)`：三分量 m/s。
 
-禁止外推；整个 `z=-2..108 mm, r=0..23.5 mm` 域必须覆盖。后续飞行 Program 必须通过官方
+禁止外推；整个 `z=-5..120 mm, r=0..23.5 mm` 域必须覆盖。圆四极杆在 `z=108.00 mm` 结束，孔板位于 `z=110.22..110.72 mm`，板后保留 `9.28 mm` 观察段；为防止 SDS 在终止步越过气体场，离子终止采样面设在 `z=119.75 mm`。后续飞行 Program 必须通过官方
 `collision_sds.lua` 注入这些函数，并通过共享 RF kernel 驱动电极；不得用 Python 阻尼积分器替代。
+
+真实 COMSOL 场 Prototype `20260910_z120_empty_cfd_simion_n100` 使用冻结 N=100 圆柱源完成：80 个离子到达 `z=119.75 mm`，到达束斑半径中位数 `0.240 mm`、95% 分位 `0.527 mm`。这些数值依赖暂定的 `100 V`、`1 MHz` 两段 RF 和空包络气流，只是筛选结果，不是仪器绝对传输率。
+
+[返回项目状态](PROJECT.md)

@@ -31,22 +31,25 @@
 
 ## 当前工作流边界
 
-最简快速原型的权威方向为：
+当前最简气流—轨迹原型的权威方向为：
 
 ```text
-规定的后端 400 Pa / 300 K / 100 m/s 气体场
-  → 哈希冻结的 Lua gas-field + manifest
+上游 101325 Pa / 300 K 储气腔 + 连通双锥通道 + 后端 400 Pa
+  → COMSOL 二维轴对称 High-Mach 气体场
+  → 带源合同哈希的 Lua gas-field + manifest
   → SIMION 气体辅助轨迹 run
   → trajectory samples + particle final state
 ```
 
-一条命令入口是
-[`workflows/gas_assisted_transport/run_uniform_400pa_prototype.ps1`](workflows/gas_assisted_transport/run_uniform_400pa_prototype.ps1)。
-它不调用 COMSOL；COMSOL 可压缩气流是以后替换规定气体场的升级路径。两种气体场都必须先生成
-本次 run 专属、经哈希复核的 manifest，SIMION 不得目录搜索“最新场”。
+COMSOL 场通过
+[`workflows/gas_assisted_transport/run_comsol_field_prototype.ps1`](workflows/gas_assisted_transport/run_comsol_field_prototype.ps1)
+进入真实 SIMION Fly。该入口与均匀场对照共同复用唯一的
+[`run_gas_field_prototype.ps1`](workflows/gas_assisted_transport/run_gas_field_prototype.ps1)，后者负责 PA
+缓存、官方 SDS、IOB 和 Fly；两种气体场只负责生成自己的严格 manifest。SIMION 不得目录搜索“最新场”。
 
-当前 execution profile 仍只注册两个 `plan` profile；均匀 400 Pa 快速原型已有项目级公开 Fly 入口，
-但还不是 Candidate/Formal 资格。COMSOL 场升级仍保持失败关闭。几何新鲜度入口为：
+当前 execution profile 仍只注册两个 `plan` profile；均匀 400 Pa 快速对照已有真实单离子 Fly 证据，
+但不替代 COMSOL 场目标链，也不是 Candidate/Formal 资格。COMSOL 求解、场发布和下游 Fly 均保持失败
+关闭。几何新鲜度入口为：
 
 ```powershell
 python -m projects.dual_cone_tandem_quadrupole_ion_interface.analysis.resolve_geometry --check

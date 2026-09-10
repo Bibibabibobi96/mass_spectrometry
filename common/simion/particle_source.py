@@ -13,8 +13,22 @@ def render_standard_beams(beams: list[dict[str, Any]]) -> str:
         lines.extend([
             "  standard_beam {", "    n = 1,", f"    tob = {beam['tob']},",
             f"    mass = {beam['mass']},", f"    charge = {beam['charge']},",
-            f"    x = {beam['x']},", f"    y = {beam['y']},", f"    z = {beam['z']},",
-            f"    ke = {beam['ke']},", f"    az = {beam['az']},", f"    el = {beam['el']},",
+        ])
+        if "direction" in beam:
+            direction = beam["direction"]
+            if not isinstance(direction, (list, tuple)) or len(direction) != 3:
+                raise ValueError("standard beam direction must contain three components")
+            lines.extend([
+                f"    position = vector({beam['x']},{beam['y']},{beam['z']}),",
+                f"    direction = vector({direction[0]},{direction[1]},{direction[2]}),",
+                f"    ke = {beam['ke']},",
+            ])
+        else:
+            lines.extend([
+                f"    x = {beam['x']},", f"    y = {beam['y']},", f"    z = {beam['z']},",
+                f"    ke = {beam['ke']},", f"    az = {beam['az']},", f"    el = {beam['el']},",
+            ])
+        lines.extend([
             f"    cwf = {beam['cwf']},", f"    color = {beam['color']}", f"  }}{comma}",
         ])
     lines.append("}")

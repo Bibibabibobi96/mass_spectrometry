@@ -162,6 +162,11 @@ def validate_gas_field(
     target_outlet = science["boundary_conditions"]["outlet"]["static_pressure_pa"]
     if float(solution["requested_outlet_static_pressure_pa"]) != target_outlet:
         raise ValueError("COMSOL export did not consume the requested outlet pressure")
+    terminal_diffusion = float(
+        numerics["study"]["accepted_terminal_isotropic_diffusion"]
+    )
+    if float(solution["accepted_isotropic_diffusion"]) != terminal_diffusion:
+        raise ValueError("COMSOL export did not record the governed terminal stabilization")
     reject_knudsen = science["continuum_scope"][
         "reject_quantitative_use_knudsen_number"
     ]
@@ -176,6 +181,7 @@ def validate_gas_field(
         "maximum_mach": max_mach,
         "maximum_knudsen_aperture": max_knudsen,
         "mass_balance_relative_error": mass_error,
+        "accepted_isotropic_diffusion": terminal_diffusion,
         "quantitative_continuum_claim_allowed": max_knudsen <= reject_knudsen,
         "claim_scope": science["claim_scope"],
     }

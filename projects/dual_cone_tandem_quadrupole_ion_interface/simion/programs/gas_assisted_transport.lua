@@ -34,7 +34,7 @@ local next_sample_us = {}
 local terminal_code = {}
 
 local function set_electrode_voltage(id, voltage)
-  assert(id == 1 or id == 2 or id == 11 or id == 12 or id == 21 or id == 22,
+  assert(id == 1 or id == 2 or id == 3 or id == 11 or id == 12 or id == 21 or id == 22,
     'unsupported electrode id: ' .. tostring(id))
   adj_elect[id] = voltage
 end
@@ -48,6 +48,7 @@ end
 function segment.fast_adjust()
   adj_elect[1] = config.first_cone_v
   adj_elect[2] = config.second_cone_v
+  adj_elect[3] = config.downstream_aperture_plate_v
   stage_1.apply_at(ion_time_of_flight, set_electrode_voltage)
   stage_2.apply_at(ion_time_of_flight, set_electrode_voltage)
 end

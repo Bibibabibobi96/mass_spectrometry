@@ -2,7 +2,7 @@
   "schema_version": 1,
   "role": "dual_cone_axisymmetric_gas_flow_science_contract",
   "project_id": "dual_cone_tandem_quadrupole_ion_interface",
-  "model_id": "axisymmetric_high_mach_n2_screening_v1",
+  "model_id": "axisymmetric_high_mach_n2_plenum_v2",
   "claim_scope": "prototype_axisymmetric_empty_enclosure_gas_flow",
   "physics": {
     "comsol_interface": "HighMachNumberFlow",
@@ -21,46 +21,49 @@
       "boltzmann_constant_j_per_k": 1.380649e-23
     },
     "transport_model": {
-      "model": "constant_n2_at_300_k_with_slip_walls",
+      "model": "constant_n2_at_300_k_with_no_slip_walls",
       "dynamic_viscosity_pa_s": 0.0000176,
       "thermal_conductivity_w_per_m_k": 0.02583,
       "basis": "declared_n2_reference_values_without_sutherland_temperature_dependence"
     }
   },
   "geometry_proxy": {
-    "model": "axisymmetric_empty_enclosure_without_quadrupole_rods_or_pump_ports",
-    "upstream_feed_length_mm": 2.0,
-    "upstream_feed_radius_rule": "first_cone_aperture_radius",
+    "model": "axisymmetric_upstream_plenum_dual_cone_empty_enclosure_to_observation_end",
+    "upstream_feed_length_mm": 5.0,
+    "upstream_plenum_radius_mm": 5.0,
+    "upstream_feed_radius_rule": "finite_plenum_contract_value",
+    "first_aperture_axial_channel_length_mm": 0.25,
+    "second_aperture_axial_channel_length_mm": 0.5,
+    "thickness_interpretation": "declared cone thickness used as an axial aperture-channel proxy",
     "intercone_outer_wall_rule": "first_cone_inner_theoretical_surface",
-    "downstream_outer_wall_rule": "second_cone_inner_theoretical_surface_then_enclosure_radius",
+    "downstream_outer_wall_rule": "second_cone_inner_theoretical_surface_then_continuous_enclosure_radius_to_observation_end",
     "second_cone_baffle_rule": "impermeable_from_second_aperture_radius_to_first_cone_inner_surface",
     "excluded_geometry": [
       "elliptical_quadrupole_rods",
       "round_quadrupole_rods",
-      "interstage_lens_or_partition",
+      "downstream_aperture_plate_gas_flow_obstruction",
       "pump_ports",
       "unconfirmed_cone_edge_rounding"
     ]
   },
   "boundary_conditions": {
     "inlet": {
-      "flow_condition": "sonic_choked_screening",
-      "state": "total",
-      "total_pressure_pa": 101325.0,
-      "total_temperature_k": 300.0,
-      "mach_number": 1.0,
-      "mach_number_basis": "critical_pressure_ratio_choked_first_aperture_proxy",
+      "flow_condition": "subsonic_static_pressure_reservoir",
+      "state": "static_pressure_and_temperature",
+      "static_pressure_pa": 101325.0,
+      "temperature_k": 300.0,
+      "velocity_basis": "computed_by_the_internal_solution_not_prescribed",
       "flow_direction": "+z"
     },
     "outlet": {
-      "flow_condition": "hybrid_pressure",
+      "flow_condition": "subsonic_pressure",
       "state": "static",
       "static_pressure_pa": 400.0,
       "boundary_scope": "entire_rear_plane",
-      "interpretation": "ideal_constant_pressure_reservoir; pressure is imposed on locally subsonic outflow while locally supersonic outflow remains characteristic-consistent"
+      "interpretation": "ideal_constant_pressure_reservoir on the entire rear plane"
     },
     "walls": {
-      "velocity_condition": "slip_inviscid_screening",
+      "velocity_condition": "no_slip_continuum_prototype",
       "thermal_condition": "adiabatic"
     },
     "axis": "automatic_axial_symmetry"

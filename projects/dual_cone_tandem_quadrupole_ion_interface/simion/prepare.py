@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import re
 import shutil
@@ -10,6 +11,8 @@ from pathlib import Path
 from typing import Any
 
 from common.contracts.file_identity import file_sha256
+from common.contracts.particle_physics import kinetic_energy_ev
+from common.multipole.sources.continuous_axial_volume_source import materialize
 from common.simion.particle_source import render_standard_beams, render_source_states
 from projects.dual_cone_tandem_quadrupole_ion_interface.simion.geometry import (
     DEFAULT_NUMERICS,
@@ -22,6 +25,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SCIENCE = PROJECT_ROOT / "config" / "ion_transport_science.json"
 GAS_INTERFACE = PROJECT_ROOT / "config" / "gas_field_interface.json"
+CYLINDRICAL_SOURCE = PROJECT_ROOT / "config" / "cylindrical_ion_source.json"
 RF_KERNEL = REPO_ROOT / "common" / "multipole" / "simion_rf_drive.lua"
 PROGRAM = PROJECT_ROOT / "simion" / "programs" / "gas_assisted_transport.lua"
 SDS_FILES = ("collision_sds.lua", "mbmr.dat", "textfilelib.lua", "arraylib.lua", "m_defs.dat")
@@ -42,10 +46,44 @@ def validate_gas_field_manifest(path: Path, interface: dict[str, Any]) -> tuple[
         raise ValueError("gas-field manifest keys differ from the governed interface")
     if manifest["schema_version"] != 1 or manifest["project_id"] != interface["project_id"]:
         raise ValueError("gas-field manifest identity differs")
+    source_record = manifest["source"]
+    if not isinstance(source_record, dict):
+        raise ValueError("gas-field source record must be an object")
+    source_kind = source_record.get("kind")
+    if source_kind not in interface["runtime_artifact_contract"]["allowed_source_kinds"]:
+        raise ValueError("gas-field source kind is not governed")
+    if source_kind == "validated_comsol_axisymmetric_rz":
+        expected_source_keys = {"kind", "field_csv", "metadata", "source_contract_sha256"}
+        if set(source_record) != expected_source_keys:
+            raise ValueError("COMSOL gas-field source record differs")
+        for role in ("field_csv", "metadata"):
+            source_file = source_record[role]
+            if not isinstance(source_file, dict) or set(source_file) != {"path", "sha256"}:
+                raise ValueError(f"COMSOL gas-field {role} identity differs")
+            source_path = Path(source_file["path"]).resolve()
+            if not source_path.is_file() or not SHA256.fullmatch(str(source_file["sha256"])):
+                raise ValueError(f"COMSOL gas-field {role} is missing or has invalid identity")
+            if file_sha256(source_path).upper() != str(source_file["sha256"]).upper():
+                raise ValueError(f"COMSOL gas-field {role} SHA-256 differs")
+        hashes = source_record["source_contract_sha256"]
+        if not isinstance(hashes, dict) or set(hashes) != {
+            "gas_flow_science",
+            "comsol_solver_numerics",
+            "resolved_geometry",
+        } or any(not SHA256.fullmatch(str(value)) for value in hashes.values()):
+            raise ValueError("COMSOL gas-field source-contract identities differ")
+    else:
+        if set(source_record) != {"kind", "spec_sha256", "interface_sha256"} or any(
+            not SHA256.fullmatch(str(source_record[key]))
+            for key in ("spec_sha256", "interface_sha256")
+        ):
+            raise ValueError("uniform gas-field source identities differ")
     if manifest["coordinate_frame"] != interface["runtime_artifact_contract"]["coordinate_frame"]:
         raise ValueError("gas-field coordinate frame differs")
     if manifest["domain"] != interface["runtime_artifact_contract"]["domain"]:
         raise ValueError("gas-field domain does not cover the governed transport domain exactly")
+    if manifest["interpolation_policy"] != interface["runtime_artifact_contract"]["interpolation_policy"]:
+        raise ValueError("gas-field interpolation policy differs from the governed interface")
     record = manifest["runtime_lua"]
     if not isinstance(record, dict) or set(record) != {"path", "sha256"}:
         raise ValueError("gas-field runtime_lua record differs")
@@ -81,7 +119,8 @@ def _lua_string(value: str | Path) -> str:
 
 
 def _render_run_config(
-    *, mode: str, science: dict[str, Any], numerics: dict[str, Any], solver: Path
+    *, mode: str, science: dict[str, Any], numerics: dict[str, Any],
+    resolved: dict[str, Any], solver: Path
 ) -> str:
     def stage_record(name: str) -> str:
         stage = science["electric_field"][name]
@@ -100,6 +139,10 @@ def _render_run_config(
     collision_lua = solver / "collision_sds" / "collision_sds.lua"
     gas_lua = solver / "gas_field_runtime.lua"
     results = solver.parents[1] / "results"
+    plate = resolved["geometry_mm"]["downstream_aperture_plate"]
+    pa_cell_z = float(numerics["pa"]["cell_mm_xyz"]["z"])
+    terminal_device_z = float(plate["downstream_observation_end_z_mm"]) - 0.5 * pa_cell_z
+    terminal_workbench_z = terminal_device_z + 2.0
     return "\n".join([
         "return {",
         f"  mode={_lua_string(mode)},",
@@ -113,11 +156,12 @@ def _render_run_config(
         f"  stage_2={stage_record('stage_2')},",
         f"  first_cone_v={science['electric_field']['static_electrodes_v']['first_cone']:.15g},",
         f"  second_cone_v={science['electric_field']['static_electrodes_v']['second_cone']:.15g},",
+        f"  downstream_aperture_plate_v={science['electric_field']['static_electrodes_v']['downstream_aperture_plate']:.15g},",
         f"  rf_steps_per_period={int(trajectory['rf_steps_per_period'])},",
         f"  maximum_time_us={trajectory['maximum_time_us']:.15g},",
-        # Stop one half PA cell before the 108 mm physical end so SDS does not
+        # Stop one half PA cell before the physical end so SDS does not
         # evaluate the gas field beyond its declared domain on the terminal step.
-        f"  downstream_workbench_z_mm={109.75:.15g},",
+        f"  downstream_workbench_z_mm={terminal_workbench_z:.15g},",
         f"  device_x_offset_mm={25.5:.15g},device_y_offset_mm={25.5:.15g},device_z_offset_mm={2.0:.15g},",
         f"  random_seed={int(trajectory['random_seed'])},",
         f"  collision_gas_mass_amu={gas['collision_gas_mass_amu']:.15g},",
@@ -126,6 +170,54 @@ def _render_run_config(
         "}",
         "",
     ])
+
+
+def _materialize_gas_source(
+    *, frozen: Path, solver: Path, resolved: dict[str, Any]
+) -> tuple[Path, Path, dict[str, Any]]:
+    spec = _load(CYLINDRICAL_SOURCE, "continuous_axial_volume_ion_beam_source")
+    geometry = spec["geometry_mm"]
+    radius = float(geometry["radius_mm"])
+    z_min = float(geometry["center_z_mm"]) - 0.5 * float(geometry["axial_length_mm"])
+    z_max = float(geometry["center_z_mm"]) + 0.5 * float(geometry["axial_length_mm"])
+    first_cone = resolved["geometry_mm"]["first_cone"]
+    if radius > float(first_cone["aperture_radius_mm"]):
+        raise ValueError("cylindrical source radius exceeds the first-cone aperture")
+    if z_min < -2.0 or z_max >= float(first_cone["aperture_reference_z_mm"]):
+        raise ValueError("cylindrical source must remain upstream of the first cone inside the PA")
+
+    source_csv = frozen / "cylindrical_ion_source.csv"
+    source_receipt = frozen / "cylindrical_ion_source_receipt.json"
+    receipt = materialize(CYLINDRICAL_SOURCE, source_csv, source_receipt)
+    offset_x, offset_y, offset_z = 25.5, 25.5, 2.0
+    beams: list[dict[str, Any]] = []
+    states: list[dict[str, Any]] = []
+    with source_csv.open(encoding="utf-8", newline="") as stream:
+        source_rows = list(csv.DictReader(stream))
+    for row in source_rows:
+        vx, vy, vz = (float(row[name]) for name in ("vx_m_s", "vy_m_s", "vz_m_s"))
+        mass = float(row["mass_amu"])
+        energy = kinetic_energy_ev(mass, vx, vy, vz)
+        x = offset_x + float(row["x_mm"])
+        y = offset_y + float(row["y_mm"])
+        z = offset_z + float(row["z_mm"])
+        tob = float(row["birth_time_s"]) * 1e6
+        beams.append({
+            "tob": format(tob, ".15g"), "mass": format(mass, ".15g"),
+            "charge": int(row["charge_state"]), "x": format(x, ".15g"),
+            "y": format(y, ".15g"), "z": format(z, ".15g"),
+            "direction": tuple(format(value, ".15g") for value in (vx, vy, vz)),
+            "ke": format(energy, ".15g"), "cwf": 1, "color": 3,
+        })
+        states.append({
+            "particle_id": int(row["particle_id"]), "t": tob, "x": x, "y": y, "z": z,
+            "vx": vx / 1000.0, "vy": vy / 1000.0, "vz": vz / 1000.0, "ke": energy,
+        })
+    fly2 = solver / "gas_source.fly2"
+    states_path = solver / "gas_source_states.lua"
+    fly2.write_text(render_standard_beams(beams), encoding="utf-8")
+    states_path.write_text(render_source_states(states), encoding="utf-8")
+    return fly2, states_path, receipt
 
 
 def prepare(
@@ -207,10 +299,31 @@ def prepare(
             for name in SDS_FILES
         }
         inputs["gas_field_manifest_identity"] = manifest
+        source_fly2, source_states, source_receipt = _materialize_gas_source(
+            frozen=frozen, solver=solver, resolved=resolved
+        )
+        inputs["cylindrical_ion_source_spec"] = freeze_file(
+            CYLINDRICAL_SOURCE, frozen / "cylindrical_ion_source.json"
+        )
+        inputs["cylindrical_ion_source_csv"] = {
+            "path": str((frozen / "cylindrical_ion_source.csv").resolve()),
+            "sha256": file_sha256(frozen / "cylindrical_ion_source.csv"),
+        }
+        inputs["cylindrical_ion_source_receipt"] = {
+            "path": str((frozen / "cylindrical_ion_source_receipt.json").resolve()),
+            "sha256": file_sha256(frozen / "cylindrical_ion_source_receipt.json"),
+            "identity": source_receipt,
+        }
+        inputs["particle_fly2"] = {"path": str(source_fly2), "sha256": file_sha256(source_fly2)}
+        inputs["source_states"] = {
+            "path": str(source_states), "sha256": file_sha256(source_states)
+        }
 
     run_config = solver / "run_config.lua"
     run_config.write_text(
-        _render_run_config(mode=mode, science=science, numerics=numerics, solver=solver),
+        _render_run_config(
+            mode=mode, science=science, numerics=numerics, resolved=resolved, solver=solver
+        ),
         encoding="utf-8",
     )
     inputs["simion_run_config"] = {"path": str(run_config), "sha256": file_sha256(run_config)}

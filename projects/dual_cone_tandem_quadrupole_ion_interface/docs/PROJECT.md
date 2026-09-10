@@ -54,8 +54,9 @@ COMSOL 气流成功只证明上游场计算完成，不证明离子传输。SIMI
 不得表述为跨求解器轨迹等价。若未来需要独立闭合，必须另建 COMSOL charged-particle workflow，并使
 两个轨迹求解器分别消费同一冻结气体场、源、电极和事件合同。
 
-当前 execution profile 只登记计划和静态门禁；公开 COMSOL run 生命周期、canonical gas-field 发布和
-SIMION Fly 入口没有全部闭合前，禁止把供应商任务脚本或任意导出 CSV 当作可执行证据入口。
+当前已有项目级 COMSOL 场编译入口和复用同一核心的真实 SIMION Fly 入口；execution profile 仍只登记
+计划和静态门禁。只有 COMSOL 最终 `400 Pa`、合同明确记录的终态稳定化参数解通过独立场校验，并由下游运行冻结全部
+来源哈希后，才可形成 Prototype 证据；任意中间 continuation 解或裸 CSV 都不是可执行证据入口。
 
 ## 已退役模型
 
@@ -70,10 +71,10 @@ SIMION Fly 入口没有全部闭合前，禁止把供应商任务脚本或任意
 | 层级 | 状态 |
 |---|---|
 | 几何与合同 Static | 可执行 |
-| COMSOL 轴对称空包络气流 | 可选升级；全后端 `400 Pa` Hybrid outlet 真实复算仍未收敛，不阻塞均匀场原型 |
-| canonical COMSOL→SIMION 气体场 | 校验、Lua编译和manifest已实现；待合格COMSOL场 |
+| COMSOL 轴对称空包络气流 | Prototype；`20260910_z120_empty_cfd_comsol` 已到 `400 Pa` 并通过 `0.848%` 质量守恒门禁 |
+| canonical COMSOL→SIMION 气体场 | Prototype run 内已校验并编译为带源合同哈希的 manifest；尚未登记全局 current artifact |
 | SIMION 几何编译 | Prototype；本机 `gem2pa/refine` 已通过 |
-| SIMION 气体辅助轨迹 | 均匀后端 `400 Pa` 快速原型已真实 Fly 通过；COMSOL 场仍为可选升级 |
+| SIMION 气体辅助轨迹 | Prototype；`20260910_z120_empty_cfd_simion_n100` 使用 COMSOL 场和官方 SDS 完成 N=100，80 个到达 `z=119.75 mm` |
 | 独立轨迹跨求解器闭合 | 未建立 |
 | CAD / GUI / Candidate / Formal | BLOCKED |
 
@@ -82,12 +83,11 @@ SIMION Fly 入口没有全部闭合前，禁止把供应商任务脚本或任意
 1. 确认两个锥角定义、朝向、实体孔口面、厚度、外径、孔筒和 `3 mm` 的机械测量对象。
 2. 确认椭圆杆有效长度、中心坐标、轴向方向、`7.48 mm` 的杆对定义，以及 `1.6 mm` 是轴向还是法向净距。
 3. 确认 `5.64 mm` 是相邻还是对置中心距、两组杆是否同轴，以及 `2 mm` 间是否存在 IQ0/孔板/绝缘板。
-4. 首轮原型使用已确认的全后端 `400 Pa` 理想恒压储槽；泵口位置、面积和有效抽速只作为未来实机定量升级所需信息，不阻塞原型。
-5. 若需要气流细节，再使 COMSOL 高马赫稳态伪时间/CFL 压力 continuation 完成到 `400 Pa`，验证质量守恒、网格和场覆盖并发布 canonical 场；随后再决定是否需要三维泵口模型。
+4. 对已通过的空包络 CFD 做网格/稳定化敏感性复核；孔板仍从 CFD 排除，除非后续科学问题明确要求板前积压、孔内射流或板后膨胀。
+5. 决定是否把本次合格 COMSOL 场发布为全局 current artifact；均匀 `400 Pa` 对照不能代替此场。
 6. 给出各锥、壳体、两段杆及出口件的 DC、两段 RF 频率/幅值口径/相位，以及目标离子、源分布、迁移率
    或 CCS；快速原型 Fly runner 已可执行，这些参数确认后再替换当前暂定值。
-7. 用 N≥100 的冻结母样本完成气体场依赖复核、SIMION GUI 可检查性、损失事件和canonical出口状态；
-   在此之前不开放 Candidate。
+7. 已完成 N=100 冻结母样本的首轮 Prototype；继续补充气体场依赖、RF/DC 参数、SIMION GUI 可检查性和损失事件复核后再开放 Candidate。
 8. 建立端部、绝缘、支撑、馈通和泵口机械细节，并完成 COMSOL GUI、SIMION GUI 与 SolidWorks 同步后
    才开放 Formal。
 

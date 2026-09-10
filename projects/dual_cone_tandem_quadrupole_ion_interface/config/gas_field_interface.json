@@ -16,9 +16,15 @@
       "schema_version",
       "role",
       "project_id",
+      "source",
       "coordinate_frame",
       "domain",
+      "interpolation_policy",
       "runtime_lua"
+    ],
+    "allowed_source_kinds": [
+      "validated_comsol_axisymmetric_rz",
+      "prescribed_uniform_rear_gas"
     ],
     "runtime_lua_required_functions": [
       "pressure_pa",
@@ -37,13 +43,13 @@
       "velocity": "m/s"
     },
     "domain": {
-      "minimum_z_mm": -2.0,
-      "maximum_z_mm": 108.0,
+      "minimum_z_mm": -5.0,
+      "maximum_z_mm": 120.0,
       "minimum_radius_mm": 0.0,
       "maximum_radius_mm": 23.5
     },
     "out_of_domain_policy": "error",
-    "interpolation_policy": "producer_owned_no_extrapolation"
+    "interpolation_policy": "bilinear_with_fluid_corner_weight_renormalization_in_cut_cells_no_domain_extrapolation"
   },
   "failure_policy": "gas_assisted_prepare_must_fail_before_simion_when_current_artifact_is_null_missing_or_hash_invalid"
 }

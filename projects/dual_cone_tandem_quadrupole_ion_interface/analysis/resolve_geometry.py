@@ -44,6 +44,7 @@ def resolve_geometry(baseline: dict[str, Any]) -> dict[str, Any]:
     enclosure = geometry["low_pressure_enclosure"]
     ellipse = geometry["elliptical_quadrupole"]
     round_rods = geometry["round_quadrupole"]
+    plate = geometry["downstream_aperture_plate"]
 
     first_angle = _positive("first cone included angle", first["included_angle_deg"])
     second_angle = _positive("second cone included angle", second["included_angle_deg"])
@@ -86,6 +87,17 @@ def resolve_geometry(baseline: dict[str, Any]) -> dict[str, Any]:
     )
     if not second_aperture_z < stage_1_axis_start_z < stage_1_end_z < stage_2_start_z < stage_2_end_z:
         raise ValueError("derived quadrupole axial sections are not strictly ordered")
+    plate_upstream_z = stage_2_end_z + _positive(
+        "downstream plate gap", plate["upstream_gap_from_round_quadrupole_end_mm"]
+    )
+    plate_downstream_z = plate_upstream_z + _positive(
+        "downstream plate thickness", plate["thickness_mm"]
+    )
+    observation_end_z = _positive(
+        "downstream observation end", plate["downstream_observation_end_z_mm"]
+    )
+    if observation_end_z <= plate_downstream_z:
+        raise ValueError("downstream observation end must follow the aperture plate")
 
     second_half_angle_rad = math.radians(second_angle / 2.0)
     first_half_angle_rad = math.radians(first_angle / 2.0)
@@ -200,6 +212,21 @@ def resolve_geometry(baseline: dict[str, Any]) -> dict[str, Any]:
                 "downstream_flat_end_z_mm": stage_2_end_z,
                 "rod_array": stage_2_rod_array,
             },
+            "downstream_aperture_plate": {
+                "upstream_gap_from_round_quadrupole_end_mm": float(
+                    plate["upstream_gap_from_round_quadrupole_end_mm"]
+                ),
+                "upstream_face_z_mm": plate_upstream_z,
+                "downstream_face_z_mm": plate_downstream_z,
+                "thickness_mm": float(plate["thickness_mm"]),
+                "aperture_radius_mm": 0.5 * _positive(
+                    "downstream plate aperture diameter", plate["aperture_diameter_mm"]
+                ),
+                "outer_radius_mm": truncation_radius,
+                "downstream_observation_end_z_mm": observation_end_z,
+                "post_plate_observation_length_mm": observation_end_z - plate_downstream_z,
+                "position_interpretation": plate["position_interpretation"],
+            },
         },
         "provisional_interpretations": [
             first["angle_interpretation"],
@@ -211,6 +238,7 @@ def resolve_geometry(baseline: dict[str, Any]) -> dict[str, Any]:
             ellipse["upstream_end_model"],
             round_rods["center_distance_interpretation"],
             round_rods["downstream_alignment"],
+            plate["position_interpretation"],
         ],
         "omitted_geometry": baseline["missing_mechanical_inputs"],
     }

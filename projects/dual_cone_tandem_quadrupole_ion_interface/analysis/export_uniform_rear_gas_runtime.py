@@ -80,8 +80,14 @@ return field
         "schema_version": contract["manifest_schema_version"],
         "role": contract["manifest_role"],
         "project_id": interface["project_id"],
+        "source": {
+            "kind": "prescribed_uniform_rear_gas",
+            "spec_sha256": file_sha256(spec_path),
+            "interface_sha256": file_sha256(interface_path),
+        },
         "coordinate_frame": contract["coordinate_frame"],
         "domain": domain,
+        "interpolation_policy": contract["interpolation_policy"],
         "runtime_lua": {"path": str(output_lua), "sha256": file_sha256(output_lua)},
     }
     output_manifest.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
