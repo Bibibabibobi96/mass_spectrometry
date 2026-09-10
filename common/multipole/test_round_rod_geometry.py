@@ -28,6 +28,16 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class RoundRodGeometryTest(unittest.TestCase):
+    def test_comsol_renderer_keeps_round_default_and_adds_explicit_ellipse(self):
+        source = (ROOT / "common/comsol/create_multipole_round_rods.m").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("if isRound", source)
+        self.assertIn("'Cylinder'", source)
+        self.assertIn("'ECone'", source)
+        self.assertIn("set('rat','1')", source)
+        self.assertIn("major_axis_angle_rad", source)
+
     def test_round_default_preserves_legacy_document_bytes_and_values(self):
         inputs = {
             "radial_order_n": 2,

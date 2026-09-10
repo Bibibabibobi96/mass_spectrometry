@@ -25,6 +25,8 @@ COMSOL/SIMION也不得反向改写设计。
 
 求解器无关杆阵列由[`round_rod_geometry.py`](round_rod_geometry.py)统一生成和判定。`build_rod_array`
 省略`cross_section`时保持既有圆杆输出；椭圆杆必须显式声明长短半轴及长轴为径向或切向，
+同一 resolved 杆合同由 SIMION GEM 渲染器和公共 COMSOL 杆生成器消费。COMSOL 圆杆仍使用历史
+`Cylinder` 分支，显式椭圆杆使用顶底比例为一的 `ECone`（椭圆柱），
 `points_inside_rods`对两种截面提供同一批量点内判定。既有`build_round_rod_array`仍是圆杆兼容入口。
 [`ideal_transport.py`](ideal_transport.py)同时提供与标量参考公式一致的NumPy批量RF波形和理想多极场适配，
 项目不得另存同义批量公式。
