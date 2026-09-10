@@ -2,14 +2,14 @@
   "schema_version": 1,
   "role": "dual_cone_simion_gas_field_interface",
   "project_id": "dual_cone_tandem_quadrupole_ion_interface",
-  "status": "implemented_pending_qualified_comsol_export",
+  "status": "implemented_with_uniform_rear_prototype_and_optional_comsol_upgrade",
   "producer": {
-    "solver": "COMSOL Multiphysics",
-    "required_physics": "compressible_flow_with_pressure_temperature_and_bulk_velocity",
+    "prototype": "declared_uniform_rear_reservoir",
+    "optional_upgrade": "COMSOL Multiphysics compressible flow",
     "current_artifact": null
   },
   "runtime_artifact_contract": {
-    "manifest_role": "dual_cone_comsol_gas_field_export",
+    "manifest_role": "dual_cone_gas_field_export",
     "manifest_schema_version": 1,
     "lua_role": "dual_cone_simion_gas_field_runtime",
     "required_manifest_keys": [
@@ -37,7 +37,7 @@
       "velocity": "m/s"
     },
     "domain": {
-      "minimum_z_mm": -1.0,
+      "minimum_z_mm": -2.0,
       "maximum_z_mm": 108.0,
       "minimum_radius_mm": 0.0,
       "maximum_radius_mm": 23.5

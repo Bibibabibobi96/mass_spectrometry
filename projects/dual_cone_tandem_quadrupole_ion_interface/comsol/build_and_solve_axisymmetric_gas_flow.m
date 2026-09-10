@@ -30,6 +30,7 @@ end
 
 g = geometry.geometry_mm;
 s = science.physics.gas_species;
+transport = science.physics.transport_model;
 bc = science.boundary_conditions;
 proxy = science.geometry_proxy;
 n = numerics;
@@ -56,15 +57,18 @@ setParameter(model, "r_enclosure", g.low_pressure_enclosure.radius_mm, "mm");
 setParameter(model, "z_end", g.low_pressure_enclosure.end_z_mm, "mm");
 setParameter(model, "p_in_total", bc.inlet.total_pressure_pa, "Pa");
 setParameter(model, "T_in_total", bc.inlet.total_temperature_k, "K");
+setParameter(model, "Ma_in", bc.inlet.mach_number, "1");
 setParameter(model, "p_out", bc.outlet.static_pressure_pa, "Pa");
 setParameter(model, "M_N2", s.molar_mass_kg_per_mol, "kg/mol");
 setParameter(model, "gamma_N2", s.specific_heat_ratio, "1");
 setParameter(model, "Cp_N2", s.specific_heat_capacity_cp_j_per_kg_k, "J/(kg*K)");
-setParameter(model, "k_N2", s.thermal_conductivity_w_per_m_k, "W/(m*K)");
-setParameter(model, "mu_ref", s.dynamic_viscosity_reference_pa_s, "Pa*s");
-setParameter(model, "T_mu_ref", s.dynamic_viscosity_reference_temperature_k, "K");
-setParameter(model, "S_mu", s.sutherland_temperature_k, "K");
+setParameter(model, "k_num", transport.thermal_conductivity_w_per_m_k, "W/(m*K)");
+setParameter(model, "mu_num", transport.dynamic_viscosity_pa_s, "Pa*s");
 setParameter(model, "R_univ", s.universal_gas_constant_j_per_mol_k, "J/(mol*K)");
+model.param.set("T_in_static", "T_in_total/(1+0.5*(gamma_N2-1)*Ma_in^2)");
+model.param.set("p_in_static", ...
+    "p_in_total/(1+0.5*(gamma_N2-1)*Ma_in^2)^(gamma_N2/(gamma_N2-1))");
+model.param.set("u_in", "Ma_in*sqrt(gamma_N2*(R_univ/M_N2)*T_in_static)");
 
 geom = model.component("comp1").geom("geom1");
 try
@@ -112,15 +116,17 @@ try
     hmnf = model.component("comp1").physics.create("hmnf", "HighMachNumberFlow", "geom1");
     inlet = hmnf.create("hminl1", "HighMachNumberFlowInlet", 1);
     inlet.selection.set(inletBoundaries);
-    inlet.set("FlowCondition", "Subsonic");
+    inlet.set("FlowCondition", "Supersonic");
     inlet.set("InputState", "TotalConditions");
     inlet.set("p0tot", "p_in_total");
     inlet.set("T0tot", "T_in_total");
+    inlet.set("Ma0", "Ma_in");
     outlet = hmnf.create("hmout1", "HighMachNumberFlowOutlet", 1);
     outlet.selection.set(outletBoundaries);
-    outlet.set("FlowCondition", "Subsonic");
+    outlet.set("FlowCondition", "HybridOutlet");
     outlet.set("BoundaryCondition", "Pressure");
-    outlet.set("p0", "p_out");
+    outlet.set("InputState", "StaticConditions");
+    outlet.set("p0stat", "p_out");
     wall = hmnf.feature("wallbc1");
     wall.set("BoundaryCondition", "Slip");
     fluid = hmnf.feature("fluid1");
@@ -130,12 +136,12 @@ try
     fluid.set("gamma_mat", "userdef");
     fluid.set("gamma", "gamma_N2");
     fluid.set("k_mat", "userdef");
-    fluid.set("k", {'k_N2', '0', '0', '0', 'k_N2', '0', '0', '0', 'k_N2'});
+    fluid.set("k", {'k_num', '0', '0', '0', 'k_num', '0', '0', '0', 'k_num'});
     fluid.set("mu_mat", "userdef");
-    fluid.set("mu", "mu_ref*(T/T_mu_ref)^(3/2)*(T_mu_ref+S_mu)/(T+S_mu)");
-    hmnf.feature("init1").set("u_init", {'0', '1[m/s]', '0'});
-    hmnf.feature("init1").set("p_init", "p_in_total");
-    hmnf.feature("init1").set("Tinit", "T_in_total");
+    fluid.set("mu", "mu_num");
+    hmnf.feature("init1").set("u_init", {'0', '0', 'u_in'});
+    hmnf.feature("init1").set("p_init", "p_in_static");
+    hmnf.feature("init1").set("Tinit", "T_in_static");
 catch exception
     throwAsCaller(addCause(MException("GasFlow:HighMachAPI", ...
         "The installed COMSOL version does not accept the declared High Mach Number Flow " + ...
@@ -154,18 +160,37 @@ try
     sizeFeature.set("hnarrow", n.mesh.narrow_region_resolution);
     mesh.run;
     study = model.study.create("std1");
-    study.create("stat", "Stationary");
+    stationary = study.create("stat", "Stationary");
     continuation = n.study.outlet_pressure_continuation_pa(:).';
     model.param.set("p_out", sprintf("%.17g[Pa]", continuation(1)));
-    study.feature("stat").set("useparam", true);
-    study.feature("stat").setIndex("pname", "p_out", 0);
-    study.feature("stat").setIndex("plistarr", strjoin(string(continuation), " "), 0);
-    study.feature("stat").setIndex("punit", "Pa", 0);
+    stationary.set("useparam", true);
+    stationary.setIndex("pname", "p_out", 0);
+    stationary.setIndex("plistarr", strjoin(string(continuation), " "), 0);
+    stationary.setIndex("punit", "Pa", 0);
     study.createAutoSequences("all");
+    stationarySolver = model.sol("sol1").feature("s1");
+    stationarySolver.create("se1", "Segregated");
+    segregated = stationarySolver.feature("se1");
+    segregated.feature.remove("ssDef");
+    segregated.create("ss1", "SegregatedStep");
+    segregated.feature("ss1").set("segvar", {'comp1_T', 'comp1_p', 'comp1_u'});
+    segregated.feature("ss1").set("subdamp", n.solver.segregated_damping);
+    segregated.feature("ss1").set("linsolver", "d1");
+    segregated.set("segstabacc", "segcflcmp");
+    segregated.set("segcfltech", "simple");
+    segregated.set("subinitcfl", n.solver.initial_cfl);
+    segregated.set("submincfl", n.solver.target_cfl);
+    segregated.set("maxsegiter", n.solver.maximum_segregated_iterations);
+    segregated.create("ll1", "LowerLimit");
+    lowerLimits = sprintf("comp1.T %.17g comp1.p %.17g ", ...
+        n.solver.iteration_lower_limits.temperature_k, ...
+        n.solver.iteration_lower_limits.pressure_pa);
+    segregated.feature("ll1").set("lowerlimit", lowerLimits);
+    stationarySolver.feature.remove("fc1");
     model.sol("sol1").runAll;
 catch exception
     throwAsCaller(addCause(MException("GasFlow:Solve", ...
-        "Meshing, continuation, or stationary solve failed; no export was emitted."), exception));
+        "Meshing or stationary pseudo-time continuation failed; no export was emitted."), exception));
 end
 
 artifacts = n.artifact_names;
@@ -184,7 +209,7 @@ zValues = -science.geometry_proxy.upstream_feed_length_mm:grid.axial_step_mm:g.l
 [rGrid, zGrid] = meshgrid(rValues, zValues);
 query = [reshape(rGrid.', 1, []); reshape(zGrid.', 1, [])];
 try
-    sampled = mphinterp(model, {"p", "T", "v", "u"}, "coord", query, "ext", 0);
+    sampled = mphinterp(model, {"p", "T", "w", "u"}, "coord", query, "ext", 0);
 catch exception
     throwAsCaller(addCause(MException("GasFlow:ExportAPI", ...
         "COMSOL field interpolation failed; no export is valid."), exception));
@@ -194,6 +219,11 @@ temperature = reshape(sampled(2, :), size(rGrid.')).';
 uZ = reshape(sampled(3, :), size(rGrid.')).';
 uR = reshape(sampled(4, :), size(rGrid.')).';
 fluidMask = isfinite(p) & isfinite(temperature) & isfinite(uZ) & isfinite(uR);
+if any(temperature(fluidMask) <= numerics.solver.iteration_lower_limits.temperature_k) || ...
+        any(p(fluidMask) <= numerics.solver.iteration_lower_limits.pressure_pa)
+    error("GasFlow:LowerLimitActive", ...
+        "A converged field touches an iteration lower limit and is not physically valid.");
+end
 s = science.physics.gas_species;
 rho = p .* s.molar_mass_kg_per_mol ./ (s.universal_gas_constant_j_per_mol_k .* temperature);
 soundSpeed = sqrt(s.specific_heat_ratio .* s.universal_gas_constant_j_per_mol_k ./ ...
@@ -221,8 +251,10 @@ csvPath = fullfile(outputDir, numerics.artifact_names.field_csv);
 writetable(tableOut, csvPath);
 
 try
-    massIn = mphint2(model, "-2*pi*r*(p*M_N2/(R_univ*T))*v", "line", "selection", inletIds);
-    massOut = mphint2(model, "2*pi*r*(p*M_N2/(R_univ*T))*v", "line", "selection", outletIds);
+    massIn = mphint2(model, "-2*pi*r*(p*M_N2/(R_univ*T))*w", "line", ...
+        "selection", inletIds);
+    massOut = mphint2(model, "2*pi*r*(p*M_N2/(R_univ*T))*w", "line", ...
+        "selection", outletIds);
 catch exception
     throwAsCaller(addCause(MException("GasFlow:MassBalanceAPI", ...
         "Boundary mass-flow integration failed; metadata was not emitted."), exception));

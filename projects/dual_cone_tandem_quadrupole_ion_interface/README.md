@@ -24,28 +24,29 @@
 | COMSOL 气流物理 | [`config/gas_flow_science.json`](config/gas_flow_science.json) |
 | COMSOL 数值 | [`config/comsol_solver_numerics.json`](config/comsol_solver_numerics.json) |
 | COMSOL→SIMION 气体场接口 | [`config/gas_field_interface.json`](config/gas_field_interface.json) |
+| 均匀后端 400 Pa 原型场 | [`config/uniform_rear_gas_field.json`](config/uniform_rear_gas_field.json) |
 | SIMION 离子输运物理 | [`config/ion_transport_science.json`](config/ion_transport_science.json) |
 | SIMION 数值 | [`config/simion_solver_numerics.json`](config/simion_solver_numerics.json) |
 | 计划级执行能力 | [`config/execution_profiles.json`](config/execution_profiles.json) |
 
 ## 当前工作流边界
 
-权威方向固定为：
+最简快速原型的权威方向为：
 
 ```text
-COMSOL 可压缩气流 run
-  → canonical gas-field + 来源 manifest
+规定的后端 400 Pa / 300 K / 100 m/s 气体场
+  → 哈希冻结的 Lua gas-field + manifest
   → SIMION 气体辅助轨迹 run
-  → canonical particle state / events
+  → trajectory samples + particle final state
 ```
 
-COMSOL 气流与 SIMION 轨迹是两个不同科学声明。SIMION 必须消费复制到本次 run、经哈希复核的
-canonical 气体场和成功 COMSOL manifest；不得目录搜索“最新场”。这是一条依赖链，不是两个求解器
-对同一轨迹物理的独立闭合。
+一条命令入口是
+[`workflows/gas_assisted_transport/run_uniform_400pa_prototype.ps1`](workflows/gas_assisted_transport/run_uniform_400pa_prototype.ps1)。
+它不调用 COMSOL；COMSOL 可压缩气流是以后替换规定气体场的升级路径。两种气体场都必须先生成
+本次 run 专属、经哈希复核的 manifest，SIMION 不得目录搜索“最新场”。
 
-当前只注册两个 `plan` profile；公开 COMSOL run 生命周期、canonical gas-field handoff 和 SIMION Fly
-入口尚未全部闭合，因此不能从 execution profile 启动商业求解。项目内 MATLAB 任务和 SIMION GEM
-编译器是受测实现部件，不是绕过 run 生命周期的第二公开入口。几何新鲜度入口为：
+当前 execution profile 仍只注册两个 `plan` profile；均匀 400 Pa 快速原型已有项目级公开 Fly 入口，
+但还不是 Candidate/Formal 资格。COMSOL 场升级仍保持失败关闭。几何新鲜度入口为：
 
 ```powershell
 python -m projects.dual_cone_tandem_quadrupole_ion_interface.analysis.resolve_geometry --check

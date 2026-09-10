@@ -42,17 +42,20 @@ try {
       'config\gas_flow_science.json',
       'config\comsol_solver_numerics.json',
       'config\gas_field_interface.json',
+      'config\uniform_rear_gas_field.json',
       'config\ion_transport_science.json',
       'config\simion_solver_numerics.json',
       'comsol\build_and_solve_axisymmetric_gas_flow.m',
       'analysis\validate_gas_field.py',
       'analysis\export_simion_gas_runtime.py',
-      'simion\geometry.py'
+      'analysis\export_uniform_rear_gas_runtime.py',
+      'simion\geometry.py',
+      'workflows\gas_assisted_transport\run_uniform_400pa_prototype.ps1'
     )
     foreach ($relativePath in $requiredProjectFiles) {
       $requiredPath = Join-Path $projectRoot $relativePath
       if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
-        throw "COMSOL gas-flow authority file is missing: $relativePath"
+        throw "Dual-cone authority file is missing: $relativePath"
       }
     }
 
@@ -81,7 +84,7 @@ try {
     }
 
     if ($Level -ne 'Static') {
-      throw "PROJECT_GATE=BLOCKED PROJECT=dual_cone_tandem_quadrupole_ion_interface LEVEL=$Level REASON=comsol_gas_field_to_simion_trajectory_chain_not_qualified"
+      throw "PROJECT_GATE=BLOCKED PROJECT=dual_cone_tandem_quadrupole_ion_interface LEVEL=$Level REASON=single_ion_uniform_gas_prototype_not_candidate_qualified"
     }
   } finally {
     Pop-Location

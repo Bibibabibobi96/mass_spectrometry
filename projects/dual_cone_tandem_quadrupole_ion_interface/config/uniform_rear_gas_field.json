@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "role": "dual_cone_uniform_rear_gas_field",
+  "project_id": "dual_cone_tandem_quadrupole_ion_interface",
+  "model_id": "uniform_400pa_plug_flow_prototype_v1",
+  "rear_region": {
+    "start_z_mm": 3.0,
+    "pressure_pa": 400.0,
+    "temperature_k": 300.0,
+    "axial_velocity_m_per_s": 100.0,
+    "radial_velocity_m_per_s": 0.0
+  },
+  "upstream_collision_proxy": {
+    "pressure_pa": 0.0,
+    "interpretation": "collisions before the second aperture are omitted; ions are initialized as already desolvated"
+  },
+  "enabled_physics": [
+    "simion_electrostatic_and_rf_trajectory",
+    "simion_official_sds_collisions",
+    "sds_diffusion",
+    "prescribed_axial_carrier_velocity"
+  ],
+  "disabled_physics": [
+    "comsol_cfd",
+    "pressure_gradient",
+    "gas_expansion",
+    "pump_geometry",
+    "space_charge",
+    "droplet_desolvation",
+    "ion_chemistry"
+  ],
+  "claim_scope": "fast_qualitative_trajectory_prototype_only"
+}

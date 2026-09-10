@@ -17,9 +17,13 @@ from projects.dual_cone_tandem_quadrupole_ion_interface.simion.prepare import (
     prepare,
     validate_gas_field_manifest,
 )
+from projects.dual_cone_tandem_quadrupole_ion_interface.analysis.export_uniform_rear_gas_runtime import (
+    export_uniform_runtime,
+)
 
 
 PROJECT = Path(__file__).resolve().parents[1]
+UNIFORM_RUNNER = PROJECT / "workflows" / "gas_assisted_transport" / "run_uniform_400pa_prototype.ps1"
 
 
 def load(path: Path) -> dict:
@@ -50,8 +54,22 @@ class SimionGeometryTests(unittest.TestCase):
         self.assertIn("loadfile(assert(config.rf_drive_kernel))", program)
         self.assertIn("simion.import(assert(config.collision_sds_lua), 'noinstall')", program)
         self.assertIn("SDS.install()", program)
+        self.assertNotIn("adj_electrode", program)
+        self.assertIn("adj_elect[id] = voltage", program)
+        self.assertIn("apply_at(ion_time_of_flight, set_electrode_voltage)", program)
+        self.assertIn("stage_1.timestep_cap_us, stage_2.timestep_cap_us", program)
         self.assertEqual(program.count("function segment.fast_adjust()"), 1)
         self.assertEqual(program.count("function segment.tstep_adjust()"), 1)
+        self.assertEqual(program.count("function segment.terminate()"), 1)
+        self.assertIn("trajectory_samples.csv", (PROJECT / "simion" / "prepare.py").read_text(encoding="utf-8"))
+
+    def test_uniform_runner_reuses_common_iob_builder_and_real_simion_fly(self) -> None:
+        runner = UNIFORM_RUNNER.read_text(encoding="utf-8")
+        self.assertIn("run_c0_gem_smoke.ps1", runner)
+        self.assertIn("build_simion_runtime_iob.lua", runner)
+        self.assertIn("--nogui --noprompt fly", runner)
+        self.assertIn("SDS_collision_gas_mass_amu", runner)
+        self.assertIn("prototype_run_report.json", runner)
 
 
 class GasPreparationTests(unittest.TestCase):
@@ -75,7 +93,7 @@ class GasPreparationTests(unittest.TestCase):
             )
             manifest = {
                 "schema_version": 1,
-                "role": "dual_cone_comsol_gas_field_export",
+                "role": "dual_cone_gas_field_export",
                 "project_id": "dual_cone_tandem_quadrupole_ion_interface",
                 "coordinate_frame": interface["runtime_artifact_contract"]["coordinate_frame"],
                 "domain": interface["runtime_artifact_contract"]["domain"],
@@ -103,7 +121,7 @@ class GasPreparationTests(unittest.TestCase):
             )
             manifest = {
                 "schema_version": 1,
-                "role": "dual_cone_comsol_gas_field_export",
+                "role": "dual_cone_gas_field_export",
                 "project_id": "dual_cone_tandem_quadrupole_ion_interface",
                 "coordinate_frame": interface["runtime_artifact_contract"]["coordinate_frame"],
                 "domain": interface["runtime_artifact_contract"]["domain"],
@@ -122,6 +140,19 @@ class GasPreparationTests(unittest.TestCase):
             self.assertEqual(set(frozen), set(SDS_FILES))
             for record in frozen.values():
                 self.assertEqual(file_sha256(Path(record["frozen_path"])), record["sha256"])
+
+    def test_uniform_rear_runtime_keeps_400_pa_and_zeroes_upstream_collisions(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runtime = root / "field.lua"
+            manifest_path = root / "manifest.json"
+            manifest = export_uniform_runtime(runtime, manifest_path)
+            source = runtime.read_text(encoding="utf-8")
+            self.assertEqual(manifest["role"], "dual_cone_gas_field_export")
+            self.assertIn("local p_rear, p_upstream = 400, 0", source)
+            self.assertIn("local z_rear = 3", source)
+            self.assertIn("local uz_rear, ur_rear = 100, 0", source)
+            validate_gas_field_manifest(manifest_path, load(GAS_INTERFACE))
 
 
 if __name__ == "__main__":

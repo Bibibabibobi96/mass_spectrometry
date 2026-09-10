@@ -116,14 +116,22 @@ class GasFlowContractTests(unittest.TestCase):
         gamma = science["physics"]["gas_species"]["specific_heat_ratio"]
         critical_ratio = (2.0 / (gamma + 1.0)) ** (gamma / (gamma - 1.0))
         self.assertLess(outlet / inlet, critical_ratio)
+        self.assertEqual(science["boundary_conditions"]["inlet"]["mach_number"], 1.0)
         self.assertTrue(science["geometry_proxy"]["excluded_geometry"])
         self.assertEqual(
             science["export_contract"]["coordinate_order"],
             "z_major_then_r_minor",
         )
-        self.assertEqual(
-            numerics["study"]["outlet_pressure_continuation_pa"][-1], outlet
+        continuation = numerics["study"]["outlet_pressure_continuation_pa"]
+        self.assertEqual(continuation[-1], outlet)
+        self.assertTrue(all(a > b for a, b in zip(continuation, continuation[1:])))
+        self.assertGreater(
+            numerics["solver"]["iteration_lower_limits"]["temperature_k"], 0.0
         )
+        self.assertGreater(
+            numerics["solver"]["iteration_lower_limits"]["pressure_pa"], 0.0
+        )
+        self.assertEqual(outlet, 400.0)
 
     def test_valid_field_fixture_passes_fail_closed_validator(self) -> None:
         validator = _load_validator()
@@ -173,7 +181,7 @@ class GasFlowContractTests(unittest.TestCase):
                 GEOMETRY_PATH,
                 interface_path,
             )
-            self.assertEqual(manifest["role"], "dual_cone_comsol_gas_field_export")
+            self.assertEqual(manifest["role"], "dual_cone_gas_field_export")
             self.assertRegex(manifest["runtime_lua"]["sha256"], r"^[0-9a-f]{64}$")
             source = lua_path.read_text(encoding="utf-8")
             self.assertIn("field.pressure_pa = function", source)
@@ -187,14 +195,26 @@ class GasFlowContractTests(unittest.TestCase):
             "axisymmetric(true)",
             '"gas_flow_science.json"',
             '"comsol_solver_numerics.json"',
-            "outlet_pressure_continuation_pa",
+            'study.create("stat", "Stationary")',
+            'inlet.set("FlowCondition", "Supersonic")',
+            'outlet.set("FlowCondition", "HybridOutlet")',
+            'outlet.set("BoundaryCondition", "Pressure")',
+            'outlet.set("p0stat", "p_out")',
+            'stationarySolver.create("se1", "Segregated")',
+            'segregated.create("ll1", "LowerLimit")',
+            'segregated.set("segstabacc", "segcflcmp")',
+            '{"p", "T", "w", "u"}',
+            "))*w",
+            '"GasFlow:LowerLimitActive"',
             "mphinterp",
             "mass_balance_relative_error",
         ):
             self.assertIn(token, builder)
         self.assertIn("STATUS=PASS", runner)
         self.assertIn("STATUS=FAIL", runner)
+        self.assertIn("STATUS=RUNNING", runner)
         self.assertIn("rethrow(exception)", runner)
+        self.assertNotIn('{"p", "T", "v", "u"}', builder)
         for hidden_physical_value in ("101325", "3.7e-10"):
             self.assertNotIn(hidden_physical_value, builder)
 

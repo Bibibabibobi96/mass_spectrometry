@@ -99,19 +99,25 @@ def _render_run_config(
     gas = science["gas"]
     collision_lua = solver / "collision_sds" / "collision_sds.lua"
     gas_lua = solver / "gas_field_runtime.lua"
+    results = solver.parents[1] / "results"
     return "\n".join([
         "return {",
         f"  mode={_lua_string(mode)},",
         f"  rf_drive_kernel={_lua_string(solver / 'simion_rf_drive.lua')},",
         f"  collision_sds_lua={_lua_string(collision_lua)},",
         f"  gas_field_lua={_lua_string(gas_lua)},",
+        f"  trajectory_csv={_lua_string(results / 'trajectory_samples.csv')},",
+        f"  final_state_csv={_lua_string(results / 'particle_final_state.csv')},",
+        "  trajectory_sample_interval_us=1,",
         f"  stage_1={stage_record('stage_1')},",
         f"  stage_2={stage_record('stage_2')},",
         f"  first_cone_v={science['electric_field']['static_electrodes_v']['first_cone']:.15g},",
         f"  second_cone_v={science['electric_field']['static_electrodes_v']['second_cone']:.15g},",
         f"  rf_steps_per_period={int(trajectory['rf_steps_per_period'])},",
         f"  maximum_time_us={trajectory['maximum_time_us']:.15g},",
-        f"  downstream_workbench_z_mm={110.0:.15g},",
+        # Stop one half PA cell before the 108 mm physical end so SDS does not
+        # evaluate the gas field beyond its declared domain on the terminal step.
+        f"  downstream_workbench_z_mm={109.75:.15g},",
         f"  device_x_offset_mm={25.5:.15g},device_y_offset_mm={25.5:.15g},device_z_offset_mm={2.0:.15g},",
         f"  random_seed={int(trajectory['random_seed'])},",
         f"  collision_gas_mass_amu={gas['collision_gas_mass_amu']:.15g},",
@@ -157,6 +163,7 @@ def prepare(
     solver = output_dir / "solver" / "simion"
     frozen.mkdir(parents=True, exist_ok=True)
     solver.mkdir(parents=True, exist_ok=True)
+    (output_dir / "results").mkdir(parents=True, exist_ok=True)
     gem = solver / "dual_cone_tandem.gem"
     gem.write_text(render_gem(resolved, numerics), encoding="utf-8")
     inputs: dict[str, Any] = {

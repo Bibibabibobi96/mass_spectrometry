@@ -10,6 +10,7 @@ if ~isfolder(outputDir)
     mkdir(outputDir);
 end
 reportPath = fullfile(outputDir, "comsol_run_report.txt");
+writeReport(reportPath, compose("STATUS=RUNNING\nTASK=axisymmetric_gas_flow\n"));
 try
     result = build_and_solve_axisymmetric_gas_flow(projectRoot, outputDir);
     report = compose("STATUS=PASS\nMODEL=%s\nFIELD=%s\nMETADATA=%s\n", ...
