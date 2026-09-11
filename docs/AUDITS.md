@@ -4,6 +4,7 @@
 
 ## 文档整治
 
+- [2026-09-11 全量整治、逐文件处置与验证报告](history/20260911__documentation-system-reform.md)
 
 - [2026-09-11 公共参考文档与旧台账合并](history/20260911__reference-documentation-consolidation.md)
 
