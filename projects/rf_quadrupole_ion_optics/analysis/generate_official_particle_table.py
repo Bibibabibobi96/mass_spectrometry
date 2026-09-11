@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 
 from common.contracts.particle_physics import AMU_KG, ELEMENTARY_CHARGE_C
-from common.contracts.particle_count_policy import validate_standard_particle_count
+from common.contracts.particle_count_policy import validate_positive_particle_count
 from common.multipole.particle_source_preflight import COLUMNS
 
 
@@ -21,9 +21,9 @@ STANDARD_COUNTS = (100, 1000)
 
 
 def generate(count: int = 100) -> np.ndarray:
-    validate_standard_particle_count(count)
+    validate_positive_particle_count(count)
     rng = np.random.default_rng(SEED)
-    n = MASTER_COUNT
+    n = max(MASTER_COUNT, count)
     birth = rng.uniform(0.0, 0.909091, n)
     y = rng.uniform(-0.05, 0.05, n)
     z = rng.uniform(-0.05, 0.05, n)
@@ -95,7 +95,7 @@ def main() -> None:
     parser.add_argument("--check", type=Path)
     parser.add_argument("--check-canonical", type=Path)
     parser.add_argument("--resolved-design", type=Path)
-    parser.add_argument("--particles", type=int, choices=STANDARD_COUNTS, default=100)
+    parser.add_argument("--particles", type=int, default=100)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--canonical-output", type=Path)
     args = parser.parse_args()

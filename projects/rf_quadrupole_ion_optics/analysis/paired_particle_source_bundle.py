@@ -20,7 +20,7 @@ from common.contracts.particle_count_policy import (
     POLICY_PATH,
     load_particle_count_policy,
     validate_prefix_particle_sources,
-    validate_standard_particle_count,
+    validate_positive_particle_count,
 )
 from common.multipole.particle_source_preflight import COLUMNS, validate_source
 
@@ -288,7 +288,10 @@ def _generate_table_prefix(
     seed: int,
 ) -> np.ndarray:
     _, _, statistical_count = _policy_counts()
-    latent = _sample_latent(distribution, seed, statistical_count)
+    validate_positive_particle_count(count)
+    # Preserve the registered N=100/N=1000 prefixes while allowing a caller
+    # to request a larger deterministic realization without silent truncation.
+    latent = _sample_latent(distribution, seed, max(count, statistical_count))
     table, _ = _build_ion_table(family["operating_points"][point_id], distribution, latent)
     return table[:count]
 
@@ -592,7 +595,7 @@ def generate_single_table(
     seed: int | None = None,
 ) -> dict[str, Any]:
     """Generate one ION table from a caller-selected latent-family point."""
-    validate_standard_particle_count(particle_count)
+    validate_positive_particle_count(particle_count)
     family, distribution = _load_inputs(source_family_path, distribution_path)
     if operating_point_id not in family["operating_points"]:
         raise ValueError(f"unknown operating point: {operating_point_id}")
