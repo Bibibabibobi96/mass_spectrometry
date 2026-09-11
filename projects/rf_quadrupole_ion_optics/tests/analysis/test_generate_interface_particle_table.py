@@ -14,6 +14,9 @@ from pathlib import Path
 import numpy as np
 
 from common.contracts.particle_state import canonical_sources, ion11_sources
+from projects.rf_quadrupole_ion_optics.analysis.generate_official_particle_table import (
+    generate as generate_official_table,
+)
 from projects.rf_quadrupole_ion_optics.analysis.paired_particle_source_bundle import (
     generate_bundle as generate_neutral_bundle,
     generate_single_table,
@@ -100,7 +103,7 @@ class InterfaceParticleTableTests(unittest.TestCase):
             distribution_path.write_text(json.dumps(distribution), encoding="utf-8")
             family_path.write_text(json.dumps(family), encoding="utf-8")
             tables = {}
-            for count in (100, 1000):
+            for count in (100, 1000, 1001, 1002):
                 output = root / f"n{count}.ion"
                 generate_single_table(
                     family_path,
@@ -112,6 +115,16 @@ class InterfaceParticleTableTests(unittest.TestCase):
                 )
                 tables[count] = np.loadtxt(output, delimiter=",")
             self.assertTrue(np.array_equal(tables[100], tables[1000][:100]))
+            self.assertTrue(np.array_equal(tables[1000], tables[1001][:1000]))
+            self.assertTrue(np.array_equal(tables[1001], tables[1002][:1001]))
+
+    def test_official_source_allows_counts_above_registered_samples(self) -> None:
+        n1000 = generate_official_table(1000)
+        n1001 = generate_official_table(1001)
+        n1002 = generate_official_table(1002)
+        self.assertEqual(n1001.shape, (1001, 11))
+        self.assertTrue(np.array_equal(n1000, n1001[:1000]))
+        self.assertTrue(np.array_equal(n1001, n1002[:1001]))
 
     def test_paired_bundle_freezes_prefixes_mapping_and_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as root_text:

@@ -17,19 +17,16 @@ from common.multipole.particle_source_preflight import COLUMNS
 
 SEED = 20260716
 MASTER_COUNT = 1000
-STANDARD_COUNTS = (100, 1000)
 
 
-def generate(count: int = 100) -> np.ndarray:
-    validate_positive_particle_count(count)
+def _generate_legacy(count: int) -> np.ndarray:
     rng = np.random.default_rng(SEED)
-    n = max(MASTER_COUNT, count)
-    birth = rng.uniform(0.0, 0.909091, n)
-    y = rng.uniform(-0.05, 0.05, n)
-    z = rng.uniform(-0.05, 0.05, n)
-    energy = rng.uniform(1.8, 2.2, n)
-    phi = rng.uniform(0.0, 2.0 * np.pi, n)
-    cos_theta = rng.uniform(np.cos(np.deg2rad(5.0)), 1.0, n)
+    birth = rng.uniform(0.0, 0.909091, count)
+    y = rng.uniform(-0.05, 0.05, count)
+    z = rng.uniform(-0.05, 0.05, count)
+    energy = rng.uniform(1.8, 2.2, count)
+    phi = rng.uniform(0.0, 2.0 * np.pi, count)
+    cos_theta = rng.uniform(np.cos(np.deg2rad(5.0)), 1.0, count)
     theta = np.arccos(cos_theta)
     vx = np.cos(theta)
     vy = np.sin(theta) * np.cos(phi)
@@ -37,10 +34,45 @@ def generate(count: int = 100) -> np.ndarray:
     azimuth = np.rad2deg(np.arctan2(vy, vx))
     elevation = np.rad2deg(np.arcsin(vz))
     master = np.column_stack(
-        [birth, np.full(n, 100.0), np.ones(n), np.zeros(n), y, z,
-         azimuth, elevation, energy, np.ones(n), np.full(n, 3.0)]
+        [birth, np.full(count, 100.0), np.ones(count), np.zeros(count), y, z,
+         azimuth, elevation, energy, np.ones(count), np.full(count, 3.0)]
     )
-    return master[:count]
+    return master
+
+
+def generate(count: int = 100) -> np.ndarray:
+    validate_positive_particle_count(count)
+    legacy = _generate_legacy(MASTER_COUNT)
+    if count <= MASTER_COUNT:
+        return legacy[:count]
+    extension_count = count - MASTER_COUNT
+    streams = np.random.SeedSequence(SEED).spawn(6)
+    birth_rng, y_rng, z_rng, energy_rng, phi_rng, theta_rng = (
+        np.random.default_rng(stream) for stream in streams
+    )
+    birth = birth_rng.uniform(0.0, 0.909091, extension_count)
+    y = y_rng.uniform(-0.05, 0.05, extension_count)
+    z = z_rng.uniform(-0.05, 0.05, extension_count)
+    energy = energy_rng.uniform(1.8, 2.2, extension_count)
+    phi = phi_rng.uniform(0.0, 2.0 * np.pi, extension_count)
+    cos_theta = theta_rng.uniform(np.cos(np.deg2rad(5.0)), 1.0, extension_count)
+    theta = np.arccos(cos_theta)
+    extension = np.column_stack(
+        [
+            birth,
+            np.full(extension_count, 100.0),
+            np.ones(extension_count),
+            np.zeros(extension_count),
+            y,
+            z,
+            np.rad2deg(np.arctan2(np.sin(theta) * np.cos(phi), np.cos(theta))),
+            np.rad2deg(np.arcsin(np.sin(theta) * np.sin(phi))),
+            energy,
+            np.ones(extension_count),
+            np.full(extension_count, 3.0),
+        ]
+    )
+    return np.vstack([legacy, extension])
 
 
 def generate_canonical(count: int, resolved_design: dict[str, object]) -> list[dict[str, str]]:

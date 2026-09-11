@@ -75,7 +75,7 @@ def _bundle_particle_counts(
     return sorted(counts, reverse=True)
 
 
-def _sample_latent(
+def _sample_legacy_latent(
     distribution: dict[str, Any], seed: int, count: int
 ) -> dict[str, np.ndarray]:
     rng = np.random.default_rng(seed)
@@ -105,6 +105,43 @@ def _sample_latent(
         "phi_rad": phi,
         "cos_theta": cos_theta,
     }
+
+
+def _sample_latent(
+    distribution: dict[str, Any], seed: int, count: int
+) -> dict[str, np.ndarray]:
+    """Sample a prefix-stable latent family without changing registered N=1000 rows."""
+    _, _, statistical_count = _policy_counts()
+    legacy = _sample_legacy_latent(distribution, seed, min(count, statistical_count))
+    if count <= statistical_count:
+        return legacy
+    extension_count = count - statistical_count
+    birth_contract = distribution["time_of_birth_us"]
+    position = distribution["position_mm"]
+    half_angle = np.deg2rad(distribution["direction"]["half_angle_deg"])
+    streams = np.random.SeedSequence(seed).spawn(6)
+    generators = [np.random.default_rng(stream) for stream in streams]
+    extension = {
+        "birth_time_us": generators[0].uniform(
+            birth_contract["min"], birth_contract["max"], extension_count
+        ),
+        "transverse_1_mm": generators[1].uniform(
+            position["transverse_1"]["min"],
+            position["transverse_1"]["max"],
+            extension_count,
+        ),
+        "transverse_2_mm": generators[2].uniform(
+            position["transverse_2"]["min"],
+            position["transverse_2"]["max"],
+            extension_count,
+        ),
+        "energy_quantile": generators[3].random(extension_count),
+        "phi_rad": generators[4].uniform(0.0, 2.0 * np.pi, extension_count),
+        "cos_theta": generators[5].uniform(
+            np.cos(half_angle), 1.0, extension_count
+        ),
+    }
+    return {name: np.concatenate([legacy[name], extension[name]]) for name in legacy}
 
 
 def _latent_sha256(latent: dict[str, np.ndarray]) -> str:
