@@ -44,7 +44,11 @@ IOB 路径写入该项目 `docs/SIMION.md` 或 `docs/PROJECT.md`。
   供应商进程退出后必须复核完整源family并清理临时副本目录。
 - hard link曾在初次实跑后被SIMION延迟写回并改变源`pa4`，所以只读属性不算隔离。修复后的公共路径已在
   `20260915_080000__sim__simion__mrtof-transient-shortcopy-smoke-n1`通过五组局域合成、八实例装配和真实
-  单粒子飞行；运行前后family完整性与终态manifest均通过。此问题在
+  单粒子飞行；运行前后family完整性与终态manifest均通过。随后，669,209,300-byte分析器PA在
+  `20260916_050000__sim__simion__mrtof-return-grid-natural-return-n1-r49`暴露单次复制后立即校验不稳定；公共入口
+  现以最多三次完整重复制进行有界重试，每次仍要求源复制前后长度和SHA-256不变、目标长度和SHA-256与原源完全
+  一致，耗尽即失败关闭。`20260916_053000__sim__simion__mrtof-return-grid-natural-return-n1-r50`已使用该实现完成
+  完整分析器PA、五个局域PA0、装配及真实SIMION飞行，并自然命中独立探测器。此问题在
   “SIMION只读长PA输入”范围内视为已关闭；原生`.paN` family调整仍必须物化完整可写副本。
 - 实现、测试、官方依据和真实run身份由
   [`common/simion/README.md`](../common/simion/README.md)统一记录，其他Agent先复用并运行该回归测试，不再重新

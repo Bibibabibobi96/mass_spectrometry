@@ -13,7 +13,8 @@ function New-ShortPaCopy {
   [CmdletBinding()]
   param(
     [Parameter(Mandatory)][string]$Source,
-    [Parameter(Mandatory)][string]$Destination
+    [Parameter(Mandatory)][string]$Destination,
+    [ValidateRange(1,10)][int]$VerificationAttempts=3
   )
   $sourcePath=(Resolve-Path -LiteralPath $Source).Path
   if(-not(Test-Path -LiteralPath $sourcePath -PathType Leaf)){
@@ -28,16 +29,35 @@ function New-ShortPaCopy {
     New-Item -ItemType Directory -Path $parent|Out-Null
   }
   $sourceItem=Get-Item -LiteralPath $sourcePath -Force
+  $sourceLength=[int64]$sourceItem.Length
   $sourceHash=(Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash
   try {
-    [IO.File]::Copy($sourcePath,$destinationPath,$false)
-    $destinationAttributes=[IO.File]::GetAttributes($destinationPath)
-    [IO.File]::SetAttributes($destinationPath,$destinationAttributes-band(-bnot[IO.FileAttributes]::ReadOnly))
-    $destinationItem=Get-Item -LiteralPath $destinationPath -Force
-    $destinationHash=(Get-FileHash -LiteralPath $destinationPath -Algorithm SHA256).Hash
-    $sourceHashAfter=(Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash
-    if($destinationItem.Length-ne$sourceItem.Length -or $destinationHash-ne$sourceHash -or $sourceHashAfter-ne$sourceHash){
-      throw "Short PA copy verification failed: $destinationPath"
+    $verified=$false
+    $lastFailure='verification did not run'
+    for($attempt=1;$attempt-le$VerificationAttempts;$attempt++){
+      if(Test-Path -LiteralPath $destinationPath -PathType Leaf){
+        $attributes=[IO.File]::GetAttributes($destinationPath)
+        [IO.File]::SetAttributes($destinationPath,$attributes-band(-bnot[IO.FileAttributes]::ReadOnly))
+        [IO.File]::Delete($destinationPath)
+      }
+      [IO.File]::Copy($sourcePath,$destinationPath,$false)
+      $destinationAttributes=[IO.File]::GetAttributes($destinationPath)
+      [IO.File]::SetAttributes($destinationPath,$destinationAttributes-band(-bnot[IO.FileAttributes]::ReadOnly))
+      $destinationItem=Get-Item -LiteralPath $destinationPath -Force
+      $destinationHash=(Get-FileHash -LiteralPath $destinationPath -Algorithm SHA256).Hash
+      $sourceItemAfter=Get-Item -LiteralPath $sourcePath -Force
+      $sourceHashAfter=(Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash
+      if([int64]$destinationItem.Length-eq$sourceLength -and
+         [int64]$sourceItemAfter.Length-eq$sourceLength -and
+         $destinationHash-eq$sourceHash -and $sourceHashAfter-eq$sourceHash){
+        $verified=$true
+        break
+      }
+      $lastFailure="attempt=$attempt source_bytes=$($sourceItemAfter.Length) destination_bytes=$($destinationItem.Length) source_stable=$($sourceHashAfter-eq$sourceHash) destination_matches=$($destinationHash-eq$sourceHash)"
+      if($attempt-lt$VerificationAttempts){Start-Sleep -Milliseconds 200}
+    }
+    if(-not$verified){
+      throw "Short PA copy verification failed after $VerificationAttempts attempts: $destinationPath ($lastFailure)"
     }
   } catch {
     if(Test-Path -LiteralPath $destinationPath -PathType Leaf){

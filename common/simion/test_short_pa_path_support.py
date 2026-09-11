@@ -32,7 +32,7 @@ $ErrorActionPreference='Stop'
 . $env:PA_HELPER
 $before=[IO.File]::GetAttributes($env:PA_SOURCE)
 New-Item -ItemType Directory -Path $env:PA_LINK_DIR|Out-Null
-$copy=New-ShortPaCopy -Source $env:PA_SOURCE -Destination (Join-Path $env:PA_LINK_DIR 'p.pa')
+$copy=New-ShortPaCopy -Source $env:PA_SOURCE -Destination (Join-Path $env:PA_LINK_DIR 'p.pa') -VerificationAttempts 3
 [IO.File]::WriteAllText($copy,'simulated delayed solver write')
 Remove-ShortPaCopyDirectory -Path $env:PA_LINK_DIR -ExpectedNamePrefix 'simion_pa_links_test_'
 $after=[IO.File]::GetAttributes($env:PA_SOURCE)
