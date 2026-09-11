@@ -1,80 +1,37 @@
-# 横置螺旋灯丝Wehnelt电子枪
+# 横置螺旋灯丝 Wehnelt 电子枪
 
-本项目的当前物理基线是**横置螺旋灯丝 Wehnelt 电子枪**，面向质谱 EI 离子源中优先提高电子
-利用率、无需成像级轴对称束斑的应用。开始任务先读仓库根[`README.md`](../../README.md)，再读
-当前权威状态[`docs/PROJECT.md`](docs/PROJECT.md)。需要追溯选型依据和旧实验时才读冻结背景
-[`docs/history/PROJECT_HISTORY.md`](docs/history/PROJECT_HISTORY.md)；实心阴极与轴向螺旋灯丝的
-原始源码谱系见
-[`docs/history/20260713__pre-transverse-wehnelt-lineages.md`](docs/history/20260713__pre-transverse-wehnelt-lineages.md)。
-操作COMSOL模型树、三阶段脚本或GUI验收时再读[`docs/COMSOL.md`](docs/COMSOL.md)。
+本项目研究面向 EI 离子源的横置螺旋灯丝热电子发射与收集。当前状态、资格和开放任务以
+[PROJECT](docs/PROJECT.md) 为准。
 
-机器身份、能力边界和当前`prototype`成熟度由[`config/project.json`](config/project.json)声明；
-它用于项目发现，不改变PROJECT记录的正式资格。
+## 按任务阅读
 
-物理输入只在[`config/baseline.json`](config/baseline.json)维护，数值与证据模式只在
-[`config/numerical_modes.json`](config/numerical_modes.json)维护；解析器
-[`analysis/resolve_contract.py`](analysis/resolve_contract.py)生成三阶段MATLAB唯一允许读取的
-[`config/resolved_model.json`](config/resolved_model.json)。当前跟踪发布选择`build_only_smoke`，
-只验证构建和GUI参数绑定，不是Candidate或Formal证据。项目Static门禁为`.\verify_project.ps1`；
-仓库执行注册只使用[`config/execution_profiles.json`](config/execution_profiles.json)，未完成真实
-N>=100复算前不注册`functional_reference`。
+| 任务 | 入口 |
+|---|---|
+| 开始项目工作 | [仓库 README](../../README.md) → [PROJECT](docs/PROJECT.md) |
+| 构建、模型树与 GUI 验收 | [COMSOL 实施说明](docs/COMSOL.md) |
+| 物理输入与数值模式 | [baseline](config/baseline.json)、[numerical_modes](config/numerical_modes.json) |
+| 生成唯一 MATLAB 输入 | [resolve_contract.py](analysis/resolve_contract.py) → [resolved_model.json](config/resolved_model.json) |
+| 项目发现与可执行能力 | [project.json](config/project.json)、[execution_profiles.json](config/execution_profiles.json) |
+| 静态检查 | [verify_project.ps1](verify_project.ps1) |
+| 选型及旧谱系 | 下方历史索引；[旧脚本目录说明](legacy/README.md) |
 
-受治理商业构建入口为`.\run_build_only_smoke.ps1 -RunId <显式run_id>`。它只执行注册的
-`build_only_smoke`，冻结resolved合同与实际MATLAB源码，调用一次仓库统一R2025b/COMSOL入口，并为
-成功或失败结果写入可复核manifest；不得用手工LiveLink命令替代。
+## 执行与产物
 
-runner在run目录建立后立即写入`interrupted`预置summary和已复核manifest；只有捕获到明确异常才改写
-为`failed`，完整通过报告判据后才改写为`success`。三种终态统一记录失败阶段、证据资格和几何/网格/
-静电/CPT构建或求解布尔值。项目合同、resolver、Static gate、执行profile、实际调用的公共COMSOL入口
-及manifest入口均冻结；商业wrapper的控制台与退出上下文写入`logs/commercial_wrapper.log`。失败收尾
-递归枚举当时已经存在的冻结输入和输出，不能用空manifest掩盖中途失败。
+从本项目目录运行 `./run_build_only_smoke.ps1 -RunId <run_id>`，使用显式且符合仓库合同的新运行身份。
+该入口只执行已注册的构建检查；参数、失败收尾、三阶段职责及输出判据见 COMSOL 实施说明。
+当前构建能力不代表粒子求解、收集效率或 Candidate/Formal 资格。
 
-修复前失败、缓存污染和重试闭合过程只在
-[`docs/history/20260728__pre-document-consolidation-project.md`](docs/history/20260728__pre-document-consolidation-project.md)
-追溯；当前入口不复制历史run编号。
-
-## 基线源码流水线
-
-按下列顺序运行，三份脚本均通过[`egun_paths.m`](egun_paths.m)定位产物：
-
-1. `phase1_geometry_coil_transverse.m`：消费resolved合同，建立横置灯丝、Wehnelt 和阳极几何，保存几何中间模型。
-2. `phase2_electrostatics_coil_transverse.m`：消费同一resolved合同，建立材料、选择集、静电场、网格、Study 和原生结果节点，保存静电中间模型。
-3. `phase4_thermal_emission_coil_transverse.m`：消费同一resolved合同，建立热发射 CPT、瞬态 Study、粒子数据集和原生轨迹图，保存本次run的最终阶段模型。
-
-编号保留为 phase1/2/4，是为了维持既有实验谱系；旧 phase3 是不适合效率评估的冷发射验证，
-不属于正式流水线。
-
-三阶段都必须显式接收resolved路径；缺失、过期或身份不匹配时失败关闭，不从MATLAB源码、环境变量
-或旧MPH回退物理参数。人工只修改baseline或具名数值模式，再由解析器生成resolved；禁止手改resolved。
-
-## 产物位置
-
-- 新运行只写入
-  `artifacts/projects/transverse_helical_filament_wehnelt_electron_gun/`。
-- 当前资格与正式资产状态只查[`docs/PROJECT.md`](docs/PROJECT.md)；本入口只记录产物位置规则。
-- 旧身份证据已完成全树SHA迁移；归档载荷不改写、不接收新运行，也不得在新项目身份下晋升。
-- 新运行必须写入活动根的`runs/<run_id>/{comsol,results,logs}`并形成run config、summary和manifest。
-- 历史模型和结果位于上述migration snapshot的
-  `legacy-layout/{models,results}/comsol/archive/lineages/{solid_cathode,axial_coil}/`；这些路径只用于追溯。
-
-## 历史脚本
-
-实心阴极与轴向螺旋灯丝的九个历史脚本已按原字节冻结到
-[`docs/history/20260713__pre-transverse-wehnelt-lineages.md`](docs/history/20260713__pre-transverse-wehnelt-lineages.md)
-的同名扁平payload，只用于追溯旧结论，不得作为新工作的起点。归档
-`phase5_wehnelt_sweep.m`实际使用轴向 Helix，因此其扫描结果不是横置基线参数结论；横置 Wehnelt
-参数扫描尚未建立，是否启动及关闭条件只以[`docs/PROJECT.md`](docs/PROJECT.md#开放任务)为准。
-
-## 运行依赖
-
-版本和启动方式只采用仓库根[`README.md`](../../README.md#工具链与执行入口)的统一工具链；当前
-验证范围、正式资格和未闭合事项只写入PROJECT，本入口不保存容易漂移的复算数值。
-
-新增跨项目API或调试经验按仓库根README路由到根`docs/`，项目特有当前事实写PROJECT，不创建
-按阶段排列的活跃说明文件。
+新产物进入 `artifacts/projects/transverse_helical_filament_wehnelt_electron_gun/runs/<run_id>/`。
+旧谱系与改名前资产按 [PROJECT](docs/PROJECT.md#产物边界) 及 descriptor 只读定位。
+旧轴向灯丝的 phase5 扫描不能作为横置灯丝的参数结论。
 
 ## History索引
 
-- [`docs/history/20260713__pre-transverse-wehnelt-lineages.md`](docs/history/20260713__pre-transverse-wehnelt-lineages.md)
-- [`docs/history/20260728__pre-document-consolidation-project.md`](docs/history/20260728__pre-document-consolidation-project.md)
-- [`docs/history/PROJECT_HISTORY.md`](docs/history/PROJECT_HISTORY.md)
+<details>
+<summary>展开只读历史记录</summary>
+
+- [20260713__pre-transverse-wehnelt-lineages](docs/history/20260713__pre-transverse-wehnelt-lineages.md)
+- [20260728__pre-document-consolidation-project](docs/history/20260728__pre-document-consolidation-project.md)
+- [PROJECT_HISTORY](docs/history/PROJECT_HISTORY.md)
+
+</details>

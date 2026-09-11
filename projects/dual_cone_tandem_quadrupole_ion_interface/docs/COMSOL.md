@@ -18,23 +18,27 @@ MATLAB 源码中没有隐藏入口压力、出口压力、温度、分子直径�
 
 ## 运行
 
-要求 COMSOL 6.4、CFD Module、LiveLink for MATLAB，以及能创建 `HighMachNumberFlow` 的有效许可。先设置一个明确的产物目录：
+需要 CFD Module、LiveLink for MATLAB 和有效的 `HighMachNumberFlow` 许可。工具版本与连接
+生命周期统一见[仓库操作指南](../../../docs/OPERATIONS.md)。以下命令在仓库根的 PowerShell Core 中
+执行，先将 `<run_id>` 替换为预登记的新运行身份：
 
 ```powershell
-$env:DUAL_CONE_GAS_FLOW_OUTPUT_DIR = 'C:\absolute\path\to\gas-flow-output'
-comsol mphserver
-matlab -batch "addpath('projects/dual_cone_tandem_quadrupole_ion_interface/comsol'); run_axisymmetric_gas_flow"
+$gasRun = [IO.Path]::GetFullPath('../artifacts/projects/dual_cone_tandem_quadrupole_ion_interface/runs/<run_id>')
+$env:DUAL_CONE_GAS_FLOW_OUTPUT_DIR = $gasRun
+./common/comsol/run_comsol_r2025b.ps1 `
+  -TaskScript ./projects/dual_cone_tandem_quadrupole_ion_interface/comsol/run_axisymmetric_gas_flow.m `
+  -ReportPath (Join-Path $gasRun 'comsol_run_report.txt')
 ```
 
-实际 COMSOL 批处理启动方式会随安装方式改变；也可从已连接 COMSOL Server 的 MATLAB 会话运行入口脚本。入口脚本任何异常都会写 `comsol_run_report.txt` 的 `STATUS=FAIL` 并重新抛出，不会切换到其他物理接口、伪造 CSV 或留下通过状态。只有求解、插值和质量守恒检查全部通过才写 `STATUS=PASS`。
+这是底层气流任务的调用方式，尚不是已注册的完整生产 run wrapper。启动前须冻结本次输入与保留类别；
+任务完成后仍须按[运行生命周期](../../../docs/LIFECYCLE.md)整理 summary、manifest 并复核。
+任务报告不能代替 run 三件套，也不能因 `STATUS=PASS` 自动取得 Candidate 或 Formal 资格。
+异常写入 `comsol_run_report.txt` 的 `STATUS=FAIL` 并重新抛出；只有求解、插值与质量守恒检查均通过
+才写 `STATUS=PASS`，不允许改用其他物理接口或从中间解导出合格场。
 
-本机已确认 COMSOL 6.4 Build 293 与 LiveLink 可以启动。默认全耦合 Newton 及瞬态压力缓降均在大压比下失败，因此当前实现采用 High Mach Number Flow 对稳态问题默认支持的伪时间/CFL continuation，并对出口压力作参数 continuation；只有最终 `400 Pa` 解完成并通过质量守恒检查才产生合格场。失败报告保留在工作区 artifacts，入口严格保持 `STATUS=FAIL`。
-
-2026-09-08 的真实 COMSOL 6.4 运行已校正轴对称速度映射（径向 `u`、轴向 `w`），并依次验证阻塞入口、亚声速定压出口、压力 continuation、阻尼 segregated、CFL 伪时间和常数氮气输运。`20260908_axisymmetric_gas_flow_pseudotime6` 在强制全后端亚声速的出口附近产生速度残差 `NaN`，因此没有导出 CSV、没有 canonical 场，也没有下游 SIMION 轨迹声明。该失败只否定了不一致的全亚声速出口设置，不否定用户确认的理想 `400 Pa` 恒压储槽代理。
-
-2026-09-10 又以同一全后端 `400 Pa` 边界真实运行 Hybrid outlet；API 与模型构建通过，但求解仍在后端附近产生 `u/w` 残差 `NaN`。该历史 run 保持失败关闭；`uniform_rear_gas_field.json` 规定的均匀后端场只作快速对照，不得称为 CFD 结果。
-
-同日加入 `z=110.22..110.72 mm` 孔板的 CFD 解虽完成 continuation，但进出口质量流量差 `3.82%`，被 `1%` 门禁拒绝。按最简模型边界，随后只从 CFD 中排除孔板阻塞、仍将孔板保留在 SIMION；`20260910_z120_empty_cfd_comsol` 对纯氮气完成至 `z=120 mm / 400 Pa`，质量流量差 `0.848%`、最大马赫数 `4.52`，通过并导出带哈希的场。该结果只支持空包络 Prototype，不支持孔板气动效应声明。
+已完成的 continuation 失败、孔板质量守恒失败及空包络原型通过过程见
+[原型历史记录](history/20260911__empty-enclosure-gas-transport-prototype.md)。当前资格见
+[PROJECT](PROJECT.md#当前资格)，本说明只维护模型设置与操作。
 
 ## 几何与边界
 
@@ -70,7 +74,7 @@ z_index,r_index,z_mm,r_mm,p_pa,temperature_k,u_z_m_per_s,u_r_m_per_s,rho_kg_per_
 运行后必须执行独立验证：
 
 ```powershell
-python projects/dual_cone_tandem_quadrupole_ion_interface/analysis/validate_gas_field.py `
+python -m projects.dual_cone_tandem_quadrupole_ion_interface.analysis.validate_gas_field `
   --csv C:\absolute\path\gas_field_rz.csv `
   --metadata C:\absolute\path\gas_field_metadata.json
 ```
@@ -81,7 +85,7 @@ python projects/dual_cone_tandem_quadrupole_ion_interface/analysis/validate_gas_
 
 ```powershell
 projects\dual_cone_tandem_quadrupole_ion_interface\workflows\gas_assisted_transport\build_gas_runtime.ps1 `
-  -ComsolRunDirectory C:\absolute\path\to\gas-flow-output
+  -ComsolRunDirectory <已验证的COMSOL运行目录>
 ```
 
 编译器采用合同声明的轴对称双线性插值，把径向速度映射到三维笛卡尔分量；越出治理域或插值单元触及非流体网格时立即报错，不做外推或最近邻填充。

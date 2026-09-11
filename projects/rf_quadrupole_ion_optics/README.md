@@ -16,33 +16,13 @@
 运行机制、公共坐标、电压语义及共同证据只由
 [`../../common/multipole/README.md`](../../common/multipole/README.md)登记。项目README和软件文档
 不得复制公共状态。轴向部件与物理面只采用该公共文档的
-[`术语定义`](../../common/multipole/README.md#轴向部件与物理面术语)。
+[`术语定义`](../../common/multipole/README.md#统一术语)。
 
 ## 机器权威
 
-| 职责 | 权威入口 |
-|---|---|
-| 项目身份与能力 | [`config/project.json`](config/project.json) |
-| 可执行workflow | [`config/execution_profiles.json`](config/execution_profiles.json) |
-| 命名设计profile | [`config/design_profiles.json`](config/design_profiles.json) |
-| 圆柱全尺寸家族机械base与三种电气模式 | [`config/requests/baseline.json`](config/requests/baseline.json)与[`config/operating_modes.json`](config/operating_modes.json) |
-| 家族N=100/N=1000母样本绑定 | [`config/particle_source_profiles.json`](config/particle_source_profiles.json) |
-| 三模式N=100数值预注册与资格输入 | [`config/family_experiment/n100_convergence_preregistration.json`](config/family_experiment/n100_convergence_preregistration.json) |
-| 多极杆家族暂时下游工程推进判据 | [`../../common/multipole/engineering_progression_acceptance.json`](../../common/multipole/engineering_progression_acceptance.json) |
-| 无加速混合网格粒子收敛预登记与独立预算 | [`config/family_experiment/comsol_hybrid_no_acceleration_particle_convergence_preregistration.json`](config/family_experiment/comsol_hybrid_no_acceleration_particle_convergence_preregistration.json)与[`config/family_experiment/comsol_hybrid_no_acceleration_particle_convergence_budget.json`](config/family_experiment/comsol_hybrid_no_acceleration_particle_convergence_budget.json) |
-| 官方传输物理发布 | [`config/resolved_design_official.json`](config/resolved_design_official.json) |
-| 质量过滤物理发布 | [`config/resolved_design_mass_filter.json`](config/resolved_design_mass_filter.json) |
-| 接口、质量过滤与旧同求解器比较的COMSOL数值 | [`config/comsol_solver_numerics.json`](config/comsol_solver_numerics.json) |
-| 圆柱家族三电气模式及数值档 | [`config/runtime_profiles.json`](config/runtime_profiles.json)绑定[`config/multipole_transport_comsol_solver_numerics.json`](config/multipole_transport_comsol_solver_numerics.json)与SIMION对应合同 |
-| SIMION数值合同 | [`config/simion_solver_numerics.json`](config/simion_solver_numerics.json) |
-| 粒子状态与接口面 | [`config/interface_contract.json`](config/interface_contract.json) |
-| oaTOF集成oracle专用出口端口 | [`config/interfaces/provided/rf_multipole_exit.json`](config/interfaces/provided/rf_multipole_exit.json) |
-| 多极杆轴向加速共同证据 | [`../../common/multipole/family_contract.json`](../../common/multipole/family_contract.json) |
-
-`config/project.json`的注册身份由全部design profile的一致identity给出，不再绑定
-`config/baseline.json`。后者仍由尚未迁移的专用workflow只读消费；活动圆柱家族runner只消费具名
-profile编译的完整request/resolved发布，不得用任意路径或CLI标量覆盖几何、RF/DC、静态电极或轴向
-加速合同。
+参数、数值、源和资格合同统一由 [PROJECT 的机器权威表](docs/PROJECT.md#机器权威)导航。
+项目发现使用 [project.json](config/project.json)，可执行入口注册见
+[execution_profiles.json](config/execution_profiles.json)。
 
 ## 工作流入口
 
@@ -80,33 +60,26 @@ rf_quadrupole_ion_optics/
 大型模型、PA/IOB、结果和日志只进入工作区
 `artifacts/projects/rf_quadrupole_ion_optics/`，不进入Git源码树。
 
-## 项目特有硬规则
+## 项目边界
 
-- 接口输运、无碰撞回归、质量过滤和轴向加速是不同科学声明，不能由`Mode`或粒子数隐式切换。
-- `official_transport`及其出口端口只服务矩形RF→oaTOF integration oracle；圆柱家族实验只消费
-  `requests/baseline.json`、typed operating mode和公共家族母样本。
-- 两个求解器必须消费同一受治理粒子bundle及各自实际表示；未消费文件不能冒充来源证据。
-- 质量过滤专属Mathieu判据、方形出口罩和上述integration实例不得上移到公共multipole层。
-- 功能PASS不代表跨求解器数值等价、网格收敛、机械、Candidate或Formal资格。
-- 本项目适用公共多极杆家族工程推进合同；阈值、状态、缺失指标处置和判定只读取上表链接的共同
-  JSON，不在项目文件保存副本。工程推进不回写既有`INCONCLUSIVE`数值敏感性/收敛结论。
-- 已完成实验、资源终态、N=1000抽样结论与后续授权只以[`docs/PROJECT.md`](docs/PROJECT.md)为准；
-  本入口不复制运行数值、campaign状态或开放任务。公共runner仍必须在创建run目录前复核身份、数值
-  参数及工程预算。
-- 正式机械几何与CAD同步完成前，`verify_project.ps1 -Level Formal`必须失败关闭。
+接口输运、无碰撞回归、质量过滤和轴向加速是不同科学声明。`official_transport` 矩形参考与圆柱
+家族实验的消费边界见 [PROJECT](docs/PROJECT.md#当前机械与模式)；不能由粒子数或 `Mode` 隐式切换。
 
-历史完整状态、实现清单和关闭过程冻结于
-[`docs/history/20260728__pre-document-consolidation-project.md`](docs/history/20260728__pre-document-consolidation-project.md)
-及同日软件快照；它们只用于追溯。
 
 ## History索引
 
-- [`docs/history/20260722__rf-oatof-s2-s3-functional-closure.md`](docs/history/20260722__rf-oatof-s2-s3-functional-closure.md)
-- [`docs/history/20260722_rf-mesh-strategy-screen.md`](docs/history/20260722_rf-mesh-strategy-screen.md)
-- [`docs/history/20260722_rf-validation-and-s1-integration.md`](docs/history/20260722_rf-validation-and-s1-integration.md)
-- [`docs/history/20260723__pre-n100-multipole-functional-evidence.md`](docs/history/20260723__pre-n100-multipole-functional-evidence.md)
-- [`docs/history/20260728__pre-document-consolidation-comsol.md`](docs/history/20260728__pre-document-consolidation-comsol.md)
-- [`docs/history/20260728__pre-document-consolidation-project.md`](docs/history/20260728__pre-document-consolidation-project.md)
-- [`docs/history/20260728__pre-document-consolidation-readme.md`](docs/history/20260728__pre-document-consolidation-readme.md)
-- [`docs/history/20260728__pre-document-consolidation-simion.md`](docs/history/20260728__pre-document-consolidation-simion.md)
-- [`docs/history/20260729__superseded-rf-oatof-s2-s3-active-contracts.md`](docs/history/20260729__superseded-rf-oatof-s2-s3-active-contracts.md)
+<details>
+<summary>展开只读历史记录</summary>
+
+- [20260722__rf-oatof-s2-s3-functional-closure](docs/history/20260722__rf-oatof-s2-s3-functional-closure.md)
+- [20260722_rf-mesh-strategy-screen](docs/history/20260722_rf-mesh-strategy-screen.md)
+- [20260722_rf-validation-and-s1-integration](docs/history/20260722_rf-validation-and-s1-integration.md)
+- [20260723__pre-n100-multipole-functional-evidence](docs/history/20260723__pre-n100-multipole-functional-evidence.md)
+- [20260728__pre-document-consolidation-comsol](docs/history/20260728__pre-document-consolidation-comsol.md)
+- [20260728__pre-document-consolidation-project](docs/history/20260728__pre-document-consolidation-project.md)
+- [20260728__pre-document-consolidation-readme](docs/history/20260728__pre-document-consolidation-readme.md)
+- [20260728__pre-document-consolidation-simion](docs/history/20260728__pre-document-consolidation-simion.md)
+- [20260729__superseded-rf-oatof-s2-s3-active-contracts](docs/history/20260729__superseded-rf-oatof-s2-s3-active-contracts.md)
+- [20260911__solver-sensitivity-and-retired-interface](docs/history/20260911__solver-sensitivity-and-retired-interface.md)
+
+</details>

@@ -33,8 +33,8 @@ class ParticleCountPolicyTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "positive integer"):
                 validate_positive_particle_count(count)
 
-    def test_root_readme_matches_machine_policy(self) -> None:
-        readme = (Path(__file__).resolve().parents[2] / "README.md").read_text(encoding="utf-8")
+    def test_operations_reference_matches_machine_policy(self) -> None:
+        readme = (Path(__file__).resolve().parents[2] / "docs" / "OPERATIONS.md").read_text(encoding="utf-8")
         self.assertIn("N=100是功能检查、日常回归和Candidate功能证据的最低标准档", readme)
         self.assertIn("N=1000是峰形、尾部、束斑/发散分布、损失分布与标准分辨率统计档", readme)
         self.assertIn("N=5000是高统计档", readme)

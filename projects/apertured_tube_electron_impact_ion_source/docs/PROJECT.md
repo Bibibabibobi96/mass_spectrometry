@@ -8,11 +8,15 @@
 
 ## 当前状态
 
-项目目前只有COMSOL实现，尚无正式或可提升候选资产。现存三个MPH与三张结果图等旧模型和结果
-已冻结在活动artifact根的`archive/20260801_130001__migration-snapshot__repo__electron-impact-ion-source/
-legacy-project-root/archive/20260719_212436__migration-snapshot__repo__pre-v2-layout/legacy-layout/`，
-只能作为旧试验证据。新模型与结果必须统一写入`runs/<run_id>/{comsol,results,logs}`；未形成run config、summary和已复核manifest前，
-不得从scratch提升或声明正式完成。
+项目目前只有 COMSOL 实现，尚无正式或可提升候选资产。
+
+| 层级 | 状态 | 依据与限制 |
+|---|---|---|
+| 合同与构建 | 已有真实 build-only 证据 | 几何、网格、静电与 CPT 模型树；未求解 |
+| 功能粒子结果 | 未闭合 | 需受治理 N≥100 及实际输出粒子数复核 |
+| Candidate／Formal | BLOCKED | 缺功能、GUI Compute 和现行资产证据 |
+
+旧模型与结果只作历史试验，位置由下方产物边界和项目 descriptor 定位，不能凭文件存在恢复资格。
 
 ## 当前物理边界
 
@@ -21,7 +25,7 @@ legacy-project-root/archive/20260719_212436__migration-snapshot__repo__pre-v2-la
 只能视为电子束路径范围的近似。因此它是电离产额可行性模型，不是完整EI离子源或已闭合的
 oa-TOF上游接口。具体数值不在本文复制，避免与机器合同形成第二真值。
 
-## 已知程序问题
+## 实现与验证边界
 
 - 源码已移除COMSOL安装路径和`mphstart`，只能由仓库统一R2025b连接入口运行。运行
   `20260722_120000__test__comsol__build-only-smoke`已在真实MATLAB R2025b/COMSOL 6.4连接中完成
@@ -34,7 +38,7 @@ oa-TOF上游接口。具体数值不在本文复制，避免与机器合同形�
 - 现有结果提取以脚本端统计为主；正式化前必须确认关键结果节点、Study/Solver和判据在GUI中可见。
 - 旧模型未按当前运行生命周期生成run config、summary和manifest，不能仅凭文件存在恢复正式资格。
 
-## 下一步
+## 开放任务
 
 1. 使用`functional_reference`和最低N=100完成GUI Compute、结果提取与manifest；在此之前不建立
    Candidate或Formal。

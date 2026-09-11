@@ -1,12 +1,30 @@
-# Paper 1：JASMS验证与证据计划
+# Paper 1：JASMS 研究与证据计划
 
-> `STATUS: ACTIVE / PRIOR_ART_PRESCREEN_COMPLETE / PARTIALLY_EXECUTED`
+本文统一维护科学问题、文章结构、工作包和关闭条件；当前执行资格只见
+[evidence_matrix.md](evidence_matrix.md)，候选主张与允许措辞只见
+[claim 注册表](../prior_art_claim_registry.md)，跨稿数据与公开边界只见
+[重叠防火墙](../overlap_and_claim_firewall.md)。
 
-本文只定义工作包、进入条件和关闭条件。执行配置、粒子身份、运行结果和SHA仍属于项目config与
-artifacts；这里不保存可变参数或手工抄录结果。C0、C1及C2轴向筛选已执行；当前结果资格以
-[`evidence_matrix.md`](evidence_matrix.md)为准，尤其不得把C2的J2暂停误读为对冻结一维J3有限束宽证据的否定。
+候选题目：*Source-Conditioned Control-Subspace Analysis of an Orthogonal-Acceleration Time-of-Flight Mass Spectrometer*。
+这是工作题目，不能用标题暗示尚未完成的预测验证。目标期刊及其投稿要求应在真正投稿前按
+[官方作者指南](https://researcher-resources.acs.org/publish/author_guidelines?coden=jamsef)复核。
 
-## 1. 成功判据
+## 独立科学问题
+
+真实RF多极杆输出不是无厚度的单值`z-v_z`曲线。Paper 1回答：
+
+1. 沿条件均值流形的局部高阶closure实际消除了什么？
+2. 有限条件厚度通过哪些source-to-detector时间模态产生残差峰宽？
+3. 保持已有聚焦和工程约束后，分析器还能控制多少残差？
+4. 新增场区是否提供真正独立、与未解决残差重叠的控制方向？
+5. 何时应继续优化分析器，何时必须改变源条件分布？
+
+## 主张与模型边界
+
+J1 为归因框架，J2/J3 为待验证的候选中心，J4/J5 只作为后果；不将经典聚焦、场区数或数学工具本身声称为创新。
+公式与局部适用域见[条件可聚焦性理论](../../theory/conditional_phase_space_focusability.md)。
+
+## 成功判据
 
 Paper 1成功不是得到一个高`R`候选，而是同时证明：
 
@@ -16,15 +34,9 @@ Paper 1成功不是得到一个高`R`候选，而是同时证明：
 4. 结论在公平架构比较、多质量、三维场和独立求解路径中保持；
 5. 峰宽收益没有由粒子损失、后筛选或不公平预算制造。
 
-## 2. WP0：先行工作与claim冻结
+## WP0：先行工作与claim冻结
 
-### 2026-08-25进度
-
-定向论文、引用链、厂商资料和代表性专利族预审已经完成，见
-[`prior_art_search_audit_20260825.md`](../prior_art_search_audit_20260825.md)。预审已否决J1、J4、J5和
-Paper 2 A1的宽泛新颖性表述，并把Paper 1中心收窄到J2/J3。Yefchak 1989、2005 thesis相关理论章节、
-2015正文和2026正文已完成[`逐式claim chart`](../prior_art_equation_claim_chart_20260825.md)；但两篇
-Supporting Information、其他closest-work全文、扩展引文链和专业FTO仍未关闭，因此WP0不是`COMPLETE`。
+当前先行工作证据及缺口只查 [claim 注册表](../prior_art_claim_registry.md)。
 
 ### 动作
 
@@ -51,7 +63,7 @@ Supporting Information、其他closest-work全文、扩展引文链和专业FTO�
 
 若预测方向、floor或新增控制方向收益不能跨工况闭合，J2/J3直接`NO_GO`，不启动WP3/WP4昂贵矩阵。
 
-## 3. WP1：冻结真实条件源
+## WP1：冻结真实条件源
 
 ### 输入要求
 
@@ -92,7 +104,7 @@ eligibility and source condition
 - 条件模型及不确定度在至少两种工况可重复；
 - source authority可由manifest和有序粒子ID重建。
 
-## 4. WP2：到达时间灵敏度与focusability实现
+## WP2：到达时间灵敏度与focusability实现
 
 ### 动作
 
@@ -116,7 +128,7 @@ eligibility and source condition
 - direct particle结果给出可复现的线性信赖域；
 - 模态排序不由任意单位或单个bin选择决定。
 
-## 5. WP3：公平架构与目标比较
+## WP3：公平架构与目标比较
 
 对同一training/optimization source分别充分优化：
 
@@ -146,13 +158,13 @@ D. unweighted D1/D2/D3 closure control
 - 报告Pareto前沿，不只比较新方案最好点与baseline默认点；
 - 峰形改善没有依靠更低传输或不同后处理。
 
-## 6. WP4：模型层级和求解器独立性
+## WP4：模型层级和求解器独立性
 
 ### 最低矩阵
 
 | 因子 | 最低水平 |
 |---|---|
-| Source | affine薄源、经验条件源、完整冻结6D |
+| Source |
 | Source condition | 至少2种 |
 | Accelerator | two-zone、three-zone、source-weighted、unweighted control |
 | Reflectron | 局部闭式对照、整机耦合优化 |
@@ -160,7 +172,7 @@ D. unweighted D1/D2/D3 closure control
 | Independent check | 关键COMSOL或独立field/trajectory implementation |
 | Mass | 至少3个代表质量点 |
 | Envelope | 至少3个源宽/残差水平 |
-| Statistics | locked test + bootstrap CI |
+| Statistics |
 
 ### 关闭条件
 
@@ -169,7 +181,7 @@ D. unweighted D1/D2/D3 closure control
 - 至少一个关键工况完成网格、时间步和粒子统计检查；
 - 坐标、时钟、探测面、粒子ID和FWHM定义跨路径一致。
 
-## 7. WP5：模态消融和预测检验
+## WP5：模态消融和预测检验
 
 ### H1检验
 
@@ -190,7 +202,7 @@ condition上预测收益或无收益。
 使用至少两种source condition，在启封最终结果前登记“改分析器、source-weighted重优化或改源”的
 预测，并用独立运行验证。
 
-## 8. WP6：统计和报告
+## WP6：统计和报告
 
 必须报告：
 
@@ -206,16 +218,67 @@ condition上预测收益或无收益。
 
 不允许只报告最高质量分辨率或只在共同命中交集上报告性能。
 
-## 9. 投稿门槛
+## 投稿门槛
 
-| 门槛 | 当前状态 | 关闭判据 |
-|---|---|---|
-| Novelty | 定向预审完成；未关闭 | WP0全文claim chart完成，J2/J3允许措辞冻结，具体IP另行审查 |
-| Source | 未关闭 | 两工况、detector-blind、locked N≥1000 |
-| Focusability | 未实现 | WP2全部独立校核通过 |
-| Fair baseline | 未关闭 | A–D充分重优化和blind Pareto比较 |
-| 3D independence | 部分基础 | 多质量3D SIMION + 关键独立路径 |
-| Statistics | 未关闭 | 直接峰、尾部、传输和CI完整 |
-| Generality | 未关闭 | 至少两源工况、三质量和多个场模型 |
+| 门槛 | 关闭判据 |
+|---|---|
+| Novelty | WP0全文claim chart完成，J2/J3允许措辞冻结，具体IP另行审查 |
+| Source | 两工况、detector-blind、locked N≥1000 |
+| Focusability | WP2全部独立校核通过 |
+| Fair baseline | A–D充分重优化和blind Pareto比较 |
+| 3D independence | 多质量3D SIMION + 关键独立路径 |
+| Statistics | 直接峰、尾部、传输和CI完整 |
+| Generality | 至少两源工况、三质量和多个场模型 |
 
-任一主claim所需门槛未关闭时，不进入JASMS投稿冻结。
+门槛的当前状态只查证据矩阵；本计划不维护第二份状态表。任一主claim所需门槛未关闭时，不进入JASMS投稿冻结。
+
+## 文章结构
+
+### Introduction
+
+1. OA-TOF峰宽受完整源相空间而非独立标量宽度控制；
+2. 已有space–velocity correlation和coupled focusing的贡献；
+3. 真实RF源的条件厚度、异方差和尾部；
+4. 局部高阶closure与有限分布最优之间的缺口；
+5. 本文的可证伪问题、方法和证据范围。
+
+### Theory
+
+- pulse-relative时钟和共同pre-pulse源；
+- 多维条件流形与厚度；
+- total variance和高阶适用边界；
+- N-zone OA、dual-stage reflectron与统一参考面；
+- 受约束focusability、残差模态和新增控制方向；
+- 有限孔径和传输边界。
+
+### Methods
+
+- source authority、cohort split和detector-blind模型选择；
+- analytic/AD/finite-difference导数交叉校核；
+- two-zone、three-zone、unweighted和source-weighted公平优化；
+- ideal、轴线场、3D SIMION和独立COMSOL/实现；
+- 峰提取、bootstrap、损失census和盲化test。
+
+### Results
+
+1. exact oracle与三维导数一致性；
+2. affine薄源的局部closure；
+3. observed条件厚度、异方差和残差模态；
+4. predicted variance/floor与direct-particle结果；
+5. 充分重优化的架构比较；
+6. 多质量和多source condition稳健性；
+7. 新增场区何时有用、何时无用；
+8. 分析器优化与source conditioning的决策图。
+
+### Discussion
+
+- 与1974/1994/1996/2005/2006/2010/2015/2016/2017/2024/2026工作的明确差异；
+- 局部projector和协方差近似的边界；
+- 非高斯、孔径、脉冲、空间电荷和实验源推断限制；
+- 对oa-TOF源接口和分析器设计的可推广启示。
+
+### Conclusions
+
+结论应落在受约束、source-conditioned的设计判据，而不是最高分辨率纪录：
+
+> High-order closure along a source manifold is effective only to the extent that the remaining conditional source modes have weak timing projection or lie within the feasible control subspace of the complete analyzer.

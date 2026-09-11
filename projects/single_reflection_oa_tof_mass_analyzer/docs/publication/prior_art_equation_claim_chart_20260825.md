@@ -1,5 +1,8 @@
 # OA-TOF 核心全文逐式 claim chart 与理论审计（2026-08-25）
 
+> 日期化只读参考：以下检索范围与结论冻结于 2026-08-25，不代表再次查阅或当前投稿资格。
+> 后续状态只更新 [claim 注册表](prior_art_claim_registry.md)，不续写本审计。
+
 > `STATUS: FOUR_LOCAL_MAIN_TEXTS_EQUATION_REVIEWED / SUPPLEMENTS_AND_REMAINING_CORE_TEXTS_OPEN`
 >
 > `SCOPE: SCIENTIFIC_NOVELTY_AND_FORMULA_AUDIT / NOT_LEGAL_ADVICE`
@@ -11,12 +14,41 @@ SHA-256 和审计结论，不保存 PDF 副本或绝对路径。
 
 ## 1. 审查语料与边界
 
-| 本地文件 | 书目信息 | 页数 | SHA-256 | 本轮覆盖 |
-|---|---|---:|---|---|
-| `423073.pdf` | Papanastasiou, *Space Velocity Correlation in Orthogonal Time-of-Flight Mass Spectrometry*, PhD thesis, 2005, DOI [`10.83056/mmu.32482788`](https://doi.org/10.83056/mmu.32482788) | 280 | `B85F76B05093EB12F186EC48AECF201685D199D690F26C8724FB0B1AFC253D71` | 与 TOF 聚焦直接相关的第 2–4 章、附录 I–II；公式页逐页渲染核对 |
-| `cai2015 Coupled Space- and Velocity-Focusing in Time-of-Flight Mass Spectrometry—a Comprehensive Theoretical Investigation.pdf` | Cai, Lai & Wang, JASMS 2015, DOI [`10.1007/s13361-015-1206-y`](https://doi.org/10.1007/s13361-015-1206-y) | 10 | `966933D5B1000537D12015DAE340F022512CA257286A71F072B3DC2F10749A58` | 全文、全部编号公式和图表定义 |
-| `Models for mass-independent space and energy focusing in time-of-flight mass spectrometry.pdf` | Yefchak, Enke & Holland, IJMSIP 1989, DOI [`10.1016/0168-1176(89)80031-X`](https://doi.org/10.1016/0168-1176(89)80031-X) | 18 | `6B1AAEACC99C2BE2AEA9B8B3982F2434938CFA0BBA35B35919F71230A207AEE2` | 全文、式 (1)–(37)、表 1 横排公式和模拟指标 |
-| `Theoretical Study of High-Order Velocity Focusing Achieved with Single-Stage Reflectron Time-of-Flight Mass Spectrometry.pdf` | Cai & Wang, JASMS 2026, DOI [`10.1021/jasms.5c00167`](https://doi.org/10.1021/jasms.5c00167) | 9 | `5D411B26BF03D071EBE6AE8BDC4590784D922E3CBAFC3C92A2C813A5A9967E9C` | 全文、全部编号公式和图表定义 |
+| 编号 | 书目信息 | 页数 | 本轮覆盖 |
+|---|---|---:|---|
+| 文献 1 | Papanastasiou, *Space Velocity Correlation in Orthogonal Time-of-Flight Mass Spectrometry*, PhD thesis, 2005, DOI [`10.83056/mmu.32482788`](https://doi.org/10.83056/mmu.32482788) | 280 | 与 TOF 聚焦直接相关的第 2–4 章、附录 I–II；公式页逐页渲染核对 |
+| 文献 2 | Cai, Lai & Wang, JASMS 2015, DOI [`10.1007/s13361-015-1206-y`](https://doi.org/10.1007/s13361-015-1206-y) | 10 | 全文、全部编号公式和图表定义 |
+| 文献 3 | Yefchak, Enke & Holland, IJMSIP 1989, DOI [`10.1016/0168-1176(89)80031-X`](https://doi.org/10.1016/0168-1176(89)80031-X) | 18 | 全文、式 (1)–(37)、表 1 横排公式和模拟指标 |
+| 文献 4 | Cai & Wang, JASMS 2026, DOI [`10.1021/jasms.5c00167`](https://doi.org/10.1021/jasms.5c00167) | 9 | 全文、全部编号公式和图表定义 |
+
+<details>
+<summary>原始本地文件名与 SHA-256</summary>
+
+文献 1：`423073.pdf`
+
+
+SHA-256：`B85F76B05093EB12F186EC48AECF201685D199D690F26C8724FB0B1AFC253D71`
+
+
+文献 2：`cai2015 Coupled Space- and Velocity-Focusing in Time-of-Flight Mass Spectrometry—a Comprehensive Theoretical Investigation.pdf`
+
+
+SHA-256：`966933D5B1000537D12015DAE340F022512CA257286A71F072B3DC2F10749A58`
+
+
+文献 3：`Models for mass-independent space and energy focusing in time-of-flight mass spectrometry.pdf`
+
+
+SHA-256：`6B1AAEACC99C2BE2AEA9B8B3982F2434938CFA0BBA35B35919F71230A207AEE2`
+
+
+文献 4：`Theoretical Study of High-Order Velocity Focusing Achieved with Single-Stage Reflectron Time-of-Flight Mass Spectrometry.pdf`
+
+
+SHA-256：`5D411B26BF03D071EBE6AE8BDC4590784D922E3CBAFC3C92A2C813A5A9967E9C`
+
+
+</details>
 
 学位论文第 5–7 章的装置实现、电子发射和应用数据不属于本轮“理论逐式”范围；两篇期刊论文的
 Supporting Information 不在本地目录，仍是开放项。以下状态码统一为：

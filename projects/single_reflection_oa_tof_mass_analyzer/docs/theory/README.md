@@ -62,3 +62,6 @@ Paper 1与Paper 2的独立科学问题、证据计划和重叠防火墙只见
 
 原始重写投稿包及 SHA 已冻结在 `../history/20260720__oatof-theory-refactor-review/`；审查清单见
 `../history/20260720__oatof-theory-refactor-review.md`。归档不参与活跃程序导入。
+
+历史链接及旧候选合同仍使用[双区理论迁移入口](oaaccelerator_time_focus.md)；它只转向独立加速器正文，
+不维护本项目的局部公式副本。

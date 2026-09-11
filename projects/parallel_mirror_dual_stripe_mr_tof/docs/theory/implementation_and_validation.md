@@ -15,13 +15,15 @@ maturity: reference
 
 # 实现、复现与验证协议
 
-本文件把理论转换为 AI 可以执行的工程流程。目标不是一次性建立一个“看起来像 Astral”的轨迹图，而是形成：
+本文件把理论转换为可复现的研究流程，目标是形成：
 
 - 可追溯的几何和电压合同；
 - 求解器无关的解析参考；
 - 可重复的粒子源；
 - 明确的空间、时间和振荡事件定义；
 - 跨求解器和实验可升级的验证证据。
+
+按问题定位：[最小物理合同](#3-最小物理合同) · [L0 镜优化算法](#8-l0-镜优化算法) · [事件和状态定义](#15-事件和状态定义) · [Overtone 定义](#19-overtone-定义) · [参数灵敏度和 Jacobian](#21-参数灵敏度和-jacobian) · [发布门禁](#27-发布门禁)。
 
 ## 1. 系统模块边界
 
@@ -45,22 +47,13 @@ space_charge
 
 ## 2. 单向数据流
 
-```text
-理论模型与工程约束
-→ baseline 参数
-→ resolved 几何与电压
-→ COMSOL / SIMION / CAD
-→ 原始场和轨迹
-→ 统一粒子结果
-→ 峰形、FWHM、透过率和振荡数
-→ 验证报告
-```
-
-求解器不得反向修改 baseline。若某个几何在 COMSOL 中更容易网格化，也不能据此静默改变理论尺寸。
+单向派生与职责边界以[仓库架构](../../../../docs/REPOSITORY_ARCHITECTURE.md)为准。
+本项目先冻结理论与机械约束，再由 resolved 生成求解器输入；实际求解顺序和当前 receipt 由
+[PROJECT](../PROJECT.md)解释。本页模型流程不能反向改写 baseline 或放宽固定硬件边界。
 
 ## 3. 最小物理合同
 
-建议建立 `physics_contract.json`：
+以下是物理信息分组示例，既有项目应映射到已有机器合同，不要求新建 `physics_contract.json`：
 
 ```json
 {
@@ -154,7 +147,7 @@ shape_2(y; coefficients_2)
 
 ## 6. 粒子源合同
 
-正式源不能由求解器内部随机生成后丢失。应先生成冻结粒子表：
+正式源需冻结粒子表及其目标事件语义。以下列名是信息示例，实际 canonical 列与单位服从项目合同：
 
 ```text
 particle_id
@@ -179,7 +172,7 @@ species_id
 
 ## 7. L0 解析参考实现
 
-至少建立以下独立函数：
+解析实现需要覆盖以下能力；名称是示意，先查现有实现，不建立同义函数：
 
 ```python
 compute_planar_mirror_potential(...)
@@ -433,24 +426,9 @@ adiabatic_action_error
 
 ## 18. 峰形和 FWHM
 
-正式峰算法需要版本化：
-
-1. 选择 `detected` 粒子；
-2. 不按期望结果删除尾部；
-3. 固定直方图或核估计规则；
-4. 计算峰中心；
-5. 计算 FWHM；
-6. 报告多峰、肩峰或无半高交点；
-7. 同时报告透过率和 overtone。
-
-对于非高斯峰，应报告：
-
-- FWHM；
-- 10–90% 宽度或分位数；
-- 偏度和峰度；
-- 主峰面积；
-- overtone 面积；
-- 尾部比例。
+峰形算法、KDE、FWHM 和非高斯解释只由[验证方法](../../../../docs/VALIDATION_METHODS.md#分辨率与峰形)
+定义，图形表达由[绘图标准](../../../../docs/PLOTTING_STANDARDS.md)定义。
+本项目同时报告传输、overtone、实际事件数及探测器响应边界；不能只保留目标振荡数的窄峰而隐藏损失。
 
 ## 19. Overtone 定义
 
@@ -467,7 +445,8 @@ overtone +1: K_target + 1
 
 ## 20. 误差预算
 
-至少包含：
+下列是误差来源清单。只有给出来源不确定度、传播关系与组合规则后才能称为误差预算，具体方法见
+[通用验证方法](../../../../docs/VALIDATION_METHODS.md#网格建设与计算量控制)。
 
 ### 20.1 几何
 
@@ -543,58 +522,19 @@ peak field
 
 ## 22. 跨求解器验证
 
-COMSOL、SIMION 或其他求解器必须使用：
-
-- 相同几何合同；
-- 相同电压；
-- 相同粒子表；
-- 相同时间原点；
-- 相同探测面；
-- 相同状态映射；
-- 相同 FWHM 算法。
-
-比较：
-
-1. 单位电压场；
-2. 轴势；
-3. 关键截面场；
-4. 转折点；
-5. 单粒子到达时间；
-6. Poincaré 映射；
-7. 振荡数；
-8. 粒子级状态；
-9. FWHM 和透过率。
+共同输入、独立求场、事件配对、统计等价与资格边界遵循
+[通用验证方法](../../../../docs/VALIDATION_METHODS.md)。MR-TOF 的比较重点包括单位电压场、轴势、
+转折点、周期、Poincaré 映射、真实振荡数、粒子状态、FWHM 和透过率；具体阈值在运行前由项目合同冻结。
 
 ## 23. 参考基准
 
-### 23.1 镜
+公开数值只维护在对应理论正文，避免本页与模型页分别更新：
 
-```text
-w0 = 4000 V
-energy nodes = 3900, 4000, 4100 V
-```
+- [镜能量与等时基准](isochronous_mirror_design.md#13-公开基准和未公开量)
+- [原漂移尺度](adiabatic_drift_and_original_ion_foil.md#17-公开工程基准)
+- [硬边界棱镜算例](injection_prism_source_and_calibration.md#5-硬边界棱镜折射)
 
-### 23.2 原漂移方案
-
-```text
-L = 335 mm
-W = 641 mm
-K = 25
-theta0 ≈ 1.78 deg
-Theta ≈ 0.045 deg
-vs ≈ -13.8 V
-```
-
-### 23.3 棱镜
-
-```text
-alpha = 4 deg
-beta = 1.8 deg
-w0 = 4000 V
-vd ≈ -152.8 V
-```
-
-这些基准用于验证方程和单位，不代表新设计的最终参数。
+它们检查方程和单位，不能作为当前制造硬件的默认电压或工作点。
 
 ## 24. 双 Stripe 专项报告
 
@@ -634,7 +574,7 @@ vd ≈ -152.8 V
 8. **只比较最终 FWHM，不比较粒子级轨迹**；
 9. **把统计噪声当优化改进**；
 10. **改变 detector area 后仍比较同一透过率**；
-11. **未把基线 Stripe 作用量纳入镜校准**；
+11. **未把基线 Stripe 作用量纳入完整分析器响应与全局校准**；
 12. **把 aperture 截束造成的窄峰当高分辨**；
 13. **没有同时报告峰宽和主峰面积**；
 14. **用生产二进制反向定义 baseline**；
@@ -642,77 +582,27 @@ vd ≈ -152.8 V
 
 ## 27. 发布门禁
 
-### L0 发布
+L0—L5 是模型保真度，项目 Static/Candidate/Formal 是独立的证据与发布维度。正式化依照项目
+机器验收合同与[生命周期](../../../../docs/LIFECYCLE.md)，不以理论文件中的层级表自动晋升。
 
-需要：
+| 模型证据 | 应验证的内容 |
+|---|---|
+| 解析 | 公式、公开参考、积分/导数收敛和适用域 |
+| 二维场 | 真实截面、网格、映射、高阶导数与解析误差 |
+| 完整三维 | 同源输入、事件链及声明所需的独立比较和粒子统计 |
+| 鲁棒性或实验扩展 | 声明范围内的空间电荷、公差、统计或实验校准 |
 
-- 公式单元测试；
-- 论文公开基准回归；
-- 数值积分和导数收敛；
-- 明确适用范围。
-
-### L2 发布
-
-需要：
-
-- 真实二维场；
-- 网格收敛；
-- 映射和高阶导数验证；
-- 解析模型误差报告。
-
-### L3 候选
-
-需要：
-
-- 完整三维几何；
-- 同源粒子表；
-- 跨求解器比较；
-- FWHM、透过率和 overtone；
-- 电压和几何误差扫描。
-
-### L4/L5 正式
-
-需要：
-
-- 空间电荷和统计不确定度；
-- 制造公差；
-- 实验校准；
-- 冻结分析合同；
-- 适用电荷、质量和工作模式范围。
+仿真型正式交付不以实验校准为默认前提；未覆盖的物理和适用范围须明确保留为限制。
 
 ## 28. 推荐目录绑定
 
-```text
-projects/<astral_like_project>/
-├─ README.md
-├─ docs/
-│  ├─ PROJECT.md
-│  └─ PHYSICS.md
-├─ config/
-│  ├─ project.json
-│  ├─ baseline.json
-│  ├─ resolved_geometry.json
-│  ├─ physics_contract.json
-│  ├─ source.json
-│  ├─ modes.json
-│  └─ analysis_contract.json
-├─ analysis/
-│  ├─ mirror_reference.py
-│  ├─ drift_reference.py
-│  ├─ dual_stripe_reference.py
-│  ├─ prism_reference.py
-│  └─ peak_metrics.py
-├─ comsol/
-├─ simion/
-├─ cad/
-└─ tests/
-```
-
-理论正文保留在跨项目知识目录；具体项目只绑定模型版本和当前参数。
+本理论包保留在本项目 `docs/theory/`。现有实现与机器配置从[项目 README](../../README.md)进入；
+目录、公共复用及语言职责遵循[仓库架构](../../../../docs/REPOSITORY_ARCHITECTURE.md)。
+不为本页预建 `PHYSICS.md`、空软件目录或一套示意名称的重复参考实现。
 
 ## 29. 主要来源
 
-- D. Grinfeld et al., *Nuclear Instruments and Methods in Physics Research A* 1060 (2024) 169017. DOI: `10.1016/j.nima.2023.169017`.
-- A. S. Berdnikov et al., *Journal of Analytical Chemistry* 74 (2019) 1437–1446. DOI: `10.1134/S1061934819140041`.
-- H. Stewart et al., *Journal of the American Society for Mass Spectrometry* 35 (2024) 74–81. DOI: `10.1021/jasms.3c00311`.
-- H. Stewart et al., “Crowd Control of Ions in the Astral Analyzer,” ChemRxiv. DOI: `10.26434/chemrxiv-2023-p6zln`.
+- D. Grinfeld et al., *Nuclear Instruments and Methods in Physics Research A* 1060 (2024) 169017. DOI：[原始来源](https://doi.org/10.1016/j.nima.2023.169017).
+- A. S. Berdnikov et al., *Journal of Analytical Chemistry* 74 (2019) 1437–1446. DOI：[原始来源](https://doi.org/10.1134/S1061934819140041).
+- H. Stewart et al., *Journal of the American Society for Mass Spectrometry* 35 (2024) 74–81. DOI：[原始来源](https://doi.org/10.1021/jasms.3c00311).
+- H. Stewart et al., “Crowd Control of Ions in the Astral Analyzer,” ChemRxiv. DOI：[原始来源](https://doi.org/10.26434/chemrxiv-2023-p6zln).

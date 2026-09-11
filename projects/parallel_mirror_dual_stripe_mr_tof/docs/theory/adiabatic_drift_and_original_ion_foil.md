@@ -22,6 +22,8 @@ Astral 的核心不是让离子在一条狭窄通道中始终分开，而是允�
 > **项目边界**：本方案在当前项目中只作为理论对照和解析回归，不是活动硬件、mode或profile；
 > 当前活动设计只采用名义平行镜与两套独立漂移 Stripe。
 
+按问题定位：[漂移反转和返回时间](#4-漂移反转和返回时间) · [Stripe/Ion Foil 的作用量响应](#7-stripeion-foil-的作用量响应) · [kappa 和 tau 函数](#11-kappa-和-tau-函数) · [公开无量纲系数](#13-公开无量纲系数) · [公开工程基准](#17-公开工程基准) · [端点正则化](#18-端点正则化)。
+
 ## 1. 快运动和慢运动
 
 离子以小角度 $\vartheta$ 注入两镜之间。总能量分解为
@@ -768,5 +770,5 @@ $$
 
 ## 22. 主要来源
 
-- D. Grinfeld et al., *Nuclear Instruments and Methods in Physics Research A* 1060 (2024) 169017. DOI: `10.1016/j.nima.2023.169017`.
-- H. Stewart et al., “Crowd Control of Ions in the Astral Analyzer,” ChemRxiv. DOI: `10.26434/chemrxiv-2023-p6zln`.
+- D. Grinfeld et al., *Nuclear Instruments and Methods in Physics Research A* 1060 (2024) 169017. DOI：[原始来源](https://doi.org/10.1016/j.nima.2023.169017).
+- H. Stewart et al., “Crowd Control of Ions in the Astral Analyzer,” ChemRxiv. DOI：[原始来源](https://doi.org/10.26434/chemrxiv-2023-p6zln).

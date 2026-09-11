@@ -10,7 +10,7 @@ C3_J3只检验一个问题：C2_J3中理想轴向的三区局部控制方向，�
 - `three_zone_solver_free_funnel_v1`保留其原始哈希绑定，不能在扩展轴向状态oracle后继续执行；当前可执行理论合同为v2。旧T5 Candidate仍是历史基准，若要把它用于新的C3 run，必须单独绑定其原始receipt与本次C3物理请求，不能假称由v2重编译。
 - 新的`CandidateControlRequest`把加速器电压、grid2/exit几何和反射器两项控制的扰动、绝对边界与`-2h,-h,0,+h,+2h`一次性冻结。它不读取探测器结果，也不选择“最好”的扰动。
 - 请求必须显式给出从C2_J3抽象方向到物理电极方向的映射；不得把理想`Γ3`系数直接当作电压。
-- 该映射现由`paper1_c3_j3_mapping.py`逐点重推：它要求C2的improve/zero/worsen是对称方向，并把zero点逐项绑定到冻结T5 Candidate。`paper1_c3_j3_publish.py`已将S1五个点原子发布为`20260826_023000__build__python__paper1-c3-j3-s1-candidates`；仍须由integration把每一个派生Candidate编译为独立PA/IOB后才可启动N=1。
+- 该映射现由`paper1_c3_j3_mapping.py`逐点重推：它要求C2的improve/zero/worsen是对称方向，并把zero点逐项绑定到冻结T5 Candidate。`paper1_c3_j3_publish.py`已将S1五个点原子发布为`20260826_023000__build__python__paper1-c3-j3-s1-candidates`；每个派生 Candidate 的真实运行必须消费与之绑定的独立 PA/IOB。
 - 每一候选重新生成PA，并保存完整母cohort的命中、撞击、损失和事件序列。不得只以共同命中交集计算导数或峰宽。
 - OA时钟只用每一冻结layout的`pulse_effective_time_us`；不再进行时间窗扫选。
 
@@ -29,22 +29,15 @@ field-only run；它必须绑定与对应真实PA点逐字节相同的 Candidate
 
 N=1只允许使用`terminal_handoff_smoke_source_particle_id`明确登记的一个、已实际传输的上游粒子；运行器仍保留完整母cohort的上游损失记录，并将该粒子映射为SIMION粒子1。它只是构建、时钟和事件序列的功能烟雾测试，禁止输出或解释峰宽、传输率、导数、排序或任何性能指标。
 
-## 已完成的 N=1 功能门槛
+## 当前资格
 
-2026-08-26，S1的五个预注册物理点`-2h,-h,0,+h,+2h`均以
-`multipole_handoff_ballistic_centroid_v1`解析的固定脉冲时刻`45.56495820366112 µs`完成真实PA单飞。
-每个点都保留1000离子母分母、明确的上游粒子ID 1、独立PA身份、完整事件链及成功的父/子manifest；
-五点均为`1 → grid1 → intermediate2 → accelerator exit → reflectron → detector`，检测器`1/1`。
-这只关闭N=1贯通门槛：它既不比较五点TOF，也不支持导数、峰宽、传输或J3主张。C3仍须完成同一五点的
-N=100中心差分、事件拓扑稳定性和独立轴场积分器比较后才能形成阶段结论。
+五点 N=1 贯通及 N=100 真实 PA 中心差分／事件拓扑平台均已完成；独立轴场积分器的同段参考仍待完成。
+因此当前为 `INCONCLUSIVE_REVISE`，不得进入 C4。精确差分、样本与失败重跑来源见
+[冻结状态沿革](../../history/20260911__publication-status-consolidation.md#stage_c3_j3_real_field_contract)。
 
-N=100的正式campaign是[`paper1_c3_j3_s1_fixed_pulse_derivative_n100.json`](../../../../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/explorations/paper1_c3_j3_s1_fixed_pulse_derivative_n100.json)。其执行cohort由`first_n_transmitted_terminal_handoffs_in_source_particle_id_order`唯一指定，ID序列哈希已冻结；五点共享现有`multipole_handoff_ballistic_centroid_v1`脉冲计划，不含时间窗扫描。
-
-首次`−2h` N=100运行（`20260826_081000__sim__cross__paper1-c3-j3-s1-fixed-pulse-derivative-m2__n100`）的原始三批飞行与checkpoint已完成，但在空间图后处理时被错误要求存在上游source-region diagnostic 而失败。terminal-handoff continuation 的合法起点没有该checkpoint，因此这不是场、粒子事件或物理`FAIL_STOP`；原run按失败证据保留。修复后的重跑必须使用新的run ID，且仍使用同一五点、cohort、固定pulse与母cohort分母。
-
-五点N=100的当前闭合状态是：`−2h`以`20260826_082000__sim__simion__rf-oatof-single-flight-gap0__n100__r02`成功，`−h`的原始N=100行因一个已损坏的前端PA cache generation而在飞行前失败，保留为非物理失败证据；`−h`以`20260826_083000__sim__simion__rf-oatof-single-flight-gap0__n100__r02`重建并重新校验缓存后成功，`0,+h,+2h`三个原登记行也均成功。五点均为100个固定source ID启动、98个在固定pulse时刻合格且98个完整到达探测器，所有登记的下游事件均为98。
-
-独立轴场积分器只能重算从`pre_pulse_state`到`local_accelerator_exit`的传播，不能与完整 detector TOF 混合比较。因此配对分析器也按同一段计算：`±h`与`±2h`中心差分均值分别为`1.5042704087e-4`与`1.5042704087e-4 ns/h`，步长平台相对误差`1.1568e-11`，98个共同粒子的事件拓扑不变。该结果只证明真实PA局部差分和事件拓扑稳定；独立导出轴场积分器尚未提供同段参考导数，因此当前机器结论仍为`INCONCLUSIVE_REVISE`，不得进入C4。
+N=100 campaign 仍由
+[固定脉冲导数合同](../../../../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/explorations/paper1_c3_j3_s1_fixed_pulse_derivative_n100.json)
+绑定；本次排版没有修改任何步长、容差、粒子选择或阶段进入条件。
 
 ## 结论格式
 

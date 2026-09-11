@@ -1,6 +1,7 @@
 # COMSOL 6.4 + MATLAB LiveLink API参考
 
-本文件只保存跨项目成立的COMSOL Model Object API、MATLAB LiveLink调用和GUI对等要求。
+本文件汇集 COMSOL 6.4 Model Object API 与 MATLAB LiveLink 的调用参考；代码片段展示对象关系，
+不是可独立运行的项目脚本。适用范围限于本仓库已记录环境，升级后须重新核验相关调用。
 通用排错见[`COMSOL_DEBUGGING.md`](COMSOL_DEBUGGING.md)，网格、统计和跨求解器闭合见
 [`VALIDATION_METHODS.md`](VALIDATION_METHODS.md)。器件几何、物理组合、具体参数和运行结论
 写入对应项目文档。
@@ -9,8 +10,8 @@
 
 ## 执行入口与会话生命周期
 
-正式任务使用`common/comsol/run_comsol_r2025b.ps1`驱动`matlab.exe -batch`并建立
-MATLAB LiveLink/Java API连接。任务脚本只使用已建立的连接，不再次调用`mphstart`。
+正式入口和版本选择见[操作指南](OPERATIONS.md)，部署参数、启动失败分类与重试行为见
+[共享启动器](../common/comsol/README.md#正式启动入口)。下列片段在入口已建立的连接中执行：
 
 ```matlab
 import com.comsol.model.*
@@ -21,14 +22,12 @@ model = ModelUtil.create('Model');
 - 同一任务内连续完成建模、求解、保存和验收，避免反复启动服务。
 - 不跨独立任务长期复用服务端；长期会话会积累模型标签、Java内存和客户端状态。
 - 创建或加载前清理同名模型，任务结束显式`ModelUtil.remove(tag)`或`ModelUtil.clear`。
-- 启动器只可在任务报告尚未创建时对连接初始化失败自动重试；业务脚本开始后不得自动重算。
 - 首次使用一个直连脚本先做最小连接、创建模型和保存MPH测试。
 
 ## GUI对等与节点管理
 
-正式模型的几何、材料、参数、变量、函数、选择集、物理条件、网格、Study、Solver、数据集、
-派生值、绘图和导出必须持久化为Desktop Model Builder中可见、可编辑、可保存的节点或属性。
-脚本不得把关键物理或数值逻辑只留在MATLAB变量、后处理或Server内存中。
+GUI 对等的通用判据见[仓库架构](REPOSITORY_ARCHITECTURE.md)。本节说明 COMSOL 中如何持久化
+Study/Solver 关系；节点存在与脚本调用成功仍须由保存后重开检查确认。
 
 自定义Solver序列要显式附着到Study：
 
@@ -310,6 +309,9 @@ pd = mphparticle(model, 'dataset', 'pdset1');
 
 查证顺序：当前版本GUI Record Code → Programming Reference Manual → 对应Module User’s Guide →
 最小脚本 → 生成MPH的GUI Compute验收。
+
+离线文件与按问题定位见[官方资料索引](../official_docs/README.md)。以下手册名是检索入口，
+本页尚未给出每项调用对应的页码和独立验证运行，不能把整页视为逐项已认证的 API 清单。
 
 - `COMSOL_ProgrammingReferenceManual.pdf`：Model Object API、feature类型、属性和合法值；
 - `LiveLinkForMATLABUsersGuide.pdf`：`mph*`函数和MATLAB连接；

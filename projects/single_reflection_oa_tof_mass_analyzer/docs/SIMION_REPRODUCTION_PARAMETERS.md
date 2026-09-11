@@ -1,9 +1,16 @@
 # oa-TOF SIMION复现交接
 
-本文件是面向GUI复核人员的**派生导航**，不是参数权威，也不能驱动Candidate、PA重建或Formal发布。
+本文件随 SIMION 交付构建复制到独立包，是面向 GUI 复核人员的**交付检查单**，不是参数权威，也不能驱动Candidate、PA重建或Formal发布。
 精确几何、电压、网格、粒子和资产SHA必须在复现时从下列机器合同读取；若本文与合同冲突，以合同为准。
 
-## 权威输入
+## 包内与仓库输入
+
+在独立交付包中，先读取同目录的 `baseline.json`、`resolved_geometry.json`；Formal 构建还包含
+`formal_mode.json`。其余精确数值、资产身份与验收记录由交付来源的 run／asset manifest 定位。
+下面的相对链接仅适用于源码仓库；独立包中不得把失效的仓库链接当作文件已随包交付。
+如缺少来源清单或所需合同，应先补齐交接，不能按文档摘要重建或验收。
+
+### 仓库合同入口
 
 | 职责 | 机器合同 |
 |---|---|
@@ -45,8 +52,8 @@ Formal包。其电极映射和PA重构只查
 ## PA重建
 
 包含四个理想栅的加速器和反射器GEM采用SIMION官方ideal-grid路线的PA级`surface=none`；生成的完整
-PA家族必须包含`pa#`和`pa0..paN`，不得要求或生成`.pa-surf`。Refine必须从头执行并使用
-`formal_solver_numerics.json`给出的convergence，不得Resume旧解；Lua Fast Adjust仍依赖完整电极基函数数组。
+PA家族必须包含`pa#`和`pa0..paN`，不得要求或生成`.pa-surf`。Refine 必须从头执行，不得 Resume 旧解；活动入口使用所安装 SIMION 的官方默认 convergence，不传入覆盖值。
+Lua Fast Adjust 仍依赖完整电极基函数数组；旧 Formal 验证按其冻结数值身份解释，不能把重建自动视为原资格复验。
 
 任何源宽、加速器、无场长度或反射器变量变化都属于隔离Candidate。候选编译器根据变量目录自动重算
 理论派生量和rebuild plan，只重建run-local受影响PA；通过Candidate、GUI和独立晋升前，不得覆盖Formal。

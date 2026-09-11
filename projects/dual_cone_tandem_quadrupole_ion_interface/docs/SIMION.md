@@ -1,5 +1,8 @@
 # SIMION 最小实现与边界
 
+本文维护 SIMION 的活动入口、表示与验收；当前资格见 [PROJECT](PROJECT.md)。
+所有命令从仓库根执行，尖括号内容须替换为显式冻结输入或符合命名合同的新 run ID。
+
 本项目的离子轨迹推进权威是 SIMION。Python 只编译 GEM、校验输入、序列化粒子源和整理证据，不能
 积分离子运动。
 
@@ -51,8 +54,8 @@ projects\dual_cone_tandem_quadrupole_ion_interface\workflows\gas_assisted_transp
 ```
 
 在 COMSOL 场 manifest 缺失、字段/坐标域不符、Lua 场文件缺失或 SHA-256 漂移时，入口在调用
-SIMION 前失败。当前 `gas_field_interface.json` 的 `current_artifact` 是 `null`，表示没有已发布的
-COMSOL 场；它不影响每次运行即时生成并冻结的均匀 `400 Pa` 原型场。
+SIMION 前失败。当前 `gas_field_interface.json` 的 `current_artifact` 是 `null`，表示尚无全局 current 场；
+每次运行仍可显式消费已校验的 COMSOL 场 manifest 或规定均匀场，且须冻结来源。
 
 准备阶段从 SIMION 安装目录的 `examples\collision_sds` 冻结并哈希
 `collision_sds.lua`、`mbmr.dat`、`textfilelib.lua`、`arraylib.lua` 和 `m_defs.dat`。这些 SIMION 官方、
@@ -82,6 +85,7 @@ COMSOL CSV 先由 `analysis/export_simion_gas_runtime.py`（或 `build_gas_runti
 禁止外推；整个 `z=-5..120 mm, r=0..23.5 mm` 域必须覆盖。圆四极杆在 `z=108.00 mm` 结束，孔板位于 `z=110.22..110.72 mm`，板后保留 `9.28 mm` 观察段；为防止 SDS 在终止步越过气体场，离子终止采样面设在 `z=119.75 mm`。后续飞行 Program 必须通过官方
 `collision_sds.lua` 注入这些函数，并通过共享 RF kernel 驱动电极；不得用 Python 阻尼积分器替代。
 
-真实 COMSOL 场 Prototype `20260910_z120_empty_cfd_simion_n100` 使用冻结 N=100 圆柱源完成：80 个离子到达 `z=119.75 mm`，到达束斑半径中位数 `0.240 mm`、95% 分位 `0.527 mm`。这些数值依赖暂定的 `100 V`、`1 MHz` 两段 RF 和空包络气流，只是筛选结果，不是仪器绝对传输率。
+原型粒子数和当前资格见 [PROJECT](PROJECT.md#当前资格)，束斑统计与原记录的限制见
+[原型历史记录](history/20260911__empty-enclosure-gas-transport-prototype.md)。
 
 [返回项目状态](PROJECT.md)

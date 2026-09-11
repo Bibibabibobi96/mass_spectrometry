@@ -3,6 +3,20 @@
   "role": "repository_gate_catalog",
   "routes": [
     {
+      "stage": "documentation_link_tests",
+      "dependency_profile": "stdlib",
+      "repository_integration_group": "fast",
+      "matches": [
+        { "exact": "common/documentation_links.py", "reason": "documentation_links_changed" },
+        { "exact": "common/test_documentation_links.py", "reason": "documentation_link_tests_changed" },
+        { "exact": "common/verify_documentation.ps1", "reason": "documentation_gate_changed" }
+      ],
+      "command": {
+        "runner": "python",
+        "arguments": ["-m", "unittest", "common.test_documentation_links"]
+      }
+    },
+    {
       "stage": "project_registry",
       "dependency_profile": "locked",
       "repository_integration_group": "fast",

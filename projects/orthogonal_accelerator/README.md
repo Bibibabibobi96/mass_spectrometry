@@ -14,7 +14,7 @@
 
 独立二区计算入口是`python -m projects.orthogonal_accelerator.analysis.accelerator_time_focus`，
 接受显式输入合同，`--self-test`只验证解析参考。轻量验证入口为`verify_project.ps1`，不启动商业求解器。
-该门禁还使用显式`-LuaExe`或本机SIMION 2020所附Lua检查全部26项构建参数；没有Lua时明确跳过该项。
+该门禁还使用显式`-LuaExe`或本机 SIMION 2020 所附 Lua 检查构建参数合同；没有Lua时明确跳过该项。
 各API的参数和坐标约定以源码及理论为准；不提供隐藏的仪器电压、尺寸或焦面默认值。
 
 原生PA专项回归使用`tests/simion/test_two_zone_native_geometry.lua`：只读检查冻结参数生成的
@@ -29,6 +29,14 @@
 integration保存连接及冻结依赖，不保存第二份加速器模型。旧OA整机适配器只做参数映射或兼容导入。
 新器件独立运行产物归`artifacts/projects/orthogonal_accelerator/`；既有OA/MR历史证据不迁移、不改身份。
 
-## 历史索引
 
-- [旧独立加速器COMSOL诊断的只读归档](docs/history/20260903__legacy-accelerator-diagnostic.md)
+## History索引
+
+<details>
+<summary>展开只读历史记录</summary>
+
+- [20260903__legacy-accelerator-diagnostic](docs/history/20260903__legacy-accelerator-diagnostic.md)
+
+- [加速器迁移与原生检查](docs/history/20260911__component-migration-evidence.md)
+
+</details>

@@ -1,13 +1,26 @@
 [CmdletBinding()]
-param()
+param(
+    [switch]$StructureOnly,
+    [string]$PythonExe = ''
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
-. (Join-Path $PSScriptRoot 'host_execution_lease.ps1')
-$hostExecutionLease = Enter-HostExecutionLease -Role GATE
+# StructureOnly is a read-only documentation check: no host lease or external hygiene.
+$hostExecutionLease = $null
+if (-not $StructureOnly) {
+    . (Join-Path $PSScriptRoot 'host_execution_lease.ps1')
+    $hostExecutionLease = Enter-HostExecutionLease -Role GATE
+}
 try {
-& (Join-Path $PSScriptRoot 'verify_repository_hygiene.ps1')
+if (-not $StructureOnly) { & (Join-Path $PSScriptRoot 'verify_repository_hygiene.ps1') }
+if (-not $PythonExe) {
+    $venvPython = Join-Path $repoRoot '.venv/Scripts/python.exe'
+    $PythonExe = if (Test-Path -LiteralPath $venvPython) { $venvPython } else { (Get-Command python -ErrorAction Stop).Source }
+}
+$pythonVersion = (& $PythonExe -c 'import sys; print(str(sys.version_info.major) + "." + str(sys.version_info.minor))').Trim()
+if ($pythonVersion -ne '3.11') { throw "Documentation gate requires Python 3.11, found $pythonVersion" }
 $errors = New-Object System.Collections.Generic.List[string]
 $markdownFiles = @(Get-ChildItem -LiteralPath $repoRoot -Recurse -File -Filter '*.md' |
     Where-Object { $_.FullName -notmatch '[\\/](\.git|artifacts|\.venv)[\\/]' } |
@@ -17,33 +30,17 @@ $comsolApiPath = Join-Path $repoRoot 'docs\COMSOL_API.md'
 $visionPath = Join-Path $repoRoot 'docs\VISION.md'
 $roadmapPath = Join-Path $repoRoot 'docs\ROADMAP.md'
 $rootReadmePath = Join-Path $repoRoot 'README.md'
-$workspaceRoot = Split-Path -Parent $repoRoot
-$externalArtifactsRoot = [IO.Path]::GetFullPath(
-    (Join-Path $workspaceRoot 'artifacts')
-).TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
-$externalArtifactsPrefix = $externalArtifactsRoot + [IO.Path]::DirectorySeparatorChar
-
 function Add-DocError {
     param([string]$Message)
     $errors.Add($Message)
 }
 
-function Test-ExternalArtifactLink {
-    param([Parameter(Mandatory)][string]$ResolvedPath)
-    $candidate = [IO.Path]::GetFullPath($ResolvedPath)
-    return $candidate.Equals(
-        $externalArtifactsRoot,
-        [StringComparison]::OrdinalIgnoreCase
-    ) -or $candidate.StartsWith(
-        $externalArtifactsPrefix,
-        [StringComparison]::OrdinalIgnoreCase
-    )
-}
-
+# History integrity is checked below, without imposing today's prose on frozen evidence.
 foreach ($file in $markdownFiles) {
     $lines = @(Get-Content -LiteralPath $file.FullName -Encoding UTF8)
     $relative = $file.FullName.Substring($repoRoot.Length + 1)
     $relativeGit = $relative -replace '\\', '/'
+    if ($relativeGit -match '(^|/)docs/history/') { continue }
     $requiresGithubMathFence = $relativeGit -in @(
         'projects/orthogonal_accelerator/docs/theory/oaaccelerator_time_focus.md',
         'projects/orthogonal_accelerator/docs/theory/affine_phase_space_time_focus.md',
@@ -54,14 +51,21 @@ foreach ($file in $markdownFiles) {
     )
     $h1Count = 0
     $previousLevel = 0
-    $inFence = $false
+    $headingFence = $null
 
     foreach ($line in $lines) {
-        if ($line -match '^\s*(```|~~~)') {
-            $inFence = -not $inFence
+        if ($null -ne $headingFence) {
+            if ($line -match '^\s{0,3}(?<marker>`{3,}|~{3,})\s*$' -and
+                $Matches['marker'][0] -ceq $headingFence[0] -and
+                $Matches['marker'].Length -ge $headingFence.Length) {
+                $headingFence = $null
+            }
             continue
         }
-        if ($inFence) { continue }
+        if ($line -match '^\s{0,3}(?<marker>`{3,}|~{3,})(?<info>.*)$') {
+            $headingFence = $Matches['marker']
+            continue
+        }
         if ($line -match '^(#{1,6})\s+\S') {
             $level = $Matches[1].Length
             if ($level -eq 1) { $h1Count++ }
@@ -87,7 +91,9 @@ foreach ($file in $markdownFiles) {
     foreach ($line in $lines) {
         $lineNumber++
         if ($null -ne $fenceMarker) {
-            if ($line.Trim() -ceq $fenceMarker) {
+            if ($line -match '^\s{0,3}(?<marker>`{3,}|~{3,})\s*$' -and
+                $Matches['marker'][0] -ceq $fenceMarker[0] -and
+                $Matches['marker'].Length -ge $fenceMarker.Length) {
                 $fenceMarker = $null
                 $fenceInfo = ''
                 $inMathFence = $false
@@ -95,7 +101,7 @@ foreach ($file in $markdownFiles) {
             continue
         }
 
-        if ($line -match '^\s*(?<marker>```|~~~)(?<info>.*)$') {
+        if ($line -match '^\s{0,3}(?<marker>`{3,}|~{3,})(?<info>.*)$') {
             $fenceMarker = $Matches['marker']
             $fenceInfo = $Matches['info'].Trim()
             $inMathFence = $fenceInfo -ceq 'math'
@@ -177,41 +183,10 @@ foreach ($file in $markdownFiles) {
             Add-DocError "$relative`: the absolute instrument clock resolution-claim prohibition is missing"
         }
     }
-    $matches = [regex]::Matches($raw, '!?(?:\[[^\]]*\])\((?<target>[^)]+)\)')
-    foreach ($match in $matches) {
-        $target = $match.Groups['target'].Value.Trim().Trim('<', '>')
-        if ($target -match '^(?:https?://|mailto:|app://|#)' -or [string]::IsNullOrWhiteSpace($target)) {
-            continue
-        }
-        $pathPart = ($target -split '#', 2)[0]
-        $anchorPart = if ($target -match '#') { ($target -split '#', 2)[1] } else { '' }
-        $pathPart = [uri]::UnescapeDataString($pathPart)
-        $resolved = [IO.Path]::GetFullPath(
-            (Join-Path -Path $file.DirectoryName -ChildPath $pathPart)
-        )
-        if (-not (Test-Path -LiteralPath $resolved)) {
-            # Artifacts are deliberately stored beside, rather than inside, the
-            # Git checkout.  Their relative links remain valid evidence links
-            # in a workspace, but a clean CI checkout cannot contain them.
-            if (-not (Test-ExternalArtifactLink -ResolvedPath $resolved)) {
-                Add-DocError "$relative`: broken relative link '$target'"
-            }
-        }
-        elseif (-not [string]::IsNullOrWhiteSpace($anchorPart) -and
-                $anchorPart -match '^[A-Za-z0-9][A-Za-z0-9_-]*$') {
-            $headingAnchors = @()
-            foreach ($heading in @(Get-Content -LiteralPath $resolved -Encoding UTF8 |
-                    Where-Object { $_ -match '^#{1,6}\s+(.+?)\s*$' })) {
-                $headingText = ([regex]::Match($heading, '^#{1,6}\s+(.+?)\s*$')).Groups[1].Value
-                $slug = $headingText.ToLowerInvariant() -replace '[^a-z0-9\s_-]', '' -replace '\s+', '-'
-                $headingAnchors += $slug.Trim('-')
-            }
-            if ($anchorPart.ToLowerInvariant() -notin $headingAnchors) {
-                Add-DocError "$relative`: broken Markdown anchor '$target'"
-            }
-        }
-    }
-}
+ }
+
+& $PythonExe (Join-Path $PSScriptRoot 'documentation_links.py') --root $repoRoot
+if ($LASTEXITCODE -ne 0) { Add-DocError 'Markdown links/anchors failed; see per-file diagnostics above' }
 
 if (-not (Test-Path -LiteralPath $comsolApiPath -PathType Leaf)) {
     Add-DocError 'missing docs/COMSOL_API.md'
@@ -403,53 +378,30 @@ foreach ($required in @('AGENTS.md', 'README.md', 'CLAUDE.md')) {
     }
 }
 
-$requiredRootReadmeHeadings = @(
-    '## 如何使用仓库',
-    '## 固定阅读顺序',
-    '## 知识权威与写入路由',
-    '### 文档权威和冲突优先级',
-    '### 新知识写入表',
-    '### 跨项目知识提升条件',
-    '## 总体目录与项目边界',
-    '## 参数权威与单向派生',
-    '## 语言职责',
-    '## 产物与运行生命周期',
-    '### Git / artifacts 边界',
-    '### artifacts 目录职责',
-    '### artifact标识与文件命名',
-    '### run_config / summary / manifest',
-    '### success / failed / interrupted / superseded',
-    '### 故障调查状态转换',
-    '### history 冻结条件',
-    '### 保留与清理策略',
-    '## 脚本生命周期',
-    '### 新代码分类与一次性实现清理',
-    '## GUI 与 CAD 门禁',
-    '## 通用验证口径',
-    '## 工具链与执行入口',
-    '## Git 规则',
-    '## 任务完成定义'
-)
-$rootReadmeLines = @(Get-Content -LiteralPath $rootReadmePath -Encoding UTF8)
 $rootReadmeRaw = [System.IO.File]::ReadAllText($rootReadmePath, $utf8)
-foreach ($strategyLink in @('docs/VISION.md', 'docs/ROADMAP.md')) {
-    if ($rootReadmeRaw -notmatch [regex]::Escape($strategyLink)) {
-        Add-DocError "README.md: missing strategy-document route '$strategyLink'"
+$authorityRoutes = @(
+    'docs/REPOSITORY_ARCHITECTURE.md', 'docs/LIFECYCLE.md', 'docs/OPERATIONS.md',
+    'docs/DEVELOPMENT_STANDARDS.md', 'docs/PLOTTING_STANDARDS.md',
+    'docs/VISION.md', 'docs/ROADMAP.md', 'AGENTS.md'
+)
+foreach ($route in $authorityRoutes) {
+    if (-not (Test-Path -LiteralPath (Join-Path $repoRoot $route) -PathType Leaf)) {
+        Add-DocError "missing authority document '$route'"
+    }
+    if ($rootReadmeRaw -notmatch [regex]::Escape($route)) {
+        Add-DocError "README.md: missing authority route '$route'"
     }
 }
-$lastHeadingIndex = -1
-foreach ($heading in $requiredRootReadmeHeadings) {
-    $headingIndices = @(for ($index = 0; $index -lt $rootReadmeLines.Count; $index++) {
-        if ($rootReadmeLines[$index] -ceq $heading) { $index }
-    })
-    if ($headingIndices.Count -ne 1) {
-        Add-DocError "README.md: expected exactly one required heading '$heading', found $($headingIndices.Count)"
-        continue
+# Check responsibility boundaries by routes, not a fixed heading count or prose order.
+foreach ($name in @('REPOSITORY_ARCHITECTURE', 'LIFECYCLE', 'OPERATIONS')) {
+    $authorityPath = Join-Path $repoRoot "docs/$name.md"
+    if (-not (Test-Path -LiteralPath $authorityPath -PathType Leaf)) { continue }
+    $authorityRaw = [System.IO.File]::ReadAllText($authorityPath, $utf8)
+    foreach ($route in @('../README.md', '../AGENTS.md')) {
+        if ($authorityRaw -notmatch [regex]::Escape($route)) {
+            Add-DocError "docs/$name.md: missing responsibility-boundary route '$route'"
+        }
     }
-    if ($headingIndices[0] -le $lastHeadingIndex) {
-        Add-DocError "README.md: required heading is out of order: '$heading'"
-    }
-    $lastHeadingIndex = $headingIndices[0]
 }
 
 $projectDirs = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'projects') -Directory)
@@ -492,17 +444,18 @@ foreach ($projectDir in $projectDirs) {
 }
 
 if ($errors.Count -gt 0) {
-    $errors | ForEach-Object { Write-Error $_ }
+    $errors | ForEach-Object { Write-Error $_ -ErrorAction Continue }
     throw "Documentation gate failed with $($errors.Count) error(s)."
 }
 
 [pscustomobject]@{
     MarkdownFiles = $markdownFiles.Count
     HistoryArchives = $historyFiles.Count
-    AuthorityEntries = 3
+    AuthorityEntries = $authorityRoutes.Count
+    Mode = if ($StructureOnly) { 'StructureOnly' } else { 'Full' }
     ComsolReferenceBytes = if (Test-Path -LiteralPath $comsolApiPath) { (Get-Item $comsolApiPath).Length } else { 0 }
     STATUS = 'PASS'
 } | Format-List
 } finally {
-    Exit-HostExecutionLease -Lease $hostExecutionLease
+    if (-not $StructureOnly) { Exit-HostExecutionLease -Lease $hostExecutionLease }
 }

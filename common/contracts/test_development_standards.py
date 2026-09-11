@@ -1,4 +1,5 @@
 import ast
+import re
 import shutil
 import subprocess
 import tempfile
@@ -13,9 +14,9 @@ class ExperimentParameterAuthorityStandardTests(unittest.TestCase):
         source = (
             standards.REPO_ROOT / "docs" / "DEVELOPMENT_STANDARDS.md"
         ).read_text(encoding="utf-8")
-        heading = "##### 实验语义参数的唯一权威链"
-        self.assertEqual(source.count(heading), 1)
-        section = source.split(heading, 1)[1].split("\n#### ", 1)[0]
+        headings = list(re.finditer(r"(?m)^#{1,6}\s+实验语义参数的唯一权威链\s*$", source))
+        self.assertEqual(len(headings), 1)
+        section = re.split(r"(?m)^#{1,6}\s+", source[headings[0].end():], maxsplit=1)[0]
         self.assertIn(
             "canonical row -> resolved plan/budget -> execution receipt", section
         )

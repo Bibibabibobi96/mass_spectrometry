@@ -1,5 +1,8 @@
 # OA-TOF投稿先行工作与专利族预审（2026-08-25）
 
+> 日期化只读参考：以下检索范围与结论冻结于 2026-08-25，不代表再次查阅或当前投稿资格。
+> 后续状态只更新 [claim 注册表](prior_art_claim_registry.md)，不续写本审计。
+
 > `DOC_STATUS: FOUR_LOCAL_MAIN_TEXTS_REVIEWED / REMAINING_FULL_TEXT_AND_LEGAL_REVIEW_OPEN`
 >
 > `SCOPE: SCIENTIFIC_NOVELTY_AND_PRELIMINARY_PATENT_LANDSCAPE / NOT_LEGAL_ADVICE`

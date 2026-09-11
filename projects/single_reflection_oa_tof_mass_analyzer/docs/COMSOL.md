@@ -13,7 +13,8 @@
 - N=100候选功能：`../tests/comsol/run_n100_candidate_functional.ps1`
 - 几何同步：`../workflows/formal_reference/verify_geometry_contract.ps1`
 
-版本、启动、连接复用、重试和失败分类只采用根README与`common/comsol/README.md`。项目任务不自行
+版本与启动采用[仓库操作指南](../../../docs/OPERATIONS.md)，连接复用、重试和失败分类见
+[公共 COMSOL 入口](../../../common/comsol/README.md)。项目任务不自行
 `mphstart`。普通构建不得写Formal路径；只有获批promotion事务中角色与目标精确匹配时才允许。
 
 ## 模型与合同
@@ -44,8 +45,8 @@
 5. 复核固定粒子表、唯一terminal事件分类、输出列和manifest；terminal是事件终态，不是探测面别名；
 6. 几何改变时同步SolidWorks，并由PROJECT更新资格。
 
-当前项目为`formal`。当前MPH身份、N=1000结果与COMSOL GUI evidence由Formal release manifest和
-`formal_validation.json`冻结；2026-07-20拆层前Formal记录仅保留追溯价值，不能替代当前release。
+当前 MPH 身份、验证结果与 GUI evidence 只查 [PROJECT](PROJECT.md) 和
+[`formal_validation.json`](../config/formal_validation.json)；当前源码路径不自动重验历史资产。
 
 ## 兼容限制
 

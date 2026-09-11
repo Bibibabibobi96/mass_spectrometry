@@ -288,12 +288,22 @@ class ChangedGateContractTests(unittest.TestCase):
         self.assertNotIn("projects/rf_quadrupole_ion_optics/README.md", workflow)
 
     def test_documentation_gate_accepts_workspace_artifact_links(self) -> None:
-        source = DOCUMENTATION_GATE.read_text(encoding="utf-8")
-        self.assertIn("function Test-ExternalArtifactLink", source)
-        self.assertIn("Join-Path $workspaceRoot 'artifacts'", source)
-        self.assertIn(
-            "-not (Test-ExternalArtifactLink -ResolvedPath $resolved)", source
-        )
+        from tempfile import TemporaryDirectory
+
+        from common.documentation_links import inspect_repository
+
+        with TemporaryDirectory(prefix="documentation_gate_test_") as directory:
+            root = Path(directory) / "repo"
+            root.mkdir()
+            subprocess.run(["git", "init", "--quiet", str(root)], check=True, cwd=root, timeout=30)
+            (root / "README.md").write_text(
+                "# Entry\n[evidence](../artifacts/projects/example/runs/run/summary.json)\n"
+                "[not evidence](../artifacts_other/missing.json)\n",
+                encoding="utf-8",
+            )
+            report = inspect_repository(root)
+            self.assertEqual(len(report["errors"]), 1)
+            self.assertIn("artifacts_other/missing.json", report["errors"][0])
 
     def test_shared_dependencies_route_to_actual_consumers(self) -> None:
         multipole = self.routed_stages("common/multipole/simion_particle_source.py")

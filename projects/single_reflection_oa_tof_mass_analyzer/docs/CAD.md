@@ -18,12 +18,11 @@
 
 ## 工具链
 
-MATLAB任务必须经根`common/comsol/run_comsol_r2025b.ps1`使用既有LiveLink连接；CAD脚本不得再次
-调用`mphstart`。`load_only`只加载MPH并解析动态实体，不创建目录、导出STEP、运行求解器或保存模型。
+版本和启动方式见[仓库操作指南](../../../docs/OPERATIONS.md)，共享导出桥接见
+[SolidWorks 入口](../../../common/solidworks/README.md)。
 
-SolidWorks 2022由`common/solidworks/`共享解析器发现。STEP桥接使用根`.venv`中的64位Python 3.11
-和锁定的pywin32；其他Python不是替代运行时。导入期间桥接器临时绑定SolidWorks 2022零件/装配模板，
-结束时恢复用户设置，避免失效默认模板阻塞无人值守运行。
+`load_only` 只加载 MPH 并解析动态实体，不创建目录、导出 STEP、运行求解器或保存模型。
+导入期间桥接器临时绑定零件／装配模板，结束时恢复用户设置。
 
 ## 数据流与隔离
 

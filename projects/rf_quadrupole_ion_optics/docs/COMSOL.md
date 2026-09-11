@@ -35,35 +35,19 @@ integration入口内部顺序调用COMSOL/SIMION stage；内部stage不是可独
 和状态导出，不按workflow名称选择科学问题。接口准备任务负责验证RF-only、无碰撞、无静态端场；
 质量过滤任务显式建立差分RF/DC与静态公共偏置；轴向加速走公共multipole模型入口。
 
-标准输出为canonical逐粒子事件表、稀疏轨迹、原始 solver metadata、Python 生成的 solver summary、MPH及
-run三件套。MATLAB/COMSOL只导出原始状态、事件和求解器元数据；传输率、出口 RMS、输出能量均值/标准差
+标准输出为canonical逐粒子事件表、稀疏轨迹、原始 solver metadata、Python 生成的 solver summary 及
+run 三件套。MPH 是否终态保留由运行前冻结的[保留合同](../../../docs/LIFECYCLE.md)决定。
+MATLAB/COMSOL 只导出原始状态、事件和求解器元数据；传输率、出口 RMS、输出能量均值/标准差
 及其他发布的聚合统计均由Python从canonical状态生成。求解器专属终点表不是新运行的稳定接口。
 
 ## 数值与物理边界
 
-- 基线网格、RF步数与最长时间只来自COMSOL数值合同；生产入口不接受hmax或步数标量覆盖。
-- 无加速N=100基线与局部`0.5→0.35 mm`空间敏感性档已在四段杆实体几何上完成；两档均为
-  RF-on 100/100、zero-RF 21/100，RMS半径相对变化约`0.92%`。v3当前只授权固定`0.35 mm`、
-  `80→160`步/周期的时间敏感性档也已完成，RMS半径相对变化约`0.20%`。没有连续量误差预算，
-  空间/时间功能PASS不得改称连续数值收敛；分段杆轴向加速baseline已完成。首次N=100空间档在
-  `MESH_COMPLETE`后仅因17.752 GB超过原17.180 GB进程树帽而失败，预算v7保留8.59 GB系统
-  可用内存底线、将进程树帽调整为21.475 GB后，唯一人工替代运行仍升至21.835 GB，同时系统
-  可用内存降至7.653 GB。空间收敛因此为`INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED`，不再重跑；
-  出口孔板加速N=100 baseline已完成；空间档在`MESH_COMPLETE`后以17.454 GB超过17.180 GB
-  进程树帽，记为`INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED`。结合上述替代运行经验不再抬帽，
-  当前商业求解器授权已关闭。
-- 分段杆轴向加速使用四段、0.4 mm绝缘间隙和公共模电势；出口带孔接口板加速与显式多级案例均由各自具名合同
-  决定，不在MATLAB中维护第二份电势。
-- 当前模型无碰撞；旧碰撞脚本不得恢复。
-- 唯一授权的无加速COMSOL N=1000 bridge在7200 s边界只完成746/1000个逐粒子release构造；
-  静电场已完成，但粒子求解未启动且无出口状态。该run按`interrupted`终结并保留release日志
-  校验清单，campaign关闭且不自动重试，不能作为COMSOL N=1000结果。
-- 单节点向量化phase release只完成了隔离的N=100诊断，结果为
-  `EXECUTED_NOT_EQUIVALENT`：离散传输分类保持不变，但RF-on逐粒子状态未在预登记固定分箱下稳定，
-  且312.606 s相对逐粒子release参考312.020 s没有性能收益。不得把该实验profile用于生产或
-  N=1000；活动默认仍为逐粒子`ReleaseFromDataFile`。
-- RF四极杆离子光学→单次反射oa-TOF的pre_pulse_interface_transport/pulse_capture/analyzer_transport是候选局部联合链，不修改下游Formal资产，也不证明
-  接口场连续或整机Formal。
+- 网格、RF 步数与最长时间来自具名数值合同；生产入口不接受标量覆盖。
+- 当前模型无碰撞。轴向加速由公共多极杆模型消费冻结电势合同。
+- 生产粒子释放仍采用逐粒子 `ReleaseFromDataFile`；隔离向量化试验未证明等价，不能作为生产入口。
+- 已完成的空间／时间敏感性、资源中断和 release 诊断见
+  [历史记录](history/20260911__solver-sensitivity-and-retired-interface.md)；当前资格见 [PROJECT](PROJECT.md)。
+- oa-TOF 连接归 integration；本软件文档不维护下游场、运行阶段或整机资格。
 
 ## GUI验收
 
@@ -84,9 +68,5 @@ release构造Gate只验证完整N=100输入下100个GUI可见`ReleaseFromDataFil
 
 ## 当前限制
 
-- 圆柱家族三模式的COMSOL N=100完整数值矩阵未运行；四极杆无加速模式已有空间档和时间档
-  诊断，但连续量仍缺少来源充分的接受尺度，因此结论固定为INCONCLUSIVE。
-- RF四极杆离子光学→单次反射oa-TOF连接场、时间步、N=1000和机械资格未完成。
-- 正式机械几何与CAD同步前不得提升Formal。
-- 已关闭的连续屏蔽、piecewise swept和hybrid网格筛选数字不再保留在current文档；需要复核时使用
-  history及来源manifest。
+连续量接受尺度、资源受限的加速模式以及机械交付仍有限制，具体状态与关闭条件统一见
+[PROJECT](PROJECT.md#资格边界)。软件入口可执行不等于 Candidate 或 Formal 验收通过。

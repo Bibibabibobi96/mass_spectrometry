@@ -1,88 +1,48 @@
-# Paper 1：JASMS当前证据矩阵
+# Paper 1：当前证据矩阵
 
-> `STATUS: LIVE_INDEX / NO_RESULT_COPY`
->
-> `LAST_REVIEW: 2026-08-27`
+本页是论文证据资格的汇总入口；精确结果留在来源报告，预注册门槛留在阶段合同。
+`SUPPORTED` 表示满足相应主张的完整投稿要求；目前没有主 claim 达到该状态。
+新颖性及允许措辞只查 [claim 注册表](../prior_art_claim_registry.md)，研究步骤见
+[研究与证据计划](validation_and_evidence_plan.md)。
 
-本表只索引当前证据和缺口，不复制run数字、manifest清单或history叙事。`SUPPORTED`表示证据满足该
-claim的完整投稿要求；目前没有主claim达到`SUPPORTED`。
+## 基础与阶段
 
-## 1. 基础能力
-
-| 能力 | 当前证据 | 状态 | 投稿用途与限制 |
-|---|---|---|---|
-| N=2双区精确时间和焦面 | [独立加速器理论](../../../../orthogonal_accelerator/docs/theory/oaaccelerator_time_focus.md)及测试 | `PROJECT_ORACLE` | 经典基础，不是创新 |
-| affine `z-v_z`耦合 | [局部加速器理论](../../../../orthogonal_accelerator/docs/theory/affine_phase_space_time_focus.md)、[下游连接](../../theory/z_vz_linear_phase_space_coupling.md)及测试 | `PROJECT_ORACLE` | 已知相关聚焦特例 |
-| 二级reflectron精确时间 | [`dual_stage_reflectron.md`](../../theory/dual_stage_reflectron.md)及测试 | `PROJECT_ORACLE` | 经典基础，不是创新 |
-| 一维整机耦合 | [`oatof_oaaccelerator_coupling.md`](../../theory/oatof_oaaccelerator_coupling.md)及测试 | `PROJECT_ORACLE` | 参考面和低阶闭合基础 |
-| N=3、`A1–A4`、`Γ3` | [局部三区公式](../../../../orthogonal_accelerator/docs/theory/three_zone_accelerator_ideal_theory.md)、[整机联合理论](../../theory/three_zone_accelerator_ideal_theory.md)及测试 | `PROJECT_ORACLE / PROVISIONAL` | 三区不是创新；100 Th理论身份 |
-| 524 Da N=1000双求解器Formal | [`PROJECT.md`](../../PROJECT.md)与机器合同 | `FORMAL_REFERENCE` | 理想项目基线；不是RF observed source的Paper 1闭环 |
-| C0理论与声明闭合 | [`stage_c0_theory_closure.md`](stage_c0_theory_closure.md) | `PASS_CONTINUE / THEORY_ONLY` | 不含source cohort、直接粒子或性能证据 |
-
-## 2. 主claim证据
-
-| Claim | 已有直接证据 | 当前等级 | 主要缺口 |
-|---|---|---|---|
-| J1：切向closure与条件厚度分离 | [`20260817 observed-source归因`](../../history/20260817__three-zone-zvz-nonlinearity-fixed-energy-source-sensitivity.md) | `PRIOR_ART_OVERLAP / DIAGNOSTIC_FRAMEWORK` | N=100、单设计、post-hoc移植；且非线性相关与finite spread已有先例，不能独立承担新颖性 |
-| J2：focusability projector预测残差floor | `paper1_stage_evidence/C2/20260825_144300__total_variance_j2_j3_revision/stage_conclusion.md`、51.2 mm历史功能对照、[`当前J2-0复现`](../../../../../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/paper1_stage_evidence/J2_0/20260826_214700__s1_gap51p2_current_condition_reproduction/stage_conclusion.md)及`C1_CONNECTOR_GAP_TRIPLET` N=5000 source-only evidence | `AXIAL_TOTAL_OBJECTIVE_INCONCLUSIVE_REVISE / CURRENT_FUNCTIONAL_REPRODUCTION_PASS / GAP_HYPOTHESIS_SUPPORTED` | 当前J2-0确认了低残差51.2 mm工况下按仿射`z-vz`关系重算工作点的功能性改善，且未改变完整母群检测数；但它不是“source-weighted vs unweighted projector”比较，不能被升级为J2成功。下一步按[`J2真实场公平pilot合同`](j2_real_3d_pilot_contract.md)以同一候选池、预算和锁定角色检验预测力；完整6D、真实场、峰形和传输检验仍缺 |
-| J3：第三区的独立高阶控制方向及其有限束宽价值 | `runs/20260817_122700__analysis__python__three-zone-t5/stage_receipt.json`显示：在两区已闭合`D1/D2`后，三区保留的`Γ3`方向可把冻结1D、2.2 mm轴向束宽的`σ_t`从0.816 ns降至0.182 ns；`paper1_stage_evidence/C2_J3/20260826_015500__ideal_axial_direction_v2/stage_conclusion.md`以当前哈希冻结的理论合同，在两种冻结源条件下通过导数、步长、零空间及 locked improve/zero/worsen 排序门槛；C3真实PA的五点N=1路径均已贯通 | `IDEAL_AXIAL_PASS_CONTINUE / C3_N1_FUNCTIONAL_ONLY / HIGH_OBVIOUSNESS_RISK` | N=1不支持导数或性能。仍须完成N=100五点中心差分、事件拓扑稳定性、独立轴场积分器、完整6D传输/峰形、多质量与公平结构比较 |
-| J4：source-weighted优于未加权closure | solver-free two/three比较与`Γ3` | `PRIOR_ART_OVERLAP / LOCAL_SCALAR_ONLY` | 相同预算A–D公平重优化和blind test全部缺；只能作为J2/J3次级结果 |
-| J5：诊断决定改分析器还是改源 | 历史结论提出下一阶段问题 | `PRIOR_ART_OVERLAP / HYPOTHESIS_ONLY` | 至少两源工况的事前决策和独立验证缺失；一般source/analyzer权衡已知 |
-
-## 3. 先行工作门禁
-
-| 门禁 | 当前证据 | 状态 | 仍需关闭 |
-|---|---|---|---|
-| 定向论文与引用链预审 | [`2026-08-25审计`](../prior_art_search_audit_20260825.md)及[`逐式claim chart`](../prior_art_equation_claim_chart_20260825.md) | `FOUR_LOCAL_MAIN_TEXTS_REVIEWED` | 2015/2026 SI、其他closest-work全文、扩展引用链与独立专家复核 |
-| 专利族预审 | 同上，覆盖SVCF、RF guide/conditioner、OA guide mode、spatial-temporal correlation和upstream conditioner代表族 | `PRELIMINARY_LANDSCAPE_COMPLETE` | 具体conditioner逐权利要求、continuation/法域状态和专业FTO |
-| J2/J3同构先例 | 定向检索及四份本地主文本均未发现完整同构组合；Yefchak 1989进一步加重J3明显性风险 | `NO_DIRECT_HIT / NOT_CLEARANCE` | 剩余正文/SI、引文扩展与领域专家独立复核 |
-
-## 4. 当前真实源相关证据
-
-| 证据 | 已证明 | 未证明 |
+| 对象 | 当前资格 | 依据与下一道门槛 |
 |---|---|---|
-| [`三区完成结果快照`](../../history/20260823__three-zone-completed-results-snapshot.md) | 一维三区理论、N=100真实PA和固定设计源敏感性已完成 | N≥1000、条件模型、可补偿性、COMSOL/CAD和工程资格 |
-| [`observed横向敏感性`](../../history/20260817__three-zone-observed-transverse-sensitivity.md) | 同一N=100 ID下横向恢复是较小但可测增量 | 横向普遍不重要、连续真实handoff或统计稳定性 |
-| [`observed z-vz归因`](../../history/20260817__three-zone-zvz-nonlinearity-fixed-energy-source-sensitivity.md) | 固定设计中observed-affine残差主导首尾顺序退化 | 该残差不可补偿、是光滑高阶曲线或可推广到其他工况 |
-| RF→OA integration observed authority | S1的N=1000母cohort/900 handoff同步真实PA筛查提供875个所选时刻状态；S2的N=1000母cohort/914 handoff筛查提供828个所选时刻状态。两源均由冻结脉冲计划和detector-blind selector选择，且母分母与损失账本保留 | [`C1 source contract`](stage_c1_source_contract.md)为`PASS_CONTINUE`：只证明两源各自可稳定识别；它不比较模型相等性，也不升级为J2/J3或性能结论 |
-| S1 connector-gap pre-pulse residual | `C1_CONNECTOR_GAP_TRIPLET` N=5000、real-field pulse-equivalent source-only stage保留完整母cohort分母；0→51.2 mm和51.2→102.4 mm分别使用137和34个共同locked pre-pulse ID，不能把两对残差拼成同一三点群体。各对RMS与来源见[机制证据及勘误](connector_gap_working_point_mechanism_20260827.md) | 这是残差—传输权衡的探测器盲证据，不是J2、峰宽或分辨率结论。51.2 mm须独立重建C1 source receipt后作为首个J2主工况；102.4 mm仅为低传输边界对照，当前样本不足以单独承担锁定J2结论 |
-| S1 51.2 mm历史`z-vz`理论工作点直接对照 | 同一77个pre-pulse restart粒子、同一全理想三区场与77/77检出：继承工作点 [`20260821_110000`](../../../../../../artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20260821_110000__sim__simion__rf-oatof-single-flight-gap51p2__n77/summary.json) 的直接FWHM为2.1105 ns、R=7423、2 modes；按`source_zvz_three_zone_theory_working_point_v1`重算的 [`20260821_110200`](../../../../../../artifacts/projects/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/runs/20260821_110200__sim__simion__rf-oatof-single-flight-gap51p2__n77/summary.json) 为0.6731 ns、R=23271、1 mode | `HISTORICAL_FUNCTIONAL_SCREEN_ONLY`：FWHM降低68.1%、R提高3.14×，支持“`z-vz`关系调节可在低残差gap工况恢复有效聚焦”的既有功能性事实；原campaign未运行成对统计，且N=77、历史重启源/全理想场、无锁定角色，不能独自作为J2投稿证据 |
-| S1 51.2 mm当前`z-vz`理论工作点复现 | [`J2-0 stage package`](../../../../../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/paper1_stage_evidence/J2_0/20260826_214700__s1_gap51p2_current_condition_reproduction/stage_report.json)绑定同一393个pre-pulse ID、106个pulse-eligible peak ID和两臂相同的211 detector crossings；继承工作点的直接FWHM/R为2.341 ns/6692，`source_zvz_three_zone_theory_working_point_v1`为0.711 ns/22023 | `CURRENT_FUNCTIONAL_REPRODUCTION / DEVELOPMENT_ONLY`：通过J2-0实施等价性门槛，排除了“当前restart、时钟或字段实现已丢失该已知机制”的解释；它不是J2预测器对比、锁定测试、跨源或多质量证据 |
-| S1三间隙真实场工作点机制实验 | [脉冲相对时钟修正run](../../../../../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/runs/20260827_123019__analysis__python__connector-gap-pulse-clock-correction/run_manifest.json)重新派生既有六臂，不新增SIMION；固定同一N=5000母cohort、每间隙pulse与源状态，各臂使用全部检测命中且同gap命中ID相同。新R、峰宽和有符号成对收益区间见[机制报告](connector_gap_working_point_mechanism_20260827.md)。旧`20260827_112500`报告的absolute-clock R和无符号差异区间被替代，原始轨迹和FWHM不变 | `MECHANISM_EXPERIMENT_PASS / MODEL_SPECIFIC`：支持针对当前源重调工作点的收益及其与源条件变化的关联；不隔离所有gap依赖变量，不给出普遍残差阈值。继承点是旧理想源工作点，调压复用已有算法，不是同预算经典方法重优化对照。51.2 mm为主证据，102.4 mm为低传输边界；不支持算法首创、source-weighted优越性或多源/多质量推广 |
-| C2 ideal axial total-objective revision | 两源的解析/有限差分`g`、`G`步长平台、两区零控制、三区改善/零效/恶化的锁定排序均闭合；目标同时含条件均值方差和条件厚度 | 对旧小-gap源条件的J2：`INCONCLUSIVE_REVISE`。它禁止把旧结果升级为J2成功，却不排除经独立C1确认的低残差gap工况；后者必须作为新的、预注册的真实场pilot。对预注册拆分的J3：`PASS_CONTINUE / IDEAL_AXIAL_ONLY`，只允许冻结一份C3_J3真实场局部导数合同；不允许借此恢复J2、FWHM、传输或普适结构优越性主张 |
+| 双区、三区、反射器与一维整机模型 | `PROJECT_ORACLE`；三区部分为 `PROVISIONAL` | [理论入口](../../theory/README.md)；经典基础不作为创新 |
+| 524 Da 双求解器冻结设计 | `FORMAL_REFERENCE` | [PROJECT](../../PROJECT.md)；不是 RF 真实源的论文闭环 |
+| C0 理论与接口 | `PASS_CONTINUE / THEORY_ONLY` | [C0 记录](stage_c0_theory_closure.md)；不含源或粒子性能 |
+| C1 两种源的历史识别 | `DEVELOPMENT_ONLY` | [源合同](stage_c1_source_contract.md)；新阶段须两份独立母群 assessment 均为 `PROSPECTIVE` |
+| Connector-gap 三臂源侧比较 | `DEVELOPMENT_ONLY / SOURCE_ONLY` | [三臂合同](stage_c1_connector_gap_triplet_contract.md)与[机制证据](connector_gap_working_point_mechanism_20260827.md)；不能复用为新锁定测试 |
+| J2-0 当前工作点复现 | `CURRENT_FUNCTIONAL_REPRODUCTION / DEVELOPMENT_ONLY` | [公平 pilot 的前置证据](j2_real_3d_pilot_contract.md)；不是两种预测器的公平比较 |
+| C2 轴向总目标 | J2 为 `INCONCLUSIVE_REVISE`；J3 为 `IDEAL_AXIAL_ONLY` | [状态沿革及原来源](../../history/20260911__publication-status-consolidation.md#evidence_matrix)；不得将 J3 的局部闭合升级为 J2 |
+| C3_J3 真实 PA | `INCONCLUSIVE_REVISE` | [C3 合同](stage_c3_j3_real_field_contract.md)：N=1 与 N=100 五点平台已完成；独立同段轴场参考待闭合 |
+| C4_J3 锁定预测 | `BLOCKED_BY_C3_J3` | [C4 合同](stage_c4_j3_locked_prediction_contract.md)；先核验 C3 五件套，再读取锁定探测器结果 |
 
-## 5. 证据资格结论
+## 候选主张与缺口
 
-当前仓库足以支持以下写作动作：
+| Claim | 可用证据边界 | 尚缺什么 |
+|---|---|---|
+| J1 条件均值与厚度分离 | 历史 observed-source 归因；只作框架 | 非独立新颖性，不承担主方法 claim |
+| J2 受约束源加权预测 | 历史轴向总目标不确定；J2-0 仅复现已知机制 | 新前瞻源、同候选池／预算的加权与未加权真实场比较、锁定预测及独立验证 |
+| J3 新增控制方向的增量价值 | 冻结一维理论与真实 PA 局部平台 | 独立轴场参考、锁定三维预测、完整六维损失／峰形、多质量与公平结构比较 |
+| J4 源加权优于未加权目标 | 当前只能作为 J2/J3 的次级问题 | 同预算重优化及 blind test |
+| J5 改分析器还是改源 | 工况条件化假设 | 至少两源的事前决策及独立验证 |
 
-- 按收窄后的J2/J3中心问题写核心全文骨架、Introduction和claim-safe相关工作；
-- 写Theory和Methods草案，但结果数字、摘要结论和新颖性措辞必须留空；
-- 设计并预注册Paper 1 campaign；
-- 把现有N=100结果作为hypothesis-generating历史证据。
+## 结果入口与使用边界
 
-当前仓库不足以支持：
+- [三区完成快照](../../history/20260823__three-zone-completed-results-snapshot.md)：一维理论、真实 PA 功能与固定源敏感性。
+- [横向敏感性](../../history/20260817__three-zone-observed-transverse-sensitivity.md)：同一小样本下的横向增量，不能外推横向普遍不重要。
+- [轴向残差归因](../../history/20260817__three-zone-zvz-nonlinearity-fixed-energy-source-sensitivity.md)：固定设计中的主导退化，不能证明残差绝对不可补偿。
+- [Connector-gap 工作点机制及钟表勘误](connector_gap_working_point_mechanism_20260827.md)：脉冲相对时钟下的模型特定重调收益。
+  两个相邻 gap 的共同锁定 ID 群体不同，不能拼成同一三点残差曲线；低传输边界不能承担精密主结论。
+- [先行工作审计](../prior_art_search_audit_20260825.md)与[逐式 claim chart](../prior_art_equation_claim_chart_20260825.md)：
+  已核对部分主文本；剩余 SI、closest-work 全文、引文链和具体 IP 审查未关闭。
 
-- JASMS摘要中的定量focusability claim；
-- 条件残差构成架构极限的结论；
-- 三区对真实源优于二区的投稿结论；
-- source-weighted设计优越性；
-- “必须改源而不能改分析器”的普遍判断；
-- 任何`first/novel`措辞。
+## 当前可写内容
 
-## 6. 更新规则
+可撰写收窄后的问题、相关工作及 Theory／Methods 草案，设计前瞻验证。
+现有证据不支持定量 focusability 投稿结论、架构极限、三区一般优越性、source-weighted 优越性或 `first/novel`。
 
-新证据只有在以下字段齐全时加入本表：
-
-```text
-claim_id
-source cohort and ordered-ID hash
-field/geometry/numerics identity
-particle count and mass/source condition
-metric and denominator definition
-run/history/manifest reference
-independent validation
-evidence level
-known limitation
-```
-
-结果数字留在summary/history，本文只更新资格和引用。
+新增证据必须能追溯 claim、源及有序 ID、场／几何／数值／时钟身份、样本与质量、指标及分母、
+run／manifest、独立验证和限制。更新本表时只调整资格与引用，不再次抄录结果数字。

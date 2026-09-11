@@ -8,7 +8,8 @@
 
 - 上游项目拥有provided port和canonical输出；
 - 下游项目拥有required port和输入接受条件；
-- `common/integration/`拥有端口、连接、坐标、时钟、粒子状态、谱系和composition plan的schema与解析；
+- `common/contracts/`拥有接口 Schema；`common/integration/`拥有端口、连接、坐标、时钟、粒子状态、
+  谱系和 composition plan 的解析；
 - `integrations/<connection-family>/`拥有具体连接profile、运行编排、联合分析、测试和当前证据；
 - 联合run以`integration_id`为主身份，并冻结两端项目、port和profile身份。
 
@@ -90,22 +91,14 @@ profile显式选择一种物理模式：
    基函数默认串行构建；SIMION并发只有在独立资源测试证明内存、写盘、许可证和稳定性均有余量后才能
    开启。缓存是可删除性能层，run仍冻结输入、验证报告和所用PA身份。
 
-该机制当前只在RF多极杆→oaTOF integration中实现；尚未满足两个平级消费者的公共代码迁移条件。
-其他integration采用时应复用本节的合同和门禁，但先在自身边界实现并验证；第二个消费者闭合后再评估
-把无器件假设的基函数传递与实例切换机制迁入`common/simion/`。
+本节描述耦合设计和验收边界，不维护公共代码消费者数量或当前物理资格。
+已存在的无器件假设 PA 构建与场比较机制直接复用[公共 SIMION 实现](../common/simion/README.md)。
+器件局部域、portal、实例启停和接受阈值仍由消费者拥有；不能重新建立公共构建器的项目私有副本。
 
-## 当前RF多极杆→oaTOF实例
+## 实现入口
 
-四、六、八极杆共享多极杆家族出口端口，一个integration family
-`rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer`覆盖三者。当前实现支持：
-
-- `staged_three_stage`分阶段COMSOL/COMSOL/SIMION链；
-- `simion_single_flight`连续SIMION单次飞行；
-- 模式中性的direct-mating profile；
-- 接地圆套筒、带孔法兰和整体屏蔽；
-- 由参数合同驱动的单流程布局和受影响PA重建。
-
-准确流程、四PA结构、电极18/19映射、当前诊断和开放任务见
+公共 API 和验证边界见[公共连接层](../common/integration/README.md)。
+RF 多极杆→oaTOF 的活动模式、实例布局、电极映射、当前诊断和开放任务见
 [integration入口](../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/README.md)。
 
 ## 扩展门禁

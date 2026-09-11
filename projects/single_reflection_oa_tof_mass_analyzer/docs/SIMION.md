@@ -3,7 +3,7 @@
 本文只记录SIMION文本、PA/IOB、GUI和独立验收。当前项目资格、跨求解器结论与开放任务只见
 [`PROJECT.md`](PROJECT.md)；2026-07-28以前的完整实施时间线冻结在
 [`history/20260728__pre-document-consolidation-simion.md`](history/20260728__pre-document-consolidation-simion.md)。
-同事复现参数见[`SIMION_REPRODUCTION_PARAMETERS.md`](SIMION_REPRODUCTION_PARAMETERS.md)。
+独立交付包的 GUI 复核步骤与完成条件见[`SIMION_REPRODUCTION_PARAMETERS.md`](SIMION_REPRODUCTION_PARAMETERS.md)。
 
 ## 活动入口与资产
 
@@ -62,11 +62,8 @@ Candidate SIMION门禁通过`run_parameterized_geometry_smoke.ps1`隔离构建�
 单粒子Fly的墙钟耗时receipt。真实丝网属于独立物理候选，须建立单独几何/profile并重新验证传输、场和收敛，
 不能复用一行理想栅路径。
 
-Candidate run `20260813_160656__gate__simion__native-ideal-grid__smoke`已真实PASS：四栅raw row依次为
-`260/596/0/480`且各仅一行，单粒子原生穿越计数为`1/1/2/2`并命中探测器。加速器builder墙钟
-`168.329 s`（其中Refine `164 s`），反射器builder `32.170 s`（Refine `32 s`），组合raw-PA receipt
-`3.908 s`，单粒子Fly `0.472 s`。这是隔离的Candidate功能验收，不晋升或改写当前Formal包，也不证明
-真实丝网、网格收敛、N=100/1000传输或分辨率资格。
+原生理想栅功能验收的有效结论与来源 run 见 [PROJECT 的兼容边界](PROJECT.md#已知兼容边界)。
+该专项单粒子检查不提供统计、真实丝网或 Formal 晋升资格。
 
 反射器为二维轴对称PA；网格只查`../config/formal_solver_numerics.json`，制造约束只查
 `../config/design_variables.json`。包含理想栅的加速器和反射器PA均使用SIMION官方ideal-grid示例采用的

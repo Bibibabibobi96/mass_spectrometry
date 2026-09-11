@@ -1,7 +1,7 @@
 # 科学绘图与图形证据规范
 
 本文是仓库内科学绘图、仿真诊断图、跨求解器比较图、报告图和发表图的唯一跨项目规范。仓库架构、
-artifact生命周期和文件角色仍由根[`README.md`](../README.md)定义；编码与机器合同遵循
+artifact 生命周期和文件角色见[生命周期](LIFECYCLE.md)，仓库边界见[架构](REPOSITORY_ARCHITECTURE.md)；编码与机器合同遵循
 [`DEVELOPMENT_STANDARDS.md`](DEVELOPMENT_STANDARDS.md)；指标、统计和跨求解器验证语义遵循
 [`VALIDATION_METHODS.md`](VALIDATION_METHODS.md)。Agent权限和面向用户的交接方式只由
 [`AGENTS.md`](../AGENTS.md)定义。
@@ -56,7 +56,7 @@ artifact生命周期和文件角色仍由根[`README.md`](../README.md)定义；
   不能成为长期正式分析入口。
 - notebook可以调用正式绘图函数，但不能成为证据图唯一且不可复现的实现。
 - 不为本规范预建统一`src/plotting`、figure registry或空测试树。共享样式或绘图代码只有在至少两个项目
-  实际采用并验证后，才按根README提升到`common/`。
+  实际采用并验证后，才按[仓库架构](REPOSITORY_ARCHITECTURE.md)提升到`common/`。
 
 ## 命名与API
 
@@ -71,7 +71,7 @@ artifact生命周期和文件角色仍由根[`README.md`](../README.md)定义；
 - `validate_*`：失败关闭地校验图形或绘图数据合同。
 
 禁止`make_plot`、`plot_data`、`helpers.py`、`final_figure.py`等职责不明或以生命周期代替语义的名称。
-artifact内图形文件继续使用根README规定的稳定角色名，例如`mass-spectrum__peak-overlay.png`；不得用
+artifact 内图形文件继续使用[生命周期](LIFECYCLE.md)规定的稳定角色名，例如`mass-spectrum__peak-overlay.png`；不得用
 `final`、`latest`、`new`、`v2`或人工日期管理版本。
 
 新建或实质修改的Python证据图优先使用显式Figure/Axes接口。渲染函数返回Figure和Axes，不调用
@@ -249,7 +249,7 @@ MATLAB/COMSOL/SIMION可以保存原生诊断图和GUI节点；影响正式模型
 - 密集场图或散点可以在PDF/SVG内只栅格化数据artist，保留轴、文字和注释为矢量。
 - 每次导出显式指定格式、尺寸和DPI；扩展名不能代替格式合同。`bbox_inches='tight'`改变名义尺寸，
   只有在复核最终尺寸后使用。
-- 可引用run不可原地覆盖图形证据；重新计算产生新run，或按README定义的生命周期晋升和取代。
+- 可引用run不可原地覆盖图形证据；重新计算产生新run，或按[生命周期](LIFECYCLE.md)晋升和取代。
 - 新生命周期实现优先写临时文件、验证能打开、尺寸和必要内容后再原子发布。
 
 报告/发表图的caption或caption draft应说明：图的目的、案例和求解器、关键条件、样本数和分母、
@@ -282,9 +282,9 @@ MATLAB/COMSOL/SIMION可以保存原生诊断图和GUI节点；影响正式模型
 裁剪/重叠、文件能否在目标viewer打开，以及来源数据和代码能否重建可见marks。自动测试、人工图审和
 真实求解器验证是三个不同证据层级。
 
-## Agent工作流
+## 绘图操作顺序
 
-创建或实质修改证据图前，Agent应：
+创建或实质修改证据图前，维护者应：
 
 1. 读取本文、相关指标合同和现有样式/相邻图形；
 2. 确定探索、运行诊断、证据或报告/发表等级及目标受众；
@@ -292,8 +292,8 @@ MATLAB/COMSOL/SIMION可以保存原生诊断图和GUI节点；影响正式模型
 4. 搜索现有图形角色、准备函数和类别语义，避免第二套实现；
 5. 明确本次只改变视觉表达，还是改变数据语义、过滤、指标或比较合同。
 
-修改期间不得为了更好看而改变轴范围、颜色、归一化、平滑、排除或样本；确有科学理由的改变作为
-显式合同变更验证。完成后运行适用的数据测试和渲染smoke test，生成代表性预览，检查尺寸、格式、
+修改数据选择、归一化、平滑或比较范围时，必须说明科学理由并验证合同变化。
+颜色和版式可按本规范改善可读性；类别语义、裁剪或尺度发生变化时，仍须记录并复核，不能隐藏数据。完成后运行适用的数据测试和渲染smoke test，生成代表性预览，检查尺寸、格式、
 可读性和裁剪，并在交接中报告来源数据、实质语义变化、验证层级和产物；普通实现细节仍按AGENTS和
 用户偏好保持紧凑。
 

@@ -14,15 +14,18 @@ version: 1.0.0
 maturity: reference_with_provisional_extension
 ---
 
-# Astral 类质量分析器理论复刻知识包
+# MR-TOF 理论索引与共同约定
 
-本知识包面向需要**理解、实现、优化和验证** Astral 类开放路径多反射飞行时间质量分析器的研究人员与 AI Agent。它把原论文公开的理论结构、可复算方程和工程接口整理为一条可执行的复刻路线，同时单独给出“平行镜 + 双 Stripe”非倾斜方案的理论模型。
+本知识包整理 Astral 公开理论、解析参考和本项目平行镜双 Stripe 扩展。各页按模型边界保留完整推导，
+实现入口由[项目 README](../../README.md)导航，当前结论由[PROJECT](../PROJECT.md)维护。
 
 > **边界说明**：公开论文足以复现理论方程、优化目标和系统工作方式，但没有公开完整的生产 CAD、电极精确宽度、全部间隙、端部修正器尺寸、未舍入优化系数和最终制造公差。因此，本知识包支持建立功能等价的研究模型，不声称恢复商业仪器的专有工程图。
 
 > **当前项目绑定**：本项目只实现“名义平行镜 + 两套独立偏压、独立形状 Stripe”的活动硬件线。
 > 原 Astral 的“收敛镜 + 单 Stripe/Ion Foil 响应”仅用于理论对照、公开基准回归和双 Stripe 初值，
 > 不构成另一个活动项目、mode或profile。
+
+按问题定位：[文档组成](#1-文档组成) · [坐标、能量和周期约定](#2-坐标能量和周期约定) · [原 Astral 与双 Stripe 非倾斜方案](#4-原-astral-与双-stripe-非倾斜方案) · [复刻模型层级](#6-复刻模型层级) · [主要来源](#8-主要来源)。
 
 ## 1. 文档组成
 
@@ -128,21 +131,11 @@ astral.dual_stripe.parallel_mirrors.v1
 
 ## 5. 已公开的关键基准
 
-原 Astral 主论文公开了下列理论基准，可用于回归测试：
-
-| 量 | 公开值 |
-|---|---:|
-| 标称能量/电荷 $w_0$ | $4000\ \mathrm{V}$ |
-| 镜三点等时能量 | 由净增益参考中心与单粒子增益半宽派生；当前为 $4000\pm100\ \mathrm{V}$ |
-| 标称漂移长度 $L$ | $335\ \mathrm{mm}$ |
-| 有效镜间距离 $W$ | $641\ \mathrm{mm}$ |
-| 理论振荡次数 $K$ | $25$ |
-| 标称注入角 $\vartheta_0$ | $1.78^\circ$ |
-| 镜面收敛角 $\Theta$ | $0.045^\circ$ |
-| Stripe 偏压 $v_s$ | $-13.8\ \mathrm{V}$ |
-| 分析器内近似路径 | $32\ \mathrm{m}$ |
-
-这些数字是论文样机和其理论工作点的参考，不应直接成为新几何的固定常数。本仓库模型与论文保持一致的是**方程、变量依赖、多项式阶次，以及线性项/高次项的结构分工**；当前制造实例的曲线系数、$L$、$W$ 和各电极电压允许不同，而且必须由当前 baseline 与相应闭合条件输入或求解。换言之，“理论一致”不等于“逐个数值复刻”。
+原论文的能量、长度、振荡数、角度和 Stripe 偏压仅用于解析回归，不直接成为本项目参数。
+唯一数值表分别见[镜基准](isochronous_mirror_design.md#13-公开基准和未公开量)和
+[原漂移基准](adiabatic_drift_and_original_ion_foil.md#17-公开工程基准)。
+当前制造实例的曲线、工作能量、电压和漂移长度由项目机器合同及有效证据决定；理论关系一致不意味着
+必须逐个复刻论文样机数值。
 
 ## 6. 复刻模型层级
 
@@ -153,13 +146,15 @@ astral.dual_stripe.parallel_mirrors.v1
 | L2 | 真实二维截面、有限间隙和厚度 | 场误差、真实横向聚焦、边缘场修正 |
 | L3 | 完整三维镜、端部、Stripe、棱镜和探测面 | 透过率、振荡数、峰形、overtone 和装配误差 |
 | L4 | 六维源分布、空间电荷、制造和电压统计 | 鲁棒性、动态范围和运行包络 |
-| L5 | 实验标定和冻结校准 | 仪器工作点、质量标定和正式性能 |
+| L5 | 实验标定和冻结校准 | 实验覆盖域内的工作点、质量标定与性能 |
 
-AI 在输出任何结论时应附带模型层级。例如，“$T'(4000\ \mathrm V)=0$”属于 L0/L1；“给定真实离子源时分辨率超过某值”至少属于 L3/L4。
+模型层级只描述保真度，不自动授予 Candidate/Formal；仿真型正式交付不以 L5 实验标定为默认前提。
+输出结论时应注明模型层级。例如，“$T'(4000\ \mathrm V)=0$”属于 L0/L1；“给定真实离子源时分辨率超过某值”至少属于 L3/L4。
 
 ## 7. AI 复刻的最小输入
 
-至少需要以下机器可读输入：
+以下只展示所需信息分组，空对象、路径与枚举写法不是可直接执行的 Schema。
+现有项目配置优先复用，不另建 `physics_contract.json` 或复制论文数值为当前基线：
 
 ```json
 {
@@ -194,8 +189,8 @@ AI 在输出任何结论时应附带模型层级。例如，“$T'(4000\ \mathrm
 
 ## 8. 主要来源
 
-1. D. Grinfeld et al., “Multi-reflection Astral mass spectrometer with isochronous drift in elongated ion mirrors,” *Nuclear Instruments and Methods in Physics Research A* 1060 (2024) 169017. DOI: `10.1016/j.nima.2023.169017`.
-2. A. S. Berdnikov et al., “Analytical Potentials for the Efficient Simulation of Planar and Axisymmetric Ion Mirrors,” *Journal of Analytical Chemistry* 74 (2019) 1437–1446. DOI: `10.1134/S1061934819140041`.
-3. H. Stewart et al., “A Conjoined Rectilinear Collision Cell and Pulsed Extraction Ion Trap with Auxiliary DC Electrodes,” *Journal of the American Society for Mass Spectrometry* 35 (2024) 74–81. DOI: `10.1021/jasms.3c00311`.
-4. H. Stewart et al., “Crowd Control of Ions in the Astral Analyzer,” ChemRxiv preprint. DOI: `10.26434/chemrxiv-2023-p6zln`.
-5. H. Stewart et al., “A Multi-Reflection Time-of-Flight Analyzer with a Long Focus Lens,” ChemRxiv preprint. DOI: `10.26434/chemrxiv-2024-xl3kt`.
+1. D. Grinfeld et al., “Multi-reflection Astral mass spectrometer with isochronous drift in elongated ion mirrors,” *Nuclear Instruments and Methods in Physics Research A* 1060 (2024) 169017. DOI：[原始来源](https://doi.org/10.1016/j.nima.2023.169017).
+2. A. S. Berdnikov et al., “Analytical Potentials for the Efficient Simulation of Planar and Axisymmetric Ion Mirrors,” *Journal of Analytical Chemistry* 74 (2019) 1437–1446. DOI：[原始来源](https://doi.org/10.1134/S1061934819140041).
+3. H. Stewart et al., “A Conjoined Rectilinear Collision Cell and Pulsed Extraction Ion Trap with Auxiliary DC Electrodes,” *Journal of the American Society for Mass Spectrometry* 35 (2024) 74–81. DOI：[原始来源](https://doi.org/10.1021/jasms.3c00311).
+4. H. Stewart et al., “Crowd Control of Ions in the Astral Analyzer,” ChemRxiv preprint. DOI：[原始来源](https://doi.org/10.26434/chemrxiv-2023-p6zln).
+5. H. Stewart et al., “A Multi-Reflection Time-of-Flight Analyzer with a Long Focus Lens,” ChemRxiv preprint. DOI：[原始来源](https://doi.org/10.26434/chemrxiv-2024-xl3kt).

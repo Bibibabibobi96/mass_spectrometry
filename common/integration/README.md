@@ -1,10 +1,12 @@
 # 公共器件连接合同层
 
-本目录实现获批连接架构中的求解器中立公共边界。项目拥有provided/required port；
+本目录实现[连接架构](../../docs/COMPONENT_CONNECTION_ARCHITECTURE.md)中的求解器中立公共边界。项目拥有provided/required port；
 `integrations/<connection-family>/`拥有具体profile、连接几何、adapter和联合证据；本目录只负责
 解析显式五元组、失败关闭兼容性冲突并冻结`resolved connection + composition plan`。
 
-公共Python API为：
+## Python API
+
+公共 Python API 为：
 
 - `load_connection_profile_registry(path)`：读取并校验一个integration的profile注册表；
 - `resolve_connection_profile(registry, profile_id, repo_root=...)`：按显式profile加载两端port，
@@ -13,7 +15,9 @@
 - `write_resolved_and_plan(...)`：写出包含源SHA-256的resolved connection及引用其SHA-256的plan；
 - `verify_composition_plan(...)`：执行前重新计算resolved SHA并核对五元组与耦合模式。
 
-`execute_connection.ps1 -ValidateOnly`保持原公共门禁；`-PrepareOnly -AdapterEntrypoint <path>`可在
+## 执行边界
+
+[`execute_connection.ps1`](execute_connection.ps1) 的 `-ValidateOnly` 执行公共校验；`-PrepareOnly -AdapterEntrypoint <path>`可在
 同一复核后委托integration-owned adapter检查映射但不启动求解器。真正委托执行还必须同时给出显式
 `RunId`和`-SolverAuthorized`，并由adapter串行调用其冻结入口。公共层不会从两个project ID猜测端口、
 自动发明连接器、复制物理参数或执行profile中未冻结的命令；缺少adapter、RunId或授权均失败关闭。
@@ -23,7 +27,9 @@ binding，不允许几何、电压或粒子参数。具体integration负责把�
 并在执行前再次核对。工程预算由各integration的campaign行和execution policy共同解析为run-local
 输入；公共连接层不保留旧的profile专用预算合同。
 
-port是项目物理合同的发布视图，不是第二权威。每个port必须通过`authority.source_contract`和
+## 身份与兼容性
+
+port 是项目物理合同的发布视图，不是第二权威。每个port必须通过`authority.source_contract`和
 `source_sha256`锁定仓库内来源，并用`bindings`逐项声明port JSON Pointer与source JSON Pointer；
 解析和执行复核时任何来源过期、pointer缺失或绑定值漂移都会失败关闭。
 

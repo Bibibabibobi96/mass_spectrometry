@@ -20,6 +20,8 @@ maturity: reference
 
 本文件说明 Astral 类系统中源、注入、棱镜、探测和运行校准的接口。
 
+按问题定位：[第一时间焦点](#2-第一时间焦点) · [硬边界棱镜折射](#5-硬边界棱镜折射) · [棱镜的双程时间补偿](#6-棱镜的双程时间补偿) · [镜电压校准 TE1/TE2](#10-镜电压校准-te1te2) · [源、分析器和探测器的宽度预算](#14-源分析器和探测器的宽度预算) · [最低参考测试](#20-最低参考测试)。
+
 ## 1. 离子处理与脉冲提取
 
 公开的 Ion Processor 由高压缓冲气体区和低压提取区组成：
@@ -235,7 +237,8 @@ $$
 - 只有特定 $K$ 附近同时形成宽时间平台；
 - 论文样机的理论最优点为 $K=25$。
 
-双 Stripe 系统中，运行参数变为 $(v_1,v_2,v_d)$。建议先把 $(v_1,v_2)$ 正交化为“返回方向”和“时间方向”，再与 $v_d$ 联合扫描。
+在单棱镜示意模型中，可把双 Stripe 参数写成 $(v_1,v_2,v_d)$，用于解释耦合方向。
+本项目的两个独立棱镜须分别由机器合同表达，不把一个示意 $v_d$ 当作完整系统未知量。
 
 ## 10. 镜电压校准 TE1/TE2
 
@@ -305,29 +308,10 @@ TE1/TE2如何进入注入和标定流程，不复制镜设计参数。
 
 ## 13. 分辨率定义
 
-仓库建议统一使用
-
-$$
-R_m=\frac{m}{\mathrm{FWHM}_m}.
-$$
-
-窄峰且 $t\propto\sqrt{m/z}$ 时：
-
-$$
-R_m
-\approx
-\frac{T}{2\,\mathrm{FWHM}_t}.
-$$
-
-必须明确时间宽度是：
-
-- FWHM；
-- 标准差；
-- 半宽；
-- 端点差；
-- 探测器卷积后的实测宽度。
-
-不能把粒子表最大时间减最小时间直接称为 FWHM。
+质量与时间域分辨率、直接 FWHM 和高斯代理统一遵循
+[通用验证方法](../../../../docs/VALIDATION_METHODS.md#分辨率与峰形)。
+MR-TOF 报告额外说明几何到达时间、探测器卷积与电子学采样的边界，并同时保存实际振荡数和 overtone。
+粒子表最大时间减最小时间是极差，不能称为 FWHM。
 
 ## 14. 源、分析器和探测器的宽度预算
 
@@ -395,7 +379,7 @@ Astral 的漂移过程中，离子束可扩展到很宽的空间范围，降低�
 - 高电荷容忍度可能上升；
 - 不同峰强度无法同时获得同一最优补偿。
 
-因此应定义至少两种模式：
+若研究目标包含两类负载折中，可区分下列用途（示意名称，不要求当前项目预建模式）：
 
 ```text
 low_charge_high_resolution
@@ -449,6 +433,6 @@ space_charge_hardened
 
 ## 21. 主要来源
 
-- D. Grinfeld et al., *Nuclear Instruments and Methods in Physics Research A* 1060 (2024) 169017. DOI: `10.1016/j.nima.2023.169017`.
-- H. Stewart et al., *Journal of the American Society for Mass Spectrometry* 35 (2024) 74–81. DOI: `10.1021/jasms.3c00311`.
-- H. Stewart et al., “Crowd Control of Ions in the Astral Analyzer,” ChemRxiv. DOI: `10.26434/chemrxiv-2023-p6zln`.
+- D. Grinfeld et al., *Nuclear Instruments and Methods in Physics Research A* 1060 (2024) 169017. DOI：[原始来源](https://doi.org/10.1016/j.nima.2023.169017).
+- H. Stewart et al., *Journal of the American Society for Mass Spectrometry* 35 (2024) 74–81. DOI：[原始来源](https://doi.org/10.1021/jasms.3c00311).
+- H. Stewart et al., “Crowd Control of Ions in the Astral Analyzer,” ChemRxiv. DOI：[原始来源](https://doi.org/10.26434/chemrxiv-2023-p6zln).

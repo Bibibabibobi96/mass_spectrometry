@@ -1,6 +1,6 @@
 # C1：S1 三点 connector-gap 残差—传输率合同
 
-> `STATUS: PLANNED / DETECTOR_BLIND_SOURCE_ONLY / EXECUTE_SIMION_SERIALly`
+> `STATUS: SOURCE_ONLY_REANALYSIS_COMPLETE / DEVELOPMENT_ONLY`
 
 ## 目标
 
@@ -108,11 +108,7 @@ detector 结果选择边界或 salt。v2 仍只支持 source-side C1 结论；�
 
 ## 当前状态
 
-- 0 mm（`...gap0...n5000__r09`）与 51.2 mm（`...gap51p2...n5000__r03`）已各自完成
-  N=5000 的 `continuous_frontend` detector-blind time-series 运行；102.4 mm
-  （`...gap102p4...n5000__r02`）也已完成。三臂均通过统一 `PRE_PULSE_EQUIVALENT_TIME_SERIES`、resolved epoch
-  和 frozen-identity 核验。
-- C1-v1 五件套已发布为 `INCONCLUSIVE_REVISE`，唯一失败原因是 51.2/102.4 mm 的 common locked-test ID 为
-  17，低于 32；其余输入与完整 5000-ID 分母均保留为负结果证据。
-- 下一步：按本节 C1-v2 的固定盲分区重新发布**独立**五件套。历史 23 臂 gap×field 结果始终为
-  `DEVELOPMENT_ONLY`，不进入统计输入；用户现有的 0 mm、N=1000 terminal-handoff 文件保持不改。
+C1-v1 的分区不足结论保留；C1-v2 的独立源侧重分析已完成，来源为
+[机制报告中的源侧收据](connector_gap_working_point_mechanism_20260827.md)。
+该完成状态仅覆盖本合同的探测器盲残差比较；历史或重放输入保持 `DEVELOPMENT_ONLY`，不能替代
+[新的前瞻 C1 输入门槛](stage_c1_source_contract.md)。不再把 v2 发布列为未完成任务。

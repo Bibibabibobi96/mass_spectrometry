@@ -3,10 +3,19 @@
 本目录只负责求解器无关的理论闭合、指标、统计和图形。COMSOL模型树由MATLAB维护，SIMION几何与
 运行时由GEM/Lua/Fly2维护；Python不直接解析MPH或PA。
 
+## 按任务查找
+
+| 任务 | 说明 |
+|---|---|
+| 运行理想场残差、束宽或长度对照 | [自动理想场比较](#自动理想场比较) |
+| 理论及候选编译 | [理论与候选编译](#理论与候选编译) |
+| 查看可复用分析模块 | [核心分析](#核心分析) |
+| 复核冻结 Formal 或跨求解器结果 | [Formal 与跨求解器](#formal与跨求解器) |
+
 ## 环境与权威
 
 Python版本、虚拟环境和依赖重建只认仓库根
-[`README.md#正式工具链基线`](../../../README.md#正式工具链基线)。
+[仓库操作指南](../../../docs/OPERATIONS.md#正式工具链基线)。
 `pyproject.toml`声明依赖，`requirements-lock.txt`冻结版本。
 
 输入权威分层为：
@@ -89,6 +98,10 @@ shield边界和rebuild plan均由该函数一次性闭合。API严格拒绝profi
 - `analyze_longitudinal_closure.py`：纵向场与逐粒子TOF差解释。
 - `analyze_accelerator_transverse_field_uniformity.py`：轴心/偏轴场均匀性诊断。
 - `truncation_diagnostics.py`：能量窗、检测半径和源宽截断。
+
+<details>
+<summary>Paper 1 专用源模型、候选与阶段分析接口</summary>
+
 - `paper1_focusability.py`：C1 detector-blind条件源模型以及C2局部受限白化投影；时序预脉冲记录必须显式选择一个锚点样本，且只允许作为状态输入，不可混入检测器结果。
 - `paper1_j2_real_field_selection.py`：J2真实场公平选择的纯分析入口。它只以冻结C1条件源协方差和具有内容哈希的真实场局部灵敏度收据，对同一候选池分别计算未加权与源白化分数；拒绝来源、状态尺度或候选池身份不一致，且绝不读取探测器、峰宽或传输结果。
 - `paper1_j2_candidate_pool.py`：J2真实场的公共候选池编译器。它在预注册边界内扰动三区grid2/末端几何、电极及反射器控制，并从每个候选的平面和电势重新导出区长、场强和焦点漂移；候选池本身不评分、不运行SIMION，也不接触检测器结果。
@@ -103,12 +116,14 @@ shield边界和rebuild plan均由该函数一次性闭合。API严格拒绝profi
 - `paper1_c3_j3_publish.py`：将上述五点物理控制家族和每一个schema-valid Candidate原子发布为一个非Formal artifact run。它只冻结C2→物理控制的映射与文件身份；不构建PA、不启动SIMION、不读取探测器结果，也不产生C3结论。
 - `paper1_c4_locked_prediction.py`：C4_J3锁定三维预测分析。它必须先读取C3_J3的`PASS_CONTINUE`五件套，随后才读取已完成的三方向run receipt；核验锁定ID、共同脉冲、母cohort分母、直接FWHM顺序和传输防御，不启动求解器。
 
+</details>
+
 正式数据优先CSV/JSON。XLSX只接收人工导出，导入后立即规范化。严格配对必须使用相同粒子ID，并区分
 整体时移与去均值逐粒子残差。
 
 ## 自动理想场比较
 
-从仓库根使用Python 3.11运行：
+从仓库根使用仓库锁定的 Python 环境运行：
 
 ```powershell
 .\.venv\Scripts\python.exe -m projects.single_reflection_oa_tof_mass_analyzer.workflows.ideal_source_comparison.run_comparison --seed 20260827
@@ -191,10 +206,10 @@ selected result；`--run-dir`原子发布一个`CANDIDATE_ONLY`候选，`--outpu
 
 ## Formal与跨求解器
 
-Formal唯一入口：
+从仓库根只读复核当前 Formal；同一入口的其他阶段含义见下文：
 
 ```powershell
-../workflows/formal_reference/run_formal_validation.ps1 -Phase Validate|Publish|Verify
+.\projects\single_reflection_oa_tof_mass_analyzer\workflows\formal_reference\run_formal_validation.ps1 -Phase Verify
 ```
 
 `Validate`从成功的零物理变化候选冻结输入，以同一N=1000粒子表串行重算；`Publish`只接受晋升
@@ -215,6 +230,6 @@ request和独立GUI/CAD evidence；`Verify`只读复核当前Formal。禁止手�
 - 修改加速器电压、间距、源宽、无场长度或反射器参数时，必须重新运行理论闭合并按rebuild plan更新
   所有受影响实现。
 - Arm 8解析闭合通过`python -m projects.single_reflection_oa_tof_mass_analyzer.analysis.verify_axial_ideal_closure
-  ../config/diagnostics/axial_ideal_arm8_analytic_closure.json --output <receipt.json>`运行。receipt明确标记为
+  projects/single_reflection_oa_tof_mass_analyzer/config/diagnostics/axial_ideal_arm8_analytic_closure.json --output <receipt.json>`运行。receipt明确标记为
   solver-independent analytic closure，不得表述为SIMION、COMSOL或Formal结果。
 - 通用代码只有第二个项目实际复用后才能上移`common/`。

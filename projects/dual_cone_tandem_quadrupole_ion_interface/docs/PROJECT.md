@@ -46,7 +46,7 @@
    [`comsol_solver_numerics.json`](../config/comsol_solver_numerics.json) 建立轴对称可压缩气流筛选。
    当前模型只覆盖无杆、无偏置泵口的空包络轴对称近似；它的声明边界是
    `prototype_axisymmetric_empty_enclosure_gas_flow`。
-2. SIMION 几何编译器从同一 resolved 几何生成电极表示；后续 Fly runner 只消费由成功 COMSOL run 导出、复制进本次 run 且
+2. SIMION 几何编译器从同一 resolved 几何生成电极表示；Fly runner 只消费由成功 COMSOL run 导出、复制进本次 run 且
    通过 SHA-256 和 frame/单位检查的 canonical `r-z` 气体场。气体场至少包含压力、温度、径向与轴向
    气速以及有效域和插值边界语义。
 
@@ -78,6 +78,9 @@ COMSOL 气流成功只证明上游场计算完成，不证明离子传输。SIMI
 | 独立轨迹跨求解器闭合 | 未建立 |
 | CAD / GUI / Candidate / Formal | BLOCKED |
 
+已完成的气流失败链、质量守恒与粒子统计保存在
+[原型记录](history/20260911__empty-enclosure-gas-transport-prototype.md)。
+
 ## 开放任务
 
 1. 确认两个锥角定义、朝向、实体孔口面、厚度、外径、孔筒和 `3 mm` 的机械测量对象。
@@ -87,7 +90,7 @@ COMSOL 气流成功只证明上游场计算完成，不证明离子传输。SIMI
 5. 决定是否把本次合格 COMSOL 场发布为全局 current artifact；均匀 `400 Pa` 对照不能代替此场。
 6. 给出各锥、壳体、两段杆及出口件的 DC、两段 RF 频率/幅值口径/相位，以及目标离子、源分布、迁移率
    或 CCS；快速原型 Fly runner 已可执行，这些参数确认后再替换当前暂定值。
-7. 已完成 N=100 冻结母样本的首轮 Prototype；继续补充气体场依赖、RF/DC 参数、SIMION GUI 可检查性和损失事件复核后再开放 Candidate。
+7. 补充气体场依赖、RF/DC 参数、SIMION GUI 可检查性和损失事件复核；通过后再开放 Candidate。
 8. 建立端部、绝缘、支撑、馈通和泵口机械细节，并完成 COMSOL GUI、SIMION GUI 与 SolidWorks 同步后
    才开放 Formal。
 

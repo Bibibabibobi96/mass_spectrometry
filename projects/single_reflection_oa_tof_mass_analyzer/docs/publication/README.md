@@ -1,67 +1,49 @@
-# OA-TOF 两论文发表计划
+# oa-TOF 发表研究入口
 
-> `PROGRAM_STATUS: ACTIVE_PLANNING / NOT_SUBMISSION_READY`
->
-> `SEQUENCE: PAPER_1_JASMS_TARGET -> PAPER_2_ANALYTICAL_CHEMISTRY`
+本目录按科学问题组织 Paper 1（JASMS 目标）与 Paper 2（Analytical Chemistry 目标）。
+当前均未达到投稿条件；发表计划不改变项目 Formal 资格，也不授权硬件、商业运行或外部披露。
 
-本目录按独立科学问题组织两篇论文，不按“理论、模拟、实验”机械拆稿。当前任何论文均未达到投稿
-go/no-go；本目录记录候选主张、所需证据和禁止重叠内容，不改变项目Formal资格。
+| 阅读目的 | 唯一正文 |
+|---|---|
+| Paper 1：给定条件源，分析器可控制哪些残差 | [研究与证据计划](paper_1_jasms/validation_and_evidence_plan.md) |
+| Paper 1：现在证明了什么，还缺什么 | [证据矩阵](paper_1_jasms/evidence_matrix.md) |
+| Paper 2：主动调理源与分析器的联合实验设计 | [研究与证据计划](paper_2_analytical_chemistry/validation_and_evidence_plan.md) |
+| 候选新颖性、先行工作和允许措辞 | [claim 注册表](prior_art_claim_registry.md) |
+| 两稿数据、图和公开边界 | [重叠防火墙](overlap_and_claim_firewall.md) |
+| 物理公式、假设与适用域 | [理论入口](../theory/README.md) |
 
-## 1. 两篇论文的中心问题
+Paper 1 固定给定源分布；Paper 2 主动改变源分布并需要独立的样机与分析终点证据。
+当前不另建 RSI 稿；未来若有可独立复用的测量或仪器方法，应重新评估科学问题与数据独立性。
 
-| 论文 | 中心科学问题 | 必须新增的核心证据 | 不承担的内容 |
-|---|---|---|---|
-| Paper 1，JASMS目标 | 给定真实有限条件厚度的RF多极杆源，局部高阶closure能消除哪些展宽，受约束分析器控制子空间还可控制多少残差？ | 条件源、focusability、残差模态、公平重优化、三维多工况验证 | 最终conditioner、样机Pareto、真实样品 |
-| Paper 2，Analytical Chemistry | 主动相空间匹配能否在实机中移动分辨率—传输—接受度—占空比—灵敏度前沿并改善分析终点？ | conditioner、稳健联合设计、as-built与实测波形、样机A/B、真实分析数据 | 把Paper 1理论重新称为新理论 |
+## 独立阶段合同
 
-Paper 1以JASMS为明确目标；如果只完成一维理论和有限模拟，或结论仍过度依赖单一私有几何，则不满足
-当前JASMS计划，应补证或转向更匹配的期刊，而不是降低证据口径。
+按相应合同进入条件执行，不能仅按文件排列顺序启动。
 
-## 2. 权威入口
+| 阶段／问题 | 入口 |
+|---|---|
+| C0 理论与声明 | [闭合记录](paper_1_jasms/stage_c0_theory_closure.md) |
+| C1 前瞻探测器盲源 | [源合同](paper_1_jasms/stage_c1_source_contract.md) |
+| Connector-gap 三臂源侧比较 | [三臂合同](paper_1_jasms/stage_c1_connector_gap_triplet_contract.md) |
+| J2 公平真实场选择 | [pilot 合同](paper_1_jasms/j2_real_3d_pilot_contract.md) |
+| C3_J3 真实场局部可微性 | [真实场合同](paper_1_jasms/stage_c3_j3_real_field_contract.md) |
+| C4_J3 锁定三维预测 | [锁定预测合同](paper_1_jasms/stage_c4_j3_locked_prediction_contract.md) |
 
-- 共享物理：[`theory/README.md`](../theory/README.md)
-- Paper 1范围：[`paper_1_jasms/scope_claims_and_outline.md`](paper_1_jasms/scope_claims_and_outline.md)
-- Paper 1验证：[`paper_1_jasms/validation_and_evidence_plan.md`](paper_1_jasms/validation_and_evidence_plan.md)
-- Paper 1当前证据：[`paper_1_jasms/evidence_matrix.md`](paper_1_jasms/evidence_matrix.md)
-- Paper 2范围：
-  [`paper_2_analytical_chemistry/scope_claims_and_new_work.md`](paper_2_analytical_chemistry/scope_claims_and_new_work.md)
-- Paper 2验证：
-  [`paper_2_analytical_chemistry/validation_and_evidence_plan.md`](paper_2_analytical_chemistry/validation_and_evidence_plan.md)
-- 跨论文防火墙：[`overlap_and_claim_firewall.md`](overlap_and_claim_firewall.md)
-- 先行工作与候选claim：[`prior_art_claim_registry.md`](prior_art_claim_registry.md)
-- 2026-08-25论文/引用链/专利族预审：
-  [`prior_art_search_audit_20260825.md`](prior_art_search_audit_20260825.md)
-- 四份本地核心全文逐式claim chart与理论审计：
-  [`prior_art_equation_claim_chart_20260825.md`](prior_art_equation_claim_chart_20260825.md)
+## 完成材料与历史入口
 
-## 3. 共同规则
+- [2026-08-25 先行工作检索审计](prior_art_search_audit_20260825.md)
+- [核心全文逐式 claim chart](prior_art_equation_claim_chart_20260825.md)
+- [Connector-gap 机制实验及脉冲相对时钟勘误](paper_1_jasms/connector_gap_working_point_mechanism_20260827.md)
+- [已被三臂合同接替的双臂定义](paper_1_jasms/connector_gap_paired_source_contract.md)
+- [阶段状态沿革](../history/20260911__publication-status-consolidation.md)
 
-- 理论文档只维护一套公式；论文计划只说明使用范围和证据。
-- history、run和artifact不按论文复制；evidence matrix只链接冻结证据。
-- 所有`first/novel/unprecedented`措辞在系统全文、引用链和专利族审查前禁用。
-- Paper 1冻结给定source distribution；Paper 2主动改变source distribution。
-- 任何性能比较都使用充分重优化的baseline、相同母cohort、相同约束和独立locked test。
-- 公开conditioner、电压、波形、自动调谐或制造补偿前先完成公司IP审查。
+研究范围、阶段执行状态、科学公式与历史结果各在上述唯一正文维护。旧 scope 页面仅保留迁移导航。
 
-2026-08-25定向查重已否决J1、J4、J5和Paper 2 A1的宽泛新颖性表述；Paper 1当前只保留J2/J3作为
-候选主贡献。Yefchak 1989、2005 thesis、2015与2026四份本地主文本的相关公式已逐式核对，但
-2015/2026 SI、其他closest-work全文、扩展引用链和法律FTO仍未关闭，也没有任何claim升级为`GREEN`。
+<details>
+<summary>整治前路径的迁移入口</summary>
 
-## 4. RSI不在当前计划内
+- [Paper 1 原范围页](paper_1_jasms/scope_claims_and_outline.md)
+- [Paper 2 原范围页](paper_2_analytical_chemistry/scope_claims_and_new_work.md)
 
-当前不建立第三篇RSI论文。只有未来产生可脱离最终分析性能故事、可被其他实验室独立复用的pulser、
-电极端波形计量、as-built数字孪生、源相空间诊断或detector/readout创新时，才重新执行独立go/no-go。
-仅“做出三区OA样机”不构成拆分RSI的理由。
+以上页面保留旧路径解析，正文已合并；新工作直接使用上表的研究计划。
 
-## 5. 状态转换
-
-```text
-candidate claim
--> prior-art cleared
--> evidence planned
--> implementation validated
--> locked evidence complete
--> manuscript claim allowed
-```
-
-没有完成上一状态时，不得在摘要、标题或PROJECT中把后续状态写成当前事实。
+</details>

@@ -1,21 +1,16 @@
-# Shared SIMION IOB instance seeds
+# SIMION IOB 实例种子
 
-This directory contains the canonical GUI-created SIMION Workbench templates
-for one through ten PA instance counts.  Every new SIMION Workbench in this
-repository must derive from the matching numbered seed; do not make or retain
-empty slots to reserve a future topology.  Slot *n* loads the distinct local
-`iob_seed_placeholder_NN.pa0`.  This is essential: SIMION shares a PA object
-when two Workbench instances reference the same filename, preventing the IOB
-builder from independently replacing their runtime PA paths.
+本目录保存由 GUI 创建的一至十实例 Workbench 种子。实例数量选择与禁止空槽的公共规则见
+[SIMION 实现入口](../../README.md)。种子只提供容器结构，不定义器件、电极或项目资格。
 
-Current runtime uses:
+每个槽使用不同的本地 `iob_seed_placeholder_NN.pa0`。SIMION 会让引用同一文件名的实例共享 PA
+对象，因此不同占位文件使构建器可以分别替换各槽的运行 PA 路径。
 
-- `3_instance_seed.iob` for the pre-pulse handoff chain;
-- `5_instance_seed.iob` for the post-pulse handoff chain;
-- `7_instance_seed.iob` for the full-flight chain.
+## 使用方法
 
-The builders require contiguous, fully-replaced instance slots.  A seed is
-always copied together with all ten placeholder PAs before its runtime IOB is
-built; GEM and Fly2 exports are intentionally excluded.  Do not edit these
-seeds during a run: copy the selected seed into the run directory and save the
-derived IOB under the run artifact path.
+1. 根据实际实例数选择对应的编号种子，不依赖本页列举的某个项目当前拓扑。
+2. 把种子与十个占位 PA 复制到运行目录，再由消费者构建器替换所有连续槽。
+3. 在 run artifact 路径保存派生 IOB，验证所有槽均指向预期运行 PA，没有残留占位实例。
+
+构建时不需要 GEM 或 Fly2 导出。运行不得原地修改本目录种子；具体实例位姿、PA 来源及验收由
+消费者的冻结输入和验证合同负责。

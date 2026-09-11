@@ -4,6 +4,29 @@
 >
 > `PUBLICATION_NOVELTY: NONE_BY_ITSELF`
 
+<details>
+<summary>章节导航</summary>
+
+- [1. 文档职责](#1-文档职责)
+- [2. 权威边界](#2-权威边界)
+- [3. 参考面与长度定义](#3-参考面与长度定义)
+- [4. 耦合模型的适用范围](#4-耦合模型的适用范围)
+- [5. 加速器到焦面的归一化时间](#5-加速器到焦面的归一化时间)
+- [6. 加速器时间导数](#6-加速器时间导数)
+- [7. 反射镜段归一化时间](#7-反射镜段归一化时间)
+- [8. 整机总时间](#8-整机总时间)
+- [9. 全局一阶与二阶聚焦条件](#9-全局一阶与二阶聚焦条件)
+- [10. 能量包络和反射镜深度](#10-能量包络和反射镜深度)
+- [11. 源位置采样与正式峰形](#11-源位置采样与正式峰形)
+- [12. 示意字段（非运行输入合同）](#12-示意字段非运行输入合同)
+- [13. 参考程序接口](#13-参考程序接口)
+- [14. 最低参考测试](#14-最低参考测试)
+- [15. 从解析耦合到 Formal 的升级路线](#15-从解析耦合到-formal-的升级路线)
+- [16. 禁止性结论](#16-禁止性结论)
+- [17. 参考文献](#17-参考文献)
+
+</details>
+
 ## 1. 文档职责
 
 实测线性 $z-v_z$ 束的实际能量及替代导数 $A_1/A_2$ 由
@@ -416,7 +439,7 @@ W_i=V_R-E_{A1}x_i.
 → R = T_peak / (2 * FWHM_t)
 ```
 
-## 12. 推荐机器合同
+## 12. 示意字段（非运行输入合同）
 
 ```json
 {
@@ -510,11 +533,11 @@ coupled_flight_time_s(...)
 source_position_samples(...)
 ```
 
-CLI：
+从仓库根执行；下列尖括号为必须替换的输入／输出路径，不能原样运行：
 
 ```powershell
 python -m projects.single_reflection_oa_tof_mass_analyzer.analysis.oatof_oaaccelerator_coupling `
-  .\config\oatof_longitudinal_contract.json `
+  <longitudinal-contract.json> `
   --write-derived <derived.json> `
   --write-samples <samples.csv>
 ```

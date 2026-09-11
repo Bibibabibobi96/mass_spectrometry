@@ -47,6 +47,9 @@ $\chi$的单位为$\sqrt{\mathrm V}$，$\beta$的单位为$\sqrt{\mathrm V}/\mat
 ```math
 \chi(x)=\chi+\beta(x-x_c),\qquad
 \mathcal W(x)=W(x)+\chi(x)^2.
+```
+
+```math
 S_2=\sqrt{\mathcal W-V_G},\qquad S_3=\sqrt{\mathcal W}.
 ```
 
@@ -57,6 +60,9 @@ S_2=\sqrt{\mathcal W-V_G},\qquad S_3=\sqrt{\mathcal W}.
 =\frac{2[S_2-\chi(x)]}{E_1}
 +\frac{2(S_3-S_2)}{E_2}
 +\frac{D_A}{S_3}.
+```
+
+```math
 t=10^{-3}\sqrt{\frac{m/q}{2}}\,\tau_{A,\mathrm{lin}}.
 ```
 
@@ -75,7 +81,10 @@ t=10^{-3}\sqrt{\frac{m/q}{2}}\,\tau_{A,\mathrm{lin}}.
 B_1=
 \frac{1}{E_1S_2}
 +\frac{1}{E_2}\left(\frac{1}{S_3}-\frac{1}{S_2}\right)
--\frac{D_A}{2S_3^3},
+-\frac{D_A}{2S_3^3}.
+```
+
+```math
 B_2=
 -\frac{1}{2E_1S_2^3}
 +\frac{1}{2E_2}\left(\frac{1}{S_2^3}-\frac{1}{S_3^3}\right)

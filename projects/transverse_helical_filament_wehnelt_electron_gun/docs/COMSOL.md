@@ -14,7 +14,7 @@
 - 项目门禁：`../verify_project.ps1`
 - build-only生产任务：`../comsol/build_only_smoke.m`
 
-版本与启动只采用仓库根README。三阶段脚本不包含COMSOL安装路径或`mphstart`，只能由仓库统一
+版本与启动见[操作指南](../../../docs/OPERATIONS.md)。三阶段脚本不包含COMSOL安装路径或`mphstart`，只能由仓库统一
 R2025b/COMSOL入口调用。
 
 ## 合同与阶段边界
@@ -36,9 +36,10 @@ R2025b/COMSOL入口调用。
 明确异常才转为`failed`，全部报告判据通过才转为`success`。输入、输出、公共COMSOL入口、Static gate、
 execution profile和manifest机制均冻结并校验SHA。
 
-当前闭合证据完成了真实MATLAB R2025b/COMSOL 6.4三阶段build-only，三个MPH非空，GUI参数绑定和
-模型树通过；未运行静电或粒子求解器。历史超时、空manifest、缓存污染和clean retry过程只见
-[`history/20260728__pre-document-consolidation-project.md`](history/20260728__pre-document-consolidation-project.md)。
+当前证据与未运行的求解层级见 [PROJECT 的资格状态](PROJECT.md#资格状态)。
+商业 wrapper 的控制台与退出上下文保存为 `logs/commercial_wrapper.log`；失败收尾枚举当时实际存在
+的冻结输入和输出，不能用空 manifest 掩盖中途失败。终态同时记录失败阶段、证据资格以及几何、网格、
+静电和 CPT 构建／求解标志。
 
 ## GUI与功能验收
 

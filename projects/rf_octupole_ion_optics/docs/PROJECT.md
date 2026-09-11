@@ -14,16 +14,9 @@
 - 两个加速模式的SIMION空间档已执行；COMSOL空间档均触发预登记资源帽，保持
   `INCONCLUSIVE_RESOURCE_BUDGET_EXCEEDED`，不事后抬帽。
 - 家族工程六指标可用于下游推进，不授予数值收敛、求解器等价、Candidate或Formal。
-- N=1000 平面冻结源与独立轴向体积快照的 SIMION 成对传输已完成，并由 recovery analysis run
-  `20260830_212610__analysis__python__oct-source-model-comparison-recovery__n1000` 发布；恢复只重做 Python
-  分析与绘图，未重跑求解器。两臂均为 1000/1000 传输。体积快照在源端为同刻释放、z RMS 0.6251 mm、
-  vz RMS 49.2820 m/s、动能 RMS 0.1005 eV，且 z--vz Pearson r=-0.01154；平面源的 z 宽度为零、连续
-  birth-time 跨度非零。体积源出口空间 RMS 为 0.4169 mm（平面 0.5381 mm）、角 RMS 为 1.3490°
-  （平面 3.2660°），实际墙钟 120.9 s（平面 128.8 s）。这是 source-model 的描述性对比，不构成
-  数值收敛、探测器、Candidate 或 Formal 结论。
-- 当前oaTOF连续SIMION单流程选择了八极杆末端加速方案，并确认高传输与10 eV目标注入；角度和z方向
-  空间展宽仍未闭合。具体census、能量、2.2 mm源宽候选和PA重构结果只查integration。
-
+- 平面冻结源与轴向体积快照的 N=1000 SIMION 比较已完成；Python 恢复分析没有重跑求解器。
+  两臂均全传输，源模型改变出口空间与角分布；这是描述性对比，详见
+  [源模型记录](history/20260911__source-model-comparison.md)，不构成统计或数值资格。
 ## 资格边界
 
 | 对象 | 当前状态 |
@@ -31,7 +24,7 @@
 | 三模式N=100功能 | PASS |
 | 连续数值收敛/跨求解器等价 | INCONCLUSIVE |
 | N=1000多极杆统计资格 | 未完成 |
-| oaTOF单流程 | `INCONCLUSIVE_DIAGNOSTIC_ONLY` |
+| oaTOF连接 | 状态归 integration；不赋予本项目新资格 |
 | 机械、CAD、Candidate、Formal | BLOCKED |
 
 已完成run缺少运行前冻结的bootstrap seed和resample数，不能事后发布为正式three-mode dispersion
@@ -56,17 +49,6 @@ binding；现有点估计只能保持`POSTHOC_DESCRIPTIVE`。
 碰撞、空间电荷、磁场、支撑、公差和真实下游器件不属于本机械base。oaTOF连接器、入口参考套筒、
 入口板和脉冲加速器由integration组合，不得反向写入本项目base。
 
-## 数值合同
-
-| 层级 | COMSOL局部最大单元 / 步每RF周期 | SIMION cell / 步每RF周期 |
-|---|---|---|
-| baseline | 0.5 mm / 80 | 0.4 mm / 40 |
-| spatial refined | 0.35 mm / 80 | 0.3 mm / 40 |
-| temporal refined | 0.35 mm / 160 | 0.3 mm / 80 |
-
-空间比较只改变空间离散；时间比较固定已选细网格。缺少接受尺度时不能发明百分比PASS。资源预算见
-项目资格合同，耗尽即停止且零自动重试。
-
 ## 机器权威
 
 | 职责 | 入口 |
@@ -83,12 +65,11 @@ binding；现有点估计只能保持`POSTHOC_DESCRIPTIVE`。
 活动L1/L2/L3只消费具名profile。旧设计/runtime alias和旧resolved快照不是活动输入；无加速具名发布
 `resolved_design_no_acceleration_full_length.json`只是当前profile的发布视图。
 
-## oaTOF资格影响
+## oaTOF连接
 
-integration中的1.5 mm入口参考套筒和10 eV连续单流程使用真实八极杆输出，证明当前末端方案可提供
-高传输且在加速器内达到目标能量；它也证明角度和脉冲前z展宽仍超过理想源尺度。后续2.2 mm理论源宽
-候选没有改变八极杆源、handoff或脉冲前相空间，因此不改变本项目资格。详情见
-[integration当前状态](../../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/INTEGRATION.md)。
+本项目发布 canonical handoff，连接器、套筒、目标注入能量和脉冲前接受度由
+[integration 当前状态](../../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/docs/INTEGRATION.md)
+维护。下游源宽或装配候选不自动改变本项目的机械 base、源模型和资格。
 
 ## 开放任务
 

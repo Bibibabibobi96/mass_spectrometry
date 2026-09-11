@@ -1,6 +1,6 @@
 # 单次反射正交加速飞行时间质量分析器当前状态
 
-本文件是项目当前事实、资格与开放任务的唯一权威。机器精确值分别由`../config/`中的物理、数值、
+本文件是项目当前事实、资格与开放任务的唯一权威。机器精确值分别由[`config/`](../config/)中的物理、数值、
 resolved、分析和资产合同管理；实现细节见[`COMSOL.md`](COMSOL.md)、[`SIMION.md`](SIMION.md)与
 [`CAD.md`](CAD.md)。2026-07-28以前的完整状态和时间线冻结在
 [`history/20260728__pre-document-consolidation-project.md`](history/20260728__pre-document-consolidation-project.md)。
@@ -150,31 +150,20 @@ Candidate唯一公开入口为`../workflows/design_candidate/run_candidate.py`�
 
 详细失败矩阵与已关闭调查只在history保存，不作为current开放任务。
 
+## 理想场探索的已验证范围
+
+残差／束宽与仿射斜率比较仅证明受控一维机制。理论宽束重设计采用聚焦方程反求场强与长度，
+再做独立粒子检验；原 2.8 mm 结果只约束原参数，不能作为三区结构上限。
+
+| 冻结扫描 | 可支持的结论 | 证据 |
+|---|---|---|
+| 200 mm 总长 | 声明离散域内总体最大已测通过宽度 4.0 mm；三次独立 5000 粒子重复为 3.6 mm | [200 mm 快照](history/20260827__200mm-ideal-acceptance-scan.md) |
+| 300 mm 总长 | 公平对照的 4.0 mm 冻结候选通过总体及三组粒子检查；支持总长是该受限域的有效自由度 | [300 mm 快照](history/20260827__300mm-ideal-acceptance-scan.md) |
+
+最大已测宽度、单一冻结设计的接受范围与连续域全局上界是不同结论。上述证据不证明长度单调更优、
+真实三维孔径接受或实测性能。重现与配置选择见[分析入口](../analysis/README.md#自动理想场比较)。
+
 ## 开放任务
-
-后续验证仍限定理想场，不启动新的三维场；残差扫描和两区/三区束宽比较的首轮结果已闭合。
-唯一入口为[`自动理想场比较`](../analysis/README.md#自动理想场比较)：数值源/实验由
-[`科学配置`](../config/experiments/ideal_source_comparison.json)冻结，canonical峰宽数值仍使用分析合同，
-seed与run身份单独记录。新workflow只隔离残差机制和固定几何的结构比较，复用现有精确时间、反射器
-解和峰宽；当前残差对照仅改变两级反射器电压，不能称为加速器—反射器全变量优化。完整case测试自动
-进入项目Static，三维、孔径收集率和工程验证均未因此获得新证据。
-
-当前宽束设计补充遵循“理论方程→场强与长度→独立粒子检验”。新科学配置
-[`ideal_acceptance_theory.json`](../config/experiments/ideal_acceptance_theory.json)通过同一入口调用；
-有限束宽的高阶误差、残差投影和线性反求场强公式由
-[`三区理想理论第10节`](theory/three_zone_accelerator_ideal_theory.md#10-有限束宽接受的理论设计理想场不是机械约束)管理。
-原2.8 mm结果只约束原参数，不能作为三区结构的理论上限。新设计的最大已验证宽度、单一冻结设计的
-接受范围以及全局上界证明是不同结论；当前不得互相替代。
-
-200 mm总长的理想场宽束扫描已完成：在其声明的离散参数域内，总体最大已测通过宽度为4.0 mm，三个
-独立5000粒子重复的最大已测通过宽度为3.6 mm；该数字不是连续域最大值、三维场或实测接受度。条件、
-冻结设计、负结果和manifest身份见
-[`200 mm 理想场扫描快照`](history/20260827__200mm-ideal-acceptance-scan.md)。
-
-300 mm公平对照已完成：除总长外复用200 mm主扫描的全部离散宽度、源、控制、数值和粒子合同，并且不
-补密。其4.0 mm冻结候选的总体$R=28181$、三组5000粒子$R=28657,27422,26022$均通过，因而支持“总长是
-该受限理想场设计域的有效宽束接受自由度”；它不证明长度单调更优、连续最大值或真实三维接受度。详情见
-[`300 mm 理想场扫描快照`](history/20260827__300mm-ideal-acceptance-scan.md)。
 
 1. **复现交付。** 按需从自包含Formal目录生成不含日志和收敛参考的ZIP及独立SHA；ZIP不是第二资产权威。
 2. **按需求启动的物理候选。** 轴对称圆形加速器、真实丝网、制造/装配误差预算和二维轴对称混合
@@ -183,20 +172,13 @@ seed与run身份单独记录。新workflow只隔离残差机制和固定几何�
    检查点、相空间、TOF和场诊断；为保留能力建立单一版本化能力目录、固定输入/输出角色和统一分析
    run生命周期，未入目录的实现须归类为测试、迁移历史或删除候选。关闭条件是活动入口不再各自维护
    重叠绘图代码，campaign只声明能力ID和受控参数，且现有Formal/Candidate证据不被重写。
-4. **COMSOL canonical 指标迁移。** 现有 MATLAB/COMSOL 链既生成 GUI 用 Gaussian/KDE FWHM，又在
-   全链 Formal 测试中独立计算并断言 resolution；SIMION 单飞链的 canonical 分析在 Python。先为同一
-   冻结 detector-arrival 表建立 Python 指标与现有 COMSOL Formal 数值的 parity fixture，再将 COMSOL
-   导出接入该 Python 分析器，最后才移除 MATLAB 中决定资格的重复计算。关闭条件是两条链共享同一
-   已版本化指标实现或有明确的非权威 GUI 派生物，并以真实 COMSOL golden 证明 FWHM、R、单位、时钟
-   与 Formal 判定未退化；不得靠重写历史结果或调宽容差达成。
+4. **COMSOL 指标迁移的证据验收。** 当前实现已由 MATLAB 导出终态事件、Python 发布 canonical 指标，
+   不再把实现迁移列为未做。仍需核对同一冻结 detector-arrival 表的 parity fixture 与真实 COMSOL
+   golden 是否完整绑定；关闭条件是 FWHM、R、单位、时钟和 Formal 判定的等价性均有可追溯验收。
+   在核验前不因源码迁移重写历史结果或宣称新 Formal 复验完成。
 5. **JASMS Paper 1证据闭合。** 按
    [`publication/paper_1_jasms/validation_and_evidence_plan.md`](publication/paper_1_jasms/validation_and_evidence_plan.md)
-   继续完成剩余核心正文/SI查重、预注册源分布、条件可聚焦性实现、公平再优化、消融、三质量与
-   三维跨求解器验证；Yefchak 1989、2005 thesis相关理论章节、2015正文和2026正文的逐式claim chart已完成，见
-   [`publication/prior_art_equation_claim_chart_20260825.md`](publication/prior_art_equation_claim_chart_20260825.md)；
-   2026-08-25定向论文/引用链/专利族预审已把候选主贡献收窄为J2/J3，见
-   [`publication/prior_art_search_audit_20260825.md`](publication/prior_art_search_audit_20260825.md)，但该预审
-   不等于专业FTO或novelty gate关闭；
+   完成剩余先行工作、前瞻源输入、公平比较与独立验证；具体阶段、已完成证据及缺口只在发表目录维护。
    实时缺口只查
    [`publication/paper_1_jasms/evidence_matrix.md`](publication/paper_1_jasms/evidence_matrix.md)。关闭条件是候选
    主张通过prior-art gate，预测量能在锁定测试集区分可修正切向失配与不可修正条件厚度，并以受控统计、

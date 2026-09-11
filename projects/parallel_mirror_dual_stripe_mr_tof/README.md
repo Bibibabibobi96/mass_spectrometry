@@ -1,37 +1,37 @@
-# 开放路径平行镜双条带 MR-TOF 项目使用指南
+# 开放路径平行镜双条带 MR-TOF
 
-本目录是开放路径平行镜双条带多次反射飞行时间质量分析器（MR-TOF）的独立原型项目。当前活动
-硬件设计线由一组名义平行的伸长等时离子镜和两套独立偏压、独立形状的漂移条带电极组共同构成；
-两套条带是同一分析器内耦合的空间返回/时间响应基，不是两个项目或两个运行 profile。本项目不是
-单次反射 oa-TOF 的 mode。
+本项目研究名义平行的伸长等时镜与两套独立偏压、独立形状的漂移条带。两套条带属于同一分析器，
+共同控制空间返回和时间响应；本项目是与单反射 oa-TOF 平级的独立硬件设计线。
 
-## 固定阅读顺序
+返回[仓库导航](../../README.md)。
 
-1. 先读[`docs/PROJECT.md`](docs/PROJECT.md)，确认当前能力边界、已有证据和开放任务。
-2. 检查或处理现有 SolidWorks 图时再读[`docs/CAD.md`](docs/CAD.md)。
-3. 建立机器参数合同、COMSOL、SIMION和分析入口时，再按实际职责新增邻近文档或代码；不预建空目录。
+## 阅读与操作入口
 
-已审阅的MR-TOF理论参考见[`docs/theory/index.md`](docs/theory/index.md)。其中平行镜双条带模型是
-当前活动设计目标；原 Astral 的收敛镜加单 Stripe/Ion Foil 方案只用于理论对照和解析回归，不启动
-另一条单 Stripe 项目，也不自动成为本项目baseline。
+先读[当前状态](docs/PROJECT.md)确认能力、证据和开放任务，再按实际工作选择：
 
-新区二区／三区正交加速器的局部理论、环／屏蔽几何派生和复用实现见独立
-[`orthogonal_accelerator`](../orthogonal_accelerator/README.md)项目。本项目只提供 MR 专属合同与
-装配变换，并负责棱镜、镜组、中央 `z=0` 交接及整机飞行；不读取 oa-TOF Formal 或 integration 运行产物。
+| 任务 | 入口 |
+|---|---|
+| 理解模型、符号、推导和验证范围 | [理论索引](docs/theory/index.md) |
+| 构建、检查或运行 SIMION | [SIMION 实施说明](simion/README.md) |
+| 处理原始装配、曲线或机械证据 | [CAD 实施说明](docs/CAD.md) |
+| 查项目身份、旧资产位置和机器成熟度 | [项目描述符](config/project.json) |
+| 查活动几何与 CAD 变换 | [候选几何合同](config/simion_candidate_two_zone.json)、[坐标合同](config/cad_to_theory_frame.json) |
 
-本项目落实仓库的单向几何链：理论/参数合同生成`resolved`的简化三维 CAD 几何，再分别生成
-SIMION、COMSOL、GPT 和机械 CAD 交付。冻结的原始 SolidWorks 图只提供审计过的机械约束与曲线尺度；
-它不定义本项目的电场拓扑、坐标或聚焦条件。
+COMSOL 或其他求解器是否已有可执行入口，以 PROJECT 的当前说明为准，不从目录名或理论计划推定。
+实际执行的前提、输入、资源限制与产物检查由对应实施说明提供。
 
-仓库结构、产物生命周期、正式化和 Git 规则统一继承根[`README.md`](../../README.md)。原始 CAD
-二进制已以迁移前`mr_tof`身份逐文件验证并只读迁入当前项目具名archive，不进入 Git；新运行只能使用当前
-`parallel_mirror_dual_stripe_mr_tof`身份和同名artifact根。
+## 项目边界
 
-## 当前权威入口
+原 Astral 的“收敛镜 + 单 Stripe/Ion Foil”仅作为理论对照和解析回归，不是另一条活动硬件线。
+二区／三区正交加速器的局部理论、几何与复用实现由独立
+[正交加速器项目](../orthogonal_accelerator/README.md)拥有；本项目负责 MR 专属输入、装配、棱镜、
+镜组及整机飞行，不复制另一仪器的 Formal 或 integration 运行产物作为自身资格。
 
-- 项目状态与下一步：[`docs/PROJECT.md`](docs/PROJECT.md)
-- SolidWorks 原始图边界：[`docs/CAD.md`](docs/CAD.md)
-- 项目身份与成熟度：[`config/project.json`](config/project.json)
+知识权威与单向几何链见[仓库架构](../../docs/REPOSITORY_ARCHITECTURE.md)，原始 CAD 只提供已审计
+机械约束；归档、运行和发布见[生命周期](../../docs/LIFECYCLE.md)。新运行使用当前项目身份，
+历史 `mr_tof` 资产按描述符保留原记录身份。
 
 ## 历史补充索引
-- [20260802__mrtof-project-identity-consolidation](docs/history/20260802__mrtof-project-identity-consolidation.md)
+
+- [项目身份整合](docs/history/20260802__mrtof-project-identity-consolidation.md)
+- [CAD 审计上下文冻结](docs/history/20260911__cad-audit-context-freeze.md)

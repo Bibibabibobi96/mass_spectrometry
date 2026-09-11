@@ -48,13 +48,10 @@ config/resolved_model.json`。MATLAB只消费resolved并绑定GUI参数，不从
    Study Compute；通过前不得进入Candidate评审。
 3. 只有下游设计明确需要时才建立横置谱系参数扫描或EI源接口合同；不得复用轴向phase5的具体最优值。
 
-已修复的超时终态分类、空manifest、缓存污染、冻结闭包和clean retry不再列为开放任务，完整证据只见
-同日history快照。
-
 ## 产物边界
 
 新活动产物根为`artifacts/projects/transverse_helical_filament_wehnelt_electron_gun/`。当前没有通过
 现行门禁的Formal资产。旧模型、结果与谱系按原manifest身份只读保存在
 该根的`archive/20260801_130004__migration-snapshot__repo__wehnelt-electron-gun/legacy-project-root/`，
 不改写、不追加新run，也不改变原资格和声明边界；
-新运行只进入活动根的`runs/<run_id>/`并遵守根README三件套与manifest合同。
+新运行只进入活动根的`runs/<run_id>/`，三件套与 manifest 遵循[生命周期](../../../docs/LIFECYCLE.md)。

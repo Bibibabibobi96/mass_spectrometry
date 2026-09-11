@@ -2,7 +2,8 @@
 
 本文是仓库长期使命、能力边界和目标形态的唯一权威。它回答“最终建设什么”，不记录当前项目状态、
 实施顺序或具体参数基线。当前事实仍以各项目`docs/PROJECT.md`为准，阶段顺序见
-[`ROADMAP.md`](ROADMAP.md)，执行与归档规则见仓库[`README.md`](../README.md)。
+[`ROADMAP.md`](ROADMAP.md)，操作入口见仓库[README](../README.md)，架构边界与产物规则分别见
+[仓库架构](REPOSITORY_ARCHITECTURE.md)和[生命周期](LIFECYCLE.md)。
 
 ## 使命
 
@@ -66,9 +67,8 @@ SolidWorks是受统一参数、接口与验收合同约束的平等实现工具�
 - 接口与集成：部件间坐标、电位、孔径、压力、相空间、时间和机械接口匹配；
 - 最终仪器：由已正式化部件和冻结接口组成的可验证系统设计。
 
-设计族只表达共享物理和参数化方法，不自动共享同一正式资产。可以独立保持baseline、验收状态和正式
-COMSOL/SIMION/CAD的硬件设计，是独立项目；同一硬件的运行工况和参数扫描则属于mode与run。具体
-项目边界以仓库README为准。
+设计族用于关联共享物理与方法，不自动共享正式资产。项目、结构变体、mode 与 run 的划分
+以[仓库架构](REPOSITORY_ARCHITECTURE.md)为准。
 
 ## 正式交付定义
 

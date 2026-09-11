@@ -16,18 +16,10 @@
 
 ## 机器权威
 
-| 职责 | 入口 |
-|---|---|
-| 身份 | [`config/project.json`](config/project.json) |
-| 机械request | [`config/requests/mechanical_base.json`](config/requests/mechanical_base.json) |
-| 变量与包络 | [`config/design_variables.json`](config/design_variables.json)、[`config/optimization_envelope.json`](config/optimization_envelope.json) |
-| typed模式与设计profile | [`config/operating_modes.json`](config/operating_modes.json)、[`config/design_profiles.json`](config/design_profiles.json) |
-| runtime与源 | [`config/runtime_profiles.json`](config/runtime_profiles.json)、[`config/particle_source_profiles.json`](config/particle_source_profiles.json) |
-| 求解器数值 | [`config/comsol_solver_numerics.json`](config/comsol_solver_numerics.json)、[`config/simion_solver_numerics.json`](config/simion_solver_numerics.json) |
-| 资格 | [`config/qualification/`](config/qualification/) |
-
-活动设计只有`no_acceleration_full_length`、`segmented_rod_axial_acceleration`和
-`exit_aperture_plate_acceleration`三个规范模式。几何、电气值和运行终态不在README复制。
+项目身份见 [project.json](config/project.json)；机械、电气、源、数值和资格合同统一由
+[PROJECT](docs/PROJECT.md)导航。共享编译与运行方法见
+[公共多极杆入口](../../common/multipole/README.md)，跨器件连接见
+[RF 多极杆→oaTOF integration](../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/README.md)。
 
 ## 执行
 
@@ -40,6 +32,14 @@
 `artifacts/projects/rf_octupole_ion_optics/`；历史证据只按项目descriptor的
 `archived_verified`位置读取。
 
+
 ## History索引
 
-- [N=100规范前功能证据](docs/history/20260723__pre-n100-multipole-functional-evidence.md)
+<details>
+<summary>展开只读历史记录</summary>
+
+- [20260723__pre-n100-multipole-functional-evidence](docs/history/20260723__pre-n100-multipole-functional-evidence.md)
+
+- [源模型描述性比较](docs/history/20260911__source-model-comparison.md)
+
+</details>

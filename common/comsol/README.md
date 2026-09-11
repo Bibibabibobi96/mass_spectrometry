@@ -1,7 +1,7 @@
 # COMSOL共享测试与启动器
 
 本目录保存跨项目可复用的COMSOL启动器和组件级验证测试，不保存任何项目的正式参数、模型或
-当前结论。API调用查`docs/COMSOL_API.md`，通用排错查`docs/COMSOL_DEBUGGING.md`；采用某个测试
+当前结论。API 调用查[API 参考](../../docs/COMSOL_API.md)，通用排错查[排错指南](../../docs/COMSOL_DEBUGGING.md)；采用某个测试
 进入正式项目后，其几何、参数、GUI节点和验收状态必须写入该项目文档。
 
 本目录同时保存经实际复用的最小构建原语：圆柱、圆柱壳、开孔板、圆杆多极阵列、全局自动网格和局部
@@ -12,12 +12,13 @@
 ## 正式启动入口
 
 `run_comsol_r2025b.ps1`是共享LiveLink任务入口；允许的软件版本和调用命令只以仓库根
-[`README.md`](../../README.md#comsol-r2025b-执行入口)为权威。项目脚本不得再次调用`mphstart`，
+[操作指南](../../docs/OPERATIONS.md)为权威。项目脚本不得再次调用`mphstart`，
 也不得绕过入口维护另一套长期服务连接。
 入口默认从Windows卸载注册表发现COMSOL 6.4，并从`ProgramFiles`派生MATLAB R2025b根目录；非标准
 安装分别使用`COMSOL_64_ROOT`和`MATLAB_R2025B_ROOT`覆盖。环境变量只描述软件部署位置，不承载模型参数。
 
-入口只对白名单中的启动瞬态进行有限重试：报告必须同时包含首次模型打开链路中的
+尚未创建任务报告的启动失败由入口有限重试；已经创建报告时，只有命中窄白名单的首次模型打开
+瞬态允许重试：报告必须同时包含首次模型打开链路中的
 `mphload`、`mphopen`和`Not connected to a server`。重试前失败报告以
 `.startup_retry.<attempt>.<timestamp>`归档；进入配置、Study Compute或求解器后的空指针、断连和
 原生崩溃均立即失败，不得用自动重试掩盖。分类回归入口为`test_livelink_failure_classification.ps1`。

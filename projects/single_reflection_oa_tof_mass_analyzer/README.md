@@ -19,9 +19,6 @@
    [`docs/CAD.md`](docs/CAD.md)。
 6. 只有追溯旧结论、run ID或失败链时才进入[`docs/history/`](docs/history/)。
 
-2026-07-28以前四份current文档的完整内容已冻结为`docs/history/20260728__pre-document-consolidation-*.md`；
-它们保留全部实施时间线和数值，但不覆盖当前文档。
-
 ## 机器权威
 
 | 职责 | 权威入口 |
@@ -38,10 +35,6 @@
 | 可执行workflow | [`config/execution_profiles.json`](config/execution_profiles.json) |
 | 已完成的声明式Candidate campaign | [`config/experiment_campaign.json`](config/experiment_campaign.json)（retired；历史结果见history） |
 
-数据流固定为`baseline + science + solver numerics → resolved → COMSOL/SIMION/CAD`。seed、run ID和
-冻结路径只属于run instance；候选不得反写baseline或Formal资产。当前项目生命周期为
-`formal`；当前Formal release、资格边界与开放任务详见PROJECT。
-
 参数不在文档复制：可调性、类型与约束只查[`config/design_variables.json`](config/design_variables.json)，
 默认值只查[`config/baseline.json`](config/baseline.json)，数值设置只查
 [`config/formal_solver_numerics.json`](config/formal_solver_numerics.json)；执行入口见下表。
@@ -50,24 +43,19 @@
 
 | 用途 | 唯一入口 | 合同或资格边界 |
 |---|---|---|
-| 理想场源残差与束宽比较 | [`workflows/ideal_source_comparison/run_comparison.py`](workflows/ideal_source_comparison/run_comparison.py) | [`config/experiments/ideal_source_comparison.json`](config/experiments/ideal_source_comparison.json)；一次执行残差扫描和两区/三区束宽比较，无商业求解器；支持新run复用已验证断点 |
-| 理想场仿射源斜率机制比较 | 同上，使用`--config`选择斜率配置 | [`config/experiments/ideal_source_affine_slope_scan.json`](config/experiments/ideal_source_affine_slope_scan.json)；只比较`k=0`、历史标量参考和当前人造源斜率；每个非零`k`由一至三阶聚焦方程重算依赖三区场/长度和反射器二级场，不读取或拟合历史粒子表 |
-| 理论先行的宽束接受重设计 | 同上，使用`--config`选择理论角色 | [`config/experiments/ideal_acceptance_theory.json`](config/experiments/ideal_acceptance_theory.json)；从三阶聚焦方程求场与长度，自动完成总体计算和独立粒子检验；不声称全局最大值 |
-| 固定总长的宽束接受对照 | 同上，使用`--config`选择固定长度配置 | [`config/experiments/ideal_acceptance_fixed_length.json`](config/experiments/ideal_acceptance_fixed_length.json)；总加速器长度20.25 mm，解额外长度方程，总体密度不依赖KDE带宽 |
-| 200 mm宽束接受扫描 | 同上，使用`--config`选择200 mm配置 | [`config/experiments/ideal_acceptance_200mm.json`](config/experiments/ideal_acceptance_200mm.json)和[`ideal_acceptance_200mm_boundary.json`](config/experiments/ideal_acceptance_200mm_boundary.json)；固定总长、反求三区正场，历史结果只代表声明离散域 |
-| 300 mm宽束接受公平对照 | 同上，使用`--config`选择300 mm配置 | [`config/experiments/ideal_acceptance_300mm.json`](config/experiments/ideal_acceptance_300mm.json)；除总长改为300 mm外与200 mm主扫描相同，不自动补密边界 |
+| 理想场残差、仿射斜率与束宽设计比较 | [统一分析入口](analysis/README.md#自动理想场比较) | 同一 workflow 按科学配置选择比较；配置角色、运行方法及声明边界在分析说明维护 |
 | COMSOL生产 | [`comsol/run_oatof_model.m`](comsol/run_oatof_model.m) | `config/baseline.json`与显式Candidate合同 |
 | SIMION交付构建 | [`simion/workbench/build_formal_delivery.ps1`](simion/workbench/build_formal_delivery.ps1) | Formal只读；Candidate输出不得反写Formal |
 | 单个结构Candidate | [`workflows/design_candidate/run_candidate.py`](workflows/design_candidate/run_candidate.py) | 获批request、显式seed、完整COMSOL/SIMION/CAD链 |
 | 预注册Candidate campaign | [`workflows/experiment_campaign/run_campaign.py`](workflows/experiment_campaign/run_campaign.py) | 默认合同已完成并retired；新campaign须使用新的合同与run ID，执行时显式选择实验或`--all` |
-| Formal验证、发布、复核 | [`workflows/formal_reference/run_formal_validation.ps1`](workflows/formal_reference/run_formal_validation.ps1) | `-Phase Validate|Publish|Verify` |
+| Formal验证、发布、复核 | [`workflows/formal_reference/run_formal_validation.ps1`](workflows/formal_reference/run_formal_validation.ps1) | `-Phase Validate`、`Publish` 或 `Verify` |
 | 五质量候选 | [`workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1`](workflows/mass_spectrum_candidate/run_mass_spectrum_candidate.ps1) | 五个固定质量点，不自动推广Formal |
 | Formal跨求解器诊断 | [`workflows/cross_solver_diagnostics/run_cross_solver_diagnostics.ps1`](workflows/cross_solver_diagnostics/run_cross_solver_diagnostics.ps1) | 只读冻结场与轨迹，只发布diagnostic结果 |
 | 加速器横向场均匀性 | [`workflows/accelerator_transverse_field_uniformity/run_accelerator_transverse_field_uniformity.ps1`](workflows/accelerator_transverse_field_uniformity/run_accelerator_transverse_field_uniformity.ps1) | 只读Formal COMSOL保存场，不重求粒子 |
 | oaTOF径向紧凑化 | [`workflows/radial_compaction/run_campaign.py`](workflows/radial_compaction/run_campaign.py) | [`config/radial_compaction_campaign.json`](config/radial_compaction_campaign.json)；SIMION-only Candidate，不自动推广Formal；独立case按共享调度器的CPU、当前可用内存和已观测峰值分波执行 |
 | 反射器电压场补偿 | [`workflows/reflectron_voltage_compensation/run_compensation.py`](workflows/reflectron_voltage_compensation/run_compensation.py) | 固定端点、单调环电压；复用PA，先测量单批峰值内存，再自动分批比较原场/补偿场/理想场 |
 | CAD导出 | [`cad/ms_export_oatof_to_solidworks.m`](cad/ms_export_oatof_to_solidworks.m) | 读取指定模型与合同 |
-| 项目门禁 | `verify_project.ps1 -Level Static|Candidate|Formal` | 按证据等级执行 |
+| 项目门禁 | [`verify_project.ps1`](verify_project.ps1)，选择 `-Level` | 按证据等级执行 |
 
 所有workflow从本表导航；目录内不再复制合同和资格说明。命令行细节由入口的`--help`/参数块给出，
 SIMION运行边界见[`docs/SIMION.md`](docs/SIMION.md)，Formal与开放任务见[`docs/PROJECT.md`](docs/PROJECT.md)。
@@ -96,23 +84,16 @@ single_reflection_oa_tof_mass_analyzer/
 └─ docs/         # 当前文档、理论、投稿边界和只读history
 ```
 
-新运行和未来vNext Formal只写入工作区
-`artifacts/projects/single_reflection_oa_tof_mass_analyzer/`。重命名前的Formal、run与archive已按
-原manifest身份只读迁入该根的
-`archive/20260801_130003__migration-snapshot__repo__oa-tof/legacy-project-root/`；不得改写、追加新run
-或在新身份下晋升。映射由
-[`config/project.json`](config/project.json)的`legacy_identities`声明。两处产物的生命周期均采用
-根README，不在本项目复制。
-
-## 项目特有硬规则
-
-- COMSOL、SIMION和CAD必须消费同一resolved几何；正式比较必须使用同一粒子表、有效探测面和FWHM定义。
-- SIMION检测器PA是GUI可见数值终止层，不是机械检测器厚度。
-- Program与Data Recording必须同时开启；关闭Program窗口不等于禁用Program。
-- Candidate成功不自动恢复Formal资格，也不授权性能声明或baseline晋升。
-- 理论、投稿主张、机器合同、软件实现和历史各自只维护本层职责，不在README重复状态正文。
+产物定位与历史身份见 [PROJECT](docs/PROJECT.md#产物与历史)；生命周期见
+[仓库生命周期](../../docs/LIFECYCLE.md)。求解器专有操作要求在对应实施说明维护。
 
 ## History索引
+
+<details>
+<summary>展开已冻结实验、迁移与故障证据</summary>
+
+- [论文阶段状态与文档整治前沿革](docs/history/20260911__publication-status-consolidation.md)
+
 
 - [理想场残差扫描与两区/三区束宽比较](docs/history/20260827__ideal-source-residual-and-width-comparison.md)
 - [理想场仿射源斜率机制比较](docs/history/20260827__synthetic-affine-slope-scan.md)
@@ -143,5 +124,6 @@ single_reflection_oa_tof_mass_analyzer/
 - [`docs/history/SIMION_VALIDATION.md`](docs/history/SIMION_VALIDATION.md)
 - [`docs/history/SUPERSEDED_RESULTS.md`](docs/history/SUPERSEDED_RESULTS.md)
 
-## 历史补充索引
 - [20260801__oatof-legacy-artifact-migration-audit](docs/history/20260801__oatof-legacy-artifact-migration-audit.md)
+
+</details>

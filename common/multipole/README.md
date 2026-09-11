@@ -31,9 +31,8 @@ COMSOL/SIMION也不得反向改写设计。
 [`ideal_transport.py`](ideal_transport.py)同时提供与标量参考公式一致的NumPy批量RF波形和理想多极场适配，
 项目不得另存同义批量公式。
 
-typed operating-mode registry只声明同一机械base上的电气差异。当前三个规范模式为：
-`no_acceleration_full_length`、`segmented_rod_axial_acceleration`和
-`exit_aperture_plate_acceleration`。模式名不能用来偷偷改变几何、源或数值设置。
+typed operating-mode registry 只声明同一机械 base 上的电气差异。允许模式由对应项目的机器注册表
+解析；模式名不能隐式改变几何、源或数值设置，本页不复制模式枚举。
 
 ## 下游终端组合
 
@@ -45,6 +44,8 @@ typed operating-mode registry只声明同一机械base上的电气差异。当�
 公共接地圆套筒—矩形法兰primitive由[`grounded_shield.py`](grounded_shield.py)生成；具体尺寸和是否
 启用由integration profile决定。开孔离散、贯通列与孔外guard遵循
 [`common/simion/README.md`](../simion/README.md)。
+
+<a id="轴向部件与物理面术语"></a>
 
 ## 统一术语
 
@@ -72,8 +73,8 @@ particle_id,birth_time_s,x_mm,y_mm,z_mm,vx_m_s,vy_m_s,vz_m_s,mass_amu,charge_sta
 ```
 
 [`particle_source_preflight.py`](particle_source_preflight.py)在商业软件启动前验证列、单位、ID、有限值、
-时钟、释放面、质量、电荷和动能，并绑定CSV与resolved SHA。四、六、八极杆家族共同使用N=1000母样本
-及其精确N=100前缀；精确路径和SHA由项目`particle_source_profiles.json`绑定。
+时钟、释放面、质量、电荷和动能，并绑定 CSV 与 resolved SHA。家族母样本、允许前缀、精确路径与
+SHA 由项目 `particle_source_profiles.json` 绑定；粒子数等级由公共机器政策定义。
 
 默认源仍必须位于唯一的规范释放面并满足设计的单能源模型。唯一受支持的例外是由
 [`continuous_axial_volume_source.py`](sources/continuous_axial_volume_source.py)生成、且其receipt与CSV
@@ -89,12 +90,15 @@ solver numerics、资源预算和保留类；CLI不得覆盖几何、RF/DC、源
 并且要求两臂的 source authority SHA 不同；输出传输/出口差值、可用的损失原因普查与冻结资源指标。
 它是描述性来源模型比较，不授予收敛、探测器、Candidate 或 Formal 资格。
 
-家族SIMION campaign入口为：
+家族 SIMION campaign 从仓库根执行。以下为占位命令模板，先替换路径与实验 ID；`-DryRun`
+只生成预检/计划，正式执行会启动 SIMION，应在项目声明的资源范围内进行。
 
 ```powershell
 .\common\multipole\run_simion_transport_campaign.ps1 `
-  -CampaignPath <campaign.json> (-ExperimentId <id> | -All)
+  -CampaignPath "<campaign.json>" -ExperimentId "<id>" -DryRun
 ```
+
+核对计划后使用同一冻结选择执行；整批选择用 `-All` 替换 `-ExperimentId`，不要把两种参数集混用。
 
 它串行调用现有单工况runner，不复制求解器逻辑。analysis request只能引用
 [`analysis_capabilities.json`](analysis_capabilities.json)中的具名能力，不能嵌入任意模块或路径。
@@ -117,15 +121,11 @@ effect resolution和预算；缺少这些设置的既有run只能发布`POSTHOC_
 
 ## 求解器投影
 
-两个L3入口为：
-
-```powershell
-.\common\multipole\run_finite_3d_transport.ps1 `
-  -ProjectId <id> -DesignProfileId <profile> -ParticleSourcePath <canonical.csv>
-
-.\common\multipole\run_simion_finite_3d_transport.ps1 `
-  -ProjectId <id> -DesignProfileId <profile> -ParticleSourcePath <canonical.csv>
-```
+求解器底层入口为 [COMSOL 传输](run_finite_3d_transport.ps1) 和
+[SIMION 传输](run_simion_finite_3d_transport.ps1)。它们由项目 wrapper 或 campaign 传入冻结的
+`ProjectId`、`RuntimeProfileId`、`DesignProfileId`、`ParticleSourcePath` 和 `EngineeringBudgetPath`，
+不作为跳过 runtime profile 的手工调参入口。执行后检查 summary 的实际状态与 manifest，不能仅凭退出
+码或结果文件存在声明成功。
 
 两端消费同一resolved hash、杆阵列、接口、屏蔽、segmentation和完整drive。数值profile与物理设计分层；
 SIMION使用`cell_mm_xyz`，COMSOL显式声明电势单元阶次。普通收敛点默认`compact`，只有事前授权的
@@ -163,7 +163,7 @@ RMS、输出能量统计、成对差和指标JSON均由Python分析器从canonic
 - GUI登记：[`register_simion_layout_template.ps1`](register_simion_layout_template.ps1)
 - 当前登记：[`simion_layout_template.json`](simion_layout_template.json)
 
-生产run通过 simion_layout_template_support.ps1 一次解析并冻结注册表、登记manifest、IOB和CON，再重绑run-local PA、更新实例尺寸并恢复Program/Fly2。登记不refine、
+生产 run 通过 [`simion_layout_template_support.ps1`](simion_layout_template_support.ps1) 一次解析并冻结注册表、登记manifest、IOB和CON，再重绑run-local PA、更新实例尺寸并恢复Program/Fly2。登记不refine、
 不Fly，也不授予Candidate或Formal。SIMION 2026 `.wgem`在许可证和隔离复验完成前不是活动路线。
 
 ## 理论与项目状态

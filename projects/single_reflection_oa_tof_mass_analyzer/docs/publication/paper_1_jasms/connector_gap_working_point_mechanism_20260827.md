@@ -1,5 +1,8 @@
 # Connector-gap residual and working-point mechanism experiment
 
+> 冻结机制报告及钟表勘误；保留原英文结果、数值与来源身份。当前论文资格见
+> [证据矩阵](evidence_matrix.md)，本报告不随执行进度追加。
+
 ## Scope and frozen controls
 
 This is a collisionless, independent-particle, RF terminal-octupole-to-OA-TOF

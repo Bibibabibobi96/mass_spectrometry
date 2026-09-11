@@ -4,6 +4,27 @@
 >
 > `PUBLICATION_NOVELTY: NONE_BY_ITSELF`
 
+<details>
+<summary>章节导航</summary>
+
+- [1. 文档职责](#1-文档职责)
+- [2. 模型与符号](#2-模型与符号)
+- [3. 理想模型假设](#3-理想模型假设)
+- [4. 归一化飞行时间](#4-归一化飞行时间)
+- [5. 为什么只依赖 $L_up + L_down$](#5-为什么只依赖-l_up--l_down)
+- [6. 局部一阶与二阶能量聚焦条件](#6-局部一阶与二阶能量聚焦条件)
+- [7. 未耦合闭式参考解](#7-未耦合闭式参考解)
+- [8. 第二级长度是包络约束](#8-第二级长度是包络约束)
+- [9. 质量与电荷依赖](#9-质量与电荷依赖)
+- [10. 三阶像差与 FWHM](#10-三阶像差与-fwhm)
+- [11. 与加速器耦合的必要性](#11-与加速器耦合的必要性)
+- [12. 参考程序接口](#12-参考程序接口)
+- [13. 最低参考测试](#13-最低参考测试)
+- [14. 当前模型的禁止用法](#14-当前模型的禁止用法)
+- [15. 参考文献](#15-参考文献)
+
+</details>
+
 ## 1. 文档职责
 
 本文定义单次反射 oa-TOF 中二级、分段均匀场反射镜的一维参考模型，包括：
@@ -527,7 +548,7 @@ energy_aberration_diagnostics(...)
 arrival_time_samples(...)
 ```
 
-### 12.2 推荐机器合同
+### 12.2 示意字段（非运行输入合同）
 
 ```json
 {
@@ -572,10 +593,10 @@ arrival_time_samples(...)
 | `REF-TF-009` | 粒子级时间输出 | 可交给统一 FWHM 后处理 |
 | `REF-TF-010` | 真实轴向场积分和折返点 | 不穿底且网格收敛 |
 
-运行自检：
+从仓库根运行自检：
 
 ```powershell
-python .\analysis\reflectron_dual_stage_solver.py --self-test
+python -m projects.single_reflection_oa_tof_mass_analyzer.analysis.reflectron_dual_stage_solver --self-test
 ```
 
 ## 14. 当前模型的禁止用法
