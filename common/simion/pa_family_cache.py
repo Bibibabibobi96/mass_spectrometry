@@ -22,6 +22,7 @@ from typing import Any, Mapping, Sequence
 from uuid import uuid4
 
 from common.contracts.file_identity import canonical_json_sha256, file_sha256
+from common.simion.cache_generation import materialize_direct_inventory
 
 
 SCHEMA_VERSION = 1
@@ -42,6 +43,9 @@ CACHE_KEY_FIELDS = (
     "builder_identity",
 )
 SHA256 = re.compile(r"^[0-9A-F]{64}$")
+PAYLOAD_VERIFICATION_ATTEMPTS = 3
+PAYLOAD_RECOVERY_CONSECUTIVE_MATCHES = 2
+PAYLOAD_VERIFICATION_RETRY_DELAY_S = 0.2
 
 
 class PAFamilyCacheError(ValueError):
@@ -88,6 +92,50 @@ def _set_file_read_only(path: Path) -> None:
 def _set_file_writable(path: Path) -> None:
     """Make one private materialization writable without changing its bytes."""
     path.chmod(path.stat().st_mode | stat.S_IWUSR)
+
+
+def _verify_payload_record(root: Path, record: Mapping[str, Any]) -> None:
+    """Verify one immutable payload, recovering only from a transient read.
+
+    A normal cache hit still performs one full read.  If that read differs,
+    accept the payload only after two consecutive complete re-reads reproduce
+    the manifest exactly.  This keeps persistent damage fail-closed while
+    avoiding a false CORRUPT result from one unstable large-file read.
+    """
+
+    path = root / record["name"]
+    observations: list[str] = []
+    mismatch_seen = False
+    consecutive_matches = 0
+    for attempt in range(1, PAYLOAD_VERIFICATION_ATTEMPTS + 1):
+        if path.is_file():
+            observed_bytes = path.stat().st_size
+            observed_sha256 = file_sha256(path)
+        else:
+            observed_bytes = None
+            observed_sha256 = None
+        observations.append(
+            f"attempt={attempt},bytes={observed_bytes},sha256={observed_sha256}"
+        )
+        matches = (
+            observed_bytes == record["bytes"]
+            and observed_sha256 == record["sha256"]
+        )
+        if matches:
+            consecutive_matches += 1
+            required = PAYLOAD_RECOVERY_CONSECUTIVE_MATCHES if mismatch_seen else 1
+            if consecutive_matches >= required:
+                return
+        else:
+            mismatch_seen = True
+            consecutive_matches = 0
+        if attempt < PAYLOAD_VERIFICATION_ATTEMPTS:
+            time.sleep(PAYLOAD_VERIFICATION_RETRY_DELAY_S)
+    raise PAFamilyCacheError(
+        "PA cache family payload differs: "
+        f"{record['name']} expected_bytes={record['bytes']} "
+        f"expected_sha256={record['sha256']} observations=[{' ; '.join(observations)}]"
+    )
 
 
 def _seal_generation_files(directory: Path, manifest: Mapping[str, Any]) -> None:
@@ -216,9 +264,7 @@ def validate_pa_family_cache_generation(
             raise PAFamilyCacheError("PA cache inventory byte count is invalid")
         if not isinstance(record["sha256"], str) or not SHA256.fullmatch(record["sha256"]):
             raise PAFamilyCacheError("PA cache inventory SHA-256 is invalid")
-        path = root / name
-        if not path.is_file() or path.stat().st_size != record["bytes"] or file_sha256(path) != record["sha256"]:
-            raise PAFamilyCacheError(f"PA cache family payload differs: {name}")
+        _verify_payload_record(root, record)
         names.append(name)
     if names != sorted(names) or len(names) != len(set(names)):
         raise PAFamilyCacheError("PA cache inventory filenames are not sorted and unique")
@@ -411,52 +457,38 @@ def materialize_pa_family_cache(
     source = Path(generation_directory)
     manifest = validate_pa_family_cache_generation(source, expected_filenames=expected_filenames)
     destination = Path(destination_directory)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    if destination.exists() and not destination.is_dir():
-        raise PAFamilyCacheError(f"run-local PA materialization destination is not a directory: {destination}")
-    names = [record["name"] for record in manifest["files"]]
-    if destination.exists():
-        collisions = [name for name in names if (destination / name).exists()]
-        if collisions:
-            raise PAFamilyCacheError(
-                "run-local PA materialization would overwrite existing family files: "
-                + ", ".join(collisions)
-            )
-    stage = destination.parent / f".{destination.name}.staging-{uuid4().hex}"
+    collisions = [
+        record["name"] for record in manifest["files"]
+        if (destination / record["name"]).exists()
+        or (destination / record["name"]).is_symlink()
+    ]
+    if collisions:
+        raise PAFamilyCacheError(
+            "materialization would overwrite existing files: " + ", ".join(collisions)
+        )
     try:
-        stage.mkdir()
-        for name in names:
-            shutil.copy2(source / name, stage / name)
-            _set_file_writable(stage / name)
-        copied = pa_family_inventory(stage, names)
-        if copied != manifest["files"]:
-            # Large PA arrays can be scanned while an endpoint protection
-            # filter is still completing its write path on Windows.  Never
-            # accept those bytes: re-copy only the divergent direct files
-            # once, then require the same complete manifest again.
-            expected = {record["name"]: record for record in manifest["files"]}
-            actual = {record["name"]: record for record in copied}
-            divergent = [name for name in names if actual.get(name) != expected[name]]
-            for name in divergent:
-                _copy_verified_candidate_file(source / name, stage / name)
-                _set_file_writable(stage / name)
-            copied = pa_family_inventory(stage, names)
-            if copied != manifest["files"]:
-                actual = {record["name"]: record for record in copied}
-                divergent = [name for name in names if actual.get(name) != expected[name]]
-                raise PAFamilyCacheError(
-                    "run-local PA materialization hash verification failed: " + ", ".join(divergent)
-                )
-        destination.mkdir(exist_ok=True)
-        for name in names:
-            os.replace(stage / name, destination / name)
-    finally:
-        if stage.exists():
-            shutil.rmtree(stage)
-    # Verify the published run-local bytes as well; a successful copy is not enough evidence.
-    copied = pa_family_inventory(destination, names)
-    if copied != manifest["files"]:
-        raise PAFamilyCacheError("published run-local PA family hash verification failed")
+        if not destination.exists():
+            copied = materialize_direct_inventory(source, destination, manifest["files"])
+        else:
+            if not destination.is_dir():
+                raise ValueError("materialization destination is not a directory")
+            temporary = destination.parent / f".{destination.name}.family-{uuid4().hex}"
+            moved: list[Path] = []
+            try:
+                copied = materialize_direct_inventory(source, temporary, manifest["files"])
+                for record in manifest["files"]:
+                    target = destination / record["name"]
+                    os.replace(temporary / record["name"], target)
+                    moved.append(target)
+            except Exception:
+                for target in moved:
+                    target.unlink(missing_ok=True)
+                raise
+            finally:
+                if temporary.exists():
+                    shutil.rmtree(temporary)
+    except ValueError as exc:
+        raise PAFamilyCacheError(str(exc)) from exc
     return MaterializedFamily(destination.resolve(), tuple(copied))
 
 

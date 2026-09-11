@@ -37,22 +37,31 @@ IOB 路径写入该项目 `docs/SIMION.md` 或 `docs/PROJECT.md`。
 
 ### 长PA输入路径
 
-- 对只读、独立的PA响应输入，统一调用
-  [`common/simion/short_pa_path_support.ps1`](../common/simion/short_pa_path_support.ps1)，在系统临时目录建立
-  经SHA-256验证的短名独立副本；规范artifact路径、文件内容、科学身份和manifest路径保持不变。
-- 禁止把不可变cache generation暴露为junction/symlink/hard link，或在项目内再实现一套短路径工具。
-  供应商进程退出后必须复核完整源family并清理临时副本目录。
-- hard link曾在初次实跑后被SIMION延迟写回并改变源`pa4`，所以只读属性不算隔离。修复后的公共路径已在
-  `20260915_080000__sim__simion__mrtof-transient-shortcopy-smoke-n1`通过五组局域合成、八实例装配和真实
-  单粒子飞行；运行前后family完整性与终态manifest均通过。随后，669,209,300-byte分析器PA在
-  `20260916_050000__sim__simion__mrtof-return-grid-natural-return-n1-r49`暴露单次复制后立即校验不稳定；公共入口
-  现以最多三次完整重复制进行有界重试，每次仍要求源复制前后长度和SHA-256不变、目标长度和SHA-256与原源完全
-  一致，耗尽即失败关闭。`20260916_053000__sim__simion__mrtof-return-grid-natural-return-n1-r50`已使用该实现完成
-  完整分析器PA、五个局域PA0、装配及真实SIMION飞行，并自然命中独立探测器。此问题在
-  “SIMION只读长PA输入”范围内视为已关闭；原生`.paN` family调整仍必须物化完整可写副本。
-- 实现、测试、官方依据和真实run身份由
-  [`common/simion/README.md`](../common/simion/README.md)统一记录，其他Agent先复用并运行该回归测试，不再重新
-  调研或创建替代实现。
+**已关闭范围：SIMION 只读 standalone PA 的长路径输入。** 初版实现与回归提交于 `fe09cc9c`，
+Agent 强制路由提交于 `d6a51112`；本节是该能力适用边界和关闭结论的唯一规范位置。
+
+| 消费方式 | 必须使用的输入表示 | 完整性检查 |
+|---|---|---|
+| 真正 standalone 的只读 PA（不含从 family 抽出的响应成员） | 公共入口生成可写、可丢弃的短名普通 `.pa` 副本 | 复制前后源及目标大小／SHA-256一致；进程退出后核对源 |
+| 新 family 的构建、Refine 与响应生成 | 仅在一次性、可写的 build staging 中创建原生 family；发布前把每个响应复制到全新 PA 对象并保存为 standalone `.pa` | 新对象逐节点保留势、电极标志及网格元数据；独立进程重开和延迟哈希稳定 |
+| 已发布 cache 的 `.paN` 成员 | **禁止供应商进程再次打开**；运行时只消费同 generation 内已发布的 standalone 响应 | manifest 同时覆盖原生 family 和 standalone 响应；运行后完整 cache probe |
+
+统一复用 [short_pa_path_support.ps1](../common/simion/short_pa_path_support.ps1)。禁止用
+junction、symlink 或 hard link 把不可变缓存暴露给 SIMION，禁止项目私有短路径实现。文件只读属性
+不能代替写隔离；所有路径都不能只核对 `.pa#` 哨兵。短名副本在供应商退出后清理，不改变规范 artifact
+目录、科学输入身份或 manifest 路径。完整 family 的内容缺失或损坏不能误判为 `MAX_PATH` 问题。
+把 `.paN` 单个复制、改名，甚至把已发布 family 完整复制到私有目录，都不能证明其 family 关联已解除：
+`r59` 与 `r66` 分别捕获了单成员路径和完整复制路径之后的延迟源哈希漂移。因此公共短副本入口拒绝
+`.paN`，生产运行器只接受在 family 初次构建时由**全新 PA 对象**生成并受同一 cache manifest 约束的
+standalone 响应。完整 family 物化仅是通用字节复制原语，不再是已发布 SIMION family 的运行时隔离边界。
+
+已验证能力包括完整分析器 PA、局域 PA0、IOB 装配及真实飞行；独立响应导出的最终真实飞行复验为
+`20260916_193000__sim__simion__mrtof-r55-standalone-flight-r76`，其上游 build/cache 证据由
+[MR-TOF 项目状态](../projects/parallel_mirror_dual_stripe_mr_tof/docs/PROJECT.md)绑定。自然检测命中属于对应项目 run 的功能证据，不由本公共能力授予统计、数值收敛、
+Candidate 或 Formal 资格。本结论不扩展为所有求解器的通用短路径发布层。
+
+[公共实现说明](../common/simion/README.md#长路径输入-api与证据)维护 API、回归命令、官方依据及完整
+失败／复验链。后续直接复用并按改动范围验证，不重新建立替代机制。
 
 ## GUI 对等
 

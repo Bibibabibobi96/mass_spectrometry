@@ -36,8 +36,8 @@ function Get-VerifiedAnalyzerLocalFamily {
     identity_source=$identitySource;publication_source=$publicationSource
     contract=$contract;cache_key=[string]$publication.cache_key
     region=$ExpectedRegion;scale=$ExpectedScale
-    frozen_contract=$null;frozen_identity=$null;frozen_publication=$null
-    generation_directory=$null
+    frozen_contract=$contractSource;frozen_identity=$identitySource;frozen_publication=$publicationSource
+    generation_directory=[string]$publication.generation_directory
   }
 }
 
@@ -59,7 +59,7 @@ function Resolve-AnalyzerLocalFamilyCacheGeneration {
   } finally {$env:PYTHONPATH=$saved;Pop-Location}
   $probe=(@($lines)-join "`n")|ConvertFrom-Json
   if($probe.disposition-ne'hit' -or [string]$probe.cache_key-ne$Family.cache_key){
-    throw "Required local PA family is not an intact cache hit: $($Family.label)"
+    throw "Required local PA family is not an intact cache hit: $($Family.label); disposition=$($probe.disposition); detail=$($probe.detail)"
   }
   $Family.generation_directory=[string]$probe.generation_directory
   return $Family.generation_directory

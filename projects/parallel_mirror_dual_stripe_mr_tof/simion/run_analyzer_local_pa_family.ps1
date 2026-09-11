@@ -3,6 +3,7 @@ param(
   [Parameter(Mandatory)][string]$GeometryReviewRunPath,
   [Parameter(Mandatory)][ValidateSet('mirror_turn_positive','mirror_turn_negative','central_transport','stripe_mirror_bridge_positive','stripe_mirror_bridge_negative')][string]$Region,
   [Parameter(Mandatory)][ValidateSet(1.0,0.5,0.25)][double]$ScaleFactor,
+  [ValidatePattern('^[0-9A-Fa-f]{64}$')][string[]]$ProtectedCacheKeys=@(),
   [string]$ContractPath='',
   [string]$RunId='',
   [string]$SimionExe='',
@@ -95,12 +96,6 @@ try {
   }
   $selected=$profile[0].$profileKey
   [int64]$estimatedFamilyBytes=[int64]$selected.estimated_family_bytes
-  $failureStage='capacity_preflight'
-  $capacityStartup=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
-    -RequiredHeadroomBytes ([int64](2*$estimatedFamilyBytes)) -ProtectedPaths @($package.artifact_run_dir,$geometryRun)
-  $capacityStartupPath=Join-Path $resultDir 'artifact_capacity_gate_startup.json'
-  Write-RunJson -Path $capacityStartupPath -Depth 14 -Value $capacityStartup
-
   $failureStage='derive_family_contract'
   $gem=Join-Path $solverDir "mrtof_analyzer_local_$Region.gem"
   Invoke-ProjectPython -Arguments @('-m','projects.parallel_mirror_dual_stripe_mr_tof.analysis.analyzer_local_patch_geometry',
@@ -120,6 +115,19 @@ try {
   $probe=($probeLines-join "`n")|ConvertFrom-Json
   $cacheDisposition=[string]$probe.disposition
   if($cacheDisposition-eq'corrupt'){throw "Local PA cache is corrupt: $($probe.detail)"}
+  # A verified hit needs no multi-gigabyte build staging.  Probe the immutable
+  # identity first, protect the selected generation during reconciliation, and
+  # reserve the double-family headroom only when a build is actually required.
+  [int64]$requiredBuildHeadroom=if($cacheDisposition-eq'hit'){0}else{[int64](2*$estimatedFamilyBytes)}
+  $startupProtectedCacheKeys=@($ProtectedCacheKeys)
+  if($cacheDisposition-eq'hit'){$startupProtectedCacheKeys+=([string]$probe.cache_key)}
+  $failureStage='capacity_preflight'
+  $capacityStartup=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
+    -RequiredHeadroomBytes $requiredBuildHeadroom -ProtectedPaths @($package.artifact_run_dir,$geometryRun) `
+    -ProtectedCacheKeys $startupProtectedCacheKeys
+  $capacityStartupPath=Join-Path $resultDir 'artifact_capacity_gate_startup.json'
+  Write-RunJson -Path $capacityStartupPath -Depth 14 -Value $capacityStartup
+
   if($cacheDisposition-ne'hit'){
     $failureStage='build_local_family'
     $temporaryFamily=Join-Path ([IO.Path]::GetTempPath()) ('mrtof_local_pa_family_'+[guid]::NewGuid().ToString('N'))
@@ -140,9 +148,15 @@ try {
       (Join-Path $temporaryFamily ([string]$familyContract.zero_response.output_filename)),'-','-',$coarseOrigin,$patchOrigin)
     foreach($recipe in @($familyContract.response_recipes)){
       $sourcePaths=@($recipe.source_basis_paths|ForEach-Object{[string]$_})-join'|'
+      $sourcePhysicalIds=@($recipe.physical_ids|ForEach-Object{[string]$_})-join','
       Invoke-SimionStage -Stage ("build_local_basis_{0:D2}"-f[int]$recipe.local_id) -Arguments @('--nogui','--noprompt','lua',
         (Join-Path $repoRoot 'common\simion\build_dirichlet_patch_basis.lua'),$groupedRaw,
-        (Join-Path $temporaryFamily ([string]$recipe.output_filename)),$sourcePaths,([string]$recipe.local_id),$coarseOrigin,$patchOrigin)
+        (Join-Path $temporaryFamily ([string]$recipe.output_filename)),$sourcePaths,([string]$recipe.local_id),$coarseOrigin,$patchOrigin,
+        '-',([string]$familyContract.coarse_raw_pa_path),$sourcePhysicalIds)
+      Invoke-SimionStage -Stage ("export_standalone_response_{0:D2}"-f[int]$recipe.local_id) -Arguments @('--nogui','--noprompt','lua',
+        (Join-Path $repoRoot 'common\simion\export_standalone_pa.lua'),
+        (Join-Path $temporaryFamily ([string]$recipe.output_filename)),
+        (Join-Path $temporaryFamily ([string]$recipe.standalone_response_filename)))
     }
     $failureStage='publish_local_family_cache'
     $publishLines=Invoke-ProjectPython -Arguments @('-m','common.simion.pa_family_cache','--action','publish',
@@ -171,8 +185,10 @@ try {
   $retention=Apply-RunArtifactRetention -Python $python -RepoRoot $repoRoot -RunConfig $runConfig
   $failureStage='capacity_terminal'
   [int64]$maximum=[int64](Get-ChildItem -LiteralPath $package.artifact_run_dir -Recurse -File|Measure-Object Length -Sum).Sum
+  $terminalProtectedCacheKeys=@($ProtectedCacheKeys)+@([string]$publication.cache_key)
   $capacityTerminal=Invoke-ArtifactCapacityGate -Python $python -RepoRoot $repoRoot -ArtifactRoot $artifactRoot `
-    -ProtectedPaths @($package.artifact_run_dir,$geometryRun) -KnownMeasuredBytes ([int64]$capacityStartup.measured_after_bytes) -MaximumNewArtifactBytes $maximum
+    -ProtectedPaths @($package.artifact_run_dir,$geometryRun) -ProtectedCacheKeys $terminalProtectedCacheKeys `
+    -KnownMeasuredBytes ([int64]$capacityStartup.measured_after_bytes) -MaximumNewArtifactBytes $maximum
   $capacityTerminalPath=Join-Path $resultDir 'artifact_capacity_gate_terminal.json'
   Write-RunJson -Path $capacityTerminalPath -Depth 14 -Value $capacityTerminal
   Write-VerifiedRunManifest -Python $python -RepoRoot $repoRoot -RunConfig $runConfig -Status success `

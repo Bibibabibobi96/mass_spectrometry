@@ -1,17 +1,16 @@
 -- Refine one local operating-point PA from a solved parent operating PA.
 -- Geometry, voltage grouping, origins, and mesh remain caller-owned.
 -- Usage: ... RAW_LOCAL_PA# OUTPUT_LOCAL_PA0 SOURCE_OPERATING_PA0
---   SOURCE_ORIGIN_X,Y,Z PATCH_ORIGIN_X,Y,Z LOCAL_V1,...,LOCAL_VN [CONVERGENCE]
+--   SOURCE_ORIGIN_X,Y,Z PATCH_ORIGIN_X,Y,Z LOCAL_V1,...,LOCAL_VN
 local raw_path=assert(arg[1],'raw local PA# required')
 local output_path=assert(arg[2],'output local PA0 required')
 local source_path=assert(arg[3],'solved parent operating PA0 required')
 local source_origin_text=assert(arg[4],'source project origin required')
 local patch_origin_text=assert(arg[5],'patch project origin required')
 local voltage_text=assert(arg[6],'local electrode voltages required')
-local convergence=arg[7] and assert(tonumber(arg[7]),'convergence must be numeric') or nil
+assert(arg[7]==nil,'unexpected argument 7')
 assert(raw_path:match('%.pa#$') and output_path:match('%.pa0$') and source_path:match('%.pa0$'),
   'raw/output/source suffixes must be PA#/PA0/PA0')
-assert(convergence==nil or convergence>0,'convergence must be positive')
 local function numbers(text,label)
   local values={}
   for value in text:gmatch('[^,]+') do values[#values+1]=assert(tonumber(value),label..' contains a non-number') end
@@ -55,7 +54,7 @@ for z=0,target.nz-1 do for y=0,target.ny-1 do for x=0,target.nx-1 do
 end end end
 target:save(output_path);target:close();source:close()
 local solved=assert(simion.pas:open(output_path),'cannot reopen local operating PA')
-if convergence then solved:refine{convergence=convergence} else solved:refine() end
+solved:refine()
 solved:save(output_path);solved:close()
 print(string.format('DIRICHLET_PATCH_OPERATING_PA=PASS physical_points=%d boundary_points=%d output=%s',
   physical_count,boundary_count,output_path))

@@ -5,7 +5,8 @@
 -- Usage:
 -- simion --nogui lua build_dirichlet_patch_basis.lua RAW_PA# OUTPUT_PA
 --   SOURCE_PA_PATHS_PIPE_SEPARATED ACTIVE_RAW_IDS_COMMA_SEPARATED
---   SOURCE_PROJECT_ORIGIN_X,Y,Z PATCH_PROJECT_ORIGIN_X,Y,Z CONVERGENCE
+--   SOURCE_PROJECT_ORIGIN_X,Y,Z PATCH_PROJECT_ORIGIN_X,Y,Z RESERVED_DASH
+--   SOURCE_RAW_PA# SOURCE_ACTIVE_IDS_COMMA_SEPARATED
 
 local raw_path=assert(arg[1], 'raw local PA# required')
 local output_path=assert(arg[2], 'output PA required')
@@ -13,8 +14,9 @@ local source_text=assert(arg[3], 'coarse response PA path list required')
 local active_text=assert(arg[4], 'active raw electrode IDs required')
 local source_origin_text=assert(arg[5], 'coarse project origin required')
 local patch_origin_text=assert(arg[6], 'patch project origin required')
-local convergence=arg[7] and assert(tonumber(arg[7]), 'convergence must be numeric') or nil
-assert(convergence==nil or convergence>0, 'convergence must be positive')
+assert(arg[7]==nil or arg[7]=='-', 'argument 7 is reserved and must be omitted or "-"')
+local source_raw_path=arg[8]
+local source_active_text=arg[9]
 
 local function split(text, separator_pattern)
   local values={}
@@ -51,9 +53,10 @@ for _,path in ipairs(source_paths) do
   sources[#sources+1]=pa
 end
 
-local function source_basis_voltage(pa)
-  -- SIMION solution-array normalization belongs to the source PA.  Read the
-  -- first non-zero physical node instead of assuming a particular voltage.
+local function legacy_source_basis_voltage(pa)
+  -- Compatibility path for callers without a source raw PA.  Physical
+  -- Dirichlet faces can precede geometry electrodes, so contract-aware callers
+  -- must supply source_raw_path and source_active_text below.
   for z=0,pa.nz-1 do for y=0,pa.ny-1 do for x=0,pa.nx-1 do
     local value,is_physical=pa:point(x,y,z)
     if is_physical and math.abs(value)>1e-12 then return value end
@@ -62,14 +65,65 @@ local function source_basis_voltage(pa)
 end
 
 local basis_voltage=nil
-for _,source in ipairs(sources) do
-  local value=source_basis_voltage(source)
-  if basis_voltage==nil then
-    basis_voltage=value
-  else
-    local scale=math.max(1,math.abs(basis_voltage),math.abs(value))
-    assert(math.abs(value-basis_voltage)<=1e-12*scale,
-      'coarse response PA basis voltages differ')
+if #sources>0 and source_raw_path and source_raw_path~='-' then
+  assert(source_active_text and source_active_text~='-',
+    'source active electrode IDs are required with the source raw PA')
+  local source_active_ids={}
+  for _,value in ipairs(split(source_active_text, '[^,]+')) do
+    local identifier=assert(tonumber(value), 'source active electrode ID is not numeric')
+    assert(identifier==math.floor(identifier) and identifier>0,
+      'source active electrode ID must be a positive integer')
+    source_active_ids[#source_active_ids+1]=identifier
+  end
+  assert(#source_active_ids==#sources,
+    'source active electrode IDs must align one-to-one with coarse response paths')
+  local source_raw=assert(simion.pas:open(source_raw_path), 'cannot open source raw geometry PA')
+  local measurements={}
+  local source_index_by_id={}
+  for index,identifier in ipairs(source_active_ids) do
+    assert(source_index_by_id[identifier]==nil, 'source active electrode IDs must be unique')
+    source_index_by_id[identifier]=index
+    measurements[index]={minimum=nil,maximum=nil,count=0}
+    local source=sources[index]
+    assert(source.nx==source_raw.nx and source.ny==source_raw.ny and source.nz==source_raw.nz,
+      'coarse response PA and source raw PA shapes differ')
+  end
+  for z=0,source_raw.nz-1 do for y=0,source_raw.ny-1 do for x=0,source_raw.nx-1 do
+    local raw_value,is_geometry_electrode=source_raw:point(x,y,z)
+    if is_geometry_electrode then
+      local index=source_index_by_id[math.floor(raw_value+0.5)]
+      if index then
+        local value,is_physical=sources[index]:point(x,y,z)
+        assert(is_physical, 'active source geometry electrode is not physical in solved basis')
+        local item=measurements[index]
+        item.minimum=item.minimum and math.min(item.minimum,value) or value
+        item.maximum=item.maximum and math.max(item.maximum,value) or value
+        item.count=item.count+1
+      end
+    end
+  end end end
+  source_raw:close()
+  for index,item in ipairs(measurements) do
+    assert(item.count>0, 'source raw PA has no nodes for an active source electrode ID')
+    local scale=math.max(1,math.abs(item.minimum),math.abs(item.maximum))
+    assert(math.abs(item.maximum-item.minimum)<=1e-6*scale,
+      'coarse response PA active geometry-electrode voltage spread is too large')
+    local value=(item.minimum+item.maximum)/2
+    assert(math.abs(value)>1e-12, 'coarse response PA active geometry-electrode voltage is zero')
+    if basis_voltage==nil then basis_voltage=value else
+      local comparison_scale=math.max(1,math.abs(basis_voltage),math.abs(value))
+      assert(math.abs(value-basis_voltage)<=1e-12*comparison_scale,
+        'coarse response PA basis voltages differ')
+    end
+  end
+else
+  for _,source in ipairs(sources) do
+    local value=legacy_source_basis_voltage(source)
+    if basis_voltage==nil then basis_voltage=value else
+      local scale=math.max(1,math.abs(basis_voltage),math.abs(value))
+      assert(math.abs(value-basis_voltage)<=1e-12*scale,
+        'coarse response PA basis voltages differ')
+    end
   end
 end
 if #sources==0 then basis_voltage=0 end
@@ -107,7 +161,7 @@ target:close()
 for _,source in ipairs(sources) do source:close() end
 
 local solved=assert(simion.pas:open(output_path), 'cannot reopen local response PA')
-if convergence then solved:refine{convergence=convergence} else solved:refine() end
+solved:refine()
 solved:save(output_path)
 solved:close()
 print(string.format('DIRICHLET_PATCH_BASIS=PASS boundary_points=%d physical_points=%d basis_voltage=%.15g output=%s',

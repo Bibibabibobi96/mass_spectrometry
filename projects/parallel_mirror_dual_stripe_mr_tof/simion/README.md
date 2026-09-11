@@ -1,8 +1,7 @@
 # MR-TOF Candidate SIMION 路径
 
 本页说明活动 SIMION 实现与操作边界；当前资格、有效证据和开放任务以
-[项目状态](../docs/PROJECT.md)为准。源码具备三组件几何生成与事件完整性校验，不代表完整装配、
-脉冲注入、双程棱镜或探测链已经通过验证；旧 PA/IOB 不因源码修复自动恢复有效性。
+[项目状态](../docs/PROJECT.md)为准。当前 N=1 自然互易路径不授予束团或分辨率资格；旧 PA/IOB 不因源码修复自动恢复有效性。
 
 ## 输入、坐标与几何
 
@@ -55,7 +54,7 @@ grid1与exit是节点对齐的理想栅。五环位置与电压由区长、环�
 探测器GEM先用稳定ID25建立物质掩码；[build_component_pa.lua](build_component_pa.lua)在
 `INITIALIZE=0`时以`pa:potential(x,y,z,0)`把所有节点电势置零、保留电极标志并保存原始PA。
 因此原始ID值不会被当成25 V，且没有静电求解数组。它不是已验证的物理探测器；
-原生平板终止与Lua命中事件面的对应关系仍须验证。
+原生终止与事件面的一致性必须随每次飞行检查；当前 N=1 证据见项目状态。
 
 ## 构建与重新加载检查
 
@@ -198,344 +197,96 @@ python -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_anal
 检测率、目标K比例、FWHM和分辨率为`null`，CLI返回`FAIL/1`；只有完整性通过才返回`PASS/0`。
 旧schema日志只能只读诊断，不能通过补造新source manifest恢复当前运行资格。
 
-## 尚未闭合的飞行接口
+## 飞行与求根入口
 
-当前[mrtof_candidate.lua](mrtof_candidate.lua)仍有以下物理限制，事件完整性PASS并不消除它们：
+所有入口从已审计 run 消费冻结合同、源与 PA 身份；参数说明直接查看对应脚本的 `param` 定义。
+以下入口具有不同资格，不能互相替代。
 
-- 主程序现已绑定[mirror_cycle_counter.lua](mirror_cycle_counter.lua)：P1 后先记录负镜预反射，
-  随后通过 P2 和正侧 Stripe 区；首个`v_y>0`正侧镜转折建立主漂移相位原点。
-  此后每个“正侧转折→负侧转折→正侧转折”增加一个完整周期，并在每个同侧转折发布整数K相位样本；
-  只有同侧正镜转折同时满足`y=0,v_y<0`才是严格相位返回。若轨迹在两个相位样本之间穿越`y=0`，
-  只发布坐标返回诊断，并由相邻同侧周期计算连续圈数，绝不把它冒充整数K相位闭合。`z=0`穿越只保留为
-  Poincare/周期诊断，不再拥有周期相位。第50次镜转折
-  不会主动截停；真正成功终止仍由探测器命中负责。该状态机已有SIMION 2020 Lua合成轨迹回归，但尚无
-  合格K=25返回证据，因而不构成真实三维完整引出或探测证据。
-- 棱镜16（路径 P1）和棱镜17（路径 P2）均在主漂移前；二者之间存在真实负镜预反射。棱镜只记录
-  `prism_pass`/`prism_entry`，绝不以`v_z`反号伪装棱镜事件。约4-keV轴向能量不是棱镜电压；活动
-  有限三维射击在百伏量级校正P1/P2。硬边界初值尺度由总动能和入/出射角共同决定；对当前
-  `4000 eV`快向、`5 eV`慢向分配，交叉能量尺度为`sqrt(4000*5)=141.421 V`，不是`5 V`
-  也不是`4000 V`。旧P2=`0 V`仅是被取代的几何审查显示值；
-  加速器同样未实现脉冲时序与源时钟闭合。
-- Lua已按合同改在探测器`+z`外表面接收沿`-z`入射，保留初始步并对中央面采用半开区间和插值；
-  纯Lua回归通过，但实际平板终止与检测事件的对应仍待全装配飞行复核。
-- `sim_segment_global=1`已启用。SIMION 2020（8.2.0.11）同一N=2原生生命周期回归确认：关闭时仅记录PA内
-  粒子终止，开启后PA内与PA外各一个粒子均有终态；不需`early_access`。这不代替旧漏记录束团的重新飞行。
-- [run_iob_flight.lua](run_iob_flight.lua)要求IOB同名的Lua、Fly2、operating-point、voltage-map和
-  mirror-cycle-counter sidecar。
-  [run_three_component_center_flight.ps1](run_three_component_center_flight.ps1)是唯一的N=1中心粒子入口：
-  它从已审计P1/P2工作点冻结代码、合同与完整中心源，并把已电压化的分析器/加速器PA及零势探测器PA
-  以只读路径装入run-local IOB；既不复制约1 GiB PA载荷，也不执行PA save，且构建和飞行前后核对三份
-  上游PA哈希。入口拒绝IOB同名Fly2与冻结源字节不一致。入口只发布全终态事件链的
-  `candidate_prototype_event_chain_only` receipt；不运行束团、不产生分辨率结论，也不修改上游PA或P1/P2 run。
+| 任务 | 受管入口 | 结果范围 |
+|---|---|---|
+| N=1 完整中心事件链 | [run_three_component_center_flight.ps1](run_three_component_center_flight.ps1) | 单中心原型事件诊断 |
+| P1/P2 或 S1/S2/P1/P2 有限场试点 | [run_two_prism_trial.ps1](run_two_prism_trial.ps1) | 四残差与真实回程观测 |
+| 新中心八条对称扰动及审计 | [run_downstream_central_difference_campaign.ps1](run_downstream_central_difference_campaign.ps1) | 同一冻结问题的局部 Jacobian |
+| 只读中央差分审计 | [run_downstream_central_difference.ps1](../analysis/run_downstream_central_difference.ps1) | 定义性与导数诊断，不选择步长 |
+| 实际步进下降审计 | [run_downstream_bounded_step.ps1](../analysis/run_downstream_bounded_step.ps1) | 对照真实与预测下降，不授予工作点 |
+| 首棱镜隔离诊断 | [run_three_component_first_prism_flight.ps1](run_three_component_first_prism_flight.ps1) | 首棱镜接口 |
+| 静态第一时间焦点 | [run_accelerator_focus_flight.ps1](run_accelerator_focus_flight.ps1) | 独立加速器焦点，不是束团出口时钟 |
 
-受管run `20260909_041000__sim__simion__mrtof-center-n1-readonly-pa-fractional-return`首次越过上述
-只读装配、源身份和事件完整性门禁：P1/P2分别为`+177.661775543/-180.055454662 V`，不是4 kV；
-慢向转折为`258.778899196 mm`，坐标返回为`K=19.014224397`，其后在P2屏蔽附近碰撞，探测数为0。
-因此它确认了完整中心源、只读PA复用和事件链功能，同时否决当前电压点的`L=340 mm、K=25`物理闭合。
+中央差分 campaign 从中心 run 继承四电压及上游 run、局域工作台、trajectory profile 和脉冲模式；
+调用者显式提供四个正对称步长和新 run 身份。它在八次飞行及审计全过程持有公共 host-execution lease。
+每条 manifest 逐文件绑定几何/镜/Stripe/加速器/工作台、组件 PA、源、IOB builder/seed、Program/helper、
+电压映射和飞行/合成实现；`solver_problem_identity` 按 bytes+SHA-256 比较。仅四电压与派生 operating PA 可变。
 
-[run_two_prism_trial.ps1](run_two_prism_trial.ps1)现同时服务P1/P2交接局部试点和后续四坐标下游试点：
-可选Stripe1/Stripe2电压必须成对给出，`-ContinueMainDrift`要求同时观察相位原点、首个慢向转折和
-连续返回K。入口不再把约1-GB电压化PA0复制进每个run，也不在逐步回调中重复Fast Adjust；它从
-不可变分析器family在系统临时目录只合成一次PA0，建立临时IOB并飞行，逐项核对源PA哈希后删除临时
-PA/IOB。artifact保留冻结小输入、完整日志、四残差、临时PA哈希和重建方法。
-它现在也可显式给出同一时刻的P1/P2提取态电压。静态PA0仍承载镜、Stripe和注入态棱镜电压；
-SIMION `segment.fast_adjust`只重组发生切换的电极16/17基数组，其他约18张分析器basis不进入逐段计算，
-也不执行refine或保存上游PA。切换时刻、电极ID、注入态和提取态均写入run-local sidecar及manifest；
-全分析器Fast Adjust与该单电极路径互斥。该实现是提取诊断能力，不表示提取电压已经闭合。
-提取试算还必须给出一个已成功主漂移run作为`ReferenceTransportRunPath`：入口验证其manifest，直接继承
-该run的Stripe电压和P1/P2注入态，并从其唯一`drift_coordinate_return`事件自动取得切换时刻。任何回落到
-理论Stripe初值、改变注入棱镜电压或手工给出不一致切换时刻的请求都会失败关闭。
+有界 proposal 由已验证 Jacobian 和显式 alpha 自动派生，不手工誊写四电压。proposal、真实试飞与下降审计是
+三个独立步骤；迭代是否已完成只在[PROJECT](../docs/PROJECT.md)维护，不在本页累加试点时间线。
 
-2026-09-10首轮切换诊断把P1/P2注入态固定为`+177.537401235/-179.126593079 V`，在中心离子
-`y=0`坐标返回`773.579816892 us`切换；这里的约`180 V`来自5-eV慢向/约4-keV快向能量的有限三维
-校正，`4 kV`只属于加速器净增益和镜轴向能量，绝不是棱镜电压。P2提取态`0,-30,-65,-70,-75,
--90,-100,-120,-135,-140,-160,-170 V`及`+140 V`的有界诊断均未命中探测器，但已经区分了P2屏蔽、
-25-mm加速器孔边和加速器环/框等不同终止边界。`P1=0/100/140 V`与`P2=-140 V`也已验证P1是独立的
-回程控制量。当前只能据此建立双变量提取射击问题，不能从任一单点发布工作电压、探测率或分辨率。
-日志新增双向`detector_plane`相空间样本；探测器成功仍只接受其合同规定的`+z`外表面沿`-z`入射。
-受管run `20260910_080000__sim__simion__detector-chain-event-audit-n1`首次完整审计动态链路可达：
-在`K=24.9995073622`的坐标返回面将P1/P2切到`0/-140 V`后，中心离子最终于
-`t=1654.71284613 us`、`(x,y,z)=(0.03616,-43.16221,97) mm`命中独立探测器。切换到命中历时
-`881.133029238 us`且有59个额外镜面转折；日志恰有一个detector和一个`splat=1`事件。该结果只是
-`prototype event chain`证据，不是目标K=25提取解，也不能用于分辨率声明。
-随后受管run `20260910_093000__sim__simion__p1-minus60-p2-minus140-extraction-n1`
-把提取态改为`P1/P2=-60/-140 V`，在切换后`83.327634611 us`、6个额外镜面转折处即命中；
-命中点为`(x,y)=(-0.56926,-64.97622) mm`，位于50x50-mm有效面内并接近`y=-62 mm`中心。
-这是当前最短且三维无碰撞的N=1提取Candidate，但尚未做局部电压中心化、束团或步长/网格对照。
-随后以`center_precision`重新求得的精确中心根
-`20260910_153500__sim__simion__near-target-k-local-root-dt0p00002-n1`为唯一参考，受管run
-`20260910_160000__sim__simion__exact-k-rebound-extraction-dt0p00002-n1`在
-`773.59367622 us`自动切换到`P1/P2=-59.533/-140 V`，并于`856.910310086 us`命中探测器；
-切换后为`83.316633866 us`和5个额外镜面转折，命中`(x,y)=(-0.569330,-60.693342) mm`。
-该run同时报告`K-25=+1.04e-8`和慢向折返`y=340.000250717 mm`，只闭合固定1-mm场网格的
-中心粒子事件链，不授予网格收敛、束团传输或分辨率资格。
-[run_downstream_voltage_definition.ps1](../analysis/run_downstream_voltage_definition.ps1)只读消费一个基点和
-四个有序单轴SIMION run，构造缩放4x4 Jacobian并报告秩、零空间、条件数和未阻尼线性修正；它本身
-不启动求解器，也不授权执行外推步。当前受管审计为
-`20260909_062000__analysis__python__downstream-voltage-definition`：局部满秩但条件数约323，线性修正远超
-0.2-V差分邻域，故仍未产生新的下游工作点。
+## 事件与脉冲合同
 
-[run_three_component_first_prism_flight.ps1](run_three_component_first_prism_flight.ps1)是独立的N=1首棱镜
-接口诊断：它用已审查几何run中的同一三份PA0／PA#、同一合同派生原点，复制并重命名已保存电压的 IOB，
-`mrtof_first_prism_l0.iob`，使 IOB basename 与 `mrtof_first_prism_l0.lua`、其 operating-point、voltage-map
-及同名4-keV `-z` Fly2一致。重载后重新检查三实例和保存电压，并以字节身份核对该 Fly2 与描述性的
-`mrtof_first_prism_entry_center.fly2`。结果只可由`first_prism_l0_result.py`发布
-`prototype_first_prism_interface_only`，不代表加速器提取、第二棱镜、K=25、传输、时间焦点或分辨率。
-该入口向`run_iob_flight.lua`直接传入 IOB 路径（没有多余的`--`），因为后者的唯一参数就是 IOB。
+[mrtof_candidate.lua](mrtof_candidate.lua)与[mirror_cycle_counter.lua](mirror_cycle_counter.lua)按 P2 后同侧正镜
+转折定义完整快周期；中央 `z=0` 穿越只作诊断。只有同侧转折同时回到 `y=0,v_y<0` 才是严格相位返回；
+两个相位样本间穿越 `y=0` 只报告连续圈数。实际坐标返回后自然传播，不在目标 K 截停。
+P1/P2 始终保持注入态，trial runner 对棱镜提取态及切换时刻参数失败关闭。
 
-[run_accelerator_focus_flight.ps1](run_accelerator_focus_flight.ps1)复用同一已审查三实例IOB和只读
-加速器PA-family，不会重新refine任何PA。可选`-FirstGapDropV`只建立run-local候选合同：中心提取能量和
-释放位置固定时，它自动派生repeller/intermediate及五个第二级环电压；机械坐标始终来自已审查合同，
-不会随解析焦距重新布置。随后[voltageize_accelerator_pa0.lua](voltageize_accelerator_pa0.lua)从只读family
-执行SIMION原生`pa:fast_adjust()`并另存一个run-local PA0，receipt验证源PA0前后哈希不变且没有refine。
-入口再把run-local同名Program换成
-[mrtof_accelerator_focus.lua](mrtof_accelerator_focus.lua)，选择中心或轴向束团Fly2，并在离子首次穿过
-项目`z=0`时插值记录时间和速度后停止。随后
-[accelerator_focus_simion_analysis.py](../analysis/accelerator_focus_simion_analysis.py)将数值时间与独立
-`orthogonal_accelerator`一维解析参考逐粒子比较；解析传播距离使用已审查的真实exit-to-`z=0`距离，
-而非随候选电压移动的理想焦距。结果报告有限区间时间极差、线性斜率、二次系数和最大解析误差。
-该receipt只验证二区加速器的静态首时间焦点，不授予棱镜、Stripe、K=25、探测或分辨率资格。
+加速器有 `static`、仅 N=1 的 `initial_exit_triggered_single_center` 和 `fixed_global_time` 三种互斥模式。
+固定时钟必须通过 `-AcceleratorPulseSchedulePath` 消费冻结收据，在共同 `tob=0` 的 `ion_time_of_flight`
+上切换 ID 1--9；`tstep_adjust` 落到计划边界，事件记录实际与计划时刻。禁止用裸时间参数替代身份收据。
+[run_freeze_accelerator_pulse_schedule.ps1](../analysis/run_freeze_accelerator_pulse_schedule.ps1)目前仅能冻结
+成功 N=1 首出口为 `single_center_diagnostic__not_a_bunch_schedule`。它不提供完整束团的最后安全出口与 guard。
+
+`sim_segment_global=1`用于覆盖 PA 外终态；仍须逐粒子对账、唯一成功终止和原始日志完整性。
+[run_iob_flight.lua](run_iob_flight.lua)要求 IOB 同名 Program、Fly2、operating-point、voltage-map 和
+mirror-cycle-counter 伴随文件；实际源必须与冻结 Fly2 字节一致。旧不完整日志不能补造资格。
 
 ## 数值执行边界
 
-积分设置由候选合同的具名 `trajectory_profiles` 单向解析；运行入口只选择 profile ID，不接受游离的
-时间步数值。默认 `center_screening` 为 `trajectory_quality=8`、`maximum_step_us=0.002`，用于中心粒子
-拓扑和电压筛查；`center_refined` (`0.0002 us`) 与 `center_precision` (`0.00002 us`) 只用于同一固定
-物理点的事件顺序和连续 K 数值收敛。三者共享同一场网格，不能替代后续三档 PA 网格收敛，也不能把
-较细时间步本身当成物理通过证据。更重要的是，已查明一次异常慢飞行的主因不是离子物理 TOF、网格或
-`sim_segment_global`：旧 Program 会在**每个积分段**调用 `analyser:fast_adjust()`，反复合成20张
-约669 MB的分析器 basis PA。IOB 构建器本已按同一 operating point 执行一次 `fast_adjust → save`；GUI
-Fly 正是使用该持久化 PA0。故正式飞行默认 `runtime_fast_adjust_enable=0`，只读取保存的 PA0；若交互式
-改电压，必须先重新 Fast Adjust 并保存 PA0，不能在运行段内隐式重算。1-us 原生 profile 在关闭全局回调
-时仍为43段、约6.16 s，而在已保存 PA0 上为同43段、约0.00 s，确认根因。
-同一规则也适用于独立的`mrtof_first_prism_l0.lua`：其静态单粒子接口诊断不再在每个积分段重合PA family。
+积分设置只由候选合同的 `trajectory_profiles` 派生；入口选择 ID，不接受游离时间步。
+`center_screening` 用于中心筛查，更细 profile 用于同一物理点的步长敏感性，不能替代 PA 网格收敛。
+静态飞行读取已保存 PA0，默认 `runtime_fast_adjust_enable=0`；电压化在飞行前完成，不能在每个积分段重算完整 basis。
 
-分析器空间收敛由
-[`analyzer_local_refinement_plan.py`](../analysis/analyzer_local_refinement_plan.py)
-从resolved几何派生。当前全域`1/1/1 mm/gu`的22文件family约为`14.72 GB`；直接全域
-`0.5/0.5/0.5 mm/gu`估算约`117.28 GB`，不得绕过容量门禁强行生成。局部方案不是两个独立零边界场的
-叠加。每个补丁都必须保存完整的8组独立响应（镜B--E、Stripe 1/2、P1/P2），不能因为某电极实体在
-补丁外就删掉它的边界响应；连同raw geometry与PA0，两补丁在`1/0.5/0.25 mm`三档合计约为
-`0.938/7.405/58.833 GB`。对每个可调电压basis，必须把已验证全局basis插值到局部PA六个面并标为Dirichlet边界，再保留
-子域内同一resolved几何进行Refine。Workbench中局部实例优先级高于全局实例，局部场只作替换；所有
-接缝的电势与法向场连续性、三档网格和逐档重新求中心电压根均通过后，局部PA才可进入粒子飞行。
-局部GEM由
-[`analyzer_local_patch_geometry.py`](../analysis/analyzer_local_patch_geometry.py)从同一resolved实体发射并由
-PA边界自然裁剪；不得复制或另写一套几何常量。设备无关的电极ID重映射和粗场边界插值分别位于
-[`common/simion/remap_pa_electrode_ids.lua`](../../../common/simion/remap_pa_electrode_ids.lua)与
-[`common/simion/build_dirichlet_patch_basis.lua`](../../../common/simion/build_dirichlet_patch_basis.lua)。
-前者把物理1--20命名空间按合同压缩为8个Fast-Adjust响应组并保留零电势实体，后者用SIMION原生
-`potential_vc`在六个面采样粗basis、保留局部实体后执行Refine。二者是构建原语；在受管runner、
-容量预检、接缝验证和IOB优先级装配完成前，不能手工生成PA后直接用于性能结论。
-[run_analyzer_local_pa_family.ps1](run_analyzer_local_pa_family.ps1)现已闭合受管构建器：它先证明当前
-baseline生成的全局GEM与已审查源逐字节相同，再派生局域GEM、完整八响应recipe和公共内容寻址identity；
-cache miss才调用SIMION，hit则不Refine。2026-09-10已实际发布中央区与正镜转折区的1-mm及0.5-mm族。
-镜的机械实体仍由合同刚体对称生成，但负侧有限场不能复用正侧solution：两只离轴棱镜使边界响应不
-对称，因此正、负镜局域PA已分别从全局场直接构建。上述family run证明局域basis构建与缓存发布；
-其后述工作点PA与八实例IOB取代“尚未装配”的历史状态。
+[analyzer_local_refinement_plan.py](../analysis/analyzer_local_refinement_plan.py)及
+[analyzer_local_patch_geometry.py](../analysis/analyzer_local_patch_geometry.py)从同一 resolved 几何派生局域计划与 GEM。
+全局 1-mm 分析器作为远场回退，五个 0.5-mm 局域替代按合同重叠责任区接管；独立加速器和探测器保持各自 PA。
+局域场替换全局场，不是两个零边界场相加。每区保留镜 B--E、S1/S2、P1/P2 八组响应与实测 basis 归一化，
+六面边界从同源全局响应插值。正负局域场分别构建，不能因机械镜对称复用受离轴棱镜影响的场。
 
-[`common/simion/compare_dirichlet_patch_interface.lua`](../../../common/simion/compare_dirichlet_patch_interface.lua)
-现按两种采样检查接缝：`matched_lattice`在1 mm与0.5 mm族上使用相同物理坐标，
-`native_all_nodes`则遍历各自六个面的全部原生节点。Dirichlet电势只在真空面节点比较；实体面节点由
-电极边界条件所有，不能把solution-array的电极/basis编码误当成真空电势。法向场只在面节点及其内侧
-相邻节点均为真空时比较，同时分别记录实体面节点和贴近实体而被排除的真空节点。
-受管run `20260910_193000__analysis__simion__analyzer-local-interface-convergence`实际检查了96个
-region/group/face组合，以及1-mm档`2,531,592`和0.5-mm档`10,206,096`个原生真空面节点；所有
-Dirichlet真空节点的最大电势差为`1.4552e-11 V`。但是法向场最大值只有55/96项随细化下降，RMS只有
-58/96项下降；最差项位于切过实体或电极边缘的整面，而不是已证明的离子穿越窗口。故当前大盒子不
-能通过空间收敛门禁，也不应直接耗费约58.8 GB生成同边界的0.25-mm族。下一步先从冻结中心轨迹与
-后续束团包络派生可穿越真空portal，使局域替代边界避开电极边缘；非portal面须由轨迹包含门禁证明
-不会被离子穿越。完成该边界重构后才构建第三档并逐网格重新求中心电压根。论文没有给出此数值接口
-的接受阈值，因此上述run只作measured Candidate证据，不自行宣布通过。
+[run_analyzer_local_pa_family.ps1](run_analyzer_local_pa_family.ps1)调用公共缓存与 Dirichlet 原语。
+每个原生 `.paN` 响应只在一次性 build staging 内产生；发布前由公共 exporter 写成真正 standalone 的
+`.responseN.pa`，并与原生 family 一起进入同一 cache manifest。工作台和飞行器只读取这些 standalone
+响应，不重新打开 cache 中的 `.paN`。
+`instance_adjust` 只在合同从重叠区导出的半开责任区内接管；portal 真空穿越、非 portal 不穿越、电势/法向场、
+事件拓扑和固定粒子轨迹必须分别验证。当前中心接口证据不能替代束团包络或第三档网格，每档须重新求中心根。
 
-受管run `20260910_211000__sim__simion__screening-patch-portal-envelope-n1`进一步用现行全局
-`1/1/1 mm/gu`场和已闭合的中心注入／K=25／脉冲引出链，逐段插值记录了三个候选局部PA盒子的
-全部18个边界面。221次有效穿越只落在4个`z`面：中央补丁`z=-105/+102 mm`分别55/53次，
-正镜补丁`z=+97 mm`为55次，反射复用的负镜补丁`z=-97 mm`为58次；所有`x/y`面及两块镜的外侧
-`z`面均未穿越。最大横向中心轨迹包络约为`|x|<=0.602 mm`，慢漂移坐标总体覆盖
-`y=-113.21--339.99 mm`。这只是一条中心轨迹的portal种子，不能代替后续固定束团的接受包络。
+[analyzer_local_z_compression_plan.py](../analysis/analyzer_local_z_compression_plan.py)是只读规划器：
 
-因此活动精化策略保持全局分析器1-mm等长网格作为远场与装配基线，并仅以更高优先级局部PA替换
-真实轨迹访问的镜转折区和中央Stripe／棱镜区。两个局部盒在`z`方向各重叠5 mm；实际Workbench
-切换面由实例优先级决定，不能把记录到的4个几何边界都误称为4个场切换面。进入IOB之前必须先在
-拟定的两个优先级切换面上比较**中央局部场与镜局部场**，而不只分别与全局场比较；同时用固定束团
-扩张portal并证明其余边界未被接受粒子穿越。若0.5-mm结果仍不收敛，第三档只细化这些高梯度局部
-PA或增加一个覆盖接缝的真空portal补丁，不改变resolved机械几何，也不把整个14.72-GB全域缩到
-0.25 mm。
+```powershell
+python -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.analyzer_local_z_compression_plan `
+  --contract projects/parallel_mirror_dual_stripe_mr_tof/config/simion_candidate_two_zone.json `
+  --scale-factor 0.5
+```
 
-后续局部—局部portal比较还发现并修正了一个先于网格判断的构建缺陷：SIMION全局solution basis的
-实际激励由源PA给出，当前为`10000 V`；旧局部构建器却把局部实体电极写成`1 V`，同时原样复制
-`10000 V`尺度的Dirichlet边界。故先前四个局部族及其`20260910_193000`整面场比较不能再作为空间
-收敛证据。公共构建器现在逐源PA读取并交叉核对非零实体basis电压，不再硬编码归一化；修复后的
-1/0.5-mm中央和镜族分别由受管run
-`20260910_223000__build__simion__analyzer-local-central-1mm-normalized`、
-`20260910_224000__build__simion__analyzer-local-mirror-1mm-normalized`、
-`20260910_225000__build__simion__analyzer-local-central-0p5mm-normalized`和
-`20260910_230000__build__simion__analyzer-local-mirror-0p5mm-normalized`重新生成并以新源码哈希发布缓存。
+它不调用 SIMION，不修改 PA/IOB。A 保留五责任区并收紧，B 收紧后合并三区，C 只合并不新增切面；
+B/C 需要新的三局域实例合同。名义轴线真空不等于整面真空，现有实体见证尚未消除，`build_authorized=false`。
+容量估算不授权构建；各向异性网格也须按区域敏感性验证，不能绕过失败接口。
 
-受管run `20260911_013000__analysis__simion__analyzer-local-portal-interface-weighted-r05`随后在两个实际
-优先级候选切换面、32个basis/scale/seam组合上比较中央局部场与镜局部场。basis归一化由每档raw PA
-的真实活动电极节点测得为`10000 V`，再以冻结注入工作点的8组电压作逐样点线性组合。1-mm档的最大
-工作点电势差／法向场差为`0.1201 V / 0.7203 V/mm`；0.5-mm档为
-`0.3189 V / 0.3430 V/mm`。法向场差下降约一半，但电势差不单调，因此0.5 mm尚不能宣称足够，
-也不能用同盒0.25-mm蛮力构建推断会闭合。下一步优先设计同时包含Stripe端部和镜内侧实体的专用
-接缝PA，把它与中央／镜局部PA的边界移到低梯度真空区；仍须用固定束团扩张portal并执行第三档对照。
-上述工作点组合使用注入态P1/P2；脉冲引出态须在同一basis上另行组合检查。
+## 缓存、短路径与发布
 
-后续按同一resolved几何新增了覆盖Stripe端部到内镜A/B间隙的局域桥接PA；全局分析器仍保持
-`1/1/1 mm/gu`。正、负z桥接区必须分别构建：镜与Stripe自身可对称，但两只离轴棱镜破坏了整个
-分析器关于z的可复用性。直接把正侧桥接PA反射到负侧时，运行
-`20260911_044500__analysis__simion__analyzer-local-bridge-interface-r05`在负侧测得约
-`20.94 V / 5.70 V/mm`的工作点不连续；分别构建负侧后，边界误差降至与正侧同量级。
+PA-family 与 working-point 缓存分开。[local_operating_pa_cache.py](../analysis/local_operating_pa_cache.py)
+把五个 operating PA0 接入公共缓存，身份绑定基准 PA0、响应、实测归一化、完整四电压及公共合成实现。
+命中只物化私有可写 PA0；缺失按区流式合成后发布，每区临时响应副本在输出哈希后删除。
+IOB、Fly2 和运行配置每 run 重新装配；相同文件名不构成缓存命中。
 
-局域PA不在自己的Dirichlet外边界切换。合同从相邻盒子的真重叠区自动计算四个切换面：
-`z=-72,+72,-131,+131 mm`。中心轨迹run
-`20260911_070000__sim__simion__overlap-handoff-envelope-n1`证明四面均被穿越且未触及x/y边界；
-`20260911_073000__analysis__simion__analyzer-local-overlap-interface-r05`随后完成64个
-basis/scale/seam比较。0.5-mm工作点的最大电势差为`0.01654 V`，最大法向场差为
-`0.003533 V/mm`；中央—桥接两面更低至约`1.52e-6 V / 9.30e-7 V/mm`。这是中心粒子
-Candidate接口证据，不是束团或分辨率验收。0.5-mm相对1-mm并未在所有接口量上单调收敛；0.25-mm
-只在固定束团接口或飞行收敛证明仍不够时，针对责任区继续构建，不能将全域分析器整体细化。
+只读、硬链接以及完整复制后的 family 都不是 SIMION family 写入的隔离边界。长路径输入通过
+[公共 short_pa_path_support.ps1](../../../common/simion/short_pa_path_support.ps1)生成经过验证、可写、可丢弃且
+无 `.paN` family 语义的短路径副本。原生 family 操作仅允许在新建 family 的一次性 build staging 中发生；
+已发布 cache 及其物化副本中的 `.paN` 均不得由 SIMION 打开。构建/飞行后仍 probe 完整源 generation。
+同 key 重建后从 `current_generation.json` 解析当前 generation，不修改旧 run 收据，也不依赖其失效的物理目录。
 
-受管工作台run
-`20260912_060000__build__simion__mrtof-local-replacement-iob-r05-final`已将全局1-mm分析器作为
-最低优先级和远场回退，并依次装入负镜、负桥、中央、正桥、正镜五个`0.5/0.5/0.5 mm/gu`工作点PA；
-独立加速器仍为`0.25/0.25/0.1 mm/gu`，独立探测器仍为`1/1/1 mm/gu`。局域实例只在合同从重叠区
-派生的`z=-131,-72,+72,+131 mm`责任边界内接管；不属于当前责任区时，Program用SIMION官方
-`instance_adjust`语义把当前高优先级实例置零，使其回落到下一适用实例。所有局域PA的六面Dirichlet
-值均从同一已电压化全局PA采样；它们是冻结注入电压的工作点PA，不伪装成可脉冲Fast-Adjust family。
-因此该工作台当前仅支持`static_injection_only`，动态P1/P2引出要另建注入/引出工作点或保持响应族。
-最终产物目录内的八实例IOB已经实际重载，实例、原点和网格报告通过，且复制进入run的加速器和探测器
-与上游缓存逐字节一致，没有因装配而重新Refine。
+容量预检和终态门禁保护所有使用中的 generation 与 cache key，清理规则只由公共层维护；见
+[公共 SIMION](../../../common/simion/README.md)与[运行规范](../../../docs/OPERATIONS.md)。
+长 PA 输入和缓存回归只证明执行路径，不授予任何物理性能。
 
-当前供GUI审查和后续飞行使用的是可移植修订
-`20260912_103000__build__simion__mrtof-local-iob-r06-portable/simion/mrtof_local_replacement.iob`。
-它与r05的物理装配相同，但`run_config.json`只记录最终artifact路径，不再记录终结后会删除的短执行别名；
-r05因此只在元数据可移植性上被取代。局域工作点调压现在从同一基准PA0和缓存响应PA按实际basis电压
-线性合成，不Refine、不改源family。一个四响应组合与独立重建/Refine场在39个抽样点的最大电势差为
-`9.66e-10 V`、最大场分量差为`2.30e-9 V/mm`，证明该合成路径可用于局部电压搜索。
+## 历史与来源
 
-同一IOB的受管单中心飞行
-`20260912_073000__sim__simion__mrtof-local-center-screening-n1`实际耗时约`7.01 s`，记录208次
-局域接口穿越，五个局域实例均被访问且从未落入实例0。中心离子完成50次镜转折并取得唯一K=25相位
-样本，但转折相位仍为`y=10.7123479495 mm`，回到`y=0`时的`fractional_k=25.2588505503`，随后在
-`z=-22 mm`以`splat=-1`终止；没有目标K返回或探测命中。这证明全局1-mm加局域0.5-mm替代的执行链与
-速度正常，只授予`single_center_static_injection_local_mesh_check__not_resolution`，不授予物理调谐、
-束团、网格收敛、TOF或质量分辨率资格。
-
-同一结果随后由r06和`center_screening`（`maximum_step_us=0.002`）在受管run
-`20260912_140000__sim__simion__mrtof-local-downstream-baseline-screening-n1`精确复现；使用
-`center_precision=0.00002 us`做搜索会把积分段数放大约100倍，故只允许在局域电压根闭合后作步长
-敏感性检查。四个局域单轴试点及受管审计
-`20260912_153000__analysis__python__mrtof-local-downstream-definition-r01`得到4x4满秩系统、零空间0和
-条件数`612.445833644`；未阻尼修正为
-`[+1.273132415,+2.742710346,-0.250852057,+0.208031202] V`，仍超出实测局部步长4.2--13.7倍。
-5%联合步越过返回通道的碰撞边界；2%步保持完整返回并把前三个残差从
-`[0.0313127 mm,0.00105466 eV,8.08907 mm]`降至
-`[0.0306859 mm,0.00103312 eV,7.92861 mm]`，但`K-25`反而由`0.258851`升至`0.268376`。
-因此单边Jacobian不能继续外推；下一步须在可通行邻域使用双边差分或有界无导数搜索，并把碰撞/通道
-裕量作为显式不等式。上述结果仍只有一个中心离子，不是网格收敛或分辨率结果。
-
-受管中央差分审计 `20260912_180000__analysis__python__mrtof-local-central-difference-r01`
-使用实际可通行的 `[S1,S2,P1,P2]=[0.05,0.2,0.02,0.02] V` 对称步长。中央 Jacobian
-仍为秩4，但条件数降为 `105.952612670`；消去 P1/P2 交接自由度后的两 Stripe 有效响应
-条件数为 `2.275314721`，说明两条制造曲线在该点并不退化。前/后向 Stripe 导数仍明显
-不一致，因此没有授权直接 Newton 外推。中央方向2%试点
-`20260912_181000__sim__simion__mrtof-local-central-trust-alpha0p02-n1` 保持完整返回且四残差
-全部下降；审计 `20260912_182000__analysis__python__mrtof-local-central-step-alpha0p02-audit`
-得到实际/预测下降比 `1.161169649` 和 `descent_observed__new_jacobian_required`。
-
-试点还发现：直接通过目录 junction 打开缓存 `.paN` 会让 SIMION 改写同族 `.pa#` 的
-bookkeeping；只把所需响应复制成另一 `.paN` basename 也不足以隔离同族成员。哈希门禁先后
-拒绝了受影响的正镜 `.pa#`、正侧 bridge `.pa8` 和中央区 `.pa5`；这些成员均从同一冻结
-GEM/单位场重建且逐字节恢复到原清单哈希。完整 family 私有复制仍出现延迟 family 写回，因而
-不是最终隔离层。公共缓存发布器现把 generation payload 和 manifest 设为文件系统只读；runner
-只把所需、已验证的响应复制成无 `.paN` family 语义的独立 `.pa`，再合成局域 operating PA。
-构建和飞行后仍重新 probe 完整源 family，而不只检查 `.pa#` 哨兵。
-
-受管工作台
-`20260912_221500__build__simion__mrtof-local-accepted-r04/simion/mrtof_local_replacement.iob`
-已把`20260912_181000`的已接受中心电压点固化到同一八实例装配。全局分析器保持
-`1/1/1 mm/gu`，五个局域替代保持`0.5/0.5/0.5 mm/gu`，独立加速器为
-`0.25/0.25/0.1 mm/gu`，独立探测器为`1/1/1 mm/gu`。全部局域PA由只读缓存的八个
-单位响应复制为standalone `.pa`后按实测`10000 V` basis线性组合；没有Refine。原位和搬迁后
-IOB结构检查均通过。两次先行构建在大文件复制哈希不一致时失败关闭；公共冻结复制现允许调用方
-显式启用有限重试，并且每次都要求复制前源、复制后源和目标SHA-256三方一致。
-
-后续工作点物化复用上一受管工作台的五个 operating PA0，只复制实际变化电压对应的响应列并叠加
-电压差；未变响应不复制，所有局域PA仍不Refine。`20260913_033000__build__simion__mrtof-local-accepted-jac02-alpha0p015-r05`
-首次闭合该增量路径。最新成功工作台
-`20260913_103500__build__simion__mrtof-local-accepted-jac03-alpha0p01-r09/simion/mrtof_local_replacement.iob`
-还在SIMION打开源全局`.pa0`以前，把所需`.pa2/.pa#`冻结为standalone `.pa`，避免延迟family
-bookkeeping与大文件复制竞争；失败的r06--r08均未发布为成功工作台。r09原位和搬迁后的八实例检查通过。
-
-该点之前的中央差分审计
-`20260913_080000__analysis__python__mrtof-local-central-difference-jac03`使用
-`[0.01,0.025,0.005,0.005] V`对称步长，8/8单离子均完成完整漂移。中央4x4 Jacobian秩为4、
-条件数为`93.8265341065`；消去棱镜交接自由度后的两Stripe响应条件数为`2.89616227082`。
-前后差分列相对不一致为`[27.9%,39.3%,5.15%,5.62%]`，故仍只允许小信赖步。1% Newton方向试点
-`20260913_083000__sim__simion__mrtof-local-central-jac03-alpha0p01-n1`把四残差从
-`[0.030924 mm,0.00100645 eV,7.81442 mm,0.238718]`降至
-`[0.030615 mm,0.00099647 eV,7.73389 mm,0.236363]`；受管审计的实际/预测下降比为
-`1.023970954`。该点只接受为下一轮局域求根中心，不是网格收敛、束团或分辨率结果。
-
-`20260912_184500__sim__simion__mrtof-local-step02-s1-plus0p05-private-family-n1`
-完成了完整-family私有复制路径的首个全链验证：未 Refine；N=1 在约`9.81 s`完成完整慢漂移
-返回。随后发现退出后的延迟写回，故该 run 的物理轨迹仍可作为单粒子响应数据，但其缓存隔离
-实现已被上述只读+standalone路径取代。该试点的残差为
-`[0.030612211 mm,0.000914088 eV,7.956547152 mm,0.265233311]`，仅用于新工作点
-Jacobian，不是工作点或分辨率结论。
-
-修复后的实际中心粒子全装配 Fly 已在约0.06 s终止并完成事件对账；它在 `t=333.722473491 us`、
-`z=-97.0000004 mm`、`y=0.515455 mm` 时以 electrode collision (`splat=-1`) 损失，仅记录24次转折
-（overtone `K=12`），没有探测命中或 K=25。因此性能问题已经解除，但当前静态 Candidate 的几何/注入/
-棱镜传输仍未闭合；不得从该运行报告 TOF 峰宽或质量分辨率。
-
-后续必须将“中心粒子事件链贯通”的宽松数值profile和“步长／网格三档收敛”的严格profile作为
-不同冻结run：前者只确认事件序列、碰撞和接口，不报告分辨率；后者固定物理和源后才比较误差。
-不得用宽松profile的TOF或峰宽替代严格profile结果，也不得修改已启动run的合同或把运行时长归因于
-镜、Stripe或棱镜物理。
-
-先关闭上述接口，再按中心粒子→冻结小束团执行受控飞行。不得由GEM编译、PA生成、IOB加载或统计脚本
-PASS推断双Stripe返回、25圈目标比例、探测率、第一时间焦点或质量分辨率；更不能据此声明Formal。
-
-## 官方支持路径
-
-2026-09-03核对的官方依据包括
-[simion.wb API](https://simion.com/info/lua_simion.wb.html)、
-[simion.pas API](https://simion.com/info/lua_simion.pas.html)和
-[SIMION编程API的命令行入口](https://simion.com/info/api.html#command-line-interface)。
-在线页面目前描述较新版本，完整接口说明应与本机SIMION 2020的Help／Supplemental Documentation交叉核对。
-动态棱镜路径另核对了官方[time-dependent fields](https://simion.com/info/time_dependent_field.html)、
-[PA types](https://simion.com/info/potential_array_types.html)和[FAQ](https://simion.com/info/faq.html)：
-`segment.fast_adjust`是脉冲电压的支持路径，回调只依赖当前保留变量，且数值步长必须解析切换时刻。
-本项目仍以本机SIMION 2020实际N=1运行作为版本适用证据。
-
-本机官方示例相对于SIMION 2020安装目录为：
-`examples/geometry/parallel_plate_capacitor_2d.gem`（节点对齐理想栅）、
-`examples/collision_hs1/make.lua`（`pa:potential` setter及PA保存）、
-`examples/field_dump/field_dump.lua`和`fielddumplib.lua`（场读取）。
-本项目以这些官方接口实现几何／零电压掩码处理；示例本身不证明本项目三维场、原生检测或飞行已经验证。
-
-## 2026-09-10 局域电压根与细网格入口
-
-受管工作台
-`20260913_223000__build__simion__mrtof-local-accepted-jac05-alpha0p03-r11/simion/mrtof_local_replacement.iob`
-保持全局`1/1/1 mm/gu`分析器、五个`0.5/0.5/0.5 mm/gu`局域替代、独立
-`0.25/0.25/0.1 mm/gu`加速器和独立1-mm探测器。Jacobian 06的8个中心差分点均以
-`full_drift_observed`结束；另加两组S1半步/四分之一步探针后，选择`+-0.0025 V`作为当前
-S1导数步长，因为它相对`+-0.005 V`的中心导数只变化约3--4%，而`+-0.00125 V`已出现
-K导数约14%的反向变化。基于该导数的0.5%阻尼步将四残差降至
-`[0.0289606 mm,0.000946072 eV,7.34175 mm,0.234361]`，实际/预测下降比为
-`0.907905462`；仍须在新中心重算Jacobian。
-
-该点已物化为受管工作台
-`20260914_093000__build__simion__mrtof-local-accepted-jac06-s1half-alpha0p005-r12-r3/simion/mrtof_local_replacement.iob`；
-八实例原位及发布后重载检查均通过。工作台和飞行runner在容量门禁的启动、结束两阶段都会同时
-保护已解析的五个局域PA generation路径与cache key，避免门禁在“完成验证”和“复制使用”之间
-删除L2缓存。此修复只约束缓存生命周期，不改变几何、电压或电场。
-
-全局1-mm网格只用于背景和拓扑，不授予分辨率资格。若0.5-mm局域结果不足，下一档优先采用
-合同派生的各向异性局域PA：在4-mm槽、棱镜/Stripe边缘和快速反射方向细化到0.25 mm，慢漂移
-方向先保留0.5--1 mm；每一区域是否可保留较粗步长必须由同一粒子的接口场、事件拓扑和轨迹差分
-证明。不得直接建立整台0.25-mm分析器，也不得用各向异性方案绕过失败区域。
+旧几何审查、r50 首次自然命中、棱镜切换、局域网格试探和逐轮 Jacobian 记录统一见
+[整治前两页原文快照](../docs/history/20260911__project-and-simion-status-freeze.md)。
+官方 API 用法查[SIMION 参考](../../../docs/SIMION_REFERENCE.md)；执行结果只从本次受管 manifest 与日志读取。

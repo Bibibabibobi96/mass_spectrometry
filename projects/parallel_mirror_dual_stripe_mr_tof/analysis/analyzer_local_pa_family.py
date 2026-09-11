@@ -31,7 +31,12 @@ def local_pa_family_filenames(region: str, group_count: int) -> tuple[str, ...]:
     if not isinstance(group_count, int) or isinstance(group_count, bool) or group_count <= 0:
         raise CandidateContractError("local PA group count must be a positive integer")
     prefix = local_family_prefix(region)
-    return (f"{prefix}.pa#", f"{prefix}.pa0", *(f"{prefix}.pa{index}" for index in range(1, group_count + 1)))
+    return (
+        f"{prefix}.pa#",
+        f"{prefix}.pa0",
+        *(f"{prefix}.pa{index}" for index in range(1, group_count + 1)),
+        *(f"{prefix}.response{index}.pa" for index in range(1, group_count + 1)),
+    )
 
 
 def derive_local_pa_family_contract(
@@ -76,6 +81,9 @@ def derive_local_pa_family_contract(
             "physical_ids": list(physical_ids),
             "source_basis_paths": paths,
             "output_filename": f"{local_family_prefix(region)}.pa{int(local_ids[name])}",
+            "standalone_response_filename": (
+                f"{local_family_prefix(region)}.response{int(local_ids[name])}.pa"
+            ),
         })
     global_raw = global_family_directory / "mrtof_analyzer.pa#"
     if not global_raw.is_file():
@@ -128,6 +136,7 @@ def derive_local_pa_family_contract(
             "family_adapter_sha256": file_sha256(Path(__file__)),
             "id_remapper_sha256": file_sha256(common_simion / "remap_pa_electrode_ids.lua"),
             "dirichlet_builder_sha256": file_sha256(common_simion / "build_dirichlet_patch_basis.lua"),
+            "standalone_response_exporter_sha256": file_sha256(common_simion / "export_standalone_pa.lua"),
         },
     }
     return {
@@ -141,6 +150,7 @@ def derive_local_pa_family_contract(
         "family_filenames": list(family_names),
         "raw_physical_to_local_electrode_id": plan["physical_to_local_electrode_id"],
         "coarse_origin_project_mm": plan["baseline"]["box_project_mm"][:3],
+        "coarse_raw_pa_path": str(global_raw.resolve()),
         "patch_origin_project_mm": patch_origin,
         "zero_response": {
             "source_basis_paths": [], "active_local_ids": [],

@@ -1,8 +1,20 @@
 # SIMION公共实现层
 
 本目录保存不含器件身份、专用坐标系或运行模式假设的SIMION公共实现。`particle_source.py`接收已经由
-上游适配器转换到工作台语义的beam或逐粒子状态并生成FLY2/Lua文本；多极杆的ION11和canonical字段映射
-仍由`common/multipole/simion_particle_source.py`负责。
+上游适配器转换到工作台语义的 beam 或逐粒子状态并生成 FLY2/Lua 文本；多极杆的 ION11 和 canonical 字段映射
+仍由 `common/multipole/simion_particle_source.py` 负责。
+
+## 按任务导航
+
+| 任务 | 入口 |
+|---|---|
+| 序列化几何、检查孔拓扑 | [几何与 Workbench](#几何与-workbench) |
+| 缓存、物化完整 PA family | [PA 缓存与工作点](#pa-缓存与工作点) |
+| 长 PA 输入与缓存写隔离 | 先读[跨项目边界](../../docs/SIMION_REFERENCE.md#长pa输入路径)，再读 [API 与证据](#长路径输入-api与证据) |
+| 并发、资源画像及中断续算 | [调度与恢复](#调度与恢复) |
+| 查旧 Fly 入口审计 | [只读历史入口](PRODUCTION_FLY_AUDIT.md) |
+
+## 几何与 Workbench
 
 [`gem_primitives.py`](gem_primitives.py)只序列化明确传入的有限坐标与尺寸，提供
 `centered_box3D`和沿`z`轴的`cylinder`文本，不选择电极、器件尺寸、孔径、网格或坐标变换。
@@ -22,6 +34,8 @@ oaTOF、single-flight或具体电极编号。
 所有新建SIMION Workbench必须从[`assets/iob_instance_seeds/`](assets/iob_instance_seeds/README.md)
 中与实际PA实例数一致的干净GUI种子派生。该公共目录提供1--10槽连续容器和唯一占位PA；派生器必须替换每一个槽，
 不得创建空槽或保留占位实例。种子只用于生成运行目录或正式交付目录中的派生IOB，绝不原地修改。
+
+## PA 缓存与工作点
 
 [`pa_family_cache.py`](pa_family_cache.py)提供完整静电PA-family的内容寻址复用：调用方必须给出完整的
 数值身份（resolved geometry、GEM、basis namespace、xyz网格、网格相位、surface、SIMION可执行文件身份、
@@ -55,41 +69,131 @@ probe|publish|materialize --cache-root <root> --identity <identity.json> --filen
 SIMION原生Fast Adjust会拒绝超出局部实体计数的响应；此时
 [`adjust_operating_pa_from_basis.lua`](adjust_operating_pa_from_basis.lua)从已解基准工作点只叠加调用方列出的
 非零电压增量响应，不Refine，也不假定响应归一化。零增量应直接复用基准PA0。
-调用方不得通过junction/symlink或hard link把不可变缓存generation直接暴露给SIMION：直接打开`.paN`时，
-SIMION可能在进程退出后延迟更新同family成员，Windows只读属性也不是写隔离边界；完整复制但保留family
-语义同样不能作为源缓存保护证明。若消费者仅只读若干已验证响应并用项目Lua叠加，可调用
-[`short_pa_path_support.ps1`](short_pa_path_support.ps1)把每个响应复制为系统临时目录中无`.paN`语义的短名
-`.pa`。入口在复制前后验证源与目标SHA-256，把副本恢复为可写，并在删除副本时再次核对源SHA-256；运行器
-还必须在SIMION退出后probe完整源generation。临时副本不进入科学身份或manifest。已经冻结的调用方可继续
-调用旧函数名`New-ShortPaHardLink`/`Remove-ShortPaHardLinkDirectory`，但兼容入口也只执行独立副本语义，
-不会创建hard link。若消费者确需原生family操作，则仍须
-调用`materialize`取得完整、可写、run-local副本。两种路径都必须在构建和飞行后重新probe完整源family，
-不能只核对`.pa#`哨兵。
 
-短路径投影解决的是仍受传统`MAX_PATH`行为影响的供应商进程输入，不改变规范artifact目录。Windows官方
-说明传统路径上限为260字符；本实现使用普通短路径临时文件作为进程隔离边界。2026-09-10查阅：
-[Maximum Path Length Limitation](https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation)。
+### Standalone 工作点与响应合成 API
 
-**已验证状态（2026-09-15）：SIMION只读长PA输入问题已关闭。** 公共入口固定为
-[`short_pa_path_support.ps1`](short_pa_path_support.ps1)，回归入口为
-[`test_short_pa_path_support.py`](test_short_pa_path_support.py)。该回归会主动改写临时副本并证明长路径只读源
-字节与属性不变。早期hard-link证据在延迟写回后暴露源`pa4`哈希漂移，已撤销其缓存保护资格；中央family从
-冻结GEM和recipe重建后恢复到原generation SHA-256
-`5230B69194902E23A68F3EDF1CCB5BD11FCBC0FDCE1E56C3DBE9D323A2DF0B5F`。后续项目必须复用该入口，不得建立
-junction/symlink/hard link或项目私有短路径脚本。这个关闭结论只覆盖
-“只读独立PA输入投影”；需要SIMION原生`.paN` family写入/调整时仍按上段物化可写run-local family，不能把
-本结论扩大为所有solver的通用短路径发布层。
+[`export_fast_adjusted_standalone_pa.lua`](export_fast_adjusted_standalone_pa.lua)只在可写、一次性的 build staging
+中使用。输入必须是原生 family controller `.pa0`、全量 `ID=V` 工作点表和一个尚不存在的 `.pa` 输出路径。
+工具用 controller 的 `electrode_numbers` 拒绝漏项和未知 ID，调用原生 `pa:fast_adjust`，再把内存中的完整工作点
+复制到全新 PA 对象。它不把 controller 另存为 `.pa0`，不 Refine，并把输出固定为 `refined=true`、
+`refinable=false`。任何 `.pa-surf` 伴随文件、已有输出或覆盖输入都会在打开 family 前失败关闭。发布后的不可变
+cache family 及其副本不得作为该工具输入。
 
-生产飞行实证为`20260915_080000__sim__simion__mrtof-transient-shortcopy-smoke-n1`：五个局域响应组全部采用
-上述短路径临时副本，完成工作点PA0合成、八实例IOB装配和单中心离子飞行，运行报告
-`full_drift_observed`，终态manifest及运行后完整family probe均通过，所有临时副本已删除。一次性工作点未写入
-公共cache，源generation未Refine。该粒子未自然命中探测器，故此run只验证长PA输入隔离和完整执行链，
-不构成自然探测命中或分辨率证据。
+[`compose_standalone_pa.lua`](compose_standalone_pa.lua)实现
+`OUTPUT = BASE + sum(COEFFICIENT * RESPONSE)`。输入只接受 `surface=none` 的 standalone `.pa`；每项响应采用
+`PATH.pa,COEFFICIENT`，路径可含逗号，因为最后一个逗号才是分隔符。工具先用官方 `pa:copy` 复制 base，随后验证
+每个响应的尺寸、网格、对称性和 potential type。SIMION 2020 没有已记录的“另一 PA 数组整体相加”API，因此
+实现按节点调用官方 `potential_add`；若当前 PA 对象不暴露该方法，才用 `point` 读写同一节点。两条路径都只改变
+电势并保留 base 的电极标志，不 Refine，输出同样是 solved/nonrefinable 的全新 `.pa`。它不是运行时逐时间步叠场
+接口，而是生成一个可复核、可缓存的固定工作点。
 
-[`cache_generation.py`](cache_generation.py)只抽取不同 PA-family 缓存协议共有的直接文件清单、payload
-摘要和 immutable generation 摘要计算；它不定义 identity 字段、role、锁、缓存目录、容量治理或命中时的
-哈希频率。集成项目的 v3 cache 通过它生成与其 artifact verifier 一致的 payload/generation 值，同时保留
-自身的 provider-run、断点恢复和 SIMION 写者安全策略。
+本机 SIMION 2020（8.2.0.11）的官方证据位于
+`C:\Program Files\SIMION-2020\docs\simion.chm`：`lua_simion.pas.html`记录
+`simion.pas:open`、`pa:copy`、`pa:point`／`potential_add`、`electrode_numbers`和`fast_adjust`；
+`user_programming.html#efield-adjust`记录运行时场覆盖；
+`multiple_pas.html#programmatically-controlling-pa-instance-priority`记录从 PA instance 查询场及模拟默认 Fast Adjust
+行为；`faq.html#fadj-types`与`calculation_time.html`记录 Fast Adjust 类型和逐时间步用户程序的性能边界。
+官方 API 支持上述基本操作，但“将若干 standalone 响应按项目系数合成为另一 standalone PA”、完整表门禁、
+surface 拒绝与不可变缓存边界均是本仓库实现，不应表述为 SIMION 提供了原生 family replacement 命令。
+
+默认回归只做 Python 静态合同检查，不启动 SIMION：
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest common.simion.test_standalone_pa_composition_tools
+```
+
+文件内另有小型真实 solver 回归；只有持有公共主机租约并显式设置
+`SIMION_SOLVER_TEST_AUTHORIZED=1`时才会运行，否则始终跳过。
+
+## 长路径输入 API与证据
+
+适用规则和关闭结论只由[长 PA 输入路径](../../docs/SIMION_REFERENCE.md#长pa输入路径)定义。
+本节记录实现调用方式和历史证据；实现提交 `fe09cc9c`、Agent 路由提交 `d6a51112` 已发布。
+
+### 调用与回归
+
+[short_pa_path_support.ps1](short_pa_path_support.ps1) 提供：
+
+| API | 输入与职责 |
+|---|---|
+| `New-ShortPaCopy -Source <PA> -Destination <short.pa>` | 建立目标不存在的短名独立普通副本；拒绝 `.paN` 响应成员；默认最多三次完整重复制，每次核对源复制前后与目标大小／SHA-256 |
+| `Remove-ShortPaCopyDirectory -Path <directory>` | 仅清理系统临时目录下匹配前缀的目录，并再次核对已登记源 SHA-256；默认前缀为 `simion_pa_links_` |
+
+短副本恢复为可写，但“改名”不能证明来源于 family 的响应已经失去 `.paN` 语义。已发布 cache 中的
+family 成员即使完整物化到私有目录也不得再次交给供应商进程；`r66` 证明复制后的成员仍可能导致原 cache
+兄弟文件延迟变化。原生 family 只在一次性 build staging 中构建，并由
+[`export_standalone_pa.lua`](export_standalone_pa.lua)复制到全新 PA 对象、保存为受同一 manifest 覆盖的
+standalone 响应。运行时只为这些真正 standalone 的响应建立短副本，在 SIMION 退出后核对源并清理。
+已经冻结的旧调用方仍可使用
+`New-ShortPaHardLink`／`Remove-ShortPaHardLinkDirectory`，但两个兼容名称也只执行独立副本语义。
+
+`cache_generation.py materialize` 仍提供通用、逐字节核验的完整 family 复制，但不构成已发布 SIMION
+family 的运行时安全证明。只有新 family 的构建 staging 可以执行原生 Refine/Fast Adjust；发布后运行器
+不得打开 cache 或其副本中的 `.paN`。
+
+从仓库根运行回归：
+
+```powershell
+.\.venv\Scripts\python.exe common/simion/test_short_pa_path_support.py
+.\.venv\Scripts\python.exe common/simion/test_export_standalone_pa.py
+```
+
+第一项回归主动改写临时副本，检查长路径只读源的字节与属性未变；第二项以真实 SIMION 建立小型 family，
+在独立进程验证新对象导出的 standalone PA 节点、场、电极标志、重开行为和延迟哈希稳定。两者都不替代
+项目整机物理资格测试。
+
+### 失败与真实复验记录
+
+<details>
+<summary>展开 hard-link 失败、9 月 15 日复验及 r49／r50 证据链</summary>
+
+早期 hard link 在 SIMION 延迟写回后暴露源 `pa4` 哈希漂移，其缓存保护资格已撤销。中央 family 从
+冻结 GEM 和 recipe 重建后恢复到原 generation SHA-256：
+`5230B69194902E23A68F3EDF1CCB5BD11FCBC0FDCE1E56C3DBE9D323A2DF0B5F`。
+
+- `20260915_080000__sim__simion__mrtof-transient-shortcopy-smoke-n1`：五组局域响应采用短普通副本，
+  完成工作点 PA0 合成、八实例 IOB 与单中心离子飞行，报告 `full_drift_observed`。终态 manifest 和
+  运行后完整 family probe 通过，临时副本已清理；一次性工作点未写公共 cache，源 generation 未 Refine。
+  粒子未自然命中探测器，因此只证明输入隔离与执行链，不构成自然命中或分辨率证据。
+- `20260916_050000__sim__simion__mrtof-return-grid-natural-return-n1-r49`：669,209,300-byte 分析器 PA
+  暴露单次复制后立即校验不稳定。此失败促成默认最多三次完整重复制；每次仍要求源前后及目标
+  大小／SHA-256完全一致，耗尽即失败关闭。
+- `20260916_053000__sim__simion__mrtof-return-grid-natural-return-n1-r50`：使用上述实现完成完整分析器
+  PA、五个局域 PA0、IOB 装配和真实 SIMION 飞行，并自然命中独立探测器。该结果不升级为统计、
+  收敛或整机资格。
+- `20260916_170000__sim__simion__mrtof-return-grid-jac11-r66`：完整复制已发布 family 后打开其 `.paN`，
+  仍观察到原 negative-mirror cache 的 `.pa4` 延迟哈希漂移；campaign 失败关闭。该结果撤销“完整复制
+  family 可作为已发布 cache 运行时隔离”的结论。
+- `20260916_180000...r69` 至 `20260916_184000...r73`：五个局域 family 在初次构建 staging 中导出
+  受同一 manifest 保护的 standalone 响应。`20260916_193000__sim__simion__mrtof-r55-standalone-flight-r76`
+  仅打开 standalone 运行输入，真实飞行自然命中探测器，并通过飞行后完整 cache probe。
+
+以上保留来源记录的日期和 run identity；本次文档整治未重新运行这些试验。
+
+</details>
+
+传统路径上限与目标进程选择有关，官方依据为 Microsoft
+[Maximum Path Length Limitation](https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation)
+（2026-09-10 查阅）。本实现针对仍受传统路径行为影响的 SIMION 输入，不改变规范 artifact 路径。
+
+## 完整 family 的物化原语
+
+[`cache_generation.py`](cache_generation.py)统一提供不同 PA-family 缓存协议共有的直接文件清单、payload/
+immutable generation 摘要，以及按 manifest 文件清单完整物化为可写 run-local 副本的原子复制原语。物化先拒绝
+既有目标，再在一次流式复制中对实际读取并写入的同一字节计算 SHA-256、逐文件核对 manifest、flush/fsync，最后
+原子发布整个目录；不为同一大型 family 重复执行源预哈希、staging 复哈希和发布后复哈希。目标副本不继承只读源
+的时间戳或只读属性。它不定义 identity 字段、role、锁、缓存目录、容量治理或命中时的哈希频率。公共 PA-family
+cache 与集成项目 v3 cache 共用该物化原语，同时分别保留自身的 identity、provider-run、断点恢复和 SIMION 写者
+生命周期安全策略。对于刚完成求解、准备进入不可变缓存的 staging family，调用方使用
+`--require-stable-inventory`要求连续两次完整字节清单一致；这覆盖 SIMION 可见进程退出后仍可能发生的延迟 PA
+落盘。稳定性确认仅发生在一次性发布边界，普通缓存命中不会因此重复读取整个大型 family。
+普通命中仍只读取每个 payload 一次；若某个大文件首次读取与 manifest 不一致，则只重读该文件，并且必须连续
+两次恢复为 manifest 的长度与 SHA-256 才接受。三次机会内不能取得连续两次一致即保持 `corrupt`，错误详情记录
+期望身份和每次观测值；这处理瞬时读取不稳定，不允许未知字节或持续损坏通过。
+
+## 调度与恢复
+
+### 调度与资源画像
 
 [`resource_scheduler.py`](resource_scheduler.py)是独立粒子批次与相互独立完整case的唯一SIMION并发决策实现。
 项目只提交总粒子数、独立性和网格、RF步数、trajectory quality、PA哈希等客观数值身份；CPU、内存、并发、
@@ -120,6 +224,8 @@ junction/symlink/hard link或项目私有短路径脚本。这个关闭结论只
 危险，调度器终止其余受管worker并以`memory_danger_recovery_attempts_exhausted`失败关闭，绝不无限回退或混同为
 普通逐次降并发。
 
+### 中断续算
+
 跨运行中断续算由[`batch_continuation.py`](batch_continuation.py)提供统一的不可变协议，有两种互斥策略：
 `build_batch_continuation_plan`验证失败/中断/checkpoint父run的manifest、冻结run-config、批区间、合同、母cohort输入和原始输出SHA-256，
 再把全局有序前缀中已经完整终态的整批物化到新run，并从第一个未完成批开始重放；它不拼接中断批的粒子片段。
@@ -133,17 +239,21 @@ run相对的终态产物清单。两者都不解析项目物理或替代结果�
 `simion__batch*.stdout.log`。两者都必须由 retention action 和失败/checkpoint manifest 绑定；普通日志或
 不完整批不能借此绕过容量策略。
 
+### 结果收据与串行边界
+
 成功运行只保留紧凑调度收据，不保留逐秒探测文件。 [`resource_profile.py`](resource_profile.py)发布首个正式
 批次的独立峰值并用run manifest及输入收据SHA-256复核；并行聚合峰值不得按进程数拆分。PA/IOB构建及没有独立粒子/可合并结果
 合同的SIMION任务保持串行；未知case资源身份每次先运行一个正式case，只有同一完整输入的已观测峰值才可参与
 后续case wave。已完成case campaign可以把画像写入manifest覆盖的summary；后续运行只发现这种受完整性保护的
 画像，不接受裸日志或未受manifest覆盖的JSON。调度器不会发现、批准或启动campaign，也不会在外层campaign之上创建嵌套并发。
 
+### 调度的官方依据
+
 Windows能力依据（2026-08-26查阅）：Microsoft `MEMORYSTATUSEX/GlobalMemoryStatusEx`文档说明
 `ullAvailPhys`表示可立即复用的物理内存，用于1 GiB/0.5 GiB门限；.NET `System.Diagnostics.Process`文档支持读取
 `WorkingSet64`和`TotalProcessorTime`；Microsoft `taskkill /T`文档支持只终止选中PID及其子进程。采用这些接口
 是为了测量真实SIMION进程族，并在持续内存危险时只回收最新批次。
 
-- https://learn.microsoft.com/en-us/windows/win32/api/sysinfoapi/ns-sysinfoapi-memorystatusex
-- https://learn.microsoft.com/en-us/dotnet/api/system.diagnostics.process?view=net-10.0
-- https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/taskkill
+- [MEMORYSTATUSEX](https://learn.microsoft.com/en-us/windows/win32/api/sysinfoapi/ns-sysinfoapi-memorystatusex)
+- [.NET Process](https://learn.microsoft.com/en-us/dotnet/api/system.diagnostics.process?view=net-10.0)
+- [taskkill](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/taskkill)
