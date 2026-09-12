@@ -37,8 +37,10 @@ IOB 路径写入该项目 `docs/SIMION.md` 或 `docs/PROJECT.md`。
 
 ### 长PA输入路径
 
-**已关闭范围：SIMION 只读 standalone PA 的长路径输入。** 初版实现与回归提交于 `fe09cc9c`，
-Agent 强制路由提交于 `d6a51112`；本节是该能力适用边界和关闭结论的唯一规范位置。
+**状态：COMPLETE；SIMION 2020 真实运行通过。已关闭范围：SIMION 只读 standalone PA 的长路径输入。**
+这不是待实施方案或仅有单元测试的能力。初版实现与回归提交于 `fe09cc9c`，Agent 强制路由提交于
+`d6a51112`，已发布 family 与运行时彻底解耦的修复提交于 `88dd17b2`；本节是该能力适用边界和关闭
+结论的唯一规范位置。
 
 | 消费方式 | 必须使用的输入表示 | 完整性检查 |
 |---|---|---|
@@ -55,8 +57,11 @@ junction、symlink 或 hard link 把不可变缓存暴露给 SIMION，禁止项�
 `.paN`，生产运行器只接受在 family 初次构建时由**全新 PA 对象**生成并受同一 cache manifest 约束的
 standalone 响应。完整 family 物化仅是通用字节复制原语，不再是已发布 SIMION family 的运行时隔离边界。
 
-已验证能力包括完整分析器 PA、局域 PA0、IOB 装配及真实飞行；独立响应导出的最终真实飞行复验为
-`20260916_193000__sim__simion__mrtof-r55-standalone-flight-r76`，其上游 build/cache 证据由
+已验证能力包括完整分析器 PA、局域 PA、八实例 IOB 装配及真实飞行；独立响应导出的真实飞行复验包括
+`20260916_193000__sim__simion__mrtof-r55-standalone-flight-r76` 与
+`20260916_235000__sim__simion__mrtof-r55-detached-flight-r87`。后者从 manifest 绑定的八个 standalone
+运行 PA 建立短副本，真实飞行后复现相同 `798.419772666 us` 探测命中并发布 success manifest；上游
+build/cache 证据由
 [MR-TOF 项目状态](../projects/parallel_mirror_dual_stripe_mr_tof/docs/PROJECT.md)绑定。自然检测命中属于对应项目 run 的功能证据，不由本公共能力授予统计、数值收敛、
 Candidate 或 Formal 资格。本结论不扩展为所有求解器的通用短路径发布层。
 
