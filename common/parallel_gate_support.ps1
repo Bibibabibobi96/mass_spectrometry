@@ -1,6 +1,30 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+function Invoke-ResourceBudgetedGateAction {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][Alias('Action')][scriptblock]$Operation
+    )
+    $budget = Get-HostResourceBudget -Stage $Name -Role GATE
+    $lease = Enter-HostResourceStage -Role GATE -Stage $Name -Budget $budget
+    $limitRuffThreads = $Name -in @('ruff_all', 'ruff_changed_python')
+    $originalRayonThreads = [Environment]::GetEnvironmentVariable('RAYON_NUM_THREADS', 'Process')
+    try {
+        # Ruff's registered one-core budget must also bound its native workers.
+        if ($limitRuffThreads) { $env:RAYON_NUM_THREADS = '1' }
+        & $Operation
+    } finally {
+        try {
+            Exit-HostResourceStage -Lease $lease
+        } finally {
+            if ($limitRuffThreads) {
+                [Environment]::SetEnvironmentVariable('RAYON_NUM_THREADS', $originalRayonThreads, 'Process')
+            }
+        }
+    }
+}
+
 function Resolve-GateConcurrency {
     param([Parameter(Mandatory)][ValidateRange(0, 32)][int]$Requested)
     if ($Requested -gt 0) { return $Requested }
@@ -79,6 +103,12 @@ function Invoke-IndependentGateStageGroup {
         [hashtable]$RequestPayload,
         [string]$InternalRequestParameter = ''
     )
+    # A nested gate consumes its caller's whole-stage reservation. It cannot
+    # multiply that reservation by starting simultaneous inheriting children.
+    if ($env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN -and $MaxConcurrency -gt 1) {
+        $MaxConcurrency = 1
+        Write-Output 'GATE_CONCURRENCY=1 REASON=inherited_resource_reservation'
+    }
     $selected = @($Items | Where-Object { $_.Run })
     if ($selected.Count -le 1) {
         foreach ($item in $Items) {
@@ -118,12 +148,14 @@ function Invoke-IndependentGateStageGroup {
         try {
         $env:MPLCONFIGDIR = Join-Path $groupRoot 'matplotlib'
         New-Item -ItemType Directory -Path $env:MPLCONFIGDIR | Out-Null
-        & $PythonExe -c (
-            "import importlib.util; spec=importlib.util.find_spec('matplotlib'); " +
-            "spec and __import__('matplotlib.font_manager')"
-        )
-        if ($LASTEXITCODE -ne 0) {
-            throw 'Gate Matplotlib cache initialization failed.'
+        Invoke-ResourceBudgetedGateAction -Name 'gate_matplotlib_cache' -Action {
+            & $PythonExe -c (
+                "import importlib.util; spec=importlib.util.find_spec('matplotlib'); " +
+                "spec and __import__('matplotlib.font_manager')"
+            )
+            if ($LASTEXITCODE -ne 0) {
+                throw 'Gate Matplotlib cache initialization failed.'
+            }
         }
         Write-Output "GATE_MATPLOTLIB_CACHE=READY PATH=$env:MPLCONFIGDIR"
         $childArguments = [Collections.Generic.List[string]]::new()
@@ -150,6 +182,7 @@ function Invoke-IndependentGateStageGroup {
                 & $reportCompletions
                 Start-Sleep -Milliseconds 50
             }
+            & $reportCompletions
             $logPath = Join-Path $groupRoot (
                 '{0:D2}_{1}.log' -f $index, $item.Name
             )
@@ -235,6 +268,19 @@ function Invoke-IndependentGateStageGroup {
             throw "$FailureMessage`: $($failed -join ', ')"
         }
     } finally {
+        # These are exclusively the processes launched by this group. Do not
+        # release their work/log directory while an interrupted child is alive.
+        foreach ($record in @($records.Values)) {
+            if (-not $record.Process.HasExited) {
+                Write-Output "GATE_PROCESS=STOP PID=$($record.Process.Id) REASON=group_unwinding"
+                $record.Process.Kill($true)
+                $record.Process.WaitForExit()
+                if (Test-Path -LiteralPath $record.LogPath -PathType Leaf) {
+                    Get-Content -LiteralPath $record.LogPath -Encoding UTF8
+                }
+            }
+            $record.Process.Dispose()
+        }
         if ($null -eq $originalMatplotlibConfig) {
             Remove-Item Env:MPLCONFIGDIR -ErrorAction SilentlyContinue
         } else {

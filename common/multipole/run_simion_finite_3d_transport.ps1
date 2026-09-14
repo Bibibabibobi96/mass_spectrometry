@@ -228,9 +228,13 @@ if(-not(Test-Path -LiteralPath $simion -PathType Leaf)){
   Remove-Item -LiteralPath $budgetPreflight -Force -ErrorAction SilentlyContinue
   throw "SIMION executable is missing: $simion"
 }
+$hostRuntimeSourcePaths=@(
+  'common/host_execution_lease.ps1','common/host_resource_scheduler.py',
+  'common/host_resource_policy.json','common/require_powershell7.ps1')
 $executionCapacityPaths=Get-RunPackageCopiedSourcePaths -RepoRoot $repoRoot `
   -SourceRelativeDirectories @('common/contracts','common/multipole','common/simion') `
   -Extensions @('.py','.json','.ps1','.lua')
+$executionCapacityPaths+=@($hostRuntimeSourcePaths|ForEach-Object{"inputs/code/$_"})
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot `
   -ArtifactRoot (Join-Path $workspaceRoot "artifacts\projects\$ProjectId") -RunId $RunId `
   -Project $ProjectId -Mode 'resolved_design_transport' -Software @('SIMION 2020','Python 3.11') `
@@ -258,6 +262,10 @@ try{
       New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination)|Out-Null
       Copy-Item -LiteralPath $_.FullName -Destination $destination
     }
+  }
+  foreach($relative in $hostRuntimeSourcePaths){
+    Copy-VerifiedRunInput -Source (Join-Path $repoRoot $relative) `
+      -Destination (Join-Path $codeRoot $relative)|Out-Null
   }
   $codeInventory=Join-Path $inputDir 'code_inventory.json'
   $inventory=@(Get-ChildItem -LiteralPath $codeRoot -Recurse -File|Sort-Object FullName|ForEach-Object{

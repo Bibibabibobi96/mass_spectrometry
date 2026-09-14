@@ -18,13 +18,42 @@ param(
     [int]$ProcessorCount = 0,
 
     [ValidateSet('auto', 'scalable', 'native')]
-    [string]$Allocator = 'auto'
+    [string]$Allocator = 'auto',
+
+    [hashtable]$ResourceBudgets = @{},
+
+    [string]$RunId = ''
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot '..\require_powershell7.ps1')
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+. (Join-Path $repoRoot 'common\host_execution_lease.ps1')
+foreach ($stageName in $ResourceBudgets.Keys) {
+    if ($stageName -notin @('prepare', 'solver', 'postprocess')) {
+        throw "Unknown COMSOL resource stage: $stageName"
+    }
+}
+$stageBudgets = @{}
+foreach ($stageName in @('prepare', 'solver', 'postprocess')) {
+    $stageBudgets[$stageName] = if ($ResourceBudgets.ContainsKey($stageName)) {
+        $ResourceBudgets[$stageName]
+    } else {
+        Get-HostResourceBudget -Role COMSOL -Stage $stageName
+    }
+}
+# The before/after server inventory is attributable only while all managed
+# LiveLink sessions hold this same lock, including completion cleanup.
+$solverBudget = @{}
+foreach ($entry in $stageBudgets.solver.GetEnumerator()) { $solverBudget[$entry.Key] = $entry.Value }
+$solverBudget.exclusive_resources = @(
+    @($solverBudget.exclusive_resources) + 'comsol-server-session' | Select-Object -Unique
+)
+$stageBudgets.solver = $solverBudget
+$resourceLease = Enter-HostResourceStage -Role COMSOL -Stage prepare `
+    -Budget $stageBudgets.prepare -RunId $RunId
+try {
 $bootstrapDir = Join-Path $PSScriptRoot 'livelink_r2025b'
 $failureClassifier = Join-Path $PSScriptRoot 'livelink_failure_classification.ps1'
 $environmentPreflight = Join-Path $PSScriptRoot 'livelink_environment.ps1'
@@ -61,7 +90,12 @@ function Stop-ComsolAttemptServers {
         $process = Get-Process -Id $processId -ErrorAction SilentlyContinue
         if ($null -ne $process -and $process.ProcessName -eq 'comsolmphserver') {
             Stop-Process -Id $processId -Force
-            Write-Warning "Stopped attempt-local COMSOL server PID $processId after $Reason."
+            $process.WaitForExit()
+            if ($Reason -eq 'task completion') {
+                Write-Verbose "Stopped completed attempt-local COMSOL server PID $processId."
+            } else {
+                Write-Warning "Stopped attempt-local COMSOL server PID $processId after $Reason."
+            }
         }
     }
 }
@@ -92,6 +126,10 @@ try {
     $env:COMSOL_BOOTSTRAP_REPORT = $report
 
     for ($attempt = 1; $attempt -le $StartupAttempts; $attempt++) {
+        if ($attempt -gt 1) {
+            Update-HostResourceStage -Lease $resourceLease -Stage prepare `
+                -Budget $stageBudgets.prepare -RetainedMemoryBytes 0
+        }
         Remove-Item -LiteralPath $report -Force -ErrorAction SilentlyContinue
         $launcherArguments = @()
         if ($ProcessorCount -gt 0) {
@@ -107,15 +145,29 @@ try {
             '-mlnosplash',
             '-mlstartdir', $repoRoot
         )
+        Update-HostResourceStage -Lease $resourceLease -Stage solver `
+            -Budget $stageBudgets.solver -RetainedMemoryBytes 0
         $serversBeforeAttempt = @(Get-ComsolServerProcessIds)
         $launcherProcess = Start-ComsolLauncherProcess -FilePath $launcher `
             -Arguments $launcherArguments
+        try {
+            Register-HostResourceProcess -Lease $resourceLease -ProcessId $launcherProcess.Id
+        } catch {
+            # Do not leave an unregistered solver running if ownership publication fails.
+            if (-not $launcherProcess.HasExited) {
+                $launcherProcess.Kill($true)
+                $launcherProcess.WaitForExit()
+            }
+            Stop-ComsolAttemptServers -Before $serversBeforeAttempt -Reason 'resource registration failure'
+            throw
+        }
         $standardOutputRead = $launcherProcess.StandardOutput.ReadToEndAsync()
         $standardErrorRead = $launcherProcess.StandardError.ReadToEndAsync()
         $reportDeadline = [DateTime]::UtcNow.AddSeconds($StartupReportTimeoutSeconds)
         while (-not $launcherProcess.HasExited -and
                -not (Test-Path -LiteralPath $report -PathType Leaf) -and
                [DateTime]::UtcNow -lt $reportDeadline) {
+            Receive-HostResourceStage -Lease $resourceLease
             Start-Sleep -Milliseconds 500
             $launcherProcess.Refresh()
         }
@@ -130,19 +182,28 @@ try {
             Write-Warning ("COMSOL/MATLAB did not create the task report within " +
                 "$StartupReportTimeoutSeconds seconds (attempt $attempt/$StartupAttempts).")
         } else {
-            if (-not $launcherProcess.HasExited) { $launcherProcess.WaitForExit() }
+            while (-not $launcherProcess.HasExited) {
+                Receive-HostResourceStage -Lease $resourceLease
+                [void]$launcherProcess.WaitForExit(500)
+            }
             $launcherExit = $launcherProcess.ExitCode
         }
         $launcherStandardOutput = $standardOutputRead.GetAwaiter().GetResult()
         $launcherStandardError = $standardErrorRead.GetAwaiter().GetResult()
+        Receive-HostResourceStage -Lease $resourceLease
 
         if (Test-Path -LiteralPath $report -PathType Leaf) {
             $reportText = Get-Content -LiteralPath $report -Raw -Encoding UTF8
             $reportText
             if ($launcherExit -eq 0 -and $reportText -match '(?m)^STATUS=PASS$') {
+                Stop-ComsolAttemptServers -Before $serversBeforeAttempt -Reason 'task completion'
+                Update-HostResourceStage -Lease $resourceLease -Stage postprocess `
+                    -Budget $stageBudgets.postprocess -RetainedMemoryBytes 0
                 return
             }
             Stop-ComsolAttemptServers -Before $serversBeforeAttempt -Reason 'task failure'
+            Update-HostResourceStage -Lease $resourceLease -Stage postprocess `
+                -Budget $stageBudgets.postprocess -RetainedMemoryBytes 0
             if ($attempt -lt $StartupAttempts -and
                 (Test-ComsolRetryableStartupReport -ReportText $reportText)) {
                 $archivedReport = $report + '.startup_retry.' + $attempt + '.' +
@@ -163,6 +224,8 @@ try {
         $noReportReason = if ($startupTimedOut) { 'startup report timeout' } `
             else { 'startup without a task report' }
         Stop-ComsolAttemptServers -Before $serversBeforeAttempt -Reason $noReportReason
+        Update-HostResourceStage -Lease $resourceLease -Stage postprocess `
+            -Budget $stageBudgets.postprocess -RetainedMemoryBytes 0
         if ($attempt -lt $StartupAttempts) {
             Write-Warning ("COMSOL/MATLAB exited before the task report was created; " +
                 "retrying clean startup in $StartupRetryDelaySeconds s " +
@@ -178,3 +241,6 @@ finally {
 }
 
 throw "LiveLink task did not create its report after $StartupAttempts clean startup attempts: $report"
+} finally {
+    Exit-HostResourceStage -Lease $resourceLease
+}

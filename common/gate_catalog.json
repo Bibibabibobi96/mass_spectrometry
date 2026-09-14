@@ -3,6 +3,51 @@
   "role": "repository_gate_catalog",
   "routes": [
     {
+      "stage": "host_resource_scheduler_tests",
+      "dependency_profile": "stdlib",
+      "repository_integration_group": "fast",
+      "matches": [
+        { "exact": "common/host_resource_scheduler.py", "reason": "host_scheduler_changed" },
+        { "exact": "common/host_resource_policy.json", "reason": "host_policy_changed" },
+        { "exact": "common/test_host_resource_scheduler.py", "reason": "host_scheduler_tests_changed" },
+        { "exact": "common/host_execution_lease.ps1", "reason": "host_adapter_changed" }
+      ],
+      "command": {
+        "runner": "python",
+        "arguments": ["-m", "unittest", "common.test_host_resource_scheduler"]
+      }
+    },
+    {
+      "stage": "host_resource_adapter_tests",
+      "dependency_profile": "stdlib",
+      "repository_integration_group": "fast",
+      "matches": [
+        { "exact": "common/host_resource_scheduler.py", "reason": "host_scheduler_changed" },
+        { "exact": "common/host_resource_policy.json", "reason": "host_policy_changed" },
+        { "exact": "common/host_execution_lease.ps1", "reason": "host_adapter_changed" },
+        { "exact": "common/test_host_execution_lease.ps1", "reason": "host_adapter_tests_changed" }
+      ],
+      "command": {
+        "runner": "powershell",
+        "script": "common/test_host_execution_lease.ps1",
+        "parameters": { "PythonExe": "{python}" }
+      }
+    },
+    {
+      "stage": "livelink_resource_stages_tests",
+      "dependency_profile": "stdlib",
+      "repository_integration_group": "fast",
+      "matches": [
+        { "exact": "common/comsol/run_comsol_r2025b.ps1", "reason": "livelink_launcher_changed" },
+        { "exact": "common/comsol/test_livelink_resource_stages.py", "reason": "livelink_resource_tests_changed" },
+        { "exact": "common/host_execution_lease.ps1", "reason": "host_adapter_changed" }
+      ],
+      "command": {
+        "runner": "python",
+        "arguments": ["-m", "unittest", "common.comsol.test_livelink_resource_stages"]
+      }
+    },
+    {
       "stage": "longitudinal_fit_tests",
       "dependency_profile": "locked",
       "repository_integration_group": "regression",
@@ -214,6 +259,7 @@
           "-m",
           "unittest",
           "common.contracts.test_verify_changed",
+          "common.contracts.test_parallel_gate_support",
           "common.contracts.test_development_standards"
         ]
       }

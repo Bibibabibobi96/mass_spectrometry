@@ -50,7 +50,7 @@ if ($projectContract.lifecycle_status -ne 'formal_revalidation_pending') {
   if ($LASTEXITCODE -ne 0) { throw 'Static cross-solver geometry gate failed.' }
 }
 & $python -m unittest discover -s (Join-Path $projectRoot 'tests\analysis') -p 'test_*.py'
-if ($LASTEXITCODE -ne 0) { throw 'Python analysis tests failed.' }
+if (-not $? -or $LASTEXITCODE -ne 0) { throw 'Python analysis tests failed.' }
 
 if ($Level -eq 'Candidate') {
   if ($CandidateTarget -eq 'SIMION') {

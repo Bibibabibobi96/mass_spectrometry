@@ -1,100 +1,135 @@
+param([string]$PythonExe = (Join-Path (Split-Path -Parent $PSScriptRoot) '.venv/Scripts/python.exe'))
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 function Assert-True {
-  param([Parameter(Mandatory)][bool]$Condition, [Parameter(Mandatory)][string]$Message)
+  param([bool]$Condition, [string]$Message)
   if (-not $Condition) { throw $Message }
 }
 
-$testRoot = Join-Path ([IO.Path]::GetTempPath()) (
-  'host_execution_lease_' + [guid]::NewGuid().ToString('N')
-)
-$mutexName = 'Global\MassSpectrometry.HostExecutionLease.test.' +
-  [guid]::NewGuid().ToString('N')
-$receiptPath = Join-Path $testRoot 'lease.json'
-$childLog = Join-Path $testRoot 'child.log'
-$leasePath = Join-Path $PSScriptRoot 'host_execution_lease.ps1'
-$savedRole = [Environment]::GetEnvironmentVariable(
-  'MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE', 'Process'
-)
-$savedOwner = [Environment]::GetEnvironmentVariable(
-  'MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID', 'Process'
-)
-$parentLease = $null
+# Long-term behavior tests create only isolated temporary state; never use the
+# live host ledger and never launch a commercial solver.
+$testRoot = Join-Path ([IO.Path]::GetTempPath()) ('host_stage_test_' + [guid]::NewGuid().ToString('N'))
+$statePath = Join-Path $testRoot 'state.sqlite3'
+$leaseSource = Join-Path $PSScriptRoot 'host_execution_lease.ps1'
+$savedEnvironment = @{}
+foreach ($name in @('MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN','MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH',
+    'MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID','MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE','SIMULATION_PYTHON_EXE')) {
+  $savedEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
+  [Environment]::SetEnvironmentVariable($name, $null, 'Process')
+}
+$lease = $null
 try {
-  New-Item -ItemType Directory -Path $testRoot -Force | Out-Null
-  . $leasePath
-  $parentLease = Enter-HostExecutionLease -Role GATE -RunId 'gate-test' -MutexName $mutexName `
-    -ReceiptPath $receiptPath -PollMilliseconds 100
-  Assert-True (Test-Path -LiteralPath $receiptPath -PathType Leaf) `
-    'Lease acquisition did not publish its human-readable receipt.'
-  Assert-True ((Get-HostExecutionLeaseReceipt -Path $receiptPath).run_id -eq 'gate-test') `
-    'Lease receipt did not retain its run identity.'
-
-  $quotedLeasePath = $leasePath.Replace("'", "''")
-  $quotedMutexName = $mutexName.Replace("'", "''")
-  $quotedReceiptPath = $receiptPath.Replace("'", "''")
-  $childScript = @"
-Remove-Item Env:MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE -ErrorAction SilentlyContinue
-Remove-Item Env:MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID -ErrorAction SilentlyContinue
-. '$quotedLeasePath'
-`$lease = Enter-HostExecutionLease -Role SIMION -MutexName '$quotedMutexName' -ReceiptPath '$quotedReceiptPath' -PollMilliseconds 100
-Exit-HostExecutionLease -Lease `$lease
-"@
-  $encodedChildScript = [Convert]::ToBase64String(
-    [Text.Encoding]::Unicode.GetBytes($childScript)
-  )
-  $child = Start-Process -FilePath (Get-Command pwsh).Source -WindowStyle Hidden `
-    -ArgumentList @('-NoProfile', '-EncodedCommand', $encodedChildScript) -PassThru `
-    -RedirectStandardOutput $childLog
-  Start-Sleep -Milliseconds 350
-  Assert-True (-not $child.HasExited) `
-    'A second process acquired the host lease while the first holder still owned it.'
-  Exit-HostExecutionLease -Lease $parentLease
-  $parentLease = $null
-  Assert-True ($child.WaitForExit(10000)) `
-    'Waiting child did not acquire the host lease after release.'
-  $child.Refresh()
-  Assert-True ($child.ExitCode -eq 0) `
-    "Waiting child exited with code $($child.ExitCode)."
-  # Write-Host is deliberately used for live scheduler/gate status and is not
-  # redirected by every PowerShell host.  The pre-release liveness assertion
-  # above plus successful child completion proves real mutex contention.
-  Assert-True (-not (Test-Path -LiteralPath $receiptPath)) `
-    'Lease receipt remained after the final holder released it.'
-
-  $comsolLease = Enter-HostExecutionLease -Role COMSOL -RunId 'comsol-test' -MutexName $mutexName `
-    -ReceiptPath $receiptPath -PollMilliseconds 100
-  Assert-True ((Get-HostExecutionLeaseReceipt -Path $receiptPath).role -eq 'COMSOL') `
-    'COMSOL solver lease did not publish its role.'
-  Exit-HostExecutionLease -Lease $comsolLease
-
-  $env:MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID = 'synthetic-parent'
-  $inherited = Enter-HostExecutionLease -Role GATE -MutexName $mutexName `
-    -ReceiptPath $receiptPath -PollMilliseconds 100
-  Assert-True ([bool]$inherited.inherited) `
-    'Nested gate invocation did not inherit the outer host lease.'
+  New-Item -ItemType Directory -Path $testRoot | Out-Null
+  $env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH = $statePath
+  $env:SIMULATION_PYTHON_EXE = $PythonExe
+  . $leaseSource
+  Assert-True (Test-HostResourceConsoleProcess -ImagePath (Join-Path ([Environment]::SystemDirectory) 'conhost.exe')) `
+    'The OS console image was not recognized.'
+  Assert-True (-not (Test-HostResourceConsoleProcess -ImagePath (Join-Path $testRoot 'conhost.exe'))) `
+    'A same-name executable outside the Windows system directory was incorrectly exempted.'
+  Assert-True (-not (Test-HostResourceConsoleProcess -ImagePath $null)) `
+    'An unknown executable image was incorrectly exempted.'
+  $realSnapshot = ${function:Get-HostResourceSnapshot}
+  function Get-HostResourceSnapshot {
+    $value = & $realSnapshot
+    $value.cpu_percent = 0; $value.available_memory_bytes = 32GB
+    $value.total_memory_bytes = 64GB; $value.logical_processors = 4; $value.io_pressure = $false
+    return $value
+  }
+  $light = Get-HostResourceBudget -Profile measured-small-check
+  $lease = Enter-HostResourceStage -Role GATE -Stage 'test-prepare' -Budget $light
+  Assert-True ($lease.status -eq 'acquired') 'A valid stage did not acquire.'
+  $inherited = Enter-HostResourceStage -Role GATE -Stage 'nested-known' -Budget $light
+  Assert-True ($inherited.inherited -and $inherited.token -eq $lease.token) 'Nested entry allocated a second reservation.'
   Exit-HostExecutionLease -Lease $inherited
-  Remove-Item Env:MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID `
-    -ErrorAction SilentlyContinue
-  $savedSound = [Environment]::GetEnvironmentVariable('SIMULATION_COMPLETION_SOUND', 'Process')
-  try {
-    $env:SIMULATION_COMPLETION_SOUND = 'off'
-    Invoke-HostExecutionCompletionNotification -Outcome success -RunId 'lease-test'
-    Invoke-HostExecutionCompletionNotification -Outcome interrupted -RunId 'lease-test'
-  } finally {
-    [Environment]::SetEnvironmentVariable('SIMULATION_COMPLETION_SOUND', $savedSound, 'Process')
-  }
-  Write-Output 'HOST_EXECUTION_LEASE_TEST=PASS'
+  $lease = Update-HostResourceStage -Lease $lease -Stage 'test-analyze' -Budget $light -RetainedMemoryBytes 0
+  Assert-True ($lease.stage -eq 'test-analyze' -and $lease.status -eq 'acquired') 'Stage transition failed.'
+  Exit-HostResourceStage -Lease $lease
+  $lease = $null
+  Assert-True (@((Get-HostResourceStatus -StatePath $statePath).records).Count -eq 0) 'Normal release leaked a reservation.'
+
+  # A hidden Windows console owns a real conhost child for its entire life.
+  # Process identities and image paths are real; only host pressure is fixed.
+  $quotedSource = $leaseSource.Replace("'", "''")
+  $quotedState = (Join-Path $testRoot 'hidden.sqlite3').Replace("'", "''")
+  $hiddenError = Join-Path $testRoot 'hidden-error.txt'
+  $quotedHiddenError = $hiddenError.Replace("'", "''")
+  $hiddenCode = @"
+trap { [IO.File]::WriteAllText('$quotedHiddenError', `$_.Exception.ToString()); exit 1 }
+. '$quotedSource'
+`$env:MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH = '$quotedState'
+Remove-Item Env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN -ErrorAction SilentlyContinue
+`$real = `${function:Get-HostResourceSnapshot}
+function Get-HostResourceSnapshot {
+  `$s = & `$real
+  `$s.cpu_percent=0; `$s.available_memory_bytes=32GB; `$s.total_memory_bytes=64GB; `$s.logical_processors=4; `$s.io_pressure=`$false
+  return `$s
+}
+`$console = @(Get-CimInstance Win32_Process | Where-Object { `$_.ParentProcessId -eq `$PID -and `$_.Name -eq 'conhost.exe' })
+if (`$console.Count -eq 0) { throw 'Hidden-console fixture did not create a conhost child.' }
+`$budget = Get-HostResourceBudget -Profile measured-small-check
+`$hiddenLease = Enter-HostResourceStage -Role GATE -Stage prepare -Budget `$budget
+try {
+  `$hiddenLease = Update-HostResourceStage -Lease `$hiddenLease -Stage analyze -Budget `$budget -RetainedMemoryBytes 0
+  if (`$hiddenLease.stage -ne 'analyze') { throw 'Hidden process did not transition.' }
+} finally { Exit-HostResourceStage -Lease `$hiddenLease }
+if (@((Get-HostResourceStatus -StatePath '$quotedState').records).Count -ne 0) {
+  throw 'Console-only task kept its budget after explicit release while the owner remained alive.'
+}
+if (@(Get-CimInstance Win32_Process | Where-Object { `$_.ParentProcessId -eq `$PID -and `$_.Name -eq 'conhost.exe' }).Count -eq 0) {
+  throw 'The console fixture exited before the release assertion.'
+}
+`$nextLease = Enter-HostResourceStage -Role GATE -Stage next-request -Budget (Get-HostResourceBudget -Profile unknown) -NoWait -NoEnvironment
+try {
+  if (`$nextLease.status -ne 'acquired') { throw 'A new request remained blocked after console-only release.' }
+} finally { Exit-HostResourceStage -Lease `$nextLease }
+"@
+  $hiddenEncoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($hiddenCode))
+  $hidden = Start-Process -FilePath (Get-Command pwsh).Source -WindowStyle Hidden -PassThru `
+    -ArgumentList @('-NoProfile','-EncodedCommand',$hiddenEncoded)
+  Assert-True ($hidden.WaitForExit(45000)) 'Hidden stage fixture did not finish.'
+  $hiddenFailure = if (Test-Path -LiteralPath $hiddenError) { Get-Content -LiteralPath $hiddenError -Raw } else { '' }
+  Assert-True ($hidden.ExitCode -eq 0) "Hidden stage could not transition with its own conhost child: $hiddenFailure"
+
+  # Independent contender, not a child claiming the same budget.
+  $lease = Enter-HostExecutionLease -Role COMSOL -RunId 'test-unknown'
+  $quotedSource = $leaseSource.Replace("'", "''")
+  $quotedState = $statePath.Replace("'", "''")
+  $childCode = @"
+. '$quotedSource'
+Remove-Item Env:MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN -ErrorAction SilentlyContinue
+Remove-Item Env:MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID -ErrorAction SilentlyContinue
+`$real = `${function:Get-HostResourceSnapshot}
+function Get-HostResourceSnapshot {
+  `$s = & `$real
+  `$s.cpu_percent=0; `$s.available_memory_bytes=32GB; `$s.total_memory_bytes=64GB; `$s.logical_processors=4; `$s.io_pressure=`$false
+  return `$s
+}
+`$childLease = Enter-HostResourceStage -Role GATE -Stage test-child -StatePath '$quotedState' -Budget (Get-HostResourceBudget -Profile measured-small-check) -NoWait -NoEnvironment
+if (`$childLease.status -ne 'waiting') { throw 'Unknown peak did not exclude a second stage.' }
+Exit-HostResourceStage -Lease `$childLease
+"@
+  $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($childCode))
+  $child = Start-Process -FilePath (Get-Command pwsh).Source -WindowStyle Hidden -PassThru `
+    -ArgumentList @('-NoProfile','-EncodedCommand',$encoded)
+  Assert-True ($child.WaitForExit(30000)) 'Isolated contender did not finish.'
+  Assert-True ($child.ExitCode -eq 0) 'Isolated contender failed.'
+  Exit-HostExecutionLease -Lease $lease
+  $lease = $null
+  Assert-True (@((Get-HostResourceStatus -StatePath $statePath).records).Count -eq 0) 'Unknown stage leaked a reservation.'
+  Write-Output 'HOST_EXECUTION_LEASE_TEST=PASS MODE=ISOLATED_STAGE_LEDGER'
 } finally {
-  if ($null -ne $parentLease) { Exit-HostExecutionLease -Lease $parentLease }
-  [Environment]::SetEnvironmentVariable(
-    'MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_ROLE', $savedRole, 'Process'
-  )
-  [Environment]::SetEnvironmentVariable(
-    'MASS_SPECTROMETRY_HOST_EXECUTION_LEASE_OWNER_PID', $savedOwner, 'Process'
-  )
-  if (Test-Path -LiteralPath $testRoot) {
-    Remove-Item -LiteralPath $testRoot -Recurse -Force
+  if ($null -ne $lease) { Exit-HostExecutionLease -Lease $lease }
+  foreach ($name in $savedEnvironment.Keys) {
+    [Environment]::SetEnvironmentVariable($name, $savedEnvironment[$name], 'Process')
   }
+  $resolved = [IO.Path]::GetFullPath($testRoot)
+  $temporaryRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
+  if (-not $resolved.StartsWith($temporaryRoot, [StringComparison]::OrdinalIgnoreCase) -or
+      -not (Split-Path -Leaf $resolved).StartsWith('host_stage_test_')) {
+    throw 'Refusing cleanup outside isolated scheduler test directory.'
+  }
+  if (Test-Path -LiteralPath $resolved) { Remove-Item -LiteralPath $resolved -Recurse -Force }
 }

@@ -127,6 +127,8 @@ effect resolution和预算；缺少这些设置的既有run只能发布`POSTHOC_
 不作为跳过 runtime profile 的手工调参入口。执行后检查 summary 的实际状态与 manifest，不能仅凭退出
 码或结果文件存在声明成功。
 
+两入口同时冻结主机调度 facade、Python 核心、策略和 PowerShell 7 检查四个公共依赖，并向冻结执行链传递已选 Python 路径；预算与继承规则见[主机资源调度](../../docs/OPERATIONS.md#主机资源调度)。
+
 两端消费同一resolved hash、杆阵列、接口、屏蔽、segmentation和完整drive。数值profile与物理设计分层；
 SIMION使用`cell_mm_xyz`，COMSOL显式声明电势单元阶次。普通收敛点默认`compact`，只有事前授权的
 最终参考或GUI复核可保留重型求解器资产。

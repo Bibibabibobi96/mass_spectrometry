@@ -234,11 +234,12 @@ function New-BuildSummary {
 
 $environmentNames = @(
   'WEHNELT_RUN_ID','WEHNELT_ARTIFACT_ROOT',
-  'PYTHONDONTWRITEBYTECODE','RUFF_NO_CACHE'
+  'PYTHONDONTWRITEBYTECODE','RUFF_NO_CACHE','SIMULATION_PYTHON_EXE'
 )
 $savedEnvironment = Save-RunEnvironment -Names $environmentNames
 $env:PYTHONDONTWRITEBYTECODE = '1'
 $env:RUFF_NO_CACHE = 'true'
+$env:SIMULATION_PYTHON_EXE = $python
 $package = $null
 $manifestPath = ''
 $report = ''
@@ -344,6 +345,9 @@ try {
     powershell_runtime_gate = 'common\require_powershell7.ps1'
     changed_scope_gate = 'common\verify_changed.ps1'
     gate_catalog = 'common\gate_catalog.json'
+    host_resource_adapter = 'common\host_execution_lease.ps1'
+    host_resource_scheduler = 'common\host_resource_scheduler.py'
+    host_resource_policy = 'common\host_resource_policy.json'
     artifact_support = 'common\contracts\run_artifact_support.ps1'
     manifest_writer = 'common\contracts\write_run_manifest.py'
     manifest_verifier = 'common\contracts\verify_run_manifest.py'
@@ -451,7 +455,7 @@ foreach ($entry in $bootstrapIdentity.GetEnumerator()) {
   try {
     $commercialWrapperInvocationAttempted = $true
     & $frozenInputs.comsol_runner -TaskScript $frozenInputs.task_script `
-      -ReportPath $report *>&1 |
+      -ReportPath $report -RunId $RunId *>&1 |
       Tee-Object -FilePath $wrapperLog -Append
     $wrapperExitCode = $LASTEXITCODE
     $commercialWrapperCompleted = $true

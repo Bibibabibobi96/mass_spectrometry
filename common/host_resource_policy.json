@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "policy_id": "host-stage-admission",
+  "cpu_admission_percent": 95.0,
+  "memory_admission_reserve_bytes": 1073741824,
+  "io_slots": 1,
+  "maximum_queue_bypasses": 8,
+  "poll_milliseconds": 1000,
+  "status_interval_seconds": 30,
+  "snapshot_backoff_max_milliseconds": 5000,
+  "profiles": {
+    "measured-small-check": {
+      "schema_version": 1,
+      "cpu_cores": 1,
+      "memory_bytes": 402653184,
+      "io_slots": 0,
+      "exclusive_resources": [],
+      "unknown_peak": false
+    },
+    "unknown": {
+      "schema_version": 1,
+      "cpu_cores": 0,
+      "memory_bytes": 0,
+      "io_slots": 1,
+      "exclusive_resources": [],
+      "unknown_peak": true
+    }
+  },
+  "stages": {
+    "GATE/expected_values_tests": "measured-small-check",
+    "GATE/ruff_all": "measured-small-check",
+    "GATE/ruff_changed_python": "measured-small-check",
+    "SIMION/mrtof_pa_prepare": "unknown",
+    "SIMION/mrtof_flight": "unknown",
+    "SIMION/mrtof_postprocess": "unknown"
+  },
+  "observations": {
+    "date": "2026-09-14",
+    "method": "Get-ManagedSolverProcessSample: sum of max(WorkingSet64, PrivateMemorySize64) for complete pwsh and Python/native child trees",
+    "expected_values_tests_managed_peak_bytes": 99049472,
+    "ruff_all_managed_peak_bytes": 84930560,
+    "headroom_multiplier": 4,
+    "round_up_bytes": 67108864,
+    "limits": "Single sampled runs, not proven worst-case bounds. Ruff consumers restrict RAYON_NUM_THREADS=1; only these named pure checks are classified. Larger or unknown stages remain exclusive."
+  },
+  "rationale": {
+    "snapshot_backoff": "Rejected stale snapshots are resampled after bounded randomized backoff, without a retry-count failure. The five-second delay ceiling preserves cancellation and reduces synchronized contention; invalid telemetry still fails closed.",
+    "io_slots": "One uncalibrated streaming I/O producer at a time; zero means metadata-only or no bulk I/O, not unrestricted disk access.",
+    "maximum_queue_bypasses": "Bounded backfilling: after eight later admissions the older request becomes a queue barrier until it can run.",
+    "measured-small-check": "Initial complete-tree observed envelopes with fourfold margin rounded upward to 64 MiB; not OS-enforced limits.",
+    "safety_reserves": "Moved unchanged from the existing SIMION repository policy: 95 percent system CPU ceiling and 1 GiB physical-memory reserve. SIMION imports these same values.",
+    "mrtof_stages": "Initial separate stage boundaries remain unknown/exclusive pending complete process-tree peak measurements. PA file-set bytes are not a process-memory peak. Publication includes retention and payload hashing, so it is not classified as zero bulk I/O. The campaign itself does not retain a grant between rows."
+  }
+}

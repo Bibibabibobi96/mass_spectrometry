@@ -7,6 +7,8 @@ resolved、分析和资产合同管理；实现细节见[`COMSOL.md`](COMSOL.md)
 
 ## 当前状态
 
+- 静态门禁覆盖隐藏 Windows 宿主的非法参数拒绝；分析测试失败时立即拒绝，不发布项目 PASS。
+
 - 分析入口的原始文件身份统一复用 `common/contracts/file_identity.py`，仍按原始字节输出大写 SHA-256，
   不规范化 run 输入的换行；已有不同 JSON 序列化合同保持原身份。理论 CLI 的递归预期值比较复用
   `common/contracts/expected_values.py`，不改变理论公式与容差。此复用只属于无求解器回归，不更新 Formal 资格。

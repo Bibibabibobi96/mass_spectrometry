@@ -2,7 +2,9 @@ import csv
 import hashlib
 import json
 import math
+import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -17,6 +19,59 @@ REPO_ROOT = Path(__file__).parents[2]
 
 
 class SimionRunnerContractTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell Core is required")
+    def test_transport_snapshots_include_host_runtime_dependency_closure(self) -> None:
+        expected = {
+            "common/host_execution_lease.ps1", "common/host_resource_scheduler.py",
+            "common/host_resource_policy.json", "common/require_powershell7.ps1",
+        }
+        for runner_name in ("run_finite_3d_transport.ps1", RUNNER.name):
+            source = (RUNNER.parent / runner_name).read_text(encoding="utf-8-sig")
+            capacity = source[source.index("$hostRuntimeSourcePaths="):source.index("$package=New-RunPackage")]
+            freeze = source[source.index("  $codeRoot=Join-Path $inputDir 'code'"):source.index("  $manifestRepoRoot=$codeRoot")]
+            with self.subTest(runner=runner_name), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                def quoted(path: Path) -> str:
+                    return "'" + str(path).replace("'", "''") + "'"
+                script = (
+                    f"$ErrorActionPreference='Stop'\n$repoRoot={quoted(REPO_ROOT)}\n"
+                    f"$inputDir={quoted(root)}\n"
+                    f". {quoted(REPO_ROOT / 'common/contracts/run_artifact_support.ps1')}\n"
+                    + capacity + "\n" + freeze
+                    + f"\n$executionCapacityPaths | ConvertTo-Json | Set-Content {quoted(root / 'capacity.json')}\n"
+                    + ". (Join-Path $codeRoot 'common/host_execution_lease.ps1')\n"
+                    + "$null = Get-HostResourceBudget -Role GATE -Stage snapshot-probe\n"
+                )
+                completed = subprocess.run(
+                    [shutil.which("pwsh"), "-NoProfile", "-Command", script],
+                    cwd=root, capture_output=True, text=True, encoding="utf-8",
+                    errors="replace", timeout=45, check=False,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+                records = json.loads((root / "code_inventory.json").read_text(encoding="utf-8-sig"))["files"]
+                by_path = {record["path"]: record for record in records}
+                capacities = json.loads((root / "capacity.json").read_text(encoding="utf-8-sig"))
+                for relative in expected:
+                    payload = root / "code" / relative
+                    self.assertIn("inputs/code/" + relative, capacities)
+                    self.assertEqual(payload.read_bytes(), (REPO_ROOT / relative).read_bytes())
+                    self.assertEqual(hashlib.sha256(payload.read_bytes()).hexdigest().upper(), by_path[relative]["sha256"])
+                imports = "from common.host_resource_scheduler import load_policy; assert load_policy()"
+                if "simion" in runner_name:
+                    imports += "; from common.simion import resource_scheduler; assert resource_scheduler.CPU_ADMISSION_PERCENT > 0"
+                probe = subprocess.run(
+                    [sys.executable, "-I", "-c", f"import sys; sys.path.insert(0, {str(root / 'code')!r}); " + imports],
+                    cwd=root, capture_output=True, text=True, timeout=15, check=False,
+                )
+                self.assertEqual(probe.returncode, 0, probe.stderr)
+
+    def test_frozen_comsol_runner_receives_resolved_python_environment(self) -> None:
+        source = (RUNNER.parent / "run_finite_3d_transport.ps1").read_text(encoding="utf-8-sig")
+        self.assertIn("$environmentNames=@('SIMULATION_PYTHON_EXE'", source)
+        self.assertIn("$env:SIMULATION_PYTHON_EXE=$python", source)
+        self.assertLess(source.index("$env:SIMULATION_PYTHON_EXE=$python"), source.index("$solverProcess=Invoke-ResourceBudgetedProcess"))
+        self.assertIn("Restore-RunEnvironment -Names $environmentNames -Snapshot $oldEnvironment", source)
+
     def test_runner_freezes_resolved_campaign_selection_before_solver_launch(self) -> None:
         source = RUNNER.read_text(encoding="utf-8-sig")
         self.assertIn("[string]$ResolvedRuntimeProfilePath=''", source)

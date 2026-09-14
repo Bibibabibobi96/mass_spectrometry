@@ -115,6 +115,17 @@ class ChangedGateContractTests(unittest.TestCase):
         self.assertIn("orthogonal_accelerator_static",
                       self.routed_stages("common/contracts/expected_values.py"))
 
+    def test_host_scheduler_and_adapters_keep_regression_routes(self) -> None:
+        for path, expected in (
+            ("common/host_resource_scheduler.py", {"host_resource_scheduler_tests", "host_resource_adapter_tests"}),
+            ("common/host_resource_policy.json", {"host_resource_scheduler_tests", "host_resource_adapter_tests"}),
+            ("common/comsol/run_comsol_r2025b.ps1", {"livelink_resource_stages_tests"}),
+        ):
+            with self.subTest(path=path):
+                self.assertTrue(expected <= self.routed_stages(path).keys())
+        gate_route = next(row for row in self.routes if row["stage"] == "gate_contract_tests")
+        self.assertIn("common.contracts.test_parallel_gate_support", gate_route["command"]["arguments"])
+
     def test_integration_test_module_change_runs_only_that_module(self) -> None:
         pwsh = shutil.which("pwsh")
         if pwsh is None:
@@ -545,7 +556,13 @@ class ChangedGateContractTests(unittest.TestCase):
         )
 
     def test_excludes_commercial_and_formal_gate_levels(self) -> None:
-        serialized_routes = json.dumps(self.route_contract)
+        # Watching a launcher source path must select its mock regression, not
+        # be confused with executing that launcher as a gate command.
+        commands = [
+            route[key] for route in self.routes
+            for key in ("command", "repository_integration_command") if key in route
+        ]
+        serialized_commands = json.dumps(commands)
         for forbidden in (
             "-Level Candidate",
             "-Level Formal",
@@ -553,7 +570,10 @@ class ChangedGateContractTests(unittest.TestCase):
             "simion.exe",
         ):
             self.assertNotIn(forbidden, self.source)
-            self.assertNotIn(forbidden, serialized_routes)
+            self.assertNotIn(forbidden, serialized_commands)
+        for command in commands:
+            level = str(command.get("parameters", {}).get("Level", "")).casefold()
+            self.assertNotIn(level, {"candidate", "formal"})
 
     def test_parallel_scheduler_is_bounded_isolated_and_deterministic(self) -> None:
         integration_source = INTEGRATION_GATE.read_text(encoding="utf-8")

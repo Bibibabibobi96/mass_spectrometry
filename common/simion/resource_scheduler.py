@@ -24,12 +24,15 @@ from typing import Any
 FORMAL_OBSERVATION_SECONDS = 45
 INITIAL_CPU_LANES = 10
 MINIMUM_PROCESS_CPU_PERCENT = 10.0
-CPU_ADMISSION_PERCENT = 95.0
+_HOST_RESOURCE_POLICY = json.loads(
+    Path(__file__).resolve().parents[1].joinpath("host_resource_policy.json").read_text("utf-8")
+)
+CPU_ADMISSION_PERCENT = float(_HOST_RESOURCE_POLICY["cpu_admission_percent"])
 # These are repository-wide Windows safety reserves, deliberately expressed in
 # binary bytes rather than as fractions of installed RAM.  A percentage made the same
 # safe free-memory level vary with host capacity and caused an unnecessarily
 # large reservation on the 48 GiB research workstation.
-MEMORY_ADMISSION_RESERVE_BYTES = 1 * 1024**3
+MEMORY_ADMISSION_RESERVE_BYTES = int(_HOST_RESOURCE_POLICY["memory_admission_reserve_bytes"])
 MEMORY_CRITICAL_RESERVE_BYTES = 512 * 1024**2
 MEMORY_CRITICAL_SECONDS = 15
 LAUNCH_STAGGER_SECONDS = 5

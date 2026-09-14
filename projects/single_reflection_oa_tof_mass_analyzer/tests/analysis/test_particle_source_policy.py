@@ -236,24 +236,29 @@ class ParticleSourcePolicyTests(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 is required")
     def test_removed_arbitrary_particle_override_fails_at_parameter_binding(self) -> None:
-        result = subprocess.run(
-            [
-                "pwsh",
-                "-NoProfile",
-                "-File",
-                str(RUNNER),
-                "-ParticleCountOverride",
-                "30",
-            ],
-            cwd=PROJECT_ROOT.parents[1],
-            capture_output=True,
-            check=False,
-            text=True,
-            encoding="utf-8",
-            timeout=30,
-        )
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("ParticleCountOverride", result.stderr)
+        flags = (0, subprocess.CREATE_NO_WINDOW) if os.name == "nt" else (0,)
+        for creationflags in flags:
+            with self.subTest(creationflags=creationflags):
+                # Binding fails before script initialization. Hidden Windows
+                # hosts may emit localized OEM bytes instead of UTF-8; the
+                # rejected parameter identity is ASCII in either encoding.
+                result = subprocess.run(
+                    [
+                        "pwsh",
+                        "-NoProfile",
+                        "-File",
+                        str(RUNNER),
+                        "-ParticleCountOverride",
+                        "30",
+                    ],
+                    cwd=PROJECT_ROOT.parents[1],
+                    capture_output=True,
+                    check=False,
+                    creationflags=creationflags,
+                    timeout=30,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(b"ParticleCountOverride", result.stderr)
 
 
 if __name__ == "__main__":

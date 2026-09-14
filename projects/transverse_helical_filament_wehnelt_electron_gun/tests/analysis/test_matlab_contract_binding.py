@@ -623,11 +623,16 @@ class MatlabContractBindingTests(unittest.TestCase):
             "common\\contracts\\verify_run_manifest.py",
             "common\\contracts\\particle_physics.py",
             "common\\contracts\\strict_json.py",
+            "common\\host_execution_lease.ps1",
+            "common\\host_resource_scheduler.py",
+            "common\\host_resource_policy.json",
             "common\\comsol\\run_comsol_r2025b.ps1",
             "common\\comsol\\resolve_comsol_64.ps1",
             "common\\comsol\\livelink_r2025b\\comsolstartup.m",
             ". $frozenInputs.artifact_support",
             "& $frozenInputs.comsol_runner",
+            "$env:SIMULATION_PYTHON_EXE = $python",
+            "'SIMULATION_PYTHON_EXE'",
             "Write-VerifiedRunManifest",
         )
         for token in required:
@@ -662,6 +667,9 @@ class MatlabContractBindingTests(unittest.TestCase):
             "common/verify_changed.ps1",
             "common/gate_catalog.json",
             "common/verify_repository_integration.ps1",
+            "common/host_execution_lease.ps1",
+            "common/host_resource_scheduler.py",
+            "common/host_resource_policy.json",
             "common/contracts/run_artifact_support.ps1",
             "common/contracts/write_run_manifest.py",
             "common/contracts/verify_run_manifest.py",
@@ -694,6 +702,19 @@ class MatlabContractBindingTests(unittest.TestCase):
                 freeze(source, frozen_project / "tests" / "analysis" / source.name)
             for relative in common_relatives:
                 freeze(REPO_ROOT / relative, snapshot / relative)
+            # Isolate admission telemetry as well as its ledger: this checks frozen
+            # imports/writes, not whether another real scientific run leaves capacity.
+            with (snapshot / "common/host_execution_lease.ps1").open("a", encoding="utf-8") as stream:
+                stream.write(r'''
+function Get-HostResourceSnapshot {
+  return @{
+    complete=$true; logical_processors=8; cpu_percent=0
+    total_memory_bytes=64GB; available_memory_bytes=64GB; io_pressure=$false
+    processes=@(@{pid=$PID;parent_pid=0;memory_bytes=1MB
+      started=([Diagnostics.Process]::GetCurrentProcess().StartTime.ToUniversalTime().Ticks.ToString('D19'))})
+  }
+}
+''')
             for source in sorted(
                 (REPO_ROOT / "common" / "contracts" / "schemas").glob("*.json")
             ):
@@ -703,11 +724,14 @@ class MatlabContractBindingTests(unittest.TestCase):
                 )
 
             environment = os.environ.copy()
+            environment.pop("MASS_SPECTROMETRY_HOST_RESOURCE_TOKEN", None)
             environment.update(
                 {
                     "PYTHONDONTWRITEBYTECODE": "1",
                     "RUFF_NO_CACHE": "true",
                     "WEHNELT_NESTED_FROZEN_GATE": "1",
+                    "SIMULATION_PYTHON_EXE": sys.executable,
+                    "MASS_SPECTROMETRY_HOST_RESOURCE_STATE_PATH": str(Path(directory) / "scheduler.sqlite3"),
                 }
             )
             record = Path(directory) / "record"

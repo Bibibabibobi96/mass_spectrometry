@@ -13,8 +13,6 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'gate_catalog_support.ps1')
 $repoRoot = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'host_execution_lease.ps1')
-$hostExecutionLease = Enter-HostExecutionLease -Role GATE
-try {
 if (-not $PythonExe) {
     $venvPython = Join-Path $repoRoot '.venv\Scripts\python.exe'
     if (Test-Path -LiteralPath $venvPython -PathType Leaf) { $PythonExe = $venvPython }
@@ -24,6 +22,9 @@ $PythonExe = [IO.Path]::GetFullPath($PythonExe)
 if (-not (Test-Path -LiteralPath $PythonExe -PathType Leaf)) { throw "Python runtime missing: $PythonExe" }
 $pythonVersion = (& $PythonExe -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')").Trim()
 if ($LASTEXITCODE -ne 0 -or $pythonVersion -ne '3.11') { throw "Repository integration gate requires Python 3.11, found $pythonVersion at $PythonExe" }
+$originalSimulationPython = [Environment]::GetEnvironmentVariable('SIMULATION_PYTHON_EXE', 'Process')
+try {
+$env:SIMULATION_PYTHON_EXE = $PythonExe
 $concurrencyMode = if ($MaxConcurrency -eq 0) { 'auto' } else { 'explicit' }
 $MaxConcurrency = Resolve-GateConcurrency -Requested $MaxConcurrency
 $routes = @(Read-GateCatalog -RepoRoot $repoRoot)
@@ -33,8 +34,10 @@ function Invoke-IntegrationStage {
     param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][scriptblock]$Action)
     $timer = [Diagnostics.Stopwatch]::StartNew()
     Write-Output "GATE_STAGE=RUN NAME=$Name"
-    & $Action
-    if ($LASTEXITCODE -ne 0) { throw "Repository integration stage failed: $Name" }
+    Invoke-ResourceBudgetedGateAction -Name $Name -Action {
+        & $Action
+        if ($LASTEXITCODE -ne 0) { throw "Repository integration stage failed: $Name" }
+    }
     Write-Output "GATE_STAGE=PASS NAME=$Name ELAPSED_SECONDS=$([math]::Round($timer.Elapsed.TotalSeconds, 3))"
 }
 
@@ -151,5 +154,5 @@ Invoke-ParallelIntegrationGroup $fullRegressionStages
 
 Write-Output "REPOSITORY_INTEGRATION_GATE=PASS PYTHON=$pythonVersion"
 } finally {
-    Exit-HostExecutionLease -Lease $hostExecutionLease
+    [Environment]::SetEnvironmentVariable('SIMULATION_PYTHON_EXE', $originalSimulationPython, 'Process')
 }

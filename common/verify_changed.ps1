@@ -18,8 +18,6 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'host_execution_lease.ps1')
-$hostExecutionLease = Enter-HostExecutionLease -Role GATE
-try {
 if ($InternalStage) {
     if (-not $InternalRequestPath -or
         -not (Test-Path -LiteralPath $InternalRequestPath -PathType Leaf)) {
@@ -44,6 +42,9 @@ $pythonVersion = (& $PythonExe -c "import sys; print(f'{sys.version_info.major}.
 if ($LASTEXITCODE -ne 0 -or $pythonVersion -ne '3.11') {
     throw "Changed-files gate requires Python 3.11, found $pythonVersion at $PythonExe"
 }
+$originalSimulationPython = [Environment]::GetEnvironmentVariable('SIMULATION_PYTHON_EXE', 'Process')
+try {
+$env:SIMULATION_PYTHON_EXE = $PythonExe
 $concurrencyMode = if ($MaxConcurrency -eq 0) { 'auto' } else { 'explicit' }
 $MaxConcurrency = Resolve-GateConcurrency -Requested $MaxConcurrency
 
@@ -113,8 +114,10 @@ function Invoke-ChangedGateStage {
     )
     $timer = [Diagnostics.Stopwatch]::StartNew()
     Write-Output "GATE_STAGE=RUN NAME=$Name REASON=$Reason"
-    & $Action
-    if ($LASTEXITCODE -ne 0) { throw "Changed-files gate stage failed: $Name" }
+    Invoke-ResourceBudgetedGateAction -Name $Name -Action {
+        & $Action
+        if ($LASTEXITCODE -ne 0) { throw "Changed-files gate stage failed: $Name" }
+    }
     $timer.Stop()
     Write-Output "GATE_STAGE=PASS NAME=$Name ELAPSED_SECONDS=$([Math]::Round($timer.Elapsed.TotalSeconds, 3))"
 }
@@ -428,5 +431,5 @@ Invoke-ChangedStageGroup $postFreshnessStages
 
 Write-Output "CHANGED_GATE=PASS PYTHON=$pythonVersion CHANGED_PATHS=$($changedPaths.Count) FULL_SCOPE=$([bool]$FullScope)"
 } finally {
-    Exit-HostExecutionLease -Lease $hostExecutionLease
+    [Environment]::SetEnvironmentVariable('SIMULATION_PYTHON_EXE', $originalSimulationPython, 'Process')
 }

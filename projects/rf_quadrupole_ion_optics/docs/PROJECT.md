@@ -31,6 +31,9 @@
 `Static`门禁可用；物理运行按workflow profile授权；机械与CAD闭环前`Formal`必须失败关闭。公共
 工程推进合同的PASS只允许进入下一阶段，不回写上述`INCONCLUSIVE`。
 
+粒子表回归分别检查探索计数的前缀一致性和非法计数拒绝；生成成功不授予正式样本资格，资格判定仍使用
+[公共粒子数合同](../../../common/contracts/particle_count_policy.json)。
+
 ## 当前机械与模式
 
 识别性摘要如下；精确值只认机器合同。

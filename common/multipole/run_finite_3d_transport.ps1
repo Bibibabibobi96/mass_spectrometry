@@ -139,9 +139,13 @@ try{
   Remove-Item -LiteralPath $budgetPreflight -Force -ErrorAction SilentlyContinue
   throw
 }
+$hostRuntimeSourcePaths=@(
+  'common/host_execution_lease.ps1','common/host_resource_scheduler.py',
+  'common/host_resource_policy.json','common/require_powershell7.ps1')
 $executionCapacityPaths=Get-RunPackageCopiedSourcePaths -RepoRoot $repoRoot `
   -SourceRelativeDirectories @('common/contracts','common/multipole','common/comsol') `
   -Extensions @('.py','.json','.ps1','.m','.lua')
+$executionCapacityPaths+=@($hostRuntimeSourcePaths|ForEach-Object{"inputs/code/$_"})
 $package=New-RunPackage -Python $python -RepoRoot $repoRoot `
   -ArtifactRoot (Join-Path $workspaceRoot "artifacts\projects\$ProjectId") -RunId $RunId `
   -Project $ProjectId -Mode 'resolved_design_transport' `
@@ -173,6 +177,10 @@ try{
       New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination)|Out-Null
       Copy-Item -LiteralPath $_.FullName -Destination $destination
     }
+  }
+  foreach($relative in $hostRuntimeSourcePaths){
+    Copy-VerifiedRunInput -Source (Join-Path $repoRoot $relative) `
+      -Destination (Join-Path $codeRoot $relative)|Out-Null
   }
   $codeInventory=Join-Path $inputDir 'code_inventory.json'
   $inventory=@(Get-ChildItem -LiteralPath $codeRoot -Recurse -File|Sort-Object FullName|ForEach-Object{
@@ -344,7 +352,7 @@ try{
       stop_stage=$StopStage};
     formal_gate_passed=$false}|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $runConfig -Encoding UTF8
 
-  $environmentNames=@('MULTIPOLE_RESOLVED_DESIGN','MULTIPOLE_SOLVER_NUMERICS','MULTIPOLE_L3_PARTICLE_SOURCE',
+  $environmentNames=@('SIMULATION_PYTHON_EXE','MULTIPOLE_RESOLVED_DESIGN','MULTIPOLE_SOLVER_NUMERICS','MULTIPOLE_L3_PARTICLE_SOURCE',
     'MULTIPOLE_L3_PARTICLE_SOURCE_METADATA','MULTIPOLE_L3_RUNTIME_DIR','MULTIPOLE_L3_EVENTS',
     'MULTIPOLE_L3_TRAJECTORIES','MULTIPOLE_L3_METRICS','MULTIPOLE_L3_PLOT','MULTIPOLE_L3_MODEL',
     'MULTIPOLE_L3_CANONICAL_STATE','MULTIPOLE_L3_PRIMARY_CANONICAL_STATE',
@@ -356,6 +364,7 @@ try{
   $oldEnvironment=Save-RunEnvironment -Names $environmentNames
   $resourceUsage=Join-Path $resultDir 'resource_usage.json'
   try{
+    $env:SIMULATION_PYTHON_EXE=$python
     $env:MULTIPOLE_RESOLVED_DESIGN=$resolved;$env:MULTIPOLE_SOLVER_NUMERICS=$numerics
     $env:MULTIPOLE_L3_PARTICLE_SOURCE=$particleSource;$env:MULTIPOLE_L3_PARTICLE_SOURCE_METADATA=$sourceMetadata
     $env:MULTIPOLE_L3_RUNTIME_DIR=$runtimeDir;$env:MULTIPOLE_L3_EVENTS=$events

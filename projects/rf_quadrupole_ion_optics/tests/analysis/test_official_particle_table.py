@@ -20,9 +20,16 @@ class OfficialParticleTableTests(unittest.TestCase):
     def test_n100_is_n1000_prefix(self) -> None:
         self.assertTrue(np.array_equal(generate(100), generate(1000)[:100]))
 
-    def test_nonstandard_count_is_rejected(self) -> None:
-        with self.assertRaisesRegex(ValueError, "must be one of"):
-            generate(25)
+    def test_nonstandard_positive_count_preserves_master_prefix(self) -> None:
+        rows = generate(25)
+        self.assertEqual(rows.shape, (25, 11))
+        self.assertTrue(np.array_equal(rows, generate(1000)[:25]))
+
+    def test_invalid_count_is_rejected(self) -> None:
+        for count in (0, -1, True, 1.5):
+            with self.subTest(count=count):
+                with self.assertRaisesRegex(ValueError, "positive integer"):
+                    generate(count)
 
     def test_canonical_projection_uses_governed_release_plane_and_same_energy(self) -> None:
         resolved = json.loads(

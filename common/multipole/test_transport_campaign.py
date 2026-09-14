@@ -392,6 +392,15 @@ class TransportCampaignTests(unittest.TestCase):
             set(campaign["downstream_terminal_profile"]),
             {"integration_id", "terminal_profile_id", "registry_sha256"},
         )
+        binding = campaign["downstream_terminal_profile"]
+        discovery = json.loads((REPO_ROOT / "integrations/registry.json").read_text(encoding="utf-8"))
+        integration = next(item for item in discovery["integrations"] if item["integration_id"] == binding["integration_id"])
+        registry = json.loads((REPO_ROOT / integration["downstream_terminal_profile_registry"]).read_text(encoding="utf-8"))
+        profiles = [item for item in registry["profiles"] if item["terminal_profile_id"] == binding["terminal_profile_id"]]
+        self.assertEqual(len(profiles), 1)
+        # This tests composition of the registered terminal, not a second frozen
+        # geometry definition predating the integration's circular port migration.
+        expected_aperture = profiles[0]["aperture"]
         for experiment in campaign["experiments"]:
             self.assertNotIn("downstream_terminal_profile", experiment)
             resolved = resolve_runtime_selection(
@@ -408,13 +417,7 @@ class TransportCampaignTests(unittest.TestCase):
             self.assertEqual(terminal["rod_end_clearance_mm"], 1.0)
             self.assertEqual(
                 terminal["aperture"],
-                {
-                    "shape": "rectangular",
-                    "width_mm": 1.0,
-                    "height_mm": 0.9,
-                    "width_axis": "multipole_x",
-                    "height_axis": "multipole_y",
-                },
+                expected_aperture,
             )
             self.assertFalse(terminal["upstream_terminal_electrode_present"])
             self.assertEqual(
@@ -531,11 +534,15 @@ class TransportCampaignTests(unittest.TestCase):
         )
         self.assertTrue(all("solver_numerics" in profile for profile in plan["experiments"]))
 
-    def test_checked_in_v2_source_comparison_campaign_dry_runs_without_case_set(self) -> None:
+    def test_checked_in_source_comparison_dry_run_preserves_declared_case_sets(self) -> None:
         pwsh = shutil.which("pwsh")
         if pwsh is None:
             self.skipTest("PowerShell Core is unavailable")
         campaign = CAMPAIGN_ROOT / "20260829__oct_planar_vs_volume_source_n1000.json"
+        document = json.loads(campaign.read_text(encoding="utf-8"))
+        # The maintained source comparison declares its arms explicitly; only
+        # campaigns without case_set use the launcher's implicit control pair.
+        declared = {row["experiment_id"]: row["case_set"] for row in document["experiments"]}
         with tempfile.TemporaryDirectory() as directory:
             plan_path = Path(directory) / "resolved_execution_plan.json"
             completed = subprocess.run(
@@ -556,7 +563,17 @@ class TransportCampaignTests(unittest.TestCase):
             ["oct_planar_source_control_n1000", "oct_volume_source_n1000"],
         )
         self.assertIn("volume_snapshot_receipt", plan["experiments"][1]["particle_source"])
-        self.assertIn("CASE_SET=primary_and_zero_axial_control", completed.stdout)
+        self.assertEqual(
+            {row["runtime_profile_id"]: row["case_set"] for row in plan["experiments"]},
+            declared,
+        )
+        dry_run_rows = [line for line in completed.stdout.splitlines() if line.startswith("MULTIPOLE_CAMPAIGN=DRY_RUN ")]
+        self.assertEqual(len(dry_run_rows), len(declared))
+        self.assertEqual(
+            {line.split("EXPERIMENT=", 1)[1].split(" RUN=", 1)[0]: line.split("CASE_SET=", 1)[1]
+             for line in dry_run_rows},
+            declared,
+        )
 
     def test_campaign_semantic_diff_resolves_profiles_without_execution_policy(self) -> None:
         campaign = campaign_fixture()
