@@ -38,7 +38,8 @@ probe。这个结论关闭的是长路径输入和 cache 写隔离，不提升�
 未阻尼修正不作为工作电压。每条飞行必须保持同一已验证求解问题身份，不能把旧缺少 Program/helper 身份的 run 补写成新基点。
 
 这些证据位于项目 artifact 的 `runs/<run-id>/`；查阅时先验证 manifest，再读取同 run 的 summary、观测和日志。
-r50 首次自然命中、Jacobian 09 及旧步进过程集中保存在[具名历史](history/20260911__project-and-simion-status-freeze.md)。
+r50 首次自然命中、Jacobian 09 及旧步进过程的具名历史候选为
+`20260911__project-and-simion-status-freeze.md`；它尚未随当前 Git 修订发布，不能作为仓库内证据入口。
 
 ### 开放任务与资格边界
 

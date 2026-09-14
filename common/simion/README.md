@@ -72,14 +72,16 @@ SIMION原生Fast Adjust会拒绝超出局部实体计数的响应；此时
 
 ### Standalone 工作点与响应合成 API
 
-[`export_fast_adjusted_standalone_pa.lua`](export_fast_adjusted_standalone_pa.lua)只在可写、一次性的 build staging
+以下仅以代码格式出现的工具名是尚未随当前 Git 修订发布的工作区候选，不构成当前可调用 API。
+
+`export_fast_adjusted_standalone_pa.lua`只在可写、一次性的 build staging
 中使用。输入必须是原生 family controller `.pa0`、全量 `ID=V` 工作点表和一个尚不存在的 `.pa` 输出路径。
 工具用 controller 的 `electrode_numbers` 拒绝漏项和未知 ID，调用原生 `pa:fast_adjust`，再把内存中的完整工作点
 复制到全新 PA 对象。它不把 controller 另存为 `.pa0`，不 Refine，并把输出固定为 `refined=true`、
 `refinable=false`。任何 `.pa-surf` 伴随文件、已有输出或覆盖输入都会在打开 family 前失败关闭。发布后的不可变
 cache family 及其副本不得作为该工具输入。
 
-[`compose_standalone_pa.lua`](compose_standalone_pa.lua)实现
+`compose_standalone_pa.lua`实现
 `OUTPUT = BASE + sum(COEFFICIENT * RESPONSE)`。输入只接受 `surface=none` 的 standalone `.pa`；每项响应采用
 `PATH.pa,COEFFICIENT`，路径可含逗号，因为最后一个逗号才是分隔符。工具先用官方 `pa:copy` 复制 base，随后验证
 每个响应的尺寸、网格、对称性和 potential type。SIMION 2020 没有已记录的“另一 PA 数组整体相加”API，因此

@@ -200,13 +200,14 @@ python -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.simion_event_anal
 ## 飞行与求根入口
 
 所有入口从已审计 run 消费冻结合同、源与 PA 身份；参数说明直接查看对应脚本的 `param` 定义。
-以下入口具有不同资格，不能互相替代。
+以下入口具有不同资格，不能互相替代。仅以代码格式出现而没有链接的名称尚未随当前 Git 修订发布，
+不能作为当前可调用入口。
 
 | 任务 | 受管入口 | 结果范围 |
 |---|---|---|
 | N=1 完整中心事件链 | [run_three_component_center_flight.ps1](run_three_component_center_flight.ps1) | 单中心原型事件诊断 |
 | P1/P2 或 S1/S2/P1/P2 有限场试点 | [run_two_prism_trial.ps1](run_two_prism_trial.ps1) | 四残差与真实回程观测 |
-| 新中心八条对称扰动及审计 | [run_downstream_central_difference_campaign.ps1](run_downstream_central_difference_campaign.ps1) | 同一冻结问题的局部 Jacobian |
+| 新中心八条对称扰动及审计 | `run_downstream_central_difference_campaign.ps1` | 同一冻结问题的局部 Jacobian |
 | 只读中央差分审计 | [run_downstream_central_difference.ps1](../analysis/run_downstream_central_difference.ps1) | 定义性与导数诊断，不选择步长 |
 | 实际步进下降审计 | [run_downstream_bounded_step.ps1](../analysis/run_downstream_bounded_step.ps1) | 对照真实与预测下降，不授予工作点 |
 | 首棱镜隔离诊断 | [run_three_component_first_prism_flight.ps1](run_three_component_first_prism_flight.ps1) | 首棱镜接口 |
@@ -230,7 +231,7 @@ P1/P2 始终保持注入态，trial runner 对棱镜提取态及切换时刻参�
 加速器有 `static`、仅 N=1 的 `initial_exit_triggered_single_center` 和 `fixed_global_time` 三种互斥模式。
 固定时钟必须通过 `-AcceleratorPulseSchedulePath` 消费冻结收据，在共同 `tob=0` 的 `ion_time_of_flight`
 上切换 ID 1--9；`tstep_adjust` 落到计划边界，事件记录实际与计划时刻。禁止用裸时间参数替代身份收据。
-[run_freeze_accelerator_pulse_schedule.ps1](../analysis/run_freeze_accelerator_pulse_schedule.ps1)目前仅能冻结
+`run_freeze_accelerator_pulse_schedule.ps1`目前仅能冻结
 成功 N=1 首出口为 `single_center_diagnostic__not_a_bunch_schedule`。它不提供完整束团的最后安全出口与 guard。
 
 `sim_segment_global=1`用于覆盖 PA 外终态；仍须逐粒子对账、唯一成功终止和原始日志完整性。
@@ -256,7 +257,7 @@ mirror-cycle-counter 伴随文件；实际源必须与冻结 Fly2 字节一致�
 `instance_adjust` 只在合同从重叠区导出的半开责任区内接管；portal 真空穿越、非 portal 不穿越、电势/法向场、
 事件拓扑和固定粒子轨迹必须分别验证。当前中心接口证据不能替代束团包络或第三档网格，每档须重新求中心根。
 
-[analyzer_local_z_compression_plan.py](../analysis/analyzer_local_z_compression_plan.py)是只读规划器：
+`analyzer_local_z_compression_plan.py`是只读规划器：
 
 ```powershell
 python -m projects.parallel_mirror_dual_stripe_mr_tof.analysis.analyzer_local_z_compression_plan `
@@ -270,7 +271,7 @@ B/C 需要新的三局域实例合同。名义轴线真空不等于整面真空�
 
 ## 缓存、短路径与发布
 
-PA-family 与 working-point 缓存分开。[local_operating_pa_cache.py](../analysis/local_operating_pa_cache.py)
+PA-family 与 working-point 缓存分开。`local_operating_pa_cache.py`
 把五个 operating PA0 接入公共缓存，身份绑定基准 PA0、响应、实测归一化、完整四电压及公共合成实现。
 命中只物化私有可写 PA0；缺失按区流式合成后发布，每区临时响应副本在输出哈希后删除。
 IOB、Fly2 和运行配置每 run 重新装配；相同文件名不构成缓存命中。
@@ -288,5 +289,5 @@ IOB、Fly2 和运行配置每 run 重新装配；相同文件名不构成缓存�
 ## 历史与来源
 
 旧几何审查、r50 首次自然命中、棱镜切换、局域网格试探和逐轮 Jacobian 记录统一见
-[整治前两页原文快照](../docs/history/20260911__project-and-simion-status-freeze.md)。
+整治前两页原文快照候选 `20260911__project-and-simion-status-freeze.md`；该快照尚未随当前 Git 修订发布。
 官方 API 用法查[SIMION 参考](../../../docs/SIMION_REFERENCE.md)；执行结果只从本次受管 manifest 与日志读取。
