@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import csv
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from common.contracts.file_identity import file_sha256
 from projects.dual_cone_tandem_quadrupole_ion_interface.simion.geometry import (
@@ -20,6 +23,10 @@ from projects.dual_cone_tandem_quadrupole_ion_interface.simion.prepare import (
 from projects.dual_cone_tandem_quadrupole_ion_interface.analysis.export_uniform_rear_gas_runtime import (
     export_uniform_runtime,
 )
+from projects.dual_cone_tandem_quadrupole_ion_interface.analysis.plot_simion_trajectory_projection import (
+    axial_reach_profile,
+    main as plot_trajectory_projection,
+)
 
 
 PROJECT = Path(__file__).resolve().parents[1]
@@ -35,6 +42,61 @@ def load(path: Path) -> dict:
 
 
 class SimionGeometryTests(unittest.TestCase):
+    def test_default_diagnostic_axial_reach_counts_unique_ions(self) -> None:
+        tracks = {
+            1: ([-1.0, 2.0, 6.0], [0.0, 0.1, 0.2]),
+            2: ([-1.0, 2.0, 4.0, 1.0], [0.0, 0.2, 0.3, 0.1]),
+            3: ([-1.0, 2.0, 6.0], [0.0, 0.1, 0.2]),
+        }
+        edges, counts = axial_reach_profile(tracks, -2.0, 8.0)
+        self.assertEqual(edges, [-2.0, 4.0, 6.0, 8.0])
+        self.assertEqual(counts, [3, 2, 0])
+
+    def test_axial_reach_rejects_reversed_or_nonfinite_limits(self) -> None:
+        with self.assertRaisesRegex(ValueError, "must exceed"):
+            axial_reach_profile({}, 1.0, 1.0)
+        with self.assertRaisesRegex(ValueError, "finite"):
+            axial_reach_profile({}, float("nan"), 1.0)
+
+    def test_default_diagnostic_renders_three_panel_png(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            trajectory = root / "trajectory.csv"
+            final_state = root / "final.csv"
+            output = root / "diagnostic.png"
+            with trajectory.open("w", encoding="utf-8", newline="") as stream:
+                writer = csv.DictWriter(
+                    stream, fieldnames=("ion_number", "x_mm", "y_mm", "z_mm")
+                )
+                writer.writeheader()
+                for ion, device_z in ((1, -1.0), (1, 120.0), (2, -1.0), (2, 10.0)):
+                    writer.writerow(
+                        {
+                            "ion_number": ion,
+                            "x_mm": 25.5,
+                            "y_mm": 25.5,
+                            "z_mm": device_z + 2.0,
+                        }
+                    )
+            with final_state.open("w", encoding="utf-8", newline="") as stream:
+                writer = csv.DictWriter(stream, fieldnames=("ion_number", "splat"))
+                writer.writeheader()
+                writer.writerows(
+                    ({"ion_number": 1, "splat": 1}, {"ion_number": 2, "splat": 3})
+                )
+            argv = [
+                "plot_simion_trajectory_projection.py",
+                "--trajectory",
+                str(trajectory),
+                "--final-state",
+                str(final_state),
+                "--output",
+                str(output),
+            ]
+            with mock.patch.object(sys, "argv", argv):
+                self.assertEqual(plot_trajectory_projection(), 0)
+            self.assertGreater(output.stat().st_size, 10_000)
+
     def test_gem_uses_shared_rod_renderer_and_distinct_namespaces(self) -> None:
         gem = render_gem(load(DEFAULT_RESOLVED), load(DEFAULT_NUMERICS))
         for electrode in (1, 2, 3, 11, 12, 21, 22):

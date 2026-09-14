@@ -19,7 +19,9 @@ projects\dual_cone_tandem_quadrupole_ion_interface\workflows\gas_assisted_transp
 ```
 
 一条命令会复用/生成 PA、编译受控 Lua 气体场、冻结官方 SDS、构建单实例 IOB、执行真实 Fly，
-并输出 `prototype_run_report.json`、逐点轨迹、粒子末态和 `trajectory_rz_projection.png`。`100 m/s` 是明确可替换的规定参数，
+并输出 `prototype_run_report.json`、逐点轨迹、粒子末态和默认诊断图 `trajectory_rz_projection.png`。
+该图无需在合同中另行声明，固定包含全程径向轨迹、下游局部轨迹和“到达至少该轴向位置的唯一离子数”三幅子图。
+第三幅按每个离子的最大采样 `z` 计数，不把回退轨迹或密集采样重复计为多个粒子。`100 m/s` 是明确可替换的规定参数，
 不是 CFD 或实测结果。
 
 ## 当前可执行链
