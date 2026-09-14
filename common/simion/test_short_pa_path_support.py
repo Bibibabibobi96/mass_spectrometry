@@ -17,6 +17,38 @@ HELPER = Path(__file__).with_name("short_pa_path_support.ps1")
 
 @unittest.skipUnless(os.name == "nt" and shutil.which("pwsh"), "Windows PowerShell test")
 class ShortPaPathSupportTest(unittest.TestCase):
+    def test_seed_placeholder_cleanup_is_exact_and_retains_seed_iob(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "8_instance_seed.iob").write_bytes(b"seed")
+            for index in range(1, 4):
+                (root / f"iob_seed_placeholder_{index:02d}.pa0").write_bytes(
+                    bytes([index]) * index
+                )
+            unrelated = root / "iob_input_analyzer.pa"
+            unrelated.write_bytes(b"operating")
+            script = r"""
+. $env:PA_HELPER
+$result=Remove-IobSeedPlaceholderCompanions -Directory $env:PA_DIRECTORY -Count 3
+$result|ConvertTo-Json -Compress
+"""
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", script],
+                cwd=HELPER.parent,
+                check=True,
+                capture_output=True,
+                text=True,
+                env={**os.environ, "PA_HELPER": str(HELPER), "PA_DIRECTORY": str(root)},
+                timeout=30,
+            )
+            result = json.loads(completed.stdout.strip())
+            self.assertEqual(result["removed_count"], 3)
+            self.assertEqual(result["removed_bytes"], 6)
+            self.assertTrue(result["retained_seed_iob"])
+            self.assertTrue((root / "8_instance_seed.iob").is_file())
+            self.assertEqual(unrelated.read_bytes(), b"operating")
+            self.assertFalse(any(root.glob("iob_seed_placeholder_*.pa0")))
+
     def test_frozen_identity_is_checked_and_individual_copy_is_unregistered(self) -> None:
         root = Path(tempfile.mkdtemp(prefix="simion_short_pa_identity_"))
         source = root / "source.pa"
@@ -113,6 +145,91 @@ New-ShortPaCopy -Source $env:PA_SOURCE -Destination $env:PA_DESTINATION|Out-Null
                 completed.stdout + completed.stderr,
             )
             self.assertFalse(destination.exists())
+        finally:
+            shutil.rmtree(root, ignore_errors=False)
+
+    def test_large_pa_uses_verified_write_through_stream_copy(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="simion_unbuffered_pa_"))
+        source = root / "source.pa"
+        destination = root / "copy.pa"
+        payload = bytes(range(256)) * (9 * 1024 * 1024 // 256)
+        source.write_bytes(payload)
+        expected = hashlib.sha256(payload).hexdigest()
+        script = r"""
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+. $env:PA_HELPER
+$copy=New-ShortPaCopy -Source $env:PA_SOURCE -Destination $env:PA_DESTINATION `
+  -ExpectedBytes ([int64]$env:PA_EXPECTED_BYTES) -ExpectedSha256 $env:PA_EXPECTED_SHA256
+$result=[pscustomobject]@{
+  hash=(Get-FileHash -LiteralPath $copy -Algorithm SHA256).Hash
+  staging_count=@(Get-ChildItem -LiteralPath (Split-Path -Parent $copy) -Directory -Filter '.pa_copy_*').Count
+}
+Remove-ShortPaCopy -Path $copy
+$result|ConvertTo-Json -Compress
+"""
+        environment = os.environ.copy()
+        environment.update(
+            PA_HELPER=str(HELPER), PA_SOURCE=str(source),
+            PA_DESTINATION=str(destination), PA_EXPECTED_BYTES=str(len(payload)),
+            PA_EXPECTED_SHA256=expected,
+        )
+        try:
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", script],
+                cwd=HELPER.parent, check=True, capture_output=True, text=True,
+                encoding="utf-8", errors="replace", env=environment, timeout=60,
+            )
+            result = json.loads(completed.stdout.strip().splitlines()[-1])
+            self.assertEqual(result["hash"].lower(), expected)
+            self.assertEqual(result["staging_count"], 0)
+            self.assertFalse(destination.exists())
+        finally:
+            shutil.rmtree(root, ignore_errors=False)
+
+    def test_source_is_write_locked_for_disposable_copy_lifetime(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="simion_pa_source_guard_"))
+        source = root / "source.pa"
+        destination = root / "copy.pa"
+        source.write_bytes(b"immutable-source")
+        script = r"""
+Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop'
+. $env:PA_HELPER
+$copy=New-ShortPaCopy -Source $env:PA_SOURCE -Destination $env:PA_DESTINATION
+$write_blocked=$false
+try {
+  $writer=[IO.File]::Open($env:PA_SOURCE,[IO.FileMode]::Open,[IO.FileAccess]::Write,[IO.FileShare]::ReadWrite)
+  $writer.Dispose()
+} catch [IO.IOException] {$write_blocked=$true}
+Remove-ShortPaCopy -Path $copy
+$writer=[IO.File]::Open($env:PA_SOURCE,[IO.FileMode]::Open,[IO.FileAccess]::Write,[IO.FileShare]::ReadWrite)
+$writer.Dispose()
+[pscustomobject]@{
+  write_blocked_while_registered=$write_blocked
+  destination_removed=-not(Test-Path -LiteralPath $copy)
+}|ConvertTo-Json -Compress
+"""
+        try:
+            completed = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", script],
+                cwd=HELPER.parent,
+                check=True,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                env={
+                    **os.environ,
+                    "PA_HELPER": str(HELPER),
+                    "PA_SOURCE": str(source),
+                    "PA_DESTINATION": str(destination),
+                },
+                timeout=30,
+            )
+            result = json.loads(completed.stdout.strip().splitlines()[-1])
+            self.assertTrue(result["write_blocked_while_registered"])
+            self.assertTrue(result["destination_removed"])
         finally:
             shutil.rmtree(root, ignore_errors=False)
 

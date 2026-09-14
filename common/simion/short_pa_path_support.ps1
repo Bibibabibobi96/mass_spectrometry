@@ -1,6 +1,37 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $script:ShortPaCopies=@{}
+$script:ShortPaUnbufferedThresholdBytes=8MB
+
+function Copy-StandalonePaBytes {
+  param(
+    [Parameter(Mandatory)][IO.FileStream]$SourceStream,
+    [Parameter(Mandatory)][string]$Destination,
+    [Parameter(Mandatory)][int64]$Length
+  )
+  $bufferSize=if($Length-ge$script:ShortPaUnbufferedThresholdBytes){8MB}else{1MB}
+  $destinationStream=[IO.FileStream]::new(
+    $Destination,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None,
+    $bufferSize,([IO.FileOptions]::SequentialScan-bor[IO.FileOptions]::WriteThrough)
+  )
+  try{
+    $SourceStream.Position=0
+    $SourceStream.CopyTo($destinationStream,$bufferSize)
+    $destinationStream.Flush($true)
+  }finally{$destinationStream.Dispose()}
+}
+
+function Get-OpenPaStreamSha256 {
+  param([Parameter(Mandatory)][IO.FileStream]$Stream)
+  $hash=[Security.Cryptography.SHA256]::Create()
+  try{
+    $Stream.Position=0
+    ([BitConverter]::ToString($hash.ComputeHash($Stream))).Replace('-','')
+  }finally{
+    $Stream.Position=0
+    $hash.Dispose()
+  }
+}
 
 function New-ShortPaCopy {
   <#
@@ -33,17 +64,25 @@ function New-ShortPaCopy {
   if(-not(Test-Path -LiteralPath $parent -PathType Container)){
     New-Item -ItemType Directory -Path $parent|Out-Null
   }
-  $sourceItem=Get-Item -LiteralPath $sourcePath -Force
-  $sourceLength=[int64]$sourceItem.Length
-  $sourceHash=(Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash
+  # Keep a no-write/no-delete sharing handle open for the complete lifetime of
+  # the disposable copy.  This proves that a cache payload cannot be changed
+  # by another solver or maintenance process between preflight and cleanup.
+  $sourceGuard=[IO.File]::Open(
+    $sourcePath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read
+  )
+  $sourceLength=[int64]$sourceGuard.Length
+  $sourceHash=Get-OpenPaStreamSha256 -Stream $sourceGuard
   if($ExpectedBytes-ge 0 -and $sourceLength-ne$ExpectedBytes){
+    $sourceGuard.Dispose()
     throw "Short PA source byte length differs from its frozen identity: $sourcePath"
   }
   if(-not[string]::IsNullOrWhiteSpace($ExpectedSha256)){
     if($ExpectedSha256-notmatch '^[A-Fa-f0-9]{64}$'){
+      $sourceGuard.Dispose()
       throw 'Expected short PA source SHA256 is invalid.'
     }
     if($sourceHash-ne$ExpectedSha256){
+      $sourceGuard.Dispose()
       throw "Short PA source SHA256 differs from its frozen identity: $sourcePath"
     }
   }
@@ -56,26 +95,36 @@ function New-ShortPaCopy {
         [IO.File]::SetAttributes($destinationPath,$attributes-band(-bnot[IO.FileAttributes]::ReadOnly))
         [IO.File]::Delete($destinationPath)
       }
-      [IO.File]::Copy($sourcePath,$destinationPath,$false)
+      Copy-StandalonePaBytes -SourceStream $sourceGuard -Destination $destinationPath -Length $sourceLength
       $destinationAttributes=[IO.File]::GetAttributes($destinationPath)
       [IO.File]::SetAttributes($destinationPath,$destinationAttributes-band(-bnot[IO.FileAttributes]::ReadOnly))
+      # File.Copy closes its managed handle synchronously, but large PA copies
+      # can still sit behind a filesystem/filter-driver write cache.  Force the
+      # completed standalone copy through that boundary before hashing it;
+      # otherwise a byte-equal source can intermittently compare unequal in a
+      # long sequence of several-hundred-megabyte PA projections.
+      $flushStream=[IO.File]::Open(
+        $destinationPath,[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::Read
+      )
+      try{$flushStream.Flush($true)}finally{$flushStream.Dispose()}
       $destinationItem=Get-Item -LiteralPath $destinationPath -Force
       $destinationHash=(Get-FileHash -LiteralPath $destinationPath -Algorithm SHA256).Hash
-      $sourceItemAfter=Get-Item -LiteralPath $sourcePath -Force
-      $sourceHashAfter=(Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash
+      $sourceLengthAfter=[int64]$sourceGuard.Length
+      $sourceHashAfter=Get-OpenPaStreamSha256 -Stream $sourceGuard
       if([int64]$destinationItem.Length-eq$sourceLength -and
-         [int64]$sourceItemAfter.Length-eq$sourceLength -and
+         $sourceLengthAfter-eq$sourceLength -and
          $destinationHash-eq$sourceHash -and $sourceHashAfter-eq$sourceHash){
         $verified=$true
         break
       }
-      $lastFailure="attempt=$attempt source_bytes=$($sourceItemAfter.Length) destination_bytes=$($destinationItem.Length) source_stable=$($sourceHashAfter-eq$sourceHash) destination_matches=$($destinationHash-eq$sourceHash)"
+      $lastFailure="attempt=$attempt source_bytes=$sourceLengthAfter destination_bytes=$($destinationItem.Length) source_stable=$($sourceHashAfter-eq$sourceHash) destination_matches=$($destinationHash-eq$sourceHash) source_sha256=$sourceHash destination_sha256=$destinationHash"
       if($attempt-lt$VerificationAttempts){Start-Sleep -Milliseconds 200}
     }
     if(-not$verified){
       throw "Short PA copy verification failed after $VerificationAttempts attempts: $destinationPath ($lastFailure)"
     }
   } catch {
+    $sourceGuard.Dispose()
     if(Test-Path -LiteralPath $destinationPath -PathType Leaf){
       $attributes=[IO.File]::GetAttributes($destinationPath)
       [IO.File]::SetAttributes($destinationPath,$attributes-band(-bnot[IO.FileAttributes]::ReadOnly))
@@ -86,6 +135,7 @@ function New-ShortPaCopy {
   $script:ShortPaCopies[$destinationPath]=[pscustomobject]@{
     source=$sourcePath
     source_sha256=$sourceHash
+    source_guard=$sourceGuard
   }
   $destinationPath
 }
@@ -107,13 +157,17 @@ function Remove-ShortPaCopy {
       [IO.File]::Delete($destination)
     }
   } finally {
-    if(Test-Path -LiteralPath $record.source -PathType Leaf){
-      $sourceHashAfter=(Get-FileHash -LiteralPath $record.source -Algorithm SHA256).Hash
-      if($sourceHashAfter-ne$record.source_sha256){
-        throw "Short PA source changed while a disposable copy was in use: $($record.source)"
+    try {
+      if(Test-Path -LiteralPath $record.source -PathType Leaf){
+        $sourceHashAfter=Get-OpenPaStreamSha256 -Stream $record.source_guard
+        if($sourceHashAfter-ne$record.source_sha256){
+          throw "Short PA source changed while a disposable copy was in use: $($record.source)"
+        }
       }
+    } finally {
+      $record.source_guard.Dispose()
+      $script:ShortPaCopies.Remove($destination)
     }
-    $script:ShortPaCopies.Remove($destination)
   }
 }
 
@@ -155,6 +209,46 @@ function Remove-PrivatePaFamilyDirectory {
   }
   if(Test-Path -LiteralPath $directory -PathType Container){
     Remove-Item -LiteralPath $directory -Recurse -Force
+  }
+}
+
+function Remove-IobSeedPlaceholderCompanions {
+  <#
+    Remove only the canonical PA companions that SIMION needs while loading
+    an IOB instance seed.  A saved IOB contains the replacement PA filenames,
+    so callers invoke this only after inspecting both the execution-path and
+    relocated IOB.  The seed IOB itself is retained as provenance.
+  #>
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][string]$Directory,
+    [ValidateRange(1,10)][int]$Count
+  )
+  $resolvedDirectory=(Resolve-Path -LiteralPath $Directory).Path
+  $removed=@()
+  for($index=1;$index-le$Count;$index++){
+    $name='iob_seed_placeholder_{0:D2}.pa0'-f$index
+    $path=Join-Path $resolvedDirectory $name
+    if(-not(Test-Path -LiteralPath $path -PathType Leaf)){
+      throw "IOB seed placeholder companion is missing before cleanup: $path"
+    }
+    $item=Get-Item -LiteralPath $path -Force
+    $removed+=[pscustomobject]@{name=$name;bytes=[int64]$item.Length}
+  }
+  foreach($record in $removed){
+    $path=Join-Path $resolvedDirectory $record.name
+    $attributes=[IO.File]::GetAttributes($path)
+    [IO.File]::SetAttributes($path,$attributes-band(-bnot[IO.FileAttributes]::ReadOnly))
+    [IO.File]::Delete($path)
+  }
+  foreach($record in $removed){
+    $path=Join-Path $resolvedDirectory $record.name
+    if(Test-Path -LiteralPath $path){throw "IOB seed placeholder cleanup did not remove: $path"}
+  }
+  [pscustomobject]@{
+    removed_count=$removed.Count
+    removed_bytes=[int64](@($removed|ForEach-Object{$_.bytes})|Measure-Object -Sum).Sum
+    retained_seed_iob=$true
   }
 }
 

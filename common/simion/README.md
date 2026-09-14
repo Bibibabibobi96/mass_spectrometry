@@ -9,7 +9,7 @@
 | 任务 | 入口 |
 |---|---|
 | 序列化几何、检查孔拓扑 | [几何与 Workbench](#几何与-workbench) |
-| 缓存、物化完整 PA family | [PA 缓存与工作点](#pa-缓存与工作点) |
+| 缓存 PA family、导出 standalone 工作点 | [PA 缓存与工作点](#pa-缓存与工作点) |
 | 长 PA 输入与缓存写隔离 | 先读[跨项目边界](../../docs/SIMION_REFERENCE.md#长pa输入路径)，再读 [API 与证据](#长路径输入-api与证据) |
 | 并发、资源画像及中断续算 | [调度与恢复](#调度与恢复) |
 | 查旧 Fly 入口审计 | [只读历史入口](PRODUCTION_FLY_AUDIT.md) |
@@ -40,8 +40,10 @@ oaTOF、single-flight或具体电极编号。
 [`pa_family_cache.py`](pa_family_cache.py)提供完整静电PA-family的内容寻址复用：调用方必须给出完整的
 数值身份（resolved geometry、GEM、basis namespace、xyz网格、网格相位、surface、SIMION可执行文件身份、
 Refine策略和构建器身份）以及精确文件清单。它只缓存并逐字节核验`.pa#`、`.pa0`和basis数组；新发布的
-generation payload和manifest同时设为文件系统只读。同一身份命中时以原子复制物化到新的run-local目录，
-并明确把私有副本恢复为可写；任一缺失、额外、哈希不同或损坏generation均失败关闭。IOB、Fast Adjust
+generation payload和manifest同时设为文件系统只读。同一身份命中时可原子复制到新的run-local目录，
+但完整 family 物化只服务字节审计、迁移或受控 build 边界，不授权供应商进程再次打开其中的 `.paN`；
+SIMION 运行必须消费构建 staging 导出的 standalone `.pa`。任一缺失、额外、哈希不同或损坏 generation
+均失败关闭。IOB、Fast Adjust
 工作点、程序和Fly2从不作为缓存几何真值：每个run必须重新装配、重新保存并在本次manifest中绑定。该层不理解
 器件、坐标或电极含义，项目仍拥有其ID和几何合同。发布过程按cache key持有短生命周期目录锁；并发发布同一
 key只允许一个写者，遗留锁失败关闭并需按artifact保留规则审计后处置，绝不由缓存代码猜测为可删除。
@@ -64,7 +66,8 @@ probe|publish|materialize --cache-root <root> --identity <identity.json> --filen
 优先级，也不把父场与局部场相加。
 [`voltageize_pa0.lua`](voltageize_pa0.lua)使用SIMION原生PA-family Fast Adjust，把调用方明确给出的
 `ID=V`稀疏电压表另存为临时工作点PA0；它不Refine、不覆盖源family，也不拥有电极分组或电压选择。
-这条公共路径适用于全局或局部PA family，可避免逐节点Lua叠加和重复建场；调用方仍须验证family identity、
+该入口只适用于新建、可写、一次性的 build staging family，禁止对已发布 cache 或其物化副本执行。
+它可避免构建期逐节点Lua叠加和重复建场；调用方仍须验证family identity、
 几何网格、实例位置和跨局部域接口。若裁剪后的局部域不含某个实体、但仍依赖它的Dirichlet边界响应，
 SIMION原生Fast Adjust会拒绝超出局部实体计数的响应；此时
 [`adjust_operating_pa_from_basis.lua`](adjust_operating_pa_from_basis.lua)从已解基准工作点只叠加调用方列出的
@@ -72,16 +75,25 @@ SIMION原生Fast Adjust会拒绝超出局部实体计数的响应；此时
 
 ### Standalone 工作点与响应合成 API
 
-以下仅以代码格式出现的工具名是尚未随当前 Git 修订发布的工作区候选，不构成当前可调用 API。
+以下公共入口仅负责 PA 表示、工作点导出与缓存，不选择项目电压，也不授予物理工作点资格。
 
-`export_fast_adjusted_standalone_pa.lua`只在可写、一次性的 build staging
+[`export_fast_adjusted_standalone_pa.lua`](export_fast_adjusted_standalone_pa.lua)只在可写、一次性的 build staging
 中使用。输入必须是原生 family controller `.pa0`、全量 `ID=V` 工作点表和一个尚不存在的 `.pa` 输出路径。
 工具用 controller 的 `electrode_numbers` 拒绝漏项和未知 ID，调用原生 `pa:fast_adjust`，再把内存中的完整工作点
 复制到全新 PA 对象。它不把 controller 另存为 `.pa0`，不 Refine，并把输出固定为 `refined=true`、
 `refinable=false`。任何 `.pa-surf` 伴随文件、已有输出或覆盖输入都会在打开 family 前失败关闭。发布后的不可变
 cache family 及其副本不得作为该工具输入。
 
-`compose_standalone_pa.lua`实现
+[`native_fast_adjust_operating_pa_cache.py`](native_fast_adjust_operating_pa_cache.py)把这条一次性 staging 导出路径
+接入内容寻址缓存，但不执行求解器。身份绑定 source family role／cache key、controller basename、完整且有序的
+solution ID 集合、每个 standalone 输出对全部 ID 的有限电压表、上述 exporter 的 SHA-256 和 SIMION 2020 PA
+格式；缺一项即失败关闭。调用方在原生 family 唯一一次 Refine 后、删除 staging 前取得确定性导出计划并运行
+exporter，再只发布 direct `.pa` 输出。底层复用 `pa_family_cache.py` 的原子发布、只读 generation 与可写私有物化；
+原生 `.pa0`／`.paN` 永不进入 operating cache，也不因 operating cache 命中而被供应商进程重新打开。现有
+[`operating_pa_cache.py`](operating_pa_cache.py) schema v2 继续专用于 standalone 基准／响应线性合成，两种身份不兼容、
+不会互相命中。
+
+[`compose_standalone_pa.lua`](compose_standalone_pa.lua)实现
 `OUTPUT = BASE + sum(COEFFICIENT * RESPONSE)`。输入只接受 `surface=none` 的 standalone `.pa`；每项响应采用
 `PATH.pa,COEFFICIENT`，路径可含逗号，因为最后一个逗号才是分隔符。工具先用官方 `pa:copy` 复制 base，随后验证
 每个响应的尺寸、网格、对称性和 potential type。SIMION 2020 没有已记录的“另一 PA 数组整体相加”API，因此
@@ -118,7 +130,7 @@ surface 拒绝与不可变缓存边界均是本仓库实现，不应表述为 SI
 
 | API | 输入与职责 |
 |---|---|
-| `New-ShortPaCopy -Source <PA> -Destination <short.pa>` | 建立目标不存在的短名独立普通副本；拒绝 `.paN` 响应成员；默认最多三次完整重复制，每次核对源复制前后与目标大小／SHA-256 |
+| `New-ShortPaCopy -Source <PA> -Destination <short.pa>` | 持有禁止写入/删除源文件的共享句柄，以 `WriteThrough` 流式建立目标不存在的短名独立普通副本；拒绝 `.paN` 响应成员；默认最多三次完整重复制，每次核对源复制前后与目标大小／SHA-256 |
 | `Remove-ShortPaCopyDirectory -Path <directory>` | 仅清理系统临时目录下匹配前缀的目录，并再次核对已登记源 SHA-256；默认前缀为 `simion_pa_links_` |
 
 短副本恢复为可写，但“改名”不能证明来源于 family 的响应已经失去 `.paN` 语义。已发布 cache 中的
@@ -141,7 +153,10 @@ family 的运行时安全证明。只有新 family 的构建 staging 可以执�
 ```
 
 第一项回归主动改写临时副本，检查长路径只读源的字节与属性未变；第二项以真实 SIMION 建立小型 family，
-在独立进程验证新对象导出的 standalone PA 节点、场、电极标志、重开行为和延迟哈希稳定。两者都不替代
+在独立进程验证新对象导出的 standalone PA 节点、场、电极标志、重开行为和延迟哈希稳定，并执行
+`family build → 两响应新对象导出 → 短路径复制 → compose → 关闭 → 延迟复核`，要求原生 family 与已发布
+standalone 响应的全部 SHA-256 均不改变。该链已在公共租约
+`common-standalone-response-writeback-regression` 下用 SIMION 2020 实跑通过。两者都不替代
 项目整机物理资格测试。
 
 ### 失败与真实复验记录
@@ -169,6 +184,10 @@ family 的运行时安全证明。只有新 family 的构建 staging 可以执�
 - `20260916_180000...r69` 至 `20260916_184000...r73`：五个局域 family 在初次构建 staging 中导出
   受同一 manifest 保护的 standalone 响应。`20260916_193000__sim__simion__mrtof-r55-standalone-flight-r76`
   仅打开 standalone 运行输入，真实飞行自然命中探测器，并通过飞行后完整 cache probe。
+- `20260916_231000__build__simion__mrtof-local-r55-detached-r85`：把全局分析器、五局域替代、加速器和
+  探测器固化为唯一八 PA 运行集合。`20260916_235000__sim__simion__mrtof-r55-detached-flight-r87` 只把该集合
+  投影为短路径副本，真实飞行与终态 manifest 均通过，TOF 与 r76 完全一致；这证明工作台重打包没有改变
+  当前中心轨迹，但不提升其工作点或性能资格。
 
 以上保留来源记录的日期和 run identity；本次文档整治未重新运行这些试验。
 

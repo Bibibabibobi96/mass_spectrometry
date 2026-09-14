@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import time
@@ -12,6 +13,7 @@ import unittest
 SIMION = Path(os.environ.get("SIMION_EXE", r"C:\Program Files\SIMION-2020\simion.exe"))
 SOLVER_AUTHORIZED = os.environ.get("SIMION_SOLVER_TEST_AUTHORIZED") == "1"
 EXPORTER = Path(__file__).with_name("export_standalone_pa.lua")
+COMPOSER = Path(__file__).with_name("compose_standalone_pa.lua")
 
 
 BUILD_LUA = r"""
@@ -149,6 +151,56 @@ class StandalonePaExportTest(unittest.TestCase):
             time.sleep(1.25)
             self.assertEqual(_family_hashes(family), family_before)
             self.assertEqual(_sha256(standalone), output_hash)
+
+    def test_exported_responses_survive_short_copy_composition_without_source_writeback(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="simion_standalone_compose_") as temporary:
+            root = Path(temporary)
+            family = root / "private_family"
+            published = root / "published"
+            short = root / "short"
+            family.mkdir()
+            published.mkdir()
+            short.mkdir()
+            builder = root / "build.lua"
+            builder.write_text(BUILD_LUA, encoding="utf-8")
+
+            self.assertIn("TOY_PA_FAMILY=PASS", self._run(builder, family).stdout)
+            family_before = _family_hashes(family)
+            exported_paths = []
+            for response_id in (1, 2):
+                destination = published / f"response_{response_id}.pa"
+                result = self._run(
+                    EXPORTER, family / f"toy.pa{response_id}", destination
+                )
+                self.assertIn("STANDALONE_PA_EXPORT=PASS", result.stdout)
+                exported_paths.append(destination)
+            published_before = {path.name: _sha256(path) for path in exported_paths}
+
+            short_base = short / "b.pa"
+            short_response = short / "r.pa"
+            shutil.copyfile(exported_paths[0], short_base)
+            shutil.copyfile(exported_paths[1], short_response)
+            composed = short / "o.pa"
+            result = self._run(
+                COMPOSER, short_base, composed, f"{short_response},0.25"
+            )
+            self.assertIn("STANDALONE_PA_COMPOSITION=PASS", result.stdout)
+            self.assertTrue(composed.is_file())
+
+            # SIMION can flush PA writes after the visible command completes.
+            # The permanent family and published standalone files must remain
+            # byte-identical after both immediate and delayed checks.
+            self.assertEqual(_family_hashes(family), family_before)
+            self.assertEqual(
+                {path.name: _sha256(path) for path in exported_paths},
+                published_before,
+            )
+            time.sleep(1.25)
+            self.assertEqual(_family_hashes(family), family_before)
+            self.assertEqual(
+                {path.name: _sha256(path) for path in exported_paths},
+                published_before,
+            )
 
     def test_rejects_surface_enhanced_family_before_open(self) -> None:
         with tempfile.TemporaryDirectory(prefix="simion_standalone_surface_reject_") as temporary:

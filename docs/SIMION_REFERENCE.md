@@ -44,7 +44,7 @@ IOB 路径写入该项目 `docs/SIMION.md` 或 `docs/PROJECT.md`。
 
 | 消费方式 | 必须使用的输入表示 | 完整性检查 |
 |---|---|---|
-| 真正 standalone 的只读 PA（不含从 family 抽出的响应成员） | 公共入口生成可写、可丢弃的短名普通 `.pa` 副本 | 复制前后源及目标大小／SHA-256一致；进程退出后核对源 |
+| 真正 standalone 的只读 PA（不含从 family 抽出的响应成员） | 公共入口持有禁止写入/删除源文件的共享句柄，并以 `WriteThrough` 流式生成可写、可丢弃的短名普通 `.pa` 副本 | 复制前后源及目标大小／SHA-256一致；进程退出后在同一源句柄上复核 |
 | 新 family 的构建、Refine 与响应生成 | 仅在一次性、可写的 build staging 中创建原生 family；发布前把每个响应复制到全新 PA 对象并保存为 standalone `.pa` | 新对象逐节点保留势、电极标志及网格元数据；独立进程重开和延迟哈希稳定 |
 | 已发布 cache 的 `.paN` 成员 | **禁止供应商进程再次打开**；运行时只消费同 generation 内已发布的 standalone 响应 | manifest 同时覆盖原生 family 和 standalone 响应；运行后完整 cache probe |
 
