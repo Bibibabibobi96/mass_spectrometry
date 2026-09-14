@@ -9,10 +9,11 @@ then publishes the comparison JSON together with the standard run trio.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 from pathlib import Path
+
+from common.contracts.file_identity import file_sha256 as _sha256
 import shutil
 import subprocess
 import sys
@@ -49,10 +50,6 @@ MODE_CAMPAIGN_IDS: dict[str, frozenset[str]] = {
     "pre-pulse": pre_pulse.CAMPAIGN_IDS,
     "full-flight": full_flight.CAMPAIGN_IDS,
 }
-
-
-def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest().upper()
 
 
 def _load_json(path: Path, label: str) -> dict[str, Any]:
@@ -173,6 +170,14 @@ def publish_aperture_comparison(
         raise FileExistsError(f"analysis run directory already exists: {run_dir}")
     inputs = _collect_input_artifacts(campaign_path=campaign_path, runs_root=runs_root, mode=mode)
     _, result_name, analyzer = MODES[mode]
+    source_paths = {
+        "publication_implementation": Path(__file__).resolve(),
+        "pre_pulse_implementation": Path(pre_pulse.__file__).resolve(),
+        "full_flight_implementation": Path(full_flight.__file__).resolve(),
+        "longitudinal_fit_implementation": REPOSITORY_ROOT / "common/analysis/longitudinal_fit.py",
+        "file_identity_implementation": REPOSITORY_ROOT / "common/contracts/file_identity.py",
+    }
+    source_hashes = {name: _sha256(path) for name, path in source_paths.items()}
     # Run the reader before creating any artifact directory: a rejected arm
     # therefore leaves no partial success-looking output behind.
     result = analyzer(campaign_path=campaign_path, runs_root=runs_root, threshold_mm=threshold_mm)
@@ -189,6 +194,13 @@ def publish_aperture_comparison(
     try:
         staging = Path(tempfile.mkdtemp(prefix=f".{run_dir.name}.pending-", dir=canonical_runs))
         result_path, summary_path, config_path = staging / "results" / result_name, staging / "summary.json", staging / "run_config.json"
+        for name, source in source_paths.items():
+            frozen = staging / "inputs" / "repository_snapshot" / source.relative_to(REPOSITORY_ROOT)
+            frozen.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, frozen)
+            if _sha256(source) != source_hashes[name] or _sha256(frozen) != source_hashes[name]:
+                raise RuntimeError(f"analysis implementation changed during publication: {name}")
+            inputs[name] = frozen
         _write_exclusive_json(result_path, result)
         relative = lambda path: os.path.relpath(path, staging).replace("\\", "/")
         _write_exclusive_json(config_path, {

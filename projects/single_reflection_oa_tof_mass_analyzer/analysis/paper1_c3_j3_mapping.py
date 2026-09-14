@@ -9,10 +9,11 @@ the same exact theory used in C2 before it can be handed to a real-PA compiler.
 from __future__ import annotations
 
 import argparse
-from hashlib import sha256
 import json
 import math
 from pathlib import Path
+
+from common.contracts.file_identity import file_sha256 as _sha256
 from typing import Any, Mapping
 
 import numpy as np
@@ -32,10 +33,6 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_ideal_t
 from projects.single_reflection_oa_tof_mass_analyzer.analysis.three_zone_theory_experiment import (
     load_campaign,
 )
-
-
-def _sha256(path: Path) -> str:
-    return sha256(path.read_bytes()).hexdigest().upper()
 
 
 def _load_object(path: Path) -> dict[str, Any]:

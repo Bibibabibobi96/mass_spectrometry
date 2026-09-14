@@ -23,6 +23,20 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.reflectron_dual_st
 )
 
 
+class ReferenceExpectationTests(unittest.TestCase):
+    def test_oa_reference_clis_keep_length_diagnostic(self) -> None:
+        from projects.single_reflection_oa_tof_mass_analyzer.analysis.oatof_oaaccelerator_coupling import _assert_expected as coupled_assert
+        from projects.single_reflection_oa_tof_mass_analyzer.analysis.reflectron_dual_stage_solver import _assert_expected as reflectron_assert
+
+        for compare in (coupled_assert, reflectron_assert):
+            with self.subTest(compare=compare), self.assertRaises(SystemExit) as caught:
+                compare({"x": [1]}, {"x": [1, 2]}, "expected_derived", abs_tol=0, rel_tol=0)
+            self.assertEqual(
+                str(caught.exception),
+                "MISMATCH expected_derived.x: sequence length differs",
+            )
+
+
 def _five_point_first(function, x: float, h: float) -> float:
     return (
         function(x - 2.0 * h)

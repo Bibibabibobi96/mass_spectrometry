@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 from pathlib import Path
 from typing import Any
 
+from common.contracts.file_identity import canonical_json_sha256
 from common.contracts.particle_physics import (
     ELECTRON_MASS_KG,
     ELECTRON_MASS_U,
@@ -31,14 +31,13 @@ MODEL_ID = "wehnelt.transverse_helical_filament.thermal_transport.v1"
 def contract_sha256(value: dict[str, Any]) -> str:
     """Return the SHA-256 of one canonical JSON contract."""
 
-    encoded = json.dumps(
-        value,
-        ensure_ascii=False,
-        allow_nan=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest().upper()
+    try:
+        return canonical_json_sha256(value)
+    except ValueError as error:
+        # Preserve this resolver's native JSON error type/message for callers.
+        if isinstance(error.__cause__, (TypeError, ValueError)):
+            raise error.__cause__ from None
+        raise
 
 
 def validate_baseline(raw: dict[str, Any]) -> dict[str, Any]:

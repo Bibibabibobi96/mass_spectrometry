@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -32,6 +33,52 @@ from projects.transverse_helical_filament_wehnelt_electron_gun.analysis.resolve_
 
 class ResolveContractTests(unittest.TestCase):
     """Preserve the current physics while rejecting ambiguous contracts."""
+
+    def test_canonical_identity_preserves_unicode_order_and_signed_zero(self) -> None:
+        value = {"z": [1, -0.0, True, None], "\u952e": "\u03bc"}
+        expected = "578AA2C3EADEF1C251ADCBF1CACCA990EB04E733C1B38C46C0F5D3512BB754B9"
+        self.assertEqual(contract_sha256(value), expected)
+        self.assertEqual(contract_sha256(dict(reversed(list(value.items())))), expected)
+
+    def test_canonical_identity_preserves_native_json_errors(self) -> None:
+        circular: dict[str, object] = {}
+        circular["self"] = circular
+        for index, value in enumerate(({"x": float("nan")}, {"x": float("inf")}, {"x": object()}, circular)):
+            with self.subTest(case=index):
+                try:
+                    json.dumps(value, ensure_ascii=False, allow_nan=False, sort_keys=True, separators=(",", ":"))
+                except (TypeError, ValueError) as expected:
+                    with self.assertRaises(type(expected)) as actual:
+                        contract_sha256(value)
+                    self.assertEqual(str(actual.exception), str(expected))
+
+    def test_resolved_source_identity_matches_tracked_contract(self) -> None:
+        tracked = load_json(PROJECT_ROOT / "config" / "resolved_model.json")
+        resolved = resolve_contract(self.baseline, self.modes, "build_only_smoke", 1)
+        self.assertEqual(resolved, tracked)
+
+    def test_resolver_runs_with_only_frozen_shared_dependencies(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            snapshot = Path(directory)
+            for relative in (
+                "analysis/resolve_contract.py", "config/baseline.json",
+                "config/numerical_modes.json", "config/resolved_model.json",
+            ):
+                destination = snapshot / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(PROJECT_ROOT / relative, destination)
+            for name in ("file_identity", "strict_json", "particle_physics"):
+                destination = snapshot / "common" / "contracts" / (name + ".py")
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(REPO_ROOT / "common" / "contracts" / (name + ".py"), destination)
+            completed = subprocess.run(
+                [sys.executable, "-m", "analysis.resolve_contract",
+                 "--baseline", "config/baseline.json", "--modes", "config/numerical_modes.json",
+                 "--mode", "build_only_smoke", "--evidence-particle-count", "1",
+                 "--check", "config/resolved_model.json"],
+                cwd=snapshot, capture_output=True, text=True, encoding="utf-8", timeout=10,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
     @classmethod
     def setUpClass(cls) -> None:

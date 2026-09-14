@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 import json
 import tempfile
+import subprocess
+import sys
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -59,8 +61,29 @@ class PublishIdealAcceptanceApertureComparisonTest(unittest.TestCase):
             run_dir = self._run_dir(root, "20260828_120000__analysis__python__aperture-pre-pulse")
             manifest = json.loads((run_dir / "run_manifest.json").read_text(encoding="utf-8"))
             result_exists = (run_dir / "results" / "ideal_acceptance_300mm_aperture_pre_pulse_comparison.json").is_file()
+            snapshot = run_dir / "inputs" / "repository_snapshot"
+            for name, relative in (
+                ("longitudinal_fit_implementation", "common/analysis/longitudinal_fit.py"),
+                ("file_identity_implementation", "common/contracts/file_identity.py"),
+            ):
+                self.assertEqual(manifest["inputs"][name]["sha256"], _sha(snapshot / relative))
+                self.assertEqual((snapshot / relative).read_bytes(),
+                                 (publisher.REPOSITORY_ROOT / relative).read_bytes())
+            # Isolated import proves the new dependency is present without the live repo.
+            probe = subprocess.run(
+                [sys.executable, "-I", "-c",
+                 "import sys; sys.path.insert(0, sys.argv[1]); "
+                 "from common.analysis.longitudinal_fit import fit_longitudinal_polynomial; "
+                 "from common.contracts.file_identity import file_sha256; "
+                 "import numpy as np; "
+                 "assert abs(fit_longitudinal_polynomial(np.arange(3.), np.arange(3.), 1).metrics['k_per_us'] - 1) < 1e-12",
+                 str(snapshot)],
+                cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=30,
+            )
+            self.assertEqual(probe.returncode, 0, probe.stderr)
+
         self.assertEqual(summary["qualification"], "DETECTOR_BLIND_SOURCE_ONLY")
-        self.assertEqual(len(manifest["inputs"]), 9)
+        self.assertEqual(len(manifest["inputs"]), 14)
         self.assertTrue(result_exists)
         self.assertFalse(manifest["formal_eligible"])
 
@@ -76,7 +99,7 @@ class PublishIdealAcceptanceApertureComparisonTest(unittest.TestCase):
                     mode="full-flight", workspace_root=root,
                 )
             manifest = json.loads((self._run_dir(root, "20260828_120100__analysis__python__aperture-full-flight") / "run_manifest.json").read_text(encoding="utf-8"))
-        self.assertEqual(len(manifest["inputs"]), 17)
+        self.assertEqual(len(manifest["inputs"]), 22)
         self.assertIn("arm_01_single_flight_manifest", manifest["inputs"])
 
     def test_reader_failure_leaves_no_published_run(self) -> None:

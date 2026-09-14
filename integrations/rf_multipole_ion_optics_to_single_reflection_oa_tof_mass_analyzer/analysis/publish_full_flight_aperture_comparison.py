@@ -643,7 +643,11 @@ def publish_full_flight_aperture_comparison(*, repo_root: Path, run_id: str, cas
     summary_path = run_dir / "summary.json"
     manifest_path = run_dir / "run_manifest.json"
     write_pending_json(request_path, {"schema_version": 1, "role": "rf_oatof_full_flight_aperture_comparison_request", "cases": [{"case_id": case_id, "run_path": str(path)} for case_id, path in sorted(normalized.items())]})
-    input_paths: dict[str, Path] = {"comparison_request": request_path, "publication_implementation": implementation}
+    input_paths: dict[str, Path] = {
+        "comparison_request": request_path, "publication_implementation": implementation,
+        "longitudinal_fit_implementation": repo_root / "common/analysis/longitudinal_fit.py",
+        "file_identity_implementation": repo_root / "common/contracts/file_identity.py",
+    }
     for index, (_, (_, _, paths)) in enumerate(sorted(analyzed.items()), start=1):
         for source_index, path in enumerate(paths, start=1):
             input_paths[f"case_{index}_source_{source_index}"] = path

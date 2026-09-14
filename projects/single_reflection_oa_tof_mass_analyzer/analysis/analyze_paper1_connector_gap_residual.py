@@ -18,6 +18,8 @@ import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
+
+from common.contracts.file_identity import file_sha256 as _sha256
 from typing import Any, Iterable
 
 import numpy as np
@@ -57,10 +59,6 @@ class GovernedSource:
     screened_count: int
     checkpoint_kind: str
     screened_id_sha256: str | None = None
-
-
-def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest().upper()
 
 
 def _load_json(path: Path) -> dict[str, Any]:

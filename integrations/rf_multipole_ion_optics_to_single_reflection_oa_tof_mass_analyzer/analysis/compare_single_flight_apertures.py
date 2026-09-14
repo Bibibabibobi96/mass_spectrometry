@@ -18,6 +18,7 @@ from matplotlib.patches import Rectangle
 import numpy as np
 import pandas as pd
 
+from common.analysis.longitudinal_fit import fit_longitudinal_polynomial
 from common.contracts.artifact_naming import validate_run_id
 from common.contracts.file_identity import file_sha256
 from common.contracts.machine_contracts import ContractError
@@ -81,30 +82,9 @@ def _polynomial_fit_diagnostics(
     random noise.
     """
 
-    coefficients = np.polyfit(z_mm, vz_mm_per_us, degree)
-    residual = vz_mm_per_us - np.polyval(coefficients, z_mm)
-    result: dict[str, Any] = {
-        "degree": degree,
-        "coefficients_descending_power": [float(value) for value in coefficients],
-        "coefficient_units_descending_power": [
-            "mm_per_us_per_mm" if power == 1 else (
-                "mm_per_us" if power == 0 else f"mm_per_us_per_mm{power}"
-            )
-            for power in range(degree, -1, -1)
-        ],
-        "residual_sample_sigma_mm_per_us": float(np.std(residual, ddof=1)),
-        "residual_rms_mm_per_us": float(np.sqrt(np.mean(np.square(residual)))),
-        "residual_max_abs_mm_per_us": float(np.max(np.abs(residual))),
-        "residual_abs_p95_mm_per_us": float(np.quantile(np.abs(residual), .95)),
-    }
-    # These named terms use exactly the position/velocity unit convention of
-    # the campaign's default affine diagnostic: z in mm and vz in mm/us.
-    result["intercept_mm_per_us"] = float(coefficients[-1])
-    result["k_per_us"] = float(coefficients[-2])
-    if degree >= 2:
-        result["quadratic_coefficient_per_mm_us"] = float(coefficients[-3])
-    if degree >= 3:
-        result["cubic_coefficient_per_mm2_us"] = float(coefficients[-4])
+    fit = fit_longitudinal_polynomial(z_mm, vz_mm_per_us, degree)
+    result = fit.metrics
+    result["residual_abs_p95_mm_per_us"] = float(np.quantile(np.abs(fit.residual_mm_per_us), .95))
     return result
 
 
@@ -1029,6 +1009,8 @@ def publish_run(repo_root: Path, run_id: str, wide_run: Path, small_run: Path) -
         "small_upstream": small_run / "inputs" / "upstream_resolved_design.json",
         "small_oatof": small_run / "inputs" / "oatof_resolved_geometry.json",
         "comparison_implementation": implementation,
+        "longitudinal_fit_implementation": repo_root / "common/analysis/longitudinal_fit.py",
+        "file_identity_implementation": repo_root / "common/contracts/file_identity.py",
         "spatial_implementation": spatial_implementation,
         "analysis_capability_catalog": capability_catalog,
         "requirements_lock": requirements_lock,

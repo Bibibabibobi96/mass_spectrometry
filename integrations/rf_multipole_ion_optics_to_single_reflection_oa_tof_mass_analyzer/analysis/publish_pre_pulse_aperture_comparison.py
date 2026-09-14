@@ -111,6 +111,8 @@ def publish_pre_pulse_aperture_comparison(
         "comparison_request": request_path,
         "publication_implementation": implementation,
         "comparison_implementation": comparison_implementation,
+        "longitudinal_fit_implementation": repo_root / "common/analysis/longitudinal_fit.py",
+        "file_identity_implementation": repo_root / "common/contracts/file_identity.py",
     }
     for index, (_, run) in enumerate(sorted(normalized_cases.items()), start=1):
         for name in pre_pulse_aperture_source_files(run):

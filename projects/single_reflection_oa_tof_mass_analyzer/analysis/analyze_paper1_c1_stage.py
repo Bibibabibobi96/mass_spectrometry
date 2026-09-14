@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 from pathlib import Path
+
+from common.contracts.file_identity import file_sha256 as _sha256
 from typing import Any
 
 
@@ -14,10 +15,6 @@ def _load(path: Path) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("C1 source assessment must be a JSON object")
     return value
-
-
-def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest().upper()
 
 
 def _summarize(path: Path) -> dict[str, Any]:

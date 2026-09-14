@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import importlib
 import json
 import tempfile
 import unittest
@@ -15,6 +16,28 @@ def _sha(path: Path) -> str:
 
 
 class IdealAcceptanceApertureCampaignTest(unittest.TestCase):
+    def test_analysis_identities_preserve_raw_bytes_and_uppercase(self) -> None:
+        modules = (
+            "analyze_ideal_acceptance_aperture_campaign",
+            "analyze_ideal_acceptance_aperture_full_flight",
+            "analyze_paper1_c1_source", "analyze_paper1_c1_stage",
+            "analyze_paper1_connector_gap_residual",
+            "publish_ideal_acceptance_aperture_comparison",
+            "paper1_c3_j3_mapping", "paper1_j2_real_field_selection",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "frozen-input.bin"
+            for name in modules:
+                module = importlib.import_module(
+                    "projects.single_reflection_oa_tof_mass_analyzer.analysis." + name
+                )
+                for payload in (b"", b"abc", b"a\r\nb\rc\n\x00\xff", b"x" * (1024 * 1024 + 1)):
+                    with self.subTest(module=name, bytes=len(payload)):
+                        path.write_bytes(payload)
+                        self.assertEqual(module._sha256(path), hashlib.sha256(payload).hexdigest().upper())
+                with self.assertRaises(FileNotFoundError):
+                    module._sha256(Path(directory) / "absent.bin")
+
     def _campaign(self, root: Path) -> Path:
         rows = []
         for realization in ("square", "cylindrical"):

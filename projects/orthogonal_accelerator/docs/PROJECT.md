@@ -15,6 +15,8 @@
 - SIMION 实现包括矩形环／屏蔽、二区／三区方圆截面、显式参数的原生 PA 构建；COMSOL 提供器件几何构建。
 - 提供者身份、API、单位、结构变体和源路径通过 `analysis/component_contract.py` 校验。
   消费者冻结其实际闭包；不能据此宣称整个 Python 环境均已脱离工作树。
+- 参考 CLI 的递归预期值比较与 OA 理论入口共用 `common/contracts/expected_values.py`；
+  容差仍由输入合同声明。共享模块仅在 CLI 比较阶段加载，器件物理 API、公式和现有诊断文本不变。
 
 ## 参数与坐标
 

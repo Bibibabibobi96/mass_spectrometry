@@ -11,9 +11,10 @@ candidate list.  The two choices can subsequently be audited on locked runs.
 from __future__ import annotations
 
 import argparse
-from hashlib import sha256
 import json
 from pathlib import Path
+
+from common.contracts.file_identity import file_sha256 as _sha256
 from typing import Any, Mapping, Sequence
 
 import numpy as np
@@ -32,10 +33,6 @@ def _load(path: Path, *, label: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError(f"{label} must be a JSON object")
     return value
-
-
-def _sha256(path: Path) -> str:
-    return sha256(path.read_bytes()).hexdigest().upper()
 
 
 def _finite_vector(value: object, *, label: str) -> np.ndarray:

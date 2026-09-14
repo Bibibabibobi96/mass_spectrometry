@@ -15,6 +15,16 @@ from projects.orthogonal_accelerator.analysis.accelerator_time_focus import (
 
 
 class AcceleratorTimeFocusTest(unittest.TestCase):
+    def test_reference_assertion_keeps_accelerator_length_diagnostic(self) -> None:
+        from projects.orthogonal_accelerator.analysis.accelerator_time_focus import _assert_expected
+
+        with self.assertRaises(SystemExit) as caught:
+            _assert_expected({"x": [1]}, {"x": [1, 2]}, "expected_derived", abs_tol=0, rel_tol=0)
+        self.assertEqual(
+            str(caught.exception),
+            "MISMATCH expected_derived.x: actual length=1 expected=2",
+        )
+
     def test_finite_interval_match_preserves_uniform_second_region(self) -> None:
         match = match_finite_phase_space_interval(
             3.0, 16.8, 1.5122728479061323, 2.2,

@@ -12,9 +12,11 @@ from __future__ import annotations
 
 import argparse
 import csv
-import hashlib
 import json
 from pathlib import Path
+
+from common.analysis.longitudinal_fit import fit_longitudinal_polynomial
+from common.contracts.file_identity import file_sha256 as _sha256
 import re
 from typing import Any
 
@@ -32,10 +34,6 @@ CHECKPOINT_COLUMNS = {
     "particle_id", "event", "z_mm", "vz_mm_per_us", "pulse_eligibility",
 }
 RESOLUTION_TIME_BASIS = "detector_time_minus_pulse_effective_time"
-
-
-def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest().upper()
 
 
 def _load_json(path: Path, label: str) -> dict[str, Any]:
@@ -137,28 +135,7 @@ def _read_pre_pulse_states(path: Path) -> tuple[np.ndarray, np.ndarray, set[int]
 def _polynomial_metrics(
     z_mm: np.ndarray, vz_mm_per_us: np.ndarray, degree: int
 ) -> dict[str, Any]:
-    coefficients = np.polyfit(z_mm, vz_mm_per_us, degree)
-    residual = vz_mm_per_us - np.polyval(coefficients, z_mm)
-    result: dict[str, Any] = {
-        "degree": degree,
-        "coefficients_descending_power": [float(value) for value in coefficients],
-        "coefficient_units_descending_power": [
-            "mm_per_us_per_mm" if power == 1 else (
-                "mm_per_us" if power == 0 else f"mm_per_us_per_mm{power}"
-            )
-            for power in range(degree, -1, -1)
-        ],
-        "residual_sample_sigma_mm_per_us": float(np.std(residual, ddof=1)),
-        "residual_rms_mm_per_us": float(np.sqrt(np.mean(residual**2))),
-        "residual_max_abs_mm_per_us": float(np.max(np.abs(residual))),
-    }
-    result["intercept_mm_per_us"] = float(coefficients[-1])
-    result["k_per_us"] = float(coefficients[-2])
-    if degree >= 2:
-        result["quadratic_coefficient_per_mm_us"] = float(coefficients[-3])
-    if degree >= 3:
-        result["cubic_coefficient_per_mm2_us"] = float(coefficients[-4])
-    return result
+    return fit_longitudinal_polynomial(z_mm, vz_mm_per_us, degree).metrics
 
 
 def _affine_metrics(z_mm: np.ndarray, vz_mm_per_us: np.ndarray) -> dict[str, Any]:

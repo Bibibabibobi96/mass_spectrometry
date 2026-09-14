@@ -19,7 +19,7 @@ import json
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping
 
 from projects.orthogonal_accelerator.analysis.two_zone_geometry import (
     TwoZoneGeometryError,
@@ -1018,53 +1018,14 @@ def derive(contract: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _assert_expected(
-    actual: Any,
-    expected: Any,
-    path: str,
-    *,
-    abs_tol: float,
-    rel_tol: float,
+    actual: Any, expected: Any, path: str, *, abs_tol: float, rel_tol: float
 ) -> None:
-    if isinstance(expected, Mapping):
-        if not isinstance(actual, Mapping):
-            raise SystemExit(f"MISMATCH {path}: actual is not a mapping")
-        for key, value in expected.items():
-            if key not in actual:
-                raise SystemExit(f"MISMATCH {path}.{key}: missing actual key")
-            _assert_expected(
-                actual[key],
-                value,
-                f"{path}.{key}",
-                abs_tol=abs_tol,
-                rel_tol=rel_tol,
-            )
-        return
-    if isinstance(expected, Sequence) and not isinstance(expected, (str, bytes)):
-        if not isinstance(actual, Sequence) or isinstance(actual, (str, bytes)):
-            raise SystemExit(f"MISMATCH {path}: actual is not a sequence")
-        if len(actual) != len(expected):
-            raise SystemExit(
-                f"MISMATCH {path}: actual length={len(actual)} expected={len(expected)}"
-            )
-        for index, (a_value, e_value) in enumerate(zip(actual, expected, strict=True)):
-            _assert_expected(
-                a_value,
-                e_value,
-                f"{path}[{index}]",
-                abs_tol=abs_tol,
-                rel_tol=rel_tol,
-            )
-        return
-    if isinstance(expected, (int, float)) and not isinstance(expected, bool):
-        if not math.isclose(
-            float(actual), float(expected), rel_tol=rel_tol, abs_tol=abs_tol
-        ):
-            raise SystemExit(
-                f"MISMATCH {path}: actual={actual!r} expected={expected!r}"
-            )
-        return
-    if actual != expected:
-        raise SystemExit(f"MISMATCH {path}: actual={actual!r} expected={expected!r}")
+    from common.contracts.expected_values import assert_expected_values
+
+    assert_expected_values(
+        actual, expected, path, abs_tol=abs_tol, rel_tol=rel_tol,
+        sequence_length_message="actual length={actual} expected={expected}",
+    )
 
 
 def run_self_test() -> None:

@@ -3,6 +3,32 @@
   "role": "repository_gate_catalog",
   "routes": [
     {
+      "stage": "longitudinal_fit_tests",
+      "dependency_profile": "locked",
+      "repository_integration_group": "regression",
+      "matches": [
+        { "exact": "common/analysis/longitudinal_fit.py", "reason": "longitudinal_fit_changed" },
+        { "exact": "common/analysis/test_longitudinal_fit.py", "reason": "longitudinal_fit_tests_changed" }
+      ],
+      "command": {
+        "runner": "python",
+        "arguments": ["-m", "unittest", "common.analysis.test_longitudinal_fit"]
+      }
+    },
+    {
+      "stage": "expected_values_tests",
+      "dependency_profile": "stdlib",
+      "repository_integration_group": "fast",
+      "matches": [
+        { "exact": "common/contracts/expected_values.py", "reason": "expected_values_changed" },
+        { "exact": "common/contracts/test_expected_values.py", "reason": "expected_values_tests_changed" }
+      ],
+      "command": {
+        "runner": "python",
+        "arguments": ["-m", "unittest", "common.contracts.test_expected_values"]
+      }
+    },
+    {
       "stage": "documentation_link_tests",
       "dependency_profile": "stdlib",
       "repository_integration_group": "fast",
@@ -382,6 +408,7 @@
       "dependency_profile": "locked",
       "repository_integration_group": "regression",
       "matches": [
+        { "exact": "common/analysis/longitudinal_fit.py", "reason": "longitudinal_fit_dependency_changed" },
         {
           "prefix": "projects/orthogonal_accelerator/",
           "reason": "orthogonal_accelerator_direct_dependency_changed"
@@ -456,6 +483,7 @@
       "repository_integration_group": "regression",
       "project_id": "orthogonal_accelerator",
       "matches": [
+        { "exact": "common/contracts/expected_values.py", "reason": "reference_comparison_dependency_changed" },
         {"prefix": "projects/orthogonal_accelerator/", "reason": "orthogonal_accelerator_changed"},
         {"exact": "common/simion/gem_primitives.py", "reason": "accelerator_geometry_dependency_changed"},
         {"exact": "projects/single_reflection_oa_tof_mass_analyzer/config/accelerator_dependency.json", "reason": "accelerator_consumer_contract_changed"},
@@ -473,6 +501,7 @@
       "repository_integration_group": "regression",
       "project_id": "single_reflection_oa_tof_mass_analyzer",
       "matches": [
+        { "exact": "common/analysis/longitudinal_fit.py", "reason": "longitudinal_fit_dependency_changed" },
         {
           "prefix": "projects/single_reflection_oa_tof_mass_analyzer/",
           "reason": "single_reflection_oa_tof_mass_analyzer_path_changed"

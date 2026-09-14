@@ -144,6 +144,15 @@ class PrePulseApertureComparisonPublicationTests(unittest.TestCase):
                 self.assertIn("case_2_results_pre_pulse_time_series_states_csv", config["inputs"])
                 self.assertIn("case_8_results_detector_blind_pulse_timing_candidate_receipt_json", config["inputs"])
                 self.assertIn("repository_snapshot", config["inputs"]["publication_implementation"])
+                for name, relative in (
+                    ("longitudinal_fit_implementation", "common/analysis/longitudinal_fit.py"),
+                    ("file_identity_implementation", "common/contracts/file_identity.py"),
+                ):
+                    frozen_path = output / "inputs" / "repository_snapshot" / relative
+                    self.assertTrue(frozen_path.is_file())
+                    self.assertEqual(file_sha256(frozen_path), file_sha256(REPO_ROOT / relative))
+                    self.assertIn(name, manifest["inputs"])
+
             finally:
                 if output.exists():
                     shutil.rmtree(output)

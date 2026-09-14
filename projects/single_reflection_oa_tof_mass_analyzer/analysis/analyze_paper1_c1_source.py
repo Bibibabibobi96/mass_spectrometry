@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 from pathlib import Path
+
+from common.contracts.file_identity import file_sha256 as _sha256
 from typing import Any
 
 import numpy as np
@@ -15,10 +16,6 @@ from projects.single_reflection_oa_tof_mass_analyzer.analysis.paper1_focusabilit
     assign_detector_blind_cohorts,
     load_frozen_pre_pulse_source,
 )
-
-
-def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest().upper()
 
 
 def _json(path: Path) -> dict[str, Any]:

@@ -16,6 +16,8 @@
 
 机器参数链为`config/baseline.json + config/numerical_modes.json → analysis/resolve_contract.py →
 config/resolved_model.json`。MATLAB只消费resolved并绑定GUI参数，不从源码、环境或旧MPH回退物理值。
+resolver 的规范 JSON 身份复用 `common/contracts/file_identity.py`；项目薄适配器保留原生 JSON 错误类型
+与消息。生成的 resolved 合同和身份不变，build-only 输入冻结已包含该公共依赖；此迁移不构成新的商业求解证据。
 实心阴极与轴向线圈源码已冻结到
 [`history/20260713__pre-transverse-wehnelt-lineages.md`](history/20260713__pre-transverse-wehnelt-lineages.md)。
 

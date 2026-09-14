@@ -96,6 +96,25 @@ class ChangedGateContractTests(unittest.TestCase):
             "rf_multipole_to_single_reflection_oatof_integration",
         } <= primitives.keys())
 
+    def test_extracted_mechanisms_keep_automatic_regression_routes(self) -> None:
+        for implementation, stage, module in (
+            ("common/contracts/expected_values.py", "expected_values_tests",
+             "common.contracts.test_expected_values"),
+            ("common/analysis/longitudinal_fit.py", "longitudinal_fit_tests",
+             "common.analysis.test_longitudinal_fit"),
+        ):
+            with self.subTest(implementation=implementation):
+                self.assertIn(stage, self.routed_stages(implementation))
+                route = next(row for row in self.routes if row["stage"] == stage)
+                self.assertIn(route["repository_integration_group"], {"fast", "regression"})
+                self.assertIn(module, route["command"]["arguments"])
+        self.assertTrue({
+            "single_reflection_oa_tof_mass_analyzer_static",
+            "rf_multipole_to_single_reflection_oatof_integration",
+        } <= self.routed_stages("common/analysis/longitudinal_fit.py").keys())
+        self.assertIn("orthogonal_accelerator_static",
+                      self.routed_stages("common/contracts/expected_values.py"))
+
     def test_integration_test_module_change_runs_only_that_module(self) -> None:
         pwsh = shutil.which("pwsh")
         if pwsh is None:
