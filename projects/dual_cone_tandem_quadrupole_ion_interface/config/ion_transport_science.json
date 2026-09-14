@@ -21,21 +21,30 @@
     "field_authority": "config/gas_field_interface.json"
   },
   "electric_field": {
+    "operating_point_basis": {
+      "frequency_range_hz": [550000.0, 590000.0],
+      "selected_nominal_frequency_hz": 570000.0,
+      "voltage_interpretation": "peak_to_ground_per_electrode_group",
+      "rf_amplitude_v_zero_to_peak_per_group": 300.0,
+      "opposed_group_voltage_v_zero_to_peak": 600.0,
+      "opposed_group_voltage_v_peak_to_peak": 1200.0,
+      "applies_to": ["stage_1", "stage_2"]
+    },
     "stage_1": {
-      "waveform": "cosine",
-      "rf_amplitude_v_zero_to_peak_per_group": 100.0,
+      "waveform": "sine",
+      "rf_amplitude_v_zero_to_peak_per_group": 300.0,
       "dc_amplitude_v_per_group": 0.0,
       "common_mode_offset_v": 0.0,
-      "frequency_hz": 1000000.0,
+      "frequency_hz": 570000.0,
       "phase_rad": 0.0,
       "electrode_group_ids": {"1": 11, "2": 12}
     },
     "stage_2": {
-      "waveform": "cosine",
-      "rf_amplitude_v_zero_to_peak_per_group": 100.0,
+      "waveform": "sine",
+      "rf_amplitude_v_zero_to_peak_per_group": 300.0,
       "dc_amplitude_v_per_group": 0.0,
       "common_mode_offset_v": 0.0,
-      "frequency_hz": 1000000.0,
+      "frequency_hz": 570000.0,
       "phase_rad": 0.0,
       "electrode_group_ids": {"1": 21, "2": 22}
     },
@@ -44,7 +53,7 @@
       "second_cone": 0.0,
       "downstream_aperture_plate": 0.0
     },
-    "status": "provisional_not_user_confirmed"
+    "status": "user_confirmed_voltage_and_frequency_range_with_nominal_midpoint"
   },
   "controls": {
     "c0_collision_free_geometry_smoke": {

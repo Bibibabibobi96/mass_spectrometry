@@ -84,6 +84,7 @@ $report=[ordered]@{
   claim_scope='n100_cylindrical_source_qualitative_prototype_only'
   trajectory_authority='SIMION'
   collision_model='SIMION official collision_sds'
+  electric_field=$science.electric_field
   gas_field=[ordered]@{
     role=$gasManifest.role
     source=$gasManifest.source

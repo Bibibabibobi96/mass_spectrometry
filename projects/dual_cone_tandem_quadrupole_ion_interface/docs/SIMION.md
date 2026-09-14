@@ -62,6 +62,10 @@ SIMION 前失败。当前 `gas_field_interface.json` 的 `current_artifact` 是 
 受许可约束的文件只进入运行目录，不复制进 Git。RF 电压计算冻结并复用
 `common/multipole/simion_rf_drive.lua`；粒子文件由 `common/simion/particle_source.py` 序列化。
 
+当前两段 RF 均为 `570 kHz` 正弦波，电极组 1/2 分别为 `+300 sin(omega t)` 与
+`-300 sin(omega t)` V；因此每组对地峰值为 `300 V`，对置组之间为 `1200 Vpp`。`570 kHz` 是用户
+给定 `550–590 kHz` 范围的标称中点，不代表频率扫描已经完成。
+
 ## 几何范围
 
 单体 PA 使用电极 `1/2` 表示两锥，`3` 表示末端孔板，`11/12` 表示椭圆杆两相，`21/22` 表示圆杆两相。设备坐标到

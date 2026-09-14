@@ -55,6 +55,19 @@ class SimionGeometryTests(unittest.TestCase):
         self.assertEqual(science["gas"]["collision_model"], "simion_official_collision_sds")
         self.assertEqual(science["gas"]["species_id"], "n2")
 
+    def test_rf_operating_point_uses_confirmed_peak_to_ground_voltage(self) -> None:
+        field = load(PROJECT / "config" / "ion_transport_science.json")["electric_field"]
+        basis = field["operating_point_basis"]
+        self.assertEqual(basis["frequency_range_hz"], [550000.0, 590000.0])
+        self.assertEqual(basis["selected_nominal_frequency_hz"], 570000.0)
+        self.assertEqual(basis["voltage_interpretation"], "peak_to_ground_per_electrode_group")
+        self.assertEqual(basis["opposed_group_voltage_v_peak_to_peak"], 1200.0)
+        for name in basis["applies_to"]:
+            stage = field[name]
+            self.assertEqual(stage["waveform"], "sine")
+            self.assertEqual(stage["frequency_hz"], 570000.0)
+            self.assertEqual(stage["rf_amplitude_v_zero_to_peak_per_group"], 300.0)
+
     def test_program_composes_shared_rf_and_official_sds_without_python_tracking(self) -> None:
         program = (PROJECT / "simion" / "programs" / "gas_assisted_transport.lua").read_text(
             encoding="utf-8"
@@ -80,6 +93,7 @@ class SimionGeometryTests(unittest.TestCase):
         self.assertIn("common\\simion\\analyze_terminal_plane.py", runner)
         self.assertIn("terminal_plane_metrics.json", runner)
         self.assertIn("downstream_aperture_plate", runner)
+        self.assertIn("electric_field=$science.electric_field", runner)
         self.assertIn("plot_simion_trajectory_projection.py", runner)
         self.assertIn("prototype_run_report.json", runner)
 
