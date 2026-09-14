@@ -71,7 +71,12 @@ L2用于显式全仓审计，纯文档提交不默认运行L2。
 
 仅审查文档结构时运行 `common/verify_documentation.ps1 -StructureOnly`：检查活动本地链接、中文与页内锚点、格式和历史归档完整性，不取得主机执行租约、不运行外部工作区卫生。默认模式与 L1 仍执行完整卫生检查并遵守租约。
 
-`.\.venv\Scripts\python.exe -m common.documentation_links --inventory-json`输出逐文件清单。既有只读历史的失效链接只诊断，新历史断链仍阻断；长文、重复段落和无入链只是人工审查提示。相对 artifact 路径允许外部载荷不在当前机器上，远程文献和科学结论需另行核验。
+`.\.venv\Scripts\python.exe -m common.documentation_links --inventory-json`输出逐文件行数、字符数与诊断。
+字符数基于UTF-8解码、换行规范化后的文本，不是token数。既有只读历史的失效链接只诊断，新历史断链仍阻断。
+长文、重复段落、无入链、表格列数不齐和空单元格是人工审查提示；合法空值不能仅凭检查器判断为遗漏。
+相对artifact路径允许外部载荷不在当前机器上，远程文献和科学结论需另行核验。
+结构PASS不证明新旧指令一致或阅读范围完整；文档升级还按[任务检索验收](REPOSITORY_ARCHITECTURE.md#按任务读取与局部检索)
+核对当前答案、必需约束和失效路径。
 
 ### artifact结构门禁
 

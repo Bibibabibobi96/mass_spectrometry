@@ -7,8 +7,9 @@
 ## 开始任务
 
 1. Agent先读[执行规则](AGENTS.md)；所有使用者按下表选择项目或集成。
-2. 读目标README和`docs/PROJECT.md`（集成为`docs/INTEGRATION.md`），确认能力、资格、限制和下一步。
-3. 修改代码前完整读[开发标准](docs/DEVELOPMENT_STANDARDS.md)；建图前读[绘图标准](docs/PLOTTING_STANDARDS.md)。
+2. 项目任务读目标README和`docs/PROJECT.md`（集成为`docs/INTEGRATION.md`），确认能力、资格、限制和下一步。
+   公共工具任务读最近的`common/<domain>/README.md`；无该说明时按下表进入对应规范，不创建占位PROJECT。
+3. 修改或审查代码按[开发标准阅读导航](docs/DEVELOPMENT_STANDARDS.md#阅读导航)读通用章节及触发专题；建图前读[绘图标准](docs/PLOTTING_STANDARDS.md)。
 4. 按任务读取对应软件操作或理论文档；只有追溯旧结论时进入history。
 5. 创建文件、运行或归档前查[生命周期](docs/LIFECYCLE.md)，执行与提交前查[操作指南](docs/OPERATIONS.md)。
 
@@ -42,6 +43,7 @@
 | run、artifact、缓存、归档、保留 | [生命周期](docs/LIFECYCLE.md) |
 | 准备环境、启动工具、执行验证、提交 | [操作指南](docs/OPERATIONS.md) |
 | 编码、配置分层、合同、进程和测试 | [开发标准](docs/DEVELOPMENT_STANDARDS.md) |
+| 维护仓库门禁或文档检查器 | [分层门禁](docs/OPERATIONS.md#分层门禁)、[文档检查与验收](docs/OPERATIONS.md#文档结构检查)，再查对应实现与邻近测试 |
 | 粒子样本、收敛、统计和跨求解器比较 | [验证方法](docs/VALIDATION_METHODS.md) |
 | 科学绘图与图形证据 | [绘图标准](docs/PLOTTING_STANDARDS.md) |
 | COMSOL API与故障定位 | [API参考](docs/COMSOL_API.md)、[排错](docs/COMSOL_DEBUGGING.md)、[官方资料](official_docs/README.md) |

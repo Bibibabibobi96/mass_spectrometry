@@ -397,46 +397,15 @@ $$
 
 ## 14. 最低验证要求
 
-### 14.1 Source
+本节保留既有导航位置；实验门槛只由 [Paper 1 研究与证据计划](../publication/paper_1_jasms/validation_and_evidence_plan.md)
+维护。本文第1–12节定义数学对象与适用域，第13节提出可证伪假设，不能代替实验验收。
 
-- 共同pre-pulse物理时刻；
-- detector-blind训练、验证和locked test；
-- 粒子ID、cohort hash、单位、坐标和尺度冻结；
-- 至少两种独立source operating condition；
-- 条件均值、异方差、残差尾部和bootstrap不确定度；
-- 不用detector结果选择条件模型阶数。
-
-### 14.2 导数与线性代数
-
-- 到达时间`g`至少两条独立路径；
-- `∂g/∂θ`的步长平台或独立实现；
-- null-space与原约束残差一致；
-- projector与直接最小二乘/QP一致；
-- rank和模态对预注册尺度、容差及bootstrap的稳定性；
-- 直接轨迹确定局部信赖域。
-
-### 14.3 公平架构比较
-
-同一冻结源、粒子ID和预算下分别充分优化：
-
-```text
-two-zone baseline
-three-zone design
-source-weighted constrained design
-unweighted derivative-closure design
-```
-
-冻结几何/电压上限、detector、命中规则、峰算法、优化预算和随机种子策略。不得在affine源上优化三区，
-再直接换observed源并把崩溃解释为三区原理失效。
-
-### 14.4 三维与统计
-
-- ideal segmented、真实轴线场和3D SIMION；
-- 关键COMSOL或独立轨迹实现；
-- 至少三个质量点；
-- N≥1000 locked test，优选N≥5000或独立重复；
-- direct FWHM、分位宽、尾部、主峰比例、命中率和bootstrap区间；
-- 基本电压、几何和数值敏感性。
+| 要验证的内容 | 唯一要求 |
+|---|---|
+| Source、共同pre-pulse状态、盲分区与样本量 | [WP1](../publication/paper_1_jasms/validation_and_evidence_plan.md#wp1冻结真实条件源) |
+| 独立导数、null-space、projector/QP、秩与信赖域 | [WP2](../publication/paper_1_jasms/validation_and_evidence_plan.md#wp2到达时间灵敏度与focusability实现) |
+| 同源同预算的充分重优化 | [WP3](../publication/paper_1_jasms/validation_and_evidence_plan.md#wp3公平架构与目标比较) |
+| 三维、独立求解路径、质量点与统计 | [WP4](../publication/paper_1_jasms/validation_and_evidence_plan.md#wp4模型层级和求解器独立性)、[WP6](../publication/paper_1_jasms/validation_and_evidence_plan.md#wp6统计和报告) |
 
 ## 15. 设计决策图
 

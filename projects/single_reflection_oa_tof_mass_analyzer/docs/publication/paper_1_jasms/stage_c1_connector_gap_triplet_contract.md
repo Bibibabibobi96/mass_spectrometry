@@ -108,7 +108,6 @@ detector 结果选择边界或 salt。v2 仍只支持 source-side C1 结论；�
 
 ## 当前状态
 
-C1-v1 的分区不足结论保留；C1-v2 的独立源侧重分析已完成，来源为
-[机制报告中的源侧收据](connector_gap_working_point_mechanism_20260827.md)。
-该完成状态仅覆盖本合同的探测器盲残差比较；历史或重放输入保持 `DEVELOPMENT_ONLY`，不能替代
-[新的前瞻 C1 输入门槛](stage_c1_source_contract.md)。不再把 v2 发布列为未完成任务。
+完成状态与资格只查[证据矩阵](evidence_matrix.md#基础与阶段)。C1-v1分区不足与C1-v2源侧重分析的
+来源见[机制报告中的源侧收据](connector_gap_working_point_mechanism_20260827.md)。
+本合同只定义探测器盲残差比较；历史或重放输入不能替代[新的前瞻C1输入门槛](stage_c1_source_contract.md)。

@@ -1,6 +1,6 @@
 # Paper 1 阶段 1：探测器盲源合同
 
-> `STATUS: DEVELOPMENT_ONLY / PROSPECTIVE_C1_REBUILD_REQUIRED`
+当前执行资格与下一道门槛只查[证据矩阵](evidence_matrix.md#基础与阶段)；本页维护阶段定义与进入条件。
 
 ## 术语（本页及后续报告的唯一含义）
 
@@ -19,9 +19,9 @@ validation选择。阶段 1 分析还会报告条件分箱协方差、残差主�
 
 ## 当前资格与重新进入条件
 
-历史同步筛查证明两种源工况曾能被探测器盲地读取并建立稳定条件模型；该阶段结果现在仅为
-`DEVELOPMENT_ONLY`，不能作为新 J2/J3 的锁定输入。历史输入拒绝、时序修复、完整母群损失、模型选择
-与关闭经过见[冻结状态沿革](../../history/20260911__publication-status-consolidation.md#stage_c1_source_contract)。
+历史输入拒绝、时序修复、完整母群损失、模型选择与关闭经过见
+[冻结状态沿革](../../history/20260911__publication-status-consolidation.md#stage_c1_source_contract)。
+历史或重放输入不能作为新 J2/J3 的锁定输入。
 
 新的阶段 1 只有在两份独立母cohort的 source assessment 均显式标为`PROSPECTIVE`时才可为`PASS_CONTINUE`；
 任何历史或重放输入都会得到`INCONCLUSIVE_REVISE`。51.2 mm 终端八极杆源工况的新母群应首先完成该重建，再作为新的受约束源加权聚焦预测

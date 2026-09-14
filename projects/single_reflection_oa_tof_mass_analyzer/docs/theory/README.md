@@ -6,27 +6,21 @@
 项目参数、状态和正式结果仍以`../../config/`、[`PROJECT.md`](../PROJECT.md)
 和受manifest管理的运行证据为准。
 
-## 阅读顺序
+## 按任务选择阅读路径
 
-### 统一框架
+先确认 [PROJECT](../PROJECT.md) 的当前资格和本页下方的解释边界，再按任务读取一行；
+无需为局部公式查询通读统一框架。涉及共同源、时钟、损失或声明范围时，必须同时读取对应框架章节，
+不能只截取公式。完整建立或审查整机理论时才完整阅读统一框架与所用组件模型。
 
-1. [`source_to_detector_phase_space_framework.md`](source_to_detector_phase_space_framework.md)：
-   从共同pre-pulse条件源到pulse-relative探测时间、有限孔径、三维事件、工程误差和测量链的多变量
-   canonical框架；同时规定时变场、波形时钟和有限动态区渡越边界。
-2. [`conditional_phase_space_focusability.md`](conditional_phase_space_focusability.md)：
-   条件均值流形与有限厚度、source-weighted受约束控制子空间、projector/SVD和新增控制方向判据。
-
-### 组件精确模型
-
-- [独立双区加速器理论](../../../orthogonal_accelerator/docs/theory/oaaccelerator_time_focus.md)：静止释放、N=2精确模型和一阶焦面；
-- [独立 affine 加速器理论](../../../orthogonal_accelerator/docs/theory/affine_phase_space_time_focus.md)：有符号初速、能量与局部时间导数；
-- [独立三区加速器理论](../../../orthogonal_accelerator/docs/theory/three_zone_accelerator_ideal_theory.md)：N=3精确时间、`A1–A4`与局部退化；
-- [`z_vz_linear_phase_space_coupling.md`](z_vz_linear_phase_space_coupling.md)：detector-blind affine
-  `z-v_z`源与本项目反射器的连接及残差验收；
-- [`dual_stage_reflectron.md`](dual_stage_reflectron.md)：二级反射镜局部一、二阶能量聚焦；
-- [`oatof_oaaccelerator_coupling.md`](oatof_oaaccelerator_coupling.md)：从释放到探测面的整机一维纵向耦合；
-- [`three_zone_accelerator_ideal_theory.md`](three_zone_accelerator_ideal_theory.md)：三区加速器与反射器的
-  `Γ3`联合闭合、阶段漏斗和整机有限束宽设计。
+| 任务 | 所需正文 |
+|---|---|
+| 统一状态、时钟、观测量、三维事件或模型适用域 | [统一相空间框架](source_to_detector_phase_space_framework.md)的章节导航，读取所改对象及其适用边界 |
+| 条件厚度、受约束控制方向、projector/SVD | [条件可聚焦性](conditional_phase_space_focusability.md)；先读第1–3节定义，再读目标公式及第7、10–12节限制 |
+| 独立加速器的一阶焦面、affine初速、N=3精确时间 | [独立加速器理论入口](../../../orthogonal_accelerator/docs/theory/README.md)，按二区／affine／三区选择 |
+| 反射镜局部一、二阶能量聚焦 | [双级反射器](dual_stage_reflectron.md)；若用于整机结论，再读[整机纵向耦合](oatof_oaaccelerator_coupling.md) |
+| 从释放到探测面的纵向时间 | [整机纵向耦合](oatof_oaaccelerator_coupling.md)；affine源另读[z-vz耦合](z_vz_linear_phase_space_coupling.md) |
+| 三区与反射器联合闭合、Γ3、有限束宽设计 | [三区整机理论](three_zone_accelerator_ideal_theory.md)，先读第1、7、9节边界，再按目录选择推导 |
+| 论文实验矩阵、样本量、当前缺口 | [研究计划](../publication/paper_1_jasms/validation_and_evidence_plan.md)与[证据矩阵](../publication/paper_1_jasms/evidence_matrix.md)，无需重复读取全部理论 |
 
 统一框架不复制组件的完整公式；组件文档也不单独定义论文新颖性。局部反射镜闭式解不包含加速器在
 一阶焦面处仍存在的二阶时间曲率，不能直接作为整机二阶聚焦结论。`D1/D2/D3=0`和`Γ3`只描述指定

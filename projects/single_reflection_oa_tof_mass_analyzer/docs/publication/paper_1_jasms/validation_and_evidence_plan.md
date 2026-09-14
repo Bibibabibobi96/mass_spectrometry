@@ -102,6 +102,7 @@ eligibility and source condition
 - 模型选择完全detector-blind；
 - locked test在模型冻结后才启封；
 - 条件模型及不确定度在至少两种工况可重复；
+- 粒子ID、cohort hash、单位、坐标和尺度均被冻结；
 - source authority可由manifest和有序粒子ID重建。
 
 ## WP2：到达时间灵敏度与focusability实现
@@ -124,7 +125,7 @@ eligibility and source condition
 ### 关闭条件
 
 - 两条真正独立导数路径在预注册容差内一致；
-- projector/QP和约束残差闭合；
+- null-space与原约束残差一致，projector与直接最小二乘/QP闭合；
 - direct particle结果给出可复现的线性信赖域；
 - 模态排序不由任意单位或单个bin选择决定。
 
@@ -164,7 +165,7 @@ D. unweighted D1/D2/D3 closure control
 
 | 因子 | 最低水平 |
 |---|---|
-| Source |
+| Source | 冻结的共同pre-pulse六维条件源；字段、detector-blind分区和身份见[WP1](#wp1冻结真实条件源) |
 | Source condition | 至少2种 |
 | Accelerator | two-zone、three-zone、source-weighted、unweighted control |
 | Reflectron | 局部闭式对照、整机耦合优化 |
@@ -172,13 +173,13 @@ D. unweighted D1/D2/D3 closure control
 | Independent check | 关键COMSOL或独立field/trajectory implementation |
 | Mass | 至少3个代表质量点 |
 | Envelope | 至少3个源宽/残差水平 |
-| Statistics |
+| Statistics | locked test每工况N≥1000，优选N=5000母cohort或独立N=1000重复；完整统计输出见[WP6](#wp6统计和报告) |
 
 ### 关闭条件
 
 - 一维oracle与三维事件时间导数的偏差有量化边界；
 - 主claim不依赖单一SIMION网格或同一Python核心；
-- 至少一个关键工况完成网格、时间步和粒子统计检查；
+- 至少一个关键工况完成网格、时间步和粒子统计检查，并报告基本电压与几何敏感性；
 - 坐标、时钟、探测面、粒子ID和FWHM定义跨路径一致。
 
 ## WP5：模态消融和预测检验

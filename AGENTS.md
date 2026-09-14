@@ -1,7 +1,8 @@
 # 项目执行规则（跨 Agent 共用）
 
 本文件是 Claude Code、Codex 及其他编码 Agent 共用的执行约束。开始任务先完整阅读
-`README.md`；它提供项目与规范路由。随后读目标项目README和PROJECT，再读任务实际需要的操作、
+`README.md`；它提供项目与规范路由。项目任务随后读目标项目README和PROJECT；公共工具任务按根入口
+读取最近的公共说明或对应规范，不要求不存在的PROJECT。再读任务实际需要的操作、
 理论和规范。知识归属见[仓库架构](docs/REPOSITORY_ARCHITECTURE.md)，创建或归档文件前读
 [生命周期](docs/LIFECYCLE.md)，执行与提交前读[操作指南](docs/OPERATIONS.md)；不要默认通读历史。
 
@@ -10,7 +11,8 @@
 - 开始修改前先搜索已有实现、机器合同、测试和相邻入口；优先扩展现有边界，不创建同义函数、同义字段、
   第二CLI或只为假想需求服务的抽象。不得只凭文件名推断模型、二进制、数据或历史证据的内容。
 - 修改正式项目脚本前，先阅读项目 `README.md` 和 `docs/PROJECT.md`；旧 `项目_*.md` 只在尚未完成新结构迁移的项目中暂作入口。
-- 修改或审查代码时完整阅读[`docs/DEVELOPMENT_STANDARDS.md`](docs/DEVELOPMENT_STANDARDS.md)；该文档
+- 修改或审查代码时，先读[开发标准阅读导航](docs/DEVELOPMENT_STANDARDS.md#阅读导航)指定的通用必读章节，
+  再完整读取任务触发的专题；范围扩大时补读新触发的章节。该文档
   约束人类和Agent共同遵守的编码、合同实现、进程、性能与测试标准，不改变本文件的Agent权限或
   [仓库架构](docs/REPOSITORY_ARCHITECTURE.md)和[产物生命周期](docs/LIFECYCLE.md)。
 - 新增或实质改变供应商软件、求解器、SDK、设备或文件格式相关能力前，Agent必须先执行开发标准的

@@ -1,6 +1,6 @@
 # Paper 1 J2：公平真实场 pilot 合同
 
-> `STATUS: J2-0_PASS_CONTINUE / FAIR_J2_PILOT_DESIGN_FROZEN / SOLVER_NOT_AUTHORIZED_BY_THIS_DOCUMENT`
+当前执行资格与下一道门槛只查[证据矩阵](evidence_matrix.md#基础与阶段)；本页维护阶段定义与进入条件。
 
 ## 要回答的问题
 
@@ -23,15 +23,12 @@ manifest-bound restart（补全 canonical state、质量/电荷、ID 映射和�
 `pulse_disabled` CSV 直接伪装成 restart。J2-0 仅为 `DEVELOPMENT_ONLY`；通过后才授权下面的公平 J2
 候选池，失败则首先排查当前源材料化/时钟/字段等价性，而不是反向否定历史机制。
 
-### J2-0 当前复现结果
+### J2-0 证据入口
 
-该前置门槛现已通过。冻结的 S1、51.2 mm、100 Th 工况以相同的393个 pre-pulse ID、同一脉冲时刻和
-同一数值身份完成两臂真实场飞行；两臂各有106个 pulse-eligible peak样本、211个完整母cohort detector
-crossings。将工作点从继承值替换为该源的 `source_zvz_three_zone_theory_working_point_v1` 后，直接 FWHM
-由2.341 ns变为0.711 ns，质量分辨率由6692变为22023；完整的、hash-bound结果和禁止声明见
-[`J2-0 stage package`](../../../../../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/paper1_stage_evidence/J2_0/20260826_214700__s1_gap51p2_current_condition_reproduction/stage_conclusion.md)。
-这只确认当前材料化、时钟、字段和分析实现没有丢失已知机制；它**不**比较 source-whitened J2与未加权
-预测器，也不构成锁定测试或投稿证据。
+J2-0是否通过只查[证据矩阵](evidence_matrix.md#基础与阶段)。冻结工况、逐臂数值、hash绑定及禁止声明见
+[J2-0数值报告](../../../../../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/paper1_stage_evidence/J2_0/20260826_214700__s1_gap51p2_current_condition_reproduction/stage_report.md)。
+该功能复现只检查材料化、时钟、字段和分析实现是否保留已知机制；不比较source-whitened与未加权预测器，
+也不构成锁定测试或投稿证据。
 
 ## 冻结比较规则
 

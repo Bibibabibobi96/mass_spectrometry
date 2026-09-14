@@ -5,10 +5,57 @@ import subprocess
 import tempfile
 import unittest
 
-from common.documentation_links import anchors, inspect_repository, is_history, links
+from common.documentation_links import anchors, inspect_repository, is_history, links, table_diagnostics
 
 
 class MarkdownNavigationTests(unittest.TestCase):
+    def test_incomplete_validation_matrix_reports_exact_rows(self):
+        text = '# Evidence\n\n| Item | Requirement |\n|---|---|\n| Source |\n| Statistics |\n| Mass | Three points |\n'
+        self.assertEqual(table_diagnostics(text), [
+            (5, 'table row has 1 cells; header has 2; review missing/extra content'),
+            (6, 'table row has 1 cells; header has 2; review missing/extra content'),
+        ])
+
+    def test_empty_cells_extra_cells_and_mismatched_delimiter_are_reviewed(self):
+        text = '| Item | |\n|---|\n| Source |   |\n| Mass | Three | Extra |\n'
+        result = table_diagnostics(text)
+        self.assertEqual([number for number, _ in result], [2, 1, 3, 4])
+        self.assertIn('empty cells at columns 2', result[1][1])
+        self.assertIn('empty cells at columns 2', result[2][1])
+
+    def test_valid_table_pipes_code_and_nonapplicable_cells(self):
+        text = (
+            '| Item | Requirement |\n|:---|---:|\n'
+            '| `x|y` | ``a`|b`` |\n'
+            '| a\\|b | Not applicable |\n'
+            '| `--flag` | [Source](source.md) |\n\n'
+            'Item | Requirement\n- | -\n'
+            'a\\\\ | b\n'
+            'value | N/A\n'
+        )
+        self.assertFalse(table_diagnostics(text))
+
+    def test_table_examples_in_fences_comments_and_indented_code_are_ignored(self):
+        invalid = '| Item | Requirement |\n|---|---|\n| Source |\n'
+        text = '```md\n' + invalid + '```\n<!--\n' + invalid + '-->\n'
+        text += ''.join('    ' + line + '\n' for line in invalid.splitlines())
+        self.assertFalse(table_diagnostics(text))
+
+    def test_table_review_excludes_history_and_preserves_nonblocking_status(self):
+        with tempfile.TemporaryDirectory(prefix='documentation_gate_test_') as directory:
+            root = Path(directory)
+            subprocess.run(['git', 'init', '--quiet', str(root)], check=True, cwd=root, timeout=30)
+            text = '# Evidence\n| Item | Requirement |\n|---|---|\n| Source | |\n'
+            (root / 'README.md').write_text(text, encoding='utf-8')
+            history = root / 'docs/history'
+            history.mkdir(parents=True)
+            (history / 'frozen.md').write_text(text, encoding='utf-8')
+            result = inspect_repository(root)
+            self.assertFalse(result['errors'])
+            self.assertEqual(len(result['diagnostics']), 1)
+            self.assertIn('README.md:4: table has empty cells', result['diagnostics'][0])
+            self.assertEqual(result['inventory'][0]['characters'], len(text))
+
     def test_unicode_duplicate_and_explicit_anchors(self):
         text = '# 入口\n## 长 PA 输入路径\n## 长 PA 输入路径\n## `config` 与 **输入**\n<a id="manual"></a>'
         self.assertEqual(anchors(text), {'入口', '长-pa-输入路径', '长-pa-输入路径-1', 'config-与-输入', 'manual'})

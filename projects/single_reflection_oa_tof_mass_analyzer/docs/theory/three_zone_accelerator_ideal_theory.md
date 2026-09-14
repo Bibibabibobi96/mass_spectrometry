@@ -119,14 +119,13 @@ $\ell_1,\ell_{23},\lambda$ 和第一段压降作为受控外层离散域；这�
 `accelerator_stage1/accelerator_stage2`、`repeller/grid1/grid2`及 `accel1/accel2`；其中现有
 `grid2` 是双区出口，不是三区新增中间边界。
 
-后续已实现并执行一条显式桥接能力：T5 receipt可由
+T5 receipt的显式桥接由
 [`three_zone_t5_simion_candidate.py`](../../analysis/three_zone_t5_simion_candidate.py)编译为
 `CANDIDATE_ONLY` resolved；integration region-field schema v2只在显式
 `three_zone_accelerator_ideal_v1`拓扑下接受三区region/plane/field；电极拓扑注册表保持旧双区
-`0..19`不变，仅为三区新增ID `20`。显式successor layout把二区5.1 mm和三区11.9 mm的5个整形环
-分别布置为1+4，并已完成真实frontend/overlay PA、N=1原生路径和完整2.2 mm N=100。隔离理论仍不得
-直接复用双区profile，也不得把现有`grid2`静默改成中间电极；COMSOL、CAD、N=1000和工程资格仍未
-闭合。
+`0..19`不变，仅为三区新增ID `20`。隔离理论不得直接复用双区profile，也不得把现有`grid2`静默改成
+中间电极。successor布局、真实PA与N=1/N=100完成结果只查
+[冻结完成快照](../history/20260823__three-zone-completed-results-snapshot.md)；当前资格查[PROJECT](../PROJECT.md)。
 
 ## 8. T0—T5阶段漏斗
 

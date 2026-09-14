@@ -113,6 +113,56 @@ def links(text: str) -> list[tuple[int, str]]:
     return result
 
 
+def table_diagnostics(text: str) -> list[tuple[int, str]]:
+    """Review table shape and empty cells, without inferring which fields are required.
+
+    Code-span and escaped pipes are cell content. Only header/delimiter pairs
+    start tables; fences, indented examples and comments are not tables.
+    """
+    # Preserve nonempty code cells while hiding their internal separators.
+    protected = re.sub(r"(?<!`)(`+)(?!`)(.+?)(?<!`)\1(?!`)",
+                       lambda m: m[0].replace("|", "\x00"), text)
+    rows = []
+    for line in prose(protected, keep_code_text=True).splitlines():
+        cells, current = [], []
+        for token in re.findall(r"\\.|[^\\|]|[\\|]", line):
+            if token == "|":
+                cells.append("".join(current).strip())
+                current = []
+            else:
+                current.append(token)
+        if not cells:
+            rows.append(None)
+            continue
+        cells.append("".join(current).strip())
+        if line.lstrip().startswith("|"):
+            cells.pop(0)
+        if line.rstrip().endswith("|") and not cells[-1]:
+            cells.pop()
+        rows.append(cells)
+    result = []
+    width = None
+    for index, cells in enumerate(rows):
+        delimiter = cells and all(re.fullmatch(r":?-+:?", cell) for cell in cells)
+        if delimiter and index and rows[index - 1]:
+            width = len(rows[index - 1])
+            if len(cells) != width:
+                result.append((index + 1, f"table delimiter has {len(cells)} cells; header has {width}"))
+            empty = [str(i + 1) for i, cell in enumerate(rows[index - 1]) if not cell]
+            if empty:
+                result.append((index, "table header has empty cells at columns " + ", ".join(empty)))
+            continue
+        if not cells:
+            width = None
+        elif width is not None:
+            if len(cells) != width:
+                result.append((index + 1, f"table row has {len(cells)} cells; header has {width}; review missing/extra content"))
+            empty = [str(i + 1) for i, cell in enumerate(cells) if not cell]
+            if empty:
+                result.append((index + 1, "table has empty cells at columns " + ", ".join(empty) + "; review whether intentional"))
+    return result
+
+
 def inspect_repository(root: Path) -> dict:
     """Return errors, nonblocking diagnostics and a per-document inventory."""
     root = root.resolve()
@@ -131,7 +181,7 @@ def inspect_repository(root: Path) -> dict:
         relative = path.relative_to(root)
         frozen = is_history(relative)
         existing_history = frozen and relative.as_posix() in committed
-        row = {"path": relative.as_posix(), "kind": document_kind(relative), "lines": len(text.splitlines()), "diagnostics": []}
+        row = {"path": relative.as_posix(), "kind": document_kind(relative), "lines": len(text.splitlines()), "characters": len(text), "diagnostics": []}
         inventory.append(row)
         for number, target in links(text):
             target = re.sub(r"\\([() ])", r"\1", html.unescape(target))
@@ -160,6 +210,10 @@ def inspect_repository(root: Path) -> dict:
                 row["diagnostics"].append(message)
         if frozen:
             continue
+        for number, detail in table_diagnostics(text):
+            message = f"{relative.as_posix()}:{number}: {detail}"
+            diagnostics.append(message)
+            row["diagnostics"].append(message)
         for number, line in enumerate(prose(text, keep_code_text=True).splitlines(), 1):
             if re.search(r"(?:artifacts[/\\]|\.\.[/\\])\S*[/\\]scratch[/\\]\S+", line) and not any(f":{number}: scratch evidence" in entry for entry in row["diagnostics"]):
                 message = f"{relative.as_posix()}:{number}: scratch path in prose/code span; review evidence lifetime"

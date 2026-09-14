@@ -14,7 +14,7 @@
 | C0 理论与接口 | `PASS_CONTINUE / THEORY_ONLY` | [C0 记录](stage_c0_theory_closure.md)；不含源或粒子性能 |
 | C1 两种源的历史识别 | `DEVELOPMENT_ONLY` | [源合同](stage_c1_source_contract.md)；新阶段须两份独立母群 assessment 均为 `PROSPECTIVE` |
 | Connector-gap 三臂源侧比较 | `DEVELOPMENT_ONLY / SOURCE_ONLY` | [三臂合同](stage_c1_connector_gap_triplet_contract.md)与[机制证据](connector_gap_working_point_mechanism_20260827.md)；不能复用为新锁定测试 |
-| J2-0 当前工作点复现 | `CURRENT_FUNCTIONAL_REPRODUCTION / DEVELOPMENT_ONLY` | [公平 pilot 的前置证据](j2_real_3d_pilot_contract.md)；不是两种预测器的公平比较 |
+| J2-0 当前工作点复现 | `CURRENT_FUNCTIONAL_REPRODUCTION / DEVELOPMENT_ONLY` | [J2-0冻结结果](../../../../../../artifacts/projects/single_reflection_oa_tof_mass_analyzer/paper1_stage_evidence/J2_0/20260826_214700__s1_gap51p2_current_condition_reproduction/stage_conclusion.md)；不是两种预测器的公平比较 |
 | C2 轴向总目标 | J2 为 `INCONCLUSIVE_REVISE`；J3 为 `IDEAL_AXIAL_ONLY` | [状态沿革及原来源](../../history/20260911__publication-status-consolidation.md#evidence_matrix)；不得将 J3 的局部闭合升级为 J2 |
 | C3_J3 真实 PA | `INCONCLUSIVE_REVISE` | [C3 合同](stage_c3_j3_real_field_contract.md)：N=1 与 N=100 五点平台已完成；独立同段轴场参考待闭合 |
 | C4_J3 锁定预测 | `BLOCKED_BY_C3_J3` | [C4 合同](stage_c4_j3_locked_prediction_contract.md)；先核验 C3 五件套，再读取锁定探测器结果 |

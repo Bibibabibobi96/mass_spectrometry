@@ -1,6 +1,6 @@
 # Paper 1 C3_J3：真实场局部可微性合同
 
-> `STATUS: N=1 FUNCTIONAL GATE PASSED / N=100 REAL-PA PLATFORM COMPLETE / INDEPENDENT AXIS REFERENCE PENDING`
+当前执行资格与下一道门槛只查[证据矩阵](evidence_matrix.md#基础与阶段)；本页维护阶段定义与进入条件。
 
 C3_J3只检验一个问题：C2_J3中理想轴向的三区局部控制方向，经过真实PA、真实边缘场和完整事件分类后，是否仍可在一个有限信赖域内定义稳定的一阶响应。它不恢复失败的J2比较，也不检验峰宽、传输率、锁定预测或多质量普适性。
 
@@ -31,13 +31,12 @@ N=1只允许使用`terminal_handoff_smoke_source_particle_id`明确登记的一�
 
 ## 当前资格
 
-五点 N=1 贯通及 N=100 真实 PA 中心差分／事件拓扑平台均已完成；独立轴场积分器的同段参考仍待完成。
-因此当前为 `INCONCLUSIVE_REVISE`，不得进入 C4。精确差分、样本与失败重跑来源见
+当前资格与独立参考缺口只查[证据矩阵](evidence_matrix.md#基础与阶段)。精确差分、样本与失败重跑来源见
 [冻结状态沿革](../../history/20260911__publication-status-consolidation.md#stage_c3_j3_real_field_contract)。
 
 N=100 campaign 仍由
 [固定脉冲导数合同](../../../../../integrations/rf_multipole_ion_optics_to_single_reflection_oa_tof_mass_analyzer/config/explorations/paper1_c3_j3_s1_fixed_pulse_derivative_n100.json)
-绑定；本次排版没有修改任何步长、容差、粒子选择或阶段进入条件。
+绑定；步长、容差和粒子选择以该机器合同及本页门槛为准。
 
 ## 结论格式
 
