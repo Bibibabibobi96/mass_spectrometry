@@ -932,7 +932,7 @@
       "source_repo_path": "common/comsol/create_multipole_round_rods.m",
       "frozen_filename": "runtime_snapshot/common/comsol/create_multipole_round_rods.m",
       "run_input_name": "common_create_multipole_round_rods",
-      "sha256": "F0B8FEA2FA79E03C0C8C76B67D1C894D2904904593FE218AE5641A9F1491CBBD",
+      "sha256": "B86F2CDEB59298C6C926A604BAF87E3AFF42913C2321AE6D75A5900D2A74196F",
       "consumers": [
         "pre_pulse_interface_transport",
         "pulse_capture"
