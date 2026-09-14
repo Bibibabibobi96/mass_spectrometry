@@ -107,7 +107,7 @@ class ChangedGateContractTests(unittest.TestCase):
             with self.subTest(implementation=implementation):
                 self.assertIn(stage, self.routed_stages(implementation))
                 route = next(row for row in self.routes if row["stage"] == stage)
-                self.assertIn(route["repository_integration_group"], {"fast", "regression"})
+                self.assertIn(route["repository_integration_group"], {"fast", "regression", "covered"})
                 self.assertIn(module, route["command"]["arguments"])
         self.assertTrue({
             "single_reflection_oa_tof_mass_analyzer_static",
@@ -468,10 +468,40 @@ class ChangedGateContractTests(unittest.TestCase):
         routed = self.routed_stages("common/report_cloc_delta.ps1")
         self.assertEqual(routed, {"cloc_contract_tests": "cloc_entrypoint_changed"})
 
+    def test_comsol_readme_does_not_expand_mixed_changed_scope(self) -> None:
+        self.assertEqual(self.routed_stages("common/comsol/README.md"), {})
+        consumers = {
+            "rf_quadrupole_generated_publications", "multipole_common",
+            "multipole_foundation", "rf_multipole_to_single_reflection_oatof_integration",
+            "single_reflection_oa_tof_mass_analyzer_static", "rf_quadrupole_ion_optics_static",
+            "rf_hexapole_ion_optics_static", "rf_octupole_ion_optics_static",
+            "transverse_helical_filament_wehnelt_electron_gun_static",
+        }
+        for path in ("common/comsol/run_comsol_r2025b.ps1", "common/comsol/livelink_environment.ps1"):
+            self.assertTrue(consumers <= self.routed_stages(path).keys(), path)
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            self.skipTest("PowerShell Core is unavailable")
+        command = (
+            f"& '{CHANGED_GATE}' -PythonExe '{sys.executable}' -PlanOnly "
+            "-ChangedPath @('common/gate_catalog.json',"
+            "'common/contracts/test_verify_changed.py','common/comsol/README.md')"
+        )
+        result = subprocess.run([pwsh, "-NoProfile", "-Command", command], cwd=REPO_ROOT,
+                                capture_output=True, text=True, encoding="utf-8", timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        selected = re.search(r"SELECTED_STAGES=([^\s]+)", result.stdout)
+        self.assertIsNotNone(selected, result.stdout)
+        self.assertEqual(set(selected[1].split(",")), {
+            "repository_hygiene", "repository_text_bytes", "documentation",
+            "development_standards", "ruff_changed_python", "common_contracts",
+        })
+
     def test_full_scope_does_not_repeat_contract_tests(self) -> None:
         routes_by_stage = {route["stage"]: route for route in self.routes}
-        for stage in ("gate_contract_tests", "cloc_contract_tests"):
+        for stage in ("gate_contract_tests", "cloc_contract_tests", "expected_values_tests"):
             route = routes_by_stage[stage]
+            self.assertEqual(route["repository_integration_group"], "covered")
             self.assertFalse(route["run_on_full_scope"])
             self.assertEqual(route["full_scope_coverage_stage"], "common_contracts")
         self.assertIn("covered_by_", self.source)
@@ -481,6 +511,8 @@ class ChangedGateContractTests(unittest.TestCase):
         if pwsh is None:
             self.skipTest("PowerShell Core is unavailable")
         cases = (
+            (["common/contracts/expected_values.py"], "expected_values_tests", True),
+            (["common/contracts/test_expected_values.py"], "expected_values_tests", True),
             (["common/contracts/test_verify_changed.py"], "gate_contract_tests", True),
             (["common/contracts/test_report_cloc_delta.py"], "cloc_contract_tests", True),
             (["common/contracts/file_identity.py", "pyproject.toml"], "python_dependency_contract", True),
