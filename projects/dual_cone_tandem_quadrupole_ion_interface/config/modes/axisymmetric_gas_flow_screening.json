@@ -9,6 +9,6 @@
   "limitations": [
     "The axisymmetric empty-enclosure model omits rods, asymmetric pump ports and other three-dimensional obstructions",
     "A successful gas-flow solve is an upstream field result and does not establish ion transmission",
-    "Candidate use requires a versioned canonical gas-field export and verified run manifest"
+    "The registered runner emits a versioned canonical gas-field artifact and verified run manifest"
   ]
 }

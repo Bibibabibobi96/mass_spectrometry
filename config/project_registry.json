@@ -8,7 +8,7 @@
     },
     {
       "descriptor": "projects/dual_cone_tandem_quadrupole_ion_interface/config/project.json",
-      "sha256": "C4A5438AAA1EA9D8AAA041EE49F79FD37012C33E73E4EB6F139800FADDC68461"
+      "sha256": "B9F52F6C658B01DF6226F608278FBCA67042D541BC67EB99011BF33DA6FF3256"
     },
     {
       "descriptor": "projects/orthogonal_accelerator/config/project.json",
@@ -172,9 +172,9 @@
         "Component vendor and exact product identity are unconfirmed",
         "Cone truncation and aperture-plane interpretation remain provisional; pump geometry and intermediate pressures are missing",
         "The current COMSOL gas-flow model is an axisymmetric empty-enclosure screening model",
-        "The canonical COMSOL gas-field handoff is blocked pending a successful exported field artifact",
-        "The SIMION geometry and gas-assisted program exist, but a qualified trajectory run awaits a converged COMSOL field",
-        "Ion source, RF/DC operating points, collision model, CAD, Candidate and Formal evidence are not qualified"
+        "The registered COMSOL-to-SIMION handoff and uniform-400 Pa control produce only unqualified qualitative Prototype evidence",
+        "The current ion source, 570 kHz and 300 V peak-to-ground RF point, and official SIMION SDS collision closure are explicit but not experimentally qualified",
+        "CAD, pump type and geometry, intermediate pressure measurements, Candidate evidence and Formal evidence are unavailable"
       ]
     },
     {

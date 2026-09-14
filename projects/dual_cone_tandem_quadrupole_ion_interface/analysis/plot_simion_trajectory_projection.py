@@ -13,6 +13,7 @@ from typing import Mapping, Sequence
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_GEOMETRY = PROJECT_ROOT / "config" / "resolved_geometry.json"
+DEFAULT_NUMERICS = PROJECT_ROOT / "config" / "simion_solver_numerics.json"
 
 
 def axial_reach_profile(
@@ -48,9 +49,7 @@ def main() -> int:
     parser.add_argument("--final-state", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--geometry", type=Path, default=DEFAULT_GEOMETRY)
-    parser.add_argument("--axis-center-x-mm", type=float, default=25.5)
-    parser.add_argument("--axis-center-y-mm", type=float, default=25.5)
-    parser.add_argument("--device-z-offset-mm", type=float, default=2.0)
+    parser.add_argument("--numerics", type=Path, default=DEFAULT_NUMERICS)
     args = parser.parse_args()
 
     import matplotlib.pyplot as plt
@@ -58,6 +57,8 @@ def main() -> int:
     from matplotlib.ticker import MaxNLocator
 
     resolved = json.loads(args.geometry.read_text(encoding="utf-8"))
+    numerics = json.loads(args.numerics.read_text(encoding="utf-8"))
+    offsets = numerics["workbench"]["coordinate_mapping"]["device_to_workbench_offset_mm"]
     geometry = resolved["geometry_mm"]
     stage_2_end = float(geometry["stage_2_round_quadrupole"]["downstream_flat_end_z_mm"])
     plate = geometry["downstream_aperture_plate"]
@@ -75,9 +76,9 @@ def main() -> int:
     with args.trajectory.open(encoding="utf-8", newline="") as stream:
         for row in csv.DictReader(stream):
             ion = int(row["ion_number"])
-            x = float(row["x_mm"]) - args.axis_center_x_mm
-            y = float(row["y_mm"]) - args.axis_center_y_mm
-            z = float(row["z_mm"]) - args.device_z_offset_mm
+            x = float(row["x_mm"]) - float(offsets["x"])
+            y = float(row["y_mm"]) - float(offsets["y"])
+            z = float(row["z_mm"]) - float(offsets["z"])
             tracks[ion][0].append(z)
             tracks[ion][1].append(math.hypot(x, y))
 

@@ -28,7 +28,7 @@
 | 均匀后端 400 Pa 原型场 | [`config/uniform_rear_gas_field.json`](config/uniform_rear_gas_field.json) |
 | SIMION 离子输运物理 | [`config/ion_transport_science.json`](config/ion_transport_science.json) |
 | SIMION 数值 | [`config/simion_solver_numerics.json`](config/simion_solver_numerics.json) |
-| 计划级执行能力 | [`config/execution_profiles.json`](config/execution_profiles.json) |
+| 已注册计划级执行能力 | [`config/execution_profiles.json`](config/execution_profiles.json) |
 
 ## 工作流入口
 

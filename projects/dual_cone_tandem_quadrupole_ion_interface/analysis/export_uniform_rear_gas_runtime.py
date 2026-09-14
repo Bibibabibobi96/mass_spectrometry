@@ -53,7 +53,7 @@ local function check(x, y, z)
   local r = math.sqrt(x*x + y*y)
   assert(z >= z_min-boundary_tolerance_mm and z <= z_max+boundary_tolerance_mm and
     r <= r_max+boundary_tolerance_mm,
-    string.format('gas-field query outside declared domain: x=%.9g y=%.9g z=%.9g r=%.9g', x,y,z,r))
+    string.format('gas-field query has no fluid support outside declared envelope: x=%.9g y=%.9g z=%.9g r=%.9g', x,y,z,r))
   return r
 end
 field.pressure_pa = function(x, y, z)

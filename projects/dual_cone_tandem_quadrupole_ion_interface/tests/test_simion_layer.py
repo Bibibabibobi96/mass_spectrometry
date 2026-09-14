@@ -12,6 +12,7 @@ from common.contracts.file_identity import file_sha256
 from projects.dual_cone_tandem_quadrupole_ion_interface.simion.geometry import (
     DEFAULT_NUMERICS,
     DEFAULT_RESOLVED,
+    device_to_workbench_offsets,
     render_gem,
 )
 from projects.dual_cone_tandem_quadrupole_ion_interface.simion.prepare import (
@@ -98,7 +99,8 @@ class SimionGeometryTests(unittest.TestCase):
             self.assertGreater(output.stat().st_size, 10_000)
 
     def test_gem_uses_shared_rod_renderer_and_distinct_namespaces(self) -> None:
-        gem = render_gem(load(DEFAULT_RESOLVED), load(DEFAULT_NUMERICS))
+        numerics = load(DEFAULT_NUMERICS)
+        gem = render_gem(load(DEFAULT_RESOLVED), numerics)
         for electrode in (1, 2, 3, 11, 12, 21, 22):
             self.assertIn(f"e({electrode})", gem)
         self.assertIn("cylinder(0,0,0,4.3,1.88,49.2)", gem)
@@ -110,6 +112,8 @@ class SimionGeometryTests(unittest.TestCase):
         source = (PROJECT / "simion" / "geometry.py").read_text(encoding="utf-8")
         self.assertIn("render_grouped_rod_array_gem", source)
         self.assertNotIn("def _stage_1_rods", source)
+        self.assertEqual(device_to_workbench_offsets(numerics), (25.5, 25.5, 2.0))
+        self.assertIn("device_to_workbench_offset_mm", source)
 
     def test_science_contract_makes_simion_the_only_trajectory_authority(self) -> None:
         science = load(PROJECT / "config" / "ion_transport_science.json")
@@ -157,6 +161,7 @@ class SimionGeometryTests(unittest.TestCase):
         self.assertIn("terminal_code[ion_number] = 3", program)
         self.assertIn("gas-field query has no fluid support", program)
         self.assertIn("ion_splat = 1", program)
+        self.assertIn("emit_final(3)", program)
         self.assertLess(
             program.index("function segment.other_actions()"),
             program.index("terminal_code[ion_number] = 3"),
@@ -177,6 +182,13 @@ class SimionGeometryTests(unittest.TestCase):
         self.assertIn("left validated gas-field fluid support", runner)
         self.assertIn("plot_simion_trajectory_projection.py", runner)
         self.assertIn("prototype_run_report.json", runner)
+        self.assertIn("New-RunPackage", runner)
+        self.assertIn("Write-VerifiedRunManifest", runner)
+        self.assertIn("Complete-FailedRun", runner)
+        self.assertIn("Enter-HostExecutionLease -Role SIMION", runner)
+        self.assertIn("Invoke-ArtifactCapacityGate", runner)
+        self.assertIn("Apply-RunArtifactRetention", runner)
+        self.assertNotIn("[string]$OutputDir", runner)
 
     def test_field_specific_wrappers_delegate_to_one_simion_runner(self) -> None:
         uniform = UNIFORM_RUNNER.read_text(encoding="utf-8")
@@ -290,6 +302,7 @@ class GasPreparationTests(unittest.TestCase):
             self.assertIn("local p_rear, p_upstream = 400, 0", source)
             self.assertIn("local z_rear = 3", source)
             self.assertIn("local uz_rear, ur_rear = 100, 0", source)
+            self.assertIn("no fluid support outside declared envelope", source)
             validate_gas_field_manifest(manifest_path, load(GAS_INTERFACE))
 
 

@@ -23,16 +23,12 @@ MATLAB 源码中没有隐藏入口压力、出口压力、温度、分子直径�
 执行，先将 `<run_id>` 替换为预登记的新运行身份：
 
 ```powershell
-$gasRun = [IO.Path]::GetFullPath('../artifacts/projects/dual_cone_tandem_quadrupole_ion_interface/runs/<run_id>')
-$env:DUAL_CONE_GAS_FLOW_OUTPUT_DIR = $gasRun
-./common/comsol/run_comsol_r2025b.ps1 `
-  -TaskScript ./projects/dual_cone_tandem_quadrupole_ion_interface/comsol/run_axisymmetric_gas_flow.m `
-  -ReportPath (Join-Path $gasRun 'comsol_run_report.txt')
+./projects/dual_cone_tandem_quadrupole_ion_interface/workflows/gas_assisted_transport/run_axisymmetric_gas_flow.ps1 `
+  -RunId <timestamp>__sim__comsol__dual-cone-gas-flow
 ```
 
-这是底层气流任务的调用方式，尚不是已注册的完整生产 run wrapper。启动前须冻结本次输入与保留类别；
-任务完成后仍须按[运行生命周期](../../../docs/LIFECYCLE.md)整理 summary、manifest 并复核。
-任务报告不能代替 run 三件套，也不能因 `STATUS=PASS` 自动取得 Candidate 或 Formal 资格。
+该入口已登记为项目计划级 runner：它创建不可覆盖的标准运行包、冻结输入、串行占用 COMSOL 主机租约，
+并发布经校验的 summary 与 manifest。任务报告不能代替 run 三件套，也不能因 `STATUS=PASS` 自动取得 Candidate 或 Formal 资格。
 异常写入 `comsol_run_report.txt` 的 `STATUS=FAIL` 并重新抛出；只有求解、插值与质量守恒检查均通过
 才写 `STATUS=PASS`，不允许改用其他物理接口或从中间解导出合格场。
 

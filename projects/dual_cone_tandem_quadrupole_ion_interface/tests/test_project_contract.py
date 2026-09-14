@@ -32,6 +32,27 @@ class ProjectContractTests(unittest.TestCase):
         self.assertTrue(
             all(profile["evidence_levels"] == ["plan"] for profile in profiles["profiles"])
         )
+        run_steps = [
+            step
+            for profile in profiles["profiles"]
+            for step in profile["steps"]
+            if step["kind"] == "run"
+        ]
+        self.assertEqual(len(run_steps), 2)
+        self.assertTrue(all("-RunId" in step["arguments"] for step in run_steps))
+        comsol_runner = (
+            PROJECT_ROOT
+            / "workflows/gas_assisted_transport/run_axisymmetric_gas_flow.ps1"
+        ).read_text(encoding="utf-8")
+        for token in (
+            "New-RunPackage",
+            "Enter-HostExecutionLease -Role COMSOL",
+            "Invoke-ArtifactCapacityGate",
+            "Apply-RunArtifactRetention",
+            "Write-VerifiedRunManifest",
+            "Complete-FailedRun",
+        ):
+            self.assertIn(token, comsol_runner)
 
     def test_retired_python_integrator_is_not_an_active_entry(self) -> None:
         profiles = (PROJECT_ROOT / "config/execution_profiles.json").read_text(

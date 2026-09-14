@@ -6,20 +6,20 @@
 本项目的离子轨迹推进权威是 SIMION。Python 只编译 GEM、校验输入、序列化粒子源和整理证据，不能
 积分离子运动。
 
-## 最简 400 Pa 快速原型
+## 均匀 400 Pa 快速对照
 
-首轮轨迹不依赖 COMSOL。第二锥出口 `z=3 mm` 之后直接规定为均匀 `400 Pa`、`300 K`、轴向
+这个诊断控制不依赖 COMSOL。第二锥出口 `z=3 mm` 之后直接规定为均匀 `400 Pa`、`300 K`、轴向
 载气速度 `100 m/s`，第二锥之前省略碰撞；SIMION 负责 RF/DC 轨迹，官方 `collision_sds.lua`
 负责氮气碰撞与扩散。入口离子视为已经去溶剂化。该模型只用于快速判断能否穿过几何和两段杆，
-不解释喷流、压强梯度、泵口或绝对传输率。
+不解释喷流、压强梯度、泵口或绝对传输率，也不是项目自然压降链的 current 物理结果。
 
 ```powershell
 projects\dual_cone_tandem_quadrupole_ion_interface\workflows\gas_assisted_transport\run_uniform_400pa_prototype.ps1 `
-  -OutputDir ..\artifacts\projects\dual_cone_tandem_quadrupole_ion_interface\runs\<run_id>
+  -RunId <timestamp>__sim__simion__dual-cone-uniform-400pa-n100
 ```
 
 一条命令会复用/生成 PA、编译受控 Lua 气体场、冻结官方 SDS、构建单实例 IOB、执行真实 Fly，
-并输出 `prototype_run_report.json`、逐点轨迹、粒子末态和默认诊断图 `trajectory_rz_projection.png`。
+并在项目受管 `runs/<run_id>/` 中输出运行三件套、`results/prototype_run_report.json`、逐点轨迹、粒子末态和默认诊断图 `results/trajectory_rz_projection.png`。
 该图无需在合同中另行声明，固定包含全程径向轨迹、下游局部轨迹和“到达至少该轴向位置的唯一离子数”三幅子图。
 第三幅按每个离子的最大采样 `z` 计数，不把回退轨迹或密集采样重复计为多个粒子。`100 m/s` 是明确可替换的规定参数，
 不是 CFD 或实测结果。
@@ -31,7 +31,7 @@ projects\dual_cone_tandem_quadrupole_ion_interface\workflows\gas_assisted_transp
 ```powershell
 projects\dual_cone_tandem_quadrupole_ion_interface\workflows\gas_assisted_transport\run_gas_field_prototype.ps1 `
   -GasFieldManifest C:\absolute\path\gas_field_manifest.json `
-  -OutputDir ..\artifacts\projects\dual_cone_tandem_quadrupole_ion_interface\runs\<run_id>
+  -RunId <timestamp>__sim__simion__dual-cone-field-n100
 ```
 
 COMSOL 成功目录使用 `run_comsol_field_prototype.ps1`，它先调用独立校验/编译器，再委托上述核心。
@@ -94,9 +94,9 @@ COMSOL CSV 先由 `analysis/export_simion_gas_runtime.py`（或 `build_gas_runti
 禁止外推；整个 `z=-5..120 mm, r=0..23.5 mm` 域必须覆盖。圆四极杆在 `z=108.00 mm` 结束，孔板位于 `z=110.22..110.72 mm`，板后保留 `9.28 mm` 观察段；为防止 SDS 在终止步越过气体场，离子终止采样面设在 `z=119.75 mm`。后续飞行 Program 必须通过官方
 `collision_sds.lua` 注入这些函数，并通过共享 RF kernel 驱动电极；不得用 Python 阻尼积分器替代。
 规则网格的切割单元继续按有效流体角点归一化插值；若一步推进完全离开流体支持但尚未由粗 PA 表面
-终止，Program 将其记录为边界代理损失码 `3` 并停止该离子。该码与锥壁位置一致，但受 `0.1 mm`
+终止，Program 将其记录为边界代理损失码 `3` 并停止该离子；均匀场的声明域边缘也就是规定气体包络边缘，越出时采用同一损失码。该码与锥壁或包络边界位置一致，但受 `0.1 mm`
 流场网格、`0.5 mm` PA 网格和未确认锥口圆角限制，不能单独解释为精确实机撞壁率。真正越出治理坐标域
-仍是运行错误，不能按损失吞掉。
+以外的其他气场执行错误仍是运行错误，不能按损失吞掉。
 
 原型粒子数和当前资格见 [PROJECT](PROJECT.md#当前资格)，束斑统计与原记录的限制见
 [原型历史记录](history/20260911__empty-enclosure-gas-transport-prototype.md)。

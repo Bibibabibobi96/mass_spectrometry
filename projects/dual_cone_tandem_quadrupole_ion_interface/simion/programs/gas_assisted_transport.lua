@@ -33,6 +33,7 @@ local final_stream
 local next_sample_us = {}
 local terminal_code = {}
 local gas_support_lost = {}
+local final_recorded = {}
 
 local function set_electrode_voltage(id, voltage)
   assert(id == 1 or id == 2 or id == 3 or id == 11 or id == 12 or id == 21 or id == 22,
@@ -87,13 +88,20 @@ function segment.other_actions()
   end
 end
 
-function segment.terminate()
+local function emit_final(code)
+  if final_recorded[ion_number] then return end
+  terminal_code[ion_number] = code or terminal_code[ion_number] or 0
   emit_sample()
   final_stream:write(string.format('%d,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%d\n',
     ion_number, ion_time_of_flight, ion_px_mm, ion_py_mm, ion_pz_mm,
-    ion_vx_mm, ion_vy_mm, ion_vz_mm, terminal_code[ion_number] or 0))
+    ion_vx_mm, ion_vy_mm, ion_vz_mm, terminal_code[ion_number]))
   trajectory_stream:flush()
   final_stream:flush()
+  final_recorded[ion_number] = true
+end
+
+function segment.terminate()
+  emit_final()
 end
 
 function segment.terminate_run()
@@ -114,6 +122,9 @@ if config.mode == 'gas_assisted_transport' then
     if result[1] then return unpack(result, 2) end
     if tostring(result[2]):find('gas-field query has no fluid support', 1, true) then
       gas_support_lost[ion_number] = true
+      terminal_code[ion_number] = 3
+      -- A PA workbench-edge splat can occur before segment.terminate.
+      emit_final(3)
       return unpack(fallback)
     end
     error(result[2])

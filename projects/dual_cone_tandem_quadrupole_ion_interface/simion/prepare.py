@@ -17,6 +17,7 @@ from common.simion.particle_source import render_standard_beams, render_source_s
 from projects.dual_cone_tandem_quadrupole_ion_interface.simion.geometry import (
     DEFAULT_NUMERICS,
     DEFAULT_RESOLVED,
+    device_to_workbench_offsets,
     render_gem,
 )
 
@@ -143,7 +144,8 @@ def _render_run_config(
     plate = resolved["geometry_mm"]["downstream_aperture_plate"]
     pa_cell_z = float(numerics["pa"]["cell_mm_xyz"]["z"])
     terminal_device_z = float(plate["downstream_observation_end_z_mm"]) - 0.5 * pa_cell_z
-    terminal_workbench_z = terminal_device_z + 2.0
+    offset_x, offset_y, offset_z = device_to_workbench_offsets(numerics)
+    terminal_workbench_z = terminal_device_z + offset_z
     return "\n".join([
         "return {",
         f"  mode={_lua_string(mode)},",
@@ -163,7 +165,7 @@ def _render_run_config(
         # Stop one half PA cell before the physical end so SDS does not
         # evaluate the gas field beyond its declared domain on the terminal step.
         f"  downstream_workbench_z_mm={terminal_workbench_z:.15g},",
-        f"  device_x_offset_mm={25.5:.15g},device_y_offset_mm={25.5:.15g},device_z_offset_mm={2.0:.15g},",
+        f"  device_x_offset_mm={offset_x:.15g},device_y_offset_mm={offset_y:.15g},device_z_offset_mm={offset_z:.15g},",
         f"  random_seed={int(trajectory['random_seed'])},",
         f"  collision_gas_mass_amu={gas['collision_gas_mass_amu']:.15g},",
         f"  collision_gas_diameter_nm={gas['collision_gas_diameter_nm']:.15g},",
@@ -174,7 +176,8 @@ def _render_run_config(
 
 
 def _materialize_gas_source(
-    *, frozen: Path, solver: Path, resolved: dict[str, Any], gas_science: dict[str, Any]
+    *, frozen: Path, solver: Path, resolved: dict[str, Any], gas_science: dict[str, Any],
+    numerics: dict[str, Any]
 ) -> tuple[Path, Path, dict[str, Any]]:
     spec = _load(CYLINDRICAL_SOURCE, "continuous_axial_volume_ion_beam_source")
     geometry = spec["geometry_mm"]
@@ -191,7 +194,7 @@ def _materialize_gas_source(
     source_csv = frozen / "cylindrical_ion_source.csv"
     source_receipt = frozen / "cylindrical_ion_source_receipt.json"
     receipt = materialize(CYLINDRICAL_SOURCE, source_csv, source_receipt)
-    offset_x, offset_y, offset_z = 25.5, 25.5, 2.0
+    offset_x, offset_y, offset_z = device_to_workbench_offsets(numerics)
     beams: list[dict[str, Any]] = []
     states: list[dict[str, Any]] = []
     with source_csv.open(encoding="utf-8", newline="") as stream:
@@ -272,12 +275,13 @@ def prepare(
     }
 
     source = science["ion"]
-    center, z_source = 25.5, 1.0
+    offset_x, offset_y, offset_z = device_to_workbench_offsets(numerics)
+    center_x, center_y, z_source = offset_x, offset_y, offset_z - 1.0
     fly2 = solver / "c0_smoke.fly2"
     fly2.write_text(
         render_standard_beams([{
             "tob": 0.0, "mass": source["mass_amu"], "charge": source["charge_state"],
-            "x": center, "y": center, "z": z_source,
+            "x": center_x, "y": center_y, "z": z_source,
             "ke": source["source_kinetic_energy_ev"], "az": 0.0, "el": 0.0,
             "cwf": 1.0, "color": 1,
         }]),
@@ -285,7 +289,7 @@ def prepare(
     )
     states = solver / "source_states.lua"
     states.write_text(render_source_states([{
-        "particle_id": 1, "t": 0.0, "x": center, "y": center, "z": z_source,
+        "particle_id": 1, "t": 0.0, "x": center_x, "y": center_y, "z": z_source,
         "vx": 0.0, "vy": 0.0, "vz": 0.0, "ke": source["source_kinetic_energy_ev"],
     }]), encoding="utf-8")
     inputs["particle_fly2"] = {"path": str(fly2), "sha256": file_sha256(fly2)}
@@ -303,7 +307,8 @@ def prepare(
         }
         inputs["gas_field_manifest_identity"] = manifest
         source_fly2, source_states, source_receipt = _materialize_gas_source(
-            frozen=frozen, solver=solver, resolved=resolved, gas_science=gas_science
+            frozen=frozen, solver=solver, resolved=resolved, gas_science=gas_science,
+            numerics=numerics
         )
         inputs["gas_flow_science"] = freeze_file(
             GAS_FLOW_SCIENCE, frozen / "gas_flow_science.json"
@@ -340,7 +345,7 @@ def prepare(
             "gem": {"sha256": inputs["gem"]["sha256"]},
             "basis_namespace": "dual_cone_tandem",
             "mesh": numerics["pa"]["cell_mm_xyz"],
-            "grid_phase": {"workbench_origin_mm": [25.5, 25.5, 2.0]},
+            "grid_phase": {"workbench_origin_mm": list(device_to_workbench_offsets(numerics))},
             "surface": numerics["pa"]["surface_enhancement"],
             "simion_identity": {"executable_sha256": file_sha256(executable)},
             "refine_policy": numerics["pa"]["refine_policy"],

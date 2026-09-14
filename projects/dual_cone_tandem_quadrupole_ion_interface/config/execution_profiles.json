@@ -4,31 +4,23 @@
   "project_id": "dual_cone_tandem_quadrupole_ion_interface",
   "profiles": [
     {
-      "profile_id": "axisymmetric_gas_flow_screening_plan",
+      "profile_id": "axisymmetric_gas_flow_screening_static",
       "capability_id": "axisymmetric_gas_flow_field_generation",
       "mode": "axisymmetric_gas_flow_screening",
       "evidence_levels": ["plan"],
       "supported_objectives": ["gas_flow_field_generation"],
-      "supported_operating_points": [
-        {"mass": {"value": 500.0, "unit": "Da"}, "charge_state": 1}
-      ],
+      "supported_operating_points": [{"mass": {"value": 500.0, "unit": "Da"}, "charge_state": 1}],
       "supported_design_variables": [],
       "supported_constraints": ["positive_clearance", "nonoverlapping_axial_sections"],
-      "deliverable_outputs": ["comsol_model", "simulation_results"],
+      "deliverable_outputs": ["comsol_model", "simulation_results", "interface_state"],
       "required_bindings": ["geometry_baseline", "resolved_geometry", "gas_flow_science", "comsol_solver_numerics"],
       "steps": [
-        {
-          "step_id": "static_gate",
-          "kind": "gate",
-          "shell": "powershell",
-          "entrypoint": "verify_project.ps1",
-          "run_id_template": null,
-          "arguments": ["-PythonExe", "{python_exe}"]
-        }
+        {"step_id": "static_gate", "kind": "gate", "shell": "powershell", "entrypoint": "verify_project.ps1", "run_id_template": null, "arguments": ["-PythonExe", "{python_exe}"]},
+        {"step_id": "comsol_gas_flow", "kind": "run", "shell": "powershell", "entrypoint": "workflows/gas_assisted_transport/run_axisymmetric_gas_flow.ps1", "run_id_template": "{timestamp}__sim__comsol__dual-cone-gas-flow", "arguments": ["-RunId", "{run_id}", "-PythonExe", "{python_exe}"]}
       ],
       "limitations": [
-        "This plan-level profile validates contracts and source bindings only; no public COMSOL run lifecycle is registered yet.",
-        "The operating point is a provisional planning identity and does not affect the gas-only solve.",
+        "The registered run remains an axisymmetric empty-enclosure qualitative prototype, not a quantitative instrument CFD result.",
+        "The operating point is an identity placeholder and does not affect the gas-only solve.",
         "A gas-flow result alone does not establish ion transmission."
       ]
     },
@@ -38,26 +30,18 @@
       "mode": "gas_field_driven_simion_transport",
       "evidence_levels": ["plan"],
       "supported_objectives": ["gas_assisted_ion_transport"],
-      "supported_operating_points": [
-        {"mass": {"value": 500.0, "unit": "Da"}, "charge_state": 1}
-      ],
+      "supported_operating_points": [{"mass": {"value": 500.0, "unit": "Da"}, "charge_state": 1}],
       "supported_design_variables": [],
       "supported_constraints": ["positive_clearance", "nonoverlapping_axial_sections"],
       "deliverable_outputs": ["simion_model", "simulation_results", "interface_state"],
-      "required_bindings": ["resolved_geometry", "successful_comsol_gas_flow_manifest", "canonical_gas_field", "particle_source", "simion_solver_numerics", "particle_count_policy"],
+      "required_bindings": ["resolved_geometry", "successful_comsol_gas_flow_run", "canonical_gas_field", "particle_source", "simion_solver_numerics", "particle_count_policy"],
       "steps": [
-        {
-          "step_id": "static_gate",
-          "kind": "gate",
-          "shell": "powershell",
-          "entrypoint": "verify_project.ps1",
-          "run_id_template": null,
-          "arguments": ["-PythonExe", "{python_exe}"]
-        }
+        {"step_id": "static_gate", "kind": "gate", "shell": "powershell", "entrypoint": "verify_project.ps1", "run_id_template": null, "arguments": ["-PythonExe", "{python_exe}"]},
+        {"step_id": "simion_transport", "kind": "run", "shell": "powershell", "entrypoint": "workflows/gas_assisted_transport/run_comsol_field_prototype.ps1", "run_id_template": "{timestamp}__sim__simion__dual-cone-comsol-field-n100", "arguments": ["-ComsolRunDirectory", "{comsol_run_directory}", "-RunId", "{run_id}", "-PythonExe", "{python_exe}"]}
       ],
       "limitations": [
-        "This plan-level profile does not register a SIMION Fly runner.",
-        "SIMION must consume a copied and hash-verified canonical gas field from one successful COMSOL run.",
+        "The run is unqualified qualitative Prototype evidence even though it has a complete governed artifact lifecycle.",
+        "SIMION consumes a copied and hash-verified canonical gas field from one successful COMSOL run.",
         "The dependent COMSOL-to-SIMION chain is not independent cross-solver validation."
       ]
     }

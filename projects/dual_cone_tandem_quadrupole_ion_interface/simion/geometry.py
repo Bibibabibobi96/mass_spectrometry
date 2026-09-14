@@ -16,6 +16,15 @@ DEFAULT_RESOLVED = PROJECT_ROOT / "config" / "resolved_geometry.json"
 DEFAULT_NUMERICS = PROJECT_ROOT / "config" / "simion_solver_numerics.json"
 
 
+def device_to_workbench_offsets(numerics: dict[str, Any]) -> tuple[float, float, float]:
+    """Return the governed device-to-workbench translation in x, y, z order."""
+    record = numerics["workbench"]["coordinate_mapping"]["device_to_workbench_offset_mm"]
+    offsets = tuple(float(record[axis]) for axis in "xyz")
+    if not all(math.isfinite(value) for value in offsets):
+        raise ValueError("SIMION coordinate offsets must be finite")
+    return offsets
+
+
 def _number(value: float) -> str:
     number = float(value)
     if not math.isfinite(number):
@@ -77,18 +86,23 @@ def render_gem(resolved: dict[str, Any], numerics: dict[str, Any]) -> str:
     )
     transverse_span = 2.0 * (radius + 2.0)
     z_min = -2.0
-    center = 0.5 * transverse_span
-    offset = -z_min
+    offset_x, offset_y, offset_z = device_to_workbench_offsets(numerics)
+    if not math.isclose(offset_x, 0.5 * transverse_span) or not math.isclose(
+        offset_y, 0.5 * transverse_span
+    ):
+        raise ValueError("SIMION transverse offsets must center the governed PA span")
+    if not math.isclose(offset_z, -z_min):
+        raise ValueError("SIMION axial offset must place the governed upstream plane at zero")
     lines = [
         "; Generated from config/resolved_geometry.json; do not edit.",
-        "; Device-to-array map: (x,y,z) -> (x+25.5,y+25.5,z+2.0) mm.",
+        "; Device-to-array map is governed by config/simion_solver_numerics.json.",
         "; C0 limitation: stage-1 upstream faces are flat at the minimum resolved z.",
         "; The cone-following cut remains blocked pending a governed project CSG mask.",
         f"# local mmgu = {_number(mmgu)}",
         f"pa_define($(51/mmgu+1),$(51/mmgu+1),$({_number(observation_end - z_min)}/mmgu+1),"
         "planar,non-mirror,electric,,$(mmgu),surface=fractional)",
         "",
-        f"locate({_number(center)},{_number(center)},{_number(offset)}) {{",
+        f"locate({_number(offset_x)},{_number(offset_y)},{_number(offset_z)}) {{",
         _cone_electrode(geometry["first_cone"], 1, radius),
         _cone_electrode(geometry["second_cone"], 2, radius),
         render_grouped_rod_array_gem(

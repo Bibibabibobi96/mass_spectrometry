@@ -1,6 +1,9 @@
 % RUN_AXISYMMETRIC_GAS_FLOW Fail-closed batch entry point for COMSOL with MATLAB.
 scriptPath = string(mfilename("fullpath"));
-projectRoot = fileparts(fileparts(scriptPath));
+projectRoot = string(getenv("DUAL_CONE_PROJECT_ROOT"));
+if strlength(projectRoot) == 0
+    projectRoot = fileparts(fileparts(scriptPath));
+end
 outputDir = string(getenv("DUAL_CONE_GAS_FLOW_OUTPUT_DIR"));
 if strlength(outputDir) == 0
     error("GasFlow:MissingOutput", ...

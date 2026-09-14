@@ -1,6 +1,8 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$ComsolRunDirectory,
+    [Parameter(Mandatory = $true)]
+    [string]$OutputDir,
     [string]$PythonExe = ''
 )
 
@@ -14,10 +16,12 @@ $python = if ($PythonExe) {
     Join-Path $repoRoot '.venv\Scripts\python.exe'
 }
 $runDirectory = [IO.Path]::GetFullPath($ComsolRunDirectory)
+$outputDirectory = [IO.Path]::GetFullPath($OutputDir)
+$null = New-Item -ItemType Directory -Path $outputDirectory -Force
 $csv = Join-Path $runDirectory 'gas_field_rz.csv'
 $metadata = Join-Path $runDirectory 'gas_field_metadata.json'
-$runtime = Join-Path $runDirectory 'gas_field_runtime.lua'
-$manifest = Join-Path $runDirectory 'gas_field_manifest.json'
+$runtime = Join-Path $outputDirectory 'gas_field_runtime.lua'
+$manifest = Join-Path $outputDirectory 'gas_field_manifest.json'
 
 & $python -m projects.dual_cone_tandem_quadrupole_ion_interface.analysis.export_simion_gas_runtime `
     --csv $csv --metadata $metadata --output-lua $runtime --output-manifest $manifest
